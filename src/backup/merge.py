@@ -4322,6 +4322,64 @@ def _safe_ring_target(base: Path, rel: str) -> Path | None:
     return candidate
 
 
+def _touched_source_ids(session, batch_id: int) -> list[int] | None:
+    """The sources whose ``Source.article_count`` this batch could have changed (ruling R25).
+
+    WHY THIS IS DERIVED AND NOT CARRIED. The obvious source is the merge's own
+    ``temp.map_sources``, and PR 3 recorded that as the blocker: it is a TEMP table on the
+    merge connection, gone by the time this post-swap session runs, so scoping "meant
+    threading several thousand lines through the restore path". **It does not.**
+    ``merged_rows`` is DURABLE provenance the merge already writes for every row it inserts,
+    it survives the atomic swap, and the post-swap re-index already reads it to find this
+    batch's articles. So the touched set is one query against a table that is already there,
+    with nothing threaded and no potentially-86,470-element list carried through a
+    serialised report.
+
+    TWO POPULATIONS, and the second is not redundant:
+
+    * sources that GAINED articles -- the additive merge inserted articles onto existing
+      sources mapped by domain, without touching their counter (finding S6);
+    * sources the merge INSERTED -- a brand-new source whose articles all turned out to be
+      duplicates still arrives with a NULL counter that needs its first value.
+
+    RETURNS ``None`` WHEN THE SET CANNOT BE DERIVED, and the caller must read that as
+    "reconcile everything", never "reconcile nothing". The asymmetry is the whole reason
+    this function has a third return value: an unscoped reconcile is slow, while a silently
+    empty scope leaves ``Source.article_count`` stale-LOW and, being non-NULL, the read
+    fallback never fires -- a wrong count displayed as exact, which is the precise defect S6
+    was raised about. Slow and right beats fast and wrong. An empty LIST is different again
+    and means what it says: this batch touched nothing, so there is nothing to verify.
+    """
+    try:
+        from sqlalchemy import select
+
+        from src.database.models import Article, MergedRow
+
+        gained = select(Article.source_id).join(
+            MergedRow, MergedRow.row_id == Article.id
+        ).where(
+            MergedRow.batch_id == batch_id,
+            MergedRow.table_name == "articles",
+        ).distinct()
+        # No `source_id IS NOT NULL` predicate: the column is NOT NULL, so the filter would
+        # be an unreachable branch implying a case the schema forbids. Pinned by
+        # tests/test_import_source_counter_scope.py, which fails if that ever changes and the
+        # guard becomes necessary again.
+        inserted = select(MergedRow.row_id).where(
+            MergedRow.batch_id == batch_id,
+            MergedRow.table_name == "sources",
+        )
+        touched = {int(r[0]) for r in session.execute(gained) if r[0] is not None}
+        touched |= {int(r[0]) for r in session.execute(inserted) if r[0] is not None}
+        return sorted(touched)
+    except Exception:  # noqa: BLE001 - an underivable scope must widen, never narrow
+        _LOG.warning(
+            "could not derive the batch's touched sources; reconciling ALL source counters",
+            exc_info=True,
+        )
+        return None
+
+
 def _refresh_event_mirror(side_files: dict) -> dict | None:
     """After the atomic swap, refresh the durable ``event_imports`` mirror so it reflects the
     just-restored calendar events (DB-reliability D1 follow-up, Wave 5 L).
@@ -5873,10 +5931,24 @@ def run_restore(
                     # S6: the additive merge inserted articles onto existing sources (mapped by
                     # domain) WITHOUT touching Source.article_count, so it is now stale-low and, being
                     # non-NULL, the read fallback would never fire -> a wrong count shown as exact
-                    # (skeptic finding). Reconcile it authoritatively (cheap; sources are few).
+                    # (skeptic finding). Reconcile it authoritatively.
+                    #
+                    # THE COMMENT HERE USED TO END "(cheap; sources are few)". THERE ARE 86,470 AND
+                    # IT TOOK 32 MINUTES (finding F6) -- the same aged claim the function's own
+                    # docstring carried, in a second place, which is why the number now appears
+                    # beside it rather than an adjective.
+                    #
+                    # SCOPED per ruling R25: only the sources this batch touched can have drifted
+                    # from it. `_touched_source_ids` returns None when it cannot derive the set, and
+                    # None is exactly `reconcile_source_counters`' UNSCOPED whole-corpus repair --
+                    # so an underivable scope degrades to slow-and-correct rather than to a silent
+                    # no-op that would leave the counters stale-low and reported as exact.
                     from src.analytics.store import reconcile_source_counters
 
-                    reconcile_source_counters(_epoch_sess)
+                    report["source_counters"] = reconcile_source_counters(
+                        _epoch_sess,
+                        source_ids=_touched_source_ids(_epoch_sess, batch_id),
+                    )
             except Exception:  # noqa: BLE001 - a coordination bump must never undo a committed restore
                 _LOG.warning("corpus-epoch bump after restore-merge failed", exc_info=True)
 

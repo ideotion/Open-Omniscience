@@ -11957,3 +11957,60 @@ Its twin, from the same matrix: a test asserting the **return value** cannot dis
 And a test cannot tell a committed row from a pending one on a shared in-memory
 connection — proving "committed" needs a file database and a genuinely separate
 connection.
+
+### A RECORDED BLOCKER CAN BE WRONG, AND IT WILL BE BELIEVED (PR 6)
+
+PR 3 could not scope the import's source-counter reconcile and wrote down why: the touched
+set lives in the merge's `temp.map_sources`, on a connection the post-swap epoch bump no
+longer holds, so scoping meant *"threading several thousand lines through the restore
+path"* — **"what remains is the thread, not the design."** That entry was careful, specific,
+and read as settled.
+
+It was wrong. `merged_rows` is durable provenance the merge already writes for every
+inserted row, it survives the atomic swap, and **the post-swap re-index already reads it**
+to find the batch's articles. The touched set was one query, in the same session, all along.
+
+**A blocker recorded with a mechanism is the most credible kind, and therefore the most
+expensive kind to get wrong** — it stops the next session re-examining the problem at all.
+When picking up an item whose ledger entry says "the design is done, only the thread
+remains", re-derive the design once: ask what ELSE already survives the boundary the
+blocker names. The cost of that check is minutes; the cost of believing it was a ruling
+(`R25`) carried as unbuilt across three PRs.
+
+### THE PLAN'S ITEMS AGE AGAINST THE TREE, IN BOTH DIRECTIONS (PR 6)
+
+`R25` licenses scoping *four* import stages, on a measurement of 2 h 25 min of corpus-wide
+work. Checked one by one, **three were already delivered before the ruling was made**:
+`quick_check`'s whole-file walk was already deferred to the swap checkpoint, the keyword
+reconcile had been replaced by a bounded resumable sweep two months earlier, and the event
+mirror was already proportional to events rather than the corpus.
+
+This is the third PR in a row where the plan and the tree had drifted — PR 4 found the
+"cheaper option" already true, PR 5 found two of seven parts already delivered. **Before
+building a planned item, verify each of its parts is still unbuilt.** The audit measured a
+tree that no longer exists, and a ruling is a licence to act, not evidence that acting is
+still needed. Recording *which* parts were already done is as valuable as the code: it stops
+the next reader assuming the item is untouched.
+
+And the residue matters too. The one part of `quick_check` still undeferred — a lone import
+with no later checkpoint — is **not** an optimisation waiting to happen: deferring it would
+weaken the pre-swap verification gate. A performance plan can contain a data-safety
+question, and it should be handed back as one rather than optimised.
+
+### THE "PR pending" SWEEP PATTERN IS RED CI BY CONSTRUCTION (PR 6)
+
+Rule (5b) permits writing `PR pending` in a `shipped.csv` row whose PR number does not
+exist yet, and sweeping it later. I used that three times (#1167, #1168, #1169): commit the
+row with the placeholder, push, open the PR, sweep in a follow-up commit.
+
+**`tests/test_release_notes_generator.py::test_the_real_ledger_carries_no_placeholder_any_release_would_cite`
+forbids it at every commit.** The intermediate commit is red by construction. It never
+surfaced because each of those pushes was followed within a minute by the sweep push, and
+the concurrency group cancelled the first run before it reached pytest. Three for three on
+luck, not correctness.
+
+**The order that is actually correct:** commit and push the code and the non-CSV ledger,
+open the PR, then add the `shipped.csv` row **with the real number** in its own commit. The
+placeholder then never exists in a commit at all. Rule (5b)'s allowance is for a row that
+must be *written* before the number is known — not for one that must be *committed* before
+it is known, which is a different and avoidable thing.

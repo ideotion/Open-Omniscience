@@ -22,6 +22,43 @@
 
 ## Open queue (when maintainer says proceed)
 
+- **PR 6 OF THE AUDIT'S §9.2 IS BUILT, AND IT WAS ONE STAGE RATHER THAN FOUR (2026-09-23).**
+  `R25` says all four import stages may be scoped to the batch, on a measurement of
+  **2 h 25 min of corpus-wide stages for a 77 MB import whose merge step took 7 s**. Checked
+  one by one against the tree, **three were already delivered before `R25` was ruled**:
+  - **`quick_check` — already DEFERRED.** Under `hold_after_merge` (the import-queue
+    checkpoint path) the whole-FILE walk moves to the checkpoint that swaps the copy in and
+    "covers every merge in the file by construction". It is NOT deferred for a lone import,
+    and that residue is **not an optimisation**: there is no later checkpoint to carry it, so
+    deferring it would weaken the pre-swap verification gate — a data-safety ruling rather
+    than a code choice. Scoping it is impossible in principle; it is a whole-file check.
+  - **the keyword-counter reconcile — already BOUNDED.** The 2026-07-30 import-speed fix
+    replaced the unbounded `backfill_keyword_counters` with the resumable, budgeted,
+    durable-cursor sweep, so a queue amortises ONE sweep across its items. Scoping it to the
+    batch is not even meaningful: since the 2026-07-29 option-(a) ruling the merge no longer
+    copies mention rows at all, so the batch's keywords do not exist until the re-index runs.
+  - **the event-mirror refresh — already PROPORTIONAL.** It returns `None` unless a calendar
+    side-file was actually merged, and its cost tracks the events, not the corpus.
+  - **the source counters — THE ONE THAT WAS LEFT**, and the 32-minute one (F6). Now scoped.
+    **PR 3'S RECORDED BLOCKER WAS WRONG, and that is the finding worth keeping.** It said the
+    touched set lives in the merge's `temp.map_sources`, on a connection the post-swap epoch
+    bump no longer holds, so threading it was "a change to the restore path" — "the thread,
+    not the design". In fact `merged_rows` is DURABLE provenance the merge already writes for
+    every inserted row, it survives the atomic swap, and it is ALREADY read post-swap by the
+    re-index to find this batch's articles. The touched set is one query over two
+    populations (sources that gained articles; sources the merge inserted, which is not
+    redundant because a new source whose articles all deduplicated still needs a first
+    counter value). **No thread was ever needed. The design was the thing that was wrong.**
+  - **THE ASYMMETRY THAT CARRIES IT:** `_touched_source_ids` returns `None` when it cannot
+    derive the set, and `None` is `reconcile_source_counters`' UNSCOPED whole-corpus repair.
+    A silently EMPTY scope would leave `Source.article_count` stale-low and, being non-NULL,
+    the read fallback never fires — a wrong count displayed as exact, which is precisely the
+    S6 defect this stage exists to prevent. `[]` (verified nothing touched) and `None`
+    (cannot tell) stay distinguishable, and only the second widens.
+  - **STILL OPEN:** whether a LONE import may defer its `quick_check`. A data-safety
+    question, and the only part of `R25` this PR leaves.
+
+
 - **PR 5 SLICE 1 OF THE AUDIT'S §9.2 IS BUILT: THE INDEX WINDOW, ITS CRASH HEAL AND THE
   DISCLOSURE. THE SPAN IS `D46` ⛔ AND THE SORTED-RUNS HALF IS NOT BUILT (2026-09-23).**
   §9.2 item 5 is the step the audit says "changes the order of magnitude on this class of
