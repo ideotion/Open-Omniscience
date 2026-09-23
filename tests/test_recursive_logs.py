@@ -75,6 +75,7 @@ def test_schema_drift_detects_a_missing_column(session):
     # Simulate a self-heal gap: drop a column the model declares. Drop the index that
     # covers it first (SQLite refuses to drop an indexed column).
     session.execute(text("DROP INDEX IF EXISTS idx_keyword_mention_count"))
+    session.execute(text("DROP INDEX IF EXISTS idx_keyword_counter_freshness"))
     session.execute(text("ALTER TABLE keywords DROP COLUMN mention_count"))
     session.commit()
     r = schema_drift(session)

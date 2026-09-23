@@ -152,3 +152,115 @@ def test_source_io_reads_the_counter_with_a_freshness_aware_basis():
 def test_reconcile_is_wired_into_idle_maintenance_delete_and_restore():
     for path in ("src/scheduler/maintenance.py", "src/ingest/email.py", "src/backup/merge.py"):
         assert "reconcile_source_counters" in Path(path).read_text(encoding="utf-8"), path
+
+
+# --------------------------------------------------------------------------- #
+# F6: 86,470 sources, 32 minutes, and a docstring that said "sources are few"  #
+# --------------------------------------------------------------------------- #
+
+
+def _seed(session, *, sources=4, per_source=3):
+    """A corpus with a known per-source count, and deliberately wrong counters."""
+    made = []
+    for i in range(sources):
+        src = _src(session, f"f6s{i}")
+        src.article_count = 999
+        made.append(src)
+    session.flush()
+    for src in made:
+        _art(session, src.id, per_source)
+    session.commit()
+    return [src.id for src in made]
+
+
+def test_an_unscoped_run_still_reconciles_every_source():
+    """The authoritative whole-corpus repair is UNCHANGED, and the scheduler's maintenance
+    pass still calls it that way. Scoping must not quietly become the only mode."""
+    s = _session()
+    ids = _seed(s)
+    out = reconcile_source_counters(s)
+
+    assert out["scope"] == "all"
+    assert out["sources"] == len(ids) and out["drift_repaired"] == len(ids)
+    rows = s.query(Source).filter(Source.id.in_(ids)).all()
+    assert {r.article_count for r in rows} == {3}
+    assert all(r.counter_reconciled_at is not None for r in rows)
+
+
+def test_a_scoped_run_touches_ONLY_the_named_sources():
+    """R25/F6: an import knows which sources it touched, and the ones it did not touch
+    cannot have drifted from it. 86,470 sources at 32 minutes is what the unscoped call
+    cost inside the import's corpus-epoch bump."""
+    s = _session()
+    ids = _seed(s)
+    out = reconcile_source_counters(s, source_ids=ids[:2])
+
+    assert out["scope"] == "scoped" and out["scoped_to"] == 2 and out["sources"] == 2
+    by_id = {r.id: r for r in s.query(Source).all()}
+    assert [by_id[i].article_count for i in ids[:2]] == [3, 3]
+    # ...and the untouched ones keep their wrong counter, because nothing verified them.
+    assert [by_id[i].article_count for i in ids[2:]] == [999, 999]
+
+
+def test_a_scoped_run_STAMPS_ONLY_WHAT_IT_VERIFIED():
+    """THE HONESTY CLAUSE, and the reason scoping is not free. `source_counter_envelope`
+    reads `counter_reconciled_at` to say exact vs estimated. Stamping a source this call
+    never looked at would be a false freshness claim -- an untouched source keeps its older
+    stamp and is honestly reported as older."""
+    s = _session()
+    ids = _seed(s)
+    reconcile_source_counters(s, source_ids=ids[:2])
+
+    by_id = {r.id: r for r in s.query(Source).all()}
+    assert all(by_id[i].counter_reconciled_at is not None for i in ids[:2])
+    assert all(by_id[i].counter_reconciled_at is None for i in ids[2:]), (
+        "a source this run never verified was stamped as verified"
+    )
+
+
+def test_an_empty_scope_is_a_no_op_rather_than_a_whole_corpus_run():
+    """THE DIRECTION THAT MATTERS. `source_ids=[]` means "nothing was touched"; falling
+    back to the whole corpus there would turn the cheapest possible call into the most
+    expensive one, which is precisely the 32 minutes this change exists to remove."""
+    s = _session()
+    ids = _seed(s)
+    out = reconcile_source_counters(s, source_ids=[])
+
+    assert out["sources"] == 0 and out["scope"] == "scoped"
+    rows = s.query(Source).filter(Source.id.in_(ids)).all()
+    assert {r.article_count for r in rows} == {999}
+
+
+def test_a_source_with_no_articles_is_reconciled_to_zero_not_skipped():
+    """A source whose articles all went away must go to 0, not keep its old count. The
+    GROUP BY has no row for it, so this is the branch a `live.get(sid, 0)` default carries
+    -- and the one a naive "iterate the GROUP BY" rewrite would silently drop."""
+    s = _session()
+    ids = _seed(s)
+    s.query(Article).filter(Article.source_id == ids[0]).delete()
+    s.commit()
+
+    reconcile_source_counters(s, source_ids=[ids[0]])
+    assert s.get(Source, ids[0]).article_count == 0
+
+
+def test_the_docstring_no_longer_CLAIMS_sources_are_few():
+    """The claim that made this cost invisible for months sat directly above a loop that
+    flushed one UPDATE per source: "CHEAP by design: sources are few (hundreds-thousands)".
+    The phrase survives only inside the correction that names what it cost -- asserted that
+    way round, because deleting the history would lose the reason anyone should care."""
+    import inspect
+
+    doc = inspect.getdoc(reconcile_source_counters) or ""
+
+    # It must still SAY what it cost -- deleting the history would lose the reason
+    # anyone should care that this call is now scopeable.
+    assert "86,470" in doc and "32 MINUTES" in doc.upper()
+
+    # ...and the old claim may survive ONLY as quoted history. Asserting its plain
+    # ABSENCE was this test's first cut and it failed against the correction that
+    # quotes it -- a guard that forbids naming the defect is a guard against the
+    # documentation, not against the defect.
+    for line in doc.splitlines():
+        if "CHEAP by design" in line or "sources are few" in line:
+            assert "USED TO SAY" in line, f"stated as a live claim: {line}"

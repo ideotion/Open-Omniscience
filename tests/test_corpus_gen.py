@@ -107,7 +107,10 @@ def test_hot_indexes_present_but_unlock_index_absent(tmp_path):
     idx = _indexes(db)
     assert "ix_mention_covering" in idx
     assert "ix_mention_date_keyword" in idx
-    assert "idx_keyword_mention_count" in idx
+    # F7 (2026-09-23): the single-column index was REPLACED by the composite that
+    # makes `counter_envelope`'s min(last_reconciled_at) covering.
+    assert "idx_keyword_counter_freshness" in idx
+    assert "idx_keyword_mention_count" not in idx
     assert "ix_article_observed" not in idx  # the unlock self-heal builds this
 
 

@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import logging
 import time
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from datetime import UTC, datetime
 
 from sqlalchemy import insert, text
@@ -1498,41 +1498,88 @@ def reconcile_keyword_counters(
     }
 
 
-def reconcile_source_counters(session: Session, *, now=None) -> dict:
+def reconcile_source_counters(
+    session: Session, *, now=None, source_ids: Iterable[int] | None = None
+) -> dict:
     """Recompute ``Source.article_count`` EXACTLY from articles (one ``GROUP BY source_id``)
     and stamp ``counter_reconciled_at`` (S6). The authoritative repair + initial population
     for the maintained per-source counter that ``source_io/sources`` + the reader read instead
     of a live per-source ``COUNT(*)``.
 
-    CHEAP by design: sources are few (hundreds–thousands, not the 3 M keywords), so this is one
-    grouped scan + a bulk update — no cursor/budget needed. NEVER a ``keyword_mentions ->
-    articles`` join (the codec column-order trap): it counts on the indexed
-    ``Article.source_id`` only. Counts only, no score. Returns ``{sources, drift_repaired}``.
+    NEVER a ``keyword_mentions -> articles`` join (the codec column-order trap): it counts on
+    the indexed ``Article.source_id`` only. Counts only, no score.
+
+    **THE DOCSTRING USED TO SAY "CHEAP by design: sources are few (hundreds-thousands)".
+    THERE ARE 86,470, AND THIS TOOK 32 MINUTES** inside the import's corpus-epoch bump
+    (finding F6). The cost was never the ``GROUP BY``: it was loading every ``Source`` as an
+    ORM object and assigning to all of them, so ``commit()`` flushed 86,470 UPDATE statements
+    through the SQLCipher codec while holding the single write gate.
+
+    TWO THINGS CHANGED, and only the first is a behaviour change:
+
+    * ``source_ids`` SCOPES it (ruling R25). An import knows which sources it touched, and
+      the ones it did not touch cannot have drifted from it. Unscoped remains the
+      authoritative whole-corpus repair -- the scheduler's maintenance pass still calls it
+      that way -- so nothing loses its periodic exact verification.
+    * The write is now a bulk update of the rows that are actually being verified, rather
+      than an ORM object per source.
+
+    **A SCOPED RUN STAMPS ONLY WHAT IT VERIFIED, WHICH IS THE POINT.** Stamping a source this
+    call never looked at would be a false freshness claim, and ``source_counter_envelope``
+    reads exactly that stamp to say ``exact`` vs ``estimated``. An untouched source keeps its
+    older stamp and is honestly reported as older. ``scope`` is returned so a caller can say
+    which it ran.
     """
     from datetime import UTC, datetime
 
     from sqlalchemy import func
 
+    from src.database.writer import write_lock
+
     stamp = now or datetime.now(UTC)
-    live: dict[int, int] = {
-        sid: cnt
-        for sid, cnt in session.query(Article.source_id, func.count(Article.id))
-        .group_by(Article.source_id)
-        .all()
-    }
+    wanted: list[int] | None = None
+    if source_ids is not None:
+        # Deduplicated and ordered so the UPDATE order is deterministic (a stable order is
+        # one fewer thing that can differ between two runs of the same import).
+        wanted = sorted({int(s) for s in source_ids})
+        if not wanted:
+            return {
+                "sources": 0,
+                "drift_repaired": 0,
+                "reconciled_at": stamp.isoformat(),
+                "scope": "scoped",
+                "scoped_to": 0,
+            }
+
+    counts = session.query(Article.source_id, func.count(Article.id))
+    current = session.query(Source.id, Source.article_count)
+    if wanted is not None:
+        counts = counts.filter(Article.source_id.in_(wanted))
+        current = current.filter(Source.id.in_(wanted))
+    live: dict[int, int] = {sid: cnt for sid, cnt in counts.group_by(Article.source_id).all()}
+
+    rows: list[dict] = []
     drift = 0
-    sources = session.query(Source).all()
-    for src in sources:
-        want = int(live.get(src.id, 0))
-        if src.article_count != want:  # includes NULL -> a first population counts as drift
+    for sid, have in current.all():
+        want = int(live.get(sid, 0))
+        if have != want:  # includes NULL -> a first population counts as drift
             drift += 1
-        src.article_count = want
-        src.counter_reconciled_at = stamp
-    session.commit()
+        rows.append({"id": sid, "article_count": want, "counter_reconciled_at": stamp})
+
+    if rows:
+        # Gated EXPLICITLY: ``bulk_update_mappings`` is invisible to both write-gate hooks
+        # (the recorded C8 note; the same reason the language backfill takes the lock by
+        # hand a few hundred lines below).
+        with write_lock():
+            session.bulk_update_mappings(Source, rows)
+            session.commit()
+
     return {
-        "sources": len(sources),
+        "sources": len(rows),
         "drift_repaired": drift,
         "reconciled_at": stamp.isoformat(),
+        "scope": "scoped" if wanted is not None else "all",
+        **({"scoped_to": len(wanted)} if wanted is not None else {}),
     }
 
 

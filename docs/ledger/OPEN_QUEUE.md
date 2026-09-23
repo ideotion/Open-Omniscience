@@ -62,6 +62,57 @@
   either — there is nothing yet to fix, only something to find out. They are listed here so
   the round's closure is not read as covering them.
 
+- **PR 3 OF THE FIELD-SLOWNESS PLAN IS HALF BUILT, AND THE HALVES ARE NAMED (2026-09-23).**
+  The audit's §9.2 item 3 bundles five findings. **F7 and F6 are done; F4, F5 and F11 are
+  not**, and this entry exists so that "PR 3" is never read as all five.
+
+  **(1) F7 IS CLOSED, AND THE INDEX DROP WAS MEASURED RATHER THAN ARGUED.**
+  `counter_envelope` runs on the Insights top path and asks
+  `min(keywords.last_reconciled_at) WHERE mention_count > 0`. `idx_keyword_mention_count`
+  covered only the predicate, so SQLite found the index entries and then read **1.1 M rows**
+  for the timestamp — **50,781 ms across three calls**. The composite
+  `(mention_count, last_reconciled_at)` makes it COVERING. The single-column index is
+  **dropped**, not kept beside it: `EXPLAIN QUERY PLAN` shows the composite serving every
+  query the old one served — *including* the hot `ORDER BY mention_count DESC LIMIT`, since
+  `mention_count` leads it — as a covering scan. Keeping both would buy nothing and charge
+  write amplification on an 11 M-row table, on the write-bound instance this audit is about.
+  The tests assert the **plan**, not the schema: an index the planner does not choose is
+  decoration, and "the index exists" is exactly the assertion that stays green while the scan
+  comes back.
+
+  **(2) F6's COST WAS NEVER THE `GROUP BY`.** `reconcile_source_counters` loaded every
+  `Source` as an ORM object and assigned to all of them, so `commit()` flushed **86,470
+  UPDATE statements** through the SQLCipher codec while holding the single write gate — 32
+  minutes inside the import's corpus-epoch bump. Its docstring said *"CHEAP by design:
+  sources are few (hundreds–thousands)"*. It is now one bulk update, and it takes
+  `source_ids` (ruling `R25`).
+
+  **A SCOPED RUN STAMPS ONLY WHAT IT VERIFIED**, which is the honesty clause and the reason
+  scoping is not free: `source_counter_envelope` reads `counter_reconciled_at` to say exact
+  vs estimated, so stamping a source the call never looked at would be a false freshness
+  claim. An untouched source keeps its older stamp and is honestly reported as older. An
+  EMPTY scope is a no-op, never a fallback to the whole corpus — that direction would turn
+  the cheapest possible call into the most expensive one.
+
+  **(3) WHAT IS NOT DONE, AND WHY, STATED SO NOBODY RE-DERIVES IT.**
+  *The import still calls it unscoped.* The touched set is the merge's own
+  `temp.map_sources`, a TEMP table on the merge connection — and the corpus-epoch bump runs
+  post-swap in a separate `session_scope()`, where that table is gone. Scoping the import
+  therefore means capturing `SELECT DISTINCT new FROM temp.map_sources` while the merge
+  connection is alive and threading it several thousand lines to the bump. That is a change
+  to the **restore path**, the most data-safety-critical code in the repo, and it was not
+  made on an autonomous turn that cannot run a real merge end to end. The API it needs now
+  exists, so the remaining work is the thread, not the design.
+  *F4* (a read transaction open 17 hours on an API worker thread — the pool listing names
+  the thread class only, never the handler), *F5* (three SAVEPOINTs timed at 510/660/664 s,
+  where a SAVEPOINT does no I/O — either the recorder attributes a neighbour's time or the
+  process was suspended) and *F11* (the drain's per-run progress counter) are untouched.
+  **F11 is a DISCLOSURE problem, not arithmetic**, which is worth recording because the
+  finding reads as a counting bug: `done` and `total` already describe the same population
+  (this run, against the currently-pending batches). What misleads is that the pair *reads*
+  as overall progress and resets each run. The fix is to say which it is and publish the
+  backlog at run start, not to change the sum.
+
 - **PR 2 OF THE FIELD-SLOWNESS PLAN IS BUILT, AND IT COULD NOT FINISH ITS OWN JOB
   (2026-09-23; `R26`, `R27` built; `D44` ⛔ opened).** F1's invariant — *the collector
   may never hold every connection* — is now true on the small tier and provably false on

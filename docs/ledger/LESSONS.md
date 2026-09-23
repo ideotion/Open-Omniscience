@@ -11791,3 +11791,49 @@ maintainer as `D44` rather than being made by the session that found it.
 **A guard whose green tells you something it never checked is the "fabricated security"
 shape in test form.** Where the work is genuinely incomplete, the assertion belongs on the
 incompleteness.
+
+---
+
+### AN INDEX THE PLANNER DOES NOT CHOOSE IS DECORATION — ASSERT THE PLAN, NOT THE SCHEMA (2026-09-23, finding F7)
+
+`counter_envelope` asked `min(keywords.last_reconciled_at) WHERE mention_count > 0` on the
+Insights top path. `idx_keyword_mention_count` covered the *predicate*, so SQLite located
+the matching index entries and then **read 1.1 M rows** to fetch the timestamp — **50,781 ms
+across three calls** on the field instance. The index existed, was used, and did not help.
+
+**`EXPLAIN QUERY PLAN` is the instrument, and COVERING is the word that separates a fix from
+a hope.** A test asserting *"the index exists"* would have been green throughout the defect
+and green after a fix that did nothing. The tests here assert the plan for each of the three
+statements the envelope actually runs — **and carry a negative twin** proving the old index
+was *not* covering, because without it a green suite cannot distinguish "the composite fixed
+this" from "this was always fine", and the second reading is the comfortable one.
+
+**The same instrument settled a judgment call that would otherwise have been a guess.** Is
+the single-column index still needed? Measured, not argued: with the composite present the
+planner serves every query the old index served — *including* the hot
+`ORDER BY mention_count DESC LIMIT` it was created for — from the composite, as a covering
+scan, because `mention_count` leads it. So it is dropped rather than kept, which stops paying
+write amplification on an 11 M-row table on a write-bound instance. **Two minutes of
+`EXPLAIN QUERY PLAN` against a throwaway in-memory database replaced an argument nobody could
+have won from reading.**
+
+### "CHEAP BY DESIGN" IS A CLAIM WITH A DATE ON IT (finding F6)
+
+`reconcile_source_counters` carried, directly above its loop: *"CHEAP by design: sources are
+few (hundreds–thousands, not the 3 M keywords)"*. **There are 86,470 sources, and the call
+took 32 minutes** inside the import's corpus-epoch bump.
+
+**The cost was never the `GROUP BY` the comment was defending.** It was loading every
+`Source` as an ORM object and assigning to all of them, so `commit()` flushed 86,470 UPDATE
+statements through the SQLCipher codec while holding the single write gate. The comment was
+true when written, aged silently, and its confidence is exactly what stopped anyone looking —
+the same shape as the `FLOOR_MAX_WORKERS` docstring one PR earlier. **A comment asserting a
+cost should name the scale it was true at**, so the reader can check whether that scale still
+holds instead of trusting a bare adjective.
+
+**And scoping is not free, which is the part worth keeping.** A scoped run stamps only what
+it verified, because `source_counter_envelope` reads that stamp to say *exact* vs
+*estimated* — stamping a source the call never looked at would be a false freshness claim.
+An untouched source keeps its older stamp and is honestly reported as older. The empty scope
+is a no-op and never a fallback to the whole corpus: that direction turns the cheapest
+possible call into the most expensive one, which is the defect being removed.

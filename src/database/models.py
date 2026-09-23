@@ -1190,7 +1190,21 @@ class Keyword(Base):
         # Ordered scan for the corpus-wide top-N by mentions (top_terms, the hot
         # Home grouped view) -- an index-only ORDER BY mention_count DESC LIMIT,
         # no keyword_mentions join. Mirrored in the boot self-heal + migration.
-        Index("idx_keyword_mention_count", "mention_count"),
+        #
+        # F7 (2026-09-23): the SECOND column is why this replaced the single-column
+        # `idx_keyword_mention_count`. `counter_envelope` runs on the Insights top path
+        # and asks `min(last_reconciled_at) WHERE mention_count > 0`; with mention_count
+        # alone that is a SEARCH, not a covering scan, so SQLite reads 1.1 M ROWS for the
+        # timestamp -- measured at 50,781 ms across three calls on the field instance.
+        # With the timestamp IN the index it is COVERING and touches no rows at all.
+        #
+        # THE OLD INDEX IS DROPPED RATHER THAN KEPT, and that was measured rather than
+        # assumed: EXPLAIN QUERY PLAN shows this composite serving every query the
+        # single-column one served -- including the hot `ORDER BY mention_count DESC
+        # LIMIT` -- as a COVERING INDEX, because mention_count leads it. Keeping both
+        # would buy nothing and charge write amplification on an 11 M-row table, on the
+        # write-bound instance this whole audit is about.
+        Index("idx_keyword_counter_freshness", "mention_count", "last_reconciled_at"),
     )
 
     def __repr__(self):
