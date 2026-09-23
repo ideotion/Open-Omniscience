@@ -11903,3 +11903,57 @@ MEANS (`"workers" not in extra`) **and** pin the knob SET, so a future argument 
 to the test deliberately instead of arriving unnoticed. **A proxy assertion should be replaced
 by the thing it was standing in for, plus a guard for what it was incidentally catching** —
 otherwise one of the two properties is silently dropped in the fix.
+
+### THE COUNTS IN A PLAN CAN BE RIGHT AND THE SET STILL WRONG (PR 5)
+
+Audit §9.2 item 5 says to drop *"the ten secondary mention indexes and the seven
+when/where/who indexes"*. Both numbers are exactly right — `keyword_mentions` has ten
+`Index()` objects, the three when/where/who tables have seven. **Three of the seventeen
+are UNIQUE**, and they are not performance indexes at all: they are the constraints that
+make *"one mention row per (keyword, article)"* true, and the bulk-insert path relies on
+the `IntegrityError` they raise. Dropping them lets a load insert duplicates that nothing
+reports and that the counters then faithfully double.
+
+**A verified count is not a verified set.** The plan's arithmetic passed; its *membership*
+did not. When a change is expressed as "drop the N indexes on X", enumerate them and ask
+of each what breaks if it is gone — the uniqueness ones answer differently from the rest.
+
+### A SELF-HEAL THAT COVERS MOST OF A SET IS THE MOST DANGEROUS KIND (PR 5)
+
+`maintenance.ensure_hot_indexes` recreates missing hot-path indexes at boot, and it is a
+good mechanism. It covers **4 of the 14** indexes a bulk build may drop. The other ten
+exist only because `create_all` or alembic built them once, and **neither adds an index to
+an existing table** — so a process that died between the DROP and the rebuild would leave
+them gone permanently, turning every query that used them into a full scan over 27.7 GB,
+silently and forever.
+
+The trap is that the mechanism's *existence* reads as coverage. "There is a boot self-heal
+for indexes" is true and was nearly load-bearing in the wrong direction. **Before relying
+on a heal, diff the set it covers against the set you are about to break.**
+
+### A CRASH-RECOVERY PASS SHOULD READ REALITY, NOT ITS OWN BOOKKEEPING (PR 5)
+
+The first shape for the bulk-build marker was a running tally: record each index as it is
+dropped, record each as it is rebuilt. That is wrong in the one case it exists for — a
+crash *between* the DROP and the record leaves an index gone with no note of it.
+
+The shape that works: the marker records, **once and committed before the first DROP**,
+the full set the window *may* drop. Recovery then asks `sqlite_master` which of those are
+actually absent. That is correct after a crash at any point, and there is no accounting to
+get wrong. The only ordering rule left is the commit-before-first-DROP, because **an index
+dropped with no durable record of it is an index nothing will look for.**
+
+### A MUTATION WHOSE TARGET DOES NOT MATCH APPLIES NOTHING, AND REPORTS AS "NOT CAUGHT" (PR 5)
+
+One mutation in this PR's matrix read as a surviving mutant — a guard with no test behind
+it. It was a mis-indented replacement string: the edit silently changed nothing, the suite
+passed because the code was unmodified, and the conclusion drawn was the opposite of the
+truth. **Assert the replacement count inside the mutation script** (`assert s.count(old)
+== 1`), so a mutation that fails to apply fails loudly instead of masquerading as evidence
+about the tests.
+
+Its twin, from the same matrix: a test asserting the **return value** cannot distinguish
+"declined to act" from "acted on an empty plan" when both return `[]`. Assert the STORE.
+And a test cannot tell a committed row from a pending one on a shared in-memory
+connection — proving "committed" needs a file database and a genuinely separate
+connection.

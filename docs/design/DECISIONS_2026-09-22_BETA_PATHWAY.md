@@ -363,6 +363,38 @@ item**, and PR 4 says so rather than letting "the constant factors in apply" rea
 three.
 `ANSWER D45:`
 
+**D46 ⛔ · What does a bulk-build index window SPAN? The mechanism is built; the trigger
+is a ruling (2026-09-23).** `R23` puts the bulk build on the LIVE store with the surfaces
+disclosing "rebuilding, N of M", and PR 5 slice 1 builds the window, its crash heal and
+that disclosure. **It has no caller yet, deliberately** — every candidate encodes a policy
+with a failure mode worse than the cost it removes:
+- The **drain** calls `reindex_articles` once per import batch. A window per batch pays one
+  full index build over the whole mention table *per batch* — the exact pessimisation
+  measured on `R22` in PR 4. A window over the whole drain leaves the store without 13
+  indexes for as long as the drain runs, which on the field instance is **days**.
+- `reindex_all_batch` is paged (`limit`/`after_id`) and driven by a resumable job loop, so
+  it has the same two shapes and adds a third: the operator can stop and resume it across
+  process restarts, so "the span" is not even one process's lifetime.
+- The cost only pays when the re-indexed fraction is large: dropping and rebuilding is
+  ~13 full index builds, against per-row maintenance saved on the rows actually touched.
+  **The break-even needs the operator's numbers, which this session does not have.**
+- **a** — **span = one exclusive drain run, with the window opened only when the backlog
+  exceeds a fraction of the corpus** (the field instance is 95 % unindexed, so it would
+  qualify and a mature corpus would not). Needs one number from `D43`'s instance.
+- **b** — **span = a full re-index only** ("Clean up keywords"), never the incremental
+  drain. Simplest to reason about, and the case where 100 % of rows are rewritten so the
+  rebuild is unambiguously worth it. Leaves the drain — the long pole — unimproved.
+- **c** — **keep it callerless**: ship the window, the heal and the disclosure, and let
+  the operator open it explicitly for a maintenance run. Honest, and does nothing on its
+  own.
+Default if blank: **⛔ none — this stays PENDING.** → **Recommendation: b now, a once
+`D43` returns a backlog fraction.** `b` is the one span with no threshold to guess and no
+multi-day stripped store; `a` is where the order-of-magnitude actually lives, and it needs
+a measurement rather than a preference. *Shipped state meanwhile:* the window, the
+**boot heal** (live and load-bearing from the first boot — it is what makes `R23`'s
+live-store choice survivable) and `rebuild_progress` for the disclosure.
+`ANSWER D46:`
+
 ## §B2 — The awareness mechanism you asked for
 
 *"find a way so that future bug discovery would not contradict what has been planned … to help

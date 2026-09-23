@@ -268,6 +268,7 @@ def init_db() -> None:
 
     # Mark a freshly-created DB at the current migration baseline so future schema
     # changes apply via `alembic upgrade head`. No-op if already alembic-managed.
+    from src.analytics.bulk_build import heal_bulk_build
     from src.database.migrate import stamp_if_unstamped
 
     stamp_if_unstamped(engine)
@@ -348,6 +349,18 @@ def init_db() -> None:
     ensure_source_catalog_baseline_column(engine)
 
     ensure_hot_indexes(engine)
+
+    # R23 / PR 5: finish a bulk build that a crash interrupted with its indexes dropped.
+    #
+    # THIS IS NOT COVERED BY ensure_hot_indexes ABOVE, which is why it is a second call
+    # rather than an entry in HOT_INDEXES: of the 14 indexes the bulk window may drop,
+    # only FOUR are in that map. The other ten exist solely because `create_all` or
+    # alembic built them once, and neither adds an index to an EXISTING table -- so a
+    # process that died between the DROP and the rebuild would leave them gone for good,
+    # turning every query that used them into a full scan, silently. The heal is driven
+    # by a durable marker and asks sqlite_master what is actually absent, so it is a
+    # no-op (one small read, no DDL) on every boot where nothing was interrupted.
+    heal_bulk_build(engine)
 
     # Per-feed de-churn backoff columns (field log finding F) for databases that
     # already had feed_fetch_state before these columns existed (create_all never
