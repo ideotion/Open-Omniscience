@@ -4942,6 +4942,7 @@ def reindex_imported_articles(
     stats: dict | None = None,
     should_stop: Callable[[], bool] | None = None,
     bump_epoch: bool = True,
+    defer_counters: bool = False,
 ) -> dict:
     """Recompute CORE-ENGINE metadata for the articles imported by ``batch_id``.
 
@@ -5044,6 +5045,11 @@ def reindex_imported_articles(
             stats=stats,
             should_stop=should_stop,
             bump_epoch=bump_epoch,
+            # R22: passed through, never decided here. Whether the machine is exclusive
+            # is the DRAIN's fact (the collector may start between batches), and the
+            # marker's lifecycle spans every batch of a run -- so one caller up owns
+            # both, exactly as it already owns the exclusive commit_batch.
+            defer_counters=defer_counters,
         )
         # Only a batch that reached the end is stamped done. Anything short of that
         # deliberately stays 'merged', so the backlog survives the interruption -- the

@@ -110,10 +110,63 @@ def _self_name_forms(source) -> set[str]:
     return {f for f in forms if len(f) >= 3}
 
 
+# One article yields ~100 distinct terms (measured; the audit reads ~92), so a single
+# IN (...) covers a whole article comfortably. The chunk exists only so the query can
+# never outgrow SQLite's bound-parameter limit if a caller ever passes a larger set.
+_KEYWORD_PREFETCH_CHUNK = 500
+
+
+def _prefetch_keywords(session: Session, normalized: Iterable[str]) -> dict[str, Keyword]:
+    """Resolve many normalized terms to their ``Keyword`` rows in ONE query.
+
+    THE COST THIS REMOVES IS MEASURED, not read: a warm apply (the field shape --
+    the vocabulary already stored) emitted **98 statements for one article, 81 of
+    them this lookup**, one per kept term, each a separate round trip into
+    ``idx_keyword_normalized_term`` on an 11 M-row table. Batching them is the whole
+    of the audit's "batched keyword lookups per article" (§9.2 item 4).
+
+    Returns ``{normalized_term: Keyword}`` for the terms that EXIST. A term absent
+    from the mapping is absent from the store, and :func:`_get_or_create_keyword`
+    creates it and writes it back into the same mapping -- so two ExtractedTerm
+    objects sharing a normalized form still resolve to ONE keyword, exactly as the
+    per-term lookup did. (They still produce two mention rows and still collide on
+    the unique ``(keyword_id, article_id)`` index; that contract is pinned by
+    tests/test_bulk_mention_insert.py and deliberately unchanged here.)
+    """
+    out: dict[str, Keyword] = {}
+    uniq = list(dict.fromkeys(n for n in normalized if n))
+    for i in range(0, len(uniq), _KEYWORD_PREFETCH_CHUNK):
+        chunk = uniq[i : i + _KEYWORD_PREFETCH_CHUNK]
+        for kw in session.query(Keyword).filter(Keyword.normalized_term.in_(chunk)).all():
+            out[kw.normalized_term] = kw
+    return out
+
+
 def _get_or_create_keyword(
-    session: Session, t: ExtractedTerm, *, language: str | None, extractor: str
+    session: Session,
+    t: ExtractedTerm,
+    *,
+    language: str | None,
+    extractor: str,
+    prefetched: dict[str, Keyword] | None = None,
 ) -> Keyword:
-    kw = session.query(Keyword).filter_by(normalized_term=t.normalized).first()
+    """Get-or-create ONE keyword. ``prefetched`` is the only thing that changed.
+
+    ``prefetched=None`` (the default) keeps the original per-term query verbatim, so
+    every caller that does not pass it is byte-identical. When a caller HAS already
+    resolved the article's terms in one query (:func:`_prefetch_keywords`), the map is
+    consulted instead of the database, and a keyword created here is written BACK into
+    it -- the map is the authority for the rest of that article, which is what makes a
+    repeated normalized form resolve to one row without a second query.
+
+    A keyword cannot exist in the store but be missing from a map built earlier in the
+    same transaction: the only writer between the prefetch and here is this loop, and
+    it writes back. The entity upgrade and the baseline tagging below are untouched.
+    """
+    if prefetched is None:
+        kw = session.query(Keyword).filter_by(normalized_term=t.normalized).first()
+    else:
+        kw = prefetched.get(t.normalized)
     is_entity = t.kind != "term"
     if kw is None:
         kw = Keyword(
@@ -134,6 +187,8 @@ def _get_or_create_keyword(
         # Each tag is a labelled assertion carrying its source provenance.
         for axis, tag in baseline_tags(language, t.normalized):
             session.add(KeywordTag(keyword_id=kw.id, axis=axis, tag=tag, source="baseline"))
+        if prefetched is not None:
+            prefetched[t.normalized] = kw
     elif is_entity and not kw.is_entity:
         # A term first seen lowercase, later recognised as an entity -> upgrade.
         kw.is_entity = True
@@ -264,6 +319,7 @@ def index_article(
     precomputed_terms: list[ExtractedTerm] | None = None,
     precomputed_sentiment: tuple[float | None, str | None] | None = None,
     precomputed_www: dict | None = None,
+    maintain_counters: bool = True,
 ) -> dict:
     """Extract + store mentions for one article (idempotent). Returns a small tally.
 
@@ -339,13 +395,17 @@ def index_article(
     # counters BEFORE replacing its mentions, so mention_count / article_count stay
     # EXACT across a re-index (idempotent). One indexed scan over this article's
     # rows (ix_mention_article) — bounded by the article's keyword count.
+    # R22: when the caller is NOT maintaining counters this read is pure waste -- it
+    # feeds _apply_keyword_counter_deltas and nothing else, so a deferred drain skips a
+    # whole indexed scan of keyword_mentions per article on top of the updates.
     old_contrib: dict[int, int] = {}
-    for kid, cnt in (
-        session.query(KeywordMention.keyword_id, KeywordMention.count)
-        .filter_by(article_id=article.id)
-        .all()
-    ):
-        old_contrib[kid] = old_contrib.get(kid, 0) + int(cnt or 0)
+    if maintain_counters:
+        for kid, cnt in (
+            session.query(KeywordMention.keyword_id, KeywordMention.count)
+            .filter_by(article_id=article.id)
+            .all()
+        ):
+            old_contrib[kid] = old_contrib.get(kid, 0) + int(cnt or 0)
 
     # Idempotent re-index: drop this article's existing mentions first.
     session.query(KeywordMention).filter_by(article_id=article.id).delete()
@@ -366,6 +426,17 @@ def index_article(
     new_contrib: dict[int, int] = {}
     mention_rows: list[dict] = []
     mentions_created_at = datetime.now(UTC)
+    # PR 4 (audit §9.2 item 4, "batched keyword lookups per article"): resolve every
+    # kept term in ONE query instead of one round trip per term. Measured before the
+    # change: 81 of the 98 statements a warm apply emitted for a single article were
+    # this lookup. The suppression filter is applied HERE as well as in the loop so a
+    # self-name never reaches the IN (...) -- the prefetch must ask for exactly the
+    # terms the loop will keep, or it would both widen the query and warm rows the
+    # article has no business touching.
+    prefetched = _prefetch_keywords(
+        session,
+        (t.normalized for t in terms if t.normalized.casefold() not in self_forms),
+    )
     for t in terms:
         # Case-insensitive: _self_name_forms is casefolded, but the entity
         # detector keeps acronyms UPPERCASE (2026-06-16 ruling), so a source
@@ -376,7 +447,7 @@ def index_article(
             self_suppressed += 1
             continue
         kw = _get_or_create_keyword(
-            session, t, language=known_lang, extractor=extractor.name
+            session, t, language=known_lang, extractor=extractor.name, prefetched=prefetched
         )
         mention_rows.append(
             {
@@ -442,7 +513,17 @@ def index_article(
     article.keyword_indexed_at = datetime.now(UTC)
 
     # Keep the denormalised counters exact for THIS article's net change.
-    _apply_keyword_counter_deltas(session, old_contrib, new_contrib)
+    #
+    # R22 (audit §9.2 item 4): an EXCLUSIVE drain may skip this and reconcile once at the
+    # end, which is the only way to stop relocating ~100 entries per article in the
+    # mention-count index (mention_count LEADS idx_keyword_counter_freshness, so every
+    # one of these updates moves its row in an 11 M-entry B-tree). The skip is only
+    # honest while src.analytics.counter_deferral's DURABLE marker is open -- the
+    # envelope reads Keyword.last_reconciled_at, which this skip does not touch, so
+    # without that marker a corpus reconciled an hour ago would report `exact` over
+    # counters that are drifting right now. reindex_articles owns opening it.
+    if maintain_counters:
+        _apply_keyword_counter_deltas(session, old_contrib, new_contrib)
 
     # When x Where x Who at ingest (T12, CONFIRMED GO): persist the deduced
     # dates/places/entities WITH the keyword pass — one hook, so every path
@@ -654,6 +735,7 @@ def reindex_articles(
     stats: dict | None = None,
     should_stop: Callable[[], bool] | None = None,
     bump_epoch: bool = True,
+    defer_counters: bool = False,
 ) -> dict:
     """Recompute CORE-ENGINE derived metadata for an EXPLICIT set of articles.
 
@@ -735,6 +817,41 @@ def reindex_articles(
     mentions_written = 0
     commit_batch = max(1, commit_batch)
 
+    # R22 -- counters deferred for an EXCLUSIVE drain, disclosed as estimated meanwhile.
+    #
+    # THE MARKER IS OPENED AND COMMITTED BEFORE THE FIRST ARTICLE, which is the ordering
+    # the whole guarantee rests on: an article committed without counter maintenance
+    # while no durable marker exists is a counter that drifted with nothing recording it,
+    # and counter_envelope would go on reporting `exact` over it after a crash.
+    #
+    # IF THE MARKER CANNOT BE OPENED, WE DO NOT DEFER. Falling back to maintaining the
+    # counters costs speed; deferring without the disclosure costs the truth of every
+    # counter-backed number on the Insights surface, and only one of those is ours to
+    # trade away. Bound to a local (not re-read per article) so the run cannot change
+    # its mind halfway and leave half the articles maintained.
+    # WHOEVER OPENS THE MARKER OWNS THE RECONCILE, and that distinction is not
+    # bookkeeping -- it is what stops a multi-batch drain from being SLOWER than no
+    # deferral at all. The drain calls this once PER IMPORT BATCH; if each call
+    # reconciled at its own end, a ten-batch drain would pay ten whole-corpus GROUP BYs
+    # over 11 M keywords (~86-104 s per pass measured at 3.06 M) to save the per-article
+    # updates of one batch. So an ALREADY-OPEN marker means an outer caller is running
+    # the drain and will reconcile once at the end; this call only stops maintaining.
+    _deferring = _owns_deferral = False
+    if defer_counters:
+        from src.analytics.counter_deferral import is_deferral_open, open_deferral
+
+        try:
+            if is_deferral_open(session):
+                _deferring = True  # an outer drain owns the lifecycle
+            else:
+                open_deferral(session, reason=f"reindex_articles({len(article_ids)} articles)")
+                _deferring = _owns_deferral = True
+        except Exception:  # noqa: BLE001 - no marker, no deferral; the run still runs
+            _LOG.warning(
+                "could not open the counter-deferral marker; maintaining counters inline",
+                exc_info=True,
+            )
+
     # Re-index is delete-then-reinsert, so the disposable columnar rollup must FULL-rebuild
     # rather than incrementally merge (the D3 double-count guard). This is ALSO the
     # restore-merge path: reindex_imported_articles re-indexes the merged articles against
@@ -791,6 +908,7 @@ def reindex_articles(
                 precomputed_terms=terms,
                 precomputed_sentiment=sentiment,
                 precomputed_www=www,
+                maintain_counters=not _deferring,
             ),
             session=session,
             label=f"reindex_articles[{article.id}]",
@@ -876,6 +994,7 @@ def reindex_articles(
                     precomputed_terms=terms,
                     precomputed_sentiment=sentiment,
                     precomputed_www=www,
+                    maintain_counters=not _deferring,
                 )
                 pending.append((art, deriv))
                 staged_mentions += int((_res or {}).get("mentions", 0) or 0)
@@ -1006,6 +1125,15 @@ def reindex_articles(
         _apply_window(articles, derivs, content_by_id)
         _apply_s += time.monotonic() - _t0
 
+    # The END of the exclusive drain, which is where R22 says the reconcile belongs. The
+    # marker closes ONLY on a sweep that reports `complete` -- a budgeted pass that
+    # stopped early has verified some keywords and not others, which is the exact state
+    # reconcile_keyword_counters documents as one that "can never masquerade as exact".
+    # An unfinished reconcile therefore leaves the disclosure standing, and the next
+    # background pass resumes from its own durable cursor and closes it then.
+    if _owns_deferral:
+        finish_deferral(session)
+
     if stats is not None:
         done = reindexed + failed
         elapsed = time.monotonic() - _t_all
@@ -1031,6 +1159,36 @@ def reindex_articles(
         })
 
     return {"reindexed": reindexed, "failed": failed}
+
+
+def finish_deferral(session: Session) -> dict:
+    """End a deferred-counter drain: reconcile everything, then lift the disclosure.
+
+    THE ONE PLACE the end of a deferral is implemented, so the outer drain
+    (``_reindex_resume_worker``) and a self-contained ``reindex_articles`` call cannot
+    drift apart on the two things that are easy to get wrong -- restarting rather than
+    resuming, and closing only on a complete sweep.
+
+    Never raises into its caller: a failed reconcile leaves the marker OPEN, which keeps
+    the counters disclosed as ``estimated`` until a later pass finishes the job. That is
+    the safe direction, and the asymmetry this whole mechanism is built on -- an
+    understated freshness claim costs a little trust in the number, a false ``exact``
+    costs all of it.
+    """
+    from src.analytics.counter_deferral import close_deferral
+
+    try:
+        # restart=True, not a resume: a resumed sweep would skip keywords an earlier
+        # partial pass stamped BEFORE this drain drifted them, report `complete`, and
+        # close the marker over a false `exact`.
+        rec = reconcile_keyword_counters(session, budget_s=0, restart=True)
+    except Exception:  # noqa: BLE001 - a failed reconcile must not fail the re-index
+        _LOG.warning("deferred-counter reconcile failed; staying estimated", exc_info=True)
+        return {"reconciled": False, "closed": False, "complete": False}
+    if not rec.get("complete"):
+        _LOG.warning("deferred-counter reconcile did not complete; staying estimated")
+        return {"reconciled": True, "closed": False, "complete": False}
+    return {"reconciled": True, "closed": close_deferral(session), "complete": True}
 
 
 def reindex_all_batch(
@@ -1369,7 +1527,7 @@ def _fresh_window_hours() -> int:
 
 
 def reconcile_keyword_counters(
-    session: Session, *, now=None, budget_s: float | None = None
+    session: Session, *, now=None, budget_s: float | None = None, restart: bool = False
 ) -> dict:
     """Recompute the counters EXACTLY from the live mentions, detect drift, and stamp
     ``Keyword.last_reconciled_at`` (Slice 2 — the bounded background reconcile).
@@ -1402,7 +1560,17 @@ def reconcile_keyword_counters(
     scan_chunk = _RECONCILE_SCAN_CHUNK
     t0 = _time.monotonic()
 
-    after_id = _cursor_get(session, RECONCILE_CURSOR_KEY)
+    # ``restart`` ignores the durable resume cursor and sweeps from the beginning.
+    #
+    # THE DEFERRED DRAIN (R22) MUST USE IT, and the reason is not obvious enough to leave
+    # to a call site. The cursor exists so a budgeted background pass can continue where
+    # it stopped; but a pass that stopped at id 5000 already STAMPED keywords 1..5000 as
+    # verified. If a deferred drain then drifts every counter in the corpus and the
+    # end-of-drain reconcile merely RESUMES, it sweeps 5000..end, reports `complete`, and
+    # leaves 1..5000 drifted while still carrying fresh watermarks -- a false `exact`,
+    # which is the precise failure the deferral marker exists to prevent, reintroduced by
+    # the optimisation meant to close it.
+    after_id = 0 if restart else _cursor_get(session, RECONCILE_CURSOR_KEY)
     resumed_from = after_id
     scanned = 0
     with_mentions = 0
@@ -2019,6 +2187,7 @@ def counter_envelope(session: Session, *, window_hours: int | None = None, now=N
 
     from sqlalchemy import func
 
+    from src.analytics.counter_deferral import deferral_open_since
     from src.analytics.envelope import Envelope, now_iso
 
     win = window_hours if window_hours is not None else _fresh_window_hours()
@@ -2030,6 +2199,23 @@ def counter_envelope(session: Session, *, window_hours: int | None = None, now=N
         "denormalised per-keyword counters maintained at index time; "
         "reconciled exactly against the corpus in the background"
     )
+    # R22. A deferred re-index stops maintaining the counters WITHOUT touching
+    # last_reconciled_at, so the watermarks below would keep answering `exact` over
+    # counters that are drifting. The marker is checked FIRST and overrides them: while
+    # it is open the only honest basis is `estimated`, whatever the watermarks say.
+    deferred_since = deferral_open_since(session)
+    if deferred_since is not None and n > 0:
+        return Envelope.estimated(
+            n,
+            as_of=deferred_since,
+            method=(
+                method
+                + f"; MAINTENANCE DEFERRED since {deferred_since} for an exclusive "
+                "re-index -- these counters have not been updated since then and are "
+                "reconciled when it finishes"
+            ),
+            n=n,
+        )
     if n == 0:
         # No counters back anything yet — an empty/fresh corpus. Honest, computed now.
         return Envelope.exact(0, as_of=now_iso(), method=method, n=0)

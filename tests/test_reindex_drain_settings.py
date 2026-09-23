@@ -57,13 +57,19 @@ class _Ctx:
 @pytest.fixture
 def drain(monkeypatch):
     """Wire the worker to fakes and hand back the knobs + the recorded calls."""
-    rec: dict = {"calls": [], "bumps": [], "backlog_reads": 0}
+    rec: dict = {
+        "calls": [], "bumps": [], "backlog_reads": 0,
+        # R22: the deferral marker's lifecycle, which the worker owns for the whole run.
+        "deferrals": [], "finishes": [],
+    }
     state = {
         "batches": [{"batch_id": 7, "articles": 4}, {"batch_id": 9, "articles": 6}],
         "scheduler_running": False,
         "exclusive": False,
         # What OO_REINDEX_COMMIT_BATCH resolves to -- 1 unless the operator set it.
         "env_commit_batch": 1,
+        # R22: whether the durable deferral marker can be written at all.
+        "deferral_can_open": True,
         "stats": {
             "articles": 2,
             "wall_s": 10.0,
@@ -105,7 +111,13 @@ def drain(monkeypatch):
 
     class _Sched:
         def is_running(self):
-            return state["scheduler_running"]
+            # A LIST means "one answer per read", which is how a drain that starts busy
+            # and becomes exclusive (or the reverse) is expressed: `idle` is re-read per
+            # batch precisely because the operator may go online while it runs.
+            running = state["scheduler_running"]
+            if isinstance(running, list):
+                return running.pop(0) if running else False
+            return running
 
     import contextlib
 
@@ -128,6 +140,19 @@ def drain(monkeypatch):
         "src.analytics.corpus_epoch.bump_corpus_epoch",
         lambda _s, *, reason="": rec["bumps"].append(reason) or 1,
     )
+
+    def _open(_s, *, reason="", now=None):
+        if not state["deferral_can_open"]:
+            raise RuntimeError("marker unavailable")
+        rec["deferrals"].append(reason)
+        return "2026-09-23T00:00:00+00:00"
+
+    def _finish(_s):
+        rec["finishes"].append(True)
+        return {"reconciled": True, "closed": True, "complete": True}
+
+    monkeypatch.setattr("src.analytics.counter_deferral.open_deferral", _open)
+    monkeypatch.setattr("src.analytics.store.finish_deferral", _finish)
     return state, rec
 
 
@@ -217,7 +242,13 @@ def test_workers_are_left_alone(drain):
     measure. Passing it would silently settle an open question."""
     state, rec = drain
     bv2._reindex_resume_worker(_Ctx())
-    assert [c["extra"] for c in rec["calls"]] == [{}, {}]
+    assert all("workers" not in c["extra"] for c in rec["calls"]), (
+        "the worker count is what the A/B still has to measure; passing it settles it"
+    )
+    # The knob set is pinned too, so a future knob has to be added HERE deliberately
+    # rather than arriving unnoticed -- which is what the original `extra == {}` was
+    # really guarding, before R22 gave this call site its first legitimate extra.
+    assert [set(c["extra"]) for c in rec["calls"]] == [{"defer_counters"}, {"defer_counters"}]
 
 
 # --------------------------------------------------------------------------- #
@@ -349,3 +380,123 @@ def test_a_failing_epoch_bump_never_breaks_the_drain(drain, monkeypatch):
     monkeypatch.setattr("src.analytics.corpus_epoch.bump_corpus_epoch", _boom)
     out = bv2._reindex_resume_worker(_Ctx())
     assert out["articles_reindexed"] == 4
+
+
+# --------------------------------------------------------------------------- #
+# 4. R22 — the counters are deferred for the RUN, and the disclosure is lifted  #
+#    by the run's own reconcile                                                 #
+# --------------------------------------------------------------------------- #
+
+
+def test_the_marker_opens_once_for_the_run_not_once_per_batch(drain):
+    """THE COST GUARD. Per-batch ownership would make every batch reconcile the whole
+    corpus at its own end -- two batches here, ten on a real backlog, each a GROUP BY
+    over 11 M keywords. That is slower than never deferring, which would make the
+    optimisation a pessimisation nobody measured."""
+    state, rec = drain
+    state["scheduler_running"] = False
+
+    out = bv2._reindex_resume_worker(_Ctx())
+
+    assert rec["deferrals"] == ["reindex-resume"], "opened exactly once for the run"
+    assert rec["finishes"] == [True], "and reconciled exactly once, at the end"
+    assert [c["extra"]["defer_counters"] for c in rec["calls"]] == [True, True]
+    assert [b["counters_deferred"] for b in out["batches"]] == [True, True]
+    assert out["counter_reconcile"]["closed"] is True
+
+
+def test_a_live_collector_never_defers_the_counters(drain):
+    """Deferral rides the same exclusivity signal as the commit width. A run that never
+    gets the machine must not publish an `estimated` it did not earn."""
+    state, rec = drain
+    state["scheduler_running"] = True
+
+    out = bv2._reindex_resume_worker(_Ctx())
+
+    assert rec["deferrals"] == [] and rec["finishes"] == []
+    assert [c["extra"]["defer_counters"] for c in rec["calls"]] == [False, False]
+    assert [b["counters_deferred"] for b in out["batches"]] == [False, False]
+    assert "counter_reconcile" not in out
+
+
+def test_the_marker_opens_lazily_at_the_first_exclusive_batch(drain):
+    """`idle` is re-read per batch because the operator may go online mid-run. A drain
+    that starts busy and becomes exclusive defers from that batch on, and the marker
+    opens THERE -- never at the top, where a run that turns out to never get the machine
+    would have published an `estimated` it did not earn."""
+    state, rec = drain
+    state["scheduler_running"] = [True, False]  # busy for batch 1, idle for batch 2
+
+    out = bv2._reindex_resume_worker(_Ctx())
+
+    assert [c["extra"]["defer_counters"] for c in rec["calls"]] == [False, True]
+    assert rec["deferrals"] == ["reindex-resume"], "opened at the first exclusive batch"
+    assert rec["finishes"] == [True]
+    assert [b["counters_deferred"] for b in out["batches"]] == [False, True]
+
+
+def test_a_run_that_goes_busy_keeps_the_disclosure_until_its_own_reconcile(drain):
+    """The mirror case, and the one where getting it wrong is dishonest rather than
+    slow: batch 1 deferred, so its counters ARE drifted. Batch 2 going back to inline
+    maintenance must not lift the disclosure early -- only the run's reconcile may."""
+    state, rec = drain
+    state["scheduler_running"] = [False, True]  # exclusive for batch 1, busy for batch 2
+
+    out = bv2._reindex_resume_worker(_Ctx())
+
+    assert [c["extra"]["defer_counters"] for c in rec["calls"]] == [True, False]
+    assert rec["deferrals"] == ["reindex-resume"], "still only opened once"
+    assert rec["finishes"] == [True], "and still reconciled once, at the end of the run"
+    assert [b["counters_deferred"] for b in out["batches"]] == [True, False], (
+        "each batch publishes the regime that produced its numbers"
+    )
+    assert out["counter_reconcile"]["closed"] is True, (
+        "and the run's OWN reconcile is what lifts the disclosure, at the end"
+    )
+
+
+def test_a_marker_that_cannot_open_declines_the_deferral_rather_than_hiding_it(drain):
+    """No marker, no deferral. Losing the speed-up is a cost we may pay; losing the
+    disclosure is not ours to trade away."""
+    state, rec = drain
+    state["scheduler_running"] = False
+    state["deferral_can_open"] = False
+
+    out = bv2._reindex_resume_worker(_Ctx())
+
+    assert [c["extra"]["defer_counters"] for c in rec["calls"]] == [False, False]
+    assert rec["finishes"] == [], "nothing to reconcile if nothing was deferred"
+    assert [b["counters_deferred"] for b in out["batches"]] == [False, False]
+
+
+def test_an_interrupted_drain_still_reconciles_what_it_stopped_maintaining(drain):
+    """A cancel does not un-commit the articles already re-indexed, so the counters the
+    drain stopped maintaining are drifted whether or not it finished. The reconcile sits
+    in a `finally` for exactly that reason -- without it, a cancelled drain would leave
+    a corpus whose counters are wrong and whose marker says so forever."""
+    state, rec = drain
+    state["scheduler_running"] = False
+
+    class _StopAfterFirstBatch(_Ctx):
+        """`stopping` flips once the first batch has actually been re-indexed, so the
+        top-of-loop check breaks the run with one batch's work committed."""
+
+        def __init__(self, recorded):
+            super().__init__()
+            self._recorded = recorded
+
+        @property
+        def stopping(self):  # type: ignore[override]
+            return len(self._recorded["calls"]) >= 1
+
+        @stopping.setter
+        def stopping(self, _value):  # the base __init__ assigns it; ignore that
+            pass
+
+    out = bv2._reindex_resume_worker(_StopAfterFirstBatch(rec))
+
+    assert out["stopped"] is True
+    assert len(rec["calls"]) == 1, "precondition: exactly one batch ran before the stop"
+    assert rec["calls"][0]["extra"]["defer_counters"] is True
+    assert rec["finishes"] == [True], "the cancelled run still reconciled its own drift"
+    assert out["counter_reconcile"]["closed"] is True

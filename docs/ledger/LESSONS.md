@@ -11837,3 +11837,69 @@ it verified, because `source_counter_envelope` reads that stamp to say *exact* v
 An untouched source keeps its older stamp and is honestly reported as older. The empty scope
 is a no-op and never a fallback to the whole corpus: that direction turns the cheapest
 possible call into the most expensive one, which is the defect being removed.
+
+### THE PLAN'S OWN CHEAPER OPTION WAS ALREADY DONE, AND ONLY MEASUREMENT SAID SO (PR 4)
+
+Audit §9.2 item 4 offered a choice: *"counters as one statement OR deferred during an
+exclusive drain with the estimated envelope"*. The first is the small, safe half, and §4.1
+justified it by reading *"an ORM UPDATE per keyword touched"*. **Measured, SQLAlchemy's unit
+of work already collapses them into ONE `executemany`** — so the cheap option was true
+before anyone started, and choosing it would have shipped a no-op described as a fix.
+
+**A plan that offers a fallback has usually not measured the fallback.** The expensive
+option was the only one left, which is a very different PR from the one the plan reads like.
+Two of that section's three `[CODE-READ]` claims failed the same way (the other: *"rewrites
+the whole record"* is a **cliff, not a slope** — one 16 KiB page for every row under ~16.3 KB
+stored, so the obvious fix buys nothing on the common path). **Measure the item you are about
+to skip, not just the one you are about to build**, or the skip is the undetected mistake.
+
+### A FIXTURE SIZED FROM THE CONSTANT UNDER TEST CAN ONLY AGREE WITH ITSELF (PR 4)
+
+A chunking test sized its input as `_KEYWORD_PREFETCH_CHUNK + 7`. Raise the constant and the
+fixture rises with it, so the test **cannot fail** for the thing it exists to pin: lifting the
+ceiling from 500 to 100,000 left it GREEN. **The tell was the runtime** — 86 seconds instead
+of 1.9, because it had dutifully built 100,007 keywords to keep agreeing. A mutation that
+passes *slowly* is still a mutation that passed. Split such a test in two: the BEHAVIOUR
+against a patched literal, and the production VALUE against a literal ceiling.
+
+### ASSERTING THE END STATE CAN PASS STRAIGHT OVER THE WINDOW OF DISHONESTY (PR 4)
+
+"When the durable marker cannot be written, do not defer" was tested by checking the counters
+afterwards. It passed under the mutation that deferred anyway — because the end-of-run
+reconcile **repairs** the counters, so the final state is identical whether or not the corpus
+spent the whole drain reporting `exact` over drifting numbers. The dishonesty lives in the
+MIDDLE, and nothing at the end remembers it. **Assert what the code was ASKED to do at the
+moment the claim would be false** (here: the `maintain_counters` argument each article was
+indexed with), not the state once the repair has run.
+
+### A RESUME CURSOR CAN REINTRODUCE THE FALSEHOOD THE NEW GUARD WAS ADDED TO PREVENT (PR 4)
+
+`reconcile_keyword_counters` resumes from a durable cursor, which is correct for a budgeted
+background pass. But a pass that stopped at id 5000 has already **stamped** keywords 1..5000
+as verified. Let a deferred drain drift every counter in the corpus and then merely *resume*:
+it sweeps 5000..end, reports `complete`, and closes the honesty marker over 1..5000 — still
+drifted, still carrying fresh watermarks. **A false `exact`, delivered by the optimisation
+meant to close the hole, at the end of the drain instead of the start.** When adding a
+correctness guard on top of an incremental mechanism, ask what that mechanism has already
+claimed to have done.
+
+### AN OPTIMISATION AT THE WRONG GRANULARITY IS A PESSIMISATION, AND ONE UNIT OF TEST DATA HIDES IT (PR 4)
+
+Counter deferral was built so that the deferring call reconciled at its own end. Correct for
+one call; the drain makes one call **per import batch**, so a ten-batch backlog would have
+paid ten whole-corpus `GROUP BY`s over 11 M keywords to save one batch's per-article updates
+— **slower than never deferring at all.** Every test passed, because every test ran a single
+batch. The fix was explicit ownership (whoever opens the marker reconciles it) plus a test
+that asserts *opened once per run*. **When a helper is invoked in a loop by its real caller,
+a test that invokes it once measures the wrong thing** — and cost regressions have no
+exception to raise.
+
+### AN OVER-BROAD PROXY ASSERTION FAILS ON THE FIRST LEGITIMATE ADDITION (PR 4)
+
+`test_workers_are_left_alone` meant *"the worker count is not passed"* and asserted
+`extra == {}`. Fine while no other knob existed; it broke the moment a ruling gave that call
+site its first legitimate extra argument. The repair is not to loosen it: assert what it
+MEANS (`"workers" not in extra`) **and** pin the knob SET, so a future argument must be added
+to the test deliberately instead of arriving unnoticed. **A proxy assertion should be replaced
+by the thing it was standing in for, plus a guard for what it was incidentally catching** —
+otherwise one of the two properties is silently dropped in the fix.

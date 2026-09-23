@@ -22,6 +22,49 @@
 
 ## Open queue (when maintainer says proceed)
 
+- **PR 4 OF THE AUDIT'S §9.2 IS BUILT AS TWO OF ITS THREE ITEMS, AND THE THIRD IS DECLINED
+  WITH NUMBERS (2026-09-23).** §9.2 item 4 is "the constant factors in apply" and names
+  three: batched keyword lookups, counters as one statement or deferred (`R22`), and the
+  article-row rewrite taken off the pass. All three of the audit's §4.1 claims behind them
+  are `[CODE-READ]`; **two did not survive measurement**, which is the whole reason this
+  entry exists rather than a tidy "PR 4 shipped" row.
+  - **BUILT — batched keyword lookups.** Confirmed and dominant: a warm apply emitted **98
+    statements for one article, 81 of them the per-term `WHERE normalized_term = ?`**, now
+    one batched `IN (...)`. 19 statements after.
+  - **BUILT — `R22`.** But the audit's "an ORM UPDATE per keyword touched" is **wrong at
+    the statement level**: SQLAlchemy already collapses them into ONE executemany, so
+    item 4's cheaper option ("counters as one statement") was already true and bought
+    nothing. Only real deferral was left. Measured worth, by batch: **1.37x at 8, 2.24x at
+    50, 3.70x at 200** — which independently confirms `R22`'s own scoping to the exclusive
+    drain, since live collection's 1.37x would not justify the durable-marker risk.
+    (Measured on this repo's docs — a more homogeneous vocabulary than a real multi-source
+    corpus, so it indicates shape, not the operator's number.)
+  - **NOT BUILT — the article-row rewrite. See `D45` ⛔.** The cost is real but it is a
+    **cliff, not a slope**, and below the cliff the obvious fix buys nothing. Recorded with
+    the measurement and an operator query rather than built on a guess about article
+    lengths this session cannot see. **AND THE AUDIT UNDERCOUNTS IT:** §4.1 says "an UPDATE
+    of the article row", SINGULAR, and the row is rewritten **twice** per apply — once for
+    `sentiment_*`, once for `top_keyword_*` + `keyword_indexed_at` — because a query between
+    the two assignments autoflushes the first. Above the cliff the cost is therefore double
+    what the audit states. **Pre-existing, not introduced by PR 4** (verified in a
+    `git worktree` at its base), and counter deferral does NOT coalesce them, because the
+    batched prefetch and the self-name read still autoflush in between. `D45` option **(d)**
+    would halve it with no schema change and is the recommendation there; it is not done
+    here because it moves an assignment relative to the when/where/who `SAVEPOINT`, beside
+    the comment explaining why `keyword_indexed_at` is assigned BEFORE `begin_nested()` so a
+    WWW rollback cannot undo a completed keyword pass. That ordering is a data-correctness
+    question, not a performance one.
+  - **STILL OPEN from item 4:** the COLD path still flushes once per NEW keyword to assign
+    the mention FK id — **80 separate `INSERT INTO keywords`** on a first-sight vocabulary,
+    where a two-pass create could make it one executemany. Deliberately omitted: it
+    restructures the loop whose IntegrityError-on-duplicate-normalized-form contract is
+    pinned by `tests/test_bulk_mention_insert.py`, for a path the field instance (11 M
+    keywords, re-indexing an existing corpus) almost never takes. Named, not forgotten.
+  - **REMAINING in §9.2:** PR 3's second half (`F4`, `F5`, `F11` + threading the import's
+    source-counter scope through the restore path), and PRs 5, 6, 7. `R23`–`R25` stay
+    decided-and-unbuilt.
+
+
 - **THE FIELD-SLOWNESS ROUND IS DECIDED, AND SIX OF ITS SEVEN RULINGS ARE STILL UNBUILT
   (2026-09-22).** The seven rulings the 2026-09-21 report
   ([`docs/audit/15_FIELD_INSTANCE_SLOWNESS_2026-09-21.md`](../audit/15_FIELD_INSTANCE_SLOWNESS_2026-09-21.md)
