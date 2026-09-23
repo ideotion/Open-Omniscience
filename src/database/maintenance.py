@@ -1213,13 +1213,20 @@ def ensure_keyword_counter_columns(engine: Engine) -> list[str]:
                 conn.execute(text(ddl))
                 added.append(name)
         # The ordered top-N scan index (depends on the column existing, so it is
-        # created here rather than in HOT_INDEXES).
+        # created here rather than in HOT_INDEXES). F7: now COMPOSITE with
+        # `last_reconciled_at`, so `counter_envelope`'s `min(last_reconciled_at) WHERE
+        # mention_count > 0` is covering instead of reading 1.1 M rows for the timestamp.
         conn.execute(
             text(
-                "CREATE INDEX IF NOT EXISTS idx_keyword_mention_count "
-                "ON keywords (mention_count)"
+                "CREATE INDEX IF NOT EXISTS idx_keyword_counter_freshness "
+                "ON keywords (mention_count, last_reconciled_at)"
             )
         )
+        # The single-column predecessor is redundant once the composite exists (measured:
+        # the composite is COVERING for every query it served, mention_count leading).
+        # Dropped HERE as well as in the migration because a store that reaches this path
+        # may never run alembic -- the recorded create_all-vs-migration split.
+        conn.execute(text("DROP INDEX IF EXISTS idx_keyword_mention_count"))
     # Only a freshly-added VALUE column is wrong-zero and needs the (potentially
     # expensive) one-pass backfill. Adding the nullable `last_reconciled_at` watermark
     # alone must NOT trigger a full recompute of already-correct counters (it would pay

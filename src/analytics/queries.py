@@ -1070,7 +1070,7 @@ def top_terms(
         # GROUP BY-ing the whole keyword_mentions table. mention_count == SUM(count)
         # and article_count == COUNT(DISTINCT article_id) BY CONSTRUCTION (see
         # src/analytics/store.py + tests/test_keyword_counters.py), so the rows are
-        # byte-identical — but this is an index-only scan (idx_keyword_mention_count),
+        # byte-identical — but this is an index-only scan (idx_keyword_counter_freshness),
         # never the mention join that dragged article pages through the SQLCipher
         # codec. ``mention_count > 0`` reproduces the inner-join's "has mentions"
         # filter (a counter is 0 iff the keyword has no mentions).
