@@ -373,3 +373,65 @@ def test_restart_ignores_a_stale_cursor_and_sweeps_from_the_beginning():
     restarted = reconcile_keyword_counters(s, budget_s=0, restart=True)
     assert restarted["resumed_from_id"] == 0
     assert restarted["with_mentions"] >= 1, "a restart actually sweeps the keywords"
+
+
+# --- who owns the reconcile -------------------------------------------------- #
+
+def test_an_already_open_marker_means_an_outer_drain_owns_the_reconcile(monkeypatch):
+    """THE COST GUARD, not a detail. The drain calls reindex_articles once per import
+    batch. If each call reconciled at its own end, a ten-batch drain would pay ten
+    whole-corpus GROUP BYs over 11 M keywords to save one batch's per-article updates --
+    strictly slower than never deferring at all."""
+    import src.analytics.store as store
+
+    s = _session()
+    a = _article(s, "a")
+    ex = _FakeExtractor(_terms(3))
+    index_article(s, a, extractor=ex, country=None, city=None)
+    s.commit()
+
+    calls: list[dict] = []
+    real = store.reconcile_keyword_counters
+
+    def _spy(session, **kw):
+        calls.append(kw)
+        return real(session, **kw)
+
+    monkeypatch.setattr(store, "reconcile_keyword_counters", _spy)
+
+    open_deferral(s, reason="the outer drain")  # an outer caller owns it
+    reindex_articles(s, extractor=ex, article_ids=[a.id], defer_counters=True)
+
+    assert calls == [], "a batch inside an owned drain must not reconcile"
+    assert is_deferral_open(s) is True, "and must not lift the outer drain's disclosure"
+
+
+def test_finish_deferral_reconciles_restarting_and_then_closes():
+    from src.analytics.store import finish_deferral
+
+    s = _session()
+    a = _article(s, "a")
+    index_article(s, a, extractor=_FakeExtractor(_terms(3)), country=None, city=None)
+    s.commit()
+    open_deferral(s)
+
+    out = finish_deferral(s)
+    assert out == {"reconciled": True, "closed": True, "complete": True}
+    assert is_deferral_open(s) is False
+    stored = {k: v for k, v in _stored_counts(s).items() if v != (0, 0)}
+    assert stored == _live_counts(s)
+
+
+def test_finish_deferral_keeps_the_disclosure_when_the_reconcile_fails(monkeypatch):
+    import src.analytics.store as store
+
+    s = _session()
+    open_deferral(s)
+
+    def _boom(session, **kw):
+        raise RuntimeError("no")
+
+    monkeypatch.setattr(store, "reconcile_keyword_counters", _boom)
+    out = store.finish_deferral(s)
+    assert out["closed"] is False
+    assert is_deferral_open(s) is True

@@ -829,13 +829,23 @@ def reindex_articles(
     # counter-backed number on the Insights surface, and only one of those is ours to
     # trade away. Bound to a local (not re-read per article) so the run cannot change
     # its mind halfway and leave half the articles maintained.
-    _deferring = False
+    # WHOEVER OPENS THE MARKER OWNS THE RECONCILE, and that distinction is not
+    # bookkeeping -- it is what stops a multi-batch drain from being SLOWER than no
+    # deferral at all. The drain calls this once PER IMPORT BATCH; if each call
+    # reconciled at its own end, a ten-batch drain would pay ten whole-corpus GROUP BYs
+    # over 11 M keywords (~86-104 s per pass measured at 3.06 M) to save the per-article
+    # updates of one batch. So an ALREADY-OPEN marker means an outer caller is running
+    # the drain and will reconcile once at the end; this call only stops maintaining.
+    _deferring = _owns_deferral = False
     if defer_counters:
-        from src.analytics.counter_deferral import open_deferral
+        from src.analytics.counter_deferral import is_deferral_open, open_deferral
 
         try:
-            open_deferral(session, reason=f"reindex_articles({len(article_ids)} articles)")
-            _deferring = True
+            if is_deferral_open(session):
+                _deferring = True  # an outer drain owns the lifecycle
+            else:
+                open_deferral(session, reason=f"reindex_articles({len(article_ids)} articles)")
+                _deferring = _owns_deferral = True
         except Exception:  # noqa: BLE001 - no marker, no deferral; the run still runs
             _LOG.warning(
                 "could not open the counter-deferral marker; maintaining counters inline",
@@ -1121,20 +1131,8 @@ def reindex_articles(
     # reconcile_keyword_counters documents as one that "can never masquerade as exact".
     # An unfinished reconcile therefore leaves the disclosure standing, and the next
     # background pass resumes from its own durable cursor and closes it then.
-    if _deferring:
-        from src.analytics.counter_deferral import close_deferral
-
-        try:
-            # restart=True, not a resume: see the note on the parameter -- a resumed
-            # sweep would skip keywords an earlier partial pass stamped before this
-            # drain drifted them, and close the marker over a false `exact`.
-            _rec = reconcile_keyword_counters(session, budget_s=0, restart=True)
-            if _rec.get("complete"):
-                close_deferral(session)
-            else:
-                _LOG.warning("deferred-counter reconcile did not complete; staying estimated")
-        except Exception:  # noqa: BLE001 - a failed reconcile must not fail the re-index
-            _LOG.warning("deferred-counter reconcile failed; staying estimated", exc_info=True)
+    if _owns_deferral:
+        finish_deferral(session)
 
     if stats is not None:
         done = reindexed + failed
@@ -1161,6 +1159,36 @@ def reindex_articles(
         })
 
     return {"reindexed": reindexed, "failed": failed}
+
+
+def finish_deferral(session: Session) -> dict:
+    """End a deferred-counter drain: reconcile everything, then lift the disclosure.
+
+    THE ONE PLACE the end of a deferral is implemented, so the outer drain
+    (``_reindex_resume_worker``) and a self-contained ``reindex_articles`` call cannot
+    drift apart on the two things that are easy to get wrong -- restarting rather than
+    resuming, and closing only on a complete sweep.
+
+    Never raises into its caller: a failed reconcile leaves the marker OPEN, which keeps
+    the counters disclosed as ``estimated`` until a later pass finishes the job. That is
+    the safe direction, and the asymmetry this whole mechanism is built on -- an
+    understated freshness claim costs a little trust in the number, a false ``exact``
+    costs all of it.
+    """
+    from src.analytics.counter_deferral import close_deferral
+
+    try:
+        # restart=True, not a resume: a resumed sweep would skip keywords an earlier
+        # partial pass stamped BEFORE this drain drifted them, report `complete`, and
+        # close the marker over a false `exact`.
+        rec = reconcile_keyword_counters(session, budget_s=0, restart=True)
+    except Exception:  # noqa: BLE001 - a failed reconcile must not fail the re-index
+        _LOG.warning("deferred-counter reconcile failed; staying estimated", exc_info=True)
+        return {"reconciled": False, "closed": False, "complete": False}
+    if not rec.get("complete"):
+        _LOG.warning("deferred-counter reconcile did not complete; staying estimated")
+        return {"reconciled": True, "closed": False, "complete": False}
+    return {"reconciled": True, "closed": close_deferral(session), "complete": True}
 
 
 def reindex_all_batch(

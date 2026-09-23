@@ -863,6 +863,8 @@ def _reindex_resume_worker(ctx, **_kw) -> dict:
     means a stop mid-batch is resumed exactly, never redone from the top.
     """
     from src.analytics.corpus_epoch import bump_corpus_epoch
+    from src.analytics.counter_deferral import open_deferral
+    from src.analytics.store import finish_deferral
     from src.backup.merge import (
         default_reindex_commit_batch,
         import_reindex_commit_batch,
@@ -948,6 +950,32 @@ def _reindex_resume_worker(ctx, **_kw) -> dict:
         except Exception:  # noqa: BLE001 - never let the epoch bump break the drain
             _LOG.warning("corpus-epoch bump failed (%s)", reason, exc_info=True)
 
+    # R22 -- the counters stop being maintained per article while the machine is ours,
+    # and the disclosure says so until the drain's own reconcile lands.
+    #
+    # OPENED ONCE FOR THE RUN, NOT PER BATCH, and closed in the finally below. Per batch
+    # would make each one reconcile the whole corpus at its own end -- ten batches, ten
+    # whole-corpus GROUP BYs over 11 M keywords -- which is slower than never deferring.
+    # Opened LAZILY, at the first batch that actually turns out to be exclusive, because
+    # `idle` is re-read per batch and a run that never gets the machine should never
+    # publish an `estimated` it did not earn.
+    deferring = False
+
+    def _open_deferral_once() -> bool:
+        nonlocal deferring
+        if deferring:
+            return True
+        try:
+            with session_scope() as _s:
+                open_deferral(_s, reason="reindex-resume")
+            deferring = True
+        except Exception:  # noqa: BLE001 - no marker, no deferral; the drain still runs
+            _LOG.warning(
+                "could not open the counter-deferral marker; counters stay maintained",
+                exc_info=True,
+            )
+        return deferring
+
     if batches:
         _bump("reindex-resume:start")
     try:
@@ -978,11 +1006,17 @@ def _reindex_resume_worker(ctx, **_kw) -> dict:
             commit_batch = (
                 import_reindex_commit_batch() if idle else default_reindex_commit_batch()
             )
+            # Deferral rides the SAME exclusivity signal as the commit width: a batch
+            # that is not exclusive keeps maintaining its counters inline, and the marker
+            # (if an earlier batch opened one) simply stays open until the final
+            # reconcile -- a mixed run is still honest, just less deferred.
+            defer = _open_deferral_once() if idle else False
             st: dict = {}
             with corpus_lease("reindex-resume"):
                 res = reindex_imported_articles(
                     bid,
                     commit_batch=commit_batch,
+                    defer_counters=defer,
                     stats=st,
                     # ONE epoch bump per RUN (below), not one per batch: the bump takes the
                     # single-writer gate and commits, and a backlog of many imports is ONE
@@ -992,14 +1026,36 @@ def _reindex_resume_worker(ctx, **_kw) -> dict:
                     should_stop=lambda: ctx.stopping or _yield_to_import(),
                 )
             walked += int(b["articles"])
-            out["batches"].append({"batch_id": bid, "exclusive_settings": idle, **res})
+            out["batches"].append(
+                {
+                    "batch_id": bid,
+                    "exclusive_settings": idle,
+                    # Published beside the seconds it produced, for the same reason
+                    # exclusive_settings is: a batch's numbers cannot be read without
+                    # knowing which regime produced them.
+                    "counters_deferred": defer,
+                    **res,
+                }
+            )
             out["articles_reindexed"] += int(res.get("reindexed") or 0)
             out["articles_failed"] += int(res.get("failed") or 0)
             _accumulate(run, st, commit_batch=commit_batch, idle=idle)
             ctx.set_metrics(_drain_metrics(run))
     finally:
-        # In a finally so a cancel, an import yield and a crash all land it: whatever
-        # ended the run, the articles it DID re-index are committed and rewritten.
+        # In a finally for the same reason as the bump below, and BEFORE it: whatever
+        # ended the run -- a cancel, an import yield, a crash on the last batch -- the
+        # counters it stopped maintaining must be reconciled and the disclosure lifted.
+        # A run that ends early still reconciles: the articles it DID re-index are
+        # committed, so their counters are drifted whether or not the drain finished.
+        # finish_deferral never raises, and leaves the marker open if it could not
+        # finish, so an interrupted drain degrades to an honest `estimated` rather than
+        # to a silent `exact`.
+        if deferring:
+            try:
+                with session_scope() as _s:
+                    out["counter_reconcile"] = finish_deferral(_s)
+            except Exception:  # noqa: BLE001 - never let it mask what ended the run
+                _LOG.warning("deferred-counter reconcile failed", exc_info=True)
         if out["articles_reindexed"]:
             _bump("reindex-resume:end")
     # A cancel during the LAST batch leaves the loop normally, so the top-of-loop check
