@@ -319,6 +319,7 @@ def index_article(
     precomputed_terms: list[ExtractedTerm] | None = None,
     precomputed_sentiment: tuple[float | None, str | None] | None = None,
     precomputed_www: dict | None = None,
+    maintain_counters: bool = True,
 ) -> dict:
     """Extract + store mentions for one article (idempotent). Returns a small tally.
 
@@ -394,13 +395,17 @@ def index_article(
     # counters BEFORE replacing its mentions, so mention_count / article_count stay
     # EXACT across a re-index (idempotent). One indexed scan over this article's
     # rows (ix_mention_article) — bounded by the article's keyword count.
+    # R22: when the caller is NOT maintaining counters this read is pure waste -- it
+    # feeds _apply_keyword_counter_deltas and nothing else, so a deferred drain skips a
+    # whole indexed scan of keyword_mentions per article on top of the updates.
     old_contrib: dict[int, int] = {}
-    for kid, cnt in (
-        session.query(KeywordMention.keyword_id, KeywordMention.count)
-        .filter_by(article_id=article.id)
-        .all()
-    ):
-        old_contrib[kid] = old_contrib.get(kid, 0) + int(cnt or 0)
+    if maintain_counters:
+        for kid, cnt in (
+            session.query(KeywordMention.keyword_id, KeywordMention.count)
+            .filter_by(article_id=article.id)
+            .all()
+        ):
+            old_contrib[kid] = old_contrib.get(kid, 0) + int(cnt or 0)
 
     # Idempotent re-index: drop this article's existing mentions first.
     session.query(KeywordMention).filter_by(article_id=article.id).delete()
@@ -508,7 +513,17 @@ def index_article(
     article.keyword_indexed_at = datetime.now(UTC)
 
     # Keep the denormalised counters exact for THIS article's net change.
-    _apply_keyword_counter_deltas(session, old_contrib, new_contrib)
+    #
+    # R22 (audit §9.2 item 4): an EXCLUSIVE drain may skip this and reconcile once at the
+    # end, which is the only way to stop relocating ~100 entries per article in the
+    # mention-count index (mention_count LEADS idx_keyword_counter_freshness, so every
+    # one of these updates moves its row in an 11 M-entry B-tree). The skip is only
+    # honest while src.analytics.counter_deferral's DURABLE marker is open -- the
+    # envelope reads Keyword.last_reconciled_at, which this skip does not touch, so
+    # without that marker a corpus reconciled an hour ago would report `exact` over
+    # counters that are drifting right now. reindex_articles owns opening it.
+    if maintain_counters:
+        _apply_keyword_counter_deltas(session, old_contrib, new_contrib)
 
     # When x Where x Who at ingest (T12, CONFIRMED GO): persist the deduced
     # dates/places/entities WITH the keyword pass — one hook, so every path
@@ -720,6 +735,7 @@ def reindex_articles(
     stats: dict | None = None,
     should_stop: Callable[[], bool] | None = None,
     bump_epoch: bool = True,
+    defer_counters: bool = False,
 ) -> dict:
     """Recompute CORE-ENGINE derived metadata for an EXPLICIT set of articles.
 
@@ -801,6 +817,31 @@ def reindex_articles(
     mentions_written = 0
     commit_batch = max(1, commit_batch)
 
+    # R22 -- counters deferred for an EXCLUSIVE drain, disclosed as estimated meanwhile.
+    #
+    # THE MARKER IS OPENED AND COMMITTED BEFORE THE FIRST ARTICLE, which is the ordering
+    # the whole guarantee rests on: an article committed without counter maintenance
+    # while no durable marker exists is a counter that drifted with nothing recording it,
+    # and counter_envelope would go on reporting `exact` over it after a crash.
+    #
+    # IF THE MARKER CANNOT BE OPENED, WE DO NOT DEFER. Falling back to maintaining the
+    # counters costs speed; deferring without the disclosure costs the truth of every
+    # counter-backed number on the Insights surface, and only one of those is ours to
+    # trade away. Bound to a local (not re-read per article) so the run cannot change
+    # its mind halfway and leave half the articles maintained.
+    _deferring = False
+    if defer_counters:
+        from src.analytics.counter_deferral import open_deferral
+
+        try:
+            open_deferral(session, reason=f"reindex_articles({len(article_ids)} articles)")
+            _deferring = True
+        except Exception:  # noqa: BLE001 - no marker, no deferral; the run still runs
+            _LOG.warning(
+                "could not open the counter-deferral marker; maintaining counters inline",
+                exc_info=True,
+            )
+
     # Re-index is delete-then-reinsert, so the disposable columnar rollup must FULL-rebuild
     # rather than incrementally merge (the D3 double-count guard). This is ALSO the
     # restore-merge path: reindex_imported_articles re-indexes the merged articles against
@@ -857,6 +898,7 @@ def reindex_articles(
                 precomputed_terms=terms,
                 precomputed_sentiment=sentiment,
                 precomputed_www=www,
+                maintain_counters=not _deferring,
             ),
             session=session,
             label=f"reindex_articles[{article.id}]",
@@ -942,6 +984,7 @@ def reindex_articles(
                     precomputed_terms=terms,
                     precomputed_sentiment=sentiment,
                     precomputed_www=www,
+                    maintain_counters=not _deferring,
                 )
                 pending.append((art, deriv))
                 staged_mentions += int((_res or {}).get("mentions", 0) or 0)
@@ -1071,6 +1114,27 @@ def reindex_articles(
         _t0 = time.monotonic()
         _apply_window(articles, derivs, content_by_id)
         _apply_s += time.monotonic() - _t0
+
+    # The END of the exclusive drain, which is where R22 says the reconcile belongs. The
+    # marker closes ONLY on a sweep that reports `complete` -- a budgeted pass that
+    # stopped early has verified some keywords and not others, which is the exact state
+    # reconcile_keyword_counters documents as one that "can never masquerade as exact".
+    # An unfinished reconcile therefore leaves the disclosure standing, and the next
+    # background pass resumes from its own durable cursor and closes it then.
+    if _deferring:
+        from src.analytics.counter_deferral import close_deferral
+
+        try:
+            # restart=True, not a resume: see the note on the parameter -- a resumed
+            # sweep would skip keywords an earlier partial pass stamped before this
+            # drain drifted them, and close the marker over a false `exact`.
+            _rec = reconcile_keyword_counters(session, budget_s=0, restart=True)
+            if _rec.get("complete"):
+                close_deferral(session)
+            else:
+                _LOG.warning("deferred-counter reconcile did not complete; staying estimated")
+        except Exception:  # noqa: BLE001 - a failed reconcile must not fail the re-index
+            _LOG.warning("deferred-counter reconcile failed; staying estimated", exc_info=True)
 
     if stats is not None:
         done = reindexed + failed
@@ -1435,7 +1499,7 @@ def _fresh_window_hours() -> int:
 
 
 def reconcile_keyword_counters(
-    session: Session, *, now=None, budget_s: float | None = None
+    session: Session, *, now=None, budget_s: float | None = None, restart: bool = False
 ) -> dict:
     """Recompute the counters EXACTLY from the live mentions, detect drift, and stamp
     ``Keyword.last_reconciled_at`` (Slice 2 — the bounded background reconcile).
@@ -1468,7 +1532,17 @@ def reconcile_keyword_counters(
     scan_chunk = _RECONCILE_SCAN_CHUNK
     t0 = _time.monotonic()
 
-    after_id = _cursor_get(session, RECONCILE_CURSOR_KEY)
+    # ``restart`` ignores the durable resume cursor and sweeps from the beginning.
+    #
+    # THE DEFERRED DRAIN (R22) MUST USE IT, and the reason is not obvious enough to leave
+    # to a call site. The cursor exists so a budgeted background pass can continue where
+    # it stopped; but a pass that stopped at id 5000 already STAMPED keywords 1..5000 as
+    # verified. If a deferred drain then drifts every counter in the corpus and the
+    # end-of-drain reconcile merely RESUMES, it sweeps 5000..end, reports `complete`, and
+    # leaves 1..5000 drifted while still carrying fresh watermarks -- a false `exact`,
+    # which is the precise failure the deferral marker exists to prevent, reintroduced by
+    # the optimisation meant to close it.
+    after_id = 0 if restart else _cursor_get(session, RECONCILE_CURSOR_KEY)
     resumed_from = after_id
     scanned = 0
     with_mentions = 0
@@ -2085,6 +2159,7 @@ def counter_envelope(session: Session, *, window_hours: int | None = None, now=N
 
     from sqlalchemy import func
 
+    from src.analytics.counter_deferral import deferral_open_since
     from src.analytics.envelope import Envelope, now_iso
 
     win = window_hours if window_hours is not None else _fresh_window_hours()
@@ -2096,6 +2171,23 @@ def counter_envelope(session: Session, *, window_hours: int | None = None, now=N
         "denormalised per-keyword counters maintained at index time; "
         "reconciled exactly against the corpus in the background"
     )
+    # R22. A deferred re-index stops maintaining the counters WITHOUT touching
+    # last_reconciled_at, so the watermarks below would keep answering `exact` over
+    # counters that are drifting. The marker is checked FIRST and overrides them: while
+    # it is open the only honest basis is `estimated`, whatever the watermarks say.
+    deferred_since = deferral_open_since(session)
+    if deferred_since is not None and n > 0:
+        return Envelope.estimated(
+            n,
+            as_of=deferred_since,
+            method=(
+                method
+                + f"; MAINTENANCE DEFERRED since {deferred_since} for an exclusive "
+                "re-index -- these counters have not been updated since then and are "
+                "reconciled when it finishes"
+            ),
+            n=n,
+        )
     if n == 0:
         # No counters back anything yet — an empty/fresh corpus. Honest, computed now.
         return Envelope.exact(0, as_of=now_iso(), method=method, n=0)
