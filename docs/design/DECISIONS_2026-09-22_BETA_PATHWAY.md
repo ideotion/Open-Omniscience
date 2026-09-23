@@ -308,6 +308,44 @@ open. *Shipped state meanwhile:* the small tier is fixed, medium is improved and
 **honestly reported as insufficient** rather than implied fixed.
 `ANSWER D44:`
 
+**D45 ⛔ · The article-row rewrite is a TAIL cost, not a constant factor — measured while
+building PR 4 (2026-09-23).** Audit §9.2 item 4's third named factor is "the article-row
+rewrite taken off the pass", from §4.1's `[CODE-READ]` that the stamp UPDATE "rewrites the
+whole record". Measured, the statement is **narrow** — five columns, `updated_at`,
+`top_keyword_id/count/tied_n`, `keyword_indexed_at` — but SQLite is a row store, so the
+question is whether the untouched content blob rides along. It does, and the shape is a
+**cliff, not a slope**: WAL bytes for exactly that UPDATE stay at **16,440 (one 16 KiB
+page) for every stored row size up to ~16.3 KB**, then jump to 4 pages at 16,400 bytes, 6
+at 40 KB and 10 at 80 KB.
+- That matters because **below the cliff a narrow side table would cost the same one
+  page** (its own leaf). So moving the four hot columns out of `articles` buys **nothing**
+  for a typical article and helps only the long-form tail.
+- Whether a given corpus crosses it is **not something this session can see**. Real
+  non-repetitive prose compresses **2.0–2.4x** (measured on this repo's own docs), which
+  would put the cliff near 35–38 KB of raw text — but `articles` carries **both** a plain
+  `content` column and a `compressed_content` one, and if ingest populates both the row
+  payload is raw + compressed and the cliff arrives far earlier. That is the operator's
+  store to answer:
+  ```sql
+  SELECT count(*) AS articles,
+         sum((length(content) + coalesce(length(compressed_content), 0)) > 16300) AS over_cliff,
+         cast(avg(length(content) + coalesce(length(compressed_content), 0)) AS int) AS mean_row_bytes
+  FROM articles;
+  ```
+- **a** — **leave it, and measure first.** Ship the query above with the next bundle; the
+  answer decides whether there is anything here worth a migration.
+- **b** — **move the four hot columns to a narrow side table.** Pays only on the tail, and
+  costs a migration plus every read path of four columns on the most-read table.
+- **c** — **move the COLD content blob out instead**, leaving `articles` as narrow hot
+  metadata. The only option that makes every future hot-metadata write cheap rather than
+  this one; much larger, and it overlaps §9.2 item 7's segmented derived index for 0.5.
+Default if blank: **⛔ none — this stays PENDING.** → **Recommendation: a now, and c is the
+one worth designing if the distribution says it matters** — b optimises the tail at the
+price of the common path's read simplicity. *Shipped state meanwhile:* **nothing built for
+this item**, and PR 4 says so rather than letting "the constant factors in apply" read as
+all three.
+`ANSWER D45:`
+
 ## §B2 — The awareness mechanism you asked for
 
 *"find a way so that future bug discovery would not contradict what has been planned … to help

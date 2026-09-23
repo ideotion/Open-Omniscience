@@ -9313,3 +9313,60 @@ two rounds on this PR, after the double-drift round before it.
 zero) means nothing from one side alone: `git worktree add /tmp/base origin/main` and run
 the same command there. Main measured zero mypy errors and 440 ruff findings, so both of
 mine are genuinely unchanged rather than assumed unchanged.
+
+## 2026-09-23 — PR 4 of the field-slowness plan: the constant factors in apply (audit §9.2 item 4)
+
+**Two of the three items built; the third declined with numbers as `D45`.** §9.2 item 4 names
+batched keyword lookups, counters as one statement or deferred (`R22`), and the article-row
+rewrite taken off the pass. All three of §4.1's claims behind them are `[CODE-READ]`, and
+**two did not survive measurement** — which is the substance of this entry.
+
+**Batched keyword lookups — confirmed and dominant.** A warm apply (the field shape, the
+vocabulary already stored) emitted **98 statements for one article, 81 of them** the same
+per-term `SELECT ... FROM keywords WHERE normalized_term = ?`, one round trip per kept term
+into `idx_keyword_normalized_term` on an 11 M-row table. After: **19 statements**, one
+batched `IN (...)`. The extractor yields a mean of **100.4 distinct keywords per article** on
+real prose, independently corroborating the audit's ~92. `_get_or_create_keyword` takes an
+optional `prefetched` map whose `None` default keeps the original query verbatim; the map is
+the authority for the rest of the article (a keyword created in the loop is written back), so
+a repeated normalized form resolves once without a second query and **still collides** on the
+unique `(keyword_id, article_id)` index, which stays pinned.
+
+**`R22` — and the audit's reading was wrong at the statement level.** SQLAlchemy already
+emits ONE `executemany` for the counter updates, so item 4's cheaper option was already true
+and bought nothing. What is real is the B-tree work: `mention_count` **leads**
+`idx_keyword_counter_freshness`, so each of ~100 updates relocates its entry in an 11 M-entry
+index. Deferral's measured worth by batch: **1.37x at 8, 2.24x at 50, 3.70x at 200** — the
+drain's own recommended setting — which **independently confirms `R22`'s scoping to the
+exclusive drain**, since live collection's 1.37x would not justify the durable-marker risk.
+(Measured on this repo's docs, a more homogeneous vocabulary than a real multi-source corpus:
+shape, not the operator's number.)
+
+**The disclosure is why the ruling permits the skip, so the marker is the load-bearing
+part.** `counter_envelope` reads `Keyword.last_reconciled_at`, which deferral never touches —
+so a corpus reconciled an hour before a drain carries fresh watermarks on drifting counters
+and would keep reporting `exact`. `src/analytics/counter_deferral.py` closes it from
+`derived_meta`, durable rather than in-process because the case it exists for is a crash
+mid-drain. One asymmetry decides every detail: opened and committed **before** the first
+unmaintained article; **no marker, no deferral**; an unreadable marker reads as OPEN; a
+re-open keeps the original timestamp; only a **complete** reconcile closes it.
+
+**Two defects found by building it, both invisible from reading.** (1) `reconcile_keyword_counters`
+**resumes** from a durable cursor, so an end-of-drain sweep would skip keywords an earlier
+partial pass had already stamped — reporting `complete` over rows that are drifted **and**
+fresh-stamped. It now takes `restart`. (2) The drain calls `reindex_articles` **once per
+import batch**, so per-call ownership of the reconcile would have cost ten whole-corpus
+`GROUP BY`s for a ten-batch backlog — **slower than never deferring**, and invisible because
+every test ran one batch.
+
+**`D45` — the article-row rewrite is a cliff, not a slope.** The stamp write is a narrow
+five-column UPDATE, but SQLite rewrites the row including overflow pages: WAL bytes stay at
+**16,440 (one 16 KiB page) for every stored row up to ~16.3 KB**, then 4 pages at 16,400
+bytes, 6 at 40 KB, 10 at 80 KB. **Below the cliff a narrow side table costs the same one
+page**, so moving the four hot columns out buys nothing for a typical article. Whether a
+corpus crosses it depends on the row payload — and `articles` carries **both** a plain
+`content` and a `compressed_content` column — so `D45` hands the operator a query rather than
+a guess.
+
+**Not claimed:** any wall-clock figure. The statement counts and WAL bytes are measured; the
+effect on a 27.7 GB encrypted corpus belongs to the operator's instance (`D43`).
