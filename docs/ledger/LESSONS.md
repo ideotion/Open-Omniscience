@@ -11725,3 +11725,69 @@ normally route it out — but the whole finding is that `CLAUDE.md` named none o
 surfaces, so a rule telling sessions to consult them is worthless anywhere a session is not
 required to read. Twenty-one lines; ratchet 740 → 761. **Where a rule lives is part of
 whether the rule works.**
+
+---
+
+### A NEW ACTOR WITH AN EXISTING CAPABILITY RE-OPENS EVERY HOLE CLOSED BY ASSUMING ONLY THE OLD ONE HAD IT (2026-09-23, `R27` vs `R28`, one week apart)
+
+`R28` gave the OPERATOR a way to decline a diagnostics member, and the same PR closed the
+hole that opened: release gate row C closes on «every member non-zero», a declined member
+is *absent* rather than zero-byte, so `complete_profile` was published for a gate check to
+read. It was defined as `profile == "full"` — exactly right while the operator was the only
+one who could decline.
+
+`R27`, seven days later, gave the **machine** that same power, on a FULL run. The boolean
+was instantly wrong: a full bundle missing its heaviest member would have reported itself
+complete and closed row C on less evidence than the clause names. **The flag encoded *who*
+could decline instead of *whether anything was declined*.** It now means the second, and
+the manifest additionally records which actor declined each member — two different facts
+to an operator, one unmakeable by re-running and one not.
+
+**The check that generalises:** when a change lets a new actor do something an existing
+actor could already do, re-read every guard written for the old actor and ask whether it
+tests the *capability* or the *actor*. The ones that test the actor are already broken.
+This is the same week's absence-check lesson one actor over, and both were found by asking
+what the new path makes newly possible rather than by re-reading the new path.
+
+### TWO CORRECT NUMBERS CAN MEET, AND A DOCSTRING IS HOW THEY INTRODUCE THEMSELVES (finding F1, ruling `R26`)
+
+`memory_budget._SMALL` gave the small tier 6 + 2 = 8 connections, for measured reasons
+about connection churn. `machine_floor.FLOOR_MAX_WORKERS` allowed 8 collector workers, and
+its docstring said 8 *because* the pool was 6 + 2. **Neither was wrong. Together they meant
+the collector could hold the entire pool**, and since a collector thread takes the
+single-writer gate *inside* `before_flush` on a session that already holds its connection,
+every thread queued on a gate held up to 1,329 s pinned one. Measured: 153 API stalls at
+exactly 30.0 s, 160 of 332 calls failed, three diagnostics members dead on the same error.
+
+**A value derived from another module's value is a coupling with no test.** The fix is not
+only the new number — it is that the guard asserts `api_headroom_for(FLOOR_MAX_WORKERS)`
+against the *live* pool rather than against the literals 8 and 12, so it reddens whether
+someone shrinks the pool or raises the cap; and an AST test asserts `memory_budget` imports
+neither `machine_floor` nor the scheduler, so the coupling cannot re-form in the other
+direction. **The caller that knows the fan-out passes it.**
+
+**And the stale docstring is the other half of the defect.** Once the pool moved, that
+sentence asserted a derivation that no longer held — which is how a later session
+re-creates the coupling in good faith. It is the recorded `page_size=16384` trap, and that
+one cost a maintainer decision. A test now pins the corrected prose, because prose is the
+part no other test covers.
+
+### WHEN A RULING CANNOT DO WHAT IT SAYS, REPORT IT — DO NOT LET A GREEN SUITE IMPLY IT
+
+`R26` says *raise the pool, never lower the worker cap*. On the small tier that closes F1
+exactly. On the medium tier `collect_parallelism` ships at **50** and the floor's cap
+applies only *below* the floor, so a pool obeying the ruling literally would need 54
+connections at 16 MiB each — 864 MiB of worst-case page cache on an 8 GB box. **The ruling
+cannot fix the tier it names.**
+
+The temptation is to ship the small-tier fix and let "PR 2 built" stand. What was done
+instead: `_db_memory` already carried `pool_bound` and `w_max` **side by side** and nothing
+subtracted one from the other — so a collector that could hold every connection looked
+exactly like one that could not. It now publishes `api_headroom.sufficient` every pass, and
+it reads `false` on that tier. A test asserts the *insufficiency*, so a green suite can
+never imply a fix that is not there, and the choice that would close it went to the
+maintainer as `D44` rather than being made by the session that found it.
+
+**A guard whose green tells you something it never checked is the "fabricated security"
+shape in test form.** Where the work is genuinely incomplete, the assertion belongs on the
+incompleteness.

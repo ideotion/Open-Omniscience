@@ -284,6 +284,30 @@ what the awareness mechanism in §B2 exists to prevent, and it would be odd to b
 leaving this one in place.
 `ANSWER D38:`
 
+**D44 ⛔ · `R26` cannot make the medium tier safe — found by building it (2026-09-23).**
+`R26` says raise the pool, never lower the worker cap. On the **small** tier that closes F1
+exactly: the cap is 8, the pool went 8 → 12, the margin is 4, and the invariant is now
+test-enforced against *both* constants so neither can move alone. On **medium**,
+`collect_parallelism` ships at **50** and the floor's cap applies only *below* the floor —
+so nothing bounds the fan-out, and a pool sized to 54 connections at 16 MiB each would be
+864 MiB of worst-case page cache on an 8 GB box.
+- **a** — a **reservation at checkout**: the collector may not take the last
+  `_API_MARGIN` connections. This bounds concurrent DB checkouts, **not** fetch fan-out —
+  every worker still fetches; they queue briefly for a connection instead of starving the
+  API. Arguably not the "worker cap" `R26` forbids lowering, but that is your call, not
+  mine.
+- **b** — a **cap derived from the pool** on medium too. Honest and simple; `R26` forbids
+  it in as many words.
+- **c** — **leave it**, and let the pass summary keep reporting
+  `api_headroom.sufficient: false` on that tier. The margin already bought four more
+  served calls before the pool empties.
+Default if blank: **⛔ none — this stays PENDING.** → **Recommendation: a.** It is the only
+option that makes the invariant true on the tier where 50 workers are real, and the
+distinction it rests on (checkouts vs fan-out) is exactly the one `R26`'s wording leaves
+open. *Shipped state meanwhile:* the small tier is fixed, medium is improved and
+**honestly reported as insufficient** rather than implied fixed.
+`ANSWER D44:`
+
 ## §B2 — The awareness mechanism you asked for
 
 *"find a way so that future bug discovery would not contradict what has been planned … to help
