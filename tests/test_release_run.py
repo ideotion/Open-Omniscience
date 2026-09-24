@@ -281,13 +281,31 @@ def test_a_legacy_backup_path_gets_its_own_restore_and_a_missing_one_is_refused(
 
 
 def test_the_heartbeat_ring_is_bounded_and_says_what_it_dropped(fast, monkeypatch):
-    monkeypatch.setattr(rr, "HEARTBEAT_CAP", 3)
+    # A ring of ONE, because the soak ALWAYS beats on entry and on exit: two beats against
+    # a cap of one drop at least one, whatever the clock does. A cap of three needed four
+    # beats inside the 0.3 s window, and a single pause of ~0.25 s cost the fourth -- and a
+    # full GC pass in this suite takes about a second (LESSONS.md). macOS CI failed it on
+    # three of four runs across PR #1171's last two commits. The ring's own arithmetic is
+    # tested by count in the next test, never by the clock.
+    monkeypatch.setattr(rr, "HEARTBEAT_CAP", 1)
     monkeypatch.setattr(rr, "HEARTBEAT_INTERVAL_S", 0.03)
     res = rr.run_release_run(FakeCtx(), **_params(fast["dest"], soak_hours=0.3 / 3600))
     rep = res["report"]
-    assert len(rep["heartbeats"]) == 3
+    assert len(rep["heartbeats"]) == 1
     assert rep["heartbeats_dropped"] >= 1
     assert rep["board_rows"][1]["row"] == "B" and rep["board_rows"][1]["evidence"]["heartbeats_dropped"] == rep["heartbeats_dropped"]
+
+
+def test_the_ring_keeps_the_newest_beats_and_counts_every_one_it_drops(fast, monkeypatch):
+    """The ring by COUNT, never by clock: seven beats into a ring of three keep the three
+    newest, in order, and count the four it dropped. A ring that kept the OLDEST beats, or
+    that overwrote the drop count instead of adding to it, passed the clocked test above."""
+    monkeypatch.setattr(rr, "HEARTBEAT_CAP", 3)
+    run = rr._Run(rr.RunParams(**_params(fast["dest"])))
+    for i in range(7):
+        run.heartbeat({"i": i})
+    assert [b["i"] for b in run.heartbeats] == [4, 5, 6]
+    assert run.heartbeats_dropped == 4
 
 
 def test_an_interim_report_is_written_during_the_soak_marked_as_one_and_superseded(fast, monkeypatch):
