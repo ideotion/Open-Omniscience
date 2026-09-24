@@ -454,13 +454,15 @@ def boot_and_drain():
     from src.api.main import _resume_reindex_backlog_at_boot
     _resume_reindex_backlog_at_boot(int(before.get("articles_pending") or 0))
     from src.api.backup_v2 import _REINDEX_RESUME_JOB
+    # ``started_at`` is set once, by the job's own start(), and never cleared: it is
+    # the durable record that boot started the drain. Sampling ``state == "running"``
+    # instead missed a drain that finished between two 0.1 s polls (macOS CI).
     deadline = time.time() + 120
     started = False
     while time.time() < deadline:
         st = _REINDEX_RESUME_JOB.status()
-        if st.get("state") == "running":
-            started = True
-        elif started:
+        started = st.get("started_at") is not None
+        if started and st.get("state") != "running":
             break
         time.sleep(0.1)
     after = reindex_backlog()
