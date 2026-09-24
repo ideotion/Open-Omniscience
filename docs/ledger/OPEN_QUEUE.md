@@ -22,6 +22,54 @@
 
 ## Open queue (when maintainer says proceed)
 
+- **PR 7 OF THE AUDIT'S §9.2 IS BUILT AS `R24` + A DESIGN, AND `R24` NEEDED THREE THINGS ITS
+  WORDING DID NOT SAY (2026-09-24, PR #1171).** §9.2 item 7 is *"Design for 0.5: the segmented
+  derived index for the 1 TB target, and carrying mention rows from same-engine backups instead
+  of re-extracting them."* The carry is BUILT; the segmented index is DESIGNED
+  (`docs/design/SEGMENTED_DERIVED_INDEX_2026-09-24.md`) and its adoption is **`D47` ⛔**.
+  - **"Same-engine BACKUPS" is the wrong unit — sameness is per ARTICLE.** A manifest can only
+    name the engine the exporter runs NOW, and an instance upgraded half-way holds rows from
+    several engines under one version string. So `index_article` stamps each article in the
+    pass that writes its rows: table `article_index_stamps`, identity from
+    `src/analytics/engine_identity.py` — a hash of the BYTES of the extraction modules and data
+    files, the optional dictionaries' versions, the three switches and the Unicode tables, with
+    no hand-bumped constant. A test runs a real pass in a fresh interpreter and fails on any
+    module or data file it reads that the hash does not cover; it found
+    `src/utils/markup_blocks.py`, which reading the code had missed.
+  - **...and per INPUTS.** A wiki body replaced, a country adopted by a later merge, a source
+    renamed: each leaves rows a re-index would not reproduce. The stamp records a digest of what
+    the pass read and the merge recomputes it, so a stamp is a statement that stays true for
+    ever and nothing has to remember to invalidate it.
+  - **The local dictionary decides which keyword row a mention lands on.** The indexer resolves
+    by term alone (lowest id); the merge's own map by term and language. The carry follows the
+    indexer, and refuses what a stamp cannot see: an entity upgrade a re-index would perform,
+    and a collision only a damaged backup can hold.
+  - **Every refusal is a re-extraction, never a loss**, and the acceptance test is a
+    DIFFERENTIAL: the same backup restored with the carry and with option (a) + a re-index must
+    agree row for row, to the keyword row (`tests/test_derived_carry.py`). The merge's step
+    order changed once — `keywords` now precede `articles`, with a carry-plan step between, so
+    a carried article's top keyword rides the article INSERT and its row is written once, not
+    twice (`D45`'s cliff). The keyword counters move by index_article's own deltas as the rows
+    are written, so PR 6's note above — that scoping the keyword reconcile to a batch is not
+    meaningful — still holds: nothing the carry writes leaves a counter to reconcile.
+  - **What it does NOT reach, stated so it is not over-read:** no backup made before the stamp
+    existed carries anything, so the field instance's **9.86 M orphan keywords (F8)** are the
+    drain's and the prune's, not this. What it reaches is every backup from now on — most
+    valuably a FRESH-INSTALL restore of one's own backup, which re-extracted every article and
+    on the field instance meant the 61-day drain again. `OO_CARRY_DERIVED=0` turns it off.
+  - **FOUND ON THE WAY, FIXED IN THE SAME PR:** a REGRESSION in PR 4 (#1168) — its batched
+    keyword lookup resolved a term shared by several keyword rows to the HIGHEST id where the
+    per-term lookup it replaced gave the LOWEST, against the 2026-07-29 ruling 5's `MIN(id)`
+    (see `LESSONS.md`); and a macOS-only race in
+    `tests/test_import_lifecycle_stages.py`'s boot-drain test, which watched for a transient
+    "running" state a fast drain can pass between two polls.
+  - **`D47` ⛔ PENDING — adopt the segmented derived index as 0.5's plan for the derived-row
+    write path.** Recommendation **a**: build step 0 (every reader through a view over today's
+    tables — behaviour-neutral) now, and steps 1–4 in 0.5 gated on the design's §8
+    measurements. It is also the design in which `D46` stops being a question. Touches, when
+    built: `src/analytics/store.py`, `src/backup/merge.py`, `src/analytics/bulk_build.py`,
+    `src/analytics/queries.py`, `src/database/models.py`.
+
 - **PR 6 OF THE AUDIT'S §9.2 IS BUILT, AND IT WAS ONE STAGE RATHER THAN FOUR (2026-09-23).**
   `R25` says all four import stages may be scoped to the batch, on a measurement of
   **2 h 25 min of corpus-wide stages for a 77 MB import whose merge step took 7 s**. Checked
@@ -145,8 +193,13 @@
     decided-and-unbuilt.
 
 
-- **THE FIELD-SLOWNESS ROUND IS DECIDED, AND SIX OF ITS SEVEN RULINGS ARE STILL UNBUILT
-  (2026-09-22).** The seven rulings the 2026-09-21 report
+- **THE FIELD-SLOWNESS ROUND IS DECIDED, AND AS OF 2026-09-24 EVERY ONE OF ITS SEVEN RULINGS
+  HAS A BUILD, `R23` ONLY IN PART** (was, 2026-09-22: *"SIX OF ITS SEVEN RULINGS ARE STILL
+  UNBUILT"*). **SWEPT 2026-09-24 (PR 7):** `R21` PR 1 (#1164); `R26` + `R27` PR 2 (#1166);
+  `R25` PR 3 + PR 6 (#1167, #1170), a lone import's `quick_check` still open as a data-safety
+  question; `R22` PR 4 (#1168); `R23` PR 5 (#1169), the window with no caller (`D46`, which
+  the segmented design `D47` dissolves); `R24` PR 7 (#1171). What this entry still holds open
+  is below it: the worker count, and F4 / F5 / F10. The seven rulings the 2026-09-21 report
   ([`docs/audit/15_FIELD_INSTANCE_SLOWNESS_2026-09-21.md`](../audit/15_FIELD_INSTANCE_SLOWNESS_2026-09-21.md)
   §9.3) put to the maintainer came back as «I agree with all your 7 rulings defaults. Mark
   them as decided.» — every stated default accepted verbatim, none amended. They are
@@ -3405,7 +3458,11 @@
   exclusion, disclosing pending refreshes from `merged_rows` (the skeptic's own recommendation, on
   cross-time-recall grounds) and (c) the per-article flag as framed (NOT recommended) are recorded
   in the brief. **RULED 2026-07-29 (maintainer chose (a)): DO NOT MERGE THE DERIVED ROWS — the
-  re-index PRODUCES them.** So the merge stops copying the incoming corpus's `keyword_mentions`
+  re-index PRODUCES them.** **NARROWED 2026-09-24 by `R24` (built, PR #1171):** option (a) now
+  governs every article whose engine stamp and inputs do not verify — which includes every
+  backup made before the stamp existed; a verified same-engine article's rows are carried, and
+  a differential test holds them equal to what this ruling's re-index would write (the PR 7
+  entry at the head of this queue). So the merge stops copying the incoming corpus's `keyword_mentions`
   (localised to the merge step tuple, `merge.py:315-330`), "not yet re-indexed" means "has no
   mentions" — which every analytics path already honours STRUCTURALLY, no flag/gate/join/15-path
   sweep — and the counter-drift bug is fixed by construction. THE MANDATORY GUARD travels with the

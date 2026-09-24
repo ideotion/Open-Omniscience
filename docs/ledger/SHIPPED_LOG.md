@@ -9397,3 +9397,44 @@ checked with `EXPLAIN QUERY PLAN`, no sort). Four tests, each failing on the pre
 including one through `index_article` that pins which row the MENTION lands on. Mutation
 matrix: last-row-wins and highest-id-wins are caught by all four; per-term highest-id by two;
 dropping the per-term `ORDER BY` survives, as expected — the plan already keeps that promise.
+
+## 2026-09-24 — PR 7 of the field-slowness plan: `R24` built (per article, per inputs), and the segmented derived index designed (`D47`)
+
+**§9.2 item 7** is *"Design for 0.5: the segmented derived index for the 1 TB target, and carrying
+mention rows from same-engine backups instead of re-extracting them."* The carry is BUILT; the
+segmented index is DESIGNED (`docs/design/SEGMENTED_DERIVED_INDEX_2026-09-24.md`), its adoption
+`D47` ⛔ with recommendation **a** (build step 0, a behaviour-neutral view, now).
+
+**The carry, and the three things `R24`'s wording did not say.** (1) Engine identity is per
+ARTICLE: `index_article` writes `article_index_stamps` in the pass that writes the rows, and the
+identity (`src/analytics/engine_identity.py`) hashes the BYTES of the extraction modules and
+data files, the optional dictionaries' versions, the switches and the Unicode tables — no
+hand-bumped constant — with a test that fails on any module or file a real pass reads that the
+hash does not cover. (2) Per INPUTS: the stamp records a digest of what the pass read (text,
+the raw content column, title, both language fields, the date, country, the source's self-name
+forms), and the merge recomputes it from the incoming row and the LOCAL source. (3) The local
+dictionary: the carry resolves terms as the indexer does (term alone, lowest id) and refuses an
+entity upgrade or a collision.
+
+**The merge changed shape once:** `keywords` before `articles`, with a carry-plan step between,
+so a carried article's top keyword rides the article INSERT (one write per carried article row,
+not two). Post-swap, the re-index skips certified articles and the backlog reports
+`n - certified`; a fully carried batch is complete at merge.
+
+**Measured, not assumed:** `EXPLAIN QUERY PLAN` found SQLite scanning the whole incoming mention
+table per window on the stats-free staged copy (now pinned with `CROSS JOIN`), and `CREATE TABLE
+AS` temp tables with no index under a correlated probe (now declared with keys). A backup with no
+`article_id`-led index is declined with the reason.
+
+**Acceptance: a differential** — the same backup restored with the carry and with option (a) + a
+re-index agree row for row, to the keyword row, on a fresh install, a populated corpus with five
+collision scenarios (each asserted to have FIRED), and 1-article windows. **Mutation matrix: 20
+mutations, 20 caught**; three survived the first pass, each a test gap now closed.
+
+**Not reached:** backups made before the stamp (none has one), so the field instance's 9.86 M
+orphan keywords (F8) stay the drain's and the prune's. **Not promised:** date extraction reads
+today's date (a year bound), so a later re-index can admit a date the exporter rejected; dates
+merge additively either way. **Not claimed:** any wall-clock figure.
+
+**Also in this PR:** the PR 4 tie-break regression (its own entry above) and a macOS-only race in
+the boot-drain test (it watched for a transient `running` state a fast drain passes unseen).

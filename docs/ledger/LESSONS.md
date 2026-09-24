@@ -12038,3 +12038,65 @@ A dict built from a result set is a silent last-wins; `.first()` without `ORDER 
 lowest-rowid that the plan provides and nothing promises. Found while designing R24, whose
 carried rows must resolve exactly as a local re-index would — the second time in this
 sequence that designing one PR audited the one before it.
+
+### A RULING'S UNIT CAN BE WRONG WHILE ITS INTENT IS RIGHT (PR 7)
+
+`R24` ruled that *"same-engine BACKUPS carry their mention rows"*. The intent — skip a
+re-extraction that would reproduce the same rows — was sound. The unit was not: a backup's
+manifest can only name the engine its exporter runs *now*, and an instance upgraded half-way
+through its life holds rows from several engines under one version string. Sameness had to be
+decided per ARTICLE, per its INPUTS (a body replaced after indexing leaves stale rows under a
+current engine), and against the local dictionary (which keyword row a term resolves to).
+
+**When building a ruling, ask what property its noun stands in for, and whether that noun
+actually carries it.** Here the refinement narrows *how* the intent is achieved and never
+widens what the ruling permits, so it was built and recorded beside the ruling rather than
+turned into a new question — and it was stated in the PR as a refinement, not smuggled in.
+
+### `CREATE TABLE AS` BUILDS NO INDEX, AND A CORRELATED PROBE INTO ONE IS QUADRATIC (PR 7)
+
+The carry's per-window temp tables were first built with `CREATE TEMP TABLE x AS SELECT …`,
+which creates a table with **no index at all**, not even on the column you meant as its key.
+The counter update then probed one per touched keyword — a full scan of the delta table per
+keyword, quadratic in the distinct keywords of a window (~50k × 50k at field scale). Every test
+passed in milliseconds, because fixtures have fifty keywords. **Declare a temp table with its
+key, then fill it.**
+
+### ON A STATS-FREE COPY, PIN THE JOIN ORDER — AND READ THE PLAN, NOT THE FIXTURE'S SPEED (PR 7)
+
+The restore's staged copy has no `sqlite_stat1`, so SQLite cannot know that a window holds
+2,000 articles and the incoming mention table ~100 M rows. `EXPLAIN QUERY PLAN` on the fixture
+showed it choosing to SCAN the mention table and probe the window — at field scale a full pass
+over every incoming mention *per window*. `CROSS JOIN` is SQLite's documented way to keep the
+written order. The tests could never have shown it: a plan is invisible at fixture scale, so
+**read the plan of every statement that will meet a large table**, and decline (with the
+reason) when the index the plan relies on is absent rather than letting it degrade to a scan.
+
+### A SCENARIO THAT NEVER FIRES PROVES NOTHING — ASSERT THAT IT FIRED (PR 7, generalising PR 5)
+
+The populated-corpus differential planted a keyword row sharing a carried term, to prove the
+carry resolves terms as the indexer does. Every article using that term happened to be REFUSED
+for another reason, so all its mentions came from the re-index — and a mutation resolving to
+the HIGHEST id survived a differential that "covered" it. In the same test, a title edit meant
+to exercise the inputs check landed on the one article the entity scenario needed and silently
+pre-empted it. **Each scenario now asserts it fired** (a carried article uses the planted term;
+each refusal counter is non-zero). A differential is only as strong as the rows that actually
+travel the path under test.
+
+### MEASURE A CLOSURE, DON'T READ IT (PR 7)
+
+The engine identity hashes the files an indexing pass reads, so its file list IS its
+correctness. Reading the code named the obvious modules; a probe that ran a real pass per
+language in a fresh interpreter found `src/utils/markup_blocks.py` (the markup strip every term
+passes through) and a GENERATED `configs/cities.yml` that silently shadows the shipped sample
+gazetteer. The probe is now a test that fails on any module or file a pass reads that the list
+does not cover. **A hash of the code is only as good as its file list; test the list against a
+real run.**
+
+### A POLL THAT WAITS TO SEE A TRANSIENT STATE RACES A FAST JOB (PR 7)
+
+A boot test polled a background job every 0.1 s and counted it "started" only if it SAW
+`running`. A drain that starts and finishes between two polls goes `idle` → `done` unseen, and
+macOS CI reported it as never started — twice, on a PR that did not touch that path, while
+Linux passed every time. **Assert on any state past the initial one, end the wait on a terminal
+state, and print the states seen**, so a genuine no-start still fails and says why.
