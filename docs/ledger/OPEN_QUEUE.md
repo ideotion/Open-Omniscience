@@ -481,7 +481,7 @@
   bar-on-a-sum, nine killed. Chromium-walked in en/ar (second pass in the same audit record).
 
 
-- **THE FIELD DEFECTS OUTSIDE THE WRITE PATH (2026-09-24, the field-defects PR; the report is
+- **THE FIELD DEFECTS OUTSIDE THE WRITE PATH (2026-09-24, PR #1173; the report is
   `docs/audit/16_FIELD_DIAGNOSTICS_SIX_MACHINES_2026-09-24.md` §3.3–§3.6, which lands with the
   release-run PR #1172, as do the rulings `FD01`–`FD04`).** Built: **SCHED-1** (slice `S04-08`)
   a resume that runs out of retries stays PENDING on a watcher that waits for the old pass to

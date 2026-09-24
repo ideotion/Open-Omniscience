@@ -12015,7 +12015,7 @@ placeholder then never exists in a commit at all. Rule (5b)'s allowance is for a
 must be *written* before the number is known — not for one that must be *committed* before
 it is known, which is a different and avoidable thing.
 
-### A RESUME MUST WAIT FOR THE THING IT IS WAITING ON (the field round, the field-defects PR)
+### A RESUME MUST WAIT FOR THE THING IT IS WAITING ON (the field round, PR #1173)
 
 `resume_after_exclusive_operation` retried `start()` for about ten minutes, a budget sized
 against the worst single blocked WRITE (438 s). On a write-bound machine the unit is a pass's
@@ -12025,7 +12025,7 @@ ran. A fixed retry budget for an event whose duration is not bounded is a timer 
 The resume now waits on the event itself (the old pass thread exiting) on a watcher, gives way
 to anything the operator does meanwhile, and is visible while it waits.
 
-### A DECLINE IS NOT AN EMPTY RESULT (the field round, the field-defects PR)
+### A DECLINE IS NOT AN EMPTY RESULT (the field round, PR #1173)
 
 Below the memory floor, a qualification pass declines its scan and returns `evaluated: 0` WITH
 a reason. The bulk job read `evaluated == 0` as "the backlog is empty", marked itself complete
@@ -12034,7 +12034,7 @@ starting…" while 82,805 candidates waited on one of them. When a function can 
 find nothing, the caller must test for the decline FIRST; a count of zero answers neither
 question on its own.
 
-### PER-ITEM ISOLATION EATS A DEADLINE, ONE ITEM AT A TIME (the field round, the field-defects PR)
+### PER-ITEM ISOLATION EATS A DEADLINE, ONE ITEM AT A TIME (the field round, PR #1173)
 
 A statement deadline, once tripped, interrupts every later statement on that connection, and
 the interrupt surfaces as an ordinary error. Every loop that isolates its items with
@@ -12049,7 +12049,7 @@ EXACTLY what the deadline translates (elapsed AND an interrupt): the first cut r
 error once the budget had expired, so a missing table after the budget would have escaped the
 deadline untyped and turned a degrading diagnostic into a 500.
 
-### A FAIL-OPEN PATH NEEDS A RECORD OF WHAT IT SKIPPED (the field round, the field-defects PR)
+### A FAIL-OPEN PATH NEEDS A RECORD OF WHAT IT SKIPPED (the field round, PR #1173)
 
 Custody logging on ingest is fail-open by design, correctly: it must never cost the article.
 But it kept no record of what it skipped, so a chain-of-custody log the operator had turned on
@@ -12061,7 +12061,7 @@ successful ingest, which meant one read per owed entry through a fresh pooled co
 the per-article path, under the very exhaustion that had created the debt -- up to twenty pool
 timeouts on one ingest. Repayment moved to the pass boundary, batched into one read.
 
-### A TOPIC IS NOT A WRITER (the field round, the field-defects PR)
+### A TOPIC IS NOT A WRITER (the field round, PR #1173)
 
 The fixity audit's first fix chose each row's hash formula partly from `Source.source_type`,
 and `legal` and `statistics` looked like the law and statistics writers. They are TOPICS:

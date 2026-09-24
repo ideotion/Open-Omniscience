@@ -9371,7 +9371,7 @@ a guess.
 **Not claimed:** any wall-clock figure. The statement counts and WAL bytes are measured; the
 effect on a 27.7 GB encrypted corpus belongs to the operator's instance (`D43`).
 
-### 2026-09-24 — the field defects outside the write path (the field-defects PR)
+### 2026-09-24 — the field defects outside the write path (PR #1173)
 
 `docs/audit/16` §3.4–§3.6 and RR-9, built beside the release-run PR (#1172, which carries the
 report). **SCHED-1:** `resume_after_exclusive_operation` keeps its retry loop and, when the
