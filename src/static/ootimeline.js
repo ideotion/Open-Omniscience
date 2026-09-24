@@ -210,11 +210,14 @@
     });
     // The bar: reached on one stretch, or projected on the current one.
     var bar = null, sm = chrono.summary || {};
+    // The bar is projected on the stretch it is MEASURED on: the current COLLECTION stretch
+    // when the summary names one (RR-10), the process stretch only for an older payload.
+    var barStretch = ("bar_current_stretch" in sm) ? sm.bar_current_stretch : sm.current_stretch;
     var reachedAt = parse(sm.bar_reached_at);
     if (reachedAt != null) {
       bar = { t: reachedAt, x: X(reachedAt), reached: true, visible: reachedAt >= t0 && reachedAt <= t1, hours: sm.bar_hours };
-    } else if (sm.current_stretch && parse(sm.current_stretch.started_at) != null && sm.bar_hours) {
-      var due = parse(sm.current_stretch.started_at) + sm.bar_hours * HOUR;
+    } else if (barStretch && parse(barStretch.started_at) != null && sm.bar_hours) {
+      var due = parse(barStretch.started_at) + sm.bar_hours * HOUR;
       bar = { t: due, x: X(due), reached: false, projected: true, visible: due >= t0 && due <= t1, hours: sm.bar_hours,
               remaining_h: sm.hours_remaining_on_current_stretch };
     }

@@ -4385,7 +4385,7 @@
   "Start the unattended run (goes online: continuous collection and the qualification drain)": "Den unbeaufsichtigten Lauf starten (geht online: fortlaufendes Sammeln und Abarbeiten der Qualifikations-Warteschlange)",
   "Stop at the next safe point; whatever the window gave is still collected and reported.": "Am nächsten sicheren Punkt anhalten; was das Fenster ergeben hat, wird dennoch gesammelt und berichtet.",
   "The same run under the 'million' profile: the all-diagnostics bundle at the end is REQUIRED (row C's bar: complete coverage, every member non-zero) and the report says its numbers speak to the ~1M rows.": "Derselbe Lauf unter dem Profil „million“: das Alle-Diagnosen-Archiv am Ende ist PFLICHT (die Latte von Zeile C: vollständige Abdeckung, kein leeres Mitglied) und der Bericht sagt, dass seine Zahlen zu den ~1-Mio.-Zeilen sprechen.",
-  "also run 0.3 row 5 — the Tier-A quarantine pass (deferred by ruling A1; tick only to run it now)": "auch Zeile 5 von 0.3 ausführen — den Quarantäne-Durchlauf der Stufe A (durch Entscheidung A1 aufgeschoben; nur ankreuzen, um ihn jetzt auszuführen)",
+  "also run 0.3 row 5, LAST — the Tier-A quarantine pass, then a whole-corpus keyword re-index with collection paused: hours on a small corpus, days on a slow machine (deferred by ruling A1; tick only to run it now)": "auch Zeile 5 von 0.3 ausführen, ZULETZT — den Quarantäne-Durchlauf der Stufe A, danach eine Neuindizierung der Schlüsselwörter über das ganze Korpus bei pausierter Sammlung: Stunden bei einem kleinen Korpus, Tage auf einer langsamen Maschine (durch Entscheidung A1 aufgeschoben; nur ankreuzen, um ihn jetzt auszuführen)",
   "destination dir (a separate folder / drive, ~3× your corpus)": "Zielverzeichnis (ein separater Ordner / ein separates Laufwerk, ~3× Ihr Korpus)",
   "include newsletters": "Newsletter einbeziehen",
   "online probes (law hosts, scoring endpoint, weights digests)": "Online-Sonden (Rechtsquellen-Hosts, Bewertungs-Endpunkt, Gewichts-Prüfsummen)",
@@ -4439,7 +4439,6 @@
   "Session {id}: {from} → {to} · {kind} · up {dur}": "Sitzung {id}: {from} → {to} · {kind} · Laufzeit {dur}",
   "Stretch: {from} → {to} · {dur} · ended by {by}": "Abschnitt: {from} → {to} · {dur} · beendet durch {by}",
   "Suspend (clock jump): {from} → {to}. The wall clock ran ahead of the monotonic clock; a sleep, a hibernation and a clock change leave the same record.": "Ruhezustand (Uhrensprung): {from} → {to}. Die Wanduhr lief der monotonen Uhr davon; Schlaf, Ruhezustand und eine Uhrumstellung hinterlassen denselben Eintrag.",
-  "not yet — {h} h more on the current stretch (a restart or a suspend starts it over)": "noch nicht — noch {h} h auf dem laufenden Abschnitt (ein Neustart oder ein Ruhezustand lässt ihn von vorn beginnen)",
   "reached at {when}": "erreicht um {when}",
   "{h} h continuous bar": "{h}-h-Marke, kontinuierlich",
   "{h} h if this stretch holds": "{h} h, falls dieser Abschnitt hält",
@@ -4448,5 +4447,12 @@
   "{n} unclean end(s)": "{n} unsauberes/unsaubere Ende(n)",
   "{n} since {when}": "{n} seit {when}",
   "Light bundle": "Leichtes Paket",
-  "FULL collects every member and is the default. LIGHT skips four members that measure the machine or re-read the whole corpus instead of reporting your data. Each skipped member still appears in the archive as a file naming why, so a light bundle can never be mistaken for a full one. Applies to this run only and is never remembered.": "VOLLSTÄNDIG erfasst jeden Bestandteil und ist die Voreinstellung. LEICHT überspringt vier Bestandteile, die die Maschine vermessen oder den gesamten Korpus erneut lesen, statt Ihre Daten zu melden. Jeder übersprungene Bestandteil erscheint weiterhin im Archiv als Datei, die den Grund nennt, sodass ein leichtes Paket nie mit einem vollständigen verwechselt werden kann. Gilt nur für diesen Lauf und wird nie gespeichert."
+  "FULL collects every member and is the default. LIGHT skips four members that measure the machine or re-read the whole corpus instead of reporting your data. Each skipped member still appears in the archive as a file naming why, so a light bundle can never be mistaken for a full one. Applies to this run only and is never remembered.": "VOLLSTÄNDIG erfasst jeden Bestandteil und ist die Voreinstellung. LEICHT überspringt vier Bestandteile, die die Maschine vermessen oder den gesamten Korpus erneut lesen, statt Ihre Daten zu melden. Jeder übersprungene Bestandteil erscheint weiterhin im Archiv als Datei, die den Grund nennt, sodass ein leichtes Paket nie mit einem vollständigen verwechselt werden kann. Gilt nur für diesen Lauf und wird nie gespeichert.",
+  "unknown — nothing in this window recorded when collection ran": "unbekannt — nichts in diesem Zeitfenster hat aufgezeichnet, wann die Sammlung lief",
+  "not yet — {h} h more on the current collection stretch (stopping collection, a restart or a suspend starts it over)": "noch nicht — noch {h} h auf dem laufenden Sammelabschnitt (ein Anhalten der Sammlung, ein Neustart oder ein Ruhezustand lässt ihn von vorn beginnen)",
+  "not yet — collection is not running": "noch nicht — die Sammlung läuft nicht",
+  "Longest collection stretch": "Längster Sammelabschnitt",
+  "Process up without a break": "Prozess ohne Unterbrechung aktiv",
+  "{h} h reached at {when} — the process's half of the clause, not the bar": "{h} h erreicht um {when} — die Prozess-Hälfte der Klausel, nicht die Marke",
+  "not yet — {h} h more on the current stretch": "noch nicht — noch {h} h auf dem laufenden Abschnitt"
 }

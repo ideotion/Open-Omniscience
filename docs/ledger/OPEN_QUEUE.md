@@ -23,7 +23,7 @@
 ## Open queue (when maintainer says proceed)
 
 - **THE HEARTBEAT-RING TEST FAILED THE macOS LANE WHENEVER A GC PASS LANDED IN ITS 0.3 s SOAK —
-  found driving PR #1171 to green, FIXED IN PR #1174; TWO SIBLING TIMING TESTS STILL OPEN
+  found driving PR #1171 to green, FIXED IN PR #1172; TWO SIBLING TIMING TESTS STILL OPEN
   (2026-09-24).** *(Headline as first recorded: "THE HEARTBEAT-RING TEST FAILS THE macOS LANE
   WHENEVER A GC PASS LANDS IN ITS 0.3 s SOAK — found driving PR #1171 to green, NOT fixed there,
   STILL OPEN".)*
@@ -48,9 +48,13 @@
   one GC pass does not explain it; it is recorded, not diagnosed.
   **Not blocking:** the lane is `continue-on-error: true`; both become blocking the day it
   graduates.
-  **HEARTBEAT HALF FIXED (2026-09-24, PR #1174), with the patch above.** The end-to-end test now
-  runs a ring of one, and a new test checks the ring's arithmetic by count; both pass with an
-  injected 0.25 s, 0.3 s and 1.0 s pause. **STILL OPEN:** the `test_markup_blocks` observation
+  **HEARTBEAT HALF FIXED (2026-09-24, PR #1172), independently and with the same approach as the
+  patch above.** #1172 (the field round's release-run PR) hit the same failure on its own CI; its
+  test now checks the ring by count (five beats into a ring of three keep the last three and count
+  2 dropped), then runs the soak with a ring of one. Verified against that version, here: it
+  passes with an injected 0.25 s, 0.3 s and 1.0 s pause, and it catches the same 4 of 4 broken
+  rings. PR #1174 carried this entry's own patch, took #1172's on merge, and records the fix here,
+  because #1172 did not. **STILL OPEN:** the `test_markup_blocks` observation
   above, and `test_an_interim_report_is_written_during_the_soak_marked_as_one_and_superseded` in
   the same file as the heartbeat test. The interim test has the same exposure through a narrower
   window: a pause of ≥ ~0.35 s in the soak's first ~0.06 s ends the loop before the first interim
@@ -487,6 +491,53 @@
   new way for a member to be absent needs every ABSENCE CHECK re-read, not only the one the
   new path writes.
 
+- **THE FIELD-DIAGNOSTICS ROUND, SIX MACHINES (2026-09-24,
+  `docs/audit/16_FIELD_DIAGNOSTICS_SIX_MACHINES_2026-09-24.md` + its `_TABLES.md` appendix).**
+  Six all-diagnostics bundles (Asus 289k articles, Lenn 193k, a NUC 149k, three Qubes VMs 141k to
+  149k, all 4 GB machines on `68b295b`, so none of PRs #1164–#1170) plus three release-run
+  reports, read by six Sonnet analysts and re-checked by six Sonnet verifiers (none refuted), then
+  hand-verified. **Answers (`RULINGS_INDEX.md` `FD01`–`FD04`):** `FD02` swap stays at the 1 GB
+  default (ruled, «I won't change swap size (default is 1Gb)»); `FD04` both fix PRs open now
+  (ruled); `FD01` row 5 after the soak and `FD03` the floor stays with a named decline are
+  ASSUMPTIONS at their stated defaults, built, and reversible by answering at the report's
+  `ANSWER` lines. **Built by the two PRs:** the release run and the chronology (RR-1 to RR-8,
+  RR-10, RR-11) in the release-run PR; SCHED-1, QUAL-1, RR-9, CUST-1, FIX-1, INT-1 and the
+  card-audit and bulletin deadline guard in the field-defects PR (#1173). **THE RELEASE-RUN PR IS BUILT
+  (PR #1172, 2026-09-24): all ten**, every new test shown failing on the pre-fix code. Two
+  findings of its own, beyond the report: the chronology placed an IN-FLIGHT phase at the FIRST
+  phase's end (a backwards loop with no break; on the NUC the soak "started" at the preflight),
+  fixed; and row 5 could NOT be wrapped in an exclusive window as first planned, because the
+  quarantine job and the re-index both PARK while one is open — row 5 would have waited on jobs
+  waiting on it. It stops the collector and the Wikipedia lane directly instead, never touching
+  the network state. **Behaviour that is new and deliberate, so it is not mistaken for a
+  defect:** a suspend during the soak ends the stretch and a new one starts with the full window
+  (the restart's rule, because the bar is continuous collection); a row-5 job whose counter
+  does not move for two hours outside its uncounted tail is PAUSED, never waited on for ever;
+  the chronology's bar reads UNKNOWN for a window whose sessions ran a build that did not record
+  collection (every session before this build). **STILL OPEN, deliberately built by neither:**
+  (1) **the §4 bundle additions** — the commit id in `manifest.json`, a jobs member (every job's
+  status, progress, rate, error), an operator and lifecycle event log, the error ring deduped by
+  message, `D45`'s row-size query, the machine's boot time beside the unlock timing, per-case
+  deadlines in `benchmark.json` and `performance.json` — held for one PR coordinated with the
+  indexing session, which edits `src/api/diagnostics/bundle.py`;
+  (2) **Home cards whose click-through lands on an empty search** (`law_change`,
+  `recipe_source_candidates`, `ip_litigation_pulse`, flagged by the bundle's own
+  "SEARCH-FALLBACK MISMATCH" check) — each needs its own destination, a UI decision under
+  invariant #6;
+  (3) **the ten card producers that never fired on any machine** — re-read once the card-audit
+  guard lands, because the audit that tells "no signal" from "error" was itself cascading;
+  (4) **the public-holiday lane is dead upstream**: `worldpublicholiday.com` answers HTTP 404
+  since mid-September, so it needs a replacement source, not a parser fix (`RC13`, Prompt 17b);
+  (5) **the indexing session's inputs** (report §3.2 and the paste-ready §5.3): F4's checkout
+  dates from the UNLOCK on all six; the slow INSERTs are execution, not lock waits; `R27`'s one
+  constant declines the keyword-log digest on every machine under ~6.6 GB although it cost 434
+  to 874 MiB here (~317 B per keyword fits all six); `api_headroom_for` counts only collector
+  workers; Asus is a 67 % backlog machine for `D43` and `D46`; Insights reads take 15 to 86 s
+  with collection paused. Handed over as evidence, not tasks;
+  (6) **the temp directory was full during the bundle on Asus and the NUC** — cause unproven,
+  settled by `df -h /tmp` from the operator;
+  (7) **operator steps, report §5.1**: update all six, restart Lenn's collection, cancel the Qubes
+  row-5 runs, network time sync on the NUC, and the Asus drain readings.
 - **THE 0.4 RELEASE RUN BUTTON (2026-09-18): what it composes, what it deliberately does not
   automate, and one invariant #14 gap it found in a shipped control.** The maintainer asked for
   "a one time single (fully automated) button in the advanced settings in the diagnostics tab"

@@ -12125,3 +12125,43 @@ where the passes land (+2.4 % objects, pause lengths unchanged). **Adding tests 
 flip a timing test that has no margin. Test a bound by COUNT, never by a sub-second clock; when
 the timing IS the property, `gc.collect()` then `gc.disable()` around the timed region, or take
 the best of N runs.**
+
+### A DURATION IS NEVER THE DIFFERENCE OF TWO WALL STAMPS (the field round, PR #1172)
+
+A NUC booted with its clock 12 hours fast, and NTP corrected it an hour in. Everything that
+subtracted two wall stamps went wrong at once: a release-run phase "ended" seven hours before
+it "started", the chronology reported 12 hours LESS uptime than the machine had (and 23.8 h to
+the 72 h bar when 11.8 h remained), a politeness stamp deferred a host for seven hours, and
+the soak's own deadline was one clock step away from ending early while still claiming 72 h.
+Meanwhile the one surface that used the monotonic clock — the System tab's uptime — was right,
+so two surfaces disagreed about the same number.
+
+**The rule:** time a duration on the monotonic clock; record the monotonic uptime BESIDE every
+wall stamp, so a reader can place an event without trusting the clock that stamped it; and on
+Linux, read the boot-time clock too — boot-time minus monotonic is a suspend, wall minus
+boot-time is a clock change, and without it the two are indistinguishable (and a BACKWARD
+change, which no suspend can produce, used to leave no record at all).
+
+**The same rule bites tests.** An existing chronology test "let 30 hours pass" by moving only
+the wall clock. Nothing moves one clock alone except a clock change, and the fixed code
+correctly read it as one. A fake clock for time-dependent code advances all the clocks together.
+
+### TEST A READER AGAINST THE WRITER'S REAL OUTPUT (the field round, PR #1172)
+
+The release run's row C read the bundle's coverage block from `debug-bundle.json`; the bundle
+writer puts it in `manifest.json` → `run.runtime_coverage`. So the clause could not read
+satisfied on any machine, and its test passed, because the test built its own zip with the
+block where the reader looked. A reader's fixture must come from the writer — here, the real
+`_write_all_diagnostics_zip` driven with stub members, one of which times out and one of which
+raises — never from the reader's own idea of the format. The same test then caught the second
+half: a member skipped at its deadline is replaced by a 52-byte marker, so a "zero-byte
+member" check can never see it.
+
+### A JOB THAT YIELDS TO AN EXCLUSIVE WINDOW CANNOT RUN INSIDE ONE (the field round, PR #1172)
+
+The obvious way to give row 5's re-index the machine was `exclusive_window()`: it pauses
+collection and resumes it once. But the quarantine job and the re-index both PARK while an
+exclusive window is open — they stand aside for an import, by an earlier fix. Row 5 inside the
+window would have waited on its own jobs, which were waiting on it, for ever. Before wrapping
+work in a machine-owning primitive, check whether the work itself is one of the things that
+primitive tells to stand aside.

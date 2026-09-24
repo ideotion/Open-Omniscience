@@ -47,6 +47,14 @@ WHAT IT MAY NOT DO. It never tags, never flips the version, never decides a ⛔ 
 RC item, never touches ``configs/``. The 0.3 row-5 quarantine pass is a DEFERRED
 operator step (register ruling A1), so it runs only behind an explicit per-run opt-in
 that defaults OFF -- ticking it is the maintainer's decision, not this module's.
+
+THE FIELD ROUND (2026-09-24, six machines; ``docs/audit/16_…``, fixes RR-1 to RR-8).
+Row 5 runs LAST, after the bundle, with collection paused (ruling FD01): it is a
+whole-corpus re-index that held three 4 GB VMs for 50 to 61 hours before their soaks
+could start. Every duration is monotonic, a suspend ends a soak stretch, a pool timeout
+is retried and a failed phase keeps what it measured, each board row takes its status
+from the evidence it holds, row C reads the bundle's manifest where the writer puts it,
+and the bundle's release-run member carries the live run.
 """
 
 from __future__ import annotations
@@ -100,6 +108,29 @@ _MIB = 1024 * 1024
 #: seconds, not at the next hourly heartbeat.
 _TICK_S = 5.0
 
+#: A suspend or a wall-clock change is recorded past this bound between two ticks: the
+#: session ledger's own threshold, so the run and the chronology agree on what one is.
+CLOCK_EVENT_MIN_S = 120.0
+
+#: A pool timeout (``sqlalchemy.exc.TimeoutError``: every connection checked out for
+#: 30 s) is transient by nature, and one of them cost Asus seven hours of row 5 and the
+#: NUC three rows after a 72-hour soak (RR-2, RR-7). Retried after these waits, then
+#: reported. The waits are stoppable: a cancel lands within one tick.
+POOL_RETRY_DELAYS_S = (5.0, 15.0, 45.0, 120.0)
+
+#: Row 5 (RR-6): a job whose article counter has not moved for this long, while it is
+#: neither parked for an import nor in its uncounted tail (the prune), is PAUSED and
+#: reported as stalled -- resumable from its cursor, never discarded. Slow is not
+#: stalled: the Qubes VMs re-indexed for 60 hours and moved the whole time.
+ROW5_STALL_S = 2 * 3600.0
+#: Row 5's progress is sampled into the phase record this often, bounded like the
+#: heartbeat ring, so a multi-day job leaves a rate a reader can re-open.
+ROW5_SAMPLE_S = 600.0
+ROW5_SAMPLE_CAP = 288
+#: After row 5, collection is put back only once the old pass thread has exited; this
+#: long at most, which on any real machine is far longer than a pass's wind-down.
+RESUME_COLLECTION_WAIT_S = 3600.0
+
 # --------------------------------------------------------------------------- #
 #  Parameters
 # --------------------------------------------------------------------------- #
@@ -148,6 +179,72 @@ def _now_iso() -> str:
     return datetime.now().astimezone().isoformat(timespec="seconds")
 
 
+def _stamp_epoch(iso: Any) -> float | None:
+    """A run stamp (local time with its offset) as an epoch, or None."""
+    if not iso or not isinstance(iso, str):
+        return None
+    try:
+        dt = datetime.fromisoformat(iso.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=UTC)
+    return dt.timestamp()
+
+
+class _PhaseError(Exception):
+    """A phase that failed PART of the way: ``partial`` is what it had measured, kept in
+    the phase record rather than thrown away with the exception (RR-2). The NUC lost
+    three board rows after a 72-hour soak because one read failed and the phase record
+    kept nothing. ``status`` is ``error`` unless the cause was a refusal."""
+
+    def __init__(self, message: str, *, partial: dict[str, Any], status: str = "error") -> None:
+        super().__init__(message)
+        self.partial = partial
+        self.status = status
+
+
+def _is_pool_timeout(exc: BaseException) -> bool:
+    try:
+        from sqlalchemy.exc import TimeoutError as PoolTimeout
+    except Exception:  # noqa: BLE001 - without SQLAlchemy there is no pool to time out
+        return False
+    return isinstance(exc, PoolTimeout)
+
+
+#: How a job manager's stored error names a pool timeout (it keeps ``str(exc)``, which
+#: drops the class name).
+_POOL_TIMEOUT_TEXT = ("QueuePool limit", "connection timed out")
+
+
+def _sleep_stoppable(ctx: Any, seconds: float) -> None:
+    end = time.monotonic() + seconds
+    while not ctx.stopping:
+        left = end - time.monotonic()
+        if left <= 0:
+            return
+        time.sleep(min(_TICK_S, left))
+
+
+def _retrying(ctx: Any, what: str, fn: Any, log: list[dict[str, Any]] | None = None) -> Any:
+    """``fn()``, retried after a pool timeout on the ``POOL_RETRY_DELAYS_S`` backoff
+    (RR-2, RR-7). Any other error, a cancel, or the last timeout is raised to the caller,
+    which records it; every retry is written to ``log`` so a reader sees it happened."""
+    delays = (*POOL_RETRY_DELAYS_S, None)
+    for attempt, delay in enumerate(delays, start=1):
+        try:
+            return fn()
+        except Exception as exc:  # noqa: BLE001 - classified, then re-raised
+            if delay is None or not _is_pool_timeout(exc) or ctx.stopping:
+                raise
+            if log is not None:
+                log.append({"what": what, "attempt": attempt, "waited_s": delay, "at": _now_iso(),
+                            "error": f"{type(exc).__name__}: {exc}"[:200]})
+            _LOG.warning("release run: %s hit a pool timeout (attempt %d), retrying in %.0f s", what, attempt, delay)
+            _sleep_stoppable(ctx, delay)
+    raise AssertionError("unreachable")  # pragma: no cover - the loop returns or raises
+
+
 def read_state() -> dict[str, Any]:
     """The last run's state, or ``{}``. A plain file read -- safe on a slow machine."""
     try:
@@ -191,6 +288,12 @@ class _Run:
         self.sessions: list[dict[str, Any]] = [{"pid": os.getpid(), "started_at": self.started_at, "kind": "start"}]
         self.soak_stretches: list[dict[str, Any]] = []
         self.resumed = 0
+        # RR-4: what the clocks did during the run -- a wall-clock change beside a phase,
+        # a suspend inside the soak. Every duration is monotonic; these explain why a
+        # wall stamp pair may disagree with it.
+        self.clock_adjustments: list[dict[str, Any]] = []
+        self.suspends: list[dict[str, Any]] = []
+        self._current_mono: float | None = None
 
     # -- persistence ------------------------------------------------------ #
     def snapshot(self) -> dict[str, Any]:
@@ -213,11 +316,14 @@ class _Run:
                 "note": p.note,
             },
             "phase": (self._current or {}).get("name"),
+            "phase_started_at": (self._current or {}).get("started_at"),
             "phases": list(self.phases),
             "soak": dict(self.soak),
             "soak_stretches": list(self.soak_stretches),
             "sessions": list(self.sessions),
             "resumed": self.resumed,
+            "clock_adjustments": list(self.clock_adjustments),
+            "suspends": list(self.suspends),
             "heartbeats": list(self.heartbeats),
             "heartbeats_cap": HEARTBEAT_CAP,
             "heartbeats_dropped": self.heartbeats_dropped,
@@ -234,14 +340,30 @@ class _Run:
     # -- phases ----------------------------------------------------------- #
     def begin(self, name: str) -> None:
         self._current = {"name": name, "started_at": _now_iso(), "ended_at": None}
+        self._current_mono = time.monotonic()
         self.persist()
 
     def end(self, status: str, detail: str, **extra: Any) -> dict[str, Any]:
         assert status in PHASE_STATUSES, status
         cur = self._current or {"name": "?", "started_at": _now_iso()}
-        cur.update({"ended_at": _now_iso(), "status": status, "detail": detail, **extra})
+        ended = _now_iso()
+        # RR-4: the phase's duration on the monotonic clock. The wall stamps beside it
+        # are for reading, never for subtracting: on the NUC a phase "ended" seven hours
+        # before it "started", because the clock was corrected in between.
+        wall_s = round(time.monotonic() - self._current_mono, 1) if self._current_mono is not None else None
+        cur.update({"ended_at": ended, "wall_s": wall_s, "status": status, "detail": detail, **extra})
+        a, b = _stamp_epoch(cur.get("started_at")), _stamp_epoch(ended)
+        if wall_s is not None and a is not None and b is not None and abs((b - a) - wall_s) > CLOCK_EVENT_MIN_S:
+            self.clock_adjustments.append({
+                "phase": cur.get("name"), "stamps_s": round(b - a), "wall_s": wall_s,
+                "clock_moved_s": round((b - a) - wall_s),
+                "basis": ("the phase's wall stamps and its monotonic duration disagree: the wall "
+                          "clock was changed (or the machine suspended) during the phase; wall_s "
+                          "is the duration, the stamps are only where the clock read"),
+            })
         self.phases.append(cur)
         self._current = None
+        self._current_mono = None
         self.persist()
         return cur
 
@@ -278,12 +400,20 @@ class _Run:
         run = cls(params)
         run.run_id = str(state.get("run_id"))
         run.started_at = str(state.get("started_at") or run.started_at)
+        phases = [dict(ph) for ph in (state.get("phases") or []) if isinstance(ph, dict)]
+        # A COMPLETED SOAK IS KEPT (RR-6). Row 5 now runs after the bundle and can take
+        # days, so a restart inside it must not throw away a 72-hour soak that finished:
+        # only the phases after the soak that did not reach a terminal status are redone.
+        # A soak that did NOT complete is redone with its arming, as before: the bar is
+        # continuous, and the process that armed it is gone.
+        soak_ph = next((ph for ph in phases if ph.get("name") == "soak"), None)
+        soak_complete = bool(soak_ph and soak_ph.get("status") == "measured"
+                             and soak_ph.get("ended_by") in ("window-complete", "collect-now"))
+        redo = () if soak_complete else _REDONE_ON_RESUME
         kept, dropped = [], []
-        for ph in state.get("phases") or []:
-            if not isinstance(ph, dict):
-                continue
-            if ph.get("status") in _TERMINAL_OK and ph.get("name") not in _REDONE_ON_RESUME:
-                kept.append(dict(ph))
+        for ph in phases:
+            if ph.get("status") in _TERMINAL_OK and ph.get("name") not in redo:
+                kept.append(ph)
             else:
                 dropped.append(f"{ph.get('name')}:{ph.get('status')}")
         run.phases = kept
@@ -293,9 +423,19 @@ class _Run:
         run.warnings = list(state.get("warnings") or [])
         run.soak_stretches = [dict(s) for s in (state.get("soak_stretches") or []) if isinstance(s, dict)]
         run.sessions = [dict(s) for s in (state.get("sessions") or []) if isinstance(s, dict)] or run.sessions
+        run.clock_adjustments = [dict(c) for c in (state.get("clock_adjustments") or []) if isinstance(c, dict)]
+        run.suspends = [dict(c) for c in (state.get("suspends") or []) if isinstance(c, dict)]
         run.resumed = int(state.get("resumed") or 0) + 1
         prev_soak = dict(state.get("soak") or {})
-        if prev_soak.get("started_at") and not prev_soak.get("ended_at"):
+        if soak_complete:
+            run.soak = prev_soak
+            if any(d.split(":", 1)[0] in ("collect", "bundle") for d in dropped):
+                run.warnings.append(
+                    "the end-of-window readings were taken again after a restart, by a process that "
+                    "did not run the soak: the soak window and the lane counters are read from the "
+                    "store and still describe it, P0.3's collector check describes the resumed process"
+                )
+        elif prev_soak.get("started_at") and not prev_soak.get("ended_at"):
             last_beat = run.heartbeats[-1] if run.heartbeats else {}
             prev_soak["ended_by"] = "restart"
             prev_soak["ended_at"] = last_beat.get("at") or state.get("updated_at")
@@ -306,7 +446,8 @@ class _Run:
                 "updated_at when no heartbeat was kept"
             )
             run.soak_stretches.append(prev_soak)
-        run.soak = {}
+        if not soak_complete:
+            run.soak = {}
         run.sessions.append({
             "pid": os.getpid(), "started_at": _now_iso(), "kind": "resume",
             "interrupted_phase": state.get("phase"), "previous_pid": state.get("pid"),
@@ -314,7 +455,8 @@ class _Run:
         })
         run.warnings.append(
             f"resumed after a restart (resume #{run.resumed}): the measured phases were kept, "
-            "the soak stretch started over because the bar is continuous"
+            + ("including the completed soak" if soak_complete
+               else "the soak stretch started over because the bar is continuous")
         )
         return run
 
@@ -379,6 +521,15 @@ def _rss_mb() -> float | None:
 
 
 def _process_uptime_s() -> float | None:
+    """How long this process has been running, on the session ledger's monotonic clock
+    (RR-4). The psutil fallback subtracts a creation time from the wall clock, which a
+    clock change moves; it is used only where the ledger never opened a session."""
+    with contextlib.suppress(Exception):
+        from src.monitoring.session_history import current_session
+
+        up = current_session().get("uptime_s")
+        if up is not None:
+            return round(float(up), 1)
     try:
         import psutil
 
@@ -542,50 +693,261 @@ def _preflight(run: _Run) -> dict[str, Any]:
 # --------------------------------------------------------------------------- #
 
 
-def _wait_manager(ctx: Any, status_fn: Any, *, running_states: tuple[str, ...]) -> dict:
-    """Poll a resumable manager until it leaves its running states, or a cancel lands.
-    A PAUSED run is a person's decision and is not waited out."""
-    last: dict = {}
+def _exclusive_open() -> bool:
+    try:
+        from src.scheduler.runner import exclusive_window_open
+
+        return bool(exclusive_window_open())
+    except Exception:  # noqa: BLE001 - unknown is "not parked"
+        return False
+
+
+def _pause_collection() -> dict[str, Any]:
+    """Stop the collector and the Wikipedia lane for row 5 (FD01, FD02: the soak is done,
+    and a 4 GB machine with 1 GB of swap cannot carry a whole-corpus re-index beside
+    collection -- two of the Qubes VMs ended the way an out-of-memory kill does).
+
+    NOT an exclusive window, deliberately: the quarantine job and the re-index both PARK
+    while one is open (they stand aside for an import), so claiming it here would stop
+    the very jobs it is making room for, forever. The network state is not touched
+    either: going offline and back would be a new offline->online transition the
+    operator never consented to."""
+    out: dict[str, Any] = {"scheduler_was_running": False, "wiki_lane_was_streaming": False}
+    try:
+        from src.scheduler.runner import get_scheduler
+
+        sched = get_scheduler()
+        out["scheduler_was_running"] = bool(sched.is_running())
+        if out["scheduler_was_running"]:
+            sched.stop(timeout=30.0)
+            # stop()'s join is bounded; a pass deep in a write can outlive it. Said, not hidden.
+            out["scheduler_still_winding_down"] = bool(sched.is_running())
+    except Exception as exc:  # noqa: BLE001
+        out["scheduler_error"] = f"{type(exc).__name__}: {exc}"[:300]
+    try:
+        from src.wiki.service import lane_service_status, stop_wiki_lane
+
+        out["wiki_lane_was_streaming"] = bool((lane_service_status() or {}).get("streaming"))
+        if out["wiki_lane_was_streaming"]:
+            stop_wiki_lane(timeout=30.0)
+    except Exception as exc:  # noqa: BLE001
+        out["wiki_lane_error"] = f"{type(exc).__name__}: {exc}"[:300]
+    out["at"] = _now_iso()
+    return out
+
+
+def _resume_collection(paused: dict[str, Any] | None) -> dict[str, Any]:
+    """Put back what row 5 stopped, and only that. Never over the operator's airplane
+    mode. The collector is restarted only once its old pass thread has exited -- the
+    wait SCHED-1 lacked: one refused ``start()`` there left Lenn's collector off for
+    five days, because a pass winding down on a write-bound machine outlived every
+    retry."""
+    if not paused:
+        return {"resumed": False, "reason": "nothing was paused"}
+    out: dict[str, Any] = {"at": _now_iso()}
+    try:
+        from src.ingest import kill_switch_active
+    except Exception:  # noqa: BLE001
+
+        def kill_switch_active() -> bool:  # type: ignore[misc]
+            return False
+    if paused.get("scheduler_was_running"):
+        try:
+            from src.scheduler.runner import get_scheduler
+
+            sched = get_scheduler()
+            deadline = time.monotonic() + RESUME_COLLECTION_WAIT_S
+            started = False
+            while True:
+                if kill_switch_active():
+                    out["scheduler"] = "left stopped: airplane mode is on, so collection waits for the operator to go online"
+                    break
+                if sched.start():
+                    started = True
+                    break
+                if time.monotonic() >= deadline:
+                    out["scheduler"] = ("NOT restarted: the previous pass thread was still running after "
+                                        f"{RESUME_COLLECTION_WAIT_S:.0f} s -- restart collection from the task manager")
+                    _LOG.warning("release run: collection could not be restarted after row 5")
+                    break
+                time.sleep(_TICK_S)
+            out["scheduler_restarted"] = started
+        except Exception as exc:  # noqa: BLE001
+            out["scheduler_error"] = f"{type(exc).__name__}: {exc}"[:300]
+    if paused.get("wiki_lane_was_streaming"):
+        if kill_switch_active():
+            out["wiki_lane"] = "left stopped: airplane mode is on"
+        else:
+            try:
+                from src.wiki.service import start_wiki_lane
+
+                out["wiki_lane_restarted"] = bool(start_wiki_lane())
+            except Exception as exc:  # noqa: BLE001
+                out["wiki_lane_error"] = f"{type(exc).__name__}: {exc}"[:300]
+    return out
+
+
+def _wait_job(ctx: Any, run: _Run, label: str, mgr: Any, out: dict[str, Any]) -> dict[str, Any]:
+    """Wait for one row-5 job, and never blindly (RR-6, RR-7). While it runs: its counter
+    is published as the run's progress and sampled into the phase record, an interim
+    report is rewritten on the soak's cadence, a pool-timeout error is resumed from the
+    job's cursor on the retry backoff, and a counter that has not moved for
+    ``ROW5_STALL_S`` pauses the job and says so. A job parked for an import, or in its
+    uncounted tail (the re-index's prune), is not stalled. A cancel pauses the job
+    rather than leaving it running under a run that has stopped: paused, it resumes
+    from its cursor whenever the operator wants."""
+    samples: list[dict[str, Any]] = out.setdefault(f"{label}_progress", [])
+    retries: list[dict[str, Any]] = out.setdefault("retries", [])
+    t0 = time.monotonic()
+    last_done: Any = None
+    last_move = t0
+    next_sample = t0
+    next_interim = t0 + INTERIM_REPORT_INTERVAL_S
+    resumed = 0
     while True:
-        last = status_fn() or {}
-        state = str(last.get("state") or "")
+        st = dict(mgr.status() or {})
+        state = str(st.get("state") or "")
+        done, total = st.get("articles_done"), st.get("articles_total")
+        now = time.monotonic()
+        if done != last_done:
+            last_done, last_move = done, now
+        tail = bool(total) and done is not None and done >= total
+        parked = bool(st.get("parked_for_exclusive")) or _exclusive_open()
+        if now >= next_sample:
+            samples.append({"at": _now_iso(), "elapsed_s": round(now - t0), "done": done, "total": total,
+                            "percent": st.get("percent"), "state": state, "parked": parked,
+                            "articles_per_hour": st.get("articles_per_hour")})
+            if len(samples) > ROW5_SAMPLE_CAP:
+                del samples[1:len(samples) - ROW5_SAMPLE_CAP + 1]  # keep the first; drop the oldest after it
+                out[f"{label}_progress_dropped"] = int(out.get(f"{label}_progress_dropped") or 0) + 1
+            next_sample = now + ROW5_SAMPLE_S
+        if tail and state == "running":
+            what = "pruning orphan keywords and reconciling (no counter)"
+        elif parked:
+            what = "parked: an import owns the machine"
+        else:
+            what = f"{done if done is not None else '?'} of {total if total is not None else '?'}" + (
+                f" ({st.get('percent')} %)" if st.get("percent") is not None else "")
+        ctx.set_progress(detail=f"row 5: {label} -- {what}")
+        err = str(st.get("error") or "")
+        if (state == "error" and any(t in err for t in _POOL_TIMEOUT_TEXT)
+                and resumed < len(POOL_RETRY_DELAYS_S) and not ctx.stopping):
+            delay = POOL_RETRY_DELAYS_S[resumed]
+            retries.append({"what": f"{label} job", "attempt": resumed + 1, "waited_s": delay, "at": _now_iso(),
+                            "error": err[:200]})
+            _sleep_stoppable(ctx, delay)
+            if ctx.stopping:
+                continue
+            with contextlib.suppress(RuntimeError):
+                mgr.resume()
+            resumed += 1
+            last_move = time.monotonic()
+            continue
         if state == "paused":
-            return last
-        if state not in running_states and not last.get("running"):
-            return last
+            return st
+        if state != "running" and not st.get("running"):
+            return st
         if ctx.stopping:
-            return last
+            with contextlib.suppress(Exception):
+                mgr.pause()
+            st = dict(mgr.status() or {})
+            st["paused_by"] = "the release run was cancelled; the job is paused at its cursor, not discarded"
+            return st
+        if not tail and not parked and now - last_move > ROW5_STALL_S:
+            with contextlib.suppress(Exception):
+                mgr.pause()
+            st = dict(mgr.status() or {})
+            st["stalled"] = {
+                "no_progress_for_s": round(now - last_move), "bound_s": ROW5_STALL_S, "at_count": done,
+                "basis": ("the article counter did not move for the bound while the job was neither "
+                          "parked for an import nor in its uncounted tail; the job was PAUSED at its "
+                          "cursor and can be resumed from the task manager"),
+            }
+            return st
+        if now >= next_interim:
+            with contextlib.suppress(Exception):
+                _write_report(run, interim=True)
+            _ledger_event("release-run", action="interim-report", run_id=run.run_id, phase="row5_quarantine")
+            next_interim = now + INTERIM_REPORT_INTERVAL_S
         time.sleep(_TICK_S)
 
 
 def _row5_quarantine(ctx: Any, run: _Run) -> dict[str, Any]:
-    """The four commands of ``RELEASE_0.3_GATE.md`` §7.1, in order, with the two
-    mode checks that section warns about read back from the run itself."""
+    """The four commands of ``RELEASE_0.3_GATE.md`` §7.1, in order, with the two mode
+    checks that section warns about read back from the run itself.
+
+    WHAT IT COSTS, SAID (RR-6, FD01): a quarantine pass over every article, then a
+    whole-corpus keyword re-index with the orphan prune -- hours on a small corpus, days
+    on a slow machine (50 to 61 hours on the 4 GB Qubes VMs, where it did not finish).
+    So it runs AFTER the soak, the collect and the bundle, with collection paused, and a
+    failure keeps everything it had measured."""
     from src.analytics.quarantine_job import get_quarantine_manager
     from src.analytics.reindex_job import get_reindex_manager
 
-    out: dict[str, Any] = {}
-    qm = get_quarantine_manager()
-    started = qm.start(write=True, include_prose_gate=False)  # RuntimeError -> refused
-    out["quarantine_started"] = started
-    st = _wait_manager(ctx, qm.status, running_states=("running",))
-    out["quarantine_final"] = st
-    # §7.1 step 2: a run under the wrong criteria reports a tally that looks legitimate.
-    out["mode_ok"] = (st.get("dry_run") is False) and (st.get("include_prose_gate") is False)
-    if ctx.stopping or st.get("state") == "paused":
-        return out
-    ctx.set_progress(detail="row 5: re-index (keywords, prune after)")
-    rm = get_reindex_manager()
-    out["reindex_started"] = rm.start(scope="keywords", prune_after=True, restart=False)
-    out["reindex_final"] = _wait_manager(ctx, rm.status, running_states=("running",))
-    if ctx.stopping:
-        return out
-    from src.analytics.figures import quarantine_composition
-    from src.database.session import session_scope
+    out: dict[str, Any] = {"retries": []}
+    out["collection_paused"] = _pause_collection()
+    try:
+        qm = get_quarantine_manager()
+        prior = dict(qm.status() or {})
+        if prior.get("state") == "paused" and prior.get("articles_done"):
+            # A restart inside row 5 left the quarantine PAUSED at its cursor (the manager
+            # restores an interrupted run that way). Continue it rather than scan again
+            # from the first article -- but only if it is THIS run's mode; another paused
+            # run is the operator's, and is refused by name rather than overwritten.
+            if prior.get("dry_run") is False and prior.get("include_prose_gate") is False \
+                    and not prior.get("index_page_tiers"):
+                out["quarantine_started"] = qm.resume()
+                out["quarantine_continued_from"] = prior.get("articles_done")
+            else:
+                raise RuntimeError(
+                    f"a different quarantine run is paused at {prior.get('articles_done')} articles "
+                    f"(dry_run={prior.get('dry_run')}, include_prose_gate={prior.get('include_prose_gate')}); "
+                    "resume or cancel it from the task manager first")
+        else:
+            out["quarantine_started"] = qm.start(write=True, include_prose_gate=False)  # RuntimeError -> refused
+        st = _wait_job(ctx, run, "quarantine", qm, out)
+        out["quarantine_final"] = st
+        # §7.1 step 2: a run under the wrong criteria reports a tally that looks legitimate.
+        out["mode_ok"] = (st.get("dry_run") is False) and (st.get("include_prose_gate") is False)
+        if ctx.stopping or st.get("stalled") or st.get("state") == "paused":
+            return out
+        if st.get("state") != "done":
+            out["reindex_skipped"] = (
+                f"the quarantine pass ended '{st.get('state')}' ({st.get('error') or 'no error text'}), so the "
+                "re-index was not started: a composition read over a half-applied quarantine would describe "
+                "a run that never happened")
+            raise _PhaseError(f"row 5: the quarantine pass ended '{st.get('state')}'", partial=out)
+        ctx.set_progress(detail="row 5: re-index (keywords, prune after)")
+        rm = get_reindex_manager()
+        try:
+            out["reindex_started"] = _retrying(
+                ctx, "re-index start", lambda: rm.start(scope="keywords", prune_after=True, restart=False),
+                out["retries"])
+        except RuntimeError as exc:
+            # A re-index already running, or a DIFFERENT one paused: the quarantine is done
+            # and its tally is kept; the re-index is the operator's to resolve.
+            raise _PhaseError(f"row 5: the re-index was refused: {exc}"[:400], partial=out, status="refused") from exc
+        rs = _wait_job(ctx, run, "reindex", rm, out)
+        out["reindex_final"] = rs
+        if ctx.stopping or rs.get("stalled") or rs.get("state") == "paused":
+            return out
+        if rs.get("state") != "done":
+            raise _PhaseError(f"row 5: the re-index ended '{rs.get('state')}'", partial=out)
+        from src.analytics.figures import quarantine_composition
+        from src.database.session import session_scope
 
-    with session_scope() as db:
-        out["composition"] = quarantine_composition(db, limit=40)
-    return out
+        def _composition() -> Any:
+            with session_scope() as db:
+                return quarantine_composition(db, limit=40)
+
+        out["composition"] = _retrying(ctx, "quarantine composition", _composition, out["retries"])
+        return out
+    except (_PhaseError, RuntimeError):
+        raise
+    except Exception as exc:  # noqa: BLE001 - keep what row 5 measured (RR-2)
+        raise _PhaseError(f"{type(exc).__name__}: {exc}"[:400], partial=out) from exc
+    finally:
+        out["collection_resumed"] = _resume_collection(out.get("collection_paused"))
 
 
 # --------------------------------------------------------------------------- #
@@ -715,9 +1077,14 @@ def _arm_soak(run: _Run) -> dict[str, Any]:
 
 
 def _heartbeat_sample(run: _Run) -> dict[str, Any]:
+    started_mono = run.soak.get("started_mono")
+    elapsed = (time.monotonic() - float(started_mono)) if started_mono is not None \
+        else (time.time() - float(run.soak.get("started_epoch") or time.time()))
     sample: dict[str, Any] = {
         "at": _now_iso(),
-        "elapsed_h": round((time.time() - run.soak["started_epoch"]) / 3600.0, 2),
+        # RR-4: monotonic, so a clock change can neither end the window early nor grow it.
+        "elapsed_h": round(elapsed / 3600.0, 2),
+        "stretch": run.soak.get("stretch"),
         "rss_mb": _rss_mb(),
         "process_uptime_s": _process_uptime_s(),
     }
@@ -890,6 +1257,11 @@ def _weights_digest_proposal() -> dict[str, Any]:
 
 
 def _collect(ctx: Any, run: _Run) -> dict[str, Any]:
+    """The end-of-window readings, EACH ON ITS OWN (RR-2). They used to share one database
+    session, so one pool timeout on the second read discarded the first and the phase
+    kept nothing -- the NUC lost rows B, D and E that way after 72 hours. Now every block
+    gets its own session and the pool-timeout retry, a block that still fails records its
+    own error beside the others, and the phase ends ``error`` WITH everything it read."""
     from src.catalog.qualification_integrity import qualification_integrity_report
     from src.database.session import session_scope
     from src.monitoring import expedition
@@ -898,20 +1270,38 @@ def _collect(ctx: Any, run: _Run) -> dict[str, Any]:
     from src.monitoring.soak_window import soak_window
 
     out: dict[str, Any] = {}
-    ctx.set_progress(detail="collect: soak window")
-    with session_scope() as db:
-        out["soak_window"] = soak_window(db, bar_hours=SOAK_BAR_HOURS)
-        ctx.set_progress(detail="collect: qualification integrity (live corpus)")
-        out["qualification_integrity_live"] = qualification_integrity_report(db)
-    out["collector"] = _check_collector()
-    ctx.set_progress(detail="collect: lane counters")
-    try:
+    retries: list[dict[str, Any]] = []
+    failed: list[str] = []
+
+    def block(key: str, fn: Any, *, core: bool = True) -> None:
+        try:
+            out[key] = _retrying(ctx, key, fn, retries)
+        except Exception as exc:  # noqa: BLE001 - recorded on the block, the others go on
+            out[key] = {"measured": False, "error": f"{type(exc).__name__}: {exc}"[:300]}
+            if core:
+                failed.append(key)
+
+    def _sw() -> Any:
+        with session_scope() as db:
+            return soak_window(db, bar_hours=SOAK_BAR_HOURS)
+
+    def _qi() -> Any:
+        with session_scope() as db:
+            return qualification_integrity_report(db)
+
+    def _lanes() -> Any:
         from src.api.wiki_lane import lane_counters_route
 
         hours = float(run.soak.get("elapsed_hours") or 0.0)
-        out["wiki_lane_counters"] = lane_counters_route(window_days=max(1, min(90, math.ceil(hours / 24.0) + 1)))
-    except Exception as exc:  # noqa: BLE001
-        out["wiki_lane_counters"] = {"measured": False, "error": f"{type(exc).__name__}: {exc}"[:300]}
+        return lane_counters_route(window_days=max(1, min(90, math.ceil(hours / 24.0) + 1)))
+
+    ctx.set_progress(detail="collect: soak window")
+    block("soak_window", _sw)
+    ctx.set_progress(detail="collect: qualification integrity (live corpus)")
+    block("qualification_integrity_live", _qi)
+    block("collector", _check_collector)
+    ctx.set_progress(detail="collect: lane counters")
+    block("wiki_lane_counters", _lanes, core=False)
     out["wiki_lane_service"] = _network_state().get("wiki_lane")
     with contextlib.suppress(Exception):
         out["expedition"] = expedition.digest()
@@ -924,14 +1314,83 @@ def _collect(ctx: Any, run: _Run) -> dict[str, Any]:
             out["ores_probe"] = _ores_probe()
         except Exception as exc:  # noqa: BLE001
             out["ores_probe"] = {"measured": False, "error": f"{type(exc).__name__}: {exc}"[:300]}
+    out["pool_retries"] = retries
+    if failed:
+        raise _PhaseError(f"{len(failed)} end-of-window reading(s) failed: {', '.join(failed)}", partial=out)
+    return out
+
+
+#: Marker files the bundle writes IN PLACE of a member it could not collect. Each is a
+#: few dozen bytes, so a "zero-byte member" check never sees the member was missing.
+_MARKER_SUFFIXES = {".skipped-deadline.txt": "skipped-deadline", ".error.txt": "error",
+                    ".declined.txt": "declined"}
+
+
+def _read_bundle_archive(path: str) -> dict[str, Any]:
+    """What row C's clause needs out of a finished archive, read from where the bundle
+    writer PUTS it (RR-1): the coverage block at ``manifest.json`` -> ``run`` ->
+    ``runtime_coverage`` (it was read from ``debug-bundle.json``, where it never is, so
+    row C could not read satisfied on any machine); and every member's own ``outcome``
+    from the manifest (RR-1b), because a member skipped at its deadline is ABSENT and
+    replaced by a 52-byte marker -- ``source-audit.json`` was, on four of six machines,
+    while the zero-byte list stayed empty."""
+    import zipfile
+
+    out: dict[str, Any] = {}
+    with zipfile.ZipFile(path) as z:
+        infos = z.infolist()
+        names = [i.filename for i in infos]
+        out["members_total"] = len(infos)
+        out["zero_byte_members"] = sorted(i.filename for i in infos if i.file_size == 0)
+        man: dict[str, Any] = {}
+        with contextlib.suppress(KeyError, ValueError):
+            man = json.loads(z.read("manifest.json").decode("utf-8")) or {}
+        coverage = (man.get("run") or {}).get("runtime_coverage")
+        coverage_from = "manifest.json run.runtime_coverage" if coverage is not None else None
+        if coverage is None:
+            with contextlib.suppress(KeyError, ValueError):
+                dbg = json.loads(z.read("debug-bundle.json").decode("utf-8"))
+                coverage = dbg.get("runtime_coverage")
+                coverage_from = "debug-bundle.json runtime_coverage" if coverage is not None else None
+        out["runtime_coverage"] = coverage
+        out["runtime_coverage_from"] = coverage_from
+        out["coverage_complete"] = bool((coverage or {}).get("complete")) if coverage else None
+        # Per-member outcomes, from the manifest; for an archive older than the outcome
+        # field, from the marker files it wrote instead of the members.
+        members = [m for m in (man.get("members") or []) if isinstance(m, dict) and m.get("file")]
+        by_outcome: dict[str, list[str]] = {}
+        if members:
+            for m in members:
+                by_outcome.setdefault(str(m.get("outcome") or ("ok" if m.get("ok") else "unknown")), []).append(str(m["file"]))
+            out["outcomes_from"] = "manifest.json members[].outcome"
+        else:
+            for n in names:
+                for suffix, outcome in _MARKER_SUFFIXES.items():
+                    if n.endswith(suffix):
+                        by_outcome.setdefault(outcome, []).append(n[: -len(suffix)])
+            out["outcomes_from"] = "marker files (the archive's manifest carries no member outcomes)"
+        out["members_by_outcome"] = {k: sorted(v) for k, v in sorted(by_outcome.items())}
+        out["skipped_deadline_members"] = sorted(by_outcome.get("skipped-deadline", []))
+        out["error_members"] = sorted(by_outcome.get("error", []))
+        out["partial_members"] = sorted(by_outcome.get("partial-deadline", []))
+        # WHICH PROFILE THIS ARCHIVE IS (ruling R28, 2026-09-22). The run ASKS for a
+        # full bundle, but when one is already building it RIDES that one -- and an
+        # operator may have started a LIGHT bundle a minute earlier. A declined member
+        # is ABSENT, not zero-byte. `None` means the archive predates the toggle, which
+        # is a FULL bundle by construction -- only an explicit `false` may block the row.
+        prof = man.get("profile") or {}
+        if prof:
+            out["profile"] = prof.get("name")
+            out["complete_profile"] = prof.get("complete_profile")
+            declined = [d for d in (prof.get("declined") or []) if isinstance(d, dict) and d.get("file")]
+            out["declined_members"] = sorted(str(d["file"]) for d in declined)
+            out["declined_by_machine"] = sorted(str(d["file"]) for d in declined if d.get("declined_by") == "machine")
     return out
 
 
 def _bundle(ctx: Any) -> dict[str, Any]:
     """Row C: the all-diagnostics job, awaited, and its archive READ -- the coverage
-    block and every zero-byte member, which are the two things the bar names."""
-    import zipfile
-
+    block, every member's outcome and the profile, which are what the bar names."""
     from src.api.diagnostics.bundle import _ALL_DIAG_JOB
 
     with contextlib.suppress(RuntimeError):  # already building -- ride the build in flight
@@ -952,31 +1411,7 @@ def _bundle(ctx: Any) -> dict[str, Any]:
         out["measured"] = False
         return out
     try:
-        with zipfile.ZipFile(path) as z:
-            infos = z.infolist()
-            out["members_total"] = len(infos)
-            out["zero_byte_members"] = sorted(i.filename for i in infos if i.file_size == 0)
-            coverage = None
-            with contextlib.suppress(KeyError, ValueError):
-                dbg = json.loads(z.read("debug-bundle.json").decode("utf-8"))
-                coverage = dbg.get("runtime_coverage")
-            out["runtime_coverage"] = coverage
-            out["coverage_complete"] = bool((coverage or {}).get("complete")) if coverage else None
-            # WHICH PROFILE THIS ARCHIVE IS (ruling R28, 2026-09-22). The run ASKS for a
-            # full bundle, but when one is already building it RIDES that one -- and an
-            # operator may have started a LIGHT bundle a minute earlier. A declined member
-            # is ABSENT, not zero-byte, so neither check above would notice, and row C
-            # would close on less evidence than its clause names. Read instead of assumed.
-            # `None` means the archive predates the toggle, which is a FULL bundle by
-            # construction -- only an explicit `false` may block the row.
-            with contextlib.suppress(KeyError, ValueError):
-                man = json.loads(z.read("manifest.json").decode("utf-8"))
-                prof = man.get("profile") or {}
-                out["profile"] = prof.get("name")
-                out["complete_profile"] = prof.get("complete_profile")
-                out["declined_members"] = sorted(
-                    d.get("file") for d in (prof.get("declined") or []) if d.get("file")
-                )
+        out.update(_read_bundle_archive(path))
         out["measured"] = True
     except Exception as exc:  # noqa: BLE001
         out["measured"] = False
@@ -1009,11 +1444,25 @@ def board_rows(run: _Run) -> list[dict[str, Any]]:  # noqa: C901 - one branch pe
     child = ((fresh.get("result") or {}).get("child") or {})
     p0 = _phase(run, "p0_validation").get("result") or {}
     soak = _phase(run, "soak")
-    collect = _phase(run, "collect").get("result") or {}
-    bundle = _phase(run, "bundle").get("result") or {}
+    collect_ph = _phase(run, "collect")
+    collect = collect_ph.get("result") or {}
+    bundle_ph = _phase(run, "bundle")
+    bundle = bundle_ph.get("result") or {}
     probes = _phase(run, "online_probes").get("result") or {}
     row5 = _phase(run, "row5_quarantine")
     million = p.profile == "million"
+
+    def _block_status(block: Any, *, ran: bool) -> str:
+        """RR-3: a row's status from the reading it holds. A reading that failed is an
+        ERROR, named as one -- it used to read 'skipped', which says nobody tried."""
+        if isinstance(block, dict) and block and block.get("measured") is not False and not block.get("error"):
+            return "measured"
+        if isinstance(block, dict) and (block.get("error") or block.get("measured") is False):
+            return "error"
+        if not ran:
+            return "skipped"
+        cs = collect_ph.get("status")
+        return "error" if cs == "error" else (cs if cs in PHASE_STATUSES and cs != "measured" else "skipped")
 
     # A -- the committed import + the stamps surviving it
     if child and fresh.get("status") == "measured":
@@ -1047,9 +1496,16 @@ def board_rows(run: _Run) -> list[dict[str, Any]]:  # noqa: C901 - one branch pe
         (s.get("process_uptime_s") is not None and float(s["process_uptime_s"]) < float(s.get("elapsed_h") or 0) * 3600.0 - HEARTBEAT_INTERVAL_S)
         for s in hb
     )
+    soak_status = soak.get("status") or "skipped"
+    if soak_status != "measured":
+        b_status = soak_status
+    else:
+        # The soak ran; the row's clause is only answered with the end-of-window reading
+        # beside it. `measured` with `reaches_bar: null` was the NUC's report (RR-3).
+        b_status = _block_status(collect.get("soak_window"), ran=bool(collect_ph))
     rows.append(_row(
         "B", "memory flat across >= 72 h of continuous collection; the process stayed up for the window it reports on",
-        "measured" if soak.get("status") == "measured" else (soak.get("status") or "skipped"),
+        b_status,
         {"soak_hours_elapsed": run.soak.get("elapsed_hours"), "soak_hours_requested": p.soak_hours,
          "reaches_bar": window.get("reaches_bar"), "window_hours": window.get("hours"),
          "p0_3_collector": {"verdict": coll.get("verdict"), "reason": coll.get("reason")},
@@ -1059,60 +1515,108 @@ def board_rows(run: _Run) -> list[dict[str, Any]]:  # noqa: C901 - one branch pe
          "memory_guard_last": (hb[-1].get("memory_guard") if hb else None),
          "stretches": len(run.soak_stretches),
          "longest_stretch_hours": max([float(s.get("elapsed_hours") or 0.0) for s in run.soak_stretches] or [0.0]),
-         "resumed": run.resumed},
-        "read P0.3 and the soak window together; a restart ends the stretch and is visible here -- "
-        "the bar is continuous, so only the longest stretch can reach it, never the sum",
+         "resumed": run.resumed,
+         "suspends_during_soak": list(run.suspends),
+         "clock_adjustments": list(run.clock_adjustments),
+         "elapsed_basis": "the monotonic clock, from the stretch's start (RR-4)",
+         "end_of_window_reading": (collect.get("soak_window") or {}).get("error") or ("taken" if sw else "not taken")},
+        "read P0.3 and the soak window together; a restart or a suspend ends the stretch and is visible here -- "
+        "the bar is continuous, so only the longest stretch can reach it, never the sum"
+        + ("; THE SOAK RAN but its end-of-window reading failed, so the clause has no answer from this run"
+           if b_status == "error" and soak_status == "measured" else ""),
     ))
 
     # C -- the bundle on the ~1M instance
     if bundle.get("measured"):
         zero = bundle.get("zero_byte_members") or []
         declined = bundle.get("declined_members") or []
+        by_machine = bundle.get("declined_by_machine") or []
+        skipped = bundle.get("skipped_deadline_members") or []
+        errored = bundle.get("error_members") or []
+        partial = bundle.get("partial_members") or []
         light = bundle.get("complete_profile") is False
-        ok = bool(bundle.get("coverage_complete")) and not zero and not light
+        # "Every member non-zero": a member skipped at its deadline or failed is ABSENT
+        # (a marker stands in its place), so it fails the clause exactly as an empty
+        # one would (RR-1b). A member cut short at its deadline is non-zero and is
+        # counted as such, and named so the reader decides what "partial" is worth.
+        ok = (bool(bundle.get("coverage_complete")) and not zero and not light
+              and not skipped and not errored)
+        notes = ["the bar names the ~1M instance"
+                 + ("" if million else "; on the release-scale profile this bundle is evidence at this scale only")]
+        if bundle.get("coverage_complete") is None:
+            notes.append("the archive carries no coverage block, so the clause's first half cannot be read")
+        if skipped:
+            notes.append(f"{len(skipped)} member(s) hit their deadline and are ABSENT: " + ", ".join(skipped))
+        if errored:
+            notes.append(f"{len(errored)} member(s) FAILED and are absent: " + ", ".join(errored))
+        if partial:
+            notes.append(f"{len(partial)} member(s) stopped at their deadline and are PARTIAL (non-zero): " + ", ".join(partial))
+        if light and by_machine and len(by_machine) == len(declined):
+            notes.append("THIS FULL BUNDLE IS INCOMPLETE -- " + ", ".join(by_machine)
+                         + " declined by the machine's memory (R27), so it cannot satisfy the clause's every member")
+        elif light:
+            notes.append("THIS BUNDLE IS LIGHT -- " + ", ".join(declined)
+                         + " declined at the operator's request, so it cannot satisfy the clause's every member (R28)")
         rows.append(_row(
             "C", "one bundle whose coverage block reads complete: true, on a build carrying the statement_deadline fix, every member non-zero",
             "measured",
             {"path": bundle.get("path"), "bytes": bundle.get("bytes"), "members_total": bundle.get("members_total"),
-             "coverage_complete": bundle.get("coverage_complete"), "zero_byte_members": zero,
+             "coverage_complete": bundle.get("coverage_complete"), "coverage_from": bundle.get("runtime_coverage_from"),
+             "zero_byte_members": zero, "members_by_outcome": bundle.get("members_by_outcome"),
+             "skipped_deadline_members": skipped, "error_members": errored, "partial_members": partial,
              "bundle_profile": bundle.get("profile"), "complete_profile": bundle.get("complete_profile"),
-             "declined_members": declined,
+             "declined_members": declined, "declined_by_machine": by_machine,
              "statement_deadline_fix_present": (_phase(run, "preflight").get("result") or {}).get("statement_deadline_fix_present"),
              "bar_satisfied_by_this_bundle": ok, "required_on_this_profile": million},
-            "the bar names the ~1M instance"
-            + ("" if million else "; on the release-scale profile this bundle is evidence at this scale only")
-            + ("; THIS BUNDLE IS LIGHT -- " + ", ".join(declined) + " declined at the operator's request, so it cannot satisfy the clause's every member (R28)" if light else ""),
+            "; ".join(notes),
         ))
     else:
-        rows.append(_row("C", "one bundle from the ~1M instance", bundle.get("job_state") and "error" or "skipped",
-                         bundle, "the bundle did not finish here" + (" -- REQUIRED on the million profile" if million else "")))
+        c_status = ("error" if (bundle_ph.get("status") == "error" or bundle.get("job_state") == "error"
+                                or bundle.get("read_error")) else (bundle_ph.get("status") or "skipped"))
+        if c_status == "measured":  # the phase ran and the archive was not there to read
+            c_status = "error"
+        rows.append(_row("C", "one bundle from the ~1M instance", c_status,
+                         {**bundle, "phase_detail": bundle_ph.get("detail")},
+                         "the bundle did not finish here" + (" -- REQUIRED on the million profile" if million else "")))
 
     # D / E -- the two bars, read from the run
+    d_status = _block_status(collect.get("soak_window"), ran=bool(collect_ph)) if soak_status == "measured" \
+        else ("skipped" if soak_status in ("skipped", "measured") else soak_status)
     rows.append(_row(
         "D", "one soak-window report from a run of >= 72 h, read alongside the P0.3 report",
-        "measured" if sw else "skipped",
-        {"window": window, "unmeasured_blocks": sw.get("unmeasured"), "blocks": sorted(k for k in sw if k not in ("window", "unmeasured"))},
+        d_status,
+        {"window": window, "unmeasured_blocks": sw.get("unmeasured"), "error": sw.get("error"),
+         "blocks": sorted(k for k in sw if k not in ("window", "unmeasured", "error", "measured"))},
         "the same block the bundle carries as soak-window.json",
     ))
     live = collect.get("qualification_integrity_live") or {}
+    live_ok = bool(live) and live.get("measured") is not False and not live.get("error")
+    e_status = "measured" if (child.get("integrity") or live_ok) else _block_status(live, ran=bool(collect_ph))
     rows.append(_row(
         "E", "qualification-integrity read after the committed import; the clause is answered by inversions_total with the sources named",
-        "measured" if (child.get("integrity") or live) else "skipped",
+        e_status,
         {"restored_corpus": (child.get("integrity") or {}).get("verdict"),
          "live_corpus_after_drain": {"verdict": live.get("verdict"), "laundered_total": live.get("laundered_total"),
-                                     "demoted_total": live.get("demoted_total"), "checked": live.get("checked")}},
+                                     "demoted_total": live.get("demoted_total"), "checked": live.get("checked"),
+                                     "error": live.get("error")}},
         "two readings on purpose: the restored install answers row A's clause, the live corpus answers the drain's",
     ))
 
     # G -- 0.3 row 5 (opt-in)
     if p.run_row5_quarantine:
         r5 = row5.get("result") or {}
+        rf = r5.get("reindex_final") or {}
         rows.append(_row(
             "G", "0.3 row 5: the Tier-A quarantine pass (8 articles expected under nav-soup-v2 on the release-scale instance), the re-index, the composition",
             row5.get("status") or "skipped",
             {"mode_ok": r5.get("mode_ok"), "quarantine_final": r5.get("quarantine_final"),
-             "reindex_final": (r5.get("reindex_final") or {}).get("state"), "composition": r5.get("composition")},
-            "run because the operator ticked it; ruling A1 had deferred it. The v0.3.0 tag and the version flip are still not this run's",
+             "reindex_final": rf.get("state"), "reindex_stalled": rf.get("stalled"),
+             "reindex_skipped": r5.get("reindex_skipped"), "composition": r5.get("composition"),
+             "wall_s": row5.get("wall_s"), "retries": r5.get("retries"),
+             "collection_paused": r5.get("collection_paused"), "collection_resumed": r5.get("collection_resumed")},
+            "run because the operator ticked it; ruling A1 had deferred it. It runs AFTER the soak, the collect and "
+            "the bundle, with collection paused (FD01): a whole-corpus re-index takes hours to days. The v0.3.0 tag "
+            "and the version flip are still not this run's",
         ))
     else:
         rows.append(_row("G", "0.3 row 5 (deferred by ruling A1)", "skipped", {}, "not ticked -- nothing was quarantined"))
@@ -1146,9 +1650,11 @@ def board_rows(run: _Run) -> list[dict[str, Any]]:  # noqa: C901 - one branch pe
 
     # P -- the lane's run
     lc = collect.get("wiki_lane_counters") or {}
+    p_status = "measured" if lc.get("measured") else (
+        "error" if (lc.get("error") or collect_ph.get("status") == "error" and not lc) else "not-measurable-here")
     rows.append(_row(
         "P", "the lane ran >= 72 h inside its budget with its counters read from one artifact (rows/day, bytes/day, gap history)",
-        "measured" if lc.get("measured") else "not-measurable-here",
+        p_status,
         {"counters": lc, "service": collect.get("wiki_lane_service"), "ores_probe": collect.get("ores_probe"),
          "soak_hours_elapsed": run.soak.get("elapsed_hours")},
         "the counters are computed from the lane's rows, so a restart does not lose them; Q717's verification is the ores_probe block"
@@ -1208,10 +1714,12 @@ def _write_report(run: _Run, *, interim: bool) -> Path:
         "preflight": _phase(run, "preflight").get("result"),
         "phases": [{k: v for k, v in ph.items() if k != "result"} for ph in run.phases],
         "phase_results": {ph["name"]: ph.get("result") for ph in run.phases if "result" in ph},
-        "soak": dict(run.soak),
-        "soak_stretches": list(run.soak_stretches),
+        "soak": {k: v for k, v in run.soak.items() if k != "started_mono"},
+        "soak_stretches": [{k: v for k, v in st.items() if k != "started_mono"} for st in run.soak_stretches],
         "sessions": list(run.sessions),
         "resumed": run.resumed,
+        "clock_adjustments": list(run.clock_adjustments),
+        "suspends": list(run.suspends),
         "heartbeats": list(run.heartbeats),
         "heartbeats_dropped": run.heartbeats_dropped,
         "artifacts": dict(run.artifacts),
@@ -1221,7 +1729,10 @@ def _write_report(run: _Run, *, interim: bool) -> Path:
             "Composes the P0 kit, a subprocess fresh-install restore, the ruled online seam, "
             "the unattended-run kit, the soak window, the qualification-integrity check, the "
             "lane counters and the all-diagnostics job. Measurements only; each board row "
-            "carries its own status and evidence; nothing here decides whether a row closes."
+            "carries its own status and evidence; nothing here decides whether a row closes. "
+            "Every duration (a phase's wall_s, the soak's elapsed hours) is on the monotonic "
+            "clock; the wall stamps beside them are where the clock read, and "
+            "clock_adjustments says where the two disagreed."
         ),
     }
     out_dir = _run_dir()
@@ -1241,21 +1752,66 @@ def _write_report(run: _Run, *, interim: bool) -> Path:
     return final
 
 
+def _live_run(state: dict[str, Any]) -> dict[str, Any] | None:
+    """The run in the state file, as a reader of the bundle needs it: where it is, since
+    when, what it has measured so far. Never the passphrase (the state has none)."""
+    if not state or not state.get("run_id"):
+        return None
+    beats = [h for h in (state.get("heartbeats") or []) if isinstance(h, dict)]
+    interrupted = state.get("outcome") is None and state.get("pid") != os.getpid()
+    return {
+        "run_id": state.get("run_id"),
+        "profile": state.get("profile"),
+        "started_at": state.get("started_at"),
+        "outcome": state.get("outcome"),
+        "status": ("finished" if state.get("outcome") is not None
+                   else ("interrupted (the process that ran it is gone)" if interrupted else "in progress")),
+        "phase": state.get("phase"),
+        "phase_started_at": state.get("phase_started_at"),
+        "updated_at": state.get("updated_at"),
+        "phases": [{k: ph.get(k) for k in ("name", "status", "started_at", "ended_at", "wall_s", "detail")}
+                   for ph in (state.get("phases") or []) if isinstance(ph, dict)],
+        "soak": {k: v for k, v in (state.get("soak") or {}).items() if k != "started_mono"},
+        "soak_stretches": len(state.get("soak_stretches") or []),
+        "heartbeats": len(beats),
+        "last_heartbeat": beats[-1] if beats else None,
+        "resumed": state.get("resumed"),
+        "clock_adjustments": state.get("clock_adjustments") or [],
+        "warnings": state.get("warnings") or [],
+        "report_path": state.get("report_path"),
+    }
+
+
 def last_release_run_report() -> dict:
-    """The newest saved report (final over interim), for the bundle member and the
-    ``/release-run/last`` route -- read-only, never runs anything."""
+    """The newest saved report (final over interim) for the bundle member and the
+    ``/release-run/last`` route -- read-only, never runs anything -- WITH the live run
+    beside it whenever the saved report does not already describe it (RR-8). Three Qubes
+    bundles said "no 0.4 release run has been made yet" 61 hours into a run, because
+    only a finished soak ever saved a report."""
+    live = _live_run(read_state())
     try:
         files = sorted(_run_dir().glob("oo-release-run-*.json"))
         if not files:
-            return {"schema": RELEASE_RUN_SCHEMA, "available": False,
-                    "note": "no 0.4 release run has been made yet -- Settings -> Advanced -> Diagnostics"}
+            out: dict[str, Any] = {"schema": RELEASE_RUN_SCHEMA, "available": False}
+            if live:
+                out["live_run"] = live
+                out["note"] = (f"run {live['run_id']} is {live['status']}, at phase {live.get('phase')}, and "
+                               "has not saved a report yet; live_run is its state file")
+            else:
+                out["note"] = "no 0.4 release run has been made yet -- Settings -> Advanced -> Diagnostics"
+            return out
         newest = max(files, key=lambda p: p.stat().st_mtime)
         report = json.loads(newest.read_text(encoding="utf-8"))
         report["available"] = True
         report["source_file"] = newest.name
+        if live and (str(live.get("run_id")) != str(report.get("run_id")) or report.get("interim")):
+            report["live_run"] = live
         return report
     except Exception as exc:  # noqa: BLE001
-        return {"schema": RELEASE_RUN_SCHEMA, "available": False, "error": str(exc)[:300]}
+        out = {"schema": RELEASE_RUN_SCHEMA, "available": False, "error": str(exc)[:300]}
+        if live:
+            out["live_run"] = live
+        return out
 
 
 def render_release_run_text(report: dict) -> str:
@@ -1277,7 +1833,14 @@ def render_release_run_text(report: dict) -> str:
             lines.append(f"      {k}: {s[:240]}{'…' if len(s) > 240 else ''}")
     lines += ["", "PHASES"]
     for ph in report.get("phases") or []:
-        lines.append(f"  {ph.get('name')}: {ph.get('status')} · {ph.get('started_at')} -> {ph.get('ended_at')} · {ph.get('detail', '')}")
+        took = f" · took {ph.get('wall_s')} s" if ph.get("wall_s") is not None else ""
+        lines.append(f"  {ph.get('name')}: {ph.get('status')} · {ph.get('started_at')} -> {ph.get('ended_at')}{took} · {ph.get('detail', '')}")
+    if report.get("clock_adjustments"):
+        lines += ["", "CLOCK ADJUSTMENTS (durations above are monotonic; the stamps are where the clock read)"]
+        lines += [f"  - {json.dumps(c, default=str, ensure_ascii=False)[:240]}" for c in report["clock_adjustments"]]
+    if report.get("suspends"):
+        lines += ["", "SUSPENDS DURING THE SOAK (each ended a stretch)"]
+        lines += [f"  - {c.get('at')}: {c.get('seconds')} s ({c.get('clocks')})" for c in report["suspends"]]
     soak = report.get("soak") or {}
     if soak:
         lines += ["", f"SOAK: {soak.get('elapsed_hours')} of {soak.get('hours_requested')} h · ended by {soak.get('ended_by')} · "
@@ -1313,14 +1876,138 @@ def _run_phase(run: _Run, ctx: Any, name: str, fn: Any, *, refusals: tuple[type[
     ctx.set_progress(detail=name)
     try:
         result = fn()
+    except _PhaseError as exc:
+        # RR-2: what the phase measured before it failed stays in its record.
+        _LOG.warning("release run phase %s failed part of the way: %s", name, exc)
+        ph = run.end(exc.status if exc.status in PHASE_STATUSES else "error", str(exc)[:400], result=exc.partial)
     except refusals as exc:
-        return run.end("refused", f"{type(exc).__name__}: {exc}"[:400])
+        ph = run.end("refused", f"{type(exc).__name__}: {exc}"[:400])
     except Exception as exc:  # noqa: BLE001 - recorded, never fatal to the report
         _LOG.warning("release run phase %s failed", name, exc_info=True)
-        return run.end("error", f"{type(exc).__name__}: {exc}"[:400])
-    if ctx.stopping:
-        return run.end("cancelled", "cancelled during this phase", result=result)
-    return run.end("measured", "ok", result=result)
+        ph = run.end("error", f"{type(exc).__name__}: {exc}"[:400])
+    else:
+        if ctx.stopping:
+            ph = run.end("cancelled", "cancelled during this phase", result=result)
+        else:
+            ph = run.end("measured", "ok", result=result)
+    _interim(run)
+    return ph
+
+
+def _interim(run: _Run) -> None:
+    """An interim report after every phase (RR-8): a run is readable from its first
+    finished phase, not only from inside a completed soak."""
+    with contextlib.suppress(Exception):
+        _write_report(run, interim=True)
+
+
+class _Clocks:
+    """The soak's two questions between ticks, the session ledger's way (RR-4): was the
+    machine SUSPENDED (the boot-time clock ran ahead of the monotonic one), and was the
+    wall clock CHANGED (it moved against the boot-time clock). Without a boot-time clock
+    a forward jump reads as a suspend -- the conservative reading, since the bar may
+    never be claimed across a gap nobody can vouch for -- and a backward one as a change."""
+
+    def __init__(self) -> None:
+        from src.monitoring.session_history import boottime
+
+        self._bt = boottime
+        self.mono, self.bt, self.wall = time.monotonic(), boottime(), time.time()
+
+    def advance(self) -> tuple[float, float, str]:
+        m, b, w = time.monotonic(), self._bt(), time.time()
+        dm = m - self.mono
+        if b is not None and self.bt is not None:
+            db = b - self.bt
+            out = (db - dm, (w - self.wall) - db, "boot-time")
+        else:
+            gap = (w - self.wall) - dm
+            out = (gap, 0.0, "monotonic-only") if gap > 0 else (0.0, gap, "monotonic-only")
+        self.mono, self.bt, self.wall = m, b, w
+        return out
+
+
+def _open_stretch(run: _Run, hours: float) -> float:
+    started = time.monotonic()
+    run.soak = {"started_at": _now_iso(), "started_epoch": time.time(), "started_mono": started,
+                "hours_requested": hours, "elapsed_hours": 0.0, "ended_by": None,
+                "stretch": len(run.soak_stretches) + 1, "pid": os.getpid()}
+    run.heartbeat(_heartbeat_sample(run))
+    return started
+
+
+def _close_stretch(run: _Run, started: float, ended_by: str) -> None:
+    run.soak["elapsed_hours"] = round((time.monotonic() - started) / 3600.0, 2)
+    run.soak["ended_by"] = ended_by
+    run.soak["ended_at"] = _now_iso()
+    run.soak_stretches.append({k: v for k, v in run.soak.items() if k != "started_mono"})
+
+
+def _soak(ctx: Any, run: _Run) -> None:
+    """The window, on the MONOTONIC clock: elapsed time, the deadline, the heartbeat and
+    interim cadences (RR-4). A wall-clock change is recorded and changes nothing. A
+    SUSPEND ends the stretch -- the bar is continuous collection (R20), and a machine
+    that slept was not collecting -- and a new stretch starts with the full window, the
+    same rule a restart has always followed."""
+    params = run.params
+    run.begin("soak")
+    clocks = _Clocks()
+    started = _open_stretch(run, params.soak_hours)
+    next_beat = started + HEARTBEAT_INTERVAL_S
+    next_interim = started + INTERIM_REPORT_INTERVAL_S
+    deadline = started + params.soak_hours * 3600.0
+    ended_by = "window-complete"
+    while True:
+        now = time.monotonic()
+        suspended, stepped, basis = clocks.advance()
+        if abs(stepped) > CLOCK_EVENT_MIN_S:
+            run.clock_adjustments.append({
+                "at": _now_iso(), "phase": "soak", "clock_moved_s": round(stepped), "clocks": basis,
+                "basis": "the wall clock was changed during the soak; the window runs on the monotonic clock and did not move"})
+            run.persist()
+        if suspended > CLOCK_EVENT_MIN_S:
+            run.suspends.append({"at": _now_iso(), "seconds": round(suspended), "clocks": basis,
+                                 "stretch": run.soak.get("stretch"),
+                                 "basis": ("the machine was suspended: the boot-time clock ran ahead of the monotonic clock"
+                                           if basis == "boot-time" else
+                                           "the wall clock ran ahead of the monotonic clock -- a suspend, or a forward "
+                                           "clock change this platform cannot tell from one")})
+            _close_stretch(run, started, "suspend")
+            run.warnings.append(
+                f"the machine was suspended for {round(suspended)} s during stretch {run.soak.get('stretch')}; "
+                "the bar is continuous, so a new stretch started with the full window")
+            started = _open_stretch(run, params.soak_hours)
+            next_beat = started + HEARTBEAT_INTERVAL_S
+            deadline = started + params.soak_hours * 3600.0
+            now = started
+        run.soak["elapsed_hours"] = round((now - started) / 3600.0, 2)
+        if ctx.stopping:
+            ended_by = "cancelled"
+            break
+        if _COLLECT_NOW.is_set():
+            ended_by = "collect-now"
+            break
+        if now >= deadline:
+            break
+        if now >= next_beat:
+            run.heartbeat(_heartbeat_sample(run))
+            next_beat += HEARTBEAT_INTERVAL_S
+        if now >= next_interim:
+            with contextlib.suppress(Exception):
+                _write_report(run, interim=True)
+            _ledger_event("release-run", action="interim-report", run_id=run.run_id)
+            next_interim += INTERIM_REPORT_INTERVAL_S
+        ctx.set_progress(
+            detail=f"soak: {run.soak['elapsed_hours']} / {params.soak_hours} h · rss {_rss_mb()} MB"
+        )
+        time.sleep(_TICK_S)
+    _close_stretch(run, started, ended_by)
+    run.heartbeat(_heartbeat_sample(run))
+    run.end("measured" if ended_by != "cancelled" else "cancelled",
+            f"{run.soak['elapsed_hours']} h of {params.soak_hours} h, ended by {ended_by}"
+            + (f" (stretch {run.soak.get('stretch')} of this run)" if len(run.soak_stretches) > 1 else ""),
+            ended_by=ended_by)
+    _interim(run)
 
 
 def run_release_run(ctx: Any, **kwargs: Any) -> dict:  # noqa: C901 - the sequence IS the module
@@ -1362,17 +2049,7 @@ def run_release_run(ctx: Any, **kwargs: Any) -> dict:  # noqa: C901 - the sequen
         path = _write_report(run, interim=False)
         return {"path": str(path), "filename": path.name, "report": json.loads(path.read_text(encoding="utf-8"))}
 
-    # 1 -- 0.3 row 5 (opt-in only)
-    if _kept("row5_quarantine"):
-        pass
-    elif params.run_row5_quarantine and not ctx.stopping:
-        _run_phase(run, ctx, "row5_quarantine", lambda: _row5_quarantine(ctx, run), refusals=(RuntimeError,))
-    else:
-        run.begin("row5_quarantine")
-        run.end("skipped", "not requested (deferred by ruling A1; the operator did not tick it)")
-    step("row 5")
-
-    # 2 -- the P0 trio into the dated folder (kept on a resume: the folder exists)
+    # 1 -- the P0 trio into the dated folder (kept on a resume: the folder exists)
     if not ctx.stopping and not _kept("p0_validation"):
         from src.backup.export_folder import ExportFolderError
 
@@ -1380,7 +2057,7 @@ def run_release_run(ctx: Any, **kwargs: Any) -> dict:  # noqa: C901 - the sequen
                    refusals=(ExportFolderError, ValueError))
     step("P0 trio")
 
-    # 3 -- the committed restore into a fresh install (needs the backup to have passed)
+    # 2 -- the committed restore into a fresh install (needs the backup to have passed)
     p0res = _phase(run, "p0_validation").get("result") or {}
     backup_ok = ((p0res.get("checks") or {}).get("p0_1_verify") or {}).get("verdict") == "pass"
     fits = (_phase(run, "preflight").get("result") or {}).get("fresh_install_fits")
@@ -1406,9 +2083,11 @@ def run_release_run(ctx: Any, **kwargs: Any) -> dict:  # noqa: C901 - the sequen
             run.end("refused", f"no such path: {legacy}")
     step("fresh install")
 
-    # 4 -- arm the soak, then the online probes while the collector warms up
+    # 3 -- arm the soak, then the online probes while the collector warms up. A resume
+    # that kept a completed soak keeps its arming too: nothing is left to arm.
     if not ctx.stopping:
-        _run_phase(run, ctx, "arm_soak", lambda: _arm_soak(run))
+        if not _kept("arm_soak"):
+            _run_phase(run, ctx, "arm_soak", lambda: _arm_soak(run))
         if _kept("online_probes"):
             pass
         elif params.online_probes:
@@ -1429,59 +2108,39 @@ def run_release_run(ctx: Any, **kwargs: Any) -> dict:  # noqa: C901 - the sequen
             run.end("skipped", "online probes were not requested")
     step("armed")
 
-    # 5 -- the soak itself
-    if not ctx.stopping and _phase(run, "arm_soak").get("status") == "measured":
-        run.begin("soak")
-        started = time.time()
-        run.soak = {"started_at": _now_iso(), "started_epoch": started, "hours_requested": params.soak_hours,
-                    "elapsed_hours": 0.0, "ended_by": None, "stretch": len(run.soak_stretches) + 1,
-                    "pid": os.getpid()}
-        run.heartbeat(_heartbeat_sample(run))
-        next_beat = started + HEARTBEAT_INTERVAL_S
-        next_interim = started + INTERIM_REPORT_INTERVAL_S
-        deadline = started + params.soak_hours * 3600.0
-        ended_by = "window-complete"
-        while True:
-            now = time.time()
-            run.soak["elapsed_hours"] = round((now - started) / 3600.0, 2)
-            if ctx.stopping:
-                ended_by = "cancelled"
-                break
-            if _COLLECT_NOW.is_set():
-                ended_by = "collect-now"
-                break
-            if now >= deadline:
-                break
-            if now >= next_beat:
-                run.heartbeat(_heartbeat_sample(run))
-                next_beat += HEARTBEAT_INTERVAL_S
-            if now >= next_interim:
-                with contextlib.suppress(Exception):
-                    _write_report(run, interim=True)
-                _ledger_event("release-run", action="interim-report", run_id=run.run_id)
-                next_interim += INTERIM_REPORT_INTERVAL_S
-            ctx.set_progress(
-                detail=f"soak: {run.soak['elapsed_hours']} / {params.soak_hours} h · rss {_rss_mb()} MB"
-            )
-            time.sleep(_TICK_S)
-        run.soak["elapsed_hours"] = round((time.time() - started) / 3600.0, 2)
-        run.soak["ended_by"] = ended_by
-        run.soak["ended_at"] = _now_iso()
-        run.soak_stretches.append(dict(run.soak))
-        run.heartbeat(_heartbeat_sample(run))
-        run.end("measured" if ended_by != "cancelled" else "cancelled",
-                f"{run.soak['elapsed_hours']} h of {params.soak_hours} h, ended by {ended_by}"
-                + (f" (stretch {run.soak.get('stretch')} of this run)" if run.resumed else ""))
+    # 4 -- the soak itself, on the monotonic clock (RR-4)
+    if _kept("soak"):
+        pass
+    elif not ctx.stopping and _phase(run, "arm_soak").get("status") == "measured":
+        _soak(ctx, run)
     else:
         run.begin("soak")
         run.end("skipped", "the soak was not armed")
     step("soak")
 
-    # 6 -- collect (also after a cancel: whatever the window gave is worth reading)
-    _run_phase(run, ctx, "collect", lambda: _collect(ctx, run))
+    # 5 -- collect (also after a cancel: whatever the window gave is worth reading)
+    if not _kept("collect"):
+        _run_phase(run, ctx, "collect", lambda: _collect(ctx, run))
     step("collect")
-    _run_phase(run, ctx, "bundle", lambda: _bundle(ctx))
+    if not _kept("bundle"):
+        _run_phase(run, ctx, "bundle", lambda: _bundle(ctx))
     step("bundle")
+
+    # 6 -- 0.3 row 5 (opt-in only), LAST (FD01): the soak's evidence is written first, and
+    # a whole-corpus re-index that takes days runs on its own time, collection paused.
+    if _kept("row5_quarantine"):
+        pass
+    elif params.run_row5_quarantine and not ctx.stopping:
+        _interim(run)
+        _ledger_event("release-run", action="row5-start", run_id=run.run_id)
+        _run_phase(run, ctx, "row5_quarantine", lambda: _row5_quarantine(ctx, run), refusals=(RuntimeError,))
+    elif params.run_row5_quarantine:
+        run.begin("row5_quarantine")
+        run.end("skipped", "the run was cancelled before row 5 started")
+    else:
+        run.begin("row5_quarantine")
+        run.end("skipped", "not requested (deferred by ruling A1; the operator did not tick it)")
+    step("row 5")
 
     run.outcome = "cancelled" if ctx.stopping else "done"
     path = _write_report(run, interim=False)

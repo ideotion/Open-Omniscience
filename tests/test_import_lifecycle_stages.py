@@ -239,16 +239,33 @@ def test_the_corpus_path_refuses_a_selective_restore_it_cannot_honour(tmp_path, 
     assert "legacy" in str(exc.value), "the refusal must name the path that CAN honour it"
 
 
+def _stop_and_join(mgr) -> None:
+    """stop() signals the worker and returns; the worker then calls
+    start_reindex_drain() on its way out. Join it, so that call lands in the
+    test that started it and never in a later test that patches the same name
+    (the boot-resume opt-out test below failed on CI exactly that way)."""
+    mgr.stop()
+    if mgr._thread is not None:
+        mgr._thread.join(timeout=10)
+        assert not mgr._thread.is_alive(), "the import worker outlived its test"
+
+
+def _no_real_drain(monkeypatch) -> None:
+    import src.backup.volume_job as vj
+
+    monkeypatch.setattr(vj, "start_reindex_drain", lambda: (False, "stubbed in test"))
+
+
 def test_the_queue_item_declares_both_moved_options(tmp_path, monkeypatch):
     monkeypatch.setattr("src.paths.data_dir", lambda: tmp_path)
+    _no_real_drain(monkeypatch)
     mgr = ImportQueueManager(state_path=tmp_path / "q.json")
-    mgr._thread = None
     st = mgr.start(
         [{"kind": "legacy", "path": str(tmp_path / "x.oobak"),
           "allow_unverified": True, "include_newsletters": False}],
         passphrase="pw",
     )
-    mgr.stop()
+    _stop_and_join(mgr)
     it = st["items"][0]
     assert it["allow_unverified"] is True
     assert it["include_newsletters"] is False
@@ -256,9 +273,10 @@ def test_the_queue_item_declares_both_moved_options(tmp_path, monkeypatch):
 
 def test_the_defaults_reproduce_todays_behaviour_exactly(tmp_path, monkeypatch):
     monkeypatch.setattr("src.paths.data_dir", lambda: tmp_path)
+    _no_real_drain(monkeypatch)
     mgr = ImportQueueManager(state_path=tmp_path / "q.json")
     st = mgr.start([{"kind": "legacy", "path": str(tmp_path / "x.oobak")}], passphrase="pw")
-    mgr.stop()
+    _stop_and_join(mgr)
     it = st["items"][0]
     assert it["allow_unverified"] is False
     assert it["include_newsletters"] is True

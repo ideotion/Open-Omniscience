@@ -4385,7 +4385,7 @@
   "Start the unattended run (goes online: continuous collection and the qualification drain)": "Start the unattended run (goes online: continuous collection and the qualification drain)",
   "Stop at the next safe point; whatever the window gave is still collected and reported.": "Stop at the next safe point; whatever the window gave is still collected and reported.",
   "The same run under the 'million' profile: the all-diagnostics bundle at the end is REQUIRED (row C's bar: complete coverage, every member non-zero) and the report says its numbers speak to the ~1M rows.": "The same run under the 'million' profile: the all-diagnostics bundle at the end is REQUIRED (row C's bar: complete coverage, every member non-zero) and the report says its numbers speak to the ~1M rows.",
-  "also run 0.3 row 5 — the Tier-A quarantine pass (deferred by ruling A1; tick only to run it now)": "also run 0.3 row 5 — the Tier-A quarantine pass (deferred by ruling A1; tick only to run it now)",
+  "also run 0.3 row 5, LAST — the Tier-A quarantine pass, then a whole-corpus keyword re-index with collection paused: hours on a small corpus, days on a slow machine (deferred by ruling A1; tick only to run it now)": "also run 0.3 row 5, LAST — the Tier-A quarantine pass, then a whole-corpus keyword re-index with collection paused: hours on a small corpus, days on a slow machine (deferred by ruling A1; tick only to run it now)",
   "destination dir (a separate folder / drive, ~3× your corpus)": "destination dir (a separate folder / drive, ~3× your corpus)",
   "include newsletters": "include newsletters",
   "online probes (law hosts, scoring endpoint, weights digests)": "online probes (law hosts, scoring endpoint, weights digests)",
@@ -4439,7 +4439,6 @@
   "Session {id}: {from} → {to} · {kind} · up {dur}": "Session {id}: {from} → {to} · {kind} · up {dur}",
   "Stretch: {from} → {to} · {dur} · ended by {by}": "Stretch: {from} → {to} · {dur} · ended by {by}",
   "Suspend (clock jump): {from} → {to}. The wall clock ran ahead of the monotonic clock; a sleep, a hibernation and a clock change leave the same record.": "Suspend (clock jump): {from} → {to}. The wall clock ran ahead of the monotonic clock; a sleep, a hibernation and a clock change leave the same record.",
-  "not yet — {h} h more on the current stretch (a restart or a suspend starts it over)": "not yet — {h} h more on the current stretch (a restart or a suspend starts it over)",
   "reached at {when}": "reached at {when}",
   "{h} h continuous bar": "{h} h continuous bar",
   "{h} h if this stretch holds": "{h} h if this stretch holds",
@@ -4448,5 +4447,12 @@
   "{n} unclean end(s)": "{n} unclean end(s)",
   "{n} since {when}": "{n} since {when}",
   "Light bundle": "Light bundle",
-  "FULL collects every member and is the default. LIGHT skips four members that measure the machine or re-read the whole corpus instead of reporting your data. Each skipped member still appears in the archive as a file naming why, so a light bundle can never be mistaken for a full one. Applies to this run only and is never remembered.": "FULL collects every member and is the default. LIGHT skips four members that measure the machine or re-read the whole corpus instead of reporting your data. Each skipped member still appears in the archive as a file naming why, so a light bundle can never be mistaken for a full one. Applies to this run only and is never remembered."
+  "FULL collects every member and is the default. LIGHT skips four members that measure the machine or re-read the whole corpus instead of reporting your data. Each skipped member still appears in the archive as a file naming why, so a light bundle can never be mistaken for a full one. Applies to this run only and is never remembered.": "FULL collects every member and is the default. LIGHT skips four members that measure the machine or re-read the whole corpus instead of reporting your data. Each skipped member still appears in the archive as a file naming why, so a light bundle can never be mistaken for a full one. Applies to this run only and is never remembered.",
+  "unknown — nothing in this window recorded when collection ran": "unknown — nothing in this window recorded when collection ran",
+  "not yet — {h} h more on the current collection stretch (stopping collection, a restart or a suspend starts it over)": "not yet — {h} h more on the current collection stretch (stopping collection, a restart or a suspend starts it over)",
+  "not yet — collection is not running": "not yet — collection is not running",
+  "Longest collection stretch": "Longest collection stretch",
+  "Process up without a break": "Process up without a break",
+  "{h} h reached at {when} — the process's half of the clause, not the bar": "{h} h reached at {when} — the process's half of the clause, not the bar",
+  "not yet — {h} h more on the current stretch": "not yet — {h} h more on the current stretch"
 }

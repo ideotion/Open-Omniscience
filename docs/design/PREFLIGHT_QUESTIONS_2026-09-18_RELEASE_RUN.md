@@ -32,6 +32,13 @@ version at `0.3.0` until row 5 runs. The button carries row 5 as an opt-in check
 button may not decide an operator step. Ticked, it runs `RELEASE_0.3_GATE.md` §7.1's four commands in order
 (`write=True`, prose gate off) and reads the mode back before trusting the tally — and it CHANGES that corpus's
 quarantine stamps.
+**What it costs, and where it runs (amended 2026-09-24, ruling `FD01`, from the six-machine field round in
+`docs/audit/16_FIELD_DIAGNOSTICS_SIX_MACHINES_2026-09-24.md`):** row 5 is a quarantine pass over every article
+FOLLOWED BY A WHOLE-CORPUS KEYWORD RE-INDEX with the orphan prune — seven hours on a 289k-article laptop, and 50 to
+61 hours on three 4 GB VMs, where it had not finished and their soaks never started. It now runs LAST, after the
+soak, the collect and the bundle, with collection and the Wikipedia lane paused for its duration and put back
+after it; the report is written before it starts, its progress is published and sampled, a job whose counter does
+not move for two hours is paused (resumable, never discarded), and a restart inside it keeps the completed soak.
 - **a** — tick it on the release-scale instance only: row 5's tally and composition come out in that run's
   report (`phase_results.row5_quarantine`, board row G), row G's precondition is met on one corpus, the ~1M corpus is untouched.
 - **b** — tick it on both instances: the same, on both corpora (twice the write, twice the evidence).
