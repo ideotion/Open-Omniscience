@@ -264,6 +264,7 @@ the `[analysis]` extra (the app still boots without it, those endpoints disabled
 | `POST /api/custody/log`, `GET /api/custody/{item}`, `.../verify`, `GET /api/custody/export`, `POST /api/custody/verify` | Append-only, hash-chained signed chain-of-custody log + offline verification |
 | `GET/PUT /api/custody/settings` | Runtime custody preferences (post-quantum signing, anchoring mode, auto-log) — reports *effective*, availability-aware state |
 | `POST /api/custody/anchor`, `GET /api/custody/providers` | Anchor a Merkle root (local / OpenTimestamps) + provider availability |
+| `POST /api/custody/reconcile` | Write the INGEST entries a failure left owed, each marked late in its signed metadata; `scan` counts older gaps, `record_gaps` queues them (2026-09-24, CUST-1) |
 | `… /api/keywords/...`, `/api/analysis/articles/similarity` | **[analysis]** Keyword extraction + article similarity |
 | `GET /api/search/omni` | Index-backed federated omnibar (articles FTS5 + keywords + sources + wiki/law) |
 | `… /api/jobs/...` | Task-manager job aggregation (collect pass, in-flight fetch, wiki-dump queue + reorder) |

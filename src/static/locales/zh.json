@@ -4454,5 +4454,18 @@
   "Longest collection stretch": "最长采集运行段",
   "Process up without a break": "进程不间断运行",
   "{h} h reached at {when} — the process's half of the clause, not the bar": "于 {when} 达到 {h} 小时 — 这是条款中关于进程的一半，而非门槛本身",
-  "not yet — {h} h more on the current stretch": "尚未 — 当前运行段还需 {h} 小时"
+  "not yet — {h} h more on the current stretch": "尚未 — 当前运行段还需 {h} 小时",
+  "Resume pending": "等待恢复",
+  "An exclusive operation (an import, a restore, a release run) paused collection while a pass was running. Collection starts again the moment that pass finishes winding down, unless airplane mode is on.": "某项独占操作（导入、恢复或发布运行）在一次采集遍历进行时暂停了采集。该遍历一旦收尾结束，采集即会重新开始，除非飞行模式已开启。",
+  "waiting for the previous pass to finish (since {when})": "正在等待上一次遍历结束（自 {when} 起）",
+  "Qualification is declined on this machine: it is below the memory floor, so no candidate is judged.": "本机拒绝进行资格审核：本机低于内存下限，因此不评判任何候选来源。",
+  "To run it anyway, restart the app with {env}=1.": "若仍要运行，请以 {env}=1 重新启动应用。",
+  "Check for missing ingest entries": "检查缺失的采集条目",
+  "Compares the stored articles with the custody log's ingest entries, from the log's first ingest entry on. It only counts; recording what it finds is a separate button.": "将已存储的文章与保管日志中的采集条目进行比对，从日志的第一条采集条目开始。它只计数；记录所发现的内容需另按一个按钮。",
+  "Record them, marked late": "予以记录，并标记为补录",
+  "{p} ingest entries could not be written when their articles were stored and are queued; {r} have been recorded late, each marked so in its signed metadata.": "{p} 条采集条目在其文章存储时未能写入，现已排队；{r} 条已补录，每条都在其签名元数据中注明。",
+  "The custody log has no ingest entry yet, so there is no start to measure gaps from.": "保管日志中尚无任何采集条目，因此没有可用来度量缺口的起点。",
+  "{n} stored articles since the log's first ingest entry have no ingest entry ({checked} checked).": "自日志第一条采集条目以来存储的文章中，有 {n} 篇没有采集条目（已检查 {checked} 篇）。",
+  "The scan stopped at its time budget; run it again to continue.": "扫描已在其时间预算处停止；请再次运行以继续。",
+  "Recorded {n} entries, each marked late.": "已记录 {n} 条条目，每条均标记为补录。"
 }

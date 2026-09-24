@@ -650,6 +650,11 @@
       </p>
 
       <div id="custody-status" class="hint">Loading custody settings…</div>
+      <div id="cust-late" class="hint" style="margin-top:4px"></div>
+      <div class="row" style="margin-top:4px">
+        <button class="secondary" onclick="custodyGapCheck(this)" title="Compares the stored articles with the custody log's ingest entries, from the log's first ingest entry on. It only counts; recording what it finds is a separate button.">Check for missing ingest entries</button>
+        <button class="secondary" id="cust-gap-record" style="display:none" onclick="custodyGapRecord(this)">Record them, marked late</button>
+      </div>
 
       <div class="row" style="margin-top:10px">
         <label style="display:flex;align-items:center;gap:8px;cursor:pointer">

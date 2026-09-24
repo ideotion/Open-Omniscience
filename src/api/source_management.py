@@ -599,10 +599,21 @@ async def qualify_sources_bulk(
 @limiter.limit("200/hour")
 def qualify_sources_bulk_status(request: Request, db: Session = Depends(get_db)):
     """Live status of the bulk qualification job + a fresh backlog estimate (so the
-    panel can show remaining work even while the job is idle)."""
+    panel can show remaining work even while the job is idle) + the memory floor's
+    verdict, because below it every qualification pass declines (FD03 = a, recorded
+    2026-09-24: the floor stays, and the Sources surface SAYS it declines, with the
+    switch that lifts it -- 82,805 candidates waited on one field machine with
+    nothing on screen saying why)."""
     from src.catalog.qualify_job import initial_backlog_estimate
+    from src.config.machine_floor import machine_floor
 
-    return {**_BULK_QUALIFICATION_JOB.status(), "backlog": initial_backlog_estimate(db)}
+    floor = machine_floor()
+    return {
+        **_BULK_QUALIFICATION_JOB.status(),
+        "backlog": initial_backlog_estimate(db),
+        "floor": {k: floor.get(k) for k in ("declines", "below", "overridden", "reason",
+                                             "available_mb", "total_mb", "override_env")},
+    }
 
 
 @router.post("/qualify-bulk/cancel", response_model=dict)

@@ -2017,9 +2017,19 @@
         ? row(t("Last run"), `<span title="${esc(fmtLocal(a.last_run))}">${esc(fmtRelative(a.last_run))}</span>`)
         : row(t("Last run"), `<span class="muted">${esc(t("no run yet"))}</span>`);
       const modeHtml = row(t("Mode"), `<span class="muted">${esc(s.mode || a.mode || "")}</span>`);
+      // -- A resume still waiting for the previous pass (SCHED-1, 2026-09-24) --- //
+      // Before this, a resume that ran out of retries left collection OFF with one log
+      // line; a field machine sat five days that way. Now it is pending, and shown.
+      const rp = a.resume_pending;
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((x, v) => x.replace(/\{(\w+)\}/g, (_, k) => v[k]));
+      const pendingHtml = rp
+        ? `<div class="vr"><span>${esc(t("Resume pending"))}</span><b><span title="${esc(t("An exclusive operation (an import, a restore, a release run) paused collection while a pass was running. Collection starts again the moment that pass finishes winding down, unless airplane mode is on."))}">`
+          + `${esc(tf("waiting for the previous pass to finish (since {when})", { when: fmtLocal(rp.since) }))}</span></b></div>`
+        : "";
       el.innerHTML =
         sect(t("Collection")) +
         `<div class="vr"><span>${esc(t("State"))}</span><b>${stateHtml}</b></div>` +
+        pendingHtml +
         nowHtml +
         _concurrencyHtml(a.concurrency, pg, t, row, sect) +
         sect(t("Schedule")) +

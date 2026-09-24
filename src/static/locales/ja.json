@@ -4454,5 +4454,18 @@
   "Longest collection stretch": "最長の収集区間",
   "Process up without a break": "プロセスの連続稼働",
   "{h} h reached at {when} — the process's half of the clause, not the bar": "{when}に{h}時間に到達 — 条件のうちプロセス側の半分で、基準そのものではありません",
-  "not yet — {h} h more on the current stretch": "まだです — 現在の区間であと{h}時間"
+  "not yet — {h} h more on the current stretch": "まだです — 現在の区間であと{h}時間",
+  "Resume pending": "再開待ち",
+  "An exclusive operation (an import, a restore, a release run) paused collection while a pass was running. Collection starts again the moment that pass finishes winding down, unless airplane mode is on.": "排他的な操作（インポート、復元、リリース実行）が、パスの実行中に収集を一時停止しました。そのパスが終了し次第、収集は再開します（機内モードがオンの場合を除く）。",
+  "waiting for the previous pass to finish (since {when})": "前のパスの終了待ち（{when} から）",
+  "Qualification is declined on this machine: it is below the memory floor, so no candidate is judged.": "このマシンでは適格判定が見送られています：メモリ下限を下回っているため、候補は判定されません。",
+  "To run it anyway, restart the app with {env}=1.": "それでも実行するには、{env}=1 を付けてアプリを再起動してください。",
+  "Check for missing ingest entries": "欠けている取り込みエントリを確認",
+  "Compares the stored articles with the custody log's ingest entries, from the log's first ingest entry on. It only counts; recording what it finds is a separate button.": "保存済みの記事を、保全ログの取り込みエントリと、ログ最初の取り込みエントリ以降について照合します。数えるだけで、見つかったものの記録は別のボタンです。",
+  "Record them, marked late": "遅延の印を付けて記録",
+  "{p} ingest entries could not be written when their articles were stored and are queued; {r} have been recorded late, each marked so in its signed metadata.": "{p} 件の取り込みエントリは記事の保存時に書き込めず、キューに入っています。{r} 件は遅れて記録され、それぞれ署名付きメタデータにその旨が記されています。",
+  "The custody log has no ingest entry yet, so there is no start to measure gaps from.": "保全ログにはまだ取り込みエントリがないため、欠落を測る起点がありません。",
+  "{n} stored articles since the log's first ingest entry have no ingest entry ({checked} checked).": "ログ最初の取り込みエントリ以降に保存された記事のうち {n} 件に取り込みエントリがありません（{checked} 件を確認）。",
+  "The scan stopped at its time budget; run it again to continue.": "スキャンは時間予算で停止しました。続けるにはもう一度実行してください。",
+  "Recorded {n} entries, each marked late.": "{n} 件のエントリを記録しました。それぞれに遅延の印が付いています。"
 }

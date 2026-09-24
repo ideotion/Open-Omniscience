@@ -608,6 +608,33 @@
   bar-on-a-sum, nine killed. Chromium-walked in en/ar (second pass in the same audit record).
 
 
+- **THE FIELD DEFECTS OUTSIDE THE WRITE PATH (2026-09-24, PR #1173; the report is
+  `docs/audit/16_FIELD_DIAGNOSTICS_SIX_MACHINES_2026-09-24.md` §3.3–§3.6, which lands with the
+  release-run PR #1172, as do the rulings `FD01`–`FD04`).** Built: **SCHED-1** (slice `S04-08`)
+  a resume that runs out of retries stays PENDING on a watcher that waits for the old pass to
+  exit, gives way to airplane mode, waits out another exclusive hold, stands down when
+  collection was started elsewhere, is retired at shutdown, and shows in the task manager's
+  Schedule tab; **QUAL-1** (slice `S04-12`, `FD03` = a) a pass declined below the memory floor
+  is a named refusal with its override in the job's result and the Sources panel, never
+  "complete", and the unattended-run arming asks the same floor first; **RR-9** (slice
+  `S04-13`) a persisted politeness stamp is clamped to its own delay, so a stamp written on a
+  clock since corrected costs the host's delay and not the clock error; **CUST-1** an INGEST
+  entry that could not be written is queued in `data/custody_pending.jsonl` (no database) and
+  written later marked late, at the end of the next collection pass (never on the per-article
+  path), and the Chain of custody tab counts older gaps and records them only when asked; **FIX-1** the fixity audit re-hashes each row with its writer's formula
+  (`normalised`, `raw`, `url+content`) and counts a row matching another writer's formula
+  apart, never as corruption; **INT-1** the integrity sweep's verdict is read from COMPLETED
+  checks only, `null` with the incomplete checks named when its budget ran out; and the card
+  audit and the bulletin port `run_all_bounded`'s deadline guard, listing what the spent budget
+  never reached as `skipped-budget`. **STILL OPEN, recorded rather than built:** (1) **the
+  custody settings live in the main database's key-value table**, so an exhausted pool makes
+  `load_settings()` fall back to the config default -- ON in the field, which agrees with the
+  usual setting, but an operator who switched auto-log OFF could see one ingest logged during a
+  pool timeout; making the settings read tell "unreadable" from "unset" is a small separate
+  change to `src/custody/settings.py`; (2) **the historical custody gaps on the six field
+  machines** are counted by the new button and recorded only when the operator presses it,
+  because the app cannot tell a failed write from a period when auto-log was off; (3) **FD03's
+  option (b)**, a qualification pass that fits below the floor, stays a planned slice, unbuilt.
 - **THE PRE-FLIGHT QUESTION ROUND (2026-09-18, `docs/design/PREFLIGHT_QUESTIONS_2026-09-18_RELEASE_RUN.md`,
   PF01–PF14) — UNANSWERED at recording; nothing here is resolved.** Asked in the same PR as the 0.4
   release-run button, because the maintainer said *"If you have any questions, ask them now before I launch

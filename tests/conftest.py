@@ -196,6 +196,20 @@ def _memory_guard_not_leaked():
 
 
 @pytest.fixture(autouse=True)
+def _pending_resume_not_leaked():
+    """SCHED-1's resume watcher is a process-global daemon: any test whose resume
+    runs out of retries hands off to one, and it polls every RESUME_POLL_S for the
+    rest of the session -- calling start() on whatever scheduler it was handed and
+    keeping ``resume_pending()`` set in every later status payload. Retire it at
+    teardown, as a shutdown does; a retired watcher leaves at its next look.
+    Imported BEFORE the test: a test may patch ``__import__`` to hide the runner."""
+    from src.scheduler.runner import cancel_pending_resume
+
+    yield
+    cancel_pending_resume()
+
+
+@pytest.fixture(autouse=True)
 def _isolated_robots_cache_path(tmp_path, monkeypatch):
     """A5 (2026-07-24 throughput brief, C4): EthicalFetcher now persists an
     in-TTL robots.txt verdict to a shared data_dir() sidecar BY DEFAULT (the
