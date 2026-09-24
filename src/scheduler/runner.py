@@ -50,6 +50,19 @@ def _tail_phase(name: str, *, pass_id: str | None = None):
         return nullcontext()
 
 
+def _drain_owed_custody() -> dict | None:
+    """Write the custody entries earlier ingest failures owe (CUST-1), or do nothing.
+    Never raises: a pass tail that a custody fault could break would be a second failure
+    layered on the first."""
+    try:
+        from src.custody.pending import drain_owed
+
+        return drain_owed()
+    except Exception:  # noqa: BLE001 - the entries stay queued for the next pass
+        _LOG.debug("custody: owed entries not written at this pass end", exc_info=True)
+        return None
+
+
 def _tail_journal_trim() -> None:
     try:
         from src.scheduler.pass_journal import trim
@@ -1819,6 +1832,14 @@ class BackgroundScheduler:
                 hygiene = run_pass_hygiene()
             if hygiene:
                 report["hygiene"] = hygiene
+            # CUST-1 (field round 2026-09-24): custody INGEST entries that failed during
+            # ingest are written HERE, marked late -- at the pass boundary, never on the
+            # per-article path, where the read they need would compete for the very pool
+            # whose exhaustion caused them. Bounded, and recorded on the run report.
+            with _tail_phase("custody-late", pass_id=report.get("pass_id")):
+                custody_late = _drain_owed_custody()
+            if custody_late:
+                report["custody_late"] = custody_late
             report["finished_at"] = datetime.now(UTC).isoformat(timespec="seconds")
             # One auditable line per run (WP3/RM-06); best-effort by design.
             from src.scheduler.runlog import record_run

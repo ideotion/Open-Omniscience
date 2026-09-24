@@ -413,27 +413,14 @@ def _maybe_record_custody(article: Article) -> None:
 
         logging.getLogger(__name__).warning("custody logging on ingest failed", exc_info=True)
         # ...but the entry is OWED, not forgotten: queued in a file (no database), and
-        # written later, marked late, by the next successful entry or the custody tab.
+        # written later, marked late, at the end of the next collection pass or from the
+        # Chain of custody tab. NEVER repaid here: the read a repayment needs competes for
+        # the very pool whose exhaustion created the debt, and one ingest must never wait
+        # out a pool timeout to pay for another's (src/custody/pending.py, drain_owed).
         if article_id is not None:
             from src.custody.pending import note_failed
 
             note_failed(article_id, error=f"{type(exc).__name__}: {exc}")
-        return
-    # A successful write means the database and the log both answer again: record what
-    # earlier failures still owe, a few at a time so no single ingest pays for many.
-    try:
-        from src.custody.pending import drain, pending_count
-
-        if pending_count():
-            drain(limit=_CUSTODY_DRAIN_PER_INGEST)
-    except Exception:  # noqa: BLE001 - the late entries wait for the next chance
-        import logging
-
-        logging.getLogger(__name__).debug("custody: late-entry drain failed", exc_info=True)
-
-
-#: How many owed custody entries one successful ingest writes, at most (CUST-1).
-_CUSTODY_DRAIN_PER_INGEST = 20
 
 
 def ingest_source(

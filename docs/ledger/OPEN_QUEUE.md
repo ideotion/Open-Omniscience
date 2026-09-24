@@ -493,8 +493,8 @@
   `S04-13`) a persisted politeness stamp is clamped to its own delay, so a stamp written on a
   clock since corrected costs the host's delay and not the clock error; **CUST-1** an INGEST
   entry that could not be written is queued in `data/custody_pending.jsonl` (no database) and
-  written later marked late, and the Chain of custody tab counts older gaps and records them
-  only when asked; **FIX-1** the fixity audit re-hashes each row with its writer's formula
+  written later marked late, at the end of the next collection pass (never on the per-article
+  path), and the Chain of custody tab counts older gaps and records them only when asked; **FIX-1** the fixity audit re-hashes each row with its writer's formula
   (`normalised`, `raw`, `url+content`) and counts a row matching another writer's formula
   apart, never as corruption; **INT-1** the integrity sweep's verdict is read from COMPLETED
   checks only, `null` with the incomplete checks named when its budget ran out; and the card

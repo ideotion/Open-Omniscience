@@ -115,7 +115,8 @@ def _late_block() -> dict:
         "recorded_late": late_count(),
         "method": (
             "an INGEST entry that could not be written when its article was stored is "
-            "queued in data/custody_pending.jsonl and written later, marked late in its own "
+            "queued in data/custody_pending.jsonl and written later -- at the end of the next "
+            "collection pass while auto-log is on, or from this tab -- marked late in its own "
             "signed metadata; nothing is back-dated"
         ),
     }
@@ -155,20 +156,26 @@ def put_settings(req: SettingsUpdate) -> dict:
     return _settings_status()
 
 
+#: How many owed entries one reconcile request writes. Each is a signed, committed
+#: append, so a very large gap is written over several presses (or pass ends), and the
+#: response's ``still_pending`` and the tab's count say what remains.
+RECONCILE_DRAIN_MAX = 1000
+
+
 @router.post("/reconcile")
 def reconcile(req: ReconcileRequest) -> dict:
     """Write the owed INGEST entries (each marked late); optionally scan for older gaps,
     and -- only when asked -- queue what the scan found. Local, no network."""
     from src.custody.pending import drain, gap_scan, queue_gaps
 
-    out: dict = {"drained": drain(limit=500)}
+    out: dict = {"drained": drain(limit=RECONCILE_DRAIN_MAX)}
     if req.scan:
         scan = gap_scan()
         ids = scan.pop("missing_ids", [])
         out["scan"] = scan
         if req.record_gaps and ids:
             out["queued"] = queue_gaps(ids)
-            out["drained_after_queue"] = drain(limit=max(500, len(ids)))
+            out["drained_after_queue"] = drain(limit=RECONCILE_DRAIN_MAX)
     out["late"] = _late_block()
     return out
 

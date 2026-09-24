@@ -67,17 +67,22 @@ HASH_KINDS: dict[str, Callable[[str, str], str]] = {
 }
 
 
-def expected_hash_kind(url: str | None, domain: str | None, source_type: str | None) -> str:
-    """Which writer's formula a row SHOULD hash under, from where it came from: the
-    synthetic ``*.local`` domains the non-web writers mint for themselves (and the
-    ``hazard://`` / ``statistics://`` URL schemes), and the Wikipedia edition domains.
-    A scraped page is ``normalised``."""
+def expected_hash_kind(url: str | None, domain: str | None) -> str:
+    """Which writer's formula a row SHOULD hash under, read from the mark each non-web
+    writer puts on its OWN rows: the synthetic ``*.local`` domain it mints
+    (``law.<j>.local``, ``statistics.<a>.local``, ``hazard.<p>.local``), the
+    ``statistics://`` and ``hazard://`` URL schemes, and the Wikipedia edition domains.
+    A scraped page is ``normalised``.
+
+    NEVER from ``Source.source_type``. That is a TOPIC, shared with the web: about two
+    hundred seeded web sources are typed ``legal`` and one ``statistics``, and their
+    pages are scraped, so reading the type as the writer sent every one of them to the
+    wrong formula and counted it as a misclassified row."""
     u = (url or "").lower()
     d = (domain or "").lower()
-    st = (source_type or "").lower()
-    if u.startswith("hazard://") or st == "hazard" or (d.startswith("hazard.") and d.endswith(".local")):
+    if u.startswith("hazard://") or (d.startswith("hazard.") and d.endswith(".local")):
         return "url+content"
-    if (u.startswith("statistics://") or st in ("legal", "statistics")
+    if (u.startswith("statistics://")
             or (d.endswith(".local") and (d.startswith("law.") or d.startswith("statistics.")))
             or d.endswith(".wikipedia.org")):
         return "raw"
@@ -91,8 +96,9 @@ METHOD = (
     "Re-hash each stored Article.content with the formula of the ingest path that wrote "
     "it -- 'normalised' (the scraper's generate_content_hash: whitespace-normalised "
     "SHA-256), 'raw' (SHA-256 of the text as stored: law, Wikipedia, statistics) or "
-    "'url+content' (SHA-256 of url, newline, body: hazards), chosen from the row's source "
-    "-- and compare to the Article.hash recorded at capture time. A row that matches only "
+    "'url+content' (SHA-256 of url, newline, body: hazards), chosen from the synthetic "
+    "domain or URL scheme each non-web writer marks its own rows with (never from the "
+    "source's topical type) -- and compare to the Article.hash recorded at capture time. A row that matches only "
     "under ANOTHER writer's formula is counted apart (matched_other_kind), never as a "
     "mismatch: that is a misclassified writer, not altered content. A mismatch means the "
     "stored content matches its capture-time hash under no known formula; nothing is "
@@ -140,8 +146,8 @@ def audit_fixity(session: Session, limit: int | None = None) -> dict:
 
     # Only the columns we need -- avoid dragging compressed_content etc. through the
     # SQLCipher codec. ``content`` is required for the recompute; the source's domain
-    # and type say which writer's formula applies (an outer join: a row whose source
-    # is gone is still audited, under the scraper's formula).
+    # says which writer's formula applies (an outer join: a row whose source is gone
+    # is still audited, under the scraper's formula).
     stmt = (
         select(
             Article.id,
@@ -150,7 +156,6 @@ def audit_fixity(session: Session, limit: int | None = None) -> dict:
             Article.content,
             Article.hash,
             Source.domain,
-            Source.source_type,
         )
         .outerjoin(Source, Source.id == Article.source_id)
         .order_by(Article.id)
@@ -162,8 +167,8 @@ def audit_fixity(session: Session, limit: int | None = None) -> dict:
     # Stream in batches so a large corpus is never fully materialised in memory.
     for row in session.execute(stmt.execution_options(yield_per=_BATCH)):
         checked += 1
-        art_id, url, title, content, stored, domain, source_type = row
-        kind = expected_hash_kind(url, domain, source_type)
+        art_id, url, title, content, stored, domain = row
+        kind = expected_hash_kind(url, domain)
         text = content or ""
 
         stored_hash = (stored or "").strip()

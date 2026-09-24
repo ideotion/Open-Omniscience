@@ -139,8 +139,12 @@ def test_a_pending_resume_never_overrides_airplane_mode(sched1, monkeypatch):
     monkeypatch.setattr(sched1, "get_scheduler", lambda: fake)
     sched1.resume_after_exclusive_operation(True, retries=0, retry_delay=0.0)
     activate_kill_switch()  # the operator went offline while it waited
-    old.release.set()
+    # The watcher can only end here by seeing airplane mode: the old pass is still
+    # alive, so no start() can succeed. The pass is released only AFTER it has ended,
+    # so no interleaving can let a start() slip between its checks.
     assert _wait_for(lambda: sched1.resume_pending() is None)
+    old.release.set()
+    time.sleep(0.05)
     assert fake.starts == 0
 
 
@@ -176,9 +180,15 @@ def test_shutdown_retires_a_pending_resume_before_it_stops_the_scheduler(sched1,
     fake = _Sched(old)
     monkeypatch.setattr(sched1, "get_scheduler", lambda: fake)
     sched1.resume_after_exclusive_operation(True, retries=0, retry_delay=0.0)
+    watchers = [t for t in threading.enumerate() if t.name == "oo-resume-watch"]
     sched1.cancel_pending_resume()
+    # A retired watcher leaves at its next look; the old pass is released only once it
+    # has, so the check below cannot race a start() already past its generation check.
+    for t in watchers:
+        t.join(timeout=5)
+    assert not any(t.is_alive() for t in watchers)
     old.release.set()
-    time.sleep(0.1)
+    time.sleep(0.05)
     assert fake.starts == 0 and sched1.resume_pending() is None
     body = python_function_source((_ROOT / "src" / "api" / "main.py").read_text(encoding="utf-8"), "lifespan")
     assert body.index("cancel_pending_resume()") < body.index("get_scheduler().stop()")
@@ -378,6 +388,23 @@ def test_a_misclassified_writer_is_counted_apart_never_as_corruption(db):
     assert r["matched_other_kind_examples"][0]["matched_kind"] == "raw"
 
 
+def test_a_topical_type_never_decides_the_writer(db):
+    """About two hundred seeded web sources are typed ``legal`` and one ``statistics``.
+    Their pages are SCRAPED, so they hash under the scraper's formula and are plain ok --
+    never counted as misclassified because a topic was read as a writer."""
+    from src.utils.url_utils import generate_content_hash
+    from src.verification.fixity import audit_fixity
+
+    _art(db, _src(db, "gazette.example.gov", "legal"), "https://gazette.example.gov/n/1",
+         "Decree  no. 1", generate_content_hash("Decree  no. 1"))
+    _art(db, _src(db, "stats.example.gov", "statistics"), "https://stats.example.gov/r/1",
+         "CPI  rose", generate_content_hash("CPI  rose"))
+    r = audit_fixity(db)
+    assert r["ok"] == 2 and r["mismatched"] == 0
+    assert r["matched_other_kind"] == 0, r["matched_other_kind_examples"]
+    assert r["by_hash_kind"]["normalised"] == 2
+
+
 def test_the_audit_formulas_are_the_writers_formulas():
     """The audit mirrors four writers; if one of them changes its formula, this fails
     rather than the field reporting corruption again."""
@@ -447,6 +474,29 @@ def test_a_clean_complete_sweep_still_says_no_drift(monkeypatch):
         r = corpus_integrity(s, sample=100)
     assert r["timed_out"] is False and r["drift"] is False and r["verdict"] == "no drift"
     assert r["incomplete_checks"] == []
+
+
+def test_a_non_interrupt_error_after_the_budget_is_still_a_degraded_read(monkeypatch):
+    """Only the deadline's OWN interrupt is re-raised. A missing table after the budget has
+    run out still degrades to a null count: re-raised, it would escape the deadline untyped
+    (the deadline types only an interrupt) and turn the sweep into a 500."""
+    import sqlite3
+
+    from src.monitoring import integrity
+
+    class _S:
+        def __init__(self, msg: str) -> None:
+            self.msg = msg
+
+        def execute(self, *_a, **_k):
+            raise sqlite3.OperationalError(self.msg)
+
+    monkeypatch.setattr(integrity, "deadline_expired", lambda _s: True)
+    assert integrity._scalar(_S("no such table: keywords"), "SELECT 1") is None
+    with pytest.raises(sqlite3.OperationalError):
+        integrity._scalar(_S("interrupted"), "SELECT 1")
+    monkeypatch.setattr(integrity, "deadline_expired", lambda _s: False)
+    assert integrity._scalar(_S("interrupted"), "SELECT 1") is None, "no deadline: a degraded read"
 
 
 # --------------------------------------------------------------------------- #
@@ -547,10 +597,10 @@ def _entries(item_id: str):
         return log.entries_for(item_id)
 
 
-def test_a_failed_custody_write_is_queued_and_written_late_by_the_next_success(custody, db, monkeypatch):
+def test_a_failed_custody_write_is_queued_and_written_late_at_the_pass_end(custody, db, monkeypatch):
     """Lenn, Qubes: 8 to 19 skipped entries each, in logs covering one or two days,
-    and nothing ever wrote them. The failure is now queued without the database, and
-    the next successful write records it, marked late."""
+    and nothing ever wrote them. The failure is now queued without the database, the
+    per-article path never repays it, and the pass end records it, marked late."""
     from src.custody import pending
     from src.custody.log import CustodyLog
     from src.ingest.pipeline import _maybe_record_custody
@@ -567,6 +617,10 @@ def test_a_failed_custody_write_is_queued_and_written_late_by_the_next_success(c
     assert [q["article_id"] for q in queued] == [a.id] and "QueuePool" in queued[0]["error"]
     monkeypatch.setattr(CustodyLog, "record", real)
     _maybe_record_custody(b)
+    assert [q["article_id"] for q in pending.read_pending()] == [a.id], (
+        "the per-article path never repays: its read would compete for the exhausted pool")
+    res = pending.drain_owed()
+    assert res is not None and res["recorded"] == 1 and res["still_pending"] == 0
     assert pending.read_pending() == [] and not pending.pending_path().exists()
     late = [e for e in _entries(f"article:{a.id}") if e.action == "ingest"]
     assert len(late) == 1
@@ -575,6 +629,135 @@ def test_a_failed_custody_write_is_queued_and_written_late_by_the_next_success(c
     assert late[0].item_hash == "hash-0", "the hash was read back from the stored row"
     assert [e.metadata.get("late") for e in _entries(f"article:{b.id}")] == [None]
     assert pending.late_count() == 1
+
+
+def test_the_collection_pass_end_writes_what_is_owed(custody, db, monkeypatch):
+    """The repayment runs in the pass tail, journalled like every other tail step, and the
+    run report says what it wrote."""
+    import src.scheduler.hygiene as hygiene
+    from src.custody import pending
+    from src.scheduler.runner import BackgroundScheduler
+    from src.scheduler.settings import SchedulerSettings
+
+    (a,) = _stored(db, 1)
+    pending.note_failed(a.id, error="TimeoutError: pool")
+    reports: list[dict] = []
+    monkeypatch.setattr("src.scheduler.runlog.record_run", reports.append)
+    monkeypatch.setattr(hygiene, "run_pass_hygiene", lambda: None)
+    sched = BackgroundScheduler(run_once_fn=lambda: {"ok": True},
+                                settings_provider=lambda: SchedulerSettings(continuous=False))
+    sched._do_run()
+    assert reports and reports[0]["custody_late"]["recorded"] == 1
+    assert pending.read_pending() == []
+    assert [e.metadata.get("late") for e in _entries(f"article:{a.id}")] == [True]
+
+
+def test_the_pass_end_leaves_the_debt_alone_once_auto_log_is_off(custody, db):
+    """Automatic custody writes happen only while automatic custody logging is on; after
+    the operator switches it off, what is owed waits for the Chain of custody tab."""
+    from src.custody import pending
+    from src.custody.settings import save_settings
+
+    (a,) = _stored(db, 1)
+    pending.note_failed(a.id, error="TimeoutError: pool")
+    save_settings({"auto_log_on_ingest": False})
+    assert pending.drain_owed() is None
+    assert [q["article_id"] for q in pending.read_pending()] == [a.id]
+    assert pending.drain()["recorded"] == 1, "the tab's drain is the operator's act"
+
+
+def test_a_drain_reads_the_owed_columns_in_one_query_not_one_per_entry(custody, db):
+    from sqlalchemy import event
+
+    from src.custody import pending
+
+    arts = _stored(db, 30)
+    for a in arts:
+        pending.note_failed(a.id, error="TimeoutError: pool")
+    reads: list[str] = []
+
+    def _count(conn, cursor, statement, *a):
+        if "FROM articles" in statement:
+            reads.append(statement)
+
+    engine = db.get_bind()
+    event.listen(engine, "before_cursor_execute", _count)
+    try:
+        res = pending.drain(limit=100)
+    finally:
+        event.remove(engine, "before_cursor_execute", _count)
+    assert res["recorded"] == 30
+    assert len(reads) == 1, reads
+
+
+def test_a_failed_column_read_is_tried_once_and_every_entry_stays_pending(custody, db, monkeypatch):
+    """Under the pool exhaustion that created the debt, a drain must fail FAST: one read
+    attempt for the whole batch, never one pool timeout per entry."""
+    from src.custody import pending
+
+    arts = _stored(db, 5)
+    for a in arts:
+        pending.note_failed(a.id, error="TimeoutError: pool")
+    calls: list[list[int]] = []
+
+    def _no_pool(ids, session_factory=None):
+        calls.append(list(ids))
+        raise TimeoutError("QueuePool limit of size 6 overflow 2 reached, connection timed out")
+
+    monkeypatch.setattr(pending, "_columns_for", _no_pool)
+    res = pending.drain(limit=100)
+    assert len(calls) == 1 and res["recorded"] == 0 and res["still_pending"] == 5
+    assert "QueuePool" in res["read_error"]
+    assert len(pending.read_pending()) == 5
+
+
+def test_an_entry_queued_during_a_drain_survives_it(custody, db, monkeypatch):
+    """The queue is re-read before the rewrite, so a failure that lands while a drain is
+    writing is never erased by it."""
+    from src.custody import pending
+    from src.custody.log import CustodyLog
+
+    a, b = _stored(db, 2)
+    pending.note_failed(a.id, error="TimeoutError: pool")
+    real = CustodyLog.record
+
+    def _record_and_meanwhile_queue(self, *args, **kw):
+        pending.note_failed(b.id, error="TimeoutError: pool (meanwhile)")
+        return real(self, *args, **kw)
+
+    monkeypatch.setattr(CustodyLog, "record", _record_and_meanwhile_queue)
+    res = pending.drain(limit=10)
+    assert res["recorded"] == 1 and res["still_pending"] == 1
+    assert [q["article_id"] for q in pending.read_pending()] == [b.id]
+
+
+def test_a_slow_drain_never_holds_up_a_failing_ingest(custody, db, monkeypatch):
+    """A drain's read can wait out a pool timeout; queueing a NEW failure must not wait
+    with it, because that is an ingest thread."""
+    from src.custody import pending
+
+    (a,) = _stored(db, 1)
+    pending.note_failed(a.id, error="TimeoutError: pool")
+    in_read, release = threading.Event(), threading.Event()
+    real = pending._columns_for
+
+    def _slow(ids, session_factory=None):
+        in_read.set()
+        release.wait(5)
+        return real(ids, session_factory)
+
+    monkeypatch.setattr(pending, "_columns_for", _slow)
+    t = threading.Thread(target=pending.drain, kwargs={"limit": 10}, daemon=True)
+    t.start()
+    try:
+        assert in_read.wait(5)
+        t0 = time.monotonic()
+        assert pending.note_failed(999, error="meanwhile")
+        assert time.monotonic() - t0 < 1.0, "queueing never waits for a drain's read"
+    finally:
+        release.set()
+        t.join(5)
+    assert [q["article_id"] for q in pending.read_pending()] == [999]
 
 
 def test_the_owed_id_is_taken_without_a_database_read(custody, db, monkeypatch):

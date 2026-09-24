@@ -19,7 +19,12 @@ WHAT THIS DOES
   metadata (``late: true``, when the article was stored, when the entry was finally
   written, and why it was late). The entry's position in the chain is its true position:
   it is appended now, and says so; nothing is back-dated and nothing is inserted into the
-  past of an append-only log.
+  past of an append-only log. The stored columns it needs are read in ONE query per
+  :data:`_READ_CHUNK` entries, never one per entry.
+- :func:`drain_owed` is the automatic repayment, called at the END OF A COLLECTION PASS
+  and never on the per-article path: the read a drain needs competes for the very pool
+  whose exhaustion created the debt, and one ingest must never wait out a pool timeout
+  to pay for another's.
 - :func:`gap_scan` finds stored articles with no INGEST entry since the log's first one,
   for the gaps from before this existed. It only COUNTS; queueing what it found is a
   separate, explicit act (:func:`queue_gaps`), because the app cannot tell a failure from
@@ -43,11 +48,20 @@ from typing import Any
 _LOG = logging.getLogger(__name__)
 
 PENDING_FILE = "custody_pending.jsonl"
+#: Guards every read-modify-write of the pending FILE, and only that.
 _LOCK = threading.Lock()
+#: One drain at a time: two could otherwise both find an entry missing and both record it.
+_DRAIN_LOCK = threading.Lock()
 #: The marker every late entry carries in its (signed) metadata, and the substring the
 #: late count looks for in ``metadata_json`` (written with ``sort_keys=True``).
 LATE_KEY = "late"
 _LATE_NEEDLE = '"late": true'
+#: Stored-row columns are read this many ids per query (well under SQLite's bound-
+#: parameter limit on every version the app supports).
+_READ_CHUNK = 500
+#: How many owed entries one collection pass writes, at most. The field debt was 8 to 19
+#: entries per day or two; a bounded tail keeps a pass's end predictable when it is larger.
+DRAIN_PER_PASS = 200
 
 
 def _now_iso() -> str:
@@ -60,26 +74,39 @@ def pending_path() -> Path:
     return data_dir() / PENDING_FILE
 
 
-def note_failed(article_id: int, *, item_hash: str | None = None, url: str | None = None,
-                canonical_url: str | None = None, source_id: int | None = None,
-                error: str = "", found_by: str = "ingest failure") -> bool:
-    """Queue one entry that could not be written. A file append, never a database write;
-    returns whether it was queued."""
-    rec = {
-        "article_id": int(article_id), "item_hash": item_hash, "url": url,
-        "canonical_url": canonical_url, "source_id": source_id,
-        "failed_at": _now_iso(), "error": str(error or "")[:300], "found_by": found_by,
-    }
+def _append(records: list[dict[str, Any]]) -> bool:
+    """One append for any number of records; a file write, never a database one."""
+    if not records:
+        return True
     try:
         with _LOCK:
             p = pending_path()
             p.parent.mkdir(parents=True, exist_ok=True)
             with open(p, "a", encoding="utf-8", newline="\n") as fh:
-                fh.write(json.dumps(rec, separators=(",", ":")) + "\n")
+                fh.write("".join(json.dumps(r, separators=(",", ":")) + "\n" for r in records))
         return True
     except OSError:
-        _LOG.warning("custody: could not queue the late entry for article %s", article_id, exc_info=True)
+        _LOG.warning("custody: could not queue %d late entr(ies)", len(records), exc_info=True)
         return False
+
+
+def _record(article_id: int, *, item_hash: str | None = None, url: str | None = None,
+            canonical_url: str | None = None, source_id: int | None = None,
+            error: str = "", found_by: str = "ingest failure") -> dict[str, Any]:
+    return {
+        "article_id": int(article_id), "item_hash": item_hash, "url": url,
+        "canonical_url": canonical_url, "source_id": source_id,
+        "failed_at": _now_iso(), "error": str(error or "")[:300], "found_by": found_by,
+    }
+
+
+def note_failed(article_id: int, *, item_hash: str | None = None, url: str | None = None,
+                canonical_url: str | None = None, source_id: int | None = None,
+                error: str = "", found_by: str = "ingest failure") -> bool:
+    """Queue one entry that could not be written. A file append, never a database write;
+    returns whether it was queued."""
+    return _append([_record(article_id, item_hash=item_hash, url=url, canonical_url=canonical_url,
+                            source_id=source_id, error=error, found_by=found_by)])
 
 
 def read_pending() -> list[dict[str, Any]]:
@@ -140,39 +167,73 @@ def late_count(log: Any = None) -> int | None:
                 log.close()
 
 
-def _article_columns(article_id: int, session_factory: Any = None) -> dict[str, Any] | None:
-    """The stored row's columns, read now. ``{}`` when the article no longer exists;
-    raises when the database cannot be read (the entry then stays pending)."""
+def _columns_for(ids: list[int], session_factory: Any = None) -> dict[int, dict[str, Any]]:
+    """The stored rows' columns, read now: ONE query per :data:`_READ_CHUNK` ids. An id
+    absent from the result no longer exists; raises when the database cannot be read
+    (every entry that needed the read then stays pending)."""
     from sqlalchemy import select
 
     from src.database.models import Article
 
     if session_factory is None:
         from src.database.session import session_scope as session_factory
+    out: dict[int, dict[str, Any]] = {}
     with session_factory() as db:
-        row = db.execute(
-            select(Article.hash, Article.url, Article.canonical_url, Article.source_id)
-            .where(Article.id == int(article_id))
-        ).first()
-    if row is None:
-        return {}
-    return {"item_hash": row[0], "url": row[1], "canonical_url": row[2], "source_id": row[3]}
+        for i in range(0, len(ids), _READ_CHUNK):
+            chunk = ids[i:i + _READ_CHUNK]
+            for row in db.execute(
+                select(Article.id, Article.hash, Article.url, Article.canonical_url, Article.source_id)
+                .where(Article.id.in_(chunk))
+            ):
+                out[int(row[0])] = {"item_hash": row[1], "url": row[2], "canonical_url": row[3],
+                                    "source_id": row[4]}
+    return out
 
 
-def drain(*, limit: int = 50, session_factory: Any = None, log_factory: Any = None) -> dict[str, Any]:
+def _key(rec: dict[str, Any]) -> str:
+    return json.dumps(rec, sort_keys=True, separators=(",", ":"))
+
+
+def drain(*, limit: int = 50, session_factory: Any = None, log_factory: Any = None,
+          prefs: Any = None) -> dict[str, Any]:
     """Record up to ``limit`` pending entries now, each marked late. An entry whose article
     already has an INGEST entry is dropped (it was written after all); one whose article is
-    gone is dropped and counted; one whose columns cannot be read yet stays pending."""
-    from src.custody.log import CustodyAction
-    from src.custody.settings import load_settings
+    gone is dropped and counted; one whose columns cannot be read yet stays pending, and a
+    failed read is tried ONCE per drain, never once per entry.
 
-    with _LOCK:
-        items = read_pending()
-        if not items:
+    Two locks, so a slow drain never holds up a failing ingest: ``_DRAIN_LOCK`` lets one
+    drain run at a time (two could otherwise both find an entry missing and both record
+    it), while the file lock is held only to read the queue and, at the end, to remove
+    what this drain settled -- re-reading first, so an entry queued meanwhile survives."""
+    from src.custody.log import CustodyAction
+
+    with _DRAIN_LOCK:
+        with _LOCK:
+            todo = read_pending()[:limit]
+        if not todo:
             return {"recorded": 0, "already_present": 0, "article_gone": 0, "still_pending": 0}
-        todo, keep = items[:limit], items[limit:]
+        settled: list[dict[str, Any]] = []
         recorded = already = gone = 0
-        prefs = load_settings()
+        need = sorted({int(it["article_id"]) for it in todo if not it.get("item_hash")})
+        read: dict[int, dict[str, Any]] | None = {}
+        read_error: str | None = None
+        if need:
+            try:
+                read = _columns_for(need, session_factory)
+            except Exception as exc:  # noqa: BLE001 - those entries wait for the next drain
+                read, read_error = None, f"{type(exc).__name__}: {exc}"[:200]
+                _LOG.debug("custody: owed entries' columns could not be read yet", exc_info=True)
+        if prefs is None:
+            # Only the actor name comes from here, so an unreadable setting (the settings
+            # live in the same database whose pool may be the problem) costs the name,
+            # never the entries.
+            try:
+                from src.custody.settings import load_settings
+
+                prefs = load_settings()
+            except Exception:  # noqa: BLE001 - fall back to the pipeline's own actor name
+                _LOG.debug("custody: settings unreadable during a drain", exc_info=True)
+        actor = getattr(prefs, "default_actor", None) or "ingest-pipeline"
         if log_factory is None:
             from src.custody.log import CustodyLog as log_factory
         log = log_factory()
@@ -183,18 +244,21 @@ def drain(*, limit: int = 50, session_factory: Any = None, log_factory: Any = No
                 try:
                     if any(e.action == CustodyAction.INGEST.value for e in log.entries_for(item_id)):
                         already += 1
+                        settled.append(it)
                         continue
                     cols = {k: it.get(k) for k in ("item_hash", "url", "canonical_url", "source_id")}
                     if not cols.get("item_hash"):
-                        fresh = _article_columns(aid, session_factory)
-                        if fresh == {}:
+                        if read is None:
+                            continue  # stays queued: its columns could not be read
+                        fresh = read.get(aid)
+                        if fresh is None:
                             gone += 1
+                            settled.append(it)
                             continue
-                        assert fresh is not None
                         cols.update(fresh)
                     log.record(
                         item_id, str(cols["item_hash"]), CustodyAction.INGEST,
-                        actor=prefs.default_actor or "ingest-pipeline",
+                        actor=actor,
                         metadata={
                             "url": cols.get("url"), "canonical_url": cols.get("canonical_url"),
                             "source_id": cols.get("source_id"),
@@ -206,17 +270,40 @@ def drain(*, limit: int = 50, session_factory: Any = None, log_factory: Any = No
                         },
                     )
                     recorded += 1
+                    settled.append(it)
                 except Exception:  # noqa: BLE001 - this one waits for the next drain
                     _LOG.debug("custody: late entry for article %s still pending", aid, exc_info=True)
-                    keep.append(it)
         finally:
             with contextlib.suppress(Exception):
                 log.close()
-        try:
-            _rewrite(keep)
-        except OSError:
-            _LOG.warning("custody: could not rewrite the pending file", exc_info=True)
-    return {"recorded": recorded, "already_present": already, "article_gone": gone, "still_pending": len(keep)}
+        done = {_key(it) for it in settled}
+        with _LOCK:
+            remaining = [it for it in read_pending() if _key(it) not in done]
+            try:
+                _rewrite(remaining)
+            except OSError:
+                _LOG.warning("custody: could not rewrite the pending file", exc_info=True)
+    out: dict[str, Any] = {"recorded": recorded, "already_present": already, "article_gone": gone,
+                           "still_pending": len(remaining)}
+    if read_error:
+        out["read_error"] = read_error
+    return out
+
+
+def drain_owed(*, limit: int = DRAIN_PER_PASS, session_factory: Any = None,
+               log_factory: Any = None) -> dict[str, Any] | None:
+    """The automatic repayment, for the END OF A COLLECTION PASS: write what earlier
+    failures owe, while automatic custody logging is still on. None when nothing is owed
+    (a file read, no database) or when the operator has since switched auto-log off --
+    then the entries wait for the Chain of custody tab, which is the operator's act."""
+    if not pending_count():
+        return None
+    from src.custody.settings import load_settings
+
+    prefs = load_settings()
+    if not prefs.auto_log_on_ingest:
+        return None
+    return drain(limit=limit, session_factory=session_factory, log_factory=log_factory, prefs=prefs)
 
 
 def gap_scan(*, budget_s: float = 60.0, batch: int = 5000, session_factory: Any = None,
@@ -285,10 +372,8 @@ def gap_scan(*, budget_s: float = 60.0, batch: int = 5000, session_factory: Any 
 
 
 def queue_gaps(article_ids: list[int]) -> int:
-    """Queue the articles a gap scan found, to be recorded late. The operator's act."""
-    n = 0
-    for aid in article_ids:
-        if note_failed(int(aid), error="no ingest entry was found for this article by the gap scan",
-                       found_by="gap scan"):
-            n += 1
-    return n
+    """Queue the articles a gap scan found, to be recorded late. The operator's act; one
+    append for the whole list."""
+    recs = [_record(int(aid), error="no ingest entry was found for this article by the gap scan",
+                    found_by="gap scan") for aid in article_ids]
+    return len(recs) if _append(recs) else 0

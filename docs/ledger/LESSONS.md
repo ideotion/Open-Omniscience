@@ -12044,7 +12044,10 @@ ran none of them, and the integrity sweep swallowed its interrupt check by check
 "no drift" having checked nothing. `run_all_bounded` already had the answer, a `break` on
 `deadline_expired(session)`; it is CONTROL FLOW the isolation cannot intercept. Any loop that
 runs under a statement deadline needs it, and anything that reports a verdict needs to know
-which of its checks completed.
+which of its checks completed. And a handler that re-raises for the deadline must re-raise
+EXACTLY what the deadline translates (elapsed AND an interrupt): the first cut re-raised any
+error once the budget had expired, so a missing table after the budget would have escaped the
+deadline untyped and turned a degrading diagnostic into a 500.
 
 ### A FAIL-OPEN PATH NEEDS A RECORD OF WHAT IT SKIPPED (the field round, the field-defects PR)
 
@@ -12052,4 +12055,18 @@ Custody logging on ingest is fail-open by design, correctly: it must never cost 
 But it kept no record of what it skipped, so a chain-of-custody log the operator had turned on
 carried gaps nothing reported. Failing open is a promise to do the thing later or to say it
 was not done; without a debt record it is neither. The record has to live somewhere the
-failure cannot reach -- here a file, because the failure was the database.
+failure cannot reach -- here a file, because the failure was the database. And the debt is
+not repaid where it was incurred: the first cut drained owed entries after the next
+successful ingest, which meant one read per owed entry through a fresh pooled connection, on
+the per-article path, under the very exhaustion that had created the debt -- up to twenty pool
+timeouts on one ingest. Repayment moved to the pass boundary, batched into one read.
+
+### A TOPIC IS NOT A WRITER (the field round, the field-defects PR)
+
+The fixity audit's first fix chose each row's hash formula partly from `Source.source_type`,
+and `legal` and `statistics` looked like the law and statistics writers. They are TOPICS:
+about two hundred seeded web sources are typed `legal` and one `statistics`, their pages are
+scraped, and every one of them would have been hashed under the wrong formula and reported as
+a misclassified row. Which code wrote a row is read from the mark that code puts on its own
+rows (here the synthetic `*.local` domain and the URL scheme), never from a label other
+writers share.
