@@ -165,6 +165,23 @@ def test_two_closers_sharing_a_source_string_but_not_their_flags_are_two_familie
     assert "P" in out and "Q" in out and "R" in out and "<b>" in out
 
 
+class _CountingCloser:
+    """A closer that counts its searches: the unit the retirement defect is made of.
+
+    ``strip_blocks`` reads a closer's ``pattern`` and ``flags`` (its exhaustion key) and
+    calls ``search``, nothing else, so this stands in for the compiled pattern and the
+    module under test is not touched."""
+
+    def __init__(self, rx: re.Pattern[str]) -> None:
+        self._rx = rx
+        self.pattern, self.flags = rx.pattern, rx.flags
+        self.searches = 0
+
+    def search(self, text: str, pos: int = 0) -> re.Match[str] | None:
+        self.searches += 1
+        return self._rx.search(text, pos)
+
+
 def test_retirement_survives_openers_that_are_all_TEXTUALLY_DIFFERENT():
     """The property Q3 exposed, and the one real wikitext actually exhibits.
 
@@ -175,19 +192,26 @@ def test_retirement_survives_openers_that_are_all_TEXTUALLY_DIFFERENT():
     way it is keyed. Real refs carry distinct ``name=`` attributes, so every
     opener is its own key and the retirement stops working exactly where it
     matters. The fixture therefore makes every opener textually unique.
+
+    COUNTED, not timed, since 2026-09-24. This asserted that 4x the openers cost under
+    8x the time, and the macOS lane measured 8.57 once, on code that is linear
+    (median 4.1 here, 40 of 40 runs under 4.4 on a quiet heap). The work timed is
+    about a millisecond, and best-of-3 narrows a runner's disturbance without bounding
+    it. The collector is not the cause either: the function allocates almost nothing it
+    tracks, so 60 measured ratios ran with no collection at all. What the defect IS, is
+    one closer search per distinct opener, so the searches are counted: one for the whole
+    document once the family retires, n when the key is the opener's text.
     """
     def doc_of(n_openers: int) -> str:
         return "".join(f"Lorem ipsum dolor sit amet <ref name=n{i}>body " for i in range(n_openers))
 
-    ts = []
     for n in (2000, 8000):
-        d = doc_of(n)
-        ts.append(max(_time(strip_one_block, d, _REF_OPEN, _REF_CLOSE), 1e-6))
-    ratio = ts[1] / ts[0]
-    assert ratio < 8, (
-        f"4x the openers cost {ratio:.1f}x the time -- exhaustion is keyed on the opener, "
-        "so each distinct spelling re-scans the whole document"
-    )
+        doc, closer = doc_of(n), _CountingCloser(_REF_CLOSE)
+        assert strip_one_block(doc, _REF_OPEN, closer) is doc, "nothing closes, so nothing is removed"
+        assert closer.searches == 1, (
+            f"{n} textually distinct openers cost {closer.searches} closer searches -- exhaustion is "
+            "keyed on the opener, so each distinct spelling re-scans the whole document"
+        )
 
 
 # --------------------------------------------------------------------------- #

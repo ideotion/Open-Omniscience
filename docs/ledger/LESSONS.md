@@ -12178,3 +12178,19 @@ commit recorded for this test, written against the code #1171 ran; that note sur
 of main because the TEST was unchanged there, when the code UNDER it was not. **Assert on a property only the named path can produce
 (here: the soak's window still open, `ended_by` None), and prove the test with that path removed.
 A test's exposure belongs to the code it runs, so re-derive it when that code changes.**
+
+### A MILLISECOND OF TIMED WORK IS THE RUNNER'S TO DECIDE; COUNT THE OPERATION THE DEFECT IS MADE OF (PR #1174)
+
+`test_retirement_survives_openers_that_are_all_TEXTUALLY_DIFFERENT` guarded the markup strip's
+family retirement with a ratio of two timings (4x the openers under 8x the time) and failed the
+macOS lane once at 8.57 on linear code; here it measured a median of 4.1, with one of 40 at 7.24
+beside a million-object ballast. The collector was the obvious suspect after the heartbeat test,
+and it was wrong: the function allocates almost nothing the collector tracks, and 60 ratios ran
+with zero collections. The runner decides a millisecond, and best-of-3 narrows that without
+bounding it. The defect is one closer SEARCH per distinct opener, observable through the
+function's own parameters, so a closer object that counts its `search` calls reads 1 on correct
+code and n on the defect, deterministically, with the module untouched (it is hashed into the
+engine identity, so editing it would re-stamp every article). The 2026-08-10 rule in
+`OPEN_QUEUE.md` ("A THRESHOLD OVER A RATIO OF TWO TIMINGS IS NOT A GUARD ON A SHARED RUNNER"),
+again: **find the arithmetic claim under a timing guard and assert that; and check the suspect
+you already have before blaming it twice.**

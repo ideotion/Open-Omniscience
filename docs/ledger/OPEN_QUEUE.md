@@ -22,50 +22,6 @@
 
 ## Open queue (when maintainer says proceed)
 
-- **THE HEARTBEAT-RING TEST FAILED THE macOS LANE WHENEVER A GC PASS LANDED IN ITS 0.3 s SOAK —
-  found driving PR #1171 to green, FIXED IN PR #1172; ITS INTERIM-REPORT SIBLING FIXED IN PR #1174;
-  THE `test_markup_blocks` FAILURE STILL OPEN (2026-09-24).** *(Headline as first recorded: "THE HEARTBEAT-RING TEST FAILS THE macOS LANE
-  WHENEVER A GC PASS LANDS IN ITS 0.3 s SOAK — found driving PR #1171 to green, NOT fixed there,
-  STILL OPEN".)*
-  `tests/test_release_run.py::test_the_heartbeat_ring_is_bounded_and_says_what_it_dropped`
-  failed `Portability observation (macos-latest)` twice on `c1a5fbf9` (push run `36022151118`,
-  attempts 1 and 2, `assert 0 >= 1`) and passed in that commit's `pull_request` run. **Measured,
-  not guessed** (`LESSONS.md`): a generation-2 GC pass in this suite takes ~0.9–2 s, and the test
-  needs four beats inside a 0.3 s soak, so one pause over ~0.25 s anywhere in it fails the test;
-  an injected 0.25 s pause reproduces the exact assertion. Not #1171's code: a profile of the test
-  enters none of the four files #1171 changes; #1171's 55 extra tests only move where the passes
-  land.
-  **Proposed patch, verified locally and not applied** (outside #1171's change): run the
-  end-to-end soak with `HEARTBEAT_CAP = 1` — the soak's unconditional entry and exit beats
-  overflow a ring of one whatever the clock does — and test the ring's arithmetic by COUNT, where
-  seven `_Run.heartbeat()` calls into a ring of three keep beats `[4, 5, 6]` and count 4 dropped.
-  It passes under injected 0.3 s and 1.0 s pauses, and it catches 4 of 4 ring mutants where
-  today's test catches 2: a ring that keeps the OLDEST beats, and one that assigns the drop count
-  instead of adding to it, both pass today.
-  **Separately, and NOT investigated:** the same lane failed
-  `tests/test_markup_blocks.py::test_retirement_survives_openers_that_are_all_TEXTUALLY_DIFFERENT`
-  once, on `d0ce56e2` (`8.57 < 8`). Its timer already takes the best of `_TIMING_REPEATS` runs, so
-  one GC pass does not explain it; it is recorded, not diagnosed.
-  **Not blocking:** the lane is `continue-on-error: true`; both become blocking the day it
-  graduates.
-  **HEARTBEAT HALF FIXED (2026-09-24, PR #1172), independently and with the same approach as the
-  patch above.** #1172 (the field round's release-run PR) hit the same failure on its own CI; its
-  test now checks the ring by count (five beats into a ring of three keep the last three and count
-  2 dropped), then runs the soak with a ring of one. Verified against that version, here: it
-  passes with an injected 0.25 s, 0.3 s and 1.0 s pause, and it catches the same 4 of 4 broken
-  rings. PR #1174 carried this entry's own patch, took #1172's on merge, and records the fix here,
-  because #1172 did not. **STILL OPEN:** the `test_markup_blocks` observation above.
-  **THE INTERIM-REPORT SIBLING, FIXED IN PR #1174 — and not for the reason first given.** #1174
-  first recorded `test_an_interim_report_is_written_during_the_soak_marked_as_one_and_superseded`
-  as sharing the heartbeat test's exposure through a narrower window. That was true of the code
-  #1171 ran; #1172's RR-8 (an interim report after EVERY phase) removed it, and made the test
-  VACUOUS instead. It asserted only that an interim file existed by collection time, which a per-phase
-  interim satisfies: with a 0.6 s pause at the soak's first heartbeat, the loop wrote no interim
-  and the test still passed. #1174 asserts on the interim only the loop writes (the window still
-  open, `ended_by` None), makes it due on the loop's first pass, and ends the window there with
-  "collect now" instead of racing a sub-second deadline. Measured: it passes with a 0.6 s and a
-  2 s pause; it FAILS with the loop's interim write removed (main's version passed that
-  mutant) and with collect-now ignored.
 - **PR 7 OF THE AUDIT'S §9.2 IS BUILT AS `R24` + A DESIGN, AND `R24` NEEDED THREE THINGS ITS
   WORDING DID NOT SAY (2026-09-24, PR #1171).** §9.2 item 7 is *"Design for 0.5: the segmented
   derived index for the 1 TB target, and carrying mention rows from same-engine backups instead
@@ -14500,6 +14456,13 @@ ejecting the reader — cosmetic residue, explicitly not the P0.
   rather than collapsed, and both splice refusals with their reasons).
 
 ### 2026-09-11 — A GREEN SUITE THAT WENT RED ON A TEST NOBODY TOUCHED: the markup timing ratio can report the quadratic bomb on linear code
+
+**APPLIED THE SAME DAY (annotation 2026-09-24): `b8128bfd`, PR #1114 (`shipped.csv`
+`tests/markup`)** — `_time` takes the best of three runs, pinned by an anti-vacuity test. Best-of-3
+narrowed the noise without bounding it: the sibling ratio test in the same file,
+`test_retirement_survives_openers_that_are_all_TEXTUALLY_DIFFERENT`, failed the macOS lane once at
+8.57 on linear code, and PR #1174 replaced its timing with a count of closer searches. The
+remaining `_scaling` tests stay timed. The original status follows, unedited.
 
 **PENDING: a two-line fix, not applied, because it belongs to no branch currently open.** Recorded
 so the next session that meets this does not spend its budget the way this one nearly did.
