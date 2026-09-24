@@ -398,7 +398,11 @@ def test_the_boot_resume_never_blocks_the_boot(monkeypatch):
     from src.api.main import _resume_reindex_backlog_at_boot
 
     gate = threading.Event()
-    monkeypatch.setattr(vj, "start_reindex_drain", lambda: (gate.wait(5) or (True, None)))
+    # ALWAYS the tuple. `gate.wait(5) or (True, None)` returned the bare `True` once the
+    # gate was set -- which it is, below -- so the boot thread this leaves behind raised
+    # "cannot unpack non-iterable bool object" into whichever test ran next (macOS CI
+    # captured it in the setup log of the kill-and-boot test, 2026-09-24).
+    monkeypatch.setattr(vj, "start_reindex_drain", lambda: (gate.wait(5), (True, None))[1])
     t0 = _t.monotonic()
     _resume_reindex_backlog_at_boot(1)
     elapsed = _t.monotonic() - t0
@@ -438,16 +442,24 @@ def boot_and_drain():
     from src.api.backup_v2 import _REINDEX_RESUME_JOB
     deadline = time.time() + 120
     started = False
+    seen = []
+    # ANY state past "idle" proves the drain started IN THIS PROCESS (the job object is
+    # fresh here). Watching for "running" alone raced: a drain that starts and finishes
+    # between two 0.1 s polls goes idle -> done unseen, and read as never started --
+    # macOS CI, 2026-09-24, twice in a row. A terminal state also ends the wait.
     while time.time() < deadline:
-        st = _REINDEX_RESUME_JOB.status()
-        if st.get("state") == "running":
+        state = _REINDEX_RESUME_JOB.status().get("state")
+        if not seen or seen[-1] != state:
+            seen.append(state)
+        if state and state != "idle":
             started = True
-        elif started:
+        if state in ("done", "cancelled", "error"):
             break
         time.sleep(0.1)
     after = reindex_backlog()
     print(json.dumps({
         "started": started,
+        "states": seen,
         "pending_before_boot": before.get("articles_pending"),
         "pending_after": after.get("articles_pending"),
     }), flush=True)
@@ -520,7 +532,9 @@ def test_a_kill_between_stages_three_and_four_resumes_on_the_next_boot(tmp_path)
     assert booted.returncode == 0, booted.stderr[-3000:]
     out = json.loads(booted.stdout.strip().splitlines()[-1])
     assert out["pending_before_boot"] == pending, "the kill's backlog must survive the restart"
-    assert out["started"] is True, "boot must START the drain, not merely report the backlog"
+    assert out["started"] is True, (
+        f"boot must START the drain, not merely report the backlog (states seen: {out['states']})"
+    )
     assert out["pending_after"] == 0, (
         f"the resume left {out['pending_after']} article(s) un-re-indexed"
     )
