@@ -23,8 +23,8 @@
 ## Open queue (when maintainer says proceed)
 
 - **THE HEARTBEAT-RING TEST FAILED THE macOS LANE WHENEVER A GC PASS LANDED IN ITS 0.3 s SOAK —
-  found driving PR #1171 to green, FIXED IN PR #1172; TWO SIBLING TIMING TESTS STILL OPEN
-  (2026-09-24).** *(Headline as first recorded: "THE HEARTBEAT-RING TEST FAILS THE macOS LANE
+  found driving PR #1171 to green, FIXED IN PR #1172; ITS INTERIM-REPORT SIBLING FIXED IN PR #1174;
+  THE `test_markup_blocks` FAILURE STILL OPEN (2026-09-24).** *(Headline as first recorded: "THE HEARTBEAT-RING TEST FAILS THE macOS LANE
   WHENEVER A GC PASS LANDS IN ITS 0.3 s SOAK — found driving PR #1171 to green, NOT fixed there,
   STILL OPEN".)*
   `tests/test_release_run.py::test_the_heartbeat_ring_is_bounded_and_says_what_it_dropped`
@@ -54,11 +54,18 @@
   2 dropped), then runs the soak with a ring of one. Verified against that version, here: it
   passes with an injected 0.25 s, 0.3 s and 1.0 s pause, and it catches the same 4 of 4 broken
   rings. PR #1174 carried this entry's own patch, took #1172's on merge, and records the fix here,
-  because #1172 did not. **STILL OPEN:** the `test_markup_blocks` observation
-  above, and `test_an_interim_report_is_written_during_the_soak_marked_as_one_and_superseded` in
-  the same file as the heartbeat test. The interim test has the same exposure through a narrower
-  window: a pause of ≥ ~0.35 s in the soak's first ~0.06 s ends the loop before the first interim
-  write. It has not been seen failing.
+  because #1172 did not. **STILL OPEN:** the `test_markup_blocks` observation above.
+  **THE INTERIM-REPORT SIBLING, FIXED IN PR #1174 — and not for the reason first given.** #1174
+  first recorded `test_an_interim_report_is_written_during_the_soak_marked_as_one_and_superseded`
+  as sharing the heartbeat test's exposure through a narrower window. That was true of the code
+  #1171 ran; #1172's RR-8 (an interim report after EVERY phase) removed it, and made the test
+  VACUOUS instead. It asserted only that an interim file existed by collection time, which a per-phase
+  interim satisfies: with a 0.6 s pause at the soak's first heartbeat, the loop wrote no interim
+  and the test still passed. #1174 asserts on the interim only the loop writes (the window still
+  open, `ended_by` None), makes it due on the loop's first pass, and ends the window there with
+  "collect now" instead of racing a sub-second deadline. Measured: it passes with a 0.6 s and a
+  2 s pause; it FAILS with the loop's interim write removed (main's version passed that
+  mutant) and with collect-now ignored.
 - **PR 7 OF THE AUDIT'S §9.2 IS BUILT AS `R24` + A DESIGN, AND `R24` NEEDED THREE THINGS ITS
   WORDING DID NOT SAY (2026-09-24, PR #1171).** §9.2 item 7 is *"Design for 0.5: the segmented
   derived index for the 1 TB target, and carrying mention rows from same-engine backups instead

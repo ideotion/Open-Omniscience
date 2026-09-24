@@ -12165,3 +12165,16 @@ exclusive window is open — they stand aside for an import, by an earlier fix. 
 window would have waited on its own jobs, which were waiting on it, for ever. Before wrapping
 work in a machine-owning primitive, check whether the work itself is one of the things that
 primitive tells to stand aside.
+
+### A TEST CAN GO VACUOUS WITHOUT FAILING WHEN THE CODE GROWS A SECOND WRITER (PR #1174)
+
+`test_an_interim_report_is_written_during_the_soak_marked_as_one_and_superseded` asserted that an
+interim report FILE existed by the time the run collected. Then #1172 (RR-8) began writing an
+interim after every phase, and the soak loop's own interim stopped being the only way to satisfy
+it: with a 0.6 s pause at the soak's first heartbeat the loop wrote none and the test still
+passed, and a mutant deleting the loop's interim write passed it too. Nothing went red, because
+nothing had to. The same change had also retired the timing exposure that #1174's first ledger
+commit recorded for this test, written against the code #1171 ran; that note survived the merge
+of main because the TEST was unchanged there, when the code UNDER it was not. **Assert on a property only the named path can produce
+(here: the soak's window still open, `ended_by` None), and prove the test with that path removed.
+A test's exposure belongs to the code it runs, so re-derive it when that code changes.**

@@ -9469,3 +9469,17 @@ reached its soak. **RR-11:** an empty ledger's first boot seeds the previous ses
 forensics' sentinel and the high-water sidecar, labelled as such. Every new test was run
 against the pre-fix source and failed there. Lessons: `LESSONS.md`, the three entries dated by
 this PR.
+
+## 2026-09-24 — the interim-report test asserts on the soak's own interim again (PR #1174)
+
+Asked for as "fix the interim report test too", after #1174 found the heartbeat-ring fix already
+on main (#1172). #1174's first ledger commit had said this test shared the heartbeat test's
+timing exposure, reading the code #1171 ran; on main it could no longer fail that way, because RR-8 writes an interim after every phase, and for
+the same reason it no longer tested the soak loop at all (a 0.6 s pause made the loop skip its
+interim; the test passed). Now it asserts on the interim only the loop writes (the window still
+open), makes that interim due on the loop's first pass, and ends the window with "collect now"
+the moment it is written, so no pause can close the window first; a 10 s deadline only bounds how
+a broken loop fails. **Mutation-checked in a scratch worktree:** the loop's interim write removed
+→ the new test fails and main's passed; collect-now ignored → fails; the final no longer
+superseding the interim → both fail. Also in #1174: the ledger record of #1172's heartbeat-ring
+fix, and the correction of the queue headline that still said that test fails.

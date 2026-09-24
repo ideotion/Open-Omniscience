@@ -304,21 +304,36 @@ def test_the_heartbeat_ring_is_bounded_and_says_what_it_dropped(fast, monkeypatc
 def test_an_interim_report_is_written_during_the_soak_marked_as_one_and_superseded(fast, monkeypatch):
     """An operator who returns early downloads a PARTIAL reading rather than nothing --
     and it says INTERIM, because a partial reading presented as final is the two-hour
-    reading wearing a three-day label. The final run report then supersedes it."""
-    monkeypatch.setattr(rr, "INTERIM_REPORT_INTERVAL_S", 0.05)
-    seen: list[dict] = []
-    original_collect = rr._collect
+    reading wearing a three-day label. The final run report then supersedes it.
 
-    def _collect(ctx, run):
-        # Read the interim while the run is still in flight (before the final is written).
-        for p in rr._run_dir().glob("oo-release-run-*-interim.json"):
-            seen.append(json.loads(p.read_text(encoding="utf-8")))
-        return original_collect(ctx, run)
-    monkeypatch.setattr(rr, "_collect", _collect)
-    res = rr.run_release_run(FakeCtx(), **_params(fast["dest"], soak_hours=0.4 / 3600))
-    assert seen, "no interim report was written during the soak"
-    assert all(r["interim"] is True for r in seen), [r["interim"] for r in seen]
-    assert all(r["outcome"] is None for r in seen)
+    About the SOAK'S OWN interim, deterministically, since 2026-09-24. Every phase now writes
+    an interim as it ends (RR-8), so "an interim file exists by collection time" held even
+    when the soak loop wrote none: with a 0.6 s pause at the soak's first heartbeat the loop
+    skipped its interim and this test still passed. It now asserts on the interim only the
+    loop writes -- the window still OPEN (``ended_by`` is None) -- makes it due on the loop's
+    first pass, and ends the window there with "collect now" instead of racing a sub-second
+    deadline. The 10 s deadline is only how a loop that never writes it fails, fast."""
+    monkeypatch.setattr(rr, "INTERIM_REPORT_INTERVAL_S", 0.0)
+    mid_soak: list[dict] = []
+    original_write = rr._write_report
+
+    def _write_report(run, *, interim):
+        path = original_write(run, interim=interim)
+        if interim:
+            written = json.loads(path.read_text(encoding="utf-8"))
+            if written["soak"].get("started_at") and written["soak"].get("ended_by") is None:
+                mid_soak.append(written)
+                rr.request_collect_now()
+        return path
+    monkeypatch.setattr(rr, "_write_report", _write_report)
+    try:
+        res = rr.run_release_run(FakeCtx(), **_params(fast["dest"], soak_hours=10.0 / 3600))
+    finally:
+        rr._COLLECT_NOW.clear()
+    assert mid_soak, "the soak loop wrote no interim report while its window was open"
+    assert all(r["interim"] is True for r in mid_soak), [r["interim"] for r in mid_soak]
+    assert all(r["outcome"] is None for r in mid_soak)
+    assert res["report"]["soak"]["ended_by"] == "collect-now"
     assert res["report"]["interim"] is False
     assert not list(rr._run_dir().glob("oo-release-run-*-interim.json")), "the final supersedes the interim"
 
