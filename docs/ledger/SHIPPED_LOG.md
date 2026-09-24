@@ -9501,7 +9501,7 @@ scratch worktree:** exhaustion keyed on the opener's text, and a family that nev
 fail it with "2000 textually distinct openers cost 2000 closer searches" (the timed version also
 failed them, at ~15x); a key without flags passes it and fails its sibling
 `test_two_closers_sharing_a_source_string_but_not_their_flags_are_two_families`, as designed. The
-file's other `_scaling` tests stay timed; none has been seen failing.
+file's other `_scaling` tests followed in the same PR (the entry below).
 
 **Retired from `OPEN_QUEUE.md` the same day, every half shipped (rule (5a)):** the entry below,
 verbatim, with its closing annotation.
@@ -9559,3 +9559,24 @@ verbatim, with its closing annotation.
   (it is in the engine identity's hash) -- one for the whole document on correct code, n when the
   key is the opener's text. Every half of this entry has shipped, so it left `OPEN_QUEUE.md` for
   `SHIPPED_LOG.md` the same day, per rule (5a).
+
+## 2026-09-24 — the markup-blocks scaling harness times the thread's own CPU, and the primitive's scaling test is counted (PR #1174)
+
+Asked for as "fix the other _scaling tests too". **Measured first, with four busy cores
+alongside** (the 2026-09-11 session's condition): `main`'s file failed 2 of 10 runs, both in
+`test_the_wiki_strip_is_linear_on_EVERY_shape_that_reaches_it`, and 3 of 60 end-to-end ratios
+crossed the bar of 8 (max 8.36) under best-of-3 on the wall clock. Interleaving the two sizes on
+the wall clock cut the false alarms and opened the other door: a deliberately quadratic scan
+measured 7.52, UNDER the bar. The thread's own CPU clock does not advance while the thread is
+preempted: interleaved, with the collector paused, linear max 4.22 (0 of 60) and quadratic min
+15.00 under the same load; the rewritten file then failed 0 of 40 runs. So `_scaling` now times
+`time.thread_time` wherever `clock_gettime` backs it (the wall clock stays on Windows, whose
+per-thread clock advances in ~15.6 ms ticks), interleaves the sizes and pauses the collector,
+and the anti-vacuity guard pins that clock beside the repeats. The end-to-end test stays TIMED
+on purpose: its quadratic shapes live inside the regex engine, where no counter can see them.
+The primitive's test (`strip_one_block`, three shapes) is COUNTED instead: the characters its
+opener and closer searches scan grow ~4x for 4x the input, and the family retires on its
+closer's first miss. **Mutation-checked in a scratch worktree:** a family that never retires
+fails the counted test on all three shapes; the six anchored substitutions reverted to plain
+`re.sub` measure 15.4x and 14.6x through the new harness (real code: 3.8x and 3.5x). Lesson:
+`LESSONS.md`.

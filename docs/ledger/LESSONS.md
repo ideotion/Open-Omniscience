@@ -12194,3 +12194,19 @@ engine identity, so editing it would re-stamp every article). The 2026-08-10 rul
 `OPEN_QUEUE.md` ("A THRESHOLD OVER A RATIO OF TWO TIMINGS IS NOT A GUARD ON A SHARED RUNNER"),
 again: **find the arithmetic claim under a timing guard and assert that; and check the suspect
 you already have before blaming it twice.**
+
+### TIME CPU WORK ON THE THREAD'S OWN CPU CLOCK, AND TEST THE HARNESS IN BOTH DIRECTIONS (PR #1174)
+
+`tests/test_markup_blocks.py` times the whole wiki strip at two sizes and bars the ratio at 8
+(linear ~4, quadratic ~16). Best-of-3 on the wall clock, the 2026-09-11 fix, narrowed a busy
+runner's noise without bounding it: with four busy cores alongside, the file still failed 2 of
+10 runs, and 3 of 60 ratios crossed the bar. Interleaving the sizes on the wall clock made false
+alarms rarer and bought FALSE PASSES instead: a deliberately quadratic scan measured 7.52, under
+the bar, so the guard could have waved through the defect it exists for. `time.thread_time()`
+does not advance while the thread is preempted, so the runner stops being part of the
+measurement: under the same load, linear max 4.22 and quadratic min 15.00. **When the property
+is CPU work done by this thread, time it on this thread's CPU clock; and measure a timing harness
+under load in BOTH directions -- linear code must stay under the bar and a known quadratic must
+stay over it -- because a fix for false alarms can quietly become a blind spot.** Where the defect
+is countable from outside (a scan per opener, through the patterns the function is handed),
+count it instead; a timer is for work no counter can reach, like a regex engine's backtracking.

@@ -14462,7 +14462,9 @@ ejecting the reader — cosmetic residue, explicitly not the P0.
 narrowed the noise without bounding it: the sibling ratio test in the same file,
 `test_retirement_survives_openers_that_are_all_TEXTUALLY_DIFFERENT`, failed the macOS lane once at
 8.57 on linear code, and PR #1174 replaced its timing with a count of closer searches. The
-remaining `_scaling` tests stay timed. The original status follows, unedited.
+remaining `_scaling` tests followed in the same PR: the primitive's is counted, and the
+end-to-end strip's is timed on the thread's own CPU clock, the sizes interleaved, the collector
+paused. The original status follows, unedited.
 
 **PENDING: a two-line fix, not applied, because it belongs to no branch currently open.** Recorded
 so the next session that meets this does not spend its budget the way this one nearly did.

@@ -16,6 +16,7 @@ changes nothing about the output. Everything else measures the cliff.
 
 from __future__ import annotations
 
+import gc
 import random
 import re
 import time
@@ -165,21 +166,25 @@ def test_two_closers_sharing_a_source_string_but_not_their_flags_are_two_familie
     assert "P" in out and "Q" in out and "R" in out and "<b>" in out
 
 
-class _CountingCloser:
-    """A closer that counts its searches: the unit the retirement defect is made of.
+class _CountingPattern:
+    """A compiled pattern that counts its searches and the characters they scanned: the
+    units the scan-per-opener defect is made of.
 
     ``strip_blocks`` reads a closer's ``pattern`` and ``flags`` (its exhaustion key) and
-    calls ``search``, nothing else, so this stands in for the compiled pattern and the
-    module under test is not touched."""
+    calls ``search`` on the opener and the closer, nothing else, so this stands in for the
+    compiled pattern and the module under test is not touched."""
 
     def __init__(self, rx: re.Pattern[str]) -> None:
         self._rx = rx
         self.pattern, self.flags = rx.pattern, rx.flags
         self.searches = 0
+        self.scanned = 0
 
     def search(self, text: str, pos: int = 0) -> re.Match[str] | None:
         self.searches += 1
-        return self._rx.search(text, pos)
+        m = self._rx.search(text, pos)
+        self.scanned += (m.end() if m else len(text)) - pos
+        return m
 
 
 def test_retirement_survives_openers_that_are_all_TEXTUALLY_DIFFERENT():
@@ -206,7 +211,7 @@ def test_retirement_survives_openers_that_are_all_TEXTUALLY_DIFFERENT():
         return "".join(f"Lorem ipsum dolor sit amet <ref name=n{i}>body " for i in range(n_openers))
 
     for n in (2000, 8000):
-        doc, closer = doc_of(n), _CountingCloser(_REF_CLOSE)
+        doc, closer = doc_of(n), _CountingPattern(_REF_CLOSE)
         assert strip_one_block(doc, _REF_OPEN, closer) is doc, "nothing closes, so nothing is removed"
         assert closer.searches == 1, (
             f"{n} textually distinct openers cost {closer.searches} closer searches -- exhaustion is "
@@ -233,14 +238,33 @@ def test_retirement_survives_openers_that_are_all_TEXTUALLY_DIFFERENT():
 # quadratic on its best run too, so the guard keeps its teeth.
 _TIMING_REPEATS = 3
 
+# ...and on the THREAD'S OWN CPU CLOCK, interleaving the two sizes, with the collector
+# paused (2026-09-24). Best-of-3 on the wall clock narrowed the runner's noise without
+# bounding it: over the end-to-end shapes, with four busy cores alongside, it still put 3
+# of 60 linear ratios over the bar (max 8.36), and interleaving alone, on the wall clock,
+# let a deliberately quadratic scan measure 7.52 -- UNDER the bar. A preempted thread does
+# not advance its own CPU clock, so preemption stops being measured at all: under the same
+# contention, linear max 4.22 (0 of 60) and quadratic min 15.00. Interleaving puts a burst
+# on both sizes' samples rather than on one. Where the platform has no fine per-thread
+# clock (Windows' GetThreadTimes advances in ~15.6 ms ticks, coarser than the work timed
+# here), the wall clock stays.
+_CLOCK = (
+    time.thread_time
+    if time.get_clock_info("thread_time").implementation.startswith("clock_gettime")
+    else time.perf_counter
+)
 
-def _time(fn, *a):
-    best = float("inf")
-    for _ in range(_TIMING_REPEATS):
-        t0 = time.perf_counter()
+
+def _time_once(fn, *a) -> float:
+    was_on = gc.isenabled()
+    gc.disable()
+    try:
+        t0 = _CLOCK()
         fn(*a)
-        best = min(best, time.perf_counter() - t0)
-    return best
+        return _CLOCK() - t0
+    finally:
+        if was_on:
+            gc.enable()
 
 
 def _scaling(fn, unit: str, small: int = 100_000, factor: int = 4) -> float:
@@ -251,11 +275,12 @@ def _scaling(fn, unit: str, small: int = 100_000, factor: int = 4) -> float:
     runner's speed, while the defect is that the two diverge by an order of
     magnitude. Measured before the fix, `<ref>` spam scaled 15.9x for a 4x input.
     """
-    ts = []
-    for n in (small, small * factor):
-        doc = (unit * (n // len(unit) + 1))[:n]
-        ts.append(max(_time(fn, doc), 1e-6))
-    return ts[1] / ts[0]
+    docs = [(unit * (n // len(unit) + 1))[:n] for n in (small, small * factor)]
+    best = [float("inf"), float("inf")]
+    for _ in range(_TIMING_REPEATS):
+        for i, doc in enumerate(docs):
+            best[i] = min(best[i], _time_once(fn, doc))
+    return max(best[1], 1e-6) / max(best[0], 1e-6)
 
 
 @pytest.mark.parametrize(
@@ -273,6 +298,14 @@ def test_an_unclosed_block_opener_no_longer_costs_a_scan_per_opener(unit):
     and that is deliberate rather than convenient -- see the test below, which
     records why the end-to-end claim is true for two of the three shapes and not
     yet for the third.
+
+    COUNTED, not timed, since 2026-09-24. At the primitive the scan-per-opener defect is a
+    number of characters searched, and every search goes through the two patterns it is
+    handed, so the cost IS countable: the characters the opener and closer searches scan
+    must grow ~4x for 4x the input (a scan per opener: ~16x), and the family must retire
+    on its closer's first miss. The end-to-end test below stays timed, because the
+    quadratic shapes it guards live inside the regex engine, where no counter outside it
+    can see them.
     """
     families = {
         "<ref": (re.compile(r"<ref[^>]*>", re.IGNORECASE), re.compile(r"</ref>", re.IGNORECASE)),
@@ -280,9 +313,17 @@ def test_an_unclosed_block_opener_no_longer_costs_a_scan_per_opener(unit):
         "<!--": (re.compile(r"<!--"), re.compile(r"-->")),
     }
     key = next(k for k in families if k in unit)
-    opener, closer = families[key]
-    ratio = _scaling(lambda d: strip_one_block(d, opener, closer), unit)
-    assert ratio < 8, f"4x the input cost {ratio:.1f}x the time -- the quadratic scan is back"
+    costs = []
+    for n in (100_000, 400_000):
+        doc = (unit * (n // len(unit) + 1))[:n]
+        opener, closer = (_CountingPattern(rx) for rx in families[key])
+        assert strip_one_block(doc, opener, closer) is doc, "nothing closes, so nothing is removed"
+        assert closer.searches == 1, (
+            f"{closer.searches} closer searches in {n:,} characters -- the family no longer retires"
+        )
+        costs.append(opener.scanned + closer.scanned)
+    ratio = costs[1] / costs[0]
+    assert ratio < 8, f"4x the input cost {ratio:.1f}x the characters searched -- the quadratic scan is back"
 
 
 def test_the_wiki_strip_is_linear_on_EVERY_shape_that_reaches_it():
@@ -304,6 +345,10 @@ def test_the_wiki_strip_is_linear_on_EVERY_shape_that_reaches_it():
     Measured after: 59.282 s -> 0.0137 s on the worst shape, and every one of the
     eight below scales linearly. The comment shape is no longer excluded: its
     downstream ``<[^>]+>`` is linear now too.
+
+    Still TIMED, deliberately: these shapes are quadratic inside the regex engine, where
+    no counter can see them. Timed on the thread's own CPU clock since 2026-09-24 (see
+    ``_CLOCK``), which a busy runner's preemption does not advance.
     """
     for unit in (
         "Lorem ipsum dolor sit amet. <ref>a citation ",
@@ -408,9 +453,10 @@ def test_the_wiki_strip_contains_no_lazy_block_regex_at_all():
 # the guard on the guard
 # --------------------------------------------------------------------------- #
 def test_the_scaling_harness_still_catches_a_genuinely_quadratic_scan():
-    """ANTI-VACUITY for ``_time``'s repeats, which are otherwise free to delete.
+    """ANTI-VACUITY for the harness's repeats and its clock, which are otherwise free to
+    delete.
 
-    ``_time`` takes the MINIMUM of ``_TIMING_REPEATS`` runs rather than timing once,
+    ``_scaling`` takes the MINIMUM of ``_TIMING_REPEATS`` runs rather than timing once,
     because the timed work is ~3 ms and a single scheduler preemption on a busy runner
     moved the ratio past the bar -- to a measured max of 17.53 on provably linear code,
     which is ABOVE the 15.9x this file cites as the quadratic signature (2026-09-11).
@@ -424,10 +470,19 @@ def test_the_scaling_harness_still_catches_a_genuinely_quadratic_scan():
 
     So this test fails if the repeats are removed (they are the fix) OR if the harness
     stops being able to see a quadratic (it would then be asserting nothing at all).
+
+    And since 2026-09-24 it pins the CLOCK: the thread's own CPU time wherever the platform
+    has a fine one, because the wall clock under four busy cores still failed linear code
+    (3 of 60) and, interleaved, let this very quadratic measure 7.52.
     """
     assert _TIMING_REPEATS >= 3, (
-        "_time takes the minimum of its repeats to survive a busy runner; dropping "
+        "_scaling takes the minimum of its repeats to survive a busy runner; dropping "
         "below 3 restores the false 'the quadratic scan is back' this fixed"
+    )
+    fine_thread_clock = time.get_clock_info("thread_time").implementation.startswith("clock_gettime")
+    assert _CLOCK is (time.thread_time if fine_thread_clock else time.perf_counter), (
+        "the harness times on the wall clock where a fine per-thread CPU clock exists, so a "
+        "busy runner's preemption is measured again"
     )
 
     opener, closer = re.compile(r"\{\|"), re.compile(r"\|\}")
