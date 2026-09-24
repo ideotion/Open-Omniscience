@@ -1153,12 +1153,35 @@
           + ' <span class="muted">· ' + esc(_chronoWhen(s.longest_stretch.started_at)) + ' → '
           + (s.longest_stretch.current ? esc(t("now")) : esc(_chronoWhen(s.longest_stretch.ended_at))) + '</span>'));
       }
-      const bar = s.bar_reached
-        ? tf("reached at {when}", { when: _chronoWhen(s.bar_reached_at) })
-        : (s.hours_remaining_on_current_stretch != null
-            ? tf("not yet — {h} h more on the current stretch (a restart or a suspend starts it over)", { h: s.hours_remaining_on_current_stretch })
-            : t("not yet — no stretch is running"));
+      // THE BAR IS CONTINUOUS COLLECTION (gate row B; RR-10, 2026-09-24). It is read off the
+      // collection loop's own start/stop records, and it is UNKNOWN -- never "not yet" -- when
+      // no session in the window recorded them. The process staying up is the clause's other
+      // half, shown on its own row so a process that ran five days with its collector
+      // stopped (Lenn) can never read as a reached bar.
+      const coll = s.collection || null;
+      if (coll && coll.longest_stretch) {
+        rows.push(row(t("Longest collection stretch"), esc(_chronoDur(coll.longest_stretch.seconds))
+          + ' <span class="muted">· ' + esc(_chronoWhen(coll.longest_stretch.started_at)) + ' → '
+          + (coll.longest_stretch.current ? esc(t("now")) : esc(_chronoWhen(coll.longest_stretch.ended_at))) + '</span>',
+          coll.method || ""));
+      }
+      const bar = s.bar_reached == null
+        ? t("unknown — nothing in this window recorded when collection ran")
+        : (s.bar_reached
+          ? tf("reached at {when}", { when: _chronoWhen(s.bar_reached_at) })
+          : (s.hours_remaining_on_current_stretch != null
+              ? tf("not yet — {h} h more on the current collection stretch (stopping collection, a restart or a suspend starts it over)", { h: s.hours_remaining_on_current_stretch })
+              : t("not yet — collection is not running")));
       rows.push(row(tf("{h} h continuous bar", { h: s.bar_hours }), esc(bar), s.method || ""));
+      const pb = s.process_bar || null;
+      if (pb) {
+        const pv = pb.reached
+          ? tf("{h} h reached at {when} — the process's half of the clause, not the bar", { h: s.bar_hours, when: _chronoWhen(pb.reached_at) })
+          : (pb.hours_remaining_on_current_stretch != null
+              ? tf("not yet — {h} h more on the current stretch", { h: pb.hours_remaining_on_current_stretch })
+              : t("not yet — no stretch is running"));
+        rows.push(row(t("Process up without a break"), esc(pv)));
+      }
       const cav = (s.caveats || []).map((c) => '<div class="hint">' + esc(c) + '</div>').join("");
       return rows.join("") + cav;
     }

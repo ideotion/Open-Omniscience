@@ -4385,7 +4385,7 @@
   "Start the unattended run (goes online: continuous collection and the qualification drain)": "Iniciar a execução autónoma (fica online: coleta contínua e esvaziamento da fila de qualificação)",
   "Stop at the next safe point; whatever the window gave is still collected and reported.": "Parar no próximo ponto seguro; o que a janela deu é coletado e relatado na mesma.",
   "The same run under the 'million' profile: the all-diagnostics bundle at the end is REQUIRED (row C's bar: complete coverage, every member non-zero) and the report says its numbers speak to the ~1M rows.": "A mesma execução com o perfil «million»: o pacote de todos os diagnósticos no fim é OBRIGATÓRIO (a fasquia da linha C: cobertura completa, nenhum membro vazio) e o relatório diz que os seus números falam das linhas de ~1 M.",
-  "also run 0.3 row 5 — the Tier-A quarantine pass (deferred by ruling A1; tick only to run it now)": "executar também a linha 5 da 0.3 — a passagem de quarentena de nível A (adiada pela decisão A1; marque apenas para a executar agora)",
+  "also run 0.3 row 5, LAST — the Tier-A quarantine pass, then a whole-corpus keyword re-index with collection paused: hours on a small corpus, days on a slow machine (deferred by ruling A1; tick only to run it now)": "executar também a linha 5 da 0.3, NO FIM — a passagem de quarentena de nível A e depois uma reindexação de palavras-chave de todo o corpus com a coleta em pausa: horas num corpus pequeno, dias numa máquina lenta (adiada pela decisão A1; marque apenas para a executar agora)",
   "destination dir (a separate folder / drive, ~3× your corpus)": "diretório de destino (uma pasta / unidade separada, ~3× o seu corpus)",
   "include newsletters": "incluir newsletters",
   "online probes (law hosts, scoring endpoint, weights digests)": "sondas online (hosts jurídicos, ponto de pontuação, digests dos pesos)",
@@ -4439,7 +4439,6 @@
   "Session {id}: {from} → {to} · {kind} · up {dur}": "Sessão {id}: {from} → {to} · {kind} · a correr {dur}",
   "Stretch: {from} → {to} · {dur} · ended by {by}": "Trecho: {from} → {to} · {dur} · terminado por {by}",
   "Suspend (clock jump): {from} → {to}. The wall clock ran ahead of the monotonic clock; a sleep, a hibernation and a clock change leave the same record.": "Suspensão (salto de relógio): {from} → {to}. O relógio de parede adiantou-se ao relógio monotónico; uma suspensão, uma hibernação e uma mudança de hora deixam o mesmo registo.",
-  "not yet — {h} h more on the current stretch (a restart or a suspend starts it over)": "ainda não — faltam {h} h no trecho atual (um reinício ou uma suspensão fá-lo recomeçar)",
   "reached at {when}": "atingida às {when}",
   "{h} h continuous bar": "barra contínua de {h} h",
   "{h} h if this stretch holds": "{h} h se este trecho aguentar",
@@ -4448,5 +4447,12 @@
   "{n} unclean end(s)": "{n} fim(ns) abrupto(s)",
   "{n} since {when}": "{n} desde {when}",
   "Light bundle": "Pacote leve",
-  "FULL collects every member and is the default. LIGHT skips four members that measure the machine or re-read the whole corpus instead of reporting your data. Each skipped member still appears in the archive as a file naming why, so a light bundle can never be mistaken for a full one. Applies to this run only and is never remembered.": "COMPLETO recolhe todos os elementos e é a opção predefinida. LEVE ignora quatro elementos que medem a máquina ou releem todo o corpus em vez de comunicar os seus dados. Cada elemento ignorado continua a aparecer no arquivo como um ficheiro que indica o motivo, pelo que um pacote leve nunca pode ser confundido com um completo. Aplica-se apenas a esta execução e nunca é memorizado."
+  "FULL collects every member and is the default. LIGHT skips four members that measure the machine or re-read the whole corpus instead of reporting your data. Each skipped member still appears in the archive as a file naming why, so a light bundle can never be mistaken for a full one. Applies to this run only and is never remembered.": "COMPLETO recolhe todos os elementos e é a opção predefinida. LEVE ignora quatro elementos que medem a máquina ou releem todo o corpus em vez de comunicar os seus dados. Cada elemento ignorado continua a aparecer no arquivo como um ficheiro que indica o motivo, pelo que um pacote leve nunca pode ser confundido com um completo. Aplica-se apenas a esta execução e nunca é memorizado.",
+  "unknown — nothing in this window recorded when collection ran": "desconhecido — nada nesta janela registrou quando a coleta estava em execução",
+  "not yet — {h} h more on the current collection stretch (stopping collection, a restart or a suspend starts it over)": "ainda não — faltam {h} h no trecho de coleta atual (parar a coleta, um reinício ou uma suspensão fazem-no recomeçar)",
+  "not yet — collection is not running": "ainda não — a coleta não está em execução",
+  "Longest collection stretch": "Trecho de coleta mais longo",
+  "Process up without a break": "Processo ativo sem interrupção",
+  "{h} h reached at {when} — the process's half of the clause, not the bar": "{h} h atingidas às {when} — a metade «processo» da cláusula, não a barra",
+  "not yet — {h} h more on the current stretch": "ainda não — faltam {h} h no trecho atual"
 }

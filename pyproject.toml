@@ -45,7 +45,10 @@ dependencies = [
     "slowapi>=0.1.9",
     "prometheus-client>=0.20",
     # Data / ORM
-    "sqlalchemy>=2.0.30",
+    # Capped below 2.1 (2026-09-24): SQLAlchemy 2.1.0 tightened its ORM typing, and
+    # the blocking mypy lane reports 19 new errors under it across 9 files with no
+    # code change here. Lift the cap in the PR that fixes those, as a deliberate bump.
+    "sqlalchemy>=2.0.30,<2.1",
     "alembic>=1.13",
     # At-rest encryption (maintainer-ruled default): SQLCipher 4 via self-
     # contained wheels on Linux/Windows/macOS (verified: gate zero + the 3-OS

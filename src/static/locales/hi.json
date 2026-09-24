@@ -4385,7 +4385,7 @@
   "Start the unattended run (goes online: continuous collection and the qualification drain)": "अनुपस्थित संचालन शुरू करें (ऑनलाइन जाता है: निरंतर संग्रह और योग्यता कतार निकासी)",
   "Stop at the next safe point; whatever the window gave is still collected and reported.": "अगले सुरक्षित बिंदु पर रुकें; विंडो ने जो दिया वह फिर भी संग्रहीत और रिपोर्ट किया जाता है।",
   "The same run under the 'million' profile: the all-diagnostics bundle at the end is REQUIRED (row C's bar: complete coverage, every member non-zero) and the report says its numbers speak to the ~1M rows.": "«million» प्रोफ़ाइल में वही रन: अंत में सभी-निदान बंडल आवश्यक है (पंक्ति C का मापदंड: पूर्ण कवरेज, कोई सदस्य शून्य नहीं) और रिपोर्ट बताती है कि उसके आँकड़े ~1M पंक्तियों के बारे में हैं।",
-  "also run 0.3 row 5 — the Tier-A quarantine pass (deferred by ruling A1; tick only to run it now)": "0.3 की पंक्ति 5 भी चलाएँ — स्तर A क्वारंटीन पास (निर्णय A1 द्वारा स्थगित; अभी चलाने के लिए ही टिक करें)",
+  "also run 0.3 row 5, LAST — the Tier-A quarantine pass, then a whole-corpus keyword re-index with collection paused: hours on a small corpus, days on a slow machine (deferred by ruling A1; tick only to run it now)": "0.3 की पंक्ति 5 भी चलाएँ, सबसे अंत में — स्तर A क्वारंटीन पास, फिर संग्रह रोककर पूरे कॉर्पस का कीवर्ड पुनः-अनुक्रमण: छोटे कॉर्पस पर घंटों, धीमी मशीन पर कई दिनों तक (निर्णय A1 द्वारा स्थगित; अभी चलाने के लिए ही टिक करें)",
   "destination dir (a separate folder / drive, ~3× your corpus)": "गंतव्य डायरेक्टरी (एक अलग फ़ोल्डर / ड्राइव, आपके कॉर्पस का ~3×)",
   "include newsletters": "न्यूज़लेटर शामिल करें",
   "online probes (law hosts, scoring endpoint, weights digests)": "ऑनलाइन प्रोब (कानून होस्ट, स्कोरिंग एंडपॉइंट, वेट डाइजेस्ट)",
@@ -4439,7 +4439,6 @@
   "Session {id}: {from} → {to} · {kind} · up {dur}": "सत्र {id}: {from} → {to} · {kind} · चालू {dur}",
   "Stretch: {from} → {to} · {dur} · ended by {by}": "अवधि: {from} → {to} · {dur} · {by} से समाप्त",
   "Suspend (clock jump): {from} → {to}. The wall clock ran ahead of the monotonic clock; a sleep, a hibernation and a clock change leave the same record.": "निलंबन (घड़ी की छलांग): {from} → {to}। दीवार घड़ी मोनोटोनिक घड़ी से आगे निकल गई; स्लीप, हाइबरनेशन और घड़ी बदलना एक जैसा रिकॉर्ड छोड़ते हैं।",
-  "not yet — {h} h more on the current stretch (a restart or a suspend starts it over)": "अभी नहीं — वर्तमान अवधि पर {h} घंटे और (पुनरारंभ या निलंबन इसे फिर से शुरू कर देता है)",
   "reached at {when}": "{when} पर पहुँचा",
   "{h} h continuous bar": "{h} घंटे का निरंतर मानक",
   "{h} h if this stretch holds": "यह अवधि टिकी तो {h} घंटे",
@@ -4448,5 +4447,12 @@
   "{n} unclean end(s)": "{n} अशुद्ध अंत",
   "{n} since {when}": "{when} से {n}",
   "Light bundle": "हल्का बंडल",
-  "FULL collects every member and is the default. LIGHT skips four members that measure the machine or re-read the whole corpus instead of reporting your data. Each skipped member still appears in the archive as a file naming why, so a light bundle can never be mistaken for a full one. Applies to this run only and is never remembered.": "पूर्ण हर सदस्य को एकत्र करता है और यही डिफ़ॉल्ट है। हल्का उन चार सदस्यों को छोड़ देता है जो आपके डेटा की रिपोर्ट देने के बजाय मशीन को मापते हैं या पूरे संग्रह को दोबारा पढ़ते हैं। छोड़ा गया प्रत्येक सदस्य फिर भी संग्रह में एक फ़ाइल के रूप में दिखता है जो कारण बताती है, इसलिए हल्के बंडल को कभी पूर्ण बंडल समझा नहीं जा सकता। यह केवल इसी बार लागू होता है और कभी याद नहीं रखा जाता।"
+  "FULL collects every member and is the default. LIGHT skips four members that measure the machine or re-read the whole corpus instead of reporting your data. Each skipped member still appears in the archive as a file naming why, so a light bundle can never be mistaken for a full one. Applies to this run only and is never remembered.": "पूर्ण हर सदस्य को एकत्र करता है और यही डिफ़ॉल्ट है। हल्का उन चार सदस्यों को छोड़ देता है जो आपके डेटा की रिपोर्ट देने के बजाय मशीन को मापते हैं या पूरे संग्रह को दोबारा पढ़ते हैं। छोड़ा गया प्रत्येक सदस्य फिर भी संग्रह में एक फ़ाइल के रूप में दिखता है जो कारण बताती है, इसलिए हल्के बंडल को कभी पूर्ण बंडल समझा नहीं जा सकता। यह केवल इसी बार लागू होता है और कभी याद नहीं रखा जाता।",
+  "unknown — nothing in this window recorded when collection ran": "अज्ञात — इस अवधि में कुछ भी दर्ज नहीं हुआ कि संग्रह कब चल रहा था",
+  "not yet — {h} h more on the current collection stretch (stopping collection, a restart or a suspend starts it over)": "अभी नहीं — वर्तमान संग्रह-अवधि पर {h} घंटे और (संग्रह रोकना, पुनरारंभ या निलंबन इसे फिर से शुरू कर देता है)",
+  "not yet — collection is not running": "अभी नहीं — संग्रह नहीं चल रहा है",
+  "Longest collection stretch": "सबसे लंबी संग्रह-अवधि",
+  "Process up without a break": "प्रक्रिया बिना रुकावट चालू",
+  "{h} h reached at {when} — the process's half of the clause, not the bar": "{when} पर {h} घंटे पूरे — शर्त का प्रक्रिया वाला आधा हिस्सा, मानक नहीं",
+  "not yet — {h} h more on the current stretch": "अभी नहीं — वर्तमान अवधि पर {h} घंटे और"
 }
