@@ -2768,7 +2768,7 @@
           <label class="small"><span>soak hours</span> <input id="rr-hours" type="number" min="1" max="1440" step="1" value="72" style="width:70px"></label>
           <label class="small"><input id="rr-newsletters" type="checkbox" checked style="width:auto"> <span>include newsletters</span></label>
           <label class="small"><input id="rr-probes" type="checkbox" checked style="width:auto"> <span>online probes (law hosts, scoring endpoint, weights digests)</span></label>
-          <label class="small"><input id="rr-row5" type="checkbox" style="width:auto"> <span>also run 0.3 row 5 — the Tier-A quarantine pass (deferred by ruling A1; tick only to run it now)</span></label>
+          <label class="small"><input id="rr-row5" type="checkbox" style="width:auto"> <span>also run 0.3 row 5, LAST — the Tier-A quarantine pass, then a whole-corpus keyword re-index with collection paused: hours on a small corpus, days on a slow machine (deferred by ruling A1; tick only to run it now)</span></label>
         </div>
         <div class="row" style="margin-top:6px">
           <button id="rr-run-btn" onclick="releaseRunStart(this, 'release-scale')" title="Start the 0.4 release run on this instance (the release-scale profile): the P0 trio, the fresh-install restore, then the soak for the hours entered. Goes online now through the one consent popup; the soak clock starts after the restore.">Run on this instance</button>

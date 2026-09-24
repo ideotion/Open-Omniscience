@@ -157,8 +157,9 @@ def test_a_full_run_sequences_the_phases_and_writes_one_report(fast):
     assert report["schema"] == rr.RELEASE_RUN_SCHEMA
     assert report["outcome"] == "done" and report["interim"] is False
     names = [ph["name"] for ph in report["phases"]]
-    assert names == ["preflight", "row5_quarantine", "p0_validation", "fresh_install_restore",
-                     "arm_soak", "online_probes", "soak", "collect", "bundle"], names
+    # Row 5 is LAST (ruling FD01, 2026-09-24): the soak's evidence comes first.
+    assert names == ["preflight", "p0_validation", "fresh_install_restore",
+                     "arm_soak", "online_probes", "soak", "collect", "bundle", "row5_quarantine"], names
     assert {ph["name"]: ph["status"] for ph in report["phases"]}["row5_quarantine"] == "skipped"
     rows = {r["row"]: r for r in report["board_rows"]}
     assert set(rows) == {"A", "B", "C", "D", "E", "G", "J", "K", "I", "P", "Q", "T"}
@@ -189,7 +190,9 @@ def test_row5_runs_ONLY_when_ticked(fast):
     assert "row5" not in fast["calls"]
     fast["calls"].clear()
     rr.run_release_run(FakeCtx(), **_params(fast["dest"], run_row5_quarantine=True))
-    assert fast["calls"][:2] == ["preflight", "row5"], fast["calls"]
+    # ...and it runs AFTER the bundle (FD01): a whole-corpus re-index that can take days
+    # may no longer hold the soak back.
+    assert fast["calls"][-2:] == ["bundle", "row5"], fast["calls"]
 
 
 def test_a_cancel_during_the_soak_still_collects_and_reports(fast):
@@ -983,3 +986,504 @@ def test_the_bundle_phase_READS_the_profile_out_of_the_real_archive(tmp_path, mo
     assert out["profile"] == "light"
     assert out["complete_profile"] is False
     assert out["declined_members"] == ["fixity.json"]
+
+
+# --------------------------------------------------------------------------- #
+#  The field round (2026-09-24, docs/audit/16_…): RR-1 to RR-4, RR-6 to RR-8
+# --------------------------------------------------------------------------- #
+def _pool_timeout():
+    from sqlalchemy.exc import TimeoutError as PoolTimeout
+
+    return PoolTimeout("QueuePool limit of size 6 overflow 2 reached, connection timed out, timeout 30.00")
+
+
+def test_row5_starts_only_after_an_interim_report_already_holds_the_soak(fast, monkeypatch):
+    """FD01: the soak's evidence is on disk before a job that can take days begins."""
+    seen: list[dict] = []
+
+    def _row5(ctx, run):
+        fast["calls"].append("row5")
+        for p in rr._run_dir().glob("oo-release-run-*-interim.json"):
+            seen.append(json.loads(p.read_text(encoding="utf-8")))
+        return {"mode_ok": True}
+    monkeypatch.setattr(rr, "_row5_quarantine", _row5)
+    res = rr.run_release_run(FakeCtx(), **_params(fast["dest"], run_row5_quarantine=True))
+    assert seen and seen[-1]["interim"] is True and seen[-1]["outcome"] is None
+    done = {ph["name"]: ph["status"] for ph in seen[-1]["phases"]}
+    assert done["soak"] == "measured" and done["collect"] == "measured" and done["bundle"] == "measured"
+    assert "row5_quarantine" not in done
+    assert res["report"]["board_rows"][[r["row"] for r in res["report"]["board_rows"]].index("G")]["status"] == "measured"
+
+
+def test_collect_retries_a_pool_timeout_and_keeps_every_block_it_read(monkeypatch, tmp_path):
+    """RR-2: one pool timeout used to discard every end-of-window reading. Now each block
+    has its own session and the retry, and a block that still fails is named beside the
+    others, which are kept."""
+    import contextlib as _cl
+
+    import src.api.wiki_lane as wl
+    import src.catalog.qualification_integrity as qi
+    import src.database.session as dbs
+    import src.monitoring.expedition as ex
+    import src.monitoring.forensics as fo
+    import src.monitoring.p0_validation as p0
+    import src.monitoring.soak_window as sw
+
+    monkeypatch.setenv("OO_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setattr(rr, "POOL_RETRY_DELAYS_S", (0.01, 0.01, 0.01, 0.01))
+    calls = {"sw": 0}
+
+    def _soak_window(db, bar_hours):
+        calls["sw"] += 1
+        if calls["sw"] <= 2:
+            raise _pool_timeout()
+        return {"window": {"hours": 72.1, "reaches_bar": True}, "unmeasured": []}
+
+    def _integrity(db):
+        raise RuntimeError("integrity blew up")
+
+    monkeypatch.setattr(sw, "soak_window", _soak_window)
+    monkeypatch.setattr(qi, "qualification_integrity_report", _integrity)
+    monkeypatch.setattr(p0, "_check_collector", lambda: {"verdict": "pass"})
+    monkeypatch.setattr(dbs, "session_scope", lambda: _cl.nullcontext(None))
+    monkeypatch.setattr(wl, "lane_counters_route", lambda window_days: {"measured": False, "reason": "lane-never-run"})
+    monkeypatch.setattr(ex, "digest", lambda: {})
+    monkeypatch.setattr(fo, "session_forensics", lambda: {})
+    monkeypatch.setattr(rr, "_network_state", lambda: {})
+    run = rr._Run(rr.RunParams(str(tmp_path / "d"), SECRET, online_probes=False))
+    with pytest.raises(rr._PhaseError) as ei:
+        rr._collect(FakeCtx(), run)
+    part = ei.value.partial
+    assert part["soak_window"]["window"]["reaches_bar"] is True, "the block that recovered is kept"
+    assert calls["sw"] == 3 and [r["what"] for r in part["pool_retries"]] == ["soak_window", "soak_window"]
+    assert part["qualification_integrity_live"] == {"measured": False, "error": "RuntimeError: integrity blew up"}
+    assert part["collector"] == {"verdict": "pass"}
+    assert "qualification_integrity_live" in str(ei.value)
+    # ...and through the phase runner, the partial result lands in the phase record.
+    ph = rr._run_phase(run, FakeCtx(), "collect", lambda: rr._collect(FakeCtx(), run))
+    assert ph["status"] == "error" and ph["result"]["soak_window"]["window"]["hours"] == 72.1
+
+
+def test_a_phase_that_raises_a_non_pool_error_is_not_retried(monkeypatch):
+    monkeypatch.setattr(rr, "POOL_RETRY_DELAYS_S", (0.01,))
+    n = {"i": 0}
+
+    def _boom():
+        n["i"] += 1
+        raise ValueError("not a pool timeout")
+    with pytest.raises(ValueError):
+        rr._retrying(FakeCtx(), "x", _boom, [])
+    assert n["i"] == 1
+
+
+def test_row_statuses_name_a_failed_reading_as_an_error_not_a_skip(fast, monkeypatch):
+    """RR-3: the NUC's report said row B 'measured' with reaches_bar null and row D
+    'skipped', after a 72-hour soak whose end-of-window reading failed."""
+    def _collect(ctx, run):
+        raise RuntimeError("QueuePool limit of size 6 overflow 2 reached")
+
+    def _bundle(ctx):
+        raise RuntimeError("zip exploded")
+    monkeypatch.setattr(rr, "_collect", _collect)
+    monkeypatch.setattr(rr, "_bundle", _bundle)
+    rows = {r["row"]: r for r in rr.run_release_run(FakeCtx(), **_params(fast["dest"]))["report"]["board_rows"]}
+    assert rows["B"]["status"] == "error" and "end-of-window reading failed" in rows["B"]["note"]
+    assert rows["D"]["status"] == "error"
+    assert rows["C"]["status"] == "error"
+    assert rows["P"]["status"] == "error"
+    assert rows["E"]["status"] == "measured", "the restored install's reading is still there"
+
+
+def test_a_partial_collect_keeps_the_rows_it_can_answer(fast, monkeypatch):
+    def _collect(ctx, run):
+        raise rr._PhaseError("1 end-of-window reading(s) failed: qualification_integrity_live", partial={
+            "soak_window": {"window": {"hours": 72.0, "reaches_bar": True}, "unmeasured": []},
+            "qualification_integrity_live": {"measured": False, "error": "TimeoutError: pool"},
+            "wiki_lane_counters": {"measured": False, "reason": "lane-never-run"}})
+    monkeypatch.setattr(rr, "_collect", _collect)
+    rep = rr.run_release_run(FakeCtx(), **_params(fast["dest"]))["report"]
+    rows = {r["row"]: r for r in rep["board_rows"]}
+    assert {ph["name"]: ph["status"] for ph in rep["phases"]}["collect"] == "error"
+    assert rows["B"]["status"] == "measured" and rows["B"]["evidence"]["reaches_bar"] is True
+    assert rows["D"]["status"] == "measured"
+    assert rows["E"]["evidence"]["live_corpus_after_drain"]["error"] == "TimeoutError: pool"
+    assert rows["P"]["status"] == "not-measurable-here"
+
+
+def test_a_suspend_during_the_soak_ends_the_stretch_and_starts_a_new_one(fast, monkeypatch):
+    """RR-4: the bar is continuous collection, and a machine that slept was not
+    collecting. The rule is the restart's: a new stretch, with the full window."""
+    n = {"i": 0}
+
+    def _advance(self):
+        # The FIRST tick: every soak makes at least one, so no runner is too slow for it.
+        n["i"] += 1
+        return (900.0, 0.0, "boot-time") if n["i"] == 1 else (0.0, 0.0, "boot-time")
+    monkeypatch.setattr(rr._Clocks, "advance", _advance)
+    rep = rr.run_release_run(FakeCtx(), **_params(fast["dest"], soak_hours=0.2 / 3600))["report"]
+    assert len(rep["soak_stretches"]) == 2
+    assert rep["soak_stretches"][0]["ended_by"] == "suspend" and rep["soak_stretches"][1]["ended_by"] == "window-complete"
+    assert rep["suspends"] == [dict(rep["suspends"][0], seconds=900, clocks="boot-time", stretch=1)]
+    b = next(r for r in rep["board_rows"] if r["row"] == "B")
+    assert b["evidence"]["stretches"] == 2 and len(b["evidence"]["suspends_during_soak"]) == 1
+    assert any("suspended for 900 s" in w for w in rep["warnings"])
+    assert all("started_mono" not in st for st in rep["soak_stretches"]), "a process-local clock never reaches the report"
+
+
+def test_a_clock_change_during_the_soak_is_recorded_and_moves_nothing(fast, monkeypatch):
+    n = {"i": 0}
+
+    def _advance(self):
+        n["i"] += 1
+        return (0.0, -43200.0, "boot-time") if n["i"] == 1 else (0.0, 0.0, "boot-time")
+    monkeypatch.setattr(rr._Clocks, "advance", _advance)
+    rep = rr.run_release_run(FakeCtx(), **_params(fast["dest"], soak_hours=0.2 / 3600))["report"]
+    assert len(rep["soak_stretches"]) == 1 and rep["soak_stretches"][0]["ended_by"] == "window-complete"
+    adj = [c for c in rep["clock_adjustments"] if c.get("phase") == "soak"]
+    assert adj and adj[0]["clock_moved_s"] == -43200
+    assert rep["soak"]["elapsed_hours"] < 1, "the window is monotonic: a 12-hour step did not end it"
+
+
+def test_every_phase_has_a_monotonic_duration_and_a_disagreeing_stamp_pair_is_recorded(monkeypatch, tmp_path):
+    """RR-4, the NUC: p0_validation 'ended' at 08:02 before it 'started' at 19:29."""
+    monkeypatch.setenv("OO_DATA_DIR", str(tmp_path / "data"))
+    run = rr._Run(rr.RunParams(str(tmp_path / "d"), SECRET))
+    stamps = iter(["2026-09-19T19:29:21+02:00", "2026-09-19T08:02:55+02:00"])
+    monkeypatch.setattr(rr, "_now_iso", lambda: next(stamps, "2026-09-19T08:02:56+02:00"))
+    run.begin("p0_validation")
+    ph = run.end("measured", "ok")
+    assert ph["wall_s"] is not None and 0 <= ph["wall_s"] < 60
+    adj = run.clock_adjustments[0]
+    assert adj["phase"] == "p0_validation" and adj["clock_moved_s"] < -40000
+    assert "wall_s is the duration" in adj["basis"]
+
+
+def _build_real_archive(tmp_path, members, monkeypatch):
+    """An archive written by the bundle's REAL writer -- never a hand-made zip (RR-1's
+    lesson: the reader was tested against a layout the writer does not produce)."""
+    import zipfile
+
+    from src.api.diagnostics import bundle as bundle_mod
+
+    monkeypatch.setattr(bundle_mod, "_all_diag_nondb_member_deadline_s", lambda: 0.2)
+    path = tmp_path / "oo-all-diagnostics-real.zip"
+    with zipfile.ZipFile(path, "w") as z:
+        bundle_mod._write_all_diagnostics_zip(members, z)
+    return path
+
+
+def test_row_C_reads_coverage_and_member_outcomes_from_an_archive_the_real_writer_built(tmp_path, monkeypatch, fast):
+    """RR-1 and RR-1b, against the real writer: the coverage block is at manifest.json ->
+    run.runtime_coverage (it was read from debug-bundle.json and was always null), and a
+    member skipped at its deadline or failed is ABSENT, replaced by a marker the zero-byte
+    check cannot see."""
+    def _slow():
+        time.sleep(1.0)
+        return {"late": True}
+
+    def _boom():
+        raise RuntimeError("member exploded")
+    path = _build_real_archive(tmp_path, [("ok.json", lambda: {"ran": True}), ("slow.json", _slow),
+                                          ("boom.json", _boom)], monkeypatch)
+    read = rr._read_bundle_archive(str(path))
+    assert read["runtime_coverage_from"] == "manifest.json run.runtime_coverage"
+    assert read["coverage_complete"] is True
+    assert read["skipped_deadline_members"] == ["slow.json"]
+    assert read["error_members"] == ["boom.json"]
+    assert read["zero_byte_members"] == [], "the markers are not empty: this is exactly the blind spot"
+    assert read["outcomes_from"] == "manifest.json members[].outcome"
+    monkeypatch.setattr(rr, "_bundle", lambda ctx: {**read, "measured": True, "path": str(path), "job_state": "done"})
+    c = next(r for r in rr.run_release_run(FakeCtx(), **_params(fast["dest"]))["report"]["board_rows"] if r["row"] == "C")
+    assert c["evidence"]["bar_satisfied_by_this_bundle"] is False
+    assert "slow.json" in c["note"] and "boom.json" in c["note"]
+    # ...and a clean archive from the same writer satisfies the clause.
+    (tmp_path / "c").mkdir()
+    clean = rr._read_bundle_archive(str(_build_real_archive(tmp_path / "c", [("ok.json", lambda: {"ran": True})], monkeypatch)))
+    monkeypatch.setattr(rr, "_bundle", lambda ctx: {**clean, "measured": True, "path": "x", "job_state": "done"})
+    c2 = next(r for r in rr.run_release_run(FakeCtx(), **_params(fast["dest"]))["report"]["board_rows"] if r["row"] == "C")
+    assert c2["evidence"]["bar_satisfied_by_this_bundle"] is True
+
+
+# -- row 5 with fake managers ------------------------------------------------ #
+class _FakeJob:
+    """A resumable manager whose status walks a script, one entry per poll."""
+
+    def __init__(self, script, *, after_resume=None):
+        self.script = list(script)
+        self.after_resume = list(after_resume or [])
+        self.calls: list[str] = []
+
+    def start(self, **kw):
+        self.calls.append("start")
+        return {"state": "running"}
+
+    def status(self):
+        if len(self.script) > 1:
+            return dict(self.script.pop(0))
+        return dict(self.script[0])
+
+    def resume(self):
+        self.calls.append("resume")
+        self.script = self.after_resume or self.script
+        return {"state": "running"}
+
+    def pause(self):
+        self.calls.append("pause")
+        self.script = [dict(self.script[0], state="paused", running=False)]
+
+
+class _FakeSched:
+    def __init__(self, running=True):
+        self.running, self.calls = running, []
+
+    def is_running(self):
+        return self.running
+
+    def stop(self, timeout=10.0):
+        self.calls.append("stop")
+        self.running = False
+        return True
+
+    def start(self):
+        self.calls.append("start")
+        self.running = True
+        return True
+
+
+@pytest.fixture
+def row5(monkeypatch, tmp_path):
+    import contextlib as _cl
+
+    import src.analytics.figures as figs
+    import src.analytics.quarantine_job as qj
+    import src.analytics.reindex_job as rj
+    import src.database.session as dbs
+    import src.ingest as ingest
+    import src.scheduler.runner as runner
+    import src.wiki.service as ws
+
+    monkeypatch.setenv("OO_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setattr(rr, "_TICK_S", 0.005)
+    monkeypatch.setattr(rr, "POOL_RETRY_DELAYS_S", (0.01, 0.01))
+    sched = _FakeSched()
+    lane = {"streaming": True, "calls": []}
+    monkeypatch.setattr(runner, "get_scheduler", lambda: sched)
+    monkeypatch.setattr(runner, "exclusive_window_open", lambda: False)
+    monkeypatch.setattr(ws, "lane_service_status", lambda: {"streaming": lane["streaming"]})
+    monkeypatch.setattr(ws, "stop_wiki_lane", lambda timeout=5.0: lane["calls"].append("stop"))
+    monkeypatch.setattr(ws, "start_wiki_lane", lambda: lane["calls"].append("start") or True)
+    monkeypatch.setattr(ingest, "kill_switch_active", lambda: False)
+    monkeypatch.setattr(dbs, "session_scope", lambda: _cl.nullcontext(None))
+    monkeypatch.setattr(figs, "quarantine_composition", lambda db, limit=40: {"rows": [{"reason": "nav-soup-v2", "n": 8}]})
+    jobs: dict = {}
+    monkeypatch.setattr(qj, "get_quarantine_manager", lambda: jobs["q"])
+    monkeypatch.setattr(rj, "get_reindex_manager", lambda: jobs["r"])
+    run = rr._Run(rr.RunParams(str(tmp_path / "d"), SECRET, run_row5_quarantine=True))
+    return {"sched": sched, "lane": lane, "jobs": jobs, "run": run}
+
+
+_Q_DONE = {"state": "done", "running": False, "dry_run": False, "include_prose_gate": False,
+           "articles_done": 10, "articles_total": 10, "percent": 100.0}
+_R_DONE = {"state": "done", "running": False, "articles_done": 10, "articles_total": 10, "percent": 100.0}
+
+
+def test_row5_pauses_collection_resumes_a_pool_timeout_and_puts_collection_back(row5):
+    """RR-6 and RR-7: collection off for the re-index (FD02: 4 GB and 1 GB of swap), a
+    job that died on a pool timeout resumed from its cursor, and collection put back."""
+    row5["jobs"]["q"] = _FakeJob(
+        [{"state": "running", "running": True, "articles_done": 3, "articles_total": 10},
+         {"state": "error", "running": False, "error": "QueuePool limit of size 6 overflow 2 reached, connection timed out"}],
+        after_resume=[_Q_DONE])
+    row5["jobs"]["r"] = _FakeJob([{"state": "running", "running": True, "articles_done": 5, "articles_total": 10}, _R_DONE])
+    out = rr._row5_quarantine(FakeCtx(), row5["run"])
+    assert out["collection_paused"]["scheduler_was_running"] is True and out["collection_paused"]["wiki_lane_was_streaming"]
+    assert row5["sched"].calls == ["stop", "start"] and row5["lane"]["calls"] == ["stop", "start"]
+    assert out["collection_resumed"]["scheduler_restarted"] is True and out["collection_resumed"]["wiki_lane_restarted"] is True
+    assert row5["jobs"]["q"].calls == ["start", "resume"]
+    assert [r["what"] for r in out["retries"]] == ["quarantine job"]
+    assert out["mode_ok"] is True and out["composition"]["rows"][0]["n"] == 8
+    assert out["quarantine_progress"] and out["reindex_progress"], "the progress is sampled into the record"
+
+
+def test_row5_never_reindexes_over_a_failed_quarantine_and_keeps_its_tally(row5):
+    row5["jobs"]["q"] = _FakeJob([{"state": "error", "running": False, "error": "disk I/O error",
+                                   "tally": {"scanned": 400}}])
+    row5["jobs"]["r"] = _FakeJob([_R_DONE])
+    with pytest.raises(rr._PhaseError) as ei:
+        rr._row5_quarantine(FakeCtx(), row5["run"])
+    part = ei.value.partial
+    assert part["quarantine_final"]["tally"] == {"scanned": 400}
+    assert "half-applied quarantine" in part["reindex_skipped"]
+    assert row5["jobs"]["r"].calls == [], "no re-index over an incomplete quarantine"
+    assert part["collection_resumed"]["scheduler_restarted"] is True, "collection comes back on the failure path too"
+
+
+def test_a_stalled_row5_job_is_paused_and_reported_never_waited_on_forever(row5, monkeypatch):
+    monkeypatch.setattr(rr, "ROW5_STALL_S", 0.05)
+    row5["jobs"]["q"] = _FakeJob([_Q_DONE])
+    row5["jobs"]["r"] = _FakeJob([{"state": "running", "running": True, "articles_done": 5, "articles_total": 10}])
+    out = rr._row5_quarantine(FakeCtx(), row5["run"])
+    assert row5["jobs"]["r"].calls == ["start", "pause"]
+    assert out["reindex_final"]["stalled"]["at_count"] == 5 and "PAUSED" in out["reindex_final"]["stalled"]["basis"]
+    assert "composition" not in out
+
+
+def test_a_job_in_its_uncounted_tail_or_parked_for_an_import_is_not_stalled(row5, monkeypatch):
+    monkeypatch.setattr(rr, "ROW5_STALL_S", 0.02)
+    tail = {"state": "running", "running": True, "articles_done": 10, "articles_total": 10}
+    parked = {"state": "running", "running": True, "articles_done": 4, "articles_total": 10, "parked_for_exclusive": True}
+    row5["jobs"]["q"] = _FakeJob([_Q_DONE])
+    row5["jobs"]["r"] = _FakeJob([parked] * 20 + [tail] * 20 + [_R_DONE])
+    out = rr._row5_quarantine(FakeCtx(), row5["run"])
+    assert "pause" not in row5["jobs"]["r"].calls and out["reindex_final"]["state"] == "done"
+
+
+def test_a_cancel_during_row5_pauses_the_job_rather_than_leaving_it_running(row5):
+    row5["jobs"]["q"] = _FakeJob([{"state": "running", "running": True, "articles_done": 1, "articles_total": 10}])
+    ctx = FakeCtx()
+    ctx.cancel()
+    out = rr._row5_quarantine(ctx, row5["run"])
+    assert row5["jobs"]["q"].calls == ["start", "pause"]
+    assert "not discarded" in out["quarantine_final"]["paused_by"]
+
+
+def test_row5_never_turns_collection_back_on_over_airplane_mode(row5, monkeypatch):
+    import src.ingest as ingest
+
+    row5["jobs"]["q"] = _FakeJob([_Q_DONE])
+    row5["jobs"]["r"] = _FakeJob([_R_DONE])
+    monkeypatch.setattr(ingest, "kill_switch_active", lambda: True)
+    out = rr._row5_quarantine(FakeCtx(), row5["run"])
+    assert row5["sched"].calls == ["stop"] and "airplane mode" in out["collection_resumed"]["scheduler"]
+
+
+def test_row5_is_not_an_exclusive_window_because_both_its_jobs_park_inside_one():
+    """Claiming the window would park the quarantine and the re-index -- they stand aside
+    for an import -- so row 5 would wait on jobs waiting on it. Pinned on the source:
+    the pause stops the collector directly and never opens the window."""
+    from tests.js_source_helper import python_function_source
+
+    src = (_ROOT / "src" / "monitoring" / "release_run.py").read_text(encoding="utf-8")
+    body = python_function_source(src, "_pause_collection")
+    assert "sched.stop(" in body and "exclusive_window(" not in body and "pause_for_exclusive_operation" not in body
+    assert "set_network_mode" not in body, "no offline->online transition the operator did not consent to"
+
+
+def _interrupted_in_row5(fast, *, collect_status="measured"):
+    from src.monitoring.release_run import _write_state
+
+    run = rr._Run(rr.RunParams(**_params(fast["dest"], run_row5_quarantine=True)))
+    run.artifacts["backup_folder"] = str(fast["dest"] / "202609181200_OpenOmniscience_Backup")
+    for name, extra in (("preflight", {"result": {"fresh_install_fits": True}}),
+                        ("p0_validation", {"result": {"checks": {"p0_1_verify": {"verdict": "pass"}}}}),
+                        ("fresh_install_restore", {"result": {"child": {"integrity": {"verdict": "consistent"}}}}),
+                        ("arm_soak", {}), ("online_probes", {}),
+                        ("soak", {"ended_by": "window-complete"}),
+                        ("collect", {"result": {"soak_window": {"window": {"hours": 72.0, "reaches_bar": True}}}}),
+                        ("bundle", {"result": {"measured": True, "coverage_complete": True}})):
+        run.begin(name)
+        status = collect_status if name == "collect" else "measured"
+        run.end(status, "ok", **extra)
+    run.soak = {"started_at": "2026-09-19T10:00:00+02:00", "elapsed_hours": 72.0, "ended_by": "window-complete",
+                "ended_at": "2026-09-22T10:00:00+02:00", "stretch": 1, "hours_requested": 72.0}
+    run.soak_stretches = [dict(run.soak)]
+    run.begin("row5_quarantine")
+    state = run.snapshot()
+    state["pid"] = os.getpid() + 100000
+    _write_state(state)
+    return state
+
+
+def test_a_restart_inside_row5_keeps_the_completed_soak(fast):
+    """Row 5 now runs last and can take days: a restart inside it must not throw away a
+    72-hour soak that finished."""
+    state = _interrupted_in_row5(fast)
+    rep = rr.run_release_run(FakeCtx(), resume=True, passphrase="")["report"]
+    assert fast["calls"] == ["row5"], fast["calls"]
+    names = [p["name"] for p in rep["phases"]]
+    assert names.count("soak") == 1 and names[-1] == "row5_quarantine"
+    assert rep["soak"]["ended_by"] == "window-complete" and rep["run_id"] == state["run_id"]
+    assert any("including the completed soak" in w for w in rep["warnings"])
+    b = next(r for r in rep["board_rows"] if r["row"] == "B")
+    assert b["status"] == "measured" and b["evidence"]["reaches_bar"] is True
+
+
+def test_a_resume_retakes_a_failed_reading_without_redoing_the_soak(fast):
+    _interrupted_in_row5(fast, collect_status="error")
+    rep = rr.run_release_run(FakeCtx(), resume=True, passphrase="")["report"]
+    assert fast["calls"] == ["collect", "row5"], fast["calls"]
+    assert any("taken again after a restart" in w for w in rep["warnings"])
+
+
+def test_the_bundle_member_carries_the_live_run_when_no_saved_report_describes_it(fast):
+    """RR-8: three bundles said "no 0.4 release run has been made yet" 61 hours into a run."""
+    state = _interrupted_in_row5(fast)
+    last = rr.last_release_run_report()
+    assert last["available"] is False
+    assert last["live_run"]["run_id"] == state["run_id"] and last["live_run"]["phase"] == "row5_quarantine"
+    assert "interrupted" in last["live_run"]["status"] and state["run_id"] in last["note"]
+    assert SECRET not in json.dumps(last)
+    from src.api.diagnostics.bundle import _release_run_last
+
+    assert _release_run_last()["live_run"]["run_id"] == state["run_id"], "the bundle member is the same reading"
+    # An interim report of the same run is saved -> still shown beside it; a final one -> not.
+    rr._write_report(rr._Run.from_state(rr.read_state(), ""), interim=True)
+    assert rr.last_release_run_report()["live_run"]["run_id"] == state["run_id"]
+    rr.run_release_run(FakeCtx(), **_params(fast["dest"]))
+    assert "live_run" not in rr.last_release_run_report()
+
+
+def test_the_text_rendering_shows_durations_and_clock_adjustments(fast):
+    res = rr.run_release_run(FakeCtx(), **_params(fast["dest"]))
+    rep = dict(res["report"], clock_adjustments=[{"phase": "p0_validation", "clock_moved_s": -43200}],
+               suspends=[{"at": "x", "seconds": 900, "clocks": "boot-time"}])
+    text = rr.render_release_run_text(rep)
+    assert " took " in text and "CLOCK ADJUSTMENTS" in text and "SUSPENDS DURING THE SOAK" in text
+
+
+def test_the_row5_label_states_the_cost_and_the_order_in_all_twelve_locales():
+    html = _html()
+    m = re.search(r'<input id="rr-row5"[^>]*> <span>([^<]+)</span>', html)
+    assert m, "the row-5 checkbox keeps its label"
+    label = m.group(1)
+    assert "LAST" in label and "whole-corpus keyword re-index" in label and "collection paused" in label
+    assert "days on a slow machine" in label, "the cost is stated where the choice is made (FD01)"
+    new = ["unknown — nothing in this window recorded when collection ran",
+           "not yet — {h} h more on the current collection stretch (stopping collection, a restart or a suspend starts it over)",
+           "not yet — collection is not running", "Longest collection stretch", "Process up without a break",
+           "{h} h reached at {when} — the process's half of the clause, not the bar",
+           "not yet — {h} h more on the current stretch", label]
+    for loc in ("en", "fr", "de", "es", "pt", "ru", "ar", "bn", "hi", "id", "ja", "zh"):
+        data = json.loads((_ROOT / "src" / "static" / "locales" / f"{loc}.json").read_text(encoding="utf-8"))
+        for k in new:
+            assert k in data and str(data[k]).strip(), (loc, k)
+        assert "also run 0.3 row 5 — the Tier-A quarantine pass (deferred by ruling A1; tick only to run it now)" not in data
+
+
+def test_the_summary_draws_an_unknown_bar_as_unknown_and_the_process_half_beside_it():
+    from tests.js_source_helper import function_source
+
+    src = function_source(_diag_js(), "_chronoSummaryHtml")
+    assert "s.bar_reached == null" in src, "an unrecorded window reads UNKNOWN, never 'not yet'"
+    assert "s.process_bar" in src and "Process up without a break" in src
+    assert "Longest collection stretch" in src
+    from tests.js_source_helper import read_static
+
+    tl = read_static("ootimeline.js")
+    assert '("bar_current_stretch" in sm) ? sm.bar_current_stretch : sm.current_stretch' in tl
+
+
+def test_a_row5_quarantine_paused_by_a_restart_is_continued_not_rescanned(row5):
+    q = _FakeJob([dict(_Q_DONE, state="paused", running=False, articles_done=6)], after_resume=[_Q_DONE])
+    row5["jobs"]["q"] = q
+    row5["jobs"]["r"] = _FakeJob([_R_DONE])
+    out = rr._row5_quarantine(FakeCtx(), row5["run"])
+    assert q.calls == ["resume"] and out["quarantine_continued_from"] == 6
+
+
+def test_a_paused_quarantine_in_ANOTHER_mode_is_refused_by_name_not_overwritten(row5):
+    row5["jobs"]["q"] = _FakeJob([dict(_Q_DONE, state="paused", running=False, articles_done=6, dry_run=True)])
+    row5["jobs"]["r"] = _FakeJob([_R_DONE])
+    with pytest.raises(RuntimeError, match="different quarantine run is paused"):
+        rr._row5_quarantine(FakeCtx(), row5["run"])
+    assert row5["sched"].calls == ["stop", "start"], "collection is put back on a refusal too"

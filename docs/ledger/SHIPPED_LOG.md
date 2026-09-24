@@ -9439,6 +9439,37 @@ merge additively either way. **Not claimed:** any wall-clock figure.
 **Also in this PR:** the PR 4 tie-break regression (its own entry above) and a macOS-only race in
 the boot-drain test (it watched for a transient `running` state a fast drain passes unseen).
 
+### 2026-09-24 — the field round's release-run and chronology fixes (PR #1172)
+
+`docs/audit/16` §3.3's ten defects, RR-1 to RR-8, RR-10 and RR-11, built on the release-run
+PR that also carries the report. **RR-1:** row C reads `manifest.json` → `run.runtime_coverage`
+(falling back to `debug-bundle.json` for an archive that has it there) and every member's own
+`outcome`; a member skipped at its deadline or failed is ABSENT and fails "every member
+non-zero", a partial one is named. **RR-2/RR-7:** each end-of-window reading has its own
+session and the pool-timeout backoff (5, 15, 45, 120 s, stoppable), a block that still fails
+records its own error beside the others, and `_run_phase` keeps a failed phase's partial
+result; a row-5 job that errored on a pool timeout is resumed from its cursor. **RR-3:** every
+board row derives its status from the evidence it holds; a failed reading is `error`, never
+`skipped`. **RR-4:** phases carry `wall_s` on the monotonic clock, the soak's elapsed time,
+deadline and cadences are monotonic, a wall-clock change is recorded in `clock_adjustments`,
+and a suspend ends the stretch. **RR-5:** the session ledger records `uptime_s` on every record,
+`span_s` on liveness and ends, `clock-step` records (boot-time clock on Linux; backward steps
+everywhere), `machine_boot_id`; the chronology places every record on its session's clocks and
+re-bases a boot stamp that disagrees with the session's span. **RR-6 (FD01):** row 5 runs LAST,
+after an interim report, with the collector and the Wikipedia lane stopped for its duration
+(not an exclusive window: both jobs park inside one), its progress published and sampled, a
+two-hour stall bound that PAUSES the job, a paused quarantine continued from its cursor after
+a restart, the re-index never started over a quarantine that did not finish, and a restart
+inside row 5 keeping the completed soak. **RR-8:** the bundle's release-run member carries the
+live run whenever no saved report describes it, and an interim report is written after every
+phase. **RR-10:** the scheduler's loop records its own start and exit as ledger events; the
+72 h bar is read on collection stretches, with the process's uptime beside it as the clause's
+other half, UNKNOWN for sessions that did not record collection, and a note when the run never
+reached its soak. **RR-11:** an empty ledger's first boot seeds the previous session from
+forensics' sentinel and the high-water sidecar, labelled as such. Every new test was run
+against the pre-fix source and failed there. Lessons: `LESSONS.md`, the three entries dated by
+this PR.
+
 ### 2026-09-24 — the field defects outside the write path (PR #1173)
 
 `docs/audit/16` §3.4–§3.6 and RR-9, built beside the release-run PR (#1172, which carries the
