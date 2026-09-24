@@ -12014,3 +12014,27 @@ open the PR, then add the `shipped.csv` row **with the real number** in its own 
 placeholder then never exists in a commit at all. Rule (5b)'s allowance is for a row that
 must be *written* before the number is known — not for one that must be *committed* before
 it is known, which is a different and avoidable thing.
+
+### A BATCHED REWRITE OF A LOOKUP MUST PRESERVE THE TIE-BREAK, NOT ONLY THE SET (PR 7, correcting PR 4)
+
+PR 4 replaced a per-term `session.query(Keyword).filter_by(normalized_term=t).first()` with
+one batched `IN (...)` per article, and its docstring said the map resolved terms "exactly as
+the per-term lookup did". Every test agreed. **It was true of the SET of keywords and false of
+WHICH ROW**: `keywords.normalized_term` is deliberately not unique (the merge keys a keyword on
+term *and* language), and the batched version filled its dict with `out[kw.normalized_term] =
+kw` over the whole result — last row wins. SQLite returns an equal-key index range in rowid
+order, so "last" is the **highest** id; `.first()` had been the **lowest**. Measured on three
+rows sharing a term: 1 before, 3 after. The 2026-07-29 keyword-cache ruling had required a
+deterministic `MIN(id)` in exactly this case.
+
+Nothing failed, because nothing in the suite had two rows sharing a term — **the one fixture
+that distinguishes the two behaviours**. The damage is silent by construction: every row is
+valid, every counter matches its own mentions, and a shared term's count is simply split
+across two rows depending on when each article was indexed.
+
+**When a rewrite batches N lookups into one, list what the old lookup decided besides
+membership — order, tie-break, first-write-wins — and give each a fixture where it matters.**
+A dict built from a result set is a silent last-wins; `.first()` without `ORDER BY` is a
+lowest-rowid that the plan provides and nothing promises. Found while designing R24, whose
+carried rows must resolve exactly as a local re-index would — the second time in this
+sequence that designing one PR audited the one before it.

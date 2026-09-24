@@ -107,6 +107,10 @@
   - **BUILT — batched keyword lookups.** Confirmed and dominant: a warm apply emitted **98
     statements for one article, 81 of them the per-term `WHERE normalized_term = ?`**, now
     one batched `IN (...)`. 19 statements after.
+    **CORRECTED 2026-09-24 (found starting PR 7):** as built, the batch changed WHICH ROW a
+    term shared by several keyword rows resolves to — lowest id before, highest after —
+    against the 2026-07-29 ruling 5's `MIN(id)`. Restored; see `LESSONS.md`, "A batched
+    rewrite of a lookup must preserve the tie-break".
   - **BUILT — `R22`.** But the audit's "an ORM UPDATE per keyword touched" is **wrong at
     the statement level**: SQLAlchemy already collapses them into ONE executemany, so
     item 4's cheaper option ("counters as one statement") was already true and bought

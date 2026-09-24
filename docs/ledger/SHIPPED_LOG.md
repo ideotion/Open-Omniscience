@@ -9370,3 +9370,30 @@ a guess.
 
 **Not claimed:** any wall-clock figure. The statement counts and WAL bytes are measured; the
 effect on a 27.7 GB encrypted corpus belongs to the operator's instance (`D43`).
+
+## 2026-09-24 — analytics: a shared keyword term resolves to its lowest id again (PR 4 regression, found starting PR 7)
+
+**The regression.** PR 4 (#1168, merged 2026-09-23) batched `index_article`'s keyword lookups
+into one `IN (...)` per article and built the result into a dict with `out[term] = kw` — last
+row wins. `keywords.normalized_term` is deliberately not unique (the restore merge keys a
+keyword on term AND language), and SQLite returns an equal-key range in rowid order, so the
+batched lookup resolved a shared term to its **highest** id where the per-term `.first()` it
+replaced had resolved to the **lowest**. Measured on three rows sharing `"foo"`: per-term 1,
+batched 3. The 2026-07-29 keyword-cache ruling (ruling 5) had required a deterministic
+`MIN(id)` for exactly this case.
+
+**Effect.** From #1168's merge until this fix, on any corpus a multilingual merge had touched,
+an article indexed through the batched path attached a shared term's mentions to a different
+row than every article indexed before it. Each row stays internally consistent (counters match
+their own mentions), so nothing fails; the term's count is split across rows by indexing date.
+**Not measurable from here:** how many articles an instance indexed in that window, which
+depends on when it pulled `main`. A re-index of the affected articles moves them to the lowest
+id; nothing repairs them automatically.
+
+**The fix.** `_prefetch_keywords` keeps the lowest id per term, taken in Python so the answer
+does not depend on the plan SQLite picks for `IN (...) ORDER BY` on an 11 M-row table; the
+per-term path states `ORDER BY id` instead of relying on the index walk (plan unchanged —
+checked with `EXPLAIN QUERY PLAN`, no sort). Four tests, each failing on the pre-fix code,
+including one through `index_article` that pins which row the MENTION lands on. Mutation
+matrix: last-row-wins and highest-id-wins are caught by all four; per-term highest-id by two;
+dropping the per-term `ORDER BY` survives, as expected — the plan already keeps that promise.

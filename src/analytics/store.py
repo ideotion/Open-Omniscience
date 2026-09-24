@@ -132,13 +132,37 @@ def _prefetch_keywords(session: Session, normalized: Iterable[str]) -> dict[str,
     per-term lookup did. (They still produce two mention rows and still collide on
     the unique ``(keyword_id, article_id)`` index; that contract is pinned by
     tests/test_bulk_mention_insert.py and deliberately unchanged here.)
+
+    WHICH ROW, WHEN SEVERAL SHARE A TERM: THE LOWEST ID, and it is a ruling, not a
+    taste. ``keywords.normalized_term`` is deliberately NOT unique -- the restore merge
+    keys a keyword on its term AND its language, so every multilingual merge leaves
+    rows that share a term -- while this lookup is by term alone. The 2026-07-29
+    keyword-cache ruling (ruling 5, ``OPEN_QUEUE.md``) required a "deterministic
+    ``MIN(id)`` tie-break for duplicate ``normalized_term``", the same convention the
+    merge's ``map_keywords`` uses.
+
+    THIS FUNCTION BROKE IT WHEN IT WAS WRITTEN (PR 4, #1168), and the docstring above
+    claimed "exactly as the per-term lookup did". It assigned every row of the result
+    into the dict, so the LAST row won; SQLite hands back an equal-key range in rowid
+    order, so the last row is the HIGHEST id. Measured on three rows sharing a term:
+    the per-term lookup answered id 1, this function answered id 3. From that merge
+    until this fix, an article indexed on a merged corpus attached a shared term's
+    mentions to a different row than every article indexed before it, splitting the
+    term's counts across two rows with nothing failing. Caught while designing R24,
+    whose carried rows must resolve exactly as a local re-index would.
+
+    The minimum is taken HERE, in Python, rather than with ``ORDER BY id`` in the
+    query: over ~100 rows it costs nothing, and it keeps the answer independent of
+    whatever plan SQLite picks for ``IN (...) ORDER BY`` on an 11 M-row table.
     """
     out: dict[str, Keyword] = {}
     uniq = list(dict.fromkeys(n for n in normalized if n))
     for i in range(0, len(uniq), _KEYWORD_PREFETCH_CHUNK):
         chunk = uniq[i : i + _KEYWORD_PREFETCH_CHUNK]
         for kw in session.query(Keyword).filter(Keyword.normalized_term.in_(chunk)).all():
-            out[kw.normalized_term] = kw
+            held = out.get(kw.normalized_term)
+            if held is None or kw.id < held.id:
+                out[kw.normalized_term] = kw
     return out
 
 
@@ -164,7 +188,18 @@ def _get_or_create_keyword(
     it writes back. The entity upgrade and the baseline tagging below are untouched.
     """
     if prefetched is None:
-        kw = session.query(Keyword).filter_by(normalized_term=t.normalized).first()
+        # ``ORDER BY id`` states the lowest-id rule the prefetch also follows (see
+        # :func:`_prefetch_keywords`). Before it, ``.first()`` returned the lowest id
+        # only because SQLite walks an equal-key index range in rowid order -- true, but
+        # an accident of the plan rather than a promise. The plan is unchanged: the
+        # equality on ``idx_keyword_normalized_term`` already yields rowid order, so
+        # SQLite answers it from the index with no sort (EXPLAIN QUERY PLAN, checked).
+        kw = (
+            session.query(Keyword)
+            .filter_by(normalized_term=t.normalized)
+            .order_by(Keyword.id)
+            .first()
+        )
     else:
         kw = prefetched.get(t.normalized)
     is_entity = t.kind != "term"
