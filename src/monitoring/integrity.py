@@ -26,7 +26,7 @@ from typing import Any
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from src.database.maintenance import StatementTimeout, statement_deadline
+from src.database.maintenance import StatementTimeout, deadline_expired, statement_deadline
 
 _LOG = logging.getLogger(__name__)
 
@@ -36,7 +36,49 @@ def _scalar(session: Session, sql: str) -> int | None:
         row = session.execute(text(sql)).fetchone()
         return int(row[0]) if row and row[0] is not None else 0
     except Exception:  # noqa: BLE001 - a diagnostic must degrade, never crash
+        # INT-1 (field round 2026-09-24): the DEADLINE is not a degraded read, it is the
+        # budget running out -- and it surfaces as a plain "interrupted" error that this
+        # handler used to swallow, so the sweep carried on, every later check was
+        # interrupted too, and the report read `drift: false, timed_out: false` having
+        # checked nothing. Re-raised, it reaches the enclosing deadline, which turns it
+        # into the typed StatementTimeout the report records.
+        if deadline_expired(session):
+            raise
         return None
+
+
+#: The checks whose results the verdict is read from, and the report key each lives at.
+_VERDICT_CHECKS = (
+    ("orphan_keywords", ("orphan_keywords",)),
+    ("dangling_mentions_missing_article", ("dangling_mentions_missing_article",)),
+    ("dangling_mentions_missing_keyword", ("dangling_mentions_missing_keyword",)),
+    ("counter_drift_mentions", ("counter_drift", "keywords_with_mention_drift")),
+    ("counter_drift_articles", ("counter_drift", "keywords_with_article_drift")),
+    ("foreign_key_violations", ("foreign_key_violations",)),
+)
+
+
+def _verdict(report: dict[str, Any]) -> tuple[bool | None, list[str], list[str]]:
+    """``drift`` from the checks that COMPLETED, never from a blank (INT-1).
+
+    True when any completed check found drift; False only when EVERY check completed
+    and none did; None ("not established") when none found drift but at least one did
+    not complete -- a sweep that ran out of budget has not shown there is no drift.
+    Returns the verdict, the checks that found drift, and the checks that did not
+    complete."""
+    found: list[str] = []
+    incomplete: list[str] = []
+    for name, path in _VERDICT_CHECKS:
+        v: Any = report
+        for k in path:
+            v = v.get(k) if isinstance(v, dict) else None
+        if v is None:
+            incomplete.append(name)
+        elif v:
+            found.append(name)
+    if found:
+        return True, found, incomplete
+    return (None if incomplete else False), found, incomplete
 
 
 def corpus_integrity(session: Session, *, sample: int = 500, full: bool = False) -> dict[str, Any]:
@@ -107,6 +149,8 @@ def corpus_integrity(session: Session, *, sample: int = 500, full: bool = False)
             except StatementTimeout:
                 raise
             except Exception as exc:  # noqa: BLE001 - a missing/corrupt table degrades, never 500
+                if deadline_expired(session):
+                    raise  # the budget ran out: the enclosing deadline types it (INT-1)
                 rows = []
                 drift_count_status = "error"
                 report["counter_drift_error"] = str(exc)[:200]
@@ -164,6 +208,8 @@ def corpus_integrity(session: Session, *, sample: int = 500, full: bool = False)
                     {str(r[0]) for r in fk_rows[:5000]}
                 )
             except Exception:  # noqa: BLE001
+                if deadline_expired(session):
+                    raise
                 report["foreign_key_violations"] = None
     except StatementTimeout:
         timed_out = True
@@ -223,18 +269,19 @@ def corpus_integrity(session: Session, *, sample: int = 500, full: bool = False)
         report["auto_incremental_vacuum"] = {"last_run": None}
 
     report["timed_out"] = timed_out
-    report["drift"] = bool(
-        (report.get("orphan_keywords") or 0)
-        or (report.get("dangling_mentions_missing_article") or 0)
-        or (report.get("dangling_mentions_missing_keyword") or 0)
-        or (report.get("counter_drift", {}).get("keywords_with_mention_drift") or 0)
-        or (report.get("counter_drift", {}).get("keywords_with_article_drift") or 0)
-        or (report.get("foreign_key_violations") or 0)
-    )
+    drift, found, incomplete = _verdict(report)
+    report["drift"] = drift
+    report["drift_found_in"] = found
+    report["incomplete_checks"] = incomplete
+    report["verdict"] = ("drift" if drift else ("no drift" if drift is False else
+                         "not established: " + ", ".join(incomplete) + " did not complete"))
     report["method"] = (
         "Read-only, deadline-guarded SQLite sweep. Orphan/dangling tallies are exact "
         "(index-backed); counter drift is sampled over the top-mention keywords unless "
         "full=1. Reports drift, never fixes it (the reconcile/prune passes own that). "
-        "Counts/names only, no score."
+        "Counts/names only, no score. The verdict is read from COMPLETED checks only: "
+        "drift=true if any found drift, false only if all completed clean, null when a "
+        "check did not complete (incomplete_checks names them; timed_out says whether "
+        "the budget ran out)."
     )
     return report

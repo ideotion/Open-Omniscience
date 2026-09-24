@@ -101,7 +101,31 @@ def _settings_status() -> dict:
         "ots_effective": prefs.anchoring_mode == "opentimestamps" and avail["ots_available"],
         "key_protection": signer.key_protection,
         "signer": signer.public_identity().to_dict(),
+        # CUST-1 (2026-09-24): ingest entries a failure left owed, and those written late.
+        # Shown beside the chain's own status, because a gap nobody reports is the defect.
+        "late": _late_block(),
     }
+
+
+def _late_block() -> dict:
+    from src.custody.pending import late_count, pending_count
+
+    return {
+        "pending": pending_count(),
+        "recorded_late": late_count(),
+        "method": (
+            "an INGEST entry that could not be written when its article was stored is "
+            "queued in data/custody_pending.jsonl and written later, marked late in its own "
+            "signed metadata; nothing is back-dated"
+        ),
+    }
+
+
+class ReconcileRequest(BaseModel):
+    #: Also look for stored articles with no INGEST entry since the log's first one.
+    scan: bool = False
+    #: Queue what the scan found, to be recorded late. The operator's act, never automatic.
+    record_gaps: bool = False
 
 
 class SettingsUpdate(BaseModel):
@@ -129,6 +153,24 @@ def put_settings(req: SettingsUpdate) -> dict:
     except CustodySettingsError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return _settings_status()
+
+
+@router.post("/reconcile")
+def reconcile(req: ReconcileRequest) -> dict:
+    """Write the owed INGEST entries (each marked late); optionally scan for older gaps,
+    and -- only when asked -- queue what the scan found. Local, no network."""
+    from src.custody.pending import drain, gap_scan, queue_gaps
+
+    out: dict = {"drained": drain(limit=500)}
+    if req.scan:
+        scan = gap_scan()
+        ids = scan.pop("missing_ids", [])
+        out["scan"] = scan
+        if req.record_gaps and ids:
+            out["queued"] = queue_gaps(ids)
+            out["drained_after_queue"] = drain(limit=max(500, len(ids)))
+    out["late"] = _late_block()
+    return out
 
 
 @router.get("/{item_id}")

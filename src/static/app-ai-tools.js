@@ -508,6 +508,13 @@
       } catch (e) { toast(_apiErrorMessage(e), "err"); }
     }
 
+    function _qualDeclinedText(reason, env) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      return t("Qualification is declined on this machine: it is below the memory floor, so no candidate is judged.")
+        + (reason ? " (" + reason + ")" : "")
+        + " " + _qualTf("To run it anyway, restart the app with {env}=1.", { env: env || "OO_ALLOW_BIG_SCANS" });
+    }
+
     async function loadQualifyBulk() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const out = $("qualify-bulk-status");
@@ -525,6 +532,13 @@
           out.textContent = backlog
             ? `${fmtNum(backlog)} ${esc(t("candidates awaiting qualification"))}`
             : t("No candidates awaiting qualification.");
+          // FD03 = a (2026-09-24): below the memory floor every qualification pass
+          // declines. Said here, with the switch that lifts it, rather than left for
+          // the operator to infer from a backlog that never moves.
+          const fl = st.floor || {};
+          if (fl.declines) {
+            out.textContent += " " + _qualDeclinedText(fl.reason, fl.override_env);
+          }
           if (cancelBtn) cancelBtn.style.display = "none";
         }
       } catch (e) { out.textContent = t("Could not load qualification status."); }
@@ -558,6 +572,10 @@
           console.error("qualifyBulkStart", st.error);
         } else if (_jobStillRunning(st)) {
           say(t("Still running in the background — see the task manager."));
+        } else if (st && st.result && st.result.declined) {
+          // A named refusal, never "0 qualified" read as a finished run (QUAL-1).
+          const d = st.result.declined;
+          say(_qualDeclinedText(d.reason, d.override_env));
         } else if (st && st.result) {
           const r = st.result;
           say(`${r.qualified || 0} ${t("qualified")} · ${r.disqualified || 0} ${t("disqualified")} · `
@@ -2040,8 +2058,57 @@
     async function loadCustody() {
       try {
         const s = await api("/api/custody/settings");
-        renderCustodyStatus(s); applyCustodyToggles(s);
+        renderCustodyStatus(s); applyCustodyToggles(s); _renderCustodyLate(s.late);
       } catch (e) { $("custody-status").textContent = _failMsg("Custody settings unavailable: {error}", e); }
+    }
+
+    // CUST-1 (2026-09-24): ingest entries a failure left owed are queued and written
+    // later, each marked late; the gaps from before that are counted on request. Both
+    // are said here, beside the chain they belong to.
+    function _renderCustodyLate(L) {
+      const el = $("cust-late");
+      if (!el) return;
+      L = L || {};
+      if (!L.pending && !L.recorded_late) { el.textContent = ""; return; }
+      el.textContent = _qualTf("{p} ingest entries could not be written when their articles were stored and are queued; {r} have been recorded late, each marked so in its signed metadata.",
+        { p: L.pending || 0, r: L.recorded_late == null ? "?" : L.recorded_late });
+    }
+    async function _custodyReconcile(body) {
+      const d = await api("/api/custody/reconcile", { method: "POST", body: JSON.stringify(body) });
+      _renderCustodyLate(d.late);
+      return d;
+    }
+    async function custodyGapCheck(btn) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const out = $("cust-result"), rec = $("cust-gap-record");
+      if (btn) btn.disabled = true;
+      try {
+        const d = await _custodyReconcile({ scan: true });
+        const sc = d.scan || {};
+        if (sc.since_article_id == null) {
+          out.textContent = t("The custody log has no ingest entry yet, so there is no start to measure gaps from.");
+          if (rec) rec.style.display = "none";
+          return;
+        }
+        out.textContent = _qualTf("{n} stored articles since the log's first ingest entry have no ingest entry ({checked} checked).",
+          { n: sc.missing || 0, checked: sc.checked || 0 })
+          + (sc.complete ? "" : " " + t("The scan stopped at its time budget; run it again to continue."));
+        if (rec) rec.style.display = sc.missing ? "" : "none";
+      } catch (e) {
+        out.textContent = _apiErrorMessage(e);
+      } finally { if (btn) btn.disabled = false; }
+    }
+    async function custodyGapRecord(btn) {
+      const out = $("cust-result");
+      if (btn) btn.disabled = true;
+      try {
+        const d = await _custodyReconcile({ scan: true, record_gaps: true });
+        const n = ((d.drained_after_queue || {}).recorded || 0);
+        out.textContent = _qualTf("Recorded {n} entries, each marked late.", { n: n });
+        if (btn) btn.style.display = "none";
+      } catch (e) {
+        out.textContent = _apiErrorMessage(e);
+      } finally { if (btn) btn.disabled = false; }
     }
 
     async function saveCustody() {

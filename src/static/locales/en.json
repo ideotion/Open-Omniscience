@@ -4448,5 +4448,18 @@
   "{n} unclean end(s)": "{n} unclean end(s)",
   "{n} since {when}": "{n} since {when}",
   "Light bundle": "Light bundle",
-  "FULL collects every member and is the default. LIGHT skips four members that measure the machine or re-read the whole corpus instead of reporting your data. Each skipped member still appears in the archive as a file naming why, so a light bundle can never be mistaken for a full one. Applies to this run only and is never remembered.": "FULL collects every member and is the default. LIGHT skips four members that measure the machine or re-read the whole corpus instead of reporting your data. Each skipped member still appears in the archive as a file naming why, so a light bundle can never be mistaken for a full one. Applies to this run only and is never remembered."
+  "FULL collects every member and is the default. LIGHT skips four members that measure the machine or re-read the whole corpus instead of reporting your data. Each skipped member still appears in the archive as a file naming why, so a light bundle can never be mistaken for a full one. Applies to this run only and is never remembered.": "FULL collects every member and is the default. LIGHT skips four members that measure the machine or re-read the whole corpus instead of reporting your data. Each skipped member still appears in the archive as a file naming why, so a light bundle can never be mistaken for a full one. Applies to this run only and is never remembered.",
+  "Resume pending": "Resume pending",
+  "An exclusive operation (an import, a restore, a release run) paused collection while a pass was running. Collection starts again the moment that pass finishes winding down, unless airplane mode is on.": "An exclusive operation (an import, a restore, a release run) paused collection while a pass was running. Collection starts again the moment that pass finishes winding down, unless airplane mode is on.",
+  "waiting for the previous pass to finish (since {when})": "waiting for the previous pass to finish (since {when})",
+  "Qualification is declined on this machine: it is below the memory floor, so no candidate is judged.": "Qualification is declined on this machine: it is below the memory floor, so no candidate is judged.",
+  "To run it anyway, restart the app with {env}=1.": "To run it anyway, restart the app with {env}=1.",
+  "Check for missing ingest entries": "Check for missing ingest entries",
+  "Compares the stored articles with the custody log's ingest entries, from the log's first ingest entry on. It only counts; recording what it finds is a separate button.": "Compares the stored articles with the custody log's ingest entries, from the log's first ingest entry on. It only counts; recording what it finds is a separate button.",
+  "Record them, marked late": "Record them, marked late",
+  "{p} ingest entries could not be written when their articles were stored and are queued; {r} have been recorded late, each marked so in its signed metadata.": "{p} ingest entries could not be written when their articles were stored and are queued; {r} have been recorded late, each marked so in its signed metadata.",
+  "The custody log has no ingest entry yet, so there is no start to measure gaps from.": "The custody log has no ingest entry yet, so there is no start to measure gaps from.",
+  "{n} stored articles since the log's first ingest entry have no ingest entry ({checked} checked).": "{n} stored articles since the log's first ingest entry have no ingest entry ({checked} checked).",
+  "The scan stopped at its time budget; run it again to continue.": "The scan stopped at its time budget; run it again to continue.",
+  "Recorded {n} entries, each marked late.": "Recorded {n} entries, each marked late."
 }

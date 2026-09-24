@@ -4448,5 +4448,18 @@
   "{n} unclean end(s)": "{n}টি অপরিচ্ছন্ন শেষ",
   "{n} since {when}": "{when} থেকে {n}",
   "Light bundle": "হালকা বান্ডিল",
-  "FULL collects every member and is the default. LIGHT skips four members that measure the machine or re-read the whole corpus instead of reporting your data. Each skipped member still appears in the archive as a file naming why, so a light bundle can never be mistaken for a full one. Applies to this run only and is never remembered.": "সম্পূর্ণ প্রতিটি সদস্য সংগ্রহ করে এবং এটিই ডিফল্ট। হালকা সেই চারটি সদস্য বাদ দেয় যেগুলি আপনার ডেটা জানানোর বদলে যন্ত্রটি মাপে বা পুরো সংগ্রহ আবার পড়ে। বাদ দেওয়া প্রতিটি সদস্য তবুও আর্কাইভে একটি ফাইল হিসেবে থাকে যা কারণ জানায়, তাই হালকা বান্ডিলকে কখনও সম্পূর্ণ বলে ভুল করা যায় না। কেবল এই বারের জন্য প্রযোজ্য এবং কখনও মনে রাখা হয় না।"
+  "FULL collects every member and is the default. LIGHT skips four members that measure the machine or re-read the whole corpus instead of reporting your data. Each skipped member still appears in the archive as a file naming why, so a light bundle can never be mistaken for a full one. Applies to this run only and is never remembered.": "সম্পূর্ণ প্রতিটি সদস্য সংগ্রহ করে এবং এটিই ডিফল্ট। হালকা সেই চারটি সদস্য বাদ দেয় যেগুলি আপনার ডেটা জানানোর বদলে যন্ত্রটি মাপে বা পুরো সংগ্রহ আবার পড়ে। বাদ দেওয়া প্রতিটি সদস্য তবুও আর্কাইভে একটি ফাইল হিসেবে থাকে যা কারণ জানায়, তাই হালকা বান্ডিলকে কখনও সম্পূর্ণ বলে ভুল করা যায় না। কেবল এই বারের জন্য প্রযোজ্য এবং কখনও মনে রাখা হয় না।",
+  "Resume pending": "পুনরায় শুরু অপেক্ষমাণ",
+  "An exclusive operation (an import, a restore, a release run) paused collection while a pass was running. Collection starts again the moment that pass finishes winding down, unless airplane mode is on.": "একটি একচেটিয়া কাজ (আমদানি, পুনরুদ্ধার বা রিলিজ রান) একটি পাস চলার সময় সংগ্রহ থামিয়েছিল। সেই পাস থেমে যাওয়া মাত্র সংগ্রহ আবার শুরু হবে, যদি না এয়ারপ্লেন মোড চালু থাকে।",
+  "waiting for the previous pass to finish (since {when})": "আগের পাস শেষ হওয়ার অপেক্ষায় ({when} থেকে)",
+  "Qualification is declined on this machine: it is below the memory floor, so no candidate is judged.": "এই যন্ত্রে যোগ্যতা নির্ধারণ প্রত্যাখ্যাত: এটি মেমরির ন্যূনতম সীমার নিচে, তাই কোনো প্রার্থীর বিচার হয় না।",
+  "To run it anyway, restart the app with {env}=1.": "তবুও চালাতে চাইলে {env}=1 দিয়ে অ্যাপটি আবার চালু করুন।",
+  "Check for missing ingest entries": "অনুপস্থিত ইনজেস্ট এন্ট্রি খুঁজুন",
+  "Compares the stored articles with the custody log's ingest entries, from the log's first ingest entry on. It only counts; recording what it finds is a separate button.": "সংরক্ষিত নিবন্ধগুলোকে তত্ত্বাবধান লগের ইনজেস্ট এন্ট্রির সঙ্গে মেলায়, লগের প্রথম ইনজেস্ট এন্ট্রি থেকে। এটি শুধু গোনে; যা পায় তা লিপিবদ্ধ করা আলাদা বোতাম।",
+  "Record them, marked late": "এগুলো লিপিবদ্ধ করুন, বিলম্বিত চিহ্নসহ",
+  "{p} ingest entries could not be written when their articles were stored and are queued; {r} have been recorded late, each marked so in its signed metadata.": "{p}টি ইনজেস্ট এন্ট্রি তাদের নিবন্ধ সংরক্ষণের সময় লেখা যায়নি এবং সারিতে আছে; {r}টি বিলম্বে লিপিবদ্ধ হয়েছে, প্রতিটি তার স্বাক্ষরিত মেটাডেটায় সেভাবে চিহ্নিত।",
+  "The custody log has no ingest entry yet, so there is no start to measure gaps from.": "তত্ত্বাবধান লগে এখনও কোনো ইনজেস্ট এন্ট্রি নেই, তাই ফাঁক মাপার কোনো শুরু নেই।",
+  "{n} stored articles since the log's first ingest entry have no ingest entry ({checked} checked).": "লগের প্রথম ইনজেস্ট এন্ট্রির পর থেকে সংরক্ষিত {n}টি নিবন্ধের কোনো ইনজেস্ট এন্ট্রি নেই ({checked}টি পরীক্ষিত)।",
+  "The scan stopped at its time budget; run it again to continue.": "স্ক্যানটি তার সময়সীমায় থেমেছে; চালিয়ে যেতে আবার চালান।",
+  "Recorded {n} entries, each marked late.": "{n}টি এন্ট্রি লিপিবদ্ধ হয়েছে, প্রতিটি বিলম্বিত চিহ্নসহ।"
 }

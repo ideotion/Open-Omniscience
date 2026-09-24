@@ -471,6 +471,30 @@ def _load_host_schedule(
     return out
 
 
+def _stamp_remaining(not_before: float, delay_s: float, min_interval_s: float, netloc: str = "") -> float:
+    """How long a persisted stamp still asks us to wait -- CLAMPED to the stamp's own
+    delay (RR-9, field round 2026-09-24).
+
+    A legitimate stamp is written as "now + the interval", so it can never lie further
+    ahead of now than that interval. One that does was written on a clock that has since
+    been CORRECTED: the NUC booted 12 hours fast, stamped legislation.gov.uk's 10-second
+    crawl-delay on that clock, and after NTP set it right the probe was refused as "not
+    before 13:49Z" at 06:35Z -- seven hours of politeness nobody had asked for, and one
+    of row Q's three hosts lost. Clamping keeps the host's own stated wish (its delay,
+    in full) and drops only the clock error; a stamp can still never be SHORTENED below
+    what the host declared, because the bound is that declaration."""
+    remaining = max(0.0, not_before - time.time())
+    bound = max(float(delay_s or 0.0), float(min_interval_s or 0.0))
+    if remaining > bound:
+        _LOG.info(
+            "politeness stamp for %s lay %.0f s ahead against its own %.0f s delay "
+            "(written on a clock since corrected); waiting the delay instead",
+            netloc or "a host", remaining, bound,
+        )
+        return bound
+    return remaining
+
+
 def _persist_host_schedule(path: Path, netloc: str, not_before: float, delay_s: float) -> None:
     """Best-effort read-modify-write of ONE host's next-allowed-at.
 
@@ -1738,7 +1762,7 @@ class EthicalFetcher:
                 if persisted_delay > declared_delay:
                     declared_delay = persisted_delay
                     interval = max(interval, persisted_delay)
-                wait = max(wait, max(0.0, not_before - time.time()))
+                wait = max(wait, _stamp_remaining(not_before, persisted_delay, self.min_interval_s, netloc))
 
         if wait <= 0:
             self._stamp_host_schedule(netloc, interval, declared_delay)

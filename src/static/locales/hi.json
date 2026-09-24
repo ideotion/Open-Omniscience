@@ -4448,5 +4448,18 @@
   "{n} unclean end(s)": "{n} अशुद्ध अंत",
   "{n} since {when}": "{when} से {n}",
   "Light bundle": "हल्का बंडल",
-  "FULL collects every member and is the default. LIGHT skips four members that measure the machine or re-read the whole corpus instead of reporting your data. Each skipped member still appears in the archive as a file naming why, so a light bundle can never be mistaken for a full one. Applies to this run only and is never remembered.": "पूर्ण हर सदस्य को एकत्र करता है और यही डिफ़ॉल्ट है। हल्का उन चार सदस्यों को छोड़ देता है जो आपके डेटा की रिपोर्ट देने के बजाय मशीन को मापते हैं या पूरे संग्रह को दोबारा पढ़ते हैं। छोड़ा गया प्रत्येक सदस्य फिर भी संग्रह में एक फ़ाइल के रूप में दिखता है जो कारण बताती है, इसलिए हल्के बंडल को कभी पूर्ण बंडल समझा नहीं जा सकता। यह केवल इसी बार लागू होता है और कभी याद नहीं रखा जाता।"
+  "FULL collects every member and is the default. LIGHT skips four members that measure the machine or re-read the whole corpus instead of reporting your data. Each skipped member still appears in the archive as a file naming why, so a light bundle can never be mistaken for a full one. Applies to this run only and is never remembered.": "पूर्ण हर सदस्य को एकत्र करता है और यही डिफ़ॉल्ट है। हल्का उन चार सदस्यों को छोड़ देता है जो आपके डेटा की रिपोर्ट देने के बजाय मशीन को मापते हैं या पूरे संग्रह को दोबारा पढ़ते हैं। छोड़ा गया प्रत्येक सदस्य फिर भी संग्रह में एक फ़ाइल के रूप में दिखता है जो कारण बताती है, इसलिए हल्के बंडल को कभी पूर्ण बंडल समझा नहीं जा सकता। यह केवल इसी बार लागू होता है और कभी याद नहीं रखा जाता।",
+  "Resume pending": "पुनः आरंभ लंबित",
+  "An exclusive operation (an import, a restore, a release run) paused collection while a pass was running. Collection starts again the moment that pass finishes winding down, unless airplane mode is on.": "एक विशिष्ट कार्य (आयात, पुनर्स्थापना या रिलीज़ रन) ने एक पास चलते समय संग्रह रोक दिया था। वह पास रुकते ही संग्रह फिर शुरू हो जाएगा, जब तक एयरप्लेन मोड चालू न हो।",
+  "waiting for the previous pass to finish (since {when})": "पिछले पास के समाप्त होने की प्रतीक्षा ({when} से)",
+  "Qualification is declined on this machine: it is below the memory floor, so no candidate is judged.": "इस मशीन पर योग्यता-निर्धारण अस्वीकार है: यह मेमोरी की न्यूनतम सीमा से नीचे है, इसलिए किसी उम्मीदवार का आकलन नहीं होता।",
+  "To run it anyway, restart the app with {env}=1.": "फिर भी चलाने के लिए, ऐप को {env}=1 के साथ पुनः आरंभ करें।",
+  "Check for missing ingest entries": "लुप्त इनजेस्ट प्रविष्टियाँ जाँचें",
+  "Compares the stored articles with the custody log's ingest entries, from the log's first ingest entry on. It only counts; recording what it finds is a separate button.": "संग्रहीत लेखों की तुलना अभिरक्षा लॉग की इनजेस्ट प्रविष्टियों से करता है, लॉग की पहली इनजेस्ट प्रविष्टि से आगे। यह केवल गिनता है; जो मिले उसे दर्ज करना अलग बटन है।",
+  "Record them, marked late": "इन्हें दर्ज करें, विलंबित चिह्नित",
+  "{p} ingest entries could not be written when their articles were stored and are queued; {r} have been recorded late, each marked so in its signed metadata.": "{p} इनजेस्ट प्रविष्टियाँ उनके लेख संग्रहीत होते समय लिखी नहीं जा सकीं और कतार में हैं; {r} विलंब से दर्ज की गईं, हर एक अपने हस्ताक्षरित मेटाडेटा में ऐसे चिह्नित है।",
+  "The custody log has no ingest entry yet, so there is no start to measure gaps from.": "अभिरक्षा लॉग में अभी कोई इनजेस्ट प्रविष्टि नहीं है, इसलिए अंतराल मापने का कोई आरंभ-बिंदु नहीं है।",
+  "{n} stored articles since the log's first ingest entry have no ingest entry ({checked} checked).": "लॉग की पहली इनजेस्ट प्रविष्टि के बाद से संग्रहीत {n} लेखों की कोई इनजेस्ट प्रविष्टि नहीं है ({checked} जाँचे गए)।",
+  "The scan stopped at its time budget; run it again to continue.": "स्कैन अपनी समय-सीमा पर रुक गया; जारी रखने के लिए इसे फिर चलाएँ।",
+  "Recorded {n} entries, each marked late.": "{n} प्रविष्टियाँ दर्ज की गईं, हर एक विलंबित चिह्नित।"
 }

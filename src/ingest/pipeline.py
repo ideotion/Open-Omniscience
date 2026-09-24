@@ -375,12 +375,25 @@ def _maybe_record_custody(article: Article) -> None:
     article's content hash, so the custody entry binds to exactly the bytes that
     were stored.
     """
+    article_id: int | None = None
     try:
         from src.custody.settings import load_settings
 
         prefs = load_settings()
         if not prefs.auto_log_on_ingest:
             return
+        # The id WITHOUT a database read (CUST-1): after the commit every column is
+        # expired, and reading ``article.id`` reloads the row -- which is exactly the call
+        # that failed on four field machines with every pooled connection busy. The
+        # identity map still knows the primary key, so a failure below can at least
+        # say WHICH article's entry is owed.
+        try:
+            from sqlalchemy import inspect as sa_inspect
+
+            ident = getattr(sa_inspect(article), "identity", None)
+            article_id = int(ident[0]) if ident else None
+        except Exception:  # noqa: BLE001 - not an ORM instance: no id to queue, the write still runs
+            article_id = None
         from src.custody.log import CustodyAction, CustodyLog
 
         with CustodyLog() as log:
@@ -395,10 +408,32 @@ def _maybe_record_custody(article: Article) -> None:
                     "source_id": article.source_id,
                 },
             )
-    except Exception:  # noqa: BLE001 - custody is auxiliary; never fail ingestion
+    except Exception as exc:  # noqa: BLE001 - custody is auxiliary; never fail ingestion
         import logging
 
         logging.getLogger(__name__).warning("custody logging on ingest failed", exc_info=True)
+        # ...but the entry is OWED, not forgotten: queued in a file (no database), and
+        # written later, marked late, by the next successful entry or the custody tab.
+        if article_id is not None:
+            from src.custody.pending import note_failed
+
+            note_failed(article_id, error=f"{type(exc).__name__}: {exc}")
+        return
+    # A successful write means the database and the log both answer again: record what
+    # earlier failures still owe, a few at a time so no single ingest pays for many.
+    try:
+        from src.custody.pending import drain, pending_count
+
+        if pending_count():
+            drain(limit=_CUSTODY_DRAIN_PER_INGEST)
+    except Exception:  # noqa: BLE001 - the late entries wait for the next chance
+        import logging
+
+        logging.getLogger(__name__).debug("custody: late-entry drain failed", exc_info=True)
+
+
+#: How many owed custody entries one successful ingest writes, at most (CUST-1).
+_CUSTODY_DRAIN_PER_INGEST = 20
 
 
 def ingest_source(

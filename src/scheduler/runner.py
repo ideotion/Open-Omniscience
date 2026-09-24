@@ -2284,6 +2284,9 @@ class BackgroundScheduler:
                 # app got slow". Rides the payload that window ALREADY polls, for the
                 # reason memory_guard and machine_floor do.
                 "concurrency": _concurrency_block(s),
+                # SCHED-1: a resume still waiting for the previous pass to exit. Rides the
+                # payload the Schedule tab already polls; None when nothing is pending.
+                "resume_pending": resume_pending(),
             }
 
     def activity(self, session) -> dict:
@@ -2518,8 +2521,10 @@ def resume_after_exclusive_operation(
     minutes here costs nothing real. If it genuinely never succeeds (retries
     exhausted), it logs LOUDLY once rather than staying silent, and still
     returns — a caller's own ``finally`` block must never block forever on
-    this courtesy call. NOTHING here retries again afterward, so the warning
-    never claims a self-heal that does not exist.
+    this courtesy call. What happens next CHANGED on 2026-09-24 (SCHED-1): the
+    resume is handed to a background watcher that waits for the old pass to
+    actually exit, because the fixed budget stranded a field machine's collector
+    for five days; the warning says so, and the Schedule tab shows it pending.
 
     Checked on EVERY attempt: the user's own airplane-mode kill switch always
     wins. If the operator engaged airplane mode of their own accord while
@@ -2547,10 +2552,105 @@ def resume_after_exclusive_operation(
                 return
             if attempt < retries:
                 time.sleep(retry_delay)
+        # SCHED-1 (field round 2026-09-24): the retry budget ran out with the old pass
+        # still alive. The budget was sized against one blocked WRITE (438 s); on a
+        # write-bound machine the unit is a pass's wind-down, and Lenn's took 39 minutes,
+        # so the warning below fired, nothing retried again, autostart was off, and
+        # collection stayed off for FIVE DAYS. The resume now stays PENDING on a watcher
+        # that waits for that pass to actually exit -- and says so where the operator
+        # looks (the task manager's Schedule tab), not only in a log line.
+        _watch_for_resume(get_scheduler())
         _LOG.warning(
-            "could not resume background collection after an exclusive operation "
-            "-- the previous pass appears to still be running; restart collection "
-            "manually from Settings if it does not resume on its own"
+            "could not resume background collection after an exclusive operation yet "
+            "-- the previous pass is still winding down; collection resumes on its own "
+            "the moment it exits (task manager -> Schedule shows it as pending)"
         )
     finally:
         get_scheduler().release_exclusive()
+
+
+# --------------------------------------------------------------------------- #
+#  The pending resume (SCHED-1, 2026-09-24)
+# --------------------------------------------------------------------------- #
+#
+# One watcher at a time, keyed by a GENERATION so a cancel (a shutdown) or a newer
+# watcher retires an older one without either racing on shared state. It never starts
+# collection over the operator's airplane mode (every operator stop engages the kill
+# switch first), never while another exclusive operation holds the machine (it waits
+# that out and resumes after), and stands down the moment collection is running on a
+# thread other than the one it was waiting for -- someone else already started it.
+_RESUME_LOCK = threading.Lock()
+_RESUME_PENDING: dict | None = None
+_RESUME_GEN = 0
+#: How often the watcher looks. A pass winds down in minutes, never seconds, and a
+#: start() that succeeds the minute after the pass exits costs nothing real.
+RESUME_POLL_S = 30.0
+
+
+def resume_pending() -> dict | None:
+    """The pending resume, or None: what the Schedule tab shows instead of a silently
+    stopped collector."""
+    with _RESUME_LOCK:
+        return dict(_RESUME_PENDING) if _RESUME_PENDING else None
+
+
+def cancel_pending_resume() -> None:
+    """Retire any watcher (called at shutdown, so a watcher can never start collection
+    on a process that is going down)."""
+    global _RESUME_GEN, _RESUME_PENDING
+    with _RESUME_LOCK:
+        _RESUME_GEN += 1
+        _RESUME_PENDING = None
+
+
+def _watch_for_resume(sched: BackgroundScheduler, *, poll_s: float | None = None) -> threading.Thread:
+    global _RESUME_GEN, _RESUME_PENDING
+    old = getattr(sched, "_thread", None)
+    with _RESUME_LOCK:
+        _RESUME_GEN += 1
+        gen = _RESUME_GEN
+        _RESUME_PENDING = {
+            "since": datetime.now(UTC).isoformat(timespec="seconds"),
+            "waiting_for": getattr(old, "name", None),
+            "basis": (
+                "the previous collection pass was still winding down when an exclusive "
+                "operation ended; collection starts again the moment that pass exits"
+            ),
+        }
+    t = threading.Thread(target=_resume_watch, args=(sched, old, gen, poll_s or RESUME_POLL_S),
+                         name="oo-resume-watch", daemon=True)
+    t.start()
+    return t
+
+
+def _resume_watch(sched: BackgroundScheduler, old: threading.Thread | None, gen: int, poll_s: float) -> None:
+    global _RESUME_PENDING
+    from src.ingest import kill_switch_active
+
+    outcome = "stopped"
+    t0 = time.monotonic()
+    while True:
+        # Wait FIRST: the retry loop that handed over has just tried start().
+        time.sleep(poll_s)
+        with _RESUME_LOCK:
+            if gen != _RESUME_GEN:
+                return  # retired by a cancel or a newer watcher; they own the state now
+        try:
+            if kill_switch_active():
+                outcome = "not resumed: airplane mode was engaged"
+                break
+            cur = getattr(sched, "_thread", None)
+            if cur is not None and cur is not old and cur.is_alive():
+                outcome = "not needed: collection was started by something else"
+                break
+            holds = getattr(sched, "holds_exclusive", None)
+            held = exclusive_window_open() or (bool(holds()) if callable(holds) else False)
+            if not held and sched.start():
+                outcome = "resumed"
+                break
+        except Exception:  # noqa: BLE001 - the watcher must outlive a transient error
+            _LOG.debug("resume watcher: a check failed", exc_info=True)
+    with _RESUME_LOCK:
+        if gen == _RESUME_GEN:
+            _RESUME_PENDING = None
+    _LOG.warning("pending collection resume ended after %.0f s: %s", time.monotonic() - t0, outcome)
