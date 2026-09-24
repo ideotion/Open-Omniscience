@@ -22,8 +22,11 @@
 
 ## Open queue (when maintainer says proceed)
 
-- **THE HEARTBEAT-RING TEST FAILS THE macOS LANE WHENEVER A GC PASS LANDS IN ITS 0.3 s SOAK —
-  found driving PR #1171 to green, NOT fixed there, STILL OPEN (2026-09-24).**
+- **THE HEARTBEAT-RING TEST FAILED THE macOS LANE WHENEVER A GC PASS LANDED IN ITS 0.3 s SOAK —
+  found driving PR #1171 to green, FIXED IN PR #1174; TWO SIBLING TIMING TESTS STILL OPEN
+  (2026-09-24).** *(Headline as first recorded: "THE HEARTBEAT-RING TEST FAILS THE macOS LANE
+  WHENEVER A GC PASS LANDS IN ITS 0.3 s SOAK — found driving PR #1171 to green, NOT fixed there,
+  STILL OPEN".)*
   `tests/test_release_run.py::test_the_heartbeat_ring_is_bounded_and_says_what_it_dropped`
   failed `Portability observation (macos-latest)` twice on `c1a5fbf9` (push run `36022151118`,
   attempts 1 and 2, `assert 0 >= 1`) and passed in that commit's `pull_request` run. **Measured,
@@ -45,6 +48,13 @@
   one GC pass does not explain it; it is recorded, not diagnosed.
   **Not blocking:** the lane is `continue-on-error: true`; both become blocking the day it
   graduates.
+  **HEARTBEAT HALF FIXED (2026-09-24, PR #1174), with the patch above.** The end-to-end test now
+  runs a ring of one, and a new test checks the ring's arithmetic by count; both pass with an
+  injected 0.25 s, 0.3 s and 1.0 s pause. **STILL OPEN:** the `test_markup_blocks` observation
+  above, and `test_an_interim_report_is_written_during_the_soak_marked_as_one_and_superseded` in
+  the same file as the heartbeat test. The interim test has the same exposure through a narrower
+  window: a pause of ≥ ~0.35 s in the soak's first ~0.06 s ends the loop before the first interim
+  write. It has not been seen failing.
 - **PR 7 OF THE AUDIT'S §9.2 IS BUILT AS `R24` + A DESIGN, AND `R24` NEEDED THREE THINGS ITS
   WORDING DID NOT SAY (2026-09-24, PR #1171).** §9.2 item 7 is *"Design for 0.5: the segmented
   derived index for the 1 TB target, and carrying mention rows from same-engine backups instead
