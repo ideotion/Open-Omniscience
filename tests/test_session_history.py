@@ -155,7 +155,13 @@ def test_the_summary_counts_restarts_stretches_and_the_honest_downtime(two_sessi
     assert s["suspends"] == 1 and s["unclean_ends"] == 1 and s["unknown_end_sessions"] == 0
     assert s["longest_stretch"]["seconds"] == 86280 and s["longest_stretch"]["current"] is False
     assert s["current_stretch"]["seconds"] == 8 * 3600
-    assert s["bar_reached"] is False and s["hours_remaining_on_current_stretch"] == 64.0
+    # The bar is continuous COLLECTION (RR-10): this build records the collection loop,
+    # none ran, so the bar is not reached and nothing is counting toward it. The process
+    # half of the clause is read beside it, on the process stretches.
+    assert s["bar_basis"] == "collection" and s["bar_reached"] is False
+    assert s["hours_remaining_on_current_stretch"] is None
+    assert s["collection"]["recorded"] is True and s["collection"]["stretches"] == 0
+    assert s["process_bar"]["reached"] is False and s["process_bar"]["hours_remaining_on_current_stretch"] == 64.0
     assert s["discontinuous_total_s"] == s["uptime_total_s"]
     assert "CONTINUOUS" in s["method"] and "not the bar" in s["method"]
     gaps = c["gaps"]
@@ -164,23 +170,58 @@ def test_the_summary_counts_restarts_stretches_and_the_honest_downtime(two_sessi
     assert kinds == ["boot", "suspend", "end-unclean", "boot"]
 
 
-def test_the_bar_is_reached_on_one_stretch_never_on_the_sum(ledger, monkeypatch):
-    # three sessions of 30 h each, cleanly restarted: 90 h in total, no stretch of 72 h
-    t = T0
+class Clocks:
+    """Three COHERENT clocks (2026-09-24). Running advances all three; a suspend advances
+    the wall and boot-time clocks; a clock change moves only the wall clock. The earlier
+    form of the test below moved only the wall clock to "let 30 hours pass" -- which the
+    ledger now correctly reads as a clock change, since nothing else moves one clock
+    alone."""
+
+    def __init__(self, monkeypatch, wall: float, *, boottime: bool = True) -> None:
+        self.wall, self.mono, self.bt, self.has_bt = float(wall), 1_000.0, 50_000.0, boottime
+        monkeypatch.setattr(sh.time, "time", lambda: self.wall)
+        monkeypatch.setattr(sh.time, "monotonic", lambda: self.mono)
+        monkeypatch.setattr(sh, "boottime", lambda: self.bt if self.has_bt else None)
+
+    def run(self, s: float) -> None:
+        self.wall += s
+        self.mono += s
+        self.bt += s
+
+    def suspend(self, s: float) -> None:
+        self.wall += s
+        self.bt += s
+
+    def step(self, s: float) -> None:
+        self.wall += s
+
+
+def test_the_bar_is_reached_on_one_collection_stretch_never_on_the_sum(ledger, monkeypatch):
+    # three sessions collecting 30 h each, cleanly restarted: 90 h in total, no stretch of 72 h
+    c = Clocks(monkeypatch, T0)
     for _ in range(3):
-        _boot_at(monkeypatch, t, {"state": "clean", "ended_at": None})
-        monkeypatch.setattr(sh.time, "time", lambda t=t: t + 30 * 3600)
+        sh._reset_for_tests()
+        sh.record_boot({"state": "clean"})
+        sh.record_event("collection", running=True)
+        c.run(30 * 3600)
+        sh.record_event("collection", running=False, stop_requested=True)
         sh.record_end(clean=True)
-        t += 31 * 3600
-    s = ch.chronology(anchor="install", now=t)["summary"]
-    assert s["uptime_total_s"] == 90 * 3600 and s["bar_reached"] is False
-    assert s["longest_stretch"]["seconds"] == 30 * 3600
-    # ...and one session of 80 h reaches it, at start + 72 h
-    _boot_at(monkeypatch, t, {"state": "clean"})
-    s2 = ch.chronology(anchor="install", now=t + 80 * 3600)["summary"]
+        c.run(3600)
+    s = ch.chronology(anchor="install")["summary"]
+    assert s["collection"]["total_s"] == 90 * 3600 and s["bar_reached"] is False
+    assert s["collection"]["longest_stretch"]["seconds"] == 30 * 3600
+    assert s["uptime_total_s"] == 90 * 3600
+    # ...and one session collecting for 80 h reaches it, at the stretch's start + 72 h
+    sh._reset_for_tests()
+    sh.record_boot({"state": "clean"})
+    start = c.wall
+    sh.record_event("collection", running=True)
+    c.run(80 * 3600)
+    s2 = ch.chronology(anchor="install")["summary"]
     assert s2["bar_reached"] is True
-    assert s2["bar_reached_at"] == ch._iso(t + 72 * 3600)
+    assert s2["bar_reached_at"] == ch._iso(start + 72 * 3600)
     assert s2["hours_remaining_on_current_stretch"] is None
+    assert s2["collection"]["running_now"] is True
 
 
 def test_an_end_with_no_time_contributes_nothing_and_is_counted_as_unknown(ledger, monkeypatch):
@@ -248,3 +289,262 @@ def test_the_chronology_endpoint_and_the_vitals_carry_it(monkeypatch, tmp_path):
         assert body["summary"]["bar_hours"] == 72.0
         v = c.get("/api/system/vitals").json()
         assert "session" in v and "restarts_since_ledger_start" in v["session"]
+
+
+# --------------------------------------------------------------------------- #
+#  The field round (2026-09-24, docs/audit/16_…): RR-5, RR-10, RR-11
+# --------------------------------------------------------------------------- #
+def test_a_backward_clock_correction_is_recorded_and_every_duration_stays_true(ledger, monkeypatch):
+    """RR-5, the NUC: booted with the clock 12 hours fast, corrected by NTP an hour in.
+    The chronology read 12 hours short, because the correction left no record and every
+    duration was a difference of two wall stamps. Now the tick records the step against
+    the boot-time clock, and the boot stamp is moved onto the corrected scale by it."""
+    c = Clocks(monkeypatch, T0 + 12 * 3600)
+    sh.record_boot(None)
+    c.run(3600)
+    sh.tick_once()
+    c.step(-12 * 3600)
+    c.run(60)
+    sh.tick_once()
+    c.run(60 * 3600)
+    sh.tick_once()
+    recs = sh.read_records()
+    steps = [r for r in recs if r["kind"] == "clock-step"]
+    assert len(steps) == 1 and steps[0]["step_s"] == -43200 and steps[0]["direction"] == "backward"
+    assert steps[0]["clocks"] == "boot-time" and "not a suspend" in steps[0]["basis"]
+    assert not [r for r in recs if r["kind"] == "suspend"], "a correction is not a suspend"
+    s = ch.chronology(anchor="install")["summary"]
+    true_up = 3600 + 60 + 60 * 3600
+    assert s["since_last_restart_s"] == true_up
+    assert s["current_stretch"]["seconds"] == true_up
+    assert s["anchor_at"] == ch._iso(T0), "the boot, placed on the corrected clock"
+    assert s["clock_steps"] == 1 and s["rebased_sessions"] == 0
+
+
+def test_an_unrecorded_correction_is_rebased_from_the_sessions_own_span(ledger, monkeypatch):
+    """The same correction with no tick between it and the reading (or a ledger from the
+    build before clock-step records): the boot stamp disagrees with the session's span by
+    12 hours, and the span wins, saying so."""
+    c = Clocks(monkeypatch, T0 + 12 * 3600)
+    sh.record_boot(None)
+    c.run(3600)
+    c.step(-12 * 3600)
+    out = ch.chronology(anchor="install")
+    sess = out["sessions"][-1]
+    assert sess["rebased"]["moved_s"] == -43200 and "boot stamp disagreed" in sess["rebased"]["basis"]
+    assert out["summary"]["since_last_restart_s"] == 3600
+    assert out["summary"]["rebased_sessions"] == 1
+    assert any("placed from their span" in cv for cv in out["summary"]["caveats"])
+    assert "_clock" not in sess, "the internal clock object never leaves the read model"
+
+
+def test_a_past_session_from_the_old_ledger_format_is_rebased_from_its_uptime(ledger, monkeypatch):
+    """A 68b295b ledger: no span, no clock-step records -- only the end's monotonic uptime.
+    That is enough to place a session whose boot stamp was 12 hours fast."""
+    sh._append({"kind": "boot", "session_id": "old-1", "at": ch._iso(T0 + 12 * 3600), "pid": 1})
+    sh._append({"kind": "end", "session_id": "old-1", "at": ch._iso(T0 + 30 * 3600), "clean": False,
+                "basis": "the last liveness tick", "uptime_s": 30 * 3600.0, "written_by": "next-boot"})
+    out = ch.chronology(anchor="install", now=T0 + 31 * 3600)
+    sess = out["sessions"][0]
+    assert sess["started_at"] == ch._iso(T0) and sess["uptime_s"] == 30 * 3600
+    assert sess["rebased"]["moved_s"] == -43200
+
+
+def test_the_boot_time_clock_tells_a_suspend_from_a_clock_change(ledger, monkeypatch):
+    c = Clocks(monkeypatch, T0)
+    sh.record_boot(None)
+    c.run(60)
+    sh.tick_once()
+    c.suspend(7200)
+    c.run(30)
+    sh.tick_once()
+    c.run(60)
+    c.step(3 * 3600)
+    sh.tick_once()
+    recs = sh.read_records()
+    assert [r["kind"] for r in recs] == ["boot", "suspend", "clock-step"]
+    susp, step = recs[1], recs[2]
+    assert susp["gap_s"] == 7200 and susp["clocks"] == "boot-time" and "cannot produce" in susp["basis"]
+    assert susp["uptime_before_s"] == 60 and susp["uptime_s"] == 90
+    assert step["step_s"] == 10800 and step["direction"] == "forward"
+    s = ch.chronology(anchor="install")["summary"]
+    assert s["suspends"] == 1 and s["clock_steps"] == 1 and s["stretches"] == 2
+    assert s["uptime_total_s"] == 60 + 30 + 60, "running time only: the suspend is a hole, the step moves nothing"
+    kinds = [e["kind"] for e in ch.chronology(anchor="install")["events"]]
+    assert kinds == ["boot", "suspend", "clock-step"]
+
+
+def test_without_a_boot_time_clock_a_backward_change_is_still_recorded(ledger):
+    """No boot-time clock (macOS, Windows): a forward jump stays ambiguous with a suspend,
+    but a BACKWARD one can only be a clock change -- the case that left no record at all."""
+    sh.record_boot(None)
+    m0 = sh._STARTED_MONO
+    sh.tick_once(now_wall=T0 + 60, now_mono=m0 + 60)
+    assert sh.tick_once(now_wall=T0 + 120 - 3600, now_mono=m0 + 120) is None
+    rec = sh.read_records()[-1]
+    assert rec["kind"] == "clock-step" and rec["step_s"] == -3600 and rec["clocks"] == "monotonic-only"
+    assert "only a clock change" in rec["basis"]
+
+
+def test_an_event_is_placed_by_its_uptime_across_a_correction(ledger, monkeypatch):
+    c = Clocks(monkeypatch, T0 + 12 * 3600)
+    sh.record_boot(None)
+    c.run(600)
+    sh.record_event("network", online=True)
+    c.run(60)
+    c.step(-12 * 3600)
+    sh.tick_once()
+    ev = next(e for e in ch.chronology(anchor="install")["events"] if e["kind"] == "event:network")
+    assert ev["at"] == ch._iso(T0 + 600), "the event's stamp was fast; its uptime was not"
+
+
+def test_a_process_up_for_days_with_its_collector_stopped_does_not_reach_the_bar(ledger, monkeypatch):
+    """RR-10, Lenn: the process ran five days after a cancelled run while the collector
+    was stopped (SCHED-1), and the chronology read "bar reached"."""
+    c = Clocks(monkeypatch, T0)
+    sh.record_boot(None)
+    sh.record_event("collection", running=True)
+    c.run(2 * 3600)
+    sh.record_event("collection", running=False, stop_requested=True)
+    c.run(5 * 24 * 3600)
+    s = ch.chronology(anchor="install")["summary"]
+    assert s["bar_basis"] == "collection" and s["bar_reached"] is False
+    assert s["hours_remaining_on_current_stretch"] is None, "collection is not running, so nothing counts toward it"
+    assert s["process_bar"]["reached"] is True, "the process half of the clause, beside the bar"
+    assert s["collection"]["running_now"] is False
+    assert s["collection"]["longest_stretch"]["seconds"] == 7200
+    assert s["collection"]["longest_stretch"]["ended_by"] == "collection stopped"
+
+
+def test_a_suspend_cuts_the_collection_stretch_too(ledger, monkeypatch):
+    c = Clocks(monkeypatch, T0)
+    sh.record_boot(None)
+    sh.record_event("collection", running=True)
+    c.run(40 * 3600)
+    sh.tick_once()
+    c.suspend(600)
+    c.run(10)
+    sh.tick_once()
+    c.run(40 * 3600)
+    s = ch.chronology(anchor="install")["summary"]
+    assert s["collection"]["stretches"] == 2, "80 h of collection with a sleep in it is two stretches"
+    assert s["bar_reached"] is False
+    assert s["collection"]["current_stretch"]["seconds"] == 40 * 3600
+
+
+def test_a_build_that_recorded_no_collection_leaves_the_bar_unknown(ledger, monkeypatch):
+    """A session from before the collection events has no answer; it is never read as
+    "collection never ran"."""
+    sh._append({"kind": "boot", "session_id": "old-1", "at": ch._iso(T0), "pid": 1})
+    out = ch.chronology(anchor="install", now=T0 + 100 * 3600)
+    s = out["summary"]
+    assert s["bar_reached"] is None and s["bar_basis"] == "not recorded"
+    assert s["collection"]["recorded"] is False
+    assert any("cannot be read" in cv for cv in s["caveats"])
+
+
+def test_the_run_note_says_when_the_run_never_reached_its_soak(ledger, monkeypatch):
+    from src.monitoring.release_run import RELEASE_RUN_SCHEMA, _write_state
+
+    sh.record_boot(None)
+    _write_state({"schema": RELEASE_RUN_SCHEMA, "run_id": "r9", "profile": "release-scale",
+                  "started_at": ch._iso(T0), "outcome": "cancelled", "pid": os.getpid() + 7, "phase": None,
+                  "phases": [{"name": "preflight", "status": "measured", "started_at": ch._iso(T0), "ended_at": ch._iso(T0 + 5)},
+                             {"name": "p0_validation", "status": "cancelled"},
+                             {"name": "soak", "status": "skipped"}]})
+    s = ch.chronology(anchor="run", now=T0 + 3600)["summary"]
+    assert s["run_note"] and "cancelled before its soak" in s["run_note"]
+    assert s["run_note"] in s["caveats"]
+
+
+def test_the_session_before_the_ledger_is_seeded_from_the_sentinel(ledger, monkeypatch):
+    """RR-11: the ledger began with the PR #1162 build's first boot, so it read "0 unclean
+    ends" on four machines whose forensics sentinel said the session before had died."""
+    from src.monitoring import session_hwm
+
+    ledger.mkdir(parents=True, exist_ok=True)
+    (ledger / "session_hwm.json").write_text(json.dumps({
+        "pid": 4242, "started_at": "2023-11-14T10:00:00+00:00", "last_ts": "2023-11-14T20:00:05+00:00",
+        "rss_max_mb": 3500.0, "avail_min_mb": 76.0, "swap_used_max_mb": 8225.0, "phase": "collect"}),
+        encoding="utf-8")
+    session_hwm.reset_for_tests()
+    b = sh.record_boot({"state": "running", "started_at": "2023-11-14T10:00:00+00:00", "pid": 4242})
+    recs = sh.read_records()
+    assert [r["kind"] for r in recs] == ["boot", "end", "boot"]
+    seeded_boot, seeded_end = recs[0], recs[1]
+    assert seeded_boot["source"] == "forensics-sentinel" and seeded_boot["at"] == "2023-11-14T10:00:00Z"
+    assert seeded_boot["session_id"].startswith("pre-ledger-") and seeded_boot["pid"] == 4242
+    assert seeded_end["clean"] is False and seeded_end["at"] == "2023-11-14T20:00:05Z"
+    assert "high-water" in seeded_end["basis"]
+    assert seeded_end["previous_peaks"]["swap_used_max_mb"] == 8225.0
+    assert b["previous_closed_by_this_boot"] is True
+    s = ch.chronology(anchor="install", now=T0 + 60)["summary"]
+    assert s["unclean_ends"] == 1 and s["pre_ledger_sessions"] == 1 and s["restarts"] == 1
+    assert any("before the ledger existed" in cv for cv in s["caveats"])
+    # never seeded twice: the next boot finds a ledger and closes only its predecessor
+    _boot_at(monkeypatch, T0 + 120, {"state": "clean", "started_at": ch._iso(T0), "ended_at": ch._iso(T0 + 100)})
+    assert [r.get("source") for r in sh.read_records()].count("forensics-sentinel") == 2
+
+
+def test_a_clean_sentinel_seeds_a_clean_end_and_no_start_seeds_nothing(ledger, monkeypatch):
+    sh.record_boot({"state": "clean", "started_at": "2023-11-14T10:00:00+00:00",
+                    "ended_at": "2023-11-14T11:00:00+00:00", "pid": 7})
+    end = [r for r in sh.read_records() if r["kind"] == "end"][0]
+    assert end["clean"] is True and end["at"] == "2023-11-14T11:00:00Z" and "clean-shutdown" in end["basis"]
+    sh._reset_for_tests()
+    sh.ledger_path().unlink()
+    sh.record_boot({"state": "running"})
+    assert [r["kind"] for r in sh.read_records()] == ["boot"], "a sentinel with no start cannot be placed"
+
+
+def test_a_death_during_teardown_is_dated_from_the_teardown_stamp(ledger, monkeypatch):
+    from src.monitoring import session_hwm
+
+    session_hwm.reset_for_tests()
+    sh.record_boot({"state": "shutting-down", "started_at": "2023-11-14T10:00:00+00:00",
+                    "shutdown_phase_at": "2023-11-14T12:00:00+00:00", "pid": 9})
+    end = [r for r in sh.read_records() if r["kind"] == "end"][0]
+    assert end["clean"] is False and end["at"] == "2023-11-14T12:00:00Z" and "teardown" in end["basis"]
+
+
+def test_a_gap_says_whether_the_machine_itself_rebooted(ledger, monkeypatch):
+    monkeypatch.setattr(sh, "machine_boot_id", lambda: "boot-A")
+    sh.record_boot(None)
+    sh.record_end(clean=True)
+    monkeypatch.setattr(sh, "machine_boot_id", lambda: "boot-B")
+    _boot_at(monkeypatch, T0 + 3600, {"state": "clean"})
+    g = ch.chronology(anchor="install", now=T0 + 7200)["gaps"][0]
+    assert g["machine"] == "rebooted" and "kernel boot id changed" in g["basis"]
+    monkeypatch.setattr(sh, "machine_boot_id", lambda: "boot-B")
+    sh.record_end(clean=True)
+    _boot_at(monkeypatch, T0 + 9000, {"state": "clean"})
+    g2 = ch.chronology(anchor="install", now=T0 + 9600)["gaps"][1]
+    assert g2["machine"] == "same boot" and "app alone" in g2["basis"]
+
+
+def test_the_in_flight_phase_starts_where_the_LAST_finished_phase_ended():
+    """The loop this replaced walked the list backwards without stopping, so the NUC's
+    soak read as having started at the preflight."""
+    state = {"run_id": "r", "outcome": None, "phase": "soak", "phases": [
+        {"name": "preflight", "started_at": "a", "ended_at": "2026-09-19T19:29:21+02:00", "status": "measured"},
+        {"name": "online_probes", "started_at": "b", "ended_at": "2026-09-19T08:35:06+02:00", "status": "measured"}]}
+    assert ch._release_run_block(state)["phases"][-1]["started_at"] == "2026-09-19T08:35:06+02:00"
+    state["phase_started_at"] = "2026-09-19T08:35:07+02:00"
+    assert ch._release_run_block(state)["phases"][-1]["started_at"] == "2026-09-19T08:35:07+02:00"
+
+
+def test_the_scheduler_loop_records_its_own_start_and_exit(ledger, monkeypatch):
+    """The bar's evidence comes from the loop's own thread: every way collection starts
+    or stops passes through it, and only it knows when the loop actually exited."""
+    from src.scheduler import runner
+    from src.scheduler.settings import SchedulerSettings
+
+    sh.record_boot(None)
+    monkeypatch.setattr(runner.BackgroundScheduler, "_loop", lambda self: self._stop.wait(10))
+    sched = runner.BackgroundScheduler(settings_provider=lambda: SchedulerSettings())
+    assert sched.start() is True
+    sched.stop(timeout=5)
+    evs = [r for r in sh.read_records() if r.get("event") == "collection"]
+    assert [e["running"] for e in evs] == [True, False], evs
+    assert evs[1]["stop_requested"] is True and "failure" not in evs[1]
+    assert evs[0]["uptime_s"] is not None

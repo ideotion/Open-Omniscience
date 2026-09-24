@@ -408,8 +408,19 @@
   ASSUMPTIONS at their stated defaults, built, and reversible by answering at the report's
   `ANSWER` lines. **Built by the two PRs:** the release run and the chronology (RR-1 to RR-8,
   RR-10, RR-11) in the release-run PR; SCHED-1, QUAL-1, RR-9, CUST-1, FIX-1, INT-1 and the
-  card-audit and bulletin deadline guard in the field-defects PR. **STILL OPEN, deliberately
-  built by neither:**
+  card-audit and bulletin deadline guard in the field-defects PR. **THE RELEASE-RUN PR IS BUILT
+  (PR #1172, 2026-09-24): all ten**, every new test shown failing on the pre-fix code. Two
+  findings of its own, beyond the report: the chronology placed an IN-FLIGHT phase at the FIRST
+  phase's end (a backwards loop with no break; on the NUC the soak "started" at the preflight),
+  fixed; and row 5 could NOT be wrapped in an exclusive window as first planned, because the
+  quarantine job and the re-index both PARK while one is open — row 5 would have waited on jobs
+  waiting on it. It stops the collector and the Wikipedia lane directly instead, never touching
+  the network state. **Behaviour that is new and deliberate, so it is not mistaken for a
+  defect:** a suspend during the soak ends the stretch and a new one starts with the full window
+  (the restart's rule, because the bar is continuous collection); a row-5 job whose counter
+  does not move for two hours outside its uncounted tail is PAUSED, never waited on for ever;
+  the chronology's bar reads UNKNOWN for a window whose sessions ran a build that did not record
+  collection (every session before this build). **STILL OPEN, deliberately built by neither:**
   (1) **the §4 bundle additions** — the commit id in `manifest.json`, a jobs member (every job's
   status, progress, rate, error), an operator and lifecycle event log, the error ring deduped by
   message, `D45`'s row-size query, the machine's boot time beside the unlock timing, per-case

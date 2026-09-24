@@ -35,6 +35,18 @@ from src.scheduler.settings import SchedulerSettings, load_settings
 _LOG = logging.getLogger(__name__)
 
 
+def _ledger_collection(running: bool, **fields: object) -> None:
+    """One ``collection`` event on the session ledger. Best-effort and silent: the
+    ledger explains the loop, it must never be able to stop it."""
+    try:
+        from src.monitoring.session_history import record_event
+
+        record_event("collection", running=bool(running),
+                     **{k: v for k, v in fields.items() if v is not None})
+    except Exception:  # noqa: BLE001 - an instrument never breaks the thing it measures
+        _LOG.debug("session ledger: collection event failed", exc_info=True)
+
+
 def _tail_phase(name: str, *, pass_id: str | None = None):
     """Record one pass-tail step in the phase journal (S0.5), or do nothing.
 
@@ -1628,9 +1640,29 @@ class BackgroundScheduler:
             return False
         self._stop.clear()
         self._started_at = datetime.now(UTC)
-        self._thread = threading.Thread(target=self._loop, name="oo-scheduler", daemon=True)
+        self._thread = threading.Thread(target=self._loop_recorded, name="oo-scheduler", daemon=True)
         self._thread.start()
         return True
+
+    def _loop_recorded(self) -> None:
+        """The loop, bracketed by the two ledger events the chronology reads its bar from
+        (RR-10, 2026-09-24): collection started, collection stopped. Recorded HERE, on
+        the loop's own thread, because every way collection starts or stops passes
+        through this thread's start and exit -- the network toggle, an exclusive
+        operation's pause and resume, the release run, a shutdown -- while the call sites
+        that ASK for a stop cannot say when the loop actually exited (``stop()``'s join is
+        bounded, and a pass deep in a write can outlive it by many minutes). A process
+        that dies with the loop running records no stop; the chronology closes the
+        stretch at the session's end instead."""
+        _ledger_collection(True)
+        failure: str | None = None
+        try:
+            self._loop()
+        except BaseException as exc:
+            failure = type(exc).__name__
+            raise
+        finally:
+            _ledger_collection(False, stop_requested=self._stop.is_set(), failure=failure)
 
     def stop(self, timeout: float = 10.0) -> bool:
         """Signal the loop to stop and join it. Returns False if it wasn't running."""

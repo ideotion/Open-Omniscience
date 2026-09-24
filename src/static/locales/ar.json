@@ -4385,7 +4385,7 @@
   "Start the unattended run (goes online: continuous collection and the qualification drain)": "بدء التشغيل غير المراقَب (يتصل بالشبكة: جمع مستمر وتصريف طابور التأهيل)",
   "Stop at the next safe point; whatever the window gave is still collected and reported.": "التوقف عند أقرب نقطة آمنة؛ ما أعطته النافذة يُجمع ويُبلَّغ عنه على أي حال.",
   "The same run under the 'million' profile: the all-diagnostics bundle at the end is REQUIRED (row C's bar: complete coverage, every member non-zero) and the report says its numbers speak to the ~1M rows.": "التشغيل نفسه تحت ملف التعريف «million»: حزمة كل التشخيصات في النهاية مطلوبة (معيار الصف C: تغطية كاملة، ولا عضو فارغ)، ويذكر التقرير أن أرقامه تخص صفوف ~1 مليون.",
-  "also run 0.3 row 5 — the Tier-A quarantine pass (deferred by ruling A1; tick only to run it now)": "تشغيل الصف 5 من 0.3 أيضاً — جولة الحجر الصحي من المستوى A (مؤجَّلة بالقرار A1؛ لا تضع علامة إلا لتشغيلها الآن)",
+  "also run 0.3 row 5, LAST — the Tier-A quarantine pass, then a whole-corpus keyword re-index with collection paused: hours on a small corpus, days on a slow machine (deferred by ruling A1; tick only to run it now)": "تشغيل الصف 5 من 0.3 أيضاً، في النهاية — جولة الحجر الصحي من المستوى A، ثم إعادة فهرسة الكلمات المفتاحية للمدوّنة كلها مع إيقاف الجمع مؤقتاً: ساعات على مدوّنة صغيرة، وأيام على جهاز بطيء (مؤجَّلة بالقرار A1؛ لا تضع علامة إلا لتشغيلها الآن)",
   "destination dir (a separate folder / drive, ~3× your corpus)": "مجلد الوجهة (مجلد / قرص منفصل، ~3× حجم مجموعتك)",
   "include newsletters": "تضمين النشرات الإخبارية",
   "online probes (law hosts, scoring endpoint, weights digests)": "مسابير عبر الشبكة (مضيفو القوانين، نقطة نهاية التقييم، ملخّصات الأوزان)",
@@ -4439,7 +4439,6 @@
   "Session {id}: {from} → {to} · {kind} · up {dur}": "الجلسة {id}: {from} ← {to} · {kind} · تعمل منذ {dur}",
   "Stretch: {from} → {to} · {dur} · ended by {by}": "الفترة: {from} ← {to} · {dur} · انتهت بـ {by}",
   "Suspend (clock jump): {from} → {to}. The wall clock ran ahead of the monotonic clock; a sleep, a hibernation and a clock change leave the same record.": "تعليق (قفزة في الساعة): {from} ← {to}. تقدّمت ساعة الحائط على الساعة الرتيبة؛ السكون والإسبات وتغيير الوقت تترك السجل نفسه.",
-  "not yet — {h} h more on the current stretch (a restart or a suspend starts it over)": "ليس بعد — تبقى {h} ساعة على الفترة الحالية (إعادة التشغيل أو التعليق يعيدانها من البداية)",
   "reached at {when}": "بلغ عند {when}",
   "{h} h continuous bar": "حدّ متواصل {h} ساعة",
   "{h} h if this stretch holds": "{h} ساعة إذا صمدت هذه الفترة",
@@ -4448,5 +4447,12 @@
   "{n} unclean end(s)": "{n} نهاية غير نظيفة",
   "{n} since {when}": "{n} منذ {when}",
   "Light bundle": "حزمة مخففة",
-  "FULL collects every member and is the default. LIGHT skips four members that measure the machine or re-read the whole corpus instead of reporting your data. Each skipped member still appears in the archive as a file naming why, so a light bundle can never be mistaken for a full one. Applies to this run only and is never remembered.": "الوضع الكامل يجمع كل العناصر وهو الخيار الافتراضي. الوضع المخفف يتخطى أربعة عناصر تقيس الجهاز أو تعيد قراءة المجموعة بأكملها بدل أن تُبلغ عن بياناتك. كل عنصر متخطى يظل موجودًا في الأرشيف كملف يذكر السبب، لذا لا يمكن أبدًا الخلط بين حزمة مخففة وحزمة كاملة. ينطبق على هذا التشغيل فقط ولا يُحفظ أبدًا."
+  "FULL collects every member and is the default. LIGHT skips four members that measure the machine or re-read the whole corpus instead of reporting your data. Each skipped member still appears in the archive as a file naming why, so a light bundle can never be mistaken for a full one. Applies to this run only and is never remembered.": "الوضع الكامل يجمع كل العناصر وهو الخيار الافتراضي. الوضع المخفف يتخطى أربعة عناصر تقيس الجهاز أو تعيد قراءة المجموعة بأكملها بدل أن تُبلغ عن بياناتك. كل عنصر متخطى يظل موجودًا في الأرشيف كملف يذكر السبب، لذا لا يمكن أبدًا الخلط بين حزمة مخففة وحزمة كاملة. ينطبق على هذا التشغيل فقط ولا يُحفظ أبدًا.",
+  "unknown — nothing in this window recorded when collection ran": "غير معروف — لم يسجّل شيء في هذه النافذة متى كان الجمع يعمل",
+  "not yet — {h} h more on the current collection stretch (stopping collection, a restart or a suspend starts it over)": "ليس بعد — تبقى {h} ساعة على فترة الجمع الحالية (إيقاف الجمع أو إعادة التشغيل أو التعليق يعيدها من البداية)",
+  "not yet — collection is not running": "ليس بعد — الجمع لا يعمل",
+  "Longest collection stretch": "أطول فترة جمع",
+  "Process up without a break": "العملية تعمل دون انقطاع",
+  "{h} h reached at {when} — the process's half of the clause, not the bar": "بلغت {h} ساعة عند {when} — نصف الشرط الخاص بالعملية، لا الحدّ",
+  "not yet — {h} h more on the current stretch": "ليس بعد — تبقى {h} ساعة على الفترة الحالية"
 }

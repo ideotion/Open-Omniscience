@@ -4385,7 +4385,7 @@
   "Start the unattended run (goes online: continuous collection and the qualification drain)": "Запустить автономный режим (выходит в сеть: непрерывный сбор и разбор очереди квалификации)",
   "Stop at the next safe point; whatever the window gave is still collected and reported.": "Остановиться в ближайшей безопасной точке; то, что дало окно, всё равно собирается и попадает в отчёт.",
   "The same run under the 'million' profile: the all-diagnostics bundle at the end is REQUIRED (row C's bar: complete coverage, every member non-zero) and the report says its numbers speak to the ~1M rows.": "Тот же прогон под профилем «million»: архив всех диагностик в конце ОБЯЗАТЕЛЕН (планка строки C: полное покрытие, ни одного пустого элемента), и отчёт указывает, что его числа относятся к строкам ~1 млн.",
-  "also run 0.3 row 5 — the Tier-A quarantine pass (deferred by ruling A1; tick only to run it now)": "также выполнить строку 5 из 0.3 — проход карантина уровня A (отложен решением A1; отметьте только для выполнения сейчас)",
+  "also run 0.3 row 5, LAST — the Tier-A quarantine pass, then a whole-corpus keyword re-index with collection paused: hours on a small corpus, days on a slow machine (deferred by ruling A1; tick only to run it now)": "также выполнить строку 5 из 0.3, ПОСЛЕДНЕЙ — проход карантина уровня A, затем переиндексация ключевых слов по всему корпусу при приостановленном сборе: часы на небольшом корпусе, дни на медленной машине (отложено решением A1; отметьте только для выполнения сейчас)",
   "destination dir (a separate folder / drive, ~3× your corpus)": "каталог назначения (отдельная папка / диск, ~3× вашего корпуса)",
   "include newsletters": "включить рассылки",
   "online probes (law hosts, scoring endpoint, weights digests)": "сетевые зонды (правовые хосты, конечная точка оценки, дайджесты весов)",
@@ -4439,7 +4439,6 @@
   "Session {id}: {from} → {to} · {kind} · up {dur}": "Сеанс {id}: {from} → {to} · {kind} · в работе {dur}",
   "Stretch: {from} → {to} · {dur} · ended by {by}": "Отрезок: {from} → {to} · {dur} · завершён: {by}",
   "Suspend (clock jump): {from} → {to}. The wall clock ran ahead of the monotonic clock; a sleep, a hibernation and a clock change leave the same record.": "Приостановка (скачок часов): {from} → {to}. Настенные часы ушли вперёд монотонных; сон, гибернация и перевод часов оставляют одинаковую запись.",
-  "not yet — {h} h more on the current stretch (a restart or a suspend starts it over)": "пока нет — ещё {h} ч на текущем отрезке (перезапуск или приостановка начинают его заново)",
   "reached at {when}": "достигнута в {when}",
   "{h} h continuous bar": "непрерывная планка {h} ч",
   "{h} h if this stretch holds": "{h} ч, если этот отрезок продержится",
@@ -4448,5 +4447,12 @@
   "{n} unclean end(s)": "нечистых завершений: {n}",
   "{n} since {when}": "{n} с {when}",
   "Light bundle": "Облегчённый архив",
-  "FULL collects every member and is the default. LIGHT skips four members that measure the machine or re-read the whole corpus instead of reporting your data. Each skipped member still appears in the archive as a file naming why, so a light bundle can never be mistaken for a full one. Applies to this run only and is never remembered.": "ПОЛНЫЙ собирает всеэлементы и используется по умолчанию. ОБЛЕГЧЁННЫЙ пропускает четыре элемента, которые измеряют машину или заново читают весь корпус вместо того, чтобы сообщать ваши данные. Каждый пропущенный элемент всё равно присутствует в архиве в виде файла с указанием причины, поэтому облегчённый архив невозможно принять за полный. Действует только для этого запуска и никогда не запоминается."
+  "FULL collects every member and is the default. LIGHT skips four members that measure the machine or re-read the whole corpus instead of reporting your data. Each skipped member still appears in the archive as a file naming why, so a light bundle can never be mistaken for a full one. Applies to this run only and is never remembered.": "ПОЛНЫЙ собирает всеэлементы и используется по умолчанию. ОБЛЕГЧЁННЫЙ пропускает четыре элемента, которые измеряют машину или заново читают весь корпус вместо того, чтобы сообщать ваши данные. Каждый пропущенный элемент всё равно присутствует в архиве в виде файла с указанием причины, поэтому облегчённый архив невозможно принять за полный. Действует только для этого запуска и никогда не запоминается.",
+  "unknown — nothing in this window recorded when collection ran": "неизвестно — в этом окне ничто не записало, когда шёл сбор",
+  "not yet — {h} h more on the current collection stretch (stopping collection, a restart or a suspend starts it over)": "пока нет — ещё {h} ч на текущем отрезке сбора (остановка сбора, перезапуск или приостановка начинают его заново)",
+  "not yet — collection is not running": "пока нет — сбор не идёт",
+  "Longest collection stretch": "Самый длинный отрезок сбора",
+  "Process up without a break": "Процесс работал без перерыва",
+  "{h} h reached at {when} — the process's half of the clause, not the bar": "{h} ч достигнуто в {when} — половина условия о процессе, а не планка",
+  "not yet — {h} h more on the current stretch": "пока нет — ещё {h} ч на текущем отрезке"
 }
