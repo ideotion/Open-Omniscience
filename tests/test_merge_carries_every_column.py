@@ -379,10 +379,6 @@ def test_every_model_column_is_either_merged_or_declared_omitted() -> None:
 _PARSER_BLIND_SPOTS = {
     "article_keyword_association": "f-string table name; covered behaviourally below",
     "article_keywords": "f-string table name; covered behaviourally below",
-    "keyword_mentions": (
-        "no INSERT exists by design -- the maintainer ruled 2026-07-29 that the merge does "
-        "NOT copy mentions and the post-swap re-index produces them from the article text"
-    ),
     "feed_fetch_state": (
         "f-string COLUMN list, not table name: the carried set is read from ONE registry "
         "(src/backup/fetch_history.py's FEED_FETCH_STATE_CARRIED) so the handler and the "

@@ -1690,9 +1690,26 @@ def merge_corpus(
         # Every step has run: only now is this artifact "merged". Before the
         # windowed steps this stamp was implicit in the single transaction; it is
         # explicit because it is no longer implicit, not as belt-and-braces.
+        #
+        # R24: a batch whose EVERY inserted article had its derived rows carried owes the
+        # re-index nothing, so it is complete now rather than a backlog entry of zero.
+        # Measured against merged_rows, never inferred from the plan: one uncarried
+        # article keeps the batch 'merged', and the backlog counts that one.
+        status = _STATUS_MERGED
+        _plan: object = results.get("_derived_carry")
+        _done = _plan.get("carried") if isinstance(_plan, dict) else None
+        _carried = int(_done.get("articles") or 0) if isinstance(_done, dict) else 0
+        if _carried:
+            _inserted = _count(
+                con,
+                "SELECT COUNT(*) FROM merged_rows WHERE batch_id = ? AND table_name = 'articles'",
+                (batch_id,),
+            )
+            if _inserted and _carried >= _inserted:
+                status = _STATUS_REINDEXED
         con.execute(
             "UPDATE merge_batches SET counts_json = ?, status = ? WHERE id = ?",
-            (json.dumps(counts), _STATUS_MERGED, batch_id),
+            (json.dumps(counts), status, batch_id),
         )
         con.execute("COMMIT")
         return counts, batch_id
@@ -1746,6 +1763,11 @@ _MERGE_HANDLED = {
     # 2026-09-16, the Q701 note: the per-feed fetch history, adopted only where this
     # corpus has no row of its own and only when the operator trusted it.
     "feed_fetch_state",
+    # R24 (2026-09-24): CARRIED for an article whose engine stamp and inputs match this
+    # corpus, and otherwise rebuilt by the post-swap re-index exactly as before -- see
+    # `_plan_derived_carry`. The places and entities left _MERGE_NOT_CARRIED for it; the
+    # stamps table is never copied, only WRITTEN, for the rows the carry itself wrote.
+    "article_mentioned_places", "article_entities", "article_index_stamps",
 }
 # Deliberately not merged: the other corpus's OWN import history + schema/FTS internals,
 # plus ``app_state`` — per-machine settings/UI prefs (DB-reliability D1 / T10: local wins
@@ -1786,21 +1808,20 @@ _MERGE_IGNORED = {"merge_batches", "merged_rows", "alembic_version", "app_state"
 # restore would actually lose (the P0.2 acceptance bar), which is the only case where any of
 # this bites: a self-restore sees every row as a duplicate and hides the whole question.
 _MERGE_NOT_CARRIED: dict[str, str] = {
-    # (a) REBUILT by the post-swap re-index from the article text, exactly like
-    # keyword_mentions (maintainer ruling 2026-07-29). Nothing is lost; these are only
-    # here rather than in _MERGE_IGNORED because the report should say so.
+    # (a) REBUILT by the post-swap re-index from the article text. EMPTY since R24: the
+    # places and entities that lived here are now carried for a certified article and
+    # rebuilt for every other one, so they moved to _MERGE_HANDLED. The reasoning they
+    # carried is kept, because it still decides what may be left to a re-index:
     #
-    # WHY THEIR SIBLING ``article_mentioned_dates`` IS MERGED AND THESE ARE NOT -- this
+    # WHY THEIR SIBLING ``article_mentioned_dates`` IS MERGED UNCONDITIONALLY -- this
     # looked like an inconsistency (all three are written by the same index_article
     # pass) and it is NOT. ``article_mentioned_dates`` carries a ``status`` column:
     # datestore.set_status() is a human confirm/reject, and reads filter
     # ``status != 'rejected'``. A re-index recreates every date as a fresh
     # ``candidate``, so NOT merging dates would silently discard the operator's own
-    # judgements. These two tables have no such column -- purely derived, so a rebuild
+    # judgements. Places and entities have no such column -- purely derived, so a rebuild
     # is lossless. THE RULE, for whoever adds the next one: a derived table may be left
     # to the re-index only while it carries no human decision.
-    "article_mentioned_places": "purely derived, no human channel; rebuilt by index_article",
-    "article_entities": "purely derived, no human channel; rebuilt by index_article",
     # (b) PER-MACHINE or self-healing: losing them costs nothing durable.
     "derived_meta": "corpus epoch + derived bookkeeping, rebuilt on demand",
     # `feed_fetch_state` LEFT THIS LIST on 2026-09-16 (the Q701 note, gate row K). The
@@ -1893,26 +1914,11 @@ _MERGE_COLUMN_INTENTIONALLY_OMITTED: dict[str, str] = {
     "law_revisions.diff_base_revision_id": (
         "self-reference; remapped by a dedicated UPDATE after map_law_rev is built"
     ),
-    # (d) DERIVED FROM ROWS THIS MERGE DELIBERATELY DOES NOT COPY. The article's own top
-    # keyword (rulings 23/38/39) is computed from that article's keyword_mentions -- and
-    # `_merge_keyword_mentions` deliberately copies NONE of them (maintainer ruling
-    # 2026-07-29 option (a)): the post-swap re-index produces the mentions from the
-    # article text instead. Carrying the precompute would therefore state a top keyword
-    # for which no local mention row exists, and top_keyword_id would additionally be an
-    # id from the INCOMING corpus's keyword space -- `temp.map_keywords` is not even built
-    # until after `_merge_articles` runs, so it could not be remapped in this statement
-    # even if we wanted to. The re-index that produces the mentions writes these three
-    # columns in the same pass (src.analytics.store.index_article), so they arrive
-    # correct, from local evidence, without a merge handler.
-    #
-    # Safe to leave to the re-index under the 2026-08-03 rule -- a derived column may be
-    # rebuilt rather than merged ONLY while it carries no human decision -- which these
-    # do not: they are arithmetic over occurrence counts, with no confirm/reject state
-    # (contrast article_mentioned_dates, which IS merged precisely because it carries the
-    # operator's own confirm/reject verdicts).
-    "articles.top_keyword_id": "derived from keyword_mentions, which the merge deliberately does not copy; the post-swap re-index recomputes it from local evidence",
-    "articles.top_keyword_count": "derived from keyword_mentions, which the merge deliberately does not copy; the post-swap re-index recomputes it from local evidence",
-    "articles.top_keyword_tied_n": "derived from keyword_mentions, which the merge deliberately does not copy; the post-swap re-index recomputes it from local evidence",
+    # (d) The article's own top keyword (rulings 23/38/39) used to be listed here, as
+    # derived from mentions the merge does not copy. Since R24 it RIDES the article INSERT
+    # -- set from the carry plan for an article whose rows are carried, NULL for every
+    # other -- so it is carried where it can be exact and omitted where it cannot, by one
+    # statement. See `_plan_derived_carry` for why it is computed from LOCAL keyword ids.
 }
 
 
@@ -1939,8 +1945,13 @@ def _merge_steps() -> tuple[tuple[str, Callable[..., None]], ...]:
         ("country codes", _normalise_country_codes),
         ("keyword categories", _merge_keyword_categories),
         ("sources", _merge_sources),
-        ("articles", _merge_articles),
+        # KEYWORDS BEFORE ARTICLES since R24 (2026-09-24). Nothing in the keyword step
+        # reads an article; the carry plan needs the local keyword ids to resolve each
+        # carried article's top keyword, and must run BEFORE the article INSERT so that
+        # value rides the insert instead of a second write of every carried article row.
         ("keywords", _merge_keywords),
+        ("derived-row carry plan", _plan_derived_carry),
+        ("articles", _merge_articles),
         ("article-keyword links", _merge_article_keyword_links),
         ("keyword mentions", _merge_keyword_mentions),
         ("curation", _merge_curation),
@@ -2634,6 +2645,7 @@ def _adopt_article_metadata(con) -> dict:
 
 def _merge_articles(con, batch_id, results) -> None:
     r = DomainResult()
+    _ensure_carry_tables(con)  # an empty plan when the plan step did not run: carry nothing
     # Bit-level duplicate test: same hash AND same content bytes = duplicate; same hash,
     # different bytes = a collision or normalisation drift, i.e. a conflict (local kept,
     # surfaced with both ids).
@@ -2697,7 +2709,14 @@ def _merge_articles(con, batch_id, results) -> None:
         # the placement survives the restore and its reversibility does not. That is the
         # 2026-08-03 lesson exactly -- a dropped column arrives as a plausible NULL that
         # nothing reports.
-        " source_revision, newsletter_list_id, newsletter_attached_via)"
+        " source_revision, newsletter_list_id, newsletter_attached_via,"
+        # R24: the article's own top keyword, for an article whose derived rows are
+        # being CARRIED -- computed by `_plan_derived_carry` from the incoming mentions
+        # over LOCAL keyword ids, exactly as index_article would. NULL for every other
+        # article, which is what they have always arrived with: the post-swap re-index
+        # computes theirs. Here rather than in an UPDATE afterwards, so a carried
+        # article row is written once and not twice (the D45 cliff).
+        " top_keyword_id, top_keyword_count, top_keyword_tied_n)"
         " SELECT i.url, i.canonical_url, ms.new, i.title, i.content,"
         " i.compressed_content, i.published_at, i.language, i.hash, i.created_at,"
         " i.updated_at, i.region, i.country, i.author, i.word_count, i.reading_time,"
@@ -2705,11 +2724,24 @@ def _merge_articles(con, batch_id, results) -> None:
         " i.detected_language, i.server_ip, i.ip_observed_at, i.server_ip_reason,"
         " i.content_multihash, i.canon_version,"
         " i.quarantined, i.quarantine_reason, i.quarantine_criteria_version, i.quarantined_at,"
-        " i.source_revision, i.newsletter_list_id, i.newsletter_attached_via"
+        " i.source_revision, i.newsletter_list_id, i.newsletter_attached_via,"
+        " cp.top_keyword_id, cp.top_keyword_count, cp.top_keyword_tied_n"
         " FROM inc.articles i JOIN temp.map_sources ms ON ms.old = i.source_id"
+        " LEFT JOIN temp.carry_plan cp ON cp.old = i.id"
         " WHERE NOT EXISTS (SELECT 1 FROM articles m WHERE m.hash = i.hash)"
         + _WINDOW_MARK,
         src="articles",
+    )
+    # No article this merge INSERTED may start life with a stamp. A stamp outlives its
+    # article only if the article was deleted with foreign keys OFF (this connection runs
+    # that way; the app's own engine never does), and SQLite hands the highest rowid out
+    # again after it is deleted -- so a leftover stamp could certify a NEW article's
+    # absent rows, and the post-swap re-index skips a certified article. Cheap insurance:
+    # two narrow tables, normally nothing to delete. The carry writes its own stamps after.
+    con.execute(
+        "DELETE FROM article_index_stamps WHERE article_id IN ("
+        " SELECT row_id FROM merged_rows WHERE batch_id = ? AND table_name = 'articles')",
+        (batch_id,),
     )
     r.samples = _new_row_samples(
         con, batch_id, "articles", "COALESCE(NULLIF(m.title, ''), '(untitled)')"
@@ -2826,6 +2858,440 @@ def _merge_article_keyword_links(con, batch_id, results) -> None:
     results["article_keyword_links"] = r
 
 
+# --------------------------------------------------------------------------- #
+#  R24: carrying a same-engine article's derived rows instead of re-extracting
+# --------------------------------------------------------------------------- #
+# The 2026-07-29 option-(a) ruling stopped the merge copying derived rows, because an
+# incoming row may come from an older engine and so disagree with what this corpus would
+# compute. R24 (2026-09-22) keeps that for a FOREIGN engine and lets an IDENTICAL one skip
+# the re-extraction it does not need. "Identical" here is not a version string: it is the
+# per-article stamp `index_article` writes (src/analytics/engine_identity.py), matched on
+# BOTH halves --
+#
+#   * the ENGINE: code, data files, optional dictionaries and switches, hashed; and
+#   * the INPUTS: text, title, languages, date, country and the source's self-name forms,
+#     recomputed HERE from the incoming row and the LOCAL source it maps to.
+#
+# Three further guards cover what the stamp cannot see, each a way a local re-index would
+# write something different even from identical engine and inputs:
+#
+#   * a keyword the local store would resolve differently. index_article resolves a term
+#     by `normalized_term` alone, to the lowest id; the carry does the same, and refuses an
+#     article whose term has no local row at all;
+#   * an ENTITY UPGRADE. index_article upgrades a local term-keyword to an entity when the
+#     article uses it as one. The carry writes mention rows only, so an article whose
+#     incoming keyword is an entity where the local one is not is left to the re-index;
+#   * a COLLISION: two incoming mentions that resolve to one local keyword would collide on
+#     the unique (keyword_id, article_id) index a real pass never violates.
+#
+# EVERY REFUSAL IS A RE-EXTRACTION, NEVER A LOSS. A refused article is merged exactly as
+# before and stays in the re-index backlog; the carry only ever removes work that would
+# have reproduced the rows it writes. `OO_CARRY_DERIVED=0` turns the carry off entirely.
+#
+# What it cannot promise, stated rather than hidden: date extraction reads today's date
+# (a year bound), so a re-index run later can admit a candidate date the exporter
+# rejected as too far ahead. Dates are merged additively either way, and the carry keeps
+# the exporter's.
+
+#: Incoming articles verified per round trip. Each is read in full (the text must be
+#: hashed), so this bounds memory, not correctness.
+_CARRY_PLAN_CHUNK = 500
+
+#: Carried articles written per window. ~92 mention rows each, so a window is ~180k
+#: mention rows -- committed between windows, like every other windowed step.
+_CARRY_WRITE_WINDOW = 2000
+
+
+def _carry_enabled() -> bool:
+    return os.getenv("OO_CARRY_DERIVED", "1") != "0"
+
+
+def _ensure_carry_tables(con: sqlite3.Connection) -> None:
+    """The plan's temp tables, created empty if the plan step did not run -- so a caller
+    that runs `_merge_articles` alone joins an empty plan and carries nothing."""
+    con.execute(
+        "CREATE TEMP TABLE IF NOT EXISTS carry_plan ("
+        " old INTEGER PRIMARY KEY, source_id INTEGER, inputs TEXT NOT NULL,"
+        " observed_on TEXT, country TEXT, language TEXT,"
+        " top_keyword_id INTEGER, top_keyword_count INTEGER, top_keyword_tied_n INTEGER)"
+    )
+    con.execute(
+        "CREATE TEMP TABLE IF NOT EXISTS carry_kw ("
+        " old INTEGER PRIMARY KEY, new INTEGER, inc_entity INTEGER)"
+    )
+
+
+def _inc_has_table(con: sqlite3.Connection, name: str) -> bool:
+    return bool(
+        con.execute(
+            "SELECT 1 FROM inc.sqlite_master WHERE type = 'table' AND name = ?", (name,)
+        ).fetchone()
+    )
+
+
+def _inc_has_leading_index(con: sqlite3.Connection, table: str, column: str) -> bool:
+    """Does the INCOMING table have a full (non-partial) index whose first column is
+    ``column``? ``table`` is always a module literal below, never input."""
+    for row in con.execute(f'PRAGMA inc.index_list("{table}")'):  # noqa: S608  # nosec B608 - module-local literal table names
+        name, partial = row[1], row[4] if len(row) > 4 else 0
+        if partial:
+            continue
+        cols = [r[2] for r in con.execute(f'PRAGMA inc.index_info("{name}")')]
+        if cols and cols[0] == column:
+            return True
+    return False
+
+
+def _stored_text(content, compressed) -> str:
+    """What `Article.get_content()` returns for a raw row: the decompressed body when one
+    is stored compressed, else the content column. The SAME rule, so the digest agrees
+    with the one index_article computed from the ORM object."""
+    if compressed:
+        from src.utils.compression import database_compressor
+
+        return database_compressor.decompress_text_from_storage(compressed)
+    return content or ""
+
+
+def _plan_derived_carry(con, batch_id, results) -> None:
+    """Decide which incoming articles' derived rows can be CARRIED (R24).
+
+    Runs after `keywords` and before `articles`, and that position is the design: the
+    local keyword ids exist (so each article's top keyword can be resolved the way a
+    local pass would resolve it), and the article rows do not yet -- so the plan's top
+    keyword rides the article INSERT and each carried article row is written ONCE. An
+    UPDATE afterwards would rewrite every carried article, overflow pages and all (the
+    D45 cliff), roughly doubling the write volume of the largest step on a machine the
+    audit measured as write-bound.
+
+    Writes only TEMP tables. The report entry `_derived_carry` says what was planned and
+    why every stamped article that was not planned was refused."""
+    _ensure_carry_tables(con)
+    con.execute("DELETE FROM temp.carry_plan")
+    con.execute("DELETE FROM temp.carry_kw")
+    plan: dict = {
+        "engine": None, "stamped": 0, "verified": 0, "planned": 0,
+        "refused": {
+            "already_present": 0, "source_unmapped": 0, "inputs_changed": 0,
+            "keyword_unmapped": 0, "entity_upgrade": 0, "keyword_collision": 0,
+        },
+        "method": (
+            "an incoming article is carried only when its stamp names this engine AND its "
+            "inputs, recomputed here from the incoming row and the local source, match; "
+            "every refusal is re-extracted exactly as before R24"
+        ),
+    }
+    results["_derived_carry"] = plan
+    if not _carry_enabled():
+        plan["reason"] = "disabled (OO_CARRY_DERIVED=0)"
+        return
+    if not _inc_has_table(con, "article_index_stamps"):
+        plan["reason"] = "the backup predates engine stamps"
+        return
+    try:
+        from src.analytics.engine_identity import baseline_engine_id
+
+        local = baseline_engine_id()
+    except Exception:  # noqa: BLE001 - no identity, no carry; the re-index still runs
+        _LOG.warning("could not compute the engine identity; carrying nothing", exc_info=True)
+        plan["reason"] = "this machine's engine identity could not be computed"
+        return
+    plan["engine"] = local
+    # Every carry statement reaches the incoming rows of ONE article through an index led
+    # by article_id (the join order is pinned; see the write loop). A backup without one
+    # -- taken while a bulk build had its indexes dropped, or damaged -- would turn each
+    # window into a scan of the whole incoming table. Declined rather than attempted, and
+    # never "fixed" by writing an index into the staged copy the merge only reads.
+    missing = [
+        t for t in ("keyword_mentions", "article_mentioned_places", "article_entities")
+        if not _inc_has_leading_index(con, t, "article_id")
+    ]
+    if missing:
+        plan["reason"] = (
+            "the backup has no index led by article_id on " + ", ".join(missing)
+            + ", so carrying would re-read every incoming row once per window"
+        )
+        return
+    plan["stamped"] = _count(
+        con, "SELECT COUNT(*) FROM inc.article_index_stamps WHERE engine = ?", (local,)
+    )
+    if not plan["stamped"]:
+        plan["reason"] = "no incoming article is stamped by this engine"
+        return
+
+    from types import SimpleNamespace
+
+    from src.analytics.engine_identity import date_part, index_inputs_digest
+    from src.analytics.managed import normalize_lang
+    from src.analytics.store import _self_name_forms
+    from src.catalog.countries import normalize_country
+
+    refused = plan["refused"]
+    last = -(2**63)
+    while True:
+        rows = _q(
+            con,
+            "SELECT s.article_id, s.inputs, i.source_id, i.title, i.content,"
+            " i.compressed_content, i.language, i.detected_language, i.published_at,"
+            " i.created_at, i.country, i.hash"
+            " FROM inc.article_index_stamps s JOIN inc.articles i ON i.id = s.article_id"
+            " WHERE s.engine = ? AND s.article_id > ? ORDER BY s.article_id LIMIT ?",
+            (local, last, _CARRY_PLAN_CHUNK),
+        )
+        if not rows:
+            break
+        last = int(rows[-1][0])
+        marks = ",".join("?" * len(rows))
+        present = {
+            r[0] for r in _q(con, f"SELECT hash FROM articles WHERE hash IN ({marks})",  # noqa: S608  # nosec B608 - only placeholders are interpolated
+                             tuple(r[11] for r in rows))
+        }
+        src_ids = tuple({int(r[2]) for r in rows if r[2] is not None})
+        local_src: dict[int, tuple] = {}
+        if src_ids:
+            smarks = ",".join("?" * len(src_ids))
+            for old, new, name, domain in _q(
+                con,
+                "SELECT ms.old, m.id, m.name, m.domain FROM temp.map_sources ms"  # noqa: S608  # nosec B608 - only placeholders are interpolated
+                f" JOIN sources m ON m.id = ms.new WHERE ms.old IN ({smarks})",
+                src_ids,
+            ):
+                local_src[int(old)] = (int(new), name, domain)
+        planned = []
+        for (aid, stamp_inputs, sid, title, content, compressed, lang, detected,
+             published, created, country, ahash) in rows:
+            if ahash in present:
+                # Already in this corpus: nothing is inserted, and the local article keeps
+                # its own rows. Not a refusal of the stamp -- there is nothing to carry INTO.
+                refused["already_present"] += 1
+                continue
+            src = local_src.get(int(sid)) if sid is not None else None
+            if src is None:
+                refused["source_unmapped"] += 1
+                continue
+            text = _stored_text(content, compressed)
+            forms = _self_name_forms(SimpleNamespace(name=src[1], domain=src[2]))
+            digest = index_inputs_digest(
+                text=text, raw_content=content, title=title, language=lang,
+                detected_language=detected, observed=date_part(published or created),
+                country=country, self_forms=forms,
+            )
+            plan["verified"] += 1
+            if digest != stamp_inputs:
+                refused["inputs_changed"] += 1
+                continue
+            known = (lang or "").strip() or (detected or "").strip() or None
+            planned.append((
+                int(aid), src[0], stamp_inputs, date_part(published or created),
+                # A re-index passes the ARTICLE's country and no city
+                # (src.analytics.store.reindex_articles), so that is what a carried mention
+                # carries -- not whatever the exporter's ingest denormalised from its source.
+                normalize_country(country), normalize_lang(known) or None,
+            ))
+        con.executemany(
+            "INSERT INTO temp.carry_plan (old, source_id, inputs, observed_on, country, language)"
+            " VALUES (?, ?, ?, ?, ?, ?)",
+            planned,
+        )
+    if not _count(con, "SELECT COUNT(*) FROM temp.carry_plan"):
+        plan["reason"] = "no stamped article passed verification"
+        return
+
+    # Resolve each incoming keyword the carried mentions name, the way index_article
+    # resolves a term: by normalized_term alone, lowest id (_prefetch_keywords).
+    con.execute(
+        "INSERT INTO temp.carry_kw (old, new, inc_entity)"
+        " SELECT ik.id,"
+        "  (SELECT MIN(k.id) FROM keywords k WHERE k.normalized_term = ik.normalized_term),"
+        "  COALESCE(ik.is_entity, 0)"
+        " FROM inc.keywords ik WHERE ik.id IN ("
+        "  SELECT DISTINCT im.keyword_id FROM temp.carry_plan cp"
+        "  CROSS JOIN inc.keyword_mentions im ON im.article_id = cp.old)"
+    )
+
+    def _refuse(key: str, sql: str) -> None:
+        cur = con.execute(f"DELETE FROM temp.carry_plan WHERE old IN ({sql})")  # noqa: S608  # nosec B608 - module-local literal subqueries only
+        refused[key] += int(cur.rowcount or 0)
+
+    # A mention naming a keyword with no local row -- or no incoming row at all.
+    _refuse(
+        "keyword_unmapped",
+        "SELECT im.article_id FROM temp.carry_plan cp"
+        " CROSS JOIN inc.keyword_mentions im ON im.article_id = cp.old"
+        " LEFT JOIN temp.carry_kw ck ON ck.old = im.keyword_id WHERE ck.new IS NULL",
+    )
+    _refuse(
+        "entity_upgrade",
+        "SELECT im.article_id FROM temp.carry_plan cp"
+        " CROSS JOIN inc.keyword_mentions im ON im.article_id = cp.old"
+        " JOIN temp.carry_kw ck ON ck.old = im.keyword_id"
+        " JOIN keywords k ON k.id = ck.new"
+        " WHERE ck.inc_entity = 1 AND COALESCE(k.is_entity, 0) = 0",
+    )
+    _refuse(
+        "keyword_collision",
+        "SELECT im.article_id FROM temp.carry_plan cp"
+        " CROSS JOIN inc.keyword_mentions im ON im.article_id = cp.old"
+        " JOIN temp.carry_kw ck ON ck.old = im.keyword_id"
+        " GROUP BY im.article_id, ck.new HAVING COUNT(*) > 1",
+    )
+
+    # The article's own top keyword, exactly as src.analytics.store.top_keyword_of
+    # computes it from the rows a pass writes: positive counts only; the highest count;
+    # how many keywords reach it; the LOWEST LOCAL id among them as the representative.
+    # Local ids, because the tie-break is over this corpus's ids, not the exporter's.
+    con.execute(
+        "UPDATE temp.carry_plan SET top_keyword_count = ("
+        " SELECT MAX(im.count) FROM inc.keyword_mentions im"
+        " WHERE im.article_id = carry_plan.old AND im.count > 0)"
+    )
+    con.execute(
+        "UPDATE temp.carry_plan SET"
+        " top_keyword_tied_n = (SELECT COUNT(*) FROM inc.keyword_mentions im"
+        "  WHERE im.article_id = carry_plan.old AND im.count = carry_plan.top_keyword_count),"
+        " top_keyword_id = (SELECT MIN(ck.new) FROM inc.keyword_mentions im"
+        "  JOIN temp.carry_kw ck ON ck.old = im.keyword_id"
+        "  WHERE im.article_id = carry_plan.old AND im.count = carry_plan.top_keyword_count)"
+        " WHERE top_keyword_count IS NOT NULL"
+    )
+    plan["planned"] = _count(con, "SELECT COUNT(*) FROM temp.carry_plan")
+    if not plan["planned"]:
+        plan["reason"] = "every verified article was refused by a keyword guard"
+
+
+def _carry_derived_rows(con, batch_id, results) -> dict:
+    """Write the planned articles' derived rows, stamps and counter deltas (R24).
+
+    Runs after `articles`, so `temp.map_articles` names each planned article's new local
+    id; only ids THIS merge inserted are carried (checked against merged_rows, not
+    assumed from the plan). Windowed and committed per window like every large step,
+    and NOT recorded in merged_rows: a carried row's provenance is its article's, which
+    IS recorded, and ~92 provenance rows per article would cost more than the rows they
+    describe.
+
+    The stamp is written in the same window as the rows it certifies, so a crash between
+    windows can leave rows without a stamp (re-extracted -- slow, correct) but never a
+    stamp without its rows (skipped by the re-index -- silently keywordless). The working
+    copy is disposable until the swap in any case."""
+    out = {"articles": 0, "mentions": 0, "places": 0, "entities": 0}
+    _ensure_carry_tables(con)
+    plan = results.get("_derived_carry") or {}
+    engine = plan.get("engine")
+    if not engine or not _count(con, "SELECT COUNT(*) FROM temp.carry_plan"):
+        return out
+    # Every temp table below is declared with its key, never built with CREATE TABLE AS:
+    # a CTAS table has NO index, and each is probed per row -- carry_win by range once per
+    # window, carry_delta once per touched keyword by the counter UPDATE. Unindexed, the
+    # counter update alone is quadratic in the distinct keywords of a window (~50k at a
+    # 2,000-article window on the field corpus, so ~10^9 probes per window).
+    con.execute("DROP TABLE IF EXISTS temp.carry_ids")
+    con.execute(
+        "CREATE TEMP TABLE carry_ids (old INTEGER PRIMARY KEY, new INTEGER NOT NULL,"
+        " source_id INTEGER, inputs TEXT NOT NULL, observed_on TEXT, country TEXT,"
+        " language TEXT)"
+    )
+    con.execute(
+        "INSERT INTO temp.carry_ids (old, new, source_id, inputs, observed_on, country, language)"
+        " SELECT cp.old, ma.new, cp.source_id, cp.inputs, cp.observed_on, cp.country,"
+        " cp.language FROM temp.carry_plan cp"
+        " JOIN temp.map_articles ma ON ma.old = cp.old"
+        " JOIN merged_rows r ON r.batch_id = ? AND r.table_name = 'articles' AND r.row_id = ma.new",
+        (batch_id,),
+    )
+    ids = [int(r[0]) for r in _q(con, "SELECT old FROM temp.carry_ids ORDER BY old")]
+    # The ORM's own storage form for a DateTime column -- naive UTC, space-separated,
+    # microseconds -- so a carried row's timestamp is indistinguishable in shape from one
+    # index_article wrote. (The first draft used isoformat(), whose "+00:00" suffix put a
+    # second format into columns every reader expects to hold one.)
+    now = datetime.now(UTC).replace(tzinfo=None).isoformat(sep=" ", timespec="microseconds")
+    total = len(ids)
+    for start in range(0, total, _CARRY_WRITE_WINDOW):
+        window = ids[start : start + _CARRY_WRITE_WINDOW]
+        lo, hi = window[0], window[-1]
+        con.execute("DROP TABLE IF EXISTS temp.carry_win")
+        con.execute(
+            "CREATE TEMP TABLE carry_win (old INTEGER PRIMARY KEY, new INTEGER NOT NULL,"
+            " source_id INTEGER, inputs TEXT NOT NULL, observed_on TEXT, country TEXT,"
+            " language TEXT)"
+        )
+        con.execute(
+            "INSERT INTO temp.carry_win SELECT * FROM temp.carry_ids WHERE old >= ? AND old <= ?",
+            (lo, hi),
+        )
+        # CROSS JOIN, here and in every carry statement driven by the plan: SQLite's
+        # spelling for "keep this join order". The staged copy has no planner statistics,
+        # so SQLite cannot know the window holds 2,000 articles and the incoming mention
+        # table ~100 M rows -- and on the fixture it chose to SCAN the mention table and
+        # probe the window, which at field scale is a full pass over every incoming mention
+        # PER WINDOW. The plan now drives from the window and reads only its articles'
+        # rows, through the index on article_id (EXPLAIN QUERY PLAN, checked).
+        # "Sorted bulk" (R24's words): keyword-major order, so the unique
+        # (keyword_id, article_id) index takes runs of neighbouring entries instead of a
+        # scatter across the whole B-tree.
+        cur = con.execute(
+            "INSERT INTO keyword_mentions (keyword_id, article_id, count, first_offset,"
+            " observed_on, country, city, language, source_id, extractor, created_at)"
+            " SELECT ck.new, w.new, im.count, im.first_offset, w.observed_on, w.country,"
+            " NULL, w.language, w.source_id, 'baseline', ?"
+            " FROM temp.carry_win w CROSS JOIN inc.keyword_mentions im ON im.article_id = w.old"
+            " JOIN temp.carry_kw ck ON ck.old = im.keyword_id"
+            " ORDER BY ck.new, w.new",
+            (now,),
+        )
+        out["mentions"] += int(cur.rowcount or 0)
+        cur = con.execute(
+            "INSERT INTO article_mentioned_places (article_id, name, country, kind,"
+            " mentions, snippet, lat, lon, note, extractor, created_at)"
+            " SELECT w.new, p.name, p.country, p.kind, p.mentions, p.snippet, p.lat, p.lon,"
+            " p.note, p.extractor, ?"
+            " FROM temp.carry_win w"
+            " CROSS JOIN inc.article_mentioned_places p ON p.article_id = w.old",
+            (now,),
+        )
+        out["places"] += int(cur.rowcount or 0)
+        cur = con.execute(
+            "INSERT INTO article_entities (article_id, name, entity_class, mentions,"
+            " snippet, note, extractor, created_at)"
+            " SELECT w.new, e.name, e.entity_class, e.mentions, e.snippet, e.note,"
+            " e.extractor, ?"
+            " FROM temp.carry_win w CROSS JOIN inc.article_entities e ON e.article_id = w.old",
+            (now,),
+        )
+        out["entities"] += int(cur.rowcount or 0)
+        # The counters move by exactly what index_article's own delta would move them by
+        # for an article with no prior mentions: +occurrences, +1 article per keyword.
+        con.execute("DROP TABLE IF EXISTS temp.carry_delta")
+        con.execute(
+            "CREATE TEMP TABLE carry_delta (kid INTEGER PRIMARY KEY, m INTEGER NOT NULL,"
+            " a INTEGER NOT NULL)"
+        )
+        con.execute(
+            "INSERT INTO temp.carry_delta (kid, m, a) SELECT ck.new, SUM(im.count), COUNT(*)"
+            " FROM temp.carry_win w"
+            " CROSS JOIN inc.keyword_mentions im ON im.article_id = w.old"
+            " JOIN temp.carry_kw ck ON ck.old = im.keyword_id GROUP BY ck.new"
+        )
+        con.execute(
+            "UPDATE keywords SET"
+            " mention_count = mention_count"
+            "  + (SELECT d.m FROM temp.carry_delta d WHERE d.kid = keywords.id),"
+            " article_count = article_count"
+            "  + (SELECT d.a FROM temp.carry_delta d WHERE d.kid = keywords.id)"
+            " WHERE id IN (SELECT kid FROM temp.carry_delta)"
+        )
+        con.execute(
+            "INSERT INTO article_index_stamps (article_id, engine, inputs, stamped_at)"
+            " SELECT w.new, ?, w.inputs, ? FROM temp.carry_win w",
+            (engine, now),
+        )
+        out["articles"] += len(window)
+        con.execute("COMMIT")
+        con.execute("BEGIN IMMEDIATE")
+        _window_tick("derived rows", start + len(window), total, out["mentions"])
+    plan.update({"carried": dict(out)})
+    return out
+
+
 def _merge_keyword_mentions(con, batch_id, results) -> None:
     """DELIBERATELY DOES NOT COPY the incoming mentions (maintainer ruling 2026-07-29,
     option (a)) -- the post-swap re-index PRODUCES them from the article text instead.
@@ -2862,14 +3328,37 @@ def _merge_keyword_mentions(con, batch_id, results) -> None:
     # One bare table count (no join): the previous three heavy join queries + the 10M-row
     # INSERT are exactly what this step no longer does, so paying for them to describe the
     # skip would defeat its purpose.
-    r.deferred = _count(con, "SELECT COUNT(*) FROM inc.keyword_mentions")
-    r.note = (
+    total = _count(con, "SELECT COUNT(*) FROM inc.keyword_mentions")
+    # R24 (2026-09-22): the ONE exception. An article whose engine stamp and inputs match
+    # this corpus has its rows carried by `_carry_derived_rows` -- untracked, and never
+    # for an article the plan did not verify.
+    carried = _carry_derived_rows(con, batch_id, results)
+    r.new = carried["mentions"]
+    r.deferred = max(0, total - carried["mentions"])
+    base_note = (
         "not copied by design: the post-swap re-index recomputes these from the article "
         "text with the CURRENT extraction engine (maintainer ruling 2026-07-29). Until it "
         "reaches an article, that article has no keywords and is absent from keyword "
         "analytics -- see the restore report's reindex section for the backlog."
     )
+    if carried["articles"]:
+        r.note = (
+            f"carried for {carried['articles']} article(s) whose engine stamp and inputs "
+            "match this corpus, so a re-index would reproduce them exactly (R24); the rest "
+            + base_note
+        )
+    else:
+        r.note = base_note
     results["keyword_mentions"] = r
+    for table, key in (("article_mentioned_places", "places"), ("article_entities", "entities")):
+        d = DomainResult()
+        d.new = carried[key]
+        d.deferred = max(0, _count(con, f"SELECT COUNT(*) FROM inc.{table}") - carried[key])  # noqa: S608  # nosec B608 - module-local literal table names
+        d.note = (
+            "carried with their article's certified keywords (R24); the rest are rebuilt "
+            "by the post-swap re-index, like the mentions"
+        )
+        results[table] = d
 
 
 def _merge_curation(con, batch_id, results) -> None:
@@ -4913,16 +5402,37 @@ def mark_reindex_complete(batch_id: int) -> None:
 #: the option-(a) ruling calls its mandatory guard reported "nothing pending" while
 #: a real backlog sat behind it. Field bundle 2026-08-02: 686,317 of 785,481
 #: articles carried no keyword mentions and nothing said so.
+#:
+#: ``certified`` (R24, 2026-09-24): of a batch's articles, how many already hold rows
+#: stamped by the engine a re-index would run -- carried at import, or re-indexed by an
+#: earlier run that was interrupted before it could stamp the batch complete. Those owe
+#: nothing, so the backlog is ``n - certified``. The join is on two narrow tables
+#: (merged_rows, article_index_stamps) and never touches an article row.
 _BACKLOG_SQL = (
-    "SELECT b.id, b.imported_at, COUNT(m.row_id) AS n"
+    "SELECT b.id, b.imported_at, COUNT(m.row_id) AS n, COUNT(st.article_id) AS certified"
     " FROM merge_batches b"
     " LEFT JOIN merged_rows m"
     "   ON m.batch_id = b.id AND m.table_name = 'articles'"
+    " LEFT JOIN article_index_stamps st"
+    "   ON st.article_id = m.row_id AND st.engine = :engine"
     " WHERE b.status = :s"
     " GROUP BY b.id, b.imported_at"
     " HAVING COUNT(m.row_id) > 0"
     " ORDER BY b.id"
 )
+
+
+def _backlog_engine() -> str:
+    """The identity a re-index would stamp now. If it cannot be computed, a value no
+    stamp can equal -- so every article counts as owed. "Cannot tell" overstates the
+    backlog; it must never hide one."""
+    try:
+        from src.analytics.engine_identity import baseline_engine_id
+
+        return baseline_engine_id()
+    except Exception:  # noqa: BLE001 - an unknown engine certifies nothing
+        _LOG.warning("could not compute the engine identity for the backlog", exc_info=True)
+        return "<unknown>"
 
 
 def pending_reindex_batches() -> list[dict]:
@@ -4944,8 +5454,14 @@ def pending_reindex_batches() -> list[dict]:
 
     try:
         with session_scope() as session:
-            rows = session.execute(text(_BACKLOG_SQL), {"s": _STATUS_MERGED}).fetchall()
-        return [{"batch_id": int(r[0]), "created_at": r[1], "articles": int(r[2])} for r in rows]
+            rows = session.execute(
+                text(_BACKLOG_SQL), {"s": _STATUS_MERGED, "engine": _backlog_engine()}
+            ).fetchall()
+        return [
+            {"batch_id": int(r[0]), "created_at": r[1], "articles": int(r[2]) - int(r[3]),
+             "certified": int(r[3])}
+            for r in rows
+        ]
     except Exception:  # noqa: BLE001
         _LOG.warning("could not read the re-index backlog", exc_info=True)
         return []
@@ -4970,23 +5486,32 @@ def reindex_backlog() -> dict:
 
     try:
         with session_scope() as session:
-            rows = session.execute(text(_BACKLOG_SQL), {"s": _STATUS_MERGED}).fetchall()
+            rows = session.execute(
+                text(_BACKLOG_SQL), {"s": _STATUS_MERGED, "engine": _backlog_engine()}
+            ).fetchall()
     except Exception as exc:  # noqa: BLE001 - a diagnostic must degrade, never 500
         _LOG.warning("could not read the re-index backlog", exc_info=True)
         return {"available": False, "reason": str(exc)}
+    owed = [int(r[2]) - int(r[3]) for r in rows]
+    certified = [int(r[3]) for r in rows]
     batches = [
         {"batch_id": int(r[0]), "created_at": str(r[1]) if r[1] is not None else None,
-         "articles": int(r[2])}
-        for r in rows
+         "articles": o, "certified": c}
+        for r, o, c in zip(rows, owed, certified, strict=True)
     ]
     return {
         "available": True,
+        # Every 'merged' batch stays listed, a zero-owed one included, so the drain still
+        # visits it and stamps it complete; only the COUNTS exclude what owes nothing.
         "batches": batches,
-        "batches_pending": len(batches),
-        "articles_pending": sum(b["articles"] for b in batches),
+        "batches_pending": sum(1 for o in owed if o > 0),
+        "articles_pending": sum(owed),
+        "articles_certified": sum(certified),
         "method": (
             "imports whose articles were merged but whose re-index has not been "
-            "confirmed complete; counts read from merged_rows, never estimated"
+            "confirmed complete; counts read from merged_rows, never estimated. An "
+            "article already holding rows stamped by the current engine -- carried at "
+            "import (R24) or re-indexed by an interrupted run -- is not counted as owed"
         ),
     }
 
@@ -5042,10 +5567,30 @@ def reindex_imported_articles(
             ),
             {"b": batch_id},
         ).fetchall()
-        all_ids = sorted(int(r[0]) for r in rows)
+        batch_ids = {int(r[0]) for r in rows}
+        # R24: an article whose rows are already stamped by the engine this re-index would
+        # run -- carried at import, or finished by an earlier interrupted run -- would be
+        # delete-then-reinserted into exactly the rows it already has. Skipped. Read from
+        # the narrow stamps table, never from the article rows.
+        certified = {
+            int(r[0])
+            for r in session.execute(
+                text(
+                    "SELECT m.row_id FROM merged_rows m"
+                    " JOIN article_index_stamps st ON st.article_id = m.row_id"
+                    " WHERE m.batch_id = :b AND m.table_name = 'articles'"
+                    " AND st.engine = :e"
+                ),
+                {"b": batch_id, "e": _backlog_engine()},
+            ).fetchall()
+        }
+        all_ids = sorted(batch_ids - certified)
         if not all_ids:
             mark_reindex_complete(batch_id)
-            return {"reindexed": 0, "failed": 0}
+            out0: dict = {"reindexed": 0, "failed": 0}
+            if certified:
+                out0["already_certified"] = len(certified)
+            return out0
 
         # RESUME. Ascending order + a last-completed watermark is an exact cursor: every
         # id at or below it is already re-indexed. A missing/foreign watermark simply
@@ -5116,6 +5661,8 @@ def reindex_imported_articles(
             mark_reindex_complete(batch_id)
         if already:
             result["resumed_already_done"] = already
+        if certified:
+            result["already_certified"] = len(certified)
         return result
 
 
