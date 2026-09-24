@@ -48,6 +48,21 @@ class FakeCtx:
         self._stop.set()
 
 
+class _CancelInSoak(FakeCtx):
+    """Cancels from the soak's first tick. The loop's own progress line proves the soak has
+    begun, where a timer can only guess how long the phases before it will take."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.cancelled_in_soak = False
+
+    def set_progress(self, *, done=None, total=None, detail=None) -> None:
+        super().set_progress(done=done, total=total, detail=detail)
+        if detail and detail.startswith("soak:") and not self.stopping:
+            self.cancelled_in_soak = True
+            self.cancel()
+
+
 @pytest.fixture
 def fast(monkeypatch, tmp_path):
     """Every phase stubbed, every wait shortened, the data dir isolated. Returns the
@@ -196,9 +211,20 @@ def test_row5_runs_ONLY_when_ticked(fast):
 
 
 def test_a_cancel_during_the_soak_still_collects_and_reports(fast):
-    ctx = FakeCtx()
-    threading.Timer(0.15, ctx.cancel).start()
-    res = rr.run_release_run(ctx, **_params(fast["dest"], soak_hours=24))
+    # The cancel comes from inside the soak, never from a timer. A 0.15 s timer raced the
+    # six phases before the soak. On a loaded runner they outlasted it, the cancel landed
+    # first, the soak was recorded as skipped, and report["soak"] had no "ended_by" (the
+    # core-only lane on main, 2026-09-24; reproduced 3 of 3 with 60 ms added to each phase).
+    ctx = _CancelInSoak()
+    # A backstop, never a pass: if the soak's progress line changes, this ends what would
+    # be a 24 h wait, and the assertion on cancelled_in_soak still fails the test.
+    backstop = threading.Timer(30, ctx.cancel)
+    backstop.start()
+    try:
+        res = rr.run_release_run(ctx, **_params(fast["dest"], soak_hours=24))
+    finally:
+        backstop.cancel()
+    assert ctx.cancelled_in_soak, "the cancel never came from inside the soak"
     report = res["report"]
     assert report["outcome"] == "cancelled"
     assert report["soak"]["ended_by"] == "cancelled"

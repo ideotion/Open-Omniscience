@@ -9469,3 +9469,18 @@ reached its soak. **RR-11:** an empty ledger's first boot seeds the previous ses
 forensics' sentinel and the high-water sidecar, labelled as such. Every new test was run
 against the pre-fix source and failed there. Lessons: `LESSONS.md`, the three entries dated by
 this PR.
+
+## 2026-09-24 — the soak-cancel test cancels from inside the soak (follow-up to PR #1172)
+
+`tests/test_release_run.py::test_a_cancel_during_the_soak_still_collects_and_reports` failed
+once on `main`'s core-only lane at `39a28be6` with `KeyError: 'ended_by'`. Its 0.15 s cancel
+timer raced the six stubbed phases before the soak. When a loaded runner outlasted the timer,
+the cancel landed first, the soak was recorded as skipped, and the report's soak block never
+got `ended_by`. Adding 60 ms to each phase reproduced it 3 of 3. The test now cancels on the
+soak loop's first progress line, through a `FakeCtx` subclass, and passes with 0.5 s added to
+each phase. A 30 s timer stays only as a backstop against a hang, and an assertion that the
+cancel came from inside the soak fails the test if the backstop fired: with the progress line
+mutated, it failed in 30 s with that message. The sibling collect-now test keeps its timer,
+because the run clears `_COLLECT_NOW` when it starts and the soak honours a request made
+before it begins. Test-only; no product code changed. Lesson: `LESSONS.md`, the corollary
+under "A TEST THAT SAMPLES A TRANSIENT STATE IS A RACE".

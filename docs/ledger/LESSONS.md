@@ -10402,6 +10402,20 @@ the thread finally runs. **`setup` capture is a different test's exhaust.** Read
 label before believing the traceback, and be suspicious of a stub built with `or` over a
 predicate that is truthy on the success path.
 
+**COROLLARY — THE SAME RACE RUN BACKWARDS: A TIMER THAT MEANS "DURING X" CAN ONLY GUESS WHEN
+X WILL RUN (2026-09-24, found on `main`'s core-only lane at `39a28be6`).**
+`test_a_cancel_during_the_soak_still_collects_and_reports` sent `ctx.cancel` from a
+`threading.Timer(0.15, …)`, meaning "cancel during the soak". The six phases before the soak
+are stubs, and 150 ms was ample until a loaded runner outlasted it. The cancel then landed
+before the soak began, `run_release_run` recorded the soak as skipped (it starts the soak only
+`if not ctx.stopping`), and `report["soak"]` had no `ended_by`: one `KeyError` among 12,252
+passes. Adding 60 ms to each phase reproduced it 3 of 3. **The lesson above proves that
+something happened from the record it leaves; this one makes something happen at a point by
+triggering it FROM that point.** The fixed test cancels on the soak loop's own first progress
+line, and passes with 0.5 s added to each phase. It keeps a 30 s timer only as a backstop
+against a hang, and asserts that the cancel came from inside the soak, so the backstop can
+never produce a pass.
+
 - **A PASS-THROUGH PARAMETER THAT IS ACCEPTED AND NEVER USED IS INVISIBLE FROM BOTH SIDES OF
   THE CALL, AND THE CALLER'S OWN COMMENT WILL ARGUE FOR THE PROPERTY IT DOES NOT HAVE
   (2026-09-17, `search_total`'s `expand`):** the function declared the cross-language hook,
