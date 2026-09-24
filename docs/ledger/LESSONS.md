@@ -12015,6 +12015,117 @@ placeholder then never exists in a commit at all. Rule (5b)'s allowance is for a
 must be *written* before the number is known — not for one that must be *committed* before
 it is known, which is a different and avoidable thing.
 
+### A BATCHED REWRITE OF A LOOKUP MUST PRESERVE THE TIE-BREAK, NOT ONLY THE SET (PR 7, correcting PR 4)
+
+PR 4 replaced a per-term `session.query(Keyword).filter_by(normalized_term=t).first()` with
+one batched `IN (...)` per article, and its docstring said the map resolved terms "exactly as
+the per-term lookup did". Every test agreed. **It was true of the SET of keywords and false of
+WHICH ROW**: `keywords.normalized_term` is deliberately not unique (the merge keys a keyword on
+term *and* language), and the batched version filled its dict with `out[kw.normalized_term] =
+kw` over the whole result — last row wins. SQLite returns an equal-key index range in rowid
+order, so "last" is the **highest** id; `.first()` had been the **lowest**. Measured on three
+rows sharing a term: 1 before, 3 after. The 2026-07-29 keyword-cache ruling had required a
+deterministic `MIN(id)` in exactly this case.
+
+Nothing failed, because nothing in the suite had two rows sharing a term — **the one fixture
+that distinguishes the two behaviours**. The damage is silent by construction: every row is
+valid, every counter matches its own mentions, and a shared term's count is simply split
+across two rows depending on when each article was indexed.
+
+**When a rewrite batches N lookups into one, list what the old lookup decided besides
+membership — order, tie-break, first-write-wins — and give each a fixture where it matters.**
+A dict built from a result set is a silent last-wins; `.first()` without `ORDER BY` is a
+lowest-rowid that the plan provides and nothing promises. Found while designing R24, whose
+carried rows must resolve exactly as a local re-index would — the second time in this
+sequence that designing one PR audited the one before it.
+
+### A RULING'S UNIT CAN BE WRONG WHILE ITS INTENT IS RIGHT (PR 7)
+
+`R24` ruled that *"same-engine BACKUPS carry their mention rows"*. The intent — skip a
+re-extraction that would reproduce the same rows — was sound. The unit was not: a backup's
+manifest can only name the engine its exporter runs *now*, and an instance upgraded half-way
+through its life holds rows from several engines under one version string. Sameness had to be
+decided per ARTICLE, per its INPUTS (a body replaced after indexing leaves stale rows under a
+current engine), and against the local dictionary (which keyword row a term resolves to).
+
+**When building a ruling, ask what property its noun stands in for, and whether that noun
+actually carries it.** Here the refinement narrows *how* the intent is achieved and never
+widens what the ruling permits, so it was built and recorded beside the ruling rather than
+turned into a new question — and it was stated in the PR as a refinement, not smuggled in.
+
+### `CREATE TABLE AS` BUILDS NO INDEX, AND A CORRELATED PROBE INTO ONE IS QUADRATIC (PR 7)
+
+The carry's per-window temp tables were first built with `CREATE TEMP TABLE x AS SELECT …`,
+which creates a table with **no index at all**, not even on the column you meant as its key.
+The counter update then probed one per touched keyword — a full scan of the delta table per
+keyword, quadratic in the distinct keywords of a window (~50k × 50k at field scale). Every test
+passed in milliseconds, because fixtures have fifty keywords. **Declare a temp table with its
+key, then fill it.**
+
+### ON A STATS-FREE COPY, PIN THE JOIN ORDER — AND READ THE PLAN, NOT THE FIXTURE'S SPEED (PR 7)
+
+The restore's staged copy has no `sqlite_stat1`, so SQLite cannot know that a window holds
+2,000 articles and the incoming mention table ~100 M rows. `EXPLAIN QUERY PLAN` on the fixture
+showed it choosing to SCAN the mention table and probe the window — at field scale a full pass
+over every incoming mention *per window*. `CROSS JOIN` is SQLite's documented way to keep the
+written order. The tests could never have shown it: a plan is invisible at fixture scale, so
+**read the plan of every statement that will meet a large table**, and decline (with the
+reason) when the index the plan relies on is absent rather than letting it degrade to a scan.
+
+### A SCENARIO THAT NEVER FIRES PROVES NOTHING — ASSERT THAT IT FIRED (PR 7, generalising PR 5)
+
+The populated-corpus differential planted a keyword row sharing a carried term, to prove the
+carry resolves terms as the indexer does. Every article using that term happened to be REFUSED
+for another reason, so all its mentions came from the re-index — and a mutation resolving to
+the HIGHEST id survived a differential that "covered" it. In the same test, a title edit meant
+to exercise the inputs check landed on the one article the entity scenario needed and silently
+pre-empted it. **Each scenario now asserts it fired** (a carried article uses the planted term;
+each refusal counter is non-zero). A differential is only as strong as the rows that actually
+travel the path under test.
+
+### MEASURE A CLOSURE, DON'T READ IT (PR 7)
+
+The engine identity hashes the files an indexing pass reads, so its file list IS its
+correctness. Reading the code named the obvious modules; a probe that ran a real pass per
+language in a fresh interpreter found `src/utils/markup_blocks.py` (the markup strip every term
+passes through) and a GENERATED `configs/cities.yml` that silently shadows the shipped sample
+gazetteer. The probe is now a test that fails on any module or file a pass reads that the list
+does not cover. **A hash of the code is only as good as its file list; test the list against a
+real run.**
+
+### A POLL THAT WAITS TO SEE A TRANSIENT STATE RACES A FAST JOB (PR 7)
+
+A boot test polled a background job every 0.1 s and counted it "started" only if it SAW
+`running`. A drain that starts and finishes between two polls goes `idle` → `done` unseen, and
+macOS CI reported it as never started — on PR #1147, and again on PR 7's first commit, neither of
+which touched the boot or polling path — while Linux passed every time. **Assert on any state
+past the initial one, end the wait on a terminal state, and print the states seen**, so a genuine
+no-start still fails and says why.
+
+**AND THE DIAGNOSIS WAS ALREADY IN THE LEDGER.** PR #1147 had measured the real boot path (a
+~224 ms `running` window against a 100 ms sampler) and filed exactly this patch in
+`OPEN_QUEUE.md`, unapplied because the test belonged to another slice. PR 7 re-derived it from
+scratch: `planned.py` never surfaced that entry, because it counts a queue entry as open only
+when the body carries one of its eight markers (`PENDING`, `⛔`, `STILL OPEN`, `NOT BUILT`, …),
+and "NOT fixed there" and "not applied here" are not among them. **Before fixing a failing test,
+grep the ledger for the TEST'S NAME. `planned.py` answers for paths, and a defect filed as found
+but unfixed, without a marker, is invisible to it.**
+
+### A FULL GC PASS IN THIS SUITE TAKES ABOUT A SECOND, SO A SUB-SECOND CLOCK IS A COIN TOSS (PR 7)
+
+Measured 2026-09-24 (py3.13, the 4-CPU dev container, two suites side by side) at the moment `tests/test_release_run.py`
+starts in suite order, about 8,700 tests in: **2.07 M gc-tracked objects, and a median
+generation-2 pass of 0.94 s** (max 2.1 s; 159 of the 160 passes so far took over 100 ms).
+`test_the_heartbeat_ring_is_bounded_and_says_what_it_dropped` needed four heartbeats inside a
+0.3 s soak. One injected 0.25 s pause reproduces its macOS failure exactly (`assert 0 >= 1`) and
+0.20 s does not, so any generation-2 pass that lands in the window fails it. It failed twice on
+one commit of PR #1171 and passed once, on a path that commit does not touch (profiled: zero
+calls into the four files it changes). What the PR changed was the SUITE: 55 more tests moved
+where the passes land (+2.4 % objects, pause lengths unchanged). **Adding tests anywhere can
+flip a timing test that has no margin. Test a bound by COUNT, never by a sub-second clock; when
+the timing IS the property, `gc.collect()` then `gc.disable()` around the timed region, or take
+the best of N runs.**
+
 ### A DURATION IS NEVER THE DIFFERENCE OF TWO WALL STAMPS (the field round, PR #1172)
 
 A NUC booted with its clock 12 hours fast, and NTP corrected it an hour in. Everything that

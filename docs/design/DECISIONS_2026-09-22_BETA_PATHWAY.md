@@ -395,6 +395,43 @@ a measurement rather than a preference. *Shipped state meanwhile:* the window, t
 live-store choice survivable) and `rebuild_progress` for the disclosure.
 `ANSWER D46:`
 
+**D47 ⛔ · The segmented derived index: adopt it as 0.5's plan for the derived-row WRITE
+path, and in what order against Phase C (2026-09-24).** §9.2 item 7's design half, written up
+in [`SEGMENTED_DERIVED_INDEX_2026-09-24.md`](./SEGMENTED_DERIVED_INDEX_2026-09-24.md). The
+storage plan of record covers the article TEXT (Phase C), the FTS index (Phase B) and sharding
+past 64 TiB; nothing in it covers how ~2 billion `keyword_mentions` rows get *written*, which
+is where the field instance is stuck (870 articles an hour, `writer-saturated` in 200 of 200
+samples). The design splits the derived rows into **segments cut by write order** — one small
+mutable head that ingest and re-indexing write to, and sealed immutable segments built in bulk
+— with **every query reading every segment**, so cross-time recall holds by construction (the
+refresh's own 44-of-44 measurement is of exactly that shape). Three things follow that no
+option on the monolith gives: **`D46` dissolves** (every seal and compaction is a bounded bulk
+build on tables nothing is reading yet, so the live store never loses an index); an engine
+change becomes *"rebuilding, segment N of M"* with the corpus fully queryable throughout; and
+`R24`'s carry becomes a segment import instead of row-by-row inserts.
+- **a** — **adopt, and build step 0 now**: every reader of the derived tables goes through a
+  view that today covers exactly the current tables, pinned by a repo-invariant test. No
+  behaviour change, and it is what makes every later step reviewable. Steps 1–4 (head + seal,
+  tombstones, compaction, segment-granular rebuild) follow in 0.5, **each gated on the §8
+  measurements** (the head size that stays resident on the field's RAM tier; query latency
+  against segment count; one seal's cost). Segments as tables in the main file first — the
+  refresh already ruled that WAL forfeits cross-file atomicity.
+- **b** — **adopt the design, build nothing yet**: wait for the DB-10 §6 footprint split,
+  which has never been taken and decides whether Phase C (text offload) or this is the larger
+  lever on the field instance first.
+- **c** — **do not segment**: keep the monolith, give `D46` a caller, and accept per-article
+  apply into ever-larger B-trees at 1 TB.
+Default if blank: **⛔ none — this stays PENDING.** → **Recommendation: a.** Step 0 costs a
+rename behind a view and changes nothing a reader can see, so it does not need the
+measurements that gate step 1 — and `b`'s question is real but orthogonal: Phase C shrinks
+every article row, segmentation localises every derived-row write, and they compose. `c` is
+the option the audit's own Appendix A already rules out (*"the per-article design cannot reach
+that scale"*). *Not asked here, because they are measurements rather than preferences:* the head
+size, the compaction target, and whether sealed segments later move to immutable files
+(design §3.7 — the backup-incrementality argument). *Shipped state meanwhile:* **nothing of this
+design is built**; `R24`, the other half of item 7, is built in the same PR.
+`ANSWER D47:`
+
 ## §B2 — The awareness mechanism you asked for
 
 *"find a way so that future bug discovery would not contradict what has been planned … to help

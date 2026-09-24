@@ -416,7 +416,11 @@ def test_the_boot_resume_never_blocks_the_boot(monkeypatch):
     from src.api.main import _resume_reindex_backlog_at_boot
 
     gate = threading.Event()
-    monkeypatch.setattr(vj, "start_reindex_drain", lambda: (gate.wait(5) or (True, None)))
+    # ALWAYS the tuple. `gate.wait(5) or (True, None)` returned the bare `True` once the
+    # gate was set -- which it is, below -- so the boot thread this leaves behind raised
+    # "cannot unpack non-iterable bool object" into whichever test ran next (macOS CI
+    # captured it in the setup log of the kill-and-boot test, 2026-09-24).
+    monkeypatch.setattr(vj, "start_reindex_drain", lambda: (gate.wait(5), (True, None))[1])
     t0 = _t.monotonic()
     _resume_reindex_backlog_at_boot(1)
     elapsed = _t.monotonic() - t0
@@ -454,20 +458,28 @@ def boot_and_drain():
     from src.api.main import _resume_reindex_backlog_at_boot
     _resume_reindex_backlog_at_boot(int(before.get("articles_pending") or 0))
     from src.api.backup_v2 import _REINDEX_RESUME_JOB
-    # ``started_at`` is set once, by the job's own start(), and never cleared: it is
-    # the durable record that boot started the drain. Sampling ``state == "running"``
-    # instead missed a drain that finished between two 0.1 s polls (macOS CI).
     deadline = time.time() + 120
     started = False
+    seen = []
+    # ANY state past "idle" proves the drain started IN THIS PROCESS (the job object is
+    # fresh here). Watching for "running" alone raced: a drain that starts and finishes
+    # between two 0.1 s polls goes idle -> done unseen, and read as never started --
+    # macOS CI on PR #1147 (7adcfec6) and on PR #1171 (d0ce56e2). A terminal state also
+    # ends the wait. This is the patch OPEN_QUEUE.md filed for it under #1147, after
+    # measuring the real boot path: a ~224 ms `running` window against a 100 ms sampler.
     while time.time() < deadline:
-        st = _REINDEX_RESUME_JOB.status()
-        started = st.get("started_at") is not None
-        if started and st.get("state") != "running":
+        state = _REINDEX_RESUME_JOB.status().get("state")
+        if not seen or seen[-1] != state:
+            seen.append(state)
+        if state and state != "idle":
+            started = True
+        if state in ("done", "cancelled", "error"):
             break
         time.sleep(0.1)
     after = reindex_backlog()
     print(json.dumps({
         "started": started,
+        "states": seen,
         "pending_before_boot": before.get("articles_pending"),
         "pending_after": after.get("articles_pending"),
     }), flush=True)
@@ -540,7 +552,9 @@ def test_a_kill_between_stages_three_and_four_resumes_on_the_next_boot(tmp_path)
     assert booted.returncode == 0, booted.stderr[-3000:]
     out = json.loads(booted.stdout.strip().splitlines()[-1])
     assert out["pending_before_boot"] == pending, "the kill's backlog must survive the restart"
-    assert out["started"] is True, "boot must START the drain, not merely report the backlog"
+    assert out["started"] is True, (
+        f"boot must START the drain, not merely report the backlog (states seen: {out['states']})"
+    )
     assert out["pending_after"] == 0, (
         f"the resume left {out['pending_after']} article(s) un-re-indexed"
     )

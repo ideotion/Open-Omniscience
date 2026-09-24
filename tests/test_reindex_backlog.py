@@ -121,7 +121,12 @@ def test_an_ordinary_domain_report_is_byte_unchanged():
 def test_the_merge_no_longer_copies_mentions_but_still_handles_the_table():
     """The step stays in the pipeline. Dropping it instead would make keyword_mentions
     show up as an UNMERGED table in the report — technically honest, but it would read as
-    an oversight rather than the deliberate policy it is."""
+    an oversight rather than the deliberate policy it is.
+
+    SINCE R24 (2026-09-24) the step writes mentions again, for ONE population: articles
+    whose engine stamp and inputs the carry plan verified. What this still pins is that
+    the old UNCONDITIONAL copy -- a tracked INSERT over every incoming mention -- is gone;
+    the certified carry's behaviour is pinned in tests/test_derived_carry.py."""
     import inspect
 
     src = inspect.getsource(merge_mod._merge_keyword_mentions)
