@@ -408,7 +408,7 @@
   ASSUMPTIONS at their stated defaults, built, and reversible by answering at the report's
   `ANSWER` lines. **Built by the two PRs:** the release run and the chronology (RR-1 to RR-8,
   RR-10, RR-11) in the release-run PR; SCHED-1, QUAL-1, RR-9, CUST-1, FIX-1, INT-1 and the
-  card-audit and bulletin deadline guard in the field-defects PR. **THE RELEASE-RUN PR IS BUILT
+  card-audit and bulletin deadline guard in the field-defects PR (#1173). **THE RELEASE-RUN PR IS BUILT
   (PR #1172, 2026-09-24): all ten**, every new test shown failing on the pre-fix code. Two
   findings of its own, beyond the report: the chronology placed an IN-FLIGHT phase at the FIRST
   phase's end (a backwards loop with no break; on the NUC the soak "started" at the preflight),

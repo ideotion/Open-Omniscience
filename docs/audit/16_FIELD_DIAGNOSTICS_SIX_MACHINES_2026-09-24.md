@@ -615,7 +615,7 @@ fleet-wide (82,805 candidates on Asus).
 Default if blank: **a**. Recommendation: **a now, b as a planned slice.** The honesty fix is
 owed under every option; whether small machines should qualify at all is a product question.
 `ANSWER FD03:` *(blank at recording; the default **a** is taken as an ASSUMPTION and built in
-the field-defects PR: the floor stays, the decline is named and shown)*
+the field-defects PR, #1173: the floor stays, the decline is named and shown)*
 
 **FD04 · When do my two fix PRs go in?** They touch different files from the indexing session's
 plan, except one function in `bundle.py`.
