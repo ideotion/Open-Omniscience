@@ -132,13 +132,37 @@ def _prefetch_keywords(session: Session, normalized: Iterable[str]) -> dict[str,
     per-term lookup did. (They still produce two mention rows and still collide on
     the unique ``(keyword_id, article_id)`` index; that contract is pinned by
     tests/test_bulk_mention_insert.py and deliberately unchanged here.)
+
+    WHICH ROW, WHEN SEVERAL SHARE A TERM: THE LOWEST ID, and it is a ruling, not a
+    taste. ``keywords.normalized_term`` is deliberately NOT unique -- the restore merge
+    keys a keyword on its term AND its language, so every multilingual merge leaves
+    rows that share a term -- while this lookup is by term alone. The 2026-07-29
+    keyword-cache ruling (ruling 5, ``OPEN_QUEUE.md``) required a "deterministic
+    ``MIN(id)`` tie-break for duplicate ``normalized_term``", the same convention the
+    merge's ``map_keywords`` uses.
+
+    THIS FUNCTION BROKE IT WHEN IT WAS WRITTEN (PR 4, #1168), and the docstring above
+    claimed "exactly as the per-term lookup did". It assigned every row of the result
+    into the dict, so the LAST row won; SQLite hands back an equal-key range in rowid
+    order, so the last row is the HIGHEST id. Measured on three rows sharing a term:
+    the per-term lookup answered id 1, this function answered id 3. From that merge
+    until this fix, an article indexed on a merged corpus attached a shared term's
+    mentions to a different row than every article indexed before it, splitting the
+    term's counts across two rows with nothing failing. Caught while designing R24,
+    whose carried rows must resolve exactly as a local re-index would.
+
+    The minimum is taken HERE, in Python, rather than with ``ORDER BY id`` in the
+    query: over ~100 rows it costs nothing, and it keeps the answer independent of
+    whatever plan SQLite picks for ``IN (...) ORDER BY`` on an 11 M-row table.
     """
     out: dict[str, Keyword] = {}
     uniq = list(dict.fromkeys(n for n in normalized if n))
     for i in range(0, len(uniq), _KEYWORD_PREFETCH_CHUNK):
         chunk = uniq[i : i + _KEYWORD_PREFETCH_CHUNK]
         for kw in session.query(Keyword).filter(Keyword.normalized_term.in_(chunk)).all():
-            out[kw.normalized_term] = kw
+            held = out.get(kw.normalized_term)
+            if held is None or kw.id < held.id:
+                out[kw.normalized_term] = kw
     return out
 
 
@@ -164,7 +188,18 @@ def _get_or_create_keyword(
     it writes back. The entity upgrade and the baseline tagging below are untouched.
     """
     if prefetched is None:
-        kw = session.query(Keyword).filter_by(normalized_term=t.normalized).first()
+        # ``ORDER BY id`` states the lowest-id rule the prefetch also follows (see
+        # :func:`_prefetch_keywords`). Before it, ``.first()`` returned the lowest id
+        # only because SQLite walks an equal-key index range in rowid order -- true, but
+        # an accident of the plan rather than a promise. The plan is unchanged: the
+        # equality on ``idx_keyword_normalized_term`` already yields rowid order, so
+        # SQLite answers it from the index with no sort (EXPLAIN QUERY PLAN, checked).
+        kw = (
+            session.query(Keyword)
+            .filter_by(normalized_term=t.normalized)
+            .order_by(Keyword.id)
+            .first()
+        )
     else:
         kw = prefetched.get(t.normalized)
     is_entity = t.kind != "term"
@@ -304,6 +339,62 @@ def _resolve_known_language(article: Article, content: str) -> str | None:
         or (getattr(article, "detected_language", None) or "").strip()
         or None
     )
+
+
+def _stamp_index_engine(
+    session: Session, article: Article, extractor, *, certified: bool, inputs: str
+) -> None:
+    """Record which engine, on which inputs, produced this article's derived rows (R24).
+
+    ``certified`` is True only when THIS pass rewrote every derived row the stamp
+    vouches for -- the keywords, the mentions, sentiment, the top keyword AND the When
+    x Where x Who rows. Then the stamp is this engine on these inputs, whatever it was.
+
+    Otherwise the pass refreshed only part of the article (a keyword-only cleanup, or a
+    When x Where x Who failure whose savepoint restored the previous rows), and the rest
+    is whatever an earlier pass left. The stamp survives that only if the earlier pass
+    was THIS engine on THESE inputs -- then every row is still that pass's output. Any
+    other stamp is deleted: the article now mixes two passes' rows, and a stamp naming
+    either would let a restore carry rows a re-index would not reproduce.
+
+    Two statements, no read: an upsert when certified, a conditional delete when not.
+    An identity that cannot be computed DELETES the stamp rather than failing the pass
+    -- the stamp only ever makes a restore cheaper, so its absence costs a re-extraction
+    and never a keyword."""
+    from sqlalchemy import and_, delete, not_
+    from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+
+    from src.database.models import ArticleIndexStamp
+
+    try:
+        from src.analytics.engine_identity import engine_id
+
+        current = engine_id(extractor)
+    except Exception:  # noqa: BLE001 - an uncertified article is safe; a failed index is not
+        _LOG.warning("could not compute the engine identity; clearing the stamp", exc_info=True)
+        session.execute(delete(ArticleIndexStamp).where(ArticleIndexStamp.article_id == article.id))
+        return
+    if certified:
+        stmt = sqlite_insert(ArticleIndexStamp).values(
+            article_id=article.id, engine=current, inputs=inputs, stamped_at=datetime.now(UTC)
+        )
+        session.execute(
+            stmt.on_conflict_do_update(
+                index_elements=[ArticleIndexStamp.article_id],
+                set_={
+                    "engine": stmt.excluded.engine,
+                    "inputs": stmt.excluded.inputs,
+                    "stamped_at": stmt.excluded.stamped_at,
+                },
+            )
+        )
+    else:
+        session.execute(
+            delete(ArticleIndexStamp).where(
+                ArticleIndexStamp.article_id == article.id,
+                not_(and_(ArticleIndexStamp.engine == current, ArticleIndexStamp.inputs == inputs)),
+            )
+        )
 
 
 def index_article(
@@ -538,6 +629,11 @@ def index_article(
     # below. `article.id` is safe to read now: it was already resolved earlier
     # in this same call (the keyword-mention inserts above reference it).
     article_id = article.id
+    # Whether THIS pass rewrote the When x Where x Who rows. False on the keyword-only
+    # scope (it never touches them) and on a swallowed failure below (the savepoint put
+    # the PREVIOUS rows back). Read by the engine stamp at the end, which may only
+    # certify rows this pass actually produced.
+    www_rewritten = scope != "keywords"
     try:
         if scope != "keywords":  # keyword-only cleanup skips the when/where/who passes
             from src.timemap.datestore import store_for_article as _store_dates
@@ -594,6 +690,25 @@ def index_article(
         if is_locked_error(exc):
             raise
         _LOG.warning("when/where/who persistence failed for %s", article_id, exc_info=True)
+        www_rewritten = False
+    from src.analytics.engine_identity import date_part, index_inputs_digest
+
+    _stamp_index_engine(
+        session,
+        article,
+        extractor,
+        certified=www_rewritten,
+        inputs=index_inputs_digest(
+            text=content,
+            raw_content=article.content,
+            title=article.title,
+            language=article.language,
+            detected_language=getattr(article, "detected_language", None),
+            observed=date_part(observed),
+            country=article.country,
+            self_forms=self_forms,
+        ),
+    )
     if commit:
         session.commit()
     return {

@@ -487,7 +487,8 @@ whole-corpus scans below the floor; this member is not covered by it.
 6. **The import's fixed costs.** Snapshot once per run is already there; quick_check, the keyword
    reconcile and the event mirror scoped or deferred; the working copy kept. Attended.
 7. **Design for 0.5.** The segmented derived index for the 1 TB target, and carrying mention rows
-   from same-engine backups instead of re-extracting them.
+   from same-engine backups instead of re-extracting them. *(2026-09-24: the carry BUILT as `R24`;
+   the index DESIGNED in `docs/design/SEGMENTED_DERIVED_INDEX_2026-09-24.md`, adoption `D47`.)*
 
 ### 9.3 Rulings — DECIDED 2026-09-22, every default accepted
 
@@ -496,17 +497,17 @@ defaults. Mark them as decided." Each is now recorded in
 [`docs/ledger/RULINGS_INDEX.md`](../ledger/RULINGS_INDEX.md) under the id in the last
 column, with the round's own entry in
 [`docs/ledger/OPEN_QUEUE.md`](../ledger/OPEN_QUEUE.md). **Decided is not built:** the
-`state` column says which of the §9.2 PRs carries each, and only R1 has one.
+`state` column says which of the §9.2 PRs carries each. **Swept 2026-09-24 (PR 7):** every ruling now has one, R3 only in part; `docs/ledger/RULINGS_INDEX.md` is the authoritative state, and this column had said "unbuilt" for six rulings already built.
 
 | # | ruling, as decided at its default | index | state |
 |---|---|---|---|
-| R1 | the drain may use the exclusive settings whenever the collector is idle | R21 | **BUILT** — PR 1 |
-| R2 | counters deferred and reconciled at the end of an exclusive drain, disclosed as estimated meanwhile | R22 | decided, unbuilt — PR 4 |
-| R3 | bulk build on the live store, with surfaces disclosing "rebuilding, N of M" | R23 | decided, unbuilt — PR 5 |
-| R4 | same-engine backups carry their mention rows in sorted bulk instead of re-extraction; revisits the 2026-07-29 option (a) | R24 | decided, unbuilt — PR 7 |
-| R5 | all four import stages may be scoped to the batch: quick_check, keyword counter reconcile, event-mirror refresh, source counters | R25 | decided, unbuilt — PR 6 |
-| R6 | raise the pool rather than lower the worker cap on the small and medium tiers (8 MB × 4 more connections is 32 MB) | R26 | decided, unbuilt — PR 2 |
-| R7 | diagnostics members that need more than half the machine's RAM decline below the floor, like the whole-corpus scans already do | R27 | decided, unbuilt — PR 2 |
+| R1 | the drain may use the exclusive settings whenever the collector is idle | R21 | **BUILT** — PR 1 (#1164) |
+| R2 | counters deferred and reconciled at the end of an exclusive drain, disclosed as estimated meanwhile | R22 | **BUILT** — PR 4 (#1168) |
+| R3 | bulk build on the live store, with surfaces disclosing "rebuilding, N of M" | R23 | **PARTLY BUILT** — PR 5 (#1169): the window, its boot heal and the disclosure; no caller yet (`D46`, which the segmented design dissolves — `D47`) |
+| R4 | same-engine backups carry their mention rows in sorted bulk instead of re-extraction; revisits the 2026-07-29 option (a) | R24 | **BUILT** — PR 7 (#1171), per ARTICLE and per INPUTS rather than per backup (see `RULINGS_INDEX.md`) |
+| R5 | all four import stages may be scoped to the batch: quick_check, keyword counter reconcile, event-mirror refresh, source counters | R25 | **BUILT** — PR 3 (#1167) + PR 6 (#1170); three of the four stages were already delivered, and a lone import's `quick_check` stays a data-safety question |
+| R6 | raise the pool rather than lower the worker cap on the small and medium tiers (8 MB × 4 more connections is 32 MB) | R26 | **BUILT** — PR 2 (#1166) |
+| R7 | diagnostics members that need more than half the machine's RAM decline below the floor, like the whole-corpus scans already do | R27 | **BUILT** — PR 2 (#1166) |
 
 **What PR 1 changed, and what is still unmeasured.** It carries R21 plus the three items
 of §9.2 item 1 that needed no ruling: the drain publishes the load/precompute/apply split

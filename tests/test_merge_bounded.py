@@ -468,7 +468,10 @@ def test_an_interrupted_merge_is_not_stamped_merged(tmp_path, monkeypatch) -> No
     def boom(con, batch_id, results):  # noqa: ANN001
         raise RuntimeError("killed after the articles step committed")
 
-    monkeypatch.setattr(merge_mod, "_merge_keywords", boom)
+    # The step AFTER articles. This killed `_merge_keywords` until R24 moved keywords
+    # ahead of articles (2026-09-24); killing it now would stop the merge before any
+    # windowed step committed, and the non-empty assertion below would say so.
+    monkeypatch.setattr(merge_mod, "_merge_article_keyword_links", boom)
     with pytest.raises(RuntimeError):
         merge_corpus(staged, working, _BATCH_META)
 

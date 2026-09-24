@@ -281,3 +281,79 @@ def test_the_prefetch_ignores_empty_terms_and_duplicates():
     asked = [p for stmt, p in zip(spy.sql, spy.params, strict=True) if _BATCHED.search(stmt)]
     flat = [str(v) for params in asked for v in (params or ())]
     assert flat == ["x"], f"the query must ask for 'x' once and nothing else, got {flat}"
+
+
+# --- which row, when several share a term: the LOWEST id -------------------- #
+#
+# `keywords.normalized_term` is deliberately not unique: the restore merge keys a keyword
+# on term AND language, so every multilingual merge leaves rows sharing a term, while the
+# indexer looks a term up by the term alone. The 2026-07-29 keyword-cache ruling (ruling 5)
+# required a deterministic MIN(id) tie-break for exactly this case.
+#
+# PR 4 broke it: the prefetch assigned every result row into its dict, so the LAST row won
+# -- the HIGHEST id, because SQLite returns an equal-key range in rowid order. Measured: for
+# three rows sharing "foo", the per-term lookup answered 1 and the prefetch answered 3.
+# Every test below fails on that code.
+
+def _shared_term(s, languages=("en", "fr", "de")):
+    """Rows sharing one normalized term -- the shape a multilingual merge leaves."""
+    for lang in languages:
+        s.add(Keyword(term="foo", normalized_term="foo", language=lang, frequency=0))
+    s.add(Keyword(term="bar", normalized_term="bar", language="en", frequency=0))
+    s.commit()
+    return [k.id for k in s.query(Keyword).filter_by(normalized_term="foo").order_by(Keyword.id)]
+
+
+def test_the_prefetch_resolves_a_shared_term_to_its_lowest_id():
+    s, _ = _session_and_spy()
+    ids = _shared_term(s)
+    assert len(ids) == 3
+    got = _prefetch_keywords(s, ["foo", "bar"])
+    assert got["foo"].id == min(ids), (
+        f"a term shared by rows {ids} must resolve to the lowest id (ruling 5), "
+        f"got {got['foo'].id}"
+    )
+
+
+def test_both_lookup_paths_agree_on_a_shared_term():
+    """The batched path replaced the per-term one for index_article; the two must give
+    the same answer, or the switch silently moved every shared term's mentions."""
+    s, _ = _session_and_spy()
+    _shared_term(s)
+    t = ExtractedTerm(term="foo", normalized="foo", kind="term", count=1, first_offset=0)
+    per_term = _get_or_create_keyword(s, t, language="en", extractor="fake")
+    batched = _get_or_create_keyword(
+        s, t, language="en", extractor="fake", prefetched=_prefetch_keywords(s, ["foo"])
+    )
+    assert batched.id == per_term.id
+
+
+def test_index_article_attaches_a_shared_terms_mentions_to_the_lowest_id():
+    """The behaviour, not the helper: which row the MENTION lands on. This is where the
+    defect did its damage -- a helper-level assertion can stay green while the caller
+    stops using the helper, which is PR 5's recorded lesson."""
+    from src.database.models import KeywordMention
+
+    s, _ = _session_and_spy()
+    ids = _shared_term(s)
+    a = _article(s, "shared")
+    terms = [ExtractedTerm(term="foo", normalized="foo", kind="term", count=4, first_offset=0)]
+    index_article(s, a, extractor=_FakeExtractor(terms), country=None, city=None)
+    landed = [m.keyword_id for m in s.query(KeywordMention).filter_by(article_id=a.id)]
+    assert landed == [min(ids)], f"the mention must land on {min(ids)}, landed on {landed}"
+
+
+def test_a_shared_term_keeps_landing_on_one_row_across_articles():
+    """The symptom as an operator would meet it: one term, two articles, two rows. Before
+    the fix an article indexed by the per-term path and one indexed by the prefetch split
+    the same term across rows 1 and 3, and the term's count with them."""
+    from src.database.models import KeywordMention
+
+    s, _ = _session_and_spy()
+    ids = _shared_term(s)
+    t = ExtractedTerm(term="foo", normalized="foo", kind="term", count=1, first_offset=0)
+    first = _get_or_create_keyword(s, t, language="en", extractor="fake")  # per-term path
+    a = _article(s, "later")
+    index_article(s, a, extractor=_FakeExtractor([t]), country=None, city=None)
+    rows = {m.keyword_id for m in s.query(KeywordMention).filter_by(article_id=a.id)}
+    assert rows == {first.id} == {min(ids)}
