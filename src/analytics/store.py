@@ -341,6 +341,62 @@ def _resolve_known_language(article: Article, content: str) -> str | None:
     )
 
 
+def _stamp_index_engine(
+    session: Session, article: Article, extractor, *, certified: bool, inputs: str
+) -> None:
+    """Record which engine, on which inputs, produced this article's derived rows (R24).
+
+    ``certified`` is True only when THIS pass rewrote every derived row the stamp
+    vouches for -- the keywords, the mentions, sentiment, the top keyword AND the When
+    x Where x Who rows. Then the stamp is this engine on these inputs, whatever it was.
+
+    Otherwise the pass refreshed only part of the article (a keyword-only cleanup, or a
+    When x Where x Who failure whose savepoint restored the previous rows), and the rest
+    is whatever an earlier pass left. The stamp survives that only if the earlier pass
+    was THIS engine on THESE inputs -- then every row is still that pass's output. Any
+    other stamp is deleted: the article now mixes two passes' rows, and a stamp naming
+    either would let a restore carry rows a re-index would not reproduce.
+
+    Two statements, no read: an upsert when certified, a conditional delete when not.
+    An identity that cannot be computed DELETES the stamp rather than failing the pass
+    -- the stamp only ever makes a restore cheaper, so its absence costs a re-extraction
+    and never a keyword."""
+    from sqlalchemy import and_, delete, not_
+    from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+
+    from src.database.models import ArticleIndexStamp
+
+    try:
+        from src.analytics.engine_identity import engine_id
+
+        current = engine_id(extractor)
+    except Exception:  # noqa: BLE001 - an uncertified article is safe; a failed index is not
+        _LOG.warning("could not compute the engine identity; clearing the stamp", exc_info=True)
+        session.execute(delete(ArticleIndexStamp).where(ArticleIndexStamp.article_id == article.id))
+        return
+    if certified:
+        stmt = sqlite_insert(ArticleIndexStamp).values(
+            article_id=article.id, engine=current, inputs=inputs, stamped_at=datetime.now(UTC)
+        )
+        session.execute(
+            stmt.on_conflict_do_update(
+                index_elements=[ArticleIndexStamp.article_id],
+                set_={
+                    "engine": stmt.excluded.engine,
+                    "inputs": stmt.excluded.inputs,
+                    "stamped_at": stmt.excluded.stamped_at,
+                },
+            )
+        )
+    else:
+        session.execute(
+            delete(ArticleIndexStamp).where(
+                ArticleIndexStamp.article_id == article.id,
+                not_(and_(ArticleIndexStamp.engine == current, ArticleIndexStamp.inputs == inputs)),
+            )
+        )
+
+
 def index_article(
     session: Session,
     article: Article,
@@ -573,6 +629,11 @@ def index_article(
     # below. `article.id` is safe to read now: it was already resolved earlier
     # in this same call (the keyword-mention inserts above reference it).
     article_id = article.id
+    # Whether THIS pass rewrote the When x Where x Who rows. False on the keyword-only
+    # scope (it never touches them) and on a swallowed failure below (the savepoint put
+    # the PREVIOUS rows back). Read by the engine stamp at the end, which may only
+    # certify rows this pass actually produced.
+    www_rewritten = scope != "keywords"
     try:
         if scope != "keywords":  # keyword-only cleanup skips the when/where/who passes
             from src.timemap.datestore import store_for_article as _store_dates
@@ -629,6 +690,25 @@ def index_article(
         if is_locked_error(exc):
             raise
         _LOG.warning("when/where/who persistence failed for %s", article_id, exc_info=True)
+        www_rewritten = False
+    from src.analytics.engine_identity import date_part, index_inputs_digest
+
+    _stamp_index_engine(
+        session,
+        article,
+        extractor,
+        certified=www_rewritten,
+        inputs=index_inputs_digest(
+            text=content,
+            raw_content=article.content,
+            title=article.title,
+            language=article.language,
+            detected_language=getattr(article, "detected_language", None),
+            observed=date_part(observed),
+            country=article.country,
+            self_forms=self_forms,
+        ),
+    )
     if commit:
         session.commit()
     return {

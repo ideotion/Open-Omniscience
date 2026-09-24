@@ -2049,6 +2049,48 @@ class ArticleEntity(Base):
     )
 
 
+class ArticleIndexStamp(Base):
+    """WHICH ENGINE, ON WHICH INPUTS, produced an article's derived rows (R24, 2026-09-24).
+
+    Written by ``index_article`` in the SAME pass as the rows it certifies -- the
+    mentions, sentiment, the top keyword and the When x Where x Who rows -- and deleted
+    when a pass refreshes only part of them under a different engine or different inputs.
+    A row therefore always states something TRUE: "engine E, applied to inputs I,
+    produced these rows". It never has to be invalidated when an input changes later,
+    because ``inputs`` records which inputs it was, and a reader compares.
+
+    WHY IT EXISTS. A restore may CARRY an incoming article's derived rows instead of
+    re-extracting them exactly when a local re-index would reproduce them, and that is a
+    per-ARTICLE fact: a backup's manifest could only name the engine its exporter runs
+    now, and an instance upgraded half-way through its life holds rows from several
+    engines under one version string. See ``src/analytics/engine_identity.py`` for what
+    ``engine`` and ``inputs`` are hashes of.
+
+    WHY A SIDE TABLE AND NOT A COLUMN ON ``articles``. Both readers -- the restore looking
+    for stamped incoming articles, and the re-index backlog counting what is still owed
+    -- ask about many articles at once. A column appended to ``articles`` sits AFTER
+    ``content`` in every row, and SQLite reaches it only by walking the article's overflow
+    pages: on the 27.7 GB field corpus that is a full read of every article, through the
+    SQLCipher codec, to learn one short string each. Here it is ~60 bytes a row. The
+    same reasoning put ``source_id`` and ``language`` on ``keyword_mentions``.
+
+    Absence is the uncertified state -- never indexed since this table existed, or a
+    pass that mixed engines. A restore carries ONLY stamped rows, so an absent stamp
+    costs a re-extraction and never a wrong keyword.
+    """
+
+    __tablename__ = "article_index_stamps"
+
+    article_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("articles.id", ondelete="CASCADE"), primary_key=True
+    )
+    engine: Mapped[str] = mapped_column(String(40), nullable=False)
+    inputs: Mapped[str] = mapped_column(String(40), nullable=False)
+    stamped_at: Mapped[datetime | None] = mapped_column(
+        DateTime, default=lambda: datetime.now(UTC)
+    )
+
+
 class HazardEventDetail(Base):
     """Provider-ASSERTED event metadata for a hazard ingested as an Article
     (2026-07-24 field-feedback Session A §6, ruled: hazards ingest AS Articles).

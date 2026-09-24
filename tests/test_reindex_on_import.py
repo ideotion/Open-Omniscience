@@ -195,12 +195,23 @@ def test_reindex_imported_articles_threads_batching_and_progress(monkeypatch):
         assert progress_seen == [(1, 1)]
 
         # commit_batch=None (the default) reads OO_REINDEX_COMMIT_BATCH.
+        # Since R24 the first call CERTIFIED the article, and a certified article is
+        # skipped -- so without this the second call would have nothing to do and would
+        # never reach reindex_articles at all. Clearing the stamp gives it work.
+        from src.database.models import ArticleIndexStamp
+
+        with session_scope() as s:
+            s.query(ArticleIndexStamp).filter_by(article_id=merged_id).delete()
+            s.commit()
         monkeypatch.setenv("OO_REINDEX_COMMIT_BATCH", "7")
         merge_mod.reindex_imported_articles(batch_id, workers=0)
         assert captured["commit_batch"] == 7
     finally:
         with session_scope() as s:
             if merged_id is not None:
+                from src.database.models import ArticleIndexStamp
+
+                s.query(ArticleIndexStamp).filter_by(article_id=merged_id).delete()
                 s.query(KeywordMention).filter_by(article_id=merged_id).delete()
                 a = s.get(Article, merged_id)
                 if a is not None:
