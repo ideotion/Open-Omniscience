@@ -12097,6 +12097,31 @@ real run.**
 
 A boot test polled a background job every 0.1 s and counted it "started" only if it SAW
 `running`. A drain that starts and finishes between two polls goes `idle` → `done` unseen, and
-macOS CI reported it as never started — twice, on a PR that did not touch that path, while
-Linux passed every time. **Assert on any state past the initial one, end the wait on a terminal
-state, and print the states seen**, so a genuine no-start still fails and says why.
+macOS CI reported it as never started — on PR #1147, and again on PR 7's first commit, neither of
+which touched the boot or polling path — while Linux passed every time. **Assert on any state
+past the initial one, end the wait on a terminal state, and print the states seen**, so a genuine
+no-start still fails and says why.
+
+**AND THE DIAGNOSIS WAS ALREADY IN THE LEDGER.** PR #1147 had measured the real boot path (a
+~224 ms `running` window against a 100 ms sampler) and filed exactly this patch in
+`OPEN_QUEUE.md`, unapplied because the test belonged to another slice. PR 7 re-derived it from
+scratch: `planned.py` never surfaced that entry, because it counts a queue entry as open only
+when the body carries one of its eight markers (`PENDING`, `⛔`, `STILL OPEN`, `NOT BUILT`, …),
+and "NOT fixed there" and "not applied here" are not among them. **Before fixing a failing test,
+grep the ledger for the TEST'S NAME. `planned.py` answers for paths, and a defect filed as found
+but unfixed, without a marker, is invisible to it.**
+
+### A FULL GC PASS IN THIS SUITE TAKES ABOUT A SECOND, SO A SUB-SECOND CLOCK IS A COIN TOSS (PR 7)
+
+Measured 2026-09-24 (py3.13, the 4-CPU dev container, two suites side by side) at the moment `tests/test_release_run.py`
+starts in suite order, about 8,700 tests in: **2.07 M gc-tracked objects, and a median
+generation-2 pass of 0.94 s** (max 2.1 s; 159 of the 160 passes so far took over 100 ms).
+`test_the_heartbeat_ring_is_bounded_and_says_what_it_dropped` needed four heartbeats inside a
+0.3 s soak. One injected 0.25 s pause reproduces its macOS failure exactly (`assert 0 >= 1`) and
+0.20 s does not, so any generation-2 pass that lands in the window fails it. It failed twice on
+one commit of PR #1171 and passed once, on a path that commit does not touch (profiled: zero
+calls into the four files it changes). What the PR changed was the SUITE: 55 more tests moved
+where the passes land (+2.4 % objects, pause lengths unchanged). **Adding tests anywhere can
+flip a timing test that has no margin. Test a bound by COUNT, never by a sub-second clock; when
+the timing IS the property, `gc.collect()` then `gc.disable()` around the timed region, or take
+the best of N runs.**

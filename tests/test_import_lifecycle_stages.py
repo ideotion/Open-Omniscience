@@ -446,7 +446,9 @@ def boot_and_drain():
     # ANY state past "idle" proves the drain started IN THIS PROCESS (the job object is
     # fresh here). Watching for "running" alone raced: a drain that starts and finishes
     # between two 0.1 s polls goes idle -> done unseen, and read as never started --
-    # macOS CI, 2026-09-24, twice in a row. A terminal state also ends the wait.
+    # macOS CI on PR #1147 (7adcfec6) and on PR #1171 (d0ce56e2). A terminal state also
+    # ends the wait. This is the patch OPEN_QUEUE.md filed for it under #1147, after
+    # measuring the real boot path: a ~224 ms `running` window against a 100 ms sampler.
     while time.time() < deadline:
         state = _REINDEX_RESUME_JOB.status().get("state")
         if not seen or seen[-1] != state:

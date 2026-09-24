@@ -22,6 +22,29 @@
 
 ## Open queue (when maintainer says proceed)
 
+- **THE HEARTBEAT-RING TEST FAILS THE macOS LANE WHENEVER A GC PASS LANDS IN ITS 0.3 s SOAK —
+  found driving PR #1171 to green, NOT fixed there, STILL OPEN (2026-09-24).**
+  `tests/test_release_run.py::test_the_heartbeat_ring_is_bounded_and_says_what_it_dropped`
+  failed `Portability observation (macos-latest)` twice on `c1a5fbf9` (push run `36022151118`,
+  attempts 1 and 2, `assert 0 >= 1`) and passed in that commit's `pull_request` run. **Measured,
+  not guessed** (`LESSONS.md`): a generation-2 GC pass in this suite takes ~0.9–2 s, and the test
+  needs four beats inside a 0.3 s soak, so one pause over ~0.25 s anywhere in it fails the test;
+  an injected 0.25 s pause reproduces the exact assertion. Not #1171's code: a profile of the test
+  enters none of the four files #1171 changes; #1171's 55 extra tests only move where the passes
+  land.
+  **Proposed patch, verified locally and not applied** (outside #1171's change): run the
+  end-to-end soak with `HEARTBEAT_CAP = 1` — the soak's unconditional entry and exit beats
+  overflow a ring of one whatever the clock does — and test the ring's arithmetic by COUNT, where
+  seven `_Run.heartbeat()` calls into a ring of three keep beats `[4, 5, 6]` and count 4 dropped.
+  It passes under injected 0.3 s and 1.0 s pauses, and it catches 4 of 4 ring mutants where
+  today's test catches 2: a ring that keeps the OLDEST beats, and one that assigns the drop count
+  instead of adding to it, both pass today.
+  **Separately, and NOT investigated:** the same lane failed
+  `tests/test_markup_blocks.py::test_retirement_survives_openers_that_are_all_TEXTUALLY_DIFFERENT`
+  once, on `d0ce56e2` (`8.57 < 8`). Its timer already takes the best of `_TIMING_REPEATS` runs, so
+  one GC pass does not explain it; it is recorded, not diagnosed.
+  **Not blocking:** the lane is `continue-on-error: true`; both become blocking the day it
+  graduates.
 - **PR 7 OF THE AUDIT'S §9.2 IS BUILT AS `R24` + A DESIGN, AND `R24` NEEDED THREE THINGS ITS
   WORDING DID NOT SAY (2026-09-24, PR #1171).** §9.2 item 7 is *"Design for 0.5: the segmented
   derived index for the 1 TB target, and carrying mention rows from same-engine backups instead
@@ -604,6 +627,17 @@
   graduates to required when green), and `Core-only install` — which is NOT observational —
   passed on `7adcfec6` in both runs. It becomes blocking the day the portability lane graduates,
   and it is already costing the `Core-only install` lane a false red on `main`.
+
+  **HALF FIXED (2026-09-24, PR #1171, `af3f2f88`); THE OTHER HALF IS STILL OPEN.** The
+  kill-and-boot test now carries this entry's own proposed patch: any state past `idle` proves
+  the start, a terminal state ends the wait, and the assertion quotes the states it saw. It had
+  failed once more, on #1171's first commit (`d0ce56e2`), and #1171 re-derived the diagnosis
+  without finding this entry — `planned.py` does not index it, because none of its open markers
+  appears in it (the lesson is in `LESSONS.md`). The same commit stopped
+  `test_the_boot_resume_never_blocks_the_boot` from leaving a boot thread that raised a
+  `TypeError` into the next test's setup. **`test_the_boot_resume_declines_under_its_own_opt_out`
+  (the `Core-only install` red on `main`@`be658809`) was NOT addressed:** that leaked thread
+  starts after it in file order, so it cannot be the cause there.
 
 - **THE COLLECTION-SPEED KNOB MISSTATES ITS OWN UNIT BY 8.192x, ON FOUR USER-FACING SURFACES —
   found while building the per-process budget (S04-13 S1, Q1012), NOT fixed here.**
