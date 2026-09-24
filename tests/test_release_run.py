@@ -281,11 +281,19 @@ def test_a_legacy_backup_path_gets_its_own_restore_and_a_missing_one_is_refused(
 
 
 def test_the_heartbeat_ring_is_bounded_and_says_what_it_dropped(fast, monkeypatch):
+    """DETERMINISTIC since 2026-09-24: the first form needed MORE than three heartbeats
+    inside a one-second soak, and the macOS lane's runner produced fewer (PR #1172's CI).
+    The ring's bound is asserted on the ring itself; the run then only needs two beats
+    (the stretch's first and its last, which every soak writes) to overflow a cap of one."""
     monkeypatch.setattr(rr, "HEARTBEAT_CAP", 3)
-    monkeypatch.setattr(rr, "HEARTBEAT_INTERVAL_S", 0.03)
+    ring = rr._Run(rr.RunParams(**_params(fast["dest"])))
+    for i in range(5):
+        ring.heartbeat({"at": str(i), "elapsed_h": float(i)})
+    assert [h["at"] for h in ring.heartbeats] == ["2", "3", "4"] and ring.heartbeats_dropped == 2
+    monkeypatch.setattr(rr, "HEARTBEAT_CAP", 1)
     res = rr.run_release_run(FakeCtx(), **_params(fast["dest"], soak_hours=0.3 / 3600))
     rep = res["report"]
-    assert len(rep["heartbeats"]) == 3
+    assert len(rep["heartbeats"]) == 1
     assert rep["heartbeats_dropped"] >= 1
     assert rep["board_rows"][1]["row"] == "B" and rep["board_rows"][1]["evidence"]["heartbeats_dropped"] == rep["heartbeats_dropped"]
 
