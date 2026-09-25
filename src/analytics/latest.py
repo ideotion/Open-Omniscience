@@ -187,12 +187,12 @@ def latest_articles(
     link_count: dict[int, int] = {}
     for i in range(0, len(ids), _SQL_IN_CHUNK):
         chunk = ids[i : i + _SQL_IN_CHUNK]
-        for aid, c in (
+        for aid, n_links in (
             session.query(ArticleLink.article_id, func.count(ArticleLink.id))
             .filter(ArticleLink.link_type == "external", ArticleLink.article_id.in_(chunk))
             .group_by(ArticleLink.article_id)
         ):
-            link_count[aid] = int(c)
+            link_count[aid] = int(n_links)
 
     # Apply the two transparent gates, preserving recency order.
     candidates: list[dict] = []

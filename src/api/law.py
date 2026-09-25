@@ -724,6 +724,7 @@ def law_provision_timeline(document_id: int, db: Session = Depends(get_db)) -> d
         .filter(LawRevision.document_id == doc.id, LawRevision.lane_key.isnot(None))
         .order_by(LawRevision.observed_at.asc(), LawRevision.id.asc())
         .all()
+        if key is not None  # excluded by the filter; narrows the Optional column
     ]
     try:
         from src.law.analytics import provision_timeline

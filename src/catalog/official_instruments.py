@@ -263,7 +263,7 @@ def instrument_signals(title: str) -> dict:
     return {"kinds": kinds, "dated": dated, "instrument_shaped": bool(kinds and dated)}
 
 
-def observe_headlines(titles: Iterable[str], *, sample_cap: int = 12) -> dict:
+def observe_headlines(titles: Iterable[str | None], *, sample_cap: int = 12) -> dict:
     """The observable, over one source's headlines. NEVER a verdict about the source.
 
     Three outcomes, and the distinction between the last two is the ruling's own point:
@@ -274,7 +274,7 @@ def observe_headlines(titles: Iterable[str], *, sample_cap: int = 12) -> dict:
     A caller that collapses the last two is recording "we could not tell" as "no", which is
     the shape the review named and the robots ruling already rejected.
     """
-    seen = [t for t in titles if (t or "").strip()]
+    seen = [t for t in titles if t and t.strip()]
     if not seen:
         return {
             "outcome": NO_EVIDENCE, "n": 0, "matched": 0, "kinds": {}, "examples": [],
