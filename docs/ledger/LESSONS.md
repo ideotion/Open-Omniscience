@@ -12249,3 +12249,48 @@ scraped, and every one of them would have been hashed under the wrong formula an
 a misclassified row. Which code wrote a row is read from the mark that code puts on its own
 rows (here the synthetic `*.local` domain and the URL scheme), never from a label other
 writers share.
+
+### A TEST CAN GO VACUOUS WITHOUT FAILING WHEN THE CODE GROWS A SECOND WRITER (PR #1174)
+
+`test_an_interim_report_is_written_during_the_soak_marked_as_one_and_superseded` asserted that an
+interim report FILE existed by the time the run collected. Then #1172 (RR-8) began writing an
+interim after every phase, and the soak loop's own interim stopped being the only way to satisfy
+it: with a 0.6 s pause at the soak's first heartbeat the loop wrote none and the test still
+passed, and a mutant deleting the loop's interim write passed it too. Nothing went red, because
+nothing had to. The same change had also retired the timing exposure that #1174's first ledger
+commit recorded for this test, written against the code #1171 ran; that note survived the merge
+of main because the TEST was unchanged there, when the code UNDER it was not. **Assert on a property only the named path can produce
+(here: the soak's window still open, `ended_by` None), and prove the test with that path removed.
+A test's exposure belongs to the code it runs, so re-derive it when that code changes.**
+
+### A MILLISECOND OF TIMED WORK IS THE RUNNER'S TO DECIDE; COUNT THE OPERATION THE DEFECT IS MADE OF (PR #1174)
+
+`test_retirement_survives_openers_that_are_all_TEXTUALLY_DIFFERENT` guarded the markup strip's
+family retirement with a ratio of two timings (4x the openers under 8x the time) and failed the
+macOS lane once at 8.57 on linear code; here it measured a median of 4.1, with one of 40 at 7.24
+beside a million-object ballast. The collector was the obvious suspect after the heartbeat test,
+and it was wrong: the function allocates almost nothing the collector tracks, and 60 ratios ran
+with zero collections. The runner decides a millisecond, and best-of-3 narrows that without
+bounding it. The defect is one closer SEARCH per distinct opener, observable through the
+function's own parameters, so a closer object that counts its `search` calls reads 1 on correct
+code and n on the defect, deterministically, with the module untouched (it is hashed into the
+engine identity, so editing it would re-stamp every article). The 2026-08-10 rule in
+`OPEN_QUEUE.md` ("A THRESHOLD OVER A RATIO OF TWO TIMINGS IS NOT A GUARD ON A SHARED RUNNER"),
+again: **find the arithmetic claim under a timing guard and assert that; and check the suspect
+you already have before blaming it twice.**
+
+### TIME CPU WORK ON THE THREAD'S OWN CPU CLOCK, AND TEST THE HARNESS IN BOTH DIRECTIONS (PR #1174)
+
+`tests/test_markup_blocks.py` times the whole wiki strip at two sizes and bars the ratio at 8
+(linear ~4, quadratic ~16). Best-of-3 on the wall clock, the 2026-09-11 fix, narrowed a busy
+runner's noise without bounding it: with four busy cores alongside, the file still failed 2 of
+10 runs, and 3 of 60 ratios crossed the bar. Interleaving the sizes on the wall clock made false
+alarms rarer and bought FALSE PASSES instead: a deliberately quadratic scan measured 7.52, under
+the bar, so the guard could have waved through the defect it exists for. `time.thread_time()`
+does not advance while the thread is preempted, so the runner stops being part of the
+measurement: under the same load, linear max 4.22 and quadratic min 15.00. **When the property
+is CPU work done by this thread, time it on this thread's CPU clock; and measure a timing harness
+under load in BOTH directions -- linear code must stay under the bar and a known quadratic must
+stay over it -- because a fix for false alarms can quietly become a blind spot.** Where the defect
+is countable from outside (a scan per opener, through the patterns the function is handed),
+count it instead; a timer is for work no counter can reach, like a regex engine's backtracking.
