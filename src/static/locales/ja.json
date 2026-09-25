@@ -4631,5 +4631,20 @@
   "— what changed in the sources that keep changing": "— 変わり続ける情報源で何が変わったか",
   "A research mirror, not the authoritative source and not legal advice. Every document links back to its official gazette; changes are surfaced, never judged.": "研究用のミラーであり、権威ある原典ではなく、法的助言でもありません。すべての文書は公式官報にリンクして戻ります。変更は提示するだけで、判定はしません。",
   "deletion": "削除",
-  "The newest change the stream recorded, on any page, followed or not.": "ストリームが記録した最新の変更。フォローしているかどうかに関係なく、すべてのページが対象です。"
+  "The newest change the stream recorded, on any page, followed or not.": "ストリームが記録した最新の変更。フォローしているかどうかに関係なく、すべてのページが対象です。",
+  "Fold keyword forms (studies → study)": "キーワードの語形をまとめる（studies → study）",
+  "File older keywords under the base form new articles already use, so “studies” and “study” become one keyword. Reads no article text; pausable from the task manager.": "古いキーワードを、新しい記事がすでに使っている基本形の下にまとめ、「studies」と「study」を1つのキーワードにします。記事の本文は読みません。タスクマネージャーから一時停止できます。",
+  "Fold report (.json)": "統合レポート（.json）",
+  "The report of the last completed fold: what it counted, the largest folds, and the language pass.": "最後に完了した統合のレポート：数えた内容、最大の統合、言語の処理。",
+  "Since lemmatisation was added, new articles file “studies” under “study”; articles indexed before then still keep “studies” as its own keyword, so one word is split across two. Folding moves those older mentions to the base form, exactly as a re-index would, without re-reading any article. Only single words in the languages the app lemmatises are folded; phrases, names and keywords your families or groups use are left as they are. Each keyword’s language is then set from the languages of its mentions. The report lists the largest folds.": "レンマ化が加わって以来、新しい記事は「studies」を「study」の下に登録します。それ以前にインデックスされた記事では「studies」が別のキーワードのまま残っているため、1つの語が2つに分かれています。統合はこれらの古い言及を基本形へ移します。再インデックスと同じ結果になりますが、記事を読み直すことはありません。統合されるのは、アプリがレンマ化する言語の単語1語だけです。フレーズ、名前、そしてあなたのファミリーやグループが使っているキーワードはそのまま残ります。その後、各キーワードの言語は言及の言語から決まります。レポートには最大の統合が一覧表示されます。",
+  "Lemmatisation is off in this install (OO_EXTRACT_LEMMA=0), so there is no base form to fold into.": "このインストールではレンマ化がオフになっています（OO_EXTRACT_LEMMA=0）。そのため、統合先となる基本形がありません。",
+  "No lemmatiser is installed, so there is no base form to fold into.": "レンマタイザーがインストールされていません。そのため、統合先となる基本形がありません。",
+  "The fold stopped on an error; the log has the details. Folding again continues from where it stopped.": "統合はエラーで停止しました。詳細はログにあります。もう一度統合すると、停止した位置から続行します。",
+  "Keywords folded: {folded} · mentions moved: {moved} · keywords whose language changed: {relanguaged}": "統合したキーワード：{folded} · 移動した言及：{moved} · 言語が変わったキーワード：{relanguaged}",
+  "Setting each keyword's language from its mentions…": "各キーワードの言語を言及から決めています…",
+  "Keywords checked: {done} of {total} ({percent}%)": "確認済みキーワード：{total} 件中 {done} 件（{percent}%）",
+  "Mentions moved: {moved}": "移動した言及：{moved}",
+  "paused for an import": "インポートのため一時停止中",
+  "Continue folding keyword forms? It resumes where it stopped. Keywords already checked: {done} of {total}.": "キーワードの語形の統合を続けますか？停止した位置から再開します。確認済みキーワード：{total} 件中 {done} 件。",
+  "Fold keyword forms now? Older keywords are filed under the base form new articles already use, so “studies” and “study” become one keyword. Phrases, names and keywords your families or groups use are left as they are. It runs in the background and can be paused from the task manager. A fold cannot be undone.": "今すぐキーワードの語形をまとめますか？古いキーワードは、新しい記事がすでに使っている基本形の下にまとめられ、「studies」と「study」は1つのキーワードになります。フレーズ、名前、そしてあなたのファミリーやグループが使っているキーワードはそのまま残ります。処理はバックグラウンドで実行され、タスクマネージャーから一時停止できます。統合は元に戻せません。"
 }

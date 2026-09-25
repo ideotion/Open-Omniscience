@@ -4631,5 +4631,20 @@
   "— what changed in the sources that keep changing": "— 持续变化的来源中发生了什么变化",
   "A research mirror, not the authoritative source and not legal advice. Every document links back to its official gazette; changes are surfaced, never judged.": "研究镜像，并非权威来源，也不构成法律意见。每份文档都会回链至其官方公报；变更只会被呈现，从不评判。",
   "deletion": "删除",
-  "The newest change the stream recorded, on any page, followed or not.": "数据流记录的最新变更，涵盖任何页面，无论是否关注。"
+  "The newest change the stream recorded, on any page, followed or not.": "数据流记录的最新变更，涵盖任何页面，无论是否关注。",
+  "Fold keyword forms (studies → study)": "合并关键词词形（studies → study）",
+  "File older keywords under the base form new articles already use, so “studies” and “study” become one keyword. Reads no article text; pausable from the task manager.": "将旧关键词归入新文章已在使用的基本形式，使“studies”和“study”成为同一个关键词。不读取任何文章正文；可在任务管理器中暂停。",
+  "Fold report (.json)": "合并报告（.json）",
+  "The report of the last completed fold: what it counted, the largest folds, and the language pass.": "最近一次完成的合并的报告：它统计了什么、规模最大的合并，以及语言处理。",
+  "Since lemmatisation was added, new articles file “studies” under “study”; articles indexed before then still keep “studies” as its own keyword, so one word is split across two. Folding moves those older mentions to the base form, exactly as a re-index would, without re-reading any article. Only single words in the languages the app lemmatises are folded; phrases, names and keywords your families or groups use are left as they are. Each keyword’s language is then set from the languages of its mentions. The report lists the largest folds.": "自加入词形还原以来，新文章会把“studies”归入“study”；在此之前索引的文章仍把“studies”作为单独的关键词，因此同一个词被拆成了两个。合并会把这些旧的提及移到基本形式，结果与重新索引完全相同，但不会重新读取任何文章。只合并本应用做词形还原的语言中的单个词；短语、名称以及您的词族或分组所使用的关键词保持不变。随后，每个关键词的语言将根据其提及的语言来确定。报告会列出规模最大的合并。",
+  "Lemmatisation is off in this install (OO_EXTRACT_LEMMA=0), so there is no base form to fold into.": "此安装中已关闭词形还原（OO_EXTRACT_LEMMA=0），因此没有可以合并到的基本形式。",
+  "No lemmatiser is installed, so there is no base form to fold into.": "未安装词形还原工具，因此没有可以合并到的基本形式。",
+  "The fold stopped on an error; the log has the details. Folding again continues from where it stopped.": "合并因错误而停止；详情见日志。再次合并会从停止处继续。",
+  "Keywords folded: {folded} · mentions moved: {moved} · keywords whose language changed: {relanguaged}": "已合并的关键词：{folded} · 已移动的提及：{moved} · 语言发生变化的关键词：{relanguaged}",
+  "Setting each keyword's language from its mentions…": "正在根据提及确定每个关键词的语言…",
+  "Keywords checked: {done} of {total} ({percent}%)": "已检查的关键词：{done} / {total}（{percent}%）",
+  "Mentions moved: {moved}": "已移动的提及：{moved}",
+  "paused for an import": "因导入而暂停",
+  "Continue folding keyword forms? It resumes where it stopped. Keywords already checked: {done} of {total}.": "继续合并关键词词形？将从停止处继续。已检查的关键词：{done} / {total}。",
+  "Fold keyword forms now? Older keywords are filed under the base form new articles already use, so “studies” and “study” become one keyword. Phrases, names and keywords your families or groups use are left as they are. It runs in the background and can be paused from the task manager. A fold cannot be undone.": "现在合并关键词词形？旧关键词将归入新文章已在使用的基本形式，使“studies”和“study”成为同一个关键词。短语、名称以及您的词族或分组所使用的关键词保持不变。该过程在后台运行，可在任务管理器中暂停。合并无法撤销。"
 }

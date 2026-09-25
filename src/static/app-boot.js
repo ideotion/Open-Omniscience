@@ -560,6 +560,14 @@
       } catch (e) { /* a malformed deep link must never break boot */ }
     })();
 
+    // The keyword fold (Q416 = a): Settings → Advanced. Bound here rather than inline.
+    (function _wireKeywordFold() {
+      const btn = $("kw-fold-btn");
+      if (btn) btn.addEventListener("click", () => foldKeywords(btn));
+      const rep = $("kw-fold-report");
+      if (rep) rep.addEventListener("click", () => window.open("/api/insights/keyword-fold-job/report", "_blank"));
+    })();
+
     // Click the EMPTY space of the sidebar (not a nav item / button / link) to
     // collapse / expand it (remark 15) — the same toggle as the #sb-collapse /
     // #sb-expand buttons, so the whole rail is a discoverable target.

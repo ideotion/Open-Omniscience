@@ -458,6 +458,42 @@ def _stopset(language: str) -> frozenset[str]:
     return frozenset(stopwords_manager.get_stopwords(language)) | global_stopwords()
 
 
+def lemma_key(
+    word: str,
+    language: str,
+    *,
+    stop: frozenset[str],
+    segmented: bool,
+    code_filter: bool,
+) -> str:
+    """The key a single-token TERM is filed under once lemmatised (Q416 = a).
+
+    ``word`` is a normalised unigram that has already survived every filter the
+    extractor applies to it; ``language`` is the bare code the extractor ran under.
+    The lemma is adopted only when it would itself have survived those same filters
+    (length floor, stoplist, digits, code shape); otherwise the word stays its own key.
+    That is the merge-only invariant described in :meth:`BaselineExtractor._terms`.
+
+    ONE FUNCTION, TWO CALLERS, ON PURPOSE. Extraction calls it for every new article,
+    and :mod:`src.analytics.keyword_fold` calls it to re-key the keywords written
+    before lemmatisation existed. If the two ever computed the key differently, the
+    fold job would file old mentions under one keyword and new articles would keep
+    filing the same word under another, which is the split the job exists to remove.
+    The opt-out (``OO_EXTRACT_LEMMA``) is the caller's to check, not this function's.
+    """
+    lem = extraction_lemma(word, language, kind="term")
+    if lem == word:
+        return word
+    if (
+        len(lem) < _term_floor(lem, segmented)
+        or lem in stop
+        or lem.isdigit()
+        or (code_filter and _is_code_token_shape(lem))
+    ):
+        return word  # a lemma that would have been filtered is not a usable key
+    return lem
+
+
 @dataclass
 class ExtractedTerm:
     term: str  # display form (entities keep case; terms are lowercased)
@@ -673,17 +709,7 @@ class BaselineExtractor:
         def _key_for(word: str) -> str:
             if not lemma_on:
                 return word
-            lem = extraction_lemma(word, language, kind="term")
-            if lem == word:
-                return word
-            if (
-                len(lem) < _term_floor(lem, segmented)
-                or lem in stop
-                or lem.isdigit()
-                or (code_filter and _is_code_token_shape(lem))
-            ):
-                return word  # a lemma that would have been filtered is not a usable key
-            return lem
+            return lemma_key(word, language, stop=stop, segmented=segmented, code_filter=code_filter)
 
         # Unigrams (content words only). Drop digit-heavy CODE tokens (A-10C, a1b2 —
         # see _is_code_token) and glued <digits><token> fragments (1h15 -> h15), which

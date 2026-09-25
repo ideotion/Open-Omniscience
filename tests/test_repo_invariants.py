@@ -360,13 +360,22 @@ def test_reindex_background_job_is_wired():
 
 def test_reconcile_keyword_language_is_wired():
     """Keyword-engine P4.2: a background pass re-languages keywords to their
-    signature-majority article language (the first-write-wins tag index_article never
+    signature-majority language (the first-write-wins tag index_article never
     reconciles), perf-safe (no per-row keyword_mentions->articles join), exposed as an
-    endpoint AND folded into the re-index job's complete pass."""
+    endpoint AND folded into the re-index job's complete pass.
+
+    Since Q413/Q414 (2026-09-25) the vote is the MENTION's own language, read off the
+    mention table, with the article's language (from a covering-index map, built only
+    when a mention predates the column) standing in for a NULL. The perf half of this
+    guard therefore moved from "reads Article.language" to "reads the mention's language
+    and never joins": asserted on the function's own source, so the article-language
+    reader elsewhere in the file cannot satisfy it by accident."""
     store = (_SRC / "analytics" / "store.py").read_text(encoding="utf-8")
     assert "def reconcile_keyword_language(" in store
-    # perf-safe: reads Article.language (covering idx_article_language), NOT a per-row join
-    assert "Article.language" in store and "art_lang" in store
+    body = _py_function_source(store, "reconcile_keyword_language")
+    assert "SELECT id, keyword_id, article_id, language FROM keyword_mentions" in body
+    assert "ArticleLanguageMap(session)" in body and "art_lang" in body
+    assert ".join(Article" not in body and "JOIN ARTICLES" not in body.upper()
     api = (_SRC / "api" / "insights.py").read_text(encoding="utf-8")
     assert "/reconcile-keyword-language" in api
     job = (_SRC / "analytics" / "reindex_job.py").read_text(encoding="utf-8")

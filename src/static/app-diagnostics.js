@@ -161,6 +161,86 @@
       finally { if (btn) btn.disabled = false; }
     }
 
+    // THE KEYWORD FOLD (Q416 = a): re-key keywords written before lemmatisation, the way a
+    // re-index would, without reading article text; then set each keyword's language from
+    // its mentions (Q413/Q414). The status line is a PURE function of the job's status and
+    // its report, so tests/keyword_fold_node_test.js drives it without a page. Every count
+    // reads "Label: n" so no language has to agree a number with a noun.
+    function _foldStatusText(s, report, t) {
+      if (!s) return "";
+      const n = (v) => Number(v || 0).toLocaleString();
+      if (s.refusal === "lemmatisation-off") {
+        return t("Lemmatisation is off in this install (OO_EXTRACT_LEMMA=0), so there is no base form to fold into.");
+      }
+      if (s.refusal === "no-lemmatiser") {
+        return t("No lemmatiser is installed, so there is no base form to fold into.");
+      }
+      if (s.state === "error") {
+        return t("The fold stopped on an error; the log has the details. Folding again continues from where it stopped.");
+      }
+      if (s.state === "done") {
+        if (!report) return t("done");
+        const f = report.fold || {};
+        const lg = report.language || {};
+        return t("Keywords folded: {folded} · mentions moved: {moved} · keywords whose language changed: {relanguaged}")
+          .replace("{folded}", n(f.keywords_folded))
+          .replace("{moved}", n((f.mentions_moved || 0) + (f.mentions_merged || 0)))
+          .replace("{relanguaged}", n(lg.relanguaged));
+      }
+      const tal = s.tally || {};
+      const bits = [];
+      if (s.phase === "language") {
+        bits.push(t("Setting each keyword's language from its mentions…"));
+      } else if (s.keywords_total) {
+        bits.push(t("Keywords checked: {done} of {total} ({percent}%)")
+          .replace("{done}", n(s.keywords_done))
+          .replace("{total}", n(s.keywords_total))
+          .replace("{percent}", String(s.percent || 0)));
+      }
+      const moved = (tal.mentions_moved || 0) + (tal.mentions_merged || 0);
+      if (moved) bits.push(t("Mentions moved: {moved}").replace("{moved}", n(moved)));
+      if (s.parked_for_exclusive) bits.push(t("paused for an import"));
+      else if (s.state === "paused") bits.push(t("paused"));
+      return bits.join(" · ");
+    }
+    async function _pollFoldJob(st, t) {
+      for (;;) {
+        let s;
+        try { s = await api("/api/insights/keyword-fold-job/status"); }
+        catch { break; }
+        let report = null;
+        if (s.state === "done") {
+          try { report = await api("/api/insights/keyword-fold-job/report"); }
+          catch (_e) { /* no report yet: the line says "done" and nothing it cannot show */ }
+        }
+        if (st) st.textContent = _foldStatusText(s, report, t);
+        if (s.state !== "running" || !s.running) break;
+        await new Promise((r) => setTimeout(r, 2000));
+      }
+    }
+    async function foldKeywords(btn) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      const st = $("kw-fold-status");
+      let s0 = null;
+      try { s0 = await api("/api/insights/keyword-fold-job/status"); }
+      catch (_e) { /* status is a courtesy here; never block the action on it */ }
+      if (s0 && s0.refusal) { if (st) st.textContent = _foldStatusText(s0, null, t); return; }
+      // A PAUSED RUN IS CONTINUED, AND THE CONFIRM SAYS SO (the re-index job's lesson).
+      const paused = s0 && (s0.state === "paused" || s0.state === "error");
+      const ask = paused
+        ? t("Continue folding keyword forms? It resumes where it stopped. Keywords already checked: {done} of {total}.")
+            .replace("{done}", Number(s0.keywords_done || 0).toLocaleString())
+            .replace("{total}", Number(s0.keywords_total || 0).toLocaleString())
+        : t("Fold keyword forms now? Older keywords are filed under the base form new articles already use, so “studies” and “study” become one keyword. Phrases, names and keywords your families or groups use are left as they are. It runs in the background and can be paused from the task manager. A fold cannot be undone.");
+      if (!confirm(ask)) return;
+      if (btn) btn.disabled = true;
+      try {
+        try { await api("/api/insights/keyword-fold-job", { method: "POST" }); }
+        catch (_e) { /* 409: one is already running; fall through and poll it */ }
+        await _pollFoldJob(st, t);
+      } finally { if (btn) btn.disabled = false; }
+    }
+
     // Keyword-growth (vocabulary) curve — cumulative distinct keywords vs cumulative
     // words added (maintainer ask 2026-06-24, at ~909k keywords). The SHAPE is the
     // diagnostic: a line that bows BELOW the dashed origin->end reference = the
