@@ -228,7 +228,14 @@ def test_the_soak_window_reports_a_lane_that_has_NEVER_RUN_as_absent(tmp_path, m
     assert "not a reading of zero" in block["reason"]
 
 
-def test_the_soak_window_reads_a_lane_that_HAS_run(lane):
+def test_the_soak_window_reads_a_lane_that_HAS_run(lane, monkeypatch):
+    # _wiki_lane reads the counters on the real clock, and these rows sit at the fixed NOW.
+    # Unfrozen, the test passed only while the real date stayed inside the 7-day window:
+    # it failed on every run from 2026-09-25 00:00 UTC, when the day-1 row fell out, and
+    # would have read no rows at all a day later. So the counters' clock is frozen at NOW.
+    import src.wiki.counters as counters_mod
+
+    monkeypatch.setattr(counters_mod, "_utcnow", lambda: NOW)
     with lane_session("wiki") as db:
         _changes(db, day_offsets=[0, 1])
     from src.monitoring.soak_window import _wiki_lane
