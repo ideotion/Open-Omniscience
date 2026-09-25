@@ -55,7 +55,7 @@ function makeButton() {
   return el;
 }
 
-function run(state, translate, active) {
+function run(state, translate, active, why) {
   const btn = makeButton();
   const mark = makeButton();
   const sandbox = {
@@ -71,12 +71,16 @@ function run(state, translate, active) {
   // ``active`` DEFAULTS TO TRUE here, so every assertion below is about the state
   // machine rather than about the temporary fact that nothing collects yet. The
   // chosen-but-idle case has its own block at the end, where it is the subject.
+  // ``_wikiLaneWhy`` is the reason the status last gave (S04-08's S5); null unless a
+  // test is about it.
   const body = STATES_DECL + "\nlet _wikiLaneState = null; let _wikiLaneActive = false;\n"
+    + "let _wikiLaneWhy = WHY;\n"
     + extract("_paintWikiLane")
     + "\n_paintWikiLane(STATE, ACTIVE); return {btn: BTN, mark: MARK, state: _wikiLaneState, active: _wikiLaneActive};";
-  const fn = new Function("$", "document", "window", "OOI18N", "console", "BTN", "MARK", "STATE", "ACTIVE", body);
+  const fn = new Function("$", "document", "window", "OOI18N", "console", "BTN", "MARK", "STATE", "ACTIVE", "WHY", body);
   return fn(sandbox.$, sandbox.document, sandbox.window, sandbox.window.OOI18N,
-            {warn() {}}, btn, mark, state, active === undefined ? true : active);
+            {warn() {}}, btn, mark, state, active === undefined ? true : active,
+            why || {reason: null, waitingOn: null});
 }
 
 // -- invariant #14's grammar: FILL is the state, never an action glyph -------- //
@@ -180,6 +184,7 @@ console.log("wiki_toggle_node_test: ok");
   const before = {title: btn.title, fill: mark.getAttribute("fill"),
                   live: btn.classList.contains("wiki-live")};
   const body = STATES_DECL + "\nlet _wikiLaneState = null; let _wikiLaneActive = false;\n"
+    + "let _wikiLaneWhy = {reason: null, waitingOn: null};\n"
     + extract("_paintWikiLane")
     + "\n_paintWikiLane('running', true); _paintWikiLane('draining', true);"
     + "\nreturn {btn: BTN, mark: MARK, state: _wikiLaneState};";
@@ -220,3 +225,44 @@ console.log("wiki_toggle_node_test: unknown-state refusal ok");
 }
 
 console.log("wiki_toggle_node_test: chosen-vs-happening ok");
+
+// -- a WAITING stream says so, and on what (S04-08's S5, Q1014) --------------- //
+{
+  // The status reports `transport-waiting` while the stream's connections keep
+  // failing -- a refused or dead proxy. loadWikiLane then paints it as NOT active
+  // (nothing is arriving), and the hover must name the failure rather than read as
+  // "chosen, but not running", which would send an operator looking in the wrong place.
+  const failure = "TransportUnavailable: protected fetch mode is on but no proxy is configured";
+  const waiting = run("running", null, false, {reason: "transport-waiting", waitingOn: failure});
+  assert.ok(waiting.btn.title.includes(failure),
+    "the hover does not carry the failure the stream is waiting on: " + waiting.btn.title);
+  assert.ok(/never falls back to a direct connection/.test(waiting.btn.title),
+    "the waiting hover must say the lane does not go direct in the meantime");
+  assert.ok(!waiting.btn.classList.contains("wiki-live"),
+    "a waiting stream delivers nothing, so it must not breathe as live");
+  const idle = run("running", null, false);
+  assert.notStrictEqual(waiting.btn.title, idle.btn.title,
+    "waiting on a failing connection reads the same as not running at all");
+  // The failure is verbatim (an error message), the sentence around it translated.
+  // Placeholders survive translation (the i18n gates hold every locale to that), so
+  // the probe keeps `{why}` as it is and shouts the words around it.
+  const shout = (x) => x.toUpperCase().replace(/\{WHY\}/g, "{why}");
+  const t = run("running", shout, false, {reason: "transport-waiting", waitingOn: failure}).btn.title;
+  assert.ok(t.includes(failure), "the failure text went through the translator");
+  assert.ok(t.includes("NEVER FALLS BACK"), "the sentence around the failure is not translated");
+  // A wait with no reported failure still says it is waiting, and names the absence.
+  const bare = run("running", null, false, {reason: "transport-waiting", waitingOn: null});
+  assert.ok(/no reason was reported/.test(bare.btn.title), bare.btn.title);
+}
+{
+  // Airplane mode is THIS APP holding the lane (invariant #14e's corollary), and the
+  // hover names it as such rather than as a lane that simply is not running.
+  const plane = run("running", null, false, {reason: "airplane-mode", waitingOn: null});
+  assert.ok(/airplane mode/.test(plane.btn.title), plane.btn.title);
+  const idle = run("running", null, false, {reason: "not-started", waitingOn: null});
+  assert.ok(!/airplane mode/.test(idle.btn.title), idle.btn.title);
+  assert.ok(!/on this build/.test(idle.btn.title),
+    "the retired 'nothing is collecting yet on this build' came back: a collector exists");
+}
+
+console.log("wiki_toggle_node_test: waiting-reason ok");

@@ -474,13 +474,22 @@ def test_the_production_service_creates_the_lane_FILE_rather_than_raising_into_t
 ):
     """The measured defect: ``_hot_sets`` opened the lane without ``create=True``, so
     the first drain on a fresh install raised LaneAbsentError inside the drain thread,
-    where nothing was catching it."""
+    where nothing was catching it.
+
+    Since S04-08's S5 every wiki path opens the lane through ``wiki_lane_session``,
+    which runs ``create_lane`` first: ``create=True`` made the FILE and not its schema,
+    so the next drain failed on a missing table instead (tests/test_wiki_lane_schema.py
+    drives that end to end)."""
     import inspect
 
     from src.wiki import service
 
     source = inspect.getsource(service._hot_sets)
-    assert 'lane_session("wiki", create=True)' in source, (
-        "every lane_session in the service creates; this one did not, and the lane "
-        "stopped collecting for the rest of the process with no record anywhere"
+    assert "wiki_lane_session()" in source and 'lane_session("wiki")' not in source, (
+        "every lane open in the service creates the lane first; this one did not, and "
+        "the lane stopped collecting for the rest of the process with no record anywhere"
+    )
+    opener = inspect.getsource(service.wiki_lane_session)
+    assert opener.index('create_lane("wiki")') < opener.index('lane_session("wiki")'), (
+        "the lane must be created WITH its schema before it is opened"
     )

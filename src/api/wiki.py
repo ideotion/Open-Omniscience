@@ -204,9 +204,9 @@ def _pin_to_hot(wiki: str, title: str, page_id: int | None) -> dict:
     )
     try:
         from src.versioned.pipeline import ensure_entity
-        from src.versioned.store import lane_session
+        from src.wiki.service import wiki_lane_session
 
-        with lane_session("wiki", create=True) as lane:
+        with wiki_lane_session() as lane:
             ensure_entity(
                 lane,
                 external_id,

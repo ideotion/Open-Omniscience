@@ -56,6 +56,11 @@
  *              operator is told the opt-out succeeded (recorded 2026-09-16)
  *   fetcher    false when the lane does NOT use the ethical fetcher; the hover
  *              then says what it uses instead
+ *   mixed      true on a `fetcher: false` lane where ONE of its hosts does go through
+ *              the fetcher (docs/SECURITY.md's "Mixed." rows): the AI lane's installer
+ *              check reaches api.github.com through it while the downloads do not. The
+ *              hover's transport line then says "mostly direct" rather than claiming
+ *              no part of the lane uses the proxy (S04-08's S5, 2026-09-25)
  */
 (function (root) {
   "use strict";
@@ -179,7 +184,8 @@
       "hosts": ["api.github.com", "objects.githubusercontent.com", "huggingface.co", "pypi.org"],
       "trigger": "click",
       "setting": null,
-      "fetcher": false
+      "fetcher": false,
+      "mixed": true
     },
     {
       "id": "mail",

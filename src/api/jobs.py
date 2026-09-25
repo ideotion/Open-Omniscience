@@ -94,6 +94,8 @@ def _dump_jobs() -> list[dict]:
                 "rate": e.get("rate") or {"measured": False, "reason": "not reported"},
                 "eta_seconds": (e.get("rate") or {}).get("eta_seconds"),
                 "error": e.get("error"),
+                # Who paused it (airplane / operator / restart), only while paused.
+                "paused_by": e.get("paused_by"),
                 "actions": _dl_actions(state),
             }
         )
@@ -140,6 +142,8 @@ def _osm_jobs() -> list[dict]:
                 "rate": e.get("rate") or {"measured": False, "reason": "not reported"},
                 "eta_seconds": (e.get("rate") or {}).get("eta_seconds"),
                 "error": e.get("error"),
+                # Who paused it (airplane / operator / restart), only while paused.
+                "paused_by": e.get("paused_by"),
                 "actions": _dl_actions(state),
             }
         )

@@ -3361,6 +3361,28 @@ def test_net_coach_never_places_above_the_topbar_row():
     )
 
 
+
+def test_the_OPEN_language_menu_sits_above_the_net_coach():
+    """The coach's fix above guards the four top-bar BUTTONS, and the menu one of them opens
+    drops into exactly the space that fix sends the coach to. With the menu at z-index 300
+    and the coach at 360, the coach covered the menu's first five languages: cancelling the
+    network-consent popup raises the prominent coach, and a click on Francais then landed
+    on the coach instead (S04-08 S5's Chromium walk, 2026-09-25: Playwright's own log said
+    the coach's subtree "intercepts pointer events", and elementFromPoint at the item's
+    centre returned the coach's body). A menu the operator has just opened outranks a
+    passive invitation; #oo-tip may still sit above both, since it takes no pointer events."""
+    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    css = (_SRC / "static" / "app.css").read_text(encoding="utf-8")
+    menu = re.search(r'<div id="lang-menu"[^>]*?style="[^"]*?z-index:\s*(\d+)', html)
+    coach = re.search(r"#net-coach \{[^}]*?z-index:\s*(\d+)", css)
+    assert menu and coach, "the language menu or the coach lost its z-index -- re-anchor this test"
+    assert int(menu.group(1)) > int(coach.group(1)), (
+        f"#lang-menu (z-index {menu.group(1)}) must stack above #net-coach "
+        f"(z-index {coach.group(1)}), or the coach eats clicks on the open menu"
+    )
+    tip = re.search(r"#oo-tip \{[^}]*?pointer-events:\s*none", css)
+    assert tip, "#oo-tip stacks above the menu, which is only harmless while it takes no pointer events"
+
 def test_topbar_wraps_instead_of_overflowing():
     """GUI-test findings topbar-overflow-mobile-375-net-toggle-unreachable (P0) +
     topbar-overflow-mainstream-widths (P1): .topbar was `display:flex` with the default

@@ -82,10 +82,17 @@ def _uninstall_flags(body: UninstallBody) -> tuple[bool, bool]:
     raise HTTPException(status_code=400, detail=f"unknown uninstall mode: {body.mode!r}")
 
 
+def _settings_payload(s: safety_settings.SafetySettings) -> dict:
+    """The stored fields, the proxy note, and ``transport``: how a fetch actually
+    leaves, read through the fetch path's own reader (the consent popup's lane lines)."""
+    from src.safety.fetcher import transport_summary
+
+    return {**s.to_dict(), "note": _PROXY_NOTE, "transport": transport_summary(s)}
+
+
 @router.get("/settings")
 def get_settings() -> dict:
-    s = safety_settings.load_settings()
-    return {**s.to_dict(), "note": _PROXY_NOTE}
+    return _settings_payload(safety_settings.load_settings())
 
 
 @router.put("/settings")
@@ -94,7 +101,7 @@ def update_settings(body: SettingsUpdate) -> dict:
         s = safety_settings.save_settings(body.model_dump(exclude_unset=True))
     except safety_settings.SafetySettingsError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return {**s.to_dict(), "note": _PROXY_NOTE}
+    return _settings_payload(s)
 
 
 @router.post("/backup/encrypted")

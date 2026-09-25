@@ -265,6 +265,23 @@
 
   var _jobs = null;
 
+  // WHY a download is not moving (S04-08's S5, Q1014): who paused it, or the failure
+  // verbatim. The same causes app-core.js's _jobWhy draws in the in-app window -- this
+  // page is where the top-bar task-manager button lands, so a cause drawn only there
+  // would leave the operator's own window as silent as before.
+  function jobWhy(j) {
+    if (!isDl(j.kind)) return "";
+    var line = "";
+    if (j.state === "paused") {
+      if (j.paused_by === "airplane") line = t("Paused by airplane mode. Resume asks to go online first.");
+      else if (j.paused_by === "operator") line = t("Paused by you.");
+      else if (j.paused_by === "restart") line = t("Paused when the app stopped mid-download; the partial file is kept.");
+    } else if (j.state === "failed" && j.error) {
+      line = t("Failed:") + " " + j.error;
+    }
+    return line ? '<div class="muted" style="font-size:11px">' + esc(line) + "</div>" : "";
+  }
+
   function jobRow(j, queuedKeysByKind) {
     var pill = j.state === "running" ? "ok" : (j.state === "failed" ? "err" : "warn");
     var prog = "";
@@ -294,7 +311,7 @@
     return '<div class="job"><span class="pill ' + pill + '">' + esc(t(j.state)) + '</span><span class="label">' + esc(j.label) + "</span>" + qpos +
            '<span class="acts">' + acts.join("") + "</span>" +
            (j.detail ? '<div class="detail">' + esc(j.detail) + "</div>" : "") +
-           '<div style="flex-basis:100%">' + prog + "</div></div>";
+           '<div style="flex-basis:100%">' + prog + jobWhy(j) + "</div></div>";
   }
 
   // ---- Processes: a unified, grouped live list of EVERYTHING happening ---- //

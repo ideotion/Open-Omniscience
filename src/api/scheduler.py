@@ -181,31 +181,42 @@ def _wiki_lane_block() -> dict:
             "reason": "unknown-state",
             "states": list(WIKI_LANE_STATES),
         }
+    settings_block = _wiki_lane_settings_block()
+    # A stream that is registered but whose connections keep failing is WAITING, and
+    # says on what (Q1014, S04-08's S5): a refused or dead proxy holds it, and it
+    # retries rather than going direct. Read from the stream's own counters, which
+    # clear on the next event, so the reason cannot outlive the wait.
+    stream = (settings_block.get("service") or {}).get("stream") or {}
+    waiting = bool(live) and bool(stream.get("consecutive_failures"))
     return {
         "state": state,
         "active": bool(live),
         # A literal token, never prose: the sentence is composed by the UI through
         # OOI18N.t and ships x12, because this reaches a caveat surface. Absent while
-        # a stream IS running -- there is nothing to explain then.
+        # a stream IS running and connected -- there is nothing to explain then.
         #
         # ``no-collector-yet`` WAS the honest answer while nothing in this tree
         # constructed a stream. A collector exists now, so leaving that token would be
         # the same overclaim in reverse: an operator told the feature is unbuilt while
         # their own airplane mode is what is holding it. The reason is MEASURED --
         # each branch reads a real fact, and none of them guesses.
-        "reason": _wiki_lane_reason(state, bool(live)),
+        "reason": _wiki_lane_reason(state, bool(live), waiting=waiting),
+        # The failure itself, verbatim, only while waiting: the one fact an operator
+        # needs to fix their proxy, and never a stale one from a wait that ended.
+        "waiting_on": stream.get("last_failure") if waiting else None,
         "editions_live": sorted({code for editions in live for code in editions}),
         "states": list(WIKI_LANE_STATES),
-        **_wiki_lane_settings_block(),
+        **settings_block,
     }
 
 
-def _wiki_lane_reason(state: str, live: bool) -> str | None:
+def _wiki_lane_reason(state: str, live: bool, *, waiting: bool = False) -> str | None:
     """WHY nothing is streaming, in one token the UI translates. ``None`` when it is."""
     from src.ingest import kill_switch_active
 
     if live:
-        return None
+        # Registered is not connected: ``transport-waiting`` while its connections fail.
+        return "transport-waiting" if waiting else None
     if state != "running":
         # The state itself is the explanation; a second one beside it would be noise.
         return None

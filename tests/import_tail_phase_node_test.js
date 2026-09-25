@@ -108,6 +108,9 @@ const src = [
   extract("function _rateNote("),
   extract("function _fmtDur("),
   extract("function fmtNum("),
+  // And the cause line S04-08's S5 added to the row (why a download is paused or
+  // failed) -- the same trap, sprung again the day that call landed.
+  extract("function _jobWhy("),
   "function esc(s){return String(s==null?'':s).replace(/[&<>\"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',\"'\":'&#39;'}[c]));}",
   "function fmtDateTime(ms){return 'DATE';}",
   "function _isDownloadKind(k){return false;}",
