@@ -12294,3 +12294,38 @@ under load in BOTH directions -- linear code must stay under the bar and a known
 stay over it -- because a fix for false alarms can quietly become a blind spot.** Where the defect
 is countable from outside (a scan per opener, through the patterns the function is handed),
 count it instead; a timer is for work no counter can reach, like a regex engine's backtracking.
+
+### REQUESTS LETS THE ENVIRONMENT BEAT A SESSION'S PROXIES; ONLY A PER-REQUEST MAPPING IS THE OPERATOR'S (PR #1180)
+
+`Session.request` merges `HTTP_PROXY`, `HTTPS_PROXY` and `ALL_PROXY` from the environment into
+the REQUEST's proxy mapping (`merge_environment_settings`), and only then falls back to
+`session.proxies`. So the effective order is explicit per-request, then environment, then
+session: a proxy set on the session is the one the environment silently replaces. Every
+protected path that left the operator's Tor proxy on `session.proxies` sent its requests to
+whatever system proxy the process inherited. It surfaced because this project's sandbox sets
+`HTTPS_PROXY`: the first new transport test failed for a reason it was not written to test,
+and the reason was the defect. **Pass the proxy on every request when it matters where the
+bytes go, and pin the library's precedence in a test of its own, so an upgrade that changes it
+fails there first. A test failing for the wrong reason is a finding before it is a nuisance.**
+
+### A FETCHER BUILT AT IMPORT TIME READS THE SETTINGS OF A STORE THAT IS STILL LOCKED (PR #1180)
+
+`src/api/markets.py`, `hazards.py` and `ingestion.py` each held `_fetcher = make_fetcher()` at
+module level. Import runs before the operator unlocks an encrypted store, when the stored
+safety settings cannot be read, so those fetchers were built from the pre-migration file or the
+defaults, and kept for the life of the process: protected mode saved in Settings never reached
+them. Nothing looked wrong, because the object existed and fetched. **Anything derived from a
+user setting must be derived when it is used, not when its module loads: on an encrypted
+install, import time is before the settings exist. A structural test that parses for
+import-time construction holds this better than a review can, and it needs a self-test on the
+shapes it exists to catch, or it can go blind without failing.**
+
+### A SETTING WITH TWO FIELDS NEEDS ONE READER (PR #1180)
+
+Protected mode's transport is `http_proxy` or a SOCKS pool, `http_proxies`. The article fetcher
+read both; `guarded_session` read `http_proxy` alone. With a pool and no single proxy, the two
+paths disagreed about whether there was a proxy at all, and the one that saw none connected
+directly. **When a setting is spread over several fields, write one function that reads them
+all into the decision (here `_protected_transport`: the pool, else the single proxy, else a
+named refusal) and route every consumer through it. Two readers of one setting is how one of
+them comes to answer "none".**
