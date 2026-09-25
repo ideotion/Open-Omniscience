@@ -9884,3 +9884,24 @@ timeline's newest row).
 
 **STILL OWED.** The maintainer's click-through (Q1128 = a) and the upgrade of an existing encrypted
 install on the maintainer's machine: row O's operator steps.
+
+## 2026-09-25 — The keyword fold: older keyword forms move to their base form (PR #1186)
+
+**WHAT SHIPPED.** Gate row M's two carried items (Q413, Q414, Q416 = a; brief `S04-06` S4 and
+S5). Settings → Advanced → Diagnostics runs a pausable job that moves every mention written before
+lemmatisation (#1148) onto its base form, as a lemmatised re-index would, without reading article
+text. The keyword language pass is rewritten as a keyset scan of `keyword_mentions` alone; a
+mention with no language votes through its article's language, read from the covering index
+`idx_article_created_lang` into one byte per article.
+
+**THE LESSON (copied to `LESSONS.md`).** The only correct answer for a job that re-derives stored
+rows is the one the producer would have written, so the fold calls `lemma_key`, the function
+extraction itself now calls, and its test compares a folded corpus with the same corpus indexed
+with lemmatisation on, in both data states. An expected-value test written first encoded a wrong
+reading of the rules (it kept the English stopword "report" as a keyword); an equality test with a
+real producer run cannot hold that kind of mistake.
+
+**LEFT OUT ON PURPOSE** (each in `OPEN_QUEUE.md`): no write-back of old mention languages, no
+deletion (the prune owns it), no re-ranking of the 80-term cap, term-keyed settings not rewritten.
+
+**STILL OWED.** Operator step 2 on row M: run the fold on the real corpus and keep its report.
