@@ -15133,3 +15133,15 @@ rather than twice by whoever touches each file next.
 ## 2026-09-25 — Storage's placement ANSWERED: a panel at the top of Data & backup (R33)
 
 PR #1182 built Settings → Storage (Q1006 = a) as the first panel of Data & backup, because ruling 42 pins Settings at nine subtabs and `tests/test_settings_nine_subtabs.py` enforces it, and asked on a decision card whether it should instead be a tenth subtab. The maintainer answered «Data & backup». **Closed:** nothing to build, ruling 42 and its test stand as written. A future session that wants Storage as its own subtab needs a new ruling that amends 42; this one is not a placeholder for it.
+
+---
+
+## 2026-09-25 — Q1016's NOTE ANSWERED: the Living sources view is a MAIN TAB (R32)
+
+Q1016 = (a) asked for a NOTE, «a main tab or a Home family — your call», and none was given on the
+2026-09-15 sheet, so the S04-08 brief proposed a main tab and held the roster test back. The
+maintainer answered on the decision card in the project thread, 2026-09-25 12:25 UTC: **«Main
+tab»** (over «Home section»). Recorded as `R32` in `RULINGS_INDEX.md` and as UI invariant #32 in
+`CLAUDE.md`; invariant #2's roster grows by one and `test_ui_invariants` pins it (#32). **Not
+decided by it:** nothing about a Home family. The renderers in `src/static/app-living.js` stay pure
+`(payload, t, tf) -> HTML` so one could be added later, but no Home card exists and none is implied.

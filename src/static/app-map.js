@@ -2785,13 +2785,22 @@
     // mirroring the endpoint method; the flagged-only toggle reuses the endpoint param.
     // Counts only, no score; all strings flow through the i18n engine.
     let _wikiTc = { id: null, title: "", wiki: "" };
+    // The view was a dialog; it is the Wikipedia panel of Living sources now (Q1016,
+    // S04-08's S6), so opening it means going there -- through the tab's own subtab
+    // component (invariant #18), never by toggling the panel behind its back.
     function openWikiTC(id, title, wiki) {
       _wikiTc = { id: id, title: title || "", wiki: wiki || "" };
+      // A tab opened for the first time starts on _livingView; one already open is
+      // moved with select(). Doing both would load the panel twice.
+      const opened = typeof _livingSubtabs !== "undefined" && !!_livingSubtabs;
+      if (typeof _livingView !== "undefined") _livingView = "wiki";
+      showTab("living");
+      if (opened) _livingSubtabs.select("wiki");
       const ttl = $("wiki-tc-title");
       if (ttl) ttl.textContent = (_wikiTc.wiki ? _wikiTc.wiki + " · " : "") + _wikiTc.title;
       const fo = $("wiki-tc-flagged"); if (fo) fo.checked = false;
-      const dlg = $("wiki-tc");
-      if (dlg && typeof dlg.showModal === "function" && !dlg.open) dlg.showModal();
+      const sec = $("wiki-tc");
+      if (sec && typeof sec.scrollIntoView === "function") sec.scrollIntoView({ block: "start" });
       loadWikiTC();
     }
 
@@ -2805,7 +2814,7 @@
       if (r.has_full_text) pills.push(`<span class="pill ok" title="${esc(t("The exact text of this revision is stored on this machine."))}">${esc(t("full text stored"))}</span>`);
       const pill = pills.length ? " " + pills.join(" ") : "";
       const delta = (r.delta_bytes == null) ? "" :
-        `<span style="color:${r.delta_bytes < 0 ? 'var(--err)' : 'var(--ok)'}">${r.delta_bytes > 0 ? '+' : ''}${r.delta_bytes}</span>`;
+        `<span style="color:${r.delta_bytes < 0 ? 'var(--err)' : 'var(--ok)'};direction:ltr;unicode-bidi:isolate">${r.delta_bytes > 0 ? '+' : ''}${r.delta_bytes}</span>`;
       const reasons = (r.flag_reasons || []).filter(Boolean)
         .map(x => `<span class="pill warn">${esc(x)}</span>`).join(" ");
       const comment = r.comment ? `<div class="muted" style="font-size:12px;margin-top:2px">${esc(r.comment)}</div>` : "";
@@ -2815,7 +2824,9 @@
       const diff = raw
         ? raw.split("\n").map(l => {
             const cls = l.charAt(0) === "+" ? "ok" : l.charAt(0) === "-" ? "err" : "muted";
-            return `<div style="color:var(--${cls});white-space:pre-wrap;font-size:12px">${esc(l)}</div>`;
+            // Direction from the line's own text: in the Arabic UI "+An added line" was
+            // drawn "An added line+" (seen in the S04-08 S6 walk).
+            return `<div style="color:var(--${cls});white-space:pre-wrap;font-size:12px;unicode-bidi:plaintext">${esc(l)}</div>`;
           }).join("")
         : `<div class="muted" style="font-size:12px">${esc(t("No stored diff (no parent, or tracked without diffs)."))}</div>`;
       return `<div style="padding:8px 0;border-bottom:1px solid var(--border)">

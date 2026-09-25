@@ -1973,3 +1973,19 @@
     #oo-crash-screen .crash-actions {
       display:flex; gap:12px; align-items:center; flex-wrap:wrap; margin:14px 0 4px;
     }
+
+/* Living sources (Q1016; S04-08's S6): figures as a grid of labelled cells, changes
+   as rows, stored diffs as monospaced lines. Theme-derived colours only. */
+.living-facts { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 8px; margin-bottom: 6px; }
+.living-fact { border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px; min-width: 0; }
+.living-fact .muted { font-size: 12px; }
+.living-fact-v { font-weight: 600; overflow-wrap: anywhere; }
+.living-row { padding: 8px 0; border-bottom: 1px solid var(--line); }
+.living-row-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; }
+.living-delta { font-variant-numeric: tabular-nums; margin-inline-start: auto; }
+.living-diff { font-family: var(--mono); font-size: 12px; max-height: 420px; overflow: auto; margin-top: 6px; }
+/* Each line takes its direction from its own text, so an English diff reads left to right
+   inside the Arabic UI (and an Arabic one right to left), with the +/- where it belongs. */
+.living-diff-l { white-space: pre-wrap; overflow-wrap: anywhere; unicode-bidi: plaintext; }
+.living-pages { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.living-tc { border-top: 1px solid var(--line); margin-top: 8px; padding-top: 10px; }

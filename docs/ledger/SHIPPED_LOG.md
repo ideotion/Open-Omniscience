@@ -9860,3 +9860,27 @@ is skipped. `ingest_source` already wrote through `source.id`. The sequential pa
 **MEASURED.** A new test records every statement the caller's session runs off the caller's
 thread: on `main` it names `oo-collect_0` … `oo-collect_3`; with the fix it records none. The
 pool test ran 40 times with the fix and did not crash. The lesson is in `LESSONS.md`.
+
+## 2026-09-25 — Living sources: one tab for what changed in Wikipedia, law and maps (PR #1185)
+
+**WHAT SHIPPED.** Gate row O's S6 (Q1016 = a; its NOTE answered «Main tab» on the decision card,
+`R32`, UI invariant #32). A main tab with Wikipedia, Law and Maps as subtabs: coverage (the text
+stored for N of M changes, the changes on pages nobody follows), freshness as the newest and oldest
+check, the stream's complete-through point and open gaps, the timeline with each stored diff opened
+in place, the law tracker's changes with a link to the local copy, the map regions with the task
+manager's cause lines, and Settings → Storage's own cells without the budget input. It replaces the
+tracked-changes dialog, whose ids and renderer moved into the Wikipedia panel.
+
+**THE READ NEVER WRITES.** `GET /api/living/overview` opens the lane without `create`, so a fresh
+folder stays without a lane file after the tab is read (measured in the walk: `size_state: absent`).
+Each part degrades on its own, so one source's trouble never blanks the other two.
+
+**SEVEN DEFECTS, ALL FIXED BEFORE THE PR.** Three from the tests (failed downloads counted under the
+wrong word, the first lesson; the diff route reading after its session closed; the language and
+jurisdiction printed raw, refused by the Q302 guard) and four from the
+Chromium walk (diff direction in Arabic, the second lesson; a repeated title; a count that could
+not agree with its noun; a last-change time with no hover explaining why it was later than the
+timeline's newest row).
+
+**STILL OWED.** The maintainer's click-through (Q1128 = a) and the upgrade of an existing encrypted
+install on the maintainer's machine: row O's operator steps.

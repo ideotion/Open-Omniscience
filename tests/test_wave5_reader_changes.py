@@ -50,16 +50,26 @@ _ITEM1_KEYS = [
 ]
 
 
-def test_tracked_changes_dialog_exists():
-    """The #wiki-tc dialog with its body, method/caveat slot and flagged-only toggle."""
+def test_tracked_changes_view_exists_in_the_living_sources_tab():
+    """The #wiki-tc view with its body, method/caveat slot and flagged-only toggle.
+
+    It was a dialog; since S04-08's S6 it is a section of the Living sources tab
+    (#tab-living), read beside the stream's timeline rather than over it. Its ids are
+    unchanged, so loadWikiTC draws into it exactly as before.
+    """
     html = _html()
-    assert 'id="wiki-tc"' in html, "the tracked-changes dialog must exist"
+    assert '<dialog id="wiki-tc"' not in html, "the tracked-changes view went back to a dialog"
+    assert '<section id="wiki-tc"' in html, "the tracked-changes view must exist"
+    at = html.index('<section id="wiki-tc"')
+    assert html.index('id="tab-living"') < at < html.index('id="living-law"'), (
+        "the tracked-changes view must sit in the Living sources tab's Wikipedia panel"
+    )
     for needle in ('id="wiki-tc-body"', 'id="wiki-tc-method"', 'id="wiki-tc-flagged"',
                    'id="wiki-tc-title"'):
-        assert needle in html, f"tracked-changes dialog missing {needle}"
+        assert needle in html, f"tracked-changes view missing {needle}"
     # The method/caveat slot uses the visible caveat styling, never a hidden block.
-    seg = html[html.index('id="wiki-tc"'):]
-    seg = seg[: seg.index("</dialog>")]
+    seg = html[html.index('<section id="wiki-tc"'):]
+    seg = seg[: seg.index("</section>")]
     assert 'id="wiki-tc-method" class="card-caveat"' in seg, (
         "the caveat/method must render in a VISIBLE .card-caveat line, never hidden"
     )

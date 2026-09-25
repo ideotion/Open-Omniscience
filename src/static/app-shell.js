@@ -32,6 +32,7 @@
       {id:"markets",  label:"Commodities",        grp:"Investigate"},
       {id:"ingest",   label:"Collect",            grp:"Collect"},
       {id:"sources",  label:"Sources",            grp:"Collect"},
+      {id:"living",   label:"Living sources",     grp:"Investigate"},
       {id:"library",  label:"Library",            grp:"Collect"},
       {id:"custody",  label:"Evidence & custody", grp:"Trust"},
       {id:"integrity",label:"Source integrity",   grp:"Trust"},
@@ -65,6 +66,7 @@
       timemap: () => loadOoMapCoverage(),   // slice 5b: the Map tab is now the unified ooMap (the temporal map was folded in + retired)
       law: () => loadGovernments(),   // Governments tab (Countries · Map · Law subtabs)
       agenda: () => loadAgenda(),
+      living: () => loadLiving(),   // Living sources: Wikipedia · Law · Maps (Q1016, S04-08 S6)
       library: () => { _wireLibraryViews(); },  // per-view lazy loaders (2026-08-01 ruling 9); stats ride the live poller (startLive)
       custody: () => loadCustody(),
       integrity: () => loadIntegrity(),
@@ -82,6 +84,7 @@
       agenda: "agenda-views", indices: "indices-cats", markets: "commodities-cats",
       law: "gov-subtabs",   // Governments: Countries · Map · Law
       timemap: "oomap-lenses",   // World map: Coverage · Stories · Places · Server IPs (field-test Item 6)
+      living: "living-subtabs",  // Living sources: Wikipedia · Law · Maps
       library: "library-views",  // Library: Overview · Activity · Tracked · Database & storage · World coverage
     };
     function _relocateSubtabs(name) {
