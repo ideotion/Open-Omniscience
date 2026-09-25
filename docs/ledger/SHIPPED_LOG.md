@@ -9774,3 +9774,41 @@ store is locked); unset system proxy variables for the app.
 
 **STILL S5's.** The per-lane transport line in the consent hover, and naming the wiki stream's
 waiting reason when its transport is refused.
+
+## 2026-09-25 — Settings → Storage: each lane's size, its budget, its measured growth and the disk left (PR #1182)
+
+**WHAT SHIPPED.** Gate row O's S4 (Q1006 = a, Q1010 = a, Q1011 = a). Settings -> Data & backup
+opens on a Storage panel: the corpus, Wikipedia, law and maps lanes with their size on disk
+(the file with its `-wal`/`-shm` sidecars), their budget (published or the operator's own),
+the share used, the growth over 30 days, and the disk left, beside the hardware reading taken
+at boot and the reference machine (2 cores, 3.5 GB) the budgets are sized for.
+
+**THE TABLE CARRIES ONLY RULED NUMBERS.** `configs/lane_budgets.yml` has Q707's 20 GB for
+Wikipedia and nothing else; press, law and osm are `budget_gb: null` with the reason
+`not_ruled`, and the panel says "No published budget". The S04-08 brief says numbers beyond the
+table's shape are not the build's to decide. `src/versioned/budget.py` refuses a malformed
+table by name (22 malformed shapes and 4 unreadable files tested), and the panel then draws
+every size it can still measure.
+
+**GROWTH IS MEASURED, OR ABSENT.** Each lane's size is recorded at most hourly as a
+`lane_mib_<kind>` snapshot gauge, in whole MiB because `stat_snapshots.value` is a 32-bit
+integer on PostgreSQL (the Q1140 parity note). The rate is the change between the first and
+last reading in 30 days over the wall-clock time between them, and nothing is shown below 7
+days of span. It is a rate, never a forecast: nothing says when a disk fills.
+
+**NO VERDICT AGAINST THE REFERENCE MACHINE.** The field's AMD 3020e reference boxes report 3.2
+to 3.46 GB of their nominal 3.5 with the graphics carve-out taken, so a strict "below the
+reference" line would call the reference machine smaller than itself, and any tolerance would
+be a threshold nobody ruled. The one comparison made is whether the budgets fit on the disk
+actually free, in three states; an unreadable disk is "unknown", never "fits".
+
+**THE WALK FOUND THREE DEFECTS, ALL FIXED BEFORE THE PR.** A 120 KiB lane read "0% used"
+because the server rounded the share (the lesson in `LESSONS.md`); a budget over the maximum
+came back as the server's English field message (the page now refuses it itself, ×12, with
+the server's own bounds); and in Arabic `+6.0 MB` rendered as `MB 6.0+`, with the hover's ISO
+dates about to reverse (now through the app's `_ltrIsolate`, asserted in the node suite).
+
+**OPEN, ASKED IN THE PR.** Whether Storage becomes a tenth Settings subtab, which would amend
+the nine-subtab ruling pinned by `tests/test_settings_nine_subtabs.py`; and whether the corpus,
+law and maps lanes get published budgets. The maintainer's click-through (Q1128 = a) is still
+owed.

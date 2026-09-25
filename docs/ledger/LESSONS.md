@@ -12329,3 +12329,15 @@ directly. **When a setting is spread over several fields, write one function tha
 all into the decision (here `_protected_transport`: the pool, else the single proxy, else a
 named refusal) and route every consumer through it. Two readers of one setting is how one of
 them comes to answer "none".**
+
+### A RATIO ROUNDED AT THE SOURCE ERASES THE SMALL-NONZERO CASE THE RENDERER EXISTS TO REFUSE (PR #1182)
+
+Settings -> Storage draws "<1% used" for any share above zero and under one percent, so a lane
+that holds something never reads as empty. Its node test passed, fed a share of 0.004. The
+server fed it 0.0: `src/versioned/budget.py` rounded `used_share` to four decimals, a habit that
+looks tidy in a JSON payload, and a 120 KiB Wikipedia lane under a 20 GB budget is a share of
+0.0000057, which four decimals make exactly zero. The refusal never received a nonzero value to
+act on, and only the browser walk against a real lane file showed "0% used". **Round where a
+value is drawn, never where it is sent: a server-side round turns "small" into "none" before the
+code that exists to tell them apart ever sees it. And feed a renderer's test the value the server
+actually sends, not the value the renderer was designed around.**
