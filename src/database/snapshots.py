@@ -209,8 +209,34 @@ def _gauge_wal_bytes(session: Session) -> int | None:
 # ruled the WAL is diagnostics material, not a user-facing Library surface, and
 # ALL_METRICS is the Library endpoint's allowlist. The series is served through the
 # all-diagnostics bundle instead (see monitoring/storage.py).
+def _gauge_lane_mib(kind: str) -> Callable[[Session], int | None]:
+    """One gauge per lane: that lane's own file on disk, sidecars included, in whole MiB
+    (Q1006's growth column reads this series; ``src/versioned/budget.py`` owns the
+    measurement). MiB rather than bytes because ``value`` is an Integer column, 32-bit on
+    PostgreSQL, and a corpus passes 2 GiB long before it passes 2 PiB.
+
+    ``budget`` is imported when the gauge RUNS, not when this module loads: it pulls in
+    the lane registry, and a test replacing ``budget.lane_mib`` must reach the recorder."""
+
+    def gauge(_session: Session) -> int | None:
+        from src.versioned import budget
+
+        return budget.lane_mib(kind)
+
+    return gauge
+
+
+# ``lane_mib_<kind>`` (S04-08 S4): each lane's size, so Settings -> Storage can state a
+# MEASURED growth rate rather than a guess. An absent lane returns None and is skipped
+# (a hole, never a recorded 0 -- "no file yet" is not "an empty file"). Not in
+# ALL_METRICS either, for the same reason as the WAL: the Library endpoint's allowlist is
+# for corpus counters, and these are read through /api/storage/lanes.
 _GAUGE_METRICS: dict[str, Callable[[Session], int | None]] = {
     "wal_bytes": _gauge_wal_bytes,
+    "lane_mib_press": _gauge_lane_mib("press"),
+    "lane_mib_wiki": _gauge_lane_mib("wiki"),
+    "lane_mib_law": _gauge_lane_mib("law"),
+    "lane_mib_osm": _gauge_lane_mib("osm"),
 }
 
 ALL_METRICS = tuple(_SNAPSHOT_TABLES) + tuple(_FILTERED_METRICS) + ("articles_per_hour",)

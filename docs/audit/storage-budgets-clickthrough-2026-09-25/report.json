@@ -1,0 +1,197 @@
+{
+ "en@1440": {
+  "lang": "en",
+  "dir": "ltr",
+  "heading": "Storage",
+  "headers": [
+   "Lane",
+   "On disk",
+   "Budget",
+   "Growth, last 30 days"
+  ],
+  "rows": [
+   [
+    "Corpus",
+    "1.1 MB",
+    "No published budget",
+    "⁨+6.0 MB⁩ in 19 days ≈ ⁨+9.5 MB⁩ per 30 days at that rate"
+   ],
+   [
+    "Wikipedia / Wikimedia",
+    "152.0 KB",
+    "20 GB the published default <1% used Save budget",
+    "Not measured yet"
+   ],
+   [
+    "Law",
+    "Not built yet",
+    "No published budget",
+    ""
+   ],
+   [
+    "Maps / OpenStreetMap",
+    "Not built yet",
+    "No published budget",
+    ""
+   ]
+  ],
+  "reading": "This machine, read at boot: 4 CPU cores · 15.7 GB of RAM · 28.3 GB of free disk\nThe published budgets are sized for a reference machine with 2 CPU cores and 3.5 GB of RAM. Raise them if this machine has more room.",
+  "disk": "Disk left: 28.3 GB free of 252.0 GB on the drive that holds your data folder.\nYour budgets can still take 20.0 GB; the drive has 28.3 GB free.",
+  "caveat": "Growth is each lane’s own size change over the last 30 days, shown once there are 7 days of readings. It is a rate, not a forecast.",
+  "caveatTitle": "Each size is the lane’s database file with its -wal and -shm sidecars. Sizes are",
+  "budgetInput": true,
+  "hScroll": false
+ },
+ "fr@1440": {
+  "lang": "fr",
+  "dir": "ltr",
+  "heading": "Stockage",
+  "headers": [
+   "File",
+   "Sur le disque",
+   "Budget",
+   "Croissance, 30 derniers jours"
+  ],
+  "rows": [
+   [
+    "Corpus",
+    "1.1 MB",
+    "Aucun budget publié",
+    "⁨+6.0 MB⁩ en 19 jours ≈ ⁨+9.5 MB⁩ par 30 jours à ce rythme"
+   ],
+   [
+    "Wikipedia / Wikimedia",
+    "152.0 KB",
+    "20 Go la valeur publiée par défaut <1 % utilisé Enregistrer le budget",
+    "Pas encore mesuré"
+   ],
+   [
+    "Droit",
+    "Pas encore disponible",
+    "Aucun budget publié",
+    ""
+   ],
+   [
+    "Cartes / OpenStreetMap",
+    "Pas encore disponible",
+    "Aucun budget publié",
+    ""
+   ]
+  ],
+  "reading": "Cette machine, relevé au démarrage : 4 cœurs de processeur · 15.7 GB de RAM · 28.3 GB d’espace disque libre\nLes budgets publiés sont dimensionnés pour une machine de référence avec 2 cœurs de processeur et 3.5 GB de RAM. Augmentez-les si cette machine a plus de place.",
+  "disk": "Disque restant : 28.3 GB libres sur 252.0 GB, sur le disque qui contient votre dossier de données.\nVos budgets peuvent encore occuper 20.0 GB ; le disque a 28.3 GB libres.",
+  "caveat": "La croissance est la variation de taille propre à chaque file sur les 30 derniers jours, affichée dès qu’il y a 7 jours de relevés. C’est un rythme, pas une prévision.",
+  "caveatTitle": "Chaque taille est celle du fichier de base de données de la file, avec ses fichi",
+  "budgetInput": true,
+  "hScroll": false
+ },
+ "ar@1440": {
+  "lang": "ar",
+  "dir": "rtl",
+  "heading": "التخزين",
+  "headers": [
+   "المسار",
+   "على القرص",
+   "الميزانية",
+   "النمو، آخر 30 يومًا"
+  ],
+  "rows": [
+   [
+    "المجموعة",
+    "1.1 MB",
+    "لا توجد ميزانية منشورة",
+    "⁨+6.0 MB⁩ خلال 19 يومًا ≈ ⁨+9.5 MB⁩ لكل 30 يومًا بهذا المعدّل"
+   ],
+   [
+    "ويكيبيديا / ويكيميديا",
+    "152.0 KB",
+    "20 غيغابايت القيمة الافتراضية المنشورة مستخدم <1% حفظ الميزانية",
+    "لم يُقَس بعد"
+   ],
+   [
+    "القانون",
+    "لم يُنفَّذ بعد",
+    "لا توجد ميزانية منشورة",
+    ""
+   ],
+   [
+    "خرائط / OpenStreetMap",
+    "لم يُنفَّذ بعد",
+    "لا توجد ميزانية منشورة",
+    ""
+   ]
+  ],
+  "reading": "هذا الجهاز، كما قُرئ عند الإقلاع: 4 من أنوية المعالج · 15.7 GB من ذاكرة الوصول العشوائي · 28.3 GB من المساحة الحرة على القرص\nالميزانيات المنشورة محسوبة لجهاز مرجعي بـ 2 من أنوية المعالج و3.5 GB من ذاكرة الوصول العشوائي. ارفعها إذا كان لدى هذا الجهاز متسع أكبر.",
+  "disk": "المتبقي من القرص: 28.3 GB متاحة من أصل 252.0 GB على محرك الأقراص الذي يضم مجلد بياناتك.\nلا يزال بإمكان ميزانياتك أن تشغل 20.0 GB؛ ولدى محرك الأقراص 28.3 GB متاحة.",
+  "caveat": "النمو هو تغيّر حجم كل مسار بعينه خلال آخر 30 يومًا، ويُعرض بمجرد توفر قراءات لمدة 7 أيام. إنه معدّل، وليس توقعًا.",
+  "caveatTitle": "كل حجم هو ملف قاعدة بيانات المسار مع ملفَّيه المرافقَين -wal و-shm. تُسجَّل الأح",
+  "budgetInput": true,
+  "hScroll": false
+ },
+ "errors@1440": [],
+ "en@375": {
+  "lang": "en",
+  "dir": "ltr",
+  "heading": "Storage",
+  "headers": [
+   "Lane",
+   "On disk",
+   "Budget",
+   "Growth, last 30 days"
+  ],
+  "rows": [
+   [
+    "Corpus",
+    "1.1 MB",
+    "No published budget",
+    "⁨+6.0 MB⁩ in 19 days ≈ ⁨+9.5 MB⁩ per 30 days at that rate"
+   ],
+   [
+    "Wikipedia / Wikimedia",
+    "152.0 KB",
+    "20 GB the published default <1% used Save budget",
+    "Not measured yet"
+   ],
+   [
+    "Law",
+    "Not built yet",
+    "No published budget",
+    ""
+   ],
+   [
+    "Maps / OpenStreetMap",
+    "Not built yet",
+    "No published budget",
+    ""
+   ]
+  ],
+  "reading": "This machine, read at boot: 4 CPU cores · 15.7 GB of RAM · 28.3 GB of free disk\nThe published budgets are sized for a reference machine with 2 CPU cores and 3.5 GB of RAM. Raise them if this machine has more room.",
+  "disk": "Disk left: 28.3 GB free of 252.0 GB on the drive that holds your data folder.\nYour budgets can still take 20.0 GB; the drive has 28.3 GB free.",
+  "caveat": "Growth is each lane’s own size change over the last 30 days, shown once there are 7 days of readings. It is a rate, not a forecast.",
+  "caveatTitle": "Each size is the lane’s database file with its -wal and -shm sidecars. Sizes are",
+  "budgetInput": true,
+  "hScroll": false
+ },
+ "errors@375": [],
+ "interaction": {
+  "raised_to_35": {
+   "msg": "Saved.",
+   "cell": "35 GB yours; the published default is 20 GB <1% used Save budget Saved."
+  },
+  "saved_setting": 35,
+  "fraction_1_5": {
+   "msg": "Enter a whole number of GB from 1 to 2000.",
+   "cell": "35 GB yours; the published default is 20 GB <1% used Save budget Enter a whole number of GB from 1 to 2000."
+  },
+  "over_max_5000": {
+   "msg": "Enter a whole number of GB from 1 to 2000.",
+   "cell": "35 GB yours; the published default is 20 GB <1% used Save budget Enter a whole number of GB from 1 to 2000."
+  },
+  "setting_after_refusals": 35,
+  "back_to_20": {
+   "msg": "Saved.",
+   "cell": "20 GB the published default <1% used Save budget Saved."
+  },
+  "errors": []
+ }
+}

@@ -1864,6 +1864,20 @@
     </div>
 
     <div class="set-view" id="set-data" style="display:none">
+    <!-- SETTINGS -> STORAGE (Q1006 / Q1010 / Q1011, ruled 2026-09-15; S04-08 S4). Each
+         lane's size, its budget, its measured growth, the disk left, and the machine
+         reading taken at boot. A PANEL at the top of Data & backup rather than a tenth
+         subtab: ruling 42 pins Settings at nine (tests/test_settings_nine_subtabs.py), and
+         this is where the data it measures is already managed. Whether it earns its own
+         subtab is the maintainer's call. Filled by loadLaneStorage() (app-settings.js). -->
+    <section class="panel" id="storage-panel">
+      <div class="phead"><h2>Storage</h2></div>
+      <p class="muted" style="margin-top:0">What each part of your data takes on this machine, the budget it runs under, how fast it has grown, and the disk left. Measured here; nothing is sent anywhere.</p>
+      <div class="hint" id="storage-reading"></div>
+      <div id="storage-lanes" style="overflow:auto;margin-top:8px"></div>
+      <div class="hint" id="storage-disk" style="margin-top:8px"></div>
+      <p class="card-caveat" title="Each size is the lane’s database file with its -wal and -shm sidecars. Sizes are recorded at most hourly, in whole MiB, while collection runs. The rate is the change between the first and last reading of the last 30 days, over the time between them, including hours the app was closed. 1 GB = 1024³ bytes.">Growth is each lane’s own size change over the last 30 days, shown once there are 7 days of readings. It is a rate, not a forecast.</p>
+    </section>
     <section class="panel">
       <div class="phead"><h2>Export / Backup</h2></div>
       <p class="muted" style="margin-top:0">One place to back up everything, at any database size. Pick a destination folder or drive, choose what to include, and it streams into that folder — the encrypted corpus as volumes&nbsp;+&nbsp;parity, the large public blobs (models&nbsp;/&nbsp;maps&nbsp;/&nbsp;dumps) copied as-is. No size limit. (The older single-file backup below is being replaced by this.)</p>

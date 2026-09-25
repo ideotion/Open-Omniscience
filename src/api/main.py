@@ -433,6 +433,16 @@ async def lifespan(app: FastAPI):
     except Exception:  # noqa: BLE001 - a forensic marker must never block startup
         logger.debug("could not mark incomplete run journals", exc_info=True)
 
+    # Q1011: the machine reading (cores, RAM, free disk) is taken here, BEFORE the lock
+    # check -- it needs no database and no network, so a store that boots locked still
+    # has one for Settings -> Storage to show once it is unlocked.
+    try:
+        from src.config.hardware_reading import record_boot_reading
+
+        record_boot_reading()
+    except Exception:  # noqa: BLE001 - a reading must never block startup
+        logger.debug("could not take the boot hardware reading", exc_info=True)
+
     state = app_lock_state()
     if state.startswith("unlocked"):
         run_deferred_startup()

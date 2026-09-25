@@ -15129,3 +15129,7 @@ walker. That is one decision covering both pockets and it wants to be made once,
 rather than twice by whoever touches each file next.
 
 
+
+## 2026-09-25 — Storage's placement ANSWERED: a panel at the top of Data & backup (R33)
+
+PR #1182 built Settings → Storage (Q1006 = a) as the first panel of Data & backup, because ruling 42 pins Settings at nine subtabs and `tests/test_settings_nine_subtabs.py` enforces it, and asked on a decision card whether it should instead be a tenth subtab. The maintainer answered «Data & backup». **Closed:** nothing to build, ruling 42 and its test stand as written. A future session that wants Storage as its own subtab needs a new ruling that amends 42; this one is not a placeholder for it.

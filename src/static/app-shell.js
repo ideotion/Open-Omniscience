@@ -435,6 +435,9 @@
       // manager History subtab. A moved panel takes its loader with it (the recorded
       // 2026-08-13 "can't find your keyword triage button" lesson), so it is wired
       // HERE, on the subtab that contains the markup.
+      // S04-08 S4: the Storage panel (Q1006/Q1010/Q1011) opens the subtab, so it loads
+      // with it -- one loopback read, no network.
+      if (cat === "data" && typeof loadLaneStorage === "function") loadLaneStorage();
       if (cat === "data") { loadNewsletterRemoveCount(); loadNewsletterAttach(); _folderImportStartPoll(); loadImportHistory(); }
     }
 
