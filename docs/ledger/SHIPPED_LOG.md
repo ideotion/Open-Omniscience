@@ -9620,3 +9620,97 @@ closer's first miss. **Mutation-checked in a scratch worktree:** a family that n
 fails the counted test on all three shapes; the six anchored substitutions reverted to plain
 `re.sub` measure 15.4x and 14.6x through the new harness (real code: 3.8x and 3.5x). Lesson:
 `LESSONS.md`.
+
+## 2026-09-25 — the boot-resume opt-out test's CI red was a leaked import worker, fixed by #1171 and hardened here; the queue entry retires
+
+**THE "OTHER HALF" WAS ALREADY FIXED, 49 MINUTES AFTER THE LEDGER SAID IT WAS NOT.** The
+queue entry's "HALF FIXED" note (below, verbatim) was written in #1171 at `8b72a759`
+(2026-09-24 17:55 UTC). The same PR then diagnosed and fixed the opt-out red at `8f6f1026`
+(18:44 UTC) and nothing updated the entry: `ImportQueueManager.stop()` signals its worker and
+returns, and the worker calls `src.backup.volume_job.start_reindex_drain()` on its way out. Two
+queue tests in the same file (`test_the_queue_item_declares_both_moved_options`,
+`test_the_defaults_reproduce_todays_behaviour_exactly`) run before the boot-resume tests and
+returned with that worker alive, so on a loaded runner its call landed after the opt-out test
+had patched the same attribute -- CI's `assert ['start'] == []` on `185b951`. #1171 stubbed the
+drain in both tests and joined the worker.
+
+**RE-VERIFIED, not taken on trust (2026-09-25, py3.13 venv).** A deterministic reproduction:
+the worker's exit held until `OO_REINDEX_AUTORESUME=0` is set (only the opt-out test sets it),
+i.e. the race forced to its worst case. The file as it stood before `8f6f1026` FAILS the
+opt-out test under it (`assert ['start', 'start'] == []`); `main` passes 36/36. No other test
+file that runs before this one in pytest's serial alphabetical order starts an import worker
+(checked by grepping every `ImportQueueManager`/`import-queue` user), so there is no second
+leaker today.
+
+**HARDENED, because "no second leaker today" is a fact about the suite, not about the test.**
+The three boot-resume unit tests now record a drain call only when it comes from the boot
+resume's OWN thread (`oo-reindex-resume-boot`), so they assert what the function under test
+did, whatever else in the process still holds the patched name. Checked with the queue tests'
+join and stub reverted AND the worst-case delay in place: 36/36.
+
+The retired entry, verbatim:
+
+- **`tests/test_import_lifecycle_stages.py` IS ORDER- OR ENVIRONMENT-DEPENDENT ON CI, PROVEN BY
+  SAME-COMMIT DIVERGENCE — found while driving `S04-05` (PR #1147) to green, NOT fixed there
+  (S04-02's code, gate row I; fixing it inside a display PR would widen it into a slice it does
+  not own).** Two tests in that file assert OPPOSITE things about the boot re-index auto-resume,
+  and each has now failed on a different CI run while the other passed:
+  `test_the_boot_resume_declines_under_its_own_opt_out` (`OO_REINDEX_AUTORESUME=0` must decline)
+  failed on **`main`@`be658809`** in `Core-only install`, and
+  `test_a_kill_between_stages_three_and_four_resumes_on_the_next_boot` ("boot must START the
+  drain, not merely report the backlog") failed on **PR #1147@`7adcfec6`** in
+  `Portability observation (macos-latest)`.
+
+  **THE EVIDENCE IS NOT AN INFERENCE.** `7adcfec6` was built TWICE (a `push` run and a
+  `pull_request` run): job `104995183603` in run `35155893710` **FAILED** and job `104995192615`
+  in run `35155898679` **SUCCEEDED** — the same job, on the same commit, with the same code,
+  in opposite directions. "Flake" is not a root cause anywhere else in this ledger and it is not
+  one here either; what is established is that the OUTCOME does not depend on the diff. The file
+  passes 3/3 locally and inside a full local suite of 11,212.
+
+  **DIAGNOSED, not guessed — the reproduction this entry first asked for was run.** The boot
+  helper (`_KILL_AND_BOOT`, `tests/test_import_lifecycle_stages.py:412`) sets `started` ONLY by
+  catching the job mid-flight:
+
+      deadline = time.time() + 120
+      while time.time() < deadline:
+          st = _REINDEX_RESUME_JOB.status()
+          if st.get("state") == "running":
+              started = True
+          elif started:
+              break
+          time.sleep(0.1)
+
+  A 1 ms-resolution probe of the REAL boot path, on the fixture's own 2-article backlog,
+  measured: `idle` at 0.3 ms → **`running` at 2.1 ms** → `done` at 227 ms, i.e. an observable
+  `running` window of **224 ms**, with `pending_after == 0`. The test samples every **100 ms**.
+  So it is catching a ~200 ms event with a 100 ms sampler, and the moment that window falls
+  under one tick — a faster runner, a different scheduler, a smaller backlog — every poll
+  misses it, `started` stays `False`, and the loop spins out its full 120 s while the work has
+  in fact completed correctly. The wall-clock corroborates it: the failing macOS run took
+  1509 s against 1416 s for the passing one on the SAME commit, a 93 s gap against a 120 s
+  deadline. **The drain is not broken; the test measures the observation rather than the fact.**
+
+  **The proposed patch, for whoever owns S04-02** (not applied here — a display slice must not
+  rewrite another slice's test): assert the FACT the property is about, not the sighting.
+  `started` should be satisfied by any non-`idle` state ever observed, or better by the job's
+  own durable record (it reaches `done`; `pending_after == 0` already proves the work ran), so
+  a drain that finishes between two polls reads as success rather than as a failure to start.
+  A `time.sleep(0.1)` sampler can never be made reliable by shortening it — that is a race the
+  test can only lose more slowly.
+
+  **Not blocking today:** the macOS lane is `continue-on-error: true` (an observation lane that
+  graduates to required when green), and `Core-only install` — which is NOT observational —
+  passed on `7adcfec6` in both runs. It becomes blocking the day the portability lane graduates,
+  and it is already costing the `Core-only install` lane a false red on `main`.
+
+  **HALF FIXED (2026-09-24, PR #1171, `af3f2f88`); THE OTHER HALF IS STILL OPEN.** The
+  kill-and-boot test now carries this entry's own proposed patch: any state past `idle` proves
+  the start, a terminal state ends the wait, and the assertion quotes the states it saw. It had
+  failed once more, on #1171's first commit (`d0ce56e2`), and #1171 re-derived the diagnosis
+  without finding this entry — `planned.py` does not index it, because none of its open markers
+  appears in it (the lesson is in `LESSONS.md`). The same commit stopped
+  `test_the_boot_resume_never_blocks_the_boot` from leaving a boot thread that raised a
+  `TypeError` into the next test's setup. **`test_the_boot_resume_declines_under_its_own_opt_out`
+  (the `Core-only install` red on `main`@`be658809`) was NOT addressed:** that leaked thread
+  starts after it in file order, so it cannot be the cause there.

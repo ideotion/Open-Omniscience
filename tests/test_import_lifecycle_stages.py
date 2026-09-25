@@ -351,6 +351,24 @@ def test_a_newsletter_tally_supplies_the_headline_when_there_is_no_plan(tmp_path
 # --------------------------------------------------------------------------- #
 #  6. Q205: the boot auto-resume
 # --------------------------------------------------------------------------- #
+def _record_boot_thread_calls(monkeypatch, vj, calls: list[str]) -> None:
+    """Patch the drain starter to record only calls made from the boot resume's OWN
+    thread. The attribute is shared by every caller in the process: the import queue's
+    worker also calls it on its way out, and one such worker left alive by an earlier
+    test landed its call inside the opt-out test's window (CI, 2026-09-24:
+    ``assert ['start'] == []``). Counting by thread makes these tests assert what the
+    function under test did, whatever else in the process is still running."""
+
+    def fake() -> tuple[bool, None]:
+        import threading
+
+        if threading.current_thread().name == "oo-reindex-resume-boot":
+            calls.append("start")
+        return True, None
+
+    monkeypatch.setattr(vj, "start_reindex_drain", fake)
+
+
 def test_the_boot_resume_starts_the_drain(monkeypatch):
     calls: list[str] = []
     monkeypatch.setenv("OO_NO_SCHEDULER", "0")
@@ -358,7 +376,7 @@ def test_the_boot_resume_starts_the_drain(monkeypatch):
     import src.backup.volume_job as vj
     from src.api.main import _resume_reindex_backlog_at_boot
 
-    monkeypatch.setattr(vj, "start_reindex_drain", lambda: (calls.append("start") or (True, None)))
+    _record_boot_thread_calls(monkeypatch, vj, calls)
     _resume_reindex_backlog_at_boot(42)
     for _ in range(200):
         if calls:
@@ -376,7 +394,7 @@ def test_the_boot_resume_declines_under_its_own_opt_out(monkeypatch):
     import src.backup.volume_job as vj
     from src.api.main import _resume_reindex_backlog_at_boot
 
-    monkeypatch.setattr(vj, "start_reindex_drain", lambda: (calls.append("start") or (True, None)))
+    _record_boot_thread_calls(monkeypatch, vj, calls)
     _resume_reindex_backlog_at_boot(42)
     import time as _t
 
@@ -395,7 +413,7 @@ def test_the_boot_resume_is_inert_under_the_suites_own_gate(monkeypatch):
     import src.backup.volume_job as vj
     from src.api.main import _resume_reindex_backlog_at_boot
 
-    monkeypatch.setattr(vj, "start_reindex_drain", lambda: (calls.append("start") or (True, None)))
+    _record_boot_thread_calls(monkeypatch, vj, calls)
     _resume_reindex_backlog_at_boot(42)
     import time as _t
 
