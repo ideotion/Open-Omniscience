@@ -3725,6 +3725,20 @@
     input the test CREATES (safe) or an expectation compared against something clock-derived
     (rots). Two of three hits here were the safe kind, which is why the grep alone is not the
     answer — the question is which side of the assertion the literal sits on.
+  - **AN INPUT AT A FIXED DATE IS NOT THE SAFE KIND WHEN THE CODE WINDOWS IT AGAINST THE REAL
+    CLOCK — the rule above, a third time (2026-09-25, `test_wiki_counters.py`, red on every
+    run from 00:00 UTC):** `test_the_soak_window_reads_a_lane_that_HAS_run` wrote two rows,
+    one at the file's fixed `NOW` (2026-09-18) and one a day earlier, then called
+    `_wiki_lane`, which reads `lane_counters` without `now=`, so its 7-day window ends at the
+    real clock. The detector above would have classed those rows as the safe kind, an input
+    the test creates. They were not: the code compared them against today, so the day-1 row
+    left the window at 2026-09-25 00:00 UTC, and the next day's run would have read none.
+    Found on a PR that did not touch the file, then reproduced on `main`'s own tree. **The
+    question is not only which side of the assertion a date sits on, but whether any clock
+    between them is real:** a fixed-date fixture needs a frozen clock (here `_utcnow` patched
+    to `NOW`) on every path that windows it, and a function whose `now` defaults to the real
+    clock is such a path. Checked at four simulated real dates: the old test passes at
+    2026-09-24 23:59 and fails at every later one; the fixed test passes at all four.
   - **A "MUST BE PRESENT" SOURCE GUARD IS SATISFIED BY THE COMMENT THAT EXPLAINS THE THING
     IT GUARDS — the recorded trap's mirror, and the worse half (2026-08-12, the import
     queue's `queued=True`):** the ledger records twice that a "must be GONE" guard trips on
@@ -10401,6 +10415,20 @@ it, that test still passes, and the traceback lands in whatever test's capture i
 the thread finally runs. **`setup` capture is a different test's exhaust.** Read the phase
 label before believing the traceback, and be suspicious of a stub built with `or` over a
 predicate that is truthy on the success path.
+
+**COROLLARY — THE SAME RACE RUN BACKWARDS: A TIMER THAT MEANS "DURING X" CAN ONLY GUESS WHEN
+X WILL RUN (2026-09-24, found on `main`'s core-only lane at `39a28be6`).**
+`test_a_cancel_during_the_soak_still_collects_and_reports` sent `ctx.cancel` from a
+`threading.Timer(0.15, …)`, meaning "cancel during the soak". The six phases before the soak
+are stubs, and 150 ms was ample until a loaded runner outlasted it. The cancel then landed
+before the soak began, `run_release_run` recorded the soak as skipped (it starts the soak only
+`if not ctx.stopping`), and `report["soak"]` had no `ended_by`: one `KeyError` among 12,252
+passes. Adding 60 ms to each phase reproduced it 3 of 3. **The lesson above proves that
+something happened from the record it leaves; this one makes something happen at a point by
+triggering it FROM that point.** The fixed test cancels on the soak loop's own first progress
+line, and passes with 0.5 s added to each phase. It keeps a 30 s timer only as a backstop
+against a hang, and asserts that the cancel came from inside the soak, so the backstop can
+never produce a pass.
 
 - **A PASS-THROUGH PARAMETER THAT IS ACCEPTED AND NEVER USED IS INVISIBLE FROM BOTH SIDES OF
   THE CALL, AND THE CALLER'S OWN COMMENT WILL ARGUE FOR THE PROPERTY IT DOES NOT HAVE
