@@ -100,17 +100,30 @@ class SchedulerSettings:
     crawl_max_depth: int = 2
     crawl_max_pages: int = 50
 
-    # THE MARKETS LANE'S TWO OPT-INS (Q1020 = a). Before the ruling, the operator's own
+    # THE MARKETS LANE'S TWO SWITCHES (Q1020 = a). Before the ruling, the operator's own
     # price-extraction rules and the refresh of the statistics figures they SUBSCRIBED to
     # ran only when the scheduler's ``mode`` was "markets" -- a mode that also stopped
     # press collection. The markets lane now runs beside press on every online pass, so
-    # both become per-lane switches. They default OFF because that is what every install
-    # outside the retired markets mode was doing; an install that WAS in markets mode is
-    # migrated to ON for both (``_migrate_retired_mode``), so nobody's collection narrows.
-    # The bundled commodity and index feeds are not behind either switch: they have ridden
-    # the lane on every pass since 2026-07-24 and still do.
+    # both become per-lane switches. An install that WAS in markets mode is migrated to ON
+    # for both (``_migrate_retired_mode``), so nobody's collection narrows. The bundled
+    # commodity and index feeds are not behind either switch: they have ridden the lane on
+    # every pass since 2026-07-24 and still do.
+    #
+    # The two DEFAULTS differ, and each has its own reason:
+    #   * the price rules default OFF -- that is what every install outside the retired
+    #     markets mode was doing, and the pages they fetch are whatever the operator typed;
+    #   * the statistics refresh defaults ON -- the maintainer's ruling R31 (2026-09-25,
+    #     «turn it on by default»). It is what ruling #12 (2026-06-17) asked for in the
+    #     first place ("add a scheduled auto-refresh of vintages"), and its egress is
+    #     bounded by construction: only figures the operator fetched and left enabled, each
+    #     at most once per its own interval (30 days by default), at most 50 per pass
+    #     (``stats.subscriptions.refresh_due``), and never under the kill switch.
+    # A default reaches only a blob WITHOUT the key. A blob saved between PR #1178 and R31
+    # carries the old ``False`` like any other stored choice, and nothing re-flips it: a
+    # stored value is the operator's, and this module cannot tell a default that was
+    # written down from a box that was unticked on purpose.
     auto_run_market_rules: bool = False
-    auto_refresh_stat_subscriptions: bool = False
+    auto_refresh_stat_subscriptions: bool = True
 
     # Which retired ``mode`` this install was migrated FROM ("" = none, or dismissed).
     # Kept so the disclosure survives the first save -- the migration drops ``mode`` from

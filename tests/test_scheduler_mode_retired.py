@@ -17,8 +17,9 @@ What this pins, and why each is its own test:
 * The DISCLOSURE survives that save, is owed only to an install that was actually in a
   non-default mode, and ends only on Dismiss -- which is the one write ``retired_mode``
   accepts.
-* The markets lane's two opt-ins do what they say, in isolation from each other and from
-  the bundled feeds.
+* The markets lane's two switches do what they say, in isolation from each other and from
+  the bundled feeds. (Their DEFAULTS are pinned in tests/test_stat_refresh_default.py since
+  R31 made the statistics refresh default on.)
 """
 
 from __future__ import annotations
@@ -122,12 +123,14 @@ def test_markets_mode_maps_to_both_markets_opt_ins_on(tmp_path, monkeypatch):
     assert s.retired_mode == "markets"
 
 
-def test_the_markets_opt_ins_default_off_for_everyone_else(tmp_path, monkeypatch):
-    # Off is what every install OUTSIDE markets mode was doing: nobody gains an egress.
+def test_an_rss_install_gets_the_two_markets_defaults(tmp_path, monkeypatch):
+    # The price rules stay off -- what every install OUTSIDE markets mode was doing. The
+    # statistics refresh is on: the maintainer's ruling R31 (2026-09-25) made that the
+    # default for everyone, pinned on its own in tests/test_stat_refresh_default.py.
     _as_json_store(tmp_path, monkeypatch, {"mode": "rss"})
     s = load_settings()
     assert s.auto_run_market_rules is False
-    assert s.auto_refresh_stat_subscriptions is False
+    assert s.auto_refresh_stat_subscriptions is True
 
 
 def test_wiki_mode_never_overrides_the_operators_own_lane_toggle(tmp_path, monkeypatch):
@@ -321,7 +324,8 @@ def test_the_markets_lane_with_both_opt_ins_off_runs_only_the_feeds(monkeypatch)
 
     calls = _Calls()
     _patch_markets(monkeypatch, calls)
-    out = _lane_step_markets(_Session(), None, SchedulerSettings())
+    s = SchedulerSettings(auto_run_market_rules=False, auto_refresh_stat_subscriptions=False)
+    out = _lane_step_markets(_Session(), None, s)
     assert (calls.feeds, calls.rules, calls.stats) == (1, 0, 0)
     assert out == {"feed_points": 2}
 
