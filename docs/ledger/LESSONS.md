@@ -12363,3 +12363,16 @@ standalone page (`taskmanager.html`) with its own `jobRow`. The walk showed empt
 until it followed the real button into its new tab. **Before fixing a surface, find every
 renderer of it (`grep` the row's markup, not the function name), drive the walk through the
 control the operator actually clicks, and run one test body against every renderer.**
+
+### AN ORM OBJECT HANDED TO A THREAD POOL STILL BELONGS TO THE SESSION THAT LOADED IT (PR #1184)
+
+The collection pool gave each worker its own session and still crashed the process: the
+`Source` objects it handed out were loaded in the CALLER'S session, so the first unloaded
+relationship a worker touched (`source_metadata`, read for every source) lazy-loaded through
+that one session and its one connection, from four threads at once. The worker's own session
+was never involved. The crash was intermittent (2 in 30 runs of the pool test) and surfaced as
+an unrelated PR's red CI job; the cross-thread use was not intermittent at all, and a
+`do_orm_execute` listener on the caller's session that records any statement run off the
+caller's thread fails on every run. **Hand a worker an id, not a row, and have it read the row
+through its own session. To test a thread-safety rule, count the violation (which is
+deterministic), not the crash it sometimes causes.**

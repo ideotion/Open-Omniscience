@@ -9840,3 +9840,23 @@ coachmark covered the open language menu (the menu now stacks above it).
 **HANDED OFF.** `GET /api/briefing` answered 500 on this build (`src/api/briefing.py:74`); it is
 not this slice's code and was fixed in its own thread. The maintainer's click-through
 (Q1128 = a) is still owed.
+
+## 2026-09-25 — Collection workers read their source through their own session (PR #1184)
+
+**FOUND** by PR #1183's core-only CI job, which segfaulted in
+`tests/test_parallel_collect.py::test_run_scrape_once_parallel_processes_all_sources`; not that
+PR's code. Reproduced on unmodified `main` (2 crashes in 30 runs of that test), and every crash
+dump named the same thread: a collection worker in `IngestBatch._source_city`, lazy-loading
+`source.source_metadata` (`src/ingest/batch.py:184`).
+
+**CAUSE.** `run_scrape_once` loads its sources in the caller's session and submits the objects
+to the `ThreadPoolExecutor`. A lazy load on one of them runs through the session that loaded
+it, so four workers ran SQL on one session and one connection at once.
+
+**FIX.** `_worker(source, source_id)` takes the id read on the caller's thread and runs
+`_process_source` on `worker_session.get(Source, source_id)`; a row deleted since the selection
+is skipped. `ingest_source` already wrote through `source.id`. The sequential path is unchanged.
+
+**MEASURED.** A new test records every statement the caller's session runs off the caller's
+thread: on `main` it names `oo-collect_0` … `oo-collect_3`; with the fix it records none. The
+pool test ran 40 times with the fix and did not crash. The lesson is in `LESSONS.md`.
