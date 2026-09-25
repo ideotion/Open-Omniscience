@@ -240,6 +240,33 @@ def _protected_transport(settings: SafetySettings) -> tuple[str | None, tuple[st
     return None, (), NO_PROXY_REFUSAL
 
 
+def transport_summary(settings: SafetySettings) -> dict[str, Any]:
+    """How a fetch through this module leaves the machine, as one token for the UI.
+
+    ``kind`` is ``direct`` (protected mode off: any stored proxy is NOT used),
+    ``proxy`` (one proxy), ``pool`` (a SOCKS pool, one member per host) or ``refused``
+    (protected mode with no usable proxy: nothing is sent). S04-08's S5 (Q1014) puts
+    this on every lane of the consent popup, and it is read through
+    :func:`_protected_transport` -- the same reading both factories make -- so the
+    popup cannot describe a transport the fetch path would not use. The popup used to
+    derive it from ``http_proxy`` alone and said "fetches ride the proxy you
+    configured" in transparent mode, where that proxy is ignored.
+
+    The token carries no address of its own. A refusal's ``reason`` is a CODE
+    (``no-proxy``, or ``pool-not-socks`` for a pool refused whole), never the refusal's
+    text: that text comes from an exception and quotes the stored entry it refused, and
+    the popup draws its own translated sentence for each kind anyway.
+    """
+    if not settings.is_protected:
+        return {"kind": "direct"}
+    _single, pool, refusal = _protected_transport(settings)
+    if refusal is not None:
+        return {"kind": "refused", "reason": "no-proxy" if refusal == NO_PROXY_REFUSAL else "pool-not-socks"}
+    if pool:
+        return {"kind": "pool", "members": len(pool)}
+    return {"kind": "proxy"}
+
+
 def guarded_session(
     *,
     user_agent: str = DEFAULT_USER_AGENT,

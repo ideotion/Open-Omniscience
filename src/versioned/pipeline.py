@@ -32,8 +32,10 @@ in its storage — and, worse, would let a real retention gap hide among them.
 NOTHING HERE REACHES THE NETWORK. Every outbound call belongs to the adapter's
 client, which the caller supplies. That is what lets the whole pass run in CI with
 the airplane socket guard armed, and it is the property
-``tests/test_versioned_offline.py`` asserts by counting resolutions rather than
-requests — a DNS lookup is itself egress.
+``tests/test_versioned_lane.py::test_a_full_pass_makes_ZERO_NAME_RESOLUTIONS`` asserts
+by counting resolutions rather than requests — a DNS lookup is itself egress. The
+wiki lane (``tests/test_wiki_lane_end_to_end.py``) and the law lane
+(``tests/test_law_lane_offline.py``) are measured the same way end to end.
 """
 
 from __future__ import annotations

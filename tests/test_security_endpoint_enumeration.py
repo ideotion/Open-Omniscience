@@ -654,14 +654,14 @@ def test_the_table_loads_before_the_code_that_reads_it():
     )
 
 
-#: The four functions that make up the disclosure, by name. Sliced through
+#: The functions that make up the disclosure, by name. Sliced through
 #: ``js_source_helper`` rather than by hand between two literal anchors: an
 #: index-to-index slice is the shape ``test_source_slicing_discipline`` budgets
 #: with zero slack, and it silently truncates the day a brace lands inside a
 #: string. Naming the functions is also the better guard -- each assertion below
 #: then lands on the function that owns the property, not on a region.
 _HOVER_FUNCS = ("_laneState", "_laneHostTitle", "_laneLine", "_renderNetLanes",
-                "_netConsentConfig")
+                "_netConsentConfig", "_transportKind", "_laneTransport", "_transportHint")
 
 
 def _hover_source() -> str:

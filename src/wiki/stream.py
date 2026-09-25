@@ -173,6 +173,13 @@ class StreamCounters:
     #: run that had one blip on its first day; a consecutive count can, and it is
     #: what the diagnostics member reports.
     consecutive_failures: int = 0
+    #: WHY the stream is waiting, as ``Type: message`` of the latest transport failure,
+    #: cleared by the next event that arrives -- so it is set exactly while
+    #: ``consecutive_failures`` is. Q1014: a lane whose transport is unavailable WAITS
+    #: with a named reason (S04-08's S5). Before, a stream held off by a refused or dead
+    #: proxy was registered as live and reported nothing, so the lane read "running"
+    #: while every connection failed; the reason was only in the log.
+    last_failure: str | None = None
     #: The id we would resume from right now.
     last_event_id: str | None = None
     #: When the last event of ANY kind arrived, on the monotonic clock. ``None``
@@ -224,6 +231,7 @@ class StreamCounters:
             "last_event_id": self.last_event_id,
             "idle_seconds": self.idle_seconds(),
             "consecutive_failures": self.consecutive_failures,
+            "last_failure": self.last_failure,
             "per_edition": dict(self.per_edition),
         }
 
@@ -426,6 +434,7 @@ class WikiEventStream:
             except Exception as exc:  # noqa: BLE001 - every transport fault is a retry
                 self.counters.transport_errors += 1
                 self.counters.consecutive_failures += 1
+                self.counters.last_failure = f"{type(exc).__name__}: {exc}"[:300]
                 _LOG.warning("wiki stream connection failed: %s: %s", type(exc).__name__, exc)
                 backoff = self._next_backoff(backoff)
             if should_stop is not None and should_stop():
@@ -433,7 +442,28 @@ class WikiEventStream:
             if max_connections is not None and self.counters.connections >= max_connections:
                 return self.counters
             if backoff:
-                self._sleep(backoff)
+                self._wait(backoff, should_stop)
+
+    #: The longest a stop or airplane mode waits to be noticed during a backoff.
+    WAIT_SLICE_S: float = 1.0
+
+    def _wait(self, seconds: float, should_stop: Callable[[], bool] | None) -> None:
+        """Sleep a backoff in slices, ending early on a stop or on airplane mode.
+
+        One uninterrupted ``sleep`` of up to :data:`MAX_BACKOFF_S` kept a stream that was
+        waiting behind a dead proxy registered as LIVE for as long as five minutes after
+        the operator stopped the lane or engaged airplane mode, so the lane status read
+        "running" in airplane mode (found by S04-08's S5 walk, 2026-09-25). Now the loop
+        re-checks within a slice, and airplane mode is then refused BY NAME at the top of
+        the next iteration rather than waited out.
+        """
+        remaining = seconds
+        while remaining > 0:
+            step = min(self.WAIT_SLICE_S, remaining)
+            self._sleep(step)
+            remaining -= step
+            if (should_stop is not None and should_stop()) or kill_switch_active():
+                return
 
     def _one_connection(
         self,
@@ -481,6 +511,7 @@ class WikiEventStream:
             last_seen = now
             self.counters.last_event_at = now
             self.counters.consecutive_failures = 0
+            self.counters.last_failure = None
             self.counters.events_seen += 1
             self.counters.last_event_id = self.parser.last_event_id
             # ONE decode per event, here. Three call sites used to parse the same

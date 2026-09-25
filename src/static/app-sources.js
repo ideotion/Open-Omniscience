@@ -1051,6 +1051,13 @@
     // top-bar icon should never be the thing that ends a multi-day stream.
     let _wikiLaneState = null;
     let _wikiLaneActive = false;
+    // WHY the lane is not collecting, as the status reported it: `reason` is a token
+    // (airplane-mode, not-started, transport-waiting) and `waitingOn` the stream's
+    // latest failure, verbatim, while it waits (S04-08's S5, Q1014). Kept beside the
+    // state rather than passed through every repaint, so a language switch or a click
+    // repaints with the last reason the backend actually gave.
+    let _wikiLaneWhy = {reason: null, waitingOn: null};
+    let _wikiLaneTimer = 0;
 
     //: The three states the backend can store (src/scheduler/settings.py's
     //: WIKI_LANE_STATES). Named here rather than derived by elimination, because an
@@ -1092,8 +1099,17 @@
       // A CONTROL THAT RENDERS CLAIMS ITS CAPABILITY. Every state names the action
       // the click performs AND what the lane is doing, so the button is never a
       // promise the app will refuse on click.
-      const detail = (running && !_wikiLaneActive)
-        ? t9("Chosen, but nothing is collecting yet on this build.")
+      const why = _wikiLaneWhy || {};
+      // A stream whose connections keep failing is WAITING, and the hover names on
+      // what: the failure verbatim (an error message, not translated prose) inside a
+      // translated sentence that says it retries and never goes direct.
+      const detail = (running && why.reason === "transport-waiting")
+        ? t9("Waiting for a connection: {why}. It retries on its own and never falls back to a direct connection.")
+            .replace("{why}", why.waitingOn || t9("no reason was reported"))
+        : (running && !_wikiLaneActive)
+        ? (why.reason === "airplane-mode"
+            ? t9("Chosen; airplane mode is holding it until you go online.")
+            : t9("Chosen, but no stream is running in this session."))
         : running
         ? t9("Every edit in the editions you chose arrives as it happens.")
         : halted
@@ -1123,11 +1139,31 @@
         // the first is what would let this button claim a stream that is not running.
         const st = await api("/api/scheduler/status");
         const lane = (st && st.wiki_lane) || {};
-        _paintWikiLane(lane.state || "running", lane.active === true);
+        _wikiLaneWhy = {reason: lane.reason || null, waitingOn: lane.waiting_on || null};
+        // A WAITING stream is registered but delivers nothing, so it is not drawn
+        // as live: the breathing accent means "happening now".
+        _paintWikiLane(lane.state || "running",
+                       lane.active === true && lane.reason !== "transport-waiting");
+        _scheduleWikiLaneRefresh();
       } catch (_e) {
         // The chrome keeps the boot paint. NOT a silent "stopped": claiming the
         // lane is off when we simply could not ask would be a fabricated state on
         // the one control whose whole job is to tell the truth about egress.
+      }
+    }
+
+    // While the lane is chosen RUNNING, re-read its status once a minute (only while
+    // the page is visible), so a wait that starts after the page loaded -- a proxy
+    // that stops answering -- reaches the hover. Loopback only, and no timer at all
+    // while the lane is paused or stopped.
+    function _scheduleWikiLaneRefresh() {
+      if (_wikiLaneState === "running") {
+        if (!_wikiLaneTimer) {
+          _wikiLaneTimer = setInterval(() => { if (!document.hidden) loadWikiLane(); }, 60000);
+        }
+      } else if (_wikiLaneTimer) {
+        clearInterval(_wikiLaneTimer);
+        _wikiLaneTimer = 0;
       }
     }
 
@@ -1151,6 +1187,7 @@
         _paintWikiLane((c && c.wiki_lane_state) || next, _wikiLaneActive);
         toast(next === "running" ? t9("Resume the Wikipedia stream")
                                  : t9("Pause the Wikipedia stream"));
+        loadWikiLane();  // the reason the last paint carried belongs to the old state
       } catch (e) {
         toast(_failMsg("Update failed: {error}", e), "err");
       }
@@ -1163,6 +1200,7 @@
           {method: "PUT", body: JSON.stringify({wiki_lane_state: "stopped"})});
         _paintWikiLane((c && c.wiki_lane_state) || "stopped", _wikiLaneActive);
         toast(t9("Stop the Wikipedia stream"));
+        loadWikiLane();
       } catch (e) {
         toast(_failMsg("Update failed: {error}", e), "err");
       }

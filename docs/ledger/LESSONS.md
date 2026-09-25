@@ -12341,3 +12341,25 @@ act on, and only the browser walk against a real lane file showed "0% used". **R
 value is drawn, never where it is sent: a server-side round turns "small" into "none" before the
 code that exists to tell them apart ever sees it. And feed a renderer's test the value the server
 actually sends, not the value the renderer was designed around.**
+
+### A FACTORY THAT CREATES THE FILE LETS "THE FILE EXISTS" STAND IN FOR "THE STORE EXISTS" (PR #1183)
+
+`lane_session(kind, create=True)` makes a lane's database FILE; `create_lane(kind)` makes its
+schema and enforces the locked-store and plaintext-lane refusals (Q1005). The Wikipedia drain
+and pin called the first, so a fresh install got an empty `wiki.db`: the first drain failed on
+a missing table, the lane's status answered 500, and every later drain opened the same empty
+file and failed the same way. Every unit test passed, because each built its lane through
+`create_lane` in a fixture, which is the step production skipped. Only a browser walk on a fresh
+data folder showed it. **When one call makes the container and another makes what goes in it,
+route every production caller through the one that makes both, and pin that with a guard over
+the tree (here an AST test that no module outside the store passes `create=`). Build a test's
+state the way the product builds it, or the fixture does the product's missing step for it.**
+
+### TWO RENDERERS FOR ONE ROW: FIX THE ONE THE BUTTON OPENS (PR #1183)
+
+The task manager's "why is this download paused" line was written into `app-core.js`'s
+`_jobRow`, tested there, and invisible to the operator: the top-bar button opens `/tasks`, a
+standalone page (`taskmanager.html`) with its own `jobRow`. The walk showed empty captures
+until it followed the real button into its new tab. **Before fixing a surface, find every
+renderer of it (`grep` the row's markup, not the function name), drive the walk through the
+control the operator actually clicks, and run one test body against every renderer.**

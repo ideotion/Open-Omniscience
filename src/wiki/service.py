@@ -35,6 +35,8 @@ from __future__ import annotations
 
 import logging
 import threading
+from collections.abc import Iterator
+from contextlib import contextmanager
 from typing import Any
 
 _LOG = logging.getLogger("wiki.service")
@@ -72,11 +74,32 @@ def _budget():
     )
 
 
+@contextmanager
+def wiki_lane_session() -> Iterator[Any]:
+    """A session on the wiki lane, creating the lane WITH its schema on first use.
+
+    Every wiki path opens its lane through here. They used to call
+    ``lane_session("wiki", create=True)``, which brings the FILE into existence and
+    nothing else (``src/law/lane_sync.py`` says so and calls ``create_lane``). On a
+    fresh install that nothing had created the lane for, going online therefore left
+    an EMPTY ``wiki.db``: every drain, hot-set build and pin failed on "no such table:
+    versioned_entities", and the lane status and the briefing answered 500. It also
+    stepped around ``create_lane``'s refusal to write a plaintext lane beside an
+    encrypted corpus (Q1005). Found by S04-08's S5 walk, 2026-09-25.
+
+    ``create_lane`` is idempotent, and it repairs an empty file an earlier build left.
+    """
+    from src.versioned.store import create_lane, lane_session
+
+    create_lane("wiki")
+    with lane_session("wiki") as lane:
+        yield lane
+
+
 def _hot_sets():
     """Rebuilt each drain from the operator's own corpus and lane. No network."""
     from src.config.kv_store import kv_get_json
     from src.database.session import SessionLocal
-    from src.versioned.store import lane_session
     from src.wiki.hotset import build_hot_sets, pageview_kv_key
 
     editions = _editions()
@@ -86,12 +109,9 @@ def _hot_sets():
         titles = blob.get("titles")
         if isinstance(titles, list):
             tops[edition] = {str(t) for t in titles if t}
-    # ``create=True``, like every other lane_session in this module. Without it the
-    # FIRST drain on a fresh install raised LaneAbsentError -- inside the drain thread,
-    # where nothing was catching it, so the lane stopped collecting for the rest of the
-    # process with no record anywhere. Found by an existing test's unhandled-thread
-    # warning, not by reading.
-    with SessionLocal() as corpus, lane_session("wiki", create=True) as lane:
+    # Through ``wiki_lane_session``, like every lane session in this module: the FIRST
+    # drain on a fresh install must find a lane with its schema (see that function).
+    with SessionLocal() as corpus, wiki_lane_session() as lane:
         sets, _report = build_hot_sets(
             corpus=corpus, lane=lane, editions=editions, pageview_tops=tops
         )
@@ -182,7 +202,6 @@ def _refresh_one_pageview_top(client: Any) -> str | None:
 def _build():
     """Construct the runner with the real client, stream and sessions."""
     from src.database.session import SessionLocal
-    from src.versioned.store import lane_session
     from src.wiki.client import WikiClient
     from src.wiki.lane import WikiStreamAdapter
     from src.wiki.runner import WikiLaneRunner
@@ -201,7 +220,7 @@ def _build():
     return WikiLaneRunner(
         adapter=adapter,
         stream=stream,
-        lane_session=lambda: lane_session("wiki", create=True),
+        lane_session=wiki_lane_session,
         corpus_session=SessionLocal,
         state_of=_state_of,
         hot_sets=_hot_sets,
@@ -268,10 +287,15 @@ def lane_service_status() -> dict:
         runner = _RUNNER
         drain_alive = bool(_DRAIN_THREAD is not None and _DRAIN_THREAD.is_alive())
     if runner is None:
-        return {"streaming": False, "draining": False, "drains": 0, "last_drain": None}
+        return {"streaming": False, "draining": False, "drains": 0, "last_drain": None,
+                "stream": None}
     return {
         "streaming": bool(runner.streaming),
         "draining": drain_alive,
         "drains": int(runner.drains),
         "last_drain": runner.last_drain,
+        # The stream's own counters (connections, failures in a row, the latest
+        # failure, idle seconds): what the lane's status reads to say it is WAITING
+        # and on what, rather than "running" while every connection fails.
+        "stream": runner.stream_counters(),
     }

@@ -1,0 +1,406 @@
+{
+ "boot_network": {
+  "online": false
+ },
+ "safety_transport": {
+  "kind": "proxy"
+ },
+ "start_offline_osm": {
+  "key": "europe",
+  "code": "europe",
+  "name": "Europe",
+  "url": "https://download.geofabrik.de/europe-latest.osm.pbf",
+  "dest": "/tmp/claude-0/s5walk-data/osm_regions/europe-latest.osm.pbf",
+  "total_bytes": 0,
+  "downloaded_bytes": 0,
+  "status": "paused",
+  "error": null,
+  "paused_by": "airplane",
+  "mirrors": [],
+  "expected_sha256": "",
+  "percent": 0,
+  "size_estimate_bytes": 30064771072
+ },
+ "start_offline_dump": {
+  "key": "fr:pages-articles-multistream",
+  "wiki": "fr",
+  "kind": "pages-articles-multistream",
+  "url": "https://dumps.wikimedia.org/frwiki/latest/frwiki-latest-pages-articles-multistream.xml.bz2",
+  "dest": "/tmp/claude-0/s5walk-data/wiki_dumps/frwiki-latest-pages-articles-multistream.xml.bz2",
+  "total_bytes": 0,
+  "downloaded_bytes": 0,
+  "status": "paused",
+  "error": null,
+  "paused_by": "airplane",
+  "mirrors": [],
+  "expected_sha256": "",
+  "percent": 0,
+  "index_queued": true
+ },
+ "consent-protected-en": {
+  "rows": [
+   {
+    "label": "Press collection",
+    "hover": "9033 hosts — the full list is in the security notes — Transport: through your proxy."
+   },
+   {
+    "label": "Source discovery",
+    "hover": "query.wikidata.org · www.wikidata.org — Transport: through your proxy."
+   },
+   {
+    "label": "Wikipedia / Wikimedia",
+    "hover": "*.wikipedia.org · stream.wikimedia.org · wikimedia.org · ores.wikimedia.org · dumps.wikimedia.org — Transport: through your proxy."
+   },
+   {
+    "label": "Law",
+    "hover": "260 hosts — the full list is in the security notes — Transport: through your proxy. — Always on: the code reads a switch that does not exist yet, so this cannot be turned off today."
+   },
+   {
+    "label": "Official statistics",
+    "hover": "api.worldbank.org · ec.europa.eu · ourworldindata.org — Transport: through your proxy."
+   },
+   {
+    "label": "Markets & commodities",
+    "hover": "fred.stlouisfed.org · www.eia.gov · www.imf.org · www.worldbank.org — Transport: through your proxy. — Always on: the code reads a switch that does not exist yet, so this cannot be turned off today."
+   },
+   {
+    "label": "Calendars",
+    "hover": "date.nager.at · www.openholidaysapi.org · www.officeholidays.com · www.calendarlabs.com · www.hebcal.com · litcal.johnromanodorazio.com · worldpublicholiday.com · fosdem.org · f1calendar.com · www.matchesio.com · www.rocketlaunch.live · pirate.monkeyness.com · raw.githubusercontent.com · jonamarkin.github.io — Transport: through your proxy. — Always on: the code reads a switch that does not exist yet, so this cannot be turned off today."
+   },
+   {
+    "label": "Hazard feeds",
+    "hover": "earthquake.usgs.gov · www.gdacs.org — Transport: through your proxy. — Its off-switch exists but the app cannot reach it: the settings endpoint accepts the change and discards it."
+   },
+   {
+    "label": "Maps / OpenStreetMap",
+    "hover": "download.geofabrik.de · planet.openstreetmap.org — Transport: through your proxy."
+   },
+   {
+    "label": "Keyword translations",
+    "hover": "www.wikidata.org — Transport: through your proxy."
+   },
+   {
+    "label": "Weather",
+    "hover": "archive-api.open-meteo.com — Transport: through your proxy."
+   },
+   {
+    "label": "Local AI install & weights",
+    "hover": "api.github.com · objects.githubusercontent.com · huggingface.co · pypi.org — Transport: mostly direct, even with protected mode on — only the installer check goes through your proxy, so the download hosts see your address."
+   },
+   {
+    "label": "Newsletter mailbox",
+    "hover": "a host you name yourself — nothing is bundled — Transport: direct, even with protected mode on — this lane does not use your proxy, so these hosts see your address."
+   },
+   {
+    "label": "Discover by topic",
+    "hover": "html.duckduckgo.com — Transport: through your proxy."
+   },
+   {
+    "label": "Chain of custody",
+    "hover": "a.pool.opentimestamps.org · b.pool.opentimestamps.org · alice.btc.calendar.opentimestamps.org — Transport: direct, even with protected mode on — this lane does not use your proxy, so these hosts see your address."
+   }
+  ],
+  "hint": "Fetches ride the proxy you configured; a lane never falls back to the clear internet on its own.",
+  "lang": "en",
+  "tip_press": "9033 hosts — the full list is in the security notes — Transport: through your proxy."
+ },
+ "consent-protected-fr": {
+  "rows": [
+   {
+    "label": "Collecte de presse",
+    "hover": "9033 hôtes — la liste complète se trouve dans les notes de sécurité — Transport : via votre proxy."
+   },
+   {
+    "label": "Découverte de sources",
+    "hover": "query.wikidata.org · www.wikidata.org — Transport : via votre proxy."
+   },
+   {
+    "label": "Wikipedia / Wikimedia",
+    "hover": "*.wikipedia.org · stream.wikimedia.org · wikimedia.org · ores.wikimedia.org · dumps.wikimedia.org — Transport : via votre proxy."
+   },
+   {
+    "label": "Droit",
+    "hover": "260 hôtes — la liste complète se trouve dans les notes de sécurité — Transport : via votre proxy. — Toujours actif : le code lit un commutateur qui n'existe pas encore, donc cela ne peut pas être désactivé aujourd'hui."
+   },
+   {
+    "label": "Statistiques officielles",
+    "hover": "api.worldbank.org · ec.europa.eu · ourworldindata.org — Transport : via votre proxy."
+   },
+   {
+    "label": "Marchés & matières premières",
+    "hover": "fred.stlouisfed.org · www.eia.gov · www.imf.org · www.worldbank.org — Transport : via votre proxy. — Toujours actif : le code lit un commutateur qui n'existe pas encore, donc cela ne peut pas être désactivé aujourd'hui."
+   },
+   {
+    "label": "Calendriers",
+    "hover": "date.nager.at · www.openholidaysapi.org · www.officeholidays.com · www.calendarlabs.com · www.hebcal.com · litcal.johnromanodorazio.com · worldpublicholiday.com · fosdem.org · f1calendar.com · www.matchesio.com · www.rocketlaunch.live · pirate.monkeyness.com · raw.githubusercontent.com · jonamarkin.github.io — Transport : via votre proxy. — Toujours actif : le code lit un commutateur qui n'existe pas encore, donc cela ne peut pas être désactivé aujourd'hui."
+   },
+   {
+    "label": "Flux d'aléas",
+    "hover": "earthquake.usgs.gov · www.gdacs.org — Transport : via votre proxy. — Son interrupteur d'arrêt existe, mais l'application ne peut pas y accéder : le point d'accès des paramètres accepte la modification et l'écarte."
+   },
+   {
+    "label": "Cartes / OpenStreetMap",
+    "hover": "download.geofabrik.de · planet.openstreetmap.org — Transport : via votre proxy."
+   },
+   {
+    "label": "Traductions des mots-clés",
+    "hover": "www.wikidata.org — Transport : via votre proxy."
+   },
+   {
+    "label": "Météo",
+    "hover": "archive-api.open-meteo.com — Transport : via votre proxy."
+   },
+   {
+    "label": "Installation & poids de l'IA locale",
+    "hover": "api.github.com · objects.githubusercontent.com · huggingface.co · pypi.org — Transport : surtout direct, même en mode protégé — seule la vérification de l'installateur passe par votre proxy, donc les hôtes de téléchargement voient votre adresse."
+   },
+   {
+    "label": "Boîte mail des infolettres",
+    "hover": "un hôte que vous indiquez vous-même — rien n'est fourni — Transport : direct, même en mode protégé — cette voie n'utilise pas votre proxy, donc ces hôtes voient votre adresse."
+   },
+   {
+    "label": "Découverte par sujet",
+    "hover": "html.duckduckgo.com — Transport : via votre proxy."
+   },
+   {
+    "label": "Chaîne de possession",
+    "hover": "a.pool.opentimestamps.org · b.pool.opentimestamps.org · alice.btc.calendar.opentimestamps.org — Transport : direct, même en mode protégé — cette voie n'utilise pas votre proxy, donc ces hôtes voient votre adresse."
+   }
+  ],
+  "hint": "Les requêtes transitent par le proxy que vous avez configuré ; une file ne repasse jamais d'elle-même par l'internet en clair.",
+  "lang": "fr",
+  "tip_press": "9033 hôtes — la liste complète se trouve dans les notes de sécurité — Transport : via votre proxy."
+ },
+ "consent-protected-ar": {
+  "rows": [
+   {
+    "label": "جمع الأخبار",
+    "hover": "9033 مضيفات — القائمة الكاملة في ملاحظات الأمن — النقل: عبر وكيلك."
+   },
+   {
+    "label": "اكتشاف المصادر",
+    "hover": "query.wikidata.org · www.wikidata.org — النقل: عبر وكيلك."
+   },
+   {
+    "label": "ويكيبيديا / ويكيميديا",
+    "hover": "*.wikipedia.org · stream.wikimedia.org · wikimedia.org · ores.wikimedia.org · dumps.wikimedia.org — النقل: عبر وكيلك."
+   },
+   {
+    "label": "القانون",
+    "hover": "260 مضيفات — القائمة الكاملة في ملاحظات الأمن — النقل: عبر وكيلك. — دائمًا مفعَّل: يقرأ الكود مفتاحًا غير موجود بعد، لذا يتعذّر إيقافه اليوم."
+   },
+   {
+    "label": "الإحصاءات الرسمية",
+    "hover": "api.worldbank.org · ec.europa.eu · ourworldindata.org — النقل: عبر وكيلك."
+   },
+   {
+    "label": "الأسواق والسلع",
+    "hover": "fred.stlouisfed.org · www.eia.gov · www.imf.org · www.worldbank.org — النقل: عبر وكيلك. — دائمًا مفعَّل: يقرأ الكود مفتاحًا غير موجود بعد، لذا يتعذّر إيقافه اليوم."
+   },
+   {
+    "label": "التقويمات",
+    "hover": "date.nager.at · www.openholidaysapi.org · www.officeholidays.com · www.calendarlabs.com · www.hebcal.com · litcal.johnromanodorazio.com · worldpublicholiday.com · fosdem.org · f1calendar.com · www.matchesio.com · www.rocketlaunch.live · pirate.monkeyness.com · raw.githubusercontent.com · jonamarkin.github.io — النقل: عبر وكيلك. — دائمًا مفعَّل: يقرأ الكود مفتاحًا غير موجود بعد، لذا يتعذّر إيقافه اليوم."
+   },
+   {
+    "label": "موجزات الأخطار",
+    "hover": "earthquake.usgs.gov · www.gdacs.org — النقل: عبر وكيلك. — مفتاح إيقافه موجود، لكن لا يصل إليه التطبيق: تقبل نقطة نهاية الإعدادات التغيير ثم تتجاهله."
+   },
+   {
+    "label": "خرائط / OpenStreetMap",
+    "hover": "download.geofabrik.de · planet.openstreetmap.org — النقل: عبر وكيلك."
+   },
+   {
+    "label": "ترجمات الكلمات المفتاحية",
+    "hover": "www.wikidata.org — النقل: عبر وكيلك."
+   },
+   {
+    "label": "الطقس",
+    "hover": "archive-api.open-meteo.com — النقل: عبر وكيلك."
+   },
+   {
+    "label": "تثبيت الذكاء الاصطناعي المحلي وأوزانه",
+    "hover": "api.github.com · objects.githubusercontent.com · huggingface.co · pypi.org — النقل: مباشر في معظمه حتى مع تفعيل الوضع المحمي — وحده فحص المثبِّت يمر عبر وكيلك، لذا ترى مضيفات التنزيل عنوانك."
+   },
+   {
+    "label": "صندوق بريد النشرات",
+    "hover": "مضيف تسمّيه بنفسك — لا شيء مُضمَّن — النقل: مباشر حتى مع تفعيل الوضع المحمي — هذا المسار لا يستخدم وكيلك، لذا ترى هذه المضيفات عنوانك."
+   },
+   {
+    "label": "الاكتشاف حسب الموضوع",
+    "hover": "html.duckduckgo.com — النقل: عبر وكيلك."
+   },
+   {
+    "label": "سلسلة الحيازة",
+    "hover": "a.pool.opentimestamps.org · b.pool.opentimestamps.org · alice.btc.calendar.opentimestamps.org — النقل: مباشر حتى مع تفعيل الوضع المحمي — هذا المسار لا يستخدم وكيلك، لذا ترى هذه المضيفات عنوانك."
+   }
+  ],
+  "hint": "تمر عمليات الجلب عبر الوكيل الذي أعددته؛ لا يعود مسار أبدًا إلى الإنترنت المكشوف من تلقاء نفسه.",
+  "lang": "ar",
+  "tip_press": "9033 مضيفات — القائمة الكاملة في ملاحظات الأمن — النقل: عبر وكيلك."
+ },
+ "consent-transparent-en": {
+  "rows": [
+   {
+    "label": "Press collection",
+    "hover": "9033 hosts — the full list is in the security notes — Transport: direct — protected mode is off, so these hosts see your address."
+   },
+   {
+    "label": "Source discovery",
+    "hover": "query.wikidata.org · www.wikidata.org — Transport: direct — protected mode is off, so these hosts see your address."
+   },
+   {
+    "label": "Wikipedia / Wikimedia",
+    "hover": "*.wikipedia.org · stream.wikimedia.org · wikimedia.org · ores.wikimedia.org · dumps.wikimedia.org — Transport: direct — protected mode is off, so these hosts see your address."
+   },
+   {
+    "label": "Law",
+    "hover": "260 hosts — the full list is in the security notes — Transport: direct — protected mode is off, so these hosts see your address. — Always on: the code reads a switch that does not exist yet, so this cannot be turned off today."
+   },
+   {
+    "label": "Official statistics",
+    "hover": "api.worldbank.org · ec.europa.eu · ourworldindata.org — Transport: direct — protected mode is off, so these hosts see your address."
+   },
+   {
+    "label": "Markets & commodities",
+    "hover": "fred.stlouisfed.org · www.eia.gov · www.imf.org · www.worldbank.org — Transport: direct — protected mode is off, so these hosts see your address. — Always on: the code reads a switch that does not exist yet, so this cannot be turned off today."
+   },
+   {
+    "label": "Calendars",
+    "hover": "date.nager.at · www.openholidaysapi.org · www.officeholidays.com · www.calendarlabs.com · www.hebcal.com · litcal.johnromanodorazio.com · worldpublicholiday.com · fosdem.org · f1calendar.com · www.matchesio.com · www.rocketlaunch.live · pirate.monkeyness.com · raw.githubusercontent.com · jonamarkin.github.io — Transport: direct — protected mode is off, so these hosts see your address. — Always on: the code reads a switch that does not exist yet, so this cannot be turned off today."
+   },
+   {
+    "label": "Hazard feeds",
+    "hover": "earthquake.usgs.gov · www.gdacs.org — Transport: direct — protected mode is off, so these hosts see your address. — Its off-switch exists but the app cannot reach it: the settings endpoint accepts the change and discards it."
+   },
+   {
+    "label": "Maps / OpenStreetMap",
+    "hover": "download.geofabrik.de · planet.openstreetmap.org — Transport: direct — protected mode is off, so these hosts see your address."
+   },
+   {
+    "label": "Keyword translations",
+    "hover": "www.wikidata.org — Transport: direct — protected mode is off, so these hosts see your address."
+   },
+   {
+    "label": "Weather",
+    "hover": "archive-api.open-meteo.com — Transport: direct — protected mode is off, so these hosts see your address."
+   },
+   {
+    "label": "Local AI install & weights",
+    "hover": "api.github.com · objects.githubusercontent.com · huggingface.co · pypi.org — Not through this app's fetcher or proxy."
+   },
+   {
+    "label": "Newsletter mailbox",
+    "hover": "a host you name yourself — nothing is bundled — Not through this app's fetcher or proxy."
+   },
+   {
+    "label": "Discover by topic",
+    "hover": "html.duckduckgo.com — Transport: direct — protected mode is off, so these hosts see your address."
+   },
+   {
+    "label": "Chain of custody",
+    "hover": "a.pool.opentimestamps.org · b.pool.opentimestamps.org · alice.btc.calendar.opentimestamps.org — Not through this app's fetcher or proxy."
+   }
+  ],
+  "hint": "Protected mode is off, so fetches go direct — the hosts above see your address."
+ },
+ "safety_transport_restored": {
+  "kind": "proxy"
+ },
+ "online_network": {
+  "online": true
+ },
+ "resume_dump": {
+  "resumed": "dump:fr:pages-articles-multistream",
+  "detail": "download resumed"
+ },
+ "wiki_lane_block": {
+  "state": "running",
+  "active": true,
+  "reason": "transport-waiting",
+  "waiting_on": "ConnectionError: SOCKSHTTPSConnectionPool(host='stream.wikimedia.org', port=443): Max retries exceeded with url: /v2/stream/recentchange (Caused by NewConnectionError(\"SOCKSHTTPSConnection(host='stream.wikimedia.org', port=443): Failed to establish a new connection: [Errno 111] Connection refused\"))"
+ },
+ "jobs": [
+  {
+   "id": "dump:fr:pages-articles-multistream",
+   "state": "failed",
+   "paused_by": null,
+   "error": "SOCKSHTTPSConnectionPool(host='dumps.wikimedia.org', port=443): Max retries exceeded with url: /frwiki/latest/frwiki-latest-pages-articles-multistream.xml.bz2 (Caused by NewConnectionError(\"SOCKSHTTPSConnection(host='dumps.wikimedia.org', port=443): Failed to establish a new connection: [Errno 111] Connection refused\"))"
+  },
+  {
+   "id": "dump:fr:pages-articles-multistream-index",
+   "state": "paused",
+   "paused_by": "airplane",
+   "error": null
+  },
+  {
+   "id": "osm:asia",
+   "state": "paused",
+   "paused_by": "operator",
+   "error": null
+  },
+  {
+   "id": "osm:africa",
+   "state": "paused",
+   "paused_by": "restart",
+   "error": null
+  },
+  {
+   "id": "osm:europe",
+   "state": "paused",
+   "paused_by": "airplane",
+   "error": null
+  }
+ ],
+ "wiki-toggle-en": {
+  "title": "Wikipedia stream: running — Waiting for a connection: ConnectionError: SOCKSHTTPSConnectionPool(host='stream.wikimedia.org', port=443): Max retries exceeded with url: /v2/stream/recentchange (Caused by NewConnectionError(\"SOCKSHTTPSConnection(host='stream.wikimedia.org', port=443): Failed to establish a new connection: [Errno 111] Connection refused\")). It retries on its own and never falls back to a direct connection.\nPause the Wikipedia stream\nThis lane contacts stream.wikimedia.org, each edition's Action API, and wikimedia.org for daily pageviews.",
+  "live_class": false,
+  "tip": "Wikipedia stream: running — Waiting for a connection: ConnectionError: SOCKSHTTPSConnectionPool(host='stream.wikimedia.org', port=443): Max retries exceeded with url: /v2/stream/recentchange (Caused by NewConnectionError(\"SOCKSHTTPSConnection(host='stream.wikimedia.org', port=443): Failed to establish a new connection: [Errno 111] Connection refused\")). It retries on its own and never falls back to a direct connection.\nPause the Wikipedia stream\nThis lane contacts stream.wikimedia.org, each edition's Action API, and wikimedia.org for daily pageviews."
+ },
+ "task-manager-en": {
+  "url": "http://127.0.0.1:8745/tasks",
+  "lang": "en",
+  "text": "COLLECTION\n1\nscheduled\ncollection loop (idle)\nStop\nDOWNLOADS\n5\nfailed\nFrench Wikipedia — articles dump\nResume\nFailed: SOCKSHTTPSConnectionPool(host='dumps.wikimedia.org', port=443): Max retries exceeded with url: /frwiki/latest/frwiki-latest-pages-articles-multistream.xml.bz2 (Caused by NewConnectionError(\"SOCKSHTTPSConnection(host='dumps.wikimedia.org', port=443): Failed to establish a new connection: [Errno 111] Connection refused\"))\npaused\nFrench Wikipedia — articles dump index\nResume\nPaused by airplane mode. Resume asks to go online first.\npaused\nAsia\nResume\n202.2 MB / 1.2 GB · 16.3%\nPaused by you.\npaused\nAfrica\nResume\n45.8 MB / 6.4 GB · 0.7%\nPaused when the app stopped mid-download; the partial file is kept.\npaused\nEurope\nResume\nPaused by airplane mode. Resume asks to go online first."
+ },
+ "wiki-toggle-fr": {
+  "title": "Flux Wikipédia : en cours — En attente d'une connexion : ConnectionError: SOCKSHTTPSConnectionPool(host='stream.wikimedia.org', port=443): Max retries exceeded with url: /v2/stream/recentchange (Caused by NewConnectionError(\"SOCKSHTTPSConnection(host='stream.wikimedia.org', port=443): Failed to establish a new connection: [Errno 111] Connection refused\")). Il réessaie de lui-même et ne se rabat jamais sur une connexion directe.\nSuspendre le flux Wikipédia\nCette file contacte stream.wikimedia.org, l'Action API de chaque édition, et wikimedia.org pour les pages vues quotidiennes.",
+  "live_class": false,
+  "tip": "Flux Wikipédia : en cours — En attente d'une connexion : ConnectionError: SOCKSHTTPSConnectionPool(host='stream.wikimedia.org', port=443): Max retries exceeded with url: /v2/stream/recentchange (Caused by NewConnectionError(\"SOCKSHTTPSConnection(host='stream.wikimedia.org', port=443): Failed to establish a new connection: [Errno 111] Connection refused\")). Il réessaie de lui-même et ne se rabat jamais sur une connexion directe.\nSuspendre le flux Wikipédia\nCette file contacte stream.wikimedia.org, l'Action API de chaque édition, et wikimedia.org pour les pages vues quotidiennes."
+ },
+ "task-manager-fr": {
+  "url": "http://127.0.0.1:8745/tasks",
+  "lang": "fr",
+  "text": "COLLECTE\n1\nplanifié\ncollection loop (idle)\nArrêter\nTÉLÉCHARGEMENTS\n5\néchoué\nFrench Wikipedia — articles dump\nReprendre\nÉchec : SOCKSHTTPSConnectionPool(host='dumps.wikimedia.org', port=443): Max retries exceeded with url: /frwiki/latest/frwiki-latest-pages-articles-multistream.xml.bz2 (Caused by NewConnectionError(\"SOCKSHTTPSConnection(host='dumps.wikimedia.org', port=443): Failed to establish a new connection: [Errno 111] Connection refused\"))\nsuspendu\nFrench Wikipedia — articles dump index\nReprendre\nMis en pause par le mode avion. Reprendre demande d'abord de passer en ligne.\nsuspendu\nAsie\nReprendre\n202.2 MB / 1.2 GB · 16.3%\nMis en pause par vous.\nsuspendu\nAfrique\nReprendre\n45.8 MB / 6.4 GB · 0.7%\nMis en pause quand l'application s'est arrêtée en cours de téléchargement ; le fichier partiel est conservé.\nsuspendu\nEurope\nReprendre\nMis en pause par le mode avion. Reprendre demande d'abord de passer en ligne.\nIA ET ANALYSE\n1\nen cours\nrefreshing the Home briefing\nen cours depuis ~1 s"
+ },
+ "wiki-toggle-ar": {
+  "title": "تدفق ويكيبيديا: يعمل — في انتظار اتصال: ConnectionError: SOCKSHTTPSConnectionPool(host='stream.wikimedia.org', port=443): Max retries exceeded with url: /v2/stream/recentchange (Caused by NewConnectionError(\"SOCKSHTTPSConnection(host='stream.wikimedia.org', port=443): Failed to establish a new connection: [Errno 111] Connection refused\")). يعيد المحاولة من تلقاء نفسه ولا يلجأ أبدًا إلى اتصال مباشر.\nإيقاف تدفق ويكيبيديا مؤقتًا\nيتواصل هذا المسار مع stream.wikimedia.org، وواجهة Action API الخاصة بكل نسخة، ومع wikimedia.org لعدد مشاهدات الصفحات اليومي.",
+  "live_class": false,
+  "tip": "تدفق ويكيبيديا: يعمل — في انتظار اتصال: ConnectionError: SOCKSHTTPSConnectionPool(host='stream.wikimedia.org', port=443): Max retries exceeded with url: /v2/stream/recentchange (Caused by NewConnectionError(\"SOCKSHTTPSConnection(host='stream.wikimedia.org', port=443): Failed to establish a new connection: [Errno 111] Connection refused\")). يعيد المحاولة من تلقاء نفسه ولا يلجأ أبدًا إلى اتصال مباشر.\nإيقاف تدفق ويكيبيديا مؤقتًا\nيتواصل هذا المسار مع stream.wikimedia.org، وواجهة Action API الخاصة بكل نسخة، ومع wikimedia.org لعدد مشاهدات الصفحات اليومي."
+ },
+ "task-manager-ar": {
+  "url": "http://127.0.0.1:8745/tasks",
+  "lang": "ar",
+  "text": "الجمع\n1\nقيد التشغيل\ncollection pass — background tasks (markets · calendars · checks)\nإيقاف\nالتنزيلات\n5\nفشل\nFrench Wikipedia — articles dump\nاستئناف\nفشل: SOCKSHTTPSConnectionPool(host='dumps.wikimedia.org', port=443): Max retries exceeded with url: /frwiki/latest/frwiki-latest-pages-articles-multistream.xml.bz2 (Caused by NewConnectionError(\"SOCKSHTTPSConnection(host='dumps.wikimedia.org', port=443): Failed to establish a new connection: [Errno 111] Connection refused\"))\nموقوف مؤقتًا\nFrench Wikipedia — articles dump index\nاستئناف\nأوقفه وضع الطيران مؤقتًا. الاستئناف يطلب أولًا الاتصال بالإنترنت.\nموقوف مؤقتًا\nآسيا\nاستئناف\n202.2 MB / 1.2 GB · 16.3%\nأوقفته أنت مؤقتًا.\nموقوف مؤقتًا\nأفريقيا\nاستئناف\n45.8 MB / 6.4 GB · 0.7%\nتوقف مؤقتًا حين توقف التطبيق في منتصف التنزيل؛ الملف الجزئي محفوظ.\nموقوف مؤقتًا\nأوروبا\nاستئناف\nأوقفه وضع الطيران مؤقتًا. الاستئناف يطلب أولًا الاتصال بالإنترنت.\nالذكاء الاصطناعي والتحليل\n2\nقيد التشغيل\nbackground housekeeping (markets/calendar/law/discovery)\nيعمل منذ ~2 s\nقيد التشغيل\nqualifying candidate sources\nup to 5 candidate(s) + 2 re-check(s)\nيعمل منذ ~1 s"
+ },
+ "offline_network": {
+  "online": false
+ },
+ "wiki_lane_after_offline": {
+  "state": "running",
+  "active": false,
+  "reason": "airplane-mode",
+  "waiting_on": null
+ },
+ "errors": [
+  "console.error: Failed to load resource: the server responded with a status of 500 (Internal Server Error)",
+  "console.error: Failed to load resource: the server responded with a status of 500 (Internal Server Error)",
+  "console.error: Failed to load resource: the server responded with a status of 500 (Internal Server Error)",
+  "console.error: Failed to load resource: the server responded with a status of 500 (Internal Server Error)",
+  "console.error: Failed to load resource: the server responded with a status of 500 (Internal Server Error)",
+  "console.error: Failed to load resource: the server responded with a status of 500 (Internal Server Error)",
+  "console.error: Failed to load resource: the server responded with a status of 500 (Internal Server Error)",
+  "console.error: Failed to load resource: the server responded with a status of 500 (Internal Server Error)",
+  "console.error: Failed to load resource: the server responded with a status of 500 (Internal Server Error)",
+  "console.error: Failed to load resource: the server responded with a status of 500 (Internal Server Error)",
+  "console.error: Failed to load resource: the server responded with a status of 500 (Internal Server Error)"
+ ]
+}

@@ -1166,11 +1166,56 @@
       return _NET_STATE_OFF;
     }
 
+    // HOW A FETCH LEAVES, as one of five tokens (S04-08's S5, Q1014: "each lane
+    // declares its transport in the consent hover"). `kind` is the SERVER's reading of
+    // the fetch path (src/safety/fetcher.py:transport_summary), never re-derived here
+    // from the stored fields: this popup used to read `http_proxy` alone, so it said
+    // "fetches ride the proxy you configured" in transparent mode, where that proxy is
+    // not used; "no proxy" beside a working pool; and "no proxy" when the settings
+    // could not be read at all. Anything but the four known kinds is "unknown".
+    function _transportKind(cfg) {
+      const tr = cfg && cfg.safety && cfg.safety.transport;
+      const k = tr && tr.kind;
+      return (k === "direct" || k === "proxy" || k === "pool" || k === "refused") ? k : "unknown";
+    }
+
+    // One lane's transport line. A lane that does not use the ethical fetcher leaves on
+    // its own connection whatever the mode, so its line depends on the mode only in
+    // how loudly it says so: with protected mode on, "direct" is the fact an operator
+    // relying on Tor most needs to see before going online.
+    function _laneTransport(lane, kind) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      const protectedMode = kind === "proxy" || kind === "pool" || kind === "refused";
+      if (lane.fetcher === false) {
+        if (!protectedMode) return t("Not through this app's fetcher or proxy.");
+        // With no usable proxy the installer check is refused, not proxied, so the
+        // "mostly direct" line would overclaim; the plain direct line is the true one.
+        return (lane.mixed && kind !== "refused")
+          ? t("Transport: mostly direct, even with protected mode on — only the installer check goes through your proxy, so the download hosts see your address.")
+          : t("Transport: direct, even with protected mode on — this lane does not use your proxy, so these hosts see your address.");
+      }
+      if (kind === "direct") return t("Transport: direct — protected mode is off, so these hosts see your address.");
+      if (kind === "proxy") return t("Transport: through your proxy.");
+      if (kind === "pool") return t("Transport: through your proxy pool, one member per host.");
+      if (kind === "refused") return t("Transport: none — protected mode is on with no usable proxy, so these fetches are refused, never sent direct.");
+      return t("Transport: unknown — the safety settings could not be read.");
+    }
+
+    // The line under the list, for the lanes that DO use the fetcher.
+    function _transportHint(kind) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      if (kind === "proxy") return t("Fetches ride the proxy you configured; a lane never falls back to the clear internet on its own.");
+      if (kind === "pool") return t("Fetches ride your proxy pool, one member per host; a lane never falls back to the clear internet on its own.");
+      if (kind === "refused") return t("Protected mode is on but no usable proxy is set, so fetches are refused rather than sent direct.");
+      if (kind === "direct") return t("Protected mode is off, so fetches go direct — the hosts above see your address.");
+      return t("Could not read how fetches leave this machine, so this cannot say whether they use a proxy.");
+    }
+
     // What the lane reaches, as ONE translated sentence for the #oo-tip bubble.
     // Host names are literal tokens and stay verbatim; every word around them is
     // translated, because a hover is a caveat surface and this project's caveats
     // ship in twelve locales.
-    function _laneHostTitle(lane) {
+    function _laneHostTitle(lane, kind) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
       const parts = [];
       if (lane.hosts && lane.hosts.length) parts.push(lane.hosts.join(" · "));
@@ -1179,9 +1224,7 @@
                    t("the full list is in the security notes"));
       }
       if (!parts.length) parts.push(t("a host you name yourself — nothing is bundled"));
-      if (lane.fetcher === false) {
-        parts.push(t("Not through this app's fetcher or proxy."));
-      }
+      parts.push(_laneTransport(lane, kind));
       if (lane.noOptOut) {
         parts.push(t("Always on: the code reads a switch that does not exist yet, so this cannot be turned off today."));
       }
@@ -1191,7 +1234,7 @@
       return parts.join(" — ");
     }
 
-    function _laneLine(lane) {
+    function _laneLine(lane, kind) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
       const n = (lane.hosts && lane.hosts.length) || lane.hostCount || 0;
       // "n=" rather than "N hosts": the house convention for a count (invariant
@@ -1200,7 +1243,7 @@
       // hover spells the number out in words, where the only lanes that reach it
       // are the two classes, whose counts are never 1.
       const count = n ? ` <span class="muted">n=${n}</span>` : "";
-      return `<div><span title="${esc(_laneHostTitle(lane))}">${esc(t(lane.label))}</span>${count}</div>`;
+      return `<div><span title="${esc(_laneHostTitle(lane, kind))}">${esc(t(lane.label))}</span>${count}</div>`;
     }
 
     function _renderNetLanes(cfg) {
@@ -1214,28 +1257,26 @@
       }
       const by = {on: [], ask: [], off: [], unknown: []};
       lanes.forEach((l) => by[_laneState(l, cfg)].push(l));
+      const kind = _transportKind(cfg);
+      const line = (l) => _laneLine(l, kind);
       const out = [];
       if (by.on.length) {
         out.push(`<div class="muted" style="margin-top:2px">${esc(t("Runs on every collection pass:"))}</div>`);
-        out.push(by.on.map(_laneLine).join(""));
+        out.push(by.on.map(line).join(""));
       }
       if (by.ask.length) {
         out.push(`<div class="muted" style="margin-top:6px">${esc(t("Only when you ask for it:"))}</div>`);
-        out.push(by.ask.map(_laneLine).join(""));
+        out.push(by.ask.map(line).join(""));
       }
       if (by.off.length) {
         out.push(`<div class="muted" style="margin-top:6px">${esc(t("Switched off right now:"))}</div>`);
-        out.push(by.off.map(_laneLine).join(""));
+        out.push(by.off.map(line).join(""));
       }
       if (by.unknown.length) {
         out.push(`<div class="muted" style="margin-top:6px">${esc(t("Could not read whether these are on:"))}</div>`);
-        out.push(by.unknown.map(_laneLine).join(""));
+        out.push(by.unknown.map(line).join(""));
       }
-      const proxy = cfg.safety && cfg.safety.http_proxy;
-      out.push(`<div class="hint" style="margin-top:6px">` + esc(
-        proxy ? t("Fetches ride the proxy you configured; a lane never falls back to the clear internet on its own.")
-              : t("No proxy is configured, so fetches go direct — the hosts above see your address.")
-      ) + `</div>`);
+      out.push(`<div class="hint" style="margin-top:6px">` + esc(_transportHint(kind)) + `</div>`);
       box.innerHTML = out.join("");
       // No marking call is needed: app-boot.js's MutationObserver adds
       // .oo-tip-target to every [title] that enters the DOM, which is exactly
@@ -1794,6 +1835,23 @@
       }
       return "";
     }
+    // WHY a download is not moving (S04-08's S5, Q1014): who paused it, or the
+    // failure verbatim. Before, a download held by airplane mode read as a bare
+    // "paused", the same as one the operator stopped, and a failed one showed no reason
+    // at all, though the owner kept it: a proxy that refused was invisible here.
+    function _jobWhy(j, t) {
+      if (!_isDownloadKind(j.kind)) return "";
+      let line = "";
+      if (j.state === "paused") {
+        if (j.paused_by === "airplane") line = t("Paused by airplane mode. Resume asks to go online first.");
+        else if (j.paused_by === "operator") line = t("Paused by you.");
+        else if (j.paused_by === "restart") line = t("Paused when the app stopped mid-download; the partial file is kept.");
+      } else if (j.state === "failed" && j.error) {
+        line = t("Failed:") + " " + j.error;
+      }
+      return line ? `<div class="muted" style="font-size:11px">${esc(line)}</div>` : "";
+    }
+
     function _jobRow(j, queuedKeysByKind, t) {
         const pill = j.state === "running" ? "ok" : (j.state === "failed" ? "err" : "warn");
         let prog = "";
@@ -1834,7 +1892,7 @@
         return `<div style="display:flex;align-items:center;gap:8px;padding:3px 0;flex-wrap:wrap">` +
           `<span class="pill ${pill}">${esc(t(j.state))}</span><b style="font-size:12.5px">${esc(j.label)}</b>${qpos}` +
           `<span style="margin-inline-start:auto;display:flex;gap:4px">${acts.join("")}</span>` +
-          `<div style="flex-basis:100%">${prog}</div></div>`;
+          `<div style="flex-basis:100%">${prog}${_jobWhy(j, t)}</div></div>`;
     }
     async function _renderJobs() {
       const elA = $("jobs-body"), elQ = $("queue-body");

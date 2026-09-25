@@ -94,6 +94,13 @@ class OsmDownloadEntry:
     downloaded_bytes: int = 0
     status: str = "queued"  # queued | downloading | paused | done | error
     error: str | None = None
+    # WHO paused it, while it is paused: "airplane" (the kill switch -- this app's own
+    # setting, named as such per invariant #14e's corollary), "operator" (the Pause
+    # button) or "restart" (the process ended mid-download). Before S04-08's S5 all
+    # three read as a bare "paused" with ``error=None``, so a download held by airplane
+    # mode looked exactly like one the operator had stopped. ``to_dict`` reports it only
+    # while the status is "paused", so a stale value never outlives the pause.
+    paused_by: str | None = None
     # C11 (2026-07-24 throughput brief, S-C): operator/config-supplied acceleration
     # inputs — EMPTY for every real catalog entry today (no verified Geofabrik
     # mirror list or per-file checksum could be confirmed from this sandbox; see
@@ -104,6 +111,7 @@ class OsmDownloadEntry:
 
     def to_dict(self) -> dict:
         d = asdict(self)
+        d["paused_by"] = self.paused_by if self.status == "paused" else None
         d["percent"] = (
             round(100.0 * self.downloaded_bytes / self.total_bytes, 1) if self.total_bytes else 0.0
         )
@@ -181,6 +189,7 @@ class OsmDownloadManager:
         for e in self._entries.values():
             if e.status == "downloading":
                 e.status = "paused"
+                e.paused_by = "restart"
 
     def _save(self) -> None:
         # Serialized under one lock so each written state file is internally
@@ -415,6 +424,9 @@ class OsmDownloadManager:
                     if (stop_event is not None and stop_event.is_set()) or kill_switch_active():
                         entry.status = "paused"
                         entry.error = None
+                        entry.paused_by = (
+                            "operator" if (stop_event is not None and stop_event.is_set()) else "airplane"
+                        )
                         self._save()
                         return entry
                     if not chunk:
@@ -460,6 +472,7 @@ class OsmDownloadManager:
                     self._order.remove(entry.key)
                 entry.status = "paused"
                 entry.error = None
+                entry.paused_by = "airplane"
                 self._save()
             return entry.to_dict()
         with self._lock:
@@ -484,6 +497,7 @@ class OsmDownloadManager:
                 if key in self._order:
                     self._order.remove(key)
                 e.status = "paused"
+                e.paused_by = "operator"
                 self._save()
                 return True
         stop = self._stops.get(key)

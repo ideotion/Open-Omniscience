@@ -56,6 +56,22 @@ Open Omniscience targets a **single local user** on a **Qubes OS Debian AppVM**:
   usable proxy refuses each request by name (`TransportUnavailable`) instead of connecting
   directly. (`src/safety/fetcher.py`; `tests/test_transport_follows_setting.py`.)
 
+  **The hover says how each lane leaves (S04-08's S5).** Every lane in the consent popup's
+  hover carries one transport line, taken from the server's reading of the fetch path
+  (`transport_summary`, over the same reader both fetch factories use) rather than from
+  the stored fields: *direct* with protected mode off, where a stored proxy is not used;
+  *through your proxy*; *through your proxy pool, one member per host*; or *none* when
+  protected mode is on with no usable proxy, because those fetches are refused. The mail
+  and custody rows say they go direct even with protected mode on, and the local-AI row
+  says *mostly* direct, because only its installer check is proxied. Settings that could
+  not be read show as unknown, never as direct. **A lane whose transport is unavailable
+  waits, and says on what:** the Wikipedia stream, the one long-lived lane connection,
+  reports *waiting for a connection* with the failure verbatim and keeps retrying; it never
+  falls back to a direct connection. A map or dump download held by airplane mode says so
+  in the task manager, apart from one you paused and one a restart interrupted.
+  (`src/static/app-core.js`; `tests/test_lane_transport.py`,
+  `tests/net_lane_transport_node_test.js`, `tests/test_download_paused_by.py`.)
+
 | Lane | Hosts it can reach | Trigger | Transport | Where in the tree |
 |---|---|---|---|---|
 | **Press collection** | *A class, never enumerable:* the domains of **the sources you have enabled** — **9,033 distinct hosts** across the bundled directory (`configs/sources.yml`, `configs/academic_sources.yml`, `configs/official_sources.yml`, `configs/sources_spectrum.yml`, `configs/markets_sources.yml`), plus every feed or site **you** add. A source is reached at *two* addresses: its `rss_url` when it has one, and `https://<its domain>` for the crawl and the preflight — which is why a sweep for `https://` literals alone sees only 5,425 of them, and why the guard sweeps the scheme-less `domain:` field too. The sub-rungs stay on the source's own domain: sitemap discovery, the bounded crawl rung (`crawl_per_pass`, default 3) and the archive-backfill rung (`archive_backfill_per_pass`, default 5). | The collect pass you start | ethical fetcher | `src/ingest/__init__.py:529` · `src/ingest/pipeline.py` · `src/ingest/sitemap.py` · `src/ingest/crawl.py` · `src/ingest/archive_backfill.py` · `src/ingest/seed_sources.py` · `src/ingest/crawl.py:149` and `src/monitoring/preflight.py:68` (the `https://{domain}` synthesis) |

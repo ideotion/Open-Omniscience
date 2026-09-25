@@ -361,6 +361,12 @@ class WikiLaneRunner:
         """Whether the stream thread is alive. MEASURED, never the stored setting."""
         return self._thread is not None and self._thread.is_alive()
 
+    def stream_counters(self) -> dict | None:
+        """The stream's own counters, or ``None`` for a stream that keeps none."""
+        counters = getattr(self._stream, "counters", None)
+        as_dict = getattr(counters, "as_dict", None)
+        return as_dict() if callable(as_dict) else None
+
     # -- the drain half ----------------------------------------------------- #
     def drain(self) -> DrainReport:
         """One drain, on the CALLER's thread. Opens the lane, stores, closes."""

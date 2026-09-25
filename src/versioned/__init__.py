@@ -24,7 +24,7 @@ The pieces, in the order a change travels through them:
 NOTHING HERE TOUCHES THE NETWORK. An adapter is handed a client; the substrate calls
 it. That is what lets the whole pipeline run in CI against a fixture with the
 airplane socket guard armed (Q1018), and it is the property
-``tests/test_versioned_offline.py`` pins.
+``tests/test_versioned_lane.py::test_a_full_pass_makes_ZERO_NAME_RESOLUTIONS`` pins.
 """
 
 from src.versioned.lanes import (
