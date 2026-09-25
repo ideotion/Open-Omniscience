@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import time
 from datetime import UTC, datetime
+from typing import Any
 
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -472,7 +473,7 @@ def keyword_engine_report(session: Session, *, top_n: int = 500, sample_articles
         )
 
     # Per-language coverage + functional status.
-    languages = [
+    languages: list[dict[str, Any]] = [
         {"language": (lang or "?"), "keywords": int(n), "status": _lang_status(lang or "?")}
         for lang, n in session.query(Keyword.language, func.count(Keyword.id))
         .group_by(Keyword.language)

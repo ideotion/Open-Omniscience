@@ -3594,7 +3594,7 @@ def keywords_by_tag(
             KeywordTag.axis == ax, KeywordTag.tag == tg
         ):
             by_kw.setdefault(int(kid), set()).add(str(source))
-        items = [
+        items: list[dict[str, Any]] = [
             {
                 "normalized": norm,
                 "term": term,

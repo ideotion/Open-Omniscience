@@ -166,6 +166,8 @@ def amendment_velocity(
         if basis == "first":
             excluded_baselines += 1
             continue
+        if observed_at is None:  # excluded by the filter above; narrows the Optional column
+            continue
         key = observed_at.strftime("%Y-%m" if bucket == "month" else "%Y")
         counts[(jurisdiction or "").lower() or "unknown"][key] += 1
 
