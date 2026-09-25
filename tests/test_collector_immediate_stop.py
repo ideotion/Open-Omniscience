@@ -163,7 +163,7 @@ def test_a_stop_mid_pass_defers_the_remainder_and_drops_nothing(monkeypatch):
 
     fetcher = EthicalFetcher(min_interval_s=0.0, retry_backoff_s=0.0, session=_FeedSession())
     res = run_scrape_once(
-        session, fetcher, SchedulerSettings(mode="rss"), should_stop=_should_stop
+        session, fetcher, SchedulerSettings(), should_stop=_should_stop
     )
 
     assert res["sources_processed"] == 1
@@ -186,7 +186,7 @@ def test_without_a_stop_the_whole_pass_still_runs(monkeypatch):
     fetcher = EthicalFetcher(min_interval_s=0.0, retry_backoff_s=0.0, session=_FeedSession())
 
     res = run_scrape_once(
-        session, fetcher, SchedulerSettings(mode="rss"), should_stop=lambda: False
+        session, fetcher, SchedulerSettings(), should_stop=lambda: False
     )
     assert res["sources_processed"] == 4
     assert "recycled" not in res and "deferred_next_pass" not in res

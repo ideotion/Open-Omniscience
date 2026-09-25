@@ -798,8 +798,23 @@
     }
 
     // -- Scheduler ---------------------------------------------------------- //
-    function toggleCrawlFields() {
-      $("crawl-fields").style.display = $("sch-mode").value === "crawl" ? "flex" : "none";
+    // Q1020 = a: the Mode select is retired. An install migrated from one is told what
+    // changed (the server's own sentence, keyed x12) until the operator dismisses it.
+    function renderRetiredMode(c) {
+      const box = $("sch-retired"), txt = $("sch-retired-text");
+      if (!box || !txt) return;
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const lines = (c && c.retired) || [];
+      box.hidden = !lines.length;
+      txt.textContent = lines.map((s) => t(s)).join(" ");
+    }
+    async function dismissRetiredMode(btn) {
+      btn.disabled = true;
+      try {
+        renderRetiredMode(await api("/api/scheduler/config",
+          {method: "PUT", body: JSON.stringify({retired_mode: ""})}));
+      } catch (e) { toast(_failMsg("Save failed: {error}", e), "err"); }
+      finally { btn.disabled = false; }
     }
 
     // Timezone-proof: the backend reports UTC; the browser knows the operator's
@@ -842,7 +857,7 @@
       const r = st.last_result;
       $("sched-last").innerHTML = st.last_error
         ? `<span class="pill err">last run failed</span> ${esc(st.last_error)}`
-        : (r ? `Last run (${esc(r.mode)}): <strong>${r.articles_stored}</strong> stored` +
+        : (r ? `Last run: <strong>${r.articles_stored}</strong> stored` +
                (r.pages_fetched ? `, ${r.pages_fetched} pages fetched` : "") +
                `, ${r.sources_processed} source(s), ${esc(String(r.duration_s))}s ` +
                `<span class="muted">at ${esc(fmtLocal(r.finished_at || ""))}</span>`
@@ -938,7 +953,9 @@
 
     function applySchedConfig(c) {
       $("sch-interval").value = c.interval_minutes;
-      $("sch-mode").value = c.mode;
+      if ($("sch-market-rules")) $("sch-market-rules").checked = !!c.auto_run_market_rules;
+      if ($("sch-stat-refresh")) $("sch-stat-refresh").checked = !!c.auto_refresh_stat_subscriptions;
+      renderRetiredMode(c);
       $("sch-depth").value = c.crawl_max_depth;
       $("sch-pages").value = c.crawl_max_pages;
       $("sch-autostart").checked = !!c.autostart;
@@ -959,7 +976,6 @@
         $("sch-speed").value = idx;
         schedSpeedLabel();
       }
-      toggleCrawlFields();
     }
 
     const _csv = id => $(id).value.split(",").map(x => x.trim()).filter(Boolean);
@@ -1378,7 +1394,6 @@
       const el = $("sched-targets");
       try {
         const t = await api("/api/scheduler/targets");
-        if (!t.applies) { el.innerHTML = `<span class="muted">Selection applies to RSS / crawl modes; current mode is <strong>${esc(t.mode)}</strong>.</span>`; return; }
         const langs = Object.entries(t.by_language).map(([k,v])=>`${esc(k)}:${v}`).join("  ");
         const types = Object.entries(t.by_source_type).map(([k,v])=>`${esc(k)}:${v}`).join("  ");
         el.innerHTML = `<span class="pill ${t.matched?'ok':'warn'}">${t.matched} sources targeted</span> ` +
@@ -1419,7 +1434,8 @@
     async function saveScheduler() {
       const body = {
         interval_minutes: Number($("sch-interval").value),
-        mode: $("sch-mode").value,
+        auto_run_market_rules: $("sch-market-rules") ? $("sch-market-rules").checked : undefined,
+        auto_refresh_stat_subscriptions: $("sch-stat-refresh") ? $("sch-stat-refresh").checked : undefined,
         crawl_max_depth: Number($("sch-depth").value),
         crawl_max_pages: Number($("sch-pages").value),
         autostart: $("sch-autostart").checked,

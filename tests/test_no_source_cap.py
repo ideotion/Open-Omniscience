@@ -77,13 +77,13 @@ def test_save_settings_accepts_max_sources_per_run_zero_and_above_1000():
 
 def test_plan_preview_covers_every_source_when_uncapped():
     s = _db_with_sources(7)
-    plan = plan_preview(s, SchedulerSettings(mode="rss", max_sources_per_run=0), last_result=None)
+    plan = plan_preview(s, SchedulerSettings(max_sources_per_run=0), last_result=None)
     assert plan["planned_total"] == 7  # every enabled source, no selection
 
 
 def test_plan_preview_honours_an_explicit_soft_cap():
     s = _db_with_sources(7)
-    plan = plan_preview(s, SchedulerSettings(mode="rss", max_sources_per_run=3), last_result=None)
+    plan = plan_preview(s, SchedulerSettings(max_sources_per_run=3), last_result=None)
     assert plan["planned_total"] == 3
 
 
@@ -103,7 +103,7 @@ def test_plan_preview_bounds_the_materialised_sample(monkeypatch):
         return original(rows, **kw)
 
     monkeypatch.setattr(runner, "stratified_interleave", _spy)
-    plan = plan_preview(s, SchedulerSettings(mode="rss", max_sources_per_run=0), last_result=None)
+    plan = plan_preview(s, SchedulerSettings(max_sources_per_run=0), last_result=None)
 
     assert plan["planned_total"] == 300  # the honest total (no cap), via COUNT
     assert seen["n"] <= runner._PLAN_PREVIEW_SAMPLE  # only a bounded sample built

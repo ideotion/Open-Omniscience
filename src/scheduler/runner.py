@@ -478,7 +478,8 @@ def select_sources(session, settings: SchedulerSettings):
 
 
 # Small, tight bound for the crawl-SUPPLEMENT'S per-source config -- deliberately much
-# smaller than the explicit whole-source mode="crawl" caps (up to 500 pages/depth 6):
+# smaller than the operator's own caps (up to 500 pages/depth 6, the bounds the retired
+# whole-source mode="crawl" used), which the rung reads through min():
 # this is a bounded, polite discovery nibble that runs EVERY due pass, not a full crawl.
 _CRAWL_SUPPLEMENT_MAX_PAGES = 20
 _CRAWL_SUPPLEMENT_MAX_DEPTH = 2
@@ -503,23 +504,6 @@ def _select_crawl_candidates(session, settings: SchedulerSettings, limit: int) -
         Source.last_crawled_at.asc(),  # then oldest-crawled first
     )
     return q.limit(limit).all()
-
-
-def _item_mode_count(session, settings: SchedulerSettings) -> int:
-    """How many watched items a wiki/law/markets pass will cover (for the preview
-    estimate). With no per-run cap this is the true count; a soft cap clamps it."""
-    from src.database.models import LawDocument, MarketExtractionRule, WikiPage
-
-    if settings.mode == "wiki":
-        n = session.query(WikiPage).filter_by(watched=True).count()
-    elif settings.mode == "law":
-        n = session.query(LawDocument).filter_by(watched=True).count()
-    elif settings.mode == "markets":
-        n = session.query(MarketExtractionRule).filter_by(enabled=True).count()
-    else:
-        return 0
-    cap = settings.max_sources_per_run
-    return min(n, cap) if cap and cap > 0 else n
 
 
 # --- Live run progress (maintainer-ruled 2026-06-10: the activity chip opens -- #
@@ -586,98 +570,93 @@ def plan_preview(session, settings: SchedulerSettings, *, last_result: dict | No
     # Holds list-of-dict facets PLUS scalar 'sampled'/'note', so the value type is object.
     strata: dict[str, object] = {"languages": [], "tags": []}
     total = 0
-    if settings.mode in ("rss", "crawl"):
-        from sqlalchemy import func
+    # Q1020 = a: there is no per-pass mode any more -- the pass IS the press lane, so the
+    # preview always describes it. (The wiki / law / markets "item-mode" estimate went with
+    # the modes; those kinds run beside the pass as lanes, and a lane's own surface owns
+    # what it will do next.)
+    from sqlalchemy import func
 
-        from src.database.models import Source
+    from src.database.models import Source
 
-        base = select_sources(session, settings)
-        # Field perf 2026-06-17: /api/scheduler/activity was the #1 endpoint by
-        # server time (4244 polls × ~119 ms), because this preview materialised
-        # the WHOLE enabled-source set (3000+ rows decrypted through the SQLCipher
-        # codec) on every poll. We only need an honest total + 8 preview domains +
-        # a representative politeness delay, so: a cheap COUNT for the total, then
-        # a BOUNDED sample (never more than the pass will actually run) for the
-        # rest. total still drives the estimate, so it stays the true count.
-        # Field diagnostics 2026-09-11 (A5): the "cheap COUNT" above was not cheap.
-        # `max_sources_per_run` defaults to 0, so `capped()` returns the query UNTOUCHED
-        # (src/database/query.py: 0 means unbounded, because LIMIT 0 returns no rows) --
-        # and `base` is an ENTITY query carrying `ORDER BY priority, id`. Query.count()
-        # wraps that whole thing in a subquery, so SQLite was asked for all 22 `sources`
-        # columns SORTED, and `EXPLAIN QUERY PLAN` duly shows USE TEMP B-TREE FOR ORDER
-        # BY -- to produce one integer, on the endpoint that carried 160 of the 187
-        # recorded stalls. Reproduced at 45k rows: 24.4 ms against 8.8 ms for a direct
-        # count, identical answer. (That measurement is plaintext in-memory SQLite: it
-        # proves the SHAPE, not the field magnitude on an encrypted 86k-source store.)
-        #
-        # `with_entities` rewrites the SELECT list of THE SAME query object, so the
-        # WHERE clauses can never drift from select_sources' -- which is why the count
-        # is derived here rather than rebuilt from a second copy of the filters. The
-        # ORDER BY is dropped because a count does not depend on order.
-        #
-        # The cap is applied as arithmetic rather than SQL: `capped(base, n).count()`
-        # answered `min(n, total)`, and min() answers the same thing without asking the
-        # database to run a LIMIT it would only count the rows of.
-        total = base.order_by(None).with_entities(func.count(Source.id)).scalar() or 0
-        if settings.max_sources_per_run and settings.max_sources_per_run > 0:
-            total = min(total, settings.max_sources_per_run)
-        sample_n = min(total, _PLAN_PREVIEW_SAMPLE)
-        rows = base.limit(sample_n).all() if sample_n else []
-        # Same stratified (language + tag, true-random) ordering the pass uses.
-        rows = stratified_interleave(rows)
-        targets = [r.domain for r in rows[:8]]
-        # Show the ACTUAL strata the pass interleaves by (field test 2026-06-22, #5):
-        # not just the claim "stratified by language & tag" but the languages/tags
-        # present. Derived from the bounded sample ALREADY fetched (zero extra query —
-        # /api/scheduler/activity is the hot poll, never add an unbounded DISTINCT scan),
-        # so it is a representative sample of the highest-priority due sources, not the
-        # whole catalogue — and the pass RE-RANDOMISES every time, so this is a glimpse
-        # of the rotation, never a fixed queue. The "·unknown"/"·untagged" buckets are
-        # the same ones stratified_interleave uses (never dropped).
-        lang_n: dict[str, int] = {}
-        tag_n: dict[str, int] = {}
-        for r in rows:
-            lang_n[_source_lang(r)] = lang_n.get(_source_lang(r), 0) + 1
-            tag_n[_source_tag(r)] = tag_n.get(_source_tag(r), 0) + 1
-        strata = {
-            "languages": [
-                {"key": k, "n": n}
-                for k, n in sorted(lang_n.items(), key=lambda kv: (-kv[1], kv[0]))[:12]
-            ],
-            "tags": [
-                {"key": k, "n": n}
-                for k, n in sorted(tag_n.items(), key=lambda kv: (-kv[1], kv[0]))[:12]
-            ],
-            "sampled": len(rows),
-            "note": (
-                "Languages & tags among the next sources sampled; the pass re-randomises "
-                "by language & tag every time (a rotation, not a fixed queue)."
-            ),
-        }
-        delays = [max((r.rate_limit_ms or 1000) / 1000.0, 1.0) for r in rows] or [1.0]
-        median_delay = sorted(delays)[len(delays) // 2]
-        per_source = 1.0
-        if last_result and last_result.get("sources_processed"):
-            per_source = max(
-                1.0,
-                (last_result.get("pages_fetched") or 0) / last_result["sources_processed"],
-            )
-        if settings.mode == "crawl":
-            per_source = max(per_source, min(settings.crawl_max_pages, 5))
-        est = round(total * median_delay * per_source)
-        method = (
-            f"{total} source(s) × ~{median_delay:.1f}s politeness delay × "
-            f"~{per_source:.1f} fetch(es) each (from the last run) — an assumption, "
-            "not a promise; robots crawl-delays can stretch it."
+    base = select_sources(session, settings)
+    # Field perf 2026-06-17: /api/scheduler/activity was the #1 endpoint by
+    # server time (4244 polls × ~119 ms), because this preview materialised
+    # the WHOLE enabled-source set (3000+ rows decrypted through the SQLCipher
+    # codec) on every poll. We only need an honest total + 8 preview domains +
+    # a representative politeness delay, so: a cheap COUNT for the total, then
+    # a BOUNDED sample (never more than the pass will actually run) for the
+    # rest. total still drives the estimate, so it stays the true count.
+    # Field diagnostics 2026-09-11 (A5): the "cheap COUNT" above was not cheap.
+    # `max_sources_per_run` defaults to 0, so `capped()` returns the query UNTOUCHED
+    # (src/database/query.py: 0 means unbounded, because LIMIT 0 returns no rows) --
+    # and `base` is an ENTITY query carrying `ORDER BY priority, id`. Query.count()
+    # wraps that whole thing in a subquery, so SQLite was asked for all 22 `sources`
+    # columns SORTED, and `EXPLAIN QUERY PLAN` duly shows USE TEMP B-TREE FOR ORDER
+    # BY -- to produce one integer, on the endpoint that carried 160 of the 187
+    # recorded stalls. Reproduced at 45k rows: 24.4 ms against 8.8 ms for a direct
+    # count, identical answer. (That measurement is plaintext in-memory SQLite: it
+    # proves the SHAPE, not the field magnitude on an encrypted 86k-source store.)
+    #
+    # `with_entities` rewrites the SELECT list of THE SAME query object, so the
+    # WHERE clauses can never drift from select_sources' -- which is why the count
+    # is derived here rather than rebuilt from a second copy of the filters. The
+    # ORDER BY is dropped because a count does not depend on order.
+    #
+    # The cap is applied as arithmetic rather than SQL: `capped(base, n).count()`
+    # answered `min(n, total)`, and min() answers the same thing without asking the
+    # database to run a LIMIT it would only count the rows of.
+    total = base.order_by(None).with_entities(func.count(Source.id)).scalar() or 0
+    if settings.max_sources_per_run and settings.max_sources_per_run > 0:
+        total = min(total, settings.max_sources_per_run)
+    sample_n = min(total, _PLAN_PREVIEW_SAMPLE)
+    rows = base.limit(sample_n).all() if sample_n else []
+    # Same stratified (language + tag, true-random) ordering the pass uses.
+    rows = stratified_interleave(rows)
+    targets = [r.domain for r in rows[:8]]
+    # Show the ACTUAL strata the pass interleaves by (field test 2026-06-22, #5):
+    # not just the claim "stratified by language & tag" but the languages/tags
+    # present. Derived from the bounded sample ALREADY fetched (zero extra query —
+    # /api/scheduler/activity is the hot poll, never add an unbounded DISTINCT scan),
+    # so it is a representative sample of the highest-priority due sources, not the
+    # whole catalogue — and the pass RE-RANDOMISES every time, so this is a glimpse
+    # of the rotation, never a fixed queue. The "·unknown"/"·untagged" buckets are
+    # the same ones stratified_interleave uses (never dropped).
+    lang_n: dict[str, int] = {}
+    tag_n: dict[str, int] = {}
+    for r in rows:
+        lang_n[_source_lang(r)] = lang_n.get(_source_lang(r), 0) + 1
+        tag_n[_source_tag(r)] = tag_n.get(_source_tag(r), 0) + 1
+    strata = {
+        "languages": [
+            {"key": k, "n": n}
+            for k, n in sorted(lang_n.items(), key=lambda kv: (-kv[1], kv[0]))[:12]
+        ],
+        "tags": [
+            {"key": k, "n": n}
+            for k, n in sorted(tag_n.items(), key=lambda kv: (-kv[1], kv[0]))[:12]
+        ],
+        "sampled": len(rows),
+        "note": (
+            "Languages & tags among the next sources sampled; the pass re-randomises "
+            "by language & tag every time (a rotation, not a fixed queue)."
+        ),
+    }
+    delays = [max((r.rate_limit_ms or 1000) / 1000.0, 1.0) for r in rows] or [1.0]
+    median_delay = sorted(delays)[len(delays) // 2]
+    per_source = 1.0
+    if last_result and last_result.get("sources_processed"):
+        per_source = max(
+            1.0,
+            (last_result.get("pages_fetched") or 0) / last_result["sources_processed"],
         )
-    else:
-        # wiki / law / markets iterate watched items, not sources. With no cap
-        # (the default), report the REAL count of items this pass will cover.
-        total = _item_mode_count(session, settings)
-        est = None
-        method = "item-mode pass (wiki/law/markets): duration depends on the remote service."
+    est = round(total * median_delay * per_source)
+    method = (
+        f"{total} source(s) × ~{median_delay:.1f}s politeness delay × "
+        f"~{per_source:.1f} fetch(es) each (from the last run) — an assumption, "
+        "not a promise; robots crawl-delays can stretch it."
+    )
     return {
-        "mode": settings.mode,
+        "lane": "press",
         "planned_total": total,
         "next_targets": targets,
         "strata": strata,
@@ -686,7 +665,7 @@ def plan_preview(session, settings: SchedulerSettings, *, last_result: dict | No
     }
 
 
-def _process_source(source, *, session, fetcher, mode: str, crawl_cfg) -> tuple[dict, int, int]:
+def _process_source(source, *, session, fetcher) -> tuple[dict, int, int]:
     """Scrape ONE source into ``session``; returns (tally, pages_fetched, processed).
 
     Isolated and fail-safe: one bad source never aborts the pass — its error is
@@ -696,7 +675,6 @@ def _process_source(source, *, session, fetcher, mode: str, crawl_cfg) -> tuple[
     is paired with this call's session (S1.0) so a fetch never runs while that
     session holds a pooled connection.
     """
-    from src.ingest.crawl import crawl_source
     from src.ingest.fetch_release import wrap_fetcher
     from src.ingest.pipeline import ingest_source
 
@@ -716,14 +694,9 @@ def _process_source(source, *, session, fetcher, mode: str, crawl_cfg) -> tuple[
     fetcher = wrap_fetcher(fetcher, session)
 
     try:
-        if mode == "crawl":
-            from src.stats.ingest import crawl_start_url_for
-
-            report = crawl_source(
-                session, source, fetcher=fetcher, config=crawl_cfg,
-                start_url=crawl_start_url_for(source),
-            )
-            return report.tally, report.pages_fetched, 1
+        # Feeds only. The whole-source crawl branch that sat here served the retired
+        # ``mode="crawl"`` (Q1020 = a); crawling now happens beside the pass, bounded, in
+        # the housekeeping lane's crawl supplement (``_lane_step_crawl``).
         if not source.rss_url:
             return {}, 0, 0
         return ingest_source(session, source, fetcher=fetcher), 0, 1
@@ -737,9 +710,12 @@ def run_scrape_once(
 ) -> dict:
     """Run one ingestion pass over enabled sources and return an aggregated tally.
 
-    In ``rss`` mode each enabled source with a feed is ingested; in ``crawl`` mode
-    each enabled source is crawled (bounded by the crawl caps in ``settings``).
-    Sources are taken highest-priority first, capped at ``max_sources_per_run``.
+    This is the PRESS lane: each enabled, qualified source with a feed is ingested.
+    Before Q1020 = a the scheduler's ``mode`` could swap this pass for a whole-source
+    crawl, a markets pass, a wiki pass or a law pass, each of which STOPPED feed
+    collection; those kinds now run beside it as lanes (``run_housekeeping_lane``, and
+    the Wikipedia stream on the online seam). Sources are taken highest-priority first,
+    capped at ``max_sources_per_run``.
 
     ``should_stop`` (field report 2026-07-29): consulted before each source via
     :class:`_PassWindDown`, so an explicit stop (the operator's, or an exclusive
@@ -747,9 +723,6 @@ def run_scrape_once(
     instead of one whole pass. In-flight work always finishes; the remainder is
     deferred to run first next pass, never dropped.
     """
-    from src.database.models import MarketExtractionRule
-    from src.ingest.crawl import CrawlConfig
-
     started = datetime.now(UTC)
 
     agg: dict[str, int] = {}
@@ -760,89 +733,6 @@ def run_scrape_once(
         for k, v in tally.items():
             if isinstance(v, int):
                 agg[k] = agg.get(k, 0) + v
-
-    # Wiki mode tracks watched Wikipedia pages (revisions/diffs/flags), not sources.
-    if settings.mode == "wiki":
-        from src.wiki.client import WikiClient
-        from src.wiki.track import track_watched
-
-        res = track_watched(session, WikiClient(), limit_pages=settings.max_sources_per_run)
-        finished = datetime.now(UTC)
-        return {
-            "mode": "wiki",
-            "sources_processed": res["pages"],
-            "articles_stored": 0,
-            "wiki_new_revisions": res["new_revisions"],
-            "wiki_flagged": res["flagged"],
-            "pages_fetched": 0,
-            "tally": {"new_revisions": res["new_revisions"], "flagged": res["flagged"]},
-            "started_at": started.isoformat(),
-            "finished_at": finished.isoformat(),
-            "duration_s": round((finished - started).total_seconds(), 2),
-        }
-
-    # Law mode tracks watched legal documents (baseline/diff/flag), not sources.
-    if settings.mode == "law":
-        # Aliased: src.wiki.track exports a `track_watched` too, with a different
-        # signature, and this function already imports that one for the wiki branch.
-        # Python rebinds per import at runtime, so both calls worked -- but one name
-        # for two functions is a trap for the next reader as much as for the checker.
-        from src.law.track import track_watched as track_watched_law
-
-        res = track_watched_law(session, fetcher, limit_documents=settings.max_sources_per_run)
-        finished = datetime.now(UTC)
-        return {
-            "mode": "law",
-            "sources_processed": res["documents"],
-            "articles_stored": 0,
-            "law_changed": res["changed"],
-            "law_flagged": res["flagged"],
-            "pages_fetched": res["documents"],
-            "tally": res,
-            "started_at": started.isoformat(),
-            "finished_at": finished.isoformat(),
-            "duration_s": round((finished - started).total_seconds(), 2),
-        }
-
-    # Markets mode iterates configured extraction rules, not sources.
-    if settings.mode == "markets":
-        from src.markets.pipeline import import_due_feeds, run_rules
-
-        rules = capped(
-            session.query(MarketExtractionRule)
-            .filter_by(enabled=True)
-            .order_by(MarketExtractionRule.id.asc()),
-            settings.max_sources_per_run,
-        ).all()
-        result = run_rules(session, rules, fetcher=fetcher)
-        _add(result["tally"])
-        # Background AUTO-LOAD of the curated CSV feeds (commodities + indices),
-        # freshness-gated, so the board fills itself and the manual Load/Refresh
-        # button is no longer needed (maintainer 2026-06-17). Best-effort.
-        feeds = import_due_feeds(session, fetcher=fetcher)
-        _add({"feed_points": feeds.get("imported", 0)})
-        # Scheduled auto-refresh of tracked official-statistics vintages (ruling #12),
-        # freshness- + airplane-gated, best-effort (a stats problem never breaks the pass).
-        try:
-            from src.stats.subscriptions import refresh_due
-
-            stats_ref = refresh_due(session)
-            _add({"stat_vintages": stats_ref.get("stored", 0)})
-        except Exception:  # noqa: BLE001 - additive; never fatal to the markets pass
-            _LOG.warning("stat-subscription refresh failed; pass continues", exc_info=True)
-        finished = datetime.now(UTC)
-        return {
-            "mode": "markets",
-            "sources_processed": len(rules),
-            "articles_stored": agg.get("stored", 0),
-            "prices_stored": result["prices_stored"],
-            "feeds_imported": feeds.get("imported", 0),
-            "pages_fetched": 0,
-            "tally": agg,
-            "started_at": started.isoformat(),
-            "finished_at": finished.isoformat(),
-            "duration_s": round((finished - started).total_seconds(), 2),
-        }
 
     sources = capped(select_sources(session, settings), settings.max_sources_per_run).all()
     # Fair ordering: TRUE-RANDOM stratified by LANGUAGE + SOURCE TAG so no
@@ -870,12 +760,9 @@ def run_scrape_once(
     # duplicates). This is an additive pre-filter — it changes only WHICH feeds
     # run THIS pass, never the dispatch below, and never an exclusion: the cap
     # (BACKOFF_CAP_S ~6 h) guarantees every feed is re-checked soon; any new
-    # article / 304 / error already cleared the window. Crawl mode has no feed
-    # state, so it is untouched. Counted honestly as "backed_off", not skipped
+    # article / 304 / error already cleared the window. Counted honestly as "backed_off", not skipped
     # silently and not as a duplicate/error.
-    backed_off = 0
-    if settings.mode == "rss":
-        sources, backed_off = _filter_due_feeds(session, sources)
+    sources, backed_off = _filter_due_feeds(session, sources)
     if backed_off:
         agg["backed_off"] = agg.get("backed_off", 0) + backed_off
 
@@ -884,7 +771,7 @@ def run_scrape_once(
     # deferred to a later pass — NEVER excluded (a hard freshness floor keeps any
     # cap-stale or never-fetched source). Empty target = the block is skipped =
     # byte-identical to the pure rotation. Additive + fail-open like the backoff.
-    if settings.mode == "rss" and settings.language_equilibrium:
+    if settings.language_equilibrium:
         try:
             from src.database.models import FeedFetchState
             from src.scheduler.equilibrium import (
@@ -919,7 +806,7 @@ def run_scrape_once(
     countries = len({(s.country or "").strip().lower() for s in sources if s.country})
 
     _progress_set(
-        mode=settings.mode,
+        lane="press",
         total=len(sources),
         done=0,
         current=None,
@@ -927,11 +814,6 @@ def run_scrape_once(
         countries=countries,
         ordering="round-robin",
         started_at=started.isoformat(),
-    )
-    crawl_cfg = (
-        CrawlConfig(max_depth=settings.crawl_max_depth, max_pages=settings.crawl_max_pages)
-        if settings.mode == "crawl"
-        else None
     )
     # The pass-boundary decider (P0.3 E2): when the wall-clock budget or work
     # cap is reached the pass stops ADMITTING new sources; whatever is in
@@ -1022,7 +904,7 @@ def run_scrape_once(
             monitor = CollectionMonitor(
                 governor=governor,
                 pass_id=started.isoformat(timespec="seconds"),
-                mode=settings.mode,
+                mode="press",
                 # Per-component memory gauges (P0.3 E1): the fetcher's host
                 # caches are per-pass state; their growth rides every sample.
                 cache_stats_fn=getattr(fetcher, "cache_stats", None),
@@ -1045,8 +927,6 @@ def run_scrape_once(
                             source,
                             session=worker_session,
                             fetcher=fetcher,
-                            mode=settings.mode,
-                            crawl_cfg=crawl_cfg,
                         )
                 finally:
                     governor.release()
@@ -1134,7 +1014,6 @@ def run_scrape_once(
                 _progress_set(current=source.domain, done=idx, pages=pages_fetched)
                 tally, pages, processed = _process_source(
                     source, session=session, fetcher=fetcher,
-                    mode=settings.mode, crawl_cfg=crawl_cfg,
                 )
                 _add(tally)
                 pages_fetched += pages
@@ -1159,7 +1038,7 @@ def run_scrape_once(
 
     finished = datetime.now(UTC)
     out = {
-        "mode": settings.mode,
+        "lane": "press",
         "sources_processed": sources_processed,
         "articles_stored": agg.get("stored", 0),
         "pages_fetched": pages_fetched,
@@ -1264,8 +1143,11 @@ def _lane_pending_kinds(settings: SchedulerSettings) -> set[str]:
     ride-along's OWN settings toggle/budget -- "budget 0 / toggle off" is a
     kind's off-switch (unchanged from today), never the ladder's job."""
     pending: set[str] = set()
-    if settings.mode != "markets":  # markets MODE already ran its own import
-        pending.add("markets")
+    # The markets lane always runs: its bundled feed import is freshness-gated and has no
+    # switch (docs/SECURITY.md says so). Its two operator opt-ins -- the price rules and
+    # the subscribed statistics -- are checked INSIDE the step, so an operator who turned
+    # both off still gets the feeds they never had a switch for.
+    pending.add("markets")
     if getattr(settings, "auto_import_calendars", True):
         pending.add("calendar")
     if getattr(settings, "auto_track_law", True):
@@ -1312,10 +1194,48 @@ def _lane_kind_order(pending: set[str], *, ladder: KindLadder | None = None) -> 
 
 
 def _lane_step_markets(session, fetcher, settings: SchedulerSettings) -> dict:
+    """The markets lane (Q1020 = a): the bundled feeds always, then the operator's two
+    opt-ins -- their own price-extraction rules and the statistics figures they subscribed
+    to. Those two used to run only inside the retired ``mode="markets"`` pass (which also
+    STOPPED feed collection); here they run beside it.
+
+    Each opt-in is isolated from the other and from the feed import: a broken rule must
+    not cost the operator their commodity prices, and a statistics host that is down must
+    not cost them their rules. A failure is RECORDED in the tally under its own key rather
+    than only logged, so "nothing was due" and "it broke" stay two different readings.
+    """
     from src.markets.pipeline import import_due_feeds
 
     feeds = import_due_feeds(session, fetcher=fetcher)
-    return {"feed_points": feeds.get("imported", 0)}
+    out: dict = {"feed_points": feeds.get("imported", 0)}
+    if getattr(settings, "auto_run_market_rules", False):
+        try:
+            from src.database.models import MarketExtractionRule
+            from src.markets.pipeline import run_rules
+
+            rules = capped(
+                session.query(MarketExtractionRule)
+                .filter_by(enabled=True)
+                .order_by(MarketExtractionRule.id.asc()),
+                settings.max_sources_per_run,
+            ).all()
+            result = run_rules(session, rules, fetcher=fetcher)
+            out["rules_run"] = len(rules)
+            out["prices_stored"] = result.get("prices_stored", 0)
+        except Exception as exc:  # noqa: BLE001 - the feeds above already counted
+            _LOG.warning("markets lane: price rules failed", exc_info=True)
+            session.rollback()
+            out["rules_error"] = str(exc)[:200] or exc.__class__.__name__
+    if getattr(settings, "auto_refresh_stat_subscriptions", False):
+        try:
+            from src.stats.subscriptions import refresh_due
+
+            out["stat_vintages"] = refresh_due(session).get("stored", 0)
+        except Exception as exc:  # noqa: BLE001 - never fatal to the lane
+            _LOG.warning("markets lane: stat-subscription refresh failed", exc_info=True)
+            session.rollback()
+            out["stats_error"] = str(exc)[:200] or exc.__class__.__name__
+    return out
 
 
 def _lane_step_calendar(session, fetcher, settings: SchedulerSettings) -> dict:
@@ -1831,10 +1751,8 @@ class BackgroundScheduler:
             self._active = True
         started = datetime.now(UTC)
         report: dict = {"started_at": started.isoformat(timespec="seconds")}
-        try:
-            report["mode"] = self._settings_provider().mode
-        except Exception:  # noqa: BLE001 - settings must not block a run
-            report["mode"] = "unknown"
+        # Q1020 = a: every run is the press lane; there is no per-run mode to read.
+        report["lane"] = "press"
         try:
             result = self._run_once_fn()
             with self._state_lock:
@@ -2226,7 +2144,8 @@ class BackgroundScheduler:
             # block) instead of running serially here. Every find still stays a
             # DISABLED source for review (automation covers DISCOVERY, never
             # enabling); ongoing refresh of an already-loaded indicator is still the
-            # separate stats.subscriptions.refresh_due call in markets mode above,
+            # separate stats.subscriptions.refresh_due call on the markets lane
+            # (``auto_refresh_stat_subscriptions``, Q1020 = a),
             # so the two never duplicate work.
             # AUTO-ON-INGEST (opt-in): run every enabled, run_on_ingest custom AI
             # extractor over the most recent articles. Best-effort + bounded; with no

@@ -257,7 +257,7 @@ def _run_pass(args, *, workers: int, seed: int = 4) -> tuple[int, float, int]:
 
     serve = _Serve()
     fetcher = EthicalFetcher(min_interval_s=0.0, retry_backoff_s=0.0, session=serve)
-    settings = SchedulerSettings(mode="rss", collect_parallelism=workers,
+    settings = SchedulerSettings(collect_parallelism=workers,
                                  select_tags=[tag], collect_rate_mode="maximum")
     sel = SessionLocal()
     t0 = time.perf_counter()

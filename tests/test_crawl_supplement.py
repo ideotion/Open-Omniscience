@@ -311,8 +311,9 @@ def test_one_source_failing_does_not_abort_the_rest(monkeypatch):
 
 
 def test_the_supplement_uses_a_tight_crawl_config(monkeypatch):
-    """The supplement's CrawlConfig is deliberately smaller than the explicit
-    whole-source mode="crawl" caps -- never a full crawl every pass."""
+    """The supplement's CrawlConfig is deliberately smaller than the operator's own caps
+    (the bounds the retired whole-source mode="crawl" used) -- never a full crawl every
+    pass."""
     session = _engine_session()
     settings = SchedulerSettings(crawl_per_pass=1, crawl_max_pages=500, crawl_max_depth=6)
     _qualified_source(session, domain="a.example")

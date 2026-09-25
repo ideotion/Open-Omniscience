@@ -217,7 +217,7 @@ def test_engaged_guard_winds_a_pass_down_and_never_touches_the_gate(monkeypatch)
     fetcher = EthicalFetcher(min_interval_s=0.0, retry_backoff_s=0.0,
                              session=_EmptyFeedSession())
     t0 = time.monotonic()
-    res = run_scrape_once(session, fetcher, SchedulerSettings(mode="rss"))
+    res = run_scrape_once(session, fetcher, SchedulerSettings())
     # Pause-not-die: the pass RETURNED promptly (nothing blocked, no deadlock),
     # processed nothing, deferred everything with the honest reason.
     assert time.monotonic() - t0 < 5.0

@@ -2242,7 +2242,7 @@
     </details>
 
     <details class="adv-sec" data-adv="collect">
-      <summary><span class="adv-sec-t">Collection</span> <span class="muted">— schedule, crawl modes, manual and batch ingest</span></summary>
+      <summary><span class="adv-sec-t">Collection</span> <span class="muted">— schedule, lanes, manual and batch ingest</span></summary>
     <section class="panel">
       <h2>Collection</h2>
       <p class="hint"><strong>Scraping, source aggregation and crawling run continuously and automatically whenever collection is on and you are online.</strong>
@@ -2274,19 +2274,31 @@
       <div class="row">
         <div><label for="sch-interval">Interval (minutes)</label>
           <input id="sch-interval" type="number" min="1" max="10080" step="1"></div>
-        <div><label for="sch-mode">Mode</label>
-          <select id="sch-mode" onchange="toggleCrawlFields()">
-            <option value="rss">RSS feeds</option>
-            <option value="crawl">Recursive crawl</option>
-            <option value="markets">Markets (price rules)</option>
-            <option value="wiki">Wikipedia (watched pages)</option>
-          </select></div>
       </div>
-      <div class="row" id="crawl-fields" style="display:none">
+      <!-- Q1020 = a: the scheduler "Mode" select is RETIRED. Every pass collects the
+           feeds, and markets, law, hazards, discovery, the crawl supplement and the
+           Wikipedia stream run BESIDE it as lanes. An install migrated from a retired
+           mode is told what changed here, once, until it dismisses the line. -->
+      <div id="sch-retired" class="card-caveat" hidden>
+        <span id="sch-retired-text"></span>
+        <button class="secondary" type="button" onclick="dismissRetiredMode(this)">Dismiss</button>
+      </div>
+      <div class="row" id="crawl-fields">
         <div><label for="sch-depth">Crawl depth</label>
           <input id="sch-depth" type="number" min="0" max="6" step="1"></div>
         <div><label for="sch-pages">Max pages / source</label>
           <input id="sch-pages" type="number" min="1" max="500" step="1"></div>
+      </div>
+      <div class="hint">These two cap the crawl supplement, the bounded crawl that runs beside feed collection on every pass.</div>
+      <div class="row" style="margin-top:8px">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer" title="Your own price-extraction rules (Markets) fetch the pages you gave them. Off by default: before this release they ran only in the retired Markets mode.">
+          <input type="checkbox" id="sch-market-rules" style="width:auto"> Run my price-extraction rules on every pass
+        </label>
+      </div>
+      <div class="row">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer" title="Statistics figures you subscribed to are re-fetched from their publisher when a newer vintage is due. Off by default: before this release they refreshed only in the retired Markets mode.">
+          <input type="checkbox" id="sch-stat-refresh" style="width:auto"> Refresh the statistics I subscribed to on every pass
+        </label>
       </div>
       <div class="row">
         <div style="flex:2"><label for="sch-export-dir">Drop-folder export
@@ -2295,7 +2307,7 @@
         </div>
       </div>
 
-      <h2 style="font-size:13px;margin:14px 0 4px">Which sources (rss / crawl modes)</h2>
+      <h2 style="font-size:13px;margin:14px 0 4px">Which sources (feed collection)</h2>
       <div class="row">
         <div><label for="sch-langs">Languages</label><input id="sch-langs" placeholder="en, fr (blank = all)"></div>
         <div><label for="sch-types">Source types</label><input id="sch-types" placeholder="news, financial …"></div>

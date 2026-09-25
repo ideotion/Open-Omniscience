@@ -132,7 +132,7 @@ def test_pool_serialises_same_host_but_overlaps_different_hosts():
 
     sess = _OverlapSession(delay=0.1)
     fetcher = EthicalFetcher(min_interval_s=0.0, retry_backoff_s=0.0, session=sess)
-    settings = SchedulerSettings(mode="rss", collect_parallelism=4, select_tags=[tag])
+    settings = SchedulerSettings(collect_parallelism=4, select_tags=[tag])
 
     res = _run(None, fetcher, settings)
 
@@ -173,7 +173,7 @@ def test_kill_switch_halts_every_worker_and_pass_returns():
 
     sess = _CountingSession(delay=0.05)
     fetcher = EthicalFetcher(min_interval_s=0.0, retry_backoff_s=0.0, session=sess)
-    settings = SchedulerSettings(mode="rss", collect_parallelism=4, select_tags=[tag])
+    settings = SchedulerSettings(collect_parallelism=4, select_tags=[tag])
 
     activate_kill_switch()
     try:
@@ -211,7 +211,7 @@ def test_kill_switch_tripped_mid_pass_stops_remaining_workers():
 
     sess = _CountingSession(delay=0.1)
     fetcher = EthicalFetcher(min_interval_s=0.0, retry_backoff_s=0.0, session=sess)
-    settings = SchedulerSettings(mode="rss", collect_parallelism=2, select_tags=[tag])
+    settings = SchedulerSettings(collect_parallelism=2, select_tags=[tag])
 
     clear_kill_switch()
     done = threading.Event()

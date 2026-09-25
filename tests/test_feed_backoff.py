@@ -284,7 +284,7 @@ def test_collect_loop_skips_backed_off_feed(db):
     db.commit()
 
     fetcher = _StubFetcher([])  # every feed answers an empty 200 (zero new)
-    result = run_scrape_once(db, fetcher, SchedulerSettings(mode="rss"))
+    result = run_scrape_once(db, fetcher, SchedulerSettings())
 
     # Exactly one feed processed; the backed-off one is counted, not silently lost.
     assert result["sources_processed"] == 1
@@ -303,7 +303,7 @@ def test_collect_loop_runs_all_when_none_backed_off(db):
     a = _make_source(db)
     b = _make_source(db)
     fetcher = _StubFetcher([])
-    result = run_scrape_once(db, fetcher, SchedulerSettings(mode="rss"))
+    result = run_scrape_once(db, fetcher, SchedulerSettings())
 
     assert result["sources_processed"] == 2
     assert result["tally"].get("backed_off", 0) == 0

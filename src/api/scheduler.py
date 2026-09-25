@@ -24,9 +24,9 @@ from src.monitoring.server_load import server_load
 from src.scheduler.coverage import DEFAULT_FRESH_WINDOW_HOURS, tag_coverage
 from src.scheduler.runner import get_scheduler
 from src.scheduler.settings import (
-    VALID_MODES,
     SchedulerSettingsError,
     load_settings,
+    retired_mode_disclosure,
     save_settings,
 )
 
@@ -47,7 +47,17 @@ class SchedulerConfigUpdate(BaseModel):
     collect_rate_mode: str | None = None
     collect_target_kbps: int | None = None
     collect_parallelism: int | None = None
+    # `mode` is RETIRED (Q1020 = a) and stays DECLARED for the same reason as
+    # `scrape_unqualified` below: undeclared, Pydantic would drop it and a caller still
+    # sending it would get a 200 that changed nothing. Declared, `save_settings` refuses
+    # it by name with the ruling attached.
     mode: str | None = None
+    # The markets lane's two opt-ins (Q1020 = a), declared so they are reachable -- the
+    # settingUnreachable trap recorded on `wiki_lane_state` below.
+    auto_run_market_rules: bool | None = None
+    auto_refresh_stat_subscriptions: bool | None = None
+    # Only "" is accepted: the Dismiss button on the retired-mode disclosure.
+    retired_mode: str | None = None
     max_sources_per_run: int | None = None
     crawl_max_depth: int | None = None
     crawl_max_pages: int | None = None
@@ -92,7 +102,7 @@ class SchedulerConfigUpdate(BaseModel):
     country_data_per_pass: int | None = None
     # §8 crawl-by-default (2026-07-24 PR766 throughput brief C3): a bounded crawl
     # sub-pass over qualified sources, the lane's lowest rung; default ON.
-    # crawl_per_pass=0 disables the supplement (mode="crawl" stays orthogonal).
+    # crawl_per_pass=0 disables the supplement. Its caps are crawl_max_depth/pages above.
     crawl_supplement: bool | None = None
     crawl_per_pass: int | None = None
     # THE WIKIPEDIA LANE'S RUN STATE (Q702's NOTE): "running" | "halted" | "stopped".
@@ -114,7 +124,6 @@ def _status_payload() -> dict:
     from src.ingest import kill_switch_active
 
     status = get_scheduler().status()
-    status["valid_modes"] = list(VALID_MODES)
     # Network state rides every scheduler response so the UI repaints the
     # airplane toggle IMMEDIATELY on implicit transitions (a collect start
     # clears the kill switch server-side) instead of waiting for the 5 s poll.
@@ -254,9 +263,7 @@ def scheduler_activity(db: Session = Depends(get_db)) -> dict:
     progress (domains only), the next pass's targets + an honest duration
     estimate (method stated), and per-host transfer rates measured from the
     app's OWN fetches — never OS-wide counters."""
-    payload = get_scheduler().activity(db)
-    payload["valid_modes"] = list(VALID_MODES)
-    return payload
+    return get_scheduler().activity(db)
 
 
 @router.get("/coverage")
@@ -368,7 +375,7 @@ def memory_guard_resume() -> dict:
 
 @router.get("/targets")
 def scheduler_targets(db: Session = Depends(get_db)) -> dict:
-    """How many (and which) sources the current selection will scrape (rss/crawl).
+    """How many (and which) sources the current selection will scrape (the press lane).
 
     Shows the matched count vs total enabled, what will actually run this pass
     (capped by max_sources_per_run), a sample, and a breakdown by language and
@@ -389,8 +396,9 @@ def scheduler_targets(db: Session = Depends(get_db)) -> dict:
         by_lang[(src.language or "?")] += 1
         by_type[(src.source_type or "?")] += 1
     return {
-        "mode": s.mode,
-        "applies": s.mode in ("rss", "crawl"),
+        # No ``mode``/``applies`` any more (Q1020 = a): the selection ALWAYS applies,
+        # because every pass is the press lane. A client still reading ``applies``
+        # would otherwise hide this preview behind a mode that no longer exists.
         "matched": matched,
         "total_enabled": total_enabled,
         # Q1114 = a: `matched` IS the headline predicate (it runs `select_sources`, so it
@@ -434,8 +442,13 @@ def scheduler_targets(db: Session = Depends(get_db)) -> dict:
 
 @router.get("/config")
 def scheduler_config() -> dict:
-    """Current scheduler configuration plus the set of valid modes."""
-    return {**load_settings().to_dict(), "valid_modes": list(VALID_MODES)}
+    """Current scheduler configuration, plus the disclosure owed for a retired mode."""
+    return _config_payload()
+
+
+def _config_payload() -> dict:
+    s = load_settings()
+    return {**s.to_dict(), "retired": retired_mode_disclosure(s)}
 
 
 @router.put("/config")
@@ -455,7 +468,7 @@ def scheduler_update_config(update: SchedulerConfigUpdate) -> dict:
         # and the stream itself refuses BY NAME under the kill switch, so this can
         # never bring the app online.
         _apply_wiki_lane_state(str(fields["wiki_lane_state"]))
-    return {**load_settings().to_dict(), "valid_modes": list(VALID_MODES)}
+    return _config_payload()
 
 
 def _apply_wiki_lane_state(state: str) -> None:
