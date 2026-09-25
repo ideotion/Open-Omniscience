@@ -69,12 +69,7 @@ def _annotate_card_terms(payload: dict, db: Session, target_lang: str | None) ->
     from src.analytics.equivalence import resolve_translation
     from src.analytics.translation_store import tentative_translations
 
-    cards = [
-        c
-        for bucket in (payload.get("cards") or {}).values() if isinstance(bucket, list)
-        for c in bucket if isinstance(c, dict) and isinstance(c.get("title_vars"), dict)
-        and c["title_vars"].get("term")
-    ]
+    cards = _keyword_cards(payload)
     if not cards:
         return payload
     terms = [str(c["title_vars"]["term"]) for c in cards]
@@ -84,13 +79,7 @@ def _annotate_card_terms(payload: dict, db: Session, target_lang: str | None) ->
     except Exception:  # noqa: BLE001 - a pre-migration store: the ladder reports untranslated
         tent = {}
     out = copy.deepcopy(payload)
-    out_cards = [
-        c
-        for bucket in (out.get("cards") or {}).values() if isinstance(bucket, list)
-        for c in bucket if isinstance(c, dict) and isinstance(c.get("title_vars"), dict)
-        and c["title_vars"].get("term")
-    ]
-    for card in out_cards:
+    for card in _keyword_cards(out):
         term = str(card["title_vars"]["term"])
         key = _norm(term)
         src = langs.get(key)
@@ -102,6 +91,35 @@ def _annotate_card_terms(payload: dict, db: Session, target_lang: str | None) ->
             card["title_vars"]["term_translation"] = res.text
             card["title_i18n"] = _TRANSLATED_TITLE
     return out
+
+
+def _keyword_cards(payload: dict) -> list[dict]:
+    """Every distinct card carrying a keyword term, from ``cards`` AND ``buckets``.
+
+    ``_present`` serves ``cards`` as a flat LIST and ``buckets`` as
+    ``[{"bucket", "label", "cards": [...]}]`` over the SAME dicts. This read
+    ``cards`` as a dict of buckets from 2026-09-17, so ``.values()`` raised on every
+    non-empty briefing and Home showed its error state for every language. Both are
+    walked because a client may render either; deduped by identity so a card shared
+    between them (``deepcopy`` keeps that sharing) is annotated once.
+    """
+    lists: list = [payload.get("cards")]
+    for bucket in payload.get("buckets") or []:
+        if isinstance(bucket, dict):
+            lists.append(bucket.get("cards"))
+    seen: set[int] = set()
+    found: list[dict] = []
+    for cards in lists:
+        if not isinstance(cards, list):
+            continue
+        for c in cards:
+            if (
+                isinstance(c, dict) and id(c) not in seen
+                and isinstance(c.get("title_vars"), dict) and c["title_vars"].get("term")
+            ):
+                seen.add(id(c))
+                found.append(c)
+    return found
 
 
 #: Q411 = a's template, VERBATIM from the ruling. Swapped in for a card whose term was
