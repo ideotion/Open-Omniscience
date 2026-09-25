@@ -23,7 +23,7 @@ against the REAL docs/USER_MANUAL.md:
     spaces both survive as hyphens (never collapsed to one) -- verified
     against four independent hand-written anchors in the doc that all show
     the same double-hyphen shape for a deleted "&" or em dash;
-  * a solid majority (>=80%) of the doc's own 50 in-page TOC links now
+  * a solid majority (>=80%) of the doc's own 51 in-page TOC links now
     resolve to a real heading id. The remainder are pre-existing, genuine
     authoring inconsistencies in the markdown itself (a shortened link that
     drops half the heading text, or a link hand-typed assuming the OTHER,
@@ -146,7 +146,7 @@ def test_most_of_the_docs_own_toc_links_now_resolve():
     result = _run(_USER_MANUAL)
     ids = set(result["ids"])
     links = result["links"]
-    assert len(links) == 50, f"USER_MANUAL.md's own in-page link count changed ({len(links)}); re-verify this test's numbers"
+    assert len(links) == 51, f"USER_MANUAL.md's own in-page link count changed ({len(links)}); re-verify this test's numbers"
     resolved = [link for link in links if link in ids]
     unresolved = sorted({link for link in links if link not in ids})
     # WAS A PINNED SET OF NINE (2026-09-09). This test used to assert that exactly nine

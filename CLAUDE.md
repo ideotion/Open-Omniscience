@@ -599,6 +599,13 @@ finding things, or it finds so much that every answer is the same answer).
    only and marks are screen-space sized. Enforced by
    tests/test_observatory_ui.py + tests/oosky_node_test.js (20 checks, mostly
    negative space) + test_ui_invariants (#31).
+32. **LIVING SOURCES IS A MAIN TAB (Q1016's NOTE, ruled 2026-09-25 on the decision card, R32;
+   S04-08 S6):** one view for Wikipedia, law and maps (`#tab-living`, subtabs through `ooSubtabs`),
+   the #2 roster grows by one. It REPLACED the `#wiki-tc` dialog, whose ids now live in the tab's
+   Wikipedia panel. Counts and dates, never a verdict (freshness is the newest and OLDEST check);
+   a change the stream only COUNTED reads as counted and offers no diff; the storage cells are
+   Settings → Storage's own minus the budget input (#8). Enforced in test_ui_invariants (#32) +
+   tests/test_living_sources.py + tests/living_sources_node_test.js.
 8. **The UI shows DATA, never plumbing (ruled 2026-06-11, stated GENERALLY):**
    data tabs present the aggregated data itself — "that's the added value of
    this app"; acquisition/configuration surfaces live in Settings. First

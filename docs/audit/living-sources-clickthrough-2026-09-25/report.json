@@ -1,0 +1,167 @@
+{
+ "seeded": {
+  "en": {
+   "lang": "en",
+   "status": "Read ⁨2026-09-25 12:45⁩ UTC. Counts cover the last 30 days.",
+   "caveat": "Freshness is shown as dates, never judged: how recent is recent enough depends on the story. A change counted is not a change read: under a budget the stream stores the text of some changes and counts the rest. Each diff is the one stored when the change arrived, not a live re-diff.",
+   "wiki_facts": "Live stream\nPages followed\n2\nChanges reported, last 30 days\n4\nText stored for\n2 of 4\nChanges on pages you do not follow\n1\nLast change recorded\n⁨2026-09-25 12:28⁩ UTC\nComplete through\n⁨2026-09-25 06:30⁩ UTC\nOpen gaps\n1\nPages you track\nPages\n2\nNever checked\n1\nNewest check\n⁨2026-09-25 11:30⁩ UTC\nOldest check\n⁨2026-09-25 11:30⁩ UTC\nRevisions stored, last 30 days\n2\nFlagged\n1\nStorage\nOn disk\n152.0 KB\nBudget\n20 GB the published default\n<1% used",
+   "stream_cap": "Showing 4 of 4 changes, newest first.",
+   "stream": "⁨2026-09-25 12:25⁩ UTC\n·\nWalk Rome\neng\nedit\n⁨+38⁩\nLines added: 2, removed: 1 Show diff\n⁨2026-09-25 12:10⁩ UTC\n·\nWalk Lyon\nfra\nedit\n⁨-120⁩\nCounted only: its text was not stored.\n⁨2026-09-25 09:30⁩ UTC\n·\nWalk Lyon\nfra\nlog\nCounted only: its text was not stored.\n⁨2026-09-23 12:30⁩ UTC\n·\nWalk Rome\neng\ncreate\n⁨+16⁩\nText stored; there was no earlier stored text to compare it with.",
+   "subtab_active": [
+    [
+     "wiki",
+     "true"
+    ],
+    [
+     "law",
+     "false"
+    ],
+    [
+     "osm",
+     "false"
+    ]
+   ],
+   "diff": "--- 1001\n+++ 1002\n@@ -1 +1,2 @@\n-Rome is a city.\n+Rome is the capital city of Italy.\n+It has <b>many</b> churches.",
+   "diff_note": [
+    "The diff stored when this change arrived, against the lane's previous stored text: not a live re-diff, and not necessarily the source's previous revision."
+   ],
+   "tracked_title": "en · Walk Tracked Page",
+   "tracked_body": "Showing 2 / 2 tracked revisions\n2026-09-25 11:40 · 192.0.2.7 anon\n-3000\nlarge-removal\n-Most of the article.\n2026-09-25 10:30 · WalkEditor\n+812\nexpanded the history section\n+A new paragraph about the history.\n-An old line.",
+   "tracked_method": "The tracked slice of edits stored on this machine, newest first — not necessarily every historical revision. Each diff is the compact added / removed summary captured when the edit was tracked (truncated per side), not a live re-diff. Counts only, no score.",
+   "law_facts": "Law tracker\nDocuments\n2\nJurisdictions\n2\nNever checked\n1\nNewest check\n⁨2026-09-25 08:30⁩ UTC\nOldest check\n⁨2026-09-25 08:30⁩ UTC\nChanges, last 30 days\n1\nFlagged\n1\nStorage\nOn disk\nNot built yet\nBudget\nNo published budget",
+   "law_changes": "A research mirror, not the authoritative source and not legal advice. Every document links back to its official gazette; changes are surfaced, never judged.\n\n⁨2026-09-25 08:30⁩ UTC\n·\nFRA\nWalk Code civil (extract)\n⁨-640⁩\nlarge-removal\n·\nRead locally\nStored diff",
+   "law_links": [
+    "/api/law/documents/1/view"
+   ],
+   "maps_facts": "Map regions\nRegions\n3\nDownloaded\n1\nIn progress\n0\nPaused\n1\nFailed\n1\nOn disk\n231.7 MB\nDate of the map data\nNot recorded\nStorage\nOn disk\nNot built yet\nBudget\nNo published budget",
+   "maps_regions": "REGION\tSTATE\tON DISK\nAntarctica\tDownloaded\t29.6 MB / 29.6 MB\nAsia\tPaused\nPaused by airplane mode. Resume asks to go online first.\n\t202.2 MB / 1.2 GB\nAfrica\tFailed\nFailed: HTTP 503 from the mirror\n\t0 B",
+   "junk_words": [],
+   "tip_maps_date": "The bytes the map files hold on this machine, partial downloads included."
+  },
+  "fr": {
+   "lang": "fr",
+   "status": "Relevé : ⁨2026-09-25 12:45⁩ UTC. Les décomptes couvrent les 30 derniers jours.",
+   "caveat": "La fraîcheur est indiquée par des dates, jamais jugée : ce qui est assez récent dépend du sujet. Un changement compté n'est pas un changement lu : avec un budget, le flux stocke le texte de certains changements et compte les autres. Chaque diff est celui stocké à l'arrivée du changement, pas un diff recalculé en direct.",
+   "wiki_facts": "Flux en direct\nPages suivies\n2\nChangements rapportés, 30 derniers jours\n4\nTexte stocké pour\n2 sur 4\nChangements sur des pages que vous ne suivez pas\n1\nDernier changement enregistré\n⁨2026-09-25 12:28⁩ UTC\nComplet jusqu'au\n⁨2026-09-25 06:30⁩ UTC\nLacunes non comblées\n1\nPages que vous suivez\nPages\n2\nJamais vérifiés\n1\nVérification la plus récente\n⁨2026-09-25 11:30⁩ UTC\nVérification la plus ancienne\n⁨2026-09-25 11:30⁩ UTC\nRévisions stockées, 30 derniers jours\n2\nSignalé\n1\nStockage\nSur le disque\n152.0 KB\nBudget\n20 Go la valeur publiée par défaut\n<1 % utilisé",
+   "stream_cap": "Affichage de 4 changements sur 4, les plus récents d'abord.",
+   "stream": "⁨2026-09-25 12:25⁩ UTC\n·\nWalk Rome\neng\nmodification\n⁨+38⁩\nLignes ajoutées : 2, supprimées : 1 Afficher le diff\n⁨2026-09-25 12:10⁩ UTC\n·\nWalk Lyon\nfra\nmodification\n⁨-120⁩\nCompté seulement : son texte n'a pas été stocké.\n⁨2026-09-25 09:30⁩ UTC\n·\nWalk Lyon\nfra\nlog\nCompté seulement : son texte n'a pas été stocké.\n⁨2026-09-23 12:30⁩ UTC\n·\nWalk Rome\neng\ncréation\n⁨+16⁩\nTexte stocké ; il n'y avait aucun texte stocké antérieur avec lequel le comparer.",
+   "subtab_active": [
+    [
+     "wiki",
+     "true"
+    ],
+    [
+     "law",
+     "false"
+    ],
+    [
+     "osm",
+     "false"
+    ]
+   ],
+   "diff": "--- 1001\n+++ 1002\n@@ -1 +1,2 @@\n-Rome is a city.\n+Rome is the capital city of Italy.\n+It has <b>many</b> churches.",
+   "diff_note": [
+    "Le diff stocké à l'arrivée de ce changement, par rapport au texte précédemment stocké par la file : pas un diff recalculé en direct, et pas nécessairement la révision précédente de la source."
+   ],
+   "tracked_title": "en · Walk Tracked Page",
+   "tracked_body": "Affichage de 2 / 2 révisions suivies\n2026-09-25 11:40 · 192.0.2.7 anon.\n-3000\nlarge-removal\n-Most of the article.\n2026-09-25 10:30 · WalkEditor\n+812\nexpanded the history section\n+A new paragraph about the history.\n-An old line.",
+   "tracked_method": "La tranche d'éditions suivies stockée sur cette machine, les plus récentes d'abord — pas nécessairement toutes les révisions historiques. Chaque différence est le résumé compact ajouté / supprimé capturé au moment du suivi de l'édition (tronqué de chaque côté), pas une re-comparaison en direct. Décomptes uniquement, aucun score.",
+   "law_facts": "Veille juridique\nDocuments\n2\nJuridictions\n2\nJamais vérifiés\n1\nVérification la plus récente\n⁨2026-09-25 08:30⁩ UTC\nVérification la plus ancienne\n⁨2026-09-25 08:30⁩ UTC\nChangements, 30 derniers jours\n1\nSignalé\n1\nStockage\nSur le disque\nPas encore disponible\nBudget\nAucun budget publié",
+   "law_changes": "Un miroir de recherche, pas la source qui fait foi, et pas un conseil juridique. Chaque document renvoie à son journal officiel ; les changements sont mis en évidence, jamais jugés.\n\n⁨2026-09-25 08:30⁩ UTC\n·\nFRA\nWalk Code civil (extract)\n⁨-640⁩\nlarge-removal\n·\nLire localement\nDiff stocké",
+   "law_links": [
+    "/api/law/documents/1/view"
+   ],
+   "maps_facts": "Régions de carte\nRégions\n3\nTéléchargé\n1\nEn cours\n0\nEn pause\n1\nÉchec\n1\nSur le disque\n231.7 MB\nDate des données cartographiques\nNon enregistrée\nStockage\nSur le disque\nPas encore disponible\nBudget\nAucun budget publié",
+   "maps_regions": "RÉGION\tÉTAT\tSUR LE DISQUE\nAntarctica\tTéléchargé\t29.6 MB / 29.6 MB\nAsie\tEn pause\nMis en pause par le mode avion. Reprendre demande d'abord de passer en ligne.\n\t202.2 MB / 1.2 GB\nAfrique\tÉchec\nÉchec : HTTP 503 from the mirror\n\t0 B",
+   "junk_words": [],
+   "tip_maps_date": "Les octets que les fichiers de carte occupent sur cette machine, téléchargements partiels compris."
+  },
+  "ar": {
+   "lang": "ar",
+   "status": "قُرئ: ⁨2026-09-25 12:46⁩ UTC. تغطي الأعداد آخر 30 يومًا.",
+   "caveat": "تُعرض الحداثة تواريخَ، ولا يُحكم عليها أبدًا: فمدى الحداثة الكافية يتوقف على الخبر. التغيير المعدود ليس تغييرًا مقروءًا: ضمن الميزانية يخزّن التدفق نص بعض التغييرات ويعدّ الباقي. كل فرق هو الذي خُزِّن عند وصول التغيير، لا فرقًا يُعاد حسابه مباشرةً.",
+   "wiki_facts": "التدفق المباشر\nالصفحات المُتابَعة\n2\nالتغييرات المُبلَّغ عنها، آخر 30 يومًا\n4\nالنص مُخزَّن لـ\n2 من 4\nتغييرات في صفحات لا تتابعها\n1\nآخر تغيير مُسجَّل\n⁨2026-09-25 12:28⁩ UTC\nمكتمل حتى\n⁨2026-09-25 06:30⁩ UTC\nالفجوات المفتوحة\n1\nالصفحات التي تتتبّعها\nالصفحات\n2\nلم يُتحقَّق منها قط\n1\nأحدث تحقُّق\n⁨2026-09-25 11:30⁩ UTC\nأقدم تحقُّق\n⁨2026-09-25 11:30⁩ UTC\nالمراجعات المُخزَّنة، آخر 30 يومًا\n2\nمُعلَّم\n1\nالتخزين\nعلى القرص\n152.0 KB\nالميزانية\n20 غيغابايت القيمة الافتراضية المنشورة\nمستخدم <1%",
+   "stream_cap": "عرض 4 من أصل 4 من التغييرات، الأحدث أولاً.",
+   "stream": "⁨2026-09-25 12:25⁩ UTC\n·\nWalk Rome\neng\nتعديل\n⁨+38⁩\nأسطر مُضافة: 2، محذوفة: 1 عرض الفرق\n⁨2026-09-25 12:10⁩ UTC\n·\nWalk Lyon\nfra\nتعديل\n⁨-120⁩\nمعدود فقط: لم يُخزَّن نصه.\n⁨2026-09-25 09:30⁩ UTC\n·\nWalk Lyon\nfra\nlog\nمعدود فقط: لم يُخزَّن نصه.\n⁨2026-09-23 12:30⁩ UTC\n·\nWalk Rome\neng\nإنشاء\n⁨+16⁩\nالنص مُخزَّن؛ لم يكن هناك نص مُخزَّن سابق لمقارنته به.",
+   "subtab_active": [
+    [
+     "wiki",
+     "true"
+    ],
+    [
+     "law",
+     "false"
+    ],
+    [
+     "osm",
+     "false"
+    ]
+   ],
+   "diff": "--- 1001\n+++ 1002\n@@ -1 +1,2 @@\n-Rome is a city.\n+Rome is the capital city of Italy.\n+It has <b>many</b> churches.",
+   "diff_note": [
+    "الفرق المُخزَّن عند وصول هذا التغيير، مقارنةً بالنص المُخزَّن السابق للمسار: ليس فرقًا يُعاد حسابه مباشرةً، وليس بالضرورة المراجعة السابقة للمصدر."
+   ],
+   "tracked_title": "en · Walk Tracked Page",
+   "tracked_body": "عرض 2 / 2 مراجعات متتبَّعة\n2026-09-25 11:40 · 192.0.2.7 مجهول\n-3000\nlarge-removal\n-Most of the article.\n2026-09-25 10:30 · WalkEditor\n+812\nexpanded the history section\n+A new paragraph about the history.\n-An old line.",
+   "tracked_method": "الشريحة المتتبَّعة من التعديلات المُخزَّنة على هذا الجهاز، الأحدث أولاً — ليست بالضرورة كل مراجعة تاريخية. كل فرق هو الملخص المُوجز للمُضاف / المحذوف المُلتقَط عند تتبُّع التعديل (مقتطع من كل جانب)، وليس إعادة مقارنة حيّة. أعداد فقط، بلا تقييم.",
+   "law_facts": "متتبِّع القانون\nالمستندات\n2\nالولايات القضائية\n2\nلم يُتحقَّق منها قط\n1\nأحدث تحقُّق\n⁨2026-09-25 08:30⁩ UTC\nأقدم تحقُّق\n⁨2026-09-25 08:30⁩ UTC\nالتغييرات، آخر 30 يومًا\n1\nمُعلَّم\n1\nالتخزين\nعلى القرص\nلم يُنفَّذ بعد\nالميزانية\nلا توجد ميزانية منشورة",
+   "law_changes": "مرآة بحثية، وليست المصدر الرسمي ولا استشارة قانونية. كل مستند يرتبط بجريدته الرسمية؛ تُعرَض التغييرات ولا يُحكم عليها أبدًا.\n\n⁨2026-09-25 08:30⁩ UTC\n·\nFRA\nWalk Code civil (extract)\n⁨-640⁩\nlarge-removal\n·\nقراءة محلياً\nالفرق المُخزَّن",
+   "law_links": [
+    "/api/law/documents/1/view"
+   ],
+   "maps_facts": "مناطق الخرائط\nالمناطق\n3\nتم التنزيل\n1\nقيد التنفيذ\n0\nمتوقف مؤقتًا\n1\nفشل\n1\nعلى القرص\n231.7 MB\nتاريخ بيانات الخريطة\nغير مسجَّل\nالتخزين\nعلى القرص\nلم يُنفَّذ بعد\nالميزانية\nلا توجد ميزانية منشورة",
+   "maps_regions": "المنطقة\tالحالة\tعلى القرص\nAntarctica\tتم التنزيل\t29.6 MB / 29.6 MB\nآسيا\tمتوقف مؤقتًا\nأوقفه وضع الطيران مؤقتًا. الاستئناف يطلب أولًا الاتصال بالإنترنت.\n\t202.2 MB / 1.2 GB\nأفريقيا\tفشل\nفشل: HTTP 503 from the mirror\n\t0 B",
+   "junk_words": [],
+   "tip_maps_date": "البايتات التي تشغلها ملفات الخرائط على هذا الجهاز، بما فيها التنزيلات الجزئية."
+  }
+ },
+ "fresh": {
+  "wiki_facts": "Live stream\nState\nNot run yet\nPages you track\nPages\n0\nNever checked\n0\nNewest check\nnever\nOldest check\nnever\nRevisions stored, last 30 days\n0\nFlagged\n0\nStorage\nOn disk\nNot created yet\nBudget\n20 GB the published default",
+  "stream": "The live stream has not run yet, so there is no timeline. Turn it on with the W button in the top bar.",
+  "pages": "No pages tracked yet. Add them in Settings → Wikipedia.",
+  "law_facts": "Law tracker\nDocuments\n0\nJurisdictions\n0\nNever checked\n0\nNewest check\nnever\nOldest check\nnever\nChanges, last 30 days\n0\nFlagged\n0\nStorage\nOn disk\nNot built yet\nBudget\nNo published budget",
+  "law_changes": "A research mirror, not the authoritative source and not legal advice. Every document links back to its official gazette; changes are surfaced, never judged.\n\nNo changes recorded for the documents the law tracker follows yet.",
+  "maps_facts": "Map regions\nRegions\n0\nDownloaded\n0\nIn progress\n0\nPaused\n0\nFailed\n0\nOn disk\n0 B\nDate of the map data\nNot recorded\nStorage\nOn disk\nNot built yet\nBudget\nNo published budget",
+  "maps_regions": "No map regions downloaded yet. Regions are downloaded from Settings → OpenStreetMap.",
+  "lane_file_after_reads": [
+   "absent"
+  ],
+  "junk_words": [],
+  "errors": [],
+  "bad_responses": []
+ },
+ "network_at_boot": {
+  "online": false
+ },
+ "deep_link": {
+  "active_tab": "living",
+  "title": "en · Walk Tracked Page",
+  "body_head": "Showing 2 / 2 tracked revisions\n2026-09-25 11:40 · 192.0.2.7 anon\n-3000\nlarge-removal\n-Most of the article.\n2026-09-25 10:30 · WalkEditor\n+812\nexpanded the history section\n+A new paragraph about the h",
+  "dialog_left": false
+ },
+ "seeded_errors": [
+  "console.error: Failed to load resource: the server responded with a status of 500 (Internal Server Error)",
+  "console.error: Failed to load resource: the server responded with a status of 500 (Internal Server Error)",
+  "console.error: Failed to load resource: the server responded with a status of 500 (Internal Server Error)",
+  "console.error: Failed to load resource: the server responded with a status of 500 (Internal Server Error)",
+  "console.error: Failed to load resource: the server responded with a status of 500 (Internal Server Error)",
+  "console.error: Failed to load resource: the server responded with a status of 500 (Internal Server Error)"
+ ],
+ "seeded_bad_responses": [
+  "500 GET http://127.0.0.1:8745/api/briefing?target_lang=en",
+  "500 GET http://127.0.0.1:8745/api/briefing?target_lang=en",
+  "500 GET http://127.0.0.1:8745/api/briefing?target_lang=fr",
+  "500 GET http://127.0.0.1:8745/api/briefing?target_lang=ar",
+  "500 GET http://127.0.0.1:8745/api/briefing?target_lang=en",
+  "500 GET http://127.0.0.1:8745/api/briefing?target_lang=en"
+ ],
+ "narrow": {
+  "page_scroll_x": 0,
+  "errors": [
+   "console.error: Failed to load resource: the server responded with a status of 500 (Internal Server Error)"
+  ],
+  "bad": [
+   "500 GET http://127.0.0.1:8745/api/briefing?target_lang=en"
+  ]
+ }
+}

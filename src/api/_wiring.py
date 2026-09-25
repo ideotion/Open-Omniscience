@@ -55,6 +55,7 @@ def wire(app) -> None:
     from src.api.library import router as library_router
     from src.api.link_analysis import router as link_analysis_router
     from src.api.link_preview import router as link_preview_router
+    from src.api.living import router as living_router
     from src.api.llm import router as llm_router
     from src.api.markets import router as markets_router
     from src.api.monitoring import router as monitoring_router
@@ -124,6 +125,7 @@ def wire(app) -> None:
         signals_router,
         agenda_state_router,
         lane_storage_router,
+        living_router,
     )
     for router in spine:
         app.include_router(router)

@@ -2241,6 +2241,18 @@ def test_ui_invariants():
     assert "Math.random" not in _oosky_code(), (
         "the sky is deterministic: same corpus, same sky, so change is signal (#31)"
     )
+    # 32. Living sources (Q1016's NOTE, ruled 2026-09-25, R32): a MAIN tab, so the roster
+    #     of invariant #2 grew by one again. It replaced the tracked-changes DIALOG, and the
+    #     caveat is visible. Behaviour: tests/test_living_sources.py + living_sources_node_test.js.
+    assert '<button class="nav-item" data-tab="living"' in html, (
+        "Living sources is a dedicated main tab in the sidebar (CLAUDE.md #32, #2)"
+    )
+    assert 'class="card-caveat" id="living-caveat"' in html, (
+        "the Living sources caveat renders visibly, never behind a toggle (#32, informed consent)"
+    )
+    assert '<dialog id="wiki-tc"' not in html, (
+        "the tracked-changes view lives in the Living sources tab, never a dialog again (#32)"
+    )
     # 8. external links ALWAYS confirmed via popup before opening (ruled
     #    2026-06-10) — delegated capture-phase guard in the UI.
     assert "_externalLinkGuard" in html, (
@@ -8161,7 +8173,10 @@ def test_docs_index_covers_live_docs():
 #: so a rule telling sessions to consult them is worthless anywhere a session is not required to
 #: read. Measured on this branch's own tree; re-measure at the merge point if main grows
 #: CLAUDE.md first (the recorded 2026-09-08 precedent).
-_CLAUDE_MD_LINE_CEILING = 761
+#: RAISED 2026-09-25 (Q1016's NOTE, ruling R32): 761 -> 768, seven lines for UI invariant #32
+#: (Living sources is a main tab). A new UI invariant is the growth the clause above names as
+#: normal; the build detail stays in the gate row and the slice's own tests.
+_CLAUDE_MD_LINE_CEILING = 768
 
 
 def _claude_md_lines() -> int:

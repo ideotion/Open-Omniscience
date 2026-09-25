@@ -155,6 +155,15 @@
           _obsRender();
         }
       } catch (_e) {}
+      // Living sources builds every figure and row with t()/tf() at render time, so a
+      // switch re-reads the panel on screen (loopback only) -- and only if the tab was
+      // ever opened, which is when _livingOverview holds a payload.
+      try {
+        if (typeof _livingOverview !== "undefined" && _livingOverview && typeof showLivingView === "function") {
+          showLivingView(_livingView);
+          if (_livingView === "wiki" && _wikiTc && _wikiTc.id != null) loadWikiTC();
+        }
+      } catch (_e) {}
       // The Activity view is the same class again, and it recurred the moment a new
       // interpolated string was added there: the qualification tile's composition note
       // ("Of 3 awaiting a verdict, 1 have never been attempted…") is built with
@@ -494,14 +503,11 @@
     // reader offers "tracked changes on this machine" and navigates to
     // "/?wikitc=<page_id>". The reader is a STANDALONE page served by
     // /api/articles/{id}/view, so without this the history the ruling asks to sit
-    // beside a wiki article is reachable only from Settings -- which is not where
-    // a reader is.
+    // beside a wiki article would be reachable only by going looking for it.
     //
-    // AFTER the subtab wiring on purpose: the component owns the strip's visible
-    // state (invariant #18), so selecting through `_setSubtabs` is what keeps the
-    // .active / aria-selected pair in step -- the same idiom app-shell.js uses for
-    // the "wiki" nav alias, fallback included, and `_setSubtabs` does not exist
-    // until the line above.
+    // The view is the Wikipedia panel of Living sources now (Q1016, S04-08's S6), and
+    // openWikiTC goes there itself, selecting the subtab through the tab's own
+    // component (invariant #18) so .active / aria-selected stay in step.
     //
     // The reader only ever emits this link for a page whose WikiPage row exists, so
     // the id is real by construction; a stale or hand-edited one opens the view and
@@ -512,8 +518,8 @@
         const id = Number(new URLSearchParams(location.search).get("wikitc"));
         if (!Number.isFinite(id) || id <= 0) return;
         if (typeof openWikiTC !== "function") return;
-        showTab("settings", false);
-        try { _setSubtabs.select("wikipedia"); } catch (e) { showSetCat("wikipedia"); }
+        // openWikiTC goes to Living sources -> Wikipedia itself, through the tab's
+        // subtab component; the view left Settings with the dialog (Q1016).
         openWikiTC(id, "", "");
       } catch (e) { /* a malformed deep link must never break boot */ }
     })();

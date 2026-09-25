@@ -114,6 +114,9 @@ _SURFACES: tuple[tuple[str, str, str], ...] = (
     ("app-agenda.js", "ooCountryCell(f.country)", "the calendar-feed directory row"),
     ("app-agenda.js", "ooCountryCell(k)", "the List-view country grouping heading"),
     ("app-agenda.js", "ooCountryFlag(cc)", "the flag beside the code (a convention, never the identifier)"),
+    # --- Living sources (S04-08 S6) ----------------------------------------- #
+    ("app-living.js", "ooLangCell(c.language, ", "a live-stream change's language pill"),
+    ("app-living.js", "ooCountryCell(c.jurisdiction, ", "a law change's jurisdiction pill"),
     # --- Home --------------------------------------------------------------- #
     ("app-home.js", "ooCountryCell(tr.country)", "the transparency card dimension"),
     ("app-home.js", "ooLangCell(lang)", "a briefing card's language"),

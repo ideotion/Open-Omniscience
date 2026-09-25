@@ -919,6 +919,29 @@ The extractor is high-precision: bare years and vague spans are not extracted, b
   (verdicts, folders of duplicate providers, adding your own `.ics`) is plumbing and
   lives in **Settings → Advanced → Calendar directory**.
 
+### 3.6b Living sources
+
+The **Living sources** tab shows what changed in the sources that keep changing
+after you collect them: Wikipedia, law and maps, one subtab each. Everything in it
+is read from this machine; nothing is fetched to draw it.
+
+- **Wikipedia:** how many pages the live stream follows, how many changes it
+  reported in the last 30 days and **for how many it stored the text** ("2 of 4":
+  under a budget it stores some and counts the rest), the point up to which every
+  feed was read without a break, and any gaps it knows it missed. Below that, each
+  change newest first; **Show diff** opens the diff stored when the change arrived.
+  A change that was only counted says so and has no diff. The pages you track by
+  hand (Settings → Wikipedia) are listed too: pick one to read its tracked
+  revisions.
+- **Law:** the documents the law tracker follows, the newest and oldest check, and
+  each real change (a re-check that changed nothing is not counted) with its
+  stored diff and a link to your local copy.
+- **Maps:** your downloaded map regions, which are paused or failed and why, and
+  the space they take.
+
+Freshness is shown as dates, never judged: how recent is recent enough depends on
+the story. Budgets are shown but set in **Settings → Data & backup**.
+
 ### 3.7 Wikipedia *(in Settings → Wikipedia)*
 
 > **Where it lives now.** Wikipedia change-tracking and the offline-dump tools moved
@@ -951,8 +974,8 @@ machine** — past versions stay exactly reconstructable (version-anchored
 analytics, no diff replay), at the honest cost of storage growing with edit
 activity; (3) the analyzed text is wikitext reduced to plain text — never
 passed off as the rendered article. Everything stays local; the change
-history remains available per page, and a dedicated tracked-changes view is
-the named next step.
+history remains available per page, and the **Living sources** tab shows it
+([3.6b](#36b-living-sources)).
 
 Heavy **offline full-text baselines** (whole-edition dumps) are *separate* and live
 in **Settings → Wikipedia** — you don't need them for change-tracking. See

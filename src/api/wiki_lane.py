@@ -303,3 +303,161 @@ def lane_sections(external_id: str = Query(..., min_length=3, max_length=512)) -
         raise
     except LaneAbsentError:
         return _absent()
+
+
+#: The most diff text one answer carries. A stored diff is bounded when it is made
+#: (``compute_diff`` refuses past 40,000 lines or 4 MiB), which is still more than a
+#: panel can draw; the answer says when it was cut and by how much.
+_DIFF_TEXT_CAP = 200_000
+
+
+@router.get("/changes")
+def lane_changes(
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0, le=1_000_000),
+) -> dict:
+    """The stream's timeline for the pages the lane follows, newest first (Q1016).
+
+    EVERY change the stream reported for a followed page is a row, stored text or not:
+    ``text_stored`` says which, so a change that was only counted reads as counted
+    rather than as a change nobody made. The diff counts are the ones stored when the
+    revision was ingested; the text itself is one more request away
+    (``/revisions/{id}``), because a timeline of fifty diffs would be megabytes.
+    """
+    from sqlalchemy import func, select
+    from sqlalchemy.exc import SQLAlchemyError
+
+    from src.versioned.models import VersionedChange, VersionedEntity, VersionedRevision
+
+    if not lane_path("wiki").is_file():
+        return _absent()
+    try:
+        with lane_session("wiki") as lane:
+            total = lane.execute(
+                select(func.count(VersionedChange.id)).where(VersionedChange.entity_id.isnot(None))
+            ).scalar_one()
+            rows = lane.execute(
+                select(
+                    VersionedChange.id,
+                    VersionedChange.change_kind,
+                    VersionedChange.occurred_at,
+                    VersionedChange.recorded_at,
+                    VersionedChange.byte_delta,
+                    VersionedEntity.title,
+                    VersionedEntity.language,
+                    VersionedEntity.external_id,
+                    VersionedRevision.id.label("revision_id"),
+                    VersionedRevision.diff_method,
+                    VersionedRevision.diff_added,
+                    VersionedRevision.diff_removed,
+                )
+                .join(VersionedEntity, VersionedChange.entity_id == VersionedEntity.id)
+                .outerjoin(
+                    VersionedRevision, VersionedChange.ingested_revision_id == VersionedRevision.id
+                )
+                .order_by(VersionedChange.recorded_at.desc(), VersionedChange.id.desc())
+                .limit(limit)
+                .offset(offset)
+            ).all()
+    except LaneAbsentError:
+        return _absent()
+    except SQLAlchemyError:
+        _LOG.warning("lane changes: the Wikipedia lane could not be read", exc_info=True)
+        return {
+            "measured": False,
+            "reason": "lane-unreadable",
+            "detail": "the Wikipedia lane file could not be read; the next drain repairs a file with no tables",
+        }
+    changes = []
+    for r in rows:
+        m = r._mapping
+        changes.append(
+            {
+                "id": m["id"],
+                # Stored verbatim, including a kind outside edit/create/delete/move: the
+                # view shows what the source said rather than the nearest known word.
+                "change_kind": m["change_kind"],
+                "occurred_at": m["occurred_at"].isoformat() if m["occurred_at"] else None,
+                "recorded_at": m["recorded_at"].isoformat() if m["recorded_at"] else None,
+                "byte_delta": m["byte_delta"],
+                "title": m["title"],
+                "language": m["language"],
+                "external_id": m["external_id"],
+                "text_stored": m["revision_id"] is not None,
+                "revision_id": m["revision_id"],
+                "diff_method": m["diff_method"],
+                "diff_added": m["diff_added"],
+                "diff_removed": m["diff_removed"],
+            }
+        )
+    return {
+        "measured": True,
+        "count": len(changes),
+        "total": int(total),
+        "offset": offset,
+        "changes": changes,
+        "method": (
+            "versioned_changes rows for the pages this lane follows, newest recorded first, "
+            "each joined to the revision it ingested when its text was stored"
+        ),
+    }
+
+
+@router.get("/revisions/{revision_id}")
+def lane_revision_diff(revision_id: int) -> dict:
+    """One ingested revision's stored diff, as it was computed when it arrived.
+
+    Never a live re-diff: the text compared against was the lane's previous stored
+    version, which is not necessarily the source's previous revision (a revision the
+    stream only counted has no text to compare with). ``diff_from_ref`` names what it
+    was compared with, and a revision with no diff says why (``diff_method``).
+    """
+    from sqlalchemy import select
+    from sqlalchemy.exc import SQLAlchemyError
+
+    from src.versioned.models import VersionedEntity, VersionedRevision
+
+    if not lane_path("wiki").is_file():
+        return _absent()
+    try:
+        with lane_session("wiki") as lane:
+            row = lane.execute(
+                select(VersionedRevision, VersionedEntity.title, VersionedEntity.language)
+                .join(VersionedEntity, VersionedRevision.entity_id == VersionedEntity.id)
+                .where(VersionedRevision.id == revision_id)
+            ).first()
+            if row is None:
+                raise HTTPException(status_code=404, detail="no such revision in the Wikipedia lane")
+            rev, title, language = row
+            # Read INSIDE the session: leaving it commits, which expires the row, and a
+            # detached row cannot reload what the payload below still needs.
+            text = rev.diff_text
+            full = len(text) if text is not None else 0
+            return {
+                "measured": True,
+                "id": rev.id,
+                "title": title,
+                "language": language,
+                "revision_ref": rev.revision_ref,
+                "diff_from_ref": rev.diff_from_ref,
+                "observed_at": rev.observed_at.isoformat() if rev.observed_at else None,
+                "revised_at": rev.revised_at.isoformat() if rev.revised_at else None,
+                "diff_method": rev.diff_method,
+                "diff_added": rev.diff_added,
+                "diff_removed": rev.diff_removed,
+                "diff_byte_delta": rev.diff_byte_delta,
+                "diff_text": text[:_DIFF_TEXT_CAP] if text is not None else None,
+                "diff_chars": full,
+                "truncated": full > _DIFF_TEXT_CAP,
+            }
+    except HTTPException:
+        raise
+    except LaneAbsentError:
+        return _absent()
+    except SQLAlchemyError:
+        _LOG.warning("lane revision: the Wikipedia lane could not be read", exc_info=True)
+        return {
+            "measured": False,
+            "reason": "lane-unreadable",
+            "detail": "the Wikipedia lane file could not be read; the next drain repairs a file with no tables",
+        }

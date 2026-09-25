@@ -333,11 +333,20 @@ def test_the_reader_deep_link_has_a_handler_that_opens_the_tracked_changes_view(
 
 def test_the_deep_link_selects_the_subtab_through_the_component():
     """Invariant #18: the component owns the strip's visible state, so a bare
-    showSetCat would leave .active / aria-selected out of step."""
+    display toggle would leave .active / aria-selected out of step.
+
+    Since S04-08's S6 the view lives in the Living sources tab: the deep link goes
+    through openWikiTC, which opens that tab and, when it is already open, moves it to
+    its Wikipedia subtab through the component."""
     from tests.js_source_helper import app_js, function_body, strip_comments
 
-    body = strip_comments(function_body(app_js(), "_hydrateWikiTrackedChanges"))
-    assert "_setSubtabs.select(" in body
+    app = app_js()
+    body = strip_comments(function_body(app, "_hydrateWikiTrackedChanges"))
+    assert "openWikiTC(" in body
+    opener = strip_comments(function_body(app, "openWikiTC"))
+    assert 'showTab("living")' in opener
+    assert '_livingSubtabs.select("wiki")' in opener
+    assert "showModal" not in opener, "the tracked-changes view went back to a dialog"
 
 
 def test_the_tracked_changes_view_behaves(tmp_path):
