@@ -30,17 +30,19 @@ from src.ingest.email import (
 from src.ingest.pipeline import ingest_source, ingest_url
 from src.ingest.seed_sources import seed_default_sources
 from src.jobs.background import BackgroundJob, register_job
-from src.safety.fetcher import make_fetcher
+from src.safety.fetcher import following_fetcher
 
 router = APIRouter(prefix="/api", tags=["ingestion"])
 
-# Shared fetcher: keeps robots cache + per-host rate-limit timers across requests.
-_fetcher = make_fetcher()
+# No module-level fetcher. One built at import time read the safety settings before an
+# encrypted store was unlocked -- their defaults, i.e. direct -- and never saw protected
+# mode afterwards. ``following_fetcher`` keeps one across requests (robots cache and
+# per-host politeness) and rebuilds it when the transport setting changes.
 
 
 def get_fetcher() -> EthicalFetcher:
     """Dependency returning the shared fetcher (overridable in tests)."""
-    return _fetcher
+    return following_fetcher("ingestion")
 
 
 class IngestUrlRequest(BaseModel):

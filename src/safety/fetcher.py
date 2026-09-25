@@ -15,12 +15,14 @@ from __future__ import annotations
 import hashlib
 import os
 import re
+import threading
 from typing import Any
+from urllib.parse import urlparse
 
 import requests
 
 from src.ingest import DEFAULT_USER_AGENT, EthicalFetcher, kill_switch_active
-from src.safety.settings import GENERIC_USER_AGENT, load_settings
+from src.safety.settings import GENERIC_USER_AGENT, SafetySettings, load_settings
 
 # The SOCKS proxy schemes requests[socks]/PySocks understand. Shared by the
 # stream-isolation helper below and the C10 (2026-07-24 throughput brief)
@@ -43,6 +45,28 @@ class NetworkBlocked(RuntimeError):
     """
 
 
+class TransportUnavailable(requests.exceptions.ConnectionError):
+    """Protected fetch mode is on and no usable proxy is configured, so the request is
+    refused instead of being sent directly.
+
+    A ``ConnectionError`` on purpose. Every caller already handles "the proxy did not
+    answer": the wiki stream backs off and retries, a download pauses, a fetch records a
+    transport error, and none of them falls back to a direct connection. This is the same
+    situation one step earlier, so it takes the same road, with a message that names it.
+    It is NOT a ``NetworkBlocked``: that is the operator's own airplane switch, and a
+    caller that reported this as airplane mode would name the wrong cause.
+    """
+
+
+#: The refusal when protected mode has nothing to route through. ``save_settings``
+#: refuses to store that state, but ``OO_FETCH_MODE=protected`` with no proxy variable,
+#: or a hand-edited settings file, still reaches it, and it must never mean "direct".
+NO_PROXY_REFUSAL = (
+    "protected fetch mode is on but no proxy is configured, so this request was refused "
+    "instead of being sent directly (a lane never downgrades Tor -> clearnet)"
+)
+
+
 class GuardedSession(requests.Session):
     """A ``requests.Session`` that consults the global kill switch on EVERY verb.
 
@@ -63,6 +87,17 @@ class GuardedSession(requests.Session):
     #: call sites that ARE the AI install (the Ollama installer's resolve + fetch)
     #: pass one.
     egress_purpose: str | None = None
+
+    #: The operator's SOCKS pool, when protected mode uses one (C10). Each request's host
+    #: is sharded onto ONE member at send time -- the mapping ``EthicalFetcher`` uses, so a
+    #: host reaches the same endpoint whichever of the two paths fetches it.
+    proxy_pool: tuple[str, ...] = ()
+    #: The caller's stream-isolation token, layered on the sharded member per request.
+    isolation_token: str | None = None
+    #: The single proxy (isolation already layered on) when protected mode uses one.
+    transport_proxy: str | None = None
+    #: Set when protected mode has no usable proxy: every request is refused with it.
+    transport_refusal: str | None = None
 
     def request(self, method, url, *args, **kwargs) -> requests.Response:  # type: ignore[override]
         # NOTE for anyone writing a test here: this reads the MODULE-LEVEL
@@ -87,7 +122,26 @@ class GuardedSession(requests.Session):
             # app-level exemption and forget the socket one, or vice versa, and no
             # other thread is affected for even an instant.
             with socket_exemption():
-                return super().request(method, url, *args, **kwargs)
+                return self._send(method, url, *args, **kwargs)
+        return self._send(method, url, *args, **kwargs)
+
+    def _send(self, method, url, *args, **kwargs) -> requests.Response:
+        """The transport decision, taken AFTER the kill switch: airplane mode is the
+        operator's own switch and is named as that, whatever the transport would have been.
+        """
+        if self.transport_refusal is not None:
+            raise TransportUnavailable(self.transport_refusal)
+        # EXPLICIT, PER REQUEST, never only ``self.proxies``: requests folds the
+        # ``HTTP(S)_PROXY`` / ``ALL_PROXY`` environment into the REQUEST's mapping and
+        # lets that win over the session's (``Session.merge_environment_settings``), so a
+        # system proxy variable silently replaced the operator's Tor proxy on every
+        # session this module built. A per-request mapping is merged the other way: the
+        # environment only fills keys it lacks. ``proxies={}`` counts as absent.
+        if not kwargs.get("proxies"):
+            if self.proxy_pool:
+                kwargs["proxies"] = _pool_proxies(url, self.proxy_pool, self.isolation_token)
+            elif self.transport_proxy:
+                kwargs["proxies"] = {"http": self.transport_proxy, "https": self.transport_proxy}
         return super().request(method, url, *args, **kwargs)
 
 
@@ -151,6 +205,41 @@ def shard_host_to_proxy(host: str, proxies: list[str]) -> str:
     return proxies[idx]
 
 
+def _pool_proxies(url: str, pool: tuple[str, ...], token: str | None) -> dict[str, str]:
+    """The proxies one request to ``url`` uses under a pool: its host's sharded member,
+    with the caller's stream-isolation token layered on (``_with_stream_isolation``)."""
+    host = urlparse(url).hostname or ""
+    member = _with_stream_isolation(shard_host_to_proxy(host, list(pool)), token)
+    return {"http": member, "https": member}
+
+
+def _protected_transport(settings: SafetySettings) -> tuple[str | None, tuple[str, ...], str | None]:
+    """``(proxy, pool, refusal)`` for protected mode, the ONE reading both factories use.
+
+    The pool when one is set (it takes precedence, as C10 ruled), else the single proxy,
+    else a refusal. A pool with a non-SOCKS member is refused WHOLE, as ``save_settings``
+    refuses to store one: "all-Tor or refused", never a per-host downgrade.
+
+    Before 2026-09-25 ``guarded_session`` read ``http_proxy`` alone, so protected mode with
+    only a pool -- a configuration ``save_settings`` accepts -- sent every session this
+    module builds (the MediaWiki API and its stream, dumps, ORES, OSM downloads, official
+    statistics, DuckDuckGo discovery, the AI installer) out directly while articles went
+    through the pool.
+    """
+    # ``getattr``: a stand-in settings object without the field has no pool, which is
+    # the reading that cannot widen what a session reaches.
+    pool = tuple(getattr(settings, "http_proxies", None) or ())
+    if pool:
+        try:
+            validate_socks_pool(list(pool))
+        except ValueError as exc:
+            return None, (), str(exc)
+        return None, pool, None
+    if settings.http_proxy:
+        return settings.http_proxy, (), None
+    return None, (), NO_PROXY_REFUSAL
+
+
 def guarded_session(
     *,
     user_agent: str = DEFAULT_USER_AGENT,
@@ -182,9 +271,21 @@ def guarded_session(
     s.egress_purpose = egress_purpose
     s.headers["User-Agent"] = user_agent
     settings = load_settings()
-    proxy = settings.http_proxy if settings.is_protected else None
-    if proxy:
+    if not settings.is_protected:
+        return s
+    proxy, pool, refusal = _protected_transport(settings)
+    if refusal is not None:
+        s.transport_refusal = refusal
+    elif pool:
+        # Each request shards its own host (``GuardedSession._send``). ``s.proxies`` is
+        # set for anything that reads it; it is a pool member, never what decides.
+        s.proxy_pool = pool
+        s.isolation_token = isolation_token
+        first = _with_stream_isolation(pool[0], isolation_token)
+        s.proxies = {"http": first, "https": first}
+    elif proxy:
         proxy = _with_stream_isolation(proxy, isolation_token)
+        s.transport_proxy = proxy
         s.proxies = {"http": proxy, "https": proxy}
     return s
 
@@ -198,14 +299,31 @@ def make_fetcher(**overrides) -> EthicalFetcher:
     protected mode only), it takes precedence over the single ``http_proxy`` --
     each host shards onto ONE pool member (``EthicalFetcher`` does the actual
     per-fetch sharding, since it needs the per-URL host). ``save_settings``
-    already refuses a pool containing a non-SOCKS entry; ``EthicalFetcher``
-    re-validates defensively at construction (the pool may be an older/
-    hand-edited persisted file that predates that validation).
+    already refuses a pool containing a non-SOCKS entry; ``_protected_transport``
+    refuses one again here, by name, and ``EthicalFetcher`` re-validates at
+    construction (the pool may be an older/hand-edited persisted file that
+    predates that validation).
+
+    Protected mode with no proxy at all raises :class:`TransportUnavailable`
+    rather than returning a fetcher that would connect directly.
     """
-    s = load_settings()
+    return _fetcher_for(load_settings(), **overrides)
+
+
+def _fetcher_for(s: SafetySettings, **overrides) -> EthicalFetcher:
+    """``make_fetcher`` for a settings object already read, so ``following_fetcher`` builds
+    from the same reading it keys its cache on."""
     user_agent = GENERIC_USER_AGENT if s.is_protected else DEFAULT_USER_AGENT
-    proxy_pool = list(s.http_proxies) if (s.is_protected and s.http_proxies) else None
-    proxy = (s.http_proxy or None) if (s.is_protected and not proxy_pool) else None
+    proxy: str | None = None
+    proxy_pool: list[str] | None = None
+    if s.is_protected:
+        single, pool, refusal = _protected_transport(s)
+        if refusal is not None:
+            # Refused at construction, by name: an EthicalFetcher with no proxy would
+            # fetch directly, and the caller (a pass, an endpoint) surfaces the message.
+            raise TransportUnavailable(refusal)
+        proxy_pool = list(pool) or None
+        proxy = single
     params: dict[str, Any] = {
         "user_agent": user_agent,
         "min_interval_s": float(os.getenv("OO_FETCH_MIN_INTERVAL", "1.0")),
@@ -222,3 +340,43 @@ def make_fetcher(**overrides) -> EthicalFetcher:
         params["body_deadline_s"] = float(os.environ["OO_FETCH_BODY_DEADLINE"])
     params.update(overrides)
     return EthicalFetcher(**params)
+
+
+# --------------------------------------------------------------------------- #
+# A long-lived fetcher that follows the transport setting
+# --------------------------------------------------------------------------- #
+_FOLLOWING_LOCK = threading.Lock()
+_FOLLOWING: dict[str, tuple[tuple[Any, ...], EthicalFetcher]] = {}
+
+
+def _transport_key(s: SafetySettings) -> tuple[Any, ...]:
+    """Everything ``_fetcher_for`` reads from the settings, and nothing else."""
+    return (bool(s.is_protected), s.http_proxy, tuple(getattr(s, "http_proxies", None) or ()))
+
+
+def following_fetcher(owner: str) -> EthicalFetcher:
+    """The long-lived fetcher for one API module, rebuilt whenever the transport changes.
+
+    ``src.api.markets``, ``src.api.hazards`` and ``src.api.ingestion`` each built one
+    ``make_fetcher()`` at IMPORT time and kept it for the life of the process. Import
+    happens before the operator unlocks an encrypted store, when the stored safety
+    settings cannot be read and load from the pre-migration ``safety_settings.json``
+    if one survives, or as their defaults. So on an encrypted install whose protected
+    mode was saved in Settings, those three fetched directly, with the bot User-Agent,
+    unless an older settings file happened to carry the same choice; and on any
+    install, a switch to protected mode in Settings did not reach them before a
+    restart. Found 2026-09-25.
+
+    Kept long-lived rather than built per call so the in-memory politeness state (the
+    per-host last-request stamps) survives between requests. A changed transport starts
+    a fresh fetcher; the robots verdicts and the Crawl-delay schedule are persisted, so
+    only the in-memory stamps are lost at that moment.
+    """
+    s = load_settings()
+    key = _transport_key(s)
+    with _FOLLOWING_LOCK:
+        held = _FOLLOWING.get(owner)
+        if held is None or held[0] != key:
+            held = (key, _fetcher_for(s))
+            _FOLLOWING[owner] = held
+        return held[1]

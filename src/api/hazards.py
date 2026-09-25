@@ -15,11 +15,14 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Query
 
-from src.safety.fetcher import make_fetcher
+from src.safety.fetcher import following_fetcher
 
 router = APIRouter(prefix="/api/hazards", tags=["hazards"])
 
-_fetcher = make_fetcher()
+# No module-level fetcher. One built at import time read the safety settings before an
+# encrypted store was unlocked -- their defaults, i.e. direct -- and never saw protected
+# mode afterwards. ``following_fetcher`` keeps one across requests (robots cache and
+# per-host politeness) and rebuilds it when the transport setting changes.
 
 # Open, no-key feeds. USGS is rock-solid; a bad/renamed URL fails loudly (best-effort),
 # never fabricates — same stance as the market/law catalogs.
@@ -44,17 +47,20 @@ def fetch_hazards(
     (``/api/timemap?hazards=true``) layers its records onto the space-time axis.
     Best-effort: one bad feed lands in ``failures``, never raises. ``fetcher`` lets a
     caller (e.g. the scheduler's background snapshot pass) inject the shared per-pass
-    EthicalFetcher; unset it uses this module's own guarded fetcher. Either way the
-    kill switch / robots / proxy are honoured by the fetcher (airplane mode refuses).
+    EthicalFetcher; unset it uses this module's own fetcher, which follows the transport
+    setting. Either way the kill switch / robots / proxy are honoured by the fetcher
+    (airplane mode refuses).
     """
     from src.hazards.parse import PARSERS
 
-    f = fetcher or _fetcher
     want = list(_FEEDS) if source == "all" else [s for s in (source,) if s in _FEEDS]
     items: list[dict] = []
     failures: list[str] = []
     for key in want:
         try:
+            # Inside the try: protected mode with no usable proxy refuses at construction
+            # (TransportUnavailable), and that refusal is a failed feed like any other.
+            f = fetcher or following_fetcher("hazards")
             fetched = f.fetch(_FEEDS[key], require_html=False)
             rows = PARSERS[key](fetched.content)
             if key == "usgs" and min_magnitude is not None:

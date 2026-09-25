@@ -1343,31 +1343,30 @@ class EthicalFetcher:
 
         Returns a ``{"http":…, "https":…}`` dict whose SOCKS URL carries a
         per-host username so Tor's ``IsolateSOCKSAuth`` builds a dedicated circuit
-        for this host. A no-op (returns ``None``) when isolation is disabled,
-        there is no proxy, or the proxy is not SOCKS. The page fetch and its
-        robots.txt both route through this, so a host's traffic shares one circuit
-        and is unlinkable to other hosts' circuits.
+        for this host. The page fetch and its robots.txt both route through this,
+        so a host's traffic shares one circuit and is unlinkable to other hosts'
+        circuits. ``None`` ONLY when there is no proxy at all.
+
+        WHENEVER A PROXY IS CONFIGURED THE MAPPING IS EXPLICIT, isolated or not
+        (isolation disabled, or an HTTP proxy that cannot isolate, get the bare
+        proxy). Until 2026-09-25 those two cases returned ``None`` and left the
+        choice to ``session.proxies`` -- and requests folds the ``HTTP(S)_PROXY``
+        environment into the REQUEST's mapping, which then wins over the
+        session's, so a system proxy variable replaced the operator's proxy for
+        exactly those fetches. A per-request mapping is merged the other way.
         """
         if not netloc:
             return None
         base = self._effective_base_proxy(netloc)
         if not base:
             return None
-        if self._proxy_pool and not self._stream_isolation:
-            # A pool member is still an explicit per-call override even with
-            # isolation off (unlike the single-proxy path, which can fall back
-            # to the session-level default) -- every host must land on ITS
-            # sharded endpoint, never the session's arbitrary first-member default.
-            return {"http": base, "https": base}
         if not self._stream_isolation:
-            return None
+            return {"http": base, "https": base}
         # Lazy import: src.safety.fetcher imports from src.ingest, so a top-level
         # import here would be circular. The helper is pure string work.
         from src.safety.fetcher import _with_stream_isolation
 
         isolated = _with_stream_isolation(base, netloc)
-        if isolated == base and not self._proxy_pool:
-            return None  # non-SOCKS proxy (or creds already set): nothing to isolate
         return {"http": isolated, "https": isolated}
 
     def _http_get(
@@ -1423,6 +1422,11 @@ class EthicalFetcher:
         """
         if self._real_session and _KILL.is_set():
             raise FetchFailed("network kill switch is active -- collection stopped by operator")
+        if proxies is None:
+            # The two preflight side doors call this without a mapping. Give them the
+            # host's own, as the page and robots paths do, so no request through this
+            # method is left to ``session.proxies`` (see ``_isolated_proxies``).
+            proxies = self._isolated_proxies(urlparse(url).netloc)
         # Lazily, and on EVERY request rather than behind a one-shot flag:
         # ``src.ingest.airplane`` imports this module, so the import cannot be at
         # module level, and the installer is an ``if already installed: return``
@@ -1483,9 +1487,12 @@ class EthicalFetcher:
         ``HTTP(S)_PROXY`` environment (honouring ``NO_PROXY``) whenever
         ``trust_env`` is set, which is the default; a guard that only read
         ``session.proxies`` would refuse the proxy connection of every operator
-        whose proxy comes from their environment. Merged in the same precedence
-        requests itself uses: environment first, then the session, then the
-        per-request mapping.
+        whose proxy comes from their environment. Merged in the precedence
+        requests itself uses (``Session.merge_environment_settings``): the
+        per-request mapping over the environment over the session -- the
+        environment is folded into the REQUEST's mapping, which then wins over
+        the session's. (Before 2026-09-25 this read session over environment,
+        the reverse of what requests does.)
 
         The result is then narrowed to the keys ``requests.utils.select_proxy``
         can ever consult -- read out of the installed library rather than
@@ -1500,13 +1507,12 @@ class EthicalFetcher:
         without this filter, an unrelated ``npm_config_proxy`` naming a host
         would silently disable the check on a great many developer machines.
         """
-        merged: dict[str, str] = {}
+        merged: dict[str, str] = dict(getattr(self.session, "proxies", None) or {})
         if getattr(self.session, "trust_env", False):
             try:
                 merged.update(requests.utils.get_environ_proxies(url, no_proxy=None))
             except Exception:  # noqa: BLE001 - an unreadable environment is not a fetch error
                 _LOG.debug("could not read environment proxies for %r", url, exc_info=True)
-        merged.update(getattr(self.session, "proxies", None) or {})
         merged.update(explicit or {})
         return {k: v for k, v in merged.items() if k in _SELECTABLE_PROXY_KEYS or "://" in k}
 

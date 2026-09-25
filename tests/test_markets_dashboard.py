@@ -46,8 +46,8 @@ def test_import_all_and_series(tmp_path, monkeypatch):
     Sess = sessionmaker(bind=engine, future=True)
 
     # Stub the shared fetcher so all feeds resolve to a tiny CSV (no network).
-    monkeypatch.setattr(mk._fetcher, "session", FakeSession())
-    monkeypatch.setattr(mk._fetcher, "respect_robots", False)
+    monkeypatch.setattr(mk.following_fetcher("markets"), "session", FakeSession())
+    monkeypatch.setattr(mk.following_fetcher("markets"), "respect_robots", False)
 
     def _db():
         d = Sess()

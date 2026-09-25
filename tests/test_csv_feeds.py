@@ -167,7 +167,7 @@ def test_feeds_api_list_and_import(tmp_path, monkeypatch):
     sess = FakeSession()
     sess.route("https://fred.stlouisfed.org/robots.txt", status_code=404, text="")
     sess.route(feed.url, text="DATE,PCOPPUSDM\n2024-01-01,8450.5\n2024-02-01,8600.0\n")
-    monkeypatch.setattr(mk._fetcher, "session", sess)
+    monkeypatch.setattr(mk.following_fetcher("markets"), "session", sess)
 
     from src.api.main import app
 

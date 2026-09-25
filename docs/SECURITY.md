@@ -47,6 +47,15 @@ Open Omniscience targets a **single local user** on a **Qubes OS Debian AppVM**:
   refusal is surfaced. The three rows that do *not* use the ethical fetcher say so, and say
   what they use instead.
 
+  **What "carries your proxy" covers.** A proxy pool (`OO_HTTP_PROXIES`) counts as your
+  proxy on both paths, and a host lands on the same pool member whichever path fetches it.
+  Every request passes the proxy explicitly, so an `HTTP(S)_PROXY` or `ALL_PROXY` variable
+  in your environment cannot replace it. The long-lived fetchers behind markets, hazard
+  feeds and manual feed or URL ingest re-read the setting on use, so turning protected mode on, or
+  unlocking an encrypted store, reaches them without a restart. Protected mode with no
+  usable proxy refuses each request by name (`TransportUnavailable`) instead of connecting
+  directly. (`src/safety/fetcher.py`; `tests/test_transport_follows_setting.py`.)
+
 | Lane | Hosts it can reach | Trigger | Transport | Where in the tree |
 |---|---|---|---|---|
 | **Press collection** | *A class, never enumerable:* the domains of **the sources you have enabled** — **9,033 distinct hosts** across the bundled directory (`configs/sources.yml`, `configs/academic_sources.yml`, `configs/official_sources.yml`, `configs/sources_spectrum.yml`, `configs/markets_sources.yml`), plus every feed or site **you** add. A source is reached at *two* addresses: its `rss_url` when it has one, and `https://<its domain>` for the crawl and the preflight — which is why a sweep for `https://` literals alone sees only 5,425 of them, and why the guard sweeps the scheme-less `domain:` field too. The sub-rungs stay on the source's own domain: sitemap discovery, the bounded crawl rung (`crawl_per_pass`, default 3) and the archive-backfill rung (`archive_backfill_per_pass`, default 5). | The collect pass you start | ethical fetcher | `src/ingest/__init__.py:529` · `src/ingest/pipeline.py` · `src/ingest/sitemap.py` · `src/ingest/crawl.py` · `src/ingest/archive_backfill.py` · `src/ingest/seed_sources.py` · `src/ingest/crawl.py:149` and `src/monitoring/preflight.py:68` (the `https://{domain}` synthesis) |
