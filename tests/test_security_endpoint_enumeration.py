@@ -857,3 +857,60 @@ def test_the_prose_count_of_non_fetcher_rows_matches_the_table():
     assert not wrong, (
         f"the section says {wrong} where the table has {len(doc_non_fetcher)} ({n!r})"
     )
+
+
+def test_the_lane_state_node_suite():
+    """``_laneState`` run as REAL code against the REAL table (R31, 2026-09-25).
+
+    A lane's ``setting`` may name several switches; the lane is ON while ANY is on and
+    OFF only when every one is. Which of "any", "all" or "the first" the code implements
+    is invisible to a source needle -- all three mention every key -- so the node suite
+    drives the extracted function. The three wrong readings were each applied as a
+    mutation and each failed it.
+    """
+    import subprocess
+
+    proc = subprocess.run(
+        ["node", str(_ROOT / "tests" / "net_lane_state_node_test.js")],
+        capture_output=True, text=True, check=False,
+    )
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert "all assertions passed" in proc.stdout
+
+
+def test_every_scheduler_switch_a_lane_names_is_a_real_reachable_field():
+    """A key the popup reads and the settings never carry renders its lane as "could not
+    read" forever, and a key the API cannot write is an opt-out the operator is told
+    worked (the settingUnreachable finding). So each key a scheduler lane names must be a
+    SchedulerSettings field AND a SchedulerConfigUpdate field -- except where the table
+    already DISCLOSES the gap (``noOptOut``: no field; ``settingUnreachable``: no
+    declaration), which the two guards above pin to their causes.
+
+    Written for R31, whose statistics row gained a second key: a typo in it would still
+    show the row as on (the other key is on by default), so nothing else would notice.
+    """
+    import dataclasses
+
+    from src.api.scheduler import SchedulerConfigUpdate
+    from src.scheduler.settings import SchedulerSettings
+
+    fields = {f.name for f in dataclasses.fields(SchedulerSettings)}
+    declared = set(SchedulerConfigUpdate.model_fields)
+    checked = []
+    for lane in _lanes():
+        if lane.get("settingFrom") != "scheduler" or not lane.get("setting"):
+            continue
+        if lane.get("noOptOut"):
+            continue
+        keys = lane["setting"] if isinstance(lane["setting"], list) else [lane["setting"]]
+        for key in keys:
+            assert key in fields, f"lane {lane['id']!r} reads {key!r}, not a SchedulerSettings field"
+            if not lane.get("settingUnreachable"):
+                assert key in declared, (
+                    f"lane {lane['id']!r} reads {key!r}, which PUT /api/scheduler/config "
+                    f"cannot write -- declare it, or disclose it with settingUnreachable"
+                )
+            checked.append(key)
+    assert "auto_refresh_stat_subscriptions" in checked, (
+        "the statistics row no longer names the refresh switch R31 made default-on"
+    )

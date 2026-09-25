@@ -1148,13 +1148,22 @@
       const src = cfg[lane.settingFrom];
       if (!lane.setting || src === undefined) return _NET_STATE_ON;
       if (src === null) return _NET_STATE_UNKNOWN;           // the read failed
-      const v = src[lane.setting];
-      if (v === undefined || v === null) return _NET_STATE_UNKNOWN;
-      if (lane.settingOn !== undefined) {
-        return v === lane.settingOn ? _NET_STATE_ON : _NET_STATE_OFF;
-      }
-      if (typeof v === "number") return v > 0 ? _NET_STATE_ON : _NET_STATE_OFF;
-      return v ? _NET_STATE_ON : _NET_STATE_OFF;
+      // A lane reached by SEVERAL switches (net-hosts.js: `setting` as an array) is on
+      // while ANY of them is on, unknown while one is unreadable and none is on, and
+      // off only when every one reads off. "Off" here tells the operator no request
+      // will go to these hosts, so one switch being off must never be enough to say it.
+      const states = [].concat(lane.setting).map((key) => {
+        const v = src[key];
+        if (v === undefined || v === null) return _NET_STATE_UNKNOWN;
+        if (lane.settingOn !== undefined) {
+          return v === lane.settingOn ? _NET_STATE_ON : _NET_STATE_OFF;
+        }
+        if (typeof v === "number") return v > 0 ? _NET_STATE_ON : _NET_STATE_OFF;
+        return v ? _NET_STATE_ON : _NET_STATE_OFF;
+      });
+      if (states.includes(_NET_STATE_ON)) return _NET_STATE_ON;
+      if (states.includes(_NET_STATE_UNKNOWN)) return _NET_STATE_UNKNOWN;
+      return _NET_STATE_OFF;
     }
 
     // What the lane reaches, as ONE translated sentence for the #oo-tip bubble.

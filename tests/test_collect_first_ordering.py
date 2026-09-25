@@ -71,6 +71,11 @@ def order(monkeypatch):
                         lambda s, fetcher=None, now=None: calls.append("markets") or {"imported": 0})
     monkeypatch.setattr("src.discovery.run_discovery",
                         lambda s, per_run: calls.append("discovery") or {})
+    # R31 (2026-09-25) made the tracked-statistics refresh default ON, so the default
+    # pass now reaches it on the markets lane -- a networked collaborator like the ones
+    # above, stubbed for the same reason.
+    monkeypatch.setattr("src.stats.subscriptions.refresh_due",
+                        lambda s: calls.append("stat-refresh") or {"stored": 0})
 
     def _briefing(session):
         calls.append("briefing")
@@ -161,3 +166,12 @@ def test_market_feeds_autoload_in_default_rss_pass_after_scrape(order):
     calls, _ = order
     assert "markets" in calls and "briefing" in calls, calls
     assert calls.index("scrape") < calls.index("markets"), calls
+
+
+def test_the_stat_refresh_rides_the_default_pass_after_scrape(order):
+    """R31 end to end: on a default install the refresh of tracked statistics runs on
+    the markets lane of an ordinary pass -- after the articles, like every other piece
+    of housekeeping -- rather than only when someone presses "Refresh due now"."""
+    calls, _ = order
+    assert "stat-refresh" in calls, calls
+    assert calls.index("scrape") < calls.index("stat-refresh"), calls

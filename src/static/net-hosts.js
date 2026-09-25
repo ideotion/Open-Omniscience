@@ -34,7 +34,14 @@
  *   hostCount  distinct hosts across `hostsFrom` — pinned by the guard against
  *              the real files, so it can never quietly go stale
  *   trigger    "pass" | "ride-along" | "click" | "opt-in"
- *   setting    the settings key that switches this lane off, or null
+ *   setting    the settings key that switches this lane off, or null -- or an ARRAY
+ *              of keys when more than one switch reaches the same hosts. The lane
+ *              is then ON while ANY of them is on, and OFF only when every one reads
+ *              off: "Official statistics" is reached both by the country-data
+ *              ride-along and by the refresh of the figures you subscribed to, and
+ *              showing it as "switched off" because one of the two is would hide the
+ *              other's egress from the one decision this table informs
+ *              (recorded 2026-09-25, R31)
  *   settingFrom which loopback settings payload that key lives in:
  *              "scheduler" | "safety" | "custody"
  *   settingOn  the exact value that means ON, when the key is not a boolean or a
@@ -108,7 +115,7 @@
       "label": "Official statistics",
       "hosts": ["api.worldbank.org", "ec.europa.eu", "ourworldindata.org"],
       "trigger": "ride-along",
-      "setting": "country_data_per_pass",
+      "setting": ["country_data_per_pass", "auto_refresh_stat_subscriptions"],
       "settingFrom": "scheduler",
       "fetcher": true
     },

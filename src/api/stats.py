@@ -246,7 +246,8 @@ def delete_stat_subscription(sub_id: int) -> dict:
 
 @router.post("/subscriptions/refresh")
 def refresh_stat_subscriptions() -> dict:
-    """Replay DUE subscriptions now (also runs automatically in the scheduler markets pass).
+    """Replay DUE subscriptions now. Also runs on the scheduler's markets lane on every
+    online pass while ``auto_refresh_stat_subscriptions`` is on -- the default (R31).
 
     Airplane-gated: opens NO socket while the kill switch is engaged (returns the count
     as skipped_offline). Best-effort per subscription."""

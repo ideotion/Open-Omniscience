@@ -1194,12 +1194,13 @@ def _lane_kind_order(pending: set[str], *, ladder: KindLadder | None = None) -> 
 
 
 def _lane_step_markets(session, fetcher, settings: SchedulerSettings) -> dict:
-    """The markets lane (Q1020 = a): the bundled feeds always, then the operator's two
-    opt-ins -- their own price-extraction rules and the statistics figures they subscribed
-    to. Those two used to run only inside the retired ``mode="markets"`` pass (which also
-    STOPPED feed collection); here they run beside it.
+    """The markets lane (Q1020 = a): the bundled feeds always, then its two switches --
+    the operator's own price-extraction rules (default off) and the refresh of the
+    statistics figures they subscribed to (default on, R31). Those two used to run only
+    inside the retired ``mode="markets"`` pass (which also STOPPED feed collection); here
+    they run beside it.
 
-    Each opt-in is isolated from the other and from the feed import: a broken rule must
+    Each switch's work is isolated from the other and from the feed import: a broken rule must
     not cost the operator their commodity prices, and a statistics host that is down must
     not cost them their rules. A failure is RECORDED in the tally under its own key rather
     than only logged, so "nothing was due" and "it broke" stay two different readings.
@@ -1228,7 +1229,9 @@ def _lane_step_markets(session, fetcher, settings: SchedulerSettings) -> dict:
             # The class name only: the message can carry a path or a stack detail, and
             # this tally reaches /api/scheduler/activity. The full error is in the log.
             out["rules_error"] = exc.__class__.__name__
-    if getattr(settings, "auto_refresh_stat_subscriptions", False):
+    # Defaults ON (R31); the getattr fallback matches the field, so a duck-typed settings
+    # object without it behaves like a fresh install rather than like a silent opt-out.
+    if getattr(settings, "auto_refresh_stat_subscriptions", True):
         try:
             from src.stats.subscriptions import refresh_due
 
