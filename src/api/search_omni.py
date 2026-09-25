@@ -124,7 +124,7 @@ def _articles_group(
             {
                 "article_id": aid,
                 "title": by_id[aid][1],
-                "published_at": by_id[aid][2].isoformat() if by_id[aid][2] else None,
+                "published_at": pub.isoformat() if (pub := by_id[aid][2]) else None,
                 "url": f"/api/articles/{aid}/view",  # the LOCAL reader first (invariant #6)
             }
             for aid in top
@@ -337,7 +337,7 @@ def _wiki_group(
                             "title": by[aid][1],
                             "wiki": edition,
                             "url": f"/api/articles/{aid}/view",  # the LOCAL reader (invariant #6)
-                            "published_at": by[aid][2].isoformat() if by[aid][2] else None,
+                            "published_at": pub.isoformat() if (pub := by[aid][2]) else None,
                         }
                     )
     # 2) downloaded-dump BODY matches (labelled dump results; honest empty when none).

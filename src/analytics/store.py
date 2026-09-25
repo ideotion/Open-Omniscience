@@ -1939,7 +1939,8 @@ def reconcile_keyword_language(
     for aid, lang in session.query(Article.id, Article.language).filter(
         Article.language.isnot(None), Article.language != ""
     ):
-        art_lang[int(aid)] = lang
+        if lang:  # excluded by the filter; narrows the Optional column
+            art_lang[int(aid)] = lang
     if not art_lang:
         return {"keywords_with_signature": 0, "relanguaged": 0, "null_to_lang": 0, "lang_to_lang": 0}
 
@@ -2222,6 +2223,7 @@ def reconcile_article_language(
         for kid, lang in session.query(Keyword.id, Keyword.language).filter(
             Keyword.language.isnot(None), Keyword.language != ""
         )
+        if lang  # excluded by the filter; narrows the Optional column
     }
     dist: dict[int, dict[str, int]] = {}
     for i in range(0, len(ids), 500):

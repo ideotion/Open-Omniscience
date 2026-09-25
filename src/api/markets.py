@@ -13,6 +13,8 @@ number is shown without a real series behind it.
 
 from __future__ import annotations
 
+from typing import Any
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -372,7 +374,7 @@ def list_series(db: Session = Depends(get_db)) -> dict:
         .group_by(CommodityPrice.symbol)
         .all()
     )
-    out = []
+    out: list[dict[str, Any]] = []
     for symbol, n, _last in rows:
         latest = (
             db.query(CommodityPrice)
