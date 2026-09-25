@@ -93,3 +93,37 @@ def test_draft_add_export_remove(client):
 def test_draft_add_rejects_card_without_id(client):
     r = client.post("/api/briefing/draft/add", json={"card": {"title": "no id"}})
     assert r.status_code == 400
+
+
+def test_briefing_with_cards_and_target_lang_does_not_500(client, monkeypatch):
+    # Regression (2026-09-17 → 2026-09-25): `_annotate_card_terms` read `cards` as a dict
+    # of buckets, but `_present` serves it as a LIST, so `.values()` raised on every
+    # non-empty briefing. Home always sends `target_lang` (English included), so every
+    # install with at least one card saw the error state. The empty-corpus tests above
+    # never reached the loop; this one feeds the REAL `_present` shape through the route.
+    from src.briefing import service
+
+    cache = {
+        "generated_at": "2026-09-25T00:00:00Z",
+        "cards": [
+            {"id": "kw1", "bucket": "rising", "title_vars": {"term": "Wahl"}},
+            {"id": "plain", "bucket": "rising", "title": "no term here"},
+        ],
+    }
+    monkeypatch.setattr(
+        service, "get_briefing",
+        lambda db, **kw: service._present(cache, include_dismissed=False),
+    )
+    for lang in ("en", "fr", "ar"):
+        r = client.get(f"/api/briefing?target_lang={lang}")
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert [c["id"] for c in body["cards"]] == ["kw1", "plain"]
+        # Both views carry the same annotation; the flat list and the bucket agree.
+        bucket_cards = {c["id"]: c for b in body["buckets"] for c in b["cards"]}
+        for card in body["cards"]:
+            assert card == bucket_cards[card["id"]]
+        assert "translation_tier" in bucket_cards["kw1"]
+        assert "translation_tier" not in bucket_cards["plain"]
+    # The shared cache must not carry one reader's annotation into the next.
+    assert "translation_tier" not in cache["cards"][0]
