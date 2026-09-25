@@ -22,14 +22,16 @@ from sqlalchemy.orm import Session
 from src.database.models import CommodityPrice, MarketExtractionRule, Source
 from src.database.session import get_db
 from src.ingest import EthicalFetcher  # noqa: F401 (kept for type/back-compat)
-from src.safety.fetcher import make_fetcher
+from src.safety.fetcher import following_fetcher
 
 router = APIRouter(prefix="/api/markets", tags=["markets"])
 
 VALID_CATEGORIES = ("financial", "stock", "commodity")
 
-# Shared ethical fetcher (persists robots cache + per-host rate-limit state).
-_fetcher = make_fetcher()
+# No module-level fetcher. One built at import time read the safety settings before an
+# encrypted store was unlocked -- their defaults, i.e. direct -- and never saw protected
+# mode afterwards. ``following_fetcher`` keeps one across requests (robots cache and
+# per-host politeness) and rebuilds it when the transport setting changes.
 
 
 class RuleCreate(BaseModel):
@@ -154,7 +156,7 @@ def run_rule_now(rule_id: int, db: Session = Depends(get_db)) -> dict:
     from src.markets.pipeline import run_rule
 
     rule = _get_rule(db, rule_id)
-    outcome = run_rule(db, rule, fetcher=_fetcher)
+    outcome = run_rule(db, rule, fetcher=following_fetcher("markets"))
     return outcome.to_dict()
 
 
@@ -244,7 +246,7 @@ def import_catalog_feed(key: str, db: Session = Depends(get_db)) -> dict:
         db,
         url=feed.url,
         symbol=feed.symbol,
-        fetcher=_fetcher,
+        fetcher=following_fetcher("markets"),
         date_column=feed.date_column,
         value_column=feed.value_column,
         currency=feed.currency,
@@ -286,7 +288,7 @@ def import_all_feeds(
                 db,
                 url=feed.url,
                 symbol=feed.symbol,
-                fetcher=_fetcher,
+                fetcher=following_fetcher("markets"),
                 date_column=feed.date_column,
                 value_column=feed.value_column,
                 currency=feed.currency,
@@ -487,7 +489,7 @@ def import_custom_feed(payload: CustomFeedImport, db: Session = Depends(get_db))
         db,
         url=payload.url,
         symbol=payload.symbol,
-        fetcher=_fetcher,
+        fetcher=following_fetcher("markets"),
         date_column=payload.date_column,
         value_column=payload.value_column,
         currency=payload.currency,

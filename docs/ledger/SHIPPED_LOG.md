@@ -9740,3 +9740,37 @@ The retired entry, verbatim:
   `TypeError` into the next test's setup. **`test_the_boot_resume_declines_under_its_own_opt_out`
   (the `Core-only install` red on `main`@`be658809`) was NOT addressed:** that leaked thread
   starts after it in file order, so it cannot be the cause there.
+
+## 2026-09-25 — Protected mode carries the operator's proxy on every request, or refuses by name (PR #1180)
+
+**WHAT SHIPPED.** Three ways a request left without the operator's proxy while protected fetch
+mode was on, found while mapping S04-08's S5 (Q1014: a lane never downgrades Tor to clearnet),
+each reproduced by a test before it was fixed:
+
+1. `guarded_session` read `http_proxy` alone. Protected mode with only a SOCKS pool, which
+   `save_settings` accepts and Settings cannot create, sent the MediaWiki API and its stream,
+   dumps, ORES, OSM downloads, official statistics, DuckDuckGo discovery and the AI installer
+   out directly, while articles went through the pool.
+2. Markets, hazards and ingestion built their fetcher at import, before an encrypted store
+   unlocks. On an encrypted install whose protected mode was saved in Settings they fetched
+   directly with the bot User-Agent, unless the pre-migration `safety_settings.json` carried
+   the same choice; on any install, a switch did not reach them before a restart.
+3. requests lets `HTTP(S)_PROXY` and `ALL_PROXY` from the environment win over a session's own
+   proxies, so the single-proxy shared session, the article fetcher when it did not isolate,
+   and both preflight side doors used the system proxy instead.
+
+**HOW.** Every protected request passes its proxy explicitly. The pool counts on both paths,
+and a host lands on the same member either way (`shard_host_to_proxy`). `following_fetcher`
+keeps one long-lived fetcher per module, so per-host politeness survives, and rebuilds it when
+the transport changes. An AST guard refuses any fetcher built at import time. Protected mode
+with no usable proxy, reachable only through the environment or a hand-edited file, refuses
+each request by name (`TransportUnavailable`, a `ConnectionError`, never a `NetworkBlocked`);
+the hazard relay lists it as each feed's failure, a pass records it as its error. Airplane
+mode was never affected: the kill switch is checked before all of these paths.
+
+**INTERIM WORKAROUNDS GIVEN BEFORE THE MERGE.** Set `OO_HTTP_PROXY` beside a pool; set
+`OO_FETCH_MODE=protected` and `OO_HTTP_PROXY` in the app's environment (read even while the
+store is locked); unset system proxy variables for the app.
+
+**STILL S5's.** The per-lane transport line in the consent hover, and naming the wiki stream's
+waiting reason when its transport is refused.

@@ -168,7 +168,7 @@ def test_api_relays_and_is_best_effort(monkeypatch):
             return _Fetched(_USGS)
         raise RuntimeError("gdacs feed unreachable")  # exercise per-source failure
 
-    monkeypatch.setattr(hz._fetcher, "fetch", _fake_fetch)
+    monkeypatch.setattr(hz.following_fetcher("hazards"), "fetch", _fake_fetch)
     with TestClient(app) as c:
         body = c.get("/api/hazards?min_magnitude=5").json()
         # USGS parsed (M>=5 keeps only the 7.1); GDACS failure reported, not a 500.

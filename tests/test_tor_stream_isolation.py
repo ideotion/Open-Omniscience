@@ -7,7 +7,9 @@ Maintainer concept 2026-06-13 (the "protect the user from other sources" win,
 done the safe way — circuit isolation, NOT clearnet). Over a SOCKS (Tor) proxy
 each host's requests ride their own circuit via IsolateSOCKSAuth (a per-host
 SOCKS username), so no exit node or circuit observer can link the user's
-activity across different sources. A no-op for non-SOCKS / no proxy / disabled.
+activity across different sources. No isolation for a non-SOCKS proxy or when disabled, but the proxy itself is still
+passed on every request (2026-09-25: left to ``session.proxies``, a system
+``HTTPS_PROXY`` variable replaced it -- see ``tests/test_transport_follows_setting.py``).
 The page fetch AND its robots.txt share the host's circuit.
 """
 
@@ -77,11 +79,14 @@ def test_different_hosts_get_different_circuits():
     assert page_tokens == {"hosta.example:hosta.example", "hostb.example:hostb.example"}
 
 
-def test_non_socks_proxy_is_not_isolated():
+def test_non_socks_proxy_is_not_isolated_but_is_still_passed_on_every_request():
+    http_proxy = "http://127.0.0.1:8118"
     sess = _RecordingSession()
-    _fetcher(sess, "http://127.0.0.1:8118").fetch("https://hosta.example/x")
-    # An HTTP proxy can't do per-stream isolation -> no per-request override.
-    assert all(p is None for _, p in sess.calls)
+    _fetcher(sess, http_proxy).fetch("https://hosta.example/x")
+    # An HTTP proxy can't do per-stream isolation, so no username is injected -- but the
+    # proxy is still passed explicitly, so no environment variable can replace it.
+    assert len(sess.calls) == 2
+    assert all(p == {"http": http_proxy, "https": http_proxy} for _, p in sess.calls)
 
 
 def test_no_proxy_no_isolation():
@@ -94,7 +99,9 @@ def test_disabled_via_env(monkeypatch):
     monkeypatch.setenv("OO_TOR_STREAM_ISOLATION", "0")
     sess = _RecordingSession()
     _fetcher(sess, _SOCKS).fetch("https://hosta.example/x")  # SOCKS, but disabled
-    assert all(p is None for _, p in sess.calls)
+    # No per-host username, and still the operator's proxy on every request.
+    assert len(sess.calls) == 2
+    assert all(p == {"http": _SOCKS, "https": _SOCKS} for _, p in sess.calls)
 
 
 def test_isolated_proxies_unit():
@@ -105,5 +112,9 @@ def test_isolated_proxies_unit():
         "https": "socks5://news.example:news.example@127.0.0.1:9050",
     }
     assert f._isolated_proxies(None) is None
-    # Non-SOCKS proxy -> nothing to isolate.
-    assert _fetcher(_RecordingSession(), "http://127.0.0.1:8118")._isolated_proxies("x") is None
+    # Non-SOCKS proxy -> nothing to isolate, and the bare proxy, explicitly.
+    http_proxy = "http://127.0.0.1:8118"
+    assert _fetcher(_RecordingSession(), http_proxy)._isolated_proxies("x") == {
+        "http": http_proxy,
+        "https": http_proxy,
+    }
