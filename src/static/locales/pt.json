@@ -4454,5 +4454,18 @@
   "Longest collection stretch": "Trecho de coleta mais longo",
   "Process up without a break": "Processo ativo sem interrupção",
   "{h} h reached at {when} — the process's half of the clause, not the bar": "{h} h atingidas às {when} — a metade «processo» da cláusula, não a barra",
-  "not yet — {h} h more on the current stretch": "ainda não — faltam {h} h no trecho atual"
+  "not yet — {h} h more on the current stretch": "ainda não — faltam {h} h no trecho atual",
+  "Resume pending": "Retomada pendente",
+  "An exclusive operation (an import, a restore, a release run) paused collection while a pass was running. Collection starts again the moment that pass finishes winding down, unless airplane mode is on.": "Uma operação exclusiva (uma importação, uma restauração, uma execução de versão) pausou a coleta enquanto uma passagem estava em execução. A coleta recomeça assim que essa passagem termina de encerrar, a menos que o modo avião esteja ativado.",
+  "waiting for the previous pass to finish (since {when})": "aguardando o fim da passagem anterior (desde {when})",
+  "Qualification is declined on this machine: it is below the memory floor, so no candidate is judged.": "A qualificação é recusada nesta máquina: ela está abaixo do piso de memória, por isso nenhuma candidata é julgada.",
+  "To run it anyway, restart the app with {env}=1.": "Para executá-la mesmo assim, reinicie o aplicativo com {env}=1.",
+  "Check for missing ingest entries": "Procurar entradas de ingestão ausentes",
+  "Compares the stored articles with the custody log's ingest entries, from the log's first ingest entry on. It only counts; recording what it finds is a separate button.": "Compara os artigos armazenados com as entradas de ingestão do registro de custódia, a partir da primeira entrada de ingestão. Só conta; registrar o que encontra é um botão separado.",
+  "Record them, marked late": "Registrá-las, marcadas como tardias",
+  "{p} ingest entries could not be written when their articles were stored and are queued; {r} have been recorded late, each marked so in its signed metadata.": "{p} entradas de ingestão não puderam ser escritas quando seus artigos foram armazenados e estão na fila; {r} foram registradas com atraso, cada uma marcada assim em seus metadados assinados.",
+  "The custody log has no ingest entry yet, so there is no start to measure gaps from.": "O registro de custódia ainda não tem nenhuma entrada de ingestão, então não há início a partir do qual medir lacunas.",
+  "{n} stored articles since the log's first ingest entry have no ingest entry ({checked} checked).": "{n} artigos armazenados desde a primeira entrada de ingestão do registro não têm entrada de ingestão ({checked} verificados).",
+  "The scan stopped at its time budget; run it again to continue.": "A verificação parou no seu limite de tempo; execute-a novamente para continuar.",
+  "Recorded {n} entries, each marked late.": "{n} entradas registradas, cada uma marcada como tardia."
 }

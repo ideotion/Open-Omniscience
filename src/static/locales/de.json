@@ -4454,5 +4454,18 @@
   "Longest collection stretch": "Längster Sammelabschnitt",
   "Process up without a break": "Prozess ohne Unterbrechung aktiv",
   "{h} h reached at {when} — the process's half of the clause, not the bar": "{h} h erreicht um {when} — die Prozess-Hälfte der Klausel, nicht die Marke",
-  "not yet — {h} h more on the current stretch": "noch nicht — noch {h} h auf dem laufenden Abschnitt"
+  "not yet — {h} h more on the current stretch": "noch nicht — noch {h} h auf dem laufenden Abschnitt",
+  "Resume pending": "Fortsetzung ausstehend",
+  "An exclusive operation (an import, a restore, a release run) paused collection while a pass was running. Collection starts again the moment that pass finishes winding down, unless airplane mode is on.": "Ein exklusiver Vorgang (ein Import, eine Wiederherstellung, ein Release-Lauf) hat die Sammlung pausiert, während ein Durchlauf lief. Die Sammlung startet wieder, sobald dieser Durchlauf ausgelaufen ist, außer der Flugmodus ist an.",
+  "waiting for the previous pass to finish (since {when})": "wartet auf das Ende des vorigen Durchlaufs (seit {when})",
+  "Qualification is declined on this machine: it is below the memory floor, so no candidate is judged.": "Die Qualifizierung wird auf dieser Maschine abgelehnt: Sie liegt unter der Speicheruntergrenze, daher wird kein Kandidat beurteilt.",
+  "To run it anyway, restart the app with {env}=1.": "Um sie trotzdem auszuführen, starten Sie die App mit {env}=1 neu.",
+  "Check for missing ingest entries": "Nach fehlenden Erfassungseinträgen suchen",
+  "Compares the stored articles with the custody log's ingest entries, from the log's first ingest entry on. It only counts; recording what it finds is a separate button.": "Vergleicht die gespeicherten Artikel mit den Erfassungseinträgen des Verwahrungsprotokolls, ab dessen erstem Erfassungseintrag. Es zählt nur; das Eintragen des Gefundenen ist ein eigener Knopf.",
+  "Record them, marked late": "Eintragen, als verspätet markiert",
+  "{p} ingest entries could not be written when their articles were stored and are queued; {r} have been recorded late, each marked so in its signed metadata.": "{p} Erfassungseinträge konnten beim Speichern ihrer Artikel nicht geschrieben werden und stehen in der Warteschlange; {r} wurden verspätet eingetragen, jeder in seinen signierten Metadaten als solcher markiert.",
+  "The custody log has no ingest entry yet, so there is no start to measure gaps from.": "Das Verwahrungsprotokoll hat noch keinen Erfassungseintrag, es gibt also keinen Anfang, von dem aus Lücken gemessen werden könnten.",
+  "{n} stored articles since the log's first ingest entry have no ingest entry ({checked} checked).": "{n} gespeicherte Artikel seit dem ersten Erfassungseintrag des Protokolls haben keinen Erfassungseintrag ({checked} geprüft).",
+  "The scan stopped at its time budget; run it again to continue.": "Die Prüfung hat an ihrem Zeitbudget angehalten; starten Sie sie erneut, um fortzufahren.",
+  "Recorded {n} entries, each marked late.": "{n} Einträge eingetragen, jeder als verspätet markiert."
 }

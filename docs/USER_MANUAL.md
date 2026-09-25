@@ -1680,7 +1680,12 @@ native name; `region` is kept only as descriptive metadata — no continent `gro
 **Chain of custody** — `POST /api/custody/log`; `GET /api/custody/{item}` (+
 `/verify`); `POST /api/custody/verify`; `GET /api/custody/export`;
 `GET /api/custody/providers`; `POST /api/custody/anchor`;
-`GET/PUT /api/custody/settings`. **Evidence** — `POST /api/reports/evidence`
+`GET/PUT /api/custody/settings`; `POST /api/custody/reconcile` (an INGEST entry that
+could not be written when its article was stored is queued and written later, at the end
+of the next collection pass while auto-log is on, marked late in its own signed metadata --
+the Chain of custody tab counts them, and its
+"Check for missing ingest entries" button counts older gaps without recording anything
+until you press "Record them, marked late"). **Evidence** — `POST /api/reports/evidence`
 (+ `/verify`).
 
 **LLM (local Ollama)** — `GET /api/llm/health|models`; `POST /api/llm/generate`;

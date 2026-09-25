@@ -466,7 +466,11 @@ class ProducerOutcome:
     ``outcome`` separates the three states ``run_all`` collapses into one empty
     list: ``ok`` (emitted at least one card), ``no-signal`` (ran cleanly, emitted
     nothing — a legitimate quiet producer) and ``error`` (raised; the exception
-    is captured rather than only logged).
+    is captured rather than only logged) -- plus a fourth, ``skipped-budget``: the
+    enclosing statement deadline had already expired, so the producer never ran
+    (field round 2026-09-24: once tripped, the deadline interrupts every later
+    statement, and 15 of 37 producers on one machine were reported as independent
+    "errors" that were one spent budget).
     """
 
     name: str
@@ -505,12 +509,23 @@ def observe_producers(session) -> list[ProducerOutcome]:
     surfaced set matches ``run_all``'s exactly).
     """
     from src.briefing.card import Card
-    from src.briefing.registry import _REGISTRY, _release_transaction, _wal_guard
+    from src.briefing.registry import _REGISTRY, _deadline_expired, _release_transaction, _wal_guard
 
     from src.briefing.registry import _drain_pending
 
     out: list[ProducerOutcome] = []
     for name, producer in list(_REGISTRY):
+        # The guard ``run_all_bounded`` already has (its ``break`` on an expired
+        # deadline), ported: once the budget is spent every later statement is
+        # interrupted, so running the rest would only manufacture "errors". Each one
+        # is still LISTED, with why it did not run -- a producer that vanished from the
+        # inventory would read as one that was never registered.
+        if _deadline_expired(session):
+            out.append(ProducerOutcome(
+                name=name, outcome="skipped-budget",
+                error_message="the statement budget was spent before this producer ran",
+            ))
+            continue
         started = time.monotonic()
         try:
             # PR-D / W1 fix-forward: entered PER PRODUCER, exactly as
@@ -1533,12 +1548,15 @@ def card_audit_report(
             "outcome_tallies": _tally([o.outcome for o in outcomes], "outcome"),
             "errored": [o.to_dict() for o in outcomes if o.outcome == "error"],
             "silent": [o.name for o in outcomes if o.outcome == "no-signal"],
+            "skipped_budget": [o.name for o in outcomes if o.outcome == "skipped-budget"],
             "note": (
                 "THE POINT OF THIS DIAGNOSTIC. run_all() catches a producer exception, logs a "
                 "warning and contributes [] — exactly what a producer with no signal "
                 "contributes, so a producer crashing on every run is indistinguishable from a "
                 "quiet one in every other card diagnostic. Here 'error' carries the exception "
-                "type and message; 'no-signal' means it ran cleanly and had nothing to say."
+                "type and message; 'no-signal' means it ran cleanly and had nothing to say; "
+                "'skipped-budget' means the statement budget was spent before it ran, so it "
+                "says nothing about the producer."
             ),
         },
         "dedup": {
@@ -1680,6 +1698,12 @@ def _determinism_check(session, first: list[ProducerOutcome]) -> dict:
     second = observe_producers(session)
     first_by = {o.name: o for o in first}
     second_by = {o.name: o for o in second}
+    # A producer the budget skipped in EITHER pass was not run twice, so a difference
+    # there is the budget's, not the producer's: it is named, never counted as drift.
+    not_compared = sorted(
+        n for n in set(first_by) | set(second_by)
+        if "skipped-budget" in (getattr(first_by.get(n), "outcome", None), getattr(second_by.get(n), "outcome", None))
+    )
     outcome_changes = [
         {
             "producer": name,
@@ -1687,10 +1711,10 @@ def _determinism_check(session, first: list[ProducerOutcome]) -> dict:
             "second": second_by[name].outcome,
         }
         for name in sorted(set(first_by) & set(second_by))
-        if first_by[name].outcome != second_by[name].outcome
+        if first_by[name].outcome != second_by[name].outcome and name not in not_compared
     ]
-    a_cards = {(c.type, c.key): c for o in first for c in o.cards}
-    b_cards = {(c.type, c.key): c for o in second for c in o.cards}
+    a_cards = {(c.type, c.key): c for o in first if o.name not in not_compared for c in o.cards}
+    b_cards = {(c.type, c.key): c for o in second if o.name not in not_compared for c in o.cards}
     appeared = sorted(f"{t}:{k}" for (t, k) in set(b_cards) - set(a_cards))
     vanished = sorted(f"{t}:{k}" for (t, k) in set(a_cards) - set(b_cards))
     moved = []
@@ -1713,6 +1737,9 @@ def _determinism_check(session, first: list[ProducerOutcome]) -> dict:
         "vanished": vanished,
         "numbers_moved": moved,
         "producer_outcome_changes": outcome_changes,
+        # Producers the statement budget skipped in either pass: not run twice, so not
+        # compared -- listed, because an omitted comparison must not read as a match.
+        "not_compared_budget": not_compared,
         "stable": not (appeared or vanished or moved or outcome_changes),
         "note": (
             "Two consecutive producer passes over the same session. Real ingest between the "
