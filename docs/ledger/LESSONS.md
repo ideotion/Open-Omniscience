@@ -12376,3 +12376,22 @@ an unrelated PR's red CI job; the cross-thread use was not intermittent at all, 
 caller's thread fails on every run. **Hand a worker an id, not a row, and have it read the row
 through its own session. To test a thread-safety rule, count the violation (which is
 deterministic), not the crash it sometimes causes.**
+
+### A STATE COUNTED UNDER ANOTHER SURFACE'S WORD READS AS ZERO, AND NOTHING FAILS (PR #1185)
+
+The Living sources view counted failed map downloads under `failed`, the word the task manager
+shows. The download manager itself writes `error` (`src/api/jobs.py` translates it), so every
+failure would have been counted as zero, silently: `dict.fromkeys(...)` starts each count at zero
+and an unmatched status falls through to "other". A zero is a measurement, so nothing looked
+wrong. **When you count or branch on another component's status values, read them from the code
+that WRITES them, not from a surface that displays them, and pin the vocabulary with a test that
+greps the writer's assignments** (here `test_the_map_states_are_the_WORDS_THE_MANAGER_WRITES`).
+
+### A DIFF IS READ IN THE SOURCE'S DIRECTION, NOT THE INTERFACE'S (PR #1185)
+
+In the Arabic interface every diff line drew its `+`/`-` at the wrong end (`An added line+`) and a
+size change of `-3000` read `3000-`, in the new timeline and in the tracked-changes view that had
+carried the same fault for months as a dialog. Unit tests on the HTML cannot see it; only a
+right-to-left render does. **Give each line of quoted text `unicode-bidi: plaintext` so its own
+first strong character sets its direction, and isolate signed numbers left to right. Walk every
+new surface in Arabic, not only in the language it was written in.**
