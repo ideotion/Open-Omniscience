@@ -1597,7 +1597,7 @@
       if (pg && pg.total) {
         const pct = Math.round(100 * Math.min(pg.done, pg.total) / pg.total);
         nowHtml =
-          row("Now collecting", `${esc(pg.current || "…")} <span class="muted">· ${pg.mode}</span>`) +
+          row("Now collecting", `${esc(pg.current || "…")}`) +
           `<div class="cap-bar" role="progressbar" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100">` +
           `<div class="cap-fill" style="width:${pct}%"></div><span class="cap-txt">${pg.done}/${pg.total} · ${pct}%</span></div>` +
           (pg.pages ? row("Pages this run", String(pg.pages)) : "");
@@ -1624,7 +1624,7 @@
       const extra = Math.max(0, (plan.planned_total || 0) - (plan.next_targets || []).length);
       const planHtml = (plan.planned_total || plan.estimated_seconds != null) ?
         sect("Next pass") +
-        row("Targets", `${plan.planned_total || 0} <span class="muted">· ${esc(plan.mode || "")}</span>`) +
+        row("Targets", `${plan.planned_total || 0}`) +
         (chips ? `<div class="cap-chips">${chips}${extra ? `<span class="cap-chip muted">+${extra}</span>` : ""}</div>` : "") +
         (plan.estimated_seconds != null
           ? row("Estimated duration", `${_fmtDur(plan.estimated_seconds)}`) +
@@ -1978,7 +1978,7 @@
       if (pg && pg.total) {
         const pct = Math.round(100 * Math.min(pg.done, pg.total) / pg.total);
         nowHtml = row(t("Current pass"),
-            `${esc(pg.current || "…")} <span class="muted">· ${esc(pg.mode || "")}</span>`) +
+            `${esc(pg.current || "…")}`) +
           `<div class="cap-bar" role="progressbar" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100">` +
           `<div class="cap-fill" style="width:${pct}%"></div><span class="cap-txt">${pg.done}/${pg.total} · ${pct}%</span></div>`;
       } else {

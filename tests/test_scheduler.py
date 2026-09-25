@@ -39,11 +39,13 @@ class FakeSession:
     def __init__(self):
         self.headers = {}
         self._routes: dict[str, FakeResponse] = {}
+        self.calls: list[str] = []
 
     def route(self, url, **kwargs):
         self._routes[url] = FakeResponse(url=url, **kwargs)
 
     def get(self, url, timeout=None, allow_redirects=True):
+        self.calls.append(url)
         if url in self._routes:
             return self._routes[url]
         return FakeResponse(status_code=404, text="not found", url=url)
@@ -93,32 +95,37 @@ def test_run_scrape_once_rss(db):
     result = run_scrape_once(
         db,
         EthicalFetcher(min_interval_s=0.0, session=sess),
-        SchedulerSettings(mode="rss", max_sources_per_run=10),
+        SchedulerSettings(max_sources_per_run=10),
     )
-    assert result["mode"] == "rss"
+    assert result["lane"] == "press"
     assert result["articles_stored"] == 1
     # Only the RSS source counts; the feedless source is skipped, not errored.
     assert result["sources_processed"] == 1
     assert db.query(Article).count() == 1
 
 
-def test_run_scrape_once_crawl(db):
+def test_run_scrape_once_never_crawls_a_whole_source_now_the_mode_is_retired(db):
+    """Q1020 = a retired the whole-source ``mode="crawl"``. The pass reads feeds only; a
+    feedless source is reached by the crawl SUPPLEMENT on the housekeeping lane, never by a
+    whole-source crawl here. Pinned as behaviour: a feedless source's homepage is routed,
+    and the pass must not fetch it."""
     sess = FakeSession()
     sess.route("https://example.com/robots.txt", status_code=404, text="")
-    sess.route("https://example.com", text=_article_html("Home", "Homepage story body here."))
+    sess.route("https://example.com/feed.xml", text="<rss version='2.0'><channel/></rss>",
+               content_type="application/rss+xml")
     sess.route("https://nofeed.test/robots.txt", status_code=404, text="")
     sess.route("https://nofeed.test", text=_article_html("NF", "Nofeed story body here."))
 
     result = run_scrape_once(
         db,
         EthicalFetcher(min_interval_s=0.0, session=sess),
-        SchedulerSettings(
-            mode="crawl", max_sources_per_run=10, crawl_max_depth=0, crawl_max_pages=5
-        ),
+        SchedulerSettings(max_sources_per_run=10, crawl_max_depth=0, crawl_max_pages=5),
     )
-    assert result["mode"] == "crawl"
-    assert result["pages_fetched"] >= 1
-    assert result["sources_processed"] == 2
+    assert result["lane"] == "press"
+    assert result["sources_processed"] == 1  # the feed source only
+    assert not any("nofeed.test" in url and "robots" not in url for url in sess.calls), (
+        "the pass fetched a feedless source's page: a whole-source crawl survived Q1020"
+    )
 
 
 def test_scheduler_start_runs_then_stops():
@@ -177,11 +184,15 @@ def test_scheduler_api(tmp_path, monkeypatch):
         assert client.get("/api/scheduler/status").json()["running"] in (True, False)
 
         # Config validation.
-        good = client.put("/api/scheduler/config", json={"interval_minutes": 5, "mode": "crawl"})
+        good = client.put("/api/scheduler/config", json={"interval_minutes": 5})
         assert good.status_code == 200
-        assert good.json()["mode"] == "crawl"
-        bad = client.put("/api/scheduler/config", json={"mode": "telepathy"})
-        assert bad.status_code == 400
+        assert "mode" not in good.json()
+        # Q1020 = a: the retired mode is REFUSED BY NAME -- a valid old value too, since
+        # accepting "crawl" with a 200 would tell the caller it took effect.
+        for old in ("crawl", "telepathy"):
+            bad = client.put("/api/scheduler/config", json={"mode": old})
+            assert bad.status_code == 400
+            assert "Q1020" in bad.text
         bad2 = client.put("/api/scheduler/config", json={"interval_minutes": 0})
         assert bad2.status_code == 400
 

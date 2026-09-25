@@ -135,7 +135,7 @@ def test_run_scrape_once_parallel_processes_all_sources():
                 enabled=True, status="qualified", language="en", tags=tag,
             ))
     fetcher = EthicalFetcher(min_interval_s=0.0, retry_backoff_s=0.0, session=_EmptyFeedSession())
-    settings = SchedulerSettings(mode="rss", collect_parallelism=4, select_tags=[tag])
+    settings = SchedulerSettings(collect_parallelism=4, select_tags=[tag])
 
     sel = SessionLocal()
     try:

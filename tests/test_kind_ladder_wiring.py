@@ -43,10 +43,12 @@ def test_default_settings_makes_every_kind_pending():
     }
 
 
-def test_markets_mode_excludes_the_markets_kind():
-    # markets MODE already runs its own import inside run_scrape_once.
-    s = SchedulerSettings(mode="markets")
-    assert "markets" not in _lane_pending_kinds(s)
+def test_the_markets_kind_is_always_pending_now_the_mode_is_retired():
+    # Q1020 = a: there is no markets MODE left to run the import instead of the lane, so
+    # the markets kind is pending on every pass -- including with both of its opt-ins off,
+    # because the bundled feeds were never behind either of them.
+    s = SchedulerSettings(auto_run_market_rules=False, auto_refresh_stat_subscriptions=False)
+    assert "markets" in _lane_pending_kinds(s)
 
 
 def test_toggles_and_zero_budgets_exclude_their_kind():

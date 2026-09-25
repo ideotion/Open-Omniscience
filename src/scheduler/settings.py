@@ -18,7 +18,12 @@ from dataclasses import asdict, dataclass, field
 _LOG = logging.getLogger(__name__)
 
 SETTINGS_VERSION = "oo-scheduler-settings-1"
-VALID_MODES = ("rss", "crawl", "markets", "wiki", "law")
+# `VALID_MODES` and the `mode` field are RETIRED (Q1020 = a, Q716 = a; brief S04-08 S3).
+# The scheduler no longer picks ONE of press / crawl / markets / wiki / law per pass: press
+# collection is the pass itself, and every other kind runs BESIDE it as a lane (the
+# housekeeping lane in ``runner.py`` for markets, law, hazards, discovery and the crawl
+# supplement; the Wikipedia stream on the online seam). A stored ``mode`` is migrated once
+# by ``_migrate_retired_mode`` below and disclosed; see ``_RETIRED_MODE_SENTENCES``.
 VALID_RATE_MODES = ("target", "maximum")
 # Bounds for the download-rate target (KiB/s): a generous, honest range.
 _MIN_TARGET_KBPS, _MAX_TARGET_KBPS = 50, 50_000
@@ -84,13 +89,35 @@ class SchedulerSettings:
     collect_rate_mode: str = "maximum"
     collect_target_kbps: int = 500
     collect_parallelism: int = 50
-    mode: str = "rss"  # "rss" (feeds) or "crawl" (bounded recursion)
     # 0 = UNBOUNDED (cover every source / watched item) -- the default. Any cap
     # silently SELECTS which sources to skip, which cannot be justified
     # (maintainer 2026-06-13). A positive value is honoured as a soft cap.
     max_sources_per_run: int = 0
+    # The operator's caps on the CRAWL SUPPLEMENT (see ``crawl_supplement`` below). Before
+    # Q1020 these bounded the whole-source ``mode="crawl"``; that mode is retired, and the
+    # supplement already read them through ``min(..., its own ceiling)``, so they keep a
+    # meaning rather than becoming dead fields an operator can still edit.
     crawl_max_depth: int = 2
     crawl_max_pages: int = 50
+
+    # THE MARKETS LANE'S TWO OPT-INS (Q1020 = a). Before the ruling, the operator's own
+    # price-extraction rules and the refresh of the statistics figures they SUBSCRIBED to
+    # ran only when the scheduler's ``mode`` was "markets" -- a mode that also stopped
+    # press collection. The markets lane now runs beside press on every online pass, so
+    # both become per-lane switches. They default OFF because that is what every install
+    # outside the retired markets mode was doing; an install that WAS in markets mode is
+    # migrated to ON for both (``_migrate_retired_mode``), so nobody's collection narrows.
+    # The bundled commodity and index feeds are not behind either switch: they have ridden
+    # the lane on every pass since 2026-07-24 and still do.
+    auto_run_market_rules: bool = False
+    auto_refresh_stat_subscriptions: bool = False
+
+    # Which retired ``mode`` this install was migrated FROM ("" = none, or dismissed).
+    # Kept so the disclosure survives the first save -- the migration drops ``mode`` from
+    # the stored blob on that save, and a disclosure that vanished before the operator
+    # opened the panel would be the silent change it exists to prevent. Not settable to
+    # anything but "" (the Dismiss button); see ``save_settings``.
+    retired_mode: str = ""
 
     # Source selection for rss/crawl runs (empty list = no filter on that facet).
     # Sources are always also filtered to enabled=True. Tags match ANY (substring).
@@ -232,8 +259,8 @@ class SchedulerSettings:
     country_data_per_pass: int = 2
 
     # §8 CRAWL-BY-DEFAULT (maintainer-ruled 2026-07-24, PR766 throughput brief C3): a
-    # HYBRID BUDGETED RUNG, never a mode flip -- ``mode="crawl"`` (the explicit whole-
-    # source crawl selector) stays orthogonal and unchanged. When True (the ruled
+    # HYBRID BUDGETED RUNG, never a mode flip. (The whole-source ``mode="crawl"`` it once
+    # sat beside is retired, Q1020 = a; its caps now bound this rung.) When True (the ruled
     # default), a bounded crawl sub-pass runs over ``crawl_per_pass`` qualified sources
     # per online collection pass (least-recently-crawled + feedless-first rotation, the
     # lane's LOWEST bandwidth-ladder rung), reusing crawl_source through the ONE
@@ -514,6 +541,92 @@ def _disclose_retired(raw: dict) -> list[str]:
     return owed
 
 
+# THE RETIRED ``mode`` (Q1020 = a, Q716 = a). Not an entry in ``_RETIRED_KEYS`` because
+# it differs from those in two ways that matter. Its retired default ("rss") is truthy, so
+# "any truthy stored value is disclosed" would tell every install on earth that something
+# changed when for almost all of them nothing did. And what the operator is owed depends on
+# WHICH mode they were in, because each one maps onto a different lane. One sentence per
+# value, each saying what now happens instead; a value outside this table (a corrupt blob
+# that the old loader was already ignoring) is dropped without a disclosure, since no
+# behaviour the operator chose is being taken away.
+_MODE_RETIRED_DEFAULT = "rss"
+_RETIRED_MODE_SENTENCES: dict[str, str] = {
+    "crawl": (
+        "The scheduler's 'Recursive crawl' mode has been retired (ruling Q1020, "
+        "2026-09-15). Every pass now reads your sources' feeds again, and crawling "
+        "continues beside it as the bounded crawl supplement, within the depth and page "
+        "caps you had set. The supplement was switched on for you."
+    ),
+    "markets": (
+        "The scheduler's 'Markets' mode has been retired (ruling Q1020, 2026-09-15). "
+        "Markets now run as a lane beside feed collection on every pass, so feed "
+        "collection has resumed. Your price-extraction rules and your subscribed "
+        "statistics keep refreshing: both were switched on for you below."
+    ),
+    "law": (
+        "The scheduler's 'Law' mode has been retired (ruling Q1020, 2026-09-15). Watched "
+        "legal documents are now re-checked by the law lane, beside feed collection, "
+        "whenever they are due, so feed collection has resumed."
+    ),
+    "wiki": (
+        "The scheduler's 'Wikipedia (watched pages)' mode has been retired (ruling Q716, "
+        "2026-09-15). Wikipedia is now a lane beside feed collection: your watched pages "
+        "are followed through the live edit stream in the editions the lane follows, "
+        "which the Wikipedia button in the top bar starts and stops. Feed collection has "
+        "resumed."
+    ),
+}
+
+
+def _migrate_retired_mode(raw: dict, settings: SchedulerSettings) -> None:
+    """Map a stored retired ``mode`` onto the lanes, IN PLACE, and record where it came from.
+
+    The mapping is the brief's design note (S04-08 section 6): every lane the old mode
+    implied is ON, and press is ON, because Q716 says "beside" -- the four non-default modes
+    each STOPPED feed collection, and that is the one behaviour no lane keeps.
+
+    Idempotent and one-time by construction rather than by a flag: it acts only while the
+    stored blob still carries ``mode``, and ``save_settings`` writes ``to_dict()``, which no
+    longer has the key -- so the first save persists the mapped values and ends it. An
+    operator who then switches a mapped lane off is never overridden, because by then there
+    is no ``mode`` left to migrate from.
+
+    ``law`` and ``wiki`` map onto nothing to switch: the law lane has no off switch today
+    (the OPEN_QUEUE entry on phantom ride-along settings), and the Wikipedia lane's run
+    state is the operator's own, newer choice on the top-bar toggle -- overriding a
+    "stopped" they pressed because an older setting implied "running" would be this
+    migration deciding for them.
+    """
+    old = raw.get("mode")
+    if not isinstance(old, str) or old not in _RETIRED_MODE_SENTENCES:
+        return
+    if old == "crawl":
+        settings.crawl_supplement = True
+        if settings.crawl_per_pass <= 0:
+            settings.crawl_per_pass = SchedulerSettings().crawl_per_pass
+    elif old == "markets":
+        settings.auto_run_market_rules = True
+        settings.auto_refresh_stat_subscriptions = True
+    if not settings.retired_mode:
+        settings.retired_mode = old
+        if f"mode:{old}" not in _RETIRED_DISCLOSED:
+            _RETIRED_DISCLOSED.add(f"mode:{old}")
+            _LOG.warning(
+                "retired scheduler mode %r migrated: %s", old, _RETIRED_MODE_SENTENCES[old]
+            )
+
+
+def retired_mode_disclosure(settings: SchedulerSettings | None = None) -> list[str]:
+    """The sentence owed for this install's retired mode, or nothing.
+
+    Read from the persisted ``retired_mode`` rather than from the raw blob, so it outlives
+    the save that drops ``mode`` and ends only when the operator dismisses it.
+    """
+    s = settings if settings is not None else load_settings()
+    sentence = _RETIRED_MODE_SENTENCES.get(s.retired_mode or "")
+    return [sentence] if sentence else []
+
+
 def retired_settings_disclosures() -> list[str]:
     """The disclosures a UI surface should show. Reads the stored file, never a cache, so
     a fresh import that carries the retired key is disclosed too."""
@@ -534,14 +647,10 @@ def load_settings() -> SchedulerSettings:
     if raw is None:
         return d
     _disclose_retired(raw)
-    mode = raw.get("mode", d.mode)
-    if mode not in VALID_MODES:
-        _LOG.warning("ignoring invalid stored scheduler mode %r", mode)
-        mode = d.mode
     rate_mode = raw.get("collect_rate_mode", d.collect_rate_mode)
     if rate_mode not in VALID_RATE_MODES:
         rate_mode = d.collect_rate_mode
-    return SchedulerSettings(
+    settings = SchedulerSettings(
         autostart=_coerce_bool(raw.get("autostart"), d.autostart),
         interval_minutes=_coerce_int(
             raw.get("interval_minutes"), d.interval_minutes, _MIN_INTERVAL, _MAX_INTERVAL
@@ -554,7 +663,6 @@ def load_settings() -> SchedulerSettings:
         collect_parallelism=_coerce_int(
             raw.get("collect_parallelism"), d.collect_parallelism, 1, _MAX_PARALLELISM
         ),
-        mode=mode,
         # lo=0 allows the unbounded default; hi is a generous safety ceiling for
         # an explicit soft cap, never a selection imposed by us.
         max_sources_per_run=_coerce_int(
@@ -606,7 +714,21 @@ def load_settings() -> SchedulerSettings:
         archive_backfill_per_pass=_coerce_int(
             raw.get("archive_backfill_per_pass"), d.archive_backfill_per_pass, 0, 100
         ),
+        auto_run_market_rules=_coerce_bool(
+            raw.get("auto_run_market_rules"), d.auto_run_market_rules
+        ),
+        auto_refresh_stat_subscriptions=_coerce_bool(
+            raw.get("auto_refresh_stat_subscriptions"), d.auto_refresh_stat_subscriptions
+        ),
+        retired_mode=_coerce_retired_mode(raw.get("retired_mode")),
     )
+    _migrate_retired_mode(raw, settings)
+    return settings
+
+
+def _coerce_retired_mode(value) -> str:
+    """Only a mode the disclosure table knows survives a load; anything else reads as none."""
+    return value if isinstance(value, str) and value in _RETIRED_MODE_SENTENCES else ""
 
 
 def save_settings(updates: dict) -> SchedulerSettings:
@@ -623,13 +745,25 @@ def save_settings(updates: dict) -> SchedulerSettings:
             )
     current = load_settings()
 
+    # ``mode`` is REFUSED BY NAME, like the retired keys above and for the same reason: a
+    # caller still sending it would otherwise get a 200 that changed nothing.
     if "mode" in updates and updates["mode"] is not None:
-        mode = str(updates["mode"])
-        if mode not in VALID_MODES:
+        raise SchedulerSettingsError(
+            "mode has been retired and can no longer be set (ruling Q1020, 2026-09-15). "
+            "Feed collection runs on every pass and every other kind runs beside it as a "
+            "lane; switch a lane with its own setting instead."
+        )
+    if "retired_mode" in updates and updates["retired_mode"] is not None:
+        # The one value an operator may write is "" -- the Dismiss button. Anything else
+        # would let a caller manufacture a disclosure for a migration that never ran.
+        if str(updates["retired_mode"]) != "":
             raise SchedulerSettingsError(
-                f"unknown mode {mode!r}; use one of: {', '.join(VALID_MODES)}"
+                "retired_mode can only be cleared (set to an empty string)"
             )
-        current.mode = mode
+        current.retired_mode = ""
+    for key in ("auto_run_market_rules", "auto_refresh_stat_subscriptions"):
+        if key in updates and updates[key] is not None:
+            setattr(current, key, _coerce_bool(updates[key], getattr(current, key)))
     if "autostart" in updates and updates["autostart"] is not None:
         current.autostart = _coerce_bool(updates["autostart"], current.autostart)
     if "continuous" in updates and updates["continuous"] is not None:

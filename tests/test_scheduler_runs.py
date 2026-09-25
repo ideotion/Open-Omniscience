@@ -33,7 +33,7 @@ def test_do_run_records_success_and_failure_lines(tmp_path, monkeypatch):
 
     ok_sched = BackgroundScheduler(
         run_once_fn=lambda: {"tally": 3},
-        settings_provider=lambda: SchedulerSettings(mode="rss"),
+        settings_provider=lambda: SchedulerSettings(),
     )
     ok_sched._do_run()
 
@@ -41,15 +41,15 @@ def test_do_run_records_success_and_failure_lines(tmp_path, monkeypatch):
         raise RuntimeError("fetch exploded")
 
     bad_sched = BackgroundScheduler(
-        run_once_fn=_boom, settings_provider=lambda: SchedulerSettings(mode="crawl")
+        run_once_fn=_boom, settings_provider=lambda: SchedulerSettings()
     )
     bad_sched._do_run()
 
     runs = recent_runs(limit=10)
     assert len(runs) == 2
     fail, ok = runs[0], runs[1]
-    assert ok["ok"] is True and ok["mode"] == "rss" and ok["result"] == {"tally": 3}
-    assert fail["ok"] is False and fail["mode"] == "crawl"
+    assert ok["ok"] is True and ok["lane"] == "press" and ok["result"] == {"tally": 3}
+    assert fail["ok"] is False and fail["lane"] == "press"
     assert "fetch exploded" in fail["error"]
     assert fail["started_at"] and fail["finished_at"]
 

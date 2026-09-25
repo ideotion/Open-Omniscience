@@ -152,7 +152,7 @@ def test_expired_budget_defers_the_rest_after_the_progress_floor(monkeypatch):
     ids = _seed_sources(session, 4, tag)
     fetcher = EthicalFetcher(min_interval_s=0.0, retry_backoff_s=0.0,
                              session=_RecordingFeedSession())
-    res = run_scrape_once(session, fetcher, SchedulerSettings(mode="rss"))
+    res = run_scrape_once(session, fetcher, SchedulerSettings())
     assert res["sources_processed"] == 1  # the floor: never zero forever
     assert res["deferred_next_pass"] == 3
     assert res["recycled"] == "budget"
@@ -171,7 +171,7 @@ def test_zero_budget_disables_recycling_entirely(monkeypatch):
     _seed_sources(session, 3, tag)
     fetcher = EthicalFetcher(min_interval_s=0.0, retry_backoff_s=0.0,
                              session=_RecordingFeedSession())
-    res = run_scrape_once(session, fetcher, SchedulerSettings(mode="rss"))
+    res = run_scrape_once(session, fetcher, SchedulerSettings())
     assert res["sources_processed"] == 3
     assert "recycled" not in res
     assert "deferred_next_pass" not in res
@@ -186,7 +186,7 @@ def test_work_cap_processes_exactly_n_and_defers_the_rest(monkeypatch):
     ids = _seed_sources(session, 5, tag)
     fetcher = EthicalFetcher(min_interval_s=0.0, retry_backoff_s=0.0,
                              session=_RecordingFeedSession())
-    res = run_scrape_once(session, fetcher, SchedulerSettings(mode="rss"))
+    res = run_scrape_once(session, fetcher, SchedulerSettings())
     assert res["sources_processed"] == 2
     assert res["deferred_next_pass"] == 3
     assert res["recycled"] == "work"
@@ -205,7 +205,7 @@ def test_carryover_sources_run_first_next_pass():
     runner._record_deferred([ids[4], ids[2]])
     sess = _RecordingFeedSession()
     fetcher = EthicalFetcher(min_interval_s=0.0, retry_backoff_s=0.0, session=sess)
-    res = run_scrape_once(session, fetcher, SchedulerSettings(mode="rss"))
+    res = run_scrape_once(session, fetcher, SchedulerSettings())
     assert res["sources_processed"] == 6
     # The deferred pair ran FIRST, in their recorded order (no starvation).
     assert sess.feed_hosts[0] == f"{tag}-4.example"
@@ -238,7 +238,7 @@ def test_parallel_pool_exactness_processed_plus_deferred_covers_all(monkeypatch)
     try:
         res = run_scrape_once(
             sel, fetcher,
-            SchedulerSettings(mode="rss", collect_parallelism=4, select_tags=[tag]),
+            SchedulerSettings(collect_parallelism=4, select_tags=[tag]),
         )
     finally:
         sel.close()

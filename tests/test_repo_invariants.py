@@ -8588,14 +8588,14 @@ def test_housekeeping_lane_runs_in_a_background_thread_not_inline():
 
 def test_crawl_by_default_rides_the_housekeeping_lanes_lowest_rung():
     """§8 crawl-by-default (2026-07-24 throughput brief, C3): the ruling is a
-    HYBRID BUDGETED RUNG, never a mode flip -- ``mode="crawl"`` (the explicit
-    whole-source selector, ``VALID_MODES``/``_process_source``) stays
-    orthogonal and unchanged. Guard that the supplement's own settings exist
+    HYBRID BUDGETED RUNG, never a mode flip. (The whole-source ``mode="crawl"``
+    it sat beside is retired since Q1020 = a -- see tests/test_scheduler_mode_retired.py
+    -- and the supplement is now the only scheduled crawl.) Guard that the supplement's own settings exist
     with the ruled default (ON) and that its lane step exists and is
     registered -- see tests/test_crawl_supplement.py for the full behavioural
     coverage (rotation, stamping, isolation, no new fetch path)."""
     settings_src = (_SRC / "scheduler" / "settings.py").read_text(encoding="utf-8")
-    assert 'mode: str = "rss"' in settings_src  # the explicit selector default is UNCHANGED
+    assert 'mode: str = "rss"' not in settings_src  # Q1020 = a: the selector is retired
     assert "crawl_supplement: bool = True" in settings_src
     assert "crawl_per_pass: int = 3" in settings_src
 

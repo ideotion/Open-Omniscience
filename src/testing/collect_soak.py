@@ -167,7 +167,6 @@ def run_soak(args, emit=None) -> dict:
         items=args.items, fresh_per_pass=args.fresh, body_kb=args.body_kb
     )
     settings = SchedulerSettings(
-        mode="rss",
         collect_parallelism=args.parallelism,
         collect_rate_mode="maximum",
         select_tags=["soak"],

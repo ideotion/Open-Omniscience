@@ -81,7 +81,7 @@ def test_plan_preview_targets_and_estimate(monkeypatch, tmp_path):
         )
     s.commit()
 
-    settings = SchedulerSettings(mode="rss", max_sources_per_run=10)
+    settings = SchedulerSettings(max_sources_per_run=10)
     plan = plan_preview(s, settings, last_result={"sources_processed": 3, "pages_fetched": 6})
     assert plan["planned_total"] == 3
     # next_targets reflects the SAME stratified, TRUE-RANDOM per-pass order the run uses
@@ -118,7 +118,7 @@ def test_plan_preview_reports_actual_language_and_tag_strata(monkeypatch, tmp_pa
                      enabled=True, status="qualified", language=lang, tags=tags))
     s.commit()
 
-    plan = plan_preview(s, SchedulerSettings(mode="rss"), last_result=None)
+    plan = plan_preview(s, SchedulerSettings(), last_result=None)
     strata = plan["strata"]
     langs = {x["key"]: x["n"] for x in strata["languages"]}
     tags = {x["key"]: x["n"] for x in strata["tags"]}
@@ -202,7 +202,7 @@ def test_plan_preview_total_matches_the_selected_set_uncapped(monkeypatch, tmp_p
     this is the default, and the case A5 measured."""
     monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
     s = _plan_preview_sources_session(12, enabled_qualified=7)
-    settings = SchedulerSettings(mode="rss", max_sources_per_run=0)
+    settings = SchedulerSettings(max_sources_per_run=0)
     plan = plan_preview(s, settings, last_result=None)
     # 7 enabled+qualified out of 12 rows: the filters still apply, only the ORDER BY and
     # the entity subquery are gone.
@@ -216,10 +216,10 @@ def test_plan_preview_total_still_honours_the_per_run_cap(monkeypatch, tmp_path)
     monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
     s = _plan_preview_sources_session(10)
     # cap BELOW the available set -> the cap wins
-    plan = plan_preview(s, SchedulerSettings(mode="rss", max_sources_per_run=4), last_result=None)
+    plan = plan_preview(s, SchedulerSettings(max_sources_per_run=4), last_result=None)
     assert plan["planned_total"] == 4
     # cap ABOVE the available set -> the real total wins (never the cap)
-    plan = plan_preview(s, SchedulerSettings(mode="rss", max_sources_per_run=99), last_result=None)
+    plan = plan_preview(s, SchedulerSettings(max_sources_per_run=99), last_result=None)
     assert plan["planned_total"] == 10
 
 
@@ -240,7 +240,7 @@ def test_plan_preview_count_emits_no_order_by_and_no_entity_subquery(monkeypatch
     def _record(conn, cursor, statement, parameters, context, executemany):  # noqa: ANN001
         seen.append(statement)
 
-    plan_preview(s, SchedulerSettings(mode="rss", max_sources_per_run=0), last_result=None)
+    plan_preview(s, SchedulerSettings(max_sources_per_run=0), last_result=None)
     counts = [q for q in seen if "count(" in q.lower()]
     assert counts, f"plan_preview issued no COUNT at all; statements seen: {seen}"
     for q in counts:

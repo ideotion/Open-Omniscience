@@ -1,0 +1,73 @@
+{
+ "en@1440": {
+  "lang": "en",
+  "dir": "ltr",
+  "retiredVisible": true,
+  "retiredText": "The scheduler's 'Markets' mode has been retired (ruling Q1020, 2026-09-15). Markets now run as a lane beside feed collection on every pass, so feed collection h",
+  "rulesLabel": "Run my price-extraction rules on every pass",
+  "rules": true,
+  "stats": true,
+  "crawlFieldsDisplay": "flex",
+  "modeSelectExists": false,
+  "hScroll": false
+ },
+ "fr@1440": {
+  "lang": "fr",
+  "dir": "ltr",
+  "retiredVisible": true,
+  "retiredText": "Le mode « Marchés » du planificateur a été retiré (décision Q1020, 2026-09-15). Les marchés s'exécutent désormais comme une voie à côté de la collecte des flux ",
+  "rulesLabel": "Exécuter mes règles d'extraction de prix à chaque passage",
+  "rules": true,
+  "stats": true,
+  "crawlFieldsDisplay": "flex",
+  "modeSelectExists": false,
+  "hScroll": false
+ },
+ "ar@1440": {
+  "lang": "ar",
+  "dir": "rtl",
+  "retiredVisible": true,
+  "retiredText": "أُلغي وضع «الأسواق» في المجدول (القرار Q1020، 2026-09-15). تعمل الأسواق الآن مسارًا إلى جانب جمع الخلاصات في كل تمريرة، لذا استُؤنف جمع الخلاصات. تستمر قواعد اس",
+  "rulesLabel": "شغّل قواعد استخراج الأسعار الخاصة بي في كل تمريرة",
+  "rules": true,
+  "stats": true,
+  "crawlFieldsDisplay": "flex",
+  "modeSelectExists": false,
+  "hScroll": false
+ },
+ "errors@1440": [],
+ "en@375": {
+  "lang": "en",
+  "dir": "ltr",
+  "retiredVisible": true,
+  "retiredText": "The scheduler's 'Markets' mode has been retired (ruling Q1020, 2026-09-15). Markets now run as a lane beside feed collection on every pass, so feed collection h",
+  "rulesLabel": "Run my price-extraction rules on every pass",
+  "rules": true,
+  "stats": true,
+  "crawlFieldsDisplay": "flex",
+  "modeSelectExists": false,
+  "hScroll": false
+ },
+ "errors@375": [],
+ "interaction": {
+  "dismiss_hides_line": true,
+  "saved_rules": false,
+  "saved_stats": true,
+  "saved_retired": [],
+  "mode_in_config": false,
+  "after_reload": {
+   "lang": "en",
+   "dir": "ltr",
+   "retiredVisible": false,
+   "retiredText": "",
+   "rulesLabel": "Run my price-extraction rules on every pass",
+   "rules": false,
+   "stats": true,
+   "crawlFieldsDisplay": "flex",
+   "modeSelectExists": false,
+   "hScroll": false
+  },
+  "targets_preview": "0 sources targeted of 0 enabled · this run will process up to 0by language: —by type: —",
+  "errors": []
+ }
+}

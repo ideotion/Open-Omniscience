@@ -4467,5 +4467,16 @@
   "The custody log has no ingest entry yet, so there is no start to measure gaps from.": "保全ログにはまだ取り込みエントリがないため、欠落を測る起点がありません。",
   "{n} stored articles since the log's first ingest entry have no ingest entry ({checked} checked).": "ログ最初の取り込みエントリ以降に保存された記事のうち {n} 件に取り込みエントリがありません（{checked} 件を確認）。",
   "The scan stopped at its time budget; run it again to continue.": "スキャンは時間予算で停止しました。続けるにはもう一度実行してください。",
-  "Recorded {n} entries, each marked late.": "{n} 件のエントリを記録しました。それぞれに遅延の印が付いています。"
+  "Recorded {n} entries, each marked late.": "{n} 件のエントリを記録しました。それぞれに遅延の印が付いています。",
+  "— schedule, lanes, manual and batch ingest": "— スケジュール、レーン、手動・一括取り込み",
+  "These two cap the crawl supplement, the bounded crawl that runs beside feed collection on every pass.": "この2つの値は、毎回のパスでフィード収集と並行して動く上限付きクロールである「クロール補完」を制限します。",
+  "Run my price-extraction rules on every pass": "毎回のパスで自分の価格抽出ルールを実行する",
+  "Refresh the statistics I subscribed to on every pass": "毎回のパスで購読している統計を更新する",
+  "Your own price-extraction rules (Markets) fetch the pages you gave them. Off by default: before this release they ran only in the retired Markets mode.": "あなた自身の価格抽出ルール（市場）は、指定したページを取得します。既定ではオフです。このリリースより前は、廃止された「市場」モードでのみ実行されていました。",
+  "Statistics figures you subscribed to are re-fetched from their publisher when a newer vintage is due. Off by default: before this release they refreshed only in the retired Markets mode.": "購読している統計値は、新しい版が期限を迎えると発行元から再取得されます。既定ではオフです。このリリースより前は、廃止された「市場」モードでのみ更新されていました。",
+  "Which sources (feed collection)": "対象ソース（フィード収集）",
+  "The scheduler's 'Recursive crawl' mode has been retired (ruling Q1020, 2026-09-15). Every pass now reads your sources' feeds again, and crawling continues beside it as the bounded crawl supplement, within the depth and page caps you had set. The supplement was switched on for you.": "スケジューラの「再帰クロール」モードは廃止されました（裁定 Q1020、2026-09-15）。毎回のパスで再びソースのフィードを読み込み、クロールはその横で、設定した深さとページ数の上限内の上限付きクロール補完として続きます。補完はあなたのためにオンにされました。",
+  "The scheduler's 'Markets' mode has been retired (ruling Q1020, 2026-09-15). Markets now run as a lane beside feed collection on every pass, so feed collection has resumed. Your price-extraction rules and your subscribed statistics keep refreshing: both were switched on for you below.": "スケジューラの「市場」モードは廃止されました（裁定 Q1020、2026-09-15）。市場は毎回のパスでフィード収集と並ぶレーンとして動くようになったため、フィード収集が再開されました。価格抽出ルールと購読中の統計は引き続き更新されます。どちらも下でオンにされました。",
+  "The scheduler's 'Law' mode has been retired (ruling Q1020, 2026-09-15). Watched legal documents are now re-checked by the law lane, beside feed collection, whenever they are due, so feed collection has resumed.": "スケジューラの「法令」モードは廃止されました（裁定 Q1020、2026-09-15）。監視中の法令文書は、フィード収集と並ぶ法令レーンによって期限が来るたびに再確認されるようになったため、フィード収集が再開されました。",
+  "The scheduler's 'Wikipedia (watched pages)' mode has been retired (ruling Q716, 2026-09-15). Wikipedia is now a lane beside feed collection: your watched pages are followed through the live edit stream in the editions the lane follows, which the Wikipedia button in the top bar starts and stops. Feed collection has resumed.": "スケジューラの「Wikipedia（監視ページ）」モードは廃止されました（裁定 Q716、2026-09-15）。Wikipedia はフィード収集と並ぶレーンになりました。監視中のページは、レーンが追う版でライブ編集ストリームを通じて追跡され、上部バーの Wikipedia ボタンで開始・停止できます。フィード収集が再開されました。"
 }
