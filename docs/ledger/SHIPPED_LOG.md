@@ -9812,3 +9812,31 @@ dates about to reverse (now through the app's `_ltrIsolate`, asserted in the nod
 the nine-subtab ruling pinned by `tests/test_settings_nine_subtabs.py`; and whether the corpus,
 law and maps lanes get published budgets. The maintainer's click-through (Q1128 = a) is still
 owed.
+
+## 2026-09-25 — Each lane says how it leaves; the Wikipedia stream waits by name; a paused download says who paused it (PR #1183)
+
+**WHAT SHIPPED.** Gate row O's S5 (Q1014 = a, Q1018 = a). The consent popup's hover gives every
+lane one transport line: direct, through your proxy, through your proxy pool, or refused
+because protected mode has no usable proxy. The Wikipedia stream reports `transport-waiting`
+with the failure verbatim while its connections fail, and is not drawn as live. A paused map
+or dump download says whether airplane mode, the operator or a restart paused it; a failed one
+shows its error, in the in-app window and on the `/tasks` page alike. Q1018 is complete: the
+law lane over the synthetic jurisdiction and a synthetic OSM extract through the real
+download manager and the in-browser reader, both with zero name resolutions.
+
+**THE HOVER READS THE FETCH PATH.** `transport_summary()` reads `_protected_transport`, the one
+reader both fetch factories share since PR #1180. The popup had read the stored `http_proxy`
+alone, which is not how a fetch leaves: transparent mode ignores a stored proxy, and a pool has
+no single proxy. A summary built from the stored fields would have repeated that mistake.
+
+**THE WALK FOUND FOUR DEFECTS, ALL FIXED BEFORE THE PR.** Chromium, en / fr / ar, protected mode
+through `socks5h://127.0.0.1:9` (the discard port), so every failure was real and nothing
+could leave. A fresh install's `wiki.db` was a file with no schema, so the lane stored nothing
+(the first lesson in `LESSONS.md`; an existing empty file is repaired on the next drain). The
+stream slept through airplane mode and Stop for its whole backoff, up to five minutes (it now
+waits in one-second slices). The `/tasks` page drew no cause (the second lesson). The offline
+coachmark covered the open language menu (the menu now stacks above it).
+
+**HANDED OFF.** `GET /api/briefing` answered 500 on this build (`src/api/briefing.py:74`); it is
+not this slice's code and was fixed in its own thread. The maintainer's click-through
+(Q1128 = a) is still owed.
