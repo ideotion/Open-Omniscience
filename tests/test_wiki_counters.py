@@ -43,14 +43,14 @@ def lane(tmp_path, monkeypatch):
         dispose_all()
 
 
-def _changes(db, *, day_offsets, now=NOW):
+def _changes(db, *, day_offsets):
     for i, offset in enumerate(day_offsets):
         db.add(
             VersionedChange(
                 change_ref=f"r{i}",
                 feed="stream:oo",
                 change_kind="edit",
-                recorded_at=now - timedelta(days=offset),
+                recorded_at=NOW - timedelta(days=offset),
             )
         )
     db.flush()
@@ -228,12 +228,16 @@ def test_the_soak_window_reports_a_lane_that_has_NEVER_RUN_as_absent(tmp_path, m
     assert "not a reading of zero" in block["reason"]
 
 
-def test_the_soak_window_reads_a_lane_that_HAS_run(lane):
-    # The soak window reads the REAL clock, so its rows are seeded against it. Seeded
-    # against the fixed NOW they aged out of its 7-day window a week after NOW was
-    # written (2026-09-25: ``assert 1 == 2``, then 0 the next day).
+def test_the_soak_window_reads_a_lane_that_HAS_run(lane, monkeypatch):
+    # _wiki_lane reads the counters on the real clock, and these rows sit at the fixed NOW.
+    # Unfrozen, the test passed only while the real date stayed inside the 7-day window:
+    # it failed on every run from 2026-09-25 00:00 UTC, when the day-1 row fell out, and
+    # would have read no rows at all a day later. So the counters' clock is frozen at NOW.
+    import src.wiki.counters as counters_mod
+
+    monkeypatch.setattr(counters_mod, "_utcnow", lambda: NOW)
     with lane_session("wiki") as db:
-        _changes(db, day_offsets=[0, 1], now=datetime.now(UTC))
+        _changes(db, day_offsets=[0, 1])
     from src.monitoring.soak_window import _wiki_lane
 
     block = _wiki_lane(72.0)
