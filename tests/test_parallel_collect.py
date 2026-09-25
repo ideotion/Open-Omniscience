@@ -147,6 +147,53 @@ def test_run_scrape_once_parallel_processes_all_sources():
     assert res["sources_processed"] == 6
 
 
+def test_no_worker_runs_sql_on_the_SELECTION_session():
+    """The pool's workers read their source through THEIR OWN session, never the caller's.
+
+    ``run_scrape_once`` loads the sources in the caller's session and hands the objects
+    to the pool. A worker that touched one of their unloaded relationships
+    (``IngestBatch._source_city`` reads ``source.source_metadata``) ran that lazy load on
+    the CALLER'S session, from every worker at once: one SQLAlchemy session and one
+    database connection shared across threads. It segfaulted the process
+    (``test_run_scrape_once_parallel_processes_all_sources`` above crashed 2 times in 30
+    on main, 2026-09-25, always in that lazy load). The crash is intermittent; the
+    cross-thread use is not, so this test counts it: every statement the caller's
+    session runs must run on the caller's thread.
+    """
+    from sqlalchemy import event
+
+    from src.database.session import SessionLocal, init_db, session_scope
+
+    init_db()
+    tag = "own" + uuid.uuid4().hex[:6]
+    with session_scope() as s:
+        for i in range(6):
+            s.add(Source(
+                name=f"O{i}", domain=f"{tag}-{i}.example",
+                rss_url=f"https://{tag}-{i}.example/feed.xml",
+                enabled=True, status="qualified", language="en", tags=tag,
+            ))
+    fetcher = EthicalFetcher(min_interval_s=0.0, retry_backoff_s=0.0, session=_EmptyFeedSession())
+    settings = SchedulerSettings(collect_parallelism=4, select_tags=[tag])
+
+    caller = threading.current_thread()
+    foreign: list[str] = []
+
+    sel = SessionLocal()
+
+    @event.listens_for(sel, "do_orm_execute")
+    def _record(state):  # noqa: ANN001 - SQLAlchemy's ORMExecuteState
+        if threading.current_thread() is not caller:
+            foreign.append(threading.current_thread().name)
+
+    try:
+        res = run_scrape_once(sel, fetcher, settings)
+    finally:
+        sel.close()
+    assert res["sources_processed"] == 6, "the pool did not run, so the test proved nothing"
+    assert not foreign, f"the caller's session ran SQL on worker threads: {sorted(set(foreign))}"
+
+
 def test_collect_parallelism_setting_round_trips(tmp_path, monkeypatch):
     monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
     # The bandwidth-governed collector: the default rate mode is "maximum"

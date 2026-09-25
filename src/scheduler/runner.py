@@ -875,6 +875,7 @@ def run_scrape_once(
             # gate, and the shared fetcher's per-host lock keeps politeness intact.
             from concurrent.futures import ThreadPoolExecutor, as_completed
 
+            from src.database.models import Source as _Source
             from src.database.session import session_scope
             from src.monitoring.collect_perf import CollectionMonitor
             from src.scheduler import capacity as _capacity
@@ -910,7 +911,7 @@ def run_scrape_once(
                 cache_stats_fn=getattr(fetcher, "cache_stats", None),
             )
 
-            def _worker(source):
+            def _worker(source, source_id):
                 # Pass boundary check BEFORE any permit/session/gate is taken:
                 # a wound-down worker holds nothing and returns immediately
                 # (the source is deferred, never dropped).
@@ -923,8 +924,18 @@ def run_scrape_once(
                 governor.acquire()
                 try:
                     with session_scope() as worker_session:
+                        # The worker processes ITS OWN session's copy of the row, found
+                        # by an id read on the caller's thread. ``source`` belongs to the
+                        # CALLER'S session: the first unloaded relationship a worker
+                        # touched on it (``IngestBatch._source_city`` reads
+                        # ``source_metadata``) lazy-loaded through that one session and
+                        # its one connection, from every worker at once, and segfaulted
+                        # the process (2 crashes in 30 runs of the pool test, 2026-09-25).
+                        own = worker_session.get(_Source, source_id)
+                        if own is None:  # deleted since the selection: nothing to fetch
+                            return {}, 0, 0
                         return _process_source(
-                            source,
+                            own,
                             session=worker_session,
                             fetcher=fetcher,
                         )
@@ -937,7 +948,7 @@ def run_scrape_once(
                 with ThreadPoolExecutor(
                     max_workers=w_max, thread_name_prefix="oo-collect"
                 ) as pool:
-                    futures = [pool.submit(_worker, s) for s in sources]
+                    futures = [pool.submit(_worker, s, s.id) for s in sources]
                     for fut in as_completed(futures):
                         tally, pages, processed = fut.result()
                         _add(tally)
