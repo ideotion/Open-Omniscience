@@ -661,6 +661,17 @@ SECTIONS: tuple[tuple[str, Any], ...] = (
 )
 
 
+def _deadline_expired(session) -> bool:
+    """The briefing registry's guard: a missing DB layer or a stub session reads as "no
+    deadline", never as an expired one."""
+    try:
+        from src.database.maintenance import deadline_expired
+
+        return deadline_expired(session)
+    except Exception:  # noqa: BLE001 - no DB layer, or a stub session
+        return False
+
+
 def build_sections(session, period: Period, **options) -> list[dict]:
     """Run every registered section, in order, over one period.
 
@@ -671,6 +682,16 @@ def build_sections(session, period: Period, **options) -> list[dict]:
     ctx: dict[str, Any] = dict(options)
     out: list[dict] = []
     for key, build in SECTIONS:
+        # THE BUDGET GUARD (field round 2026-09-24). Under a statement deadline, once it
+        # has expired every later statement is interrupted -- so the loop's per-section
+        # isolation turned one slow early section into a run of independent-looking
+        # failures, and the cards section ran 0 of 37 producers on six machines. A
+        # section the budget never reached is reported IN PLACE as skipped, through the
+        # same field every renderer already shows, never as a failure of its own.
+        if _deadline_expired(session):
+            out.append({"section": key, "skipped": "budget",
+                        "error": "skipped: the statement budget was spent before this section ran"})
+            continue
         try:
             bundle = build(session, period, ctx)
         except Exception as exc:  # noqa: BLE001 - one section never loses the edition

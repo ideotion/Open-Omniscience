@@ -4454,5 +4454,18 @@
   "Longest collection stretch": "Plus longue période de collecte",
   "Process up without a break": "Processus actif sans interruption",
   "{h} h reached at {when} — the process's half of the clause, not the bar": "{h} h atteintes à {when} — la moitié « processus » de la clause, pas la barre",
-  "not yet — {h} h more on the current stretch": "pas encore — encore {h} h sur la période en cours"
+  "not yet — {h} h more on the current stretch": "pas encore — encore {h} h sur la période en cours",
+  "Resume pending": "Reprise en attente",
+  "An exclusive operation (an import, a restore, a release run) paused collection while a pass was running. Collection starts again the moment that pass finishes winding down, unless airplane mode is on.": "Une opération exclusive (une importation, une restauration, une exécution de version) a mis la collecte en pause pendant qu'une passe tournait. La collecte reprend dès que cette passe a fini de s'arrêter, sauf si le mode avion est activé.",
+  "waiting for the previous pass to finish (since {when})": "en attente de la fin de la passe précédente (depuis {when})",
+  "Qualification is declined on this machine: it is below the memory floor, so no candidate is judged.": "La qualification est refusée sur cette machine : elle est sous le seuil mémoire, aucun candidat n'est donc jugé.",
+  "To run it anyway, restart the app with {env}=1.": "Pour l'exécuter malgré tout, redémarrez l'application avec {env}=1.",
+  "Check for missing ingest entries": "Rechercher les entrées d'ingestion manquantes",
+  "Compares the stored articles with the custody log's ingest entries, from the log's first ingest entry on. It only counts; recording what it finds is a separate button.": "Compare les articles stockés aux entrées d'ingestion du journal de possession, à partir de sa première entrée d'ingestion. Il ne fait que compter ; enregistrer ce qu'il trouve est un bouton à part.",
+  "Record them, marked late": "Les enregistrer, marquées tardives",
+  "{p} ingest entries could not be written when their articles were stored and are queued; {r} have been recorded late, each marked so in its signed metadata.": "{p} entrées d'ingestion n'ont pas pu être écrites lors du stockage de leurs articles et sont en file d'attente ; {r} ont été enregistrées tardivement, chacune marquée comme telle dans ses métadonnées signées.",
+  "The custody log has no ingest entry yet, so there is no start to measure gaps from.": "Le journal de possession ne contient encore aucune entrée d'ingestion, il n'y a donc pas de point de départ pour mesurer des lacunes.",
+  "{n} stored articles since the log's first ingest entry have no ingest entry ({checked} checked).": "{n} articles stockés depuis la première entrée d'ingestion du journal n'ont pas d'entrée d'ingestion ({checked} vérifiés).",
+  "The scan stopped at its time budget; run it again to continue.": "L'analyse s'est arrêtée à son budget de temps ; relancez-la pour continuer.",
+  "Recorded {n} entries, each marked late.": "{n} entrées enregistrées, chacune marquée tardive."
 }

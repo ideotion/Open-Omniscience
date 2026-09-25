@@ -12166,6 +12166,62 @@ window would have waited on its own jobs, which were waiting on it, for ever. Be
 work in a machine-owning primitive, check whether the work itself is one of the things that
 primitive tells to stand aside.
 
+### A RESUME MUST WAIT FOR THE THING IT IS WAITING ON (the field round, PR #1173)
+
+`resume_after_exclusive_operation` retried `start()` for about ten minutes, a budget sized
+against the worst single blocked WRITE (438 s). On a write-bound machine the unit is a pass's
+wind-down: Lenn's took 39 minutes, the retries ran out, one warning was logged, nothing
+retried again, autostart was off, and collection stayed OFF for five days while the process
+ran. A fixed retry budget for an event whose duration is not bounded is a timer on silence.
+The resume now waits on the event itself (the old pass thread exiting) on a watcher, gives way
+to anything the operator does meanwhile, and is visible while it waits.
+
+### A DECLINE IS NOT AN EMPTY RESULT (the field round, PR #1173)
+
+Below the memory floor, a qualification pass declines its scan and returns `evaluated: 0` WITH
+a reason. The bulk job read `evaluated == 0` as "the backlog is empty", marked itself complete
+and broke before its progress line changed, so six machines showed "done [0/79977]
+starting…" while 82,805 candidates waited on one of them. When a function can both decline and
+find nothing, the caller must test for the decline FIRST; a count of zero answers neither
+question on its own.
+
+### PER-ITEM ISOLATION EATS A DEADLINE, ONE ITEM AT A TIME (the field round, PR #1173)
+
+A statement deadline, once tripped, interrupts every later statement on that connection, and
+the interrupt surfaces as an ordinary error. Every loop that isolates its items with
+`except Exception` therefore turns ONE spent budget into a run of independent-looking
+failures: the card audit reported 15 of 37 producers as errors, the bulletin's cards section
+ran none of them, and the integrity sweep swallowed its interrupt check by check and reported
+"no drift" having checked nothing. `run_all_bounded` already had the answer, a `break` on
+`deadline_expired(session)`; it is CONTROL FLOW the isolation cannot intercept. Any loop that
+runs under a statement deadline needs it, and anything that reports a verdict needs to know
+which of its checks completed. And a handler that re-raises for the deadline must re-raise
+EXACTLY what the deadline translates (elapsed AND an interrupt): the first cut re-raised any
+error once the budget had expired, so a missing table after the budget would have escaped the
+deadline untyped and turned a degrading diagnostic into a 500.
+
+### A FAIL-OPEN PATH NEEDS A RECORD OF WHAT IT SKIPPED (the field round, PR #1173)
+
+Custody logging on ingest is fail-open by design, correctly: it must never cost the article.
+But it kept no record of what it skipped, so a chain-of-custody log the operator had turned on
+carried gaps nothing reported. Failing open is a promise to do the thing later or to say it
+was not done; without a debt record it is neither. The record has to live somewhere the
+failure cannot reach -- here a file, because the failure was the database. And the debt is
+not repaid where it was incurred: the first cut drained owed entries after the next
+successful ingest, which meant one read per owed entry through a fresh pooled connection, on
+the per-article path, under the very exhaustion that had created the debt -- up to twenty pool
+timeouts on one ingest. Repayment moved to the pass boundary, batched into one read.
+
+### A TOPIC IS NOT A WRITER (the field round, PR #1173)
+
+The fixity audit's first fix chose each row's hash formula partly from `Source.source_type`,
+and `legal` and `statistics` looked like the law and statistics writers. They are TOPICS:
+about two hundred seeded web sources are typed `legal` and one `statistics`, their pages are
+scraped, and every one of them would have been hashed under the wrong formula and reported as
+a misclassified row. Which code wrote a row is read from the mark that code puts on its own
+rows (here the synthetic `*.local` domain and the URL scheme), never from a label other
+writers share.
+
 ### A TEST CAN GO VACUOUS WITHOUT FAILING WHEN THE CODE GROWS A SECOND WRITER (PR #1174)
 
 `test_an_interim_report_is_written_during_the_soak_marked_as_one_and_superseded` asserted that an

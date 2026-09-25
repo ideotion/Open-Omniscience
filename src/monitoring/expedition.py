@@ -445,6 +445,30 @@ def qualification_safety(session) -> dict:
     avail = mem.get("available_mb")
     articles = latest_recorded_articles(session)
 
+    # THE SAME FLOOR THE PASS ASKS (QUAL-1, 2026-09-24). This check once judged a
+    # bulk run safe (1,257 MB needed, 1,621 MB available) on a machine where every
+    # qualification pass then declined below the S1.3 floor: two estimators, opposite
+    # answers, and the run armed a job that could only report "done" having judged
+    # nothing. The floor's verdict comes first; the estimate below is only asked when
+    # the floor lets the pass run at all.
+    try:
+        from src.config.machine_floor import scan_budget
+
+        floor = scan_budget(int(articles or 0))
+    except Exception:  # noqa: BLE001 - an unreadable floor falls through to the estimate
+        floor = {}
+    if floor.get("declines"):
+        env = floor.get("override_env") or "OO_ALLOW_BIG_SCANS"
+        return {
+            "safe": False, "basis": "memory floor",
+            "reason": (
+                "below the memory floor every qualification pass declines its whole-corpus "
+                f"scan ({floor.get('reason')}), so bulk qualification was NOT started; "
+                f"restart the app with {env}=1 to run it anyway"
+            ),
+            "available_mb": avail, "articles": articles, "override_env": env,
+        }
+
     if avail is None:
         return {
             "safe": True, "basis": "unmeasured",

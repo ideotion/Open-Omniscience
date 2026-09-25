@@ -4454,5 +4454,18 @@
   "Longest collection stretch": "أطول فترة جمع",
   "Process up without a break": "العملية تعمل دون انقطاع",
   "{h} h reached at {when} — the process's half of the clause, not the bar": "بلغت {h} ساعة عند {when} — نصف الشرط الخاص بالعملية، لا الحدّ",
-  "not yet — {h} h more on the current stretch": "ليس بعد — تبقى {h} ساعة على الفترة الحالية"
+  "not yet — {h} h more on the current stretch": "ليس بعد — تبقى {h} ساعة على الفترة الحالية",
+  "Resume pending": "الاستئناف معلّق",
+  "An exclusive operation (an import, a restore, a release run) paused collection while a pass was running. Collection starts again the moment that pass finishes winding down, unless airplane mode is on.": "أوقفت عملية حصرية (استيراد أو استعادة أو تشغيل إصدار) الجمع مؤقتاً بينما كانت جولة قيد التشغيل. يُستأنف الجمع لحظة انتهاء تلك الجولة من التوقف، ما لم يكن وضع الطيران مفعّلاً.",
+  "waiting for the previous pass to finish (since {when})": "بانتظار انتهاء الجولة السابقة (منذ {when})",
+  "Qualification is declined on this machine: it is below the memory floor, so no candidate is judged.": "التأهيل مرفوض على هذا الجهاز: فهو دون حدّ الذاكرة الأدنى، لذا لا يُحكم على أي مرشح.",
+  "To run it anyway, restart the app with {env}=1.": "لتشغيله رغم ذلك، أعد تشغيل التطبيق مع {env}=1.",
+  "Check for missing ingest entries": "البحث عن قيود إدخال ناقصة",
+  "Compares the stored articles with the custody log's ingest entries, from the log's first ingest entry on. It only counts; recording what it finds is a separate button.": "يقارن المقالات المخزّنة بقيود الإدخال في سجل الحيازة، بدءاً من أول قيد إدخال فيه. يكتفي بالعدّ؛ وتسجيل ما يجده زرّ منفصل.",
+  "Record them, marked late": "سجّلها مع وسمها بأنها متأخرة",
+  "{p} ingest entries could not be written when their articles were stored and are queued; {r} have been recorded late, each marked so in its signed metadata.": "تعذّرت كتابة {p} من قيود الإدخال عند تخزين مقالاتها وهي في قائمة الانتظار؛ وسُجّل {r} متأخراً، وكلٌّ منها موسوم بذلك في بياناته الوصفية الموقّعة.",
+  "The custody log has no ingest entry yet, so there is no start to measure gaps from.": "لا يحتوي سجل الحيازة بعد على أي قيد إدخال، لذا لا توجد بداية تُقاس منها الفجوات.",
+  "{n} stored articles since the log's first ingest entry have no ingest entry ({checked} checked).": "{n} من المقالات المخزّنة منذ أول قيد إدخال في السجل ليس لها قيد إدخال (فُحص {checked}).",
+  "The scan stopped at its time budget; run it again to continue.": "توقّف الفحص عند ميزانيته الزمنية؛ شغّله مرة أخرى للمتابعة.",
+  "Recorded {n} entries, each marked late.": "سُجّل {n} قيداً، وكلٌّ منها موسوم بأنه متأخر."
 }

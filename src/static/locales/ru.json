@@ -4454,5 +4454,18 @@
   "Longest collection stretch": "Самый длинный отрезок сбора",
   "Process up without a break": "Процесс работал без перерыва",
   "{h} h reached at {when} — the process's half of the clause, not the bar": "{h} ч достигнуто в {when} — половина условия о процессе, а не планка",
-  "not yet — {h} h more on the current stretch": "пока нет — ещё {h} ч на текущем отрезке"
+  "not yet — {h} h more on the current stretch": "пока нет — ещё {h} ч на текущем отрезке",
+  "Resume pending": "Возобновление ожидается",
+  "An exclusive operation (an import, a restore, a release run) paused collection while a pass was running. Collection starts again the moment that pass finishes winding down, unless airplane mode is on.": "Эксклюзивная операция (импорт, восстановление, прогон релиза) приостановила сбор, пока шёл проход. Сбор возобновится, как только этот проход завершится, если не включён режим полёта.",
+  "waiting for the previous pass to finish (since {when})": "ожидает завершения предыдущего прохода (с {when})",
+  "Qualification is declined on this machine: it is below the memory floor, so no candidate is judged.": "Квалификация на этой машине отклонена: она ниже порога памяти, поэтому ни один кандидат не оценивается.",
+  "To run it anyway, restart the app with {env}=1.": "Чтобы всё же запустить её, перезапустите приложение с {env}=1.",
+  "Check for missing ingest entries": "Найти недостающие записи о загрузке",
+  "Compares the stored articles with the custody log's ingest entries, from the log's first ingest entry on. It only counts; recording what it finds is a separate button.": "Сравнивает сохранённые статьи с записями о загрузке в журнале хранения, начиная с его первой такой записи. Только считает; записать найденное — отдельная кнопка.",
+  "Record them, marked late": "Записать их с пометкой «с опозданием»",
+  "{p} ingest entries could not be written when their articles were stored and are queued; {r} have been recorded late, each marked so in its signed metadata.": "{p} записей о загрузке не удалось записать при сохранении статей, они стоят в очереди; {r} записаны с опозданием, каждая помечена так в своих подписанных метаданных.",
+  "The custody log has no ingest entry yet, so there is no start to measure gaps from.": "В журнале хранения пока нет ни одной записи о загрузке, поэтому пропуски не от чего отсчитывать.",
+  "{n} stored articles since the log's first ingest entry have no ingest entry ({checked} checked).": "{n} сохранённых статей после первой записи о загрузке в журнале не имеют такой записи (проверено {checked}).",
+  "The scan stopped at its time budget; run it again to continue.": "Проверка остановилась, исчерпав лимит времени; запустите её снова, чтобы продолжить.",
+  "Recorded {n} entries, each marked late.": "Записано {n} записей, каждая с пометкой «с опозданием»."
 }

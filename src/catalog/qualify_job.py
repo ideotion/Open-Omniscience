@@ -129,6 +129,7 @@ def run_bulk_qualification(
     }
     consecutive_no_progress = 0
     paused_reason: str | None = None
+    declined: dict | None = None
     complete = False
     cohort: dict | None = None
 
@@ -183,6 +184,22 @@ def run_bulk_qualification(
                 + " — progress is saved, start again once memory recovers"
             )
             break
+        if result.get("skipped") == "memory":
+            # QUAL-1 (field round 2026-09-24): the pass DECLINED its whole-corpus scan
+            # below the memory floor (S1.3) and said so -- and this loop read its
+            # ``evaluated: 0`` as "the backlog is empty", marked the run complete, and
+            # broke before updating its progress, so every field machine showed
+            # "done [0/79977] starting…". A decline is a named refusal, carried to the
+            # result and the progress line with the switch that lifts it; never complete.
+            env = str(result.get("override_env") or "OO_ALLOW_BIG_SCANS")
+            declined = {k: result.get(k) for k in ("reason", "available_mb", "need_mb", "caveat")}
+            declined["override_env"] = env
+            paused_reason = (
+                "declined on this machine: " + str(result.get("reason") or "below the memory floor")
+                + f" — nothing was judged; restart the app with {env}=1 to run it anyway"
+            )
+            ctx.set_progress(done=0, total=total_backlog, detail=paused_reason)
+            break
 
         evaluated = int(result.get("evaluated", 0))
         totals["batches_run"] += 1
@@ -223,6 +240,8 @@ def run_bulk_qualification(
     summary: dict = {"complete": complete, **totals, "initial_backlog": backlog}
     if paused_reason:
         summary["paused_reason"] = paused_reason
+    if declined is not None:
+        summary["declined"] = declined
     return summary
 
 

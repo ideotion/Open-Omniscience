@@ -9470,6 +9470,46 @@ forensics' sentinel and the high-water sidecar, labelled as such. Every new test
 against the pre-fix source and failed there. Lessons: `LESSONS.md`, the three entries dated by
 this PR.
 
+### 2026-09-24 — the field defects outside the write path (PR #1173)
+
+`docs/audit/16` §3.4–§3.6 and RR-9, built beside the release-run PR (#1172, which carries the
+report). **SCHED-1:** `resume_after_exclusive_operation` keeps its retry loop and, when the
+retries run out with the old pass still alive, hands the resume to ONE watcher
+(`_watch_for_resume`, keyed by a generation) that waits for that pass to exit, never starts
+over airplane mode, waits out another exclusive hold, stands down when collection was started
+on another thread, and is retired at shutdown before the scheduler stops; `status()` carries
+`resume_pending`, which the Schedule tab shows. **QUAL-1:** `run_bulk_qualification` treats a
+pass's `skipped: "memory"` as a named refusal (`declined`, the override, the progress line)
+and never as complete; `/api/sources/qualify-bulk/status` carries the floor's verdict and the
+Sources panel says qualification is declined with the switch that lifts it (`FD03` = a);
+`expedition.qualification_safety` asks the floor before its own estimate. **RR-9:**
+`_stamp_remaining` clamps a persisted crawl-delay stamp to its own delay. **CUST-1:**
+`src/custody/pending.py` -- `note_failed` (a file append, no database), `drain` (writes owed
+entries marked late in their signed metadata; drops ones already written; keeps ones whose
+row cannot be read yet), `gap_scan` (counts, never records) and `queue_gaps` (the operator's
+act); `_maybe_record_custody` takes the article id from the identity map, so the reload that
+timed out in the field cannot also lose which entry was owed, and NEVER repays on the
+per-article path -- `drain_owed` runs in the scheduler's pass tail (journalled as
+`custody-late`, on the run report as `custody_late`, only while auto-log is on), reading the
+owed rows' columns in one query per 500 entries and trying a failed read once per drain, not
+once per entry, on a drain lock of its own (the queue file's lock is held only for the file,
+so queueing a new failure never waits on a drain's read); `POST /api/custody/reconcile` (at
+most 1,000 entries per request), and the
+Chain of custody tab's counts and gap check. **FIX-1:** `HASH_KINDS` and `expected_hash_kind`
+in the fixity audit, the writer read from the synthetic domain or URL scheme each non-web
+writer marks its own rows with and never from `Source.source_type` (a topic about two hundred
+seeded web sources share), `by_hash_kind`, `matched_other_kind`. **INT-1:** `_scalar` and the
+counter-drift and FK handlers re-raise the deadline's own interrupt -- exactly the pair
+`statement_deadline` types, elapsed AND an interrupt -- so any other error after the budget
+still degrades instead of escaping untyped; `_verdict` gives `drift` true / false / null with
+`incomplete_checks` and a `verdict` sentence. **Budget guards:** `observe_producers`
+and `build_sections` stop on `deadline_expired`, listing the rest; `_determinism_check` does
+not count a budget skip as nondeterminism. Every new test was run against the pre-fix source:
+35 of the 36 fail or error there, and the one that passes is the pin on the writers' formulas.
+The seven that test the review fixes (the pass-end repayment, the batched read, the
+auto-log-off case, the topical-type case and the narrowed re-raise) also fail against this
+PR's own first commit; two more pin the lock split. Lessons: `LESSONS.md`, the five entries dated by this PR.
+
 ## 2026-09-24 — the interim-report test asserts on the soak's own interim again (PR #1174)
 
 Asked for as "fix the interim report test too", after #1174 found the heartbeat-ring fix already

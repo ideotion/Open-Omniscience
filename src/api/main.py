@@ -461,10 +461,13 @@ async def lifespan(app: FastAPI):
     except Exception:  # noqa: BLE001 - best-effort
         logger.debug("could not stamp the shutdown phase", exc_info=True)
 
-    # Stop the scheduler thread cleanly if it is running (no-op otherwise).
+    # Stop the scheduler thread cleanly if it is running (no-op otherwise). A pending
+    # resume is retired FIRST, so its watcher cannot start collection again on a
+    # process that is going down (SCHED-1).
     try:
-        from src.scheduler.runner import get_scheduler
+        from src.scheduler.runner import cancel_pending_resume, get_scheduler
 
+        cancel_pending_resume()
         get_scheduler().stop()
     except Exception:  # noqa: BLE001 - best-effort shutdown
         logger.warning("Error stopping scheduler on shutdown", exc_info=True)
