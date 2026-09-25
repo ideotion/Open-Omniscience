@@ -1654,6 +1654,238 @@
       } finally { if (btn) btn.disabled = false; }
     }
 
+    // ---- Settings → Storage (Q1006 / Q1010 / Q1011, ruled 2026-09-15; S04-08 S4) ---- //
+    // Each lane's size, its budget, how fast it has grown, the disk left, and this
+    // machine's boot reading beside the reference machine the budgets are sized for.
+    // One loopback read (GET /api/storage/lanes); nothing here touches the network, so
+    // nothing here passes ensureOnline. A raised budget is written through the SAME
+    // PUT /api/scheduler/config the Wikipedia wizard uses -- one write path per setting.
+    //
+    // THE REFUSALS ARE THE POINT, and tests/lane_storage_node_test.js runs each one,
+    // because none of them is visible in a diff:
+    //   * an UNMEASURED growth draws words and no figure -- a rate with a number on it
+    //     where nothing was measured is exactly what Q1006's "honest arithmetic" rules out;
+    //   * a lane with NO PUBLISHED BUDGET says so -- never a 0, never an invented number;
+    //   * an ABSENT lane reads "not created yet" or "not built yet", never 0 B -- a file
+    //     that exists and is empty is a different, reportable fact;
+    //   * an unreadable figure in the boot reading is named, never rounded into a number.
+    function _storageLaneName(kind) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      // The consent popup's own lane labels where one exists (net-hosts.js): one name
+      // per lane across the app, already x12.
+      if (kind === "press") return t("Corpus");
+      if (kind === "wiki") return t("Wikipedia / Wikimedia");
+      if (kind === "law") return t("Law");
+      if (kind === "osm") return t("Maps / OpenStreetMap");
+      return String(kind);
+    }
+    function _storageLaneHover(kind) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      if (kind === "press") return t("Your main database file: press articles, imported newsletters and documents, statistics, markets, laws, and the individual Wikipedia pages you track.");
+      if (kind === "wiki") return t("The Wikipedia lane’s own database file, beside your corpus. When your corpus is encrypted, this file is too, with the same passphrase.");
+      return t("This lane’s own database file, beside your corpus. When your corpus is encrypted, this file is too, with the same passphrase.");
+    }
+    function _storageSignedBytes(n) {
+      // A U+2212 minus, and the sign always shown: "+1.2 GB" and "−300 MB" are the two
+      // facts a growth column states, and a bare "1.2 GB" would not say which.
+      return (n > 0 ? "+" : n < 0 ? "−" : "") + humanBytes(Math.abs(n));
+    }
+    function _storagePct(share) {
+      const pct = share * 100;
+      // Never "0%" for a lane that holds something: that reads as empty.
+      if (pct > 0 && pct < 1) return "<1";
+      return String(Math.round(pct));
+    }
+    function _storageGrowthHtml(g) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((s, v) => s.replace(/\{(\w+)\}/g, (_, k) => v[k]));
+      if (!g) return "";
+      // `=== true` and a real delta, never truthiness: a payload that forgot the flag
+      // must fall through to the words, not to a figure.
+      if (g.measured === true && typeof g.delta_bytes === "number" && typeof g.span_days === "number") {
+        const days = Math.max(1, Math.round(g.span_days));
+        // The dates and the signed figures go through _ltrIsolate (app-library.js): in the
+        // Arabic page "+6.0 MB" otherwise renders as "MB 6.0+" and an ISO date with its
+        // year at the wrong end -- a misread, not only an ugly one.
+        const how = tf("Measured from {n} readings of this lane’s own size, {from} to {to}. A rate, not a forecast.",
+          { n: g.samples, from: _ltrIsolate(String(g.from || "").slice(0, 10)), to: _ltrIsolate(String(g.to || "").slice(0, 10)) });
+        if (g.delta_bytes === 0) {
+          return `<span title="${esc(how)}">${esc(tf("No change in {days} days", { days }))}</span>`;
+        }
+        const head = tf("{delta} in {days} days", { delta: _ltrIsolate(_storageSignedBytes(g.delta_bytes)), days });
+        const rate = typeof g.per_30_days_bytes === "number"
+          ? `<div class="muted">${esc(tf("≈ {rate} per 30 days at that rate", { rate: _ltrIsolate(_storageSignedBytes(g.per_30_days_bytes)) }))}</div>`
+          : "";
+        return `<span title="${esc(how)}">${esc(head)}</span>${rate}`;
+      }
+      // The size cell already says why an absent lane has nothing to measure.
+      if (g.reason === "absent" || g.reason === "unmeasurable") return "";
+      if (g.reason === "unreadable") {
+        return `<span class="muted" title="${esc(t("The size history could not be read from your corpus."))}">${esc(t("Could not be read"))}</span>`;
+      }
+      // no_history and too_short: WORDS ONLY on the surface. The numbers that explain
+      // the wait (how many days so far, how many a rate needs) ride the hover, where
+      // they cannot be mistaken for a measurement of growth.
+      const why = g.reason === "too_short"
+        ? tf("A rate needs {min} days of this lane’s size readings; there are {days} so far.",
+          { min: g.min_span_days || 7, days: typeof g.span_days === "number" ? g.span_days : 0 })
+        : t("No size readings yet. Each lane’s size is recorded at most hourly while collection runs.");
+      return `<span class="muted" title="${esc(why)}">${esc(t("Not measured yet"))}</span>`;
+    }
+    function _storageBudgetHtml(lane) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((s, v) => s.replace(/\{(\w+)\}/g, (_, k) => v[k]));
+      const b = lane && lane.budget;
+      if (!b) return "";
+      if (b.gb == null) {
+        const why = b.reason === "not_ruled"
+          ? t("No budget has been decided for this lane, so none is shown. The app never invents one.")
+          : t("The published budget table could not be read.");
+        return `<span class="muted" title="${esc(why)}">${esc(t("No published budget"))}</span>`;
+      }
+      const src = b.source === "yours"
+        ? tf("yours; the published default is {gb} GB", { gb: b.published_gb })
+        : t("the published default");
+      let html = `<b>${esc(tf("{gb} GB", { gb: b.gb }))}</b> <span class="muted">${esc(src)}</span>`;
+      if (typeof b.used_share === "number") {
+        html += `<div class="muted">${esc(tf("{pct}% used", { pct: _storagePct(b.used_share) }))}</div>`;
+      }
+      if (b.exhausted === true) {
+        html += `<div class="card-caveat">${esc(lane.kind === "wiki"
+          ? t("Budget reached: new page text is not stored until you raise it.")
+          : t("Budget reached."))}</div>`;
+      }
+      if (b.setting && typeof b.min_gb === "number" && typeof b.max_gb === "number") {
+        const k = esc(lane.kind);
+        html += `<div class="row" style="gap:6px;align-items:center;margin-top:4px;flex-wrap:wrap">`
+          + `<input type="number" id="storage-budget-${k}" min="${b.min_gb}" max="${b.max_gb}" step="1" value="${esc(b.gb)}" style="width:6em" aria-label="${esc(t("Budget in GB"))}">`
+          // esc(JSON.stringify(...)), never a hand-written '...' around esc(): '&#39;'
+          // decodes back to a quote BEFORE the handler runs (onclick_xss_esc_node_test.js).
+          + `<button class="secondary" onclick="saveLaneBudget(${esc(JSON.stringify(String(lane.kind)))}, ${esc(JSON.stringify(String(b.setting)))}, this)">${esc(t("Save budget"))}</button>`
+          + `<span id="storage-budget-msg-${k}" class="hint" role="status" aria-live="polite"></span></div>`;
+      }
+      return html;
+    }
+    function _storageSizeHtml(lane) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((s, v) => s.replace(/\{(\w+)\}/g, (_, k) => v[k]));
+      let html;
+      if (lane.size_state === "present" && typeof lane.bytes === "number") {
+        html = `<b>${esc(humanBytes(lane.bytes))}</b>`;
+      } else if (lane.size_state === "unmeasurable") {
+        html = `<span class="muted" title="${esc(t("Your corpus is not a database file this app can measure (DATABASE_URL points elsewhere)."))}">${esc(t("Cannot be measured"))}</span>`;
+      } else if (lane.implemented === false) {
+        html = `<span class="muted" title="${esc(t("This lane arrives in a later release. It has no file yet."))}">${esc(t("Not built yet"))}</span>`;
+      } else {
+        html = `<span class="muted" title="${esc(t("This lane has no database file yet: it has never run."))}">${esc(t("Not created yet"))}</span>`;
+      }
+      if (typeof lane.other_volume_free_bytes === "number") {
+        html += `<div class="muted">${esc(tf("On another drive: {free} free", { free: humanBytes(lane.other_volume_free_bytes) }))}</div>`;
+      }
+      return html;
+    }
+    function _storageTableHtml(rep) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const lanes = (rep && rep.lanes) || [];
+      if (!lanes.length) return "";
+      const rows = lanes.map((l) =>
+        `<tr><td title="${esc(_storageLaneHover(l.kind))}">${esc(_storageLaneName(l.kind))}</td>`
+        + `<td>${_storageSizeHtml(l)}</td><td>${_storageBudgetHtml(l)}</td>`
+        + `<td>${_storageGrowthHtml(l.growth)}</td></tr>`).join("");
+      return `<table><thead><tr><th>${esc(t("Lane"))}</th><th>${esc(t("On disk"))}</th>`
+        + `<th>${esc(t("Budget"))}</th><th>${esc(t("Growth, last 30 days"))}</th></tr></thead>`
+        + `<tbody>${rows}</tbody></table>`;
+    }
+    function _storageReadingHtml(rep) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((s, v) => s.replace(/\{(\w+)\}/g, (_, k) => v[k]));
+      const r = rep && rep.reading;
+      if (!r) return "";
+      const bits = [
+        typeof r.cores === "number" ? tf("{n} CPU cores", { n: r.cores }) : t("CPU cores could not be read"),
+        typeof r.ram_bytes === "number" ? tf("{size} of RAM", { size: humanBytes(r.ram_bytes) }) : t("RAM could not be read"),
+        typeof r.disk_free_bytes === "number"
+          ? tf("{size} of free disk", { size: humanBytes(r.disk_free_bytes) }) : t("free disk could not be read"),
+      ];
+      const lead = r.when === "boot" ? t("This machine, read at boot:") : t("This machine, read just now:");
+      const how = t("Read on this machine with no network: logical CPU cores, total RAM, and the free space on the drive that holds your data folder.");
+      let html = `<div title="${esc(how)}">${esc(lead)} ${esc(bits.join(" · "))}</div>`;
+      // The reading beside the reference, and NO verdict between them: the reference's
+      // "3.5 GB" is what its machine class reports, so a strict "below" would call the
+      // reference machine smaller than itself (see src/config/hardware_reading.py).
+      const ref = rep.table && rep.table.reference_machine;
+      if (ref) {
+        html += `<div>${esc(tf("The published budgets are sized for a reference machine with {cores} CPU cores and {ram} of RAM. Raise them if this machine has more room.",
+          { cores: ref.cores, ram: humanBytes(ref.ram_bytes) }))}</div>`;
+      } else if (rep.table_error) {
+        html += `<div class="card-caveat" title="${esc(rep.table_error)}">${esc(t("The published budget table could not be read, so no budgets are shown."))}</div>`;
+      }
+      return html;
+    }
+    function _storageDiskHtml(rep) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((s, v) => s.replace(/\{(\w+)\}/g, (_, k) => v[k]));
+      const d = rep && rep.disk;
+      if (!d) return "";
+      if (typeof d.free_bytes !== "number") {
+        return esc(t("The free space on the drive that holds your data folder could not be read."));
+      }
+      let html = esc(typeof d.total_bytes === "number"
+        ? tf("Disk left: {free} free of {total} on the drive that holds your data folder.",
+          { free: humanBytes(d.free_bytes), total: humanBytes(d.total_bytes) })
+        : tf("Disk left: {free} free on the drive that holds your data folder.", { free: humanBytes(d.free_bytes) }));
+      if (typeof rep.claimable_bytes === "number") {
+        // Today's sizes against today's budgets: no rate enters this line, so it is
+        // arithmetic about the present and never a forecast of when anything fills.
+        // The server's three-state `budgets_fit` decides the tone, and only a `false`
+        // warns -- an unknown is not drawn as a fit, and not as a failure either.
+        const line = tf("Your budgets can still take {room}; the drive has {free} free.",
+          { room: humanBytes(rep.claimable_bytes), free: humanBytes(d.free_bytes) });
+        html += rep.budgets_fit === false
+          ? `<div class="card-caveat">${esc(line)} ${esc(t("That is more than the drive has free."))}</div>`
+          : `<div class="muted">${esc(line)}</div>`;
+      }
+      return html;
+    }
+    async function loadLaneStorage() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      try {
+        const rep = await api("/api/storage/lanes");
+        if ($("storage-reading")) $("storage-reading").innerHTML = _storageReadingHtml(rep);
+        if ($("storage-lanes")) $("storage-lanes").innerHTML = _storageTableHtml(rep);
+        if ($("storage-disk")) $("storage-disk").innerHTML = _storageDiskHtml(rep);
+      } catch (e) {
+        if ($("storage-lanes")) {
+          $("storage-lanes").innerHTML = `<span class="note err">${esc(t("Storage could not be read:"))} ${esc(e.message)}</span>`;
+        }
+      }
+    }
+    async function saveLaneBudget(kind, setting, btn) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((s, v) => s.replace(/\{(\w+)\}/g, (_, k) => v[k]));
+      const input = $("storage-budget-" + kind), msg = $("storage-budget-msg-" + kind);
+      if (!input || !setting) return;
+      const gb = Number(input.value), min = Number(input.min), max = Number(input.max);
+      if (!Number.isInteger(gb) || gb < min || gb > max) {
+        // Refused, never rounded or clamped: the server refuses both too (in English, as
+        // a field name), and saying so here, in the operator's language, keeps their
+        // number on screen while they fix it. The bounds are the server's, drawn on the input.
+        if (msg) msg.textContent = tf("Enter a whole number of GB from {min} to {max}.", { min: input.min, max: input.max });
+        return;
+      }
+      if (btn) btn.disabled = true;
+      try {
+        await api("/api/scheduler/config", { method: "PUT", body: JSON.stringify({ [setting]: gb }) });
+        // Re-read, so the row shows what the SERVER now holds (a refused value never
+        // lingers on screen as if it had been taken), then confirm on the fresh row.
+        await loadLaneStorage();
+        const fresh = $("storage-budget-msg-" + kind);
+        if (fresh) fresh.textContent = t("Saved.");
+      } catch (e) {
+        if (msg) msg.textContent = t("Not saved:") + " " + e.message;
+      } finally { if (btn) btn.disabled = false; }
+    }
+
     // ---- Backup v2: one signed archive; restore = MERGE with a preview ---- //
     let _v2Token = null;
     // Local LLM models — an OPT-IN companion backup (models live outside the corpus,

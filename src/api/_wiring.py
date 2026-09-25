@@ -49,6 +49,7 @@ def wire(app) -> None:
     from src.api.insights import router as insights_router
     from src.api.integrity import router as integrity_router
     from src.api.jobs import router as jobs_router
+    from src.api.lane_storage import router as lane_storage_router
     from src.api.law import router as law_router
     from src.api.legal import router as legal_router
     from src.api.library import router as library_router
@@ -122,6 +123,7 @@ def wire(app) -> None:
         ai_router,
         signals_router,
         agenda_state_router,
+        lane_storage_router,
     )
     for router in spine:
         app.include_router(router)

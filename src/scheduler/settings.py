@@ -46,7 +46,8 @@ WIKI_LANE_DEFAULT_EDITIONS: tuple = (
 
 #: Q707's published default budget, in whole GB, TOTAL for the lane. Duplicated from
 #: ``src.wiki.tiers.DEFAULT_TOTAL_BUDGET_GB`` for the same no-imports reason, and
-#: pinned to it by the same test.
+#: pinned to it by the same test -- and, since S04-08 S4, to the published table's wiki
+#: row (``configs/lane_budgets.yml``) by ``tests/test_lane_budgets.py``.
 WIKI_LANE_DEFAULT_BUDGET_GB: int = 20
 
 #: What the wizard will accept. Mirrors ``src.wiki.tiers.BUDGET_GB_MIN/MAX``, pinned.

@@ -77,12 +77,13 @@ DEFERRED_UNTIL_WARM_TIER: Final[str] = "warm_and_cold_text_is_not_ingested_in_0_
 #: TOTAL for the lane, not per edition — the per-edition share is derived below and
 #: the arithmetic is SHOWN rather than folded in.
 #:
-#: WHERE THIS NUMBER WILL EVENTUALLY LIVE: S04-08's slice 4 is "a published table (a
+#: WHERE THIS NUMBER IS PUBLISHED: S04-08's slice 4 is "a published table (a
 #: versioned file under ``configs/``) of per-lane budgets sized for the reference VM",
 #: and its brief's §6 says "Q707's 20 GB is S04-09's" — the number is this slice's,
-#: the table is that one's, and that table does not exist yet (gate row O lists it
-#: among S04-08's remaining items). It is declared HERE with its provenance so that
-#: moving it later is a move, not a rediscovery.
+#: the table is that one's. The table now exists, ``configs/lane_budgets.yml`` (wiki
+#: row, ``ruling: Q707``). This literal STAYS, because the tier arithmetic must not read
+#: a file to know its own default; ``tests/test_lane_budgets.py`` pins it to the table,
+#: so the two cannot drift.
 DEFAULT_TOTAL_BUDGET_GB: Final[int] = 20
 
 #: The bounds the wizard offers. The floor is not zero: a lane with a zero budget

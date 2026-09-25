@@ -1,0 +1,51 @@
+# The published storage budgets, one row per lane (0.4, S04-08 slice 4).
+#
+# Q1006 (ruled 2026-09-15): "Settings -> Storage shows each lane's size, its budget,
+# the honest arithmetic, and the disk left; budgets are published defaults sized for
+# the reference VM."
+# Q1010: "Every budget is published and sized for the 2-core / 3.5 GB VM by default;
+# power users raise them; nothing silently assumes the maintainer's machine."
+# Q1011: "The app reads cores, RAM and free disk at boot (no network), proposes
+# budgets from a published table, and shows the reading."
+#
+# THIS FILE IS THAT TABLE. The app reads it and never writes it. An operator's own
+# budget lives in their settings (for the Wikipedia lane, `wiki_lane_budget_gb`) and
+# is shown BESIDE the row here, never merged into it, so a raised budget still says
+# what the published default was.
+#
+# A ROW WITHOUT A NUMBER IS DELIBERATE. One lane budget has been ruled: Q707's 20 GB
+# for Wikipedia. The brief this table was built under says the numbers beyond the
+# table's shape are not the build's to decide, so every other row carries
+# `budget_gb: null` and a reason token, and Settings -> Storage says "no published
+# budget" instead of showing an invented one. Adding a number is a ruling: record it
+# in docs/ledger/RULINGS_INDEX.md in the same change, and update the pins in
+# tests/test_lane_budgets.py.
+#
+# The reference machine is the one the budgets are sized for. It is not a minimum:
+# the app reads the machine it runs on and shows both, and changes nothing by itself.
+#
+# Units: 1 GB = 1024^3 bytes, the unit the Wikipedia wizard and every byte figure in
+# the app already use. Tokens, never sentences: the UI words them x12.
+
+version: 1
+
+reference_machine:
+  cores: 2
+  ram_gb: 3.5
+
+# Display order: the corpus first (Q1004 names it "press, as today"), then the
+# versioned lanes in the order they were ruled.
+lanes:
+  press:
+    budget_gb: null
+    reason: not_ruled
+  wiki:
+    budget_gb: 20
+    ruling: Q707
+    setting: wiki_lane_budget_gb
+  law:
+    budget_gb: null
+    reason: not_ruled
+  osm:
+    budget_gb: null
+    reason: not_ruled
