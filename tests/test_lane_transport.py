@@ -70,7 +70,7 @@ def test_protected_mode_with_no_proxy_is_REFUSED_by_name() -> None:
     # Only reachable through the environment or a hand-edited file (save_settings
     # refuses it), which is exactly why the popup must say so rather than "direct".
     s = SafetySettings(fetch_mode="protected")
-    assert transport_summary(s) == {"kind": "refused", "reason": NO_PROXY_REFUSAL}
+    assert transport_summary(s) == {"kind": "refused", "reason": "no-proxy"}
 
 
 def test_a_pool_with_a_clearnet_member_is_refused_WHOLE() -> None:
@@ -78,7 +78,10 @@ def test_a_pool_with_a_clearnet_member_is_refused_WHOLE() -> None:
                        http_proxies=["socks5h://127.0.0.1:9150", "http://127.0.0.1:8118"])
     out = transport_summary(s)
     assert out["kind"] == "refused", "a pool with a non-SOCKS member fell back to the single proxy"
-    assert "not a SOCKS proxy" in out["reason"]
+    assert out["reason"] == "pool-not-socks"
+    # The refusal's TEXT quotes the entry and comes from an exception; the settings reply
+    # carries a code instead (CodeQL: information exposure through an exception).
+    assert "8118" not in repr(out), "the refused entry's address reached the reply"
 
 
 def test_the_summary_agrees_with_the_session_the_fetch_path_builds(monkeypatch) -> None:

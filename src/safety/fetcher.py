@@ -252,14 +252,16 @@ def transport_summary(settings: SafetySettings) -> dict[str, Any]:
     derive it from ``http_proxy`` alone and said "fetches ride the proxy you
     configured" in transparent mode, where that proxy is ignored.
 
-    The token carries no address of its own; a refusal's ``reason`` can name the pool
-    entry it refused, which the stored fields sent beside it already carry.
+    The token carries no address of its own. A refusal's ``reason`` is a CODE
+    (``no-proxy``, or ``pool-not-socks`` for a pool refused whole), never the refusal's
+    text: that text comes from an exception and quotes the stored entry it refused, and
+    the popup draws its own translated sentence for each kind anyway.
     """
     if not settings.is_protected:
         return {"kind": "direct"}
     _single, pool, refusal = _protected_transport(settings)
     if refusal is not None:
-        return {"kind": "refused", "reason": refusal}
+        return {"kind": "refused", "reason": "no-proxy" if refusal == NO_PROXY_REFUSAL else "pool-not-socks"}
     if pool:
         return {"kind": "pool", "members": len(pool)}
     return {"kind": "proxy"}
