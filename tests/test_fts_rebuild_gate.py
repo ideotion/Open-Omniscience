@@ -65,7 +65,9 @@ class _SqlSpy:
 
     @property
     def rebuilt(self) -> bool:
-        return any("'rebuild'" in s for s in self.stmts)
+        # A rebuild is FTS5's own 'rebuild' (which nothing runs any more) OR the
+        # transforming rebuild's opening 'delete-all' (Q506/Q507, fts.REBUILD_MARK).
+        return any("'rebuild'" in s or "'delete-all'" in s for s in self.stmts)
 
 
 # --------------------------------------------------------------------------- #

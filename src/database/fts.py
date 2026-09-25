@@ -40,6 +40,8 @@ from sqlalchemy import text
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
+from src.database.fts_norm import SEGMENTERS as _SEGMENTERS
+
 _LOG = logging.getLogger(__name__)
 
 # --------------------------------------------------------------------------- #
@@ -172,8 +174,29 @@ def _quote(value: str) -> str:
 #: the Boolean parser and must stay pure and dependency-free; see ``build_match``.
 ExpandTerms = Callable[[str], Sequence[str]]
 
+#: The index-shape seam: a literal -> every form it must take to meet the index (the
+#: literal first). ``fts_norm.query_variants`` for the article index (Q506/Q507: Arabic
+#: folded, Chinese and Japanese segmented); ``None`` for an index stored raw, such as the
+#: Wikipedia dump index, whose MATCH stays byte-identical.
+LiteralVariants = Callable[[str], Sequence["str | tuple[str, ...]"]]
 
-def _render_term(node: _Term, expand: ExpandTerms | None) -> str:
+#: How far apart a segmented literal's words may sit, per word. The index holds a
+#: compound's sub-words beside it (jieba's search mode, sudachi's short units), so two
+#: words adjacent in the text are rarely adjacent in the index; 3 per word leaves room for
+#: the sub-words of a compound between them and still keeps the words together.
+_NEAR_PER_WORD = 3
+
+
+def _render_literal(value: str | tuple[str, ...]) -> str:
+    """A literal as FTS5 syntax: a string is a phrase; a tuple is words NEAR each other."""
+    if isinstance(value, tuple):
+        if len(value) == 1:
+            return _quote(value[0])
+        return "NEAR(" + " ".join(_quote(w) for w in value) + f", {_NEAR_PER_WORD * len(value)})"
+    return _quote(value)
+
+
+def _render_term(node: _Term, expand: ExpandTerms | None, variants: LiteralVariants | None = None) -> str:
     """One parsed term, optionally widened to its cross-language siblings.
 
     Expansion applies to EXCLUDES as well as includes, and that is deliberate: the unit
@@ -183,30 +206,41 @@ def _render_term(node: _Term, expand: ExpandTerms | None) -> str:
 
     Every literal goes through ``_quote``, so a multi-word ring member (fr ``migration
     humaine``) is emitted as an FTS5 phrase rather than two loose words.
+
+    ``variants`` runs AFTER expansion and after its cap, on each literal: it changes the
+    shape a literal takes to meet the index, never which literals were asked for, so the
+    expansion's disclosure ("expanded to 40 of 63 forms") counts the same forms either way.
     """
-    literals = [node.value]
+    literals: list[str | tuple[str, ...]] = [node.value]
     if expand is not None:
         for extra in expand(node.value):
             if extra and extra not in literals:
                 literals.append(extra)
+    if variants is not None:
+        shaped: list[str | tuple[str, ...]] = []
+        for lit in literals:
+            for v in variants(lit if isinstance(lit, str) else " ".join(lit)):
+                if v and v not in shaped:
+                    shaped.append(v)
+        literals = shaped or literals
     if len(literals) == 1:
-        return _quote(literals[0])
-    return "(" + " OR ".join(_quote(v) for v in literals) + ")"
+        return _render_literal(literals[0])
+    return "(" + " OR ".join(_render_literal(v) for v in literals) + ")"
 
 
-def _render(node, expand: ExpandTerms | None = None) -> str | None:
+def _render(node, expand: ExpandTerms | None = None, variants: LiteralVariants | None = None) -> str | None:
     if node is None:
         return None
     if isinstance(node, _Term):
-        return _render_term(node, expand)
+        return _render_term(node, expand, variants)
     if isinstance(node, _Or):
-        parts = [p for p in (_render(c, expand) for c in node.children) if p]
+        parts = [p for p in (_render(c, expand, variants) for c in node.children) if p]
         if not parts:
             return None
         return "(" + " OR ".join(parts) + ")"
     if isinstance(node, _AndGroup):
-        inc = [p for p in (_render(c, expand) for c in node.includes) if p]
-        exc = [p for p in (_render(c, expand) for c in node.excludes) if p]
+        inc = [p for p in (_render(c, expand, variants) for c in node.includes) if p]
+        exc = [p for p in (_render(c, expand, variants) for c in node.excludes) if p]
         if not inc:
             # FTS5 MATCH cannot express a purely-negative query; ignore the
             # exclusions rather than error. (Caller may treat None as "no match".)
@@ -218,7 +252,12 @@ def _render(node, expand: ExpandTerms | None = None) -> str | None:
     raise AssertionError(f"unknown node type: {type(node)!r}")
 
 
-def build_match(query: str | None, *, expand: ExpandTerms | None = None) -> str | None:
+def build_match(
+    query: str | None,
+    *,
+    expand: ExpandTerms | None = None,
+    variants: LiteralVariants | None = None,
+) -> str | None:
     """Translate a user Boolean query into a safe FTS5 MATCH expression.
 
     Returns ``None`` when the query has no searchable positive content (empty,
@@ -230,6 +269,10 @@ def build_match(query: str | None, *, expand: ExpandTerms | None = None) -> str 
     knowledge lives in ``src/analytics/equivalence.py`` and is injected, which is also
     what lets the caller read back WHICH terms were expanded and publish it. ``None``
     (the default) leaves the emitted MATCH byte-identical to before the hook existed.
+
+    ``variants`` is the index-shape hook (:data:`LiteralVariants`); for a query with no
+    Arabic, Chinese or Japanese in it the article index's variants are the literal alone,
+    so the MATCH is byte-identical there too.
     """
     if not query or not query.strip():
         return None
@@ -237,7 +280,7 @@ def build_match(query: str | None, *, expand: ExpandTerms | None = None) -> str 
     if not tokens:
         return None
     ast = _Parser(tokens).parse()
-    return _render(ast, expand)
+    return _render(ast, expand, variants)
 
 
 # --------------------------------------------------------------------------- #
@@ -246,6 +289,51 @@ def build_match(query: str | None, *, expand: ExpandTerms | None = None) -> str 
 
 # External-content FTS5 table mirroring articles(title, content). External content
 # means FTS5 stores only the index, not a second copy of the text.
+#
+# WHAT THE TRIGGERS INDEX (Q506 🔒 = b, Q507 = a; ``fts_norm``). Not the stored text itself
+# but ``oo_fts_norm(text, mask)``: Arabic folded, Chinese and Japanese runs segmented. An
+# external-content ``'delete'`` must be handed EXACTLY the values that were indexed, so each
+# document indexed differently from its stored text has a row in ``article_fts_norm``: its
+# mask, and, when a segmenter produced the values, the values themselves (a segmenter is a
+# third-party package whose next dictionary, or whose absence, would give different words;
+# the Arabic fold is this code's own and is re-run). No row: indexed raw, which is every
+# document indexed before this existed. The functions are registered on every connection
+# (``fts_norm.register``); a connection without them cannot write ``articles``, which fails
+# loudly rather than corrupting the index.
+
+
+def _indexed(row: str, col: str) -> str:
+    """SQL for the value ``row``'s (``old``/``new``) column is indexed with, read from its
+    ``article_fts_norm`` row: kept when a segmenter made it, re-folded when only the Arabic
+    fold did, the stored text when there is no row. Mirrors ``fts_norm.indexed_values``."""
+    return (
+        f"COALESCE((SELECT CASE WHEN n.mask & {_SEGMENTERS} THEN n.{col} "
+        f"ELSE oo_fts_norm({row}.{col}, n.mask) END "
+        f"FROM article_fts_norm n WHERE n.article_id = {row}.id), {row}.{col})"
+    )
+
+
+# Index ``new`` under this connection's capabilities: record its entry first (the values
+# themselves only when a segmenter made them), then index what the record says, so the
+# segmenter runs once and the index and the record cannot disagree.
+_INDEX_NEW = f"""
+        DELETE FROM article_fts_norm WHERE article_id = new.id;
+        INSERT INTO article_fts_norm(article_id, mask, title, content)
+        SELECT new.id, m,
+               CASE WHEN m & {_SEGMENTERS} THEN oo_fts_norm(new.title, m) END,
+               CASE WHEN m & {_SEGMENTERS} THEN oo_fts_norm(new.content, m) END
+        FROM (SELECT oo_fts_used(new.title, new.content, oo_fts_caps()) AS m) WHERE m != 0;
+        INSERT INTO article_fts(rowid, title, content)
+        VALUES (new.id, {_indexed("new", "title")}, {_indexed("new", "content")});
+"""
+
+# Remove ``old``'s entry with exactly the values it was indexed with, then its record.
+_DELETE_OLD = f"""
+        INSERT INTO article_fts(article_fts, rowid, title, content)
+        VALUES ('delete', old.id, {_indexed("old", "title")}, {_indexed("old", "content")});
+        DELETE FROM article_fts_norm WHERE article_id = old.id;
+"""
+
 _FTS_DDL = [
     """
     CREATE VIRTUAL TABLE IF NOT EXISTS article_fts USING fts5(
@@ -254,18 +342,24 @@ _FTS_DDL = [
         tokenize='unicode61 remove_diacritics 2'
     )
     """,
-    # Keep the index in sync with the base table.
+    # The record of each document indexed differently from its stored text. Its name
+    # starts with ``article_fts`` so every place that skips the FTS shadow tables by that
+    # prefix (backup counts, the merge's table walk) skips it too: its ids are this store's
+    # article ids and mean nothing in another, and every rebuild rewrites it.
     """
-    CREATE TRIGGER IF NOT EXISTS article_fts_ai AFTER INSERT ON articles BEGIN
-        INSERT INTO article_fts(rowid, title, content)
-        VALUES (new.id, new.title, new.content);
-    END
+    CREATE TABLE IF NOT EXISTS article_fts_norm (
+        article_id INTEGER PRIMARY KEY,
+        mask INTEGER NOT NULL,
+        title TEXT,
+        content TEXT
+    )
     """,
-    """
-    CREATE TRIGGER IF NOT EXISTS article_fts_ad AFTER DELETE ON articles BEGIN
-        INSERT INTO article_fts(article_fts, rowid, title, content)
-        VALUES ('delete', old.id, old.title, old.content);
-    END
+    # Keep the index in sync with the base table.
+    f"""
+    CREATE TRIGGER IF NOT EXISTS article_fts_ai AFTER INSERT ON articles BEGIN{_INDEX_NEW}    END
+    """,
+    f"""
+    CREATE TRIGGER IF NOT EXISTS article_fts_ad AFTER DELETE ON articles BEGIN{_DELETE_OLD}    END
     """,
     # COLUMN-SCOPED ON PURPOSE -- `OF title, content` (PERF/F2, 2026-09-21 audit
     # docs/audit/15). An UPDATE that touches neither indexed column cannot change
@@ -283,15 +377,13 @@ _FTS_DDL = [
     # changes. A column can only be written by a statement that names it, so every
     # write to `title`/`content` still re-indexes, and a SET that writes the same
     # value re-indexes too (wasteful, never stale). That is the safe direction.
-    """
-    CREATE TRIGGER IF NOT EXISTS article_fts_au AFTER UPDATE OF title, content ON articles BEGIN
-        INSERT INTO article_fts(article_fts, rowid, title, content)
-        VALUES ('delete', old.id, old.title, old.content);
-        INSERT INTO article_fts(rowid, title, content)
-        VALUES (new.id, new.title, new.content);
-    END
+    f"""
+    CREATE TRIGGER IF NOT EXISTS article_fts_au AFTER UPDATE OF title, content ON articles BEGIN{_DELETE_OLD}{_INDEX_NEW}    END
     """,
 ]
+
+#: The three sync triggers, each of which must call the index transform.
+_FTS_TRIGGERS = ("article_fts_ai", "article_fts_ad", "article_fts_au")
 
 #: Name of the update trigger, so the self-heal below and the DDL above cannot drift apart.
 _FTS_UPDATE_TRIGGER = "article_fts_au"
@@ -329,6 +421,30 @@ def _heal_unscoped_update_trigger(conn) -> bool:
         return False  # already scoped
     conn.execute(text(f"DROP TRIGGER {_FTS_UPDATE_TRIGGER}"))
     return True
+
+
+def _heal_raw_triggers(conn) -> list[str]:
+    """Replace sync triggers that index the stored text RAW with the transforming ones.
+
+    Every store created before Q506/Q507 has ``article_fts_ai/ad/au`` indexing
+    ``new.title``/``new.content`` as stored, and ``CREATE TRIGGER IF NOT EXISTS`` can never
+    replace them. Dropping and re-creating a trigger does not touch the index, and the
+    swap is safe at any moment: a document indexed raw has no ``article_fts_norm`` row, so
+    the new delete side hands FTS5 its raw values -- exactly what was indexed. Only
+    documents written from now on are indexed transformed; the search re-index job
+    converts the rest. O(1): three ``sqlite_master`` reads. Returns the names dropped."""
+    from src.database.fts_norm import FN_NORM
+
+    dropped: list[str] = []
+    for name in _FTS_TRIGGERS:
+        row = conn.execute(
+            text("SELECT sql FROM sqlite_master WHERE type='trigger' AND name=:n"), {"n": name}
+        ).fetchone()
+        sql = (row[0] if row else None) or ""
+        if sql and FN_NORM not in sql:
+            conn.execute(text(f"DROP TRIGGER {name}"))
+            dropped.append(name)
+    return dropped
 
 
 def ensure_fts(engine: Engine, *, rebuild: str = "auto") -> str:
@@ -379,6 +495,12 @@ def ensure_fts(engine: Engine, *, rebuild: str = "auto") -> str:
     if rebuild not in ("auto", "always", "never"):
         raise ValueError(f"rebuild must be one of auto|always|never, got {rebuild!r}")
     with engine.begin() as conn:
+        # The triggers call the index transform, so THIS connection needs it before any
+        # DDL below can run a rebuild through it (``fts_norm.register`` is idempotent;
+        # the pool listener gives every later connection the same functions).
+        from src.database.fts_norm import register as _register_norm
+
+        _register_norm(conn.connection.dbapi_connection)
         # Was the FTS table ALREADY present before this (idempotent) create? A table that
         # already existed is kept in sync by the triggers; a table we create here has never
         # seen the trigger fire for pre-existing rows.
@@ -392,12 +514,143 @@ def ensure_fts(engine: Engine, *, rebuild: str = "auto") -> str:
         # re-makes it scoped in the same transaction (see _heal_unscoped_update_trigger).
         if _heal_unscoped_update_trigger(conn):
             _LOG.info("FTS: replaced the unscoped article_fts_au trigger with the scoped one")
+        healed = _heal_raw_triggers(conn)
+        if healed:
+            _LOG.info("FTS: the sync triggers now index Arabic folded and CJK segmented (%s)", ", ".join(healed))
         for ddl in _FTS_DDL:
             conn.execute(text(ddl))
         action = _decide_fts_rebuild(conn, rebuild, existed)
         if action == "rebuilt":
-            conn.execute(text("INSERT INTO article_fts(article_fts) VALUES ('rebuild')"))
+            rebuild_index(conn)
     return action
+
+
+#: Articles read per step of a full rebuild (one read of each article's text).
+_REBUILD_BATCH = 500
+
+#: The statement every full rebuild starts with. FTS5's own ``'rebuild'`` is never run
+#: any more, so this is what a probe looks for to tell whether a rebuild happened.
+REBUILD_MARK = "INSERT INTO article_fts(article_fts) VALUES ('delete-all')"
+
+
+def _dbapi(con):
+    """The DB-API connection under ``con`` (a SQLAlchemy ``Connection`` or one already)."""
+    inner = getattr(con, "connection", None)
+    return getattr(inner, "dbapi_connection", None) or con
+
+
+def _store_caps(con) -> int:
+    """The transforms THIS store's index may be written under: today's capabilities when
+    its delete trigger reproduces them, else 0 (index raw).
+
+    Writing the index transformed under a delete trigger that hands FTS5 the RAW text
+    would corrupt it on the first delete. That cannot happen in the app, where
+    ``ensure_fts`` heals the triggers at every unlock, but a store opened by other means
+    (an old working copy, a fixture) must be indexed the way ITS triggers will delete."""
+    from src.database.fts_norm import FN_NORM, available_mask
+
+    row = _run(
+        con, "SELECT sql FROM sqlite_master WHERE type='trigger' AND name='article_fts_ad'"
+    ).fetchone()
+    sql = row[0] if row else None
+    return available_mask() if isinstance(sql, str) and FN_NORM in sql else 0
+
+
+def _run(con, sql: str, params=()):
+    """Execute on a SQLAlchemy ``Connection`` through ``exec_driver_sql`` (so its events,
+    and the probes built on them, see the statement) or on a DB-API connection directly.
+    A list of tuples is an executemany on both."""
+    if hasattr(con, "exec_driver_sql"):
+        return con.exec_driver_sql(sql, params)
+    if isinstance(params, list):
+        return con.executemany(sql, params)
+    return con.execute(sql, params)
+
+
+def rebuild_index(con) -> int:
+    """Rebuild the whole article index THROUGH the transform; return the documents indexed.
+
+    Replaces FTS5's own ``'rebuild'``, which re-reads ``articles`` and indexes the stored
+    text raw: after Q506/Q507 that would leave every Arabic, Chinese and Japanese document
+    indexed differently from what the triggers' delete side reproduces, and the next delete
+    of one would corrupt the index. Here each document is indexed under this process's
+    capabilities and its mask recorded, in ONE read of each article's text.
+
+    ``con`` is a SQLAlchemy ``Connection`` or a DB-API connection (the merge's raw one):
+    the caller owns the transaction, as it did for ``'rebuild'``."""
+    from src.database.fts_norm import register
+
+    register(_dbapi(con))
+    caps = _store_caps(con)
+    _run(con, REBUILD_MARK)
+    if caps:
+        _run(con, "DELETE FROM article_fts_norm")
+    # The first page has no lower bound: a rowid may be 0 or negative, and a keyset that
+    # started from "> 0" would silently leave those out of the rebuilt index.
+    last: int | None = None
+    n = 0
+    while True:
+        if last is None:
+            rows = _run(
+                con, "SELECT id, title, content FROM articles ORDER BY id LIMIT ?", (_REBUILD_BATCH,)
+            ).fetchall()
+        else:
+            rows = _run(
+                con,
+                "SELECT id, title, content FROM articles WHERE id > ? ORDER BY id LIMIT ?",
+                (last, _REBUILD_BATCH),
+            ).fetchall()
+        if not rows:
+            return n
+        _index_rows(con, rows, caps)
+        n += len(rows)
+        last = int(rows[-1][0])
+
+
+def _index_rows(con, rows, caps: int) -> None:
+    """Index ``(id, title, content)`` rows that are NOT in the index yet, through the
+    transform, recording each one it changed exactly as the insert trigger does. The one
+    place outside the triggers and the search re-index that writes this index."""
+    from src.database.fts_norm import SEGMENTERS, index_entry
+
+    if not rows:
+        return
+    if not caps:  # a store whose triggers index raw: so does this
+        _run(con, "INSERT INTO article_fts(rowid, title, content) VALUES (?, ?, ?)", [tuple(r) for r in rows])
+        return
+    entries = [(r[0], *index_entry(r[1], r[2], caps)) for r in rows]
+    _run(
+        con,
+        "INSERT INTO article_fts(rowid, title, content) VALUES (?, ?, ?)",
+        [(aid, t, c) for aid, _m, t, c in entries],
+    )
+    records = [
+        (aid, m, t, c) if m & SEGMENTERS else (aid, m, None, None) for aid, m, t, c in entries if m
+    ]
+    if records:
+        _run(
+            con,
+            "INSERT OR REPLACE INTO article_fts_norm(article_id, mask, title, content) VALUES (?, ?, ?, ?)",
+            records,
+        )
+
+
+def index_articles(con, ids: Sequence[int]) -> int:
+    """Index the given articles, which must not be in the index yet (the merge's bulk
+    path, run with the insert trigger suspended). Returns how many were indexed."""
+    from src.database.fts_norm import register
+
+    if not ids:
+        return 0
+    register(_dbapi(con))
+    rows = _run(
+        con,
+        "SELECT id, title, content FROM articles WHERE id IN"  # noqa: S608  # nosec B608 - the only interpolation is a placeholder count derived from len(ids); every id is a bound parameter
+        f" ({','.join('?' * len(ids))})",
+        tuple(ids),
+    ).fetchall()
+    _index_rows(con, rows, _store_caps(con))
+    return len(rows)
 
 
 def _decide_fts_rebuild(conn, rebuild: str, existed_before: bool) -> str:
@@ -667,7 +920,9 @@ def search_ids(
     ``expand`` is the cross-language hook (see :func:`build_match`); ``None`` leaves the
     emitted MATCH and therefore the returned ids byte-identical to before it existed.
     """
-    match = build_match(query, expand=expand)
+    from src.database.fts_norm import query_variants
+
+    match = build_match(query, expand=expand, variants=query_variants)
     if match is None:
         return None
     wt, wb = weights if weights is not None else _bm25_weights()
@@ -724,8 +979,11 @@ def search_total(
     ids and ``search_total`` answered **3**, i.e. the omnibar's "exact total" described
     the literal query while its rows described the concept. Q515 = b (exact, uncapped)
     is a ruling about THIS function, so the fix belongs here rather than at each caller.
+    The index-shape variants are passed for the same reason: rows and count, one set.
     """
-    match = build_match(query, expand=expand)
+    from src.database.fts_norm import query_variants
+
+    match = build_match(query, expand=expand, variants=query_variants)
     if match is None:
         return None
     gate = _QUARANTINE_GATE if exclude_quarantined else ""

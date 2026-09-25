@@ -80,9 +80,13 @@ jobs:
       - name: Install (core + analysis + dev + segmentation + pdf + ocr)
         run: |
           python -m pip install --upgrade pip
-          # [segmentation] adds the offline zh/ja/th word segmenters (jieba/janome/
-          # pythainlp) so the segmentation tests + the zh/ja/th self-test cases run
-          # for real here. [pdf] adds pypdf so the PDF-extraction + PDF-import tests
+          # [segmentation] adds the offline ja/th word segmenters (janome/pythainlp)
+          # and sudachipy + its dictionary for the Japanese search index, so the
+          # segmentation tests + the ja/th self-test cases run for real here. jieba (zh)
+          # is a CORE dependency since 2026-09-25 (Q506 = b, Q1015 = a), so every lane
+          # has it; the zh-absent degrade is proven by tests that switch the segmenter
+          # off (tests/test_segmentation.py, tests/test_fts_cjk_arabic.py) rather than
+          # by an environment, the same shape as pypdf below. [pdf] adds pypdf so the PDF-extraction + PDF-import tests
           # run for real. [ocr] adds pytesseract/pypdfium2/Pillow so the OCR fallback
           # runs for real against the tesseract binary installed above. The Core-only
           # job below (no [segmentation]/[ocr]) proves the graceful-degrade path

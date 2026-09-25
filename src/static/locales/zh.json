@@ -4646,5 +4646,18 @@
   "Mentions moved: {moved}": "已移动的提及：{moved}",
   "paused for an import": "因导入而暂停",
   "Continue folding keyword forms? It resumes where it stopped. Keywords already checked: {done} of {total}.": "继续合并关键词词形？将从停止处继续。已检查的关键词：{done} / {total}。",
-  "Fold keyword forms now? Older keywords are filed under the base form new articles already use, so “studies” and “study” become one keyword. Phrases, names and keywords your families or groups use are left as they are. It runs in the background and can be paused from the task manager. A fold cannot be undone.": "现在合并关键词词形？旧关键词将归入新文章已在使用的基本形式，使“studies”和“study”成为同一个关键词。短语、名称以及您的词族或分组所使用的关键词保持不变。该过程在后台运行，可在任务管理器中暂停。合并无法撤销。"
+  "Fold keyword forms now? Older keywords are filed under the base form new articles already use, so “studies” and “study” become one keyword. Phrases, names and keywords your families or groups use are left as they are. It runs in the background and can be paused from the task manager. A fold cannot be undone.": "现在合并关键词词形？旧关键词将归入新文章已在使用的基本形式，使“studies”和“study”成为同一个关键词。短语、名称以及您的词族或分组所使用的关键词保持不变。该过程在后台运行，可在任务管理器中暂停。合并无法撤销。",
+  "Re-index search (Arabic, Chinese, Japanese)": "重建搜索索引（阿拉伯语、中文、日语）",
+  "Index older articles the way new ones are indexed: Arabic spelling variants folded together, Chinese and Japanese split into words. Pausable from the task manager.": "按新文章的方式为旧文章建立索引：合并阿拉伯语的拼写变体，将中文和日语切分成词。可在任务管理器中暂停。",
+  "Search re-index report (.json)": "搜索重建索引报告（.json）",
+  "The report of the last completed search re-index: articles checked and re-indexed, by script.": "最近一次完成的搜索重建索引的报告：按文字系统列出已检查和已重建索引的文章。",
+  "New articles are indexed so that a search finds an Arabic word however its alef, teh marbuta or yeh is written and with or without vowel marks, and finds a Chinese or Japanese word inside a longer run of text. Articles indexed before this version keep their old entry until this job re-indexes them; until then a search still finds them the way it always did. Only articles whose entry would change are touched. Japanese is split into words only when the optional segmentation package is installed.": "新文章的索引方式使搜索能够找到阿拉伯语单词，无论其 alif、ta marbuta 或 ya 如何书写，也无论是否带元音符号；并能在较长的文本中找到中文或日语词语。此版本之前建立索引的文章会保留旧的条目，直到此任务为其重建索引；在此之前，搜索仍会像以往一样找到它们。只有条目会发生变化的文章才会被处理。只有安装了可选的分词软件包时，日语才会被切分成词。",
+  "This store's search index has not been upgraded yet. Restart the app once, then run this again.": "此存储的搜索索引尚未升级。请重启应用一次，然后再次运行此操作。",
+  "The search re-index stopped on an error; the log has the details. Running it again continues from where it stopped.": "搜索重建索引因错误而停止；详情见日志。再次运行会从停止处继续。",
+  "Articles checked: {checked} · re-indexed: {reindexed} (Arabic: {arabic} · Chinese: {chinese} · Japanese: {japanese})": "已检查文章：{checked} · 已重建索引：{reindexed}（阿拉伯语：{arabic} · 中文：{chinese} · 日语：{japanese}）",
+  "Indexed without word splitting, their segmenter is no longer installed: {n}": "因其分词器已不再安装而未分词建立索引的文章：{n}",
+  "Articles checked: {done} of {total} ({percent}%)": "已检查文章：{done} / {total}（{percent}%）",
+  "Re-indexed: {n}": "已重建索引：{n}",
+  "Continue the search re-index? It resumes where it stopped ({percent}% done).": "继续搜索重建索引？将从停止处继续（已完成 {percent}%）。",
+  "Re-index search for Arabic, Chinese and Japanese now? Articles whose search entry would change are indexed again; nothing else is touched. It runs in the background and can be paused from the task manager.": "现在为阿拉伯语、中文和日语重建搜索索引？只有搜索条目会发生变化的文章才会重建索引；其他内容一概不动。该任务在后台运行，可在任务管理器中暂停。"
 }

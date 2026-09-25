@@ -143,7 +143,17 @@ def _current_stamp(engine) -> str | None:
 # set (not a prefix) so a future ORM table happening to start with "article_fts" could
 # never be silently swallowed as benign (skeptic hardening).
 _FTS_SHADOW_TABLES = frozenset(
-    {"article_fts", "article_fts_data", "article_fts_idx", "article_fts_docsize", "article_fts_config"}
+    {
+        "article_fts",
+        "article_fts_data",
+        "article_fts_idx",
+        "article_fts_docsize",
+        "article_fts_config",
+        # Not an FTS5 shadow table but ensure_fts's own: the mask each document was indexed
+        # under (Q506/Q507, src/database/fts_norm.py). Created beside the index, never by
+        # the ORM, so it is benign in exactly the same way.
+        "article_fts_norm",
+    }
 )
 
 # SAFE-ADVANCE FLOOR (skeptic finding): compare_metadata verifies SCHEMA parity but is blind

@@ -45,6 +45,9 @@ from sqlalchemy.orm import sessionmaker
 # Data directory resolution is centralised in src.paths so a source checkout, an
 # editable install under $HOME, and a wheel install into a read-only location all
 # behave correctly (see that module's docstring). OO_DATA_DIR still wins.
+# Before any engine exists: every pool's new connections get the search index's transform
+# functions, which its sync triggers call (Q506/Q507, src/database/fts_norm.py).
+from src.database import fts_norm as _fts_norm  # noqa: F401
 from src.database.writer import _SESSION_FLAG as _WRITE_GATE_SESSION_FLAG
 from src.paths import data_dir, default_sqlite_url
 

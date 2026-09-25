@@ -196,7 +196,7 @@ def test_the_heal_never_rebuilds_the_index():
     action = ensure_fts(eng)
 
     assert action == "skipped", f"the heal must not provoke a rebuild, got {action!r}"
-    assert not any("'rebuild'" in s for s in spy.stmts)
+    assert not any("'rebuild'" in s or "'delete-all'" in s for s in spy.stmts)
     # No corpus scan either: the probe reads one sqlite_master row.
     assert not any("count(*) from articles" in s.lower() for s in spy.stmts)
 
