@@ -3725,6 +3725,20 @@
     input the test CREATES (safe) or an expectation compared against something clock-derived
     (rots). Two of three hits here were the safe kind, which is why the grep alone is not the
     answer — the question is which side of the assertion the literal sits on.
+  - **AN INPUT AT A FIXED DATE IS NOT THE SAFE KIND WHEN THE CODE WINDOWS IT AGAINST THE REAL
+    CLOCK — the rule above, a third time (2026-09-25, `test_wiki_counters.py`, red on every
+    run from 00:00 UTC):** `test_the_soak_window_reads_a_lane_that_HAS_run` wrote two rows,
+    one at the file's fixed `NOW` (2026-09-18) and one a day earlier, then called
+    `_wiki_lane`, which reads `lane_counters` without `now=`, so its 7-day window ends at the
+    real clock. The detector above would have classed those rows as the safe kind, an input
+    the test creates. They were not: the code compared them against today, so the day-1 row
+    left the window at 2026-09-25 00:00 UTC, and the next day's run would have read none.
+    Found on a PR that did not touch the file, then reproduced on `main`'s own tree. **The
+    question is not only which side of the assertion a date sits on, but whether any clock
+    between them is real:** a fixed-date fixture needs a frozen clock (here `_utcnow` patched
+    to `NOW`) on every path that windows it, and a function whose `now` defaults to the real
+    clock is such a path. Checked at four simulated real dates: the old test passes at
+    2026-09-24 23:59 and fails at every later one; the fixed test passes at all four.
   - **A "MUST BE PRESENT" SOURCE GUARD IS SATISFIED BY THE COMMENT THAT EXPLAINS THE THING
     IT GUARDS — the recorded trap's mirror, and the worse half (2026-08-12, the import
     queue's `queued=True`):** the ledger records twice that a "must be GONE" guard trips on

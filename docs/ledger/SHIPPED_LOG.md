@@ -9510,7 +9510,7 @@ The seven that test the review fixes (the pass-end repayment, the batched read, 
 auto-log-off case, the topical-type case and the narrowed re-raise) also fail against this
 PR's own first commit; two more pin the lock split. Lessons: `LESSONS.md`, the five entries dated by this PR.
 
-## 2026-09-24 — the soak-cancel test cancels from inside the soak (follow-up to PR #1172)
+## 2026-09-24 — two tests that depended on when they ran: the soak-cancel race and a wiki-counters date bomb (PR #1175)
 
 `tests/test_release_run.py::test_a_cancel_during_the_soak_still_collects_and_reports` failed
 once on `main`'s core-only lane at `39a28be6` with `KeyError: 'ended_by'`. Its 0.15 s cancel
@@ -9522,5 +9522,16 @@ each phase. A 30 s timer stays only as a backstop against a hang, and an asserti
 cancel came from inside the soak fails the test if the backstop fired: with the progress line
 mutated, it failed in 30 s with that message. The sibling collect-now test keeps its timer,
 because the run clears `_COLLECT_NOW` when it starts and the soak honours a request made
-before it begins. Test-only; no product code changed. Lesson: `LESSONS.md`, the corollary
-under "A TEST THAT SAMPLES A TRANSIENT STATE IS A RACE".
+before it begins.
+
+**The second test, found when this PR's own CI went red (2026-09-25):**
+`tests/test_wiki_counters.py::test_the_soak_window_reads_a_lane_that_HAS_run` failed with
+`assert 1 == 2`, on a PR that did not touch it and then on `main`'s own tree. It was a date
+time bomb, not a flake. The test wrote rows at the file's fixed `NOW` (2026-09-18) and a day
+earlier, and `_wiki_lane` reads `lane_counters` without `now=`, so the 7-day window ended at
+the real clock. The day-1 row left that window at 2026-09-25 00:00 UTC, and a day later
+neither row would have counted. The test now freezes `src.wiki.counters._utcnow` at `NOW`. At
+four simulated real dates, the old test passes at 2026-09-24 23:59 and fails at every later
+one; the fixed test passes at all four. Test-only; no product code changed in either fix.
+Lessons: `LESSONS.md`, the corollary under "A TEST THAT SAMPLES A TRANSIENT STATE IS A RACE",
+and the bullet "AN INPUT AT A FIXED DATE IS NOT THE SAFE KIND…" under the real-`now` rule.
