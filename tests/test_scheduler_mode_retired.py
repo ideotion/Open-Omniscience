@@ -348,7 +348,10 @@ def test_one_broken_opt_in_costs_neither_the_other_nor_the_feeds(monkeypatch):
     s = SchedulerSettings(auto_run_market_rules=True, auto_refresh_stat_subscriptions=True)
     out = _lane_step_markets(sess, None, s)
     assert out["feed_points"] == 2
-    assert "rule host down" in out["rules_error"]
+    # The class name only: the tally reaches /api/scheduler/activity, so the message
+    # (which can carry a path or a stack detail) stays in the log (CodeQL py/stack-trace).
+    assert out["rules_error"] == "RuntimeError"
+    assert "rule host down" not in out["rules_error"]
     assert out["stat_vintages"] == 3
     assert sess.rolled_back == 1
 

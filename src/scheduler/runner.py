@@ -1225,7 +1225,9 @@ def _lane_step_markets(session, fetcher, settings: SchedulerSettings) -> dict:
         except Exception as exc:  # noqa: BLE001 - the feeds above already counted
             _LOG.warning("markets lane: price rules failed", exc_info=True)
             session.rollback()
-            out["rules_error"] = str(exc)[:200] or exc.__class__.__name__
+            # The class name only: the message can carry a path or a stack detail, and
+            # this tally reaches /api/scheduler/activity. The full error is in the log.
+            out["rules_error"] = exc.__class__.__name__
     if getattr(settings, "auto_refresh_stat_subscriptions", False):
         try:
             from src.stats.subscriptions import refresh_due
@@ -1234,7 +1236,9 @@ def _lane_step_markets(session, fetcher, settings: SchedulerSettings) -> dict:
         except Exception as exc:  # noqa: BLE001 - never fatal to the lane
             _LOG.warning("markets lane: stat-subscription refresh failed", exc_info=True)
             session.rollback()
-            out["stats_error"] = str(exc)[:200] or exc.__class__.__name__
+            # The class name only: the message can carry a path or a stack detail, and
+            # this tally reaches /api/scheduler/activity. The full error is in the log.
+            out["stats_error"] = exc.__class__.__name__
     return out
 
 
