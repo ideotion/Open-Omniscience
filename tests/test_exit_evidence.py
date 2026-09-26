@@ -786,6 +786,7 @@ def test_memory_running_short_records_what_every_thread_was_doing(hwm, monkeypat
     assert (doc["pid"], doc["started_at"]) == (marks["pid"], marks["started_at"])
     [snap] = doc["snapshots"]
     assert snap["avail_mb"] == 586.4 and snap["line_mb"] == round(3924.7 * 0.15, 1)
+    assert snap["why"] == "memory short"
     assert snap["rss_mb"] == 2699.0 and "heap_in_use_mb" not in snap["memory"]
     assert any(e["name"] == "oo-fake-worker" for e in snap["threads"])
     # the next boot reads it as the previous session's, and starts clean
@@ -795,7 +796,10 @@ def test_memory_running_short_records_what_every_thread_was_doing(hwm, monkeypat
     assert not (dd / "session_pressure.json").exists()
     txt = forensics.render_text({"previous_session": {"previous_session_peaks": dict(
         prev, available=True)}})
-    assert "when memory ran short (1 snapshot(s) of every thread, taken below 588.7 MB" in txt
+    assert (
+        "what every thread was doing, 1 snapshot(s) (1 when memory ran short below 588.7 MB "
+        "available)" in txt
+    )
     assert "oo-fake-worker" not in txt, "a thread parked in a wait is counted, not listed"
     assert "more thread(s) waiting or not listed" in txt
 
@@ -846,7 +850,51 @@ def test_the_newest_snapshots_are_kept_and_all_are_counted(hwm, monkeypatch, dd)
     txt = forensics.render_text({"previous_session": {"previous_session_peaks": {
         "available": True, "rss_max_mb": 3000.0, "pressure": doc["snapshots"],
         "pressure_taken": doc["taken"]}}})
-    assert f"{keep} snapshot(s) of every thread; {keep + 3} taken, the newest {keep} kept" in txt
+    assert f"{keep} snapshot(s) of {keep + 3} taken, the newest kept" in txt
+
+
+def test_a_burst_of_python_allocation_is_snapshotted_with_memory_to_spare(hwm, monkeypatch, dd):
+    """MUTATION TARGET. One instance built and freed 3-7 M blocks every 40 s for hours
+    with available memory flat, so the memory line never fired. A burst between two
+    liveness readings is the second trigger; the collector's own readings never move
+    its baseline, and a recurring burst is snapshotted once per interval."""
+    blocks = [5_000_000]
+    monkeypatch.setattr(sys, "getallocatedblocks", lambda: blocks[0])
+    monkeypatch.setattr(session_hwm, "_readings",
+                        lambda: {"avail_mb": 3000.0, "total_mb": 4000.0, "rss_mb": 900.0})
+    monkeypatch.setattr(session_hwm, "thread_snapshot", lambda: [])
+    session_hwm.capture_previous()
+    session_hwm.observe(may_snapshot_threads=True)  # the baseline
+    blocks[0] += 3_000_000
+    session_hwm.observe("collecting")  # the monitor reads memory, never the baseline
+    assert not (dd / "session_pressure.json").exists()
+    session_hwm.observe(may_snapshot_threads=True)
+    [snap] = json.loads((dd / "session_pressure.json").read_text(encoding="utf-8"))["snapshots"]
+    assert snap["why"] == "allocation burst" and snap["blocks_gained"] == 3_000_000
+    assert snap["avail_mb"] == 3000.0
+    blocks[0] += 3_000_000
+    session_hwm.observe(may_snapshot_threads=True)
+    assert len(session_hwm.current()["pressure"]) == 1, "the same burst, recurring: once"
+    session_hwm._LAST_BURST = 0.0
+    blocks[0] += session_hwm._BURST_BLOCKS - 1
+    session_hwm.observe(may_snapshot_threads=True)
+    assert len(session_hwm.current()["pressure"]) == 1, "below the burst size"
+    txt = forensics.render_text({"previous_session": {"previous_session_peaks": {
+        "available": True, "pressure": [snap], "pressure_taken": 1}}})
+    assert "1 at a burst of Python allocation" in txt
+    assert "allocation burst (+3,000,000 Python blocks in " in txt
+
+
+def test_a_burst_while_memory_is_short_is_one_snapshot_with_both(hwm, monkeypatch, dd):
+    blocks = [5_000_000]
+    monkeypatch.setattr(sys, "getallocatedblocks", lambda: blocks[0])
+    monkeypatch.setattr(session_hwm, "_readings", lambda: dict(_SHORT))
+    monkeypatch.setattr(session_hwm, "thread_snapshot", lambda: [])
+    session_hwm.capture_previous()
+    session_hwm._LAST_BLOCKS = (time.monotonic() - 5.0, 3_000_000)
+    session_hwm.observe(may_snapshot_threads=True)
+    [snap] = session_hwm.current()["pressure"]
+    assert snap["why"] == "memory short" and snap["blocks_gained"] == 2_000_000
 
 
 def test_a_pressure_file_from_another_session_is_never_this_ones(hwm, dd):
@@ -877,8 +925,8 @@ def test_the_busiest_thread_is_the_one_that_worked_between_snapshots():
     assert "oo-burst" in second[1] and "+15.0 s in the 20 s before" in second[1]
     assert "oo-old-busy" in second[2] and "+1.0 s in the 20 s before" in second[2]
     assert forensics._render_pressure([], 3) == [
-        "  - when memory ran short: 3 snapshot(s) of every thread were taken, but their "
-        "file (session_pressure.json) was not found"
+        "  - what every thread was doing: 3 snapshot(s) were taken, but their file "
+        "(session_pressure.json) was not found"
     ]
 
 

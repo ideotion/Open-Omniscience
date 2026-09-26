@@ -9955,7 +9955,10 @@ app started the same way at every login, so records are matched on pid and machi
 in 45 s, and nothing recorded which code ran it. Below 15% of RAM available (at most 1 GB), the
 liveness thread now snapshots every thread (name, app frames, CPU for the working ones) at the
 crossing and at each new low an eighth of the line further down, keeping the newest eight in
-`session_pressure.json`, written through at once. The report lists the working threads by the CPU
+`session_pressure.json`, written through at once. The other instance built and freed 3-7 M blocks
+every 40 s for hours while available memory stayed flat (the memory was being reused), so no line
+would ever have fired there: a gain of a million blocks between two 5 s readings is the second
+trigger, snapshotted at most every five minutes. The report lists the working threads by the CPU
 they used since the previous snapshot. MEASURED: with one thread holding the GIL, psutil's scan of
 ~40 threads took 0.5-0.7 s, because every `/proc` read releases the GIL and waits a switch interval
 to get it back; reading only the working threads and keeping the snapshot off the memory guard's

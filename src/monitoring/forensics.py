@@ -1039,29 +1039,46 @@ def _render_pressure(snaps: Any, taken: Any = None) -> list[str]:
     if not snaps:
         if isinstance(taken, int) and taken > 0:
             return [
-                f"  - when memory ran short: {taken} snapshot(s) of every thread were "
-                "taken, but their file (session_pressure.json) was not found"
+                f"  - what every thread was doing: {taken} snapshot(s) were taken, but "
+                "their file (session_pressure.json) was not found"
             ]
         return []
-    count = f"{len(snaps)} snapshot(s) of every thread"
+    why: dict[str, int] = {}
+    for snap in snaps:
+        label = str(snap.get("why") or "memory short")
+        why[label] = why.get(label, 0) + 1
+    reasons = []
+    if why.get("memory short"):
+        line = next((x.get("line_mb") for x in snaps if x.get("line_mb") is not None), None)
+        below = f" below {line} MB available" if line is not None else ""
+        reasons.append(f"{why.pop('memory short')} when memory ran short{below}")
+    if why.get("allocation burst"):
+        reasons.append(f"{why.pop('allocation burst')} at a burst of Python allocation")
+    reasons += [f"{n} {label}" for label, n in why.items()]
+    count = f"{len(snaps)} snapshot(s)"
     if isinstance(taken, int) and taken > len(snaps):
-        count += f"; {taken} taken, the newest {len(snaps)} kept"
+        count += f" of {taken} taken, the newest kept"
     out = [
-        f"  - when memory ran short ({count}, taken below {snaps[0].get('line_mb')} MB "
-        "available; every thread is in session-forensics.json):"
+        f"  - what every thread was doing, {count} ({'; '.join(reasons)}); every thread "
+        "is in session-forensics.json:"
     ]
     before: dict[Any, float] = {}
     before_at: float | None = None
     for snap in snaps:
         mem = snap.get("memory") or {}
-        bits = [f"{snap.get('avail_mb')} MB available"]
+        bits = []
+        if snap.get("avail_mb") is not None:
+            bits.append(f"{snap['avail_mb']} MB available")
         if snap.get("rss_mb") is not None:
             bits.append(f"RSS {snap['rss_mb']} MB")
         if mem.get("swapped_out_mb") is not None:
             bits.append(f"swapped out {mem['swapped_out_mb']} MB")
         if mem.get("py_alloc_blocks") is not None:
             bits.append(f"{mem['py_alloc_blocks']:,} Python blocks")
-        out.append(f"    - {snap.get('at')}: {', '.join(bits)}")
+        head = f"{snap.get('at')}, {snap.get('why') or 'memory short'}"
+        if isinstance(snap.get("blocks_gained"), int):
+            head += f" (+{snap['blocks_gained']:,} Python blocks in {snap.get('over_s')} s)"
+        out.append(f"    - {head}: {', '.join(bits) or 'no reading'}")
         now_at = _snap_seconds(snap.get("at"))
         span = (
             round(now_at - before_at)

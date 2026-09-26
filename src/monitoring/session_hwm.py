@@ -21,8 +21,9 @@ after that one: WHO. The fatal stretch on one of them was a burst -- +15 M Pytho
 blocks and +930 MB in 45 s, on top of a slow climb -- and nothing recorded which code
 was running. So once available memory falls below a line, a second sidecar
 (``session_pressure.json``) keeps what EVERY THREAD was doing, by name, with its CPU
-time: at the crossing and at each new low below it, written through at once, the
-newest few kept. At boot both files are read as the PREVIOUS session's record and
+time: at the crossing and at each new low below it, and at a burst of Python
+allocation (another instance built and freed millions of objects every 40 s with
+memory flat), written through at once, the newest few kept. At boot both files are read as the PREVIOUS session's record and
 then reset — so the previous session's own peaks travel into the next boot's report,
 and nothing the current session does can overwrite them.
 
@@ -82,6 +83,14 @@ _PRESSURE_REARM_SHARE = 1.25
 _PRESSURE_MIN_INTERVAL_S = 4.0
 # The NEWEST are kept: the last ones before a death are the ones that name its cause.
 _PRESSURE_KEEP = 8
+# A BURST of Python allocation is the other trigger: at least this many blocks gained
+# between two of the liveness thread's readings (5 s apart). One field instance built
+# and freed 3-7 M blocks every 40 s for hours, with available memory flat because the
+# memory was being reused -- the line above never fired, and that churn is exactly
+# what the snapshot exists to name. Normal collection moves by tens of thousands.
+_BURST_BLOCKS = 1_000_000
+# A burst that recurs every 40 s is one burst: at most one snapshot of it this often.
+_BURST_MIN_INTERVAL_S = 300.0
 # A thread whose innermost frame is in one of these is waiting, not working: a lock, a
 # queue, a socket, the event loop's select.
 _WAITING_IN = ("threading.py", "queue.py", "selectors.py", "socket.py", "ssl.py")
@@ -100,6 +109,8 @@ _LAST_PRESSURE = 0.0
 _PRESSURE: list[dict[str, Any]] = []
 _PRESSURE_TAKEN = 0
 _EPISODE_LOW: float | None = None  # lowest available at a snapshot; None = no episode
+_LAST_BLOCKS: tuple[float, int] | None = None  # (monotonic, blocks) at the last liveness read
+_LAST_BURST = 0.0
 _PREV: dict[str, Any] | None = None
 _PREV_LOADED = False
 
@@ -421,18 +432,34 @@ def _pressure_due(readings: dict[str, float], now: float) -> bool:
         return True
 
 
-def _pressure_snapshot(readings: dict[str, float]) -> dict[str, Any]:
-    """What every thread was doing, with the memory readings it was taken at."""
-    total = readings["total_mb"]
-    snap: dict[str, Any] = {
-        "at": _now(),
-        "avail_mb": readings["avail_mb"],
-        "total_mb": total,
-        "line_mb": round(_pressure_line_mb(total), 1),
-    }
-    for key in ("rss_mb", "swap_used_mb"):
+def _burst_due(now: float) -> dict[str, Any] | None:
+    """``{"blocks_gained": n, "over_s": t}`` when the Python heap grew by a burst since
+    the previous call, CLAIMED under the lock; else None. Called by the liveness thread
+    alone, so "since the previous call" is its own 5 s cadence."""
+    global _LAST_BLOCKS, _LAST_BURST
+    counter = getattr(sys, "getallocatedblocks", None)  # CPython only
+    if counter is None:
+        return None
+    blocks = counter()
+    with _LOCK:
+        before, _LAST_BLOCKS = _LAST_BLOCKS, (now, blocks)
+        if before is None or blocks - before[1] < _BURST_BLOCKS:
+            return None
+        if (now - _LAST_BURST) < _BURST_MIN_INTERVAL_S:
+            return None
+        _LAST_BURST = now
+    return {"blocks_gained": blocks - before[1], "over_s": round(now - before[0], 1)}
+
+
+def _pressure_snapshot(readings: dict[str, float], why: str) -> dict[str, Any]:
+    """What every thread was doing, with the memory readings it was taken at and WHY it
+    was taken: ``memory short`` (below the line) or ``allocation burst``."""
+    snap: dict[str, Any] = {"at": _now(), "why": why}
+    for key in ("avail_mb", "total_mb", "rss_mb", "swap_used_mb"):
         if readings.get(key) is not None:
             snap[key] = readings[key]
+    if readings.get("total_mb"):
+        snap["line_mb"] = round(_pressure_line_mb(readings["total_mb"]), 1)
     # The kernel's counters only: the heap walk is exactly what a short machine must
     # not do (see _HEAP_WALK_MIN_AVAIL_SHARE).
     snap["memory"] = composition(walk_heap=False)
@@ -440,20 +467,26 @@ def _pressure_snapshot(readings: dict[str, float]) -> dict[str, Any]:
     return snap
 
 
+def _reset_snapshots() -> None:
+    """This session's snapshot state, emptied. Caller holds ``_LOCK``."""
+    global _PRESSURE, _PRESSURE_TAKEN, _EPISODE_LOW, _LAST_PRESSURE, _LAST_BLOCKS, _LAST_BURST
+    _PRESSURE, _PRESSURE_TAKEN, _EPISODE_LOW, _LAST_PRESSURE = [], 0, None, 0.0
+    _LAST_BLOCKS, _LAST_BURST = None, 0.0
+
+
 def capture_previous() -> dict[str, Any] | None:
     """Read the PREVIOUS session's marks and start this session's record.
 
     Call once at boot, before anything can observe. Returns the previous marks (or
     None when there are none — a first boot, or a removed file)."""
-    global _PREV, _PREV_LOADED, _MARKS, _LAST_WRITE, _PRESSURE, _PRESSURE_TAKEN
-    global _EPISODE_LOW, _LAST_PRESSURE
+    global _PREV, _PREV_LOADED, _MARKS, _LAST_WRITE
     with _LOCK:
         if not _PREV_LOADED:
             _PREV = _read_record()
             _PREV_LOADED = True
         _MARKS = {"pid": os.getpid(), "started_at": _now()}
         _LAST_WRITE = 0.0
-        _PRESSURE, _PRESSURE_TAKEN, _EPISODE_LOW, _LAST_PRESSURE = [], 0, None, 0.0
+        _reset_snapshots()
         _write(dict(_MARKS))
         try:
             _pressure_path().unlink(missing_ok=True)
@@ -485,8 +518,16 @@ def observe(phase: str | None = None, *, may_snapshot_threads: bool = False) -> 
         readings = _readings()
         now = time.monotonic()
         pressure = None
-        if may_snapshot_threads and _pressure_due(readings, now):
-            pressure = _pressure_snapshot(readings)
+        if may_snapshot_threads:
+            # The burst reading is taken on every call, so its baseline is always the
+            # previous 5 s reading, even when this call is a memory-short snapshot.
+            burst = _burst_due(now)
+            if _pressure_due(readings, now):
+                pressure = _pressure_snapshot(readings, "memory short")
+            elif burst is not None:
+                pressure = _pressure_snapshot(readings, "allocation burst")
+            if pressure is not None and burst is not None:
+                pressure.update(burst)
         # At a new RSS peak, what the memory is made of (2026-09-26). Read OUTSIDE the
         # lock -- the heap walk is the slow part -- and at most once per interval.
         at_peak = None
@@ -575,15 +616,11 @@ def current() -> dict[str, Any]:
 
 def reset_for_tests() -> None:
     """Clear the module state. Test-only; the suite shares one process."""
-    global _PREV, _PREV_LOADED, _MARKS, _LAST_WRITE, _LAST_COMPOSITION, _LAST_PRESSURE
-    global _PRESSURE, _PRESSURE_TAKEN, _EPISODE_LOW
+    global _PREV, _PREV_LOADED, _MARKS, _LAST_WRITE, _LAST_COMPOSITION
     with _LOCK:
         _PREV = None
         _PREV_LOADED = False
         _MARKS = {}
         _LAST_WRITE = 0.0
         _LAST_COMPOSITION = 0.0
-        _LAST_PRESSURE = 0.0
-        _PRESSURE = []
-        _PRESSURE_TAKEN = 0
-        _EPISODE_LOW = None
+        _reset_snapshots()

@@ -1872,12 +1872,14 @@ The memory killers write to the system journal, which only members of `adm` or
 says so instead of calling the log empty. With no witness at all, the report
 says the end is unknown, never that it was clean.
 
-The same report says what the memory was made of at the session's peak, and,
-when available memory fell below 15% of RAM (at most 1 GB), what every thread
-was doing: its name, the app code it was running and the CPU it used. That
-snapshot is taken when memory first falls below the line and again at each
-new low. The newest eight are kept in `session_pressure.json` in the data
-folder, and they stay on this computer like the rest of the diagnostics.
+The same report says what the memory was made of at the session's peak, and
+what every thread was doing (its name, the app code it was running and the CPU
+it used) at two kinds of moment: when available memory fell below 15% of RAM
+(at most 1 GB), first at the crossing and again at each new low, and when the
+app created a million or more Python objects within five seconds, at most once
+every five minutes. The newest eight snapshots are kept in
+`session_pressure.json` in the data folder, and they stay on this computer like
+the rest of the diagnostics.
 
 ## 5.6 Known limits & honest disclosures
 
