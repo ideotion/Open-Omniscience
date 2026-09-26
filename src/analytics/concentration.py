@@ -43,6 +43,39 @@ FLOOD_CAVEAT = (
 )
 
 
+def _flood_pairs_to_test(
+    chunk: list[int],
+    recent_kw_by_source: dict[int, dict[int, int]],
+    prior_count_by_source: dict[int, int],
+    n_now_of: dict[int, int],
+    *,
+    min_prior_articles: int,
+    min_recent_count: int,
+    min_share: float,
+) -> dict[int, set[int]]:
+    """The keywords, per source, whose PRIOR share :func:`find_flooded_topics` reads.
+
+    The same three filters, with the same arithmetic, that its z-test loop applies before
+    it reads a prior count: the source's baseline floor, the recent count floor and the
+    recent share floor. A pair left out here would read as a prior count of 0, which is a
+    different z, so ``tests/test_concentration_bounded_reads.py`` compares the answers,
+    on random corpora, against the same reader with every one of these filters off.
+    """
+    wanted: dict[int, set[int]] = {}
+    for sid in chunk:
+        if prior_count_by_source.get(sid, 0) < min_prior_articles:
+            continue
+        n_now = n_now_of[sid]
+        kids = {
+            kid
+            for kid, a_now in recent_kw_by_source.get(sid, {}).items()
+            if a_now >= min_recent_count and not a_now / n_now < min_share
+        }
+        if kids:
+            wanted[sid] = kids
+    return wanted
+
+
 def find_flooded_topics(
     session,
     *,
@@ -121,9 +154,13 @@ def find_flooded_topics(
     # three GROUP BY queries, chunked over the candidate ids at the same 400-per-chunk
     # IN() boundary find_buried_topics uses below -- replacing what used to be up to
     # 3 * max_sources sequential single-source queries with a small, chunk-bounded number.
+    # Both per-keyword breakdowns return only the pairs the z-test can read (see the
+    # comments on each), so what this holds is bounded by the pairs tested, not by the
+    # corpus.
     prior_count_by_source: dict[int, int] = {}
     recent_kw_by_source: dict[int, dict[int, int]] = {}
     prior_kw_by_source: dict[int, dict[int, int]] = {}
+    n_now_of = dict(cands)
     if cands:
         cand_ids = [s for s, _ in cands]
         for i in range(0, len(cand_ids), 400):  # bounded IN() under the SQLite variable limit
@@ -140,6 +177,8 @@ def find_flooded_topics(
                 .group_by(KeywordMention.source_id)
             ):
                 prior_count_by_source[int(sid)] = int(n or 0)
+            # Only the pairs the count floor below would keep: a pair under it is skipped
+            # before anything else reads it, so dropping it in SQL changes no answer.
             for sid, kid, n in (
                 session.query(
                     KeywordMention.source_id,
@@ -152,22 +191,37 @@ def find_flooded_topics(
                     KeywordMention.observed_on < r_hi,
                 )
                 .group_by(KeywordMention.source_id, KeywordMention.keyword_id)
+                .having(func.count(distinct(KeywordMention.article_id)) >= min_recent_count)
             ):
                 recent_kw_by_source.setdefault(int(sid), {})[int(kid)] = int(n or 0)
-            for sid, kid, n in (
-                session.query(
-                    KeywordMention.source_id,
-                    KeywordMention.keyword_id,
-                    func.count(distinct(KeywordMention.article_id)),
-                )
-                .filter(
-                    KeywordMention.source_id.in_(chunk),
-                    KeywordMention.observed_on >= b_start,
-                    KeywordMention.observed_on < r_start,
-                )
-                .group_by(KeywordMention.source_id, KeywordMention.keyword_id)
-            ):
-                prior_kw_by_source.setdefault(int(sid), {})[int(kid)] = int(n or 0)
+            # The prior share is read only for a pair that already passed the recent
+            # filters, so only those pairs are asked for. Reading every (source, keyword)
+            # pair of the baseline instead held 740k pairs to test 74 of them on a
+            # 40k-article corpus, and that number grows faster than the corpus does.
+            wanted = _flood_pairs_to_test(
+                chunk, recent_kw_by_source, prior_count_by_source, n_now_of,
+                min_prior_articles=min_prior_articles,
+                min_recent_count=min_recent_count, min_share=min_share,
+            )
+            wanted_sids = sorted(wanted)
+            wanted_kids = sorted({kid for kids in wanted.values() for kid in kids})
+            for j in range(0, len(wanted_kids), 400):
+                for sid, kid, n in (
+                    session.query(
+                        KeywordMention.source_id,
+                        KeywordMention.keyword_id,
+                        func.count(distinct(KeywordMention.article_id)),
+                    )
+                    .filter(
+                        KeywordMention.source_id.in_(wanted_sids),
+                        KeywordMention.keyword_id.in_(wanted_kids[j : j + 400]),
+                        KeywordMention.observed_on >= b_start,
+                        KeywordMention.observed_on < r_start,
+                    )
+                    .group_by(KeywordMention.source_id, KeywordMention.keyword_id)
+                ):
+                    if int(kid) in wanted[int(sid)]:
+                        prior_kw_by_source.setdefault(int(sid), {})[int(kid)] = int(n or 0)
 
     is_hidden = _hidden_predicate()
     items: list[dict] = []
@@ -360,6 +414,9 @@ def find_buried_topics(
     # Big topics: broad across the corpus (distinct articles AND distinct sources), a real
     # share of the window, and not stoplisted.
     is_hidden = _hidden_predicate()
+    # The two count floors of the loop below go into the query, so only keywords that
+    # can be big come back; the share floor stays in Python, where its division is.
+    # Fetching every keyword of the window held one row per keyword (five objects each).
     topic_rows = (
         session.query(
             KeywordMention.keyword_id,
@@ -368,6 +425,8 @@ def find_buried_topics(
         )
         .filter(*win)
         .group_by(KeywordMention.keyword_id)
+        .having(func.count(distinct(KeywordMention.article_id)) >= min_corpus_articles)
+        .having(func.count(distinct(KeywordMention.source_id)) >= min_corpus_sources)
         .all()
     )
     big: list[tuple[int, int, int]] = []

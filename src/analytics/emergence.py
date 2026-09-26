@@ -65,19 +65,28 @@ def find_manufactured_emergence(
     p_start = r_start - timedelta(days=prior_days)
     anchor_lo = r_start - timedelta(days=anchor_lookback_days)
 
-    def _article_counts(lo, hi):
-        return dict(
-            session.query(
-                KeywordMention.keyword_id,
-                func.count(distinct(KeywordMention.article_id)),
-            )
-            .filter(KeywordMention.observed_on >= lo, KeywordMention.observed_on < hi)
-            .group_by(KeywordMention.keyword_id)
-            .all()
-        )
+    def _article_counts(lo, hi, keep):
+        from sqlalchemy import select
 
-    recent = _article_counts(r_start, today + timedelta(days=1))
-    prior = _article_counts(p_start, r_start)
+        from src.database.query import grouped_counts
+
+        kept, _groups = grouped_counts(
+            session,
+            select(KeywordMention.keyword_id, func.count(distinct(KeywordMention.article_id)))
+            .where(KeywordMention.observed_on >= lo, KeywordMention.observed_on < hi)
+            .group_by(KeywordMention.keyword_id),
+            keep,
+        )
+        return kept
+
+    # Only what the candidate filter below reads: a keyword under the recent floor is
+    # never a candidate, and a prior count is read only for a keyword over it. Both
+    # windows used to come back whole, every keyword of the last five weeks at once.
+    recent = _article_counts(
+        r_start, today + timedelta(days=1),
+        lambda _kid, rc: int(rc or 0) >= min_recent_articles,
+    )
+    prior = _article_counts(p_start, r_start, lambda kid, _pc: kid in recent)
 
     # Candidate = new (prior ~0) AND frequent-now, ordered by recent volume, bounded.
     cands = sorted(

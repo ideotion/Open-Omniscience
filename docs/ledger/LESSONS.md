@@ -12484,3 +12484,18 @@ keywords that is about 1.7 GB on a 3.9 GB machine, from a pass that runs by itse
 set is the chunk plus everything kept across chunks. A per-id tally over a dense id space fits in
 an array indexed by id (the layout `ArticleLanguageMap` already used); a dict of small dicts costs
 a few hundred bytes per id.**
+
+### A FILTER IN THE LOOP IS NOT A BOUND ON THE READ (2026-09-26, the Home cards' refresh)
+
+Four readers behind the Home cards (flooded topics, buried topics, manufactured emergence,
+trending) were correct, and each applied its thresholds at the top of its loop, so each read as
+"only looks at what passes". The memory each held was set by the query ABOVE the loop, which
+fetched every group of its window. At 40k articles the flood detector held 739,776 baseline
+(source, keyword) pairs to compute the z of 74; that count grows with sources times keywords, so
+it was the one step of the whole after-pass refresh that grew faster than the corpus (26 to 174
+MB for 4x the articles). With each filter moved into the read (the count floors as `HAVING`,
+only the pairs the test reads, a streamed GROUP BY that drops what the loop would skip) it held
+1.6 MB and gave the same answers. **When a loop filters, ask what the query above it fetched:
+the filter bounds the work, not the read. Put each filter where the rows are produced, and prove
+the answers unchanged against the same code with the filters off, on corpora built to hit the
+filters' edges.**

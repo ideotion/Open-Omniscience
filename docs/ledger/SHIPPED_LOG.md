@@ -10039,3 +10039,53 @@ UTC+2. The other two deaths (the first instance at 23:27 UTC on 25 Sept, the sec
 15:53 UTC) happened during collection, when idle maintenance cannot run, so this job is one
 suspect and not the cause of every crash. The thread snapshots this PR adds will name what runs
 at the next one.
+
+## 2026-09-26 — The Home cards read only what their filters keep (PR #1190)
+
+**WHAT SHIPPED.** The briefing refresh that runs after every collection pass (and from Home when
+its cache is stale) was measured step by step with `tracemalloc` on a 10k- and a 40k-article
+corpus: the 40 card producers, the watch evaluation and the insights cache warm. Four readers
+fetched a whole window of keywords and then skipped most of it in Python. Their reads now carry
+their filters. `find_flooded_topics` asks for the baseline share of only the (source, keyword)
+pairs its z-test reads (`_flood_pairs_to_test`: the same three floors, with the same arithmetic),
+in 400-keyword chunks, and its recent pairs carry the count floor as `HAVING`.
+`find_buried_topics`' big-topic query carries its two count floors as `HAVING` (the share floor
+stays in Python, where its division is). `find_manufactured_emergence` and `trending` stream their
+GROUP BY through `grouped_counts` (`src/database/query.py`, 10,000 rows per round trip) and keep
+only the keywords their loops read: those over the recent floor, then the prior count of only
+those. `trending`'s `keywords_with_recent_mentions` still counts every keyword of the window,
+because `grouped_counts` returns the group count, so no response changed.
+
+**THE LESSON (copied to `LESSONS.md`).** A filter in the loop is not a bound on the read. Each of
+these readers was correct, and each applied its thresholds at the top of its loop; the memory it
+held was set by the query above the loop, which fetched every group of the window. The flood
+detector's was the worst: at 40k articles it held 739,776 baseline (source, keyword) pairs to
+compute the z of 74, a count that grows with sources times keywords. It was the one step of the
+whole refresh that grew faster than the corpus: 26 to 174 MB for 4x the articles.
+
+**MEASURED, NOT INFERRED.** Peak Python memory at 40k articles (1.6 M mentions, 360k keywords),
+before and after: flood 174.3 to 1.6 MB (9.7 to 0.7 s), buried 51.4 to 1.5 MB, emergence 51.5 to
+6.4 MB, the five cards that start from `trending` (rising now, framing split, emotion profile, IP
+litigation pulse, on the horizon) 52-57 to 15-20 MB, and the insights warm's `trending_windows`
+79 to 53 MB. No step got slower. The answers are proven unchanged rather than assumed: a
+differential test runs every reader (flood at two settings, buried, emergence, trending at three
+windows and by country, `trending_windows`) on three random corpora with thin sources and
+brand-new keywords, and compares each answer exactly against the same code with every filter
+off (the `HAVING`s patched out, `_flood_pairs_to_test` returning every recent pair,
+`grouped_counts` keeping everything). The memory tests grow a tail no answer reads by 4x: the
+flood detector's peak now moves x1.02 (x4.0 with the bound off) and trending's x1.00 (x2.49).
+8 tests; 17 mutations of the new code, all caught.
+
+**WHAT STAYS.** Measured at 40k articles: the lemma dictionaries (574 MB once all nine languages
+are loaded, resident for the life of the process, so a floor rather than a burst);
+`trending_windows`' 24-hour and 30-day windows, which keep every keyword over a floor of one or
+two mentions because the scoring loop ranks all of them; about 37 MB each for price narrative,
+echo chamber and recycled claim, the same at 10k and 40k articles. Not measured: SQLite's own
+sorter memory under `temp_store=MEMORY`, which `tracemalloc` cannot see. These, and the two
+refresh paths that can run at once, are recorded in `OPEN_QUEUE.md`.
+
+**WHAT THE BUNDLE SAYS, AND WHAT IT DOES NOT.** The first instance died at 23:27 UTC on 25 Sept,
+13 minutes after a pass tail whose refresh never wrote its cache: the newest cache on disk was
+generated at 22:47:29 UTC and holds flood cards. The timing fits the refresh; nothing proves it.
+The second instance's 15:53 UTC death has no refresh recorded in its session and is not
+attributed.

@@ -48,6 +48,40 @@ def keyset_scan(query, id_col, *, chunk: int | None = None) -> Iterator[Any]:
             return
 
 
+#: Rows :func:`grouped_counts` fetches per round trip.
+GROUPED_CHUNK = 10_000
+
+
+def grouped_counts(session, stmt, keep) -> tuple[dict[Any, Any], int]:
+    """Run a ``(key, value)`` GROUP BY and keep only the groups ``keep`` accepts.
+
+    Returns ``(kept, groups)``: ``{key: value}`` for the accepted groups, in the order
+    the statement returns them, and how many groups it returned in all.
+
+    For a caller that reads a few groups of a big window. ``dict(query.all())`` held a
+    row object for every group (about four Python objects each) and then a dict of all
+    of them; on a window of a few million keywords that is a burst the size of the one
+    a 3.9 GB machine died of (crash bundle, 2026-09-26, which does not record which read
+    that was). Here the rows arrive ``GROUPED_CHUNK`` at a time and a rejected group is
+    dropped as it passes.
+
+    Unlike :func:`keyset_scan`, this is ONE statement, open until the last group is
+    read. That is the same read mark ``.all()`` held while it built its list; a GROUP
+    BY cannot be split into keyset chunks without re-reading the window once per chunk.
+    """
+    kept: dict[Any, Any] = {}
+    groups = 0
+    result = session.execute(stmt.execution_options(yield_per=GROUPED_CHUNK))
+    try:
+        for key, value in result:
+            groups += 1
+            if keep(key, value):
+                kept[key] = value
+    finally:
+        result.close()
+    return kept, groups
+
+
 def capped(query, n: int | None):
     """Apply an OPTIONAL row cap.
 
