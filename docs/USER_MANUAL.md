@@ -1846,6 +1846,32 @@ reached.
 If you are not on systemd, the same is available through Docker/Podman
 (`--memory=3g --memory-swap=3g`) or a plain cgroup v2 `memory.max`.
 
+#### After a crash: what the next start can tell you
+
+When the app is killed or crashes, the launcher window now stays open and says
+how it ended: `SIGKILL` is the usual mark of a low-memory killer. An ordinary
+stop (the app's own Stop button, closing the window, logging out) closes the
+window as before.
+
+The next start then says how the previous session ended, under **Settings →
+Advanced → Diagnostics → session forensics** and in the downloaded
+`session-forensics.txt`, from whichever of these witnesses answered:
+
+- the launcher's record of the exit status (`diagnostics/launcher_exits.jsonl`);
+- the kernel log, which names the kernel's own out-of-memory kills;
+- the log lines of the user-space memory killers (systemd-oomd, earlyoom,
+  nohang) and of systemd-coredump that name the app. These never appear in the
+  kernel log, and systemd-oomd names the app's cgroup rather than its process;
+- a crash trace of every thread when native code aborts
+  (`diagnostics/crash_trace.log`).
+
+The log reads are local and read-only, and they keep only lines about this app.
+`OO_NO_KERNEL_LOG=1` turns them off; `OO_CRASH_TRACE=0` turns off the trace.
+The memory killers write to the system journal, which only members of `adm` or
+`systemd-journal` (`wheel` on Fedora) can read; when yours cannot, the report
+says so instead of calling the log empty. With no witness at all, the report
+says the end is unknown, never that it was clean.
+
 ## 5.6 Known limits & honest disclosures
 
 Honesty by construction means stating what the tool *cannot* tell you, not only
