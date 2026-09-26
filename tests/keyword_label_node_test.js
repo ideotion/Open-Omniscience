@@ -54,15 +54,23 @@ const src =
   "function ooLangName(code, fb){ return _NAMES[code] || fb || code; }\n" +
   "var window = {};\n" +
   "function openLinkPreview(){}\n" +
+  // Records what a sense pick opened (M4), so the test can read the pin it carried.
+  "var _opened = [];\n" +
+  "function openAnalysisFor(q, opts){ _opened.push({q: q, opts: opts}); }\n" +
   extract("_kwTf") + "\n" +
   extract("kwLangName") + "\n" +
   extract("kwTier") + "\n" +
   extract("kwLangBreakdownText") + "\n" +
   extract("kwHoverText") + "\n" +
   extract("kwQidHtml") + "\n" +
+  extract("kwHasTag") + "\n" +
+  extract("kwTipExtraAttr") + "\n" +
   extract("kwSensePickerHtml") + "\n" +
+  extract("kwSensesAfterHtml") + "\n" +
+  extract("kwPickSense") + "\n" +
   extract("kwLabelHtml") + "\n" +
-  "module.exports = { kwLabelHtml, kwTier, kwHoverText, kwSensePickerHtml, kwLangName, kwLangBreakdownText };";
+  "module.exports = { kwLabelHtml, kwTier, kwHoverText, kwSensePickerHtml, kwLangName, kwLangBreakdownText,\n" +
+  "  kwQidHtml, kwHasTag, kwTipExtraAttr, kwSensesAfterHtml, kwPickSense, opened: _opened };";
 const K = (() => {
   const m = { exports: {} };
   new Function("module", "exports", src)(m, m.exports);
@@ -188,6 +196,104 @@ const K = (() => {
   assert.ok(!/kw-tag/.test(out), "an empty language rendered an empty tag: " + out);
   assert.strictEqual(K.kwLangName(""), "");
   assert.strictEqual(K.kwLangName(null), "");
+}
+
+// --- THE QID CLICK STOPS AT THE QID (M9) ------------------------------------ //
+// It sits inside keyword chips that are clickable themselves; without stopping the event
+// the local preview opened AND the chip's own action ran behind it.
+{
+  const out = K.kwQidHtml({ translation_qid: "Q7590" });
+  const m = out.match(/onclick='([^']*)'/);
+  assert.ok(m, "the QID lost its handler: " + out);
+  let stopped = 0, previewed = null;
+  const handler = new Function("event", "openLinkPreview", m[1].replace(/&quot;/g, '"'));
+  const ret = handler({ stopPropagation: () => { stopped++; } }, (u) => { previewed = u; });
+  assert.strictEqual(stopped, 1, "the QID click still bubbles to the enclosing chip (M9)");
+  assert.strictEqual(previewed, "https://www.wikidata.org/wiki/Q7590", "the local preview did not open");
+  assert.strictEqual(ret, false, "the default (href='#') is not prevented");
+}
+
+// --- A LABEL DRAWN INSIDE A BUTTON NESTS NO BUTTON (M4) ---------------------- //
+// The parser closes an outer <button> at the first nested one, which hoisted the sense
+// buttons out of the analysis chip and left its count dangling.
+{
+  const wahl = {
+    term: "Wahl", normalized: "wahl", translation_tier: "untranslated",
+    translation_source_lang: "de", translation_declined: "several-senses",
+    senses: [
+      { ring_id: "election", concept: "election", translation: "élection" },
+      { ring_id: "public_election", concept: "public election", translation: "élection" },
+    ],
+  };
+  const inside = K.kwLabelHtml(wahl, { inButton: true });
+  assert.ok(!/<button/.test(inside), "a label drawn inside a button still nests buttons: " + inside);
+  assert.ok(/Several senses/.test(inside), "the refusal must still be stated inside the chip: " + inside);
+  const after = K.kwSensesAfterHtml(wahl);
+  assert.ok(/data-kwpin="wahl:election"/.test(after) && /data-kwpin="wahl:public_election"/.test(after), after);
+  // ...and only for the row the inline label would have drawn a picker for.
+  assert.strictEqual(K.kwSensesAfterHtml({ term: "x", translation_tier: "verified", translation: "y",
+    senses: [{ ring_id: "a" }] }), "");
+  // Two senses reading the same in the reader's language are told apart on the button.
+  const labels = (after.match(/<button[^>]*>([^<]*)<\/button>/g) || []).map((b) => b.replace(/<[^>]+>/g, ""));
+  assert.strictEqual(labels.length, 2, after);
+  assert.notStrictEqual(labels[0], labels[1], "two senses still read identically (M4): " + labels);
+  assert.ok(labels.every((l) => l.startsWith("élection")), labels);
+  // A label shared by nobody stays the bare translation.
+  const solo = K.kwSensePickerHtml({ normalized: "wahl", senses: [
+    { ring_id: "election", concept: "election", translation: "election" },
+    { ring_id: "voting", concept: "voting", translation: "voting" }] });
+  assert.ok(/>election</.test(solo) && />voting</.test(solo), solo);
+  // The sense the analysis lens already pinned stays pressed across a re-render.
+  const pinned = K.kwSensesAfterHtml(wahl, { wahl: "public_election" });
+  assert.ok(/data-kwpin="wahl:public_election" aria-pressed="true"/.test(pinned), pinned);
+  assert.ok(/data-kwpin="wahl:election" aria-pressed="false"/.test(pinned), pinned);
+}
+
+// --- A PICK OPENS THE ANALYSIS WITH THE SENSE PINNED (M4) -------------------- //
+{
+  const buttons = [];
+  const group = { querySelectorAll: () => buttons };
+  const mk = (pin) => {
+    const attrs = { "data-kwpin": pin, "aria-pressed": "false" };
+    const b = {
+      getAttribute: (k) => attrs[k], setAttribute: (k, v) => { attrs[k] = String(v); }, attrs,
+      closest: () => group,
+    };
+    buttons.push(b);
+    return b;
+  };
+  const b1 = mk("wahl:election"), b2 = mk("wahl:voting");
+  b1.setAttribute("aria-pressed", "true");
+  K.opened.length = 0;
+  assert.strictEqual(K.kwPickSense(b2), true);
+  assert.strictEqual(K.opened.length, 1, "a pick opened nothing -- the picker is a dead end again");
+  const { q, opts } = K.opened[0];
+  assert.strictEqual(q, "wahl");
+  assert.deepStrictEqual(opts.lens.senses, { wahl: "voting" }, "the pin is not the term:ring_id the reader chose");
+  assert.strictEqual(opts.lens.expand, true, "a pinned sense with expansion off would search nothing");
+  assert.strictEqual(b2.attrs["aria-pressed"], "true");
+  assert.strictEqual(b1.attrs["aria-pressed"], "false", "the previous pick is still marked pressed");
+  // A malformed pin is refused, never guessed at.
+  K.opened.length = 0;
+  assert.strictEqual(K.kwPickSense(mk("no-colon")), false);
+  assert.strictEqual(K.kwPickSense(mk(":election")), false);
+  assert.strictEqual(K.opened.length, 0);
+}
+
+// --- THE TAG'S HOVER REACHES A KEYBOARD READER THROUGH THE ROW (M2) ---------- //
+{
+  const verified = { term: "software", normalized: "software", translation: "logiciel",
+    translation_tier: "verified", translation_source_lang: "fr", translation_qid: "Q7397" };
+  const attr = K.kwTipExtraAttr(verified);
+  assert.ok(/^ data-oo-tip-extra="/.test(attr), attr);
+  assert.ok(/Original: software/.test(attr) && /Q7397/.test(attr), "the tier hover is not on the row: " + attr);
+  // No tag, no tier hover: only the breakdown the row carried before (or nothing).
+  assert.strictEqual(K.kwTipExtraAttr({ term: "budget", translation_tier: "same_language",
+    translation_source_lang: "en" }), "");
+  assert.ok(/Across languages:/.test(K.kwTipExtraAttr({ term: "x", translation_tier: "same_language",
+    language_breakdown: { fr: 3, de: 1 } })));
+  assert.strictEqual(K.kwHasTag({ term: "x", translation_tier: "untranslated" }), false,
+    "a term whose language nobody measured draws no tag, so it claims no tag hover either");
 }
 
 console.log("keyword_label_node_test.js: OK");

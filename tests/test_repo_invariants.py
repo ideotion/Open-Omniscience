@@ -6310,8 +6310,13 @@ def test_keyword_views_show_verified_translations():
     assert any("ooKwRepaintOnLangChange" in h for h in handlers), (
         f"({len(handlers)} oo:langchange listener(s), none repaints the keyword labels)"
     )
-    # termListHtml renders through the one helper.
-    assert "${kwLabelHtml(term)}" in html, "termListHtml must render through the one label helper"
+    # termListHtml renders through the one helper. Anchored on the function's OWN body:
+    # this line used to match `${kwLabelHtml(term)}` anywhere, which was the analysis
+    # chips' call (termListHtml's row is `t`), so the chips gaining an options argument
+    # (M4) failed it while termListHtml itself had not changed.
+    body = html.split("function termListHtml(", 1)[1].split("\n    }\n", 1)[0]
+    assert "${kwLabelHtml(t)}" in body, "termListHtml must render through the one label helper"
+    assert "${esc(t.term)}</a>" not in body, "termListHtml draws a bare keyword again"
     # The three keyword fetches request the verified translation for the UI language.
     assert "/api/insights/trending-windows?limit=6&series_top=6\" + tgtLangParam()" in html
     assert "/api/insights/trending-windows?limit=4&series_top=4\" + tgtLangParam()" in html

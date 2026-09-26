@@ -139,7 +139,7 @@
             const fam = f.variants > 1;
             return `<button class="ls-chip" style="font-size:${(11.5*scale).toFixed(1)}px"
               title="${fam ? `family of ${f.variants}: ${esc((f.members||[]).map(m=>m.term).join(', '))} · ` : ""}${f.mentions} mentions — click to zoom in"
-              onclick="pickTerm(${esc(JSON.stringify(f.term))})">${kwLabelHtml(f)}${fam ? `<span class="muted"> ·${f.variants}</span>` : ""}</button>`;
+              onclick="pickTerm(${esc(JSON.stringify(f.term))})">${kwLabelHtml(f, {inButton: true})}${fam ? `<span class="muted"> ·${f.variants}</span>` : ""}</button>${kwSensesAfterHtml(f)}`;
           }).join("");
           return `<div class="ls-col"><div class="ls-h">${esc(t(g.label))} <span class="muted">${items.length}</span></div><div class="ls-chips">${chips}</div></div>`;
         }).join("");

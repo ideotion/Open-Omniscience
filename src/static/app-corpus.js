@@ -895,20 +895,46 @@
     }
 
     // The QID opens the LOCAL preview first (invariant #6, Q418's "a LOCAL preview
-    // first"): never a bare outbound shortcut, even to Wikidata.
+    // first"): never a bare outbound shortcut, even to Wikidata. It sits inside keyword
+    // chips and rows that are clickable themselves, so the click STOPS here: without it
+    // the preview opened AND the enclosing chip's own action ran behind it (M9).
     function kwQidHtml(row) {
       const qid = row && row.translation_qid;
       if (!qid) return "";
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const url = "https://www.wikidata.org/wiki/" + encodeURIComponent(qid);
       return ` <a href="#" class="kw-qid" data-i18n-dyn title="${esc(t("Open a local preview of this source first"))}"`
-        + ` onclick='openLinkPreview(${esc(JSON.stringify(url))});return false'>${esc(qid)}</a>`;
+        + ` onclick='event.stopPropagation();openLinkPreview(${esc(JSON.stringify(url))});return false'>${esc(qid)}</a>`;
+    }
+
+    // Whether the label draws a tier tag at all (a term in the reader's own language, or
+    // one whose language nobody measured, draws none).
+    function kwHasTag(row) {
+      if (!row) return false;
+      const tier = kwTier(row);
+      if (tier === "untranslated" && row.translation_declined === "several-senses") return true;
+      return (tier === "verified" || tier === "tentative" || tier === "untranslated")
+        && !!kwLangName(row.translation_source_lang);
+    }
+
+    // THE TAG'S HOVER FOR A READER WHO CANNOT POINT AT THE TAG (M2). A keyword row marked
+    // `data-kwstat` gets its bubble rewritten with live stats, and the tag inside it is a
+    // span no keyboard reaches, so the tier hover (Q418) is carried on the ROW through
+    // `data-oo-tip-extra`, the channel `ooKwStatInit` appends rather than overwrites.
+    // Without a tag it carries only the per-language breakdown, as it did before.
+    function kwTipExtraAttr(row) {
+      const extra = kwHasTag(row) ? kwHoverText(row) : kwLangBreakdownText(row);
+      return extra ? ` data-oo-tip-extra="${esc(extra)}"` : "";
     }
 
     // THE LABEL. Returns the whole visible unit: the term the reader should see, plus the
     // tier tag. Callers render `${kwLabelHtml(row)}` instead of `${esc(row.term)}` + a
     // translation suffix, which is what makes the translation the VISIBLE term (Q401).
-    function kwLabelHtml(row) {
+    // `opts.inButton`: the caller draws the label INSIDE a <button>, where the sense
+    // picker's own buttons cannot go (the parser closes the outer button at the first
+    // nested one, M4), so it is left out here and the caller draws
+    // `kwSensePickerHtml(row)` after its closing tag.
+    function kwLabelHtml(row, opts) {
       if (!row) return "";
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const tier = kwTier(row);
@@ -928,7 +954,7 @@
       } else if (tier === "untranslated") {
         if (row.translation_declined === "several-senses") {
           html += ` <span class="kw-tag kw-senses" data-i18n-dyn title="${esc(hover)}">`
-            + esc(t("Several senses")) + `</span>` + kwSensePickerHtml(row);
+            + esc(t("Several senses")) + `</span>` + ((opts && opts.inButton) ? "" : kwSensePickerHtml(row));
         } else if (srcName) {
           // R7: a keyword we cannot translate is still TAGGED with what it is, never
           // left as an unexplained foreign word.
@@ -942,17 +968,59 @@
     // Q412 = a's picker. A refusal that names a choice and offers no way to make it is a
     // dead end one level past the unread-flag trap, so the senses ride the row and each
     // one is offered by what it READS AS, never by a bare ring id.
-    function kwSensePickerHtml(row) {
+    // TWO SENSES CAN READ THE SAME in the reader's language ("election" and "public
+    // election" both translate to "élection"), which left two identical buttons told apart
+    // only by an English hover (M4). A label shared by several senses carries its concept
+    // too; the concept is the ring's identifier, data like the term, so it is not keyed.
+    // `pinned` ({normalized term: ring id}, the analysis window's lens) marks the sense the
+    // reader already chose, so a re-render after the pick still shows it pressed.
+    function kwSensePickerHtml(row, pinned) {
       const senses = (row && row.senses) || [];
       if (!senses.length) return "";
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const base = (x) => x.translation || x.concept || x.ring_id;
+      const seen = {};
+      senses.forEach((x) => { const k = String(base(x)).toLowerCase(); seen[k] = (seen[k] || 0) + 1; });
       const opts = senses.map((x) => {
-        const label = x.translation || x.concept || x.ring_id;
-        const pin = (row.normalized || row.term || "") + ":" + x.ring_id;
-        return `<button class="kw-sense" type="button" data-i18n-dyn data-kwpin="${esc(pin)}"`
-          + ` title="${esc(t("Concept") + ": " + (x.concept || x.ring_id))}">${esc(label)}</button>`;
+        const shared = seen[String(base(x)).toLowerCase()] > 1;
+        const concept = x.concept || x.ring_id;
+        const label = shared && concept && concept !== base(x) ? `${base(x)} (${concept})` : base(x);
+        const norm = row.normalized || row.term || "";
+        const pin = norm + ":" + x.ring_id;
+        const on = !!(pinned && pinned[norm] === x.ring_id);
+        return `<button class="kw-sense" type="button" data-i18n-dyn data-kwpin="${esc(pin)}" aria-pressed="${on}"`
+          + ` title="${esc(t("Concept") + ": " + concept)}">${esc(label)}</button>`;
       });
       return ` <span class="kw-senses" data-i18n-dyn>` + opts.join("") + `</span>`;
+    }
+
+    // The picker a `{inButton: true}` caller draws after its own closing tag: exactly the
+    // picker `kwLabelHtml` would have drawn inline, and nothing for any other row.
+    function kwSensesAfterHtml(row, pinned) {
+      return (row && kwTier(row) === "untranslated" && row.translation_declined === "several-senses")
+        ? kwSensePickerHtml(row, pinned) : "";
+    }
+
+    // THE PICK (Q412 = a, M4). The picker was drawn and read by nobody: a click changed
+    // nothing. Picking a sense opens the keyword's analysis with that sense PINNED -- the
+    // `term:ring_id` grammar `parse_sense_pins` reads, carried as the tab's lens seed like
+    // the analysis window's own sense buttons (`_anPickSense`) -- and the choice is marked
+    // pressed. Reached from ONE delegated capture-phase listener (app-boot.js), so a picker
+    // drawn inside a clickable row never also fires the row.
+    function kwPickSense(btn) {
+      const raw = btn && btn.getAttribute && btn.getAttribute("data-kwpin");
+      if (!raw) return false;
+      const i = raw.lastIndexOf(":");
+      if (i <= 0) return false;
+      const term = raw.slice(0, i).trim().toLowerCase(), ring = raw.slice(i + 1).trim();
+      if (!term || !ring) return false;
+      const group = btn.closest ? btn.closest(".kw-senses") : null;
+      if (group) group.querySelectorAll("[data-kwpin]").forEach((b) => b.setAttribute("aria-pressed", "false"));
+      btn.setAttribute("aria-pressed", "true");
+      if (typeof openAnalysisFor === "function") {
+        openAnalysisFor(term, {lens: {expand: true, cap: true, senses: {[term]: ring}}});
+      }
+      return true;
     }
 
     // The frozen-locale half of the `data-i18n-dyn` opt-out. Called from app-boot.js's
@@ -971,25 +1039,32 @@
       // Each is guarded on the host ALREADY HAVING ROWS: a language switch must never
       // FETCH for a panel the reader has not opened (the convention app-boot.js's own
       // listener follows for `src-table` and the coverage table).
+      //
+      // The third element is the ARGUMENT the loader needs to actually re-run (M8): the
+      // landscape loader returns early once loaded unless forced, so `loadLandscape()`
+      // alone left the landscape in the previous locale's tags.
       const callers = [
         ["home-trends", "loadHomeTrends"],
-        ["ins-landscape", "loadLandscape"],
+        ["ins-landscape", "loadLandscape", true],
         ["fam-list", "loadFamilies"],
         ["famc-list", "loadFamilyCuration"],
         ["trd-windows", "loadTrendWindows"],
-        // The analysis window re-renders from data it already holds, so it needs no
-        // fetch guard -- `anRenderKwChips` returns early when there is nothing loaded.
-        [null, "anRenderKwChips"],
+        // The Trends tab's two bar charts (rising, top) draw the label too.
+        ["trd-top", "loadTrends"],
+        // The analysis window RE-FETCHES its keywords for the new target language rather
+        // than re-rendering the payload it holds, whose translations belong to the old
+        // one (M8); with nothing loaded `anRenderKwChips` returns early.
+        [null, "anRenderKwChips", {refetch: true}],
         // The Home cards translate their own term since Q411 = a, so they are the same
         // frozen-locale shape as the keyword rows and need the same repaint.
         ["briefing-feed", "loadBriefing"],
       ];
-      for (const [hostId, fn] of callers) {
+      for (const [hostId, fn, arg] of callers) {
         try {
           if (typeof window[fn] !== "function") continue;
-          if (hostId === null) { window[fn](); continue; }
+          if (hostId === null) { window[fn](arg); continue; }
           const host = document.getElementById(hostId);
-          if (host && host.children && host.children.length) window[fn]();
+          if (host && host.children && host.children.length) window[fn](arg);
         } catch (_e) { /* one stale surface must never stop the rest */ }
       }
     }
@@ -1132,7 +1207,26 @@
       const expr = ((d.terms) || []).map((x) => x.normalized || x.term).join(_anConjSep(d.op));
       openAnalysisForIds(d.article_ids, expr);   // the exact-set precedent — a fresh corpus tab
     }
-    function anRenderKwChips() {
+    // A LANGUAGE SWITCH RE-FETCHES, it does not only re-render (M8). The translations in
+    // `_anKwData` were resolved for the `target_lang` of the fetch that brought them, so
+    // re-rendering the cached payload repainted the tag in the new language beside the
+    // OLD language's translated word ("logiciel" under an Arabic tag). A failed re-fetch
+    // keeps what is on screen; a newer analysis that replaced the payload meanwhile wins.
+    async function _anRefetchKw() {
+      const d0 = _anKwData;
+      if (!_anKwHost || !d0 || typeof _anLastParams === "undefined" || !_anLastParams) {
+        anRenderKwChips(); return;
+      }
+      try {
+        const d = await api("/api/insights/corpus-keywords?" + _anLastParams.toString() + tgtLangParam());
+        if (_anKwData !== d0) return;
+        d._context = d0._context;
+        _anKwData = d;
+      } catch (_e) { /* keep the payload on screen; the chrome around it still repaints */ }
+      anRenderKwChips();
+    }
+    function anRenderKwChips(opts) {
+      if (opts && opts.refetch) { _anRefetchKw(); return; }
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const d = _anKwData, kw = _anKwHost;
       if (!kw) return;
@@ -1152,10 +1246,14 @@
       const sgChips = (term) => (term.supergroups || []).map((g) =>
         `<button class="chip tiny lvl-super" onclick="openSupergroup(${g.id})"`
         + ` title="${esc(t("Open this group's own trend + members") + " — " + lvlTitle("super"))}">⊕ ${esc(g.name)}</button>`).join(" ");
+      // The sense picker is drawn AFTER the chip, never inside it (M4): its buttons nested
+      // in this <button> were hoisted out by the parser, leaving the count dangling. The
+      // window's own lens says which sense the reader pinned, so the choice stays marked.
+      const pins = (typeof _anSenses === "object" && _anSenses) ? _anSenses : null;
       const chips = d.terms.map((term) =>
-        `<button class="chip" data-kwstat="${esc(term.term)}" onclick="openCorpus(${esc(JSON.stringify(term.term))})"`
-        + ` title="${esc(t("Open this keyword's own analysis window"))}">${kwLabelHtml(term)}`
-        + ` <span class="muted">${term.articles}</span></button>${sgChips(term)}`).join(" ");
+        `<button class="chip" data-kwstat="${esc(term.term)}"${kwTipExtraAttr(term)} onclick="openCorpus(${esc(JSON.stringify(term.term))})"`
+        + ` title="${esc(t("Open this keyword's own analysis window"))}">${kwLabelHtml(term, {inButton: true})}`
+        + ` <span class="muted">${term.articles}</span></button>${kwSensesAfterHtml(term, pins)}${sgChips(term)}`).join(" ");
       // Audit-07 B1 disclosure: our extractor does NOT segment CJK, so those keywords
       // are unreliable; surface it when CJK terms are present.
       const cjk = d.terms.some((tm) => /[぀-ヿ㐀-䶿一-鿿가-힯]/.test(tm.term));
