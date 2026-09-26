@@ -154,8 +154,10 @@
         // widget. `aria-current` marks the active entry in place of aria-selected.
         // (This is NOT one of invariant #18's ooSubtabs surfaces: the window's own
         // subtabs are #an-subtabs and keep the tablist grammar unchanged.)
+        // The label is the reader's own query (or a Lead's name), so it opts out of the
+        // i18n walker: a search for "Climate" must not be drawn as "Climat" (N6's class).
         return `<span class="an-tab${on ? " active" : ""}" role="listitem">`
-          + `<button class="an-tab-label"${on ? ' aria-current="true"' : ""} onclick="_anActivate(${esc(JSON.stringify(tb.id))})" title="${esc(tb.label || tb.query || "")}">${esc(lbl)}</button>`
+          + `<button class="an-tab-label" data-i18n-dyn${on ? ' aria-current="true"' : ""} onclick="_anActivate(${esc(JSON.stringify(tb.id))})" title="${esc(tb.label || tb.query || "")}">${esc(lbl)}</button>`
           + `<button class="an-tab-x" onclick="_anCloseTab(${esc(JSON.stringify(tb.id))})" title="Close this analysis tab" aria-label="Close">✕</button></span>`;
       }).join("");
     }
@@ -328,7 +330,10 @@
       const from = $("an-adv-from").value, to = $("an-adv-to").value;
       if (from || to) parts.push((from || "…") + " → " + (to || "…"));
       const sb = $("an-adv-sort") && $("an-adv-sort").value;
-      if (sb) parts.push(t("sorted") + ": " + sb + " " + (($("an-adv-dir") && $("an-adv-dir").value) === "asc" ? "↑" : "↓"));
+      const asc = ($("an-adv-dir") && $("an-adv-dir").value) === "asc";
+      // Newest-first by date is the DEFAULT order (Q508, N4), not a refinement the reader
+      // made, so it is not listed under "Filtered".
+      if (sb && !(sb === "date" && !asc)) parts.push(t("sorted") + ": " + sb + " " + (asc ? "↑" : "↓"));
       return parts;
     }
     function anRunAdvanced() {
@@ -459,12 +464,31 @@
         const prices = (pd && pd.prices) || [];
         const vol = (td && td.resolved) ? (td.points || []) : [];
         const unit = c.unit || (prices[0] ? `${prices[0].currency}/${prices[0].unit}` : "");
-        const head = `<div class="hint"><b>${esc(t("Price × coverage"))}</b> — ${esc(c.name || c.symbol)}</div>`;
-        const note = vol.length
-          ? `<div class="hint muted" style="font-size:11px;margin-top:4px">${esc(t("Articles"))}: ${td.total} · ${vol.length}×</div>`
-          : `<div class="muted" style="font-size:12px;margin:6px 0">${esc(t("No corpus coverage to overlay yet."))}</div>`;
-        el.innerHTML = head + commodityOverlaySvg(prices, vol, unit) + note;
-      } catch (e) { el.innerHTML = `<div class="note err">${esc(e.message)}</div>`; }
+        _anPriceLast = {symbol: c.symbol, name: c.name || c.symbol, prices, vol, unit,
+                        total: td ? td.total : null};
+        _anPriceHtml(el, _anPriceLast);
+      } catch (e) { _anPriceLast = null; el.innerHTML = `<div class="note err">${esc(e.message)}</div>`; }
+    }
+    // The last price overlay drawn, so a LANGUAGE SWITCH can redraw it with no request:
+    // its axis label ("Price USD/kg") is text drawn INTO the SVG from t(), which the i18n
+    // walker cannot reach, and it stayed "Price" in fr/ar/zh until the panel was reopened
+    // (the 2026-09-26 click-through, U9).
+    let _anPriceLast = null;
+    function _anPriceHtml(el, d) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const head = `<div class="hint"><b>${esc(t("Price × coverage"))}</b> — ${esc(d.name)}</div>`;
+      const note = d.vol.length
+        ? `<div class="hint muted" style="font-size:11px;margin-top:4px">${esc(t("Articles"))}: ${d.total} · ${d.vol.length}×</div>`
+        : `<div class="muted" style="font-size:12px;margin:6px 0">${esc(t("No corpus coverage to overlay yet."))}</div>`;
+      el.innerHTML = head + commodityOverlaySvg(d.prices, d.vol, d.unit) + note;
+    }
+    // Registered in app-boot's ONE `oo:langchange` listener. Only while the panel still
+    // shows the commodity it was drawn for; never fetches.
+    function _anRepaintPrice() {
+      const el = $("an-price");
+      if (!el || !_anPriceLast || !_anCommodity || _anCommodity.symbol !== _anPriceLast.symbol) return;
+      if (!el.querySelector("svg")) return;
+      _anPriceHtml(el, _anPriceLast);
     }
     // A self-contained, deterministic dual-axis SVG (does NOT touch ooChart). The
     // PRICE reads its OWN left axis (line + real sample dots so the true n is
@@ -1033,6 +1057,23 @@
         .sort((a, b) => (b.size || 1) - (a.size || 1)).slice(0, 24);
       const scale = (_anMM.scale || 100) / 100, big = _anMM.big;
       const W = big ? 1100 : 680, H = big ? 720 : 460, cx = W / 2, cy = H / 2;
+      // ⛶ ENLARGES THE PICTURE, NOT THE COORDINATE SPACE (the 2026-09-26 click-through,
+      // N8). The bigger viewBox gives the layout more room, but drawn at width 100% it was
+      // squeezed back into the same box, so every label SHRANK (33 px to 24 px at 1440 px).
+      // The enlarged SVG is drawn W/680 times as wide as the host, so its scale -- and every
+      // label's size -- is exactly the normal view's. It scrolls in its OWN box, opened on
+      // its centre, so the controls (⛶ among them) stay in reach and the reader starts at
+      // the seed, not at the picture's empty top-left corner.
+      const svgW = big ? `${(100 * W / 680).toFixed(1)}%` : "100%";
+      const boxOpen = big ? `<div class="an-mm-big" style="overflow:auto;max-height:80vh">` : "";
+      const boxClose = big ? "</div>" : "";
+      const centreBox = () => {
+        const sc = big && host.querySelector(".an-mm-big");
+        if (!sc) return;
+        const rtl = getComputedStyle(sc).direction === "rtl";   // RTL scrollLeft runs negative
+        sc.scrollLeft = (rtl ? -1 : 1) * (sc.scrollWidth - sc.clientWidth) / 2;
+        sc.scrollTop = (sc.scrollHeight - sc.clientHeight) / 2;
+      };
       const R = Math.min(W, H) * 0.36;
       const maxSize = Math.max(center.size || 1, ...neighbours.map((n) => n.size || 1), 1);
       const fsOf = (n) => ((n.id === center.id ? 17 : 9 + 9 * Math.sqrt((n.size || 1) / maxSize)) * scale);
@@ -1053,13 +1094,24 @@
           ? `<div class="hint muted" style="margin-top:4px">`
             + `${esc(t("Not observed in this corpus:"))} ${missing.join(" · ")}</div>`
           : "";
-        host.innerHTML = controls
-          + `<svg viewBox="0 0 ${W} ${H}" width="100%" style="background:var(--panel2);`
-          + `border:1px solid var(--border);border-radius:8px">${tree}</svg>`
+        // THE VIEW SAYS WHEN IT DOES NOT FOLLOW THE LITERAL TOGGLE (the 2026-09-26
+        // click-through, N12). The ring IS this picture (Q512), so it cannot narrow to the
+        // typed word -- and with "only the words I typed" on, every other tab has. Saying
+        // so, with the one click back, keeps the reader from reading the ring as the
+        // corpus the rest of the window describes.
+        const literal = _anExpand ? ""
+          : `<div class="hint" style="margin-bottom:4px">`
+            + `${esc(t("This view always shows the concept in every language; the other tabs are showing only the words you typed."))} `
+            + `<button type="button" class="linkish" onclick="_anSetExpand(true)">`
+            + `${esc(t("Search the concept in every language"))}</button></div>`;
+        host.innerHTML = controls + literal + boxOpen
+          + `<svg viewBox="0 0 ${W} ${H}" width="${svgW}" style="background:var(--panel2);max-width:none;`
+          + `border:1px solid var(--border);border-radius:8px">${tree}</svg>` + boxClose
           + omitted
           + `<div class="hint muted" style="margin-top:6px">`
           + `${esc(t("The concept at the centre, one arm per language, associations off the arms."))} `
           + `${esc(d.method ? t(d.method) : "")} <b>${esc(d.caveat ? t(d.caveat) : "")}</b></div>`;
+        centreBox();
         return;
       }
       if (_anMM.cloud) {
@@ -1091,11 +1143,12 @@
       const desc = _anMM.cloud
         ? t("Word cloud: keywords sized by shared-article volume; no links.")
         : t("Radial map: the seed keyword at the centre, its strongest relatives outward.");
-      host.innerHTML = controls
-        + `<svg viewBox="0 0 ${W} ${H}" width="100%" style="background:var(--panel2);`
-        + `border:1px solid var(--border);border-radius:8px">${edges}${nodesSvg}</svg>`
+      host.innerHTML = controls + boxOpen
+        + `<svg viewBox="0 0 ${W} ${H}" width="${svgW}" style="background:var(--panel2);max-width:none;`
+        + `border:1px solid var(--border);border-radius:8px">${edges}${nodesSvg}</svg>` + boxClose
         + `<div class="hint muted" style="margin-top:6px">${esc(desc)} `
         + `<b>${esc(t("Font size = shared-article volume."))}</b> ${esc(g.method || "")} ${esc(g.caveat || "")}</div>`;
+      centreBox();
     }
     // Inline near-dup annotation (maintainer-ruled: "1 voice" inline in lists, PR 3):
     // badge article-row links that are near-identical COPIES (= effectively one voice,
@@ -1233,7 +1286,12 @@
     function _anSetProvenance(v) {
       _anProvenance = v || "";
       // Wikipedia view orders by keyword count when a count is available (the ruling).
-      if (_anProvenance === "wikipedia" && _anKwForCount) _anKwSort = true;
+      if (_anProvenance === "wikipedia" && _anKwForCount) {
+        _anKwSort = true;
+        // ONE visible sort at a time, as in _anToggleKwSort: with Date now the select's
+        // default (Q508, N4) it would otherwise read "Date" over a count-ordered list.
+        const sb = $("an-adv-sort"); if (sb) sb.value = "";
+      }
       if (_anArtParams) _anLoadArticles(_anArtParams, 0);
     }
     function _anToggleKwSort() {
@@ -1498,6 +1556,7 @@
     function _anWriteLensToUrl() {
       try {
         const sp = new URLSearchParams(location.search);
+        _anUrlNamesActiveTab(sp);
         if (_anExpand) sp.delete("expand"); else sp.set("expand", "0");
         if (_anCap) sp.delete("cap"); else sp.set("cap", "0");
         sp.delete("sense");
@@ -1511,6 +1570,32 @@
         const qs = sp.toString();
         history.replaceState(null, "", (qs ? "?" + qs : location.pathname) + location.hash);
       } catch (_e) { /* a hostile history state must never break a toggle */ }
+    }
+    // THE URL DESCRIBES ONE TAB (the 2026-09-26 delegated click-through, row N, N2). A
+    // deep link names the tab it opened (?analyze= or ?corpus=), and the lens above is
+    // written BESIDE that name. Once the reader switches to another tab in the strip the
+    // name is stale: a sense pinned on "election" was written as
+    // "?analyze=climate&sense=election:…", and the next reload seeded CLIMATE with it and
+    // saved it into that tab's persisted lens. So the name follows the active tab. A
+    // plain query tab is named by its query; any other tab (an exact article set, a
+    // filtered search, a commodity, a Lead) cannot be spelled in a short link, so the
+    // stale name is dropped and a reload restores the strip's own active tab instead.
+    // A URL that names no tab is left alone: there is nothing in it to go stale.
+    function _anUrlNamesActiveTab(sp) {
+      if (!sp.has("analyze") && !sp.has("corpus")) return;
+      const tb = _anTabs.find((x) => x.id === _anActiveId);
+      if (!tb) return;
+      const ids = (s) => String(s || "").split(",").map(Number)
+        .filter((n) => Number.isFinite(n) && n > 0).slice(0, 5000).join(",");
+      const named = sp.has("analyze") ? "q:" + (sp.get("analyze") || "").trim()
+        : "ids:" + ids(sp.get("corpus"));
+      const mine = tb.kind === "ids" ? "ids:" + ids((tb.ids || []).join(","))
+        : "q:" + (tb.query || "");
+      if (named === mine) return;
+      ["analyze", "corpus", "label", "prov", "tab"].forEach((k) => sp.delete(k));
+      const plain = tb.kind !== "ids" && tb.query && !tb.src && !tb.lang && !tb.from
+        && !tb.to && !tb.commodity && !tb.prov;
+      if (plain) sp.set("analyze", tb.query);
     }
     // The other direction, and PURE (a query string -> a lens seed, or null when the URL
     // carries no lens at all). It deliberately does NOT assign the globals: a deep link's
@@ -1597,8 +1682,11 @@
             `<button type="button" class="linkish"`
             + ` onclick="_anPickSense(${esc(JSON.stringify(term.normalized))}, ${esc(JSON.stringify(s2.ring_id))})">`
             + `“${esc(s2.concept)}”</button>`).join(" · ");
-          parts.push(`<div>${esc(tf("{term} denotes several concepts, so it was not expanded",
-            { term: term.term }))}. <span class="muted">${esc(t("Search one of them:"))}</span> ${picks}`
+          // The full stop is INSIDE the keyed frame, so each locale ends the sentence
+          // with its own punctuation ("。" in zh and ja). A literal ". " after the frame
+          // drew "因此未做扩展. 搜索其中之一" (the 2026-09-26 click-through, N14).
+          parts.push(`<div>${esc(tf("{term} denotes several concepts, so it was not expanded.",
+            { term: term.term }))} <span class="muted">${esc(t("Search one of them:"))}</span> ${picks}`
             + missNote(term) + `</div>`);
         } else if (term.pinned_ring) {
           // No expansion and no refusal, but a pin was sent: the term touches no ring at
@@ -1618,7 +1706,17 @@
       // off there is nothing for the server to report. The two are never both drawn.
       let cap = "";
       if (cross.capped) {
-        cap = `<div class="muted">${esc(cross.cap_caveat ? t(cross.cap_caveat) : "")} `
+        // Q503 words the disclosure with its NUMBERS ("expanded to 40 of 63 forms"), and
+        // the payload carries them on every capped term; they used to reach the reader
+        // only after a click on "Count each form" (N13). A frame per term, the counts
+        // interpolated after translation.
+        const n = (x) => (typeof fmtNum === "function" ? fmtNum(x, 0) : String(x));
+        const nums = (cross.terms || []).filter((x) => x.capped
+            && x.searched_forms != null && x.total_forms != null)
+          .map((x) => tf("{term}: expanded to {searched} of {total} forms.",
+            { term: x.term, searched: n(x.searched_forms), total: n(x.total_forms) }));
+        cap = `<div class="muted">${nums.length ? esc(nums.join(" ")) + " " : ""}`
+          + `${esc(cross.cap_caveat ? t(cross.cap_caveat) : "")} `
           + `<button type="button" class="linkish" onclick="_anSetCap(false)">`
           + `${esc(t("Search every form"))}</button></div>`;
       } else if (capOff) {
@@ -1639,10 +1737,15 @@
       // The caveat is SERVER prose, so it goes through `t()` exactly as the Lead's own
       // caveat does in `_anRenderProvenance`. Without it the rail reads in English on a
       // page whose every other string is translated -- measured in ar/zh/ja/hi.
-      const cav = cross.caveat ? t(cross.caveat) : "";
-      return `<div class="hint" id="an-xlang" title="${esc(cav)}">`
+      //
+      // Only when the search WAS widened (N13): the sentence says "this search matched
+      // the concept in every language", and under a term that was declined ("so it was
+      // not expanded") it stated the opposite of the line right above it. The server
+      // sends it whenever the block exists, so the payload's own `expanded` decides.
+      const cav = (cross.caveat && cross.expanded) ? t(cross.caveat) : "";
+      return `<div class="hint" id="an-xlang"${cav ? ` title="${esc(cav)}"` : ""}>`
         + parts.join("") + counts + cap
-        + `<div class="muted">${esc(cav)}${back}</div></div>`;
+        + ((cav || back) ? `<div class="muted">${esc(cav)}${back}</div>` : "") + `</div>`;
     }
     // A DOM-id-safe slug for a term that may be Arabic, Japanese or hyphenated. Not a
     // hash: the id has to be reproducible from the same term on the next render, and
@@ -1824,8 +1927,11 @@
       return order.map((k) => {
         const n = buckets.get(k).length;
         const label = k ? ooLangCell(k) : `<span class="muted">${esc(t("Language not recorded"))}</span>`;
+        // A group of ONE read "spa 1 articles" (N14): a count of one takes the singular
+        // key, the one form every locale has (there are no CLDR plural rules here).
+        const count = (n === 1 ? t("{n} article") : t("{n} articles")).replace("{n}", n);
         return `<tr class="an-lang-group"><td colspan="5"><b>${label}</b>`
-          + ` <span class="muted">${esc(t("{n} articles").replace("{n}", n))}</span></td></tr>`
+          + ` <span class="muted">${esc(count)}</span></td></tr>`
           + buckets.get(k).join("");
       }).join("");
     }
@@ -2328,8 +2434,13 @@
       const p = _articleQuery(searchParams()); p.set("limit", String(DEFAULT_LIMIT));
       try {
         const data = await api("/api/articles?" + p.toString());
-        $("search-meta").textContent = `${data.total} result(s)` + (data.total > data.results.length ?
-          ` (showing ${data.results.length})` : "");
+        // Keyed frames with the counts interpolated after translation -- the line was a
+        // hard-coded English template on a page read in eleven other languages (N11).
+        const stf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
+          : ((s, v) => s.replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null ? String(v[k]) : m)));
+        $("search-meta").textContent = (data.total > data.results.length)
+          ? stf("{n} result(s) (showing {shown})", {n: data.total, shown: data.results.length})
+          : stf("{n} result(s)", {n: data.total});
         const t = $("results");
         t.innerHTML = "<tr><th>Title</th><th>Source</th><th>Published</th><th>Lang</th><th></th></tr>" +
           (data.results.length ? data.results.map(a =>

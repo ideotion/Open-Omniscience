@@ -48,8 +48,9 @@ def test_spa_stats_are_counts_with_method_caveat_no_score():
     assert 't("mentions")' in _JS and 't("articles")' in _JS
     assert 't("trend")' in _JS and "tr.growth" in _JS
     assert "d.cooccurrences" in _JS
-    # the endpoint caveat is appended (method/caveat visible)
-    assert 'd.caveat ? " · " + d.caveat : ""' in _JS
+    # the endpoint caveat is appended (method/caveat visible), translated through its
+    # key: it is a fixed server string, so the hover reads in the UI language (N7)
+    assert 'd.caveat ? " · " + t(d.caveat) : ""' in _JS
     # honest empty state for an unknown term
     assert 't("Not in your corpus yet — no stats.")' in _JS
     # the transient "Loading…" placeholder is live-bubble-only (persist=false), never

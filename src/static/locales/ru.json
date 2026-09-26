@@ -4691,5 +4691,16 @@
   "Interrupted": "Прервано",
   "Cancelled": "Отменено",
   "Analytics are complete once the re-index (stage 4) finishes.": "Аналитика будет завершена, когда закончится переиндексация (этап 4).",
-  "An import is running — verify the backup once it has finished.": "Идёт импорт — проверьте резервную копию, когда он завершится."
+  "An import is running — verify the backup once it has finished.": "Идёт импорт — проверьте резервную копию, когда он завершится.",
+  "Every series is hidden. Click a legend entry to show it again.": "Все ряды скрыты. Нажмите на элемент легенды, чтобы снова его показать.",
+  "mention": "упоминание",
+  "{n} article": "{n} статья",
+  "{term} denotes several concepts, so it was not expanded.": "{term} обозначает несколько понятий, поэтому запрос не расширялся.",
+  "{term}: expanded to {searched} of {total} forms.": "{term}: расширено до {searched} из {total} форм.",
+  "This view always shows the concept in every language; the other tabs are showing only the words you typed.": "Этот вид всегда показывает понятие на всех языках; остальные вкладки показывают только введённые вами слова.",
+  "{n} result(s)": "Результатов: {n}",
+  "{n} result(s) (showing {shown})": "Результатов: {n} (показано {shown})",
+  "Counts only, never a score. The trend ratio is noisy on a young corpus; co-occurrence and PMI are association, not causation. Deduced from your corpus, not a claim about the world.": "Только подсчёты, никогда не оценка. Коэффициент тренда шумный на молодом корпусе; совместная встречаемость и PMI — это связь, а не причинность. Выведено из вашего корпуса, а не утверждение о мире.",
+  "Meeus, Astronomical Algorithms (2nd ed.) ch. 49: mean lunar phase + periodic and planetary corrections; computed locally, no data files": "Меус, Astronomical Algorithms (2-е изд.), гл. 49: средняя фаза Луны + периодические и планетные поправки; вычисляется локально, без файлов данных",
+  "typically within ~2 minutes; times are TD (ΔT≈70 s vs UTC not applied — immaterial at agenda granularity, stated rather than hidden)": "обычно с точностью ~2 минуты; время в TD (ΔT≈70 с относительно UTC не учитывается — несущественно для точности повестки, указано, а не скрыто)"
 }

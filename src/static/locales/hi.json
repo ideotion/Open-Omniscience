@@ -4691,5 +4691,16 @@
   "Interrupted": "बाधित",
   "Cancelled": "रद्द किया गया",
   "Analytics are complete once the re-index (stage 4) finishes.": "पुनः अनुक्रमण (चरण 4) पूरा होने पर विश्लेषण पूरा होगा।",
-  "An import is running — verify the backup once it has finished.": "एक आयात चल रहा है — उसके पूरा होने के बाद बैकअप सत्यापित करें।"
+  "An import is running — verify the backup once it has finished.": "एक आयात चल रहा है — उसके पूरा होने के बाद बैकअप सत्यापित करें।",
+  "Every series is hidden. Click a legend entry to show it again.": "सभी शृंखलाएँ छिपी हुई हैं। किसी को फिर से दिखाने के लिए लेजेंड की किसी प्रविष्टि पर क्लिक करें।",
+  "mention": "उल्लेख",
+  "{n} article": "{n} लेख",
+  "{term} denotes several concepts, so it was not expanded.": "{term} कई अवधारणाओं को दर्शाता है, इसलिए इसका विस्तार नहीं किया गया।",
+  "{term}: expanded to {searched} of {total} forms.": "{term}: {total} में से {searched} रूपों तक विस्तारित।",
+  "This view always shows the concept in every language; the other tabs are showing only the words you typed.": "यह दृश्य अवधारणा को हमेशा सभी भाषाओं में दिखाता है; अन्य टैब केवल आपके लिखे शब्द दिखा रहे हैं।",
+  "{n} result(s)": "{n} परिणाम",
+  "{n} result(s) (showing {shown})": "{n} परिणाम ({shown} दिखाए जा रहे हैं)",
+  "Counts only, never a score. The trend ratio is noisy on a young corpus; co-occurrence and PMI are association, not causation. Deduced from your corpus, not a claim about the world.": "केवल गिनतियाँ, कभी स्कोर नहीं। नए संग्रह पर प्रवृत्ति अनुपात अस्थिर होता है; सह-उपस्थिति और PMI संबंध हैं, कारण नहीं। आपके संग्रह से निकाला गया, दुनिया के बारे में कोई दावा नहीं।",
+  "Meeus, Astronomical Algorithms (2nd ed.) ch. 49: mean lunar phase + periodic and planetary corrections; computed locally, no data files": "मीउस, Astronomical Algorithms (दूसरा संस्करण) अध्याय 49: औसत चंद्र कला + आवधिक और ग्रहीय सुधार; स्थानीय रूप से गणना, कोई डेटा फ़ाइल नहीं",
+  "typically within ~2 minutes; times are TD (ΔT≈70 s vs UTC not applied — immaterial at agenda granularity, stated rather than hidden)": "आम तौर पर ~2 मिनट के भीतर; समय TD में हैं (UTC की तुलना में ΔT≈70 से. लागू नहीं — एजेंडा की सूक्ष्मता पर महत्वहीन, छिपाने के बजाय बताया गया)"
 }

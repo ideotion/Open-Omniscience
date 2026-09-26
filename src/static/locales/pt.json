@@ -4691,5 +4691,16 @@
   "Interrupted": "Interrompido",
   "Cancelled": "Cancelado",
   "Analytics are complete once the re-index (stage 4) finishes.": "As análises ficam completas quando a reindexação (etapa 4) terminar.",
-  "An import is running — verify the backup once it has finished.": "Uma importação está em curso — verifique a cópia de segurança quando ela terminar."
+  "An import is running — verify the backup once it has finished.": "Uma importação está em curso — verifique a cópia de segurança quando ela terminar.",
+  "Every series is hidden. Click a legend entry to show it again.": "Todas as séries estão ocultas. Clique numa entrada da legenda para voltar a mostrá-la.",
+  "mention": "menção",
+  "{n} article": "{n} artigo",
+  "{term} denotes several concepts, so it was not expanded.": "{term} designa vários conceitos, pelo que a pesquisa não foi alargada.",
+  "{term}: expanded to {searched} of {total} forms.": "{term}: alargado a {searched} de {total} formas.",
+  "This view always shows the concept in every language; the other tabs are showing only the words you typed.": "Esta vista mostra sempre o conceito em todas as línguas; os outros separadores mostram apenas as palavras que escreveu.",
+  "{n} result(s)": "{n} resultado(s)",
+  "{n} result(s) (showing {shown})": "{n} resultado(s) (a mostrar {shown})",
+  "Counts only, never a score. The trend ratio is noisy on a young corpus; co-occurrence and PMI are association, not causation. Deduced from your corpus, not a claim about the world.": "Apenas contagens, nunca uma pontuação. A razão de tendência é ruidosa num corpus jovem; a coocorrência e a PMI são associação, não causalidade. Deduzido do seu corpus, não uma afirmação sobre o mundo.",
+  "Meeus, Astronomical Algorithms (2nd ed.) ch. 49: mean lunar phase + periodic and planetary corrections; computed locally, no data files": "Meeus, Astronomical Algorithms (2.ª ed.), cap. 49: fase lunar média + correções periódicas e planetárias; calculado localmente, sem ficheiros de dados",
+  "typically within ~2 minutes; times are TD (ΔT≈70 s vs UTC not applied — immaterial at agenda granularity, stated rather than hidden)": "normalmente com precisão de ~2 minutos; horas em TD (ΔT≈70 s face a UTC não aplicado — irrelevante à granularidade da agenda, indicado em vez de escondido)"
 }

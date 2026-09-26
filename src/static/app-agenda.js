@@ -1172,6 +1172,13 @@
                  full: "Full moon", last_quarter: "Last quarter moon"};
       return L[kind] ? tr(L[kind]) : String(kind || "");
     }
+    // The method + accuracy half of a moon or season hover. Both are FIXED sentences the
+    // server sends (src/events/astronomy.py, Meeus), so they are keyed and translated
+    // here; appended verbatim they read in English in every locale (the 2026-09-26
+    // click-through, U9). One helper so the month and week grids cannot disagree.
+    function _astroNote(x, tr) {
+      return tr(x.method || "") + "; " + tr(x.acc || "");
+    }
     async function _ensureAstro(year) {
       if (_astroYear === year) return;
       try {
@@ -1249,11 +1256,11 @@
         const iso = `${y}-${String(m).padStart(2, "0")}-${String(c.d).padStart(2, "0")}`;
         const moon = _astroByDate[iso];
         const moonHtml = moon
-          ? `<span class="ag-moon" style="float:inline-end;font-size:11px" title="${esc(_moonLabel(moon.kind, t9m) + " " + moon.time + " UTC — " + moon.method + "; " + moon.acc)}">${moon.glyph}</span>`
+          ? `<span class="ag-moon" style="float:inline-end;font-size:11px" title="${esc(_moonLabel(moon.kind, t9m) + " " + moon.time + " UTC — " + _astroNote(moon, t9m))}">${moon.glyph}</span>`
           : "";
         const season = _seasonByDate[iso];
         const seasonHtml = season
-          ? `<span class="ag-season" style="float:inline-end;font-size:11px;margin-inline-end:2px" title="${esc(t9m(season.name) + " " + season.time + " UTC — " + season.method + "; " + season.acc)}">${season.glyph}</span>`
+          ? `<span class="ag-season" style="float:inline-end;font-size:11px;margin-inline-end:2px" title="${esc(t9m(season.name) + " " + season.time + " UTC — " + _astroNote(season, t9m))}">${season.glyph}</span>`
           : "";
         const chips = evs.slice(0, 3).map(e =>
           `<span class="ag-chip${agChipCls(e) ? " " + agChipCls(e) : ""}" title="${esc(e.title + agChipTitleSuffix(e, e.confirmed ? "" : " — exact date moves; check the official source"))}">${esc(e.title.length > 22 ? e.title.slice(0, 21) + "…" : e.title)}</span>`).join("");
@@ -1308,7 +1315,7 @@
         const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
         const moon = _astroByDate[iso];
         const moonHtml = moon
-          ? `<span class="ag-moon" style="float:inline-end;font-size:11px" title="${esc(_moonLabel(moon.kind, t9) + " " + moon.time + " UTC — " + moon.method + "; " + moon.acc)}">${moon.glyph}</span>`
+          ? `<span class="ag-moon" style="float:inline-end;font-size:11px" title="${esc(_moonLabel(moon.kind, t9) + " " + moon.time + " UTC — " + _astroNote(moon, t9))}">${moon.glyph}</span>`
           : "";
         const wd = new Intl.DateTimeFormat(loc, { weekday: "short" }).format(d);
         const dn = new Intl.DateTimeFormat(loc, { day: "numeric", month: "short" }).format(d);

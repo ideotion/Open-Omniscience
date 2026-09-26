@@ -4691,5 +4691,16 @@
   "Interrupted": "Terputus",
   "Cancelled": "Dibatalkan",
   "Analytics are complete once the re-index (stage 4) finishes.": "Analitik akan lengkap setelah pengindeksan ulang (tahap 4) selesai.",
-  "An import is running — verify the backup once it has finished.": "Sebuah impor sedang berjalan — verifikasi cadangan setelah impor selesai."
+  "An import is running — verify the backup once it has finished.": "Sebuah impor sedang berjalan — verifikasi cadangan setelah impor selesai.",
+  "Every series is hidden. Click a legend entry to show it again.": "Semua seri disembunyikan. Klik entri legenda untuk menampilkannya lagi.",
+  "mention": "penyebutan",
+  "{n} article": "{n} artikel",
+  "{term} denotes several concepts, so it was not expanded.": "{term} menunjuk beberapa konsep, jadi tidak diperluas.",
+  "{term}: expanded to {searched} of {total} forms.": "{term}: diperluas ke {searched} dari {total} bentuk.",
+  "This view always shows the concept in every language; the other tabs are showing only the words you typed.": "Tampilan ini selalu menampilkan konsep dalam semua bahasa; tab lain hanya menampilkan kata yang Anda ketik.",
+  "{n} result(s)": "{n} hasil",
+  "{n} result(s) (showing {shown})": "{n} hasil (menampilkan {shown})",
+  "Counts only, never a score. The trend ratio is noisy on a young corpus; co-occurrence and PMI are association, not causation. Deduced from your corpus, not a claim about the world.": "Hanya hitungan, tidak pernah skor. Rasio tren tidak stabil pada korpus yang masih muda; kemunculan bersama dan PMI adalah asosiasi, bukan sebab-akibat. Disimpulkan dari korpus Anda, bukan klaim tentang dunia.",
+  "Meeus, Astronomical Algorithms (2nd ed.) ch. 49: mean lunar phase + periodic and planetary corrections; computed locally, no data files": "Meeus, Astronomical Algorithms (edisi ke-2) bab 49: fase bulan rata-rata + koreksi periodik dan planet; dihitung secara lokal, tanpa berkas data",
+  "typically within ~2 minutes; times are TD (ΔT≈70 s vs UTC not applied — immaterial at agenda granularity, stated rather than hidden)": "biasanya dalam ~2 menit; waktu dalam TD (ΔT≈70 dtk terhadap UTC tidak diterapkan — tidak berarti pada tingkat ketelitian agenda, dinyatakan alih-alih disembunyikan)"
 }

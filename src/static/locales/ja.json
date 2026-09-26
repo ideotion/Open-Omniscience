@@ -4691,5 +4691,16 @@
   "Interrupted": "中断",
   "Cancelled": "キャンセル済み",
   "Analytics are complete once the re-index (stage 4) finishes.": "分析は再インデックス（ステージ 4）が終わった時点で完了します。",
-  "An import is running — verify the backup once it has finished.": "インポートの実行中です — 完了してからバックアップを検証してください。"
+  "An import is running — verify the backup once it has finished.": "インポートの実行中です — 完了してからバックアップを検証してください。",
+  "Every series is hidden. Click a legend entry to show it again.": "すべての系列が非表示です。凡例の項目をクリックすると再び表示されます。",
+  "mention": "言及",
+  "{n} article": "{n} 件の記事",
+  "{term} denotes several concepts, so it was not expanded.": "{term} は複数の概念を指すため、拡張しませんでした。",
+  "{term}: expanded to {searched} of {total} forms.": "{term}：{total} 語形のうち {searched} 語形まで拡張しました。",
+  "This view always shows the concept in every language; the other tabs are showing only the words you typed.": "このビューは常にすべての言語で概念を表示します。ほかのタブは入力した語のみを表示しています。",
+  "{n} result(s)": "{n} 件の結果",
+  "{n} result(s) (showing {shown})": "{n} 件の結果（{shown} 件を表示）",
+  "Counts only, never a score. The trend ratio is noisy on a young corpus; co-occurrence and PMI are association, not causation. Deduced from your corpus, not a claim about the world.": "件数のみで、スコアではありません。コーパスが若いうちはトレンド比のばらつきが大きく、共起と PMI は関連であって因果ではありません。あなたのコーパスから導いたもので、世界についての主張ではありません。",
+  "Meeus, Astronomical Algorithms (2nd ed.) ch. 49: mean lunar phase + periodic and planetary corrections; computed locally, no data files": "Meeus『Astronomical Algorithms』（第2版）第49章：平均月相＋周期項と惑星による補正。ローカルで計算し、データファイルは使用しません",
+  "typically within ~2 minutes; times are TD (ΔT≈70 s vs UTC not applied — immaterial at agenda granularity, stated rather than hidden)": "通常は約2分以内の精度。時刻は力学時 TD（UTC との差 ΔT≈70 秒は未適用 — アジェンダの粒度では影響なし。隠さずに明記しています）"
 }
