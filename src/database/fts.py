@@ -307,7 +307,7 @@ def _indexed(row: str, col: str) -> str:
     ``article_fts_norm`` row: kept when a segmenter made it, re-folded when only the Arabic
     fold did, the stored text when there is no row. Mirrors ``fts_norm.indexed_values``."""
     return (
-        f"COALESCE((SELECT CASE WHEN n.mask & {_SEGMENTERS} THEN n.{col} "
+        f"COALESCE((SELECT CASE WHEN n.mask & {_SEGMENTERS} THEN n.{col} "  # nosec B608 - row and col are the literals "old"/"new" and "title"/"content" passed below; _SEGMENTERS is a module int
         f"ELSE oo_fts_norm({row}.{col}, n.mask) END "
         f"FROM article_fts_norm n WHERE n.article_id = {row}.id), {row}.{col})"
     )
@@ -325,14 +325,14 @@ _INDEX_NEW = f"""
         FROM (SELECT oo_fts_used(new.title, new.content, oo_fts_caps()) AS m) WHERE m != 0;
         INSERT INTO article_fts(rowid, title, content)
         VALUES (new.id, {_indexed("new", "title")}, {_indexed("new", "content")});
-"""
+"""  # nosec B608 - every interpolation is a module constant (_SEGMENTERS, an int) or a literal row/column name from this file; the trigger bodies take no input
 
 # Remove ``old``'s entry with exactly the values it was indexed with, then its record.
 _DELETE_OLD = f"""
         INSERT INTO article_fts(article_fts, rowid, title, content)
         VALUES ('delete', old.id, {_indexed("old", "title")}, {_indexed("old", "content")});
         DELETE FROM article_fts_norm WHERE article_id = old.id;
-"""
+"""  # nosec B608 - every interpolation is a module constant (_SEGMENTERS, an int) or a literal row/column name from this file; the trigger bodies take no input
 
 _FTS_DDL = [
     """
