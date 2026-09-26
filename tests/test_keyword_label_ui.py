@@ -194,10 +194,10 @@ def test_a_tag_inside_a_keyword_row_keeps_its_own_hover_m2() -> None:
     Q418's hover (original, language, QID) was unreachable. The handler must stand down
     when the pointer is on a hover target of its own INSIDE the row, and the chips must
     carry the tag's hover on the row for a keyboard reader."""
-    from tests.js_source_helper import app_js, function_body, strip_comments
+    from tests.js_source_helper import app_js, function_body, function_source, strip_comments
 
     app = app_js()
-    boot = app[app.index("function ooKwStatInit("):]
+    boot = function_source(app, "ooKwStatInit")
     on_hover = strip_comments(function_body(boot, "onHover"))
     assert 'closest(".oo-tip-target")' in on_hover, "the stats handler no longer looks for an inner hover target"
     assert "inner !== el && el.contains(inner)" in on_hover and "hovered = null" in on_hover

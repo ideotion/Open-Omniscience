@@ -26,7 +26,7 @@ from pathlib import Path
 
 import pytest
 
-from tests.js_source_helper import app_js, function_body, read_static, strip_comments
+from tests.js_source_helper import app_js, function_body, object_literal, read_static, strip_comments
 
 _ROOT = Path(__file__).resolve().parents[1]
 _LOCALES = _ROOT / "src" / "static" / "locales"
@@ -90,7 +90,7 @@ def test_the_bulletin_list_is_keyed_and_its_cadence_is_a_label() -> None:
     label, through the same keys."""
     agenda = strip_comments(read_static("app-agenda.js"))
     assert "_bulT(_BUL_CADENCE_LABEL[r.cadence] || r.cadence)" in agenda
-    labels = dict(re.findall(r'(\w+): "(\w+)"', agenda.split("const _BUL_CADENCE_LABEL = {", 1)[1].split("}", 1)[0]))
+    labels = dict(re.findall(r'(\w+): "(\w+)"', object_literal(agenda, "_BUL_CADENCE_LABEL")))
     assert set(labels) == {"daily", "weekly", "monthly", "trimester", "semester", "yearly"}
     for label in list(labels.values()) + ["Covers through", "Review", "Draft built."]:
         _keyed(label)
