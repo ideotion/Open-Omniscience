@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import logging
 import time
+from array import array
 from collections.abc import Callable, Iterable, Mapping
 from datetime import UTC, datetime
 
@@ -1905,6 +1906,119 @@ def source_counter_envelope(session: Session, source, *, fresh_within_hours: flo
 # CLOSED between chunks rather than held for the whole ~9.3 M-row scan.
 _LANG_SCAN_CHUNK = 20_000
 
+#: Language corrections written per hold of the write gate. A first run after an
+#: upgrade can correct hundreds of thousands of keywords; one bulk write of all of them
+#: held every correction in memory at once (measured ~1.5 KB each, mappings included)
+#: and held the gate against the collectors for the whole write.
+_LANG_UPDATE_BATCH = 5_000
+
+#: Keyword ids the vote tally keeps in its two arrays (5 bytes per id up to the highest
+#: id seen). A keyword id past this goes to the dict instead, so a sparse id space can
+#: never size an array.
+_VOTE_DENSE_IDS = 1 << 25
+
+
+class _LanguageVotes:
+    """How many of each keyword's mentions vote for each language, held compactly.
+
+    It was a ``dict[int, dict[str, int]]``: about 300 bytes per keyword (an int key, a
+    one-entry dict, and the language string sqlite3 hands back as a new object per row),
+    which is 876 MB of Python objects at the 2.98 M keywords of the 2026-09-26 crash
+    bundle, all held until the pass ends. Most keywords are voted on in ONE language
+    (72% of that corpus's keywords appear in a single article), so a keyword's first
+    language and its vote count live in two arrays indexed by keyword id, the layout
+    :class:`~src.analytics.article_lang_map.ArticleLanguageMap` uses for articles. Only a
+    keyword that meets a SECOND language (or a code past the 255 slots) gets a dict.
+    """
+
+    def __init__(self) -> None:
+        self._codes: list[str] = []  # slot k (1..255) -> self._codes[k - 1]
+        self._code_of: dict[str, int] = {}
+        self._first = bytearray()  # keyword id -> slot of its first language; 0 = no vote
+        self._count = array("I")  # keyword id -> votes for that first language
+        self._mixed: dict[int, dict[str, int]] = {}
+        #: Keywords with at least one vote (what ``len(dist)`` counted).
+        self.keywords = 0
+
+    def _slot(self, lang: str) -> int:
+        slot = self._code_of.get(lang)
+        if slot is None:
+            if len(self._codes) >= 255:
+                return 0
+            self._codes.append(lang)
+            slot = self._code_of[lang] = len(self._codes)
+        return slot
+
+    def add(self, kid: int, lang: str) -> None:
+        mixed = self._mixed.get(kid)
+        if mixed is not None:
+            mixed[lang] = mixed.get(lang, 0) + 1
+            return
+        slot = self._slot(lang)
+        first = self._first[kid] if 0 <= kid < len(self._first) else 0
+        if first == 0:
+            self.keywords += 1
+            if slot == 0 or not 0 <= kid < _VOTE_DENSE_IDS:
+                self._mixed[kid] = {lang: 1}
+                return
+            if kid >= len(self._first):
+                grow = max(kid + 1 - len(self._first), len(self._first))
+                self._first.extend(bytes(grow))
+                self._count.frombytes(bytes(grow * self._count.itemsize))
+            self._first[kid] = slot
+            self._count[kid] = 1
+        elif first == slot:
+            self._count[kid] += 1
+        else:
+            # A second language: from here on this keyword keeps its whole distribution.
+            self._mixed[kid] = {self._codes[first - 1]: self._count[kid], lang: 1}
+            self._first[kid] = 0
+            self._count[kid] = 0
+
+    def get(self, kid: int) -> dict[str, int] | None:
+        """The keyword's votes as ``{language: count}``, or ``None`` if it has none."""
+        mixed = self._mixed.get(kid)
+        if mixed is not None:
+            return mixed
+        if 0 <= kid < len(self._first):
+            first = self._first[kid]
+            if first:
+                return {self._codes[first - 1]: self._count[kid]}
+        return None
+
+
+def _write_keyword_languages(session: Session, updates: list[dict]) -> None:
+    """Write one batch of keyword-language corrections under the single-writer gate.
+
+    C8 root cause (2026-09-11, confirmed by reproduction): ``bulk_update_mappings`` is a
+    LEGACY bulk-ORM operation that writes through ``session_transaction.connection(...)``
+    directly (``sqlalchemy.orm.bulk_persistence._bulk_update`` ->
+    ``persistence._emit_update_statements``) rather than through ``Session.execute()`` --
+    so it fires NEITHER ``before_flush`` NOR ``do_orm_execute``, the two hooks
+    ``src.database.writer.register_write_gate`` relies on to take the single-writer gate.
+    Unlike ``Query.delete()``/``Query.update()`` (which DO fire ``do_orm_execute`` and are
+    covered by tests/test_write_gate.py), this call reaches SQLite completely outside the
+    gate. Reproduced directly: two threads, one holding the gate+SQLite write lock past
+    ``busy_timeout``, the other calling this exact ``bulk_update_mappings`` shape, raised
+    a raw ``sqlite3.OperationalError: database is locked`` on every run — which is why the
+    field bundle showed ``auto_cleanup.last_tally.language`` fail deterministically while
+    its sibling steps (ordinary ORM writes, correctly gated) did not. Fixed the same way
+    the file's own raw-write callers do it (``write_lock()``, e.g.
+    ``prune_orphan_keywords``): take the gate explicitly around the bulk write.
+    """
+    from src.database.writer import write_lock
+
+    with write_lock():
+        session.bulk_update_mappings(Keyword, updates)
+        # Savepoint-aware for the same reason the scan loop is: a tail commit here would
+        # close a caller-owned savepoint, which is the recorded "a store helper that
+        # commits internally" defect. Neither caller nests this today; the guard is what
+        # keeps it safe if one does.
+        if session.in_nested_transaction():
+            session.flush()
+        else:
+            session.commit()
+
 
 def reconcile_keyword_language(
     session: Session,
@@ -1950,9 +2064,11 @@ def reconcile_keyword_language(
     the query-time ``global_stopwords`` already routes every keyword (incl. unknown-language)
     through the English + all-language stoplist. Returns a small tally."""
     from src.analytics.article_lang_map import ArticleLanguageMap
+    from src.database.query import keyset_scan
 
     # 1) per-keyword language distribution (count == distinct articles, one mention per
-    # (keyword, article)), streamed to bound RAM.
+    # (keyword, article)), streamed to bound RAM. The ROWS are bounded by the chunk; the
+    # TALLY is bounded by keeping it compact (:class:`_LanguageVotes`).
     # S4.2: a keyset loop that CLOSES between chunks, not one `yield_per` scan.
     # This pass runs from the background re-index job, and a single streamed scan
     # over ~9.3 M mentions held one WAL read-mark for its whole duration -- which
@@ -1977,7 +2093,7 @@ def reconcile_keyword_language(
     # `min_articles` plus a strict-majority test. It is not acceptable for
     # `read_snapshot`, whose one snapshot is exactly what makes an export's two
     # passes agree -- see that module for why it is deliberately left alone.
-    dist: dict[int, dict[str, int]] = {}
+    votes = _LanguageVotes()
     art_lang: ArticleLanguageMap | None = None  # only a NULL-language mention needs it
     from_mentions = from_articles = unmeasured = 0
     cursor_id = 0
@@ -2006,8 +2122,7 @@ def reconcile_keyword_language(
                     continue
                 lang = resolved
                 from_articles += 1
-            d = dist.setdefault(int(kid), {})
-            d[lang] = d.get(lang, 0) + 1
+            votes.add(int(kid), lang)
         cursor_id = int(chunk[-1][0])
         # Savepoint-aware, per the recorded lesson that a store helper committing
         # internally breaks any caller-owned savepoint. Neither caller nests this
@@ -2019,7 +2134,7 @@ def reconcile_keyword_language(
             session.commit()
         if should_stop is not None and should_stop():
             return {
-                "keywords_with_signature": len(dist),
+                "keywords_with_signature": votes.keywords,
                 "relanguaged": 0,
                 "null_to_lang": 0,
                 "lang_to_lang": 0,
@@ -2031,10 +2146,14 @@ def reconcile_keyword_language(
             }
 
     # 2) decide the signature per keyword + collect the changes vs the stored language.
+    # The keywords are read in keyset chunks: iterating the query itself fetched every
+    # keyword before yielding the first (SQLAlchemy 2.0's ORM loading does not stream
+    # without yield_per), 313 bytes each, ~930 MB at 2.98 M keywords. A correction
+    # written between chunks never moves the scan, which is keyed on id.
     relanguaged = null_to_lang = lang_to_lang = respelled = 0
     updates: list[dict] = []
-    for kid, stored in session.query(Keyword.id, Keyword.language):
-        langs = dist.get(int(kid))
+    for kid, stored in keyset_scan(session.query(Keyword.id, Keyword.language), Keyword.id):
+        langs = votes.get(int(kid))
         if not langs:
             continue
         total = sum(langs.values())
@@ -2045,6 +2164,9 @@ def reconcile_keyword_language(
         if (stored or None) == sig_lang:
             continue
         updates.append({"id": int(kid), "language": sig_lang})
+        if len(updates) >= _LANG_UPDATE_BATCH:
+            _write_keyword_languages(session, updates)
+            updates = []
         if stored and normalize_lang(stored) == sig_lang:
             respelled += 1  # "en-US" -> "en": the same language, one spelling
             continue
@@ -2054,36 +2176,9 @@ def reconcile_keyword_language(
         else:
             null_to_lang += 1
     if updates:
-        # C8 root cause (2026-09-11, confirmed by reproduction): `bulk_update_mappings`
-        # is a LEGACY bulk-ORM operation that writes through
-        # `session_transaction.connection(...)` directly (`sqlalchemy.orm.bulk_persistence
-        # ._bulk_update` -> `persistence._emit_update_statements`) rather than through
-        # `Session.execute()` -- so it fires NEITHER `before_flush` NOR `do_orm_execute`,
-        # the two hooks `src.database.writer.register_write_gate` relies on to take the
-        # single-writer gate. Unlike `Query.delete()`/`Query.update()` (which DO fire
-        # `do_orm_execute` and are covered by tests/test_write_gate.py), this call reaches
-        # SQLite completely outside the gate. Reproduced directly: two threads, one
-        # holding the gate+SQLite write lock past `busy_timeout`, the other calling this
-        # exact `bulk_update_mappings` shape, raised a raw
-        # ``sqlite3.OperationalError: database is locked`` on every run — which is why the
-        # field bundle showed `auto_cleanup.last_tally.language` fail deterministically
-        # while its sibling steps (ordinary ORM writes, correctly gated) did not. Fixed the
-        # same way the file's own raw-write callers do it (`write_lock()`, e.g.
-        # `prune_orphan_keywords` above): take the gate explicitly around the bulk write.
-        from src.database.writer import write_lock
-
-        with write_lock():
-            session.bulk_update_mappings(Keyword, updates)
-            # Savepoint-aware for the same reason the scan loop above is: this tail
-            # commit predates S4.2 and would close a caller-owned savepoint, which is
-            # the recorded "a store helper that commits internally" defect. Neither
-            # caller nests this today; the guard is what keeps it safe if one does.
-            if session.in_nested_transaction():
-                session.flush()
-            else:
-                session.commit()
+        _write_keyword_languages(session, updates)
     return {
-        "keywords_with_signature": len(dist),
+        "keywords_with_signature": votes.keywords,
         "relanguaged": relanguaged,
         "null_to_lang": null_to_lang,
         "lang_to_lang": lang_to_lang,
@@ -2214,9 +2309,9 @@ def reconcile_article_language(
 
     PERF (the SQLCipher codec column-order trap, ledger): NEVER a
     ``keyword_mentions -> articles`` join to read a keyword's language (that drags whole
-    ~35 KB article rows through the codec). Instead a small covering ``Keyword.id ->
-    language`` map + a covering ``(article_id, keyword_id)`` mention scan restricted to the
-    candidate batch, joined in Python. The per-article CONTENT read for the text detector
+    ~35 KB article rows through the codec). Instead a covering ``(article_id, keyword_id)``
+    mention scan restricted to the candidate batch, then the languages of just those
+    keywords by id, joined in Python. The per-article CONTENT read for the text detector
     is unavoidable, so the pass is BOUNDED + RESUMABLE (``after_id`` cursor, ``done`` flag),
     exactly like :func:`reindex_all_batch` — call repeatedly with ``after_id=last_id``.
 
@@ -2253,27 +2348,37 @@ def reconcile_article_language(
         }
 
     # 2) per-article keyword-language distribution for THIS batch only (the tier-2 signal).
-    # Covering Keyword.id -> language map (small keywords-table scan, no content) + a
-    # covering (article_id, keyword_id) mention scan chunked under the SQLite variable cap
-    # — NEVER the codec-trap join through the articles table.
-    kw_lang: dict[int, str] = {
-        int(kid): lang
-        for kid, lang in session.query(Keyword.id, Keyword.language).filter(
-            Keyword.language.isnot(None), Keyword.language != ""
-        )
-        if lang  # excluded by the filter; narrows the Optional column
-    }
-    dist: dict[int, dict[str, int]] = {}
+    # A covering (article_id, keyword_id) mention scan for the batch, then the languages
+    # of THOSE keywords only, both chunked under the SQLite variable cap -- NEVER the
+    # codec-trap join through the articles table. It used to read every keyword's
+    # language into a dict on every batch: ~1.3 GB of Python objects at the 2.98 M
+    # keywords of the 2026-09-26 crash bundle, for a batch that mentions a few thousand.
+    pairs: list[tuple[int, int]] = []
     for i in range(0, len(ids), 500):
         chunk = ids[i : i + 500]
-        for aid, kid in session.query(
-            KeywordMention.article_id, KeywordMention.keyword_id
-        ).filter(KeywordMention.article_id.in_(chunk)):
-            lang = kw_lang.get(int(kid))
-            if lang is None or lang not in SUPPORTED:
-                continue
-            d = dist.setdefault(int(aid), {})
-            d[lang] = d.get(lang, 0) + 1
+        pairs.extend(
+            (int(aid), int(kid))
+            for aid, kid in session.query(
+                KeywordMention.article_id, KeywordMention.keyword_id
+            ).filter(KeywordMention.article_id.in_(chunk))
+        )
+    kids = sorted({kid for _aid, kid in pairs})
+    kw_lang: dict[int, str] = {}
+    for i in range(0, len(kids), 500):
+        for kid, lang in session.query(Keyword.id, Keyword.language).filter(
+            Keyword.id.in_(kids[i : i + 500]),
+            Keyword.language.isnot(None),
+            Keyword.language != "",
+        ):
+            if lang:  # excluded by the filter; narrows the Optional column
+                kw_lang[int(kid)] = lang
+    dist: dict[int, dict[str, int]] = {}
+    for aid, kid in pairs:
+        lang = kw_lang.get(kid)
+        if lang is None or lang not in SUPPORTED:
+            continue
+        d = dist.setdefault(aid, {})
+        d[lang] = d.get(lang, 0) + 1
 
     # 3) deduce per article: text first, keyword-majority fallback, else leave unknown.
     set_by_text = set_by_keywords = still_unknown = 0

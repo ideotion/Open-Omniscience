@@ -10002,3 +10002,40 @@ caught.
 objects per row, 67 bytes each, linear) fits a whole-table `.all()` of a few million rows, and the
 five chunked here are the ones the UI can start, but none is proven to be it. The thread
 snapshots this same PR adds are what will name it. What the stop does not cover is recorded in `OPEN_QUEUE.md`.
+
+## 2026-09-26 — The 12-hourly keyword clean-up holds bytes per keyword, not objects (PR #1190)
+
+**WHAT SHIPPED.** `reconcile_keyword_language`, the language vote the idle-window keyword clean-up
+runs at most every 12 hours (and the re-index and keyword-fold jobs run too), keeps its tally in
+`_LanguageVotes`: a keyword's first language and its vote count in two arrays indexed by keyword
+id, 5 bytes per id, with a dict only for a keyword voted on in two languages or a code past the
+255 slots. It reads the keywords in `keyset_scan` chunks and writes its corrections 5,000 at a
+time, each batch under the write gate. `reconcile_article_language` reads its batch's mentions
+first and then only those keywords' languages, instead of every keyword's language on every
+batch.
+
+**THE LESSON (copied to `LESSONS.md`).** Bounding the rows is not bounding the tally. The S4.2
+keyset loop bounded each FETCH to 20,000 mentions and the comment above it said "streamed to bound
+RAM", but the dict it filled grew with every keyword in the corpus: 294 bytes each, measured. Then
+the decision step iterated `session.query(Keyword.id, Keyword.language)`, which does not stream
+(313 bytes a keyword). At the 2.98 M keywords of the 2026-09-26 crash bundle that is about 1.7 GB of
+Python objects, on a 3.9 GB machine already running the app.
+
+**MEASURED, NOT INFERRED.** Peak Python memory of the whole reconcile, steady state (nothing to
+correct): 16.1 / 45.0 MB at 20k / 80k keywords before, 10.5 / 11.0 / 13.1 MB at 20k / 80k / 320k
+after. The tests measure it at N and 4N keywords for both passes and for a first run that corrects
+every keyword; reverting either half alone grows it ×3.3-×3.8. The decisions are checked on
+randomized corpora against the rule written out independently (votes from the mention, then the
+article's asserted or deduced language; a strict majority backed by `min_articles`; respelled vs
+relanguaged), across chunk and batch edges and with keywords in both the arrays and the dict.
+16 tests; 12 mutations, all caught.
+
+**WHAT THE BUNDLE SAYS, AND WHAT IT DOES NOT.** Of the three recorded deaths, one fits this job:
+the long session on the second instance ended at 14:54 UTC, six minutes after its last pass tail
+finished (14:48 UTC), with the clean-up due since 13:02 UTC and both its marker and the
+incremental-vacuum marker that runs after it left at their earlier values. The markers are local
+time; the bundle's own clocks (a report named 17:56 and timestamped 15:56 UTC) put the machine at
+UTC+2. The other two deaths (the first instance at 23:27 UTC on 25 Sept, the second instance at
+15:53 UTC) happened during collection, when idle maintenance cannot run, so this job is one
+suspect and not the cause of every crash. The thread snapshots this PR adds will name what runs
+at the next one.

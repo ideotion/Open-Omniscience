@@ -15234,7 +15234,17 @@ nobody reads it as a general memory cap:
   Python work after the last row (the per-domain sets in most-cited domains, the article-to-source
   dict in the cited-sources preview, which is one entry per article) is not interrupted by it.
 - **Background jobs outside a deadline** (the pass tail, the wiki lane, housekeeping) are not
-  covered. The memory guard pauses new work; it cannot stop one read already running.
+  covered. The memory guard pauses new work; it cannot stop one read already running. ONE of
+  them was measured and bounded in the same PR: the 12-hourly keyword clean-up's language vote
+  (about 1.7 GB at 2.98 M keywords before, about 30 MB after; see `SHIPPED_LOG.md`). The rest are
+  unmeasured. The likeliest next ones to measure are the two whole-corpus recomputes that run
+  BESIDE collection: the briefing refresh that starts at the end of every pass and overlaps the
+  next one (`_refresh_briefing_async`), and the insights cache warm that starts after the unlock
+  at boot (thread `oo-warm-cache`; `refresh_briefing` runs `warm_cache` too). The two deaths
+  during collection fit them: the first instance died at 23:27 UTC on 25 Sept, 13 minutes after
+  a pass tail ended and 9 minutes into the next pass; the second died at 15:53 UTC on 26 Sept, 27
+  minutes into the first pass after a restart, 30 minutes after the unlock. Timing only: neither
+  is measured yet.
 - **Which read made the 2026-09-26 burst is not known.** When the next crash's thread snapshots
   (PR #1190) name it, check whether it runs inside a deadline; if not, that read needs its own
   bound, and this entry should say which.

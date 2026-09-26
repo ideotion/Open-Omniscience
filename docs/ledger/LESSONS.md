@@ -12472,3 +12472,15 @@ row by row, and read as a streaming scan. It was not: the ORM's `loading.instanc
 is yielded, exactly as `.all()` would. **To bound a scan, bound it explicitly: `yield_per`, or a
 keyset loop (`src/database/query.py::keyset_scan`) when the read mark must also be released
 between chunks. A `for` loop over a query is not evidence of streaming.**
+
+### BOUNDING THE ROWS IS NOT BOUNDING THE TALLY (2026-09-26, the keyword clean-up's language vote)
+
+`reconcile_keyword_language` was fixed once for memory (S4.2): a keyset loop that reads 20,000
+mentions at a time and closes between chunks, under a comment saying it was "streamed to bound RAM".
+The fetch was bounded; the dict it filled held a small dict for every keyword in the corpus, 294
+bytes each, and the next step read every keyword through a query that does not stream. At 2.98 M
+keywords that is about 1.7 GB on a 3.9 GB machine, from a pass that runs by itself every 12 hours.
+**When a pass is made to stream, check what it ACCUMULATES as well as what it fetches: the working
+set is the chunk plus everything kept across chunks. A per-id tally over a dense id space fits in
+an array indexed by id (the layout `ArticleLanguageMap` already used); a dict of small dicts costs
+a few hundred bytes per id.**
