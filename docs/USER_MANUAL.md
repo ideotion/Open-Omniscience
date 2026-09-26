@@ -1799,6 +1799,23 @@ the setting, not a failure. To run them anyway, start the app with
 keeps reporting that the machine is small, because the override changes what the
 app *does*, never what it *measured*.
 
+#### A heavy view stops before it can take the app down
+
+The heavy analytics reads (most Insights views, the Observatory, most-cited
+sources, the diagnostics bundle) already run under a time limit. They also
+watch available memory while the database hands them rows. If it falls to the
+memory guard's floor (**256 MB** by default, `OO_MEM_GUARD_AVAIL_MB`), the read
+is stopped and the view says why, with the numbers: *"stopped this read after
+12s: the machine was nearly out of memory (180 MB available, at or below the
+256 MB floor the memory guard uses) ..."*. A read asked for when memory is
+already that low does not start, and says *"did not start this read"*
+instead. Open the view again once memory has recovered; nothing was lost,
+because a read changes nothing.
+
+**What it does not do:** it is a stop, not a cap. It sees what grows while rows
+are being read, which is where a view that loads a whole table grows, and
+nothing else. `OO_READ_MEMORY_STOP=0` turns it off without touching the guard.
+
 #### Why the app cannot simply cap its own memory
 
 There is no honest way for a program to enforce a memory ceiling on itself:
@@ -1845,6 +1862,41 @@ reached.
 
 If you are not on systemd, the same is available through Docker/Podman
 (`--memory=3g --memory-swap=3g`) or a plain cgroup v2 `memory.max`.
+
+#### After a crash: what the next start can tell you
+
+When the app is killed or crashes, the launcher window now stays open and says
+how it ended: `SIGKILL` is the usual mark of a low-memory killer. An ordinary
+stop (the app's own Stop button, closing the window, logging out) closes the
+window as before.
+
+The next start then says how the previous session ended, under **Settings →
+Advanced → Diagnostics → session forensics** and in the downloaded
+`session-forensics.txt`, from whichever of these witnesses answered:
+
+- the launcher's record of the exit status (`diagnostics/launcher_exits.jsonl`);
+- the kernel log, which names the kernel's own out-of-memory kills;
+- the log lines of the user-space memory killers (systemd-oomd, earlyoom,
+  nohang) and of systemd-coredump that name the app. These never appear in the
+  kernel log, and systemd-oomd names the app's cgroup rather than its process;
+- a crash trace of every thread when native code aborts
+  (`diagnostics/crash_trace.log`).
+
+The log reads are local and read-only, and they keep only lines about this app.
+`OO_NO_KERNEL_LOG=1` turns them off; `OO_CRASH_TRACE=0` turns off the trace.
+The memory killers write to the system journal, which only members of `adm` or
+`systemd-journal` (`wheel` on Fedora) can read; when yours cannot, the report
+says so instead of calling the log empty. With no witness at all, the report
+says the end is unknown, never that it was clean.
+
+The same report says what the memory was made of at the session's peak, and
+what every thread was doing (its name, the app code it was running and the CPU
+it used) at two kinds of moment: when available memory fell below 15% of RAM
+(at most 1 GB), first at the crossing and again at each new low, and when the
+app created a million or more Python objects within five seconds, at most once
+every five minutes. The newest eight snapshots are kept in
+`session_pressure.json` in the data folder, and they stay on this computer like
+the rest of the diagnostics.
 
 ## 5.6 Known limits & honest disclosures
 

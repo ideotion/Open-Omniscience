@@ -79,16 +79,71 @@ ${bold}${blu}Open Omniscience${rst} is starting...
 
 EOF
 
+# Where the app keeps its data: the SAME precedence as src/paths.py:data_dir(), which a
+# test pins this function against -- OO_DATA_DIR, then a writable source checkout's
+# data/, then the per-user XDG location.
+oo_data_dir() {
+    if [ -n "${OO_DATA_DIR:-}" ]; then
+        case "$OO_DATA_DIR" in
+            "~") printf '%s\n' "$HOME" ;;
+            "~/"*) printf '%s\n' "$HOME/${OO_DATA_DIR#\~/}" ;;
+            *) printf '%s\n' "$OO_DATA_DIR" ;;
+        esac
+    elif [ -f "$DIR/pyproject.toml" ] && [ -w "$DIR" ]; then
+        printf '%s\n' "$DIR/data"
+    else
+        printf '%s\n' "${XDG_DATA_HOME:-$HOME/.local/share}/open-omniscience"
+    fi
+}
+
+# How the server ended when this launcher did not stop it (2026-09-26, the daily-crash
+# field reports). A process killed with SIGKILL -- the kernel's OOM killer,
+# systemd-oomd, earlyoom, a `kill -9` -- runs no code of its own, so its exit status
+# is the only account of the death, and only this parent holds it. Before this, the
+# window closed as the server died and took the answer with it. One JSON line per
+# such exit; the app's next boot reads the line naming its previous pid AND boot (a
+# pid alone repeats across reboots). Sets EXIT_RECORD to the file on success.
+EXIT_RECORD=""
+record_exit() {
+    local status="$1" name="" sig_json="null" boot boot_json="null" dd f
+    if [ "$status" -gt 128 ]; then
+        name="$(kill -l "$((status - 128))" 2>/dev/null || true)"
+        [ -n "$name" ] && sig_json="\"SIG${name#SIG}\""
+    fi
+    boot="$(cat /proc/sys/kernel/random/boot_id 2>/dev/null || true)"
+    case "$boot" in
+        ""|*[!0-9a-f-]*) ;;
+        *) boot_json="\"$boot\"" ;;
+    esac
+    dd="$(oo_data_dir)"
+    f="$dd/diagnostics/launcher_exits.jsonl"
+    mkdir -p "$dd/diagnostics" 2>/dev/null || return 1
+    printf '{"schema":"oo-launcher-exit-1","at":"%s","started_at":"%s","pid":%s,"boot_id":%s,"status":%s,"signal":%s}\n' \
+        "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$SERVER_STARTED_AT" "$SERVER" "$boot_json" "$status" "$sig_json" \
+        >> "$f" 2>/dev/null || return 1
+    EXIT_RECORD="$f"
+    # Bounded: the newest 20 exits are plenty to see a pattern, and a crash loop must
+    # never grow this file without limit.
+    if [ "$(wc -l < "$f" 2>/dev/null || echo 0)" -gt 40 ]; then
+        tail -n 20 "$f" > "$f.tmp" 2>/dev/null && mv -f "$f.tmp" "$f" 2>/dev/null || rm -f "$f.tmp"
+    fi
+}
+
 # Start the server in the background so we can wait for health, then open a browser.
 open-omniscience &
 SERVER=$!
+SERVER_STARTED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 # Stop the server when this launcher exits (window closed / Ctrl-C).
 # HUP is in the list because it is the signal the ADVERTISED stop actually sends:
 # closing the terminal window HUPs the foreground process group. Without it bash
 # takes SIGHUP's default disposition and the EXIT trap is not a reliable path
 # (2026-09-02, S0.2). The server also installs its own SIGHUP handler, so the stop
 # is graceful whether the signal reaches it directly or through this trap.
-trap 'kill "$SERVER" 2>/dev/null || true' EXIT INT TERM HUP
+# STOP_REQUESTED marks the stop as ASKED FOR before the server is signalled, so the
+# exit check below never records a stop the user made as a crash.
+STOP_REQUESTED=0
+trap 'STOP_REQUESTED=1; kill "$SERVER" 2>/dev/null || true' INT TERM HUP
+trap 'kill "$SERVER" 2>/dev/null || true' EXIT
 
 # Wait up to ~20s for the health endpoint.
 for _ in $(seq 1 40); do
@@ -99,4 +154,32 @@ done
 open_browser "$URL"
 
 # Keep running (and holding the server) until the user closes the window.
-wait "$SERVER"
+status=0
+wait "$SERVER" || status=$?
+if [ "$STOP_REQUESTED" = 0 ] && [ "$status" -ne 0 ]; then
+    record_exit "$status" || true
+    case "$status" in
+        # SIGHUP/SIGINT/SIGTERM: a stop somebody ASKED for, just not through this
+        # window -- the app's own Stop button (it SIGTERMs itself), a logout, a service
+        # manager, a plain kill. uvicorn re-raises the stop signal once its graceful
+        # shutdown is done (measured: the parent sees 143), so this is what a requested
+        # stop looks like from here. Recorded, so a teardown that did not finish can be
+        # told apart on the next boot, but no alarm: the window closes as it always did.
+        129|130|143) ;;
+        *)
+            echo
+            case "$status" in
+                137) echo "${bold}Open Omniscience was ended from outside without warning (SIGKILL).${rst}"
+                     echo "The usual cause is a low-memory killer on this computer." ;;
+                132|134|135|136|139) echo "${bold}Open Omniscience crashed (exit status $status).${rst}" ;;
+                *)   echo "${bold}Open Omniscience stopped unexpectedly (exit status $status).${rst}"
+                     echo "The messages above may say why." ;;
+            esac
+            [ -n "$EXIT_RECORD" ] && echo "Recorded in $EXIT_RECORD for the app's diagnostics."
+            echo
+            # The window stays open so this can be read: it used to vanish with the server.
+            read -r -p "Press Enter to close this window..." _ || true
+            ;;
+    esac
+fi
+exit "$status"

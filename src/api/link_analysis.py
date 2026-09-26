@@ -67,10 +67,10 @@ def top_cited(
     "Citations" = number of *distinct articles* in the corpus that link to it — a
     citation-graph trend signal grounded in what reporters actually reference.
     """
-    # S2.4 guard: the by=domain path materializes the WHOLE ArticleLink table into
-    # Python (pairs.distinct().all()) — an OOM risk at scale; the by=url path is a
-    # corpus-scaled GROUP BY. guarded_read caps concurrency + a statement deadline
-    # interrupts a runaway scan (never a full materialization past the deadline).
+    # S2.4 guard: the by=domain path reads the WHOLE ArticleLink table, in id-ordered
+    # chunks (it materialised all of it into Python until 2026-09-26, an OOM risk at
+    # scale); the by=url path is a corpus-scaled GROUP BY. guarded_read caps concurrency,
+    # and its statement deadline interrupts a runaway scan, on time or on memory.
     from src.api.heavy import guarded_read
 
     key = f"top-cited|{by}|{window_days}|{min_citations}|{limit}"
@@ -107,13 +107,19 @@ def top_cited(
             return {"by": "url", "window_days": window_days, "items": items}
 
         # by == "domain": parse the registrable domain in Python (portable across SQLite).
-        pairs = db.query(ArticleLink.normalized_url, ArticleLink.article_id)
+        # Read in id-ordered chunks, never one ``.all()`` of every (url, article) pair.
+        # The per-domain SETS are what count distinct articles, so the SQL DISTINCT the
+        # whole-table read used is not needed for the answer: a repeated pair adds an
+        # article id that is already there.
+        from src.database.query import keyset_scan
+
+        pairs = db.query(ArticleLink.id, ArticleLink.normalized_url, ArticleLink.article_id)
         if cutoff is not None:
             pairs = pairs.join(Article, ArticleLink.article_id == Article.id).filter(
                 func.coalesce(Article.published_at, Article.created_at) >= cutoff
             )
         by_domain: dict[str, set[int]] = defaultdict(set)
-        for nu, aid in pairs.distinct().all():
+        for _link_id, nu, aid in keyset_scan(pairs, ArticleLink.id):
             dom = registrable_domain(nu)
             if dom:
                 by_domain[dom].add(aid)
@@ -122,7 +128,8 @@ def top_cited(
             for d, ids in by_domain.items()
             if len(ids) >= min_citations
         ]
-        items = sorted(rows, key=lambda x: -x["citations"])[:limit]
+        # Ties by name, so the cut at ``limit`` does not depend on scan order.
+        items = sorted(rows, key=lambda x: (-x["citations"], x["domain"]))[:limit]
         return {"by": "domain", "window_days": window_days, "items": items}
 
     return guarded_read(db, key, _compute)

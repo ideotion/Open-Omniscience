@@ -2975,8 +2975,12 @@ def _supergroup_totals(
     # Family morphological variants (country↔countries) match by canonical key, which is
     # a Python function (not a column) — so a scan is unavoidable, but ONLY when a family
     # (non-ring) member exists, and over the small (id, term) columns, never the mentions.
+    # In id-ordered chunks, never one ``.all()``: that held every keyword in memory at
+    # once, about four Python objects per row (``keyset_scan``).
     if canon_to_key:
-        for kid, norm in db.query(Keyword.id, Keyword.normalized_term).all():
+        from src.database.query import keyset_scan
+
+        for kid, norm in keyset_scan(db.query(Keyword.id, Keyword.normalized_term), Keyword.id):
             if canonical_key(norm) in canon_to_key:
                 matched_ids.add(kid)
     if not matched_ids:

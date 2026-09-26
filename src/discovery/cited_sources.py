@@ -68,10 +68,15 @@ def cited_domain_stats(session) -> dict[str, dict]:
     by_articles: dict[str, set[int]] = {}
     # Only EXTERNAL links are secondary sources (internal links resolve to the citing
     # article's own domain -> deduped anyway; images/scripts are not citations).
-    q = session.query(ArticleLink.normalized_url, ArticleLink.article_id).filter(
+    #
+    # In id-ordered chunks. Iterating the query itself was not streaming: without
+    # ``yield_per`` the ORM fetches every row before it yields the first one.
+    from src.database.query import keyset_scan
+
+    q = session.query(ArticleLink.id, ArticleLink.normalized_url, ArticleLink.article_id).filter(
         ArticleLink.link_type == "external"
     )
-    for nu, aid in q:
+    for _link_id, nu, aid in keyset_scan(q, ArticleLink.id):
         dom = registrable_domain(nu)
         if not dom:
             continue

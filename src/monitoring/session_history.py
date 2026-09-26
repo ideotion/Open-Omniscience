@@ -374,8 +374,33 @@ def _close_previous(prev_state: dict[str, Any] | None, liveness: dict[str, Any] 
         rec.update({"at": None, "clean": False if state and state != "clean" else None,
                     "basis": "no sentinel end and no liveness tick, so the end has no time",
                     "sentinel_state": state or None})
+    if rec.get("clean") is not True:
+        exit_seen = _launcher_exit(prev_state)
+        if exit_seen:
+            rec["exit"] = exit_seen
     _append(rec)
     return rec
+
+
+def _launcher_exit(prev_state: dict[str, Any] | None) -> dict[str, Any] | None:
+    """How the launcher saw the previous process end (2026-09-26), for its end line.
+
+    The ledger is the one record that spans many sessions, so this is where a machine
+    that crashes daily shows WHICH signal each death was -- a pattern one boot's
+    report cannot show."""
+    pid = (prev_state or {}).get("pid")
+    if not isinstance(pid, int):
+        return None
+    boot = (prev_state or {}).get("boot_id")
+    try:
+        from src.monitoring.exit_evidence import launcher_exit
+
+        got = launcher_exit(pid, boot if isinstance(boot, str) else None)
+    except Exception:  # noqa: BLE001 - the ledger never breaks a boot
+        return None
+    if not got:
+        return None
+    return {k: got.get(k) for k in ("signal", "status", "kind", "at", "seen_by")}
 
 
 def record_boot(prev_state: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -567,16 +592,35 @@ def tick_once(now_wall: float | None = None, now_mono: float | None = None,
     return suspend
 
 
+#: How often this thread also reads memory (2026-09-26). The high-water marks were fed
+#: only by the collector's monitor, so a peak reached while collection was paused
+#: (Insights after a boot, the memory guard's own pause) was never seen -- and the
+#: field burst that killed a 4 GB machine took 45 s from 1 GB available to none, which
+#: a once-a-minute reading could miss entirely. A read is three /proc files. This is
+#: also the one thread that snapshots every thread when memory runs short.
+MEMORY_WATCH_S = 5.0
+
+
 def _loop() -> None:
-    while not _STOP.wait(TICK_S):
+    next_tick = time.monotonic() + TICK_S
+    while not _STOP.wait(max(0.0, min(MEMORY_WATCH_S, next_tick - time.monotonic()))):
+        if time.monotonic() >= next_tick:
+            next_tick = time.monotonic() + TICK_S
+            try:
+                tick_once()
+            except Exception:  # noqa: BLE001 - the tick must never kill its thread
+                _LOG.debug("session ledger: tick failed", exc_info=True)
         try:
-            tick_once()
-        except Exception:  # noqa: BLE001 - the tick must never kill its thread
-            _LOG.debug("session ledger: tick failed", exc_info=True)
+            from src.monitoring.session_hwm import observe
+
+            observe(may_snapshot_threads=True)
+        except Exception:  # noqa: BLE001 - best-effort and throttled on its own
+            _LOG.debug("session ledger: memory observe failed", exc_info=True)
 
 
 def start_liveness() -> bool:
-    """Start the once-a-minute tick (idempotent; one daemon thread per process)."""
+    """Start the once-a-minute tick, which also reads memory every ``MEMORY_WATCH_S``
+    (idempotent; one daemon thread per process)."""
     global _THREAD
     with _LOCK:
         if _THREAD is not None and _THREAD.is_alive():

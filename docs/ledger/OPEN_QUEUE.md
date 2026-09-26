@@ -15214,3 +15214,58 @@ tab»** (over «Home section»). Recorded as `R32` in `RULINGS_INDEX.md` and as 
 `CLAUDE.md`; invariant #2's roster grows by one and `test_ui_invariants` pins it (#32). **Not
 decided by it:** nothing about a Home family. The renderers in `src/static/app-living.js` stay pure
 `(payload, t, tf) -> HTML` so one could be added later, but no Home card exists and none is implied.
+
+---
+
+## 2026-09-26 — What the read memory stop does NOT cover (deliberate, PR #1190)
+
+The stop (`statement_deadline`, `MemoryShort`) was built after a 3.9 GB instance died in 25
+seconds of growth that no time deadline could stop. It is recorded here what it leaves alone, so
+nobody reads it as a general memory cap:
+
+- **It rides the deadline.** A read outside any `statement_deadline` scope is not watched, and
+  `OO_STATEMENT_TIMEOUT_S=0` turns the stop off with the deadline. Of the whole-table reads the UI
+  can start, the Groups view (`list_supergroups`), a source's discovery trail
+  (`/api/sources/{id}/provenance`) and the cited-sources preview (`/api/sources/promote-cited`)
+  are still outside a deadline. They were CHUNKED instead (`keyset_scan`), which bounds their rows;
+  putting them under `guarded_read` too would change their failure from a slow answer to a 503
+  after 60 s, a UX decision not taken here.
+- **It sees growth while SQLite produces rows**, which is where a whole-table `.all()` grows.
+  Python work after the last row (the per-domain sets in most-cited domains, the article-to-source
+  dict in the cited-sources preview, which is one entry per article) is not interrupted by it.
+- **Background jobs outside a deadline** (the pass tail, the wiki lane, housekeeping) are not
+  covered. The memory guard pauses new work; it cannot stop one read already running. TWO of
+  them were measured and bounded in the same PR. The 12-hourly keyword clean-up's language vote:
+  about 1.7 GB at 2.98 M keywords before, about 30 MB after. The briefing refresh (after every
+  pass, `_refresh_briefing_async`; from Home when its cache is stale, `_ensure_background_refresh`;
+  both end in `warm_cache`, which the boot warm `oo-warm-cache` also runs): measured step by step
+  at 10k and 40k articles, four card readers fetched whole windows of keywords, and the flood
+  detector's grew faster than the corpus (26 to 174 MB for 4x the articles). Those reads now
+  fetch only what their filters keep (flood 1.6 MB at 40k articles; see `SHIPPED_LOG.md`).
+  What the refresh still holds, measured at 40k articles: `trending_windows`' 24-hour and 30-day
+  windows (about 53 MB), which keep every keyword over a floor of one or two mentions because the
+  scoring loop ranks all of them (ranking in SQL would bound it; not done here); about 37 MB each
+  for price narrative, echo chamber and recycled claim, the same at 10k and 40k. Beside it, not
+  part of it: the lemma dictionaries extraction loads, about 550 MB of Python objects and 665 MB
+  of RSS (8.2 M blocks) once all nine languages are loaded, resident for the life of the process:
+  a floor, not a burst. simplemma 1.2's `TrieDictionaryFactory` promises "very little memory",
+  but it needs `marisa-trie` and `platformdirs` (neither is a dependency today) and by default
+  caches under the user's cache directory, so it is a dependency choice for the maintainer and
+  is not measured here. Not measured: SQLite's own sorter memory under `temp_store=MEMORY`, which
+  `tracemalloc` cannot see; the wiki lane; housekeeping other than the clean-up.
+- **The two refresh paths can run at once.** `_refresh_briefing_async` holds `_briefing_bg_lock`
+  and `_heavy_tail_lock`; the Home path (`_ensure_background_refresh`, thread
+  `oo-briefing-refresh`) checks only its own `_refresh_state`, and `refresh_briefing` takes no
+  lock. A Home visit with a stale cache during a post-pass refresh therefore runs a second whole
+  refresh beside it. Not changed here: which one should yield is a behaviour choice (a Home that
+  waits on a stale cache, or a post-pass refresh that skips its cycle), and the bounds above cut
+  what an overlap costs.
+- **What the timing says about the deaths during collection.** The first instance died at 23:27
+  UTC on 25 Sept, 13 minutes after a pass tail ended and 9 minutes into the next pass, and no
+  refresh after that tail wrote its cache (the newest on disk was generated at 22:47:29 UTC and
+  holds flood cards): the refresh fits, on timing only. The second died at 15:53 UTC on 26 Sept,
+  27 minutes into the first pass after a restart and 30 minutes after the unlock, with no
+  refresh recorded in that session and UI reads running: not attributed.
+- **Which read made the 2026-09-26 burst is not known.** When the next crash's thread snapshots
+  (PR #1190) name it, check whether it runs inside a deadline; if not, that read needs its own
+  bound, and this entry should say which.

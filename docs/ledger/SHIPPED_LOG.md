@@ -9929,3 +9929,165 @@ suite also caught a test's raw `sqlite3` writes to `articles`, the disclosed kno
 
 **STILL OWED.** Row N's operator steps: the re-index on the real corpus with its report, the
 agreement comparison, Q515's cost, and the maintainer's click-through.
+
+## 2026-09-26 — The next crash says how it ended (PR #1190)
+
+Two field instances on 4 GB machines died within a minute of running out of memory, and the next
+boot's kernel-log read found no line about either death. The launcher now records the server's exit
+status and signal in `diagnostics/launcher_exits.jsonl` and holds its window open; the app reads the
+journal lines of systemd-oomd, earlyoom, nohang and systemd-coredump naming its previous process or
+cgroup, keeps a faulthandler crash trace in `diagnostics/crash_trace.log`, reads the kernel log for
+the boot the session ran in, and records what the memory was made of at each RSS peak. The
+session-forensics report says in one line how the session ended, from the witnesses that answered.
+
+**THE LESSON (copied to `LESSONS.md`).** An empty kernel log after a memory death is not a clean
+bill: the user-space killers (systemd-oomd, earlyoom, nohang) log only to the ordinary journal, and
+systemd-oomd names a cgroup, not a pid. And only a parent can witness a SIGKILL, so the launcher's
+exit status was the one record of these deaths, and it was being thrown away with the window.
+
+**MEASURED ON THE WAY.** uvicorn 0.49 re-raises the stop signal after its graceful shutdown, so the
+in-app Stop button (SIGTERM to self) reaches the parent as 143; the first draft of this change would
+have announced every ordinary Stop as a crash. `journalctl -b` rejects the dashed boot id /proc
+prints and accepts the same id as 32 hex digits (systemd 255). A pid repeats across reboots for an
+app started the same way at every login, so records are matched on pid and machine boot.
+
+**AND WHO WAS RUNNING.** One instance's fatal stretch was a burst, +15 M Python blocks and +930 MB
+in 45 s, and nothing recorded which code ran it. Below 15% of RAM available (at most 1 GB), the
+liveness thread now snapshots every thread (name, app frames, CPU for the working ones) at the
+crossing and at each new low an eighth of the line further down, keeping the newest eight in
+`session_pressure.json`, written through at once. The other instance built and freed 3-7 M blocks
+every 40 s for hours while available memory stayed flat (the memory was being reused), so no line
+would ever have fired there: a gain of a million blocks between two 5 s readings is the second
+trigger, snapshotted at most every five minutes. The report lists the working threads by the CPU
+they used since the previous snapshot. MEASURED: with one thread holding the GIL, psutil's scan of
+~40 threads took 0.5-0.7 s, because every `/proc` read releases the GIL and waits a switch interval
+to get it back; reading only the working threads and keeping the snapshot off the memory guard's
+monitor is what makes it affordable at that moment (copied to `LESSONS.md`).
+
+**STILL OWED.** The memory growth itself (next PR), and a real field crash read through the new
+witnesses.
+
+## 2026-09-26 — A heavy read stops before memory runs out; five whole-table reads go in chunks (PR #1190)
+
+**WHAT SHIPPED.** `statement_deadline`, the progress handler every heavy analytics read already
+runs under, now also watches available memory. A read asked for at or below the memory guard's
+own floor (`memguard.memory_guard.avail_floor_mb`, 256 MB by default) never starts; one that drives
+memory there is interrupted. Both raise `MemoryShort`, a `StatementTimeout` subclass, so every
+existing handler (the API's 503, a diagnostics member's "skipped", a probe's "timed out") already
+catches it, and its message names memory and the numbers. `OO_READ_MEMORY_STOP=0` turns it off
+without touching the guard. Separately, `keyset_scan` (`src/database/query.py`) reads a table in
+`WHERE id > last ORDER BY id LIMIT 20000` statements, and five reads a click can start use it
+instead of holding the whole table: the Groups view and the Observatory's member resolution (every
+keyword, when a group has a hand-added member), a source's discovery trail and the cited-sources
+preview (every external link), and most-cited domains (every link).
+
+**THE LESSON (copied to `LESSONS.md`).** A time deadline is not a memory bound. The crash bundle of
+2026-09-26 (a 3.9 GB machine) shows the app gaining 13.5 million Python objects in its last 25
+seconds, about 575,000 a second, while available memory fell from 1,065 MB to 135 MB. Every heavy
+read already ran under a 60-second deadline, and none of them could have fired in time. The floor
+has to be on the resource that runs out, read where it is consumed.
+
+**THE SECOND LESSON (copied to `LESSONS.md`).** Iterating a SQLAlchemy 2.0 ORM query does not
+stream. `loading.instances()` calls `cursor._raw_all_rows()` unless `yield_per` is set, so `for
+row in session.query(...)` fetches every row before it yields the first. `cited_domain_stats` was
+written as if it streamed.
+
+**MEASURED, NOT INFERRED.** Each of the five reads is timed at N and 4N rows with `tracemalloc` on
+a table built so its answer stays the same size: the old code's peak grew ×4.01, the chunked one's
+×1.04. 29 tests; 18 mutations of the new code (each comparison, the door, the cache, the switch,
+the floor's source, each call site reverted, the keyset's edges and filter, the tie order), all
+caught.
+
+**NOT ATTRIBUTED.** The bundle does not say which read made the fatal burst. The shape (about four
+objects per row, 67 bytes each, linear) fits a whole-table `.all()` of a few million rows, and the
+five chunked here are the ones the UI can start, but none is proven to be it. The thread
+snapshots this same PR adds are what will name it. What the stop does not cover is recorded in `OPEN_QUEUE.md`.
+
+## 2026-09-26 — The 12-hourly keyword clean-up holds bytes per keyword, not objects (PR #1190)
+
+**WHAT SHIPPED.** `reconcile_keyword_language`, the language vote the idle-window keyword clean-up
+runs at most every 12 hours (and the re-index and keyword-fold jobs run too), keeps its tally in
+`_LanguageVotes`: a keyword's first language and its vote count in two arrays indexed by keyword
+id, 5 bytes per id, with a dict only for a keyword voted on in two languages or a code past the
+255 slots. It reads the keywords in `keyset_scan` chunks and writes its corrections 5,000 at a
+time, each batch under the write gate. `reconcile_article_language` reads its batch's mentions
+first and then only those keywords' languages, instead of every keyword's language on every
+batch.
+
+**THE LESSON (copied to `LESSONS.md`).** Bounding the rows is not bounding the tally. The S4.2
+keyset loop bounded each FETCH to 20,000 mentions and the comment above it said "streamed to bound
+RAM", but the dict it filled grew with every keyword in the corpus: 294 bytes each, measured. Then
+the decision step iterated `session.query(Keyword.id, Keyword.language)`, which does not stream
+(313 bytes a keyword). At the 2.98 M keywords of the 2026-09-26 crash bundle that is about 1.7 GB of
+Python objects, on a 3.9 GB machine already running the app.
+
+**MEASURED, NOT INFERRED.** Peak Python memory of the whole reconcile, steady state (nothing to
+correct): 16.1 / 45.0 MB at 20k / 80k keywords before, 10.5 / 11.0 / 13.1 MB at 20k / 80k / 320k
+after. The tests measure it at N and 4N keywords for both passes and for a first run that corrects
+every keyword; reverting either half alone grows it ×3.3-×3.8. The decisions are checked on
+randomized corpora against the rule written out independently (votes from the mention, then the
+article's asserted or deduced language; a strict majority backed by `min_articles`; respelled vs
+relanguaged), across chunk and batch edges and with keywords in both the arrays and the dict.
+16 tests; 12 mutations, all caught.
+
+**WHAT THE BUNDLE SAYS, AND WHAT IT DOES NOT.** Of the three recorded deaths, one fits this job:
+the long session on the second instance ended at 14:54 UTC, six minutes after its last pass tail
+finished (14:48 UTC), with the clean-up due since 13:02 UTC and both its marker and the
+incremental-vacuum marker that runs after it left at their earlier values. The markers are local
+time; the bundle's own clocks (a report named 17:56 and timestamped 15:56 UTC) put the machine at
+UTC+2. The other two deaths (the first instance at 23:27 UTC on 25 Sept, the second instance at
+15:53 UTC) happened during collection, when idle maintenance cannot run, so this job is one
+suspect and not the cause of every crash. The thread snapshots this PR adds will name what runs
+at the next one.
+
+## 2026-09-26 — The Home cards read only what their filters keep (PR #1190)
+
+**WHAT SHIPPED.** The briefing refresh that runs after every collection pass (and from Home when
+its cache is stale) was measured step by step with `tracemalloc` on a 10k- and a 40k-article
+corpus: the 40 card producers, the watch evaluation and the insights cache warm. Four readers
+fetched a whole window of keywords and then skipped most of it in Python. Their reads now carry
+their filters. `find_flooded_topics` asks for the baseline share of only the (source, keyword)
+pairs its z-test reads (`_flood_pairs_to_test`: the same three floors, with the same arithmetic),
+in 400-keyword chunks, and its recent pairs carry the count floor as `HAVING`.
+`find_buried_topics`' big-topic query carries its two count floors as `HAVING` (the share floor
+stays in Python, where its division is). `find_manufactured_emergence` and `trending` stream their
+GROUP BY through `grouped_counts` (`src/database/query.py`, 10,000 rows per round trip) and keep
+only the keywords their loops read: those over the recent floor, then the prior count of only
+those. `trending`'s `keywords_with_recent_mentions` still counts every keyword of the window,
+because `grouped_counts` returns the group count, so no response changed.
+
+**THE LESSON (copied to `LESSONS.md`).** A filter in the loop is not a bound on the read. Each of
+these readers was correct, and each applied its thresholds at the top of its loop; the memory it
+held was set by the query above the loop, which fetched every group of the window. The flood
+detector's was the worst: at 40k articles it held 739,776 baseline (source, keyword) pairs to
+compute the z of 74, a count that grows with sources times keywords. It was the one step of the
+whole refresh that grew faster than the corpus: 26 to 174 MB for 4x the articles.
+
+**MEASURED, NOT INFERRED.** Peak Python memory at 40k articles (1.6 M mentions, 360k keywords),
+before and after: flood 174.3 to 1.6 MB (9.7 to 0.7 s), buried 51.4 to 1.5 MB, emergence 51.5 to
+6.4 MB, the five cards that start from `trending` (rising now, framing split, emotion profile, IP
+litigation pulse, on the horizon) 52-57 to 15-20 MB, and the insights warm's `trending_windows`
+79 to 53 MB. No step got slower. The answers are proven unchanged rather than assumed: a
+differential test runs every reader (flood at two settings, buried, emergence, trending at three
+windows and by country, `trending_windows`) on three random corpora with thin sources and
+brand-new keywords, and compares each answer exactly against the same code with every filter
+off (the `HAVING`s patched out, `_flood_pairs_to_test` returning every recent pair,
+`grouped_counts` keeping everything). The memory tests grow a tail no answer reads by 4x: the
+flood detector's peak now moves x1.02 (x4.0 with the bound off) and trending's x1.00 (x2.49).
+8 tests; 17 mutations of the new code, all caught.
+
+**WHAT STAYS.** In the refresh, measured at 40k articles: `trending_windows`' 24-hour and
+30-day windows, which keep every keyword over a floor of one or two mentions because the scoring
+loop ranks all of them, and about 37 MB each for price narrative, echo chamber and recycled
+claim, the same at 10k and 40k articles. Beside it: the lemma dictionaries extraction loads,
+about 550 MB of Python objects once all nine languages are loaded (`tracemalloc`; 574 MB at the
+peak of loading) and 665 MB of RSS with 8.2 M blocks (measured without `tracemalloc`, which
+inflates RSS), resident for the life of the process, so a floor rather than a burst. Not
+measured: SQLite's own sorter memory under `temp_store=MEMORY`, which `tracemalloc` cannot see.
+These, and the two refresh paths that can run at once, are recorded in `OPEN_QUEUE.md`.
+
+**WHAT THE BUNDLE SAYS, AND WHAT IT DOES NOT.** The first instance died at 23:27 UTC on 25 Sept,
+13 minutes after a pass tail whose refresh never wrote its cache: the newest cache on disk was
+generated at 22:47:29 UTC and holds flood cards. The timing fits the refresh; nothing proves it.
+The second instance's 15:53 UTC death has no refresh recorded in its session and is not
+attributed.

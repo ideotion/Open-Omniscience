@@ -140,20 +140,67 @@ def _journal_storage_note() -> str | None:
     )
 
 
-def read_kernel_evidence(previous_pid: int | None = None, *, since: str | None = None) -> dict[str, Any]:
+def journal_boot_arg(boot_id: str | None) -> str:
+    """The ``-b`` argument for a boot id as /proc prints it.
+
+    /proc/sys/kernel/random/boot_id is a dashed UUID, and journalctl (measured on
+    systemd 255) REJECTS that form -- "Failed to add match ... Invalid argument" --
+    while it accepts the same 128 bits as 32 plain hex digits. No boot id means this
+    boot, which is where an OOM kill that did not reboot the machine is logged."""
+    if not boot_id:
+        return "0"
+    return boot_id.replace("-", "").strip().lower()
+
+
+def _boot_reads(since: str | None, boot: str | None) -> tuple[list[tuple[str, list[str]]], dict[str, Any] | None]:
+    """Which boots to read, and what is known about them.
+
+    With the previous session's own boot id (recorded in its sentinel since
+    2026-09-26) exactly ONE boot is relevant, and it is read by id: this boot when the
+    machine did not restart (the common OOM case), otherwise the boot it ran in. The
+    older two-read guess (this boot since the start, plus the previous boot) remains
+    for a sentinel that predates the id -- and there a failure of one read is no longer
+    hidden by the other's success (see ``unread``)."""
+    if boot:
+        try:
+            from src.monitoring.session_history import machine_boot_id
+
+            current = machine_boot_id()
+        except Exception:  # noqa: BLE001 - an unknown current boot falls back below
+            current = None
+        if current:
+            same = journal_boot_arg(current) == journal_boot_arg(boot)
+            label = "this boot" if same else "the boot the previous session ran in"
+            cmd = ["journalctl", "-k", "-b", "0" if same else journal_boot_arg(boot), "--no-pager"]
+            if since:
+                cmd += ["--since", since]
+            return [(label, cmd)], {"previous_session_boot": boot, "same_as_this_boot": same}
+    cmds: list[tuple[str, list[str]]] = []
+    if since:
+        cmds.append(("this boot", ["journalctl", "-k", "-b", "0", "--no-pager", "--since", since]))
+    else:
+        cmds.append(("this boot", ["journalctl", "-k", "-b", "0", "--no-pager"]))
+    cmds.append(("previous boot", ["journalctl", "-k", "-b", "-1", "--no-pager"]))
+    return cmds, None
+
+
+def read_kernel_evidence(
+    previous_pid: int | None = None, *, since: str | None = None, boot: str | None = None
+) -> dict[str, Any]:
     """Kernel lines about this app's previous session, with an honest verdict.
 
     ``previous_pid`` is the pid from the previous session's sentinel; ``since`` its
     ``started_at`` (used to bound the CURRENT boot's search — an OOM kill does not
     reboot the machine, so the evidence is often in this boot's log, not the last
-    one's)."""
+    one's); ``boot`` the machine boot id that session recorded, when it did."""
     out: dict[str, Any] = {
         "checked_at": None,
         "verdict": "no-kernel-evidence",
         "lines": [],
         "method": (
-            "journalctl -k for the previous boot and for this boot since the previous "
-            "session started, filtered to lines naming this app's pid or process name "
+            "journalctl -k for the boot the previous session ran in, read by the boot id "
+            "it recorded (a session that predates the id: this boot since it started, "
+            "plus the previous boot), filtered to lines naming this app's pid or process name "
             "(the kernel truncates the name to 15 characters: open-omniscien). "
             "Read-only, local, never transmitted. An empty result is "
             "'no-kernel-evidence' — never 'clean'."
@@ -182,16 +229,14 @@ def read_kernel_evidence(previous_pid: int | None = None, *, since: str | None =
 
     matched: list[str] = []
     reasons: list[str] = []
+    read_labels: list[str] = []
     read_any = False
 
     # An OOM kill does NOT reboot the machine, so the evidence usually sits in THIS
     # boot's log. Check it first, bounded by when the previous session started.
-    cmds: list[tuple[str, list[str]]] = []
-    if since:
-        cmds.append(("this boot", ["journalctl", "-k", "-b", "0", "--no-pager", "--since", since]))
-    else:
-        cmds.append(("this boot", ["journalctl", "-k", "-b", "0", "--no-pager"]))
-    cmds.append(("previous boot", ["journalctl", "-k", "-b", "-1", "--no-pager"]))
+    cmds, boot_info = _boot_reads(since, boot)
+    if boot_info is not None:
+        out["boot"] = boot_info
 
     for label, cmd in cmds:
         rc, text = _run(cmd)
@@ -219,11 +264,18 @@ def read_kernel_evidence(previous_pid: int | None = None, *, since: str | None =
             )
             continue
         read_any = True
+        read_labels.append(label)
         for line in kernel_lines:
             if _mentions_us(line, previous_pid):
                 matched.append(line)
 
     out["lines"] = matched[-40:]
+    if reasons:
+        # Kept on EVERY verdict (2026-09-26). They used to be dropped as soon as any
+        # other read succeeded, so "this boot could not be read" vanished behind a
+        # successful read of the previous boot and the report said "the kernel log
+        # was read" about the one log that mattered and had not been.
+        out["unread"] = reasons
     if matched:
         kind = _classify(matched)
         out["verdict"] = kind or "kernel-lines-found"
@@ -249,12 +301,18 @@ def read_kernel_evidence(previous_pid: int | None = None, *, since: str | None =
         return out
 
     out["verdict"] = "no-kernel-evidence"
+    scope = f" for {' and '.join(read_labels)} only" if reasons else ""
     out["reason"] = (
-        "the kernel log was read and contains no line naming this app's previous "
+        f"the kernel log was read{scope} and contains no line naming this app's previous "
         "session. That rules out an OOM kill and a native fault RECORDED BY THE "
         "KERNEL; it does not establish a clean end — a host reset or a signal leaves "
         "no kernel line about us."
     )
+    if reasons:
+        out["reason"] += (
+            " The rest could not be read (see 'unread'), and a kill logged there would "
+            "not show here."
+        )
     note = _journal_storage_note()
     if note:
         out["storage_note"] = note

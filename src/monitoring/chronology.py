@@ -346,7 +346,8 @@ def _ledger_events(records: list[dict[str, Any]], sessions: list[dict[str, Any]]
             end_at = _at()
             ev.append({"at": end_at, "kind": k, "label": k.replace("-", " "), "session_id": r.get("session_id"), "_i": i,
                        "detail": {"basis": r.get("basis"), "reason": r.get("reason"), "uptime_s": r.get("uptime_s"),
-                                  "source": r.get("source") or "ledger", "previous_peaks": r.get("previous_peaks")}})
+                                  "source": r.get("source") or "ledger", "previous_peaks": r.get("previous_peaks"),
+                                  "exit": r.get("exit")}})
         elif kind == "suspend":
             label = "suspend" if r.get("clocks") == "boot-time" else "suspend (clock jump)"
             if clock is not None and r.get("uptime_s") is not None:
