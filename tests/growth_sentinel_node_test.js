@@ -65,8 +65,16 @@ const SRC = [
   // `termBarsHtml` appends Q417's per-language breakdown to each row's hover title, so
   // the two functions that build it belong in the sandbox as their REAL source: stubbing
   // them would leave this suite passing over a `termBarsHtml` that production never runs.
+  functionSource(APP, "_kwTf"),
   functionSource(APP, "kwLangName"),
+  functionSource(APP, "kwTier"),
   functionSource(APP, "kwLangBreakdownText"),
+  functionSource(APP, "kwHoverText"),
+  functionSource(APP, "kwQidHtml"),
+  functionSource(APP, "kwHasTag"),
+  functionSource(APP, "kwSensePickerHtml"),
+  // ...and the row's label is drawn by THE one helper (M7), loaded as real source too.
+  functionSource(APP, "kwLabelHtml"),
   functionSource(APP, "termBarsHtml"),
 ].join("\n");
 

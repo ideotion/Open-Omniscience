@@ -39,8 +39,9 @@ def test_spa_keyword_surfaces_are_marked():
     assert '<button class="chip" data-kwstat="${esc(term.term)}"' in _JS
     # the Insights Trends bars
     assert '<a class="tb-label" href="#" data-kwstat="${esc(t.term)}"' in _JS
-    # the keyword list rows (given a placeholder title so #oo-tip marks them)
-    assert '<a href="#" data-kwstat="${esc(t.term)}" title="${esc(t.term)}"' in _JS
+    # the keyword list rows (given a placeholder title so #oo-tip marks them); the row also
+    # carries its tier tag's hover on the channel the stats line appends (M2)
+    assert '<a href="#" data-kwstat="${esc(t.term)}"${kwTipExtraAttr(t)} title="${esc(t.term)}"' in _JS
 
 
 def test_spa_stats_are_counts_with_method_caveat_no_score():
@@ -49,7 +50,7 @@ def test_spa_stats_are_counts_with_method_caveat_no_score():
     assert 't("trend")' in _JS and "tr.growth" in _JS
     assert "d.cooccurrences" in _JS
     # the endpoint caveat is appended (method/caveat visible), translated through its
-    # key: it is a fixed server string, so the hover reads in the UI language (N7)
+    # key: it is a fixed server string, so the hover reads in the UI language (N7, M14)
     assert 'd.caveat ? " · " + t(d.caveat) : ""' in _JS
     # honest empty state for an unknown term
     assert 't("Not in your corpus yet — no stats.")' in _JS

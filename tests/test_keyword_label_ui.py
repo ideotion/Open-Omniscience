@@ -181,3 +181,103 @@ def test_every_surface_that_renders_a_keyword_label_also_repaints_on_a_language_
         "are re-run on oo:langchange, so their labels freeze in whichever locale painted "
         f"them first: {missing}"
     )
+
+
+# --------------------------------------------------------------------------- #
+#  The delegated click-through of 2026-09-26, row M (M2, M3, M4, M8)
+# --------------------------------------------------------------------------- #
+
+
+def test_a_tag_inside_a_keyword_row_keeps_its_own_hover_m2() -> None:
+    """M2: on a ``data-kwstat`` chip the keyword-stats handler took the enclosing chip for
+    every hover and overwrote the bubble ooTipInit had just opened for the tier tag, so
+    Q418's hover (original, language, QID) was unreachable. The handler must stand down
+    when the pointer is on a hover target of its own INSIDE the row, and the chips must
+    carry the tag's hover on the row for a keyboard reader."""
+    from tests.js_source_helper import app_js, function_body, strip_comments
+
+    app = app_js()
+    boot = app[app.index("function ooKwStatInit("):]
+    on_hover = strip_comments(function_body(boot, "onHover"))
+    assert 'closest(".oo-tip-target")' in on_hover, "the stats handler no longer looks for an inner hover target"
+    assert "inner !== el && el.contains(inner)" in on_hover and "hovered = null" in on_hover
+    chips = strip_comments(function_body(app, "anRenderKwChips"))
+    assert "kwTipExtraAttr(term)" in chips, "the analysis chips carry no tier hover for the keyboard"
+
+
+def test_the_tag_inside_a_filled_chip_takes_the_chips_text_colour_m3() -> None:
+    """M3: the analysis chips are ``<button class="chip">``, filled with --accent by the
+    global button rule; the tag's own accent/muted colours measured 1.14:1 on that fill.
+    Inside a filled chip the tag inherits the chip's --accent-fg, and that pair clears
+    AA on every theme."""
+    from tests.js_source_helper import css_rule
+    from tests.test_theme_contrast_and_donut_guard import _ratio, _theme_tokens
+
+    css = (_ROOT / "src" / "static" / "app.css").read_text(encoding="utf-8")
+    rule = css_rule(css, "button.chip .kw-tag, button.chip .kw-qid")
+    assert "color: inherit" in rule and "currentColor" in rule, rule
+    tokens = _theme_tokens()
+    assert len(tokens) >= 17
+    weak = []
+    for name, t in sorted(tokens.items()):
+        fg, fill = t.get("accent-fg"), t.get("accent")
+        if fg and fill and _ratio(fg, fill) < 4.5:
+            weak.append(f"{name} {_ratio(fg, fill):.2f}")
+    assert not weak, f"the chip's own text colour fails AA on its fill: {weak}"
+
+
+def test_the_sense_picker_sits_outside_the_chip_and_a_pick_is_read_m4() -> None:
+    """M4: the picker's buttons nested inside the chip's <button> were hoisted out by the
+    parser, and no code read ``data-kwpin``, so a pick changed nothing."""
+    from tests.js_source_helper import app_js, event_listener_bodies, function_body, strip_comments
+
+    app = app_js()
+    chips = strip_comments(function_body(app, "anRenderKwChips"))
+    assert "kwLabelHtml(term, {inButton: true})" in chips
+    assert "</button>${kwSensesAfterHtml(term, pins)}" in chips, "the picker is not drawn after the chip"
+    insights = (_ROOT / "src" / "static" / "app-insights.js").read_text(encoding="utf-8")
+    assert "kwLabelHtml(f, {inButton: true})" in insights and "</button>${kwSensesAfterHtml(f)}" in insights, (
+        "the landscape chip is a <button> too"
+    )
+    clicks = event_listener_bodies(app, "click")
+    assert any("[data-kwpin]" in h and "kwPickSense(" in h and "stopPropagation" in h for h in clicks), (
+        f"no delegated click listener reads the sense picker ({len(clicks)} click listener(s) found)"
+    )
+
+
+def test_a_language_switch_reloads_what_holds_translations_m8() -> None:
+    """M8: the repaint called ``loadLandscape()``, which returns early once loaded, and
+    re-rendered the analysis chips from a payload fetched for the OLD target language."""
+    from tests.js_source_helper import app_js, function_body, strip_comments
+
+    app = app_js()
+    body = strip_comments(function_body(app, "ooKwRepaintOnLangChange"))
+    assert '["ins-landscape", "loadLandscape", true]' in body
+    assert '[null, "anRenderKwChips", {refetch: true}]' in body
+    assert "window[fn](arg)" in body, "the per-surface argument is never passed"
+    chips = strip_comments(function_body(app, "anRenderKwChips"))
+    assert "opts.refetch" in chips and "_anRefetchKw()" in chips
+    refetch = strip_comments(function_body(app, "_anRefetchKw"))
+    assert "tgtLangParam()" in refetch and "corpus-keywords" in refetch
+    landscape = strip_comments(function_body(app, "loadLandscape"))
+    assert "if (_landscapeLoaded && !force) return;" in landscape
+
+
+def test_the_trend_rows_draw_the_label_through_the_one_helper_m7() -> None:
+    """M7 (the row's closing criterion: every keyword surface draws a foreign word with its
+    tier tag). Home's "Trending now" row, the three-window sparkline rows and the Trends
+    bars drew ``esc(x.term)`` -- the bare original, never the translation, never a tag.
+
+    Each is a LINK, so each calls the helper with ``{inLink: true}`` and draws the QID
+    after its closing tag: a nested anchor closes the outer one early and spills the rest
+    of the row out of it. The rendered strings are driven in
+    ``term_bars_hover_node_test.js`` and ``keyword_label_node_test.js``; this pins that
+    the surfaces still call them."""
+    from tests.js_source_helper import app_js, function_body, strip_comments
+
+    app = app_js()
+    for fn in ("_renderOverviewTrends", "loadTrendWindows", "termBarsHtml", "termListHtml"):
+        body = strip_comments(function_body(app, fn))
+        assert re.search(r"kwLabelHtml\((?:x|t), \{inLink: true\}\)", body), f"{fn} draws a bare keyword"
+        assert "kwQidHtml(" in body, f"{fn} drops the QID the label left for it"
+        assert not re.search(r">\$\{esc\((?:x|t)\.term\)\}</a>", body), f"{fn} still draws a bare term"

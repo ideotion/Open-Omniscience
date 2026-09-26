@@ -108,3 +108,24 @@ def test_translate_keywords_endpoint_gates_on_availability():
     assert r2["available"] is True and r2["translations"] == {"réforme": "reform"}
     assert r2["source"] == "llm-tentative" and r2.get("caveat")
     assert all("élection" not in c for c in on.calls)
+
+
+def test_the_offline_toast_does_not_send_the_reader_online_for_a_loopback_ai():
+    """M13 (delegated click-through 2026-09-26): with no Ollama running, "Translate the
+    rest" told the reader to start Ollama AND TURN AIRPLANE MODE OFF. The local AI is
+    loopback, and loopback inference passes the kill switch (``OllamaClient.
+    _check_kill_switch``, pinned in ``tests/test_egress_window.py``), so the second half
+    was advice to egress for nothing. The toast now names only what fixes it."""
+    import json
+    from pathlib import Path
+
+    from tests.js_source_helper import app_js, function_body, strip_comments
+
+    body = strip_comments(function_body(app_js(), "anFillTentative"))
+    key = "Local AI is offline — start Ollama for tentative translations."
+    assert f't("{key}")' in body, "the offline toast is not the loopback-only wording"
+    assert "airplane" not in body.lower(), "the offline toast still sends the reader online"
+    locales = sorted((Path(__file__).resolve().parents[1] / "src/static/locales").glob("*.json"))
+    assert len(locales) == 12
+    for path in locales:
+        assert key in json.loads(path.read_text(encoding="utf-8")), f"{path.name} has no entry"

@@ -139,7 +139,7 @@
             const fam = f.variants > 1;
             return `<button class="ls-chip" style="font-size:${(11.5*scale).toFixed(1)}px"
               title="${fam ? `family of ${f.variants}: ${esc((f.members||[]).map(m=>m.term).join(', '))} · ` : ""}${f.mentions} mentions — click to zoom in"
-              onclick="pickTerm(${esc(JSON.stringify(f.term))})">${kwLabelHtml(f)}${fam ? `<span class="muted"> ·${f.variants}</span>` : ""}</button>`;
+              onclick="pickTerm(${esc(JSON.stringify(f.term))})">${kwLabelHtml(f, {inButton: true})}${fam ? `<span class="muted"> ·${f.variants}</span>` : ""}</button>${kwSensesAfterHtml(f)}`;
           }).join("");
           return `<div class="ls-col"><div class="ls-h">${esc(t(g.label))} <span class="muted">${items.length}</span></div><div class="ls-chips">${chips}</div></div>`;
         }).join("");
@@ -625,13 +625,16 @@
            title="${tip}">${inner} <span class="muted">${m.mentions}</span>${alsoIn ? " *" : ""}</button>${mapLink}`;
       }).join("")
         : '<span class="muted">No members yet.</span>';
+      const tf = (s2, v) => (window.OOI18N && OOI18N.tf) ? OOI18N.tf(s2, v)
+        : String(s2).replace(/\{(\w+)\}/g, (m0, k) => (v && v[k] != null) ? String(v[k]) : m0);
       const zeroChip = zeroCount > 0
-        ? `<span class="muted" title="${esc(g.members.filter(m => m.mentions === 0).map(m => m.normalized).join(", "))}">+${zeroCount} with no mentions yet</span>`
+        ? `<span class="muted" title="${esc(g.members.filter(m => m.mentions === 0).map(m => m.normalized).join(", "))}">${esc(tf("+{n} with no mentions yet", {n: zeroCount}))}</span>`
         : "";
       // Row 1 (dominance): the mandatory "which member accounts for the total"
-      // disclosure — a group total without it misleads by construction.
+      // disclosure — a group total without it misleads by construction. Keyed as one
+      // frame (M14): the member is data, the sentence around it translates.
       const domLine = g.dominance
-        ? `<div class="hint muted" style="margin-top:2px">Dominated by <b>${esc(g.dominance.member)}</b> (${Math.round(g.dominance.share * 100)}% of this total)</div>`
+        ? `<div class="hint muted" style="margin-top:2px">${esc(tf("Dominated by “{member}” ({share}% of this total)", {member: g.dominance.member, share: Math.round(g.dominance.share * 100)}))}</div>`
         : "";
       // S1.5: a windowed rate + sparkline, present only on the top series_top groups
       // (bounded — never all groups); both summed over the SAME deduped id set the
@@ -654,7 +657,7 @@
         : "";
       return `<div class="sg-card" id="sg-card-${g.id}">
         <div class="sg-head"><b class="lvl-super" title="${esc(lvlTitle("super"))}">${esc(g.name)}</b>
-          <span class="muted">· ${g.count} member${g.count === 1 ? "" : "s"} · ${g.mentions} mentions</span></div>
+          <span class="muted">· ${esc(tf(g.count === 1 ? "{n} member · {m} mentions" : "{n} members · {m} mentions", {n: g.count, m: g.mentions}))}</span></div>
         ${domLine}${rateLine}${spark}
         <div class="fam-chips" style="margin-top:6px">${chips}${zeroChip ? " " + zeroChip : ""}</div></div>`;
     }

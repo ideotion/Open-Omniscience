@@ -439,7 +439,7 @@
         if (co.length) bits.push(`${t("with")}: ${co.join(", ")}`);
         const head = d.resolved.term || d.term || "";
         // The caveat is a FIXED server sentence, so it is keyed and goes through t() --
-        // appended verbatim it read in English inside every translated bubble (N7).
+        // appended verbatim it read in English inside every translated bubble (N7, M14).
         return `${head} — ${bits.join(" · ")}${d.caveat ? " · " + t(d.caveat) : ""}`;
       }
       function applyTo(el, text, persist) {
@@ -492,6 +492,13 @@
       function onHover(e) {
         const el = e.target && e.target.closest ? e.target.closest("[data-kwstat]") : null;
         if (!el) { hovered = null; return; }
+        // A hover target of its OWN inside the keyword row -- the tier tag, its QID --
+        // keeps the bubble ooTipInit just opened for it. Without this the stats line
+        // overwrote it at once, so Q418's hover (original, language, QID) was unreachable
+        // on every data-kwstat chip (M2). Its text also rides the row's
+        // data-oo-tip-extra, which is how a keyboard reader gets it.
+        const inner = e.target.closest(".oo-tip-target");
+        if (inner && inner !== el && el.contains(inner)) { hovered = null; return; }
         hovered = el;
         const term = el.getAttribute("data-kwstat");
         if (term) load(el, term);
@@ -499,6 +506,16 @@
       document.addEventListener("mouseover", onHover, true);
       document.addEventListener("focusin", onHover, true);
     })();
+
+    // Q412's sense picker (M4): ONE delegated listener for every [data-kwpin] button on
+    // every keyword surface. CAPTURE phase and stopped here, so a picker drawn inside a
+    // clickable row (a keyword link) never also fires that row's own action.
+    document.addEventListener("click", (e) => {
+      const b = e.target && e.target.closest ? e.target.closest("[data-kwpin]") : null;
+      if (!b || typeof kwPickSense !== "function") return;
+      e.preventDefault(); e.stopPropagation();
+      kwPickSense(b);
+    }, true);
 
     document.addEventListener("click", function _externalLinkGuard(e) {
       const a = e.target && e.target.closest ? e.target.closest("a[href]") : null;

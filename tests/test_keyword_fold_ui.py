@@ -227,3 +227,44 @@ def test_the_task_manager_names_the_phase_and_an_import_that_parked_it(monkeypat
     )
     (row,) = jobs._keyword_fold_jobs()
     assert row["label"] == "Setting each keyword's language from its mentions"
+
+
+def test_the_task_manager_draws_the_folds_controls_in_both_renderers() -> None:
+    """Row M5 (delegated click-through 2026-09-26): the fold's row had zero buttons in both
+    task managers although /api/jobs listed pause/resume/cancel. Driven as real code."""
+    proc = subprocess.run(
+        ["node", str(_ROOT / "tests" / "job_row_local_node_test.js")],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert "all assertions passed" in proc.stdout
+
+
+class _Ctl(_Stub):
+    def __init__(self, **over) -> None:
+        super().__init__(**over)
+        self.calls: list[str] = []
+
+    def pause(self) -> None:
+        self.calls.append("pause")
+
+    def cancel(self) -> None:
+        self.calls.append("cancel")
+
+
+@pytest.mark.parametrize(
+    ("state", "want"), [("running", "pause"), ("paused", "cancel"), ("error", "cancel")]
+)
+def test_the_jobs_cancel_pauses_a_running_fold_and_cancels_a_stopped_one(monkeypatch, state, want) -> None:
+    """The row's Cancel (drawn only on a stopped fold) must DO something: pausing a fold that
+    is already paused would leave a button that answers and changes nothing."""
+    from src.api import jobs
+
+    ctl = _Ctl(state=state, running=state == "running")
+    monkeypatch.setattr(keyword_fold, "get_fold_manager", lambda: ctl)
+    out = jobs.cancel_job("keyword-fold")
+    assert ctl.calls == [want]
+    assert out["cancelled"] == "keyword-fold"
+    assert ("cancelled" if want == "cancel" else "paused") in out["detail"]

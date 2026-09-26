@@ -1913,6 +1913,15 @@
       border: 1px solid var(--line); border-radius: 10px; background: var(--panel);
       color: var(--fg); cursor: pointer; }
     .kw-senses .kw-sense:hover { border-color: var(--accent); }
+    .kw-senses .kw-sense[aria-pressed="true"] { border-color: var(--accent); font-weight: 600; }
+
+    /* INSIDE A FILLED CHIP the tag takes the chip's own text colour (M3). The analysis
+       window's keyword chips are <button class="chip">, painted var(--accent) with
+       var(--accent-fg) text by the global button rule, and the tag's own accent / muted /
+       caveat colours measured 1.14:1 on that fill -- the tier disclosure was unreadable
+       exactly where it is most often seen. The dotted/dashed underline and the tag's own
+       words still tell the tiers apart; colour was only ever reinforcing. */
+    button.chip .kw-tag, button.chip .kw-qid { color: inherit; border-bottom-color: currentColor; }
 
     /* The QID chip. Opens the LOCAL preview first (invariant #6) -- it is a button in an
        anchor's clothing, so it carries no outbound affordance of its own. */

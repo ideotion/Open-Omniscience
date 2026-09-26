@@ -92,8 +92,10 @@ def test_all_grouped_top_fetches_carry_target_lang(app: str) -> None:
 # --------------------------------------------------------------------------- #
 def test_landscape_chip_renders_translation(app: str) -> None:
     region = _region(app, "async function loadLandscape(", "async function loadFamilies(")
-    # rendered on the top-level family/ring row `f` (where `translation` lives)
-    assert "kwLabelHtml(f)" in region, "landscape chip must render kwLabelHtml(f)"
+    # rendered on the top-level family/ring row `f` (where `translation` lives). The chip
+    # is a <button>, so the call carries `{inButton: true}` (M4: the sense picker is drawn
+    # after the chip, never nested in it) -- anchored on the row, not the argument list.
+    assert re.search(r"kwLabelHtml\(f[,)]", region), "landscape chip must render kwLabelHtml(f)"
 
 
 def test_families_label_renders_translation(app: str) -> None:

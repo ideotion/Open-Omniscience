@@ -962,6 +962,12 @@ def insights_corpus_keywords(
             f"Counts only, never a score — scoped to the top {len(ids)} matched "
             "article(s) by relevance."
         )
+        # The same sentence as a keyable FRAME + its data (M14), so the client renders it
+        # in the reader's language; ``caveat`` stays the English fallback.
+        res["caveat_i18n"] = (
+            "Counts only, never a score — scoped to the top {n} matched article(s) by relevance."
+        )
+        res["caveat_vars"] = {"n": len(ids)}
         # S3 (keyword -> super-group navigation): ONE batched reverse lookup for the
         # whole page of terms — the reverse index is cached per process, so this is
         # in-memory lookups, never an N+1 query per row. Plural membership renders as
@@ -1850,15 +1856,27 @@ def insights_trend(
             "false = every form."
         ),
     ] = True,
+    target_lang: str | None = Query(None, description="UI language for the resolved keyword's label"),
     db: Session = Depends(get_db),
 ) -> dict:
-    """Mention volume over time for one keyword."""
-    return q.trend(
+    """Mention volume over time for one keyword.
+
+    ``target_lang`` (M7): the resolved keyword is DRAWN as a label ("Resolved to …"), so
+    it walks the same translation ladder as every other keyword row and carries its tier
+    fields; without it the payload is unchanged."""
+    out = q.trend(
         db, term, bucket=bucket, country=country,
         concept=_concept_for(
             db, term, expand=expand, ui_lang=ui_lang, sense=sense, literal_cap=literal_cap
         ),
     )
+    tl = _tlang(target_lang)
+    resolved = out.get("resolved")
+    if tl and isinstance(resolved, dict):
+        rows = [dict(resolved)]
+        q._annotate_translations(rows, tl, None, q._tentative_for(db, rows, tl))
+        out = {**out, "resolved": rows[0]}
+    return out
 
 
 @router.get("/trend-articles")

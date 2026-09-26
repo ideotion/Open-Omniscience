@@ -1868,6 +1868,9 @@
     // its own queue), so jobMove takes the kind. The id is "<prefix>:<key>"; the
     // key may itself contain ':' so slice after the FIRST colon, never a fixed N.
     const _isDownloadKind = (k) => k === "wiki-dump" || k === "osm-map";
+    // Local DB work: resumable from a cursor, and never a network fetch, so a resume
+    // needs no consent popup (jobResume's `local`).
+    const _LOCAL_JOB_KINDS = new Set(["reindex", "keyword-fold", "search-reindex"]);
     const _dlKey = (j) => j.id.slice(j.id.indexOf(":") + 1);
     const _reorderEndpoint = (k) => k === "osm-map" ? "/api/jobs/osm/reorder" : "/api/jobs/dumps/reorder";
     // PERF-09. The rate is the OWNER's measurement (the download loop's own
@@ -1952,16 +1955,26 @@
         // partial file). It routes through the ONE network-consent popup.
         if (_isDownloadKind(j.kind) && (j.state === "paused" || j.state === "failed"))
           acts.push(`<button class="tiny secondary" onclick="jobResume(${esc(JSON.stringify(j.id))})">${esc(t("Resume"))}</button>`);
-        // The whole-corpus re-index (Phase 1.1) is a DB-writer job pausable from here:
-        // pause (running) stops between batches; resume continues from the persisted
-        // cursor — so closing the tab no longer restarts it from article 0.
-        if (j.kind === "reindex" && j.state === "running")
-          acts.push(`<button class="tiny secondary" onclick="jobCancel(${esc(JSON.stringify(j.id))})">${esc(t("Pause"))}</button>`);
-        if (j.kind === "reindex" && (j.state === "paused" || j.state === "failed"))
-          acts.push(`<button class="tiny secondary" onclick="jobResume(${esc(JSON.stringify(j.id))})">${esc(t("Resume"))}</button>`);
+        // The local DB-writer jobs (the whole-corpus re-index, the keyword fold, the search
+        // re-index) draw the controls the server lists in `actions` for their state: pause
+        // (running) stops between batches; resume continues from the persisted cursor, so
+        // closing the tab never restarts one from the beginning. "cancel" on a RUNNING job
+        // is the same pause and is not drawn twice; on a stopped keyword fold it discards
+        // the saved cursor (jobs.py), the only place a paused fold can be abandoned.
+        if (_LOCAL_JOB_KINDS.has(j.kind)) {
+          const a = Array.isArray(j.actions) ? j.actions : [];
+          if (a.includes("pause"))
+            acts.push(`<button class="tiny secondary" onclick="jobCancel(${esc(JSON.stringify(j.id))})">${esc(t("Pause"))}</button>`);
+          if (a.includes("resume"))
+            acts.push(`<button class="tiny secondary" onclick="jobResume(${esc(JSON.stringify(j.id))}, true)">${esc(t("Resume"))}</button>`);
+          if (a.includes("cancel") && !a.includes("pause") && j.kind === "keyword-fold")
+            acts.push(`<button class="tiny secondary" onclick="jobCancel(${esc(JSON.stringify(j.id))})">${esc(t("Cancel"))}</button>`);
+        }
         const qpos = j.queue_position ? ` <span class="muted">#${j.queue_position} ${esc(t("in queue"))}</span>` : "";
+        // `t(j.label)`: a fixed job label is keyed ×12 (the fold's are); a label carrying a
+        // value is not a key and falls through unchanged.
         return `<div style="display:flex;align-items:center;gap:8px;padding:3px 0;flex-wrap:wrap">` +
-          `<span class="pill ${pill}">${esc(t(j.state))}</span><b style="font-size:12.5px">${esc(j.label)}</b>${qpos}` +
+          `<span class="pill ${pill}">${esc(t(j.state))}</span><b style="font-size:12.5px">${esc(t(j.label))}</b>${qpos}` +
           `<span style="margin-inline-start:auto;display:flex;gap:4px">${acts.join("")}</span>` +
           `<div style="flex-basis:100%">${prog}${_jobWhy(j, t)}</div></div>`;
     }
@@ -2045,19 +2058,20 @@
       try {
         const r = await api(`/api/jobs/${encodeURIComponent(id)}/cancel`, {method: "POST"});
         if (typeof r.online === "boolean") _paintNetwork(r.online);
-        toast(r.detail || t("Cancelled."));
+        toast(r.detail ? t(r.detail) : t("Cancelled."));   // a fixed detail is keyed ×12
         _renderJobs();
       } catch (e) { toast(e.message, "err"); }
     }
-    async function jobResume(id) {
+    async function jobResume(id, local) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
       // A resume re-opens a network fetch -> the ONE consent popup first
       // (invariant #14; a no-op when already online). The download path itself
-      // still refuses while the kill switch is engaged.
-      if (typeof ensureOnline === "function" && !await ensureOnline(t("Resume a paused download"))) return;
+      // still refuses while the kill switch is engaged. A LOCAL job (`local`: a
+      // re-index or the keyword fold) opens no connection, so it asks nothing.
+      if (!local && typeof ensureOnline === "function" && !await ensureOnline(t("Resume a paused download"))) return;
       try {
         const r = await api(`/api/jobs/${encodeURIComponent(id)}/resume`, {method: "POST"});
-        toast(r.detail || t("Resumed."));
+        toast(r.detail ? t(r.detail) : t("Resumed."));
         _renderJobs();
       } catch (e) { toast(e.message, "err"); }
     }

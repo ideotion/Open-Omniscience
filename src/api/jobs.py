@@ -781,11 +781,21 @@ def cancel_job(job_id: str) -> dict:
         get_quarantine_manager().pause()
         return {"cancelled": job_id, "detail": "quarantine job paused (resumable; it survives a restart)"}
     if job_id == "keyword-fold":
-        # Task-manager "cancel"/"pause" PAUSE the fold (resumable from its persisted cursor;
-        # every committed page stays committed, and a re-run finds nothing left to move).
+        # Task-manager "cancel"/"pause" PAUSE a RUNNING fold (resumable from its persisted
+        # cursor; every committed page stays committed, and a re-run finds nothing left to
+        # move). On a fold that is already stopped, pausing again would do nothing while the
+        # row offers "cancel", so there it CANCELS: the saved cursor is dropped and the row
+        # leaves the task manager. Nothing already folded is undone.
         from src.analytics.keyword_fold import get_fold_manager
 
-        get_fold_manager().pause()
+        fmgr = get_fold_manager()
+        if fmgr.status().get("state") in ("paused", "error"):
+            fmgr.cancel()
+            return {
+                "cancelled": job_id,
+                "detail": "keyword fold cancelled (what it already folded stays folded; folding again starts a new pass)",
+            }
+        fmgr.pause()
         return {"cancelled": job_id, "detail": "keyword fold paused (resumable; it survives a restart)"}
     if job_id == "search-reindex":
         # Task-manager "cancel"/"pause" PAUSE the search re-index (resumable from its

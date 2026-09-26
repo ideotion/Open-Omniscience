@@ -249,6 +249,7 @@
 
   // ---- which job kind belongs to which Processes group ---- //
   var isDl = function (k) { return k === "wiki-dump" || k === "osm-map"; };
+  var isLocal = function (k) { return k === "reindex" || k === "keyword-fold" || k === "search-reindex"; };
   var dlKey = function (j) { return j.id.slice(j.id.indexOf(":") + 1); };
   var reorderEp = function (k) { return k === "osm-map" ? "/api/jobs/osm/reorder" : "/api/jobs/dumps/reorder"; };
   // Processes are grouped like Windows groups apps/background/services.
@@ -307,8 +308,23 @@
     }
     if (isDl(j.kind) && (j.state === "paused" || j.state === "failed"))
       acts.push('<button class="tbtn" onclick="TM.resume(\'' + esc(j.id) + '\')">' + esc(t("Resume")) + "</button>");
+    // The local DB-writer jobs (re-index, keyword fold, search re-index) draw the controls
+    // the server lists in `actions` for their state, as the in-app window's _jobRow does.
+    // "cancel" on a RUNNING job is the same pause and is not drawn twice; on a stopped
+    // keyword fold it discards the saved cursor (jobs.py).
+    if (isLocal(j.kind)) {
+      var a = Array.isArray(j.actions) ? j.actions : [];
+      if (a.indexOf("pause") >= 0)
+        acts.push('<button class="tbtn" onclick="TM.cancel(\'' + esc(j.id) + '\')">' + esc(t("Pause")) + "</button>");
+      if (a.indexOf("resume") >= 0)
+        acts.push('<button class="tbtn" onclick="TM.resume(\'' + esc(j.id) + '\')">' + esc(t("Resume")) + "</button>");
+      if (a.indexOf("cancel") >= 0 && a.indexOf("pause") < 0 && j.kind === "keyword-fold")
+        acts.push('<button class="tbtn" onclick="TM.cancel(\'' + esc(j.id) + '\')">' + esc(t("Cancel")) + "</button>");
+    }
     var qpos = j.queue_position ? ' <span class="muted">#' + j.queue_position + " " + esc(t("in queue")) + "</span>" : "";
-    return '<div class="job"><span class="pill ' + pill + '">' + esc(t(j.state)) + '</span><span class="label">' + esc(j.label) + "</span>" + qpos +
+    // t(j.label): a fixed job label is keyed x12 (the fold's are); one carrying a value
+    // is not a key and falls through unchanged.
+    return '<div class="job"><span class="pill ' + pill + '">' + esc(t(j.state)) + '</span><span class="label">' + esc(t(j.label)) + "</span>" + qpos +
            '<span class="acts">' + acts.join("") + "</span>" +
            (j.detail ? '<div class="detail">' + esc(j.detail) + "</div>" : "") +
            '<div style="flex-basis:100%">' + prog + jobWhy(j) + "</div></div>";
@@ -543,11 +559,11 @@
   // ---- controls (POST the same endpoints the in-app window used) ---- //
   window.TM = {
     cancel: async function (id) {
-      try { var r = await api("/api/jobs/" + encodeURIComponent(id) + "/cancel", { method: "POST" }); toast(r.detail || t("Cancelled.")); }
+      try { var r = await api("/api/jobs/" + encodeURIComponent(id) + "/cancel", { method: "POST" }); toast(r.detail ? t(r.detail) : t("Cancelled.")); }
       catch (e) { toast(e.message, "err"); }
     },
     resume: async function (id) {
-      try { var r = await api("/api/jobs/" + encodeURIComponent(id) + "/resume", { method: "POST" }); toast(r.detail || t("Resumed.")); }
+      try { var r = await api("/api/jobs/" + encodeURIComponent(id) + "/resume", { method: "POST" }); toast(r.detail ? t(r.detail) : t("Resumed.")); }
       catch (e) { toast(e.message, "err"); }
     },
     move: async function (key, dir, kind) {

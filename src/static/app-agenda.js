@@ -183,6 +183,10 @@
     // own helper on the _gwT precedent -- a bare t() here passes node --check and
     // throws a ReferenceError in the browser.
     function _bulT(s) { return (window.OOI18N && OOI18N.t) ? OOI18N.t(s) : s; }
+    // The cadence is stored as its CODE ("weekly"); the list shows the same label the
+    // Period picker does, through the same keys (M14).
+    const _BUL_CADENCE_LABEL = {daily: "Daily", weekly: "Weekly", monthly: "Monthly",
+      trimester: "Trimester", semester: "Semester", yearly: "Yearly"};
     // Guarded like _bulT, for the same reason: i18n.js may not have loaded. The
     // template is the key and the count is data, so the frame can be translated
     // later without the number ever going through a translation table.
@@ -263,7 +267,7 @@
           <th>${esc(_bulT("Covers through"))}</th><th>${esc(_bulT("Period"))}</th><th></th></tr>` +
         rows.map(r => `<tr>
           <td>${esc(r.covers_through || r.filename)}</td>
-          <td>${esc(r.cadence || "—")}</td>
+          <td>${esc(r.cadence ? _bulT(_BUL_CADENCE_LABEL[r.cadence] || r.cadence) : "—")}</td>
           <td class="row" style="gap:6px;justify-content:flex-end">
             <button class="secondary" onclick="bulletinReview(${esc(JSON.stringify(r.filename))})">${esc(_bulT("Review"))}</button>
             <button class="secondary" onclick="bulletinOpenFile(${esc(JSON.stringify(r.filename))})">${esc(_bulT("Open"))}</button>

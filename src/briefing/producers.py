@@ -1036,6 +1036,9 @@ def lonely_signal(session) -> list[Card]:
                     ],
                 ),
                 title=f"Single-source: “{story['title'][:80]}”",
+                # A keyable frame (M14); the story's own title is data, never translated.
+                title_i18n="Single-source: “{title}”",
+                title_vars={"title": story["title"][:80]},
                 summary=(
                     f"Only {story['sources'][0] if story['sources'] else 'one source'} carried this; "
                     "no other source published near-identical text. It could be an exclusive — or minor."
@@ -2153,6 +2156,8 @@ def recycled_claim(session) -> list[Card]:
             Card(
                 type="recycled_claim",
                 title=f"Resurfaced after {c['gap_days']} days: {title}",
+                title_i18n="Resurfaced after {days} days: {title}",
+                title_vars={"days": c["gap_days"], "title": title},
                 summary=(
                     f"Near-identical text first seen {c['first_seen']} reappeared "
                     f"{c['resurfaced']} ({spread}) — a {c['gap_days']}-day gap. It may be an "
@@ -2769,6 +2774,10 @@ def story_propagation(session) -> list[Card]:
             Card(
                 type="story_propagation",
                 title=f"“{it['term']}” spread across {it['distinct_sources']} sources",
+                # The rising card's treatment (Q411, M7/M14): a keyable frame with the term
+                # as data, so the serve-time pass can also show the term's translation.
+                title_i18n="“{term}” spread across {n} sources",
+                title_vars={"term": it["term"], "n": it["distinct_sources"]},
                 summary=(
                     f"Coverage of “{it['term']}” propagated across {it['distinct_sources']} "
                     f"sources over {it['span_days']} days, first carried by "
