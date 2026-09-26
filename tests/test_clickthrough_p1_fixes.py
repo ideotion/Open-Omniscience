@@ -14,26 +14,14 @@ these tests pin the MECHANISM each fix relies on; the route fix is tested behavi
 from __future__ import annotations
 
 import re
-from pathlib import Path
 
-_STATIC = Path(__file__).resolve().parent.parent / "src" / "static"
-
-
-def _read(name: str) -> str:
-    return (_STATIC / name).read_text(encoding="utf-8")
-
-
-def _tip_init() -> str:
-    src = _read("app-boot.js")
-    start = src.index("(function ooTipInit()")
-    return src[start : src.index("})();", start)]
+from tests.js_source_helper import function_body, read_static
 
 
 def test_the_hover_bubble_is_hosted_in_the_open_dialog_that_holds_its_element():
     # A showModal() dialog is in the browser's TOP LAYER, which no z-index reaches, so a
     # bubble left on <body> is drawn UNDER it: Q1002's per-lane hosts were unreadable.
-    body = _tip_init()
-    show = body[body.index("function show(") : body.index("function hide(")]
+    show = function_body(read_static("app-boot.js"), "show")
     assert 'closest("dialog[open]")' in show
     assert "host.appendChild(tip)" in show
     # ...and it goes back to <body> for everything outside a dialog.
@@ -41,47 +29,42 @@ def test_the_hover_bubble_is_hosted_in_the_open_dialog_that_holds_its_element():
 
 
 def test_a_title_repainted_while_its_bubble_is_open_is_never_overwritten():
-    body = _tip_init()
+    boot = read_static("app-boot.js")
     # the bubble follows a repaint...
-    assert 'attributeFilter: ["title"]' in body
+    assert 'attributeFilter: ["title"]' in function_body(boot, "ooTipInit")
     # ...and hide() keeps a title the app set, instead of writing the captured one back.
-    hide = body[body.index("function hide(") :]
     assert re.search(
         r'cur\.hasAttribute\("title"\)\)\s*\{\s*cur\.dataset\.ooTip = cur\.getAttribute\("title"\)',
-        hide,
+        function_body(boot, "hide"),
     )
 
 
 def test_the_task_manager_counts_healthy_as_healthy():
-    tm = _read("taskmanager.html")
-    assert 'h.status === "healthy"' in tm
+    assert 'h.status === "healthy"' in read_static("taskmanager.html")
 
 
 def test_a_deep_linked_analysis_tab_does_not_also_load_the_restored_one():
-    boot = _read("app-boot.js")
-    hyd = boot[boot.index("(function _hydrateCardCorpus()") :]
-    hyd = hyd[: hyd.index("})();")]
+    hyd = function_body(read_static("app-boot.js"), "_hydrateCardCorpus")
     # hydrated BEFORE showTab, or showTab loads the restored active tab first
-    assert hyd.index("_anHydrated = true") < hyd.index('showTab("analyze", false)')
+    flag = re.search(r"_anHydrated = true", hyd)
+    show = re.search(r'showTab\("analyze", false\)', hyd)
+    assert flag and show and flag.start() < show.start()
 
 
 def test_a_superseded_analysis_run_never_writes():
-    an = _read("app-analysis.js")
-    body = an[an.index("async function loadAnalysis(p) {") :]
-    body = body[: body.index("\n    }\n")]
+    an = read_static("app-analysis.js")
+    body = function_body(an, "loadAnalysis")
     assert "++_anRunSeq" in body
-    # every await in the run is followed by the staleness check
-    code = "\n".join(ln.split("//")[0] if "http" not in ln else ln for ln in body.splitlines())
+    # every await in the run is followed by the staleness check (comments dropped, so an
+    # "await" in prose cannot pass or fail this)
+    code = "\n".join(
+        ln if "http" in ln else re.sub(r"//.*", "", ln) for ln in body.splitlines()
+    )
     awaits = [m.start() for m in re.finditer(r"\bawait\b", code)]
     assert awaits, "loadAnalysis lost its awaits?"
     for pos in awaits:
-        after = code[pos : pos + 700]
-        assert "if (stale()) return;" in after, code[pos : pos + 120]
+        assert "if (stale()) return;" in code[pos : pos + 700], code[pos : pos + 120]
     # the two un-awaited loaders carry the run and check it after their own fetch
     assert "_anLoadArticles(p, 0, run)" in body and "_anLoadArtFacets(p, run)" in body
-    for fn in (
-        "async function _anLoadArticles(p, page, run)",
-        "async function _anLoadArtFacets(p, run)",
-    ):
-        seg = an[an.index(fn) :][:1800]
-        assert "run !== _anRunSeq" in seg, fn
+    for fn in ("_anLoadArticles", "_anLoadArtFacets"):
+        assert "run !== _anRunSeq" in function_body(an, fn), fn
