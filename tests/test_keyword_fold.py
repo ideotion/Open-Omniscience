@@ -204,6 +204,32 @@ def test_a_second_run_finds_nothing_to_fold(tmp_path, monkeypatch):
     assert tally.get("mentions_moved", 0) == 0 and tally.get("mentions_merged", 0) == 0
 
 
+def test_a_term_the_fold_emptied_resolves_to_the_keyword_its_mentions_went_to(tmp_path, monkeypatch):
+    """Row M1 (delegated click-through 2026-09-26): after a fold and BEFORE the prune, every
+    keyword surface still passes the display surface (``elections``), and the exact match
+    used to land on the emptied row: "Resolved to elections · 0 mentions in 0 articles"
+    beside a chip counting them. The read side must prefer the keyword that carries the
+    mentions, and must not change what the fold wrote (the husk is still there)."""
+    from src.analytics import queries as q
+
+    eng, s = _corpus(tmp_path, "c.db", lemma=False, monkeypatch=monkeypatch)
+    _run_fold(tmp_path, eng, monkeypatch)
+    s.expire_all()
+    husk = s.query(Keyword).filter_by(normalized_term="elections").one()
+    assert s.query(KeywordMention).filter_by(keyword_id=husk.id).count() == 0, "fixture: not emptied"
+
+    kw = q.resolve_keyword(s, "elections", exact=True)
+    assert kw is not None and kw.normalized_term == "election"
+    trend = q.trend(s, "elections")
+    assert trend["resolved"]["normalized"] == "election"
+    assert trend["total"] == q.trend(s, "election")["total"] > 0
+    stats = q.keyword_stats(s, "elections")
+    assert stats["mentions"] > 0
+    # A keyword that still carries mentions is never swapped for its lemma.
+    kept = q.resolve_keyword(s, "studies", exact=True)
+    assert kept is not None and kept.normalized_term == "studies"
+
+
 def test_a_paused_run_resumes_to_the_same_result_without_double_counting(tmp_path, monkeypatch):
     """Page size 1, stopped after every page and resumed from the persisted state by a NEW
     manager (a restart): the result must equal an uninterrupted run, counters included."""

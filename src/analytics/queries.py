@@ -177,6 +177,39 @@ def _resolve_by_lemma(session, norm: str) -> Keyword | None:
     return rows[0] if len(rows) == 1 else None
 
 
+def _has_mentions(session, keyword_id: int) -> bool:
+    """Whether any mention row still points at this keyword -- the same authoritative
+    test ``prune_orphan_keywords`` uses, one ``(keyword_id, article_id)`` index seek."""
+    return (
+        session.query(KeywordMention.id)
+        .filter(KeywordMention.keyword_id == keyword_id)
+        .first()
+        is not None
+    )
+
+
+def _prefer_surviving(session, norm: str, kw: Keyword) -> Keyword:
+    """An exact hit that the FOLD EMPTIED gives way to the keyword its mentions went to.
+
+    The fold job (:mod:`src.analytics.keyword_fold`) moves ``nouvelle``'s mentions to the
+    ``nouveau`` key and leaves the emptied ``nouvelle`` row for the regular prune, by
+    design (``OPEN_QUEUE.md``: "LEFT OUT: deleting the keywords a fold empties"). Every
+    keyword surface still passes the DISPLAY term, which is the inflected surface, so
+    until the prune runs the exact match lands on the husk and reports "0 mentions in 0
+    articles" beside a chip counting 109. This is the read side only: nothing the fold
+    writes changes. The lemma rung is the same EXACT, ambiguity-refusing try
+    :func:`_resolve_by_lemma` already is, and the emptied row stays the answer when that
+    finds nothing with mentions -- a keyword with no mentions is still the honest answer
+    to a term nothing else carries.
+    """
+    if _has_mentions(session, int(kw.id)):
+        return kw
+    alt = _resolve_by_lemma(session, norm)
+    if alt is not None and int(alt.id) != int(kw.id) and _has_mentions(session, int(alt.id)):
+        return alt
+    return kw
+
+
 def resolve_keyword(session, term: str, *, exact: bool = False) -> Keyword | None:
     """Map a user term to a stored keyword: exact normalized match, else (unless
     ``exact=True``) the best fuzzy ``LIKE %term%`` match by mention count.
@@ -219,7 +252,7 @@ def resolve_keyword(session, term: str, *, exact: bool = False) -> Keyword | Non
         return None
     kw = session.query(Keyword).filter_by(normalized_term=norm).first()
     if kw:
-        return kw
+        return _prefer_surviving(session, norm, kw)
     kw = _resolve_by_lemma(session, norm)
     if kw:
         return kw
@@ -382,6 +415,11 @@ def resolve_concept_keywords(
         chunk = wanted[i : i + _IN_CHUNK]
         for kw in session.query(Keyword).filter(Keyword.normalized_term.in_(chunk)).all():
             found.setdefault(str(kw.normalized_term), kw)
+    # A form whose own row the fold EMPTIED resolves to the keyword its mentions went to,
+    # exactly as ``resolve_keyword`` does (``_prefer_surviving``), so a ring form never
+    # counts the husk and misses the keyword that carries its mentions.
+    for n in list(found):
+        found[n] = _prefer_surviving(session, n, found[n])
     # THE LEMMA RUNG, and why it belongs here (found by reading this against S04-06 after
     # it merged, not by a test). Extraction lemmatises, so the corpus stores `sanction`
     # where the articles said "sanctions" -- and a RING member is a surface form from
