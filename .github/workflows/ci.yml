@@ -24,12 +24,17 @@ concurrency:
   cancel-in-progress: ${{ github.ref_name != github.event.repository.default_branch }}
 
 on:
-  # Run on every pushed branch so the active release branch (0.05, 0.06, 0.07,
-  # ...) is always covered. Pinning to one old branch let direct pushes to the
-  # default branch ship unchecked (finding ARCH-01); branches-ignore: [] keeps
-  # the trigger from rotting on each release-cycle rename.
+  # Pushes run CI on `main` only; every other branch is covered by its pull
+  # request. Running on every pushed branch (the old `branches-ignore: []`) made
+  # each PR commit run the whole workflow TWICE -- once as `push`, once as
+  # `pull_request` -- for no extra coverage (maintainer pick 2026-09-26, "trim
+  # three"). ARCH-01 (direct pushes to the default branch shipping unchecked)
+  # stays closed: `main` is still named. The old worry that a named branch rots
+  # on each release rename ended when `main` became the permanent default
+  # branch (2026-07-15). A branch pushed without a PR gets no CI until one is
+  # opened (or run it by hand with workflow_dispatch).
   push:
-    branches-ignore: []
+    branches: [main]
   pull_request:
   workflow_dispatch:
   # Weekly security cadence (RM-10 / 0.0.8 WP2): a freshly published CVE should
@@ -463,13 +468,21 @@ jobs:
   # are discovered and fixed honestly -- they graduate to required (drop the
   # flag) once green; Linux remains the release gate meanwhile. Never claim
   # an OS works without this proof.
+  #
+  # WINDOWS RUNS WEEKLY + ON DEMAND, NOT PER PUSH (maintainer pick 2026-09-26,
+  # "trim three"): the Windows leg hit its 45-minute cap on every run sampled
+  # (PRH-29 hang), so per push it produced no signal -- and a timed-out job made
+  # every CI run, main included, read "cancelled" instead of green. It still
+  # runs on the Monday schedule and on workflow_dispatch, so the lane (and the
+  # PRH-29 bisect it exists for) is kept; it returns to every push once the hang
+  # is fixed. macOS stays per push. The SQLCipher smoke below still proves the
+  # encrypted store on Windows on every push.
   # ----------------------------------------------------------------------- #
   portability:
-    if: github.event_name != 'schedule'
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, macos-latest]
+        os: ${{ (github.event_name == 'pull_request' || github.event_name == 'push') && fromJSON('["macos-latest"]') || fromJSON('["windows-latest", "macos-latest"]') }}
     runs-on: ${{ matrix.os }}
     name: Portability observation (${{ matrix.os }})
     continue-on-error: true  # observation lane: graduates to required when green
@@ -549,36 +562,13 @@ jobs:
               pass
           print("sqlcipher3 OK on", sys.platform, "| cipher:", ver[0])
 
-  # A pinned lock file must resolve INSTALLABLE from a clean environment against
-  # public PyPI -- not just "the developer's existing venv still works" (audit
-  # finding OO-03: numpy==2.5.0 was pinned while unresolvable, and the lock had
-  # drifted out of sync with pyproject). This lane catches that class of drift
-  # automatically, before a new contributor's clean install is the one to hit it.
-  lockfile-resolve:
-    if: github.event_name != 'schedule'
-    runs-on: ubuntu-latest
-    name: Lock file resolves clean (requirements.lock)
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Set up Python 3.13
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: "3.13"
-
-      # setup-python gives a clean interpreter with only pip installed. --dry-run
-      # installs nothing; --require-hashes proves every pin (numpy included) is
-      # published AND its hash matches -- exactly the clean-room `pip install
-      # -r requirements.lock` a new contributor runs. Robust against new releases
-      # appearing on the index (it validates the committed pins, never re-resolves).
-      - name: Clean-room resolve of the lock file (hash-checked, no install)
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install --dry-run --require-hashes -r requirements.lock
-
-  # lockfile-resolve above proves the pins are publishable and hash-correct, but never
-  # actually installs anything -- it would stay green even if install.sh's lock-based
-  # path (_pip_install_from_lock) silently broke. This lane runs the REAL two-step
+  # A pinned lock file must INSTALL from a clean environment against public PyPI --
+  # not just "the developer's existing venv still works" (audit finding OO-03:
+  # numpy==2.5.0 was pinned while unresolvable, and the lock had drifted out of sync
+  # with pyproject). A separate `lockfile-resolve` job used to prove the same thing
+  # with `--dry-run --require-hashes`; it was dropped 2026-09-26 ("trim three")
+  # because the real hash-checked install below fails on exactly the same drift and
+  # proves more. This lane runs the REAL two-step
   # sequence that path uses (hash-verified deps, then the project itself editable +
   # --no-deps) in a clean-room venv, exactly as a `./install.sh` run for the
   # requirements.lock's own covered extras would, so a future PR can't regress the
