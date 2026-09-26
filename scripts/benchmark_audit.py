@@ -118,9 +118,12 @@ def bench_db(n: int) -> None:
     print(f"  seeding {n} articles ...", flush=True)
     t0 = time.perf_counter()
     _seed_db(session, n)
-    # rebuild FTS over the seeded rows
+    # rebuild FTS over the seeded rows, through the index transform (never FTS5's raw
+    # 'rebuild', which the triggers' delete side would not reproduce)
+    from src.database.fts import rebuild_index
+
     with engine.begin() as conn:
-        conn.execute(text("INSERT INTO article_fts(article_fts) VALUES ('rebuild')"))
+        rebuild_index(conn)
     print(f"  seeded in {time.perf_counter()-t0:.1f}s")
 
     # --- recency browse (no query): the default /api/articles path ---

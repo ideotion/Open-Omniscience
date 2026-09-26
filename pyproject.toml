@@ -117,6 +117,15 @@ dependencies = [
     # in core precisely because it is pure Python; registered in
     # configs/external_artifacts.yml (simplemma-dictionaries) as Q1015 also requires.
     "simplemma>=1.1",
+    # Chinese word segmentation for the SEARCH INDEX. MOVED here from [segmentation] on
+    # 2026-09-25 by Q506 = b (jieba for zh) and Q1015 = a (pure Python in core): the search
+    # index folds text through it at write time (src/database/fts_norm.py), so a core
+    # install without it would index Chinese as unbroken runs that a search for a word
+    # inside them never finds. Pure Python, dictionary bundled in the sdist, no network.
+    # The keyword path (src/analytics/segmentation.py) already used it whenever it was
+    # importable, so a core install now segments zh keywords too. Registered in
+    # configs/external_artifacts.yml (jieba-dictionary).
+    "jieba>=0.42",
     # PDF text extraction. MOVED here from the [pdf] extra on 2026-09-18 by ruling L6
     # (2026-09-15 register round, "Promote [pdf] into the default"), which overrode the
     # round's own recommended default of "leave it optional". The measurement behind it
@@ -215,9 +224,15 @@ ocr = [
 # A core install works without them — src/analytics/segmentation.py degrades to the
 # whitespace tokenizer and zh/ja/th stay honestly reported "unsegmented".
 segmentation = [
-    "jieba>=0.42",
+    # jieba moved to the core dependencies (2026-09-25, Q506 = b + Q1015 = a; see above).
     "janome>=0.5",
     "pythainlp>=5.0",
+    # Japanese word segmentation for the SEARCH INDEX (Q506 = b names sudachipy for ja).
+    # Compiled (a Rust abi3 wheel), so an optional extra per Q1015 = a; its dictionary is
+    # a separate ~77 MB wheel. Without them Japanese is indexed as before. janome stays on
+    # the keyword path: which one ja keeps there is not ruled (brief S04-07 §6, PF12).
+    "sudachipy>=0.6.8",
+    "sudachidict_core>=20240409",
 ]
 
 # The `crypto` extra (its only member was python-gnupg) was REMOVED 2026-09-08

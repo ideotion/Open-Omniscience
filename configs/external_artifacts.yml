@@ -399,8 +399,54 @@ artifacts:
     freshness: {max_age_months: 24}
     couplings:
       - "src/analytics/lemma.py is the ONE seam: families.py (display) and extract.py (extraction) both read LEMMA_LANGS / MISLEMMA_DENYLIST from it"
-      - "zh/ja are excluded by construction (unsegmented here); their segmenters are the [segmentation] extra"
+      - "zh/ja are excluded by construction (unsegmented here); their segmenters are jieba (core since 2026-09-25) and the [segmentation] extra"
     last_verified: "2026-09-17"
+
+  - id: jieba-segmenter
+    title: jieba Chinese word segmenter (search index and keyword path)
+    kind: runtime-coupling
+    description: >
+      Q506 = b names jieba for Chinese. Since S04-07 S8 (2026-09-25) the search index is
+      written through it: the sync triggers segment Chinese text before FTS5 tokenizes it
+      (src/database/fts_norm.py), in search mode on the index and default mode on queries,
+      so a search for a word finds it inside a longer run. Pure Python with its dictionary
+      in the sdist, so it moved from the [segmentation] extra into CORE (Q1015 = a). A
+      release that splits the same text differently cannot corrupt the index -- each
+      segmented document keeps the exact values it was indexed with, and deletes read those
+      -- but its documents then hold the old words until the search re-index runs.
+    upstream: https://pypi.org/project/jieba/ (https://github.com/fxsjy/jieba)
+    check_upstream: "pypi.org/pypi/jieba/json - compare info.version; a new dictionary re-segments Chinese"
+    license: MIT
+    pin: {file: src/database/fts_norm.py, const: JIEBA_AS_OF}
+    refresh: "bump the pyproject floor and the requirements.lock hash (sdist), run tests/test_fts_cjk_arabic.py, then run the search re-index (Settings > Advanced) so older documents take the new words; bump JIEBA_AS_OF"
+    freshness: {max_age_months: 24}
+    couplings:
+      - "src/analytics/segmentation.py (keywords) and src/database/fts_norm.py (search) both import it; the keyword path used it whenever importable, so the move to core also segments zh keywords on a core install"
+      - "requirements.lock pins the sdist (jieba publishes no wheel); it builds with setuptools under hash-checked install (verified 2026-09-25)"
+    last_verified: "2026-09-25"
+
+  - id: sudachipy-segmenter
+    title: sudachipy + sudachidict_core Japanese word segmenter (search index)
+    kind: runtime-coupling
+    description: >
+      Q506 = b names sudachipy for Japanese. The search index segments text containing kana
+      with it (mode C plus its A sub-units, the shape of jieba's search mode). It is COMPILED
+      (a Rust abi3 wheel) and its dictionary is a separate ~77 MB wheel, so both live in the
+      [segmentation] extra (Q1015 = a); without them Japanese is indexed as before. A
+      tokenizer refuses concurrent use (measured on 0.7.0), so each thread gets its own over
+      one shared dictionary. Dictionary releases are frequent and dated; like jieba's, a new
+      one cannot corrupt the index but leaves older documents on the old words until the
+      search re-index runs. janome stays the keyword path's ja segmenter: which one ja keeps
+      there is not ruled (brief S04-07 section 6, PF12).
+    upstream: https://pypi.org/project/SudachiPy/ + https://pypi.org/project/SudachiDict-core/ (https://github.com/WorksApplications/sudachi.rs)
+    check_upstream: "pypi.org/pypi/sudachipy/json and pypi.org/pypi/sudachidict-core/json - compare info.version"
+    license: Apache-2.0
+    pin: {file: src/database/fts_norm.py, const: SUDACHI_AS_OF}
+    refresh: "bump the [segmentation] floors, run tests/test_fts_cjk_arabic.py with the extra installed, then run the search re-index; bump SUDACHI_AS_OF"
+    freshness: {max_age_months: 12}
+    couplings:
+      - "0.7 renamed Dictionary.create() to tokenizer(); fts_norm calls whichever exists, so 0.6.8+ works"
+    last_verified: "2026-09-25"
 
   - id: subjectivity-lexicons
     title: Subjectivity / loaded-language seed lexicons

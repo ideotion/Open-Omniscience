@@ -42,14 +42,15 @@ import re
 import sqlite3
 import threading
 import time
-from contextlib import contextmanager, suppress
 from collections.abc import Callable
+from contextlib import contextmanager, suppress
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from src.backup.artifact import StagedArtifact
 from src.backup.fetch_history import resolve_trust_fetch_history
+from src.database.fts import index_articles, rebuild_index
 from src.paths import data_dir
 
 _LOG = logging.getLogger("backup.merge")
@@ -996,12 +997,10 @@ def _fts_index_merged_articles(
     try:
         for i in range(0, len(ids), _FTS_BULK_BATCH):
             chunk = ids[i:i + _FTS_BULK_BATCH]
-            con.execute(
-                "INSERT INTO article_fts(rowid, title, content)"  # noqa: S608  # nosec B608 - the only interpolation is a placeholder count derived from len(chunk); every id is a bound parameter
-                " SELECT id, title, content FROM articles WHERE id IN"
-                f" ({','.join('?' * len(chunk))})",
-                chunk,
-            )
+            # Through the index transform (Q506/Q507): the same folding and segmentation
+            # the insert trigger applies, and the mask recorded, so a later delete of a
+            # merged article hands FTS5 exactly what was indexed.
+            index_articles(con, chunk)
             if progress is not None:
                 progress["done"] = min(i + len(chunk), len(ids))
     finally:
@@ -4371,7 +4370,9 @@ def _verify_fts(con, has_fts: bool, articles: int) -> dict:
         }
     rebuilt = False
     if indexed != articles:
-        con.execute("INSERT INTO article_fts(article_fts) VALUES('rebuild')")
+        # Never FTS5's own 'rebuild': it indexes the stored text raw, which the triggers'
+        # delete side would not reproduce for an Arabic, Chinese or Japanese article.
+        rebuild_index(con)
         con.commit()
         indexed = _count(con, "SELECT COUNT(*) FROM article_fts_docsize")
         rebuilt = True

@@ -12411,3 +12411,20 @@ expected side. **When a
 job reproduces what a producer would have written, share the producer's function rather than
 copying it, and assert equality with a real producer run from scratch in every data state the
 job will meet.**
+
+### AN INDEX YOU CAN ONLY DELETE FROM WITH ITS OWN INPUT MUST KEEP THAT INPUT WHEN A THIRD PARTY MADE IT (2026-09-25, the search index's segmenters)
+
+An external-content FTS5 table stores no text, so its `'delete'` must be handed exactly the
+values that were indexed; anything else corrupts the index silently. The first design recorded
+only WHICH transform each document went through (a bit mask) and re-ran the transform at delete
+time, which is exact for the Arabic fold, because that fold is this project's own code and a
+new fold would get a new bit. It is not exact for a segmenter: jieba and sudachipy are
+third-party packages whose next dictionary splits the same sentence into different words, and an
+uninstall leaves nothing to re-run. The mask design would have made the first dictionary upgrade
+corrupt every later delete of a Chinese or Japanese article, and made uninstalling the extra
+refuse those deletes outright. So a document a segmenter touched keeps its exact indexed values
+(measured at 1.5× the source bytes, on those documents only), the delete side reads them back,
+and a test swaps the segmenter for a different one between insert and delete and checks the
+index's own vocabulary is empty afterwards. **Before re-computing anything at delete or undo
+time, ask who owns the function: re-run your own code only if its meaning is versioned; keep the
+output of anyone else's.**

@@ -2972,6 +2972,15 @@
         <span id="kw-fold-status" class="muted small"></span>
       </div>
       <div class="hint">Since lemmatisation was added, new articles file “studies” under “study”; articles indexed before then still keep “studies” as its own keyword, so one word is split across two. Folding moves those older mentions to the base form, exactly as a re-index would, without re-reading any article. Only single words in the languages the app lemmatises are folded; phrases, names and keywords your families or groups use are left as they are. Each keyword’s language is then set from the languages of its mentions. The report lists the largest folds.</div>
+      <!-- S04-07 S8 (Q506 🔒 = b, Q507 = a): the search re-index brings articles indexed before
+           Arabic folding and Chinese/Japanese word splitting to the same shape. Bound with
+           addEventListener (app-boot.js _wireSearchReindex), not an inline handler. -->
+      <div class="row" style="margin-top:6px">
+        <button id="fts-reindex-btn" title="Index older articles the way new ones are indexed: Arabic spelling variants folded together, Chinese and Japanese split into words. Pausable from the task manager.">Re-index search (Arabic, Chinese, Japanese)</button>
+        <button id="fts-reindex-report" class="secondary" title="The report of the last completed search re-index: articles checked and re-indexed, by script.">Search re-index report (.json)</button>
+        <span id="fts-reindex-status" class="muted small"></span>
+      </div>
+      <div class="hint">New articles are indexed so that a search finds an Arabic word however its alef, teh marbuta or yeh is written and with or without vowel marks, and finds a Chinese or Japanese word inside a longer run of text. Articles indexed before this version keep their old entry until this job re-indexes them; until then a search still finds them the way it always did. Only articles whose entry would change are touched. Japanese is split into words only when the optional segmentation package is installed.</div>
       <div class="hint">The debug bundle is the full picture for bug reports: runtime facts, scheduler history, every network verdict, what each Load/Refresh click actually did, law/wiki tracking states and the rolling error log — click through the app, then download and share it.</div>
       <div class="hint">The performance report carries real evidence from this machine: per-endpoint response times from your actual use since the app started, store and memory facts, and a quick timed self-test over the heavy views of your real corpus. Local only; runs in a few seconds and nothing is transmitted.</div>
       <div class="hint">The scaling benchmark times the heavy read paths against your real corpus, several runs each, and reports cold vs warm timings per case — so we can check that big corpora stay fast on modest hardware. It records your corpus size, the keyword-counter freshness and the engine mode alongside the numbers so the results are interpretable. Read-only and local; nothing is transmitted.</div>

@@ -234,7 +234,7 @@ def _try_open_encrypted(
         return None
 
 
-def connect(
+def _connect(
     path: Path | str,
     *,
     key: str | None = None,
@@ -381,6 +381,35 @@ def connect(
         f"{p.name} does not exist yet: choose a passphrase (encrypted by default) "
         "or set OO_DB_PLAINTEXT=1 explicitly"
     )
+
+
+def connect(
+    path: Path | str,
+    *,
+    key: str | None = None,
+    create_encrypted: bool | None = None,
+    check_same_thread: bool = True,
+    timeout: float = 30.0,
+    cipher_page_size: int | None = None,
+):
+    """Open ``path`` (see :func:`_connect` for the driver and key rules) with the search
+    index's transform functions registered.
+
+    The article index's sync triggers call them (Q506/Q507, ``src/database/fts_norm.py``),
+    so a raw connection without them could not write ``articles`` -- the merge's working
+    copy is written through exactly this factory."""
+    conn = _connect(
+        path,
+        key=key,
+        create_encrypted=create_encrypted,
+        check_same_thread=check_same_thread,
+        timeout=timeout,
+        cipher_page_size=cipher_page_size,
+    )
+    from src.database.fts_norm import register
+
+    register(conn)
+    return conn
 
 
 def state_for_header(header: bool | None) -> str:

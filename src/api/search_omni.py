@@ -21,7 +21,7 @@ from __future__ import annotations
 import logging
 from functools import lru_cache
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
@@ -621,3 +621,70 @@ def omni(
     return guarded_read(
         db, f"omni|{q}", _compute, on_timeout=_degraded, on_busy=_degraded
     )
+
+
+# --------------------------------------------------------------------------- #
+# The search re-index (S04-07 S8; Q506 🔒 = b, Q507 = a). New articles are indexed with
+# Arabic folded and Chinese/Japanese split into words; this job brings the articles indexed
+# before that to the same shape. A background DB-writer job (kind "search-reindex"),
+# pausable and resumable from the task manager. Refusals answer with a CODE, never text.
+# --------------------------------------------------------------------------- #
+
+
+@router.post("/index-job")
+def search_index_job() -> dict:
+    """Start the search re-index, or continue a paused one. 409 with a code when running."""
+    from src.database.fts_reindex import (
+        SearchReindexRefused,
+        get_search_reindex_manager,
+        refusal_code,
+    )
+
+    mgr = get_search_reindex_manager()
+    try:
+        return mgr.start()
+    except SearchReindexRefused:
+        raise HTTPException(status_code=409, detail={"code": refusal_code(mgr)}) from None
+
+
+@router.get("/index-job/status")
+def search_index_job_status() -> dict:
+    """Live state of the (single) search re-index job, for the UI and /api/jobs."""
+    from src.database.fts_reindex import get_search_reindex_manager
+
+    return get_search_reindex_manager().status()
+
+
+@router.get("/index-job/report")
+def search_index_job_report() -> dict:
+    """The report the last COMPLETED run wrote (the gate's before/after); 404 before one."""
+    from src.database.fts_reindex import last_report
+
+    report = last_report()
+    if report is None:
+        raise HTTPException(status_code=404, detail={"code": "no-report"})
+    return report
+
+
+@router.post("/index-job/{action}")
+def search_index_job_action(action: str) -> dict:
+    """Pause / resume / cancel the search re-index."""
+    from src.database.fts_reindex import (
+        SearchReindexRefused,
+        get_search_reindex_manager,
+        refusal_code,
+    )
+
+    mgr = get_search_reindex_manager()
+    if action == "pause":
+        mgr.pause()
+        return mgr.status()
+    if action == "resume":
+        try:
+            return mgr.resume()
+        except SearchReindexRefused:
+            raise HTTPException(status_code=409, detail={"code": refusal_code(mgr)}) from None
+    if action == "cancel":
+        mgr.cancel()
+        return mgr.status()
+    raise HTTPException(status_code=400, detail={"code": "unknown-action"})

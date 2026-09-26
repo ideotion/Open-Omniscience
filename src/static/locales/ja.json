@@ -4646,5 +4646,18 @@
   "Mentions moved: {moved}": "移動した言及：{moved}",
   "paused for an import": "インポートのため一時停止中",
   "Continue folding keyword forms? It resumes where it stopped. Keywords already checked: {done} of {total}.": "キーワードの語形の統合を続けますか？停止した位置から再開します。確認済みキーワード：{total} 件中 {done} 件。",
-  "Fold keyword forms now? Older keywords are filed under the base form new articles already use, so “studies” and “study” become one keyword. Phrases, names and keywords your families or groups use are left as they are. It runs in the background and can be paused from the task manager. A fold cannot be undone.": "今すぐキーワードの語形をまとめますか？古いキーワードは、新しい記事がすでに使っている基本形の下にまとめられ、「studies」と「study」は1つのキーワードになります。フレーズ、名前、そしてあなたのファミリーやグループが使っているキーワードはそのまま残ります。処理はバックグラウンドで実行され、タスクマネージャーから一時停止できます。統合は元に戻せません。"
+  "Fold keyword forms now? Older keywords are filed under the base form new articles already use, so “studies” and “study” become one keyword. Phrases, names and keywords your families or groups use are left as they are. It runs in the background and can be paused from the task manager. A fold cannot be undone.": "今すぐキーワードの語形をまとめますか？古いキーワードは、新しい記事がすでに使っている基本形の下にまとめられ、「studies」と「study」は1つのキーワードになります。フレーズ、名前、そしてあなたのファミリーやグループが使っているキーワードはそのまま残ります。処理はバックグラウンドで実行され、タスクマネージャーから一時停止できます。統合は元に戻せません。",
+  "Re-index search (Arabic, Chinese, Japanese)": "検索を再インデックス（アラビア語・中国語・日本語）",
+  "Index older articles the way new ones are indexed: Arabic spelling variants folded together, Chinese and Japanese split into words. Pausable from the task manager.": "古い記事を新しい記事と同じ方法でインデックスします。アラビア語の表記ゆれをまとめ、中国語と日本語を単語に分割します。タスクマネージャーから一時停止できます。",
+  "Search re-index report (.json)": "検索再インデックスのレポート（.json）",
+  "The report of the last completed search re-index: articles checked and re-indexed, by script.": "最後に完了した検索再インデックスのレポート：確認した記事と再インデックスした記事（文字体系別）。",
+  "New articles are indexed so that a search finds an Arabic word however its alef, teh marbuta or yeh is written and with or without vowel marks, and finds a Chinese or Japanese word inside a longer run of text. Articles indexed before this version keep their old entry until this job re-indexes them; until then a search still finds them the way it always did. Only articles whose entry would change are touched. Japanese is split into words only when the optional segmentation package is installed.": "新しい記事は、アラビア語の単語をアリフ、ター・マルブータ、ヤーの書き方や母音記号の有無にかかわらず検索で見つけられるように、また長い文章の中にある中国語や日本語の単語を見つけられるようにインデックスされます。このバージョンより前にインデックスされた記事は、このジョブが再インデックスするまで古いエントリのままです。それまでも、検索ではこれまでどおり見つかります。エントリが変わる記事だけが処理されます。日本語が単語に分割されるのは、オプションの分かち書きパッケージがインストールされている場合だけです。",
+  "This store's search index has not been upgraded yet. Restart the app once, then run this again.": "このストアの検索インデックスはまだアップグレードされていません。アプリを一度再起動してから、もう一度実行してください。",
+  "The search re-index stopped on an error; the log has the details. Running it again continues from where it stopped.": "検索の再インデックスはエラーで停止しました。詳細はログにあります。もう一度実行すると、停止したところから続行します。",
+  "Articles checked: {checked} · re-indexed: {reindexed} (Arabic: {arabic} · Chinese: {chinese} · Japanese: {japanese})": "確認した記事：{checked} · 再インデックス：{reindexed}（アラビア語：{arabic} · 中国語：{chinese} · 日本語：{japanese}）",
+  "Indexed without word splitting, their segmenter is no longer installed: {n}": "分かち書きツールがもうインストールされていないため、単語に分割せずにインデックスした記事：{n}",
+  "Articles checked: {done} of {total} ({percent}%)": "確認した記事：{total} 件中 {done} 件（{percent}%）",
+  "Re-indexed: {n}": "再インデックス：{n}",
+  "Continue the search re-index? It resumes where it stopped ({percent}% done).": "検索の再インデックスを続行しますか？停止したところから再開します（{percent}% 完了）。",
+  "Re-index search for Arabic, Chinese and Japanese now? Articles whose search entry would change are indexed again; nothing else is touched. It runs in the background and can be paused from the task manager.": "アラビア語・中国語・日本語の検索を今すぐ再インデックスしますか？検索エントリが変わる記事だけを再インデックスし、それ以外には触れません。バックグラウンドで実行され、タスクマネージャーから一時停止できます。"
 }
