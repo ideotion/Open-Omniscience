@@ -4659,5 +4659,8 @@
   "Articles checked: {done} of {total} ({percent}%)": "確認した記事：{total} 件中 {done} 件（{percent}%）",
   "Re-indexed: {n}": "再インデックス：{n}",
   "Continue the search re-index? It resumes where it stopped ({percent}% done).": "検索の再インデックスを続行しますか？停止したところから再開します（{percent}% 完了）。",
-  "Re-index search for Arabic, Chinese and Japanese now? Articles whose search entry would change are indexed again; nothing else is touched. It runs in the background and can be paused from the task manager.": "アラビア語・中国語・日本語の検索を今すぐ再インデックスしますか？検索エントリが変わる記事だけを再インデックスし、それ以外には触れません。バックグラウンドで実行され、タスクマネージャーから一時停止できます。"
+  "Re-index search for Arabic, Chinese and Japanese now? Articles whose search entry would change are indexed again; nothing else is touched. It runs in the background and can be paused from the task manager.": "アラビア語・中国語・日本語の検索を今すぐ再インデックスしますか？検索エントリが変わる記事だけを再インデックスし、それ以外には触れません。バックグラウンドで実行され、タスクマネージャーから一時停止できます。",
+  "Open an EXTERNAL site on the public web?": "公開ウェブ上の外部サイトを開きますか？",
+  "A bundled directory of public calendar feeds: country public holidays, UN international days and one open-source events calendar, each from one provider. Feeds are checked a few at a time on each collection pass — never at startup, and never while you are offline.": "公開カレンダーフィードを同梱したディレクトリです。各国の祝日、国連の国際デー、オープンソースのイベントカレンダー1件で、いずれも提供元は1つです。フィードは収集パスごとに数件ずつ確認されます — 起動時に確認することは決してなく、オフライン中に確認することも決してありません。",
+  "Feeds whose host refuses automated fetching in its robots.txt, or whose robots.txt cannot be read, are left out of this list, as is one moon-phase feed the app's own astronomy already computes. That leaves no feed for the religious, election, rocket-launch and astronomy calendars the bundle also records, so they are not offered.": "ホストが robots.txt で自動取得を拒否しているフィード、または robots.txt を読み取れないフィードは、この一覧から除外されています。アプリ自身の天文計算ですでに求めている月相のフィード1件も同様です。そのため、同梱データに記録されている宗教・選挙・ロケット打ち上げ・天文のカレンダーには使えるフィードが残らず、表示されません。"
 }

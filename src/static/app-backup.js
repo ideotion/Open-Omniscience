@@ -2705,7 +2705,12 @@
     async function checkEmptyCorpus() {
       try {
         const s = await api("/api/database/stats");
-        if (s.counts && s.counts.articles === 0 && !guideDone()) openGuide();
+        if (!(s.counts && s.counts.articles === 0 && !guideDone())) return;
+        // One first-run dialog at a time, in one order: the Wikipedia wizard the fresh-corpus
+        // hand-off asked for first, this guide when it closes (U8, see wikiWizardPending).
+        if (typeof wikiWizardPending === "function" && wikiWizardPending()) {
+          $("wiki-wizard").addEventListener("close", () => { if (!guideDone()) openGuide(); }, { once: true });
+        } else openGuide();
       } catch (e) { /* stats unavailable -> no banner */ }
     }
 

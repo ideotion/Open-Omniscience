@@ -251,7 +251,8 @@ def delete_page(page_id: int, db: Session = Depends(get_db)) -> dict:
 
 
 @router.post("/pages/{page_id}/track")
-def track_page(page_id: int, ores: bool = True, db: Session = Depends(get_db)) -> dict:
+def track_page(page_id: int, ores: bool = False, db: Session = Depends(get_db)) -> dict:
+    # ores defaults OFF (Q717: opt-in) -- a caller that omits it contacts no scoring host.
     from src.wiki.track import update_page
 
     page = db.query(WikiPage).filter_by(id=page_id).first()
@@ -271,7 +272,7 @@ def track_page(page_id: int, ores: bool = True, db: Session = Depends(get_db)) -
 
 @router.post("/track-now")
 def track_now(
-    ores: bool = True, limit: int = Query(25, ge=1, le=500), db: Session = Depends(get_db)
+    ores: bool = False, limit: int = Query(25, ge=1, le=500), db: Session = Depends(get_db)
 ) -> dict:
     """Track all watched pages now (synchronous; for a handful of pages)."""
     from src.wiki.track import track_watched

@@ -380,6 +380,93 @@ def test_an_unusable_folder_is_a_400_and_changes_nothing(monkeypatch, tmp_path):
 
 
 # --------------------------------------------------------------------------- #
+# The lock gate: the step's endpoints THROUGH the real app's middleware
+# --------------------------------------------------------------------------- #
+# Every test above mounts the router on a bare FastAPI(), so none of them could see that
+# the real app's lock gate answered 503 for these paths at `fresh` -- the only state they
+# are for -- and the first-launch step was skipped on every install (2026-09-26
+# click-through, I15/P4/U1). These go through `src.api.main.app`, which runs the gate, and
+# pin both directions: open at `fresh`, and exactly as closed as before against a LOCKED
+# store (which must not even say where its data folder is).
+_STEP_CALLS = (
+    ("get", "/api/system/data-location", None),
+    ("post", "/api/system/data-location/check", "path"),
+    ("post", "/api/system/data-location", "path"),
+)
+
+
+def _gated_client():
+    from fastapi.testclient import TestClient
+
+    from src.api.main import app
+
+    return TestClient(app)  # no `with`: the gate is middleware, the lifespan is not needed
+
+
+def test_at_fresh_the_real_app_serves_the_step(monkeypatch, tmp_path, env_file):
+    import src.api.unlock as unlock_mod
+
+    monkeypatch.setattr(unlock_mod, "app_lock_state", lambda: "fresh")
+    c = _gated_client()
+    got = c.get("/api/system/data-location")
+    assert got.status_code == 200, got.text
+    assert got.json()["offerable"] is True
+
+    drive = tmp_path / "drive"
+    drive.mkdir()
+    probe = c.post("/api/system/data-location/check", json={"path": str(drive)})
+    assert probe.status_code == 200 and probe.json()["usable"] is True
+    saved = c.post("/api/system/data-location", json={"path": str(drive)})
+    assert saved.status_code == 200 and saved.json()["saved"] is True
+    assert DATA_SUBDIR in env_file.read_text(encoding="utf-8")
+
+
+def test_a_locked_store_still_refuses_every_step_call_at_the_gate(monkeypatch, tmp_path, env_file):
+    """The GET would disclose the data folder's path; the POSTs would probe and record a
+    folder. Against an existing locked store all three stay the gate's 503 -- the handlers'
+    own 409 is never reached, so nothing about the store is said beyond "locked"."""
+    import src.api.unlock as unlock_mod
+
+    monkeypatch.setattr(unlock_mod, "app_lock_state", lambda: "locked")
+    c = _gated_client()
+    target = str(tmp_path / "elsewhere")
+    for method, path, body_key in _STEP_CALLS:
+        kw = {"json": {body_key: target}} if body_key else {}
+        r = getattr(c, method)(path, **kw)
+        assert r.status_code == 503, (method, path, r.status_code, r.text)
+        assert r.json() == {"detail": "the database is locked: unlock it first", "locked": True}
+    assert not (tmp_path / "elsewhere").exists()
+    assert not env_file.exists()
+
+
+def test_fresh_opens_those_two_paths_and_nothing_else(monkeypatch):
+    """Exact paths, not a prefix, and only at `fresh`: the rest of the API stays shut."""
+    import src.api.unlock as unlock_mod
+    from src.api.unlock import ALLOWED_ONLY_WHILE_FRESH, allowed_while_locked
+
+    assert ALLOWED_ONLY_WHILE_FRESH == (
+        "/api/system/data-location",
+        "/api/system/data-location/check",
+    )
+    for p in ALLOWED_ONLY_WHILE_FRESH:
+        assert allowed_while_locked(p, "fresh")
+        assert not allowed_while_locked(p, "locked"), f"{p} must stay shut on a locked store"
+    for p in (
+        "/api/system/data-location/",
+        "/api/system/data-location-x",
+        "/api/system/data-location/check/x",
+        "/api/system/doctor",
+        "/api/sources",
+    ):
+        assert not allowed_while_locked(p, "fresh"), p
+
+    monkeypatch.setattr(unlock_mod, "app_lock_state", lambda: "fresh")
+    c = _gated_client()
+    assert c.get("/api/system/doctor").status_code == 503
+    assert c.get("/api/sources").status_code == 503
+
+
+# --------------------------------------------------------------------------- #
 # The first-launch step itself
 # --------------------------------------------------------------------------- #
 def _unlock_script() -> str:

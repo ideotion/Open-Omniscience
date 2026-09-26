@@ -1074,6 +1074,10 @@
       // was already showing, for the reverse ordering).
       const wiz = $("guide-wizard");
       if (wiz && wiz.open) return;
+      // The same for the first-run Wikipedia wizard, which now opens BEFORE the guide
+      // (U8): shown behind that modal the coach is a prompt nobody can press, and the
+      // guide that follows it hides the coach anyway.
+      if (typeof wikiWizardPending === "function" && wikiWizardPending()) return;
       const s = _coachState();
       if (s.dismissed || (s.seen || 0) >= 6) return;     // respected + never naggy
       s.seen = (s.seen || 0) + 1; _coachSave(s);

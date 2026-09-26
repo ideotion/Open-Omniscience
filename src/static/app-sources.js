@@ -1320,6 +1320,19 @@
         : ((window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x))("The host list could not be read.");
     }
 
+    // Is this wizard open, or still to open for the fresh-corpus hand-off (/?wikiwizard=1)?
+    // The one-time guide asks before it opens (checkEmptyCorpus) and waits for this one to
+    // close: both first-run dialogs sat behind their own fetch, so whichever answered first
+    // ended up underneath the other (2026-09-26 click-through U8). One at a time, this first.
+    let _wizShown = false;
+    function wikiWizardPending() {
+      const dlg = $("wiki-wizard");
+      if (!dlg) return false;
+      if (dlg.open) return true;
+      try { return !_wizShown && new URLSearchParams(location.search).get("wikiwizard") === "1"; }
+      catch (_e) { return false; }
+    }
+
     async function openWikiWizard() {
       const dlg = $("wiki-wizard");
       if (!dlg) return;
@@ -1347,6 +1360,7 @@
         // operator with no way to answer the question at all.
         toast(_failMsg("Update failed: {error}", e), "err");
       }
+      _wizShown = true;
       try { dlg.showModal(); } catch (_e) { dlg.setAttribute("open", "open"); }
     }
 
