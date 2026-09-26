@@ -115,6 +115,13 @@ const src = [
   "function fmtDateTime(ms){return 'DATE';}",
   "function _isDownloadKind(k){return false;}",
   "function _dlKey(j){return j.id;}",
+  // ...and a third time (M5): _jobRow reads the set of LOCAL job kinds, whose resume
+  // needs no consent popup. The real statement, sliced to its own semicolon.
+  (() => {
+    const at = APP.indexOf("const _LOCAL_JOB_KINDS");
+    assert(at !== -1, "could not find const _LOCAL_JOB_KINDS");
+    return APP.slice(at, APP.indexOf(";", at) + 1);
+  })(),
   "return { _uxImRenderQueue, _uxImLive, _uxImPhaseBits, _uxVolPhase, _jobRow };",
 ].join("\n");
 
