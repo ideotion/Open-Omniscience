@@ -12428,3 +12428,18 @@ and a test swaps the segmenter for a different one between insert and delete and
 index's own vocabulary is empty afterwards. **Before re-computing anything at delete or undo
 time, ask who owns the function: re-run your own code only if its meaning is versioned; keep the
 output of anyone else's.**
+
+### "IS VISIBLE" IS NOT "CAN BE SEEN": A HOVER UNDER A MODAL'S TOP LAYER PASSES EVERY VISIBILITY CHECK (2026-09-26, the delegated click-through)
+
+The 2026-09-16 sandbox walk of the consent popup recorded the per-lane host bubble as shown, with
+Playwright's `locator.is_visible()`. That call reports an element that has a box, is not
+`display:none` or `visibility:hidden`, and has non-zero size. It does not report whether anything
+covers it. The bubble (`#oo-tip`, appended to `<body>`) was drawn beneath the `showModal()` popup,
+because a modal dialog lives in the browser's TOP LAYER, which paints above every `z-index` in the
+document. So for ten days the one disclosure Q1002 added to the consent popup could not be read,
+behind a green record. The delegated walk caught it by measuring what a person sees:
+`document.elementFromPoint()` at the bubble's centre, and a pixel diff (0 changed pixels in
+en/fr/zh). **A check that stands in for a human's eyes must ask what is TOPMOST at that point, not
+whether the element exists and has a size. Any floating UI a modal can cover (tooltips, toasts,
+menus) needs that check, or it must itself enter the top layer (a popover, or a child of the open
+dialog).**

@@ -1,0 +1,745 @@
+{
+ "row": "N",
+ "steps_walked": {
+  "row": "N",
+  "title": "Cross-language search through the concept rings: the 'only the words I typed' toggle, the 40-form limit switch, the sense picker, language chips and grouping, per-form counts with one total, the stacked per-language chart, the concept map, watches and the bulletin annexe, Arabic/Chinese/Japanese search with its re-index job",
+  "prerequisites": [
+   "The app is at current main, which includes S8 (merged 2026-09-25), with its dependencies reinstalled. jieba is now a core dependency (Chinese). Japanese word splitting in search also needs the optional [segmentation] extra (sudachipy); it is only needed for the optional Japanese check in N13.",
+   "PART A (steps N1–N11) runs on a THROWAWAY data folder, never your real data: a plaintext store at /tmp/oo-rowN, seeded with scripts/ui_clickthrough_seed.py plus the 9-article concept fixture docs/audit/cross-language-lens-clickthrough-2026-09-17/concept_fixture.py, and served on port 8010. The different port means its browser settings (language, analysis tabs) never mix with your real install on :8000.",
+   "Do Part A on the SAME DAY you seed. The fixture articles are dated 1–6 days before seeding. Insights → Trends (7-day window, N8) and the weekly Bulletin (the 7 days before today, N10) only see them in that week.",
+   "Start the throwaway with `.venv/bin/open-omniscience serve`. Do not use `python -m src.api.main` or `--ephemeral`: both serve an app whose Mindmap graph fails with a 500 (docs/audit/concept-map-clickthrough-2026-09-17/README.md). Use the terminal where you typed `export OO_DATA_DIR=…` ONLY for the throwaway, and start your real app the usual way.",
+   "PART B (steps N12–N13) runs on your own ENCRYPTED install, unlocked, with its real corpus. It works best if the corpus has Arabic and Chinese articles (and Japanese, for the optional check) that were collected BEFORE you updated to this version.",
+   "Before N13, make a fresh backup of the real install: the gear button 'Settings' at the bottom of the sidebar → subtab 'Data & backup' → section 'Export / Backup' → 'Export / Back up…'.",
+   "Keep airplane mode ON for the whole pass: the top-bar plane icon stays FILLED, so never click it. No step in this row sends anything off the machine, so no consent popup should appear. If one does, click Cancel and write down which click raised it.",
+   "You need a zip viewer (N10), and you need to paste Arabic and Chinese words; copy them from this sheet."
+  ],
+  "steps": [
+   {
+    "id": "N1",
+    "where": "A terminal in the Open-Omniscience folder, then your browser at http://127.0.0.1:8010",
+    "do": "Build the throwaway, one command at a time: `export OO_DATA_DIR=/tmp/oo-rowN OO_DB_PLAINTEXT=1` → `.venv/bin/python scripts/ui_clickthrough_seed.py` → `PYTHONPATH=. .venv/bin/python docs/audit/cross-language-lens-clickthrough-2026-09-17/concept_fixture.py` (run it ONCE only: it adds 9 articles that use the word for 'climate' in 6 languages, en, fr, de, es, ar and hi, and one of them uses both climate and climat. A second run would add 9 duplicates and change every number below) → `OO_PORT=8010 .venv/bin/open-omniscience serve`. Open http://127.0.0.1:8010. If a terms notice or the welcome guide appears, accept or close it. To throw everything away at the end, click the top-bar power icon 'Shut down the app', then delete /tmp/oo-rowN.",
+    "expect": "The terminal prints 'ui_clickthrough_seed: STATE C seeded.' and then 'added 9 cross-language fixture articles'. The app opens with no lock screen, and the top-bar plane icon (#net-toggle) is FILLED, meaning offline.",
+    "flags": [
+     "needs-seed-data"
+    ],
+    "evidence": "scripts/ui_clickthrough_seed.py:13-18,790; docs/audit/cross-language-lens-clickthrough-2026-09-17/concept_fixture.py:17-29,50-51; src/api/main.py:3074 (OO_PORT); src/static/index.html:174 (Shut down the app); docs/audit/concept-map-clickthrough-2026-09-17/README.md ('python -m src.api.main serves a half-broken app')"
+   },
+   {
+    "id": "N2",
+    "where": "First browser tab → top-bar magnifier (tooltip 'Search everything — articles, dates, locations, settings, etc.', or Ctrl+K) → type climate → click the row 'Analysis: “climate”' (it opens a NEW browser tab) → subtab 'Articles' (#an-articles)",
+    "do": "Read the grey block at the top (#an-xlang), the 'language:' chips row, and the total line (#an-art-total). Read the column headers and hover two different Language cells. With the default 'Sort by: Relevance / recency', read the Published column. Then set 'Sort by' to 'Date' (Order: Descending) and read it again. Under the total, next to 'View:', click 'Group by language', look, then click 'Interleave by date'. Set 'Sort by' back to 'Relevance / recency'.",
+    "expect": "The grey block reads 'climate also matched as the concept “climate” — en: climate · fr: climat · de: klima · es: clima · it: clima · pt: clima · nl: klimaat · ar: مناخ · ru: климат'. Under it is the link 'Count each form'. Below that, the caveat line 'This search matched the concept in every language the ring covers, not only the words you typed. Most terms are in no ring and are unaffected.' ends with the link 'Show only the words I typed'. The total line reads '160 Articles · Open an article to read it…' (160 is what the sandbox measured on this exact seed). The 'language:' chips show eng, fra, deu, rus, ara, por and spa, each with a count; they add up to 160. There is no zho, because the seeded Chinese articles are not about climate. Columns: Title · Source · Language · Published · Top keyword. EVERY row has a three-letter code, and hovering it shows the language's name (for example 'French'). ORDER: with 'Relevance / recency', the Published dates are NOT in date order although 'Interleave by date' is the pressed button. Write this down: Q508 rules 'interleaved by date', and the default list is ranked by relevance. With 'Sort by: Date', the dates run newest to oldest and the languages are mixed. 'Group by language' puts the same rows under headings like 'eng N articles', largest group first. The heading counts add up to the rows on this page (50), and the total line still says 160. 'Interleave by date' brings back the mixed list.",
+    "flags": [
+     "needs-seed-data"
+    ],
+    "evidence": "src/static/app-shell.js:773 (palette 'Analysis' row → openAnalysisInNewTab); src/static/app-analysis.js:1543-1655 (_crossLangNotice: sentence, 'Count each form', caveat + back link), :1300-1323 (language facet chips), :1770-1784 (_anLangCell), :1786-1830 (group control + grouping over d.results), :1157 (_AN_ART_PAGE = 50), :1909 (an-art-total); src/static/index.html:466-473 (Sort by options); src/api/main.py:1458 (default = relevance order); src/database/fts.py:937 (ORDER BY bm25); src/analytics/equivalence.py:894-897 (caveat); scripts/ui_clickthrough_seed.py:393-402 (153 seeded 'Climate coverage' titles: en 18, fr/de/ru/ar/pt 27 each); docs/audit/cross-language-lens-clickthrough-2026-09-17/README.md"
+   },
+   {
+    "id": "N3",
+    "where": "The 'climate' analysis browser tab → Articles → the link 'Count each form' in the grey block; then the FIRST browser tab (the one from N1) → top-bar magnifier → type climate → the row 'Run the full Boolean search for “climate”' (opens the Search page, #tab-search, in that same browser tab)",
+    "do": "Click 'Count each form' and wait until 'Counting…' is replaced by numbers. Then, in the first browser tab, run the full Boolean search for climate and read the line under the Search button.",
+    "expect": "The readout says 'climate 156 · climat 3 · clima 1 · klima 1 · klimaat 0 · климат 0 · مناخ 0 · 160 articles in total, counted once each', followed by 'These figures overlap: an article carrying two forms of the concept is counted under each of them and ONCE in the total, so the per-form numbers do not add up to it.' PASS if: (1) the 'in total' figure equals the N2 list total; (2) the forms add up to MORE than the total (161 against 160, because of the one article with both climate and climat), and the caveat says why; (3) no 'N of M forms counted' appears, because all 7 forms were counted; (4) if any form could not be counted, it shows '—' with a reason on hover, never a 0 (none is expected here). The Search page line starts '160 result(s)' (followed by '(showing 50)'). 'مناخ 0' is expected; see notes.",
+    "flags": [
+     "needs-seed-data"
+    ],
+    "evidence": "src/static/app-analysis.js:1661-1715 (_anFormCountsHtml/_anFormCounts); src/api/insights.py:1667-1769 (concept-forms: same search_total as the list, overlap caveat, measured_forms vs total_forms); src/static/app-shell.js:759-760 (Boolean row runs showTab('search') in the current tab); src/static/app-analysis.js:2306-2314 (doSearch '… result(s)'); src/static/app-settings.js:218 (DEFAULT_LIMIT = 50); docs/audit/cross-language-lens-clickthrough-2026-09-17/README.md (the 156/3/1/1 readout)"
+   },
+   {
+    "id": "N4",
+    "where": "The 'climate' analysis browser tab → subtab 'Sentiment' (#an-sentiment); → 'Articles' → the link 'Show only the words I typed'; the browser address bar; subtabs 'Trend' (#an-trend) and 'Sentiment'",
+    "do": "First open Sentiment and note the second number in 'n=…/…' at the bottom. Return to Articles and click 'Show only the words I typed'. Look at the address bar and the total. Open Trend and read the 'View:' buttons. Open Sentiment and read 'n=…/…' again. Press F5 (the page may land on Overview, so open Articles again). Copy the address, paste it into a NEW browser tab, and open Articles there too. Finally click 'Search the concept in every language'.",
+    "expect": "Before the toggle, Sentiment reads 'n=…/160'. After it, the address gains 'expand=0'. The grey block now reads only 'Showing only the words you typed. Search the concept in every language'. The total drops from 160 to 156, exactly the 'climate 156' from N3. Trend offers only 'Counts' and 'Indexed'. 'By language' is gone because only English is left, which shows the toggle reached a keyword-based tab. Sentiment now reads 'n=…/156', which shows it reached a set-based tab. After F5, AND in the pasted tab, the page is still in 'Showing only the words you typed.' mode with 156. 'Search the concept in every language' removes 'expand=0' from the address and brings back 160 and the full grey block.",
+    "flags": [
+     "needs-seed-data"
+    ],
+    "evidence": "src/static/app-analysis.js:1450-1476 (_anApplyLens), :1481-1541 (lens seed, _anWriteLensToUrl, _anParseLens), :1723-1726 (_anSetExpand re-runs the whole window), :655-668 ('By language' only with >1 language), :2110-2128 (Sentiment 'n=n_scored/n_articles'); src/api/insights.py:1298-1305 (corpus-sentiment through _resolve_corpus with the lens); src/static/app-boot.js:453-481 (?analyze= + lens restored on load); tests/test_cross_language_ui.py::test_the_lens_survives_a_reload_and_a_shared_link"
+   },
+   {
+    "id": "N5",
+    "where": "Top-bar magnifier → type election → 'Analysis: “election”' → subtab 'Articles'",
+    "do": "Read the grey block and the 'language:' chips. Click the choice “public election”, then read the block, the address, and the chips. Click 'Count each form'. Click 'Search every form', then read the chips and the total, and click 'Count each form' again. Click 'Limit the search to the most-mentioned forms'. Finally click 'Show all senses'.",
+    "expect": "First the block reads 'election denotes several concepts, so it was not expanded. Search one of them: “election” · “public election”'. The concept names are data and stay in English in every language. Write down whether the caveat line under it ('This search matched the concept in every language the ring covers…') reads as a contradiction, since nothing was expanded. After you pick “public election”, the block reads 'election: searching the concept “public election”, which you chose — en: public election, elections, election, political election · ar: … · zh: 選舉, 选举, …' with a 'Show all senses' link. The address carries 'sense=election%3Apublic-election'. The chips now include ara and other languages besides eng. The limit is ON by default: 'The search was widened to the most-mentioned forms only. Turn the limit off to search every form the concept has. Search every form'. 'Count each form' ends with '40 of 44 forms counted'. Write down that the '40 of 44' figure appears only after this click, not in the limit sentence (Q503 rules 'disclosed as expanded to 40 of 63 forms'). After 'Search every form', the address gains 'cap=0' and the line becomes 'Searching every form of the concept. Limit the search to the most-mentioned forms'. The total is the same or LARGER, never smaller. 'Count each form' no longer says '… of 44'. If zho appears in the chips only now, that is the limit leaving out the Chinese forms (they are last in the ring's order); write down which happened. 'Limit…' removes 'cap=0'. 'Show all senses' removes 'sense=' from the address and returns to the first sentence.",
+    "flags": [
+     "needs-seed-data"
+    ],
+    "evidence": "src/analytics/equivalence.py:711 (CONCEPT_LITERAL_CAP = 40), :760-832 (cap keeps the first 39 siblings; unmeasured forms keep ring order), :833-918 (cap_facts, disclosure, caveat always present, cap_caveat without numbers); src/static/app-analysis.js:1576-1627 (sense picks, cap switch both ways, caveat rendered unconditionally), :1680-1683 ('{n} of {total} forms counted' only in the readout), :1728-1731 (_anSetCap), :1740-1749 (_anPickSense/_anClearSense); configs/keyword_equivalents.yml:36-37 + configs/keyword_rings_generated.yml:29-31 (election is in two rings; public-election has 44 forms, zh last); scripts/ui_clickthrough_seed.py:192-231 (ar الانتخابات, zh 选举 prose)"
+   },
+   {
+    "id": "N6",
+    "where": "The 'climate' analysis browser tab (expansion on) → subtab 'Trend' (#an-trend) → 'View: Counts · Indexed · By language'",
+    "do": "Click 'By language'. Hover low in the tallest column, then high in the same column. Click one legend chip to hide that language, then click it again to bring it back.",
+    "expect": "The chart shows stacked COLUMNS, not slanted filled bands. There is one colour per language and a legend of three-letter codes (eng, fra, deu, spa, ita, por). The vertical axis starts at 0. Under the chart: 'eng 3 · fra 3 · deu 1 · spa 1 · ita 1 · por 1 · 7 articles in total, counted once each', then the caveat 'Bands are mention counts per language and they overlap: an article carrying two languages' forms of the concept is counted in both, so the stack's height is not the article total beside it.' Hovering low and then high in one column names two DIFFERENT languages, in the form 'eng: N mentions · running total N · date', and the higher one has the larger running total. The sentence 'These series could not be stacked, so they are drawn as lines.' must NOT appear. Hiding a chip removes that language's band, and clicking again restores it. Write down the 7: it is counted from extracted keywords, not from the full-text list (see notes).",
+    "flags": [
+     "needs-seed-data"
+    ],
+    "evidence": "src/static/app-analysis.js:713-772 (_drawAnTrendByLang: ooChart stacked + zeroBase, totals line, caveat, refusal sentences); docs/audit/stacked-by-language-2026-09-17/report.json (totals_line, hover_low/hover_high)"
+   },
+   {
+    "id": "N7",
+    "where": "The 'climate' analysis browser tab (expansion on) → subtab 'Mindmap' (#an-mindmap) → buttons 'Map · Cloud · Concept · ⛶'",
+    "do": "Click 'Concept'. Hover the centre word, one arm, and one of the small words hanging off an arm. Drag 'Text size' to the maximum and look, then back to the middle. Click ⛶ to enlarge, then click it again to go back.",
+    "expect": "'climate' is in the centre, and its hover shows 'climate · 7'. There is one arm per language, labelled with a code and an article count ('eng 3 · fra 3 · deu 1 · spa 1 · ita 1 · por 1'). Associated words (such as 'assembly' or 'rapport') hang off the arm they were measured on. Lines run only centre → arm → word, and none cross. A line under the picture names what is missing: 'Not observed in this corpus: ara: مناخ · nld: klimaat · rus: климат'. Hovering an arm shows the language's name and its form; for spa, ita and por it adds 'the same word in …', naming the other two. At normal size and in ⛶, no label is cut off at the canvas edge. At maximum text size, write down any label that is cut off (the sandbox measured the default size only).",
+    "flags": [
+     "needs-seed-data"
+    ],
+    "evidence": "src/static/app-analysis.js:945-998 (_anConceptTreeSvg: arm/centre titles, form_shared_with), :1000-1052 (renderAnMindmap: Concept button only when arms.expanded, 'Not observed in this corpus:'); docs/audit/concept-map-clickthrough-2026-09-17/README.md"
+   },
+   {
+    "id": "N8",
+    "where": "First browser tab → sidebar 'Insights' → subtab 'Trends' (#ins-trends) → lists 'Rising' and 'Top'; then subtab 'Watches' (#ins-watches)",
+    "do": "On Trends, hover the 'climate' row label, then press Tab until that label has keyboard focus. If 'climate' is in neither list, set 'Window (days)' to 30 and click 'Refresh'. Do NOT click the red ✕ at the start of a row: it excludes that keyword from the corpus. Clicking a label only opens an analysis. Also hover a row for a word that is not a concept (a place name, for example). Then open Watches and fill in: Name 'Climate', Condition (search query) 'climate', Min articles 2, Window (days) 30. Click 'Add watch' (not 'Check now'), then hover 'the concept “climate”' in the new row. Leave the watch in place until the end of N11.",
+    "expect": "The bubble for 'climate' ends with '— Across languages: English … · French … · German … · Spanish …' (the sandbox showed 9 · 7 · 3 · 3). Keyboard focus shows the same bubble. The row for a non-concept word has NO 'Across languages' part. The new watch row reads 'This watch covers the concept “climate” in every language its ring carries.', and hovering the concept lists 'en: climate · fr: climat · …'. The caveat 'This search matched the concept in every language the ring covers…' appears ONCE at the foot of the list, not once per row.",
+    "flags": [
+     "mutates-data",
+     "needs-seed-data"
+    ],
+    "evidence": "src/static/app-corpus.js:866-877 (kwLangBreakdownText 'Across languages:'), :1246-1275 (termBarsHtml: ✕ excludeKeyword button, data-oo-tip-extra); src/static/index.html:1269-1281 (Window (days), Refresh, Rising, Top), :1375-1387 (Watches form); src/static/app-insights.js:1269-1330 (_watchRingNote, caveat once), :1369-1374 (deleteWatch confirm); docs/audit/stacked-by-language-2026-09-17/README.md (aggregate hover)"
+   },
+   {
+    "id": "N9",
+    "where": "Top-bar magnifier → 'Analysis: “…”' → Articles, once per word; then the gear 'Settings' at the bottom of the sidebar → subtab 'Advanced' → fold 'Diagnostics — logs and reports about this install, generated only when you click' → buttons 'Re-index search (Arabic, Chinese, Japanese)' (#fts-reindex-btn) and 'Search re-index report (.json)' (#fts-reindex-report)",
+    "do": "Paste and analyse each word in turn, and note each total. Arabic: (a) الإقليمية; (b) الاقليميه (the same word with a bare alef and ه instead of ة); (c) الإِقْلِيمِيَّة (the same word with vowel marks); (d) على, then علي (yeh). Chinese: 预算 and 诊所, two words that sit inside longer runs of characters. Then click 'Re-index search (Arabic, Chinese, Japanese)', read the confirm, click OK, and wait for the line beside the buttons to finish. Click 'Search re-index report (.json)'; it opens in a new browser tab.",
+    "expect": "(a), (b) and (c) give the SAME total, above 0, with rows coded ara and no grey concept block (the word is in no ring). على and علي give the same total as each other. 预算 and 诊所 each give a total above 0 with rows coded zho; without word splitting, both would be 0. The confirm reads 'Re-index search for Arabic, Chinese and Japanese now? Articles whose search entry would change are indexed again; nothing else is touched. It runs in the background and can be paused from the task manager.' The status line ends as 'Articles checked: N · re-indexed: 0 (Arabic: 0 · Chinese: 0 · Japanese: 0)'. Here 0 is the honest answer, because this throwaway was indexed the new way from the start; if it is not 0, write it down. The report tab shows JSON with articles_checked, articles_reindexed and by_script, and its figures match the line.",
+    "flags": [
+     "mutates-data",
+     "needs-seed-data"
+    ],
+    "evidence": "src/database/fts_norm.py:93-117 (fold: harakat + tatweel stripped, أ إ آ ٱ→ا, ة→ه, ى→ي; verified that all three spellings of (a)-(c) and على/علي fold to one form); src/static/index.html:2976-2983; src/static/app-diagnostics.js:249-320 (status text, confirm); src/static/app-boot.js:572-577 (report opens via window.open); src/api/search_omni.py:634-669; scripts/ui_clickthrough_seed.py:192-231 (ar الإقليمية/على, zh 交通预算/小型诊所 prose)"
+   },
+   {
+    "id": "N10",
+    "where": "Gear 'Settings' → 'Advanced' → fold 'Uninstall & wipe — irreversible: destroy the key and remove this install' → the fold directly under its heading, 'Bulletin — a periodic document built from this corpus' (#bulletin-panel)",
+    "do": "Open only these two folds. Do NOT press 'Wipe everything now' or anything under 'Uninstall the app', which sit below the Bulletin fold. If the panel says this machine cannot build a bulletin, write that down and skip this step. Otherwise leave Period on 'Weekly' and click 'Build a draft'. The Review panel opens below the editions table; in it, click 'Download report + annexes'. Do NOT press 'Publish' or 'Narrate with the local model'. Open the downloaded annexes ZIP. UNDO: click 'Delete' on the edition's row in the editions table.",
+    "expect": "The status reads 'Draft built.' Two files download: the report (.md) and the annexes ZIP. Inside the ZIP, in its folder, is 'CROSS-LANGUAGE-CONCEPTS.md'. Its first line is '# Cross-language concepts in this edition', followed by the sentence about hand-vetted Wikidata rings and the overlap caveat 'The per-language figures overlap: …'. The file then does one of two things. EITHER it lists each merged ring: a heading such as '## climate', then Ring, Merged in, 'Forms present in this edition' and 'Forms the ring defines', then a Language | Form | Mentions table. This is expected when you build the draft on the day you seeded. OR it says 'No concept in this edition was carried in more than one language. That is a fact about this period's corpus, not a gap in this file.' The file must be present either way.",
+    "flags": [
+     "mutates-data",
+     "needs-seed-data"
+    ],
+    "evidence": "src/static/index.html:3105-3140 (Bulletin nested inside Uninstall & wipe, above Panic wipe); src/static/app-agenda.js:254-271 (edition row: Review · Open · Delete), :274-292 (Build a draft → review), :370-386 (Review panel buttons), :449-474 (bulletinDownloadBundle: report + annexes.zip); src/bulletin/annexes.py:331-455 (CONCEPTS_FILENAME, title, empty state, table), :993-1006 (always written); src/bulletin/period.py:56-75 (weekly = 7 days ending at the start of today)"
+   },
+   {
+    "id": "N11",
+    "where": "In the analysis browser tab: top-bar language button (#lang-switch, a flag plus a code) → menu entries 'Français', 'العربية', '中文', '日本語'; the palette row is localised ('Analyse : “…”', 'تحليل: “…”', '分析: “…”')",
+    "do": "Switch to Français. Open the analysis for the FRENCH word climat, then repeat N2 (grey block, Language column 'Langue', 'Grouper par langue'), N3 ('Compter chaque forme'), N4 (\"N'afficher que les mots que j'ai saisis\") and N5 (election: the sense picker and 'Rechercher toutes les formes'), and open 'Par langue' on 'Tendance'. Switch to العربية and, on a 'climate' analysis, repeat N2–N7. Then read the Insights → Trends hover and the watch row from N8, without adding another watch. Switch to 中文, then to 日本語, and repeat N2–N5 in each. Switch back to English. Finally, in Insights → Watches, click 'Delete' on the 'Climate' watch and confirm.",
+    "expect": "In Français, the French word 'climat' reaches the SAME total that 'climate' reached in English (160 on this seed). That one line is ruling R10. With \"N'afficher que les mots que j'ai saisis\" the total drops to 3, the 'climat 3' of the readout, not 156. Every sentence in the grey block, every link, and both caveats are in French. In العربية the page switches to right-to-left: the sidebar is on the right and text is right-aligned. The block, both caveats, the per-form readout, the sense picker, the limit sentence, the stacked-chart caveat, the Concept view, the Insights hover ('عبر جميع اللغات: …') and the watch sentence are in Arabic ('اللغة', 'عرض الكلمات التي كتبتها فقط', 'حسب اللغة', 'المفهوم'). Latin words inside Arabic sentences stay readable, and there is no sideways scroll bar. In 中文 ('语言', '仅显示我输入的词', '按语言分组', '搜索所有词形') and 日本語 ('言語', '入力した語だけを表示', '言語でグループ化', 'すべての語形を検索'), the same controls work and the same numbers appear as in English. In every language, the only things left in English or Latin script are data: the word forms, the three-letter codes and the concept names ('climate', 'public election'). After Delete, the watch row is gone.",
+    "flags": [
+     "locale-check",
+     "mutates-data",
+     "needs-seed-data"
+    ],
+    "evidence": "src/static/app-core.js:558-565 (LANGS_12 native names); src/static/app-shell.js:773 (t('Analysis') in the palette row); src/static/locales/{fr,ar,zh,ja}.json (every string named above verified present); brief docs/plans/2026-09-12-beta-pathway/S04-07_cross-language-search-by-rings.md §4 (literal toggle, cap toggle, group-by, sense picker, chip in en, fr, ar, zh, ja); docs/audit/cross-language-agreement-2026-09-17/README.md (climat/fr reaches the same set as climate/en)"
+   },
+   {
+    "id": "N12",
+    "where": "Your own encrypted install at its usual address, unlocked → top-bar magnifier → 'Analysis: “climate”' → subtabs 'Articles', 'Trend' and 'Sentiment'; then, in your main browser tab with the Search page's Source/Language fields empty, top-bar magnifier → 'Run the full Boolean search for “climate”'",
+    "do": "Use 'climate', or any word for which the grey block says 'also matched as the concept'. Write down: (a) the Articles total; (b) the 'in total' figure from 'Count each form'; (c) the Search page's 'N result(s)'; (d) the 'N articles in total' under Trend → 'By language'; (e) the second number in Sentiment's 'n=…/…'. Then click 'Show only the words I typed' and write down (a) again, plus the per-form count of the word you typed. Click 'Search the concept in every language' to restore. Nothing is changed by this step.",
+    "expect": "(a), (b) and (c) are the same number, because they come from one search. With the toggle on, (a) drops and equals the count shown for your typed spelling in 'Count each form'. (e) equals (a) when (a) is 900 or less. Above 900, the set-based tabs describe only the top 900 matched articles and Sentiment does not say so; write both numbers down. (d) is counted from extracted keywords and may be smaller; write it beside (a) rather than judging it. The grey block, the chips and the chart render on the encrypted store just as on the throwaway. Send all the numbers to the session that records row N: they are raw material for the 'recorded comparison', not the whole of it.",
+    "flags": [],
+    "evidence": "RELEASE_0.4_GATE.md row N 'Closes when'; docs/audit/cross-language-agreement-2026-09-17/agreement_probe.py:55-81 (what the comparison measures); src/api/insights.py:378 (_SQLITE_SAFE_IN_CAP = 900), :381-440 (_resolve_corpus); src/static/app-analysis.js:2128 (Sentiment n= without a capped note), :2251 (Competitive discloses 'scoped to the top matched articles'); src/analytics/queries.py:1724 (n_articles = len(ids))"
+   },
+   {
+    "id": "N13",
+    "where": "Your own install → top-bar magnifier → 'Analysis: “…”' for each test word; gear 'Settings' → 'Advanced' → fold 'Diagnostics' → 'Re-index search (Arabic, Chinese, Japanese)' and 'Search re-index report (.json)'; top-bar 'Tasks & system' icon (#tm-open) → the 'Task manager · FOOS' browser tab → 'Processes'",
+    "do": "Make sure your backup from the prerequisites is done. BEFORE: analyse each word below and note its total: (1) a Chinese word you can see inside a Chinese headline in your corpus, such as 中国 or 北京; (2) القاهرة; (3) the same word typed as القاهره, with ه instead of ة (if a grey concept block appears above the list, pick another Arabic word that ends in ة); (4) 東京, only if you have Japanese articles; (5) climate. RUN: click 'Re-index search (Arabic, Chinese, Japanese)' → OK, then open the task manager and watch 'Processes' while it runs. OPTIONAL, only if the run lasts more than a minute: click the top-bar power icon 'Shut down the app' mid-run, start the app again, and click the same Settings button. When the line beside the button says it is done, click 'Search re-index report (.json)' and save the tab that opens (Ctrl+S). AFTER: analyse the same words again. Then run the re-index once more. The re-index rewrites only the search index; articles and keywords are not touched. There is no undo button, which is what the backup is for.",
+    "expect": "If the line says 'This store's search index has not been upgraded yet. Restart the app once, then run this again.', restart and retry. While it runs, the task manager's 'AI & analysis' group shows 'Re-indexing search for Arabic, Chinese and Japanese' (this label stays in English whatever the language) with a 'running' pill and a bar reading 'checked / total · %'. There is no Pause button there; see not_clickable. If you did the optional interruption, the confirm says 'Continue the search re-index? It resumes where it stopped (N% done).' At the end the line reads 'Articles checked: N · re-indexed: M (Arabic: a · Chinese: b · Japanese: c)', and the saved JSON shows the same figures. AFTER compared with BEFORE: the Chinese word's total is the same or higher (higher whenever older Chinese articles contain it); القاهره now gives the SAME total as القاهرة (it was lower before); climate is unchanged; 東京 rises only if the optional segmentation package is installed. The second run reports re-indexed: 0. Keep both sets of numbers and the report: they are the real-corpus before/after figures that a session must write into the PR.",
+    "flags": [
+     "mutates-data",
+     "needs-backup-file"
+    ],
+    "evidence": "src/database/fts_reindex.py:1-30 (what the job does, resumable, parks for imports), :248-264 (an interrupted run restored as PAUSED), :268-296 (start continues a paused run), :395-400 (report fields); src/api/jobs.py:519-548 (task-manager row, English label); src/static/taskmanager.html:172 (Processes), :250-260 (groups; search-reindex falls under 'AI & analysis'), :285-310 (row render: buttons only for downloads/collect); src/static/app-diagnostics.js:249-320 (status line, continue confirm); src/static/app-core.js:2374-2376 (openTaskManager → /tasks)"
+   }
+  ],
+  "clause_coverage": [
+   {
+    "clause": "resolve_concept computed once per analysis tab and passed to both the full-text path and the keyword aggregates (Q501): one toggle moves the list, a set-based tab (Sentiment) and a keyword tab (Trend) together",
+    "step_ids": [
+     "N3",
+     "N4",
+     "N12"
+    ]
+   },
+   {
+    "clause": "'Only the words I typed' is one toggle, persisted in the tab seed and the URL (Q501, Q504: ?expand=0, ?sense=)",
+    "step_ids": [
+     "N4",
+     "N5",
+     "N11"
+    ]
+   },
+   {
+    "clause": "Stacked per-language series with a legend (Q502)",
+    "step_ids": [
+     "N6",
+     "N11"
+    ]
+   },
+   {
+    "clause": "40-literal cap, disclosed, with a user switch to turn it off, ON by default (Q503 note)",
+    "step_ids": [
+     "N5",
+     "N11"
+    ]
+   },
+   {
+    "clause": "Segmenters for zh/ja (jieba, sudachipy) with the re-index job they imply (Q506)",
+    "step_ids": [
+     "N9",
+     "N13"
+    ]
+   },
+   {
+    "clause": "Arabic diacritics removal plus alef / teh marbuta / yeh folding at index and query time (Q507)",
+    "step_ids": [
+     "N9",
+     "N13"
+    ]
+   },
+   {
+    "clause": "Results interleaved by date with a language chip on every row, plus a group-by-language option (Q508 note)",
+    "step_ids": [
+     "N2",
+     "N11"
+    ]
+   },
+   {
+    "clause": "Per-form counts on the chip plus the single total (Q509 note)",
+    "step_ids": [
+     "N3",
+     "N11"
+    ]
+   },
+   {
+    "clause": "A watch on 'climate' watches the ring (Q510), disclosed on the watch row",
+    "step_ids": [
+     "N8",
+     "N11"
+    ]
+   },
+   {
+    "clause": "Bulletin sections use the ring, and a new bulletin annexe carries the ring details (Q511 note); the annexe rendered in the click-through record (brief S7 acceptance)",
+    "step_ids": [
+     "N10"
+    ]
+   },
+   {
+    "clause": "The ring is the mind-map centre, each language an arm, associations off the arms (Q512)",
+    "step_ids": [
+     "N7",
+     "N11"
+    ]
+   },
+   {
+    "clause": "Exact, uncapped totals (Q515): lifting the cap never shrinks a reported total, and 'N of M forms' is stated",
+    "step_ids": [
+     "N5",
+     "N3"
+    ]
+   },
+   {
+    "clause": "Rising / trends / top computed per ring with a per-language breakdown in the hover (Q417)",
+    "step_ids": [
+     "N8",
+     "N11"
+    ]
+   },
+   {
+    "clause": "Closes when: every analysis tab agrees with the Articles list on the same concept (spot-check and raw numbers only; the recorded comparison itself is not clickable)",
+    "step_ids": [
+     "N3",
+     "N4",
+     "N12"
+    ]
+   },
+   {
+    "clause": "Closes when: the CJK and Arabic re-index has run on the fixture and the reference corpus, counts before/after",
+    "step_ids": [
+     "N9",
+     "N13"
+    ]
+   },
+   {
+    "clause": "Closes when: the toggles are verified, i.e. the maintainer's own click-through (Q1128 = a) on top of the existing sandbox Chromium walks",
+    "step_ids": [
+     "N2",
+     "N3",
+     "N4",
+     "N5",
+     "N6",
+     "N7",
+     "N8",
+     "N11"
+    ]
+   },
+   {
+    "clause": "Brief S04-07 §4: click-through of the literal toggle, cap toggle, group-by control, sense picker and chip in en, fr, ar (RTL), zh, ja",
+    "step_ids": [
+     "N2",
+     "N3",
+     "N4",
+     "N5",
+     "N11"
+    ]
+   }
+  ],
+  "not_clickable": [
+   "'Every analysis tab agrees with the Articles list … on the reference corpus (a recorded comparison, numbers in the PR)'. This is a measured comparison run by a session or operator against the reference corpus, as the agreement probe in docs/audit/cross-language-agreement-2026-09-17/ did at 7-article scale. N12 only gathers raw numbers. The throwaway cannot show agreement either: the full-text list and the set-based tabs count 160 there, while the keyword-based tabs (Trend, concept map, Insights hover) count 7 (see notes). Whether that kind of gap counts as agreement needs the maintainer's word, recorded by a session.",
+   "'The CJK and Arabic re-index has run on … the reference corpus, counts before/after' has to be recorded in a PR and on the gate. You can trigger the run and save the report by clicking (N13), but writing the figures into the PR and the gate is a session's job. Whether your own install counts as 'the reference corpus' (as opposed to the reference VM) is also your call.",
+   "Q515's cost: the timing of the exact, uncapped total at the ring-size extremes (for example covid-19 with 120 forms, soviet-afghan-war with 124) on the real corpus. No screen shows this timing; it is an operator measurement.",
+   "Choosing sudachipy or janome for Japanese (brief §6; answer-sheet PF12 is blank). This is a maintainer ruling, not a click. The search index uses sudachipy (in the optional [segmentation] extra) and keyword extraction still uses janome.",
+   "Q506's placement and registration: jieba in core and sudachipy in the optional extra, each registered in configs/external_artifacts.yml. These are packaging and registry facts enforced by tests, and nothing on screen shows them.",
+   "Q503's 'most frequent first' ordering: which 40 of the forms the limit keeps is decided by corpus mention counts inside the search, and no screen lists that order. 'Count each form' sorts its own readout by article count, which is a different ordering.",
+   "Q514 (a tentative ≈ translation expands a search only on a per-query opt-in): main has no opt-in control at all, so there is nothing to click. The property that tentative translations never expand a search is enforced by tests/test_concept_resolution.py.",
+   "Q516 (the Observatory, World map and Sources tab read the same resolution): these surfaces reach the corpus by article id, not by typed term (the premise correction recorded in PR #1149), so there is no toggle there to test. The sandbox walk rendered them in en and ar with zero page errors, and that is all a click can add.",
+   "Pausing or resuming the search re-index FROM THE TASK MANAGER. The confirm dialog and the Settings hint both say it can be paused there, and the API offers pause and resume (src/api/jobs.py:540). But neither the standalone task manager (src/static/taskmanager.html:285-305 draws buttons only for downloads and collection) nor the in-app one (src/static/app-core.js:1884-1888 handles only the keyword 'reindex' kind) draws a Pause or Resume button for the 'search-reindex' job. A click cannot pass this until a session adds the buttons. Continuing an interrupted run works through the Settings button (N13, optional).",
+   "The watch FIRING path (the Q510 disclosure on a fired watch and its Lead card) needs new articles to arrive after the watch is created. A static corpus cannot produce that, and pressing 'Check now' is not the same test, so it is covered by tests/test_watch_rings.py.",
+   "Japanese search word splitting cannot be seen on the throwaway, which has no Japanese articles. On the real install it needs Japanese articles and the optional [segmentation] extra (sudachipy)."
+  ],
+  "surfaces": [
+   "Top-bar search (command palette, Ctrl+K)",
+   "Analysis window › Articles (concept block, language chips, Language column, sort, grouping, per-form counts, sense picker, limit switch)",
+   "Analysis window › Trend › By language",
+   "Analysis window › Sentiment (set size)",
+   "Analysis window › Mindmap › Concept",
+   "Search page (Run the full Boolean search)",
+   "Insights › Trends (Rising / Top hover)",
+   "Insights › Watches",
+   "Settings › Advanced › Diagnostics (search re-index + report)",
+   "Task manager › Processes",
+   "Settings › Advanced › Uninstall & wipe › Bulletin (annexes ZIP)",
+   "Top-bar language menu (Français, العربية, 中文, 日本語)"
+  ],
+  "estimate_minutes": 115,
+  "notes": "Budget roughly 55 min for Part A (N1–N10), 30 min for the language pass (N11) and 25 min for Part B, plus however long the real re-index takes (it depends on corpus size). The expected numbers (160 / 156 / 'climate 156 · climat 3 …' / 'eng 3 · fra 3 …' / '40 of 44') are the ones the sandbox Chromium walks measured, or the code computes, on this exact seed plus fixture. S8 does not move them: English is not folded and no Chinese article is about climate. If yours differ, record them; what must hold is the relationships stated in each step.\n\nThings this pass will show that are NOT your mistake. They were found while preparing and checking the sheet; record them rather than fail the step:\n(1) On the throwaway, the full-text and set-based numbers (Articles list, Count each form, Search page, Sentiment: 160) and the keyword-based numbers (Trend 'By language' total, concept-map arms, Insights hover: 7) differ a lot. The seeder titles each of its 153 climate articles 'Climate coverage (edition N) — <lang>' and writes the body without the word, so 'climate' is in the title text without being an extracted keyword. The agreement probe only ever compared these on a 7-article fixture where every article carries the keyword. On a real corpus, expect the keyword-based figure to be at most the list figure. Whether that counts as 'agreement' needs your ruling.\n(2) 'مناخ 0' stays at 0 after S8. Q507 folds alef, teh marbuta and yeh shapes and strips vowel marks (src/database/fts_norm.py:93-117). It does not strip the definite article ال, and the Arabic fixture writes المناخ. The lens walk README hoped S8 would fix this; that is outside what Q507 rules.\n(3) The Articles list's default order is RELEVANCE (BM25), not date, although the pressed view button is labelled 'Interleave by date' (N2). Q508 = a rules 'interleaved by date'. Only 'Sort by: Date' delivers it.\n(4) When a term is declined because it has several senses, the grey block still prints the caveat 'This search matched the concept in every language the ring covers…' under 'so it was not expanded' (N5).\n(5) The limit sentence carries no numbers. 'expanded to 40 of 44 forms' is only readable after clicking 'Count each form', as '40 of 44 forms counted' (N5). Q503 = a words the disclosure as 'expanded to 40 of 63 forms'.\n(6) The search re-index has no Pause or Resume button in either task manager, although its confirm text says it 'can be paused from the task manager', and its task-manager label is English in every language (see not_clickable and N13).\n(7) The Search page ('Run the full Boolean search') uses the lens of whichever analysis window last ran in THAT browser tab, but shows no concept block and no toggle. That is why N3 runs it from the first browser tab. Its 'result(s)' line is not translated.\n(8) With 'only the words I typed' on, Mindmap → Concept still draws the other languages' arms, because the concept-map request does not carry the expand flag (src/static/app-analysis.js:2031-2034). Judge whether that reads as contradicting the toggle.\n(9) The set-based analysis tabs stop at 900 articles (_SQLITE_SAFE_IN_CAP). Competitive says so; Sentiment does not (N12).\n(10) The Bulletin fold sits inside 'Uninstall & wipe', directly above 'Wipe everything now'. This is already known (docs/audit/ui-visual-2026-09-08/findings.csv P3, and docs/audit/13_ENCRYPTED_CLICKTHROUGH_2026-09-16.md), so take care not to press a wipe button.\n(11) Also recorded, not part of row N: Devanagari and Bengali vowel signs are split in the search index (docs/ledger/OPEN_QUEUE.md).\n\nCoverage so far: the sandbox walks covered en/ar/zh/ja/hi but never fr, and never the sense picker on screen (the fixture reached no colliding term), so N5 and French in N11 are new ground. Nobody has walked phone width (375 px); try it at the end if you like. Part A (plaintext throwaway) and Part B (your encrypted install) together also exercise the encrypted path. Evidence walks: docs/audit/cross-language-lens-clickthrough-2026-09-17/, concept-map-clickthrough-2026-09-17/, stacked-by-language-2026-09-17/, cross-language-forms-2026-09-17/ and cross-language-agreement-2026-09-17/."
+ },
+ "walk": {
+  "row": "N",
+  "environment": {
+   "encrypted": true,
+   "seed": "Main store (:8830): scripts/ui_clickthrough_seed.py default STATE C (440 language-pool articles) plus docs/audit/cross-language-lens-clickthrough-2026-09-17/concept_fixture.py (9 articles, run once). Both ran with OO_DB_PASSPHRASE set and OO_DB_PLAINTEXT unset, giving 462 articles; the file header is ciphertext. The app was booted with neither variable, so it started LOCKED and was unlocked through #pw/#btn-unlock. N13 stand-in store (:8831): the same seed plus fixture written by the PRE-S8 code (git archive 1af520c^ into the scratch dir, encrypted), then served by current main (origin/main 462145c), so its search index had the old shape.",
+   "ports": [
+    8830,
+    8831
+   ],
+   "scratch_dir": "/tmp/claude-0/walk/N/",
+   "notes": "Deviation from the sheet: Part A ran on an ENCRYPTED seeded store on :8830, as the harness asked, not on a plaintext throwaway on :8010. The numbers match the sandbox ones exactly (160/156/161/7/40-of-44). Part B needs the operator's own encrypted install with a real corpus, which does not exist here: N12 was measured on the encrypted seeded store and N13 on an encrypted store indexed by the pre-S8 code. Airplane mode stayed ON throughout (plane fill=currentColor, /api/system/network online:false). No step raised a consent popup. The coachmark's 'Go online' was never pressed, only its 'Not now'. Passes run: Chromium 1440x950 main pass; fr, ar, zh and ja locale pass; 375x800 en pass. Final evidence runs: R-en-all.json, R-loc-fr-ar-zh-ja.json, R-ar-ins*.json, R-375.json, R-n13.json, R-misc.json (earlier iterations are in dev-runs/). Full report: /tmp/claude-0/walk/N/report.json. Screenshots are in shots/. My servers (PIDs 3841, 9332, 10503) were killed."
+  },
+  "steps": [
+   {
+    "id": "N1",
+    "result": "pass",
+    "locales": [
+     "en"
+    ],
+    "screenshot": "shots/N/N-N1-lock-en.png",
+    "observed": "The seed printed 'ui_clickthrough_seed: STATE C seeded.' and the fixture printed 'added 9 cross-language fixture articles'. The encrypted boot landed on /unlock with the lock form shown. After unlock the app went to /#home with no guide wizard. The #net-toggle plane is FILLED (fill=currentColor) and /api/system/network returns {online:false}. The airplane coachmark appeared and was dismissed with its own 'Not now'."
+   },
+   {
+    "id": "N2",
+    "result": "pass",
+    "locales": [
+     "en"
+    ],
+    "screenshot": "shots/N/N-N2-articles-default-en.png",
+    "observed": "Opened in a new browser tab at ?analyze=climate. The grey block reads exactly 'climate also matched as the concept “climate” — en: climate · fr: climat · de: klima · es: clima · it: clima · pt: clima · nl: klimaat · ar: مناخ · ru: климат', then 'Count each form', then the caveat ending in 'Show only the words I typed'. Total line: '160 Articles · Open an article…'. Language chips: fra 29 · deu 28 · ara 27 · por 27 · rus 27 · eng 21 · spa 1 (sum 160, no zho). Columns are Title/Source/Language/Published/Top keyword. All 50 of 50 rows carry a 3-letter code, and hovering deu/fra shows 'German'/'French'. The default 'Relevance / recency' order is NOT by date, although 'Interleave by date' has aria-pressed=true (the Q508 gap, listed under defects). Sort by Date gives newest to oldest with 7 languages mixed, total still 160. Group by language shows headings fra 9 · por 9 · rus 9 · eng 8 · ara 7 · deu 7 · spa 1, which add up to 50; the total line still reads 160. 'Interleave by date' brings the mixed list back."
+   },
+   {
+    "id": "N3",
+    "result": "pass",
+    "locales": [
+     "en"
+    ],
+    "screenshot": "shots/N/N-N3-formcounts-en.png",
+    "observed": "'Counting…' is replaced by exactly 'climate 156 · climat 3 · clima 1 · klima 1 · klimaat 0 · климат 0 · مناخ 0 · 160 articles in total, counted once each', followed by the overlap caveat. The in-total figure 160 equals the list total. The forms add up to 161, more than 160. No 'N of M forms counted' appears and no form shows '—'. In the first browser tab, 'Run the full Boolean search for “climate”' gives '160 result(s) (showing 50)'."
+   },
+   {
+    "id": "N4",
+    "result": "pass",
+    "locales": [
+     "en"
+    ],
+    "screenshot": "shots/N/N-N4-literal-en.png",
+    "observed": "Sentiment before the toggle: n=21/160. After 'Show only the words I typed': the URL gains expand=0, the block reads 'Showing only the words you typed. Search the concept in every language', and the total is 156, equal to 'climate 156'. Trend offers only Counts and Indexed. Sentiment reads n=21/156. After F5 the page lands on Overview; Articles is still literal with 156. The same URL pasted into a new tab is also literal with 156. 'Search the concept in every language' removes expand=0 and brings back 160 and the full block."
+   },
+   {
+    "id": "N5",
+    "result": "fail",
+    "locales": [
+     "en"
+    ],
+    "screenshot": "shots/N/N-race-en-N5.png",
+    "observed": "The first paint was wrong (P1 race defect). In the new 'Analysis: “election”' tab, the election tab was active and the header said “election”, but Articles showed the CLIMATE result (climate block, climate chips, 160). It stayed that way until the election tab in the strip was clicked again. After that click everything matched the sheet. The block read 'election denotes several concepts, so it was not expanded. Search one of them: “election” · “public election”', with the ring caveat still printed under it (known note 4). Total 20, chips eng 20. Picking “public election” gave the 'which you chose' sentence with 'Show all senses', the URL gained sense=election%3Apublic-election, the total became 216, and the chips showed ara, deu, spa, fra, por, rus and zho at 28 each plus eng 20. The limit sentence has no numbers. 'Count each form' ends with '40 of 44 forms counted', and that is the only place the figure appears. 'Search every form' adds cap=0 and shows 'Searching every form of the concept…'; the total stays 216 and '… of 44' disappears. zho was already in the chips with the limit ON, because 选举 is among the 40 forms kept. 'Limit…' removes cap=0. 'Show all senses' removes sense= and returns to the first sentence, total 20."
+   },
+   {
+    "id": "N6",
+    "result": "fail",
+    "locales": [
+     "en"
+    ],
+    "screenshot": "shots/N/N-N6-legend-hidden-en.png",
+    "observed": "By language draws stacked columns with the y axis from 0 and a legend of eng/fra/deu/spa/ita/por. Totals line: 'eng 3 · fra 3 · deu 1 · spa 1 · ita 1 · por 1 · 7 articles in total, counted once each', followed by the exact overlap caveat. No refusal sentence appears. Hovering low in the tallest column gives 'eng: 7 mentions · running total 7'; higher up it gives fra 12, deu 15 and ita 21, and at the top 'por: 3 mentions · running total 24'. FAIL: clicking the eng legend chip hides the eng band AND removes the eng chip, so there is nothing to click again. Only switching to Counts and back to By language restores it."
+   },
+   {
+    "id": "N7",
+    "result": "pass",
+    "locales": [
+     "en"
+    ],
+    "screenshot": "shots/N/N-N7-concept-en.png",
+    "observed": "Concept view: centre 'climate' with title 'climate · 7'; arms eng 3 · fra 3 · deu 1 · spa 1 · ita 1 · por 1; 'assembly' and 'rapport' hang off their arms; no lines cross. Missing line: 'Not observed in this corpus: ara: مناخ · nld: klimaat · rus: климат'. Arm titles such as 'Spanish — clima — the same word in ita, por' name the shared spelling. The hover text comes from native SVG title tooltips. No label is cut off at the default size (centre label 33 px), at maximum text size (59 px) or in ⛶. Note: ⛶ made the labels smaller (33 to 24 px), recorded as a defect."
+   },
+   {
+    "id": "N8",
+    "result": "pass",
+    "locales": [
+     "en"
+    ],
+    "screenshot": "shots/N/N-N8-trends-hover-en.png",
+    "observed": "'climate' was already in Rising and Top with the 7-day window. Its bubble ends '— Across languages: English 9 · French 7 · German 3 · Spanish 3'. Keyboard focus (6 Tab presses) shows the same bubble. The non-concept row 'المناخ' has no 'Across languages' part. After 'Add watch', the row reads 'This watch covers the concept “climate” in every language its ring carries.', and hovering the concept lists 'en: climate · fr: climat · …'. The ring caveat appears once, at the foot of the list. The red ✕ was never pressed."
+   },
+   {
+    "id": "N9",
+    "result": "pass",
+    "locales": [
+     "en"
+    ],
+    "screenshot": "shots/N/N-N9-reindex-en.png",
+    "observed": "الإقليمية, الاقليميه and الإِقْلِيمِيَّة each give 55, with ara rows and no grey block. على and علي both give 27. 预算 gives 28 and 诊所 gives 27, with zho rows. The confirm text is exact. The status line reads 'Articles checked: 462 · re-indexed: 0 (Arabic: 0 · Chinese: 0 · Japanese: 0)'. The report tab shows JSON with articles_checked 462, articles_reindexed 0 and by_script all 0, matching the line."
+   },
+   {
+    "id": "N10",
+    "result": "pass",
+    "locales": [
+     "en"
+    ],
+    "screenshot": "shots/N/N-N10-bulletin-en.png",
+    "observed": "Weekly 'Build a draft' gives 'Draft built.'. 'Download report + annexes' gives 'Downloaded: the report and 30 annexed article(s).' and two files: the .md report and the annexes ZIP. The ZIP folder contains CROSS-LANGUAGE-CONCEPTS.md. Its first line is '# Cross-language concepts in this edition', followed by the Wikidata ring sentence and the overlap caveat. Then comes '## climate' with Ring climate, 'Merged in rising_concepts', 'Forms present 4', 'Forms the ring defines 7' and a table: en climate 9 · fr climat 7 · es clima 3 · de klima 3. The edition was deleted through its row's Delete (confirm accepted) and the list returned to empty. The wipe buttons were not touched."
+   },
+   {
+    "id": "N11",
+    "result": "fail",
+    "locales": [
+     "fr",
+     "ar",
+     "zh",
+     "ja",
+     "en"
+    ],
+    "screenshot": "shots/N/N-race-ar-concept.png",
+    "observed": "fr: the French word climat reaches 160, the same as climate (R10 holds). 'Only the words I typed' gives 3, the 'climat 3' of the readout. The block, links, caveats, readout, sense picker, '40 formes comptées sur 44', 'Rechercher toutes les formes' and 'Par langue' with its caveat are all in French. ar: dir=rtl with the sidebar on the right, all row strings in Arabic ('المفهوم', 'حسب اللغة', 'عبر جميع اللغات'), 0 px overflow. zh and ja: labels translated, same numbers as en. FAILS: (1) the P1 race painted election/public-election (216) under the 'climate' tab in ar and ja, and the zh climate view kept election's chips; (2) the sense pin leaked, so the climate URL carried sense=election:public-election and 'Analysis: election' opened already pinned (216) in ar, zh and ja, skipping the picker; (3) English is left on translated pages: the Insights hover caveat sentence, the watch row's '≥ 2 articles within 30 day(s) · last fired: never' and 'the concept “climate”' after a language switch until reload, and the Search page 'result(s)' in fr. The user's watch name 'Climate' was shown translated. zh and ja show an ASCII '.' after the declined-sense sentence. The watch was deleted at the end."
+   },
+   {
+    "id": "N12",
+    "result": "not-measurable-here",
+    "locales": [
+     "en"
+    ],
+    "screenshot": "shots/N/N-N4-literal-en.png",
+    "observed": "There is no operator install or real corpus here. On the encrypted seeded store: (a) Articles 160, (b) in total 160, (c) Search page 160, (d) Trend By language 7, (e) Sentiment n=21/160. With 'only the words I typed': (a) 156, equal to 'climate 156', and Sentiment n=21/156. So (a)=(b)=(c) and (e)=(a) hold on an encrypted store. The case above 900 articles cannot be produced here."
+   },
+   {
+    "id": "N13",
+    "result": "not-measurable-here",
+    "locales": [
+     "en"
+    ],
+    "screenshot": "shots/N/N-N13-reindex1-en.png",
+    "observed": "Stand-in: an encrypted store indexed by the pre-S8 code and served by main. BEFORE: 预算 0, 诊所 0, الإقليمية 55, الاقليميه 55, الإِقْلِيمِيَّة 0, على 27 = علي 27, climate 160. The run reported 'Articles checked: 462 · re-indexed: 111 (Arabic: 56 · Chinese: 55 · Japanese: 0)', and the report JSON matches. AFTER: 预算 28, 诊所 28, الإِقْلِيمِيَّة 55, climate unchanged at 160. A second run reported re-indexed: 0. The job took 0.1 s, so the task-manager row could not be observed."
+   }
+  ],
+  "page_errors": [],
+  "http_errors": [],
+  "junk_text": [],
+  "defects": [
+   {
+    "title": "A new analysis browser tab can paint another workspace tab's results under its own label (list, total, grey block, chips)",
+    "severity": "P1",
+    "step_ids": [
+     "N5",
+     "N11",
+     "N13"
+    ],
+    "repro": "Open 'Analysis: “climate”' from the palette (a new browser tab) and keep it open. From the first tab, open 'Analysis: “election”'. In the new tab the strip shows election active and the header “election”, but Articles shows climate's block, chips and '160 Articles'. It is intermittent: it happened in the final en run, in 1 of 4 probe attempts, in the ar and ja climate tabs, and in the N13 预算 tab; in zh only the chips were stale.",
+    "expected": "The Articles panel describes the active tab's query: for election, the declined-sense block, 20 articles, eng 20.",
+    "actual": "The run for the workspace tab that was active before finishes last and overwrites the shared panels. Clicking the tab in the strip again repaints it correctly.",
+    "evidence": "shots/N-race-en-N5.png, N-race-ar-concept.png, N-race-ja-concept.png, N-race-probe-en.png; the 'races' entries in R-en-all.json and R-loc-fr-ar-zh-ja.json. Cause: src/static/app-boot.js:459 showTab('analyze') hydrates the restored active tab (src/static/app-shell.js:146-150, then _anApplySeed, then loadAnalysis). app-boot.js:475 openAnalysisFor then starts a second loadAnalysis. loadAnalysis (src/static/app-analysis.js:1961) has no stale-run guard, and _anLoadArtFacets (:1289) writes a single global."
+   },
+   {
+    "title": "A sense pin leaks across analysis tabs: new tabs open pre-pinned and carry another tab's sense in their URL",
+    "severity": "P2",
+    "step_ids": [
+     "N11",
+     "N5"
+    ],
+    "repro": "In fr, pick “public election” on an election analysis. Then, in new browser tabs, open 'Analysis: “climate”' and later 'Analysis: “election”' from the palette.",
+    "expected": "A new analysis starts with the default settings: election shows the sense picker with 20 articles, and the climate URL has no sense=.",
+    "actual": "The climate URL became ?analyze=climate&sense=election%3Apublic-election and kept it after the toggle and after re-clicking the tab. Election in ar, zh and ja opened already pinned to “public election” with 216 articles, skipping the picker.",
+    "evidence": "R-loc-fr-ar-zh-ja.json (ar/zh/ja: el_url0, el_sense_already_pinned=true, el_total0=216, literal_url); shots/N-race-ar-concept.png. Likely the same concurrent-hydration path as the P1 race (app-shell.js:146-150 and app-analysis.js:161-168)."
+   },
+   {
+    "title": "ooChart legend: hiding a series removes its chip, so it cannot be clicked back",
+    "severity": "P2",
+    "step_ids": [
+     "N6"
+    ],
+    "repro": "Analysis climate, then Trend, then By language. Click the 'eng' legend chip, then try to click it again.",
+    "expected": "The chip stays (dimmed, aria-pressed=false), and a second click restores the band.",
+    "actual": "The band and its chip both disappear, leaving 5 chips. Only switching view to Counts and back restores it. This affects every ooChart chart.",
+    "evidence": "shots/N-N6-legend-hidden-en.png; R-en-all.json N6.legend_after_hide. src/static/app-markets.js:1968-1970: visible() filters out hidden series, and :2253 builds the legend from that list."
+   },
+   {
+    "title": "Articles default order is relevance while 'Interleave by date' is shown pressed (Q508 rules 'interleaved by date')",
+    "severity": "P2",
+    "step_ids": [
+     "N2"
+    ],
+    "repro": "Analysis climate, then Articles, with 'Sort by: Relevance / recency'.",
+    "expected": "The default list is interleaved by date, or the pressed control does not claim it is.",
+    "actual": "The dates are not in order (09-23, 09-22, 09-20, 09-24, …) while 'Interleave by date' has aria-pressed=true. Already known (sheet note 3).",
+    "evidence": "R-en-all.json N2.default_first12; shots/N-N2-articles-default-en.png; src/api/main.py:1458; src/database/fts.py:937."
+   },
+   {
+    "title": "Watches list keeps English composite strings after a language switch until reload",
+    "severity": "P3",
+    "step_ids": [
+     "N11",
+     "N8"
+    ],
+    "repro": "Add a watch in en, switch to ar, fr, zh or ja, and open Insights → Watches again without reloading.",
+    "expected": "The frame sentences are translated; their keys exist in all four locale files.",
+    "actual": "'≥ 2 articles within 30 day(s) · last fired: never' and 'the concept “climate”' stay in English. After a reload they are translated.",
+    "evidence": "R-ar-ins2.json vs R-ar-ins3.json; src/static/app-insights.js:1269-1330."
+   },
+   {
+    "title": "The user's watch name is machine-translated on screen",
+    "severity": "P3",
+    "step_ids": [
+     "N11"
+    ],
+    "repro": "Add a watch named 'Climate', then switch the UI to ar, fr, zh or ja.",
+    "expected": "The name appears as the user typed it.",
+    "actual": "It appears as 'مناخ', 'Climat', '气候' or '気候'.",
+    "evidence": "R-ar-ins2.json; src/static/app-insights.js:1305 (the name in <b> is not marked no-translate); src/static/locales/ar.json:2125."
+   },
+   {
+    "title": "Insights term-bar hover caveat is English in every locale",
+    "severity": "P3",
+    "step_ids": [
+     "N11",
+     "N8"
+    ],
+    "repro": "In ar, go to Insights → Trends and hover 'climate'.",
+    "expected": "The whole bubble is in Arabic.",
+    "actual": "The sentence 'Counts only, never a score. The trend ratio is noisy on a young corpus; … not a claim about the world.' is in English inside the Arabic bubble. No locale key exists for it.",
+    "evidence": "R-ar-ins3.json; shots/N-N11-insights-hover-ar.png; src/analytics/queries.py:3052."
+   },
+   {
+    "title": "Mindmap ⛶ 'Enlarge' makes the labels smaller on a wide window",
+    "severity": "P3",
+    "step_ids": [
+     "N7"
+    ],
+    "repro": "Analysis climate, then Mindmap, then Concept, then ⛶, at 1440x950.",
+    "expected": "A larger picture.",
+    "actual": "The SVG keeps the same width, and the centre label shrinks from 33 px to 24 px.",
+    "evidence": "R-en-all.json N7; shots/N-N7-concept-enlarged-en.png; src/static/app-analysis.js:1033-1034 (the viewBox grows from 680x460 to 1100x720 while width stays 100%)."
+   },
+   {
+    "title": "Insights → Trends scrolls sideways at 375 px",
+    "severity": "P3",
+    "step_ids": [
+     "N8"
+    ],
+    "repro": "At 375x800, open the hamburger menu, then Insights, then Trends.",
+    "expected": "No horizontal scroll (scrollWidth - clientWidth = 0).",
+    "actual": "178 px of horizontal scroll: the .tb-val spans ('22 mentions — new in this period, nothing prior to compare') do not wrap. The analysis window surfaces have 0 overflow at 375 px.",
+    "evidence": "R-375.json insights_overflow=178; shots/N-375-insights-trends-en.png."
+   },
+   {
+    "title": "Airplane coachmark covers the palette results at 375 px and the sidebar's Insights item in Arabic",
+    "severity": "P3",
+    "step_ids": [
+     "N2",
+     "N11"
+    ],
+    "repro": "(a) At 375 px, open the palette and type climate while the coach is showing. (b) In ar at 1440, click Insights in the sidebar.",
+    "expected": "The row's entry points stay clickable.",
+    "actual": "(a) The coach (z-index 360; the palette has 151) covers the 'Analysis: “climate”' row. (b) The coach at [1162,62,1432,198] covers the Insights item at [1200,159,1429,200] and intercepts the click. Both clear after 'Not now'.",
+    "evidence": "shots/N-375-palette-coach-climate.png, N-N11-coach-rtl-ar.png; src/static/app-core.js:1017-1058."
+   },
+   {
+    "title": "Search page result line is not translated",
+    "severity": "P3",
+    "step_ids": [
+     "N11",
+     "N3"
+    ],
+    "repro": "In Français, run the palette's full Boolean search for climat.",
+    "expected": "A French result line.",
+    "actual": "'160 result(s) (showing 50)'. Already known (sheet note 7).",
+    "evidence": "R-misc.json; src/static/app-analysis.js:2314."
+   },
+   {
+    "title": "Concept map ignores 'Show only the words I typed'",
+    "severity": "P3",
+    "step_ids": [
+     "N7",
+     "N4"
+    ],
+    "repro": "Turn on 'Show only the words I typed' (156), then open Mindmap → Concept.",
+    "expected": "The concept map follows the toggle, or says that it does not.",
+    "actual": "All six language arms are still drawn. Already known (sheet note 8).",
+    "evidence": "R-misc.json concept_texts_literal; shots/N-N7-concept-literal-en.png; src/static/app-analysis.js:2031-2034."
+   },
+   {
+    "title": "Disclosure wording: ring caveat under a declined term, and a limit sentence with no numbers",
+    "severity": "P3",
+    "step_ids": [
+     "N5"
+    ],
+    "repro": "Analysis election, then Articles, then pick “public election”.",
+    "expected": "No 'matched the concept in every language' caveat when nothing was expanded. Q503 words the disclosure as 'expanded to 40 of N forms'.",
+    "actual": "The caveat is printed under 'so it was not expanded'. '40 of 44 forms counted' appears only after clicking 'Count each form'. Already known (sheet notes 4 and 5).",
+    "evidence": "R-en-all.json N5; src/analytics/equivalence.py:833-918; src/static/app-analysis.js:1576-1627."
+   },
+   {
+    "title": "Small i18n and grammar slips on this row's surfaces",
+    "severity": "P3",
+    "step_ids": [
+     "N11",
+     "N2",
+     "N8"
+    ],
+    "repro": "In zh or ja, open 'election'. In any language, use Group by language or hover a single-article row.",
+    "expected": "The locale's own punctuation and correct singular forms.",
+    "actual": "zh shows '因此未做扩展. 搜索其中之一' with an ASCII '.' (ja is the same). English shows 'spa 1 articles' and '1 articles'.",
+    "evidence": "R-loc-fr-ar-zh-ja.json; src/static/app-analysis.js:1598-1599 and :1826."
+   }
+  ],
+  "not_measurable": [
+   "N12: needs the operator's own encrypted install with a real corpus. The Sentiment cap above 900 articles cannot be reached with 462 articles.",
+   "N13 on the reference or real corpus: measured on a pre-S8-indexed encrypted stand-in instead. The job finished in 0.1 s, so the task manager's running row, progress bar, missing Pause/Resume buttons and English label could not be seen. The interrupt-and-continue path was not exercised.",
+   "Japanese search word splitting: the seed has no Japanese articles (sudachipy 0.7.0 is installed and reported as active).",
+   "The watch firing path, which needs new articles to arrive after the watch is created.",
+   "Q515 timing, PF12, Q506 packaging, Q503 ordering, Q514 and Q516, as listed in the sheet's not_clickable items.",
+   "Consent popup: no step in this row raised one, so there was nothing to screenshot or cancel."
+  ],
+  "summary": "The click-through clause does not close on this walk. The toggles, limit switch, sense picker, chips, per-form counts, stacked chart, concept map, watch disclosure, bulletin annexe and Arabic/Chinese re-index all behave as ruled in en, fr, ar, zh and ja on an encrypted store; on the stand-in store the re-index moved 预算 and 诊所 from 0 to 28 and the voweled Arabic spelling from 0 to 55. It fails on a P1 race where a new analysis tab shows another tab's results under its own label, a P2 sense-pin leak between tabs, and a P2 stacked-chart legend chip that cannot be clicked back; the real-install steps N12 and N13 still need the operator's corpus."
+ },
+ "recheck": {
+  "row": "N",
+  "verdicts": [
+   {
+    "title": "A new analysis browser tab can paint another workspace tab's results under its own label (list, total, grey block, chips)",
+    "verdict": "confirmed",
+    "severity": "P1",
+    "reason": "I reproduced this on my own encrypted seeded store: 462 articles, booted locked on :8832 and unlocked via #pw, airplane mode on throughout. I left the climate analysis tab open, made it the saved active tab with a real click on its strip tab, then opened 'Analysis: “election”' from the palette into a new browser tab. In 4 of 6 runs the strip and header said election while Articles showed climate's grey block, climate's chips and '160 Articles'. Run 3 had the right total (20) but climate's chips, which matches the walker's zh case. Every run showed the new election tab sending BOTH /api/articles?query=climate and ?query=election, so the tab loads twice every time. To make it deterministic I held climate's /api/articles response: election painted correctly (20, declined-sense block), then climate's late response overwrote it with 160 when released. The same overwrite happens inside one window: click the climate strip tab then the election strip tab while climate's response is slow, and the list ends up showing climate under election. So the missing stale-run guard is the core fault, and the boot double-load makes it hit on most palette searches, which open a new browser tab by design. Evidence: /tmp/claude-0/walk/N-recheck/R-race.json (B_runs, C_*), R-inwin.json, shots/N-recheck-B-race-run5-en.png, N-recheck-C-race-forced-en.png, N-recheck-inwindow-race-en.png. P1 holds: results for one query are shown under another query's label with nothing on screen to say so.",
+    "root_cause": "src/static/app-boot.js:448 _anRestoreTabs() restores the saved strip. Then app-boot.js:459 showTab('analyze', false) runs, and because _anHydrated is false, src/static/app-shell.js:146-150 applies the RESTORED active tab: _anApplySeed calls loadAnalysis at src/static/app-analysis.js:178. Next, app-boot.js:474 openAnalysisFor(analyze) → _anSpawn → _anActivate → _anApplySeed starts a SECOND loadAnalysis. loadAnalysis (app-analysis.js:1961) has no run token. The un-awaited _anLoadArticles (:1831, called at :2043) and _anLoadArtFacets (:1289, called at :2044) of whichever run finishes last write the shared #an-art-list, #an-xlang and #an-art-facets, as well as the _anArtParams, _anArtFacetData and _anLastParams globals.",
+    "suggested_fix": "(1) In _hydrateCardCorpus (app-boot.js ~455-460), when ?analyze= or ?corpus= is present, set _anHydrated = true before showTab('analyze', false). The restored active tab is then not loaded, and only the deep-linked tab renders through _anSpawn → _anActivate. (2) Add a generation guard for in-window switching: `const run = ++_anRunSeq` at the top of loadAnalysis; pass it to _anLoadArticles and _anLoadArtFacets; after every await, return without writing when `run !== _anRunSeq`."
+   },
+   {
+    "title": "A sense pin leaks across analysis tabs: new tabs open pre-pinned and carry another tab's sense in their URL",
+    "verdict": "confirmed",
+    "severity": "P2",
+    "reason": "Reproduced in en; it is deterministic, not the race the walker suspected. I picked “public election” in an election tab (216 articles, and the tab's saved lens held senses {election: public-election}). I then opened 'Analysis: “climate”' from the palette in a new browser tab. Its URL became ?analyze=climate&sense=election%3Apublic-election, and the climate tab's saved lens now carries the election pin. Opening 'Analysis: “election”' in another new tab then came up already pinned: 'which you chose', 216 articles, no sense picker (the default is the declined-sense picker with 20). The literal toggle leaks the same way, which is worse. After 'Show only the words I typed' on climate, a brand-new search for 'climat' opened with ?expand=0 and 'Showing only the words you typed', 3 articles, where the default is 160. I confirmed that total with a real click on climat's own strip tab, so the race is ruled out. A related symptom: the URL's analyze= keeps the boot term while the lens of whichever tab is active is written beside it (seen: ?analyze=climat&expand=0 while the climate tab was active), so a reload or a shared link applies one tab's lens to another term. Each leaked lens is disclosed on screen with a one-click way back, so this stays P2 rather than P1. It breaks the code's own rule at app-analysis.js:164-166: 'The lens belongs to the TAB: switching between two analyses must not carry one reader's narrowing onto the other's corpus.' Evidence: R-race.json D_* and E_*; R-misc.json G_*; shots/N-recheck-D-climate-url-leak-en.png, N-recheck-D-election-prepinned-en.png, N-recheck-G-climat-literal-leak-en.png.",
+    "root_cause": "src/static/app-boot.js:459 showTab('analyze', false) applies the restored active tab. Its _anApplySeed calls _anWriteLensToUrl (src/static/app-analysis.js:168 → :1496), which writes THAT tab's sense, expand and cap into location.search. Only afterwards does app-boot.js:469 `const lens = _anReadLensFromUrl()` read the URL, so the deep-linked tab is seeded with the restored tab's lens (app-boot.js:474). _anSaveTabs then saves it into oo.an.tabs.v1, where it spreads to the next new tab.",
+    "suggested_fix": "Move `const lens = _anReadLensFromUrl();` (and the prov read) above `showTab('analyze', false)` in _hydrateCardCorpus, and skip loading the restored tab when a deep link is present (same change as fix (1) of the race). Optionally, have _anWriteLensToUrl also rewrite analyze= to the active tab's query so the URL always describes one tab."
+   },
+   {
+    "title": "ooChart legend: hiding a series removes its chip, so it cannot be clicked back",
+    "verdict": "confirmed",
+    "severity": "P2",
+    "reason": "Reproduced: Analysis climate, then Trend, then By language. The legend had eng, fra, deu, spa, ita, por, all aria-pressed=true. After one click on 'eng' it had 5 chips (fra…por), with no dimmed or aria-pressed=false chip left to click. The code clearly meant to keep hidden chips: the legend template already emits aria-pressed='false' and opacity:.4 for s.hidden, but hidden series never reach it. Invariant #16 lists 'legend chips toggle series' as ruled ooChart behaviour, and this is the shared toolkit, so every ooChart chart is affected. Evidence: R-race.json F_legend_before / F_legend_after_hide / F_dimmed_chip_present=false; shots/N-recheck-F-legend-hidden-en.png.",
+    "root_cause": "src/static/app-markets.js:1967-1969 visible() filters out hidden series (`all.filter(s => !s.hidden)`), and the legend at app-markets.js:2253 is built from `vs = visible()`. A hidden series therefore loses its chip and its click handler.",
+    "suggested_fix": "Build the legend from `all`, computing vis per series, e.g. `legend.innerHTML = all.map((s0) => { const s = {...s0, vis: s0.pts.filter(p => p.t >= t0 && p.t <= t1)}; ... })`. The existing hidden branch (aria-pressed=false, opacity .4) then renders the dimmed chip, and a second click restores the band."
+   },
+   {
+    "title": "Articles default order is relevance while 'Interleave by date' is shown pressed (Q508 rules 'interleaved by date')",
+    "verdict": "confirmed",
+    "severity": "P2",
+    "reason": "Reproduced on climate: the Sort select value is '' ('Relevance / recency'), 'Interleave by date' has aria-pressed=true, and the first published dates run 2026-09-23, 09-22, 09-20, 09-24, 09-24, 09-25, 09-25, 2024-01-24, 2024-04-30… (bm25 order). Q508 = (a) «Interleaved by date, a language chip on every row» (RULINGS_INDEX.md:150), and the code comment at app-analysis.js:1783 says 'The ruled DEFAULT is interleaved by date', yet no code sorts by date by default. Not by-design. P2 is a borderline grade: the dates are visible on each row and 'Sort by: Date' works, but a maintainer-ruled default is unmet and a pressed control misstates the order. Evidence: R-race.json F_default_order.",
+    "root_cause": "src/static/app-analysis.js:1846-1848 (_anLoadArticles) deletes sort_by when #an-adv-sort is '' (src/static/index.html:468 is the default option). src/api/main.py:1455-1458 then keeps FTS relevance order, which is bm25 (src/database/fts.py:937). app-analysis.js:1800 still labels that state 'Interleave by date', pressed.",
+    "suggested_fix": "Make date descending the analysis Articles default: in _anLoadArticles, when no sort is chosen and the list is not grouped, set sort_by=date and sort_dir=desc, or make 'Date' the default option of #an-adv-sort. Keep 'Relevance / recency' as an explicit choice. Alternatively, stop claiming 'by date' while the order is relevance."
+   },
+   {
+    "title": "Watches list keeps English composite strings after a language switch until reload",
+    "verdict": "confirmed",
+    "severity": "P3",
+    "reason": "Reproduced: I added a watch in en, switched to ar with the top-bar switcher, and went Trends → Watches. The row still read '≥ 2 articles within 30 day(s) · last fired: never' and 'the concept “climate”' in English, while the surrounding chrome was Arabic. After a reload it read '‏≥ 2 مقالات خلال 30 يوم · آخر تفعيل: أبدًا' and 'المفهوم «climate»'. This is the frozen-locale class that app-boot.js's oo:langchange listener fixes surface by surface; the watches panel is not in that list. Evidence: R-misc.json W_ar_no_reload vs W_ar_after_reload; shots/N-recheck-W-watch-ar-noreload.png, N-recheck-W-watch-ar-reload.png.",
+    "root_cause": "src/static/app-insights.js:1313 and :1277 build the row with tf() when it renders. loadWatches runs only once per page load (showInsightCat, app-insights.js:97-105, guarded by _insLoaded), and it is not called from the oo:langchange listener at src/static/app-boot.js:41.",
+    "suggested_fix": "Add `try { if (_insLoaded.has('watches')) loadWatches(); } catch (_e) {}` to the existing oo:langchange listener in app-boot.js. Better still, re-render from a cached payload so the switch sends no request."
+   },
+   {
+    "title": "The user's watch name is machine-translated on screen",
+    "verdict": "confirmed",
+    "severity": "P3",
+    "reason": "Reproduced: a watch named 'Climate' shows as <b>مناخ</b> in ar, both before and after a reload. The i18n engine's header concedes that a data string matching a UI key gets translated ('rare, and harmless'). That is a code comment, not a ruling, and the project already opts user and keyword data out of the walker with data-i18n-dyn (S04-06), so this is not by-design. Evidence: R-misc.json W_ar_name_html.",
+    "root_cause": "The src/static/i18n.js:35-58 DOM walker translates any text node exactly equal to a locale key ('Climate' → src/static/locales/ar.json:2125), and src/static/app-insights.js:1305 renders the user's name in a plain <b>.",
+    "suggested_fix": "Render the name as `<b data-i18n-dyn>${esc(w.name)}</b>` at app-insights.js:1305. Apply the same to w.query and to the history 'Watch: {name}' label."
+   },
+   {
+    "title": "Insights term-bar hover caveat is English in every locale",
+    "verdict": "confirmed",
+    "severity": "P3",
+    "reason": "Reproduced in ar, Insights → Trends, hovering 'climate'. The #oo-tip bubble is Arabic apart from the sentence 'Counts only, never a score. The trend ratio is noisy on a young corpus; … not a claim about the world.' The non-negotiables require every caveat string ×12. I kept P3 because this is the hover layer. Evidence: R-misc.json O_ar_hover; shots/N-recheck-O-insights-hover-ar.png.",
+    "root_cause": "src/static/app-boot.js:363 appends the server caveat verbatim (`d.caveat ? ' · ' + d.caveat`) without t(), and the server prose at src/analytics/queries.py:3051-3055 has no key in any locale file.",
+    "suggested_fix": "Use `t(d.caveat)` at app-boot.js:363 and add the caveat sentence as a key in all 12 locales, as was done for the cross-language rail caveat."
+   },
+   {
+    "title": "Mindmap ⛶ 'Enlarge' makes the labels smaller on a wide window",
+    "verdict": "confirmed",
+    "severity": "P3",
+    "reason": "Reproduced at 1440x950 in Analysis climate → Mindmap → Concept. Before ⛶: viewBox 0 0 680 460, SVG 1116 px wide, centre label 33 px tall. After ⛶: viewBox 0 0 1100 720, SVG still 1116 px wide, centre label 20 px tall. 'Enlarge' zooms out. Evidence: R-misc.json H_concept_default / H_concept_enlarged; shots/N-recheck-H-concept-default-en.png, N-recheck-H-concept-enlarged-en.png.",
+    "root_cause": "src/static/app-analysis.js:1033-1034 grows the viewBox (680x460 → 1100x720) when _anMM.big, but the SVG stays width='100%' (app-analysis.js:1056 and :1094), so the whole drawing is scaled down by 680/1100.",
+    "suggested_fix": "When big, keep the drawing's scale: emit width='${W}' (pixel width) inside an overflow:auto host, or keep the 680x460 viewBox and raise the container's rendered height and width instead of the coordinate space."
+   },
+   {
+    "title": "Insights → Trends scrolls sideways at 375 px",
+    "verdict": "confirmed",
+    "severity": "P3",
+    "reason": "Reproduced at 375x800 in en (hamburger → Insights → Trends): scrollWidth - clientWidth = 178. The overflowing elements are SPAN.tb-val ('22 mentions — new in this period, nothing prior to compare', right edge 553 px). Evidence: R-coach.json 375_insights_trends_overflow / 375_widest; shots/N-recheck-375-insights-trends-en.png.",
+    "root_cause": "src/static/app.css:1263 `.tb-val { flex:0 0 auto; font-size:12px; white-space:nowrap; }`: the long value label can neither shrink nor wrap inside the .tb-row flex row (app.css:1258).",
+    "suggested_fix": "Allow the value to wrap on narrow screens, e.g. `@media (max-width:600px){ .tb-row{flex-wrap:wrap} .tb-val{white-space:normal; flex:1 1 100%; min-width:0} }`, or `.tb-val{white-space:normal; flex:0 1 auto; min-width:0}`."
+   },
+   {
+    "title": "Airplane coachmark covers the palette results at 375 px and the sidebar's Insights item in Arabic",
+    "verdict": "confirmed",
+    "severity": "P3",
+    "reason": "(a) Confirmed at 375x800 in en with a fresh profile: the coach sits at [64,108,334,281] over the first palette row 'Analysis: “climate”' [22,205,353,248], and elementFromPoint at that row's centre is #net-coach. (b) Confirmed, but only by a narrower path than the walker described. When the app boots in ar, the coach is placed at [232,8,502,143] and the Insights item [1200,159,1429,200] is clickable. When the language is switched en → ar live while the coach is showing, the coach stays at its LTR position [1162,62,1432,198] over the now right-hand sidebar. The topmost element at the Insights item is the coach's own 'Not now', and Playwright's click was blocked. No consent breach: 'Go online' still routes through ensureOnline, and 'Not now' only dismisses. Evidence: R-coach.json 375_palette_row0 and ar_insights_nav; R-coach-ar.json; shots/N-recheck-375-palette-coach-en.png, N-recheck-coach-after-switch-ar.png.",
+    "root_cause": "_placeCoach (src/static/app-core.js:1017) runs only when the coach is shown and on window resize (app-core.js:1085-1087), never on oo:langchange, so a live dir flip leaves the coach at its LTR spot. #net-coach has z-index 360 (src/static/app.css:1803), above the command palette.",
+    "suggested_fix": "Call _placeCoach() from the existing oo:langchange listener in app-boot.js. Hide the coach non-permanently while the palette is open (e.g. dismissNetCoach(false) in the palette's open path), or put it below the palette's z-index."
+   },
+   {
+    "title": "Search page result line is not translated",
+    "verdict": "confirmed",
+    "severity": "P3",
+    "reason": "Reproduced in Français: the palette row 'Lancer la recherche booléenne complète pour “climat”' opens the Search page, whose #search-meta reads '160 result(s) (showing 50)'. Evidence: R-misc.json N_fr_search_meta; shots/N-recheck-N-search-fr.png.",
+    "root_cause": "src/static/app-analysis.js:2314-2315 builds the line from a hard-coded English template literal (`${data.total} result(s)` + ` (showing ${n})`) with no t() or tf(). The results table header on the next line is also hard-coded ('Title', 'Source', 'Published', 'Lang'), though the DOM walker may cover those single words.",
+    "suggested_fix": "Use tf('{n} result(s)', {n}) and tf('(showing {shown})', {shown}), with keys added in all 12 locales (a similar 'showing {shown} of {total}' key already exists)."
+   },
+   {
+    "title": "Concept map ignores 'Show only the words I typed'",
+    "verdict": "confirmed",
+    "severity": "P3",
+    "reason": "Reproduced: with the literal toggle on (156, 'Showing only the words you typed'), Mindmap → Concept still draws all six arms (eng 3 · fra 3 · deu 1 · spa 1 · ita 1 · por 1) and nothing says the view ignores the toggle. I found no ruling asking for this. Q501 rules one lens for every tab, and Q512 only rules the tree's shape, so this is not by-design. P3, because the Concept view is by nature a picture of the ring. Evidence: R-misc.json I_*; shots/N-recheck-I-concept-literal-en.png.",
+    "root_cause": "src/static/app-analysis.js:2029-2034 builds the concept-map request with only ui_lang, literal_cap and sense (expand is not forwarded), and src/api/insights.py:1805-1807 hard-codes resolve_concept_keywords(..., expand=True).",
+    "suggested_fix": "When _anExpand is false, show one keyed line on the Concept view, e.g. 'The Concept view shows the whole ring; the list is showing only the words you typed.' Or hide the Concept button while literal is on. Forwarding expand=false would make the endpoint return expanded:false and drop the view entirely."
+   },
+   {
+    "title": "Disclosure wording: ring caveat under a declined term, and a limit sentence with no numbers",
+    "verdict": "confirmed",
+    "severity": "P3",
+    "reason": "Reproduced both parts. (a) election's block reads 'election denotes several concepts, so it was not expanded…' and directly below it 'This search matched the concept in every language the ring covers, not only the words you typed.' That sentence is false for this search. (b) After picking “public election” the rail says only 'The search was widened to the most-mentioned forms only. Turn the limit off…', with no numbers. The /api/articles payload does carry searched_forms=40 and total_forms=44 for the term. Q503 = (a) rules the disclosure as «expanded to 40 of 63 forms», and on screen the figure appears only after the lazy 'Count each form' click. Evidence: R-misc.json J_election_block, K_pinned_block, K_payload_cap_fields; shots/N-recheck-K-limit-sentence-en.png.",
+    "root_cause": "(a) src/analytics/equivalence.py:901-904: disclosure() always emits the expansion caveat, even when only a decline or a pin-miss made the block 'interesting'. src/static/app-analysis.js:1640-1643 renders `cav` unconditionally. (b) app-analysis.js:1618-1621 renders only cross.cap_caveat and never the per-term searched_forms / total_forms.",
+    "suggested_fix": "(a) Render the caveat only when cross.expanded, or emit it server-side only when any_expanded. (b) In the capped branch, add a keyed tf('expanded to {searched} of {total} forms', …) built from the capped terms' searched_forms and total_forms."
+   },
+   {
+    "title": "Small i18n and grammar slips on this row's surfaces",
+    "verdict": "confirmed",
+    "severity": "P3",
+    "reason": "Reproduced in zh: the election block reads 'election 指代多个概念，因此未做扩展. 搜索其中之一：', with an ASCII '. ' after a translated frame. The code puts the same period after ja. In en, Group by language on climate gives the heading 'spa 1 articles'. Evidence: R-misc.json M_zh_election_block; R-coach.json group_headings_climate; shots/N-recheck-M-election-zh.png.",
+    "root_cause": "src/static/app-analysis.js:1598-1599 adds a literal '. ' outside the translated tf() frame. app-analysis.js:1826 uses t('{n} articles').replace('{n}', n) with no singular form.",
+    "suggested_fix": "Move the sentence-final punctuation into the keyed frame so each locale supplies its own (e.g. '。' in zh and ja), and add a '{n} article' key for n === 1, or use the project's plural helper if it has one."
+   }
+  ]
+ }
+}
