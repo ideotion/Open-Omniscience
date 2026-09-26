@@ -1281,54 +1281,72 @@
         + `${esc(t("This watch covers"))} ${bits} `
         + `<span class="muted">${esc(t("in every language its ring carries."))}</span></div>`;
     }
+    // The last /api/watches payload drawn, so a LANGUAGE SWITCH can redraw the list
+    // without a request (the 2026-09-26 click-through, N5): every row is built from tf()
+    // frames plus the watch's own numbers, so the i18n DOM walker cannot reach it and the
+    // list stayed in the language it was first drawn in until a reload.
+    let _wtLast = null;
     async function loadWatches() {
       const box = $("wt-list"); if (!box) return;
       const t = _wt(), tf = _wtf();
       box.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
       try {
-        const d = await api("/api/watches");
-        const ws = d.watches || [];
-        if (!ws.length) {
-          box.innerHTML = `<div class="muted">${esc(t("No watches yet — add one above. The engine runs after every collection pass."))}</div>`;
-          return;
-        }
-        box.innerHTML = ws.map(w => {
-          const last = w.last_matched_at ? fmtDateTime(w.last_matched_at) : t("never");
-          const hist = (w.history || []).map(h =>
-            `<li>${esc(fmtDateTime(h.matched_at))}: ${esc(tf("{n} articles ({new} new)", {n: h.n_articles, new: h.new_articles}))}`
-            + (h.article_ids && h.article_ids.length
-                ? ` · <a href="#" onclick="openAnalysisForIds(${JSON.stringify(h.article_ids)}, ${JSON.stringify(tf("Watch: {name}", {name: w.name}))});return false">${esc(t("open set ↗"))}</a>`
-                : "")
-            + `</li>`).join("");
-          return `<div class="card" style="padding:10px;margin-bottom:8px">
-            <div class="row" style="align-items:center;justify-content:space-between;gap:8px">
-              <div><b>${esc(w.name)}</b> <span class="muted">— “${esc(w.query)}”</span>
-                <span class="pill ${w.enabled ? 'ok' : ''}">${esc(w.enabled ? t('on') : t('off'))}</span></div>
-              <div style="flex:0 0 auto">
-                <button class="secondary" onclick="toggleWatch(${w.id}, ${!w.enabled})">${esc(w.enabled ? t('Disable') : t('Enable'))}</button>
-                <button class="secondary" onclick="editWatch(${w.id})">${esc(t('Edit'))}</button>
-                <button class="secondary" onclick="deleteWatch(${w.id})">${esc(t('Delete'))}</button>
-              </div>
-            </div>
-            <div class="hint" style="margin-top:4px">${esc(tf("≥ {n} articles within {d} day(s) · last fired: {when}",
-                {n: w.threshold, d: w.window_days, when: last}))}</div>
-            ${_watchRingNote(w.cross_language)}
-            ${hist ? `<ul class="hint" style="margin:6px 0 0 16px">${hist}</ul>` : ""}
-          </div>`;
-        }).join("")
-          // Server prose, so it goes through t() -- the same defect class the analysis
-          // rail carried until a Chromium walk read it back in Arabic.
-          + (d.caveat ? `<div class="hint" style="margin-top:8px">${esc(t(d.caveat))}</div>` : "")
-          // The ring caveat ONCE for the panel, not once per row: it is the same sentence
-          // for every watch, and repeating it is how a caveat stops being read.
-          + (ws.some((w) => w.cross_language && w.cross_language.caveat)
-              ? `<div class="hint muted" style="margin-top:4px">`
-                + `${esc(t(ws.find((w) => w.cross_language && w.cross_language.caveat)
-                    .cross_language.caveat))}</div>`
-              : "");
+        _wtLast = await api("/api/watches");
+        _renderWatches();
       } catch (e) {
+        _wtLast = null;
         box.innerHTML = `<div class="muted">${esc(tf("Could not load watches: {error}", {error: e.message}))}</div>`;
       }
+    }
+    // Registered in app-boot's ONE `oo:langchange` listener. Redraws from the retained
+    // payload only -- it never fetches, so a switch cannot ask the backend anything.
+    function _renderWatches() {
+      const box = $("wt-list"); if (!box || !_wtLast) return;
+      const t = _wt(), tf = _wtf();
+      const d = _wtLast;
+      const ws = d.watches || [];
+      if (!ws.length) {
+        box.innerHTML = `<div class="muted">${esc(t("No watches yet — add one above. The engine runs after every collection pass."))}</div>`;
+        return;
+      }
+      box.innerHTML = ws.map(w => {
+        const last = w.last_matched_at ? fmtDateTime(w.last_matched_at) : t("never");
+        const hist = (w.history || []).map(h =>
+          `<li>${esc(fmtDateTime(h.matched_at))}: ${esc(tf("{n} articles ({new} new)", {n: h.n_articles, new: h.new_articles}))}`
+          + (h.article_ids && h.article_ids.length
+              ? ` · <a href="#" onclick="openAnalysisForIds(${JSON.stringify(h.article_ids)}, ${JSON.stringify(tf("Watch: {name}", {name: w.name}))});return false">${esc(t("open set ↗"))}</a>`
+              : "")
+          + `</li>`).join("");
+        // The watch's NAME and QUERY are the reader's own words, never chrome, so both
+        // opt out of the i18n walker (`data-i18n-dyn`). The walker translates any text
+        // node that equals a locale key, and a watch named "Climate" was drawn as
+        // "مناخ" / "Climat" / "气候" (the 2026-09-26 click-through, N6).
+        return `<div class="card" style="padding:10px;margin-bottom:8px">
+          <div class="row" style="align-items:center;justify-content:space-between;gap:8px">
+            <div><b data-i18n-dyn>${esc(w.name)}</b> <span class="muted" data-i18n-dyn>— “${esc(w.query)}”</span>
+              <span class="pill ${w.enabled ? 'ok' : ''}">${esc(w.enabled ? t('on') : t('off'))}</span></div>
+            <div style="flex:0 0 auto">
+              <button class="secondary" onclick="toggleWatch(${w.id}, ${!w.enabled})">${esc(w.enabled ? t('Disable') : t('Enable'))}</button>
+              <button class="secondary" onclick="editWatch(${w.id})">${esc(t('Edit'))}</button>
+              <button class="secondary" onclick="deleteWatch(${w.id})">${esc(t('Delete'))}</button>
+            </div>
+          </div>
+          <div class="hint" style="margin-top:4px">${esc(tf("≥ {n} articles within {d} day(s) · last fired: {when}",
+              {n: w.threshold, d: w.window_days, when: last}))}</div>
+          ${_watchRingNote(w.cross_language)}
+          ${hist ? `<ul class="hint" style="margin:6px 0 0 16px">${hist}</ul>` : ""}
+        </div>`;
+      }).join("")
+        // Server prose, so it goes through t() -- the same defect class the analysis
+        // rail carried until a Chromium walk read it back in Arabic.
+        + (d.caveat ? `<div class="hint" style="margin-top:8px">${esc(t(d.caveat))}</div>` : "")
+        // The ring caveat ONCE for the panel, not once per row: it is the same sentence
+        // for every watch, and repeating it is how a caveat stops being read.
+        + (ws.some((w) => w.cross_language && w.cross_language.caveat)
+            ? `<div class="hint muted" style="margin-top:4px">`
+              + `${esc(t(ws.find((w) => w.cross_language && w.cross_language.caveat)
+                  .cross_language.caveat))}</div>`
+            : "");
     }
     async function createWatch() {
       const t = _wt(), tf = _wtf();

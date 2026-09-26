@@ -465,8 +465,12 @@
         <div class="an-sortbar" style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;margin-bottom:6px">
           <label style="display:flex;flex-direction:column;gap:2px"><span class="muted">Sort by</span>
             <select id="an-adv-sort" style="max-width:170px" onchange="_anSortChanged()">
+              <!-- Q508: the list is INTERLEAVED BY DATE by default, so Date is the
+                   selected option. It defaulted to relevance while the view switch below
+                   was drawn pressed on "Interleave by date" (the 2026-09-26 click-through,
+                   N4); relevance stays one click away. -->
               <option value="">Relevance / recency</option>
-              <option value="date">Date</option>
+              <option value="date" selected>Date</option>
               <option value="source">Source</option>
               <option value="title">Title (A–Z)</option>
               <option value="language">Language</option>

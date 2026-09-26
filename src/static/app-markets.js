@@ -1743,29 +1743,48 @@
       return tpl.replace(/\{(\w+)\}/g, (_m, k) => vars[k]);
     }
 
+    // THE HOST'S WIDTH IS WATCHED FOR AS LONG AS THE CHART IS ON IT (the 2026-09-26
+    // click-through, U10). The canvas is sized in FIXED px when it is drawn, so a host
+    // that narrowed afterwards -- a window taken from 1440 to 375 px -- kept a 937 px
+    // canvas and the page scrolled sideways by 562 px. ONE observer per host, replaced
+    // with the chart (a re-render disconnects the previous one first, so a chart that no
+    // longer exists is never redrawn), re-rendering from the SAME series it was given: no
+    // request, and the full-resolution rule (invariant #16) holds at every width. It also
+    // covers the host that is not laid out yet (a hidden tab), which used to have a
+    // one-shot observer of its own. A hidden host (width 0) keeps its drawing until it is
+    // seen again.
+    function _ooChartWatch(el, drawnW) {
+      if (typeof ResizeObserver !== "function") return;
+      let timer = null;
+      const ro = new ResizeObserver(() => {
+        const w = el.clientWidth || (el.parentElement ? el.parentElement.clientWidth : 0);
+        if (!w) return;
+        const [series, o] = el._ooChartArgs || [[], {}];
+        const want = Math.max(120, Math.min(w, (o && o.maxWidth) || 900));
+        if (drawnW && Math.abs(want - drawnW) < 4) return;
+        clearTimeout(timer);
+        timer = setTimeout(() => {
+          if (el._ooChartRO === ro) ooChart(el, series, o);
+        }, drawnW ? 150 : 0);
+      });
+      ro.observe(el);
+      el._ooChartRO = ro;
+    }
+
     function ooChart(el, seriesList, opts = {}) {
       const t9 = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
       el.innerHTML = "";
+      if (el._ooChartRO) { el._ooChartRO.disconnect(); el._ooChartRO = null; }
+      el._ooChartArgs = [seriesList, opts];
       // The canvas is sized in FIXED px, so it must never be wider than its host:
       // a 320 px hard floor (and a 680 px fallback when the element was not laid
       // out yet) made the chart overflow a narrower tile, with no overflow rule
       // anywhere in the tile/row/panel chain to clip it (maintainer-reported
       // "graphs do not fit their boxes"). Measure the real container; when it is
-      // not laid out yet (hidden tab), re-render ONCE when it gains a width
-      // instead of guessing a size that will overflow.
+      // not laid out yet (hidden tab), re-render when it gains a width instead of
+      // guessing a size that will overflow.
       const avail = el.clientWidth || (el.parentElement ? el.parentElement.clientWidth : 0);
-      if (!avail) {
-        if (typeof ResizeObserver === "function" && !el._ooChartPending) {
-          el._ooChartPending = true;
-          const ro = new ResizeObserver(() => {
-            if (!el.clientWidth) return;
-            ro.disconnect(); el._ooChartPending = false;
-            ooChart(el, seriesList, opts);
-          });
-          ro.observe(el);
-        }
-        return;
-      }
+      if (!avail) { _ooChartWatch(el, 0); return; }
       const W = Math.max(120, Math.min(avail, opts.maxWidth || 900));
       const H = opts.height || 220, padL = 52, padR = 10, padT = 10, padB = 24;
       const wrap = document.createElement("div");
@@ -1975,6 +1994,7 @@
           s._base = fnz ? fnz.v : (vis.length ? (vis[0].v || 1) : 1);
         }
         const vs = visible();
+        drawLegend();
         // Q502: bands, or a NAMED refusal the caller can surface. Recomputed per draw
         // because the visible window, the legend toggles and the zoom all change which
         // series are stacked and over which timestamps.
@@ -1995,7 +2015,14 @@
         const ys = stacked
           ? [0, stk.top]
           : vs.flatMap(s => s.vis.map(p => vt(pv(s, p))));
-        if (!ys.length) { readout.textContent = t9("no points in this window — zoom out (double-click)"); return; }
+        if (!ys.length) {
+          // Every series hidden is a different state from an empty window, and "zoom out"
+          // would send the reader to the wrong control.
+          readout.textContent = vs.length
+            ? t9("no points in this window — zoom out (double-click)")
+            : t9("Every series is hidden. Click a legend entry to show it again.");
+          return;
+        }
         const dataLo = (stacked || (opts.zeroBase && !logOk)) ? Math.min(0, ...ys) : Math.min(...ys);
         const dataHi = Math.max(...ys);
         // A FLAT series is centred instead of fabricating a span: the old
@@ -2238,25 +2265,34 @@
           ctx.beginPath(); ctx.moveTo(x, padT); ctx.lineTo(x, H - padB); ctx.stroke(); ctx.setLineDash([]);
           ctx.beginPath(); ctx.arc(x, y, 4, 0, 7); ctx.stroke();
         }
-        // The legend glyph shows all three channels (colour + dash + marker), so the
-        // key itself is readable in greyscale. It is a <button>, not a clickable
-        // <span> with an inline onclick, so it keeps this component off the
-        // 'unsafe-inline' script-src debt instead of adding to it, and the toggle
-        // becomes keyboard-reachable with its pressed state announced.
-        //
-        // Careful: the loop below used to only ASSIGN elm._oo, and the inline
-        // `onclick="this._oo&&this._oo()"` was what invoked it \u2014 so that property was
-        // not a listener and dropping the inline attribute alone would have left the
-        // toggle dead. It is now a real addEventListener; _oo stays because
-        // ooChart re-renders the legend on every draw and the property is the
-        // per-element closure the listener calls.
-        legend.innerHTML = vs.map((s) => {
-          const i = all.indexOf(all.find(a => a.label === s.label));
-          const st = s.style || _figStyle(Math.max(i, 0));
+      }
+      // The legend glyph shows all three channels (colour + dash + marker), so the
+      // key itself is readable in greyscale. It is a <button>, not a clickable
+      // <span> with an inline onclick, so it keeps this component off the
+      // 'unsafe-inline' script-src debt instead of adding to it, and the toggle
+      // becomes keyboard-reachable with its pressed state announced.
+      //
+      // Careful: the loop below used to only ASSIGN elm._oo, and the inline
+      // `onclick="this._oo&&this._oo()"` was what invoked it \u2014 so that property was
+      // not a listener and dropping the inline attribute alone would have left the
+      // toggle dead. It is now a real addEventListener; _oo stays because
+      // ooChart re-renders the legend on every draw and the property is the
+      // per-element closure the listener calls.
+      //
+      // EVERY series gets a chip, the hidden ones too (the 2026-09-26 click-through,
+      // N3). The legend used to be built from the VISIBLE series, so hiding one removed
+      // its chip -- and with it the only control that could show it again. A hidden
+      // series keeps its chip, dimmed and aria-pressed=false. Drawn at the TOP of every
+      // draw, before the "no points in this window" return, so hiding the last visible
+      // series still leaves the chips that bring it back.
+      function drawLegend() {
+        legend.innerHTML = all.map((s, i) => {
+          const st = s.style || _figStyle(i);
+          const n = s.pts.filter(p => p.t >= t0 && p.t <= t1).length;
           return `<button type="button" class="fig-leg" data-oo-leg="${i}"` +
             ` aria-pressed="${s.hidden ? "false" : "true"}"${s.hidden ? ' style="opacity:.4"' : ""}>` +
             _figGlyph(Object.assign({}, st, {color: s.color})) +
-            `${esc(s.label)} <span class="muted" title="${esc(t9("n counts the datapoints plotted here, not articles."))}">n=${s.vis.length}${s.unit ? " \u00b7 " + esc(s.unit) : ""}</span></button>`;
+            `${esc(s.label)} <span class="muted" title="${esc(t9("n counts the datapoints plotted here, not articles."))}">n=${n}${s.unit ? " \u00b7 " + esc(s.unit) : ""}</span></button>`;
         }).join("");
         legend.querySelectorAll("[data-oo-leg]").forEach(elm => {
           elm._oo = () => { all[+elm.dataset.ooLeg].hidden = !all[+elm.dataset.ooLeg].hidden; draw(); };
@@ -2377,6 +2413,7 @@
       });
       cv.addEventListener("dblclick", () => { t0 = tMin; t1 = tMax; pinned = null; pinnedS = null; draw(); });
       draw();
+      _ooChartWatch(el, W);
       return {redraw: draw};
     }
 

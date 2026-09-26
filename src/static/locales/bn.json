@@ -4659,5 +4659,16 @@
   "Articles checked: {done} of {total} ({percent}%)": "যাচাই করা নিবন্ধ: {total}-এর মধ্যে {done} ({percent}%)",
   "Re-indexed: {n}": "আবার ইনডেক্স: {n}",
   "Continue the search re-index? It resumes where it stopped ({percent}% done).": "অনুসন্ধান পুনঃইনডেক্স চালিয়ে যাবেন? যেখানে থেমেছিল সেখান থেকে আবার শুরু হবে ({percent}% সম্পন্ন)।",
-  "Re-index search for Arabic, Chinese and Japanese now? Articles whose search entry would change are indexed again; nothing else is touched. It runs in the background and can be paused from the task manager.": "এখনই আরবি, চীনা ও জাপানির জন্য অনুসন্ধান আবার ইনডেক্স করবেন? যেসব নিবন্ধের অনুসন্ধান এন্ট্রি বদলাবে সেগুলো আবার ইনডেক্স করা হয়; আর কিছুতে হাত দেওয়া হয় না। এটি পটভূমিতে চলে এবং টাস্ক ম্যানেজার থেকে বিরতি দেওয়া যায়।"
+  "Re-index search for Arabic, Chinese and Japanese now? Articles whose search entry would change are indexed again; nothing else is touched. It runs in the background and can be paused from the task manager.": "এখনই আরবি, চীনা ও জাপানির জন্য অনুসন্ধান আবার ইনডেক্স করবেন? যেসব নিবন্ধের অনুসন্ধান এন্ট্রি বদলাবে সেগুলো আবার ইনডেক্স করা হয়; আর কিছুতে হাত দেওয়া হয় না। এটি পটভূমিতে চলে এবং টাস্ক ম্যানেজার থেকে বিরতি দেওয়া যায়।",
+  "Every series is hidden. Click a legend entry to show it again.": "সব সিরিজ লুকানো আছে। আবার দেখাতে লেজেন্ডের একটি এন্ট্রিতে ক্লিক করুন।",
+  "mention": "উল্লেখ",
+  "{n} article": "{n}টি নিবন্ধ",
+  "{term} denotes several concepts, so it was not expanded.": "{term} একাধিক ধারণা বোঝায়, তাই এটি সম্প্রসারিত করা হয়নি।",
+  "{term}: expanded to {searched} of {total} forms.": "{term}: {total}টির মধ্যে {searched}টি রূপে সম্প্রসারিত।",
+  "This view always shows the concept in every language; the other tabs are showing only the words you typed.": "এই দৃশ্য সবসময় সব ভাষায় ধারণাটি দেখায়; অন্য ট্যাবগুলো কেবল আপনার লেখা শব্দগুলো দেখাচ্ছে।",
+  "{n} result(s)": "{n}টি ফলাফল",
+  "{n} result(s) (showing {shown})": "{n}টি ফলাফল ({shown}টি দেখানো হচ্ছে)",
+  "Counts only, never a score. The trend ratio is noisy on a young corpus; co-occurrence and PMI are association, not causation. Deduced from your corpus, not a claim about the world.": "শুধু গণনা, কখনও স্কোর নয়। নতুন সংগ্রহে প্রবণতার অনুপাত অস্থির; সহ-উপস্থিতি ও PMI সম্পর্ক নির্দেশ করে, কার্যকারণ নয়। আপনার সংগ্রহ থেকে অনুমিত, বিশ্ব সম্পর্কে কোনো দাবি নয়।",
+  "Meeus, Astronomical Algorithms (2nd ed.) ch. 49: mean lunar phase + periodic and planetary corrections; computed locally, no data files": "মিউস, Astronomical Algorithms (২য় সংস্করণ) অধ্যায় ৪৯: গড় চন্দ্রকলা + পর্যায়ক্রমিক ও গ্রহজনিত সংশোধন; স্থানীয়ভাবে গণনা করা, কোনো ডেটা ফাইল নেই",
+  "typically within ~2 minutes; times are TD (ΔT≈70 s vs UTC not applied — immaterial at agenda granularity, stated rather than hidden)": "সাধারণত ~২ মিনিটের মধ্যে; সময়গুলো TD-তে (UTC-র তুলনায় ΔT≈৭০ সে. প্রয়োগ করা হয়নি — এজেন্ডার সূক্ষ্মতায় এটি গুরুত্বহীন, লুকানোর বদলে জানানো হলো)"
 }

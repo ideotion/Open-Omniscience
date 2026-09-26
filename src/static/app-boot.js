@@ -176,6 +176,19 @@
           renderLibraryActivityGraphs();
         }
       } catch (_e) {}
+      // The 2026-09-26 click-through (N5, U9) found three more members of the class, each
+      // built at render time from t()/tf() and so out of the walker's reach: the Insights
+      // watch rows, the analysis Price overlay's in-SVG axis label, and the Agenda grids
+      // (weekday names from Intl in the page's language, and the moon hovers). Each redraws
+      // from what it already holds -- the watch payload, the price series, the loaded
+      // agenda -- and only when it was ever drawn, so a switch never fetches for them.
+      try { if (typeof _renderWatches === "function") _renderWatches(); } catch (_e) {}
+      try { if (typeof _anRepaintPrice === "function") _anRepaintPrice(); } catch (_e) {}
+      try {
+        if (typeof AG !== "undefined" && AG.cals && AG.cals.length && typeof renderAgenda === "function") {
+          renderAgenda();
+        }
+      } catch (_e) {}
       // Re-translate the airplane button's JS-managed (data-i18n-dyn) title.
       try { if (_netOnline !== null && typeof _paintNetwork === "function") _paintNetwork(_netOnline); } catch (_e) {}
       // Re-render the AI prompt editor (remark 13): its labels are auto-translated by the
@@ -344,7 +357,7 @@
     // and, when that element's bubble is already open, updates it live (hint -> loading
     // -> stats) without touching the ooTip internals.
     (function ooKwStatInit() {
-      const cache = new Map();   // term -> formatted line ; null = in-flight
+      const cache = new Map();   // term -> keyword-stats payload ; null = in-flight
       let hovered = null;
       function fmt(d) {
         const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
@@ -360,7 +373,11 @@
           const none = t("Not in your corpus yet — no stats.");
           return unresolved ? `${unresolved} — ${none}` : none;
         }
-        const bits = [`${d.mentions} ${t("mentions")} · ${d.articles} ${t("articles")}`];
+        // "1 articles" read as a slip (N14): the singular keys exist, so a count of one
+        // takes them. (No CLDR plural rules here; this fixes the one form every locale
+        // has, and leaves the rest of the counting grammar where it was.)
+        const bits = [`${d.mentions} ${d.mentions === 1 ? t("mention") : t("mentions")}`
+          + ` · ${d.articles} ${d.articles === 1 ? t("article") : t("articles")}`];
         const tr = d.trend || {};
         if (tr.recent || tr.prior) {
           const fb = growthFallback(tr, {window: true});
@@ -382,7 +399,9 @@
         });
         if (co.length) bits.push(`${t("with")}: ${co.join(", ")}`);
         const head = d.resolved.term || d.term || "";
-        return `${head} — ${bits.join(" · ")}${d.caveat ? " · " + d.caveat : ""}`;
+        // The caveat is a FIXED server sentence, so it is keyed and goes through t() --
+        // appended verbatim it read in English inside every translated bubble (N7).
+        return `${head} — ${bits.join(" · ")}${d.caveat ? " · " + t(d.caveat) : ""}`;
       }
       function applyTo(el, text, persist) {
         // THIS HANDLER OVERWRITES THE TITLE, so anything the RENDERER put there is gone
@@ -415,14 +434,15 @@
       }
       async function load(el, term) {
         const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-        if (cache.has(term)) { const v = cache.get(term); if (v) applyTo(el, v, true); return; }
+        // The PAYLOAD is cached, not the formatted line: the line is words in the active
+        // language, and a line cached in English was served unchanged after a switch.
+        if (cache.has(term)) { const v = cache.get(term); if (v) applyTo(el, fmt(v), true); return; }
         cache.set(term, null);                              // in-flight guard (no dup fetch)
         applyTo(el, t("Loading keyword stats…"), false);    // live bubble only — never persisted
         try {
           const d = await api("/api/insights/keyword-stats?term=" + encodeURIComponent(term));
-          const text = fmt(d);
-          cache.set(term, text);
-          applyTo(el, text, true);
+          cache.set(term, d || {});
+          applyTo(el, fmt(d), true);
         } catch (_e) {
           cache.delete(term);                               // allow a later retry
           // if still hovering, revert the transient "Loading…" back to the element's own hint
@@ -486,17 +506,19 @@
         // to the restored tab, exactly as before.
         const ids = corpus ? corpus.split(",").map(Number).filter((n) => Number.isFinite(n) && n > 0) : [];
         if (analyze || ids.length) _anHydrated = true;
+        // Q504: the cross-language lens travels in the link, so a shared "?analyze=climat
+        // &expand=0" opens the search the sender was actually looking at rather than the
+        // default one. It rides as part of the SEED, not as a setting applied beside it:
+        // the spawned tab's own _anApplySeed would otherwise overwrite it a moment later
+        // and rewrite the URL without it. Read BEFORE showTab: when showTab hydrates the
+        // restored tab it writes THAT tab's lens into this URL, and a read after it took
+        // another tab's sense as this link's own (row N, N2).
+        const lens = _anReadLensFromUrl();
         showTab("analyze", false);
         // Ruling 16: the Lead's provenance travels with the deep link (a one-shot
         // localStorage token, taken and deleted here) so the new window can show WHICH
         // Lead it came from and on what basis. Absent -> no header, never an invented one.
         const prov = _anProvTake(sp.get("prov"));
-        // Q504: the cross-language lens travels in the link, so a shared "?analyze=climat
-        // &expand=0" opens the search the sender was actually looking at rather than the
-        // default one. It rides as part of the SEED, not as a setting applied beside it:
-        // the spawned tab's own _anApplySeed would otherwise overwrite it a moment later
-        // and rewrite the URL without it.
-        const lens = _anReadLensFromUrl();
         if (corpus) {
           if (ids.length) openAnalysisForIds(ids, sp.get("label") || "", prov, lens);
         } else if (analyze) {

@@ -42,8 +42,8 @@ const src = "function esc(s){return String(s==null?'':s).replace(/[&<>\"]/g,"
   // `_anSlug` builds the per-term id the Q509 count-trigger writes into. It is REAL, not
   // shimmed: a shim would let the renderer emit an id nothing could ever find again.
   + extract("_anSlug") + "\n"
-  + "module.exports = { _crossLangNotice };";
-const { _crossLangNotice } = (() => {
+  + "module.exports = { _crossLangNotice, _win: window };";
+const { _crossLangNotice, _win } = (() => {
   const m = { exports: {} };
   new Function("module", "exports", src)(m, m.exports);
   return m.exports;
@@ -182,6 +182,53 @@ const PINNED = {
   assert.ok(!html.includes("<img src=x"), "the typed term was not escaped");
   assert.ok(!html.includes("<script>"), "a member term was not escaped");
   assert.ok(html.includes("&lt;img"), "escaping should keep the text, not drop it");
+}
+
+// 6. N13 (the 2026-09-26 click-through): the "matched the concept in every language"
+//    caveat rides ONLY on a search that was widened. Under a declined term it stated the
+//    opposite of the sentence right above it ("so it was not expanded").
+{
+  const said = "This search matched the concept in every language the ring covers.";
+  assert.ok(!_crossLangNotice(DECLINED, false).includes(said),
+    "a declined search still claims it matched the concept in every language");
+  assert.ok(_crossLangNotice(EXPANDED, false).includes(said),
+    "an expanded search lost its caveat -- the disclosure must stay on the widened case");
+}
+
+// 7. N13: a capped expansion states its NUMBERS (Q503: "expanded to 40 of 63 forms"),
+//    not only the generic cap sentence -- they were reachable only through a click.
+{
+  const capped = { expanded: true, capped: true, caveat: "",
+    cap_caveat: "Only the most-mentioned forms were searched.",
+    terms: [{ term: "climate", normalized: "climate", expanded: true, ring_id: "climate",
+              concept: "climate", by_language: { fr: ["climat"] },
+              capped: true, searched_forms: 40, total_forms: 63 }] };
+  const html = _crossLangNotice(capped, false);
+  assert.ok(html.includes("climate: expanded to 40 of 63 forms."),
+    "the capped disclosure does not say how many forms were searched out of how many");
+  assert.ok(/onclick="_anSetCap\(false\)"/.test(html), "the way to lift the cap is gone");
+}
+
+// 8. N14: the full stop is INSIDE the keyed frame, so a locale can end the sentence
+//    with its own punctuation. A literal ". " after the frame drew "因此未做扩展. 搜索".
+//    Driven through a zh engine shim: in English the two spellings look identical.
+{
+  const ZH = { "{term} denotes several concepts, so it was not expanded.":
+                 "{term} 指代多个概念，因此未做扩展。" };
+  // The renderer reads `window.OOI18N` and then the bare global, so both are set.
+  _win.OOI18N = globalThis.OOI18N = {
+    t: (s) => ZH[s] || s,
+    tf: (s, v) => String(ZH[s] || s).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null ? v[k] : m)),
+  };
+  try {
+    const html = _crossLangNotice(DECLINED, false);
+    assert.ok(html.includes("strom 指代多个概念，因此未做扩展。 <span"),
+      "the decline sentence is not one keyed frame ending in the locale's own full stop");
+    assert.ok(!html.includes("扩展. "), "a Latin full stop is still welded after the frame");
+  } finally { delete _win.OOI18N; delete globalThis.OOI18N; }
+  assert.ok(_crossLangNotice(DECLINED, false)
+    .includes("strom denotes several concepts, so it was not expanded. <span"),
+    "the English sentence lost its full stop");
 }
 
 console.log("cross_language_notice_node_test: all assertions passed");

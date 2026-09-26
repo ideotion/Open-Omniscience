@@ -4659,5 +4659,16 @@
   "Articles checked: {done} of {total} ({percent}%)": "確認した記事：{total} 件中 {done} 件（{percent}%）",
   "Re-indexed: {n}": "再インデックス：{n}",
   "Continue the search re-index? It resumes where it stopped ({percent}% done).": "検索の再インデックスを続行しますか？停止したところから再開します（{percent}% 完了）。",
-  "Re-index search for Arabic, Chinese and Japanese now? Articles whose search entry would change are indexed again; nothing else is touched. It runs in the background and can be paused from the task manager.": "アラビア語・中国語・日本語の検索を今すぐ再インデックスしますか？検索エントリが変わる記事だけを再インデックスし、それ以外には触れません。バックグラウンドで実行され、タスクマネージャーから一時停止できます。"
+  "Re-index search for Arabic, Chinese and Japanese now? Articles whose search entry would change are indexed again; nothing else is touched. It runs in the background and can be paused from the task manager.": "アラビア語・中国語・日本語の検索を今すぐ再インデックスしますか？検索エントリが変わる記事だけを再インデックスし、それ以外には触れません。バックグラウンドで実行され、タスクマネージャーから一時停止できます。",
+  "Every series is hidden. Click a legend entry to show it again.": "すべての系列が非表示です。凡例の項目をクリックすると再び表示されます。",
+  "mention": "言及",
+  "{n} article": "{n} 件の記事",
+  "{term} denotes several concepts, so it was not expanded.": "{term} は複数の概念を指すため、拡張しませんでした。",
+  "{term}: expanded to {searched} of {total} forms.": "{term}：{total} 語形のうち {searched} 語形まで拡張しました。",
+  "This view always shows the concept in every language; the other tabs are showing only the words you typed.": "このビューは常にすべての言語で概念を表示します。ほかのタブは入力した語のみを表示しています。",
+  "{n} result(s)": "{n} 件の結果",
+  "{n} result(s) (showing {shown})": "{n} 件の結果（{shown} 件を表示）",
+  "Counts only, never a score. The trend ratio is noisy on a young corpus; co-occurrence and PMI are association, not causation. Deduced from your corpus, not a claim about the world.": "件数のみで、スコアではありません。コーパスが若いうちはトレンド比のばらつきが大きく、共起と PMI は関連であって因果ではありません。あなたのコーパスから導いたもので、世界についての主張ではありません。",
+  "Meeus, Astronomical Algorithms (2nd ed.) ch. 49: mean lunar phase + periodic and planetary corrections; computed locally, no data files": "Meeus『Astronomical Algorithms』（第2版）第49章：平均月相＋周期項と惑星による補正。ローカルで計算し、データファイルは使用しません",
+  "typically within ~2 minutes; times are TD (ΔT≈70 s vs UTC not applied — immaterial at agenda granularity, stated rather than hidden)": "通常は約2分以内の精度。時刻は力学時 TD（UTC との差 ΔT≈70 秒は未適用 — アジェンダの粒度では影響なし。隠さずに明記しています）"
 }

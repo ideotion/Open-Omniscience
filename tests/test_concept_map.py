@@ -255,9 +255,12 @@ def test_every_string_these_two_surfaces_render_is_keyed_in_all_twelve_locales()
         "Not observed in this corpus:",
         "The concept at the centre, one arm per language, associations off the arms.",
     ]
+    # `_renderWatches` draws what `loadWatches` fetched (so a language switch can redraw
+    # it without a request, N5), and the panel's caveat moved there with the rows.
     rendered = (
         function_body(insights, "_watchRingNote")
         + function_body(insights, "loadWatches")
+        + function_body(insights, "_renderWatches")
         + function_body(analysis, "_anConceptTreeSvg")
         + function_body(analysis, "renderAnMindmap")
     )
@@ -266,7 +269,7 @@ def test_every_string_these_two_surfaces_render_is_keyed_in_all_twelve_locales()
     # The client must pass the server's own sentences through the translator.
     assert "t(d.method)" in function_body(analysis, "renderAnMindmap")
     assert "t(d.caveat)" in function_body(analysis, "renderAnMindmap")
-    assert "t(d.caveat)" in function_body(insights, "loadWatches")
+    assert "t(d.caveat)" in function_body(insights, "_renderWatches")
     emitted = set()
     for path in (
         _ROOT / "src" / "api" / "watches.py",

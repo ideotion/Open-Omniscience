@@ -4659,5 +4659,16 @@
   "Articles checked: {done} of {total} ({percent}%)": "المقالات التي فُحصت: {done} من {total} ({percent}%)",
   "Re-indexed: {n}": "أُعيدت فهرستها: {n}",
   "Continue the search re-index? It resumes where it stopped ({percent}% done).": "متابعة إعادة فهرسة البحث؟ تُستأنف من حيث توقفت (أُنجز {percent}%).",
-  "Re-index search for Arabic, Chinese and Japanese now? Articles whose search entry would change are indexed again; nothing else is touched. It runs in the background and can be paused from the task manager.": "إعادة فهرسة البحث للعربية والصينية واليابانية الآن؟ تُعاد فهرسة المقالات التي سيتغير مدخل البحث الخاص بها؛ ولا يُمسّ أي شيء آخر. تعمل في الخلفية ويمكن إيقافها مؤقتًا من مدير المهام."
+  "Re-index search for Arabic, Chinese and Japanese now? Articles whose search entry would change are indexed again; nothing else is touched. It runs in the background and can be paused from the task manager.": "إعادة فهرسة البحث للعربية والصينية واليابانية الآن؟ تُعاد فهرسة المقالات التي سيتغير مدخل البحث الخاص بها؛ ولا يُمسّ أي شيء آخر. تعمل في الخلفية ويمكن إيقافها مؤقتًا من مدير المهام.",
+  "Every series is hidden. Click a legend entry to show it again.": "كل السلاسل مخفية. انقر على عنصر في وسيلة الإيضاح لإظهاره من جديد.",
+  "mention": "إشارة",
+  "{n} article": "{n} مقال",
+  "{term} denotes several concepts, so it was not expanded.": "يدل {term} على عدة مفاهيم، لذلك لم يجرِ توسيع البحث.",
+  "{term}: expanded to {searched} of {total} forms.": "{term}: جرى التوسيع إلى {searched} من أصل {total} صيغة.",
+  "This view always shows the concept in every language; the other tabs are showing only the words you typed.": "يعرض هذا العرض المفهوم دائمًا بكل اللغات؛ أما التبويبات الأخرى فتعرض الكلمات التي كتبتها فقط.",
+  "{n} result(s)": "{n} نتيجة",
+  "{n} result(s) (showing {shown})": "{n} نتيجة (يُعرض {shown})",
+  "Counts only, never a score. The trend ratio is noisy on a young corpus; co-occurrence and PMI are association, not causation. Deduced from your corpus, not a claim about the world.": "أعداد فقط، وليست درجة أبدًا. نسبة الاتجاه غير مستقرة في مجموعة نصوص حديثة؛ والتواجد المشترك وPMI ارتباط لا سببية. مستنتج من مجموعتك، وليس ادعاءً عن العالم.",
+  "Meeus, Astronomical Algorithms (2nd ed.) ch. 49: mean lunar phase + periodic and planetary corrections; computed locally, no data files": "ميوس، الخوارزميات الفلكية (الطبعة الثانية) الفصل 49: الطور القمري المتوسط + التصحيحات الدورية والكوكبية؛ محسوب محليًا، بلا ملفات بيانات",
+  "typically within ~2 minutes; times are TD (ΔT≈70 s vs UTC not applied — immaterial at agenda granularity, stated rather than hidden)": "عادةً بدقة ~2 دقيقة؛ الأوقات بالزمن الديناميكي TD (لم يُطبَّق الفرق ΔT≈70 ث عن UTC — لا أثر له بدقة الأجندة، ونذكره بدل إخفائه)"
 }

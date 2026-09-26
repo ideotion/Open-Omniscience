@@ -185,7 +185,11 @@ test("ooChart draws its gridlines from honestTicks and sizes to its container", 
   assert(!/yMin \+ ySpan \* g \/ 3/.test(body), "the fabricated 4-tick loop is back");
   assert(!/Math\.max\(320,\s*Math\.min\(el\.clientWidth \|\| 680/.test(body),
     "the fixed 320px floor / 680px hidden-element fallback is back (the overflow vector)");
-  assert(body.includes("ResizeObserver"),
+  // The observer lives in `_ooChartWatch` since the chart also refits when its host
+  // NARROWS (U10): the not-yet-laid-out host arms it with a drawn width of 0.
+  assert(/if \(!avail\) \{ _ooChartWatch\(el, 0\); return; \}/.test(body),
+    "a not-yet-laid-out host must re-render on width, never guess a size");
+  assert(bodyOf("function _ooChartWatch(").includes("new ResizeObserver("),
     "a not-yet-laid-out host must re-render on width, never guess a size");
 });
 
