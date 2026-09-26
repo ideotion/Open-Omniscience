@@ -583,8 +583,11 @@
         scale: "sequential", label: meta.label || "", unit: meta.unit || "",
         // A map tooltip IS the hover Q302 puts the name in, and it is also what a
         // screen reader is handed -- so the NAME stays here deliberately, with the
-        // code beside it so the two readings agree.
-        valueLabel: (iso, v) => `${ooCountryCode(iso)} · ${ooCountryName(iso, iso)}: ${_govFmt(v, meta.unit)}`,
+        // code beside it so the two readings agree. `ooCountryTitle`, not the bare
+        // name: it is the name PLUS Q303's disclosure, and a map tooltip that says
+        // "Kosovo" beside `XKX` with no "not an ISO code" is the one place the
+        // disclosure went missing (2026-09-26 click-through, L13).
+        valueLabel: (iso, v) => `${ooCountryCode(iso)} · ${ooCountryTitle(iso) || iso}: ${_govFmt(v, meta.unit)}`,
         caveat: data.caveat || "",
         onCountry: (iso) => {   // click a country -> its detail in the Countries subtab
           if (_govSubtabs) _govSubtabs.select("countries");

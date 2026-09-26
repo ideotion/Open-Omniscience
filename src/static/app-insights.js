@@ -386,7 +386,7 @@
         ? members.filter((r) => _conceptMatches(r.id) || _conceptMatches((r.languages || []).join("/")))
             .map((r) => `<button class="chip lvl-group${_conceptActiveBucket && r.id === _conceptSelectedRing ? " active" : ""}"
                onclick="selectConceptGroup(${esc(JSON.stringify(r.id))})" title="${esc(lvlTitle("group"))}">⦾ ${esc(r.id)}
-               <span class="muted">(${esc((r.languages || []).join("/"))})</span></button>`).join(" ")
+               <span class="muted">(${(r.languages || []).map((l) => ooLangCell(l)).join("/")})</span></button>`).join(" ")
         : (_conceptActiveBucket ? `<div class="muted">${esc(t("No groups in this bucket."))}</div>` : "");
 
       // The clickable path breadcrumb (reuses the shared component from §B).
@@ -494,12 +494,15 @@
         const lb = _ringLangIndex[ringId];
         const langBd = (lb && Object.keys(lb).length)
           ? `<div class="hint" style="margin-top:4px"><b>${esc(t("By language"))}:</b> `
+            // Q306's display step: every language CODE on screen is 639-2/T with the
+            // name in the hover -- these two lines and the group chips printed the
+            // stored 639-1 (`es 84 · en 47`), the one place the sweep missed (L10).
             + Object.entries(lb).sort((a, b) => b[1] - a[1]).map(([lg, n]) =>
-                `${esc(lg === "?" ? t("unknown") : lg)} <span class="muted">${n}</span>`).join(" · ")
+                `${lg === "?" ? esc(t("unknown")) : ooLangCell(lg)} <span class="muted">${n}</span>`).join(" · ")
             + ` <span class="muted">— ${esc(t("mentions per language"))}</span></div>`
           : "";
         const langs = (d.languages || []).length
-          ? `<div class="hint"><b>${esc(t("Languages"))}:</b> ${esc((d.languages || []).join(" · "))}</div>` : "";
+          ? `<div class="hint"><b>${esc(t("Languages"))}:</b> ${(d.languages || []).map((l) => ooLangCell(l)).join(" · ")}</div>` : "";
         // §D: the "not mapped" bucket is CLICKABLE too -- often the largest bucket,
         // and it must be investigable, never a dead end.
         const unlocNote = unloc

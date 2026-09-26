@@ -78,7 +78,7 @@ const F = new Function(src + "return {ooCountryAlpha2,ooCountryCode,ooCountryKin
   "ooLangCode,ooLangStorage,ooLangDisplayName,ooLangCell,OO_ISO3_TO_ISO2,OO_LANG1_TO_3};")();
 
 // -- anti-vacuity: the tables really loaded ---------------------------------------- //
-assert.strictEqual(Object.keys(F.OO_ISO3_TO_ISO2).length, 216,
+assert.strictEqual(Object.keys(F.OO_ISO3_TO_ISO2).length, 250,
   "the alpha-3 table did not parse -- every assertion below would pass for free");
 assert.strictEqual(Object.keys(F.OO_LANG1_TO_3).length, 183,
   "the 639-1 table did not parse -- every language assertion below would pass for free");
@@ -140,6 +140,16 @@ assert.strictEqual(F.ooCountryKind("fr"), "iso");
 assert.ok(!/not an ISO code/.test(F.ooCountryTitle("fr")),
   "a real ISO country must not carry the non-ISO disclosure");
 assert.strictEqual(F.ooCountryKind("gbr"), "iso");
+// Defect L1 (2026-09-26 click-through): ISO territories the World Bank does not report
+// were missing from the table, so they printed as `va`/`AX` with a "not a recognised
+// country code" hover. Each must now read as an ordinary ISO country.
+[["va", "VAT"], ["AX", "ALA"], ["ai", "AIA"], ["ck", "COK"], ["re", "REU"], ["aq", "ATA"]]
+  .forEach(([stored, code]) => {
+    assert.strictEqual(F.ooCountryCode(stored), code, stored + " must render as " + code);
+    assert.strictEqual(F.ooCountryKind(stored), "iso", stored + " is an ISO country");
+    assert.ok(!/not a recognised/.test(F.ooCountryTitle(stored)),
+      stored + "'s hover must carry its name, not the unreadable-code line");
+  });
 
 // -- fail-closed: an aggregate is never a country, junk stays VISIBLE --------------- //
 ["HIC", "WLD", "XD", "Z4", "floop"].forEach((junk) => {

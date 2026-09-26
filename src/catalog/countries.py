@@ -617,6 +617,18 @@ CONTINENTS: tuple[str, ...] = (
 # territories the WB reports; aggregates (WLD/EUU/ARB...) have no alpha-2 and are simply
 # absent (so they never colour the choropleth — honest). Kosovo uses the WB "XKX" -> the
 # user-assigned "xk" the rest of this module already recognises.
+#
+# THE LAST THREE LINES ARE THE 34 ISO TERRITORIES THE WORLD BANK DOES NOT REPORT (ala:ax
+# … myt:yt). The table began as "every economy the Bank publishes", which was the right
+# scope while its only reader was the Governments tab -- and became a hole the day the
+# alpha-3 DISPLAY layer (Q301 step 1) started reading it for every country surface:
+# Vatican City, Réunion, Åland, Anguilla… are in ISO_3166_1_ALPHA2 and in the catalogues,
+# so they rendered as a bare two-letter code with a "not a recognised country code" hover
+# (the 2026-09-26 delegated click-through, defect L1). Taken from the Debian iso-codes
+# `iso_3166-1.json` and cross-checked pair by pair against CLDR's alpha-3 territory
+# aliases (Babel), 34 of 34 agreeing; none is a statistical aggregate code.
+# `tests/test_country_display.py` now asserts EVERY member of ISO_3166_1_ALPHA2 has a
+# pair, so a gap of this shape cannot reopen quietly.
 _ISO3_TO_2_TEXT = """
 afg:af alb:al dza:dz and:ad ago:ao atg:ag arg:ar arm:am aus:au aut:at aze:az bhs:bs
 bhr:bh bgd:bd brb:bb blr:by bel:be blz:bz ben:bj btn:bt bol:bo bih:ba bwa:bw bra:br
@@ -636,6 +648,9 @@ syr:sy tjk:tj tza:tz tha:th tls:tl tgo:tg ton:to tto:tt tun:tn tur:tr tkm:tm tuv
 uga:ug ukr:ua are:ae gbr:gb usa:us ury:uy uzb:uz vut:vu ven:ve vnm:vn yem:ye zmb:zm
 zwe:zw hkg:hk mac:mo pri:pr twn:tw pse:ps grl:gl xkx:xk ncl:nc pyf:pf abw:aw cuw:cw
 sxm:sx tca:tc vir:vi asm:as gum:gu mnp:mp vgb:vg cym:ky bmu:bm fro:fo gib:gi imn:im
+ala:ax aia:ai ata:aq atf:tf blm:bl bes:bq bvt:bv cck:cc cok:ck cxr:cx esh:eh flk:fk
+guf:gf ggy:gg glp:gp sgs:gs hmd:hm iot:io jey:je maf:mf mtq:mq msr:ms nfk:nf niu:nu
+spm:pm pcn:pn reu:re shn:sh sjm:sj tkl:tk umi:um vat:va wlf:wf myt:yt
 """
 ISO3_TO_ISO2: dict[str, str] = dict(pair.split(":") for pair in _ISO3_TO_2_TEXT.split())
 ISO2_TO_ISO3: dict[str, str] = {v: k for k, v in ISO3_TO_ISO2.items()}

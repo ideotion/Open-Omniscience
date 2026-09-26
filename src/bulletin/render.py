@@ -604,7 +604,9 @@ def _section_groups(section: dict, T: Translator) -> list[tuple[str, list[tuple[
 
     changes = []
     for r in section.get("law_examples") or []:
-        bits = [str(r.get("jurisdiction") or "—")]
+        # The jurisdiction in the alphabet every other surface uses (`FRA`, `GBR` for
+        # the law `uk`, `EUU`), not the stored lowercase value (L6).
+        bits = [country_display_code(r.get("jurisdiction")) or "—"]
         if r.get("observed_at"):
             bits.append(T.f("observed {when}", when=str(r["observed_at"])[:10]))
         delta = r.get("delta_bytes")
@@ -753,8 +755,11 @@ def _article_lines(row: dict, T: Translator) -> list[str]:
         stated.append(str(asserted["published_at"])[:16])
     if asserted.get("author"):
         stated.append(T.f("by {author}", author=asserted["author"]))
+    # Q306's display step: the language CODE a reader sees is 639-2/T here as on every
+    # screen (`fra`, not the stored `fr`); a value with no 639-2/3 form prints as stored.
     if asserted.get("language"):
-        stated.append(T.f("lang {code}", code=asserted["language"]))
+        lang = asserted["language"]
+        stated.append(T.f("lang {code}", code=language_display_code(lang) or lang))
 
     read = []
     if deduced.get("word_count"):
@@ -762,7 +767,8 @@ def _article_lines(row: dict, T: Translator) -> list[str]:
     if deduced.get("detected_language") and deduced.get("detected_language") != asserted.get(
         "language"
     ):
-        read.append(T.f("detected {code}", code=deduced["detected_language"]))
+        detected = deduced["detected_language"]
+        read.append(T.f("detected {code}", code=language_display_code(detected) or detected))
     sent = deduced.get("sentiment") or {}
     if sent.get("label"):
         read.append(

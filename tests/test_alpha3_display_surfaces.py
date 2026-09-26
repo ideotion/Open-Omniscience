@@ -61,6 +61,7 @@ _HELPERS = (
     "ooLangBase",
     "ooLangName",
     "ooRegionName",
+    "ooAreaCell",
 )
 
 #: A country- or language-shaped field read off a payload object.
@@ -87,16 +88,31 @@ _SURFACES: tuple[tuple[str, str, str], ...] = (
     ("app-gov-law.js", "ooCountryCompare", "the roster ordering"),
     (
         "app-gov-law.js",
-        "`${ooCountryCode(iso)} · ${ooCountryName(iso, iso)}",
-        "the choropleth value label (a map tooltip IS the hover)",
+        "`${ooCountryCode(iso)} · ${ooCountryTitle(iso) || iso}",
+        "the choropleth value label (a map tooltip IS the hover, so it carries Q303's disclosure)",
     ),
     # --- The map ------------------------------------------------------------ #
     ("app-map.js", "ooCountryCell(s.country)", "a signal's country in the detail list"),
     ("app-map.js", "ooCountryCell(a.country)", "the stats table row"),
-    ("app-map.js", "ooCountryCell(iso2By[c.area] || c.area)", "the per-area figures table"),
-    ("app-map.js", "ooCountryCode(iso) || ooRegionName(iso,", "the stat-map ranked rows"),
+    (
+        "app-map.js",
+        "ooAreaCell(iso2By[c.area] || c.area",
+        "the stat-map ranked rows (an aggregate disclosed as one, Q303)",
+    ),
+    ("app-map.js", "ooCountryCell(iso) || esc(ooRegionName(iso,", "the coverage detail panel heading"),
+    ("app-map.js", "a.code ? ooCountryCell(a.code)", "the Map tab's per-country keyword table"),
+    (
+        "app-map.js",
+        'ooCountryCode(region), name = ooCountryName(region, "")',
+        "the worldview picker (Q308: an <option> carries Name (CODE))",
+    ),
+    ("app-map.js", "ooCountryCompare(_OO_POV_REGION[a] || a", "the worldview picker's order"),
     # --- Sources ------------------------------------------------------------ #
-    ("app-sources.js", "ooCountryCell(c.code)", "the country facet chips"),
+    ("app-sources.js", 'ooCountryCell(none ? "" : c.code', "the coverage table's country cell"),
+    ("app-sources.js", 'ooCountryCell(tc.code, {empty: "—"})', "the regional balance's top country"),
+    ("app-sources.js", "ooLangCell(k)} (${n})", "the unanalysable-languages line"),
+    ("app-sources.js", 'id === "src-msel-country" ? ooCountryCode(v[0])', "a closed country filter's one value"),
+    ("app-sources.js", 'id === "src-msel-language" ? ooLangCode(v[0])', "a closed language filter's one value"),
     ("app-sources.js", "s.country ? ooCountryCell(s.country)", "the sources table row"),
     ("app-sources.js", "s.language ? ooLangCell(s.language)", "the sources table language"),
     (
@@ -120,6 +136,13 @@ _SURFACES: tuple[tuple[str, str, str], ...] = (
     # --- Home --------------------------------------------------------------- #
     ("app-home.js", "ooCountryCell(tr.country)", "the transparency card dimension"),
     ("app-home.js", "ooLangCell(lang)", "a briefing card's language"),
+    ("app-home.js", "const tip = ooCountryTitle(j)", "a law-change card title's jurisdiction hover"),
+    # --- Markets ------------------------------------------------------------ #
+    (
+        "app-markets.js",
+        "ooAreaCell(r.ref_area, r.area_kind, r.area_name)",
+        "the minerals supply table's area (WLD disclosed as an aggregate)",
+    ),
     # --- The corpus window -------------------------------------------------- #
     ("app-corpus.js", "ooCountryCell(meta.country)", "a source's country fact"),
     ("app-corpus.js", "ooLangCell(meta.language)", "a source's language fact"),
@@ -137,6 +160,9 @@ _SURFACES: tuple[tuple[str, str, str], ...] = (
         "the per-country chart axis label (the SVG <title> beside it carries the name)",
     ),
     ("app-insights.js", "ooLangCell(k.language)", "a keyword's language"),
+    ("app-insights.js", "(r.languages || []).map((l) => ooLangCell(l))", "a concept group chip's languages"),
+    ("app-insights.js", 'lg === "?" ? esc(t("unknown")) : ooLangCell(lg)', "a concept's by-language line"),
+    ("app-insights.js", "(d.languages || []).map((l) => ooLangCell(l))", "a concept's languages line"),
     # --- Diagnostics -------------------------------------------------------- #
     ("app-diagnostics.js", "ooLangCell(q.language)", "the gold-set query header"),
     ("app-diagnostics.js", "ooLangCell(rf.language)", "a write-gate refusal line"),
@@ -162,6 +188,17 @@ _PY_SURFACES: tuple[tuple[str, str, str], ...] = (
     ("src/bulletin/render.py", "language_display_code(r['language'])", "the masthead language split"),
     ("src/bulletin/render.py", 'country_display_code(row.get("country"))', "the by-country heading"),
     ("src/bulletin/coverage.py", "country_display_code(code)", "the coverage label's fallback"),
+    ("src/bulletin/render.py", 'country_display_code(r.get("jurisdiction"))', "a law change's jurisdiction"),
+    ("src/bulletin/render.py", "language_display_code(lang)", "an article's stated language"),
+    ("src/bulletin/render.py", "language_display_code(detected)", "an article's detected language"),
+    ("src/briefing/producers.py", "country_display_code(doc.jurisdiction)", "the law-change card title"),
+    (
+        "src/stats/aggregate.py",
+        "country_display_code(c) or c for c in missing_value",
+        "an aggregate refusal's members",
+    ),
+    ("src/stats/store.py", '**area_classification(f["ref_area"])', "a minerals row's area kind"),
+    ("src/stats/store.py", "cell.update(area_classification(r.ref_area))", "a stat-map cell's area kind"),
     ("src/api/source_io.py", "country_payload_iso3(country)", "the source export's country_iso3"),
     ("src/api/law.py", "country_payload_iso3(doc.country)", "a law row's country_iso3"),
     ("src/api/law.py", "country_payload_iso3(doc.jurisdiction)", "a law row's jurisdiction_iso3"),
