@@ -12428,3 +12428,16 @@ and a test swaps the segmenter for a different one between insert and delete and
 index's own vocabulary is empty afterwards. **Before re-computing anything at delete or undo
 time, ask who owns the function: re-run your own code only if its meaning is versioned; keep the
 output of anyone else's.**
+
+### AN EMPTY KERNEL LOG AFTER A MEMORY DEATH IS NOT A CLEAN BILL, AND ONLY A PARENT SEES A SIGKILL (2026-09-26, the daily field crashes)
+
+Two instances died within a minute of running out of memory and the boot's kernel-log read found
+nothing, because the likeliest killers never write there: systemd-oomd, earlyoom and nohang log to
+the ordinary journal, and systemd-oomd names the cgroup it killed rather than a pid. A SIGKILLed
+process runs no code, so nothing inside it can record the death; its parent's exit status is the
+only account, and the launcher window was closing with the server and taking that status with it.
+Then the check on the fix: uvicorn re-raises the stop signal after a graceful shutdown, so an
+ordinary in-app Stop reaches the parent as 143, and a launcher that alarms on every non-zero status
+calls every Stop a crash. **Before concluding from a log that says nothing, ask which killers write
+somewhere else, and keep the one witness that cannot be recreated: the parent's exit status.
+Measure what a normal stop looks like from outside before treating a status as abnormal.**

@@ -9929,3 +9929,27 @@ suite also caught a test's raw `sqlite3` writes to `articles`, the disclosed kno
 
 **STILL OWED.** Row N's operator steps: the re-index on the real corpus with its report, the
 agreement comparison, Q515's cost, and the maintainer's click-through.
+
+## 2026-09-26 — The next crash says how it ended (PR #1190)
+
+Two field instances on 4 GB machines died within a minute of running out of memory, and the next
+boot's kernel-log read found no line about either death. The launcher now records the server's exit
+status and signal in `diagnostics/launcher_exits.jsonl` and holds its window open; the app reads the
+journal lines of systemd-oomd, earlyoom, nohang and systemd-coredump naming its previous process or
+cgroup, keeps a faulthandler crash trace in `diagnostics/crash_trace.log`, reads the kernel log for
+the boot the session ran in, and records what the memory was made of at each RSS peak. The
+session-forensics report says in one line how the session ended, from the witnesses that answered.
+
+**THE LESSON (copied to `LESSONS.md`).** An empty kernel log after a memory death is not a clean
+bill: the user-space killers (systemd-oomd, earlyoom, nohang) log only to the ordinary journal, and
+systemd-oomd names a cgroup, not a pid. And only a parent can witness a SIGKILL, so the launcher's
+exit status was the one record of these deaths, and it was being thrown away with the window.
+
+**MEASURED ON THE WAY.** uvicorn 0.49 re-raises the stop signal after its graceful shutdown, so the
+in-app Stop button (SIGTERM to self) reaches the parent as 143; the first draft of this change would
+have announced every ordinary Stop as a crash. `journalctl -b` rejects the dashed boot id /proc
+prints and accepts the same id as 32 hex digits (systemd 255). A pid repeats across reboots for an
+app started the same way at every login, so records are matched on pid and machine boot.
+
+**STILL OWED.** The memory growth itself (next PR), and a real field crash read through the new
+witnesses.
