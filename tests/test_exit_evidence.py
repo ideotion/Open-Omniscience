@@ -23,6 +23,7 @@ import signal
 import subprocess
 import sys
 import textwrap
+import threading
 import time
 from pathlib import Path
 
@@ -678,20 +679,253 @@ def test_the_export_says_what_the_peak_was_made_of():
     assert "C heap not read" in txt, "an unread heap is named, never shown as zero"
 
 
+def _parked_in_app_code(ev):
+    """A thread parked inside a function whose file is under the app's own src/."""
+    ns: dict = {}
+    fake = session_hwm._APP_SRC + "/fake/parked.py"
+    exec(compile("def parked(ev):\n    ev.wait(30)\n", fake, "exec"), ns)
+    t = threading.Thread(target=ns["parked"], args=(ev,), name="oo-fake-worker", daemon=True)
+    t.start()
+    return t
+
+
+def test_every_thread_is_named_with_the_app_code_it_is_in():
+    """MUTATION TARGET. A faulthandler dump prints thread ids, not names, and the
+    innermost frame of a working thread is usually a library: the snapshot must say
+    WHICH thread and which of the app's own functions it was running."""
+    ev = threading.Event()
+    t = _parked_in_app_code(ev)
+    try:
+        time.sleep(0.05)
+        snap = session_hwm.thread_snapshot()
+    finally:
+        ev.set()
+        t.join(5)
+    mine = next(e for e in snap if e["name"] == "oo-fake-worker")
+    assert mine["stack"][0].startswith("threading.py:") and mine["stack"][0].endswith(" wait")
+    assert "src/fake/parked.py:2 parked" in mine["stack"]
+    assert mine["tid"] == t.native_id, "the kernel's id, so CPU can be diffed across snapshots"
+    assert any(e.get("sampler") for e in snap), "the sampling thread marks itself"
+
+
+def test_cpu_is_read_for_the_working_threads_only(monkeypatch):
+    """Every /proc read releases the GIL, and under the burst being recorded each one
+    waits a switch interval: reading all forty-odd threads measured 0.5-0.7 s. The
+    waiting threads are marked instead, and only the working ones are read."""
+    ev = threading.Event()
+    parked = _parked_in_app_code(ev)
+    ns: dict = {}
+    spin_src = "def spin(ev):\n    while not ev.is_set():\n        sum(range(2000))\n"
+    exec(compile(spin_src, session_hwm._APP_SRC + "/fake/spin.py", "exec"), ns)
+    busy = threading.Thread(target=ns["spin"], args=(ev,), name="oo-fake-busy", daemon=True)
+    busy.start()
+    asked: list[int] = []
+    real = session_hwm._thread_cpu
+    monkeypatch.setattr(session_hwm, "_thread_cpu", lambda tids: asked.extend(tids) or real(tids))
+    try:
+        time.sleep(0.2)
+        snap = session_hwm.thread_snapshot()
+    finally:
+        ev.set()
+        parked.join(5)
+        busy.join(5)
+    by_name = {e["name"]: e for e in snap}
+    assert by_name["oo-fake-worker"].get("waiting") is True
+    assert parked.native_id not in asked and "cpu_s" not in by_name["oo-fake-worker"]
+    assert busy.native_id in asked and by_name["oo-fake-busy"]["stack"][0].startswith("src/fake/spin.py")
+    if sys.platform.startswith("linux"):
+        assert by_name["oo-fake-busy"]["cpu_s"] > 0
+
+
+@pytest.mark.skipif(not sys.platform.startswith("linux"), reason="/proc is Linux's")
+def test_a_threads_cpu_is_read_from_the_right_proc_fields():
+    t0 = time.thread_time()
+    while time.thread_time() - t0 < 0.3:
+        sum(range(10000))
+    got = session_hwm._thread_cpu([threading.get_native_id()])[threading.get_native_id()]
+    assert abs(got - time.thread_time()) < 0.2, (got, time.thread_time())
+    assert session_hwm._thread_cpu([]) == {} and session_hwm._thread_cpu([2**30]) == {}
+
+
+def test_only_the_apps_own_directory_is_app_code():
+    """A ``/src/`` elsewhere in a path (a Python built under /usr/local/src) is not the
+    app, or every stdlib frame would read as the app's own code."""
+    assert session_hwm._short_path("/usr/local/src/Python-3.13/Lib/threading.py") == "threading.py"
+    assert session_hwm._short_path(session_hwm._APP_SRC + "/api/main.py") == "src/api/main.py"
+    assert session_hwm._short_path(
+        "/home/u/.venv/lib/python3.13/site-packages/sqlalchemy/engine/base.py"
+    ) == "sqlalchemy/engine/base.py"
+
+
+_SHORT = {"rss_mb": 2699.0, "avail_mb": 586.4, "total_mb": 3924.7, "swap_used_mb": 1024.0}
+
+
+def test_memory_running_short_records_what_every_thread_was_doing(hwm, monkeypatch, dd):
+    """MUTATION TARGET. The field death was a 45 s burst: the snapshot has to be taken
+    below the line and be on disk AT ONCE (the throttle could outlive the process), in
+    its own file so the marks' routine rewrite stays small, and it has to reach the
+    next boot's report."""
+    monkeypatch.setattr(session_hwm, "_readings", lambda: dict(_SHORT))
+    monkeypatch.setattr(session_hwm, "_heap_walk_is_safe", lambda r: False)
+    session_hwm.capture_previous()
+    session_hwm.observe("collecting")
+    assert not (dd / "session_pressure.json").exists(), (
+        "the collector's monitor feeds the memory guard: it never pays for a snapshot"
+    )
+    ev = threading.Event()
+    t = _parked_in_app_code(ev)
+    try:
+        time.sleep(0.05)
+        session_hwm.observe(may_snapshot_threads=True)
+    finally:
+        ev.set()
+        t.join(5)
+    marks = json.loads((dd / "session_hwm.json").read_text(encoding="utf-8"))
+    doc = json.loads((dd / "session_pressure.json").read_text(encoding="utf-8"))
+    assert "pressure" not in marks and marks["pressure_taken"] == 1
+    assert (doc["pid"], doc["started_at"]) == (marks["pid"], marks["started_at"])
+    [snap] = doc["snapshots"]
+    assert snap["avail_mb"] == 586.4 and snap["line_mb"] == round(3924.7 * 0.15, 1)
+    assert snap["rss_mb"] == 2699.0 and "heap_in_use_mb" not in snap["memory"]
+    assert any(e["name"] == "oo-fake-worker" for e in snap["threads"])
+    # the next boot reads it as the previous session's, and starts clean
+    session_hwm.reset_for_tests()
+    prev = session_hwm.capture_previous()
+    assert prev is not None and prev["pressure"] == doc["snapshots"] and prev["pressure_taken"] == 1
+    assert not (dd / "session_pressure.json").exists()
+    txt = forensics.render_text({"previous_session": {"previous_session_peaks": dict(
+        prev, available=True)}})
+    assert "when memory ran short (1 snapshot(s) of every thread, taken below 588.7 MB" in txt
+    assert "oo-fake-worker" not in txt, "a thread parked in a wait is counted, not listed"
+    assert "more thread(s) waiting or not listed" in txt
+
+
+def test_a_slide_is_recorded_step_by_step_and_a_plateau_once(hwm):
+    """MUTATION TARGET. One snapshot at the crossing, one per new low a step further
+    down, none while memory sits on a plateau, and a new episode only once memory has
+    come back above the line by the re-arm margin."""
+    total = 4000.0
+    line = session_hwm._pressure_line_mb(total)  # 600 MB
+    step = line * session_hwm._PRESSURE_STEP_SHARE  # 75 MB
+    gap = session_hwm._PRESSURE_MIN_INTERVAL_S
+    due = session_hwm._pressure_due
+
+    def r(avail):
+        return {"avail_mb": avail, "total_mb": total}
+
+    assert not due(r(line + 1), 1000.0), "above the line"
+    assert due(r(line - 10), 1000.0), "the crossing"
+    assert not due(r(line - 10 - step + 1), 1000.0 + gap), "less than a step lower"
+    assert not due(r(line - 10), 1000.0 + 10 * gap), "a plateau, however long"
+    assert not due(r(line - 10 - step), 1000.0 + gap / 2), "a step lower, but too soon"
+    assert due(r(line - 10 - step), 1000.0 + gap), "a step lower"
+    assert not due(r(line + 1), 2000.0) and not due(r(line - 10), 2000.0 + gap), (
+        "back above the line but inside the margin is the same episode"
+    )
+    assert not due(r(line * session_hwm._PRESSURE_REARM_SHARE + 1), 3000.0)
+    assert due(r(line - 10), 3000.0 + gap), "a new episode after the re-arm"
+    assert not due({"avail_mb": 10.0}, 4000.0), "unknown RAM takes no snapshot"
+
+
+def test_the_newest_snapshots_are_kept_and_all_are_counted(hwm, monkeypatch, dd):
+    avail = [600.0]
+    monkeypatch.setattr(session_hwm, "_readings",
+                        lambda: {"avail_mb": avail[0], "total_mb": 4000.0, "rss_mb": 3000.0})
+    monkeypatch.setattr(session_hwm, "thread_snapshot", lambda: [])
+    monkeypatch.setattr(session_hwm, "_PRESSURE_STEP_SHARE", 0.05)  # a 30 MB step
+    session_hwm.capture_previous()
+    keep = session_hwm._PRESSURE_KEEP
+    for _ in range(keep + 3):
+        session_hwm._LAST_PRESSURE = 0.0
+        avail[0] -= 40.0
+        session_hwm.observe(may_snapshot_threads=True)
+    doc = json.loads((dd / "session_pressure.json").read_text(encoding="utf-8"))
+    assert doc["taken"] == keep + 3 and len(doc["snapshots"]) == keep
+    assert doc["snapshots"][-1]["avail_mb"] == 600.0 - 40.0 * (keep + 3), "the last one is kept"
+    assert len(session_hwm.current()["pressure"]) == keep
+    txt = forensics.render_text({"previous_session": {"previous_session_peaks": {
+        "available": True, "rss_max_mb": 3000.0, "pressure": doc["snapshots"],
+        "pressure_taken": doc["taken"]}}})
+    assert f"{keep} snapshot(s) of every thread; {keep + 3} taken, the newest {keep} kept" in txt
+
+
+def test_a_pressure_file_from_another_session_is_never_this_ones(hwm, dd):
+    dd.mkdir(parents=True, exist_ok=True)
+    (dd / "session_hwm.json").write_text(json.dumps(
+        {"pid": 4242, "started_at": "2026-09-26T15:00:00+00:00", "rss_max_mb": 900.0}))
+    (dd / "session_pressure.json").write_text(json.dumps(
+        {"pid": 4242, "started_at": "2026-09-25T09:00:00+00:00", "taken": 2,
+         "snapshots": [{"at": "2026-09-25T09:10:00+00:00", "avail_mb": 100.0}]}))
+    prev = session_hwm.capture_previous()
+    assert prev is not None and "pressure" not in prev
+
+
+def test_the_busiest_thread_is_the_one_that_worked_between_snapshots():
+    """A thread's lifetime CPU says what it did since boot; the order must follow the
+    CPU spent while the memory went, and a missing file must be named."""
+    def snap(at, avail, threads):
+        return {"at": at, "avail_mb": avail, "line_mb": 588.7, "memory": {}, "threads": threads}
+
+    old = {"name": "oo-old-busy", "tid": 1, "stack": ["src/a.py:1 f"]}
+    new = {"name": "oo-burst", "tid": 2, "stack": ["src/b.py:2 g"]}
+    snaps = [
+        snap("2026-09-26T15:52:40+00:00", 580.0, [dict(old, cpu_s=900.0), dict(new, cpu_s=5.0)]),
+        snap("2026-09-26T15:53:00+00:00", 150.0, [dict(old, cpu_s=901.0), dict(new, cpu_s=20.0)]),
+    ]
+    lines = forensics._render_pressure(snaps, 2)
+    second = lines[lines.index(next(x for x in lines if "15:53:00" in x)):]
+    assert "oo-burst" in second[1] and "+15.0 s in the 20 s before" in second[1]
+    assert "oo-old-busy" in second[2] and "+1.0 s in the 20 s before" in second[2]
+    assert forensics._render_pressure([], 3) == [
+        "  - when memory ran short: 3 snapshot(s) of every thread were taken, but their "
+        "file (session_pressure.json) was not found"
+    ]
+
+
+def test_memory_is_read_between_the_liveness_ticks(monkeypatch):
+    """The field burst went from 1 GB available to none in 45 s; a once-a-minute read
+    could miss it entirely. The liveness thread reads memory every MEMORY_WATCH_S and
+    still ticks the ledger only once per TICK_S."""
+    from src.monitoring import session_history as sh
+
+    ticks, reads = [], []
+    monkeypatch.setattr(sh, "TICK_S", 0.3)
+    monkeypatch.setattr(sh, "MEMORY_WATCH_S", 0.02)
+    monkeypatch.setattr(sh, "tick_once", lambda: ticks.append(1))
+    monkeypatch.setattr(session_hwm, "observe", lambda *a, **k: reads.append(k))
+    sh._STOP.clear()
+    t = threading.Thread(target=sh._loop, daemon=True)
+    t.start()
+    try:
+        time.sleep(0.45)
+    finally:
+        sh._STOP.set()
+        t.join(5)
+        sh._STOP.clear()
+    assert 1 <= len(ticks) <= 2
+    assert len(reads) >= 4 * len(ticks), (ticks, reads)
+    assert all(k == {"may_snapshot_threads": True} for k in reads), "the one snapshotting thread"
+
+
+def test_no_snapshot_above_the_line(hwm, monkeypatch, dd):
+    monkeypatch.setattr(session_hwm, "_readings",
+                        lambda: {"rss_mb": 900.0, "avail_mb": 2000.0, "total_mb": 3924.7})
+    monkeypatch.setattr(session_hwm, "_heap_walk_is_safe", lambda r: True)
+    session_hwm.observe(may_snapshot_threads=True)
+    assert "pressure" not in session_hwm.current()
+    assert not (dd / "session_pressure.json").exists()
+    # a large machine's line is capped: 1 GB, never 15 % of 64 GB
+    assert session_hwm._pressure_line_mb(65536.0) == 1024.0
+
+
 def test_the_heap_walk_is_skipped_when_memory_is_already_short(hwm, monkeypatch):
     """glibc's heap walk touches free chunks all over the heap; on a machine that is
     swapping it would page them back in at the worst moment."""
     calls = []
     monkeypatch.setattr(session_hwm, "_glibc_heap", lambda: calls.append(1) or {"heap_in_use_mb": 1.0})
-
-    class _VM:
-        total = 4000 * 1024 * 1024
-
-    import psutil
-
-    monkeypatch.setattr(psutil, "virtual_memory", lambda: _VM())
-    assert session_hwm._heap_walk_is_safe({"avail_mb": 200.0}) is False
-    assert session_hwm._heap_walk_is_safe({"avail_mb": 1000.0}) is True
+    assert session_hwm._heap_walk_is_safe({"avail_mb": 200.0, "total_mb": 4000.0}) is False
+    assert session_hwm._heap_walk_is_safe({"avail_mb": 1000.0, "total_mb": 4000.0}) is True
+    assert session_hwm._heap_walk_is_safe({"avail_mb": 1000.0}) is False, "unknown RAM is not safe"
     assert session_hwm._heap_walk_is_safe({}) is False, "unknown availability is not safe"
     out = session_hwm.composition(walk_heap=False)
     assert calls == [] and "heap_in_use_mb" not in out

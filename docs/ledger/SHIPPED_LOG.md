@@ -9951,5 +9951,15 @@ have announced every ordinary Stop as a crash. `journalctl -b` rejects the dashe
 prints and accepts the same id as 32 hex digits (systemd 255). A pid repeats across reboots for an
 app started the same way at every login, so records are matched on pid and machine boot.
 
+**AND WHO WAS RUNNING.** One instance's fatal stretch was a burst, +15 M Python blocks and +930 MB
+in 45 s, and nothing recorded which code ran it. Below 15% of RAM available (at most 1 GB), the
+liveness thread now snapshots every thread (name, app frames, CPU for the working ones) at the
+crossing and at each new low an eighth of the line further down, keeping the newest eight in
+`session_pressure.json`, written through at once. The report lists the working threads by the CPU
+they used since the previous snapshot. MEASURED: with one thread holding the GIL, psutil's scan of
+~40 threads took 0.5-0.7 s, because every `/proc` read releases the GIL and waits a switch interval
+to get it back; reading only the working threads and keeping the snapshot off the memory guard's
+monitor is what makes it affordable at that moment (copied to `LESSONS.md`).
+
 **STILL OWED.** The memory growth itself (next PR), and a real field crash read through the new
 witnesses.

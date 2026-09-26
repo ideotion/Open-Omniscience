@@ -637,7 +637,9 @@ def _previous_peaks() -> dict[str, Any] | None:
         "peak RSS / minimum available memory / peak swap-used sampled by the previous "
         "session itself and snapshotted at this boot, with what the memory was made of "
         "at the RSS peak (at_peak: /proc/self/status, glibc mallinfo2, CPython's block "
-        "count). A field that could not be measured is ABSENT rather than zero."
+        "count) and, when available memory ran short, what every thread was doing "
+        "(pressure: name, CPU time and stack, the newest snapshots kept). A field that "
+        "could not be measured is ABSENT rather than zero."
     )
     return out
 
@@ -1015,6 +1017,89 @@ def _render_at_peak(comp: Any) -> list[str]:
     return [f"  - made of, at {comp.get('rss_mb')} MB ({comp.get('at')}): {', '.join(parts)}"]
 
 
+# The threads that were WORKING when memory ran short are listed; the waiting ones (the
+# snapshot marks them) are counted, so the few are not buried under forty idle ones.
+_PRESSURE_THREADS_SHOWN = 8
+
+
+def _snap_seconds(at: Any) -> float | None:
+    try:
+        return datetime.fromisoformat(str(at)).timestamp()
+    except ValueError:
+        return None
+
+
+def _render_pressure(snaps: Any, taken: Any = None) -> list[str]:
+    """Each snapshot's readings, then the threads that were WORKING, busiest first.
+
+    Busiest means CPU spent since the previous snapshot (a thread the previous one did
+    not see counts all of its CPU), because a thread's lifetime total says what it did
+    since boot, not what it was doing while the memory went."""
+    snaps = [x for x in snaps if isinstance(x, dict)] if isinstance(snaps, list) else []
+    if not snaps:
+        if isinstance(taken, int) and taken > 0:
+            return [
+                f"  - when memory ran short: {taken} snapshot(s) of every thread were "
+                "taken, but their file (session_pressure.json) was not found"
+            ]
+        return []
+    count = f"{len(snaps)} snapshot(s) of every thread"
+    if isinstance(taken, int) and taken > len(snaps):
+        count += f"; {taken} taken, the newest {len(snaps)} kept"
+    out = [
+        f"  - when memory ran short ({count}, taken below {snaps[0].get('line_mb')} MB "
+        "available; every thread is in session-forensics.json):"
+    ]
+    before: dict[Any, float] = {}
+    before_at: float | None = None
+    for snap in snaps:
+        mem = snap.get("memory") or {}
+        bits = [f"{snap.get('avail_mb')} MB available"]
+        if snap.get("rss_mb") is not None:
+            bits.append(f"RSS {snap['rss_mb']} MB")
+        if mem.get("swapped_out_mb") is not None:
+            bits.append(f"swapped out {mem['swapped_out_mb']} MB")
+        if mem.get("py_alloc_blocks") is not None:
+            bits.append(f"{mem['py_alloc_blocks']:,} Python blocks")
+        out.append(f"    - {snap.get('at')}: {', '.join(bits)}")
+        now_at = _snap_seconds(snap.get("at"))
+        span = (
+            round(now_at - before_at)
+            if now_at is not None and before_at is not None and now_at >= before_at
+            else None
+        )
+        threads = [t for t in snap.get("threads") or [] if isinstance(t, dict)]
+        working = []
+        for t in threads:
+            if t.get("sampler") or t.get("waiting"):
+                continue
+            cpu = t.get("cpu_s")
+            recent = None
+            if isinstance(cpu, int | float):
+                prior = before.get(t.get("tid")) if span is not None else None
+                recent = round(cpu - prior, 1) if prior is not None else cpu
+            working.append((recent, t))
+        working.sort(key=lambda rt: -(rt[0] or 0.0))
+        for recent, t in working[:_PRESSURE_THREADS_SHOWN]:
+            cpu_bits = []
+            if t.get("cpu_s") is not None:
+                cpu_bits.append(f"cpu {t['cpu_s']} s")
+                if span is not None and recent is not None and t.get("tid") in before:
+                    cpu_bits.append(f"+{recent} s in the {span} s before")
+            cpu = f" ({', '.join(cpu_bits)})" if cpu_bits else ""
+            out.append(f"      - {t.get('name')}{cpu}: {' <- '.join(t.get('stack') or [])}")
+        rest = len(threads) - min(len(working), _PRESSURE_THREADS_SHOWN)
+        if rest > 0:
+            out.append(f"      - {rest} more thread(s) waiting or not listed")
+        before = {
+            t.get("tid"): float(t["cpu_s"])
+            for t in threads
+            if t.get("tid") is not None and isinstance(t.get("cpu_s"), int | float)
+        }
+        before_at = now_at
+    return out
+
+
 def _render_exit_evidence(ev: Any) -> list[str]:
     """The witnesses outside the process, each on its own line and each absence named."""
     if not isinstance(ev, dict) or not ev:
@@ -1136,6 +1221,7 @@ def render_text(d: dict[str, Any] | None = None) -> str:
             if peaks.get("last_ts"):
                 lines.append(f"  - last recorded at: {peaks['last_ts']}")
             lines += _render_at_peak(peaks.get("at_peak"))
+            lines += _render_pressure(peaks.get("pressure"), peaks.get("pressure_taken"))
     sample = prev.get("last_collector_sample") or {}
     if sample:
         rss = sample.get("rss_mb")

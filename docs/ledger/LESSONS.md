@@ -12441,3 +12441,13 @@ ordinary in-app Stop reaches the parent as 143, and a launcher that alarms on ev
 calls every Stop a crash. **Before concluding from a log that says nothing, ask which killers write
 somewhere else, and keep the one witness that cannot be recreated: the parent's exit status.
 Measure what a normal stop looks like from outside before treating a status as abnormal.**
+
+### AN INSTRUMENT THAT READS FILES DURING A PYTHON BURST PAYS A SWITCH INTERVAL PER READ (2026-09-26, the thread snapshot)
+
+The snapshot meant to name the code behind a +930 MB burst first read every thread's CPU time
+through psutil and measured 0.5-0.7 s with one busy thread in the process, against a few ms on an
+idle one. Each `/proc` read releases the GIL, and a thread that holds it (the very burst being
+recorded) keeps it for a full switch interval (5 ms) before the reader gets it back; forty-odd
+threads times three syscalls adds up. **An instrument that must run while Python code is hot should
+do its file reads only for what it needs, list the frames before it reads anything, and run on a
+thread whose timing nothing else depends on -- never on the monitor that feeds the memory guard.**

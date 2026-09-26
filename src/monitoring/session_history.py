@@ -592,26 +592,35 @@ def tick_once(now_wall: float | None = None, now_mono: float | None = None,
     return suspend
 
 
+#: How often this thread also reads memory (2026-09-26). The high-water marks were fed
+#: only by the collector's monitor, so a peak reached while collection was paused
+#: (Insights after a boot, the memory guard's own pause) was never seen -- and the
+#: field burst that killed a 4 GB machine took 45 s from 1 GB available to none, which
+#: a once-a-minute reading could miss entirely. A read is three /proc files. This is
+#: also the one thread that snapshots every thread when memory runs short.
+MEMORY_WATCH_S = 5.0
+
+
 def _loop() -> None:
-    while not _STOP.wait(TICK_S):
-        try:
-            tick_once()
-        except Exception:  # noqa: BLE001 - the tick must never kill its thread
-            _LOG.debug("session ledger: tick failed", exc_info=True)
-        # The memory high-water marks were fed only by the collector, so a peak
-        # reached while collection was paused (Insights after a boot, the memory
-        # guard's own pause) was never seen. Once a minute closes that gap
-        # (2026-09-26); observe() is best-effort and throttled on its own.
+    next_tick = time.monotonic() + TICK_S
+    while not _STOP.wait(max(0.0, min(MEMORY_WATCH_S, next_tick - time.monotonic()))):
+        if time.monotonic() >= next_tick:
+            next_tick = time.monotonic() + TICK_S
+            try:
+                tick_once()
+            except Exception:  # noqa: BLE001 - the tick must never kill its thread
+                _LOG.debug("session ledger: tick failed", exc_info=True)
         try:
             from src.monitoring.session_hwm import observe
 
-            observe()
-        except Exception:  # noqa: BLE001
+            observe(may_snapshot_threads=True)
+        except Exception:  # noqa: BLE001 - best-effort and throttled on its own
             _LOG.debug("session ledger: memory observe failed", exc_info=True)
 
 
 def start_liveness() -> bool:
-    """Start the once-a-minute tick (idempotent; one daemon thread per process)."""
+    """Start the once-a-minute tick, which also reads memory every ``MEMORY_WATCH_S``
+    (idempotent; one daemon thread per process)."""
     global _THREAD
     with _LOCK:
         if _THREAD is not None and _THREAD.is_alive():
