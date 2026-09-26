@@ -1904,7 +1904,7 @@
   "Loading what's available…": "Chargement de ce qui est disponible…",
   "dates": "dates",
   "keywords": "mots-clés",
-  "LLM models": "modèles LLM",
+  "LLM models": "Modèles LLM",
   "Offline maps": "Cartes hors ligne",
   "What do you want to back up?": "Que voulez-vous sauvegarder ?",
   "Could not load the inventory — see console": "Impossible de charger l’inventaire — voir la console",
@@ -4691,5 +4691,13 @@
   "Interrupted": "Interrompu",
   "Cancelled": "Annulé",
   "Analytics are complete once the re-index (stage 4) finishes.": "Les analyses seront complètes une fois la réindexation (étape 4) terminée.",
-  "An import is running — verify the backup once it has finished.": "Une importation est en cours — vérifiez la sauvegarde une fois celle-ci terminée."
+  "An import is running — verify the backup once it has finished.": "Une importation est en cours — vérifiez la sauvegarde une fois celle-ci terminée.",
+  "a lane is a live encrypted database; its backup format is not settled yet": "une voie est une base de données chiffrée vivante ; son format de sauvegarde n'est pas encore arrêté",
+  "the large-data copy records no timing of its own": "la copie des données volumineuses n'enregistre pas sa propre durée",
+  "no large-data files were copied": "aucun fichier volumineux n'a été copié",
+  "The corpus and every member of the artifact are encrypted. Copied large-data files (dumps, maps, model weights) are public, re-downloadable blobs and are NOT encrypted — that is what makes a 100 GB export feasible, and it is stated rather than implied.": "Le corpus et chaque membre de l'artefact sont chiffrés. Les fichiers volumineux copiés (dumps, cartes, poids de modèles) sont des fichiers publics et retéléchargeables, et ne sont PAS chiffrés — c'est ce qui rend possible un export de 100 Go, et c'est dit plutôt que sous-entendu.",
+  "no files": "aucun fichier",
+  "corpus database not separately encrypted (the backup's volumes are)": "base du corpus non chiffrée séparément (les volumes de la sauvegarde le sont)",
+  "Verify result not known here — the app no longer holds what this export measured (it has run another job or restarted since). The volume figures below are read off the drive.": "Résultat de vérification inconnu ici — l'application ne conserve plus ce que cet export a mesuré (elle a exécuté une autre tâche ou redémarré depuis). Les chiffres des volumes ci-dessous sont lus sur le disque.",
+  "{prefix}: {text}": "{prefix} : {text}"
 }

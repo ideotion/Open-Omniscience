@@ -48,6 +48,22 @@
       _uxShowLastCompletedExportSummary();  // best-effort; never blocks opening the dialog
     }
 
+    // Which of the two managers' finished states is the LAST export (2026-09-26
+    // click-through, J1). The folder phase runs after the corpus phase of the same
+    // export, so when both name ONE folder the folder job is the later state. When they
+    // name DIFFERENT folders they are two exports -- a corpus-only export leaves the
+    // folder manager holding an OLDER export's destination -- and the later START wins.
+    // (The old rule let the folder job win unconditionally, so the dialog named the
+    // older export, and a paused corpus export lost its Resume button to it.)
+    // Returns whichever of the two statuses to show, or null.
+    function _uxPickLastExport(vol, fold) {
+      if (vol && fold) {
+        return (_uxSamePath(vol.dest, fold.dest) || (fold.started_at || 0) >= (vol.started_at || 0))
+          ? fold : vol;
+      }
+      return vol || fold || null;
+    }
+
     // Mirrors _uxShowLastCompletedSummary() for the Import dialog (audit finding
     // 2026-07-17 -- the same field report 2026-07-16 root cause applies here too): a
     // large export can run for hours as a background job (task-manager-visible), so
@@ -64,18 +80,21 @@
       const prog = document.getElementById("ux-progress");
       const bar = document.getElementById("ux-bar");
       const pauseBtn = document.getElementById("ux-pause");
-      let shown = null, phase = null;
+      const exportState = (s) => s && s.mode === "backup" && (s.state === "done" || s.state === "paused");
+      let vol = null, fold = null;
       try {
         const s = await api("/api/backup/v2/volumes/status");
-        if (s && s.mode === "backup" && (s.state === "done" || s.state === "paused")) { shown = s; phase = "volumes"; }
+        if (exportState(s)) vol = s;
       } catch (e) { /* best-effort: one endpoint failing must not hide the other */ }
       try {
-        // The folder (large-data) phase runs AFTER volumes in a full export -- if it
-        // also completed/paused, it is the more recent state to show.
         const s = await api("/api/backup/folder/status");
-        if (s && s.mode === "backup" && (s.state === "done" || s.state === "paused")) { shown = s; phase = "folder"; }
+        if (exportState(s)) fold = s;
       } catch (e) { /* best-effort */ }
+      const shown = _uxPickLastExport(vol, fold);
       if (!shown) return;
+      let phase = null;
+      if (shown === fold) phase = "folder";
+      else phase = "volumes";
       const dest = shown.dest || (document.getElementById("ux-dest").value || "").trim();
       // Recover the folder BEFORE the branch: a PAUSED export resumed after a page
       // reload must re-enter the folder it paused in, and the only place that survives
@@ -95,10 +114,24 @@
         // A completed export: the panel a reopened dialog shows is the same panel the
         // run itself ended on, built from the same server-side facts rather than from a
         // remembered sentence.
-        prog.innerHTML = `<b>${esc(t("Backup complete →"))}</b> <span style="overflow-wrap:anywhere">${esc(dest)}</span> (${esc(t("last completed export"))})`;
+        // dir="ltr": a path is left-to-right data, and inside the Arabic dialog its
+        // leading slash was drawn at the far end (J3).
+        prog.innerHTML = `<b>${esc(t("Backup complete →"))}</b> <span dir="ltr" style="overflow-wrap:anywhere">${esc(dest)}</span> (${esc(t("last completed export"))})`;
         if (dest) {
           try {
-            const facts = await api("/api/backup/export-summary?dir=" + encodeURIComponent(dest));
+            let facts = await api("/api/backup/export-summary?dir=" + encodeURIComponent(dest));
+            // J2: the job writes BACKUP_SUMMARY.md when it completes. Should the file
+            // still be missing (that write failed), ask for it once more here, and if
+            // that fails too the panel NAMES the missing file rather than reading as
+            // if one were there.
+            if (facts && !facts.summary_path && shown.state === "done") {
+              try {
+                const w = await api("/api/backup/export-summary", { method: "POST", body: JSON.stringify({ dir: dest }) });
+                facts = { ...(w.facts || {}), summary_path: w.summary_path };
+              } catch (e) {
+                facts = { ...facts, summary_error: String((e && e.message) || e) };
+              }
+            }
             _uxRenderExportPanel(facts, t);
           } catch (e) { /* best-effort: the completion line stands on its own */ }
         }
@@ -160,25 +193,36 @@
       if (files.length) {
         row(t("Files copied"), files.map((c) => `<span class="pill" style="margin:0 4px 4px 0"><b>${esc(c.category)}</b> ${esc(String(c.files))} · ${esc(bytes(c.bytes))}</span>`).join(""));
       } else {
-        row(t("Files copied"), esc(t("none")));
+        // Its own key, not the shared "none": the shared one agrees with a feminine noun
+        // in French (parité : aucune), and "files" needs the masculine (J9).
+        row(t("Files copied"), esc(t("no files")));
       }
       // 5. elapsed -- an unmeasured span says so; it never renders as zero.
+      // The hovers here and on Encryption are the server's English sentences, looked up
+      // as keys: they are caveats, and a caveat ships x12 (J7). The server strings are
+      // pinned as keys in all 12 locales by tests/test_export_folder.py, because the
+      // i18n gate cannot see a string that only arrives over the wire.
       const corpusS = secs(el.corpus_s), filesS = secs(el.files_s);
       row(t("Elapsed"),
           `${esc(corpusS || dash)} <span class="muted">${esc(t("corpus"))}</span>` +
           (files.length ? ` · ${esc(filesS || t("not recorded"))} <span class="muted">${esc(t("files"))}</span>` : ""),
-          el.files_s_reason || "");
+          el.files_s_reason ? t(el.files_s_reason) : "");
       // 6-9. destination, encryption, schema, app version.
       // A filesystem path is ONE unbreakable token, and the dated folder made it longer:
       // measured at 390px it ran 165px past the viewport with no way to read its end.
       // `anywhere` rather than `break-word` because there is no space to break at.
-      row(t("Destination"), `<code style="overflow-wrap:anywhere">${esc(facts.destination || "")}</code>`);
+      // dir="ltr": it is left-to-right data inside a possibly right-to-left panel (J3).
+      row(t("Destination"), `<code dir="ltr" style="overflow-wrap:anywhere">${esc(facts.destination || "")}</code>`);
+      // corpus_encrypted is the SQLCipher state of the corpus DATABASE FILE inside the
+      // volumes -- never whether the corpus is encrypted in this backup, which it always
+      // is. The false case says which layer it measures, so it no longer contradicts the
+      // note on its own hover (J5).
       row(t("Encryption"),
           esc(enc.corpus_encrypted == null
               ? dash
-              : (enc.corpus_encrypted ? t("corpus encrypted at rest inside the backup") : t("corpus stored unencrypted in this backup"))) +
+              : (enc.corpus_encrypted ? t("corpus encrypted at rest inside the backup") : t("corpus database not separately encrypted (the backup's volumes are)"))) +
           (files.length ? ` · ${esc(t("copied files are not encrypted"))}` : ""),
-          enc.note || "");
+          enc.note ? t(enc.note) : "");
       row(t("Schema version"), esc(`${sch.backup_schema || dash} · ${sch.container || dash} · ${t("database")} ${sch.alembic_rev || dash}`));  // esc(): alembic_rev is read out of a database, not a constant
       row(t("App version"), esc(facts.app_version || dash));
       // 10. the licence lines that apply (Q1008 = a).
@@ -189,26 +233,34 @@
         row(t("Licences"),
             `<span class="note err" title="${esc(facts.attribution_error)}">${esc(t("The attribution lines could not be completed — a licence question is unanswered, so this backup is reported without them."))}</span>`);
       } else if (lic.length) {
+        // dir="auto": the licence texts are English data, and inside an Arabic panel
+        // their closing periods were drawn at the start of the line (J3).
         row(t("Licences"),
-            lic.map((l) => `<div title="${esc(tf("applies because: {signal}", { signal: l.because }))}">${esc(l.text)}</div>`).join(""));
+            lic.map((l) => `<div dir="auto" title="${esc(tf("applies because: {signal}", { signal: l.because }))}">${esc(l.text)}</div>`).join(""));
       } else {
         row(t("Licences"), `<span class="muted">${esc(t("no attribution line applies to what this backup holds"))}</span>`);
       }
 
       const verify = facts.verify || {};
+      // Red for every not-verified verdict EXCEPT "not held": there the export may well
+      // have verified its set, and what is missing is this app's memory of it -- an
+      // unknown, which a red box would turn into an alarm about a sound backup.
+      const verdictCls = verify.state === "verified" ? "" : (verify.state === "not_held" ? "muted" : "err");
       host.innerHTML =
-        `<div class="note ${verify.state === "verified" ? "" : "err"}" style="margin-top:8px"${_uxVerifyDetail(verify) ? ` title="${esc(_uxVerifyDetail(verify))}"` : ""}>${esc(_uxVerifySentence(verify, t))}</div>` +
+        `<div class="note ${verdictCls}" style="margin-top:8px"${_uxVerifyDetail(verify) ? ` title="${esc(_uxVerifyDetail(verify))}"` : ""}>${esc(_uxVerifySentence(verify, t))}</div>` +
         `<div style="margin-top:6px;display:flex;flex-direction:column;gap:2px;font-size:12px">${rows.join("")}</div>` +
         `<div class="card-caveat" style="margin-top:6px;font-size:11px">${esc(t("Every export writes a new dated folder and every volume in it: nothing is reused from an earlier backup, so this folder's bytes were all written by this one pass."))}</div>` +
         (facts.summary_path
-          ? `<div class="muted" style="margin-top:4px;font-size:11px;overflow-wrap:anywhere">${esc(t("A summary of these facts was written beside the backup:"))} <code>${esc(facts.summary_path)}</code></div>`
-          : "");
+          ? `<div class="muted" style="margin-top:4px;font-size:11px;overflow-wrap:anywhere">${esc(t("A summary of these facts was written beside the backup:"))} <code dir="ltr">${esc(facts.summary_path)}</code></div>`
+          : (facts.summary_error
+            ? `<div class="note err" style="margin-top:4px;font-size:11px;overflow-wrap:anywhere">${esc(t("The backup is written, but its summary file could not be:"))} ${esc(facts.summary_error)}</div>`
+            : ""));
     }
 
     // The verify verdict as ONE sentence. The five not-verified cases stay apart: "off",
     // "cancelled", "could not be re-read", "no result recorded" and "FAILED" are
     // different facts, and a single missing "verified" would flatten the last one into
-    // the others.
+    // the others. A sixth, "not known here", is not a not-verified case at all.
     //
     // EVERY branch is a CLIENT-side keyed template, never the backend's own `reason`
     // string. The job writes those in English, and this is a caveat surface, which ships
@@ -226,6 +278,10 @@
       if (verify.state === "off") return t("Not verified — verify-after-write was turned off for this export.");
       if (verify.state === "stopped") return t("Not verified — the re-read was cancelled. The volumes were written, but they were not read back.");
       if (verify.state === "unavailable") return t("Not verified — the volume set could not be read back off the destination.");
+      // The folder holds a volume set whose export this app no longer remembers (it ran
+      // another job or restarted since). Not a "Not verified": nobody has found anything
+      // wrong, and "no corpus" -- what this used to render as -- was simply false (J1).
+      if (verify.state === "not_held") return t("Verify result not known here — the app no longer holds what this export measured (it has run another job or restarted since). The volume figures below are read off the drive.");
       return t("Not verified — this export recorded no verify result.");
     }
 
@@ -353,8 +409,12 @@
     // knows no total ahead of time, so we show an INDETERMINATE bar + the phase + how
     // many volumes are done — never a fabricated/animated-fake percentage.
     function _uxVolPhase(phase, mode, t) {
+      // `verifying` is the verify-after-write re-read (Q218), the pass that can double an
+      // export's time on a slow drive. Without its own entry it fell through to the
+      // "Backing up…" default and was never named on screen (J6).
       const back = { starting: t("Preparing…"), building: t("Building encrypted volumes…"),
-        volumes: t("Writing encrypted volumes…"), parity: t("Writing parity…"), done: t("Done.") };
+        volumes: t("Writing encrypted volumes…"), parity: t("Writing parity…"),
+        verifying: t("Verifying volumes…"), done: t("Done.") };
       const rest = { verifying: t("Verifying volumes…"), reassembling: t("Reassembling the archive…"),
         merging: t("Merging (additive)…"), reindexing: t("Re-indexing merged articles…"), done: t("Done."),
         // "Progress everywhere" (§4 item 2): named labels for the run_restore
@@ -442,6 +502,10 @@
       let extra = "";
       if (p.volumes_written) extra += ` · ${p.volumes_written} ${esc(t("volumes"))}`;
       if (p.bytes_written) extra += ` · ${esc(humanBytes(p.bytes_written))}`;
+      // The re-read's own count, in the merge label's N/M shape. Only once the total is
+      // known: the first report (sent before any volume is hashed) carries none, and a
+      // "0/?" would be a figure made up for the gap.
+      if (p.phase === "verifying" && p.volumes_total) extra += ` · ${p.volumes_verified || 0}/${p.volumes_total} ${esc(t("volumes"))}`;
       return { pct: null, indeterminate: true, phaseKey: `phase:${p.phase || ""}`,
         text: `${esc(_uxVolPhase(p.phase, s.mode, t))}${extra}<span class="muted">${phaseCount}</span>` };
     }
@@ -455,7 +519,17 @@
     // Resolves with the final status object (so the caller can read its summary/tally).
     function _uxPoll(url, kind, ui) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      const prefix = ui.prefix ? `${esc(ui.prefix)}: ` : "";
+      const tf = (window.OOI18N && OOI18N.tf)
+        ? OOI18N.tf
+        : ((str, vars) => str.replace(/\{(\w+)\}/g, (m, k) => (vars && vars[k] != null) ? String(vars[k]) : m));
+      // "Corpus: Preparing…". The separator is the LOCALE's -- French puts a space before
+      // the colon, Chinese and Japanese use a full-width one -- so it comes from a keyed
+      // frame rather than a hardcoded ": " (J9). The frame is filled with two markers and
+      // escaped first, then the markers are swapped for the prefix (text, escaped here)
+      // and the progress (already HTML), so neither is escaped twice or not at all.
+      const withPrefix = (html) => (!ui.prefix ? html
+        : esc(tf("{prefix}: {text}", { prefix: "\u0001", text: "\u0002" }))
+          .replace("\u0001", () => esc(ui.prefix)).replace("\u0002", () => html));
       // PER-PHASE ETA baseline (field report 2026-07-29: a 50,000-article import
       // quoted "~4000 min left"). This used to be ONE startMs for the whole job while
       // `view.frac` resets to ~0 at every phase boundary, so the rule of three computed
@@ -485,7 +559,7 @@
               return reject(new Error(t("Lost contact with the backup job — check the task manager; it may still be running.")));
             }
             if (ui.label) {
-              ui.label.innerHTML = prefix + `<span class="muted">${esc(t("Connection hiccup — retrying…"))}</span>`;
+              ui.label.innerHTML = withPrefix(`<span class="muted">${esc(t("Connection hiccup — retrying…"))}</span>`);
             }
             setTimeout(tick, Math.min(1200 * Math.pow(1.6, fails - 1), 15000));
             return;
@@ -499,7 +573,7 @@
           if (key !== etaKey) { etaKey = key; etaStart = Date.now(); }
           const etaSec = _uxRuleOfThree(etaStart, view.frac);
           const etaTxt = etaSec != null ? _uxEta(etaSec, t, true) : "";
-          if (ui.label) ui.label.innerHTML = prefix + view.text + esc(etaTxt);
+          if (ui.label) ui.label.innerHTML = withPrefix(view.text + esc(etaTxt));
           if (state === "done" || state === "paused") return resolve(s);  // paused = stopped, not a hang
           if (state === "error" || state === "cancelled") {
             // Surface the REAL backend error (the volume manifest/checksum message),
@@ -661,7 +735,7 @@
         if (blobs.includes("models")) included.push(t("LLM models"));
         if (blobs.includes("osm_regions")) included.push(t("Offline maps"));
         if (blobs.includes("wiki_dumps")) included.push(t("Wikipedia dumps"));
-        prog.innerHTML = `<b>${esc(t("Backup complete →"))}</b> <span style="overflow-wrap:anywhere">${esc(dest)}</span>`
+        prog.innerHTML = `<b>${esc(t("Backup complete →"))}</b> <span dir="ltr" style="overflow-wrap:anywhere">${esc(dest)}</span>`
           + `<div class="muted" style="font-size:12px;margin-top:2px">`
           + `${esc(t("Included:"))} ${esc(included.join(" · "))}</div>`;
         // BACKUP_SUMMARY.md is written LAST (Q209 = a), after both phases and after the
@@ -724,7 +798,7 @@
           if (s && s.state === "paused") { _uxShowPaused(prog, bar, btn, t); return; }
           _uxPhase = null;
           if (bar) bar.style.display = "none"; btn.style.display = "none";
-          prog.innerHTML = `<b>${esc(t("Backup complete →"))}</b> ${esc(_uxExportDir || (document.getElementById("ux-dest").value || "").trim())}`;
+          prog.innerHTML = `<b>${esc(t("Backup complete →"))}</b> <span dir="ltr" style="overflow-wrap:anywhere">${esc(_uxExportDir || (document.getElementById("ux-dest").value || "").trim())}</span>`;
         } catch (e) {
           _uxPhase = null; if (bar) bar.style.display = "none"; btn.style.display = "none";
           prog.innerHTML = `<span class="note err">${esc(t("Backup failed:"))} ${esc(e.message || e)}</span>`;

@@ -142,3 +142,58 @@ def test_member_sizes_come_from_the_inventory_and_the_categories_from_the_member
             "a second copy of the member→category mapping is how the size shown beside "
             "the models tick came to count only one of its two stores"
         )
+
+
+# --------------------------------------------------------------------------- #
+#  The 2026-09-26 delegated click-through, row J (J3 and J9)
+# --------------------------------------------------------------------------- #
+def _locale(lang: str) -> dict:
+    import json
+
+    return json.loads(read_static(f"locales/{lang}.json"))
+
+
+def test_paths_keep_their_own_direction_in_the_arabic_dialog():
+    """J3: in the RTL dialog a path's leading slash was drawn at its far end, and the
+    example folder name in the hint read with its date AFTER the name -- the opposite of
+    the folder the export actually makes."""
+    import re
+
+    tag = re.search(r'<input id="ux-dest"[^>]*>', _HTML)
+    assert tag and 'dir="ltr"' in tag.group(0), "the destination input inherits the page direction"
+    # Every "Backup complete →" path, on each of the three code paths that draw one.
+    for fn in ("_uxRun", "_uxResume", "_uxShowLastCompletedExportSummary"):
+        body = function_body(_APP, fn)
+        i = body.index('t("Backup complete →")')
+        assert '<span dir="ltr"' in body[i : i + 200], f"{fn} draws the path without an LTR isolate"
+    # The hint is translated as ONE string (a split would force the example to the end
+    # of the sentence in every SOV language), so the isolate lives in the Arabic value.
+    hint = "Each export makes its own dated folder here, named like 202609121045_OpenOmniscience_Backup."
+    assert "⁨202609121045_OpenOmniscience_Backup⁩" in _locale("ar")[hint]
+
+
+def test_the_progress_prefix_takes_the_locale_s_own_separator():
+    """J9: "Corpus: Préparation…" -- French puts a space before the colon, and the
+    prefix and ": " were glued together in code, out of the locale's reach."""
+    poll = function_body(_APP, "_uxPoll")
+    assert 'tf("{prefix}: {text}"' in poll
+    assert '${esc(ui.prefix)}: `' not in poll, "the separator is hardcoded again"
+    assert _locale("fr")["{prefix}: {text}"] == "{prefix} : {text}"
+    assert _locale("zh")["{prefix}: {text}"] == "{prefix}：{text}"
+
+
+def test_the_export_surface_wording_the_click_through_flagged():
+    """J9: French agreement and case, and one Arabic word for the corpus."""
+    fr = _locale("fr")
+    assert fr["no files"] == "aucun fichier", "'Files copied' needs the masculine"
+    assert fr["none"] == "aucune", "the shared 'none' (parity) is feminine and must stay so"
+    assert fr["LLM models"][0].isupper(), fr["LLM models"]
+    panel = function_body(_APP, "_uxRenderExportPanel")
+    assert 'row(t("Files copied"), esc(t("no files")))' in panel
+    ar = _locale("ar")
+    assert ar["corpus"] == ar["Corpus"], "the checklist and the Elapsed row name the corpus differently"
+    parity = (
+        "The corpus is written as encrypted volumes plus parity. Parity (corruption recovery) "
+        "requires the analysis extra (numpy); otherwise the backup is volumes only."
+    )
+    assert ar["Corpus"] in ar[parity] and "المتن" not in ar[parity]

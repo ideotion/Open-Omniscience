@@ -616,7 +616,10 @@ def _export_summary_facts(dirname: str) -> dict:
     from src.backup.export_summary import export_facts
     from src.backup.volume_job import get_volume_manager
 
-    return export_facts(dirname, volume_status=get_volume_manager().status())
+    # THIS folder's completed backup, not the manager's last job: a restore or a verify
+    # run since the export would otherwise stand in for it and be refused, and the
+    # folder read back as holding no corpus (J1).
+    return export_facts(dirname, volume_status=get_volume_manager().backup_status_for(dirname))
 
 
 def _is_export_destination(dirname: str) -> bool:
@@ -654,8 +657,19 @@ def export_summary_read(folder: str = Query(..., alias="dir")) -> dict:
 
     The same :func:`~src.backup.export_summary.export_facts` the written file renders
     from, so a reopened dialog and the file on the drive cannot disagree.
+
+    ``summary_path`` says whether ``BACKUP_SUMMARY.md`` is actually beside the backup
+    (``None`` when it is not), so a reopened panel can name the file -- or its absence
+    -- instead of implying one (J2).
     """
-    return _export_summary_facts(folder)
+    from pathlib import Path
+
+    from src.backup.export_summary import SUMMARY_NAME
+
+    facts = _export_summary_facts(folder)
+    p = Path(folder) / SUMMARY_NAME
+    facts["summary_path"] = str(p) if p.is_file() else None
+    return facts
 
 
 @router.post("/export-summary")
@@ -663,7 +677,10 @@ def export_summary_write(body: ExportSummaryBody) -> dict:
     """Write ``BACKUP_SUMMARY.md`` beside ``volumes.json`` and return the facts (Q209 = a).
 
     Called LAST, after both phases and after the verify-after-write pass, which is
-    what lets the file carry the verify verdict rather than promising one.
+    what lets the file carry the verify verdict rather than promising one. Each export
+    phase now writes the file itself when it completes (J2), so this is an idempotent
+    rewrite from the same facts -- and the way a reopened dialog recovers a file the
+    job could not write.
     """
     from src.backup.export_summary import SUMMARY_NAME, write_backup_summary
 

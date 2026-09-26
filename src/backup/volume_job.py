@@ -14,6 +14,7 @@ from __future__ import annotations
 import logging
 import os
 import threading
+import time
 from collections.abc import Callable, Collection
 from pathlib import Path
 from typing import Any
@@ -209,6 +210,16 @@ class VolumeBackupManager:
         self._pause_requested = False
         #: Re-merge even an artifact already recorded as merged (set per start_restore).
         self._force = False
+        #: Wall-clock start of the current/last job, so a reopened Export dialog can
+        #: tell which of two managers' "done" states is the LATER export (J1).
+        self._started_at: float | None = None
+        #: The completed BACKUP summaries this process still holds, by resolved
+        #: destination. The manager's own state is its LAST job, so a restore or a
+        #: verify run after an export used to erase what that export measured, and a
+        #: reopened panel then described a folder of encrypted volumes as holding no
+        #: corpus (the 2026-09-26 click-through, J1). Small and bounded: the facts
+        #: block is a table-count dict and a handful of numbers per export.
+        self._done_backups: dict[str, dict[str, Any]] = {}
 
     def _alive(self) -> bool:
         return self._thread is not None and self._thread.is_alive()
@@ -266,6 +277,7 @@ class VolumeBackupManager:
             self._pause_requested = False
             self._state, self._mode, self._dest = "running", "backup", str(destp)
             self._error, self._summary = None, None
+            self._started_at = time.time()
             self._progress = {"phase": "starting"}
             self._thread = threading.Thread(
                 target=self._run_backup,
@@ -322,6 +334,11 @@ class VolumeBackupManager:
         def _prog(p: dict) -> None:
             self._on_prog({**p, "phase": "verifying"})
 
+        # The phase is announced BEFORE the first volume is hashed. verify_volume_set
+        # reports after each volume, so on a slow drive the whole read of the first
+        # (up to 600 MB) volume used to go on reading "Writing parity…" -- the one pass
+        # that can double an export's time was never named on screen (J6).
+        self._on_prog({"phase": "verifying", "volumes_verified": 0})
         try:
             res = verify_volume_set(destp, progress_cb=_prog, should_stop=self._stop.is_set)
         except VolumeStopped:
@@ -391,6 +408,15 @@ class VolumeBackupManager:
             # in one line. Lifted into a small, flat block instead.
             kept["facts"] = _envelope_facts(summary.get("envelope"))
             kept["verify"] = self._verify_after_write(destp, verify_after_write)
+            done_status = {"mode": "backup", "state": "done", "dest": str(destp), "summary": kept}
+            with self._lock:
+                self._remember_backup(destp, kept)
+            # BACKUP_SUMMARY.md, from the job and BEFORE "done" is published (J2): a
+            # page that sees "done" and reads the folder must find the file already
+            # there, and a page that was reloaded mid-export is not needed at all.
+            from src.backup.export_summary import write_summary_for_export_job
+
+            write_summary_for_export_job(destp, volume_status=done_status)
             with self._lock:
                 self._state = "done"
                 self._summary = kept
@@ -490,6 +516,7 @@ class VolumeBackupManager:
             self._pause_requested = False
             self._state, self._mode, self._dest = "running", "restore", str(srcp)
             self._error, self._summary = None, None
+            self._started_at = time.time()
             # phase 1 of the restore's user-visible sequence (the total is filled in
             # by _run_restore, which knows run_restore's own plan for these flags).
             self._progress = {
@@ -961,6 +988,7 @@ class VolumeBackupManager:
             self._pause_requested = False
             self._state, self._mode, self._dest = "running", "verify", str(srcp)
             self._error, self._summary = None, None
+            self._started_at = time.time()
             self._progress = {"phase": "verifying"}
             self._thread = threading.Thread(
                 target=self._run_verify,
@@ -1035,7 +1063,55 @@ class VolumeBackupManager:
                 "error": self._error,
                 "summary": self._summary,
                 "running": self._alive(),
+                "started_at": self._started_at,
             }
+
+    #: How many completed exports' facts are held. An operator makes a handful of
+    #: exports in one sitting; this is a bound on memory, not a feature.
+    _DONE_BACKUPS_KEPT = 16
+
+    @staticmethod
+    def _dest_key(dest: str | os.PathLike[str]) -> str | None:
+        try:
+            return str(Path(dest).resolve())
+        except OSError:
+            return None
+
+    def _remember_backup(self, destp: Path, kept: dict[str, Any]) -> None:
+        """Hold a completed backup's summary by folder. Call under ``self._lock``."""
+        key = self._dest_key(destp)
+        if key is None:
+            return
+        self._done_backups.pop(key, None)
+        self._done_backups[key] = kept
+        while len(self._done_backups) > self._DONE_BACKUPS_KEPT:
+            self._done_backups.pop(next(iter(self._done_backups)))
+
+    def backup_status_for(self, dest: str | os.PathLike[str]) -> dict:
+        """The status to describe ONE export folder with.
+
+        The live status when it IS a completed backup of that folder; otherwise that
+        folder's completed backup from :attr:`_done_backups`, in the same shape; and
+        otherwise the live status as it is, which ``export_facts`` then refuses as not
+        belonging to the folder. Never another folder's numbers: the lookup is by the
+        folder's own resolved path.
+        """
+        st = self.status()
+        key = self._dest_key(dest)
+        if key is None:
+            return st
+        if (
+            st.get("mode") == "backup"
+            and st.get("state") == "done"
+            and st.get("dest")
+            and self._dest_key(str(st["dest"])) == key
+        ):
+            return st
+        with self._lock:
+            kept = self._done_backups.get(key)
+        if kept is None:
+            return st
+        return {"mode": "backup", "state": "done", "dest": key, "summary": kept}
 
 
 _MANAGER: VolumeBackupManager | None = None

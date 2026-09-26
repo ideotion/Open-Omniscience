@@ -1904,7 +1904,7 @@
   "Loading what's available…": "A carregar o que está disponível…",
   "dates": "datas",
   "keywords": "palavras-chave",
-  "LLM models": "modelos LLM",
+  "LLM models": "Modelos LLM",
   "Offline maps": "Mapas offline",
   "What do you want to back up?": "O que quer copiar?",
   "Could not load the inventory — see console": "Não foi possível carregar o inventário — ver consola",
@@ -4691,5 +4691,13 @@
   "Interrupted": "Interrompido",
   "Cancelled": "Cancelado",
   "Analytics are complete once the re-index (stage 4) finishes.": "As análises ficam completas quando a reindexação (etapa 4) terminar.",
-  "An import is running — verify the backup once it has finished.": "Uma importação está em curso — verifique a cópia de segurança quando ela terminar."
+  "An import is running — verify the backup once it has finished.": "Uma importação está em curso — verifique a cópia de segurança quando ela terminar.",
+  "a lane is a live encrypted database; its backup format is not settled yet": "uma via é uma base de dados encriptada viva; o seu formato de cópia de segurança ainda não está decidido",
+  "the large-data copy records no timing of its own": "a cópia dos dados grandes não regista a sua própria duração",
+  "no large-data files were copied": "não foi copiado nenhum ficheiro de dados grandes",
+  "The corpus and every member of the artifact are encrypted. Copied large-data files (dumps, maps, model weights) are public, re-downloadable blobs and are NOT encrypted — that is what makes a 100 GB export feasible, and it is stated rather than implied.": "O corpus e cada membro do artefacto estão encriptados. Os ficheiros de dados grandes copiados (dumps, mapas, pesos de modelos) são dados públicos que se podem voltar a descarregar e NÃO estão encriptados — é isso que torna viável uma exportação de 100 GB, e é dito em vez de subentendido.",
+  "no files": "nenhum ficheiro",
+  "corpus database not separately encrypted (the backup's volumes are)": "base de dados do corpus sem encriptação própria (os volumes da cópia estão encriptados)",
+  "Verify result not known here — the app no longer holds what this export measured (it has run another job or restarted since). The volume figures below are read off the drive.": "Resultado da verificação desconhecido aqui — a aplicação já não guarda o que esta exportação mediu (desde então executou outra tarefa ou foi reiniciada). Os valores dos volumes abaixo são lidos do disco.",
+  "{prefix}: {text}": "{prefix}: {text}"
 }

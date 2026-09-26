@@ -21,7 +21,9 @@ WHERE THE FACTS COME FROM, and why none of them come from the browser:
   * the corpus half: the volume job's own last-completed summary. The job manager is
     a process-wide singleton, so this survives the tab being closed for the hours a
     real export runs -- the same property ``_uxShowLastCompletedExportSummary``
-    already relies on.
+    already relies on. WHETHER the corpus is in the folder is read off the folder
+    (``volumes.json``); a folder whose measurements this process no longer holds is
+    ``corpus_facts = "not_held"``, never "no corpus".
   * the large-data half: ``oo-folder-backup.json`` read off the destination. Durable
     on disk, so a reopened dialog reports the files that are actually there rather
     than an in-memory progress counter that a reload cleared.
@@ -69,6 +71,20 @@ HEADLINE_TABLE = "articles"
 FULL_WRITE_NOTE = (
     "Every export writes every volume: nothing is reused from an earlier backup, so "
     "this folder's bytes were all written by this one pass."
+)
+
+#: The three English sentences the completion panel shows as HOVERS (the Elapsed and
+#: Encryption rows). They are caveats, so they ship x12: the panel passes each through
+#: t(), which looks the English up as a key -- and tests/test_export_folder.py pins
+#: every one of them as a key in all 12 locale files, because the i18n gate reads
+#: literal t("...") calls only and cannot see a string the server sends (J7).
+FILES_S_UNTIMED = "the large-data copy records no timing of its own"
+FILES_S_NONE = "no large-data files were copied"
+ENCRYPTION_NOTE = (
+    "The corpus and every member of the artifact are encrypted. Copied "
+    "large-data files (dumps, maps, model weights) are public, "
+    "re-downloadable blobs and are NOT encrypted — that is what makes a "
+    "100 GB export feasible, and it is stated rather than implied."
 )
 
 #: What Q218 = a costs. Also a price, also stated.
@@ -157,6 +173,20 @@ def _verify_facts(summary: dict[str, Any] | None) -> dict[str, Any]:
     return v
 
 
+#: The state of the corpus half when the folder HOLDS a volume set but this process no
+#: longer holds what the export measured while writing it (the volume job has run
+#: something else since, or the app restarted). Kept apart from "no corpus", which is
+#: what an absent in-memory summary used to be reported as -- a folder with four
+#: encrypted volumes in it was described as "no corpus was selected for this export".
+NOT_HELD = "not_held"
+
+#: Why a ``not_held`` verify verdict is not known, in the same register as the others.
+NOT_HELD_REASON = (
+    "this app no longer holds what the export measured (it has run another job or "
+    "restarted since); the figures read off the drive are shown, the rest is not known here"
+)
+
+
 def export_facts(
     dest: str | os.PathLike[str],
     *,
@@ -165,11 +195,12 @@ def export_facts(
 ) -> dict[str, Any]:
     """Everything Q208 lists, measured, for ONE export folder.
 
-    ``volume_status`` is the volume job manager's ``status()`` -- passed in rather
-    than fetched so this module stays importable and testable without the job
-    singleton. A status that is not a completed BACKUP OF THIS FOLDER is ignored:
-    reporting another job's numbers under this folder's name is the exact
-    data-safety bug the corpus gate upstream already refuses.
+    ``volume_status`` is the volume job manager's ``status()`` (or its
+    ``backup_status_for(dest)``) -- passed in rather than fetched so this module stays
+    importable and testable without the job singleton. A status that is not a
+    completed BACKUP OF THIS FOLDER is ignored: reporting another job's numbers under
+    this folder's name is the exact data-safety bug the corpus gate upstream already
+    refuses.
     """
     d = Path(dest)
     st = volume_status if isinstance(volume_status, dict) else {}
@@ -195,16 +226,37 @@ def export_facts(
         attribution, attribution_error = [], str(exc)
 
     corpus_s = summary.get("wall_s") if summary else None
+    # Whether the corpus is IN this folder is read off the folder (its volume manifest),
+    # never inferred from what this process still remembers. The in-memory summary only
+    # decides whether the export's own MEASUREMENTS can be reported beside it.
+    manifest = _volume_manifest(d)
+    if summary is not None:
+        corpus_facts: str | None = "measured"
+    elif manifest is not None:
+        corpus_facts = NOT_HELD
+    else:
+        corpus_facts = None
+    if summary is not None:
+        count = summary.get("volumes")
+        parity = bool(summary.get("parity"))
+    elif manifest is not None:
+        # The set's own account of itself: the same two figures the summary carries,
+        # so a reopened panel still states what is on the drive.
+        count = len(manifest.get("volumes") or [])
+        parity = bool((manifest.get("parity") or {}).get("volumes"))
+    else:
+        count, parity = None, False
     facts: dict[str, Any] = {
         "destination": str(d),
         "folder": d.name,
         "created_at": now_iso or _local_now_iso(),
-        "corpus_included": summary is not None,
+        "corpus_included": corpus_facts is not None,
+        "corpus_facts": corpus_facts,
         "volumes": {
-            "count": (summary or {}).get("volumes"),
+            "count": count,
             "bytes": _volume_bytes(d),
             "plaintext_bytes": (summary or {}).get("plaintext_bytes"),
-            "parity": bool((summary or {}).get("parity")),
+            "parity": parity,
             "parity_available": (summary or {}).get("parity_available"),
         },
         "tables": _table_rows(tables),
@@ -213,22 +265,13 @@ def export_facts(
         "elapsed": {
             "corpus_s": corpus_s,
             "files_s": None,
-            "files_s_reason": (
-                "the large-data copy records no timing of its own"
-                if files
-                else "no large-data files were copied"
-            ),
+            "files_s_reason": FILES_S_UNTIMED if files else FILES_S_NONE,
         },
         "encryption": {
             "artifact_encrypted": True if summary else None,
             "corpus_encrypted": (summary or {}).get("corpus_encrypted"),
             "files_encrypted": False if files else None,
-            "note": (
-                "The corpus and every member of the artifact are encrypted. Copied "
-                "large-data files (dumps, maps, model weights) are public, "
-                "re-downloadable blobs and are NOT encrypted — that is what makes a "
-                "100 GB export feasible, and it is stated rather than implied."
-            ),
+            "note": ENCRYPTION_NOTE,
         },
         "schema": {
             "backup_schema": facts_block.get("backup_schema"),
@@ -237,13 +280,31 @@ def export_facts(
             "folder_schema": (folder or {}).get("schema"),
         },
         "app_version": facts_block.get("app_version"),
-        "verify": _verify_facts(summary),
+        "verify": (
+            {"state": NOT_HELD, "reason": NOT_HELD_REASON, "method": None}
+            if corpus_facts == NOT_HELD
+            else _verify_facts(summary)
+        ),
         "attribution": attribution,
         "attribution_error": attribution_error,
         "notes": list((summary or {}).get("notes") or []),
         "reuse": {"reused": False, "note": FULL_WRITE_NOTE},
     }
     return facts
+
+
+def _volume_manifest(dest: Path) -> dict[str, Any] | None:
+    """The volume set's ``volumes.json``, or ``None`` when the folder holds no set."""
+    from src.backup.volumes import MANIFEST_NAME
+
+    p = dest / MANIFEST_NAME
+    if not p.exists():
+        return None
+    try:
+        m = json.loads(p.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return m if isinstance(m, dict) else None
 
 
 def _volume_bytes(dest: Path) -> int | None:
@@ -253,14 +314,8 @@ def _volume_bytes(dest: Path) -> int | None:
     globbed off the directory, so a stray file an operator dropped in the folder is
     never counted as part of the backup.
     """
-    from src.backup.volumes import MANIFEST_NAME
-
-    p = dest / MANIFEST_NAME
-    if not p.exists():
-        return None
-    try:
-        m = json.loads(p.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
+    m = _volume_manifest(dest)
+    if m is None:
         return None
     total = 0
     for v in m.get("volumes") or []:
@@ -304,6 +359,11 @@ def verify_sentence(verify: dict[str, Any]) -> str:
         )
     if state == "off":
         return "NOT verified — verify-after-write was turned off for this export."
+    if state == NOT_HELD:
+        # Not a "NOT verified": the export may well have verified its set. What is
+        # missing is this process's memory of it, and saying "NOT" would turn an unknown
+        # into an alarm about a backup nobody has found anything wrong with.
+        return f"Verify result not known here — {NOT_HELD_REASON}."
     reason = (verify or {}).get("reason") or "no reason was recorded"
     return f"NOT verified — {reason}."
 
@@ -357,7 +417,7 @@ def render_summary_markdown(facts: dict[str, Any]) -> str:
         "## Encryption",
         "",
         f"- **Corpus at rest in this backup:** "
-        f"{_yes_no(enc.get('corpus_encrypted'))}",
+        f"{_corpus_at_rest(enc.get('corpus_encrypted'))}",
         *(
             [f"- **Copied large-data files:** {_yes_no(enc.get('files_encrypted'))}"]
             if files
@@ -424,6 +484,23 @@ def _yes_no(flag: Any) -> str:
     return "yes" if flag else "no"
 
 
+def _corpus_at_rest(flag: Any) -> str:
+    """The corpus line of the Encryption section.
+
+    ``corpus_encrypted`` is the SQLCipher state of the corpus DATABASE FILE carried
+    inside the volumes -- not whether the corpus is encrypted in this backup, which it
+    always is, because every volume is. A bare "no" under "Corpus at rest in this
+    backup" therefore read as the opposite of the note printed right under it (the
+    2026-09-26 click-through, J5). The false case says which layer it measures.
+    """
+    if flag is None or flag:
+        return _yes_no(flag)
+    return (
+        "encrypted by the volumes only — the database file inside them is not "
+        "separately encrypted (SQLCipher)"
+    )
+
+
 def sch_value(v: Any) -> str:
     return "—" if v in (None, "") else str(v)
 
@@ -436,7 +513,49 @@ def write_backup_summary(dest: str | os.PathLike[str], facts: dict[str, Any]) ->
     """
     d = Path(dest)
     p = d / SUMMARY_NAME
+    if p.exists() and facts.get("corpus_facts") == NOT_HELD:
+        # A rewrite from facts that no longer carry the export's own measurements would
+        # REPLACE the file that does carry them -- the per-table counts, the verify
+        # verdict -- with dashes. The file on the drive is the durable record; it is
+        # kept, and the caller is told where it is.
+        _LOG.info("export summary: kept %s (this process no longer holds its facts)", p)
+        return p
     tmp = d / (SUMMARY_NAME + ".oopart")
     tmp.write_text(render_summary_markdown(facts), encoding="utf-8")
     os.replace(tmp, p)
     return p
+
+
+def write_summary_for_export_job(
+    dest: str | os.PathLike[str], *, volume_status: dict[str, Any] | None
+) -> Path | None:
+    """Write ``BACKUP_SUMMARY.md`` from the JOB, when an export phase completes (J2).
+
+    Q209 = a puts the file beside every export. It used to be written only by the page,
+    in a POST at the very end of its own run -- a closure a page reload destroys, while
+    the job it was waiting for carries on server-side and finishes. A reload during an
+    export therefore left a complete, verified backup with no summary beside it, and
+    nothing ever wrote one. The job is the one party that is always there at the end,
+    so each phase writes the file when it completes (the corpus phase after its verify
+    pass, the large-data phase after its copy -- the last writer carries both halves),
+    from the SAME :func:`export_facts` the page's own POST renders. The page's POST
+    stays, as an idempotent rewrite.
+
+    Only a dated export folder gets one: the older volume and folder backup dialogs
+    write into whatever directory the operator names, and a file appearing there would
+    be a change nobody asked for.
+
+    NEVER RAISES. A summary that cannot be written is not a failed backup -- the bytes
+    are on the drive and verified -- so this returns ``None`` and logs, and the panel
+    reports the missing file when it next reads the folder.
+    """
+    from src.backup.export_folder import is_export_folder_name
+
+    d = Path(dest)
+    if not is_export_folder_name(d.name):
+        return None
+    try:
+        return write_backup_summary(d, export_facts(d, volume_status=volume_status))
+    except Exception:  # noqa: BLE001 - see the docstring: never fail the backup over this
+        _LOG.warning("export summary: could not write %s in %s", SUMMARY_NAME, d, exc_info=True)
+        return None

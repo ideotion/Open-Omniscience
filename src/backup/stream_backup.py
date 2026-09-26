@@ -978,6 +978,15 @@ def write_stream_backup(
             _ms("stage_begin", "export:collecting")
             st.phase = "collecting"
             st.progress()
+            # Materialise the signing key BEFORE the side members are collected, as the
+            # zip writer does (artifact._build_backup_zip): a first-ever export on an
+            # install that has no key yet must carry the very key that signs it. The
+            # envelope creates it anyway, but only AFTER collection -- so the first
+            # export had one volume fewer than every later one, and a restore of it
+            # onto a new machine did not carry the identity that signed it (J4).
+            from src.reporting.evidence import load_or_create_signing_key
+
+            load_or_create_signing_key()
             side = side_members if side_members is not None else _collect_side_members(tmp_dir)
             # Blobs ride the SAME emit path as any other member -- sliced, encrypted,
             # parity-covered, checksum-verified on reassembly -- so nothing about the

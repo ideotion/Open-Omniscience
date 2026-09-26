@@ -1904,7 +1904,7 @@
   "Loading what's available…": "Cargando lo disponible…",
   "dates": "fechas",
   "keywords": "palabras clave",
-  "LLM models": "modelos LLM",
+  "LLM models": "Modelos LLM",
   "Offline maps": "Mapas sin conexión",
   "What do you want to back up?": "¿Qué quieres respaldar?",
   "Could not load the inventory — see console": "No se pudo cargar el inventario — ver consola",
@@ -4691,5 +4691,13 @@
   "Interrupted": "Interrumpido",
   "Cancelled": "Cancelado",
   "Analytics are complete once the re-index (stage 4) finishes.": "Los análisis estarán completos cuando termine la reindexación (etapa 4).",
-  "An import is running — verify the backup once it has finished.": "Hay una importación en curso: verifique la copia de seguridad cuando termine."
+  "An import is running — verify the backup once it has finished.": "Hay una importación en curso: verifique la copia de seguridad cuando termine.",
+  "a lane is a live encrypted database; its backup format is not settled yet": "un carril es una base de datos cifrada viva; su formato de copia de seguridad aún no está decidido",
+  "the large-data copy records no timing of its own": "la copia de los datos grandes no registra su propia duración",
+  "no large-data files were copied": "no se copió ningún archivo de datos grandes",
+  "The corpus and every member of the artifact are encrypted. Copied large-data files (dumps, maps, model weights) are public, re-downloadable blobs and are NOT encrypted — that is what makes a 100 GB export feasible, and it is stated rather than implied.": "El corpus y cada miembro del artefacto están cifrados. Los archivos de datos grandes copiados (volcados, mapas, pesos de modelos) son datos públicos que se pueden volver a descargar y NO están cifrados: eso es lo que hace viable una exportación de 100 GB, y se dice en lugar de darlo por supuesto.",
+  "no files": "ningún archivo",
+  "corpus database not separately encrypted (the backup's volumes are)": "base de datos del corpus sin cifrado propio (los volúmenes de la copia sí están cifrados)",
+  "Verify result not known here — the app no longer holds what this export measured (it has run another job or restarted since). The volume figures below are read off the drive.": "Resultado de verificación desconocido aquí: la aplicación ya no conserva lo que midió esta exportación (desde entonces ha ejecutado otra tarea o se ha reiniciado). Las cifras de volúmenes de abajo se leen del disco.",
+  "{prefix}: {text}": "{prefix}: {text}"
 }

@@ -4691,5 +4691,13 @@
   "Interrupted": "বাধাপ্রাপ্ত",
   "Cancelled": "বাতিল করা হয়েছে",
   "Analytics are complete once the re-index (stage 4) finishes.": "পুনঃসূচিকরণ (ধাপ ৪) শেষ হলে বিশ্লেষণ সম্পূর্ণ হবে।",
-  "An import is running — verify the backup once it has finished.": "একটি আমদানি চলছে — এটি শেষ হলে ব্যাকআপটি যাচাই করুন।"
+  "An import is running — verify the backup once it has finished.": "একটি আমদানি চলছে — এটি শেষ হলে ব্যাকআপটি যাচাই করুন।",
+  "a lane is a live encrypted database; its backup format is not settled yet": "লেন একটি সক্রিয় এনক্রিপ্টেড ডেটাবেস; এর ব্যাকআপ ফরম্যাট এখনও চূড়ান্ত হয়নি",
+  "the large-data copy records no timing of its own": "বড় ডেটার কপি নিজের সময় রেকর্ড করে না",
+  "no large-data files were copied": "বড় ডেটার কোনো ফাইল কপি করা হয়নি",
+  "The corpus and every member of the artifact are encrypted. Copied large-data files (dumps, maps, model weights) are public, re-downloadable blobs and are NOT encrypted — that is what makes a 100 GB export feasible, and it is stated rather than implied.": "কর্পাস এবং আর্টিফ্যাক্টের প্রতিটি সদস্য এনক্রিপ্টেড। কপি করা বড় ডেটার ফাইলগুলি (ডাম্প, মানচিত্র, মডেলের ওজন) সর্বজনীন, আবার ডাউনলোডযোগ্য ফাইল এবং এনক্রিপ্টেড নয় — এটাই 100 GB-এর এক্সপোর্টকে সম্ভব করে, এবং তা ইঙ্গিতে নয়, স্পষ্টভাবে বলা হয়েছে।",
+  "no files": "কোনো ফাইল নেই",
+  "corpus database not separately encrypted (the backup's volumes are)": "কর্পাস ডেটাবেস আলাদাভাবে এনক্রিপ্টেড নয় (ব্যাকআপের ভলিউমগুলি এনক্রিপ্টেড)",
+  "Verify result not known here — the app no longer holds what this export measured (it has run another job or restarted since). The volume figures below are read off the drive.": "যাচাইয়ের ফলাফল এখানে অজানা — এই এক্সপোর্ট যা মেপেছিল অ্যাপটি তা আর ধরে রাখে না (তারপর থেকে এটি অন্য কাজ চালিয়েছে বা পুনরায় চালু হয়েছে)। নিচের ভলিউমের সংখ্যাগুলি ড্রাইভ থেকে পড়া।",
+  "{prefix}: {text}": "{prefix}: {text}"
 }
