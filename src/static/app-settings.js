@@ -150,7 +150,9 @@
       let para = [];
       while (i < lines.length) {
         const ln = lines[i];
-        const fence = ln.match(/^ F(\d+) $/);
+        // A fence inside a list item is indented, so its placeholder line is too;
+        // matching only the unindented form dropped that code as a stray "F0".
+        const fence = ln.match(/^\s*F(\d+) $/);
         if (fence) { flushPara(para); para = []; out.push(fences[+fence[1]]); i++; continue; }
         if (/^\s*$/.test(ln)) { flushPara(para); para = []; i++; continue; }
         let m;
@@ -184,8 +186,21 @@
           out.push("<blockquote>" + inline(q.join("\u0000")).replace(/\u0000/g, "<br>") + "</blockquote>"); continue; }
         if (/^\s*([-*+]|\d+\.)\s+/.test(ln)) { flushPara(para); para = [];
           const ordered = /^\s*\d+\.\s+/.test(ln); let items = [];
+          const indentOf = (s) => s.match(/^\s*/)[0].length;
           while (i < lines.length && /^\s*([-*+]|\d+\.)\s+/.test(lines[i])) {
-            items.push("<li>" + inline(lines[i].replace(/^\s*([-*+]|\d+\.)\s+/, "")) + "</li>"); i++;
+            // A wrapped item continues on the following lines that are MORE indented
+            // than its own marker and are not a new marker (2026-09-26 click-through
+            // J8: the manual's "never scheduled" bullet broke mid-sentence into a
+            // stray paragraph). They join the item BEFORE inline(), for the same
+            // cross-line reason as flushPara; a blank line, a new marker or a line
+            // back at the marker's indent ends it.
+            const markerIndent = indentOf(lines[i]);
+            const buf = [lines[i].replace(/^\s*([-*+]|\d+\.)\s+/, "")]; i++;
+            while (i < lines.length && !/^\s*$/.test(lines[i]) && !/^\s*F\d+ $/.test(lines[i])
+                   && !/^\s*([-*+]|\d+\.)\s+/.test(lines[i]) && indentOf(lines[i]) > markerIndent) {
+              buf.push(lines[i].trim()); i++;
+            }
+            items.push("<li>" + inline(buf.join(" ")) + "</li>");
           }
           const tag = ordered ? "ol" : "ul";
           out.push(`<${tag}>` + items.join("") + `</${tag}>`); continue; }

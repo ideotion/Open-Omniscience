@@ -1773,8 +1773,10 @@
       <div id="wiki-status" class="hint">Loading…</div>
       <div class="row" style="margin-top:6px">
         <button onclick="trackWikiNow()">Track now</button>
+        <!-- Q717: ORES is opt-in, so this starts unticked (a third party's model, one more
+             host contacted); the endpoints default to off too (src/api/wiki.py). -->
         <label style="display:flex;align-items:center;gap:6px;align-self:center;cursor:pointer">
-          <input type="checkbox" id="wiki-ores" style="width:auto" checked> use ORES scores
+          <input type="checkbox" id="wiki-ores" style="width:auto"> use ORES scores
         </label>
         <span id="wiki-progress" class="hint" style="align-self:center"></span>
       </div>
@@ -1854,12 +1856,12 @@
           <label for="dumpread-wiki">Edition</label>
           <select id="dumpread-wiki" title="Editions with a complete multistream dump + index on disk"><option value="">—</option></select>
         </div>
-        <div style="flex:2">
+        <div style="flex:2 1 220px">
           <label for="dumpread-title">Page title</label>
           <input id="dumpread-title" placeholder="Exact page title (a case-insensitive match is offered and labelled)…"
                  onkeydown="if(event.key==='Enter')dumpReadPage()">
         </div>
-        <div style="flex:0 0 auto;align-self:end"><button class="secondary" onclick="dumpSearchTitles()">Search titles</button> <button class="secondary" onclick="dumpReadPage()">Read locally</button></div>
+        <div style="flex:1 1 auto;align-self:end;display:flex;flex-wrap:wrap;gap:6px"><button class="secondary" onclick="dumpSearchTitles()">Search titles</button> <button class="secondary" onclick="dumpReadPage()">Read locally</button></div>
       </div>
       <div class="hint">Reading happens entirely on this machine: the dump's index is scanned for the title, then one small
         block is decompressed at its byte offset. The text shown is raw wikitext (unrendered) as of the dump date — a snapshot, not the live article.</div>
@@ -1873,14 +1875,16 @@
           <label for="dumpfts-build-wiki">Edition to index</label>
           <select id="dumpfts-build-wiki" title="Editions with a complete multistream dump on disk"><option value="">Loading…</option></select>
         </div>
-        <div style="flex:0 0 auto;align-self:end">
+        <!-- flex:1 1 auto + wrap, not flex:0 0 auto: three buttons side by side are wider
+             than a phone column (29 px of page scroll at 375 px; 2026-09-26 click-through P9). -->
+        <div style="flex:1 1 auto;align-self:end;display:flex;flex-wrap:wrap;gap:6px">
           <button class="secondary" onclick="dumpFtsBuild()">Build index</button>
           <button class="secondary" onclick="dumpFtsCancel()">Cancel build</button>
           <button class="danger" onclick="dumpFtsClear()">Clear index</button>
         </div>
       </div>
       <div class="row" style="gap:6px;align-items:end;flex-wrap:wrap;margin-top:8px">
-        <div style="flex:2">
+        <div style="flex:2 1 220px">
           <label for="dumpfts-q">Full-text query</label>
           <input id="dumpfts-q" placeholder="Words or a Boolean query (AND OR NOT)…"
                  onkeydown="if(event.key==='Enter')dumpFtsSearch()">
@@ -2721,8 +2725,8 @@
       <summary><span class="adv-sec-t">Calendar directory</span> <span class="muted">— the bundled feed catalogue, its check verdicts, and adding your own</span></summary>
     <section class="panel" id="agenda-feeds">
       <h2>Calendar directory</h2>
-      <p class="hint" style="margin-top:0"><span>A bundled directory of ~500 public calendar feeds (country holidays, religions, elections, UN days, space, astronomy). Feeds are checked a few at a time on each collection pass — never at startup, and never while you are offline.</span>
-        <span>When several providers publish the same calendar, they are grouped into one folder — you see the duplicate and can compare every source.</span></p>
+      <p class="hint" style="margin-top:0"><span>A bundled directory of public calendar feeds: country public holidays, UN international days and one open-source events calendar, each from one provider. Feeds are checked a few at a time on each collection pass — never at startup, and never while you are offline.</span>
+        <span>Feeds whose host refuses automated fetching in its robots.txt, or whose robots.txt cannot be read, are left out of this list, as is one moon-phase feed the app's own astronomy already computes. That leaves no feed for the religious, election, rocket-launch and astronomy calendars the bundle also records, so they are not offered.</span></p>
       <div class="row">
         <div><label for="feeddir-kind">Kind</label><select id="feeddir-kind" onchange="renderFeedDir()">
           <option value="">all</option></select></div>

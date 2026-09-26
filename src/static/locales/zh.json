@@ -4661,5 +4661,8 @@
   "Continue the search re-index? It resumes where it stopped ({percent}% done).": "继续搜索重建索引？将从停止处继续（已完成 {percent}%）。",
   "Re-index search for Arabic, Chinese and Japanese now? Articles whose search entry would change are indexed again; nothing else is touched. It runs in the background and can be paused from the task manager.": "现在为阿拉伯语、中文和日语重建搜索索引？只有搜索条目会发生变化的文章才会重建索引；其他内容一概不动。该任务在后台运行，可在任务管理器中暂停。",
   "Mostly not through this app's fetcher or proxy — only the installer check uses the fetcher.": "基本不经过本应用的抓取器或代理——只有安装程序的校验使用抓取器。",
-  "Shift+click stops the stream completely.": "Shift+点击可完全停止该流。"
+  "Shift+click stops the stream completely.": "Shift+点击可完全停止该流。",
+  "Open an EXTERNAL site on the public web?": "要打开公共网络上的外部网站吗？",
+  "A bundled directory of public calendar feeds: country public holidays, UN international days and one open-source events calendar, each from one provider. Feeds are checked a few at a time on each collection pass — never at startup, and never while you are offline.": "内置的公共日历订阅源目录：各国法定节假日、联合国国际日，以及一个开源活动日历，每个均来自单一提供方。每次采集时只检查其中少数几个——绝不在启动时检查，也绝不在你离线时检查。",
+  "Feeds whose host refuses automated fetching in its robots.txt, or whose robots.txt cannot be read, are left out of this list, as is one moon-phase feed the app's own astronomy already computes. That leaves no feed for the religious, election, rocket-launch and astronomy calendars the bundle also records, so they are not offered.": "若订阅源的主机在其 robots.txt 中拒绝自动抓取，或其 robots.txt 无法读取，该订阅源即不列入此目录；另有一个月相订阅源也被排除，因为应用自带的天文计算已经算出这些数据。因此，内置数据中同样记录的宗教、选举、火箭发射和天文日历已没有可用的订阅源，不予提供。"
 }

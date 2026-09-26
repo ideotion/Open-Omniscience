@@ -750,13 +750,16 @@ app.mount(
 # Console redirects itself to /unlock. A plaintext store never hits this.
 @app.middleware("http")
 async def _lock_gate(request: Request, call_next):
-    from src.api.unlock import ALLOWED_WHILE_LOCKED, app_is_locked
+    from src.api.unlock import LOCKED_STATES, allowed_while_locked, app_lock_state
 
-    if app_is_locked():
+    # Read ONCE: the allowlist depends on WHICH locked state this is (the first-launch
+    # data-location step answers at `fresh` only), and two reads could disagree.
+    state = app_lock_state()
+    if state in LOCKED_STATES:
         path = request.url.path
         if path == "/" or path == "/index.html":
             return RedirectResponse(url="/unlock", status_code=307)
-        if not any(path == p or path.startswith(p) for p in ALLOWED_WHILE_LOCKED):
+        if not allowed_while_locked(path, state):
             return JSONResponse(
                 status_code=503,
                 content={"detail": "the database is locked: unlock it first", "locked": True},
@@ -2568,14 +2571,15 @@ def view_article(request: Request, article_id: int, db: Session = Depends(get_db
 </div>
 <script>
   // Any link that leaves the corpus is confirmed first — honest about the exposure.
+  // A consent string, so it goes through the i18n engine (x12), as the law reader's does.
   document.addEventListener('click', function(e){{
     var a = e.target.closest && e.target.closest('a.ext');
     if(!a) return;
     e.preventDefault();
+    var t = (window.OOI18N && OOI18N.t) ? OOI18N.t : function(x){{ return x; }};
     var ok = window.confirm(
-      "Open an EXTERNAL site on the public web?\\n\\n" + a.href +
-      "\\n\\nThis leaves your local copy and makes a live request from your machine — " +
-      "the site may see your visit. Continue?");
+      t("Open an EXTERNAL site on the public web?") + "\\n\\n" + a.href + "\\n\\n" +
+      t("This leaves your local copy and makes a live request from your machine — the site may see your visit. Continue?"));
     if(ok) window.open(a.href, '_blank', 'noopener');
   }});
 </script>

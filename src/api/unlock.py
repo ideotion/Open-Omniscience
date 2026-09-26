@@ -68,8 +68,12 @@ def app_lock_state() -> str:
     return state_for_header(main_header_state(p))
 
 
+#: The two states the lock gate answers for; everything else is an open store.
+LOCKED_STATES = ("locked", "fresh")
+
+
 def app_is_locked() -> bool:
-    return app_lock_state() in ("locked", "fresh")
+    return app_lock_state() in LOCKED_STATES
 
 
 #: Paths served while locked: the unlock flow itself + the static assets it
@@ -92,6 +96,27 @@ ALLOWED_WHILE_LOCKED = (
     # from the unlock screen at /static/sw.js, which "/static/" above already
     # allows, so its reachability is unchanged.
 )
+
+#: Paths served ONLY while the state is ``fresh`` -- no store exists yet -- and still
+#: refused (503) while an existing store is locked. The first-launch "Where should your
+#: corpus live?" step runs between the legal step and the passphrase, i.e. exactly at
+#: ``fresh``; it was unreachable because this gate answered 503 for it (2026-09-26
+#: click-through, I15/P4/U1). EXACT paths, never a prefix: the step needs these three
+#: calls (GET and POST on the first, POST on the second) and nothing that might later
+#: be mounted beside them. Against a LOCKED store the answer stays what it was -- the
+#: endpoints would disclose the data folder's path, and a locked app says nothing but
+#: that it is locked. The handlers' own ``fresh`` checks remain the second wall.
+ALLOWED_ONLY_WHILE_FRESH = (
+    "/api/system/data-location",
+    "/api/system/data-location/check",
+)
+
+
+def allowed_while_locked(path: str, state: str) -> bool:
+    """Does the lock gate let ``path`` through in ``state`` (one of ``LOCKED_STATES``)?"""
+    if any(path == p or path.startswith(p) for p in ALLOWED_WHILE_LOCKED):
+        return True
+    return state == "fresh" and path in ALLOWED_ONLY_WHILE_FRESH
 
 
 class PassphraseBody(BaseModel):
