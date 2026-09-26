@@ -3366,16 +3366,32 @@ def test_net_coach_never_places_above_the_topbar_row():
     direction structurally guaranteed to have room near a top-anchored topbar -- confirmed
     live: at both 1400px (room to the right, "left" branch) and 900px (no room, "below"
     branch forced), all four buttons independently resolve document.elementFromPoint() to
-    themselves while the coach is showing."""
+    themselves while the coach is showing.
+
+    AMENDED 2026-09-26 (delegated click-through, rows N, O and T): the "to the right of the
+    button" branch was the same collapse in RTL -- the plane sits at the LEFT in Arabic, so
+    the branch was always taken and the clamp pulled the coach into the top bar over
+    #tm-open, #rate-toggle, #wiki-toggle and #llm -- and "below the four buttons" still
+    landed on the facet-subtab strip `.chrome` relocates under the top bar. So the side
+    branch is gone and the guard is the whole `.chrome` plus seven buttons. The geometry is
+    driven for real, LTR and RTL at 1440 and 375 px, in tests/net_coach_place_node_test.js."""
     js = app_js()
     fn = js.split("function _placeCoach() {", 1)[1].split("\n    }\n", 1)[0]
     assert "top = b.top - gap - h" not in fn, (
         "the old always-fails-near-the-topbar fallback (place above the single button, "
         "then clamp) must be gone"
     )
-    assert '"net-toggle", "lang-switch", "tm-open", "app-shutdown"' in fn, (
-        "the fallback must compute a union rect over ALL FOUR protected buttons, not just "
-        "the one #net-toggle it points at"
+    assert "b.right + gap" not in fn and 'side = "left"' not in fn, (
+        "the beside-the-button branch is back: the coach is taller than the top bar, so it "
+        "lands in the top bar's own row (in RTL, every time)"
+    )
+    guard = re.search(r"const _COACH_GUARD = \[([^\]]*)\]", js)
+    assert guard, "the protected-button list is gone"
+    for bid in ("net-toggle", "lang-switch", "tm-open", "app-shutdown", "rate-toggle",
+                "wiki-toggle", "llm"):
+        assert f'"{bid}"' in guard.group(1), f"#{bid} is no longer protected from the coach"
+    assert 'btn.closest(".chrome")' in fn, (
+        "the guard must include the whole chrome, whose subtab strip sits under the top bar"
     )
     assert "guardBottom + gap" in fn, (
         "the fallback must place the coach BELOW the guard-button union (never above), the "

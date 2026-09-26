@@ -1799,8 +1799,13 @@
     /* Airplane-mode onboarding coachmark (maintainer-ruled 2026-06-13): a
        dismissible invitation that teaches the ONE online/offline switch. It is
        the invitation layer only — going online still passes the consent popup
-       (ensureOnline). Prominent on first launches, subtle after, never naggy. */
-    #net-coach { position: fixed; z-index: 360; max-width: 270px; background: var(--panel);
+       (ensureOnline). Prominent on first launches, subtle after, never naggy.
+       z-index 52: above the sticky .chrome (50) and the page it hangs over, BELOW
+       everything the operator opens on purpose — the phone drawer's scrim (55) and
+       sidebar (60), the enlarged mind map (140), the command palette (150/151),
+       toasts (200) and the language menu (380). At 375 px the old 360 put a passive
+       invitation over the palette's results (delegated click-through, row N). */
+    #net-coach { position: fixed; z-index: 52; max-width: 270px; background: var(--panel);
       color: var(--fg); border: 1px solid var(--line); border-inline-start: 3px solid var(--accent);
       border-radius: 10px; padding: 12px 14px; font-size: 12.5px; line-height: 1.5;
       box-shadow: 0 10px 30px rgba(0,0,0,.35); display: none; }

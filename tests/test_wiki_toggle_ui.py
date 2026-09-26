@@ -164,6 +164,31 @@ def test_going_to_RUNNING_passes_the_ONE_consent_popup():
     )
 
 
+def test_the_consent_popup_is_told_WHICH_lane_this_action_turns_on():
+    """Delegated click-through 2026-09-26, row P: "Start the Wikipedia stream" headed a
+    popup that listed the Wikipedia lane under "Switched off right now" -- the state the
+    click was about to end. The toggle names the lane it enables; ``_laneState`` sorts
+    it as on (driven in ``net_lane_state_node_test.js``)."""
+    code = strip_comments(function_body(_SOURCES.read_text(encoding="utf-8"), "toggleWikiLane"))
+    assert re.search(r'ensureOnline\(\s*\w+\s*,\s*\{\s*enabling:\s*"wikipedia"\s*\}\s*\)', code), (
+        "the start path no longer tells the popup which lane it turns on"
+    )
+
+
+def test_the_toasts_CONFIRM_a_state_rather_than_repeat_an_order():
+    """Row P again: after a pause the toast read "Pause the Wikipedia stream", the
+    button's own action label, which reads as an instruction. A toast confirms what
+    happened, in the hover's heading for the state the server returned."""
+    src = _SOURCES.read_text(encoding="utf-8")
+    for name in ("toggleWikiLane", "stopWikiLane"):
+        code = strip_comments(function_body(src, name))
+        toasts = code[code.index("toast("):]
+        for order in ("Pause the Wikipedia stream", "Stop the Wikipedia stream",
+                      "Resume the Wikipedia stream", "Start the Wikipedia stream"):
+            assert f't9("{order}")' not in toasts, f"{name} toasts the order {order!r}"
+        assert 't9("Wikipedia stream: paused")' in toasts, f"{name} no longer confirms a state"
+
+
 def test_stopping_and_pausing_are_NOT_gated_on_a_network_consent():
     """Turning something off must never require consent to go online."""
     body = strip_comments(function_body(_SOURCES.read_text(encoding="utf-8"), "stopWikiLane"))

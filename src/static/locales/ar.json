@@ -4659,5 +4659,7 @@
   "Articles checked: {done} of {total} ({percent}%)": "المقالات التي فُحصت: {done} من {total} ({percent}%)",
   "Re-indexed: {n}": "أُعيدت فهرستها: {n}",
   "Continue the search re-index? It resumes where it stopped ({percent}% done).": "متابعة إعادة فهرسة البحث؟ تُستأنف من حيث توقفت (أُنجز {percent}%).",
-  "Re-index search for Arabic, Chinese and Japanese now? Articles whose search entry would change are indexed again; nothing else is touched. It runs in the background and can be paused from the task manager.": "إعادة فهرسة البحث للعربية والصينية واليابانية الآن؟ تُعاد فهرسة المقالات التي سيتغير مدخل البحث الخاص بها؛ ولا يُمسّ أي شيء آخر. تعمل في الخلفية ويمكن إيقافها مؤقتًا من مدير المهام."
+  "Re-index search for Arabic, Chinese and Japanese now? Articles whose search entry would change are indexed again; nothing else is touched. It runs in the background and can be paused from the task manager.": "إعادة فهرسة البحث للعربية والصينية واليابانية الآن؟ تُعاد فهرسة المقالات التي سيتغير مدخل البحث الخاص بها؛ ولا يُمسّ أي شيء آخر. تعمل في الخلفية ويمكن إيقافها مؤقتًا من مدير المهام.",
+  "Mostly not through this app's fetcher or proxy — only the installer check uses the fetcher.": "في معظمه ليس عبر أداة جلب هذا التطبيق أو وكيله — وحده فحص المثبِّت يستخدم أداة الجلب.",
+  "Shift+click stops the stream completely.": "النقر مع الضغط على Shift يوقف التدفق تمامًا."
 }

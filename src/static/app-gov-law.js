@@ -598,7 +598,9 @@
 
     async function govLoadStandard(btn) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      if (typeof ensureOnline === "function" && !(await ensureOnline())) return;  // the ONE consent
+      // The ONE consent, naming the action like every other gated button (invariant #14):
+      // called bare, the popup read "This action needs the network:" and then nothing.
+      if (typeof ensureOnline === "function" && !(await ensureOnline(t("Load standard country data")))) return;
       const old = btn && btn.textContent;
       if (btn) { btn.disabled = true; btn.textContent = t("Loading…"); }
       try {

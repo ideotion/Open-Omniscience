@@ -4659,5 +4659,7 @@
   "Articles checked: {done} of {total} ({percent}%)": "Artikel diperiksa: {done} dari {total} ({percent}%)",
   "Re-indexed: {n}": "Diindeks ulang: {n}",
   "Continue the search re-index? It resumes where it stopped ({percent}% done).": "Lanjutkan indeks ulang pencarian? Proses dilanjutkan dari titik berhentinya ({percent}% selesai).",
-  "Re-index search for Arabic, Chinese and Japanese now? Articles whose search entry would change are indexed again; nothing else is touched. It runs in the background and can be paused from the task manager.": "Indeks ulang pencarian untuk bahasa Arab, Tionghoa, dan Jepang sekarang? Artikel yang entri pencariannya akan berubah diindeks ulang; tidak ada yang lain yang disentuh. Proses berjalan di latar belakang dan bisa dijeda dari pengelola tugas."
+  "Re-index search for Arabic, Chinese and Japanese now? Articles whose search entry would change are indexed again; nothing else is touched. It runs in the background and can be paused from the task manager.": "Indeks ulang pencarian untuk bahasa Arab, Tionghoa, dan Jepang sekarang? Artikel yang entri pencariannya akan berubah diindeks ulang; tidak ada yang lain yang disentuh. Proses berjalan di latar belakang dan bisa dijeda dari pengelola tugas.",
+  "Mostly not through this app's fetcher or proxy — only the installer check uses the fetcher.": "Sebagian besar tidak melalui pengambil atau proksi aplikasi ini — hanya pemeriksaan penginstal yang memakai pengambil.",
+  "Shift+click stops the stream completely.": "Shift+klik menghentikan aliran sepenuhnya."
 }

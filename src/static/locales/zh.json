@@ -4659,5 +4659,7 @@
   "Articles checked: {done} of {total} ({percent}%)": "已检查文章：{done} / {total}（{percent}%）",
   "Re-indexed: {n}": "已重建索引：{n}",
   "Continue the search re-index? It resumes where it stopped ({percent}% done).": "继续搜索重建索引？将从停止处继续（已完成 {percent}%）。",
-  "Re-index search for Arabic, Chinese and Japanese now? Articles whose search entry would change are indexed again; nothing else is touched. It runs in the background and can be paused from the task manager.": "现在为阿拉伯语、中文和日语重建搜索索引？只有搜索条目会发生变化的文章才会重建索引；其他内容一概不动。该任务在后台运行，可在任务管理器中暂停。"
+  "Re-index search for Arabic, Chinese and Japanese now? Articles whose search entry would change are indexed again; nothing else is touched. It runs in the background and can be paused from the task manager.": "现在为阿拉伯语、中文和日语重建搜索索引？只有搜索条目会发生变化的文章才会重建索引；其他内容一概不动。该任务在后台运行，可在任务管理器中暂停。",
+  "Mostly not through this app's fetcher or proxy — only the installer check uses the fetcher.": "基本不经过本应用的抓取器或代理——只有安装程序的校验使用抓取器。",
+  "Shift+click stops the stream completely.": "Shift+点击可完全停止该流。"
 }

@@ -1047,8 +1047,11 @@
     // halted, stopped}; start and resume both ARRIVE at running and differ only in
     // what the lane can promise about continuity (see the field's own comment in
     // src/scheduler/settings.py). A click cycles running -> halted -> running;
-    // the full stop lives on the hover menu, because an accidental click on a
-    // top-bar icon should never be the thing that ends a multi-day stream.
+    // the full stop is Shift+click (index.html's onclick), because an accidental
+    // click on a top-bar icon should never be the thing that ends a multi-day
+    // stream. There is no hover menu: the hover NAMES the gesture while a stop
+    // would change anything, since a gesture nothing on screen mentions is one an
+    // operator cannot find (delegated click-through, row P).
     let _wikiLaneState = null;
     let _wikiLaneActive = false;
     // WHY the lane is not collecting, as the status reported it: `reason` is a token
@@ -1126,7 +1129,9 @@
       // The hover carries the CAVEAT (invariant #17's bubble reads the live title),
       // including what the lane contacts — a hover is a consent surface, so it
       // names the hosts rather than only the state.
-      btn.title = heading + " — " + detail + "\n" + action + "\n"
+      // Named only where Shift+click does something: a stopped lane has nothing to stop.
+      const stopHint = (running || halted) ? t9("Shift+click stops the stream completely.") + "\n" : "";
+      btn.title = heading + " — " + detail + "\n" + action + "\n" + stopHint
         + t9("This lane contacts stream.wikimedia.org, each edition's Action API, and wikimedia.org for daily pageviews.");
       btn.setAttribute("aria-label", action);
       btn.setAttribute("aria-pressed", running ? "true" : "false");
@@ -1179,14 +1184,23 @@
         // transition passes the ONE consent popup, and this is one, because the
         // stream opens a connection to stream.wikimedia.org the moment it starts.
         // The airplane check is the gate; the settings write below is loopback.
-        if (!await ensureOnline(t9("Start the Wikipedia stream"))) return;
+        // `enabling` makes the popup list this lane as it WILL be once the operator
+        // agrees, not under "Switched off right now" (delegated click-through, row P).
+        const why = from === "halted" ? t9("Resume the Wikipedia stream")
+                                      : t9("Start the Wikipedia stream");
+        if (!await ensureOnline(why, {enabling: "wikipedia"})) return;
       }
       try {
         const c = await api("/api/scheduler/config",
           {method: "PUT", body: JSON.stringify({wiki_lane_state: next})});
-        _paintWikiLane((c && c.wiki_lane_state) || next, _wikiLaneActive);
-        toast(next === "running" ? t9("Resume the Wikipedia stream")
-                                 : t9("Pause the Wikipedia stream"));
+        const now = (c && c.wiki_lane_state) || next;
+        _paintWikiLane(now, _wikiLaneActive);
+        // The toast CONFIRMS what happened, in the hover's own heading for the state
+        // the server returned -- the action labels read as orders ("Pause the
+        // Wikipedia stream" after it was paused; row P).
+        toast(now === "running" ? t9("Wikipedia stream: running")
+              : now === "halted" ? t9("Wikipedia stream: paused")
+                                 : t9("Wikipedia stream: stopped"));
         loadWikiLane();  // the reason the last paint carried belongs to the old state
       } catch (e) {
         toast(_failMsg("Update failed: {error}", e), "err");
@@ -1198,8 +1212,11 @@
       try {
         const c = await api("/api/scheduler/config",
           {method: "PUT", body: JSON.stringify({wiki_lane_state: "stopped"})});
-        _paintWikiLane((c && c.wiki_lane_state) || "stopped", _wikiLaneActive);
-        toast(t9("Stop the Wikipedia stream"));
+        const now = (c && c.wiki_lane_state) || "stopped";
+        _paintWikiLane(now, _wikiLaneActive);
+        toast(now === "stopped" ? t9("Wikipedia stream: stopped")
+              : now === "halted" ? t9("Wikipedia stream: paused")
+                                 : t9("Wikipedia stream: running"));
         loadWikiLane();
       } catch (e) {
         toast(_failMsg("Update failed: {error}", e), "err");
