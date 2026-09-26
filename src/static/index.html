@@ -3260,7 +3260,7 @@
       <h3 style="margin:0 0 4px">Import</h3>
       <p class="muted" style="margin-top:0">Point at a folder and we'll find what's importable inside it — a backup to restore, large data (models&nbsp;/&nbsp;maps&nbsp;/&nbsp;dumps), or newsletters. Restore is always additive: nothing you already have is overwritten.</p>
       <div><label for="ux-imp-src">Folder to import from</label>
-        <div class="row" style="gap:6px"><input id="ux-imp-src" type="text" placeholder="/mnt/backup  or  D:\oo-backup" style="flex:2">
+        <div class="row" style="gap:6px"><input id="ux-imp-src" type="text" placeholder="/mnt/backup  or  D:\oo-backup" style="flex:2 1 12em;min-width:12em">
           <button class="secondary" type="button" onclick="ooFolderPicker('ux-imp-src', false)">Browse…</button>
           <button class="secondary" type="button" onclick="_uxImScan(this)">Scan</button>
           <button class="secondary" type="button" onclick="_uxImVerify(this)" title="Check the backup's manifest signature and every volume + parity checksum without restoring anything — the live corpus is untouched.">Verify</button></div></div>

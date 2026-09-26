@@ -296,7 +296,12 @@ def test_reopening_the_import_dialog_offers_the_last_run_without_re_rendering_it
     assert "async function _uxImLastLine(" in _APP
     fn = function_body(_APP, "_uxImLastLine")
     assert "/api/backup/import-reports" in fn, "the line reads the persisted reports"
-    assert "_uxImLastLineHtml(reports[0]" in fn, "the NEWEST report is the subject"
+    # The NEWEST RUN is the subject (I7, 2026-09-26): one report per backup, so the
+    # newest report alone named the last backup's 1,200 of a 4,800-article import.
+    # _uxImRunSummary folds the newest report's run together (behaviour pinned in
+    # tests/import_stages_node_test.js).
+    assert "_uxImLastLineHtml(_uxImRunSummary(reports)" in fn, "the NEWEST run is the subject"
+    assert "reports[0]" in function_body(_APP, "_uxImRunSummary")
     # a failed READ renders nothing -- never a fabricated "no imports yet"
     assert 'host.innerHTML = ""' in fn
     # the line itself LINKS the report; it does not re-render it

@@ -4684,5 +4684,12 @@
   "Enter a series id and an area (e.g. FRA) to chart it over time.": "Masukkan id seri dan wilayah (mis. FRA) untuk memplotnya sepanjang waktu.",
   "FRA": "FRA",
   "Name and domain are required. Country takes a 2- or 3-letter code or a country name. The export adds country_iso3; an import falls back to it when country is empty or unreadable, and refuses a row where the two disagree. Tags are comma-separated, so quote the cell. Priority runs 1–3 and reliability_score runs 1–10.": "Nama dan domain wajib diisi. Negara menerima kode 2 atau 3 huruf atau nama negara. Ekspor menambahkan country_iso3; impor memakainya bila country kosong atau tidak terbaca, dan menolak baris yang keduanya tidak cocok. Tag dipisahkan koma, jadi beri tanda kutip pada sel. Prioritas berkisar 1–3 dan reliability_score berkisar 1–10.",
-  "World": "Dunia"
+  "World": "Dunia",
+  "Done": "Selesai",
+  "Waiting": "Menunggu",
+  "Skipped": "Dilewati",
+  "Interrupted": "Terputus",
+  "Cancelled": "Dibatalkan",
+  "Analytics are complete once the re-index (stage 4) finishes.": "Analitik akan lengkap setelah pengindeksan ulang (tahap 4) selesai.",
+  "An import is running — verify the backup once it has finished.": "Sebuah impor sedang berjalan — verifikasi cadangan setelah impor selesai."
 }

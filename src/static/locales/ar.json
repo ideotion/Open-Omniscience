@@ -4684,5 +4684,12 @@
   "Enter a series id and an area (e.g. FRA) to chart it over time.": "أدخل معرّف سلسلة ومنطقة (مثلاً FRA) لرسمها بيانيًا عبر الزمن.",
   "FRA": "FRA",
   "Name and domain are required. Country takes a 2- or 3-letter code or a country name. The export adds country_iso3; an import falls back to it when country is empty or unreadable, and refuses a row where the two disagree. Tags are comma-separated, so quote the cell. Priority runs 1–3 and reliability_score runs 1–10.": "الاسم والنطاق مطلوبان. يقبل البلد رمزًا من حرفين أو ثلاثة أحرف أو اسم بلد. يضيف التصدير ⁨country_iso3⁩؛ ويلجأ إليه الاستيراد إذا كان ⁨country⁩ فارغًا أو غير مقروء، ويرفض أي صف يتعارض فيه الاثنان. الوسوم مفصولة بفواصل، لذا ضع الخلية بين علامتي اقتباس. الأولوية تتراوح بين ⁨1–3⁩، و⁨reliability_score⁩ يتراوح بين ⁨1–10⁩.",
-  "World": "العالم"
+  "World": "العالم",
+  "Done": "تم",
+  "Waiting": "في الانتظار",
+  "Skipped": "تم التخطي",
+  "Interrupted": "انقطع",
+  "Cancelled": "أُلغي",
+  "Analytics are complete once the re-index (stage 4) finishes.": "تكتمل التحليلات عندما تنتهي إعادة الفهرسة (المرحلة 4).",
+  "An import is running — verify the backup once it has finished.": "هناك استيراد قيد التشغيل — تحقّق من النسخة الاحتياطية بعد انتهائه."
 }

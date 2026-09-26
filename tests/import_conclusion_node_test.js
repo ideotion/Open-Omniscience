@@ -209,12 +209,39 @@ test("an unreadable backlog says so and never renders as zero pending", () => {
   assert(!html.includes("0 article"), "an unreadable count is not a measured zero");
 });
 
-test("several backups' backlogs are summed, not silently taken from the last", () => {
+// I6 (2026-09-26) REVERSED what this suite used to pin. Each item's `articles_pending`
+// is the WHOLE corpus backlog when that item committed (volume_job.hand_off_reindex reads
+// reindex_backlog()), so the later snapshot already CONTAINS the earlier one; the test
+// that asserted a sum pinned the double count. The walk: four 1,200-article backups at
+// K=3 read 3,600 then 4,800, and the summary said "8,400 still to index".
+test("several backups' backlogs are the LAST snapshot, never a sum of snapshots", () => {
   const html = render([
-    viaProducer(restoreReport({ deferred: true, articles_pending: 1000, started: true }), "a"),
-    viaProducer(restoreReport({ deferred: true, articles_pending: 250, started: false }), "b"),
+    viaProducer(restoreReport({ deferred: true, articles_pending: 3600, started: false }), "a"),
+    viaProducer(restoreReport({ deferred: true, articles_pending: 4800, started: true }), "b"),
   ], { state: "done", elapsed_s: 400, items_done: 2, items_total: 2 });
-  assert(html.includes("1,250"), "a queued run's total backlog is the sum of its items'");
+  assert(html.includes("4,800"), "the backlog the run ended with is the last snapshot");
+  assert(!html.includes("8,400"), "summing whole-corpus snapshots double-counts: " + html);
+});
+
+test("an unreadable last snapshot says so rather than repeating an older figure", () => {
+  const html = render([
+    viaProducer(restoreReport({ deferred: true, articles_pending: 3600, started: false }), "a"),
+    viaProducer(restoreReport({ deferred: true, articles_pending: null,
+                                pending_unreadable_reason: "database is locked" }), "b"),
+  ], { state: "done", elapsed_s: 400, items_done: 2, items_total: 2 });
+  assert(html.includes("could not be read"), "the current backlog was not read: " + html);
+  assert(!html.includes("3,600"), "an earlier snapshot is not the current backlog");
+});
+
+test("I13/I12: the per-backup table lets a folder name wrap, and isolates it", () => {
+  // At 375 px the one-line names held this table 130-170 px wider than the dialog
+  // (measured in Chromium, 2026-09-26), clipping them at its edge.
+  const name = "202609261808_OpenOmniscience_Backup_2";
+  const html = render([ok(name, 1200, 0), ok("b", 1200, 0)],
+                      { state: "done", elapsed_s: 13, items_done: 2, items_total: 2 });
+  const cell = html.slice(html.indexOf("<tr>"), html.indexOf("</td>", html.indexOf("<tr>")));
+  assert(cell.indexOf("<bdi>" + name + "</bdi>") !== -1, "the name is isolated: " + cell);
+  assert(cell.indexOf("white-space:nowrap") === -1, "the name may wrap: " + cell);
 });
 
 test("_uxFmtDur refuses to invent a duration it does not have", () => {

@@ -4684,5 +4684,12 @@
   "Enter a series id and an area (e.g. FRA) to chart it over time.": "请输入序列 id 和地区（例如 FRA）以绘制其随时间变化的图表。",
   "FRA": "FRA",
   "Name and domain are required. Country takes a 2- or 3-letter code or a country name. The export adds country_iso3; an import falls back to it when country is empty or unreadable, and refuses a row where the two disagree. Tags are comma-separated, so quote the cell. Priority runs 1–3 and reliability_score runs 1–10.": "名称和域名为必填项。国家可填 2 或 3 字母代码或国家名称。导出会附加 country_iso3；导入在 country 为空或无法识别时改用它，并拒绝两者不一致的行。标签以逗号分隔，因此请为该单元格加引号。优先级的范围是 1–3，reliability_score 的范围是 1–10。",
-  "World": "世界"
+  "World": "世界",
+  "Done": "已完成",
+  "Waiting": "等待中",
+  "Skipped": "已跳过",
+  "Interrupted": "已中断",
+  "Cancelled": "已取消",
+  "Analytics are complete once the re-index (stage 4) finishes.": "重新索引（第 4 步）完成后，分析才算完成。",
+  "An import is running — verify the backup once it has finished.": "正在进行导入——请在导入完成后再校验备份。"
 }

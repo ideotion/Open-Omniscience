@@ -4684,5 +4684,12 @@
   "Enter a series id and an area (e.g. FRA) to chart it over time.": "Saisissez un id de série et une zone (par ex. FRA) pour la tracer dans le temps.",
   "FRA": "FRA",
   "Name and domain are required. Country takes a 2- or 3-letter code or a country name. The export adds country_iso3; an import falls back to it when country is empty or unreadable, and refuses a row where the two disagree. Tags are comma-separated, so quote the cell. Priority runs 1–3 and reliability_score runs 1–10.": "Le nom et le domaine sont requis. Le pays accepte un code à 2 ou 3 lettres ou un nom de pays. L'export ajoute country_iso3 ; un import s'y reporte si country est vide ou illisible, et refuse une ligne où les deux se contredisent. Les étiquettes sont séparées par des virgules, donc mettez la cellule entre guillemets. La priorité va de 1 à 3 et reliability_score va de 1 à 10.",
-  "World": "Monde"
+  "World": "Monde",
+  "Done": "Terminé",
+  "Waiting": "En attente",
+  "Skipped": "Ignoré",
+  "Interrupted": "Interrompu",
+  "Cancelled": "Annulé",
+  "Analytics are complete once the re-index (stage 4) finishes.": "Les analyses seront complètes une fois la réindexation (étape 4) terminée.",
+  "An import is running — verify the backup once it has finished.": "Une importation est en cours — vérifiez la sauvegarde une fois celle-ci terminée."
 }

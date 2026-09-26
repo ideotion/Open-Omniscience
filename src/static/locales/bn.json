@@ -4684,5 +4684,12 @@
   "Enter a series id and an area (e.g. FRA) to chart it over time.": "একটি series id ও একটি এলাকা (যেমন FRA) লিখে এটিকে সময়ের সাথে চার্ট করুন।",
   "FRA": "FRA",
   "Name and domain are required. Country takes a 2- or 3-letter code or a country name. The export adds country_iso3; an import falls back to it when country is empty or unreadable, and refuses a row where the two disagree. Tags are comma-separated, so quote the cell. Priority runs 1–3 and reliability_score runs 1–10.": "নাম এবং ডোমেইন আবশ্যক। দেশ হিসেবে ২ বা ৩ অক্ষরের কোড অথবা দেশের নাম দেওয়া যায়। রপ্তানি country_iso3 যোগ করে; আমদানি country ফাঁকা বা অপাঠ্য হলে এটি ব্যবহার করে, এবং যে সারিতে দুটি মেলে না তা প্রত্যাখ্যান করে। ট্যাগ কমা দিয়ে আলাদা করা, তাই ঘরটি উদ্ধৃত করুন। অগ্রাধিকার ১–৩ পর্যন্ত এবং reliability_score ১–১০ পর্যন্ত চলে।",
-  "World": "বিশ্ব"
+  "World": "বিশ্ব",
+  "Done": "সম্পন্ন",
+  "Waiting": "অপেক্ষমাণ",
+  "Skipped": "এড়িয়ে যাওয়া হয়েছে",
+  "Interrupted": "বাধাপ্রাপ্ত",
+  "Cancelled": "বাতিল করা হয়েছে",
+  "Analytics are complete once the re-index (stage 4) finishes.": "পুনঃসূচিকরণ (ধাপ ৪) শেষ হলে বিশ্লেষণ সম্পূর্ণ হবে।",
+  "An import is running — verify the backup once it has finished.": "একটি আমদানি চলছে — এটি শেষ হলে ব্যাকআপটি যাচাই করুন।"
 }

@@ -97,6 +97,11 @@ const src = [
   extract("function _uxImRenderStatements("),
   extract("function _uxImRenderStages("),
   extract("function _uxImRenderQueue("),
+  // The interrupted line the header shares with the fresh page (I9), and the two pieces
+  // of chain state the renderer now writes -- declared here, not left to sloppy-mode
+  // globals, so a typo in the shipped name fails this suite instead of passing it.
+  extract("function _uxImInterruptedHtml("),
+  "let _uxImLastStatus = null; let _uxImView = null;",
   extract("function _jobRow("),
   extract("function _fmtBytes("),
   // _jobRow calls these two (PERF-09's rate line). Extracted rather than stubbed,
@@ -151,13 +156,15 @@ const document = { getElementById: (id) => dom[id] || null, createElement: () =>
 
 const mod = new Function("window", "document", src)({}, document);  // no OOI18N: t() is identity
 
-function render(st) { resetDom(); mod._uxImRenderQueue(st); return dom["ux-imp-queue-note"].innerHTML; }
-
 // Q206 = a: rows are PATCHED IN PLACE now, so the host's own innerHTML stays empty
 // and the content lives on its children. Reading the host directly would report an
 // empty string for a correctly-rendered list -- a false negative that reads exactly
 // like a broken renderer.
 function childHtml(id) { return dom[id].children.map((c) => c.innerHTML).join(""); }
+
+// The HEADER is patched the same way since I9 (2026-09-26): a "head" part that carries
+// the elapsed seconds and changes every tick, and a "body" part that does not.
+function render(st) { resetDom(); mod._uxImRenderQueue(st); return childHtml("ux-imp-queue-note"); }
 
 const DONE_ITEM = { label: "backup-a", kind: "corpus", state: "done", elapsed_s: 6240, path: "/x" };
 const RUNNING_ITEM = { label: "backup-a", kind: "corpus", state: "running", elapsed_s: 60, path: "/x" };
@@ -237,7 +244,7 @@ test("an item genuinely in flight keeps its phase in its own row, not the header
     stages_done: 0, stages_total: 2, elapsed_s: 60, collection_paused: true,
     live: { state: "running", progress: { phase: "merging" } },
   });
-  const note = dom["ux-imp-queue-note"].innerHTML;
+  const note = childHtml("ux-imp-queue-note");
   const rows = childHtml("ux-imp-queue-rows");
   assert(note.indexOf("Merging") === -1, "the header must not duplicate a running item's phase");
   assert(rows.indexOf("Merging") !== -1, "the running item's own row still carries it");
@@ -247,6 +254,83 @@ test("a running run with no phase at all adds nothing", () => {
   const note = render(Object.assign({}, TAIL_RUN, { live: null }));
   assert(note.indexOf(TUNING_LABEL) === -1,
     "with no phase published there is nothing to claim — an empty live must stay silent");
+});
+
+// --------------------------------------------------------------------------- //
+//  batch B1 (2026-09-26): the header, the rows, and what they must not say
+// --------------------------------------------------------------------------- //
+const STAGED_RUN = {
+  state: "running", elapsed_s: 7, collection_paused: true, items_staged: 2,
+  checkpoint: { k: 3 }, items_done: 2, items_total: 4, stages_done: 0, stages_total: 4,
+  items: [
+    { id: "0", label: "b1", kind: "corpus", state: "staged", stage: 2, stage_applicable: true },
+    { id: "1", label: "b2", kind: "corpus", state: "staged", stage: 2, stage_applicable: true },
+    { id: "2", label: "b3", kind: "corpus", state: "running", stage: 1, stage_applicable: true },
+    { id: "3", label: "b4", kind: "corpus", state: "queued", stage_applicable: true },
+  ],
+};
+
+test("I9: no status line in the header is the toast box", () => {
+  // THE WALK: the staged line was `<span class="note">` -- 11 px padding, a shadow and a
+  // slide-in -- so it overlapped "0/4 imported" and re-animated on every 1 s tick.
+  const note = render(STAGED_RUN);
+  assert(note.indexOf("Merged, not yet saved") !== -1, "the staged line is still said: " + note);
+  assert(note.indexOf('class="note') === -1, "the toast class overlaps the line above: " + note);
+});
+
+test("I9: a tick that only moves the clock rewrites the clock and nothing else", () => {
+  resetDom();
+  mod._uxImRenderQueue(STAGED_RUN);
+  const host = dom["ux-imp-queue-note"];
+  const keys = host.children.map((c) => c.getAttribute("data-row-key"));
+  assert(keys.join(",") === "head,body", "the header is two patched parts: " + keys);
+  const body = host.children[1];
+  let writes = 0;
+  const kept = body.innerHTML;
+  Object.defineProperty(body, "innerHTML", {
+    get() { return kept; }, set(_v) { writes += 1; }, configurable: true,
+  });
+  mod._uxImRenderQueue(Object.assign({}, STAGED_RUN, { elapsed_s: 8 }));
+  assert(writes === 0, "the staged line was rewritten (and its animation replayed) by a clock tick");
+  assert(host.children[0].innerHTML.indexOf("8s") !== -1, "the clock itself did move");
+});
+
+test("I12: a backup's folder name is isolated from the surrounding text direction", () => {
+  resetDom();
+  mod._uxImRenderQueue(Object.assign({}, STAGED_RUN, {
+    items: [{ id: "0", label: "202609261808_OpenOmniscience_Backup_2", kind: "corpus", state: "done" }],
+  }));
+  const rows = childHtml("ux-imp-queue-rows");
+  assert(rows.indexOf("<bdi>202609261808_OpenOmniscience_Backup_2</bdi>") !== -1, rows);
+});
+
+test("I13: a long folder name may wrap rather than run out of a 375 px dialog", () => {
+  resetDom();
+  mod._uxImRenderQueue(STAGED_RUN);
+  assert(childHtml("ux-imp-queue-rows").indexOf("overflow-wrap:anywhere") !== -1,
+    childHtml("ux-imp-queue-rows"));
+});
+
+test("I14: a finished backup does not also read 'stage 2 of 4'", () => {
+  resetDom();
+  mod._uxImRenderQueue(Object.assign({}, STAGED_RUN, {
+    state: "done",
+    items: [
+      { id: "0", label: "b1", kind: "corpus", state: "done", stage: 2, stage_applicable: true },
+      { id: "1", label: "b2", kind: "corpus", state: "error", stage: 1, stage_applicable: true },
+    ],
+  }));
+  const rows = childHtml("ux-imp-queue-rows");
+  assert(rows.indexOf("stage ") === -1, "'Done · stage 2 of 4' says finished and half-way: " + rows);
+});
+
+test("I14: ...while a backup on its way, or waiting for its checkpoint, keeps its stage", () => {
+  resetDom();
+  mod._uxImRenderQueue(STAGED_RUN);
+  const rows = dom["ux-imp-queue-rows"].children.map((c) => c.innerHTML);
+  assert(rows[0].indexOf("stage 2 of 4") !== -1, "a staged backup waits in stage 2: " + rows[0]);
+  assert(rows[2].indexOf("stage 1 of 4") !== -1, "a running backup is in stage 1: " + rows[2]);
+  assert(rows[3].indexOf("stage ") === -1, "a queued backup has no stage yet: " + rows[3]);
 });
 
 // --------------------------------------------------------------------------- //
