@@ -1799,6 +1799,23 @@ the setting, not a failure. To run them anyway, start the app with
 keeps reporting that the machine is small, because the override changes what the
 app *does*, never what it *measured*.
 
+#### A heavy view stops before it can take the app down
+
+The heavy analytics reads (most Insights views, the Observatory, most-cited
+sources, the diagnostics bundle) already run under a time limit. They also
+watch available memory while the database hands them rows. If it falls to the
+memory guard's floor (**256 MB** by default, `OO_MEM_GUARD_AVAIL_MB`), the read
+is stopped and the view says why, with the numbers: *"stopped this read after
+12s: the machine was nearly out of memory (180 MB available, at or below the
+256 MB floor the memory guard uses) ..."*. A read asked for when memory is
+already that low does not start, and says *"did not start this read"*
+instead. Open the view again once memory has recovered; nothing was lost,
+because a read changes nothing.
+
+**What it does not do:** it is a stop, not a cap. It sees what grows while rows
+are being read, which is where a view that loads a whole table grows, and
+nothing else. `OO_READ_MEMORY_STOP=0` turns it off without touching the guard.
+
 #### Why the app cannot simply cap its own memory
 
 There is no honest way for a program to enforce a memory ceiling on itself:

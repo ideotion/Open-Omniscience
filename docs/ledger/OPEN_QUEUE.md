@@ -15214,3 +15214,27 @@ tab»** (over «Home section»). Recorded as `R32` in `RULINGS_INDEX.md` and as 
 `CLAUDE.md`; invariant #2's roster grows by one and `test_ui_invariants` pins it (#32). **Not
 decided by it:** nothing about a Home family. The renderers in `src/static/app-living.js` stay pure
 `(payload, t, tf) -> HTML` so one could be added later, but no Home card exists and none is implied.
+
+---
+
+## 2026-09-26 — What the read memory stop does NOT cover (deliberate, PR #1190)
+
+The stop (`statement_deadline`, `MemoryShort`) was built after a 3.9 GB instance died in 25
+seconds of growth that no time deadline could stop. It is recorded here what it leaves alone, so
+nobody reads it as a general memory cap:
+
+- **It rides the deadline.** A read outside any `statement_deadline` scope is not watched, and
+  `OO_STATEMENT_TIMEOUT_S=0` turns the stop off with the deadline. Of the whole-table reads the UI
+  can start, the Groups view (`list_supergroups`), a source's discovery trail
+  (`/api/sources/{id}/provenance`) and the cited-sources preview (`/api/sources/promote-cited`)
+  are still outside a deadline. They were CHUNKED instead (`keyset_scan`), which bounds their rows;
+  putting them under `guarded_read` too would change their failure from a slow answer to a 503
+  after 60 s, a UX decision not taken here.
+- **It sees growth while SQLite produces rows**, which is where a whole-table `.all()` grows.
+  Python work after the last row (the per-domain sets in most-cited domains, the article-to-source
+  dict in the cited-sources preview, which is one entry per article) is not interrupted by it.
+- **Background jobs outside a deadline** (the pass tail, the wiki lane, housekeeping) are not
+  covered. The memory guard pauses new work; it cannot stop one read already running.
+- **Which read made the 2026-09-26 burst is not known.** When the next crash's thread snapshots
+  (PR #1190) name it, check whether it runs inside a deadline; if not, that read needs its own
+  bound, and this entry should say which.

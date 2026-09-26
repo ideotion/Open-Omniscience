@@ -9966,3 +9966,39 @@ monitor is what makes it affordable at that moment (copied to `LESSONS.md`).
 
 **STILL OWED.** The memory growth itself (next PR), and a real field crash read through the new
 witnesses.
+
+## 2026-09-26 — A heavy read stops before memory runs out; five whole-table reads go in chunks (PR #1190)
+
+**WHAT SHIPPED.** `statement_deadline`, the progress handler every heavy analytics read already
+runs under, now also watches available memory. A read asked for at or below the memory guard's
+own floor (`memguard.memory_guard.avail_floor_mb`, 256 MB by default) never starts; one that drives
+memory there is interrupted. Both raise `MemoryShort`, a `StatementTimeout` subclass, so every
+existing handler (the API's 503, a diagnostics member's "skipped", a probe's "timed out") already
+catches it, and its message names memory and the numbers. `OO_READ_MEMORY_STOP=0` turns it off
+without touching the guard. Separately, `keyset_scan` (`src/database/query.py`) reads a table in
+`WHERE id > last ORDER BY id LIMIT 20000` statements, and five reads a click can start use it
+instead of holding the whole table: the Groups view and the Observatory's member resolution (every
+keyword, when a group has a hand-added member), a source's discovery trail and the cited-sources
+preview (every external link), and most-cited domains (every link).
+
+**THE LESSON (copied to `LESSONS.md`).** A time deadline is not a memory bound. The crash bundle of
+2026-09-26 (a 3.9 GB machine) shows the app gaining 13.5 million Python objects in its last 25
+seconds, about 575,000 a second, while available memory fell from 1,065 MB to 135 MB. Every heavy
+read already ran under a 60-second deadline, and none of them could have fired in time. The floor
+has to be on the resource that runs out, read where it is consumed.
+
+**THE SECOND LESSON (copied to `LESSONS.md`).** Iterating a SQLAlchemy 2.0 ORM query does not
+stream. `loading.instances()` calls `cursor._raw_all_rows()` unless `yield_per` is set, so `for
+row in session.query(...)` fetches every row before it yields the first. `cited_domain_stats` was
+written as if it streamed.
+
+**MEASURED, NOT INFERRED.** Each of the five reads is timed at N and 4N rows with `tracemalloc` on
+a table built so its answer stays the same size: the old code's peak grew ×4.01, the chunked one's
+×1.04. 29 tests; 18 mutations of the new code (each comparison, the door, the cache, the switch,
+the floor's source, each call site reverted, the keyset's edges and filter, the tie order), all
+caught.
+
+**NOT ATTRIBUTED.** The bundle does not say which read made the fatal burst. The shape (about four
+objects per row, 67 bytes each, linear) fits a whole-table `.all()` of a few million rows, and the
+five chunked here are the ones the UI can start, but none is proven to be it. The thread
+snapshots this same PR adds are what will name it. What the stop does not cover is recorded in `OPEN_QUEUE.md`.

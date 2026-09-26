@@ -63,16 +63,20 @@ def _first_citing_article(session, domain: str) -> dict | None:
     """
     from src.catalog.normalize import registrable_domain
     from src.database.models import Article, ArticleLink, Source
+    from src.database.query import keyset_scan
     from src.utils.url_utils import is_equivalent_domain
 
     dom = domain.lower()
-    rows = (
-        session.query(ArticleLink.normalized_url, ArticleLink.article_id)
-        .filter(ArticleLink.link_type == "external")
-        .all()
+    # Every external link is read, in id-ordered chunks: this used to be one ``.all()``
+    # of the whole table, every URL held in memory at once for one source's panel.
+    rows = keyset_scan(
+        session.query(
+            ArticleLink.id, ArticleLink.normalized_url, ArticleLink.article_id
+        ).filter(ArticleLink.link_type == "external"),
+        ArticleLink.id,
     )
     matching_ids: set[int] = set()
-    for nu, aid in rows:
+    for _link_id, nu, aid in rows:
         d = registrable_domain(nu)
         if d and is_equivalent_domain(d.lower(), dom):
             matching_ids.add(aid)
