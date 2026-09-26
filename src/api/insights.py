@@ -832,6 +832,63 @@ def insights_reindex_job_action(action: str) -> dict:
     raise HTTPException(status_code=400, detail=f"unknown action {action!r}")
 
 
+@router.post("/keyword-fold-job")
+def insights_keyword_fold_job() -> dict:
+    """Start the keyword FOLD job (Q416 = a), or continue a paused one.
+
+    Re-keys keywords written before lemmatisation exactly as a re-index would (``studies``
+    joins ``study``), without reading article text, then sets each keyword's language to
+    the majority of its mentions' (Q413/Q414). A background DB-writer job (kind
+    "keyword-fold"), pausable and resumable from the task manager. 409 with a CODE when it
+    is already running or lemmatisation is off in this install; never exception text."""
+    from src.analytics.keyword_fold import FoldRefused, get_fold_manager, refusal_code
+
+    mgr = get_fold_manager()
+    try:
+        return mgr.start()
+    except FoldRefused:
+        raise HTTPException(status_code=409, detail={"code": refusal_code(mgr)}) from None
+
+
+@router.get("/keyword-fold-job/status")
+def insights_keyword_fold_job_status() -> dict:
+    """Live state of the (single) keyword fold job — for the UI + /api/jobs."""
+    from src.analytics.keyword_fold import get_fold_manager
+
+    return get_fold_manager().status()
+
+
+@router.get("/keyword-fold-job/report")
+def insights_keyword_fold_job_report() -> dict:
+    """The report the last COMPLETED fold wrote (the gate's artifact); 404 before one."""
+    from src.analytics.keyword_fold import last_report
+
+    report = last_report()
+    if report is None:
+        raise HTTPException(status_code=404, detail={"code": "no-report"})
+    return report
+
+
+@router.post("/keyword-fold-job/{action}")
+def insights_keyword_fold_job_action(action: str) -> dict:
+    """Pause / resume / cancel the keyword fold job."""
+    from src.analytics.keyword_fold import FoldRefused, get_fold_manager, refusal_code
+
+    mgr = get_fold_manager()
+    if action == "pause":
+        mgr.pause()
+        return mgr.status()
+    if action == "resume":
+        try:
+            return mgr.resume()
+        except FoldRefused:
+            raise HTTPException(status_code=409, detail={"code": refusal_code(mgr)}) from None
+    if action == "cancel":
+        mgr.cancel()
+        return mgr.status()
+    raise HTTPException(status_code=400, detail={"code": "unknown-action"})
+
+
 @router.get("/corpus-keywords")
 def insights_corpus_keywords(
     query: str | None = None,

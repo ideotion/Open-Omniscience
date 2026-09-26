@@ -1907,45 +1907,52 @@ _LANG_SCAN_CHUNK = 20_000
 
 
 def reconcile_keyword_language(
-    session: Session, *, min_articles: int = 2
+    session: Session,
+    *,
+    min_articles: int = 2,
+    should_stop: Callable[[], bool] | None = None,
 ) -> dict:
-    """Set ``Keyword.language`` to the SIGNATURE-MAJORITY article language — the fix for
-    the first-write-wins language that ``index_article`` never reconciles (keyword-engine
-    P4.2; the 16% / 40%-of-head mismatch). A background pass, mirroring
-    :func:`reconcile_keyword_counters`: off the request path, counts only, no score.
+    """Set ``Keyword.language`` to the MAJORITY language of its mentions -- the cache
+    Q414 = a turned the first-write-wins column into (keyword-engine P4.2; the 16% /
+    40%-of-head mismatch). A background pass, mirroring :func:`reconcile_keyword_counters`:
+    off the request path, counts only, no score.
 
-    Effective language of a keyword = the language of the ARTICLES that mention it,
-    by distinct-article majority — the same signal :func:`queries._ring_lang_of` uses for
-    ring membership, but written back so the stored tag becomes truthful (and gates
-    correct grouping + the later lemmatization, P4.3). A correction only happens with a
-    CLEAR majority (``> half`` of the keyword's located mentions) backed by
-    ``>= min_articles`` distinct articles, so a single stray article never flips a tag.
+    THE VOTE IS THE MENTION'S OWN LANGUAGE (Q413 = a, Q414 = a, 2026-09-15). Each mention
+    row carries its article's normalised language since PR #1148, so the vote is read off
+    the mention table itself -- one table, no join. A mention written BEFORE that column
+    existed reads NULL (the migration deliberately did no backfill), and for it the vote
+    is its article's language resolved exactly as ``index_article`` would have written it
+    (:class:`~src.analytics.article_lang_map.ArticleLanguageMap`: the asserted language,
+    else the deduced one, normalised). That is not a second source of truth: it is the
+    same value, read from where it still lives until a re-index copies it onto the row.
+    The map is built LAZILY, on the first such mention, so a corpus whose mentions all
+    carry a language never reads the articles table at all. A mention whose article has
+    no language either way is not a vote -- never the ``"en"`` extraction assumption.
+
+    A correction happens only on a CLEAR majority (``> half`` of the keyword's votes)
+    backed by ``>= min_articles`` distinct articles, so a single stray article never flips
+    a tag. There is exactly one mention per ``(keyword, article)`` (the unique index), so a
+    per-(keyword, language) row COUNT already equals COUNT(DISTINCT article_id).
+
+    ONE SPELLING PER LANGUAGE. The votes are normalised codes, and the pass before this one
+    wrote the raw ``<html lang>`` value (``en-US``). Rewriting ``en-US`` to ``en`` is a real
+    write but not a language change, so it is counted apart as ``respelled`` rather than
+    inflating ``relanguaged`` -- a report that called the first run's spelling clean-up
+    "hundreds of thousands of keywords changed language" would misstate what it did.
 
     PERF (the SQLCipher codec column-order trap, ledger): NEVER the per-row
-    ``keyword_mentions -> articles`` join to read ``Article.language`` (that drags whole
-    ~35 KB article rows through the codec). Instead a covering article-language map (via
-    ``idx_article_language``) + a covering ``(keyword_id, article_id)`` mention scan, joined
-    in Python. There is exactly one mention per ``(keyword, article)`` (the unique index),
-    so a per-(keyword, language) row COUNT already equals COUNT(DISTINCT article_id).
+    ``keyword_mentions -> articles`` join. The mention scan reads only the mention table,
+    and the fallback map is one covering-index scan.
 
-    Keywords whose mentions are ALL in untagged ("?") articles are LEFT as-is — the
-    query-time ``global_stopwords`` already routes every keyword (incl. unknown-language)
-    through the English + all-language stoplist, so "?" boilerplate is filtered there; an
-    aggressive email/web boilerplate denylist stays the evidence-driven stoplist process
-    (never a guess, per the no-over-stoplist discipline). Returns a small tally."""
-    # 1) article id -> language for LOCATED articles only (covering idx_article_language;
-    # no content read). Empty corpus / all-untagged -> nothing to reconcile.
-    art_lang: dict[int, str] = {}
-    for aid, lang in session.query(Article.id, Article.language).filter(
-        Article.language.isnot(None), Article.language != ""
-    ):
-        if lang:  # excluded by the filter; narrows the Optional column
-            art_lang[int(aid)] = lang
-    if not art_lang:
-        return {"keywords_with_signature": 0, "relanguaged": 0, "null_to_lang": 0, "lang_to_lang": 0}
+    ``should_stop`` lets a pausable job end the pass between chunks: it then returns
+    ``complete: False`` and WRITES NOTHING, because a majority over part of the table is
+    not a majority. Keywords whose mentions are ALL unknown-language ("?") are LEFT as-is --
+    the query-time ``global_stopwords`` already routes every keyword (incl. unknown-language)
+    through the English + all-language stoplist. Returns a small tally."""
+    from src.analytics.article_lang_map import ArticleLanguageMap
 
-    # 2) per-keyword language distribution (count == distinct articles, one mention per
-    # (keyword, article)). Covering (keyword_id, article_id) scan, streamed to bound RAM.
+    # 1) per-keyword language distribution (count == distinct articles, one mention per
+    # (keyword, article)), streamed to bound RAM.
     # S4.2: a keyset loop that CLOSES between chunks, not one `yield_per` scan.
     # This pass runs from the background re-index job, and a single streamed scan
     # over ~9.3 M mentions held one WAL read-mark for its whole duration -- which
@@ -1971,11 +1978,13 @@ def reconcile_keyword_language(
     # `read_snapshot`, whose one snapshot is exactly what makes an export's two
     # passes agree -- see that module for why it is deliberately left alone.
     dist: dict[int, dict[str, int]] = {}
+    art_lang: ArticleLanguageMap | None = None  # only a NULL-language mention needs it
+    from_mentions = from_articles = unmeasured = 0
     cursor_id = 0
     while True:
         result = session.execute(
             text(
-                "SELECT id, keyword_id, article_id FROM keyword_mentions "
+                "SELECT id, keyword_id, article_id, language FROM keyword_mentions "
                 "WHERE id > :cursor ORDER BY id LIMIT :n"
             ),
             {"cursor": cursor_id, "n": _LANG_SCAN_CHUNK},
@@ -1984,10 +1993,19 @@ def reconcile_keyword_language(
         result.close()  # belt; the fetchall above is what completes the statement
         if not chunk:
             break
-        for _mid, kid, aid in chunk:
-            lang = art_lang.get(int(aid))
-            if lang is None:
-                continue
+        for _mid, kid, aid, mention_lang in chunk:
+            if mention_lang:
+                lang = mention_lang
+                from_mentions += 1
+            else:
+                if art_lang is None:
+                    art_lang = ArticleLanguageMap(session)
+                resolved = art_lang.mention_language(int(aid))
+                if resolved is None:
+                    unmeasured += 1
+                    continue
+                lang = resolved
+                from_articles += 1
             d = dist.setdefault(int(kid), {})
             d[lang] = d.get(lang, 0) + 1
         cursor_id = int(chunk[-1][0])
@@ -1999,9 +2017,21 @@ def reconcile_keyword_language(
             session.flush()
         else:
             session.commit()
+        if should_stop is not None and should_stop():
+            return {
+                "keywords_with_signature": len(dist),
+                "relanguaged": 0,
+                "null_to_lang": 0,
+                "lang_to_lang": 0,
+                "respelled": 0,
+                "votes_from_mentions": from_mentions,
+                "votes_from_articles": from_articles,
+                "mentions_unmeasured": unmeasured,
+                "complete": False,
+            }
 
-    # 3) decide the signature per keyword + collect the changes vs the stored language.
-    relanguaged = null_to_lang = lang_to_lang = 0
+    # 2) decide the signature per keyword + collect the changes vs the stored language.
+    relanguaged = null_to_lang = lang_to_lang = respelled = 0
     updates: list[dict] = []
     for kid, stored in session.query(Keyword.id, Keyword.language):
         langs = dist.get(int(kid))
@@ -2015,6 +2045,9 @@ def reconcile_keyword_language(
         if (stored or None) == sig_lang:
             continue
         updates.append({"id": int(kid), "language": sig_lang})
+        if stored and normalize_lang(stored) == sig_lang:
+            respelled += 1  # "en-US" -> "en": the same language, one spelling
+            continue
         relanguaged += 1
         if stored:
             lang_to_lang += 1
@@ -2054,6 +2087,11 @@ def reconcile_keyword_language(
         "relanguaged": relanguaged,
         "null_to_lang": null_to_lang,
         "lang_to_lang": lang_to_lang,
+        "respelled": respelled,
+        "votes_from_mentions": from_mentions,
+        "votes_from_articles": from_articles,
+        "mentions_unmeasured": unmeasured,
+        "complete": True,
     }
 
 

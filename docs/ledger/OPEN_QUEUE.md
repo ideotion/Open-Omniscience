@@ -22,6 +22,35 @@
 
 ## Open queue (when maintainer says proceed)
 
+- **THE KEYWORD FOLD JOB AND THE RECONCILE REWRITE (gate row M's two carried items, Q413 / Q414 /
+  Q416, built 2026-09-25): WHAT IS OWED, AND FOUR THINGS LEFT OUT ON PURPOSE.** The fold re-keys
+  every keyword written before lemmatisation (`studies` → `study`) the way a re-index would,
+  without reading article text, then runs the language reconcile as its second phase. Its
+  equivalence with a lemmatised re-index is TESTED on the fixture in both corpus states (mention
+  languages stored, and missing as on a pre-#1148 store), not argued.
+  - **OWED — operator step 2 of `S04-06`:** run the fold (Settings → Advanced → Diagnostics) on
+    the real corpus and keep its report, which carries the reconcile's result too. Nothing in this
+    sandbox can stand in for a million-article run.
+  - **LEFT OUT: a write-back of `keyword_mentions.language` for old rows.** The brief's S4 says
+    "with a backfill job"; migration `3b7e91c4d28a` chose NO backfill, and the reconcile no longer
+    needs one — a NULL mention votes through its article's language, read from a covering index,
+    which is the value a backfill would have written. Writing it to tens of millions of rows would
+    buy nothing the vote does not already have. A re-index still fills the column forward.
+  - **LEFT OUT: deleting the keywords a fold empties.** The existing prune owns deletion (its
+    12-hour pass or the button); the fold leaves them at zero mentions, and the equivalence test
+    runs the prune before it compares.
+  - **LEFT OUT: re-ranking the extractor's per-article cap.** Extraction keeps the top 80 terms of
+    an article AFTER lemmatising, so on an article that hit the cap a re-index can differ at the
+    margin: merged counts can let in a term the old run dropped, or push out one it kept. The fold
+    has only the stored rows, so it cannot know the first and does not guess at the second; the
+    re-index job remains the exact path. The fixture's articles sit well under the cap, which is
+    why the equivalence holds there exactly.
+  - **LEFT OUT: folding term-keyed settings.** A family override or super-group member naming
+    `studies` still names `studies`; the fold leaves that keyword alone and the report lists a
+    sample of what it skipped for that reason, so the operator decides, not the job.
+  - No dry run: the fold is idempotent (a second run moves nothing, tested) and pausable, and a
+    preview would cost the same full scan as the run.
+
 - **PR 7 OF THE AUDIT'S §9.2 IS BUILT AS `R24` + A DESIGN, AND `R24` NEEDED THREE THINGS ITS
   WORDING DID NOT SAY (2026-09-24, PR #1171).** §9.2 item 7 is *"Design for 0.5: the segmented
   derived index for the 1 TB target, and carrying mention rows from same-engine backups instead

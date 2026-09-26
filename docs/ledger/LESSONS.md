@@ -12395,3 +12395,19 @@ carried the same fault for months as a dialog. Unit tests on the HTML cannot see
 right-to-left render does. **Give each line of quoted text `unicode-bidi: plaintext` so its own
 first strong character sets its direction, and isolate signed numbers left to right. Walk every
 new surface in Arabic, not only in the language it was written in.**
+
+### A JOB THAT RE-DERIVES STORED ROWS IS TESTED AGAINST THE PRODUCER, NOT AGAINST ITS OWN IDEA (2026-09-25, the keyword fold)
+
+The fold job re-keys keywords written before lemmatisation, so its only correct answer is the
+one a lemmatised re-index would write. It was built to call `lemma_key`, the function
+extraction itself now calls (extraction's inline copy was lifted out for the purpose), and its
+test indexes one corpus with lemmatisation off, folds it, prunes it, and compares mentions,
+counters and top keywords with the same corpus indexed with lemmatisation on, in BOTH states the
+job meets (mention languages stored, and missing as on an older store). An expected-value test
+encodes the author's reading of the rules, and in this very slice one of them was wrong: it
+expected "report" to stay a keyword, and "report" is an English stopword the extractor never
+keys. The equality test cannot hold that kind of mistake, because the producer supplies the
+expected side. **When a
+job reproduces what a producer would have written, share the producer's function rather than
+copying it, and assert equality with a real producer run from scratch in every data state the
+job will meet.**

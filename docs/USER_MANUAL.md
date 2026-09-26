@@ -1351,6 +1351,14 @@ Official **figures** are not here at all — they are data, so they live under
   **Re-index the whole corpus** run a **pausable background job with a persisted cursor**
   (it survives a tab close or restart and resumes where it stopped). Run the cleanup after
   a keyword-engine upgrade to apply the newer stoplists/families to existing articles.
+  **Fold keyword forms (studies → study)**, beside it, does the one part of that cleanup
+  lemmatisation needs without re-reading any article: keywords indexed before lemmatisation
+  was added keep "studies" apart from the "study" new articles use, and the fold files those
+  older mentions under the base form exactly as a re-index would. It then sets each
+  keyword's language from the languages of its mentions. Phrases, names and keywords your
+  families or groups use are never folded. It is a pausable job in the task manager, and
+  **Fold report (.json)** shows what the last completed fold counted and its largest folds.
+  A fold cannot be undone; a later prune removes the keywords it emptied.
 - **Temporary field-test instrumentation (0.0.8 live-test cycle).** During this
   cycle the app automatically exercises each network surface once *inside your
   own collect passes* (calendar-feed verification in polite batches, the market
