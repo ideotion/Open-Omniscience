@@ -275,10 +275,28 @@
         if (n.nodeType === 1) { if (n.hasAttribute && n.hasAttribute("title")) mark({querySelectorAll: () => [n]}); mark(n); }
       }))).observe(document.body, {childList: true, subtree: true});
       let cur = null, hideT = null;
+      // A title set on an element AFTER it was rendered (a toggle repainting its own
+      // hover on click) is marked like any other, and when that element's bubble is the
+      // one open, the bubble takes the new text at once, instead of naming the state
+      // before the click until the pointer leaves (row P's stale W hover).
+      new MutationObserver((muts) => muts.forEach((m) => {
+        const el = m.target, v = el.getAttribute && el.getAttribute("title");
+        if (!v || !v.trim()) return;
+        el.classList.add("oo-tip-target");
+        if (el === cur) { el.dataset.ooTip = v; el.removeAttribute("title"); tip.textContent = v; }
+      })).observe(document.body, {attributes: true, attributeFilter: ["title"], subtree: true});
       function show(el, x, y) {
         const text = el.getAttribute("title") || el.dataset.ooTip || "";
         if (!text.trim()) return;
         el.dataset.ooTip = text; el.removeAttribute("title");  // suppress the native double bubble
+        // A MODAL DIALOG IS IN THE BROWSER'S TOP LAYER, which paints above every z-index
+        // in the document, so a bubble left on <body> is drawn UNDER any showModal()
+        // dialog: the consent popup's per-lane hosts (Q1002) were unreadable behind a
+        // green is_visible() check (docs/audit/delegated-clickthrough-2026-09-26, P1).
+        // Host the bubble in the open dialog that holds the element; position:fixed
+        // still resolves to the viewport, because no dialog here sets a transform.
+        const host = (el.closest && el.closest("dialog[open]")) || document.body;
+        if (tip.parentNode !== host) host.appendChild(tip);
         cur = el; tip.textContent = text;
         tip.style.left = Math.min(x + 12, window.innerWidth - 346) + "px";
         tip.style.top = Math.min(y + 14, window.innerHeight - tip.offsetHeight - 12) + "px";
@@ -286,7 +304,11 @@
         tip.classList.add("show");
       }
       function hide() {
-        if (cur && cur.dataset.ooTip != null) { cur.setAttribute("title", cur.dataset.ooTip); }
+        // A control REPAINTED while its bubble was open (the top-bar toggles set a new
+        // title on click) already carries its new title: keep it, and never write the
+        // text captured before the click back over it (the stale-hover defect, row P).
+        if (cur && cur.hasAttribute("title")) { cur.dataset.ooTip = cur.getAttribute("title"); }
+        else if (cur && cur.dataset.ooTip != null) { cur.setAttribute("title", cur.dataset.ooTip); }
         cur = null; tip.classList.remove("show");
         tip.setAttribute("aria-hidden", "true");
       }
@@ -456,6 +478,14 @@
         const sp = new URLSearchParams(location.search);
         const corpus = sp.get("corpus"), analyze = sp.get("analyze");
         if (!corpus && !analyze) return;
+        // The deep link IS the tab to show: mark Analysis hydrated BEFORE opening it, so
+        // showTab does not first load the RESTORED active tab as well. Loading both raced
+        // two runs into the same panels and wrote the restored tab's sense into this
+        // tab's URL (the 2026-09-26 delegated click-through, row N: P1 + the sense-pin
+        // leak). Only when a spawn will follow: a ?corpus= with no usable id falls back
+        // to the restored tab, exactly as before.
+        const ids = corpus ? corpus.split(",").map(Number).filter((n) => Number.isFinite(n) && n > 0) : [];
+        if (analyze || ids.length) _anHydrated = true;
         showTab("analyze", false);
         // Ruling 16: the Lead's provenance travels with the deep link (a one-shot
         // localStorage token, taken and deleted here) so the new window can show WHICH
@@ -468,7 +498,6 @@
         // and rewrite the URL without it.
         const lens = _anReadLensFromUrl();
         if (corpus) {
-          const ids = corpus.split(",").map(Number).filter((n) => Number.isFinite(n) && n > 0);
           if (ids.length) openAnalysisForIds(ids, sp.get("label") || "", prov, lens);
         } else if (analyze) {
           openAnalysisFor(analyze, (prov || lens) ? {prov, lens} : undefined);

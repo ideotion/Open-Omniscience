@@ -144,6 +144,25 @@ def test_activity_endpoint_shape():
         assert "estimate_method" in body["plan"]
 
 
+def test_activity_carries_the_real_network_state_in_both_directions():
+    """The task-manager page paints its airplane toggle and its Schedule state from
+    THIS route. It never carried ``online``, and the page read the absent key as
+    "online", so in airplane mode it told the operator the opposite of the truth
+    (2026-09-26 delegated click-through, row T, P1). A key-exists check would have
+    passed a hard-coded ``True``: both directions are asserted."""
+    from fastapi.testclient import TestClient
+
+    from src.api.main import app
+    from src.ingest import activate_kill_switch, clear_kill_switch
+
+    with TestClient(app) as c:
+        activate_kill_switch()
+        assert c.get("/api/scheduler/activity").json()["online"] is False
+        clear_kill_switch()
+        assert c.get("/api/scheduler/activity").json()["online"] is True
+    clear_kill_switch()
+
+
 def test_network_mode_toggle_endpoints():
     """The app-wide online/offline switch (the kill switch as a first-class
     top-bar control, maintainer-ruled 2026-06-11)."""

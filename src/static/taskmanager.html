@@ -743,7 +743,7 @@
   // start-or-install logic lives there, this standalone page just links back).
   async function loadHealth() {
     var el = $("health"); if (!el) return;
-    try { var h = await api("/api/health"); var ok = h && (h.status === "ok" || h.ok === true || h.healthy === true);
+    try { var h = await api("/api/health"); var ok = h && (h.status === "healthy" || h.status === "ok" || h.ok === true || h.healthy === true);  // /api/health answers status "healthy"
       el.innerHTML = '<span class="dot"></span> ' + esc(ok ? t("healthy") : t("degraded"));
     } catch (e) { el.innerHTML = '<span class="dot"></span> ' + esc(t("offline")); }
   }

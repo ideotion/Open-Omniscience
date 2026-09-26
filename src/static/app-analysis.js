@@ -106,6 +106,7 @@
     let _anActiveId = null;
     let _anTabSeq = 1;
     let _anHydrated = false;    // restored tabs load lazily the first time Analysis is opened
+    let _anRunSeq = 0;          // loadAnalysis generation: a superseded run never writes (see loadAnalysis)
     const _AN_TABS_KEY = "oo.an.tabs.v1";
     const _AN_TAB_CAP = 10;    // soft cap (a multi-document workspace, not unbounded)
 
@@ -1286,9 +1287,10 @@
     // of what the corpus actually contains (2026-07-20 ruling, item 3), never free
     // text. Fetched once per fresh corpus (from loadAnalysis); chip selection alone
     // never refetches or re-filters -- only "Apply filter" commits it.
-    async function _anLoadArtFacets(p) {
+    async function _anLoadArtFacets(p, run) {
       try {
         const d = await api("/api/insights/corpus-source-language-facets?" + p.toString());
+        if (run != null && run !== _anRunSeq) return;   // superseded by a newer loadAnalysis
         _anArtFacetData = { sources: d.sources || [], languages: d.languages || [] };
       } catch (e) { _anArtFacetData = { sources: [], languages: [] }; }
       _anRenderArtFacetChips();
@@ -1828,7 +1830,7 @@
       }).join("");
     }
 
-    async function _anLoadArticles(p, page) {
+    async function _anLoadArticles(p, page, run) {
       // The list renders into an-art-list, INSIDE an-articles -- the sort bar above it
       // is static markup and must survive a re-render (it is what triggered this one).
       const arts = $("an-art-list") || $("an-articles"); if (!arts) return;
@@ -1848,6 +1850,7 @@
         else { q.delete("sort_by"); q.delete("sort_dir"); }
         if (_anKwSort) { q.set("sort_by", "keyword_count"); q.set("sort_dir", "desc"); }
         const d = await api("/api/articles?" + q.toString());
+        if (run != null && run !== _anRunSeq) return;   // superseded by a newer loadAnalysis
         _anKwForCount = d.keyword_for_count || "";
         if (!_anKwForCount) _anKwSort = false;   // no keyword resolved -> no count sort
         const kwc = _anKwForCount;
@@ -1959,6 +1962,12 @@
         + (tags ? `<div style="margin-top:3px">${tags}</div>` : "");
     }
     async function loadAnalysis(p) {
+      // A SUPERSEDED RUN NEVER WRITES. Two runs can overlap (a deep-linked tab spawned
+      // while the restored one was loading, or a quick tab switch), and every panel below
+      // is shared DOM, so whichever finished last used to paint its corpus under the other
+      // tab's label (the 2026-09-26 delegated click-through, row N, P1). Each await is
+      // followed by a check that this is still the newest run.
+      const run = ++_anRunSeq, stale = () => run !== _anRunSeq;
       // ...and the lazy subtabs hold until this run has params of its own (see
       // `anSelectTab`). Nulled BEFORE the await below, so the window in which a click
       // could reach the previous corpus' params does not exist.
@@ -1979,6 +1988,7 @@
       // other four locales issued it once: the reader's first chart described a
       // resolution computed without their language, and a repaint quietly replaced it.
       try { if (window.OOI18N && OOI18N.ready) await OOI18N.ready; } catch (_e) { /* never block a render */ }
+      if (stale()) return;
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       // Q501/Q516: apply the lens ONCE, here, to the params EVERY tab below reads -- the
       // keywords chips, the mind map's graph, When/Where/Who, Links, Sentiment, Sources
@@ -1999,6 +2009,7 @@
       _toggleAnPrice();   // commodity overlay: show + render the Price subtab, or hide it
       try {
         const d = await api("/api/insights/corpus-keywords?" + p.toString() + tgtLangParam());
+        if (stale()) return;
         _anKwData = d; _anKwHost = kw;   // stash for the tentative-fill action
         anRenderKwChips();
         loadAnContext(p);   // S4.4: term-in-context concordance under the chips (progressive)
@@ -2011,6 +2022,7 @@
       mm.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
       try {
         const dk = await api("/api/insights/corpus-keywords?" + p.toString());
+        if (stale()) return;
         const top = (dk.terms && dk.terms.length) ? dk.terms[0].term : null;
         if (!top) {
           mm.innerHTML = `<div class="muted">${esc(t("No strong associations yet."))}</div>`;
@@ -2036,17 +2048,19 @@
             api("/api/insights/graph?" + gp.toString()),
             api("/api/insights/concept-map?" + cq.toString()).catch(() => null),
           ]);
+          if (stale()) return;
           _anMM.arms = cm;
           renderAnMindmap(g, mm);
         }
       } catch (e) { mm.innerHTML = `<div class="note err">${esc(e.message)}</div>`; }
-      _anLoadArticles(p, 0);   // paginated Articles list — Prev/Next + "Page X of Y", above + below
-      _anLoadArtFacets(p);   // sources/languages present in this corpus, with counts (item 3 facet controls)
+      _anLoadArticles(p, 0, run);   // paginated Articles list — Prev/Next + "Page X of Y", above + below
+      _anLoadArtFacets(p, run);   // sources/languages present in this corpus, with counts (item 3 facet controls)
       // When/Where/Who deduced across the matched articles, as CLICKABLE FACETS:
       // clicking a value narrows the corpus to the articles that mention it (the drill
       // that makes a facet co-equal with the text query). Counts only, never confirmed.
       try {
         const d = await api("/api/insights/corpus-www?" + p.toString());
+        if (stale()) return;
         _anFacets = {
           who: ((d.who && d.who.entities) || []).map((e) => ({
             facet: "entity", value: e.name, label: e.name,
@@ -2081,6 +2095,7 @@
       // structure; convergence is corroboration only when paths are independent).
       try {
         const d = await api("/api/links/corpus?" + p.toString());
+        if (stale()) return;
         // THE INDEPENDENCE READOUT, per row. The retired #corpus-win modal showed a
         // distinct-SOURCE count beside the distinct-ARTICLE count and said, for each
         // link, which of the two situations it was in; this view showed the article
@@ -2108,6 +2123,7 @@
       // with the English-lexicon limitation disclosed (non-English scores unreliable).
       try {
         const d = await api("/api/insights/corpus-sentiment?" + p.toString());
+        if (stale()) return;
         const cav = `<div class="hint muted">${esc(d.caveat || "")}</div>`;
         if (!d.n_scored) {
           $("an-sentiment").innerHTML = cav
@@ -2146,6 +2162,7 @@
       // nothing for reads as an em dash rather than as an empty claim.
       try {
         const d = await api("/api/insights/corpus-sources?" + p.toString());
+        if (stale()) return;
         const rows = (d.sources || []).map((s) => {
           const span = (s.first && s.last) ? `${String(s.first).slice(0, 10)} – ${String(s.last).slice(0, 10)}` : "—";
           const tone = (s.mean_tone === null || s.mean_tone === undefined) ? "—" : s.mean_tone;

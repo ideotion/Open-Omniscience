@@ -1344,7 +1344,8 @@ def test_analysis_articles_paginated():
     app = app_js()
     assert "function _anLoadArticles(" in app and "function _anArtGo(" in app and "_anArtPager(" in app
     assert 'q.set("offset"' in app and 'q.set("limit"' in app, "pagination must fetch by limit+offset"
-    assert "_anLoadArticles(p, 0)" in app, "loadAnalysis must use the paginated loader"
+    # (p, 0, run) since 2026-09-26: the run token lets a superseded analysis run skip its write.
+    assert "_anLoadArticles(p, 0, run)" in app, "loadAnalysis must use the paginated loader"
     assert app.count("+ pager") >= 2, "the pager must render BOTH above and below the results list"
     # RE-ANCHORED 2026-09-18 (S04-14) ONTO A STRICTLY STRONGER FACT, not a looser one.
     # This line used to assert the two FRAGMENTS the label was welded from, t("Page") and
