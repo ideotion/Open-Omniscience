@@ -198,6 +198,6 @@ assert.ok(/title="LNAME\(fr\)"/.test(lc),
 
 // -- escaping: a value from a corpus reaches an attribute ---------------------------- //
 const nasty = F.ooCountryCell('a"><script>x</script>');
-assert.ok(!/<script>/.test(nasty), "a hostile stored value must not break out: " + nasty);
+assert.ok(!nasty.toLowerCase().includes("<script"), "a hostile stored value must not break out: " + nasty);
 
 console.log("country_display_node_test.js: OK");
