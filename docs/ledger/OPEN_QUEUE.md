@@ -15242,14 +15242,17 @@ nobody reads it as a general memory cap:
   at 10k and 40k articles, four card readers fetched whole windows of keywords, and the flood
   detector's grew faster than the corpus (26 to 174 MB for 4x the articles). Those reads now
   fetch only what their filters keep (flood 1.6 MB at 40k articles; see `SHIPPED_LOG.md`).
-  What the refresh still holds, measured at 40k articles: the lemma dictionaries (574 MB once
-  all nine languages are loaded, resident for the life of the process: a floor, not a burst);
-  `trending_windows`' 24-hour and 30-day windows (about 53 MB), which keep every keyword over a
-  floor of one or two mentions because the scoring loop ranks all of them (ranking in SQL would
-  bound it; not done here); about 37 MB each for price narrative, echo chamber and recycled
-  claim, the same at 10k and 40k. Not measured: SQLite's own sorter memory under
-  `temp_store=MEMORY`, which `tracemalloc` cannot see; the wiki lane; housekeeping other than the
-  clean-up.
+  What the refresh still holds, measured at 40k articles: `trending_windows`' 24-hour and 30-day
+  windows (about 53 MB), which keep every keyword over a floor of one or two mentions because the
+  scoring loop ranks all of them (ranking in SQL would bound it; not done here); about 37 MB each
+  for price narrative, echo chamber and recycled claim, the same at 10k and 40k. Beside it, not
+  part of it: the lemma dictionaries extraction loads, about 550 MB of Python objects and 665 MB
+  of RSS (8.2 M blocks) once all nine languages are loaded, resident for the life of the process:
+  a floor, not a burst. simplemma 1.2's `TrieDictionaryFactory` promises "very little memory",
+  but it needs `marisa-trie` and `platformdirs` (neither is a dependency today) and by default
+  caches under the user's cache directory, so it is a dependency choice for the maintainer and
+  is not measured here. Not measured: SQLite's own sorter memory under `temp_store=MEMORY`, which
+  `tracemalloc` cannot see; the wiki lane; housekeeping other than the clean-up.
 - **The two refresh paths can run at once.** `_refresh_briefing_async` holds `_briefing_bg_lock`
   and `_heavy_tail_lock`; the Home path (`_ensure_background_refresh`, thread
   `oo-briefing-refresh`) checks only its own `_refresh_state`, and `refresh_briefing` takes no

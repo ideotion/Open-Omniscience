@@ -10076,13 +10076,15 @@ off (the `HAVING`s patched out, `_flood_pairs_to_test` returning every recent pa
 flood detector's peak now moves x1.02 (x4.0 with the bound off) and trending's x1.00 (x2.49).
 8 tests; 17 mutations of the new code, all caught.
 
-**WHAT STAYS.** Measured at 40k articles: the lemma dictionaries (574 MB once all nine languages
-are loaded, resident for the life of the process, so a floor rather than a burst);
-`trending_windows`' 24-hour and 30-day windows, which keep every keyword over a floor of one or
-two mentions because the scoring loop ranks all of them; about 37 MB each for price narrative,
-echo chamber and recycled claim, the same at 10k and 40k articles. Not measured: SQLite's own
-sorter memory under `temp_store=MEMORY`, which `tracemalloc` cannot see. These, and the two
-refresh paths that can run at once, are recorded in `OPEN_QUEUE.md`.
+**WHAT STAYS.** In the refresh, measured at 40k articles: `trending_windows`' 24-hour and
+30-day windows, which keep every keyword over a floor of one or two mentions because the scoring
+loop ranks all of them, and about 37 MB each for price narrative, echo chamber and recycled
+claim, the same at 10k and 40k articles. Beside it: the lemma dictionaries extraction loads,
+about 550 MB of Python objects once all nine languages are loaded (`tracemalloc`; 574 MB at the
+peak of loading) and 665 MB of RSS with 8.2 M blocks (measured without `tracemalloc`, which
+inflates RSS), resident for the life of the process, so a floor rather than a burst. Not
+measured: SQLite's own sorter memory under `temp_store=MEMORY`, which `tracemalloc` cannot see.
+These, and the two refresh paths that can run at once, are recorded in `OPEN_QUEUE.md`.
 
 **WHAT THE BUNDLE SAYS, AND WHAT IT DOES NOT.** The first instance died at 23:27 UTC on 25 Sept,
 13 minutes after a pass tail whose refresh never wrote its cache: the newest cache on disk was
