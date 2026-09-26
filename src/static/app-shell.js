@@ -135,9 +135,13 @@
       // interval is untouched, so live data is never delayed by more than the
       // loader it would have duplicated.
       let justLoaded = false;
-      if (TAB_LOADERS[name] && !_loaded.has(name)) {
+      // `name` comes from the URL hash: take only an OWN loader that is a function, so a
+      // hash such as #constructor can never dispatch to Object's prototype (CodeQL
+      // js/unvalidated-dynamic-method-call, flagged on PR #1191).
+      const loader = Object.prototype.hasOwnProperty.call(TAB_LOADERS, name) ? TAB_LOADERS[name] : null;
+      if (typeof loader === "function" && !_loaded.has(name)) {
         _loaded.add(name);
-        TAB_LOADERS[name]();
+        loader();
         justLoaded = true;
       }
       // THEME-3: opening Analysis hydrates the restored active tab the first time (the
