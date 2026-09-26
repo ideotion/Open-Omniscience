@@ -243,8 +243,8 @@ def test_the_trend_resolved_keyword_walks_the_translation_ladder() -> None:
     s.commit()
     for i, when in enumerate(["2024-03-01", "2024-03-02"]):
         _mk(s, f"tr{i}", _COLLIDING_TEXT, when)
-    kw = dict(bucket="week", country=None, expand=False, ui_lang=None, sense=None,
-              literal_cap=True, db=s)
+    kw = {"bucket": "week", "country": None, "expand": False, "ui_lang": None, "sense": None,
+          "literal_cap": True, "db": s}
     fr = insights_trend("lithium", target_lang="fr", **kw)["resolved"]
     assert fr["language"] == "en"
     assert fr["translation_tier"] == "untranslated"
