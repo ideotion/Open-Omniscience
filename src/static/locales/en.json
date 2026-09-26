@@ -4659,5 +4659,12 @@
   "Articles checked: {done} of {total} ({percent}%)": "Articles checked: {done} of {total} ({percent}%)",
   "Re-indexed: {n}": "Re-indexed: {n}",
   "Continue the search re-index? It resumes where it stopped ({percent}% done).": "Continue the search re-index? It resumes where it stopped ({percent}% done).",
-  "Re-index search for Arabic, Chinese and Japanese now? Articles whose search entry would change are indexed again; nothing else is touched. It runs in the background and can be paused from the task manager.": "Re-index search for Arabic, Chinese and Japanese now? Articles whose search entry would change are indexed again; nothing else is touched. It runs in the background and can be paused from the task manager."
+  "Re-index search for Arabic, Chinese and Japanese now? Articles whose search entry would change are indexed again; nothing else is touched. It runs in the background and can be paused from the task manager.": "Re-index search for Arabic, Chinese and Japanese now? Articles whose search entry would change are indexed again; nothing else is touched. It runs in the background and can be paused from the task manager.",
+  "Done": "Done",
+  "Waiting": "Waiting",
+  "Skipped": "Skipped",
+  "Interrupted": "Interrupted",
+  "Cancelled": "Cancelled",
+  "Analytics are complete once the re-index (stage 4) finishes.": "Analytics are complete once the re-index (stage 4) finishes.",
+  "An import is running — verify the backup once it has finished.": "An import is running — verify the backup once it has finished."
 }

@@ -4659,5 +4659,12 @@
   "Articles checked: {done} of {total} ({percent}%)": "Проверено статей: {done} из {total} ({percent}%)",
   "Re-indexed: {n}": "Переиндексировано: {n}",
   "Continue the search re-index? It resumes where it stopped ({percent}% done).": "Продолжить переиндексацию поиска? Она продолжится с места остановки (выполнено {percent}%).",
-  "Re-index search for Arabic, Chinese and Japanese now? Articles whose search entry would change are indexed again; nothing else is touched. It runs in the background and can be paused from the task manager.": "Переиндексировать поиск для арабского, китайского и японского сейчас? Статьи, чья поисковая запись изменилась бы, индексируются заново; больше ничего не затрагивается. Задача выполняется в фоне и может быть приостановлена в диспетчере задач."
+  "Re-index search for Arabic, Chinese and Japanese now? Articles whose search entry would change are indexed again; nothing else is touched. It runs in the background and can be paused from the task manager.": "Переиндексировать поиск для арабского, китайского и японского сейчас? Статьи, чья поисковая запись изменилась бы, индексируются заново; больше ничего не затрагивается. Задача выполняется в фоне и может быть приостановлена в диспетчере задач.",
+  "Done": "Готово",
+  "Waiting": "Ожидает",
+  "Skipped": "Пропущено",
+  "Interrupted": "Прервано",
+  "Cancelled": "Отменено",
+  "Analytics are complete once the re-index (stage 4) finishes.": "Аналитика будет завершена, когда закончится переиндексация (этап 4).",
+  "An import is running — verify the backup once it has finished.": "Идёт импорт — проверьте резервную копию, когда он завершится."
 }

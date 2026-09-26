@@ -4659,5 +4659,12 @@
   "Articles checked: {done} of {total} ({percent}%)": "Artigos verificados: {done} de {total} ({percent}%)",
   "Re-indexed: {n}": "Reindexados: {n}",
   "Continue the search re-index? It resumes where it stopped ({percent}% done).": "Continuar a reindexação da pesquisa? Retoma de onde parou ({percent}% concluído).",
-  "Re-index search for Arabic, Chinese and Japanese now? Articles whose search entry would change are indexed again; nothing else is touched. It runs in the background and can be paused from the task manager.": "Reindexar agora a pesquisa para árabe, chinês e japonês? Os artigos cuja entrada de pesquisa mudaria são indexados de novo; nada mais é alterado. Corre em segundo plano e pode ser pausado no gerenciador de tarefas."
+  "Re-index search for Arabic, Chinese and Japanese now? Articles whose search entry would change are indexed again; nothing else is touched. It runs in the background and can be paused from the task manager.": "Reindexar agora a pesquisa para árabe, chinês e japonês? Os artigos cuja entrada de pesquisa mudaria são indexados de novo; nada mais é alterado. Corre em segundo plano e pode ser pausado no gerenciador de tarefas.",
+  "Done": "Concluído",
+  "Waiting": "Aguardando",
+  "Skipped": "Ignorado",
+  "Interrupted": "Interrompido",
+  "Cancelled": "Cancelado",
+  "Analytics are complete once the re-index (stage 4) finishes.": "As análises ficam completas quando a reindexação (etapa 4) terminar.",
+  "An import is running — verify the backup once it has finished.": "Uma importação está em curso — verifique a cópia de segurança quando ela terminar."
 }

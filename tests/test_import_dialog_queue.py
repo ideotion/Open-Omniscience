@@ -94,7 +94,11 @@ def test_an_interrupted_run_says_it_cannot_resume():
     never coming."""
     body = _fn("_uxImRenderQueue")
     assert "interrupted" in body
-    assert "cannot resume" in body.lower()
+    # The sentence lives in ONE helper since 2026-09-26 (I1/I9): the live header and
+    # the fresh page a reopen shows both draw it, so neither can drift from the other.
+    assert "_uxImInterruptedHtml(t)" in body
+    assert "cannot resume" in _fn("_uxImInterruptedHtml").lower()
+    assert "_uxImInterruptedHtml(t)" in _fn("_uxImRenderFresh")
 
 
 # --------------------------------------------------------------------------- #

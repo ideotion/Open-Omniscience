@@ -4659,5 +4659,12 @@
   "Articles checked: {done} of {total} ({percent}%)": "確認した記事：{total} 件中 {done} 件（{percent}%）",
   "Re-indexed: {n}": "再インデックス：{n}",
   "Continue the search re-index? It resumes where it stopped ({percent}% done).": "検索の再インデックスを続行しますか？停止したところから再開します（{percent}% 完了）。",
-  "Re-index search for Arabic, Chinese and Japanese now? Articles whose search entry would change are indexed again; nothing else is touched. It runs in the background and can be paused from the task manager.": "アラビア語・中国語・日本語の検索を今すぐ再インデックスしますか？検索エントリが変わる記事だけを再インデックスし、それ以外には触れません。バックグラウンドで実行され、タスクマネージャーから一時停止できます。"
+  "Re-index search for Arabic, Chinese and Japanese now? Articles whose search entry would change are indexed again; nothing else is touched. It runs in the background and can be paused from the task manager.": "アラビア語・中国語・日本語の検索を今すぐ再インデックスしますか？検索エントリが変わる記事だけを再インデックスし、それ以外には触れません。バックグラウンドで実行され、タスクマネージャーから一時停止できます。",
+  "Done": "完了",
+  "Waiting": "待機中",
+  "Skipped": "スキップ済み",
+  "Interrupted": "中断",
+  "Cancelled": "キャンセル済み",
+  "Analytics are complete once the re-index (stage 4) finishes.": "分析は再インデックス（ステージ 4）が終わった時点で完了します。",
+  "An import is running — verify the backup once it has finished.": "インポートの実行中です — 完了してからバックアップを検証してください。"
 }

@@ -68,10 +68,24 @@ const src = [
   extract("function _uxImLastLineHtml("),
   extract("function _uxImCheckpointHtml("),
   extract("function _uxImHistoryHtml("),
+  // 2026-09-26 (batch B1): the reopen's decision, the run summary behind the "Last
+  // import" line, and the guarded start -- all pure, or pure but for the one `api`
+  // call the stub below answers.
+  extract("function _uxImStage4Owed("),
+  extract("function _uxImFreshView("),
+  extract("function _uxImRunSummary("),
+  extract("function _uxImInterruptedHtml("),
+  extract("function _uxImRenderFresh("),
+  extract("async function _uxImStartGuarded("),
+  "let _uxImLastStatus = null; let _uxImView = null;",
+  "let __api = null; function api(u, o) { return __api(u, o); }",
+  "function __setApi(f) { __api = f; }",
   "function esc(s){return String(s==null?'':s).replace(/[&<>\"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',\"'\":'&#39;'}[c]));}",
   "function fmtDateTime(x){return 'DATE';}",
   "return { _uxImReindexBits, _uxImStatements, _uxImRenderStages, _uxImLastLineHtml,"
-  + " _uxImCheckpointHtml, _uxImHistoryHtml, _uxPatchRow, _uxPruneRows };",
+  + " _uxImCheckpointHtml, _uxImHistoryHtml, _uxPatchRow, _uxPruneRows,"
+  + " _uxImStage4Owed, _uxImFreshView, _uxImRunSummary, _uxImRenderFresh,"
+  + " _uxImStartGuarded, __setApi, view: () => _uxImView };",
 ].join("\n");
 
 function makeNode() {
@@ -87,7 +101,8 @@ function makeNode() {
 }
 const dom = {};
 function resetDom() {
-  for (const id of ["ux-imp-stages", "ux-imp-statements"]) dom[id] = makeNode();
+  for (const id of ["ux-imp-stages", "ux-imp-statements", "ux-imp-queue",
+                    "ux-imp-queue-note", "ux-imp-queue-rows"]) dom[id] = makeNode();
 }
 const document = { getElementById: (id) => dom[id] || null, createElement: () => makeNode() };
 const mod = new Function("window", "document", src)({}, document);
@@ -371,7 +386,10 @@ test("a stage row on an ENDED run says which ending, never just a grey pending",
   mod._uxImRenderStages({ stages: [ended] }, RX_CLEAN, t, tf);
   const got = html("ux-imp-stages");
   assert(got.indexOf("Interrupted") !== -1, "the ending is not named: " + got);
-  assert(got.indexOf("var(--err)") !== -1, "an interrupted run is drawn as if pending");
+  // The DOT, not any red on the row: since I9 (2026-09-26) the "2 failed" count is red
+  // TEXT rather than the toast box, so a bare "var(--err)" needle also matches a pending
+  // row that merely reports failures -- a non-unique needle, the recorded trap.
+  assert(got.indexOf("background:var(--err)") !== -1, "an interrupted run is drawn as if pending");
   // ...and the real progress is still there beside it, never replaced by the ending.
   assert(text("ux-imp-stages").indexOf("2 of 4") !== -1, got);
 
@@ -379,7 +397,161 @@ test("a stage row on an ENDED run says which ending, never just a grey pending",
   mod._uxImRenderStages({ stages: [{ ...ended, state: "pending" }] }, RX_CLEAN, t, tf);
   const live = html("ux-imp-stages");
   assert(live.indexOf("Interrupted") === -1, "a live run must not claim an ending");
-  assert(live.indexOf("var(--err)") === -1, "a live run is not an error");
+  assert(live.indexOf("background:var(--err)") === -1, "a live run is not an error");
 });
 
-console.log("\n" + passed + " passed");
+// ── I2 (2026-09-26): analytics are complete AFTER stage 4, never at the start ─
+const RUN_START = { state: "running",
+                    items: [{ kind: "corpus", state: "running" }, { kind: "corpus", state: "queued" }] };
+
+test("I2: a run in flight never says analytics are complete", () => {
+  // THE WALK: "✓ Analytics are complete — every imported article is indexed" at
+  // "0/4 imported". An empty backlog then is a fact about the corpus BEFORE the import.
+  const s = mod._uxImStatements(RUN_START, RX_CLEAN, t, tf)[2];
+  assert(s.ok === false, "a check mark at 0 of 4 imported: " + s.text);
+  assert(s.text.indexOf("once the re-index (stage 4) finishes") !== -1, s.text);
+});
+
+test("I2: row 4 of a run in flight reads 'not started', not 'complete'", () => {
+  assert(mod._uxImReindexBits(RX_CLEAN, t, tf, RUN_START) === "not started",
+    mod._uxImReindexBits(RX_CLEAN, t, tf, RUN_START));
+  resetDom();
+  mod._uxImRenderStages({ ...RUN_START, stages: [STAGES[3]] }, RX_CLEAN, t, tf);
+  const out = text("ux-imp-stages");
+  assert(out.indexOf("not started") !== -1 && out.indexOf("complete") === -1, out);
+});
+
+test("I2: a drain still running holds the statement back even at a zero backlog", () => {
+  const s = mod._uxImStatements({ state: "done", items: [{ kind: "corpus", state: "done" }] },
+    { state: "running", done: 4800, total: 4800, backlog: { available: true, articles_pending: 0 } },
+    t, tf)[2];
+  assert(s.ok === false, "stage 4 is still going: " + s.text);
+});
+
+test("I2: ...and the finished run's measured zero still says complete (the twin)", () => {
+  const st = { state: "done", items: [{ kind: "corpus", state: "done" }] };
+  assert(mod._uxImStatements(st, RX_CLEAN, t, tf)[2].ok === true, "an over-eager refusal invents an outage");
+  assert(mod._uxImReindexBits(RX_CLEAN, t, tf, st) === "complete");
+});
+
+// ── I1 / I3 (2026-09-26): what a REOPEN shows (R1 fresh page; Q204/Q205 stage 4) ─
+const DONE_RUN = { state: "done", items: [{ kind: "corpus", state: "done" }],
+                   stages: STAGES.map((s) => ({ ...s, state: "done" })) };
+const RX_DRAINING = { state: "running", done: 1200, total: 4800,
+                      backlog: { available: true, articles_pending: 3600 } };
+
+test("I3: a finished run with nothing owed reopens onto a fresh page", () => {
+  const v = mod._uxImFreshView(DONE_RUN, RX_CLEAN);
+  assert(!v.full && !v.interrupted && !v.stage4, JSON.stringify(v));
+  resetDom();
+  mod._uxPatchRow(dom["ux-imp-queue-rows"], "old", "x", "a row the last opening drew");
+  mod._uxImRenderFresh(DONE_RUN, RX_CLEAN, t, tf);
+  assert(dom["ux-imp-queue"].style.display === "none", "the run box is not shown at all");
+  assert(dom["ux-imp-queue-rows"].children.length === 0, "the previous run's rows are gone");
+  assert(dom["ux-imp-stages"].children.length === 0, "no stage rows");
+  assert(dom["ux-imp-statements"].innerHTML === "", "no statements");
+  assert(mod.view() === "fresh", "the view says which page it is");
+});
+
+test("I1/I3: a stage 4 still owed stands alone beside the quiet line, and says so", () => {
+  for (const rx of [RX_PENDING, RX_DRAINING]) {
+    const v = mod._uxImFreshView(DONE_RUN, rx);
+    assert(!v.full && v.stage4 && !v.interrupted, JSON.stringify(v));
+    resetDom();
+    mod._uxImRenderFresh(DONE_RUN, rx, t, tf);
+    assert(dom["ux-imp-queue"].style.display === "", "the stage-4 row is shown");
+    const keys = dom["ux-imp-stages"].children.map((c) => c.getAttribute("data-row-key"));
+    assert(keys.join(",") === "reindex", "stage 4 ALONE, never the whole run again: " + keys);
+    const stm = dom["ux-imp-statements"].innerHTML;
+    assert((stm.match(/<div>/g) || []).length === 1, "only the analytics statement: " + stm);
+    assert(stm.indexOf("Safe to close") === -1, stm);
+    assert(dom["ux-imp-queue-rows"].children.length === 0, "no per-backup rows");
+  }
+  resetDom();
+  mod._uxImRenderFresh(DONE_RUN, RX_DRAINING, t, tf);
+  assert(text("ux-imp-stages").indexOf("resuming re-index") !== -1, text("ux-imp-stages"));
+});
+
+test("I3: an interrupted run keeps its one red line on the fresh page", () => {
+  const st = { state: "interrupted", items: [{ kind: "corpus", state: "interrupted" }] };
+  const v = mod._uxImFreshView(st, RX_CLEAN);
+  assert(v.interrupted && !v.full && !v.stage4, JSON.stringify(v));
+  resetDom();
+  mod._uxImRenderFresh(st, RX_CLEAN, t, tf);
+  assert(html("ux-imp-queue-note").indexOf("start it again") !== -1, html("ux-imp-queue-note"));
+  assert(html("ux-imp-queue-note").indexOf('class="note') === -1, "coloured text, not the toast box");
+});
+
+test("I1/I3: a running run is the full view, and nothing at all is not a run", () => {
+  assert(mod._uxImFreshView(RUN_START, RX_CLEAN).full === true);
+  const none = mod._uxImFreshView({ state: "idle", items: [] }, RX_PENDING);
+  assert(!none.full && !none.interrupted && !none.stage4, "no run, no stage 4 to show");
+});
+
+test("I1: stage 4 is owed while draining or with a measured backlog; unknown is not owed", () => {
+  assert(mod._uxImStage4Owed(RX_DRAINING) === true);
+  assert(mod._uxImStage4Owed({ state: "paused" }) === true);
+  assert(mod._uxImStage4Owed(RX_PENDING) === true);
+  assert(mod._uxImStage4Owed(RX_CLEAN) === false);
+  assert(mod._uxImStage4Owed(null) === false);
+  assert(mod._uxImStage4Owed({ state: "idle", backlog: { available: false } }) === false);
+});
+
+// ── I7 (2026-09-26): the "Last import" line is the RUN, not its last backup ───
+const rep = (over) => ({ filename: "restore-x.json", created_at: "2026-09-26T18:11:00Z",
+                         articles: 1200, articles_basis: "merged", outcome: "ok", run_id: "r1", ...over });
+
+test("I7: the newest run's reports are summed into ONE import", () => {
+  const s = mod._uxImRunSummary([
+    rep({ filename: "restore-4.json" }), rep({ filename: "restore-3.json" }),
+    rep({ filename: "restore-2.json" }), rep({ filename: "restore-1.json" }),
+    rep({ filename: "restore-old.json", run_id: "r0", articles: 99 }),
+  ]);
+  assert(s.articles === 4800, "four 1,200-article backups are one 4,800-article import: " + s.articles);
+  assert(s.filename === "restore-4.json", "the link stays the newest report");
+  const line = mod._uxImLastLineHtml(s, t, tf);
+  assert(/4,?800 articles/.test(line) && !/1,?200 articles/.test(line), line);
+});
+
+test("I7: a member with no figure, or only a PLANNED one, makes the total unknown", () => {
+  const a = mod._uxImRunSummary([rep({}), rep({ articles: null })]);
+  assert(a.articles === null, "a part is not the whole: " + a.articles);
+  const b = mod._uxImRunSummary([rep({}), rep({ articles_basis: "planned", outcome: "killed" })]);
+  assert(b.articles === null && b.outcome === "killed", JSON.stringify(b));
+  assert(mod._uxImLastLineHtml(b, t, tf).indexOf("did not complete") !== -1);
+});
+
+test("I7: an older report with no run id is quoted exactly as before", () => {
+  const old = rep({ run_id: undefined, articles: 933 });
+  assert(mod._uxImRunSummary([old, rep({})]) === old, "no run id, no grouping");
+  assert(mod._uxImRunSummary([]) === null);
+});
+
+test("I7/I12: the history names each backup, isolated for right-to-left pages", () => {
+  const out = mod._uxImHistoryHtml([rep({ label: "202609261808_OpenOmniscience_Backup_2", kind: "restore" })], t, tf);
+  assert(out.indexOf("<bdi") !== -1 && out.indexOf("202609261808_OpenOmniscience_Backup_2") !== -1, out);
+});
+
+// ── I8 (2026-09-26): a refused Verify never adopts the import's own restore ──
+async function asyncTests() {
+  const refused = () => Promise.reject(new Error("409 a job is already running"));
+  mod.__setApi(async () => ({ state: "running", mode: "restore" }));
+  let threw = null;
+  try { await mod._uxImStartGuarded(refused, "/status", "verify"); } catch (e) { threw = e; }
+  assert(threw && /409/.test(threw.message),
+    "a live RESTORE is not the verify we asked for; the refusal must surface");
+  passed += 1; console.log("ok  - I8: a live job of another mode is not the one we started");
+
+  mod.__setApi(async () => ({ state: "running", mode: "verify" }));
+  await mod._uxImStartGuarded(refused, "/status", "verify");   // resolves: it IS ours
+  passed += 1; console.log("ok  - I8: a lost START over our own live verify is still accepted");
+
+  mod.__setApi(async () => ({ state: "running", mode: "restore" }));
+  await mod._uxImStartGuarded(refused, "/status");              // no mode: unchanged
+  passed += 1; console.log("ok  - I8: a caller that names no mode keeps the old guard");
+}
+
+asyncTests().then(
+  () => console.log("\n" + passed + " passed"),
+  (e) => { console.error("FAIL: " + (e && e.message)); process.exit(1); },
+);

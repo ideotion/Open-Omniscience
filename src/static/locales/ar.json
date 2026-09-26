@@ -4659,5 +4659,12 @@
   "Articles checked: {done} of {total} ({percent}%)": "المقالات التي فُحصت: {done} من {total} ({percent}%)",
   "Re-indexed: {n}": "أُعيدت فهرستها: {n}",
   "Continue the search re-index? It resumes where it stopped ({percent}% done).": "متابعة إعادة فهرسة البحث؟ تُستأنف من حيث توقفت (أُنجز {percent}%).",
-  "Re-index search for Arabic, Chinese and Japanese now? Articles whose search entry would change are indexed again; nothing else is touched. It runs in the background and can be paused from the task manager.": "إعادة فهرسة البحث للعربية والصينية واليابانية الآن؟ تُعاد فهرسة المقالات التي سيتغير مدخل البحث الخاص بها؛ ولا يُمسّ أي شيء آخر. تعمل في الخلفية ويمكن إيقافها مؤقتًا من مدير المهام."
+  "Re-index search for Arabic, Chinese and Japanese now? Articles whose search entry would change are indexed again; nothing else is touched. It runs in the background and can be paused from the task manager.": "إعادة فهرسة البحث للعربية والصينية واليابانية الآن؟ تُعاد فهرسة المقالات التي سيتغير مدخل البحث الخاص بها؛ ولا يُمسّ أي شيء آخر. تعمل في الخلفية ويمكن إيقافها مؤقتًا من مدير المهام.",
+  "Done": "تم",
+  "Waiting": "في الانتظار",
+  "Skipped": "تم التخطي",
+  "Interrupted": "انقطع",
+  "Cancelled": "أُلغي",
+  "Analytics are complete once the re-index (stage 4) finishes.": "تكتمل التحليلات عندما تنتهي إعادة الفهرسة (المرحلة 4).",
+  "An import is running — verify the backup once it has finished.": "هناك استيراد قيد التشغيل — تحقّق من النسخة الاحتياطية بعد انتهائه."
 }

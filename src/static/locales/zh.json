@@ -4659,5 +4659,12 @@
   "Articles checked: {done} of {total} ({percent}%)": "已检查文章：{done} / {total}（{percent}%）",
   "Re-indexed: {n}": "已重建索引：{n}",
   "Continue the search re-index? It resumes where it stopped ({percent}% done).": "继续搜索重建索引？将从停止处继续（已完成 {percent}%）。",
-  "Re-index search for Arabic, Chinese and Japanese now? Articles whose search entry would change are indexed again; nothing else is touched. It runs in the background and can be paused from the task manager.": "现在为阿拉伯语、中文和日语重建搜索索引？只有搜索条目会发生变化的文章才会重建索引；其他内容一概不动。该任务在后台运行，可在任务管理器中暂停。"
+  "Re-index search for Arabic, Chinese and Japanese now? Articles whose search entry would change are indexed again; nothing else is touched. It runs in the background and can be paused from the task manager.": "现在为阿拉伯语、中文和日语重建搜索索引？只有搜索条目会发生变化的文章才会重建索引；其他内容一概不动。该任务在后台运行，可在任务管理器中暂停。",
+  "Done": "已完成",
+  "Waiting": "等待中",
+  "Skipped": "已跳过",
+  "Interrupted": "已中断",
+  "Cancelled": "已取消",
+  "Analytics are complete once the re-index (stage 4) finishes.": "重新索引（第 4 步）完成后，分析才算完成。",
+  "An import is running — verify the backup once it has finished.": "正在进行导入——请在导入完成后再校验备份。"
 }

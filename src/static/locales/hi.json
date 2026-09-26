@@ -4659,5 +4659,12 @@
   "Articles checked: {done} of {total} ({percent}%)": "जाँचे गए लेख: {total} में से {done} ({percent}%)",
   "Re-indexed: {n}": "फिर से इंडेक्स: {n}",
   "Continue the search re-index? It resumes where it stopped ({percent}% done).": "खोज री-इंडेक्स जारी रखें? यह वहीं से शुरू होगा जहाँ रुका था ({percent}% पूरा)।",
-  "Re-index search for Arabic, Chinese and Japanese now? Articles whose search entry would change are indexed again; nothing else is touched. It runs in the background and can be paused from the task manager.": "अरबी, चीनी और जापानी के लिए खोज को अभी फिर से इंडेक्स करें? जिन लेखों की खोज प्रविष्टि बदलेगी, उन्हें फिर से इंडेक्स किया जाता है; और कुछ नहीं छुआ जाता। यह पृष्ठभूमि में चलता है और कार्य प्रबंधक से रोका जा सकता है।"
+  "Re-index search for Arabic, Chinese and Japanese now? Articles whose search entry would change are indexed again; nothing else is touched. It runs in the background and can be paused from the task manager.": "अरबी, चीनी और जापानी के लिए खोज को अभी फिर से इंडेक्स करें? जिन लेखों की खोज प्रविष्टि बदलेगी, उन्हें फिर से इंडेक्स किया जाता है; और कुछ नहीं छुआ जाता। यह पृष्ठभूमि में चलता है और कार्य प्रबंधक से रोका जा सकता है।",
+  "Done": "पूर्ण",
+  "Waiting": "प्रतीक्षा में",
+  "Skipped": "छोड़ा गया",
+  "Interrupted": "बाधित",
+  "Cancelled": "रद्द किया गया",
+  "Analytics are complete once the re-index (stage 4) finishes.": "पुनः अनुक्रमण (चरण 4) पूरा होने पर विश्लेषण पूरा होगा।",
+  "An import is running — verify the backup once it has finished.": "एक आयात चल रहा है — उसके पूरा होने के बाद बैकअप सत्यापित करें।"
 }
