@@ -217,6 +217,16 @@ def run_bulk_qualification(
 
         progressed = qualified + disqualified
         consecutive_no_progress = 0 if progressed else consecutive_no_progress + 1
+        # EVERY batch reports, including one that judged nothing. This used to sit after
+        # the no-progress breaker, so a run whose batches all came back no-evidence never
+        # reported once: the 0.4 release run's job ended "done", "starting…", 0 of 17,082,
+        # which reads as a job that did nothing rather than one that tried 200 candidates
+        # and could not judge any of them.
+        ctx.set_progress(
+            done=totals["evaluated"],
+            total=max(total_backlog, totals["evaluated"]),  # the estimate is a floor, not a cap
+            detail=_tally(totals) + " so far",
+        )
         if consecutive_no_progress >= _MAX_CONSECUTIVE_NO_PROGRESS:
             paused_reason = (
                 f"stopped after {consecutive_no_progress} consecutive batches with no "
@@ -226,16 +236,23 @@ def run_bulk_qualification(
             )
             break
 
-        ctx.set_progress(
-            done=totals["evaluated"],
-            total=max(total_backlog, totals["evaluated"]),  # the estimate is a floor, not a cap
-            detail=(
-                f"{totals['qualified']} qualified · {totals['disqualified']} disqualified · "
-                f"{totals['no_evidence']} no-evidence so far"
-            ),
-        )
         if sleep_s and evaluated:
             time.sleep(sleep_s)
+
+    # THE LAST THING THE TASK MANAGER SHOWS IS WHY THE RUN ENDED. The reason lived only in
+    # the job's result, so every surface that reads a job's progress line (the task
+    # manager's row, the expedition digest) kept showing the last batch's tally -- or
+    # "starting…" -- under a state of "done", whichever way the run actually ended. The
+    # declined path already wrote its own line and is left as it is.
+    if declined is None:
+        ctx.set_progress(
+            done=totals["evaluated"],
+            total=max(total_backlog, totals["evaluated"]),
+            detail=(
+                f"{paused_reason} ({_tally(totals)})" if paused_reason
+                else "finished: nothing left to judge (" + _tally(totals) + ")"
+            ),
+        )
 
     summary: dict = {"complete": complete, **totals, "initial_backlog": backlog}
     if paused_reason:
@@ -243,6 +260,13 @@ def run_bulk_qualification(
     if declined is not None:
         summary["declined"] = declined
     return summary
+
+
+def _tally(totals: dict) -> str:
+    return (
+        f"{totals['qualified']} qualified · {totals['disqualified']} disqualified · "
+        f"{totals['no_evidence']} no-evidence"
+    )
 
 
 def qualification_pass(db, fetcher, batch_size: int, now: datetime, *,
