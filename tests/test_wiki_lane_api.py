@@ -90,6 +90,44 @@ def test_all_four_routes_share_ONE_absence_shape(no_lane):
     assert len(set(shapes)) == 1, shapes
 
 
+@pytest.fixture
+def empty_lane_file(no_lane):
+    """A ``wiki.db`` that exists with NO tables -- what the 0.4 release run's machine had.
+
+    An earlier build opened the lane file without its schema, so the file was there and
+    every read raised "no such table: versioned_changes". The routes answered 500 (the
+    Home strip's status call at the next boot, 2026-09-26) and the soak bundle recorded
+    the counters block as an error.
+    """
+    from src.versioned.store import lane_path
+
+    path = lane_path("wiki")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(b"")
+    yield
+
+
+_ALL_READ_ROUTES = (
+    *_ROUTES,
+    ("lane_sections", lambda: wiki_lane.lane_sections(external_id="en:Example")),
+    ("lane_changes", lambda: wiki_lane.lane_changes(limit=50, offset=0)),
+)
+
+
+@pytest.mark.parametrize("name,route", _ALL_READ_ROUTES, ids=[n for n, _ in _ALL_READ_ROUTES])
+def test_a_lane_file_with_NO_TABLES_is_named_on_every_route_never_a_500(
+    empty_lane_file, name, route
+):
+    out = route()
+    assert out["measured"] is False
+    assert out["reason"] == "lane-unreadable", f"{name} answered {out!r}"
+
+
+def test_every_route_shares_ONE_unreadable_shape(empty_lane_file):
+    shapes = {tuple(sorted(route().items())) for _n, route in _ALL_READ_ROUTES}
+    assert len(shapes) == 1, shapes
+
+
 # --------------------------------------------------------------------------- #
 # Q714: the lane's own counts, separate from the corpus's.
 # --------------------------------------------------------------------------- #

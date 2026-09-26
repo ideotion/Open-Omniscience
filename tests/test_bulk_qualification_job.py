@@ -250,6 +250,51 @@ def test_stops_honestly_after_consecutive_no_progress_batches(db, scope, monkeyp
     assert remaining == 50
 
 
+def test_a_no_progress_stop_is_VISIBLE_in_the_progress_line_not_only_in_the_result(
+    db, scope, monkeypatch
+):
+    """The 0.4 release run's job ended "done", "starting…", 0 of 17,082.
+
+    Every batch came back no-evidence, and the progress line was written only after a
+    batch that judged something, so nothing the task manager reads ever moved. The
+    reason the run stopped was in the job's result alone.
+    """
+    _add_unqualified(db, 50, rss=False)
+    monkeypatch.setattr("src.catalog.qualify_job.qualification_pass", _always_no_evidence_pass)
+
+    ctx = _Ctx()
+    out = run_bulk_qualification(
+        ctx, batch_size=5, fetcher=object(), session_factory=scope, sleep_s=0.0
+    )
+    last = ctx.progress[-1]
+    assert last["detail"] != "starting…"
+    assert "no evidence to judge" in last["detail"]
+    assert "no-evidence" in last["detail"]
+    assert last["done"] == out["evaluated"] > 0
+    # Each no-evidence batch reported as it happened, not only the last one.
+    assert len(ctx.progress) >= out["batches_run"] + 1
+
+
+def test_a_finished_run_says_it_finished(db, scope, monkeypatch):
+    monkeypatch.setattr("src.catalog.qualify_job.qualification_pass", _always_no_evidence_pass)
+    ctx = _Ctx()
+    run_bulk_qualification(ctx, batch_size=5, fetcher=object(), session_factory=scope, sleep_s=0.0)
+    assert ctx.progress[-1]["detail"].startswith("finished: nothing left to judge")
+
+
+def test_a_paused_run_names_its_pause_in_the_progress_line(db, scope):
+    _add_unqualified(db, 3)
+    activate_kill_switch()
+    try:
+        ctx = _Ctx()
+        run_bulk_qualification(
+            ctx, batch_size=5, fetcher=object(), session_factory=scope, sleep_s=0.0
+        )
+    finally:
+        clear_kill_switch()
+    assert "airplane mode" in ctx.progress[-1]["detail"]
+
+
 def test_resume_after_cancel_finishes_the_backlog_with_no_double_stamps(db, scope, monkeypatch):
     """No persisted cursor by design -- Source.status IS the durable progress marker.
     A cancelled run resumed by simply calling run_bulk_qualification again must finish

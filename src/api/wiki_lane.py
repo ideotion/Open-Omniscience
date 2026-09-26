@@ -21,6 +21,7 @@ from __future__ import annotations
 import logging
 
 from fastapi import APIRouter, HTTPException, Query
+from sqlalchemy.exc import SQLAlchemyError
 
 from src.versioned.store import LaneAbsentError, lane_path, lane_session
 
@@ -40,6 +41,24 @@ _ABSENT = {
 
 def _absent() -> dict:
     return dict(_ABSENT)
+
+
+#: The answer when the lane FILE exists but cannot be read -- in the field, a
+#: ``wiki.db`` an earlier build left with no tables (every read raised "no such
+#: table: versioned_changes" and the route answered 500; the 0.4 release run's
+#: bundle, 2026-09-26). The next drain repairs such a file through ``create_lane``;
+#: until then every route names the state rather than failing, and ONE shape keeps
+#: the seven routes from disagreeing about it.
+_UNREADABLE = {
+    "measured": False,
+    "reason": "lane-unreadable",
+    "detail": "the Wikipedia lane file could not be read; the next drain repairs a file with no tables",
+}
+
+
+def _unreadable(route: str) -> dict:
+    _LOG.warning("lane %s: the Wikipedia lane could not be read", route, exc_info=True)
+    return dict(_UNREADABLE)
 
 
 @router.get("/status")
@@ -78,6 +97,8 @@ def lane_status() -> dict:
             changes_total = lane.execute(select(func.count(VersionedChange.id))).scalar_one()
     except LaneAbsentError:
         return _absent()
+    except SQLAlchemyError:
+        return _unreadable("status")
     return {
         "measured": True,
         "pages": int(pages),
@@ -113,6 +134,8 @@ def lane_analytics(window_days: int = Query(7, ge=1, le=90)) -> dict:
             return {"measured": True, **analytics(lane, window_days=window_days)}
     except LaneAbsentError:
         return _absent()
+    except SQLAlchemyError:
+        return _unreadable("analytics")
 
 
 @router.get("/counters")
@@ -138,6 +161,8 @@ def lane_counters_route(window_days: int = Query(7, ge=1, le=90)) -> dict:
             }
     except LaneAbsentError:
         return _absent()
+    except SQLAlchemyError:
+        return _unreadable("counters")
 
 
 @router.get("/places")
@@ -214,6 +239,8 @@ def lane_places(limit: int = Query(2000, ge=1, le=20000)) -> dict:
                 )
     except LaneAbsentError:
         return _absent()
+    except SQLAlchemyError:
+        return _unreadable("places")
     return {
         "measured": True,
         "points": points,
@@ -303,6 +330,8 @@ def lane_sections(external_id: str = Query(..., min_length=3, max_length=512)) -
         raise
     except LaneAbsentError:
         return _absent()
+    except SQLAlchemyError:
+        return _unreadable("sections")
 
 
 #: The most diff text one answer carries. A stored diff is bounded when it is made
@@ -325,7 +354,6 @@ def lane_changes(
     (``/revisions/{id}``), because a timeline of fifty diffs would be megabytes.
     """
     from sqlalchemy import func, select
-    from sqlalchemy.exc import SQLAlchemyError
 
     from src.versioned.models import VersionedChange, VersionedEntity, VersionedRevision
 
@@ -362,12 +390,7 @@ def lane_changes(
     except LaneAbsentError:
         return _absent()
     except SQLAlchemyError:
-        _LOG.warning("lane changes: the Wikipedia lane could not be read", exc_info=True)
-        return {
-            "measured": False,
-            "reason": "lane-unreadable",
-            "detail": "the Wikipedia lane file could not be read; the next drain repairs a file with no tables",
-        }
+        return _unreadable("changes")
     changes = []
     for r in rows:
         m = r._mapping
@@ -413,7 +436,6 @@ def lane_revision_diff(revision_id: int) -> dict:
     was compared with, and a revision with no diff says why (``diff_method``).
     """
     from sqlalchemy import select
-    from sqlalchemy.exc import SQLAlchemyError
 
     from src.versioned.models import VersionedEntity, VersionedRevision
 
@@ -455,9 +477,4 @@ def lane_revision_diff(revision_id: int) -> dict:
     except LaneAbsentError:
         return _absent()
     except SQLAlchemyError:
-        _LOG.warning("lane revision: the Wikipedia lane could not be read", exc_info=True)
-        return {
-            "measured": False,
-            "reason": "lane-unreadable",
-            "detail": "the Wikipedia lane file could not be read; the next drain repairs a file with no tables",
-        }
+        return _unreadable("revision")
