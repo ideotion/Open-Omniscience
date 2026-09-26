@@ -291,19 +291,33 @@ def record_session_start() -> dict[str, Any] | None:
     started_at = _now()
     _SESSION_STARTED_AT = started_at
     _SESSION_STARTED_MONO = time.monotonic()
-    _write_state(
-        {
-            "state": "running",
-            "started_at": started_at,
-            "pid": os.getpid(),
-            # What the PREVIOUS session left on disk, measured before this one could
-            # touch it. It describes that session, not this one.
-            "wal_at_boot": boot_reading,
-            # carry the last unlock record forward so one boot's timing survives
-            # into the next export even if the next unlock is fast
-            "last_unlock": (prev or {}).get("last_unlock"),
-        }
-    )
+    state: dict[str, Any] = {
+        "state": "running",
+        "started_at": started_at,
+        "pid": os.getpid(),
+        # What the PREVIOUS session left on disk, measured before this one could
+        # touch it. It describes that session, not this one.
+        "wal_at_boot": boot_reading,
+        # carry the last unlock record forward so one boot's timing survives
+        # into the next export even if the next unlock is fast
+        "last_unlock": (prev or {}).get("last_unlock"),
+    }
+    # The two handles the NEXT boot needs to find this session's death in the host's
+    # journal (2026-09-26): the machine boot it runs in, so the right boot is read by
+    # id rather than guessed, and its cgroup, which is all systemd-oomd names when it
+    # kills. Absent where the platform has neither -- never a placeholder.
+    try:
+        from src.monitoring.exit_evidence import own_cgroup
+        from src.monitoring.session_history import machine_boot_id
+
+        boot_id, cgroup = machine_boot_id(), own_cgroup()
+        if boot_id:
+            state["boot_id"] = boot_id
+        if cgroup:
+            state["cgroup"] = cgroup
+    except Exception:  # noqa: BLE001 - a missing handle never breaks a boot
+        _LOG.debug("session sentinel: boot id / cgroup unavailable", exc_info=True)
+    _write_state(state)
     # The session LEDGER (2026-09-18, maintainer-asked): the chronology across MANY
     # sessions that this one-sentinel file cannot hold -- restarts, stretches, the
     # last minute a dead session was seen. Best-effort, after the sentinel is written,
@@ -415,20 +429,29 @@ def _last_collect_perf_sample() -> dict[str, Any] | None:
         raw = path.read_bytes()
     except OSError:
         return None
-    for line in reversed(raw.splitlines()):
+    # The newest TICK line. A pass ends with a "summary" line whose rss_mb is a
+    # {first, last, max} curve and which carries no available-memory reading; taking
+    # it as the sample printed "rss {'first': 587.2, ...} MB, available None MB" in the
+    # field export of 2026-09-26. The tick just before it holds the real reading.
+    for line in reversed(raw.splitlines()[-200:]):
         line = line.strip()
-        if line:
-            try:
-                d = json.loads(line)
-                return {
-                    "ts": d.get("ts"),
-                    "rss_mb": d.get("rss_mb"),
-                    "mem_avail_mb": d.get("mem_avail_mb"),
-                    "elapsed_s": d.get("elapsed_s"),
-                    "pass_id": d.get("pass_id"),
-                }
-            except ValueError:
-                return None
+        if not line:
+            continue
+        try:
+            d = json.loads(line)
+        except ValueError:
+            continue  # a line cut short by the very death being explained
+        if not isinstance(d, dict) or d.get("kind") == "summary":
+            continue
+        if not isinstance(d.get("rss_mb"), (int, float)):
+            continue
+        return {
+            "ts": d.get("ts"),
+            "rss_mb": d.get("rss_mb"),
+            "mem_avail_mb": d.get("mem_avail_mb"),
+            "elapsed_s": d.get("elapsed_s"),
+            "pass_id": d.get("pass_id"),
+        }
     return None
 
 
@@ -567,6 +590,12 @@ def previous_session_report() -> dict[str, Any]:
     for key in ("shutdown_reason", "stop_signal", "shutdown_phase_at"):
         if prev.get(key):
             out[key] = prev[key]
+    if out["previous_session"] != "clean":
+        # How it ENDED, from the witnesses outside the process (2026-09-26): the
+        # launcher's exit status, the user-space memory killers' journal lines and the
+        # native crash trace -- beside the kernel's account above, never instead of it.
+        out["exit_evidence"] = _exit_evidence_report(prev)
+        out["how_it_ended"] = _how_it_ended(out["kernel_evidence"], out["exit_evidence"])
     if out["previous_session"] == "unclean-end":
         # The previous session's OWN peaks (S0.4). ``last_collector_sample`` reads the
         # last line of a file EVERY session appends to, so once this process starts
@@ -606,8 +635,9 @@ def _previous_peaks() -> dict[str, Any] | None:
     out["available"] = True
     out["method"] = (
         "peak RSS / minimum available memory / peak swap-used sampled by the previous "
-        "session itself and snapshotted at this boot. A field that could not be "
-        "measured is ABSENT rather than zero."
+        "session itself and snapshotted at this boot, with what the memory was made of "
+        "at the RSS peak (at_peak: /proc/self/status, glibc mallinfo2, CPython's block "
+        "count). A field that could not be measured is ABSENT rather than zero."
     )
     return out
 
@@ -630,20 +660,41 @@ def start_kernel_evidence_read(prev: dict[str, Any] | None) -> None:
         return
 
     def _work() -> None:
-        global _KERNEL_EVIDENCE
+        global _KERNEL_EVIDENCE, _JOURNAL_EXIT_EVIDENCE
+        pid = prev.get("pid")
+        pid = int(pid) if isinstance(pid, int) else None
         try:
             from src.monitoring.kernel_log import read_kernel_evidence
 
-            pid = prev.get("pid")
-            _KERNEL_EVIDENCE = read_kernel_evidence(
-                int(pid) if isinstance(pid, int) else None,
-                since=prev.get("started_at"),
-            )
+            kwargs: dict[str, Any] = {"since": prev.get("started_at")}
+            if prev.get("boot_id"):
+                # Only a sentinel written since 2026-09-26 carries it.
+                kwargs["boot"] = prev["boot_id"]
+            _KERNEL_EVIDENCE = read_kernel_evidence(pid, **kwargs)
         except Exception as exc:  # noqa: BLE001 - a forensic read never raises upward
             _KERNEL_EVIDENCE = {
                 "verdict": "unavailable",
                 "reason": f"the kernel-log read failed ({type(exc).__name__})",
             }
+        # The user-space killers log to the ordinary journal, not the kernel's
+        # (2026-09-26): read only for a session that did not end cleanly, since a clean
+        # end is already accounted for by its own shutdown hook.
+        if str(prev.get("state")) == "clean":
+            return
+        got: dict[str, Any] = {}
+        try:
+            from src.monitoring.exit_evidence import read_userspace_killers, running_killers
+
+            got["userspace_killers"] = read_userspace_killers(
+                pid, since=prev.get("started_at"), boot=prev.get("boot_id"), cgroup=prev.get("cgroup")
+            )
+            got["running_killers"] = running_killers()
+        except Exception as exc:  # noqa: BLE001 - a forensic read never raises upward
+            got["userspace_killers"] = {
+                "verdict": "unavailable",
+                "reason": f"the journal read failed ({type(exc).__name__})",
+            }
+        _JOURNAL_EXIT_EVIDENCE = got
 
     import threading
 
@@ -661,6 +712,55 @@ def kernel_evidence() -> dict[str, Any]:
             "e.g. outside the app's own boot path) — unmeasured, not 'clean'"
         ),
     }
+
+
+# The journal half of the exit evidence, filled by the same background read as the
+# kernel's account (a journalctl call must never delay a boot).
+_JOURNAL_EXIT_EVIDENCE: dict[str, Any] | None = None
+
+
+def _exit_evidence_report(prev: dict[str, Any]) -> dict[str, Any]:
+    """The witnesses outside the process, for a session that did not end cleanly.
+
+    The launcher record and the crash trace are small local files and are read here;
+    the journal reads come from the boot's background thread, or say they have not
+    finished rather than stand in for a result."""
+    pid = prev.get("pid")
+    pid = int(pid) if isinstance(pid, int) else None
+    boot = prev.get("boot_id") if isinstance(prev.get("boot_id"), str) else None
+    out: dict[str, Any] = {}
+    try:
+        from src.monitoring.exit_evidence import launcher_exit, previous_trace
+
+        out["launcher"] = launcher_exit(pid, boot)
+        out["crash_trace"] = previous_trace(pid, boot)
+    except Exception as exc:  # noqa: BLE001 - forensics degrades, never raises
+        out["unavailable"] = f"{type(exc).__name__}: {exc}"[:200]
+    if _JOURNAL_EXIT_EVIDENCE is not None:
+        out.update(_JOURNAL_EXIT_EVIDENCE)
+    else:
+        out["userspace_killers"] = {
+            "verdict": "not-read",
+            "reason": (
+                "the background journal read has not completed (or was never started) — "
+                "unmeasured, not 'clean'"
+            ),
+        }
+    return out
+
+
+def _how_it_ended(kernel: dict[str, Any], evidence: dict[str, Any]) -> dict[str, Any]:
+    try:
+        from src.monitoring.exit_evidence import how_it_ended
+
+        return how_it_ended(
+            launcher=evidence.get("launcher"),
+            killers=evidence.get("userspace_killers"),
+            kernel=kernel,
+            trace=evidence.get("crash_trace"),
+        )
+    except Exception as exc:  # noqa: BLE001
+        return {"known": False, "summary": f"could not be assembled ({type(exc).__name__})"}
 
 
 def pass_tail_journal() -> dict[str, Any]:
@@ -892,6 +992,77 @@ def _mb(n: Any) -> str:
     return f"{v:.1f} TB"
 
 
+# What the memory was made of at the peak (session_hwm.composition), in reading order.
+_AT_PEAK_FIELDS = (
+    ("rss_anon_mb", "anonymous", " MB"),
+    ("rss_file_mb", "file-backed", " MB"),
+    ("rss_shmem_mb", "shared", " MB"),
+    ("swapped_out_mb", "swapped out", " MB"),
+    ("heap_in_use_mb", "C heap in use", " MB"),
+    ("heap_free_held_mb", "C heap freed but held", " MB"),
+    ("heap_mmapped_mb", "large C blocks", " MB"),
+    ("py_alloc_blocks", "Python blocks", ""),
+    ("threads", "threads", ""),
+)
+
+
+def _render_at_peak(comp: Any) -> list[str]:
+    if not isinstance(comp, dict):
+        return []
+    parts = [f"{label} {comp[key]}{unit}" for key, label, unit in _AT_PEAK_FIELDS if comp.get(key) is not None]
+    if comp.get("heap_in_use_mb") is None:
+        parts.append("C heap not read (memory was already short, or not glibc)")
+    return [f"  - made of, at {comp.get('rss_mb')} MB ({comp.get('at')}): {', '.join(parts)}"]
+
+
+def _render_exit_evidence(ev: Any) -> list[str]:
+    """The witnesses outside the process, each on its own line and each absence named."""
+    if not isinstance(ev, dict) or not ev:
+        return []
+    out = ["- witnesses outside the process:"]
+    if ev.get("unavailable"):
+        out.append(f"  - unavailable: {ev['unavailable']}")
+    launcher = ev.get("launcher")
+    if isinstance(launcher, dict):
+        how = launcher.get("signal") or f"exit status {launcher.get('status')}"
+        out.append(f"  - launcher: {how} at {launcher.get('at')} — {launcher.get('meaning')}")
+    elif "launcher" in ev:
+        out.append(
+            "  - launcher: no record (started another way, by an older launcher, or "
+            "stopped from the launcher's own window)"
+        )
+    killers = ev.get("userspace_killers")
+    if isinstance(killers, dict):
+        out.append(f"  - memory killers' journal: {killers.get('verdict', 'unknown')}")
+        if killers.get("reason"):
+            out.append(f"    - {killers['reason']}")
+        if killers.get("cgroup_note"):
+            out.append(f"    - {killers['cgroup_note']}")
+        for ln in (killers.get("lines") or [])[:6]:
+            out.append(f"    - journal: {ln}")
+    running = ev.get("running_killers")
+    if isinstance(running, dict):
+        if running.get("known"):
+            active = ", ".join(running.get("active") or []) or "none"
+            out.append(f"  - memory killers running on this machine now: {active}")
+        else:
+            out.append(f"  - memory killers running now: unknown ({running.get('reason')})")
+    trace = ev.get("crash_trace")
+    if isinstance(trace, dict):
+        out.append(
+            f"  - crash trace: {trace.get('summary')} "
+            f"({trace.get('lines_total')} lines in {trace.get('source')})"
+        )
+        for ln in (trace.get("lines") or [])[1:13]:
+            out.append(f"    | {ln}")
+    elif "crash_trace" in ev:
+        out.append(
+            "  - crash trace: none for that session (no native fault or uncaught exception "
+            "was recorded; a SIGKILL leaves none)"
+        )
+    return out
+
+
 def render_text(d: dict[str, Any] | None = None) -> str:
     """A plain-text rendering of the session forensics, built to be READABLE WHEN
     PASTED INTO A CHAT — the channel this file exists for. Mirrors
@@ -929,6 +1100,9 @@ def render_text(d: dict[str, Any] | None = None) -> str:
         lines.append(f"- -wal at this boot: {wal_boot['state']} ({size})")
         if wal_boot.get("reason"):
             lines.append(f"  - {wal_boot['reason']}")
+    how = prev.get("how_it_ended") or {}
+    if how.get("summary"):
+        lines.append(f"- how it ended: {how['summary']}")
     kern = prev.get("kernel_evidence") or {}
     if kern:
         lines.append(f"- host kernel evidence: {kern.get('verdict', 'unknown')}")
@@ -937,8 +1111,11 @@ def render_text(d: dict[str, Any] | None = None) -> str:
         for note in ("storage_note", "permission_note"):
             if kern.get(note):
                 lines.append(f"  - {kern[note]}")
+        for why in kern.get("unread") or []:
+            lines.append(f"  - not read: {why}")
         for ln in (kern.get("lines") or [])[:6]:
             lines.append(f"  - kernel: {ln}")
+    lines += _render_exit_evidence(prev.get("exit_evidence"))
     peaks = prev.get("previous_session_peaks") or {}
     if peaks:
         lines.append("- that session's own peaks:")
@@ -958,11 +1135,18 @@ def render_text(d: dict[str, Any] | None = None) -> str:
                 lines.append(f"  - last phase seen: {peaks['phase']}")
             if peaks.get("last_ts"):
                 lines.append(f"  - last recorded at: {peaks['last_ts']}")
+            lines += _render_at_peak(peaks.get("at_peak"))
     sample = prev.get("last_collector_sample") or {}
     if sample:
+        rss = sample.get("rss_mb")
+        if isinstance(rss, dict):  # an export written before the summary-line fix
+            rss = rss.get("last")
+        avail = sample.get("mem_avail_mb")
         lines.append(
-            f"- last collect_perf line (see attribution): rss {sample.get('rss_mb')} MB, "
-            f"available {sample.get('mem_avail_mb')} MB, at {sample.get('ts')}"
+            "- last collect_perf line (see attribution): "
+            f"rss {f'{rss} MB' if rss is not None else 'not recorded'}, "
+            f"available {f'{avail} MB' if avail is not None else 'not recorded'}, "
+            f"at {sample.get('ts')}"
         )
         if sample.get("attribution"):
             lines.append(f"  - {sample['attribution']}")
