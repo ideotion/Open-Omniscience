@@ -48,6 +48,8 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from statistics import median as _median
 
+from src.catalog.countries import country_display_code
+
 __all__ = [
     "STRATEGIES",
     "Member",
@@ -195,7 +197,13 @@ def aggregate_indicator(
         return _out({k: {"refused": gap} for k, _label, _w in STRATEGIES})
 
     if not complete and not allow_incomplete:
-        shown = ", ".join(missing_value[:8]) + ("…" if len(missing_value) > 8 else "")
+        # The members as the screen beside this sentence names them (alpha-3, Q301 step
+        # 1): the "missing:" line and the Range line already read `AND`, `ALA`, and this
+        # one printed the stored `ad, ax` (L8). `coverage.missing` stays the STORED form --
+        # it is the payload an export quotes and a caller re-requests with.
+        shown = ", ".join(country_display_code(c) or c for c in missing_value[:8]) + (
+            "…" if len(missing_value) > 8 else ""
+        )
         refusal = (
             f"{len(missing_value)} of {len(members)} members did not report this "
             f"indicator for this period ({shown}). A figure over the members that "

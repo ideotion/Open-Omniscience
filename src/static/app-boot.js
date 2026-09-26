@@ -100,8 +100,17 @@
       try { if (typeof _renderOoMapLensBar === "function") _renderOoMapLensBar(); } catch (_e) {}
       try { if (typeof _renderMapBasis === "function") _renderMapBasis(); } catch (_e) {}
       try {
+        // `loadManagedSources` is the TABLE; `loadSources` -- what this called -- only
+        // refills the ingest <select> since the sources split, so the country/language
+        // hovers in the table kept the old locale. The facet checklist labels
+        // ("Name (CODE)", localised at render) are re-read too; a re-fill keeps its ticks.
         const tbl = $("src-table");
-        if (tbl && tbl.querySelector("tr") && typeof loadSources === "function") loadSources();
+        if (tbl && tbl.querySelector("tr") && typeof loadManagedSources === "function") {
+          loadManagedSources();
+          if (typeof loadSrcFacets === "function") loadSrcFacets();
+          // Its "…languages we can't analyse yet" line is a tf() frame now: same class.
+          if (typeof loadUnmanagedLanguages === "function") loadUnmanagedLanguages();
+        }
       } catch (_e) {}
       // World coverage is the same frozen-locale class, and it needed BOTH halves --
       // which is why the first fix looked like a fix and was not. Its two repaint
@@ -115,6 +124,28 @@
       try {
         const cov = $("coverage-table");
         if (cov && cov.querySelector("tr") && typeof loadCoverage === "function") loadCoverage();
+      } catch (_e) {}
+      // Governments → Law is the same class: its jurisdiction cells bake the localised
+      // name into their hover at render time, so after a switch GBR still hovered
+      // "United Kingdom" in fr/ar/zh until a reload (2026-09-26 click-through, L15).
+      // Re-read ONLY a panel already painted -- the same guard as the two above -- and
+      // over loopback, so a switch never fetches for a tab the reader has not opened.
+      // The documents table is the guard for BOTH: `loadLaw` fills the two together,
+      // and `#law-changes` starts life holding a "Loading…" line, so its own children
+      // would read as "painted" before the tab was ever opened.
+      try {
+        const lawDocs = $("law-docs");
+        if (lawDocs && lawDocs.querySelector("tr") && typeof loadLawDocs === "function") {
+          loadLawDocs();
+          if (typeof loadLawChanges === "function") loadLawChanges();
+        }
+      } catch (_e) {}
+      // Markets → Minerals supply: its area cells hover the country name, or "World —
+      // published aggregate", baked at render time (L9). Same guard: only a table
+      // already painted is re-read, over loopback.
+      try {
+        const mins = $("mkt-minerals-supply");
+        if (mins && mins.querySelector("table") && typeof loadMineralsSupply === "function") loadMineralsSupply();
       } catch (_e) {}
       // home-lead-title-frozen-locale (P1): renderBriefing() (Home Leads + the
       // corpus-tier badge it renders internally via renderCorpusTier) builds

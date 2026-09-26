@@ -1159,7 +1159,7 @@
       const caveat = c.caveat ? `<p class="card-caveat">${esc(c.caveat)}</p>` : "";
       face.innerHTML =
         `<div class="carousel-card bk-${esc(c.bucket)}" role="group" aria-label="${esc(t("Lead"))} ${_carIdx + 1} / ${n}">`
-        + `<h4>${esc(cardTitle(c))}</h4>`
+        + `<h4${cardTitleTip(c)}>${esc(cardTitle(c))}</h4>`
         + (c.summary ? `<p class="sum">${esc(c.summary)}</p>` : "")
         + caveat
         + `<div><button class="tiny" onclick="${action}">${esc(t("Open corpus"))} ↗</button></div>`
@@ -1327,6 +1327,15 @@
     function cardTitle(c) {
       if (c && c.title_i18n && window.OOI18N && OOI18N.tf) return OOI18N.tf(c.title_i18n, c.title_vars || {});
       return (c && c.title) || "";
+    }
+    // A law-change title carries its jurisdiction as a CODE ("Law changed (FRA): …");
+    // Q302 puts the localised name in the hover, so the heading gets that title. Only
+    // a card whose signal names ONE jurisdiction qualifies (L6).
+    function cardTitleTip(c) {
+      const j = c && c.signal && c.signal.jurisdiction;
+      if (!j || j === "—") return "";
+      const tip = ooCountryTitle(j);
+      return tip ? ` title="${esc(tip)}"` : "";
     }
     // Click a Lead card to FLIP it (front <-> back). Inner controls (buttons/links/
     // inputs) are not flip triggers. Keyboard: Enter/Space flips when focused.
@@ -1561,7 +1570,7 @@
           <div class="card-face card-front" tabindex="0" role="button" aria-label="${esc(_title)}"
                onclick="leadFlip(this.closest('.card'),event)" onkeydown="leadFlipKey(this.closest('.card'),event)">
             ${chip}
-            <h4>${esc(_title)}</h4>
+            <h4${cardTitleTip(c)}>${esc(_title)}</h4>
             <p class="sum">${esc(c.summary)}</p>
             ${sigLine}
             <span class="lead-flip-hint">${esc(t("Details & corpus"))} ⟲</span>

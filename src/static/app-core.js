@@ -80,6 +80,9 @@
       uga:ug ukr:ua are:ae gbr:gb usa:us ury:uy uzb:uz vut:vu ven:ve vnm:vn yem:ye zmb:zm
       zwe:zw hkg:hk mac:mo pri:pr twn:tw pse:ps grl:gl xkx:xk ncl:nc pyf:pf abw:aw cuw:cw
       sxm:sx tca:tc vir:vi asm:as gum:gu mnp:mp vgb:vg cym:ky bmu:bm fro:fo gib:gi imn:im
+      ala:ax aia:ai ata:aq atf:tf blm:bl bes:bq bvt:bv cck:cc cok:ck cxr:cx esh:eh flk:fk
+      guf:gf ggy:gg glp:gp sgs:gs hmd:hm iot:io jey:je maf:mf mtq:mq msr:ms nfk:nf niu:nu
+      spm:pm pcn:pn reu:re shn:sh sjm:sj tkl:tk umi:um vat:va wlf:wf myt:yt
     `;
     const OO_ISO3_TO_ISO2 = {};
     const OO_ISO2_TO_ISO3 = {};
@@ -211,6 +214,32 @@
       const cls = o.cls ? ` class="${esc(o.cls)}"` : "";
       const ti = title ? ` title="${esc(title)}"` : "";
       return `<span${cls}${ti}>${esc(code)}</span>`;
+    }
+
+    // A statistics AREA: a country, or one of a producer's own PUBLISHED AGGREGATES
+    // (the World Bank's WLD/HIC/EAS, USGS's WLD). Only the server can tell the two
+    // apart -- it holds the aggregate table read off the live API
+    // (`src/catalog/aggregates.py`) -- so it sends its `classify_ref_area` answer beside
+    // the code (`area_kind`, `area_name`) and this renders THAT, rather than keeping a
+    // third copy of the list here. A country goes through `ooCountryCell` unchanged.
+    // An aggregate keeps its code on screen and discloses what it is in the hover;
+    // before this it went through the country cell and hovered "not a recognised
+    // country code", which is a different claim -- that we could not read it
+    // (2026-09-26 click-through, defects L9/L13). The producer's name is DATA and stays
+    // as published, except "World", which is a keyed string. NOT CLDR's M49 `001`:
+    // measured in Chromium, a build without region display data hands `001` straight
+    // back (the hover read "001 — published aggregate"), and English CLDR says "world"
+    // in lower case where it does name it.
+    function ooAreaCell(value, kind, name, opts) {
+      if (kind !== "aggregate") return ooCountryCell(value, opts);
+      const code = String(value == null ? "" : value).trim().toUpperCase();
+      if (!code) return "";
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const o = opts || {};
+      const shown = code === "WLD" ? t("World") : (name || "");
+      const title = (shown ? shown + " — " : "") + t("published aggregate");
+      const cls = o.cls ? ` class="${esc(o.cls)}"` : "";
+      return `<span${cls} title="${esc(title)}">${esc(code)}</span>`;
     }
 
     // Q308: order by LOCALISED NAME, with the code as the secondary key so the

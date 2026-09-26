@@ -485,7 +485,10 @@
       const blocks = (d.commodities || []).map((c) => {
         const measures = Object.keys(c.measures || {}).sort().map((m) => {
           const rows = (c.measures[m] || []).slice(0, 12).map((r) =>
-            `<tr><td>${esc(r.ref_area)}</td>`
+            // USGS writes alpha-2 (`US`) for a country and `WLD` for the world: the
+            // area cell renders the first as its alpha-3 with the name in the hover,
+            // and discloses the second as a published aggregate (Q302/Q303, L9).
+            `<tr><td>${ooAreaCell(r.ref_area, r.area_kind, r.area_name)}</td>`
             + `<td class="muted">${esc(r.time_period)}</td>`
             + `<td style="text-align:right;font-variant-numeric:tabular-nums">${r.value === null || r.value === undefined ? "—" : (typeof fmtNum === "function" ? fmtNum(r.value) : r.value)}</td>`
             + `<td class="muted">${esc(r.unit || "")}</td></tr>`).join("");

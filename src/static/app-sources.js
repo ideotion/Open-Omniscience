@@ -181,29 +181,51 @@
         `<td>${r.countries_covered}/${r.countries_total}${r.min_countries != null ? ` <span class="muted">/ ${r.min_countries}</span>` : ""} ${mark(r.countries_met)}</td></tr>`
       ).join("");
       const tc = reg.top_country || {};
-      const tcName = (c.names || {})[tc.code] || tc.code || "—";
+      // The top country is a country like any other on this panel: its CODE on screen,
+      // the localised name in the hover (it printed the server's English name, in every
+      // locale), and the sentence around it in keyed frames, because the walker cannot
+      // match a line welded around live numbers (L17).
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
+        : ((s, v) => s.replace(/\{(\w+)\}/g, (m, k) => (v[k] == null ? m : v[k])));
       const over = tc.max_share_pct != null && tc.share_pct > tc.max_share_pct;
       const located = reg.located_share_pct != null
-        ? ` · ${reg.located_share_pct}% of sources carry a country` +
-          (reg.min_located_share_pct != null ? ` <span class="muted">(floor ${reg.min_located_share_pct}%)</span>` : "")
+        ? " · " + esc(tf("{pct}% of sources carry a country", {pct: reg.located_share_pct})) +
+          (reg.min_located_share_pct != null ? ` <span class="muted">(${esc(tf("floor {pct}%", {pct: reg.min_located_share_pct}))})</span>` : "")
         : "";
       host.innerHTML =
         `<strong>Regional balance</strong> <span class="muted">(floors are working targets from configs/catalog_targets.yml)</span>` +
         _regionFloorBars(reg.regions) +
         `<div style="overflow:auto;margin-top:6px"><table>` +
         `<tr><th>Region</th><th>Sources / floor</th><th>Countries / floor</th></tr>${rows}</table></div>` +
-        `<div style="margin-top:6px">Top country: <strong>${esc(tcName)}</strong> — ${tc.sources} sources, ` +
-        `${tc.share_pct}% of located${tc.max_share_pct != null ?
-          ` <span class="pill ${over ? "warn" : "ok"}">${over ? "above" : "within"} the ${tc.max_share_pct}% guard</span>` : ""}` +
+        `<div style="margin-top:6px">${esc(t("Top country:"))} <strong>${ooCountryCell(tc.code, {empty: "—"})}</strong> — ` +
+        esc(tf("{n} sources, {pct}% of located", {n: tc.sources, pct: tc.share_pct})) +
+        (tc.max_share_pct != null
+          ? ` <span class="pill ${over ? "warn" : "ok"}">${esc(tf(over ? "above the {pct}% guard" : "within the {pct}% guard", {pct: tc.max_share_pct}))}</span>` : "") +
         `${located}</div>`;
     }
 
     function renderCoverageTable() {
+      const t9 = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
+        : ((s, v) => s.replace(/\{(\w+)\}/g, (m, k) => (v[k] == null ? m : v[k])));
       const q = ($("cov-filter").value || "").trim().toLowerCase();
+      // The filter matches what the reader can SEE, not only what is stored: the
+      // alpha-3 on screen and the localised name in the hover, beside the stored
+      // alpha-2 and the server's English name. Typing the `DEU` the table shows used
+      // to answer "No matching countries." (L11) -- and a map click fills this box
+      // with the LOCALISED name, which matched nothing outside English.
+      const matches = (code, name) => {
+        const cc = String(code || "");
+        if (cc.includes(q)) return true;
+        if ((name || "").toLowerCase().includes(q)) return true;
+        if (cc === "(none)") return false;
+        return ooCountryCode(cc).toLowerCase().includes(q)
+          || ooCountryName(cc, "").toLowerCase().includes(q);
+      };
       const rows = COV_COUNTRIES.filter(c => {
         if (!q) return true;
-        if (c.code.includes(q)) return true;
-        if ((c.name || "").toLowerCase().includes(q)) return true;
+        if (matches(c.code, c.name)) return true;
         return (c.top_tags || []).some(([t]) => t.toLowerCase().includes(q));
       });
       const t = $("coverage-table");
@@ -213,24 +235,31 @@
           // and the NAME rides the hover, where it used to be the other way round.
           // `ooCountryCell` writes that title, and `ooTipInit`'s MutationObserver
           // picks it up as an `.oo-tip-target` with nothing to register here.
-          const label = ooCountryCell(c.code);
+          //
+          // `(none)` is the rollup's sentinel for sources with NO country. It is an
+          // absent value, not an unreadable code, so it renders as that -- through the
+          // helper's `empty` -- instead of hovering "not a recognised country code" (L11).
+          const none = c.code === "(none)";
+          const label = ooCountryCell(none ? "" : c.code, {empty: t9("no country recorded")});
+          const where = ooCountryName(c.code, c.name || c.code);
           const tags = (c.top_tags || []).map(([t, n]) =>
-            `<span class="pill" style="cursor:pointer" title="show ${esc(t)} sources in ${esc(c.name || c.code)}"
+            `<span class="pill" style="cursor:pointer" title="${esc(none ? tf("show {tag} sources", {tag: t})
+              : tf("show {tag} sources in {country}", {tag: t, country: where}))}"
                 onclick="openSourcesForKeyword(${esc(JSON.stringify(c.code))}, ${esc(JSON.stringify(t))})">${esc(t)} ${n}</span>`
           ).join(" ") || '<span class="muted">—</span>';
-          const codeCell = `<strong style="cursor:pointer" title="show sources in ${esc(c.name || c.code)}"
+          const codeCell = `<strong style="cursor:pointer" title="${esc(none ? t9("no country recorded")
+              : tf("show sources in {country}", {country: where}))}"
                 onclick="openSourcesForKeyword(${esc(JSON.stringify(c.code))}, null)">${label}</strong>`;
           return `<tr><td>${codeCell}</td><td class="muted">${esc(c.region || "—")}</td><td>${c.sources}</td>
                   <td class="muted">${c.enabled}</td><td>${tags}</td></tr>`;
         }).join("") : `<tr><td colspan="5" class="muted">No matching countries.</td></tr>`);
       // Not-covered list (same filter, matched on name or code).
-      const miss = COV_MISSING.filter(x =>
-        !q || x.code.includes(q) || x.name.toLowerCase().includes(q));
+      const miss = COV_MISSING.filter(x => !q || matches(x.code, x.name));
       $("coverage-gaps").innerHTML = miss.length
-        ? `<strong>Not covered (${miss.length})</strong>: ` +
+        ? `<strong>${esc(tf("Not covered ({n})", {n: miss.length}))}</strong>: ` +
           miss.slice(0, 120).map(x =>
             ooCountryCell(x.code, {cls: "pill"})).join(" ") +
-          (miss.length > 120 ? ` <span class="muted">…and ${miss.length - 120} more</span>` : "")
+          (miss.length > 120 ? ` <span class="muted">${esc(tf("… and {n} more", {n: miss.length - 120}))}</span>` : "")
         : `<span class="pill ok">every listed country has at least one source</span>`;
     }
 
@@ -261,9 +290,14 @@
       const panel = $("unmanaged-lang-panel"); if (!panel) return;
       let r; try { r = await api("/api/sources/unmanaged-languages"); } catch (e) { panel.style.display = "none"; return; }
       if (!r || !r.enabled_unmanaged) { panel.style.display = "none"; return; }
-      const langs = Object.entries(r.by_language).map(([k, n]) => `${esc(k)} (${n})`).join(", ");
+      // The languages as 639-2/T codes with the name in the hover (Q306's display step),
+      // and the sentence as a keyed frame -- it was English in every locale (L17).
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
+        : ((s, v) => s.replace(/\{(\w+)\}/g, (m, k) => (v[k] == null ? m : v[k])));
+      const langs = Object.entries(r.by_language).map(([k, n]) => `${ooLangCell(k)} (${n})`).join(", ");
       $("unmanaged-lang-summary").innerHTML =
-        `<strong>${r.enabled_unmanaged}</strong> enabled source(s) in languages we can't analyse yet: ${langs}.`;
+        esc(tf("{n} enabled source(s) in languages we can't analyse yet:", {n: r.enabled_unmanaged}))
+        + ` ${langs}.`;
       panel.style.display = "";
     }
 
@@ -319,15 +353,27 @@
       const sum = det.querySelector("summary"); if (!sum) return;
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
       const v = mselValues(id);
-      sum.textContent = v.length === 0 ? t("Any") : (v.length === 1 ? v[0] : v.length + " " + t("selected"));
+      // One value: shown in the SAME form as the checklist beside it -- the alpha-3 /
+      // 639-2/T code, never the stored value the checkbox submits (L7: a closed filter
+      // read `fr` while every row under it read `FRA`).
+      const one = v.length !== 1 ? "" : (id === "src-msel-country" ? ooCountryCode(v[0])
+        : (id === "src-msel-language" ? ooLangCode(v[0]) : v[0]));
+      sum.textContent = v.length === 0 ? t("Any") : (v.length === 1 ? one : v.length + " " + t("selected"));
     }
     async function loadSrcFacets() {
       let f; try { f = await api("/api/sources/facets"); } catch (e) { return; }
+      // A re-fill KEEPS what is ticked. Two callers can have a facets request in flight
+      // at once -- the coverage → sources jump ticks its country after its own load,
+      // while opening the section fires the section loader's load -- and whichever
+      // response lands LAST used to rebuild the list unticked and reset the label to
+      // "Any" over a table already filtered to that country (L3). The capture is taken
+      // after the await, so it sees every tick made while the request was out.
       const fill = (id, rows, labeler) => {
         const det = $(id); if (!det) return;
         const list = det.querySelector(".msel-list"); if (!list) return;
+        const kept = new Set(mselValues(id));
         list.innerHTML = (rows || []).length
-          ? rows.map(x => `<label class="msel-opt"><input type="checkbox" value="${esc(x.key)}" onchange="srcMselChanged('${id}')"> ${esc(labeler ? labeler(x.key) : x.key)} <span class="muted">·${x.n}</span></label>`).join("")
+          ? rows.map(x => `<label class="msel-opt"><input type="checkbox" value="${esc(x.key)}"${kept.has(String(x.key)) ? " checked" : ""} onchange="srcMselChanged('${id}')"> ${esc(labeler ? labeler(x.key) : x.key)} <span class="muted">·${x.n}</span></label>`).join("")
           : `<div class="muted" style="padding:4px">—</div>`;
       };
       // Q308 for a picker: ordered by localised NAME with the code beside it. A
@@ -383,7 +429,9 @@
     }
     function srcTh(label, col) {
       const arrow = SRC.sort === col ? (SRC.order === "asc" ? " ▲" : " ▼") : "";
-      return `<th style="cursor:pointer" onclick="setSrcSort('${col}')">${label}${arrow}</th>`;
+      // The label is its OWN text node: welded to the arrow ("Name ▲") it no longer
+      // matched the "Name" key, so the sorted column stayed English in every locale (L17).
+      return `<th style="cursor:pointer" onclick="setSrcSort('${col}')"><span>${label}</span>${arrow}</th>`;
     }
 
     async function loadManagedSources() {
@@ -392,7 +440,11 @@
         const d = await api("/api/catalog/sources?" + srcQuery().toString());
         const shownFrom = d.total ? SRC.offset + 1 : 0;
         const shownTo = Math.min(SRC.offset + SRC.limit, d.total);
-        $("src-meta").textContent = `${d.total} source(s)` + (d.total ? ` · showing ${shownFrom}–${shownTo}` : "");
+        const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
+          : ((s, v) => s.replace(/\{(\w+)\}/g, (m, k) => (v[k] == null ? m : v[k])));
+        $("src-meta").textContent = d.total
+          ? tf("{total} source(s) · showing {from}–{to}", {total: d.total, from: shownFrom, to: shownTo})
+          : tf("{total} source(s)", {total: d.total});
         $("src-page").textContent = `page ${Math.floor(SRC.offset / SRC.limit) + 1} of ${Math.max(1, Math.ceil(d.total / SRC.limit))}`;
         t.innerHTML = "<tr>" + srcTh("Name","name") + srcTh("Domain","domain") + srcTh("Type","source_type") +
           srcTh("Country","country") + srcTh("Lang","language") + srcTh("Pri","priority") +

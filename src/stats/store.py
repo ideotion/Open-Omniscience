@@ -30,7 +30,8 @@ from collections.abc import Iterable
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from src.catalog.countries import to_iso2
+from src.catalog.aggregates import aggregate_name
+from src.catalog.countries import classify_ref_area, to_iso2
 from src.database.models import StatFigure as StatFigureRow
 from src.stats.revision import find_revision_anomalies
 from src.stats.sdmx import StatFigure
@@ -155,6 +156,23 @@ def list_figures(
     }
 
 
+def area_classification(ref_area: str | None) -> dict:
+    """``{"area_kind", "area_name"}`` for one statistics ``ref_area``, for a renderer.
+
+    A ``ref_area`` is a country OR a producer's published aggregate (``WLD``, ``HIC``,
+    ``EAS``…), and only this side holds the aggregate table (read off the live API), so
+    the classification travels WITH the code rather than the browser guessing it from
+    the shape of the string. Without it the display layer rendered ``WLD`` as an
+    unreadable country code (2026-09-26 click-through, L9/L13). ``area_name`` is set
+    only for an aggregate: a country's name is the browser's to localise.
+    """
+    kind = classify_ref_area(ref_area)
+    return {
+        "area_kind": kind,
+        "area_name": aggregate_name(ref_area) if kind == "aggregate" else None,
+    }
+
+
 def minerals_supply_summary(session: Session, *, limit: int = 4000) -> dict:
     """USGS Mineral Commodity Summaries SUPPLY figures grouped by commodity → measure.
 
@@ -178,6 +196,7 @@ def minerals_supply_summary(session: Session, *, limit: int = 4000) -> dict:
         c["measures"].setdefault(measure, []).append(
             {
                 "ref_area": f["ref_area"],
+                **area_classification(f["ref_area"]),
                 "time_period": f["time_period"],
                 "value": f["value"],
                 "unit": f["unit"],
@@ -361,6 +380,7 @@ def map_figures(
     for r in best.values():
         cell = _row_dict(r)
         cell["iso2"] = to_iso2(r.ref_area)
+        cell.update(area_classification(r.ref_area))
         cells.append(cell)
     cells.sort(key=lambda c: c["ref_area"])
     total = len(cells)

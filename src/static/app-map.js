@@ -346,12 +346,26 @@
     // region KR. Everything else is already a valid CLDR region code, so the label
     // comes from the browser's own data rather than a translation table we maintain.
     const _OO_POV_REGION = { ko: "kr" };
+    // Q308 for an <option>, which has no usable hover: the localised NAME with the
+    // alpha-3 beside it, "Name (CODE)", like every other country picker. The code is
+    // derived AFTER the KO -> KR mapping, or Korea's viewpoint would print `ko`.
     function _ooWorldviewLabel(code) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : (x => x);
       if (code === "contested") return t("Contested (assign nothing)");
       if (code === "iso") return t("ISO / de jure");
       if (code === "tlc") return t("Natural Earth (de facto)");
-      return ooRegionName(_OO_POV_REGION[code] || code);
+      const region = _OO_POV_REGION[code] || code;
+      const cc = ooCountryCode(region), name = ooCountryName(region, "");
+      return name && name !== cc ? `${name} (${cc})` : (cc || ooRegionName(region));
+    }
+    // The picker's order: the three conventions first, in the data's own order, then
+    // the country viewpoints by LOCALISED NAME (Q308) -- the file lists them by their
+    // two-letter key, which read as "Germany, Egypt, Spain" in English (L16).
+    function _ooWorldviewOrder(views) {
+      const fixed = (views || []).filter(v => v === "iso" || v === "tlc");
+      const countries = (views || []).filter(v => v !== "iso" && v !== "tlc")
+        .sort((a, b) => ooCountryCompare(_OO_POV_REGION[a] || a, _OO_POV_REGION[b] || b));
+      return ["contested", ...fixed, ...countries];
     }
 
     // What a single area's worldview cell means, as a translated sentence. The three
@@ -784,7 +798,7 @@
                  title="${esc(t("Disputed areas are always drawn as contested with every claim named. A worldview decides only which claim the area is ATTRIBUTED to here — it is a way to SEE the difference between conventions, never this app's verdict."))}">
             <span class="muted oomap-wv-label" style="font-size:11px">${esc(t("Worldview"))}</span>
             <select class="tiny" data-oomap-worldview aria-label="${esc(t("Worldview"))}" style="font-size:11px;max-width:150px">
-              ${["contested", ...(disputed.views || [])].map(v =>
+              ${_ooWorldviewOrder(disputed.views).map(v =>
                 `<option value="${esc(v)}"${v === _ooMapWorldview ? " selected" : ""}>${esc(_ooWorldviewLabel(v))}</option>`).join("")}
             </select>
           </label>` : "";
@@ -1431,15 +1445,17 @@
       if (!row) { host.innerHTML = `<div class="panel" style="padding:10px 12px;background:var(--panel2)"><span class="muted">${esc(t("No coverage recorded for this country yet."))}</span></div>`; return; }
       const iso = (row.country || "").toLowerCase();
       // The heading of a panel the reader OPENED: the code identifies it and the
-      // title carries the name, which is the ordinary Q302 pair.
-      const name = ooCountryCode(iso) || ooRegionName(iso, row.name || row.country);
+      // title carries the name, which is the ordinary Q302 pair -- written through
+      // the one cell, because the earlier `esc(ooCountryCode(iso))` printed the code
+      // and never wrote the title this comment promised (L12).
+      const heading = ooCountryCell(iso) || esc(ooRegionName(iso, row.name || row.country));
       const line = (label, v, extra) => (v != null && isFinite(v))
         ? `<div style="display:flex;justify-content:space-between;gap:12px"><span class="muted">${esc(label)}</span><span>${esc(fmtNum(v))}${extra ? " " + esc(extra) : ""}</span></div>` : "";
       const tone = (row.sentiment != null && isFinite(row.sentiment))
         ? `<div style="display:flex;justify-content:space-between;gap:12px"><span class="muted">${esc(t("Mean tone"))}</span><span>${row.sentiment >= 0 ? "+" : ""}${esc(fmtNum(row.sentiment, 2))} · ${esc(t("n="))}${row.sentiment_n || 0}</span></div>` : "";
       host.innerHTML = `<div class="panel" style="padding:10px 12px;background:var(--panel2)">
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-          <strong>${esc(name)}</strong>${row.continent ? ` <span class="pill">${esc(t(row.continent))}</span>` : ""}
+          <strong>${heading}</strong>${row.continent ? ` <span class="pill">${esc(t(row.continent))}</span>` : ""}
         </div>
         <div style="margin-top:6px;font-size:13px;display:flex;flex-direction:column;gap:2px">
           ${line(t("Sources"), row.sources)}
@@ -1671,9 +1687,12 @@
       const days = $("map-days").value, kind = $("map-kind").value;
       try {
         const d = await api(`/api/insights/map?days=${days}&kind=${encodeURIComponent(kind)}`);
+        // A COUNTRY row carries `code` (the stored alpha-2 the index keys on) and a CITY
+        // row carries `name` + `country`, so `code` must go through the country cell --
+        // printing it raw put `br`/`de` in the first column with no hover (L2).
         const rowsFor = (areas, label) => areas.length
           ? "<tr><th>" + label + "</th><th>Top keywords</th></tr>" + areas.map(a =>
-              `<tr><td><strong>${esc(a.code||a.name)}</strong>${a.country&&a.name?` <span class="muted">${ooCountryCell(a.country)}</span>`:""}</td><td>` +
+              `<tr><td><strong>${a.code ? ooCountryCell(a.code) : esc(a.name)}</strong>${a.country&&a.name?` <span class="muted">${ooCountryCell(a.country)}</span>`:""}</td><td>` +
               a.top.map(t => `<span class="pill" style="cursor:pointer" onclick='pickTerm(${esc(JSON.stringify(t.term))})'>${esc(t.term)} ${t.mentions}</span>`).join(" ") +
               `</td></tr>`).join("")
           : `<tr><td class="muted">No data — index the corpus (sources need a country/city).</td></tr>`;
@@ -2253,7 +2272,7 @@
       const box = $("statfig-chart"); if (!box) return;
       const series = ($("statfig-view-series").value || "").trim();
       const area = ($("statfig-view-area").value || "").trim();
-      if (!series || !area) { box.innerHTML = `<div class="muted">Enter a series id and an area (e.g. FR) to chart it over time.</div>`; return; }
+      if (!series || !area) { box.innerHTML = `<div class="muted">Enter a series id and an area (e.g. FRA) to chart it over time.</div>`; return; }
       if (typeof ooViz === "undefined") { box.innerHTML = `<div class="muted">Chart toolkit unavailable.</div>`; return; }
       box.innerHTML = `<div class="muted">Loading…</div>`;
       try {
@@ -2298,7 +2317,8 @@
         const d = await api(q);
         const cells = d.cells || [];
         if (!cells.length) { host.innerHTML = `<div class="muted">No stored figures for "${esc(series)}". Fetch some above first.</div>`; if (meta) meta.textContent = ""; return; }
-        const iso2By = {}; cells.forEach(c => { iso2By[c.ref_area] = c.iso2; });
+        const iso2By = {}, areaBy = {};
+        cells.forEach(c => { iso2By[c.ref_area] = c.iso2; areaBy[c.ref_area] = c; });
         // The node-tested comparability gate: only areas on the modal basis are colour-eligible.
         const cd = ooViz.choroplethData(cells.map(c => ({
           ref_area: c.ref_area, value: c.value, unit: c.unit, base_year: c.base_year,
@@ -2310,7 +2330,9 @@
           // just for being big). Honest refusal + the comparable values as a ranked list.
           const ranked = cd.cells.filter(c => c.comparable && typeof c.value === "number")
             .sort((a, b) => b.value - a.value).slice(0, 30)
-            .map(c => `<tr><td>${ooCountryCell(iso2By[c.area] || c.area)}</td><td style="text-align:right">${esc(fmtNum(c.value))}</td></tr>`).join("");
+            // A published aggregate (WLD/HIC/EAS) is disclosed as one through the
+            // server's classification; a country keeps the ordinary code + name (L13).
+            .map(c => `<tr><td>${ooAreaCell(iso2By[c.area] || c.area, (areaBy[c.area] || {}).area_kind, (areaBy[c.area] || {}).area_name)}</td><td style="text-align:right">${esc(fmtNum(c.value))}</td></tr>`).join("");
           host.innerHTML = `<div class="note">${esc(cd.refusalReason || "")}</div>`
             + (ranked ? `<table style="margin-top:6px"><tr><th>Area</th><th style="text-align:right">Value</th></tr>${ranked}</table>` : "");
           if (meta) meta.textContent = cd.caveat + multi;

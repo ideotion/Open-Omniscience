@@ -56,13 +56,34 @@ def test_the_alpha3_table_is_identical_on_both_sides() -> None:
     py = _py_table(_ROOT / "src" / "catalog" / "countries.py", "_ISO3_TO_2_TEXT")
     js = _js_table("_OO_ISO3_TO_2_TEXT")
     assert py, "the Python alpha-3 table parsed empty -- this guard would pass for free"
-    assert len(py.split()) == 216, f"expected 216 pairs, parsed {len(py.split())}"
+    assert len(py.split()) == 250, f"expected 250 pairs, parsed {len(py.split())}"
     if py != js:
         a, b = set(py.split()), set(js.split())
         raise AssertionError(
             "the alpha-3 table has drifted between countries.py and app-core.js. "
             f"only in Python: {sorted(a - b)} · only in JS: {sorted(b - a)}"
         )
+
+
+def test_every_iso_country_the_app_accepts_has_an_alpha3() -> None:
+    """The gap the 2026-09-26 delegated click-through found (defect L1): the table was
+    built as "every World Bank economy", and 34 real ISO 3166-1 territories -- Vatican
+    City, Réunion, Åland, Anguilla… -- were accepted by `normalize_country`, stored by
+    the catalogues, and then rendered as a bare two-letter code with a "not a
+    recognised country code" hover, because the DISPLAY layer reads this table. The
+    parity test above could not see it: both copies agreed, on the same hole."""
+    from src.catalog.countries import ISO_3166_1_ALPHA2
+
+    missing = sorted(c for c in ISO_3166_1_ALPHA2 if to_iso3(c) is None)
+    assert not missing, f"ISO 3166-1 members with no alpha-3 pair: {missing}"
+    for stored, code in (("va", "VAT"), ("ax", "ALA"), ("re", "REU"), ("ck", "COK"),
+                         ("ai", "AIA"), ("aq", "ATA"), ("um", "UMI"), ("yt", "MYT")):
+        d = country_display(stored)
+        assert (d["code"], d["kind"]) == (code, "iso"), (stored, d)
+        assert normalize_country(code) == stored, code
+    # Adding a territory must not have made an aggregate readable as one.
+    for agg in ("WLD", "HIC", "EUU", "EAS"):
+        assert to_iso3(agg) is None and to_iso2(agg) is None, agg
 
 
 def test_the_language_table_is_identical_on_both_sides() -> None:

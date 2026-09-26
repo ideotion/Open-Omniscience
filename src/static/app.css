@@ -1724,6 +1724,17 @@
          resolved box. The dropdown's option list is a native popup and renders
          full-width regardless. */
       .row select, .row input { max-width:100%; }
+      /* The Manage sources filter row is the one row whose children are all
+         `flex:1` (basis 0) AND carry a fixed-width control -- the .msel summary's
+         90px min-width. With the wrapper min-width released above, a basis of 0 lets
+         all seven wrappers fit one line at ~13px each, so flex-wrap never fires and
+         each 90px summary paints over its neighbours: "LanguCountrTypeTags", and a
+         click on Country landed on the next control (2026-09-26 click-through, L4). A
+         real basis makes the row WRAP instead; min-width stays 0, so a wrapper alone
+         on its line still shrinks and the page never widens. `!important` because the
+         Search and button wrappers carry inline `flex`. Search takes its own line. */
+      .src-filter-row > div:not(:last-child) { flex:1 1 130px !important; }
+      .src-filter-row > div:first-child { flex-basis:100% !important; }
       /* The Agenda month bar carries a deliberate inline flex-wrap:nowrap (the
          ‹ month › cluster reads as one unit on a desktop); at phone width its
          trailing hint span protruded 106px past the viewport (measured). Wrapping

@@ -1437,6 +1437,7 @@ _MAX_LAW = 4
 
 def law_change(session) -> list[Card]:
     """Recently flagged changes to tracked legal documents (a watch signal, never a verdict)."""
+    from src.catalog.countries import country_display_code
     from src.database.models import LawDocument, LawRevision
 
     rows = (
@@ -1451,6 +1452,12 @@ def law_change(session) -> list[Card]:
     for rev, doc in rows:
         reasons = (rev.flag_reasons or "").replace(",", ", ")
         reason_count = len([r for r in (rev.flag_reasons or "").split(",") if r])
+        # The jurisdiction as every surface shows it (Q301 step 1): `FRA`, `GBR` for the
+        # law `uk`, `EUU` -- the card printed the stored `fr`, on Home and, through the
+        # signal, in the bulletin (L6). The title is a keyed frame so it translates, the
+        # document title staying data.
+        jur = country_display_code(doc.jurisdiction) or "—"
+        doc_title = doc.title[:70]
         math_rows = [
             ("Size change of this revision (bytes)", f"{rev.delta_bytes:+}"),
             ("Flag reasons raised on it", str(reason_count)),
@@ -1465,7 +1472,9 @@ def law_change(session) -> list[Card]:
                     "a human should read the diff — it is never a judgement about the law.",
                     math_rows,
                 ),
-                title=f"Law changed ({doc.jurisdiction}): {doc.title[:70]}",
+                title=f"Law changed ({jur}): {doc_title}",
+                title_i18n="Law changed ({jurisdiction}): {title}",
+                title_vars={"jurisdiction": jur, "title": doc_title},
                 summary=(
                     f"A tracked legal document changed by {rev.delta_bytes:+} bytes vs its baseline"
                     + (f" — {reasons}." if reasons else ".")
@@ -1474,7 +1483,7 @@ def law_change(session) -> list[Card]:
                 signal={
                     "metric": "delta_bytes",
                     "value": rev.delta_bytes,
-                    "jurisdiction": doc.jurisdiction,
+                    "jurisdiction": jur,
                     "category": doc.category,
                     "flag_reasons": (rev.flag_reasons or "").split(",") if rev.flag_reasons else [],
                 },
@@ -1487,7 +1496,7 @@ def law_change(session) -> list[Card]:
                     {
                         "title": f"{doc.title} (official)",
                         "url": doc.official_url or doc.url,
-                        "source": doc.jurisdiction,
+                        "source": jur,
                     }
                 ],
                 n=1,

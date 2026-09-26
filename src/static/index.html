@@ -888,13 +888,13 @@
             <option value="eurostat">Eurostat (SDMX-JSON)</option>
           </select></label>
           <label>Indicator / dataset id<br><input id="statfig-series" placeholder="For example: NY.GDP.MKTP.CD" size="22"></label>
-          <label>Country (World Bank)<br><input id="statfig-country" placeholder="FR or all" size="10"></label>
+          <label>Country (World Bank)<br><input id="statfig-country" placeholder="FRA or all" size="10"></label>
           <button class="secondary" id="statfig-fetch" onclick="fetchStatFigure()">Fetch figures</button>
         </div>
         <div id="statfig-msg" class="hint" role="status" aria-live="polite" style="margin-top:8px"></div>
         <div class="row" style="gap:8px;align-items:flex-end;flex-wrap:wrap;margin-top:12px">
           <label>View stored figures — series id<br><input id="statfig-view-series" placeholder="For example: NY.GDP.MKTP.CD" size="22"></label>
-          <label>Area (for the chart)<br><input id="statfig-view-area" placeholder="FR" size="8"></label>
+          <label>Area (for the chart)<br><input id="statfig-view-area" placeholder="FRA" size="8"></label>
           <button class="secondary" onclick="loadStatFigures()">Show stored</button>
           <button class="secondary" onclick="triangulateStatSeries()">Triangulate producers</button>
           <button class="secondary" onclick="renderStatChart()" title="Plot the series over time. A new line segment starts at every unit / base-year / seasonal-adjustment change (never joined); a gap is a break, never interpolated.">Chart over time</button>
@@ -2496,7 +2496,7 @@
 
     <section class="panel">
       <h2>Manage sources</h2>
-      <div class="row">
+      <div class="row src-filter-row">
         <div style="flex:2"><label for="src-search">Search</label>
           <input id="src-search" placeholder="name or domain" onkeydown="if(event.key==='Enter')applySrcFilters()"></div>
         <!-- Multi-select dropdown filters (#23): each <details> is a native disclosure
@@ -2529,8 +2529,8 @@
         <div><span>Columns:</span> <code>name</code>, <code>domain</code>, <code>rss_url</code>,
         <code>source_type</code>, <code>country</code>, <code>language</code>,
         <code>region</code>, <code>tags</code>, <code>priority</code>,
-        <code>rate_limit_ms</code>, <code>enabled</code>, <code>reliability_score</code>.</div>
-        <div>Name and domain are required. Country is a 2-letter code. Tags are comma-separated, so quote the cell. Priority runs 1–3 and reliability_score runs 1–10.</div>
+        <code>rate_limit_ms</code>, <code>enabled</code>, <code>reliability_score</code>, <code>country_iso3</code>.</div>
+        <div>Name and domain are required. Country takes a 2- or 3-letter code or a country name. The export adds country_iso3; an import falls back to it when country is empty or unreadable, and refuses a row where the two disagree. Tags are comma-separated, so quote the cell. Priority runs 1–3 and reliability_score runs 1–10.</div>
         <div><span title="reliability_score is operator-set provenance metadata you assert per source. The app never computes, defaults, or derives it from article data, and never builds a Lead or score from it.">reliability_score is operator-set, not computed.</span></div>
         <div>Import upserts by domain (new ones created, existing updated); bad rows are reported, not dropped.</div>
       </div>
