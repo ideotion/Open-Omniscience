@@ -632,11 +632,15 @@
     // "More in Insights →" deep-links to the canonical Trends view. Reuses
     // /api/insights/trending-windows + dashChartSvg; no new backend, no new poll.
     let _homeTrendTerms = [], _homeTrendCaveat = "";   // stash for enlargeHomeTrend(i)
+    // The UI language the stash was TRANSLATED for (its rows carry that language's
+    // translations), so a re-render never paints it under another language's tags.
+    let _homeTrendLang = "";
     async function loadHomeTrends() {
       const panel = $("home-trends-panel"), box = $("home-trends");
       if (!box) return;
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       try {
+        const lang = uiLangCode();
         const d = await api("/api/insights/trending-windows?limit=4&series_top=4" + tgtLangParam());
         const wk = (d.windows || []).find(w => w.label === "7d") || (d.windows || [])[0];
         const terms = (wk && wk.terms) || [];
@@ -645,6 +649,7 @@
         const _hw = wk && wk.series_window;   // the axis the server sliced these against
         _homeTrendTerms = terms;              // stash so enlargeHomeTrend(i) needs no refetch
         _homeTrendCaveat = d.caveat || "";
+        _homeTrendLang = lang;
         const cards = terms.map((x, i) => {
           // PRH-31: the axis is the window the server sliced the series against,
           // never the points' own span — a series that omits its zero days would
@@ -660,7 +665,7 @@
             : "";
           return `<div style="flex:1;min-width:180px;padding:6px;border:1px solid var(--border);border-radius:8px">
             <div style="display:flex;align-items:baseline;gap:6px">
-              <a href="#" onclick='openAnalysisFor(${esc(JSON.stringify(x.term))});return false' title="${esc(t("Open this keyword's own analysis window"))}">${kwLabelHtml(x)}</a>
+              <a href="#" onclick='openAnalysisFor(${esc(JSON.stringify(x.term))});return false' title="${esc(t("Open this keyword's own analysis window"))}">${kwLabelHtml(x, {inLink: true})}</a>${kwQidHtml(x)}
               <span class="muted" style="font-size:12px">${esc(growthFallback(x) || `↑${x.growth}× · ${x.recent}`)}</span>${enlarge}
             </div>${spark}</div>`;
         }).join("");
@@ -1293,13 +1298,20 @@
     function _renderOverviewTrends() {
       const host = $("ov-trending");
       if (!host) return;
+      // A stash fetched for ANOTHER UI language would paint its translated words under
+      // this language's tags (M8's defect, here). Leave the row as it is: the
+      // `loadHomeTrends` a language switch runs is re-fetching, and paints it when done.
+      if (_homeTrendLang && _homeTrendLang !== uiLangCode()) return;
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const terms = _homeTrendTerms || [];
       if (!terms.length) { host.innerHTML = ""; return; }
+      // The label through the ONE helper (M7): a foreign word carries its tier tag here
+      // as on every other keyword surface; the QID goes after the chip, since a nested
+      // anchor would close this one early.
       const chips = terms.slice(0, 6).map(x =>
         `<a class="chip tiny" href="#" onclick='openAnalysisFor(${esc(JSON.stringify(x.term))});return false'`
-        + ` title="${esc(t("Open this keyword's own analysis window"))}">${esc(x.term)}`
-        + ` <span class="muted">${esc(growthFallback(x) || `↑${x.growth}× · ${x.recent}`)}</span></a>`).join("");
+        + ` title="${esc(t("Open this keyword's own analysis window"))}">${kwLabelHtml(x, {inLink: true})}`
+        + ` <span class="muted">${esc(growthFallback(x) || `↑${x.growth}× · ${x.recent}`)}</span></a>${kwQidHtml(x)}`).join("");
       host.innerHTML = `<div class="ov-trend"><span class="muted">${esc(t("Trending now"))}:</span>${chips}`
         + `<a class="ov-more" href="#" onclick="showTab('insights');return false">${esc(t("More in Insights"))} →</a></div>`
         + (_homeTrendCaveat ? `<div class="hint muted" style="font-size:11px">${esc(_homeTrendCaveat)}</div>` : "");

@@ -296,4 +296,18 @@ const K = (() => {
     "a term whose language nobody measured draws no tag, so it claims no tag hover either");
 }
 
+// --- A LABEL INSIDE A LINK LEAVES ITS QID FOR AFTER THE LINK (M7) ----------- //
+// The trend rows, the Home trends and the term lists draw the label inside an <a>. The
+// QID is an anchor of its own, and a nested anchor closes the outer one early, so the
+// rest of the row (the count, the bar) fell out of the link. `inLink` leaves the QID out
+// for the caller to draw after its closing tag; the tag and the translation stay.
+{
+  const verified = { term: "software", normalized: "software", translation: "logiciel",
+    translation_tier: "verified", translation_source_lang: "fr", translation_qid: "Q7397" };
+  const inLink = K.kwLabelHtml(verified, { inLink: true });
+  assert.ok(!/<a\b/.test(inLink), "a label drawn inside a link still nests an anchor: " + inLink);
+  assert.ok(/>logiciel</.test(inLink) && /translated from French/.test(inLink), inLink);
+  assert.ok(/class="kw-qid"/.test(K.kwLabelHtml(verified)), "the default label lost its QID");
+}
+
 console.log("keyword_label_node_test.js: OK");

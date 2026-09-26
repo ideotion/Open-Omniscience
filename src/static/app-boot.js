@@ -382,7 +382,8 @@
         });
         if (co.length) bits.push(`${t("with")}: ${co.join(", ")}`);
         const head = d.resolved.term || d.term || "";
-        return `${head} — ${bits.join(" · ")}${d.caveat ? " · " + d.caveat : ""}`;
+        // The caveat is a FIXED server sentence, so it is keyed as a whole (M14).
+        return `${head} — ${bits.join(" · ")}${d.caveat ? " · " + t(d.caveat) : ""}`;
       }
       function applyTo(el, text, persist) {
         // THIS HANDLER OVERWRITES THE TITLE, so anything the RENDERER put there is gone

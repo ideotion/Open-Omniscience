@@ -6315,7 +6315,7 @@ def test_keyword_views_show_verified_translations():
     # chips' call (termListHtml's row is `t`), so the chips gaining an options argument
     # (M4) failed it while termListHtml itself had not changed.
     body = html.split("function termListHtml(", 1)[1].split("\n    }\n", 1)[0]
-    assert "${kwLabelHtml(t)}" in body, "termListHtml must render through the one label helper"
+    assert "${kwLabelHtml(t, {inLink: true})}" in body, "termListHtml must render through the one label helper"
     assert "${esc(t.term)}</a>" not in body, "termListHtml draws a bare keyword again"
     # The three keyword fetches request the verified translation for the UI language.
     assert "/api/insights/trending-windows?limit=6&series_top=6\" + tgtLangParam()" in html

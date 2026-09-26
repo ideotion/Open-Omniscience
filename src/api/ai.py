@@ -279,9 +279,10 @@ def translate_keywords_ep(
     """Tentative LLM translations for the keywords a verified ring does NOT cover.
 
     Verified ring terms are skipped (the verified tier wins). Loopback-only (no
-    network-consent popup, like the other Ollama paths); when Ollama is unavailable —
-    including airplane mode (the kill switch) — returns ``available: false`` with no
-    translations and WITHOUT attempting a model call."""
+    network-consent popup, like the other Ollama paths), and loopback inference is
+    allowed in airplane mode: the kill switch refuses only a non-loopback Ollama address
+    (``OllamaClient._check_kill_switch``). When Ollama is not running, returns
+    ``available: false`` with no translations and WITHOUT attempting a model call."""
     from src.ai_layer.translate import TRANSLATE_PROMPT_VERSION, translate_keywords
 
     tgt = (req.target_lang or "").strip().lower()
@@ -292,7 +293,7 @@ def translate_keywords_ep(
     }
     if not tgt or len(tgt) > 3 or not tgt.isalpha():
         return {**base, "available": True, "translations": {}}
-    if not client.is_available():  # Ollama down or airplane mode -> no socket, no fabrication
+    if not client.is_available():  # Ollama not running -> no model call, no fabrication
         return {**base, "available": False, "translations": {}}
     items = [{"term": it.term, "language": it.language} for it in req.terms]
     translations = translate_keywords(client, items, tgt, model=active_model())

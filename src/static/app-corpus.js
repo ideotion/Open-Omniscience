@@ -681,24 +681,30 @@
       });
     }
 
-    async function exploreTerm() {
+    // `opts.repaint`: re-run by a language switch (ooKwRepaintOnLangChange), which must
+    // never complain about an empty box the reader cleared after exploring.
+    async function exploreTerm(opts) {
       const term = $("ins-term").value.trim();
-      if (!term) { toast("Enter a keyword or entity.", "err"); return; }
+      if (!term) { if (!(opts && opts.repaint)) toast("Enter a keyword or entity.", "err"); return; }
       $("ins-trend").innerHTML = '<div class="muted">Loading…</div>';
       $("ins-mindmap").innerHTML = ""; $("ins-context").innerHTML = ""; $("ins-framing").innerHTML = "";
       try {
         const [tr, assoc, ctx] = await Promise.all([
-          api("/api/insights/trend?bucket=week&term=" + encodeURIComponent(term)),
+          api("/api/insights/trend?bucket=week&term=" + encodeURIComponent(term) + tgtLangParam()),
           api("/api/insights/associations?term=" + encodeURIComponent(term)),
           api("/api/insights/context?term=" + encodeURIComponent(term)),
         ]);
         if (!tr.resolved) { $("ins-trend").innerHTML = `<div class="note err">No indexed mentions of “${esc(term)}”. Index the corpus, or try another term.</div>`; return; }
         const r = tr.resolved;
         const t8 = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+        const tf8 = (s2, v) => (window.OOI18N && OOI18N.tf) ? OOI18N.tf(s2, v)
+          : String(s2).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? String(v[k]) : m);
+        // The resolved keyword through THE label helper (M7: the translation is the
+        // visible term, the tier tag follows), and the chrome around it keyed (M14).
         $("ins-trend").innerHTML =
-          `<div style="margin-bottom:6px">Resolved to <strong>${esc(r.term)}</strong> ` +
-          `<span class="pill">${esc(r.kind)}</span> · ${tr.total} mentions in ${tr.articles} articles ` +
-          `<button class="tiny secondary" onclick="openCorpus(${esc(JSON.stringify(r.term))})" title="Open this keyword as a corpus window: trend, member articles, and shared outbound links (the sources' sources).">⊞ Corpus</button></div>` +
+          `<div style="margin-bottom:6px">${esc(t8("Resolved to"))} <strong>${kwLabelHtml(r)}</strong> ` +
+          `<span class="pill">${esc(r.kind)}</span> · ${esc(tf8("{n} mentions in {articles} articles", {n: fmtNum(tr.total), articles: fmtNum(tr.articles)}))} ` +
+          `<button class="tiny secondary" onclick="openCorpus(${esc(JSON.stringify(r.term))})" title="${esc(t8("Open this keyword as a corpus window: trend, member articles, and shared outbound links (the sources' sources)."))}">⊞ ${esc(t8("Corpus"))}</button></div>` +
           `<div style="margin-bottom:8px"><div class="hint">${esc(t8("Time range"))}</div>` +
           `<div id="ins-trend-scope"></div></div>` +
           `<div id="ins-trend-oo"></div>`;
@@ -934,6 +940,10 @@
     // picker's own buttons cannot go (the parser closes the outer button at the first
     // nested one, M4), so it is left out here and the caller draws
     // `kwSensePickerHtml(row)` after its closing tag.
+    // `opts.inLink`: the caller draws the label INSIDE an <a>, where the QID's own anchor
+    // cannot go -- the parser closes the outer link at the nested one, so the rest of the
+    // row falls out of it -- so the QID is left out here and the caller draws
+    // `kwQidHtml(row)` after its closing tag.
     function kwLabelHtml(row, opts) {
       if (!row) return "";
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
@@ -962,7 +972,7 @@
             + esc(_kwTf("in {language}", {language: srcName})) + `</span>`;
         }
       }
-      return html + kwQidHtml(row);
+      return html + ((opts && opts.inLink) ? "" : kwQidHtml(row));
     }
 
     // Q412 = a's picker. A refusal that names a choice and offers no way to make it is a
@@ -1045,12 +1055,18 @@
       // alone left the landscape in the previous locale's tags.
       const callers = [
         ["home-trends", "loadHomeTrends"],
+        // Home's Overview "Trending now" row renders from the SAME stash; it refuses a
+        // stash translated for another language, so on a switch it waits for the
+        // re-fetch above rather than painting the old words under the new tags.
+        ["ov-trending", "_renderOverviewTrends"],
         ["ins-landscape", "loadLandscape", true],
         ["fam-list", "loadFamilies"],
         ["famc-list", "loadFamilyCuration"],
         ["trd-windows", "loadTrendWindows"],
         // The Trends tab's two bar charts (rising, top) draw the label too.
         ["trd-top", "loadTrends"],
+        // Explore's "Resolved to" header (M7); the flag keeps a cleared box silent.
+        ["ins-trend", "exploreTerm", {repaint: true}],
         // The analysis window RE-FETCHES its keywords for the new target language rather
         // than re-rendering the payload it holds, whose translations belong to the old
         // one (M8); with nothing loaded `anRenderKwChips` returns early.
@@ -1160,40 +1176,49 @@
     // and opens the exact result set as its own corpus via openAnalysisForIds. Counts only, never
     // a score; the bounded flag + method/caveat are surfaced. Browser-unverified per fork-3.
     function anConjunctionHtml() {
+      // Keyed (M14): the hint, the placeholder, the three operators and their hovers were
+      // English literals in every locale.
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       return `<div style="margin-bottom:10px;padding:8px;border:1px solid var(--line);border-radius:6px">`
-        + `<div class="hint" style="margin-top:0"><b>Combine keywords</b> — set algebra over N keywords. `
-        + `The set expression is the corpus label; counts only, never a score.</div>`
+        + `<div class="hint" style="margin-top:0"><b>${esc(t("Combine keywords"))}</b> — `
+        + `${esc(t("set algebra over N keywords. The set expression is the corpus label; counts only, never a score."))}</div>`
         + `<div class="row" style="flex-wrap:wrap;gap:6px;align-items:center;margin-top:6px">`
-        + `<input id="an-conj-terms" placeholder="keyword, keyword, keyword…" style="flex:1;min-width:180px" `
+        + `<input id="an-conj-terms" placeholder="${esc(t("keyword, keyword, keyword…"))}" style="flex:1;min-width:180px" `
         + `onkeydown="if(event.key==='Enter')anCombine('intersection')">`
-        + `<button class="secondary" onclick="anCombine('intersection')" title="articles mentioning ALL terms">∩ All</button>`
-        + `<button class="secondary" onclick="anCombine('union')" title="articles mentioning ANY term">∪ Any</button>`
-        + `<button class="secondary" onclick="anCombine('difference')" title="the first term and none of the rest">∖ First-only</button>`
+        + `<button class="secondary" onclick="anCombine('intersection')" title="${esc(t("articles mentioning ALL terms"))}">${esc(t("∩ All"))}</button>`
+        + `<button class="secondary" onclick="anCombine('union')" title="${esc(t("articles mentioning ANY term"))}">${esc(t("∪ Any"))}</button>`
+        + `<button class="secondary" onclick="anCombine('difference')" title="${esc(t("the first term and none of the rest"))}">${esc(t("∖ First-only"))}</button>`
         + `</div><div id="an-conj-result" style="margin-top:8px"></div></div>`;
     }
     function _anConjSep(op) { return op === "difference" ? " ∖ " : (op === "union" ? " ∪ " : " ∩ "); }
     function anCombineHtml(d) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const tf = (s2, v) => (window.OOI18N && OOI18N.tf) ? OOI18N.tf(s2, v)
+        : String(s2).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? String(v[k]) : m);
       const terms = (d && d.terms) || [];
-      if (!terms.length) return `<div class="muted">${esc((d && d.method) || "No resolvable keyword given.")}</div>`;
+      if (!terms.length) return `<div class="muted">${esc(t((d && d.method) || "No resolvable keyword given."))}</div>`;
       const expr = terms.map((x) => esc(x.normalized || x.term)).join(_anConjSep(d.op));
       const perTerm = terms.map((x) =>
-        `<span class="chip" title="exact corpus-wide article count for this term">${esc(x.term)} <span class="muted">${esc(String(x.n))}</span></span>`).join(" ");
+        `<span class="chip" title="${esc(t("exact corpus-wide article count for this term"))}">${esc(x.term)} <span class="muted">${esc(String(x.n))}</span></span>`).join(" ");
       const bounded = d.result_bounded
-        ? `<div class="card-caveat" title="the set scan reached its cap">Result bounded — a true SUBSET of the answer (it may miss members), never a fabricated one.</div>` : "";
+        ? `<div class="card-caveat" title="${esc(t("the set scan reached its cap"))}">${esc(t("Result bounded — a true SUBSET of the answer (it may miss members), never a fabricated one."))}</div>` : "";
       const open = (d.n_combined > 0)
-        ? `<button class="secondary" onclick="anOpenCombined()">Open ${esc(String(d.n_combined))} article(s) as a corpus →</button>`
-        : `<div class="muted">Empty set — no articles match this combination.</div>`;
-      return `<div class="hint" style="margin-top:0"><b>${esc(expr)}</b> · <b>${esc(String(d.n_combined))}</b> article(s)</div>`
+        ? `<button class="secondary" onclick="anOpenCombined()">${esc(tf("Open {n} article(s) as a corpus →", {n: d.n_combined}))}</button>`
+        : `<div class="muted">${esc(t("Empty set — no articles match this combination."))}</div>`;
+      // The server's caveat is a fixed sentence unless the scan was bounded (that variant
+      // interpolates the cap, and falls back to the server's English).
+      return `<div class="hint" style="margin-top:0"><b>${esc(expr)}</b> · ${esc(tf("{n} article(s)", {n: d.n_combined}))}</div>`
         + `<div style="margin-top:4px;display:flex;flex-wrap:wrap;gap:4px">${perTerm}</div>`
         + `<div style="margin-top:6px">${open}</div>${bounded}`
-        + `<div class="card-caveat" title="${esc(d.method || "")}">${esc(d.caveat || "")}</div>`;
+        + `<div class="card-caveat" title="${esc(d.method || "")}">${esc(t(d.caveat || ""))}</div>`;
     }
     async function anCombine(op) {
       const inp = $("an-conj-terms"), out = $("an-conj-result");
       if (!inp || !out) return;
       const terms = (inp.value || "").split(",").map((s) => s.trim()).filter(Boolean);
-      if (!terms.length) { out.innerHTML = `<div class="muted">Enter at least one keyword to combine.</div>`; return; }
-      out.innerHTML = `<div class="muted">Combining…</div>`;
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      if (!terms.length) { out.innerHTML = `<div class="muted">${esc(t("Enter at least one keyword to combine."))}</div>`; return; }
+      out.innerHTML = `<div class="muted">${esc(t("Combining…"))}</div>`;
       try {
         const d = await api("/api/insights/corpus-algebra?terms=" + encodeURIComponent(terms.join(","))
           + "&op=" + encodeURIComponent(op));
@@ -1263,9 +1288,14 @@
       const btn = d.terms.some(_anKwNeedsTentative)
         ? ` <button class="ghost tiny" onclick="anFillTentative()" title="${esc(t("AI-generated tentative translation — unreliable, not verified."))}">✦ ${esc(t("Translate the rest (AI, tentative)"))}</button>`
         : "";
+      // The caveat carries a count, so the server sends its FRAME + vars (M14); an older
+      // payload without them keeps the server's English sentence.
+      const tfK = (s2, v) => (window.OOI18N && OOI18N.tf) ? OOI18N.tf(s2, v)
+        : String(s2).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? String(v[k]) : m);
+      const cav = d.caveat_i18n ? tfK(d.caveat_i18n, d.caveat_vars || {}) : (d.caveat || "");
       kw.innerHTML = anConjunctionHtml()
         + `<div class="hint"><b>${d.terms.length}</b> ${esc(t("Keywords"))}`
-        + ` · <span class="muted">${esc(d.caveat || "")}</span>${cjkNote}${btn}</div>`
+        + ` · <span class="muted">${esc(cav)}</span>${cjkNote}${btn}</div>`
         + `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px">${chips}</div>`
         + anContextHtml();
     }
@@ -1311,7 +1341,11 @@
         const r = await api("/api/ai/translate-keywords",
           {method: "POST", body: JSON.stringify({terms: items, target_lang: uiLangCode()})});
         if (!r.available) {
-          toast(t("Local AI is offline — start Ollama (and turn airplane mode off) for tentative translations."), "err");
+          // The local AI is LOOPBACK, and airplane mode lets loopback through
+          // (OllamaClient._check_kill_switch refuses only a non-loopback address, which
+          // _require_loopback already refuses at construction). So the one thing to tell
+          // the reader is to start Ollama; sending them online would be wrong advice (M13).
+          toast(t("Local AI is offline — start Ollama for tentative translations."), "err");
           return;
         }
         const tx = r.translations || {};
@@ -1326,7 +1360,7 @@
       return terms.map(t => `<div style="padding:4px 0;border-bottom:1px solid var(--border);display:flex;align-items:baseline;gap:6px">
         <button class="tiny danger" title="exclude this keyword" style="margin:0;padding:0 6px"
           onclick='excludeKeyword(${esc(JSON.stringify(t.term))})'>✕</button>
-        <a href="#" data-kwstat="${esc(t.term)}" title="${esc(t.term)}" onclick='pickTerm(${esc(JSON.stringify(t.term))});return false'>${kwLabelHtml(t)}</a>
+        <a href="#" data-kwstat="${esc(t.term)}"${kwTipExtraAttr(t)} title="${esc(t.term)}" onclick='pickTerm(${esc(JSON.stringify(t.term))});return false'>${kwLabelHtml(t, {inLink: true})}</a>${kwQidHtml(t)}
         <span class="pill">${esc(t.kind)}</span> <span class="muted">${extra(t)}</span></div>`).join("");
     }
     // Trends as clickable horizontal BAR graphs (field test 2026-06-19 #25): keywords
@@ -1357,9 +1391,11 @@
       // and gone the moment anyone points at the row. `data-oo-tip-extra` is the channel
       // that handler appends rather than replaces, so the row's own fact reaches the
       // bubble beside the stats instead of being destroyed by them.
+      // A TAGGED row carries the tag's own hover there too (M2, M7): the tier, the
+      // original, the language -- which already ends with this same breakdown.
       const kwExtra = (row) => {
-        const across = kwLangBreakdownText(row);
-        return across ? ` data-oo-tip-extra="${esc(across)}"` : "";
+        const extra = kwHasTag(row) ? kwHoverText(row) : kwLangBreakdownText(row);
+        return extra ? ` data-oo-tip-extra="${esc(extra)}"` : "";
       };
       if (!terms.length) return '<div class="muted">' + esc(T("Nothing yet — index the corpus.")) + "</div>";
       const scaled = terms.map(t => valueOf(t)).map(v => (v == null ? null : Number(v)))
@@ -1372,9 +1408,9 @@
         return `<div class="tb-row">
           <button class="tiny danger tb-x" title="exclude this keyword" onclick='excludeKeyword(${esc(JSON.stringify(t.term))})'>✕</button>
           <a class="tb-label" href="#" data-kwstat="${esc(t.term)}"${kwExtra(t)} title="${esc(t.term + " — " + T("open in analysis (trend + worldwide spread)") + kwAcross(t))}"
-             onclick='openAnalysisFor(${esc(JSON.stringify(t.term))});return false'>${esc(t.term)}</a>
+             onclick='openAnalysisFor(${esc(JSON.stringify(t.term))});return false'>${kwLabelHtml(t, {inLink: true})}</a>
           <span class="tb-bar" aria-hidden="true">${fill}</span>
-          <span class="tb-val muted">${esc(labelOf(t))}</span>
+          <span class="tb-val muted">${esc(labelOf(t))}</span>${kwQidHtml(t)}
         </div>`;
       }).join("") + "</div>";
     }
@@ -1474,7 +1510,7 @@
               ? {t0: w.series_window.start, t1: w.series_window.end} : {};
             return `<div style="padding:6px 0;border-bottom:1px solid var(--border)">
               <div style="display:flex;align-items:baseline;gap:6px">
-                <a href="#" onclick='pickTerm(${esc(JSON.stringify(x.term))});return false'>${esc(x.term)}</a>
+                <a href="#" onclick='pickTerm(${esc(JSON.stringify(x.term))});return false'>${kwLabelHtml(x, {inLink: true})}</a>${kwQidHtml(x)}
                 <span class="muted" style="font-size:12px">${esc(growthFallback(x) || `↑${x.growth}× · ${x.recent} recent`)}</span>
                 <button class="ghost tiny" style="margin-inline-start:auto" onclick="enlargeTrend(${wi},${ti})" title="${esc(t("Enlarge the chart"))}" aria-label="${esc(t("Enlarge the chart"))}">⛶</button>
               </div>${dashChartSvg(pts, "", axis)}</div>`;

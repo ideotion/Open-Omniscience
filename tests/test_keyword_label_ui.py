@@ -261,3 +261,23 @@ def test_a_language_switch_reloads_what_holds_translations_m8() -> None:
     assert "tgtLangParam()" in refetch and "corpus-keywords" in refetch
     landscape = strip_comments(function_body(app, "loadLandscape"))
     assert "if (_landscapeLoaded && !force) return;" in landscape
+
+
+def test_the_trend_rows_draw_the_label_through_the_one_helper_m7() -> None:
+    """M7 (the row's closing criterion: every keyword surface draws a foreign word with its
+    tier tag). Home's "Trending now" row, the three-window sparkline rows and the Trends
+    bars drew ``esc(x.term)`` -- the bare original, never the translation, never a tag.
+
+    Each is a LINK, so each calls the helper with ``{inLink: true}`` and draws the QID
+    after its closing tag: a nested anchor closes the outer one early and spills the rest
+    of the row out of it. The rendered strings are driven in
+    ``term_bars_hover_node_test.js`` and ``keyword_label_node_test.js``; this pins that
+    the surfaces still call them."""
+    from tests.js_source_helper import app_js, function_body, strip_comments
+
+    app = app_js()
+    for fn in ("_renderOverviewTrends", "loadTrendWindows", "termBarsHtml", "termListHtml"):
+        body = strip_comments(function_body(app, fn))
+        assert re.search(r"kwLabelHtml\((?:x|t), \{inLink: true\}\)", body), f"{fn} draws a bare keyword"
+        assert "kwQidHtml(" in body, f"{fn} drops the QID the label left for it"
+        assert not re.search(r">\$\{esc\((?:x|t)\.term\)\}</a>", body), f"{fn} still draws a bare term"

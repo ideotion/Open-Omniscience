@@ -881,6 +881,7 @@ def trend(
                     "term": primary.term,
                     "normalized": primary.normalized_term,
                     "kind": kind_of(primary),
+                    "language": primary.language,
                 }
                 if primary is not None
                 else None
@@ -920,7 +921,12 @@ def trend(
     return {
         "term": term,
         "bucket": bucket,
-        "resolved": {"term": kw.term, "normalized": kw.normalized_term, "kind": kind_of(kw)},
+        "resolved": {
+            "term": kw.term,
+            "normalized": kw.normalized_term,
+            "kind": kind_of(kw),
+            "language": kw.language,
+        },
         "points": points,
         "total": sum(p["count"] for p in points),
         "articles": int(articles),
