@@ -370,13 +370,21 @@ def test_a_mismatch_that_survives_a_rebuild_is_reported_as_a_failure():
             self.rebuilds = 0
 
         def execute(self, sql, *a):
-            if "rebuild" in sql:
+            # The repair is the transforming rebuild now (Q506/Q507): it opens with
+            # FTS5's 'delete-all', never FTS5's own raw 'rebuild'.
+            if "rebuild" in sql or "'delete-all'" in sql:
                 self.rebuilds += 1
                 return self
             return self
 
+        def executemany(self, sql, rows):  # pragma: no cover - no articles to index
+            return self
+
         def fetchone(self):
             return (3,)  # docsize says 3 ...
+
+        def fetchall(self):
+            return []  # the rebuild reads no articles back: the index stays stuck
 
         def commit(self):  # pragma: no cover - trivial
             pass

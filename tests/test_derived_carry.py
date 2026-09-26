@@ -48,7 +48,17 @@ from src.analytics.extract import get_extractor
 from src.analytics.store import index_article, reindex_articles
 from src.backup.merge import _BACKLOG_SQL, _STATUS_MERGED, _STATUS_REINDEXED, merge_corpus
 from src.database.fts import _FTS_DDL
+from src.database.fts_norm import register as _register_fts_functions
 from src.database.models import Article, ArticleIndexStamp, Base, Keyword, Source
+
+
+def _writer(path: Path) -> sqlite3.Connection:
+    """A raw connection that may write ``articles``: the index's sync triggers call the
+    search transform (``src/database/fts_norm.py``), which every app connection registers."""
+    con = sqlite3.connect(path)
+    _register_fts_functions(con)
+    return con
+
 
 _BATCH_META = {
     "artifact_kind": "oo-backup-2",
@@ -333,7 +343,7 @@ def test_a_merge_into_a_populated_corpus_matches_a_re_index(backup, tmp_path, mo
     # inputs check load-bearing in THIS comparison, not only in a refusal count.
     edited = tmp_path / "edited.db"
     shutil.copyfile(backup, edited)
-    con = sqlite3.connect(edited)
+    con = _writer(edited)
     # Not h0000: that one carries the acronyms the entity scenario needs, and an input
     # refusal would pre-empt it (the first draft edited it, and the entity guard went
     # silent -- the scenario assertions below are what said so).
@@ -452,7 +462,7 @@ def test_an_article_edited_after_it_was_indexed_is_refused(backup, tmp_path, mon
     revision, an adopted field) means a re-index would read different inputs."""
     edited = tmp_path / "edited.db"
     shutil.copyfile(backup, edited)
-    con = sqlite3.connect(edited)
+    con = _writer(edited)
     con.execute("UPDATE articles SET title = title || ' (updated)' WHERE hash = 'h0000'")
     con.commit()
     con.close()
@@ -606,7 +616,7 @@ def test_a_leftover_stamp_on_a_reused_id_cannot_certify_a_new_article(backup, tm
     finally:
         s.close()
         engine.dispose()
-    con = sqlite3.connect(target)
+    con = _writer(target)
     con.execute("PRAGMA foreign_keys=OFF")
     con.execute("DELETE FROM articles WHERE id = ?", (gone_id,))
     con.commit()

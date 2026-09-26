@@ -9905,3 +9905,27 @@ real producer run cannot hold that kind of mistake.
 deletion (the prune owns it), no re-ranking of the 80-term cap, term-keyed settings not rewritten.
 
 **STILL OWED.** Operator step 2 on row M: run the fold on the real corpus and keep its report.
+
+## 2026-09-26 — Search: Chinese and Japanese split into words, Arabic spellings folded (PR #1187)
+
+**WHAT SHIPPED.** Gate row N's S8 (Q506 🔒 = b, Q507 = a, Q1015 = a; brief `S04-07`). The article
+index's sync triggers call one transform (`src/database/fts_norm.py`) before FTS5's tokenizer:
+Arabic harakat and tatweel stripped and alef, teh marbuta and alef maksura folded; Chinese
+segmented with jieba and Japanese with sudachipy, chosen by script. Queries keep their raw literal
+first. Settings → Advanced → Diagnostics runs a pausable re-index for older articles, with a report
+by script.
+
+**THE LESSON (copied to `LESSONS.md`).** An external-content FTS5 index can only delete a document
+with the exact values it indexed. The first design kept a mask and re-ran the transform at delete
+time, which is safe for the Arabic fold (this code's own) and NOT for segmenter output: a new
+dictionary splits the same text differently, and an uninstall cannot split it at all, so the delete
+would silently corrupt the index. `article_fts_norm` now keeps the exact indexed values for
+segmenter output. Two tests hold the rule (a segmenter removed after indexing; a different
+segmenter swapped in between insert and delete), and each targeted mutation fails them.
+
+**FOUND ON THE WAY.** Hindi and Bengali vowel signs split words the same way Arabic's did; the fix
+needs a one-time search-table rebuild and its own ruling (recorded in `OPEN_QUEUE.md`). The full
+suite also caught a test's raw `sqlite3` writes to `articles`, the disclosed known limit.
+
+**STILL OWED.** Row N's operator steps: the re-index on the real corpus with its report, the
+agreement comparison, Q515's cost, and the maintainer's click-through.

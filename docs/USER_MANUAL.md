@@ -388,6 +388,14 @@ other, and lets you scroll.
   parentheses with correct precedence, e.g.
   `(climate OR energy) AND policy NOT opinion`. Backed by SQLite FTS5 and fully
   parameterised (no injection).
+- **Arabic, Chinese and Japanese words are found however they are written.** An Arabic
+  word matches with or without vowel marks and whatever its spelling of alef, teh
+  marbuta or alef maksura (أحمد finds احمد, مدرسة finds مدرسه), and a Chinese or Japanese
+  word is found inside a longer run of text (东京 finds an article that says 东京大学).
+  Chinese is split into words by jieba on every install; Japanese by sudachipy, which
+  comes with the optional `[segmentation]` extra. Articles indexed before this version
+  keep being found the way they always were, and are found by word too once **Re-index
+  search** (Settings → Advanced → Diagnostics) has run.
 - **Filters:** Source (exact name), Language (code like `en`), and a **time-range**
   control — From/To date fields, a draggable range bar, and quick presets
   (1M · 6M · 1Y · 5Y · All) — the *same* control used on Markets, Insights and the
@@ -706,9 +714,11 @@ module — [`src/analytics/managed.py`](../src/analytics/managed.py) (`MANAGED_L
 drift from the code. As of that module the managed set is: **en, fr, de, es, it, pt, nl,
 ru, ar, hu, id, sv, da, nb, no, pl, sr, sl, el, bg, hi, bn, fa, ur, uk, ro, cs, sk, ca,
 sw, az, et, tr, fi, bs, hr**. A language **not** in that set still *tokenises*, but its
-function words ("the/of/and" equivalents) leak in as false keywords. **zh, ja and th are
-unsegmented** — they have no inter-word spaces, so keyword extraction is broken outright
-regardless of any stoplist.
+function words ("the/of/and" equivalents) leak in as false keywords. **ja and th are
+unsegmented** unless the optional `[segmentation]` extra is installed — they have no
+inter-word spaces, so without a segmenter keyword extraction is broken outright regardless
+of any stoplist. **zh** was in the same position until jieba became a core dependency in
+0.4; it is segmented, and therefore managed, on every install.
 
 Scraping material in those languages therefore produces **junk keywords** that:
 
@@ -1359,6 +1369,13 @@ Official **figures** are not here at all — they are data, so they live under
   families or groups use are never folded. It is a pausable job in the task manager, and
   **Fold report (.json)** shows what the last completed fold counted and its largest folds.
   A fold cannot be undone; a later prune removes the keywords it emptied.
+  **Re-index search (Arabic, Chinese, Japanese)** indexes articles written before this
+  version the way new ones are, so older Arabic, Chinese and Japanese articles are found by
+  word too. It reads each article once and re-indexes only those whose search entry would
+  change; it is a pausable job in the task manager, and **Search re-index report (.json)**
+  shows how many it checked and re-indexed, by script. Run it again after upgrading jieba or
+  the Japanese dictionary: the articles the new dictionary splits differently are
+  re-indexed, and the report names the versions it ran with.
 - **Temporary field-test instrumentation (0.0.8 live-test cycle).** During this
   cycle the app automatically exercises each network surface once *inside your
   own collect passes* (calendar-feed verification in polite batches, the market
@@ -1868,9 +1885,12 @@ sweep"). None is a bug; each shapes how to read a result.
   honesty only (no forensic/deepfake claims); there is no audio or video
   analysis. A claim that lives only in a video or image is outside what the tool
   can see.
-- **CJK/Thai word segmentation is not implemented.** Keyword extraction relies on
-  whitespace tokenisation, so Chinese, Japanese and Thai keyword analysis is effectively
-  non-functional even though the interface ships in those languages. The **managed** set
+- **Japanese and Thai need the optional `[segmentation]` extra.** Keyword extraction
+  relies on whitespace tokenisation unless a word segmenter is installed. Chinese is
+  segmented on every install (jieba, a core dependency since 0.4); Japanese and Thai keyword
+  analysis is effectively non-functional without the extra (janome, pythainlp), even
+  though the interface ships in those languages, and Japanese search is split into words
+  only with the extra's sudachipy. The **managed** set
   (space-segmented, with a stoplist) is defined in
   [`src/analytics/managed.py`](../src/analytics/managed.py); the *analytical depth* per
   language varies, and unsegmented scripts are the largest current gap.

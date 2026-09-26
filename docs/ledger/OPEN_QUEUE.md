@@ -22,6 +22,46 @@
 
 ## Open queue (when maintainer says proceed)
 
+- **THE SEARCH INDEX NOW FOLDS ARABIC AND SEGMENTS CHINESE AND JAPANESE (`S04-07` S8, Q506 🔒 = b,
+  Q507 = a, built 2026-09-25): WHAT IS OWED, WHAT WAS LEFT UNDECIDED, AND ONE FINDING OUTSIDE THE
+  RULING.** The sync triggers index `oo_fts_norm(text)` rather than the stored text, and the search
+  re-index job (Settings → Advanced → Diagnostics, kind `search-reindex`) carries articles indexed
+  before that over. Each transformed document has a row in `article_fts_norm`: the mask for the
+  Arabic fold (this code's own, re-run at delete time) and the EXACT indexed values for segmenter
+  output (third-party dictionaries change and can be uninstalled; re-running one at delete time
+  would corrupt the index, and two tests fail when that is mutated in).
+  - **OWED — operator step 1 of `S04-07`:** run the search re-index on the reference corpus and
+    keep its report (counts by script, the segmenter versions it ran with, the time taken), with a
+    few before/after searches. The fixture numbers are in the PR; nothing here stands in for the
+    real corpus.
+  - **UNDECIDED, AND FOLLOWED AS DEFAULT: `sudachipy` versus `janome` for ja (brief §6, PF12 is
+    BLANK and non-⛔, default a = sudachipy per Q506).** Q506 is followed on the SEARCH path only;
+    the keyword path keeps `janome`, and nothing was retired. If PF12 is answered "retire janome",
+    the keyword path moves in its own change, with the keyword engine identity bump that implies.
+  - **A CONSEQUENCE TO KNOW, NOT A DECISION TAKEN HERE:** `jieba` moved from `[segmentation]` into
+    core because the brief places each segmenter per Q1015 = a (pure Python in core). The keyword
+    path already used it whenever it was importable, so a default install (which never had
+    `[segmentation]`) now also segments Chinese KEYWORDS and counts zh as a managed language:
+    catalog imports seed zh sources ENABLED rather than disabled, and "disable unmanaged
+    languages" no longer touches them. That matches the Q911 note's zh emphasis; it is stated so
+    nobody meets it by surprise.
+  - **FINDING OUTSIDE Q507, NOT FIXED: Devanagari and Bengali vowel signs are separators in this
+    tokenizer too.** Measured on SQLite 3.45: सरकार indexes as सरक + र, so every word with a
+    matra is shredded and a search for सरक matches सरकार. The fix is the tokenizer option
+    `categories 'L* N* Co M*'` (measured: सरकार and a vocalised مَدْرَسَةٌ each stay one token),
+    but a tokenizer is fixed when the table is CREATED, so it means recreating `article_fts` and a
+    full rebuild (981–1,645 s on the field's 130 GB corpus, per `ensure_fts`'s own record) —
+    a migration of its own, not a side effect of S8. hi and bn are UI languages; this wants a
+    ruling on when to pay that rebuild.
+  - **KNOWN LIMIT, BY DESIGN:** a connection without the three `oo_fts_*` functions cannot write
+    `articles` (the trigger fails, loudly, and the write is refused). Every connection the app
+    opens registers them (a SQLAlchemy pool hook plus `connect()`); an external tool such as the
+    `sqlite3` shell can read the store but not insert, update or delete articles.
+  - **LEFT OUT: compressing the kept values.** They measured 1.5× the source bytes for the CJK
+    documents they exist for and nothing for any other document; compression would add a function
+    to every delete. Revisit if Settings → Storage shows the search index growing out of line on a
+    CJK-heavy corpus.
+
 - **THE KEYWORD FOLD JOB AND THE RECONCILE REWRITE (gate row M's two carried items, Q413 / Q414 /
   Q416, built 2026-09-25): WHAT IS OWED, AND FOUR THINGS LEFT OUT ON PURPOSE.** The fold re-keys
   every keyword written before lemmatisation (`studies` → `study`) the way a re-index would,

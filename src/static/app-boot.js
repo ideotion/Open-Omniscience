@@ -568,6 +568,14 @@
       if (rep) rep.addEventListener("click", () => window.open("/api/insights/keyword-fold-job/report", "_blank"));
     })();
 
+    // The search re-index (S04-07 S8): Settings → Advanced. Bound here rather than inline.
+    (function _wireSearchReindex() {
+      const btn = $("fts-reindex-btn");
+      if (btn) btn.addEventListener("click", () => reindexSearch(btn));
+      const rep = $("fts-reindex-report");
+      if (rep) rep.addEventListener("click", () => window.open("/api/search/index-job/report", "_blank"));
+    })();
+
     // Click the EMPTY space of the sidebar (not a nav item / button / link) to
     // collapse / expand it (remark 15) — the same toggle as the #sb-collapse /
     // #sb-expand buttons, so the whole rail is a discoverable target.

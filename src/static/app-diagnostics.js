@@ -241,6 +241,84 @@
       } finally { if (btn) btn.disabled = false; }
     }
 
+    // THE SEARCH RE-INDEX (S04-07 S8; Q506 🔒 = b, Q507 = a): re-index the articles indexed
+    // before Arabic folding and Chinese/Japanese word splitting. The status line is a PURE
+    // function of the job's status and its report, so tests/search_reindex_node_test.js drives
+    // it without a page. Every count reads "Label: n", so no language has to agree a number
+    // with a noun, and an error is named by its CODE, never by exception text.
+    function _searchReindexStatusText(s, report, t) {
+      if (!s) return "";
+      const n = (v) => Number(v || 0).toLocaleString();
+      if (s.state === "error" && s.error === "index-not-upgraded") {
+        return t("This store's search index has not been upgraded yet. Restart the app once, then run this again.");
+      }
+      if (s.state === "error") {
+        return t("The search re-index stopped on an error; the log has the details. Running it again continues from where it stopped.");
+      }
+      if (s.state === "done") {
+        if (!report) return t("done");
+        const by = report.by_script || {};
+        let line = t("Articles checked: {checked} · re-indexed: {reindexed} (Arabic: {arabic} · Chinese: {chinese} · Japanese: {japanese})")
+          .replace("{checked}", n(report.articles_checked))
+          .replace("{reindexed}", n(report.articles_reindexed))
+          .replace("{arabic}", n(by.arabic))
+          .replace("{chinese}", n(by.chinese))
+          .replace("{japanese}", n(by.japanese));
+        if (report.unsegmented_by_a_missing_segmenter) {
+          line += " · " + t("Indexed without word splitting, their segmenter is no longer installed: {n}")
+            .replace("{n}", n(report.unsegmented_by_a_missing_segmenter));
+        }
+        return line;
+      }
+      const tal = s.tally || {};
+      const bits = [];
+      if (s.articles_total) {
+        bits.push(t("Articles checked: {done} of {total} ({percent}%)")
+          .replace("{done}", n(s.articles_checked))
+          .replace("{total}", n(s.articles_total))
+          .replace("{percent}", String(s.percent || 0)));
+      }
+      if (tal.articles_reindexed) bits.push(t("Re-indexed: {n}").replace("{n}", n(tal.articles_reindexed)));
+      if (s.parked_for_exclusive) bits.push(t("paused for an import"));
+      else if (s.state === "paused") bits.push(t("paused"));
+      return bits.join(" · ");
+    }
+    async function _pollSearchReindex(st, t) {
+      for (;;) {
+        let s;
+        try { s = await api("/api/search/index-job/status"); }
+        catch { break; }
+        let report = null;
+        if (s.state === "done") {
+          try { report = await api("/api/search/index-job/report"); }
+          catch (_e) { /* no report yet: the line says "done" and nothing it cannot show */ }
+        }
+        if (st) st.textContent = _searchReindexStatusText(s, report, t);
+        if (s.state !== "running" || !s.running) break;
+        await new Promise((r) => setTimeout(r, 2000));
+      }
+    }
+    async function reindexSearch(btn) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      const st = $("fts-reindex-status");
+      let s0 = null;
+      try { s0 = await api("/api/search/index-job/status"); }
+      catch (_e) { /* status is a courtesy here; never block the action on it */ }
+      // A PAUSED RUN IS CONTINUED, AND THE CONFIRM SAYS SO (the re-index job's lesson).
+      const paused = s0 && (s0.state === "paused" || s0.state === "error");
+      const ask = paused
+        ? t("Continue the search re-index? It resumes where it stopped ({percent}% done).")
+            .replace("{percent}", String(s0.percent || 0))
+        : t("Re-index search for Arabic, Chinese and Japanese now? Articles whose search entry would change are indexed again; nothing else is touched. It runs in the background and can be paused from the task manager.");
+      if (!confirm(ask)) return;
+      if (btn) btn.disabled = true;
+      try {
+        try { await api("/api/search/index-job", { method: "POST" }); }
+        catch (_e) { /* 409: one is already running; fall through and poll it */ }
+        await _pollSearchReindex(st, t);
+      } finally { if (btn) btn.disabled = false; }
+    }
+
     // Keyword-growth (vocabulary) curve — cumulative distinct keywords vs cumulative
     // words added (maintainer ask 2026-06-24, at ~909k keywords). The SHAPE is the
     // diagnostic: a line that bows BELOW the dashed origin->end reference = the
