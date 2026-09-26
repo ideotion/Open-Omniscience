@@ -33,6 +33,7 @@ from src import paths
 from src.monitoring import exit_evidence as ee
 from src.monitoring import forensics, kernel_log, session_hwm
 from src.monitoring import session_history as sh
+from tests.js_source_helper import python_function_source
 
 REPO = Path(__file__).resolve().parents[1]
 
@@ -128,7 +129,7 @@ def test_a_sigkilled_server_is_recorded_by_its_parent_and_the_window_says_so(tmp
     root, env = _launcher_tree(tmp_path, "sleep 0.3\nkill -9 $$\n")
     proc = _run_launcher(root, env, tty=True)
     assert proc.returncode == 137, proc.stderr
-    pid = int((tmp_path / "server.pid").read_text().strip())
+    pid = int((tmp_path / "server.pid").read_text(encoding="utf-8").strip())
     [rec] = _exits(root)
     assert rec["pid"] == pid
     assert rec["status"] == 137 and rec["signal"] == "SIGKILL"
@@ -191,7 +192,7 @@ def test_a_stop_the_user_asked_for_is_never_recorded_as_a_crash(tmp_path):
         count = tmp_path / "curl.count"
         # Past the health wait (a second curl), so the launcher is parked in `wait`.
         while time.monotonic() < deadline:
-            if count.exists() and int(count.read_text().strip() or 0) >= 2:
+            if count.exists() and int(count.read_text(encoding="utf-8").strip() or 0) >= 2:
                 break
             time.sleep(0.05)
         time.sleep(0.3)
@@ -514,7 +515,7 @@ def test_the_server_arms_the_trace_and_keeps_an_escaping_exception():
     """Source guard: the entry point that runs the server arms the trace and records
     an exception escaping uvicorn.run before re-raising it."""
     src = (REPO / "src" / "api" / "main.py").read_text(encoding="utf-8")
-    serve = src[src.index("def _serve() -> None:"):]
+    serve = python_function_source(src, "_serve")
     assert serve.index("arm_crash_trace()") < serve.index("uvicorn.run(")
     assert "note_fatal_exception(exc)" in serve
 
@@ -900,10 +901,12 @@ def test_a_burst_while_memory_is_short_is_one_snapshot_with_both(hwm, monkeypatc
 def test_a_pressure_file_from_another_session_is_never_this_ones(hwm, dd):
     dd.mkdir(parents=True, exist_ok=True)
     (dd / "session_hwm.json").write_text(json.dumps(
-        {"pid": 4242, "started_at": "2026-09-26T15:00:00+00:00", "rss_max_mb": 900.0}))
+        {"pid": 4242, "started_at": "2026-09-26T15:00:00+00:00", "rss_max_mb": 900.0}),
+        encoding="utf-8")
     (dd / "session_pressure.json").write_text(json.dumps(
         {"pid": 4242, "started_at": "2026-09-25T09:00:00+00:00", "taken": 2,
-         "snapshots": [{"at": "2026-09-25T09:10:00+00:00", "avail_mb": 100.0}]}))
+         "snapshots": [{"at": "2026-09-25T09:10:00+00:00", "avail_mb": 100.0}]}),
+        encoding="utf-8")
     prev = session_hwm.capture_previous()
     assert prev is not None and "pressure" not in prev
 
