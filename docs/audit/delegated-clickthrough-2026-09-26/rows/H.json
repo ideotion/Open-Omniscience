@@ -1,0 +1,499 @@
+{
+ "row": "H",
+ "steps_walked": {
+  "row": "H",
+  "title": "The \"Go online?\" popup lists every host per lane, and the Security notes list the same hosts",
+  "prerequisites": [
+   "Your own install is enough: no corpus, no seeding. Unlock it and open it in a desktop browser with a mouse, because the hover is what you are checking.",
+   "Know your fetch mode before you start: Settings (bottom of the left sidebar) → Advanced → click 'Safety & at-risk use' to expand it → 'Network fetch mode' → Mode: 'Transparent (default)' or 'Protected (generic UA + proxy)'. The last sentence of each hover bubble depends on it.",
+   "Start in airplane mode: the plane icon in the top bar is FILLED. The app boots offline; if yours is online, H1 takes it offline. That also stops collection until you go online again (H10).",
+   "Optional, only for H5 if you'd rather not touch your real settings: boot a throwaway, empty data folder on another port, e.g. OO_DATA_DIR=<new empty folder> OO_DB_PLAINTEXT=1 OO_PORT=8011 open-omniscience, and do H5 there. Nothing needs seeding.",
+   "A browser window you can narrow to about 375 px wide, or the browser's responsive/device mode (H8).",
+   "Never click 'Go online' in the popup before H10. No step before H10 sends anything off your machine."
+  ],
+  "steps": [
+   {
+    "id": "H1",
+    "where": "Top bar → Airplane mode button (the plane icon, right side, left of the language button) (#net-toggle)",
+    "do": "Open and unlock the app, and wait until the page has finished loading. Look at the plane icon. If it is NOT filled, click it once to go offline: that is instant and shows no popup. Two things may appear; never click their 'go online' buttons. The first-launch guide (fresh data folder only): close it with its X; its 'Go online & start collecting' goes online WITHOUT the popup you are about to test. The hint 'You're offline. Switch off airplane mode…': click 'Not now'. Keep the language on English.",
+    "expect": "The plane icon is filled. Hovering it shows 'Offline (airplane mode) — click to go online; you'll be asked to confirm first.' If you had to click it, you also see a brief 'Entering airplane mode' pop-up and the messages 'Going offline — cutting new network requests…' then 'Offline — every new network request is refused. One in-flight request may finish.'",
+    "flags": [],
+    "evidence": "src/static/app-core.js:869-914 (toggleNetwork, offline branch: no consent, instant), 957-1001 (_paintNetwork sets the offline hover title); src/static/index.html:3555-3569 (#net-coach 'Not now' / 'Go online'), 3592 (#gw-close); src/static/app-core.js:841 (the guide's 'Go online & start collecting' uses skipDialog, so no popup)"
+   },
+   {
+    "id": "H2",
+    "where": "Top bar → Airplane mode button → the 'Go online?' popup (#net-consent)",
+    "do": "Click the filled plane icon once. Read the popup from top to bottom without clicking 'Go online'; scroll inside its middle part if needed. Then click 'Stay offline', or press Esc.",
+    "expect": "A popup titled 'Go online?' opens. Under 'This action needs the network:' the bold line reads 'Allow network requests again'. Under 'Where this will let the app connect:', a brief '…' turns within a second or two into 15 lane names in groups, each with a dotted underline and (all but one) a grey n= count. With default settings: 'Runs on every collection pass:' Press collection n=9033, Source discovery n=2, Wikipedia / Wikimedia n=5, Law n=260, Official statistics n=3, Markets & commodities n=4, Calendars n=14, Hazard feeds n=2. 'Only when you ask for it:' Maps / OpenStreetMap n=2, Keyword translations n=1, Weather n=1, Local AI install & weights n=4, Newsletter mailbox (no count). 'Switched off right now:' Discover by topic n=1, Chain of custody n=3. Your own settings may move Source discovery, Wikipedia / Wikimedia, Official statistics, Discover by topic or Chain of custody to another group; that is the point of the list. There must be NO group headed 'Could not read whether these are on:'; if there is, a settings read failed, so note it. Under the list, one grey line says how fetches leave: 'Protected mode is off, so fetches go direct — the hosts above see your address.' in transparent mode, or 'Fetches ride the proxy you configured; …' in protected mode. Next comes 'Your machine presents these local network addresses:' with lines like 'wlan0: 192.168.1.23', read from your own machine. The app never looks up your public address, but a long IPv6 address of your own network card may appear. Then two grey caveats are readable without hovering: '…this app does not check it, because checking would itself be a network call.' and '…A userspace app can never equal a hardware switch.' The buttons are 'Stay offline' and 'Go online'. After 'Stay offline' or Esc the popup closes and the plane stays filled. The 'You're offline…' hint may reappear under the top bar; click 'Not now'.",
+    "flags": [],
+    "evidence": "src/static/index.html:3496-3525 (#net-consent markup, headings, two .hint caveats); src/static/app-core.js:1144-1172 (_laneState grouping), 1237-1286 (_laneLine n=, _renderNetLanes headings, transport hint), 1297-1328 (ensureOnline; Esc = stay offline); src/static/net-hosts.js (15 lanes); defaults src/scheduler/settings.py:127,158,221,243,273, src/safety/settings.py:61, src/custody/settings.py:53; src/api/system.py:163-198 (interfaces: only loopback and link-local skipped); docs/audit/lane-transport-clickthrough-2026-09-25/consent-protected-en.png (the same 15-lane layout)"
+   },
+   {
+    "id": "H3",
+    "where": "'Go online?' popup → each lane name under 'Where this will let the app connect:' (#net-consent-lanes)",
+    "do": "Re-open the popup with the plane icon. Rest the mouse still for about half a second on each lane name in turn. Start with 'Press collection', then Law, Calendars, Hazard feeds, Wikipedia / Wikimedia, Maps / OpenStreetMap, Source discovery, Local AI install & weights, Newsletter mailbox and Chain of custody, then the rest. Close with 'Stay offline'.",
+    "expect": "THE KEY CHECK: PASS only if, for every lane, a bubble appears ON TOP of the popup, next to the mouse, and can be read in full. If nothing appears, or a box only peeks out past the popup's edge, write 'hover not visible'. That fails this row's main clause (see notes), and you can skip the rest of this step and the bubble checks in H7. When bubbles show, each lists that lane's hosts. Press collection: '9033 hosts — the full list is in the security notes'. Law: '260 hosts — the full list is in the security notes'. Calendars: 14 hosts from date.nager.at to jonamarkin.github.io. Hazard feeds: 'earthquake.usgs.gov · www.gdacs.org'. Wikipedia / Wikimedia: '*.wikipedia.org · stream.wikimedia.org · wikimedia.org · ores.wikimedia.org · dumps.wikimedia.org'. Maps / OpenStreetMap: 'download.geofabrik.de · planet.openstreetmap.org'. Source discovery: 'query.wikidata.org · www.wikidata.org'. Local AI: 'api.github.com · objects.githubusercontent.com · huggingface.co · pypi.org'. Newsletter mailbox: 'a host you name yourself — nothing is bundled'. Chain of custody: the three *.opentimestamps.org hosts. The number of hosts in each bubble equals that lane's grey n=. After the hosts comes one transport sentence matching your fetch mode. In transparent mode: 'Transport: direct — protected mode is off, so these hosts see your address.', except Local AI, Newsletter mailbox and Chain of custody, which say 'Not through this app's fetcher or proxy.' In protected mode with a proxy, the fetcher lanes say 'Transport: through your proxy.' (or '…through your proxy pool, one member per host.'). Mailbox and custody then say 'Transport: direct, even with protected mode on — …', and Local AI says 'Transport: mostly direct, even with protected mode on — …'. Four lanes add a last sentence AFTER the transport one. Law, Calendars and Markets & commodities add 'Always on: the code reads a switch that does not exist yet, so this cannot be turned off today.' Hazard feeds adds 'Its off-switch exists but the app cannot reach it: the settings endpoint accepts the change and discards it.'",
+    "flags": [],
+    "evidence": "src/static/app-core.js:1186-1246 (_laneTransport, _laneHostTitle: hosts, then transport, then noOptOut / settingUnreachable sentences); src/static/net-hosts.js (hosts, noOptOut on law/markets/calendar, settingUnreachable on hazards, fetcher:false on ai/mail/custody); src/static/app-boot.js:258-312 (#oo-tip appended to <body>, title removed on show); src/static/app.css:1793 (#oo-tip position:fixed; z-index:400); docs/audit/lane-transport-clickthrough-2026-09-25/report.json (tip_press strings)"
+   },
+   {
+    "id": "H4",
+    "where": "Top bar → 'Help & documentation' (the ? icon) → left list 'Security' → the table after 'The table is the full set of endpoints the app can reach…' (#tab-help, #doc-find)",
+    "do": "Click the ? icon and pick 'Security' in the left list. Type 'Where in the tree' into 'Find on this page…' at the top right to jump to the table. Compare it with the popup from H2 (and the bubbles from H3, if you could see them).",
+    "expect": "The paragraph above the table contains 'The table is the full set of endpoints the app can reach, grouped by lane', 'Every PR that adds a host adds it here and to the consent popup's hover in the same diff' and 'Last checked 2026-09-16'. The table has the columns Lane · Hosts it can reach · Trigger · Transport · Where in the tree, and 15 rows named exactly like the popup's 15 lanes. The hosts the ruling said were missing are there: query.wikidata.org, www.wikidata.org, *.wikipedia.org, ores.wikimedia.org, dumps.wikimedia.org, download.geofabrik.de and planet.openstreetmap.org (plus huggingface.co from the premise check). No Lift Wing host is listed because the app does not contact one. Counts match the popup even if you saw no bubble: Press collection says 9,033 distinct hosts (popup n=9033), Law says 260 (n=260). Calendars lists 14 hosts (n=14), Markets 4 (n=4), the Wikipedia row 5 named hosts (n=5), Local AI 4 (n=4), Chain of custody 3 (n=3). Where you did see bubbles, every host in a bubble appears in that lane's row. Rows may also name URLs you add yourself or operator mirrors, which the bubbles do not list. The Law, Markets & commodities and Calendars rows say they are always on / cannot be switched off today, and the Hazard feeds row says its opt-out does not work: the same facts the bubbles state. This page is in English whatever the interface language.",
+    "flags": [],
+    "evidence": "docs/SECURITY.md:26-33 (lead-in, same-diff rule, last checked), 75-91 (the 15-row table); src/api/main.py:2709-2713 ('Security' in the Help reader); src/static/app-settings.js:28-86 (loadDocs/openDoc, Find scrolls to the first match); src/static/index.html:3193-3208; docs/i18n/ holds only fr/QUICKSTART.md (no translated SECURITY.md); src/wiki/ores.py:22-37"
+   },
+   {
+    "id": "H5",
+    "where": "Sidebar → Settings → Advanced → 'Safety & at-risk use' (click to expand) → 'External topic discovery' → checkbox 'Allow topic-discovery queries to DuckDuckGo' (#discovery-external)",
+    "do": "Note whether the box is ticked (default: not ticked). Click it once to flip it. Open the popup with the plane icon, find 'Discover by topic', click 'Stay offline'. Go back and click the box again to return it to how it was. Open the popup once more, then 'Stay offline'.",
+    "expect": "Flipping it ON shows 'Enabled: topic-discovery queries will be sent to DuckDuckGo.' under the box and a toast 'External topic discovery enabled.' Nothing is sent while you are offline. In the popup, 'Discover by topic' has left 'Switched off right now:' and now sits under 'Runs on every collection pass:'. Write down whether that heading is acceptable, since SECURITY.md calls this feature 'Strictly user-triggered' (a question for H9). Flipping it back OFF shows 'Disabled (the default): no topic query leaves this machine.', and 'Discover by topic' is back under 'Switched off right now:'. This is the popup's body following a real setting.",
+    "flags": [
+     "mutates-data"
+    ],
+    "evidence": "src/static/index.html:3083-3095; src/static/app-backup.js:2511 (checkbox loaded from settings), 2526-2540 (saveDiscoveryExternal: loopback PUT, result lines, toast); src/static/net-hosts.js topic-discovery row (trigger opt-in, setting discovery_external_enabled); src/static/app-core.js:1144-1172 (an opt-in that is on lands in the 'on' group); docs/SECURITY.md Discover by topic row"
+   },
+   {
+    "id": "H6",
+    "where": "Sidebar → Settings → Wikipedia (subtab) → panel 'Wikipedia offline baselines' → 'Language edition' list → button 'Refresh exact sizes' (#set-wikipedia, #dump-lang)",
+    "do": "Click one edition in the 'Language edition' list (any; selecting saves nothing). Click 'Refresh exact sizes'. Read the popup, then click 'Stay offline'.",
+    "expect": "The SAME 'Go online?' popup opens, this time with the bold reason 'Read the exact current size of the selected Wikipedia dumps' instead of 'Allow network requests again'. The lane list, the transport line, the local addresses and both grey caveats are the same as in H2. So every go-online action shares one popup. After 'Stay offline' the popup closes, the plane stays filled, and the line beside the buttons never says 'Reading exact sizes…' (nothing was fetched). If no edition was selected, the line says 'Select one or more editions first.' and no popup opens; select one and retry.",
+    "flags": [],
+    "evidence": "src/static/index.html:1833-1845 (panel, #dump-lang, 'Refresh exact sizes'); src/static/app-map.js:1796-1838 (dumpSelected, refreshDumpSizes → ensureOnline with that reason; returns without fetching on Stay offline); src/static/app-core.js:1297-1328 (the one ensureOnline / #net-consent)"
+   },
+   {
+    "id": "H7",
+    "where": "Top bar → language button (flag + 'EN', hover 'Change language') (#lang-switch) → Français, then العربية, then 中文; after each switch, re-open the 'Go online?' popup with the plane icon",
+    "do": "Switch to Français and repeat H2. If H3 passed, also hover Law, Hazard feeds and Wikipedia / Wikimedia. Leave with 'Rester hors ligne'. Do the same in العربية (right-to-left; its buttons are mirrored, so leave with 'البقاء دون اتصال'), then in 中文 (leave with '保持离线'). Switch back to English at the end.",
+    "expect": "fr: title 'Passer en ligne ?', 'Cette action nécessite le réseau :', bold 'Autoriser de nouveau les requêtes réseau', groups 'S'exécute à chaque passe de collecte :' / 'Seulement si vous le demandez :' / 'Désactivés pour le moment :'. Lanes include 'Collecte de presse', 'Droit', 'Flux d'aléas' and 'Chaîne de possession'. Buttons read 'Rester hors ligne' / 'Passer en ligne'. The Law bubble reads '260 hôtes — la liste complète se trouve dans les notes de sécurité — Transport : … — Toujours actif : …'. ar: the whole popup mirrors. The title 'الاتصال بالإنترنت؟' is on the right, lanes such as 'القانون' and 'موجزات الأخطار' are right-aligned, and the buttons read 'البقاء دون اتصال' / 'الاتصال'. In the Wikipedia bubble each host reads left to right as one intact token; note it if '*.wikipedia.org' shows as 'wikipedia.org.*' or its '*' jumps to the other end of the line. zh: '要联网吗？', '每次采集时运行：', '仅在你主动请求时：', '目前已停用：', lanes such as '法律' and '灾害数据源', buttons '保持离线' / '联网'. In all three: the n= counts and host names are identical to English, both grey caveats are visible in the popup in that language, and no English sentence remains in the popup or bubbles (host names and 'OpenStreetMap' / 'Wikipedia / Wikimedia' in fr excepted).",
+    "flags": [
+     "locale-check"
+    ],
+    "evidence": "src/static/app-core.js:555-600 (LANGS_12 native names, toggleLangMenu, pickLang); src/static/locales/fr.json, ar.json, zh.json (every lane label, heading, hover sentence and both caveats keyed; checked); docs/audit/net-consent-hosts-2026-09-16/net-consent-ar.png, net-consent-zh.png; docs/audit/lane-transport-clickthrough-2026-09-25/consent-protected-fr.png, consent-protected-ar.png"
+   },
+   {
+    "id": "H8",
+    "where": "'Go online?' popup at phone width",
+    "do": "Narrow the browser window to about 375 px, or use responsive/device mode at 375×667. Open the popup with the plane icon (at this width it may sit on a second row of the top bar). Without scrolling the page, look for the two buttons. Then scroll the popup's middle part to its end. Click 'Stay offline' and restore the window size.",
+    "expect": "The popup fits the screen width. 'Stay offline' and 'Go online' are visible at the bottom without scrolling. Only the middle part scrolls, and at its end both grey caveats are fully on screen. If the page behind scrolls sideways at 375 px, that is not this row's problem: the 2026-09-16 audit measured it with the popup closed.",
+    "flags": [
+     "narrow-window"
+    ],
+    "evidence": "src/static/index.html:3497-3525 (scrolling #net-consent-body max-height:58vh; buttons outside it); docs/audit/net-consent-hosts-2026-09-16/README.md (375×667: 521px in 667px, 'Go online' in viewport, last caveat reachable) and net-consent-en-375.png"
+   },
+   {
+    "id": "H9",
+    "where": "'Go online?' popup → the 15 lane names and the three group headings (your notes)",
+    "do": "For each lane name, write 'fine' or the name you want: Press collection, Source discovery, Wikipedia / Wikimedia, Maps / OpenStreetMap, Law, Official statistics, Markets & commodities, Calendars, Hazard feeds, Keyword translations, Weather, Discover by topic, Local AI install & weights, Newsletter mailbox, Chain of custody. Do the same for the three headings ('Runs on every collection pass:', 'Only when you ask for it:', 'Switched off right now:'). While you are at it, answer the wording questions listed under not_clickable (Wikimedia ×4, law countries, press count, Discover by topic heading).",
+    "expect": "A written 'fine' or replacement for each of the 15 names and 3 headings, plus a yes/no on each wording question. This is the word on the lane grouping names that the brief and the gate ask of you; it binds nothing until you give it.",
+    "flags": [],
+    "evidence": "docs/plans/2026-09-12-beta-pathway/S04-01_docs-security-enumeration-and-consent-hover.md §5 operator step 2; docs/product/RELEASE_0.4_GATE.md:924 (2026-09-16 entry: 'their word on the lane grouping names')"
+   },
+   {
+    "id": "H10",
+    "where": "Top bar → Airplane mode button → 'Go online?' popup → 'Go online'",
+    "do": "Only if you were online before H1 and want to be online again now: click the plane, glance at the popup, click 'Go online'. Otherwise skip this and stay offline.",
+    "expect": "The plane becomes an outline and the message 'Back online — network requests allowed again.' appears. Collection starts at once: going online starts the collector, and every 'Runs on every collection pass' lane then contacts its hosts.",
+    "flags": [
+     "online",
+     "mutates-data"
+    ],
+    "evidence": "src/static/app-core.js:915-923 (toggleNetwork online branch), 1106-1121 (_postGoOnline, the one POST); src/api/system.py:203-242 (online ⟺ collecting: scheduler.start() on going online)"
+   }
+  ],
+  "clause_coverage": [
+   {
+    "clause": "Q1001: docs/SECURITY.md's 'full set of endpoints the app can reach' names every host the tree reaches, including WDQS, the Wikipedia Action API, ORES, the dumps host and the OSM mirrors (plus www.wikidata.org and huggingface.co from the premise check)",
+    "step_ids": [
+     "H4"
+    ]
+   },
+   {
+    "clause": "Q1001: from then on every PR that adds a host adds it to SECURITY.md and to the consent hover in the same diff, backed by a repo test (the rule is stated in the document; enforcement is CI)",
+    "step_ids": [
+     "H4"
+    ]
+   },
+   {
+    "clause": "Q1002: the one popup stays (one ensureOnline for every go-online action)",
+    "step_ids": [
+     "H2",
+     "H6"
+    ]
+   },
+   {
+    "clause": "Q1002: its hover lists, per lane, the hosts that lane will contact",
+    "step_ids": [
+     "H3"
+    ]
+   },
+   {
+    "clause": "Q1002: the popup body names the lanes that are on",
+    "step_ids": [
+     "H2",
+     "H5"
+    ]
+   },
+   {
+    "clause": "Brief S4 / Q1001: the hover and SECURITY.md carry the same hosts",
+    "step_ids": [
+     "H3",
+     "H4"
+    ]
+   },
+   {
+    "clause": "Board line / 2026-09-16 entry: the three broken ride-along opt-outs are DISCLOSED (not fixed): law and calendars have no switch, the hazard switch is discarded (markets likewise has none)",
+    "step_ids": [
+     "H3",
+     "H4"
+    ]
+   },
+   {
+    "clause": "Brief S3 / informed-consent non-negotiable: the caveats stay visible in the popup and are never moved into the hover",
+    "step_ids": [
+     "H2",
+     "H7",
+     "H8"
+    ]
+   },
+   {
+    "clause": "Brief S3: every string ×12, checked in en, fr and ar (right-to-left); zh as walked in the sandbox",
+    "step_ids": [
+     "H7"
+    ]
+   },
+   {
+    "clause": "Board line: verified at a normal width and at 375 px",
+    "step_ids": [
+     "H2",
+     "H8"
+    ]
+   },
+   {
+    "clause": "Closes when: a click-through of the popup hover is recorded (Q1128 = a: the Chromium sandbox walks exist; the maintainer's own pass is these steps)",
+    "step_ids": [
+     "H1",
+     "H2",
+     "H3",
+     "H4",
+     "H5",
+     "H6",
+     "H7",
+     "H8"
+    ]
+   },
+   {
+    "clause": "Brief §5 operator step 2 / gate §3: the maintainer's word on the lane grouping names",
+    "step_ids": [
+     "H9"
+    ]
+   },
+   {
+    "clause": "Closes when: tests/test_security_endpoint_enumeration.py exists and is green on the tree that tags",
+    "step_ids": []
+   }
+  ],
+  "not_clickable": [
+   "The row closes only when tests/test_security_endpoint_enumeration.py is green on the commit that gets tagged. That is a CI or session check on the release commit, not a click. Here, pytest 9.0.2 is installed but the project's dependencies are not (requests is missing; Python 3.11 vs the repo's 3.13), so every test errored at conftest import, which says nothing about the test. The two node suites it drives, tests/net_lane_state_node_test.js and tests/net_lane_transport_node_test.js, both pass here on HEAD 462145c (run read-only; the working tree stayed clean).",
+   "Q1001's 'every future PR adds the host in both places in the same diff' is enforced by that same test on each PR. There is nothing to click.",
+   "Recording your pass: brief §5 step 1 wants it written under docs/audit/, and row H's status in RELEASE_0.4_GATE.md (board line and §3) updated. A session does both from your notes on H1–H9. The board line itself is stale (it says 14 lanes; main has 15).",
+   "Wording that needs your word, not a click. (a) Q1002 says 'Wikimedia ×4'. The Wikipedia lane shows five hosts, and two more Wikimedia-run hosts (query.wikidata.org, www.wikidata.org) sit under Source discovery and Keyword translations. Brief §6 leaves the count to you. (b) Q1002 says the hover names 'the law authorities of the countries chosen', and brief S3 said the Law entry would list the countries. What shipped shows '260 hosts — the full list is in the security notes', and no per-country list exists in the UI. (c) Brief S3 said the press entry reads 'the domains of your enabled sources'. The hover shows 'n=9033 / 9033 hosts', the BUNDLED directory's count, not what your install has enabled or added (SECURITY.md's row states the qualification; the hover drops it). (d) An opt-in that is switched on (Discover by topic, Chain of custody) is listed under 'Runs on every collection pass:', although Discover by topic only runs when you use it.",
+   "Where the three broken ride-along opt-outs get fixed needs a ruling (docs/ledger/OPEN_QUEUE.md, 2026-09-16: row T, row U or a hotfix). Re-checked on main: src/scheduler/runner.py:1162-1166 still reads auto_import_calendars / auto_track_law with getattr(…, True), and neither is a SchedulerSettings field. auto_track_signals is still absent from SchedulerConfigUpdate (src/api/scheduler.py:34-120), so the popup can only disclose them, and it does. This does not block row H.",
+   "Proving the app contacts ONLY these hosts would need a network capture while online, on an operator machine. The gate does not ask for it, and no click can show it."
+  ],
+  "surfaces": [
+   "Top bar > Airplane mode button (plane icon)",
+   "Go online? popup (network consent) and its per-lane hover bubbles",
+   "Help & documentation > Security",
+   "Settings > Advanced > Safety & at-risk use > External topic discovery",
+   "Settings > Wikipedia > Wikipedia offline baselines (Refresh exact sizes)",
+   "Top bar > language menu"
+  ],
+  "estimate_minutes": 30,
+  "notes": "1) THE LIKELIEST FAILURE, CHECKED IN H3. The hover bubble is almost certainly hidden BEHIND the popup. Code: #oo-tip is a plain position:fixed div appended to <body> at z-index 400 (src/static/app-boot.js:259; app.css:1793), while #net-consent opens with showModal() (app-core.js:1327), which puts it in the browser's top layer, above every z-index. show() also strips the element's title, so the browser's own tooltip is suppressed too. Evidence: both sandbox screenshots were taken with the mouse resting on 'Press collection' (net-consent-hosts-2026-09-16/net-consent-en.png, 450 ms after the hover; lane-transport-clickthrough-2026-09-25/consent-protected-en.png, 700 ms after), and I viewed both: neither shows a bubble. Neither walk's check could catch this. The 09-16 one used Playwright is_visible(), which ignores opacity and stacking. The 09-25 one read textContent behind `!t.hidden`, which is always true because the tip never uses `hidden`. No browser was run for this review, so it is a strong, evidence-backed suspicion, not a measurement. If H3 confirms it, row H's main clause fails for humans until the tip is rendered inside the open dialog. H4's table and the popup's n= counts are then the only host disclosure a person can read. 2) Lane names are plain spans, not focusable, so the keyboard cannot open their bubbles, which invariant #17 promises. A touch long-press uses the same hidden bubble. 3) The sandbox record is older than main. On 09-16 there were 14 lanes and Wikipedia had n=3 under 'Only when you ask for it'. Main has 15 lanes (Keyword translations, row M) and Wikipedia has n=5 (stream.wikimedia.org and wikimedia.org, row P); it sits under 'Runs on every collection pass' while the stream's setting is 'running'. Transport sentences were added on 09-25 (row O S5). 4) SECURITY.md drift a comparing reader will hit in H4. None of it blocks the row, but a session should fix it. The Wikipedia row names the button 'Estimate size', which is now 'Refresh exact sizes' (index.html:1843). The Law and Calendars rows point at runner.py:1250 / :1248, but the reads are now at runner.py:1162-1166. 'Last checked 2026-09-16' predates the Keyword translations row and the two added Wikimedia hosts. 5) In transparent mode the Local AI bubble says 'Not through this app's fetcher or proxy.', while SECURITY.md calls that lane 'Mixed' (api.github.com is a guarded fetch). The 'mostly direct' wording appears only in protected mode (app-core.js:1188-1196). 6) The bubbles say 'the full list is in the security notes', but nothing is a link. The notes live under Help > Security, in English only. 7) Undo summary: H5 is undone inside the step, or run it in the throwaway folder. H1 may pause your collection, and H10 restores it by going online, which starts collection at once. No other step changes anything. 8) Read-only preparation: no repo file was changed. Sources: docs/product/RELEASE_0.4_GATE.md (board line 54, §2b row H at 409, §3 entries at 890 and 924), the S04-01 brief, docs/audit/net-consent-hosts-2026-09-16/ and lane-transport-clickthrough-2026-09-25/, src/static/{net-hosts.js,app-core.js,app-boot.js,app-map.js,app-backup.js,app-settings.js,index.html}, src/static/locales/{en,fr,ar,zh}.json, src/api/{system,scheduler}.py and docs/SECURITY.md."
+ },
+ "walk": {
+  "row": "H",
+  "environment": {
+   "encrypted": true,
+   "seed": "scripts/ui_clickthrough_seed.py --mini (24 articles, default rng seed) into /tmp/claude-0/walk/H/data-enc with OO_DB_PASSPHRASE='walk-pass-2026'; OO_DB_PLAINTEXT never set",
+   "ports": [
+    8810
+   ],
+   "scratch_dir": "/tmp/claude-0/walk/H/",
+   "notes": "Repo at origin/main 462145c (detached), untouched: git status clean before and after. App booted with the open-omniscience console script from the repo root, with neither OO_DB_PASSPHRASE nor OO_DB_PLAINTEXT set. It started LOCKED: /api/system/lock-state said 'locked', and the DB file's first bytes were ciphertext, not 'SQLite format 3'. It was unlocked through the real #pw / #btn-unlock form, landed on /#home, and lock-state then read 'unlocked-encrypted'. Server PID 21327 on 8810 was killed at the end; port 8811 was never used. Browser: Chromium 1194 headless via Playwright sync API, at 1440x950 and 375x667. Airplane mode held throughout: GET /api/system/network answered online:false after every consent cancel, and no 'Go online' button was ever clicked. Fetch mode was the default Transparent (transport kind 'direct'). For one extra check it was switched to Protected with proxy http://127.0.0.1:9 through the real Settings > Advanced > Safety UI, then reverted to Transparent with an empty proxy. discovery_external_enabled was flipped on and back off (H5). Local interface shown: eth0 192.0.2.2. Side effect of the mandated launch method: the app appends to /home/user/Open-Omniscience/audit/api.log, relative to its cwd. That directory already existed from an earlier run and is gitignored (.gitignore:132), so it is not a tracked change. The app venv has no pytest, so tests/test_security_endpoint_enumeration.py could not be run without installing it, which the rules forbid. The two node suites it drives do pass here (read-only). Scripts: walk1.py (H1-H3), walk2.py (H3 retry, H4-H6), walk3.py (H7, H8), walk4.py (protected-mode hover text). Raw data: part1-4.json. Pixel-diff frames: _frames/. Full report: /tmp/claude-0/walk/H/report.json."
+  },
+  "steps": [
+   {
+    "id": "H1",
+    "result": "pass",
+    "locales": [
+     "en"
+    ],
+    "screenshot": "shots/H/H-H1-en.png",
+    "observed": "After unlock the plane is FILLED (#net-plane fill=currentColor, class 'off', API online:false). No click was needed, so the 'Entering airplane mode' branch was not exercised. The hover bubble over the top bar is visible and reads exactly 'Offline (airplane mode) — click to go online; you'll be asked to confirm first.' This is also the CONTROL for H3: here the same #oo-tip changes 73% of the pixels in its box, so the harness can see bubbles. The first-run guide did not open (seeded folder). The 'You're offline…' hint did appear and was dismissed with 'Not now'."
+   },
+   {
+    "id": "H2",
+    "result": "pass",
+    "locales": [
+     "en"
+    ],
+    "screenshot": "shots/H/H-H2-en.png",
+    "observed": "A real click on the plane opens the modal 'Go online?' popup (:modal true). It shows 'This action needs the network:' and bold 'Allow network requests again'. Under 'Where this will let the app connect:' are 15 dotted-underlined lanes in 3 groups, exactly as expected. Runs on every collection pass: Press collection n=9033, Source discovery n=2, Wikipedia / Wikimedia n=5, Law n=260, Official statistics n=3, Markets & commodities n=4, Calendars n=14, Hazard feeds n=2. Only when you ask for it: Maps / OpenStreetMap n=2, Keyword translations n=1, Weather n=1, Local AI install & weights n=4, Newsletter mailbox (no count). Switched off right now: Discover by topic n=1, Chain of custody n=3. There is NO 'Could not read whether these are on:' group. The transport line reads 'Protected mode is off, so fetches go direct — the hosts above see your address.' The local-address line is 'eth0: 192.0.2.2'. Both grey caveats are in the popup, not in a hover. At 950 px they sit just below the fold of the scrolling middle part (body 709 px of content in 551 px); after scrolling the middle part both are fully on screen (H-H2-en-scrolled.png). Buttons: 'Stay offline' / 'Go online'. Esc closed the popup and the plane stayed filled (API online:false)."
+   },
+   {
+    "id": "H3",
+    "result": "fail",
+    "locales": [
+     "en"
+    ],
+    "screenshot": "shots/H/H-H3-en-law-hover.png",
+    "observed": "HOVER NOT VISIBLE, for all 15 lanes. For each lane I rested the mouse on the name for 700 ms (retried with a slow 25-step mouse move and a 1.5 s rest on Press collection, Hazard feeds and Chain of custody). Each time the DOM says the bubble is shown: #oo-tip has class 'show', opacity 1, the right text, and a box inside the popup. Its parent is <body>, not the dialog. But a pixel diff of the bubble's box, hover versus no hover, found 0 changed pixels on 14 of 15 lanes and on every retry, apart from 19 stray pixels (0.08%) on one Press collection retry. The same bubble outside the dialog (H1 control) changes 73% of its box. The screenshots confirm nothing appears on top of the popup. Cause, read in the code: the popup opens with showModal() (app-core.js:1325), which puts it in the browser's top layer. The bubble is a position:fixed, z-index:400 div appended to <body> (app-boot.js:259-267, app.css:1793), so it paints underneath. show() also strips the title (app-boot.js:280), so the native tooltip cannot stand in for it. The bubble TEXT in the DOM is correct for every lane: Press = '9033 hosts — the full list is in the security notes — Transport: direct — protected mode is off, so these hosts see your address.' Law = 260 hosts … + 'Always on: …'. Calendars = the 14 hosts from date.nager.at to jonamarkin.github.io + 'Always on'. Hazard feeds = 'earthquake.usgs.gov · www.gdacs.org' + transport + 'Its off-switch exists but the app cannot reach it…'. Wikipedia = the 5 hosts. Maps = the 2 hosts. Source discovery = the 2 wikidata hosts. Local AI = the 4 hosts + 'Not through this app's fetcher or proxy.' Newsletter = 'a host you name yourself — nothing is bundled' + the same line. Custody = the 3 opentimestamps hosts + the same line. Markets = 4 hosts + 'Always on'. Every bubble's host count equals its lane's n=. In protected mode (set through the UI, then reverted) the DOM text matches too: fetcher lanes say 'Transport: through your proxy.', mailbox and custody say 'Transport: direct, even with protected mode on — …', Local AI says 'Transport: mostly direct, even with protected mode on — …', and the transport line reads 'Fetches ride the proxy you configured; …'. None of this can be READ by a person, so the step fails. Keyboard: all 15 lane spans have tabIndex -1, and Tab cycles Go online > body > scroll body > Stay offline, so no keyboard path opens a bubble either."
+   },
+   {
+    "id": "H4",
+    "result": "pass",
+    "locales": [
+     "en",
+     "zh"
+    ],
+    "screenshot": "shots/H/H-H4-en.png",
+    "observed": "Top bar ? > Help > 'Security'. Typing 'Where in the tree' into 'Find on this page…' highlighted one match and scrolled to the table. It also scrolled the wide table sideways, so the Lane column starts cut off (cosmetic; the browser's scrollIntoView). The paragraph above the table contains 'The table is the full set of endpoints the app can reach, grouped by lane', 'Every PR that adds a host adds it here and to the consent popup's hover in the same diff' and 'Last checked 2026-09-16'. Columns: Lane · Hosts it can reach · Trigger · Transport · Where in the tree. It has 15 rows whose names equal the popup's 15 lanes, in the same order. Every host each lane lists (the bubble text) appears in that lane's row: 0 missing across 15 lanes. That includes query.wikidata.org, www.wikidata.org, *.wikipedia.org, ores.wikimedia.org, dumps.wikimedia.org, download.geofabrik.de, planet.openstreetmap.org and huggingface.co. There is no Lift Wing host. Press says '9,033 distinct hosts' (n=9033) and Law '260 distinct hosts' (n=260). Calendars 14, Markets 4, Wikipedia 5, Local AI 4, Custody 3. Law and Calendars say 'always on' / not switchable today, Markets 'always on … Its budget has no toggle', Hazard feeds 'its opt-out does not work'. With the UI in zh the page stays English (no translation banner). Only the doc list's first entry ('用户手册') is translated; the other nav labels stay English. Drift, found while comparing (defect below): the Wikipedia row still names the button 'Estimate size', and the Law/Calendars rows cite runner.py:1250/:1248 (the reads are at runner.py:1162-1166)."
+   },
+   {
+    "id": "H5",
+    "result": "pass",
+    "locales": [
+     "en"
+    ],
+    "screenshot": "shots/H/H-H5-en-popup-on.png",
+    "observed": "Settings > Advanced > 'Safety & at-risk use' (expanded by clicking its summary). The fetch mode reads 'Transparent (default)'. #discovery-external starts unticked (API false). One click ticks it: the line under it reads 'Enabled: topic-discovery queries will be sent to DuckDuckGo.', the toast reads 'External topic discovery enabled.', and the API reads true while the network stays offline. In the popup, 'Discover by topic' has left 'Switched off right now:' and sits under 'Runs on every collection pass:'. My note for H9: that heading is NOT acceptable for this lane. SECURITY.md says 'Strictly user-triggered: never part of ingestion, the scheduler, or any default path' (P3 defect below). Clicking again shows 'Disabled (the default): no topic query leaves this machine.' and the toast 'External topic discovery disabled.'; the API reads false and 'Discover by topic' is back under 'Switched off right now:'. The setting was restored."
+   },
+   {
+    "id": "H6",
+    "result": "pass",
+    "locales": [
+     "en"
+    ],
+    "screenshot": "shots/H/H-H6-en.png",
+    "observed": "Settings > Wikipedia > 'Wikipedia offline baselines'. With nothing selected, 'Refresh exact sizes' prints 'Select one or more editions first.' and no popup opens. After a mouse click on the 'English — English (en, very large) · ~22.0 GB' option, the same click opens the SAME #net-consent popup with the bold reason 'Read the exact current size of the selected Wikipedia dumps'. The lane groups are identical to H2, as are the transport line, 'eth0: 192.0.2.2' and both caveats. After 'Stay offline' the popup closed, the plane stayed filled (API online:false), and the estimate line never showed 'Reading exact sizes…': it still read 'Select one or more editions first.' from the earlier click."
+   },
+   {
+    "id": "H7",
+    "result": "pass",
+    "locales": [
+     "fr",
+     "ar",
+     "zh"
+    ],
+    "screenshot": "shots/H/H-H7-ar-wiki-hover.png",
+    "observed": "Language switched through the real top-bar switcher (#lang-switch > menu), confirmed by <html lang>. POPUP: passes in all three. fr: 'Passer en ligne ?', 'Cette action nécessite le réseau :', bold 'Autoriser de nouveau les requêtes réseau', headings 'S'exécute à chaque passe de collecte :' / 'Seulement si vous le demandez :' / 'Désactivés pour le moment :', lanes including Collecte de presse, Droit, Flux d'aléas and Chaîne de possession, buttons 'Rester hors ligne' / 'Passer en ligne'. ar: dir=rtl, title right-aligned, lanes right-aligned (e.g. القانون, موجزات الأخطار), buttons mirrored ('الاتصال' on the left, 'البقاء دون اتصال'). zh: '要联网吗？', '每次采集时运行：', '仅在你主动请求时：', '目前已停用：', 法律, 灾害数据源, buttons '保持离线' / '联网'. In all three the n= counts and host names equal English, and both caveats are present in the popup in that language. No English sentence is left in the popup; the only English lane label is 'Wikipedia / Wikimedia' in fr, an allowed exception. Each language was left with its own stay-offline button, the plane stayed filled, and the page was switched back to en at the end. BUBBLES: under H3's failure the bubble checks are not required. The DOM text is correctly translated (fr Law = '260 hôtes — la liste complète se trouve dans les notes de sécurité — Transport : direct — … — Toujours actif : …'). The bubbles are just as invisible in fr and zh: 0 changed pixels. In ar they start at the lane's right-hand position, so only the part beyond the popup's right edge shows, dimmed under the backdrop (22-52% pixel change outside the popup, 0 inside). In that visible fragment of the Wikipedia bubble, '*.wikipedia.org' is broken: its '*.' jumps to the far end of the line ('wikipedia.org · stream.wikimedia.org ·.*', H-H7-ar-wiki-hover-zoom.png). Recorded as a P3 defect. Cosmetic fr nit: the colon in 'Votre machine présente ces adresses réseau locales :' wraps alone onto its own line (H-H7-fr.png)."
+   },
+   {
+    "id": "H8",
+    "result": "pass",
+    "locales": [
+     "en"
+    ],
+    "screenshot": "shots/H/H-H8-en-375.png",
+    "observed": "At 375x667 the popup spans 0-375 px wide, 72-595 px high, and does not scroll sideways. 'Stay offline' (y 535-578) and 'Go online' are both on screen without scrolling. Only the middle part scrolls: 746 px of content in 387 px. Wheeling over it to its end (scrollTop 359 = max) put both grey caveats fully on screen inside the body (H-H8-en-375-scrolled.png). No text is clipped. 'Stay offline' closed the popup and the plane stayed filled. Unrelated to this row: the page behind scrolls sideways by 71 px at 375 whether the popup is open or closed (the known, pre-existing finding). Extra wheel movement past the end of the popup body also scrolled the page behind vertically (scrollY 920); the popup itself did not move."
+   },
+   {
+    "id": "H9",
+    "result": "not-measurable-here",
+    "locales": [
+     "en"
+    ],
+    "observed": "This is the maintainer's own ruling on names; a delegated walker cannot give it. My read, as input only and binding nothing: all 15 lane names read clearly and match SECURITY.md one to one; I would keep them. Of the 3 headings, 'Only when you ask for it:' and 'Switched off right now:' are fine. 'Runs on every collection pass:' is wrong for an opt-in lane that is switched on (Discover by topic, see H5); I would give such lanes their own heading, e.g. 'Switched on — runs when you use it:'. Wording questions: (a) 'Wikimedia ×4': no, the lane shows 5 hosts, and query.wikidata.org / www.wikidata.org sit under Source discovery and Keyword translations. (b) Law hover naming the countries: no, it shows '260 hosts — the full list is in the security notes', with no per-country list, and nothing links to the notes. (c) Press hover as 'the domains of your enabled sources': no, it shows the BUNDLED directory's 9033 and drops SECURITY.md's qualification. (d) The heading over an enabled Discover by topic: no, as above."
+   },
+   {
+    "id": "H10",
+    "result": "not-measurable-here",
+    "locales": [
+     "en"
+    ],
+    "observed": "Skipped on purpose: never go online in this sandbox (no egress, and walk rules forbid clicking 'Go online'). The app stayed in airplane mode from boot to shutdown."
+   }
+  ],
+  "page_errors": [],
+  "http_errors": [],
+  "junk_text": [
+   "No undefined/NaN/null/[object Object] on any walked surface (#net-consent in en/fr/ar/zh and at 375 px, Help > Security #doc-prose, Settings > Wikipedia). No console errors either.",
+   "Untranslated English on a surface outside this row, seen incidentally behind the popup: the Home at-a-glance strip in fr and ar keeps 'KEYWORDS', 'COMMODITY PRICES', 'ARTICLE LINKS', 'MENTIONED DATES', 'SOURCES QUALIFIED', 'SOURCES PENDING', 'SOURCES CANDIDATES', 'Automatic collection:', 'stopped' (H-H7-fr.png, H-H7-ar.png).",
+   "Help > Security's doc list in zh: only 'User Manual' is translated (用户手册). Quickstart, Security and the rest stay English, as does the SECURITY.md body. The gate expects the body in English; it is noted only because the nav labels are mixed."
+  ],
+  "defects": [
+   {
+    "title": "The per-lane host bubble is painted BEHIND the modal 'Go online?' popup, so no one can read which hosts a lane contacts",
+    "severity": "P1",
+    "step_ids": [
+     "H3",
+     "H7"
+    ],
+    "repro": "Boot in airplane mode (the default), click the filled plane icon (#net-toggle), rest the mouse on any lane name under 'Where this will let the app connect:' (e.g. 'Law').",
+    "expected": "A bubble appears ON TOP of the popup next to the mouse with that lane's hosts, transport sentence and any always-on / discarded-switch sentence (Q1002: 'its hover lists, per lane, the hosts that lane will contact'; invariant #17).",
+    "actual": "Nothing appears. #oo-tip gets class 'show', opacity 1 and the right text, but it renders under the dialog. There are 0 changed pixels in the bubble's box on all 15 lanes in en, fr and zh (retried with a 1.5 s rest). The same bubble outside a dialog changes 73% of its box. In ar the bubble starts at the right-aligned lane, so only its part past the popup's right edge shows, dimmed by the ::backdrop and cut off at the dialog edge. The native title tooltip is suppressed too, because show() strips the title.",
+    "evidence": "Screenshots /tmp/claude-0/walk/H/H-H3-en-law-hover.png, H-H3-en-press-hover.png, H-H3-en-custody-hover-1500ms.png, H-H7-ar-wiki-hover.png; pixel diffs in part1.json (H3[].diff_whole_tip), part2.json (H3_retry), part3.json (hover_checks); control part1.json H1.tip_on_plane_pixel_diff. Cause: src/static/app-core.js:1325 opens #net-consent with dlg.showModal(), which puts it in the top layer; src/static/app-boot.js:259-267 appends #oo-tip to <body>; src/static/app.css:1793 gives it only position:fixed; z-index:400, which cannot rise above the top layer; src/static/app-boot.js:280 removes the title on show. The earlier sandbox walks could not catch this: one used is_visible(), the other read textContent."
+   },
+   {
+    "title": "Lane names in the consent popup cannot take keyboard focus, so their host bubble has no keyboard path (invariant #17 promises one)",
+    "severity": "P2",
+    "step_ids": [
+     "H3"
+    ],
+    "repro": "Open the 'Go online?' popup, press Tab repeatedly.",
+    "expected": "Each lane name is focusable, and focus opens its #oo-tip bubble (invariant #17: 'opens … on hover, keyboard focus, or touch long-press').",
+    "actual": "All 15 lane spans have tabIndex -1. Tab cycles Go online > body > #net-consent-body > Stay offline > Go online and never reaches a lane.",
+    "evidence": "part1.json H3_lane_focusable and H3_tab_sequence; src/static/app-core.js:1237-1246 (_laneLine renders a plain <span title=…> with no tabindex). The fix for the P1 would need to cover this path too."
+   },
+   {
+    "title": "Arabic (RTL): '*.wikipedia.org' in the Wikipedia lane bubble is broken; its '*.' jumps to the far end of the line",
+    "severity": "P3",
+    "step_ids": [
+     "H7"
+    ],
+    "repro": "Switch to العربية, open the popup, hover 'ويكيبيديا / ويكيميديا' and look at the part of the bubble that shows past the popup's right edge.",
+    "expected": "Each host reads left to right as one intact token ('*.wikipedia.org').",
+    "actual": "The line reads 'wikipedia.org · stream.wikimedia.org ·.*': the leading '*.' is placed at the right-hand end by the RTL bidi algorithm.",
+    "evidence": "/tmp/claude-0/walk/H/H-H7-ar-wiki-hover-zoom.png, H-H7-ar-wiki-hover.png. The host list is joined as plain text (src/static/app-core.js:1218-1234, _laneHostTitle) and rendered as textContent in an RTL #oo-tip, with no LTR isolation (<bdi>, dir=ltr or U+2066/U+2069) around each host."
+   },
+   {
+    "title": "'Discover by topic', once enabled, is listed under 'Runs on every collection pass:', though SECURITY.md says it is strictly user-triggered and never part of the scheduler",
+    "severity": "P3",
+    "step_ids": [
+     "H5",
+     "H9"
+    ],
+    "repro": "Settings > Advanced > Safety & at-risk use > tick 'Allow topic-discovery queries to DuckDuckGo', then open the popup with the plane icon.",
+    "expected": "The popup's heading states the lane's real trigger, which is user-triggered (SECURITY.md Discover by topic row: 'Strictly user-triggered: never part of ingestion, the scheduler, or any default path').",
+    "actual": "'Discover by topic' appears under 'Runs on every collection pass:' next to the pass/ride-along lanes. It over-discloses rather than hides, but the consent surface and the security notes disagree.",
+    "evidence": "/tmp/claude-0/walk/H/H-H5-en-popup-on.png; part2.json H5.popup_groups_on; src/static/app-core.js:1144-1166 (an opt-in lane whose setting is on returns the 'on' state) and 1263-1265 (the 'on' bucket is rendered under 'Runs on every collection pass:'); src/static/net-hosts.js:173-180 (trigger 'opt-in')."
+   },
+   {
+    "title": "Local AI bubble in transparent mode says 'Not through this app's fetcher or proxy.' while SECURITY.md says the lane is Mixed (api.github.com is a guarded fetch)",
+    "severity": "P3",
+    "step_ids": [
+     "H3",
+     "H4"
+    ],
+    "repro": "Default transparent mode: open the popup and read the 'Local AI install & weights' lane's hover text (in the DOM, since the bubble is not visible), then compare with the Local AI row's Transport column in Help > Security.",
+    "expected": "The hover and the security notes agree: part of the lane (the installer check to api.github.com) uses the fetcher.",
+    "actual": "The hover says 'Not through this app's fetcher or proxy.' The 'mostly direct' sentence that honours lane.mixed appears only in protected mode.",
+    "evidence": "part1.json H3 (Local AI hover_text_dom); part2.json H4 rows (Local AI transport 'Mixed. api.github.com is a guarded fetch.'); src/static/app-core.js:1189-1190 returns before looking at lane.mixed when not in protected mode."
+   },
+   {
+    "title": "docs/SECURITY.md has drifted from the UI and the code it cites",
+    "severity": "P3",
+    "step_ids": [
+     "H4"
+    ],
+    "repro": "Help > Security > the endpoint table; compare with Settings > Wikipedia and src/scheduler/runner.py.",
+    "expected": "The table names the current button and code lines.",
+    "actual": "The Wikipedia row's Trigger says 'Estimate size', but the button is now 'Refresh exact sizes' (src/static/index.html:1843). The Law and Calendars rows cite src/scheduler/runner.py:1250 / :1248 (also at SECURITY.md:143), but the getattr reads are at runner.py:1162-1166. 'Last checked 2026-09-16' predates the Keyword translations lane and the two added Wikimedia hosts, though the table does list them.",
+    "evidence": "part2.json H4.rows; docs/SECURITY.md:33, 79, 81, 84, 126, 143; grep of src/scheduler/runner.py for auto_track_law / auto_import_calendars (lines 1162, 1164)."
+   },
+   {
+    "title": "French: the colon of 'Votre machine présente ces adresses réseau locales :' wraps alone onto its own line in the popup",
+    "severity": "P3",
+    "step_ids": [
+     "H7"
+    ],
+    "repro": "Switch to Français at 1440 px and open the popup.",
+    "expected": "French punctuation spacing uses a no-break space, so ':' stays with its word.",
+    "actual": "The ':' sits alone on the second line. fr.json uses a plain U+0020 before ':' in this and the other popup headings.",
+    "evidence": "/tmp/claude-0/walk/H/H-H7-fr.png; src/static/locales/fr.json keys 'Your machine presents these local network addresses:' / 'Where this will let the app connect:' / 'Runs on every collection pass:' (the character before ':' is 0x20)."
+   },
+   {
+    "title": "Off-row, seen incidentally: the Home at-a-glance strip keeps English labels in fr and ar",
+    "severity": "P3",
+    "step_ids": [
+     "H7"
+    ],
+    "repro": "Switch to Français or العربية and look at the Home strip behind the popup.",
+    "expected": "Chrome strings are translated in all 12 locales.",
+    "actual": "'KEYWORDS', 'COMMODITY PRICES', 'ARTICLE LINKS', 'MENTIONED DATES', 'SOURCES QUALIFIED', 'SOURCES PENDING', 'SOURCES CANDIDATES', 'Automatic collection:' and 'stopped' stay English. The cause was not located, because it is outside this row.",
+    "evidence": "/tmp/claude-0/walk/H/H-H7-fr.png, H-H7-ar.png (top strip)."
+   }
+  ],
+  "not_measurable": [
+   "Closes-when clause 'tests/test_security_endpoint_enumeration.py green on the tree that tags': the app venv (/home/user/Open-Omniscience/.venv, py3.13) has no pytest, and installing it was out of bounds, so the test was not run. Its two node suites, tests/net_lane_state_node_test.js and tests/net_lane_transport_node_test.js, both print 'all assertions passed' on 462145c (run read-only; git status stayed clean).",
+   "H10 and the post-consent half of H2/H6 ('Go online' > 'Back online…', collection starting, 'Reading exact sizes…'): never clicked. Airplane mode is kept and the sandbox has no egress.",
+   "H9: the lane-grouping names need the maintainer's own word; my suggestions are recorded as input only.",
+   "H1's click-to-go-offline branch ('Entering airplane mode' pop-up and its two toasts): the app booted offline, so the step's condition for clicking did not arise.",
+   "Touch long-press on a lane: not exercised. It opens the same <body>-level #oo-tip (app-boot.js:305-311), so it would be hidden the same way.",
+   "That the app contacts ONLY the listed hosts: would need a network capture while online on an operator machine; not asked by the gate and impossible here."
+  ],
+  "summary": "The click-through clause of row H does NOT close on this walk. The per-lane host bubble, the one thing Q1002 adds to the popup, is painted beneath the modal 'Go online?' dialog. A person sees nothing on any of the 15 lanes in en, fr and zh (0 changed pixels, against 73% for the same bubble outside a dialog), and only a dimmed, clipped fragment in ar. That is because #oo-tip lives on <body> while the popup is in the browser's top layer (showModal). Everything else passes: the one shared popup (plane and 'Refresh exact sizes'), its 15 lanes with n= counts grouped by live settings, the visible caveats, the fr/ar/zh translations, the 375 px layout, and a SECURITY.md table whose 15 rows carry every host the hover would list. The row closes once the bubble renders inside the open dialog (and can be keyboard-focused), a walk re-confirms it, and the enumeration test is shown green on the tagging tree."
+ },
+ "recheck": {
+  "row": "H",
+  "verdicts": [
+   {
+    "title": "The per-lane host bubble is painted BEHIND the modal 'Go online?' popup, so no one can read which hosts a lane contacts",
+    "verdict": "confirmed",
+    "reason": "Reproduced on my own encrypted instance on port 8812. It booted locked and I unlocked it through #pw. In en, 5 lanes (Law, Press collection, Wikipedia / Wikimedia, Chain of custody, Local AI) were each hovered with rests of 800, 1500 and 2500 ms. Every time, #oo-tip had class 'show', opacity 1 and the correct text, and 0 pixels changed in its box against the no-hover frame. The browser's own hit test agrees: document.elementFromPoint at the bubble's centre (the bubble briefly set to pointer-events:auto) returns a dialog descendant, not #oo-tip. The control, the same bubble over the plane with no dialog open, changes 63% of its box and wins the hit test. The fix probe moved #oo-tip inside the open <dialog> for diagnosis only. The bubble then rendered on top of the popup (hit test = #oo-tip, 23.6% pixel change; H-P1-en-law-hover-FIXPROBE.png), which confirms the cause. In ar, the only part visible is the part past the dialog's right edge, dimmed (H-ar-wiki-hover.png), as the walker said. The same cause hides every hover inside every modal dialog in the app: ux-import, ux-export, corpus-win, chart-enlarge, synth-window, wiki-wizard and guide-wizard also carry titled elements, so invariant #17 is broken app-wide inside modals, not only here. Severity stays P1, not P0. Consent is still asked, nothing leaves without it, the lane names, n= counts and caveats stay visible, and the hosts are in Help > Security. But the disclosure layer that Q1002 rules ('its hover lists, per lane, the hosts it will contact') does not reach a person, and this blocks row H's click-through clause.",
+    "root_cause": "src/static/app-core.js:1325 opens #net-consent with dlg.showModal(), which puts it in the browser top layer. src/static/app-boot.js:259-267 creates #oo-tip and appends it to <body>. src/static/app.css:1793 gives it only position:fixed; z-index:400, and no z-index can rise above the top layer. src/static/app-boot.js:281 removes the element's title on show(), so the native tooltip cannot stand in either. The 2026-09-16 sandbox record (docs/audit/net-consent-hosts-2026-09-16/clickthrough.py:89-90) used locator.is_visible(), which does not detect top-layer occlusion.",
+    "suggested_fix": "In ooTipInit's show() (app-boot.js ~line 279), host the bubble in the top-most open modal that contains the hovered element before showing it: `const host = el.closest('dialog[open]') || document.body; if (tip.parentElement !== host) host.appendChild(tip);`. hide() needs no change, and moving the bubble back to <body> on hide is optional. The alternative is to make #oo-tip a manual popover (tip.popover='manual'; tip.showPopover() in show(), hidePopover() in hide()), so it enters the top layer above the dialog. Add a Chromium regression that checks elementFromPoint at the bubble's centre, or a pixel check, instead of is_visible().",
+    "severity": "P1"
+   },
+   {
+    "title": "Lane names in the consent popup cannot take keyboard focus, so their host bubble has no keyboard path",
+    "verdict": "confirmed",
+    "reason": "Reproduced: all 15 lane spans report tabIndex -1. Ten Tab presses inside the open modal cycle only #net-consent-ok > BODY > #net-consent-body > #net-consent-cancel, and #oo-tip never shows. The focusin handler exists (app-boot.js:296-299), but it can only fire on focusable elements, and neither the lane renderer nor the #17 marker (app-boot.js mark()) adds a tabindex. No other code does either, so every titled text span in the app has the same gap. Invariant #17 promises the bubble 'on hover, keyboard focus, or touch long-press'. I re-grade this to P3. It is a real accessibility gap at a consent surface, but it comes from the app-wide convention rather than this row, the same host lists are keyboard-reachable in Help > Security, and focus alone would still show nothing until the P1 is fixed.",
+    "root_cause": "src/static/app-core.js:1246 (_laneLine) renders `<span title=...>` with no tabindex. src/static/app-boot.js:269-273 (mark) adds .oo-tip-target but never makes the element focusable.",
+    "suggested_fix": "Add tabindex=\"0\" to the lane span in _laneLine (app-core.js:1246). Together with the P1 fix, the existing focusin handler then opens the bubble inside the dialog. An app-wide fix would have mark() add tabindex=0 to non-focusable .oo-tip-target elements, but that is a larger change to the focus order.",
+    "severity": "P3"
+   },
+   {
+    "title": "Arabic (RTL): '*.wikipedia.org' in the Wikipedia lane bubble is broken; its '*.' jumps to the far end of the line",
+    "verdict": "confirmed",
+    "reason": "Measured by geometry, independent of paint. In ar, #oo-tip has computed direction rtl, and Range rects on its text node put '*' at x=1193 and '.' at x=1189, while the 'w' of 'wikipedia' is at x=950. So the leading '*.' is laid out at the RIGHT end of the host run, not before 'w'. The same holds with the bubble moved into the dialog, and the fix-probe crop (H-ar-wiki-hover-FIXPROBE.png) reads 'wikipedia.org · stream.wikimedia.org ·.*'. This is the Unicode bidi algorithm: the neutral '*.' at the start of an RTL paragraph takes the paragraph direction. People cannot see it today because of the P1, but it will show as soon as that is fixed. Cosmetic, but it corrupts a host name on a disclosure surface. P3.",
+    "root_cause": "src/static/app-core.js:1221 (_laneHostTitle) joins hosts as plain text, and app-boot.js:282 renders them as tip.textContent in an RTL document with no LTR isolation around each host token.",
+    "suggested_fix": "Wrap each host in LTR isolates when building the title: `lane.hosts.map(h => '⁦' + h + '⁩').join(' · ')` (FSI/LRI…PDI). Plain text cannot carry <bdi>, so isolate characters are the smallest fix; tests that compare the hover's host list against the enumeration then need to strip U+2066/U+2069. Alternatively, render the host segment of the bubble in a dir=ltr span, which would require show() to accept markup.",
+    "severity": "P3"
+   },
+   {
+    "title": "'Discover by topic', once enabled, is listed under 'Runs on every collection pass:', though SECURITY.md says it is strictly user-triggered and never part of the scheduler",
+    "verdict": "confirmed",
+    "reason": "Reproduced through the real UI. In Settings > Advanced > Safety, ticking #discovery-external set the API to true and showed 'Enabled: topic-discovery queries will be sent to DuckDuckGo.'. Reopening the popup then listed 'Discover by topic' under 'Runs on every collection pass:' next to the ride-along lanes (H-dx-on-popup-en.png). Unticking restored false and the lane went back under 'Switched off right now:'. The code confirms the lane is click-only: discovery_external_enabled is read only as a refusal gate in the user-triggered endpoint (src/api/source_management.py:1645), never by the scheduler. docs/SECURITY.md:88 says 'Strictly user-triggered: never part of ingestion, the scheduler, or any default path'. This is not the pending H9 naming question (the maintainer's word on the heading WORDS). The lane is put in the wrong bucket. The same bucket is correct for the other 'opt-in' lane, Chain of custody, which does fire on every ingested article once enabled. It errs toward over-disclosure, but the consent surface contradicts the security notes. P3.",
+    "root_cause": "src/static/app-core.js:1144-1166 (_laneState) returns _NET_STATE_ON for any 'opt-in' lane whose switch is on. app-core.js:1263-1265 renders the 'on' bucket under 'Runs on every collection pass:'. src/static/net-hosts.js topic-discovery entry has trigger 'opt-in', which is shared with the custody lane even though their runtime triggers differ.",
+    "suggested_fix": "Give the topic-discovery lane in net-hosts.js an optional field such as \"whenOn\": \"ask\", and in _laneState return _NET_STATE_ASK instead of _NET_STATE_ON when the switch reads on and lane.whenOn === 'ask'. The lane then appears under 'Only when you ask for it:' when enabled and under 'Switched off right now:' when disabled. Document the field in net-hosts.js's header and pin both states in tests/net_lane_state_node_test.js.",
+    "severity": "P3"
+   },
+   {
+    "title": "Local AI bubble in transparent mode says 'Not through this app's fetcher or proxy.' while SECURITY.md says the lane is Mixed (api.github.com is a guarded fetch)",
+    "verdict": "confirmed",
+    "reason": "Reproduced: with transport kind 'direct', the DOM title of the Local AI lane reads 'api.github.com · objects.githubusercontent.com · huggingface.co · pypi.org — Not through this app's fetcher or proxy.'. docs/SECURITY.md:89 says 'Mixed. api.github.com is a guarded fetch.' The 'mixed' flag in net-hosts.js was added for exactly this lane, but _laneTransport consults it only in protected mode. tests/net_lane_transport_node_test.js:120-133 pins the mixed lane only for proxy, pool and refused, and pins the quiet sentence only for NON-mixed off-fetcher lanes (:100, :111-113). So no ruling or test asks for this sentence on the mixed lane; the direct case was simply left out. In transparent mode everything goes direct, so no address exposure is misstated. Only the 'not through this app's fetcher' part is wrong, for one host. P3 text accuracy.",
+    "root_cause": "src/static/app-core.js:1190 `if (!protectedMode) return t(\"Not through this app's fetcher or proxy.\");` returns before lane.mixed is looked at (the mixed branch is at :1193-1195).",
+    "suggested_fix": "In _laneTransport, check lane.mixed in the non-protected branch too, for example `if (!protectedMode) return lane.mixed ? t(\"Mostly not through this app's fetcher or proxy — only the installer check uses the fetcher.\") : t(\"Not through this app's fetcher or proxy.\");`. Add the new key to all 12 locales, and extend net_lane_transport_node_test.js to pin the mixed lane's direct and unknown lines.",
+    "severity": "P3"
+   },
+   {
+    "title": "docs/SECURITY.md has drifted from the UI and the code it cites",
+    "verdict": "confirmed",
+    "reason": "Verified by grep at 462145c, and the drift is wider than reported. (1) docs/SECURITY.md:79 (Wikipedia row) still names the trigger 'Estimate size', but the button is 'Refresh exact sizes' (src/static/index.html:1843; app-map.js:1800 records that the old per-edition 'Estimate size' button was replaced). SECURITY.md:126 is a historical #14e explanation and is fine. (2) The Law and Calendars rows (:81, :84) and :143 cite src/scheduler/runner.py:1250 and :1248, but those lines are now a blank line and an except clause. The getattr reads are at runner.py:1164 (auto_track_law) and :1162 (auto_import_calendars). (3) Also stale, not reported by the walker: the Official statistics row cites runner.py:1345 (now advance_qualification) and :1238 (now a price-rules log line), while auto_refresh_stat_subscriptions is at :1245 and country_data_per_pass at :1173 and :1356. The Calendars row cites runner.py:1300, which is now advance_law_summaries. The 'Last checked 2026-09-16' sub-claim is not a defect in itself, since the table content is right. Docs only, P3.",
+    "root_cause": "docs/SECURITY.md:79, 81, 82, 84 and 143 cite line numbers and a button label that later commits to src/scheduler/runner.py and src/static/index.html moved or renamed. tests/test_security_endpoint_enumeration.py pins the hosts but not the module:line citations.",
+    "suggested_fix": "Rename 'Estimate size' to 'Refresh exact sizes' in the Wikipedia row's Trigger. Re-derive the runner.py citations (1162, 1164, 1173, 1245, 1356), or better, cite grep-stable anchors such as `getattr(settings, \"auto_track_law\", True)` instead of line numbers. Bump 'Last checked'.",
+    "severity": "P3"
+   },
+   {
+    "title": "French: the colon of 'Votre machine présente ces adresses réseau locales :' wraps alone onto its own line in the popup",
+    "verdict": "confirmed",
+    "reason": "Measured in fr at 1440 px with Range rects on every text node in #net-consent that ends in ':'. For 'Votre machine présente ces adresses réseau locales :' the colon's top is y=709 while 'locales' is at y=686, so the colon sits alone on the next line. The other five popup headings fit on one line, so it is just that one line in this popup. The character before ':' is U+0020 in all six (H-fr-popup.png). The cause is app-wide: 522 fr.json values use a plain space before ':' and only 2 use U+00A0 or U+202F. Cosmetic P3.",
+    "root_cause": "src/static/locales/fr.json, value of key 'Your machine presents these local network addresses:' (and 521 other values): a breakable U+0020 before ':' where French typography requires a no-break space (U+00A0 or U+202F).",
+    "suggested_fix": "Replace ' :' with ' :' (or U+202F) in that fr.json value. A one-time mechanical pass over fr.json does the same for ' :', ' ;', ' !' and ' ?' app-wide, and an i18n check can keep plain-space colons from coming back.",
+    "severity": "P3"
+   },
+   {
+    "title": "Off-row, seen incidentally: the Home at-a-glance strip keeps English labels in fr and ar",
+    "verdict": "confirmed",
+    "reason": "Partly confirmed and partly a timing artifact, so I re-scoped it. Sampling #home-stats every 8 s after switching to fr: at 0 s and 8 s all labels were English and the status line read 'Automatic collection: stopped'. At 16 s the 15 s live poll re-rendered, KEYWORDS became MOTS-CLÉS (likewise COMMODITY PRICES, ARTICLE LINKS, MENTIONED DATES) and the status became 'Collecte automatique: arrêté'. 'ARTICLES' and 'SOURCES' are correct French as they stand. The walker saw a lag of up to 15 s, not a permanent failure. What is permanent: 'SOURCES QUALIFIED', 'SOURCES PENDING' and 'SOURCES CANDIDATES' stayed English at 40 s and after a reload in fr (H-fr-home-strip-after-40s.png). homeStatLabel('sources_qualified') returns 'sources qualified' because no label is mapped and no locale has that key. Off-row cosmetic, P3.",
+    "root_cause": "(1) Permanent: src/static/app-home.js:21-25 HOME_STAT_LABELS has no entries for sources_qualified, sources_pending or sources_candidates (emitted by src/api/database.py:110-112). homeStatLabel (app-home.js:26-29) therefore falls back to the lowercase 'sources qualified', etc., which is not a key in any locale. (2) Lag: #home-stats sits in a [data-i18n-dyn] subtree the DOM walker skips (i18n.js:~60). The oo:langchange handler (app-boot.js:128-135) repaints the strip only when it is showing the read failure, never real stats, and boot can render before OOI18N.ready, so labels wait for refreshHomeLive's 15 s poll (app-home.js:844).",
+    "suggested_fix": "Add sources_qualified: 'Sources qualified', sources_pending: 'Sources pending' and sources_candidates: 'Source candidates' to HOME_STAT_LABELS, with keys in all 12 locales. Keep the last payload and repaint the strip from it in the oo:langchange handler and on OOI18N.ready, the same pattern renderHomeWikiFigure(cached) already uses.",
+    "severity": "P3"
+   }
+  ]
+ }
+}

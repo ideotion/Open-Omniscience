@@ -1,0 +1,570 @@
+{
+ "row": "S",
+ "steps_walked": {
+  "row": "S",
+  "title": "Sources: judging switches a source on, the admission audit and its Undo, the shipped-verdict editor, and one collecting count everywhere (agent-run walk)",
+  "prerequisites": [
+   "WHO RUNS IT: a Claude Code session or workflow agent in this sandbox, not the maintainer (his 2026-09-26 17:23Z message delegates the click-through). It needs the repo at /home/user/Open-Omniscience on main (checked at 462145c, which includes #1158, #1159 and #1173), the repo's .venv (Python 3.13, Playwright installed), and the pinned Chromium at /opt/pw-browsers/chromium-1194/chrome-linux/chrome. Everything runs on 127.0.0.1 and no step needs the network. $SCRATCH below means the running session's own scratchpad directory.",
+   "A DISPOSABLE COPY TO SERVE FROM, so the shared checkout is never written. Run: mkdir -p \"$SCRATCH/oo-app\" && git -C /home/user/Open-Omniscience archive HEAD | tar -x -C \"$SCRATCH/oo-app\". git archive only reads the repo. The overlay file written in S7 goes into $SCRATCH/oo-app/configs/, because the app reads configs/source_qualification.yml next to the src/ it serves.",
+   "A THROWAWAY DATA FOLDER, pre-seeded with the retired hatch. Run: mkdir -p \"$SCRATCH/oo-rowS-data\" && printf '{\"scrape_unqualified\": true}\\n' > \"$SCRATCH/oo-rowS-data/scheduler_settings.json\". Do this BEFORE seeding. It simulates an install upgraded with the old 'also scrape unqualified sources' switch on; the app migrates the file into its settings store and must disclose the retirement.",
+   "SEED IT with the row's own walk seed, never scripts/ui_clickthrough_seed.py, which writes verdicts directly and leaves the audit empty. Run: cd /home/user/Open-Omniscience && PYTHONDONTWRITEBYTECODE=1 OO_DATA_DIR=\"$SCRATCH/oo-rowS-data\" OO_DB_PLAINTEXT=1 OO_NO_SCHEDULER=1 OO_AUTOSEED=0 .venv/bin/python docs/audit/sources-admission-clickthrough-2026-09-18/seed.py. It must print 'collecting: 3', 'admission events: 3 (undone 1)' and 'unaccounted: 2 of 3 collecting'. If it does not, stop: every number below assumes this seed.",
+   "BOOT the throwaway from the copy, in the background, and keep the PID: cd \"$SCRATCH/oo-app\" && OO_DATA_DIR=\"$SCRATCH/oo-rowS-data\" OO_DB_PLAINTEXT=1 OO_NO_SCHEDULER=1 OO_AUTOSEED=0 OO_LLM_AUTOSTART=0 /home/user/Open-Omniscience/.venv/bin/uvicorn src.api.main:app --app-dir \"$SCRATCH/oo-app\" --host 127.0.0.1 --port 8213. Stop it later by PID, never pkill -f. OO_AUTOSEED=0 also skips the startup adoption of shipped verdicts, which is why S7 can show the editor with 0 in force. OO_NO_SCHEDULER=1 means the app boots ONLINE (the boot airplane engage is skipped), so S1 turns airplane mode on first.",
+   "DRIVER RULES (Playwright, one browser context, 1440×1000). Use real page/locator clicks on visible controls, never el.click() or DOM edits. Change language ONLY through the top-bar menu (#lang-switch, then the native-name item), never OOI18N.setLang. Reload after every language change except the S4 probe. Register a dialog handler (dismiss once, accept once) for Revert. Use expect_download for Export and Merge. Capture every console error and pageerror. Screenshot each step. Write a report.json in the style of the 2026-09-18 walk. Never press: 'Qualify the backlog', the first-run guide's 'Go online & start collecting', or the airplane button while it is offline (that would go online)."
+  ],
+  "steps": [
+   {
+    "id": "S1",
+    "where": "http://127.0.0.1:8213 → top bar, airplane button (#net-toggle) → left sidebar, Settings (bottom button) → Advanced (subtab, #set-subtabs) → click the collapsed row \"Quality gates — what counts as an article, what counts as a working source, and what gets scraped\" (details[data-adv=qualification], #qualification-panel)",
+    "do": "1. Open the app. If the first-run guide opens, close it with its × (\"Close\", #gw-close). If the airplane coachmark shows, press \"Not now\".\n2. Click the airplane button once to go OFFLINE. Going offline needs no consent popup.\n3. Go to Settings → Advanced. Before expanding anything, read #qual-state. Then expand \"Quality gates\".\n4. Hover each of the four numbers in the line under \"Judge sources automatically\" and read the shared hover bubble (#oo-tip).\n5. Read \"What the source gate looks at\" and \"What gets scraped\".\n6. Expand the \"Collection\" and \"Sources\" sections too, and search the whole Advanced page for any control that offers to scrape unqualified or unjudged sources.\n7. Tick nothing.",
+    "expect": "(a) Airplane mode is on: the toast reads \"Offline — every new network request is refused. One in-flight request may finish.\" and #net-plane has fill=\"currentColor\" (filled).\n(b) Before expanding, #qual-state still reads \"Loading…\": the section fetches nothing until opened.\n(c) After expanding, the headline reads exactly \"Collecting now: 3 · Judged so far: 4 qualified · 2 disqualified · 5 not yet judged\". The hover bubbles read, in order:\n- 3: \"enabled AND qualified — what collection actually reaches. This is the headline figure; every other count below answers a different question.\"\n- 4: \"qualified, whether or not enabled — a verdict, not a collection state\"\n- 2: \"judged and found wanting, whether or not enabled\"\n- 5: \"not yet judged, whether or not enabled\"\n(d) \"What the source gate looks at\" lists six criteria: outlier_rate, pathology_rate, link_density_rate, furniture_share, language_mismatch_rate, short_article_rate. Exactly two read \"can disqualify\": pathology_rate with \"· absolute floor: 0.5\", and link_density_rate with \"· no absolute floor\". The other four read \"watch only\". Below the list, visible without hovering, an amber line begins \"Kept as a rare-catastrophe detector. It has never fired in the field\".\n(e) \"What gets scraped\" has exactly one checkbox, \"Only scrape the sources that came with the app\" (unticked), under \"A source is scraped once it is enabled and has passed judging. Passing judging enables it…\". The line under it reads \"This will scrape 3 sources (of 6 enabled).\" An amber line (#qual-scope-retired, not hidden) begins \"The 'also scrape unqualified sources' setting has been retired (ruling Q1101, 2026-09-15).\" It ends by pointing to \"Settings > Sources > Admission audit\", a path that does not exist: record that as finding F5. If the amber line is missing, read GET /api/sources/qualification/config → scope.retired to tell \"not stored\" apart from \"not rendered\", and record which.\n(f) No checkbox or toggle anywhere under Advanced offers to scrape unqualified or unjudged sources.",
+    "flags": [
+     "needs-seed-data"
+    ],
+    "evidence": "src/static/index.html:163-167, 1550-1560, 2549-2573; src/static/app-core.js:894-915, 975; src/static/app-ai-tools.js:88-175 (headline 106-109, criteria 124-150, retired line 160-166), 177-202; src/api/source_management.py:1914-1947, 2004-2011; src/analytics/source_audit.py:105-141; src/scheduler/settings.py:329-345, 525-533, 644-654; src/static/app-shell.js:491, 525-531"
+   },
+   {
+    "id": "S2",
+    "where": "Same panel, scroll down: \"Admission audit\" (#qual-admission) → \"Shipped verdicts\" (#qual-overlay, buttons #qual-ov-adopt / #qual-ov-revert / #qual-ov-export / #qual-ov-merge) → \"Catch up the backlog\" (#qualify-bulk-status)",
+    "do": "Read the three blocks and screenshot each. Press nothing. Undo comes in S6. Never press \"Qualify the backlog\": it asks to go online.",
+    "expect": "(a) The Admission audit header reads \"Showing 3 of 3 admissions · 1 undone\". Three rows follow, newest first:\n- admitted-undone.example ends in \"Undone 2026-09-18T13:00:00\", with no button.\n- admitted-then-refused.example ends in \"A later verdict replaced this one\", with no button (the PR #1159 fix).\n- admitted-live.example ends in an \"Undo\" button.\nEvery row reads \"Collection was: off · Status was: unqualified\": judging switched each of them on (Q1101), and the record shows it. Next comes the caveat line \"Admission is about EXTRACTION VALIDITY only…\", then an amber \"2 of 3 collecting sources are not accounted for here\" followed by its coverage note.\n(b) Shipped verdicts reads \"This install ships no record of earlier verdicts, so there is nothing to adopt. Sources are judged here as they always were.\" \"Adopt the shipped verdicts\" and \"Revert them\" are disabled. \"Export what this install measured\" and \"Build a merged file\" are enabled.\n(c) Catch up the backlog reads \"<N> candidates awaiting qualification\", where N is 5 to 7 (unqualified sources plus disqualified ones due for a re-check). No \"Qualification is declined on this machine…\" sentence appears, because this 16 GB sandbox is above the floor. Nothing reads \"done [0/…]\".",
+    "flags": [
+     "needs-seed-data"
+    ],
+    "evidence": "src/static/index.html:2576-2600; src/static/app-ai-tools.js:236-316, 339-351, 396-400, 511-543; src/api/source_management.py:598-616; src/catalog/qualify_job.py:74-88; docs/audit/sources-admission-clickthrough-2026-09-18/report.json (en rows)"
+   },
+   {
+    "id": "S3",
+    "where": "Left sidebar → Home (the stats strip at the top, #home-stats); left sidebar → Library → \"Database & storage\" (subtab) → \"Database\" tiles (#db-stats); Settings → Advanced → expand \"Collection — schedule, lanes, manual and batch ingest\" (details[data-adv=collect]) → \"Which sources (feed collection)\" → \"Preview targets\"",
+    "do": "Read the Home strip. Open Library → Database & storage and wait for the tiles to finish counting. In Settings → Advanced → Collection, leave the Languages, Source types and Tags boxes as they are (blank here) and press \"Preview targets\". Compare every collecting figure with S1's \"Collecting now: 3\".",
+    "expect": "(a) Home shows \"3 SOURCES QUALIFIED\" (the DOM text is lowercase \"sources qualified\"; CSS uppercases it), \"3 SOURCES PENDING\" and \"5 SOURCES CANDIDATES\". It ALSO shows a bare \"11 SOURCES\", the flat table total with no label saying so. Record as finding F4, together with this: the word \"qualified\" means enabled AND qualified (3) here but \"whether or not enabled\" (4) on Quality gates.\n(b) Library → Database & storage shows \"Sources (collecting)\" 3, \"Sources awaiting qualification (enabled)\" 3 and \"Discovered candidates\" 5, and no bare \"Sources\" tile.\n(c) Preview targets shows the green pill \"3 sources targeted\", followed by \"of 6 enabled · this run will process up to …\". Preview targets reads the SAVED filters, not what is typed in the boxes; they are blank on this throwaway.\n(d) Every collecting figure equals 3.",
+    "flags": [
+     "needs-seed-data"
+    ],
+    "evidence": "src/static/app-home.js:21-29, 52-66; src/static/app-library.js:28-33, 951-963; src/static/index.html:552-555, 607-613, 2320, 2385-2391; src/static/app-sources.js:1431-1441; src/api/database.py:100-166; src/api/scheduler.py:387-421; tests/test_headline_source_count.py:101-165"
+   },
+   {
+    "id": "S4",
+    "where": "Settings → Advanced → Quality gates, expanded, in English → top-bar language menu (\"Change language\", #lang-switch) → \"Français\"",
+    "do": "With the panel open and without reloading, switch to Français through the top-bar menu. Read and screenshot the whole Quality gates panel. Then reload the page (the choice persists in the browser) and re-open Settings → Advanced → Quality gates.",
+    "expect": "The top-bar button repaints to 🇫🇷 FR and html lang=\"fr\" (invariant #15).\nPASS would be every line of the panel repainting in French without a reload, which is the rule app-boot.js's oo:langchange handler enforces for other render-once panels. This panel is not in that handler and loads once per page, so the code predicts the following lines stay English:\n- the headline \"Collecting now: 3 · Judged so far: 4 qualified · 2 disqualified …\" (only its last fragment may translate)\n- \"This will scrape 3 sources (of 6 enabled).\"\n- \"Showing 3 of 3 admissions · 1 undone\"\n- each row's \"Collection was: off · Status was: unqualified\"\n- \"Undone 2026-09-18T13:00:00\"\n- the amber \"2 of 3 collecting sources…\" line\n- \"· absolute floor: 0.5\"\n- the backlog line\nMeanwhile the headings, buttons (\"Annuler\"), \"Un verdict plus récent a remplacé celui-ci\" and the single-sentence caveats do translate. Record the English lines as finding F2 (the frozen-locale class). After the reload, the panel renders fully in French, which S5 checks.",
+    "flags": [
+     "needs-seed-data",
+     "locale-check"
+    ],
+    "evidence": "src/static/i18n.js:30-45 (the walker matches whole strings only), 104-118; src/static/app-boot.js:41-110 (no Quality-gates repaint); src/static/app-shell.js:525-531 (loads once per page); src/static/app-core.js:573-600 (menu, pickLang)"
+   },
+   {
+    "id": "S5",
+    "where": "Settings → Advanced → Quality gates, freshly rendered, in fr, then (top-bar language menu → 中文 → reload) zh, then (→ العربية → reload) ar",
+    "do": "In each language, re-open Settings → Advanced → expand Quality gates. Read the headline, What gets scraped (including the amber retired line), the criteria and floor line, the Admission audit and Shipped verdicts, and screenshot each. In ar, also check the page direction and where each row's button sits. Finish in ar for S6.",
+    "expect": "The numbers are identical to S1 and S2 in every language.\nfr:\n- \"Collecte en cours: 3 · Jugées jusqu’ici: 4 qualifié · 2 disqualifié · 5 pas encore jugées\"\n- \"Cela collectera 3 sources (sur 6 activées)\"\n- \"Affichage de 3 admissions sur 3 · 1 annulées\"\n- rows \"Collecte était: désactivée · Statut était: non jugé\"; \"Un verdict plus récent a remplacé celui-ci\"; button \"Annuler\"\n- editor buttons \"Adopter les verdicts livrés\" / \"Les annuler\" / \"Exporter ce que cette installation a mesuré\" / \"Construire un fichier fusionné\"\nzh:\n- \"当前采集: 3 · 迄今已判定: 4 已认证 · 2 已取消资格 · 5 尚未判定\"\n- \"这将采集 3 个来源（共 6 个已启用）。\"\n- \"更近的一次判定已取代此判定\"; button \"撤销\"\nar:\n- \"قيد الجمع الآن: 3 · ما حُكم عليه حتى الآن: 4 مؤهل · 2 غير مؤهل · 5 لم يُحكم عليها بعد\"\n- \"سيجري جمع 3 مصدرًا (من أصل 6 مُفعّلة).\"\n- \"عرض 3 من أصل 3 قبول · تمّ التراجع عن 1\"\n- \"حكم أحدث حلّ محل هذا الحكم\"; button \"تراجع\"\n- document.documentElement.dir is \"rtl\"; each row's button or reason sits at the LEFT end of the row; the ISO timestamps (inside dir=\"ltr\" spans) read 2026-09-18T… left to right in the screenshot.\nIn all three, the retired-hatch line, the rare-catastrophe floor line and the empty-overlay sentence are translated.\nKNOWN, recorded and not a row-S fail (row U's i18n remainder): these stay English in every language:\n- the two server-built gate cards (\"Is this an article?\", \"Is this source's extraction valid?\") and their tunable labels\n- the criterion identifiers and their hover descriptions\n- on Home, SOURCES QUALIFIED / PENDING / CANDIDATES\n- in Library, \"Sources (collecting)\", \"Sources awaiting qualification (enabled)\" and \"Discovered candidates\"\n- the Preview-targets sentence",
+    "flags": [
+     "needs-seed-data",
+     "locale-check"
+    ],
+    "evidence": "src/static/locales/fr.json, zh.json, ar.json (every Quality-gates key checked present); docs/audit/sources-admission-clickthrough-2026-09-18/report.json (fr/ar text); src/static/app-ai-tools.js:236-277 (dir=ltr timestamp span, space-between row); src/api/source_management.py:1948-1960 (gate cards not keyed)"
+   },
+   {
+    "id": "S6",
+    "where": "In العربية (ar) → Settings → Advanced → Quality gates → Admission audit → row admitted-live.example → its \"تراجع\" (Undo) button",
+    "do": "Click that Undo with a real click: this is Q1101's safety valve, in right-to-left. Read the panel WITHOUT reloading. Then reload, re-open Quality gates and read the headline again.",
+    "expect": "Immediately after the click:\n- The toast reads \"تمّ التراجع عن القبول.\" (Admission undone.).\n- The row now shows \"تمّ التراجع ⁨<time>⁩\" (Undone …) and no button. The other two rows are unchanged, still with no button.\n- The header reads \"عرض 3 من أصل 3 قبول · تمّ التراجع عن 2\".\n- The scope sentence reads \"سيجري جمع 2 مصدرًا (من أصل 5 مُفعّلة).\"\n- The amber line reads \"2 من أصل 2 مصدرًا قيد الجمع غير مُفسّرة هنا …\".\n- The code predicts the headline \"قيد الجمع الآن\" still shows 3, because undoAdmission refreshes only the audit list and the scope sentence. Record that as finding F1 (the headline and the sentence under it disagree on one panel).\nAfter the reload, the headline reads \"قيد الجمع الآن: 2\" with 3 qualified · 2 disqualified · 6 not yet judged. Undo cannot be reversed from the UI; this is the throwaway only.",
+    "flags": [
+     "needs-seed-data",
+     "mutates-data",
+     "locale-check"
+    ],
+    "evidence": "src/static/app-ai-tools.js:320-331 (undo refreshes loadAdmissionAudit + _qualScopeCount only, not loadQualificationGates); src/api/source_management.py:2084; src/catalog/qualification.py:790-825; docs/audit/sources-admission-clickthrough-2026-09-18/README.md (undo in ar: undone 1 → 2, collecting 3 → 2)"
+   },
+   {
+    "id": "S7",
+    "where": "Top-bar language menu → English → reload → Settings → Advanced → expand Quality gates → \"Shipped verdicts\"",
+    "do": "Switch back to English and reload. Create $SCRATCH/oo-app/configs/source_qualification.yml (in the DISPOSABLE copy, never the shared checkout) containing exactly these five lines:\ngenerated_at: 2026-09-18\nverdicts:\n  - {domain: awaiting.example, status: qualified, qualified_at: 2026-09-18}\n  - {domain: candidate-0.example, status: qualified, qualified_at: 2026-09-18}\n  - {domain: candidate-1.example, status: disqualified}\nRecord its sha256. The file is read on every request, so no restart is needed. Reload, open Settings → Advanced → expand Quality gates, and read Shipped verdicts and the headline.",
+    "expect": "Headline: \"Collecting now: 2 · Judged so far: 3 qualified · 2 disqualified · 6 not yet judged\". Scope sentence: \"This will scrape 2 sources (of 5 enabled).\" Audit: \"Showing 3 of 3 admissions · 2 undone\", no row offering Undo, and the amber \"2 of 2 collecting sources are not accounted for here\".\nShipped verdicts reads, line by line:\n- \"3 verdicts ship with this install (2 qualified, 1 disqualified) · Measured up to: 2026-09-18\"\n- \"0 of them are in force here · 0 can be put back\"\n- \"Adopting now would: stamp 3 sources, start collecting 1\"\n- an amber line beginning \"Shipped verdicts are adopted at startup. Adopting changes only rows this install has never judged for itself\"\n\"Adopt the shipped verdicts\" is enabled. \"Revert them\" is disabled. Export and \"Build a merged file\" are enabled.",
+    "flags": [
+     "needs-seed-data",
+     "mutates-data"
+    ],
+    "evidence": "src/catalog/qualification_overlay.py:70 (DEFAULT_OVERLAY_PATH beside the served src/), 98-136 (loader), 360-420 (status and preview); src/static/app-ai-tools.js:339-400; src/api/main.py:251-278 (startup adoption only when OO_AUTOSEED is not 0); docs/audit/sources-admission-clickthrough-2026-09-18/overlay.json (before state)"
+   },
+   {
+    "id": "S8",
+    "where": "Settings → Advanced → Quality gates → Shipped verdicts → \"Export what this install measured\" (#qual-ov-export); then the file picker (#qual-ov-files) and \"Build a merged file\" (#qual-ov-merge), with the result under it (#qual-ov-merge-out)",
+    "do": "1. Press \"Export what this install measured\", capture the download and open it.\n2. With the picker EMPTY, press \"Build a merged file\". Capture that download too, then re-hash the overlay file.\n3. PROBE: put the .yml that Export just saved into the picker (a person could pick it through the dialog's \"All files\") and press \"Build a merged file\" again.",
+    "expect": "Export:\n- The toast reads \"Exported what this install measured.\" and source_qualification.yml downloads.\n- The file is YAML with a comment header, generated_at, criteria_version and \"verdicts: []\". It is empty because only sources that shipped with the app are exported, and every seeded source was found by the install itself. No row carries status unqualified.\nMerge with the picker empty:\n- \"Merging…\" appears, then \"3 verdicts in the merged file · 0 added · 0 updated · 3 carried through untouched\".\n- The next line reads \"this instance (0)\".\n- An amber note begins \"Nothing was written. Review this file and commit it as configs/source_qualification.yml\".\n- A second source_qualification.yml downloads, holding the three .example rows.\n- The overlay file's sha256 is unchanged, and \"Collecting now\" still reads 2.\nPROBE:\n- PASS would be the server's refusal \"source_qualification.yml: not valid JSON (…)\" shown under the button, with nothing downloaded.\n- The code predicts instead that \"Merging…\" never clears and a TypeError (\"Cannot read properties of undefined (reading 'status')\") appears in pageerror/console. overlayMerge hands an Error to _apiErrorMessage(data, res).\n- Record finding F3: Export writes YAML, Merge reads only JSON or all-diagnostics .zip, and the merge's refusal never renders.",
+    "flags": [
+     "needs-seed-data"
+    ],
+    "evidence": "src/static/app-ai-tools.js:436-446, 448-454, 456-498 (catch at 496-497); src/static/app-core.js:2503-2514; src/api/diagnostics/sources.py:155-186; src/catalog/qualification_export.py:112-176, 244-265; src/api/diagnostics/qualification_merge.py:34-165; src/catalog/qualification_merge.py:94-110, 177-238; src/static/index.html:2590"
+   },
+   {
+    "id": "S9",
+    "where": "Settings → Advanced → Quality gates → Shipped verdicts → \"Adopt the shipped verdicts\", then \"Revert them\" (browser confirm dialog)",
+    "do": "1. Press \"Adopt the shipped verdicts\" and read the whole panel.\n2. Press \"Revert them\" and DISMISS the confirm (Cancel). Check that nothing changed.\n3. Press \"Revert them\" again and ACCEPT. Read the whole panel.",
+    "expect": "After Adopt:\n- The toast reads \"Adopted 3 verdicts; 1 sources started being collected.\"\n- The block reads \"3 of them are in force here · 3 can be put back\", then \"Adopting now would change nothing: every shipped verdict is either already in force here or overruled by one this install reached itself.\", and the amber line still begins \"Shipped verdicts are adopted at startup.\".\n- \"Revert them\" is enabled.\n- The audit shows \"Showing 4 of 4 admissions · 2 undone\", with a new top row \"awaiting.example · Collection was: on · Status was: unqualified · <now>\" carrying an Undo button. The amber line reads \"2 of 3 collecting sources are not accounted for here\".\n- The headline reads \"Collecting now: 3 · Judged so far: 5 qualified · 3 disqualified · 3 not yet judged\" and the scope sentence \"This will scrape 3 sources (of 5 enabled).\" Only awaiting.example started collecting: the qualified candidate-0.example stays disabled.\nAfter Cancel: no toast, and every figure is unchanged.\nAfter Accept:\n- The dialog text begins \"Put back every source the shipped verdicts stamped here, and stop adopting them at startup?\".\n- The toast reads \"Put back 3 sources; 1 admissions undone.\"\n- The block reads \"0 of them are in force here · 0 can be put back\", then \"Adopting now would: stamp 3 sources, start collecting 1\", and the amber line now begins \"Adopting at startup is off, so a revert holds. Adopt turns it back on.\"\n- \"Revert them\" is disabled again.\n- The awaiting.example row shows \"Undone <time>\" and the header reads \"Showing 4 of 4 admissions · 3 undone\".\n- The headline is back to \"Collecting now: 2 · Judged so far: 3 qualified · 2 disqualified · 6 not yet judged\", and the scope sentence to \"(of 5 enabled)\".",
+    "flags": [
+     "needs-seed-data",
+     "mutates-data"
+    ],
+    "evidence": "src/static/app-ai-tools.js:402-434; src/api/source_management.py:268-305; src/catalog/qualification_overlay.py:143-240 (records the admission as inherited; never writes enabled); src/config/app_settings.py:163 (adopt_shipped_verdicts, stored in the data folder); docs/audit/sources-admission-clickthrough-2026-09-18/overlay.json (adopt → revert round trip)"
+   },
+   {
+    "id": "S10",
+    "where": "Throwaway restarted with a simulated small machine → Settings → Advanced → Quality gates → \"Catch up the backlog\" and \"Shipped verdicts\"",
+    "do": "1. Stop the server by PID. Restart it on the same data folder with an injected memory reading:\ncd \"$SCRATCH/oo-app\" && OO_DATA_DIR=\"$SCRATCH/oo-rowS-data\" OO_DB_PLAINTEXT=1 OO_NO_SCHEDULER=1 OO_AUTOSEED=0 OO_LLM_AUTOSTART=0 /home/user/Open-Omniscience/.venv/bin/python -c \"import src.config.machine_floor as m; m._mem_readings=lambda:(3924.0,800.0); import uvicorn; uvicorn.run('src.api.main:app', host='127.0.0.1', port=8213)\"\n2. Reload. Turn airplane mode on again (the restart boots online). Open Settings → Advanced → expand Quality gates and read.\n3. Stop the server and restart it the same way with OO_ALLOW_BIG_SCANS=1 added. Reload and read again. Do not press \"Qualify the backlog\".\n4. CLEAN UP: stop the server by PID. Delete $SCRATCH/oo-app and $SCRATCH/oo-rowS-data, the only two folders this walk created. Confirm /home/user/Open-Omniscience has no configs/source_qualification.yml and git status there is unchanged.",
+    "expect": "With the injected reading, Catch up the backlog reads \"<N> candidates awaiting qualification Qualification is declined on this machine: it is below the memory floor, so no candidate is judged. (this machine has 3924 MB of RAM with 800 MB available — total under the 4096 MB floor and available under the 1024 MB floor) To run it anyway, restart the app with OO_ALLOW_BIG_SCANS=1.\" N is 6 to 8. Nothing anywhere reads \"done [0/…]\".\nShipped verdicts still reads \"Adopting at startup is off, so a revert holds. Adopt turns it back on.\" after the restart: the preference lives in the data folder.\nWith OO_ALLOW_BIG_SCANS=1, only \"<N> candidates awaiting qualification\" remains, without the refusal sentence.\nAfter cleanup, the shared checkout shows no new or changed files.",
+    "flags": [
+     "needs-seed-data"
+    ],
+    "evidence": "src/config/machine_floor.py:69, 97-170 (measured here: an injected 3924/800 declines, and the override lifts it); src/api/source_management.py:598-616; src/static/app-ai-tools.js:511-543; docs/product/RELEASE_0.4_GATE.md:900 (2026-09-24 amendment, PR #1173); src/api/main.py:344 (the boot airplane engage is skipped under OO_NO_SCHEDULER=1)"
+   }
+  ],
+  "clause_coverage": [
+   {
+    "clause": "Q1101 ⛔ = a: a qualified verdict switches the source on (the flip, visible in the audit record) and the scrape_unqualified hatch is retired, with its one-time disclosure (the visible half)",
+    "step_ids": [
+     "S1",
+     "S2",
+     "S6"
+    ]
+   },
+   {
+    "clause": "Q1101: the audit view's Undo is the safety valve, including PR #1159's refusal of an undo that a later verdict replaced",
+    "step_ids": [
+     "S2",
+     "S5",
+     "S6"
+    ]
+   },
+   {
+    "clause": "Q1106 = a: the source_qualification.yml overlay editor (adopt / export / revert) in Settings, in both of its states",
+    "step_ids": [
+     "S2",
+     "S7",
+     "S8",
+     "S9"
+    ]
+   },
+   {
+    "clause": "Closes when: the overlay editor is Chromium-verified (re-verified here on current main, which has 16 later commits to these files than the 2026-09-18 walk)",
+    "step_ids": [
+     "S7",
+     "S8",
+     "S9"
+    ]
+   },
+   {
+    "clause": "B5: the export + merge run as an in-app action instead of a shell script",
+    "step_ids": [
+     "S8"
+    ]
+   },
+   {
+    "clause": "Q1114 = a: THE number is enabled AND qualified on each headline surface, and the other predicates are labelled",
+    "step_ids": [
+     "S1",
+     "S3"
+    ]
+   },
+   {
+    "clause": "Closes when: one headline count per surface is proven to be enabled AND qualified by a test that reads the shipped predicate (the test is the bar; S3 is the visible check beside it)",
+    "step_ids": [
+     "S3"
+    ]
+   },
+   {
+    "clause": "Q1107 = a + B6: PATHOLOGY_ABS_FLOOR kept at 0.5 and shown as unreachable; link_density_rate as the second measured criterion, with no invented floor",
+    "step_ids": [
+     "S1"
+    ]
+   },
+   {
+    "clause": "2026-09-24 amendment (PR #1173): a qualification pass the memory floor declines is a named refusal with its override, never \"done [0/N]\"",
+    "step_ids": [
+     "S2",
+     "S10"
+    ]
+   },
+   {
+    "clause": "Brief §4 / §5 step 3: click-through of the surfaces in en / fr / ar (zh added per this workflow)",
+    "step_ids": [
+     "S4",
+     "S5",
+     "S6"
+    ]
+   },
+   {
+    "clause": "Q1128 = a: the maintainer's click-through, which he DELEGATED to an agent on 2026-09-26. Still needs recording as a ruling before the gate can cite it (see not_clickable)",
+    "step_ids": [
+     "S1",
+     "S2",
+     "S3",
+     "S4",
+     "S5",
+     "S6",
+     "S7",
+     "S8",
+     "S9",
+     "S10"
+    ]
+   },
+   {
+    "clause": "Closes when: the flip + hatch removal has its data-safety review and tests",
+    "step_ids": []
+   },
+   {
+    "clause": "Closes when: the moves land as catalogue diffs (Q1109 = b with the growth-strategy note, Q1111 = a)",
+    "step_ids": []
+   },
+   {
+    "clause": "Closes when: the splice report exists with its agree / defer counts (Q1119, Q1112, Q1117), plus the human review before any row is applied",
+    "step_ids": []
+   },
+   {
+    "clause": "Q1105: the 64,910 kind_overrides proposals as a worklist (the brief's fourth click-through surface)",
+    "step_ids": []
+   },
+   {
+    "clause": "Q1108 / RC06, Q1110, Q1115, Q1116, Q1156: the small rulings",
+    "step_ids": []
+   },
+   {
+    "clause": "Q1118: the shortlist (3,031) run, then the remainder and the religious lists",
+    "step_ids": []
+   },
+   {
+    "clause": "Q1113 ⛔: the compromised embassy platforms",
+    "step_ids": []
+   }
+  ],
+  "not_clickable": [
+   "Q1128 = a IS WORDED \"Chromium in the sandbox + your click-through = verified\" (RULINGS_INDEX.md:310). The maintainer's 2026-09-26 17:23Z message delegates the click-through to an agent. That changes the bar, and per CLAUDE.md rules (2) and (6) it must be recorded as a ruling in OPEN_QUEUE.md and RULINGS_INDEX.md before RELEASE_0.4_GATE.md row S cites this agent walk as closing the clause. Who can: the session that runs this walk, in the same PR as the walk record. Until then the walk is evidence, like the 2026-09-18 walk.",
+   "Readings from the maintainer's REAL install cannot be taken in the sandbox: the collecting count on his field corpus across Home, Library and Preview targets; the memory-floor refusal on a genuinely small machine (simulated in S10 by injecting the reading); and the retired-hatch line on a genuinely upgraded install (simulated in S1). Who can: the maintainer, or a Claude Code session on his device via Remote Control once he approves its consent card, running S1-S3 read-only against his install in airplane mode.",
+   "The data-safety review and tests for the flip and the hatch removal were done in the session's own work, shipped in #1158 and #1159 (mutation-checked per the S1-S4 amendment lines). A click can show only the visible half (S1, S2, S6).",
+   "The catalogue moves (Q1109 = b, Q1111 = a): 16 rows moved from configs/official_sources.yml to configs/academic_sources.yml, checked by reading the git diff and by tests. No screen shows which catalogue file a source came from. The growth strategy (docs/product/ACADEMIC_CATALOGUE_GROWTH.md) is a document that decides nothing. The moved rows still carry source_type academic-research: recorded, not corrected, because the ruling said move, not retype.",
+   "The SPLICE REPORT's human review (brief §5 operator step 1) is a document, not an app surface: docs/research/sources/discovered_candidates_2026-09-10/stage_b_institutions_2026-09-11/SPLICE_REPORT.md (807 admitted / 1,283 deferred / 7 blocked / 62 declined / 57 routed; agreement 97.1 % kind, 84.6 % primary_source, 83.6 % both). The review, and any written override for the 7 blocked restricted_namespace rows (Q1112), are judgments an agent must not make on the maintainer's behalf, and several blocked rows touch Q1113. Nothing has been applied to any catalogue.",
+   "The Q1105 worklist is NOT BUILT. RC05 came back blank, so assumption (a) applies (\"no tool\"), and the CONFLICT with Q1105 stays recorded. The brief's fourth click-through surface does not exist on main; only a ruling on RC05 can change that.",
+   "Q1108 / RC06 (a 90-day verdict beside the whole-history one) has no UI. It exists only as the recency_window key of GET /api/diagnostics/source-audit, and the all-diagnostics bundle calls that with recency_window=False. The tests are the bar; the 90 days remain an ASSUMPTION until RC06 or Q1108 is answered.",
+   "Q1110 (the official-instruments observable) and Q1115 (the country-vs-domain audit) are API-only proposal surfaces (GET /api/sources/official-instruments, GET /api/sources/country-domain-audit) with no button or panel on main. Behavioural tests are the bar.",
+   "Q1116 (resolving bare Q-id names) is API-only (POST /api/sources/resolve-qid-names) and goes ONLINE to www.wikidata.org. With no UI and a network call, it is outside this offline walk.",
+   "Q1156 (the stratified round-robin, with singleton strata randomised across passes) is VERIFIED-PRESENT by a thirty-pass test (tests/test_stratified_interleave.py). Seeing it would take thirty live collection passes.",
+   "The Q1118 shortlist (3,031) run is an operator run on the maintainer's machine, or in the sandbox once row V's allowlist lands. It is networked and spends a politeness budget. The remainder and the religious lists follow the splice review.",
+   "Q1113 ⛔ (the compromised embassy platforms) is a pending ruling. The platforms stay excluded by the existing flag and appear only in the splice report's Blocked table. Nothing is published and nobody is contacted. Only the maintainer's ruling closes it.",
+   "The task-manager Coverage subtab's note that it counts ENABLED sources is a Q1114 label pinned by tests/test_headline_source_count.py:168. It cannot be reached by clicking: the in-page window (#vitals-pop, #tm-coverage) has no opener, since both top-bar controls (#tm-open, #activity) open the separate /tasks page (tabs: Processes / Performance / Queue / Schedule / Sessions). That label is test-only today.",
+   "The Library → Activity \"Source qualification\" tile's \"Qualified\" line is drawn from hourly snapshots written by the scheduler's maintenance (scheduler/maintenance.py:168), which a no-scheduler throwaway never records. Its predicate is test-pinned (test_the_snapshot_metric_uses_the_headline_predicate). Seeing it takes a running install with at least an hour of history.",
+   "The encrypted path is out of scope for this walk: the throwaway is plaintext by design. The encrypted walk is the separate per-release ritual (scripts/ui_clickthrough_run.py --require-encrypted)."
+  ],
+  "surfaces": [
+   "Settings > Advanced > Quality gates (headline counts and hovers, criteria + floor line, What gets scraped + retired-hatch line, Admission audit + Undo, Shipped verdicts editor, Build a merged file, Catch up the backlog)",
+   "Settings > Advanced > Collection > Which sources (feed collection) > Preview targets",
+   "Library > Database & storage (Database tiles)",
+   "Home (top stats strip)",
+   "Top-bar language menu (Change language)",
+   "Top-bar airplane mode"
+  ],
+  "estimate_minutes": 45,
+  "notes": "WHY THIS IS AN AGENT WALK AND NOT A CHECKLIST: the maintainer's 2026-09-26 17:23Z message says \"Don't write a checklist for me. I want to delegate the click-through to YOU or a claude code session, or an entire workflow.\" Every step runs against a seeded throwaway in this sandbox, through the real controls, and the run should publish a report.json plus screenshots in the style of docs/audit/sources-admission-clickthrough-2026-09-18/. The 2026-09-18 session walk is stale in ways that matter:\n- It predates #1173 and 16 later commits touching these files.\n- It set languages with OOI18N.setLang before opening the panel, which hid F2.\n- It never clicked Export or Merge.\n- It never saw zh, the memory-floor sentence or the retired-hatch line.\nThis checker read the code and ran no server, so the findings below are PREDICTIONS for the run to confirm or refute. The checker recorded nothing in the ledger (see the Q1128 entry in not_clickable).\n\nPATH: every panel is in Settings → Advanced → Quality gates, a collapsed section that loads once per page, on first expand. The gate row and the brief say \"Settings → Sources\", and the 2026-09-24 amendment says \"on the Sources panel\". Advanced does have a section called \"Sources\" (discovery candidates, manage, import/export), but it does not hold these panels.\n\nPREDICTED FINDINGS (for the maintainer to judge; none is a ruling):\nF1. After Undo, \"Collecting now\" goes stale (it keeps 3 while the sentence under it says 2) until a reload. undoAdmission does not call loadQualificationGates (app-ai-tools.js:320-331).\nF2. A live language switch leaves the panel's composed lines in the previous language. The section loads once and is missing from the oo:langchange repaint list (app-shell.js:525-531; app-boot.js:41 onward). This is the frozen-locale class the project already fixed for the Patterns-lens gate panel.\nF3. Export and merge do not connect:\n- \"Export what this install measured\" saves YAML (fmt=yaml), but the merge reads only export JSON or an all-diagnostics .zip. The only in-app route to a mergeable file is Settings → Advanced → Diagnostics → \"All diagnostics (.zip)\".\n- The merge's error path throws: overlayMerge passes an Error to _apiErrorMessage(data, res), which then reads res.status of undefined, so every refusal leaves \"Merging…\" on screen.\n- overlayExport's catch (line 444) has the same shape.\nF4. Q1114 on Home: a bare \"SOURCES\" (the flat COUNT(*), which includes disabled candidates) sits beside \"SOURCES QUALIFIED\". The Library deliberately hides that same figure (app-library.js:28), and the test pins the API payload, not Home's rendering. The word \"qualified\" also names 3 (enabled AND qualified) on Home but 4 (whether or not enabled) on Quality gates.\nF5. The retired-hatch disclosure (keyed ×12; scheduler/settings.py:525-533, en.json:3719) sends operators to \"Settings > Sources > Admission audit\", which does not exist. The real path is Settings → Advanced → Quality gates → Admission audit.\n\nOBSERVATIONS:\n(a) Adopting a shipped qualified verdict onto a disabled candidate stamps it but does not switch it on: apply_overlay never writes enabled, so candidate-0.example stays out of collection in S9. Only local judging flips enabled. Q1101's wording (\"a qualified verdict flips enabled=True\") may deserve a line saying that.\n(b) The exported YAML's header still tells operators to merge with scripts/merge_source_qualification.py, although B5 moved the merge into the app (qualification_export.py:258-264).\n\nKNOWN ENGLISH LEFTOVERS (row U, not row-S fails):\n- Home SOURCES QUALIFIED / PENDING / CANDIDATES\n- Library \"Sources (collecting)\", \"Sources awaiting qualification (enabled)\", \"Discovered candidates\"\n- the Preview-targets sentence\n- the two server-built gate cards and their tunables\n- criterion identifiers and descriptions\n- the merge result's \"this instance\"\n- the memory-floor reason (server data inside a translated frame)\n\nNUMBERS, derived from seed.py plus the engine code and consistent with the walk's recorded round trip (C = collecting count; Q / D / U = qualified / disqualified / not yet judged):\n- fresh seed: C 3; Q/D/U 4/2/5; 6 enabled; 11 sources\n- after Undo: C 2; Q/D/U 3/2/6; 5 enabled\n- after Adopt: C 3; Q/D/U 5/3/3\n- after Revert: C 2; Q/D/U 3/2/6\nThe backlog N is unqualified plus disqualified-due-for-re-check: 5-7 in S2, 6-8 in S10.\nThe steps must run in order on a fresh seed. Re-derive the numbers if seed.py changes.\n\nSAFETY: no step leaves the machine, and airplane mode is turned on first because this throwaway boots online. The overlay file is written only into the disposable copy. Q1113 was not crossed: nothing publishes, contacts anyone, or applies a splice row."
+ },
+ "walk": {
+  "row": "S",
+  "environment": {
+   "encrypted": true,
+   "seed": "docs/audit/sources-admission-clickthrough-2026-09-18/seed.py, copied to /tmp/claude-0/walk/S/seed.py with sys.path pointed at the disposable copy. It was run with OO_DB_PASSPHRASE='walk-pass-2026' (NOT OO_DB_PLAINTEXT) plus OO_NO_SCHEDULER=1 and OO_AUTOSEED=0, onto a data dir pre-seeded with scheduler_settings.json {\"scrape_unqualified\": true}. It printed collecting 3, admission events 3 (undone 1), unaccounted 2 of 3. The DB header is not 'SQLite format 3' (encrypted at rest).",
+   "ports": [
+    8842
+   ],
+   "scratch_dir": "/tmp/claude-0/walk/S",
+   "notes": "App served by the console-script entry point (.venv/bin/open-omniscience, i.e. src.api.main:main), never python -m. It ran from a git-archive copy of HEAD 462145c at /tmp/claude-0/walk/S/oo-app, with PYTHONPATH pointing at the copy (verified: src imported from the copy, not the editable install), so the S7 overlay file went only into the copy. Env: OO_DATA_DIR=<scratch>/oo-rowS-data, OO_PORT=8842, OO_NO_SCHEDULER=1, OO_AUTOSEED=0, OO_LLM_AUTOSTART=0, proxies unset, neither OO_DB_PASSPHRASE nor OO_DB_PLAINTEXT set. The app therefore booted LOCKED every time, and each boot was unlocked in Chromium through #pw and #btn-unlock. Port 8842 replaced the brief's 8213, as the workflow assigned. S10's memory injection used the same main() entry: python -c 'import src.config.machine_floor as m; m._mem_readings=lambda:(3924.0,800.0); from src.api.main import main; main()'. Because OO_NO_SCHEDULER=1 boots online, airplane mode was turned on first after every boot (S1, S10 twice). No consent popup was ever opened or accepted, 'Qualify the backlog' was never pressed, and nothing left the machine. Mid-walk the server was restarted three times, only to fix harness selectors (nested 'Advanced (legacy)' details, strict-mode locator) before any mutating step. The data dir was restored from a pre-boot snapshot before the final full run, which then ran S1 to S9 in order on a fresh seed. PIDs killed by exact PID only: 16292, 17372, 18773, 19009, 19454, 21132, 21492. Cleanup: oo-app, oo-rowS-data and the seed snapshot were deleted. The overlay I wrote is kept as downloads/walk-overlay-written-into-disposable-copy.yml (sha256 31a62cc9…828f). /home/user/Open-Omniscience: git status clean, no configs/source_qualification.yml, still at 462145c. Viewport 1440x950 for the main pass (the brief said 1000), plus a 375x800 pass. Language changes went only through #lang-switch and '#lang-menu [data-lang=..]'. Clicks were real Playwright clicks. The only page.evaluate calls were reads (fetch of GET endpoints, DOM text) and one replay of the S8 probe upload to capture the server's own reply."
+  },
+  "steps": [
+   {
+    "id": "S1",
+    "result": "pass",
+    "locales": [
+     "en"
+    ],
+    "screenshot": "shots/S/S-S1-airplane-en.png, shots/S/S-S1-hover-collecting-en.png, shots/S/S-S1-quality-gates-en.png, shots/S/S-S2-lower-panel-en.png",
+    "observed": "Unlock and chrome: unlocked via #pw and #btn-unlock, landing on /#home. The first-run guide was closed with #gw-close.\n(a) The backend reported online (OO_NO_SCHEDULER boot). One real click on #net-toggle opened no consent popup. The toasts read 'Going offline — cutting new network requests…' then 'Offline — every new network request is refused. One in-flight request may finish.' #net-plane fill='currentColor', and GET /api/system/network returned online:false.\n(b) Before expanding, #qual-state read 'Loading…'.\n(c) After expanding, the headline read exactly 'Collecting now: 3 · Judged so far: 4 qualified · 2 disqualified · 5 not yet judged'. The #oo-tip bubbles read, in order, word for word as expected:\n- 3: 'enabled AND qualified — what collection actually reaches. This is the headline figure; every other count below answers a different question.'\n- 4: 'qualified, whether or not enabled — a verdict, not a collection state'\n- 2: 'judged and found wanting, whether or not enabled'\n- 5: 'not yet judged, whether or not enabled'\n(d) Six criteria. pathology_rate reads 'can disqualify · absolute floor: 0.5' and link_density_rate 'can disqualify · no absolute floor'. The other four read 'watch only'. The amber line 'Kept as a rare-catastrophe detector. It has never fired in the field — …' is visible without hovering.\n(e) 'What gets scraped' has one checkbox, 'Only scrape the sources that came with the app', unticked. Under it: 'This will scrape 3 sources (of 6 enabled).' #qual-scope-retired is shown (hidden=false) and reads 'The 'also scrape unqualified sources' setting has been retired (ruling Q1101, 2026-09-15). … Every automatic admission is listed in Settings > Sources > Admission audit, where it can be undone.' That path does not exist (F5). The API scope.retired carries the same sentence, so it was both stored and rendered.\n(f) With Collection and Sources also expanded, none of the 40 checkboxes under Advanced offers to scrape unqualified or unjudged sources. The only regex hit was 'Judge sources automatically', whose title merely says candidates 'stay unqualified' when it is off.\nHarness note: #net-plane read fill=currentColor (offline) at the very first read, before the first GET /api/system/network landed, while the backend was online. This is the boot-time default paint, visible only because OO_NO_SCHEDULER=1 boots online. The pass waited for the confirmed 'none' fill before clicking."
+   },
+   {
+    "id": "S2",
+    "result": "pass",
+    "locales": [
+     "en"
+    ],
+    "screenshot": "shots/S/S-S2-admission-en.png, shots/S/S-S2-lower-panel-en.png",
+    "observed": "(a) The header reads 'Showing 3 of 3 admissions · 1 undone', with rows newest first:\n- admitted-undone.example ends 'Undone 2026-09-18T13:00:00', with no button.\n- admitted-then-refused.example ends 'A later verdict replaced this one', with no button.\n- admitted-live.example ends with an 'Undo' button.\nEvery row reads 'Collection was: off · Status was: unqualified'. Then the caveat 'Admission is about EXTRACTION VALIDITY only…', then the amber '2 of 3 collecting sources are not accounted for here' followed by its coverage note.\n(b) Shipped verdicts reads 'This install ships no record of earlier verdicts, so there is nothing to adopt. Sources are judged here as they always were.' Adopt and Revert are disabled; Export and 'Build a merged file' are enabled.\n(c) Backlog reads '5 candidates awaiting qualification' (N=5, within 5 to 7). There is no memory-floor sentence (API floor.declines=false: 16096 MB, 14093 MB available) and no 'done [0/…]'."
+   },
+   {
+    "id": "S3",
+    "result": "pass",
+    "locales": [
+     "en"
+    ],
+    "screenshot": "shots/S/S-S3-home-strip-en.png, shots/S/S-S3-library-db-en.png, shots/S/S-S3-preview-targets-en.png",
+    "observed": "(a) The Home strip DOM text reads '0 Articles', '11 Sources', '0 Keywords', '0 Commodity prices', '0 Article links', '0 Mentioned dates', '3 sources qualified', '3 sources pending', '5 sources candidates'. CSS uppercases it on screen. F4 is confirmed: a bare '11 SOURCES' (the flat COUNT(*), including 5 disabled candidates) sits beside '3 SOURCES QUALIFIED', and 'qualified' names 3 here but 4 on Quality gates.\n(b) Library → Database & storage shows 'Sources (collecting)' 3, 'Sources awaiting qualification (enabled)' 3 and 'Discovered candidates' 5. There is no bare Sources tile; the API has sources=11, but that key is hidden.\n(c) To reach Preview targets, a nested 'Advanced (legacy) — collection is automatic; these are rarely needed' <details> inside Collection had to be expanded as well; the brief does not name it. The Languages, Source types and Tags boxes were blank. The result read '3 sources targeted of 6 enabled · this run will process up to 3', with the pill '3 sources targeted' and 'by language: ?:3 by type: news:3'.\n(d) Every collecting figure is 3: Quality gates, Home, Library and Preview all agree. The Q1114 labelling gap on Home is recorded as a defect (F4). Side finding: the other Library tiles are labelled with raw keys ('commodity_prices', 'article_links', 'mentioned_dates'; see defects)."
+   },
+   {
+    "id": "S4",
+    "result": "fail",
+    "locales": [
+     "en",
+     "fr"
+    ],
+    "screenshot": "shots/S/S-S4-live-switch-fr.png",
+    "observed": "With the panel open and no reload, I switched to Français via #lang-switch then the menu item. The button repainted to '🇫🇷 FR' and html lang='fr' (invariant #15 surface OK).\nThe panel did NOT fully repaint. These stayed English:\n- 'Collecting now: 3 · Judged so far: 4 qualified · 2 disqualified · 5 pas encore jugées' (only the last fragment translated)\n- 'This will scrape 3 sources (of 6 enabled).'\n- 'Showing 3 of 3 admissions · 1 undone'\n- every row's 'Collection was: off · Status was: unqualified'\n- 'Undone 2026-09-18T13:00:00'\n- '2 of 3 collecting sources are not accounted for here …'\n- '· absolute floor: 0.5' and '· no absolute floor'\n- '5 candidates awaiting qualification'\n- '5 sources per collection pass' (#qual-enabled-hint)\nThese did translate: the headings, 'Annuler', 'Un verdict plus récent a remplacé celui-ci', the retired-hatch sentence, the floor line, the caveats and the buttons.\nF2 confirmed: the step's PASS criterion (every line repaints without a reload) is not met. After a reload, html lang stayed 'fr' and the panel rendered in French (checked in S5)."
+   },
+   {
+    "id": "S5",
+    "result": "pass",
+    "locales": [
+     "fr",
+     "zh",
+     "ar"
+    ],
+    "screenshot": "shots/S/S-S5-headline-fr.png, shots/S/S-S5-admission-fr.png, shots/S/S-S5-headline-zh.png, shots/S/S-S5-admission-zh.png, shots/S/S-S5-overlay-zh.png, shots/S/S-S5-headline-ar.png, shots/S/S-S5-admission-ar.png",
+    "observed": "The numbers were identical to S1/S2 in all three languages.\nfr:\n- 'Collecte en cours: 3 · Jugées jusqu’ici: 4 qualifié · 2 disqualifié · 5 pas encore jugées'\n- 'Cela collectera 3 sources (sur 6 activées).'\n- 'Affichage de 3 admissions sur 3 · 1 annulées'\n- rows 'Collecte était: désactivée · Statut était: non jugé'; 'Un verdict plus récent a remplacé celui-ci'; button 'Annuler'\n- editor buttons 'Adopter les verdicts livrés' / 'Les annuler' / 'Exporter ce que cette installation a mesuré' / 'Construire un fichier fusionné'\n- floor strings 'seuil absolu: 0.5' / 'aucun seuil absolu'\nzh:\n- '当前采集: 3 · 迄今已判定: 4 已认证 · 2 已取消资格 · 5 尚未判定'\n- '这将采集 3 个来源（共 6 个已启用）。'\n- '更近的一次判定已取代此判定'; button '撤销'\nar:\n- 'قيد الجمع الآن: 3 · ما حُكم عليه حتى الآن: 4 مؤهل · 2 غير مؤهل · 5 لم يُحكم عليها بعد'\n- 'سيجري جمع 3 مصدرًا (من أصل 6 مُفعّلة).'\n- 'عرض 3 من أصل 3 قبول · تمّ التراجع عن 1'\n- 'حكم أحدث حلّ محل هذا الحكم'; button 'تراجع'\n- documentElement.dir='rtl', body direction rtl\n- each row's action or reason box sits at the LEFT (x 35-590), with the info box at the right (600-1155)\n- the timestamp spans compute direction ltr and read 2026-09-18T… left to right\nIn all three languages, the retired-hatch line, the rare-catastrophe floor line and the empty-overlay sentence are translated.\nKnown row-U English leftovers were seen as listed: the two gate cards and their tunables, criterion ids, Home 'SOURCES QUALIFIED/PENDING/CANDIDATES', and the Library 'Sources (collecting)…' tiles.\nAlso untranslated in every language: the Library tiles 'COMMODITY_PRICES', 'ARTICLE_LINKS', 'MENTIONED_DATES' (raw keys).\nCosmetic: two admission timestamps wrap mid-token ('2026-09-' / '18T12:00:00'), in ar and also in en at 1440px."
+   },
+   {
+    "id": "S6",
+    "result": "pass",
+    "locales": [
+     "ar"
+    ],
+    "screenshot": "shots/S/S-S6-after-undo-ar.png, shots/S/S-S6-admission-after-undo-ar.png",
+    "observed": "A real click on the 'تراجع' button in the admitted-live.example row.\nImmediately after the click, with no reload:\n- The toast read 'تمّ التراجع عن القبول.'\n- The row now shows 'تمّ التراجع ⁨2026-09-26T19:56:47.189553⁩' and no button. The other two rows are unchanged, still with no button.\n- The header reads 'عرض 3 من أصل 3 قبول · تمّ التراجع عن 2'.\n- The scope sentence reads 'سيجري جمع 2 مصدرًا (من أصل 5 مُفعّلة).'\n- The amber line reads '2 من أصل 2 مصدرًا قيد الجمع غير مُفسّرة هنا …'.\n- The headline still read 'قيد الجمع الآن: 3 · … 4 مؤهل · 2 غير مؤهل · 5 …', while the API already said collecting 2, Q/D/U 3/2/6. F1 confirmed: the headline and the sentence under it disagree on one panel.\nAfter a reload: 'قيد الجمع الآن: 2 · ما حُكم عليه حتى الآن: 3 مؤهل · 2 غير مؤهل · 6 لم يُحكم عليها بعد'.\nQ1101's safety valve works end to end in RTL; F1 is recorded as a defect."
+   },
+   {
+    "id": "S7",
+    "result": "pass",
+    "locales": [
+     "en"
+    ],
+    "screenshot": "shots/S/S-S7-overlay-populated-en.png, shots/S/S-S7-headline-en.png",
+    "observed": "Switched to English via the menu and reloaded.\nWrote the five-line overlay into the DISPOSABLE copy's configs/source_qualification.yml (sha256 31a62cc9f2b7cbabe07e0902026cc684dc91265bec89f89e6b637b020129828f), then reloaded again.\nPanel:\n- Headline: 'Collecting now: 2 · Judged so far: 3 qualified · 2 disqualified · 6 not yet judged'.\n- Scope: 'This will scrape 2 sources (of 5 enabled).'\n- Audit: 'Showing 3 of 3 admissions · 2 undone', no Undo button, and the amber '2 of 2 collecting sources are not accounted for here'.\nShipped verdicts, line by line:\n- '3 verdicts ship with this install (2 qualified, 1 disqualified) · Measured up to: 2026-09-18'\n- '0 of them are in force here · 0 can be put back'\n- 'Adopting now would: stamp 3 sources, start collecting 1'\n- amber 'Shipped verdicts are adopted at startup. Adopting changes only rows this install has never judged for itself…'\nAdopt is enabled, Revert disabled, and Export and Merge enabled."
+   },
+   {
+    "id": "S8",
+    "result": "fail",
+    "locales": [
+     "en"
+    ],
+    "screenshot": "shots/S/S-S8-merge-empty-picker-en.png, shots/S/S-S8-merge-probe-yaml-en.png",
+    "observed": "Export: the toast read 'Exported what this install measured.' and source_qualification.yml downloaded. The file is YAML with a comment header, generated_at '2026-09-26T19:57:05…', criteria_version oo-source-qualification-3 and 'verdicts: []'. Its header still says to merge with scripts/merge_source_qualification.py.\nMerge with the picker empty:\n- The result read '3 verdicts in the merged file · 0 added · 0 updated · 3 carried through untouched', then 'this instance (0)', then the amber 'Nothing was written. Review this file and commit it as configs/source_qualification.yml…'.\n- A second source_qualification.yml downloaded, holding the three .example rows.\n- The overlay sha256 is unchanged, and Collecting now is still 2.\nPROBE, with the exported .yml put in #qual-ov-files and Merge pressed again:\n- Nothing downloaded, and #qual-ov-merge-out stayed 'Merging…'.\n- pageerror: \"Cannot read properties of undefined (reading 'status')\".\n- Console: 400 on POST /api/diagnostics/source-qualification-merge.\n- The server's own reply to the same upload was 400 {\"detail\":\"source_qualification.yml: not valid JSON (Expecting value: line 1 column 1 (char 0)).\"}, and it never renders.\nF3 confirmed. The export and merge half of the clause passes; the probe's PASS criterion fails."
+   },
+   {
+    "id": "S9",
+    "result": "pass",
+    "locales": [
+     "en"
+    ],
+    "screenshot": "shots/S/S-S9-after-adopt-en.png, shots/S/S-S9-after-adopt-overlay-en.png, shots/S/S-S9-after-revert-overlay-en.png, shots/S/S-S9-after-revert-admission-en.png",
+    "observed": "After Adopt:\n- The toast read 'Adopted 3 verdicts; 1 sources started being collected.'\n- The block reads '3 of them are in force here · 3 can be put back', then 'Adopting now would change nothing: every shipped verdict is either already in force here or overruled by one this install reached itself.', with the amber line still beginning 'Shipped verdicts are adopted at startup.'\n- Revert is enabled.\n- The audit reads 'Showing 4 of 4 admissions · 2 undone', with a new top row 'awaiting.example · Collection was: on · Status was: unqualified · 2026-09-26T19:57:24.338130' carrying Undo, and the amber '2 of 3 collecting sources are not accounted for here'.\n- The headline reads 'Collecting now: 3 · Judged so far: 5 qualified · 3 disqualified · 3 not yet judged' and the scope '(of 5 enabled)'. candidate-0.example stayed enabled=false.\nRevert, dismissed: one confirm dialog, no toast, and every figure unchanged.\nRevert, accepted:\n- The dialog read 'Put back every source the shipped verdicts stamped here, and stop adopting them at startup? …'\n- The toast read 'Put back 3 sources; 1 admissions undone.'\n- The block reads '0 of them are in force here · 0 can be put back', then 'Adopting now would: stamp 3 sources, start collecting 1', and the amber line begins 'Adopting at startup is off, so a revert holds. Adopt turns it back on.'\n- Revert is disabled.\n- The awaiting.example row shows 'Undone 2026-09-26T19:57:30.009200' and the header reads 'Showing 4 of 4 admissions · 3 undone'.\n- The headline is back to 'Collecting now: 2 · … 3 qualified · 2 disqualified · 6 not yet judged' and the scope '(of 5 enabled)'."
+   },
+   {
+    "id": "S10",
+    "result": "pass",
+    "locales": [
+     "en"
+    ],
+    "screenshot": "shots/S/S-S10-small-panel-en.png, shots/S/S-S10-small-bulk-en.png, shots/S/S-S10-override-panel-en.png",
+    "observed": "Restarted by PID with the injected reading (3924 MB total, 800 MB available). The app booted locked and was unlocked via #pw; airplane mode was re-engaged by one click (toast 'Offline — …').\nCatch up the backlog read: '6 candidates awaiting qualification Qualification is declined on this machine: it is below the memory floor, so no candidate is judged. (this machine has 3924 MB of RAM with 800 MB available — total under the 4096 MB floor and available under the 1024 MB floor) To run it anyway, restart the app with OO_ALLOW_BIG_SCANS=1.' N=6, and 'done [0/' appears nowhere on the page.\nShipped verdicts still read 'Adopting at startup is off, so a revert holds. Adopt turns it back on.' after the restart.\nRestarted again with OO_ALLOW_BIG_SCANS=1 added: only '6 candidates awaiting qualification' remains (API floor.overridden=true, declines=false).\nCleanup: the server was stopped by PID and oo-app, oo-rowS-data and the snapshot were deleted. The shared checkout's git status is clean, with no configs/source_qualification.yml."
+   },
+   {
+    "id": "L375",
+    "result": "fail",
+    "locales": [
+     "en"
+    ],
+    "screenshot": "shots/S/S-375-home-en.png, shots/S/S-375-home-strip-en.png, shots/S/S-375-quality-gates-en.png, shots/S/S-375-admission-en.png, shots/S/S-375-library-db-en.png",
+    "observed": "375x800 in en:\n- Settings → Advanced → Quality gates: scrollWidth - clientWidth = 0, no clipped or off-screen text, and the admission rows stack info/action in two columns within 35-340px.\n- Library → Database & storage: overflow 0.\n- Home: overflow = 50px. #home-tier (the 'EARLY CORPUS · 0 articles · 0 days · thin evidence — read with care' line) is 388px wide and ends at x=425. The Home stats strip itself wraps and fits.\nReaching Settings at this width needs the #hamburger menu. The 'You're offline…' coachmark overlays the Settings subtab row until 'Not now' is pressed (by design)."
+   }
+  ],
+  "page_errors": [
+   "Cannot read properties of undefined (reading 'status') — en, S8 probe, after pressing 'Build a merged file' with the exported .yml in #qual-ov-files (overlayMerge's catch calls _apiErrorMessage(e) with an Error and no res)"
+  ],
+  "http_errors": [
+   "POST http://127.0.0.1:8842/api/diagnostics/source-qualification-merge -> 400 (S8 probe, from the UI click; body: {\"detail\":\"source_qualification.yml: not valid JSON (Expecting value: line 1 column 1 (char 0)).\"})",
+   "POST http://127.0.0.1:8842/api/diagnostics/source-qualification-merge -> 400 (S8 probe, the harness's own replay of the same upload to capture the server reply; not a product request)"
+  ],
+  "junk_text": [],
+  "defects": [
+   {
+    "title": "Build a merged file: the server's refusal never renders ('Merging…' sticks, TypeError), and Export's YAML is not accepted by Merge (F3)",
+    "severity": "P2",
+    "step_ids": [
+     "S8"
+    ],
+    "repro": "1. Settings → Advanced → Quality gates → Shipped verdicts → 'Export what this install measured'. It saves source_qualification.yml, which is YAML.\n2. Put that file in the #qual-ov-files picker (accept='.json,.zip', so an operator would need 'All files').\n3. Press 'Build a merged file'.",
+    "expected": "Either Merge accepts what Export produces, or the server's refusal ('source_qualification.yml: not valid JSON (…)') is shown under the button, with nothing downloaded.",
+    "actual": "Nothing downloads, and #qual-ov-merge-out stays 'Merging…' forever. pageerror: \"Cannot read properties of undefined (reading 'status')\". The server replied 400 with a readable detail that never reaches the screen. The only in-app route to a mergeable file is Diagnostics → All diagnostics (.zip). The exported and merged YAML headers still tell operators to use scripts/merge_source_qualification.py, although B5 moved the merge into the app.",
+    "evidence": "shots/S-S8-merge-probe-yaml-en.png; raw_a.json steps.S8.\nsrc/static/app-ai-tools.js:496 (overlayMerge catch → _apiErrorMessage(e)) and :444 (overlayExport catch, same shape). These fetch() paths throw new Error(msg) without .detail.\nsrc/static/app-core.js:2503-2514: _apiErrorMessage(data, res) then reads res.status with res undefined.\nsrc/static/index.html:2590 (accept='.json,.zip'); src/static/app-ai-tools.js:439 (Export fmt=yaml)."
+   },
+   {
+    "title": "After Undo, 'Collecting now' stays stale while the scope sentence under it already shows the new count (F1)",
+    "severity": "P2",
+    "step_ids": [
+     "S6"
+    ],
+    "repro": "Settings → Advanced → Quality gates → Admission audit → press Undo (here 'تراجع' in ar) on admitted-live.example. Read the panel without reloading.",
+    "expected": "The headline 'Collecting now' and the Judged-so-far tallies update with the audit and the scope sentence: collecting 2, 3 qualified · 2 disqualified · 6 not yet judged.",
+    "actual": "The headline keeps 'قيد الجمع الآن: 3 · … 4 مؤهل · 2 غير مؤهل · 5 …', while the scope sentence directly below reads 'سيجري جمع 2 مصدرًا (من أصل 5 مُفعّلة)' and the audit's amber line reads '2 من أصل 2'. The API already said collecting 2. A reload fixes it.",
+    "evidence": "shots/S-S6-after-undo-ar.png; raw_a.json steps.S6.after_no_reload vs api_config_counts_now.\nsrc/static/app-ai-tools.js:320-331: undoAdmission refreshes loadAdmissionAudit() and _qualScopeCount() only, never loadQualificationGates()."
+   },
+   {
+    "title": "Live language switch leaves the Quality gates panel's composed lines in the previous language (F2, frozen-locale class)",
+    "severity": "P2",
+    "step_ids": [
+     "S4"
+    ],
+    "repro": "In English, open Settings → Advanced → expand Quality gates. Then switch the top-bar language menu to Français without reloading.",
+    "expected": "Invariant #15: one click switches the entire UI, and every line of the panel repaints in French.",
+    "actual": "These stay English:\n- the headline 'Collecting now: 3 · Judged so far: 4 qualified · 2 disqualified' (only '5 pas encore jugées' translates)\n- 'This will scrape 3 sources (of 6 enabled).'\n- 'Showing 3 of 3 admissions · 1 undone'\n- each row's 'Collection was: off · Status was: unqualified'\n- 'Undone 2026-09-18T13:00:00'\n- '2 of 3 collecting sources are not accounted for here …'\n- '· absolute floor: 0.5' and '· no absolute floor'\n- '5 candidates awaiting qualification'\n- '5 sources per collection pass'\nSingle-sentence strings and buttons translate. After a reload, it is all French.",
+    "evidence": "shots/S-S4-live-switch-fr.png; raw_a.json steps.S4.identical_lines_after_live_switch.\nsrc/static/app-shell.js:525-531 (the qualification loader runs once per page, guarded by advLoaded).\nsrc/static/app-boot.js:41-110 (the oo:langchange repaint list has no Quality-gates entry)."
+   },
+   {
+    "title": "Home headline strip shows a bare '11 SOURCES' (flat COUNT(*), including disabled candidates) beside '3 SOURCES QUALIFIED', and 'qualified' means different things on Home and Quality gates (F4, Q1114)",
+    "severity": "P2",
+    "step_ids": [
+     "S3"
+    ],
+    "repro": "Seed as in row S, then open Home and read the stats strip (#home-stats). Compare with Settings → Advanced → Quality gates.",
+    "expected": "Q1114 = a: the headline number is enabled AND qualified, and every other predicate is labelled. The Library already hides the flat 'sources' key for exactly this reason.",
+    "actual": "Home shows '11 SOURCES' with no predicate label, next to '3 SOURCES QUALIFIED' (enabled AND qualified), '3 SOURCES PENDING' and '5 SOURCES CANDIDATES'. Quality gates uses 'qualified' for 4 (whether or not enabled). The three split labels are also English in every locale (known row-U remainder).",
+    "evidence": "shots/S-S3-home-strip-en.png; raw_a.json steps.S3.home_textContent_items.\nsrc/static/app-home.js:21-24 (HOME_STAT_LABELS maps 'sources' to a plain 'Sources') and 52-66 (renders every counts key).\nsrc/static/app-library.js:28 (DB_STAT_HIDDEN_KEYS hides 'sources' in the Library only)."
+   },
+   {
+    "title": "Retired-hatch disclosure points to a path that does not exist: 'Settings > Sources > Admission audit' (F5)",
+    "severity": "P3",
+    "step_ids": [
+     "S1",
+     "S5"
+    ],
+    "repro": "Start an install whose scheduler_settings.json carries {\"scrape_unqualified\": true}, open Settings → Advanced → Quality gates, and read the amber line under 'What gets scraped'.",
+    "expected": "The line names the real location: Settings → Advanced → Quality gates → Admission audit.",
+    "actual": "en: '…Every automatic admission is listed in Settings > Sources > Admission audit, where it can be undone.' The same wrong path appears in fr ('Paramètres > Sources > Journal des admissions'), zh ('设置 > 来源 > 准入审计') and ar ('الإعدادات > المصادر > سجل القبول'). #set-subtabs has no Sources subtab.",
+    "evidence": "shots/S-S2-lower-panel-en.png; raw_a.json steps.S1.panel.retired and S5.per_lang.*.retired.\nsrc/scheduler/settings.py:525-533 (_RETIRED_KEYS sentence) plus its keyed translations in src/static/locales/*.json."
+   },
+   {
+    "title": "Library → Database & storage tiles are labelled with raw snake_case keys ('commodity_prices', 'article_links', 'mentioned_dates')",
+    "severity": "P3",
+    "step_ids": [
+     "S3",
+     "S5"
+    ],
+    "repro": "Open Library → Database & storage and read the #db-stats tile labels, in en or any locale.",
+    "expected": "Human, translated labels (as Home uses: 'Commodity prices', 'Article links', 'Mentioned dates').",
+    "actual": "The labels read 'commodity_prices', 'article_links', 'mentioned_dates' (uppercased by CSS) in en, fr, zh and ar. 'articles' and 'keywords' are also raw keys and translate only by coincidence of key text, for example fr 'MOTS-CLÉS'.",
+    "evidence": "shots/S-S3-library-db-en.png; raw_a.json steps.S3.db_tiles and S5.per_lang.*.db_tiles.\nsrc/static/app-library.js:29-33 (DB_STAT_LABELS covers only the three source keys) and :962 (falls back to t9(k) on the raw key)."
+   },
+   {
+    "title": "Home scrolls horizontally by 50px at 375px: the corpus-tier line is nowrap",
+    "severity": "P3",
+    "step_ids": [
+     "L375"
+    ],
+    "repro": "Open Home at a 375px-wide viewport on a young corpus (the EARLY CORPUS tier shows).",
+    "expected": "document.documentElement.scrollWidth - clientWidth = 0.",
+    "actual": "The overflow is 50px. #home-tier ('EARLY CORPUS · 0 articles · 0 days · thin evidence — read with care') is 388px wide, from x=37 to 425. Quality gates and Library measure 0 at the same width.",
+    "evidence": "shots/S-375-home-en.png, shots/S-375-home-strip-en.png; raw_375.json.\nsrc/static/app.css:1429 (.corpus-tier { display:inline-flex; … white-space:nowrap; })."
+   },
+   {
+    "title": "Admission-audit timestamps: a real Undo shows microseconds, and ISO stamps wrap mid-token",
+    "severity": "P3",
+    "step_ids": [
+     "S5",
+     "S6",
+     "S9"
+    ],
+    "repro": "Press Undo on an admission, or Adopt then Revert, and read the row. Also read rows 1-2 of the audit at 1440px in en or ar.",
+    "expected": "A readable timestamp at the same precision as the other rows, kept on one line.",
+    "actual": "The rows read 'Undone 2026-09-26T19:56:47.189553' and '2026-09-26T19:57:24.338130' (microseconds). The seeded rows show seconds only. Two rows break '2026-09-' / '18T12:00:00' across lines because the info column is squeezed by the space-between row. In ar the fragments still read left to right.",
+    "evidence": "shots/S-S6-admission-after-undo-ar.png, shots/S-S5-admission-ar.png, shots/S-S2-admission-en.png, shots/S-S9-after-revert-admission-en.png.\nsrc/static/app-ai-tools.js:236-277 (_admissionRow prints occurred_at / undone_at verbatim inside dir=ltr spans)."
+   }
+  ],
+  "not_measurable": [
+   "No step needed consent, and none was given. The plane was never clicked while offline, and 'Qualify the backlog' was never pressed, so the post-consent qualification pass is not exercised here.",
+   "Readings on the maintainer's REAL install: the field-corpus collecting count across Home, Library and Preview targets; the memory-floor refusal on a genuinely small machine (simulated here by injecting _mem_readings); and the retired-hatch line on a genuinely upgraded install (simulated by a pre-seeded scheduler_settings.json).",
+   "The data-safety review and tests of the flip and hatch removal (#1158/#1159): a click shows only the visible half (S1, S2, S6).",
+   "The catalogue moves (Q1109 = b, Q1111 = a): no screen shows which catalogue file a source came from.",
+   "The splice report's human review (807/1,283/7/62/57), and any Q1112 override: a document and a maintainer judgment, not an app surface.",
+   "The Q1105 kind_overrides worklist: not built on main.",
+   "Q1108/RC06 90-day verdict, Q1110 official-instruments, Q1115 country-vs-domain audit: API-only. Q1116 resolve-qid-names is API-only and goes online.",
+   "Q1156 stratified round-robin: needs about thirty live collection passes.",
+   "Q1118 shortlist run: networked operator run. Q1113 compromised embassy platforms: pending ruling, nothing published.",
+   "The task-manager Coverage subtab's ENABLED-sources label: the in-page window has no opener (both controls open /tasks).",
+   "The Library → Activity 'Source qualification' tile: needs hourly scheduler snapshots, which never run under OO_NO_SCHEDULER=1.",
+   "The Home strip's '(server busy)' age note appeared on an idle server. The Home counts are cache-served, and under OO_NO_SCHEDULER=1 I could not tell whether the refresher is simply not running. Not judged as a defect here."
+  ],
+  "summary": "The click-through clause does not close on this walk, because two steps fail against their own pass criteria. In S4 a live switch to French leaves the panel's composed lines in English until a reload (F2). In S8 the merge's refusal never renders: 'Merging…' sticks with a TypeError, and the YAML that Export writes cannot be merged (F3). The rest works in real Chromium on an encrypted, locked-at-boot throwaway, with every count matching the predicted numbers: the judging flip is visible in the audit record, the hatch retirement is disclosed, Undo works in right-to-left Arabic (including the #1159 refusal row), adopt/revert/export and the empty merge round-trip correctly, and the memory-floor refusal and its override show as named. Also recorded, not blocking by themselves: the stale 'Collecting now' after Undo (F1), Home's unlabelled '11 SOURCES' (F4, a Q1114 labelling gap), a wrong settings path in the retired-hatch line (F5), raw-key Library tile labels, a 50px horizontal scroll on Home at 375px, and timestamp cosmetics."
+ },
+ "recheck": {
+  "row": "S",
+  "verdicts": [
+   {
+    "title": "F3: 'Build a merged file' never shows the server's refusal ('Merging…' sticks, TypeError); Export's YAML is not accepted by Merge",
+    "verdict": "confirmed",
+    "reason": "I reproduced this on my own locked, encrypted instance (port 8844, console script, airplane mode on, 1440px, en). Export saved source_qualification.yml, which is YAML. With that file in #qual-ov-files, pressing 'Build a merged file' downloaded nothing. #qual-ov-merge-out still read 'Merging…' 16 s later, a pageerror \"Cannot read properties of undefined (reading 'status')\" fired, and the POST got a 400. I also tried a file the picker DOES accept: not-an-export.json containing {\"hello\":\"world\"}. It stuck the same way, with the same TypeError. So this is reachable without choosing 'All files'. The server's own replies are readable and never appear: 'not-an-export.json: no 'verdicts' list -- is this a source-qualification export?' and '...yml: not valid JSON (...)'. Evidence: /tmp/claude-0/walk/S-recheck/shots/S-F3-merge-json-stuck-en.png, S-F3-merge-yaml-stuck-en.png and raw_recheck.json steps.F3_merge. The YAML-versus-JSON half is a design gap rather than a defect in itself. The export endpoint's docstring says fmt=yaml is 'the overlay file itself, ready to commit', while Merge reads the JSON export or an all-diagnostics zip, and the picker's accept='.json,.zip' says so. The gap is that the panel offers no JSON export, even though its merge sentence says 'merge exports from other instances'. The YAML header's pointer to scripts/merge_source_qualification.py is still true, because the script remains a second entry point to the same code. Severity: P2 is kept. No data is at risk, but every refusal from this maintainer tool is swallowed and leaves a permanent 'Merging…'.",
+    "root_cause": "src/static/app-ai-tools.js:473 throws a plain `new Error(detail)`, and :496 passes it to `_apiErrorMessage(e)`. That Error has no `.detail`, so src/static/app-core.js:2513 falls back to `res.status` with `res` undefined, and the catch block itself throws a TypeError. overlayExport has the same shape (app-ai-tools.js:441 then :444), so an export failure would also crash its catch without a toast. The helper has about 20 single-argument callers that pass an Error. Every one of them crashes the same way whenever api() rejects with no `detail`, for example a 500 with a plain-text body.",
+    "suggested_fix": "Smallest broad fix: make the helper tolerate a missing res. At app-core.js:2513 use `return msg || (res ? res.status + \" \" + res.statusText : (data && data.message) || String(data));`. That repairs overlayMerge, overlayExport and the other single-argument callers in one line. Separately, as a follow-up and not required for this defect: either let rows_from_export_bytes (src/catalog/qualification_merge.py) accept the YAML overlay via yaml.safe_load, since it carries the same verdict rows, or add a JSON export next to Export and say which file Merge takes.",
+    "severity": "P2"
+   },
+   {
+    "title": "F1: after Undo, the 'Collecting now' headline stays stale while the scope sentence and audit already show the new count",
+    "verdict": "confirmed",
+    "reason": "I reproduced this in en at 1440px with a real click on Undo in the admitted-live.example row. The toast read 'Admission undone.' and the API went from collecting 3 to 2 (Q/D/U 4/2/5 to 3/2/6). At both 2 s and 10 s after the click, #qual-state still read 'Collecting now: 3 · Judged so far: 4 qualified · 2 disqualified · 5 not yet judged'. The line directly under it already read 'This will scrape 2 sources (of 5 enabled).', and the audit showed '2 undone' and '2 of 2 collecting sources are not accounted for here'. After a reload the headline read 'Collecting now: 2 · ... 3 qualified · 2 disqualified · 6 not yet judged'. The 10 s wait rules out harness timing. Adopt and Revert on the same panel both call loadQualificationGates(), so Undo is the odd one out. Evidence: /tmp/claude-0/walk/S-recheck/shots/S-F1-after-undo-stale-en.png and raw_recheck.json steps.F1_undo. Severity: P2 is kept. Right after the operator's own action, the panel's headline figure (Q1114) is wrong and contradicts the line under it.",
+    "root_cause": "src/static/app-ai-tools.js:320-331. On success, undoAdmission refreshes only loadAdmissionAudit() (:326) and _qualScopeCount() (:327). It never re-runs loadQualificationGates(), the only function that paints #qual-state (:106) and #qual-enabled-hint.",
+    "suggested_fix": "In undoAdmission, replace the two refresh calls at :326-327 with `loadQualificationGates();`. It already calls _qualScopeCount(), loadAdmissionAudit() and loadOverlayEditor() (:167-169), which is the same pattern overlayAdopt and overlayRevert use.",
+    "severity": "P2"
+   },
+   {
+    "title": "F2: a live language switch leaves the Quality gates panel's composed lines in the previous language (frozen-locale class)",
+    "verdict": "confirmed",
+    "reason": "I reproduced this in Chromium. With the panel expanded in en, I switched the top-bar menu to Français (html lang='fr'). I read the panel at 1.5 s, 5 s and 10 s, and every read was identical. The following stayed English:\n- 'Collecting now: 3 · Judged so far: 4 qualified · 2 disqualified' (only '5 pas encore jugées' changed)\n- 'This will scrape 3 sources (of 6 enabled).'\n- '5 sources per collection pass'\n- 'Showing 3 of 3 admissions · 1 undone'\n- each row's 'Collection was: off · Status was: unqualified'\n- 'Undone …'\n- 'absolute floor: 0.5' and 'no absolute floor'\n- '5 candidates awaiting qualification'\n- the coverage CAVEAT '2 of 3 collecting sources are not accounted for here This lists admissions made by judging…'\nOOI18N.t on the same page returned the fr strings for every one of these keys ('Collecte en cours', 'Cela collectera {n} sources (sur {total} activées).', 'Affichage de {shown} admissions sur {total}', …). So this is a repaint gap, not a missing translation. After a reload the whole panel rendered in French. Evidence: /tmp/claude-0/walk/S-recheck/shots/S-F2-live-switch-fr.png, S-F2-after-reload-fr.png and raw_recheck.json steps.F2_live_switch. Invariant #15 ('one click switches the ENTIRE UI') is not met. A caveat that stays English after a switch is the case app-boot.js itself calls 'the informed-consent non-negotiable failing quietly'. Severity: P2 is kept.",
+    "root_cause": "The panel's lines are built at render time from t() and tf() frames plus numbers (src/static/app-ai-tools.js:106-109 headline, :122-123 enabled hint, :195-197 scope, :240-297 admission audit, :130-133 floor bits, and loadQualifyBulk :532-533). The i18n DOM walker cannot re-derive composed sentences. The section loader runs once, guarded by advLoaded (src/static/app-shell.js:491 and :534-536). The oo:langchange repaint list in src/static/app-boot.js:41 onward, the listener that handles every other member of this class, has no Quality gates entry.",
+    "suggested_fix": "Add one guarded entry to the existing oo:langchange listener in app-boot.js, next to the _renderPatternsGate line (:72). It should apply only when the section has already loaded, so a switch never fetches for a panel nobody opened. For example: `try { const d = document.querySelector('#set-advanced details.adv-sec[data-adv=\"qualification\"]'); if (d && d.dataset.advLoaded === '1' && typeof loadQualificationGates === 'function') { loadQualificationGates(); loadQualifyBulk(); } } catch (_e) {}`. These are loopback-only reads. Alternatively, cache the last payloads and repaint without fetching, as the other entries do.",
+    "severity": "P2"
+   },
+   {
+    "title": "F4: the Home strip shows a bare '11 SOURCES' (flat COUNT(*)) beside key-derived English labels for the split (Q1114)",
+    "verdict": "confirmed",
+    "reason": "On my instance the #home-stats items read: '0 Articles', '11 Sources', '0 Keywords', '0 Commodity prices', '0 Article links', '0 Mentioned dates', '3 sources qualified', '3 sources pending', '5 sources candidates'. /api/database/stats sends sources=11 next to the partition 3/3/5. Q1114 = a says '`enabled AND qualified` everywhere a headline count is shown; the other predicates are labelled where they appear'. The backend docstring (src/api/database.py:107-116) says 'never show the flat figure alone where it could read as one number describing the corpus', and the Library hides the flat key for exactly that reason. Home does neither: the unlabelled '11 Sources' (which includes 5 disabled candidates) is the most prominent source number on the app's front page. The three split labels come from the key text ('sources qualified' / 'pending' / 'candidates'), so they are English in every locale. In the same strip, 'qualified' means enabled AND qualified (3), while Quality gates uses 'qualified' for 4 (whether or not enabled). Nothing in the rulings or the tests exempts Home. tests/test_headline_source_count.py covers the backend, the panel, targets and coverage, not the Home strip. Evidence: /tmp/claude-0/walk/S-recheck/shots/S-F4-home-strip-en.png and S-F7-home-glance-375-en.png, raw_recheck.json steps.F4_home. Severity: P2 is kept, as a gap against a ruling on the front-page headline.",
+    "root_cause": "src/static/app-home.js:21-24. HOME_STAT_LABELS maps 'sources' to a plain 'Sources' and has no labels for sources_qualified/sources_pending/sources_candidates, so :28 falls back to `k.replace(/_/g, \" \")`. renderHomeStats (:52-66) renders every key in counts, with no equivalent of src/static/app-library.js:28 DB_STAT_HIDDEN_KEYS.",
+    "suggested_fix": "In renderHomeStats, drop the flat 'sources' key, as the Library does: `Object.entries(counts||{}).filter(([k]) => k !== \"sources\")`. Add the three split labels to HOME_STAT_LABELS, reusing the Library's already-keyed strings ('Sources (collecting)', 'Sources awaiting qualification (enabled)', 'Discovered candidates'). Then extend test_headline_source_count or test_ui_invariants so Home is pinned too.",
+    "severity": "P2"
+   },
+   {
+    "title": "F5: the retired-hatch disclosure points to 'Settings > Sources > Admission audit', which is the wrong place",
+    "verdict": "confirmed",
+    "reason": "I reproduced it with a data dir whose scheduler_settings.json holds {\"scrape_unqualified\": true}. #qual-scope-retired is visible and reads '…Every automatic admission is listed in Settings > Sources > Admission audit, where it can be undone.' The same path is in /api/sources/qualification/config scope.retired. In the DOM, #set-subtabs is Graphics/General/Cards/AI/Wikipedia/OpenStreetMap/Agenda/Data & backup/Advanced, so there is no Sources subtab. There IS an Advanced section called 'Sources', but the 'Admission audit' heading sits inside details[data-adv='qualification'] ('Quality gates'). A reader who follows the sentence opens the wrong section. The translations carry the same wrong path: fr 'Paramètres > Sources > Journal des admissions', zh '设置 > 来源 > 准入审计', ar 'الإعدادات > المصادر > سجل القبول', de 'Einstellungen > Quellen > Aufnahmeprotokoll'. The line appears just above the audit on the same panel, which limits the harm. Evidence: /tmp/claude-0/walk/S-recheck/shots/S-F5-retired-line-en.png and raw_recheck.json steps.F5_retired_path. Severity: P3 is kept.",
+    "root_cause": "src/scheduler/settings.py:525-533. The _RETIRED_KEYS['scrape_unqualified'] sentence hard-codes 'Settings > Sources > Admission audit', and its keyed translations in src/static/locales/*.json copy the same path.",
+    "suggested_fix": "Change the sentence to 'Settings > Advanced > Quality gates > Admission audit' (or 'the admission audit below'), and re-key the 12 locale entries to match. The i18n gate keys on the English string, so every locale file needs the new key.",
+    "severity": "P3"
+   },
+   {
+    "title": "Library → Database & storage tiles are labelled with raw snake_case keys",
+    "verdict": "confirmed",
+    "reason": "I reproduced it in en: the #db-stats tile labels read 'articles', 'keywords', 'commodity_prices', 'article_links', 'mentioned_dates', then 'Sources (collecting)', 'Sources awaiting qualification (enabled)', 'Discovered candidates'. Only the three source tiles have human labels. The rest print the API key through t(), which has no key for 'commodity_prices' and so returns it unchanged. Home already has human labels for the same keys (app-home.js:21-24). Evidence: /tmp/claude-0/walk/S-recheck/shots/S-F6-library-tiles-en.png and raw_recheck.json steps.F6_library. This is a side finding, not a row-S clause. Severity: P3 is kept.",
+    "root_cause": "src/static/app-library.js:29-33. DB_STAT_LABELS covers only sources_qualified/sources_pending/sources_candidates, so :962 renders `t9(DB_STAT_LABELS[k] || k)` on the raw key.",
+    "suggested_fix": "Add articles/keywords/commodity_prices/article_links/mentioned_dates to DB_STAT_LABELS with the strings HOME_STAT_LABELS already keys ('Articles', 'Keywords', 'Commodity prices', 'Article links', 'Mentioned dates'), or have both surfaces share one label map.",
+    "severity": "P3"
+   },
+   {
+    "title": "Home scrolls horizontally by 50px at 375px: the corpus-tier line is nowrap",
+    "verdict": "confirmed",
+    "reason": "I reproduced it at 375x800 in en on a fresh context, with the coachmark dismissed. document.documentElement.scrollWidth - clientWidth = 50. The only elements past the viewport are #home-tier (class 'corpus-tier tier-early', white-space nowrap, 388px wide, x 37 to 425) and its child .tier-caveat 'thin evidence — read with care' (right edge 425). In the screenshot the caveat is cut off at the card edge ('thin evidence — r…'), so part of a visible caveat is clipped as well as causing the page scroll. Evidence: /tmp/claude-0/walk/S-recheck/shots/S-F7-home-glance-375-en.png, S-F7-home-375-en.png and raw_recheck.json steps.F7_375. Severity: P3 is kept; note the clipped text is a caveat.",
+    "root_cause": "src/static/app.css:1429 is `.corpus-tier { display:inline-flex; align-items:baseline; gap:7px; white-space:nowrap; }`. No narrow-width override exists, so the badge, numbers and caveat cannot wrap inside the ~340px card.",
+    "suggested_fix": "Let the chip wrap: add `flex-wrap:wrap; white-space:normal; max-width:100%;` to .corpus-tier (keeping nowrap on .tier-badge alone if the badge must stay whole), or add it in the existing narrow-width media block.",
+    "severity": "P3"
+   },
+   {
+    "title": "Admission-audit timestamps: Undo shows microseconds, and ISO stamps wrap mid-token",
+    "verdict": "confirmed",
+    "reason": "Both halves reproduced in en at 1440px.\n(1) Microseconds: after a real Undo the row read 'Undone ⁨2026-09-26T21:22:28.619370⁩'. /api/sources/admission/audit returns undone_at '2026-09-26T21:22:28.619370', while the seeded rows carry seconds only.\n(2) Wrapping: every seeded row's timestamp span splits across two lines ('2026-09-' / '18T12:00:00'; getClientRects().length = 2), in en as well as ar. The info and action columns are each exactly 555px of a 1120px row, so the short action column takes half the width and squeezes the info text.\nThis is cosmetic. Evidence: /tmp/claude-0/walk/S-recheck/shots/S-F8-admission-seeded-en.png, S-F8-admission-after-undo-en.png and raw_recheck.json steps.F8_timestamp. Severity: P3 is kept.",
+    "root_cause": "(1) src/catalog/qualification.py:777 and :782 serialise occurred_at/undone_at with a bare `.isoformat()`, and undo_admission stamps `now` with microseconds (:988). Real field admissions stamped by evaluate_and_stamp carry microseconds too. (2) src/static/app.css:440 `.row > div { flex:1; min-width:140px; }` gives both children of the row _admissionRow builds (src/static/app-ai-tools.js:268-276) equal width. The timestamp span at :243 and :257 has no nowrap, so Chromium breaks after the hyphen.",
+    "suggested_fix": "(1) Serialise with `isoformat(timespec=\"seconds\")` at qualification.py:777/:782, or trim to 19 characters in _admissionRow. (2) In _admissionRow, give the action div `style=\"flex:0 0 auto\"` so the info column takes the remaining width, and add `white-space:nowrap` to the dir=ltr timestamp spans.",
+    "severity": "P3"
+   }
+  ]
+ }
+}

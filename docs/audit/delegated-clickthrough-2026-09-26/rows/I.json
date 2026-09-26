@@ -1,0 +1,722 @@
+{
+ "row": "I",
+ "steps_walked": {
+  "row": "I",
+  "title": "Import lifecycle: four stage rows, three safety lines, a fresh page on reopen, K = 3, import history in Settings",
+  "prerequisites": [
+   "The app must be on current main, which includes S04-02 (built 2026-09-16). Step I1 runs on your REAL install, unlocked, and only looks (read-only). Every other step runs on a THROWAWAY data folder, so your real corpus is never touched. After I1 you may shut the real install down (top-bar power icon) so the two don't compete for disk and memory.",
+   "Environment check, in the terminal you will start the throwaway from: `env | grep -E '^(DATABASE_URL|OO_DB_PASSPHRASE|OO_DB_PLAINTEXT|OO_IMPORT_CHECKPOINT_K|OO_IMPORT_DEFER_REINDEX|OO_NO_SCHEDULER|OO_REINDEX_AUTORESUME)='` must print NOTHING. DATABASE_URL would point the throwaway at your REAL database. OO_IMPORT_CHECKPOINT_K overrides the group size. OO_IMPORT_DEFER_REINDEX=0 moves stage 4 inside the run. The last two switch off the boot auto-resume that I9 checks.",
+   "Throwaway install: from the app folder, with the virtual environment active, run  OO_DATA_DIR=\"$HOME/oo-rowI\" OO_PORT=8010 open-omniscience  and open http://127.0.0.1:8010. First launch: choose English, ACCEPT the legal terms (declining them uninstalls), then create a throwaway passphrase and write it down. There is no data-location question, because OO_DATA_DIR answers it. Close the welcome guide that opens on an empty corpus. If anything offers to go online, choose 'Not now'. No step here needs the network.",
+   "A folder holding AT LEAST FOUR DISTINCT volume-set backups, each in its own sub-folder, all made with the SAME passphrase (the dialog takes one passphrase per run). A FIFTH distinct one is needed only for the optional I13. Your own real backups work best; pick the smallest. Newer exports are named <date>_OpenOmniscience_Backup, older ones may be named otherwise, and Scan finds them by their contents either way. At corpus scale each stage lasts minutes, which is what lets you watch the group of three and interrupt the re-index. Old single-file (legacy) backups never form a group of three. A backup the throwaway already holds shows as 'Skipped'.",
+   "Fallback with no real backups (shows the surfaces only). Run  OO_DATA_DIR=\"$HOME/oo-rowI-src\" OO_DB_PLAINTEXT=1 python scripts/ui_clickthrough_seed.py --mini  (24 synthetic articles), start it with  OO_DATA_DIR=\"$HOME/oo-rowI-src\" OO_DB_PLAINTEXT=1 OO_PORT=8011 open-omniscience , and export four times via Settings → Data & backup → 'Export / Back up…' into e.g. ~/oo-rowI-backups. Between exports, change 'Backups per save point' on THIS source instance (4, 5, 6, 7) so the four backups' bytes differ. Settings never travel in a restore. Then shut it down and import into ~/oo-rowI. Even so, each stage is sub-second, so the amber 'Merged — not yet saved' state (I6) and the interruptible re-index (I9) will flash by or not show.",
+   "Free disk on the throwaway's drive of about 3× the corpus inside the largest backup (a group of three carries one working copy of the corpus beside the live one and its snapshots).",
+   "The browser must allow new tabs from 127.0.0.1: 'open report' and the task-manager link open new tabs.",
+   "Afterwards: stop the throwaway (top-bar power icon) and delete ~/oo-rowI, plus ~/oo-rowI-src and ~/oo-rowI-backups if you made them. Steps I2–I13 never touch your real data folder, and the backup folders are only read."
+  ],
+  "steps": [
+   {
+    "id": "I1",
+    "where": "REAL install (your usual address, normally 127.0.0.1:8000), unlocked → left sidebar, bottom: Settings → subtab \"Data & backup\" (#set-data) → panel \"Export / Backup\", then its \"Import…\" button (#ux-import)",
+    "do": "Read the number in \"Backups per save point\" (#set-checkpoint-k) and hover it. Do NOT change it. Scroll down to \"Import history\" (#imp-history) and read it. Click \"Import…\", look at the dialog without typing anything, then click \"Close\".",
+    "expect": "(a) \"Backups per save point\" reads 3. If it reads 1 and you never chose 1, your stored settings still carry the setting's old default: it shipped on 2026-09-07 with 1, any settings save before 2026-09-16 stored that 1, and nothing migrates it. Record it; your next real import would then save every backup on its own. Under the box: \"Higher is faster and loses more work if an import is stopped or crashes.\" The hover bubble starts \"1 saves every backup to your corpus as soon as it finishes. Higher copies and checks your corpus once per group…\". (b) Import history is never blank. It lists past imports newest first, one line each: \"<date time> · <kind> · N articles · open report\", where kind is restore, newsletter or incomplete. A run that did not finish shows, in red, \"did not complete (<outcome>)\" with \"N articles planned\" or \"article count not recorded\", never a plain count. (c) The dialog shows NO old result block (\"✓ Import successful\", before/after table). Under the \"Folder to import from\" row there is exactly ONE quiet line, \"Last import · <date time> · N articles · open report\", matching the top history row. Near the bottom is the sentence \"Verified and written to your corpus once every 3 backups — nothing is durable until a save, so a stop or a crash before one means those backups have to be imported again.\" If (a) read something other than 3, this sentence still says 3, which is a disagreement to record (see I12). There is no \"Show details\" section. JUDGE AND RECORD: if your last real import ran through the import queue, its four numbered stage rows, three safety lines and per-backup rows ALSO appear under the line, because the dialog re-attaches to the last run's saved record. In that case row 4 reads \"could not be read\" and the third line \"Whether analytics have caught up could not be read.\". If the app was restarted since that run, row 3 reads \"Merge the search index — not started\" although it ran. If that run was killed, a red \"This import was interrupted when the app stopped…\" line appears too. Q201/R1 ask for the one line \"and nothing else\"; decide whether this counts as a fresh page.",
+    "flags": [],
+    "evidence": "src/static/index.html:1927-1971 (#set-data, Import…, #set-checkpoint-k title + hint, #imp-history), 3263-3267 (#ux-imp-last under the folder row); src/static/app-backup.js:746-773 (openUnifiedImport clears #ux-imp-summary), 806-827 (_uxImLastLineHtml), 845-855 (_uxImCheckpointHtml), 1657-1683 (_uxImHistoryHtml), 1697-1705 (_uxImReattach renders the saved run), 1420 (interrupted line); src/backup/import_queue.py:293/305-352 (run record saved and reloaded; tuning_done never saved), 303 + 1203 (sentence's K = 3 until a run starts); src/config/app_settings.py:134, 329-339, 508 (stored K kept, whole dataclass persisted); git show b2bd4e0:src/config/app_settings.py:133 (old default 1); src/backup/import_reports.py:390-420 (kinds from filenames)"
+   },
+   {
+    "id": "I2",
+    "where": "THROWAWAY (127.0.0.1:8010) → Settings → \"Data & backup\" → \"Backups per save point\" and \"Import history\", then \"Import…\"",
+    "do": "Read \"Backups per save point\" and \"Import history\". Click \"Import…\" and look. Then click \"Close\".",
+    "expect": "\"Backups per save point\" reads 3. Import history reads \"No imports recorded yet.\" (an explicit empty state, never a blank area). The Import dialog has NO \"Last import\" line: nothing at all, not an invented \"no imports yet\". It has no stage rows and no per-backup rows, and shows the sentence \"Verified and written to your corpus once every 3 backups — nothing is durable until a save…\".",
+    "flags": [],
+    "evidence": "src/static/app-backup.js:784-801 (empty report list → empty line), 1657-1660 (\"No imports recorded yet.\"), 1697-1702 (no run → no rows); src/backup/import_queue.py:188 (CHECKPOINT_K_DEFAULT = 3); src/config/app_settings.py:134"
+   },
+   {
+    "id": "I3",
+    "where": "THROWAWAY → Settings → \"Data & backup\" → \"Import…\" → box \"Folder to import from\" (#ux-imp-src), buttons \"Verify\" and \"Scan\"",
+    "do": "(1) Type the path of ONE backup's own folder, or pick it with \"Browse…\". Leave the passphrase empty and press \"Verify\". (2) When it finishes, replace the path with the PARENT folder that holds the four backups and press \"Scan\".",
+    "expect": "(1) The line \"Verifying…\" appears. Below it EXACTLY ONE progress bar moves, with ONE \"Verify: …\" line under it: no second bar, and no two messages flickering in turn. It ends with a green \"✓ Backup verified — the set is complete and intact.\" followed by \"N volumes · signature: …\" and parity/method lines. (2) The checklist reads \"Restore corpus backup (encrypted volumes — additive, nothing you already have is overwritten · N volumes · 4 sets)\", \"What do you want to import?\" appears, a field \"Passphrase (to decrypt the corpus backup)\" is shown, and \"Import selected\" becomes clickable. A \"Trust the backup's scraping history\" box also appears; it belongs to row K, so leave it as it is.",
+    "flags": [
+     "needs-backup-file"
+    ],
+    "evidence": "src/static/index.html:3258-3272 (Verify/Scan, #ux-imp-bar, #ux-imp-progress); src/static/app-backup.js:877-910 (_uxImVerify through the one chain), 912-938 (_uxRenderVerify), 1167-1178 + 1213-1231 (verify mode paints the one bar), 969-1020 (_uxImScan)"
+   },
+   {
+    "id": "I4",
+    "where": "THROWAWAY → Import dialog, after the Scan in I3 → \"Import selected\"",
+    "do": "Keep \"Restore corpus backup\" ticked and untick anything else. Type the backups' passphrase and click \"Import selected\". If a box says \"Another job is writing to the database: …\", press Cancel, wait until the app is idle, and try again. Then read the dialog top to bottom. It is modal, so leave it open for now.",
+    "expect": "Within a few seconds: ONE progress bar, then a bold header \"0/4 imported · <elapsed>\" with the line \"Background collection is paused for this whole import and resumes when it finishes.\" under it. Then exactly FOUR numbered rows in this order: \"1. Check the backup and unpack it — 0 of 4 backups · <phase, e.g. Verifying volumes…>\", \"2. Merge it into your corpus and save — 0 of 4 backups\", \"3. Merge the search index — not started\", \"4. Re-index the imported articles — … open the task manager\". Next come three lines, the first two starting with \"•\" (not ✓): \"Keep the import files until this import is saved — nothing is durable until then.\" and \"Closing the app now abandons whatever has not been saved yet; your corpus is untouched.\". Then one row per backup named by its folder: \"— Waiting\", or \"— Running · <elapsed> · stage N of 4\". \"Stop\" and \"Continue in background\" are visible, and there is NO \"Show details\" section under the rows (Q207). THIRD LINE (Q203: analytics are complete only after stage 4): it must NOT read \"✓ Analytics are complete — every imported article is indexed.\" now. Reading the code, on this fresh throwaway it WILL, and row 4 will read \"complete\", because both read only the re-index backlog, which is 0 before anything merges. If you see that, record it as a defect against Q203.",
+    "flags": [
+     "mutates-data",
+     "needs-backup-file"
+    ],
+    "evidence": "src/static/index.html:3274-3288 (#ux-imp-queue, #ux-imp-stages, #ux-imp-statements, #ux-imp-queue-rows); src/static/app-backup.js:1028-1081 (_uxImRun → /import-queue/start), 1362-1453 (_uxImRenderQueue incl. collection-paused line :1419), 1455-1504 (stage rows), 1510-1529 (_uxImReindexBits: backlog 0 → \"complete\"), 1533-1572 (_uxImStatements); src/backup/import_queue.py:1029-1184 (_stage_rows). Undo: throwaway only; delete ~/oo-rowI when done"
+   },
+   {
+    "id": "I5",
+    "where": "THROWAWAY → Import dialog while the run is going (reopen with Settings → \"Data & backup\" → \"Import…\")",
+    "do": "Watch for about a minute. Then drag-select the text of row 3 (\"3. Merge the search index — not started\") and of a backup row that is not changing (a \"Waiting\" one), and wait 10 seconds. Next click \"Close\", wait 5 seconds, and reopen with \"Import…\". Do this close/reopen twice. Then reload the browser tab once (F5), go back to Settings → \"Data & backup\" and reopen \"Import…\".",
+    "expect": "No row blinks, jumps, duplicates or vanishes. Only a row whose numbers actually change is redrawn, and your selection in the unchanged rows stays highlighted (a row rebuilt every second would drop it). There is never more than one progress bar and never two overlapping status messages. After every reopen, and after the reload, the dialog finds the SAME run again: same rows, not doubled, still counting. By design, for about a second after each reopen row 4 reads \"could not be read\" and the third line \"Whether analytics have caught up could not be read.\", until the fresh reading returns (the dialog discards the old reading on purpose). Note whether that reads as a blink to you (R2).",
+    "flags": [
+     "needs-backup-file"
+    ],
+    "evidence": "src/static/app-backup.js:757-763 (reopen clears the stage-4 read on purpose), 1102-1135 (one timer, one subject, generation counter), 1180-1211 (_uxImTick), 1341-1360 (_uxPatchRow: unchanged signature → DOM untouched), 1697-1705 (_uxImReattach); tests/test_import_lifecycle_ui.py:48-116, 211-238"
+   },
+   {
+    "id": "I6",
+    "where": "THROWAWAY → Import dialog, as backups 1–3 finish",
+    "do": "Keep watching the per-backup rows, the header, row 2, row 4 and the third safety line.",
+    "expect": "Backups 1 and 2 turn \"Merged — not yet saved\" with an AMBER dot, not the green of \"Done\". The header gains \"Merged, not yet saved: 1 — written to your corpus at the next checkpoint, one every 3 backups.\" (then 2) and still reads \"0/4 imported\". Row 1 advances (\"1 of 4\", \"2 of 4\") while row 2 stays at \"0 of 4 backups\". When backup 3 finishes, all three turn green \"Done\" together (within a second), row 2 jumps to \"3 of 4 backups\" and the header to \"3/4 imported\". After that first save, row 4 changes from \"complete\" to \"N articles left to re-index\", and the third line to \"Analytics are still catching up: N imported article(s) carry no keywords until the re-index finishes.\" (Q203/Q204 working as ruled). Backup 4 is then saved on its own and goes straight to \"Done\". A backup that reads \"Skipped\" was already in the corpus, which means your four backups were not distinct.",
+    "flags": [
+     "needs-backup-file"
+    ],
+    "evidence": "src/backup/import_queue.py:188 (K = 3), 705-774 (the hold rule), 822-834 (_commit_group flips staged → done), 1227-1239 (items_staged); src/backup/volume_job.py:77-93 (per-item hand-off leaves the backlog pending during the run); src/static/app-backup.js:1303-1316 (\"Merged — not yet saved\"), 1383-1390 (staged header line), 1432-1437 (amber dot), 1510-1529 + 1553-1564 (backlog > 0 wording)"
+   },
+   {
+    "id": "I7",
+    "where": "THROWAWAY → Import dialog at the end of the run, then \"Close\" and \"Import…\" again",
+    "do": "Keep the dialog open until backup 4 reads \"Done\". Look at the two safety lines and row 3. Then click \"Close\" and leave it closed until a message pops up (or a few minutes pass). Then reopen with \"Import…\".",
+    "expect": "As soon as backup 4 reads Done, while row 3 still reads \"3. Merge the search index — running · Merging the search index…\", the first two lines turn into ✓ \"The import files can be removed — everything they carried is in your corpus now.\" and ✓ \"Safe to close or update the app — the re-index picks up where it left off on the next start.\" (Q203: after the swap). Row 3 shows only \"running\", never a number or percentage; SQLite publishes no progress for it. With the dialog closed, exactly ONE toast \"Import complete.\" appears; two would be the overlapping-messages defect R2 names. If the run ends while the dialog is still open, no toast appears. The full result block appears instead (\"✓ Import successful\", \"4 of 4 backups imported\", article totals). That is expected, and it is what the reopen must not show again. ON REOPEN: NO result block (R1). ONE line: \"Last import · <date time> · N articles · open report\", where N is from the newest single report, i.e. backup 4's; compare it with I10. Rows 1–2 read \"4 of 4 backups\", row 3 \"done\", and both first lines carry ✓. Per Q203/Q204, row 4 should show the re-index counting and the third line should read \"Analytics are still catching up: …\" until it is done. Reading the code, while the dialog stays open both freeze at their last reading, because polling stops when the run ends. On any reopen of a finished run they read \"could not be read\" / \"Whether analytics have caught up could not be read.\" and never update. If so, record it against Q204.",
+    "flags": [
+     "needs-backup-file"
+    ],
+    "evidence": "src/static/app-backup.js:1249-1301 (terminal tick stops the chain, renders the result block into the dialog, toast only when the dialog is closed :1295-1300), 1533-1551 (✓ lines keyed on every item done), 762 (reopen nulls the stage-4 read), 1233-1247 (stage-4 read only inside a running-queue tick), 2170-2184 (result block header); src/backup/import_queue.py:634-647 (search-index merge runs after the last item), 1136-1158 (search-index row: measured false)"
+   },
+   {
+    "id": "I8",
+    "where": "THROWAWAY → Import dialog → row \"4. Re-index the imported articles\" → link \"open the task manager\" (same page as the top-bar pulse-line icon \"Tasks & system\", #tm-open)",
+    "do": "After the run has ended (row 3 reads \"done\"), click \"open the task manager\" in row 4. In the new tab (\"Task manager · FOOS\") stay on the \"Processes\" tab and look under the group \"AI & analysis\".",
+    "expect": "A row with a \"running\" pill and the label \"finishing the re-index of imported articles\", a detail line like \"import <n> (<m> article(s))\", and a bar \"X / Y · Z%\" that grows over time, where Y is about the number row 4 last showed as \"left to re-index\". The drain starts only once the whole run has ended, so during the run there is nothing to see. On the 24-article fallback it may finish in seconds, and Processes then reads \"Nothing active right now — …\". The label and detail stay English in every language (no locale key).",
+    "flags": [
+     "needs-backup-file"
+    ],
+    "evidence": "src/static/app-backup.js:1495-1497 (link calls openTaskManager()); src/static/app-core.js:2374-2377 (opens /tasks); src/static/taskmanager.html:172-176 (tabs: Processes, Performance, Queue, Schedule, Sessions), 255-263 (unknown kinds → AI & analysis), 285-315 (jobRow: pill, label, detail, X / Y · Z%); src/api/backup_v2.py:1083-1091 (job label), 880-996 (progress + detail); src/backup/import_queue.py:510-529 (drain started after the run's window); src/api/jobs.py:605-630"
+   },
+   {
+    "id": "I9",
+    "where": "THROWAWAY → top-bar power icon \"Shut down the app\" (#app-shutdown), relaunch, then the top-bar pulse-line icon \"Tasks & system\" (#tm-open) → Processes, then Settings → \"Data & backup\" → \"Import…\"",
+    "do": "While the task manager still shows the re-index running, go back to the app tab, click \"Shut down the app\" and confirm \"Shut down the app? …\". Harsher, throwaway only: from another terminal, run  kill -9 $(lsof -ti tcp:8010 -sTCP:LISTEN) . Relaunch with the same command as in the prerequisites, open 127.0.0.1:8010 and unlock with the throwaway passphrase. Press nothing related to the re-index. Open \"Tasks & system\" → Processes, then the Import dialog. Finally search, in the Search tab, for a title you know is in one of the backups.",
+    "expect": "Within about a minute of unlocking, and without any click from you, Processes → AI & analysis again lists \"finishing the re-index of imported articles\". Its Y is about what was left at shutdown, and it counts up to completion (Q205 auto-resume; Q203 \"safe to close\"). Nothing imported is lost: Import history still lists the reports and the title search finds the article. In the Import dialog, per Q205, row 4 should say \"resuming re-index (N left)\". The shipped wording would be \"resuming re-index — X of Y articles\" or \"N articles left to re-index\", but reading the code, row 4 reads \"could not be read\" (see I7). Also expect row 3 to read \"3. Merge the search index — not started\" although it ran, because that fact is not saved across a restart. Record exactly what you see. This step needs corpus-scale backups; the 24-article fixture re-indexes too fast to interrupt.",
+    "flags": [
+     "mutates-data",
+     "destructive",
+     "needs-backup-file"
+    ],
+    "evidence": "src/api/main.py:105-153 (_resume_reindex_backlog_at_boot, off the boot path; skipped under OO_NO_SCHEDULER=1 / OO_REINDEX_AUTORESUME=0), 174-194 (backlog read after unlock); src/static/app-core.js:2398-2406 (appShutdown); src/backup/import_queue.py:293, 305-312, 1202 (tuning_done not saved), 1136-1144 (row 3 pending when not tuning_done); src/static/app-backup.js:1510-1529; tests/test_import_lifecycle_stages.py:372-424, 513 (automated boot-resume + SIGKILL round trip). Undo: none needed; throwaway only"
+   },
+   {
+    "id": "I10",
+    "where": "THROWAWAY → Settings → \"Data & backup\" → \"Import history\" (#imp-history) → \"open report\"",
+    "do": "Close the dialog. Click another Settings subtab (e.g. \"Advanced\") and then \"Data & backup\" again so the list reloads. Scroll to \"Import history\" and click \"open report\" on the top row.",
+    "expect": "Rows are newest first, \"<date time> · restore · N articles · open report\", and no row of this run reads \"did not complete\". The top row matches the dialog's \"Last import\" line. Reading the code, this four-backup run adds only TWO rows, for backup 3 (which saved the group) and backup 4. Backups 1 and 2 were held for the group save and write no report, and backup 3's figure counts only its own articles. If you see two rows, record that backups 1–2's figures are not kept anywhere after the run; if you see four, record that too. \"open report\" opens a new tab with plain-text Markdown starting \"# Import report (…)\" then \"**N new articles**\" (plus \"(M duplicates skipped)\" where relevant). Some browsers download a .md file instead; open it. The report is English whatever the UI language.",
+    "flags": [],
+    "evidence": "src/static/app-shell.js:444 (history loads when the Data & backup subtab opens); src/static/app-backup.js:1633-1683; src/api/backup_v2.py:80-113 (list + ?format=md); src/backup/merge.py:6276-6292 (held item returns before any report), 6700-6706 (report written only on the commit path); src/backup/import_reports.py:73-84 (heading uses the report's kind), 119-131 (headline)"
+   },
+   {
+    "id": "I11",
+    "where": "THROWAWAY → top-bar language button (shows the current flag and code, e.g. the UK flag + EN; hover \"Change language\", #lang-switch) → Settings → \"Data & backup\" → \"Import…\" and \"Import history\"",
+    "do": "Close the Import dialog first: while it is open the rest of the page cannot be clicked. Pick Français in the language menu, reopen \"Import…\" and read it, click \"Close\", read \"Import history\" and hover \"Backups per save point\". Repeat with العربية (ar) and 中文 (zh), then switch back to English and glance once more.",
+    "expect": "In each language these are in that language, with no English sentence left: the \"Last import\" line (fr \"Dernière importation · … · ouvrir le rapport\", ar \"آخر استيراد\", zh \"上次导入\"), the checkpoint sentence (fr \"Vérifié et écrit dans votre corpus une fois toutes les 3 sauvegardes —…\"), the four row titles (fr \"1. Vérifier la sauvegarde et la décompresser\" … \"4. Réindexer les articles importés\"), the three safety lines, the history heading (\"Historique des imports\" / \"سجل الاستيراد\" / \"导入历史\") and the hover text. KNOWN ENGLISH LEFTOVERS: the raw word \"restore\" in history rows, the task-manager re-index label, and the per-backup state words \"Done\", \"Waiting\" and \"Skipped\" (also \"Interrupted\", \"Cancelled\"), which have no translation in any locale. Record the state words as a defect, because they are the per-backup outcome. In ar the whole dialog reads right-to-left: text right-aligned, the coloured dot on the right of each row, nothing overlapping or cut off. Back in English, everything is English again.",
+    "flags": [
+     "locale-check"
+    ],
+    "evidence": "src/static/app-core.js:558-600 (LANGS_12, flag + code button, native-name menu); src/static/locales/{fr,ar,zh}.json keys \"Last import\", \"Check the backup and unpack it\", \"Import history\", \"Backups per save point\"; no key \"Done\"/\"Waiting\"/\"Skipped\"/\"Interrupted\" in en/fr/ar/zh (src/static/app-backup.js:1303-1316 passes them through t()); src/static/i18n.js:150 (exact-match t); src/static/app-backup.js:2775-2800 (re-render on language change); docs/audit/import-lifecycle-clickthrough-2026-09-16/coverage.csv (locale rows)"
+   },
+   {
+    "id": "I12",
+    "where": "THROWAWAY → Settings → \"Data & backup\" → \"Backups per save point\" (#set-checkpoint-k), then \"Import…\"",
+    "do": "Optional check. Change 3 to 1, click elsewhere, and wait for \"Preferences saved.\". Open \"Import…\", read the sentence near the buttons, then \"Close\". UNDO: set it back to 3 and wait for \"Preferences saved.\" again.",
+    "expect": "The setting is not hidden and can be changed (Q216 keeps the override visible), and the saved value reads back as 1. The dialog sentence exists to never disagree with the number the next run will use, so it should now read \"Every backup is verified and written to your corpus as soon as it finishes.\". Reading the code, it keeps saying \"once every 3 backups\" until an import actually starts: the dialog asks the import queue, which re-reads the setting only when a run begins and resets to 3 on every restart. Record which one you see. After the undo, the box reads 3.",
+    "flags": [
+     "mutates-data"
+    ],
+    "evidence": "src/static/app-settings.js:975-981, 1227-1244 (load/save K); src/static/app-backup.js:830-843 (sentence reads /import-queue/status checkpoint.k); src/static/index.html:3290-3293 (comment: never disagree with the run's K); src/backup/import_queue.py:303 (K initialised to 3), 537 (re-read only at run start), 1203 (status reports that K)"
+   },
+   {
+    "id": "I13",
+    "where": "THROWAWAY → Settings → \"Data & backup\" → \"Import…\" → \"Folder to import from\" → \"Scan\" → \"Import selected\", then \"Verify\"; later the top-bar power icon \"Shut down the app\"",
+    "do": "OPTIONAL. Needs a FIFTH distinct backup that the throwaway does not hold yet. Import ONLY that backup: point \"Folder to import from\" at its own folder, Scan, type the passphrase, then \"Import selected\". (a) While its row reads \"Running · … stage 1 of 4\", press \"Verify\" once and watch for 30 seconds. Then Close and reopen \"Import…\". (b) When the backup reads \"Done\" and row 3 reads \"running\" with both ✓ lines showing, click \"Shut down the app\" at once. Relaunch, unlock, and open \"Import…\". Undo: throwaway only; delete ~/oo-rowI when done.",
+    "expect": "Per the rulings: (a) pressing Verify during an import never produces a second bar or competing messages, and the run's rows keep updating (Q206/R2). (b) after \"✓ Safe to close or update the app\", closing costs nothing and nothing afterwards asks you to redo the import (Q203). Reading the code, (a) Verify takes over the dialog's single update loop: the bar and a \"Verify: …\" line then describe the import's own restore, the header, stage and backup rows stop updating, and when that backup finishes the Verify area probably says \"No verification report was returned.\". Close and reopen brings the rows back. And (b) the run is saved as finished only after the search-index merge, so after the relaunch the dialog shows, in red, \"This import was interrupted when the app stopped. It cannot resume (the passphrase is never stored) — start it again.\" beside the two ✓ lines, and row 3 reads \"not started\". Record exactly what you see for both. The re-index should still auto-resume, as in I9.",
+    "flags": [
+     "mutates-data",
+     "needs-backup-file"
+    ],
+    "evidence": "src/static/app-backup.js:900-904 + 1137-1147 (_uxImStartGuarded treats a 409 with status 'running' as a started verify), 1167-1178 (_uxImWatchVerify replaces the queue watch), 1420 (interrupted line); src/backup/volume_job.py:216-228 (busy manager → RuntimeError → 409), 944-972 (start_verify); src/api/backup_v2.py:534-548; src/backup/import_queue.py:927-961 (queue restores share the volume manager), 634-647 (state saved done only after _tune_after_run), 345-352 (running → interrupted on boot)"
+   }
+  ],
+  "clause_coverage": [
+   {
+    "clause": "Q202: four stages shown as four rows with their own progress",
+    "step_ids": [
+     "I4",
+     "I6",
+     "I7"
+    ]
+   },
+   {
+    "clause": "Q203: three statements at the ruled moments (files removable after the swap; close/update safe after the swap; analytics complete after stage 4)",
+    "step_ids": [
+     "I4",
+     "I6",
+     "I7",
+     "I9",
+     "I13"
+    ]
+   },
+   {
+    "clause": "Q204: stage 4 inside the import experience as its own row, progress from the resume-status endpoint, link to the task manager",
+    "step_ids": [
+     "I4",
+     "I6",
+     "I7",
+     "I8"
+    ]
+   },
+   {
+    "clause": "Q205: the durable cursor auto-resumes on boot; UI shows 'resuming re-index (N left)'",
+    "step_ids": [
+     "I9",
+     "I13"
+    ]
+   },
+   {
+    "clause": "Q206 / R2: one poll chain, one bar owner, rows patched in place; no blinking or overlapping messages",
+    "step_ids": [
+     "I3",
+     "I5",
+     "I7",
+     "I13"
+    ]
+   },
+   {
+    "clause": "R1 / Q201: fresh page on reopen with one quiet 'Last import · date · N articles · open report' line linking the persisted report (supersedes _uxShowLastCompletedSummary)",
+    "step_ids": [
+     "I1",
+     "I2",
+     "I7",
+     "I9",
+     "I10"
+    ]
+   },
+   {
+    "clause": "Q207 (ASSUMPTION): the 'Details' block removed",
+    "step_ids": [
+     "I1",
+     "I4"
+    ]
+   },
+   {
+    "clause": "Q216 ⛔ = a: K = 3, one verify + swap per 3 backups, stated in the dialog; override stays visible",
+    "step_ids": [
+     "I1",
+     "I2",
+     "I6",
+     "I12"
+    ]
+   },
+   {
+    "clause": "Q222 = b: import history lives in Settings → Data & backup",
+    "step_ids": [
+     "I1",
+     "I2",
+     "I10"
+    ]
+   },
+   {
+    "clause": "Q214: import-queue/* is the one path; reindex-* wired (the visible half)",
+    "step_ids": [
+     "I4",
+     "I8"
+    ]
+   },
+   {
+    "clause": "Locales the brief/walk name: en, fr, ar (RTL), zh",
+    "step_ids": [
+     "I11"
+    ]
+   },
+   {
+    "clause": "Closes (1): a click-through showing the four rows, the three statements at their stages and the fresh page with its one line (maintainer's Q1128 half)",
+    "step_ids": [
+     "I4",
+     "I5",
+     "I6",
+     "I7",
+     "I10",
+     "I11"
+    ]
+   },
+   {
+    "clause": "Closes (2): a kill between stages 3 and 4 proves the resume (the automated test is not clickable; I9 is the on-machine human counterpart)",
+    "step_ids": [
+     "I9"
+    ]
+   },
+   {
+    "clause": "Closes (3): repo test that the v2/restore routes are gone",
+    "step_ids": []
+   },
+   {
+    "clause": "Q217: prefetch only if the first real verify_copy timing shows prepare dominating",
+    "step_ids": []
+   },
+   {
+    "clause": "Q221: each lane's import is a row with the same four stages",
+    "step_ids": []
+   },
+   {
+    "clause": "Gate 'Remaining' / brief operator steps 1-2: a real four-backup restore at corpus scale and a kill between stages 3 and 4 on the maintainer's machine (met only with real backups, not the 24-article fallback)",
+    "step_ids": [
+     "I3",
+     "I4",
+     "I5",
+     "I6",
+     "I7",
+     "I8",
+     "I9"
+    ]
+   }
+  ],
+  "not_clickable": [
+   "Closes (2), the test half: the automated SIGKILL round trip is tests/test_import_lifecycle_stages.py::test_a_kill_between_stages_three_and_four_resumes_on_the_next_boot (:513), with the boot-resume tests at :372-424. pytest/CI runs it, not a click; I9 is only the human counterpart.",
+   "Closes (3): the deletion of /api/backup/v2/restore/* is asserted by tests/test_additive_restore_only.py (anchored on router definitions, :73-81) and tests/test_repo_invariants.py. A deleted route has nothing on screen to click.",
+   "Q217 (prefetch only on evidence): parked on a measurement. The field-scale verify_copy 'prepare' timing on the reference corpus is an operator read whose numbers go into a PR; the sandbox figures are sub-second on a 1.6 MB fixture. Whether 73% in stage_a:reassemble still counts as 'prepare dominating' is the maintainer's ruling.",
+   "Q221 (lanes as rows): there is no lane import on main. KINDS is still corpus / legacy / blobs / newsletters (src/backup/import_queue.py:56), so only the code hook exists, and there is nothing to click until a lane adds an import kind.",
+   "Q207 is an ASSUMPTION (a blank sheet took default a). The click-through can only confirm the Details block is gone; keeping or reversing it takes the maintainer writing an answer, not a click.",
+   "Recording the result: the operator-step artifacts (the import report and a task-manager screenshot of stage 4 completing after the restart) have to be SAVED by you. A session then has to record them into docs/audit, the gate's amendment log and RULINGS_INDEX. If you only run the synthetic fallback, the 'real four-backup restore at corpus scale' and 'kill between stages 3 and 4 on that machine' clauses stay open.",
+   "Brief S1's DOM-mutation count (\"no rebuild of an unchanged row\") is a sandbox instrument. The human equivalent in I5 (the selection survives) is a visual proxy, not a count.",
+   "How to resolve the R1-vs-Q204/Q205 tension (a finished run re-attached on reopen, versus stage 4 needing a home after reopen) and the Q205 wording is a ruling for the maintainer, not something a click can settle."
+  ],
+  "surfaces": [
+   "Settings > Data & backup > Export / Backup panel (Import…, Backups per save point)",
+   "Settings > Data & backup > Import history",
+   "Import dialog (#ux-import): Verify, Scan, stage rows, safety lines, per-backup rows, Last import line, end-of-run result block",
+   "Task manager (top-bar 'Tasks & system', /tasks) > Processes > AI & analysis",
+   "Top bar: language button and menu, Shut down the app",
+   "Unlock page on relaunch (encrypted throwaway)",
+   "Persisted import report (/api/backup/import-reports/<file>?format=md, new tab)"
+  ],
+  "estimate_minutes": 120,
+  "notes": "TIME: about 2 hours of attention with four small real backups, plus about 20 minutes for the optional I13. Wall-clock is much longer at corpus scale: the field measured 47–56 min per backup for check-and-unpack alone, so four backups can take several hours. \"Continue in background\" is fine between checks. The synthetic fallback takes about 30 minutes, but cannot show I6, I9 or I13 meaningfully.\n\nSUSPECTED DEFECTS, from reading the code on main. None were reproduced here, and the sandbox walk (plaintext, one 24-article backup, checking only that #ux-imp-summary was empty on reopen) could not have seen them. The steps name what to look for.\n(1) At the START of a run with no re-index backlog, the third line reads \"✓ Analytics are complete — every imported article is indexed.\" and row 4 reads \"complete\". Both read only the backlog (app-backup.js:1510-1529, 1553-1564), which contradicts Q203's \"analytics complete after stage 4\". [I4]\n(2) The stage-4 reading happens only inside a running-queue tick (app-backup.js:1233-1247), and the chain stops when the run ends (:1249-1251). Reopening nulls the reading (:762), and the re-attach renders without taking one (:1697-1705). So after a run, row 4 and the third line freeze, and on every reopen of a finished run they read \"could not be read\" permanently. During a run the drain yields to the import's exclusive window and starts only after it (import_queue.py:510-529), so the Q205 \"resuming re-index (N left)\" line is effectively unreachable in the dialog. Progress shows only in the task manager. [I7, I9]\n(3) Reopen re-attaches to the last run's saved record, which is never cleared: POST /import-queue/clear has no frontend caller. The old run's stage rows, safety lines and per-backup rows stay under the \"Last import\" line, even across restarts. The code's own comment at #ux-imp-last says \"one quiet line … and nothing else\". [I1, I7, I9]\n(4) The checkpoint sentence shows the K the queue resolved at its last run start. That value is initialised to 3 on every restart (import_queue.py:303, 537, 1203), not read from the stored \"Backups per save point\". It disagrees after a change and, on installs whose settings still store the pre-2026-09-16 default 1, from the first boot. [I1, I12]\n(5) NEW: _tuning_done is never saved (import_queue.py:293, 305-312). After a restart, a finished run's row 3 reads \"Merge the search index — not started\" although it ran. [I1, I9]\n(6) NEW: the two ✓ lines, including \"Safe to close or update the app\", appear as soon as the last backup is Done. But the run is saved as finished only after the search-index merge (import_queue.py:634-647). Closing during stage 3 therefore boots into \"interrupted\" with the red \"… start it again.\" line (import_queue.py:345-352; app-backup.js:1420), and stage 3 is not resumed on the next boot, although Q203 says \"resumes stages 3–4\". [I13b]\n(7) NEW: the per-backup state words \"Waiting\", \"Done\", \"Skipped\", \"Interrupted\" and \"Cancelled\" have no locale key, so they are English in all 11 other languages (app-backup.js:1303-1316 via t(variable), which the key scanner cannot see). [I11]\n(8) NEW: a backup held in a checkpoint group writes no persisted report; only the commit path writes one (merge.py:6276-6292 vs 6700-6706). A four-backup K = 3 run therefore leaves two history rows, and backups 1–2's figures survive only in the end-of-run result block, which a reopen clears. [I10]\n(9) NEW: Verify pressed during a running import. The volume manager is busy, so the POST 409s. _uxImStartGuarded reads status 'running' as a started verify, and the one chain switches away from the run (app-backup.js:1137-1178). Pressed BETWEEN two backups of a multi-backup run (manager idle), a real verify could start and make the next backup fail with \"A volume backup/restore is already running.\" (volume_job.py:216-228). That is why I13 probes it only on a single-backup run.\n\nWORDING / i18n: Q205 quotes \"resuming re-index (N left)\"; the shipped strings are \"resuming re-index — {done} of {total} articles\" and \"{n} articles left to re-index\". The task-manager label \"finishing the re-index of imported articles\" and its \"import <n> (<m> article(s))\" detail (backup_v2.py:1086, ~991) are English in all 12 languages. History rows print the raw kind (\"restore\"). The persisted report is English-only Markdown, and its heading uses the report's own kind, which may not read \"restore\". The brief said the per-backup PATH from the removed Details block 'moves into the persisted report'; I found no path line in render_import_report_markdown, so it may not be visible anywhere now.\n\nOTHER: the Import dialog is modal (showModal), so the top-bar language button can't be used while it is open. The sandbox walk switched language by script; a human must close, switch and reopen (I11). Import, Verify, Scan, the stage-4 re-index and the boot auto-resume make no network calls, so no step goes online and no consent popup is expected. The auto-resume starts only after unlock on an encrypted install, and not at all under OO_NO_SCHEDULER=1 or OO_REINDEX_AUTORESUME=0. OO_IMPORT_CHECKPOINT_K and OO_IMPORT_DEFER_REINDEX in the environment would change what I6–I9 show, and DATABASE_URL would redirect the throwaway to the real database; hence the environment check.\n\nSOURCES READ: docs/product/RELEASE_0.4_GATE.md (board line 55, §2b Row I 420-439, amendment log 909/932); docs/plans/2026-09-12-beta-pathway/S04-02_import-lifecycle-and-fresh-page.md; docs/audit/14_IMPORT_LIFECYCLE_CLICKTHROUGH_2026-09-16.md and docs/audit/import-lifecycle-clickthrough-2026-09-16/{coverage.csv,findings.csv}; scripts/ui_clickthrough_run.py:1996-2025; scripts/ui_clickthrough_seed.py; src/static/index.html, unlock.html, taskmanager.html, app-backup.js, app-settings.js, app-shell.js, app-core.js, i18n.js, locales/{en,fr,ar,zh}.json; src/backup/import_queue.py, import_reports.py, merge.py, volume_job.py, runlog.py; src/api/backup_v2.py, jobs.py, main.py; src/config/app_settings.py; src/paths.py; src/database/session.py; tests/test_import_lifecycle_ui.py, test_import_lifecycle_stages.py, test_additive_restore_only.py."
+ },
+ "walk": {
+  "row": "I",
+  "environment": {
+   "encrypted": true,
+   "seed": "Sources: scripts/ui_clickthrough_seed.py (default, 463 articles) + scratch seed_extra.py (distinct 160- and 1200-article batches through the real index_article chokepoint), all encrypted with OO_DB_PASSPHRASE. Backups made by the app's own export engine (the calls the Export dialog makes: /api/backup/export-folder -> /v2/volumes/start with verify_after_write -> /export-summary), one passphrase for all. Run 1 (throwaway tgt): 4 CUMULATIVE backups (463/623/783/943 articles) - on current main these carry R24-certified keywords, so no re-index backlog arose. Run 2 (throwaway tgt2): 4 DISTINCT backups of 1,200 articles each whose source index stamps were stripped (scratch strip_stamps.py, emulating pre-2026-09-24 backups) so stage 4 had a 4,800-article backlog; then backup5b (I13a) and backup6 (I13b) into the same throwaway. Run 3 (tgt3, port 8815): the 4 distinct backups again, for the reload/blink/toast checks. Every throwaway was created through the real first-launch flow (English, legal accepted, passphrase walk-pass-2026), so it was encrypted and every relaunch started LOCKED and was unlocked through #pw/#btn-unlock.",
+   "ports": [
+    8814,
+    8815
+   ],
+   "scratch_dir": "/tmp/claude-0/walk/I",
+   "notes": "Chromium (Playwright sync), 1440x950, en/fr/ar/zh + one 375 px en pass; app launched only with the open-omniscience console script, airplane mode kept (no consent popup arose: import/verify/scan/re-index make no network call). Each 4-backup run lasted about 12-14 s and stage 3 (search-index merge) was sub-second, so the dialog's 1 s poll never painted 'row 3 running'. I5's close/reopen x2 were done at 2 s intervals rather than 5 s, and the reload was done on a separate run (run 3), because a run ended before the planned sequence could complete. I13(b) used the step's harsher variant (SIGKILL fired by an API watcher the instant every backup read done while stage 3 ran), because the modal dialog plus the power button plus its confirm cannot land inside a sub-second stage 3. I1 needs the maintainer's REAL install and was not walked. Evidence: /tmp/claude-0/walk/I/report.json, events.jsonl, run_samples.jsonl (run 2), run3_samples.jsonl, i13a_samples.jsonl, run1/ (run 1's events, samples and screenshots), walk1..walk6.py, tgt*.log. Every server I started was killed (the last two were PID 28267 on 8814 and PID 28535 on 8815); no repo file was touched."
+  },
+  "steps": [
+   {
+    "id": "I1",
+    "result": "not-measurable-here",
+    "observed": "No real install exists in this sandbox, so neither the stored K on an old install nor its previous run's record could be read. The same surfaces were measured on the throwaway: K read 3 with the documented hint and hover bubble (I2). The dialog reopened after a run shows the 'Last import' line PLUS the previous run's header, four stage rows, three statements and per-backup rows. Row 4 then reads 'could not be read', and after a restart row 3 reads 'not started' (see I7/I9). On that evidence it is NOT a 'one line and nothing else' fresh page.",
+    "screenshot": "shots/I/I-I7-reopen-en.png"
+   },
+   {
+    "id": "I2",
+    "result": "pass",
+    "observed": "Backups per save point = 3. Hint: 'Higher is faster and loses more work if an import is stopped or crashes.' The #oo-tip bubble begins '1 saves every backup to your corpus as soon as it finishes. Higher copies and checks your corpus once per group…'. Import history reads 'No imports recorded yet.' The Import dialog has an empty #ux-imp-last (no invented line), no stage or per-backup rows and 0 <details>, and shows 'Verified and written to your corpus once every 3 backups — nothing is durable until a save…'.",
+    "screenshot": "shots/I/I-I2-dialog-en.png"
+   },
+   {
+    "id": "I3",
+    "result": "pass",
+    "observed": "Verify on one backup folder with an empty passphrase: 'Verifying…', at most ONE visible progress bar (#ux-imp-bar) at any sample, with ONE progress line 'Verify: Verifying volumes…'. It ended '✓ Backup verified — the set is complete and intact.' / '3 volumes · signature: verified' / 'Parity: 1 · can still lose 1' / 'Method: …'. Scan on the parent: 'Restore corpus backup (encrypted volumes — additive, nothing you already have is overwritten · 15 volumes · 4 sets)', then 'What do you want to import?', the 'Passphrase (to decrypt the corpus backup)' field and the trust-history box appeared, and 'Import selected' was enabled.",
+    "screenshot": "shots/I/I-I3-verified-en.png"
+   },
+   {
+    "id": "I4",
+    "result": "fail",
+    "observed": "As expected: one bar; bold '0/4 imported · 1s' with 'Background collection is paused for this whole import and resumes when it finishes.'; four rows in order: '1. Check the backup and unpack it — 0 of 4 backups · Reassembling the archive…', '2. Merge it into your corpus and save — 0 of 4 backups', '3. Merge the search index — not started', '4. Re-index the imported articles — … open the task manager'. The two • lines were verbatim. Per-backup rows named by folder read '— Running · 1s · stage 1 of 4 · …' and '— Waiting'. Stop and 'Continue in background' were visible, with no 'Show details'. FAIL (Q203): at run start, before anything merged, row 4 read 'complete' and the third line read '✓ Analytics are complete — every imported article is indexed.' in BOTH runs.",
+    "screenshot": "shots/I/I-I4-running-en.png"
+   },
+   {
+    "id": "I5",
+    "result": "fail",
+    "observed": "Passes: two close/reopen cycles during run 2 and one F5 reload during run 3 each found the SAME run (same four rows, not doubled, still counting). Never more than one visible <progress>. The drag selection anchored in the unchanged row 3 survived 10 s (anchor still connected, row 3 text still selected) while running rows were patched. A MutationObserver counted only 2 writes to row 3 over a whole run (initial + done). FAIL (R2 blink/overlap): while backups are staged, the header's 'Merged, not yet saved: N — …' line is an inline <span class=\"note\">. It is re-created on every 1 s tick (the header carries the elapsed seconds), so its .note slide-in animation replays every second (animationstart at 6255 ms and 7271 ms in a 2.5 s staged window), and its padded, shadowed box overlaps the '0/4 imported · 7s' line above it.",
+    "screenshot": "shots/I/I-I6-staged-en.png"
+   },
+   {
+    "id": "I6",
+    "result": "pass",
+    "observed": "Run 2 (K = 3): backups 1 and 2 turned 'Merged — not yet saved' with a var(--warn) amber dot. The header gained 'Merged, not yet saved: 1 — written to your corpus at the next checkpoint, one every 3 backups.' (then 2) and stayed '0/4 imported'. Row 1 advanced (1 → 2 → 3 of 4) while row 2 stayed '0 of 4 backups'. When backup 3 finished, all three turned green 'Done' in the same sample, row 2 jumped to '3 of 4 backups' and the header to '3/4 imported'. At the same moment row 4 changed from 'complete' to '3,600 articles left to re-index' and the third line to 'Analytics are still catching up: 3,600 imported article(s) carry no keywords until the re-index finishes.' Backup 4 went straight to Done. No backup read Skipped. Run 1 showed the same group behaviour, but row 4 stayed 'complete' there because R24-certified backups create no backlog.",
+    "screenshot": "shots/I/I-I6-staged-en.png"
+   },
+   {
+    "id": "I7",
+    "result": "fail",
+    "observed": "Passes: with all four Done the first two lines turned ✓ 'The import files can be removed — …' and ✓ 'Safe to close or update the app — …', and row 3 read 'done' (its 'running' state is sub-second and was never painted by the 1 s poll). With the dialog CLOSED before the end (run 3), exactly ONE toast 'Import complete.' appeared. With the dialog open at the end: the result block ('✓ Import successful', '4 of 4 backups imported · 14 s in total') and no toast. On reopen: no result block, and 'Last import · September 26, 2026 at 06:11 PM · 1,200 articles · open report' (backup 4's own report; run 1 showed '0 articles' for a 933-article run). FAIL (Q204): at the end row 4 froze at '3,600 articles left to re-index' while the real backlog was 4,800 and draining. On every reopen row 4 read 'could not be read' and the third line 'Whether analytics have caught up could not be read.', unchanged 4 s later. The reopened dialog also re-renders the whole previous run under the Last import line (R1). The result block said 'Indexing continues in the background: 8,400 article(s) still to index' for a 4,800-article import.",
+    "screenshot": "shots/I/I-I7-reopen-en.png"
+   },
+   {
+    "id": "I8",
+    "result": "pass",
+    "observed": "The 'open the task manager' link in row 4 opened a new tab 'Task manager · FOOS' at /tasks. Processes → 'AI & ANALYSIS': 'running' pill, 'finishing the re-index of imported articles', detail 'import 1 (1200 article(s))', bar '500 / 4800 · 10.4%' → '900 / 4800 · 18.8%' → '1000 / 4800 · 20.8%'. Y = 4,800 did NOT match row 4's last reading of 3,600; that mismatch is the stage-4 freeze defect.",
+    "screenshot": "shots/I/I-I8-taskmanager-en.png"
+   },
+   {
+    "id": "I9",
+    "result": "fail",
+    "observed": "Passes: the drain was at 1000/4800 (3,800 pending). Top-bar power → confirm 'Shut down the app? …' → the server exited. On relaunch the app came up LOCKED and was unlocked with the throwaway passphrase. With no click, Processes listed 'finishing the re-index of imported articles · import 2 (1200 article(s)) · 0 / 3600 · 0%' 8.1 s after unlock. Batch 1 had finished before exit, so 3,600 was exactly what remained. It counted to 3600/3600 (done, 0 failed). Omni search for 'Batch r elections 0' found 'Batch r elections 0 — en'. Import history still listed the reports. FAIL (Q205 in the dialog): opened while the resumed re-index was running, row 4 read 'could not be read' (never 'resuming re-index …'), the third line 'Whether analytics have caught up could not be read.', and row 3 '3. Merge the search index — not started' although it had run.",
+    "screenshot": "shots/I/I-I9-import-after-restart-en.png"
+   },
+   {
+    "id": "I10",
+    "result": "pass",
+    "observed": "After Advanced → Data & backup, Import history listed newest first 'September 26, 2026 at 06:11 PM · restore · 1,200 articles · open report' and '… 06:10 PM · restore · 1,200 articles · open report', with no 'did not complete'. The top row matched the dialog's Last import line. 'open report' opened a new tab with plain Markdown '# Import report (oo-backup-3)' / '**1,200 new articles**' / per-table breakdown (English). As the code predicted, the four-backup run left only TWO rows (backups 3 and 4), and backup 3's row counts only its own 1,200 although its save committed 3,600 articles; backups 1–2 have no persisted figure. The report carries no backup folder/path line, and both reports are headed '(oo-backup-3)'.",
+    "screenshot": "shots/I/I-I10-history-en.png"
+   },
+   {
+    "id": "I11",
+    "locales": [
+     "fr",
+     "ar",
+     "zh",
+     "en"
+    ],
+    "result": "fail",
+    "observed": "Translated in each language: the Last import line ('Dernière importation · 26 septembre 2026 à 18:11 · 1,200 articles · ouvrir le rapport' / 'آخر استيراد · …' / '上次导入 · …'), the checkpoint sentence ('Vérifié et écrit dans votre corpus une fois toutes les 3 sauvegardes —…'), the four row titles, the three statements, 'Historique des imports' / 'سجل الاستيراد' / '导入历史', the K label, hint and hover bubble. In ar the dialog is direction rtl with the dots on the right. Back in English everything was English. FAIL: the per-backup state word 'Done' stayed English in fr, ar and zh. Per the locale files, 'Done', 'Waiting', 'Skipped', 'Interrupted' and 'Cancelled' have no key in any of en/fr/ar/zh. Also in ar the backup folder labels are bidi-scrambled ('OpenOmniscience_Backup_2 — Done · 4s_202609261808'). Known leftovers seen: raw 'restore' in history rows; numbers formatted '1,200' in fr (browser locale, not UI locale).",
+    "screenshot": "shots/I/I-I11-dialog-ar.png"
+   },
+   {
+    "id": "I12",
+    "result": "fail",
+    "observed": "The override is visible and editable. 1 → Tab → 'Preferences saved.'; /api/settings import_checkpoint_k = 1, and the box read 1 after a reload. The Import dialog still said 'Verified and written to your corpus once every 3 backups — …' instead of 'Every backup is verified and written to your corpus as soon as it finishes.', because /import-queue/status reported checkpoint.k = 3. Undo: 3 → 'Preferences saved.', box reads 3, setting = 3.",
+    "screenshot": "shots/I/I-I12-k1-dialog-en.png"
+   },
+   {
+    "id": "I13",
+    "result": "fail",
+    "observed": "(a) With a single-backup import in 'Running · 0s · stage 1 of 4', Verify was pressed once. POST /v2/volumes/verify returned 409, and Verify took over the dialog's one chain: status 'Verifying…', one bar, and a line 'Verify: Reassembling the archive… / Merging (additive)… / Committing… · phase 11 of 18' describing the IMPORT's own restore. The header, stage rows and backup row froze at '0/1 imported', '0 of 1 backups', 'Running · 0s · stage 1 of 4' for 30 s, although the import finished at about 6 s. It ended with 'No verification report was returned.'. Close/reopen restored the rows ('1/1 imported', row 3 'done'). There was never a second bar. (b) SIGKILL landed while the only backup read done and stage 3 ran (API: search_index running, live 'merging the search index after the import'), i.e. the state in which the dialog shows both ✓ lines. After relaunch + unlock the dialog showed '1/1 imported · 27s' plus the red 'This import was interrupted when the app stopped. It cannot resume (the passphrase is never stored) — start it again.', and row 3 read 'not started', although the backup's 1,200 articles were committed (history row 06:18 · 1,200 articles). The re-index auto-resumed (0/1200 running 5.5 s after unlock).",
+    "screenshot": "shots/I/I-I13b-after-relaunch-en.png"
+   },
+   {
+    "id": "I-375",
+    "locales": [
+     "en"
+    ],
+    "result": "fail",
+    "observed": "At 375 px: document scrollWidth − clientWidth = 0 on Settings → Data & backup and with the Import dialog open (no page-level horizontal scroll). Inside the dialog, the 'Folder to import from' input is squeezed to about 40 px (shows '/m') beside Browse/Scan/Verify, and the long backup folder labels overflow the dialog by 46 px and are cut at its right edge.",
+    "screenshot": "shots/I/I-375-dialog-en.png"
+   }
+  ],
+  "page_errors": [],
+  "http_errors": [
+   "GET /api/system/data-location -> 503 (first launch on 8814, twice, and on 8815; the lock gate answers 503 because the path is not on ALLOWED_WHILE_LOCKED)",
+   "POST /api/backup/v2/volumes/verify -> 409 (I13a, Verify pressed during a running import; expected by the code, part of the I13a defect)",
+   "net::ERR_CONNECTION_REFUSED console errors on the app and /tasks tabs right after the deliberate shutdown / SIGKILL (expected)"
+  ],
+  "junk_text": [],
+  "defects": [
+   {
+    "title": "Stage-4 reading freezes when the run ends and reads 'could not be read' on every reopen, even while the re-index runs (Q204/Q205)",
+    "severity": "P2",
+    "step_ids": [
+     "I7",
+     "I9",
+     "I8"
+    ],
+    "repro": "Import four uncertified (pre-R24) backups at K = 3 with the dialog open and wait until the run ends. Then close and reopen Import…; also relaunch mid-drain, unlock, and open Import… while Processes shows the re-index running.",
+    "expected": "Row 4 counts the re-index from the resume-status endpoint ('resuming re-index — X of Y' / 'N articles left to re-index'), and the third line reads 'Analytics are still catching up: …' until stage 4 is done, including after a reopen or a restart.",
+    "actual": "At the end row 4 froze at '3,600 articles left to re-index' while the real backlog was 4,800 and draining (task manager 500 → 1000 / 4800). On every reopen, and after the restart while the drain was running, row 4 read 'could not be read' and the third line 'Whether analytics have caught up could not be read.', unchanged 4 s later.",
+    "evidence": "I-I7-reopen-en.png, I-I9-import-after-restart-en.png, I-I8-taskmanager-en.png, events.jsonl (I7_all_done, I7_reopen_4s, I9_import_dialog_3s). src/static/app-backup.js:762 (reopen nulls _uxImRx), 1233-1251 (read only inside a running-queue tick; chain stops at terminal), 1697-1705 (_uxImReattach renders without reading)."
+   },
+   {
+    "title": "'✓ Analytics are complete' and row 4 'complete' are shown at the START of an import, before anything is merged (Q203)",
+    "severity": "P2",
+    "step_ids": [
+     "I4"
+    ],
+    "repro": "On an install with no re-index backlog, start any corpus import and read the dialog in the first seconds.",
+    "expected": "Q203: the analytics statement becomes true only after stage 4; it must not read ✓ complete while the import has not merged anything.",
+    "actual": "Row 4 reads '4. Re-index the imported articles — complete' and the third line '✓ Analytics are complete — every imported article is indexed.' at 0/4 imported. Seen in both four-backup runs.",
+    "evidence": "I-I4-running-en.png (and run1/I-I4-running-en.png); src/static/app-backup.js:1510-1529 (_uxImReindexBits: backlog 0 → 'complete'), 1553-1564 (_uxImStatements reads only the backlog)."
+   },
+   {
+    "title": "Reopening the Import dialog is not a fresh page: the previous run's header, stage rows, statements and per-backup rows re-render under 'Last import' (R1/Q201)",
+    "severity": "P2",
+    "step_ids": [
+     "I7",
+     "I9",
+     "I1"
+    ],
+    "repro": "Finish any import, close the dialog (or restart the app), and reopen Settings → Data & backup → Import….",
+    "expected": "One quiet line 'Last import · <date> · N articles · open report' and nothing else (index.html comment at #ux-imp-last; Q201 = a).",
+    "actual": "Beneath the line: '4/4 imported · 14s', the four numbered stage rows, the three statements and four per-backup 'Done' rows. After a restart it also shows row 3 'not started', and after an interrupted run the red 'interrupted … start it again.' line.",
+    "evidence": "I-I7-reopen-en.png, I-I9-import-after-restart-en.png, I-I13b-after-relaunch-en.png; src/static/app-backup.js:1697-1705 (_uxImReattach renders any saved run); POST /api/backup/import-queue/clear has no frontend caller."
+   },
+   {
+    "title": "'✓ Safe to close or update the app' appears before the run is recorded finished; a stop during stage 3 boots into 'interrupted … start it again' (Q203)",
+    "severity": "P2",
+    "step_ids": [
+     "I13"
+    ],
+    "repro": "Import one backup. The moment its row reads Done while stage 3 (search-index merge) still runs, which is when both ✓ lines are due, stop the app (SIGKILL used here; stage 3 was sub-second). Relaunch, unlock, open Import….",
+    "expected": "After '✓ Safe to close or update the app', closing costs nothing and nothing asks to redo the import; stages 3-4 resume on the next boot.",
+    "actual": "Red 'This import was interrupted when the app stopped. It cannot resume (the passphrase is never stored) — start it again.' under '1/1 imported · 27s', and row 3 'Merge the search index — not started', although the backup's 1,200 articles were committed (history row 06:18 · restore · 1,200 articles). Stage 3 is not resumed. Only the re-index auto-resumed.",
+    "evidence": "I-I13b-after-relaunch-en.png, events.jsonl (I13b_kill: items done, search_index running, live 'merging the search index after the import'; I13b_dialog_after_relaunch); src/static/app-backup.js:1533-1551 (✓ lines keyed on item state), src/backup/import_queue.py:634-647 (run saved done only after _tune_after_run), 345-352 (running → interrupted on boot)."
+   },
+   {
+    "title": "The dialog's checkpoint sentence ignores the stored 'Backups per save point' until a run starts",
+    "severity": "P2",
+    "step_ids": [
+     "I12"
+    ],
+    "repro": "Settings → Data & backup → set 'Backups per save point' to 1 and tab out ('Preferences saved.'), then open Import….",
+    "expected": "The sentence never disagrees with the K the next run will use: 'Every backup is verified and written to your corpus as soon as it finishes.'",
+    "actual": "The sentence still reads 'Verified and written to your corpus once every 3 backups — …'. /api/settings import_checkpoint_k = 1 but /import-queue/status checkpoint.k = 3.",
+    "evidence": "I-I12-k1-dialog-en.png, events.jsonl I12_k1; src/static/app-backup.js:830-843; src/backup/import_queue.py:303 (K initialised to 3), 537 (re-read only at run start), 1203."
+   },
+   {
+    "title": "End-of-run result block over-counts the re-index backlog ('8,400 article(s) still to index' after a 4,800-article import)",
+    "severity": "P2",
+    "step_ids": [
+     "I7"
+    ],
+    "repro": "Import four distinct 1,200-article uncertified backups at K = 3 with the dialog open until the run ends.",
+    "expected": "The indexing caveat states the real pending count (4,800, the drain's own total).",
+    "actual": "'Indexing continues in the background: 8,400 article(s) still to index.' The block sums each committed item's whole-backlog snapshot (3,600 at the group save + 4,800 at backup 4).",
+    "evidence": "events.jsonl I7_all_done (summary) vs I8_samples (total 4800); src/static/app-backup.js:2232-2241 (pend += r.articles_pending per item)."
+   },
+   {
+    "title": "Held backups leave no persisted figures; history and the 'Last import' line show only per-report counts of a multi-backup run",
+    "severity": "P2",
+    "step_ids": [
+     "I10",
+     "I7"
+    ],
+    "repro": "Import four distinct backups at K = 3, reopen the dialog, then open Settings → Data & backup → Import history.",
+    "expected": "The persisted record, which R1 makes the only home of the detail, accounts for what each backup brought, and the Last import line says what the import added.",
+    "actual": "Only two history rows (backups 3 and 4), each '1,200 articles'. Backup 3's row omits the 2,400 articles of backups 1–2 that its save committed, and 'Last import' reads '1,200 articles' for a 4,800-article import. With cumulative backups (run 1) it read '0 articles' for a run that grew the corpus by 933. The report also names no backup folder/path, and both reports are headed '(oo-backup-3)'.",
+    "evidence": "I-I10-history-en.png, I-I10-report-en.png, run1/I-I7-reopen-en.png; src/backup/merge.py:6276-6292 vs 6700-6706 (report written only on the commit path)."
+   },
+   {
+    "title": "Verify pressed during a running import hijacks the one poll chain and freezes the run's rows",
+    "severity": "P3",
+    "step_ids": [
+     "I13"
+    ],
+    "repro": "Start a single-backup import; while its row reads 'Running · … stage 1 of 4', press Verify once and watch for 30 s.",
+    "expected": "Q206/R2: no competing messages, and the run's rows keep updating.",
+    "actual": "POST /v2/volumes/verify 409. 'Verifying…' plus 'Verify: Merging (additive)… / Committing… · phase 11 of 18' then describe the import's own restore. The header and rows froze at '0/1 imported', 'Running · 0s · stage 1 of 4' for 30 s after the import had finished, and the result was 'No verification report was returned.'. Close/reopen restored the rows.",
+    "evidence": "I-I13a-verify-pressed-en.png, I-I13a-after30s-en.png, i13a_samples.jsonl; src/static/app-backup.js:900-904 + 1137-1147 (409 'running' treated as a started verify), 1167-1178."
+   },
+   {
+    "title": "Staged header line re-animates every second and overlaps the '0/4 imported' header (R2 blink)",
+    "severity": "P3",
+    "step_ids": [
+     "I5",
+     "I6"
+    ],
+    "repro": "Import ≥ 2 backups at K = 3 and watch the dialog header while a backup reads 'Merged — not yet saved'.",
+    "expected": "No blinking or overlapping status text (R2).",
+    "actual": "The 'Merged, not yet saved: N — …' line is an inline <span class=\"note\">, whose .note rule gives it 11px padding, background, shadow and a 0.22 s slide-in animation. The header HTML includes the elapsed seconds, so it is rewritten each 1 s tick and the animation replays every second (animationstart at 6255 and 7271 ms). The box visibly covers the '0/4 imported · 7s' line.",
+    "evidence": "I-I6-staged-en.png (crop-I6-header.png), events.jsonl I7_close_before_end/I7_toasts_run3 anims; src/static/app-backup.js:1383-1390 (stagedLine span.note) and 1416-1421 (note rewritten when its HTML changes); src/static/app.css:1391-1393 (.note padding/shadow/animation)."
+   },
+   {
+    "title": "Row 3 reads 'not started' after a restart although the search-index merge ran",
+    "severity": "P3",
+    "step_ids": [
+     "I9"
+    ],
+    "repro": "Finish an import, restart the app, unlock, open Import….",
+    "expected": "Row 3 reads 'done' for a run that completed stage 3.",
+    "actual": "'3. Merge the search index — not started' beside '4/4 imported' and two ✓ lines.",
+    "evidence": "I-I9-import-after-restart-en.png; src/backup/import_queue.py:293, 305-312 (tuning_done not persisted), 1136-1144."
+   },
+   {
+    "title": "Per-backup state words are untranslated (Done/Waiting/Skipped/Interrupted/Cancelled)",
+    "severity": "P3",
+    "step_ids": [
+     "I11"
+    ],
+    "repro": "Switch the UI to fr, ar or zh and open Import… after an import.",
+    "expected": "Each backup's outcome is in the UI language.",
+    "actual": "'… — Done · 4s · étape 2 sur 4' (fr), '… — Done · … المرحلة 2 من 4' (ar), '… — Done · … 第 2 步，共 4 步' (zh). None of the keys Done/Waiting/Skipped/Interrupted/Cancelled exist in en/fr/ar/zh.json ('Running' and 'Merged — not yet saved' do).",
+    "evidence": "I-I11-dialog-fr.png, I-I11-dialog-ar.png, I-I11-dialog-zh.png; src/static/app-backup.js:1303-1316 (labels through t(variable)); src/static/locales/{fr,ar,zh}.json."
+   },
+   {
+    "title": "Arabic (RTL): backup folder labels are bidi-scrambled in the per-backup rows",
+    "severity": "P3",
+    "step_ids": [
+     "I11"
+    ],
+    "repro": "Switch to العربية and open Import… with a run listed.",
+    "expected": "Each row shows its folder name intact, e.g. '202609261808_OpenOmniscience_Backup_2'.",
+    "actual": "Rendered as 'OpenOmniscience_Backup_2 — Done · 4s_202609261808': the digit prefix is detached and drawn after the state. The label is not direction-isolated.",
+    "evidence": "I-I11-dialog-ar.png; src/static/app-backup.js:1446-1447 (label in <b> without dir=auto/bdi)."
+   },
+   {
+    "title": "375 px: Import dialog's folder field collapses to ~40 px and backup labels are clipped",
+    "severity": "P3",
+    "step_ids": [
+     "I-375"
+    ],
+    "repro": "At 375 px wide open Settings → Data & backup → Import… after an import.",
+    "expected": "No clipped text; the folder field usable.",
+    "actual": "The page has no horizontal scroll (0). Inside the dialog, #ux-imp-src shows only '/m' beside Browse/Scan/Verify, and long backup labels overflow the dialog by 46 px, cut at its right edge.",
+    "evidence": "I-375-dialog-en.png; events.jsonl W375 (dlgScroll 46)."
+   },
+   {
+    "title": "A finished backup's row keeps '· stage 2 of 4'",
+    "severity": "P3",
+    "step_ids": [
+     "I6",
+     "I7"
+    ],
+    "repro": "Any K = 3 import; read the per-backup rows after they turn Done.",
+    "expected": "A Done row does not read as mid-way through the stages.",
+    "actual": "'202609261808_OpenOmniscience_Backup_2 — Done · 4s · stage 2 of 4' for every finished backup.",
+    "evidence": "I-I7-reopen-en.png; src/static/app-backup.js:1442-1444 (stage suffix rendered regardless of state)."
+   },
+   {
+    "title": "First launch requests /api/system/data-location and gets 503 (outside row I)",
+    "severity": "P3",
+    "step_ids": [
+     "I2"
+    ],
+    "repro": "Boot a fresh data dir and accept the legal step on /unlock.",
+    "expected": "The data-location probe answers during the fresh state, or is not requested.",
+    "actual": "503 {\"locked\": true} on both throwaways. The path is not on ALLOWED_WHILE_LOCKED and app_is_locked() covers 'fresh', so the step falls through to the passphrase. Here OO_DATA_DIR was set, so skipping was correct, but the probe cannot succeed on any fresh install. To confirm in its own row.",
+    "evidence": "events.jsonl http_error (8814 and 8815); src/api/unlock.py:76-92, src/api/main.py:751-762, src/static/unlock.html:344."
+   }
+  ],
+  "not_measurable": [
+   "I1 on the maintainer's REAL install: stored K on a pre-2026-09-16 settings file, and the real last run's record.",
+   "Corpus-scale timings (gate 'Remaining', brief operator steps 1-2): here each backup took about 3-4 s and stage 3 was sub-second. 'Row 3 running' was never painted by the 1 s poll, so '✓ lines while row 3 still runs' is confirmed only from the API state plus the rendering code, not on screen.",
+   "I13(b) with the UI power button: a sub-second stage 3 cannot be hit through the modal dialog + power button + confirm; SIGKILL was used instead.",
+   "Closes (2) test half, Closes (3) route deletion, Q217, Q221, Q207 ruling: not clickable (as listed in the step plan)."
+  ],
+  "summary": "The click-through clause does NOT close on this walk. The four stage rows, the K = 3 group behaviour, the one bar, rows patched in place, reattach after reopen and reload, one toast, the task-manager drain and its boot auto-resume all worked on a real encrypted throwaway. But the dialog breaks rulings the clause names. Q203: '✓ Analytics are complete' at run start, and '✓ Safe to close' before the run is recorded finished, so a stop in stage 3 boots into 'interrupted … start it again'. Q204/Q205: stage 4 freezes, then reads 'could not be read' on every reopen and after a restart, never 'resuming re-index'. R1/Q201: reopen re-renders the whole previous run. Also untranslated per-backup states, a K sentence that ignores the setting, and an over-counted result block. Corpus-scale timing and the maintainer's real-install I1 remain not measurable here."
+ },
+ "recheck": {
+  "row": "I",
+  "verdicts": [
+   {
+    "title": "Stage-4 row freezes at run end, then reads 'could not be read' on every reopen and after a restart, even while the re-index runs (Q204/Q205)",
+    "verdict": "confirmed",
+    "reason": "Reproduced on a fresh encrypted instance (port 8816, four distinct 1,200-article uncertified backups, K = 3, dialog open). At the run's end row 4 read '3,600 articles left to re-index' while /reindex-backlog/resume/status said running 0/4800 (pending 4800). With the dialog still open it was unchanged 8 s later, while the API had moved to 700/4800. Closing and reopening gave row 4 'could not be read' and the third line 'Whether analytics have caught up could not be read.', unchanged after 7 s, while the API read running 1200/4800. After a SIGKILL and relaunch, the re-index auto-resumed (API running 0/1200) but the dialog again said 'could not be read'. It never said 'resuming re-index'. Evidence is in /tmp/claude-0/walk/I-recheck/shots/: D1-end-open-en.png, D3-reopen-en.png, D4-after-relaunch-en.png, and in events.jsonl under D1_end_api, D1_end_plus8, D1_reopen_7s and D4_api_after_relaunch.",
+    "root_cause": "src/static/app-backup.js:1238-1248: _uxImTickQueue is the only reader of /reindex-backlog/resume/status. It is paced to 5 s, so the terminal tick usually skips the read. At :1253 it stops the chain on any terminal queue state, so stage 4 is never read again once the run ends. The drain only starts after the run's window closes (import_queue.py _run, around line 520). openUnifiedImport clears the read (:762, _uxImRx = null). _uxImReattach (:1697-1703) then renders with it null and arms the chain only when state === 'running' (:1702). A finished or interrupted run, including the post-boot auto-resume, can therefore only render 'could not be read' (_uxImReindexBits :1511).",
+    "suggested_fix": "Decouple stage 4 from the queue's run state. On reattach and on the terminal tick, read resume/status unpaced before rendering. While the dialog is open and rx.state is 'running' or the backlog is above 0, keep a 5 s stage-4-only poll alive on the same timer and generation even though the queue is terminal. Render 'resuming re-index — X of Y' from that read, and stop the poll when rx is idle with a backlog of 0.",
+    "severity": "P2"
+   },
+   {
+    "title": "'✓ Analytics are complete' and row 4 'complete' are shown at the START of an import, before anything is merged (Q203)",
+    "verdict": "confirmed",
+    "reason": "Reproduced 0.22 s after 'Import selected' on a target with no backlog. The dialog read '0/4 imported', row 1 '0 of 4 backups · Verifying volumes…', row 4 '4. Re-index the imported articles — complete', and '✓ Analytics are complete — every imported article is indexed.' Q203 = a says 'Analytics complete: after stage 4'. At K = 3 on the field's timings (about 47-56 min of prepare per item), this ✓ would sit on screen for hours before the first checkpoint. Screenshot: shots/D2-start-en.png; events.jsonl D2_first_stages.",
+    "root_cause": "src/static/app-backup.js:1561-1569: _uxImStatements decides the third statement from rx.backlog.articles_pending alone, and :1526 (_uxImReindexBits) returns 'complete' when left === 0. Neither checks that the run's items are committed or that stages 1-3 are finished. The first two statements are gated on `saved` (:1553), but this one is not.",
+    "suggested_fix": "Gate the ✓ on `saved` (every item done or skipped), on the run no longer running (state !== 'running', so stage 3 is finished), and on rx.state !== 'running' with a backlog of 0. Until then show a pending bullet such as '• Analytics are complete once the re-index (stage 4) finishes', with row 4 reading 'not started'. The new string needs ×12 locales.",
+    "severity": "P2"
+   },
+   {
+    "title": "Reopening the Import dialog is not a fresh page: the previous run's header, stage rows, statements and per-backup rows re-render under 'Last import' (R1/Q201)",
+    "verdict": "confirmed",
+    "reason": "Reproduced after a finished run. The reopened dialog showed the 'Last import' line and, beneath it, '4/4 imported · 14s', all four stage rows, the three statements and four 'Done' backup rows. After a graceful restart it showed the same, with row 3 'not started'. After a killed run it added the red 'interrupted' line. R1 says reopening must show a fresh, clean page where 'the previous run's message and analytics do not remain', and Q201 = a says 'one quiet line … and nothing else'. The 2026-09-16 audit's check only asserted that #ux-imp-summary was empty and #ux-imp-last held one line. It never looked at #ux-imp-queue, which is how this passed there. Screenshots: shots/D3-reopen-en.png, D10-after-restart-en.png.",
+    "root_cause": "src/static/app-backup.js:1697-1703: _uxImReattach renders ANY persisted run that has items (`if (!st || !(st.items||[]).length) return; _uxImRenderQueue(st);`), not only a running one. The server keeps the finished run in the queue file (import_queue.py _save/_load_persisted), and POST /api/backup/import-queue/clear (backup_v2.py:750, 'so the dialog can start clean') has no frontend caller.",
+    "suggested_fix": "In _uxImReattach, call _uxImRenderQueue and _uxImWatchQueue only when st.state === 'running'. For any terminal state, hide #ux-imp-queue and leave only the quiet line. Alternatively, clear a finished run server-side when the dialog opens. An interrupted run with a genuinely interrupted item can keep one quiet line of its own.",
+    "severity": "P2"
+   },
+   {
+    "title": "'✓ Safe to close or update the app' is shown before the run is recorded finished; a stop during stage 3 boots into 'interrupted … start it again' and stage 3 is never resumed (Q203)",
+    "verdict": "confirmed",
+    "reason": "Reproduced with an API watcher polling every 10 ms. It sent SIGKILL at the moment the only backup read 'done' and stages.search_index was 'running' (live phase 'tuning', 'merging the search index after the import'). In that state the dialog shows both ✓ lines. After relaunch and unlock, the dialog showed '1/1 imported · 22s' plus the red 'This import was interrupted when the app stopped. It cannot resume (the passphrase is never stored) — start it again.', and row 3 read 'not started'. Yet the backup had committed: import-reports lists restore-…-6.json with 1,200 articles, outcome ok, and the API item state is 'done'. Q203 says close is safe after the swap and that a durable cursor resumes stages 3-4 on the next boot. Stage 3 is not resumed, and the UI tells the operator to redo a committed import. On a large corpus stage 3 is an FTS optimize that runs for minutes, so this window is real on the operator's machine. Screenshot: shots/D4-after-relaunch-en.png; events D4_kill and D4_api_after_relaunch.",
+    "root_cause": "src/backup/import_queue.py:634-647: _drive calls _tune_after_run() (stage 3) while the persisted state is still 'running', and saves the terminal state only afterwards. _load_persisted (:345-349) maps any 'running' state to 'interrupted' without checking whether every item had already committed. app-backup.js:1420 shows the 'start it again' line from st.state alone, while :1553-1560 grants the ✓ lines from item states. Nothing on boot re-runs optimize_after_bulk.",
+    "suggested_fix": "In _load_persisted, when state == 'running' and no item is running, staged or queued (all done/skipped/error), restore the run as 'done' with tuning not done instead of 'interrupted', and schedule optimize_after_bulk once off the startup path (or run it at the next run's end). On the UI side, show the 'start it again' line only when some item's state is 'interrupted'.",
+    "severity": "P2"
+   },
+   {
+    "title": "The dialog's checkpoint sentence ignores the stored 'Backups per save point' until a run starts",
+    "verdict": "confirmed",
+    "reason": "Reproduced by setting 1 in #set-checkpoint-k and pressing Tab: 'Preferences saved.', and /api/settings import_checkpoint_k = 1. The Import dialog still said 'Verified and written to your corpus once every 3 backups — …' because /import-queue/status checkpoint.k = 3. The next run would use 1, since _drive re-reads the setting. The manager is built with the shipped default, so after every boot the sentence reads 3 whatever is stored. An operator who stored 6 would be told a crash costs at most 3 backups when it can cost 6. That under-states the risk in the very disclosure Q216 put there, and the code comment claims the sentence 'can never disagree with the number the run will use'. Screenshot: shots/D5-k1-dialog-en.png; events D5_k1_saved and D5_dialog_after_k1.",
+    "root_cause": "src/backup/import_queue.py:303 initialises _checkpoint_k to CHECKPOINT_K_DEFAULT. It is re-resolved only at run start (:537, `self._checkpoint_k = import_checkpoint_k()`), and status() reports that cached value (:1203). src/static/app-backup.js:830-843 (_uxImCheckpointNote) renders status().checkpoint.k.",
+    "suggested_fix": "In status(), report `import_checkpoint_k()` whenever no run is in flight (state != 'running') and keep the captured K during a run. Alternatively, have _uxImCheckpointNote read the same resolution the next run will use.",
+    "severity": "P2"
+   },
+   {
+    "title": "End-of-run result block over-counts the re-index backlog ('8,400 article(s) still to index' after a 4,800-article import)",
+    "verdict": "confirmed",
+    "reason": "Reproduced. With the dialog open at the end, the result block said 'Indexing continues in the background: 8,400 article(s) still to index' beside '4,800 Articles awaiting indexing' in the same block, while the API backlog was 4,800. The per-item reindex_deferred.articles_pending values were null, null, 3600, 4800 (the two held items carry none), and the renderer sums them. At K = 1 it would be worse: 1,200 + 2,400 + 3,600 + 4,800 = 12,000. Evidence: events D1_end_ui (summary) and D6_per_item_pending.",
+    "root_cause": "src/static/app-backup.js:2232-2237 sums `r.articles_pending` across items. src/backup/volume_job.py:95-110 (hand_off_reindex) fills that field from reindex_backlog(), the WHOLE corpus backlog at that moment rather than this item's contribution, so each committed item's snapshot already includes the earlier ones.",
+    "suggested_fix": "Do not sum snapshots of one quantity. Use the latest committed item's value (or the max), or better, read /reindex-backlog/resume/status once when rendering the block. Keep the 'could not be read' branch when none is readable.",
+    "severity": "P2"
+   },
+   {
+    "title": "Held backups leave no persisted report; history and the 'Last import' line show only per-report counts of a multi-backup run",
+    "verdict": "confirmed",
+    "reason": "Reproduced. After a four-backup K = 3 run, import history listed only two rows, restore-…-3.json and restore-…-4.json, each '1,200 articles'. Backups 1-2 have no record at all, and the group's commit report counts only its own 1,200, although that save committed 3,600. The fresh page's 'Last import · … · 1,200 articles' then describes a 4,800-article import. The persisted report also carries no source folder or path: its keys are artifact_kind, batch_id, plan and so on. That contradicts the removal note at app-backup.js:1621-1627, which says the path now 'rides the persisted import report'. One sub-claim is by design: the '(oo-backup-3)' heading is the artifact KIND (import_reports.py:83-84, report['artifact_kind']), not a backup name, so identical headings are expected. Screenshot: shots/D7-history-en.png; events D7_history.",
+    "root_cause": "src/backup/merge.py:6276-6292: on hold_after_merge, run_restore returns the report before the commit path, and persist_import_report runs only at :6700-6706 on the commit path, with that item's own plan. src/backup/import_queue.py:822 (_commit_group) commits the held items without persisting a report for them. Nothing adds the item path to the report.",
+    "suggested_fix": "In _commit_group (or _after_item when a group commits), persist each held item's report once its checkpoint lands, marked committed-at-checkpoint, and add the source path/label to every persisted report. Alternatively, persist one run-level report that aggregates the items, and have the 'Last import' line read the run total.",
+    "severity": "P2"
+   },
+   {
+    "title": "Verify pressed during a running import hijacks the one poll chain and freezes the run's rows",
+    "verdict": "confirmed",
+    "reason": "Reproduced with a single-backup import at 'Running · 0s · stage 1 of 4'. One Verify click sent POST /v2/volumes/verify, which returned 409, followed immediately by GET /v2/volumes/status 200. The dialog then read 'Verifying…' and 'Verify: Snapshotting your corpus… · phase 4 of 18', which describes the IMPORT's restore. The run's header and row stayed at '0/1 imported · 0s' and 'Running · 0s · stage 1 of 4 · Verifying volumes…' for the whole 32 s window, although the API said the queue was done by about 17 s. The ending was 'No verification report was returned.', with no 'Import complete' result and no toast. There was still only one bar. Screenshots: shots/D8-verify-pressed-en.png, D8-after30s-en.png; d8_samples.jsonl.",
+    "root_cause": "src/static/app-backup.js:1137-1146 (_uxImStartGuarded) treats ANY live volumes job as proof that its own start landed. After the 409 it reads /v2/volumes/status, finds the import's restore job 'running' and falls through, so _uxImVerify (:896-900) calls _uxImWatchVerify (:1167-1178). That switches the single chain's subject away from 'queue', and nothing re-arms the queue watch when the verify promise settles.",
+    "suggested_fix": "Check the job's own kind or op in _uxImStartGuarded (accept only a live verify job) so a 409 from a running restore surfaces as 'an import is running'. Also disable the Verify button while the queue is running, and re-arm _uxImWatchQueue after a verify settles if the queue is still running.",
+    "severity": "P3"
+   },
+   {
+    "title": "Staged header line re-animates every second and overlaps the 'N/4 imported' header (R2 blink/overlap)",
+    "verdict": "confirmed",
+    "reason": "Reproduced. While backups were staged, the 'Merged, not yet saved: N — …' span fired the slidein animationstart 7 times at about 1 s intervals (19714, 20747, 21764 … 25830 ms). Its computed style is display:inline, padding 11px 15px, white background, a box-shadow and the slidein animation. Its box starts 7.4 px above the bottom of the '0/4 imported · 4s' line, and the crop shows the header's text partly covered. The same mechanism covers '1/1 imported · 22s' with the red 'interrupted' note after a relaunch (D4 screenshot). The gate says of R2: 'the blinking and overlap R2 named are a defect and their absence is a bar'. Severity is raised from P3 to P2 because this blocks the row's click-through clause even though the harm is visual. Screenshots: shots/D9-staged-note-crop-en.png, D9-staged-en.png; events D9_first_staged and D9_anims.",
+    "root_cause": "src/static/app-backup.js:1386-1391 wraps the staged line (and :1420, the interrupted line) in an inline <span class=\"note\">. The .note rule at src/static/app.css:1391-1393 is the toast style (padding, background, shadow, `animation:slidein .22s`). noteHtml includes the elapsed seconds (:1414), so the whole header's innerHTML is rewritten every 1 s tick (:1421) and the animated span is recreated each time.",
+    "suggested_fix": "Render these lines as plain block text (for example a <div class=\"hint\"> or card-caveat, without the toast .note class or its animation). Also move the elapsed seconds into its own text node patched separately, so the rest of the header is not rewritten every tick.",
+    "severity": "P2"
+   },
+   {
+    "title": "Row 3 reads 'not started' after a restart although the search-index merge ran",
+    "verdict": "confirmed",
+    "reason": "Reproduced by a graceful restart after a normally finished single-backup run (queue state 'done'). The reopened dialog read '1/1 imported · 5s', two ✓ statements and '3. Merge the search index — not started', unchanged after 7 s. Screenshot: shots/D10-after-restart-en.png; events R_dialog_after_restart and R_dialog_after_restart_7s.",
+    "root_cause": "src/backup/import_queue.py:293: _tuning_done is memory-only. It is absent from the _save payload (:315-320) and never restored in _load_persisted, so after a boot _stage_rows (:1142-1146) reports stage 3 'pending'. app-backup.js:1484 renders that as 'not started'. Stage 3's row also ignores run_state, so an ended run can never read as ended there.",
+    "suggested_fix": "Persist tuning_done (and `tuned`) in the queue file and restore them. On load, treat a run saved as 'done' as tuning done. This becomes moot if the fresh-page fix stops rendering finished runs, but the status payload should still be truthful.",
+    "severity": "P3"
+   },
+   {
+    "title": "Per-backup state words are untranslated (Done/Waiting/Skipped/Interrupted/Cancelled)",
+    "verdict": "confirmed",
+    "reason": "Reproduced. In fr, ar and zh the rows read '… — Done · 4s · étape 2 sur 4', '… — Done · 4s · المرحلة 2 من 4' and '… — Done · 4s · 第 2 步，共 4 步'. A grep over all 12 locale files finds no \"Done\", \"Waiting\", \"Skipped\", \"Interrupted\" or \"Cancelled\" key in any of them, en.json included, while \"Running\", \"Failed\", \"Stopped\" and the two staged/discarded labels exist in all 12. The i18n gate misses them because they are looked up through t(variable). Screenshots: shots/D11-dialog-fr.png, -ar.png, -zh.png.",
+    "root_cause": "src/static/app-backup.js:1303-1307 (_UX_IM_STATE_LABEL values) is rendered via `t(_UX_IM_STATE_LABEL[it.state] || it.state)` at :1429. Five of its values were never added to src/static/locales/*.json, and because the lookup is dynamic, scripts/i18n_report.py cannot see them.",
+    "suggested_fix": "Add the five keys ×12 locales, and make the map's values extractor-visible (for example wrap each literal in a no-op marker the i18n report scans) so a new state cannot slip through again.",
+    "severity": "P3"
+   },
+   {
+    "title": "Arabic (RTL): backup folder labels are bidi-scrambled in the per-backup rows",
+    "verdict": "confirmed",
+    "reason": "Reproduced in ar (dir=rtl). The row renders as 'OpenOmniscience_Backup_2 — Done · 4s_202609261808●': the digit prefix of '202609261808_OpenOmniscience_Backup_2' is detached and drawn after the state text. Screenshot: shots/D12-rows-ar.png.",
+    "root_cause": "src/static/app-backup.js:1446 puts the Latin/digit folder label in a bare <b> inside an RTL paragraph without direction isolation. Under the bidi rules the leading European-number run takes the RTL embedding, and the Latin run is reordered around it.",
+    "suggested_fix": "Wrap the label in <bdi> (or add dir=\"auto\" / unicode-bidi:isolate), as in `<b><bdi>${label}</bdi></b>`.",
+    "severity": "P3"
+   },
+   {
+    "title": "375 px: the Import dialog's folder field collapses to about 44 px and backup labels are clipped",
+    "verdict": "confirmed",
+    "reason": "Reproduced at 375 px. The page itself has no horizontal scroll (scrollWidth − clientWidth = 0). Inside the dialog, #ux-imp-src is 44 px wide beside Browse…/Scan/Verify and shows only the path's tail ('ıps'). The dialog's scrollWidth is 389 against a clientWidth of 343 (46 px overflow), and '202609261808_OpenOmniscience_Back…' is cut at the dialog's right edge. Screenshot: shots/D13-375-dialog-en.png; events D13_375.",
+    "root_cause": "src/static/index.html:3259: the input uses style=\"flex:2\" with no min-width inside a .row. .row wraps (app.css:439), but a shrinkable input never forces a wrap. The long unbroken folder labels at app-backup.js:1446 have no overflow-wrap.",
+    "suggested_fix": "Give #ux-imp-src a usable min-width (for example `flex:1 1 12em;min-width:12em`) so the buttons wrap below it, and add `overflow-wrap:anywhere` to the queue-row labels.",
+    "severity": "P3"
+   },
+   {
+    "title": "A finished backup's row keeps '· stage 2 of 4'",
+    "verdict": "confirmed",
+    "reason": "Reproduced. Every Done row reads '… — Done · 4s · stage 2 of 4', in all four locales. The backend supplies `stage` as the item's stage_reached, and stages 3-4 are run-level. So a Done row saying 'stage 2 of 4' reads as half-finished. No ruling or gate text asks for the suffix on finished items. Screenshot: shots/D3-reopen-en.png.",
+    "root_cause": "src/static/app-backup.js:1442-1444 renders the stage suffix whenever `it.stage_applicable && it.stage`, whatever the item's state.",
+    "suggested_fix": "Render the suffix only for items that are 'running' or 'staged', or change its wording for finished items (for example 'stages 1–2 done'; a new string needs ×12 locales).",
+    "severity": "P3"
+   },
+   {
+    "title": "First launch requests /api/system/data-location and gets 503, so the data-location step can never be offered (outside row I)",
+    "verdict": "confirmed",
+    "reason": "Reproduced on a fresh data dir (port 8817). lock-state read {\"state\":\"fresh\",\"locked\":true}, and GET /api/system/data-location returned HTTP 503 {\"detail\":\"the database is locked: unlock it first\",\"locked\":true}. unlock.html:344 then parses that body, finds no `offerable`, and skips to the passphrase. The first-launch data-location chooser is therefore unreachable on every real fresh install, not only when OO_DATA_DIR is set. tests/test_data_location.py:283-292 mounts the router on a bare FastAPI app without the lock middleware, which is why no test caught it. OPEN_QUEUE records the step as BROWSER-UNVERIFIED. Severity is raised from P3 to P2: a whole shipped first-launch feature can never appear. There is no data loss, since the default folder is used. This belongs in its own row, not row I.",
+    "root_cause": "src/api/unlock.py:76-92: ALLOWED_WHILE_LOCKED lacks '/api/system/data-location'. app_is_locked() (:71-72) counts 'fresh' as locked, so the gate in src/api/main.py:755-763 answers 503 for it (and for POST /data-location/check).",
+    "suggested_fix": "Add '/api/system/data-location' (covering /check and the POST) to ALLOWED_WHILE_LOCKED. The endpoints already refuse any state other than fresh themselves. Add a test that goes through src.api.main.app's middleware in the fresh state, anchored to ALLOWED_WHILE_LOCKED rather than the live route table.",
+    "severity": "P2"
+   }
+  ]
+ }
+}

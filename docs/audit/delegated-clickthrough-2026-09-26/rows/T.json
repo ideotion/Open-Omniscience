@@ -1,0 +1,475 @@
+{
+ "row": "T",
+ "steps_walked": {
+  "row": "T",
+  "title": "Network budgets and politeness: the network coach's two buttons at equal weight, the task manager's airplane wording, one collection-speed control with a per-process budget, the loopback rate limit, the Crawl-delay deferral",
+  "prerequisites": [
+   "The app is on current main, which includes PR #1142 (S04-13) and PR #1173 (the 2026-09-24 crawl-delay clamp). Both are on main's first-parent history.",
+   "A THROWAWAY data folder for T1–T8, on port 8010. Port 8010 is a separate browser origin, so the coach bubble, theme and language chosen there never touch your real install. Your real install's data folder is untouched. Make sure nothing else is using port 8010.",
+   "Seed it FIRST, with no server running on that folder. From the app folder: OO_DATA_DIR=\"$HOME/oo-throwaway-T\" OO_DB_PLAINTEXT=1 .venv/bin/python scripts/ui_clickthrough_seed.py. The seeded articles also keep the first-launch guide from opening, and the guide would hide the coach bubble.",
+   "First boot (T1–T7): OO_DATA_DIR=\"$HOME/oo-throwaway-T\" OO_DB_PLAINTEXT=1 OO_PORT=8010 .venv/bin/open-omniscience serve. Use the open-omniscience command, NOT 'python -m src.api.main', which serves a half-broken app. Do NOT set OO_NO_SCHEDULER on this first boot: without it the app starts in airplane mode, which T2–T6 need. Ignore the legal-documents notice the terminal prints; nothing needs accepting for an unencrypted throwaway.",
+   "Second boot (T8 only), same folder: add OO_NO_SCHEDULER=1. It then starts ONLINE, but neither its collector nor its Wikipedia stream starts, so nothing is scheduled to fetch.",
+   "A desktop-width browser window, about 1024 px or wider. Chrome/Chromium is preferred because the sandbox measured in Chromium; Firefox is best-effort per Q1128. T7 and T9 use the browser's developer console (F12 → Console).",
+   "OPTIONAL T9 and T10 only: your REAL install, unlocked. T9 needs it online with a collection pass actually running (top-bar chip 'Collecting…'). T10 needs a corpus that has collected before. A Claude session walking this in a sandbox has neither, so it records T9/T10 as 'not observed'.",
+   "Cleanup: stop the throwaway with Ctrl+C in its terminal, then delete $HOME/oo-throwaway-T."
+  ],
+  "steps": [
+   {
+    "id": "T1",
+    "where": "A terminal in the app folder, then a new browser tab at http://127.0.0.1:8010",
+    "do": "Run the seed command, then the first-boot command from the prerequisites. Wait until the terminal says it is running on http://127.0.0.1:8010. Open that address and wait 5–10 seconds without clicking. Safety: if a legal-documents screen ever appears, choose Accept and NEVER Decline. Declining uninstalls the whole app folder, which your real install shares.",
+    "expect": "The app opens straight into its normal view: no passphrase screen, no legal screen (the seeded folder is unencrypted) and no first-launch guide. Clicking 'Feed' in the left sidebar lists synthetic articles. The airplane button (the plane icon just LEFT of the language button that shows a flag and 'EN') is FILLED, and a red line runs along the bottom edge of the top bar. Both mean offline. No 'Go online?' window has opened.",
+    "flags": [
+     "needs-seed-data",
+     "mutates-data"
+    ],
+    "evidence": "scripts/ui_clickthrough_seed.py:1-20; src/api/main.py:2889-2929 (serve), :3073-3074 (OO_PORT), :336-350 (boot engages airplane unless OO_NO_SCHEDULER=1); src/api/unlock.py:52-72 + src/api/main.py:751-763 (a plaintext store never reaches the unlock/legal flow); src/static/app-backup.js:2705-2709 (guide opens only on an empty corpus); src/static/app.css:843 (red top-bar edge offline); src/static/index.html:131-168 (top-bar order: pulse, gauge, W, plane, language); docs/audit/concept-map-clickthrough-2026-09-17/README.md:36-44 (python -m is half-broken); src/legal/documents.py:162-172 (Decline = full uninstall)"
+   },
+   {
+    "id": "T2",
+    "where": "Throwaway tab. Top bar → the speech bubble pointing at the plane (#net-coach). Then the sidebar's bottom 'Settings' button → 'Graphics' subtab → 'Appearance' → 'Theme' tiles (#dr-themes)",
+    "do": "Do NOT click either bubble button yet. Compare the two buttons. Then open Settings → Graphics and click the theme tiles 'Ink', 'Paper', 'Solar' and 'Mint' in turn, looking at the bubble after each click. The bubble stays on screen while you move around the app. If no bubble has appeared after 10 seconds, open a private/incognito window at http://127.0.0.1:8010. The bubble shows on at most 6 page loads per browser, and is retired for good once either of its buttons is clicked or the app goes online.",
+    "expect": "The bubble reads 'You're offline. Switch off airplane mode to go online and start collecting.' and 'You'll confirm before anything connects.', with 'Not now' on the left and 'Go online' on the right. In EACH of the four themes the two buttons have the same filled accent-colour background, the same text colour, the same bold weight, the same height and font size, and no border or outline. Only their widths differ, by the length of the words. FAIL if 'Not now' looks greyer, flatter, thinner, lighter or outlined next to 'Go online' (the old look). Finish on Ink.",
+    "flags": [],
+    "evidence": "src/static/index.html:3555-3570 (both buttons unclassed; the Q1125 comment); src/static/app.css:441-447 (plain button = accent fill; .secondary = the old quieter look), :1812-1813 (one shared coach-button rule); src/static/app-core.js:1065-1087 (6-load cap, permanent dismiss); src/static/app-shell.js:225-233, :538-540 (theme names on the tiles); docs/ledger/RULINGS_INDEX.md:307 (sandbox measured ink/paper/solar/mint)"
+   },
+   {
+    "id": "T3",
+    "where": "Throwaway tab, bubble still showing. Top-bar language button (flag + two-letter code, #lang-switch) → 'Français', then 'العربية', then '中文'",
+    "do": "Switch to each language in turn and re-compare the two bubble buttons. One theme is enough, e.g. Paper. Then switch back to English.",
+    "expect": "fr: 'Plus tard' and 'Passer en ligne'; the bubble reads 'Vous êtes hors ligne. Désactivez le mode avion pour passer en ligne et lancer la collecte.' ar: 'ليس الآن' and 'الاتصال', with the whole page mirrored right-to-left and the bubble text fully readable. zh: '暂不' and '联网'. In every language the two buttons are still styled identically to each other, and both bubble sentences are translated, not left in English. Side observation, NOT a row-T failure: after the switch to Arabic the bubble may stay where it was and point at empty space, because it only re-anchors when the window is resized. Drag the window edge slightly and note whether it re-anchors.",
+    "flags": [
+     "locale-check"
+    ],
+    "evidence": "src/static/locales/fr.json, ar.json, zh.json keys 'Not now' / 'Go online' / \"You're offline. Switch off airplane mode…\"; src/static/app-core.js:557-600 (language menu, native names); src/static/i18n.js:102-115 (setLang flips dir, fires oo:langchange); src/static/app-core.js:1017-1087 (_placeCoach runs on show and resize only)"
+   },
+   {
+    "id": "T4",
+    "where": "Throwaway tab. The bubble's 'Go online' button → the window titled 'Go online?' (#net-consent)",
+    "do": "Click 'Go online' on the bubble. A window titled 'Go online?' opens. Click its 'Stay offline'. Do NOT click that window's own 'Go online': in this first boot it would start real collection from the throwaway's source catalogue. If you click it by mistake, click the top-bar plane once straight away (going offline asks nothing) and note it. This step retires the bubble for good in this browser, so do T2/T3 first. To repeat them later, use a private window.",
+    "expect": "The bubble's 'Go online' connects nothing by itself: the 'Go online?' window always opens first. After 'Stay offline' the bubble is gone, the plane is still FILLED and the red top-bar edge is still there. No 'Back online — network requests allowed again.' message appears. The consent window's own buttons keep their unequal look ('Stay offline' quieter). That is intended: Q1125 covers the bubble only.",
+    "flags": [
+     "online"
+    ],
+    "evidence": "src/static/app-core.js:1080-1082 (bubble → dismissNetCoach(true) + toggleNetwork), :869-923 (going online always passes ensureOnline; 'Back online' toast only on consent); src/static/index.html:3497 ('Go online?'), :3522-3523 (popup buttons, untouched by Q1125); src/api/system.py:228-266 (online ⟺ collecting)"
+   },
+   {
+    "id": "T5",
+    "where": "Throwaway, still offline. Top bar → the pulse-line icon (hover 'Tasks & system', #tm-open). It opens a new browser tab titled 'Task manager · FOOS' (/tasks). In that tab: its top-bar plane (#net-toggle) and its own language button",
+    "do": "In the Task manager tab, rest the mouse on the plane for about a second until the browser's plain tooltip appears, and read it. Then, WITHOUT reloading, use this tab's language button to switch to Français and hover again. Repeat for العربية and 中文, then switch back to English. Do not click the plane here: while offline it only sends you back to the app.",
+    "expect": "en: 'Offline (airplane mode) — click to go online in the app; you'll be asked to confirm first.' The plane is filled and red, and the state at the left of the summary strip reads 'Airplane mode'. After each LIVE switch (no reload) the tooltip is already in the new language. fr: 'Hors ligne (mode avion) — cliquez pour passer en ligne dans l'application ; une confirmation vous sera demandée au préalable.' ar: 'غير متصل (وضع الطيران) — انقر لجعل التطبيق متصلاً؛ سيُطلب منك التأكيد أولاً.', with the page mirrored. zh: '离线（飞行模式）——点击可让应用联网；系统会先请您确认。' A tooltip still in the previous language after a switch is the frozen-locale defect this row fixed: FAIL.",
+    "flags": [
+     "locale-check"
+    ],
+    "evidence": "src/static/taskmanager.html:680-705 (paintAir), :718 (oo:langchange listener added by S04-13), :528 ('Airplane mode' summary); src/static/app-core.js:2374-2377 (the icon opens /tasks); docs/ledger/shipped.csv:1008 (sandbox found the frozen-locale gap)"
+   },
+   {
+    "id": "T6",
+    "where": "Throwaway app tab, still offline. Top bar → the gauge icon 'Collection speed' (#rate-toggle, just right of the pulse-line icon). Then Settings → 'Advanced' subtab → expand 'Collection — schedule, lanes, manual and batch ingest' → expand 'Advanced (legacy) — collection is automatic; these are rarely needed' → 'Collection speed (download-rate target)' (#sch-speed). Then Settings → 'Wikipedia' and Settings → 'OpenStreetMap'",
+    "do": "Hover the gauge and read it. A fresh folder starts at Maximum: needle to the right, accent colour. If yours shows the target, the two clicks below simply run in the other order. Click the gauge once, read the message, then open the Settings path above and read the value next to 'Collection speed (download-rate target)'. Click the gauge again and re-read the Settings value; you end where you started. Last, scroll through Settings → Wikipedia and Settings → OpenStreetMap WITHOUT clicking any Download or Estimate button.",
+    "expect": "Hover at Maximum: 'Collection speed: Maximum — uses your connection fully (politeness per host unchanged). Click for the considerate 500 KiB/s target.' First click: the needle swings left, the accent colour goes, and the message reads 'Collection speed set to the 500 KiB/s target — applies from the next pass.' Settings shows '500 kbps' with the slider on the 3rd of 7 stops. Second click: needle right in accent colour, message 'Collection speed set to Maximum — applies from the next pass.', Settings shows 'Maximum' with the slider at the far right. NO 'Go online?' window appears at any point, although the app is offline: this is a setting on your own machine. The Wikipedia and OpenStreetMap subtabs, where file downloads start, have NO speed or bandwidth limit of their own. The gauge and the Settings slider are the one control (per-download caps stay omitted). The knob says 'KiB/s' while Settings says 'kbps'. That is a KNOWN, recorded wording error, not a row-T failure (see notes).",
+    "flags": [
+     "mutates-data"
+    ],
+    "evidence": "src/static/app-sources.js:989-1023 (_paintRateMode / toggleRateMode: loopback PUT /api/scheduler/config, then applySchedConfig syncs the slider), :894-911 (7 slider stops, 'Maximum' / '{n} kbps'), :967-979; src/static/index.html:138-150, :2319-2344; src/scheduler/settings.py:90-91 (default maximum / 500); src/scheduler/process_budget.py:89-110 (the budget read from the governor's own mode/target); docs/ledger/OPEN_QUEUE.md:697-712 (the KiB/s entry)"
+   },
+   {
+    "id": "T7",
+    "where": "Throwaway app tab at http://127.0.0.1:8010 → the browser's developer console (F12, Console tab)",
+    "do": "Paste this single line and press Enter. Chrome may first ask you to type 'allow pasting'. let ok=0,refused=0;for(let i=0;i<150;i++){const r=await fetch('/api/articles?limit=1');if(r.status===429)refused++;else if(r.ok)ok++;}console.log('ok',ok,'refused',refused) It makes 150 quick requests to the app on your own machine and prints a count after about 10–30 seconds.",
+    "expect": "It prints 'ok 150 refused 0'. Before this row, requests from this machine to this page were refused after 100 per hour, with 'Too many requests. Please try again later.'. Now your own UI gets 1,000 per hour. Any 'refused' above 0 is a FAIL. Running the line more than five times in the same hour will legitimately reach the new 1,000 ceiling.",
+    "flags": [],
+    "evidence": "src/api/ratelimit.py:69-74 (LOOPBACK_LIMIT 1000/hour, factor 10), :104-139 (provider + limit() override covering every decorator); src/api/main.py:1508-1509 (/api/articles 100/hour), :902-907 (429 body); tests/test_loopback_rate_limit.py"
+   },
+   {
+    "id": "T8",
+    "where": "The terminal, then the throwaway's app tab and its 'Task manager · FOOS' tab: the plane in each top bar, and the Task manager tab's language button",
+    "do": "Stop the throwaway (Ctrl+C) and start it again with OO_NO_SCHEDULER=1 added: OO_DATA_DIR=\"$HOME/oo-throwaway-T\" OO_DB_PLAINTEXT=1 OO_PORT=8010 OO_NO_SCHEDULER=1 .venv/bin/open-omniscience serve. Reload both tabs. The app now starts ONLINE, but neither its collector nor its Wikipedia stream starts. While it is online, touch nothing except the planes and the language menu. Hover the app's plane (a styled bubble appears), then the Task manager tab's plane (the browser's plain tooltip, about one second). In the Task manager tab, switch live to Français, العربية and 中文, hovering each time, then back to English. Finally click the Task manager tab's plane ONCE (going offline is the safe direction and asks nothing) and hover it again. Alternative for a human: hover only (no clicks) on your real install while it is online. The expected text is the same.",
+    "expect": "Both planes are hollow (not filled) and the Task manager summary reads 'Idle'. Both tooltips read 'Online — click to go offline (airplane mode); every new network request will be refused.'. Neither says 'stops all collection' (the old, weaker wording). Live-switched in the Task manager tab, with no reload: fr 'En ligne — cliquez pour passer hors ligne (mode avion) ; toute nouvelle requête réseau sera refusée.', ar 'متصل — انقر للانتقال إلى وضع عدم الاتصال (وضع الطيران)؛ سيُرفض كل طلب شبكة جديد.', zh '在线 — 点击以转为离线（飞行模式）；每个新的网络请求都将被拒绝。'. After the click: the message 'Offline — every new network request is refused. One in-flight request may finish.' appears, the plane turns filled and red, the summary reads 'Airplane mode', and the tooltip is T5's offline text. That is both states seen on the same surface.",
+    "flags": [
+     "online"
+    ],
+    "evidence": "src/api/system.py:228-266 (the collector and Wikipedia lane start on going online only when OO_NO_SCHEDULER != 1); src/api/main.py:336-350 (boot airplane skipped under OO_NO_SCHEDULER=1); docs/audit/net-consent-hosts-2026-09-16/README.md:15-20; src/static/taskmanager.html:688-705 (Q1126 = a title), :718, :721-738 (offline click + toast), :526-531 (summary states); src/static/app-core.js:987-991 (same key in the app); tests/test_process_budget_ui.py:185-230"
+   },
+   {
+    "id": "T9",
+    "where": "OPTIONAL, REAL install while a collection pass is running (top-bar chip 'Collecting…' or 'Collecting N/M…'). Main app tab → developer console → the hidden in-app 'Task manager' window → its 'System' subtab → the 'COLLECTION SPEED' block. Console-free alternative: a tab at http://127.0.0.1:8000/api/scheduler/activity (use your install's port)",
+    "do": "Nothing on screen opens this window any more (see notes), so type toggleVitals() in the Console and press Enter. A 'Task manager' window appears inside the app. Click its 'System' subtab and read the 'COLLECTION SPEED' block. Switch the app's language to Français and wait about 10 seconds for the block to refresh, then read it again. Do the same for العربية, then switch back and press Esc to close. Alternative: open the activity address above, press Ctrl+F and search for process_budget. Read-only either way.",
+    "expect": "'Budget' shows the same number as your Settings collection-speed slider, in kbit/s ('500 kbit/s' at the default target), or 'Maximum — no ceiling' when the gauge is at Maximum. 'Measured (whole process)' shows a number in kbit/s. A row 'of which file downloads' appears ONLY while a Wikipedia dump or map download is actually being measured, never as '0 kbit/s'. 'Some downloads cannot be measured yet, so this figure is a lower bound.' appears only when a download cannot be measured yet. The block ends with 'The whole process is held to this rate — the collector's fetches plus every file download — measured by the app itself, never a system network counter.' The unit is kbit/s, the same as Settings. fr: 'VITESSE DE COLLECTE', 'Budget', 'Mesuré (processus complet)'. ar: 'الميزانية', 'مقاس (العملية بأكملها)', with the figure still reading '500 kbit/s' in order. In the JSON: 'budget_kbps' matches Settings (null at Maximum), and 'downloads_kbps' is null, NOT 0, when no download is measuring. If no pass is running, the block is absent and process_budget is null. That is correct, not a failure.",
+    "flags": [
+     "online"
+    ],
+    "evidence": "src/static/app-core.js:1638-1697 (_renderVitals writes _budgetHtml into #vitals-body), :1754-1790 (_budgetHtml), :2355-2368 (toggleVitals; its only UI caller is the close button), :2374-2377 (#tm-open opens /tasks); src/static/index.html:198-222 (#vitals-pop, 'System' subtab); src/static/app-boot.js:223,494; src/static/locales/ar.json ('{rate} kbit/s' carries U+2068/U+2069 isolates); src/monitoring/collect_perf.py:445,589,646,700 (process_budget exists only during a pass); src/scheduler/runner.py:2282-2308 (activity payload carries collect_perf); src/scheduler/process_budget.py:117-177"
+   },
+   {
+    "id": "T10",
+    "where": "OPTIONAL, REAL install, read-only. A browser tab at http://127.0.0.1:8000/api/jobs/history?limit=100 (use your install's port), and the file host_schedule.json in your data folder. The data folder is OO_DATA_DIR if you set it, otherwise the 'data' folder inside the app folder for a normal install, otherwise ~/.local/share/open-omniscience",
+    "do": "In the history page press Ctrl+F and search for crawl_delay_deferred. Then open host_schedule.json in a text editor only to read it, and close it WITHOUT saving.",
+    "expect": "If crawl_delay_deferred appears, it is its OWN count inside a pass's 'tally', beside 'fetch_failed' and never folded into it: a host that asked to be left alone is not recorded as a failed source. If host_schedule.json exists, it lists only hosts that declared a Crawl-delay. Each entry has 'delay_s' (the host's own delay, in seconds) and 'not_before' (when it may next be fetched, as a Unix timestamp in seconds). If neither appears, write 'not observed on this corpus'. That means no host has needed deferring yet, and the guarantee is carried by tests/test_crawl_delay_deferral.py.",
+    "flags": [],
+    "evidence": "src/ingest/pipeline.py:86-95,145-146 (CRAWL_DELAY_DEFERRED its own bucket); src/ingest/__init__.py:405-410 (180 s cap), :424-427 (host_schedule.json beside robots_cache.json), :498-518 (entry format), :1764-1792 (named deferral); src/scheduler/runner.py:1050-1058 (tally in the pass result), :1813-1816 (record_run); src/api/jobs.py:594-602; src/scheduler/runlog.py:44-59; src/paths.py:63-77"
+   }
+  ],
+  "clause_coverage": [
+   {
+    "clause": "Q1125 = a: the network coach's two actions at equal visual weight ('Not now' not quieter than 'Go online'), words unchanged, across several themes",
+    "step_ids": [
+     "T2",
+     "T3",
+     "T4"
+    ]
+   },
+   {
+    "clause": "Closes-when: 'the net-coach weights are Chromium-verified' (done in the sandbox per RULINGS_INDEX:307; re-seen by the operator)",
+    "step_ids": [
+     "T2"
+    ]
+   },
+   {
+    "clause": "Q1126 ⛔ = a: task-manager airplane title aligned to 'every new network request will be refused', re-translated ×12, correct on a LIVE language switch, hover checked in both states",
+    "step_ids": [
+     "T5",
+     "T8"
+    ]
+   },
+   {
+    "clause": "Q1012 = a: ONE per-process budget composed with the collection-speed governor; #rate-toggle still switches modes through the loopback settings write with no consent popup; no second rate authority; per-job caps omitted",
+    "step_ids": [
+     "T6",
+     "T9"
+    ]
+   },
+   {
+    "clause": "S04-13 S1 UI: the task manager shows the process budget and the measured actual, absent (never 0) when unmeasured; brief §4: the budget line seen in en / fr / ar",
+    "step_ids": [
+     "T9"
+    ]
+   },
+   {
+    "clause": "Q1148 = a: 1,000/hour for loopback UI calls (the '100 for anything else' half is not clickable)",
+    "step_ids": [
+     "T7"
+    ]
+   },
+   {
+    "clause": "Q1013 = a: per-host next-allowed-at persisted beside the robots cache; a long Crawl-delay refused with a named deferral counted in its own bucket (observation only; the guarantee is test-borne)",
+    "step_ids": [
+     "T10"
+    ]
+   },
+   {
+    "clause": "Board: 'the operator's own click-through' (Q1128 = a) of #net-coach and the task manager, in en / fr / ar (plus zh)",
+    "step_ids": [
+     "T2",
+     "T3",
+     "T4",
+     "T5",
+     "T6",
+     "T8"
+    ]
+   },
+   {
+    "clause": "A throwaway environment that keeps the real install's look, language, settings and data untouched, and avoids real collection",
+    "step_ids": [
+     "T1",
+     "T8"
+    ]
+   }
+  ],
+  "not_clickable": [
+   "Q1132, the model-weight digest VALUES. src/llm/weights_pin.py ships HF_REVISION_PINS / OLLAMA_DIGEST_PINS empty and refusing by design, and the registry entry 'model-weights-revision' keeps pin blank (configs/external_artifacts.yml:209-231). Pinning is the maintainer's act: set OO_MODEL_REVISION (a full 40-character commit SHA) / OO_OLLAMA_MODEL_DIGEST, or open a PR to weights_pin.py. One UI path does FETCH a proposal: Settings → Advanced → Diagnostics → '0.4 release run (the board's operator rows)' with 'online probes (law hosts, scoring endpoint, weights digests)' ticked. It reads the Hugging Face commit SHA from huggingface.co and the Ollama digest from the local Ollama (src/monitoring/release_run.py:1214-1250). That is a long, egressing operator run, not part of this pass, and it never writes the pin.",
+   "'Each has a behavioural test': tests/test_process_budget.py, tests/process_budget_panel_node_test.js, tests/test_crawl_delay_deferral.py, tests/test_loopback_rate_limit.py, tests/test_process_budget_ui.py and tests/test_model_weights_pin.py. These are CI/pytest, not clicks. They include 'the deferral bucket appears in the pass summary on a fixture host declaring a long Crawl-delay' and 'the budget composes with the governor in one place'.",
+   "'The ×12 strings pass all three i18n gates run separately': developer scripts (scripts/i18n_report.py and its sibling gates), not UI. T3, T5, T8 and T9 only let the operator SEE fr/ar/zh.",
+   "Q1148's 'keep 100 for anything else'. The server binds loopback, so a non-loopback caller exists only if OO_HOST is widened, a port is forwarded or a proxy/hidden service fronts the app. A same-machine proxy counts as loopback by design (src/api/ratelimit.py docstring). A person cannot produce such a caller by clicking; tests/test_loopback_rate_limit.py covers it.",
+   "Q1013's 'the ride-along and the trial fetch inherit both', the 180 s cap itself, a second pass NOT re-fetching a deferred host, and the 2026-09-24 clamp (a stamp written on a fast clock never defers a host longer than its own delay). These are internal fetch-path behaviours needing a host that declares a long Crawl-delay. T10 can only observe traces if they happen to exist on the real corpus.",
+   "The THIRD airplane-title state (an AI-install network window open while otherwise offline). Reaching it means opening an AI-install egress window, which is real traffic to model hosts. It is test-pinned (tests/test_process_budget_ui.py::test_the_offline_third_state_is_still_mirrored).",
+   "The per-process budget panel has NO clickable entry point on main. It is drawn only inside the old in-app task-manager window (#vitals-pop → System), and nothing on screen opens that window any more: #tm-open, the activity chip and every other opener call openTaskManager(), which opens the separate /tasks page. The same holds for the PERF-09 per-job measured download rates (_rateNote, app-core.js:1814,1869). The /tasks page (taskmanager.html:285-296, Performance panel) shows neither. T9 reaches them only through the console or the raw JSON. Wiring them into /tasks, or re-wording the brief's 'the task manager shows the budget beside the per-job rates', is a code change or a ruling.",
+   "RC15 is still BLANK. L4's 'most ethical' is read as the loopback guard, which is an ASSUMPTION. Only the maintainer writing a letter at ANSWER RC15 changes that; no click can.",
+   "The 'KiB/s' vs 'kbps' unit wording on the speed knob, its two messages and CLAUDE.md invariant #4 (an 8.192× overstatement, docs/ledger/OPEN_QUEUE.md:697-712) needs the maintainer's word on a constitution edit. It is visible in T6 but not part of this row's bar.",
+   "WHO may do the click-through. Q1128 = a reads 'Chromium in the sandbox + YOUR click-through = verified', and the maintainer's 2026-09-26 message asks to delegate the click-through to Claude or a workflow. Whether an agent-run walk of these steps closes the 'operator's own click-through' clause is a ruling only the maintainer can give. It must be recorded in RULINGS_INDEX.md and OPEN_QUEUE.md in the same turn. Until then an agent walk is evidence, not closure.",
+   "In a sandboxed agent walk, T9 and T10 cannot be exercised: they need a real corpus and a real collection pass, and the sandbox has neither and must not egress. Record them as 'not observed'."
+  ],
+  "surfaces": [
+   "Top bar → airplane button (#net-toggle) and the offline coach bubble (#net-coach)",
+   "The 'Go online?' consent window (#net-consent)",
+   "Settings → Graphics → Appearance → Theme",
+   "Top-bar language menu (#lang-switch), in the app and in the Task manager tab",
+   "Task manager tab (/tasks, opened by the top-bar 'Tasks & system' icon) → its top-bar airplane button and summary strip",
+   "Top bar → Collection speed gauge (#rate-toggle)",
+   "Settings → Advanced → Collection → Advanced (legacy) → Collection speed (download-rate target)",
+   "Settings → Wikipedia and Settings → OpenStreetMap (glance only: no per-download speed control)",
+   "Browser console → loopback /api/articles (rate limit)",
+   "Hidden in-app Task manager window → System → Collection speed (budget panel, console-only) and /api/scheduler/activity",
+   "Loopback JSON /api/jobs/history and the data-folder file host_schedule.json"
+  ],
+  "estimate_minutes": 45,
+  "notes": "WHAT THE SANDBOX ALREADY DID. Row T has no walk folder under docs/audit/. The only Chromium evidence is docs/ledger/shipped.csv:1008 and RULINGS_INDEX.md:307-308: the coach buttons measured identical in bg, fg, weight, border and opacity across ink/paper/solar/mint, and the title checked in en/fr/ar. This pass is the first written walk of the row. Core time is about 30 minutes for T1–T8; the optional T9–T10 add about 15.\n\nDELEGATION (the maintainer's 2026-09-26 message: 'I want to delegate the click-through to YOU or a claude code session, or an entire workflow'). Every step is executable as written by a Claude session driving Chromium (Playwright) against the throwaway. Nothing in T1–T8 needs the maintainer's machine, and T8 was moved off the real install for that reason. What such a walk cannot settle is whether it counts as Q1128's 'your click-through' (see not_clickable). The session that receives the maintainer's answer records it as a ruling. An agent walk should save screenshots of T2 (four themes), T3, T5 and T8 (en/fr/ar/zh), the T6 message/slider pairs and the T7 console output as the record.\n\nFINDINGS, not fixed (read-only task). (1) The S1 budget panel and the PERF-09 per-job rates are unreachable from the UI (see not_clickable). The unit tests pass because they load the renderer on its own. (2) Code-read, unverified in a browser: the coach bubble is re-positioned only on show and on window resize (app-core.js:1017-1087). After a live switch to Arabic the top bar mirrors, but the bubble may keep pointing at the old spot. This is not Q1125's bar; T3 asks to note it. (3) An OLDER airplane key, 'Online. Click to go offline (airplane mode) — stops all collection.', still sits in all 12 locale files (line 1573) though no code uses it. tests/test_process_budget_ui.py pins a differently-worded old key ('Online — click … ; stops all collection.'), so this orphan escaped. It is invisible in the UI.\n\nWHY A THROWAWAY. The coach bubble, the theme and the language are stored per browser origin. The bubble is retired for good after either button is clicked or after the app goes online, and shows on at most 6 loads, so a real install that has ever gone online never shows it again. Port 8010 is a separate origin. The first boot must NOT set OO_NO_SCHEDULER, or the app starts online and the bubble never appears. The second boot (T8) sets it on purpose: the app is online but neither the collector nor the Wikipedia stream starts, which is the least-egress way to see the online title. Boot with '.venv/bin/open-omniscience serve', never 'python -m src.api.main', which double-imports the module and 500s /api/insights/graph. Never Decline a legal screen: it runs request_uninstall(remove_folder=True, wipe_data=True) on the app folder the throwaway shares with the real install. On an unencrypted seeded folder that screen should not appear at all.\n\nKNOWN, NOT A ROW-T FAILURE. (1) The speed knob's hover and messages say '500 KiB/s' while Settings and the budget panel say kbps / kbit/s. That is an 8.192× mismatch recorded in OPEN_QUEUE.md:697 and awaits the maintainer's word, because CLAUDE.md invariant #4 carries it. (2) The consent window's own 'Stay offline' keeps the quieter .secondary style; Q1125 covers the coach bubble only. (3) In /tasks the plane hover is the browser's native tooltip (no styled bubble), so it needs about a second of still hovering.\n\nRECORDING. Per CLAUDE.md rule (2) and the gate's closeout, whoever records the pass adds a line to RELEASE_0.4_GATE.md §3 (the amendment log) and to the row T board cell. It should say which of T2–T8 passed, in which themes and locales, who walked it (maintainer or agent), and whether T9–T10 were done or 'not observed'. The digest values (Q1132), the budget-panel reachability decision and the delegation question stay open either way."
+ },
+ "walk": {
+  "row": "T",
+  "environment": {
+   "encrypted": true,
+   "seed": "scripts/ui_clickthrough_seed.py --mini (24 synthetic articles) with OO_DB_PASSPHRASE='walk-pass-2026' and OO_DB_PLAINTEXT unset; the db header was checked and is ciphertext; /api/system/lock-state reported unlocked-encrypted after the unlock",
+   "ports": [
+    8846
+   ],
+   "scratch_dir": "/tmp/claude-0/walk/T/",
+   "notes": "origin/main 462145c (detached, shallow clone), Chromium /opt/pw-browsers/chromium headless via Playwright sync, 1440x950 main pass, 375x812 phone pass. DEVIATIONS FROM THE STEP SHEET: (1) encrypted store instead of the sheet's OO_DB_PLAINTEXT=1, as the harness requires, so T1 correctly opens on the /unlock passphrase screen (#pw -> #btn-unlock); (2) port 8846 instead of 8010 (8847 unused); (3) --mini seed (the row needs little data). Boot 1 (T1-T7, 375 pass, T9/T10 reads) = PID 14894 started with neither OO_DB_PASSPHRASE nor OO_DB_PLAINTEXT nor OO_NO_SCHEDULER, so it booted LOCKED and in airplane mode. Boot 2 (T8) = PID 17174, same data dir, OO_NO_SCHEDULER=1 as the step prescribes (online, scheduler not running, wiki_lane active=false reason not-started). Both launched with the open-omniscience console script, proxy env vars unset; both killed by PID afterwards; the repo tree is untouched (git status clean). An lsof monitor sampled PID 17174's internet sockets every second through its whole online window: zero non-loopback sockets. No consent 'Go online' button was ever clicked. T7's line was run through page.evaluate (the exact console snippet); T9 opened the hidden window with toggleVitals() as the step itself prescribes. Scripts: walk1.py, walk1b.py (T5 retries + app offline titles), walk2.py (T8), probe_lanes.py, probe375.py; raw measurements in walk1.json, walk1b.json, walk2.json; full report in report.json."
+  },
+  "steps": [
+   {
+    "id": "T1",
+    "result": "pass",
+    "locales": [
+     "en"
+    ],
+    "screenshot": "shots/T/T-T1-unlock-en.png, shots/T/T-T1-home-en.png",
+    "observed": "Encrypted store, so /unlock showed the passphrase view (#view-unlock), which is expected on this path. No legal screen (#view-legal hidden). After the unlock it landed on /#home. After 8 s with no clicks there was no guide wizard and no consent dialog. The plane was FILLED (fill=currentColor, class off) and body had .net-offline. The top bar showed a red inset 2px edge, rgb(192,57,43) in Ink. /api/system/network returned online:false. The coach bubble was showing. Sidebar Feed listed 20 synthetic articles (e.g. 'Mini technology 5 — en')."
+   },
+   {
+    "id": "T2",
+    "result": "pass",
+    "locales": [
+     "en"
+    ],
+    "screenshot": "shots/T/T-T2-coach-4themes-en.png",
+    "observed": "Bubble text was exact: 'You're offline. Switch off airplane mode to go online and start collecting.' and 'You'll confirm before anything connects.'. 'Not now' sat on the left (x=1245) and 'Go online' on the right (x=1331). Both buttons are unclassed. Theme tiles were clicked in Settings > Graphics. In Ink, Paper, Solar and Mint the computed styles of the two buttons were IDENTICAL: same background (Ink rgb(91,157,217), Paper rgb(154,106,47), Solar rgb(181,137,0), Mint rgb(46,125,91)), same text colour, weight 600, 12px, height 28px, border 0 on all sides, no outline, opacity 1, no filter, no shadow. The diff list was empty in all four. Only the widths differed (Ink 78.08 vs 85.97 px). The bubble stayed visible from Home to Feed to Settings. The walk finished on Ink."
+   },
+   {
+    "id": "T3",
+    "result": "pass",
+    "locales": [
+     "fr",
+     "ar",
+     "zh",
+     "en"
+    ],
+    "screenshot": "shots/T/T-T3-coach-fr.png, shots/T/T-T3-coach-ar.png, shots/T/T-T3-coach-zh.png",
+    "observed": "Switched live with the top-bar #lang-switch. fr: 'Plus tard' / 'Passer en ligne', body 'Vous êtes hors ligne. Désactivez le mode avion pour passer en ligne et lancer la collecte.', sub translated. ar: 'ليس الآن' / 'الاتصال', dir=rtl, the page and the button order mirrored, both sentences translated and readable. zh: '暂不' / '联网', both sentences translated. In every language the two buttons were computed-identical (empty diff). SIDE OBSERVATION (not a row-T fail, recorded as a P3 defect): the bubble does NOT re-anchor on a language or direction switch. After the switch to ar the plane moved to x=186 while the bubble stayed at x=1162, 1019 px from the plane, over the sidebar brand and the Graphics subtab. A 6 px window resize re-anchored it (13 px). Switching on to zh then en left it 986 px away at the left edge."
+   },
+   {
+    "id": "T4",
+    "result": "pass",
+    "locales": [
+     "en"
+    ],
+    "screenshot": "shots/T/T-T4-consent-en.png, shots/T/T-T4-consent-lanes-filled-en.png",
+    "observed": "The bubble's 'Go online' opened #net-consent 'Go online?' (reason 'Allow network requests again', interfaces 'eth0: 192.0.2.2', both hints visible). The server stayed offline while the dialog was open. The lane list still read '…' at about 1.2 s. A separate probe showed it fills within about 1 s ('Runs on every collection pass: Press collection n=9033 …'), so this is not a defect. The dialog's 'Stay offline' keeps .secondary (quieter), as intended. After 'Stay offline': the bubble was gone, localStorage oo_net_coach_v1 = {\"seen\":1,\"dismissed\":true}, the plane was still filled, the red edge was still there, no 'Back online' toast appeared, and /api/system/network was online:false."
+   },
+   {
+    "id": "T5",
+    "result": "fail",
+    "locales": [
+     "en",
+     "fr",
+     "ar",
+     "zh"
+    ],
+    "screenshot": "shots/T/T-T5-tasks-while-offline-en-fr-ar-zh.png",
+    "observed": "#tm-open opened a new tab 'Task manager · FOOS' (/tasks). The server was in airplane mode (/api/system/network online:false, /api/scheduler/status online:false). Even so, the Task manager's plane was HOLLOW (fill=none), NOT red, and its hover title read 'Online — click to go offline (airplane mode); every new network request will be refused.'. The summary state read 'Idle', not 'Airplane mode'. Retried three times straight on /tasks with 6, 12 and 20 s waits: identical every time. The expected offline text 'Offline (airplane mode) — click to go online in the app; …' never appeared in any language. Cause: taskmanager.html:522-524 derives the state from act.online of /api/scheduler/activity, and that payload has no 'online' key. src/scheduler/runner.py:2282-2308 returns status() plus extras; only src/api/scheduler.py:130 _status_payload adds it for the /status responses. So undefined !== false paints online, always. What DID work: the title re-translated live without a reload (fr/ar/zh online strings exact, ar mirrored), but for the wrong state. Side effect of the live switch: after ar→zh the summary strip (state, metric labels, 'Live') stayed in Arabic until the next poll (P3)."
+   },
+   {
+    "id": "T6",
+    "result": "pass",
+    "locales": [
+     "en",
+     "fr",
+     "ar",
+     "zh"
+    ],
+    "screenshot": "shots/T/T-T6-knob-hover-max-en.png, shots/T/T-T6-click1-en.png, shots/T/T-T6-click2-en.png",
+    "observed": "The fresh folder started at Maximum: config collect_rate_mode=maximum, class rate-max, needle rotate(48), accent rgb(91,157,217). The #oo-tip hover read 'Collection speed: Maximum — uses your connection fully (politeness per host unchanged). Click for the considerate 500 KiB/s target.' Click 1: the needle swung to rotate(-48), the accent went (rgb(232,235,240)), the toast read 'Collection speed set to the 500 KiB/s target — applies from the next pass.', config mode=target/500, and Settings > Advanced > Collection > Advanced (legacy) showed '500 kbps' with slider value 2 (3rd of 7 stops). Click 2: needle and accent back, toast 'Collection speed set to Maximum — applies from the next pass.', Settings 'Maximum' with the slider at 6 (far right), config maximum. A MutationObserver on #net-consent counted 0 opens, and the app stayed offline throughout. Settings > Wikipedia and > OpenStreetMap had no range or number input and no text matching speed/bandwidth/kbps/KiB/rate: there is no per-download cap. Re-checked in fr/ar/zh: the hover and both messages were translated and the slider stayed in sync. The KiB/s vs kbps wording is visible and already known (OPEN_QUEUE:697), so it is not counted here."
+   },
+   {
+    "id": "T7",
+    "result": "pass",
+    "locales": [
+     "en"
+    ],
+    "observed": "150 sequential fetch('/api/articles?limit=1') from the app page: ok 150, refused 0, no other statuses, 1.6 s."
+   },
+   {
+    "id": "T8",
+    "result": "fail",
+    "locales": [
+     "en",
+     "fr",
+     "ar",
+     "zh"
+    ],
+    "screenshot": "shots/T/T-T8-app-online-en.png, shots/T/T-T8-tasks-online-en-fr-ar-zh.png, shots/T/T-T8-tasks-after-offline-click-en.png",
+    "observed": "ONLINE HALF PASSES. Boot with OO_NO_SCHEDULER=1: online:true, scheduler running=false, wiki_lane active=false. Both planes were hollow. The app's styled bubble and the /tasks title both read 'Online — click to go offline (airplane mode); every new network request will be refused.', and the summary read 'Idle'. Nothing said 'stops all collection'. Live switches in /tasks, sampled every 100 ms: the title flipped to the exact fr/ar/zh strings 100–150 ms after the menu click, with no /api/scheduler/activity poll in between, so the oo:langchange listener did it. OFFLINE HALF FAILS. One click on the /tasks plane: the POST worked (/api/system/network online:false; the app tab repainted filled/offline within 6.5 s), and #tm-conn showed 'Offline — every new network request is refused. One in-flight request may finish.'. But over 12 s of 200 ms samples the /tasks plane stayed HOLLOW, the title stayed the online text, and the summary stayed 'Idle' ('Airplane mode' never appeared). The click handler's own refresh() immediately re-applies act.online (undefined) as online. Same root cause as T5."
+   },
+   {
+    "id": "T9",
+    "result": "not-measurable-here",
+    "locales": [
+     "en"
+    ],
+    "screenshot": "shots/T/T-T9-vitals-system-en.png",
+    "observed": "No collection pass can run here (no egress), so /api/scheduler/activity has collect_perf=null and there is no process_budget. toggleVitals() opened the in-app Task manager window. Its System subtab has NO 'COLLECTION SPEED' block, which is the correct no-pass state per the step. The only on-screen element calling toggleVitals is the window's own close button, which confirms the recorded 'no clickable entry point' finding. fr/ar and the budget/measured figures were not observable."
+   },
+   {
+    "id": "T10",
+    "result": "not-measurable-here",
+    "locales": [
+     "en"
+    ],
+    "observed": "/api/jobs/history?limit=100 returned no runs and no 'crawl_delay_deferred'. The data folder has no host_schedule.json. Not observed on this corpus: nothing has ever been collected."
+   },
+   {
+    "id": "375px",
+    "result": "fail",
+    "locales": [
+     "en"
+    ],
+    "screenshot": "shots/T/T-375-home-en.png, shots/T/T-375-tasks-en.png",
+    "observed": "Home at 375x812 (fresh profile): scrollWidth - clientWidth = 71. #home-tier ('EARLY CORPUS 24 articles · 509 days thin evidence — read with care') is 409 px wide and pushes its caveat past the right edge. Same in light and dark. The coach itself fits the viewport: buttons equal and unclipped, arrow 15 px from the plane. /tasks at 375: overflow 144 px, from the subtab row (the 'Schedule' and 'Sessions' buttons end at 428 and 519 px). The same page also showed the T5 defect (hollow plane, 'Idle' while offline)."
+   }
+  ],
+  "page_errors": [],
+  "http_errors": [],
+  "junk_text": [],
+  "defects": [
+   {
+    "title": "Task manager (/tasks) always shows ONLINE: plane never fills, offline title and 'Airplane mode' state unreachable",
+    "severity": "P1",
+    "step_ids": [
+     "T5",
+     "T8"
+    ],
+    "repro": "Boot normally (airplane mode). Click the top-bar 'Tasks & system' icon, or open /tasks. Hover the plane. Or: boot with OO_NO_SCHEDULER=1 (online), open /tasks and click its plane once.",
+    "expected": "While offline: plane filled and red, title 'Offline (airplane mode) — click to go online in the app; you'll be asked to confirm first.' (translated live), summary 'Airplane mode'. After the offline click, the same.",
+    "actual": "While the server is offline (/api/system/network and /api/scheduler/status both online:false): plane hollow and not red, title 'Online — click to go offline (airplane mode); every new network request will be refused.', summary 'Idle'. Seen on 3 retries (6/12/20 s) and in fr/ar/zh. After the offline click the POST succeeds and #tm-conn shows the offline toast, but the plane, title and summary stay online-looking for 12 s+. The safety control's FILL (invariant #14) misstates the state, and Q1126's offline half is never shown.",
+    "evidence": "/tmp/claude-0/walk/T/T-T5-tasks-while-offline-en-fr-ar-zh.png, /tmp/claude-0/walk/T/T-T8-tasks-after-offline-click-en.png, walk1b.json T5_retries (api_activity_has_online:false). Cause: src/static/taskmanager.html:522-524 (and :392 renderSchedule) read act.online from GET /api/scheduler/activity. src/scheduler/runner.py:2282-2308 builds that payload from self.status() without 'online'; only src/api/scheduler.py:130 (_status_payload, used by the /status responses) adds it. So act.online is undefined and `act.online !== false` paints online."
+   },
+   {
+    "title": "Task manager health pill always reads 'degraded' though /api/health says healthy",
+    "severity": "P2",
+    "step_ids": [
+     "T5",
+     "T8"
+    ],
+    "repro": "Open /tasks on a healthy server and read the pill left of 'AI'.",
+    "expected": "'healthy', as the app's own top bar shows for the same server",
+    "actual": "'degraded' ('dégradé', 'متدهور', '已降级') in every run, while GET /api/health returns {\"status\":\"healthy\",...}",
+    "evidence": "/tmp/claude-0/walk/T/T-T5-tasks-while-offline-en-fr-ar-zh.png vs /tmp/claude-0/walk/T/T-T6-click1-en.png. src/static/taskmanager.html:746 tests h.status === 'ok' || h.ok === true || h.healthy === true, while src/api/main.py:701 returns status 'healthy'."
+   },
+   {
+    "title": "Home's early-corpus strip overflows at 375 px and pushes its caveat off-screen",
+    "severity": "P2",
+    "step_ids": [
+     "375px"
+    ],
+    "repro": "Open the app at a 375 px viewport on a young corpus (24 articles) and look at the Home at-a-glance card.",
+    "expected": "No horizontal page scroll (scrollWidth - clientWidth = 0); the caveat 'thin evidence — read with care' fully visible",
+    "actual": "The page scrolls sideways by 71 px. #home-tier.corpus-tier.tier-early is 409 px wide, and its span.tier-caveat ends at 446 px, cut at 'thin evidence — r'.",
+    "evidence": "/tmp/claude-0/walk/T/T-375-home-en.png; /tmp/claude-0/walk/T/probe375.py output (light and dark identical)"
+   },
+   {
+    "title": "Net-coach bubble does not re-anchor after a live language/direction switch",
+    "severity": "P3",
+    "step_ids": [
+     "T3"
+    ],
+    "repro": "While offline with the bubble showing, switch the top-bar language to العربية, then to 中文.",
+    "expected": "The bubble follows the plane when the top bar mirrors",
+    "actual": "In ar the plane moves to x=186 and the bubble stays at x=1162 (arrow 1019 px from the plane), over the sidebar brand and the Graphics subtab. A window resize re-anchors it. Back in zh/en it is left 986 px away on the left.",
+    "evidence": "/tmp/claude-0/walk/T/T-T3-coach-ar.png; walk1.json T3.place. src/static/app-core.js:1017-1087: _placeCoach runs only on show and on window resize, with no oo:langchange listener."
+   },
+   {
+    "title": "Task manager summary strip keeps the previous language after a live switch from a non-English locale",
+    "severity": "P3",
+    "step_ids": [
+     "T5",
+     "T8"
+    ],
+    "repro": "In /tasks switch to العربية, then to 中文 (or back to English).",
+    "expected": "The state label, metric labels and 'Live' in the new language at once, as the airplane title is",
+    "actual": "After ar→zh: 'خامل', 'الذاكرة', 'الشبكة ↓', 'نشط', 'مباشر' on the Chinese page until the next poll (measured 2.3 s; up to 6 s idle, 15 s hidden). The same after zh→en (2.0 s). en→fr and fr→ar flip at once, because the i18n walker knows the English source.",
+    "evidence": "/tmp/claude-0/walk/T/T-T5-tasks-while-offline-en-fr-ar-zh.png (zh panel); walk2.json T8.switches.*.samples. src/static/taskmanager.html:718 re-paints only paintAir on oo:langchange, and renderSummary runs only from refresh() (:589-610)."
+   },
+   {
+    "title": "Task manager page overflows horizontally at 375 px",
+    "severity": "P3",
+    "step_ids": [
+     "375px"
+    ],
+    "repro": "Open /tasks at a 375 px viewport.",
+    "expected": "scrollWidth - clientWidth = 0",
+    "actual": "144 px of sideways page scroll. The Processes/Performance/Queue/Schedule/Sessions subtab row does not wrap or scroll in its own box; 'Schedule' ends at 428 px and 'Sessions' at 519 px.",
+    "evidence": "/tmp/claude-0/walk/T/T-375-tasks-en.png; /tmp/claude-0/walk/T/probe375.py output"
+   }
+  ],
+  "not_measurable": [
+   "T9: the per-process budget panel and /api/scheduler/activity process_budget. They need a running collection pass, which needs egress. Only the no-pass state (block absent, collect_perf null) was seen.",
+   "T10: crawl_delay_deferred in /api/jobs/history and host_schedule.json. They need a corpus that has collected from a host declaring a Crawl-delay. Not observed on this corpus.",
+   "Everything after a consent 'Go online' click (real collection). It was never clicked, per the sandbox rule.",
+   "Q1132 model-weight digest values, Q1148's 100/hour non-loopback half, the third (AI-install egress window) airplane title, and the three i18n gates and behavioural tests. These are CI/operator items, not clicks.",
+   "Whether this agent-run walk counts as Q1128's 'operator's own click-through' is a maintainer ruling. This walk is evidence, not closure.",
+   "Known and not counted: the speed knob's 'KiB/s' vs Settings' 'kbps' (OPEN_QUEUE.md:697-712), seen in T6 in en/fr/ar/zh."
+  ],
+  "summary": "The click-through clause does not close. Q1125 (coach buttons at equal weight in Ink, Paper, Solar and Mint, and in fr/ar/zh), Q1012's UI half (one gauge synced with the Settings slider, no consent popup, no per-download cap) and Q1148 (150/150 loopback calls allowed) all pass. Q1126 fails on its offline half: the /tasks page reads 'online' from /api/scheduler/activity, which never carries it, so in airplane mode the Task manager shows a hollow plane, 'Online — click to go offline…' and 'Idle', and after its own go-offline click it reverts to online at once (T5, T8); the online title and its live re-translation do work. T9 and T10 cannot be observed in the sandbox, and the 375 px pass also fails on Home (a 71 px overflow that pushes a caveat off-screen) and on /tasks (144 px)."
+ },
+ "recheck": {
+  "row": "T",
+  "verdicts": [
+   {
+    "title": "The task manager (/tasks) always shows ONLINE: the plane never fills, and the offline title and the 'Airplane mode' state never appear",
+    "verdict": "confirmed",
+    "reason": "I reproduced this on my own fresh encrypted instance (port 8848, booted locked, airplane mode on). I opened /tasks through the real top-bar #tm-open and read it after 6, 12 and 20 s. /api/system/network and /api/scheduler/status both said online:false. Even so the /tasks plane had fill='none' with no red, its title read 'Online — click to go offline (airplane mode); every new network request will be refused.', and the summary read 'Idle'. The Schedule tab said 'stopped' where it should say 'paused — airplane mode'. GET /api/scheduler/activity has no 'online' key (hasOwnProperty=false). Clicking the /tasks plane POSTs online:false, which is the safe direction. 50 ms after the click the plane was filled and showed the offline title, painted by the click handler itself. At 100 ms it flipped back to hollow with the online title, and it stayed that way through 12 s of 50 ms samples. #tm-conn showed the offline toast the whole time. To test the fix without editing the repo, I used a Playwright route to add 'online' (taken from /api/system/network) to the activity payload. With that key present the page painted correctly: filled plane, red rgb(217,108,108), Q1126's offline title, and 'Airplane mode' in the summary and 'paused — airplane mode' in Schedule. The offline title also re-translated live in fr, ar and zh. So the only missing piece is the key. Severity: I keep P1. Invariant #14 (fill shows state) is always wrong on this surface while airplane mode is on, and airplane mode is the boot default. The operator's own go-offline click looks as if it failed. The ruled Q1126 offline title cannot be shown here, so the row's clause cannot close. It is not P0 because the error only ever shows the SAFER state as the less safe one: nothing leaves the machine, and consent is never bypassed. Going online from /tasks still routes to the app.",
+    "root_cause": "src/static/taskmanager.html:522-524 (renderSummary: `_tmOnline = act ? (act.online !== false) : null`) and :392 (renderSchedule: `offline = a.online === false`) read `online` from GET /api/scheduler/activity. That route (src/api/scheduler.py:271-277) returns `get_scheduler().activity(db)`. src/scheduler/runner.py:2282-2308 builds that payload from `self.status()` plus plan and rates, and never adds `online`. Only `_status_payload()` (src/api/scheduler.py:123-130), which the /status, start, stop and resume responses use, adds `status[\"online\"] = not kill_switch_active()`. So `act.online` is undefined and `undefined !== false` paints online. The task manager's own header comment (taskmanager.html:19-20) documents that /activity carries `online`, so the endpoint drifted from its documented contract. test_repo_invariants.py:5985 only checks for the string 'a.online === false' in the HTML, so the missing key was never caught.",
+    "suggested_fix": "src/api/scheduler.py scheduler_activity: `from src.ingest import kill_switch_active; out = get_scheduler().activity(db); out[\"online\"] = not kill_switch_active(); return out` (the same line _status_payload uses). Add a behavioural test that GET /api/scheduler/activity carries a boolean `online` equal to `not kill_switch_active()`. Evidence: /tmp/claude-0/walk/T-recheck/T-recheck-tasks-offline-en.png, T-recheck-tasks-after-offline-click-en.png, T-recheck-tasks-schedule-offline-en.png, T-recheck-tasks-offline-with-online-key-en.png (fix simulated), recheck1.json defect1_*, recheck2.json fixsim_*.",
+    "severity": "P1"
+   },
+   {
+    "title": "The task manager's health pill always reads 'degraded' while /api/health says healthy",
+    "verdict": "confirmed",
+    "reason": "Reproduced on every /tasks read: #health showed ' degraded' (and 'dégradé' in fr, '已降级' in zh) while GET /api/health returned {\"status\":\"healthy\",\"version\":\"0.3.0\",...}. The app's own top bar showed 'healthy' for the same server at the same moment. The pill makes a false status claim on every load. It is not a row-T surface, and it does not stop anything from working, but it tells the operator something is wrong when nothing is. Kept at P2.",
+    "root_cause": "src/static/taskmanager.html:746 computes `ok = h && (h.status === \"ok\" || h.ok === true || h.healthy === true)`. src/api/main.py:697-704 (health_check) returns `{\"status\": \"healthy\", ...}` with no `ok` or `healthy` field, so `ok` is always false and the pill paints t(\"degraded\"). The dot also never gets an ok or err class.",
+    "suggested_fix": "taskmanager.html:746: accept the value the endpoint actually returns, e.g. `var ok = h && (h.status === \"healthy\" || h.status === \"ok\" || h.ok === true || h.healthy === true);`. Optionally add class 'ok' to the dot as app-core.js:2555 does. Evidence: /tmp/claude-0/walk/T-recheck/T-recheck-tasks-offline-en.png ('degraded' beside the AI pill); recheck1.json defect1_tasks_offline_tries[*].health_pill vs api_health.",
+    "severity": "P2"
+   },
+   {
+    "title": "On a young corpus, Home's early-corpus tier overflows at 375 px and pushes its 'thin evidence' caveat off-screen",
+    "verdict": "confirmed",
+    "reason": "Reproduced at 375x812 in both dark and light schemes. documentElement.scrollWidth - clientWidth = 71, and it is still 71 after dismissing the coach through its own 'Not now' button, so the coach is not the cause. #home-tier.corpus-tier.tier-early is 409 px wide (left 37, right 446) inside a 335 px parent, with white-space:nowrap. Its span.tier-caveat ends at 446 px, and on screen the text is cut at 'thin evidence — r'. The 2026-09-08 visual audit (docs/audit/ui-visual-2026-09-08/findings.csv, F4) saw this component overflow only at 320 px, on a 'developing' tier that has no caveat span. The early-tier variant, which adds 'thin evidence — read with care', is what every fresh phone install shows, and it overflows at 375 px. I found no record of this variant. Kept at P2: the caveat is pushed off the visible surface at phone width, and the non-negotiable says caveats are visible by default. Scrolling sideways still reveals it.",
+    "root_cause": "src/static/app.css:1429 `.corpus-tier { display:inline-flex; align-items:baseline; gap:7px; white-space:nowrap; }`. The badge, the numbers and the caveat (src/static/app-home.js:934-938) can never wrap, and the @media (max-width:600px) block has no rule to relax that.",
+    "suggested_fix": "Let the tier wrap between its parts but not inside them: `.corpus-tier { display:inline-flex; flex-wrap:wrap; align-items:baseline; gap:7px; max-width:100%; } .corpus-tier > span { white-space:nowrap; }`. I verified this by injecting it in Chromium at 375 px: the overflow goes from 71 to 0, the tier's right edge moves to 338 and the caveat's to 201 on its own line, and the tier is 46 px tall. Evidence: /tmp/claude-0/walk/T-recheck/T-recheck-375-home-en.png, T-recheck-375-home-tier-with-proposed-css-en.png, recheck1.json defect3_6_phone.home_*, recheck2.json home375_*.",
+    "severity": "P2"
+   },
+   {
+    "title": "The net-coach bubble does not re-anchor after a live language or direction switch",
+    "verdict": "confirmed",
+    "reason": "Reproduced at 1440x950. In en the coach sits at left 1162 and top 62, below the plane at x 1220-1254, with its arrow 32 px from the plane. After switching to العربية through #lang-switch (dir=rtl), the plane moved to x 186-220 and the coach stayed at left 1162. Its arrow ended up 1036 px from the plane, and the bubble sat over the RTL sidebar's Home/Feed/Insights items (T-recheck-coach-ar.png). A 6 px window resize re-anchored it (arrow 30 px from the plane). Switching on to zh and then en left it at left 232, 1003 px from the plane. The bubble can still be read and dismissed, and 'Go online' still goes through ensureOnline, so this stays P3.",
+    "root_cause": "src/static/app-core.js:1017-1087. _placeCoach runs only inside maybeShowNetCoach (:1085-1086, at show and 220 ms after) and on window 'resize' (:1087). Nothing registers it on 'oo:langchange', neither the app-boot.js:41 listener nor app-core, so when the top bar mirrors, the bubble keeps its stale pixel position.",
+    "suggested_fix": "Re-place the coach when the language changes. In the existing oo:langchange listener (src/static/app-boot.js:41), add `try { if (typeof _placeCoach === \"function\") { _placeCoach(); setTimeout(_placeCoach, 220); } } catch (_e) {}`. _placeCoach already returns early when the coach is not shown. Also fix the separate RTL placement defect below, or the re-anchored position lands on the top-bar controls. Evidence: /tmp/claude-0/walk/T-recheck/T-recheck-coach-ar.png; recheck1.json defect4_coach.",
+    "severity": "P3"
+   },
+   {
+    "title": "The task manager's summary strip (and health pill) keep the previous language after a live switch from a non-English locale",
+    "verdict": "confirmed",
+    "reason": "Reproduced in /tasks with its own #lang-switch, sampling every 100 ms. After fr→ar the summary stayed French ('Inactif … MÉMOIRE … RÉSEAU ↓ … ACTIF') until 2.7 s. After ar→zh it stayed Arabic ('خامل … الذاكرة … الشبكة ↓ … نشط') until 5.1 s. After zh→en it stayed Chinese until 1.4 s. In each case the change came at the next refresh() poll. en→fr flipped at once, because the i18n walker can match English source text. The airplane title flipped within about 100 ms every time, through the oo:langchange listener. One small correction to the walker: fr→ar did NOT flip at once here. There is more than the walker reported: the #health pill stays in the previous language for up to the 15 s health poll. It still read 'dégradé' for the whole 9 s window after fr→ar, and '已降级' for the whole window after zh→en. The text is transient and self-corrects, so P3.",
+    "root_cause": "src/static/taskmanager.html:718 registers `document.addEventListener(\"oo:langchange\", function () { paintAir(); })`, and that is the only repaint on a switch. renderSummary (:520-540) runs only from refresh() (:589-610; the idle loop fires every 6 s, and every 15 s when the tab is hidden). loadHealth (:744-748) runs only on the 15 s setInterval (:796). Both paint with t() at paint time, so the walker cannot map already-translated non-English text back to a key.",
+    "suggested_fix": "In the taskmanager.html:718 listener, also repaint the strip and the pill. The smallest change is `function () { paintAir(); refresh(); loadHealth(); }`, at the cost of one extra poll per switch. The alternative, closer to the app's no-fetch pattern: cache the last `v`, `rates` and health result, and call renderSummary(lastV, window._act, lastRates) plus re-paint #health from the cache. Evidence: /tmp/claude-0/walk/T-recheck/T-recheck-tasks-zh-after-ar.png; recheck1.json defect5_lang_switch_runs.",
+    "severity": "P3"
+   },
+   {
+    "title": "The task manager page overflows horizontally at 375 px",
+    "verdict": "confirmed",
+    "reason": "Reproduced at 375x812 in both schemes. documentElement.scrollWidth - clientWidth = 144 (scrollWidth 519). The only elements past the right edge are the last two #tm-tabs buttons: 'Schedule' spans 336-428 and 'Sessions' spans 430-519. taskmanager.html has no @media rule at all. The tabs can still be reached by scrolling the page sideways, so P3.",
+    "root_cause": "src/static/taskmanager.html:64-67. `.tm-tabs { display:flex; gap:2px; padding:8px 12px 0; … }` with five `padding:8px 14px` buttons. It has no flex-wrap, no overflow-x, and no narrow-width rule, so the row's min-content width (about 511 px) widens the page.",
+    "suggested_fix": "`.tm-tabs { overflow-x:auto; } .tm-tabs button { flex:none; }` (or flex-wrap:wrap). I verified the overflow-x version by injecting it at 375 px: page overflow goes from 144 to 0, and the tab strip scrolls inside its own 335 px box (scrollWidth 511). Evidence: /tmp/claude-0/walk/T-recheck/T-recheck-375-tasks-en.png; recheck1.json defect3_6_phone.tasks_*; recheck2.json tasks375_*.",
+    "severity": "P3"
+   },
+   {
+    "title": "NEW (found during recheck): in RTL (ar) at desktop width, the net-coach covers the top-bar #tm-open, #rate-toggle, #wiki-toggle and #llm",
+    "verdict": "confirmed",
+    "reason": "The walker did not report this. It is the T2/T3 coach surface. I picked Arabic through the real switcher and reloaded, so the page loaded straight into RTL at 1440x950. The coach showed at [232,8,502,143] while the top bar ends at y=62. document.elementFromPoint at each top-bar control's centre landed inside the coach for #tm-open (@341,31; 'Tasks & system', one of the four buttons the 2026-07-22 net-coach-blocks-topbar-buttons fix protects), #rate-toggle (@295,31; the Q1012 knob this row tests), #wiki-toggle (@249,31) and #llm (@416,31). I got the same result after the live-switch re-anchor. In LTR at 1440 px the side branch is never taken, because the plane is near the right edge. That is why the 2026-07-22 verification did not see this. The bubble can be dismissed with one click, and nothing crosses the consent gate. By this rubric (P0 means data loss, security or consent), that makes it P2, not the P0 the original LTR finding was graded.",
+    "root_cause": "src/static/app-core.js:1024-1026. The 'prefer to the right of the button' branch assumes the button sits at the right edge, which only holds in LTR. It sets `top = b.top + b.height/2 - h/2`. For a coach about 135 px tall next to a 34 px button at y 14-48, that is negative, and the clamp at :1043 raises it to 8 px, inside the top-bar row. That is the same collapse-into-the-top-bar mechanism the :1027-1036 comment describes for the old 'above' placement. In RTL the plane sits at x 186-220, so the branch is taken, and the coach lands on the controls to the right of the plane.",
+    "suggested_fix": "Never place the coach inside the top-bar row. Either always use the existing 'below the union of the protected buttons' placement, which works in either direction, or keep the side branch only when `top >= guardBottom + gap`. The smallest change: compute guardBottom before the if, and require `b.top + b.height/2 - h/2 >= guardBottom + gap` in the side-branch condition. Also add '#rate-toggle', '#wiki-toggle' and '#llm' to the guard list, and add an RTL case to the net-coach elementFromPoint regression test. Evidence: /tmp/claude-0/walk/T-recheck/T-recheck-coach-ar-cold.png, T-recheck-coach-ar-live-switch.png, T-recheck-coach-ar-reanchored-covers-topbar.png; recheck3.json, recheck5.json.",
+    "severity": "P2"
+   }
+  ]
+ }
+}

@@ -15214,3 +15214,26 @@ tab»** (over «Home section»). Recorded as `R32` in `RULINGS_INDEX.md` and as 
 `CLAUDE.md`; invariant #2's roster grows by one and `test_ui_invariants` pins it (#32). **Not
 decided by it:** nothing about a Home family. The renderers in `src/static/app-living.js` stay pure
 `(payload, t, tf) -> HTML` so one could be added later, but no Home card exists and none is implied.
+
+---
+
+## 2026-09-26 — The 0.4 click-through DELEGATED to Claude (R35), and the first delegated walk
+
+Asked what was left before v0.4, the maintainer was told the rows H, I, J, L, M, N, O, P, S, T and U each still
+owed their own click-through (Q1128 = a). Offered a checklist to walk, they answered in the project thread,
+2026-09-26 17:23 UTC: **«no, Don't write a checklist for me. I want to delegate the click-through to YOU or a claude
+code session, or an entire workflow.»** Recorded as `R35`. A Claude-run Chromium walk on an encrypted,
+locked-at-boot install, every reported defect independently reproduced before it counts, now meets the
+click-through half of Q1128 = a for those rows. **What it does NOT delegate:** each row's operator steps, which
+need the maintainer's machine (the real restore at corpus scale, the real-corpus fold and re-index reports, the
+removable drive, the upgrade of their own encrypted install), and anything after «Go online».
+
+**The first delegated walk ran the same day** (`docs/audit/delegated-clickthrough-2026-09-26/`, 44 agents: draft,
+adversarial step check, walk, independent re-check). **J and O pass** for everything a sandbox reaches; **H, I, L,
+M, N, P, S, T and U fail** on 115 confirmed defects (5 P1, 38 P2, 72 P3; two more judged by design). The three P1
+causes: every `#oo-tip` hover inside a `showModal()` dialog is drawn under the dialog's top layer, so the consent
+popup's per-lane hosts and transport are unreadable (H, O, P); a deep-linked analysis tab can paint another tab's
+results (N); the task-manager page always reads online because `/api/scheduler/activity` never carries `online`
+(T). **OPEN:** fix the confirmed defects, then walk the failed rows again; a row's click-through clause closes on
+the re-walk, not on this one.
+
