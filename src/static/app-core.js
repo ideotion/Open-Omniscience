@@ -1014,53 +1014,53 @@
     function _coachSave(s) {
       try { localStorage.setItem(_COACH_KEY, JSON.stringify(s)); } catch { /* private mode */ }
     }
+    // ALWAYS BELOW THE WHOLE CHROME, never beside the plane (delegated click-through
+    // 2026-09-26, rows N/O/T). The coach is taller than the top bar, so any placement
+    // BESIDE a top-bar button lands in the top bar's own row once the clamp below pulls
+    // it on screen. The old "to the right of the button" branch assumed the plane sat at
+    // the right edge, which only holds in LTR: in Arabic it was taken every time and the
+    // coach covered #tm-open, #rate-toggle, #wiki-toggle and #llm. And "below the
+    // top-bar buttons" was not low enough either, because `.chrome` also holds the
+    // facet-subtab strip relocated under the top bar (Settings, Living sources, Insights),
+    // so the coach sat on those subtabs. So: below the lowest of `.chrome` and every
+    // protected button, anchored to the plane on the side the reading direction puts
+    // the page (LTR: the plane is at the right, the coach hangs to its left; RTL the
+    // mirror), and kept inside the main column so it never lands on the sidebar.
+    const _COACH_GUARD = ["net-toggle", "lang-switch", "tm-open", "app-shutdown",
+                          "rate-toggle", "wiki-toggle", "llm"];
+    let _coachRO = null;
     function _placeCoach() {
       const el = $("net-coach"), btn = $("net-toggle");
       if (!el || !btn || !el.classList.contains("show")) return;
       const b = btn.getBoundingClientRect();
       const w = el.offsetWidth, h = el.offsetHeight, gap = 12, pad = 8;
       const arrow = el.querySelector(".coach-arrow");
-      let left, top, side;
-      if (b.right + gap + w <= window.innerWidth - pad) {   // prefer to the right of the button
-        left = b.right + gap; top = b.top + b.height / 2 - h / 2; side = "left";
-      } else {
-        // No room to the right. The coach must go BELOW the whole protected-button
-        // cluster, never above it: the topbar sits at the very top of the viewport,
-        // so placing it above the button (its top computed from the button's own
-        // top, minus the gap and the coach's height) is almost always deeply
-        // negative, and the clamp below collapses it right back into the topbar's
-        // own row -- overlapping every button in it (net-coach-blocks-topbar-buttons,
-        // P0; this was the exact, guaranteed-every-time root cause, not an
-        // occasional mispositioning). Below the union of every button the coach
-        // must never cover is the one direction structurally guaranteed to have
-        // room and to never overlap any of them.
-        const guard = ["net-toggle", "lang-switch", "tm-open", "app-shutdown"]
-          .map((id) => $(id)).filter(Boolean).map((e) => e.getBoundingClientRect());
-        const guardBottom = guard.length ? Math.max(...guard.map((r) => r.bottom)) : b.bottom;
-        left = b.left; top = guardBottom + gap; side = "below";
-      }
-      left = Math.max(pad, Math.min(left, window.innerWidth - w - pad));
-      top = Math.max(pad, Math.min(top, window.innerHeight - h - pad));
+      const guard = [btn.closest(".chrome"), ..._COACH_GUARD.map((id) => $(id))]
+        .filter(Boolean).map((e) => e.getBoundingClientRect()).filter((r) => r.height > 0);
+      const guardBottom = guard.length ? Math.max(...guard.map((r) => r.bottom)) : b.bottom;
+      const rtl = getComputedStyle(btn).direction === "rtl";
+      const col = btn.closest(".main-col");
+      const c = col ? col.getBoundingClientRect() : {left: 0, right: window.innerWidth};
+      const lo = Math.max(pad, c.left + pad);
+      const hi = Math.min(window.innerWidth, c.right) - w - pad;
+      let left = rtl ? b.left : b.right - w;
+      left = Math.max(lo, Math.min(left, hi));
+      const top = Math.max(pad, Math.min(guardBottom + gap, window.innerHeight - h - pad));
       el.style.left = left + "px"; el.style.top = top + "px";
       if (arrow) {
-        if (side === "left") {
-          arrow.style.left = "-6px"; arrow.style.right = "auto";
-          arrow.style.top = Math.max(8, Math.min(b.top + b.height / 2 - top - 5, h - 16)) + "px";
-          arrow.style.transform = "rotate(45deg)";
-        } else {
-          // "below": the arrow must point UP at the button cluster, so it peeks out
-          // the TOP edge (mirrors the "left" case's left:-6px) -- never the bottom,
-          // which was only correct for the old, unsafe above-the-button placement.
-          arrow.style.top = "-6px";
-          arrow.style.left = Math.max(8, Math.min(b.left + b.width / 2 - left - 5, w - 16)) + "px";
-          arrow.style.transform = "rotate(45deg)";
-        }
+        // The arrow points UP at the plane from the coach's top edge. rotate(135deg)
+        // turns the two bordered sides (left, bottom) to face up, so the notch reads
+        // as a pointer rather than a half-outlined diamond.
+        arrow.style.top = "-6px"; arrow.style.right = "auto";
+        arrow.style.left = Math.max(8, Math.min(b.left + b.width / 2 - left - 5, w - 16)) + "px";
+        arrow.style.transform = "rotate(135deg)";
       }
     }
     function dismissNetCoach(permanent) {
       const el = $("net-coach"); if (el) el.classList.remove("show", "prominent");
       if (permanent) { const s = _coachState(); s.dismissed = true; _coachSave(s); }
       window.removeEventListener("resize", _placeCoach);
+      if (_coachRO) _coachRO.disconnect();
     }
     function maybeShowNetCoach() {
       const el = $("net-coach"), btn = $("net-toggle"); if (!el || !btn) return;
@@ -1085,6 +1085,15 @@
       _placeCoach();
       setTimeout(_placeCoach, 220);                      // reposition after i18n reflow
       window.addEventListener("resize", _placeCoach);
+      // The chrome changes height WITHOUT a window resize: a tab with facet subtabs
+      // relocates its strip under the top bar, and a language switch re-wraps both.
+      // Re-place on those too (a direction flip is re-placed from app-boot.js's
+      // oo:langchange listener, since it moves the plane without resizing anything).
+      const chrome = btn.closest(".chrome");
+      if (chrome && typeof ResizeObserver === "function") {
+        if (!_coachRO) _coachRO = new ResizeObserver(() => _placeCoach());
+        _coachRO.observe(chrome);
+      }
     }
     // ONE consent design for every offline->online transition: what will
     // happen + the machine's LOCAL addresses (kernel tables; fetching a
@@ -1141,10 +1150,21 @@
     const _NET_STATE_ON = "on", _NET_STATE_OFF = "off",
           _NET_STATE_ASK = "ask", _NET_STATE_UNKNOWN = "unknown";
 
-    function _laneState(lane, cfg) {
+    // `enabling` names the lane the action being consented to turns ON (the Wikipedia
+    // toggle's Start). The popup describes the state the operator is agreeing to, so
+    // that lane is sorted as switched on -- never under "Switched off right now", which
+    // is the very state the click is about to end (delegated click-through, row P).
+    //
+    // `whenOn: "ask"` is a lane whose switch only PERMITS a request the operator then
+    // makes by hand (Discover by topic): switched on it is "only when you ask for it",
+    // never "runs on every collection pass" -- docs/SECURITY.md's row says it is never
+    // part of the scheduler, and the popup must say the same thing (row H).
+    function _laneState(lane, cfg, enabling) {
       if (lane.trigger === "pass") return _NET_STATE_ON;
       if (lane.trigger === "click") return _NET_STATE_ASK;
       if (lane.noOptOut && lane.trigger === "ride-along") return _NET_STATE_ON;
+      const on = lane.whenOn === "ask" ? _NET_STATE_ASK : _NET_STATE_ON;
+      if (enabling && lane.id === enabling) return on;
       const src = cfg[lane.settingFrom];
       if (!lane.setting || src === undefined) return _NET_STATE_ON;
       if (src === null) return _NET_STATE_UNKNOWN;           // the read failed
@@ -1161,7 +1181,7 @@
         if (typeof v === "number") return v > 0 ? _NET_STATE_ON : _NET_STATE_OFF;
         return v ? _NET_STATE_ON : _NET_STATE_OFF;
       });
-      if (states.includes(_NET_STATE_ON)) return _NET_STATE_ON;
+      if (states.includes(_NET_STATE_ON)) return on;
       if (states.includes(_NET_STATE_UNKNOWN)) return _NET_STATE_UNKNOWN;
       return _NET_STATE_OFF;
     }
@@ -1187,7 +1207,14 @@
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
       const protectedMode = kind === "proxy" || kind === "pool" || kind === "refused";
       if (lane.fetcher === false) {
-        if (!protectedMode) return t("Not through this app's fetcher or proxy.");
+        // A MIXED lane says so in every mode, not only with protected mode on: its
+        // installer check IS a guarded fetch (docs/SECURITY.md's "Mixed." row), so
+        // the plain "not through the fetcher" line would deny a path it takes (row H).
+        if (!protectedMode) {
+          return lane.mixed
+            ? t("Mostly not through this app's fetcher or proxy — only the installer check uses the fetcher.")
+            : t("Not through this app's fetcher or proxy.");
+        }
         // With no usable proxy the installer check is refused, not proxied, so the
         // "mostly direct" line would overclaim; the plain direct line is the true one.
         return (lane.mixed && kind !== "refused")
@@ -1218,7 +1245,13 @@
     function _laneHostTitle(lane, kind) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
       const parts = [];
-      if (lane.hosts && lane.hosts.length) parts.push(lane.hosts.join(" · "));
+      // Each host sits in a left-to-right ISOLATE (U+2066 … U+2069). The bubble is
+      // plain text in an RTL document under Arabic, so without it the bidi algorithm
+      // moved the "*." of "*.wikipedia.org" to the far end of the line (row H). The
+      // isolates are invisible and change no host's spelling.
+      if (lane.hosts && lane.hosts.length) {
+        parts.push(lane.hosts.map((h) => "⁦" + h + "⁩").join(" · "));
+      }
       if (lane.hostsFrom) {
         parts.push(String(lane.hostCount) + " " + t("hosts") + " — " +
                    t("the full list is in the security notes"));
@@ -1243,10 +1276,13 @@
       // hover spells the number out in words, where the only lanes that reach it
       // are the two classes, whose counts are never 1.
       const count = n ? ` <span class="muted">n=${n}</span>` : "";
-      return `<div><span title="${esc(_laneHostTitle(lane, kind))}">${esc(t(lane.label))}</span>${count}</div>`;
+      // tabindex="0": the hosts live in the hover, and invariant #17 opens the bubble on
+      // hover, KEYBOARD FOCUS or long-press. A plain span never takes focus, so Tab
+      // skipped every lane and a keyboard user could not read one host (row H).
+      return `<div><span tabindex="0" title="${esc(_laneHostTitle(lane, kind))}">${esc(t(lane.label))}</span>${count}</div>`;
     }
 
-    function _renderNetLanes(cfg) {
+    function _renderNetLanes(cfg, enabling) {
       const box = document.getElementById("net-consent-lanes");
       if (!box) return;
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
@@ -1256,7 +1292,7 @@
         return;
       }
       const by = {on: [], ask: [], off: [], unknown: []};
-      lanes.forEach((l) => by[_laneState(l, cfg)].push(l));
+      lanes.forEach((l) => by[_laneState(l, cfg, enabling)].push(l));
       const kind = _transportKind(cfg);
       const line = (l) => _laneLine(l, kind);
       const out = [];
@@ -1307,7 +1343,9 @@
       dlg.querySelector("#net-consent-reason b").textContent = reason;
       const lanesBox = document.getElementById("net-consent-lanes");
       if (lanesBox) lanesBox.textContent = "…";
-      _netConsentConfig().then(_renderNetLanes).catch(() => _renderNetLanes({}));
+      // opts.enabling: the lane id this action turns on (see _laneState).
+      _netConsentConfig().then((cfg) => _renderNetLanes(cfg, opts.enabling))
+        .catch(() => _renderNetLanes({}, opts.enabling));
       const box = document.getElementById("net-consent-ifaces");
       box.textContent = "…";
       api("/api/system/interfaces").then(d => {

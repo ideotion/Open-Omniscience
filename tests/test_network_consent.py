@@ -225,3 +225,46 @@ def test_the_narrow_http_ratchet_is_a_subset_of_the_wide_one():
     assert not missing, (
         f"in the HTTP allowlist but not the socket allowlist: {sorted(missing)}"
     )
+
+
+def test_every_consent_call_names_its_action():
+    """Invariant #14: the ONE popup "names the action". Called bare, it reads "This
+    action needs the network:" and then nothing -- Governments' "Load standard country
+    data" did exactly that (delegated click-through 2026-09-26, row L). Every call site
+    in the UI modules must pass the action as its first argument."""
+    from tests.js_source_helper import strip_comments
+
+    bare: list[str] = []
+    seen = 0
+    for path in sorted((_SRC / "static").glob("*.js")):
+        code = strip_comments(path.read_text(encoding="utf-8"))
+        for m in re.finditer(r"(?<![\w.])ensureOnline\(\s*(\S)", code):
+            if code[max(0, m.start() - 9):m.start()] == "function ":
+                continue                       # the definition, not a call
+            seen += 1
+            if m.group(1) in (")", ","):
+                line = code.count("\n", 0, m.start()) + 1
+                bare.append(f"{path.name}:~{line}")
+    assert seen >= 10, f"only {seen} ensureOnline calls found -- the scan stopped matching"
+    assert not bare, f"ensureOnline called without naming the action: {bare}"
+
+
+def test_the_french_consent_popup_keeps_each_colon_with_its_word():
+    """French puts a space before ':' and it must be a NO-BREAK one: with a plain space
+    the colon of "Votre machine présente ces adresses réseau locales :" wrapped alone
+    onto its own line in the popup (delegated click-through 2026-09-26, row H)."""
+    import json
+
+    fr = json.loads((_SRC / "static" / "locales" / "fr.json").read_text(encoding="utf-8"))
+    headings = (
+        "This action needs the network:", "Where this will let the app connect:",
+        "Your machine presents these local network addresses:",
+        "Runs on every collection pass:", "Only when you ask for it:",
+        "Switched off right now:", "Could not read whether these are on:",
+    )
+    for key in headings:
+        value = fr[key]
+        assert value.endswith(":"), (key, value)
+        assert value[-2] in (" ", " "), (
+            f"fr {key!r} ends {value[-2:]!r}: the colon can wrap alone onto its own line"
+        )

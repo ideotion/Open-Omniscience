@@ -4659,5 +4659,7 @@
   "Articles checked: {done} of {total} ({percent}%)": "Artigos verificados: {done} de {total} ({percent}%)",
   "Re-indexed: {n}": "Reindexados: {n}",
   "Continue the search re-index? It resumes where it stopped ({percent}% done).": "Continuar a reindexação da pesquisa? Retoma de onde parou ({percent}% concluído).",
-  "Re-index search for Arabic, Chinese and Japanese now? Articles whose search entry would change are indexed again; nothing else is touched. It runs in the background and can be paused from the task manager.": "Reindexar agora a pesquisa para árabe, chinês e japonês? Os artigos cuja entrada de pesquisa mudaria são indexados de novo; nada mais é alterado. Corre em segundo plano e pode ser pausado no gerenciador de tarefas."
+  "Re-index search for Arabic, Chinese and Japanese now? Articles whose search entry would change are indexed again; nothing else is touched. It runs in the background and can be paused from the task manager.": "Reindexar agora a pesquisa para árabe, chinês e japonês? Os artigos cuja entrada de pesquisa mudaria são indexados de novo; nada mais é alterado. Corre em segundo plano e pode ser pausado no gerenciador de tarefas.",
+  "Mostly not through this app's fetcher or proxy — only the installer check uses the fetcher.": "Quase tudo fora do buscador e do proxy deste aplicativo — só a verificação do instalador usa o buscador.",
+  "Shift+click stops the stream completely.": "Shift+clique para o fluxo por completo."
 }

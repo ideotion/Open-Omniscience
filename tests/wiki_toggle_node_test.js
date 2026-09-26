@@ -150,6 +150,18 @@ function hostsIn(text) {
   assert.ok(/Pause|Resume|Start/.test(aria), s + ": the label does not name the action: " + aria);
 });
 
+// -- the full stop is DISCOVERABLE: the hover names Shift+click --------------- //
+// (delegated click-through 2026-09-26, row P). The stop was wired to shiftKey and
+// named nowhere on the page. Named only where it would change something: a stopped
+// lane has nothing left to stop.
+["running", "halted"].forEach((s) => {
+  const lines = run(s).btn.title.split("\n");
+  assert.ok(lines.includes("Shift+click stops the stream completely."),
+    s + ": the hover does not name the Shift+click stop: " + JSON.stringify(lines));
+});
+assert.ok(!/Shift\+click/.test(run("stopped").btn.title),
+  "stopped: the hover offers a stop that would change nothing");
+
 // -- EVERY sentence goes through t(), so the surface can ship x12 ------------- //
 {
   // A translator that uppercases proves the string PASSED THROUGH t() -- which a

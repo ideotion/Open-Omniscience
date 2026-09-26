@@ -46,6 +46,13 @@
  *              "scheduler" | "safety" | "custody"
  *   settingOn  the exact value that means ON, when the key is not a boolean or a
  *              per-pass budget (the custody anchoring mode is the only one)
+ *   whenOn     "ask" when the switch only PERMITS a request the operator then makes
+ *              by hand, so the lane switched on is listed under "only when you ask
+ *              for it", never under "runs on every collection pass". Discover by
+ *              topic is the one: its switch unlocks a button, and docs/SECURITY.md
+ *              says it is never part of the scheduler (recorded 2026-09-26). The
+ *              custody lane has no such field, because once switched on it anchors
+ *              every ingested article without a click
  *   noOptOut   true when the code reads a toggle that does not exist as a field,
  *              so the lane cannot be switched off today (recorded 2026-09-16)
  *   settingUnreachable
@@ -176,6 +183,7 @@
       "trigger": "opt-in",
       "setting": "discovery_external_enabled",
       "settingFrom": "safety",
+      "whenOn": "ask",
       "fetcher": true
     },
     {

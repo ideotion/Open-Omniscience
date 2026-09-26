@@ -93,6 +93,14 @@
         if (typeof _paintWikiLane === "function" && typeof _wikiLaneState !== "undefined"
             && _wikiLaneState) _paintWikiLane(_wikiLaneState, _wikiLaneActive);
       } catch (_e) {}
+      // The airplane coachmark is positioned in pixels from the plane, and a switch
+      // into or out of Arabic mirrors the top bar without resizing the window, so the
+      // coach stayed at its old spot -- 1,019 px from the plane, over the sidebar
+      // (delegated click-through, rows N and T). Re-place it now and once the walker's
+      // reflow has settled. _placeCoach returns at once when the coach is not showing.
+      try {
+        if (typeof _placeCoach === "function") { _placeCoach(); setTimeout(_placeCoach, 220); }
+      } catch (_e) {}
       try { if (_ooMapPayload && typeof _renderOoMapDim === "function") _renderOoMapDim(); } catch (_e) {}
       // World-map lens desc + story chips are rendered at render time (kindLabel/t), so
       // re-render them too so the whole map surface tracks the new locale (field-test Item 6).

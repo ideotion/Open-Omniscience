@@ -131,6 +131,33 @@ const KINDS = ["direct", "proxy", "pool", "refused", "unknown"];
   const r = F._laneTransport(ai, "refused");
   assert.ok(!/through your proxy/.test(r), "refused mode claims the installer check is proxied: " + r);
   assert.ok(/even with protected mode on/.test(r), r);
+  // Protected mode off (and unreadable): the lane is STILL mixed. The plain "Not through
+  // this app's fetcher" line denied the installer check's guarded fetch, which
+  // docs/SECURITY.md's "Mixed." row names (delegated click-through 2026-09-26, row H).
+  for (const k of ["direct", "unknown"]) {
+    const s = F._laneTransport(ai, k);
+    assert.notStrictEqual(s, "Not through this app's fetcher or proxy.",
+      "ai/" + k + " denies the installer check's fetch");
+    assert.ok(/^Mostly not through/.test(s) && /only the installer check uses the fetcher/.test(s),
+      "ai/" + k + ": " + s);
+  }
+}
+
+// --- host names read left to right in an RTL bubble (row H) ------------------------ //
+// The bubble is plain text, so under Arabic the bidi algorithm moved the "*." of
+// "*.wikipedia.org" to the far end. Each host is wrapped in LRI ... PDI; stripping the
+// isolates must give back the verbatim hosts, in order.
+{
+  const LRI = "⁦", PDI = "⁩";
+  for (const l of OO_NET_LANES.filter((x) => x.hosts && x.hosts.length)) {
+    const title = F._laneHostTitle(l, "direct");
+    const hostPart = title.split(" — ")[0];
+    for (const h of l.hosts) {
+      assert.ok(hostPart.includes(LRI + h + PDI), l.id + ": " + h + " is not isolated: " + JSON.stringify(hostPart));
+    }
+    assert.strictEqual(hostPart.split(LRI).join("").split(PDI).join(""), l.hosts.join(" · "),
+      l.id + ": the isolates changed a host's spelling or order");
+  }
 }
 
 // --- the hint under the list ------------------------------------------------------- //
@@ -152,7 +179,7 @@ const KINDS = ["direct", "proxy", "pool", "refused", "unknown"];
   for (const l of OO_NET_LANES) {
     for (const k of KINDS) {
       const title = F._laneHostTitle(l, k);
-      const n = (title.match(/Transport:|Not through this app's fetcher or proxy\./g) || []).length;
+      const n = (title.match(/Transport:|Not through this app's fetcher or proxy\.|Mostly not through this app's fetcher or proxy/g) || []).length;
       assert.strictEqual(n, 1, l.id + "/" + k + " has " + n + " transport lines: " + title);
     }
   }

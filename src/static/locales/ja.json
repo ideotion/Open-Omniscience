@@ -4659,5 +4659,7 @@
   "Articles checked: {done} of {total} ({percent}%)": "確認した記事：{total} 件中 {done} 件（{percent}%）",
   "Re-indexed: {n}": "再インデックス：{n}",
   "Continue the search re-index? It resumes where it stopped ({percent}% done).": "検索の再インデックスを続行しますか？停止したところから再開します（{percent}% 完了）。",
-  "Re-index search for Arabic, Chinese and Japanese now? Articles whose search entry would change are indexed again; nothing else is touched. It runs in the background and can be paused from the task manager.": "アラビア語・中国語・日本語の検索を今すぐ再インデックスしますか？検索エントリが変わる記事だけを再インデックスし、それ以外には触れません。バックグラウンドで実行され、タスクマネージャーから一時停止できます。"
+  "Re-index search for Arabic, Chinese and Japanese now? Articles whose search entry would change are indexed again; nothing else is touched. It runs in the background and can be paused from the task manager.": "アラビア語・中国語・日本語の検索を今すぐ再インデックスしますか？検索エントリが変わる記事だけを再インデックスし、それ以外には触れません。バックグラウンドで実行され、タスクマネージャーから一時停止できます。",
+  "Mostly not through this app's fetcher or proxy — only the installer check uses the fetcher.": "ほとんどはこのアプリの取得処理やプロキシを経由しません — インストーラーの確認だけが取得処理を使います。",
+  "Shift+click stops the stream completely.": "Shift+クリックでストリームを完全に停止します。"
 }
