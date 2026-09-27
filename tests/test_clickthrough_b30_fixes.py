@@ -29,6 +29,8 @@ from tests.js_source_helper import (
     assert_present,
     event_listener_bodies,
     function_body,
+    function_source,
+    object_literal,
     python_function_source,
     read_static,
     strip_comments,
@@ -63,9 +65,7 @@ def _keyed_everywhere(keys, *, translated: bool = True) -> None:
 
 
 def _js_object_values(js: str, name: str) -> dict[str, str]:
-    at = js.index(f"const {name} = {{")
-    body = js[at: js.index("};", at)]
-    return dict(re.findall(r"(\w+):\s*\"([^\"]+)\"", body))
+    return dict(re.findall(r"(\w+):\s*\"([^\"]+)\"", object_literal(js, name)))
 
 
 def test_the_behaviour_runs_as_real_code_under_node():
@@ -146,8 +146,7 @@ def test_every_supply_measure_the_parser_can_store_has_a_key():
 
 def test_the_level_map_sentences_are_translated_where_they_are_written():
     viz = read_static("ooviz.js")
-    body = strip_comments(viz[viz.index("function choroplethData("):])
-    body = body[: body.index("return {")] + body[body.index("return {"): body.index("};") + 2]
+    body = strip_comments(function_source(viz, "choroplethData"))
     for s in re.findall(r'"(A level[^"]*|Coloured by comparable[^"]*)"', body):
         assert_present(body, f'_t("{s}")', why="an English sentence printed under a translated table (L-5)")
         _keyed_everywhere([s])

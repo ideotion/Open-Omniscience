@@ -37,6 +37,7 @@ from tests.js_source_helper import (
     assert_present,
     event_listener_bodies,
     function_body,
+    function_source,
     read_static,
 )
 
@@ -325,9 +326,9 @@ def test_the_data_location_paths_are_ltr_isolates():
     assert "direction:ltr" in rule.group(1) and "unicode-bidi:isolate" in rule.group(1), rule.group(1)
     assert '<span id="dl-default-path" class="path">' in html
     assert re.search(r'<input type="text" id="dl-path" dir="ltr"', html), "the typed path is reordered in RTL"
-    restart = html[html.index("function dlRestartRequired("):html.index("function dlWarningText(")]
+    restart = function_source(html, "dlRestartRequired")
     assert 'p2path.className = "path"' in restart and 'p2.className = "path"' not in restart, (
         "a block-level .path would flip the whole paragraph's alignment"
     )
-    check = html[html.index("async function dlCheck("):html.index("async function dlContinue(")]
+    check = function_source(html, "dlCheck")
     assert 'sp.className = "path"' in check, "the checked path is glued into the Arabic sentence"

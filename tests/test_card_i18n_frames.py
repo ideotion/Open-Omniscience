@@ -40,6 +40,7 @@ from pathlib import Path
 import pytest
 
 from src.briefing.card import Card, CardSchemaError, frame, frames_text, numeric_frames
+from tests.js_source_helper import object_literal
 
 _ROOT = Path(__file__).resolve().parents[1]
 _LOCALES = _ROOT / "src" / "static" / "locales"
@@ -292,9 +293,7 @@ def test_every_analytics_method_and_caveat_frames_to_a_key(locales, empty_sessio
 
 def _type_labels() -> dict[str, str]:
     js = (_ROOT / "src" / "static" / "app-home.js").read_text("utf-8")
-    body = js[js.index("const _CARD_TYPE_LABELS = {"):]
-    body = body[: body.index("};")]
-    return dict(re.findall(r'(\w+): "([^"]+)"', body))
+    return dict(re.findall(r'(\w+): "([^"]+)"', object_literal(js, "_CARD_TYPE_LABELS")))
 
 
 def test_every_card_type_has_a_keyed_type_label(locales):

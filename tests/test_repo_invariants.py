@@ -20,6 +20,7 @@ from tests.js_source_helper import assert_absent as _assert_js_absent
 from tests.js_source_helper import css_rule as _css_rule
 from tests.js_source_helper import assert_present as _assert_js_present
 from tests.js_source_helper import function_body as _js_function_body
+from tests.js_source_helper import function_source as _js_function_source
 from tests.js_source_helper import python_function_source as _py_function_source
 from tests.js_source_helper import strip_comments as _strip_js_comments
 from tests.diagnostics_source import diagnostics_source
@@ -3728,8 +3729,7 @@ def test_agenda_category_chips_and_country_flags():
     # trap, in a guard written to catch a display change.
     # AMENDED 2026-09-27 (re-walk L-3): the options are built by `_agFillCountryOptions`,
     # which the load AND a language switch both call, so the slice is that function.
-    _country_picker = html[html.index("function _agFillCountryOptions("):]
-    _country_picker = _country_picker[: _country_picker.index("\n    }\n")]
+    _country_picker = _js_function_source(html, "_agFillCountryOptions")
     assert "${esc(x)}</option>" not in _country_picker, (
         "the raw stored code must no longer be the country option's visible label"
     )
