@@ -331,6 +331,16 @@ def test_the_dictionary_cache_has_room_for_every_language_we_ask_about():
 
     langs = sorted(LEMMA_LANGS)
 
+    def dictionary_cache(factory):
+        """The factory's LRU-cached loader. simplemma 1.1 named it ``_get_dictionary``;
+        1.2.0 (the version ``requirements.lock`` pins) caches ``_load_dictionary_from_disk``
+        instead, and reading only the old name failed this test on every locked install."""
+        for name in ("_get_dictionary", "_load_dictionary_from_disk"):
+            fn = getattr(factory, name, None)
+            if fn is not None and hasattr(fn, "cache_info"):
+                return fn
+        pytest.skip("this simplemma caches its dictionaries somewhere this test cannot see")
+
     def misses_over_two_passes(size: int) -> int:
         """Dictionaries LOADED on a second pass over the same languages, new words."""
         factory = DefaultDictionaryFactory(cache_max_size=size)
@@ -339,10 +349,11 @@ def test_the_dictionary_cache_has_room_for_every_language_we_ask_about():
         )
         for lg in langs:
             lz.lemmatize("zzqcoronavirus", lg)
-        before = factory._get_dictionary.cache_info().misses
+        cache = dictionary_cache(factory)
+        before = cache.cache_info().misses
         for lg in langs:
             lz.lemmatize("zzqinfluenza", lg)
-        return factory._get_dictionary.cache_info().misses - before
+        return cache.cache_info().misses - before
 
     shipped = misses_over_two_passes(8)
     assert shipped > 0, (
@@ -360,8 +371,8 @@ def test_the_dictionary_cache_has_room_for_every_language_we_ask_about():
     strategy = getattr(lz, "_lemmatization_strategy", None)
     lookup = getattr(strategy, "_dictionary_lookup", None)
     factory = getattr(lookup, "_dictionary_factory", None)
-    if factory is not None and hasattr(factory, "_get_dictionary"):
-        assert factory._get_dictionary.cache_info().maxsize >= len(LEMMA_LANGS), (
+    if factory is not None:
+        assert dictionary_cache(factory).cache_info().maxsize >= len(LEMMA_LANGS), (
             "the module's own lemmatiser has fewer dictionary slots than the languages "
             "it is asked about"
         )
