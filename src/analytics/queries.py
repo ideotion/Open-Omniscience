@@ -1639,10 +1639,14 @@ def ring_country_split(session, *, ring_id: str, days: int | None = None, limit:
             "country. Keywords with no stored language are excluded (conservative). "
             "Counts only."
         ),
+        # Both sentences are keyed x12 and t()'d by the ring map (row R, R5), so a reword
+        # here must be re-keyed in src/static/locales/*.json. The unlocated bucket is named
+        # by the UI's own label for it, never by the storage word ("null") it once used.
         "caveat": (
             "Coverage by producing-source country, never a credibility ranking or score. "
-            "Unlocated sources are bucketed as null, not dropped. Co-occurrence in your "
-            "corpus, never a claim about the country."
+            "Articles whose source has no country are counted under 'Not mapped (source "
+            "country unknown)', never dropped. Co-occurrence in your corpus, never a claim "
+            "about the country."
         ),
     }
 

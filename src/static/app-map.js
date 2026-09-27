@@ -384,8 +384,11 @@
     // An area's name in the reader's locale, from Natural Earth's own NAME_<lang>
     // field -- DATA the source supplies, never a translation this app invented. Falls
     // back to the English name when the source carries no field for that locale.
+    // THE LOCALE COMES FROM `current()`, the one reader i18n.js exports (as ooRegionName
+    // does). This read `OOI18N.lang`, which i18n.js never defined, so every area kept its
+    // English name in fr/ar/zh while the claimants beside it translated (row R, R1).
     function _ooDisputedName(area) {
-      const lang = (window.OOI18N && OOI18N.lang) ? OOI18N.lang : "en";
+      const lang = (window.OOI18N && OOI18N.current && OOI18N.current()) || "en";
       return (area.names && area.names[lang]) || area.name || "";
     }
 
@@ -424,9 +427,13 @@
         // at all, so a click does NOT quietly drill into one claimant -- that silent
         // pick is the thing Q826 forbids, and it would be invisible in a screenshot.
         const drill = (who && who !== "self") ? ` data-iso="${esc(who)}" style="cursor:pointer"` : "";
+        // The claims ride a TITLE ATTRIBUTE, not an SVG <title> child (row R, R9): the
+        // #oo-tip convention (#17) marks [title] elements and opens its bubble on hover,
+        // focus AND long-press, while a <title> child only ever reached a mouse. One
+        // carrier, so a desktop hover shows one bubble, never the native one beside it.
         return under + `<path d="${d}" fill="url(#oomap-contested)" stroke="var(--caveat)" `
           + `stroke-width="0.6" stroke-dasharray="2.4 1.6" vector-effect="non-scaling-stroke" `
-          + `data-oomap-disputed="${esc(a.id)}"${drill}><title>${esc(ti)}</title></path>`;
+          + `data-oomap-disputed="${esc(a.id)}"${drill} title="${esc(ti)}"></path>`;
       }).join("");
       return { markup, shown };
     }
@@ -793,11 +800,14 @@
       // convention). It changes which convention the contested areas are ATTRIBUTED
       // under; it never changes whether a dispute is drawn. Present whenever the
       // contested layer is, independently of whether this map offers granularity.
+      // NO FIXED WIDTH CAP (row R, R7): a 150 px cap cut the default label mid-word, and
+      // the part it cut was "(assign nothing)", the one clause that says what the default
+      // does. The select sizes to its longest option; at phone width the row wraps.
       const worldviewHtml = _disp.shown ? `
-          <label class="oomap-worldview" style="display:inline-flex;align-items:center;gap:4px"
+          <label class="oomap-worldview" style="display:inline-flex;flex-wrap:wrap;align-items:center;gap:4px;max-width:100%"
                  title="${esc(t("Disputed areas are always drawn as contested with every claim named. A worldview decides only which claim the area is ATTRIBUTED to here — it is a way to SEE the difference between conventions, never this app's verdict."))}">
             <span class="muted oomap-wv-label" style="font-size:11px">${esc(t("Worldview"))}</span>
-            <select class="tiny" data-oomap-worldview aria-label="${esc(t("Worldview"))}" style="font-size:11px;max-width:150px">
+            <select class="tiny" data-oomap-worldview aria-label="${esc(t("Worldview"))}" style="font-size:11px;max-width:100%;min-width:0">
               ${_ooWorldviewOrder(disputed.views).map(v =>
                 `<option value="${esc(v)}"${v === _ooMapWorldview ? " selected" : ""}>${esc(_ooWorldviewLabel(v))}</option>`).join("")}
             </select>
@@ -915,6 +925,20 @@
       _wireOoMap(host, opts);
       _ooMapLayoutLabels(host, { x: 0, y: 0, w: W, h: H });   // initial layout (world view)
     }
+    // The worldview in force, for a caller outside this file that keys a repaint on it
+    // (app-sources.js's coverage stamp): a function, so it hoists across the module order.
+    function ooMapWorldview() { return _ooMapWorldview; }
+    // Re-render every ooMap host other than `except` that is still in the document and
+    // already holds a drawn map, from the options it was last drawn with -- never a fetch
+    // (the geometry and the contested asset are cached by then). A host that holds a
+    // "Loading…" line or an empty state has no svg and is left for its own loader.
+    function _ooMapRedrawOthers(except) {
+      document.querySelectorAll("svg#oo-choro").forEach((svg) => {
+        const wrap = svg.closest(".oomap-wrap"), host = wrap && wrap.parentElement;
+        if (!host || host === except || !host._ooOpts || !host.isConnected) return;
+        void ooMap(host, host._ooOpts);
+      });
+    }
     // Greedy non-overlapping label declutter (THEME-2), re-run on every viewBox
     // change so labels stay constant-size on screen, never overlap, and reveal more
     // detail as you zoom in. Highest-value countries win ties (placed first).
@@ -1025,6 +1049,10 @@
         // deliberate click, not a drag frame, so the cost is not the concern the
         // focus-slider fast path exists for.
         void ooMap(host, host._ooOpts || opts);
+        // ...and EVERY OTHER map already drawn, for the reason stated above the change
+        // handler: one convention across surfaces. Re-rendering only this host left the
+        // Sources map on "contested" after the World map was set to India (row R, R3).
+        _ooMapRedrawOthers(host);
       });
       if (opts && opts.onFocus) { const fs = host.querySelector("[data-oomap-focus]"); if (fs) fs.addEventListener("input", () => opts.onFocus(+fs.value)); }
       if (opts && opts.onTimeScale) host.querySelectorAll("[data-oomap-tscale]").forEach(b =>
@@ -2439,6 +2467,11 @@
     // ONE ooMap component + the node-tested ooViz.choroplethData honesty gate. English-only
     // (matches the chart panel). The cells carry iso2 (backend bridge), so no frontend ISO
     // map is needed. Browser-unverified per fork-3.
+    // What the map last drew and the controls it was drawn for, so a language switch can
+    // redraw ooMap's own legend, contested line and worldview picker (t()'d at render)
+    // from the payload it holds -- never a fetch (row R, R4). This panel's own method and
+    // caveat stay English by the design recorded above; the map chrome is ooMap's.
+    let _statMapLast = null;
     async function renderStatMap() {
       const host = $("statfig-map"); if (!host) return;
       const meta = $("statfig-map-meta");
@@ -2451,49 +2484,60 @@
       try {
         const q = "/api/stats/map?series_id=" + encodeURIComponent(series) + (agency ? "&agency=" + encodeURIComponent(agency) : "");
         const d = await api(q);
-        const cells = d.cells || [];
-        if (!cells.length) { host.innerHTML = `<div class="muted">No stored figures for "${esc(series)}". Fetch some above first.</div>`; if (meta) meta.textContent = ""; return; }
-        const iso2By = {}, areaBy = {};
-        cells.forEach(c => { iso2By[c.ref_area] = c.iso2; areaBy[c.ref_area] = c; });
-        // The node-tested comparability gate: only areas on the modal basis are colour-eligible.
-        const cd = ooViz.choroplethData(cells.map(c => ({
-          ref_area: c.ref_area, value: c.value, unit: c.unit, base_year: c.base_year,
-          adjustment: c.adjustment, time_period: c.time_period,
-        })), { kind: isLevel ? "level" : "normalized" });
-        const multi = d.multi_producer ? "  Several producers report this series — pin a producer above; the map never averages them." : "";
-        if (cd.mode === "symbols") {
-          // A LEVEL: we do NOT fake a level choropleth (a big country would look like 'more'
-          // just for being big). Honest refusal + the comparable values as a ranked list.
-          const ranked = cd.cells.filter(c => c.comparable && typeof c.value === "number")
-            .sort((a, b) => b.value - a.value).slice(0, 30)
-            // A published aggregate (WLD/HIC/EAS) is disclosed as one through the
-            // server's classification; a country keeps the ordinary code + name (L13).
-            .map(c => `<tr><td>${ooAreaCell(iso2By[c.area] || c.area, (areaBy[c.area] || {}).area_kind, (areaBy[c.area] || {}).area_name)}</td><td style="text-align:right">${esc(fmtNum(c.value))}</td></tr>`).join("");
-          host.innerHTML = `<div class="muted">${esc(cd.refusalReason || "")}</div>`
-            + (ranked ? `<table style="margin-top:6px"><tr><th>Area</th><th style="text-align:right">Value</th></tr>${ranked}</table>` : "");
-          if (meta) meta.textContent = cd.caveat + multi;
-          return;
-        }
-        const values = {}, names = {};
-        cd.cells.forEach(c => {
-          if (!c.comparable) return;            // incomparable basis / no value → no-data hatch
-          const iso2 = iso2By[c.area];
-          if (!iso2) return;                    // a non-country aggregate (WLD/EUU) → dropped honestly
-          values[iso2] = c.value;
-          names[iso2] = (typeof ooRegionName === "function") ? ooRegionName(iso2) : iso2;
-        });
-        const unit = (cd.basis && cd.basis.unit) || "";
-        const nMapped = Object.keys(values).length;
-        if (!nMapped) { host.innerHTML = `<div class="muted">No comparable, mappable figures for this series. ${esc(cd.caveat)}</div>`; if (meta) meta.textContent = ""; return; }
-        await ooMap(host, {
-          values, names, unit,
-          valueLabel: (iso, v) => `${fmtNum(v)}${unit ? " " + unit : ""}`,
-          aria: `${series} — ${nMapped} countries with comparable data`,
-          method: d.method || "",
-          caveat: cd.caveat + multi,
-        });
-        if (meta) meta.textContent = `${cd.comparableCount} comparable · ${cd.incomparableCount} on a different basis (no-data) · ${cd.noValueCount} no value`;
+        _statMapLast = { d, series, isLevel };
+        await _statMapDraw(host, meta, d, series, isLevel);
       } catch (e) { host.innerHTML = `<div class="muted">Could not map: ${esc(e && e.message || e)}</div>`; }
+    }
+    function repaintStatMapFromCache() {
+      const host = $("statfig-map");
+      if (!_statMapLast || !host || !host.querySelector("svg#oo-choro")) return;
+      const { d, series, isLevel } = _statMapLast;
+      _statMapDraw(host, $("statfig-map-meta"), d, series, isLevel)
+        .catch((e) => { host.innerHTML = `<div class="muted">Could not map: ${esc(e && e.message || e)}</div>`; });
+    }
+    async function _statMapDraw(host, meta, d, series, isLevel) {
+      const cells = d.cells || [];
+      if (!cells.length) { host.innerHTML = `<div class="muted">No stored figures for "${esc(series)}". Fetch some above first.</div>`; if (meta) meta.textContent = ""; return; }
+      const iso2By = {}, areaBy = {};
+      cells.forEach(c => { iso2By[c.ref_area] = c.iso2; areaBy[c.ref_area] = c; });
+      // The node-tested comparability gate: only areas on the modal basis are colour-eligible.
+      const cd = ooViz.choroplethData(cells.map(c => ({
+        ref_area: c.ref_area, value: c.value, unit: c.unit, base_year: c.base_year,
+        adjustment: c.adjustment, time_period: c.time_period,
+      })), { kind: isLevel ? "level" : "normalized" });
+      const multi = d.multi_producer ? "  Several producers report this series — pin a producer above; the map never averages them." : "";
+      if (cd.mode === "symbols") {
+        // A LEVEL: we do NOT fake a level choropleth (a big country would look like 'more'
+        // just for being big). Honest refusal + the comparable values as a ranked list.
+        const ranked = cd.cells.filter(c => c.comparable && typeof c.value === "number")
+          .sort((a, b) => b.value - a.value).slice(0, 30)
+          // A published aggregate (WLD/HIC/EAS) is disclosed as one through the
+          // server's classification; a country keeps the ordinary code + name (L13).
+          .map(c => `<tr><td>${ooAreaCell(iso2By[c.area] || c.area, (areaBy[c.area] || {}).area_kind, (areaBy[c.area] || {}).area_name)}</td><td style="text-align:right">${esc(fmtNum(c.value))}</td></tr>`).join("");
+        host.innerHTML = `<div class="muted">${esc(cd.refusalReason || "")}</div>`
+          + (ranked ? `<table style="margin-top:6px"><tr><th>Area</th><th style="text-align:right">Value</th></tr>${ranked}</table>` : "");
+        if (meta) meta.textContent = cd.caveat + multi;
+        return;
+      }
+      const values = {}, names = {};
+      cd.cells.forEach(c => {
+        if (!c.comparable) return;            // incomparable basis / no value → no-data hatch
+        const iso2 = iso2By[c.area];
+        if (!iso2) return;                    // a non-country aggregate (WLD/EUU) → dropped honestly
+        values[iso2] = c.value;
+        names[iso2] = (typeof ooRegionName === "function") ? ooRegionName(iso2) : iso2;
+      });
+      const unit = (cd.basis && cd.basis.unit) || "";
+      const nMapped = Object.keys(values).length;
+      if (!nMapped) { host.innerHTML = `<div class="muted">No comparable, mappable figures for this series. ${esc(cd.caveat)}</div>`; if (meta) meta.textContent = ""; return; }
+      await ooMap(host, {
+        values, names, unit,
+        valueLabel: (iso, v) => `${fmtNum(v)}${unit ? " " + unit : ""}`,
+        aria: `${series} — ${nMapped} countries with comparable data`,
+        method: d.method || "",
+        caveat: cd.caveat + multi,
+      });
+      if (meta) meta.textContent = `${cd.comparableCount} comparable · ${cd.incomparableCount} on a different basis (no-data) · ${cd.noValueCount} no value`;
     }
     // -- Tracked figures (ruling #12): scheduled vintage auto-refresh. English-only.
     async function loadStatSubs() {
