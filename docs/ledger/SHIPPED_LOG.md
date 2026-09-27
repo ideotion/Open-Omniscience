@@ -9929,3 +9929,24 @@ suite also caught a test's raw `sqlite3` writes to `articles`, the disclosed kno
 
 **STILL OWED.** Row N's operator steps: the re-index on the real corpus with its report, the
 agreement comparison, Q515's cost, and the maintainer's click-through.
+
+## 2026-09-27 — Imports adding more than 20,000 articles no longer fail at the search index (PR #1192)
+
+Found by the import-speed audit of 2026-09-26/27 (133 agents, every finding hand-re-verified
+before this change), reproduced independently on current main: through the real
+`merge_corpus`, 20,000 new articles passed and 20,001 and 45,000 raised `OperationalError:
+Error creating function` at `fts.py:645`, on both `sqlite3` and `sqlcipher3`. A regression from
+#1187, which routed the merge's chunked bulk index through `index_articles`, and that function
+re-registered the search transform's SQL functions on every chunk. **Isolated step by step:**
+re-registering works after `_store_caps` and after the article `SELECT`, and fails only after
+`_index_rows`' first index write, because FTS5 keeps a blob reader open for the rest of the
+write transaction and SQLite refuses to replace a function while any statement is active. The
+call is REMOVED, not moved: `index_articles` never calls the functions (the transform runs in
+Python), and the merge's connection has had them since `db_connect` opened it
+(`connect.py:409`). `register`'s docstring, whose "Idempotent" made the per-chunk call look
+safe, now says when that holds. The regression test shrinks `_FTS_BULK_BATCH` to 4, puts the
+Arabic article the transform changes in the third chunk, and compares everything a search sees
+against the same merge in one chunk; it fails on the unfixed code with the field's error.
+914 tests across the search, merge, restore and import files pass. `fts.py` and `fts_norm.py`
+are outside `ENGINE_MODULES`, so no article is re-stamped. Lesson: `LESSONS.md`, the entry
+dated by this PR.

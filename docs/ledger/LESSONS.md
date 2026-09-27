@@ -12428,3 +12428,16 @@ and a test swaps the segmenter for a different one between insert and delete and
 index's own vocabulary is empty afterwards. **Before re-computing anything at delete or undo
 time, ask who owns the function: re-run your own code only if its meaning is versioned; keep the
 output of anyone else's.**
+
+### SQLITE WILL NOT REPLACE A FUNCTION WHILE A STATEMENT IS ACTIVE, AND FTS5 KEEPS ONE OPEN FOR THE REST OF A WRITE TRANSACTION (PR #1192)
+
+`fts_norm.register` was documented "Idempotent", so `index_articles` called it on every
+20,000-article chunk of the merge's bulk search index. It is idempotent only while no statement
+is active: SQLite answers SQLITE_BUSY (Python's `OperationalError: Error creating function`)
+when asked to REPLACE a function while one is, and after the first write to an FTS5 table its
+blob reader stays open until the transaction ends. The first chunk always registered before any
+index write, so every fixture passed and every import up to 20,000 new articles passed; the
+first import past it failed, and at K > 1 took its whole group with it. **Register SQL functions
+when a connection is OPENED, never between writes.** And when the property is "more than one
+batch", test it by SHRINKING the batch constant: no fixture reaches a production batch size,
+which is exactly how a failure at 20,001 rows shipped behind a green suite.
