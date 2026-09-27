@@ -222,7 +222,6 @@ def test_every_analytics_method_and_caveat_frames_to_a_key(locales, empty_sessio
     )
     from src.analytics import concentration as conc
     from src.awareness.emotion import emotion_profile
-    from src.awareness.framing import compare_framing
     from src.briefing.catalog import settings_for
     from src.integrity.actors import corpus_actors
     from src.signals.concentration import concentration
@@ -278,10 +277,7 @@ def test_every_analytics_method_and_caveat_frames_to_a_key(locales, empty_sessio
             {"1": "a b c d e f g", "2": "a b c d e f g"}, threshold=0.5).method,
         "lineage.method": lin.method,
         "lineage.caveat": lin.caveat,
-        "framing.caveat": compare_framing({
-            "A": [{"text": "great wonderful", "language": "en", "title": "t"}],
-            "B": [{"text": "terrible awful", "language": "en", "title": "t"}],
-        })["caveat"],
+        "framing.caveat": _framing_caveat(),
         "echo.method": actors.method,
         "echo.caveat": actors.caveat,
     }
@@ -289,6 +285,35 @@ def test_every_analytics_method_and_caveat_frames_to_a_key(locales, empty_sessio
         assert isinstance(text, str) and text, where
         frames = numeric_frames(text)
         _assert_keyed(frames[0]["t"] if frames else text, locales, where)
+
+
+def _framing_caveat() -> str:
+    """The framing caveat as ``compare_framing`` returns it, where VADER is installed.
+
+    ``src.awareness.framing`` imports VADER at module load, which the core-only install
+    (no ``[analysis]`` extra) does not have. There the caveat is read as the literal
+    ``_CAVEAT`` from the module's source, so the key check still runs on that leg."""
+    import importlib.util
+
+    if importlib.util.find_spec("vaderSentiment") is not None:
+        from src.awareness.framing import compare_framing
+
+        return compare_framing({
+            "A": [{"text": "great wonderful", "language": "en", "title": "t"}],
+            "B": [{"text": "terrible awful", "language": "en", "title": "t"}],
+        })["caveat"]
+    return framing_caveat_literal()
+
+
+def framing_caveat_literal() -> str:
+    """``_CAVEAT`` from ``src/awareness/framing.py``, read from its source, not imported."""
+    tree = ast.parse((_ROOT / "src" / "awareness" / "framing.py").read_text("utf-8"))
+    for node in tree.body:
+        if isinstance(node, ast.Assign) and any(
+            isinstance(t, ast.Name) and t.id == "_CAVEAT" for t in node.targets
+        ):
+            return ast.literal_eval(node.value)
+    raise AssertionError("_CAVEAT is no longer a module-level literal in framing.py")
 
 
 def _type_labels() -> dict[str, str]:

@@ -390,10 +390,23 @@ _NEW_KEYS = [
 ]
 
 
-def test_every_new_string_is_keyed_in_all_twelve_locales() -> None:
-    from src.awareness.framing import _CAVEAT
+def _framing_caveat() -> str:
+    """``_CAVEAT`` read from ``src/awareness/framing.py``'s source. Importing the module
+    loads VADER, which the core-only install (no ``[analysis]`` extra) does not have."""
+    import ast
 
-    keys = [*_NEW_KEYS, q._GRAPH_BOUNDED_FRAME, _CAVEAT]
+    path = _ROOT / "src" / "awareness" / "framing.py"
+    for node in ast.parse(path.read_text(encoding="utf-8")).body:
+        if isinstance(node, ast.Assign) and any(
+            isinstance(t, ast.Name) and t.id == "_CAVEAT" for t in node.targets
+        ):
+            return ast.literal_eval(node.value)
+    raise AssertionError("_CAVEAT is no longer a module-level literal in framing.py")
+
+
+def test_every_new_string_is_keyed_in_all_twelve_locales() -> None:
+    caveat = _framing_caveat()
+    keys = [*_NEW_KEYS, q._GRAPH_BOUNDED_FRAME, caveat]
     locales = sorted(_LOCALES.glob("*.json"))
     assert len(locales) == 12
     bad: list[str] = []
@@ -405,7 +418,7 @@ def test_every_new_string_is_keyed_in_all_twelve_locales() -> None:
                 bad.append(f"{path.stem}: missing {k[:50]}")
             elif set(re.findall(r"\{\w+\}", v)) != set(re.findall(r"\{\w+\}", k)):
                 bad.append(f"{path.stem}: placeholders differ in {k[:50]}")
-            elif path.stem != "en" and k == _CAVEAT and v == k:
+            elif path.stem != "en" and k == caveat and v == k:
                 bad.append(f"{path.stem}: the VADER caveat is untranslated")
     assert not bad, bad
     # The graph's server wording IS the key, so the two cannot drift apart.
