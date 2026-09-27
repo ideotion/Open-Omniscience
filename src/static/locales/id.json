@@ -4702,5 +4702,11 @@
   "{n} result(s) (showing {shown})": "{n} hasil (menampilkan {shown})",
   "Counts only, never a score. The trend ratio is noisy on a young corpus; co-occurrence and PMI are association, not causation. Deduced from your corpus, not a claim about the world.": "Hanya hitungan, tidak pernah skor. Rasio tren tidak stabil pada korpus yang masih muda; kemunculan bersama dan PMI adalah asosiasi, bukan sebab-akibat. Disimpulkan dari korpus Anda, bukan klaim tentang dunia.",
   "Meeus, Astronomical Algorithms (2nd ed.) ch. 49: mean lunar phase + periodic and planetary corrections; computed locally, no data files": "Meeus, Astronomical Algorithms (edisi ke-2) bab 49: fase bulan rata-rata + koreksi periodik dan planet; dihitung secara lokal, tanpa berkas data",
-  "typically within ~2 minutes; times are TD (ΔT≈70 s vs UTC not applied — immaterial at agenda granularity, stated rather than hidden)": "biasanya dalam ~2 menit; waktu dalam TD (ΔT≈70 dtk terhadap UTC tidak diterapkan — tidak berarti pada tingkat ketelitian agenda, dinyatakan alih-alih disembunyikan)"
+  "typically within ~2 minutes; times are TD (ΔT≈70 s vs UTC not applied — immaterial at agenda granularity, stated rather than hidden)": "biasanya dalam ~2 menit; waktu dalam TD (ΔT≈70 dtk terhadap UTC tidak diterapkan — tidak berarti pada tingkat ketelitian agenda, dinyatakan alih-alih disembunyikan)",
+  "Sources collecting": "Sumber yang dikumpulkan",
+  "Enabled, not qualified": "Aktif, belum lolos kualifikasi",
+  "Discovered candidates": "Kandidat yang ditemukan",
+  "{n} of your {total} sources: enabled AND qualified — what collection actually reaches. This is the headline source count.": "{n} dari {total} sumber Anda: aktif DAN lolos kualifikasi — yang benar-benar dijangkau pengumpulan. Inilah angka utama sumber.",
+  "{n} of your {total} sources: enabled but not qualified — awaiting a verdict, or judged and refused. Collection does not reach them.": "{n} dari {total} sumber Anda: aktif tetapi belum lolos kualifikasi — menunggu putusan, atau sudah dinilai dan ditolak. Pengumpulan tidak menjangkaunya.",
+  "{n} of your {total} sources: discovered candidates, not enabled, awaiting review. Collection does not reach them.": "{n} dari {total} sumber Anda: kandidat yang ditemukan, tidak aktif, menunggu peninjauan. Pengumpulan tidak menjangkaunya."
 }

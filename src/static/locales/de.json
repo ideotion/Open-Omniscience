@@ -4702,5 +4702,11 @@
   "{n} result(s) (showing {shown})": "{n} Ergebnis(se) ({shown} angezeigt)",
   "Counts only, never a score. The trend ratio is noisy on a young corpus; co-occurrence and PMI are association, not causation. Deduced from your corpus, not a claim about the world.": "Nur Zählungen, niemals eine Bewertung. Das Trendverhältnis schwankt bei einem jungen Korpus stark; gemeinsames Auftreten und PMI sind Zusammenhang, nicht Ursache. Aus Ihrem Korpus abgeleitet, keine Aussage über die Welt.",
   "Meeus, Astronomical Algorithms (2nd ed.) ch. 49: mean lunar phase + periodic and planetary corrections; computed locally, no data files": "Meeus, Astronomical Algorithms (2. Aufl.), Kap. 49: mittlere Mondphase + periodische und planetare Korrekturen; lokal berechnet, keine Datendateien",
-  "typically within ~2 minutes; times are TD (ΔT≈70 s vs UTC not applied — immaterial at agenda granularity, stated rather than hidden)": "in der Regel auf ~2 Minuten genau; Zeiten in TD (ΔT≈70 s gegenüber UTC nicht angewandt — für die Genauigkeit der Agenda unerheblich, genannt statt verborgen)"
+  "typically within ~2 minutes; times are TD (ΔT≈70 s vs UTC not applied — immaterial at agenda granularity, stated rather than hidden)": "in der Regel auf ~2 Minuten genau; Zeiten in TD (ΔT≈70 s gegenüber UTC nicht angewandt — für die Genauigkeit der Agenda unerheblich, genannt statt verborgen)",
+  "Sources collecting": "Quellen in Erfassung",
+  "Enabled, not qualified": "Aktiviert, nicht qualifiziert",
+  "Discovered candidates": "Entdeckte Kandidaten",
+  "{n} of your {total} sources: enabled AND qualified — what collection actually reaches. This is the headline source count.": "{n} Ihrer {total} Quellen: aktiviert UND qualifiziert — das, was die Erfassung tatsächlich erreicht. Das ist die maßgebliche Quellenzahl.",
+  "{n} of your {total} sources: enabled but not qualified — awaiting a verdict, or judged and refused. Collection does not reach them.": "{n} Ihrer {total} Quellen: aktiviert, aber nicht qualifiziert — sie warten auf ein Urteil oder wurden geprüft und abgelehnt. Die Erfassung erreicht sie nicht.",
+  "{n} of your {total} sources: discovered candidates, not enabled, awaiting review. Collection does not reach them.": "{n} Ihrer {total} Quellen: entdeckte Kandidaten, nicht aktiviert, warten auf Prüfung. Die Erfassung erreicht sie nicht."
 }

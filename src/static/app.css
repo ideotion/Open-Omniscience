@@ -1439,7 +1439,14 @@
     .home-alerts .alert-tier li.alert-more { list-style:none; margin-top:3px; }
     /* Corpus maturity tier — a descriptive STAGE chip beside the glance numbers.
        Subtle per-stage accent only; never a score bar, never fake precision. */
-    .corpus-tier { display:inline-flex; align-items:baseline; gap:7px; white-space:nowrap; }
+    /* It WRAPS BETWEEN its parts (badge · numbers · caveat) and never overflows the
+       strip: a whole-chip nowrap pushed the early-corpus caveat 71 px off a 375 px
+       screen, cut at "thin evidence — r" (2026-09-26 click-through S7, T3) -- a caveat
+       off-screen is a hidden caveat. The badge and the numbers stay whole; the caveat
+       may wrap inside itself as a last resort, so it stays readable at any width. */
+    .corpus-tier { display:inline-flex; flex-wrap:wrap; align-items:baseline; gap:4px 7px;
+      max-width:100%; min-width:0; }
+    .corpus-tier .tier-badge, .corpus-tier .tier-nums { white-space:nowrap; }
     .corpus-tier .tier-badge { font-size:10.5px; font-weight:700; text-transform:uppercase;
       letter-spacing:.05em; padding:2px 8px; border-radius:999px;
       border:1px solid var(--tier-ac, var(--border)); color:var(--tier-ac, var(--muted)); }

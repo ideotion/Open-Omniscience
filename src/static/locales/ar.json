@@ -4702,5 +4702,11 @@
   "{n} result(s) (showing {shown})": "{n} نتيجة (يُعرض {shown})",
   "Counts only, never a score. The trend ratio is noisy on a young corpus; co-occurrence and PMI are association, not causation. Deduced from your corpus, not a claim about the world.": "أعداد فقط، وليست درجة أبدًا. نسبة الاتجاه غير مستقرة في مجموعة نصوص حديثة؛ والتواجد المشترك وPMI ارتباط لا سببية. مستنتج من مجموعتك، وليس ادعاءً عن العالم.",
   "Meeus, Astronomical Algorithms (2nd ed.) ch. 49: mean lunar phase + periodic and planetary corrections; computed locally, no data files": "ميوس، الخوارزميات الفلكية (الطبعة الثانية) الفصل 49: الطور القمري المتوسط + التصحيحات الدورية والكوكبية؛ محسوب محليًا، بلا ملفات بيانات",
-  "typically within ~2 minutes; times are TD (ΔT≈70 s vs UTC not applied — immaterial at agenda granularity, stated rather than hidden)": "عادةً بدقة ~2 دقيقة؛ الأوقات بالزمن الديناميكي TD (لم يُطبَّق الفرق ΔT≈70 ث عن UTC — لا أثر له بدقة الأجندة، ونذكره بدل إخفائه)"
+  "typically within ~2 minutes; times are TD (ΔT≈70 s vs UTC not applied — immaterial at agenda granularity, stated rather than hidden)": "عادةً بدقة ~2 دقيقة؛ الأوقات بالزمن الديناميكي TD (لم يُطبَّق الفرق ΔT≈70 ث عن UTC — لا أثر له بدقة الأجندة، ونذكره بدل إخفائه)",
+  "Sources collecting": "مصادر قيد الجمع",
+  "Enabled, not qualified": "مفعّلة، غير مؤهَّلة",
+  "Discovered candidates": "مرشَّحون مكتشَفون",
+  "{n} of your {total} sources: enabled AND qualified — what collection actually reaches. This is the headline source count.": "{n} من مصادرك البالغ عددها {total}: مفعّلة ومؤهَّلة معًا — وهي ما يصل إليه الجمع فعلًا. هذا هو العدد الرئيسي للمصادر.",
+  "{n} of your {total} sources: enabled but not qualified — awaiting a verdict, or judged and refused. Collection does not reach them.": "{n} من مصادرك البالغ عددها {total}: مفعّلة لكنها غير مؤهَّلة — في انتظار الحكم، أو حُكم عليها ورُفضت. لا يصل إليها الجمع.",
+  "{n} of your {total} sources: discovered candidates, not enabled, awaiting review. Collection does not reach them.": "{n} من مصادرك البالغ عددها {total}: مرشَّحون مكتشَفون، غير مفعّلين، في انتظار المراجعة. لا يصل إليهم الجمع."
 }

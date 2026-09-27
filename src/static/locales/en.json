@@ -4702,5 +4702,11 @@
   "{n} result(s) (showing {shown})": "{n} result(s) (showing {shown})",
   "Counts only, never a score. The trend ratio is noisy on a young corpus; co-occurrence and PMI are association, not causation. Deduced from your corpus, not a claim about the world.": "Counts only, never a score. The trend ratio is noisy on a young corpus; co-occurrence and PMI are association, not causation. Deduced from your corpus, not a claim about the world.",
   "Meeus, Astronomical Algorithms (2nd ed.) ch. 49: mean lunar phase + periodic and planetary corrections; computed locally, no data files": "Meeus, Astronomical Algorithms (2nd ed.) ch. 49: mean lunar phase + periodic and planetary corrections; computed locally, no data files",
-  "typically within ~2 minutes; times are TD (ΔT≈70 s vs UTC not applied — immaterial at agenda granularity, stated rather than hidden)": "typically within ~2 minutes; times are TD (ΔT≈70 s vs UTC not applied — immaterial at agenda granularity, stated rather than hidden)"
+  "typically within ~2 minutes; times are TD (ΔT≈70 s vs UTC not applied — immaterial at agenda granularity, stated rather than hidden)": "typically within ~2 minutes; times are TD (ΔT≈70 s vs UTC not applied — immaterial at agenda granularity, stated rather than hidden)",
+  "Sources collecting": "Sources collecting",
+  "Enabled, not qualified": "Enabled, not qualified",
+  "Discovered candidates": "Discovered candidates",
+  "{n} of your {total} sources: enabled AND qualified — what collection actually reaches. This is the headline source count.": "{n} of your {total} sources: enabled AND qualified — what collection actually reaches. This is the headline source count.",
+  "{n} of your {total} sources: enabled but not qualified — awaiting a verdict, or judged and refused. Collection does not reach them.": "{n} of your {total} sources: enabled but not qualified — awaiting a verdict, or judged and refused. Collection does not reach them.",
+  "{n} of your {total} sources: discovered candidates, not enabled, awaiting review. Collection does not reach them.": "{n} of your {total} sources: discovered candidates, not enabled, awaiting review. Collection does not reach them."
 }

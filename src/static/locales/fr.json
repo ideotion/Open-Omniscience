@@ -4702,5 +4702,11 @@
   "{n} result(s) (showing {shown})": "{n} résultat(s) ({shown} affichés)",
   "Counts only, never a score. The trend ratio is noisy on a young corpus; co-occurrence and PMI are association, not causation. Deduced from your corpus, not a claim about the world.": "Des comptes seulement, jamais un score. Le ratio de tendance est bruité sur un corpus jeune ; la cooccurrence et la PMI sont une association, pas une causalité. Déduit de votre corpus, pas une affirmation sur le monde.",
   "Meeus, Astronomical Algorithms (2nd ed.) ch. 49: mean lunar phase + periodic and planetary corrections; computed locally, no data files": "Meeus, Astronomical Algorithms (2e éd.), chap. 49 : phase lunaire moyenne + corrections périodiques et planétaires ; calculé localement, sans fichier de données",
-  "typically within ~2 minutes; times are TD (ΔT≈70 s vs UTC not applied — immaterial at agenda granularity, stated rather than hidden)": "généralement à ~2 minutes près ; heures en TD (ΔT≈70 s par rapport à UTC non appliqué — sans incidence à la granularité de l'agenda, indiqué plutôt que caché)"
+  "typically within ~2 minutes; times are TD (ΔT≈70 s vs UTC not applied — immaterial at agenda granularity, stated rather than hidden)": "généralement à ~2 minutes près ; heures en TD (ΔT≈70 s par rapport à UTC non appliqué — sans incidence à la granularité de l'agenda, indiqué plutôt que caché)",
+  "Sources collecting": "Sources en collecte",
+  "Enabled, not qualified": "Activées, non qualifiées",
+  "Discovered candidates": "Candidates découvertes",
+  "{n} of your {total} sources: enabled AND qualified — what collection actually reaches. This is the headline source count.": "{n} de vos {total} sources : activées ET qualifiées — ce que la collecte atteint réellement. C'est le chiffre de référence des sources.",
+  "{n} of your {total} sources: enabled but not qualified — awaiting a verdict, or judged and refused. Collection does not reach them.": "{n} de vos {total} sources : activées mais non qualifiées — en attente de verdict, ou jugées et refusées. La collecte ne les atteint pas.",
+  "{n} of your {total} sources: discovered candidates, not enabled, awaiting review. Collection does not reach them.": "{n} de vos {total} sources : candidates découvertes, non activées, en attente d'examen. La collecte ne les atteint pas."
 }

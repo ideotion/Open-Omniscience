@@ -4702,5 +4702,11 @@
   "{n} result(s) (showing {shown})": "{n}টি ফলাফল ({shown}টি দেখানো হচ্ছে)",
   "Counts only, never a score. The trend ratio is noisy on a young corpus; co-occurrence and PMI are association, not causation. Deduced from your corpus, not a claim about the world.": "শুধু গণনা, কখনও স্কোর নয়। নতুন সংগ্রহে প্রবণতার অনুপাত অস্থির; সহ-উপস্থিতি ও PMI সম্পর্ক নির্দেশ করে, কার্যকারণ নয়। আপনার সংগ্রহ থেকে অনুমিত, বিশ্ব সম্পর্কে কোনো দাবি নয়।",
   "Meeus, Astronomical Algorithms (2nd ed.) ch. 49: mean lunar phase + periodic and planetary corrections; computed locally, no data files": "মিউস, Astronomical Algorithms (২য় সংস্করণ) অধ্যায় ৪৯: গড় চন্দ্রকলা + পর্যায়ক্রমিক ও গ্রহজনিত সংশোধন; স্থানীয়ভাবে গণনা করা, কোনো ডেটা ফাইল নেই",
-  "typically within ~2 minutes; times are TD (ΔT≈70 s vs UTC not applied — immaterial at agenda granularity, stated rather than hidden)": "সাধারণত ~২ মিনিটের মধ্যে; সময়গুলো TD-তে (UTC-র তুলনায় ΔT≈৭০ সে. প্রয়োগ করা হয়নি — এজেন্ডার সূক্ষ্মতায় এটি গুরুত্বহীন, লুকানোর বদলে জানানো হলো)"
+  "typically within ~2 minutes; times are TD (ΔT≈70 s vs UTC not applied — immaterial at agenda granularity, stated rather than hidden)": "সাধারণত ~২ মিনিটের মধ্যে; সময়গুলো TD-তে (UTC-র তুলনায় ΔT≈৭০ সে. প্রয়োগ করা হয়নি — এজেন্ডার সূক্ষ্মতায় এটি গুরুত্বহীন, লুকানোর বদলে জানানো হলো)",
+  "Sources collecting": "সংগ্রহে থাকা উৎস",
+  "Enabled, not qualified": "সক্রিয়, যোগ্য নয়",
+  "Discovered candidates": "আবিষ্কৃত প্রার্থী",
+  "{n} of your {total} sources: enabled AND qualified — what collection actually reaches. This is the headline source count.": "আপনার {total}টি উৎসের মধ্যে {n}টি: সক্রিয় এবং যোগ্য — সংগ্রহ আসলে যেগুলোতে পৌঁছায়। এটিই উৎসের প্রধান সংখ্যা।",
+  "{n} of your {total} sources: enabled but not qualified — awaiting a verdict, or judged and refused. Collection does not reach them.": "আপনার {total}টি উৎসের মধ্যে {n}টি: সক্রিয় কিন্তু যোগ্য নয় — রায়ের অপেক্ষায়, অথবা যাচাই করে প্রত্যাখ্যাত। সংগ্রহ এগুলোতে পৌঁছায় না।",
+  "{n} of your {total} sources: discovered candidates, not enabled, awaiting review. Collection does not reach them.": "আপনার {total}টি উৎসের মধ্যে {n}টি: আবিষ্কৃত প্রার্থী, সক্রিয় নয়, পর্যালোচনার অপেক্ষায়। সংগ্রহ এগুলোতে পৌঁছায় না।"
 }

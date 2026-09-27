@@ -4702,5 +4702,11 @@
   "{n} result(s) (showing {shown})": "{n} resultado(s) (se muestran {shown})",
   "Counts only, never a score. The trend ratio is noisy on a young corpus; co-occurrence and PMI are association, not causation. Deduced from your corpus, not a claim about the world.": "Solo recuentos, nunca una puntuación. La razón de tendencia es ruidosa en un corpus joven; la coocurrencia y la PMI son asociación, no causalidad. Deducido de su corpus, no una afirmación sobre el mundo.",
   "Meeus, Astronomical Algorithms (2nd ed.) ch. 49: mean lunar phase + periodic and planetary corrections; computed locally, no data files": "Meeus, Astronomical Algorithms (2.ª ed.), cap. 49: fase lunar media + correcciones periódicas y planetarias; calculado localmente, sin archivos de datos",
-  "typically within ~2 minutes; times are TD (ΔT≈70 s vs UTC not applied — immaterial at agenda granularity, stated rather than hidden)": "normalmente con un margen de ~2 minutos; las horas están en TD (ΔT≈70 s respecto a UTC no aplicado — irrelevante con la resolución de la agenda, se indica en lugar de ocultarlo)"
+  "typically within ~2 minutes; times are TD (ΔT≈70 s vs UTC not applied — immaterial at agenda granularity, stated rather than hidden)": "normalmente con un margen de ~2 minutos; las horas están en TD (ΔT≈70 s respecto a UTC no aplicado — irrelevante con la resolución de la agenda, se indica en lugar de ocultarlo)",
+  "Sources collecting": "Fuentes en recopilación",
+  "Enabled, not qualified": "Activadas, no cualificadas",
+  "Discovered candidates": "Candidatas descubiertas",
+  "{n} of your {total} sources: enabled AND qualified — what collection actually reaches. This is the headline source count.": "{n} de sus {total} fuentes: activadas Y cualificadas — lo que la recopilación alcanza de verdad. Es la cifra principal de fuentes.",
+  "{n} of your {total} sources: enabled but not qualified — awaiting a verdict, or judged and refused. Collection does not reach them.": "{n} de sus {total} fuentes: activadas pero no cualificadas — a la espera de un veredicto, o evaluadas y rechazadas. La recopilación no las alcanza.",
+  "{n} of your {total} sources: discovered candidates, not enabled, awaiting review. Collection does not reach them.": "{n} de sus {total} fuentes: candidatas descubiertas, no activadas, a la espera de revisión. La recopilación no las alcanza."
 }

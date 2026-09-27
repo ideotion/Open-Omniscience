@@ -26,11 +26,12 @@
     // two split keys the backend now sends (database.py's counts["sources_qualified"] /
     // counts["sources_candidates"]) in plain language.
     const DB_STAT_HIDDEN_KEYS = new Set(["sources"]);
-    const DB_STAT_LABELS = {
-      sources_qualified: "Sources (collecting)",
-      sources_pending: "Sources awaiting qualification (enabled)",
-      sources_candidates: "Discovered candidates",
-    };
+    // The tile LABELS are Home's map (HOME_STAT_LABELS / homeStatLabel in app-home.js),
+    // read at render time. This file used to carry its own map for the three source
+    // keys only, so every other tile printed its raw key (`commodity_prices`) and the
+    // three it did label were keyed in no locale file (2026-09-26 click-through S6).
+    // The last payload, so a language switch relabels the tiles without a fetch.
+    let _dbStatsLast = null;
 
     // B14: the COMPLETE on-disk footprint (A12b backend, GET /api/diagnostics/storage-footprint)
     // shown wherever storage size shows — the Library dashboard + the task-manager System tab.
@@ -948,20 +949,42 @@
         points: d.series.map(p => ({t: p.t, v: p.n}))}], caveat);
     }
 
+    // The tile labels and the split tiles' hovers, painted from the last payload -- on
+    // every poll and on a language switch (app-boot.js). The tiles carry data-i18n-dyn:
+    // they own their text, so the DOM walker never caches a label painted in French as
+    // "the English" and freezes it there on the next switch. Only a changed value is
+    // written, so a poll does not churn the hover observer.
+    function _paintDbStatLabels() {
+      const s = _dbStatsLast;
+      if (!s) return;
+      const counts = s.counts || {};
+      for (const k of Object.keys(counts)) {
+        const tile = document.getElementById("db-t-" + k);
+        if (!tile) continue;
+        const lbl = tile.querySelector(".k");
+        const text = homeStatLabel(k);
+        if (lbl && lbl.textContent !== text) lbl.textContent = text;
+        const hover = homeSourceSplitHover(k, counts);
+        if (hover && tile.title !== hover) tile.title = hover;
+        else if (!hover && tile.hasAttribute("title")) tile.removeAttribute("title");
+      }
+    }
+
     async function loadDbStats() {
       const el = $("db-stats");
       try {
         const s = await api("/api/database/stats", {polled: true});
-        const t9 = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
         const entries = Object.entries(s.counts || {}).filter(([k]) => !DB_STAT_HIDDEN_KEYS.has(k));
         const keys = entries.map(([k]) => k).join(",");
         if (DB_KEYS !== keys) {                       // (re)build grid with stable number nodes
           DB_KEYS = keys;
           el.innerHTML = entries.length
             ? entries.map(([k]) =>
-                `<div class="stat"><div class="n" id="db-n-${k}" data-v="0">0</div><div class="k">${esc(t9(DB_STAT_LABELS[k] || k))}</div></div>`).join("")
+                `<div class="stat" id="db-t-${k}" data-i18n-dyn><div class="n" id="db-n-${k}" data-v="0">0</div><div class="k"></div></div>`).join("")
             : '<div class="muted">No tables yet.</div>';
         }
+        _dbStatsLast = s;
+        _paintDbStatLabels();
         for (const [k, v] of entries) {
           const n = document.getElementById("db-n-" + k);
           if (n) animateCount(n, v);

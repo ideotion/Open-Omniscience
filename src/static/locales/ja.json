@@ -4702,5 +4702,11 @@
   "{n} result(s) (showing {shown})": "{n} 件の結果（{shown} 件を表示）",
   "Counts only, never a score. The trend ratio is noisy on a young corpus; co-occurrence and PMI are association, not causation. Deduced from your corpus, not a claim about the world.": "件数のみで、スコアではありません。コーパスが若いうちはトレンド比のばらつきが大きく、共起と PMI は関連であって因果ではありません。あなたのコーパスから導いたもので、世界についての主張ではありません。",
   "Meeus, Astronomical Algorithms (2nd ed.) ch. 49: mean lunar phase + periodic and planetary corrections; computed locally, no data files": "Meeus『Astronomical Algorithms』（第2版）第49章：平均月相＋周期項と惑星による補正。ローカルで計算し、データファイルは使用しません",
-  "typically within ~2 minutes; times are TD (ΔT≈70 s vs UTC not applied — immaterial at agenda granularity, stated rather than hidden)": "通常は約2分以内の精度。時刻は力学時 TD（UTC との差 ΔT≈70 秒は未適用 — アジェンダの粒度では影響なし。隠さずに明記しています）"
+  "typically within ~2 minutes; times are TD (ΔT≈70 s vs UTC not applied — immaterial at agenda granularity, stated rather than hidden)": "通常は約2分以内の精度。時刻は力学時 TD（UTC との差 ΔT≈70 秒は未適用 — アジェンダの粒度では影響なし。隠さずに明記しています）",
+  "Sources collecting": "収集中の情報源",
+  "Enabled, not qualified": "有効・未適格",
+  "Discovered candidates": "発見された候補",
+  "{n} of your {total} sources: enabled AND qualified — what collection actually reaches. This is the headline source count.": "{total} 件の情報源のうち {n} 件：有効かつ適格 — 収集が実際に到達する範囲です。これが情報源の主要な件数です。",
+  "{n} of your {total} sources: enabled but not qualified — awaiting a verdict, or judged and refused. Collection does not reach them.": "{total} 件の情報源のうち {n} 件：有効だが未適格 — 判定待ち、または判定の結果却下されたもの。収集はこれらに到達しません。",
+  "{n} of your {total} sources: discovered candidates, not enabled, awaiting review. Collection does not reach them.": "{total} 件の情報源のうち {n} 件：発見された候補で、無効のまま審査待ち。収集はこれらに到達しません。"
 }

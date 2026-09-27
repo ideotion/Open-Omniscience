@@ -51,6 +51,13 @@
       // frozen-locale class -- nothing in the walker can repaint a sentence it never
       // saw in English. Registered in THIS listener for the reason stated above.
       try { if (typeof _wizShare === "function") _wizShare(); } catch (_e) {}
+      // The rest of the Home at-a-glance strip -- its counts and their labels, the "as
+      // of" stamp and the automatic-collection line -- is built with t() inside the same
+      // [data-i18n-dyn] subtree, so it is the same frozen-locale class: measured staying
+      // English after a switch to fr or ar until the next 15 s poll (2026-09-26
+      // click-through U5). Repaints from the LAST READING (app-home.js), never fetches,
+      // and never over the read-failure line, which has its own branch further down.
+      try { if (typeof repaintHomeGlance === "function") repaintHomeGlance(); } catch (_e) {}
       // The Home strip's own Wikipedia figure is built from a tf() frame AND carries
       // `data-i18n-dyn`, so BOTH repaint paths skip it -- the walker because the node
       // opts out, and this listener because it was not listed. Measured by the Chromium
@@ -184,6 +191,11 @@
           renderCompositionFigures();
         }
       } catch (_e) {}
+      // Library -> Database & storage: the tiles own their labels (data-i18n-dyn, so a
+      // label painted in French is never cached as the English), which means the walker
+      // cannot relabel them either. Relabel from the last payload -- no fetch, and
+      // nothing at all until the tiles were ever drawn (2026-09-26 click-through S6).
+      try { if (typeof _paintDbStatLabels === "function") _paintDbStatLabels(); } catch (_e) {}
       // The Observatory is the same class again, and worse: its canvas has no DOM
       // for the i18n walker to reach at all, so EVERY label it paints (the orbit
       // ticks, the domain wedge names) plus its tf()-built disclosures would stay
