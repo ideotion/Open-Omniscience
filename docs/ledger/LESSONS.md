@@ -12550,3 +12550,31 @@ The deferral marker was honoured only when some keyword had a counter -- and a f
 first deferred drain writes mentions and NO counter, so it read `exact 0` while counting was
 switched off. Zero is the state every fresh install starts in and every counter-based guard
 sees first; test each disclosure against the empty store before any other case.
+
+### REPRODUCE WHAT A THIRD-PARTY FUNCTION DOES, NOT WHAT IT SAYS -- AND PIN THE COPY TO THE BYTES YOU CHECKED (PR #1192)
+
+VADER's `_but_check` reads as "halve every score before the first 'but', boost every score
+after it". What it does is re-find each score with `list.index` and rescale the FIRST position
+holding an EQUAL score, so `[1.5, but, 0.75]` becomes `[0.375, 0, 0.75]` rather than
+`[0.75, 0, 1.125]`. A linear rewrite taken from the comment would have been faster, looked
+right, and moved every stored score. `src/analytics/vader_linear.py` reproduces the loop
+instead: a min-heap of positions per score answers "first equal position", and the new value
+is computed from the score READ, not the one found, because the two are only `==` -- which is
+how an int `0` turns into a float `0.0` and a `-0.0` keeps its sign in stock. The differential
+test compares per-token scores by `repr`, which sees `0`, `0.0` and `-0.0` where `==` cannot.
+Then the copy is pinned to what it was checked against: the SHA-256 of the imported module
+file, not the version string, with the stock class as the fallback -- so a new release or a
+distribution's patch can only cost speed, never change a score. **When you override a
+library's internals for speed, the specification is the code, the test is a differential
+against the installed original, and the guard is its bytes.**
+
+### A SURVIVING MUTANT MAY BE EQUIVALENT -- PROVE IT FROM THE CALL SITES BEFORE WRITING A TEST (PR #1192)
+
+The same module was designed around VADER's per-word checks reading negative indices for the
+first tokens of a text, wrapping round to its end, and a comment said so. A mutant that padded
+the start instead of wrapping survived every test. Stock calls both checks only inside
+`if i > start_i`, so every index they read is at least 0: the wraparound is unreachable, and
+the comment was wrong. A test for it could only have exercised the check outside its caller --
+a state production never reaches. **When a mutant survives, first ask whether it can differ on
+any reachable state; if it cannot, correct the reasoning and the comments that carried it, and
+leave the suite alone.**

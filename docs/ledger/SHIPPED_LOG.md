@@ -10144,3 +10144,42 @@ reads `estimated`.
 969 tests across 93 related files pass; mypy clean. `store.py` is in `ENGINE_MODULES`, so this
 PR changes the engine identity once. Lessons: `LESSONS.md`, the four entries dated by this PR
 after the FTS one.
+
+## 2026-09-27 — VADER sentiment in time linear in the text, with the same scores (PR #1192)
+
+Row 6 of the import-speed audit's synthesis, asked for by the maintainer after the four defects
+above. VADER 3.3.2 is quadratic in a text's length in three places. `_negation_check` and
+`_special_idioms_check` lowercase every token of the document on each call, up to four calls
+per lexicon word. `_but_check` re-finds each score with `list.index` and replaces it with
+`pop` + `insert`. `src/analytics/vader_linear.py` subclasses the analyzer: the two checks read
+a lowercased copy made once per document, and are otherwise stock line for line. The "but"
+check answers "the first position holding an equal score" with a min-heap of positions per
+score, and computes the new score from the score READ, as stock does.
+
+**Measured,** stock against linear, on the start of `docs/USER_MANUAL.md`: 3.1 against 1.6 ms
+at 3 KB, 21 against 4.0 ms at 10 KB, 144 against 10 ms at 25 KB, 1,527 against 36 ms at 80 KB.
+The real drain (`reindex_articles`, three workers, 600 English texts of about 27 KB cut from
+this repo's docs) went from 157 s to 54 s, its precompute from 139.5 s to 36.9 s, with the
+write phase unchanged at 16.9 s. Comparing the two drained files, all 50 tables matched column
+for column apart from the run's timestamps and the engine stamp, and all 600 sentiment scores
+were identical. Separately, the per-document lowercasing is most of the cost: at 80 KB it alone
+takes stock from 1.7 s to 134 ms, and the heap takes it to 37 ms.
+
+**The guard is the file's bytes, not the version string.** `make_analyzer()` hashes the
+imported `vaderSentiment.py` and uses the linear class only for 3.3.2's, whose bytes are the
+same in the wheel and the sdist (both hashes pinned in `requirements.lock`). Anything else gets
+the stock analyzer, which is slower and gives the same scores. Registered as
+`vader-linear-reproduction` in `configs/external_artifacts.yml`. Framing uses the same analyzer.
+
+**Tests.** The differential tests compare against the installed stock class, per-token scores
+by `repr`, on 54 hand-written cases, 20,000 random "but" lists, 2,000 token soups and English
+prose. The count pins show the tokens are read a fixed number of times and the "but" check
+makes no scan, and each pin fires on stock. Every non-equivalent mutant is caught; the one
+survivor is equivalent (see `LESSONS.md`). `vader_linear.py` joins `ENGINE_MODULES`, so the
+engine identity changes, as it already does in this PR.
+
+**Reproduced, not corrected:** the "but" rule matches scores by value, so a score after the
+"but" can go unboosted. Measured on the same 600 texts, correcting it would move the rounded
+compound of 478 and the label of 16. That is recorded as a deliberate omission in
+`OPEN_QUEUE.md`, dated by this PR. Lessons: `LESSONS.md`, the two entries dated by this PR
+after the counter ones.
