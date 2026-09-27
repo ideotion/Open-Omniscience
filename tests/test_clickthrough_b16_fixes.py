@@ -291,6 +291,11 @@ def test_every_fixed_job_label_is_keyed_everywhere():
         _keyed_everywhere(label)
 
 
+def _registered_by_the_app(job) -> bool:
+    mod = getattr(job._worker, "__module__", None) or ""
+    return not mod.split(".")[0].startswith("test")
+
+
 def test_every_registered_background_job_label_is_keyed_everywhere():
     """The generic background jobs register themselves at import; their labels reach the
     same row, so each is a key."""
@@ -299,7 +304,10 @@ def test_every_registered_background_job_label_is_keyed_everywhere():
 
     for mod in pkgutil.iter_modules(src.api.__path__):
         importlib.import_module(f"src.api.{mod.name}")
-    labels = sorted({j.label for j in background._REGISTRY.values()})
+    # The registry is process-wide, and other test files register throwaway jobs into it
+    # ("Reg", "T"): under another file order this read them as app labels and failed on the
+    # macOS leg. Only a job whose worker the app's own code defines is a label a user sees.
+    labels = sorted({j.label for j in background._REGISTRY.values() if _registered_by_the_app(j)})
     assert len(labels) >= 20, f"the registry looks unpopulated: {labels}"
     for label in labels:
         _keyed_everywhere(label)
