@@ -56,7 +56,8 @@ const appSrc = ESC +
   statement(APP, "const _isDownloadKind") + "\n" +
   statement(APP, "const _LOCAL_JOB_KINDS") + "\n" +
   statement(APP, "const _dlKey") + "\n" +
-  extract(APP, "_jobWhy") + "\n" + extract(APP, "_jobRow");
+  extract(APP, "_jobWhy") + "\n" + extract(APP, "_jobPct") + "\n" + extract(APP, "_jobLabel") + "\n" +
+  extract(APP, "_jobRow");
 const appRow = (() => {
   const m = { exports: {} };
   new Function("module", "exports", appSrc + "\nmodule.exports = _jobRow;")(m, m.exports);
@@ -70,7 +71,9 @@ function varFn(SRC, head) {
   assert.ok(at !== -1, "taskmanager.html: " + head + " is gone -- was it renamed?");
   return SRC.slice(at, SRC.indexOf("};", at) + 2);
 }
-const tmSrc = extract(TM, "esc") + "\n" + extract(TM, "fmtBytes") + "\n" + extract(TM, "fmtDur") + "\n" +
+const tmSrc = extract(TM, "esc") + "\n" + extract(TM, "fmtBytes") + "\n" + extract(TM, "tf") + "\n" +
+  extract(TM, "fmtNum") + "\n" + extract(TM, "fmtDur") + "\n" + "var _langDN = {};\n" +
+  extract(TM, "langName") + "\n" + extract(TM, "jobPct") + "\n" + extract(TM, "jobLabel") + "\n" +
   varFn(TM, "var isDl = function") + "\n" + varFn(TM, "var isLocal = function") + "\n" +
   varFn(TM, "var dlKey = function") + "\n" + extract(TM, "jobWhy") + "\n" + extract(TM, "jobRow");
 const tmRow = (j, t) => {

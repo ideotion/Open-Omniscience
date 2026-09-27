@@ -13,7 +13,10 @@ path) self-expires after ``_STALE_S`` so a crash never pins a ghost row forever.
 
 Honesty by construction: a task carries only real, owner-reported facts (a label,
 an optional detail, an optional done/total it chooses to publish) — never a
-fabricated percentage or ETA. Kinds group the rows in the UI (``llm`` /
+fabricated percentage or ETA. A label that carries a value ("Summarizing “{title}”")
+may also be given as its FRAME and values (``label_i18n`` / ``label_vars``), which the
+task managers write in the UI language; ``label`` stays the English sentence
+(click-through B17, T11). Kinds group the rows in the UI (``llm`` /
 ``analytics`` / ``index`` …); the scrape/download jobs keep their own owners
 (``/api/jobs`` aggregates both).
 """
@@ -36,7 +39,13 @@ _STALE_S = 3600.0
 
 
 def register(
-    kind: str, label: str, *, detail: str | None = None, total: int | None = None
+    kind: str,
+    label: str,
+    *,
+    detail: str | None = None,
+    total: int | None = None,
+    label_i18n: str | None = None,
+    label_vars: dict | None = None,
 ) -> int:
     """Register a running background task; returns a token to update/finish it."""
     tok = next(_SEQ)
@@ -46,6 +55,8 @@ def register(
             "token": tok,
             "kind": kind,
             "label": label,
+            "label_i18n": label_i18n,
+            "label_vars": dict(label_vars) if label_vars else None,
             "detail": detail,
             "total": total,
             "done": 0,
@@ -84,11 +95,19 @@ def finish(token: int) -> None:
 
 @contextmanager
 def track(
-    kind: str, label: str, *, detail: str | None = None, total: int | None = None
+    kind: str,
+    label: str,
+    *,
+    detail: str | None = None,
+    total: int | None = None,
+    label_i18n: str | None = None,
+    label_vars: dict | None = None,
 ) -> Iterator[int]:
     """Context manager: the task is visible for the duration of the ``with`` block
     and always removed on exit (success or error)."""
-    tok = register(kind, label, detail=detail, total=total)
+    tok = register(
+        kind, label, detail=detail, total=total, label_i18n=label_i18n, label_vars=label_vars
+    )
     try:
         yield tok
     finally:

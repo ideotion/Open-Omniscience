@@ -239,12 +239,33 @@
     var TF = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : function (s, o) { return s.replace("{rate}", o.rate); };
     return bps == null ? "—" : TF("{rate}/s", { rate: fmtBytes(bps) });
   }
+  function tf(s, v) {
+    if (window.OOI18N && OOI18N.tf) return OOI18N.tf(s, v);
+    return String(s).replace(/\{(\w+)\}/g, function (m, k) { return (v && v[k] != null) ? String(v[k]) : m; });
+  }
+  // The app's ruled number formatter (fmtNum in app-markets.js: Latin digits, a decimal
+  // POINT and a narrow no-break space between thousands in every locale). This page does
+  // not load the SPA bundle, so the function is copied, not imported; KEEP THE TWO IN STEP
+  // -- tests/clickthrough_b17_node_test.js runs both over the same values. Every count on
+  // this page goes through it, as the in-app window's do (click-through B17, T5).
+  function fmtNum(v, maxDec) {
+    if (v == null || !isFinite(v)) return "—";
+    var a = Math.abs(v);
+    var dec = maxDec != null ? maxDec : (a >= 1000 ? 1 : a >= 100 ? 1 : a >= 1 ? 2 : 3);
+    var s = v.toFixed(dec).replace(/\.?0+$/, function (m) { return m.indexOf(".") !== -1 ? "" : m; });
+    var parts = s.split(".");
+    var grouped = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, "\u202f");
+    return parts[1] ? grouped + "." + parts[1] : grouped;
+  }
+  // A duration as the locale writes it (click-through B17, T7): each unit is a keyed frame
+  // ("{n} s", "{n} min", "{n} h"), as the in-app window's _fmtDur writes them, so a locale
+  // spells the unit its own way and on its own side of the number.
   function fmtDur(s) {
     if (s == null) return "—";
     s = Math.round(s);
-    if (s < 90) return "~" + Math.max(1, s) + " s";
-    if (s < 5400) return "~" + Math.round(s / 60) + " min";
-    return "~" + (s / 3600).toFixed(1) + " h";
+    if (s < 90) return "~" + tf("{n} s", { n: fmtNum(Math.max(1, s), 0) });
+    if (s < 5400) return "~" + tf("{n} min", { n: fmtNum(Math.round(s / 60), 0) });
+    return "~" + tf("{n} h", { n: fmtNum(s / 3600, 1) });
   }
   function fmtRel(iso) {
     if (!iso) return "—";
@@ -288,6 +309,55 @@
 
   var _jobs = null;
 
+  // THE THIRD OWNER of the Intl language-name constructor (test_alpha3_display_surfaces):
+  // this page loads neither app-map.js's `ooLangName` nor the reader's `langName`. A CLDR
+  // answer that merely ECHOES the code is not a name, and is refused here: the caller
+  // then keeps the server's English sentence rather than print "simple Wikipedia".
+  var _langDN = {};
+  function langName(code) {
+    var src = String(code == null ? "" : code).trim();
+    if (!src) return "";
+    var ui = "en";
+    try { ui = (window.OOI18N && OOI18N.current && OOI18N.current()) || "en"; } catch (e) { ui = "en"; }
+    try {
+      if (!_langDN[ui]) _langDN[ui] = new Intl.DisplayNames([ui], { type: "language" });
+      var name = _langDN[ui].of(src);
+      return (name && name.toLowerCase() !== src.toLowerCase()) ? name : "";
+    } catch (e) { return ""; }
+  }
+  // A job's percent as a WHOLE number (click-through B17, T5), as the in-app window's
+  // _jobPct draws it: the fold and the re-index publish one decimal ("86.8%"), which says
+  // nothing the exact count beside it does not; and it never reads 100 while work is
+  // left, so 99.5 and up stays 99 until the count is full.
+  function jobPct(p) {
+    var done = Number(p.done) || 0, total = Number(p.total) || 0;
+    if (total > 0 && done >= total) return 100;
+    var raw = (typeof p.percent === "number" && isFinite(p.percent)) ? p.percent
+      : (total > 0 ? 100 * done / total : 0);
+    return Math.min(99, Math.max(0, Math.round(raw)));
+  }
+  // A job label carrying a value arrives as a keyed FRAME plus its values (`label_i18n` /
+  // `label_vars`, beside the unchanged English `label` -- src/api/jobs.py), and is written
+  // here exactly as the in-app window's _jobLabel writes it (click-through B17, T11): a
+  // number through fmtNum, `language` (a CODE) as the name in the UI language, anything
+  // else as data in an isolate. A fixed label is still a key: t(). A language this page
+  // cannot name keeps the server's English sentence whole.
+  function jobLabel(j) {
+    if (!j.label_i18n) return t(j.label || "");
+    var vars = j.label_vars || {}, out = {};
+    for (var k in vars) {
+      if (!Object.prototype.hasOwnProperty.call(vars, k)) continue;
+      var x = vars[k];
+      if (typeof x === "number") out[k] = fmtNum(x, 0);
+      else if (k === "language") {
+        var name = langName(x);
+        if (!name) return t(j.label || "");
+        out[k] = name;
+      } else out[k] = "\u2068" + String(x == null ? "" : x) + "\u2069";
+    }
+    return tf(j.label_i18n, out);
+  }
+
   // WHY a download is not moving (S04-08's S5, Q1014): who paused it, or the failure
   // verbatim. The same causes app-core.js's _jobWhy draws in the in-app window -- this
   // page is where the top-bar task-manager button lands, so a cause drawn only there
@@ -309,13 +379,17 @@
     var pill = j.state === "running" ? "ok" : (j.state === "failed" ? "err" : "warn");
     var prog = "";
     if (j.progress && j.progress.total) {
-      var pct = j.progress.percent || Math.round(100 * j.progress.done / j.progress.total);
+      var pct = jobPct(j.progress);
       // A count names WHAT it counts ("12 / 40 keywords"), the unit keyed x12 as the
       // in-app window's _jobRow draws it; "12 / 40" alone was the keyword fold's row
       // (click-through B16, V10).
       var what = j.progress.unit && j.progress.unit !== "bytes" ? " " + esc(t(j.progress.unit)) : "";
-      var unit = isDl(j.kind) ? (fmtBytes(j.progress.done) + " / " + fmtBytes(j.progress.total))
-                              : (j.progress.done + " / " + j.progress.total + what);
+      // Bytes by the unit the producer publishes, as the in-app _jobRow reads it: a model
+      // pull's bytes are not a download KIND here and printed "1288490188 / 4831838208"
+      // (click-through B17, T5). A row with no unit is a download's bytes or a task's count.
+      var bytes = j.progress.unit ? j.progress.unit === "bytes" : isDl(j.kind);
+      var unit = bytes ? (fmtBytes(j.progress.done) + " / " + fmtBytes(j.progress.total))
+                       : (fmtNum(j.progress.done, 0) + " / " + fmtNum(j.progress.total, 0) + what);
       prog = '<div class="cap-bar" role="progressbar" aria-valuenow="' + pct + '" aria-valuemin="0" aria-valuemax="100"><i style="width:' + pct + '%"></i></div>' +
              '<div class="muted" style="font-size:11px">' + unit + " · " + pct + '%</div>';
     } else if (j.elapsed_s != null) {
@@ -347,10 +421,9 @@
       if (a.indexOf("cancel") >= 0 && a.indexOf("pause") < 0 && j.kind === "keyword-fold")
         acts.push('<button class="tbtn" onclick="TM.cancel(\'' + esc(j.id) + '\')">' + esc(t("Cancel")) + "</button>");
     }
-    var qpos = j.queue_position ? ' <span class="muted">#' + j.queue_position + " " + esc(t("in queue")) + "</span>" : "";
-    // t(j.label): a fixed job label is keyed x12 (the fold's are); one carrying a value
-    // is not a key and falls through unchanged.
-    return '<div class="job"><span class="pill ' + pill + '">' + esc(t(j.state)) + '</span><span class="label">' + esc(t(j.label)) + "</span>" + qpos +
+    var qpos = j.queue_position ? ' <span class="muted">#' + fmtNum(j.queue_position, 0) + " " + esc(t("in queue")) + "</span>" : "";
+    // A fixed job label is keyed x12; one carrying a value arrives as a frame (jobLabel).
+    return '<div class="job"><span class="pill ' + pill + '">' + esc(t(j.state)) + '</span><span class="label">' + esc(jobLabel(j)) + "</span>" + qpos +
            '<span class="acts">' + acts.join("") + "</span>" +
            (j.detail ? '<div class="detail">' + esc(j.detail) + "</div>" : "") +
            '<div style="flex-basis:100%">' + prog + jobWhy(j) + "</div></div>";
@@ -371,7 +444,7 @@
     GROUPS.forEach(function (g) {
       var rows = byGroup[g.id];
       if (!rows || !rows.length) return;
-      html += '<div class="vsect">' + esc(t(g.title)) + ' <span class="count">' + rows.length + "</span></div>" +
+      html += '<div class="vsect">' + esc(t(g.title)) + ' <span class="count">' + fmtNum(rows.length, 0) + "</span></div>" +
               rows.map(function (j) { return jobRow(j, queuedKeysByKind); }).join("");
     });
     if (!html) {
@@ -403,7 +476,7 @@
       // the backend didn't enumerate, never a fabricated row.
       qHtml += '<div class="vsect">' + esc(t("Up next this pass")) + "</div>" +
         '<ol class="tm-upnext">' + ups.map(function (d) { return "<li>" + esc(d) + "</li>"; }).join("") +
-        (more ? '<li class="muted">+' + more + " " + esc(t("more")) + "</li>" : "") + "</ol>" +
+        (more ? '<li class="muted">+' + fmtNum(more, 0) + " " + esc(t("more")) + "</li>" : "") + "</ol>" +
         '<div class="vnote">' + esc(t("Order is re-randomised every pass — stratified by language and tag, not a fixed queue.")) + "</div>";
       // The ACTUAL strata the pass interleaves by (#5): real counts per language & tag.
       var st = plan.strata || {};
@@ -412,7 +485,7 @@
           var bucket = String(x.key || "").charAt(0) === "·";
           var label = bucket ? esc(t(x.key === "·untagged" ? "untagged" : "unknown")) : esc(x.key);
           return '<span class="cap-chip' + (bucket ? " muted" : "") + '">' + label +
-            '<span class="muted"> ·' + x.n + "</span></span>";
+            '<span class="muted"> ·' + fmtNum(x.n, 0) + "</span></span>";
         }).join("");
       };
       if ((st.languages || []).length) {
@@ -444,7 +517,7 @@
     if (pg && pg.total && !offline) {
       var pct = Math.round(100 * Math.min(pg.done, pg.total) / pg.total);
       now = row(t("Current pass"), esc(pg.current || "…") + ' <span class="muted">· ' + esc(pg.mode || "") + "</span>") +
-        '<div class="cap-bar"><div class="cap-fill" style="width:' + pct + '%"></div><span class="cap-txt">' + pg.done + "/" + pg.total + " · " + pct + '%</span></div>';
+        '<div class="cap-bar"><div class="cap-fill" style="width:' + pct + '%"></div><span class="cap-txt">' + fmtNum(pg.done, 0) + "/" + fmtNum(pg.total, 0) + " · " + pct + '%</span></div>';
     } else if (offline && a.active) {
       now = row(t("Current pass"), '<span class="muted">' + esc(t("winding down — airplane mode engaged")) + "</span>");
     } else if (a.active) {
@@ -549,13 +622,13 @@
       var when = r.finished_at || r.started_at;
       var dur = res.duration_s != null ? fmtDur(res.duration_s) : "—";
       var pill = ok ? '<span class="pill ok">' + esc(t("ok")) + "</span>" : '<span class="pill err">' + esc(t("error")) + "</span>";
-      var detail = ok ? (stored + " " + esc(t("articles")) + " · " + (res.mode || r.mode || "") + " · " + dur)
+      var detail = ok ? (fmtNum(stored, 0) + " " + esc(t("articles")) + " · " + esc(res.mode || r.mode || "") + " · " + dur)
                       : esc(String(r.error || t("failed")).slice(0, 160));
       return '<div class="job"><span>' + pill + '</span><span class="label">' + esc(fmtRel(when)) +
              ' <span class="muted" title="' + esc(fmtLocal(when)) + '" style="font-weight:400">' + esc(fmtLocal(when)) + "</span></span>" +
              '<div class="detail">' + detail + "</div></div>";
     }).join("");
-    el.innerHTML = '<div class="vsect">' + esc(t("Online sessions")) + ' <span class="count">' + runs.length + "</span></div>" + rows;
+    el.innerHTML = '<div class="vsect">' + esc(t("Online sessions")) + ' <span class="count">' + fmtNum(runs.length, 0) + "</span></div>" + rows;
   }
 
   // ---- the persistent summary strip ---- //

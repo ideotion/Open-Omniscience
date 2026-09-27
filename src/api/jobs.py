@@ -58,6 +58,36 @@ def _dump_label(wiki: str, kind: str) -> str:
     return f"{edition} Wikipedia — {_DUMP_KIND_LABELS.get(kind, kind)}"
 
 
+# A LABEL THAT CARRIES A VALUE, KEYED (click-through B17, T11). "Importing {x}",
+# "Downloading model {m}", a dump's edition: the English `label` has the value welded in,
+# so no key can ever match it and every locale showed English. Such a job also carries
+# `label_i18n` -- the frame, which is the UI locale key -- and `label_vars`, the values,
+# and the task managers (app-core.js `_jobLabel`, taskmanager.html `jobLabel`) write the
+# frame in the UI language. The conventions they share: a number is formatted there; a
+# var named `language` is a language CODE, written as its name in the UI language; any
+# other value is data and shown as given. `label` itself is unchanged: it is the API's
+# answer, the arbitration line (`busy_with`) and what an older page prints.
+_DUMP_KIND_FRAMES = {
+    "articles dump": "{language} Wikipedia — articles dump",
+    "articles dump index": "{language} Wikipedia — articles dump index",
+}
+
+
+def _label_frame(frame: str, **values) -> dict:
+    """The ``label_i18n`` / ``label_vars`` pair for a label carrying values."""
+    return {"label_i18n": frame, "label_vars": values}
+
+
+def _dump_label_frame(wiki: str, kind: str) -> dict:
+    """The keyed twin of `_dump_label`: the edition goes as its CODE, so each page names
+    the language in its own UI language (the English name is what `label` says)."""
+    human = _DUMP_KIND_LABELS.get(kind, kind)
+    frame = _DUMP_KIND_FRAMES.get(human)
+    if frame is None:   # a kind this table does not know: the frame carries it as data
+        return _label_frame("{language} Wikipedia — {kind}", language=wiki or "?", kind=human)
+    return _label_frame(frame, language=wiki or "?")
+
+
 def _dump_jobs() -> list[dict]:
     from src.wiki.dumps import get_manager
 
@@ -77,6 +107,7 @@ def _dump_jobs() -> list[dict]:
                 "id": f"dump:{e['key']}",
                 "kind": "wiki-dump",
                 "label": _dump_label(e["wiki"], e["kind"]),
+                **_dump_label_frame(e["wiki"], e["kind"]),
                 "state": state,
                 "queue_position": (order.index(e["key"]) + 1) if e["key"] in order else None,
                 "progress": {
@@ -219,12 +250,19 @@ def _task_jobs() -> list[dict]:
         if t.get("total"):
             done = int(t.get("done") or 0)
             total = int(t["total"])
-            prog = {"done": done, "total": total, "percent": round(100 * done / total) if total else 0}
+            # A COUNT, and it says so: with no unit the in-app window read the progress as
+            # bytes (the shipped default for a unit-less row), so "Summarizing 12
+            # article(s)" drew "3 B / 12 B" (click-through B17, T5).
+            prog = {"done": done, "total": total, "unit": "items",
+                    "percent": round(100 * done / total) if total else 0}
+        # A task that registered its label as a frame (src.monitoring.tasks) passes it on.
+        frame = _label_frame(t["label_i18n"], **(t.get("label_vars") or {})) if t.get("label_i18n") else {}
         out.append(
             {
                 "id": f"task:{t['token']}",
                 "kind": t.get("kind") or "task",
                 "label": t.get("label") or "background task",
+                **frame,
                 "detail": t.get("detail"),
                 "state": "running",
                 "elapsed_s": t.get("elapsed_s"),
@@ -257,11 +295,18 @@ def _folder_backup_jobs() -> list[dict]:
         actions = ["pause", "cancel"]
     elif state in ("paused", "failed"):
         actions = ["resume", "cancel"]
+    dest = s.get("dest")
+    # With no destination the label is a fixed sentence, and fixed sentences are keys.
+    frame = (
+        _label_frame("Restoring to {dest}" if s.get("mode") == "restore" else "Backing up to {dest}", dest=dest)
+        if dest else {}
+    )
     return [
         {
             "id": "folder-backup",
             "kind": "folder-backup",
-            "label": f"{verb} to {s.get('dest') or 'a folder'}",
+            "label": f"{verb} to {dest or 'a folder'}",
+            **frame,
             "state": state,
             "progress": prog,
             "error": s.get("error"),
@@ -330,6 +375,9 @@ def _import_queue_jobs() -> list[dict]:
     s_done = int(s.get("stages_done") or 0)
     s_total = int(s.get("stages_total") or 0)
     tail = str(((s.get("live") or {}).get("progress") or s.get("live") or {}).get("phase") or "")
+    # The item's own label comes from the import queue (src/backup/import_queue.py) and is
+    # data here: the frame carries it as a value.
+    frame = _label_frame("Importing {label}", label=label) if label else {}
     if label:
         job_label = f"Importing {label}"
     elif tail:
@@ -341,6 +389,7 @@ def _import_queue_jobs() -> list[dict]:
             "id": "import-queue",
             "kind": "import",
             "label": job_label,
+            **frame,
             "state": "running",
             # STAGES, not items: the run's last stage is the search-index merge, and with
             # every item done the item count reads 100% while that stage is still holding
@@ -386,13 +435,24 @@ def _import_jobs() -> list[dict]:
     # Same reading as the re-index row below, worded for a row that is ITSELF an import:
     # "paused for an import" would read as a contradiction here, and the thing it is
     # waiting for is specifically a corpus import (a restore/merge holding the window).
-    if s.get("parked_for_exclusive"):
+    parked = bool(s.get("parked_for_exclusive"))
+    if parked:
         label = "Paused for a corpus import — " + label[0].lower() + label[1:]
+    # With no folder the label is a fixed sentence, and fixed sentences are keys.
+    frame = (
+        _label_frame(
+            "Paused for a corpus import — importing newsletters from {folder}" if parked
+            else "Importing newsletters from {folder}",
+            folder=s["folder"],
+        )
+        if s.get("folder") else {}
+    )
     return [
         {
             "id": "newsletter-import",
             "kind": "import",
             "label": label,
+            **frame,
             "state": state,
             "progress": prog,
             "eta_seconds": s.get("eta_seconds"),
@@ -567,6 +627,7 @@ def _model_pull_jobs() -> list[dict]:
                 "id": f"model-pull:{a['model']}",
                 "kind": "model-pull",
                 "label": f"Downloading model {a['model']}",
+                **_label_frame("Downloading model {model}", model=a["model"]),
                 "state": "running",
                 "detail": a.get("status"),
                 "progress": (
@@ -583,6 +644,7 @@ def _model_pull_jobs() -> list[dict]:
                 "id": f"model-pull:{m}",
                 "kind": "model-pull",
                 "label": f"Model {m}",
+                **_label_frame("Model {model}", model=m),
                 "state": "queued",
                 "queue_position": i + 1,
                 "actions": ["cancel"],

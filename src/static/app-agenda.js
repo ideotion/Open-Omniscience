@@ -85,6 +85,9 @@
         month: null,
         day: null,
         calendar: e.family, family_name: e.family_name, family_names: e.family_names,
+        // Each family's KEY beside its name, index for index: a user calendar's only
+        // source is its family key, and agRow names it from here.
+        families: e.families || (e.family ? [e.family] : []),
         kind: kind, countries: e.countries || (e.country ? [e.country] : []),
         sources: e.sources || [], source_count: e.source_count, family_count: e.family_count,
         imported: true,
@@ -421,11 +424,18 @@
         const label = s.narrated
           ? `<div class="warn">${esc(_bulT("AI-derived — unreliable"))}${s.partial ? esc(_bulT("; sentences naming something absent from the sources were removed")) : ""}</div>`
           : `<div class="muted">${esc(_bulTf("No model text: {reason}", {reason: s.fallback_reason || ""}))}</div>`;
+        // Each count is ONE keyed frame chosen by the count, the singular key for one (the
+        // app's "{n} article" / "{n} articles" pair): a number welded to a plural noun read
+        // "1 sources" beside "one source only" (click-through B17, T4). A locale whose plural
+        // has more forms than two writes its "many" frame as a label and a count.
+        const nArt = Number(s.articles) || 0, nSrc = Number(s.distinct_sources) || 0;
+        const counts = _bulTf(nArt === 1 ? "{n} article" : "{n} articles", {n: fmtNum(nArt, 0)})
+          + " · " + _bulTf(nSrc === 1 ? "{n} source" : "{n} sources", {n: fmtNum(nSrc, 0)});
         return `<div style="margin:8px 0">
           <label class="row" style="${_BUL_CHECK_ROW}">
             <input type="checkbox" style="${_BUL_CHECK_BOX}" ${off ? "" : "checked"} onchange="bulletinToggleStory('${esc(s.key)}')">
             <span style="flex:1;min-width:0"><strong>${esc((s.shared_terms || []).join(", ") || "—")}</strong>
-              <span class="muted">${esc(s.articles)} ${esc(_bulT("articles"))} · ${esc(s.distinct_sources)} ${esc(_bulT("sources"))}${s.single_source ? esc(_bulT(" · one source only")) : ""}</span></span></label>
+              <span class="muted">${esc(counts)}${s.single_source ? esc(_bulT(" · one source only")) : ""}</span></span></label>
           ${label}${sents ? `<ul style="margin:4px 0 0 26px">${sents}</ul>` : ""}</div>`;
       }).join("");
 
@@ -979,8 +989,18 @@
       let prov = "";
       if (e.imported && Array.isArray(e.sources) && e.sources.length) {
         const fm = _agFeedById();
-        const names = e.sources.map(id => (fm && fm[id] && fm[id].name) || id);
-        const detail = e.sources.map(id => fm && fm[id] ? `${fm[id].name} — ${fm[id].url}` : id).join("\n");
+        // A calendar the user added (.ics upload or URL) is its own family, and its only
+        // "feed" is the family key ("user-harbour-a"), which the bundled directory never
+        // lists -- so the pill read that internal key (click-through B17, T3). The event
+        // carries each family's key beside its name; a source with no directory entry
+        // that IS one of those keys is named by the calendar's own name.
+        const famName = (id) => {
+          const i = Array.isArray(e.families) ? e.families.indexOf(id) : -1;
+          if (i >= 0 && Array.isArray(e.family_names) && e.family_names[i]) return e.family_names[i];
+          return id === e.calendar && e.family_name ? e.family_name : null;
+        };
+        const names = e.sources.map(id => (fm && fm[id] && fm[id].name) || famName(id) || id);
+        const detail = e.sources.map(id => fm && fm[id] ? `${fm[id].name} — ${fm[id].url}` : (famName(id) || id)).join("\n");
         const label = names[0] + (names.length > 1 ? ` +${names.length - 1}` : "");
         prov = ` <span class="pill" title="${esc(T("Calendar feed(s) this event came from:") + "\n" + detail)}">${esc(tfa("from {feed}", {feed: label}))}</span>`;
       } else if (e.imported && e.family_name) {

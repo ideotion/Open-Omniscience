@@ -542,6 +542,12 @@
     //     persistent "Collecting… <host>" chip; the host is the URL being fetched
     //     right now (live, truncated). Click the chip for a vitals popover.
     let _inflight = 0, _bg = null, _spinTimer = null, _curHost = null;
+    // The running pass's position ({done, total}) while one is being collected, set by
+    // _pollVitals from /api/scheduler/activity. The chip is COMPOSED from it here: the
+    // poll used to write "Collecting 3/10…" into the chip and then call _paintActivity,
+    // which wrote `_bg` straight over it, so the count never reached the screen -- and it
+    // was an English sentence with raw numbers besides (click-through B17, T10).
+    let _bgProgress = null;
     // Last known network state (airplane mode). Default true (online): never paint
     // "paused" until we actually learn we are offline (no fabricated status either way).
     let _netOnline = true;
@@ -581,7 +587,12 @@
         el.hidden = false;
         el.classList.toggle("bg", !paused);
         el.classList.toggle("paused", paused);
-        $("activity-label").textContent = paused ? T("Collecting paused") + "…" : _bg;
+        const TF = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
+          : ((s2, v) => String(s2).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? String(v[k]) : m));
+        $("activity-label").textContent = paused ? T("Collecting paused") + "…"
+          : _bgProgress ? TF("Collecting {done}/{total}…",
+              {done: fmtNum(_bgProgress.done, 0), total: fmtNum(_bgProgress.total, 0)})
+          : _bg;
         host.textContent = paused ? "" : (_curHost || "");
       }
       else if (_inflight > 0) { el.hidden = false; el.classList.remove("bg"); el.classList.remove("paused");
@@ -600,7 +611,7 @@
     function setBackgroundActivity(label) {
       const next = label || null;
       if (next === _bg) return;
-      _bg = next; if (!_bg) _curHost = null;
+      _bg = next; if (!_bg) { _curHost = null; _bgProgress = null; }
       _paintActivity();
       if (!_bg) _bumpInflight(0);   // re-evaluate any still-pending in-flight spinner
       _ensureVitalsPoll();
@@ -1816,18 +1827,22 @@
       if (_bg) {
         const pg = _actData && _actData.progress;
         _curHost = pg && pg.current ? pg.current : (cur ? _shortUrl(cur.url) : null);
-        if (pg && pg.total) {
-          $("activity-label").textContent = `Collecting ${Math.min(pg.done + 1, pg.total)}/${pg.total}…`;
-        }
+        _bgProgress = pg && pg.total ? {done: Math.min(pg.done + 1, pg.total), total: pg.total} : null;
         _paintActivity();
       }
       if (_vitalsOpen) { _renderVitals(v); _renderJobs(); _renderSchedule(); }
       _vitalsPrev = v;
     }
+    // A duration as the locale writes it (click-through B17, T7): the unit is the keyed
+    // frame the rest of the app already writes ("{n} s", "{n} min"), so a locale spells it
+    // its own way and on its own side of the number; the number keeps fmtNum's convention,
+    // and the "~" is a symbol, not a word.
     function _fmtDur(s) {
       if (s == null) return "—";
-      if (s < 90) return `~${Math.max(1, Math.round(s))} s`;
-      return `~${Math.round(s / 60)} min`;
+      const TF = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
+        : ((f, v) => String(f).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? String(v[k]) : m));
+      if (s < 90) return "~" + TF("{n} s", {n: fmtNum(Math.max(1, Math.round(s)), 0)});
+      return "~" + TF("{n} min", {n: fmtNum(Math.round(s / 60), 0)});
     }
     // The pair the panel was last drawn from, so a language switch redraws it at once
     // (app-boot.js's oo:langchange listener) rather than on the next 2 s poll -- and from
@@ -1836,6 +1851,19 @@
     let _vitalsLast = null;
     function repaintVitalsFromCache() {
       if (_vitalsOpen && _vitalsLast) _renderVitals(_vitalsLast.v, _vitalsLast.prev);
+    }
+    // The estimate's method sentence (click-through B17, T6). The server writes it in
+    // English with its numbers in it, so no key could ever match it; it also sends the
+    // sentence as a FRAME and the numbers apart (runner.plan_preview), and the page writes
+    // the frame in the UI language with the numbers through fmtNum. A payload without the
+    // frame (an older server) keeps the server's sentence rather than showing nothing.
+    function _estimateMethodText(plan, tf) {
+      const p = plan || {};
+      if (!p.estimate_method_i18n) return p.estimate_method || "";
+      const v = p.estimate_method_vars || {};
+      return tf(p.estimate_method_i18n, {
+        sources: fmtNum(v.sources, 0), delay: fmtNum(v.delay, 1), fetches: fmtNum(v.fetches, 1),
+      });
     }
     function _renderVitals(v, prev = _vitalsPrev) {
       _vitalsLast = {v, prev};
@@ -1860,8 +1888,8 @@
         nowHtml =
           row(esc(t9("Now collecting")), `${esc(pg.current || "…")}`) +
           `<div class="cap-bar" role="progressbar" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100">` +
-          `<div class="cap-fill" style="width:${pct}%"></div><span class="cap-txt">${pg.done}/${pg.total} · ${pct}%</span></div>` +
-          (pg.pages ? row(esc(t9("Pages this run")), String(pg.pages)) : "");
+          `<div class="cap-fill" style="width:${pct}%"></div><span class="cap-txt">${fmtNum(pg.done, 0)}/${fmtNum(pg.total, 0)} · ${pct}%</span></div>` +
+          (pg.pages ? row(esc(t9("Pages this run")), fmtNum(pg.pages, 0)) : "");
       } else {
         const nr = a.next_run ? new Date(a.next_run) : null;
         const mins = nr ? Math.max(0, Math.round((nr - Date.now()) / 60000)) : null;
@@ -1889,7 +1917,7 @@
         (chips ? `<div class="cap-chips">${chips}${extra ? `<span class="cap-chip muted">+${extra}</span>` : ""}</div>` : "") +
         (plan.estimated_seconds != null
           ? row(esc(t9("Estimated duration")), `${_fmtDur(plan.estimated_seconds)}`) +
-            `<div class="vnote">${esc(plan.estimate_method || "")}</div>`
+            `<div class="vnote">${esc(_estimateMethodText(plan, tf))}</div>`
           : "") : "";
       // -- Per-source rates: the app's OWN fetches, discrete ---------------- //
       const rateHtml = rates.length
@@ -2070,11 +2098,53 @@
       return line ? `<div class="muted" style="font-size:11px">${esc(line)}</div>` : "";
     }
 
+    // A job's percent as a WHOLE number (click-through B17, T5): the fold and the re-index
+    // publish one decimal ("86.8%"), which says nothing the exact count beside it does not.
+    // It never reads 100 while work is left -- a rounded "100%" on a running row is a
+    // finished job that is not finished -- so 99.5 and up stays 99 until the count is full.
+    function _jobPct(p) {
+      const done = Number(p.done) || 0, total = Number(p.total) || 0;
+      if (total > 0 && done >= total) return 100;
+      const raw = (typeof p.percent === "number" && isFinite(p.percent)) ? p.percent
+        : (total > 0 ? 100 * done / total : 0);
+      return Math.min(99, Math.max(0, Math.round(raw)));
+    }
+    // A job label that carries a value travels as a keyed FRAME plus its values
+    // (`label_i18n` / `label_vars`, beside the unchanged English `label` -- src/api/jobs.py),
+    // so a locale writes the whole sentence and orders it itself (click-through B17, T11).
+    // A number goes through fmtNum; `language` is a language CODE, written as the name in
+    // the UI language; anything else is data, held in an isolate so a Latin title or path
+    // stays one run inside a right-to-left sentence. A fixed label is still a key: t().
+    // A language CLDR cannot name (it hands the code back: "simple") keeps the server's
+    // English sentence whole rather than print the code where a name belongs.
+    function _jobLabel(j, t) {
+      if (!j.label_i18n) return t(j.label || "");
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
+        : ((f, v) => String(f).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? String(v[k]) : m));
+      const vars = j.label_vars || {}, out = {};
+      for (const k of Object.keys(vars)) {
+        const x = vars[k];
+        if (typeof x === "number") out[k] = fmtNum(x, 0);
+        else if (k === "language") {
+          const code = String(x == null ? "" : x);
+          // A code with a subtag ("be-tarask", "zh-min-nan") is its own edition, and
+          // ooLangName names its base: the English sentence is the honest one there.
+          if (/[-_]/.test(code)) return t(j.label || "");
+          const name = typeof ooLangName === "function" ? ooLangName(code, "") : "";
+          const shown = typeof ooLangCode === "function" ? String(ooLangCode(code) || "") : "";
+          if (!name || name.toLowerCase() === code.toLowerCase()
+              || (shown && name.toLowerCase() === shown.toLowerCase())) return t(j.label || "");
+          out[k] = name;
+        } else out[k] = "\u2068" + String(x == null ? "" : x) + "\u2069";
+      }
+      return tf(j.label_i18n, out);
+    }
+
     function _jobRow(j, queuedKeysByKind, t) {
         const pill = j.state === "running" ? "ok" : (j.state === "failed" ? "err" : "warn");
         let prog = "";
         if (j.progress && j.progress.total) {
-          const pct = j.progress.percent || Math.round(100 * j.progress.done / j.progress.total);
+          const pct = _jobPct(j.progress);
           // EVERY progress was formatted as BYTES, but four producers publish counts
           // (items/stages/files/articles) -- so a re-index of 700,000 articles read
           // "700 kB / 1.4 MB" and a one-item import read "1 B / 1 B". The unit was
@@ -2115,10 +2185,9 @@
             acts.push(`<button class="tiny secondary" onclick="jobCancel(${esc(JSON.stringify(j.id))})">${esc(t("Cancel"))}</button>`);
         }
         const qpos = j.queue_position ? ` <span class="muted">#${j.queue_position} ${esc(t("in queue"))}</span>` : "";
-        // `t(j.label)`: a fixed job label is keyed ×12 (the fold's are); a label carrying a
-        // value is not a key and falls through unchanged.
+        // A fixed job label is keyed ×12; one carrying a value arrives as a frame (_jobLabel).
         return `<div style="display:flex;align-items:center;gap:8px;padding:3px 0;flex-wrap:wrap">` +
-          `<span class="pill ${pill}">${esc(t(j.state))}</span><b style="font-size:12.5px">${esc(t(j.label))}</b>${qpos}` +
+          `<span class="pill ${pill}">${esc(t(j.state))}</span><b style="font-size:12.5px">${esc(_jobLabel(j, t))}</b>${qpos}` +
           `<span style="margin-inline-start:auto;display:flex;gap:4px">${acts.join("")}</span>` +
           `<div style="flex-basis:100%">${prog}${_jobWhy(j, t)}</div></div>`;
     }

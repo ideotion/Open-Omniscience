@@ -1125,7 +1125,8 @@
       //
       // The third element is the ARGUMENT the loader needs to actually re-run (M8): the
       // landscape loader returns early once loaded unless forced, so `loadLandscape()`
-      // alone left the landscape in the previous locale's tags.
+      // alone left the landscape in the previous locale's tags. The fourth names a loader
+      // that already re-runs this one, so a switch that started it skips this entry.
       const callers = [
         ["home-trends", "loadHomeTrends"],
         // Home's Overview "Trending now" row renders from the SAME stash; it refuses a
@@ -1135,9 +1136,13 @@
         ["ins-landscape", "loadLandscape", true],
         ["fam-list", "loadFamilies"],
         ["famc-list", "loadFamilyCuration"],
-        ["trd-windows", "loadTrendWindows"],
         // The Trends tab's two bar charts (rising, top) draw the label too.
         ["trd-top", "loadTrends"],
+        // loadTrends ends by re-running loadTrendWindows, so when it ran above the windows
+        // are already on their way: calling it here as well fetched trending-windows twice
+        // per switch (click-through B17, T2). It still runs on its own when the bar charts
+        // never drew (their fetch failed) and the windows did.
+        ["trd-windows", "loadTrendWindows", undefined, "loadTrends"],
         // Explore's "Resolved to" header (M7); the flag keeps a cleared box silent.
         ["ins-trend", "exploreTerm", {repaint: true}],
         // The analysis window RE-FETCHES its keywords for the new target language rather
@@ -1155,10 +1160,12 @@
         // re-asks for them only when the tab was opened (`_obsRelabel` checks).
         [null, "_obsRelabel"],
       ];
-      for (const [hostId, fn, arg] of callers) {
+      const ran = new Set();   // the loaders this switch has already started
+      for (const [hostId, fn, arg, coveredBy] of callers) {
         try {
           if (typeof window[fn] !== "function") continue;
-          if (hostId === null) { window[fn](arg); continue; }
+          if (coveredBy && ran.has(coveredBy)) continue;   // that loader re-runs this one
+          if (hostId === null) { window[fn](arg); ran.add(fn); continue; }
           const host = document.getElementById(hostId);
           // A host still holding its MARKUP placeholder (`data-oo-placeholder`, the static
           // "Loading…") was never opened: its loader has not run, and the first open draws
@@ -1167,7 +1174,7 @@
           // (click-through B16, V11). A loader's own "Loading…" carries no marker, so a
           // panel opened mid-fetch still re-runs for the new language.
           if (host && host.children && host.children.length
-              && !host.querySelector(":scope > [data-oo-placeholder]")) window[fn](arg);
+              && !host.querySelector(":scope > [data-oo-placeholder]")) { window[fn](arg); ran.add(fn); }
         } catch (_e) { /* one stale surface must never stop the rest */ }
       }
     }
