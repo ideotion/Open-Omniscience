@@ -156,11 +156,12 @@ function load(names, prelude, exportsList) {
   // ------------------------------------------------------------------ S2, the undo
   {
     const calls = [];
-    const mod = load(["undoAdmission"], `
+    const mod = load(["_qualRefresh", "undoAdmission"], `
       var window = {};
       async function api() { return { undone: true }; }
       function toast() {}
       function loadQualificationGates() { __calls.push("gates"); }
+      function loadQualifyBulk() { __calls.push("bulk"); }
       function loadAdmissionAudit() { __calls.push("audit"); }
       function _qualScopeCount() { __calls.push("scope"); }
       function _apiErrorMessage(e) { return e.message; }
@@ -171,6 +172,10 @@ function load(names, prelude, exportsList) {
     await mod.undoAdmission(7, { disabled: false });
     assert.ok(calls.includes("gates"),
       "an undo must repaint the WHOLE panel (the headline too), not only the audit: " + calls);
+    // The re-walk's S-3: the backlog line has its own loader, and an undo that skipped it
+    // left "5 candidates awaiting qualification" under a headline that already said 6.
+    assert.ok(calls.includes("bulk"),
+      "an undo must repaint the backlog line too, not only the gates: " + calls);
   }
 
   // ------------------------------------------------------------------ S8, the stamps
@@ -193,8 +198,30 @@ function load(names, prelude, exportsList) {
     const stamps = out.match(/<span class="qual-when"[^>]*>/g) || [];
     assert.strictEqual(stamps.length, 2, "both stamps are marked: " + out);
     for (const s of stamps) assert.ok(/white-space:nowrap/.test(s), "a stamp must not wrap mid-token: " + s);
-    assert.ok(/<div style="flex:0 0 auto">/.test(out),
-      "the action column must size to its content, so the info column is not squeezed: " + out);
+    // The re-walk's S-1/S-2 replaced the S8 layout: `flex:0 0 auto` on the action with a
+    // basis-0 info column could never WRAP, so at 375 px it crushed the info column to
+    // 46 px. The info column now has a real basis, and the action may shrink -- so a phone
+    // row wraps instead of squeezing. The review of that fix measured the basis ALONE
+    // failing: 16em (192 px) is narrower than the one-line stamp in en/es/pt/id, 18em
+    // than the JetBrains Mono stamp in pt/es (223 px), and between ~470 and ~640 px the
+    // stamp spilled out of the column. So the column's floor is its own min-content
+    // (`min-width:auto`, which the nowrap stamp sets), never `min-width:0`, which lets the
+    // column shrink under the stamp; and the domain may break anywhere, so a long one does
+    // not become that floor instead. The measured check (no stamp past its column, 320 to
+    // 1100 px, 12 languages, every bundled face) is the Chromium walk's; this pins the styles.
+    const info = (out.match(/<div class="row"[^>]*>\s*<div style="([^"]*)">/) || [])[1];
+    assert.ok(info, "the info column carries its own style: " + out);
+    assert.ok(/(^|;)flex:1 1 18em(;|$)/.test(info),
+      "the info column must carry a real basis so a narrow row wraps: " + info);
+    assert.ok(/(^|;)min-width:auto(;|$)/.test(info),
+      "the info column's floor must be its own content (the nowrap stamp): " + info);
+    assert.ok(!/min-width:0/.test(info),
+      "min-width:0 lets the column shrink under its nowrap stamp -- the S-1 review spill: " + info);
+    assert.ok(/<strong style="overflow-wrap:anywhere">/.test(out),
+      "a long domain must break rather than become the column's floor: " + out);
+    assert.ok(/<div style="flex:0 1 auto">/.test(out),
+      "the action column may shrink, so Undone and its stamp can break apart: " + out);
+    assert.ok(!/flex:0 0 auto/.test(out), "a never-shrinking action column is the S-1 regression: " + out);
     assert.ok(!/dir="ltr"/.test(out), "a localised date must not be forced left-to-right: " + out);
 
     // Without the formatter (a node harness, a boot-time render) the raw stamp still shows.

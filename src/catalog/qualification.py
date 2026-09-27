@@ -845,15 +845,18 @@ def admission_audit(
             "source COLLECTABLE -- not merely when it changes the enabled flag, because "
             "a catalogue source is already enabled and is admitted by the verdict alone."
         ),
+        # Both are drawn on the Quality gates panel and are keys in all twelve locales, so
+        # they are written with the typographic dash the rest of the UI uses: the ASCII
+        # "--" showed only in English (re-walk S-9).
         "caveat": (
-            "Admission is about EXTRACTION VALIDITY only -- never editorial merit, and "
+            "Admission is about EXTRACTION VALIDITY only — never editorial merit, and "
             "never a score. An undo reverses this instance's decision; it does not "
             "disqualify the source, so a later pass may admit it again."
         ),
         "coverage_note": (
             "This lists admissions made by judging. Sources can also be collecting "
             "because they came stamped in the shipped catalogue, carried an inherited "
-            "stamp, or arrived in a restored backup -- those are not judgements made "
+            "stamp, or arrived in a restored backup — those are not judgements made "
             "here and have no row to undo."
         ),
     }
@@ -1108,6 +1111,9 @@ def run_qualification_pass(
             "available_mb": budget["available_mb"],
             "need_mb": budget["need_mb"],
             "reason": budget["reason"],
+            # The reason's keyed frame, so the refusal is written in the UI language.
+            "reason_i18n": budget.get("reason_i18n"),
+            "reason_vars": budget.get("reason_vars"),
             "caveat": budget["caveat"],
             "override_env": budget["override_env"],
         }

@@ -17,7 +17,7 @@ wants two copies of.
 
 from __future__ import annotations
 
-from fastapi import Depends, File, Form, HTTPException, UploadFile
+from fastapi import Depends, File, Form, UploadFile
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
@@ -72,25 +72,30 @@ def source_qualification_merge(
     from src.catalog.qualification_export import build_overlay_export
     from src.catalog.qualification_merge import (
         MAX_MEMBER_BYTES,
+        REFUSE_NOTHING,
+        REFUSE_TOO_BIG,
+        REFUSE_TOO_MANY,
         MergeInputError,
         existing_from_text,
         merge,
+        refusal_payload,
         render,
         rows_from_bundle_bytes,
         rows_from_export_bytes,
     )
     from src.catalog.qualification_overlay import DEFAULT_OVERLAY_PATH
 
+    # Every refusal is a 400 that says itself twice: ``detail`` in English, exactly as
+    # before (and as the command line prints it), and ``detail_i18n`` / ``detail_vars``
+    # for the panel, which writes it in the UI language with the file name kept as data
+    # (the 2026-09-27 re-walk, S-6). Returned rather than raised: an ``HTTPException``
+    # carries one ``detail``, and a caller reading it as a string keeps reading a string.
+    def refuse(frame: str, **values: object) -> JSONResponse:
+        return JSONResponse(status_code=400, content=refusal_payload(frame, **values))
+
     uploads = [f for f in (files or []) if f is not None and (f.filename or "").strip()]
     if len(uploads) > _MAX_MERGE_UPLOADS:
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                f"{len(uploads)} files were sent; this run reads at most "
-                f"{_MAX_MERGE_UPLOADS}. Merge them in batches -- each run carries the "
-                "previous overlay through untouched, so batching loses nothing."
-            ),
-        )
+        return refuse(REFUSE_TOO_MANY, n=len(uploads), limit=_MAX_MERGE_UPLOADS)
 
     exports: list[list[dict]] = []
     # Which route each input took, recorded in the report. An operator reviewing a merged
@@ -102,13 +107,7 @@ def source_qualification_merge(
         raw = upload.file.read()
         name = (upload.filename or "upload").strip()
         if len(raw) > MAX_MEMBER_BYTES:
-            raise HTTPException(
-                status_code=400,
-                detail=(
-                    f"{name}: {len(raw)} bytes, past the {MAX_MEMBER_BYTES} ceiling. "
-                    "Refusing to read it."
-                ),
-            )
+            return refuse(REFUSE_TOO_BIG, file=name, size=len(raw), limit=MAX_MEMBER_BYTES)
         is_zip = raw[:4] == b"PK\x03\x04"
         try:
             rows = (
@@ -119,8 +118,9 @@ def source_qualification_merge(
         except MergeInputError as exc:
             # The core's refusal, verbatim, as a 400. Rewording it here would leave the
             # operator reading one explanation in the app and another on the command
-            # line for the same file.
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
+            # line for the same file. Its frame travels beside it, so the app can say the
+            # same refusal in the operator's language (re-walk S-6).
+            return refuse(exc.i18n, **exc.vars)
         exports.append(rows)
         inputs.append({
             "name": name,
@@ -136,14 +136,7 @@ def source_qualification_merge(
         })
 
     if not exports:
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                "Nothing to merge: no exports were uploaded and this instance's own "
-                "verdicts were excluded. Writing an overlay from nothing would replace "
-                "the shipped file with an empty one."
-            ),
-        )
+        return refuse(REFUSE_NOTHING)
 
     existing_text = (
         DEFAULT_OVERLAY_PATH.read_text(encoding="utf-8")
@@ -166,7 +159,7 @@ def source_qualification_merge(
         "written": False,
         "note": (
             "Nothing was written. Review this file and commit it as "
-            "configs/source_qualification.yml -- it ships to every fresh install, so the "
+            "configs/source_qualification.yml — it ships to every fresh install, so the "
             "app does not edit it for you."
         ),
         "conflicts_note": (
