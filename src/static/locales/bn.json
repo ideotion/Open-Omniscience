@@ -4745,5 +4745,18 @@
   "no files": "কোনো ফাইল নেই",
   "corpus database not separately encrypted (the backup's volumes are)": "কর্পাস ডেটাবেস আলাদাভাবে এনক্রিপ্টেড নয় (ব্যাকআপের ভলিউমগুলি এনক্রিপ্টেড)",
   "Verify result not known here — the app no longer holds what this export measured (it has run another job or restarted since). The volume figures below are read off the drive.": "যাচাইয়ের ফলাফল এখানে অজানা — এই এক্সপোর্ট যা মেপেছিল অ্যাপটি তা আর ধরে রাখে না (তারপর থেকে এটি অন্য কাজ চালিয়েছে বা পুনরায় চালু হয়েছে)। নিচের ভলিউমের সংখ্যাগুলি ড্রাইভ থেকে পড়া।",
-  "{prefix}: {text}": "{prefix}: {text}"
+  "{prefix}: {text}": "{prefix}: {text}",
+  "{n} B": "{n} B",
+  "{n} KB": "{n} KB",
+  "{n} MB": "{n} MB",
+  "{n} GB": "{n} GB",
+  "{n} TB": "{n} TB",
+  "{d} for the corpus": "কর্পাসের জন্য {d}",
+  "not recorded for the corpus": "কর্পাসের জন্য রেকর্ড করা হয়নি",
+  "{d} for the files": "ফাইলের জন্য {d}",
+  "not recorded for the files": "ফাইলের জন্য রেকর্ড করা হয়নি",
+  "Wikipedia text — CC BY-SA 4.0 (https://creativecommons.org/licenses/by-sa/4.0/). Attribute Wikipedia and its contributors, and share any work derived from this text alike.": "উইকিপিডিয়ার পাঠ্য — CC BY-SA 4.0 (https://creativecommons.org/licenses/by-sa/4.0/)। উইকিপিডিয়া ও এর অবদানকারীদের কৃতিত্ব দিন, এবং এই পাঠ্য থেকে তৈরি যেকোনো কাজ একই শর্তে শেয়ার করুন।",
+  "Tracked legal documents — this corpus records NO licence metadata for them. Each document's terms are those of the official source it was mirrored from (the official URL stored with the document); check them before redistributing. That is a gap in what was recorded, never a grant.": "ট্র্যাক করা আইনি নথি — এই কর্পাস এগুলোর জন্য কোনো লাইসেন্স মেটাডেটা রেকর্ড করে না। প্রতিটি নথির শর্ত হলো সেই সরকারি উৎসের শর্ত যেখান থেকে এটি প্রতিলিপি করা হয়েছে (নথির সঙ্গে সংরক্ষিত সরকারি URL); পুনর্বিতরণের আগে সেগুলো যাচাই করুন। এটি যা রেকর্ড করা হয়েছে তার একটি ফাঁক, কখনোই অনুমতি নয়।",
+  "IP geolocation by DB-IP (https://db-ip.com) — CC BY 4.0": "DB-IP-এর IP ভৌগোলিক অবস্থান নির্ণয় (https://db-ip.com) — CC BY 4.0",
+  "Open-Meteo open data, CC BY 4.0 (https://open-meteo.com/) — ERA5-family reanalysis: a model estimate for a grid cell, not a station record.": "Open-Meteo-র মুক্ত ডেটা, CC BY 4.0 (https://open-meteo.com/) — ERA5-পরিবারের রিঅ্যানালাইসিস: একটি গ্রিড সেলের মডেল-ভিত্তিক অনুমান, কোনো স্টেশনের রেকর্ড নয়।"
 }

@@ -731,7 +731,14 @@ def test_the_re_read_is_announced_before_the_first_volume_is_hashed(exported, mo
 def test_every_server_sentence_the_panel_translates_is_keyed_in_all_12_locales(exported):
     """J7: the Elapsed and Encryption hovers are English sentences the server sends and
     the panel looks up with t(). The i18n gate reads literal t("...") calls only, so it
-    cannot see these -- this is the gate for them. A caveat ships x12."""
+    cannot see these -- this is the gate for them. A caveat ships x12.
+
+    The Licences lines joined them (2026-09-26 click-through, J-licences): every line
+    the attribution registry can emit is looked up with t() too, so every one of them is
+    listed here -- read off the registry itself, so a line added later is gated the day
+    it is added rather than the day someone notices it in French."""
+    from src.backup.attribution import _REGISTRY
+
     dest, summary = exported
     no_files = export_facts(dest, volume_status=_status(dest, summary, {"state": "verified"}))
     (dest / "oo-folder-backup.json").write_text(
@@ -739,12 +746,14 @@ def test_every_server_sentence_the_panel_translates_is_keyed_in_all_12_locales(e
         encoding="utf-8",
     )
     with_files = export_facts(dest, volume_status=_status(dest, summary, {"state": "verified"}))
+    licence_lines = {text_fn() for _key, text_fn, _because in _REGISTRY}  # type: ignore[operator]
+    assert len(licence_lines) == len(_REGISTRY) >= 4, licence_lines
     sentences = {
         no_files["elapsed"]["files_s_reason"],
         with_files["elapsed"]["files_s_reason"],
         no_files["encryption"]["note"],
-    }
-    assert len(sentences) == 3, sentences
+    } | licence_lines
+    assert len(sentences) == 3 + len(_REGISTRY), sentences
     maps = {
         lang: json.loads((_LOCALES / f"{lang}.json").read_text(encoding="utf-8"))
         for lang in _LANGS

@@ -4745,5 +4745,18 @@
   "no files": "tidak ada berkas",
   "corpus database not separately encrypted (the backup's volumes are)": "basis data korpus tidak dienkripsi tersendiri (volume cadangan terenkripsi)",
   "Verify result not known here — the app no longer holds what this export measured (it has run another job or restarted since). The volume figures below are read off the drive.": "Hasil verifikasi tidak diketahui di sini — aplikasi tidak lagi menyimpan apa yang diukur ekspor ini (sejak itu aplikasi menjalankan tugas lain atau dimulai ulang). Angka volume di bawah dibaca dari drive.",
-  "{prefix}: {text}": "{prefix}: {text}"
+  "{prefix}: {text}": "{prefix}: {text}",
+  "{n} B": "{n} B",
+  "{n} KB": "{n} KB",
+  "{n} MB": "{n} MB",
+  "{n} GB": "{n} GB",
+  "{n} TB": "{n} TB",
+  "{d} for the corpus": "{d} untuk korpus",
+  "not recorded for the corpus": "tidak tercatat untuk korpus",
+  "{d} for the files": "{d} untuk berkas",
+  "not recorded for the files": "tidak tercatat untuk berkas",
+  "Wikipedia text — CC BY-SA 4.0 (https://creativecommons.org/licenses/by-sa/4.0/). Attribute Wikipedia and its contributors, and share any work derived from this text alike.": "Teks Wikipedia — CC BY-SA 4.0 (https://creativecommons.org/licenses/by-sa/4.0/). Cantumkan atribusi kepada Wikipedia dan para kontributornya, dan bagikan setiap karya turunan dari teks ini dengan lisensi yang sama.",
+  "Tracked legal documents — this corpus records NO licence metadata for them. Each document's terms are those of the official source it was mirrored from (the official URL stored with the document); check them before redistributing. That is a gap in what was recorded, never a grant.": "Dokumen hukum yang dilacak — korpus ini TIDAK mencatat metadata lisensi apa pun untuknya. Ketentuan setiap dokumen adalah ketentuan sumber resmi tempat dokumen itu dicerminkan (URL resmi yang disimpan bersama dokumen); periksa sebelum mendistribusikan ulang. Itu adalah celah dalam apa yang tercatat, bukan izin.",
+  "IP geolocation by DB-IP (https://db-ip.com) — CC BY 4.0": "Geolokasi IP oleh DB-IP (https://db-ip.com) — CC BY 4.0",
+  "Open-Meteo open data, CC BY 4.0 (https://open-meteo.com/) — ERA5-family reanalysis: a model estimate for a grid cell, not a station record.": "Data terbuka Open-Meteo, CC BY 4.0 (https://open-meteo.com/) — reanalisis keluarga ERA5: estimasi model untuk satu sel grid, bukan catatan stasiun."
 }

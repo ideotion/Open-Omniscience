@@ -223,14 +223,36 @@
     if (th) document.documentElement.setAttribute("data-theme", th);
   } catch (e) { /* ignore */ }
 
+  // The SPA's _sizeText (app-core.js), for this page (2026-09-26 click-through P8): the
+  // unit is one keyed frame per unit, so a locale writes it its own way and on its own
+  // side of the number; the number is formatted for the UI language with Latin digits;
+  // the result rides in a first-strong isolate so an Arabic line cannot reorder it; and
+  // a no-break space keeps the number on its unit's line. The value is unchanged:
+  // binary steps of 1024 under the SI-style names.
   function fmtBytes(n) {
-    if (n == null) return "—";
-    var u = ["B", "KB", "MB", "GB", "TB"], i = 0;
-    n = Number(n);
-    while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
-    return (i === 0 ? n : n.toFixed(1)) + " " + u[i];
+    if (n == null || !isFinite(Number(n))) return "—";
+    var TF = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : function (s, o) { return s.replace("{n}", o.n); };
+    var v = Number(n), i = 0;
+    while (v >= 1024 && i < 4) { v /= 1024; i++; }
+    var dec = i === 0 ? 0 : 1, num;
+    try {
+      var lang = (window.OOI18N && OOI18N.current && OOI18N.current()) || "en";
+      var cache = fmtBytes.nf || (fmtBytes.nf = {});
+      var nf = cache[lang + "|" + dec] || (cache[lang + "|" + dec] = new Intl.NumberFormat(
+        lang + "-u-nu-latn", { minimumFractionDigits: dec, maximumFractionDigits: dec, useGrouping: false }));
+      num = nf.format(v);
+    } catch (e) { num = v.toFixed(dec); }
+    var s = i === 0 ? TF("{n} B", { n: num })
+      : i === 1 ? TF("{n} KB", { n: num })
+      : i === 2 ? TF("{n} MB", { n: num })
+      : i === 3 ? TF("{n} GB", { n: num })
+      : TF("{n} TB", { n: num });
+    return "\u2068" + s.replace(/ /g, "\u00a0") + "\u2069";
   }
-  function fmtRate(bps) { return bps == null ? "—" : fmtBytes(bps) + "/s"; }
+  function fmtRate(bps) {
+    var TF = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : function (s, o) { return s.replace("{rate}", o.rate); };
+    return bps == null ? "—" : TF("{rate}/s", { rate: fmtBytes(bps) });
+  }
   function fmtDur(s) {
     if (s == null) return "—";
     s = Math.round(s);
