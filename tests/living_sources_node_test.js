@@ -50,7 +50,7 @@ function extractConst(name) {
 // Settings -> Storage's cells (reused, never copied) and the task manager's cause line.
 const HELPERS = [
   "_sizeText", "humanBytes", "_storageLaneName", "_storageLaneHover", "_storageSignedBytes", "_storagePct",
-  "_storageGrowthHtml", "_storageBudgetHtml", "_storageSizeHtml", "_jobWhy",
+  "_storageGrowthHtml", "_storageBudgetHtml", "_storageSizeHtml", "ooLabelText", "_jobWhy",
 ];
 const LIVING = [
   "livingWhen", "livingSigned", "livingFactHtml", "livingGroupsHtml", "_livingUnmeasured",
@@ -266,10 +266,12 @@ const WIKI = {
   assert.ok(visible(fr).includes("CC(fr)") && visible(fr).includes("-1200") && visible(fr).includes("large-removal"),
     "the jurisdiction went to the screen without its display helper (Q302)");
   assert.strictEqual((fr.match(/pill warn/g) || []).length, 1, "an empty flag reason drew an empty pill");
-  assert.ok(fr.includes("<details>") && fr.includes("var(--err)"), "the stored diff is missing");
+  assert.ok(/<details[ >]/.test(fr) && fr.includes("var(--err)"), "the stored diff is missing");
+  // The fold carries its change id, so a language switch can re-open it (re-walk O-3).
+  assert.ok(fr.includes('<details data-change-id="1">'), "the law fold lost its change id");
   assert.ok(fr.includes('href="/api/law/documents/7/view"'), "the local stored copy is not linked first (invariant #6)");
   assert.ok(!/href="https?:/.test(rows), "a law row linked straight outside the app");
-  assert.ok(visible(de).includes("No stored diff") && !de.includes("<details>"));
+  assert.ok(visible(de).includes("No stored diff") && !de.includes("<details"));
   assert.ok(visible(fr).includes("2026-09-20 12:00 UTC"));
   noJunk(rows, "the law rows");
 }

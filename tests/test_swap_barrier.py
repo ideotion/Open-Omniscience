@@ -384,11 +384,13 @@ def test_the_arbitration_no_longer_calls_a_db_collision_a_network_task() -> None
     app = app_js()
     arb = strip_comments(function_body(app, "arbitrate"))
     assert "Another network task is running:" not in arb
-    assert "Another job is writing to the database:" in arb
+    # Keyed without its colon since the 2026-09-27 re-walk (O-5): the reader's separator
+    # comes from ooLabelText, so zh no longer reads "…数据库： re-index".
+    assert 'ooLabelText(t("Another job is writing to the database"), busy)' in arb
     for loc in sorted(Path("src/static/locales").glob("*.json")):
         d = json.loads(loc.read_text(encoding="utf-8"))
         assert "Another network task is running:" not in d, f"{loc.name} still carries the old key"
-        assert d.get("Another job is writing to the database:"), f"{loc.name} is missing the new one"
+        assert d.get("Another job is writing to the database"), f"{loc.name} is missing the new one"
 
 
 def test_the_quarantine_scan_now_stands_aside_for_an_import() -> None:

@@ -52,6 +52,8 @@ const NAMES = [
   "_sizeText", "humanBytes", "_storageLaneName", "_storageLaneHover", "_storageSignedBytes", "_storagePct",
   "_storageGrowthHtml", "_storageBudgetHtml", "_storageSizeHtml", "_storageTableHtml",
   "_storageReadingHtml", "_storageDiskHtml",
+  // The reading's lead takes the reader's separator (re-walk O-5).
+  "ooLabelHtml",
 ];
 // `window` is defined so `window.OOI18N && ...` resolves to the fallbacks: a sandbox
 // without it raises ReferenceError on the bare global read (the recorded node trap).

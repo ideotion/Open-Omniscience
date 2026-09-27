@@ -3005,9 +3005,16 @@
       // A tab opened for the first time starts on _livingView; one already open is
       // moved with select(). Doing both would load the panel twice.
       const opened = typeof _livingSubtabs !== "undefined" && !!_livingSubtabs;
+      // Already ON the Wikipedia panel (a click on a tracked page under "Pages you track"):
+      // nothing to switch, so nothing is reloaded. select() re-reads the whole panel, and
+      // that rebuilt the stream and collapsed the diff the reader had open beside it
+      // (2026-09-27 re-walk O-6). Opening one view does not reset another.
+      const tabEl = $("tab-living");
+      const showing = opened && typeof _livingView !== "undefined" && _livingView === "wiki"
+        && !!tabEl && tabEl.classList.contains("active");
       if (typeof _livingView !== "undefined") _livingView = "wiki";
-      showTab("living");
-      if (opened) _livingSubtabs.select("wiki");
+      if (!showing) showTab("living");
+      if (opened && !showing) _livingSubtabs.select("wiki");
       const ttl = $("wiki-tc-title");
       if (ttl) ttl.textContent = (_wikiTc.wiki ? _wikiTc.wiki + " · " : "") + _wikiTc.title;
       const fo = $("wiki-tc-flagged"); if (fo) fo.checked = false;
@@ -3058,7 +3065,9 @@
       const flagged = (flaggedEl && flaggedEl.checked) ? "true" : "false";
       body.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
       if (meth) meth.textContent = "";
+      _wikiTcLast = null;
       try {
+        const id = _wikiTc.id;
         const d = await api(`/api/wiki/pages/${_wikiTc.id}/revisions?limit=50&flagged_only=${flagged}&include_diff=true`);
         // A caller that knew the page named it; the ?wikitc= deep link from the
         // article reader knows only the id, so the header is filled from the
@@ -3068,25 +3077,39 @@
           const ttl2 = $("wiki-tc-title");
           if (ttl2) ttl2.textContent = (_wikiTc.wiki ? _wikiTc.wiki + " · " : "") + _wikiTc.title;
         }
-        const revs = d.revisions || [];
-        if (!revs.length) {
-          // Honest empty state (flagged-aware), never a blank pane.
-          body.innerHTML = `<div class="muted">${esc(t(flagged === "true"
-            ? "No flagged tracked revisions stored for this page yet."
-            : "No tracked revisions stored for this page yet."))}</div>`;
-        } else {
-          // Honest window: showing `count` of `total` — the endpoint discloses it is a slice.
-          // ONE keyed frame with grouped numbers (R14), not "Showing" + a bare fraction +
-          // an English noun.
-          const cap = `<div class="muted" style="margin-bottom:8px">${esc(_mapTf("Showing {n} of {total} tracked revisions", { n: fmtNum(d.count || 0, 0), total: fmtNum(d.total || 0, 0) }))}</div>`;
-          body.innerHTML = cap + revs.map(r => _wikiRevRow(r, t)).join("");
-        }
-        // VISIBLE caveat (keyed ×12) mirroring the endpoint's method — never hidden.
-        if (meth) meth.textContent = t("The tracked slice of edits stored on this machine, newest first — not necessarily every historical revision. Each diff is the compact added / removed summary captured when the edit was tracked (truncated per side), not a live re-diff. Counts only, no score.");
+        _wikiTcLast = { id, flagged, d };
+        _renderWikiTC(d, flagged);
       } catch (e) {
         // Additive surface — degrade quietly, never throw.
         body.innerHTML = `<div class="muted">${esc(ooLabelText(t("Could not load"), e.message))}</div>`;
       }
+    }
+
+    // The last tracked-history payload, so a language switch redraws the page's history
+    // from what it holds rather than asking again (2026-09-27 re-walk O-3).
+    let _wikiTcLast = null;   // {id, flagged, d}
+    function repaintWikiTCFromCache() {
+      if (_wikiTcLast && _wikiTcLast.id === _wikiTc.id) _renderWikiTC(_wikiTcLast.d, _wikiTcLast.flagged);
+    }
+    function _renderWikiTC(d, flagged) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const body = $("wiki-tc-body"), meth = $("wiki-tc-method");
+      if (!body) return;
+      const revs = d.revisions || [];
+      if (!revs.length) {
+        // Honest empty state (flagged-aware), never a blank pane.
+        body.innerHTML = `<div class="muted">${esc(t(flagged === "true"
+          ? "No flagged tracked revisions stored for this page yet."
+          : "No tracked revisions stored for this page yet."))}</div>`;
+      } else {
+        // Honest window: showing `count` of `total` — the endpoint discloses it is a slice.
+        // ONE keyed frame with grouped numbers (R14), not "Showing" + a bare fraction +
+        // an English noun.
+        const cap = `<div class="muted" style="margin-bottom:8px">${esc(_mapTf("Showing {n} of {total} tracked revisions", { n: fmtNum(d.count || 0, 0), total: fmtNum(d.total || 0, 0) }))}</div>`;
+        body.innerHTML = cap + revs.map(r => _wikiRevRow(r, t)).join("");
+      }
+      // VISIBLE caveat (keyed ×12) mirroring the endpoint's method — never hidden.
+      if (meth) meth.textContent = t("The tracked slice of edits stored on this machine, newest first — not necessarily every historical revision. Each diff is the compact added / removed summary captured when the edit was tracked (truncated per side), not a live re-diff. Counts only, no score.");
     }
 
     // --- Search-tab time-range control (ooTimeScope reuse) ----------------- //

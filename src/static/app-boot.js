@@ -143,6 +143,12 @@
       // The AI pill is the same class (click-through B19, Q7): it carries `data-i18n-dyn`
       // and writes its word and hover itself. Repaints from the state it holds; no fetch.
       try { if (typeof _paintAiPill === "function") _paintAiPill(); } catch (_e) {}
+      // The collection-speed knob is the same class (2026-09-27 re-walk T-1): its hover
+      // kept the language of its last click. Repaints from the mode it holds; no fetch.
+      try { if (typeof _paintRateMode === "function" && _rateMode) _paintRateMode(_rateMode); } catch (_e) {}
+      // Settings → Collection's targets line (re-walk O-2, S-4): keyed frames welded to
+      // the counts, redrawn from the payload it last drew -- never a fetch.
+      try { if (typeof _renderSchedTargets === "function") _renderSchedTargets(); } catch (_e) {}
       // The airplane coachmark is positioned in pixels from the plane, and a switch
       // into or out of Arabic mirrors the top bar without resizing the window, so the
       // coach stayed at its old spot -- 1,019 px from the plane, over the sidebar
@@ -283,12 +289,14 @@
         }
       } catch (_e) {}
       // Living sources builds every figure and row with t()/tf() at render time, so a
-      // switch re-reads the panel on screen (loopback only) -- and only if the tab was
-      // ever opened, which is when _livingOverview holds a payload.
+      // switch redraws it -- and only if the tab was ever opened, which is when
+      // _livingOverview holds a payload. From the payloads it already holds, never a
+      // fetch: re-reading rebuilt every list and collapsed the diffs the reader had open
+      // (2026-09-27 re-walk O-3). The tracked page's history redraws the same way.
       try {
-        if (typeof _livingOverview !== "undefined" && _livingOverview && typeof showLivingView === "function") {
-          showLivingView(_livingView);
-          if (_livingView === "wiki" && _wikiTc && _wikiTc.id != null) loadWikiTC();
+        if (typeof _livingOverview !== "undefined" && _livingOverview && typeof repaintLivingFromCache === "function") {
+          repaintLivingFromCache();
+          if (typeof repaintWikiTCFromCache === "function") repaintWikiTCFromCache();
         }
       } catch (_e) {}
       // The Activity view is the same class again, and it recurred the moment a new

@@ -50,7 +50,10 @@ assert.ok(kAt !== -1, "_isDownloadKind is gone -- was it renamed?");
 const appWhy = load(
   "function esc(s){return String(s==null?'':s).replace(/[&<>\"]/g," +
   "c=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;'}[c]));}\n" +
-  APP.slice(kAt, APP.indexOf(";", kAt) + 1) + "\n" + extract(APP, "_jobWhy"), "_jobWhy");
+  APP.slice(kAt, APP.indexOf(";", kAt) + 1) + "\n" +
+  // The failure line goes through the shared label frame (2026-09-27 re-walk O-5);
+  // `window` is bare so its OOI18N read falls back to the English frame.
+  "var window = {};\n" + extract(APP, "ooLabelText") + "\n" + extract(APP, "_jobWhy"), "_jobWhy");
 
 // taskmanager.html: its OWN esc and isDl, and a page-global t() -- bound per call here.
 const dAt = TM.indexOf("var isDl = function");

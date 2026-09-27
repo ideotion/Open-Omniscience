@@ -140,7 +140,9 @@ def test_the_install_block_is_shared_by_both_panel_states():
     # server's per-backend plan, so the licence + caveats now render THERE. Still one
     # renderer, one source of truth -- just fed by the backend that will actually serve.
     painted = _fn("_paintDefaultModel")
-    assert "card-caveat" in painted and "Licence:" in painted, (
+    # The label is keyed without its colon since the 2026-09-27 re-walk (O-5): the reader's
+    # separator comes from ooLabelHtml, not from the key.
+    assert "card-caveat" in painted and 't("Licence")' in painted, (
         "the licence provenance travels with the button, visible before the click"
     )
     assert "p.caveats" in painted

@@ -16,6 +16,7 @@ Usage:
     python scripts/i18n_report.py --json          # machine-readable
     python scripts/i18n_report.py --min 100       # exit 1 if a 'complete' locale < 100%
     python scripts/i18n_report.py --audit-chrome  # UI strings NOT yet keyed in en.json
+    python scripts/i18n_report.py --glossary      # exit 1 if a locale strays from its one term
 
 ``--audit-chrome`` (maintainer asked 2026-06-10, after a French live test showed
 untranslated Settings text) extracts every constant text node + placeholder/
@@ -609,6 +610,45 @@ def _keys(data: dict) -> set[str]:
     return {k for k in data if k != "_meta"}
 
 
+# ONE term per concept, per locale. Coverage and the ratchets above cannot see this
+# class: every key can be present and translated while two batches pick two words for
+# one idea. French 'lane' read "file" on 26 keys and "voie" on 10 -- the Storage header
+# upper-cased to "FILE", which reads as the English word, beside "une voie" in the
+# Export dialog (2026-09-27 re-walk O-4; "file" is also this locale's word for a queue,
+# "file d'attente"). Each rule: the ENGLISH key pattern that names the concept, the term
+# every such value must use, and the term it must never use.
+GLOSSARY: dict[str, list[dict[str, str]]] = {
+    "fr": [
+        {
+            "concept": "lane",
+            "key": r"\blanes?\b",
+            "use": r"\bvoies?\b",
+            "never": r"\bfiles?\b(?! d['’]attente)",
+        },
+    ],
+}
+
+
+def glossary_violations() -> list[dict[str, str]]:
+    """Every locale value that breaks its GLOSSARY rule, one row per key and rule."""
+    out: list[dict[str, str]] = []
+    for code, rules in GLOSSARY.items():
+        data = _load(_LOCALES / f"{code}.json")
+        for rule in rules:
+            for key, value in data.items():
+                if key == "_meta" or not re.search(rule["key"], key, re.I):
+                    continue
+                text = str(value)
+                why = ""
+                if re.search(rule["never"], text, re.I):
+                    why = "uses the term this locale ruled out"
+                elif not re.search(rule["use"], text, re.I):
+                    why = "lacks the chosen term"
+                if why:
+                    out.append({"locale": code, "concept": rule["concept"], "key": key, "why": why})
+    return out
+
+
 def build_report() -> dict:
     en = _load(_LOCALES / "en.json")
     source_keys = _keys(en)
@@ -712,7 +752,19 @@ def main(argv: list[str] | None = None) -> int:
             "from a literal, so the app's own interpolation frames are invisible to them."
         ),
     )
+    ap.add_argument(
+        "--glossary",
+        action="store_true",
+        help="fail (exit 1) if a locale value uses a term other than its GLOSSARY term",
+    )
     args = ap.parse_args(argv)
+
+    if args.glossary:
+        bad = glossary_violations()
+        print(f"glossary violations: {len(bad)}", file=sys.stderr)
+        for row in bad[:20]:
+            print(f"    {row['locale']} {row['concept']}: {row['why']} -- {row['key'][:90]}", file=sys.stderr)
+        return 1 if bad else 0
 
     if args.max_unkeyed_t_calls is not None:
         tcalls = unkeyed_t_calls()
