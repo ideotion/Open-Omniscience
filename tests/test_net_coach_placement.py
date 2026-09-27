@@ -21,14 +21,15 @@ For inquiries, contact: open-omniscience@ideotion.com
 ---
 
 The airplane coachmark (#net-coach): where it sits, and when it moves (delegated
-click-through 2026-09-26, rows N, O and T).
+click-through 2026-09-26, rows N, O and T; re-walk 2026-09-27, row O-1).
 
-The GEOMETRY is driven for real in ``net_coach_place_node_test.js``: never on the top
-bar or the subtab strip under it, never on the sidebar, in LTR and RTL at 1440 and 375
-px, still pointing at the plane. This file pins the three things a geometry test
-cannot see: that the coach is RE-placed when the layout moves under it without a window
-resize (a language switch mirrors the top bar; a tab relocates its subtab strip), and
-that it stacks under the surfaces an operator opens on purpose -- at 375 px it sat on
+Since O-1 the coach is a strip IN FLOW inside the sticky `.chrome`, under the top bar, so
+it covers nothing by construction; that is pinned here from the markup and the CSS. The
+ARROW is still placed by script, and ``net_coach_place_node_test.js`` drives it for real:
+under the plane in LTR and RTL at 1440 and 375 px, never off the strip. This file also
+pins that the arrow is RE-placed when the layout moves under it without a window resize
+(a language switch mirrors the top bar; a tab relocates its subtab strip), and that the
+coach stacks under the surfaces an operator opens on purpose -- at 375 px it once sat on
 the command palette's results.
 """
 
@@ -98,12 +99,38 @@ def _z(css: str, selector: str) -> int:
     return int(m.group(1))
 
 
+def test_the_coach_is_in_the_chrome_and_in_flow():
+    """2026-09-27 re-walk O-1. As a position:fixed bubble below the whole chrome the coach
+    sat exactly where every tab page begins: on Living sources' heading and on its
+    visible-by-default caveat (92 of 372 sampled points of #living-caveat), and once the
+    page was scrolled, on a form input (#sch-pages). A fixed box has no free rectangle to
+    go to. In flow inside `.chrome`, right under the top bar, it pushes the page down
+    instead of covering it -- which is a fact about the MARKUP and the CSS, so it is pinned
+    here rather than in the geometry driver."""
+    html = (_ROOT / "src" / "static" / "index.html").read_text(encoding="utf-8")
+    chrome_at = html.index('<div class="chrome">')
+    chrome_end = html.index("</div><!-- /.chrome -->", chrome_at)
+    coach_at = html.index('<div id="net-coach"')
+    assert chrome_at < coach_at < chrome_end, "#net-coach must live inside .chrome, in flow"
+    assert html.index("</header>", chrome_at) < coach_at, (
+        "#net-coach must sit UNDER the top bar, so its arrow points up at the plane"
+    )
+    rule = css_rule(_CSS.read_text(encoding="utf-8"), "#net-coach")
+    assert "position: fixed" not in rule and "position:fixed" not in rule, (
+        "#net-coach is floating again; a fixed box covers the page it hangs over"
+    )
+    assert "position: absolute" not in rule and "position:absolute" not in rule
+
+
 def test_the_coach_stacks_under_what_the_operator_opens():
     """A passive invitation never outranks a surface opened on purpose: the palette and
-    its results, the phone drawer, the enlarged mind map. It still sits above the sticky
-    chrome, so it is never drawn under the page it hangs over."""
+    its results, the phone drawer, the enlarged mind map. Inside the sticky chrome the
+    coach takes the chrome's stacking level, so the chrome's own z-index is the one that
+    must stay under every one of them (and the coach carries none of its own to drift)."""
     css = _CSS.read_text(encoding="utf-8")
-    coach = _z(css, "#net-coach")
+    assert "z-index" not in css_rule(css, "#net-coach"), (
+        "#net-coach carries a z-index again -- it stacks with the chrome it sits in"
+    )
+    chrome = _z(css, ".chrome")
     for sel in (".overlay", ".palette", ".sidebar", ".mm-big"):
-        assert coach < _z(css, sel), f"#net-coach (z {coach}) stacks above {sel}"
-    assert coach > _z(css, ".chrome"), "#net-coach must stack above the sticky chrome"
+        assert chrome < _z(css, sel), f".chrome (z {chrome}), and the coach in it, stacks above {sel}"

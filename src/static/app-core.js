@@ -770,7 +770,8 @@
         const rows = (d.interfaces || []).map((i) => `${i.interface}: ${i.addresses.join(", ")}`);
         box.textContent = rows.length ? rows.join("\n") : t("No non-loopback network interfaces were found.");
       } catch (e) {
-        box.textContent = t("No non-loopback network interfaces were found.");
+        // A failed read is UNREAD, never "none were found" (2026-09-27 re-walk M-14).
+        box.textContent = t("This machine's network interfaces could not be read just now.");
       }
     }
     // S4.7 sources-by-theme step. Real catalog tag taxonomy from the app's OWN loopback
@@ -800,10 +801,15 @@
           _gwSrc.picked = {};
           tags.forEach((tg) => { _gwSrc.picked[tg] = curTags.length ? curTags.indexOf(tg) >= 0 : true; });
         }
+        // A source TAG is data, so it renders verbatim: `data-i18n-dyn` keeps the DOM
+        // walker from translating the one tag that happens to equal a chrome key
+        // ("technology" became "technologie" among fifteen English tags). The count goes
+        // through fmtNum like every other count in the app (2026-09-27 re-walk U-11).
+        const _n = (x) => (typeof fmtNum === "function") ? fmtNum(x || 0, 0) : String(x || 0);
         box.innerHTML = tags.map((tg) =>
           `<label class="gw-theme" style="display:inline-flex;align-items:center;gap:5px;border:1px solid var(--line);border-radius:8px;padding:4px 9px;cursor:pointer">`
           + `<input type="checkbox" data-theme="${esc(tg)}"${_gwSrc.picked[tg] ? " checked" : ""}> `
-          + `<span>${esc(tg)}</span> <span class="muted">${byTotal[tg] || 0}</span></label>`).join("");
+          + `<span data-i18n-dyn dir="auto">${esc(tg)}</span> <span class="muted">${_n(byTotal[tg])}</span></label>`).join("");
         box.querySelectorAll("input[data-theme]").forEach((cb) => {
           cb.onchange = () => { _gwSrc.picked[cb.dataset.theme] = cb.checked; _gwUpdateThemeNote(); };
         });
@@ -1097,47 +1103,32 @@
     function _coachSave(s) {
       try { localStorage.setItem(_COACH_KEY, JSON.stringify(s)); } catch { /* private mode */ }
     }
-    // ALWAYS BELOW THE WHOLE CHROME, never beside the plane (delegated click-through
-    // 2026-09-26, rows N/O/T). The coach is taller than the top bar, so any placement
-    // BESIDE a top-bar button lands in the top bar's own row once the clamp below pulls
-    // it on screen. The old "to the right of the button" branch assumed the plane sat at
-    // the right edge, which only holds in LTR: in Arabic it was taken every time and the
-    // coach covered #tm-open, #rate-toggle, #wiki-toggle and #llm. And "below the
-    // top-bar buttons" was not low enough either, because `.chrome` also holds the
-    // facet-subtab strip relocated under the top bar (Settings, Living sources, Insights),
-    // so the coach sat on those subtabs. So: below the lowest of `.chrome` and every
-    // protected button, anchored to the plane on the side the reading direction puts
-    // the page (LTR: the plane is at the right, the coach hangs to its left; RTL the
-    // mirror), and kept inside the main column so it never lands on the sidebar.
-    const _COACH_GUARD = ["net-toggle", "lang-switch", "tm-open", "app-shutdown",
-                          "rate-toggle", "wiki-toggle", "llm"];
+    // THE COACH IS A STRIP IN THE CHROME, IN FLOW (2026-09-27 re-walk O-1), so only its
+    // ARROW is placed here. History, because each step fixed the last one's victim: a
+    // floating bubble beside the plane landed in the top bar's own row (in Arabic every
+    // time, over #tm-open, #rate-toggle, #wiki-toggle and #llm); below the top-bar
+    // buttons it sat on the facet-subtab strip `.chrome` relocates there; below the
+    // whole chrome it sat where every tab page begins -- on the heading and the
+    // visible-by-default caveat (#living-caveat), and once scrolled on a form input
+    // (#sch-pages). A position:fixed box has no free rectangle to go to, because the
+    // page fills the viewport. In flow under the top bar it covers nothing by
+    // construction, in either reading direction and at any width, and the arrow still
+    // points at the plane: its centre is put under the plane's centre, clamped inside
+    // the strip. The strip spans the main column, so the clamp only bites on a plane
+    // near a corner.
     let _coachRO = null;
     function _placeCoach() {
       const el = $("net-coach"), btn = $("net-toggle");
       if (!el || !btn || !el.classList.contains("show")) return;
-      const b = btn.getBoundingClientRect();
-      const w = el.offsetWidth, h = el.offsetHeight, gap = 12, pad = 8;
       const arrow = el.querySelector(".coach-arrow");
-      const guard = [btn.closest(".chrome"), ..._COACH_GUARD.map((id) => $(id))]
-        .filter(Boolean).map((e) => e.getBoundingClientRect()).filter((r) => r.height > 0);
-      const guardBottom = guard.length ? Math.max(...guard.map((r) => r.bottom)) : b.bottom;
-      const rtl = getComputedStyle(btn).direction === "rtl";
-      const col = btn.closest(".main-col");
-      const c = col ? col.getBoundingClientRect() : {left: 0, right: window.innerWidth};
-      const lo = Math.max(pad, c.left + pad);
-      const hi = Math.min(window.innerWidth, c.right) - w - pad;
-      let left = rtl ? b.left : b.right - w;
-      left = Math.max(lo, Math.min(left, hi));
-      const top = Math.max(pad, Math.min(guardBottom + gap, window.innerHeight - h - pad));
-      el.style.left = left + "px"; el.style.top = top + "px";
-      if (arrow) {
-        // The arrow points UP at the plane from the coach's top edge. rotate(135deg)
-        // turns the two bordered sides (left, bottom) to face up, so the notch reads
-        // as a pointer rather than a half-outlined diamond.
-        arrow.style.top = "-6px"; arrow.style.right = "auto";
-        arrow.style.left = Math.max(8, Math.min(b.left + b.width / 2 - left - 5, w - 16)) + "px";
-        arrow.style.transform = "rotate(135deg)";
-      }
+      if (!arrow) return;
+      const b = btn.getBoundingClientRect(), c = el.getBoundingClientRect();
+      const half = 5.5;   // half the arrow's 11 px box
+      // `left` is measured from the padding box, inside the left border (3 px of accent
+      // in LTR, where border-inline-start is the left one; 1 px in RTL): clientLeft.
+      const x = b.left + b.width / 2 - c.left - (el.clientLeft || 0) - half;
+      const inner = el.clientWidth || c.width;
+      arrow.style.left = Math.max(8, Math.min(x, inner - 2 * half - 8)) + "px";
     }
     function dismissNetCoach(permanent) {
       const el = $("net-coach"); if (el) el.classList.remove("show", "prominent");
@@ -1414,12 +1405,32 @@
     // Three loopback reads, in parallel, each degrading to null -- which renders
     // as "could not read", never as "off". They egress nothing, so they are not
     // themselves gated (invariant #14e is about calls that LEAVE the machine).
-    async function _netConsentConfig() {
-      const one = (path) => api(path).catch(() => null);
-      const [scheduler, safety, custody] = await Promise.all([
-        one("/api/scheduler/config"), one("/api/safety/settings"), one("/api/custody/settings"),
-      ]);
-      return {scheduler, safety, custody};
+    //
+    // BOUNDED, and the popup's "Go online" waits for the answer (2026-09-27 re-walk
+    // M-14). This used to be a bare Promise.all: the lanes rendered only after the
+    // SLOWEST read, while the button was live from the first frame. Under a running
+    // fold /api/custody/settings took 5.7 s, so for that long the popup read "…"
+    // where it says that consenting starts collection -- consent clickable, the
+    // disclosure missing. Now a read that has not answered by _NET_CONSENT_READ_MS
+    // counts as unreadable ("could not read whether these are on", never "off") for
+    // the first render, and `onLate` re-renders with the real answer if it lands
+    // while the popup is still open.
+    const _NET_CONSENT_READ_MS = 2000;
+    let _netConsentGen = 0;   // which opening of #net-consent a late answer belongs to
+    function _netConsentConfig(onLate) {
+      const cfg = {scheduler: null, safety: null, custody: null};
+      let answered = false;
+      const reads = [["scheduler", "/api/scheduler/config"], ["safety", "/api/safety/settings"],
+                     ["custody", "/api/custody/settings"]].map(([key, path]) =>
+        api(path).then((v) => {
+          cfg[key] = v;
+          if (answered && onLate) onLate(Object.assign({}, cfg));
+        }, () => { /* stays null: rendered as "could not read" */ }));
+      const late = new Promise((res) => setTimeout(res, _NET_CONSENT_READ_MS));
+      return Promise.race([Promise.all(reads), late]).then(() => {
+        answered = true;
+        return Object.assign({}, cfg);
+      });
     }
 
     async function ensureOnline(reason, opts) {
@@ -1435,16 +1446,43 @@
       dlg.querySelector("#net-consent-reason b").textContent = reason;
       const lanesBox = document.getElementById("net-consent-lanes");
       if (lanesBox) lanesBox.textContent = "…";
+      // "Go online" stays disabled until the disclosure is COMPLETE -- the lanes and the
+      // interfaces both rendered, each either read or honestly marked unreadable -- so
+      // consent is never clickable beside a "…" (2026-09-27 re-walk M-14). Every read
+      // below settles (the lane reads are bounded, the rest fall back to a sentence),
+      // so the button cannot stay disabled for good. `gen` drops a late answer from an
+      // earlier opening of this same dialog.
+      const gen = (_netConsentGen += 1);
+      const okBtn = document.getElementById("net-consent-ok");
+      if (okBtn) okBtn.disabled = true;
+      const current = () => gen === _netConsentGen && dlg.open;
       // opts.enabling: the lane id this action turns on (see _laneState).
-      _netConsentConfig().then((cfg) => _renderNetLanes(cfg, opts.enabling))
-        .catch(() => _renderNetLanes({}, opts.enabling));
+      const lanesDone = _netConsentConfig((cfg) => { if (current()) _renderNetLanes(cfg, opts.enabling); })
+        .then((cfg) => { if (gen === _netConsentGen) _renderNetLanes(cfg, opts.enabling); })
+        .catch(() => { if (gen === _netConsentGen) _renderNetLanes({}, opts.enabling); });
       const box = document.getElementById("net-consent-ifaces");
       box.textContent = "…";
-      api("/api/system/interfaces").then(d => {
+      const ifacesRead = api("/api/system/interfaces").then(d => {
+        if (gen !== _netConsentGen) return;
         const rows = (d.interfaces || []).map(i => `${i.interface}: ${i.addresses.join(", ")}`);
         box.textContent = rows.length ? rows.join("\n") : t("No non-loopback network interfaces were found.");
         box.style.whiteSpace = "pre-line";
-      }).catch(() => { box.textContent = t("No non-loopback network interfaces were found."); });
+      }).catch(() => {
+        // A failed read is UNREAD, never "none were found": that would be a false claim
+        // inside the disclosure itself (the batch's "unreadable, never off" rule).
+        if (gen === _netConsentGen) box.textContent = t("This machine's network interfaces could not be read just now.");
+      });
+      // The same bound as the lanes: a read still out by then is SAID to be unread
+      // (the answer still replaces the sentence if it lands), never left as "…".
+      const ifacesDone = Promise.race([ifacesRead, new Promise((res) => setTimeout(() => {
+        if (gen === _netConsentGen && box.textContent === "…") {
+          box.textContent = t("This machine's network interfaces could not be read just now.");
+        }
+        res();
+      }, _NET_CONSENT_READ_MS))]);
+      Promise.all([lanesDone, ifacesDone]).then(() => {
+        if (gen === _netConsentGen && okBtn) okBtn.disabled = false;
+      });
       return new Promise((resolve) => {
         const ok = document.getElementById("net-consent-ok");
         const cancel = document.getElementById("net-consent-cancel");
@@ -2409,7 +2447,8 @@
       const lastHtml = a.last_run
         ? row(t("Last run"), `<span title="${esc(fmtLocal(a.last_run))}">${esc(fmtRelative(a.last_run))}</span>`)
         : row(t("Last run"), `<span class="muted">${esc(t("no run yet"))}</span>`);
-      const modeHtml = row(t("Mode"), `<span class="muted">${esc(s.mode || a.mode || "")}</span>`);
+      // No "Mode" row: the scheduler mode was RETIRED (Q1020 = a, b45bed19), so the
+      // row it fed read "Mode" beside nothing, in every state (2026-09-27 re-walk T-5).
       // -- A resume still waiting for the previous pass (SCHED-1, 2026-09-24) --- //
       // Before this, a resume that ran out of retries left collection OFF with one log
       // line; a field machine sat five days that way. Now it is pending, and shown.
@@ -2427,7 +2466,7 @@
         _concurrencyHtml(a.concurrency, pg, t, row, sect) +
         sect(t("Schedule")) +
         `<div class="vr"><span>${esc(t("Cadence"))}</span><b>${cadence}</b></div>` +
-        nextHtml + lastHtml + modeHtml +
+        nextHtml + lastHtml +
         _housekeepingHtml(a.housekeeping, t, row, sect) +
         `<div class="vnote">${esc(t("These are the scheduler’s own facts — the schedule is managed in Settings. Times are relative; hover for the exact local moment and the method."))}</div>`;
     }

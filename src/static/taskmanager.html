@@ -209,10 +209,29 @@
         .catch(function () { /* locale unreadable: English fallback */ });
     } catch (e) { /* private mode / engine absent: English fallback */ }
   }
-  try {
-    var th = localStorage.getItem("oo.theme");
-    if (th) document.documentElement.setAttribute("data-theme", th);
-  } catch (e) { /* ignore */ }
+  // The app's LOOK, read from the one place the app keeps it: localStorage "oo.ui", a
+  // JSON blob with .theme and .accent (app-shell.js getUi/applyUi). This page read an
+  // "oo.theme" key that nothing has ever written, so it rendered Ink under a Paper or a
+  // Solar app (2026-09-27 re-walk T-8). The theme is mapped the way applyThemeAttr maps
+  // it: "system" follows the OS preference (light -> the Light theme, dark -> Ink), "ink"
+  // or nothing is the :root palette, anything else is its own data-theme. Re-applied
+  // when another tab changes the look (the storage listener below) and when the OS
+  // flips light/dark under "system".
+  var _lightQuery = window.matchMedia ? window.matchMedia("(prefers-color-scheme: light)") : null;
+  function applyAppLook() {
+    var ui = {};
+    try { ui = JSON.parse(localStorage.getItem("oo.ui") || "{}") || {}; } catch (e) { ui = {}; }
+    var theme = ui.theme || "ink";
+    var eff = theme === "system" ? (_lightQuery && _lightQuery.matches ? "light" : "")
+      : theme === "ink" ? "" : theme;
+    var r = document.documentElement;
+    if (eff) r.setAttribute("data-theme", eff); else r.removeAttribute("data-theme");
+    if (ui.accent) r.style.setProperty("--accent", ui.accent); else r.style.removeProperty("--accent");
+  }
+  applyAppLook();
+  if (_lightQuery && _lightQuery.addEventListener) {
+    _lightQuery.addEventListener("change", applyAppLook);
+  }
 
   // The SPA's _sizeText (app-core.js), for this page (2026-09-26 click-through P8): the
   // unit is one keyed frame per unit, so a locale writes it its own way and on its own
@@ -543,7 +562,7 @@
     var now;
     if (pg && pg.total && !offline) {
       var pct = Math.round(100 * Math.min(pg.done, pg.total) / pg.total);
-      now = row(t("Current pass"), esc(pg.current || "…") + ' <span class="muted">· ' + esc(pg.mode || "") + "</span>") +
+      now = row(t("Current pass"), esc(pg.current || "…")) +
         '<div class="cap-bar"><div class="cap-fill" style="width:' + pct + '%"></div><span class="cap-txt">' + fmtNum(pg.done, 0) + "/" + fmtNum(pg.total, 0) + " · " + pct + '%</span></div>';
     } else if (offline && a.active) {
       now = row(t("Current pass"), '<span class="muted">' + esc(t("winding down — airplane mode engaged")) + "</span>");
@@ -563,9 +582,11 @@
       : row(t("Next pass"), '<span class="muted">' + esc(t("scheduled — timing not yet known")) + "</span>");
     var last = a.last_run ? row(t("Last run"), '<span title="' + esc(fmtLocal(a.last_run)) + '">' + esc(fmtRel(a.last_run)) + "</span>")
                           : row(t("Last run"), '<span class="muted">' + esc(t("no run yet")) + "</span>");
+    // No "Mode" row and no mode after the current domain: the scheduler mode was
+    // RETIRED (Q1020 = a, b45bed19) and neither the settings, the activity nor the
+    // pass progress carries one, so both read as an empty value (2026-09-27 re-walk T-5).
     el.innerHTML = sect(t("Collection")) + '<div class="vr"><span>' + esc(t("State")) + "</span><b>" + state + "</b></div>" + now +
       sect(t("Schedule")) + '<div class="vr"><span>' + esc(t("Cadence")) + "</span><b>" + cadence + "</b></div>" + next + last +
-      row(t("Mode"), '<span class="muted">' + esc(s.mode || a.mode || "") + "</span>") +
       '<div class="vnote">' + esc(t("These are the scheduler’s own facts — the schedule is managed in Settings. Times are relative; hover for the exact local moment and the method.")) + "</div>";
   }
 
@@ -652,7 +673,9 @@
       var when = r.finished_at || r.started_at;
       var dur = res.duration_s != null ? fmtDur(res.duration_s) : "—";
       var pill = ok ? '<span class="pill ok">' + esc(t("ok")) + "</span>" : '<span class="pill err">' + esc(t("error")) + "</span>";
-      var detail = ok ? (fmtNum(stored, 0) + " " + esc(t("articles")) + " · " + esc(res.mode || r.mode || "") + " · " + dur)
+      // No mode segment: since Q1020 = a every run is the press lane and no run report
+      // carries a mode, so reading one printed an empty "· ·" (2026-09-27 re-walk T-5).
+      var detail = ok ? (fmtNum(stored, 0) + " " + esc(t("articles")) + " · " + dur)
                       : esc(String(r.error || t("failed")).slice(0, 160));
       return '<div class="job"><span>' + pill + '</span><span class="label">' + esc(fmtRel(when)) +
              ' <span class="muted" title="' + esc(fmtLocal(when)) + '" style="font-weight:400">' + esc(fmtLocal(when)) + "</span></span>" +
@@ -832,6 +855,7 @@
   // a reload. Compared with the page's own <html lang>, not with OOI18N.current(): that
   // reads the same shared key, which already holds the new value when the event lands.
   window.addEventListener("storage", function (e) {
+    if (e.key === "oo.ui") { applyAppLook(); return; }   // a theme picked in the app (T-8)
     if (e.key !== "oo.lang" || !e.newValue || e.newValue === document.documentElement.lang) return;
     pickLang(e.newValue);
   });
@@ -951,7 +975,11 @@
     var el = $("health"); if (!el || !_healthState) return;
     var label = _healthState === "healthy" ? t("healthy")
       : _healthState === "degraded" ? t("degraded") : t("offline");
-    el.innerHTML = '<span class="dot"></span> ' + esc(label);
+    // The dot carries the state's class, as the app's own pill does (app-core.js
+    // _paintHealth: dot ok / dot err). Without one, app.css's bare .dot is --muted, so
+    // the dot was grey beside "healthy" and beside "offline" alike (2026-09-27 re-walk T-6).
+    var cls = { healthy: "ok", degraded: "warn", offline: "err" }[_healthState] || "";
+    el.innerHTML = '<span class="dot ' + cls + '"></span> ' + esc(label);
   }
   async function loadHealth() {
     var el = $("health"); if (!el) return;
