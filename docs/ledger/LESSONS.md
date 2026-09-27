@@ -12538,3 +12538,82 @@ only the pairs the test reads, a streamed GROUP BY that drops what the loop woul
 the filter bounds the work, not the read. Put each filter where the rows are produced, and prove
 the answers unchanged against the same code with the filters off, on corpora built to hit the
 filters' edges.**
+
+### SQLITE WILL NOT REPLACE A FUNCTION WHILE A STATEMENT IS ACTIVE, AND FTS5 KEEPS ONE OPEN FOR THE REST OF A WRITE TRANSACTION (PR #1192)
+
+`fts_norm.register` was documented "Idempotent", so `index_articles` called it on every
+20,000-article chunk of the merge's bulk search index. It is idempotent only while no statement
+is active: SQLite answers SQLITE_BUSY (Python's `OperationalError: Error creating function`)
+when asked to REPLACE a function while one is, and after the first write to an FTS5 table its
+blob reader stays open until the transaction ends. The first chunk always registered before any
+index write, so every fixture passed and every import up to 20,000 new articles passed; the
+first import past it failed, and at K > 1 took its whole group with it. **Register SQL functions
+when a connection is OPENED, never between writes.** And when the property is "more than one
+batch", test it by SHRINKING the batch constant: no fixture reaches a production batch size,
+which is exactly how a failure at 20,001 rows shipped behind a green suite.
+
+### IN A GIT WORKTREE, A TEST THAT SPAWNS A SUBPROCESS RUNS THE MAIN CHECKOUT'S CODE (PR #1192)
+
+The venv holds the project as an EDITABLE install pointing at the main checkout. In-process
+pytest from a worktree imports the worktree's `src` (pytest puts the rootdir first), but a
+subprocess the test spawns -- `tests/torture_helper.py`, every checkpoint and torture test --
+starts with `sys.path[0] = tests/` and resolves `src` through the editable install, i.e. the
+MAIN checkout. The fixed code "failed" with the unfixed code's exact error, which is what
+exposed it. **In a worktree, run subprocess-spawning tests with `PYTHONPATH=<worktree>`, and
+read "the fix changed nothing" as "check which code ran" before touching the fix.** It also
+means an earlier mutation check made that way would have measured nothing.
+
+### WORK DEFERRED FROM SEVERAL ITEMS TO ONE COMMIT POINT MUST BE SCOPED TO ALL OF THEM (PR #1192)
+
+The checkpoint interval K moved each held item's post-swap work (source counters, the
+quarantine scan, the event mirror) to the checkpoint whose swap makes it live -- and the
+checkpoint scoped that work to ITS OWN batch, a scope written when every item committed alone.
+A held item's counter read 2 over 5 articles, as exact. When a change defers work from N items
+to one point, audit every stage that point runs for the scope it was written with. And the
+fixture that shows it has the items touch DISJOINT things: any overlap lets the last item's
+scope cover the others by accident, which is how the group-commit test beside it stayed green.
+
+### A BACKGROUND SWEEP COMMITTING ON THE LIVE FILE MUST HOLD THE SWAP'S LEASE AND YIELD TO ITS WINDOW (PR #1192)
+
+The deferred drain's closing sweep committed slice by slice on the live file with no lease,
+and ran on a yield -- i.e. exactly while an import snapshotted, merged and swapped that file.
+It straddled the swap: slices reconciled after the snapshot died with the old file, the sweep
+carried on in the new one, completed, and closed its marker there -- `exact` over 27,143
+drifted keywords. A writer whose correctness depends on finishing in ONE file must either not
+run while a swap can happen or hold what the swap waits for; "it only writes derived counters"
+is not an exemption, because the marker it closes is a claim about the whole file.
+
+### A DISCLOSURE GUARDED BY `n > 0` GOES QUIET EXACTLY WHEN THE STORE IS NEW (PR #1192)
+
+The deferral marker was honoured only when some keyword had a counter -- and a fresh store's
+first deferred drain writes mentions and NO counter, so it read `exact 0` while counting was
+switched off. Zero is the state every fresh install starts in and every counter-based guard
+sees first; test each disclosure against the empty store before any other case.
+
+### REPRODUCE WHAT A THIRD-PARTY FUNCTION DOES, NOT WHAT IT SAYS -- AND PIN THE COPY TO THE BYTES YOU CHECKED (PR #1192)
+
+VADER's `_but_check` reads as "halve every score before the first 'but', boost every score
+after it". What it does is re-find each score with `list.index` and rescale the FIRST position
+holding an EQUAL score, so `[1.5, but, 0.75]` becomes `[0.375, 0, 0.75]` rather than
+`[0.75, 0, 1.125]`. A linear rewrite taken from the comment would have been faster, looked
+right, and moved every stored score. `src/analytics/vader_linear.py` reproduces the loop
+instead: a min-heap of positions per score answers "first equal position", and the new value
+is computed from the score READ, not the one found, because the two are only `==` -- which is
+how an int `0` turns into a float `0.0` and a `-0.0` keeps its sign in stock. The differential
+test compares per-token scores by `repr`, which sees `0`, `0.0` and `-0.0` where `==` cannot.
+Then the copy is pinned to what it was checked against: the SHA-256 of the imported module
+file, not the version string, with the stock class as the fallback -- so a new release or a
+distribution's patch can only cost speed, never change a score. **When you override a
+library's internals for speed, the specification is the code, the test is a differential
+against the installed original, and the guard is its bytes.**
+
+### A SURVIVING MUTANT MAY BE EQUIVALENT -- PROVE IT FROM THE CALL SITES BEFORE WRITING A TEST (PR #1192)
+
+The same module was designed around VADER's per-word checks reading negative indices for the
+first tokens of a text, wrapping round to its end, and a comment said so. A mutant that padded
+the start instead of wrapping survived every test. Stock calls both checks only inside
+`if i > start_i`, so every index they read is at least 0: the wraparound is unreachable, and
+the comment was wrong. A test for it could only have exercised the check outside its caller --
+a state production never reaches. **When a mutant survives, first ask whether it can differ on
+any reachable state; if it cannot, correct the reasoning and the comments that carried it, and
+leave the suite alone.**

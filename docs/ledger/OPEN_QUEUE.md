@@ -15385,3 +15385,29 @@ nobody reads it as a general memory cap:
 - **Which read made the 2026-09-26 burst is not known.** When the next crash's thread snapshots
   (PR #1190) name it, check whether it runs inside a deadline; if not, that read needs its own
   bound, and this entry should say which.
+
+---
+
+## 2026-09-27 — VADER's "but" rule matches scores by value: REPRODUCED, not corrected (a deliberate omission, PR #1192)
+
+VADER 3.3.2's `_but_check` is meant to halve every score before a text's first "but" and boost
+every score after it. It finds each score with `list.index`, so it rescales the FIRST position
+holding an equal score rather than the position it is visiting. So `[1.5, but, 0.75]` becomes
+`[0.375, 0, 0.75]`, not `[0.75, 0, 1.125]`: a score after the "but" can go unboosted, and one
+before it can be halved twice. `src/analytics/vader_linear.py`, which makes sentiment linear in
+the text, reproduces this exactly. Every stored `sentiment_score` was computed with it, and the
+speed-up promised the same scores.
+
+**How much it matters, measured** (not on news: 600 English texts of about 27 KB cut from this
+repo's docs, the corpus the drain benchmark used). 580 contain a bare "but". Correcting the rule
+would move the rounded compound of 478 of the 600, with a median shift of 0.0027 and a maximum
+of 1.42, and would flip the positive/neutral/negative label of 16.
+
+**Why it is not this PR's call.** Correcting it is a different sentiment measure, not a fix to
+this app's code. Every English score would move, the framing tone with it, and old and new
+scores would not be comparable until a full re-extraction.
+
+**Nothing to do unless ruled.** If the maintainer rules for the corrected rule:
+- the change is two lines in `_but_check` (scale position k, not the first equal one);
+- the differential test's reference would become that rule rather than stock;
+- a re-extraction is needed, and the engine identity already changes when that file does.

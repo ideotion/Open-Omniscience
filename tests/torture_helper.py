@@ -259,6 +259,78 @@ def cmd_dump(_args) -> None:
     _emit({"dump": out})
 
 
+_SCOPED_EVENT = "fp-held-only"
+
+
+def cmd_build_scoped(args) -> None:
+    """Two sources, and articles on only ONE of them per role -- the shape that tells a
+    post-swap stage scoped to every batch of a checkpoint's group from one scoped to the
+    checkpoint item alone (2026-09-27). ``live``: two articles on each source, counters
+    reconciled. ``one``: three new articles on one.example and a calendar event, the item a
+    test HOLDS. ``two``: one new article on two.example and no calendar, the checkpoint item."""
+    from src.database.session import init_db, session_scope
+
+    init_db()
+    from src.analytics.store import reconcile_source_counters
+    from src.database.models import Article, Source
+    from src.paths import data_dir
+
+    bodies = {
+        "live": [("one", f"live-one-{i}") for i in range(2)] + [("two", f"live-two-{i}") for i in range(2)],
+        "one": [("one", f"held-one-{i}") for i in range(3)],
+        "two": [("two", "checkpoint-two-0")],
+    }[args.role]
+    with session_scope() as s:
+        src = {name: Source(name=name.title(), domain=f"{name}.example") for name in ("one", "two")}
+        s.add_all(src.values())
+        s.flush()
+        for name, body in bodies:
+            s.add(Article(
+                url=f"https://{name}.example/{body}", canonical_url=f"https://{name}.example/{body}",
+                source_id=src[name].id, title=body, content=f"{body} body text", hash=_h(body),
+                language="en",
+            ))
+    with session_scope() as s:
+        reconcile_source_counters(s)
+    if args.role == "one":
+        (data_dir() / "calendar_feed_imports.json").write_text(json.dumps({"held": {
+            "name": "Held", "events": {_SCOPED_EVENT: {
+                "title": "Only in the held item", "date": "2026-07-01",
+                "sources": ["feedHeld"], "uids": []}}}}), "utf-8")
+
+    out: dict = {"built": args.role}
+    if args.artifact:
+        from src.backup.artifact import write_backup_v2
+
+        pw = args.passphrase if args.passphrase != "-" else None
+        write_backup_v2(Path(args.artifact), passphrase=pw)
+        out["artifact"] = args.artifact
+    _emit(out)
+
+
+def cmd_check_scoped(_args) -> None:
+    """Every source's counter beside its live count, and whether the held item's calendar
+    event reached the durable ``event_imports`` mirror."""
+    from sqlalchemy import func, text
+
+    from src.database.models import Article, Source
+    from src.database.session import init_db, session_scope
+
+    init_db()
+    with session_scope() as s:
+        sources = {
+            src.domain: {
+                "counter": src.article_count,
+                "live": int(s.query(func.count(Article.id)).filter(Article.source_id == src.id).scalar()),
+            }
+            for src in s.query(Source).order_by(Source.domain)
+        }
+        mirrored = s.execute(
+            text("SELECT COUNT(*) FROM event_imports WHERE fingerprint = :fp"), {"fp": _SCOPED_EVENT}
+        ).scalar()
+    _emit({"sources": sources, "held_event_mirrored": bool(mirrored)})
+
+
 def cmd_fts_find(args) -> None:
     from src.backup.sqlite_backup import live_db_path
     from src.database.connect import connect as db_connect
@@ -348,6 +420,11 @@ def main() -> None:
     m.add_argument("--crash-reindex", action="store_true")
     m.add_argument("--working-copy", default=None)
     m.add_argument("--hold", action="store_true")
+    bs = sub.add_parser("build-scoped")
+    bs.add_argument("--role", required=True, choices=["live", "one", "two"])
+    bs.add_argument("--artifact", default=None)
+    bs.add_argument("--passphrase", default="-")
+    sub.add_parser("check-scoped")
     sub.add_parser("dump")
     f = sub.add_parser("fts-find")
     f.add_argument("token")
@@ -360,6 +437,8 @@ def main() -> None:
     args = p.parse_args()
     {
         "build": cmd_build,
+        "build-scoped": cmd_build_scoped,
+        "check-scoped": cmd_check_scoped,
         "merge": cmd_merge,
         "dump": cmd_dump,
         "fts-find": cmd_fts_find,

@@ -181,6 +181,27 @@ def test_refresh_is_a_no_op_when_no_calendar_side_file_was_merged(isolated_store
     ) is None
 
 
+def test_a_checkpoint_refreshes_for_a_calendar_its_held_items_merged(isolated_stores):
+    """REGRESSION (2026-09-27). A held item merges the calendar JSON when it runs and leaves
+    the durable mirror to the checkpoint's swap -- whose OWN side files cannot say a calendar
+    merged. `force` is how the checkpoint says it for them (driven end to end, with a held
+    item's event reaching the table, in tests/test_import_checkpoint.py)."""
+    feeds, event_store = isolated_stores
+    feeds._save_json("calendar_feed_imports.json", _LOCAL, mirror=True)
+    feeds.merge_imported_store("calendar_feed_imports.json", _INCOMING)  # the held item's merge
+    assert merge._refresh_event_mirror({}) is None, "precondition: this item merged no calendar"
+
+    assert merge._refresh_event_mirror({}, force=True) == {"synced": True, "rows": 4}
+    assert event_store.load_imports() == feeds.load_imports()
+
+
+def test_the_group_check_refreshes_on_any_doubt_and_only_then():
+    """An underivable group refreshes (a guarded full replace costs milliseconds; a skipped one
+    leaves the mirror stale), and a group that is this item alone defers to its own side files."""
+    assert merge._group_merged_calendar(None, 7) is True
+    assert merge._group_merged_calendar([7], 7) is False
+
+
 def test_refresh_never_empties_a_populated_table_on_a_read_hiccup(isolated_stores, monkeypatch):
     """A JSON read that fails returns {} — the refresh must NOT then DELETE a populated
     mirror (the JSON stays authoritative; the mirror re-syncs on the next calendar write)."""

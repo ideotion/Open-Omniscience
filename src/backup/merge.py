@@ -4812,8 +4812,16 @@ def _safe_ring_target(base: Path, rel: str) -> Path | None:
     return candidate
 
 
-def _touched_source_ids(session, batch_id: int) -> list[int] | None:
-    """The sources whose ``Source.article_count`` this batch could have changed (ruling R25).
+def _touched_source_ids(session, batch_ids: int | list[int] | None) -> list[int] | None:
+    """The sources whose ``Source.article_count`` these batches could have changed (ruling R25).
+
+    ONE BATCH OR SEVERAL. A lone import brings one batch into the live corpus; the checkpoint
+    of a held group (K > 1) brings every held item's batch in with its own, in one swap, and
+    each of them can have moved a counter -- :func:`_swap_group` says which. Scoping to the
+    checkpoint's own batch alone left the held items' sources stale and reported as exact
+    (2026-09-27: a counter reading 2 over 5 articles). ``None`` in means the group could not
+    be derived, and comes straight back out as ``None``, the caller's cue to reconcile
+    everything -- the same widening an underivable scope gets below.
 
     WHY THIS IS DERIVED AND NOT CARRIED. The obvious source is the merge's own
     ``temp.map_sources``, and PR 3 recorded that as the blocker: it is a TEMP table on the
@@ -4840,6 +4848,11 @@ def _touched_source_ids(session, batch_id: int) -> list[int] | None:
     was raised about. Slow and right beats fast and wrong. An empty LIST is different again
     and means what it says: this batch touched nothing, so there is nothing to verify.
     """
+    if batch_ids is None:
+        return None
+    ids = [batch_ids] if isinstance(batch_ids, int) else [int(b) for b in batch_ids]
+    if not ids:
+        return None  # no batch named is not "nothing touched": widen
     try:
         from sqlalchemy import select
 
@@ -4848,7 +4861,7 @@ def _touched_source_ids(session, batch_id: int) -> list[int] | None:
         gained = select(Article.source_id).join(
             MergedRow, MergedRow.row_id == Article.id
         ).where(
-            MergedRow.batch_id == batch_id,
+            MergedRow.batch_id.in_(ids),
             MergedRow.table_name == "articles",
         ).distinct()
         # No `source_id IS NOT NULL` predicate: the column is NOT NULL, so the filter would
@@ -4856,7 +4869,7 @@ def _touched_source_ids(session, batch_id: int) -> list[int] | None:
         # tests/test_import_source_counter_scope.py, which fails if that ever changes and the
         # guard becomes necessary again.
         inserted = select(MergedRow.row_id).where(
-            MergedRow.batch_id == batch_id,
+            MergedRow.batch_id.in_(ids),
             MergedRow.table_name == "sources",
         )
         touched = {int(r[0]) for r in session.execute(gained) if r[0] is not None}
@@ -4870,7 +4883,105 @@ def _touched_source_ids(session, batch_id: int) -> list[int] | None:
         return None
 
 
-def _refresh_event_mirror(side_files: dict) -> dict | None:
+def _swap_group(working: Path, batch_id: int) -> list[int] | None:
+    """Every batch this swap brings into the live corpus, read BEFORE the swap.
+
+    A lone import brings one: its own. The checkpoint of a held group (K > 1) brings every
+    held item's batch too -- they merged into this same working copy and left their post-swap
+    work (source counters, the quarantine scan, the event mirror) to the swap that makes them
+    live, which is this one. Measured before this existed (2026-09-27, K = 2): the held item's
+    source counter read 2 over 5 articles and was reported as exact, and the quarantine scan
+    screened 1 of the group's 4 new articles.
+
+    The answer is the ``merge_batches`` rows the working copy carries and the live corpus does
+    not, compared as ``(id, imported_at)`` so a live batch that happened to reuse an id could
+    never hide a carried one. Read before the swap because after it the two are the same file.
+
+    RETURNS ``None`` WHEN IT CANNOT SAY, including when this item's own batch is not in the
+    answer (then the two sets are not what this function thinks). Every caller WIDENS on None,
+    each its own way, and never narrows: the counters reconcile everything, the quarantine scan
+    screens this item and says what it could not, and the event mirror refreshes."""
+    try:
+        from sqlalchemy import text
+
+        from src.database.connect import connect as db_connect
+        from src.database.session import session_scope
+
+        with session_scope() as s:
+            live = {
+                (int(r[0]), str(r[1]))
+                for r in s.execute(text("SELECT id, imported_at FROM merge_batches"))
+            }
+        con = db_connect(working, check_same_thread=False)
+        try:
+            carried = {
+                (int(r[0]), str(r[1]))
+                for r in con.execute("SELECT id, imported_at FROM merge_batches").fetchall()
+            }
+        finally:
+            con.close()
+        group = sorted(bid for bid, _at in carried - live)
+        if batch_id not in group:
+            _LOG.warning(
+                "the swap's batch %s is not among the batches its working copy adds (%s); "
+                "the post-swap stages widen instead of trusting either", batch_id, group,
+            )
+            return None
+        return group
+    except Exception:  # noqa: BLE001 - an underivable group must widen, never narrow
+        _LOG.warning(
+            "could not derive the batches this swap brings in; the post-swap stages widen",
+            exc_info=True,
+        )
+        return None
+
+
+def _calendar_merged(side_files: dict | None) -> bool:
+    """Whether one batch's side-file merge changed the calendar imports (the event mirror's
+    trigger), read from that batch's ``report["side_files"]``."""
+    cal = (side_files or {}).get("state", {}).get("calendar_feed_imports.json", {})
+    return isinstance(cal, dict) and cal.get("action") == "merged"
+
+
+def _group_merged_calendar(swap_batches: list[int] | None, batch_id: int) -> bool:
+    """Whether an EARLIER batch of this swap's group changed the calendar imports.
+
+    A held item merges its side files into ``data_dir()`` when it runs, so the calendar JSON
+    already holds its events; only the durable mirror waits for the swap. Its report, with its
+    ``side_files``, sits in ``merge_batches.report_json``, which is where this reads it --
+    after the swap, from the corpus that now holds the whole group. True on any doubt: the
+    refresh is a guarded full replace from the authoritative JSON, so an unneeded one costs
+    milliseconds, while a skipped one leaves the mirror stale until the next calendar write."""
+    if swap_batches is None:
+        return True
+    others = [b for b in swap_batches if b != batch_id]
+    if not others:
+        return False
+    try:
+        from sqlalchemy import bindparam, text
+
+        from src.database.session import session_scope
+
+        with session_scope() as s:
+            rows = s.execute(
+                text("SELECT report_json FROM merge_batches WHERE id IN :ids").bindparams(
+                    bindparam("ids", expanding=True)
+                ),
+                {"ids": others},
+            ).fetchall()
+        for (raw,) in rows:
+            try:
+                if _calendar_merged((json.loads(raw) if raw else {}).get("side_files")):
+                    return True
+            except (TypeError, ValueError, AttributeError):
+                return True
+        return len(rows) != len(others)  # a held batch without its report: refresh
+    except Exception:  # noqa: BLE001 - a doubt refreshes, it never skips
+        _LOG.warning("could not read the group's reports; refreshing the event mirror", exc_info=True)
+        return True
+
+
+def _refresh_event_mirror(side_files: dict, *, force: bool = False) -> dict | None:
     """After the atomic swap, refresh the durable ``event_imports`` mirror so it reflects the
     just-restored calendar events (DB-reliability D1 follow-up, Wave 5 L).
 
@@ -4886,9 +4997,10 @@ def _refresh_event_mirror(side_files: dict) -> dict | None:
     and can never double-count; ``sync_imports`` never raises (the JSON stays authoritative on
     any DB hiccup); and a JSON read hiccup must NEVER empty an already-populated table. Returns
     the sync status, or ``None`` when the restore carried no calendar side-file to merge (so the
-    report only grows the field when it actually applies)."""
-    cal = (side_files or {}).get("state", {}).get("calendar_feed_imports.json", {})
-    if not isinstance(cal, dict) or cal.get("action") != "merged":
+    report only grows the field when it actually applies). ``force`` refreshes regardless: the
+    checkpoint of a held group passes it when an EARLIER item of the group merged the calendar
+    (:func:`_group_merged_calendar`), since this item's own ``side_files`` cannot say so."""
+    if not force and not _calendar_merged(side_files):
         return None
     try:
         from src.events.event_store import count as _ev_count
@@ -6407,6 +6519,15 @@ def run_restore(
             report["timings"] = timings.report()
             _write_batch_report(working, batch_id, report)
 
+        # WHICH BATCHES THIS SWAP MAKES LIVE: this item's, and at the checkpoint of a held
+        # group every held item's too. Read now, while the live corpus is still the old one;
+        # the post-swap stages below scope to it and widen when it is None (_swap_group).
+        swap_batches = _swap_group(working, batch_id)
+        report["swap_group"] = {
+            "batch_ids": swap_batches if swap_batches is not None else [batch_id],
+            "derived": swap_batches is not None,
+        }
+
         # The atomic swap itself: kept as close to bare as possible (the highest
         # crash-sensitivity moment in the whole engine) -- the timer adds only two
         # cheap time.monotonic() calls around the UNCHANGED block, never a new
@@ -6529,11 +6650,16 @@ def run_restore(
                     # None is exactly `reconcile_source_counters`' UNSCOPED whole-corpus repair --
                     # so an underivable scope degrades to slow-and-correct rather than to a silent
                     # no-op that would leave the counters stale-low and reported as exact.
+                    #
+                    # EVERY BATCH THE SWAP BROUGHT IN, not this item's alone: at a checkpoint
+                    # the held items' sources moved too (2026-09-27, K = 2: a counter read 2
+                    # over 5 articles, as exact). An underivable group is None, which
+                    # `_touched_source_ids` hands back as None -- the whole-corpus repair.
                     from src.analytics.store import reconcile_source_counters
 
                     report["source_counters"] = reconcile_source_counters(
                         _epoch_sess,
-                        source_ids=_touched_source_ids(_epoch_sess, batch_id),
+                        source_ids=_touched_source_ids(_epoch_sess, swap_batches),
                     )
             except Exception:  # noqa: BLE001 - a coordination bump must never undo a committed restore
                 _LOG.warning("corpus-epoch bump after restore-merge failed", exc_info=True)
@@ -6545,7 +6671,12 @@ def run_restore(
         # + guarded (see _refresh_event_mirror): a full replace from the authoritative JSON, never
         # a double-count, never undoes a committed restore.
         with timings.stage("event_mirror_refresh"):
-            ev_mirror = _refresh_event_mirror(report.get("side_files") or {})
+            # Forced when an EARLIER item of the swap's group merged the calendar: this
+            # item's own side_files cannot say so, and the mirror would stay stale.
+            ev_mirror = _refresh_event_mirror(
+                report.get("side_files") or {},
+                force=_group_merged_calendar(swap_batches, batch_id),
+            )
             if ev_mirror is not None:
                 report["event_mirror"] = ev_mirror
         # P0-4 (maintainer ruling 2026-06-19): recompute the CORE-ENGINE derived metadata
@@ -6653,28 +6784,43 @@ def run_restore(
         # #659 URL-shape rules + the NAV-SOUP prose gate), stamping any detected candidate
         # via the REVERSIBLE S3.2 quarantine flag -- never a delete. Best-effort: a
         # quarantine-scan hiccup must never undo a committed, additive restore.
+        #
+        # EVERY BATCH THE SWAP BROUGHT IN (_swap_group): at a checkpoint the held items'
+        # articles are new to the live corpus too, and this scan is the only one they get
+        # (2026-09-27, K = 2: 1 of the group's 4 new articles screened). When the group
+        # cannot be derived it screens THIS item's batch and says what it could not reach --
+        # never a whole-corpus scan in the import's window, and never a silent narrowing.
         with timings.stage("quarantine_scan"):
             try:
+                from sqlalchemy import bindparam as _bindparam
                 from sqlalchemy import text as _text
 
                 from src.analytics.quarantine_job import default_quarantine_candidates_batch
                 from src.database.session import session_scope as _quarantine_session_scope
 
+                q_batches = swap_batches if swap_batches is not None else [batch_id]
+                if swap_batches is None:
+                    report["quarantine_scope"] = (
+                        "this item's batch only: the batches this swap brought in could not "
+                        "be derived, so articles merged by earlier held items of this group "
+                        "were not screened here"
+                    )
                 with _quarantine_session_scope() as _q_sess:
                     new_article_ids = [
                         int(r[0])
                         for r in _q_sess.execute(
                             _text(
                                 "SELECT row_id FROM merged_rows "
-                                "WHERE batch_id = :b AND table_name = 'articles'"
-                            ),
-                            {"b": batch_id},
+                                "WHERE batch_id IN :bs AND table_name = 'articles'"
+                            ).bindparams(_bindparam("bs", expanding=True)),
+                            {"bs": q_batches},
                         ).fetchall()
                     ]
                     if new_article_ids:
                         report["quarantine_summary"] = default_quarantine_candidates_batch(
                             _q_sess, article_ids=new_article_ids, write=True
                         )
+                        report["quarantine_summary"]["batches"] = q_batches
             except Exception:  # noqa: BLE001 - never undo a committed, additive restore
                 _LOG.warning("post-restore quarantine scan failed", exc_info=True)
 

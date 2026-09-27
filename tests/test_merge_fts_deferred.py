@@ -444,6 +444,79 @@ def test_the_row_counter_reaches_the_full_set(tmp_path) -> None:
     assert prog.get("phase") == "done"
 
 
+def _add_arabic_article(path: Path, *, n: int) -> None:
+    """One article whose text the index transform CHANGES (vocalised Arabic, teh marbuta),
+    so its index entry and its recorded mask prove the transform ran on it."""
+    engine = create_engine(f"sqlite:///{path}", future=True)
+    with sessionmaker(bind=engine, future=True)() as s:
+        src = s.query(Source).first()
+        s.add(Article(
+            url=f"https://wire.example/ar{n}", canonical_url=f"https://wire.example/ar{n}",
+            source_id=src.id, title=f"headline ar{n}",
+            content="أحمد ذهب إلى المَدْرَسَةِ الكبيرة في القاهرة",
+            hash=f"ar{n:08d}", language="ar", created_at=datetime.now(UTC),
+        ))
+        s.commit()
+    engine.dispose()
+
+
+def _index_of(path: Path) -> dict:
+    """What a search would see, compared by value: recorded masks and MATCH results."""
+    con = sqlite3.connect(path)
+    try:
+        def hits(term: str) -> list[int]:
+            return [r[0] for r in con.execute(
+                "SELECT rowid FROM article_fts WHERE article_fts MATCH ? ORDER BY rowid", (term,))]
+
+        return {
+            "indexed": con.execute("SELECT COUNT(*) FROM article_fts_docsize").fetchone()[0],
+            "masks": con.execute(
+                "SELECT article_id, mask FROM article_fts_norm ORDER BY article_id").fetchall(),
+            "zebra": hits("zebra"),
+            "folded": hits("المدرسه"),
+            "headline": hits("headline"),
+        }
+    finally:
+        con.close()
+
+
+def test_a_merge_that_spans_several_index_chunks_completes(tmp_path, monkeypatch) -> None:
+    """REGRESSION (2026-09-27): every import that added more than 20,000 articles failed.
+
+    ``_fts_index_merged_articles`` indexes in chunks of ``_FTS_BULK_BATCH``, and
+    ``index_articles`` re-registered the transform's SQL functions on every chunk. SQLite
+    refuses to REPLACE a function while any statement is active, and inside a write
+    transaction that has written the FTS index, FTS5's open blob reader is one: the first
+    chunk registered before any index write and passed, the second raised
+    ``OperationalError: Error creating function``. Measured on the real merge: 20,000
+    new articles passed, 20,001 failed, on both drivers.
+
+    The chunk size is shrunk rather than 20,001 articles fixtured, because the property
+    is "more than one chunk", not a count. The single-chunk merge beside it is the
+    reference: chunking must not change what a search sees, and the article that needs
+    the transform sits in the LAST chunk, which is the one that used to fail.
+    """
+    staged = tmp_path / "s.db"
+    _corpus(staged, articles=9, first=7000)
+    _add_arabic_article(staged, n=1)  # the 10th row: chunks of 4 put it in the third
+
+    chunked, reference = tmp_path / "chunked.db", tmp_path / "reference.db"
+    for p in (chunked, reference):
+        _corpus(p, articles=3)
+
+    merge_corpus(staged, reference, _BATCH_META)
+    monkeypatch.setattr(merge_mod, "_FTS_BULK_BATCH", 4)
+    merge_corpus(staged, chunked, _BATCH_META)
+
+    got, want = _index_of(chunked), _index_of(reference)
+    assert got["indexed"] == 13, "the search index does not cover every article"
+    assert len(got["zebra"]) == 12 and len(got["headline"]) == 13
+    assert len(got["folded"]) == 1, "the Arabic article in the last chunk is not findable by its folded form"
+    assert got["masks"] and got["masks"][-1][0] == got["folded"][0], (
+        "the last chunk's transformed article has no recorded mask")
+    assert got == want, "chunking changed what a search sees"
+
+
 # --------------------------------------------------------------------------- #
 # verify_copy's sub-timings
 #

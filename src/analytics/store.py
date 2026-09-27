@@ -1277,8 +1277,13 @@ def reindex_articles(
     return {"reindexed": reindexed, "failed": failed}
 
 
-def finish_deferral(session: Session) -> dict:
+def finish_deferral(session: Session, *, should_stop: Callable[[], bool] | None = None) -> dict:
     """End a deferred-counter drain: reconcile everything, then lift the disclosure.
+
+    ``should_stop`` is handed to the sweep, which polls it after every slice: the drain
+    passes "an import has claimed the machine", so its closing sweep never runs on beside
+    an import's snapshot, merge and swap. A stopped sweep is an incomplete one, so the
+    marker stays open -- the honest direction -- for the next drain to finish.
 
     THE ONE PLACE the end of a deferral is implemented, so the outer drain
     (``_reindex_resume_worker``) and a self-contained ``reindex_articles`` call cannot
@@ -1297,13 +1302,18 @@ def finish_deferral(session: Session) -> dict:
         # restart=True, not a resume: a resumed sweep would skip keywords an earlier
         # partial pass stamped BEFORE this drain drifted them, report `complete`, and
         # close the marker over a false `exact`.
-        rec = reconcile_keyword_counters(session, budget_s=0, restart=True)
+        rec = reconcile_keyword_counters(
+            session, budget_s=0, restart=True, should_stop=should_stop
+        )
     except Exception:  # noqa: BLE001 - a failed reconcile must not fail the re-index
         _LOG.warning("deferred-counter reconcile failed; staying estimated", exc_info=True)
         return {"reconciled": False, "closed": False, "complete": False}
     if not rec.get("complete"):
         _LOG.warning("deferred-counter reconcile did not complete; staying estimated")
-        return {"reconciled": True, "closed": False, "complete": False}
+        return {
+            "reconciled": True, "closed": False, "complete": False,
+            "stopped": bool(rec.get("stopped")),
+        }
     return {"reconciled": True, "closed": close_deferral(session), "complete": True}
 
 
@@ -1643,7 +1653,12 @@ def _fresh_window_hours() -> int:
 
 
 def reconcile_keyword_counters(
-    session: Session, *, now=None, budget_s: float | None = None, restart: bool = False
+    session: Session,
+    *,
+    now=None,
+    budget_s: float | None = None,
+    restart: bool = False,
+    should_stop: Callable[[], bool] | None = None,
 ) -> dict:
     """Recompute the counters EXACTLY from the live mentions, detect drift, and stamp
     ``Keyword.last_reconciled_at`` (Slice 2 — the bounded background reconcile).
@@ -1665,7 +1680,14 @@ def reconcile_keyword_counters(
     SILENT: only the keywords a pass actually verified get stamped, so
     :func:`counter_envelope` keeps disclosing ``estimated`` until a whole sweep lands
     within the freshness window — half-reconciled counters can never masquerade as
-    ``exact`` (the envelope/basis discipline)."""
+    ``exact`` (the envelope/basis discipline).
+
+    ``should_stop`` is polled after every slice's commit, and a True answer stops the pass
+    there exactly as a spent budget does (``complete: false``, ``stopped: true``). The
+    deferred drain's closing sweep passes one so an import claiming the machine stops it:
+    an unbounded sweep still committing slices on the live file while an import snapshots,
+    merges and swaps it can land a file with the marker gone over counters it never
+    reconciled (2026-09-27)."""
     import time as _time
     from datetime import UTC, datetime
 
@@ -1692,6 +1714,7 @@ def reconcile_keyword_counters(
     with_mentions = 0
     drift = 0
     complete = False
+    stopped = False
     while True:
         ids = [
             kid
@@ -1765,6 +1788,9 @@ def reconcile_keyword_counters(
             # survives an app restart and travels with the corpus).
             _cursor_set(session, RECONCILE_CURSOR_KEY, after_id)
             session.commit()
+        if should_stop is not None and should_stop():
+            stopped = True
+            break  # asked to yield: stop at this slice boundary, like a spent budget
         if budget > 0 and _time.monotonic() - t0 > budget:
             break  # soft deadline: stop cleanly; the stamps above disclose the partial
     if complete:
@@ -1776,6 +1802,7 @@ def reconcile_keyword_counters(
         "drift_repaired": int(drift),
         "as_of": stamp.isoformat(timespec="seconds"),
         "complete": complete,
+        "stopped": stopped,
         "resumed_from_id": resumed_from,
         "cursor_id": 0 if complete else after_id,
         "budget_s": budget,
@@ -2462,9 +2489,11 @@ def counter_envelope(session: Session, *, window_hours: int | None = None, now=N
     # R22. A deferred re-index stops maintaining the counters WITHOUT touching
     # last_reconciled_at, so the watermarks below would keep answering `exact` over
     # counters that are drifting. The marker is checked FIRST and overrides them: while
-    # it is open the only honest basis is `estimated`, whatever the watermarks say.
+    # it is open the only honest basis is `estimated`, whatever the watermarks say. That
+    # includes n == 0: a fresh store's first deferred drain writes mentions and no counter,
+    # and `exact 0` there claimed that nothing was counted while it was being written.
     deferred_since = deferral_open_since(session)
-    if deferred_since is not None and n > 0:
+    if deferred_since is not None:
         return Envelope.estimated(
             n,
             as_of=deferred_since,

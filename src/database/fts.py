@@ -637,12 +637,18 @@ def _index_rows(con, rows, caps: int) -> None:
 
 def index_articles(con, ids: Sequence[int]) -> int:
     """Index the given articles, which must not be in the index yet (the merge's bulk
-    path, run with the insert trigger suspended). Returns how many were indexed."""
-    from src.database.fts_norm import register
+    path, run with the insert trigger suspended). Returns how many were indexed.
 
+    It must NOT (re)register the transform's SQL functions: it never calls them (the
+    transform runs in Python, in ``_index_rows``), and the merge calls it once per chunk
+    inside one write transaction, where the second registration fails. SQLite refuses to
+    replace a function while a statement is active, and after the first chunk's index
+    write FTS5's open blob reader is one -- every import adding more than
+    ``_FTS_BULK_BATCH`` (20,000) articles died there (2026-09-27). The connection has
+    the functions from the moment it was opened (``connect.py``, the pool hook), which
+    is what the triggers that do call them rely on."""
     if not ids:
         return 0
-    register(_dbapi(con))
     rows = _run(
         con,
         "SELECT id, title, content FROM articles WHERE id IN"  # noqa: S608  # nosec B608 - the only interpolation is a placeholder count derived from len(ids); every id is a bound parameter
