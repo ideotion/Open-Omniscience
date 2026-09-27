@@ -193,10 +193,15 @@ def _sorted(cards: list[dict]) -> list[dict]:
         # explanation can never drift from the sort that produced it, because
         # both come from the same order_key here.
         try:
-            from src.briefing.leads import explain_order as _leads_explain
+            from src.briefing.card import frames_text
+            from src.briefing.leads import explain_order_frames
 
             for c in out:
-                c["order_explain"] = _leads_explain(_wrap(c), now=now)
+                # The keyed frames beside their English (re-walk N-8): Home renders the
+                # frames in the reader's language, and a cache written before they
+                # existed still has the English line.
+                c["order_explain_i18n"] = explain_order_frames(_wrap(c), now=now)
+                c["order_explain"] = frames_text(c["order_explain_i18n"])
         except Exception:  # noqa: BLE001 - an explanation is additive, never load-bearing
             _LOG.warning("Leads-2.0 order explanation failed; cards keep their order", exc_info=True)
         return out

@@ -27,6 +27,7 @@ import hashlib
 import re
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from typing import Any
 
 # Editorial buckets a card can be sorted into. The triad behind them
 # (convergence → overtold, divergence → investigate/debunk, absence → undertold)
@@ -81,6 +82,119 @@ _BANNED_FIELD_NAMES: frozenset[str] = frozenset(
 
 class CardSchemaError(TypeError):
     """Raised when a dataclass declares a field that implies a forbidden score."""
+
+
+# --------------------------------------------------------------------------- #
+#  Keyed text frames (click-through re-walk L-1/L-2/N-8, 2026-09-27)
+#
+#  ``title_i18n`` made five producers' TITLES translatable; everything else a Lead
+#  says -- its summary, its method and, above all, its CAVEAT -- was English prose
+#  with the data welded in, so no locale key could ever match it. A frame is the
+#  same idea generalised: a fixed keyable TEMPLATE with ``{named}`` holes, plus the
+#  language-neutral DATA that fills them. The UI renders ``OOI18N.tf(t, v)`` per
+#  frame and joins the sentences with a space; the English field beside it stays
+#  the fallback, and is BUILT from the frames so the two cannot drift apart.
+#
+#  A frame is ``{"t": template, "v": {name: scalar}}`` plus two optional lists:
+#  ``tr`` names vars whose VALUE is itself a keyed word (a tone label, a severity
+#  tier) and ``md`` names vars holding a ``MM-DD`` month-day the UI writes in its
+#  own language. Numbers travel as numbers (the UI formats them); a value that must
+#  keep its exact spelling (a signed delta, a p-value, a year) travels as a string.
+# --------------------------------------------------------------------------- #
+I18N_FIELDS: frozenset[str] = frozenset({"title", "summary", "method", "caveat"})
+
+_MONTHS_EN = (
+    "January", "February", "March", "April", "May", "June", "July", "August",
+    "September", "October", "November", "December",
+)
+
+# A NUMBER inside a method or caveat sentence. Those sentences are technical and
+# constant except for their parameters (a threshold, a window, a cap), so the numbers
+# become the frame's data and the words become one key. Digits glued to a word
+# ("B_top", "v2") are not parameters and stay in the template.
+_NUM_RE = re.compile(r"(?<![\w.])(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?")
+
+
+def frame(template: str, *, tr: Any = (), md: Any = (), **variables: Any) -> dict:
+    """One keyed sentence: ``template`` with ``{name}`` holes, and the data that fills them.
+
+    ``tr`` and ``md`` are sequences of VAR NAMES. They are typed ``Any`` only because a
+    caller spreading its data (``**facts``) could in principle supply a key of either
+    name, which a precise annotation would make mypy flag at every such call site."""
+    out: dict = {"t": template, "v": dict(variables)}
+    if tr:
+        out["tr"] = list(tr)
+    if md:
+        out["md"] = list(md)
+    return out
+
+
+def _en_value(fr: dict, name: str) -> str | None:
+    value = (fr.get("v") or {}).get(name)
+    if value is None:
+        return None
+    if name in (fr.get("md") or ()):
+        try:
+            month, day = (int(x) for x in str(value).split("-"))
+            return f"{_MONTHS_EN[month - 1]} {day}"
+        except (ValueError, IndexError):
+            return str(value)
+    return str(value)
+
+
+def frames_text(frames: list[dict]) -> str:
+    """The English sentence(s) a list of frames renders to -- what the plain field holds.
+
+    A hole with no value is left verbatim, the same rule as the UI's ``tf``: a
+    mismatch between a template and its data stays visible instead of vanishing."""
+    parts = []
+    for fr in frames or []:
+
+        def _fill(m: re.Match[str], fr: dict = fr) -> str:
+            value = _en_value(fr, m.group(1))
+            return value if value is not None else m.group(0)
+
+        text = re.sub(r"\{(\w+)\}", _fill, fr["t"])
+        if text:
+            parts.append(text)
+    return " ".join(parts)
+
+
+def numeric_frames(text: str) -> list[dict]:
+    """A method/caveat sentence as ONE frame whose numbers are data.
+
+    Numbers keep their exact spelling (strings), so the English rebuilds byte for byte
+    and a tuned threshold never breaks the key. Empty text gives no frame, and so does
+    text with a literal brace, which a template would read as a hole: that field keeps
+    its plain English (the UI then looks the whole sentence up as a key)."""
+    if not text or "{" in text or "}" in text:
+        return []
+    variables: dict[str, str] = {}
+
+    def _hole(m: re.Match[str]) -> str:
+        name = f"v{len(variables) + 1}"
+        variables[name] = m.group(0)
+        return "{" + name + "}"
+
+    return [frame(_NUM_RE.sub(_hole, text), **variables)]
+
+
+def _validate_frame(where: str, fr: object) -> None:
+    if not isinstance(fr, dict) or not isinstance(fr.get("t"), str):
+        raise CardSchemaError(f"{where} must be a frame {{'t': str, 'v': dict}}")
+    variables = fr.get("v") or {}
+    if not isinstance(variables, dict):
+        raise CardSchemaError(f"{where}['v'] must be a dict")
+    for k, v in variables.items():
+        if v is not None and not isinstance(v, (str, int, float, bool)):
+            raise CardSchemaError(f"{where}['v'][{k!r}] must be a JSON scalar (got {type(v).__name__})")
+    missing = set(re.findall(r"\{(\w+)\}", fr["t"])) - set(variables)
+    if missing:
+        raise CardSchemaError(f"{where} has placeholders with no matching vars: {sorted(missing)}")
+    for extra in ("tr", "md"):
+        names = fr.get(extra) or []
+        if not isinstance(names, list) or set(names) - set(variables):
+            raise CardSchemaError(f"{where}[{extra!r}] must list names of its own vars")
 
 
 def _is_banned_name(name: str) -> bool:
@@ -189,6 +303,12 @@ class Card:
     # that lets ``trigger.plain`` translate. Both are validated in ``__post_init__``.
     title_i18n: str = ""
     title_vars: dict = field(default_factory=dict)
+    # Keyed text frames for the other fields (see ``frame`` above):
+    # ``{"title"|"summary"|"method"|"caveat": [frame, ...]}``. A producer frames its
+    # title and summary itself, because only it knows which words are data; a
+    # method or caveat it leaves unframed is framed here from its numbers. The
+    # plain fields stay the English fallback, so an older card still reads.
+    i18n: dict = field(default_factory=dict)
     signal: dict = field(default_factory=dict)
     evidence: list[dict] = field(default_factory=list)
     # The FULL article set the card is built from (set-based cards only — convergence,
@@ -226,11 +346,25 @@ class Card:
             self._validate_recipe(self.recipe)
         if self.title_i18n:
             self._validate_title_i18n(self.title_i18n, self.title_vars)
+        self._frame_text_fields()
         if not self.created_at:
             self.created_at = datetime.now(UTC).isoformat()
         if not self.id:
             basis = f"{self.type}|{self.key or self.title}".encode()
             self.id = hashlib.sha256(basis).hexdigest()[:16]
+
+    def _frame_text_fields(self) -> None:
+        """Validate the producer's frames and frame the method/caveat it left plain."""
+        if not isinstance(self.i18n, dict) or set(self.i18n) - I18N_FIELDS:
+            raise CardSchemaError(f"i18n must map some of {sorted(I18N_FIELDS)} to frames")
+        for name in ("method", "caveat"):
+            if name not in self.i18n and getattr(self, name):
+                self.i18n[name] = numeric_frames(getattr(self, name))
+        for name, frames in self.i18n.items():
+            if not isinstance(frames, list):
+                raise CardSchemaError(f"i18n[{name!r}] must be a list of frames")
+            for i, fr in enumerate(frames):
+                _validate_frame(f"i18n[{name!r}][{i}]", fr)
 
     @staticmethod
     def _validate_title_i18n(template: str, variables: dict) -> None:
@@ -294,6 +428,9 @@ class Card:
             # English ``title`` above (additive; absent for cards without one).
             "title_i18n": self.title_i18n,
             "title_vars": self.title_vars,
+            # Keyed frames for title/summary/method/caveat; the UI renders these
+            # and falls back to the English fields beside them.
+            "i18n": self.i18n,
             "summary": self.summary,
             "bucket": self.bucket,
             "signal": self.signal,

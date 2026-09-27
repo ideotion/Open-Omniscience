@@ -1200,8 +1200,11 @@
         if (!c) return "";
         // The card renders exactly as it does in its family (same component, same
         // actions), plus the disclosed reason it leads its family.
-        const why = c.order_explain
-          ? `<div class="ov-why" title="${esc(c.order_explain)}">${esc(c.order_explain)}</div>` : "";
+        // The ranking line as keyed frames (N-8): an older stored card has only the English.
+        const whyText = (Array.isArray(c.order_explain_i18n) && c.order_explain_i18n.length)
+          ? cardFrames(c.order_explain_i18n) : (c.order_explain || "");
+        const why = whyText
+          ? `<div class="ov-why" title="${esc(whyText)}">${esc(whyText)}</div>` : "";
         return `<div class="ov-item" style="--fam:${famHue(b.bucket)}">`
           // h3, not h4 (axe heading-order, 2026-09-09). Two things were wrong and
           // one change fixes both: Home's only other visible heading is the h2
@@ -1278,11 +1281,11 @@
         ? `openCardCorpus(${esc(JSON.stringify(aIds))}, ${esc(JSON.stringify(aq))}, null, ${esc(JSON.stringify(cardProvenance(c)))})`
         : `openCardCorpusQuery(${esc(JSON.stringify(aq))}, null, ${esc(JSON.stringify(cardProvenance(c)))})`;
       // the CAVEAT rides EVERY rotated face — a timed rotation never hides it (#23 + the brief).
-      const caveat = c.caveat ? `<p class="card-caveat">${esc(c.caveat)}</p>` : "";
+      const caveat = c.caveat ? `<p class="card-caveat">${esc(cardText(c, "caveat"))}</p>` : "";
       face.innerHTML =
         `<div class="carousel-card bk-${esc(c.bucket)}" role="group" aria-label="${esc(t("Lead"))} ${_carIdx + 1} / ${n}">`
         + `<h4${cardTitleTip(c)}>${esc(cardTitle(c))}</h4>`
-        + (c.summary ? `<p class="sum">${esc(c.summary)}</p>` : "")
+        + (c.summary ? `<p class="sum">${esc(cardText(c, "summary"))}</p>` : "")
         + caveat
         + `<div><button class="tiny" onclick="${action}">${esc(t("Open corpus"))} ↗</button></div>`
         + `</div>`;
@@ -1456,8 +1459,80 @@
     // stays data. Otherwise the English `title` (additive fallback; cards without a
     // template, or a browser without tf, are byte-identical to before).
     function cardTitle(c) {
-      if (c && c.title_i18n && window.OOI18N && OOI18N.tf) return OOI18N.tf(c.title_i18n, c.title_vars || {});
+      if (c && c.title_i18n && window.OOI18N && OOI18N.tf) return OOI18N.tf(c.title_i18n, _cardFrameVars({v: c.title_vars}));
+      if (c && c.i18n && Array.isArray(c.i18n.title) && c.i18n.title.length && window.OOI18N && OOI18N.tf) return cardFrames(c.i18n.title);
       return (c && c.title) || "";
+    }
+    // THE REST OF A LEAD IN THE UI LANGUAGE (re-walk L-1/L-2/N-8, 2026-09-27). Only five
+    // producers' titles had a keyed frame; every summary, method, caveat and ranking line
+    // was English prose with its data welded in, so no key could match it. A card now
+    // carries keyed FRAMES (`c.i18n[field]` = [{t, v, tr, md}], src/briefing/card.py):
+    // each template translates ×12 and its data stays data -- a number through fmtNum,
+    // a `tr` var through t() (a tone word, a tier), an `md` var as this language's month
+    // and day. A card stored before frames existed has none, and its field goes through
+    // t(): a constant caveat or method keyed verbatim translates, a sentence carrying data
+    // stays in its English. Never a half-filled frame.
+    function _cardMonthDay(md) {
+      const m = /^(\d{1,2})-(\d{1,2})$/.exec(String(md));
+      if (!m) return String(md);
+      try {
+        return new Intl.DateTimeFormat(document.documentElement.lang || "en",
+          {month: "long", day: "numeric", timeZone: "UTC"}).format(new Date(Date.UTC(2000, +m[1] - 1, +m[2])));
+      } catch (_e) { return String(md); }
+    }
+    function _cardFrameVars(fr) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const tr = (fr && fr.tr) || [], md = (fr && fr.md) || [], v = (fr && fr.v) || {}, out = {};
+      Object.keys(v).forEach(k => {
+        if (v[k] == null) return;
+        if (tr.indexOf(k) !== -1) out[k] = t(String(v[k]));
+        else if (md.indexOf(k) !== -1) out[k] = _cardMonthDay(v[k]);
+        else if (typeof v[k] === "number" && typeof fmtNum === "function") out[k] = fmtNum(v[k]);
+        else out[k] = String(v[k]);
+      });
+      return out;
+    }
+    function cardFrames(frames) {
+      // Without the i18n engine, fill the English template (never show a bare "{n}").
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
+        : ((s, vars) => String(s).replace(/\{(\w+)\}/g, (m, k) => (vars[k] == null ? m : String(vars[k]))));
+      // Sentences join with a space, except after a full-width stop (zh/ja "。"), where
+      // that script puts none.
+      return (frames || []).filter(fr => fr && fr.t)
+        .map(fr => tf(fr.t, _cardFrameVars(fr))).filter(Boolean)
+        .reduce((out, s) => (!out ? s : out + (/[　-〿＀-￯]$/.test(out) ? "" : " ") + s), "");
+    }
+    function cardText(c, field) {
+      const fr = c && c.i18n && c.i18n[field];
+      if (Array.isArray(fr) && fr.length && window.OOI18N && OOI18N.tf) return cardFrames(fr);
+      const s = (c && c[field]) || "";
+      return (s && window.OOI18N && OOI18N.t) ? OOI18N.t(s) : s;
+    }
+    // The type chip: a keyed label per card type, never the raw id with its underscores
+    // swapped (it read "SOURCE LAUNDERING" in every language). A type added later and not
+    // yet listed still shows its id, as before.
+    const _CARD_TYPE_LABELS = {
+      rising: "Rising", framing_split: "Framing split", record_reshaped: "Record reshaped",
+      price_narrative: "Price vs coverage", stale_data: "Stale data", diet_self_audit: "Reading diet",
+      echo_chamber: "Echo chamber", lonely_signal: "Lonely signal",
+      capacity_implausible: "Implausible capacity", emotion_profile: "Emotion profile",
+      ip_litigation_pulse: "Litigation pulse", ownership_change: "Ownership change",
+      law_change: "Law change", model_legislation: "Model legislation", story_lineage: "Story lineage",
+      coverage_advisor: "Coverage advisor", weather_corroboration: "Weather check",
+      space_time_convergence: "Space-time convergence", watch_match: "Watch matched",
+      source_laundering: "Source laundering", recycled_claim: "Recycled claim",
+      headline_body_mismatch: "Headline vs body", manufactured_emergence: "Sudden emergence",
+      flooded_topic: "Flooded topic", copypasta: "Copied wording", buried_topic: "Buried topic",
+      severity_alert: "Alert", disputed_chronology: "Disputed chronology",
+      story_propagation: "Story propagation", supply_chain_ripple: "Supply-chain ripple",
+      supergroup_rising: "Theme rising", on_the_horizon: "On the horizon", through_time: "Through time",
+      recipe_promise: "Promise due", recipe_edit_war: "Edit burst", recipe_quiet_region: "Quiet region",
+      recipe_source_candidates: "Source candidates",
+    };
+    function cardTypeLabel(type) {
+      const label = _CARD_TYPE_LABELS[type];
+      if (!label) return String(type || "").replace(/_/g, " ");
+      return (window.OOI18N && OOI18N.t) ? OOI18N.t(label) : label;
     }
     // A law-change title carries its jurisdiction as a CODE ("Law changed (FRA): …");
     // Q302 puts the localised name in the hover, so the heading gets that title. Only
@@ -1532,8 +1607,10 @@
         family: (c.bucket && _famLabels[c.bucket]) || "",
         producer: c.type || "",
         trigger: c.trigger || null,
-        method: c.method || "",
-        caveat: c.caveat || "",
+        // In the reader's language at the moment of the click, like `card` above: the
+        // analysis window's own t() leaves an already-translated sentence as it is.
+        method: cardText(c, "method"),
+        caveat: cardText(c, "caveat"),
       };
     }
     function _anProvSweep() {
@@ -1659,14 +1736,14 @@
       const _whyRows = (c.trigger && c.trigger.math || []).map(r =>
         `<tr><td>${esc(r.label)}</td><td class="why-val">${esc(r.value)}</td></tr>`).join("");
       const _whyPlain = (c.trigger && c.trigger.plain) ? `<p class="why-plain">${esc(c.trigger.plain)}</p>` : "";
-      const methodBlock = c.method ? `<div class="mc">${ooLabelHtml(`<b>${esc(t("Method"))}</b>`, esc(c.method))}</div>` : "";
+      const methodBlock = c.method ? `<div class="mc">${ooLabelHtml(`<b>${esc(t("Method"))}</b>`, esc(cardText(c, "method")))}</div>` : "";
       const mathBlock = _whyRows
         ? `<details class="card-info"><summary>${esc(t("The exact math"))}</summary>
              <table class="why-math">${_whyRows}</table></details>` : "";
       // The CAVEAT is VISIBLE on the BACK — an equal side of the card, revealed by ONE
       // flip (never a hidden toggle), right beside the action that opens its corpus
       // (#23 amended 2026-06-23 / informed-consent preserved by LAYERING, not hiding).
-      const caveatLine = c.caveat ? `<p class="card-caveat">${esc(c.caveat)}</p>` : "";
+      const caveatLine = c.caveat ? `<p class="card-caveat">${esc(cardText(c, "caveat"))}</p>` : "";
       // The standardized, family-themed "open corpus" button — opens the card's corpus
       // IN A NEW WINDOW (exact set when the card carries article_ids, else the seed query).
       const _aq = cardAnalyzeQuery(c);
@@ -1680,7 +1757,7 @@
       const openBtn = _aq
         ? `<button class="lead-open" onclick="${_openCorpus}" title="${esc(t("Open this Lead's corpus in a new window"))}">${esc(t("Open corpus"))} ↗</button>`
         : "";
-      const chip = `<span class="chip">${esc(c.type.replace(/_/g, " "))}</span>`;
+      const chip = `<span class="chip">${esc(cardTypeLabel(c.type))}</span>`;
       const _title = cardTitle(c);
       // lead-card-nested-interactive (P1, axe): role="button" tabindex="0" on this
       // OUTER container, while it ALSO hosted genuinely interactive descendants
@@ -1702,7 +1779,7 @@
                onclick="leadFlip(this.closest('.card'),event)" onkeydown="leadFlipKey(this.closest('.card'),event)">
             ${chip}
             <h4${cardTitleTip(c)}>${esc(_title)}</h4>
-            <p class="sum">${esc(c.summary)}</p>
+            <p class="sum">${esc(cardText(c, "summary"))}</p>
             ${sigLine}
             <span class="lead-flip-hint">${esc(t("Details & corpus"))} ⟲</span>
           </div>
@@ -1960,8 +2037,8 @@
           const c = it.card;
           return `<div class="draft-item" data-id="${c.id}">
             <div class="di-body">
-              <div class="di-title">${esc(c.title)}</div>
-              <div class="hint" style="margin-top:2px">${esc(c.summary || "")}</div>
+              <div class="di-title">${esc(cardTitle(c))}</div>
+              <div class="hint" style="margin-top:2px">${esc(cardText(c, "summary"))}</div>
               <textarea placeholder="Your note (ships in the export)…" onchange="saveDraftItemNote('${c.id}', this.value)">${esc(it.note||"")}</textarea>
             </div>
             <button class="ghost tiny" onclick="removeDraftItem('${c.id}')">Remove</button>

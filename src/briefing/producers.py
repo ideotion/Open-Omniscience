@@ -24,7 +24,7 @@ from datetime import UTC, date, datetime, timedelta
 from sqlalchemy import func
 
 from src.analytics.queries import resolve_keyword
-from src.briefing.card import Card
+from src.briefing.card import Card, frame, frames_text, numeric_frames
 from src.database.models import (
     Article,
     CommodityPrice,
@@ -108,11 +108,28 @@ def _growth_math_row(term: dict, *, prefix: str = "") -> tuple[str, str]:
 
 
 def _small_corpus_note(session) -> str:
-    total = _corpus_articles(session)
-    return (
-        f" Early-corpus note: only {total} article(s) collected so far — read this as a "
-        "first hint from a small sample, not an established pattern."
-    )
+    return " " + frames_text(_small_corpus_note_frames(session))
+
+
+def _small_corpus_note_frames(session) -> list[dict]:
+    """The young-corpus note as ONE keyed frame, reused by every producer that adds it."""
+    return [
+        frame(
+            "Early-corpus note: only {n} article(s) collected so far — read this as a "
+            "first hint from a small sample, not an established pattern.",
+            n=_corpus_articles(session),
+        )
+    ]
+
+
+def _fx(**fields: list[dict]) -> dict:
+    """Card kwargs for keyed text (click-through re-walk L-1/L-2/N-8, 2026-09-27).
+
+    Each field's English is BUILT from its frames and the frames ride beside it in
+    ``Card.i18n``, so the sentence Home translates and the English fallback cannot say
+    different things. Words a reader should read in their language go in the template;
+    names, terms, titles, dates and numbers go in the vars and stay as they are."""
+    return {**{name: frames_text(frames) for name, frames in fields.items()}, "i18n": fields}
 
 
 # --- Corpus maturity tier (evidence-tier header, ruled 2026-06-15) ---------- #
@@ -267,7 +284,7 @@ def rising_now(session, *, as_of: "date | None" = None) -> list[Card]:
     young = _is_young(session)
     min_recent = 2 if young else 3
     data = q.trending(session, limit=_MAX_RISING, min_recent=min_recent, end=as_of)
-    note = _small_corpus_note(session) if young else ""
+    note = _small_corpus_note_frames(session) if young else []
     scanned = data.get("scanned", 0)
     cards: list[Card] = []
     for term in data.get("terms", []):
@@ -297,9 +314,22 @@ def rising_now(session, *, as_of: "date | None" = None) -> list[Card]:
                 # keyable template ×12, the keyword term stays DATA (never translated).
                 title_i18n="“{term}” is rising",
                 title_vars={"term": term["term"]},
-                summary=(
-                    f"Mentions of “{term['term']}” are running ~{term['growth']}× the "
-                    f"prior-period rate ({term['recent']} recent vs {term['prior']} before)."
+                **_fx(
+                    summary=[
+                        frame(
+                            "Mentions of “{term}” are running ~{growth}× the prior-period "
+                            "rate ({recent} recent vs {prior} before).",
+                            term=term["term"], growth=term["growth"],
+                            recent=term["recent"], prior=term["prior"],
+                        )
+                    ],
+                    caveat=[
+                        frame(
+                            "A rising count reflects your source set, not the world; a ratio "
+                            "is not a significance test, and small samples are noisy."
+                        ),
+                        *note,
+                    ],
                 ),
                 bucket="rising",
                 signal={
@@ -320,10 +350,6 @@ def rising_now(session, *, as_of: "date | None" = None) -> list[Card]:
                 method=data.get(
                     "method",
                     "recent volume vs prior-period rate (a ratio, not a significance test)",
-                ),
-                caveat=(
-                    "A rising count reflects your source set, not the world; a ratio is not a "
-                    "significance test, and small samples are noisy." + note
                 ),
                 evidence=_evidence_from_articles(rows),
                 n=term["recent"],
@@ -429,11 +455,38 @@ def framing_split(session, *, as_of: "date | None" = None) -> list[Card]:
                     "worth a closer look; it never means either outlet is biased.",
                     math_rows,
                 ),
-                title=f"“{term['term']}”: outlets frame it differently",
-                summary=(
-                    f"On “{term['term']}”, {high['source']} reads {high['tone_label']} "
-                    f"(tone {high['avg_tone']:+.2f}) while {low['source']} reads "
-                    f"{low['tone_label']} (tone {low['avg_tone']:+.2f})."
+                **_fx(
+                    title=[frame("“{keyword}”: outlets frame it differently", keyword=term["term"])],
+                    summary=[
+                        # The split gate above needs a positive AND a negative outlet, so
+                        # the highest tone reads positive and the lowest negative: the two
+                        # words live in the keyed sentence, where a translator can agree them.
+                        frame(
+                            "On “{keyword}”, {high_source} reads positive (tone {high_value}) "
+                            "while {low_source} reads negative (tone {low_value}).",
+                            keyword=term["term"],
+                            high_source=high["source"], high_value=f"{high['avg_tone']:+.2f}",
+                            low_source=low["source"], low_value=f"{low['avg_tone']:+.2f}",
+                        )
+                        if (high["tone_label"], low["tone_label"]) == ("positive", "negative")
+                        else frame(
+                            "On “{keyword}”, {high_source} reads {high_tone} (tone {high_value}) "
+                            "while {low_source} reads {low_tone} (tone {low_value}).",
+                            keyword=term["term"],
+                            high_source=high["source"], high_tone=high["tone_label"],
+                            high_value=f"{high['avg_tone']:+.2f}",
+                            low_source=low["source"], low_tone=low["tone_label"],
+                            low_value=f"{low['avg_tone']:+.2f}",
+                        )
+                    ],
+                    caveat=[
+                        *numeric_frames(result.get("caveat", "")),
+                        frame(
+                            "Tone is valence, not stance: negative tone may be alarm, grief OR "
+                            "skepticism. This is a signal to read, never a label that an outlet "
+                            "is biased."
+                        ),
+                    ],
                 ),
                 bucket="debunk",
                 signal={
@@ -443,11 +496,6 @@ def framing_split(session, *, as_of: "date | None" = None) -> list[Card]:
                     "low": {"source": low["source"], "tone": low["avg_tone"]},
                 },
                 method="VADER compound sentiment of each outlet's coverage of the term",
-                caveat=(
-                    result.get("caveat", "")
-                    + " Tone is valence, not stance: negative tone may be alarm, grief OR "
-                    "skepticism. This is a signal to read, never a label that an outlet is biased."
-                ),
                 evidence=evidence,
                 n=result.get("total_articles"),
                 key=term["normalized"],
@@ -488,10 +536,21 @@ def record_reshaped(session) -> list[Card]:
                     "a human should open the diff and judge; it is never a verdict of vandalism.",
                     math_rows,
                 ),
-                title=f"Wikipedia ({page.wiki}): “{page.title}” reshaped",
-                summary=(
-                    f"A flagged edit changed “{page.title}” by {rev.delta_bytes:+} bytes"
-                    + (f" — {reasons}." if reasons else ".")
+                **_fx(
+                    title=[
+                        frame("Wikipedia ({wiki}): “{title}” reshaped", wiki=page.wiki, title=page.title)
+                    ],
+                    summary=[
+                        frame(
+                            "A flagged edit changed “{title}” by {delta} bytes — {reasons}.",
+                            title=page.title, delta=f"{rev.delta_bytes:+}", reasons=reasons,
+                        )
+                        if reasons
+                        else frame(
+                            "A flagged edit changed “{title}” by {delta} bytes.",
+                            title=page.title, delta=f"{rev.delta_bytes:+}",
+                        )
+                    ],
                 ),
                 bucket="watch",
                 signal={
@@ -627,10 +686,16 @@ def price_narrative(session) -> list[Card]:
                     "to rise and fall together. Moving together is not proof one causes the other.",
                     math_rows,
                 ),
-                title=f"{label}: price moves vs coverage",
-                summary=(
-                    f"Daily price change and news volume for {label} correlate "
-                    f"{result.coefficient:+.2f} (p={result.p_value:.3g}, n={result.n})."
+                **_fx(
+                    title=[frame("{label}: price moves vs coverage", label=label)],
+                    summary=[
+                        frame(
+                            "Daily price change and news volume for {label} correlate {r} "
+                            "(p={p}, n={n}).",
+                            label=label, r=f"{result.coefficient:+.2f}",
+                            p=f"{result.p_value:.3g}", n=result.n,
+                        )
+                    ],
                 ),
                 bucket="context",
                 signal={
@@ -703,10 +768,15 @@ def stale_data(session) -> list[Card]:
                 "show may be out of date until they run again.",
                 math_rows,
             ),
-            title=f"{len(stale)} price feed(s) need attention",
-            summary=(
-                f"{len(stale)} enabled extraction rule(s) are cold (>{_STALE_DAYS}d) or last "
-                f"reported a problem — e.g. {sample}."
+            **_fx(
+                title=[frame("{n} price feed(s) need attention", n=len(stale))],
+                summary=[
+                    frame(
+                        "{n} enabled extraction rule(s) are cold (>{days}d) or last reported a "
+                        "problem — e.g. {sample}.",
+                        n=len(stale), days=_STALE_DAYS, sample=sample,
+                    )
+                ],
             ),
             bucket="trust",
             signal={
@@ -751,7 +821,7 @@ def diet_self_audit(session) -> list[Card]:
     # honestly (it is a real count) — the small-n caveat says how early it is.
     if total < 5 or len(counts) < 2:
         return []  # too little to say anything honest about a "diet"
-    note = _small_corpus_note(session) if total < 20 else ""
+    note = _small_corpus_note_frames(session) if total < 20 else []
     result = concentration(counts, top_n=3)
     if result.top_share is None:
         return []
@@ -784,35 +854,60 @@ def diet_self_audit(session) -> list[Card]:
         ("Minimum required: 5 articles across 2 sources", f"{total} · {len(counts)} ✓"),
     ]
     concentrated = result.top_share >= _DIET_CONCENTRATED_MIN_SHARE
+    diet_vars = {
+        "days": _DIET_DAYS, "n": result.n, "pct": pct,
+        "gini": f"{result.gini:.2f}", "top": top_labels,
+    }
     if concentrated:
-        title = "Your reading diet leans on a few sources"
+        title = frame("Your reading diet leans on a few sources")
         trigger_plain = (
             "Most of what you've collected recently comes from just a few sources. "
             "This Lead shows you that share, so you can decide whether your reading "
             "mix is what you want it to be."
         )
-        summary = (
-            f"Over the last {_DIET_DAYS} days, the top 3 of {result.n} sources account for "
-            f"~{pct}% of what you collected (Gini {result.gini:.2f}). Top: {top_labels}."
+        summary = frame(
+            "Over the last {days} days, the top 3 of {n} sources account for ~{pct}% of what "
+            "you collected (Gini {gini}). Top: {top}.",
+            **diet_vars,
         )
     else:
-        title = "Your reading diet is broad"
+        title = frame("Your reading diet is broad")
         trigger_plain = (
             "Your recent collection is NOT concentrated in a few sources — even your "
             "busiest three account for a small share of the total. This Lead shows you "
             "that spread."
         )
-        summary = (
-            f"Over the last {_DIET_DAYS} days, your top 3 of {result.n} sources account for only "
-            f"~{pct}% of what you collected (Gini {result.gini:.2f}) — a broad spread, not a "
-            f"concentrated diet. Top: {top_labels}."
+        summary = frame(
+            "Over the last {days} days, your top 3 of {n} sources account for only ~{pct}% of "
+            "what you collected (Gini {gini}) — a broad spread, not a concentrated diet. "
+            "Top: {top}.",
+            **diet_vars,
         )
     return [
         Card(
             type="diet_self_audit",
             trigger=_trigger(trigger_plain, math_rows),
-            title=title,
-            summary=summary,
+            **_fx(
+                title=[title],
+                summary=[summary],
+                method=[
+                    *numeric_frames(result.method),
+                    frame(
+                        "'Leans on a few' vs 'broad' is decided by the top-3 share against a "
+                        "stated {threshold} threshold — the wording always follows the number.",
+                        threshold=f"{_DIET_CONCENTRATED_MIN_SHARE:.0%}",
+                    ),
+                ],
+                caveat=[
+                    *numeric_frames(result.caveat),
+                    frame(
+                        "This groups by source, not owner: several sources may share one owner, "
+                        "so true concentration may be higher. Selection is yours — this is a "
+                        "prompt, not a cap."
+                    ),
+                    *note,
+                ],
+            ),
             bucket="context",
             signal={
                 "metric": "top3_share",
@@ -821,17 +916,6 @@ def diet_self_audit(session) -> list[Card]:
                 "sources": result.n,
                 "shares": result.shares[:10],
             },
-            method=(
-                result.method
-                + f" 'Leans on a few' vs 'broad' is decided by the top-3 share against a stated "
-                f"{_DIET_CONCENTRATED_MIN_SHARE:.0%} threshold — the wording always follows the number."
-            ),
-            caveat=(
-                result.caveat
-                + " This groups by source, not owner: several sources may share one owner, so true "
-                "concentration may be higher. Selection is yours — this is a prompt, not a cap."
-                + note
-            ),
             evidence=[
                 {"title": "Sources — manage your coverage", "url": "/#sources", "source": None}
             ],
@@ -900,16 +984,21 @@ def echo_chamber(session) -> list[Card]:
         ev_lookup = _articles_by_id(session, rep_ids)
         evidence = [ev_lookup[i] for i in rep_ids if i in ev_lookup]
         n = len(actor.sources)
-        summary = (
-            f"{n} sources published near-identical text on {actor.shared_stories} "
-            f"story(ies)"
-            + (f", sharing host {actor.shared_hosts[0]}" if actor.shared_hosts else "")
-            + (
-                ". You have collapsed this into one actor."
-                if applied
-                else ". Apply a collapse to count it as one voice, or expand to inspect."
+        summary = [
+            frame(
+                "{n} sources published near-identical text on {stories} story(ies), sharing "
+                "host {host}.",
+                n=n, stories=actor.shared_stories, host=actor.shared_hosts[0],
             )
-        )
+            if actor.shared_hosts
+            else frame(
+                "{n} sources published near-identical text on {stories} story(ies).",
+                n=n, stories=actor.shared_stories,
+            ),
+            frame("You have collapsed this into one actor.")
+            if applied
+            else frame("Apply a collapse to count it as one voice, or expand to inspect."),
+        ]
         math_rows = [
             ("Sources that published near-identical text", str(n)),
             ("Stories they shared", str(actor.shared_stories)),
@@ -928,12 +1017,14 @@ def echo_chamber(session) -> list[Card]:
                     "Either way, those voices may count as one, not many.",
                     math_rows,
                 ),
-                title=(
-                    f"{n} sources moving in lockstep"
-                    if not applied
-                    else f"Coordinated actor ({n} sources) — collapsed"
+                **_fx(
+                    title=[
+                        frame("{n} sources moving in lockstep", n=n)
+                        if not applied
+                        else frame("Coordinated actor ({n} sources) — collapsed", n=n)
+                    ],
+                    summary=summary,
                 ),
-                summary=summary,
                 bucket="overtold",
                 signal={
                     "metric": "coordinated_sources",
@@ -1039,9 +1130,19 @@ def lonely_signal(session) -> list[Card]:
                 # A keyable frame (M14); the story's own title is data, never translated.
                 title_i18n="Single-source: “{title}”",
                 title_vars={"title": story["title"][:80]},
-                summary=(
-                    f"Only {story['sources'][0] if story['sources'] else 'one source'} carried this; "
-                    "no other source published near-identical text. It could be an exclusive — or minor."
+                **_fx(
+                    summary=[
+                        frame(
+                            "Only {source} carried this; no other source published near-identical "
+                            "text. It could be an exclusive — or minor.",
+                            source=story["sources"][0],
+                        )
+                        if story["sources"]
+                        else frame(
+                            "Only one source carried this; no other source published "
+                            "near-identical text. It could be an exclusive — or minor."
+                        )
+                    ],
                 ),
                 bucket="undertold",
                 signal={
@@ -1149,10 +1250,16 @@ def capacity_implausible(session) -> list[Card]:
                 "fast legitimately; this Lead only raises the question.",
                 math_rows,
             ),
-            title=f"{len(flagged)} source(s) publishing unusually fast",
-            summary=(
-                f"{top['source']} averaged ~{top['per_day']}/day over {_CAPACITY_DAYS}d — "
-                f"≥{_CAPACITY_FACTOR:.0f}× the corpus median ({round(median, 2)}/day)."
+            **_fx(
+                title=[frame("{n} source(s) publishing unusually fast", n=len(flagged))],
+                summary=[
+                    frame(
+                        "{source} averaged ~{per_day}/day over {days}d — ≥{factor}× the corpus "
+                        "median ({median}/day).",
+                        source=top["source"], per_day=top["per_day"], days=_CAPACITY_DAYS,
+                        factor=f"{_CAPACITY_FACTOR:.0f}", median=round(median, 2),
+                    )
+                ],
             ),
             bucket="investigate",
             signal={
@@ -1226,11 +1333,24 @@ def emotion_profile_card(session) -> list[Card]:
                 "a label that an outlet is fearmongering.",
                 math_rows,
             ),
-            title=f"“{term['term']}”: coverage skews {prof['dominant']}",
-            summary=(
-                f"Across {prof['n_snippets']} context windows around “{term['term']}”, "
-                f"{prof['dominant']}-associated words are the most frequent "
-                f"({prof['categories'][prof['dominant']]} of {prof['total_hits']} hits)."
+            # The category is a lexicon WORD ("fear"), keyed like a label, so it reads in
+            # the UI language; the term stays data.
+            **_fx(
+                title=[
+                    frame(
+                        "“{keyword}”: coverage skews {emotion}",
+                        tr=("emotion",), keyword=term["term"], emotion=prof["dominant"],
+                    )
+                ],
+                summary=[
+                    frame(
+                        "Across {n} context windows around “{keyword}”, {emotion}-associated "
+                        "words are the most frequent ({hits} of {total} hits).",
+                        tr=("emotion",), n=prof["n_snippets"], keyword=term["term"],
+                        emotion=prof["dominant"], hits=prof["categories"][prof["dominant"]],
+                        total=prof["total_hits"],
+                    )
+                ],
             ),
             bucket="context",
             signal={
@@ -1327,10 +1447,15 @@ def ip_litigation_pulse(session, *, as_of: "date | None" = None) -> list[Card]:
                 "is being reported — never the merits of any actual case.",
                 math_rows,
             ),
-            title="IP / legal terms are rising",
-            summary=(
-                f"IP/legal vocabulary is trending in your corpus ({names}); “{top['term']}” "
-                f"is up ~{top['growth']}× vs the prior period."
+            **_fx(
+                title=[frame("IP / legal terms are rising")],
+                summary=[
+                    frame(
+                        "IP/legal vocabulary is trending in your corpus ({terms}); “{top}” is up "
+                        "~{growth}× vs the prior period.",
+                        terms=names, top=top["term"], growth=top["growth"],
+                    )
+                ],
             ),
             bucket="context",
             signal={
@@ -1410,10 +1535,15 @@ def ownership_change(session) -> list[Card]:
                 "primary filing; it never asserts a deal actually happened.",
                 math_rows,
             ),
-            title=f"{len(matches)} possible ownership-change report(s)",
-            summary=(
-                f"Recent articles use deal language (acquired / merger / divested), e.g. "
-                f"“{lead[:80]}”. Candidate corporate-control stories to verify."
+            **_fx(
+                title=[frame("{n} possible ownership-change report(s)", n=len(matches))],
+                summary=[
+                    frame(
+                        "Recent articles use deal language (acquired / merger / divested), e.g. "
+                        "“{lead}”. Candidate corporate-control stories to verify.",
+                        lead=lead[:80],
+                    )
+                ],
             ),
             bucket="investigate",
             signal={"metric": "deal_reports", "value": len(matches)},
@@ -1478,9 +1608,19 @@ def law_change(session) -> list[Card]:
                 title=f"Law changed ({jur}): {doc_title}",
                 title_i18n="Law changed ({jurisdiction}): {title}",
                 title_vars={"jurisdiction": jur, "title": doc_title},
-                summary=(
-                    f"A tracked legal document changed by {rev.delta_bytes:+} bytes vs its baseline"
-                    + (f" — {reasons}." if reasons else ".")
+                **_fx(
+                    summary=[
+                        frame(
+                            "A tracked legal document changed by {delta} bytes vs its baseline "
+                            "— {reasons}.",
+                            delta=f"{rev.delta_bytes:+}", reasons=reasons,
+                        )
+                        if reasons
+                        else frame(
+                            "A tracked legal document changed by {delta} bytes vs its baseline.",
+                            delta=f"{rev.delta_bytes:+}",
+                        )
+                    ],
                 ),
                 bucket="watch",
                 signal={
@@ -1543,10 +1683,15 @@ def model_legislation(session) -> list[Card]:
                     "and treaties also share text, so it is never proof of coordinated lobbying.",
                     math_rows,
                 ),
-                title=f"Near-identical law across {len(jurs)} jurisdictions",
-                summary=(
-                    f"Legal text is near-duplicate across {', '.join(jurs)} "
-                    f"(e.g. “{titles[0].title[:60]}”) — possible model legislation / diffusion."
+                **_fx(
+                    title=[frame("Near-identical law across {n} jurisdictions", n=len(jurs))],
+                    summary=[
+                        frame(
+                            "Legal text is near-duplicate across {jurisdictions} (e.g. “{title}”) "
+                            "— possible model legislation / diffusion.",
+                            jurisdictions=", ".join(jurs), title=titles[0].title[:60],
+                        )
+                    ],
                 ),
                 bucket="investigate",
                 signal={
@@ -1618,6 +1763,35 @@ def story_lineage(session) -> list[Card]:
             continue
         ev = _articles_by_id(session, [i.doc_id for i in lin.chain[:5]])
         evidence = [ev[i.doc_id] for i in lin.chain[:5] if i.doc_id in ev]
+        # The four shapes of the lineage sentence as whole keyed frames: dated or not
+        # (see the honesty note below), attributed to a wire or not. A missing source
+        # name is the keyed phrase "an unknown source", not data.
+        lineage_vars = {
+            "n": len(sources),
+            "source": lin.primary.source or "an unknown source",
+        }
+        lineage_tr = () if lin.primary.source else ("source",)
+        if lin.wire_origin:
+            lineage_vars["wire"] = lin.wire_origin
+        if lin.primary.published_at is not None:
+            lineage_template = (
+                "A story echoed across {n} sources traces earliest to {source}, attributed to "
+                "the wire **{wire}**."
+                if lin.wire_origin
+                else "A story echoed across {n} sources traces earliest to {source}."
+            )
+        else:
+            # No document in the traced chain carries a known publish date, so
+            # `lin.primary` is an arbitrary pick, not a genuinely earliest one — say that
+            # plainly rather than implying a chronology that was never established
+            # (src/signals/lineage.py's own honesty bar).
+            lineage_template = (
+                "A story echoed across {n} sources — {source} among them — but no publish "
+                "dates are available to say which ran first, attributed to the wire **{wire}**."
+                if lin.wire_origin
+                else "A story echoed across {n} sources — {source} among them — but no "
+                "publish dates are available to say which ran first."
+            )
         math_rows = [
             ("Outlets carrying near-identical text", str(len(sources))),
             ("Documents in the traced chain", str(len(cluster.members))),
@@ -1635,24 +1809,12 @@ def story_lineage(session) -> list[Card]:
                     "candidate origin to foreground, not a proven first source.",
                     math_rows,
                 ),
-                title=f"One story, {len(sources)} outlets — tracing the source",
-                summary=(
-                    (
-                        f"A story echoed across {len(sources)} sources traces earliest to "
-                        f"{lin.primary.source or 'an unknown source'}"
-                        if lin.primary.published_at is not None
-                        # No document in the traced chain carries a known publish date, so
-                        # `lin.primary` is an arbitrary pick, not a genuinely earliest one —
-                        # say that plainly rather than implying a chronology that was never
-                        # established (src/signals/lineage.py's own honesty bar).
-                        else (
-                            f"A story echoed across {len(sources)} sources — "
-                            f"{lin.primary.source or 'an unknown source'} among them — but no "
-                            "publish dates are available to say which ran first"
-                        )
-                    )
-                    + (f", attributed to the wire **{lin.wire_origin}**" if lin.wire_origin else "")
-                    + ". Foreground the original; weigh the echoes."
+                **_fx(
+                    title=[frame("One story, {n} outlets — tracing the source", n=len(sources))],
+                    summary=[
+                        frame(lineage_template, tr=lineage_tr, **lineage_vars),
+                        frame("Foreground the original; weigh the echoes."),
+                    ],
                 ),
                 bucket="context",
                 signal={
@@ -1713,7 +1875,7 @@ def coverage_advisor(session) -> list[Card]:
         return []
     kind, label, share, n = flagged[0]
     pct = round(share * 100)
-    note = _small_corpus_note(session) if _is_young(session) else ""
+    note = _small_corpus_note_frames(session) if _is_young(session) else []
     from src.signals.intervals import wilson_interval
 
     # Recompute the bucket totals for the audit trail (real counts, by design).
@@ -1746,11 +1908,37 @@ def coverage_advisor(session) -> list[Card]:
                 "out so you can balance your sources if you want to.",
                 math_rows,
             ),
-            title=f"Your recent collection leans on one {kind}",
-            summary=(
-                f"~{pct}% of what you collected in {_COVERAGE_DAYS} days is from {kind} "
-                f"“{label}” (of {n}). Consider adding under-represented {kind}s — a fuller "
-                "picture is harder to skew. This is a suggestion you can ignore."
+            # One whole sentence per kind: "country" and "language" are words the reader
+            # reads, and a translator cannot inflect a noun spliced into a frame.
+            **_fx(
+                title=[
+                    frame("Your recent collection leans on one country")
+                    if kind == "country"
+                    else frame("Your recent collection leans on one language")
+                ],
+                summary=[
+                    frame(
+                        "~{pct}% of what you collected in {days} days is from country "
+                        "“{label}” (of {n}). Consider adding under-represented countries — a "
+                        "fuller picture is harder to skew. This is a suggestion you can ignore.",
+                        pct=pct, days=_COVERAGE_DAYS, label=label, n=n,
+                    )
+                    if kind == "country"
+                    else frame(
+                        "~{pct}% of what you collected in {days} days is from language "
+                        "“{label}” (of {n}). Consider adding under-represented languages — a "
+                        "fuller picture is harder to skew. This is a suggestion you can ignore.",
+                        pct=pct, days=_COVERAGE_DAYS, label=label, n=n,
+                    )
+                ],
+                caveat=[
+                    frame(
+                        "Selection is yours: this surfaces a coverage fact, it never filters or "
+                        "caps anything. A skewed corpus skews every downstream signal — see your "
+                        "World coverage view to balance it."
+                    ),
+                    *note,
+                ],
             ),
             bucket="context",
             signal={
@@ -1761,11 +1949,6 @@ def coverage_advisor(session) -> list[Card]:
                 "all": flagged,
             },
             method=f"concentration (top share) of recent articles by source {kind}",
-            caveat=(
-                "Selection is yours: this surfaces a coverage fact, it never filters or caps "
-                "anything. A skewed corpus skews every downstream signal — see your World "
-                "coverage view to balance it." + note
-            ),
             evidence=[{"title": "Sources — World coverage", "url": "/#sources", "source": None}],
             n=n,
             key=f"coverage:{kind}",
@@ -1810,12 +1993,32 @@ def weather_corroboration(session) -> list[Card]:
             Card(
                 type="weather_corroboration",
                 article_ids=[int(x) for x in op["article_ids"]],  # F1: carry the cluster so the click opens it
-                title=f"{op['rule_label']} near {op['place']}: independent weather check available",
-                summary=(
-                    f"{op['n_articles']} articles mention {', '.join(op['terms_matched'])} "
-                    f"together with {place_label} between {op['window_start']} and "
-                    f"{op['window_end']}. Open-Meteo reanalysis for that place and window "
-                    f"can corroborate or challenge the narrative — it is fetched only if you ask."
+                **_fx(
+                    title=[
+                        frame(
+                            "{rule} near {place}: independent weather check available",
+                            rule=op["rule_label"], place=op["place"],
+                        )
+                    ],
+                    summary=[
+                        frame(
+                            "{n} articles mention {terms} together with {place} between {start} "
+                            "and {end}. Open-Meteo reanalysis for that place and window can "
+                            "corroborate or challenge the narrative — it is fetched only if you ask.",
+                            n=op["n_articles"], terms=", ".join(op["terms_matched"]),
+                            place=place_label, start=op["window_start"], end=op["window_end"],
+                        )
+                    ],
+                    caveat=[
+                        frame(
+                            "Word–place co-occurrence is not a confirmed event: articles may "
+                            "discuss past, forecast or figurative weather. The window is built "
+                            "from article publication dates, not the event's own dates. "
+                            "Reanalysis is a model estimate, not a station record; corroboration "
+                            "is never proof."
+                        ),
+                        frame("Place precision: {precision}.", precision=op["geocode"]),
+                    ],
                 ),
                 bucket="investigate",
                 method=(
@@ -1823,13 +2026,6 @@ def weather_corroboration(session) -> list[Card]:
                     "(configs/corroboration_rules.yml) against indexed keywords, joined to "
                     "deduced place mentions (lexical-v1) and article dates; computed locally — "
                     "this Lead made no network call"
-                ),
-                caveat=(
-                    "Word–place co-occurrence is not a confirmed event: articles may discuss "
-                    "past, forecast or figurative weather. The window is built from article "
-                    "publication dates, not the event's own dates. Reanalysis is a model "
-                    "estimate, not a station record; corroboration is never proof. "
-                    f"Place precision: {op['geocode']}."
                 ),
                 signal={
                     "metric": "articles_in_cluster",
@@ -1939,17 +2135,35 @@ def space_time_convergence(session) -> list[Card]:
         cards.append(
             Card(
                 type="space_time_convergence",
-                title=f"{c['distinct_sources']} sources converge on {place_label}",
-                summary=(
-                    f"{c['n_articles']} articles from {c['distinct_sources']} distinct "
-                    f"sources mention {place_label} around {c['window_start']}"
-                    + (f"–{c['window_end']}" if c["window_end"] != c["window_start"] else "")
-                    + (
-                        f". {shared} outbound link(s) are shared across members — read those "
-                        "as one possible common origin, not independent confirmation."
+                **_fx(
+                    title=[
+                        frame(
+                            "{n} sources converge on {place}",
+                            n=c["distinct_sources"], place=place_label,
+                        )
+                    ],
+                    summary=[
+                        frame(
+                            "{n} articles from {sources} distinct sources mention {place} around "
+                            "{start}–{end}.",
+                            n=c["n_articles"], sources=c["distinct_sources"], place=place_label,
+                            start=c["window_start"], end=c["window_end"],
+                        )
+                        if c["window_end"] != c["window_start"]
+                        else frame(
+                            "{n} articles from {sources} distinct sources mention {place} around "
+                            "{start}.",
+                            n=c["n_articles"], sources=c["distinct_sources"], place=place_label,
+                            start=c["window_start"],
+                        ),
+                        frame(
+                            "{shared} outbound link(s) are shared across members — read those as "
+                            "one possible common origin, not independent confirmation.",
+                            shared=shared,
+                        )
                         if shared
-                        else ". No shared outbound links among them in your corpus."
-                    )
+                        else frame("No shared outbound links among them in your corpus."),
+                    ],
                 ),
                 bucket="investigate",
                 signal={
@@ -2011,11 +2225,16 @@ def watch_matches(session) -> list[Card]:
         cards.append(
             Card(
                 type="watch_match",
-                title=f"Watch “{f['name']}” matched",
-                summary=(
-                    f"Your watch for “{f['query']}” now matches {n} article(s) in its "
-                    f"window ({new} new since it last fired). You asked to keep an eye "
-                    "on this — open the set to read it."
+                **_fx(
+                    title=[frame("Watch “{name}” matched", name=f["name"])],
+                    summary=[
+                        frame(
+                            "Your watch for “{query}” now matches {n} article(s) in its window "
+                            "({new} new since it last fired). You asked to keep an eye on this — "
+                            "open the set to read it.",
+                            query=f["query"], n=n, new=new,
+                        )
+                    ],
                 ),
                 bucket="watch",
                 signal={
@@ -2084,12 +2303,23 @@ def source_laundering(session) -> list[Card]:
         cards.append(
             Card(
                 type="source_laundering",
-                title=f"{c['distinct_sources']} sources, one origin: {dom}",
-                summary=(
-                    f"{c['n_articles']} articles from {c['distinct_sources']} distinct "
-                    f"sources ({names}) all cite the same origin — apparent corroboration "
-                    "that traces to ONE source. It may be a legitimate primary source, or a "
-                    "single-origin claim dressed as consensus. Read the origin yourself."
+                # Keyed frames (re-walk L-1): the source names and the origin are data.
+                **_fx(
+                    title=[
+                        frame(
+                            "{n} sources, one origin: {origin}",
+                            n=c["distinct_sources"], origin=dom,
+                        )
+                    ],
+                    summary=[
+                        frame(
+                            "{n} articles from {sources} distinct sources ({names}) all cite the "
+                            "same origin — apparent corroboration that traces to ONE source. It "
+                            "may be a legitimate primary source, or a single-origin claim dressed "
+                            "as consensus. Read the origin yourself.",
+                            n=c["n_articles"], sources=c["distinct_sources"], names=names,
+                        )
+                    ],
                 ),
                 bucket="overtold",
                 signal={
@@ -2147,10 +2377,23 @@ def recycled_claim(session) -> list[Card]:
         title = c["recent_title"] or c["original_title"] or "(untitled)"
         if len(title) > 70:
             title = title[:67] + "…"
-        spread = (
-            f"across {c['distinct_sources']} sources"
-            if not c["single_source"]
-            else "by the same source"
+        recycled_vars = {
+            "first": c["first_seen"], "resurfaced": c["resurfaced"], "days": c["gap_days"],
+        }
+        recycled_summary = (
+            frame(
+                "Near-identical text first seen {first} reappeared {resurfaced} (by the same "
+                "source) — a {days}-day gap. It may be an anniversary piece or an evergreen "
+                "re-run, or old content recycled as new. Read both and judge.",
+                **recycled_vars,
+            )
+            if c["single_source"]
+            else frame(
+                "Near-identical text first seen {first} reappeared {resurfaced} (across "
+                "{sources} sources) — a {days}-day gap. It may be an anniversary piece or an "
+                "evergreen re-run, or old content recycled as new. Read both and judge.",
+                sources=c["distinct_sources"], **recycled_vars,
+            )
         )
         cards.append(
             Card(
@@ -2158,12 +2401,7 @@ def recycled_claim(session) -> list[Card]:
                 title=f"Resurfaced after {c['gap_days']} days: {title}",
                 title_i18n="Resurfaced after {days} days: {title}",
                 title_vars={"days": c["gap_days"], "title": title},
-                summary=(
-                    f"Near-identical text first seen {c['first_seen']} reappeared "
-                    f"{c['resurfaced']} ({spread}) — a {c['gap_days']}-day gap. It may be an "
-                    "anniversary piece or an evergreen re-run, or old content recycled as "
-                    "new. Read both and judge."
-                ),
+                **_fx(summary=[recycled_summary]),
                 bucket="watch",
                 signal={
                     "metric": "gap_days",
@@ -2233,22 +2471,40 @@ def headline_body_mismatch(session) -> list[Card]:
             title = title[:67] + "…"
         absent = it.get("absent_terms", [])
         absent_str = ", ".join(absent[:4]) + ("…" if len(absent) > 4 else "")
-        gap_clause = (
-            f" Its tone also diverges (sentiment gap {it['sentiment_gap']})."
-            if it.get("sentiment_gap") is not None
+        hb_summary = [
+            frame(
+                "The headline leads with terms the article body barely covers ({absent}) — "
+                "lexical divergence {div}.",
+                absent=absent_str, div=str(it["lexical_div"]),
+            )
+            if absent_str
+            else frame(
+                "The headline leads with terms the article body barely covers — lexical "
+                "divergence {div}.",
+                div=str(it["lexical_div"]),
+            )
+        ]
+        if (
+            it.get("sentiment_gap") is not None
             and it["sentiment_gap"] >= found["sentiment_gap_min"]
-            else ""
+        ):
+            hb_summary.append(
+                frame(
+                    "Its tone also diverges (sentiment gap {gap}).",
+                    gap=str(it["sentiment_gap"]),
+                )
+            )
+        hb_summary.append(
+            frame(
+                "A summarising or metaphorical headline does this innocently. Read both and judge."
+            )
         )
         cards.append(
             Card(
                 type="headline_body_mismatch",
-                title=f"Headline ≠ body: {title}",
-                summary=(
-                    "The headline leads with terms the article body barely covers"
-                    + (f" ({absent_str})" if absent_str else "")
-                    + f" — lexical divergence {it['lexical_div']}.{gap_clause} A "
-                    "summarising or metaphorical headline does this innocently. Read both "
-                    "and judge."
+                **_fx(
+                    title=[frame("Headline ≠ body: {title}", title=title)],
+                    summary=hb_summary,
                 ),
                 bucket="debunk",
                 signal={
@@ -2309,13 +2565,18 @@ def manufactured_emergence(session) -> list[Card]:
         cards.append(
             Card(
                 type="manufactured_emergence",
-                title=f"Appeared everywhere at once: “{term}”",
-                summary=(
-                    f"“{term}” has almost no prior history yet showed up in "
-                    f"{it['recent_articles']} articles across {it['recent_sources']} distinct "
-                    "sources at once, and the articles cite no datable event to anchor it. "
-                    "Breaking news also appears wide and fast — but usually with a datable "
-                    "trigger. Read the sources and judge."
+                **_fx(
+                    title=[frame("Appeared everywhere at once: “{keyword}”", keyword=term)],
+                    summary=[
+                        frame(
+                            "“{keyword}” has almost no prior history yet showed up in {n} "
+                            "articles across {sources} distinct sources at once, and the articles "
+                            "cite no datable event to anchor it. Breaking news also appears wide "
+                            "and fast — but usually with a datable trigger. Read the sources and "
+                            "judge.",
+                            keyword=term, n=it["recent_articles"], sources=it["recent_sources"],
+                        )
+                    ],
                 ),
                 bucket="rising",
                 signal={
@@ -2383,12 +2644,24 @@ def flooded_topic(session) -> list[Card]:
         cards.append(
             Card(
                 type="flooded_topic",
-                title=f"{it['source']} is flooding “{it['term']}”",
-                summary=(
-                    f"{it['source']} gave {pct_now}% of its recent coverage to "
-                    f"“{it['term']}” ({it['recent_articles']} of {it['recent_total']} "
-                    f"articles), vs {pct_base}% historically. Volume isn't importance — a "
-                    "big story legitimately dominates — so read it and judge."
+                **_fx(
+                    title=[
+                        frame(
+                            "{source} is flooding “{keyword}”",
+                            source=it["source"], keyword=it["term"],
+                        )
+                    ],
+                    summary=[
+                        frame(
+                            "{source} gave {pct_now}% of its recent coverage to “{keyword}” "
+                            "({recent} of {total} articles), vs {pct_base}% historically. Volume "
+                            "isn't importance — a big story legitimately dominates — so read it "
+                            "and judge.",
+                            source=it["source"], pct_now=pct_now, keyword=it["term"],
+                            recent=it["recent_articles"], total=it["recent_total"],
+                            pct_base=pct_base,
+                        )
+                    ],
                 ),
                 bucket="overtold",
                 signal={
@@ -2455,12 +2728,22 @@ def copypasta(session) -> list[Card]:
         cards.append(
             Card(
                 type="copypasta",
-                title=f"Identical wording in {it['distinct_sources']} sources: “{shown}”",
-                summary=(
-                    f"The verbatim phrase “{shown}” appears in {it['n_articles']} articles "
-                    f"across {it['distinct_sources']} distinct sources whose full articles are "
-                    "not duplicates of one another. A shared quote, press-release line or "
-                    "boilerplate does this innocently — read them and judge."
+                **_fx(
+                    title=[
+                        frame(
+                            "Identical wording in {n} sources: “{phrase}”",
+                            n=it["distinct_sources"], phrase=shown,
+                        )
+                    ],
+                    summary=[
+                        frame(
+                            "The verbatim phrase “{phrase}” appears in {n} articles across "
+                            "{sources} distinct sources whose full articles are not duplicates of "
+                            "one another. A shared quote, press-release line or boilerplate does "
+                            "this innocently — read them and judge.",
+                            phrase=shown, n=it["n_articles"], sources=it["distinct_sources"],
+                        )
+                    ],
                 ),
                 bucket="overtold",
                 signal={
@@ -2520,12 +2803,24 @@ def buried_topic(session) -> list[Card]:
         cards.append(
             Card(
                 type="buried_topic",
-                title=f"{it['source']} under-covers “{it['term']}”",
-                summary=(
-                    f"{it['source']} gave {pct_src}% of its coverage to “{it['term']}” "
-                    f"({it['source_articles_on_topic']} of {it['source_total']} articles), vs "
-                    f"{pct_corpus}% across the rest of the corpus. A different beat, region or "
-                    "language usually explains a low share — read it and judge."
+                **_fx(
+                    title=[
+                        frame(
+                            "{source} under-covers “{keyword}”",
+                            source=it["source"], keyword=it["term"],
+                        )
+                    ],
+                    summary=[
+                        frame(
+                            "{source} gave {pct_source}% of its coverage to “{keyword}” "
+                            "({on_topic} of {total} articles), vs {pct_corpus}% across the rest "
+                            "of the corpus. A different beat, region or language usually explains "
+                            "a low share — read it and judge.",
+                            source=it["source"], pct_source=pct_src, keyword=it["term"],
+                            on_topic=it["source_articles_on_topic"], total=it["source_total"],
+                            pct_corpus=pct_corpus,
+                        )
+                    ],
                 ),
                 bucket="investigate",
                 signal={
@@ -2618,13 +2913,6 @@ def severity_alerts(session) -> list[Card]:
         # it in that case; provider-declared urgent/watch tiers are never suppressed.
         if tier == "info" and n_haz == 0 and n_watch == 0 and n_conv > 0:
             continue
-        parts = []
-        if n_haz:
-            parts.append(f"{n_haz} hazard alert(s)")
-        if n_watch:
-            parts.append(f"{n_watch} fired watch(es)")
-        if n_conv:
-            parts.append(f"{n_conv} space-time convergence(s)")
         evidence: list[dict] = []
         for h in hazards[:4]:
             evidence.append(
@@ -2642,14 +2930,31 @@ def severity_alerts(session) -> list[Card]:
             evidence.append(
                 {"title": f"Convergence: {place} ({c.get('window_start')})", "url": None, "source": None}
             )
-        stale_note = (
-            " Hazard records are a cached relay and may be stale." if alerts.get("hazards_stale") else ""
-        )
+        # One keyed sentence names all three counts, a zero included: a list that drops
+        # its empty parts cannot be one translatable frame, and a stated zero is a fact.
+        # The tier word is keyed like a label.
+        alert_summary = [
+            frame(
+                "{tier}: {hazards} hazard alert(s), {watches} fired watch(es), {convergences} "
+                "space-time convergence(s) in view.",
+                tr=("tier",), tier=_TIER_LABELS[tier],
+                hazards=n_haz, watches=n_watch, convergences=n_conv,
+            )
+        ]
+        if alerts.get("hazards_stale"):
+            alert_summary.append(frame("Hazard records are a cached relay and may be stale."))
         cards.append(
             Card(
                 type="severity_alert",
-                title=f"{_TIER_LABELS[tier]}: {count} alert signal(s)",
-                summary=(f"{_TIER_LABELS[tier]}: {', '.join(parts)} in view." + stale_note),
+                **_fx(
+                    title=[
+                        frame(
+                            "{tier}: {n} alert signal(s)",
+                            tr=("tier",), tier=_TIER_LABELS[tier], n=count,
+                        )
+                    ],
+                    summary=alert_summary,
+                ),
                 bucket="watch",
                 signal={
                     "metric": "signals_in_tier",
@@ -2709,12 +3014,21 @@ def disputed_chronology(session) -> list[Card]:
         cards.append(
             Card(
                 type="disputed_chronology",
-                title=f"Same story, {it['distinct_dates']} conflicting event dates",
-                summary=(
-                    f"{it['distinct_sources']} sources tell a near-identical story but date "
-                    f"the event differently ({', '.join(dates)}) — the conflicting dates span "
-                    f"{it['span_days']} days. Date-extraction quirks or a timeline piece can "
-                    "explain it; read both and judge."
+                **_fx(
+                    title=[
+                        frame(
+                            "Same story, {n} conflicting event dates", n=it["distinct_dates"]
+                        )
+                    ],
+                    summary=[
+                        frame(
+                            "{n} sources tell a near-identical story but date the event "
+                            "differently ({dates}) — the conflicting dates span {days} days. "
+                            "Date-extraction quirks or a timeline piece can explain it; read "
+                            "both and judge.",
+                            n=it["distinct_sources"], dates=", ".join(dates), days=it["span_days"],
+                        )
+                    ],
                 ),
                 bucket="debunk",
                 signal={
@@ -2778,11 +3092,16 @@ def story_propagation(session) -> list[Card]:
                 # as data, so the serve-time pass can also show the term's translation.
                 title_i18n="“{term}” spread across {n} sources",
                 title_vars={"term": it["term"], "n": it["distinct_sources"]},
-                summary=(
-                    f"Coverage of “{it['term']}” propagated across {it['distinct_sources']} "
-                    f"sources over {it['span_days']} days, first carried by "
-                    f"{it['first_source']} on {it['first_seen']}. A shared wire or "
-                    "independent coverage can look the same — a shape to read, never a cause."
+                **_fx(
+                    summary=[
+                        frame(
+                            "Coverage of “{term}” propagated across {n} sources over {days} days, "
+                            "first carried by {source} on {date}. A shared wire or independent "
+                            "coverage can look the same — a shape to read, never a cause.",
+                            term=it["term"], n=it["distinct_sources"], days=it["span_days"],
+                            source=it["first_source"], date=it["first_seen"],
+                        )
+                    ],
                 ),
                 bucket="context",
                 signal={
@@ -2838,12 +3157,23 @@ def supply_chain_ripple(session) -> list[Card]:
         cards.append(
             Card(
                 type="supply_chain_ripple",
-                title=f"{it['commodity']} coverage co-moves with “{it['keyword']}”",
-                summary=(
-                    f"Daily coverage of {it['commodity']} and “{it['keyword']}” rise and fall "
-                    f"together (r={it['correlation']:+.2f}, p={it['p_value']:.3g}, over "
-                    f"{it['n_days']} days) — a co-movement to investigate, never proof one "
-                    "drives the other."
+                **_fx(
+                    title=[
+                        frame(
+                            "{commodity} coverage co-moves with “{keyword}”",
+                            commodity=it["commodity"], keyword=it["keyword"],
+                        )
+                    ],
+                    summary=[
+                        frame(
+                            "Daily coverage of {commodity} and “{keyword}” rise and fall together "
+                            "(r={r}, p={p}, over {n} days) — a co-movement to investigate, never "
+                            "proof one drives the other.",
+                            commodity=it["commodity"], keyword=it["keyword"],
+                            r=f"{it['correlation']:+.2f}", p=f"{it['p_value']:.3g}",
+                            n=it["n_days"],
+                        )
+                    ],
                 ),
                 bucket="context",
                 signal={
@@ -2896,19 +3226,30 @@ def supergroup_rising(session) -> list[Card]:
 
     cards: list[Card] = []
     for it in found.get("items", [])[:_MAX_RISING_SUPERGROUP]:
-        driven_note = (
-            f" — driven almost entirely by “{it['driven_by']}”"
+        share_vars = {
+            "name": it["name"], "now": f"{it['share_now']:.2%}", "prior": f"{it['share_prior']:.2%}",
+        }
+        sg_summary = (
+            frame(
+                "“{name}” now makes up {now} of your corpus's daily coverage, up from {prior} in "
+                "its own baseline period — driven almost entirely by “{driver}”. A share shift, "
+                "not a verdict — read the coverage and judge.",
+                driver=it["driven_by"], **share_vars,
+            )
             if it["driven_share"] >= 0.6
-            else ""
+            else frame(
+                "“{name}” now makes up {now} of your corpus's daily coverage, up from {prior} in "
+                "its own baseline period. A share shift, not a verdict — read the coverage and "
+                "judge.",
+                **share_vars,
+            )
         )
         cards.append(
             Card(
                 type="supergroup_rising",
-                title=f"“{it['name']}” is rising in your corpus",
-                summary=(
-                    f"“{it['name']}” now makes up {it['share_now']:.2%} of your corpus's daily "
-                    f"coverage, up from {it['share_prior']:.2%} in its own baseline period"
-                    f"{driven_note}. A share shift, not a verdict — read the coverage and judge."
+                **_fx(
+                    title=[frame("“{name}” is rising in your corpus", name=it["name"])],
+                    summary=[sg_summary],
                 ),
                 bucket="watch",
                 signal={
@@ -3001,10 +3342,16 @@ def on_the_horizon(
         cards.append(
             Card(
                 type="on_the_horizon",
-                title=f"On the horizon: {e['title']}",
-                summary=(
-                    f"“{hit['term']}” — moving in your corpus now — has an agenda date on "
-                    f"{e['next_occurrence']} ({days} days away): {e['title']}."
+                **_fx(
+                    title=[frame("On the horizon: {event}", event=e["title"])],
+                    summary=[
+                        frame(
+                            "“{keyword}” — moving in your corpus now — has an agenda date on "
+                            "{date} ({days} days away): {event}.",
+                            keyword=hit["term"], date=e["next_occurrence"], days=days,
+                            event=e["title"],
+                        )
+                    ],
                 ),
                 bucket="watch",
                 signal={
@@ -3082,10 +3429,19 @@ def through_time(
     return [
         Card(
             type="through_time",
-            title="Through time: this day in past years",
-            summary=(
-                f"{len(rows)} articles in your corpus were published on {today.strftime('%B')} "
-                f"{today.day} in earlier years ({years[-1]}–{years[0]})."
+            # The month-day travels as MM-DD and the UI writes it in the reader's language
+            # (it read "September 27" in every locale); the years are strings, never
+            # thousands-grouped.
+            **_fx(
+                title=[frame("Through time: this day in past years")],
+                summary=[
+                    frame(
+                        "{n} articles in your corpus were published on {day} in earlier years "
+                        "({first}–{last}).",
+                        md=("day",), n=len(rows), day=md,
+                        first=str(years[-1]), last=str(years[0]),
+                    )
+                ],
             ),
             bucket="context",
             signal={"metric": "articles_on_this_day", "value": len(rows), "years": years},

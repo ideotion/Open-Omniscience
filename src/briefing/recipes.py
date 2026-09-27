@@ -30,11 +30,18 @@ import logging
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from src.briefing.card import Card
+from src.briefing.card import Card, frame, frames_text
 
 _LOG = logging.getLogger(__name__)
 
 _MAX_CARDS_PER_RECIPE = 3
+
+
+def _fx(**fields: list[dict]) -> dict:
+    """Card kwargs for keyed text: the English built from the frames, the frames beside it
+    (the same helper as ``producers._fx``, kept here so the recipe pack imports nothing
+    from the core producers it must survive without)."""
+    return {**{name: frames_text(frames) for name, frames in fields.items()}, "i18n": fields}
 
 
 def _disabled(name: str) -> bool:
@@ -86,11 +93,21 @@ def promises_due(session) -> list[Card]:
         cards.append(
             Card(
                 type="recipe_promise",
-                title=f"A promised date has arrived: {tag.mentioned_on.isoformat()}",
-                summary=(
-                    f"“{article.title}” ({article.published_at.date().isoformat()}) pointed "
-                    f"{lead_days} days ahead to {tag.mentioned_on.isoformat()} — that date is "
-                    f"now here. Worth checking what actually happened."
+                **_fx(
+                    title=[
+                        frame(
+                            "A promised date has arrived: {date}",
+                            date=tag.mentioned_on.isoformat(),
+                        )
+                    ],
+                    summary=[
+                        frame(
+                            "“{title}” ({published}) pointed {days} days ahead to {date} — that "
+                            "date is now here. Worth checking what actually happened.",
+                            title=article.title, published=article.published_at.date().isoformat(),
+                            days=lead_days, date=tag.mentioned_on.isoformat(),
+                        )
+                    ],
                 ),
                 bucket="watch",
                 signal={
@@ -196,17 +213,25 @@ def edit_war_burst(session) -> list[Card]:
         page = session.query(WikiPage).filter_by(id=page_id).first()
         if page is None:
             continue
+        burst_page = f"{page.wiki}:{page.title}"
         if ratio is None:
-            rate_desc = "no revisions at all in the prior 4 weeks"
+            burst_summary = frame(
+                "{n} revisions in 7 days on {page} — no revisions at all in the prior 4 weeks. "
+                "Its public record is in motion.",
+                n=n_recent, page=burst_page,
+            )
         else:
-            rate_desc = f"about {ratio:.0f}× its prior weekly rate"
+            burst_summary = frame(
+                "{n} revisions in 7 days on {page} — about {ratio}× its prior weekly rate. Its "
+                "public record is in motion.",
+                n=n_recent, page=burst_page, ratio=f"{ratio:.0f}",
+            )
         cards.append(
             Card(
                 type="recipe_edit_war",
-                title=f"Edit burst on “{page.title}”",
-                summary=(
-                    f"{n_recent} revisions in 7 days on {page.wiki}:{page.title} — "
-                    f"{rate_desc}. Its public record is in motion."
+                **_fx(
+                    title=[frame("Edit burst on “{title}”", title=page.title)],
+                    summary=[burst_summary],
                 ),
                 bucket="investigate",
                 signal={
@@ -292,11 +317,16 @@ def region_gone_quiet(session) -> list[Card]:
         cards.append(
             Card(
                 type="recipe_quiet_region",
-                title=f"Your coverage of “{country}” went quiet",
-                summary=(
-                    f"{country} averaged ~{weekly_prior:.0f} articles/week over the prior month "
-                    f"but produced {n_recent} in the last 7 days. Source rot, a feed change, "
-                    f"or real silence — find out which."
+                **_fx(
+                    title=[frame("Your coverage of “{country}” went quiet", country=country)],
+                    summary=[
+                        frame(
+                            "{country} averaged ~{weekly} articles/week over the prior month but "
+                            "produced {n} in the last 7 days. Source rot, a feed change, or real "
+                            "silence — find out which.",
+                            country=country, weekly=f"{weekly_prior:.0f}", n=n_recent,
+                        )
+                    ],
                 ),
                 bucket="undertold",
                 signal={
@@ -351,11 +381,29 @@ def source_candidates_waiting(session) -> list[Card]:
     return [
         Card(
             type="recipe_source_candidates",
-            title=f"{n} source candidate{'s' if n != 1 else ''} await your review",
-            summary=(
-                f"Offline discovery (citations in your corpus + the packaged catalog) "
-                f"staged {n} suggested source{'s' if n != 1 else ''}. Each carries its "
-                f"evidence; nothing is fetched or enabled until you decide."
+            # A one/many pair of whole keyed frames (M-6): it read "1 source candidate
+            # await your review", and a count spliced before a noun cannot be translated.
+            **_fx(
+                title=[
+                    frame("{n} source candidate awaits your review", n=n)
+                    if n == 1
+                    else frame("{n} source candidates await your review", n=n)
+                ],
+                summary=[
+                    frame(
+                        "Offline discovery (citations in your corpus + the packaged catalog) "
+                        "staged {n} suggested source. Each carries its evidence; nothing is "
+                        "fetched or enabled until you decide.",
+                        n=n,
+                    )
+                    if n == 1
+                    else frame(
+                        "Offline discovery (citations in your corpus + the packaged catalog) "
+                        "staged {n} suggested sources. Each carries its evidence; nothing is "
+                        "fetched or enabled until you decide.",
+                        n=n,
+                    )
+                ],
             ),
             bucket="context",
             signal={"metric": "candidates_waiting", "value": n},

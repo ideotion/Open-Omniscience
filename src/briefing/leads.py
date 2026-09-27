@@ -22,7 +22,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from src.briefing.card import Card
+from src.briefing.card import Card, frame, frames_text
 from src.signals.near_dup import _connected_components
 
 # Default floors for a "major" lead (OPERATOR-GATED: tune on real field data before shipping).
@@ -93,17 +93,36 @@ def sort_leads(cards: list[Card], *, now: datetime) -> list[Card]:
     return sorted(cards, key=lambda c: order_key(c, now=now), reverse=True)
 
 
-def explain_order(card: Card, *, now: datetime) -> str:
-    """The "why is this lead here?" string — the exact facts behind ``order_key``, in order."""
+def explain_order_frames(card: Card, *, now: datetime) -> list[dict]:
+    """``explain_order`` as keyed frames (re-walk N-8): the disclosure is one constant
+    sentence, the facts a second whose numbers are data -- so the line reads in the UI
+    language instead of English under every card. The age keeps its one decimal as
+    text, exactly as the English line prints it."""
     sources = _distinct_sources(card)
     tier = _magnitude_bucket(card.n)
     age = newest_evidence_age(card, now=now)
-    recency = f"freshest evidence {age:.1f} day(s) old" if age is not None else "no dated evidence"
-    return (
-        "Ranked by a disclosed order (independent sources → sample magnitude → recency), "
-        f"never a score. This lead: {sources} independent source(s); n={card.n or 0} "
-        f"(magnitude tier {tier}/{len(_MAGNITUDE_THRESHOLDS)}); {recency}."
-    )
+    facts = {"sources": sources, "n": card.n or 0, "tier": tier, "tiers": len(_MAGNITUDE_THRESHOLDS)}
+    if age is not None:
+        this_lead = frame(
+            "This lead: {sources} independent source(s); n={n} (magnitude tier {tier}/{tiers}); "
+            "freshest evidence {age} day(s) old.",
+            age=f"{age:.1f}", **facts,
+        )
+    else:
+        this_lead = frame(
+            "This lead: {sources} independent source(s); n={n} (magnitude tier {tier}/{tiers}); "
+            "no dated evidence.",
+            **facts,
+        )
+    return [
+        frame("Ranked by a disclosed order (independent sources → sample magnitude → recency), never a score."),
+        this_lead,
+    ]
+
+
+def explain_order(card: Card, *, now: datetime) -> str:
+    """The "why is this lead here?" string — the exact facts behind ``order_key``, in order."""
+    return frames_text(explain_order_frames(card, now=now))
 
 
 def is_major(card: Card, *, floors: dict[str, int] | None = None) -> dict:
