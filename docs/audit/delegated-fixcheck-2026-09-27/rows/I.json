@@ -1,0 +1,149 @@
+{
+ "row": "I",
+ "walk": {
+  "row": "I",
+  "environment": "Build: read-only worktree /tmp/claude-0/rewalk2/tree at 9eb10528 (git status clean before and after; never edited). Server launched from that folder by /tmp/claude-0/rewalk2/out/I/scripts/srv.py: python -c \"from src.api.main import main; main()\" from the repo .venv, port 9603, PYTHONDONTWRITEBYTECODE=1, with every *proxy* variable plus OO_DB_PASSPHRASE, OO_DB_PLAINTEXT, DATABASE_URL, OO_IMPORT_CHECKPOINT_K, OO_IMPORT_DEFER_REINDEX, OO_NO_SCHEDULER and OO_REINDEX_AUTORESUME removed. Every server was stopped by its PID from lsof; the last one (PID 30478) is stopped and port 9603 is free.\n\nData folders: I did NOT copy an old data folder. As in the row's own walk.environment, I created five throwaway folders (/tmp/claude-0/rewalk2/out/I/tgtA to tgtE) through the real first launch. For each: language en, legal via #lg-check/#lg-accept, the data-location step \"Continue\" (GET data-location answered 200), passphrase walk-pass-2026 via #pw1/#pw2/#btn-create. Each was then stopped and restarted. No seed script was needed, so no briefing_cache.json from the old build is involved.\n\nEncrypted and locked:\n- /api/system/lock-state read \"locked\" at every boot, including the relaunches after the I9 power-button shutdown and the I13b SIGKILL.\n- Every unlock went through the real #pw/#btn-unlock form.\n- After unlock, /api/system/doctor reported corpus state \"encrypted\", cipher \"4.12.0 community\", on A, A2, B, C and D.\n- The raw open_omniscience.db header is not \"SQLite format 3\" (tgtA 8812ba31…, tgtB 1a05e303…, tgtD f6dc1156…).\n\nBackup sets: copied with cp -a (hardlinks kept) from /tmp/claude-0/rewalk/I/ into /tmp/claude-0/rewalk2/out/I/sets/ (backups, backups_cum, backups8, backupB, backupC); the originals were not touched. Backup passphrase: walk-backup-2026.\n\nNetwork: airplane mode throughout. After every unlock I sent POST /api/system/network {\"online\": false} and read back {\"online\": false}; the task manager's #net-plane was filled (currentColor) with the offline title. No consent popup arose on this row's path, \"Go online\" was never pressed, and nothing egressed.\n\nBrowser: Playwright sync, Chromium /opt/pw-browsers/chromium, headless, args --disable-background-networking, --disable-component-update and --no-proxy-server. Viewports: 1440x950 (DSF 1 for A, C and D; DSF 2 for B), plus 375x800 at DSF 2 for tgtE. Navigation used the real sidebar, subtabs, buttons and the top-bar language switcher (live switch, no reload); at 375 px it went through #hamburger. Import runs were sampled every 80 ms with a MutationObserver per row, an animationstart listener and an overlap measure.\n\nArtifacts, all under /tmp/claude-0/rewalk2/out/I/: scripts/ (common.py, runlib2.py, first.py, walkA1/A2/A3_lang/B/C/D/E/E2.py), events.jsonl, walk*.out, *_samples.jsonl, errors_*.json, B_ar_reports_sq.json and shots/ (160 PNGs).",
+  "steps": [
+   {
+    "id": "I1",
+    "verdict": "not-measurable-here",
+    "evidence": "This step needs the operator's real install and history; only throwaway folders exist here. What the throwaway shows: a reopen after a finished run is the fresh page, the Last import line only, plus stage 4 alone while it drains. For example 'Last import · September 27, 2026 at 06:59 PM · 4 800 articles · open report' and '4. Re-index… — resuming re-index — 500 of 4 800 articles'. There were no stale run rows, statements or 'start it again' line (events I7_reopen_immediate and C_final_reopen; shots/I7-reopen-en.png, C-final-reopen-en.png).",
+    "locales": "en"
+   },
+   {
+    "id": "I2",
+    "verdict": "pass",
+    "evidence": "On fresh tgtA, Settings → Data & backup:\n- #set-checkpoint-k = 3, with the hint 'Higher is faster and loses more work…' and its hover text shown.\n- #imp-history reads 'No imports recorded yet.'\n\nThe fresh Import dialog has no Last import line, 0 stage rows, 0 queue rows and 0 <details>, and shows the K=3 sentence 'Verified and written to your corpus once every 3 backups — …'.\n\nThe Verify hover bubble is re-parented into #ux-import and drawn above the modal (shots/I2-dialog-hover-verify-en.png; events I2_settings, I2_dialog, I2_modal_hover_verify).",
+    "locales": "en"
+   },
+   {
+    "id": "I3",
+    "verdict": "pass",
+    "evidence": "Verify:\n- Took 1.3 s, with at most 1 visible bar and 'Verify: Verifying volumes…'.\n- Ended '✓ Backup verified — the set is complete and intact. / 3 volumes · signature: verified / Parity: 1 · can still lose 1 / Method: …'.\n\nScan:\n- Read 'Restore corpus backup (encrypted volumes — additive… · 12 volumes · 4 sets)' under 'What do you want to import?'.\n- The passphrase row and the trust row are display:block.\n- Run was enabled with the passphrase filled.\n\nEvents I3_verify, I3_scan; shots I3-verified-en.png, I3-scan-en.png.",
+    "locales": "en"
+   },
+   {
+    "id": "I4",
+    "verdict": "pass",
+    "evidence": "A running 4-backup import, dialog open (event I4_first_full at 0.22 s; B_en_first; shots I4-running-en.png, B_en-first.png):\n- Exactly one bar; max 1 across all six sampled runs (B_en, B_ar, D_fr, D_zh, E_375, E2_375).\n- The header '0 of 4 backups imported · 0 s' plus 'Background collection is paused for this whole import…'.\n- Four stage rows, with 3 and 4 reading 'not started'.\n- The two • statements plus '• Analytics are complete once the re-index (stage 4) finishes.'\n- Stop and 'Continue in background' visible; 0 details and no 'Show details'.",
+    "locales": "en"
+   },
+   {
+    "id": "I5",
+    "verdict": "pass",
+    "evidence": "Row repaints (tgtB):\n- A selection anchored in row 3 and dragged over the backup rows was still anchored 8 s later (anchor and focus connected, not collapsed) while the rows repainted in place.\n- The MutationObserver counts are per changed row (events B_en_select, B_en_select_after8s).\n\nClose and reopen on tgtC (backups8, 8 backups), twice with the dialog closed 5 s each time:\n- The same run came back with 8 rows, never doubled; the row counts seen were only 0 or 8.\n- The dialog was blank for about 80–94 ms and fully drawn by 234–251 ms.\n- Stage 4 never read 'could not be read'.\n\nF5 reload:\n- The same run was found, with 8 rows.\n\nThroughout: max 1 bar, 0 animationstart events, overlap 0 px (C_reopen1, C_reopen2, C_after_reload; shots C-reopen1-en.png, C-reopen2-en.png, C-after-reload-en.png).",
+    "locales": "en"
+   },
+   {
+    "id": "I6",
+    "verdict": "pass",
+    "evidence": "K=3 staging (B_en):\n- Staged items show the amber var(--warn) dot and 'Merged — not yet saved'.\n- The header reads 'Merged, not yet saved: 1 — written to your corpus at the next checkpoint, one every 3 backups.', then ': 2', as plain text with overlap 0 px.\n- At the third item all three turned var(--ok) 'Done' together, and stage row 2 read '3 of 4 backups'.\n\nStage 4's 'N left':\n- '4. Re-index the imported articles — 3 600 articles left to re-index' (en, fr, 375), with a var(--warn) dot while idle.\n\nEvents B_en_staged1, B_en_staged2, B_en_three_done; shots B_en-staged1.png, B_en-three-done.png.",
+    "locales": "en, fr, ar"
+   },
+   {
+    "id": "I7",
+    "verdict": "pass",
+    "evidence": "When all backups were done:\n- Both ✓ lines appear: 'The import files can be removed…' and 'Safe to close or update the app…'.\n- Row 3 went from 'not started' to 'done' with no fabricated number. Its 'running' paint was not caught in six runs; see incidental.\n\nWith the dialog open at the end:\n- The result block appeared, and there was no toast.\n- 'Indexing continues in the background: 4 800 article(s) still to index'.\n- Stage row 4 counted 'resuming re-index — 0 … 4 600 of 4 800', then '— complete', and the third line became '✓ Analytics are complete — every imported article is indexed.' (B_en_open_after_end).\n\nWith the dialog closed before the end (tgtC):\n- Exactly one 'Import complete.' toast (C_toasts_dialog_closed).\n\nReopen:\n- The fresh page: 'Last import · … · 4 800 articles · open report' plus stage 4 alone, counting.",
+    "locales": "en"
+   },
+   {
+    "id": "I8",
+    "verdict": "pass",
+    "evidence": "The stage-4 link opens /tasks, titled 'Task manager · FOOS'. Under AI & ANALYSIS it lists a running job:\n- 'finishing the re-index of imported articles'\n- 'import 1 (1 200 articles)'\n- '1 000 / 4 800 items · 21%', growing to 1 400.\n\n#net-plane has fill currentColor with the title 'Offline (airplane mode)…', and #health reads 'healthy'. /api/system/network: online false.\n\nEvent I8_tasks; shots I8-taskmanager-en.png.",
+    "locales": "en, fr, zh"
+   },
+   {
+    "id": "I9",
+    "verdict": "pass",
+    "evidence": "Shutdown and relaunch:\n- Shut down with the #app-shutdown power button at 1 700/4 800 re-indexed (3 100 pending).\n- The relaunch booted locked and was unlocked through #pw.\n\nAfter unlock:\n- The task manager showed the auto-resumed re-index 9.4 s later ('import 2 (700 articles) · 0 / 3 100 items').\n- It completed: done 3 100/3 100, remaining 0.\n- The Import dialog showed stage 4 only: 'resuming re-index — 200 of 3 100 articles', then 400, with trust row none and folder ''.\n- The API's search_index read 'done'.\n- The search palette found 'Batch r elections 0 — en'.\n\nEvents I9_tasks, I9_import_dialog_0s/6s, I9_reindex_end, I9_search; shots I9-*.png.",
+    "locales": "en"
+   },
+   {
+    "id": "I10",
+    "verdict": "pass",
+    "evidence": "Settings history:\n- Four rows, each '… · restore · <folder label> · 1 200 articles · open report'.\n\nOpen report (md):\n- '# Import report (oo-backup-3) / Source: `202609261809_OpenOmniscience_Backup` (`/tmp/claude-0/rewalk2/out/I/sets/backups/…`) / Item 4 of the 4 in one import… / **1,200 new articles** / ## Per-table breakdown'.\n\nThe Last import line sums the run: 4 800.\n\nEvents I10_history, I10_last_line, I10_report; shots I10-history-en.png, I10-report-en.png.",
+    "locales": "en"
+   },
+   {
+    "id": "I11",
+    "verdict": "pass",
+    "evidence": "Runs with the dialog open in fr (backups), ar (backups_cum) and zh (backups_cum, plus a re-import of backups) translate:\n- The stage titles, the three statements and the header.\n- The state words:\n  - fr: Terminé / en cours\n  - ar: قيد التشغيل / في الانتظار / مدمج — لم يُحفظ بعد / تم\n  - zh: 已完成 / 已于 … 合并 — 没有可导入的新内容\n- The Last import line, the K sentence, the hovers and the result block.\n- The task manager title: 'Gestionnaire de tâches · FOOS' / '任务管理器 · FOOS'.\n\nar is RTL: the dots sit on the right, and the labels stay bdi-isolated.\n\nA live top-bar switch fr → ar → zh → en repainted the Settings K label, hint, hover and history at once, without navigation (events L_*_live_settings). Switching back to en gives English.\n\nThe junk scan found 0.\n\nOne untranslated token, the report kind 'restore' in the history rows, is pre-existing; see incidental.",
+    "locales": "fr, ar, zh, en"
+   },
+   {
+    "id": "I12",
+    "verdict": "pass",
+    "evidence": "Setting K=1 saved ('Preferences saved.'). The queue checkpoint read k=1, and the dialog sentence changed to 'Every backup is verified and written to your corpus as soon as it finishes.'\n\nSetting 3 again restored the K=3 sentence (events I12_k1, I12_dialog_k1, I12_k3, I12_dialog_k3).",
+    "locales": "en"
+   },
+   {
+    "id": "I13",
+    "verdict": "pass",
+    "evidence": "(a) Verify during a running 1-backup import:\n- Refused with the toast 'An import is running — verify the backup once it has finished.'\n- No request to /v2/volumes/ was seen (I13a_http resp []).\n- The rows kept updating: '1 of 1', row 3 'done', stage 4 counting 200 → 1 000 of 1 200.\n\n(b) SIGKILL while search_index was 'running' and the item was 'done'. After the relaunch (locked) and unlock:\n- The dialog has no red 'start it again' line: note '', rows [].\n- Stage 4 reads 'resuming re-index — 0 of 1 200 articles'.\n- The API shows search_index 'interrupted', which is the known deferred stage-3 item.\n- The history row for 202609261817_OpenOmniscience_Backup is present.\n\nEvents I13a_*, I13b_*.",
+    "locales": "en"
+   },
+   {
+    "id": "I-375",
+    "verdict": "pass",
+    "evidence": "375x800 at DSF 2 on tgtE; navigation went through the real #hamburger (E2_nav).\n- Home, Settings/Data & backup, history and the task manager all have page overflow 0.\n- #ux-imp-src is 199 px wide and the buttons wrap. The dialog is 343 px, with 0 overflowing elements when fresh, filled, running and reopened.\n- The result block's plan tables sit inside overflow-x:auto boxes (scrollWidth 433 vs clientWidth 279), which is by design (Y1).\n- Stage and backup rows stay inside the dialog.\n\nShots E-375-*.png, E2-375-*.png, E_375-first.png.",
+    "locales": "en"
+   }
+  ],
+  "items": [
+   {
+    "id": "I-1",
+    "verdict": "fixed",
+    "evidence": "Reproduced exactly: tgtD (4 distinct backups imported first, 6 416 sources), then backups_cum with the dialog open in zh; the same again in ar on tgtB, and in en on tgtE (375).\n\nThe per-item snapshots are unchanged (reports restore-…-5..8.json, B_ar_reports_sq.json): local_verdict_kept 6400, 6422, 6418 and 14.\n\nThe aggregate no longer sums them. The source-qualification part now reads:\n- zh: '✓ 已添加的合格来源：25 · 到达时已被取消资格：1 / 此处已判定的来源按每个备份分别计数，见下方：同一次运行中的备份相互重叠，因此这些数目不相加。 · 判定引擎：…'\n- ar: 'تُحصى المصادر التي سبق الحكم عليها هنا لكل نسخة احتياطية على حدة…'\n- en: 'Sources already judged here are counted per backup, below: the backups of one run overlap, so those counts are not added up.'\n\nNo '19 254' appears anywhere in the result block (D_zh_register has_19254=false). Each backup's own <details> carries its figure: '此处已判定并保留：6 400', '…6 422', '…6 418' and '…14' (D_zh_details_textContent). Each is at most the corpus's 6 446 sources (paged /api/sources/: 6 416 before, 6 446 after).\n\nShots D_zh-result-block.png, B_ar-result-block.png.",
+    "id_note": null
+   },
+   {
+    "id": "I-2",
+    "verdict": "fixed",
+    "evidence": "The same backups_cum runs. 'Judged by' now words the sentinel:\n- zh: '判定引擎：引擎未记录 (1), v1 (25)'\n- ar: 'حُكم عليها بواسطة: محرك غير مسجَّل (1), v1 (25)'\n- en: 'Judged by: engine not recorded (1), v1 (25)'\n\nThe raw token 'unrecorded' is absent from the zh result block (D_zh_register has_unrecorded=false) and from the en and ar texts (events D_zh_result_block, B_ar_result_block, E2_summary_text). The real version v1 stays as data."
+   },
+   {
+    "id": "I-3",
+    "verdict": "fixed",
+    "evidence": "In ar, on #ux-imp-src: dir attribute 'ltr', computed direction ltr, text-align start, while html dir is rtl. #ux-dest also reads dir ltr.\n- '/mnt/backup' renders with the slash at the left (shots/i3-ar-src-short-blur.png).\n- A long path typed with a trailing slash reads left to right, with the caret end visible: '…e-0/rewalk2/out/I/sets/backups_cum/' (i3-ar-src-long_slash-typed.png).\n- After blur, the same path shows from its start, '/tmp/claude-0/rewalk2/out/I/sets/bac…', with scrollLeft 0 (i3-ar-src-long-blur.png).\n- The leading slash no longer moves to the end.\n- The folder picker's path line #fp-path also has dir ltr and computed ltr (i3-ar-picker.png).\n\nEvents I3x_ar_*."
+   },
+   {
+    "id": "I-4",
+    "verdict": "fixed",
+    "evidence": "tgtB, ar run with the dialog open, measured on the label line box nearest the dot.\n- Every stage row and every per-backup row has a gap of 6 px: dot left edge 973, label right edge 967, dot margin-left 6px, margin-right 0px, margin-inline-end 6px. This held at the start and at the end.\n- The en run on the same build has 6 px too: dot right edge 467, label left edge 473.\n\nEvents B_ar_gap_first/B_ar_gap_end and B_en_gap_first/B_en_gap_end; shots B_ar-stages-first.png, B_ar-rows-end.png (DSF 2), with a visible space between each dot and '1.' or the folder name."
+   },
+   {
+    "id": "I-5",
+    "verdict": "fixed",
+    "evidence": "en, tgtA: I scanned sets/backups (trust row block, src set, checklist and passphrase shown), closed without running, and reopened.\n- At 1.5 s and 5.5 s after the reopen: trust row display 'none', #ux-imp-src '', checklist '', status '', pass-row 'none', Run disabled (events I5x_after_scan, I5x_reopen_1_5s, I5x_reopen_5_5s; shots i5-after-scan-en.png, i5-reopen-after-scan-en.png).\n- After a FINISHED import the reopen also shows trust 'none' and src '' (I5b_reopen_after_import, I9_import_dialog_6s, B_en_reopen, D_zh_reopen)."
+   },
+   {
+    "id": "I-6",
+    "verdict": "fixed",
+    "evidence": "/api/jobs now returns detail_i18n 'import {batch} ({articles})' with detail_vars {batch:'2', articles:{i18n:'{n} articles', vars:{n:1200}}} (I6x_en_jobs_api, D_*_tasks api).\n\nThe task manager during the stage-4 drain, reached through the stage-4 link:\n- fr: 'fin de la réindexation des articles importés / importation ⁨1⁩ (1 200 articles) / 500 / 4 800 éléments · 10%', with 1 200 grouped by a narrow no-break space (shots/D_fr-taskmanager.png).\n- zh: '正在完成已导入文章的重建索引 / 导入 ⁨5⁩（773 篇文章）', then '导入 ⁨6⁩（160 篇文章）' (D_zh-taskmanager.png).\n- en: 'import 1 (1 200 articles)'."
+   },
+   {
+    "id": "I-7",
+    "verdict": "fixed",
+    "evidence": "Stage row 4's dot now follows the re-index status. B_en kept the dialog open through the whole 78 s drain (B_en_open_after_end):\n- var(--accent) = rgb(47,111,179) at every sample while it read 'resuming re-index — 0 … 4 600 of 4 800' (rx running).\n- Then var(--ok) = rgb(46,139,87) once it read 'complete' (rx done, backlog 0).\n- var(--warn) while idle with a backlog ('3 600 articles left to re-index', walkA1 I7_open_after_end_seq).\n- var(--muted) only for 'not started'.\n\nOn reopens mid-drain the dot is accent too (I7x_reopen_row4dot, D_fr_reopen, D_zh_reopen). Shots B_en-row4-running.png, B_en-row4-drained.png."
+   },
+   {
+    "id": "I-8",
+    "verdict": "fixed",
+    "evidence": "zh, backups_cum run with the dialog open (D_zh_result_block; shots/D_zh-result-block.png):\n- '你的语料库新增了 933 篇文章，来自 30 个新来源，涵盖 4 种新语言。' uses full-width commas.\n- '数据库记录（所有类型）：11 185' uses full-width parentheses.\n- The heading reads '你的语料库是如何增长的'.\n- The checklist wrapper now prints '（加密卷 — 追加式，不会覆盖你已有的任何内容 · 15 个卷 · 4 个备份集）'.\n\nCounting in the whole dialog's innerText: 0 × 您 and 8 × 你; the result block has 0 × 您 and 6 × 你 (D_zh_register)."
+   }
+  ],
+  "incidental": [
+   "Settings → Data & backup import history rows print the report kind raw, '· restore ·', in fr, ar and zh (for example '27 septembre 2026 à 19:03 · restore · …'). The old re-walk's data shows the same; it was never listed. Lead: src/static/app-backup.js:2271 `bits.push(... esc(r.kind) ...)`.",
+   "The result block's 'Judged by' list joins with a Latin ', ' and half-width '(n)' inside zh and ar sentences: '判定引擎：引擎未记录 (1), v1 (25)' and 'حُكم عليها بواسطة: محرك غير مسجَّل (1), v1 (25)'. Lead: the engines join in app-backup.js, about line 2828 `.join(\", \")`.",
+   "zh result block: '每份备份带来了什么 （柱形相对于 4 项中最大的一项）' has an ASCII space before the full-width parenthesis.",
+   "zh: 您 remains right beside the dialog, in the Settings K hover (#set-checkpoint-k title '写入您的语料库') and in the task manager's offline title ('系统会先请您确认'). This is the zh-wide 您/你 pass that I-8 left as a separate decision.",
+   "Stage row 3 was never caught painting 'running' in six sampled runs: it went from 'not started' to 'done', because the search-index merge finished inside one poll. This is timing, not a defect; there was no fabricated number."
+  ],
+  "page_errors": [],
+  "http_errors": [
+   "No HTTP response at or above 400 was recorded in any walk, first launches included (errors_A1, A2, A3, B, C, D, E and E2.json; no http_error events). The only console errors were 6 × 'Failed to load resource: net::ERR_CONNECTION_RESET/REFUSED'. They came from the open page's polls during the deliberate power-button shutdown (I9) and the deliberate SIGKILL (I13b), while the server was down. They are expected."
+  ],
+  "summary": "Row I passes on build 9eb10528, and all 8 re-walk items (I-1 to I-8) are fixed.\n\n**Setup.** Five encrypted throwaway folders, each created through the real first launch. Every boot read \"locked\", every unlock went through #pw/#btn-unlock, and doctor reported \"encrypted\". Airplane mode was on throughout and no consent popup arose on this path.\n\n**Steps.** 13 of 14 pass. I1 is not measurable here because it needs the operator's real install; on the throwaway, the reopen shows the fresh page.\n\n**Items:**\n- **I-1:** the result block no longer sums the per-item snapshots (6 400 + 6 422 + 6 418 + 14 were once shown as 19 254). It states that the per-backup counts are not added up, and each backup's detail carries its own figure, which is at most the 6 446 sources.\n- **I-2:** 'unrecorded' now reads 'engine not recorded' (en), '引擎未记录' (zh) and 'محرك غير مسجَّل' (ar).\n- **I-3:** #ux-imp-src has dir=ltr in ar; paths read left to right, with the slash on the left. #fp-path is ltr as well.\n- **I-4:** the dot-to-label gap is 6 px in RTL and in LTR, for both the stage rows and the per-backup rows.\n- **I-5:** a reopen after a scan, or after a finished import, hides the trust row and clears the folder.\n- **I-6:** the task-manager detail is a keyed frame: 'importation 1 (1 200 articles)' in fr and '导入 5（773 篇文章）' in zh.\n- **I-7:** stage 4's dot is accent while the re-index runs, ok when it is complete, and warn when idle with a backlog.\n- **I-8:** the zh result block uses full-width punctuation and 你, with 0 × 您 in the dialog.\n\n**Errors.** No page errors, and no HTTP errors at or above 400. The only console errors were the expected connection errors during the deliberate shutdown and kill.\n\n**Incidental.** Five minor notes are recorded, none in scope: the raw 'restore' kind in the history rows, Latin-comma joins in 'Judged by', a stray space in a zh heading, 您 outside the dialog, and row 3's 'running' paint too brief to catch."
+ },
+ "recheck": null
+}

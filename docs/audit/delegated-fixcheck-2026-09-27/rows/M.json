@@ -1,0 +1,172 @@
+{
+ "row": "M",
+ "walk": {
+  "row": "M",
+  "environment": "Build: the read-only worktree /tmp/claude-0/rewalk2/tree at 9eb10528. `git --no-optional-locks status --porcelain` was empty before and after the walk, and nothing in it was edited. Every server ran from that folder with `python -c \"from src.api.main import main; main()\"` (the /home/user/Open-Omniscience/.venv interpreter), with the proxy variables, OO_DB_PASSPHRASE, OO_DB_PLAINTEXT, OO_EXTRACT_LEMMA and OO_NO_SCHEDULER unset and PYTHONDONTWRITEBYTECODE=1 (launcher: /tmp/claude-0/rewalk2/out/M/boot.sh). Port 9612 throughout, one server at a time. Each server was stopped by PID only, after its /proc environ OO_DATA_DIR was checked (stop.sh; PIDs 8026, 12831, 13322 which exited by the in-app shutdown, 13658, 13906). No other walker's server was touched.\n\nSeed: a fresh seed on THIS build, not a copied folder, so there was no old-build briefing_cache.json. I ran scripts/ui_clickthrough_seed.py from the worktree with the default STATE C (453 articles, 2 254 keywords), with OO_DB_PASSPHRASE=walk-pass-2026, OO_DB_PLAINTEXT unset, and OO_EXTRACT_LEMMA=0 at seed time only, so the fold has work to do. That gave data1; data1-pristine is a copy taken before any boot, and data2, data3 and data4 are copies of it.\n- data1: M1–M10, the boot race, and the 375 px checks.\n- data2: M11 backup, fold, Pause/Resume from /tasks, and M-7.\n- data3: M11 shutdown → restart → Continue, and M-7 after a restart.\n- data4: M-14 during a running fold, and the 375 px consent popup.\n\nEncryption: every open_omniscience.db has no «SQLite format 3» header. Every boot ran with neither variable set. /api/system/lock-state read {state: locked, plaintext_mode: false} before the form and unlocked-encrypted after unlocking through the real #pw / #btn-unlock form. The export reports «corpus encrypted at rest inside the backup».\n\nNetwork: the boot left the app offline ({online:false}). I also POSTed /api/system/network {online:false} after every unlock. online:false was re-read after every consent popup (all closed with «Stay offline», 12 idle and 6 during a running fold on top of the M9 opens), after the external-link confirm (dismissed), after Refresh, and after the /tasks Resume. «Go online» was never pressed, in the popup or in the coach. Zero off-host requests in any run.\n\nBrowser: Playwright Chromium at /opt/pw-browsers/chromium, headless, args --disable-background-networking --disable-component-update --no-proxy-server, proxy variables unset.\n\nPasses: en, fr, ar (rtl) and zh at 1440x950; ja for the ring panel; en and fr at 375x800. Boot-race probes delayed /static/locales/fr.json by 2.5 s and 3.0 s through a Playwright route (the route hits are logged in g.json).\n\nScripts, JSON and screenshots: /tmp/claude-0/rewalk2/out/M/ (a–j .py/.json/_log.json, shots/).",
+  "steps": [
+   {
+    "id": "M1",
+    "verdict": "pass",
+    "locales": "en",
+    "evidence": "(a) «Fold report (.json)» before any fold opened /api/insights/keyword-fold-job/report showing only {\"detail\":{\"code\":\"no-report\"}} (HTTP 404) (shots/M1a-noreport-en.png).\n(b) The confirm reads in full: «Fold keyword forms now? Older keywords are filed under the base form new articles already use, so “studies” and “study” become one keyword. Phrases, names and keywords your families or groups use are left as they are. It runs in the background and can be paused from the task manager. A fold cannot be undone.»\n(c) #kw-fold-status went «Keywords checked: 0 of 2 254 (0%)» → «286 of 2 254 (12.7%) · Mentions moved: 1 349» → «1 061 of 2 254 (47.1%) · Mentions moved: 5 891» and ended at 13.9 s with «Keywords folded: 331 · mentions moved: 7 041 · keywords whose language changed: 10» (a.json M1c_seq; shots/M1-foldline-en.png). No raw error text, no page errors."
+   },
+   {
+    "id": "M2",
+    "verdict": "pass",
+    "locales": "en",
+    "evidence": "The report opened (fold_report_first.json) with every block the step names:\n- fold {keywords_folded 331, mentions_moved 6863, mentions_merged 178, skipped_phrase 887, unchanged 1174, …}.\n- largest_folds: 50 {from,to,lang,mentions} entries, all same-word inflections (autorités→autorité fr, registros→registro es, districts→district fr, berichteten→berichten de); no fila→filar.\n- curated_left_unfolded_sample [art, film, tennis, culture, force, statute, temperature].\n- language {relanguaged 10, votes_from_mentions 31441, votes_from_articles 0, complete: true}.\n- lemmatiser.languages exactly [de,en,es,fr,id,it,nl,pt,ru], plus a plain-language method.\n\nThe second fold showed «Setting each keyword's language from its mentions…» and ended «Keywords folded: 0 · mentions moved: 0 · keywords whose language changed: 0» (a.json M2_seq; shots/M2-second-fold-en.png, fold_report_second.json largest_folds [])."
+   },
+   {
+    "id": "M3",
+    "verdict": "pass",
+    "locales": "en",
+    "evidence": "(1) Corpus landscape (Themes 16):\n- Foreign words carry grey full-name tags: nouvelles «in French», registros/semana «in Spanish and Portuguese», eleitores «in Portuguese», избирателей/избирательные «in Russian». No codes.\n- regional, district and local are untagged; the families transport ·3 and budget ·5 are untagged by design.\n- 0 clipped and 0 wrapped tags; contrast 5.4:1.\n- Clicking the tagged chip «nouvelles in French» now explores it: «Resolved to nouvelles in French Term · 109 mentions in 55 articles», chart n=16 (shots/M3-landscape-click-nouvelles-en.png). Clicking «избирательные in Russian» gives «… Term · 56 mentions in 28 articles».\n\n(2) Analysis window Keywords (opened from Trends → Top «избирателей»): 30 chips tagged «in Russian» (or «in Russian and English»), tag contrast 5.19:1 (shots/M3-an-keywords-en.png).\n\n(3)/(4) On the throwaway: Families Kind=all reads «A-Z Entity · 1 mentions» and Entity family curation reads «No families with a decision to review…», both expected there (shots/M3-families-en.png).\n\nNot measurable here: the REAL-install half of (3)/(4)."
+   },
+   {
+    "id": "M4",
+    "verdict": "pass",
+    "locales": "fr, ar, zh; ja for the ring panel",
+    "evidence": "Live switch with the top-bar switcher, no reload:\n- The Corpus landscape, the landscape chip hovers and the Analysis window Keywords repaint in fr, ar and zh.\n- For all three, the no-reload tag lists equal the post-reload lists exactly (b.json; programmatic comparison True for both surfaces and for the chip titles).\n- fr: «logiciel traduit de : anglais et espagnol Q7397», «избирателей en russe».\n- ar (dir=rtl): «برمجيات مترجم من لغة: الإنجليزية والإسبانية», «اللغة: الروسية».\n- zh: «软件 译自：英语和西班牙语», «语言：俄语».\n- After reload: 0 clipped or wrapped tags and horizontal scroll 0 in every locale (shots/M4-landscape-*-{fr,ar,zh}.png, M4-an-*.png).\n\nRing panel: fully translated in fr, ar, zh and ja («470 concepts sans anneau …», «470 مفهومًا بلا حلقة …», «470 个概念没有语义环 …», «470 件の概念にリングがありません …»), with no overflowing element (shots/M4-ringpanel-*.png).\n\nReload with a slow locale (the old boot race): after the 3 s fr.json delay the landscape and Home repaint to French («regional en anglais, allemand…», «Tendances actuelles : 投票率 en chinois…») (g.json; shots/M9-bootrace2-*.png). 3 natural fr reloads also had no English frames."
+   },
+   {
+    "id": "M5",
+    "verdict": "pass",
+    "locales": "fr",
+    "evidence": "(a) Hovers, landscape and Analysis window:\n- The logiciel tag bubble shows «Traduction vérifiée (concept translangue). — Original: software — Mentions par langue : anglais 36 · espagnol 27 … — Toutes langues confondues : anglais 36 · espagnol 27 · chinois 27 … — Wikidata: Q7397» (the ring members with counts are present). It is stable at 60, 200, 500 and 900 ms in the Analysis window.\n- An untranslated tag shows «Non traduit — affiché dans sa propre langue. — Langue: russe».\n- Tab-focusing the logiciel chip shows the stats line plus the tier text (c.json kbd_bubble_logiciel).\n\n(b) Q7397 opens the local preview: «Construit uniquement depuis votre base locale — aucun appel réseau.», and the outbound link's visible text is https://www.wikidata.org/wiki/Q7397.\n- Clicking the link raised «Ouvrir ce lien externe dans votre navigateur ? …», which I cancelled: 1 page, still online:false.\n- The chip's own action did not fire: 1 analysis tab both before and after; landscape Q7590 left the Resolved line «semana» unchanged (shots/M5b-linkpreview-fr.png, M5b-landscape-qid-fr.png).\n\n(c) «✦ Traduire le reste (IA, provisoire)» → toast «L'IA locale est hors ligne — démarrez Ollama pour des traductions provisoires.», with no airplane-mode advice (shots/M5c-ai-fr.png).\n\nThe tentative rung itself is not measurable here (no Ollama)."
+   },
+   {
+    "id": "M6",
+    "verdict": "pass",
+    "locales": "fr, zh",
+    "evidence": "Chip and sense buttons (fr, Explore election → ⊞ Corpus → Mots-clés):\n- The chip reads «election Plusieurs sens 20»; the tag hover is «Non traduit — … Langue: anglais».\n- The sense buttons sit outside the chip (chip ends x=369.7, senses start x=374.9): «élection (election)» [«Concept: election»] and «élection (public election)» [«Concept: public election»] (shots/M6-senses-fr.png, M6-senses-crop-fr.png).\n\nPicking a sense (c2.json):\n- «public election» → URL ?sense=election%3Apublic-election#analyze.\n- Articles go from «election désigne plusieurs concepts…», 20 articles, to «election : recherche du concept « public election », que vous avez choisi…», 216 articles.\n- «Afficher tous les sens» restores the picker.\n\nzh, without reload and after one: «多种含义», «election | 概念: election», «選舉 | 概念: public election» (shots/M6-senses-zh-*.png)."
+   },
+   {
+    "id": "M7",
+    "verdict": "not-measurable-here",
+    "locales": "fr, ar, zh",
+    "evidence": "The synthetic corpus produces no rising-family Lead: Home in fr, ar and zh shows 18 Lead titles and none is «… est en hausse» or its equivalent (d.json home_rising = [] in every locale). The step needs a REAL install.\n\nSeen on the way: every Home title is translated, including the four the re-walk found English:\n- fr: «3 sources, une seule origine : wire-agency.example», «À travers le temps : ce jour-là, les années passées», «Votre régime de lecture repose sur quelques sources», «1 source candidate attend votre examen».\n- ar and zh: the equivalents (shots/HOME-fr.png, HOME-ar.png, HOME-zh.png)."
+   },
+   {
+    "id": "M8",
+    "verdict": "pass",
+    "locales": "fr (Explore also ar, zh; Top list en/fr at 375)",
+    "evidence": "Tag present on every keyword surface (d.json fr_M8):\n- (a) Home «Tendances actuelles» 4/4 («投票率 en chinois»).\n- (b) Trends «Rising — three windows» 12/12 and «Top» 20/20 («избирателей en russe»). The «Rising» bar list is empty («Rien pour l'instant — indexez le corpus.»), as in earlier walks. The Top tags are 20/20 fully visible at 1440 and at 375 px, en and fr (e.json, e2.json).\n- (c) Explore: Resolved line «Résolu en избирателей en russe Terme · 56 mentions dans 28 articles». The mind map and word cloud tag every node (13/13 for избирателей «en russe»; software «código en espagnol», «errors en espagnol et anglais», «programmation traduit de : espagnol»). The one untagged node is the merged ring row «health» (members salud + health, listed in its hover), by design. Shots EX-*.png.\n- (d) Analysis Mindmap SVG («районах en russe», «logiciel traduit de : anglais et espagnol»).\n- (e) Super-groups: ring rows untagged by design.\n- (f) Observatory: galaxy names, by design.\n- (g) Reader → Mots-clés: «合作社 en chinois», «serveur informatique traduit de : chinois» (shots/M8g-reader-keywords-fr.png).\n- (h) Bulletin: its own top-level Advanced fold (…uninstall, bulletin; no parent). The review «Récits» has 12/12 terms tagged «en russe». The document's «Couverture par pays» lists read «избирателей (en rus) 4 (2 art.)» (shots/M8h-bulletin-review-fr.png, M12-bulletin-apercu-fr.png)."
+   },
+   {
+    "id": "M9",
+    "verdict": "pass",
+    "locales": "en; popup also fr, ar, zh; 375 px en",
+    "evidence": "Panel and Refresh:\n- The caveat is visible without hovering, colour rgb(138,77,10): «These rings come from Wikidata and nobody reviews them … a hand-curated ring always wins … do not delete the whole of it.»\n- Gap line: «470 concepts have no ring · two Wikidata requests each, one request every 10 seconds», with pills German·60 … Chinese·50 and no time estimate.\n- The Load hover reads «Sends one request per 10 seconds to www.wikidata.org … Refused while airplane mode is on.»\n- Refresh → online:false.\n\nConsent popup:\n- It names «Load keyword translations from Wikidata (one request every 10 seconds, over your transport)».\n- It lists «Keyword translations n=1» under «Only when you ask for it:», whose hover «www.wikidata.org — Transport: direct — protected mode is off…» is drawn inside dialog#net-consent.\n- It lists «Runs on every collection pass:» (Press collection n=9033 …) and shows only eth0: 192.0.2.2.\n- «Go online» stays disabled until the lanes render (f.json).\n\nAfter «Stay offline»: the popup closed, online:false, #ring-status empty, still 470 (shots/M9-consent-en.png, M9-consent-hover-en.png, M9-after-stayoffline-en.png).\n\nThe popup is translated in fr, ar and zh. At 375 px it spans 0–375, overflow-y auto, page horizontal scroll 0 (j.json; shots/M9-consent-375-en.png)."
+   },
+   {
+    "id": "M10",
+    "verdict": "not-measurable-here",
+    "locales": "",
+    "evidence": "This step requires pressing «Go online» and letting the app egress to www.wikidata.org, which this walk may not do. The consent gate up to that point is covered by M9."
+   },
+   {
+    "id": "M11",
+    "verdict": "pass",
+    "locales": "en; task manager also fr",
+    "evidence": "Backup and running fold (data2):\n- Settings → Data & backup → «Export / Back up…» ended «Verified — all 4 volumes were re-read and matched their checksums», 453 articles, corpus encrypted at rest inside the backup (shots/M11-backup-en.png).\n- /tasks (opened by #tm-open, title «Task manager · FOOS») showed «running Folding keyword forms into their base form Pause 123 / 2 254 keywords · 6%».\n\nPause and Resume:\n- Pause → «paused … Resume Cancel 164 / 2 254 keywords · 7%».\n- Resume → running, with no consent dialog and online:false; the fold ended 331 · 7 041 · 10.\n- Report: 200, language.complete true.\n\nShutdown probe (data3):\n- Shut down with the top-bar power icon at 122/2254 running (confirm «Shut down the app? …»).\n- Restart: locked, then unlocked through the form. /tasks shows «paused … Resume Cancel 314 / 2 254 keywords · 14%»; fr shows «suspendu · Regroupement des formes des mots-clés sous leur forme de base · Reprendre / Annuler», tab title «Gestionnaire de tâches · FOOS».\n- The fold button's confirm reads «Continue folding keyword forms? It resumes where it stopped. Keywords already checked: 314 of 2 254.» OK continued from 314 (17.3% → 43.1% → …) and ended «Keywords folded: 331 · mentions moved: 7 041 · keywords whose language changed: 10».\n- fold and largest_folds are identical to the uninterrupted run (i2.json; keyword_fold_report-data3-continued.json; shots/M11-*.png)."
+   }
+  ],
+  "items": [
+   {
+    "id": "M-1",
+    "verdict": "fixed",
+    "evidence": "The step-M3 click now works. Clicking the landscape chip «nouvelles in French» (hover «109 mentions — click to zoom in») renders «Resolved to nouvelles in French Term · 109 mentions in 55 articles», chart n=16, not 0 mentions (a.json after_click_trend; shots/M3-landscape-click-nouvelles-en.png)."
+   },
+   {
+    "id": "M-2",
+    "verdict": "fixed",
+    "evidence": "The live switch en→fr/ar/zh repaints the landscape and the Analysis window, identical to the reloaded view (b.json).\n\nReload with /static/locales/fr.json held 3.0 s (route hit, released at 3.5 s):\n- At 1.8 s the landscape and Home still showed the English frames.\n- By 9.8 s they had repainted to «regional en anglais, allemand…», «logiciel traduit de : anglais et espagnol», and Home «Tendances actuelles : 投票率 en chinois 2 mentions, contre 2 (période précédente)…» with French Lead titles (g.json; shots/M9-bootrace2-insights-fr.png, M9-bootrace2-home-fr.png).\n- The 2.5 s delay run in b.json is also fully French."
+   },
+   {
+    "id": "M-3",
+    "verdict": "fixed",
+    "evidence": "Every piece the re-check listed as still present is fixed:\n- Explore mind map: 13/13 nodes tagged for избирателей («en russe»), 17/18 for software; the 18th is the merged ring row «health», by design.\n- Word cloud: the same tags (d.json fr/ar/zh explore_*.mm_nodes, cloud_nodes).\n- Bulletin review «Récits»: 12/12 terms tagged «en russe».\n- Document «Couverture par pays»: «избирателей (en rus) 4 (2 art.)», «合作社 (en zho) 2 (1 art.)».\n- Trends Top tags: 20/20 fully visible at 1440 and 375 px.\n- The Explore hint, method, caveat and VADER caveat are translated.\n\nShots: EX-*.png, M8h-bulletin-review-fr.png, M8-top-375-en.png."
+   },
+   {
+    "id": "M-4",
+    "verdict": "fixed",
+    "evidence": "After a fresh fold on my own seed, all three spellings reach the live row:\n- /api/insights/trend?term=nouvelles → total 109, resolved {term: nouvelles, normalized: nouveau}.\n- term=nouvelle → 109; term=nouveau → 109.\n- Controls: registros → 83 (registro), районах → 55 (район), избирателей → 56 (избиратель), cooperativas → 27 (a.json api_trend_*).\n\nThe UI click reads «Resolved to nouvelles in French Term · 109 mentions in 55 articles»."
+   },
+   {
+    "id": "M-5",
+    "verdict": "fixed",
+    "evidence": "fr, ar and zh:\n- Explore mind map and word cloud: every keyword node carries its tier tag as data-i18n-dyn SVG text («очередь en russe», «código اللغة: الإسبانية», «ayudar 语言：西班牙语»), with the hover in <title>.\n- The Bulletin review «Récits» list is tagged.\n- The document's country-coverage lists carry «(en rus)» and «(en zho)».\n- The keyword «errors» stays «errors» with «en espagnol et anglais» and is not rewritten (d.json; shots/EX-mindmap-fr-software.png, EX-cloud-fr-ru.png, M8h-bulletin-review-fr.png)."
+   },
+   {
+    "id": "M-6",
+    "verdict": "fixed",
+    "evidence": "The kind pill on the Resolved line is translated: «Terme» (fr), «المصطلح» (ar), «词条» (zh), «Term» (en) (d.json kind_pill).\n\nThe four Home Lead titles are translated:\n- fr: «3 sources, une seule origine : wire-agency.example», «À travers le temps : ce jour-là, les années passées», «Votre régime de lecture repose sur quelques sources», «1 source candidate attend votre examen».\n- ar: «3 مصادر، أصل واحد: …», «عبر الزمن: …», «نظام قراءتك يعتمد على مصادر قليلة», «1 مصدر مرشّح بانتظار مراجعتك».\n- zh: «3 个来源，同一出处：…», «穿越时间：往年的今天», «你的阅读结构依赖少数来源», «1 个候选来源等待你审核».\n\nShots HOME-*.png."
+   },
+   {
+    "id": "M-7",
+    "verdict": "fixed",
+    "evidence": "Pause and Resume from /tasks (data2):\n- Pause → the Diagnostics line reads «Keywords checked: 164 of 2 254 (7.3%) · Mentions moved: 1 024 · paused».\n- After a page reload, opening Diagnostics on the paused fold shows the same paused line, not blank.\n- After Resume in /tasks the line follows within about 3 s («970 of 2 254 (43%)» → «1 777 of 2 254 (78.8%)») and ends «Keywords folded: 331 · mentions moved: 7 041 · keywords whose language changed: 10» (h.json diag_samples_after_tm_resume; shots/M7-diag-*.png).\n\nAfter a shutdown and restart with a paused fold (data3), Diagnostics on open reads «Keywords checked: 314 of 2 254 (13.9%) · Mentions moved: 1 795 · paused» (i2.json; shots/M7-diag-on-open-after-restart-en.png)."
+   },
+   {
+    "id": "M-8",
+    "verdict": "fixed",
+    "evidence": "Measured on en #trd-top: 20 rows, 20 tagged, 20 fully visible and 0 partial or hidden, at both 1440x950 and 375x800. The label is no longer nowrap/ellipsis (white-space normal, overflow visible) and the tag sits on its own line under the term. fr at 375: 20/20 full. Page horizontal scroll 0 (e.json, e2.json; shots/M8-top-1440-en.png, M8-top-375-en.png, M8-top-375-fr.png)."
+   },
+   {
+    "id": "M-9",
+    "verdict": "fixed",
+    "evidence": "Deterministic probe with fr.json held 3 s (g.json route_hits): the landscape tags, their hovers and Home «Trending now» are English-framed only while the locale is still in flight (1.8 s). After it loads they repaint to «en anglais…», «en russe», «logiciel traduit de : anglais et espagnol», «Non traduit — affiché dans sa propre langue…» and «Tendances actuelles : 投票率 en chinois 2 mentions, contre 2 (période précédente) — base trop mince pour diviser». The Home Lead titles repaint too («Source unique : …», «Réapparu après 338 jours : …»). 3 natural fr reloads had 0 English frames (b.json br_natural_reloads)."
+   },
+   {
+    "id": "M-10",
+    "verdict": "fixed",
+    "evidence": "fr, ar and zh, Explore избирателей and software (d.json): no English phrase remains in the hint, method, caveat, cloud line or framing caveat (english_phrases_found = [] in all 6 runs).\n- fr hint: «… Les branches partent du centre vers l'extérieur ; chaque feuille s'accroche à son apparenté le plus fort. Association PMI/cooccurrence, deux sauts … Association n'est pas causalité ; le PMI sur de petits échantillons est bruité.»\n- Cloud: «Vue nuage : ordonnée par poids, sans liens.»\n- VADER caveat: «Ce sont des SIGNAUX de cadrage mesurables … VADER est un lexique ANGLAIS…»; ar and zh are translated too.\n- Chart legend: «n=11 · mentions» (fr), «· إشارات» (ar), «· 提及» (zh)."
+   },
+   {
+    "id": "M-11",
+    "verdict": "fixed",
+    "evidence": "The chip-body hover is keyed and formatted:\n- fr: «83 mentions — cliquez pour zoomer», «famille de 3 : transport, transporte, النقل · 153 mentions — cliquez pour zoomer».\n- ar: «83 إشارة — انقر للتكبير», «عائلة من 3: …».\n- zh: «83 次提及 — 点击放大», «含 3 个词的家族：…».\n\nIt is the same after a live switch and after a reload (b.json; c.json ls_chip_body_hover; shots/M11-chipbody-hover-fr.png)."
+   },
+   {
+    "id": "M-12",
+    "verdict": "fixed",
+    "evidence": "fr UI, «Créer un brouillon» → «Brouillon créé.». The list's «Ouvrir» now opens …/20260926-OOS-weekly-640d795c.json/render?lang=fr&fmt=html, html lang=fr, «Bulletin hebdomadaire — du 2026-09-20 au 2026-09-26». This is the same document as «Relire» → «Aperçu» (d.json h_ouvrir vs h_apercu; shots/M12-bulletin-ouvrir-fr.png, M12-bulletin-apercu-fr.png)."
+   },
+   {
+    "id": "M-13",
+    "verdict": "fixed",
+    "evidence": "Bounding-box scan of the #mm-svg text of different nodes (label + tag), in fr, ar and zh: 0 overlapping pairs in every run.\n- Cloud: 13 nodes / 26 texts for избирателей, 18 / 35 for software.\n- Mind-map view: the same, 0 pairs.\n\nShots EX-cloud-fr-ru.png (words and tags spaced, none stacked) and EX-mindmap-fr-software.png."
+   },
+   {
+    "id": "M-14",
+    "verdict": "fixed",
+    "evidence": "The lanes box and #net-consent-ok were polled every 25 ms from the click.\n\nIdle (12 opens): the dialog opens with «…» and Go online DISABLED. It fills and enables together at 270–349 ms, with 0 samples where «…» and an enabled button coexisted (f.json).\n\nDuring a running fold on data4 (6 opens, fold state running every time):\n- The first open filled at 2 284 ms, Go online disabled until then. Its lanes read «Runs on every collection pass: …» and list «Could not read whether these are on: Chain of custody n=3» rather than «…» or «off» (shots/M14-slow-busy0.png).\n- The others filled at 274–957 ms.\n- 0 violations; every popup was closed with Stay offline and online stayed false (f_busy.json)."
+   },
+   {
+    "id": "M-15",
+    "verdict": "fixed",
+    "evidence": "/api/insights/graph for software still returns the node label «errors». The Explore mind map and cloud render it as «errors» with the tag «en espagnol et anglais» (fr), «اللغة: الإسبانية والإنجليزية» (ar) and «语言：西班牙语和英语» (zh), never «erreurs», «أخطاء» or «错误». Every mm-node carries data-i18n-dyn (d.json mm_nodes dyn=True; shots/EX-mindmap-fr-software.png)."
+   },
+   {
+    "id": "M-16",
+    "verdict": "fixed",
+    "evidence": "#mm-levels at en 1440: «Keywords» scrollWidth 113 = clientWidth 113; «Families» 91/91; «Super-groups» 130/130; one line each, 43 px high (shots/M16-levels-en-1440.png shows «Keywords» whole).\n\nAlso measured:\n- fr 1440: «Mots-clés» 111/111, «Super-groupes» 139/139.\n- en and fr at 375: every button scrollWidth = clientWidth (the row wraps), page horizontal scroll 0 (e2.json)."
+   }
+  ],
+  "incidental": [
+   "Bulletin document (fr, Aperçu → «Couverture par pays»): each country's reading line «covered locally only — no source elsewhere named it in this period» and the country names «China (CHN)», «Russia (RUS)» stay English, and the language tags are ISO 639-3 codes «(en rus)», «(en zho)» rather than names. The document itself discloses «104 des 148 phrases … disposent d'une traduction». Lead: src/bulletin/render.py:734-790 (_coverage_blocks: T.t(row.get('reading')), row name).",
+   "Consent popup, first open right after entering Settings on an idle server (no fold): the /api/custody/settings read missed the 2 s budget, so «Chain of custody n=3» was listed under «Could not read whether these are on» for the whole time the popup was open (shots/M9-consent-hover-en.png). Later idle opens read it in about 300 ms, and a curl of it takes 0.16 s. The popup is honest per the M-14 fix; the slow custody read is already a recorded lead in OPEN_QUEUE.",
+   "Picking a sense in the Analysis window Keywords subtab switches the window to «Vue d'ensemble» (c2.json after_click.active), so the pressed state is not visible where the user clicked. The re-walk noted the same.",
+   "fr Insights → Super-groups lists the ring concept «flood» in English, untagged, among French labels (séisme, zone humide, santé publique) (d.json fr_M8.e_supergroups). Possibly a missing fr label in the ring data; super-group rows are untagged by design."
+  ],
+  "page_errors": [],
+  "http_errors": [
+   "404 GET /api/insights/keyword-fold-job/report {\"detail\":{\"code\":\"no-report\"}}: expected for M1(a), before any fold (a_log.json console error; server1.log).",
+   "net::ERR_CONNECTION_REFUSED ×8 on http://127.0.0.1:9612/#settings: expected, after I deliberately pressed «Shut down the app» for the M11 resumability probe (i1_log.json).",
+   "503 GET /api/system/network from my own curl while the server was still locked, before unlock (server1.log): expected.",
+   "No other HTTP response >= 400 in any server log, no Traceback, and zero requests left 127.0.0.1."
+  ],
+  "summary": "Row M passes on 9eb10528: all 16 of its items are fixed, and every step that can be walked in this sandbox passes. The run used a fresh encrypted seed, locked at boot and unlocked through the form, in airplane mode throughout.\n\nSteps:\n- Pass: M1, M2, M3, M4, M5, M6, M8, M9, M11.\n- Not measurable here: M7 (the synthetic corpus has no rising Lead; it needs a real install) and M10 (it needs «Go online»).\n- M3's real-install half, parts (3) and (4), also needs a real install.\n\nThe fold:\n- The no-report 404, the confirm and the progress line all behave, and the report is complete.\n- A second run gives 0 · 0 · 0.\n- Pause and Resume from /tasks work with no consent prompt.\n- After a shutdown, restart and «Continue» from 314, the result is identical (331 · 7 041 · 10).\n\nItems, all fixed:\n- M-1 and M-4: «nouvelles» resolves to 109 mentions.\n- M-2 and M-9: the boot race repaints once a delayed locale lands.\n- M-3 and M-5: the mind map, word cloud, bulletin stories and country lists are tagged.\n- M-6: the «term» pill and the four Home titles are translated in fr, ar and zh.\n- M-7: the Diagnostics fold line follows the job and shows «paused» on open and after a restart.\n- M-8: the Top-list tags are 20/20 visible at 1440 and 375 px.\n- M-10: the Explore hint, caveat, VADER caveat and chart unit are translated.\n- M-11: the landscape chip hover is translated.\n- M-12: «Ouvrir» opens the French document.\n- M-13: 0 label overlaps.\n- M-14: «Go online» is disabled until the disclosure renders, even during a fold.\n- M-15: «errors» stays data.\n- M-16: no clipped level toggle.\n\nFour incidental items are recorded; none affects a step."
+ },
+ "recheck": null
+}

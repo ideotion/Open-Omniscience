@@ -15337,7 +15337,8 @@ summed mention counts as articles, about 3× the real article count. **OPEN:**
 **The re-walk's fixes (2026-09-27, R37; batches B20–B30 in PR #1191).** All 119 items are fixed in code except
 three: R-6, R-14 and R-24 are the Q1150 When / Where embed, which was never built, so they are resolved by the
 gate's corrected text and the embed goes with `0.5`'s map work (the ASSUMPTION above). **OPEN until the next walk
-passes**, and that walk checks only these fixes and each row's steps (R37). Deferred, each with its reason:
+passes**, and that walk checks only these fixes and each row's steps (R37). **THAT WALK PASSED (2026-09-27, the
+fix-check walk below):** 117 fixed on `9eb10528`, the last two (N-4, O-5) on `38965c0e`. Deferred, each with its reason:
 - **J-1's full fix: make the export ONE server-side job.** The minimum fix records the export's request in
   `oo-export-request.json` and the summary reads «Backup incomplete» when a part is missing, so a reload during
   the corpus phase no longer drops the large-data copy SILENTLY. It is still two client-chained jobs; one job
@@ -15362,7 +15363,7 @@ passes**, and that walk checks only these fixes and each row's steps (R37). Defe
   passphrase field keeps its value across a close; `i18n.js`'s `doAttrs` keeps a static element's first-seen
   title, so JS that sets `.title` on a static element after first paint stays in that language; the zh/ja
   memory-floor refusal keeps half-width parentheses; the welded `t("Failed:") + " "` still stands in
-  `taskmanager.html`, `app-diagnostics.js`, `app-backup.js` and `app-gov-law.js`; the Insights map's city-dot
+  `app-diagnostics.js`, `app-backup.js` and `app-gov-law.js` (`taskmanager.html`'s was fixed as O-5, `38965c0e`); the Insights map's city-dot
   titles are not repainted; calendar family names are English catalogue data (`configs/calendar_feeds.yml`,
   needs a data-side label or a ruling); `map_by_area`'s caveat still says «None value» (no UI prints it); country
   paths on the maps still carry an SVG `<title>`, so touch cannot reach a country's name (the contested areas
@@ -15375,6 +15376,39 @@ passes**, and that walk checks only these fixes and each row's steps (R37). Defe
 - **Presentational, worth a maintainer look (not a defect):** the net coach is now an in-flow strip with an arrow
   at the plane rather than a floating bubble. The 2026-06-13 ruling (a coachmark points at the ONE airplane
   button) is still met by the arrow; Q-VIS-7 (the coach's accent-filled primary action) stays open.
+
+**The fix-check walk (2026-09-27, `docs/audit/delegated-fixcheck-2026-09-27/`; R37's last walk).** One walker per
+row re-ran its steps and reproduced its re-walk items on `9eb10528`, encrypted, locked at boot, in airplane mode,
+with no hunt for new defects. Every walkable step of rows H, I, J, L, M, N, O, P, R, S, T and U passes; 117 of
+the 119 items were fixed there, and the two an independent re-checker confirmed (N-4's Diagnostics half, O-5's
+`/tasks` line, both P3) were fixed in `38965c0e` and re-checked in Chromium. **The click-through loop is CLOSED
+for 0.4.** What a sandbox could not walk is the operator's runs or the maintainer's word, listed per row in the
+walk's README; H9 asks the maintainer whether the 15 lane names and 3 headings are fine (the walker found they
+still match `docs/SECURITY.md` one to one).
+- **Incidental notes, NOT fixed and NOT re-checked (32, one line each with a lead, in the walk's
+  `incidental.csv`):** they neither fail a row nor reopen the loop. The recurring ones: the consent popup lists
+  «Chain of custody» under «Could not read whether these are on» on a first open (seen on rows H, M, O, S, R; the
+  M-14 2 s read budget against the slow `/api/custody/settings` read already listed above); raw tokens in
+  translated lines (the import history's `restore` kind, `app-backup.js` ~2271; the Lead's `large-removal` flag,
+  `src/briefing/producers.py` ~1614, passed as a plain var rather than a translated one; the preview's `news`
+  source type, `_renderSchedTargets`); hard-coded joins (the chart hover's `: `, `app-markets.js` ~2420; the
+  engines list's `, ` and half-width `(n)`; the zh qualify refusal's ASCII parentheses, `_qualDeclinedText`);
+  the fr `{prefix}: {text}` frame uses a plain space before the colon, so free text can break before « :»
+  (`fr.json` ~4738, and the consent hover's `Transport :` values ~4522); surfaces that keep their first language
+  after a live switch (the retired-mode notice, `renderRetiredMode` in `app-sources.js` ~870; the newsletter
+  import result, recorded as by design); layout (the fr discovery checkbox at 375 px scrolls the page 80 px
+  sideways, `index.html` ~3121, exposed by the H-5 width fix; the fr Trends Rising list overlapping the Top list
+  and the ar trend-chart ticks clipped; the Home tag select at 375 px clipping its value, `app.css` ~438; the
+  selected ring chip's white text on a 16% accent fill, `app.css` ~562); and the bulletin's country coverage
+  lines and ISO 639-3 tags in English (`src/bulletin/render.py` ~734).
+- **One incidental note has a behavioural effect (O-i1; the walker's reading, not re-checked):** a reload in a non-English
+  UI retires the offline coach with no user action. The boot-time `oo:langchange` (`i18n.js` ~162) makes
+  `app-boot.js` ~344 call `_paintNetwork(_netOnline)` while `_netOnline` still holds its initial `true`
+  (`app-core.js` ~568), and `app-core.js` ~1093 then calls `dismissNetCoach(true)`. Nothing goes online; the
+  coach just never shows again on that profile.
+- **J's step text is out of date after J-1's minimum fix:** J3 and J8 expect only `volumes.json`,
+  `BACKUP_SUMMARY.md` and the volume files; every export folder now also carries `oo-export-request.json`, by
+  design. The operator's J8 instructions should say so.
 
 ## 2026-09-26 — What the read memory stop does NOT cover (deliberate, PR #1190)
 

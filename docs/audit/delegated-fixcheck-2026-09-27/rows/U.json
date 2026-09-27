@@ -1,0 +1,168 @@
+{
+ "row": "U",
+ "walk": {
+  "row": "U",
+  "environment": "Build: read-only worktree /tmp/claude-0/rewalk2/tree at 9eb10528. git status was clean before and after, and no __pycache__ was written. Every server ran from that folder through /tmp/claude-0/rewalk2/out/U/launch.py. The launcher drops the six proxy variables and both OO_DB_* variables, sets PYTHONDONTWRITEBYTECODE=1, chdirs to the tree and execs '/home/user/Open-Omniscience/.venv/bin/python -c \"from src.api.main import main; main()\"'. OO_NO_SCHEDULER was not set.\n\nSeed: I copied no data folder. A new STATE C seed was made from the tree (scripts/ui_clickthrough_seed.py, OO_DB_PASSPHRASE=walk-pass-2026, OO_DB_PLAINTEXT unset) into /tmp/claude-0/rewalk2/out/U/seeded. It printed 'STATE C seeded.' with articles_lang_pool 440 and commodity_series 3. The first 16 bytes of open_omniscience.db are ciphertext (b'8\\x96\\xd0\\x91…'), not 'SQLite format 3'. Because the seed is new, it carries no briefing_cache.json from the old build.\n\nBoot and unlock: the seeded folder was booted on port 9630 with neither OO_DB_* variable set. /api/system/lock-state read {state:'locked'}. The server log reads 'started LOCKED'. I unlocked only through the real #pw/#btn-unlock form: first a wrong passphrase (the expected 403), then the right one. lock-state then read unlocked-encrypted.\n\nFresh installs: three new empty folders, all booted as lock-state 'fresh', each walked once through language → legal → data location → create passphrase:\n- empty_en on 9631\n- empty_ar on 9632\n- empty_fr on 9633\n\nFixtures:\n- U7 used the four synthetic .eml files, copied to /tmp/claude-0/rewalk2/out/U/eml.\n- To make U-9's '({n} flagged)' frame visible, I inserted ONE flagged law_revisions row for 'Canadian Charter of Rights and Freedoms' (document 16) into this walk's own seeded copy. I used the app's own sqlcipher3 driver with PRAGMA key and the file's 16384 cipher page size (script seed_flagged.py). /api/law/documents then returned revisions 1, flagged 1 for that row. No other data was touched by hand.\n\nAirplane mode (proof):\n- The server booted in airplane mode: the log reads 'Booted in airplane mode (offline)'.\n- /api/system/network read online:false after every unlock and at the end of every run. My ensure_offline check found it already false each time, so no POST was needed.\n- #net-plane fill=currentColor at the start and end of every run.\n- The Playwright request recorder saw zero non-127.0.0.1 requests in every run.\n- No consent popup lies on row U's path. The offline coachmark did not appear, or was dismissed with 'Not now'. In the Wikipedia wizard only 'Not now' (#wiki-wizard-cancel) was pressed. 'Go online' and 'Use these settings' were never pressed.\n\nBrowser: Playwright sync, Chromium /opt/pw-browsers/chromium, headless, args --disable-background-networking --disable-component-update --no-proxy-server, proxy variables removed. Main pass at 1440x950 in en, then fr/ar/zh (U3: all 12). The 375x812 pass ran in en, ar and fr, plus a narrow-from-1440 check.\n\nShutdown: all four servers were stopped by PID only (seeded 30156; empty_en 1661, empty_ar 1663, empty_fr 1665).\n\nScratch: everything is in /tmp/claude-0/rewalk2/out/U.\n- Scripts: common.py, walk_u1.py, walk_u2.py, walk_fresh.py, walk_main.py, walk_items.py, walk_extra2.py, walk_375.py, walk_375_ar.py, seed_flagged.py.\n- JSON: u1, u2, fresh_ar, fresh_fr, main_strip_U3, main_U5_U6, main_U7_U9, items_strip_status_fr_atrest_caldir, items_price_gate_channels_law, extra2, w375, w375_ar_fr.\n- Logs: *.out, seeded.log, empty_*.log; i18n gate output in i18n_*.txt.\n- Screenshots: shots/.\n- Screenshot naming: the files named 'A1-strip-busy-*' were named by the old repro script. They show the fixed strip, which carries no busy note.",
+  "steps": [
+   {
+    "id": "U1",
+    "verdict": "pass",
+    "locales": "en, fr, ar, zh",
+    "evidence": "Fresh folder empty_en on 9631 (lock-state fresh). /unlock → 'Choose your language' (12 buttons) → English → 'Legal documents' ('Accept' disabled until ticked: true→false) → data-location step → Create → Preparing → /?wikiwizard=1#home, then unlocked-encrypted. Home has ONE card: h4 'No Leads yet — that's expected on a young corpus', 7 bold names and the grey line. After live switches:\n- fr: h4 'Aucune piste pour l'instant — c'est normal pour un jeune corpus', 7 bold names ('En hausse' … 'sources candidates'), grey line translated.\n- zh: h4 '尚无线索——这在早期语料库中很正常', names translated.\n- ar: names translated, html dir=rtl, sidebar x 1190-1440, text direction rtl.\nThe strip ('Your library is empty…' → 'Votre bibliothèque est vide…' / 'مكتبتك فارغة…' / '您的文库为空…') and the status line switch at once. Plane filled and hscroll 0 in every language; 375 hscroll 0. Shots: /tmp/claude-0/rewalk2/out/U/shots/U1-home-en.png, U1-home-fr.png, U1-home-ar.png, U1-home-zh.png, U1-home-375-fresh-en.png. JSON: u1.json."
+   },
+   {
+    "id": "U1-datadir",
+    "verdict": "pass",
+    "locales": "en, ar, fr",
+    "evidence": "GET /api/system/data-location → 200, the only response, on each of 9631, 9632 and 9633. #view-datadir shows 'Use the app's own data folder' checked, the path equal to the data dir, and #dl-custom-box hidden. Continue → Create passphrase.\n- ar: fully translated ('أين ينبغي أن يُخزَّن متنك؟'), view direction rtl.\n- fr: fully translated ('Où votre corpus doit-il être stocké ?').\n- hscroll 0 at 1440 and 375 in ar and fr, and at 1440 in en.\nShots: /tmp/claude-0/rewalk2/out/U/shots/U1-datadir-en.png, U1-datadir-ar.png, U1-datadir-ar-375.png, U1-datadir-fr.png, U1-datadir-fr-375.png. JSON: u1.json, fresh_ar.json, fresh_fr.json."
+   },
+   {
+    "id": "U1-first-run-dialogs",
+    "verdict": "pass",
+    "locales": "en, ar, fr",
+    "evidence": "16 samples over 8 s after landing; both_open_ever is false in en, ar and fr.\n- showModal order before dismissal: wiki-wizard only (en ['wiki-wizard@3103'], ar ['wiki-wizard@2538'], fr ['wiki-wizard@2383']).\n- After 'Not now' the guide opens alone (guide-wizard@10241 in en), and #gw-close closes it; dialogs_final [] and no coachmark behind.\n- A titled hint inside the wizard opens #oo-tip, parented to #wiki-wizard, drawn above the dialog (translated in fr and ar).\nShots: /tmp/claude-0/rewalk2/out/U/shots/U1-entry-dialogs-en.png, U1-after-wizard-not-now-en.png, U1-wiki-wizard-hover-fr.png, U1-wiki-wizard-hover-ar.png."
+   },
+   {
+    "id": "U2",
+    "verdict": "pass",
+    "locales": "en",
+    "evidence": "lock-state before: locked. The browser lands on /unlock, with #view-unlock the only visible view: 'Unlock your corpus This database is encrypted at rest (SQLCipher 4). Enter THE passphrase to open it.'\n- Wrong passphrase: Preparing 'Elapsed 00:00' → '00:01', then the form returns with the red (rgb 207,34,46) line 'the passphrase does not open open_omniscience.db (or the file is damaged)'. The field is editable, the button enabled and the body non-blank; the 403 on POST /api/system/unlock is expected.\n- Right passphrase: 'opening the database' 'Elapsed 00:00' → /#home with the seeded corpus (453 articles).\n- At-rest encryption reads 'Corpus: Encrypted (SQLCipher 4) 4.12.0 community' / 'Custody log: not created yet'.\n- lock-state after: unlocked-encrypted.\nShots: /tmp/claude-0/rewalk2/out/U/shots/U2-unlock-en.png, U2-wrong-passphrase-en.png, U2-preparing-en.png, U2-atrest-en.png. JSON: u2.json."
+   },
+   {
+    "id": "U3",
+    "verdict": "pass",
+    "locales": "en, fr, es, de, zh, hi, ar, bn, ru, pt, id, ja",
+    "evidence": "Before the press:\n- #patterns-gate and #patterns-gate-state are empty; the checkbox is unticked and disabled.\n- The fold has two 'Check now' buttons; only loadPatternsGate() was pressed.\nAfter the press, three lines:\n- 'Corpus size: 453 / 100 000' with the amber 'not met' pill.\n- 'False-positive rate:' with the amber 'unmeasured' pill and 'needs a labelled sample judged by a person'. No 0 and no '5 %' appears.\n- The caveat, in card-caveat rgb(138,77,10).\nState: 'off — the gate is not met'. The API returns can_flip false, blocked_by [corpus, false_positive_rate] and no rate field. A forced click leaves the checkbox unticked and disabled.\nAll 12 live switches repainted the panel without a second press (fr 'Taille du corpus', ar 'حجم المتن' with the panel rtl, zh '语料库规模', ja 'コーパスの規模', …). '100 000' carries U+202F in all 12 languages, never '100,000'. Session forensics printed its record ('no sentinel yet (first boot with forensics…)', 'Last unlock 0.6 s' with phases), with no error or red text.\nShots: /tmp/claude-0/rewalk2/out/U/shots/U3-before-press-en.png, U3-patterns-gate-en.png, U3-patterns-gate-fr.png, U3-patterns-gate-ar.png, U3-patterns-gate-zh.png, U3-patterns-gate-ja.png, U3-patterns-gate-hi.png, U3-forensics-en.png. JSON: main_strip_U3.json."
+   },
+   {
+    "id": "U4",
+    "verdict": "not-measurable-here",
+    "locales": "",
+    "evidence": "This step needs the maintainer's real encrypted install and passphrase, which this sandbox cannot reach. U2 and U3 cover the same screens on a throwaway encrypted corpus."
+   },
+   {
+    "id": "U5",
+    "verdict": "pass",
+    "locales": "en, fr, ar, zh",
+    "evidence": "(a) The collection hint is translated. Speed reads 'Maximum' (en, fr), 'الحد الأقصى' (ar) and '最大' (zh).\n(b) The CSV hint keeps the column names as code words and translates the sentences ('2- or 3-letter code or a country name … country_iso3').\n(c) The stoplist count reads '2 555' (U+202F) in all 4 languages.\n(d) The Law hint is translated.\n(e) The Help grey line is translated.\n(f) Staying on Home 'By channel', the line changed in place on each switch: '453 articles across 5 channels' → '453 articles répartis sur 5 canaux' → '453 مقالة موزعة على 5 قناة' → '453 篇文章，分布于 5 个渠道'.\nhscroll is 0 on all six places in all four languages; ar is rtl.\nShots: /tmp/claude-0/rewalk2/out/U/shots/U5a-collect-*.png, U5b-csv-*.png, U5d-law-*.png, U5e-help-*.png, U5f-channels-*.png. JSON: main_U5_U6.json."
+   },
+   {
+    "id": "U6",
+    "verdict": "pass",
+    "locales": "en, fr, ar, zh",
+    "evidence": "Commodities shows 'Custom · 3 series ⛶' with no category tabs; members Dy, Nd and Pr each have ⊞ and 📈. The ⊞ beside Dy (title 'Open this in the analysis window — its corpus coverage') opens the Price subtab 'Price × coverage — Dy'.\n- Dy: 7 accent bars (fill-opacity 0.55) and 7 two-px caps; no line and no dots. Every bar bottom sits at y=202. The axis reads 274.4/281.7/289 (API min 274.35). The lowest month is a zero-height bar showing only its cap.\n- Nd: 0 bars, 1 line, 70 dots.\n- 'No corpus coverage to overlay yet.' appears under both.\nLive switch on Dy's Price: the svg label reads 'Prix USD/kg' / 'السعر USD/kg' / '价格 USD/kg', the heading, tab and note are translated, and it returns to 'Price USD/kg'.\nShots: /tmp/claude-0/rewalk2/out/U/shots/U6-commodities-en.png, U6-price-Dy-en.png, U6-price-Nd-en.png, U6-price-Dy-fr-after-switch.png, U6-price-Dy-ar-after-switch.png, U6-price-Dy-zh-after-switch.png. JSON: main_U5_U6.json."
+   },
+   {
+    "id": "U7",
+    "verdict": "pass",
+    "locales": "en, ar, fr, zh",
+    "evidence": "Importing the four .eml files gives '4 imported · 0 duplicates skipped · 0 empty' plus the Anonymisation line.\n- The amber caveat 'this is a PLACEMENT, not a judgement about the publisher: …' is visible.\n- The this-import line reads '1 filed under a publisher you already track · 2 filed under a new, DISABLED source for the sender's domain · 1 left in the import bucket (…)'.\n- 'Automatically filed newsletters: 3', with rows 'some-unknown-press.org disabled | 2' and 'BBC News | 1'. Rows are display:flex; the name spans x 287-493 / 287-348 and the count sits at 699-707.\n- The count hovers read 'How this was decided: new-email-source · etld1' and 'attach-exact · etld1'.\nar, fr and zh re-render the block (ar rtl); the result line stays English, as the step expects. At 375 in ar, hscroll is 0 and the block is sw=cw=301.\nUndo, in en: the confirm reads 'Move every automatically filed newsletter back to the import bucket? …' → OK → '3 newsletters moved back to the import bucket.' and 'Removed the now-empty sources this filing had created: some-unknown-press.org'. The block is then hidden and attached is 0. BBC News is untouched and enabled.\nShots: /tmp/claude-0/rewalk2/out/U/shots/U7-attach-en.png, U7-attach-ar.png, U7-attach-fr.png, U7-attach-zh.png, U7-attach-ar-375.png, U7-after-undo-en.png. JSON: main_U7_U9.json."
+   },
+   {
+    "id": "U7-caveat-hover",
+    "verdict": "pass",
+    "locales": "en, ar, fr, zh",
+    "evidence": "#nl-attach-caveat has class 'card-caveat oo-tip-target' and a dotted underline. Hovering opens #oo-tip with 'the ruled publisher ladder run at import time: a Public Suffix List eTLD+1 …'. It is translated in ar ('سلّم تحديد الناشر…'), fr ('la cascade de résolution d'éditeur…') and zh ('导入时运行的出版方判定规则…'). Shot: /tmp/claude-0/rewalk2/out/U/shots/U7-caveat-hover-en.png. JSON: main_U7_U9.json (u7.hover_caveat, u7.ar/fr/zh.hover_caveat)."
+   },
+   {
+    "id": "U8",
+    "verdict": "not-measurable-here",
+    "locales": "",
+    "evidence": "This step needs the maintainer's real install and mailbox (brief §5 operator step 2). U7 covers the filing and the undo on a throwaway corpus."
+   },
+   {
+    "id": "U9",
+    "verdict": "pass",
+    "locales": "en, fr, ar, zh",
+    "evidence": "Month grid: 4 moon glyphs (🌑 🌓 🌕 🌗). The hover opens #oo-tip: 'Last quarter moon 07:52 UTC — Meeus, Astronomical Algorithms (2nd ed.) ch. 49: …'. After each live switch the moon titles, including the method and accuracy tail, are in fr/ar/zh, and the weekday row repaints (lun./الاثنين/周一).\nCalendar directory:\n- The hint says the religious, election, rocket-launch and astronomy calendars 'are not offered'.\n- Kind offers all/Civic/Community/Public holidays. The API has 241 families (holidays 239, civic 1, community 1).\n- Filters 'religio', 'Christian', 'Islam' and 'Astronomy' return nothing.\n- Rows show alpha-3 codes with name hovers (AFG → Afghanistan).\nThe step's literal 'Kind = religion lists 8 families' is NOT met, but that expectation was ruled a misread (by-design, the 2026-07-10 robots filter). The screen discloses it, so the step is graded against that verdict, as in the re-walk.\nShots: /tmp/claude-0/rewalk2/out/U/shots/U9-agenda-month-en.png, U9-agenda-month-ar.png, U9-directory-en.png, U9-directory-fr.png, U9-directory-ar.png, U9-directory-zh.png. JSON: main_U7_U9.json."
+   },
+   {
+    "id": "U-locale-extra",
+    "verdict": "pass",
+    "locales": "fr, ar, zh",
+    "evidence": "These follow a live switch without reopening the panel:\n- the Price subtab label and axis, and the Agenda moon hovers (see U6 and U9);\n- the Home strip, the status line and the By-channel line;\n- the Patterns panel;\n- the At-rest panel (now in both directions; see U-2).\nJSON: main_U5_U6.json, main_U7_U9.json, main_strip_U3.json, items_strip_status_fr_atrest_caldir.json."
+   },
+   {
+    "id": "U-375-en",
+    "verdict": "pass",
+    "locales": "en, ar, fr",
+    "evidence": "At 375x812, hscroll is 0 on every surface:\n- Home, Diagnostics/Patterns, Safety/At-rest, Calendar directory, Data & backup/newsletters.\n- Commodities, Dy Price, Agenda month, Governments→Law, Home By channel.\n- Help, in en and ar.\n- Home and Patterns gate in ar and fr, and the fresh empty-corpus Home.\nHelp: .doc-layout columns are 301px; the first pre is 301 wide and scrolls inside (sw 841); window scrollX is 0 after a sideways wheel. Commodities narrowed from 1440 without a reload: the canvas refits 900px → 301px with hscroll 0, and returns to 900px at 1440. At 375 in fr the Home status reads 'Collecte automatique : arrêtée'.\nShots: /tmp/claude-0/rewalk2/out/U/shots/w375-help-en.png, w375-help-ar.png, w375-commodities-narrowed.png, w375-home-en.png, w375-home-ar.png, w375-home-fr.png. JSON: w375.json, w375_ar_fr.json, u1.json."
+   },
+   {
+    "id": "U-i18n-gates",
+    "verdict": "pass",
+    "locales": "all 12",
+    "evidence": "Run from the tree with PYTHONDONTWRITEBYTECODE=1; every gate exited 0:\n- scripts/i18n_report.py --min 100: 5841/5841 in each locale.\n- --max-untranslatable 0: 0.\n- --max-unkeyed-t-calls 0: 0 of 2820.\n- --max-unkeyed-tf-frames 0: 0 of 428.\nOutput in /tmp/claude-0/rewalk2/out/U/i18n_min100.txt, i18n_maxuntranslatable0.txt, i18n_maxunkeyedtcalls0.txt, i18n_maxunkeyedtfframes0.txt."
+   }
+  ],
+  "items": [
+   {
+    "id": "U-1",
+    "verdict": "fixed",
+    "evidence": "Encrypted seed, unlocked through #pw/#btn-unlock, then I stayed on Home and touched nothing. /api/database/stats was sampled every 20 s. Over the run:\n- as_of stayed at 21:13:30 while cache_age_s rose 28→48→68→88→108→128→148→168.\n- Throughout: cached true, ttl 30, verified_current true, recount_running_s null, articles 457.\n- /api/scheduler/activity running:false and /api/jobs [].\nAt age 168 s the strip ends at '129 MENTIONED DATES' with no 'as of … (server busy)' note. After live switches, fr and ar show no note either ('129 DATES MENTIONNÉES' / '129 التواريخ المذكورة').\nThe client now gates the note on the server's verified_current and recount_running_s (app-home.js:133-153).\nShots: /tmp/claude-0/rewalk2/out/U/shots/A1-strip-busy-en-crop.png, A1-strip-busy-fr-crop.png, A1-strip-busy-ar-crop.png. The file names come from the old repro script; the images show the strip with no note. JSON: items_strip_status_fr_atrest_caldir.json (strip.samples, strip.idle_facts)."
+   },
+   {
+    "id": "U-2",
+    "verdict": "fixed",
+    "evidence": "(a) Opened in en ('Corpus: Encrypted (SQLCipher 4) … Custody log: not created yet'), then switched live:\n- →fr: 'Corpus : Chiffré (SQLCipher 4) … Journal de custodie : pas encore créé'.\n- →ar: 'المجموعة: مشفّر … سجل العهدة: لم يُنشأ بعد'.\n- →zh: '语料库：已加密（SQLCipher 4）… 保管日志：尚未创建'.\n(b) Fresh ar render ('المجموعة: مشفّر …'), then switched live:\n- →en: 'Corpus: Encrypted (SQLCipher 4) 4.12.0 community / Custody log: not created yet'.\n- →zh: '语料库：已加密…保管日志：尚未创建', and the same after closing and reopening the section.\nA fresh fr render matches the live one.\nShots: /tmp/claude-0/rewalk2/out/U/shots/A2-atrest-en-to-fr.png, A2-atrest-ar-to-en.png, A2-atrest-fresh-fr.png. JSON: items_strip_status_fr_atrest_caldir.json (atrest.*), u2.json."
+   },
+   {
+    "id": "U-3",
+    "verdict": "fixed",
+    "evidence": "Fresh renders:\n- fr: status '241 flux · 241 dossiers · 0 vérifiés · pas encore vérifiés : 241'; Kind ['tout','Civique','Communauté','Jours fériés']; rows 'Afghanistan — jours fériés · Jours fériés · AFG Exclure'.\n- ar: 'الموجزات: 241 · المجلدات: 241 · المفحوصة: 0 · لم يُفحص بعد: 241'; Kind ['الكل','مدني','المجتمع','العطلات الرسمية']; rows in Arabic.\n- zh: '241 个数据源 · 241 个文件夹 · 已检查 0 个 · 241 个尚未检查'; Kind ['全部','公民','社区','公共假日'].\nThe exact repro, fresh ar then a live switch to en: status '241 feeds · 241 folders · 0 checked · 241 not checked yet', Kind ['all','Civic','Community','Public holidays'], row 'Afghanistan — public holidays · Public holidays · AFG Exclude'. No Arabic is left. A further switch to zh repaints fully.\nShots: /tmp/claude-0/rewalk2/out/U/shots/A3-caldir-fresh-fr.png, A3-caldir-fresh-ar.png, A3-caldir-fresh-zh.png, U3item-caldir-fresh-ar.png, U3item-caldir-ar-to-en.png. JSON: extra2.json, items_strip_status_fr_atrest_caldir.json."
+   },
+   {
+    "id": "U-4",
+    "verdict": "fixed",
+    "evidence": "Fresh empty folder empty_ar on 9632 (lock-state fresh). I chose العربية and accepted the legal documents; the data-location step was shown. #dl-default-path has logical text '/tmp/claude-0/rewalk2/out/U/empty_ar', and its characters sorted by on-screen x give exactly the same string. The first '/' is drawn at x=640, left of the last 'r' at x=903. Computed direction is ltr with unicode-bidi isolate. The same holds at 375 (x 60→323) and in fr.\nShots: /tmp/claude-0/rewalk2/out/U/shots/U4-datadir-path-ar.png (reads '/tmp/claude-0/rewalk2/out/U/empty_ar'), U1-datadir-ar.png, U1-datadir-ar-375.png. JSON: fresh_ar.json (datadir_path, datadir_path_375)."
+   },
+   {
+    "id": "U-5",
+    "verdict": "fixed",
+    "evidence": "Fresh install in ar (9632), passphrase created, the Wikipedia wizard opened. #wiki-wizard-hosts wraps each host in an LTR isolate (U+2066…U+2069) and inherits rtl. On screen, line 1 reads '· ores.wikimedia.org · wikimedia.org · stream.wikimedia.org · *.wikipedia.org', with '*.wikipedia.org' intact at the right edge (the start of the RTL line). Line 2 reads 'dumps.wikimedia.org'. All five host names are intact, and the '*.' is no longer detached. fr is unchanged, left to right.\nShots: /tmp/claude-0/rewalk2/out/U/shots/U5-wizard-hosts-ar.png, U5-wizard-hosts-fr.png, U1-wiki-wizard-ar.png. JSON: fresh_ar.json (wizard_hosts), fresh_fr.json."
+   },
+   {
+    "id": "U-6",
+    "verdict": "fixed",
+    "evidence": "Commodities → ⊞ beside Dy → Price, geometry measured in each case:\n- en: ticks 274.4/281.7/289 at x 313-337, first bar at x 342.\n- ar live switch: the svg now carries direction='ltr' (computed ltr). Ticks at x 519-543, first bar at x 548-557, so the ticks sit left of the plot (tick_max_right 543 ≤ first_bar_left 548).\n- ar fresh render: identical geometry.\n- 'السعر USD/kg' sits at x 548-603, starting at the plot's left edge as en's label does, clear of the '289' tick at x 527-543.\n- The aria-label is now keyed: en 'Price × coverage: 7 price points, 0 coverage points'; ar 'السعر × التغطية: 7 نقطة سعر، 0 نقطة تغطية'. The singular noun after 7 is the recorded no-plural-rules item, not a failure.\nShots: /tmp/claude-0/rewalk2/out/U/shots/A6-price-Dy-ar-live.png, A6-price-Dy-ar-fresh.png, U6-price-Dy-ar-fresh-crop.png, A6-price-Dy-en.png. JSON: items_price_gate_channels_law.json (price.*)."
+   },
+   {
+    "id": "U-7",
+    "verdict": "fixed",
+    "evidence": "Settings → Advanced → Diagnostics → 'Check now' beside the Patterns lens, then live switches:\n- fr: 'Taille du corpus : 457 / 100 000' and 'Taux de faux positifs : non mesuré'.\n- zh: '语料库规模：457' and '误报率：未测量'.\n- ja: 'コーパスの規模：457' and '誤検出率：未測定'.\n- ar and de keep ': ', which is correct for their frames.\n- A FRESH fr render after pressing again also gives 'Taille du corpus : 457', matching the At-rest panel's 'Corpus : …' on the same page.\nShots: /tmp/claude-0/rewalk2/out/U/shots/A7-gate-fr-live.png, A7-gate-zh-live.png, U3-patterns-gate-ja.png. JSON: items_price_gate_channels_law.json (gate.*), main_strip_U3.json."
+   },
+   {
+    "id": "U-8",
+    "verdict": "fixed",
+    "evidence": "Home → 'By channel' (fresh renders), chips per language:\n- en: 'News 449 · 98%', 'Newsletters 5 · 1%', 'Hazards 1 · <1%', 'Legal 1 · <1%', 'Wiki 1 · <1%'.\n- fr: 'Actualités', 'Infolettres', 'Aléas', 'Juridique', 'Wiki'.\n- ar: 'أخبار', 'النشرات البريدية', 'الأخطار', 'قانوني', 'ويكي'.\n- zh: '新闻', '新闻邮件', '灾害', '法律类', '维基'.\nEach chip's hover now names its own channel and the raw type from the same map, e.g. 'Hazards: the channel its sources assert (source type “hazard”), never a quality score…', or in ar 'الأخطار: القناة التي تُصرّح بها مصادرها (نوع المصدر «hazard»)…'. The hint no longer lists a second vocabulary. Counts go through fmtNum (app-home.js:807).\nShots: /tmp/claude-0/rewalk2/out/U/shots/A8-channels-en.png, A8-channels-fr.png, A8-channels-ar.png, A8-channels-zh.png. JSON: items_price_gate_channels_law.json (channels.*)."
+   },
+   {
+    "id": "U-9",
+    "verdict": "fixed",
+    "evidence": "Governments → Law, fresh renders; the last cell of every row reads:\n- fr: 'lecteur · officiel ↗ · arrêter'\n- ar: 'القارئ · الرسمي ↗ · إيقاف'\n- zh: '阅读器 · 官方 ↗ · 停止'\n- en: 'reader · official ↗ · stop'\nThe Category column is labelled ('Législation' / 'التشريع' / '立法'), with the raw 'legislation' kept in the hover.\nTo SEE '(N flagged)', which the re-checker could only confirm from code, I inserted one flagged revision into this walk's own seeded copy. The Changes cell then reads:\n- en '1 (1 flagged)'\n- fr '1 (signalées : 1)'\n- ar '1 (الموسومة: 1)'\n- zh '1 （1 个已标记）'\nLive switches zh→fr→en repaint it.\nShots: /tmp/claude-0/rewalk2/out/U/shots/U9item-law-flagged-row-en.png, U9item-law-flagged-row-fr.png, U9item-law-flagged-row-ar.png, U9item-law-flagged-row-zh.png, A9-law-fresh-fr.png, A9-law-fresh-ar.png, A9-law-fresh-zh.png. JSON: extra2.json, items_price_gate_channels_law.json."
+   },
+   {
+    "id": "U-10",
+    "verdict": "fixed",
+    "evidence": "With collection stopped (/api/scheduler/activity running:false), #home-status reads 'Collecte automatique : arrêtée · Votre corpus reste sur cette machine …'. This holds after a live switch to fr, after a fresh fr reload, at 375 px, and on the fresh empty corpus (9631). Shots: /tmp/claude-0/rewalk2/out/U/shots/A10-status-fr-crop.png, A10-status-fr-375.png. JSON: items_strip_status_fr_atrest_caldir.json (status_fr.*), u1.json (strip_fr_immediate)."
+   },
+   {
+    "id": "U-11",
+    "verdict": "fixed",
+    "evidence": "Fresh installs in ar (9632) and fr (9633). After the Wikipedia wizard's 'Not now', the guide opened on 'Choose what to collect first'. All 16 #gw-themes chips render the source tag verbatim, including 'technology 209' in both fr and ar (themes_translated is empty in both). Counts are grouped through fmtNum: 'via:curated 4 909', 'news 3 114', 'general-news 1 366' (U+202F, app-core.js:812-816).\nShots: /tmp/claude-0/rewalk2/out/U/shots/U11-guide-themes-fr.png, U11-guide-themes-ar.png, U11-guide-fr.png, U11-guide-ar.png. JSON: fresh_ar.json, fresh_fr.json (themes)."
+   }
+  ],
+  "incidental": [
+   "Kind/tag filters print a hard-coded lowercase 'all' option beside capitalised labels ('all', Civic, Community, Public holidays; fr 'tout'): src/static/app-agenda.js:753 (also :153, :178, :1185). Cosmetic only.",
+   "The newsletter import result line ('4 imported · 0 duplicates skipped · 0 empty / Anonymisation: …') stays in the language it was produced in after a live switch, although fr, ar and zh carry the keyed 'Anonymisation: {redacted} …' frame (src/static/app-settings.js:1524). The earlier walks recorded this as by design, so it is noted only for the owner."
+  ],
+  "page_errors": [],
+  "http_errors": [
+   "403 POST http://127.0.0.1:9630/api/system/unlock: the wrong-passphrase attempt U2 requires (expected).",
+   "404 GET /api/diagnostics/served-cache and 404 GET /api/diagnostics/caches: probes of those diagnostic URLs made by my walk_items.py script, not by the app.",
+   "503 GET /api/system/network: my own curl while the app was still locked (expected; not the browser)."
+  ],
+  "summary": "Row U passes on build 9eb10528. The corpus was encrypted and locked at boot, entered through #pw/#btn-unlock, and kept in airplane mode throughout with zero external requests.\n\nSteps: 13 of the 15 steps pass:\n- U1, U1-datadir, U1-first-run-dialogs, U2\n- U3 in all 12 languages\n- U5, U6, U7, U7-caveat-hover, U9, U-locale-extra, U-375-en\n- U-i18n-gates: all four gates exit 0 (5841/5841 in each locale).\n\nU4 and U8 are not measurable here: they need the maintainer's own install and mailbox. U9 is graded, as in the re-walk, against the by-design verdict on the dropped religion calendars, which the screen discloses.\n\nDefects: all 11 items are fixed:\n- U-1: after 168 s idle the Home strip shows no '(server busy)' note; the server reports verified_current true.\n- U-2: the At-rest panel repaints in both directions (en→fr/ar/zh and ar→en→zh).\n- U-3: the Calendar directory status, Kind menu and rows are translated, and ar→en leaves no Arabic.\n- U-4: the data-location path reads left to right in Arabic (ltr, isolate).\n- U-5: '*.wikipedia.org' stays intact in the Arabic wizard (per-host LTR isolates).\n- U-6: the price chart svg is ltr and its ticks sit left of the plot in Arabic; the aria-label is keyed.\n- U-7: the Patterns labels use the locale frame in fr, zh and ja, live and fresh.\n- U-8: the By-channel chips carry translated names, and their hovers come from the same map.\n- U-9: 'reader', 'official ↗' and the Category column are translated, and '(N flagged)' is translated too. I made it visible with one flagged revision inserted into this walk's own seed copy.\n- U-10: fr reads 'arrêtée'.\n- U-11: guide tags render verbatim ('technology' in fr and ar) and counts are fmtNum-grouped.\n\nTwo cosmetic incidentals are recorded; neither fails the row. No page errors. The only HTTP errors were the expected 403, my own 404 probes and a curl 503 while locked."
+ },
+ "recheck": null
+}

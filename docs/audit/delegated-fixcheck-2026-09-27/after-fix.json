@@ -1,0 +1,121 @@
+{
+ "build": "38965c0e",
+ "N-4": {
+  "verdict": "fixed",
+  "script": "the row N re-checker diag_recheck.py, unchanged but for its port and folder",
+  "data": "a copy of the re-checker's encrypted folder, locked at boot, unlocked through #pw/#btn-unlock",
+  "readings": {
+   "en_open_before_run": {
+    "lang": "en",
+    "status": ""
+   },
+   "en_after_run": {
+    "lang": "en",
+    "status": "Articles checked: 0 of 462 (0%)"
+   },
+   "A_live_en_to_fr_10s": {
+    "lang": "fr",
+    "status": "Articles vérifiés : 462 · réindexés : 0 (arabe : 0 · chinois : 0 · japonais : 0)"
+   },
+   "B_fr_open": {
+    "lang": "fr",
+    "status": "Articles vérifiés : 462 · réindexés : 0 (arabe : 0 · chinois : 0 · japonais : 0)"
+   },
+   "B_live_fr_to_ar_10s": {
+    "lang": "ar",
+    "status": "المقالات التي فُحصت: 462 · أُعيدت فهرستها: 0 (العربية: 0 · الصينية: 0 · اليابانية: 0)"
+   },
+   "B_ar_tab_away_and_back": {
+    "lang": "ar",
+    "status": "المقالات التي فُحصت: 462 · أُعيدت فهرستها: 0 (العربية: 0 · الصينية: 0 · اليابانية: 0)"
+   },
+   "B_ar_after_fold_reopen": {
+    "lang": "ar",
+    "status": "المقالات التي فُحصت: 462 · أُعيدت فهرستها: 0 (العربية: 0 · الصينية: 0 · اليابانية: 0)"
+   },
+   "C_live_ar_to_zh_10s": {
+    "lang": "zh",
+    "status": "已检查文章：462 · 已重建索引：0（阿拉伯语：0 · 中文：0 · 日语：0）"
+   },
+   "C_live_zh_to_en_10s": {
+    "lang": "en",
+    "status": "Articles checked: 462 · re-indexed: 0 (Arabic: 0 · Chinese: 0 · Japanese: 0)"
+   }
+  },
+  "external_requests": [],
+  "page_errors": [],
+  "console_errors": [],
+  "http_errors": [],
+  "network_after_unlock": {
+   "online": false
+  },
+  "network_end": {
+   "online": false
+  }
+ },
+ "O-5": {
+  "verdict": "fixed",
+  "script": "the row O re-checker o5.py, unchanged but for its port and folder",
+  "data": "a copy of the re-checker's encrypted folder, locked at boot, unlocked through the real form",
+  "tasks_en": [
+   {
+    "text": "Failed: HTTP 503 from the mirror",
+    "codepoints": [
+     "U+0046",
+     "U+0061",
+     "U+0069",
+     "U+006C",
+     "U+0065"
+    ]
+   }
+  ],
+  "tasks_zh_live": [
+   {
+    "text": "失败：HTTP 503 from the mirror",
+    "codepoints": [
+     "U+5931",
+     "U+8D25",
+     "U+FF1A",
+     "U+0048",
+     "U+0054"
+    ]
+   }
+  ],
+  "tasks_zh_reload": [
+   {
+    "text": "失败：HTTP 503 from the mirror",
+    "codepoints": [
+     "U+5931",
+     "U+8D25",
+     "U+FF1A",
+     "U+0048",
+     "U+0054"
+    ]
+   }
+  ],
+  "tasks_direct": {
+   "lang": "zh",
+   "failed_line": [
+    "失败：HTTP 503 from the mirror"
+   ]
+  },
+  "full_width_then_space": {
+   "tasks_zh_live": [],
+   "tasks_zh_reload": []
+  },
+  "storage_full_width_then_space": {
+   "storage-reading": [],
+   "storage-disk": []
+  },
+  "maps_full_width_then_space": [],
+  "page_errors": [],
+  "console_errors": [],
+  "http_ge_400": [],
+  "network_after_unlock": {
+   "online": false
+  },
+  "network_end": {
+   "online": false
+  }
+ }
+}
