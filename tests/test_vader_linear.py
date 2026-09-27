@@ -336,12 +336,12 @@ def test_the_adapted_code_carries_vaders_own_license_notice():
 
 
 def test_the_release_is_the_same_everywhere_it_is_named():
-    registry = yaml.safe_load((_REPO / "configs" / "external_artifacts.yml").read_text())
+    registry = yaml.safe_load((_REPO / "configs" / "external_artifacts.yml").read_text(encoding="utf-8"))
     entry = next(a for a in registry["artifacts"] if a["id"] == "vader-linear-reproduction")
     assert entry["pin"]["verified"] == vl.VADER_RELEASE
-    lock = (_REPO / "requirements.lock").read_text()
+    lock = (_REPO / "requirements.lock").read_text(encoding="utf-8")
     assert f"vadersentiment=={vl.VADER_RELEASE} " in lock
-    extras = tomllib.loads((_REPO / "pyproject.toml").read_text())["project"][
+    extras = tomllib.loads((_REPO / "pyproject.toml").read_text(encoding="utf-8"))["project"][
         "optional-dependencies"
     ]["analysis"]
     assert f"vaderSentiment>={entry['pin']['floor']}" in extras
