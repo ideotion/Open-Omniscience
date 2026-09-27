@@ -832,7 +832,10 @@
           }
           _paintLangDetectButton(false);
           if (st === "done") {
-            if (res.ran === false) el.textContent = t("The local model is unavailable (Ollama down or airplane mode).");
+            // Loopback, so airplane mode never stops it (the kill switch refuses only a
+            // non-loopback model address): unavailable means not running, and saying
+            // "or airplane mode" sent the reader online to fix a local problem.
+            if (res.ran === false) el.textContent = t("The local model is unavailable: the local AI is not running.");
             else el.textContent = `${t("Done.")} ${res.stored || 0} ${t("labelled")} · ${res.none || 0} ${t("unclear")} · ${res.total || 0} ${t("scanned")}`;
           } else if (st === "cancelled") el.textContent = t("Cancelled.");
           else if (st === "error") el.textContent = t("Failed:") + " " + esc(s.error || "");
@@ -1616,7 +1619,8 @@
         $("nl-remove-result").innerHTML = `<span class="note err">${esc(t("Removal failed"))}: ${esc(e.message)}</span>`;
       } finally { btn.disabled = false; }
     }
-    // -- Pull from a mailbox (IMAP/POP3) — ruling #11. English-only; the anonymise +
+    // -- Pull from a mailbox (IMAP/POP3) — ruling #11. English-only, except the consent
+    // popup's reason, which is keyed x12 like every consent string; the anonymise +
     // kill-switch guarantees live in the (tested) backend.
     async function pullMailbox() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
@@ -1626,7 +1630,7 @@
       const password = $("mbox-pass").value || "";
       if (!host || !user) { if (out) out.textContent = t("Enter at least a host and user."); return; }
       // A network action -> the ONE consent popup (invariant #14).
-      if (typeof ensureOnline === "function" && !await ensureOnline("Pull newsletters from your mailbox")) return;
+      if (typeof ensureOnline === "function" && !await ensureOnline(t("Pull newsletters from your mailbox"))) return;
       const body = {
         protocol: $("mbox-proto").value, host, user, password,
         port: parseInt($("mbox-port").value || "0", 10) || 0,

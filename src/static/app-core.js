@@ -1291,6 +1291,11 @@
       }
       if (!parts.length) parts.push(t("a host you name yourself — nothing is bundled"));
       parts.push(_laneTransport(lane, kind));
+      // A STEP, not only a host: part of this lane is programs the app starts, and the
+      // installer script's own download of Ollama is one of them (net-hosts.js `spawned`).
+      if (lane.spawned) {
+        parts.push(t("Part of this lane is programs the app starts — pip, the Hugging Face downloader and Ollama's own install script, which downloads the Ollama program from ollama.com (and, for an NVIDIA GPU with no driver, the driver from NVIDIA's and your system's package servers). The app cannot limit where these programs connect."));
+      }
       if (lane.noOptOut) {
         parts.push(t("Always on: the code reads a switch that does not exist yet, so this cannot be turned off today."));
       }

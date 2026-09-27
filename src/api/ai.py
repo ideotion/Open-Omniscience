@@ -587,7 +587,10 @@ def _langdetect_worker(
     workers = concurrency_for(backend_name)
     try:
         if not client.is_available():
-            tally["reason"] = "the local model is unavailable (Ollama down or airplane mode)"
+            # Not airplane mode: the local model is LOOPBACK, and the kill switch refuses
+            # only a non-loopback address (OllamaClient / VllmClient._check_kill_switch), so
+            # an unavailable model here means the local AI is not running.
+            tally["reason"] = "the local model is unavailable (the local AI is not running)"
             _save_langdetect_state(tally)
             return tally
     except Exception:  # noqa: BLE001

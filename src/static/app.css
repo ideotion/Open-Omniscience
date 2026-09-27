@@ -832,6 +832,15 @@
     .gov-strat-basis { font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; }
     .gov-strat-why { font-size:10px; color:var(--muted); line-height:1.4; margin-top:4px; }
     .vitals-head { display:flex; align-items:center; justify-content:space-between; margin-bottom:4px; }
+    /* The .vr row app-wide: label left, value right, as in the task manager. Its rules
+       below were scoped to .vitals-pop (and once to #nl-attach-body), so every other .vr --
+       the fixity mismatches, the calendar feed directory, "Your calendars" -- ran its
+       label into its value with no gap at all. The /tasks page's own .vr rules come later
+       in its cascade and keep winning there; min-width:0 lets a long title wrap instead of
+       pushing the value off a phone screen. */
+    .vr { display:flex; align-items:baseline; justify-content:space-between; gap:10px; padding:2px 0; }
+    .vr > span { min-width:0; overflow-wrap:anywhere; }
+    .vr > b { text-align:end; font-variant-numeric:tabular-nums; }
     .vitals-pop .vr { display:flex; align-items:center; justify-content:space-between; gap:10px;
       padding:4px 0; border-top:1px solid color-mix(in srgb,var(--border) 60%,transparent); }
     .vitals-pop .vr:first-child { border-top:0; }

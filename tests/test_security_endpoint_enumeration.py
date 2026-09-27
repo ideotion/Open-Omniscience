@@ -135,7 +135,9 @@ _NOT_AN_ENDPOINT: dict[str, str] = {
     "github.com":
         "this repository's own URL: the contact field of the bot User-Agent, the "
         "docs base URL, and citation strings. The UA value is SENT as a header; the "
-        "URL in it is never fetched",
+        "URL in it is never fetched. The HOST is reached, but only on the local-AI "
+        "lane, through the installer's browser_download_url -- a value read from "
+        "GitHub's response, never one of these literals -- and it is enumerated there",
     "astral.sh":
         "named by a docstring explaining what the vLLM installer deliberately does "
         "NOT do (`curl https://astral.sh/uv/install.sh | sh`); uv comes from PyPI",
@@ -241,7 +243,8 @@ _DISPLAY_ONLY_FILES: dict[str, str] = {
     "src/llm/installer.py":
         "ollama.com download-page URLs handed to the UI as a manual-install link, "
         "and the same page named in a refusal message. api.github.com IS fetched "
-        "here and IS enumerated",
+        "here and IS enumerated; ollama.com is enumerated too, because the install "
+        "script this module verifies and runs downloads the Ollama program from it",
     "src/llm/vllm_lifecycle.py":
         "a port probe against the CONFIGURED vLLM URL, which defaults to 127.0.0.1. "
         "Its literals are docstrings recording what was probed and what was blocked; "

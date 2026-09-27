@@ -204,14 +204,24 @@ def aggregate_indicator(
         shown = ", ".join(country_display_code(c) or c for c in missing_value[:8]) + (
             "…" if len(missing_value) > 8 else ""
         )
+        # The choice is named in the words the Governments screen shows beside it, never
+        # as the request parameter behind that button: a reader was told to set a flag
+        # they had no way to set (row L). `refused_code` lets the screen draw the same
+        # sentence as a keyed frame, in the reader's language, from `coverage` -- the
+        # English here stays the answer an API caller gets.
         refusal = (
             f"{len(missing_value)} of {len(members)} members did not report this "
             f"indicator for this period ({shown}). A figure over the members that "
             "happen to have reported is not the group's figure, and nothing downstream "
-            "could tell the difference. Re-request with allow_incomplete to compute it "
-            "anyway — the missing members travel with the result."
+            "could tell the difference. Choose 'Compute over the members that did report' "
+            "to compute it anyway — the missing members travel with the result."
         )
-        return _out({k: {"refused": refusal} for k, _label, _w in STRATEGIES})
+        # With its label, as on every other card: without one the screen printed the
+        # strategy's internal key ("population_weighted") above the refusal.
+        return _out({
+            k: {"label": label, "refused": refusal, "refused_code": "incomplete"}
+            for k, label, _w in STRATEGIES
+        })
 
     # --- the strategies ----------------------------------------------------- #
     partial = "" if complete else (

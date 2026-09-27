@@ -477,9 +477,20 @@
         const r = strategies[k];
         const isDefault = agg.default_strategy === k;
         if (r.refused) {
+          // The partial-roster refusal is drawn as a keyed frame from the coverage it
+          // describes, naming the button below by its own label: the server's sentence is
+          // English and named the request parameter instead (row L). Every other refusal
+          // is the engine's sentence, verbatim.
+          const why = r.refused_code === "incomplete"
+            ? _govTf("{missing} of {members} members did not report this indicator for this period ({who}). A figure over the members that happen to have reported is not the group's figure, and nothing downstream could tell the difference. Choose “{action}” to compute it anyway — the missing members travel with the result.", {
+                missing: (cov.missing || []).length, members: cov.members || 0,
+                who: _govNames(cov.missing || []).short,
+                action: t("Compute over the members that did report"),
+              })
+            : r.refused;
           return `<div class="gov-strat gov-strat-refused">
             <div class="gov-strat-label">${esc(r.label || k)}</div>
-            <div class="gov-strat-why">${esc(r.refused)}</div></div>`;
+            <div class="gov-strat-why">${esc(why)}</div></div>`;
         }
         return `<div class="gov-strat${isDefault ? " gov-strat-default" : ""}">
           <div class="gov-strat-label">${esc(r.label || k)}${isDefault

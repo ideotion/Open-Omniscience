@@ -68,6 +68,13 @@
  *              check reaches api.github.com through it while the downloads do not. The
  *              hover's transport line then says "mostly direct" rather than claiming
  *              no part of the lane uses the proxy (S04-08's S5, 2026-09-25)
+ *   spawned    true when part of the lane's reach belongs to a PROGRAM this app starts
+ *              rather than to a request it makes: the AI lane runs pip, the Hugging Face
+ *              downloader and Ollama's own install.sh, whose download of the Ollama
+ *              program from ollama.com is a step of the lane, not a fetch of ours. The
+ *              hover then says so, and that the app cannot limit where those programs
+ *              connect: the hosts listed are what they reach, not a bound this app
+ *              enforces (click-through B12)
  */
 (function (root) {
   "use strict";
@@ -189,11 +196,12 @@
     {
       "id": "ai",
       "label": "Local AI install & weights",
-      "hosts": ["api.github.com", "objects.githubusercontent.com", "huggingface.co", "pypi.org"],
+      "hosts": ["api.github.com", "github.com", "release-assets.githubusercontent.com", "objects.githubusercontent.com", "ollama.com", "huggingface.co", "pypi.org"],
       "trigger": "click",
       "setting": null,
       "fetcher": false,
-      "mixed": true
+      "mixed": true,
+      "spawned": true
     },
     {
       "id": "mail",
