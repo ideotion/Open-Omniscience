@@ -105,11 +105,15 @@
         const stamp = JSON.stringify([c, d.countries, d.missing, _covUiLang()]);
         if (stamp === _covStamp) return;   // live poll: nothing changed, no repaint
         _covStamp = stamp;
+        const covTf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
+          : ((s, v) => String(s).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? String(v[k]) : m));
         el.innerHTML =
           `<div class="stat"><div class="n">${c.covered}/${c.total_countries}</div><div class="k">countries</div></div>` +
           `<div class="stat"><div class="n">${c.coverage_pct}%</div><div class="k">coverage</div></div>` +
           `<div class="stat"><div class="n">${c.missing_count}</div><div class="k">not covered</div></div>` +
-          `<div class="stat"><div class="n">${(c.thin||[]).length}</div><div class="k">thin (&lt;${c.thin_threshold})</div></div>`;
+          // A keyed frame: interpolated, the label was never a key the walker could match,
+          // so it read "THIN (<3)" in every locale (2026-09-27 re-walk L-9).
+          `<div class="stat"><div class="n">${(c.thin||[]).length}</div><div class="k">${esc(covTf("thin (<{n})", {n: c.thin_threshold}))}</div></div>`;
         renderCoverageRegions(c);
         COV_COUNTRIES = d.countries || [];
         COV_MISSING = (d.missing || []).map(code =>
@@ -117,7 +121,7 @@
         renderCoverageTable();
       } catch (e) {
         _covStamp = "";   // error rendered: force a repaint on the next good poll
-        el.innerHTML = `<div class="note err">Coverage unavailable: ${esc(e.message)}</div>`;
+        el.innerHTML = `<div class="note err">${esc(_failMsg("Coverage unavailable: {error}", e))}</div>`;
       }
     }
 
@@ -445,7 +449,11 @@
         $("src-meta").textContent = d.total
           ? tf("{total} source(s) · showing {from}–{to}", {total: d.total, from: shownFrom, to: shownTo})
           : tf("{total} source(s)", {total: d.total});
-        $("src-page").textContent = `page ${Math.floor(SRC.offset / SRC.limit) + 1} of ${Math.max(1, Math.ceil(d.total / SRC.limit))}`;
+        // The pager is the analysis window's keyed frame, not an English literal beside a
+        // translated count line (2026-09-27 re-walk L-8).
+        $("src-page").textContent = tf("Page {n} of {total}", {
+          n: fmtNum(Math.floor(SRC.offset / SRC.limit) + 1, 0),
+          total: fmtNum(Math.max(1, Math.ceil(d.total / SRC.limit)), 0)});
         t.innerHTML = "<tr>" + srcTh("Name","name") + srcTh("Domain","domain") + srcTh("Type","source_type") +
           srcTh("Country","country") + srcTh("Lang","language") + srcTh("Pri","priority") +
           srcTh("Articles","articles") + "<th>Enabled</th><th></th></tr>" +
@@ -1053,10 +1061,18 @@
         : t9("Collection speed: 500 KiB/s target — deliberately gentle. Click for Maximum (full speed).");
       btn.setAttribute("aria-pressed", max ? "true" : "false");
     }
+    // The knob carries `data-i18n-dyn`, so the walker never retranslates its hover: after
+    // one click the title held the language of that click through every later switch
+    // (2026-09-27 re-walk T-1). It is repainted from the state it holds by app-boot.js's
+    // `oo:langchange` listener, and once more when the locale is in, because the boot
+    // paint can land before the locale file and would otherwise stay English.
     async function loadRateMode() {
       try {
         const c = await api("/api/scheduler/config");
         _paintRateMode(c.collect_rate_mode || "maximum");
+        if (window.OOI18N && OOI18N.ready && OOI18N.ready.then) {
+          OOI18N.ready.then(() => { if (_rateMode) _paintRateMode(_rateMode); }).catch(() => {});
+        }
       } catch (_e) { /* chrome stays at the default paint; Settings still works */ }
     }
     async function toggleRateMode() {
@@ -1384,8 +1400,12 @@
       } catch (_e) { hosts = []; }
       // An ABSENCE with a reason rather than a blank line: an operator reading a
       // disclosure is entitled to know when it could not be filled in.
+      // Each host sits in a left-to-right ISOLATE (U+2066 … U+2069), exactly as the
+      // consent bubble writes the same table (_laneHostTitle, app-core.js): in the Arabic
+      // dialog the bidi algorithm moved the "*." of "*.wikipedia.org" to the far end of
+      // the line (2026-09-27 re-walk P-3, U-5). The list still flows in the page's order.
       el.textContent = hosts.length
-        ? hosts.join(" · ")
+        ? hosts.map((h) => "⁦" + h + "⁩").join(" · ")
         : ((window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x))("The host list could not be read.");
     }
 
@@ -1511,17 +1531,42 @@
       loadScheduler();
     }
 
+    // The targets line is ONE keyed sentence with the pill and the bold figure dropped in
+    // by marker, so each locale orders it itself. It was English literals welded to the
+    // numbers, in every language, and it renders whenever the panel opens -- not only on
+    // "Preview targets" (2026-09-27 re-walk O-2, S-4). The last payload is kept so a
+    // language switch redraws it without asking the server again (app-boot.js).
+    let _schedTargetsLast = null;
+    function _renderSchedTargets() {
+      const el = $("sched-targets"), d = _schedTargetsLast;
+      if (!el || !d) return;
+      const t9 = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
+        : ((s, v) => String(s).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? String(v[k]) : m));
+      const n = Number(d.matched) || 0;
+      const pill = `<span class="pill ${n ? "ok" : "warn"}">${esc(n === 1
+        ? tf("{n} source targeted", {n: fmtNum(n, 0)}) : tf("{n} sources targeted", {n: fmtNum(n, 0)}))}</span>`;
+      const head = esc(tf("{targeted} of {total} enabled · this run will process up to {n}",
+        {targeted: "\u0001", total: fmtNum(Number(d.total_enabled) || 0, 0), n: "\u0002"}))
+        .replace("\u0001", () => pill)
+        .replace("\u0002", () => `<strong>${esc(fmtNum(Number(d.will_process_this_run) || 0, 0))}</strong>`);
+      // The "?" bucket is the server's word for "no value recorded": said, never printed bare.
+      // A language is its code on screen with the name in the hover (Q302), like every table.
+      const pairs = (obj, cell) => Object.entries(obj || {})
+        .map(([k, v]) => `<span style="white-space:nowrap">${cell(k)} ${esc(fmtNum(Number(v) || 0, 0))}</span>`)
+        .join(" · ");
+      const langs = pairs(d.by_language, (k) => (k === "?" ? esc(t9("Unknown language")) : ooLangCell(k)));
+      const types = pairs(d.by_source_type, (k) => esc(k === "?" ? t9("unknown") : k));
+      el.innerHTML = head +
+        `<div class="muted" style="font-size:12px;margin-top:4px">${ooLabelHtml(esc(t9("By language")), langs || "—")}</div>` +
+        `<div class="muted" style="font-size:12px">${ooLabelHtml(esc(t9("By type")), types || "—")}</div>`;
+    }
     async function previewTargets() {
       const el = $("sched-targets");
       try {
-        const t = await api("/api/scheduler/targets");
-        const langs = Object.entries(t.by_language).map(([k,v])=>`${esc(k)}:${v}`).join("  ");
-        const types = Object.entries(t.by_source_type).map(([k,v])=>`${esc(k)}:${v}`).join("  ");
-        el.innerHTML = `<span class="pill ${t.matched?'ok':'warn'}">${t.matched} sources targeted</span> ` +
-          `of ${t.total_enabled} enabled · this run will process up to <strong>${t.will_process_this_run}</strong>` +
-          `<div class="muted" style="font-size:12px;margin-top:4px">by language: ${langs||'—'}</div>` +
-          `<div class="muted" style="font-size:12px">by type: ${types||'—'}</div>`;
-      } catch (e) { el.textContent = _failMsg("Could not preview targets: {error}", e); }
+        _schedTargetsLast = await api("/api/scheduler/targets");
+        _renderSchedTargets();
+      } catch (e) { _schedTargetsLast = null; el.textContent = _failMsg("Could not preview targets: {error}", e); }
     }
 
     async function schedulerStart() {

@@ -5301,5 +5301,16 @@
   "airplane mode engaged — progress is saved, start again to resume": "وضع الطيران مفعّل — حُفظ التقدّم، ابدأ من جديد للاستئناف",
   "paused: {reason} — progress is saved, start again once memory recovers": "متوقف مؤقتًا: {reason} — حُفظ التقدّم، ابدأ من جديد عندما تتعافى الذاكرة",
   "declined on this machine: {reason} — nothing was judged; restart the app with {env}=1 to run it anyway": "رُفض على هذا الجهاز: {reason} — لم يُحكم على أي شيء؛ أعد تشغيل التطبيق مع {env}=1 لتشغيله رغم ذلك",
-  "stopped after {n} consecutive batches with no evidence to judge — the remaining candidates could not be evaluated (no reachable feed / no prior articles); they stay unqualified and will be retried on a later run": "توقّف بعد دفعات متتالية بلا أدلة للحكم عددها {n} — تعذّر تقييم المرشحين المتبقين (لا خلاصة يمكن الوصول إليها / لا مقالات سابقة)؛ يبقون غير مُقيَّمين وستُعاد محاولتهم في تشغيل لاحق"
+  "stopped after {n} consecutive batches with no evidence to judge — the remaining candidates could not be evaluated (no reachable feed / no prior articles); they stay unqualified and will be retried on a later run": "توقّف بعد دفعات متتالية بلا أدلة للحكم عددها {n} — تعذّر تقييم المرشحين المتبقين (لا خلاصة يمكن الوصول إليها / لا مقالات سابقة)؛ يبقون غير مُقيَّمين وستُعاد محاولتهم في تشغيل لاحق",
+  "{n} source targeted": "{n} مصدر مستهدف",
+  "{n} sources targeted": "{n} مصادر مستهدفة",
+  "{targeted} of {total} enabled · this run will process up to {n}": "{targeted} من أصل {total} مُفعّلة · سيعالج هذا التشغيل حتى {n}",
+  "By type": "حسب النوع",
+  "thin (<{n})": "تغطية ضعيفة (<{n})",
+  "Local copy": "نسخة محلية",
+  "Coverage unavailable: {error}": "التغطية غير متاحة: {error}",
+  "This machine, read at boot": "هذا الجهاز، كما قُرئ عند الإقلاع",
+  "This machine, read just now": "هذا الجهاز، كما قُرئ للتو",
+  "Last run failed": "فشل آخر تشغيل",
+  "Your budgets can still take {room}; the drive has {free} free. That is more than the drive has free.": "لا يزال بإمكان ميزانياتك أن تشغل {room}؛ ولدى محرك الأقراص {free} متاحة. هذا أكثر من المساحة المتاحة على محرك الأقراص."
 }

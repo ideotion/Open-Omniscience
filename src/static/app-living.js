@@ -172,6 +172,16 @@
       }).join("");
     }
 
+    // One opened stream diff, from the revision payload: the stored lines, the truncation
+    // note when the server cut it, and what the diff is (and is not) measured against.
+    function livingDiffBoxHtml(d, t, tf) {
+      let html = `<div class="living-diff">${livingDiffHtml(d.diff_text)}</div>`;
+      if (d.truncated) {
+        html += `<div class="muted small">${esc(tf("Showing the first {n} characters of {m}.", { n: (d.diff_text || "").length, m: d.diff_chars }))}</div>`;
+      }
+      return html + `<div class="muted small">${esc(t("The diff stored when this change arrived, against the lane's previous stored text: not a live re-diff, and not necessarily the source's previous revision."))}</div>`;
+    }
+
     // The four kinds the lane knows, each to the NOUN it is shown as ("delete" is keyed
     // elsewhere as a button's verb, which reads wrong on a label in several languages).
     const _LIVING_CHANGE_KINDS = { edit: "edit", create: "create", delete: "deletion", move: "move" };
@@ -189,7 +199,7 @@
           what = `<span title="${esc(t("Under a budget the stream stores the text of some changes and counts the rest. A counted change has no diff."))}">${esc(t("Counted only: its text was not stored."))}</span>`;
         } else if (c.diff_method === "unified") {
           what = esc(tf("Lines added: {added}, removed: {removed}", { added: c.diff_added, removed: c.diff_removed }))
-            + ` <button class="tiny secondary" onclick="livingShowDiff(${Number(c.revision_id)}, this)">${esc(t("Show diff"))}</button>`;
+            + ` <button class="tiny secondary" data-diff-rev="${Number(c.revision_id)}" onclick="livingShowDiff(${Number(c.revision_id)}, this)">${esc(t("Show diff"))}</button>`;
         } else if (c.diff_method === "no-previous-text") {
           what = esc(t("Text stored; there was no earlier stored text to compare it with."));
         } else if (c.diff_method === "too-large") {
@@ -217,7 +227,9 @@
         const reasons = (c.flag_reasons || []).filter(Boolean)
           .map((x) => `<span class="pill warn">${esc(x)}</span>`).join(" ");
         const diff = (c.diff || "").trim()
-          ? `<details><summary>${esc(t("Stored diff"))}</summary><div class="living-diff">${livingDiffHtml(c.diff)}</div></details>`
+          // The change's id travels on the fold, so a repaint (a language switch) can
+          // re-open exactly the diffs the reader had open (2026-09-27 re-walk O-3).
+          ? `<details data-change-id="${esc(String(c.id == null ? "" : c.id))}"><summary>${esc(t("Stored diff"))}</summary><div class="living-diff">${livingDiffHtml(c.diff)}</div></details>`
           : `<div class="muted small">${esc(t("No stored diff (no parent, or tracked without diffs)."))}</div>`;
         return `<div class="living-row"><div class="living-row-head">`
           + `<span class="muted">${esc(livingWhen(c.observed_at, t))}</span> · `
@@ -259,6 +271,26 @@
 
     // ---- wiring (DOM + loopback reads only) ----------------------------------------- //
 
+    // The last payload each panel drew, so a language switch repaints the panel from
+    // what it already holds -- no request, and nothing the reader opened is closed. The
+    // switch used to re-run showLivingView, which re-fetched and rebuilt every list and
+    // so collapsed an open stream diff and every open law diff (2026-09-27 re-walk O-3).
+    let _livingStreamLast = null;   // {measured, reason, changes: [every row loaded], total}
+    let _livingPagesLast = null;
+    let _livingLawLast = null;
+    let _livingMapsLast = null;
+    const _livingDiffs = new Map();  // revision id -> the payload of a diff opened
+
+    function _livingT() { return (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s); }
+    function _livingTf() {
+      return (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((s, v) => s.replace(/\{(\w+)\}/g, (_, k) => v[k]));
+    }
+    // "Could not load: <reason>" with the reader's own separator (ooLabelText), never a
+    // welded ": " -- the zh and ja colon is full-width, the fr one takes a space.
+    function _livingFailHtml(msg, t) {
+      return `<div class="muted">${esc(ooLabelText(t("Could not load"), msg))}</div>`;
+    }
+
     async function loadLiving() {
       const nav = $("living-subtabs");
       // A re-open keeps the source the operator was reading; only the first open starts
@@ -278,8 +310,7 @@
     }
 
     function renderLivingOverview() {
-      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((s, v) => s.replace(/\{(\w+)\}/g, (_, k) => v[k]));
+      const t = _livingT(), tf = _livingTf();
       const d = _livingOverview;
       if (!d) return;
       (d.sources || []).forEach((src) => {
@@ -294,105 +325,189 @@
     }
 
     async function loadLivingOverview() {
-      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const t = _livingT();
       try {
         _livingOverview = await api("/api/living/overview");
         renderLivingOverview();
       } catch (e) {
         const st = $("living-status");
-        if (st) st.textContent = t("Could not load") + ": " + e.message;
+        if (st) st.textContent = ooLabelText(t("Could not load"), e.message);
       }
     }
 
-    async function loadLivingStream(more) {
-      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((s, v) => s.replace(/\{(\w+)\}/g, (_, k) => v[k]));
+    // The whole stream as loaded so far (every "Show older changes" page included).
+    function renderLivingStream() {
+      const t = _livingT(), tf = _livingTf();
       const box = $("living-stream"), btn = $("living-stream-more"), cap = $("living-stream-cap");
+      const d = _livingStreamLast;
+      if (!box || !d) return;
+      if (d.measured !== true) {
+        box.innerHTML = `<div class="muted">${esc(d.reason === "lane-never-run"
+          ? t("The live stream has not run yet, so there is no timeline. Turn it on with the W button in the top bar.")
+          : t("The live stream's file could not be read just now."))}</div>`;
+        if (btn) btn.hidden = true;
+        if (cap) cap.textContent = "";
+        return;
+      }
+      box.innerHTML = livingStreamRowsHtml(d.changes, t, tf);
+      _livingStreamCap();
+    }
+    function _livingStreamCap() {
+      const tf = _livingTf();
+      const btn = $("living-stream-more"), cap = $("living-stream-cap");
+      const d = _livingStreamLast;
+      if (!d || d.measured !== true) return;
+      // The window is stated, never implied: N of M, and a button while more exist.
+      if (cap) cap.textContent = d.total ? tf("Showing {n} of {m} changes, newest first.", { n: _livingStreamOffset, m: d.total }) : "";
+      if (btn) btn.hidden = _livingStreamOffset >= d.total;
+    }
+
+    async function loadLivingStream(more) {
+      const t = _livingT(), tf = _livingTf();
+      const box = $("living-stream");
       if (!box) return;
-      if (!more) { _livingStreamOffset = 0; box.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`; }
+      if (!more) {
+        _livingStreamOffset = 0;
+        _livingStreamLast = null;
+        box.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
+      }
       try {
         const d = await api(`/api/wiki/lane/changes?limit=${_LIVING_STREAM_PAGE}&offset=${_livingStreamOffset}`);
         if (d.measured !== true) {
-          box.innerHTML = `<div class="muted">${esc(d.reason === "lane-never-run"
-            ? t("The live stream has not run yet, so there is no timeline. Turn it on with the W button in the top bar.")
-            : t("The live stream's file could not be read just now."))}</div>`;
-          if (btn) btn.hidden = true;
-          if (cap) cap.textContent = "";
+          _livingStreamLast = { measured: d.measured, reason: d.reason, changes: [], total: 0 };
+          renderLivingStream();
           return;
         }
-        const html = livingStreamRowsHtml(d.changes, t, tf);
-        if (more) box.insertAdjacentHTML("beforeend", d.changes.length ? html : "");
-        else box.innerHTML = html;
+        const changes = d.changes || [];
+        if (more && _livingStreamLast) {
+          // Appended, not redrawn: a diff opened higher up stays open.
+          _livingStreamLast.changes = _livingStreamLast.changes.concat(changes);
+          _livingStreamLast.total = d.total;
+          if (changes.length) box.insertAdjacentHTML("beforeend", livingStreamRowsHtml(changes, t, tf));
+        } else {
+          _livingStreamLast = { measured: true, reason: null, changes: changes.slice(), total: d.total };
+          box.innerHTML = livingStreamRowsHtml(changes, t, tf);
+        }
         _livingStreamOffset += d.count;
-        // The window is stated, never implied: N of M, and a button while more exist.
-        if (cap) cap.textContent = d.total ? tf("Showing {n} of {m} changes, newest first.", { n: _livingStreamOffset, m: d.total }) : "";
-        if (btn) btn.hidden = _livingStreamOffset >= d.total;
+        _livingStreamCap();
       } catch (e) {
-        box.innerHTML = `<div class="muted">${esc(t("Could not load") + ": " + e.message)}</div>`;
+        box.innerHTML = _livingFailHtml(e.message, t);
       }
     }
 
     async function livingShowDiff(revisionId, btn) {
-      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((s, v) => s.replace(/\{(\w+)\}/g, (_, k) => v[k]));
+      const t = _livingT(), tf = _livingTf();
       const box = $("living-diff-" + revisionId);
       if (!box) return;
       if (box.innerHTML) { box.innerHTML = ""; if (btn) btn.textContent = t("Show diff"); return; }
       box.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
       try {
         const d = await api(`/api/wiki/lane/revisions/${Number(revisionId)}`);
-        let html = `<div class="living-diff">${livingDiffHtml(d.diff_text)}</div>`;
-        if (d.truncated) {
-          html += `<div class="muted small">${esc(tf("Showing the first {n} characters of {m}.", { n: (d.diff_text || "").length, m: d.diff_chars }))}</div>`;
-        }
-        html += `<div class="muted small">${esc(t("The diff stored when this change arrived, against the lane's previous stored text: not a live re-diff, and not necessarily the source's previous revision."))}</div>`;
-        box.innerHTML = html;
+        _livingDiffs.set(Number(revisionId), d);
+        box.innerHTML = livingDiffBoxHtml(d, t, tf);
         if (btn) btn.textContent = t("Hide diff");
       } catch (e) {
-        box.innerHTML = `<div class="muted">${esc(t("Could not load") + ": " + e.message)}</div>`;
+        box.innerHTML = _livingFailHtml(e.message, t);
       }
+    }
+
+    function renderLivingPages() {
+      const t = _livingT();
+      const box = $("living-pages"), d = _livingPagesLast;
+      if (!box || !d) return;
+      const pages = (d.pages || []).filter((p) => p.watched !== false);
+      box.innerHTML = pages.length
+        ? pages.map((p) => `<button class="tiny secondary living-page" onclick="openWikiTC(${Number(p.id)}, ${esc(JSON.stringify(String(p.title || "")))}, ${esc(JSON.stringify(String(p.wiki || "")))})"`
+            + ` title="${esc(t("See this page's tracked revision history — the stored edits, newest first, with each diff."))}">`
+            + `${esc(p.wiki ? p.wiki + " · " : "")}${esc(p.title || "?")} <span class="muted">${esc(String(p.revisions || 0))}</span></button>`).join(" ")
+        : `<div class="muted">${esc(t("No pages tracked yet. Add them in Settings → Wikipedia."))}</div>`;
     }
 
     async function loadLivingPages() {
-      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const box = $("living-pages");
       if (!box) return;
       try {
-        const d = await api("/api/wiki/pages");
-        const pages = (d.pages || []).filter((p) => p.watched !== false);
-        box.innerHTML = pages.length
-          ? pages.map((p) => `<button class="tiny secondary living-page" onclick="openWikiTC(${Number(p.id)}, ${esc(JSON.stringify(String(p.title || "")))}, ${esc(JSON.stringify(String(p.wiki || "")))})"`
-              + ` title="${esc(t("See this page's tracked revision history — the stored edits, newest first, with each diff."))}">`
-              + `${esc(p.wiki ? p.wiki + " · " : "")}${esc(p.title || "?")} <span class="muted">${esc(String(p.revisions || 0))}</span></button>`).join(" ")
-          : `<div class="muted">${esc(t("No pages tracked yet. Add them in Settings → Wikipedia."))}</div>`;
+        _livingPagesLast = await api("/api/wiki/pages");
+        renderLivingPages();
       } catch (e) {
-        box.innerHTML = `<div class="muted">${esc(t("Could not load") + ": " + e.message)}</div>`;
+        _livingPagesLast = null;
+        box.innerHTML = _livingFailHtml(e.message, _livingT());
       }
     }
 
+    function renderLivingLaw() {
+      const t = _livingT();
+      const box = $("living-law-changes"), d = _livingLawLast;
+      if (!box || !d) return;
+      // The tracker's own caveat, visible (informed consent): a mirror, not the law.
+      box.innerHTML = (d.caveat ? `<p class="card-caveat">${esc(t(d.caveat))}</p>` : "")
+        + livingLawRowsHtml(d.changes, t);
+    }
+
     async function loadLivingLaw() {
-      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const t = _livingT();
       const box = $("living-law-changes");
       if (!box) return;
       box.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
       try {
-        const d = await api("/api/law/changes?limit=50");
-        // The tracker's own caveat, visible (informed consent): a mirror, not the law.
-        box.innerHTML = (d.caveat ? `<p class="card-caveat">${esc(t(d.caveat))}</p>` : "")
-          + livingLawRowsHtml(d.changes, t);
+        _livingLawLast = await api("/api/law/changes?limit=50");
+        renderLivingLaw();
       } catch (e) {
-        box.innerHTML = `<div class="muted">${esc(t("Could not load") + ": " + e.message)}</div>`;
+        _livingLawLast = null;
+        box.innerHTML = _livingFailHtml(e.message, t);
       }
     }
 
+    function renderLivingMaps() {
+      const box = $("living-osm-regions"), d = _livingMapsLast;
+      if (!box || !d) return;
+      box.innerHTML = livingMapRowsHtml(d.downloads, _livingT());
+    }
+
     async function loadLivingMaps() {
-      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const box = $("living-osm-regions");
       if (!box) return;
       try {
-        const d = await api("/api/geo/downloads");
-        box.innerHTML = livingMapRowsHtml(d.downloads, t);
+        _livingMapsLast = await api("/api/geo/downloads");
+        renderLivingMaps();
       } catch (e) {
-        box.innerHTML = `<div class="muted">${esc(t("Could not load") + ": " + e.message)}</div>`;
+        _livingMapsLast = null;
+        box.innerHTML = _livingFailHtml(e.message, _livingT());
       }
+    }
+
+    // A language switch (app-boot.js): every panel redraws from the payload it last drew
+    // and re-opens what the reader had open -- the stream diffs (from the payloads they
+    // were opened with) and the law folds (by change id). NEVER a fetch: a diff whose
+    // payload is not held (still loading, or failed) is left closed rather than re-asked.
+    function repaintLivingFromCache() {
+      const t = _livingT(), tf = _livingTf();
+      renderLivingOverview();
+      const stream = $("living-stream");
+      if (stream && _livingStreamLast) {
+        const open = [];
+        stream.querySelectorAll('[id^="living-diff-"]').forEach((box) => {
+          const id = Number(box.id.slice("living-diff-".length));
+          if (box.innerHTML && _livingDiffs.has(id)) open.push(id);
+        });
+        renderLivingStream();
+        open.forEach((id) => {
+          const box = $("living-diff-" + id);
+          if (!box) return;
+          box.innerHTML = livingDiffBoxHtml(_livingDiffs.get(id), t, tf);
+          const btn = stream.querySelector(`button[data-diff-rev="${id}"]`);
+          if (btn) btn.textContent = t("Hide diff");
+        });
+      }
+      renderLivingPages();
+      const law = $("living-law-changes");
+      if (law && _livingLawLast) {
+        const open = new Set([...law.querySelectorAll("details[data-change-id][open]")]
+          .map((el) => el.getAttribute("data-change-id")));
+        renderLivingLaw();
+        law.querySelectorAll("details[data-change-id]").forEach((el) => {
+          if (open.has(el.getAttribute("data-change-id"))) el.open = true;
+        });
+      }
+      renderLivingMaps();
     }

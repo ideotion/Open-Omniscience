@@ -5301,5 +5301,16 @@
   "airplane mode engaged — progress is saved, start again to resume": "Flugmodus aktiv — der Fortschritt ist gespeichert, erneut starten, um fortzufahren",
   "paused: {reason} — progress is saved, start again once memory recovers": "pausiert: {reason} — der Fortschritt ist gespeichert, erneut starten, sobald sich der Speicher erholt hat",
   "declined on this machine: {reason} — nothing was judged; restart the app with {env}=1 to run it anyway": "auf diesem Rechner abgelehnt: {reason} — nichts wurde beurteilt; die App mit {env}=1 neu starten, um es trotzdem auszuführen",
-  "stopped after {n} consecutive batches with no evidence to judge — the remaining candidates could not be evaluated (no reachable feed / no prior articles); they stay unqualified and will be retried on a later run": "nach {n} aufeinanderfolgenden Stapeln ohne beurteilbare Belege angehalten — die übrigen Kandidaten konnten nicht bewertet werden (kein erreichbarer Feed / keine früheren Artikel); sie bleiben ungeprüft und werden bei einem späteren Lauf erneut versucht"
+  "stopped after {n} consecutive batches with no evidence to judge — the remaining candidates could not be evaluated (no reachable feed / no prior articles); they stay unqualified and will be retried on a later run": "nach {n} aufeinanderfolgenden Stapeln ohne beurteilbare Belege angehalten — die übrigen Kandidaten konnten nicht bewertet werden (kein erreichbarer Feed / keine früheren Artikel); sie bleiben ungeprüft und werden bei einem späteren Lauf erneut versucht",
+  "{n} source targeted": "{n} Quelle anvisiert",
+  "{n} sources targeted": "{n} Quellen anvisiert",
+  "{targeted} of {total} enabled · this run will process up to {n}": "{targeted} von {total} aktivierten · dieser Lauf verarbeitet bis zu {n}",
+  "By type": "Nach Typ",
+  "thin (<{n})": "dünn abgedeckt (<{n})",
+  "Local copy": "Lokale Kopie",
+  "Coverage unavailable: {error}": "Abdeckung nicht verfügbar: {error}",
+  "This machine, read at boot": "Dieser Rechner, beim Start gelesen",
+  "This machine, read just now": "Dieser Rechner, gerade eben gelesen",
+  "Last run failed": "Letzter Lauf fehlgeschlagen",
+  "Your budgets can still take {room}; the drive has {free} free. That is more than the drive has free.": "Ihre Budgets können noch {room} belegen; das Laufwerk hat {free} frei. Das ist mehr, als auf dem Laufwerk frei ist."
 }

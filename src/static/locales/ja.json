@@ -5301,5 +5301,16 @@
   "airplane mode engaged — progress is saved, start again to resume": "機内モードがオンです — 進捗は保存されています。再開するにはもう一度開始してください",
   "paused: {reason} — progress is saved, start again once memory recovers": "一時停止：{reason} — 進捗は保存されています。メモリが回復したらもう一度開始してください",
   "declined on this machine: {reason} — nothing was judged; restart the app with {env}=1 to run it anyway": "このマシンでは見送られました：{reason} — 何も判定していません。それでも実行するには {env}=1 でアプリを再起動してください",
-  "stopped after {n} consecutive batches with no evidence to judge — the remaining candidates could not be evaluated (no reachable feed / no prior articles); they stay unqualified and will be retried on a later run": "判定できる根拠のないバッチが {n} 回連続したため停止しました — 残りの候補は評価できませんでした（到達できるフィードなし／過去の記事なし）。未審査のまま残り、後の実行で再試行されます"
+  "stopped after {n} consecutive batches with no evidence to judge — the remaining candidates could not be evaluated (no reachable feed / no prior articles); they stay unqualified and will be retried on a later run": "判定できる根拠のないバッチが {n} 回連続したため停止しました — 残りの候補は評価できませんでした（到達できるフィードなし／過去の記事なし）。未審査のまま残り、後の実行で再試行されます",
+  "{n} source targeted": "対象ソース {n} 件",
+  "{n} sources targeted": "対象ソース {n} 件",
+  "{targeted} of {total} enabled · this run will process up to {n}": "有効な {total} 件のうち {targeted} · 今回の実行で最大 {n} 件を処理します",
+  "By type": "種類別",
+  "thin (<{n})": "手薄（<{n}）",
+  "Local copy": "ローカルの複製",
+  "Coverage unavailable: {error}": "カバレッジを取得できません：{error}",
+  "This machine, read at boot": "このマシン（起動時に読み取り）",
+  "This machine, read just now": "このマシン（たった今読み取り）",
+  "Last run failed": "前回の実行が失敗しました",
+  "Your budgets can still take {room}; the drive has {free} free. That is more than the drive has free.": "予算にはまだ {room} の余地があります。ドライブの空きは {free} です。これはドライブの空き容量を超えています。"
 }

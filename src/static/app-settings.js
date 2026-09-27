@@ -856,13 +856,13 @@
             if (res.ran === false) el.textContent = t("The local model is unavailable: the local AI is not running.");
             else el.textContent = `${t("Done.")} ${res.stored || 0} ${t("labelled")} · ${res.none || 0} ${t("unclear")} · ${res.total || 0} ${t("scanned")}`;
           } else if (st === "cancelled") el.textContent = t("Cancelled.");
-          else if (st === "error") el.textContent = t("Failed:") + " " + esc(s.error || "");
+          else if (st === "error") el.textContent = ooLabelText(t("Failed"), s.error || "");
           else if (s.last_run) {
             // Idle in THIS process, but a previous process's run left an honest trace
             // (§1 item 3 — the status line must stay honest about what happened after a
             // restart, not read as blank/never-run).
             const lr = s.last_run;
-            if (lr.state === "error") el.textContent = t("Last run failed:") + " " + esc(lr.error || "");
+            if (lr.state === "error") el.textContent = ooLabelText(t("Last run failed"), lr.error || "");
             else el.textContent = `${t("Last run:")} ${lr.stored || 0} ${t("labelled")} · ${lr.none || 0} ${t("unclear")} · ${lr.total || 0} ${t("scanned")}`;
           } else el.textContent = "";
           break;
@@ -901,7 +901,7 @@
       if (btn && btn.dataset.running === "1") {
         // Currently running -> this click means STOP.
         try { await api("/api/ai/detect-language/cancel", { method: "POST" }); }
-        catch (e) { if (el) el.textContent = t("Failed:") + " " + esc(e.message || e); }
+        catch (e) { if (el) el.textContent = ooLabelText(t("Failed"), e.message || e); }
         pollLangDetect(); // in case no poll loop is live yet (e.g. a fresh tab), pick up the cancel
         return;
       }
@@ -912,7 +912,7 @@
         // model outages and keeps going until the backlog is drained or cancelled).
         await api("/api/ai/detect-language", { method: "POST", body: JSON.stringify({ continuous: true }) });
         _paintLangDetectButton(true);
-      } catch (e) { if (el) el.textContent = t("Failed:") + " " + esc(e.message || e); }
+      } catch (e) { if (el) el.textContent = ooLabelText(t("Failed"), e.message || e); }
       if (btn) btn.disabled = false;
       pollLangDetect();
     }
@@ -1851,9 +1851,12 @@
         typeof r.disk_free_bytes === "number"
           ? tf("{size} of free disk", { size: humanBytes(r.disk_free_bytes) }) : t("free disk could not be read"),
       ];
-      const lead = r.when === "boot" ? t("This machine, read at boot:") : t("This machine, read just now:");
+      // The lead carries no colon of its own: the separator is the reader's (ooLabelHtml),
+      // since a welded ": " drew "本机（启动时读取）： 4 个…" -- a Latin space after a
+      // full-width colon (2026-09-27 re-walk O-5).
+      const lead = r.when === "boot" ? t("This machine, read at boot") : t("This machine, read just now");
       const how = t("Read on this machine with no network: logical CPU cores, total RAM, and the free space on the drive that holds your data folder.");
-      let html = `<div title="${esc(how)}">${esc(lead)} ${esc(bits.join(" · "))}</div>`;
+      let html = `<div title="${esc(how)}">${ooLabelHtml(esc(lead), esc(bits.join(" · ")))}</div>`;
       // The reading beside the reference, and NO verdict between them: the reference's
       // "3.5 GB" is what its machine class reports, so a strict "below" would call the
       // reference machine smaller than itself (see src/config/hardware_reading.py).
@@ -1883,11 +1886,12 @@
         // arithmetic about the present and never a forecast of when anything fills.
         // The server's three-state `budgets_fit` decides the tone, and only a `false`
         // warns -- an unknown is not drawn as a fit, and not as a failure either.
-        const line = tf("Your budgets can still take {room}; the drive has {free} free.",
-          { room: humanBytes(rep.claimable_bytes), free: humanBytes(d.free_bytes) });
+        // The warning is ONE keyed sentence pair, so each locale joins its own two
+        // sentences: welded with a Latin space, zh read "…可用。 这超过了…" (re-walk O-5).
+        const room = humanBytes(rep.claimable_bytes), free = humanBytes(d.free_bytes);
         html += rep.budgets_fit === false
-          ? `<div class="card-caveat">${esc(line)} ${esc(t("That is more than the drive has free."))}</div>`
-          : `<div class="muted">${esc(line)}</div>`;
+          ? `<div class="card-caveat">${esc(tf("Your budgets can still take {room}; the drive has {free} free. That is more than the drive has free.", { room, free }))}</div>`
+          : `<div class="muted">${esc(tf("Your budgets can still take {room}; the drive has {free} free.", { room, free }))}</div>`;
       }
       return html;
     }

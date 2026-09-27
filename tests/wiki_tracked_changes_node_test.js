@@ -68,6 +68,9 @@ function load(payload, opts) {
     // failure line goes through the shared label frame -- the real helpers.
     extract("fmtNum") + "\n" + extract("_mapTf") + "\n" + extract("ooLabelText") + "\n" +
     extract("_wikiRevRow") + "\n" +
+    // The view draws through the one renderer a language switch also redraws with
+    // (2026-09-27 re-walk O-3), from the payload loadWikiTC keeps.
+    "var _wikiTcLast = null;\n" + extract("_renderWikiTC") + "\n" +
     extract("loadWikiTC", "async function ") + "\n" +
     "module.exports = { loadWikiTC, _wikiTc };";
   const m = { exports: {} };

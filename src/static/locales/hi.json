@@ -5301,5 +5301,16 @@
   "airplane mode engaged — progress is saved, start again to resume": "हवाई जहाज़ मोड चालू — प्रगति सहेजी गई है, जारी रखने के लिए फिर से शुरू करें",
   "paused: {reason} — progress is saved, start again once memory recovers": "रुका हुआ: {reason} — प्रगति सहेजी गई है, मेमोरी ठीक होने पर फिर से शुरू करें",
   "declined on this machine: {reason} — nothing was judged; restart the app with {env}=1 to run it anyway": "इस मशीन पर अस्वीकृत: {reason} — कुछ भी जाँचा नहीं गया; फिर भी चलाने के लिए ऐप को {env}=1 के साथ पुनः आरंभ करें",
-  "stopped after {n} consecutive batches with no evidence to judge — the remaining candidates could not be evaluated (no reachable feed / no prior articles); they stay unqualified and will be retried on a later run": "लगातार {n} बैचों में जाँचने लायक कोई प्रमाण न मिलने पर रोका गया — शेष उम्मीदवारों का मूल्यांकन नहीं हो सका (कोई पहुँच योग्य फ़ीड नहीं / कोई पिछला लेख नहीं); वे अभी नहीं परखे गए रहेंगे और बाद के रन में फिर आज़माए जाएँगे"
+  "stopped after {n} consecutive batches with no evidence to judge — the remaining candidates could not be evaluated (no reachable feed / no prior articles); they stay unqualified and will be retried on a later run": "लगातार {n} बैचों में जाँचने लायक कोई प्रमाण न मिलने पर रोका गया — शेष उम्मीदवारों का मूल्यांकन नहीं हो सका (कोई पहुँच योग्य फ़ीड नहीं / कोई पिछला लेख नहीं); वे अभी नहीं परखे गए रहेंगे और बाद के रन में फिर आज़माए जाएँगे",
+  "{n} source targeted": "{n} स्रोत लक्षित",
+  "{n} sources targeted": "{n} स्रोत लक्षित",
+  "{targeted} of {total} enabled · this run will process up to {n}": "{total} सक्षम में से {targeted} · यह रन अधिकतम {n} संसाधित करेगा",
+  "By type": "प्रकार के अनुसार",
+  "thin (<{n})": "कम कवरेज (<{n})",
+  "Local copy": "स्थानीय प्रति",
+  "Coverage unavailable: {error}": "कवरेज उपलब्ध नहीं: {error}",
+  "This machine, read at boot": "यह मशीन, बूट के समय पढ़ी गई",
+  "This machine, read just now": "यह मशीन, अभी-अभी पढ़ी गई",
+  "Last run failed": "अंतिम रन विफल रहा",
+  "Your budgets can still take {room}; the drive has {free} free. That is more than the drive has free.": "आपके बजट अभी {room} और ले सकते हैं; ड्राइव पर {free} ख़ाली है। यह ड्राइव पर ख़ाली जगह से ज़्यादा है।"
 }

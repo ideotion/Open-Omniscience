@@ -5301,5 +5301,16 @@
   "airplane mode engaged — progress is saved, start again to resume": "飞行模式已开启 — 进度已保存，再次开始即可继续",
   "paused: {reason} — progress is saved, start again once memory recovers": "已暂停：{reason} — 进度已保存，内存恢复后再次开始",
   "declined on this machine: {reason} — nothing was judged; restart the app with {env}=1 to run it anyway": "在此机器上被拒绝：{reason} — 未作任何评判；如仍要运行，请以 {env}=1 重启应用",
-  "stopped after {n} consecutive batches with no evidence to judge — the remaining candidates could not be evaluated (no reachable feed / no prior articles); they stay unqualified and will be retried on a later run": "连续 {n} 批均无可评判的证据，已停止 — 其余候选无法评估（没有可访问的订阅源／没有既往文章）；它们保持未审核状态，将在之后的运行中重试"
+  "stopped after {n} consecutive batches with no evidence to judge — the remaining candidates could not be evaluated (no reachable feed / no prior articles); they stay unqualified and will be retried on a later run": "连续 {n} 批均无可评判的证据，已停止 — 其余候选无法评估（没有可访问的订阅源／没有既往文章）；它们保持未审核状态，将在之后的运行中重试",
+  "{n} source targeted": "目标来源 {n} 个",
+  "{n} sources targeted": "目标来源 {n} 个",
+  "{targeted} of {total} enabled · this run will process up to {n}": "{targeted}（共 {total} 个已启用）· 本次运行最多处理 {n} 个",
+  "By type": "按类型",
+  "thin (<{n})": "覆盖薄弱（<{n}）",
+  "Local copy": "本地副本",
+  "Coverage unavailable: {error}": "覆盖率不可用：{error}",
+  "This machine, read at boot": "本机（启动时读取）",
+  "This machine, read just now": "本机（刚刚读取）",
+  "Last run failed": "上次运行失败",
+  "Your budgets can still take {room}; the drive has {free} free. That is more than the drive has free.": "你的预算还可以再占用 {room}；该驱动器有 {free} 可用。这超过了该驱动器的可用空间。"
 }

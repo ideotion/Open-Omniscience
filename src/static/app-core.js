@@ -2096,7 +2096,9 @@
         else if (j.paused_by === "operator") line = t("Paused by you.");
         else if (j.paused_by === "restart") line = t("Paused when the app stopped mid-download; the partial file is kept.");
       } else if (j.state === "failed" && j.error) {
-        line = t("Failed:") + " " + j.error;
+        // The reader's own separator (ooLabelText): a welded ": " printed "失败： HTTP 503"
+        // in Chinese, a Latin space after a full-width colon (2026-09-27 re-walk O-5).
+        line = ooLabelText(t("Failed"), j.error);
       }
       return line ? `<div class="muted" style="font-size:11px">${esc(line)}</div>` : "";
     }

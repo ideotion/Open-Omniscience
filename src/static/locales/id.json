@@ -5301,5 +5301,16 @@
   "airplane mode engaged — progress is saved, start again to resume": "mode pesawat aktif — kemajuan tersimpan, mulai lagi untuk melanjutkan",
   "paused: {reason} — progress is saved, start again once memory recovers": "dijeda: {reason} — kemajuan tersimpan, mulai lagi setelah memori pulih",
   "declined on this machine: {reason} — nothing was judged; restart the app with {env}=1 to run it anyway": "ditolak di mesin ini: {reason} — tidak ada yang dinilai; mulai ulang aplikasi dengan {env}=1 untuk tetap menjalankannya",
-  "stopped after {n} consecutive batches with no evidence to judge — the remaining candidates could not be evaluated (no reachable feed / no prior articles); they stay unqualified and will be retried on a later run": "dihentikan setelah {n} batch berturut-turut tanpa bukti untuk dinilai — kandidat yang tersisa tidak dapat dievaluasi (tidak ada feed yang terjangkau / tidak ada artikel sebelumnya); mereka tetap belum dinilai dan akan dicoba lagi pada proses berikutnya"
+  "stopped after {n} consecutive batches with no evidence to judge — the remaining candidates could not be evaluated (no reachable feed / no prior articles); they stay unqualified and will be retried on a later run": "dihentikan setelah {n} batch berturut-turut tanpa bukti untuk dinilai — kandidat yang tersisa tidak dapat dievaluasi (tidak ada feed yang terjangkau / tidak ada artikel sebelumnya); mereka tetap belum dinilai dan akan dicoba lagi pada proses berikutnya",
+  "{n} source targeted": "{n} sumber ditargetkan",
+  "{n} sources targeted": "{n} sumber ditargetkan",
+  "{targeted} of {total} enabled · this run will process up to {n}": "{targeted} dari {total} yang aktif · proses ini akan menangani hingga {n}",
+  "By type": "Menurut jenis",
+  "thin (<{n})": "cakupan tipis (<{n})",
+  "Local copy": "Salinan lokal",
+  "Coverage unavailable: {error}": "Cakupan tidak tersedia: {error}",
+  "This machine, read at boot": "Mesin ini, dibaca saat boot",
+  "This machine, read just now": "Mesin ini, baru saja dibaca",
+  "Last run failed": "Proses terakhir gagal",
+  "Your budgets can still take {room}; the drive has {free} free. That is more than the drive has free.": "Anggaran Anda masih dapat memakai {room}; drive punya {free} kosong. Itu lebih besar daripada ruang kosong di drive."
 }

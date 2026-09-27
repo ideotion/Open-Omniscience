@@ -5301,5 +5301,16 @@
   "airplane mode engaged — progress is saved, start again to resume": "modo avión activado — el progreso está guardado, vuelva a iniciar para continuar",
   "paused: {reason} — progress is saved, start again once memory recovers": "en pausa: {reason} — el progreso está guardado, vuelva a iniciar cuando se recupere la memoria",
   "declined on this machine: {reason} — nothing was judged; restart the app with {env}=1 to run it anyway": "rechazado en esta máquina: {reason} — no se juzgó nada; reinicie la aplicación con {env}=1 para ejecutarlo de todos modos",
-  "stopped after {n} consecutive batches with no evidence to judge — the remaining candidates could not be evaluated (no reachable feed / no prior articles); they stay unqualified and will be retried on a later run": "detenido tras {n} lotes consecutivos sin evidencia que juzgar — los candidatos restantes no pudieron evaluarse (ningún feed accesible / ningún artículo previo); siguen sin juzgar y se reintentarán en una ejecución posterior"
+  "stopped after {n} consecutive batches with no evidence to judge — the remaining candidates could not be evaluated (no reachable feed / no prior articles); they stay unqualified and will be retried on a later run": "detenido tras {n} lotes consecutivos sin evidencia que juzgar — los candidatos restantes no pudieron evaluarse (ningún feed accesible / ningún artículo previo); siguen sin juzgar y se reintentarán en una ejecución posterior",
+  "{n} source targeted": "{n} fuente objetivo",
+  "{n} sources targeted": "{n} fuentes objetivo",
+  "{targeted} of {total} enabled · this run will process up to {n}": "{targeted} de {total} habilitadas · esta ejecución procesará hasta {n}",
+  "By type": "Por tipo",
+  "thin (<{n})": "poco cubiertos (<{n})",
+  "Local copy": "Copia local",
+  "Coverage unavailable: {error}": "Cobertura no disponible: {error}",
+  "This machine, read at boot": "Esta máquina, leída al arrancar",
+  "This machine, read just now": "Esta máquina, leída ahora mismo",
+  "Last run failed": "La última ejecución falló",
+  "Your budgets can still take {room}; the drive has {free} free. That is more than the drive has free.": "Sus presupuestos aún pueden ocupar {room}; la unidad tiene {free} libres. Eso es más de lo que la unidad tiene libre."
 }

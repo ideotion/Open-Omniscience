@@ -703,9 +703,15 @@
         } else if (g.kind === "wiki") {
           const grp = head(t("Wikipedia"), g);
           // A content hit carries a reader url (open the LOCAL article); a watched-page
-          // title hit (no url) jumps to the Wikipedia settings/tracker.
-          items.forEach(it => out.push({grp, label: it.title, sub: it.wiki || "",
-            run: it.url ? (() => window.open(it.url, "_blank")) : (() => showTab("wiki"))}));
+          // title hit (no url) opens that page's tracked changes, which live in Living
+          // sources since R32. A page whose text is also in the corpus answers BOTH ways,
+          // so each row says what it opens: two rows with one label that did different
+          // things (the second landed on Settings) was the 2026-09-27 re-walk's P-6.
+          items.forEach(it => out.push({grp, label: it.title,
+            sub: [it.wiki || "", it.url ? t("Local copy") : t("Tracked changes")].filter(Boolean).join(" · "),
+            run: it.url ? (() => window.open(it.url, "_blank"))
+              : (() => (typeof openWikiTC === "function" && it.page_id != null
+                ? openWikiTC(it.page_id, it.title || "", it.wiki || "") : showTab("wiki")))}));
         } else if (g.kind === "law") {
           const grp = head(t("World law"), g);
           items.forEach(it => out.push({grp, label: it.title,

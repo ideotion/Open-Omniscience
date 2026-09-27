@@ -1786,6 +1786,17 @@
          Search and button wrappers carry inline `flex`. Search takes its own line. */
       .src-filter-row > div:not(:last-child) { flex:1 1 130px !important; }
       .src-filter-row > div:first-child { flex-basis:100% !important; }
+      /* ...and a filter that wrapped into the RIGHT column opened its list from its own
+         left edge, 180 px or more wide, so the Country list ran 64 px past a 375 px
+         viewport and a sideways wheel scrolled the whole page (2026-09-27 re-walk L-10).
+         On a phone each open list spans the filter ROW instead: the row is the
+         containing block, left/right pin it inside the panel, and `top` stays auto so
+         it still opens right under its own summary. Long names wrap rather than push
+         their count off the edge. */
+      .src-filter-row { position:relative; }
+      .src-filter-row .msel { position:static; }
+      .src-filter-row .msel .msel-list { left:0; right:0; min-width:0; }
+      .src-filter-row .msel-opt { white-space:normal; }
       /* The Agenda month bar carries a deliberate inline flex-wrap:nowrap (the
          ‹ month › cluster reads as one unit on a desktop); at phone width its
          trailing hint span protruded 106px past the viewport (measured). Wrapping

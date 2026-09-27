@@ -5301,5 +5301,16 @@
   "airplane mode engaged — progress is saved, start again to resume": "বিমান মোড চালু — অগ্রগতি সংরক্ষিত, আবার শুরু করলে পুনরায় চলবে",
   "paused: {reason} — progress is saved, start again once memory recovers": "বিরতিতে: {reason} — অগ্রগতি সংরক্ষিত, মেমরি স্বাভাবিক হলে আবার শুরু করুন",
   "declined on this machine: {reason} — nothing was judged; restart the app with {env}=1 to run it anyway": "এই যন্ত্রে প্রত্যাখ্যাত: {reason} — কিছুই বিচার করা হয়নি; তবুও চালাতে {env}=1 দিয়ে অ্যাপ আবার চালু করুন",
-  "stopped after {n} consecutive batches with no evidence to judge — the remaining candidates could not be evaluated (no reachable feed / no prior articles); they stay unqualified and will be retried on a later run": "পরপর {n}টি ব্যাচে বিচারের কোনো প্রমাণ না থাকায় থামানো হয়েছে — বাকি প্রার্থীদের মূল্যায়ন করা যায়নি (নাগালযোগ্য ফিড নেই / পূর্ববর্তী নিবন্ধ নেই); তারা এখনও বিচারহীন থাকবে এবং পরবর্তী রানে আবার চেষ্টা করা হবে"
+  "stopped after {n} consecutive batches with no evidence to judge — the remaining candidates could not be evaluated (no reachable feed / no prior articles); they stay unqualified and will be retried on a later run": "পরপর {n}টি ব্যাচে বিচারের কোনো প্রমাণ না থাকায় থামানো হয়েছে — বাকি প্রার্থীদের মূল্যায়ন করা যায়নি (নাগালযোগ্য ফিড নেই / পূর্ববর্তী নিবন্ধ নেই); তারা এখনও বিচারহীন থাকবে এবং পরবর্তী রানে আবার চেষ্টা করা হবে",
+  "{n} source targeted": "{n}টি উৎস লক্ষ্যভুক্ত",
+  "{n} sources targeted": "{n}টি উৎস লক্ষ্যভুক্ত",
+  "{targeted} of {total} enabled · this run will process up to {n}": "{total}টি সক্রিয়র মধ্যে {targeted} · এই রানে সর্বোচ্চ {n}টি প্রক্রিয়া করা হবে",
+  "By type": "ধরন অনুযায়ী",
+  "thin (<{n})": "কম কভারেজ (<{n})",
+  "Local copy": "স্থানীয় অনুলিপি",
+  "Coverage unavailable: {error}": "কভারেজ উপলব্ধ নয়: {error}",
+  "This machine, read at boot": "এই যন্ত্র, চালু হওয়ার সময় পড়া",
+  "This machine, read just now": "এই যন্ত্র, এইমাত্র পড়া",
+  "Last run failed": "শেষ রান ব্যর্থ হয়েছে",
+  "Your budgets can still take {room}; the drive has {free} free. That is more than the drive has free.": "আপনার বাজেটগুলি এখনও {room} নিতে পারে; ড্রাইভে {free} খালি আছে। এটি ড্রাইভের খালি জায়গার চেয়ে বেশি।"
 }
