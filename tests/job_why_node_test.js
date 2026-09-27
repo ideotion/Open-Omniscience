@@ -58,11 +58,15 @@ const appWhy = load(
 // taskmanager.html: its OWN esc and isDl, and a page-global t() -- bound per call here.
 const dAt = TM.indexOf("var isDl = function");
 assert.ok(dAt !== -1, "taskmanager.html's isDl is gone -- was it renamed?");
-const tmSrc = extract(TM, "esc") + "\n" + TM.slice(dAt, TM.indexOf("};", dAt) + 2) + "\n" +
-  extract(TM, "jobWhy");
-const tmWhy = (j, t) => {
+// The failure line takes the page's own tf() and the keyed label frame (re-walk O-5);
+// a bare `window` makes that tf fall back to the English frame.
+const tmSrc = extract(TM, "esc") + "\n" + extract(TM, "tf") + "\n" +
+  TM.slice(dAt, TM.indexOf("};", dAt) + 2) + "\n" + extract(TM, "jobWhy");
+const tmWhy = (j, t, win) => {
   const m = { exports: {} };
-  new Function("module", "exports", "t", tmSrc + "\nmodule.exports = jobWhy;")(m, m.exports, t);
+  const w = win || {};
+  new Function("module", "exports", "t", "window", "OOI18N", tmSrc + "\nmodule.exports = jobWhy;")(
+    m, m.exports, t, w, w.OOI18N);
   return m.exports(j);
 };
 
@@ -112,6 +116,21 @@ for (const [RENDERER, _jobWhy] of [["app-core.js _jobWhy", appWhy], ["taskmanage
     assert.ok(f.includes("FAILED: OSError: reset"), RENDERER + ": " + f);
   }
 
+}
+
+// Re-walk O-5: the /tasks page kept its own `t("Failed:") + " " + error` weld after the
+// in-app window moved to the keyed label frame, so zh read "失败： HTTP 503" with a Latin
+// space after the full-width colon. Both renderers now take the frame's own punctuation.
+{
+  const ZH = { "Failed": "失败", "Failed:": "失败：", "{prefix}: {text}": "{prefix}：{text}" };
+  const I = {
+    t: (s) => ZH[s] || s,
+    tf: (s, v) => (ZH[s] || s).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null ? String(v[k]) : m)),
+  };
+  const out = tmWhy({ kind: "osm-map", state: "failed", error: "HTTP 503 from the mirror" }, I.t, { OOI18N: I });
+  assert.ok(out.includes("失败：HTTP 503 from the mirror"), "taskmanager.html jobWhy in zh: " + out);
+  assert.ok(!/： /.test(out), "taskmanager.html jobWhy puts a Latin space after the full-width colon: " + out);
+  assert.ok(!/t\("Failed:"\) \+ " "/.test(TM), "the /tasks weld is back");
 }
 
 // Each renderer must actually DRAW the line, not only define it.

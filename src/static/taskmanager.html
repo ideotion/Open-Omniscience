@@ -416,7 +416,11 @@
       else if (j.paused_by === "operator") line = t("Paused by you.");
       else if (j.paused_by === "restart") line = t("Paused when the app stopped mid-download; the partial file is kept.");
     } else if (j.state === "failed" && j.error) {
-      line = t("Failed:") + " " + j.error;
+      // The keyed label frame app-core.js's _jobWhy uses (ooLabelText), so zh/ja take
+      // their full-width colon with no Latin space after it (re-walk O-5).
+      line = tf("{prefix}: {text}", { prefix: "\u0001", text: "\u0002" })
+        .replace("\u0001", function () { return t("Failed"); })
+        .replace("\u0002", function () { return String(j.error); });
     }
     return line ? '<div class="muted" style="font-size:11px">' + esc(line) + "</div>" : "";
   }

@@ -138,6 +138,10 @@
     // as it did when the loop ended there -- the button is how a paused run is continued
     // from here -- while the watch goes on following the job.
     const _jobWatch = {};
+    // The reading each job line last drew, so a live language switch can redraw it without
+    // a fetch (re-walk N-4): the watch loop ends once its job is done, and nothing else
+    // would draw the line again until the fold is reopened.
+    const _jobLast = {};
     function _diagSectionOpen() {
       const d = document.querySelector('#set-advanced details.adv-sec[data-adv="diagnostics"]');
       return !!(d && d.open);
@@ -180,7 +184,10 @@
             // Opening the section on a job that never ran says nothing: the line is for a
             // job, and there is none. A refusal is still named, as the button would.
             const idle = !s.state || s.state === "idle" || s.state === "cancelled";
-            if (st && !(me.quietIdle && idle && !s.refusal)) st.textContent = render(s, report, t);
+            if (st && !(me.quietIdle && idle && !s.refusal)) {
+              st.textContent = render(s, report, t);
+              _jobLast[key] = {s, report, render, st, drawn: st.textContent};
+            }
             const running = s.state === "running" && !!s.running;
             // A start came in while this read was in flight: read again before deciding.
             if (gen !== me.gen) continue;
@@ -196,6 +203,19 @@
         }
       })();
       return me;
+    }
+    // A live language switch (the one oo:langchange listener in app-boot.js): redraw each
+    // job line from the reading it last drew, in the new language. Never a fetch. A line
+    // that is gone, or that something else has written since (an error, a refusal, a new
+    // start), is left alone: the retained reading is no longer what it shows.
+    function repaintDiagnosticsJobsFromCache() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      for (const key of Object.keys(_jobLast)) {
+        const L = _jobLast[key];
+        if (!L.st || !L.st.isConnected || L.st.textContent !== L.drawn) continue;
+        L.st.textContent = L.render(L.s, L.report, t);
+        L.drawn = L.st.textContent;
+      }
     }
     // Called when Settings → Advanced → Diagnostics opens (app-boot.js): one status read per
     // job line, which keeps watching only if that job is running or paused.

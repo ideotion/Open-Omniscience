@@ -278,6 +278,11 @@
       // Each redraws from the payload it last drew, and only when it holds a drawn map.
       try { if (typeof repaintStatMapFromCache === "function") repaintStatMapFromCache(); } catch (_e) {}
       try { if (typeof repaintRingMapFromCache === "function") repaintRingMapFromCache(); } catch (_e) {}
+      // Settings → Advanced → Diagnostics: the three job lines (re-index, keyword fold,
+      // search re-index) are composed sentences no English key matches, and their watch
+      // loop ends once the job is done, so a switch left them in the old language until
+      // the fold was reopened (re-walk N-4). Redrawn from the last reading, no fetch.
+      try { if (typeof repaintDiagnosticsJobsFromCache === "function") repaintDiagnosticsJobsFromCache(); } catch (_e) {}
       // The Observatory is the same class again, and worse: its canvas has no DOM
       // for the i18n walker to reach at all, so EVERY label it paints (the orbit
       // ticks, the domain wedge names) plus its tf()-built disclosures would stay
