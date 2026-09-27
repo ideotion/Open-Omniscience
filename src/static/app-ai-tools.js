@@ -2111,8 +2111,10 @@
         }).join("");
         // The caveat is the server's fixed English sentence, and a locale KEY (re-walk M-10):
         // left as its own text node so the DOM walker translates it and re-translates it
-        // on a language switch, like the headers beside it.
-        el.innerHTML = `<table><tr><th>Outlet</th><th>Tone (VADER)</th><th>#</th><th>Emphasised terms</th></tr>${rows}</table>
+        // on a language switch, like the headers beside it. The table scrolls in its own box:
+        // four columns of translated headers do not fit a 375 px phone in de or ru, and it
+        // pushed the whole page sideways instead (the re-walk review of M-8).
+        el.innerHTML = `<div style="overflow-x:auto"><table><tr><th>Outlet</th><th>Tone (VADER)</th><th>#</th><th>Emphasised terms</th></tr>${rows}</table></div>
           <div class="hint">${esc(d.caveat||"")}</div>`;
       } catch (e) {
         el.innerHTML = "<span class='muted'>Framing unavailable (needs the [analysis] extra installed).</span>";

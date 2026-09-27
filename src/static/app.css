@@ -1176,6 +1176,13 @@
     .ls-chip { background:transparent; border:0; padding:1px 3px; color:var(--fg); cursor:pointer;
       line-height:1.25; border-bottom:1px dotted transparent; }
     .ls-chip:hover { color:var(--accent); border-bottom-color:var(--accent); }
+    /* A keyword's language tag can name four languages ("auf Englisch, Deutsch, Portugiesisch
+       und Spanisch"), and .kw-tag's nowrap kept it on one line: at 375 px the landscape chips
+       and the Trends rows ran past the viewport and the page scrolled sideways in de, fr and
+       ru (the 2026-09-27 re-walk's review of M-8/M-11). The .tb-label cure: the tag wraps. */
+    .ls-chip { max-width:100%; white-space:normal; text-align:start; }
+    .kw-row { flex-wrap:wrap; }
+    .ls-chip .kw-tag, .kw-row .kw-tag { white-space:normal; overflow-wrap:anywhere; }
 
     .stat-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(150px,1fr)); gap:11px; }
     .stat { background:var(--panel2); border:1px solid var(--border); border-radius:var(--radius-sm); padding:13px; }

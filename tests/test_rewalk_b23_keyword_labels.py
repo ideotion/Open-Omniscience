@@ -349,6 +349,22 @@ def test_the_top_list_label_wraps_its_tag_instead_of_clipping_it() -> None:
     assert re.search(r"\.tb-label \.kw-tag\s*\{[^}]*white-space:normal", css)
 
 
+def test_a_long_language_tag_never_pushes_the_phone_page_sideways() -> None:
+    """The review of M-8: the same nowrap tag scrolled a 375 px page sideways elsewhere --
+    the Explore landscape chips (de 35 px, ru 96 px), the Trends rows (fr 15 px, ru 108 px)
+    and the framing table's last column beside them (de/ru)."""
+    css = read_static("app.css")
+    chip = re.search(r"\.ls-chip\s*\{([^}]*max-width[^}]*)\}", css)
+    assert chip and "white-space:normal" in chip.group(1).replace(" ", ""), "the chip keeps its tag on one line"
+    assert re.search(r"\.ls-chip \.kw-tag, \.kw-row \.kw-tag\s*\{[^}]*white-space:normal", css)
+    assert re.search(r"\.kw-row\s*\{[^}]*flex-wrap:wrap", css)
+    corpus = read_static("app-corpus.js")
+    assert 'class="kw-row"' in function_body(corpus, "termListHtml")
+    assert 'class="kw-row"' in function_body(corpus, "loadTrendWindows")
+    framing = function_body(read_static("app-ai-tools.js"), "loadFraming")
+    assert '<div style="overflow-x:auto"><table>' in framing, "the framing table widens the page again"
+
+
 def test_the_explore_level_toggle_never_shrinks_below_its_label() -> None:
     css = read_static("app.css")
     assert re.search(r"\.row > \.seg-toggle button\s*\{[^}]*min-width:max-content", css), (
