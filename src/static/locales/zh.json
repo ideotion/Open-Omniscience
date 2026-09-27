@@ -5304,5 +5304,18 @@
   "also run 0.4 row W (0.3's row 5), LAST — the Tier-A quarantine pass, then a whole-corpus keyword re-index with collection paused: hours on a small corpus, days on a slow machine (required before the v0.4.0 tag; runs only when ticked)": "同时在最后运行 0.4 的第 W 行（即 0.3 的第 5 行）——A 级隔离遍历，然后在暂停采集的情况下对整个语料库重建关键词索引：小语料库需数小时，慢速机器需数天（v0.4.0 标签之前必须完成；仅在勾选时运行）",
   "Mentions of every language member of the ring, grouped by the source's country. Keywords with no stored language are excluded (conservative). Counts only.": "该环中每个语言成员的提及次数，按来源国家分组。未存储语言的关键词被排除（保守处理）。仅计数。",
   "Coverage by producing-source country, never a credibility ranking or score. Articles whose source has no country are counted under 'Not mapped (source country unknown)', never dropped. Co-occurrence in your corpus, never a claim about the country.": "按内容来源国家统计的覆盖面，绝非可信度排名或评分。来源没有国家的文章计入“未上图（来源国家未知）”，从不丢弃。这是您语料库中的共现，绝非对该国的断言。",
-  "index": "指数"
+  "index": "指数",
+  "Mention counts on a shared time axis.": "共用一条时间轴的提及次数。",
+  "Price × coverage: {prices} price points, {coverage} coverage points": "价格 × 报道量：{prices} 个价格点，{coverage} 个报道量数据点",
+  "Shrink the mindmap": "缩小思维导图",
+  "{list}, {item}": "{list}、{item}",
+  "{term} ({count}, Association {pmi})": "{term}（{count}，关联 {pmi}）",
+  "{term} ({count})": "{term}（{count}）",
+  "Tone is measured by VADER, an ENGLISH-lexicon method; scores for non-English articles are unreliable (see the English share). Counts only, never a verdict.": "语气由 VADER 测量，这是一种基于英语词典的方法；非英语文章的得分不可靠（见英语占比）。仅为计数，绝非定论。",
+  "Volume and timing are exact counts; mean tone is VADER (English-lexicon, unreliable for non-English). No ranking and no verdict -- coverage, not credibility.": "数量与时间均为精确计数；平均语气来自 VADER（基于英语词典，对非英语不可靠）。不排名、不下定论——这是报道覆盖，而非可信度。",
+  "Shared-origin structure, counts only. Several articles citing the SAME link are not independent confirmation -- one origin, several echoes. Citing sources is the count that bounds how many independent paths there could be; even distinct outlets may still share an upstream origin this view cannot see.": "共同来源结构，仅为计数。多篇文章引用同一链接并非独立佐证——同一来源，多重回声。引用来源数限定了至多可能有多少条独立路径；即使是不同的媒体，也可能共享本视图看不到的上游来源。",
+  "Deduced from article text, never confirmed; counts only.": "从文章文本推断，从未经确认；仅为计数。",
+  "Near-duplicate clustering (MinHash + LSH, high-precision, Jaccard >= 0.7) within the matched set; independence is measured by DISTINCT SOURCES, never article count.": "在匹配集合内进行近似重复聚类（MinHash + LSH，高精度，Jaccard >= 0.7）；独立性以不同来源的数量衡量，绝不以文章数量衡量。",
+  "Structural near-duplication: articles sharing near-identical text count as ONE voice, not independent confirmation. This is NOT proof of collusion, and the absence of a flag is not the absence of coordination. Counts only, no score.": "结构性近似重复：文本几乎相同的文章算作“一个声音”，而非独立佐证。这不是共谋的证据，没有标记也不代表不存在协调。仅为计数，不打分。",
+  "These are measurable framing SIGNALS (tone via VADER sentiment; emphasised terms via frequency), not a judgement that any outlet is biased. VADER is an ENGLISH lexicon, so tone is measured ONLY for English articles: an outlet with no English coverage here reports NO tone at all. That is an honest gap, never a 'neutral' -- an unreadable language scores 0.0 on an English lexicon, which is the absence of a measurement, not a measurement of absence. Each outlet states how many of its articles the lexicon could actually read. Read the linked articles and attribute for yourself.": "这些是可测量的框架信号（语气来自 VADER 情感分析；强调词来自词频），并非判定任何媒体存在偏见。VADER 是英语词典，因此语气仅针对英语文章测量：在此没有英语报道的媒体完全不报告语气。这是如实的空缺，绝不是“中性”——无法读取的语言在英语词典上得分 0.0，这是测量的缺失，而不是对缺失的测量。每家媒体都会注明词典实际能读取其多少篇文章。请阅读链接的文章，自行判断归属。"
 }

@@ -286,6 +286,10 @@
       // agenda -- and only when it was ever drawn, so a switch never fetches for them.
       try { if (typeof _renderWatches === "function") _renderWatches(); } catch (_e) {}
       try { if (typeof _anRepaintPrice === "function") _anRepaintPrice(); } catch (_e) {}
+      // The rest of the analysis window (the 2026-09-27 re-walk, N-4): the Articles list,
+      // an open Trend chart and the Links, Sentiment and Sources panels, each redrawn from
+      // the payload it last drew -- never a fetch, and nothing for a panel never drawn.
+      try { if (typeof _anRepaintOnLangChange === "function") _anRepaintOnLangChange(); } catch (_e) {}
       try {
         if (typeof AG !== "undefined" && AG.cals && AG.cals.length && typeof renderAgenda === "function") {
           renderAgenda();
@@ -489,7 +493,7 @@
         const tr = d.trend || {};
         if (tr.recent || tr.prior) {
           const fb = growthFallback(tr, {window: true});
-          bits.push(fb ? `${t("trend")}: ${fb}`
+          bits.push(fb ? ooLabelText(t("trend"), fb)
                        : `${t("trend")} ${tr.growth}× (${tr.window_days}d ${t("vs")} ${tr.baseline_days}d)`);
         }
         // THE MEASURED NUMBERS, not just the names. keyword-stats returns each
@@ -500,12 +504,21 @@
         // strength cannot be read: it says "these appear together" without saying how
         // often or how much more than chance. PMI stays paired with the raw count on
         // purpose (it is noisy on small samples, exactly as the endpoint's caveat says).
+        //
+        // Each item is ONE keyed frame, so the parentheses and the comma inside them are
+        // the reader's ("（2 篇文章，关联 3.9）", "، ارتباط"), and the items are joined with the
+        // reader's list punctuation -- it read "(2 مقالة, ارتباط 3.9)" with a Latin comma and
+        // "avec: assembly" with an English colon (the 2026-09-27 re-walk, N-5).
+        const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
+          : ((s, v) => String(s).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? String(v[k]) : m));
         const co = (d.cooccurrences || []).slice(0, 4).filter((c) => c && c.term).map((c) => {
-          const n = (c.cooccur != null) ? ` (${c.cooccur} ${t("articles")}` : "";
-          const pmi = (n && c.pmi != null) ? `, ${t("Association")} ${c.pmi.toFixed(1)}` : "";
-          return `${c.term}${n}${pmi}${n ? ")" : ""}`;
+          if (c.cooccur == null) return c.term;
+          const count = t(c.cooccur === 1 ? "{n} article" : "{n} articles").replace("{n}", c.cooccur);
+          return (c.pmi != null)
+            ? tf("{term} ({count}, Association {pmi})", {term: c.term, count, pmi: c.pmi.toFixed(1)})
+            : tf("{term} ({count})", {term: c.term, count});
         });
-        if (co.length) bits.push(`${t("with")}: ${co.join(", ")}`);
+        if (co.length) bits.push(ooLabelText(t("with"), ooListJoin(co)));
         const head = d.resolved.term || d.term || "";
         // The caveat is a FIXED server sentence, so it is keyed and goes through t() --
         // appended verbatim it read in English inside every translated bubble (N7, M14).

@@ -38,6 +38,9 @@ function extract(name) {
 const src = "function esc(s){return String(s==null?'':s).replace(/[&<>\"]/g,"
   + "c=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;'}[c]));}\n"
   + "var window = {};\n"
+  // The per-language line is "fr: climat" through the ONE keyed label frame (the
+  // 2026-09-27 re-walk, N-5), so the real app-core helper rides along, never a shim.
+  + extract("ooLabelHtml") + "\n"
   + extract("_crossLangNotice") + "\n"
   // `_anSlug` builds the per-term id the Q509 count-trigger writes into. It is REAL, not
   // shimmed: a shim would let the renderer emit an id nothing could ever find again.

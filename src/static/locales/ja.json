@@ -5304,5 +5304,18 @@
   "also run 0.4 row W (0.3's row 5), LAST — the Tier-A quarantine pass, then a whole-corpus keyword re-index with collection paused: hours on a small corpus, days on a slow machine (required before the v0.4.0 tag; runs only when ticked)": "0.4 の行 W（0.3 の行 5）も最後に実行 — ティア A の隔離パスの後、収集を一時停止してコーパス全体のキーワードを再索引（小さなコーパスで数時間、遅いマシンでは数日）（v0.4.0 タグの前に必須。チェックした場合のみ実行）",
   "Mentions of every language member of the ring, grouped by the source's country. Keywords with no stored language are excluded (conservative). Counts only.": "リングの各言語メンバーの言及を、情報源の国ごとに集計。言語が保存されていないキーワードは除外（保守的）。件数のみ。",
   "Coverage by producing-source country, never a credibility ranking or score. Articles whose source has no country are counted under 'Not mapped (source country unknown)', never dropped. Co-occurrence in your corpus, never a claim about the country.": "情報源の国別のカバレッジであり、信頼性の順位やスコアではありません。情報源に国がない記事は「地図化せず（情報源の国が不明）」として数えられ、除外されることはありません。コーパス内での共起であり、その国についての主張ではありません。",
-  "index": "指数"
+  "index": "指数",
+  "Mention counts on a shared time axis.": "共通の時間軸上の言及数。",
+  "Price × coverage: {prices} price points, {coverage} coverage points": "価格 × 報道量：価格 {prices} 点、報道量 {coverage} 点",
+  "Shrink the mindmap": "マインドマップを縮小",
+  "{list}, {item}": "{list}、{item}",
+  "{term} ({count}, Association {pmi})": "{term}（{count}、関連 {pmi}）",
+  "{term} ({count})": "{term}（{count}）",
+  "Tone is measured by VADER, an ENGLISH-lexicon method; scores for non-English articles are unreliable (see the English share). Counts only, never a verdict.": "トーンは英語辞書ベースの手法である VADER で測定しています。英語以外の記事のスコアは信頼できません（英語の割合を参照）。件数のみで、判定ではありません。",
+  "Volume and timing are exact counts; mean tone is VADER (English-lexicon, unreliable for non-English). No ranking and no verdict -- coverage, not credibility.": "件数と時期は正確な集計です。平均トーンは VADER（英語辞書ベース、英語以外では信頼できません）。順位付けも判定もありません——報道量であって、信頼性ではありません。",
+  "Shared-origin structure, counts only. Several articles citing the SAME link are not independent confirmation -- one origin, several echoes. Citing sources is the count that bounds how many independent paths there could be; even distinct outlets may still share an upstream origin this view cannot see.": "共通の出典の構造で、件数のみです。同じリンクを引用する複数の記事は独立した裏付けではありません——出典は一つ、反響は複数。引用元の数が、独立した経路がいくつあり得るかの上限です。別々の媒体でも、この表示からは見えない上流の出典を共有している可能性があります。",
+  "Deduced from article text, never confirmed; counts only.": "記事本文から推定したもので、確認されたものではありません。件数のみです。",
+  "Near-duplicate clustering (MinHash + LSH, high-precision, Jaccard >= 0.7) within the matched set; independence is measured by DISTINCT SOURCES, never article count.": "一致した集合内でのほぼ重複のクラスタリング（MinHash + LSH、高精度、Jaccard >= 0.7）。独立性は記事数ではなく、異なる情報源の数で測ります。",
+  "Structural near-duplication: articles sharing near-identical text count as ONE voice, not independent confirmation. This is NOT proof of collusion, and the absence of a flag is not the absence of coordination. Counts only, no score.": "構造的なほぼ重複：ほぼ同一の本文を持つ記事は、独立した裏付けではなく「一つの声」として数えます。これは共謀の証拠ではなく、フラグがないことは調整がないことを意味しません。件数のみで、スコアはありません。",
+  "These are measurable framing SIGNALS (tone via VADER sentiment; emphasised terms via frequency), not a judgement that any outlet is biased. VADER is an ENGLISH lexicon, so tone is measured ONLY for English articles: an outlet with no English coverage here reports NO tone at all. That is an honest gap, never a 'neutral' -- an unreadable language scores 0.0 on an English lexicon, which is the absence of a measurement, not a measurement of absence. Each outlet states how many of its articles the lexicon could actually read. Read the linked articles and attribute for yourself.": "これらは測定可能なフレーミングのシグナル（トーンは VADER の感情分析、強調語は頻度による）であり、いずれかのメディアが偏っているという判断ではありません。VADER は英語の辞書なので、トーンは英語の記事についてのみ測定されます。ここで英語の報道がないメディアは、トーンをまったく報告しません。これは正直な欠落であり、決して「中立」ではありません。読めない言語は英語の辞書では 0.0 になりますが、それは測定の欠如であって、欠如の測定ではありません。各メディアについて、辞書が実際に読めた記事の数を示しています。リンク先の記事を読み、ご自身で帰属を判断してください。"
 }

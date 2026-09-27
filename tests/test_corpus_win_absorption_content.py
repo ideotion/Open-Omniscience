@@ -46,7 +46,12 @@ _ANALYSIS = read_static("app-analysis.js")
 _CORPUS = read_static("app-corpus.js")
 _BOOT = read_static("app-boot.js")
 
-_LOAD_ANALYSIS = function_source(_ANALYSIS, "loadAnalysis")
+# The Links and Sources tables are drawn by their own renderers since the 2026-09-27
+# re-walk (N-4), so a language switch redraws them from the retained payload; the
+# loader and both renderers are read together.
+_LOAD_ANALYSIS = (function_source(_ANALYSIS, "loadAnalysis")
+                  + function_source(_ANALYSIS, "_anLinksHtml")
+                  + function_source(_ANALYSIS, "_anSourcesHtml"))
 
 
 def test_the_name_only_guard_is_not_mistaken_for_a_content_guard():
@@ -176,7 +181,10 @@ def test_mindmap_keeps_the_cloud_view_and_its_in_map_controls():
 
 
 def test_competitive_keeps_all_four_columns_and_the_not_a_ranking_disclosure():
-    comp = function_source(_ANALYSIS, "renderAnCompetitive")
+    # Fetched by renderAnCompetitive and DRAWN by _anCompetitiveHtml since the 2026-09-27
+    # re-walk (N-4), so a language switch redraws the table from the retained payloads.
+    comp = (function_source(_ANALYSIS, "renderAnCompetitive")
+            + function_source(_ANALYSIS, "_anCompetitiveHtml"))
     for needle in ("Volume", "Tone", "Timing", "Emphasis"):
         assert_present(comp, needle, why="a column the modal's Competitive view had")
     assert_present(comp, "never a ranking or a credibility judgement")
