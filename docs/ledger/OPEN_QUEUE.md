@@ -15319,10 +15319,11 @@ in Chromium on the first walk's terms, rows H to U, plus the first Claude walk o
 one to three steps; row R fails. An independent re-checker confirmed **119 items: 1 P1, 23 P2, 95 P3** (some
 repeat across rows, and 17 are a failing step that restates a defect). The P1: the trend's Counts mode labels
 summed mention counts as articles, about 3× the real article count. **OPEN:**
-- **Which of the 119 before the tag** — asked on a decision card in the «What's left for v0.4» thread
-  (2026-09-27 ~11:00 UTC): «All of them» (recommended: R36's bar; the next walk checks only these fixes and
-  each row's steps, so the loop ends) or «P1 and P2 only» (the P3s recorded for 0.5). Work proceeds on the
-  recommended option until the maintainer answers: batches B20 (row R + the release-run relabel) and B21–B30.
+- **Which of the 119 before the tag: ALL OF THEM (`R37`, 2026-09-27 11:04 UTC).** Offered «All of them» (recommended:
+  R36's bar; the next walk checks only these fixes and each row's steps, so the loop ends) or «P1 and P2 only» (the
+  P3s recorded for 0.5) on a decision card in the «What's left for v0.4» thread, the maintainer picked «All of
+  them». The fixes are batches B20 (row R + the release-run relabel) and B21–B30 in PR #1191. OPEN until they merge
+  and the next walk passes.
 - **ASSUMPTION, not a ruling: the When / Where ooMap embed (Q1150 = «Keep») is built with `0.5`'s map work.**
   It was scoped and never built (`shipped.csv` 2026-09-10); the 0.4 gate's row R had read Q1150 as naming an
   existing surface and is corrected. Register M3's recommended build is option (b), places aggregated to
