@@ -5721,5 +5721,18 @@
   "Intergovernmental organisations": "Organizaciones intergubernamentales",
   "NGOs and civil society": "ONG y sociedad civil",
   "Data portals": "Portales de datos",
-  "Financial data": "Datos financieros"
+  "Financial data": "Datos financieros",
+  "PMI/co-occurrence association, two hops (relatives, and their relatives)": "Asociación PMI/coocurrencia, dos saltos (términos afines, y los afines de estos)",
+  "Association is not causation; PMI on small samples is noisy.": "Asociación no es causalidad; el PMI con muestras pequeñas es ruidoso.",
+  "shared-article overlap between keyword FAMILIES (top members each)": "solapamiento de artículos compartidos entre FAMILIAS de palabras clave (los miembros principales de cada una)",
+  "Families group surface forms of one entity; overlap counts articles, not causation.": "Las familias agrupan las formas de una misma entidad; el solapamiento cuenta artículos, no causalidad.",
+  "shared-article overlap between SUPER-GROUPS (curated groups of families); top unassigned families shown for context": "solapamiento de artículos compartidos entre SUPERGRUPOS (grupos curados de familias); se muestran como contexto las principales familias sin asignar",
+  "Super-groups are the user's own curation; overlap counts articles, not causation.": "Los supergrupos son la propia curación del usuario; el solapamiento cuenta artículos, no causalidad.",
+  "Bounded view for responsiveness: up to {nodes} nodes, {branches} hop-2 branches, ≤{articles} articles sampled per term. Narrow the term or the time window for a finer view.": "Vista acotada para mayor rapidez: hasta {nodes} nodos, {branches} ramas de segundo salto, ≤{articles} artículos muestreados por término. Acota el término o la ventana temporal para una vista más fina.",
+  "{n} mentions — click to zoom in": "{n} menciones — haz clic para acercar",
+  "family of {n}: {members}": "familia de {n}: {members}",
+  "Person": "Persona",
+  "Organisation": "Organización",
+  "Place": "Lugar",
+  "Entity": "Entidad"
 }

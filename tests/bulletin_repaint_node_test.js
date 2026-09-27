@@ -55,7 +55,7 @@ const code = [
   line("let _bulGate"), line("const _bulMsgs"),
   "const _BUL_CADENCE_LABEL = {};",
   ...["_bulT", "_bulTf", "_bulSay", "_bulPaintMsg", "_bulRepaint", "_bulPaintGate",
-      "_bulPaintNarrationGate", "_bulPaintEditions", "_bulUnit", "_bulRender", "_bulPaintPrivacy"].map(extract),
+      "_bulPaintNarrationGate", "_bulPaintEditions", "_bulUnit", "_bulStoryTermsHtml", "_bulRender", "_bulPaintPrivacy"].map(extract),
   "module.exports = {",
   "  $, _bulSay, _bulRender, _bulRepaint, _bulPaintPrivacy,",
   "  setState(s){ _bulFile = s.file; _bulView = s.view; _bulPrivacyData = s.privacy; _bulEditions = s.editions; },",

@@ -5721,5 +5721,18 @@
   "Intergovernmental organisations": "政府間機関",
   "NGOs and civil society": "NGO・市民社会",
   "Data portals": "データポータル",
-  "Financial data": "金融データ"
+  "Financial data": "金融データ",
+  "PMI/co-occurrence association, two hops (relatives, and their relatives)": "PMI/共起による関連、2ホップ（関連語と、その関連語）",
+  "Association is not causation; PMI on small samples is noisy.": "関連は因果ではありません。小さな標本での PMI はノイズが多くなります。",
+  "shared-article overlap between keyword FAMILIES (top members each)": "キーワードのファミリー間で共有される記事の重なり（各ファミリーの上位メンバー）",
+  "Families group surface forms of one entity; overlap counts articles, not causation.": "ファミリーは一つの実体の表記ゆれをまとめたものです。重なりは記事数を数えるもので、因果ではありません。",
+  "shared-article overlap between SUPER-GROUPS (curated groups of families); top unassigned families shown for context": "スーパーグループ（ファミリーを整理したグループ）間で共有される記事の重なり。未割り当ての上位ファミリーも参考として表示",
+  "Super-groups are the user's own curation; overlap counts articles, not causation.": "スーパーグループは利用者自身が整理したものです。重なりは記事数を数えるもので、因果ではありません。",
+  "Bounded view for responsiveness: up to {nodes} nodes, {branches} hop-2 branches, ≤{articles} articles sampled per term. Narrow the term or the time window for a finer view.": "応答性のための制限付き表示：最大 {nodes} ノード、2ホップ目の枝 {branches} 本、語ごとに ≤{articles} 件の記事を抽出。より細かく見るには語または期間を絞り込んでください。",
+  "{n} mentions — click to zoom in": "{n} 件の言及 — クリックで拡大",
+  "family of {n}: {members}": "{n} 語のファミリー：{members}",
+  "Person": "人物",
+  "Organisation": "組織",
+  "Place": "場所",
+  "Entity": "固有名"
 }

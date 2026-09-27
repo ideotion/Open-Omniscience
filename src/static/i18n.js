@@ -151,6 +151,17 @@
     if ("MutationObserver" in window) observer = new MutationObserver(schedule);
     apply();  // also connects the observer
     _markReady(c);   // the locale map is loaded and applied; render-once surfaces may repaint
+    // THE SAME EVENT A SWITCH SENDS, ONCE, FOR THE BOOT LOCALE (2026-09-27 re-walk, M2/M9).
+    // `ready` repairs only the surfaces that remembered to await it; the keyword labels,
+    // the Home trending row and the Lead cards did not, so a reload whose data beat the
+    // locale file kept "in russe" and "Trending now:" until the next switch. Every such
+    // surface is already registered with the `oo:langchange` handler, each guarded on
+    // having been drawn, so one dispatch here repairs whichever of them lost the race
+    // and costs nothing for the ones not drawn yet. English has no map to wait for.
+    if (c && c !== "en") {
+      try { document.dispatchEvent(new CustomEvent("oo:langchange", { detail: { lang: c, boot: true } })); }
+      catch (_e) { /* CustomEvent unsupported -> a reload still renders in the saved locale */ }
+    }
   }
 
   // t(): string-level lookup for JS-built text (confirm dialogs, toasts) that

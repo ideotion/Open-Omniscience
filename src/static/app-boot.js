@@ -793,6 +793,12 @@
       if (btn) btn.addEventListener("click", () => foldKeywords(btn));
       const rep = $("kw-fold-report");
       if (rep) rep.addEventListener("click", () => window.open("/api/insights/keyword-fold-job/report", "_blank"));
+      // The job lines read their job when Diagnostics OPENS (re-walk M-7): a fold paused or
+      // resumed from the task manager, or left paused by a restart, is shown as it is.
+      const diag = document.querySelector('#set-advanced details.adv-sec[data-adv="diagnostics"]');
+      if (diag) diag.addEventListener("toggle", () => {
+        if (diag.open && typeof watchDiagnosticsJobs === "function") watchDiagnosticsJobs();
+      });
     })();
 
     // The search re-index (S04-07 S8): Settings → Advanced. Bound here rather than inline.

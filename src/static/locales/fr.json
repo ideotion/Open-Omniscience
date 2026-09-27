@@ -5721,5 +5721,18 @@
   "Intergovernmental organisations": "Organisations intergouvernementales",
   "NGOs and civil society": "ONG et société civile",
   "Data portals": "Portails de données",
-  "Financial data": "Données financières"
+  "Financial data": "Données financières",
+  "PMI/co-occurrence association, two hops (relatives, and their relatives)": "Association PMI/cooccurrence, deux sauts (termes proches, et leurs termes proches)",
+  "Association is not causation; PMI on small samples is noisy.": "Association n'est pas causalité ; le PMI sur de petits échantillons est bruité.",
+  "shared-article overlap between keyword FAMILIES (top members each)": "recoupement d'articles partagés entre FAMILLES de mots-clés (principaux membres de chacune)",
+  "Families group surface forms of one entity; overlap counts articles, not causation.": "Les familles regroupent les formes d'une même entité ; le recoupement compte des articles, pas une causalité.",
+  "shared-article overlap between SUPER-GROUPS (curated groups of families); top unassigned families shown for context": "recoupement d'articles partagés entre SUPER-GROUPES (groupes de familles que vous avez constitués) ; les principales familles non attribuées sont affichées pour le contexte",
+  "Super-groups are the user's own curation; overlap counts articles, not causation.": "Les super-groupes sont votre propre organisation ; le recoupement compte des articles, pas une causalité.",
+  "Bounded view for responsiveness: up to {nodes} nodes, {branches} hop-2 branches, ≤{articles} articles sampled per term. Narrow the term or the time window for a finer view.": "Vue bornée pour la réactivité : jusqu'à {nodes} nœuds, {branches} branches au deuxième saut, ≤{articles} articles échantillonnés par terme. Resserrez le terme ou la période pour une vue plus fine.",
+  "{n} mentions — click to zoom in": "{n} mentions — cliquez pour zoomer",
+  "family of {n}: {members}": "famille de {n} : {members}",
+  "Person": "Personne",
+  "Organisation": "Organisation",
+  "Place": "Lieu",
+  "Entity": "Entité"
 }

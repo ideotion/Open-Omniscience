@@ -5721,5 +5721,18 @@
   "Intergovernmental organisations": "Organisasi antarpemerintah",
   "NGOs and civil society": "LSM dan masyarakat sipil",
   "Data portals": "Portal data",
-  "Financial data": "Data keuangan"
+  "Financial data": "Data keuangan",
+  "PMI/co-occurrence association, two hops (relatives, and their relatives)": "Asosiasi PMI/kemunculan bersama, dua lompatan (istilah terkait, dan istilah terkait mereka)",
+  "Association is not causation; PMI on small samples is noisy.": "Asosiasi bukan kausalitas; PMI pada sampel kecil penuh derau.",
+  "shared-article overlap between keyword FAMILIES (top members each)": "tumpang tindih artikel bersama antar-KELUARGA kata kunci (anggota teratas masing-masing)",
+  "Families group surface forms of one entity; overlap counts articles, not causation.": "Keluarga mengelompokkan bentuk-bentuk satu entitas; tumpang tindih menghitung artikel, bukan kausalitas.",
+  "shared-article overlap between SUPER-GROUPS (curated groups of families); top unassigned families shown for context": "tumpang tindih artikel bersama antar-SUPERGRUP (kelompok keluarga yang dikurasi); keluarga teratas yang belum ditetapkan ditampilkan sebagai konteks",
+  "Super-groups are the user's own curation; overlap counts articles, not causation.": "Supergrup adalah kurasi pengguna sendiri; tumpang tindih menghitung artikel, bukan kausalitas.",
+  "Bounded view for responsiveness: up to {nodes} nodes, {branches} hop-2 branches, ≤{articles} articles sampled per term. Narrow the term or the time window for a finer view.": "Tampilan terbatas demi kelancaran: hingga {nodes} simpul, {branches} cabang lompatan kedua, ≤{articles} artikel sampel per istilah. Persempit istilah atau rentang waktu untuk tampilan yang lebih rinci.",
+  "{n} mentions — click to zoom in": "{n} penyebutan — klik untuk memperbesar",
+  "family of {n}: {members}": "keluarga berisi {n}: {members}",
+  "Person": "Orang",
+  "Organisation": "Organisasi",
+  "Place": "Tempat",
+  "Entity": "Entitas"
 }

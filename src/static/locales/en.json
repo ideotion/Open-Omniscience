@@ -5721,5 +5721,18 @@
   "Intergovernmental organisations": "Intergovernmental organisations",
   "NGOs and civil society": "NGOs and civil society",
   "Data portals": "Data portals",
-  "Financial data": "Financial data"
+  "Financial data": "Financial data",
+  "PMI/co-occurrence association, two hops (relatives, and their relatives)": "PMI/co-occurrence association, two hops (relatives, and their relatives)",
+  "Association is not causation; PMI on small samples is noisy.": "Association is not causation; PMI on small samples is noisy.",
+  "shared-article overlap between keyword FAMILIES (top members each)": "shared-article overlap between keyword FAMILIES (top members each)",
+  "Families group surface forms of one entity; overlap counts articles, not causation.": "Families group surface forms of one entity; overlap counts articles, not causation.",
+  "shared-article overlap between SUPER-GROUPS (curated groups of families); top unassigned families shown for context": "shared-article overlap between SUPER-GROUPS (curated groups of families); top unassigned families shown for context",
+  "Super-groups are the user's own curation; overlap counts articles, not causation.": "Super-groups are the user's own curation; overlap counts articles, not causation.",
+  "Bounded view for responsiveness: up to {nodes} nodes, {branches} hop-2 branches, ≤{articles} articles sampled per term. Narrow the term or the time window for a finer view.": "Bounded view for responsiveness: up to {nodes} nodes, {branches} hop-2 branches, ≤{articles} articles sampled per term. Narrow the term or the time window for a finer view.",
+  "{n} mentions — click to zoom in": "{n} mentions — click to zoom in",
+  "family of {n}: {members}": "family of {n}: {members}",
+  "Person": "Person",
+  "Organisation": "Organisation",
+  "Place": "Place",
+  "Entity": "Entity"
 }

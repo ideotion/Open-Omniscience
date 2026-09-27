@@ -218,6 +218,32 @@
       if (!el || !m) return;
       el.textContent = m.vars ? _bulTf(m.key, m.vars) : _bulT(m.key);
     }
+    // A story's shared terms, each through the ONE keyword label (re-walk M-3/M-5): the
+    // Review listed a Russian story's terms bare in a French UI. The row names the term's
+    // RECORDED language and nothing more -- the review translates nothing, so a foreign
+    // term reads "in Russian", and a term in the reader's own language carries no tag.
+    // Rendered from the payload at paint time, so `_bulRepaint` renames the language
+    // after a switch without a fetch. kwLabelHtml marks each term data-i18n-dyn.
+    function _bulStoryTermsHtml(s) {
+      const rows = (s && s.shared_term_rows && s.shared_term_rows.length)
+        ? s.shared_term_rows
+        : ((s && s.shared_terms) || []).map((term) => ({term: term}));
+      if (!rows.length) return "—";
+      if (typeof kwLabelHtml !== "function") {
+        return `<span data-i18n-dyn>${esc(rows.map((r) => r.term).join(", "))}</span>`;
+      }
+      const ui = String(typeof uiLangCode === "function" ? uiLangCode() : "en").split("-")[0].toLowerCase();
+      return rows.map((r) => {
+        const lang = String(r.language || "").trim().toLowerCase();
+        const row = {term: r.term, normalized: r.normalized || r.term};
+        if (lang && lang !== "?" && lang.split("-")[0] !== ui) {
+          row.translation_source_lang = lang;
+          row.translation_tier = "untranslated";
+        }
+        return kwLabelHtml(row, {inButton: true});
+      }).join(", ");
+    }
+
     function _bulRepaint() {
       _bulPaintGate();
       if (_bulEditions) _bulPaintEditions();
@@ -434,7 +460,7 @@
         return `<div style="margin:8px 0">
           <label class="row" style="${_BUL_CHECK_ROW}">
             <input type="checkbox" style="${_BUL_CHECK_BOX}" ${off ? "" : "checked"} onchange="bulletinToggleStory('${esc(s.key)}')">
-            <span style="flex:1;min-width:0"><strong>${esc((s.shared_terms || []).join(", ") || "—")}</strong>
+            <span style="flex:1;min-width:0"><strong>${_bulStoryTermsHtml(s)}</strong>
               <span class="muted">${esc(counts)}${s.single_source ? esc(_bulT(" · one source only")) : ""}</span></span></label>
           ${label}${sents ? `<ul style="margin:4px 0 0 26px">${sents}</ul>` : ""}</div>`;
       }).join("");

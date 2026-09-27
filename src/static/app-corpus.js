@@ -465,14 +465,14 @@
         if (!_mmTerm) { host.innerHTML = '<div class="muted">Pick a keyword above to see its relatives (two hops).</div>'; return; }
         host.innerHTML = '<div class="muted">Loading…</div>';
         try {
-          const g = await api(`/api/insights/graph?level=keyword&term=${encodeURIComponent(_mmTerm)}&hops=2${_mmWindowQS()}`);
+          const g = await api(`/api/insights/graph?level=keyword&term=${encodeURIComponent(_mmTerm)}&hops=2${_mmWindowQS()}` + tgtLangParam());
           renderGraph(g);
         } catch (e) { host.innerHTML = `<div class="muted">${esc(e.message)}</div>`; }
         return;
       }
       host.innerHTML = '<div class="muted">Loading…</div>';
       try {
-        const g = await api(`/api/insights/graph?level=${level}${_mmWindowQS()}`);
+        const g = await api(`/api/insights/graph?level=${level}${_mmWindowQS()}` + tgtLangParam());
         renderGraph(g);
       } catch (e) { host.innerHTML = `<div class="muted">${esc(e.message)}</div>`; }
     }
@@ -482,7 +482,7 @@
       document.querySelectorAll("#mm-levels button").forEach(b =>
         b.classList.toggle("active", b.dataset.level === "keyword"));
       try {
-        const g = await api(`/api/insights/graph?level=keyword&term=${encodeURIComponent(center)}&hops=2${_mmWindowQS()}`);
+        const g = await api(`/api/insights/graph?level=keyword&term=${encodeURIComponent(center)}&hops=2${_mmWindowQS()}` + tgtLangParam());
         renderGraph(g);
       } catch (e) { $("ins-mindmap").innerHTML = `<div class="muted">${esc(e.message)}</div>`; }
     }
@@ -497,6 +497,77 @@
       if (kinds.has("supergroup")) items.push(`${sw("var(--ok)")} <span>super-group</span>`);
       return items.join(" &nbsp;·&nbsp; ");
     }
+    // ---- label geometry for the mind map and the cloud (re-walk M-13) ---------------- //
+    // A word's box is MEASURED, in the SVG's own units (its font-size is in viewBox units,
+    // so a canvas measure at that size in the page's font is the same length), and the
+    // tag line below it counts too. A canvas that cannot be made falls back to an honest
+    // over-estimate rather than to nothing, so a word is never assumed to take no room.
+    let _mmMeasureCtx = null;
+    function _mmTextWidth(s, fs, weight) {
+      const str = String(s || "");
+      try {
+        if (!_mmMeasureCtx) _mmMeasureCtx = document.createElement("canvas").getContext("2d");
+        const fam = (getComputedStyle(document.body).fontFamily) || "sans-serif";
+        _mmMeasureCtx.font = `${weight || 500} ${fs}px ${fam}`;
+        const w = _mmMeasureCtx.measureText(str).width;
+        if (w > 0) return w;
+      } catch (_e) { /* no canvas: estimate below */ }
+      return str.length * fs * 0.62;
+    }
+    function _mmLabelBox(n, tagFs) {
+      const w = Math.max(_mmTextWidth(n.lp.shown || n.label, n.fs, n.center ? 700 : 500),
+        n.lp.tag ? _mmTextWidth(n.lp.tag, tagFs, 400) : 0) + 6;
+      return {w: w, top: n.fs * 0.62, bottom: n.lp.tag ? n.fs * 0.95 + tagFs * 0.66 : n.fs * 0.62};
+    }
+    // Whether a box centred at (x, y) meets any of `placed` (2 units of air around each).
+    function _mmHits(placed, x, y, b) {
+      for (const o of placed) {
+        if (Math.abs(o.x - x) * 2 < o.box.w + b.w + 4
+            && y - b.top < o.y + o.box.bottom + 2 && y + b.bottom > o.y - o.box.top - 2) return true;
+      }
+      return false;
+    }
+    // Each node in `order` after the first keeps its angle and moves OUTWARD along its ray
+    // from the centre until its label clears every label placed before it.
+    function _mmDeclutter(order, cx, cy) {
+      const placed = [];
+      for (const n of order) {
+        if (!n || n.x == null) continue;
+        if (placed.length && !n.center) {
+          let dx = n.x - cx, dy = n.y - cy;
+          const d = Math.hypot(dx, dy);
+          if (d < 1) { dx = 0; dy = -1; } else { dx /= d; dy /= d; }
+          const step = Math.max(4, (n.box.top + n.box.bottom) * 0.5);
+          for (let k = 0; k < 80 && _mmHits(placed, n.x, n.y, n.box); k++) { n.x += dx * step; n.y += dy * step; }
+        }
+        placed.push(n);
+      }
+    }
+    // The cloud: heaviest first, each word walking out along a spiral from the centre
+    // until its box meets no word already placed.
+    function _mmCloudPlace(sorted, cx, cy) {
+      const placed = [];
+      for (const n of sorted) {
+        let x = cx, y = cy, th = 0;
+        for (let s = 0; s < 8000; s++) {
+          const r = 1.6 * th;   // ~10 units further out per turn, ~6 units per step
+          x = cx + r * Math.cos(th) * 1.6; y = cy + r * Math.sin(th);
+          if (!_mmHits(placed, x, y, n.box)) break;
+          th += Math.min(0.5, 6 / Math.max(r, 6));
+        }
+        n.x = x; n.y = y; placed.push(n);
+      }
+    }
+    // The first view: the W x H frame, widened to hold every label with a margin.
+    function _mmFitBox(nodes, W, H) {
+      let x0 = 0, y0 = 0, x1 = W, y1 = H;
+      for (const n of nodes) {
+        if (n.x == null || !n.box) continue;
+        x0 = Math.min(x0, n.x - n.box.w / 2 - 8); x1 = Math.max(x1, n.x + n.box.w / 2 + 8);
+        y0 = Math.min(y0, n.y - n.box.top - 8); y1 = Math.max(y1, n.y + n.box.bottom + 8);
+      }
+      return {x: +x0.toFixed(1), y: +y0.toFixed(1), w: +(x1 - x0).toFixed(1), h: +(y1 - y0).toFixed(1)};
+    }
     function renderGraph(g) {
       _mmGraph = g;
       if (_mmRAF) { cancelAnimationFrame(_mmRAF); _mmRAF = null; }
@@ -508,18 +579,32 @@
       const maxSize = Math.max(...g.nodes.map(n => n.size || 1), 1);
       const fsOf = (n) => ((n.center ? 17 : 9 + 9 * Math.sqrt((n.size || 1) / maxSize)) * scale);
 
-      // ---- layout: mind-map rules (center → arms → ALWAYS outward) -------- //
-      const nodes = g.nodes.slice(0, 60).map(n => ({...n, fs: fsOf(n)}));
+      // ---- labels: THE SAME LABEL EVERY KEYWORD LIST DRAWS (re-walk M-3/M-5) ---- //
+      // Through `kwLabelParts`, as the analysis mind map already does: the translation
+      // where a verified ring allows, the word itself otherwise, and the small tag saying
+      // which as a second line (an SVG <text> cannot hold the HTML span). The graph is
+      // fetched with the reader's language, so the nodes carry the fields the tag needs.
+      const tagFsOf = (n) => Math.max(8, n.fs * 0.5);
+      const nodes = g.nodes.slice(0, 60).map(n => {
+        const lp = (typeof kwLabelParts === "function")
+          ? kwLabelParts(Object.assign({term: n.label || n.id}, n)) : {shown: n.label || n.id, tag: "", hover: ""};
+        const m = {...n, fs: fsOf(n), lp: lp};
+        m.box = _mmLabelBox(m, tagFsOf(m));
+        return m;
+      });
       const byId = {}; nodes.forEach(n => byId[n.id] = n);
       let treeEdges = [];
+      // Placed in this order, each pushed OUTWARD along its own ray until its label box
+      // clears the ones already placed (M-13): the arms and leaves keep their angles, so
+      // the mind-map rules hold (centre -> arms -> always outward, no cross-tangle), and
+      // a crowded arm grows another ring instead of stacking words on one another.
+      let declutter = [];
       if (_mmViewMode === "cloud") {
-        // Word cloud: weight-ordered spiral from the centre, no edges.
-        const sorted = [...nodes].sort((a, b) => (b.size || 1) - (a.size || 1));
-        sorted.forEach((n, i) => {
-          const ang = i * 2.39996, r = 16 * Math.sqrt(i);   // golden-angle spiral
-          n.x = W / 2 + r * Math.cos(ang) * 1.6;
-          n.y = H / 2 + r * Math.sin(ang);
-        });
+        // Word cloud: weight-ordered, no edges. Each word walks out along a spiral from
+        // the centre until its MEASURED box touches no word already placed -- the
+        // golden-angle spiral this replaced placed by index alone and piled 9-18 px
+        // words 60-130 px wide on top of one another (M-13).
+        _mmCloudPlace([...nodes].sort((a, b) => (b.size || 1) - (a.size || 1)), W / 2, H / 2);
       } else if (g.level === "keyword") {
         const center = nodes.find(n => n.center) || nodes[0];
         center.x = W / 2; center.y = H / 2;
@@ -543,6 +628,7 @@
           (kids[p.id] = kids[p.id] || []).push(n);
           n._p = p;
         });
+        const leafOrder = [];
         for (const pid in kids) {
           const p = byId[pid], ks = kids[pid];
           const span = (2 * Math.PI / Math.max(arms.length, 1)) * 0.8;
@@ -550,8 +636,10 @@
             const a = p.ang + span * ((j + 1) / (ks.length + 1) - 0.5);
             n.x = W / 2 + R2 * Math.cos(a); n.y = H / 2 + R2 * Math.sin(a);
             treeEdges.push({a: p, b: n, w: 1});
+            leafOrder.push(n);
           });
         }
+        declutter = [center, ...arms, ...leafOrder];
       } else {
         // family / super-group: ONE spanning tree grown outward from the
         // heaviest node, so a node's position and the edge that connects it
@@ -605,6 +693,7 @@
           treeEdges.push({a: root, b: n, w: n._parentW || 1});
         });
         let frontier = arms;
+        declutter = [root, ...arms];
         while (frontier.length) {
           const next = [];
           frontier.forEach(p => {
@@ -620,14 +709,29 @@
               next.push(n);
             });
           });
+          declutter = declutter.concat(next);
           frontier = next;
         }
       }
+      _mmDeclutter(declutter, W / 2, H / 2);
 
+      // The words are DATA: `data-i18n-dyn` keeps the i18n walker from translating a
+      // keyword that happens to equal a chrome key ("errors" drawn as "erreurs", M-15), and
+      // this hint is drawn in the reader's language here, so the walker skips it too.
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const view1 = _mmViewMode === "map"
+        ? t("Branches grow outward from the centre; each leaf hangs off its strongest relative.")
+        : t("Cloud view: weight-ordered, no links.");
+      const dv = g.disclosure_vars || {};
+      const cav = g.caveat_i18n
+        ? t(g.caveat_i18n) + (g.disclosure_i18n ? " " + _kwTf(g.disclosure_i18n,
+            {nodes: fmtNum(dv.nodes), branches: fmtNum(dv.branches), articles: fmtNum(dv.articles)}) : "")
+        : t(g.caveat || "");
       host.innerHTML =
         `<div class="hint" id="mm-legend">${mmLegend(g)}</div>` +
         `<svg id="mm-svg" viewBox="0 0 ${W} ${H}" width="100%" style="background:var(--panel2);border:1px solid var(--border);border-radius:8px;touch-action:none;cursor:grab"><g id="mm-view"></g></svg>` +
-        `<div class="hint">Drag to pan · scroll to zoom (far out goes up a level) · click a word to dive in. <b>Font size = shared-article volume.</b> ${_mmViewMode === "map" ? "Branches grow outward from the centre; each leaf hangs off its strongest relative." : "Cloud view: weight-ordered, no links."} ${esc(g.method || "")} ${esc(g.caveat || "")}</div>`;
+        `<div class="hint" data-i18n-dyn>${esc(t("Drag to pan · scroll to zoom (far out goes up a level) · click a word to dive in."))} `
+        + `<b>${esc(t("Font size = shared-article volume."))}</b> ${esc(view1)} ${esc(t(g.method || ""))} ${esc(cav)}</div>`;
       const svg = $("mm-svg"), view = $("mm-view");
       const maxW = Math.max(...treeEdges.map(e => e.w || 1), 1);
       view.innerHTML =
@@ -639,13 +743,22 @@
             : n.kind === "family" ? "var(--warn)"
             : n.hop === 2 ? "var(--muted)" : "var(--accent)";
           const fam = (n.members || []).length > 1;
-          const title = fam ? `<title>${esc((n.members || []).join(", "))}</title>` : "";
-          return `<g class="mm-node" data-i="${i}" style="cursor:pointer" transform="translate(${n.x.toFixed(1)},${n.y.toFixed(1)})">${title}` +
-            `<text text-anchor="middle" dominant-baseline="central" font-size="${n.fs.toFixed(1)}" font-weight="${n.center ? 700 : 500}" fill="${col}">${esc(n.label)}</text></g>`;
+          const tip = [n.lp.tag ? n.lp.tag + " — " + n.lp.hover : "", fam ? (n.members || []).join(", ") : ""]
+            .filter(Boolean).join(" — ");
+          const title = tip ? `<title>${esc(tip)}</title>` : "";
+          const tag = n.lp.tag
+            ? `<text class="mm-tag" text-anchor="middle" dominant-baseline="central" y="${(n.fs * 0.95).toFixed(1)}"`
+              + ` font-size="${tagFsOf(n).toFixed(1)}" fill="var(--muted)">${esc(n.lp.tag)}</text>`
+            : "";
+          return `<g class="mm-node" data-i="${i}" data-i18n-dyn style="cursor:pointer" transform="translate(${n.x.toFixed(1)},${n.y.toFixed(1)})">${title}` +
+            `<text text-anchor="middle" dominant-baseline="central" font-size="${n.fs.toFixed(1)}" font-weight="${n.center ? 700 : 500}" fill="${col}">${esc(n.lp.shown || n.label)}</text>${tag}</g>`;
         }).join("");
 
       // -- pan / zoom (level-up on far zoom-out) + click-to-dive ------------- //
-      let vb = {x: 0, y: 0, w: W, h: H};
+      // The first view frames every label: a crowded map grows past W x H rather than
+      // stacking words (M-13), so the initial box widens to hold what was pushed out.
+      let vb = _mmFitBox(nodes, W, H);
+      svg.setAttribute("viewBox", `${vb.x} ${vb.y} ${vb.w} ${vb.h}`);
       const applyVB = () => svg.setAttribute("viewBox", `${vb.x} ${vb.y} ${vb.w} ${vb.h}`);
       const ptVB = (e) => { const m2 = svg.getScreenCTM().inverse(); const p = svg.createSVGPoint();
         p.x = e.clientX; p.y = e.clientY; return p.matrixTransform(m2); };
@@ -703,7 +816,7 @@
         // visible term, the tier tag follows), and the chrome around it keyed (M14).
         $("ins-trend").innerHTML =
           `<div style="margin-bottom:6px">${esc(t8("Resolved to"))} <strong>${kwLabelHtml(r)}</strong> ` +
-          `<span class="pill">${esc(r.kind)}</span> · ${esc(tf8("{n} mentions in {articles} articles", {n: fmtNum(tr.total), articles: fmtNum(tr.articles)}))} ` +
+          `<span class="pill">${esc(kwKindLabel(r.kind))}</span> · ${esc(tf8("{n} mentions in {articles} articles", {n: fmtNum(tr.total), articles: fmtNum(tr.articles)}))} ` +
           `<button class="tiny secondary" onclick="openCorpus(${esc(JSON.stringify(r.term))})" title="${esc(t8("Open this keyword as a corpus window: trend, member articles, and shared outbound links (the sources' sources)."))}">⊞ ${esc(t8("Corpus"))}</button></div>` +
           `<div style="margin-bottom:8px"><div class="hint">${esc(t8("Time range"))}</div>` +
           `<div id="ins-trend-scope"></div></div>` +
@@ -711,13 +824,17 @@
         // FULL bucketed series fetched once; the ooTimeScope window FILTERS it
         // client-side (invariant #16 — never thinned; ooChart unchanged).
         const allPts = tr.points || [];
-        const insDraw = (pts) => ooChart($("ins-trend-oo"), [{label: r.term, unit: "mentions",
+        // The unit is chrome, so it is keyed (M-10: the legend read "n=20 · mentions" in zh).
+        const insDraw = (pts) => ooChart($("ins-trend-oo"), [{label: r.term, unit: t8("mentions"),
           points: pts.map(pt => ({t: pt.date, v: pt.count}))}],
           {height: 180, zeroBase: true, lineMin: 8, bucket: "week",
            onSelectRange: _brushToCorpus(r.term, "week")});
         const insDef = _buildTrendScope($("ins-trend-scope"), allPts, insDraw);
         insDraw(_windowTrendPoints(allPts, insDef.from, insDef.to));
-        renderMindmap(r.term, assoc.pairs);
+        // A language switch re-runs this; it must redraw the level the reader was on, not
+        // drop them back to the keyword view (the map is re-fetched for the new language).
+        if (opts && opts.repaint && _mmTerm === r.term && _mmLevel !== "keyword") mmLevel(_mmLevel);
+        else renderMindmap(r.term, assoc.pairs);
         loadFraming(r.term);
         $("ins-context").innerHTML = (ctx.mentions || []).length
           ? ctx.mentions.map(m => `<div class="note" style="max-width:none;margin-bottom:6px">
@@ -1008,6 +1125,15 @@
         + ` onclick='event.stopPropagation();openLinkPreview(${esc(JSON.stringify(url))});return false'>${esc(qid)}</a>`;
     }
 
+    // A keyword's KIND as chrome (re-walk M-6): the Resolved line's pill printed the stored
+    // code ("term") in every locale. The known kinds are keyed; a kind this list does not
+    // know is data and is shown as stored rather than guessed at.
+    function kwKindLabel(kind) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const L = {term: "Term", person: "Person", org: "Organisation", location: "Place", entity: "Entity"};
+      return L[kind] ? t(L[kind]) : String(kind || "");
+    }
+
     // Whether the label draws a tier tag at all (a term in the reader's own language, or
     // one whose language nobody measured, draws none).
     function kwHasTag(row) {
@@ -1145,6 +1271,10 @@
         ["trd-windows", "loadTrendWindows", undefined, "loadTrends"],
         // Explore's "Resolved to" header (M7); the flag keeps a cleared box silent.
         ["ins-trend", "exploreTerm", {repaint: true}],
+        // ...and its mind map / word cloud, whose nodes carry translations into the language
+        // they were fetched for (re-walk M-3/M-5). exploreTerm re-fetches it when it ran; a
+        // map drawn at the family or super-group level with no term is re-fetched here.
+        ["ins-mindmap", "mmReload", undefined, "exploreTerm"],
         // The analysis window RE-FETCHES its keywords for the new target language rather
         // than re-rendering the payload it holds, whose translations belong to the old
         // one (M8); with nothing loaded `anRenderKwChips` returns early.
@@ -1452,11 +1582,11 @@
     function termListHtml(terms, extra) {
       const T = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       if (!terms.length) return '<div class="muted">' + esc(T("Nothing yet — index the corpus.")) + "</div>";
-      return terms.map(t => `<div style="padding:4px 0;border-bottom:1px solid var(--border);display:flex;align-items:baseline;gap:6px">
+      return terms.map(t => `<div class="kw-row" style="padding:4px 0;border-bottom:1px solid var(--border);display:flex;align-items:baseline;gap:6px">
         <button class="tiny danger" title="${esc(T("exclude this keyword"))}" style="margin:0;padding:0 6px"
           onclick='excludeKeyword(${esc(JSON.stringify(t.term))})'>✕</button>
         <a href="#" data-kwstat="${esc(t.term)}"${kwTipExtraAttr(t)} title="${esc(t.term)}" onclick='pickTerm(${esc(JSON.stringify(t.term))});return false'>${kwLabelHtml(t, {inLink: true})}</a>${kwQidHtml(t)}
-        <span class="pill">${esc(t.kind)}</span> <span class="muted">${extra(t)}</span></div>`).join("");
+        <span class="pill">${esc(kwKindLabel(t.kind))}</span> <span class="muted">${extra(t)}</span></div>`).join("");
     }
     // Trends as clickable horizontal BAR graphs (field test 2026-06-19 #25): keywords
     // top→down, bar length ∝ the REAL measured value (mentions count / rising rate —
@@ -1626,7 +1756,7 @@
             const axis = w.series_window
               ? {t0: w.series_window.start, t1: w.series_window.end} : {};
             return `<div style="padding:6px 0;border-bottom:1px solid var(--border)">
-              <div style="display:flex;align-items:baseline;gap:6px">
+              <div class="kw-row" style="display:flex;align-items:baseline;gap:6px">
                 <a href="#" onclick='pickTerm(${esc(JSON.stringify(x.term))});return false'>${kwLabelHtml(x, {inLink: true})}</a>${kwQidHtml(x)}
                 <span class="muted" style="font-size:12px">${esc(growthFallback(x) || trendRateText(x, {short: true}))}</span>
                 <button class="ghost tiny" style="margin-inline-start:auto" onclick="enlargeTrend(${wi},${ti})" title="${esc(t("Enlarge the chart"))}" aria-label="${esc(t("Enlarge the chart"))}">⛶</button>

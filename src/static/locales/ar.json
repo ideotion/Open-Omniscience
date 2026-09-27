@@ -5721,5 +5721,18 @@
   "Intergovernmental organisations": "منظمات حكومية دولية",
   "NGOs and civil society": "منظمات غير حكومية ومجتمع مدني",
   "Data portals": "بوابات البيانات",
-  "Financial data": "بيانات مالية"
+  "Financial data": "بيانات مالية",
+  "PMI/co-occurrence association, two hops (relatives, and their relatives)": "ارتباط PMI/التواجد المشترك، قفزتان (الكلمات القريبة، وأقرباؤها)",
+  "Association is not causation; PMI on small samples is noisy.": "الارتباط ليس سببية؛ ومقياس PMI على العينات الصغيرة كثير التشويش.",
+  "shared-article overlap between keyword FAMILIES (top members each)": "تداخل المقالات المشتركة بين عائلات الكلمات المفتاحية (أبرز الأعضاء في كل منها)",
+  "Families group surface forms of one entity; overlap counts articles, not causation.": "تجمع العائلات الصيغ المختلفة لكيان واحد؛ والتداخل يعدّ المقالات، ولا يعني السببية.",
+  "shared-article overlap between SUPER-GROUPS (curated groups of families); top unassigned families shown for context": "تداخل المقالات المشتركة بين المجموعات العليا (مجموعات منسّقة من العائلات)؛ وتُعرض أبرز العائلات غير المُسندة للسياق",
+  "Super-groups are the user's own curation; overlap counts articles, not causation.": "المجموعات العليا من تنسيق المستخدم نفسه؛ والتداخل يعدّ المقالات، ولا يعني السببية.",
+  "Bounded view for responsiveness: up to {nodes} nodes, {branches} hop-2 branches, ≤{articles} articles sampled per term. Narrow the term or the time window for a finer view.": "عرض محدود لسرعة الاستجابة: حتى {nodes} عقدة، و{branches} فرعًا من القفزة الثانية، و≤{articles} مقالة كعيّنة لكل مصطلح. ضيّق المصطلح أو النافذة الزمنية لعرض أدق.",
+  "{n} mentions — click to zoom in": "{n} إشارة — انقر للتكبير",
+  "family of {n}: {members}": "عائلة من {n}: {members}",
+  "Person": "شخص",
+  "Organisation": "منظمة",
+  "Place": "مكان",
+  "Entity": "كيان"
 }

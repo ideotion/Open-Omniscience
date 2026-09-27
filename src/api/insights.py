@@ -3579,7 +3579,9 @@ def insights_graph(
         except ValueError:
             raise HTTPException(status_code=400, detail=f"bad date: {d!r}") from None
 
-    key = _ckey("graph", level=level, term=term, hops=hops, days=days, start=start, end=end)
+    # The label language is part of the key: the nodes carry translations INTO it (M-3/M-5).
+    _gtl = _tlang(target_lang)
+    key = _ckey("graph", level=level, term=term, hops=hops, days=days, start=start, end=end, tl=_gtl)
     # The keyword build is BOUNDED (bounded fan-out + per-term article sample + a soft
     # wall-clock budget that returns the hop-1 graph if hop-2 would overrun) so it finishes
     # in a few seconds regardless of corpus size; the hard deadline + degraded fallback are
@@ -3589,6 +3591,7 @@ def insights_graph(
         lambda: rm.layered_graph(
             db, level=level, term=term, hops=hops, days=days,
             start=_parse(start), end=_parse(end), time_budget_s=_graph_budget_s(),
+            target_lang=_gtl,
         ),
         on_timeout=lambda exc: _graph_degraded(exc, level=level, term=term),
     )

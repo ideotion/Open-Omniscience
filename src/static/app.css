@@ -1188,6 +1188,13 @@
     .ls-chip { background:transparent; border:0; padding:1px 3px; color:var(--fg); cursor:pointer;
       line-height:1.25; border-bottom:1px dotted transparent; }
     .ls-chip:hover { color:var(--accent); border-bottom-color:var(--accent); }
+    /* A keyword's language tag can name four languages ("auf Englisch, Deutsch, Portugiesisch
+       und Spanisch"), and .kw-tag's nowrap kept it on one line: at 375 px the landscape chips
+       and the Trends rows ran past the viewport and the page scrolled sideways in de, fr and
+       ru (the 2026-09-27 re-walk's review of M-8/M-11). The .tb-label cure: the tag wraps. */
+    .ls-chip { max-width:100%; white-space:normal; text-align:start; }
+    .kw-row { flex-wrap:wrap; }
+    .ls-chip .kw-tag, .kw-row .kw-tag { white-space:normal; overflow-wrap:anywhere; }
 
     .stat-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(150px,1fr)); gap:11px; }
     .stat { background:var(--panel2); border:1px solid var(--border); border-radius:var(--radius-sm); padding:13px; }
@@ -1296,7 +1303,14 @@
     .term-bars { display:flex; flex-direction:column; gap:3px; }
     .tb-row { display:flex; align-items:center; gap:8px; padding:3px 0; }
     .tb-x { margin:0; padding:0 6px; flex:0 0 auto; }
-    .tb-label { flex:0 0 34%; max-width:34%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    /* The label is the term PLUS its language tag, and the ellipsis used to eat the tag
+       first: at 375 px no foreign word in the Top list showed "in Russian" at all (the
+       2026-09-27 re-walk, M-8). Only the TERM truncates now; the tag wraps under it when
+       the two do not fit side by side, and wraps within itself rather than being cut. */
+    .tb-label { flex:0 0 34%; max-width:34%; min-width:0; display:flex; flex-wrap:wrap;
+      align-items:baseline; column-gap:4px; }
+    .tb-label .kw-term { min-width:0; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .tb-label .kw-tag { min-width:0; max-width:100%; white-space:normal; overflow-wrap:anywhere; }
     .tb-bar { flex:1 1 auto; height:14px; background:var(--panel3, var(--panel2)); border-radius:7px; overflow:hidden; }
     .tb-fill { display:block; height:100%; background:var(--accent); border-radius:7px; min-width:3px; }
     .tb-val { flex:0 0 auto; font-size:12px; white-space:nowrap; }
@@ -1307,6 +1321,8 @@
       .tb-row { flex-wrap:wrap; }
       .tb-val { flex:1 1 100%; min-width:0; white-space:normal; }
     }
+    /* ...and on a phone the label gets half the row, so a term and its tag fit (M-8). */
+    @media (max-width:600px) { .tb-label { flex-basis:48%; max-width:48%; } }
     .brief-toolbar { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
     .brief-toolbar .sp { flex:1; }
     .switch { display:inline-flex; align-items:center; gap:6px; font-size:12px; color:var(--muted); cursor:pointer; }
@@ -1665,6 +1681,14 @@
     .seg-toggle button { flex:1; min-width:0; margin:0; }
     .seg-toggle.wrap { flex-wrap:wrap; }
     .seg-toggle.wrap button { flex:1 1 28%; white-space:nowrap; }
+    /* The mind-map level and view toggles sit in a `.row` beside four other groups, and
+       `.row > div { flex:1 }` gave each group an equal share -- too little for "Keywords",
+       which the min-width:0 above then let the button cut to "Keywo" at 1440 px (the
+       2026-09-27 re-walk, M-16). In a row the group takes the width its words need and,
+       when the row has less than that, wraps its own buttons onto another line rather
+       than cutting one; it still never grows past the row, so nothing escapes its box. */
+    .row > .seg-toggle { flex:0 1 auto; flex-wrap:wrap; max-width:100%; }
+    .row > .seg-toggle button { flex:1 0 auto; min-width:max-content; white-space:nowrap; }
     /* Selected-state marker mismatch: dr-density/dr-faces/dr-sidebar toggle
        ".sel" (app-shell.js), but the mind-map level/view toggle (#mm-levels/
        #mm-views, index.html + app-corpus.js mmLevel/mmView) toggles ".active"

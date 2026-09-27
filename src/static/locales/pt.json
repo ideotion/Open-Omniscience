@@ -5721,5 +5721,18 @@
   "Intergovernmental organisations": "Organizações intergovernamentais",
   "NGOs and civil society": "ONG e sociedade civil",
   "Data portals": "Portais de dados",
-  "Financial data": "Dados financeiros"
+  "Financial data": "Dados financeiros",
+  "PMI/co-occurrence association, two hops (relatives, and their relatives)": "Associação PMI/coocorrência, dois saltos (termos afins, e os afins destes)",
+  "Association is not causation; PMI on small samples is noisy.": "Associação não é causalidade; o PMI em amostras pequenas é ruidoso.",
+  "shared-article overlap between keyword FAMILIES (top members each)": "sobreposição de artigos partilhados entre FAMÍLIAS de palavras-chave (principais membros de cada uma)",
+  "Families group surface forms of one entity; overlap counts articles, not causation.": "As famílias agrupam as formas de uma mesma entidade; a sobreposição conta artigos, não causalidade.",
+  "shared-article overlap between SUPER-GROUPS (curated groups of families); top unassigned families shown for context": "sobreposição de artigos partilhados entre SUPERGRUPOS (grupos curados de famílias); as principais famílias não atribuídas são mostradas para contexto",
+  "Super-groups are the user's own curation; overlap counts articles, not causation.": "Os supergrupos são a curadoria do próprio utilizador; a sobreposição conta artigos, não causalidade.",
+  "Bounded view for responsiveness: up to {nodes} nodes, {branches} hop-2 branches, ≤{articles} articles sampled per term. Narrow the term or the time window for a finer view.": "Vista limitada para maior rapidez: até {nodes} nós, {branches} ramos do segundo salto, ≤{articles} artigos amostrados por termo. Restrinja o termo ou a janela temporal para uma vista mais fina.",
+  "{n} mentions — click to zoom in": "{n} menções — clique para ampliar",
+  "family of {n}: {members}": "família de {n}: {members}",
+  "Person": "Pessoa",
+  "Organisation": "Organização",
+  "Place": "Lugar",
+  "Entity": "Entidade"
 }

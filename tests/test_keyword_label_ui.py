@@ -176,6 +176,17 @@ def test_every_surface_that_renders_a_keyword_label_also_repaints_on_a_language_
     # `anMindmapRepaint`, whose nodes carry translations into the old language, so drawing
     # the held payload again would be wrong). What it re-draws is covered through it.
     repaint_fns = set(re.findall(r'\[\s*(?:"[^"]*"|null)\s*,\s*"(\w+)"', body))
+    # ...and every repainter the `oo:langchange` listeners call DIRECTLY (2026-09-27 re-walk
+    # M-3/M-5): the Bulletin's `_bulRepaint` redraws its Review from the payload it holds,
+    # and the Review's story terms now draw the label. Re-running it is the same guarantee
+    # as a list entry, so a function the listener runs counts as a repaint too; listing it
+    # again in the keyword list would only paint the panel twice.
+    from tests.js_source_helper import event_listener_bodies
+
+    for lb in event_listener_bodies(app, "oo:langchange"):
+        for called in re.findall(r"(?<![\w$.])(\w+)\(", lb):
+            if re.search(rf"\n\s*(?:async\s+)?function\s+{re.escape(called)}\s*\(", app):
+                repaint_fns.add(called)
     redrawn = {
         callee
         for r in repaint_fns

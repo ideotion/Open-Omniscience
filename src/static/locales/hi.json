@@ -5721,5 +5721,18 @@
   "Intergovernmental organisations": "अंतर-सरकारी संगठन",
   "NGOs and civil society": "एनजीओ और नागरिक समाज",
   "Data portals": "डेटा पोर्टल",
-  "Financial data": "वित्तीय डेटा"
+  "Financial data": "वित्तीय डेटा",
+  "PMI/co-occurrence association, two hops (relatives, and their relatives)": "PMI/सह-उपस्थिति संबंध, दो चरण (संबंधित शब्द, और उनके संबंधित शब्द)",
+  "Association is not causation; PMI on small samples is noisy.": "संबंध कार्य-कारण नहीं है; छोटे नमूनों पर PMI अस्थिर होता है।",
+  "shared-article overlap between keyword FAMILIES (top members each)": "कीवर्ड परिवारों के बीच साझा लेखों का ओवरलैप (प्रत्येक के शीर्ष सदस्य)",
+  "Families group surface forms of one entity; overlap counts articles, not causation.": "परिवार एक ही इकाई के विभिन्न रूपों को समूहित करते हैं; ओवरलैप लेख गिनता है, कार्य-कारण नहीं।",
+  "shared-article overlap between SUPER-GROUPS (curated groups of families); top unassigned families shown for context": "सुपर-समूहों (परिवारों के संयोजित समूह) के बीच साझा लेखों का ओवरलैप; संदर्भ के लिए शीर्ष असंबद्ध परिवार दिखाए गए हैं",
+  "Super-groups are the user's own curation; overlap counts articles, not causation.": "सुपर-समूह उपयोगकर्ता का अपना संयोजन हैं; ओवरलैप लेख गिनता है, कार्य-कारण नहीं।",
+  "Bounded view for responsiveness: up to {nodes} nodes, {branches} hop-2 branches, ≤{articles} articles sampled per term. Narrow the term or the time window for a finer view.": "त्वरित प्रतिक्रिया के लिए सीमित दृश्य: अधिकतम {nodes} नोड, दूसरे चरण की {branches} शाखाएँ, प्रति शब्द ≤{articles} लेखों का नमूना। अधिक बारीक दृश्य के लिए शब्द या समय-सीमा को सीमित करें।",
+  "{n} mentions — click to zoom in": "{n} उल्लेख — ज़ूम करने के लिए क्लिक करें",
+  "family of {n}: {members}": "{n} का परिवार: {members}",
+  "Person": "व्यक्ति",
+  "Organisation": "संगठन",
+  "Place": "स्थान",
+  "Entity": "इकाई"
 }

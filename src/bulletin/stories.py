@@ -152,11 +152,19 @@ def build_stories(
 
     # Terms and sources per shown cluster — small lookups over ids we already hold.
     kw_names: dict[int, str] = {}
+    # Each term's stored key and recorded language ride beside its name (re-walk M-3/M-5):
+    # the review and the document printed a Russian story's terms bare in a French edition,
+    # with nothing saying what language they were in. Additive -- ``shared_terms`` stays the
+    # list of names every older reader of the record consumes.
+    kw_rows: dict[int, dict[str, Any]] = {}
     wanted = {k for c in shown for a in c for k in compared[a]}
     for i in range(0, len(wanted), 900):
         chunk = list(wanted)[i : i + 900]
-        for kid, term in session.query(Keyword.id, Keyword.term).filter(Keyword.id.in_(chunk)):
+        for kid, term, norm, lang in session.query(
+            Keyword.id, Keyword.term, Keyword.normalized_term, Keyword.language
+        ).filter(Keyword.id.in_(chunk)):
             kw_names[int(kid)] = term
+            kw_rows[int(kid)] = {"term": term, "normalized": norm, "language": lang}
 
     stories: list[dict[str, Any]] = []
     for cluster in shown:
@@ -173,6 +181,10 @@ def build_stories(
                 "sources": sorted(srcs.values()),
                 "shared_terms": sorted(
                     (kw_names.get(k) for k in shared if kw_names.get(k)), key=str
+                ),
+                "shared_term_rows": sorted(
+                    (kw_rows[k] for k in shared if kw_names.get(k)),
+                    key=lambda r: str(r["term"]),
                 ),
                 "single_source": len(srcs) <= 1,
             }

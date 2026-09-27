@@ -137,8 +137,14 @@
           const chips = items.map(f => {
             const scale = 0.82 + 0.5 * (f.mentions / max);     // size by prominence
             const fam = f.variants > 1;
-            return `<button class="ls-chip" style="font-size:${(11.5*scale).toFixed(1)}px"
-              title="${fam ? `family of ${f.variants}: ${esc((f.members||[]).map(m=>m.term).join(', '))} · ` : ""}${f.mentions} mentions — click to zoom in"
+            // The hover is keyed frames with formatted numbers (re-walk M-11); the button
+            // opts out of the walker because its title is already in the reader's language,
+            // and the langchange repaint (forced for the landscape) redraws it.
+            const tip = (fam ? _kwTf("family of {n}: {members}", {n: fmtNum(f.variants),
+                members: (f.members || []).map(m => m.term).join(", ")}) + " · " : "")
+              + _kwTf("{n} mentions — click to zoom in", {n: fmtNum(f.mentions)});
+            return `<button class="ls-chip" data-i18n-dyn style="font-size:${(11.5*scale).toFixed(1)}px"
+              title="${esc(tip)}"
               onclick="pickTerm(${esc(JSON.stringify(f.term))})">${kwLabelHtml(f, {inButton: true})}${fam ? `<span class="muted"> ·${f.variants}</span>` : ""}</button>${kwSensesAfterHtml(f)}`;
           }).join("");
           return `<div class="ls-col"><div class="ls-h">${esc(t(g.label))} <span class="muted">${items.length}</span></div><div class="ls-chips">${chips}</div></div>`;
@@ -168,10 +174,10 @@
         const top = await api(`/api/insights/top?group=true&limit=80&kind=${encodeURIComponent(kind)}` + tgtLangParam());
         const fams = top.terms || [];
         list.innerHTML = fams.length ? fams.map(f => `<div class="fam-row">
-            <div class="fam-body"><div><b>${kwLabelHtml(f)}</b> <span class="pill">${esc(f.kind)}</span>
+            <div class="fam-body"><div><b>${kwLabelHtml(f)}</b> <span class="pill">${esc(kwKindLabel(f.kind))}</span>
               ${f.manual ? '<span class="pill ok">manual</span>' : ""}
               ${f.ring_id ? `<button class="pill lvl-group" title="${esc(lvlTitle("group"))}" onclick="openConceptMap(${esc(JSON.stringify(f.ring_id))})">group</button>` : ""}
-              <span class="muted">· ${f.mentions} mentions</span></div>
+              <span class="muted">· ${esc(_kwTf("{n} mentions", {n: fmtNum(f.mentions)}))}</span></div>
               <div class="fam-chips muted">${_famMemberList(f)}</div></div></div>`
           ).join("") : '<div class="muted">No entity families yet — index the corpus first.</div>';
       } catch (e) { list.innerHTML = `<div class="muted">Could not load families: ${esc(e.message)}</div>`; }
@@ -211,11 +217,11 @@
             : "";
           return `<div class="fam-row">
             <input type="checkbox" class="fam-pick" data-norms="${esc(norms)}" data-kind="${esc(f.kind)}" data-label="${esc(f.term)}" aria-label="${esc(f.term)}">
-            <div class="fam-body"><div><b>${kwLabelHtml(f)}</b> <span class="pill">${esc(f.kind)}</span>
+            <div class="fam-body"><div><b>${kwLabelHtml(f)}</b> <span class="pill">${esc(kwKindLabel(f.kind))}</span>
               ${f.manual ? '<span class="pill ok">manual</span>' : ""}
               ${f.ring_id ? `<button class="pill lvl-group" title="${esc(lvlTitle("group"))}" onclick="openConceptMap(${esc(JSON.stringify(f.ring_id))})">group</button>` : ""}
               ${lemmaTag}
-              <span class="muted">· ${f.mentions} mentions</span></div>
+              <span class="muted">· ${esc(_kwTf("{n} mentions", {n: fmtNum(f.mentions)}))}</span></div>
               <div class="fam-chips">${chips}</div></div></div>`;
         }).join("") : '<div class="muted">No families with a decision to review — grouping is fully automatic so far.</div>';
         renderFamOverrides(ov);

@@ -5721,5 +5721,18 @@
   "Intergovernmental organisations": "政府间组织",
   "NGOs and civil society": "非政府组织与公民社会",
   "Data portals": "数据门户",
-  "Financial data": "金融数据"
+  "Financial data": "金融数据",
+  "PMI/co-occurrence association, two hops (relatives, and their relatives)": "PMI/共现关联，两跳（相关词，及其相关词）",
+  "Association is not causation; PMI on small samples is noisy.": "关联不等于因果；小样本上的 PMI 噪声很大。",
+  "shared-article overlap between keyword FAMILIES (top members each)": "关键词家族之间共享文章的重叠（各取主要成员）",
+  "Families group surface forms of one entity; overlap counts articles, not causation.": "家族把同一实体的不同写法归为一组；重叠统计的是文章数，不代表因果。",
+  "shared-article overlap between SUPER-GROUPS (curated groups of families); top unassigned families shown for context": "超级组（整理后的家族组）之间共享文章的重叠；另显示未归组的主要家族作为参考",
+  "Super-groups are the user's own curation; overlap counts articles, not causation.": "超级组是用户自己整理的；重叠统计的是文章数，不代表因果。",
+  "Bounded view for responsiveness: up to {nodes} nodes, {branches} hop-2 branches, ≤{articles} articles sampled per term. Narrow the term or the time window for a finer view.": "为保证响应速度的受限视图：最多 {nodes} 个节点、{branches} 条第二跳分支、每个词抽样 ≤{articles} 篇文章。缩小词语或时间范围可获得更细的视图。",
+  "{n} mentions — click to zoom in": "{n} 次提及 — 点击放大",
+  "family of {n}: {members}": "含 {n} 个词的家族：{members}",
+  "Person": "人物",
+  "Organisation": "组织",
+  "Place": "地点",
+  "Entity": "实体"
 }

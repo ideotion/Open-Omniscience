@@ -227,7 +227,7 @@ async function run() {
       line("let _bulExcludeSections"), line("let _bulExcludeStories"), line("let _bulFile"),
       line("let _bulGate"), line("const _bulMsgs"),
       "const _BUL_CADENCE_LABEL = {};",
-      ...["_bulT", "_bulTf", "_bulPaintMsg", "_bulUnit", "_bulRender"].map((n) => extract(n, null, AGENDA)),
+      ...["_bulT", "_bulTf", "_bulPaintMsg", "_bulUnit", "_bulStoryTermsHtml", "_bulRender"].map((n) => extract(n, null, AGENDA)),
       "this.render = _bulRender; this.$ = $;",
     ].join("\n");
     const sb = {I: i18n(lang)};
