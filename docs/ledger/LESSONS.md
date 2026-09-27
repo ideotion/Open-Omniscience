@@ -12428,3 +12428,74 @@ and a test swaps the segmenter for a different one between insert and delete and
 index's own vocabulary is empty afterwards. **Before re-computing anything at delete or undo
 time, ask who owns the function: re-run your own code only if its meaning is versioned; keep the
 output of anyone else's.**
+
+### AN EMPTY KERNEL LOG AFTER A MEMORY DEATH IS NOT A CLEAN BILL, AND ONLY A PARENT SEES A SIGKILL (2026-09-26, the daily field crashes)
+
+Two instances died within a minute of running out of memory and the boot's kernel-log read found
+nothing, because the likeliest killers never write there: systemd-oomd, earlyoom and nohang log to
+the ordinary journal, and systemd-oomd names the cgroup it killed rather than a pid. A SIGKILLed
+process runs no code, so nothing inside it can record the death; its parent's exit status is the
+only account, and the launcher window was closing with the server and taking that status with it.
+Then the check on the fix: uvicorn re-raises the stop signal after a graceful shutdown, so an
+ordinary in-app Stop reaches the parent as 143, and a launcher that alarms on every non-zero status
+calls every Stop a crash. **Before concluding from a log that says nothing, ask which killers write
+somewhere else, and keep the one witness that cannot be recreated: the parent's exit status.
+Measure what a normal stop looks like from outside before treating a status as abnormal.**
+
+### AN INSTRUMENT THAT READS FILES DURING A PYTHON BURST PAYS A SWITCH INTERVAL PER READ (2026-09-26, the thread snapshot)
+
+The snapshot meant to name the code behind a +930 MB burst first read every thread's CPU time
+through psutil and measured 0.5-0.7 s with one busy thread in the process, against a few ms on an
+idle one. Each `/proc` read releases the GIL, and a thread that holds it (the very burst being
+recorded) keeps it for a full switch interval (5 ms) before the reader gets it back; forty-odd
+threads times three syscalls adds up. **An instrument that must run while Python code is hot should
+do its file reads only for what it needs, list the frames before it reads anything, and run on a
+thread whose timing nothing else depends on -- never on the monitor that feeds the memory guard.**
+
+### A TIME DEADLINE IS NOT A MEMORY BOUND (2026-09-26, the read memory stop)
+
+Every heavy analytics read ran under a 60-second statement deadline, and the design treated that
+as the guard against a runaway read. The crash bundle of 2026-09-26 measured what a runaway read
+does on a 3.9 GB machine: 13.5 million Python objects in 25 seconds, about 575,000 a second, with
+available memory falling from 1,065 MB to 135 MB, and the session ended there. A clock cannot
+stop that, because the machine runs out of memory long before the clock runs out. The stop now
+reads available memory in the same progress handler and uses the memory guard's own floor, so the
+guard and the reads cannot disagree about what "nearly out" means. **A guard against a runaway
+must watch the resource that runs out, where it is consumed; a guard on a different quantity only
+works while the two happen to move together.**
+
+### ITERATING A SQLALCHEMY 2.0 ORM QUERY DOES NOT STREAM (2026-09-26, the cited-sources scan)
+
+`cited_domain_stats` iterated `session.query(ArticleLink.normalized_url, ArticleLink.article_id)`
+row by row, and read as a streaming scan. It was not: the ORM's `loading.instances()` calls
+`cursor._raw_all_rows()` unless `yield_per` is set, so every row is fetched before the first one
+is yielded, exactly as `.all()` would. **To bound a scan, bound it explicitly: `yield_per`, or a
+keyset loop (`src/database/query.py::keyset_scan`) when the read mark must also be released
+between chunks. A `for` loop over a query is not evidence of streaming.**
+
+### BOUNDING THE ROWS IS NOT BOUNDING THE TALLY (2026-09-26, the keyword clean-up's language vote)
+
+`reconcile_keyword_language` was fixed once for memory (S4.2): a keyset loop that reads 20,000
+mentions at a time and closes between chunks, under a comment saying it was "streamed to bound RAM".
+The fetch was bounded; the dict it filled held a small dict for every keyword in the corpus, 294
+bytes each, and the next step read every keyword through a query that does not stream. At 2.98 M
+keywords that is about 1.7 GB on a 3.9 GB machine, from a pass that runs by itself every 12 hours.
+**When a pass is made to stream, check what it ACCUMULATES as well as what it fetches: the working
+set is the chunk plus everything kept across chunks. A per-id tally over a dense id space fits in
+an array indexed by id (the layout `ArticleLanguageMap` already used); a dict of small dicts costs
+a few hundred bytes per id.**
+
+### A FILTER IN THE LOOP IS NOT A BOUND ON THE READ (2026-09-26, the Home cards' refresh)
+
+Four readers behind the Home cards (flooded topics, buried topics, manufactured emergence,
+trending) were correct, and each applied its thresholds at the top of its loop, so each read as
+"only looks at what passes". The memory each held was set by the query ABOVE the loop, which
+fetched every group of its window. At 40k articles the flood detector held 739,776 baseline
+(source, keyword) pairs to compute the z of 74; that count grows with sources times keywords, so
+it was the one step of the whole after-pass refresh that grew faster than the corpus (26 to 174
+MB for 4x the articles). With each filter moved into the read (the count floors as `HAVING`,
+only the pairs the test reads, a streamed GROUP BY that drops what the loop would skip) it held
+1.6 MB and gave the same answers. **When a loop filters, ask what the query above it fetched:
+the filter bounds the work, not the read. Put each filter where the rows are produced, and prove
+the answers unchanged against the same code with the filters off, on corpora built to hit the
+filters' edges.**
