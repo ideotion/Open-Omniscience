@@ -126,6 +126,31 @@ def test_another_batch_s_rows_are_not_in_this_batch_s_scope():
     assert _touched_source_ids(s, theirs) == [their_src.id]
 
 
+def test_a_checkpoint_s_scope_is_every_batch_its_swap_brings_in():
+    """REGRESSION (2026-09-27). The checkpoint of a held group makes every held item's batch
+    live in the same swap, so its scope is the union. Scoped to its own batch alone, the held
+    items' sources stayed stale and were reported as exact -- measured as a counter reading 2
+    over 5 articles (tests/test_import_checkpoint.py drives it end to end)."""
+    s = _session()
+    held, ckpt = _batch(s, 1), _batch(s, 2)
+    held_src, ckpt_src = _src(s, "held"), _src(s, "ckpt")
+    _provenance(s, held, "articles", _art(s, held_src.id, "h").id)
+    _provenance(s, ckpt, "articles", _art(s, ckpt_src.id, "c").id)
+    s.commit()
+
+    assert _touched_source_ids(s, [held, ckpt]) == sorted([held_src.id, ckpt_src.id])
+    assert _touched_source_ids(s, ckpt) == [ckpt_src.id], "one batch still means one batch"
+
+
+def test_a_group_that_could_not_be_derived_widens():
+    """`None` in is the swap's group being underivable (`_swap_group`), and an empty list
+    names no batch at all; neither is "nothing was touched", so both come back as `None`,
+    the whole-corpus repair."""
+    s = _session()
+    assert _touched_source_ids(s, None) is None
+    assert _touched_source_ids(s, []) is None
+
+
 def test_a_batch_that_touched_nothing_derives_an_EMPTY_list_not_None():
     """`[]` and `None` are different answers and must stay so: empty means "verified that
     nothing was touched", None means "could not tell". Only the second may widen."""
@@ -228,8 +253,13 @@ def test_the_import_call_site_actually_passes_the_scope():
     from pathlib import Path
 
     src = Path("src/backup/merge.py").read_text(encoding="utf-8")
-    assert "source_ids=_touched_source_ids(_epoch_sess, batch_id)," in src, (
+    # `swap_batches`, not `batch_id` (2026-09-27): the scope is every batch the swap makes
+    # live, which at a checkpoint includes the held items' (`_swap_group`).
+    assert "source_ids=_touched_source_ids(_epoch_sess, swap_batches)," in src, (
         "the import's source-counter reconcile must pass the derived scope"
+    )
+    assert "swap_batches = _swap_group(working, batch_id)" in src, (
+        "and that scope must be the swap's whole group, derived before the swap"
     )
     assert 'report["source_counters"] = reconcile_source_counters(' in src, (
         "and must publish what it ran, so a scoped run is visible in the report"
@@ -249,12 +279,13 @@ def test_the_import_call_site_actually_passes_the_scope():
 
 def test_the_helper_and_the_call_site_agree_on_the_session_and_batch():
     """A scope derived from a different session or batch than the reconcile uses would be
-    silently wrong rather than loud, so both must name the same two locals."""
+    silently wrong rather than loud, so both must name the same two locals -- the session,
+    and the swap's group of batches (2026-09-27; it was this item's `batch_id` alone)."""
     from pathlib import Path
 
     src = Path("src/backup/merge.py").read_text(encoding="utf-8")
     i = src.index('report["source_counters"] = reconcile_source_counters(')
     call = src[i : i + 260]
-    assert "_epoch_sess," in call and "_touched_source_ids(_epoch_sess, batch_id)" in call, (
+    assert "_epoch_sess," in call and "_touched_source_ids(_epoch_sess, swap_batches)" in call, (
         f"the reconcile and its scope must share one session and batch; got: {call!r}"
     )

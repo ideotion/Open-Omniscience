@@ -450,6 +450,62 @@ def test_a_checkpoint_commits_every_merge_the_group_carries(tmp_path):
 @pytest.mark.skipif(
     sys.platform == "win32", reason="subprocess round-trip mirrors the POSIX torture harness"
 )
+def test_a_checkpoint_runs_its_post_swap_stages_over_every_batch_the_group_carries(tmp_path):
+    """REGRESSION (2026-09-27). The test above proves a group's ROWS all reach the corpus;
+    this one proves the work that follows the swap reaches them too.
+
+    A held item leaves its post-swap stages to the checkpoint that makes it live -- and the
+    checkpoint scoped every one of them to ITS OWN batch. Measured on the unfixed code with
+    exactly this fixture: the held item's source counter read 2 over 5 articles and was
+    reported as exact, the quarantine scan screened 1 of the group's 4 new articles, and the
+    held item's calendar event never reached the durable mirror. The fixture is shaped so
+    each defect is visible: the held item touches ONLY one.example and alone carries a
+    calendar event; the checkpoint item touches ONLY two.example.
+    """
+    a = tmp_path / "A"
+    a.mkdir()
+    arts = {}
+    for role in ("one", "two"):
+        d = tmp_path / f"src-{role}"
+        d.mkdir()
+        art = tmp_path / f"{role}.oobak.ooenc"
+        assert _helper(
+            d, "build-scoped", "--role", role, "--artifact", str(art), "--passphrase", "pw-k"
+        ).get("artifact")
+        arts[role] = art
+    _helper(a, "build-scoped", "--role", "live")
+
+    group = tmp_path / "group"
+    group.mkdir()
+    working = group / "working.db"
+    held = _helper(
+        a, "merge", str(arts["one"]), "--passphrase", "pw-k", "--commit",
+        "--working-copy", str(working), "--hold",
+    )["report"]
+    assert held["held"] is True
+    rep = _helper(
+        a, "merge", str(arts["two"]), "--passphrase", "pw-k", "--commit",
+        "--working-copy", str(working),
+    )["report"]
+    assert rep["committed"] is True
+
+    state = _helper(a, "check-scoped")
+    assert state["sources"]["one.example"]["live"] == 5, "precondition: the held merge landed"
+    for domain, c in state["sources"].items():
+        assert c["counter"] == c["live"], (
+            f"{domain}: counter {c['counter']} over {c['live']} articles after the checkpoint")
+    assert rep["quarantine_summary"]["scanned"] == 4, (
+        "the checkpoint's quarantine scan skipped the held item's new articles")
+    assert state["held_event_mirrored"], (
+        "the held item's calendar event never reached the durable event mirror")
+    assert rep["swap_group"] == {"batch_ids": [held["batch_id"], rep["batch_id"]], "derived": True}
+    assert rep["quarantine_summary"]["batches"] == rep["swap_group"]["batch_ids"]
+    assert "quarantine_scope" not in rep, "a derived group must not carry the fallback's disclosure"
+
+
+@pytest.mark.skipif(
+    sys.platform == "win32", reason="subprocess round-trip mirrors the POSIX torture harness"
+)
 def test_carrying_a_working_copy_skips_the_whole_corpus_snapshot(tmp_path):
     """The saving itself, measured rather than asserted: the second item of a group
     records a ``snapshot_working_copy`` stage that copied nothing, while the first
