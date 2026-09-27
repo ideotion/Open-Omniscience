@@ -15237,3 +15237,8 @@ results (N); the task-manager page always reads online because `/api/scheduler/a
 (T). **OPEN:** fix the confirmed defects, then walk the failed rows again; a row's click-through clause closes on
 the re-walk, not on this one.
 
+**Which defects before the tag: all of them (`R36`, 2026-09-26 23:32 UTC).** Offered «All 115», «P1 and P2» or
+«P1 only» on a decision card, the maintainer picked «All 115», the recommended option. The fixes land in PR #1191 as
+merged batches, each defect with a test that fails before it and a Chromium check; a fix that needs a ruling, a
+migration or a re-index is DEFERRED with the change it would make, and is listed here rather than dropped.
+
