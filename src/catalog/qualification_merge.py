@@ -52,7 +52,7 @@ import io
 import json
 import zipfile
 from collections import defaultdict
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 
 import yaml
 
@@ -92,7 +92,11 @@ def rows_from_payload(raw: object, origin: str) -> list[dict]:
 
 
 def rows_from_export_bytes(data: bytes, origin: str) -> list[dict]:
-    """One instance's export JSON -> its verdict rows.
+    """One instance's export -> its verdict rows: the JSON the diagnostics carry, or the
+    YAML the Quality gates panel's Export button saves (``fmt=yaml``). Both hold the same
+    ``verdicts`` rows, ``basis`` included, so the one loop the panel offers -- Export on
+    each instance, then Merge -- has to accept what its own first half produces (the
+    2026-09-26 click-through, S1: it refused it as "not valid JSON").
 
     A zip is refused BY NAME rather than sniffed and treated as a bundle: guessing is
     convenient right up to the archive that is not one.
@@ -104,10 +108,46 @@ def rows_from_export_bytes(data: bytes, origin: str) -> list[dict]:
             f"{BUNDLE_MEMBER})."
         )
     try:
-        raw = json.loads(data.decode("utf-8"))
-    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise MergeInputError(f"{origin}: not valid JSON ({exc}).") from exc
+        text = data.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise MergeInputError(f"{origin}: not valid JSON or YAML ({exc}).") from exc
+    try:
+        raw = json.loads(text)
+    except json.JSONDecodeError as json_exc:
+        return _rows_from_export_yaml(text, origin, json_exc)
     return rows_from_payload(raw, origin)
+
+
+def _rows_from_export_yaml(text: str, origin: str, json_exc: json.JSONDecodeError) -> list[dict]:
+    """The Export button's YAML -> its rows, refusing an OVERLAY that looks like one.
+
+    AN OVERLAY IS NOT AN EXPORT, and the two share a file name. A merged or shipped
+    ``source_qualification.yml`` carries no ``basis`` on its rows, and the merge reads a
+    missing ``basis`` as ``measured`` -- so feeding a previous merge back in would count
+    every verdict it holds as a fresh measurement: the echo the module refuses to count
+    as corroboration. An export writes ``basis`` on every row, so a row without one is
+    refused by name rather than guessed at.
+    """
+    try:
+        raw = yaml.safe_load(text)
+    except yaml.YAMLError as exc:
+        raise MergeInputError(
+            f"{origin}: not valid JSON ({json_exc}), and not valid YAML either."
+        ) from exc
+    rows = rows_from_payload(raw, origin)
+    if any(isinstance(r, dict) and "basis" not in r for r in rows):
+        raise MergeInputError(
+            f"{origin} reads as an overlay (a merged or shipped source_qualification.yml), "
+            "not an instance's export: its rows carry no 'basis', so this merge could not "
+            "tell a measurement from an echo of one. Upload what Export produced on each "
+            "instance, or that instance's all-diagnostics bundle."
+        )
+    for r in rows:
+        # An unquoted timestamp loads as a datetime; the merge compares and re-renders
+        # the date as the string the export wrote, never as an object.
+        if isinstance(r, dict) and isinstance(r.get("qualified_at"), (date, datetime)):
+            r["qualified_at"] = r["qualified_at"].isoformat()
+    return rows
 
 
 def rows_from_bundle_bytes(
@@ -244,8 +284,9 @@ def render(merged: dict[str, dict]) -> str:
     }
     header = (
         "# Source qualification verdicts, EARNED BY MEASUREMENT on real instances.\n"
-        "# Merged by scripts/merge_source_qualification.py from per-instance exports\n"
-        "# (GET /api/diagnostics/source-qualification-export). Do not hand-edit.\n"
+        "# Merged from per-instance exports (GET /api/diagnostics/source-qualification-export)\n"
+        "# by Settings > Advanced > Quality gates > Build a merged file, or by\n"
+        "# scripts/merge_source_qualification.py -- one merge core. Do not hand-edit.\n"
         "# A domain absent from this file ships unqualified and is judged by the install's\n"
         "# own first qualification pass, exactly as before this file existed.\n"
     )

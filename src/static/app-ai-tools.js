@@ -240,7 +240,16 @@
       const was = (e.prior_enabled === null || e.prior_enabled === undefined)
         ? t("never set")
         : (e.prior_enabled ? t("on") : t("off"));
-      const when = e.occurred_at ? `<span dir="ltr">⁨${esc(e.occurred_at)}⁩</span>` : "";
+      // Both stamps go through the app's shared date formatter (app language, the
+      // reader's zone, one precision on every row) and are kept whole: printed raw, an
+      // undo showed microseconds beside rows read to the second, and the ISO token broke
+      // after its hyphen at 1440 px (click-through S8). The exact UTC stamp the server
+      // sent stays in the hover. Raw only where the formatter is absent.
+      const stamp = (iso) => {
+        const shown = (typeof fmtDateTime === "function" && fmtDateTime(iso)) || String(iso);
+        return `<span class="qual-when" style="white-space:nowrap" title="${esc(iso)}">⁨${esc(shown)}⁩</span>`;
+      };
+      const when = e.occurred_at ? stamp(e.occurred_at) : "";
       // A CONTROL THAT RENDERS CLAIMS ITS CAPABILITY. The endpoint refuses an undo whose
       // admission is no longer the decision in effect -- a later admission, or a later
       // verdict that replaced this one -- so drawing the button there would be the surface
@@ -255,7 +264,7 @@
       };
       const undone = e.undone
         ? `<span class="muted">${t("Undone")}${e.undone_at
-            ? ` ⁨${esc(e.undone_at)}⁩` : ""}</span>`
+            ? ` ${stamp(e.undone_at)}` : ""}</span>`
         : (e.reversible === false
           ? `<span class="muted">${esc(blocked[e.blocked_by] || t("Cannot be undone"))}</span>`
           : `<button class="secondary" data-undo="${esc(String(e.id))}">${t("Undo")}</button>`);
@@ -273,7 +282,7 @@
         + ` · ${t("Status was")}: ${esc(wasStatus)}`
         + ` · ${when}</span>
         </div>
-        <div>${undone}</div>
+        <div style="flex:0 0 auto">${undone}</div>
       </div>`;
     }
 
@@ -323,8 +332,13 @@
       try {
         const r = await api(`/api/sources/admission/${encodeURIComponent(id)}/undo`, {method: "POST"});
         toast(t("Admission undone."), "ok");
-        loadAdmissionAudit();
-        _qualScopeCount();
+        // The WHOLE panel, not the audit and the scope line alone: an undo changes the
+        // "Collecting now" headline and the verdict tallies too, and refreshing only two
+        // of the three left the headline contradicting the scope sentence right under
+        // it until a reload (click-through S2). loadQualificationGates repaints the
+        // headline and re-runs the scope count, the audit and the overlay editor --
+        // the same refresh adopt and revert already use.
+        loadQualificationGates();
       } catch (e) {
         toast(_apiErrorMessage(e), "err");
         if (btn) btn.disabled = false;
@@ -438,7 +452,7 @@
       if (btn) btn.disabled = true;
       try {
         const res = await fetch("/api/diagnostics/source-qualification-export?fmt=yaml");
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        if (!res.ok) throw new Error(_apiErrorMessage(await res.json().catch(() => null), res));
         _overlaySaveAs(await res.text(), "source_qualification.yml");
         toast(t("Exported what this install measured."), "ok");
       } catch (e) { toast(_apiErrorMessage(e), "err"); }
@@ -455,7 +469,6 @@
 
     async function overlayMerge(btn) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
-      const tf = _qualTf;
       const out = $("qual-ov-merge-out");
       const picker = $("qual-ov-files");
       const body = new FormData();
@@ -465,36 +478,55 @@
       // result the record would drop what this machine measured.
       body.append("include_this_instance", "true");
       if (btn) btn.disabled = true;
+      _qualMergeLast = null;
       if (out) out.textContent = t("Merging…");
       try {
         const res = await fetch("/api/diagnostics/source-qualification-merge",
                                 {method: "POST", body});
-        const d = await res.json();
-        if (!res.ok) throw new Error(d && d.detail ? d.detail : `HTTP ${res.status}`);
-        const rep = d.report || {};
-        const conflicts = (rep.conflicts || []).length;
-        const lines = [
-          `<div>${esc(tf("{n} verdicts in the merged file", {n: d.merged_verdicts || 0}))}`
-          + ` · ${esc(tf("{n} added", {n: rep.added || 0}))}`
-          + ` · ${esc(tf("{n} updated", {n: rep.updated || 0}))}`
-          + ` · ${esc(tf("{n} carried through untouched", {n: rep.carried_through_untouched || 0}))}</div>`,
-          `<div class="muted">${(rep.inputs || []).map((i) =>
-            `${esc(i.name)} (${esc(String(i.verdicts))})`).join(" · ")}</div>`,
-        ];
-        if (conflicts) {
-          // A disagreement between instances is a FINDING. Named, listed, and left at
-          // whatever the existing file said -- never resolved on the operator's behalf.
-          lines.push(`<div class="card-caveat">${esc(tf("{n} domains disagree across instances and were left unchanged", {n: conflicts}))}`
-            + ` ${esc(t(d.conflicts_note || ""))}</div>`);
-          lines.push(`<div class="muted" dir="ltr">${(rep.conflicts || []).slice(0, 20)
-            .map((c) => esc(`${c.domain}: ${(c.verdicts || []).join(" / ")}`)).join("<br>")}</div>`);
-        }
-        lines.push(`<div class="card-caveat">${esc(t(d.note || ""))}</div>`);
-        if (out) out.innerHTML = lines.join("");
+        // The server's refusal is the answer the operator needs ("…: not valid JSON",
+        // "no 'verdicts' list"), so it is read through the shared helper WITH the
+        // response -- a plain-text error body parses to null and still says its status.
+        const d = await res.json().catch(() => null);
+        if (!res.ok) throw new Error(_apiErrorMessage(d, res));
+        _qualMergeLast = d;
+        _renderOverlayMerge();
         _overlaySaveAs(d.overlay_yaml || "", "source_qualification.yml");
       } catch (e) {
+        _qualMergeLast = null;
         if (out) out.textContent = _apiErrorMessage(e);
       } finally { if (btn) btn.disabled = false; }
+    }
+
+    // The last merge's report, KEPT so a language switch can repaint it from what it
+    // already holds (the frozen-locale class, click-through S3): its lines are tf()
+    // frames welded to the report's counts, which the i18n walker cannot re-derive.
+    let _qualMergeLast = null;
+    function _renderOverlayMerge() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      const tf = _qualTf;
+      const out = $("qual-ov-merge-out");
+      const d = _qualMergeLast;
+      if (!out || !d) return;
+      const rep = d.report || {};
+      const conflicts = (rep.conflicts || []).length;
+      const lines = [
+        `<div>${esc(tf("{n} verdicts in the merged file", {n: d.merged_verdicts || 0}))}`
+        + ` · ${esc(tf("{n} added", {n: rep.added || 0}))}`
+        + ` · ${esc(tf("{n} updated", {n: rep.updated || 0}))}`
+        + ` · ${esc(tf("{n} carried through untouched", {n: rep.carried_through_untouched || 0}))}</div>`,
+        `<div class="muted">${(rep.inputs || []).map((i) =>
+          `${esc(i.name)} (${esc(String(i.verdicts))})`).join(" · ")}</div>`,
+      ];
+      if (conflicts) {
+        // A disagreement between instances is a FINDING. Named, listed, and left at
+        // whatever the existing file said -- never resolved on the operator's behalf.
+        lines.push(`<div class="card-caveat">${esc(tf("{n} domains disagree across instances and were left unchanged", {n: conflicts}))}`
+          + ` ${esc(t(d.conflicts_note || ""))}</div>`);
+        lines.push(`<div class="muted" dir="ltr">${(rep.conflicts || []).slice(0, 20)
+          .map((c) => esc(`${c.domain}: ${(c.verdicts || []).join(" / ")}`)).join("<br>")}</div>`);
+      }
+      lines.push(`<div class="card-caveat">${esc(t(d.note || ""))}</div>`);
+      out.innerHTML = lines.join("");
     }
 
     async function _qualPut(body) {

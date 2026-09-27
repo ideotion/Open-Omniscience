@@ -2595,7 +2595,7 @@
       </div>
       <p class="hint" style="margin-top:10px">To build the file the app ships, merge exports from other instances with this one. Nothing is written: the merged file is handed back for you to review and commit.</p>
       <div class="row" style="gap:8px;flex-wrap:wrap;align-items:center">
-        <input type="file" id="qual-ov-files" accept=".json,.zip" multiple style="width:auto">
+        <input type="file" id="qual-ov-files" accept=".json,.yml,.yaml,.zip" multiple style="width:auto">
         <button class="secondary" id="qual-ov-merge" onclick="overlayMerge(this)" title="Merges the selected exports (or all-diagnostics bundles) together with this instance's own verdicts. A domain two instances disagree about is reported and left alone, never resolved automatically; an inherited verdict is never counted as a second opinion.">Build a merged file</button>
       </div>
       <div id="qual-ov-merge-out" class="hint" style="margin-top:8px"></div>

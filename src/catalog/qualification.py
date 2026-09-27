@@ -721,6 +721,20 @@ def evaluate_and_stamp(
     }
 
 
+def _audit_stamp(value: datetime | None) -> str | None:
+    """An audit timestamp as the panel should receive it: whole seconds, zone stated.
+
+    The columns hold naive UTC (every writer strips the zone), and an undo stamps the
+    live clock, so a bare ``isoformat()`` sent ``2026-09-26T19:56:47.189553`` beside
+    seeded rows reading to the second -- and, being zone-less, a browser parses it as
+    LOCAL time. Stated as UTC here, the client can render it in the reader's own zone
+    and language through the shared date formatter. Storage is untouched."""
+    if value is None:
+        return None
+    stamped = value if value.tzinfo else value.replace(tzinfo=UTC)
+    return stamped.astimezone(UTC).isoformat(timespec="seconds")
+
+
 def admission_audit(
     session: Session, *, limit: int = 100, include_undone: bool = True,
 ) -> dict:
@@ -774,12 +788,12 @@ def admission_audit(
             "source_id": int(r.source_id),
             "domain": domain,
             "name": name,
-            "occurred_at": r.occurred_at.isoformat() if r.occurred_at else None,
+            "occurred_at": _audit_stamp(r.occurred_at),
             "verdict": r.verdict,
             "criteria_version": r.criteria_version,
             "prior_enabled": r.prior_enabled,
             "prior_status": r.prior_status,
-            "undone_at": r.undone_at.isoformat() if r.undone_at else None,
+            "undone_at": _audit_stamp(r.undone_at),
             "undone": r.undone_at is not None,
             # Two fields, never one: `reversible` is the decision the panel acts on and
             # `blocked_by` is WHY, as a token the client keys ×12. `blocked_by` is None

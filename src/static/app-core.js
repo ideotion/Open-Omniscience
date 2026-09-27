@@ -2585,6 +2585,13 @@
     // string this helper exists to abolish, re-entered through the sibling case.
     // Prefer the object's own `error`/`detail`/`msg` prose; JSON.stringify only as
     // a last resort so a shape we did not anticipate is still readable.
+    // AMENDED 2026-09-27 (click-through S1): about twenty callers pass ONE argument, a
+    // caught Error, as `_apiErrorMessage(e)`. An Error that api() raised carries
+    // `.detail`; one a caller built itself around fetch(), or one api() raised for a
+    // body with no `detail` (a plain-text 500), does not -- and then `res.status` threw
+    // a TypeError INSIDE the catch block, so the refusal never reached the screen and
+    // the "Merging…" line beside the button stayed forever. With no response to read,
+    // the Error's own message is the answer.
     function _apiErrorMessage(data, res) {
       const d = data && data.detail;
       let msg;
@@ -2595,7 +2602,8 @@
       } else {
         msg = d;
       }
-      return msg || (res.status + " " + res.statusText);
+      if (msg) return msg;
+      return res ? (res.status + " " + res.statusText) : ((data && data.message) || String(data || ""));
     }
     // ------------------------------------------------------------------ //
     //  Is the server actually there? (field report 2026-08-07, item 4)     //

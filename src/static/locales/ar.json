@@ -3716,7 +3716,6 @@
   "Showing {shown} of {total} admissions": "عرض {shown} من أصل {total} قبول",
   "{n} undone": "تمّ التراجع عن {n}",
   "Admission is about EXTRACTION VALIDITY only -- never editorial merit, and never a score. An undo reverses this instance's decision; it does not disqualify the source, so a later pass may admit it again.": "القبول يتعلق بصحة الاستخلاص فقط — وليس بالقيمة التحريرية ولا بدرجة تقييم. التراجع يلغي قرار هذه النسخة فحسب؛ وهو لا يُسقط أهلية المصدر، لذا قد يقبله مرور لاحق مرة أخرى.",
-  "The 'also scrape unqualified sources' setting has been retired (ruling Q1101, 2026-09-15). A source that passes qualification is now enabled for collection automatically, so there is nothing left for the setting to relax. Every automatic admission is listed in Settings > Sources > Admission audit, where it can be undone.": "أُلغي إعداد «اجمع أيضًا المصادر غير المُقيّمة» (قرار Q1101، 2026-09-15). المصدر الذي يجتاز التقييم يُفعّل الآن للجمع تلقائيًا، فلم يعد هناك ما يُخفّف. وكل قبول تلقائي مدرج في الإعدادات > المصادر > سجل القبول، حيث يمكن التراجع عنه.",
   "This lists admissions made by judging. Sources can also be collecting because they came stamped in the shipped catalogue, carried an inherited stamp, or arrived in a restored backup -- those are not judgements made here and have no row to undo.": "يسرد هذا القبولات الناتجة عن التقييم فقط. وقد يُجمع مصدر أيضًا لأنه وصل مختومًا في الفهرس المُرفق، أو حمل ختمًا موروثًا، أو أتى من نسخة احتياطية مُستعادة — وهذه ليست أحكامًا صدرت هنا ولا توجد لها سطور يُتراجع عنها.",
   "{n} of {total} collecting sources are not accounted for here": "{n} من أصل {total} مصدرًا قيد الجمع غير مُفسّرة هنا",
   "unqualified": "لم يُقيّم بعد",
@@ -4745,5 +4744,6 @@
   "no files": "لا ملفات",
   "corpus database not separately encrypted (the backup's volumes are)": "قاعدة بيانات المجموعة غير مشفّرة بشكل منفصل (وحدات النسخة الاحتياطية مشفّرة)",
   "Verify result not known here — the app no longer holds what this export measured (it has run another job or restarted since). The volume figures below are read off the drive.": "نتيجة التحقق غير معروفة هنا — لم يعد التطبيق يحتفظ بما قاسته عملية التصدير هذه (فقد نفّذ مهمة أخرى أو أُعيد تشغيله منذ ذلك الحين). أرقام الوحدات أدناه مقروءة من القرص.",
-  "{prefix}: {text}": "{prefix}: {text}"
+  "{prefix}: {text}": "{prefix}: {text}",
+  "The 'also scrape unqualified sources' setting has been retired (ruling Q1101, 2026-09-15). A source that passes qualification is now enabled for collection automatically, so there is nothing left for the setting to relax. Every automatic admission is listed in Settings > Advanced > Quality gates > Admission audit, where it can be undone.": "أُلغي إعداد «اجمع أيضًا المصادر غير المُقيّمة» (قرار Q1101، 2026-09-15). المصدر الذي يجتاز التقييم يُفعّل الآن للجمع تلقائيًا، فلم يعد هناك ما يُخفّف. وكل قبول تلقائي مدرج في الإعدادات > متقدم > بوابات الجودة > سجل القبول، حيث يمكن التراجع عنه."
 }
