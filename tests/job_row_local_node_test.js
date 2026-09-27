@@ -80,8 +80,8 @@ const tmRow = (j, t) => {
 };
 
 const t = (s) => s;
-const buttons = (html) => (html.match(/<button[^>]*>[^<]*<\/button>/g) || [])
-  .map((b) => ({ label: b.replace(/<[^>]+>/g, ""), onclick: (b.match(/onclick="([^"]*)"/) || [])[1] || "" }));
+const buttons = (html) => [...html.matchAll(/<button([^>]*)>([^<]*)<\/button>/g)]
+  .map((m) => ({ label: m[2], onclick: (m[1].match(/onclick="([^"]*)"/) || [])[1] || "" }));
 const labels = (html) => buttons(html).map((b) => b.label);
 
 const fold = (state, actions) => ({

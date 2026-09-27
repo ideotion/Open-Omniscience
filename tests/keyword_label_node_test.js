@@ -234,7 +234,7 @@ const K = (() => {
   assert.strictEqual(K.kwSensesAfterHtml({ term: "x", translation_tier: "verified", translation: "y",
     senses: [{ ring_id: "a" }] }), "");
   // Two senses reading the same in the reader's language are told apart on the button.
-  const labels = (after.match(/<button[^>]*>([^<]*)<\/button>/g) || []).map((b) => b.replace(/<[^>]+>/g, ""));
+  const labels = [...after.matchAll(/<button[^>]*>([^<]*)<\/button>/g)].map((m) => m[1]);
   assert.strictEqual(labels.length, 2, after);
   assert.notStrictEqual(labels[0], labels[1], "two senses still read identically (M4): " + labels);
   assert.ok(labels.every((l) => l.startsWith("élection")), labels);
