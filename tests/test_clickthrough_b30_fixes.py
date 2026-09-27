@@ -208,8 +208,13 @@ def test_every_law_code_the_app_can_store_has_a_keyed_label():
     # byte delta and nothing else), so these are the two reasons it can write.
     assert set(flags) == {"large_removal", "large_addition"}
     catalog = yaml.safe_load((_ROOT / "configs" / "legal_sources.yml").read_text(encoding="utf-8"))
-    rows = catalog if isinstance(catalog, list) else next(v for v in catalog.values() if isinstance(v, list))
-    stored = {r.get("category", "legislation") for r in rows if isinstance(r, dict)} | {"legislation"}
+    # The categories live on the catalogue's DOCUMENTS (src/law/catalog.py seeds a
+    # LawDocument from each, defaulting to "legislation"); its "sources" rows carry none,
+    # so reading them made this guard compare {"legislation"} with itself.
+    docs = catalog["documents"]
+    assert docs and all(isinstance(r, dict) for r in docs), "legal_sources.yml has no documents"
+    stored = {r.get("category", "legislation") for r in docs} | {"legislation"}
+    assert "ip" in stored, "the catalogue read found no 'ip' document: the guard is reading the wrong list"
     assert stored <= set(cats), f"a catalogue category has no label: {stored - set(cats)}"
     _keyed_everywhere(sorted(set(flags.values()) | set(cats.values())))
 
