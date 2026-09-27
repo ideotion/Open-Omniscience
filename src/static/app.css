@@ -431,6 +431,11 @@
     .phead { display:flex; align-items:center; gap:10px; margin:0 0 12px; }
     .phead h2 { margin:0; }
     .phead .sp { flex:1; }
+    /* A <select> beside a panel heading takes its own width, not the row's: the global
+       `select { width:100% }` squeezed Home's "Most recent" heading down to its
+       min-content -- two lines at 1440 px, one character per line in Chinese (2026-09-27
+       re-walk T-9). Capped, and allowed to shrink, so a long tag list cannot do the same. */
+    .phead > select { width:auto; min-width:0; max-width:60%; }
     label { display:block; font-size:12px; color:var(--muted); margin:9px 0 3px; }
     input, select, textarea { width:100%; background:var(--panel2); border:1px solid var(--border);
       color:var(--fg); border-radius:var(--radius-sm); padding:9px 11px; font:inherit; transition:border-color .12s; }
@@ -1436,9 +1441,17 @@
        (UI_SHELL_REDESIGN_PLAN §5): compact, never a screenful. */
     .home-glance { display:flex; flex-wrap:wrap; align-items:baseline; gap:6px 18px;
       padding:11px 16px; margin-bottom:14px; }
-    .stat-strip { display:flex; flex-wrap:wrap; gap:5px 16px; align-items:baseline; flex:1 1 auto; }
-    .stat-strip .s { display:inline-flex; align-items:baseline; gap:5px; white-space:nowrap; }
-    .stat-strip .s b { font-size:15px; font-weight:700; letter-spacing:-.01em; }
+    /* An item stays whole on its line while it fits and wraps INSIDE itself only when it
+       is wider than the strip. A whole-item nowrap, with the strip at its default
+       min-width:auto, made the strip as wide as its widest item: in French at 375 px
+       '117 PRIX DES MATIÈRES PREMIÈRES' and the Wikipedia figure pushed the page 28 px
+       sideways and were cut at the card edge (2026-09-27 re-walk P-2, P-4; Russian
+       measured 22 px). The corpus-tier fix below is the same rule. A number never
+       breaks. */
+    .stat-strip { display:flex; flex-wrap:wrap; gap:5px 16px; align-items:baseline; flex:1 1 auto;
+      min-width:0; max-width:100%; }
+    .stat-strip .s { display:inline-flex; align-items:baseline; gap:5px; min-width:0; max-width:100%; }
+    .stat-strip .s b { font-size:15px; font-weight:700; letter-spacing:-.01em; white-space:nowrap; }
     .stat-strip .s span { font-size:10.5px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; }
     /* Home severity alert strip (Wave 3 H) — compact, honest tiers. Reuses .pill /
        .card-caveat / .hint; only the list density is bespoke. */

@@ -328,14 +328,18 @@ async function run() {
   }
 
   await test("X8: the colon is the locale's, inside a frame around the state pill", async () => {
-    const fr = LOCALE("fr"), zh = LOCALE("zh");
+    // Since re-walk U-10 the state word is part of the frame too (one sentence per state,
+    // the pill's edges marked by {pill}/{endpill}), so it agrees with its noun: French
+    // 'Collecte ... arrêtée', never the generic 'arrêté'.
     const f = homeStatus("fr", false);
-    assert(f.indexOf("Collecte automatique : <span class=\"pill \">" + fr["stopped"] + "</span>") === 0,
-      "French lost its space before the colon: " + f);
+    assert(f.indexOf("Collecte automatique : <span class=\"pill \">arrêtée</span>") === 0,
+      "French lost its space before the colon, or its agreement: " + f);
     const z = homeStatus("zh", true);
-    assert(z.indexOf("自动采集：<span class=\"pill ok\">" + zh["running"] + "</span>") === 0, "Chinese colon: " + z);
+    assert(z.indexOf("自动采集：<span class=\"pill ok\">运行中</span>") === 0, "Chinese colon: " + z);
     const e = homeStatus("en", true);
     assert(e.indexOf("Automatic collection: <span class=\"pill ok\">running</span>") === 0, "English: " + e);
+    const s = homeStatus("en", false);
+    assert(s.indexOf("Automatic collection: <span class=\"pill \">stopped</span>") === 0, "English stopped: " + s);
   });
 
   console.log("all assertions passed (" + passed + " tests)");

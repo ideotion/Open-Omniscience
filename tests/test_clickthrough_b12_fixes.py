@@ -316,11 +316,20 @@ def test_the_database_lines_are_keyed_and_repainted_on_a_language_switch():
 
 
 def test_home_collection_state_is_one_frame_so_the_colon_is_the_locales():
+    # 2026-09-27 re-walk U-10: the state WORD joined the frame (one sentence per state,
+    # the pill's edges marked), so French agrees it with 'collecte' -- the frame still
+    # owns the colon, which is what this test was written for.
     body = function_body(read_static("app-home.js"), "renderHomeStatus")
-    assert_present(body, 'tf("Automatic collection: {state}", {state: "\\u0001"})')
+    for state in ("running", "stopped"):
+        assert_present(body, 'tf("Automatic collection: {pill}' + state
+                       + '{endpill}", {pill: "\\u0001", endpill: "\\u0002"})')
     assert_absent(body, 't("Automatic collection")}:')
-    _keyed_everywhere("Automatic collection: {state}")
-    assert _locales()["fr"]["Automatic collection: {state}"] == "Collecte automatique : {state}"
+    for key in ("Automatic collection: {pill}running{endpill}",
+                "Automatic collection: {pill}stopped{endpill}"):
+        _keyed_everywhere(key)
+    assert _locales()["fr"]["Automatic collection: {pill}stopped{endpill}"] == (
+        "Collecte automatique : {pill}arrêtée{endpill}"
+    )
 
 
 # --- X9: the task-manager page -------------------------------------------------- #

@@ -1503,6 +1503,12 @@
       btn.textContent = running ? t9("Collection is ON — click to turn off")
                                 : t9("Collection is OFF — click to turn on");
       btn.setAttribute("aria-pressed", running ? "true" : "false");
+      // The state this label was painted FROM, so the `oo:langchange` listener
+      // (app-boot.js) can repaint it without asking the scheduler. The label is t()'d
+      // text, and the DOM walker records first sight as "the English", so a label
+      // painted in French stayed French after every later switch (re-walk T-3). Set
+      // only here: the static markup's aria-pressed="false" is not a reading.
+      btn.setAttribute("data-collect-state", running ? "on" : "off");
     }
     async function collectToggle() {
       let running = false;

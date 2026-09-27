@@ -99,6 +99,19 @@
       // English beside chips that translated, while booting straight into `ar` rendered
       // it correctly. Repaints from the CACHED payload, so a switch costs no request.
       try { if (typeof _renderHomeChannels === "function") _renderHomeChannels(); } catch (_e) {}
+      // Home's "Most recent" and "Latest in your corpus" panels and the Settings
+      // Collection toggle are the same class, seen only on a switch that STARTS in a
+      // non-English locale: the walker had recorded their French text as "the English",
+      // so it stayed French in ar, zh and en (2026-09-27 re-walk T-3). Each redraws from
+      // what it last drew -- the rows, the payload, the state on the button -- never a
+      // fetch, and nothing at all for a surface never drawn.
+      try { if (typeof _renderHomeRecent === "function") _renderHomeRecent(); } catch (_e) {}
+      try { if (typeof _renderHomeLatest === "function") _renderHomeLatest(); } catch (_e) {}
+      try {
+        const ct = $("collect-toggle");
+        const st = ct && ct.getAttribute("data-collect-state");
+        if (st && typeof _paintCollectToggle === "function") _paintCollectToggle(st === "on");
+      } catch (_e) {}
       // S04-14 (session 2): the analysis window's near-duplicate CAVEAT and its "≈N"
       // pill hovers are a keyed frame plus a measured count, so they are the same
       // frozen-locale class. A caveat that holds a translation in all twelve locales and
