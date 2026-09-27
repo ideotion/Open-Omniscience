@@ -319,3 +319,37 @@ def test_unlocated_buckets_are_summed_not_picked_between(db, monkeypatch):
     assert unlocated[0]["articles"] == 2, "both articles are counted, neither dropped"
     # Neither falsy group may be mistaken for a located country.
     assert out["n_countries"] == 0
+
+
+def test_ring_map_method_and_caveat_are_keyed_and_name_the_ui_bucket(db, monkeypatch):
+    """Row R, R5 (2026-09-27 walk): the ring map printed these two sentences in English
+    under every locale, and the caveat told a reader unlocated sources were "bucketed as
+    null" -- a storage word. The caveat now names the bucket by the label the map's own
+    detail shows, and both sentences are keyed x12 so the map can t() them."""
+    import json
+    from pathlib import Path
+
+    from src.analytics import equivalence
+    ring = _ring()
+    monkeypatch.setattr(equivalence, "ring_meta", lambda rid: ring if rid == "testconcept" else None)
+    monkeypatch.setattr(equivalence, "ring_of",
+                        lambda lang, norm: "testconcept" if (lang, norm) in ring.members else None)
+    us = Source(name="US Src", domain="us.test", country="us")
+    db.add(us)
+    db.commit()
+    _add_kw_mention(db, term="alpha", language="en", source=us, n=1)
+    out = q.ring_country_split(db, ring_id="testconcept")
+    assert "null" not in out["caveat"], out["caveat"]
+    assert "'Not mapped (source country unknown)'" in out["caveat"], (
+        "the caveat must name the unlocated bucket by the UI's own label for it"
+    )
+    locales = Path(__file__).resolve().parent.parent / "src" / "static" / "locales"
+    for loc in ("ar", "bn", "de", "en", "es", "fr", "hi", "id", "ja", "pt", "ru", "zh"):
+        data = json.loads((locales / f"{loc}.json").read_text(encoding="utf-8"))
+        for key in (out["method"], out["caveat"]):
+            assert data.get(key, "").strip(), (loc, key)
+            if loc != "en":
+                assert data[key] != key, (loc, "untranslated", key)
+        if loc != "en":
+            # The quoted bucket label is the locale's own translation of that label.
+            assert data["Not mapped (source country unknown)"] in data[out["caveat"]], loc

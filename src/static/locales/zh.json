@@ -814,7 +814,7 @@
   "exact link": "精确链接",
   "month": "月份",
   "orgs": "组织",
-  "people": "人物",
+  "people": "人",
   "places": "地点",
   "political": "政治",
   "technology": "科技",
@@ -4376,7 +4376,6 @@
   "Start the unattended run (goes online: continuous collection and the qualification drain)": "开始无人值守运行（联网：持续采集和资格队列处理）",
   "Stop at the next safe point; whatever the window gave is still collected and reported.": "在下一个安全点停止；窗口已获得的内容仍会被采集并写入报告。",
   "The same run under the 'million' profile: the all-diagnostics bundle at the end is REQUIRED (row C's bar: complete coverage, every member non-zero) and the report says its numbers speak to the ~1M rows.": "在「million」配置下的同一运行：结束时的全部诊断包为必需项（C 行的标准：覆盖完整，没有空成员），报告会说明其数字对应约 100 万的各行。",
-  "also run 0.3 row 5, LAST — the Tier-A quarantine pass, then a whole-corpus keyword re-index with collection paused: hours on a small corpus, days on a slow machine (deferred by ruling A1; tick only to run it now)": "同时在最后运行 0.3 的第 5 行——A 级隔离遍历，然后在暂停采集的情况下对整个语料库重建关键词索引：小语料库需数小时，慢速机器需数天（依裁定 A1 推迟；仅在要立即运行时勾选）",
   "destination dir (a separate folder / drive, ~3× your corpus)": "目标目录（单独的文件夹 / 驱动器，约为语料库的 3 倍）",
   "include newsletters": "包含新闻通讯",
   "online probes (law hosts, scoring endpoint, weights digests)": "在线探测（法律主机、评分端点、权重摘要）",
@@ -5301,5 +5300,9 @@
   "airplane mode engaged — progress is saved, start again to resume": "飞行模式已开启 — 进度已保存，再次开始即可继续",
   "paused: {reason} — progress is saved, start again once memory recovers": "已暂停：{reason} — 进度已保存，内存恢复后再次开始",
   "declined on this machine: {reason} — nothing was judged; restart the app with {env}=1 to run it anyway": "在此机器上被拒绝：{reason} — 未作任何评判；如仍要运行，请以 {env}=1 重启应用",
-  "stopped after {n} consecutive batches with no evidence to judge — the remaining candidates could not be evaluated (no reachable feed / no prior articles); they stay unqualified and will be retried on a later run": "连续 {n} 批均无可评判的证据，已停止 — 其余候选无法评估（没有可访问的订阅源／没有既往文章）；它们保持未审核状态，将在之后的运行中重试"
+  "stopped after {n} consecutive batches with no evidence to judge — the remaining candidates could not be evaluated (no reachable feed / no prior articles); they stay unqualified and will be retried on a later run": "连续 {n} 批均无可评判的证据，已停止 — 其余候选无法评估（没有可访问的订阅源／没有既往文章）；它们保持未审核状态，将在之后的运行中重试",
+  "also run 0.4 row W (0.3's row 5), LAST — the Tier-A quarantine pass, then a whole-corpus keyword re-index with collection paused: hours on a small corpus, days on a slow machine (required before the v0.4.0 tag; runs only when ticked)": "同时在最后运行 0.4 的第 W 行（即 0.3 的第 5 行）——A 级隔离遍历，然后在暂停采集的情况下对整个语料库重建关键词索引：小语料库需数小时，慢速机器需数天（v0.4.0 标签之前必须完成；仅在勾选时运行）",
+  "Mentions of every language member of the ring, grouped by the source's country. Keywords with no stored language are excluded (conservative). Counts only.": "该环中每个语言成员的提及次数，按来源国家分组。未存储语言的关键词被排除（保守处理）。仅计数。",
+  "Coverage by producing-source country, never a credibility ranking or score. Articles whose source has no country are counted under 'Not mapped (source country unknown)', never dropped. Co-occurrence in your corpus, never a claim about the country.": "按内容来源国家统计的覆盖面，绝非可信度排名或评分。来源没有国家的文章计入“未上图（来源国家未知）”，从不丢弃。这是您语料库中的共现，绝非对该国的断言。",
+  "index": "指数"
 }

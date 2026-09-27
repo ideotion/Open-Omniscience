@@ -814,7 +814,7 @@
   "exact link": "完全一致リンク",
   "month": "月",
   "orgs": "組織",
-  "people": "人物",
+  "people": "人",
   "places": "場所",
   "political": "政治",
   "technology": "テクノロジー",
@@ -4376,7 +4376,6 @@
   "Start the unattended run (goes online: continuous collection and the qualification drain)": "無人運転を開始（オンラインになります: 継続的な収集と適格性キューの消化）",
   "Stop at the next safe point; whatever the window gave is still collected and reported.": "次の安全な地点で停止します。期間で得られたものはそれでも収集・報告されます。",
   "The same run under the 'million' profile: the all-diagnostics bundle at the end is REQUIRED (row C's bar: complete coverage, every member non-zero) and the report says its numbers speak to the ~1M rows.": "「million」プロファイルでの同じ実行: 最後の全診断バンドルが必須です（行 C の基準: 完全なカバレッジ、空のメンバーなし）。レポートはその数値が約 100 万行に関するものだと明記します。",
-  "also run 0.3 row 5, LAST — the Tier-A quarantine pass, then a whole-corpus keyword re-index with collection paused: hours on a small corpus, days on a slow machine (deferred by ruling A1; tick only to run it now)": "0.3 の行 5 も最後に実行 — ティア A の隔離パスの後、収集を一時停止してコーパス全体のキーワードを再索引（小さなコーパスで数時間、遅いマシンでは数日）（判断 A1 により延期。今すぐ実行する場合のみチェック）",
   "destination dir (a separate folder / drive, ~3× your corpus)": "保存先ディレクトリ（別のフォルダー / ドライブ、コーパスの約 3 倍）",
   "include newsletters": "ニュースレターを含める",
   "online probes (law hosts, scoring endpoint, weights digests)": "オンラインプローブ（法令ホスト、スコアリングエンドポイント、重みダイジェスト）",
@@ -5301,5 +5300,9 @@
   "airplane mode engaged — progress is saved, start again to resume": "機内モードがオンです — 進捗は保存されています。再開するにはもう一度開始してください",
   "paused: {reason} — progress is saved, start again once memory recovers": "一時停止：{reason} — 進捗は保存されています。メモリが回復したらもう一度開始してください",
   "declined on this machine: {reason} — nothing was judged; restart the app with {env}=1 to run it anyway": "このマシンでは見送られました：{reason} — 何も判定していません。それでも実行するには {env}=1 でアプリを再起動してください",
-  "stopped after {n} consecutive batches with no evidence to judge — the remaining candidates could not be evaluated (no reachable feed / no prior articles); they stay unqualified and will be retried on a later run": "判定できる根拠のないバッチが {n} 回連続したため停止しました — 残りの候補は評価できませんでした（到達できるフィードなし／過去の記事なし）。未審査のまま残り、後の実行で再試行されます"
+  "stopped after {n} consecutive batches with no evidence to judge — the remaining candidates could not be evaluated (no reachable feed / no prior articles); they stay unqualified and will be retried on a later run": "判定できる根拠のないバッチが {n} 回連続したため停止しました — 残りの候補は評価できませんでした（到達できるフィードなし／過去の記事なし）。未審査のまま残り、後の実行で再試行されます",
+  "also run 0.4 row W (0.3's row 5), LAST — the Tier-A quarantine pass, then a whole-corpus keyword re-index with collection paused: hours on a small corpus, days on a slow machine (required before the v0.4.0 tag; runs only when ticked)": "0.4 の行 W（0.3 の行 5）も最後に実行 — ティア A の隔離パスの後、収集を一時停止してコーパス全体のキーワードを再索引（小さなコーパスで数時間、遅いマシンでは数日）（v0.4.0 タグの前に必須。チェックした場合のみ実行）",
+  "Mentions of every language member of the ring, grouped by the source's country. Keywords with no stored language are excluded (conservative). Counts only.": "リングの各言語メンバーの言及を、情報源の国ごとに集計。言語が保存されていないキーワードは除外（保守的）。件数のみ。",
+  "Coverage by producing-source country, never a credibility ranking or score. Articles whose source has no country are counted under 'Not mapped (source country unknown)', never dropped. Co-occurrence in your corpus, never a claim about the country.": "情報源の国別のカバレッジであり、信頼性の順位やスコアではありません。情報源に国がない記事は「地図化せず（情報源の国が不明）」として数えられ、除外されることはありません。コーパス内での共起であり、その国についての主張ではありません。",
+  "index": "指数"
 }

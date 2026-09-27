@@ -384,9 +384,13 @@
       }
       groupsHost.innerHTML = members.length
         ? members.filter((r) => _conceptMatches(r.id) || _conceptMatches((r.languages || []).join("/")))
+            // A break opportunity after each "/" and a chip no wider than its row: a ring
+            // in many languages joined "(ara/deu/eng/…)" into one unbreakable word, and at
+            // 375 px that chip pushed the page 6 px sideways (row R, R8).
             .map((r) => `<button class="chip lvl-group${_conceptActiveBucket && r.id === _conceptSelectedRing ? " active" : ""}"
+               style="max-width:100%;overflow-wrap:anywhere"
                onclick="selectConceptGroup(${esc(JSON.stringify(r.id))})" title="${esc(lvlTitle("group"))}">⦾ ${esc(r.id)}
-               <span class="muted">(${(r.languages || []).map((l) => ooLangCell(l)).join("/")})</span></button>`).join(" ")
+               <span class="muted">(${(r.languages || []).map((l) => ooLangCell(l)).join("/<wbr>")})</span></button>`).join(" ")
         : (_conceptActiveBucket ? `<div class="muted">${esc(t("No groups in this bucket."))}</div>` : "");
 
       // The clickable path breadcrumb (reuses the shared component from §B).
@@ -435,10 +439,20 @@
       const el = $("sg-ringmap"); if (el && el.scrollIntoView) el.scrollIntoView({ behavior: "smooth", block: "center" });
     }
 
+    // What the ring map last drew, so a language switch redraws its legend, caveat and
+    // worldview picker (t()'d at render, out of the walker's reach) from the payload it
+    // already holds -- never a fetch (row R, R4).
+    let _ringMapLast = null;
+    function repaintRingMapFromCache() {
+      const host = $("sg-ringmap");
+      if (!_ringMapLast || !host || !host.querySelector("svg#oo-choro")) return;
+      showRingMap(_ringMapLast.ringId, _ringMapLast.d);
+    }
     // Item #4: render a cross-language ring's coverage on the ooMap component — where the
     // concept is covered (by the producing source's country) + its per-language split.
     // Counts only, no score; unknown country is shown honestly, never mapped or guessed.
-    async function showRingMap(ringId) {
+    // `cached` is a payload this map already drew (the language-switch redraw): no fetch.
+    async function showRingMap(ringId, cached) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       // A template, so the FRAME translates and the two numbers stay data. Guarded on
       // tf EXISTING rather than falling back to identity: an identity fallback would
@@ -446,12 +460,15 @@
       const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : null;
       const host = $("sg-ringmap"), detail = $("sg-ringmap-detail");
       if (!host) return;
-      if (!ringId) { host.innerHTML = ""; if (detail) detail.innerHTML = ""; return; }
-      host.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
-      if (detail) detail.innerHTML = "";
+      if (!ringId) { host.innerHTML = ""; if (detail) detail.innerHTML = ""; _ringMapLast = null; return; }
+      if (!cached) {
+        host.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
+        if (detail) detail.innerHTML = "";
+      }
       try {
-        const d = await api("/api/insights/ring-countries?ring_id=" + encodeURIComponent(ringId));
+        const d = cached || await api("/api/insights/ring-countries?ring_id=" + encodeURIComponent(ringId));
         if (!d.found) { host.innerHTML = `<div class="muted">${esc(t("No cross-country coverage for this concept yet."))}</div>`; return; }
+        _ringMapLast = { ringId, d };
         const values = {}, names = {}; let unloc = null;
         (d.countries || []).forEach(c => {
           if (!c.country) { unloc = c; return; }            // unlocated bucket — never mapped
@@ -486,7 +503,9 @@
             values, names, unit: t("articles"),
             valueLabel: (iso, v) => `${v} ${t("articles")}`,
             aria: ariaLabel,
-            method: d.method || "", caveat: d.caveat || "",
+            // The endpoint's method and caveat are fixed sentences, keyed x12 (row R, R5):
+            // passed raw they read in English under every locale.
+            method: d.method ? t(d.method) : "", caveat: d.caveat ? t(d.caveat) : "",
             onCountry: (iso) => _conceptDrillCountry(ringId, iso),
           });
         }

@@ -39,7 +39,12 @@
       // localised name moved into a hover (Q302). Fixed in the GUARD rather than by
       // adding a third entry to that handler, so the next surface behind this stamp
       // cannot inherit the bug by being written correctly.
-      const stamp = JSON.stringify([d.by_country, d.unlocated, _covUiLang()]);
+      // THE WORLDVIEW TOO, for the same reason: it changes what the map draws (which claim
+      // a contested area is attributed to, and the legend line saying so) without changing
+      // the payload, so a stamp without it kept the old convention here after another map
+      // switched it (row R, R3).
+      const worldview = (typeof ooMapWorldview === "function") ? ooMapWorldview() : "";
+      const stamp = JSON.stringify([d.by_country, d.unlocated, _covUiLang(), worldview]);
       if (stamp === _covMapStamp) return;   // live poll: unchanged, no repaint
       _covMapStamp = stamp;
       const values = {}, names = {}, points = [];

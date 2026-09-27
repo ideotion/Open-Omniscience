@@ -793,7 +793,10 @@
       });
       await ooMap(host, {
         values, names,
-        scale: "sequential", label: _govIndLabel(meta.label), unit: meta.unit || "",
+        // The legend prints the unit after its max: the catalogue's unit WORD is keyed
+        // (years, people, per 1,000, index …) and a symbol or code (%, USD, intl$) falls
+        // through t() unchanged, so only the word translates (row R, R6).
+        scale: "sequential", label: _govIndLabel(meta.label), unit: meta.unit ? t(meta.unit) : "",
         // A map tooltip IS the hover Q302 puts the name in, and it is also what a
         // screen reader is handed -- so the NAME stays here deliberately, with the
         // code beside it so the two readings agree. `ooCountryTitle`, not the bare

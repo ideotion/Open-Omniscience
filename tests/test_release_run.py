@@ -177,9 +177,11 @@ def test_a_full_run_sequences_the_phases_and_writes_one_report(fast):
                      "arm_soak", "online_probes", "soak", "collect", "bundle", "row5_quarantine"], names
     assert {ph["name"]: ph["status"] for ph in report["phases"]}["row5_quarantine"] == "skipped"
     rows = {r["row"]: r for r in report["board_rows"]}
-    assert set(rows) == {"A", "B", "C", "D", "E", "G", "J", "K", "I", "P", "Q", "T"}
+    # Row 5 of 0.3 is 0.4 board row W (ruling RC01 = a, 2026-09-27); "G" is the maintainer's flip.
+    assert set(rows) == {"A", "B", "C", "D", "E", "W", "J", "K", "I", "P", "Q", "T"}
     assert rows["A"]["status"] == "measured" and rows["A"]["evidence"]["integrity_verdict"] == "consistent"
-    assert rows["G"]["status"] == "skipped"
+    assert rows["W"]["status"] == "skipped"
+    assert "row W stays open" in rows["W"]["note"] and "ruling A1" not in rows["W"]["clause"]
     assert rows["P"]["status"] == "not-measurable-here"
     for r in rows.values():
         assert r["status"] in rr.PHASE_STATUSES, r
@@ -398,7 +400,7 @@ def test_the_million_profile_marks_the_bundle_required_and_a_zero_byte_member_fa
 def test_render_text_names_every_row_and_the_no_score_note(fast):
     res = rr.run_release_run(FakeCtx(), **_params(fast["dest"]))
     text = rr.render_release_run_text(res["report"])
-    for row in "ABCDEGIJKPQT":
+    for row in "ABCDEIJKPQTW":
         assert f"row {row} --" in text, row
     assert "never a score" in text
     assert "[MEASURED]" in text and "[SKIPPED]" in text
@@ -659,7 +661,7 @@ def test_the_box_lives_in_the_diagnostics_section_with_its_controls():
     assert "releaseRunStart(this, 'release-scale')" in sec and "releaseRunStart(this, 'million')" in sec
     assert 'onclick="releaseRunCollect(this)"' in sec and 'onclick="releaseRunCancel()"' in sec
     assert 'onclick="releaseRunStatus(this)"' in sec
-    # The row-5 opt-in defaults OFF: ruling A1 deferred it, the button may not decide it.
+    # The row-W opt-in (0.3's row 5) defaults OFF: ticking it is the operator's act, never the button's.
     m = re.search(r'<input id="rr-row5"[^>]*>', sec)
     assert m and "checked" not in m.group(0), m.group(0)
     # The passphrase field is a password field that is never autofilled.
@@ -1053,7 +1055,8 @@ def test_row5_starts_only_after_an_interim_report_already_holds_the_soak(fast, m
     done = {ph["name"]: ph["status"] for ph in seen[-1]["phases"]}
     assert done["soak"] == "measured" and done["collect"] == "measured" and done["bundle"] == "measured"
     assert "row5_quarantine" not in done
-    assert res["report"]["board_rows"][[r["row"] for r in res["report"]["board_rows"]].index("G")]["status"] == "measured"
+    w = res["report"]["board_rows"][[r["row"] for r in res["report"]["board_rows"]].index("W")]
+    assert w["status"] == "measured" and "v0.4.0" in w["note"] and "v0.3.0" not in w["note"]
 
 
 def test_collect_retries_a_pool_timeout_and_keeps_every_block_it_read(monkeypatch, tmp_path):
@@ -1489,6 +1492,8 @@ def test_the_row5_label_states_the_cost_and_the_order_in_all_twelve_locales():
     label = m.group(1)
     assert "LAST" in label and "whole-corpus keyword re-index" in label and "collection paused" in label
     assert "days on a slow machine" in label, "the cost is stated where the choice is made (FD01)"
+    # RC01 = a (2026-09-27): the pass is 0.4 row W, required before the v0.4.0 tag, no longer "deferred".
+    assert "row W" in label and "v0.4.0" in label and "ruling A1" not in label
     new = ["unknown — nothing in this window recorded when collection ran",
            "not yet — {h} h more on the current collection stretch (stopping collection, a restart or a suspend starts it over)",
            "not yet — collection is not running", "Longest collection stretch", "Process up without a break",
@@ -1499,6 +1504,7 @@ def test_the_row5_label_states_the_cost_and_the_order_in_all_twelve_locales():
         for k in new:
             assert k in data and str(data[k]).strip(), (loc, k)
         assert "also run 0.3 row 5 — the Tier-A quarantine pass (deferred by ruling A1; tick only to run it now)" not in data
+        assert not [k for k in data if "deferred by ruling A1" in k], (loc, "the pre-RC01 label is re-keyed")
 
 
 def test_the_summary_draws_an_unknown_bar_as_unknown_and_the_process_half_beside_it():
