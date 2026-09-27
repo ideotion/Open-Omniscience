@@ -76,7 +76,17 @@ function $(id) {
     },
   });
   Object.defineProperty(e, "textContent", {
-    get() { return this._html.replace(/<[^>]*>/g, ""); },
+    get() {
+      // Drop the tags by walking the string (a regex replace reads to CodeQL as an
+      // incomplete sanitizer; this is a test double, not one).
+      let out = "", inTag = false;
+      for (const ch of this._html) {
+        if (ch === "<") inTag = true;
+        else if (ch === ">" && inTag) inTag = false;
+        else if (!inTag) out += ch;
+      }
+      return out;
+    },
     set(v) { this._html = String(v); },
   });
   Object.defineProperty(e, "firstElementChild", { get() { return /</.test(this._html) ? {} : null; } });

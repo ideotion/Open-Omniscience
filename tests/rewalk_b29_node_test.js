@@ -68,8 +68,20 @@ function extract(name, decl, src) {
 }
 const ESC = `const esc = (s) => (s == null ? "" : String(s).replace(/[&<>"']/g,
   c => ({"&":"&amp;","<":"&lt;",">":"&gt;","\\"":"&quot;","'":"&#39;"}[c])));`;
-const visible = (html) => String(html).replace(/<[^>]*>/g, "").replace(/&lt;/g, "<").replace(/&gt;/g, ">")
-  .replace(/&amp;/g, "&").replace(/&quot;/g, "\"").replace(/&#39;/g, "'");
+// The visible text of rendered markup: drop the tags by walking the string (not a
+// regex replace, which CodeQL reads as an incomplete sanitizer), then decode the five
+// entities esc() writes in ONE pass, so "&amp;lt;" reads "&lt;" and is never decoded twice.
+const stripTags = (html) => {
+  let out = "", inTag = false;
+  for (const ch of String(html)) {
+    if (ch === "<") inTag = true;
+    else if (ch === ">" && inTag) inTag = false;
+    else if (!inTag) out += ch;
+  }
+  return out;
+};
+const ENTITY = { lt: "<", gt: ">", amp: "&", quot: "\"", "#39": "'" };
+const visible = (html) => stripTags(html).replace(/&(lt|gt|amp|quot|#39);/g, (m, e) => ENTITY[e]);
 
 // A fake i18n engine over a real locale: t()/tf() behave like src/static/i18n.js (an
 // unknown key renders its English). `set` switches live, like OOI18N.setLang.
