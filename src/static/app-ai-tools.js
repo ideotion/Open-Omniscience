@@ -306,16 +306,26 @@
       // match). The DOMAIN beside it is data and stays untranslated, deliberately.
       const wasStatus = e.prior_status ? t(e.prior_status) : t("never judged");
       // TWO COLUMNS THAT WRAP, never one crushed column (click-through re-walk S-1/S-2).
-      // The info column has a real BASIS, wider than its own one-line stamp, so when the
-      // action does not fit beside it the row wraps and the action drops onto its own line.
-      // The S8 form (`flex:0 0 auto` on the action, basis 0 on the info) could never wrap:
-      // at 375 px it squeezed the info column to 46 px, printed the domain one word per
-      // line and pushed the nowrap stamp 154 px out of its own column. The action may
-      // shrink, so "Undone" and its stamp can break apart on a narrow screen; only the
-      // stamp itself stays whole.
+      // The info column has a real BASIS, so when the action does not fit beside it the
+      // row wraps and the action drops onto its own line. The S8 form (`flex:0 0 auto` on
+      // the action, basis 0 on the info) could never wrap: at 375 px it squeezed the info
+      // column to 46 px, printed the domain one word per line and pushed the nowrap stamp
+      // 154 px out of its own column. The action may shrink, so "Undone" and its stamp can
+      // break apart on a narrow screen; only the stamp itself stays whole.
+      // THE FLOOR IS THE STAMP ITSELF, not a guessed width. A basis alone was a guess: 16em
+      // (192 px at this 12 px size) is narrower than the stamp in en/es/pt/id, and 18em is
+      // still narrower than it in JetBrains Mono (223 px in pt/es) -- the Terminal theme's
+      // own face -- so between ~470 and ~640 px, where the row does not wrap and the info
+      // column sits at its basis, the stamp spilled out of it (review of the fix). So
+      // `min-width:auto` restores the flex item's own minimum (its min-content, which the
+      // nowrap stamp sets) over `.row > div`'s 140px (0 on a phone), and the row wraps
+      // before the stamp can leave its column in any language or face. The DOMAIN may
+      // break anywhere, so a long one never becomes that minimum instead and pushes the
+      // column past a phone's row; the 18em basis gives an ordinary domain room to stay
+      // on one line.
       return `<div class="row" style="gap:10px;align-items:center;justify-content:space-between;padding:4px 0">
-        <div style="flex:1 1 16em;min-width:0">
-          <strong>${esc(e.domain || e.name || "")}</strong>
+        <div style="flex:1 1 18em;min-width:auto">
+          <strong style="overflow-wrap:anywhere">${esc(e.domain || e.name || "")}</strong>
           <span class="muted"> · ${ooLabelHtml(esc(t("Collection was")), esc(was))}`
         + ` · ${ooLabelHtml(esc(t("Status was")), esc(wasStatus))}`
         + ` · ${when}</span>

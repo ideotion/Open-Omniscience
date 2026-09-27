@@ -200,11 +200,25 @@ function load(names, prelude, exportsList) {
     for (const s of stamps) assert.ok(/white-space:nowrap/.test(s), "a stamp must not wrap mid-token: " + s);
     // The re-walk's S-1/S-2 replaced the S8 layout: `flex:0 0 auto` on the action with a
     // basis-0 info column could never WRAP, so at 375 px it crushed the info column to
-    // 46 px. The info column now has a real basis wider than its one-line stamp, and the
-    // action may shrink -- so a phone row wraps instead of squeezing. The measured check
-    // (info column >= its stamp at 375 px) is the Chromium walk's; this pins the styles.
-    assert.ok(/<div style="flex:1 1 16em;min-width:0">/.test(out),
-      "the info column must carry a real basis so a narrow row wraps: " + out);
+    // 46 px. The info column now has a real basis, and the action may shrink -- so a phone
+    // row wraps instead of squeezing. The review of that fix measured the basis ALONE
+    // failing: 16em (192 px) is narrower than the one-line stamp in en/es/pt/id, 18em
+    // than the JetBrains Mono stamp in pt/es (223 px), and between ~470 and ~640 px the
+    // stamp spilled out of the column. So the column's floor is its own min-content
+    // (`min-width:auto`, which the nowrap stamp sets), never `min-width:0`, which lets the
+    // column shrink under the stamp; and the domain may break anywhere, so a long one does
+    // not become that floor instead. The measured check (no stamp past its column, 320 to
+    // 1100 px, 12 languages, every bundled face) is the Chromium walk's; this pins the styles.
+    const info = (out.match(/<div class="row"[^>]*>\s*<div style="([^"]*)">/) || [])[1];
+    assert.ok(info, "the info column carries its own style: " + out);
+    assert.ok(/(^|;)flex:1 1 18em(;|$)/.test(info),
+      "the info column must carry a real basis so a narrow row wraps: " + info);
+    assert.ok(/(^|;)min-width:auto(;|$)/.test(info),
+      "the info column's floor must be its own content (the nowrap stamp): " + info);
+    assert.ok(!/min-width:0/.test(info),
+      "min-width:0 lets the column shrink under its nowrap stamp -- the S-1 review spill: " + info);
+    assert.ok(/<strong style="overflow-wrap:anywhere">/.test(out),
+      "a long domain must break rather than become the column's floor: " + out);
     assert.ok(/<div style="flex:0 1 auto">/.test(out),
       "the action column may shrink, so Undone and its stamp can break apart: " + out);
     assert.ok(!/flex:0 0 auto/.test(out), "a never-shrinking action column is the S-1 regression: " + out);
