@@ -174,6 +174,32 @@
         <button class="icon-btn" id="app-shutdown" onclick="appShutdown()" title="Shut down the app (stops the server — your data is untouched)" aria-label="Shut down the app">
           <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v9"/><path d="M6.4 6.4a8 8 0 1 0 11.2 0"/></svg></button>
       </header>
+      <!-- Airplane-mode onboarding coachmark: invites the user to flip the ONE
+           network switch. Going online still passes the consent popup (ensureOnline)
+           — this only teaches where the switch is.
+           IN THE CHROME, IN FLOW (2026-09-27 re-walk O-1): it was a position:fixed
+           bubble, and "below the whole chrome" is exactly where every tab page
+           begins -- its heading and its visible-by-default caveat (Living sources:
+           92 of 372 sampled points of #living-caveat under it; scrolled, a form
+           input). Here, under the top bar, it pushes the page down instead of
+           covering it, stays in view like the sticky chrome it belongs to, and its
+           arrow still points at the plane (_placeCoach). -->
+      <div id="net-coach" role="status" aria-live="polite">
+        <span class="coach-arrow" aria-hidden="true"></span>
+        <div class="coach-body">You're offline. Switch off airplane mode to go online and start collecting.</div>
+        <div class="coach-sub">You'll confirm before anything connects.</div>
+        <!-- Q1125 = a (S04-13 S4): "Both actions carry equal visual weight; 'Not now'
+             is not quieter than 'Go online'." "Not now" carried .secondary (a flatter
+             panel background, a 1px border and font-weight 500) against an unclassed
+             primary, so the coachmark was nudging an operator toward going online on a
+             surface whose entire subject is a network-consent decision. Staying offline
+             is a first-class answer here and now looks like one. The WORDS are
+             unchanged, and the consent popup this leads to is untouched. -->
+        <div class="coach-actions">
+          <button id="net-coach-dismiss">Not now</button>
+          <button id="net-coach-go">Go online</button>
+        </div>
+      </div>
       <!-- Facet subtabs (Insights · Settings · Markets · Agenda · Analysis …) are
            relocated into this strip at runtime by _relocateSubtabs() in app.js, so they
            render JUST UNDER the status bar. Hidden on tabs that have no facet subtabs.
@@ -3563,26 +3589,6 @@
       <button id="ai-egress-ok">Allow the install online</button>
     </div>
   </dialog>
-
-  <!-- Airplane-mode onboarding coachmark: invites the user to flip the ONE
-       network switch. Going online still passes the consent popup (ensureOnline)
-       — this only teaches where the switch is. -->
-  <div id="net-coach" role="status" aria-live="polite">
-    <span class="coach-arrow" aria-hidden="true"></span>
-    <div class="coach-body">You're offline. Switch off airplane mode to go online and start collecting.</div>
-    <div class="coach-sub">You'll confirm before anything connects.</div>
-    <!-- Q1125 = a (S04-13 S4): "Both actions carry equal visual weight; 'Not now'
-         is not quieter than 'Go online'." "Not now" carried .secondary (a flatter
-         panel background, a 1px border and font-weight 500) against an unclassed
-         primary, so the coachmark was nudging an operator toward going online on a
-         surface whose entire subject is a network-consent decision. Staying offline
-         is a first-class answer here and now looks like one. The WORDS are
-         unchanged, and the consent popup this leads to is untouched. -->
-    <div class="coach-actions">
-      <button id="net-coach-dismiss">Not now</button>
-      <button id="net-coach-go">Go online</button>
-    </div>
-  </div>
 
   <!-- First-launch guided setup (maintainer-ruled 2026-06-13): a ONE-TIME,
        stepped GUI that walks a new user to a working app. SLICE 1 = the shell +

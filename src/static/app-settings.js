@@ -63,7 +63,22 @@
       catch (e) { prose.innerHTML = '<div class="muted">Could not load this document.</div>'; }
       const f = $("doc-find"); if (f && f.value) highlightProse(f.value);
     }
+    // DEBOUNCED, so the scroll to the first match runs OUTSIDE the input event
+    // (2026-09-27 re-walk H-3). Called straight from `oninput`, highlightProse's
+    // scrollIntoView ran inside the keystroke; Chromium then revealed the focused
+    // input's caret, which cancelled the page-level half of the scroll. A match in
+    // prose survived (one page scroll, already under way), a match inside the wide
+    // Security endpoint table did not (table first, then page: only the table step
+    // landed), so a TYPED phrase lit a mark 1,800 px below the viewport while the
+    // same phrase PASTED jumped to it. The pause also stops re-rendering the whole
+    // Help body on every key.
+    let _docFindTimer = null;
     function filterDoc() {
+      clearTimeout(_docFindTimer);
+      _docFindTimer = setTimeout(_filterDocNow, 150);
+    }
+    function _filterDocNow() {
+      _docFindTimer = null;
       if (!_docRaw) return;
       $("doc-prose").innerHTML = mdToHtml(_docRaw);
       highlightProse($("doc-find").value);

@@ -436,7 +436,14 @@
       color:var(--fg); border-radius:var(--radius-sm); padding:9px 11px; font:inherit; transition:border-color .12s; }
     input:focus, select:focus, textarea:focus { border-color:var(--accent); outline:none; }
     input::placeholder, textarea::placeholder { color:var(--muted); opacity:.7; }
-    input[type="checkbox"], input[type="radio"] { accent-color:var(--accent); }
+    /* A tick box keeps its NATIVE size. The rule above gives every input width:100%,
+       which is right for a text field and wrong for a checkbox: in a flex label the box
+       took a share of the row (#discovery-external 150-209 px, its label squeezed into
+       three narrow lines) and in a wrapping .row it sat on a line of its own above its
+       label (#qual-enabled, 188-233 px). Rows fixed one at a time with style="width:auto"
+       (.switch, .modlist, .bi-row ...) kept the class alive, so it is fixed here, once
+       (2026-09-27 re-walk H-5, S-8). */
+    input[type="checkbox"], input[type="radio"] { accent-color:var(--accent); width:auto; flex:0 0 auto; }
     /* Range sliders: themed track + thumb (browser defaults clash with dark themes). */
     input[type="range"] { -webkit-appearance:none; appearance:none; height:24px; padding:0;
       background:transparent; border:none; cursor:pointer; }
@@ -1862,24 +1869,30 @@
        dismissible invitation that teaches the ONE online/offline switch. It is
        the invitation layer only — going online still passes the consent popup
        (ensureOnline). Prominent on first launches, subtle after, never naggy.
-       z-index 52: above the sticky .chrome (50) and the page it hangs over, BELOW
-       everything the operator opens on purpose — the phone drawer's scrim (55) and
-       sidebar (60), the enlarged mind map (140), the command palette (150/151),
-       toasts (200) and the language menu (380). At 375 px the old 360 put a passive
-       invitation over the palette's results (delegated click-through, row N). */
-    #net-coach { position: fixed; z-index: 52; max-width: 270px; background: var(--panel);
-      color: var(--fg); border: 1px solid var(--line); border-inline-start: 3px solid var(--accent);
-      border-radius: 10px; padding: 12px 14px; font-size: 12.5px; line-height: 1.5;
-      box-shadow: 0 10px 30px rgba(0,0,0,.35); display: none; }
-    #net-coach.show { display: block; }
+       A STRIP IN THE STICKY CHROME, IN FLOW (2026-09-27 re-walk O-1). As a
+       position:fixed bubble "below the whole chrome" it sat exactly where every tab
+       page begins, over its heading and its visible-by-default caveat, and over a
+       form input once scrolled. In flow it covers nothing: the page starts below it.
+       Being inside .chrome (z-index 50) it also stays under everything the operator
+       opens on purpose -- the phone drawer (55/60), the enlarged mind map (140), the
+       palette (150/151), toasts (200), the language menu (380) -- with no z-index of
+       its own to keep in step with theirs. The arrow is the only positioned part:
+       _placeCoach() moves it under the plane. */
+    #net-coach { position: relative; display: none; margin: 6px 18px 8px;
+      background: var(--panel); color: var(--fg); border: 1px solid var(--line);
+      border-inline-start: 3px solid var(--accent); border-radius: 10px;
+      padding: 7px 12px; font-size: 12.5px; line-height: 1.5; }
+    #net-coach.show { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 12px; }
     #net-coach.prominent { animation: coachpulse 2.4s ease-in-out infinite; }
-    @keyframes coachpulse { 0%,100% { box-shadow: 0 10px 30px rgba(0,0,0,.35); }
-      50% { box-shadow: 0 10px 30px rgba(0,0,0,.35), 0 0 0 4px color-mix(in srgb, var(--accent) 32%, transparent); } }
-    #net-coach .coach-sub { color: var(--muted); margin-top: 4px; }
-    #net-coach .coach-actions { display: flex; gap: 8px; margin-top: 11px; justify-content: flex-end; }
+    @keyframes coachpulse { 0%,100% { box-shadow: 0 0 0 0 transparent; }
+      50% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 32%, transparent); } }
+    #net-coach .coach-body { flex: 0 1 auto; }
+    #net-coach .coach-sub { color: var(--muted); flex: 1 1 auto; }
+    #net-coach .coach-actions { display: flex; gap: 8px; margin-inline-start: auto; }
     #net-coach .coach-actions button { padding: 5px 11px; font-size: 12px; }
-    #net-coach .coach-arrow { position: absolute; width: 11px; height: 11px; background: var(--panel);
-      border-left: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+    #net-coach .coach-arrow { position: absolute; top: -6px; width: 11px; height: 11px;
+      background: var(--panel); border-left: 1px solid var(--line); border-bottom: 1px solid var(--line);
+      transform: rotate(135deg); }
     /* First-launch guided setup (maintainer-ruled 2026-06-13). RTL-aware:
        logical properties + flex order follow document.dir, so the stepper and
        footer mirror correctly for Arabic. */

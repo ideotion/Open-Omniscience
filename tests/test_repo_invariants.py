@@ -3385,7 +3385,15 @@ def test_net_coach_never_places_above_the_topbar_row():
     #tm-open, #rate-toggle, #wiki-toggle and #llm -- and "below the four buttons" still
     landed on the facet-subtab strip `.chrome` relocates under the top bar. So the side
     branch is gone and the guard is the whole `.chrome` plus seven buttons. The geometry is
-    driven for real, LTR and RTL at 1440 and 375 px, in tests/net_coach_place_node_test.js."""
+    driven for real, LTR and RTL at 1440 and 375 px, in tests/net_coach_place_node_test.js.
+
+    AMENDED 2026-09-27 (re-walk O-1): "below the whole chrome" was where every tab page
+    begins, so the fixed bubble sat on the page's heading and its visible-by-default
+    caveat, and over a form input once scrolled. The coach is now a strip IN FLOW inside
+    `.chrome`, under the top bar: it can cover no top-bar button, no subtab and no page
+    content, because it occupies its own row. The guard list and the below-the-guard
+    arithmetic are gone with the bubble; what stays pinned is that nothing brings the
+    fixed placement back (tests/test_net_coach_placement.py pins the markup and CSS)."""
     js = app_js()
     fn = js.split("function _placeCoach() {", 1)[1].split("\n    }\n", 1)[0]
     assert "top = b.top - gap - h" not in fn, (
@@ -3396,17 +3404,15 @@ def test_net_coach_never_places_above_the_topbar_row():
         "the beside-the-button branch is back: the coach is taller than the top bar, so it "
         "lands in the top bar's own row (in RTL, every time)"
     )
-    guard = re.search(r"const _COACH_GUARD = \[([^\]]*)\]", js)
-    assert guard, "the protected-button list is gone"
-    for bid in ("net-toggle", "lang-switch", "tm-open", "app-shutdown", "rate-toggle",
-                "wiki-toggle", "llm"):
-        assert f'"{bid}"' in guard.group(1), f"#{bid} is no longer protected from the coach"
-    assert 'btn.closest(".chrome")' in fn, (
-        "the guard must include the whole chrome, whose subtab strip sits under the top bar"
+    assert "el.style.top" not in fn and "el.style.left" not in fn, (
+        "_placeCoach positions the coach itself again; it is in flow in the chrome and only "
+        "its arrow is placed"
     )
-    assert "guardBottom + gap" in fn, (
-        "the fallback must place the coach BELOW the guard-button union (never above), the "
-        "one direction guaranteed to have room near a top-anchored topbar"
+    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    chrome_at = html.index('<div class="chrome">')
+    coach_at = html.index('<div id="net-coach"')
+    assert chrome_at < coach_at < html.index("</div><!-- /.chrome -->"), (
+        "#net-coach must sit inside .chrome, in flow, where it covers nothing"
     )
 
 
@@ -3419,15 +3425,23 @@ def test_the_OPEN_language_menu_sits_above_the_net_coach():
     on the coach instead (S04-08 S5's Chromium walk, 2026-09-25: Playwright's own log said
     the coach's subtree "intercepts pointer events", and elementFromPoint at the item's
     centre returned the coach's body). A menu the operator has just opened outranks a
-    passive invitation; #oo-tip may still sit above both, since it takes no pointer events."""
+    passive invitation; #oo-tip may still sit above both, since it takes no pointer events.
+
+    AMENDED 2026-09-27 (re-walk O-1): the coach now lives in the sticky `.chrome` with no
+    z-index of its own, so it stacks at the CHROME's level; the menu must outrank that."""
     html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
     css = (_SRC / "static" / "app.css").read_text(encoding="utf-8")
     menu = re.search(r'<div id="lang-menu"[^>]*?style="[^"]*?z-index:\s*(\d+)', html)
-    coach = re.search(r"#net-coach \{[^}]*?z-index:\s*(\d+)", css)
-    assert menu and coach, "the language menu or the coach lost its z-index -- re-anchor this test"
-    assert int(menu.group(1)) > int(coach.group(1)), (
+    coach_rule = re.search(r"#net-coach \{[^}]*\}", css)
+    chrome = re.search(r"\.chrome \{[^}]*?z-index:\s*(\d+)", css)
+    assert menu and coach_rule and chrome, (
+        "the language menu, the coach or the chrome moved -- re-anchor this test"
+    )
+    coach_z = re.search(r"z-index:\s*(\d+)", coach_rule.group(0))
+    level = int(coach_z.group(1)) if coach_z else int(chrome.group(1))
+    assert int(menu.group(1)) > level, (
         f"#lang-menu (z-index {menu.group(1)}) must stack above #net-coach "
-        f"(z-index {coach.group(1)}), or the coach eats clicks on the open menu"
+        f"(stacking at {level}), or the coach eats clicks on the open menu"
     )
     tip = re.search(r"#oo-tip \{[^}]*?pointer-events:\s*none", css)
     assert tip, "#oo-tip stacks above the menu, which is only harmless while it takes no pointer events"

@@ -957,10 +957,21 @@
       }
       // V4 (2026-07-29): the red pill must name the REAL situation. `no_backend`
       // means NOTHING is reachable (not merely that the selected backend is down),
-      // so lead with the server's own resolution sentence (`backend_reason` —
-      // English server text, the same class as `h.detail`) instead of a generic
-      // "offline".
-      const why = h.no_backend ? (h.backend_reason || h.detail || "") : (h.detail || "");
+      // so it leads with that fact instead of a generic "offline".
+      //
+      // In the UI language (2026-09-27 re-walk T-7). The lead used to be the server's
+      // own resolution sentence, `backend_reason`, which is English composed at run
+      // time ("no GPU detected (or vLLM unavailable), and Ollama is NOT reachable
+      // either -- …"), so a French, Arabic or Chinese hover opened in English. What
+      // `no_backend` asserts is fixed -- the server sets it exactly when neither Ollama
+      // nor vLLM answers (src/llm/backend.py _result) -- so that fact is one keyed
+      // sentence here. The server's full reason, with which hardware and which backend
+      // it chose, stays one click away: the pill opens Settings -> AI, whose "Active
+      // backend" line prints it. `h.detail` below is still the client's English
+      // exception text; it has no keyed twin on the server yet.
+      const why = h.no_backend
+        ? t("No AI backend is reachable right now — neither Ollama nor vLLM answers.")
+        : (h.detail || "");
       el.title = (why ? why + " — " : "")
         + t("AI is offline — click to start it, or open AI settings to install one");
     }

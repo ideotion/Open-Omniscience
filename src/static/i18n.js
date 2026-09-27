@@ -67,7 +67,15 @@
     // (e.g. the airplane button's title flips with online/offline state). Without
     // this, the first-seen-English cache below would revert the dynamic value on the
     // next pass (field test 2026-06-19 #5).
-    if (el.hasAttribute && el.hasAttribute("data-i18n-dyn")) return;
+    //
+    // An ANCESTOR's marker counts too, exactly as doText above honours one. Checking
+    // only the element itself let a node inside a dyn container (Home's #home-tier in
+    // .home-glance) have its self-translated title cached as "the English" on first
+    // sight and put back on every later pass, so the hover stayed in the language that
+    // painted it first (2026-09-27 re-walk T-2). `closest` includes the element itself.
+    // Audited when this changed: no static title, placeholder or aria-label sits inside
+    // a dyn container; everything inside one is written through t() by its renderer.
+    if (el.closest ? el.closest("[data-i18n-dyn]") : (el.hasAttribute && el.hasAttribute("data-i18n-dyn"))) return;
     let store = origAttr.get(el);
     for (const a of ATTRS) {
       if (!el.hasAttribute(a)) continue;
