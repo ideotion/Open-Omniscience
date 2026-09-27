@@ -83,6 +83,7 @@ ENGINE_MODULES: tuple[str, ...] = (
     "src/analytics/segmentation.py",
     "src/analytics/sentiment.py",
     "src/analytics/store.py",
+    "src/analytics/vader_linear.py",
     "src/catalog/__init__.py",
     "src/catalog/aggregates.py",
     "src/catalog/cities.py",

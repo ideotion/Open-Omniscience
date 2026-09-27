@@ -448,6 +448,34 @@ artifacts:
       - "0.7 renamed Dictionary.create() to tokenizer(); fts_norm calls whichever exists, so 0.6.8+ works"
     last_verified: "2026-09-25"
 
+  - id: vader-linear-reproduction
+    title: vaderSentiment 3.3.2 internals, reproduced in linear time
+    kind: runtime-coupling
+    description: >
+      src/analytics/vader_linear.py overrides three methods of VADER's analyzer
+      (_negation_check, _special_idioms_check, _but_check) so English sentiment costs
+      time linear in the text instead of quadratic, with the same scores bit for bit.
+      That couples it to the exact code it reproduces, so it is pinned to the BYTES of
+      one file: vaderSentiment.py of 3.3.2, sha256 VADER_SOURCE_SHA256, the same in the
+      wheel and the sdist (both hashes in requirements.lock). make_analyzer() hashes the
+      imported file and falls back to the stock analyzer for anything else, so a new
+      release can only make sentiment slower, never different.
+    upstream: https://pypi.org/project/vaderSentiment/ (https://github.com/cjhutto/vaderSentiment)
+    check_upstream: "pypi.org/pypi/vaderSentiment/json - compare info.version; 3.3.2 (2020-05-22) was the newest on 2026-09-27"
+    license: MIT (C.J. Hutto); the reproduced methods carry the attribution in the module docstring
+    pin: {floor: "3.3.2", verified: "3.3.2"}
+    refresh: >
+      On a new release: diff its vaderSentiment.py against 3.3.2; carry any change to
+      the three reproduced methods (or to what they call) into vader_linear.py; set
+      VADER_RELEASE and VADER_SOURCE_SHA256 to the new file; bump requirements.lock;
+      run tests/test_vader_linear.py, whose differential tests compare against the
+      installed stock analyzer. Until then the stock analyzer runs, slower and correct.
+    freshness: {policy: rarely}
+    couplings:
+      - "pyproject.toml [analysis] vaderSentiment>= must equal floor; requirements.lock pins verified (test_vader_linear.py checks both)"
+      - "src/analytics/engine_identity.py hashes vader_linear.py (ENGINE_MODULES) and versions vaderSentiment (ENGINE_DISTRIBUTIONS)"
+    last_verified: "2026-09-27"
+
   - id: subjectivity-lexicons
     title: Subjectivity / loaded-language seed lexicons
     kind: dated-data

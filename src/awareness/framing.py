@@ -21,12 +21,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
-
 from src.analytics.managed import normalize_lang
+from src.analytics.vader_linear import make_analyzer
 from src.services.keyword_extractor import KeywordExtractor
 
-_analyzer = SentimentIntensityAnalyzer()
+# The same scores as ingest's sentiment (src/analytics/sentiment.py), from the same
+# linear-time analyzer. Importing it needs VADER, so this module stays [analysis]-only.
+_analyzer = make_analyzer()
 _extractor = KeywordExtractor()
 
 _CAVEAT = (
