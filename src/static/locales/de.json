@@ -4890,5 +4890,19 @@
   "no rising concepts to attribute for this period": "keine aufsteigenden Begriffe, die diesem Zeitraum zuzuordnen wären",
   "the period's concepts resolved to no plain keywords": "die Begriffe des Zeitraums ließen sich keinen einfachen Schlüsselwörtern zuordnen",
   "none of the period's concepts resolved to a stored keyword": "keiner der Begriffe des Zeitraums ließ sich einem gespeicherten Schlüsselwort zuordnen",
-  "Keyword counts across the matched articles, ordered by how many mention each term.": "Schlüsselwortzählungen über die passenden Artikel, geordnet danach, wie viele jeden Begriff erwähnen."
+  "Keyword counts across the matched articles, ordered by how many mention each term.": "Schlüsselwortzählungen über die passenden Artikel, geordnet danach, wie viele jeden Begriff erwähnen.",
+  "Interleave languages": "Sprachen mischen",
+  "{what}: not enough free space — needs about {needed}, only {free} free at {path}. Free up space or choose another location, or use the large-data/volume backup for a big corpus.": "{what}: nicht genug freier Speicherplatz — benötigt etwa {needed}, nur {free} frei unter {path}. Geben Sie Speicherplatz frei oder wählen Sie einen anderen Ort, oder nutzen Sie für ein großes Korpus die Sicherung großer Daten bzw. das Volume-Backup.",
+  "Not enough free space at {path}: needs {needed}, only {free} free.": "Nicht genug freier Speicherplatz unter {path}: benötigt {needed}, nur {free} frei.",
+  "Backup": "Sicherung",
+  "Restore": "Wiederherstellung",
+  "Volume backup": "Volume-Backup",
+  "Unpacking the backup to restore it": "Entpacken der Sicherung zur Wiederherstellung",
+  "{size} RAM detected": "{size} RAM erkannt",
+  "{size} available": "{size} verfügbar",
+  "Scraping ↓": "Erfassung ↓",
+  "total {size}": "insgesamt {size}",
+  "{method}; {accuracy}": "{method}; {accuracy}",
+  "{event} {time} UTC — {note}": "{event} {time} UTC — {note}",
+  "Meeus, Astronomical Algorithms (2nd ed.) ch. 27: mean equinox or solstice + 24 periodic terms; computed locally, no data files": "Meeus, Astronomical Algorithms (2. Aufl.), Kap. 27: mittlere Tagundnachtgleiche bzw. Sonnenwende + 24 periodische Terme; lokal berechnet, keine Datendateien"
 }

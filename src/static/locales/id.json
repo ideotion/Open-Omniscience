@@ -4890,5 +4890,19 @@
   "no rising concepts to attribute for this period": "tidak ada konsep yang naik untuk diatribusikan pada periode ini",
   "the period's concepts resolved to no plain keywords": "konsep pada periode ini tidak memetakan ke kata kunci sederhana mana pun",
   "none of the period's concepts resolved to a stored keyword": "tidak satu pun konsep pada periode ini memetakan ke kata kunci yang tersimpan",
-  "Keyword counts across the matched articles, ordered by how many mention each term.": "Jumlah kata kunci di seluruh artikel yang cocok, diurutkan menurut berapa banyak artikel yang menyebut tiap istilah."
+  "Keyword counts across the matched articles, ordered by how many mention each term.": "Jumlah kata kunci di seluruh artikel yang cocok, diurutkan menurut berapa banyak artikel yang menyebut tiap istilah.",
+  "Interleave languages": "Selang-selingkan bahasa",
+  "{what}: not enough free space — needs about {needed}, only {free} free at {path}. Free up space or choose another location, or use the large-data/volume backup for a big corpus.": "{what}: ruang kosong tidak cukup — perlu sekitar {needed}, hanya {free} kosong di {path}. Kosongkan ruang atau pilih lokasi lain, atau gunakan cadangan data besar/volume untuk korpus yang besar.",
+  "Not enough free space at {path}: needs {needed}, only {free} free.": "Ruang kosong di {path} tidak cukup: perlu {needed}, hanya {free} kosong.",
+  "Backup": "Cadangan",
+  "Restore": "Pemulihan",
+  "Volume backup": "Cadangan volume",
+  "Unpacking the backup to restore it": "Membongkar cadangan untuk memulihkannya",
+  "{size} RAM detected": "RAM terdeteksi: {size}",
+  "{size} available": "{size} tersedia",
+  "Scraping ↓": "Pengumpulan ↓",
+  "total {size}": "jumlah {size}",
+  "{method}; {accuracy}": "{method}; {accuracy}",
+  "{event} {time} UTC — {note}": "{event} {time} UTC — {note}",
+  "Meeus, Astronomical Algorithms (2nd ed.) ch. 27: mean equinox or solstice + 24 periodic terms; computed locally, no data files": "Meeus, Astronomical Algorithms (edisi ke-2) bab 27: ekuinoks atau titik balik matahari rata-rata + 24 suku periodik; dihitung secara lokal, tanpa berkas data"
 }

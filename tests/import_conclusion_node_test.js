@@ -67,10 +67,16 @@ const src = [
   extract("function _uxTimingsView("),
   extract("function _uxPlanExtras("),
   extract("function _renderImportSummary("),
+  // A per-item error is shown through the page's reading of the server's own sentence
+  // (the 2026-09-26 leftovers, Y9), which writes its sizes through `_sizeText`: both are
+  // extracted, with the tables they read, for the reason this harness exists.
+  APP.slice(APP.indexOf("const _OO_SPACE_WHAT = {"), APP.indexOf("function ooServerText(")),
+  extract("function ooServerText("),
+  extract("function _sizeText("),
   // Collaborators the renderer calls that are not what is under test.
   "function esc(s){return String(s==null?'':s).replace(/[&<>\"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',\"'\":'&#39;'}[c]));}",
   "function _v2PlanTable(p){return '<table data-plan></table>';}",
-  "return { _renderImportSummary, _uxPerItemView, _uxFmtDur, _uxOutcome, _uxPlanExtras };",
+  "return { _renderImportSummary, _uxPerItemView, _uxFmtDur, _uxOutcome, _uxPlanExtras, _uxCorpusDeltaView };",
 ].join("\n");
 
 const mod = new Function("window", src)({});   // no OOI18N: t()/tf() take their fallbacks
@@ -242,6 +248,82 @@ test("I13/I12: the per-backup table lets a folder name wrap, and isolates it", (
   const cell = html.slice(html.indexOf("<tr>"), html.indexOf("</td>", html.indexOf("<tr>")));
   assert(cell.indexOf("<bdi>" + name + "</bdi>") !== -1, "the name is isolated: " + cell);
   assert(cell.indexOf("white-space:nowrap") === -1, "the name may wrap: " + cell);
+});
+
+// --------------------------------------------------------------------------- //
+// The 2026-09-26 click-through's leftovers (batch B13).
+const deferredReport = (fresh, pending) => ({
+  plan: { articles: { new: fresh, duplicate: 0, conflict: 0 } },
+  corpus_delta: null, reindexed: null, timings: null,
+  reindex_deferred: pending === undefined ? null
+    : { deferred: true, articles_pending: pending, started: true, job: "reindex-resume" },
+});
+
+test("Y4: 'Articles awaiting indexing' is the server's backlog, not the plan's new articles", () => {
+  // The walk: a second 2,400-article import while the first one's re-index still owed
+  // 1,900 -- the server measured 4,300 pending, and the line said 2,400.
+  const html = render([viaProducer(deferredReport(2400, 4300))],
+                      { state: "done", elapsed_s: 7, items_done: 1, items_total: 1 });
+  assert(html.includes("4,300 Articles awaiting indexing"), html);
+  assert(!html.includes("2,400 Articles awaiting indexing"), "the plan's new count is not the backlog");
+  // ...and the caveat and the queue line are the SAME reading.
+  assert(html.includes("4,300 article(s) still to index"), html);
+});
+
+test("Y4: with no item snapshot, the line takes the re-index job's own read", () => {
+  const html = render([viaProducer(deferredReport(2400))],
+                      { state: "done", elapsed_s: 7, items_done: 1, items_total: 1,
+                        rx: { backlog: { available: true, articles_pending: 5000 } } });
+  assert(html.includes("5,000 Articles awaiting indexing"), html);
+  assert(!html.includes("2,400 Articles awaiting indexing"), html);
+  // Nothing read at all: no figure is invented from the plan.
+  const none = render([viaProducer(deferredReport(2400))],
+                      { state: "done", elapsed_s: 7, items_done: 1, items_total: 1 });
+  assert(!none.includes("Articles awaiting indexing"), none);
+});
+
+test("Y4: a measured empty backlog grows no 'still indexing' caveat", () => {
+  // A re-import whose every article was already here: 0 new, backlog measured at 0.
+  const html = render([viaProducer(deferredReport(0, 0))],
+                      { state: "done", elapsed_s: 7, items_done: 1, items_total: 1 });
+  assert(!html.includes("Indexing continues"), "a caveat about work that does not exist: " + html);
+  assert(!html.includes("awaiting indexing"), html);
+});
+
+test("Y1: a source's details wrap its folder name and scroll their own body", () => {
+  const name = "202609261808_OpenOmniscience_Backup_2";
+  const html = render([ok(name, 1200, 0), ok("b", 1200, 0)],
+                      { state: "done", elapsed_s: 13, items_done: 2, items_total: 2 });
+  const at = html.indexOf("<summary", html.indexOf("Details by source"));
+  const blk = html.slice(at, html.indexOf("</details>", at));
+  assert(/<summary[^>]*overflow-wrap:anywhere[^>]*><bdi>/.test(blk), "the summary name may wrap, isolated: " + blk);
+  assert(blk.indexOf('<div style="overflow-x:auto">') !== -1, "the plan table scrolls in its own box: " + blk);
+});
+
+test("Y1: a date in the date-range row never breaks inside itself", () => {
+  const snap = (a, b) => ({ articles: 1, sources: 1, languages: 1, countries: 0, keywords: 1, date_min: a, date_max: b });
+  const html = mod._uxCorpusDeltaView(snap("2023-01-07", "2026-07-29"), snap("2023-01-07", "2026-09-26"), (x) => x);
+  const row = html.slice(html.indexOf("Date range"));
+  const dates = row.match(/<span dir="ltr" style="unicode-bidi:isolate;white-space:nowrap">[0-9-]{10}<\/span>/g) || [];
+  assert(dates.length === 4, "each of the four dates is one isolated, unbreakable token: " + row);
+});
+
+test("Y1: a conflict sample (one JSON token) may break rather than widen the table", () => {
+  const src2 = [extract("function _v2PlanTable("),
+    "function esc(s){return String(s==null?'':s);}", "return _v2PlanTable;"].join("\n");
+  const table = new Function("window", src2)({});
+  const out = table({ sources: { new: 0, duplicate: 6, conflict: 1,
+    conflicts: [{ domain: "icj-cij.org", incoming_name: "International Court of Justice" }] } });
+  assert(/<td colspan="4"[^>]*overflow-wrap:anywhere/.test(out), out);
+});
+
+test("Y9: a per-item free-space refusal is written from the keyed frame", () => {
+  const err = "Not enough free space for the restore: needs about 1.5 GB, only 200.0 MB free at /mnt/x. "
+    + "Free up space or choose another location, or use the large-data/volume backup for a big corpus.";
+  const html = render([ok("a", 10, 0), { title: "b", state: "error", error: err, elapsed_s: 1, plan: {} }],
+                      { state: "error", elapsed_s: 5, items_done: 1, items_total: 2 });
+  assert(html.includes("Restore: not enough free space"), "the page's frame, not the server's words: " + html);
+  assert(!html.includes("Not enough free space for the restore"), html);
 });
 
 test("_uxFmtDur refuses to invent a duration it does not have", () => {

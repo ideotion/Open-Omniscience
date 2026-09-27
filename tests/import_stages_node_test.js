@@ -77,6 +77,10 @@ const src = [
   extract("function _uxImInterruptedHtml("),
   extract("function _uxImRenderFresh("),
   extract("async function _uxImStartGuarded("),
+  // 2026-09-26 leftovers (B13): the re-index figures are written by the app's one number
+  // writer (Y3), and the "Last import" line reads only FINISHED runs' reports (Y7).
+  extract("function fmtNum("),
+  extract("function _uxImFinishedReports("),
   "let _uxImLastStatus = null; let _uxImView = null;",
   "let __api = null; function api(u, o) { return __api(u, o); }",
   "function __setApi(f) { __api = f; }",
@@ -85,7 +89,7 @@ const src = [
   "return { _uxImReindexBits, _uxImStatements, _uxImRenderStages, _uxImLastLineHtml,"
   + " _uxImCheckpointHtml, _uxImHistoryHtml, _uxPatchRow, _uxPruneRows,"
   + " _uxImStage4Owed, _uxImFreshView, _uxImRunSummary, _uxImRenderFresh,"
-  + " _uxImStartGuarded, __setApi, view: () => _uxImView };",
+  + " _uxImStartGuarded, _uxImFinishedReports, __setApi, view: () => _uxImView };",
 ].join("\n");
 
 function makeNode() {
@@ -137,7 +141,7 @@ test("a measured empty backlog says complete", () => {
 test("a pending backlog states the real figure", () => {
   const out = mod._uxImReindexBits(
     { state: "idle", backlog: { available: true, articles_pending: 12340 } }, t, tf);
-  assert(/12,?340/.test(out), out);
+  assert(/12[ ,\u202f\u00a0]?340/.test(out), out);
 });
 
 test("a running drain reports the job's own measured progress", () => {
@@ -530,6 +534,38 @@ test("I7: an older report with no run id is quoted exactly as before", () => {
 test("I7/I12: the history names each backup, isolated for right-to-left pages", () => {
   const out = mod._uxImHistoryHtml([rep({ label: "202609261808_OpenOmniscience_Backup_2", kind: "restore" })], t, tf);
   assert(out.indexOf("<bdi") !== -1 && out.indexOf("202609261808_OpenOmniscience_Backup_2") !== -1, out);
+});
+
+// ── The 2026-09-26 click-through's leftovers (batch B13) ──
+test("Y3: the resuming re-index writes its counts with the app's one number writer", () => {
+  const out = mod._uxImReindexBits(
+    { state: "running", done: 1200, total: 4800, backlog: { available: true, articles_pending: 3600 } }, t, tf);
+  // fmtNum groups with a narrow no-break space in every locale; the raw integers
+  // ("1200 of 4800") and the browser-locale form ("1,200", which half the locales read
+  // as a decimal) are both wrong.
+  assert(out.indexOf("1\u202f200 of 4\u202f800") !== -1, out);
+  const left = mod._uxImReindexBits(
+    { state: "idle", backlog: { available: true, articles_pending: 12340 } }, t, tf);
+  assert(left.indexOf("12\u202f340") !== -1 && left.indexOf("12,340") === -1, left);
+});
+
+test("Y7: a running import's partial reports are not the LAST import", () => {
+  // Reports land as each item commits, so mid-run the newest ones are THIS run's.
+  const started = Date.parse("2026-09-27T01:28:00Z") / 1000;
+  const reports = [
+    rep({ label: "this-run-b", created_at: "2026-09-27T01:28:07+00:00", run_id: "r2" }),
+    rep({ label: "this-run-a", created_at: "2026-09-27T01:28:03+00:00", run_id: "r2" }),
+    rep({ label: "last-run-b", created_at: "2026-09-27T01:22:07+00:00", run_id: "r1" }),
+    rep({ label: "last-run-a", created_at: "2026-09-27T01:22:03+00:00", run_id: "r1" }),
+  ];
+  const running = mod._uxImFinishedReports(reports, { state: "running", started_at: started });
+  assert(running.map((r) => r.label).join() === "last-run-b,last-run-a", JSON.stringify(running.map((r) => r.label)));
+  // Once the run has ended every report is a finished import's, and nothing is dropped.
+  assert(mod._uxImFinishedReports(reports, { state: "done", started_at: started }).length === 4);
+  assert(mod._uxImFinishedReports(reports, null).length === 4, "an unread status drops nothing");
+  // And the line itself reads through the filter: the fix is not a helper nobody calls.
+  const body = extract("async function _uxImLastLine(");
+  assert(/_uxImFinishedReports\(/.test(body), "the Last import line does not filter the running run's reports");
 });
 
 // ── I8 (2026-09-26): a refused Verify never adopts the import's own restore ──

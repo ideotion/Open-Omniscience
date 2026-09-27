@@ -170,11 +170,15 @@ def test_the_meeus_hover_sentences_are_translated_and_keyed():
 
     _keyed_everywhere(astronomy._METHOD, astronomy._ACCURACY)
     ag = read_static("app-agenda.js")
-    assert_present(function_body(ag, "_astroNote"), 'tr(x.method || "") + "; " + tr(x.acc || "")')
+    # Both halves still go through their keys; since the 2026-09-26 leftovers (Y11) they
+    # are joined by a KEYED frame, not a literal "; " (tests/test_clickthrough_b13_leftovers.py).
+    assert_present(function_body(ag, "_astroNote"), "tr(x.method)")
+    assert_present(function_body(ag, "_astroNote"), "tr(x.acc)")
     assert_absent(ag, 'moon.method + "; " + moon.acc')
     assert_absent(ag, 'season.method + "; " + season.acc')
-    assert ag.count("_astroNote(moon, t9m)") == 1 and ag.count("_astroNote(moon, t9)") == 1
-    assert ag.count("_astroNote(season, t9m)") == 1
+    assert ag.count("_astroTitle(_moonLabel(moon.kind, t9m), moon, t9m, tf9m)") == 1
+    assert ag.count("_astroTitle(_moonLabel(moon.kind, t9), moon, t9, tf9)") == 1
+    assert ag.count("_astroTitle(_seasonLabel(season.name, t9m), season, t9m, tf9m)") == 1
 
 
 def test_the_keyword_hover_caches_the_payload_not_a_line_in_one_language():

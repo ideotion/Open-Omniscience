@@ -4890,5 +4890,19 @@
   "no rising concepts to attribute for this period": "нет растущих понятий, которые можно отнести к этому периоду",
   "the period's concepts resolved to no plain keywords": "понятия периода не сопоставились ни с одним простым ключевым словом",
   "none of the period's concepts resolved to a stored keyword": "ни одно понятие периода не сопоставилось с сохранённым ключевым словом",
-  "Keyword counts across the matched articles, ordered by how many mention each term.": "Подсчёт ключевых слов по найденным статьям, упорядоченный по числу статей, упоминающих каждый термин."
+  "Keyword counts across the matched articles, ordered by how many mention each term.": "Подсчёт ключевых слов по найденным статьям, упорядоченный по числу статей, упоминающих каждый термин.",
+  "Interleave languages": "Чередовать языки",
+  "{what}: not enough free space — needs about {needed}, only {free} free at {path}. Free up space or choose another location, or use the large-data/volume backup for a big corpus.": "{what}: недостаточно свободного места — нужно около {needed}, свободно только {free} в {path}. Освободите место или выберите другое расположение либо используйте резервное копирование больших данных или по томам для большого корпуса.",
+  "Not enough free space at {path}: needs {needed}, only {free} free.": "Недостаточно свободного места в {path}: нужно {needed}, свободно только {free}.",
+  "Backup": "Резервное копирование",
+  "Restore": "Восстановление",
+  "Volume backup": "Резервная копия по томам",
+  "Unpacking the backup to restore it": "Распаковка резервной копии для восстановления",
+  "{size} RAM detected": "Обнаружено ОЗУ: {size}",
+  "{size} available": "доступно {size}",
+  "Scraping ↓": "Сбор ↓",
+  "total {size}": "всего {size}",
+  "{method}; {accuracy}": "{method}; {accuracy}",
+  "{event} {time} UTC — {note}": "{event} {time} UTC — {note}",
+  "Meeus, Astronomical Algorithms (2nd ed.) ch. 27: mean equinox or solstice + 24 periodic terms; computed locally, no data files": "Меус, Astronomical Algorithms (2-е изд.), гл. 27: среднее равноденствие или солнцестояние + 24 периодических члена; вычисляется локально, без файлов данных"
 }

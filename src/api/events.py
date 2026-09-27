@@ -247,8 +247,14 @@ def astronomy(year: int = Query(..., ge=1900, le=2200)) -> dict:
     from src.events.astronomy import phases_for_year, seasons_for_year
 
     out = phases_for_year(year)
-    out["seasons"] = seasons_for_year(year)["seasons"]
-    out["seasons_naming"] = seasons_for_year(year)["naming"]
+    seasons = seasons_for_year(year)
+    out["seasons"] = seasons["seasons"]
+    out["seasons_naming"] = seasons["naming"]
+    # The seasons' OWN method and accuracy (the 2026-09-26 leftovers, Y11). The top-level
+    # `method` is the MOON's (ch. 49); the agenda's season hover read it for want of any
+    # other, so an equinox cited the lunar-phase computation.
+    out["seasons_method"] = seasons["method"]
+    out["seasons_accuracy"] = seasons["accuracy"]
     return out
 
 

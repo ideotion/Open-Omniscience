@@ -1679,6 +1679,56 @@
       // Whole numbers for bytes and from 100 up; one decimal below that.
       return _sizeText(n, (i, v) => (v >= 100 || i === 0 ? 0 : 1));
     }
+    // A SERVER SENTENCE the page can read back into its parts (the 2026-09-26
+    // click-through's leftovers, Y9). The free-space refusals are raised in English by
+    // the backup code (src/backup/artifact.py preflight_free_space, and the folder
+    // backup's own check in src/backup/folder_backup.py) with sizes already written by
+    // `human_bytes`, and every surface that shows a job's error showed them as sent --
+    // English words and English units in every locale. Their shape is fixed, so the
+    // page recognises it, rebuilds the sizes (binary steps, as `human_bytes` wrote them)
+    // through `_sizeText`, and writes the sentence from a keyed frame. Anything else --
+    // an error this does not know -- comes back UNCHANGED: a sentence it cannot parse
+    // is shown as the server wrote it, never dropped or guessed at. The server's text
+    // stays English on purpose: it is also the log line and the API's answer.
+    const _OO_SPACE_WHAT = {
+      "backup": "Backup", "restore": "Restore", "volume backup": "Volume backup",
+      "restore staging": "Unpacking the backup to restore it",
+    };
+    const _OO_SIZE_RE = "([0-9]+(?:\\.[0-9]+)?) (B|KB|MB|GB|TB)";
+    const _OO_SPACE_RES = [
+      // artifact.py: preflight_free_space
+      [new RegExp("Not enough free space for the (.+?): needs about " + _OO_SIZE_RE + ", only "
+        + _OO_SIZE_RE + " free at (.+?)\\. Free up space or choose another location, or use the "
+        + "large-data/volume backup for a big corpus\\."), "what"],
+      // folder_backup.py: the large-data folder backup's own check
+      [new RegExp("Not enough free space at (.+?): needs " + _OO_SIZE_RE + ", only "
+        + _OO_SIZE_RE + " free\\."), "folder"],
+    ];
+    function ooServerText(msg) {
+      const s = String(msg == null ? "" : msg);
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      const tf = (window.OOI18N && OOI18N.tf)
+        ? OOI18N.tf
+        : ((x, v) => x.replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? String(v[k]) : m));
+      const U = { B: 0, KB: 1, MB: 2, GB: 3, TB: 4 };
+      const size = (n, u) => _sizeText(Number(n) * Math.pow(1024, U[u]), (i) => (i ? 1 : 0));
+      // A path is Latin text inside what may be a right-to-left sentence.
+      const iso = (p) => "\u2068" + p + "\u2069";
+      for (const [re, kind] of _OO_SPACE_RES) {
+        const m = re.exec(s);
+        if (!m) continue;
+        const out = kind === "what"
+          ? tf("{what}: not enough free space — needs about {needed}, only {free} free at {path}. Free up space or choose another location, or use the large-data/volume backup for a big corpus.", {
+              what: _OO_SPACE_WHAT[m[1]] ? t(_OO_SPACE_WHAT[m[1]]) : m[1],
+              needed: size(m[2], m[3]), free: size(m[4], m[5]), path: iso(m[6]),
+            })
+          : tf("Not enough free space at {path}: needs {needed}, only {free} free.", {
+              path: iso(m[1]), needed: size(m[2], m[3]), free: size(m[4], m[5]),
+            });
+        return s.slice(0, m.index) + out + s.slice(m.index + m[0].length);
+      }
+      return s;
+    }
     function _rateBytes(curr, prev, pick) {
       if (!prev) return null;
       const dt = curr.at - prev.at; if (dt <= 0) return null;
@@ -1755,7 +1805,8 @@
       const row = (k, val) => `<div class="vr"><span>${k}</span><b>${val}</b></div>`;
       const sect = (t) => `<div class="vsect">${t}</div>`;
       // A rate is the size's own frame plus the locale's per-second frame (P8).
-      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((s, o) => s.replace("{rate}", o.rate));
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
+        : ((s, o) => s.replace(/\{(\w+)\}/g, (m, k) => (o && o[k] != null) ? String(o[k]) : m));
       const perSec = (bytes) => tf("{rate}/s", { rate: _fmtBytes(bytes) });
       // -- Now: live run progress (domains only, a real bar) ---------------- //
       let nowHtml;
@@ -1803,11 +1854,16 @@
           '<div class="vnote">Measured from this app’s own responses (bytes ÷ transfer time) — not a system network counter.</div>'
         : "";
       // -- System: the hardware row, compact -------------------------------- //
+      // Keyed (the 2026-09-26 leftovers, Y9): "Scraping ↓" had no key at all, and "total"
+      // was welded into the middle of a text node the i18n walker can never match, so all
+      // three read English in every locale. "Memory" is translated here too rather than
+      // left to the walker, so the row's two halves come from the same call.
+      const t9 = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
       const sysHtml = sect("System") +
         row("CPU", p.cpu_percent == null ? "—" : p.cpu_percent + "%") +
-        row("Memory", _fmtBytes(p.rss_bytes)) +
-        row("Scraping ↓", (dl == null ? "—" : esc(perSec(dl))) +
-            ` <span class="muted">· total ${_fmtBytes(sc.bytes_total)} · ${sc.fetches_total||0}×</span>`);
+        row(esc(t9("Memory")), _fmtBytes(p.rss_bytes)) +
+        row(esc(t9("Scraping ↓")), (dl == null ? "—" : esc(perSec(dl))) +
+            ` <span class="muted">· ${esc(tf("total {size}", { size: _fmtBytes(sc.bytes_total) }))} · ${sc.fetches_total||0}×</span>`);
       $("vitals-body").innerHTML = nowHtml + planHtml + _budgetHtml(a) + rateHtml + sysHtml + _sessionHtml(v.session);
       $("vitals-note").innerHTML = "";
     }

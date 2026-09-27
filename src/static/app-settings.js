@@ -532,7 +532,13 @@
         _paintDefaultModel();
         return;
       }
-      const ram = d.total_ram_gb ? `${d.total_ram_gb} GB RAM detected` : t("RAM unknown");
+      // A keyed frame with the size written by the one localised writer (Y9): this was
+      // "15.5 GB RAM detected" in English in every locale. `total_ram_gb` is psutil's
+      // total / 1024**3, the binary step `_sizeText` divides by, so the figure is unchanged.
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((x, v) => x.replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? String(v[k]) : m));
+      const ram = d.total_ram_gb
+        ? tf("{size} RAM detected", { size: _sizeText(d.total_ram_gb * 1073741824, (i, v) => (v % 1 ? 1 : 0)) })
+        : t("RAM unknown");
       const active = d.active || d.default;   // the stored UI choice (Q10), else the default
       const installed = (d.installed || []).length
         ? `<table><tr><th>${esc(t("Installed model"))}</th><th>${esc(t("Size"))}</th><th>${esc(t("Updated"))}</th><th></th></tr>` +
@@ -541,7 +547,7 @@
             const badge = isActive ? ` <span class="pill ok">${esc(t("active"))}</span>` : "";
             const setBtn = isActive ? "" : `<button class="tiny secondary" onclick="setActiveModel(${esc(JSON.stringify(m.tag))})">${esc(t("Set active"))}</button> `;
             return `<tr><td><code>${esc(m.tag)}</code>${badge}</td>` +
-              `<td>${m.size_gb != null ? m.size_gb + " GB" : ""}</td><td>${esc((m.modified || "").slice(0,10))}</td>` +
+              `<td>${m.size_gb != null ? esc(_sizeText(m.size_gb * 1073741824, (i, v) => (v % 1 ? 1 : 0))) : ""}</td><td>${esc((m.modified || "").slice(0,10))}</td>` +
               `<td style="white-space:nowrap">${setBtn}<button class="tiny danger" onclick="removeModel(${esc(JSON.stringify(m.tag))})">${esc(t("Remove"))}</button></td></tr>`;
           }).join("") + "</table>"
         : `<p class="muted">${esc(t("No models installed yet — pull one below."))}</p>`;

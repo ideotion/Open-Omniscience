@@ -106,6 +106,10 @@ const src = [
   extract("function _fmtBytes("),
   // ...and _fmtBytes writes through the shared localised formatter (P8), the same trap.
   extract("function _sizeText("),
+  // A queue row's error reads through the page's rendering of the server's sentence
+  // (the 2026-09-26 leftovers, Y9): extracted with the tables it reads, the same trap.
+  APP.slice(APP.indexOf("const _OO_SPACE_WHAT = {"), APP.indexOf("function ooServerText(")),
+  extract("function ooServerText("),
   // _jobRow calls these two (PERF-09's rate line). Extracted rather than stubbed,
   // for the reason this whole harness exists: a stand-in would let the copy under
   // test drift from the shipped code. Adding a call to a function this suite
@@ -311,6 +315,23 @@ test("I12: a backup's folder name is isolated from the surrounding text directio
   }));
   const rows = childHtml("ux-imp-queue-rows");
   assert(rows.indexOf("<bdi>202609261808_OpenOmniscience_Backup_2</bdi>") !== -1, rows);
+});
+
+test("Y2/Y9: a row's error is the dialog's inline error line, in the page's words", () => {
+  // THE WALK: the per-item error rode the toast box (`.note` -- padding, shadow and a
+  // slide-in) inside a dialog row, and a free-space refusal read in English in every
+  // locale. It is the dialog's own error colour now, and the sentence is re-written.
+  resetDom();
+  mod._uxImRenderQueue(Object.assign({}, STAGED_RUN, {
+    state: "done",
+    items: [{ id: "0", label: "b1", kind: "corpus", state: "error",
+              error: "Not enough free space for the restore: needs about 1.5 GB, only 200.0 MB free at /mnt/x. "
+                + "Free up space or choose another location, or use the large-data/volume backup for a big corpus." }],
+  }));
+  const rows = childHtml("ux-imp-queue-rows");
+  assert(rows.indexOf('class="note') === -1, "the toast class in a dialog row: " + rows);
+  assert(rows.indexOf("color:var(--err)") !== -1, "the error keeps its colour: " + rows);
+  assert(rows.indexOf("Restore: not enough free space") !== -1, rows);
 });
 
 test("I13: a long folder name may wrap rather than run out of a 375 px dialog", () => {

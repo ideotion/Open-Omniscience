@@ -4890,5 +4890,19 @@
   "no rising concepts to attribute for this period": "この期間に帰属させられる上昇概念はありません",
   "the period's concepts resolved to no plain keywords": "この期間の概念は、いずれの単純なキーワードにも対応しませんでした",
   "none of the period's concepts resolved to a stored keyword": "この期間の概念は、いずれも保存済みキーワードに対応しませんでした",
-  "Keyword counts across the matched articles, ordered by how many mention each term.": "一致した記事全体でのキーワード数。各語に言及する記事数の多い順。"
+  "Keyword counts across the matched articles, ordered by how many mention each term.": "一致した記事全体でのキーワード数。各語に言及する記事数の多い順。",
+  "Interleave languages": "言語を交互表示",
+  "{what}: not enough free space — needs about {needed}, only {free} free at {path}. Free up space or choose another location, or use the large-data/volume backup for a big corpus.": "{what}：空き容量が足りません — 約 {needed} が必要ですが、{path} の空きは {free} だけです。空き容量を確保するか別の場所を選ぶか、大きなコーパスには大容量データ／ボリュームバックアップを使ってください。",
+  "Not enough free space at {path}: needs {needed}, only {free} free.": "{path} の空き容量が足りません：{needed} が必要ですが、空きは {free} だけです。",
+  "Backup": "バックアップ",
+  "Restore": "復元",
+  "Volume backup": "ボリュームバックアップ",
+  "Unpacking the backup to restore it": "復元のためのバックアップ展開",
+  "{size} RAM detected": "RAM {size} を検出",
+  "{size} available": "{size} 利用可能",
+  "Scraping ↓": "収集 ↓",
+  "total {size}": "合計 {size}",
+  "{method}; {accuracy}": "{method}。{accuracy}",
+  "{event} {time} UTC — {note}": "{event} {time} UTC — {note}",
+  "Meeus, Astronomical Algorithms (2nd ed.) ch. 27: mean equinox or solstice + 24 periodic terms; computed locally, no data files": "Meeus『Astronomical Algorithms』（第2版）第27章：平均分点・至点＋24の周期項。ローカルで計算し、データファイルは使用しません"
 }

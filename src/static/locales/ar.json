@@ -4890,5 +4890,19 @@
   "no rising concepts to attribute for this period": "لا مفاهيم صاعدة يمكن نسبها إلى هذه الفترة",
   "the period's concepts resolved to no plain keywords": "لم تُطابق مفاهيم الفترة أي كلمة مفتاحية بسيطة",
   "none of the period's concepts resolved to a stored keyword": "لم يُطابق أي من مفاهيم الفترة كلمة مفتاحية مخزنة",
-  "Keyword counts across the matched articles, ordered by how many mention each term.": "أعداد الكلمات المفتاحية عبر المقالات المطابقة، مرتّبة حسب عدد المقالات التي تذكر كل مصطلح."
+  "Keyword counts across the matched articles, ordered by how many mention each term.": "أعداد الكلمات المفتاحية عبر المقالات المطابقة، مرتّبة حسب عدد المقالات التي تذكر كل مصطلح.",
+  "Interleave languages": "تناوب اللغات",
+  "{what}: not enough free space — needs about {needed}, only {free} free at {path}. Free up space or choose another location, or use the large-data/volume backup for a big corpus.": "{what}: لا توجد مساحة حرة كافية — يلزم نحو {needed}، والمتاح {free} فقط في {path}. حرّر مساحة أو اختر موقعًا آخر، أو استخدم النسخ الاحتياطي للبيانات الكبيرة أو بالوحدات لمجموعة كبيرة.",
+  "Not enough free space at {path}: needs {needed}, only {free} free.": "لا توجد مساحة حرة كافية في {path}: يلزم {needed}، والمتاح {free} فقط.",
+  "Backup": "النسخ الاحتياطي",
+  "Restore": "الاستعادة",
+  "Volume backup": "النسخ الاحتياطي بالوحدات",
+  "Unpacking the backup to restore it": "فك حزم النسخة الاحتياطية لاستعادتها",
+  "{size} RAM detected": "تم اكتشاف {size} من ذاكرة الوصول العشوائي",
+  "{size} available": "{size} متاحة",
+  "Scraping ↓": "الجمع ↓",
+  "total {size}": "الإجمالي {size}",
+  "{method}; {accuracy}": "{method}؛ {accuracy}",
+  "{event} {time} UTC — {note}": "{event} {time} UTC — {note}",
+  "Meeus, Astronomical Algorithms (2nd ed.) ch. 27: mean equinox or solstice + 24 periodic terms; computed locally, no data files": "ميوس، الخوارزميات الفلكية (الطبعة الثانية) الفصل 27: الاعتدال أو الانقلاب المتوسط + 24 حدًا دوريًا؛ محسوب محليًا، بلا ملفات بيانات"
 }

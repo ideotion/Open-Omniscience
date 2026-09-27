@@ -4890,5 +4890,19 @@
   "no rising concepts to attribute for this period": "本期没有可归属的上升概念",
   "the period's concepts resolved to no plain keywords": "本期的概念未能对应到任何普通关键词",
   "none of the period's concepts resolved to a stored keyword": "本期的概念没有一个能对应到已存储的关键词",
-  "Keyword counts across the matched articles, ordered by how many mention each term.": "匹配文章中的关键词计数，按提及每个词的文章数量排序。"
+  "Keyword counts across the matched articles, ordered by how many mention each term.": "匹配文章中的关键词计数，按提及每个词的文章数量排序。",
+  "Interleave languages": "交错显示各语言",
+  "{what}: not enough free space — needs about {needed}, only {free} free at {path}. Free up space or choose another location, or use the large-data/volume backup for a big corpus.": "{what}：可用空间不足 — 约需 {needed}，{path} 仅剩 {free}。请释放空间或选择其他位置，大型语料库请使用大数据/卷备份。",
+  "Not enough free space at {path}: needs {needed}, only {free} free.": "{path} 的可用空间不足：需要 {needed}，仅剩 {free}。",
+  "Backup": "备份",
+  "Restore": "恢复",
+  "Volume backup": "卷备份",
+  "Unpacking the backup to restore it": "解包备份以便恢复",
+  "{size} RAM detected": "检测到 {size} 内存",
+  "{size} available": "可用 {size}",
+  "Scraping ↓": "采集 ↓",
+  "total {size}": "共 {size}",
+  "{method}; {accuracy}": "{method}；{accuracy}",
+  "{event} {time} UTC — {note}": "{event} {time} UTC — {note}",
+  "Meeus, Astronomical Algorithms (2nd ed.) ch. 27: mean equinox or solstice + 24 periodic terms; computed locally, no data files": "Meeus《Astronomical Algorithms》（第 2 版）第 27 章：平均分点或至点加 24 个周期项；在本地计算，不使用数据文件"
 }

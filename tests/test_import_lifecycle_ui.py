@@ -200,9 +200,17 @@ def test_a_language_switch_re_renders_the_interpolated_import_surfaces():
     own = [h for h in handlers if "ux-import" in h]
     assert len(own) == 1, f"expected exactly one import-dialog langchange listener, got {len(own)}"
     listener = own[0]
-    for fn in ("_uxImCheckpointNote()", "_uxImLastLine()", "_uxImRenderStages(",
-               "_uxImRenderStatements("):
+    for fn in ("_uxImCheckpointNote()", "_uxImLastLine()"):
         assert fn in listener, f"{fn} is not re-rendered on a language switch"
+    # The rows and the statements: called directly, or -- since the 2026-09-26 leftovers
+    # (Y6), which found the header and per-backup rows frozen too -- through the whole
+    # run renderer, which draws them itself. Either way both must be reached.
+    if "_uxImRenderQueue(_uxImLastStatus)" in listener:
+        via = function_body(body, "_uxImRenderQueue")
+    else:
+        via = listener
+    for fn in ("_uxImRenderStages(", "_uxImRenderStatements("):
+        assert fn in via, f"{fn} is not re-rendered on a language switch"
     # ...and it re-renders from the SAME facts, never a re-fetch of the queue.
     assert "_uxImLastStatus" in listener
     assert "import-queue/status" not in listener, (

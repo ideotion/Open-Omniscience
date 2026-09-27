@@ -4890,5 +4890,19 @@
   "no rising concepts to attribute for this period": "no hay conceptos en ascenso que atribuir en este período",
   "the period's concepts resolved to no plain keywords": "los conceptos del período no resolvieron a ninguna palabra clave simple",
   "none of the period's concepts resolved to a stored keyword": "ninguno de los conceptos del período resolvió a una palabra clave almacenada",
-  "Keyword counts across the matched articles, ordered by how many mention each term.": "Recuentos de palabras clave en los artículos coincidentes, ordenados según cuántos mencionan cada término."
+  "Keyword counts across the matched articles, ordered by how many mention each term.": "Recuentos de palabras clave en los artículos coincidentes, ordenados según cuántos mencionan cada término.",
+  "Interleave languages": "Intercalar idiomas",
+  "{what}: not enough free space — needs about {needed}, only {free} free at {path}. Free up space or choose another location, or use the large-data/volume backup for a big corpus.": "{what}: no hay suficiente espacio libre — necesita unos {needed}, solo hay {free} libres en {path}. Libere espacio o elija otra ubicación, o use la copia de datos grandes o por volúmenes para un corpus grande.",
+  "Not enough free space at {path}: needs {needed}, only {free} free.": "No hay suficiente espacio libre en {path}: necesita {needed}, solo hay {free} libres.",
+  "Backup": "Copia de seguridad",
+  "Restore": "Restauración",
+  "Volume backup": "Copia por volúmenes",
+  "Unpacking the backup to restore it": "Desempaquetado de la copia para restaurarla",
+  "{size} RAM detected": "{size} de RAM detectados",
+  "{size} available": "{size} disponibles",
+  "Scraping ↓": "Recopilación ↓",
+  "total {size}": "{size} en total",
+  "{method}; {accuracy}": "{method}; {accuracy}",
+  "{event} {time} UTC — {note}": "{event} {time} UTC — {note}",
+  "Meeus, Astronomical Algorithms (2nd ed.) ch. 27: mean equinox or solstice + 24 periodic terms; computed locally, no data files": "Meeus, Astronomical Algorithms (2.ª ed.), cap. 27: equinoccio o solsticio medio + 24 términos periódicos; calculado localmente, sin archivos de datos"
 }

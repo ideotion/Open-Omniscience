@@ -442,6 +442,8 @@ def test_every_string_the_lens_renders_is_keyed_in_all_twelve_locales() -> None:
         "The forms could not be counted.",
         "Group by language",
         "Interleave by date",
+        # the ungrouped label when the list is NOT sorted by date (2026-09-26 leftovers, Y8)
+        "Interleave languages",
         "Groups the articles already listed. It runs no new search and changes no count.",
         "Language not recorded",
     ]

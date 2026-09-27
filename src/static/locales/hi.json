@@ -4890,5 +4890,19 @@
   "no rising concepts to attribute for this period": "इस अवधि के लिए आरोपित करने योग्य कोई उभरती अवधारणा नहीं",
   "the period's concepts resolved to no plain keywords": "इस अवधि की अवधारणाएँ किसी सामान्य मुख्य शब्द से मेल नहीं खाईं",
   "none of the period's concepts resolved to a stored keyword": "इस अवधि की कोई भी अवधारणा किसी संचित मुख्य शब्द से मेल नहीं खाई",
-  "Keyword counts across the matched articles, ordered by how many mention each term.": "मेल खाने वाले लेखों में कीवर्ड की गिनती, इस क्रम में कि कितने लेख हर शब्द का उल्लेख करते हैं।"
+  "Keyword counts across the matched articles, ordered by how many mention each term.": "मेल खाने वाले लेखों में कीवर्ड की गिनती, इस क्रम में कि कितने लेख हर शब्द का उल्लेख करते हैं।",
+  "Interleave languages": "भाषाओं को बारी-बारी से दिखाएँ",
+  "{what}: not enough free space — needs about {needed}, only {free} free at {path}. Free up space or choose another location, or use the large-data/volume backup for a big corpus.": "{what}: पर्याप्त खाली जगह नहीं — लगभग {needed} चाहिए, {path} पर केवल {free} खाली है। जगह खाली करें या कोई दूसरा स्थान चुनें, या बड़े कॉर्पस के लिए बड़े-डेटा/वॉल्यूम बैकअप का उपयोग करें।",
+  "Not enough free space at {path}: needs {needed}, only {free} free.": "{path} पर पर्याप्त खाली जगह नहीं: {needed} चाहिए, केवल {free} खाली है।",
+  "Backup": "बैकअप",
+  "Restore": "पुनर्स्थापना",
+  "Volume backup": "वॉल्यूम बैकअप",
+  "Unpacking the backup to restore it": "पुनर्स्थापना के लिए बैकअप अनपैक करना",
+  "{size} RAM detected": "{size} RAM मिली",
+  "{size} available": "{size} उपलब्ध",
+  "Scraping ↓": "संग्रह ↓",
+  "total {size}": "कुल {size}",
+  "{method}; {accuracy}": "{method}; {accuracy}",
+  "{event} {time} UTC — {note}": "{event} {time} UTC — {note}",
+  "Meeus, Astronomical Algorithms (2nd ed.) ch. 27: mean equinox or solstice + 24 periodic terms; computed locally, no data files": "मीउस, Astronomical Algorithms (दूसरा संस्करण) अध्याय 27: औसत विषुव या अयनांत + 24 आवधिक पद; स्थानीय रूप से गणना, कोई डेटा फ़ाइल नहीं"
 }

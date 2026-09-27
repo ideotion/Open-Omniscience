@@ -4890,5 +4890,19 @@
   "no rising concepts to attribute for this period": "no rising concepts to attribute for this period",
   "the period's concepts resolved to no plain keywords": "the period's concepts resolved to no plain keywords",
   "none of the period's concepts resolved to a stored keyword": "none of the period's concepts resolved to a stored keyword",
-  "Keyword counts across the matched articles, ordered by how many mention each term.": "Keyword counts across the matched articles, ordered by how many mention each term."
+  "Keyword counts across the matched articles, ordered by how many mention each term.": "Keyword counts across the matched articles, ordered by how many mention each term.",
+  "Interleave languages": "Interleave languages",
+  "{what}: not enough free space — needs about {needed}, only {free} free at {path}. Free up space or choose another location, or use the large-data/volume backup for a big corpus.": "{what}: not enough free space — needs about {needed}, only {free} free at {path}. Free up space or choose another location, or use the large-data/volume backup for a big corpus.",
+  "Not enough free space at {path}: needs {needed}, only {free} free.": "Not enough free space at {path}: needs {needed}, only {free} free.",
+  "Backup": "Backup",
+  "Restore": "Restore",
+  "Volume backup": "Volume backup",
+  "Unpacking the backup to restore it": "Unpacking the backup to restore it",
+  "{size} RAM detected": "{size} RAM detected",
+  "{size} available": "{size} available",
+  "Scraping ↓": "Scraping ↓",
+  "total {size}": "total {size}",
+  "{method}; {accuracy}": "{method}; {accuracy}",
+  "{event} {time} UTC — {note}": "{event} {time} UTC — {note}",
+  "Meeus, Astronomical Algorithms (2nd ed.) ch. 27: mean equinox or solstice + 24 periodic terms; computed locally, no data files": "Meeus, Astronomical Algorithms (2nd ed.) ch. 27: mean equinox or solstice + 24 periodic terms; computed locally, no data files"
 }

@@ -4890,5 +4890,19 @@
   "no rising concepts to attribute for this period": "aucun concept en hausse à attribuer pour cette période",
   "the period's concepts resolved to no plain keywords": "les concepts de la période ne correspondent à aucun mot-clé simple",
   "none of the period's concepts resolved to a stored keyword": "aucun concept de la période ne correspond à un mot-clé enregistré",
-  "Keyword counts across the matched articles, ordered by how many mention each term.": "Nombre de mots-clés dans les articles correspondants, classés selon le nombre d'articles qui mentionnent chaque terme."
+  "Keyword counts across the matched articles, ordered by how many mention each term.": "Nombre de mots-clés dans les articles correspondants, classés selon le nombre d'articles qui mentionnent chaque terme.",
+  "Interleave languages": "Entrelacer les langues",
+  "{what}: not enough free space — needs about {needed}, only {free} free at {path}. Free up space or choose another location, or use the large-data/volume backup for a big corpus.": "{what} : espace libre insuffisant — il faut environ {needed}, seulement {free} libres à {path}. Libérez de l'espace ou choisissez un autre emplacement, ou utilisez la sauvegarde des données volumineuses ou par volumes pour un gros corpus.",
+  "Not enough free space at {path}: needs {needed}, only {free} free.": "Espace libre insuffisant à {path} : il faut {needed}, seulement {free} libres.",
+  "Backup": "Sauvegarde",
+  "Restore": "Restauration",
+  "Volume backup": "Sauvegarde par volumes",
+  "Unpacking the backup to restore it": "Décompression de la sauvegarde pour la restaurer",
+  "{size} RAM detected": "{size} de RAM détectés",
+  "{size} available": "{size} disponibles",
+  "Scraping ↓": "Collecte ↓",
+  "total {size}": "{size} au total",
+  "{method}; {accuracy}": "{method} ; {accuracy}",
+  "{event} {time} UTC — {note}": "{event} {time} UTC — {note}",
+  "Meeus, Astronomical Algorithms (2nd ed.) ch. 27: mean equinox or solstice + 24 periodic terms; computed locally, no data files": "Meeus, Astronomical Algorithms (2e éd.), chap. 27 : équinoxe ou solstice moyen + 24 termes périodiques ; calculé localement, sans fichier de données"
 }
