@@ -5336,5 +5336,8 @@
   "open reader": "打开阅读器",
   "reader": "阅读器",
   "official ↗": "官方 ↗",
-  "({n} flagged)": "（{n} 个已标记）"
+  "({n} flagged)": "（{n} 个已标记）",
+  "{country} — public holidays": "{country} — 公共假日",
+  "UN International Days & Weeks": "联合国国际日和国际周",
+  "Open-source conferences & meetups": "开源会议与聚会"
 }

@@ -5336,5 +5336,8 @@
   "open reader": "открыть в читалке",
   "reader": "читалка",
   "official ↗": "официальный ↗",
-  "({n} flagged)": "(отмечено: {n})"
+  "({n} flagged)": "(отмечено: {n})",
+  "{country} — public holidays": "{country} — праздничные дни",
+  "UN International Days & Weeks": "Международные дни и недели ООН",
+  "Open-source conferences & meetups": "Конференции и встречи по открытому ПО"
 }

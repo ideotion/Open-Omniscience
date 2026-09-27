@@ -5336,5 +5336,8 @@
   "open reader": "فتح القارئ",
   "reader": "القارئ",
   "official ↗": "الرسمي ↗",
-  "({n} flagged)": "(الموسومة: {n})"
+  "({n} flagged)": "(الموسومة: {n})",
+  "{country} — public holidays": "{country} — العطلات الرسمية",
+  "UN International Days & Weeks": "الأيام والأسابيع الدولية للأمم المتحدة",
+  "Open-source conferences & meetups": "مؤتمرات ولقاءات البرمجيات مفتوحة المصدر"
 }

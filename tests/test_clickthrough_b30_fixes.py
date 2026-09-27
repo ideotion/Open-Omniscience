@@ -241,6 +241,36 @@ def test_the_directory_status_is_keyed_frames_and_every_kind_has_a_label():
                        "Movable / no fixed date"])
 
 
+def test_every_family_name_the_directory_loads_reaches_the_reader_translated():
+    """The rows read "Afghanistan — public holidays" in every locale (U-3, review round
+    2). A holidays family is drawn from its parts -- the country's CLDR name in a keyed
+    frame -- so it needs a real country code and the catalogue's standard name shape; any
+    other family goes through its own key. Read through the LOADER, so a family the
+    dead-host filter drops (src/events/feeds.py) is not asked for a key it never shows."""
+    from src.events.feeds import load_families
+
+    agenda = read_static("app-agenda.js")
+    row = strip_comments(function_body(agenda, "renderFeedDir"))
+    assert_present(row, "esc(_feedFamName(f))")
+    assert_absent(row, "esc(f.name)", why="the family name was printed as the catalogue's English (U-3)")
+    assert_present(strip_comments(function_body(agenda, "_feedFamName")),
+                   '_bulTf("{country} — public holidays", {country: cn})')
+    assert_absent(strip_comments(agenda), "a.name.localeCompare",
+                  why="a translated list sorted by its English names runs in English order")
+    assert_present(strip_comments(function_body(agenda, "_feedDirFiltered")), "cmp(a, b, byName)")
+    fams = load_families()
+    assert fams, "the calendar directory loaded no family"
+    holidays = [f for f in fams if f.get("kind") == "holidays"]
+    # YAML 1.1 reads a bare NO as False, which left Norway with no country at all.
+    no_code = [f["key"] for f in holidays if not isinstance(f.get("country"), str)]
+    assert not no_code, f"a holidays family has no country code: {no_code}"
+    odd = [f["name"] for f in holidays if not f["name"].endswith(" — public holidays")]
+    assert not odd, f"a holidays family's name is not in the shape the frame draws: {odd}"
+    others = sorted({f["name"] for f in fams if f.get("kind") != "holidays"})
+    assert others, "expected at least one non-holidays family to check"
+    _keyed_everywhere(["{country} — public holidays", *others])
+
+
 def test_the_new_labels_are_not_bare_lowercase_words_the_walker_would_find_in_data():
     """LESSONS 2026-09-16: the DOM walker translates ANY text node equal to a key, so a
     bare lowercase "science" or "reserves" key would also translate a corpus keyword

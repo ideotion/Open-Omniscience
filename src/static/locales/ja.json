@@ -5336,5 +5336,8 @@
   "open reader": "リーダーで開く",
   "reader": "リーダー",
   "official ↗": "公式 ↗",
-  "({n} flagged)": "（{n} 件にフラグ）"
+  "({n} flagged)": "（{n} 件にフラグ）",
+  "{country} — public holidays": "{country} — 祝日",
+  "UN International Days & Weeks": "国連の国際デー・国際週間",
+  "Open-source conferences & meetups": "オープンソースのカンファレンスとミートアップ"
 }

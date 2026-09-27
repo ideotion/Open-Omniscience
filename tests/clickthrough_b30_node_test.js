@@ -111,7 +111,6 @@ const src = [
   "function renderDiff(){ return ''; }",
   "function lawAiSummaryHtml(){ return ''; }",
   "function fmtDateTime(s){ return s; }",
-  "function _feedDirFiltered(){ return _feedDir.families.slice(); }",
   "function agExcluded(){ return new Set(); }",
   "function buildMapSvg(){ return '<svg></svg>'; }",
   "function wireMapDrag(){}",
@@ -136,6 +135,10 @@ const src = [
   slice("const _FEED_KIND_LABEL = {", "function _feedKindLabel"),
   extract("_feedKindLabel"),
   extract("_verdictChip"),
+  extract("famStatus"),
+  extract("_feedFamName"),
+  slice("const _FEED_SORTS = {", "function _feedDirFiltered"),
+  extract("_feedDirFiltered"),
   extract("renderFeedDir"),
   extract("repaintFeedDirFromCache"),
   // app-map: the Stories dates and detail, the Insights map tables, the producers
@@ -172,7 +175,7 @@ const src = [
   "async " + extract("loadLawChanges"),
   "async " + extract("loadLawDocs"),
   "return { AG, _setFeedDir, _agMonth, _agFillCountryOptions, bulletinOpenFile, _feedKindLabel,"
-    + " renderFeedDir, repaintFeedDirFromCache, fmtYear, fmtDate, _ooMapCountryDetail,"
+    + " renderFeedDir, repaintFeedDirFromCache, _feedDirFiltered, _feedFamName, fmtYear, fmtDate, _ooMapCountryDetail,"
     + " _ooMapSignalDetail, repaintOoMapDetailFromCache, loadMap, repaintInsMapFromCache,"
     + " loadStatAgencies, repaintStatAgenciesFromCache, loadMineralsSupply, _govRepaintCountryPickers,"
     + " _lawBytes, _lawCodeLabel, _lawFlagReason, loadLawChanges, loadLawDocs, ooAreaCell };",
@@ -444,6 +447,42 @@ async function test(name, fn) { await fn(); n++; console.log("ok  - " + name); }
     M.repaintFeedDirFromCache();
     assert.strictEqual($("feeddir-status").innerHTML, "");
     I18N.lang = "fr";
+  });
+
+  await test("U-3: a holidays family's name is drawn from its parts, sorted and searched as shown", () => {
+    const fams = [
+      { key: "hol-de", name: "Germany — public holidays", kind: "holidays", country: "DE", feeds: [] },
+      { key: "hol-fr", name: "France — public holidays", kind: "holidays", country: "FR", feeds: [] },
+      { key: "un", name: "UN International Days & Weeks", kind: "civic", country: null, feeds: [] },
+      // A shape the frame does not draw, and a code no name resolves for: shown as stored.
+      { key: "sub", name: "Germany — public holidays (Bavaria)", kind: "holidays", country: "DE", feeds: [] },
+      { key: "xx", name: "Nowhere — public holidays", kind: "holidays", country: "XX", feeds: [] },
+    ];
+    M._setFeedDir({ total_feeds: 5, checked: 0, families: fams, verification: {} });
+    I18N.lang = "fr"; I18N.cur = "fr";
+    assert.strictEqual(M._feedFamName(fams[0]), "«fr:Allemagne — public holidays»");
+    assert.strictEqual(M._feedFamName(fams[2]), "«fr:UN International Days & Weeks»");
+    assert.strictEqual(M._feedFamName(fams[3]), "«fr:Germany — public holidays (Bavaria)»");
+    assert.strictEqual(M._feedFamName(fams[4]), "«fr:Nowhere — public holidays»");
+    M.renderFeedDir();
+    const list = $("feeddir-list").innerHTML;
+    assert.ok(list.includes("«fr:Allemagne — public holidays»"), list);
+    assert.ok(!list.includes(">Germany — public holidays\n"), "the catalogue's English name was printed");
+    // Allemagne before France in French; France before Germany in English.
+    const two = () => M._feedDirFiltered().map((f) => f.key).filter((k) => k.startsWith("hol-"));
+    assert.deepStrictEqual(two(), ["hol-de", "hol-fr"]);
+    I18N.lang = "en"; I18N.cur = "en";
+    assert.deepStrictEqual(two(), ["hol-fr", "hol-de"]);
+    // A switch redraws the names in the new language, from the payload held.
+    I18N.lang = "fr"; I18N.cur = "fr";
+    M.repaintFeedDirFromCache();
+    assert.ok($("feeddir-list").innerHTML.includes("«fr:France — public holidays»"));
+    // The search finds a row by the name on screen and by the catalogue's own.
+    $("feeddir-q").value = "allemagne";
+    assert.deepStrictEqual(M._feedDirFiltered().map((f) => f.key), ["hol-de"]);
+    $("feeddir-q").value = "germany";
+    assert.deepStrictEqual(M._feedDirFiltered().map((f) => f.key).sort(), ["hol-de", "sub"]);
+    $("feeddir-q").value = "";
   });
 
   await test("U-3: the Agenda's month names are the reader's language", () => {

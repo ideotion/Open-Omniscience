@@ -759,23 +759,49 @@
       }
       return anyOk ? "ok" : (anyChecked ? "error" : "unchecked");
     }
+    // A family's NAME is catalogue text (configs/calendar_feeds.yml), in English. All but
+    // two of the families the directory loads are "<Country> — public holidays", and those
+    // are drawn from their parts: the country's name in the reader's language through the
+    // one ooCountryName, in a keyed frame. The others go through their own keys, and a
+    // name in any other shape (a subdivision, a family a later catalogue adds) shows as
+    // stored. The rows read "Afghanistan — public holidays" in every locale
+    // (2026-09-27 re-walk, U-3).
+    function _feedFamName(f) {
+      const name = String(f.name || f.key || "");
+      if (f.kind === "holidays" && f.country && name.endsWith(" — public holidays")) {
+        const cn = ooCountryName(f.country, "");
+        if (cn && cn !== ooCountryCode(f.country)) return _bulTf("{country} — public holidays", {country: cn});
+      }
+      return _bulT(name);
+    }
+    // Sorted by the name ON SCREEN, in the reader's language, so a French list does not
+    // run in English order (the L-3 lesson of the Agenda's Country picker): every
+    // comparator takes that name order as its third argument.
     const _FEED_SORTS = {
-      name: (a, b) => a.name.localeCompare(b.name),
-      country: (a, b) => (a.country || "￿").localeCompare(b.country || "￿") || a.name.localeCompare(b.name),
-      kind: (a, b) => (a.kind || "").localeCompare(b.kind || "") || a.name.localeCompare(b.name),
+      name: (a, b, byName) => byName(a, b),
+      country: (a, b, byName) => (a.country || "￿").localeCompare(b.country || "￿") || byName(a, b),
+      kind: (a, b, byName) => (a.kind || "").localeCompare(b.kind || "") || byName(a, b),
       // dysfunctional first, so problems surface (the maintainer's "find the broken ones")
-      status: (a, b) => ({ error: 0, unchecked: 1, ok: 2 }[famStatus(a)] - { error: 0, unchecked: 1, ok: 2 }[famStatus(b)]) || a.name.localeCompare(b.name),
-      imported: (a, b) => ((b.imported_events || 0) - (a.imported_events || 0)) || a.name.localeCompare(b.name),
+      status: (a, b, byName) => ({ error: 0, unchecked: 1, ok: 2 }[famStatus(a)] - { error: 0, unchecked: 1, ok: 2 }[famStatus(b)]) || byName(a, b),
+      imported: (a, b, byName) => ((b.imported_events || 0) - (a.imported_events || 0)) || byName(a, b),
     };
     function _feedDirFiltered() {
       if (!_feedDir) return [];
       const kind = $("feeddir-kind").value, q = ($("feeddir-q").value || "").toLowerCase();
       const sf = $("feeddir-status-filter").value, sort = $("feeddir-sort").value || "name";
+      const shown = new Map(_feedDir.families.map(f => [f, _feedFamName(f)]));
+      const lc = (window.OOI18N && OOI18N.current && OOI18N.current()) || "en";
+      const coll = new Intl.Collator(lc);
+      const byName = (a, b) => coll.compare(shown.get(a), shown.get(b));
+      // The search matches the name on screen AND the catalogue's own, so an English
+      // query still finds a row a French reader sees translated.
       const fams = _feedDir.families.filter(f =>
         (!kind || f.kind === kind) &&
         (!sf || famStatus(f) === sf) &&
-        (!q || f.name.toLowerCase().includes(q) || (f.country || "").toLowerCase().includes(q)));
-      fams.sort(_FEED_SORTS[sort] || _FEED_SORTS.name);
+        (!q || shown.get(f).toLowerCase().includes(q) || f.name.toLowerCase().includes(q)
+            || (f.country || "").toLowerCase().includes(q)));
+      const cmp = _FEED_SORTS[sort] || _FEED_SORTS.name;
+      fams.sort((a, b) => cmp(a, b, byName));
       return fams;
     }
     // Bulk exclude/include (reversible). 'dysfunctional' = every broken folder;
@@ -835,7 +861,7 @@
           <div class="hint" style="word-break:break-all;margin:0 0 4px"><a href="${esc(fd.url)}" target="_blank" rel="noopener noreferrer">${esc(fd.url)}</a></div>`).join("");
         const isExcl = excl.has(f.key);
         return `<details class="cs-row${isExcl ? " excluded" : ""}" style="padding:6px 10px">
-          <summary style="cursor:pointer">${esc(f.name)}
+          <summary style="cursor:pointer">${esc(_feedFamName(f))}
             ${f.duplicates ? `<span class="pill" title="Several providers publish this calendar — compare them below">${esc(_bulTf("{n} sources", {n: n(f.feeds.length)}))}</span>` : ""}
             ${f.imported_events ? `<span class="pill ok">${esc(_bulTf("{n} imported", {n: n(f.imported_events)}))}</span>` : ""}
             ${isExcl ? `<span class="pill warn">excluded</span>` : ""}

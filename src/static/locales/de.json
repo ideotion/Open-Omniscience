@@ -5336,5 +5336,8 @@
   "open reader": "Leser öffnen",
   "reader": "Leser",
   "official ↗": "offiziell ↗",
-  "({n} flagged)": "({n} markiert)"
+  "({n} flagged)": "({n} markiert)",
+  "{country} — public holidays": "{country} — Feiertage",
+  "UN International Days & Weeks": "Internationale Tage und Wochen der UN",
+  "Open-source conferences & meetups": "Open-Source-Konferenzen und -Treffen"
 }
