@@ -43,7 +43,7 @@ function extract(name) {
 function makeWatcher() {
   const env = { statuses: [], calls: [], sectionOpen: true };
   const src =
-    "const _jobWatch = {};\n" +
+    "const _jobWatch = {};\nconst _jobLast = {};\n" +
     "const document = { querySelector: () => ({ open: env.sectionOpen }) };\n" +
     // Every wait is a macrotask of 0 ms: the loop's own cadence is not what is under test.
     "const setTimeout = (fn) => global.setTimeout(fn, 0);\n" +

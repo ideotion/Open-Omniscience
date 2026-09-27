@@ -15459,6 +15459,11 @@ nobody reads it as a general memory cap:
   holds flood cards): the refresh fits, on timing only. The second died at 15:53 UTC on 26 Sept,
   27 minutes into the first pass after a restart and 30 minutes after the unlock, with no
   refresh recorded in that session and UI reads running: not attributed.
+- **A burst within five minutes of the MACHINE's boot is not snapshotted (found 2026-09-27, not fixed).**
+  `_LAST_BURST` starts at `0.0` and `_burst_due` (`src/monitoring/session_hwm.py`) skips a burst while `time.monotonic() - _LAST_BURST < 300`;
+  `time.monotonic()` counts from the machine's boot, so on a host up for under 300 s (an instance started at
+  boot) the first burst is dropped. Seen as two `test_exit_evidence.py` burst tests failing in a sandbox whose
+  uptime was 284 s; CI hosts are up longer. The fix is to start `_LAST_BURST` unset rather than at zero.
 - **Which read made the 2026-09-26 burst is not known.** When the next crash's thread snapshots
   (PR #1190) name it, check whether it runs inside a deadline; if not, that read needs its own
   bound, and this entry should say which.

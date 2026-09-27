@@ -716,17 +716,26 @@ def test_cpu_is_read_for_the_working_threads_only(monkeypatch):
     ev = threading.Event()
     parked = _parked_in_app_code(ev)
     ns: dict = {}
-    spin_src = "def spin(ev):\n    while not ev.is_set():\n        sum(range(2000))\n"
+    # The loop calls nothing in threading.py (Event.is_set lives there), and the snapshot
+    # waits until the loop has started: a thread seen in threading.py, still starting or
+    # checking its flag, is marked waiting by design, which made this flaky on macOS.
+    spin_src = "def spin(state):\n    state.append(1)\n    while len(state) < 2:\n        sum(range(2000))\n"
     exec(compile(spin_src, session_hwm._APP_SRC + "/fake/spin.py", "exec"), ns)
-    busy = threading.Thread(target=ns["spin"], args=(ev,), name="oo-fake-busy", daemon=True)
+    state: list[int] = []
+    busy = threading.Thread(target=ns["spin"], args=(state,), name="oo-fake-busy", daemon=True)
     busy.start()
     asked: list[int] = []
     real = session_hwm._thread_cpu
     monkeypatch.setattr(session_hwm, "_thread_cpu", lambda tids: asked.extend(tids) or real(tids))
     try:
+        deadline = time.monotonic() + 10
+        while not state and time.monotonic() < deadline:
+            time.sleep(0.01)
+        assert state, "the busy thread never started its loop"
         time.sleep(0.2)
         snap = session_hwm.thread_snapshot()
     finally:
+        state.append(1)
         ev.set()
         parked.join(5)
         busy.join(5)
