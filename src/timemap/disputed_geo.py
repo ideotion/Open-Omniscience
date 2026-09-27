@@ -15,6 +15,16 @@ records who each of ~33 national/institutional viewpoints considers it to belong
 The claims are therefore READ OUT of the data, never curated here by hand -- which is
 what lets the app show a difference between conventions without adopting one.
 
+THE VIEWPOINTS ARE NOT EVERY CLAIMANT. The ~33 viewpoints are the countries Natural
+Earth publishes a POV for; a claimant outside that list (South Sudan over Abyei,
+Suriname over the Lawa and Courantyne headwaters) appears in no ``ADM0_A3_<POV>``
+field, so reading the viewpoints alone left three areas naming ONE claimant -- the
+silent pick again, by omission. The source does name them: every feature's
+``NOTE_BRK`` states the dispute in a fixed grammar ("Admin. by Sudan; Claimed by
+South Sudan"). Its "Claimed by" names are resolved BY NAME against the same release's
+admin-0 countries (``name_index``), never against a list typed here, and a name that
+resolves to no country, or to more than one, adds nothing.
+
 TWO HONESTY RULES ENCODED BELOW.
 
 * An alpha-3 that resolves to no country is NOT a claimant. Natural Earth uses
@@ -45,6 +55,18 @@ POV_KEYS: tuple[str, ...] = (
 )
 
 _A3_FIELDS = ("ADM0_A3", "ISO_A3", "ISO_A3_EH", "SOV_A3", "BRK_A3")
+
+# The admin-0 name fields a ``NOTE_BRK`` claimant is matched against. ABBREV is left out
+# on purpose: it is ambiguous in the source itself ("Ang." is both Angola and Anguilla).
+_NAME_FIELDS = ("NAME", "NAME_LONG", "ADMIN", "BRK_NAME", "NAME_EN")
+
+# What the asset says about where its claims come from (the method, as data).
+CLAIMS_METHOD = (
+    "Claims are read from Natural Earth's own fields: ADM0_A3, the ADM0_A3_<POV> assignment "
+    "of each of the 33 viewpoints, the FCLASS_<POV> recognition of a breakaway, and the "
+    "counter-claimants named by each feature's NOTE_BRK ('Claimed by ...'), resolved by name "
+    "against the same release's admin-0 countries. Nothing is hand-curated."
+)
 
 # Natural Earth's per-viewpoint feature class. "Admin-0 country" means THAT viewpoint
 # recognises the area as a state in its own right -- which is how a self-declared
@@ -87,6 +109,51 @@ def claim_index(*geojsons: dict) -> dict[str, dict]:
     return index
 
 
+def name_index(*geojsons: dict) -> dict[str, str]:
+    """Learn ``lower-case country name -> alpha-3`` from admin-0 features of ONE release.
+
+    Only a feature with a usable alpha-2 contributes, and a name two different countries
+    answer to is dropped rather than guessed between -- a claimant that cannot be named
+    unambiguously is not added.
+    """
+    seen: dict[str, set[str]] = {}
+    first: dict[str, str] = {}
+    for gj in geojsons:
+        for feat in (gj or {}).get("features", []) or []:
+            props = feat.get("properties") or {}
+            a2 = _a2_of(props)
+            code = str(props.get("ADM0_A3") or "").strip()
+            if not a2 or len(code) != 3:
+                continue
+            for field in _NAME_FIELDS:
+                name = str(props.get(field) or "").strip().lower()
+                if not name:
+                    continue
+                seen.setdefault(name, set()).add(a2)
+                first.setdefault(name, code)
+    return {n: first[n] for n, a2s in seen.items() if len(a2s) == 1}
+
+
+def note_claimants(props: dict) -> list[str]:
+    """The claimants a feature's ``NOTE_BRK`` names after "Claimed by", in order.
+
+    ``"Admin. by Sudan; Claimed by South Sudan"`` -> ``["South Sudan"]``;
+    ``"Claimed by Pakistan and India"`` -> ``["Pakistan", "India"]``. Any other clause
+    (who administers it, "Ceded to ... by ...") is not a claim and is not read.
+    """
+    out: list[str] = []
+    for clause in str(props.get("NOTE_BRK") or "").split(";"):
+        clause = clause.strip()
+        if not clause.lower().startswith("claimed by "):
+            continue
+        rest = clause[len("claimed by "):]
+        for part in rest.replace(",", " and ").split(" and "):
+            part = part.strip()
+            if part:
+                out.append(part)
+    return out
+
+
 def _names_of(props: dict) -> dict[str, str]:
     """The area's own name in each app locale, taken from Natural Earth's fields."""
     out: dict[str, str] = {}
@@ -101,6 +168,7 @@ def coarsen_disputed(
     geojson: dict,
     *,
     index: dict[str, dict] | None = None,
+    names: dict[str, str] | None = None,
     precision: int = 2,
     min_span: float = 0.0,
 ) -> dict:
@@ -111,9 +179,13 @@ def coarsen_disputed(
     11 km rounding collapses them below a drawable ring, and an area that vanishes
     is the one outcome this asset exists to prevent.
 
-    Returns ``{"areas": [...], "views": [...], "precision", "source"}``; pure.
+    ``names`` (from ``name_index`` over the admin-0 countries) resolves the claimants a
+    feature's ``NOTE_BRK`` names; each such claim carries ``"from": "NOTE_BRK"``.
+
+    Returns ``{"areas": [...], "views": [...], "precision", "source", "method"}``; pure.
     """
     idx = index or {}
+    by_name = names or {}
     areas: list[dict] = []
     for feat in (geojson or {}).get("features", []) or []:
         props = feat.get("properties") or {}
@@ -168,6 +240,15 @@ def coarsen_disputed(
             seen.add(entry["a2"])
             claims.append({"a2": entry["a2"], "a3": code, "name": entry.get("name") or code,
                            "self": False, "recognised_by": []})
+        # The counter-claimants no viewpoint field can carry (see the module note).
+        for claimant in note_claimants(props):
+            code = by_name.get(claimant.lower(), "")
+            entry = idx.get(code)
+            if not entry or not entry.get("a2") or entry["a2"] in seen:
+                continue
+            seen.add(entry["a2"])
+            claims.append({"a2": entry["a2"], "a3": code, "name": entry.get("name") or code,
+                           "self": False, "recognised_by": [], "from": "NOTE_BRK"})
         # The area's own claim first, then the recognised states in a stable order.
         if self_declared:
             claims = [claims[0], *sorted(claims[1:], key=lambda c: c["a2"] or "")]
@@ -192,4 +273,5 @@ def coarsen_disputed(
         "views": [p.lower() for p in POV_KEYS],
         "precision": precision,
         "source": (geojson or {}).get("source", "natural-earth-50m-breakaway-disputed"),
+        "method": CLAIMS_METHOD,
     }

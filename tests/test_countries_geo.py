@@ -10,7 +10,13 @@ import json
 from pathlib import Path
 
 from src.timemap.countries_geo import coarsen_admin0, iso2_of
-from src.timemap.disputed_geo import APP_LOCALES, claim_index, coarsen_disputed
+from src.timemap.disputed_geo import (
+    APP_LOCALES,
+    claim_index,
+    coarsen_disputed,
+    name_index,
+    note_claimants,
+)
 
 _ASSET = Path(__file__).resolve().parents[1] / "src" / "static" / "world_countries.json"
 _DISPUTED = Path(__file__).resolve().parents[1] / "src" / "static" / "world_disputed.json"
@@ -183,6 +189,42 @@ def test_a_self_declared_entity_keeps_its_own_claim():
     assert area["views"]["iso"] == "ge"
 
 
+def test_a_claimant_that_is_no_viewpoint_is_read_from_note_brk():
+    """South Sudan is not one of Natural Earth's 33 viewpoints, so no ADM0_A3_<POV> field
+    can name it: reading the viewpoints alone drew Abyei with Sudan as its ONLY claimant.
+    The feature's NOTE_BRK names it, and it is resolved by NAME against the countries
+    layer -- never a name the disputed feature itself carries."""
+    admin0 = {"features": [
+        _feat("sd", {"type": "Polygon", "coordinates": [_square(30, 15, 3)]},
+              name="Sudan", ADM0_A3="SDN", ISO_A3="SDN"),
+        _feat("ss", {"type": "Polygon", "coordinates": [_square(30, 7, 3)]},
+              name="S. Sudan", ADM0_A3="SDS", ISO_A3="SSD", NAME_LONG="South Sudan"),
+        # Two countries sharing a name: ambiguous, so it must resolve to nothing.
+        _feat("ao", {"type": "Polygon", "coordinates": [_square(17, -12, 2)]},
+              name="Angola", ADM0_A3="AGO", NAME_EN="Ang"),
+        _feat("ai", {"type": "Polygon", "coordinates": [_square(-63, 18, 0.2)]},
+              name="Anguilla", ADM0_A3="AIA", NAME_EN="Ang"),
+    ]}
+    disputed = {"features": [{
+        "type": "Feature",
+        "geometry": {"type": "Polygon", "coordinates": [_square(28.4, 9.7, 0.4)]},
+        "properties": {"BRK_NAME": "Abyei", "NAME": "Sudan", "TYPE": "Disputed", "ADM0_A3": "SDN",
+                       "BRK_A3": "B13", "ADM0_A3_US": "B13", "ADM0_A3_RU": "SDN",
+                       "NOTE_BRK": "Admin. by Sudan; Claimed by South Sudan and Ang"},
+    }]}
+    names = name_index(admin0)
+    assert "ang" not in names, "an ambiguous name resolves to no country"
+    assert note_claimants({"NOTE_BRK": "Claimed by Pakistan and India"}) == ["Pakistan", "India"]
+    assert note_claimants({"NOTE_BRK": "Admin. by China; Ceded to China by Pakistan; Claimed by India"}) == ["India"]
+    area = coarsen_disputed(disputed, index=claim_index(admin0, disputed), names=names)["areas"][0]
+    assert [c["a2"] for c in area["claims"]] == ["sd", "ss"]
+    assert area["claims"][1]["from"] == "NOTE_BRK" and "from" not in area["claims"][0]
+    assert area["views"]["ru"] == "sd", "a note adds a claim, never a viewpoint's attribution"
+    # Without the name index the build is what it was: one claimant, never an invented one.
+    bare = coarsen_disputed(disputed, index=claim_index(admin0, disputed))["areas"][0]
+    assert [c["a2"] for c in bare["claims"]] == ["sd"]
+
+
 def test_bundled_disputed_asset_names_every_claim():
     """The shipped asset. The headline property is that NO area is drawn with an empty
     claim list -- an area marked contested that names nobody would be the silent pick
@@ -199,8 +241,23 @@ def test_bundled_disputed_asset_names_every_claim():
         # Every claim is either a real country or the area's own claim to statehood.
         for c in a["claims"]:
             assert c["a2"] or c["self"], f"{a['name']}: a claim with neither a code nor selfhood"
-    # The named disputes a reader will look for, with both sides present.
+    # A DISPUTE HAS TWO SIDES (B20 R2, 2026-09-27). Abyei, Courantyne Headwaters and Lawa
+    # Headwaters named ONE claimant, because their counter-claimants (South Sudan,
+    # Suriname) are not Natural Earth viewpoints; NOTE_BRK names them and the build now
+    # reads it. The known-gap list is EMPTY and pinned as such: an area that comes back
+    # naming one claimant is a regression, not a data fact to wave through.
+    known_single_claimant: set[str] = set()
+    single = {a["name"] for a in areas if len(a["claims"]) < 2}
+    assert single == known_single_claimant, f"areas naming one claimant: {sorted(single)}"
     by_name = {a["name"]: a for a in areas}
+    for name, expected in {
+        "Abyei": {"sd", "ss"}, "Courantyne Headwaters": {"gy", "sr"}, "Lawa Headwaters": {"fr", "sr"},
+    }.items():
+        got = {c["a2"] for c in by_name[name]["claims"] if c["a2"]}
+        assert got == expected, f"{name}: {sorted(got)}"
+        assert any(c.get("from") == "NOTE_BRK" for c in by_name[name]["claims"]), name
+    assert "NOTE_BRK" in data.get("method", ""), "the asset cites the field its extra claims come from"
+    # The named disputes a reader will look for, with both sides present.
     for name, expected in {
         "Aksai Chin": {"cn", "in"}, "Crimea": {"ru", "ua"},
         "Jammu and Kashmir": {"in", "pk"}, "Golan Heights": {"il", "sy"},

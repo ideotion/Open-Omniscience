@@ -14,7 +14,9 @@ WHY IT EXISTS (maintainer rulings Q826 and Q803, 2026-09-15): every disputed are
 rendered CONTESTED showing BOTH claims, never a silent pick, and the user can see the
 difference between conventions with a toggle. Natural Earth records an
 ``ADM0_A3_<POV>`` per point of view on each feature, so both halves are read out of
-the data rather than curated by hand here.
+the data rather than curated by hand here. A claimant that is not itself a viewpoint
+(South Sudan, Suriname) is read from the feature's ``NOTE_BRK`` ("Claimed by ...") and
+resolved by name against the admin-0 countries of the same release.
 
 Until you run this, the map simply has no contested layer -- it never invents one.
 
@@ -33,7 +35,12 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from src.timemap.disputed_geo import claim_index, coarsen_disputed  # noqa: E402
+from src.timemap.disputed_geo import (  # noqa: E402
+    claim_index,
+    coarsen_disputed,
+    name_index,
+    note_claimants,
+)
 
 # Served from the upstream project's own git mirror; see build_country_polygons.py.
 _BASE = "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson"
@@ -74,7 +81,10 @@ def main() -> int:
 
     disputed.setdefault("source", f"natural-earth-{args.scale}-breakaway-disputed")
     index = claim_index(admin0, disputed)
-    asset = coarsen_disputed(disputed, index=index, precision=args.precision)
+    # NOTE_BRK's "Claimed by" names are matched against the COUNTRIES layer only, so a
+    # disputed feature's own NAME ("Sudan" on Abyei) can never stand in for a country.
+    names = name_index(admin0)
+    asset = coarsen_disputed(disputed, index=index, names=names, precision=args.precision)
 
     areas = asset["areas"]
     no_claim = [a["name"] for a in areas if not a["claims"]]
@@ -91,6 +101,16 @@ def main() -> int:
     # admin-0 release and the disputed release disagree about a code.
     if no_claim:
         print(f"NOTE: {len(no_claim)} area(s) resolved no claimant: {', '.join(no_claim)}", file=sys.stderr)
+    # The same for a single claimant: a dispute with one side named is the silent pick.
+    one_claim = [a["name"] for a in areas if len(a["claims"]) == 1]
+    if one_claim:
+        print(f"NOTE: {len(one_claim)} area(s) name ONE claimant: {', '.join(one_claim)}", file=sys.stderr)
+    # A NOTE_BRK name no country answers to adds nothing; say which, so a spelling the
+    # source changed is seen rather than silently dropped.
+    unresolved = sorted({n for f in disputed.get("features", []) or []
+                         for n in note_claimants(f.get("properties") or {}) if n.lower() not in names})
+    if unresolved:
+        print(f"NOTE: NOTE_BRK names no admin-0 country answers to: {', '.join(unresolved)}", file=sys.stderr)
     if args.dry_run:
         return 0
     _OUT.write_text(blob, encoding="utf-8")
