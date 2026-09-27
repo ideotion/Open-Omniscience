@@ -25,11 +25,13 @@ import pytest
 
 from tests.js_source_helper import (
     app_js,
+    array_literal,
     assert_absent,
     assert_present,
     event_listener_bodies,
     function_body,
     function_source,
+    object_literal,
     read_static,
 )
 
@@ -152,18 +154,21 @@ def test_the_free_space_frames_are_keyed_everywhere():
                     if kw.arg == "what" and isinstance(kw.value, ast.Constant):
                         used.add(kw.value.value)
     assert used, "no preflight_free_space(what=...) call found -- re-point this test"
-    table = app_js()[app_js().index("const _OO_SPACE_WHAT = {"):app_js().index("const _OO_SIZE_RE")]
+    table = object_literal(app_js(), "_OO_SPACE_WHAT")
     for what in used:
         assert f'"{what}":' in table, f"what={what!r} has no keyed name in _OO_SPACE_WHAT"
 
 
 def _run_server_text(messages: list[str]) -> list[str]:
     js = app_js()
-    consts = js[js.index("const _OO_SPACE_WHAT = {"):js.index("function ooServerText(")]
+    size_re = re.search(r'const _OO_SIZE_RE = "[^"\n]*";', js)
+    assert size_re, "the _OO_SIZE_RE string is gone -- re-point this test"
     prog = "\n".join([
         "const window = {};",
         function_source(js, "_sizeText"),
-        consts,
+        "const _OO_SPACE_WHAT = " + object_literal(js, "_OO_SPACE_WHAT") + ";",
+        size_re.group(0),
+        "const _OO_SPACE_RES = " + array_literal(js, "_OO_SPACE_RES") + ";",
         function_source(js, "ooServerText"),
         "process.stdout.write(JSON.stringify(" + json.dumps(messages) + ".map(ooServerText)));",
     ])
