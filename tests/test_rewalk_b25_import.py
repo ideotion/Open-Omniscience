@@ -66,6 +66,11 @@ def test_every_folder_the_picker_fills_is_a_left_to_right_field():
         tag = re.search(r'<input id="' + re.escape(tid) + r'"[^>]*>', html)
         assert tag, f"no <input id={tid!r}> for a folder-picker target"
         assert 'dir="ltr"' in tag.group(0), f"#{tid} inherits the page's direction: {tag.group(0)}"
+    # The picker's OWN line showing the same path (#fp-path, filled by _fpNav in app-map.js):
+    # the re-walk's review saw '/tmp' drawn as 'tmp/' there once the fields above were fixed.
+    line = re.search(r'<div id="fp-path"[^>]*>', html)
+    assert line, "the folder picker lost its path line #fp-path"
+    assert 'dir="ltr"' in line.group(0), f"#fp-path inherits the page's direction: {line.group(0)}"
 
 
 # --- I-6: the re-index job's detail line travels as a keyed frame ----------------------------- #
@@ -149,6 +154,9 @@ _RESULT_BLOCK_KEYS = [
     "Conflicts (your version kept)",
     "Nothing new: every row in this archive is already in your corpus.",
     "Snapshotting your corpus…",
+    # the lost-work line of the result block and the run view's staged line (review round 2)
+    "Discarded, not in your corpus: {n} — the shared working copy was never saved. Import them again.",
+    "Merged, not yet saved: {n} — written to your corpus at the next checkpoint, one every {k} backups.",
 ]
 
 
