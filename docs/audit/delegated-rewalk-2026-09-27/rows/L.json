@@ -1,0 +1,397 @@
+{
+ "row": "L",
+ "walk": {
+  "row": "L",
+  "environment": "Fixed build: read-only worktree /tmp/claude-0/rewalk/tree @ 0deff9c4, never modified. Server launched from that folder with the repo venv (/home/user/Open-Omniscience/.venv/bin/python -c 'from src.api.main import main; main()'), proxy vars unset, OO_DB_PASSPHRASE and OO_DB_PLAINTEXT both UNSET at boot; port 8909; data dir /tmp/claude-0/rewalk/L/data (fresh, not copied). Seeding: scripts/ui_clickthrough_seed.py default (STATE C, 453 articles) with OO_DB_PASSPHRASE='walk-pass-2026', then the row-L supplementary seed_extra.py (copied from /tmp/claude-0/walk/L) with the server stopped and the same passphrase. It adds SYNTHETIC World Bank figures (NY.GDP.MKTP.CD / SP.POP.TOTL / SP.DYN.LE00.IN, 250 stored each, 44 countries incl. XKX + WB aggregates), 6 USGS rare-earth rows, index series, law revisions (GBR/EUU/FRA changes) and Wikipedia changes. AT REST: both open_omniscience.db and wiki.db start with non-'SQLite format 3' bytes (ciphertext). /api/system/lock-state read 'locked' before unlock and 'unlocked-encrypted' after; the unlock went through the real #pw / #btn-unlock form in every session. NETWORK: airplane mode throughout (/api/system/network online:false; plane glyph filled). Consent popups opened: 'Load standard country data' in en/fr/ar/zh plus the lane-disclosure check. Each was read, screenshotted and cancelled; 'Go online' was never pressed; zero non-loopback requests recorded by the browser. Browser: Playwright Chromium /opt/pw-browsers/chromium, headless, args --disable-background-networking --disable-component-update --no-proxy-server. Viewports: 1440x950 in en/fr/ar/zh and 375x800 in en. Differences from the first walk: Governments (L11) and Markets (L10) use synthetic data, not a real online-collected install. The Re-seed toast was captured on a second press ('Seeded 0 sources, 0 laws.'), because the boot autoseed had already seeded the catalogue (27 law docs before and after). Server stopped by PID (kill 445). Evidence: screenshots in /tmp/claude-0/rewalk/L/shots (128 PNGs), per-script results in /tmp/claude-0/rewalk/L/res-*.json, exported CSV at /tmp/claude-0/rewalk/L/open-omniscience-sources.csv, bulletin text at /tmp/claude-0/rewalk/L/bulletin-doc.txt.",
+  "steps": [
+   {
+    "id": "L1",
+    "verdict": "pass",
+    "locales": "en (ar/fr/zh in L13)",
+    "evidence": "Governments > Law > Tracked laws (27 docs): the Jurisdiction column holds only CAN, DEU, EUU, FRA, GBR, INT, TLS, USA (the API stores ca/de/eu/fr/gb/int/tl/uk/us). No lowercase codes appear. Every cell has a dotted underline and the oo-tip-target class. The #oo-tip bubble gives GBR 'United Kingdom', DEU 'Germany', EUU 'European Union — not an ISO code', INT 'International — not an ISO code', FRA 'France', CAN 'Canada', USA 'United States'. Legal changes panel: GBR, EUU and FRA each hover their name. Re-seed toast: 'Seeded 0 sources, 0 laws.' (autoseed had already run), count 27 before and after. Shots: L1-law-changes-en.png, L1-tip-EUU-en.png, L1-tip-INT-en.png, L1-reseed-toast2-en.png."
+   },
+   {
+    "id": "L2",
+    "verdict": "pass",
+    "locales": "en (fr/ar/zh in L13)",
+    "evidence": "#agenda-country has 33 options: 'all', then '🇦🇷 Argentina (ARG)', '🇦🇺 Australia (AUS)', '🇧🇪 Belgium (BEL)', '🇧🇷 Brazil (BRA)' … '🇺🇸 United States (USA)'. They are sorted by Intl.Collator on the name and every code is alpha-3. EUU carries the EU flag and INT '🌐 International (INT)'; each real country has its own flag. Picking FRA filters the List to 'showing 3 of 153' with a FRA pill, and resetting restores 153 of 153. Group by country gives 33 heads (INT 75, CHN 3, USA 9 …, 'No country 2'); each code hovers its name, INT/EUU with the 'not an ISO code' suffix. Event pills hover correctly: EUU 'European Union — not an ISO code', FRA 'France', CHN 'China'. Shots: L2-list-country-en.png, L2-group-INT-tip-en.png, L2-pill-EUU-tip-en.png."
+   },
+   {
+    "id": "L3",
+    "verdict": "pass",
+    "locales": "en (fr/ar/zh in L13)",
+    "evidence": "Settings > Advanced > Sources > Manage sources has 6418 sources. The Country column is alpha-3 with hovers (ISR→Israel; AUS, BEN, CPV …; none bad). The Lang column is ISO 639-2/T with hovers (eng→English, fra, zho, ara …; none bad). The Country filter lists 209 'Name (CODE) ·n' entries sorted by name, and va/ai/ck now read 'Vatican City (VAT)', 'Anguilla (AIA)', 'Cook Islands (COK)'. The Language filter lists 79 entries, 'English (eng) ·2954' first. Closed labels read 'FRA' and 'eng'. Ticking FRA gives '130 source(s)' with only FRA rows; adding eng gives 17. Clear restores 'Any'/'Any'. The Producers table Country column is alpha-3 with hovers (RUS→Russia), and 8 rows without a country show '—'. Shots: L3-country-filter-open-en.png, L3-filters-closed-en.png, L3-country-tip-en.png, L3-lang-tip-en.png, L3-producers-tip-en.png."
+   },
+   {
+    "id": "L4",
+    "verdict": "pass",
+    "locales": "en",
+    "evidence": "The hint names all 13 columns ending in country_iso3 and says 'Country takes a 2- or 3-letter code or a country name. The export adds country_iso3; an import falls back to it when country is empty or unreadable, and refuses a row where the two disagree.' The downloaded open-omniscience-sources.csv (6418 rows) has a header ending in 'country_iso3'. fr rows → FRA, de → DEU, va → VAT, ck → COK, ai → AIA, gb → GBR. 1458 rows have both cells empty, and no row has a country with an empty iso3. The file was downloaded only; no import was done. Shot: L4-csv-hint-en.png."
+   },
+   {
+    "id": "L5",
+    "verdict": "pass",
+    "locales": "en",
+    "evidence": "Library > World coverage map tooltips give 'France — 56 articles', 'Germany — 56 articles', 'United States — 33 articles'. No point markers are drawn on this corpus. The table has 209 rows, all alpha-3 with dotted hovers (DEU/Germany, VAT/Vatican City, AIA, COK); the first row now reads 'no country recorded' and hovers the same. The 'Not covered (43)' pills are alpha-3 with hovers (ATA→Antarctica, ALA→Åland Islands). The filter finds DEU from 'DEU', 'deu' and 'Germ'. 'Top country: USA — 239 sources, 4.9% of located within the 12% guard', with USA hovering 'United States'. Clicking FRA jumps to Settings > Sources with label 'FRA', the fr box ticked and 130 rows; adding DEU gives '2 selected', 190. Shots: L5-coverage-map-en.png, L5-first-row-tip-en.png, L5-filter-DEU-en.png, L5-jump-FRA-sources-en.png, L5-top-country-en.png."
+   },
+   {
+    "id": "L6",
+    "verdict": "pass",
+    "locales": "en→fr→ar→zh live, no reload",
+    "evidence": "On World coverage, a switch from the top-bar #lang-menu without a reload or reopen changes the DEU hover to 'Allemagne', then 'ألمانيا', then '德国' (en 'Germany'). Map tooltips follow: 'Allemagne — 56 articles', 'ألمانيا — 56 مقالة', '德国 — 56 篇文章'. In ar the html is lang=ar dir=rtl and the codes stay Latin 'DEU'. Gaps pills and the Top-country line re-localise ('Premier pays : USA …', ATA→'Antarctique'). The only English left is the 'THIN (<3)' tile (new defect). Shots: L6-DEU-tip-{en,fr,ar,zh}.png, L6-gaps-*.png, L6-regions-*.png."
+   },
+   {
+    "id": "L7",
+    "verdict": "pass",
+    "locales": "en, fr, ar, zh",
+    "evidence": "World map > Coverage shape tooltips give the name and value: 'France — 130 sources', 'Allemagne — 60 sources', 'ألمانيا — مصادر: 60', '德国 — 60 个来源'. No shape on this corpus is drawn as a point, so the predicted 'dot shows code' finding is not observable here. Clicking Germany gives the heading <span title='Germany' class='oo-tip-target'>DEU</span>, which hovers 'Allemagne' / 'ألمانيا' / '德国'. The Worldview picker reads 'Name (CODE)' sorted by the localised name in each locale ('Allemagne (DEU)', 'Arabie saoudite (SAU)' … in fr). Stories detail: 'Aug 17, 2027 · Jakarta (IDN) · -6.21, 106.85 · agenda', where IDN hovers 'Indonesia' / 'Indonésie' / 'إندونيسيا' / '印度尼西亚'. The English date, '≈ country' and 'Official / reference source ↗' on that panel are a new defect, off the alpha-3 clause. Shots: L7-coverage-detail-DEU-*.png, L7-stories-detail-*.png."
+   },
+   {
+    "id": "L8",
+    "verdict": "pass",
+    "locales": "en, fr, ar, zh",
+    "evidence": "Insights > Map (window 3650) 'By country' first column: BRA, CHN, DEU, EGY, ESP, FRA, GBR, MEX, PRT, RUS, SAU, USA, each with a hover (BRA→Brazil / Brésil …). 'By city' says 'No data' because the seed has no cities, so that half is not measurable. Super-groups > Elections & democracy chips use ISO 639-2/T ('citizenship (ara/ben/deu/eng/spa/fra/hin/ind/jpn/por/rus/zho)'). The concept map shows 'Languages: ara · eng · spa · por · zho' with hovers ara→Arabic and country SAU→Saudi Arabia. Shots: L8-insights-by-country-*.png, L8-concept-map-*.png."
+   },
+   {
+    "id": "L9",
+    "verdict": "pass",
+    "locales": "en",
+    "evidence": "Settings > Wikipedia #wiki-lang is a SELECT with 0 optgroups and 147 options in a flat list, UI locales first: '中文 — Chinese (zh)', 'English — English (en)', 'Français — French (fr)', 'Deutsch — German (de)'. The two-letter edition codes are correct. Page hscroll is 0. Living sources > Wikipedia change pills read 'fra'/'eng' and hover 'French'/'English'. Living sources > Law codes hover names (EUU 'European Union — not an ISO code'). Shots: L9-wiki-edition-en.png, L9-living-wiki-pill-en.png, L9-living-law-EUU-en.png."
+   },
+   {
+    "id": "L10",
+    "verdict": "pass",
+    "locales": "en, fr, ar",
+    "evidence": "This used SYNTHETIC index and USGS data; the 'real install' clause is not measurable here. The Indices board is labelled by index NAME ('France — share prices', 'Germany — share prices', 'United Kingdom — share prices', 'S&P 500'), with no country codes. My verdict: names-in-prose are acceptable, because they are the index's own names. Minerals supply Area column: USA, AUS, CHN, WLD, all alpha-3 with hovers ('United States' / 'États-Unis' / 'الولايات المتحدة'). WLD hovers 'World — published aggregate' / 'Monde — agrégat publié' / 'العالم — تجميع منشور'. The feed table grey lines name producers ('EIA/FRED'). The untranslated caveat, units and measures in that section are a new defect. Shots: L10-indices-*.png, L10-minerals-supply-{en,fr,ar}.png."
+   },
+   {
+    "id": "L11",
+    "verdict": "pass",
+    "locales": "en, fr, ar, zh",
+    "evidence": "Synthetic World Bank figures were used; the real-install data is not measurable. Countries, Compare A and B: 44 options 'Name (CODE)' sorted by the localised name ('Afghanistan (AFG)', 'Albania (ALB)' … / fr 'Afghanistan (AFG)', 'Afrique du Sud (ZAF)', 'Albanie (ALB)'); none bad. 'Load standard country data' opens #net-consent reading 'This action needs the network: Load standard country data' with local IPs only. It was cancelled and stayed online:false. Map hovers: 'France — FRA · France: 72M', 'Kosovo — XKX · Kosovo — not an ISO code: 1.9M' (fr 'pas un code ISO'). Clicking Germany switches to Countries with 'Germany (DEU)'. Groups (Europe, population): 'Range … 1.9M (XKX) to 88M (DEU)', missing list 'AND, ALA, BIH …' with the full alpha-3 list in the hover. Statistics placeholders read 'FRA or all' / 'FRA'. Level map hovers: WLD 'World — published aggregate', HIC/EAS/EUU/LIC '… — published aggregate'. Shots: L11-consent-load-standard-*.png, L11-gov-map-*.png, L11-groups-computed-*.png, L11-statistics-level-table-*.png."
+   },
+   {
+    "id": "L12",
+    "verdict": "pass",
+    "locales": "en",
+    "evidence": "The Bulletin is a top-level Advanced fold after Uninstall (order tail diagnostics, safety, uninstall, bulletin) and is not nested. A Yearly draft was built ('Draft built.') and opened in a new tab at /api/bulletin/editions/…/render?fmt=html. The document reads 'Source countries: RUS 21, CHN 19, FRA 16, DEU 14, USA 11 …; 2 from sources with no country recorded.' and 'Languages: eng 23, rus 20, zho 19, ara 18, por 17, fra 15, spa 14, deu 13.' Its By-country heads read 'Russia (RUS) · Europe' etc. The law line reads 'Law changed (FRA): Walk Code civil (extract)' with 'jurisdiction FRA'. The only two-letter code is 'Wikipedia (en)', an edition code. The Home law card reads 'Law changed (FRA): …'. The edition was deleted afterwards ('No editions yet.'). Shots: L12-bulletin-panel-en.png, L12-bulletin-doc-en.png, L12-home-law-card-en.png."
+   },
+   {
+    "id": "L13",
+    "verdict": "pass",
+    "locales": "fr, ar, zh",
+    "evidence": "After a reload the page is lang fr ltr / ar rtl / zh ltr. Law hovers: DEU 'Allemagne' / 'ألمانيا' / '德国'; EUU 'Union européenne — pas un code ISO' / 'الاتحاد الأوروبي — ليس رمزًا من رموز أيزو' / '欧盟 — 非 ISO 代码'; INT likewise. The bare switch without reload also follows. The Agenda Country list is re-sorted: fr 'tout', '🇿🇦 Afrique du Sud (ZAF)', '🇩🇪 Allemagne (DEU)' …; ar 'الكل', '🇪🇹 إثيوبيا (ETH)' …; zh '全部', '🇦🇷 阿根廷 (ARG)' …. The Sources Country filter is re-sorted (fr 'Afghanistan (AFG) ·4', 'Afrique du Sud (ZAF) ·60' …) and the Language filter reads 'anglais (eng)', 'الإنجليزية (eng)', '英语 (eng)'. Cell hovers: ISR 'Israël' / 'إسرائيل' / '以色列'. Home law card: 'Loi modifiée (FRA) : …', 'تغيّر قانون (FRA): …', '法律已变更（FRA）：…'. Leftover English ('page 1 of 129', '241 feeds · 241 folders · 0 checked', law 'bytes' / 'open reader' / 'legislation') is reported as new defects. Shots: L13-*.png, home-law-card-{ar,zh}.png."
+   },
+   {
+    "id": "L375",
+    "verdict": "pass",
+    "locales": "en",
+    "evidence": "At 375x800, page hscroll is 0 and no element overflows on Law, Agenda list, World coverage, World map, Insights map, Governments Map / Countries / Statistics, Living sources, Indices, Commodities, Settings > Wikipedia and the Bulletin. The Sources filters now sit in a two-column grid (Language/Country 147 px each, row 2 Type/Tag) and the Country filter opens: ticking FRA gives label 'FRA', 130 rows. EUU hover works. One flaw remains: the open Country list is clipped by 64 px past the right edge (Tag by 9 px), reported as a new P3. Shots: L375-*.png, L375b-src-msel-country-open-en.png."
+   }
+  ],
+  "old_defects": [
+   {
+    "id": "L1",
+    "verdict": "fixed",
+    "evidence": "VAT, AIA and COK now resolve everywhere: the Sources filter ('Vatican City (VAT) ·2', 'Anguilla (AIA) ·1', 'Cook Islands (COK) ·1'), the World coverage table (VAT→'Vatican City') and the CSV (va→VAT, ck→COK, ai→AIA). Law 'tl'→TLS 'Timor-Leste'. No 'not a recognised country code' hover appeared on any real code in L2/L3/L4/L5/L11/L13."
+   },
+   {
+    "id": "L2",
+    "verdict": "fixed",
+    "evidence": "Insights > Map 'By country' shows BRA/CHN/DEU/… uppercase alpha-3 with name hovers in en/fr/ar/zh (BRA→Brazil / Brésil)."
+   },
+   {
+    "id": "L3",
+    "verdict": "fixed",
+    "evidence": "The World coverage FRA click jumps to Sources with the filter label 'FRA' and box fr ticked, '130 source(s)'. Adding DEU gives '2 selected', 190, and FRA is not dropped."
+   },
+   {
+    "id": "L4",
+    "verdict": "fixed",
+    "evidence": "At 375 px the Sources filters wrap into a 2-column grid and the Country filter opens and filters (FRA → 130 rows). A separate clipping of the open list is reported as new."
+   },
+   {
+    "id": "L5",
+    "verdict": "fixed",
+    "evidence": "The consent popup reads 'This action needs the network: Load standard country data' (fr 'Cette action nécessite le réseau : Charger les données standard par pays'). It was cancelled and stayed online:false."
+   },
+   {
+    "id": "L6",
+    "verdict": "fixed",
+    "evidence": "The Home card reads 'Law changed (FRA)' / 'Loi modifiée (FRA)' / 'تغيّر قانون (FRA)' / '法律已变更（FRA）'. The bulletin reads 'Law changed (FRA)' and 'jurisdiction FRA'. /api/briefing carries the title_i18n frame 'Law changed ({jurisdiction}): {title}'."
+   },
+   {
+    "id": "L7",
+    "verdict": "fixed",
+    "evidence": "Closed Sources filter labels read 'FRA' and 'eng', not 'fr' / 'en'."
+   },
+   {
+    "id": "L8",
+    "verdict": "fixed",
+    "evidence": "Groups computed text: 'Range … 1.9M (XKX) to 88M (DEU)' and 'missing: AND, ALA, BIH, BGR …'. No lowercase alpha-2 in parentheses."
+   },
+   {
+    "id": "L9",
+    "verdict": "fixed",
+    "evidence": "The Minerals supply Area column reads USA/AUS/CHN with name hovers, and WLD hovers 'World — published aggregate' (en/fr/ar)."
+   },
+   {
+    "id": "L10",
+    "verdict": "fixed",
+    "evidence": "Group chips read '(ara/ben/deu/eng/spa/fra/…)' and the concept map 'Languages: ara · eng · spa · por · zho' with ara→Arabic hover."
+   },
+   {
+    "id": "L11",
+    "verdict": "fixed",
+    "evidence": "The first row reads 'no country recorded' (hover the same). The filter finds DEU from 'DEU' / 'deu' / 'Germ'. The Top-country line uses code USA with a hover and is translated ('Premier pays : USA — 239 sources…')."
+   },
+   {
+    "id": "L12",
+    "verdict": "fixed",
+    "evidence": "The World map Coverage detail heading is <span title='Germany' class='oo-tip-target'>DEU</span> and localises (Allemagne / ألمانيا / 德国)."
+   },
+   {
+    "id": "L13",
+    "verdict": "fixed",
+    "evidence": "The Governments map shows 'Kosovo — XKX · Kosovo — not an ISO code: 1.9M'. The statistics level map shows WLD/HIC/EAS/EUU/LIC '… — published aggregate', not 'not a recognised country code'."
+   },
+   {
+    "id": "L14",
+    "verdict": "fixed",
+    "evidence": "The CSV hint names country_iso3 and the accepted forms. The Statistics placeholders read 'FRA or all' / 'FRA'."
+   },
+   {
+    "id": "L15",
+    "verdict": "fixed",
+    "evidence": "On Governments > Law, the bare en→fr/ar/zh switch without a reload gives GBR 'Royaume-Uni' / 'المملكة المتحدة' / '英国' and EUU / INT with a localised 'not an ISO code'. Legal-changes codes follow too."
+   },
+   {
+    "id": "L16",
+    "verdict": "fixed",
+    "evidence": "The Worldview picker reads 'Name (CODE)' sorted by localised name in en/fr/ar/zh ('Allemagne (DEU)', 'Arabie saoudite (SAU)', 'Argentine (ARG)' … in fr), on the World map and on Governments > Map."
+   },
+   {
+    "id": "L17",
+    "verdict": "fixed",
+    "evidence": "Every string listed in the defect is translated in fr/ar/zh: 'Premier pays : …', 'Non couverts (43)', 'Antarctique', headers 'Nom ▲' / 'Prio', '6418 source(s) · affichage 1–50', the unmanaged-languages note, and 'Loi modifiée (FRA)'. Other untranslated strings on the same surfaces ('THIN (<3)', 'page 1 of 129') were not in this defect and are reported as new."
+   },
+   {
+    "id": "M6",
+    "verdict": "fixed",
+    "evidence": "The Bulletin fold is a top-level Advanced section after Uninstall & wipe, not nested inside it (bulletin_nested_in_uninstall=false)."
+   },
+   {
+    "id": "U3",
+    "verdict": "fixed",
+    "evidence": "The Calendar directory hint now reads 'A bundled directory of public calendar feeds: country public holidays, UN international days and one open-source events calendar, each from one provider', matching the 241 feeds served."
+   },
+   {
+    "id": "H1",
+    "verdict": "fixed",
+    "evidence": "With #net-consent open, hovering the 'Press collection' lane shows the #oo-tip bubble hosted inside the dialog (tip_parent=net-consent). It is visible above the modal in the screenshots: '9033 hosts — the full list is in the security notes — Transport: direct — …'. Checked in en/fr/ar/zh. Shots: consent-lane-tip-en.png, L11-consent-lane-tip-{fr,ar,zh}.png."
+   },
+   {
+    "id": "O5",
+    "verdict": "fixed",
+    "evidence": "Same observation as H1: the in-dialog #oo-tip is drawn above the modal consent dialog (screenshot-confirmed; elementFromPoint misses it only because of pointer-events:none). The export-row reason bubble was not separately checked."
+   },
+   {
+    "id": "P1",
+    "verdict": "fixed",
+    "evidence": "Same as H1/O5: the consent popup's per-lane host and transport disclosure is readable in the bubble above the dialog in en/fr/ar/zh."
+   },
+   {
+    "id": "H2",
+    "verdict": "fixed",
+    "evidence": "Consent lane names take keyboard focus, and focus opens the bubble ('9033 hosts — … Transport: direct …')."
+   },
+   {
+    "id": "P9",
+    "verdict": "fixed",
+    "evidence": "At 375 px Settings > Wikipedia has document hscroll 0 and no overflowing element (L375 settings_wiki [0, []])."
+   },
+   {
+    "id": "T7",
+    "verdict": "fixed",
+    "evidence": "The net-coach in ar at 1440 sits at rect [186,74,270,135] with no overlap on top-bar controls or the sidebar. Shot: coach-ar-1440.png."
+   },
+   {
+    "id": "O2",
+    "verdict": "fixed",
+    "evidence": "The net-coach overlaps nothing in en 1440 (rect [984,74,270,173]), ar 1440 or ar 375 (rect [97,120,270,135]). Shots: coach-en-1440.png, coach-ar-375.png."
+   }
+  ],
+  "new_defects": [
+   {
+    "title": "Home 'Source laundering' Lead card: title, summary, type label and caveat stay English in fr/ar/zh",
+    "severity": "P2",
+    "repro": "On the encrypted seed, switch to Français (or العربية / 中文), open Home, find the 'SOURCE LAUNDERING' card ('3 sources, one origin: wire-agency.example') and flip it to its back.",
+    "expected": "The title, summary, type label and the visible caveat are in the chosen language, like the neighbouring law card ('Loi modifiée (FRA) : …'). The informed-consent non-negotiable requires every caveat string in 12 locales.",
+    "actual": "In fr, ar and zh the card reads 'SOURCE LAUNDERING', '3 sources, one origin: wire-agency.example' and '3 articles from 3 distinct sources (…) all cite the same origin — apparent corroboration that traces to ONE source…'. Its back caveat 'Several sources citing the same single origin are NOT independent corroboration — one source wearing many hats. … read the origin yourself.' is also English. Only the 'Détails et corpus' chrome is translated.",
+    "evidence": "/tmp/claude-0/rewalk/L/res-home2-fr.json (full card text); res-home-ar.json and res-home-zh.json (same English nodes in ar/zh); shot /tmp/claude-0/rewalk/L/shots/home-laundering-card-fr.png",
+    "root_cause_lead": "src/briefing/producers.py:2084-2092 builds the title and summary as English f-strings with no title_i18n/summary_i18n and no vars, unlike the law card's pattern. caveat=LAUNDERING_CAVEAT (src/analytics/laundering.py:32) has no locale key anywhere under src/static (grep of 'one source wearing many hats' finds nothing)."
+   },
+   {
+    "title": "A live language switch leaves several row-L country and language hovers and lists in the previous language until reload",
+    "severity": "P3",
+    "repro": "Boot in en and visit Agenda (Country dropdown), Insights > Map ('By country'), an Insights concept map, World map > Coverage (click Germany), Governments > Countries (picker), Governments > Statistics level map, Settings > Advanced > Sources (Producers table) and Advanced > Calendar directory. Switch the top-bar language to Français without reloading, then re-read and hover each.",
+    "expected": "Every name follows the switch, as World coverage (L6), Living sources, Minerals supply, Governments > Law and the Sources table already do.",
+    "actual": "These stay English after the switch: the Agenda country options and their order ('🇦🇷 Argentina (ARG)', '🇦🇺 Australia (AUS)'); the Insights BRA hover 'Brazil'; concept-map hovers SAU 'Saudi Arabia', ara 'Arabic' and the tail '— mentions per language'; the World map detail heading DEU hover 'Germany' (the rest of the panel is French); the Governments country picker 'Albania (ALB)', 'Algeria (DZA)'; the statistics-map WLD hover 'World — published aggregate'; the Producers RUS hover 'Russia'; and the calendar-directory status '… 241 not checked yet'. All are correct after a reload (L13).",
+    "evidence": "/tmp/claude-0/rewalk/L/res-live-fr.json (before/after pairs); shots live-agenda-fr.png and live-wm-detail-fr.png",
+    "root_cause_lead": "These renderers are not registered in app-boot.js's single oo:langchange listener (src/static/app-boot.js:41 ff.). It repaints renderAgenda (list), repaintGovViewsFromCache, repaintStatTablesFromCache, loadManagedSources, loadMineralsSupply and loadLawDocs. It does not repaint the #agenda-country option builder, the Insights #map-countries table, the concept map, the #oo-coverage-detail heading (app-map.js), the Governments country <select>s, renderStatMap (app-map.js:2471), the Producers table, or the feed-directory status line (app-agenda.js:774)."
+   },
+   {
+    "title": "Commodities > Minerals supply: caveat, measures, commodity and units stay English in fr/ar, and the caveat shows Python's 'None'",
+    "severity": "P3",
+    "repro": "With USGS rows stored, switch to Français or العربية and open Commodities > Minerals supply.",
+    "expected": "The caveat, the section titles (net import reliance / production / reserves), the commodity name and the units are localised. No Python token appears in the prose.",
+    "actual": "The heading and column headers are translated ('Approvisionnement en minéraux…', 'ZONE ANNÉE VALEUR UNITÉ'). Still English in fr and ar: 'SUPPLY data — production, reserves, net-import-reliance. NOT market prices: … A None value is a published gap. Producers are shown, never averaged.', plus 'rare earths', 'NET IMPORT RELIANCE', 'PRODUCTION', 'RESERVES', 'percent' and 'metric tons REO'. 'A None value' shows in English too.",
+    "evidence": "/tmp/claude-0/rewalk/L/res-L10-fr.json, res-L10-ar.json, res-L10-en.json (minerals_text); shots L10-minerals-supply-{en,fr,ar}.png",
+    "root_cause_lead": "app-markets.js:486 prints the server caveat verbatim (the text comes from src/stats/store.py:218, which says 'None'). The unit is printed raw at :504, the measure at :505 and the commodity at :510, with no t() keys."
+   },
+   {
+    "title": "Governments > Statistics level map: the proportional-symbol note is English, and aggregate hovers keep English names in fr/ar/zh",
+    "severity": "P3",
+    "repro": "In fr, ar or zh open Governments > Statistics > Map by country for NY.GDP.MKTP.CD (a level) and hover HIC, EAS or EUU.",
+    "expected": "The note and refusal line are translated, and aggregate names are localised as in the Aggregates picker ('Revenu élevé', 'Asie de l’Est et Pacifique').",
+    "actual": "'A level (count or total) is shown as area-proportional symbols, not colour — a choropleth would make a large area look like 'more'…' and 'A level is not comparable across areas of different size; it is shown as proportional symbols.' are English in fr, ar and zh. Hovers read 'High income — agrégat publié', 'East Asia & Pacific — 已公布的汇总组' and 'European Union — تجميع منشور'. WLD is localised ('Monde — agrégat publié').",
+    "evidence": "/tmp/claude-0/rewalk/L/res-L11-{fr,ar,zh}.json (stat_map_meta, stat_map_text, stat_area_tips; agg_pick shows the localised names exist); shots L11-statistics-level-table-{fr,ar,zh}.png",
+    "root_cause_lead": "renderStatMap (src/static/app-map.js:2471) passes the server's area_name without t() or the aggregate-name lookup the Aggregates picker uses. The level caveat and refusal strings in ooViz.choroplethData (src/static/ooviz.js:356 and :364) are English literals."
+   },
+   {
+    "title": "World map > Stories: English month names, '≈ country' and 'Official / reference source ↗' in fr/ar/zh",
+    "severity": "P3",
+    "repro": "In fr, ar or zh open World map > Stories, hover a dot, and click one (for example Independence Day (Indonesia)).",
+    "expected": "Dates in the locale's month names; the precision pill and the outbound link label translated.",
+    "actual": "The detail reads '≈ country', 'Aug 17, 2027 · Jakarta (IDN) · …' and 'Official / reference source ↗' in fr, ar and zh, beside translated pills ('Politique', 'confirmé'). Dot tooltips read 'Eruption of Krakatoa — Aug 27, 1883 · Catastrophe …'.",
+    "evidence": "/tmp/claude-0/rewalk/L/res-L7-{fr,ar,zh}.json (stories_detail, stories_detail_html_pills, circles_sample); shots L7-stories-detail-{fr,ar,zh}.png",
+    "root_cause_lead": "src/static/app-map.js:1782 has a hard-coded English MON array used by fmtDate (:1790). The '≈ country' literal is at :1569 and 'Official / reference source ↗' at :1588; neither is wrapped in t()."
+   },
+   {
+    "title": "Governments > Law panels keep 'bytes', 'open reader', 'reader · official ↗' and raw category/flag values in fr/ar/zh",
+    "severity": "P3",
+    "repro": "In fr, ar or zh open Governments > Law and read the Legal changes list and the Tracked laws table.",
+    "expected": "The chrome words are translated, and category and flag values are shown through translated labels.",
+    "actual": "'GBR · Walk Act 2026 +120 bytes', '… · open reader · source officielle ↗', '-640 bytes large-removal', and table rows '… legislation pas encore vérifié 0 reader · official ↗ · arrêter'. The ar and zh equivalents keep the same English tokens.",
+    "evidence": "/tmp/claude-0/rewalk/L/res-L13-{fr,ar,zh}.json (law_changes_text, law_rows); shots L13-law-bare-switch-{fr,ar,zh}.png",
+    "root_cause_lead": "src/static/app-gov-law.js around 944-948 (changes list: the 'bytes' pill, 'open reader', raw flag_reasons) and 1010-1013 (docs table: raw category, 'reader', 'official ↗') are English literals or raw stored values."
+   },
+   {
+    "title": "Sources pager 'page 1 of 129' and Calendar-directory status 'N feeds · N folders · N checked' are untranslated",
+    "severity": "P3",
+    "repro": "In fr, ar or zh open Settings > Advanced > Sources > Manage sources (read the pager), then Advanced > Calendar directory (read the status line).",
+    "expected": "Both lines are translated, like the neighbouring '6418 source(s) · affichage 1–50' and '241 pas encore vérifié'.",
+    "actual": "'page 1 of 129' in fr, ar and zh. '241 feeds · 241 folders · 0 checked · 241 pas encore vérifié' (ar: '… · 241 لم يُفحص بعد', zh: '… · 241 尚未检查') mixes an English frame with a translated tail.",
+    "evidence": "/tmp/claude-0/rewalk/L/res-L13-{fr,ar,zh}.json (src_page, feeddir_status); shots L13-sources-table-*.png, L13-calendar-dir-*.png",
+    "root_cause_lead": "src/static/app-sources.js around 448 builds `page ${…} of ${…}` as an English template. src/static/app-agenda.js:774 builds `${_feedDir.total_feeds} feeds · ${…} folders · ${…} checked` as an English literal."
+   },
+   {
+    "title": "World coverage summary tile 'THIN (<3)' is untranslated in every locale",
+    "severity": "P3",
+    "repro": "In fr, ar or zh open Library > World coverage and read the summary tiles.",
+    "expected": "All four tile labels are translated.",
+    "actual": "'206/249 PAYS · 82.7% COUVERTURE · 43 NON COUVERT · 39 THIN (<3)'. ar and zh also keep 'THIN (<3)'.",
+    "evidence": "/tmp/claude-0/rewalk/L/res-L6.json (summary for fr/ar/zh); shots L6-regions-{fr,ar,zh}.png",
+    "root_cause_lead": "src/static/app-sources.js:112 renders `thin (&lt;${c.thin_threshold})` as a literal, not through t()/tf()."
+   },
+   {
+    "title": "375 px: the open Sources Country filter list runs 64 px past the right edge (Tag list 9 px), clipping every entry",
+    "severity": "P3",
+    "repro": "At a 375x800 viewport open Settings > Advanced > Sources > Manage sources and open the Country filter, which sits in the right column. Then open Tag.",
+    "expected": "The dropdown list stays within the viewport, clamped or right-aligned, so every 'Name (CODE) ·n' entry is fully readable.",
+    "actual": "The Country list spans left 193 to right 439 px on a 375 px viewport: all 209 entries extend past the edge, and the tail with the code and count is cut. The page hscroll stays 0, so the clipped part cannot be scrolled into view. The Tag list overflows by 9 px (all 202 entries). Language and Type in the left column fit.",
+    "evidence": "/tmp/claude-0/rewalk/L/res-L375b-en.json (src-msel-country: left 193, right 439, width 246, opts_past_edge 209; src-msel-tag right 384); shot L375b-src-msel-country-open-en.png",
+    "root_cause_lead": "src/static/app.css:778 `.msel .msel-list{position:absolute; min-width:180px}` anchors the list to the control's left edge with no right clamp or max-width:calc(100vw - …) at phone width."
+   }
+  ],
+  "page_errors": [],
+  "http_errors": [],
+  "summary": "Row L re-walk on the fixed build 0deff9c4. The store was encrypted and locked at boot and unlocked through #pw/#btn-unlock; airplane mode held throughout and every consent popup was cancelled. All 13 row steps pass, plus the 375 px pass. L10 and L11 used synthetic World Bank, USGS and index data, so their real-install clause is not measurable. In L7 no shape is drawn as a point on this corpus, so the dot-tooltip sub-check is not observable.\n\nAll 17 confirmed row-L defects are fixed. Examples: VAT, AIA and COK resolve; Insights by-country, Minerals Area and the World map detail heading all have hovers; the Worldview and country pickers sort by the localised name; the consent popup names its action; XKX and the aggregates are disclosed.\n\nThese cross-row defects are also fixed:\n- M6: the Bulletin is a top-level fold.\n- U3: the directory hint is corrected.\n- H1/O5/P1: the in-dialog bubble is visible above the consent modal.\n- H2: lane names take focus.\n- P9: Settings > Wikipedia has no horizontal scroll at 375 px.\n- T7/O2: the coach has no overlap in ar or en.\n\nNine new defects:\n- P2: the Home 'Source laundering' Lead card, including its caveat, is English in fr/ar/zh.\n- P3: a live language switch leaves several row-L hovers and lists stale until reload (Agenda country list, Insights by-country, concept map, World map detail heading, Governments picker, statistics-map aggregates, Producers, calendar status).\n- P3: Minerals supply caveat, measures and units are English, and the caveat shows 'A None value'.\n- P3: the statistics level-map note is English and aggregate names stay English in hovers.\n- P3: World map Stories has English months, '≈ country' and 'Official / reference source ↗'.\n- P3: the Law panel keeps 'bytes', 'open reader', 'reader · official ↗' and raw 'legislation' / 'large-removal'.\n- P3: the Sources pager 'page 1 of 129' and the calendar status 'N feeds · N folders · N checked' are untranslated.\n- P3: the World coverage 'THIN (<3)' tile is untranslated.\n- P3: at 375 px the open Country filter list is clipped 64 px past the right edge (Tag 9 px).\n\nAcross all sessions there were no page errors, no console errors and no browser HTTP responses ≥400. The server log shows only 200/304/307/308 and no traceback, and there were zero external requests. The junk regex found no 'undefined', 'NaN', 'null' or '[object Object]'. It is worth noting that the Python token 'None' appears in the Minerals caveat, and the Insights Map empty state names a repo script path (scripts/build_city_gazetteer.py). Known items (plural rules, fmtNum grouping, '1 SÉRIES', '$14B') were not re-reported."
+ },
+ "recheck": {
+  "row": "L",
+  "summary": "I re-checked all nine of the walker's row-L items on my own fresh instance, and all nine are real on build 0deff9c4. Setup: a fresh data dir at /tmp/claude-0/rewalk/L-recheck/data (not copied), seeded with scripts/ui_clickthrough_seed.py (STATE C) plus a scratch copy of the row-L seed_extra.py, with OO_DB_PASSPHRASE=walk-pass-2026. Both .db files start with ciphertext bytes. The server ran on port 8959 with neither variable set; lock-state read 'locked' at boot and 'unlocked-encrypted' after every unlock through #pw / #btn-unlock. Airplane mode stayed on throughout, no request left loopback, and no page errors, console errors or HTTP >= 400 were recorded. The server was stopped by PID (20681). Each item was reproduced with my own Playwright scripts (r_*.py). Hovers were measured through the real #oo-tip bubble, not only the title attribute, and item 2 was also re-read after a reload in fr, which confirms it is stale content and not a missing translation. Two corrections to the walker. Item 9: while the Country list is open the document widens to 439 px and the page CAN be scrolled 64 px sideways (window.scrollX = 64), shifting the whole shell. The walker's hscroll of 0 was measured after the list was closed. Short entries also stay readable; only the longer labels lose their count. Item 1: the 'translated' law card it was compared with only has a translated title. Its type label, summary and caveat are English too. That is a wider class, so I added it as one new P2 item: every Home Lead card's type label, summary, method, ranking note and caveat stay English in fr/ar/zh, and only five producers have translatable titles. Two extra tokens are folded into existing items: '(1 flagged)' in the Law table (item 6), and the missing French space in 'Langues:' after a live switch (item 2).",
+  "items": [
+   {
+    "ref": "new:Home 'Source laundering' Lead card: title, summary, type label and caveat stay English in fr/ar/zh",
+    "verdict": "confirmed",
+    "severity": "P2",
+    "evidence": "Own instance, card '3 sources, one origin: wire-agency.example'. I read it after a live top-bar switch to fr, ar and zh, and after booting straight into fr. In every case: type label 'SOURCE LAUNDERING'; title '3 sources, one origin: wire-agency.example'; summary '3 articles from 3 distinct sources (DE Regional Herald de, …) all cite the same origin — apparent corroboration…'; back caveat 'Several sources citing the same single origin are NOT independent corroboration — one source wearing many hats. … read the origin yourself.' All English, while the 'Détails et corpus' chrome is translated. The Method line on the back ('Outbound origins cited by >= 3 distinct sources…') is English too. Files: /tmp/claude-0/rewalk/L-recheck/res-home-fr-live.json, res-home-ar-live.json, res-home-zh-live.json, res-home-fr-boot.json. Shots: /tmp/claude-0/rewalk/L-recheck/shots/home-laundering-front-{fr,ar,zh}-live.png, home-laundering-back-fr-live.png. Checked in fr.json/ar.json/zh.json: no key for LAUNDERING_CAVEAT, 'source laundering' or the title frame.",
+    "root_cause": "src/briefing/producers.py:2084-2094: the card is built with no title_i18n/title_vars (unlike producers.py:298, 1040, 1479, 2159 and 2779), and the summary is an English f-string. src/analytics/laundering.py:32-37: LAUNDERING_CAVEAT has no key in any locale file, so the exact-match DOM walker cannot translate it. src/static/app-home.js:1683: the type label is c.type with underscores replaced, never passed through t().",
+    "suggested_fix": "Give the card title_i18n '{n} sources, one origin: {origin}' with title_vars, keyed in all 12 locales. Key LAUNDERING_CAVEAT verbatim in all 12 locales. Emit the summary as a keyed tf() frame (summary_i18n/summary_vars, mirroring title_i18n), with source names as data. Render the type label with t() over a keyed type-label map. See the class-wide new item below."
+   },
+   {
+    "ref": "new:Every Home Lead card's type label, summary, method, ranking note and caveat stay English in fr/ar/zh (only five producers' titles are keyed)",
+    "verdict": "confirmed",
+    "severity": "P2",
+    "evidence": "Booted in fr, all 20 Leads read (/tmp/claude-0/rewalk/L-recheck/res-chips-fr.json). Only the titles of the rising, lonely-signal, law-change, recycled-claim and story-propagation producers translate ('Loi modifiée (FRA) : …', 'Source unique : « … »', 'Réapparu après 337 jours : …'). Every card's type label stays English ('LAW CHANGE', 'lonely signal', 'recycled claim', 'story propagation', 'through time', 'diet self audit'). So does every summary ('A tracked legal document changed by -640 bytes vs its baseline — large-removal.', 'Only ZH Regional Herald cn carried this; …'). So does every back-face caveat, for example the law card's 'A research mirror, NOT the authoritative source and not legal advice.' and the lonely-signal card's '‘Single-source, did not echo’ is the ONLY claim — …'. The per-card ranking note 'Ranked by a disclosed order (independent sources → sample magnitude …' is English as well. Two whole titles are English: 'Through time: this day in past years' and 'Your reading diet leans on a few sources'. Visible in shot /tmp/claude-0/rewalk/L-recheck/shots/home-laundering-back-fr-live.png (the LAW CHANGE and LONELY SIGNAL cards beside the laundering card). Not in defects.csv, and not in the known list of the 2026-09-26 OPEN_QUEUE entry. The S4.5 carry-over (c) in OPEN_QUEUE only plans titles.",
+    "root_cause": "src/static/app-home.js:1683 (type label, no t()), 1669 (caveat printed raw), 1662 (method printed raw), 1705 (summary printed raw). The producers in src/briefing/producers.py emit summary and caveat as English prose with no keyed frame; only title_i18n exists (src/briefing/card.py:190). src/briefing/leads.py:101-104: explain_order returns an English sentence. The informed-consent non-negotiable requires every caveat string in 12 locales.",
+    "suggested_fix": "Key every producer's constant caveat and method in all 12 locales (the DOM walker then translates them for free). Add summary_i18n/summary_vars beside title_i18n and move each producer's summary to a tf() frame. Build explain_order as a keyed frame with vars. Render the type label via t() over a keyed map of the ~30 card types. Give the remaining producers titles, as S4.5 (c) already plans. Add a test that each registered producer's caveat is a locale key."
+   },
+   {
+    "ref": "new:A live language switch leaves several row-L country and language hovers and lists in the previous language until reload",
+    "verdict": "confirmed",
+    "severity": "P3",
+    "evidence": "/tmp/claude-0/rewalk/L-recheck/res-live-fr.json has before/after/reload readings; hovers were read from the real #oo-tip bubble. I rendered all surfaces in en, switched to fr through the top bar without reloading, then reloaded in fr. After the switch, still English: the Agenda country options ('🇦🇷 Argentina (ARG)', '🇦🇺 Australia (AUS)', '🇧🇪 Belgium (BEL)', in English order); Insights Map BRA hover 'Brazil'; concept-map SAU hover 'Saudi Arabia', ara hover 'Arabic', and the tail '— mentions per language' (also 'Langues:' without the French space); World map coverage detail DEU hover 'Germany' while the rest of the panel is French; Governments country picker 'Albania (ALB)', 'Algeria (DZA)'; statistics-map WLD hover 'World — published aggregate'; Producers RUS hover 'Russia'; calendar directory status '… · 241 not checked yet'. After the reload each is correct: 'Afrique du Sud (ZAF), Allemagne (DEU)…', 'Brésil', 'Arabie saoudite', 'arabe', 'mentions par langue', 'Allemagne', 'Albanie (ALB)', 'Monde — agrégat publié', 'Russie', '241 pas encore vérifié'. Shots: /tmp/claude-0/rewalk/L-recheck/shots/live-agenda-after-fr.png vs live-agenda-reload-fr.png; live-wm-detail-after-fr.png vs live-wm-detail-reload-fr.png.",
+    "root_cause": "The one oo:langchange listener (src/static/app-boot.js:41 onward) has no repaint for these renderers. src/static/app-agenda.js:158: the #agenda-country options are built at load, and the listener's renderAgenda() call does not rebuild them. Insights loadMap (#map-countries) and the concept-map detail (src/static/app-insights.js:447) are not repainted. World map coverage country detail: src/static/app-map.js:1498. Governments country picker fill: src/static/app-gov-law.js:99; repaintGovViewsFromCache (app-gov-law.js:147-172) repaints the country data but not the picker options. Statistics level map renderStatMap: src/static/app-map.js:2442 (repaintStatTablesFromCache covers only the figures and anomalies tables). Producers loadStatAgencies: src/static/app-map.js:2155. Calendar directory renderFeedDir: src/static/app-agenda.js:762-776.",
+    "suggested_fix": "Register cache-only repaints in the existing app-boot.js listener, each guarded on the surface having been drawn, with no new fetch: rebuild the #agenda-country and #gov-country options from their cached lists and keep the selection; re-run the Insights country table, the concept-map detail and the World map country detail from their cached payloads; re-run renderStatMap when #statfig-map holds a table; redraw loadStatAgencies from its last payload; call renderFeedDir() when _feedDir is loaded."
+   },
+   {
+    "ref": "new:Commodities > Minerals supply: caveat, measures, commodity and units stay English in fr/ar, and the caveat shows Python's 'None'",
+    "verdict": "confirmed",
+    "severity": "P3",
+    "evidence": "/tmp/claude-0/rewalk/L-recheck/res-min-{en,fr,ar}.json. In fr and ar the heading and column headers are translated ('Approvisionnement en minéraux (USGS — données d'offre, pas de prix)', 'ZONE ANNÉE VALEUR UNITÉ'; 'إمدادات المعادن', 'المنطقة سنة القيمة الوحدة'). Still English in fr and ar: the caveat 'SUPPLY data — production, reserves, net-import-reliance. NOT market prices: no free rare-earth spot-price source exists and none is fabricated here. A None value is a published gap. Producers are shown, never averaged.', the commodity heading 'rare earths', the measures 'net import reliance' / 'production' / 'reserves' (uppercased by CSS), and the units 'percent' / 'metric tons REO'. The gap cell itself shows '—', so 'None' is a Python token the reader never sees anywhere else, in en as well. No locale key exists for any of these strings. Shots: /tmp/claude-0/rewalk/L-recheck/shots/min-{en,fr,ar}.png.",
+    "root_cause": "src/stats/store.py:218-221: the caveat is English server prose and says 'A None value'. src/static/app-markets.js:486 prints d.caveat raw; :505 prints m.replace(/_/g,' ') with no t(); :510 prints c.commodity.replace(/-/g,' ') with no t(); :504 prints r.unit raw.",
+    "suggested_fix": "Reword the caveat to '…A missing value (—) is a published gap…' and key it in all 12 locales. Put the commodity, the measure names and the unit words through t() over keyed labels ('rare earths', 'net import reliance', 'production', 'reserves', 'percent', 'metric tons REO'), in all 12 locales."
+   },
+   {
+    "ref": "new:Governments > Statistics level map: the proportional-symbol note is English, and aggregate hovers keep English names in fr/ar/zh",
+    "verdict": "confirmed",
+    "severity": "P3",
+    "evidence": "/tmp/claude-0/rewalk/L-recheck/res-stat-{fr,ar,zh}.json, NY.GDP.MKTP.CD with 'level' ticked. The meta line 'A level (count or total) is shown as area-proportional symbols, not colour — a choropleth would make a large area look like 'more' just for being big. …' and the refusal 'A level is not comparable across areas of different size; it is shown as proportional symbols.' are English in fr, ar and zh, while the headers read 'Zone/Valeur', 'المنطقة/القيمة' and '地区/数值'. The HIC, EAS and EUU hovers read 'High income — agrégat publié', 'East Asia & Pacific — تجميع منشور' and 'European Union — 已公布的汇总组' (title attribute and bubble). WLD is localised ('Monde — agrégat publié'), and the Aggregates picker shows the localised names ('Revenu élevé', 'الدخل المرتفع', '高收入'). Keys 'High income', 'East Asia & Pacific' and 'European Union' exist in all three locales. Shots: /tmp/claude-0/rewalk/L-recheck/shots/stat-HIC-hover-{fr,ar,zh}.png, stat-map-{fr,ar,zh}.png.",
+    "root_cause": "src/static/app-map.js:2471: the symbols branch passes (areaBy[c.area]||{}).area_name raw into ooAreaCell. It builds areaBy from d.cells without _statAreaLocal (app-map.js:2242), which the other statistics tables use. src/static/ooviz.js:356 and :364: the caveat and refusalReason strings are English, and app-map.js:2472/2474 insert them without t(). No locale keys exist for either string.",
+    "suggested_fix": "Build areaBy from _statAreaLocal(d.cells) (or t() the area_name at 2471). Wrap cd.refusalReason and cd.caveat in t(), and add both English strings as keys in all 12 locales (the choropleth-mode caveat at ooviz.js:357 too)."
+   },
+   {
+    "ref": "new:World map > Stories: English month names, '≈ country' and 'Official / reference source ↗' in fr/ar/zh",
+    "verdict": "confirmed",
+    "severity": "P3",
+    "evidence": "/tmp/claude-0/rewalk/L-recheck/res-stories-{fr,ar,zh}.json, detail for 'Independence Day (Indonesia)'. In fr it reads 'Politique · confirmé · ≈ country', 'Aug 17, 2027 · Jakarta (IDN) · -6.21, 106.85 · agenda', 'Official / reference source ↗', 'Trouver la couverture dans votre corpus'. ar and zh are the same with translated pills and the find button. The '≈ country' pill's hover IS translated ('point de substitution au niveau du pays…'). Dot titles read 'Eruption of Krakatoa — Aug 27, 1883 · Catastrophe · … · confirmé' (ar 'كارثة', zh '灾害'). No keys exist for '≈ country' or 'Official / reference source ↗' in fr/ar/zh. Shots: /tmp/claude-0/rewalk/L-recheck/shots/stories-detail-{fr,ar,zh}.png.",
+    "root_cause": "src/static/app-map.js:1782: MON is a hard-coded English month array, used by fmtDate (1790-1794) for the detail line and the dot titles. app-map.js:1565: the '≈ country' pill text is a literal with no t(). app-map.js:1588: extLink(url, 'Official / reference source ↗', …) is a literal with no t().",
+    "suggested_fix": "Format signal dates with Intl.DateTimeFormat(OOI18N.current(), {year:'numeric', month:'short', day:'numeric'}), with a guard for years below 100 or negative (Date.UTC plus setUTCFullYear). Wrap '≈ country' (and 'city') and the link label in t(), and add the keys in all 12 locales."
+   },
+   {
+    "ref": "new:Governments > Law panels keep 'bytes', 'open reader', 'reader · official ↗' and raw category/flag values in fr/ar/zh",
+    "verdict": "confirmed",
+    "severity": "P3",
+    "evidence": "/tmp/claude-0/rewalk/L-recheck/res-law-{fr,ar,zh}.json. The Legal changes list reads 'GBR · Walk Act 2026 +120 bytes' and 'FRA · Walk Code civil (extract) -640 bytes large-removal', with links '… · open reader · source officielle ↗' (ar 'المصدر الرسمي ↗', zh '官方来源 ↗'). The 'open reader' hover IS translated ('copie stockée hors ligne + historique'). Tracked-laws rows read 'FRA Walk Code civil (extract) legislation pas encore vérifié 2 (1 flagged) reader · official ↗ · arrêter' (ar '… legislation لم يُفحص بعد … reader · official ↗ · إيقاف', zh '… 尚未检查 … 停止'). Categories are shown raw ('legislation', 'ip'). One token the walker did not list: '(1 flagged)' is English too. No keys exist for 'open reader', 'reader', 'official ↗', 'bytes', 'legislation' or 'large-removal'. Shots: /tmp/claude-0/rewalk/L-recheck/shots/law-changes-{fr,ar,zh}.png, law-docs-{fr,ar,zh}.png.",
+    "root_cause": "src/static/app-gov-law.js:942 (literal 'bytes' in the pill), :943 (flag_reasons printed raw), :945 ('open reader' literal), :1008 (esc(x.category) raw), :1010 ('(N flagged)' template), :1011 ('reader' literal), :1012 (extLink label 'official ↗' literal). The table header row at :1007 is English source, but the walker translates it.",
+    "suggested_fix": "Use tf('{sign}{n} bytes', …) (the unit word translates by ruling; the number keeps fmtNum), t('open reader'), t('reader'), t('official ↗') and tf('({n} flagged)'). Map category and flag reason codes through keyed labels (legislation, ip, large-removal, …), keeping the raw code in the hover. Add the keys in all 12 locales."
+   },
+   {
+    "ref": "new:Sources pager 'page 1 of 129' and Calendar-directory status 'N feeds · N folders · N checked' are untranslated",
+    "verdict": "confirmed",
+    "severity": "P3",
+    "evidence": "/tmp/claude-0/rewalk/L-recheck/res-srccov-{fr,ar,zh}.json. #src-page reads 'page 1 of 129' in fr, ar and zh, beside a translated #src-meta ('6418 source(s) · affichage 1–50' / '6418 مصدر · عرض 1–50' / '6418 个来源 · 显示第 1–50 个'). #feeddir-status reads '241 feeds · 241 folders · 0 checked · 241 pas encore vérifié' (ar '… · 241 لم يُفحص بعد', zh '… · 241 尚未检查'). Shots: /tmp/claude-0/rewalk/L-recheck/shots/src-pager-{fr,ar,zh}.png, feeddir-status-{fr,ar,zh}.png.",
+    "root_cause": "src/static/app-sources.js:448: the pager is an untranslated template literal. src/static/app-agenda.js:774: the status frame is esc(`${total_feeds} feeds · ${folders} folders · ${checked} checked`) with no tf(); only the trailing 'not checked yet' goes through t().",
+    "suggested_fix": "Use tf('page {page} of {pages}', …) and tf('{feeds} feeds · {folders} folders · {checked} checked', …), with the keys in all 12 locales."
+   },
+   {
+    "ref": "new:World coverage summary tile 'THIN (<3)' is untranslated in every locale",
+    "verdict": "confirmed",
+    "severity": "P3",
+    "evidence": "/tmp/claude-0/rewalk/L-recheck/res-srccov-{fr,ar,zh}.json (cov_tiles). fr: '206/249 PAYS · 82.7% COUVERTURE · 43 NON COUVERT · 39 THIN (<3)'. ar: 'دول · التغطية · غير مُغطّى · THIN (<3)'. zh: '个国家 · 覆盖率 · 未覆盖 · THIN (<3)'. The other three tile labels are translated by the walker because 'countries', 'coverage' and 'not covered' are keys. Shots: /tmp/claude-0/rewalk/L-recheck/shots/cov-tiles-{fr,ar,zh}.png.",
+    "root_cause": "src/static/app-sources.js:112: the label is 'thin (&lt;${c.thin_threshold})', which is interpolated, so the exact-match walker can never match it, and there is no tf() frame or key.",
+    "suggested_fix": "Render it as esc(tf('thin (<{n})', {n: c.thin_threshold})) and add the frame in all 12 locales. It is inside the loadCoverage render, which already repaints on a language switch."
+   },
+   {
+    "ref": "new:375 px: the open Sources Country filter list runs 64 px past the right edge (Tag list 9 px), clipping every entry",
+    "verdict": "confirmed",
+    "severity": "P3",
+    "evidence": "/tmp/claude-0/rewalk/L-recheck/res-375-en.json, 375x800, en, reached through the hamburger menu, then Settings > Advanced > Sources. Country list open: summary at x 193-283; list at left 193, right 439, width 246, on a 375 px viewport; 209 of 209 option boxes end past the edge. Tag list: right 384, 202 of 202 past the edge. Language and Type (left column) fit (right 254 and 226). Two corrections to the walker. (a) With the list open, document scrollWidth is 439 against clientWidth 375, and a horizontal wheel over the list scrolls the whole page by 64 px (window.scrollX = 64; /tmp/claude-0/rewalk/L-recheck/res-375b-en.json, shot shots/375b-country-after-hwheel-en.png, where the top bar and shell visibly shift). So the tail CAN be reached, but only by breaking the no-horizontal-page-scroll rule; the walker's hscroll of 0 was measured after the list was closed. (b) At scroll 0, short labels such as 'Afghanistan (AFG) ·4' stay fully readable; longer ones such as 'Antigua & Barbuda (ATG)' lose their '·5' count. 'Clipping every entry' is true of the option boxes, not of every visible label. Shot: /tmp/claude-0/rewalk/L-recheck/shots/375-src-msel-country-open-en.png.",
+    "root_cause": "src/static/app.css:778-781: .msel .msel-list is position:absolute, anchored at its summary's left edge, with min-width:180px and no max-width or right anchoring. The phone media query (app.css around 1770-1800) makes the filter row wrap (the L4 fix) but has no override for the list, so a filter wrapped into the right column opens its list past the viewport.",
+    "suggested_fix": "In the narrow media query, add .msel .msel-list { max-width: calc(100vw - 32px); } and anchor the list to the viewport. Options: right:0; left:auto for a .msel whose summary lies in the right half (a class set on toggle), or position:fixed; left:16px; right:16px under the open summary. Also let .msel-opt wrap (white-space:normal) so a long country name wraps instead of pushing out the count."
+   }
+  ]
+ }
+}

@@ -1,0 +1,406 @@
+{
+ "row": "U",
+ "walk": {
+  "row": "U",
+  "environment": "Build: read-only worktree /tmp/claude-0/rewalk/tree at 0deff9c4 (git status clean before and after), run from that folder with /home/user/Open-Omniscience/.venv/bin/python -c \"from src.api.main import main; main()\" through /tmp/claude-0/rewalk/U/boot.sh (exec env -u for the proxy variables and both OO_DB_* variables, PYTHONDONTWRITEBYTECODE=1). No data folder was copied; every folder is new. (1) U1: fresh empty folder /tmp/claude-0/rewalk/U/empty on port 8930, booted as state 'fresh' (lock-state locked:true), and walked in en. Two more fresh folders were added for the newly reachable data-location step in other languages: empty_ar (8930, run in Arabic) and empty_fr (8931, run in French). Each was one-shot and stopped by PID. (2) Seeded: scripts/ui_clickthrough_seed.py default STATE C, run from the tree with OO_DB_PASSPHRASE=walk-pass-2026 and OO_DB_PLAINTEXT unset, into /tmp/claude-0/rewalk/U/seeded. It printed 'STATE C seeded.' with articles_lang_pool 440, commodity_series 3 and the other counts. The first 16 bytes of open_omniscience.db are ciphertext, not 'SQLite format 3'. It was booted on 8930 with neither variable set; /api/system/lock-state read {state:'locked'} and was unlocked only through the real #pw/#btn-unlock form. It read unlocked-encrypted afterwards. U7 used the first walk's four synthetic .eml files, copied to /tmp/claude-0/rewalk/U/eml (bbc.com, 2x some-unknown-press.org, bare substack.com). Browser: Playwright sync with Chromium /opt/pw-browsers/chromium, headless, args --disable-background-networking --disable-component-update --no-proxy-server, proxy variables removed. Main pass at 1440x950 in en, then fr/ar/zh (U3: all 12). The 375x812 pass ran in en, plus ar and fr (the languages the defects name), and a narrow-from-1440 check. Airplane mode stayed on throughout: #net-plane fill=currentColor at every check and /api/system/network online:false at the end of every run. No consent popup is on row U's path. The offline coachmark was dismissed with 'Not now' each time; 'Go online' was never pressed. Recorded external (non-127.0.0.1) browser requests: zero in every run. All servers were stopped by PID (7092, empty_ar, empty_fr, seeded). Scratch: /tmp/claude-0/rewalk/U (scripts walk_u1.py, walk_u1_ar.py, walk_u2.py, walk_main.py, walk_375.py, walk_375_ar.py, walk_extra.py; JSON u1/u1_ar/u1_fr/u2/main_strip_U3/main_U5/main_U6/main_U7/main_U9/main_fresh/w375/w375_ar_fr/extra; screenshots in shots/). Differences from the first walk: python -c launch instead of the console script (same src). Port 8930 instead of 8850/8851. U1 now reaches the data-location screen. The seeded corpus is fresh, not copied.",
+  "steps": [
+   {
+    "id": "U1",
+    "verdict": "pass",
+    "locales": "en, fr, ar, zh",
+    "evidence": "Fresh folder on 8930. /unlock → 'Choose your language' (12) → English → 'Legal documents' ('Accept' disabled until ticked) → 'Where should your corpus live?' with the default selected and the path /tmp/claude-0/rewalk/U/empty → Create → Preparing → /?wikiwizard=1#home. Home shows ONE card: h4 'No Leads yet — that's expected on a young corpus', 7 bold names, and the grey line. fr h4 'Aucune piste pour l'instant — c'est normal pour un jeune corpus' and zh '尚无线索——这在早期语料库中很正常' match exactly, with all 7 bold names and the grey line translated in fr, ar and zh. ar: html dir=rtl, sidebar at x 1190-1440, text direction rtl. Plane filled and hscroll 0 throughout. The strip above the card also switched at once in every language. Shots: shots/U1-home-en.png, U1-home-fr.png, U1-home-ar.png, U1-home-zh.png. JSON: u1.json."
+   },
+   {
+    "id": "U1-datadir",
+    "verdict": "pass",
+    "locales": "en, ar, fr",
+    "evidence": "GET /api/system/data-location → 200 (the only response). #view-datadir was shown with 'Use the app's own data folder' checked, the path inside the data dir, and the custom box hidden. Continue → Create passphrase. The screen is fully translated in ar (rtl) and fr, with hscroll 0 at 1440 and 375. See the new defect about the path's bidi order in ar. Shots: shots/U1-datadir-en.png, U1-datadir-ar.png, U1-datadir-fr.png."
+   },
+   {
+    "id": "U1-first-run-dialogs",
+    "verdict": "pass",
+    "locales": "en, ar, fr",
+    "evidence": "16 samples over 8 s after landing: never both open (both_open_ever false). The showModal order is wiki-wizard@2654 only. After 'Not now' the guide opens alone (guide-wizard@9930), and its X closes it. No coachmark behind the modal; no dialog left open. Same order in ar and fr. Inside the modal wizard, a titled hint's #oo-tip is appended to #wiki-wizard and draws above the dialog. JSON: u1.json dialog_samples. Shots: shots/U1-entry-dialogs-en.png, U1-wiki-wizard-hover-fr.png."
+   },
+   {
+    "id": "U2",
+    "verdict": "pass",
+    "locales": "en",
+    "evidence": "lock-state before: locked. Browser went straight to #view-unlock (only visible view): 'Unlock your corpus This database is encrypted at rest (SQLCipher 4). Enter THE passphrase to open it.' Wrong passphrase: Preparing 'Elapsed 00:00' → '00:01', then the form returns with the red (rgb 207,34,46) line 'the passphrase does not open open_omniscience.db (or the file is damaged)'. Field editable, button enabled, page not blank (the expected 403). Right passphrase: 'opening the database' 'Elapsed 00:00' → /#home with seeded material (453 articles). At-rest encryption reads 'Corpus: Encrypted (SQLCipher 4) 4.12.0 community' and 'Custody log: not created yet'. lock-state after: unlocked-encrypted. Shots: shots/U2-unlock-en.png, U2-wrong-passphrase-en.png, U2-atrest-en.png. JSON: u2.json. The panel's behaviour on a language switch is a new defect."
+   },
+   {
+    "id": "U3",
+    "verdict": "pass",
+    "locales": "en, fr, es, de, zh, hi, ar, bn, ru, pt, id, ja",
+    "evidence": "Before the press: #patterns-gate and #patterns-gate-state are empty; checkbox unticked and disabled. The fold has two 'Check now' buttons; only loadPatternsGate() was pressed. Three lines: 'Corpus size: 453 / 100 000' with an amber 'not met' pill; 'False-positive rate:' with an amber 'unmeasured' pill and grey 'needs a labelled sample judged by a person' (no 0 and no 0.0 %); the amber caveat (card-caveat, rgb 138,77,10). State: 'off — the gate is not met'. The API gives can_flip false, blocked_by corpus and false_positive_rate, and no rate field. A forced click leaves the checkbox unticked and disabled. All 12 switches repainted the panel without another press: fr 'Taille du corpus', ar 'حجم المتن' (panel direction rtl), zh '语料库规模', ja 'コーパスの規模', etc. '100 000' carries U+202F in all 12 and never '100,000'. Session forensics printed the previous-session record, 'Last unlock 0.6 s' with phases, and the data-folder inventory, with no error or red text. OBSERVATION (unchanged): while the rate is unmeasured, '5 %' appears nowhere on the panel in any of the 12 languages. Shots: shots/U3-patterns-gate-en.png, U3-patterns-gate-fr.png, U3-patterns-gate-ar.png, U3-patterns-gate-zh.png, U3-forensics-en.png. JSON: main_strip_U3.json."
+   },
+   {
+    "id": "U4",
+    "verdict": "not-measurable-here",
+    "locales": "",
+    "evidence": "Needs the maintainer's real encrypted install and passphrase, which this sandbox cannot reach. U2 and U3 cover the same screens on a throwaway encrypted corpus."
+   },
+   {
+    "id": "U5",
+    "verdict": "pass",
+    "locales": "en, fr, ar, zh",
+    "evidence": "(a) The collection hint is translated. Speed reads 'Maximum' in en and fr, 'الحد الأقصى' in ar and '最大' in zh. (b) CSV hint: column names stay code words and the sentences are translated; it now reads '2- or 3-letter code or a country name … country_iso3'. (c) Stoplist count '2 555' (U+202F) in all 4. (d) Law hint translated, including the bold sentence. (e) Help grey line translated. (f) Staying on Home 'By channel', the line changed in place on each switch: '453 articles across 5 channels' → '453 articles répartis sur 5 canaux' → '453 مقالة موزعة على 5 قناة' → '453 篇文章，分布于 5 个渠道'. hscroll 0 on all six places in all four languages; ar is rtl. Shots: shots/U5f-channels-*.png, U5a-collect-*.png, U5b-csv-*.png, U5d-law-*.png, U5e-help-*.png. JSON: main_U5.json. See the new defects on the channel chip labels and the Law table."
+   },
+   {
+    "id": "U6",
+    "verdict": "pass",
+    "locales": "en, fr, ar, zh",
+    "evidence": "Commodities: 'Custom · 3 series ⛶', no category tabs, members Dy/Nd/Pr, each with ⊞ and 📈. ⊞ (title 'Open this in the analysis window — its corpus coverage') on Dy → Price subtab 'Price × coverage — Dy'. It draws 7 accent bars (fill-opacity 0.55) and 7 two-px caps; no line and no dots. Every bar bottom sits at y=202 (the plot floor); the axis reads 274.4/281.7/289 (API min 274.35); the lowest month is a zero-height bar showing only its cap. Nd: 0 bars, one line, 70 dots. 'No corpus coverage to overlay yet.' under both. Live switch on Dy's Price: the svg label reads 'Prix USD/kg' / 'السعر USD/kg' / '价格 USD/kg', the heading and note translated, and back to 'Price USD/kg'. Shots: shots/U6-price-Dy-en.png, U6-price-Nd-en.png, U6-price-Dy-fr-after-switch.png, U6-price-Dy-ar-after-switch.png. JSON: main_U6.json. See the new defect about the RTL axis overlap."
+   },
+   {
+    "id": "U7",
+    "verdict": "pass",
+    "locales": "en, ar, fr, zh",
+    "evidence": "Result '4 imported · 0 duplicates skipped · 0 empty' plus the grey Anonymisation line. The amber caveat 'this is a PLACEMENT, not a judgement about the publisher: …' is visible. This-import line: '1 filed under a publisher you already track · 2 filed under a new, DISABLED source for the sender's domain · 1 left in the import bucket (…)'. 'Automatically filed newsletters: 3', with rows 'some-unknown-press.org disabled' | 2 and 'BBC News' | 1. Rows are display:flex with name and count apart (name right edge 493/348, count at 699). Count hovers show 'How this was decided: new-email-source · etld1' and 'attach-exact · etld1'. ar, fr and zh re-render the block (ar rtl); the result line stays English by design. At 375 in ar, hscroll 0 and the block sw=cw=301. Undo, in en: confirm 'Move every automatically filed newsletter back to the import bucket? Newsletters you filed yourself are not touched, and re-importing the same .eml files runs the filing again.' → OK → '3 newsletters moved back to the import bucket.' and 'Removed the now-empty sources this filing had created: some-unknown-press.org'. The block is hidden, attached 0, and BBC News is untouched and enabled. Shots: shots/U7-attach-en.png, U7-attach-ar.png, U7-attach-ar-375.png, U7-after-undo-en.png. JSON: main_U7.json."
+   },
+   {
+    "id": "U7-caveat-hover",
+    "verdict": "pass",
+    "locales": "en, ar, fr, zh",
+    "evidence": "#nl-attach-caveat now has class 'card-caveat oo-tip-target' with a dotted underline. Hovering opens #oo-tip with 'the ruled publisher ladder run at import time: a Public Suffix List eTLD+1 …', translated in ar, fr and zh. Shot: shots/U7-caveat-hover-en.png. JSON: main_U7.json (u7.hover_caveat, u7.ar.hover_caveat)."
+   },
+   {
+    "id": "U8",
+    "verdict": "not-measurable-here",
+    "locales": "",
+    "evidence": "Needs the maintainer's real install and mailbox (brief §5 operator step 2). U7 covers the filing and the undo on a throwaway corpus."
+   },
+   {
+    "id": "U9",
+    "verdict": "pass",
+    "locales": "en, fr, ar, zh",
+    "evidence": "Month grid: 4 moon glyphs (🌑 🌓 🌕 🌗), and the hover opens #oo-tip: 'Last quarter moon 07:52 UTC — Meeus, Astronomical Algorithms (2nd ed.) ch. 49: …'. After each live switch the moon titles, including the method and accuracy tail, are in fr/ar/zh, and the weekday row repaints (lun./الاثنين/周一). Calendar directory: the hint now states what is served and that the religious, election, rocket-launch and astronomy calendars 'are not offered'. Kind offers all/civic/community/holidays; the API has 241 families (holidays 239, civic 1, community 1); filters 'Christian', 'Islam' and 'Astronomy' return nothing. The step's literal 'Kind = religion lists 8 families' is NOT met. That expectation was ruled a misread (defects.csv U2, by-design, the 2026-07-10 B7 robots filter), and the screen now discloses it honestly, so this is graded against that verdict. Rows show alpha-3 codes with name hovers (AFG → Afghanistan, VAT). Shots: shots/U9-agenda-month-en.png, U9-agenda-month-ar.png, U9-directory-en.png. JSON: main_U9.json. See the new defect on the directory's untranslated status line and kinds."
+   },
+   {
+    "id": "U-locale-extra",
+    "verdict": "pass",
+    "locales": "fr, ar, zh",
+    "evidence": "The Price subtab label and axis, and the Agenda moon hovers, follow a live switch without reopening (see U6 and U9). The Home strip, By-channel line and Patterns panel also repaint on switch. JSON: main_U6.json, main_U9.json, main_strip_U3.json."
+   },
+   {
+    "id": "U-375-en",
+    "verdict": "pass",
+    "locales": "en, ar, fr",
+    "evidence": "375x812, hscroll 0 on: Home (developing corpus), Diagnostics/Patterns, Safety/At-rest, Calendar directory, Data & backup/newsletters, Commodities, Dy Price, Agenda month, Governments→Law, Home By channel, Help (en and ar), and the fresh empty-corpus Home. Help: .doc-layout columns 301px; the pre is 301 wide and scrolls inside (sw 841); window scrollX after a sideways wheel = 0. Commodities narrowed from 1440 without reload: the canvas refits 900px → 301px, hscroll 0, and back to 900px at 1440. Shots: shots/w375-help-en.png, w375-commodities-narrowed.png, w375-home-en.png, w375-home-ar.png. JSON: w375.json, w375_ar_fr.json, u1.json."
+   },
+   {
+    "id": "U-i18n-gates",
+    "verdict": "pass",
+    "locales": "all 12",
+    "evidence": "Run from the tree: scripts/i18n_report.py --min 100 exit 0 (5297/5297 each); --max-untranslatable 0 exit 0; --max-unkeyed-t-calls 0 exit 0 (0 of 2819); --max-unkeyed-tf-frames 0 exit 0 (0 of 400). Output in /tmp/claude-0/rewalk/U/i18n_*.txt."
+   }
+  ],
+  "old_defects": [
+   {
+    "id": "U1",
+    "verdict": "fixed",
+    "evidence": "Fresh folder, fresh state: GET /api/system/data-location → 200 {offerable:true, state:'fresh'}, and #view-datadir appears after 'Accept and continue' in en, ar and fr. u1.json data_location_responses; shots/U1-datadir-en.png."
+   },
+   {
+    "id": "U3",
+    "verdict": "fixed",
+    "evidence": "The Calendar directory hint now reads 'A bundled directory of public calendar feeds: country public holidays, UN international days and one open-source events calendar, each from one provider … That leaves no feed for the religious, election, rocket-launch and astronomy calendars the bundle also records, so they are not offered.' It matches the 241 families and the Kind options, and is translated in fr, ar and zh. main_U9.json u9.hint_en; shots/U9-directory-en.png."
+   },
+   {
+    "id": "U4",
+    "verdict": "fixed",
+    "evidence": "Help at 375x812: hscroll 0 in en and ar; .doc-layout columns 301px; the first pre is 301 wide with scrollWidth 841 (scrolls inside); a sideways wheel leaves scrollX 0. w375.json w375.help, help_layout; shots/w375-help-en.png."
+   },
+   {
+    "id": "U5",
+    "verdict": "fixed",
+    "evidence": "Right after each live switch, the strip reads 'SOURCES EN COLLECTE / ACTIVÉES, NON QUALIFIÉES / CANDIDATES DÉCOUVERTES' in fr, the Arabic equivalents in ar and '采集中的来源…' in zh. The status line and the empty-library line are translated at once (fresh corpus too), and the 'as of' time is in the app language ('à 09:07', '09:07 ص'). The tile hovers name the total ('6 411 of your 6 418 sources…'). main_strip_U3.json strip.*; u1.json strip_*_immediate."
+   },
+   {
+    "id": "U6",
+    "verdict": "fixed",
+    "evidence": "#nl-attach-caveat has class 'card-caveat oo-tip-target' (dotted underline), and hovering opens #oo-tip with the ladder text in en, ar, fr and zh. main_U7.json u7.hover_caveat."
+   },
+   {
+    "id": "U7",
+    "verdict": "fixed",
+    "evidence": "The rows are display:flex, the name span spans x 287-493 and the count <b> sits at 699-707, so they read 'some-unknown-press.org disabled | 2' and 'BBC News | 1'. main_U7.json u7.rows; shots/U7-attach-en.png."
+   },
+   {
+    "id": "U8",
+    "verdict": "fixed",
+    "evidence": "After create-passphrase, only #wiki-wizard opens (showModal order ['wiki-wizard@2654']). The guide opens only after 'Not now' (guide-wizard@9930). Never both at once in 16 samples, and the same in the ar and fr runs. u1.json dialog_samples, after_wizard_not_now."
+   },
+   {
+    "id": "U9",
+    "verdict": "fixed",
+    "evidence": "Dy Price svg label 'Price USD/kg' → 'Prix USD/kg' / 'السعر USD/kg' / '价格 USD/kg' on a live switch. Moon titles and hovers follow the switch, and the Meeus method and accuracy sentence is translated ('Meeus, Astronomical Algorithms (2e éd.), chap. 49 : …', 'ميوس، الخوارزميات الفلكية …'). Weekdays repaint on the switch. main_U6.json u6.Dy.*.after_switch; main_U9.json u9.*.moon_titles, weekdays."
+   },
+   {
+    "id": "U10",
+    "verdict": "fixed",
+    "evidence": "Commodities at 1440 (canvas 900px) narrowed to 375 without reload: canvas 301px, right edge 338, hscroll 0; back to 900px at 1440. w375.json narrow.*; shots/w375-commodities-narrowed.png."
+   },
+   {
+    "id": "H8",
+    "verdict": "fixed",
+    "evidence": "The Home strip labels are translated in fr and ar immediately after the switch (same surface as U5). main_strip_U3.json strip.fr.immediate, strip.ar.immediate."
+   },
+   {
+    "id": "P7",
+    "verdict": "fixed",
+    "evidence": "The split labels are keyed ×12: fr 'SOURCES EN COLLECTE', zh '采集中的来源', ar 'مصادر قيد الجمع'. main_strip_U3.json."
+   },
+   {
+    "id": "S4",
+    "verdict": "fixed",
+    "evidence": "There is no bare flat 'SOURCES' count. The strip shows '6 411 SOURCES COLLECTING · 0 ENABLED, NOT QUALIFIED · 7 DISCOVERED CANDIDATES', each hover naming its predicate and the total 6 418. main_strip_U3.json strip.en.titles."
+   },
+   {
+    "id": "I15",
+    "verdict": "fixed",
+    "evidence": "Same as U1: data-location returns 200 at fresh, and the step shows. u1.json."
+   },
+   {
+    "id": "P4",
+    "verdict": "fixed",
+    "evidence": "Same as U1. u1.json, u1_ar.json, u1_fr.json."
+   },
+   {
+    "id": "S7",
+    "verdict": "fixed",
+    "evidence": "Home at 375 on the seeded 'DEVELOPING CORPUS' and the empty 'EARLY CORPUS': hscroll 0 in en, ar and fr, with no widest element past the viewport. w375.json w375.home; u1.json w375_fresh_home_*."
+   },
+   {
+    "id": "T3",
+    "verdict": "fixed",
+    "evidence": "The early-corpus tier at 375 on an empty corpus wraps with its caveat 'thin evidence — read with care' on screen; hscroll 0. shots/U1-home-375-fresh-en.png."
+   },
+   {
+    "id": "L1",
+    "verdict": "fixed",
+    "evidence": "Calendar directory rows show alpha-3 codes with the name on hover: AFG→Afghanistan, ALA→Åland Islands, VAT (Vatican City). No two-letter code rows. main_U9.json u9.row_code_titles, u9.filter_Vatican."
+   },
+   {
+    "id": "L14",
+    "verdict": "fixed",
+    "evidence": "The CSV hint now reads 'Country takes a 2- or 3-letter code or a country name. The export adds country_iso3 …'. main_U5.json u5.en.b_csv."
+   },
+   {
+    "id": "L15",
+    "verdict": "fixed",
+    "evidence": "Governments→Law: after a live switch, the jurisdiction code hovers read 'Allemagne' (fr), 'كندا' (ar) and '加拿大' (zh) without reload. extra.json law.*.hover."
+   },
+   {
+    "id": "J8",
+    "verdict": "fixed",
+    "evidence": "Help → User Manual: 'Exports are never scheduled. There is no automatic or timed export and none is planned — an export is a deliberate act …' is ONE <li>, with no stray paragraph and no 'F0' placeholder. extra.json help.never_scheduled."
+   },
+   {
+    "id": "P1",
+    "verdict": "fixed",
+    "evidence": "Measured only on the modal row U walks (the Wikipedia wizard, a showModal dialog): the #oo-tip for a titled hint is appended inside #wiki-wizard and draws above the dialog. The consent popup and export dialog named in P1 were not opened in this row. u1_fr.json wizard_hover; shots/U1-wiki-wizard-hover-fr.png."
+   }
+  ],
+  "new_defects": [
+   {
+    "title": "Home strip says '(server busy)' on an idle app, beside counts the server has just re-verified as exact",
+    "severity": "P2",
+    "repro": "Unlock any corpus, leave the app idle for more than 90 s (no collection, no jobs, airplane mode), then open Home and read the at-a-glance strip, in any language.",
+    "expected": "No 'server busy' claim while nothing is running. The counts are exact (nothing was written), so at most an honest 'as of' with no busy claim.",
+    "actual": "The strip reads 'as of 09:07 AM (server busy)' (fr 'à 09:07 (serveur occupé)', ar 'حتى 09:07 ص (الخادم مشغول)') for as long as the app stays idle. At that moment /api/scheduler/activity running:false, /api/jobs is empty, and /api/database/stats returns cache_age_s 318 with ttl 30, cached true. The age grows without bound on an idle app, so the busy note becomes permanent on every idle install.",
+    "evidence": "extra.json strip.note, strip.api_age, scheduler, jobs; shots/extra-strip-server-busy-en-crop.png; w375_ar_fr.json ar.home/fr.home. The stats kept as_of 09:07:53 for more than 10 minutes while three polls 4 s apart showed cache_age_s 239/243/247 and articles 457 unchanged.",
+    "root_cause_lead": "src/api/served_cache.py:147-152 computes cache_age_s from built_at even when :234-244 has just re-verified the value ('Nothing was written … it is still exactly right', which re-stamps only checked_at). By design an idle app 'rebuilds nothing at all' (docstring :52-56). src/static/app-home.js:113-137 (_STALE_NOTE_S = 90) turns any age ≥ 90 s into t('as of {time} (server busy)'). The two modules disagree about what a large age means."
+   },
+   {
+    "title": "At-rest encryption status does not repaint on a live language switch (half-English from en, stays entirely Arabic after ar→en)",
+    "severity": "P3",
+    "repro": "Settings → Advanced → Safety & at-risk use → At-rest encryption. (a) Open it in English and switch the top-bar language to Français, العربية or 中文. (b) Open it in العربية, then switch to English (or 中文).",
+    "expected": "The status lines follow the switch like the panels around them: 'Corpus : Chiffré …', 'Journal de custodie : …' (a fresh render in fr does give exactly this).",
+    "actual": "(a) After en→fr/ar/zh only the bold values change; the labels stay English: 'Corpus: مشفّر (SQLCipher 4) … Custody log: لم يُنشأ بعد' and 'Corpus: 已加密… Custody log: 尚未创建'. (b) After ar→en (or ar→zh) the whole readout stays Arabic on an English page: 'المجموعة: مشفّر (SQLCipher 4) 4.12.0 community / سجل العهدة: لم يُنشأ بعد'.",
+    "evidence": "u2.json atrest_fr/ar/zh; extra.json atrest.ar_opened, atrest.ar_then_en; main_fresh.json fresh.fr.atrest (fresh render correct), fresh.ar_to_zh_live.atrest; shots/extra-atrest-ar-then-en.png, fresh-atrest-fr.png.",
+    "root_cause_lead": "src/static/app-backup.js:3135-3148 loadAtRestState renders once. ooLabelHtml welds the translated label and its colon into one text node, which the i18n walker cannot re-key. loadAtRestState is not called from the oo:langchange listener (src/static/app-boot.js:41 onward, which repaints e.g. _renderPatternsGate and _renderHomeChannels from cache). Keep the /api/system/doctor payload and re-render it on langchange."
+   },
+   {
+    "title": "Calendar directory: status line, Kind options and family names stay English in every locale, and the status keeps the previous language after a switch",
+    "severity": "P3",
+    "repro": "Settings → Advanced → Calendar directory, in Français, العربية or 中文 (fresh page load in that language). Then switch live from العربية to English.",
+    "expected": "The status line, the Kind menu and the row labels are translated like the hint above them. After a switch, nothing is left in the previous language.",
+    "actual": "On a fresh fr/ar render the status reads '241 feeds · 241 folders · 0 checked · 241 pas encore vérifié' (English except the tail). Kind reads 'tout, civique, community, holidays'. Rows read 'Afghanistan — public holidays · holidays · AFG Exclure'. After ar→en the status stays '241 feeds · 241 folders · 0 checked · 241 لم يُفحص بعد'.",
+    "evidence": "main_fresh.json fresh.fr.caldir_*, fresh.ar.caldir_*; main_U9.json u9.fr/ar/zh.status, kind_options, rows_sample; extra.json caldir.ar_then_en; shots/fresh-caldir-fr.png, extra-caldir-ar-then-en.png. The locales have no keys for 'community', 'holidays', 'feeds' or 'folders'.",
+    "root_cause_lead": "src/static/app-agenda.js:773-777 builds the status with esc(`${total_feeds} feeds · ${n} folders · ${checked} checked`), a welded English composite that goes through neither tf() nor fmtNum. :701-702 prints raw kind values as option labels. The family names come from configs/calendar_feeds.yml as English strings. renderFeedDir is not in the oo:langchange listener (src/static/app-boot.js:41 onward). The i18n gates cannot see template literals."
+   },
+   {
+    "title": "First-launch data-location step: the folder path is bidi-reordered in Arabic (leading slash drawn at the end)",
+    "severity": "P3",
+    "repro": "Fresh empty folder, boot locked, choose العربية on 'Choose your language', accept the legal documents, and read the path under 'استخدام مجلد بيانات التطبيق'.",
+    "expected": "The path reads '/tmp/claude-0/rewalk/U/empty_ar', left to right, as the export dialog now does after J3.",
+    "actual": "It is drawn as 'tmp/claude-0/rewalk/U/empty_ar/': the leading '/' jumps to the far end, so the operator is shown a relative-looking path on the screen that decides where the corpus lives. The element's computed direction is rtl with unicode-bidi normal. This screen was unreachable in the first walk (U1), so it had never been seen in Arabic.",
+    "evidence": "u1_ar.json datadir_path_dir {dir:'rtl', ub:'normal'}; shots/U1-datadir-ar.png.",
+    "root_cause_lead": "src/static/unlock.html:135 <span id='dl-default-path' class='path'> has no dir='ltr'. The .path rule at :72-73 sets no unicode-bidi. The same applies to the restart screen's path (:362) and the check report's path (:410). J3's fix (src/static/app-backup.js:120-122, 234-235: dir='ltr') was not carried to unlock.html."
+   },
+   {
+    "title": "Wikipedia wizard 'What it contacts' host list: '*.wikipedia.org' is broken in Arabic (the '*.' is drawn at the far end)",
+    "severity": "P3",
+    "repro": "Fresh install in العربية → create passphrase → the 'متابعة ويكيبيديا وهي تتغيّر' dialog → read the host line under 'ما الذي يتواصل معه'.",
+    "expected": "'*.wikipedia.org · stream.wikimedia.org · …' reads as five intact host names, as the consent bubble now does after H3's fix.",
+    "actual": "The line is drawn 'wikipedia.org · stream.wikimedia.org · wikimedia.org · ores.wikimedia.org ·.*', with 'dumps.wikimedia.org' on the next line. The '*.' is detached from wikipedia.org and sits at the start of the RTL line. This is the host disclosure the operator reads before deciding.",
+    "evidence": "shots/U1-wiki-wizard-ar.png; u1_fr.json wizard_hosts shows the element has no dir attribute.",
+    "root_cause_lead": "src/static/app-sources.js:1387-1388 (_wizPaintHosts) sets el.textContent = hosts.join(' · ') with no LTR isolates, and src/static/index.html:3469 #wiki-wizard-hosts has no dir='ltr'. H3's fix isolates each host (U+2066…U+2069) only in the consent bubble (src/static/app-core.js:1326-1330)."
+   },
+   {
+    "title": "Price × coverage overlay in Arabic: the y-axis values and the 'Price USD/kg' label are drawn inside the plot, over the first bar",
+    "severity": "P3",
+    "repro": "Commodities → ⊞ beside Dy → Price subtab, with the UI in العربية (live switch or fresh).",
+    "expected": "The axis values sit left of the plot as in en (x≈312-337, bars from x≈342). The chart is data drawn left to right with a time axis.",
+    "actual": "'289', '281.7' and '274.4' are drawn at x≈543-567, on top of the first (2025-01) bar at x≈552, and 'السعر USD/kg' overlaps the '289' tick. The first walk's own screenshot (docs/audit/…/shots/U/U-U6-price-Dy-ar.png) shows the same overlap, unreported. Also the svg aria-label is English: 'السعر × التغطية: 7 price, 0 coverage'.",
+    "evidence": "shots/U6-price-Dy-ar-after-switch.png vs shots/U6-price-Dy-en.png.",
+    "root_cause_lead": "src/static/app-analysis.js:562: the <svg> has no direction='ltr', so it inherits rtl, and text-anchor='end' (:556) / 'start' (:558, :560) resolve mirrored. The unanchored label at :563 also mirrors. :561 builds the aria-label with literal English 'price' and 'coverage'."
+   },
+   {
+    "title": "Patterns-lens panel welds an English colon onto its labels ('Taille du corpus: 453', '语料库规模: 453')",
+    "severity": "P3",
+    "repro": "Settings → Advanced → Diagnostics → the 'Check now' beside 'Patterns lens', then switch to Français or 中文 (or 日本語).",
+    "expected": "The labels use the locale's label frame like the At-rest panel on its fresh render: fr 'Taille du corpus : 453 / 100 000', zh '语料库规模：453 / 100 000' (fr.json '{prefix} : {text}', zh/ja '{prefix}：{text}').",
+    "actual": "fr 'Taille du corpus: 453 / 100 000' and 'Taux de faux positifs: non mesuré'. zh '语料库规模: 453' and '误报率: 未测量'. ja 'コーパスの規模: 453'. The ASCII colon appears in all 12 languages.",
+    "evidence": "main_strip_U3.json u3.fr/zh/ja text; shots/U3-patterns-gate-fr.png, U3-patterns-gate-zh.png.",
+    "root_cause_lead": "src/static/app-diagnostics.js:382 and :387-389 write `<span>${label}</span>: ` instead of ooLabelHtml (src/static/app-core.js:45). app-diagnostics.js is not in _Z3_FILES in tests/test_clickthrough_b14_fixes.py, so test_no_label_on_a_walked_surface_welds_its_own_colon never sees this walked surface."
+   },
+   {
+    "title": "Home 'By channel' chips show raw channel codes (news, hazard, legal, newsletter, wiki) in every locale, unlike the names in their own hover",
+    "severity": "P3",
+    "repro": "Home → 'By channel' subtab in Français, العربية or 中文 (also en).",
+    "expected": "Channel chips carry translated names, consistent with the hint and hover that list the channels ('newsletter, web article, wiki, statistic, law, market, discovery', translated ×12).",
+    "actual": "The chips read 'news 449 · 99%', 'hazard 1 · <1%', 'legal 1 · <1%', 'newsletter 1 · <1%' and 'wiki 1 · <1%' in fr, ar and zh. In ar the Arabic hint above them names the channels in Arabic ('نشرة بريدية، مقال ويب، ويكي، إحصاء، قانون…'), so the page shows two vocabularies. 'hazard' and 'news' are not in the hover's list at all.",
+    "evidence": "main_U5.json u5.*.f.channels_text; shots/U5f-channels-ar.png.",
+    "root_cause_lead": "src/static/app-home.js:679 prints ${esc(f.source_type)}, the raw /api/insights/source-types key, as the chip label, with no label map or t()."
+   },
+   {
+    "title": "Governments → Law documents table: 'reader', 'official ↗' and '(N flagged)' are English in every locale",
+    "severity": "P3",
+    "repro": "Governments → Law subtab, in Français, العربية or 中文 (fresh or after a switch). Read the last column of the documents table.",
+    "expected": "The row's actions are translated like the 'stop'/'arrêter' link beside them and the translated column headers.",
+    "actual": "Every row reads 'reader · official ↗ · arrêter' (fr), 'reader · official ↗ · إيقاف' (ar) and 'reader · official ↗ · 停止' (zh). The locales have no 'reader' or 'official ↗' key, so the walker cannot translate them. The '(N flagged)' revision note is a literal English template.",
+    "evidence": "extra.json law.fr.cells, law.ar.cells, law.zh.cells; shots/extra-law-fr.png, extra-law-ar.png.",
+    "root_cause_lead": "src/static/app-gov-law.js:1010-1012: literal 'reader' anchor text, extLink(…, 'official ↗', …) and `(${x.flagged} flagged)`, none passed through tr()/tf(). They are template literals, so the i18n gates do not see them."
+   },
+   {
+    "title": "French Home status reads 'Collecte automatique : arrêté' (gender agreement)",
+    "severity": "P3",
+    "repro": "Home in Français with collection stopped; read the line under the strip.",
+    "expected": "'Collecte automatique : arrêtée' (collecte is feminine), or a frame-specific key.",
+    "actual": "'Collecte automatique : arrêté · Votre corpus reste sur cette machine …', on Home at 1440 and 375 and on a fresh corpus.",
+    "evidence": "main_strip_U3.json strip.fr.immediate; u1.json home_text_fr; u1_fr.json home_text.",
+    "root_cause_lead": "src/static/app-home.js:235 fills tf('Automatic collection: {state}') with the shared key 'stopped' → fr.json 'arrêté' (masculine, used elsewhere)."
+   },
+   {
+    "title": "First-run guide topic chips: one tag is machine-translated by the i18n walker ('technology' → 'technologie'/'تقنية') while the others stay English, and the counts are ungrouped",
+    "severity": "P3",
+    "repro": "Fresh install in Français or العربية → after the Wikipedia wizard's 'Not now', the 'Welcome to Open Omniscience' guide → 'Choose what to collect first' → the topic chips.",
+    "expected": "Source tags are data and render verbatim (like watch names since N6), or all are labelled consistently. Counts use fmtNum grouping ('4 916'), as the Home strip does.",
+    "actual": "fr: 'via:curated 4909, news 3114, general-news 1366, … technologie 209, healthcare 195 …'. ar: '… تقنية 209 …' with all other tags in English. Counts are printed as '4909'/'4916' with no U+202F grouping.",
+    "evidence": "u1_fr.json guide_text; u1_ar.json guide_text; shots/U1-guide-ar.png, U1-guide-fr.png.",
+    "root_cause_lead": "src/static/app-core.js:795 renders `<span>${esc(tg)}</span> <span class='muted'>${byTotal[tg] || 0}</span>` with no data-i18n-dyn/opt-out, so the walker translates any tag equal to a locale key. The count bypasses fmtNum."
+   }
+  ],
+  "page_errors": [],
+  "http_errors": [
+   "403 POST http://127.0.0.1:8930/api/system/unlock — U2 wrong passphrase, the expected refusal (also the only console error, 'Failed to load resource: 403'). No other response >= 400 in any run or in any server log (empty.log, empty_ar.log, empty_fr.log, seeded.log). The sqlcipher 'hmac check failed' lines in seeded.log belong to that same wrong-passphrase attempt. No visible 'undefined', 'NaN', 'null' or '[object Object]' was found. The one regex hit, 'niemals als null' in the German Patterns caveat, is ordinary German for 'never as zero'."
+  ],
+  "summary": "Row U on the fixed build 0deff9c4, encrypted and locked at boot, entered through #pw/#btn-unlock, airplane mode throughout with zero external requests. Every walkable step passes: U1, U1-datadir, U1-first-run-dialogs, U2, U3 (12 languages), U5, U6, U7, U7-caveat-hover, U9, U-locale-extra, U-375-en and U-i18n-gates (all four gates exit 0). U4 and U8 need the maintainer's own install. U9 is graded against the recheck's by-design verdict: the directory now says on screen that it offers no religion or astronomy calendars, so the step's literal 'religion lists 8 families' is not met, and by that verdict it should not be. All nine confirmed row U defects are fixed: U1 data-location step, U3 calendar hint, U4 Help at 375, U5 Home strip, U6 caveat hover, U7 row spacing, U8 one first-run dialog at a time, U9 price label, moon hovers and weekdays repaint, U10 chart refits when narrowed. So are the cross-row defects on U's surfaces: H8, P7, S4, I15, P4, S7, T3, L1, L14, L15, J8, and P1 as far as the wizard modal goes. The ≤ 5 % bar is still absent from the Patterns panel while the rate is unmeasured (a recorded observation, not a click). Eleven new defects. One is P2: the Home strip says '(server busy)' on any idle install after 90 s, although the server re-verified the counts as exact (served_cache ages from built_at; app-home.js reads any age ≥ 90 s as busy). The ten P3s: the At-rest encryption readout does not repaint on a live switch (half English from en, stays wholly Arabic after ar→en); the Calendar directory status line, kinds and family names stay English and its status keeps the previous language; two Arabic bidi breaks on newly reachable first-launch screens (the data-location path's leading slash, the wizard's '*.wikipedia.org'); the Price overlay's axis values overlap the bars in Arabic; the Patterns panel welds an ASCII colon; raw channel codes on Home 'By channel'; 'reader' and 'official ↗' untranslated in the Law table; 'Collecte automatique : arrêté'; and the first-run guide translating one tag only, with ungrouped counts. No page errors; the only HTTP error was the expected 403 on the wrong passphrase."
+ },
+ "recheck": {
+  "row": "U",
+  "items": [
+   {
+    "ref": "new:Home strip says '(server busy)' on an idle app, beside counts the server has just re-verified as exact",
+    "verdict": "confirmed",
+    "severity": "P2",
+    "evidence": "My own encrypted STATE C seed in /tmp/claude-0/rewalk/U-recheck/seeded. Booted on port 8980 with neither OO_DB_* variable set. lock-state read locked; I unlocked through #pw/#btn-unlock and it then read unlocked-encrypted. I stayed on Home and touched nothing. I sampled /api/database/stats every 20 s (walk_a.json strip.samples). as_of stayed at 10:30:19 from t=44 s to t=144 s while cache_age_s rose 13→33→53→73→93→113, with cached true and ttl 30. Articles stayed at 453. At t=144 s the strip read 'as of 10:30 AM (server busy)'. After a live switch, fr read 'à 10:30 (serveur occupé)' and ar read 'حتى 10:30 ص (الخادم مشغول)'. At the same moment /api/scheduler/activity returned running:false and /api/jobs returned []. Shots: /tmp/claude-0/rewalk/U-recheck/shots/A1-strip-busy-en-crop.png, A1-strip-busy-fr-crop.png, A1-strip-busy-ar-crop.png. This is not by design. Brief S3.4(d) (docs/design/AUTONOMOUS_SESSION_BRIEF_2026-09-02_CRASH_ROOT_CAUSE.md:825) asks for the note on a STALE-SERVED payload. served_cache.py:236-244 says a value the probe verifies as unchanged 'is still exactly right'. The note therefore claims load exactly when there is none.",
+    "root_cause": "src/static/app-home.js:117-120 (homeStatsAgeNote) shows the busy note whenever payload.cache_age_s >= 90. cache_age_s is time since BUILD (src/api/served_cache.py:152, _decorate). On an idle app, served_cache.cached() at :236-244 only re-stamps checked_at and deliberately never rebuilds, so built_at never moves and the age grows without bound. The payload carries no field that separates 'verified unchanged' from 'stale while a rebuild is pending', so the client reads every verified idle value as a busy server.",
+    "suggested_fix": "In served_cache._decorate, also expose the verification state. Either add checked_age_s from entry['checked_at'], or add a 'stale' flag that is true only when the probe differs or a background refresh was kicked. In homeStatsAgeNote, show '(server busy)' only when that flag says the value is stale (or checked_age_s >= 90). When the value is verified unchanged, show nothing, or a neutral 'as of HH:MM' with no busy claim. Add a node or pytest check: an idle cache older than 90 s yields no busy note."
+   },
+   {
+    "ref": "new:At-rest encryption status does not repaint on a live language switch (half-English from en, stays entirely Arabic after ar→en)",
+    "verdict": "confirmed",
+    "severity": "P3",
+    "evidence": "Seeded instance on 8980, Settings → Advanced → Safety. Opened in en and switched live (walk_a.json atrest.*). en→fr gave 'Corpus: Chiffré (SQLCipher 4) … Custody log: pas encore créé'. en→ar gave 'Corpus: مشفّر … Custody log: لم يُنشأ بعد'. en→zh gave 'Corpus: 已加密… Custody log: 尚未创建'. A fresh fr render is correct: 'Corpus : Chiffré … Journal de custodie : pas encore créé'. From a fresh ar render, a switch to en gives 'المجموعة: مشفّر (SQLCipher 4) 4.12.0 community / سجل العهدة: لم يُنشأ بعد', unchanged. A further switch to zh still gives Arabic, and so does closing and reopening the section. Only a reload repaints it. Shots: /tmp/claude-0/rewalk/U-recheck/shots/A2-atrest-en-to-fr.png, A2-atrest-ar-to-en.png, A2-atrest-fresh-fr.png.",
+    "root_cause": "src/static/app-backup.js:3135-3148 (loadAtRestState) builds its lines at render time with ooLabelHtml(t('Corpus'), …). That yields one text node, 'Corpus: ' or 'المجموعة: ', which is not a locale key. The i18n walker (src/static/i18n.js doText) caches a node's first-seen text as 'the English', so a label painted in Arabic can never revert. Nothing re-runs the render on a switch: the app-boot.js:41 oo:langchange listener has no entry for the at-rest panel. The bold values translate only because each is a bare key text node.",
+    "suggested_fix": "Keep the last /api/system/doctor payload. Split the render into _renderAtRest(payload), which draws from the cache and does no fetch. Call it from app-boot.js's single oo:langchange listener when #atrest-state has been painted. Mark #atrest-state data-i18n-dyn so the walker never caches a translated label as the English."
+   },
+   {
+    "ref": "new:Calendar directory: status line, Kind options and family names stay English in every locale, and the status keeps the previous language after a switch",
+    "verdict": "confirmed",
+    "severity": "P3",
+    "evidence": "Fresh renders (walk_a.json caldir.fresh_*). fr: status '241 feeds · 241 folders · 0 checked · 241 pas encore vérifié', Kind ['tout','civique','community','holidays'], rows 'Afghanistan — public holidays · holidays · AFG Exclure'. ar: '241 feeds · 241 folders · 0 checked · 241 لم يُفحص بعد', Kind ['الكل','مدني','community','holidays']. zh: '… 241 尚未检查', with the same English kinds and rows. Exact repro in walk_c.py, fresh ar then a live switch to en: the status stays '241 feeds · 241 folders · 0 checked · 241 لم يُفحص بعد' while Kind switches to English. My walk_a run did zh→en and the status kept '241 尚未检查'. The locales have no keys for 'community', 'holidays', 'feeds' or 'folders'; 'civic' has one, which is why only it translates. Shots: /tmp/claude-0/rewalk/U-recheck/shots/A3-caldir-fresh-fr.png, A3-caldir-fresh-ar.png, C3-caldir-ar-to-en.png.",
+    "root_cause": "src/static/app-agenda.js:774 builds the status as one English literal inside esc(): `${total_feeds} feeds · ${n} folders · ${checked} checked`. It then appends t('not checked yet') into a composed text node ('· 241 لم يُفحص بعد'). That node is not a key, so the walker cannot revert it, and no oo:langchange repaint exists for renderFeedDir. :701-702 writes the kind codes raw as option text, and :798 writes esc(f.kind) raw in each row.",
+    "suggested_fix": "Build the status from keyed tf() frames, e.g. tf('{n} feeds · {m} folders · {k} checked'), plus a frame for '{n} not checked yet', with the keys in all 12 locales. Label kinds through a kind→label map (t('Public holidays'), t('Community'), t('Civic')) in both the <select> options and the row meta, keeping the value as the raw code. Call renderFeedDir(), plus the kind-option fill from the cached _feedDir, from app-boot.js's oo:langchange listener when _feedDir is loaded."
+   },
+   {
+    "ref": "new:First-launch data-location step: the folder path is bidi-reordered in Arabic (leading slash drawn at the end)",
+    "verdict": "confirmed",
+    "severity": "P3",
+    "evidence": "Fresh empty folder /tmp/claude-0/rewalk/U-recheck/empty_ar, booted on port 9080 (lock-state 'fresh'). I chose العربية and accepted the legal documents; the data-location step was shown. #dl-default-path has logical text '/tmp/claude-0/rewalk/U-recheck/empty_ar'. Sorting its characters by on-screen position gives 'tmp/claude-0/rewalk/U-recheck/empty_ar/'. The first logical character '/' is drawn at x=903, right of the last character 'r' at x=896. Computed direction is rtl, unicode-bidi normal, no dir attribute (walk_b_ar.json datadir_path). In fr the same path reads correctly left to right. Shots: /tmp/claude-0/rewalk/U-recheck/shots/B4-datadir-path-ar.png (shows 'tmp/claude-0/rewalk/U-recheck/empty_ar/') and B4-datadir-ar.png.",
+    "root_cause": "src/static/unlock.html:135 `<span id=\"dl-default-path\" class=\"path\">` has no dir=\"ltr\" and no bidi isolation, and the .path style at :72-73 sets none either. In an RTL paragraph the leading '/' is a neutral next to the paragraph start, so it resolves RTL and is drawn after the LTR run. :346 fills it with textContent.",
+    "suggested_fix": "Add dir=\"ltr\" to #dl-default-path (and to #dl-path and any other path readout on unlock.html), or add `direction:ltr; unicode-bidi:isolate` to the .path rule. The export dialog's J3 fix (app-backup.js:235, `<code dir=\"ltr\">`) did the same."
+   },
+   {
+    "ref": "new:Wikipedia wizard 'What it contacts' host list: '*.wikipedia.org' is broken in Arabic (the '*.' is drawn at the far end)",
+    "verdict": "confirmed",
+    "severity": "P3",
+    "evidence": "Fresh install in ar (9080), passphrase created, the Wikipedia wizard opened. #wiki-wizard-hosts has logical text '*.wikipedia.org · stream.wikimedia.org · wikimedia.org · ores.wikimedia.org · dumps.wikimedia.org'. In the drawn line the '*' sits at x=1034, the far right of line 1, detached from 'wikipedia.org', which starts the line on the left. Line 1 reads 'wikipedia.org · stream.wikimedia.org · wikimedia.org · ores.wikimedia.org ·.*' and 'dumps.wikimedia.org' wraps to line 2. Computed direction rtl, no dir attribute (walk_b_ar.json wizard_hosts). The fr render is intact (walk_b_fr.json). Shot: /tmp/claude-0/rewalk/U-recheck/shots/B5-wizard-hosts-ar.png.",
+    "root_cause": "src/static/index.html:3469 `<div id=\"wiki-wizard-hosts\" style=\"font-family:var(--mono,monospace);margin-top:4px\">` has no dir=\"ltr\", so it inherits rtl. The neutral '*' and '.' at the start of the host list resolve to the RTL paragraph direction and move to the line's right edge. The text is set in src/static/app-sources.js:1374-1390 (_wizPaintHosts).",
+    "suggested_fix": "Add dir=\"ltr\" to #wiki-wizard-hosts. Better, render each host as its own `<bdi dir=\"ltr\">` or `<span dir=\"ltr\">` joined by ' · ', which keeps each host intact while the list flows in page order. This matches how H3's fix treated the consent bubble."
+   },
+   {
+    "ref": "new:Price × coverage overlay in Arabic: the y-axis values and the 'Price USD/kg' label are drawn inside the plot, over the first bar",
+    "verdict": "confirmed",
+    "severity": "P3",
+    "evidence": "Seeded, Commodities → ⊞ beside Dy → Price (walk_a.json price.*). en: the y-ticks 274.4/281.7/289 sit at x 313-337, left of the first bar at x 342-351. ar, both after a live switch and on a fresh render: the ticks are at x 543-567 while the first (2025-01) bar is at x 548-557, so '281.7' is drawn over the bar. 'السعر USD/kg' sits at x 493-548, y 298-308, and touches the '289' tick at x 543-559, y 306-316. The svg's computed direction is rtl. The date axis and bars stay left-to-right, so only the text anchors flip. The svg aria-label is 'السعر × التغطية: 7 price, 0 coverage', with English words. Shots: /tmp/claude-0/rewalk/U-recheck/shots/A6-price-Dy-ar-live.png, A6-price-Dy-ar-fresh.png, A6-price-Dy-en.png.",
+    "root_cause": "src/static/app-analysis.js:562: the <svg> takes the page's CSS direction (rtl). The tick labels at :555-556 use text-anchor=\"end\" at x=padL-5, and in an rtl context SVG's 'end' is the text's left edge, so the labels grow rightward into the plot. The same flip hits the right axis (:557-558) and the date ticks (:559-560). :561 builds the aria-label from an English literal frame: `${t9('Price × coverage')}: ${P.length} price, ${V.length} coverage`.",
+    "suggested_fix": "Give the chart svg direction=\"ltr\" (attribute or style) so the anchors keep their LTR meaning; a time-axis chart is LTR data. Build the aria-label from a keyed tf() frame such as '{label}: {n} prices, {m} coverage points', with the key in all 12 locales. Check the other hand-built SVG charts (dashChartSvg, ooChart) for the same missing direction."
+   },
+   {
+    "ref": "new:Patterns-lens panel welds an English colon onto its labels ('Taille du corpus: 453', '语料库规模: 453')",
+    "verdict": "confirmed",
+    "severity": "P3",
+    "evidence": "Seeded, Settings → Advanced → Diagnostics → 'Check now' beside the Patterns lens, then live switches (walk_a.json gate.*). fr: 'Taille du corpus: 453 / 100 000' and 'Taux de faux positifs: non mesuré'. zh: '语料库规模: 453' and '误报率: 未测量'. ja: 'コーパスの規模: 453'. A FRESH fr render after pressing again also gives 'Taille du corpus: 453', so this is the render itself, not a repaint lag. The At-rest panel on the same page renders 'Corpus : …' through the locale frame. One refinement to the walker's claim: the ASCII colon is WRONG only in fr, zh and ja, because their '{prefix}: {text}' frames are '{prefix} : {text}' and '{prefix}：{text}'. ar, de, es and the others use ': ', so the output there is correct. Shots: /tmp/claude-0/rewalk/U-recheck/shots/A7-gate-fr-live.png, A7-gate-zh-live.png.",
+    "root_cause": "src/static/app-diagnostics.js:382 writes `<span>${t('Corpus size')}</span>: <b>…`, and :387-388 write the same for 'False-positive rate'. Both hard-code ': ' after the label instead of using the locale's '{prefix}: {text}' frame (ooLabelHtml, app-core.js:45).",
+    "suggested_fix": "Build each line with ooLabelHtml(`<span>${esc(t('Corpus size'))}</span>`, `<b>${num(...)}</b> / ${num(...)}`), and the same for the false-positive line. The label stays its own element for the walker, and the separator comes from the locale."
+   },
+   {
+    "ref": "new:Home 'By channel' chips show raw channel codes (news, hazard, legal, newsletter, wiki) in every locale, unlike the names in their own hover",
+    "verdict": "confirmed",
+    "severity": "P3",
+    "evidence": "Seeded, Home → 'By channel' in en, fr, ar and zh (walk_a.json channels.*). The chips read 'news 449 · 99%', 'hazard 1 · <1%', 'legal 1 · <1%', 'newsletter 1 · <1%' and 'wiki 1 · <1%' in every language. In ar the hint above them and each chip's hover list the channels in Arabic ('نشرة بريدية، مقال ويب، ويكي، إحصاء، قانون، سوق، اكتشاف'). 'news', 'hazard' and 'legal' are not in that list at all, even in en. fr.json has no key for news, hazard, legal, newsletter or wiki. I found no ruling in the ledger that the raw codes are intended. Shots: /tmp/claude-0/rewalk/U-recheck/shots/A8-channels-ar.png, A8-channels-fr.png, A8-channels-zh.png.",
+    "root_cause": "src/static/app-home.js:679 (_renderHomeChannels) prints `${esc(f.source_type)}`, the raw source_type code, as the chip label. The per-chip count `${esc(String(f.articles))}` also skips fmtNum, unlike the total line at :675. The hover at :679 is a fixed sentence whose channel list does not match the codes actually emitted.",
+    "suggested_fix": "Add a source_type→label map (news→t('News'), hazard→t('Hazard alert'), legal→t('Law'), newsletter→t('Newsletter'), wiki→t('Wiki'), …) with keys in all 12 locales, and use it for the chip text, keeping f.source_type for openChannelCorpus. Format the count with fmtNum. Make the hover's channel list come from the same map so the two vocabularies cannot diverge. The walker keeps these chips translated, since _renderHomeChannels already runs from the oo:langchange listener."
+   },
+   {
+    "ref": "new:Governments → Law documents table: 'reader', 'official ↗' and '(N flagged)' are English in every locale",
+    "verdict": "confirmed",
+    "severity": "P3",
+    "evidence": "Seeded, Governments → Law, on fresh renders in fr, ar and zh (walk_a.json law.fresh_*). Every row's last cell reads 'reader · official ↗ · arrêter' in fr, 'reader · official ↗ · إيقاف' in ar and 'reader · official ↗ · 停止' in zh, while the column headers and 'stop' are translated. fr.json has no key for 'reader' or 'official ↗'. The Category column's 'legislation' is also a raw code with no key. '(N flagged)' could not be SEEN because the seed has no flagged revision (flagged is empty in all three). It is confirmed from code only: app-gov-law.js:1010 is a literal English template. Shots: /tmp/claude-0/rewalk/U-recheck/shots/A9-law-fresh-fr.png, A9-law-fresh-ar.png, A9-law-fresh-zh.png.",
+    "root_cause": "src/static/app-gov-law.js:1010 writes `(${x.flagged} flagged)` as a literal. :1011 writes `>reader</a>` as a literal. :1012 calls extLink(…, \"official ↗\", …) with an unkeyed literal. :1009 writes esc(x.category) raw. The locales carry no key for any of them, so the walker cannot translate them, and loadLawDocs (which the oo:langchange listener re-runs) repaints them in English again.",
+    "suggested_fix": "Use tr('reader') and tr('official ↗'), or better a keyed tr('offline reader') and tr('official source ↗'), plus a tf('({n} flagged)') frame, with the keys in all 12 locales. Label the category through a small map (legislation→t('Legislation'), …) and keep the raw value in the hover."
+   },
+   {
+    "ref": "new:French Home status reads 'Collecte automatique : arrêté' (gender agreement)",
+    "verdict": "confirmed",
+    "severity": "P3",
+    "evidence": "Seeded, collection stopped (/api/scheduler/activity running:false). #home-status reads 'Collecte automatique : arrêté · Votre corpus reste sur cette machine …'. I saw the same text after a live switch to fr, after a fresh fr reload, and at 375 px (walk_a.json status_fr.live/fresh/375). Shots: /tmp/claude-0/rewalk/U-recheck/shots/A10-status-fr-crop.png, A10-status-fr-375.png.",
+    "root_cause": "src/static/app-home.js:234 fills the frame 'Automatic collection: {state}' with the generic key t('stopped'). fr.json:757 maps 'stopped' to the masculine 'arrêté'. The same key is shared with app-core.js:2356, so it cannot agree with the feminine 'Collecte' here.",
+    "suggested_fix": "Use frame-specific keys for this line, e.g. tf('Automatic collection: stopped') and tf('Automatic collection: running') as whole sentences with the pill placeholder, or a context key such as t('stopped (collection)'). Translate fr as 'arrêtée' and 'en cours', and review agreement in the other gendered locales (es, pt, ru, ar, hi)."
+   },
+   {
+    "ref": "new:First-run guide topic chips: one tag is machine-translated by the i18n walker ('technology' → 'technologie'/'تقنية') while the others stay English, and the counts are ungrouped",
+    "verdict": "confirmed",
+    "severity": "P3",
+    "evidence": "Fresh installs in ar (9080) and fr (9180): after the Wikipedia wizard's 'Not now', the guide opened on 'Choose what to collect first'. The 16 #gw-themes chips read 'via:curated 4916, news 3114, general-news 1366, … analysis 225, technologie 209 (fr) / تقنية 209 (ar), healthcare 195, financial 160, business 160'. technology is the only tag translated: its data-theme is 'technology' and fr.json maps 'technology' to 'technologie'. No count is grouped ('4916', '3114', '1366'), whereas the Home strip uses fmtNum ('2 239', '6 411'). Evidence: walk_b_ar.json and walk_b_fr.json (themes, themes_translated). Shots: /tmp/claude-0/rewalk/U-recheck/shots/B11-guide-themes-ar.png, B11-guide-themes-fr.png.",
+    "root_cause": "src/static/app-core.js:795 renders each tag as a plain `<span>${esc(tg)}</span>` with no data-i18n-dyn. The DOM walker therefore translates any tag that happens to equal a chrome key ('technology'). The same line prints `${byTotal[tg] || 0}` raw instead of fmtNum.",
+    "suggested_fix": "Mark the tag span data-i18n-dyn (or the #gw-themes container) so source tags render verbatim as data, as watch names do since N6. Alternatively, label all tags consistently through a tag→label map. Format the count with fmtNum(byTotal[tg] || 0, 0)."
+   }
+  ],
+  "summary": "I re-checked all 11 walker items on my own fresh instances of build 0deff9c4 and confirmed all 11 (one P2, ten P3).\n\nSetup:\n- **Seeded corpus:** a new encrypted STATE C seed at /tmp/claude-0/rewalk/U-recheck/seeded. The file header is ciphertext. It booted locked on port 8980 and I unlocked it only through #pw/#btn-unlock; it then read unlocked-encrypted.\n- **Fresh installs:** two empty folders (empty_ar on 9080, empty_fr on 9180), each booted as 'fresh'.\n- No data folder was copied.\n- Scripts, JSON and screenshots are in /tmp/claude-0/rewalk/U-recheck (walk_a.py, walk_b.py, walk_c.py, shots/).\n\nAirplane mode stayed on throughout (plane fill currentColor, /api/system/network online:false), and the browser made no external requests. The only HTTP errors were two 404s from diagnostic URLs my own script probed. I stopped all three servers by PID, and the tree's git status stayed clean.\n\n- **P2, confirmed:** on an idle app the Home strip says '(server busy)'.\n  - As of stayed fixed at 10:30:19 while cache_age_s climbed from 13 to 113. The scheduler was not running and no jobs existed.\n  - Cause: the client shows the busy note whenever cache_age_s ≥ 90 (app-home.js:117-120). served_cache deliberately never rebuilds an unchanged value and exposes only its build age (served_cache.py:152, :236-244).\n- **P3, confirmed:**\n  - The At-rest panel does not repaint on a language switch (app-backup.js:3135-3148, and the app-boot.js:41 language-change listener has no entry for it).\n  - The calendar directory status, Kind menu and row labels stay English (app-agenda.js:701, :774, :798). I reproduced the exact ar→en case.\n  - The data-location path is reordered in Arabic: it is drawn as 'tmp/…/empty_ar/' (unlock.html:135 has no dir=\"ltr\").\n  - The wizard host list in Arabic detaches '*.' from 'wikipedia.org' (index.html:3469).\n  - The price chart in Arabic puts its axis values over the first bar, and its aria-label keeps English words (app-analysis.js:561-562: the svg inherits rtl, so text-anchor \"end\" flips).\n  - The Patterns-lens panel hard-codes ': ' after its labels (app-diagnostics.js:382, :387-388). This is only wrong in fr, zh and ja; the other locales' label frames use ': ' anyway, so the walker's \"all 12 languages\" overstates it.\n  - The Home 'By channel' chips show raw source_type codes (app-home.js:679).\n  - The Law table shows 'reader' and 'official ↗' in English in every locale (app-gov-law.js:1011-1012). The '(N flagged)' part is confirmed from code only (:1010), because the seed has no flagged revision.\n  - French Home status reads 'arrêté' instead of 'arrêtée' (the shared 'stopped' key, app-home.js:234 and fr.json:757).\n  - In the first-run guide, the i18n walker translates only the 'technology' tag, and no count is grouped (app-core.js:795)."
+ }
+}

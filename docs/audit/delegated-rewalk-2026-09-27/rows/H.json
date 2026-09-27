@@ -1,0 +1,253 @@
+{
+ "row": "H",
+ "walk": {
+  "row": "H",
+  "environment": "Build: read-only worktree /tmp/claude-0/rewalk/tree at 0deff9c4. I did not copy the first walk's folder. I seeded a fresh encrypted mini corpus: scripts/ui_clickthrough_seed.py --mini (24 articles, default rng) into /tmp/claude-0/rewalk/H/data-enc, with OO_DB_PASSPHRASE=walk-pass-2026 and OO_DB_PLAINTEXT unset. The DB file's first 16 bytes are ciphertext (b'}\\xa4\\xe2\\x11…'), not 'SQLite format 3'. That is the same environment as the first walk. No extra sandbox seed was needed.\n\nServer: launched from the worktree with `python -c \"from src.api.main import main; main()\"`, OO_PORT=8900, OO_DATA_DIR=/tmp/claude-0/rewalk/H/data-enc. Neither passphrase variable was set and the proxy variables were unset (/tmp/claude-0/rewalk/H/launch.sh). /api/system/lock-state read 'locked' at boot. I unlocked through the real #pw / #btn-unlock form and landed on /#home, after which it read 'unlocked-encrypted'.\n\nThe server was stopped by PID (14871), then restarted once for the O2 coach probe (PID 27364). That restart also booted LOCKED and was unlocked through #pw. I stopped it by PID at the end. PID 25810 on 8903 belongs to walker I and was never touched.\n\nAirplane mode held throughout. /api/system/network answered online:false after every cancel, 'Go online' was never pressed, and the page recorded 0 non-loopback requests. Fetch mode was the default Transparent (transport kind 'direct'). For the H3 protected-mode check I switched it to Protected with proxy http://127.0.0.1:9 through Settings > Advanced > Safety, then reverted it to Transparent with an empty proxy. I flipped discovery_external_enabled on and back off (H5, and again in fr and ar). The Wikipedia lane went running → paused through the real W click (the P2/P6 check), and I restored it to 'running' with a loopback PUT /api/scheduler/config. Local interface shown: eth0 192.0.2.2.\n\nBrowser: Chromium 1194 headless via Playwright (executable /opt/pw-browsers/chromium, with --disable-background-networking, --disable-component-update and --no-proxy-server). Passes: 1440x950 in en, fr, ar and zh; 375x667 in en, fr and ar; 375x800 in en for O2.\n\nDifferences from the first walk:\n- pytest is importable in the venv now, so I ran tests/test_security_endpoint_enumeration.py, test_network_consent.py and test_net_coach_placement.py read-only against the tree (-p no:cacheprovider, PYTHONDONTWRITEBYTECODE=1): 48 passed. The node suites net_lane_state, net_lane_transport and net_coach_place also pass.\n- Side effect of the mandated launch: the app writes its gitignored logs under /tmp/claude-0/rewalk/tree/audit/ (shared with walker I). git status in the tree stayed empty before and after.\n\nScripts, JSON and screenshots are in /tmp/claude-0/rewalk/H/ (walk1-6.py, probe_*.py, part1-6.json, probe_*.json, shots/).",
+  "steps": [
+   {
+    "id": "H1",
+    "verdict": "pass",
+    "locales": "en",
+    "evidence": "After unlock the plane is FILLED: #net-plane fill=currentColor, #net-toggle has class 'off', and the API reads online:false. Its hover bubble reads exactly 'Offline (airplane mode) — click to go online; you'll be asked to confirm first.', is topmost at its centre, and changes 72.9% of its box (shots/H-H1-en.png). The seeded folder showed no first-launch guide. The offline coach showed and was dismissed with 'Not now'. The click-to-go-offline branch ('Entering airplane mode') could not arise: the app boots offline and going online is forbidden. part1.json H1."
+   },
+   {
+    "id": "H2",
+    "verdict": "pass",
+    "locales": "en",
+    "evidence": "A real click opens the modal (:modal true) 'Go online?' with 'This action needs the network:' / bold 'Allow network requests again'. The lanes box shows '…' at open, then 15 dotted lanes in 3 groups.\n- Runs on every collection pass: Press n=9033, Source discovery n=2, Wikipedia / Wikimedia n=5, Law n=260, Official statistics n=3, Markets & commodities n=4, Calendars n=14, Hazard feeds n=2.\n- Only when you ask for it: Maps / OpenStreetMap n=2, Keyword translations n=1, Weather n=1, Local AI install & weights n=7, Newsletter mailbox (no count).\n- Switched off right now: Discover by topic n=1, Chain of custody n=3.\n\nLocal AI now shows n=7, not the step's n=4. Fix batch B12 (X3) added github.com, release-assets.githubusercontent.com and ollama.com, and SECURITY.md lists the same 7. There is no 'Could not read whether these are on:' group. The transport line reads 'Protected mode is off, so fetches go direct — the hosts above see your address.' and the interfaces line 'eth0: 192.0.2.2'. Both grey caveats are in the popup, below the fold of the middle part (709 px of content in 551). After scrolling that part, both are fully visible (shots/H-H2-en-scrolled.png). Initial focus is on 'Stay offline'. Esc closed the popup, the plane stayed filled and the API read online:false (shots/H-H2-en.png, part1.json)."
+   },
+   {
+    "id": "H3",
+    "verdict": "pass",
+    "locales": "en (fr/ar/zh under H7)",
+    "evidence": "The key check now passes for all 15 lanes. The bubble is hosted inside #net-consent, and elementFromPoint at its centre and at all 4 corners returns #oo-tip. It changes 19.7-27.6% of its box, against 0 px on the first walk, and sits fully in the viewport (shots/H-H3-en-law-hover.png, H-H3-en-local-hover.png, part1.json H3).\n\nBubble texts:\n- Press: '9033 hosts — the full list is in the security notes — Transport: direct — …'. Law: '260 hosts …' + 'Always on: …'.\n- Calendars: 14 hosts from date.nager.at to jonamarkin.github.io, + 'Always on'. Hazard: 2 hosts + 'Its off-switch exists but the app cannot reach it…'. Markets: 4 hosts + 'Always on'.\n- Wikipedia: the 5 hosts. Maps: 2. Source discovery: 2. Keyword translations: 1. Weather: 1. Discover by topic: html.duckduckgo.com.\n- Newsletter: 'a host you name yourself — nothing is bundled — Not through this app's fetcher or proxy.' Custody: the 3 opentimestamps hosts + the same sentence.\n- Local AI: 7 hosts + 'Mostly not through this app's fetcher or proxy — only the installer check uses the fetcher.' (the H5 fix), then a new sentence on the programs the app starts.\n\nEvery bubble's host count equals its lane's n=.\n\nProtected mode (set through the UI, then reverted): fetcher lanes say 'Transport: through your proxy.'. Mailbox and custody say 'Transport: direct, even with protected mode on — …'. Local AI says 'Transport: mostly direct, even with protected mode on — …'. The transport line reads 'Fetches ride the proxy you configured; …' (part2.json protected, shots/H-H3-en-protected-popup.png).\n\nKeyboard: all 15 lanes have tabIndex 0. Tab walks them in order, each opens its bubble on top with a visible focus ring, and the scroll body follows focus (shots/H-H3-en-keyboard-focus.png, part1.json H3_tab_sequence)."
+   },
+   {
+    "id": "H4",
+    "verdict": "pass",
+    "locales": "en, zh",
+    "evidence": "Help > Security. The lead-in contains 'The table is the full set of endpoints the app can reach, grouped by lane', 'Every PR that adds a host adds it here and to the consent popup's hover in the same diff' and 'Last checked 2026-09-26'. The step text says 2026-09-16; the H6 fix bumped the date.\n\nThe table has the columns Lane · Hosts it can reach · Trigger · Transport · Where in the tree, and 15 rows named exactly like the popup lanes. Every host of every lane bubble appears in its row, with 0 missing: query.wikidata.org, www.wikidata.org, *.wikipedia.org, ores.wikimedia.org, dumps.wikimedia.org, download.geofabrik.de, planet.openstreetmap.org, huggingface.co, and the 7 Local AI hosts. There is no Lift Wing host. Press says 9,033 distinct hosts and Law 260. Law and Calendars read 'always on' / not switchable, Markets 'always on … no toggle', and Hazard 'its opt-out does not work'. With the UI in zh the body stays English (part2.json H4, part3.json H4_zh_doc).\n\nOne caveat on the 'do' line: typing 'Where in the tree' key by key into 'Find on this page…' highlights the match but does NOT bring the table on screen. The mark is at y≈1800 while the page stays at scrollY≈120. A single fill/paste does jump (reported as a new P3; probe_find.json, probe_find2.json, shots/H-H4-find-typed-1440.png vs H-H4-find-filled-1440.png)."
+   },
+   {
+    "id": "H5",
+    "verdict": "pass",
+    "locales": "en (also run in fr, ar)",
+    "evidence": "#discovery-external starts unticked (API false; fetch mode 'Transparent (default)'). Ticking it shows 'Enabled: topic-discovery queries will be sent to DuckDuckGo.' and the toast 'External topic discovery enabled.'. The API reads true while the network stays offline.\n\nIn the popup, 'Discover by topic' now sits under 'Only when you ask for it:', not 'Runs on every collection pass:' (the H4 defect is fixed; shots/H-H5-en-popup-on.png). Unticking shows 'Disabled (the default): no topic query leaves this machine.' and the toast 'External topic discovery disabled.'. The API reads false and the lane is back under 'Switched off right now:'. The setting was restored.\n\nIn fr and ar the popup placement is the same, but the result line and both toasts stay English (new P2 below; part6.json)."
+   },
+   {
+    "id": "H6",
+    "verdict": "pass",
+    "locales": "en, fr, ar",
+    "evidence": "With nothing selected, 'Refresh exact sizes' prints 'Select one or more editions first.' and opens no popup. After a mouse click on 'English — English (en, very large) · ~22.0 GB', the same click opens the SAME #net-consent with the bold reason 'Read the exact current size of the selected Wikipedia dumps'. The lane groups, transport line, 'eth0: 192.0.2.2' and both caveats match H2. 'Stay offline' closed it, the plane stayed filled (online:false), and the line never read 'Reading exact sizes…'.\n\nfr: button 'Actualiser les tailles exactes', message 'Sélectionnez d’abord une ou plusieurs éditions.', popup reason 'Lire la taille exacte actuelle des vidages Wikipédia sélectionnés'. ar is likewise translated (shots/H-H6-en.png, H-H6-fr.png, H-H6-ar.png; part2.json H6, part6.json)."
+   },
+   {
+    "id": "H7",
+    "verdict": "pass",
+    "locales": "fr, ar, zh",
+    "evidence": "Language switched through the real #lang-switch menu.\n- fr: 'Passer en ligne ?', 'Cette action nécessite le réseau :', bold 'Autoriser de nouveau les requêtes réseau'. Headings 'S'exécute à chaque passe de collecte :' / 'Seulement si vous le demandez :' / 'Désactivés pour le moment :'. Lanes include Collecte de presse, Droit, Flux d'aléas and Chaîne de possession. Buttons 'Rester hors ligne' / 'Passer en ligne'. All 6 colons now follow U+00A0 and none sits alone on a line (the H7 defect is fixed).\n- ar: the popup is RTL with its title right-aligned, lanes right-aligned (e.g. القانون, موجزات الأخطار) and buttons mirrored ('الاتصال' on the left, 'البقاء دون اتصال').\n- zh: '要联网吗？', '每次采集时运行：', '仅在你主动请求时：', '目前已停用：', 法律, 灾害数据源, buttons 保持离线 / 联网.\n\nIn all three languages the n= counts equal English, both caveats are in the popup in that language, and no English sentence is left in the popup or in any of the 15 bubble texts. 'Wikipedia / Wikimedia' in fr is the allowed exception.\n\nBubbles for Law, Hazard, Wikipedia, Local AI and Custody are all topmost and fully visible in fr, ar and zh. The fr Law bubble reads '260 hôtes — la liste complète se trouve dans les notes de sécurité — Transport : direct — … — Toujours actif : …'. In ar the bubble is drawn above the backdrop, not dimmed or clipped. '*.wikipedia.org' reads as one intact LTR token: glyph x of '*' 1140 < '.' 1146 < 'w' 1150 (the H3 defect is fixed; shots/H-H7-ar-wiki-hover.png).\n\nEach language was left with its own stay-offline button, the plane stayed filled, and I switched back to en at the end. The plane hover and the Home strip repaint on the live switch (part3.json; shots/H-H7-fr.png, H-H7-ar.png, H-H7-zh.png, H-H7-fr-zh-law-combo.png)."
+   },
+   {
+    "id": "H8",
+    "verdict": "pass",
+    "locales": "en, fr, ar (375x667)",
+    "evidence": "The popup spans 0-375 px wide and 72-595 px high, with dlg_hscroll 0 and no clipped text. 'Stay offline' and 'Go online' sit at y 535-578 without scrolling. Only the middle part scrolls: 746 px of content in 387 px in en, 807 in fr, 686 in ar. Wheeling it to its end (scrollTop = max) puts both caveats fully on screen.\n\nLane bubbles by mouse (Wikipedia, and the longest, Local AI) are topmost and fully inside the 375 px viewport. At 375 the Local AI bubble covers the hovered label, which is harmless because pointer-events are none. The page itself no longer scrolls sideways: 0 px, against 71 px on the first walk. 'Stay offline' closed the popup and the plane stayed filled.\n\nObservation, not filed (the first walk noted it too): wheel movement past the end of the popup's middle part scrolls the page behind (scroll chaining). Evidence: part4.json; shots/H-H8-en-375.png, H-H8-en-375-scrolled.png, H-H8-fr-375-scrolled.png, H-H8-ar-375-wiki-hover.png."
+   },
+   {
+    "id": "H9",
+    "verdict": "not-measurable-here",
+    "locales": "en",
+    "evidence": "This step asks for the maintainer's own word on the 15 lane names and 3 headings; a delegated walker cannot give it. Input only: the first walk's objection to 'Discover by topic' under 'Runs on every collection pass:' is gone, because the enabled lane now sits under 'Only when you ask for it:'. The 15 names still match SECURITY.md one to one."
+   },
+   {
+    "id": "H10",
+    "verdict": "not-measurable-here",
+    "locales": "en",
+    "evidence": "Skipped on purpose: going online is forbidden in this walk and the sandbox has no egress. The app stayed in airplane mode from every boot to shutdown."
+   }
+  ],
+  "old_defects": [
+   {
+    "id": "H1",
+    "verdict": "fixed",
+    "evidence": "The bubble is hosted in the open dialog. For all 15 lanes in en, #oo-tip's parent is #net-consent and elementFromPoint at its centre and 4 corners returns #oo-tip. It changes 19.7-27.6% of its box, against 0 on 462145c. It is also visible and topmost in fr, zh and ar, where in ar it sits above the backdrop, undimmed and unclipped (part1.json H3, part3.json hover_checks, shots/H-H3-en-law-hover.png, H-H7-ar-wiki-hover.png)."
+   },
+   {
+    "id": "H2",
+    "verdict": "fixed",
+    "evidence": "All 15 lane spans have tabIndex 0. Tab walks Press collection → … → Chain of custody, and each focus opens its bubble on top with a visible focus ring. The body scrolls to keep the focused lane in view (part1.json H3_tab_sequence, shots/H-H3-en-keyboard-focus.png)."
+   },
+   {
+    "id": "H3",
+    "verdict": "fixed",
+    "evidence": "Hosts are wrapped in U+2066…U+2069 isolates. In ar the Wikipedia bubble reads '*.wikipedia.org' as one intact LTR token: glyph x of '*' 1140 < '.' 1146 < 'w' 1150, and the run is ltr:true. The screenshot shows '*.wikipedia.org' intact (part3.json H7_ar geom_star, shots/H-H7-ar-wiki-hover.png)."
+   },
+   {
+    "id": "H4",
+    "verdict": "fixed",
+    "evidence": "With 'Allow topic-discovery queries to DuckDuckGo' ticked through the real UI, 'Discover by topic' is listed under 'Only when you ask for it:' in en, fr and ar. Unticked, it returns to 'Switched off right now:' (part2.json H5, part6.json, shots/H-H5-en-popup-on.png)."
+   },
+   {
+    "id": "H5",
+    "verdict": "fixed",
+    "evidence": "In transparent mode the Local AI lane's DOM title and visible bubble say 'Mostly not through this app's fetcher or proxy — only the installer check uses the fetcher.' This agrees with SECURITY.md's Transport cell 'Mixed. The installer check is a guarded fetch…'. The line is translated in fr, ar and zh (part1.json H3, part2.json H4 rows)."
+   },
+   {
+    "id": "H6",
+    "verdict": "fixed",
+    "evidence": "The rendered Help > Security contains no 'Estimate size', and the Wikipedia row names 'Refresh exact sizes'. It has no runner.py:NNNN line citations. I checked all 40 `path:symbol` citations in docs/SECURITY.md against the tree and each symbol exists. 'Last checked' reads 2026-09-26 (part2.json H4)."
+   },
+   {
+    "id": "H7",
+    "verdict": "fixed",
+    "evidence": "In fr at 1440, all 6 popup headings ending in ':' have U+00A0 before the colon, and the colon's line top equals its word's. 'Votre machine présente ces adresses réseau locales :' keeps ':' with 'locales' at 1440 and at 375 (part3.json H7_fr colon_wrap, part4.json H8_fr colon_alone=[])."
+   },
+   {
+    "id": "H8",
+    "verdict": "fixed",
+    "evidence": "After a live switch the Home strip is translated at once (0 s), with no 15 s lag. fr: MOTS-CLÉS, PRIX DES MATIÈRES PREMIÈRES, SOURCES EN COLLECTE, ACTIVÉES, NON QUALIFIÉES, CANDIDATES DÉCOUVERTES, 'Collecte automatique : arrêté'. ar and zh are likewise translated. After a reload in fr or ar, the strip paints English for under 1 s and is translated by 1 s (part3.json home_strip_0s, probe_boot.json)."
+   },
+   {
+    "id": "O5",
+    "verdict": "fixed",
+    "evidence": "Same cause as H1, and the consent popup is covered above. The export row's reason also shows: in the Export / Backup modal, hovering 'Living sources' shows 'a lane is a live encrypted database; its backup format is not settled yet' with the bubble parented to #ux-export and topmost (27.5% pixel change; probe_export_hover.json, shots/H-ux-export-hover.png)."
+   },
+   {
+    "id": "P1",
+    "verdict": "fixed",
+    "evidence": "Same fix as H1/O5. Wikipedia / Wikimedia in #net-consent shows its 5 hosts plus 'Transport: direct — …' on top of the dialog, and the Export 'Living sources' reason is visible and topmost (part1.json, probe_export_hover.json)."
+   },
+   {
+    "id": "P2",
+    "verdict": "fixed",
+    "evidence": "Hovering W then clicking it (running→paused, loopback) updates the open bubble to 'Wikipedia stream: paused — … Resume the Wikipedia stream …' at once. A re-hover after moving away still shows the paused text and the title attribute is not overwritten. The toast reads 'Wikipedia stream: paused'. The plane's hover after a popup cancel stays the correct offline text (part5.json P2, plane_hover_after_cancel; shots/H-P2-wiki-rehover.png)."
+   },
+   {
+    "id": "P6",
+    "verdict": "fixed",
+    "evidence": "With W paused, clicking W opens the popup with reason 'Resume the Wikipedia stream' and lists 'Wikipedia / Wikimedia' under 'Runs on every collection pass:', not 'Switched off right now:'. After Stay offline the state stayed 'halted' and online:false. The toast confirms the state ('Wikipedia stream: paused'), not an order (part5.json P6, shots/H-P6-wiki-resume-popup.png)."
+   },
+   {
+    "id": "L5",
+    "verdict": "fixed",
+    "evidence": "Governments > Countries > 'Load standard country data' opens the popup with the bold reason 'Load standard country data', no longer empty. Stay offline kept online:false (part5.json L5, shots/H-L5-country-data-popup.png)."
+   },
+   {
+    "id": "O2",
+    "verdict": "fixed",
+    "evidence": "With the coach showing, it sits below the chrome and the subtab strip and covers no control. At fr 1440 Settings, elementFromPoint at every subtab (incl. Avancé), #tm-open and the plane returns the control, not the coach (coach y=125). ar 1440 Settings is the same, with #tm-open, #rate-toggle and #wiki-toggle not covered. At en 375x800 Living sources, the coach sits under the Wikipedia/Law/Maps strip (probe_coach_subtabs.json, shots/H-O2-coach-*.png)."
+   },
+   {
+    "id": "T4",
+    "verdict": "fixed",
+    "evidence": "The coach was showing in en (x 984-1254, plane centre 1237). After a live switch to ar it re-anchored to x 186-456 with the plane centre at 203, under the plane, with Arabic text (part5.json coach_ar_live, shots/H-coach-ar-live.png)."
+   },
+   {
+    "id": "T7",
+    "verdict": "fixed",
+    "evidence": "In ar at 1440, cold boot and after a live switch, the coach top is y=74, below the 62 px top bar. elementFromPoint at #tm-open, #rate-toggle, #wiki-toggle, #llm, #lang-switch, #net-toggle, #app-shutdown and #health returns the control, never the coach. The coach's 'Go online' still opens the one consent popup, which I cancelled (part5.json coach_ar_cold, coach_ar_live, coach_go_popup)."
+   },
+   {
+    "id": "U4",
+    "verdict": "fixed",
+    "evidence": "At 375 px with Help open, document scrollWidth - clientWidth = 0 (was 406). The wide endpoint table now scrolls inside its own box (table scrollLeft up to 962 at 375). I measured on the Security doc, not the User Manual the repro opens, but the fix is the shared doc-layout grid (probe_find.json 375_hscroll_help)."
+   },
+   {
+    "id": "P7",
+    "verdict": "fixed",
+    "evidence": "The split source figures on the Home strip carry translated labels: fr SOURCES EN COLLECTE / ACTIVÉES, NON QUALIFIÉES / CANDIDATES DÉCOUVERTES; ar مصادر قيد الجمع / مفعّلة، غير مؤهَّلة / مرشَّحون مكتشَفون; zh 采集中的来源 / 已启用，未合格 / 发现的候选来源 (part3.json)."
+   },
+   {
+    "id": "U5",
+    "verdict": "fixed",
+    "evidence": "After a live switch to fr, ar or zh, the Home strip and the 'Automatic collection' status line change language at 0 s. The 'as of' time follows the UI language (fr 'à 06:23', ar 'حتى 06:23 ص', zh '截至 06:09') (part3.json home_strip_0s, probe_boot.json)."
+   }
+  ],
+  "new_defects": [
+   {
+    "title": "Home strip says '(server busy)' on an idle, offline server, beside 'Automatic collection: stopped'",
+    "severity": "P2",
+    "repro": "Boot and unlock. Stay offline and do nothing that writes, and stay on Home for about 90 s. Then read the at-a-glance strip (#home-stats).",
+    "expected": "The note should appear only when the counts are really being held back by a busy server, or it should state their real age without giving a cause. On an idle server nothing was written and the counts are current.",
+    "actual": "Once the cached payload is 90 s old, the strip ends with 'as of 06:23 AM (server busy)', and the same note appears in fr ('serveur occupé'), ar and zh. The status line beside it says 'Automatic collection: stopped'. At the same time the API reports scheduler running:false and online:false, and /api/database/stats shows cache_age_s growing 89→209 with an unchanged as_of. An operator in airplane mode is told the server is busy when nothing is running.",
+    "evidence": "/tmp/claude-0/rewalk/H/probe_busy.json (9 samples: the note appears once cache_age_s ≥ 90, with sched_running False); /tmp/claude-0/rewalk/H/shots/H-home-server-busy-en.png; part3.json home_strip_0s in fr, ar and zh. Row S's walker saw the same note under OO_NO_SCHEDULER=1 and left it unjudged; here it reproduces with the scheduler present.",
+    "root_cause_lead": "src/api/served_cache.py:236-244: when the change probe is unchanged, the value is treated as 'still exactly right'. The code re-stamps checked_at but deliberately keeps built_at, so cache_age_s grows without bound on an idle server. src/static/app-home.js:117-137 (homeStatsAgeNote) labels any cache_age_s ≥ 90 as t('as of {time} (server busy)') and never checks whether a recompute is pending. Either drop the cause from the note or have the payload say whether the value was re-verified."
+   },
+   {
+    "title": "External topic discovery: the Enabled/Disabled disclosure line and both toasts are English in every non-English locale",
+    "severity": "P2",
+    "repro": "Switch the top bar to Français (or العربية), then open Settings > Advanced > 'Safety & at-risk use' and tick 'Autoriser les requêtes de découverte de sujets vers DuckDuckGo'. Untick it again.",
+    "expected": "The line that discloses the egress ('… queries will be sent to DuckDuckGo') and the toasts are in the UI language. Every consent or caveat string ships in all 12 locales (the informed-consent non-negotiable), like the checkbox label beside it.",
+    "actual": "In fr and ar the line reads 'Enabled: topic-discovery queries will be sent to DuckDuckGo.' then 'Disabled (the default): no topic query leaves this machine.', and the toasts read 'External topic discovery enabled.' / 'External topic discovery disabled.'. All are English. The English line also stays on screen after a later switch to ar.",
+    "evidence": "/tmp/claude-0/rewalk/H/part6.json (fr/ar on_result, off_result, on_toasts, off_toasts); /tmp/claude-0/rewalk/H/shots/H-H5-fr-on.png, H-H5-ar-on.png. None of the four strings exists as a key in any of the 12 files under src/static/locales, whereas the sibling 'Fetch mode saved.' is keyed in all 12.",
+    "root_cause_lead": "src/static/app-backup.js:3125-3128 (saveDiscoveryExternal) writes the four literals with no t() and no locale keys. The DOM walker would translate them if keys existed. Add the four keys to all 12 locales (or wrap them in t())."
+   },
+   {
+    "title": "Help 'Find on this page…': typing a phrase whose first match is in the Security endpoint table highlights it but does not scroll it into view",
+    "severity": "P3",
+    "repro": "Open Help (top-bar ?) > Security. Click 'Find on this page…' and TYPE 'Where in the tree' key by key (as H4 says). Tried at 20, 60, 80 and 200 ms per key, and with a final Enter.",
+    "expected": "The page jumps to the highlighted match (the table header), as it does when the same text is pasted.",
+    "actual": "The match is highlighted (1 mark) and the wide table scrolls sideways (scrollLeft 519 at 1440, 962 at 375), but the page does not scroll down. The mark stays at y≈1790-1836 in a 950 px viewport, with page scrollY ≈111-159, 3-4 s later. A single fill/paste of the same text does jump (scrollY 1479, mark at y=468). Typed phrases whose match is in plain prose ('kept true', 'Reporting') also jump.",
+    "evidence": "/tmp/claude-0/rewalk/H/probe_find.json, probe_find2.json; shots/H-H4-find-typed-1440.png, H-H4-find-filled-1440.png, H-H4-find-typed-375.png, H-H4-find-typed-enter.png. The first walk used a single fill, so it did not see this.",
+    "root_cause_lead": "src/static/index.html:3210 oninput=\"filterDoc()\" re-renders the whole prose on every keystroke. src/static/app-settings.js:85 then calls first.scrollIntoView({block:'center', behavior:'smooth'}) each time. When the match is inside the horizontally scrolling table, the nested scroller's smooth scroll lands but the outer page's vertical smooth scroll is dropped after the earlier in-flight ones. Likely fixes are behavior:'auto' or debouncing the find."
+   },
+   {
+    "title": "Help document list: 9 of 10 doc titles and all 10 descriptions stay English on a translated page (only 'User Manual' translates, by coincidence)",
+    "severity": "P3",
+    "repro": "Switch to 中文 (or any non-English locale) and open Help (top-bar ?). Read the left-hand document list.",
+    "expected": "The list's chrome (document names and one-line descriptions) is in the UI language, even though the document bodies are English-only by design.",
+    "actual": "zh shows '用户手册' for the User Manual, but 'Quickstart', 'Ethics, compliance & notices', 'Governance & acceptable use', 'Security', 'Design', 'Roadmap', 'Architecture', 'Contributing', 'Changelog' and every description (e.g. 'Threat model, local-first posture, and the security audit.') stay English. Only the key 'User Manual' exists in the 12 locale files. The first walk noted this in its junk-text list without filing it, and it is not in defects.csv.",
+    "evidence": "/tmp/claude-0/rewalk/H/part3.json H4_zh_doc.nav_labels; shots/H-H4-zh-help.png. A locale scan found only 'User Manual' among the doc titles and blurbs in every one of ar/bn/de/en/es/fr/hi/id/ja/pt/ru/zh.json.",
+    "root_cause_lead": "src/api/main.py:2702-2748 serves English title/blurb literals for /api/docs. src/static/app-settings.js:30-33 (loadDocs) renders them with esc() and no t(), and the DOM walker only catches 'User Manual' because that string happens to be a locale key."
+   }
+  ],
+  "page_errors": [],
+  "http_errors": [],
+  "summary": "Row H's click-through clause closes on the fixed build 0deff9c4. The encrypted corpus booted locked and was unlocked through #pw, and the app stayed in airplane mode throughout, with 0 non-loopback requests.\n\nThe first walk's P1 is fixed. Each lane's host bubble is now hosted inside the modal 'Go online?' popup and is topmost, readable in full, for all 15 lanes in en, fr, zh and ar and at 375 px. Lanes also open their bubble on keyboard focus.\n\nSteps H1-H8 pass. H9 needs the maintainer's word and H10 needs going online, so both are not-measurable-here. Step text now differs from the build in three expected ways:\n- Local AI shows n=7 hosts, not 4. Fix batch B12 added github.com, release-assets.githubusercontent.com and ollama.com, and SECURITY.md lists the same 7.\n- SECURITY.md reads 'Last checked 2026-09-26'.\n- The Local AI transparent-mode sentence is the new 'Mostly not through this app's fetcher…'.\n\nAll 8 row-H defects (H1-H8) are fixed. So are the other rows' defects on these surfaces: O5 and P1 (bubbles in modals, including the Export dialog), P2, P6, L5, O2, T4, T7, U4, P7 and U5. The security enumeration, consent and coach tests pass here: 48 pytest and 3 node suites.\n\nNew defects:\n- P2: the Home strip says '(server busy)' on an idle, offline server, next to 'Automatic collection: stopped'.\n- P2: the Discover-by-topic Enabled/Disabled disclosure line and its two toasts are English in every non-English locale; they have no locale keys.\n- P3: typing into Help 'Find on this page…' does not scroll to a match inside the Security endpoint table. Pasting does.\n- P3: the Help document list's titles and descriptions stay English on translated pages, except 'User Manual'.\n\nNo page errors, console errors, HTTP ≥ 400 responses, or undefined/NaN/null/[object Object] text were seen on any walked surface."
+ },
+ "recheck": {
+  "row": "H",
+  "items": [
+   {
+    "ref": "new:Home strip says '(server busy)' on an idle, offline server, beside 'Automatic collection: stopped'",
+    "verdict": "confirmed",
+    "severity": "P2",
+    "evidence": "Own instance: a fresh encrypted mini seed at /tmp/claude-0/rewalk/H-recheck/data-enc (ui_clickthrough_seed.py --mini with OO_DB_PASSPHRASE set; the DB header is ciphertext), booted on 8950 with neither variable set. lock-state read 'locked'; I unlocked through #pw/#btn-unlock and stayed on Home doing nothing. My probe (rc_busy.py) sent no stats requests of its own and only recorded Home's own /api/database/stats polls. as_of stayed 09:06:10 while cache_age_s rose 14 -> 119. At dt=150 s the strip ended 'as of 09:06 AM (server busy)' while #home-status said 'Automatic collection: stopped'. At that moment /api/scheduler/status read running:false, active:false, online:false, and its own server_load read loop_lag 0.3 ms, heavy in_flight 0/4, busy_refusals 0, memory_guard engaged:false. /api/system/network read online:false. After live switches: fr 'à 09:06 (serveur occupé)', ar '(الخادم مشغول)', zh '（服务器繁忙）'. Files: /tmp/claude-0/rewalk/H-recheck/rc_busy.json and shots/rc-home-busy-en-strip.png, rc-home-busy-{en,fr,ar,zh}.png. No page, console or HTTP errors. This is not a harness artifact.",
+    "root_cause": "src/static/app-home.js:117-137. homeStatsAgeNote() tests only payload.cache_age_s >= 90 and always names the cause as '(server busy)'. But src/api/served_cache.py:233-245 is written to keep built_at when the grants probe shows nothing was written: it re-stamps only checked_at, and as_of/cache_age_s are derived from built_at (served_cache.py:152). So on an idle server the value is verified as exactly right, yet cache_age_s grows without limit, and the note fires because the server is idle. The S3.4(d) brief (docs/design/AUTONOMOUS_SESSION_BRIEF_2026-09-02_CRASH_ROOT_CAUSE.md:825) ties the note to a stale-served payload. No ruling covers the idle case: grep of OPEN_QUEUE/RULINGS_INDEX/LESSONS found nothing, and planned.py reports nothing for app-home.js.",
+    "suggested_fix": "In served_cache._decorate, also publish the age since the value was last verified or rebuilt (now - checked_at), or a verified_unchanged flag. Show '(server busy)' only when that verification age is >= 90 s, which means a rebuild is pending or in flight. For a value that was verified unchanged, show nothing, or a cause-free 'unchanged since HH:MM'. Alternatively, gate the cause on /api/scheduler/status server_load. Add a node test for the idle case: cache_age_s 120 with a fresh verification gives no 'server busy'."
+   },
+   {
+    "ref": "new:External topic discovery: the Enabled/Disabled disclosure line and both toasts are English in every non-English locale",
+    "verdict": "confirmed",
+    "severity": "P2",
+    "evidence": "rc_disc.py on my instance, in fr then ar: Settings > Advanced > Safety & at-risk use, tick #discovery-external, then untick. The label beside the box is translated (fr 'Autoriser les requêtes de découverte de sujets vers DuckDuckGo', ar 'السماح بإرسال استعلامات اكتشاف المواضيع إلى DuckDuckGo'), and so is the disclosure paragraph (keyed 12/12). In both locales the result line reads 'Enabled: topic-discovery queries will be sent to DuckDuckGo.' then 'Disabled (the default): no topic query leaves this machine.', and the toasts read 'External topic discovery enabled.' / 'External topic discovery disabled.'. After a live switch to zh the line still reads the English 'Disabled (the default)…'. In zh the page's own lookup returns all four strings unchanged, while 'Fetch mode saved.' gives '抓取模式已保存。'. A locale scan finds 0 of 12 files carrying any of the four keys. The setting was restored to false and network stayed online:false. Files: /tmp/claude-0/rewalk/H-recheck/rc_disc.json, shots/rc-disc-fr-on.png, rc-disc-ar-on.png, rc-disc-zh-after-switch.png.",
+    "root_cause": "src/static/app-backup.js:3126-3128. saveDiscoveryExternal() writes the two result sentences into #discovery-external-result with textContent and passes the two toast sentences to toast() as bare English literals. None of the four is wrapped in t() or keyed in src/static/locales/*.json. The DOM walker (src/static/i18n.js:34-44) translates only exact keys, so the four stay English, on first paint and after a live switch alike. toast() (src/static/app-core.js:510-512) does not translate.",
+    "suggested_fix": "Add the four strings to all 12 locale files. Pass the toasts through OOI18N.t. For the result line, either write the English key and let the walker translate it on paint and on oo:langchange, or render with t() on an element marked data-i18n-dyn and repaint it on oo:langchange. Do not write a translated string into a walker-owned node, or it gets cached as the English original. Extend the i18n chrome audit so it catches textContent/toast literals like these."
+   },
+   {
+    "ref": "new:Help 'Find on this page…': typing a phrase whose first match is in the Security endpoint table highlights it but does not scroll it into view",
+    "verdict": "confirmed",
+    "severity": "P3",
+    "evidence": "rc_find.py: each case ran on a fresh page, with Help > Security opened and scrollY set to 0. Typed 'Where in the tree' at 60 ms per key: 1 mark, table scrollLeft 519, page scrollY 125, mark top 1822 in a 950 px viewport (out of view). At 200 ms per key: scrollY 163, mark top 1784. Typed plus Enter, then 8 s: scrollY 125. At 375x667: scrollY 210, mark top 5025, table scrollLeft 962. fill() gives scrollY 1479, mark top 468 (1440), and scrollY 4908, mark top 327 (375). keyboard.insert_text also gives scrollY 1479. Typed prose 'kept true' does jump (scrollY 503, mark top 466). Controls: forcing behavior:'auto' on scrollIntoView still fails (scrollY 111 at 1440, 161 at 375, with the window pulled back in the same frame as each input event). Deferring the unchanged smooth call with setTimeout(0) lands (scrollY 1479, mark top 468). rc_find_ctl.py: after typing, #doc-find sits at top -30 / bottom 14, just brought back into the viewport, the signature of the caret reveal that follows a keystroke. Files: /tmp/claude-0/rewalk/H-recheck/rc_find.json, rc_find_ctl.json, shots/rc-find-typed60-1440.png, rc-find-filled-1440.png, rc-find-typed60-375.png, rc-find-typed60-DEFER0-1440.png. Playwright's keyboard.type goes through the same editing path as a real keypress, so this is not a harness artifact.",
+    "root_cause": "src/static/app-settings.js:85. highlightProse() calls first.scrollIntoView({block:'center', behavior:'smooth'}) synchronously inside the #doc-find input handler (src/static/index.html:3210 oninput=\"filterDoc()\" -> app-settings.js:66-70). After a real keystroke's input event returns, Chromium reveals the focused input's caret. That reveal overrides or aborts the page-level part of the scroll. When the match sits inside the horizontally scrollable table, the scroll is a two-step sequence (table, then page), and only the table step survives. A paste or fill makes no keystroke caret reveal, and a prose match needs only the page step, which is already animating, so both work.",
+    "suggested_fix": "Move the scroll out of the input event. A setTimeout(0) or requestAnimationFrame is enough (measured). Better, debounce filterDoc by about 150 ms, which also stops re-rendering the whole Help body on every keystroke. Optionally, scroll the table wrapper and the page as two explicit steps."
+   },
+   {
+    "ref": "new:Help document list: 9 of 10 doc titles and all 10 descriptions stay English on a translated page (only 'User Manual' translates, by coincidence)",
+    "verdict": "confirmed",
+    "severity": "P3",
+    "evidence": "rc_docnav.py on my instance, switching live with the top-bar switcher and then opening Help (the '?' icon). zh at 1440: the heading '帮助与文档' and the placeholder '在本页查找…' are translated and the first entry is '用户手册'. 'Quickstart', 'Ethics, compliance & notices', 'Governance & acceptable use', 'Security', 'Design', 'Roadmap', 'Architecture', 'Contributing' and 'Changelog', plus all 10 blurbs (e.g. 'Threat model, local-first posture, and the security audit.'), are English. It is the same in fr ('Manuel de l'utilisateur' is the only translated title), in ar ('دليل المستخدم' only) and in zh at 375. A locale scan finds only 'User Manual' among the 10 titles and 10 blurbs, in all 12 files. In fr the Quickstart body is served translated (docs/i18n/fr/QUICKSTART.md) under an English 'Quickstart' title. Files: /tmp/claude-0/rewalk/H-recheck/rc_docnav.json, shots/rc-docnav-zh-1440.png, rc-docnav-fr-1440.png, rc-docnav-ar-1440.png, rc-docnav-zh-375.png.",
+    "root_cause": "src/api/main.py:2699-2750. _DOCS holds English title and blurb literals, served by /api/docs (main.py:2769-2784). src/static/app-settings.js:31-33 renders them as plain text nodes, and the i18n walker translates only exact keys. 'User Manual' is keyed and the other 19 strings are not. This is not by design: Q1122 = b chose to translate Help ×12, so the 'every user-facing string ×12' non-negotiable stands, and S06-05's scope covers the document bodies and the banner, not this list chrome.",
+    "suggested_fix": "Key the 10 titles and 10 blurbs in all 12 locale files. They are plain text nodes outside data-i18n-dyn, so the walker will translate them on load and on a live switch. Alternatively, render them with OOI18N.t in loadDocs and re-render on oo:langchange. Add a test asserting every _DOCS title and blurb is a locale key."
+   },
+   {
+    "ref": "new:Settings > Advanced > Safety: the 'Allow topic-discovery queries to DuckDuckGo' checkbox is stretched to 150-209 px, squeezing its label into three narrow lines",
+    "verdict": "confirmed",
+    "severity": "P3",
+    "evidence": "Met on the way while re-checking H5 (rc_cblayout.py). At 1440x950 in en, #discovery-external's computed width is 149.9 px (box at x=289, 150x13). Its label starts at x=450 and wraps to 3 lines of 127/60/77 px ('Allow topic-discovery' / 'queries to' / 'DuckDuckGo'), leaving a ~160 px empty gap after the tick box. In fr the checkbox is 209.4 px and the label wraps to 3 lines starting at x=509. The row has most of the 1440 px panel free. The other Advanced checkbox measured (#ai-prompt-oningest) is 13 px wide. Files: /tmp/claude-0/rewalk/H-recheck/rc_cblayout.json, shots/rc-cb-en-1440.png, rc-cb-fr-1440.png (and the walker-style shot rc-disc-fr-on.png shows the same). Not checked at 375 px: my scripted sidebar click timed out there, so that width is cannot-check. Not in defects.csv.",
+    "root_cause": "src/static/app.css:435 'input, select, textarea { width:100% }' also applies to checkboxes (app.css:439 sets only accent-color for them). At src/static/index.html:3096-3100 the checkbox sits inside a display:flex label in a flex:0 0 auto div, so the 100% checkbox takes a share of the row and the text node is left a narrow column.",
+    "suggested_fix": "Give checkbox and radio inputs width:auto in the shared rule (app.css:439: input[type=checkbox], input[type=radio] { width:auto; flex:0 0 auto }), or add style=\"width:auto\" on #discovery-external as the other rows do (.switch input, .modlist input, .bi-row input)."
+   }
+  ],
+  "summary": "All four of walker H's items reproduce on build 0deff9c4 on my own instance, and I found one new P3 layout defect. Setup: a fresh encrypted --mini seed, booted locked on port 8950 and unlocked through #pw. Airplane mode held throughout (online:false, zero non-loopback requests), no consent was granted, and discovery_external_enabled was put back to false. I stopped my server by PID 11305 and did not touch the other walkers' servers or the worktree (git status clean).\n\n1. '(server busy)' on an idle server: CONFIRMED P2. Home's own polls show the cached stats aging from 14 to 119 s with the same as_of, and the strip then reads 'as of 09:06 AM (server busy)' in en, fr, ar and zh. At that moment the scheduler is stopped, the app is offline, and the server's own load readings show it idle (loop lag 0.3 ms, nothing in flight). Cause: the note in app-home.js:117-137 fires on the value's age alone. But served_cache.py:233-245 deliberately lets that age grow when nothing has been written, so the note appears precisely when the server is idle.\n\n2. Topic-discovery result line and toasts: CONFIRMED P2. The disclosure line and both toasts are English in fr, ar and zh (the line also stays English after a live switch), while the label and paragraph beside them are translated. None of the four strings is keyed in any of the 12 locale files. Cause: app-backup.js:3126-3128 writes them as bare English strings.\n\n3. Help 'Find on this page' typed into the Security table: CONFIRMED P3. Typing 'Where in the tree' highlights the match but leaves the page near scrollY 125 (210 at 375 px). Filling or pasting the same text lands at 1479. A control that runs the same scroll one tick later (setTimeout 0) lands correctly; forcing an instant scroll does not. Cause: app-settings.js:85 scrolls synchronously inside the input handler, and Chromium's caret reveal after the keystroke pulls the page back to the input.\n\n4. Help document list: CONFIRMED P3. In zh, fr and ar only 'User Manual' is translated; the other 9 titles and all 10 descriptions stay English. The list comes from English strings in main.py:2699-2750, and only 'User Manual' is keyed. Q1122 = b keeps the ×12 rule, and S06-05 covers the document bodies, not this list.\n\nNew P3: the 'Allow topic-discovery queries' checkbox is stretched to 150-209 px by the global input width:100% rule (app.css:435), which squeezes its label into three narrow lines. I measured this at 1440 px in en and fr only; my 375 px run failed at the sidebar click, so that width is unchecked.\n\nScripts, JSON and screenshots are in /tmp/claude-0/rewalk/H-recheck/ (the files starting rc_ and shots/)."
+ }
+}

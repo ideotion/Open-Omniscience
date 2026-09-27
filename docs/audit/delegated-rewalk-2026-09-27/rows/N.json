@@ -1,0 +1,337 @@
+{
+ "row": "N",
+ "walk": {
+  "row": "N",
+  "environment": "Build: the read-only worktree /tmp/claude-0/rewalk/tree at 0deff9c4. It was never edited: git status is clean and HEAD is unchanged at the end. The server was run with uvicorn on the app object, never `python -m src.api.main`.\n\nStore: /tmp/claude-0/rewalk/N/data/enc, a fresh seed.\n- Seeded with OO_DB_PASSPHRASE='walk-pass-2026' set and OO_DB_PLAINTEXT unset: the default STATE C, plus concept_fixture.py run once.\n- 462 articles. The file header is ciphertext.\n- Booted with NEITHER variable set. /api/system/lock-state returned locked (/api/articles gave 503 to curl while locked), and the store was unlocked through the real #pw / #btn-unlock form.\n- Seed date is 2026-09-27, so every fixture article falls in ISO week 39.\n- Port 8915. Airplane mode throughout: the plane stays filled and /api/system/network returns online:false. No consent popup was raised on any path I walked, and \"Go online\" was never pressed.\n\nBrowser: Playwright, Chromium at /opt/pw-browsers/chromium, headless, with --disable-background-networking, --disable-component-update and --no-proxy-server, and the proxy variables unset. A Recorder logged page errors, console errors, responses ≥400, any off-loopback request, and a scan for visible undefined / NaN / null / [object Object].\n\nPasses:\n- 1440x950 in en, then fr, ar (RTL) and zh, plus ja where the row names it.\n- One 375 px pass in en.\n\nStand-in for N13, which differs from the first walk:\n- A second store, /tmp/claude-0/rewalk/N/data/old, was seeded by the pre-S8 code (a copy at /tmp/claude-0/walk/N/oldsrc; nothing was written there).\n- It was served by the fixed tree on port 9015, then the real Settings \"Re-index search\" button was run.\n- The real install's 2,000,000+ article corpus was not available.\n\nBoth servers were stopped by PID. Scratch is /tmp/claude-0/rewalk/N/:\n- 106 screenshots in shots/.\n- R-*.json results and rec-*.json recorder logs.\n- downloads/: the bulletin .md, the annexes zip and CROSS-LANGUAGE-CONCEPTS.md.",
+  "steps": [
+   {
+    "id": "N1",
+    "verdict": "pass",
+    "locales": "en",
+    "evidence": "/ redirected to the lock form (#pw and #btn-unlock). Unlocking with walk-pass-2026 landed on /#home. The plane's fill is currentColor (filled) and /api/system/network returns online:false. The network coach was dismissed with 'Not now', which POSTs nothing. 0 page or console errors."
+   },
+   {
+    "id": "N2",
+    "verdict": "pass",
+    "locales": "en",
+    "evidence": "The ?analyze=climate grey block text is exact and the Articles total is 160. Language chips: fra 29, deu 28, ara 27, por 27, rus 27, eng 21, spa 1. They sum to 160, with no zho. Columns are TITLE / SOURCE / LANGUAGE / PUBLISHED ↓ / TOP KEYWORD, all 50 rows carry a language code, and code hovers read English/French. The default sort is now Date, descending, with 'Interleave by date' pressed; choosing Relevance relabels the button 'Interleave languages'. Group-by-language headings sum to 50 (including 'spa 1 article') and the total stays 160. Evidence: shots/N-N2-*.png, R-en-all.json."
+   },
+   {
+    "id": "N3",
+    "verdict": "pass",
+    "locales": "en",
+    "evidence": "The per-form readout is 'climate 156 · climat 3 · clima 1 · klima 1 · klimaat 0 · климат 0 · مناخ 0 · 160 articles in total, counted once each', followed by the overlap caveat. The forms sum to 161, against 160 counted once, which the caveat explains. There is no 'N of M' and no dash placeholders. The Search page reads '160 result(s) (showing 50)'. Evidence: R-en-all.json, shots/N-N3-*.png."
+   },
+   {
+    "id": "N4",
+    "verdict": "pass",
+    "locales": "en",
+    "evidence": "Before the toggle: total 160 and Sentiment n=21/160. After the literal toggle: the URL gains expand=0, the total is 156, Trend offers only Counts and Indexed (no By language), and Sentiment reads n=21/156. F5 lands on Overview but stays literal at 156, and pasting the URL also gives 156. Restoring expansion returns 160. Evidence: R-en-all.json."
+   },
+   {
+    "id": "N5",
+    "verdict": "pass",
+    "locales": "en",
+    "evidence": "First paint of ?analyze=election is correct: the decline block, 20 articles, chip eng 20, and no ring caveat. Picking 'public election' gives 216, with sense= in the URL and 8 language chips including zho. The limit sentence reads 'election: expanded to 40 of 44 forms.' and the readout says '40 of 44 forms counted'. cap=0 keeps 216. 'Limit' removes cap=0, and 'Show all senses' returns 20. The race detector saw no stale-tab paint across repeated runs. Evidence: R-en-all.json, R-race.json."
+   },
+   {
+    "id": "N6",
+    "verdict": "pass",
+    "locales": "en",
+    "evidence": "Trend 'By language' draws stacked columns with the axis at 0. The totals line reads 'eng 3 · fra 3 · deu 1 · spa 1 · ita 1 · por 1 · 7 articles in total…', followed by the exact caveat, and there is no refusal sentence. Hovering the low segment gives 'eng: 9 mentions · running total 9'; the top gives 'por … running total 28'. A legend chip hides its series (aria-pressed=false, opacity .4) and one click restores it. When every series is hidden, the chart says so. Enter works on a focused chip. (The Counts mode mislabels its unit; see new defect 2.) Evidence: shots/N-N6-*.png, R-en-all.json."
+   },
+   {
+    "id": "N7",
+    "verdict": "pass",
+    "locales": "en",
+    "evidence": "The Mindmap Concept view shows centre 'climate · 7' with arms eng 3 · fra 3 · deu 1 · spa 1 · ita 1 · por 1, and leaves such as assembly and rapport. The missing-forms line reads 'Not observed in this corpus: ara: مناخ · nld: klimaat · rus: климат'. Arm titles say 'the same word in …'. Nothing is clipped. After ⛶ the label stays at 39 px with the SVG at 161.8% width inside a scroll box. Node hovers are native SVG titles. Evidence: shots/N-N7-concept-*.png."
+   },
+   {
+    "id": "N8",
+    "verdict": "pass",
+    "locales": "en",
+    "evidence": "The 7-day window was enough. The Home trend hover for climate ends '— Across languages: English 9 · French 7 · German 3 · Spanish 3 (in the last 7 days)'. Keyboard focus after 6 Tabs shows the same #oo-tip bubble. The non-concept word 'edition' shows no breakdown. The Watch row carries its sentence, the concept hover lists the forms, and the caveat appears once. Evidence: shots/N-N8-*.png, R-en-all.json."
+   },
+   {
+    "id": "N9",
+    "verdict": "pass",
+    "locales": "en",
+    "evidence": "Search: الإقليمية, الاقليميه and the voweled spelling each give 55; على and علي each give 27; 预算 gives 28 and 诊所 gives 27. In Settings, 'Re-index search' shows the exact confirm text. The status reads 'Articles checked: 462 · re-indexed: 0 (Arabic: 0 · Chinese: 0 · Japanese: 0)', and the stored report matches. On a fresh fixed-tree seed 0 is the expected count. Evidence: shots/N-N9-*.png, R-en-all.json."
+   },
+   {
+    "id": "N10",
+    "verdict": "pass",
+    "locales": "en",
+    "evidence": "Bulletin is now a top-level fold in Settings, not inside Uninstall, and Uninstall stayed closed. 'Draft built.' appears, then 'Downloaded: the report and 33 annexed article(s).' with 2 files saved. CROSS-LANGUAGE-CONCEPTS.md contains '## climate' with en 9, fr 7, es 3, de 3. The edition was deleted through its confirm. Evidence: downloads/, shots/N-N10-*.png."
+   },
+   {
+    "id": "N11",
+    "verdict": "fail",
+    "locales": "fr, ar, zh, ja",
+    "evidence": "What passes. fr: ?analyze=climat gives 160; the literal toggle gives 3. The grey block, the caveats, the readout ('40 formes comptées sur 44') and 'élargi à 40 formes sur 44' are all French. ar: RTL, with the sidebar at x 1190–1440 and 0 horizontal overflow. zh and ja: the same numbers, and zh ends sentences with '。'. The watch list and the Home concept hover translate on a live switch, and the watch was deleted at the end.\n\nWhat fails:\n- (a) The Sentiment VADER caveat stays English in every locale, even after a reload.\n- (b) Separators are welded: fr 'Analyse: “climat”', 'Afficher:', 'langue:', 'Tonalité moyenne:'; zh '分析: ', '视图:'; ar uses a Latin comma.\n- (c) After a live language switch, the Articles, Trend, Sentiment and Diagnostics panels stay in the previous language.\n\nEvidence: shots/N-fr-*.png, N-ar-*.png, N-zh-*.png, N-live-*.png; R-loc-fr-ar-zh-ja.json, R-live.json, R-live2.json, R-frtabs.json."
+   },
+   {
+    "id": "N12",
+    "verdict": "not-measurable-here",
+    "locales": "en",
+    "evidence": "This step needs the real install's corpus of 2M+ articles, which is not available here. On the stand-in corpus the figures agree: (a) Articles 160, (b) the Search count 160, (c) the per-form readout 160 counted once, (d) Trend by language 7 articles, (e) Sentiment n=21/160. Literal mode gives 156, equal to the climate form's 156, with n=21/156. The surfaces agree on each number, but the 2M-scale numbers could not be checked."
+   },
+   {
+    "id": "N13",
+    "verdict": "not-measurable-here",
+    "locales": "en",
+    "evidence": "The step needs the real install's pre-S8 index. Stand-in: a store seeded by the pre-S8 code, served by the fixed tree on :9015.\n- Before the re-index: 预算 0, 诊所 0, الإقليمية 55, الاقليميه 0, voweled 0, على 27, علي 0, climate 160.\n- The run reported 're-indexed: 111 (Arabic: 56 · Chinese: 55 · Japanese: 0)' in about 0.1 s, and the report matches.\n- After: 28, 27, 55, 55, 55, 27, 27, 160.\n- A second run reported 0.\n\nThe running job row in the task manager could not be seen because the run took 0.1 s. The task manager does list search-reindex among its local job kinds, with the label translated in all 12 locales. Evidence: R-n13.json, shots/N-N13-*.png."
+   }
+  ],
+  "old_defects": [
+   {
+    "id": "N1",
+    "verdict": "fixed",
+    "evidence": "The tab race is gone.\n- 6 of 6 runs of scenario B painted the correct tab, and none of the election tab's /api/articles requests carried query=climate.\n- Scenario C held 0 climate requests, because boot no longer loads the restored tab.\n- In-window held-response race: releasing the held climate response did not overwrite the election tab (label, total, chips and xlang stayed on election).\n- Every first paint in walk_en and walk_loc was correct.\nEvidence: R-race.json, R-inwin.json."
+   },
+   {
+    "id": "N2",
+    "verdict": "fixed",
+    "evidence": "A new climate tab has no sense= in its URL. A new election tab shows the sense picker with 20. A new climat tab shows 160 (expanded, not literal). The ar, zh and ja first loads each showed the picker. Evidence: R-en-all.json, R-loc-fr-ar-zh-ja.json."
+   },
+   {
+    "id": "N3",
+    "verdict": "fixed",
+    "evidence": "The Trend by-language legend chip stays dimmed (aria-pressed=false, opacity .4) after a repaint, and one click restores it. The state where every chip is hidden is labelled. Evidence: R-en-all.json, shots/N-N6-legend-*.png."
+   },
+   {
+    "id": "N4",
+    "verdict": "fixed",
+    "evidence": "The Articles default sort is Date, descending (PUBLISHED ↓), with 'Interleave by date'. Evidence: R-en-all.json N2 block."
+   },
+   {
+    "id": "N5",
+    "verdict": "fixed",
+    "evidence": "The Watch list re-renders in the new language on a live switch in fr, ar, zh and ja. Evidence: R-loc-fr-ar-zh-ja.json watch_live."
+   },
+   {
+    "id": "N6",
+    "verdict": "fixed",
+    "evidence": "`<b data-i18n-dyn>Climate</b>` renders 'Climate' unchanged in every language; the term is not translated as if it were chrome. Evidence: R-loc-fr-ar-zh-ja.json."
+   },
+   {
+    "id": "N7",
+    "verdict": "fixed",
+    "evidence": "The Home concept-hover caveat is translated in fr, ar, zh and ja. Evidence: R-loc-fr-ar-zh-ja.json, shots/N-*-hover-*.png."
+   },
+   {
+    "id": "N8",
+    "verdict": "fixed",
+    "evidence": "After ⛶ the concept-map label stays at 39 px, with the SVG at 161.8% width inside a scroll box and no clipping. Evidence: shots/N-N7-concept-enlarged-en.png."
+   },
+   {
+    "id": "N9",
+    "verdict": "fixed",
+    "evidence": "Insights scrollWidth minus clientWidth is 0 at 375 px. Evidence: R-375.json."
+   },
+   {
+    "id": "N10",
+    "verdict": "fixed",
+    "evidence": "(a) At 375 the palette row is topmost: the coach has z-index 52, below the palette's 151. (b) After a live en→ar switch the coach re-anchors at [186,74,456,210], and the Insights sidebar item and the top-bar controls stay clickable. Evidence: R-375.json, R-loc-fr-ar-zh-ja.json, shots/N-N11-coach-live-ar.png."
+   },
+   {
+    "id": "N11",
+    "verdict": "fixed",
+    "evidence": "The fr Search count reads '160 résultat(s) (50 affichés)'. Evidence: R-loc-fr-ar-zh-ja.json."
+   },
+   {
+    "id": "N12",
+    "verdict": "fixed",
+    "evidence": "The Concept view note is present, with a working back link to the Map view. Evidence: R-en-all.json N7, shots/N-N7-*.png."
+   },
+   {
+    "id": "N13",
+    "verdict": "fixed",
+    "evidence": "A declined term (election) shows no ring or expansion caveat. The limit sentence carries its numbers: 'election: expanded to 40 of 44 forms.' (fr: 'élargi à 40 formes sur 44'). Evidence: R-en-all.json N5, R-loc-fr-ar-zh-ja.json."
+   },
+   {
+    "id": "N14",
+    "verdict": "fixed",
+    "evidence": "zh sentences end with '。', and a count of one reads '1 article' rather than '1 articles'. Evidence: R-loc-fr-ar-zh-ja.json, R-en-all.json group headings. (The known plural-rules item is excluded.)"
+   },
+   {
+    "id": "M6",
+    "verdict": "fixed",
+    "evidence": "Checked on the row-N analysis surface I walked; the M6 behaviour did not recur. Evidence: R-en-all.json."
+   },
+   {
+    "id": "T1",
+    "verdict": "fixed",
+    "evidence": "/tasks shows 'Airplane mode' in the task manager and the top-bar plane is filled. Evidence: shots/N-*-tasks*.png, R-misc.json."
+   },
+   {
+    "id": "T4",
+    "verdict": "fixed",
+    "evidence": "After live language switches the network coach re-anchors to the plane: after en→ar it sits at [186,74,456,210] and blocks nothing. Evidence: R-loc-fr-ar-zh-ja.json."
+   },
+   {
+    "id": "T7",
+    "verdict": "fixed",
+    "evidence": "Same coach re-anchoring evidence as T4, measured at 1440 and 375. Evidence: R-375.json, R-loc-fr-ar-zh-ja.json."
+   },
+   {
+    "id": "O2",
+    "verdict": "fixed",
+    "evidence": "The coach no longer overlaps the sidebar or palette controls after a relocation. Evidence: R-375.json, shots/N-N11-coach-live-ar.png."
+   },
+   {
+    "id": "M7",
+    "verdict": "fixed",
+    "evidence": "Language names inside sentences are translated on Trends and the Mindmap Map view, e.g. 'المناخ in Arabic' becomes the localised form, and fr reads 'en anglais…'. Evidence: R-loc-fr-ar-zh-ja.json, R-live.json ar_mm/zh_live_mm."
+   },
+   {
+    "id": "M8",
+    "verdict": "fixed",
+    "evidence": "The Analysis Keywords subtab repaints in the new language on a live en→fr switch. Evidence: R-live.json fr_live_keywords_head, shots/N-live-fr-keywords.png. Other panels do not repaint (new defect 3)."
+   },
+   {
+    "id": "M5",
+    "verdict": "cannot-check",
+    "evidence": "The Settings search re-index ran in about 0.1 s on the stand-in (111 articles), so a running search-reindex row never existed long enough to observe in the task manager. I can only confirm that the kind is registered and labelled in all 12 locales."
+   }
+  ],
+  "new_defects": [
+   {
+    "title": "Sentiment VADER caveat is English in every locale, even after a reload",
+    "severity": "P2",
+    "repro": "Unlock, open ?analyze=climate, switch the language to fr, then reload the page. Open the Sentiment subtab. Repeat in zh and ar.",
+    "expected": "The visible VADER caveat, which must stay visible by default under the informed-consent rule, appears in the UI language, as in every other caveat on the row.",
+    "actual": "The caveat under 'Tonalité moyenne' / '平均语调' is the English _SENTIMENT_CAVEAT text in fr, ar, zh and ja, after a live switch and after a fresh reload alike.",
+    "evidence": "shots/N-fr-reload-sentiment.png; R-frtabs.json; R-live.json zh_reload_sentiment and zh_sentiment.",
+    "root_cause_lead": "src/analytics/queries.py:1909-1912 defines _SENTIMENT_CAVEAT, which has no key in any of the 12 locale files. src/static/app-analysis.js (Sentiment block, about :2270) renders it with esc(d.caveat || \"\") and no t(), so neither the server nor the walker translates it."
+   },
+   {
+    "title": "Trend 'Counts' mode labels mention counts as articles",
+    "severity": "P2",
+    "repro": "Open ?analyze=climate, go to Trend, and choose Counts (the default). Hover the column. Also try ?analyze=election.",
+    "expected": "The unit is mentions, as /api/insights/trend documents ('Mention volume over time') and as the Insights hover says ('22 mentions · 7 articles'), or the count is of articles if the label stays.",
+    "actual": "The hover reads 'climate: 22 articles · 09-21 00:00' and the legend 'n=1 · articles', under 'Article counts on a shared time axis.' The API for the same window returns total 22 mentions over 7 articles, so the chart shows a wrong fact of about 3x. 'election: 1 articles' shows the same unit error (plural aside).",
+    "evidence": "R-counts.json (API total 22 and articles 7 against the chart label); shots/N-trend-counts-climate-en.png.",
+    "root_cause_lead": "src/static/app-analysis.js about :626 and :636 builds the counts series with unit: t(\"articles\") over pt.count. src/api/insights.py:1874 returns mention volume. Either the unit string or the series source is wrong."
+   },
+   {
+    "title": "Live language switch leaves analysis panels in the previous language",
+    "severity": "P3",
+    "repro": "Open ?analyze=climate, go to Articles, and click the per-form count. Switch en→fr from the top-bar language menu without reloading. Then go to Trend by language and switch fr→ar, and to Sentiment and switch again. Also open Settings Diagnostics and switch fr→ar.",
+    "expected": "Every visible panel repaints in the new language, as Keywords, the Watch list, the mindmap and the coach already do.",
+    "actual": "Articles after en→fr keeps 'Show:', '↕ “climate” count', 'language:', '160 Articles · Open an article…', 'Page 1 of 4 (160 Articles)', 'View:' and 'PUBLISHED ↓'. The tone chip still reads 'negative -0.57', the language-cell hover still says 'English', and the per-form readout disappears. Trend after fr→ar stays entirely French, and after en→fr it keeps 'View:', 'Chart data' and '7 articles in total, counted once each'. Sentiment keeps 'Mean tone' / 'English-scored (reliable)' in the old language. The Diagnostics re-index status stays French after fr→ar. A reload fixes all of it.",
+    "evidence": "shots/N-live-fr-articles.png, N-live-ar-trend.png, N-live2-fr-trend.png, N-live2-fr-sentiment.png; R-live.json (fr_live_articles, ar_live_trend_frleft); R-live2.json; R-final.json ar_status_before.",
+    "root_cause_lead": "The oo:langchange listener at src/static/app-boot.js:41 repaints only some surfaces. The Articles total, pager and facets, the Trend panel, the Sentiment panel and the Settings Diagnostics status are built from t() at render time and are not re-rendered, and the walker cannot map their already-translated strings back."
+   },
+   {
+    "title": "Welded separators (colon, comma) on row-N surfaces in fr, zh and ar",
+    "severity": "P3",
+    "repro": "Switch to fr and open the command palette with 'climat'. Hover the Home trend row for climate. Open ?analyze=climat and look at the Articles, Trend and Sentiment controls. Repeat in zh and ar.",
+    "expected": "Locale separators: fr 'Analyse : “climat”' with a non-breaking space before the colon; zh full-width '：' and '，'; ar Arabic comma '،'.",
+    "actual": "fr: the palette shows 'Analyse: “climat”'; the hover shows 'tendance:' and 'avec: assembly (2 articles, Association 3.9)'; the analysis window shows 'Afficher:', 'source:', 'langue:', 'Affichage:', 'Superposer une matière première:', 'Tonalité moyenne:' and 'Évalué en anglais (fiable):'. zh: '分析: ', '视图:', '来源:', '语言:', '平均语调:' and '(2 篇文章, 关联 3.9)'. ar: '(2 مقالة, ارتباط 3.9)' with a Latin comma.",
+    "evidence": "R-loc-fr-ar-zh-ja.json, R-frtabs.json, R-live.json zh_reload_articles; shots/N-fr-palette*.png, N-zh-trend-view-label.png.",
+    "root_cause_lead": "The colon or comma is hard-coded after t(): app-shell.js:777 `${t(\"Analysis\")}: “${raw}”`; app-boot.js:486 `${t(\"trend\")}: `; app-boot.js:499-502 `, ${t(\"Association\")}` and `${t(\"with\")}: `; app-analysis.js :692, :697, :1361, :1410-1411, :1941, :2290-2291. The Z3 welded-colon guard in tests/test_clickthrough_b14_fixes.py (_Z3_FILES) does not scan app-analysis.js, app-boot.js or app-shell.js."
+   },
+   {
+    "title": "⛶ hover still says 'Enlarge the mindmap' while the map is enlarged",
+    "severity": "P3",
+    "repro": "Open ?analyze=climate, go to Mindmap, choose Concept, click ⛶, then hover ⛶ again.",
+    "expected": "The hover names the action the button performs now, e.g. 'Shrink the mindmap' or 'Exit enlarged view'.",
+    "actual": "The title stays 'Enlarge the mindmap' after the map is enlarged; clicking it shrinks the map.",
+    "evidence": "shots/N-N7-concept-enlarged-en.png; R-en-all.json N7 enlarge_title.",
+    "root_cause_lead": "src/static/app-analysis.js:1044 renders the ⛶ button with a static title=\"Enlarge the mindmap\" that is never toggled."
+   },
+   {
+    "title": "Concept-map labels are 5–7 px at 375 px width",
+    "severity": "P3",
+    "repro": "Set the viewport to 375x812 in en. Open ?analyze=climate, go to Mindmap, and choose Concept without enlarging.",
+    "expected": "Readable labels, at least about 10 to 11 px rendered, or the view starts enlarged or scrollable on narrow screens.",
+    "actual": "The rendered label height is 5–7 px for arms and leaves and 9 px for the centre, because the SVG scales down to fit. Only ⛶ makes it legible.",
+    "evidence": "R-misc.json concept_label_px_375; shots/N-375-concept-en.png.",
+    "root_cause_lead": "The concept SVG uses a fixed viewBox scaled to container width with no minimum label size at narrow widths. The ⛶ path (N8's fix) is the only size floor."
+   },
+   {
+    "title": "Home briefing summaries, ranking line and back-face caveats stay English after a fr reload",
+    "severity": "P2",
+    "repro": "Unlock, switch to fr, reload Home, and read the briefing cards front and back. Repeat with a live switch to ar.",
+    "expected": "The card summaries, the 'Ranked by a disclosed order … never a score' line and the back-face caveats, which must stay visible by default, appear in the UI language.",
+    "actual": "The rising-card caveat and the ranking line are English in fr and ar, and several card summaries stay English. This was seen off-row while checking the coach; it may be adjacent to the known stored-briefing title item, but it concerns caveats and the ranking disclosure, not the law-card title.",
+    "evidence": "shots/N-home-fr-reload.png, shots/N-N11-coach-live-ar.png.",
+    "root_cause_lead": "src/briefing/leads.py:103 ('Ranked by a disclosed order…') and src/briefing/producers.py:325 (the rising-card caveat) emit English strings with no locale keys, so the i18n walker cannot map them."
+   }
+  ],
+  "page_errors": [],
+  "http_errors": [],
+  "summary": "Row N re-walked on 0deff9c4, on an encrypted store that started locked and was unlocked through #pw. Airplane mode held throughout. Chromium passes: en, fr, ar (RTL), zh (plus ja) at 1440x950, and en at 375.\n\nResults:\n- Steps: N1 to N10 pass. N11 fails. N12 and N13 are not-measurable-here because they need the real install's corpus and pre-S8 index; a stand-in store gives the expected figures (the re-index repaired 111 articles and the Arabic and Chinese spellings match afterwards).\n- Old row-N defects: all 14 fixed, including the N1 tab race (6 of 6 runs correct, and a held response no longer overwrites the tab).\n- Other rows' defects on these surfaces: M6, T1, T4, T7, O2, M7 and M8 are fixed. M5 is cannot-check, because the job took 0.1 s.\n- Monitoring: 0 page errors, 0 console errors, 0 UI HTTP responses ≥400, no visible undefined/NaN/null/[object Object], and 0 off-loopback requests.\n\nNew defects:\n- P2: the Sentiment VADER caveat is English in every locale.\n- P2: Trend Counts labels mention counts as articles (22 shown against 7 real articles).\n- P2, off-row: the Home briefing ranking line and card caveats stay English in fr and ar.\n- P3: a live language switch leaves the Articles, Trend, Sentiment and Diagnostics panels in the previous language.\n- P3: welded separators in fr, zh and ar; the Z3 guard does not scan app-analysis.js, app-boot.js or app-shell.js.\n- P3: the ⛶ hover keeps saying 'Enlarge the mindmap' while the map is enlarged.\n- P3: concept-map labels render at 5–7 px at 375 px width."
+ },
+ "recheck": {
+  "row": "N",
+  "summary": "I re-checked row N on my own fresh encrypted instance on port 8965. The store is /tmp/claude-0/rewalk/N-recheck/data/enc: default STATE C plus concept_fixture.py run once, seeded with OO_DB_PASSPHRASE set and OO_DB_PLAINTEXT unset, and the file header is ciphertext. I booted with neither variable set: lock-state returned locked and /api/articles gave 503. I unlocked through the real #pw / #btn-unlock form.\n\nThe whole run stayed in airplane mode. /api/system/network returned online:false, no consent popup was raised, and the coachmark only ever got \"Not now\". I recorded no page errors, no console errors, no browser HTTP responses >= 400, no off-loopback requests and no undefined/NaN/null tokens. The only 4xx/5xx in the server log is my own deliberate curl while the store was locked. The server (PID 30495) was stopped by PID. The worktree is still clean at 0deff9c4.\n\nAll 8 walker items are confirmed:\n- **N11 step failure:** confirmed.\n- **Sentiment caveat:** confirmed, and wider than reported. The Sources and Links caveats in the same window are also English in fr, so \"as in every other caveat on the row\" does not hold.\n- **Trend \"Counts\" mislabel:** confirmed. I raise it to P1 because it shows a wrong fact: 22 mentions are labelled as 22 articles, while there are 7.\n- **Live switch leaving panels stale:** confirmed.\n- **Welded separators:** confirmed.\n- **⛶ hover:** confirmed.\n- **375 px concept-map labels:** confirmed, with one correction. On this build ⛶ does NOT make them legible; only the Text-size slider does.\n- **Home briefing prose English:** confirmed. It is not the known law-card-title item: the briefing was generated fresh on this seed, and no locale has keys for these strings.\n\nScratch is /tmp/claude-0/rewalk/N-recheck/:\n- Scripts: p1_en.py, p2_loc.py, p3_live.py, p4_cav.py.\n- Results: R-p1.json … R-p4.json and rec-p*.json.\n- 45 screenshots in shots/.\n- Logs in logs/.",
+  "items": [
+   {
+    "ref": "N11",
+    "verdict": "confirmed",
+    "severity": "P2",
+    "evidence": "All reproduced on my own instance.\n\nWhat passes:\n- fr, after a reload: the palette row \"Analyse: “climat”\" gives 160 Articles. \"N'afficher que les mots que j'ai saisis\" gives 3 and goes back to 160 (R-p4.json).\n- ar: html dir=rtl, 0 horizontal overflow (R-p2.json).\n\n(a) The Sentiment caveat \"Tone is measured by VADER, an ENGLISH-lexicon method…\" is English in fr, zh, ar and ja after a reload (R-p2.json .sentiment; shots p2-fr-sentiment.png, p2-zh-sentiment.png, p2-ar-sentiment.png, p2-ja-sentiment.png).\n\n(b) Welded separators:\n- fr palette \"Analyse: “climat”\". The step's own expected text is 'Analyse : “…”'.\n- fr Articles 'Afficher:', 'source:', 'langue:', 'Affichage:'. Trend 'Affichage:', 'Superposer une matière première:'. Sentiment 'Tonalité moyenne:', 'Évalué en anglais (fiable):'.\n- zh '分析: “climate”', '显示:', '来源:', '语言:', '视图:', '叠加一种大宗商品:', '平均语调:'.\n- The hover reads 'tendance:' / 'avec: assembly (2 articles, Association 3.9)'. In zh it reads '趋势:' / '共现: assembly (2 篇文章, 关联 3.9)', and in ar '(2 مقالة, ارتباط 3.9)'.\n\n(c) A live switch leaves Articles, Sentiment and an open Trend panel in the previous language (R-p3.json; shots p3-live-fr-articles.png, p3-live-ar-trend-on-panel.png).",
+    "root_cause": "(a) src/analytics/queries.py:1909-1912 has no locale key, and src/static/app-analysis.js:2274 renders d.caveat without t().\n\n(b) The colon or comma is hard-coded after a t() label instead of going through the keyed '{prefix}: {text}' frame (ooLabelHtml, src/static/app-core.js:45):\n- src/static/app-shell.js:777\n- src/static/app-analysis.js:692, :697, :1361, :1410-1411, :1941, :2290-2291\n- src/static/app-boot.js:486, :499, :502\n\n(c) The oo:langchange listener at src/static/app-boot.js:41 has no repaint for these panels.",
+    "suggested_fix": "See the three item-level fixes below: key and t() the analysis caveats; route every 'label: value' through ooLabelHtml/ooLabelText, plus a keyed list separator; register repaints from retained payloads in the one oo:langchange listener."
+   },
+   {
+    "ref": "new:Sentiment VADER caveat is English in every locale, even after a reload",
+    "verdict": "confirmed",
+    "severity": "P2",
+    "evidence": "After a fresh reload in each locale, the first .hint in #an-sentiment reads 'Tone is measured by VADER, an ENGLISH-lexicon method; scores for non-English articles are unreliable (see the English share). Counts only, never a verdict.' The labels beside it are translated (e.g. 'Positif', '正面', 'إيجابي', '肯定的').\n\nEvidence: R-p2.json fr/zh/ar/ja .sentiment; R-p4.json; shots p4-fr-sentiment-caveat.png and p2-{fr,zh,ar,ja}-sentiment.png.\n\nThe defect is wider than reported. In fr the Sources caveat ('Volume and timing are exact counts; mean tone is VADER …') and the Links caveat ('Shared-origin structure, counts only …') are English too. The grep finds no key for any of the three in fr.json (R-p4.json).\n\nThis breaks the informed-consent rule that every caveat string ships in all 12 languages.",
+    "root_cause": "src/analytics/queries.py:1909-1912 (_SENTIMENT_CAVEAT), src/analytics/queries.py:2011 (sources caveat) and src/api/link_analysis.py:215 (links caveat) are English server prose with no key in any of the 12 locale files.\n\nsrc/static/app-analysis.js renders them verbatim: esc(d.caveat) at :2274 (sentiment), :2322 (sources) and :2261 (links), with no t(). The i18n walker matches exact keys only, so nothing translates them.",
+    "suggested_fix": "Add the three fixed caveat sentences as keys in all 12 locales and render them with esc(t(d.caveat)), the same way src/static/app-boot.js:506 already handles the keyword-stats caveat. Alternatively, have the endpoints return a caveat key the client translates."
+   },
+   {
+    "ref": "new:Trend 'Counts' mode labels mention counts as articles",
+    "verdict": "confirmed",
+    "severity": "P1",
+    "evidence": "The same wrong unit appears in every locale. In en, ?analyze=climate → Trend → Counts (default) shows:\n- hover 'climate: 22 articles · 09-21 00:00'\n- legend 'climate n=1 · articles'\n- caption 'Article counts on a shared time axis.'\n\nThe API for the same lens (/api/insights/trend?term=climate&expand=true&literal_cap=true) returns total 22 and articles 7.\n\nWith expand=false: total 9, articles 3.\n\nThe 'By language' view draws the same sums and labels them correctly as 'mentions' (eng 9, fra 7, …), with '7 articles in total, counted once each' beside it.\n\nThe Insights hover for the same term says '22 mentions · 7 articles', so two surfaces contradict each other.\n\nEvery locale shows the same wrong unit: fr 'climat: 22 articles', zh '22 篇文章', ar '22 مقالة', ja '22 記事'.\n\nEvidence: R-p1.json (trend_hovers, trend_legend, api_trend_climate, api_trend_climate_literal, bylang_legend); R-p2.json trend_hover per locale; shots p1-trend-counts-climate-en.png and p1-trend-bylang-climate-en.png.\n\nI rate it P1 under this walk's rubric ('wrong fact shown'): the chart states about 3x as many articles as exist. The walker filed P2.",
+    "root_cause": "src/static/app-analysis.js:628 and :637 give the Counts series unit t('articles'), and :705 adds the caption 'Article counts on a shared time axis.' The plotted value, however, is pt.count.\n\nsrc/analytics/queries.py computes that as SUM(KeywordMention.count), i.e. mentions, in two places:\n- the ring path: _mention_series, queries.py:939-957\n- the single-keyword path: queries.py:1044-1052\n\n_drawAnTrendByLang (app-analysis.js ~:748) labels the identical numbers unit t('mentions').",
+    "suggested_fix": "Label the Counts series unit t('mentions') and change the caption to a keyed 'Mention counts on a shared time axis.' in all 12 locales. If an article count is wanted instead, add a server-side distinct-article-per-bucket series and chart that under the 'articles' label."
+   },
+   {
+    "ref": "new:Live language switch leaves analysis panels in the previous language",
+    "verdict": "confirmed",
+    "severity": "P3",
+    "evidence": "Walk: en, ?analyze=climate → Articles → 'Count each form', then a live switch en→fr from the analysis tab's own top-bar menu (R-p3.json).\n\nArticles after the switch:\n- The labels stay 'Show:', 'source:', 'language:', 'View:'.\n- The count button stays '↕ “climate” count'.\n- The total stays '160 Articles · Open an article to read it…', and the pager 'Page 1 of 4 (160 Articles)'.\n- The header stays 'Published ↓'.\n- Row 1's tone chip stays 'negative -0.57', and the language-cell hover stays 'English'.\n- The per-form readout (climate 156 · climat 3 · …) disappears: the forms slot becomes empty.\n- The same holds after fr→ar.\n\nSentiment, rendered in en, keeps 'Mean tone: … English-scored (reliable)' after the fr and ar switches.\n\nTrend (By language) while on the panel, switched fr→ar, stays French ('Affichage:', 'Données du graphique', '7 articles au total…', the French caveat), with a mixed 'التاريخ\\tVALEUR' header. Leaving the subtab and returning repaints it in Arabic; opening Trend for the first time after a switch is correct.\n\nSettings → Advanced → Diagnostics: the re-index status 'Articles vérifiés : 462 · réindexés : 0 …' stays French after a live switch to ar.\n\nA reload fixes all of it, except the VADER caveat, which stays English regardless.\n\nShots: p3-live-fr-articles.png, p3-live-ar-articles.png, p3-live-fr-sentiment.png, p3-live-ar-trend-on-panel.png, p3-live-ar-trend-revisit.png, p3-fr-reindex-status.png, p3-ar-live-reindex-status.png.",
+    "root_cause": "The ONE oo:langchange listener at src/static/app-boot.js:41 registers analysis repaints only for:\n- the cross-language rail (_anRepaintXLang)\n- the near-duplicate note (_anRepaintDupNote)\n- the price panel (_anRepaintPrice)\n\nNothing repaints the frozen t()/tf() frames of:\n- the Articles list: src/static/app-analysis.js:2049-2062 with _anArtControls :1355-1370, facet labels :1410-1411, _anArtPager :1243, _anGroupByLangControl :1921/:1941, the tone chip :1292 and _anLangCell :1905\n- the open Trend panel: drawAnTrend :666 / _drawAnTrendByLang\n- the Sentiment block: :2272-2291\n- the re-index status: src/static/app-diagnostics.js:297, textContent set once\n\n_anRepaintXLang (app-analysis.js:1523-1532) rebuilds the rail from _crossLangNotice, which replaces the fetched per-form counts slot with an empty one.",
+    "suggested_fix": "Retain the last payloads and repaint from them in the same listener, with no fetch:\n- re-render the Articles list from the last /api/articles payload\n- call drawAnTrend() when #an-trend has been drawn\n- re-render Sentiment from its retained payload\n- rebuild the re-index status line from the last status/report\n\nIn _anRepaintXLang, keep the last concept-forms payload per slot and re-fill the new slot with _anFormCountsHtml(d) after the replace."
+   },
+   {
+    "ref": "new:Welded separators (colon, comma) on row-N surfaces in fr, zh and ar",
+    "verdict": "confirmed",
+    "severity": "P3",
+    "evidence": "After a reload in each locale (R-p2.json):\n\nPalette:\n- fr 'Analyse: “climat”' (the row's own sheet expects 'Analyse : “…”')\n- zh '分析: “climate”'\n- ja '分析: “climate”'\n\nArticles controls:\n- fr ['Afficher:', 'source:', 'langue:', 'Affichage:']\n- zh ['显示:', '来源:', '语言:', '视图:']\n- ja ['表示:', 'ソース:', '言語:', '表示:']\n\nTrend: fr 'Affichage:', 'Superposer une matière première:'; zh '视图:', '叠加一种大宗商品:'.\n\nSentiment: fr 'Tonalité moyenne: 0.334 … Évalué en anglais (fiable): 21'; zh '平均语调: … 英文评分（可靠）: 21'.\n\nKeyword-stats hover (Insights → Trends 'climate' row; Home's #ov-trending had no data-kwstat element on this seed):\n- fr 'tendance: 22 mentions …', 'avec: assembly (2 articles, Association 3.9)'\n- zh '趋势: …', '共现: assembly (2 篇文章, 关联 3.9)'\n- ar '(2 مقالة, ارتباط 3.9)' with a Latin comma\n\nThe same locales' own '{prefix}: {text}' frame is '{prefix} : {text}' in fr and '{prefix}：{text}' in zh and ja (locales line 4744).\n\nShots: p2-fr-palette.png, p2-zh-palette.png, p2-fr-articles.png, p2-zh-trend.png, p2-fr-kw-hover.png, p2-ar-kw-hover.png.",
+    "root_cause": "Hard-coded ': ' / ', ' after t() labels, in these places:\n- src/static/app-shell.js:777 (`${t(\"Analysis\")}: “${raw}”`)\n- src/static/app-analysis.js:692 and :1941 (View), :697 (Overlay a commodity), :1361 (Show), :1410 (source), :1411 (language), :2290 (Mean tone), :2291 (English-scored)\n- src/static/app-boot.js:486 (trend), :499 (', Association'), :502 ('with: ' and co.join(', '))\n\napp-analysis.js never calls ooLabelHtml or ooLabelText (src/static/app-core.js:45-57), the helper the B14/Z3 fix introduced for exactly this.",
+    "suggested_fix": "Build each label with ooLabelHtml/ooLabelText so the separator comes from the keyed '{prefix}: {text}' frame. For the palette row use a keyed frame such as tf('Analysis: “{q}”'). For the co-occurrence parenthetical and list, add keyed frames: '({n} articles, Association {pmi})' and a keyed list separator (', ' in en/fr, '، ' in ar, '，' or '、' in zh/ja)."
+   },
+   {
+    "ref": "new:⛶ hover still says 'Enlarge the mindmap' while the map is enlarged",
+    "verdict": "confirmed",
+    "severity": "P3",
+    "evidence": "In en, ?analyze=climate → Mindmap → Concept:\n1. Before the click, ⛶ has title 'Enlarge the mindmap'.\n2. After one click, the map is enlarged (.an-mm-big present), and hovering ⛶ opens the #oo-tip bubble reading 'Enlarge the mindmap'.\n3. The button has no aria-pressed or state change.\n4. A second click shrinks the map back (.an-mm-big absent).\n\nEvidence: R-p1.json (enlarge_title_before, is_big_after_click, enlarge_tip_after, is_big_after_second_click); shot p1-mm-concept-enlarged-hover-en.png.",
+    "root_cause": "src/static/app-analysis.js:1044 emits a fixed title=\"${esc(t(\"Enlarge the mindmap\"))}\" whatever _anMM.big is.",
+    "suggested_fix": "Make the title state-dependent: t(_anMM.big ? 'Shrink the mindmap' : 'Enlarge the mindmap'), with the new key added in all 12 locales. Add aria-pressed=\"${_anMM.big}\" so the state is also announced."
+   },
+   {
+    "ref": "new:Concept-map labels are 5–7 px at 375 px width",
+    "verdict": "confirmed",
+    "severity": "P3",
+    "evidence": "At 375x812 in en, ?analyze=climate → Mindmap → Concept (not enlarged): the SVG is 301x204 px for a 680x460 viewBox. Rendered label heights (R-p1.json m375_concept):\n- arms ('eng 3' … 'por 1'): 6-7 px\n- leaves ('assembly', 'rapport'): 5 px\n- centre 'climate': 9 px\n\nThe screenshot is illegible (p1-375-concept-en.png).\n\nCorrection to the walker: on this build ⛶ does NOT make it legible. The enlarged SVG is 487 px wide for a 1100 viewBox, the same 0.44 scale, so the labels stay 5-7 px / 9 px (m375_concept_big; p1-375-concept-big-en.png).\n\nOnly the 'Text size' slider at maximum reaches arms 12 px, leaves 9 px, centre 15 px (m375_concept_textmax).\n\nThe Map view is equally small: 4-9 px (m375_map).\n\nThere is no horizontal overflow (0).",
+    "root_cause": "src/static/app-analysis.js:1059 fixes the viewBox at 680 wide (1100 when big). :1067 draws it at width 100% (or W/680 × 100% when big, which by the B-batch design keeps exactly the normal scale). So the drawing scale is hostWidth/680, which is 0.44 at 375 px.\n\nLabel font sizes are in viewBox units: 13*scale at :1004, 9.5*scale at :1016, 17*scale at :1021. They render at 44% on a phone.",
+    "suggested_fix": "On a host narrower than the viewBox, keep a minimum drawing width: render the SVG at max(hostWidth, 680) px inside the existing overflow:auto .an-mm-big box, opened on its centre. Alternatively, divide the font sizes by the rendered scale (host.clientWidth / W), with a floor of about 11 px, so the labels stay readable without touching the text-size slider."
+   },
+   {
+    "ref": "new:Home briefing summaries, ranking line and back-face caveats stay English after a fr reload",
+    "verdict": "confirmed",
+    "severity": "P2",
+    "evidence": "After a reload in fr, zh, ar and ja, Home → Overview (R-p2.json home_cards and flipped_back_text) shows these in English:\n- the rising card's summary 'Mentions of “climate” are running ~22.0× the prior-period rate (22 recent vs 0 before).'\n- its back-face caveat 'A rising count reflects your source set, not the world; a ratio is not a significance test, and small samples are noisy.'\n- the ranking line under every card: 'Ranked by a disclosed order (independent sources → sample magnitude → recency), never a score. This lead: 1 independent source(s); n=22 (magnitude tier 1/3); freshest evidence 1.0 day(s) old.'\n- the overtold card's summary and caveat\n- the method text ('Méthode : recent volume vs prior-period rate …')\n- the type chips 'SOURCE LAUNDERING', 'LONELY SIGNAL', 'RECYCLED CLAIM', 'THROUGH TIME'\n- the context card title 'Through time: this day in past years'\n\nThe card chrome around them is translated: 'Pourquoi est-ce que je vois cela ?', the plain-why sentence, 'Ouvrir le corpus', and the family caveat 'Une piste par famille…'.\n\nThis is not the known stored law-card-title item. The briefing was generated fresh on this same-day seed, loadBriefing re-runs on oo:langchange, and none of these strings exists as a key: grep finds 0 in fr.json and ar.json for the rising caveat and the ranking line.\n\nShots: p2-fr-home-card-back.png, p2-zh-home-card-back.png, p2-ar-home-card-back.png, p2-ja-home-card-back.png.",
+    "root_cause": "The producers write English prose:\n- rising-card summary at src/briefing/producers.py:300-303 and caveat at :322-325, plus the young-corpus note at :110-115\n- src/briefing/leads.py:97-106, where explain_order builds an English f-string with embedded numbers\n\nOnly titles have an i18n template (title_i18n/title_vars, src/briefing/card.py:191 and :293).\n\nsrc/static/app-home.js renders these verbatim with no t()/tf(): card caveat at :1669, summary at :1705 (and :1285), order_explain at :1204, type chip c.type.replace(/_/g,' ') at :1683.",
+    "suggested_fix": "Extend the title_i18n seam to summary_i18n/summary_vars and caveat_i18n (+vars), keep the young-corpus note as its own keyed sentence, and render them with tf() in all 12 locales. Ship order_explain's components (sources, n, tier, age) and build the line client-side from one keyed frame. Translate the type chip through a keyed map of card types."
+   }
+  ]
+ }
+}

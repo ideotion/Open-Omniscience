@@ -1,0 +1,328 @@
+{
+ "row": "T",
+ "walk": {
+  "row": "T",
+  "environment": "Build: read-only worktree /tmp/claude-0/rewalk/tree at 0deff9c4 (git status clean before and after), run from that folder via /tmp/claude-0/rewalk/T/launch.py (drops HTTP(S)_PROXY/ALL_PROXY/OO_DB_PASSPHRASE/OO_DB_PLAINTEXT, runs `python -c \"from src.api.main import main; main()\"`), port 8927, all servers stopped by PID. Data: a FRESH seed, not a copy: `scripts/ui_clickthrough_seed.py --mini` (24 synthetic articles) into /tmp/claude-0/rewalk/T/data with OO_DB_PASSPHRASE='walk-pass-2026' and OO_DB_PLAINTEXT unset. The db header is ciphertext (first bytes 321 263 J i ...). Every boot had neither variable set. /api/system/lock-state read `locked` at boot and `unlocked-encrypted` after the real #pw/#btn-unlock form. Boots: (1) PID 27712, normal boot = LOCKED + airplane mode, for T1-T7, T9, T10 and probes; (2) PID 4275 with OO_NO_SCHEDULER=1 as T8 prescribes: online, scheduler running=false, wiki_lane active=false reason not-started. The /tasks plane click took it back offline after about 30 s. (3) PID 7608 and (4) PID 8536: normal airplane boots for the cold-/tasks and fr->ar leftover probes. Egress: an lsof monitor sampled each server PID's internet sockets once a second for every boot (egress-boot1..4.log). It saw zero non-loopback peers. It samples, so a sub-second connection could slip between samples. No consent 'Go online' was ever pressed: every popup was read, screenshotted and cancelled. Browser: Playwright sync, Chromium /opt/pw-browsers/chromium, headless, args --disable-background-networking --disable-component-update --no-proxy-server, proxy variables removed. The first walk used --no-sandbox instead. Viewports 1440x950 (en, then fr/ar/zh live switches and cold loads) and 375x812 (en and ar; /tasks also in zh). Deviations from the step sheet, the same as the first walk: the encrypted store means T1 opens on the /unlock passphrase view; a different port; the --mini seed. With a fresh browser context the headless default theme is 'light' ('System'), and T2 then clicked Ink/Paper/Solar/Mint. Scripts, JSON and screenshots are in /tmp/claude-0/rewalk/T/: walk1.py (T1-T7, T9, T10), walk2.py (T8), walk375.py, and the probes probe_consent.py, probe_coach_modal.py, probe_home.py, probe_hovers.py, probe_consent_i18n.py, probe_topbar_tips.py, probe_tasks_cold.py, probe_leftovers.py, probe_leftovers2.py, dbg_tier.py. Every script has a matching .json, and server-boot1..4.log are there too.",
+  "steps": [
+   {
+    "id": "T1",
+    "verdict": "pass",
+    "locales": "en",
+    "evidence": "Boot is locked (lock-state locked). /unlock shows the passphrase view and no legal view (T-T1-unlock-en.png). The unlock lands on /#home. After 8 s with no clicks: no guide wizard, no open dialog, plane fill=currentColor with class off, body.net-offline, top bar inset 2px red edge rgb(192,57,43), /api/system/network online:false, coach showing (T-T1-home-en.png). Feed lists 20 synthetic articles (T-T1-feed-en.png); the coach stays on screen there. walk1.json steps.T1."
+   },
+   {
+    "id": "T2",
+    "verdict": "pass",
+    "locales": "en",
+    "evidence": "Bubble text is exact ('You're offline. Switch off airplane mode to go online and start collecting.' / 'You'll confirm before anything connects.'). 'Not now' on the left (x=1067), 'Go online' on the right (x=1153). Both buttons are unclassed. In Ink, Paper, Solar and Mint the computed-style diff between them is EMPTY: same bg (Ink rgb(91,157,217), Paper rgb(154,106,47), Solar rgb(181,137,0), Mint rgb(46,125,91)), same fg, weight 600, 12px, height 28, border 0 on all sides, no outline, opacity 1. Only the widths differ (Ink 78.08 vs 85.97 px). The walk finished on Ink. T-T2-coach-{ink,paper,solar,mint}.png, walk1.json T2."
+   },
+   {
+    "id": "T3",
+    "verdict": "pass",
+    "locales": "fr, ar, zh, en",
+    "evidence": "Paper theme, live switches through #lang-switch. fr 'Plus tard'/'Passer en ligne', ar 'ليس الآن'/'الاتصال', zh '暂不'/'联网'. Both sentences match the locale files exactly in all three (expected_ok all true), and the button diff is [] in every language. In ar dir=rtl and the page mirrors. The side observation is now GOOD: the coach re-anchors on a live switch. In ar the plane is at x 186-220 and the coach at 186-456; in zh/en it is back at 984-1254. It covers no top-bar, sidebar or subtab control in any language (elementFromPoint probe: covered=[]). T-T3-coach-{fr,ar,zh,en-back}.png."
+   },
+   {
+    "id": "T4",
+    "verdict": "pass",
+    "locales": "en (popup also read in fr/ar/zh)",
+    "evidence": "The bubble's 'Go online' opened #net-consent 'Go online?' (reason 'Allow network requests again', ifaces 'eth0: 192.0.2.2'). The server stayed online:false while the popup was open. The popup's 'Stay offline' keeps .secondary, as intended. After 'Stay offline': the coach is gone, localStorage oo_net_coach_v1={seen:1,dismissed:true}, the plane is still filled with the red edge, there is no toast, network online:false, and the popup opened once (T-T4-consent-en.png, T-T4-after-stay-offline-en.png). The lane list still read '…' at 2.5 s, but this happened in the busy minute after the unlock, with a 'Working…' chip in the top bar. Opened later from the plane, it filled in 0.26 s (probe_consent.json), so I do not count it as a defect."
+   },
+   {
+    "id": "T5",
+    "verdict": "pass",
+    "locales": "en, fr, ar, zh",
+    "evidence": "Opened with #tm-open while offline. GET /api/scheduler/activity now carries online:false. The /tasks plane is filled, colour rgb(217,108,108) (var(--err)). Title: 'Offline (airplane mode) — click to go online in the app; you'll be asked to confirm first.' Summary reads 'Airplane mode', health 'healthy', and Schedule shows 'paused — airplane mode' (T-T5-tasks-offline-en.png, T-T5-tasks-schedule-en.png). Live switches without a reload give the exact fr/ar/zh titles and 'Mode avion'/'وضع الطيران'/'飞行模式'. The strip, the health pill and the tab title all flip within ~100 ms, with no poll (walk1.json T5 samples). ar mirrors. Cold opens from an fr/ar/zh app are also translated (probe_tasks_cold.json, T-T5-tasks-cold-*.png)."
+   },
+   {
+    "id": "T6",
+    "verdict": "pass",
+    "locales": "en (fr/ar/zh re-checked)",
+    "evidence": "The fresh folder starts at maximum: class rate-max, needle rotate(48), accent. The hover text is exact. Click 1: needle rotate(-48), accent gone, toast 'Collection speed set to the 500 KiB/s target — applies from the next pass.', config target/500, Settings '500 kbps' with slider=2 (3rd of 7). Click 2: toast 'Collection speed set to Maximum — applies from the next pass.', Settings 'Maximum' with slider=6. The #net-consent open counter stayed at 0 and the app stayed offline. Settings > Wikipedia and > OpenStreetMap have no range/number input and no speed/bandwidth text. The bubble under the pointer shows the NEW state immediately after each click (T-T6-click1-hover-en.png). fr/ar/zh toasts are correct. The KiB/s-vs-kbps wording is the known item. BUT: after the knob is clicked in a non-English language, its hover stays in that language after a live switch. See the new defect below."
+   },
+   {
+    "id": "T7",
+    "verdict": "pass",
+    "locales": "en",
+    "evidence": "150 sequential fetch('/api/articles?limit=1') from the app page: ok 150, refused 0, no other status, 1.7 s (walk1.json T7)."
+   },
+   {
+    "id": "T8",
+    "verdict": "pass",
+    "locales": "en, fr, ar, zh",
+    "evidence": "OO_NO_SCHEDULER=1 boot: online:true, scheduler running=false, wiki_lane active=false (not-started). The app plane is hollow and its styled bubble reads 'Online — click to go offline (airplane mode); every new network request will be refused.' The /tasks plane is hollow with the same title, summary 'Idle', health 'healthy'. Live fr/ar/zh titles are exact and nothing says 'stops all collection'. Idle, health and tab title are translated within ~100 ms. ONE click on the /tasks plane: after 200 ms it is filled and red, the title is the offline text, the summary reads 'Airplane mode', and #tm-conn shows 'Offline — every new network request is refused. One in-flight request may finish.' It STAYED that way for all 12 s (60 samples). /api/scheduler/activity online:false, and the app tab repainted to filled/offline. T-T8-tasks-online-{en,fr,ar,zh}.png, T-T8-tasks-after-offline-click-12s-en.png, walk2.json."
+   },
+   {
+    "id": "T9",
+    "verdict": "not-measurable-here",
+    "locales": "en",
+    "evidence": "No collection pass can run without egress: /api/scheduler/activity collect_perf=null and there is no process_budget. toggleVitals() opens the in-app window, and its System subtab has no 'COLLECTION SPEED' block, which is the correct no-pass state (T-T9-vitals-system-en.png). The only on-screen caller of toggleVitals is the window's own close button, as recorded before."
+   },
+   {
+    "id": "T10",
+    "verdict": "not-measurable-here",
+    "locales": "en",
+    "evidence": "/api/jobs/history?limit=100 has 0 runs and no crawl_delay_deferred, and there is no host_schedule.json in the data folder. Not observed on this corpus."
+   },
+   {
+    "id": "375px",
+    "verdict": "pass",
+    "locales": "en, ar (+ /tasks zh)",
+    "evidence": "Home at 375x812: overflow 0 in en and ar. #home-tier is 37-338 px and 43 px tall, and its caveat 'thin evidence — read with care' is fully visible (T-375-home-en.png, T-375-home-ar.png). The coach fits the viewport below the chrome, its buttons are equal and unclipped, and it covers no top-bar control and no palette row. /tasks: overflow 0 in en/ar/zh. #tm-tabs scrolls inside its own 335 px box (overflow-x:auto, scrollWidth 511) and 'Sessions' can be clicked (T-375-tasks-en.png, T-375-tasks-sessions-en.png)."
+   }
+  ],
+  "old_defects": [
+   {
+    "id": "T1",
+    "verdict": "fixed",
+    "evidence": "GET /api/scheduler/activity has 'online' (false in airplane mode). /tasks paints a filled red plane, Q1126's offline title and 'Airplane mode', and Schedule shows 'paused — airplane mode' in en/fr/ar/zh (T-T5-tasks-offline-*.png). After its own go-offline click it stays offline for 12 s (walk2.json after_click, T-T8-tasks-after-offline-click-12s-en.png)."
+   },
+   {
+    "id": "T2",
+    "verdict": "fixed",
+    "evidence": "The /tasks pill reads 'healthy'/'sain'/'سليم'/'正常' while /api/health says healthy (walk1.json T5, walk2.json T8). A residual is reported as a new P3: the dot beside it is still grey in every state."
+   },
+   {
+    "id": "T3",
+    "verdict": "fixed",
+    "evidence": "At 375 px: Home overflow 0 in en and ar. The tier wraps (37-338 px, 43 px tall) and the caveat ends at 201 px, fully visible (walk375.json, T-375-home-en.png)."
+   },
+   {
+    "id": "T4",
+    "verdict": "fixed",
+    "evidence": "The coach re-anchors on a live switch. en to ar puts the coach at 186-456 under the plane at 186-220; back to zh/en it is at 984-1254 under the plane at 1220-1254. Arrow to plane is 27 px on Home and 77 px on Settings (below the relocated subtab strip). walk1.json T3, probe_home.json."
+   },
+   {
+    "id": "T5",
+    "verdict": "fixed",
+    "evidence": "After fr to ar, ar to zh and zh to en in /tasks, the state label, metric labels, 'Live' and the health pill are all in the new language at the first 100 ms sample after <html lang> changes, with no poll in between (walk1.json T5 samples, walk2.json T8 switches)."
+   },
+   {
+    "id": "T6",
+    "verdict": "fixed",
+    "evidence": "/tasks at 375 px: overflow 0 in en, ar and zh. The tab strip scrolls in its own 335 px box (overflow-x:auto) and the last tab can be clicked (walk375.json, T-375-tasks-en.png)."
+   },
+   {
+    "id": "T7",
+    "verdict": "fixed",
+    "evidence": "Cold RTL load (ar picked through the switcher, then reload): the coach sits at [186,74,456,210], BELOW the top bar (bottom 62). elementFromPoint at every .topbar/.chrome button, the sidebar items and the subtabs finds none covered. The same holds on live switches, on Settings and at 375 px (probe_home.json ar_cold_coach, walk1.json T3, walk375.json)."
+   },
+   {
+    "id": "H1",
+    "verdict": "fixed",
+    "evidence": "The consent popup's lane hover bubble (#oo-tip) is hosted inside #net-consent and drawn above the modal; the host lists can be read (T-T4-consent-lane-hover-attempt1-en.png, probe_consent.json lane_hovers host=net-consent)."
+   },
+   {
+    "id": "O5",
+    "verdict": "fixed",
+    "evidence": "Same mechanism as H1/P1: the bubble is re-hosted in the open dialog and visible over it (T-T4-consent-lane-hover-attempt1-en.png)."
+   },
+   {
+    "id": "P1",
+    "verdict": "fixed",
+    "evidence": "Same as H1: lane hosts and transport are readable over the modal in en/fr/ar/zh (T-T4-consent-{en,fr,ar,zh}.png)."
+   },
+   {
+    "id": "H2",
+    "verdict": "fixed",
+    "evidence": "Lane names have tabindex=0. focus() opens the bubble, hosted in net-consent, in fr/ar/zh (probe_consent_i18n.json kbd_tip)."
+   },
+   {
+    "id": "H3",
+    "verdict": "fixed",
+    "evidence": "In ar the Wikipedia lane bubble reads '*.wikipedia.org · stream.wikimedia.org …' intact, with each host in bidi isolates (T-T4-consent-ar.png, probe_consent_i18n.json)."
+   },
+   {
+    "id": "H7",
+    "verdict": "fixed",
+    "evidence": "fr: 'Votre machine présente ces adresses réseau locales :' ends in a no-break space before the colon. Its last line is 62 px wide ('locales :'), not a lone colon (probe_consent_i18n.json colon_wrap)."
+   },
+   {
+    "id": "N10",
+    "verdict": "fixed",
+    "evidence": "At 375 px with the coach showing, the palette's result rows are not covered (en and ar), and in ar at desktop width the coach covers no sidebar item (walk375.json palette, probe_home.json)."
+   },
+   {
+    "id": "O2",
+    "verdict": "fixed",
+    "evidence": "The coach sits below the whole chrome (top 74 on Home, 125 on Settings below the subtab strip) and covers no control in en/fr/ar/zh (walk1.json T2/T3 covered=[])."
+   },
+   {
+    "id": "O4",
+    "verdict": "fixed",
+    "evidence": "The /tasks document.title reads 'Gestionnaire de tâches · FOOS' / 'مدير المهام · FOOS' / '任务管理器 · FOOS', both after a live switch and on a cold open from an fr/ar/zh app (walk1.json T5, probe_tasks_cold.json)."
+   },
+   {
+    "id": "P2",
+    "verdict": "fixed",
+    "evidence": "Checked on #rate-toggle, a top-bar control repainted under the pointer: straight after each click, with the mouse not moved, the bubble shows the NEW state's text (walk1.json T6 click1_tip_under_pointer / click2_tip_under_pointer). The W toggle itself was not clicked, because a click there heads into the consent path."
+   },
+   {
+    "id": "S7",
+    "verdict": "fixed",
+    "evidence": "Same as T3: Home at 375 px has 0 overflow (walk375.json)."
+   },
+   {
+    "id": "H8",
+    "verdict": "fixed",
+    "evidence": "The Home at-a-glance labels are translated in fr/ar/zh, e.g. 'SOURCES EN COLLECTE', 'مصادر قيد الجمع', '采集中的来源' (probe_home.json glance)."
+   },
+   {
+    "id": "P7",
+    "verdict": "fixed",
+    "evidence": "The Home strip counters' labels are translated in fr, ar and zh after live switches and after a cold ar load (probe_home.json)."
+   },
+   {
+    "id": "U5",
+    "verdict": "fixed",
+    "evidence": "After live en to fr to ar to zh to en switches, the Home strip, its labels and the 'as of … (server busy)' stamp repaint in each language at once (probe_home.json)."
+   }
+  ],
+  "new_defects": [
+   {
+    "title": "The collection-speed knob's hover keeps the language of its last click after a live language switch",
+    "severity": "P3",
+    "repro": "Offline app at 1440 px. Switch to Français with #lang-switch and click the top-bar gauge (#rate-toggle) twice, so the speed ends where it started. Switch to العربية (or 中文, or back to English) and hover the gauge.",
+    "expected": "The hover in the new language, e.g. ar 'سرعة الجمع: الحد الأقصى — …'",
+    "actual": "The French sentence 'Vitesse de collecte : Maximale — utilise pleinement votre connexion … Cliquez pour la cible mesurée de 500 KiB/s.' on the Arabic page, bidi-scrambled, and again in zh and en. In walk1 the ar pass showed the French hover and the zh pass showed the Arabic one. An unclicked knob is fine, because its boot paint is English, which the bubble translates on display.",
+    "evidence": "/tmp/claude-0/rewalk/T/T-T6-rate-hover-ar-after-fr-clicks.png; probe_hovers.json ar_live_rate/zh_live_rate/en_live_rate (attr_title French); walk1.json T6.locales.ar.hover (French) and zh.hover (Arabic)",
+    "root_cause_lead": "src/static/app-sources.js:1042-1055: _paintRateMode writes btn.title through t9() at paint time. #rate-toggle carries data-i18n-dyn (src/static/index.html:138), so the i18n walker never re-translates it. app-boot.js's oo:langchange listener (src/static/app-boot.js:41; it repaints _paintWikiLane at :116, _paintAiPill at :120 and _paintNetwork at :289) never calls _paintRateMode(_rateMode)."
+   },
+   {
+    "title": "Home's corpus-tier hover (the caveat's long form with the thresholds) stays in the language it was first painted in",
+    "severity": "P3",
+    "repro": "Load Home in English and switch live to Français, العربية or 中文, then hover the 'EARLY CORPUS' tier. Or load cold in fr (switch, then reload), switch live to ar, zh or en, and hover it.",
+    "expected": "The long form 'Early stage: the Leads rest on thin evidence … Thresholds: …' in the current language, like the visible badge and caveat, which do switch",
+    "actual": "English in fr, ar and zh after starting in en. French in ar, zh and en after a cold fr load. A MutationObserver trace shows renderCorpusTier write the new-language title, and then the i18n walker put the first-seen one back.",
+    "evidence": "/tmp/claude-0/rewalk/T/probe-tier-hover-ar-live.png; probe_hovers.json (fr_live_tier English, ar/zh/en_live_tier French, fr_cold_tier and ar_cold_tier correct); dbg_tier.py output (title set to 'Corpus naissant…', then reverted to 'Early corpus…')",
+    "root_cause_lead": "src/static/i18n.js:64-78: doAttrs honours data-i18n-dyn only on the element itself (:70), while doText checks closest('[data-i18n-dyn]') (:58). #home-tier (src/static/index.html:254) sits inside .home-glance[data-i18n-dyn] (:247) with no attribute of its own. The walker therefore records its first title as 'the original' and re-imposes it after renderCorpusTier (src/static/app-home.js:1028-1066) repaints. The fix: use closest() in doAttrs, or mark #home-tier data-i18n-dyn."
+   },
+   {
+    "title": "Text painted in a non-English language stays after a live switch: the Settings Collection toggle (T6's path) and Home's 'Most recent' empty state",
+    "severity": "P3",
+    "repro": "Switch to Français and reload. Open Settings > Advanced > Collection, then Home. Switch live to العربية (or 中文) and look at Settings > Advanced > Collection and at Home > Most recent.",
+    "expected": "The toggle and the empty-state line in Arabic or Chinese",
+    "actual": "The button still reads 'La collecte est DÉSACTIVÉE — cliquez pour l'activer' on the Arabic page, although its hover is Arabic. Home > Most recent still reads 'Aucun article pour cette étiquette pour l'instant.' in ar and in zh. Starting from English the walker maps both correctly, so only a switch that starts from a non-English locale shows it.",
+    "evidence": "/tmp/claude-0/rewalk/T/T-T6-collect-toggle-french-on-ar-page.png; /tmp/claude-0/rewalk/T/probe-tier-hover-ar-live.png (Most recent panel); probe_leftovers.json, probe_leftovers2.json (find_settings, find_home, find_home_zh)",
+    "root_cause_lead": "src/static/app-sources.js:1499-1505 (_paintCollectToggle sets textContent through t9()) and src/static/app-home.js:725 (loadHomeRecentList sets innerHTML through t()). The app-boot.js:41 oo:langchange listener repaints neither. The walker's first-sight cache (src/static/i18n.js:59-61) then stores the French string as 'the English original' and cannot map it."
+   },
+   {
+    "title": "Home's at-a-glance strip says 'as of HH:MM (server busy)' on an idle server",
+    "severity": "P3",
+    "repro": "Boot normally (airplane mode, collection stopped). Unlock and stay on Home, or reload it more than 90 s after the counts were last built, with nothing running.",
+    "expected": "No 'server busy' claim when the server is idle. At most an age stamp, or wording that does not give a false reason.",
+    "actual": "'as of 08:39 AM (server busy)' / 'à 08:39 (serveur occupé)' / '(الخادم مشغول)' / '（服务器繁忙）' while the scheduler is stopped and the app is in airplane mode. /api/database/stats as_of stays fixed while cache_age_s grows (46 then 66 over 20 idle seconds).",
+    "evidence": "/tmp/claude-0/rewalk/T/probe-home-en-strip-crop.png; probe-home-{fr,ar,zh}.png; T-T4-consent-ar.png (strip behind the popup); probe_home.json glance; curl of /api/database/stats in this session",
+    "root_cause_lead": "src/static/app-home.js:117-137 (homeStatsAgeNote) appends '(server busy)' whenever cache_age_s >= 90. src/api/served_cache.py (docstring :44-60, SERVE-STALE) deliberately rebuilds nothing on an idle app, so the age grows without the server being busy. The numbers are still current, but the reason given is false."
+   },
+   {
+    "title": "The task manager's Schedule tab shows a 'Mode' row with an empty value",
+    "severity": "P3",
+    "repro": "Open /tasks and click Schedule (in any language, online or offline).",
+    "expected": "No row for the retired scheduler mode, or a real value",
+    "actual": "'Mode' (ar 'الوضع') with nothing beside it, under Cadence, Next pass and Last run",
+    "evidence": "/tmp/claude-0/rewalk/T/T-T5-tasks-schedule-en.png, T-T5-tasks-schedule-ar.png; /api/scheduler/activity has no 'mode' and settings.mode is absent (retired_mode '')",
+    "root_cause_lead": "src/static/taskmanager.html:568 (and the in-app copy at src/static/app-core.js:2401) prints s.mode || a.mode. The scheduler `mode` field was retired on 2026-09-25 (src/scheduler/settings.py:21-26, commit b45bed19), so the row is always blank."
+   },
+   {
+    "title": "The task manager's health dot is grey in every state",
+    "severity": "P3",
+    "repro": "Open /tasks on a healthy server and compare the dot left of 'healthy' with the app's top bar.",
+    "expected": "A green (ok) dot as in the app, and red when the server does not respond",
+    "actual": "A neutral grey dot beside 'healthy'. The app shows green for the same server. The label half of first-walk T2 is fixed, and this is its remaining half.",
+    "evidence": "/tmp/claude-0/rewalk/T/T-T5-tasks-offline-en.png, T-T8-tasks-after-offline-click-12s-en.png vs T-T1-home-en.png",
+    "root_cause_lead": "src/static/taskmanager.html:950-955: paintHealth writes '<span class=\"dot\"></span>' with no ok or err class, although the page defines .dot.ok and .dot.err (:522-523) and app-core.js:2878-2879 uses 'dot ok' and 'dot err'."
+   },
+   {
+    "title": "The AI pill's hover opens with an English server sentence on fr, ar and zh pages",
+    "severity": "P3",
+    "repro": "With no AI backend reachable (the sandbox default), switch to Français, العربية or 中文 and hover the top-bar 'AI' pill (#llm).",
+    "expected": "The whole hover in the UI language",
+    "actual": "'no GPU detected (or vLLM unavailable), and Ollama is NOT reachable either -- no AI backend is reachable right now — L'IA est hors ligne — …' (the same English lead in ar and zh)",
+    "evidence": "/tmp/claude-0/rewalk/T/probe_topbar_tips.json (llm in en/fr/ar/zh)",
+    "root_cause_lead": "src/static/app-ai-tools.js:963-965 (and :947 for hardware_reason) prepend h.backend_reason or h.detail, the English server text from src/llm/backend.py:850-866. A code comment calls it English server text on purpose, but I found no ledger ruling for it. It is off the row's own subject; I met it on the row's top bar."
+   }
+  ],
+  "page_errors": [],
+  "http_errors": [],
+  "summary": "Row T passes on the fixed build 0deff9c4, for everything a sandbox can reach. T1-T8 pass in en, fr, ar and zh, and the 375 px pass passes in en and ar (/tasks also in zh). T9 and T10 are not measurable here: no pass can run without egress, and there is no crawl history. All 7 confirmed row-T defects are fixed. The /tasks page now reads airplane mode correctly, fills and reddens its plane, shows the Q1126 offline title and 'Airplane mode', and stays offline after its own click. Its health pill reads healthy, its strip and tab title repaint within about 100 ms of a live switch, and it has no 375 px overflow. Home's tier wraps at 375 px. The coach re-anchors on a live or RTL switch and never covers the top bar. The cross-row fixes seen on this row's surfaces also hold: H1/O5/P1 (lane hovers above the consent popup), H2, H3, H7, N10, O2, O4, P2 (on the gauge), S7, H8, P7 and U5. There were no page errors, no console errors, no HTTP responses >= 400, no undefined/NaN/null/[object Object], and no non-loopback socket in four boots. I found seven new P3s. Four are stale or untranslated text: the gauge hover keeps the language of its last click; Home's tier caveat hover stays in its first-painted language (the i18n walker ignores an ancestor's data-i18n-dyn for attributes); after a live switch from fr, the Settings Collection toggle and Home's 'Most recent' empty state stay French; and the AI pill hover opens with English server text. The other three: a false '(server busy)' stamp on an idle Home; a blank 'Mode' row in the /tasks Schedule tab (the mode was retired); and a /tasks health dot that is grey in every state."
+ },
+ "recheck": {
+  "row": "T",
+  "summary": "I re-checked all 7 of the walker's items on my own instance and confirmed all 7. I also found two new P3 defects.\n\nSetup: a fresh `scripts/ui_clickthrough_seed.py --mini` seed (24 articles) in /tmp/claude-0/rewalk/T-recheck/data, seeded with OO_DB_PASSPHRASE set and OO_DB_PLAINTEXT unset, so the database header is ciphertext. One server, PID 5791 on port 8977, ran from the read-only tree at 0deff9c4 with neither variable set. /api/system/lock-state read `locked` at boot and `unlocked-encrypted` after the real #pw / #btn-unlock form. The app stayed in airplane mode (/api/system/network online:false) the whole time, and no consent was accepted. None of my probes opened a consent popup, because the speed knob is a loopback write. An lsof monitor sampled the server once a second and saw zero non-loopback peers (egress-boot1.log). The server was stopped by PID, and `git status` in the tree is clean.\n\nBrowser: Chromium headless with the three prescribed flags and the proxy variables removed. Main viewport 1440x950. Languages en, fr, ar and zh, switched live and on cold loads, plus a 375 px pass of the /tasks Schedule tab. No page errors, console errors, HTTP responses of 400 or more, or undefined/NaN/null text in any probe.\n\nScripts and results are in /tmp/claude-0/rewalk/T-recheck/ (rc_busy.py/.json, rc_i18n.py/.json, rc_tasks.py/.json, rc_extra.py/.json), with screenshots in shots/.\n\nItems 1-3 are one family: an already-translated string is written where the i18n walker treats first sight as English, or where nothing repaints it on `oo:langchange`:\n- **Item 1:** `_paintRateMode` is not called from the language-change listener.\n- **Item 2:** the walker's `doAttrs` checks only the element's own `data-i18n-dyn`, not an ancestor's. It reverts the corpus-tier title about 110 ms after `renderCorpusTier` writes the new language, as a MutationObserver trace shows.\n- **Item 3:** `textContent`/`innerHTML` is written through `t()`, so the walker caches a French text node as the \"English original\".\n\nThe other confirmed items:\n- **Item 4:** the served cache keeps `built_at` on an idle server by design, so after 90 s the Home strip adds 'as of 10:25 AM (server busy)'. Measured beside scheduler running:false, phase null, online:false.\n- **Item 5:** the retired `mode` field (b45bed19, 2026-09-25) still has a row on the /tasks Schedule tab, with an empty value.\n- **Item 6:** the /tasks health dot has no ok/err class, so it is grey where the app's is green.\n- **Item 7:** the AI pill's hover leads with the server's English `backend_reason` in every locale. I found no ruling that keeps it English.\n\nNew:\n- /tasks ignores the app's theme. It reads localStorage 'oo.theme', which nothing writes; the app stores 'oo.ui'.\n- Home's 'Most recent' heading is squeezed onto two lines at 1440 px by a full-width select. In zh it breaks one character per line.",
+  "items": [
+   {
+    "ref": "new:The collection-speed knob's hover keeps the language of its last click after a live language switch",
+    "verdict": "confirmed",
+    "severity": "P3",
+    "evidence": "rc_i18n.json, phase B:\n- Cold fr load, then two #rate-toggle clicks. The config went maximum, then target, then maximum; start and end both 'maximum'.\n- After switching live to ar, zh and en, the #oo-tip shows 'Vitesse de collecte : Maximale — utilise pleinement votre connexion (la politesse par hôte reste inchangée). Cliquez pour la cible mesurée de 500 KiB/s.' in all three.\n- Screenshot: /tmp/claude-0/rewalk/T-recheck/shots/B-rate-hover-ar-after-fr-clicks.png. The French bubble sits on the Arabic top bar.\n- Also B-rate-hover-zh-after-fr-clicks.png and B-rate-hover-en-after-fr-clicks.png.\n- Control (phase A, knob never clicked, English boot paint): the ar, fr and zh hovers are correctly translated, e.g. ar 'سرعة الجمع: الحد الأقصى — …', because the bubble translates the English title on display.",
+    "root_cause": "src/static/app-sources.js:1042-1055 (`_paintRateMode`, title written at :1051) writes a t()-translated title on a button that carries `data-i18n-dyn` (src/static/index.html:138), so the i18n walker never retranslates it. The `oo:langchange` listener (src/static/app-boot.js:41-309) repaints the Wikipedia toggle (:116), the AI pill (:120) and the plane (:289), but never `_paintRateMode`. The first paint happens in `loadRateMode` before the locale loads, which keeps the title English and hides the bug until the first click.",
+    "suggested_fix": "In the app-boot.js `oo:langchange` listener add `try { if (typeof _paintRateMode === \"function\" && _rateMode) _paintRateMode(_rateMode); } catch (_e) {}`, next to the `_paintWikiLane` repaint. Also repaint once on `OOI18N.ready` so the boot paint is in the UI language. Add a node test: paint in fr, switch to ar, and assert the title is the ar value."
+   },
+   {
+    "ref": "new:Home's corpus-tier hover (the caveat's long form with the thresholds) stays in the language it was first painted in",
+    "verdict": "confirmed",
+    "severity": "P3",
+    "evidence": "rc_i18n.json:\n- Phase A (start in en): after live switches to ar, fr and zh, the tier hover reads 'Early corpus — Early stage: the Leads rest on thin evidence … Thresholds: early is below 200 articles or 14 days…'. The visible badge does translate, e.g. 'CORPUS NAISSANT … preuves minces — à lire avec prudence'.\n- Phase B (cold fr, then ar, zh, en): the hover reads 'Corpus naissant — Stade précoce : …' in all three.\n- A MutationObserver on the title attribute shows the mechanism. At t=19265 ms renderCorpusTier writes 'مجموعة ناشئة — مرحلة مبكرة…'; at t=19375 ms the title is reverted to 'Early corpus — …'. In phase B the Arabic, Chinese and English writes are each reverted to 'Corpus naissant — …'.\n- The hover is correct only on a cold load: fr cold and ar cold are right.\n- Screenshot: /tmp/claude-0/rewalk/T-recheck/shots/A-tier-hover-fr-live-from-en.png, an English bubble under the French badge. Also B-home-tier-hover-{ar,zh,en}-after-fr-cold.png.",
+    "root_cause": "src/static/i18n.js:64-79. `doAttrs` skips only an element that carries `data-i18n-dyn` itself (:70), while `doText` honours an ancestor (:58, `p.closest(\"[data-i18n-dyn]\")`). #home-tier (src/static/index.html:254) sits inside `.home-glance[data-i18n-dyn]` (:247) but has no marker of its own. renderCorpusTier (src/static/app-home.js:1058) sets a translated composite title, then rewrites innerHTML (:1062), which fires the childList observer. apply() then restores `tr(first-seen title)`. The composite of three keyed fragments matches no key, so the title reverts to whichever language painted it first (i18n.js:74-77).",
+    "suggested_fix": "Narrow fix: give #home-tier its own `data-i18n-dyn`, in the markup or in renderCorpusTier via `el.setAttribute('data-i18n-dyn','')`. renderCorpusTier already re-runs on `oo:langchange` through loadBriefing. Broader fix: make `doAttrs` honour an ancestor, e.g. `if (el.closest && el.closest('[data-i18n-dyn]')) return;`, to match `doText`. That one needs an audit of static titles inside dyn containers first. Add a node test: switch fr, then ar, and assert the title stays the ar composite after the debounced apply."
+   },
+   {
+    "ref": "new:Text painted in a non-English language stays after a live switch: the Settings Collection toggle (T6's path) and Home's 'Most recent' empty state",
+    "verdict": "confirmed",
+    "severity": "P3",
+    "evidence": "rc_i18n.json, phase B (cold fr; Settings > Advanced > Collection opened, then Home; then live switch):\n- #collect-toggle reads 'La collecte est DÉSACTIVÉE — cliquez pour l'activer' in ar, zh and en, even after reopening Settings > Advanced > Collection. Its hover is correctly Arabic, 'شغّل أو أوقف الجمع المستمر في الخلفية', and Chinese, '开启或关闭持续性后台采集'.\n- #home-recent reads 'Aucun article pour cette étiquette pour l'instant.' in ar, zh and en, even after leaving Home and coming back.\n- Screenshots: /tmp/claude-0/rewalk/T-recheck/shots/B-collect-toggle-ar.png (a French button on the Arabic Settings page) and B-home-recent-zh.png (a French line in the Chinese panel).\n- Control (phase A, starting in en): both translate correctly in ar, fr and zh ('الجمع مُتوقف — انقر للتفعيل', '该标签暂无文章。').",
+    "root_cause": "src/static/app-sources.js:1498-1506. `_paintCollectToggle` sets `btn.textContent = t9(...)` at :1503. This creates a new text node whose first-seen value is already French, and the walker records first sight as the English original (src/static/i18n.js:59-60). tr(French) matches no key, so the text stays French in every later language, and nothing in the `oo:langchange` listener (app-boot.js:41-309) repaints it. The same happens in src/static/app-home.js:725 (loadHomeRecentList: `box.innerHTML = ... esc(t(\"No articles for this tag yet.\"))`). Neither surface is re-run by a revisit either: loadScheduler is guarded by the section's loaded flag, and Home does not reload the recent list.",
+    "suggested_fix": "Two options for both surfaces. (a) Write the English key and let the walker translate it: `btn.textContent = running ? \"Collection is ON — click to turn off\" : \"Collection is OFF — click to turn on\"`, and likewise the plain English empty-state string. The walker translates exact keys on first sight and on every switch. (b) Keep t(), remember the last state (running flag, last recent-list outcome), and repaint both from the `oo:langchange` listener. (a) is the smaller change for exact-key strings. Pin it with a node test that paints in fr and switches to ar."
+   },
+   {
+    "ref": "new:Home's at-a-glance strip says 'as of HH:MM (server busy)' on an idle server",
+    "verdict": "confirmed",
+    "severity": "P2",
+    "evidence": "rc_busy.json:\n- After unlock the app stays on Home with nothing running: /api/scheduler/status running:false, /api/scheduler/activity {running:false, active:false, phase:null, online:false}, airplane mode.\n- /api/database/stats as_of stays '2026-09-27T10:25:16+00:00' while cache_age_s grows 18, 36, 54, 72, 90, 96 across 18 s samples, with cached:true and cache_ttl_s 30.\n- After a reload at age 96 s the strip reads '… 10 MENTIONED DATES as of 10:25 AM (server busy)'. In fr it reads 'à 10:25 (serveur occupé)', in ar 'حتى 10:25 ص (الخادم مشغول)', in zh '截至 10:25（服务器繁忙）'.\n- Screenshot: /tmp/claude-0/rewalk/T-recheck/shots/busy-home-en-reload.png. 'Automatic collection: stopped' sits two lines under '(server busy)'.\n- The cache's own comment says the idle value 'is still exactly right'.\n- Severity P2 rather than P3: the stamp states a false reason about the system's state on the app's default path (offline, idle, more than 90 s after the last write).",
+    "root_cause": "src/static/app-home.js:113-138. `homeStatsAgeNote` appends t(\"as of {time} (server busy)\") whenever `cache_age_s >= 90` (:117, :120, :137). src/api/served_cache.py:235-244 deliberately leaves `built_at`, and therefore `as_of` and `cache_age_s` (:146-152), untouched when the change probe shows no write, i.e. on an idle server. It only re-stamps `checked_at`, which the payload never exposes. So on an idle server the age grows without bound and the note fires with a reason nothing measured.",
+    "suggested_fix": "Expose the verification in the payload. `_decorate` can add `verified_age_s` (now − checked_at) or `refresh_pending: bool` (true when the probe differed and a background rebuild was kicked). The Home note should key on that: show nothing when the value was verified unchanged, and only when a rebuild is pending say 'as of {time} (refreshing)'. Never give 'server busy' as a reason unless it is measured. Keep the 90 s threshold for the pending case."
+   },
+   {
+    "ref": "new:The task manager's Schedule tab shows a 'Mode' row with an empty value",
+    "verdict": "confirmed",
+    "severity": "P3",
+    "evidence": "rc_tasks.json:\n- /tasks opened through the real #tm-open icon. On the Schedule tab the rows are State, Current pass, Cadence, Next pass, Last run, and then {'k':'Mode','v':''}.\n- The row appears in every locale: fr 'Mode' / '', ar 'الوضع' / '', zh '模式' / ''. At 375 px too.\n- /api/scheduler/activity has no 'mode' key (keys: active, collect_perf, concurrency, …, settings, started_at). settings has no 'mode' (retired_mode ''), and /api/scheduler/config has no 'mode'.\n- Screenshots: /tmp/claude-0/rewalk/T-recheck/shots/tasks-schedule-en.png and tasks-schedule-ar.png ('الوضع' with nothing beside it).",
+    "root_cause": "src/static/taskmanager.html:568 renders `row(t(\"Mode\"), esc(s.mode || a.mode || \"\"))`. The scheduler `mode` field was retired in b45bed19 (2026-09-25, Q1020 = a and Q716 = a; see src/scheduler/settings.py:21-26), so neither `settings.mode` nor `activity.mode` exists any more and the value is always empty. The in-app window's copy carries the same dead row (src/static/app-core.js:2401, `modeHtml`), although that popover no longer appears to be opened by anything.",
+    "suggested_fix": "Remove the Mode row from taskmanager.html:568 and from app-core.js:2401, along with the `modeHtml` concatenation. Add a test pinning that no Schedule renderer reads `s.mode` or `a.mode`."
+   },
+   {
+    "ref": "new:The task manager's health dot is grey in every state",
+    "verdict": "confirmed",
+    "severity": "P3",
+    "evidence": "rc_tasks.json:\n- The app's top bar has #health .dot with class 'dot ok', background rgb(46,139,87), label 'healthy'.\n- /tasks on the same server has class 'dot', background rgb(140,149,166). That is exactly --muted (#8c95a6), with no shadow, beside 'healthy' / 'sain' / 'سليم' / '正常'.\n- /api/health returns {status:'healthy'}.\n- Screenshots: /tmp/claude-0/rewalk/T-recheck/shots/tasks-en-topbar.png and tasks-schedule-ar.png (grey dot) against tasks-app-topbar-en.png (green dot).\n- The first-walk T2 root cause already noted that 'the dot also never gets an ok or err class'. B8 fixed only the label.",
+    "root_cause": "src/static/taskmanager.html:950-955. `paintHealth` writes `'<span class=\"dot\"></span> ' + label` with no state class, so app.css:521 `.dot { background: var(--muted) }` applies in every state. The app adds `dot ok` / `dot err` (src/static/app-core.js:2874-2880).",
+    "suggested_fix": "In paintHealth, map the state to a class: `var cls = {healthy: \"ok\", degraded: \"warn\", offline: \"err\"}[_healthState] || \"\"; el.innerHTML = '<span class=\"dot ' + cls + '\"></span> ' + esc(label);`. taskmanager.html already loads app.css (:32), so .dot.ok, .dot.warn and .dot.err apply as-is."
+   },
+   {
+    "ref": "new:The AI pill's hover opens with an English server sentence on fr, ar and zh pages",
+    "verdict": "confirmed",
+    "severity": "P3",
+    "evidence": "rc_i18n.json:\n- /api/llm/health returns backend_reason 'no GPU detected (or vLLM unavailable), and Ollama is NOT reachable either -- no AI backend is reachable right now'.\n- The #llm hover in fr reads 'no GPU detected (or vLLM unavailable), and Ollama is NOT reachable either -- no AI backend is reachable right now — L'IA est hors ligne — cliquez pour la démarrer…'.\n- The same English lead appears in ar ('… — الذكاء الاصطناعي غير متصل — …') and zh ('… — AI 离线 — …'), both after live switches and after a cold fr load.\n- Only the trailing t() sentence translates.\n- I found no ruling that server prose stays English. The ledger search found none, and the 2026-09-26 known list does not include it. The code comment calls it a V4 engineering choice ('English server text, the same class as h.detail'), while the B-batches moved other server prose to keyed twins (title_i18n, label_i18n, detail_i18n, paused_reason_i18n).",
+    "root_cause": "src/static/app-ai-tools.js:963-965 prefixes the pill title with `h.backend_reason || h.detail` verbatim. The reason is English prose composed at runtime in src/llm/backend.py:846-864 (e.g. :850 selection and :863 `f\"{selection}, and Ollama is NOT reachable either -- {NO_BACKEND_REASON}\"`) and passed through by src/api/llm.py:498/528/538 with no key or code beside it.",
+    "suggested_fix": "Have resolve_backend and /api/llm/health emit a stable reason code, or a `backend_reason_i18n` frame plus vars (selection and fallback as keyed sentences), next to the unchanged English `backend_reason` that the tests substring-pin. The pill then composes the lead with tf() and adds the keys x12. As an interim step, show only the translated t() sentence on non-en pages and keep the English server reason in AI settings or diagnostics."
+   },
+   {
+    "ref": "new:The task manager page (/tasks) ignores the app's theme and always renders Ink",
+    "verdict": "confirmed",
+    "severity": "P3",
+    "evidence": "rc_extra.json:\n- In the app, Settings > Graphics > Paper gives data-theme 'paper' and body background rgb(242,238,228). /tasks, opened through #tm-open in the same browser context, gives no data-theme (Ink) and body background rgb(12,14,19).\n- The same with Solar: app 'solar' / rgb(0,43,54), /tasks Ink.\n- It also happens with the default 'System' theme, which headless renders as light.\n- localStorage holds oo.ui = {\"theme\":\"paper\",…} and oo.theme = null.\n- Screenshots: /tmp/claude-0/rewalk/T-recheck/shots/extra-app-paper.png (a light Paper app) against extra-tasks-with-app-paper.png (a dark /tasks page).\n- Not in defects.csv or the OPEN_QUEUE known list.",
+    "root_cause": "src/static/taskmanager.html:212-215 reads `localStorage.getItem(\"oo.theme\")`, a key nothing in the app writes. `git log -S'\"oo.theme\"'` shows the key only ever existed in taskmanager.html (3c617bdd). The app keeps its look in `oo.ui` as JSON with a `.theme` field (src/static/app-shell.js:227, :254-263), and maps 'system' and 'ink' through applyThemeAttr.",
+    "suggested_fix": "In taskmanager.html read `JSON.parse(localStorage.getItem('oo.ui')||'{}').theme` and apply the same mapping as applyThemeAttr: 'system' follows prefers-color-scheme (light gives 'light'), 'ink' or empty removes the attribute, anything else sets data-theme. Optionally also apply accent, face and density. A `storage` event listener would let an open /tasks tab follow a theme change."
+   },
+   {
+    "ref": "new:Home's 'Most recent' heading is squeezed onto two lines at 1440 px (one character per line in zh)",
+    "verdict": "confirmed",
+    "severity": "P3",
+    "evidence": "rc_extra.json at 1440x950, #home-recent-panel h2:\n- en 'Most recent': 102 px wide, 53 px tall, 2 lines.\n- fr 'Les plus récents': 134 px, 2 lines.\n- zh '最新': 32 px, 2 lines, one character per line.\n- The tag select beside it takes the rest of the ~1130 px row.\n- Screenshots: /tmp/claude-0/rewalk/T-recheck/shots/extra-home-recent-zh.png, and A-tier-hover-fr-live-from-en.png ('Les plus / récents').\n- Cosmetic, and it predates this build, but it is visible on Home in every language and not in defects.csv.",
+    "root_cause": "src/static/app.css:431-433 (`.phead { display:flex }`, where `.phead h2` can shrink) together with app.css:435 (`input, select, textarea { width:100% }`). The full-width #home-recent-tag select (src/static/index.html:301-302) squeezes the shrinkable h2 down to its min-content width. CJK can break between any two characters, hence '最/新'.",
+    "suggested_fix": "Make the heading non-shrinking with `.phead h2 { flex: none; white-space: nowrap; }`, or limit the select: `#home-recent-tag { width: auto; max-width: 60%; }`. Check the 375 px layout afterwards, since the .phead row may need to wrap there."
+   }
+  ]
+ }
+}

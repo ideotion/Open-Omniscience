@@ -1,0 +1,369 @@
+{
+ "row": "I",
+ "walk": {
+  "row": "I",
+  "environment": "Fixed build at /tmp/claude-0/rewalk/tree (HEAD 0deff9c4). git status stayed clean; the tree was never edited. Server started from that folder with `python -c \"from src.api.main import main; main()\"` (repo .venv) on port 8903 by /tmp/claude-0/rewalk/I/srv.py. The launcher removed every proxy variable plus OO_DB_PASSPHRASE, OO_DB_PLAINTEXT, DATABASE_URL, OO_IMPORT_CHECKPOINT_K, OO_IMPORT_DEFER_REINDEX, OO_NO_SCHEDULER and OO_REINDEX_AUTORESUME, and set PYTHONDONTWRITEBYTECODE=1. Servers were stopped by the PID lsof reported, never with pkill; the last one (PID 25810) was stopped at the end and port 8903 is free.\n\nFive throwaway data folders (tgtA through tgtE, each with an explicit OO_DATA_DIR) were created through the real first launch: language en, legal accepted with #lg-check/#lg-accept, data-location step \"Continue\", and passphrase walk-pass-2026 set with #pw1/#pw2/#btn-create. Each was stopped and restarted. Lock-state read \"locked\" at every boot, and every unlock went through #pw/#btn-unlock.\n\nBackup sets under /tmp/claude-0/rewalk/I/, all with backup passphrase walk-backup-2026:\n- backups: 4 distinct 1,200-article backups with the stamps stripped.\n- backups_cum: 4 cumulative backups (463/623/783/943).\n- backups8: the two sets hardlinked together, 8 backups.\n- backupB and backupC: single copies.\n\nChromium /opt/pw-browsers/chromium, headless, with args --disable-background-networking, --disable-component-update and --no-proxy-server, driven by Playwright sync. Viewports were 1440x950, plus 375x800 at DSF 2 for the narrow pass. The app stayed in airplane mode the whole time. No \"Go online\" was ever pressed, and no consent popup came up on this row's path.\n\nEvery Import-dialog run was sampled every 80 ms (runlib.py) with a MutationObserver counting per-row writes, an animationstart listener and a header-overlap measure.\n\nAll artifacts are under /tmp/claude-0/rewalk/I/: events.jsonl (248 events), errors_*.json, *_samples.jsonl, and shots/ (132 PNGs).\n\nDifferences from the first walk:\n- The data-location GET now answers 200 while locked.\n- The first-run dialogs open one at a time.\n- Stage 4 is a real re-index job visible in /tasks.",
+  "steps": [
+   {
+    "id": "I1",
+    "verdict": "not-measurable-here",
+    "evidence": "This step needs the operator's real install and history; only throwaway data folders exist here. On the throwaway, a reopen after a finished run shows the fresh page: the Last import line only, plus stage 4 alone while it drains. It shows no stale run rows, statements or 'start it again' line (shots/I7-reopen-6s-en.png, C-final-reopen-en.png).",
+    "locales": "en"
+   },
+   {
+    "id": "I2",
+    "verdict": "pass",
+    "evidence": "Settings → Data & backup on a fresh unlocked target:\n- #set-checkpoint-k = 3, with its hint and its #oo-tip hover text.\n- #imp-history reads 'No imports recorded yet.'\n- The fresh Import dialog has no Last import line, no stage or queue rows, 0 <details>, and the K=3 checkpoint sentence.\n- The Verify hover bubble is drawn ABOVE the modal (shots/I2-dialog-hover-verify-en.png). It is re-parented into the dialog, so O5/P1/H1 are fixed on this surface.",
+    "locales": "en"
+   },
+   {
+    "id": "I3",
+    "verdict": "pass",
+    "evidence": "Verify:\n- Took 1.3 s with exactly one progress bar and 'Verify: Verifying volumes…'.\n- Ended '✓ Backup verified — the set is complete and intact. / 3 volumes · signature: verified / Parity: 1 · can still lose 1 / Method…'.\n\nScan:\n- Read 'Restore corpus backup (encrypted volumes — additive… · 12 volumes · 4 sets)', with the 'What do you want to import?' checklist, the passphrase label and the trust row.\n- Run was enabled once the passphrase was filled.",
+    "locales": "en"
+   },
+   {
+    "id": "I4",
+    "verdict": "pass",
+    "evidence": "A running import (4 backups, dialog open) showed:\n- Exactly one bar (max 1 across every sample file).\n- The header '0 of 4 backups imported · 0 s' and the collection-paused line.\n- Four stage rows, with rows 3 and 4 reading 'not started' before they begin.\n- Two • statements plus '• Analytics are complete once the re-index (stage 4) finishes.'\n- Stop and 'Continue in background' visible, and no 'Show details'.\nShots: shots/I4-running-en.png, B_en-first.png.",
+    "locales": "en"
+   },
+   {
+    "id": "I5",
+    "verdict": "pass",
+    "evidence": "Row repaints:\n- A text selection anchored in row 3 survived the repaints; the MutationObserver counts show only the changed rows being rewritten.\n\nClose and reopen on tgtC (8 backups, backups8), twice with 5 s closed each time:\n- The same run came back with 8 rows, never doubled.\n- The dialog was blank for about 90 ms and fully rendered by about 240 ms.\n- Stage row 4 never read 'could not be read'.\n\nF5 reload:\n- Found the same run with 8 rows.\n\nThroughout: max 1 bar, 0 animations, header overlap 0 px. Shots: C-reopen1-en.png, C-reopen2-en.png, C-after-reload-en.png.",
+    "locales": "en"
+   },
+   {
+    "id": "I6",
+    "verdict": "pass",
+    "evidence": "K=3 staging:\n- Staged items show the amber var(--warn) dot and 'Merged — not yet saved'.\n- The header reads 'Merged, not yet saved: 1 — …', then 2, as plain card-caveat text, beside '0 of 4 backups imported'.\n- At the third item all three turned green together; stage row 2 and the header both read '3 of 4'.\n\nStage 4's 'N left':\n- Stage row 4 showed '3 600 left' in the fr and 375 px runs.\n- It was not caught in the tgtB en run, because stage 4 is read on a 5 s pace and the run finished between reads. This is timing, not a defect.",
+    "locales": "en, fr"
+   },
+   {
+    "id": "I7",
+    "verdict": "pass",
+    "evidence": "When all backups were done:\n- Both ✓ lines were shown.\n- Row 3 painted 'running · Merging the search index…' (375 run), with no fabricated number.\n\nWith the dialog open at the end:\n- The result block appeared, with no toast.\n- 'Indexing continues…: 4 800 article(s) still to index'.\n- Stage row 4 kept counting ('resuming re-index — 0/200… of 4 800').\n\nWith the dialog closed before the end (walkC):\n- Exactly one 'Import complete.' toast.\n\nReopen:\n- A fresh page: 'Last import · … · 4 800 articles · open report', plus stage 4 alone, counting down.",
+    "locales": "en"
+   },
+   {
+    "id": "I8",
+    "verdict": "pass",
+    "evidence": "The stage-4 link opens /tasks, titled 'Task manager · FOOS'. Under AI & ANALYSIS it lists a running job:\n- 'finishing the re-index of imported articles'\n- 'import 1 (1200 article(s))'\n- '1 000 / 4 800 items · 21%', growing.\n\nThe #net-plane is filled (currentColor) with the offline title, and #health reads 'healthy' (T1 and T2 fixed).",
+    "locales": "en, fr, zh"
+   },
+   {
+    "id": "I9",
+    "verdict": "pass",
+    "evidence": "Shutdown and relaunch:\n- Shut down with the power button at 1 700/4 800 re-indexed (3 100 pending).\n- The relaunch booted locked; unlocked through #pw.\n\nAfter unlock:\n- The task manager showed the re-index 6.9 s later ('import 2 (700 article(s)) · 0 / 3 100'), and it completed 3 100/3 100.\n- The Import dialog showed stage 4 only ('resuming re-index — 200 of 3 100 articles', then 400).\n- The API's search_index read 'done' after the restart.\n- Search found 'Batch r elections 0 — en'.",
+    "locales": "en"
+   },
+   {
+    "id": "I10",
+    "verdict": "pass",
+    "evidence": "Settings history:\n- Four rows, each '… · restore · <folder label> · 1 200 articles · open report'.\n\nOpen report (md):\n- '# Import report (oo-backup-3) / Source: `folder` (`path`) / Item 4 of the 4 in one import… / **1,200 new articles**'.\n- A held (staged) backup's report says 'Merged into the import's working copy and written to your corpus at the checkpoint that saved …'.\n\nThe top history row (1 200, one backup) differs from the Last import line (4 800, the whole run). That matches the fixed design, where Last import sums the run.",
+    "locales": "en"
+   },
+   {
+    "id": "I11",
+    "verdict": "pass",
+    "evidence": "Runs with the dialog open in fr (backups), ar (backups_cum) and zh (backups_cum, plus a re-import) translate:\n- The Last import line, the K sentence, the stage titles and the statements.\n- The state words:\n  - fr: En cours / En attente / Fusionné — pas encore enregistré / Terminé\n  - ar: قيد التشغيل / في الانتظار / مدمج — لم يُحفظ بعد / تم\n  - zh: 运行中 / 等待中 / 已合并 — 尚未保存 / 已完成\n- The history rows, the hovers, and the task manager's title and job label.\n\nar is RTL: the dots sit on the right and the folder labels stay bdi-intact. Switching back to en made everything English, and a live language switch repainted the history.\n\nThe junk scan found 0. The leftover English, raw and wrongly-spaced items are reported as new P3 defects.",
+    "locales": "fr, ar, zh, en"
+   },
+   {
+    "id": "I12",
+    "verdict": "pass",
+    "evidence": "Setting K=1 changed the dialog sentence to 'Every backup is verified and written to your corpus as soon as it finishes.', and the queue status reported k=1. Undo restored 3.",
+    "locales": "en"
+   },
+   {
+    "id": "I13",
+    "verdict": "pass",
+    "evidence": "(a) Verify during a running import:\n- Refused with the toast 'An import is running — verify the backup once it has finished.'\n- No POST to /v2/volumes was made.\n- The rows kept updating: '1 of 1', row 3 done, stage 4 counting.\n\n(b) SIGKILL while search_index was running and the item was done. After the relaunch and unlock:\n- No red 'start it again' line.\n- The API state is done, with search_index 'interrupted'. That stage-3 item is the known deferred one and is not re-reported.\n- The fresh page shows stage 4 'resuming re-index — 0 of 1 200'.\n- The history row is present.",
+    "locales": "en"
+   },
+   {
+    "id": "I-375",
+    "verdict": "pass",
+    "evidence": "375x800 viewport (walkE, walkE2); navigation went through the real #hamburger click.\n- Settings and Data & backup: page overflow 0.\n- #ux-imp-src is 199 px wide and the buttons wrap.\n- Rows, stage rows and the header stay inside the dialog (0 overflowing).\n- The result block's plan tables sit inside an overflow:auto box, which is by design (Y1).\n- The history and the task manager at 375 have page overflow 0.\n- What shows under the dialog's bottom edge is the dimmed page behind the ::backdrop, not leaked dialog content.\nShots: E-375-*.png, E2-375-*.png.",
+    "locales": "en"
+   }
+  ],
+  "old_defects": [
+   {
+    "id": "I1",
+    "verdict": "fixed",
+    "evidence": "Stage 4 is a real job: it counts 'resuming re-index — X of Y' in the dialog and shows up in /tasks. It also survived a shutdown (I8, I9)."
+   },
+   {
+    "id": "I2",
+    "verdict": "fixed",
+    "evidence": "Stage rows 3 and 4 read 'not started' before they begin, and the third bullet about stage 4 is present (I4)."
+   },
+   {
+    "id": "I3",
+    "verdict": "fixed",
+    "evidence": "A reopen after the end shows the fresh page (Last import line, plus stage 4 alone while it drains), with no stale run rows (I1, I7)."
+   },
+   {
+    "id": "I4",
+    "verdict": "fixed",
+    "evidence": "After a SIGKILL in the tail and after a clean shutdown, no red 'start it again' line appears for a completed run (I13b, I9)."
+   },
+   {
+    "id": "I5",
+    "verdict": "fixed",
+    "evidence": "The K checkpoint sentence is shown and follows the setting: K=3 by default, and K=1 gives 'as soon as it finishes' (I2, I12)."
+   },
+   {
+    "id": "I6",
+    "verdict": "fixed",
+    "evidence": "The 4-backup run's Last import line and 'still to index' figure read 4 800, not 8 400 (I7)."
+   },
+   {
+    "id": "I7",
+    "verdict": "fixed",
+    "evidence": "Every item gets its own report with a folder label and path, 4 history rows in all. Last import sums the run: 4 800, plus 5 733 and 933 for the cumulative runs (I10)."
+   },
+   {
+    "id": "I8",
+    "verdict": "fixed",
+    "evidence": "Verify is refused with a toast while an import runs, and no /v2/volumes POST is made (I13a)."
+   },
+   {
+    "id": "I9",
+    "verdict": "fixed",
+    "evidence": "The header no longer uses the .note animation. Across all sampled runs there were 0 animationstart events and 0 px header overlap (I5)."
+   },
+   {
+    "id": "I10",
+    "verdict": "fixed",
+    "evidence": "search_index reads 'done' in the API after a clean restart, and search finds the imported article (I9)."
+   },
+   {
+    "id": "I11",
+    "verdict": "fixed",
+    "evidence": "State words, stage titles, statements, history and hovers are translated in fr, ar and zh (I11). The remaining leftovers are separate items, listed as new defects."
+   },
+   {
+    "id": "I12",
+    "verdict": "fixed",
+    "evidence": "In ar, folder labels and numbers in the rows and history stay bdi-isolated and intact."
+   },
+   {
+    "id": "I13",
+    "verdict": "fixed",
+    "evidence": "At 375 px: page overflow 0, the input is 199 px, the buttons wrap, and rows stay inside the dialog (I-375)."
+   },
+   {
+    "id": "I14",
+    "verdict": "fixed",
+    "evidence": "Done rows read 'Done' with no stale stage suffix in every sampled run."
+   },
+   {
+    "id": "I15",
+    "verdict": "fixed",
+    "evidence": "GET /api/system/data-location answers 200 while locked, now in ALLOWED_WHILE_LOCKED at src/api/unlock.py:110-111. The first-launch data-location step rendered on all five targets."
+   },
+   {
+    "id": "O5",
+    "verdict": "fixed",
+    "evidence": "On the Import dialog (a modal), the #oo-tip hover bubble is drawn above the dialog (shots/I2-dialog-hover-verify-en.png). This is the same fix as P1 and H1 on this surface."
+   },
+   {
+    "id": "P1",
+    "verdict": "fixed",
+    "evidence": "Hover over the modal Import dialog is visible (see O5)."
+   },
+   {
+    "id": "H1",
+    "verdict": "fixed",
+    "evidence": "Hover over the modal Import dialog is visible (see O5)."
+   },
+   {
+    "id": "T1",
+    "verdict": "fixed",
+    "evidence": "In /tasks, #net-plane has fill currentColor in airplane mode, with the offline title."
+   },
+   {
+    "id": "T2",
+    "verdict": "fixed",
+    "evidence": "#health in /tasks reads 'healthy' during and after the re-index."
+   },
+   {
+    "id": "O4",
+    "verdict": "fixed",
+    "evidence": "In fr and zh, the task manager's page title and job label are translated (D_fr-taskmanager.png, D_zh-taskmanager.png). The English detail string beside the label is a new P3."
+   },
+   {
+    "id": "T6",
+    "verdict": "fixed",
+    "evidence": "The task manager at 375 px has page overflow 0 (E-375-tasks.png)."
+   },
+   {
+    "id": "U1",
+    "verdict": "fixed",
+    "evidence": "The data-location GET answers 200 during first launch and while locked (same fix as I15)."
+   },
+   {
+    "id": "P4",
+    "verdict": "fixed",
+    "evidence": "The data-location GET answers 200 during first launch and while locked (same fix as I15)."
+   },
+   {
+    "id": "U8",
+    "verdict": "fixed",
+    "evidence": "Only one first-run dialog is open at a time: wiki-wizard after first launch, guide-wizard after unlock, never stacked."
+   }
+  ],
+  "new_defects": [
+   {
+    "title": "Result block 'Already judged here, kept' over-counts: per-item snapshots are summed across a multi-backup run",
+    "severity": "P2",
+    "repro": "1. On tgtB, after importing the 4 distinct backups (a corpus with about 6 446 sources), open Settings → Data & backup → Import.\n2. Scan /tmp/claude-0/rewalk/I/backups_cum (4 cumulative backups).\n3. Import only the corpus, with the dialog kept open until the result block renders.\n4. Look at the source-qualification part of the result block.",
+    "expected": "'Already judged here, kept' counts each source at most once. It can never exceed the number of sources in the corpus.",
+    "actual": "'Already judged here, kept: 19 254' (ar «سبق الحكم عليها هنا، أُبقيت: 19 254», zh «此处已判定并保留：19 254»). That is about three times the corpus's 6 446 sources. The per-item plans' _source_qualification.local_verdict_kept values are 6400, 6422, 6418 and 14, and the UI adds them up.",
+    "evidence": "shots/B_ar-end.png and the D_zh result-block shot; B_*_samples.jsonl and D_zh_samples.jsonl; the per-item plan values come from /api/backup/import-queue/status.",
+    "root_cause_lead": "src/static/app-backup.js ~2622-2632 does `qualKept += pq.local_verdict_kept || 0` over every item's plan, but each item's value is a snapshot of the whole local set, not a per-item increment. qualEngines and qualDisagreed are summed the same way. It should take the last item's snapshot or a de-duplicated union. This is the same class as the earlier D6 summing defect."
+   },
+   {
+    "title": "Raw backend sentinel 'unrecorded' shown as an engine name in 'Judged by'",
+    "severity": "P3",
+    "repro": "Run the cumulative-backups import (backups_cum) with the dialog open, in any locale, then read the result block's source-qualification line.",
+    "expected": "A translated phrase such as 'engine not recorded', or the entry left out.",
+    "actual": "'Judged by: unrecorded (1), v1 (25)'. The same raw token appears in the fr, ar and zh result blocks.",
+    "evidence": "B_en/B_ar and D_zh result-block shots; *_samples.jsonl summary text.",
+    "root_cause_lead": "src/backup/merge.py:2172 uses 'unrecorded' as the engine key. src/static/app-backup.js:2775-2777 prints the engine keys verbatim."
+   },
+   {
+    "title": "Import folder field #ux-imp-src lacks dir=\"ltr\": in Arabic the path is reordered and clipped",
+    "severity": "P3",
+    "repro": "1. Switch the language to ar.\n2. Open Settings → Data & backup → Import.\n3. Type /tmp/claude-0/rewalk/I/backups_cum into the folder field.",
+    "expected": "The path reads left to right, as the Export destination #ux-dest does (it got dir=\"ltr\" in the J3 fix).",
+    "actual": "The field shows 'mp/claude-0/rewalk/I/backups_cum/'. The leading slash moves to the end, and the start of the path is cut off.",
+    "evidence": "shots/crop-ar-src.png, shots/B_ar-staged1.png",
+    "root_cause_lead": "src/static/index.html:3271 `<input id=\"ux-imp-src\" ...>` has no dir=\"ltr\", while #ux-dest at index.html:3334 has it."
+   },
+   {
+    "title": "RTL: status dots touch the text in the stage rows and per-backup rows",
+    "severity": "P3",
+    "repro": "Switch to ar, start an import with the dialog open, and look at #ux-imp-stages and #ux-imp-queue-rows.",
+    "expected": "The same 6 px gap between each dot and its label as in LTR.",
+    "actual": "In RTL the dot sits right against the label text; the gap ends up on the wrong side.",
+    "evidence": "shots/crop-ar-stages.png, shots/crop-ar-rows.png",
+    "root_cause_lead": "src/static/app-backup.js lines 1874 and 1935 give the dot a physical `margin-right:6px`. It should be `margin-inline-end:6px`."
+   },
+   {
+    "title": "Reopening Import after a scan keeps the previous scan's trust row, its caveat and the folder path",
+    "severity": "P3",
+    "repro": "1. Open Import and scan /tmp/claude-0/rewalk/I/backups.\n2. Close the dialog without running.\n3. Reopen Import.",
+    "expected": "The dialog reopens clean: no trust row and no leftover folder, or all of the scan's parts kept together.",
+    "actual": "The checklist, status and passphrase row are cleared and Run is disabled, but #ux-imp-trust-row stays visible (display:block) with its caveat. The old folder path also stays in #ux-imp-src. The result is a half-reset form showing a trust statement for a scan that is no longer shown. This is an R1 residue.",
+    "evidence": "events.jsonl T_after_scan and T_reopen (trust display 'block', checklist '', src retained); shots/T-reopen-after-scan-en.png, shots/I7-reopen-6s-en.png.",
+    "root_cause_lead": "openUnifiedImport in src/static/app-backup.js:923-945 resets the checklist, status and passphrase row, but never hides #ux-imp-trust-row or clears #ux-imp-src."
+   },
+   {
+    "title": "Task manager re-index detail 'import N (M article(s))' is English with an ungrouped number in fr and zh",
+    "severity": "P3",
+    "repro": "1. Switch the language to fr (or zh) and run an import.\n2. While stage 4 drains, follow the stage-4 link to /tasks and read the job under AI & ANALYSIS.",
+    "expected": "The detail is translated and the number grouped, like the label beside it.",
+    "actual": "fr shows 'import 1 (1200 article(s))'; zh shows 'import 5 (773 article(s))'. The label next to it is translated.",
+    "evidence": "shots/D_fr-taskmanager.png, shots/D_zh-taskmanager.png; the D_fr_tasks and D_zh_tasks events.",
+    "root_cause_lead": "src/api/backup_v2.py:1008 calls `ctx.set_progress(detail=f\"import {bid} ({b['articles']} article(s))\")` without a detail_i18n key or params."
+   },
+   {
+    "title": "Stage 4's dot stays grey ('not started' colour) while the re-index is running",
+    "severity": "P3",
+    "repro": "Finish an import with the dialog open, or reopen it while the re-index drains, and look at stage row 4 while it reads 'resuming re-index — X of Y'.",
+    "expected": "The dot uses the running colour while the job runs and the done colour when the backlog reaches 0.",
+    "actual": "The dot stays var(--muted), the colour used for 'not started', throughout the run even as the text counts up.",
+    "evidence": "shots/I7-reopen-6s-en.png, shots/D_fr-reopen.png, shots/D_zh-reopen.png (stage 4 counting with a grey dot).",
+    "root_cause_lead": "src/static/app-backup.js ~1898-1901: stage 4's state is always 'external', and the dot-colour map sends 'external' to var(--muted). The dot should follow the re-index job's own running or done state."
+   },
+   {
+    "title": "zh result-block wording: half-width punctuation and 您 beside 你 in the same dialog",
+    "severity": "P3",
+    "repro": "Switch to zh, run an import with the dialog open, and read the result block.",
+    "expected": "Full-width punctuation (，（）), and the same form of address (你) as the rest of the dialog.",
+    "actual": "'数据库记录(所有类型)' and '您的语料库新增了 {articles} 篇文章,来自 {sources} 个新来源,涵盖 {languages} 种新语言。' use half-width ',' and '()', and 您 where the rest of the dialog says 你的语料库.",
+    "evidence": "The D_zh result-block shot; D_zh_samples.jsonl summary text.",
+    "root_cause_lead": "src/static/locales/zh.json:2365-2366."
+   }
+  ],
+  "page_errors": [],
+  "http_errors": [
+   "No HTTP response at or above 400 was recorded in any walk, first launch included (errors_*.json). The only console errors were 8 × 'Failed to load resource: net::ERR_CONNECTION_REFUSED'. They came from the open page's polls right after the deliberate power-button shutdown (I9) and the deliberate SIGKILL (I13b), while the server was down. They are expected and are not defects."
+  ],
+  "summary": "Row I passes on the fixed build. 13 of 14 checks pass; I1 is not measurable here because it needs the operator's real install.\n\nVerified with Chromium on five encrypted, locked-at-boot targets, each created through the real first launch:\n- **Settings:** K = 3 with its hint, and an empty history that reads 'No imports recorded yet.'\n- **Verify and scan:** Verify with one bar and a clean verdict; the scan shows the checklist, passphrase and trust row.\n- **Stage rows:** four rows, with rows 3 and 4 'not started' and three bullets.\n- **Staging:** at K = 3, 'Merged — not yet saved' with the plain header line, and all three turning green together at the third.\n- **Reopen and reload:** close/reopen twice and F5 on an 8-backup run found the same run with 8 rows, no doubling, 0 animations, 0 px overlap and max one bar.\n- **End of run:** one 'Import complete.' toast when the dialog is closed; the result block and no toast when it is open.\n- **Fresh page on reopen:** the Last import line (4 800 for the run), plus stage 4 alone while it drains.\n- **Stage 4:** a real re-index job, visible in /tasks with the plane filled and health 'healthy'. It survived a shutdown and relaunch through the lock screen and completed.\n- **After a SIGKILL:** no 'start it again' line.\n- **Reports:** one per item, with labels and paths.\n- **Verify during an import:** refused, with no POST.\n- **K = 1:** changes the sentence.\n- **Locales:** fr, ar and zh translated, with RTL and bdi intact.\n- **375 px:** page overflow 0.\n\nAll fifteen old row-I defects (I1–I15) are fixed. So are the cross-row defects this row walks: O5, P1 and H1 (hover over the modal), T1, T2, O4, T6, U1, P4 and U8.\n\nThere were no page errors and no HTTP errors at or above 400. The only console errors were the expected connection-refused errors after the deliberate shutdown and kill.\n\n8 new defects (1 P2, 7 P3):\n- **P2:** 'Already judged here, kept' adds up per-item snapshots and shows 19 254 in a 6 446-source corpus (app-backup.js ~2627; same class as D6).\n- **P3:**\n  - The raw 'unrecorded' engine name appears in 'Judged by'.\n  - #ux-imp-src lacks dir=\"ltr\", so in Arabic the path is reordered and clipped.\n  - In RTL the dots touch the text because of a physical margin-right.\n  - A reopen after a scan keeps the trust row and folder path (R1 residue).\n  - The task manager's re-index detail is English with an ungrouped number in fr and zh (backup_v2.py:1008).\n  - Stage 4's dot stays grey while the re-index runs.\n  - zh result-block punctuation, and 您 beside 你.\n\nNothing in the tree was edited. The server was stopped by PID and port 8903 is free."
+ },
+ "recheck": {
+  "row": "I",
+  "items": [
+   {
+    "ref": "new:Result block 'Already judged here, kept' over-counts: per-item snapshots are summed across a multi-backup run",
+    "verdict": "confirmed",
+    "severity": "P2",
+    "evidence": "My own instance: /tmp/claude-0/rewalk/I-recheck/tgt1 on port 8953. Created through the real first launch (en, legal, the data-location step, passphrase walk-pass-2026). It booted with lock-state 'locked' and was unlocked through #pw/#btn-unlock. I imported copies of the walker's backup sets (copied into /tmp/claude-0/rewalk/I-recheck/backups and /backups_cum): first the 4 distinct backups in fr, then the 4 cumulative backups in zh with the dialog open.\n\nSource counts, paged through /api/sources/: 6 416 before the cumulative import and 6 446 after it.\n\nThe zh result block reads '此处已判定并保留：19 254'. See events.jsonl R_zh_result_block and shots/zh-result-block.png.\n\nThe persisted per-item reports rep-5..8.json (plan._source_qualification.local_verdict_kept) give 6400, 6422, 6418 and 14. Their sum is exactly 19 254, three times the corpus's 6 446 sources.",
+    "root_cause": "src/static/app-backup.js:2627 does `qualKept += pq.local_verdict_kept || 0` for every counted item, and :2771 renders the sum as 'Already judged here, kept'. Each item's figure (src/backup/merge.py:2188, `local_verdict_kept`) counts every incoming source that already had a local verdict. A source carried by N backups of the same run is therefore counted N times. The other qualification counters (introduced/adopted) are disjoint across items and sum correctly; this one does not.",
+    "suggested_fix": "Give the aggregate a distinct count. Either the queue computes a run-level tally of the distinct local source ids whose verdict was kept (union across the run's items), or the aggregate drops this line for multi-item runs and leaves the figure in each backup's own detail. Do not sum per-item snapshots. The first walk's I6 (a re-index backlog summed per item) had the same shape and was rated P2, hence P2 here."
+   },
+   {
+    "ref": "new:Raw backend sentinel 'unrecorded' shown as an engine name in 'Judged by'",
+    "verdict": "confirmed",
+    "severity": "P3",
+    "evidence": "zh result block, same run as the item above: '判定引擎：unrecorded (1), v1 (25)' (events.jsonl R_zh_result_block, shots/zh-result-block.png). The per-item report rep-5.json has engines {\"unrecorded\": 1, \"v1\": 21}; the 1 is the one source that arrived disqualified with no criteria version recorded. The UI prints the backend key verbatim. It is English inside a zh sentence and the same token in every locale.",
+    "root_cause": "src/backup/merge.py:2166-2170 deliberately reports a verdict with no recorded criteria version under the literal key 'unrecorded' (docstring :2152-2155). src/static/app-backup.js:2773-2777 then joins `${e} (${num(n)})` for every engine key without mapping that sentinel to a translated phrase.",
+    "suggested_fix": "In the Judged-by join, map the key 'unrecorded' to t('engine not recorded'), keyed x12, and leave real criteria versions (v1 ...) as data. Alternatively the backend can send the sentinel as null/None with a separate count, and the UI words it."
+   },
+   {
+    "ref": "new:Import folder field #ux-imp-src lacks dir=\"ltr\": in Arabic the path is reordered and clipped",
+    "verdict": "confirmed",
+    "severity": "P3",
+    "evidence": "ar, Settings > Data & backup > Import, field cleared, then typed. /mnt/backup renders as 'mnt/backup/': the leading slash moves to the end (shots/i3-ar-src-short.png). /tmp/claude-0/rewalk/I-recheck/backups_cum renders as '…de-0/rewalk/I-recheck/backups_cum/': the start is clipped and the leading slash sits at the right end (shots/i3-ar-src-noslash-blur.png). Measured on #ux-imp-src: dir attribute null, computed direction rtl, scrollWidth 362 vs clientWidth 291. The Export destination #ux-dest has dir='ltr' (computed ltr), and the same path there renders '/tmp/claude-0/rewalk/I-recheck/backups_cum/' correctly (shots/i3-ar-dest-compare.png).",
+    "root_cause": "src/static/index.html:3271 `<input id=\"ux-imp-src\" type=\"text\" ...>` has no dir attribute, so it inherits the page's rtl. The J3 fix gave only #ux-dest (index.html:3334) dir=\"ltr\".",
+    "suggested_fix": "Add dir=\"ltr\" to #ux-imp-src, as on #ux-dest, and to any other path input that ooFolderPicker fills."
+   },
+   {
+    "ref": "new:RTL: status dots touch the text in the stage rows and per-backup rows",
+    "verdict": "confirmed",
+    "severity": "P3",
+    "evidence": "Measured on the label's line box nearest the dot, DSF 2, same build. In LTR (en), every stage row and per-backup row has a 6 px gap between dot and label (dot right edge 467, label left edge 473). In RTL (ar), every row has a 0 px gap (dot left edge 967 = label right edge 967). The dot's computed margin-right is 6px and its margin-left 0px in both directions. See events.jsonl I4_en_gap / I4_ar_gap, and shots/i4-ar-stages-dsf2.png and i4-ar-rows-dsf2.png beside i4-en-*-dsf2.png. In ar, the '1.' and the backup folder names sit flush against the dot.",
+    "root_cause": "src/static/app-backup.js:1874 (per-backup rows) and :1935 (stage rows) build the dot with the physical `margin-right:6px`. In RTL the dot is drawn on the right, so the margin lands on its outer side and nothing separates it from the label.",
+    "suggested_fix": "Replace margin-right:6px with margin-inline-end:6px on both dot spans. Check other inline dots in the dialog the same way."
+   },
+   {
+    "ref": "new:Reopening Import after a scan keeps the previous scan's trust row, its caveat and the folder path",
+    "verdict": "confirmed",
+    "severity": "P3",
+    "evidence": "en. I scanned /tmp/claude-0/rewalk/I-recheck/backups, closed the dialog without running, and reopened it. Measured 1.5 s and 5.5 s after the reopen: trust row display 'block' with its caveat, #ux-imp-src still holding the path, checklist '', status '', pass-row 'none', Run disabled (events.jsonl I5_reopen_1_5s / I5_reopen_5_5s, shots/i5-reopen-dialog-en.png). A trust checkbox and its caveat stand under an empty checklist. It is worse after a FINISHED import: reopening after the fr and zh runs also showed the trust row as 'block' (I5b_reopen_after_import, R_zh_reopen_row4.st). S04-02 S2's acceptance for a reopen is 'the line, nothing else'.",
+    "root_cause": "src/static/app-backup.js:923-946 (openUnifiedImport) resets the checklist, status, progress, summary, last line, bar, pass-row and Run, and calls _uxImResetRunView (:2199), but never hides #ux-imp-trust-row. That row's display is set only by _uxImTrustRow (:1196-1199), which only a scan calls. #ux-imp-src is not cleared either.",
+    "suggested_fix": "In openUnifiedImport, call the trust-row hide as well (row.style.display='none', or _uxImTrustRow(false)). Then decide deliberately whether the folder path should persist. Keeping it as a convenience is defensible, but then the form should not look half-scanned."
+   },
+   {
+    "ref": "new:Task manager re-index detail 'import N (M article(s))' is English with an ungrouped number in fr and zh",
+    "verdict": "confirmed",
+    "severity": "P3",
+    "evidence": "fr: during the stage-4 drain I followed the stage-4 link to /tasks. The job shows 'fin de la réindexation des articles importés' (translated), then 'import 2 (1200 article(s))' (English, 1200 ungrouped), then '1 700 / 4 800 éléments · 35%' (grouped). See shots/i6-fr-taskmanager.png and events I6_fr_tasks. zh: 'import 5 (773 article(s))' (shots/i6-zh-taskmanager.png, I6_zh_tasks). /api/jobs returns detail 'import 2 (1200 article(s))' with detail_i18n null.",
+    "root_cause": "src/api/backup_v2.py:1008 `ctx.set_progress(detail=f\"import {bid} ({b['articles']} article(s))\")` passes a plain str, not a src/jobs/background.py:40 `Framed`, so detail_i18n/detail_vars stay null. src/static/taskmanager.html:383-385 (jobDetail) then falls back to t(j.detail); no key matches, so the English sentence prints with its raw number.",
+    "suggested_fix": "Publish the line as a Framed detail with a keyed frame and values: the batch id, plus the article count as a one/many count phrase formatted by fmtNum. This is the pattern the 'model {model}' and qualify_job producers use. Add the frame keys to all 12 locales."
+   },
+   {
+    "ref": "new:Stage 4's dot stays grey ('not started' colour) while the re-index is running",
+    "verdict": "confirmed",
+    "severity": "P3",
+    "evidence": "fr, dialog kept open after the run. For 12 s, row 4 read 'reprise de la réindexation — 200 … 1 000 articles sur 4 800' while /reindex-backlog/resume/status was 'running'. The dot was var(--muted) = rgb(92,101,115) at every sample (events I7_fr_open_seq, shots/i7-fr-open-stages-crop.png). It was the same on reopens mid-drain (I7_fr_reopen, I7_fr_drain_reopen at 2 100 and 3 600 of 4 800) and in zh (R_zh_reopen_row4). Once finished, row 4 reads 'complete' and the dot is still var(--muted) (I4_ar_gap/I4_en_gap reindex bg var(--muted)), so neither the running colour nor the done colour ever appears.",
+    "root_cause": "src/backup/import_queue.py:1307 always reports the reindex stage as state 'external', by design, because the queue does not own that job. src/static/app-backup.js:1892-1895 colours every stage row's dot from sRow.state alone, so 'external' maps to var(--muted) while the row's TEXT comes from rx (_uxImReindexBits). Text and dot are fed by different sources.",
+    "suggested_fix": "For key==='reindex', derive the dot from rx, the same status the text uses: running gives var(--accent); a zero backlog with nothing left gives var(--ok); idle with a backlog gives var(--warn); unread stays var(--muted)."
+   },
+   {
+    "ref": "new:zh result-block wording: half-width punctuation and 您 beside 你 in the same dialog",
+    "verdict": "confirmed",
+    "severity": "P3",
+    "evidence": "zh result block (events R_zh_result_block / R_zh_dialog_text_end, shots/zh-result-block.png). It shows '您的语料库新增了 933 篇文章,来自 30 个新来源,涵盖 4 种新语言。' (half-width commas) and '数据库记录(所有类型)：11 185' (half-width parentheses). The same dialog text uses 你 six times: the intro '你已有的内容不会被覆盖', the checklist, stage 2 '合并进你的语料库并保存', the statement '…现已进入你的语料库', and the checkpoint caveat. The result block uses 您 twice: the growth sentence and '您的语料库是如何增长的'. The locale file mixes both forms app-wide (176 lines with 您, 239 with 你), but within this dialog the mix shows side by side. Minor, related: the checklist wrapper prints half-width parentheses around '(加密卷 — …)' from JS.",
+    "root_cause": "src/static/locales/zh.json:2365 'database records, all types' => '数据库记录(所有类型)'. zh.json:2366 'Your corpus grew by …' uses ',' where '，' is wanted, plus 您. zh.json:2348 'How your corpus grew' => '您的语料库是如何增长的'.",
+    "suggested_fix": "Use full-width punctuation in zh.json:2365-2366 ('数据库记录（所有类型）', '，'), and switch 您 to 你 in 2348 and 2366 to match the rest of the Import dialog. A zh-wide 您/你 pass is a separate, larger decision."
+   }
+  ],
+  "summary": "I reproduced all 8 of the walker's items for row I on build 0deff9c4, on my own fresh instance, and all 8 are confirmed. None came from the walker's scripts, and none is ruled behaviour.\n\n**Setup.** The instance is /tmp/claude-0/rewalk/I-recheck/tgt1 on port 8953, created through the real first launch. It is encrypted, booted with lock-state 'locked', and was unlocked through #pw/#btn-unlock. I imported copies of the walker's backup sets, placed in my scratch folder: first the 4 distinct stamp-stripped backups in fr, then the 4 cumulative backups in zh. I then re-imported the cumulative set in ar and en for the RTL measurements. Chromium ran headless with the no-network args, and the app stayed in airplane mode throughout; no consent popup arose. There were no page errors, console errors, HTTP errors of 400 or above, or undefined/NaN/null text on this path.\n\n**Confirmed items:**\n1. **P2, 'Already judged here, kept' over-counts.** The zh result block shows 19 254, while the corpus has 6 446 sources. It is the sum of the four per-item values 6400, 6422, 6418 and 14 (app-backup.js:2627).\n2. **P3, raw 'unrecorded' in 'Judged by'.** The backend sentinel from merge.py:2166 is printed verbatim by app-backup.js:2773-2777.\n3. **P3, #ux-imp-src has no dir='ltr' (index.html:3271).** In ar, /mnt/backup renders as 'mnt/backup/' and long paths are clipped at the start; #ux-dest renders the same path correctly.\n4. **P3, RTL dot gap is 0 px against 6 px in LTR.** Caused by the physical margin-right at app-backup.js:1874 and :1935.\n5. **P3, trust row and folder survive a reopen.** openUnifiedImport (app-backup.js:923-946) never hides #ux-imp-trust-row. It also survives a reopen after a finished import, which breaks S04-02 S2's 'the line, nothing else'.\n6. **P3, task-manager detail is not translated.** fr shows 'import 2 (1200 article(s))' and zh 'import 5 (773 article(s))', because backup_v2.py:1008 publishes a plain string rather than a Framed detail.\n7. **P3, stage 4's dot stays grey.** It stays var(--muted) while the re-index runs and after it completes, because import_queue.py:1307 always reports 'external' and app-backup.js:1892 colours the dot from that alone.\n8. **P3, zh wording.** Half-width ',' and '()' plus 您 at zh.json:2348, 2365 and 2366, while the rest of the dialog says 你.\n\n**Artifacts** are in /tmp/claude-0/rewalk/I-recheck/: walk1-4.py, rc.py, rcrun.py, gap.py, srv.py, events.jsonl, rep-5..8.json, errors_walk*.json and 55 screenshots in shots/. My server (PID 17887) was stopped by PID, port 8953 is free, and the worktree is clean."
+ }
+}
