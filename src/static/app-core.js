@@ -759,7 +759,8 @@
         const rows = (d.interfaces || []).map((i) => `${i.interface}: ${i.addresses.join(", ")}`);
         box.textContent = rows.length ? rows.join("\n") : t("No non-loopback network interfaces were found.");
       } catch (e) {
-        box.textContent = t("No non-loopback network interfaces were found.");
+        // A failed read is UNREAD, never "none were found" (2026-09-27 re-walk M-14).
+        box.textContent = t("This machine's network interfaces could not be read just now.");
       }
     }
     // S4.7 sources-by-theme step. Real catalog tag taxonomy from the app's OWN loopback
@@ -1455,7 +1456,11 @@
         const rows = (d.interfaces || []).map(i => `${i.interface}: ${i.addresses.join(", ")}`);
         box.textContent = rows.length ? rows.join("\n") : t("No non-loopback network interfaces were found.");
         box.style.whiteSpace = "pre-line";
-      }).catch(() => { if (gen === _netConsentGen) box.textContent = t("No non-loopback network interfaces were found."); });
+      }).catch(() => {
+        // A failed read is UNREAD, never "none were found": that would be a false claim
+        // inside the disclosure itself (the batch's "unreadable, never off" rule).
+        if (gen === _netConsentGen) box.textContent = t("This machine's network interfaces could not be read just now.");
+      });
       // The same bound as the lanes: a read still out by then is SAID to be unread
       // (the answer still replaces the sentence if it lands), never left as "…".
       const ifacesDone = Promise.race([ifacesRead, new Promise((res) => setTimeout(() => {

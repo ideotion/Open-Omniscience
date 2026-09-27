@@ -673,7 +673,9 @@
       var when = r.finished_at || r.started_at;
       var dur = res.duration_s != null ? fmtDur(res.duration_s) : "—";
       var pill = ok ? '<span class="pill ok">' + esc(t("ok")) + "</span>" : '<span class="pill err">' + esc(t("error")) + "</span>";
-      var detail = ok ? (fmtNum(stored, 0) + " " + esc(t("articles")) + " · " + esc(res.mode || r.mode || "") + " · " + dur)
+      // No mode segment: since Q1020 = a every run is the press lane and no run report
+      // carries a mode, so reading one printed an empty "· ·" (2026-09-27 re-walk T-5).
+      var detail = ok ? (fmtNum(stored, 0) + " " + esc(t("articles")) + " · " + dur)
                       : esc(String(r.error || t("failed")).slice(0, 160));
       return '<div class="job"><span>' + pill + '</span><span class="label">' + esc(fmtRel(when)) +
              ' <span class="muted" title="' + esc(fmtLocal(when)) + '" style="font-weight:400">' + esc(fmtLocal(when)) + "</span></span>" +

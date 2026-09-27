@@ -9,14 +9,16 @@
 //
 //   M-14  the network-consent popup's "Go online" stays disabled until the lane list and
 //         the interface list are both rendered, each read or honestly marked unreadable;
-//         a slow read is bounded, and its late answer still replaces "could not read".
+//         a slow read is bounded, and its late answer still replaces "could not read"; a
+//         FAILED interface read (here and in guided setup) is unread, never "none found".
 //   T-2   the DOM walker leaves an attribute alone when an ANCESTOR carries
 //         data-i18n-dyn, so a self-translated hover is not frozen in its first language.
 //   U-11  the guided-setup theme chips render a source tag verbatim (data-i18n-dyn) and
 //         the count through fmtNum.
 //   T-7   the red AI pill's hover leads with a KEYED sentence, not the server's English.
 //   H-3   Help's "Find on this page" runs its highlight-and-scroll OUTSIDE the keystroke.
-//   T-5   neither schedule view prints the retired "Mode" row.
+//   T-5   neither schedule view prints the retired "Mode" row, and /tasks' Sessions tab
+//         prints no empty mode fragment for a run that carries none.
 //   T-6   /tasks paints the health dot in the state's colour class.
 //   T-8   /tasks takes the app's theme from localStorage "oo.ui", as the app writes it.
 
@@ -171,6 +173,33 @@ async function m14() {
     await H.clock.advanceTo(BUDGET + 1);
     assert.strictEqual(H.nodes["net-consent-ifaces"].textContent, "This machine's network interfaces could not be read just now.");
     assert.strictEqual(H.nodes["net-consent-ok"].disabled, false);
+  });
+
+  const UNREAD = "This machine's network interfaces could not be read just now.";
+  const NONE = "No non-loopback network interfaces were found.";
+  await check("M-14 an interface read that FAILS is said to be unread, never 'none were found'", async () => {
+    const H = consentHarness({ "/api/system/network": 0, "/api/scheduler/config": 3, "/api/safety/settings": 3,
+      "/api/custody/settings": 3, "/api/system/interfaces": -3 }, NET_VALUES);
+    H.ensureOnline("Collect now", {});
+    await H.clock.advanceTo(20);
+    assert.notStrictEqual(H.nodes["net-consent-ifaces"].textContent, NONE,
+      "a failed read claims there are no interfaces, beside an enabled \"Go online\"");
+    assert.strictEqual(H.nodes["net-consent-ifaces"].textContent, UNREAD);
+    assert.strictEqual(H.nodes["net-consent-ok"].disabled, false);
+  });
+
+  await check("M-14 the guided-setup finish step: a failed interface read is unread, an empty one is none", async () => {
+    const run = async (answer) => {
+      const box = { textContent: "" };
+      const f = new Function("$", "api", "_gwT", extract(APP, "_gwRenderFinish") + "return _gwRenderFinish;")(
+        (id) => (id === "gw-ifaces" ? box : null), answer, (s) => s);
+      await f();
+      return box.textContent;
+    };
+    assert.strictEqual(await run(async () => { throw new Error("read failed"); }), UNREAD,
+      "the finish step says no interfaces exist when it could not read them");
+    assert.strictEqual(await run(async () => ({ interfaces: [] })), NONE, "an empty, answered read is still \"none\"");
+    assert.strictEqual(await run(async () => NET_VALUES["/api/system/interfaces"]), "eth0: 10.0.0.2");
   });
 
   await check("M-14 a lane read that FAILS renders as unreadable at once, not after the budget", async () => {
@@ -340,6 +369,23 @@ async function t5() {
   });
 }
 
+async function t5history() {
+  await check("T-5 /tasks Sessions: a mode-less run prints no empty mode fragment", async () => {
+    const el = { innerHTML: "" };
+    const run = { lane: "press", ok: true, started_at: "2026-09-27T10:00:00Z", finished_at: "2026-09-27T10:00:42Z",
+      result: { articles_stored: 12, duration_s: 42.1 } };
+    const f = new Function("$", "api", "esc", "t", "fmtNum", "fmtDur", "fmtRel", "fmtLocal",
+      extract(TM, "renderHistory") + "return renderHistory;")(
+      (id) => (id === "hist-body" ? el : null), async () => ({ runs: [run] }), esc, (s) => s,
+      (n) => String(n), (x) => "~" + Math.round(x) + " s", (x) => x, (x) => x);
+    await f();
+    const detail = el.innerHTML.match(/<div class="detail">(.*?)<\/div>/);
+    assert.ok(detail, "no session row rendered: " + el.innerHTML);
+    assert.ok(!/·\s*·/.test(detail[1]), "a run without a mode prints an empty fragment: " + detail[1]);
+    assert.strictEqual(detail[1], "12 articles · ~42 s");
+  });
+}
+
 async function t6() {
   await check("T-6 /tasks: the health dot carries the state's colour class", () => {
     for (const [state, cls] of [["healthy", "ok"], ["degraded", "warn"], ["offline", "err"]]) {
@@ -381,7 +427,7 @@ async function t8() {
 }
 
 (async () => {
-  await m14(); await t2(); await u11(); await t7(); await h3(); await t5(); await t6(); await t8();
+  await m14(); await t2(); await u11(); await t7(); await h3(); await t5(); await t5history(); await t6(); await t8();
   if (failures.length) {
     console.error("\nrewalk_b27_node_test: " + failures.length + " failure(s)\n - " + failures.join("\n - "));
     process.exit(1);
