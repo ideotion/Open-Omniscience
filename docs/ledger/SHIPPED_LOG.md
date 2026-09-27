@@ -9950,3 +9950,35 @@ against the same merge in one chunk; it fails on the unfixed code with the field
 914 tests across the search, merge, restore and import files pass. `fts.py` and `fts_norm.py`
 are outside `ENGINE_MODULES`, so no article is re-stamped. Lesson: `LESSONS.md`, the entry
 dated by this PR.
+
+## 2026-09-27 — Three counter defects the import-speed audit found, fixed (PR #1192)
+
+Found by the 2026-09-26/27 import-speed audit; each reproduced by this session before the fix,
+each with a test that fails on the unfixed code.
+
+**The envelope said `exact 0` while counters were deferred.** `counter_envelope` honoured the
+R22 marker only when n > 0, and a fresh store's first deferred drain writes mentions and no
+counter, so n is 0 there. The marker now wins whatever n is.
+
+**A checkpoint scoped its post-swap stages to its own batch (K > 1).** Measured with a two-item
+group whose items touch disjoint sources: the held item's source counter read 2 over 5
+articles and was reported exact, the quarantine scan screened 1 of 4 new articles, and the held
+item's calendar event missed the durable mirror. `merge.py::_swap_group`, read just before the
+swap, returns every batch the working copy carries that the live corpus does not; the three
+stages scope to it and widen on doubt (the counters reconcile everything, the quarantine scan
+screens this item and says so, the mirror refreshes). Each part of the fix undone alone is
+caught by its own assertion in the end-to-end test.
+
+**A drain that yielded to an import swept the counters beside it.** The `finally` ran
+`finish_deferral`'s unbounded whole-corpus sweep on the live file, without a lease, while the
+import snapshotted and swapped it. Reproduced with the app's own functions on 300,000
+keywords (snapshot at 30% of the sweep, swap at 60%): the new file had no marker, read `exact`,
+and held 27,143 drifted keywords; 0 when the sweep ended first. The sweep no longer starts
+while an import owns the machine, holds a corpus lease, stops at its next slice for an import,
+and a marker a yielded run leaves open is closed by the next clean run; a cancel still
+reconciles. Through the fixed flow the marker survives into the new file and the envelope
+reads `estimated`.
+
+969 tests across 93 related files pass; mypy clean. `store.py` is in `ENGINE_MODULES`, so this
+PR changes the engine identity once. Lessons: `LESSONS.md`, the four entries dated by this PR
+after the FTS one.

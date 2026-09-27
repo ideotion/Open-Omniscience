@@ -12441,3 +12441,41 @@ first import past it failed, and at K > 1 took its whole group with it. **Regist
 when a connection is OPENED, never between writes.** And when the property is "more than one
 batch", test it by SHRINKING the batch constant: no fixture reaches a production batch size,
 which is exactly how a failure at 20,001 rows shipped behind a green suite.
+
+### IN A GIT WORKTREE, A TEST THAT SPAWNS A SUBPROCESS RUNS THE MAIN CHECKOUT'S CODE (PR #1192)
+
+The venv holds the project as an EDITABLE install pointing at the main checkout. In-process
+pytest from a worktree imports the worktree's `src` (pytest puts the rootdir first), but a
+subprocess the test spawns -- `tests/torture_helper.py`, every checkpoint and torture test --
+starts with `sys.path[0] = tests/` and resolves `src` through the editable install, i.e. the
+MAIN checkout. The fixed code "failed" with the unfixed code's exact error, which is what
+exposed it. **In a worktree, run subprocess-spawning tests with `PYTHONPATH=<worktree>`, and
+read "the fix changed nothing" as "check which code ran" before touching the fix.** It also
+means an earlier mutation check made that way would have measured nothing.
+
+### WORK DEFERRED FROM SEVERAL ITEMS TO ONE COMMIT POINT MUST BE SCOPED TO ALL OF THEM (PR #1192)
+
+The checkpoint interval K moved each held item's post-swap work (source counters, the
+quarantine scan, the event mirror) to the checkpoint whose swap makes it live -- and the
+checkpoint scoped that work to ITS OWN batch, a scope written when every item committed alone.
+A held item's counter read 2 over 5 articles, as exact. When a change defers work from N items
+to one point, audit every stage that point runs for the scope it was written with. And the
+fixture that shows it has the items touch DISJOINT things: any overlap lets the last item's
+scope cover the others by accident, which is how the group-commit test beside it stayed green.
+
+### A BACKGROUND SWEEP COMMITTING ON THE LIVE FILE MUST HOLD THE SWAP'S LEASE AND YIELD TO ITS WINDOW (PR #1192)
+
+The deferred drain's closing sweep committed slice by slice on the live file with no lease,
+and ran on a yield -- i.e. exactly while an import snapshotted, merged and swapped that file.
+It straddled the swap: slices reconciled after the snapshot died with the old file, the sweep
+carried on in the new one, completed, and closed its marker there -- `exact` over 27,143
+drifted keywords. A writer whose correctness depends on finishing in ONE file must either not
+run while a swap can happen or hold what the swap waits for; "it only writes derived counters"
+is not an exemption, because the marker it closes is a claim about the whole file.
+
+### A DISCLOSURE GUARDED BY `n > 0` GOES QUIET EXACTLY WHEN THE STORE IS NEW (PR #1192)
+
+The deferral marker was honoured only when some keyword had a counter -- and a fresh store's
+first deferred drain writes mentions and NO counter, so it read `exact 0` while counting was
+switched off. Zero is the state every fresh install starts in and every counter-based guard
+sees first; test each disclosure against the empty store before any other case.
