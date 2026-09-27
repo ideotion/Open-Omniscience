@@ -389,5 +389,8 @@
   "Note": "মন্তব্য",
   "Language": "ভাষা",
   "Form": "রূপ",
-  "Mentions": "উল্লেখ"
+  "Mentions": "উল্লেখ",
+
+  "“{translation}” (translated from {language}: {term})": "“{translation}” ({language} থেকে অনূদিত: {term})",
+  "{term} (in {language})": "{term} ({language} ভাষায়)"
 }

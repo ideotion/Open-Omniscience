@@ -5408,7 +5408,15 @@ def test_supergroup_stats_ui():
         "PRH-31: and it must be drawn on the window the server sliced that series "
         "against — an index-placed daily series renders day 1 and day 5 adjacent"
     )
-    assert "g.rate.growth" in fn, "S1.5: the disclosed recent-vs-baseline rate must render"
+    # The rate line now goes through the keyed Trends frame (B10 K-strings: the English
+    # "recent · prior, Nd vs Nd" literal never translated), so the fact is pinned in two
+    # halves: sgCard hands g.rate to trendRateText, and that frame prints its growth,
+    # recent, prior and both windows.
+    rate_fn = src[src.index("function trendRateText(") : src.index("function mentionsArticlesText(")]
+    assert "g.rate.growth" in fn or (
+        "trendRateText(g.rate" in fn
+        and all(f"row.{k}" in rate_fn for k in ("growth", "recent", "prior", "window_days", "baseline_days"))
+    ), "S1.5: the disclosed recent-vs-baseline rate must render"
 
 
 def test_supergroup_curation_relocated_to_settings():

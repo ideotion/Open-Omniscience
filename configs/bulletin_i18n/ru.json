@@ -389,5 +389,8 @@
   "Note": "Примечание",
   "Language": "Язык",
   "Form": "Форма",
-  "Mentions": "Упоминания"
+  "Mentions": "Упоминания",
+
+  "“{translation}” (translated from {language}: {term})": "«{translation}» (перевод с {language}: {term})",
+  "{term} (in {language})": "{term} (на {language})"
 }

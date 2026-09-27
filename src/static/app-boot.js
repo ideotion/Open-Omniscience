@@ -196,6 +196,12 @@
       // cannot relabel them either. Relabel from the last payload -- no fetch, and
       // nothing at all until the tiles were ever drawn (2026-09-26 click-through S6).
       try { if (typeof _paintDbStatLabels === "function") _paintDbStatLabels(); } catch (_e) {}
+      // Agenda -> Bulletin is the same class (the 2026-09-27 cross-batch finding
+      // K-repaint): its Review, editions list, gate and status lines are composed at
+      // render time, so a switch left all of them in the old language. `_bulRepaint`
+      // redraws them from the payloads and status keys they last drew -- no fetch, and
+      // nothing at all for a panel never opened.
+      try { if (typeof _bulRepaint === "function") _bulRepaint(); } catch (_e) {}
       // The Observatory is the same class again, and worse: its canvas has no DOM
       // for the i18n walker to reach at all, so EVERY label it paints (the orbit
       // ticks, the domain wedge names) plus its tf()-built disclosures would stay

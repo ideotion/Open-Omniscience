@@ -49,6 +49,23 @@ def test_keyword_label_node_suite() -> None:
     assert "keyword_label_node_test.js: OK" in proc.stdout
 
 
+def test_the_reader_draws_the_same_label_m7() -> None:
+    """M7: the standalone reader's Keywords tab drew the bare stored word, because the page
+    does not load the SPA helper. Its port is driven as real code, and its fetch asks for
+    the reader's language -- without it the port would have nothing to draw."""
+    proc = subprocess.run(
+        ["node", str(_ROOT / "tests" / "reader_label_node_test.js")],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert "reader_label_node_test.js: OK" in proc.stdout
+    reader = (_ROOT / "src" / "static" / "reader.js").read_text(encoding="utf-8")
+    assert '"&target_lang=" + encodeURIComponent(uiLang())' in reader
+    assert "rdLabelHtml(t)" in reader, "renderKeywords no longer draws through the port"
+
+
 def test_every_label_string_is_keyed_in_all_twelve_locales() -> None:
     missing: list[str] = []
     for path in sorted(_LOCALES.glob("*.json")):
@@ -138,7 +155,10 @@ def test_every_surface_that_renders_a_keyword_label_also_repaints_on_a_language_
     # slicing-discipline ratchet exists precisely to stop a thirty-ninth private copy.
     body = function_body(app, "ooKwRepaintOnLangChange")
     renderers = set()
-    for m in re.finditer(r"kwLabelHtml\(", app):
+    # `kwLabelParts` too (M7): the analysis mind map draws the label as SVG text from the
+    # same rules, and a renderer reaching them through the parts is as frozen as one
+    # reaching them through the HTML if nothing re-runs it.
+    for m in re.finditer(r"kwLabel(?:Html|Parts)\(", app):
         before = app[: m.start()]
         fn = None
         for fm in re.finditer(r"\n\s*(?:async\s+)?function\s+(\w+)\s*\(", before):
@@ -146,8 +166,21 @@ def test_every_surface_that_renders_a_keyword_label_also_repaints_on_a_language_
         if fn:
             renderers.add(fn)
     # The helper itself and its own documentation mention the name; they are not surfaces.
-    renderers -= {"kwLabelHtml", "kwQidHtml", "kwHoverText", "kwSensePickerHtml"}
+    renderers -= {"kwLabelHtml", "kwLabelParts", "_kwLabelState", "kwQidHtml", "kwHoverText",
+                  "kwSensePickerHtml", "kwHasTag"}
     assert renderers, "no renderer found at all -- the scan is looking in the wrong place"
+    assert "renderAnMindmap" in renderers, (
+        "the scan no longer sees the mind map's label -- is it reading kwLabelParts?"
+    )
+    # A repaint entry may be a function that RE-FETCHES and then re-draws (the mind map's
+    # `anMindmapRepaint`, whose nodes carry translations into the old language, so drawing
+    # the held payload again would be wrong). What it re-draws is covered through it.
+    repaint_fns = set(re.findall(r'\[\s*(?:"[^"]*"|null)\s*,\s*"(\w+)"', body))
+    redrawn = {
+        callee
+        for r in repaint_fns
+        for callee in re.findall(r"(?<![\w$.])(\w+)\(", function_body(app, r))
+    }
 
     # A renderer is COVERED when it is named in the repaint set, OR when every function
     # that calls it is. `termListHtml` is the case that forced this: it is a pure HTML
@@ -156,7 +189,7 @@ def test_every_surface_that_renders_a_keyword_label_also_repaints_on_a_language_
     # host that does not exist; ignoring builders by NAME ("anything not called load*")
     # would be a convention, not a property. Following the call is the property.
     def covered(fn: str, seen: set[str]) -> bool:
-        if fn in body:
+        if fn in body or fn in redrawn:
             return True
         if fn in seen:
             return False  # a cycle reaches no repainted surface
@@ -166,7 +199,9 @@ def test_every_surface_that_renders_a_keyword_label_also_repaints_on_a_language_
         # bare name pattern too, and the enclosing-function scan then attributes it to
         # whatever function happens to sit above it in the file -- a caller that does not
         # exist. That misattribution is what this pattern's first draft reported.
-        for cm in re.finditer(rf"(?<![\w$.])(?<!function ){re.escape(fn)}\(", app):
+        # A renderer handed over BY REFERENCE (`.map(sgCard)`) is called by the function
+        # that hands it over, so that function is a caller too (M7: the super-group cards).
+        for cm in re.finditer(rf"(?<![\w$.])(?<!function ){re.escape(fn)}(?:\(|\s*[),])", app):
             head = app[: cm.start()]
             outer = None
             for fm in re.finditer(r"\n\s*(?:async\s+)?function\s+(\w+)\s*\(", head):

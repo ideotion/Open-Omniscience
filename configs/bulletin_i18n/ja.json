@@ -389,5 +389,8 @@
   "Note": "備考",
   "Language": "言語",
   "Form": "語形",
-  "Mentions": "言及"
+  "Mentions": "言及",
+
+  "“{translation}” (translated from {language}: {term})": "「{translation}」（{language} からの翻訳: {term}）",
+  "{term} (in {language})": "{term}（{language}）"
 }

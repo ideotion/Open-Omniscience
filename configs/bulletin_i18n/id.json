@@ -389,5 +389,8 @@
   "Note": "Catatan",
   "Language": "Bahasa",
   "Form": "Bentuk",
-  "Mentions": "Penyebutan"
+  "Mentions": "Penyebutan",
+
+  "“{translation}” (translated from {language}: {term})": "“{translation}” (diterjemahkan dari {language}: {term})",
+  "{term} (in {language})": "{term} (dalam {language})"
 }

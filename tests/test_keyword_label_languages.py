@@ -167,3 +167,70 @@ def test_the_query_reads_only_the_rows_on_screen():
             for n in ("software", "klima", "budget")]
     q.annotate_label_languages(s, rows, "en")
     assert len(calls) == 1
+
+
+def test_the_analysis_mind_map_nodes_carry_the_same_label_fields():
+    """M7: the analysis window's mind map drew every node as its bare stored word, so a
+    French keyword stayed French in the English UI while the keyword list beside it read
+    "climate, translated from French". The nodes now carry the label fields the list is
+    drawn from; the node's id and label stay the original, since the edges key on them."""
+    s = _seeded()
+    ids = [a.id for a in s.query(Article).all()]
+    g = q.article_graph(s, article_ids=ids, target_lang="en")
+    by_id = {n["id"]: n for n in g["nodes"]}
+    climat = by_id["climat"]
+    assert climat["label"] == "climat"
+    assert climat["translation"] == "climate" and climat["translation_tier"] == "verified"
+    assert climat["translation_source_lang"] == "fr"
+    assert by_id["software"]["mention_languages"] == {"es": 40, "en": 30}
+    # Without a label language the map is exactly what it was.
+    plain = {n["id"]: n for n in q.article_graph(s, article_ids=ids)["nodes"]}
+    assert "translation" not in plain["climat"]
+
+
+def _grouped():
+    from src.database.models import KeywordSuperGroup, KeywordSuperGroupMember
+
+    s = _seeded()
+    sg = KeywordSuperGroup(name="Climate")
+    s.add(sg)
+    s.flush()
+    # A FAMILY member (a German keyword) and a RING member (the concept itself).
+    s.add(KeywordSuperGroupMember(supergroup_id=sg.id, normalized_term="klima"))
+    s.add(KeywordSuperGroupMember(supergroup_id=sg.id, normalized_term="climate", ring_id="climate"))
+    s.commit()
+    return s
+
+
+def test_super_group_members_carry_the_label_fields():
+    """M7: Insights -> Groups printed a family member as its stored word and a ring member
+    as its id with the old arrow. Both now carry the ladder's fields for the reader's
+    language, from the ONE resolver every keyword list uses."""
+    from src.api.insights import list_supergroups
+
+    s = _grouped()
+    out = list_supergroups(target_lang="fr", series_top=0, window_days=7, baseline_days=30, db=s)
+    members = {m["normalized"]: m for m in out["supergroups"][0]["members"]}
+    fam, ring = members["klima"], members["climate"]
+    assert fam["translation"] == "climat" and fam["translation_tier"] == "verified"
+    assert fam["translation_source_lang"] == "de"
+    assert ring["translation"] == "climat" and ring["ring_id"] == "climate"
+    # No language asked: no label fields, exactly as before.
+    plain = list_supergroups(target_lang=None, series_top=0, window_days=7, baseline_days=30, db=s)
+    assert "translation_tier" not in plain["supergroups"][0]["members"][0]
+
+
+def test_the_observatory_readout_members_carry_the_label_fields():
+    """M7: the Observatory's readout named its dominant and shared members by their stored
+    keys. The members it can name gain label fields after the cache, on a copy."""
+    from src.api.insights import _observatory_member_labels
+
+    s = _grouped()
+    payload = {"galaxies": [{"name": "Climate", "dominance": {"member": "klima"},
+                             "cross_group_overlap": {"climate": ["Weather"]}}]}
+    out = _observatory_member_labels(payload, s, "fr")
+    labels = out["member_labels"]
+    assert labels["klima"]["translation"] == "climat"
+    assert labels["climate"]["translation"] == "climat" and labels["climate"]["ring_id"] == "climate"
+    assert "member_labels" not in payload, "the cached payload was annotated in place"
+    assert _observatory_member_labels(payload, s, None) is payload

@@ -468,7 +468,23 @@ def test_intl_displaynames_is_reached_only_through_the_two_owning_helpers() -> N
             line = text.count("\n", 0, m.start()) + 1
             sites.append(f"{path.name}:{line}")
     assert sites, "no Intl.DisplayNames anywhere — this guard stopped measuring"
-    owners = {"app-map.js"}
+    # Each owner carries its reason. reader.js is the standalone reader page
+    # (/api/articles/{id}/view), which loads only i18n.js and itself, so it cannot reach
+    # ooLangName; its ONE construction must stay inside its own `langName`, which
+    # base-normalises the code and refuses to pass a CLDR echo off as a name.
+    owners = {
+        "app-map.js": "ooRegionName / ooLangName",
+        "reader.js": "langName -- the reader page does not load app-map.js",
+    }
+    reader = (_STATIC / "reader.js").read_text(encoding="utf-8")
+    body = reader[reader.index("function langName(") :]
+    body = body[: body.index("\n  }\n") + 4]
+    assert reader.count("new Intl.DisplayNames") == 1 and "new Intl.DisplayNames" in body, (
+        "reader.js constructs Intl.DisplayNames outside its one langName helper"
+    )
+    assert ".split(\"-\")[0]" in body and "!== base" in body, (
+        "reader.js langName lost its base normalisation or its echo refusal"
+    )
     stray = [s for s in sites if s.split(":")[0] not in owners]
     assert not stray, (
         "Intl.DisplayNames is constructed outside ooRegionName/ooLangName. It answers "

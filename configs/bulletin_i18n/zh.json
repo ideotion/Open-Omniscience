@@ -389,5 +389,8 @@
   "Note": "备注",
   "Language": "语言",
   "Form": "词形",
-  "Mentions": "提及"
+  "Mentions": "提及",
+
+  "“{translation}” (translated from {language}: {term})": "“{translation}”（译自 {language}：{term}）",
+  "{term} (in {language})": "{term}（{language}）"
 }

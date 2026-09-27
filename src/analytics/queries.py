@@ -1444,7 +1444,21 @@ def corpus_keywords(
     return out
 
 
-def article_graph(session, *, article_ids: list[int], limit_nodes: int = 24) -> dict:
+#: The fields a keyword LABEL is drawn from (the translation ladder's output plus the
+#: mention languages behind it), copied onto a graph node so the mind map draws the
+#: same label every keyword list does (M7). The node's ``id``/``label`` stay the
+#: original term: edges and the reader's "open this keyword" click key on it.
+_LABEL_FIELDS = (
+    "normalized", "translation", "translation_tier", "translation_source_lang",
+    "translation_source", "translation_qid", "translation_declined", "translation_model",
+    "senses", "mention_languages", "language_breakdown", "translation_ring_members",
+    "language_counts_scope", "language_counts_days",
+)
+
+
+def article_graph(
+    session, *, article_ids: list[int], limit_nodes: int = 24, target_lang: str | None = None
+) -> dict:
     """A radial keyword mind-map over a GIVEN article set (the reader / analysis
     "corpus of 1+").
 
@@ -1454,8 +1468,15 @@ def article_graph(session, *, article_ids: list[int], limit_nodes: int = 24) -> 
     its keywords; for several it is the set's dominant terms around the lead term.
     Reuses :func:`corpus_keywords` (same hidden-word policy + spread ordering),
     counts only — NO score.
+
+    ``target_lang`` (M7) gives each node the label fields :func:`corpus_keywords`
+    computes for that language, so the map shows a foreign keyword the way every
+    keyword list does -- translated where a verified ring allows, tagged otherwise --
+    instead of as a bare foreign word.
     """
-    kw = corpus_keywords(session, article_ids=article_ids, limit=max(1, limit_nodes))
+    kw = corpus_keywords(
+        session, article_ids=article_ids, limit=max(1, limit_nodes), target_lang=target_lang
+    )
     terms = kw.get("terms", [])
     n_articles = kw.get("n_articles", 0)
     method = (
@@ -1474,11 +1495,15 @@ def article_graph(session, *, article_ids: list[int], limit_nodes: int = 24) -> 
             empty["unsegmented"] = kw["unsegmented"]
             empty["caveat"] = kw["unsegmented"]["note"]
         return empty
+    def _label(tdat: dict) -> dict:
+        return {k: tdat[k] for k in _LABEL_FIELDS if tdat.get(k) not in (None, "", [], {})}
+
     center = terms[0]
     nodes = [{
         "id": center["term"], "label": center["term"], "kind": "keyword",
         "center": True, "size": 13,
         "mentions": center["mentions"], "articles": center["articles"],
+        **_label(center),
     }]
     edges, seen = [], {center["term"]}
     for tdat in terms[1:]:
@@ -1489,6 +1514,7 @@ def article_graph(session, *, article_ids: list[int], limit_nodes: int = 24) -> 
             "id": tdat["term"], "label": tdat["term"], "kind": "keyword",
             "size": tdat["mentions"],
             "mentions": tdat["mentions"], "articles": tdat["articles"],
+            **_label(tdat),
         })
         edges.append({"a": center["term"], "b": tdat["term"], "weight": tdat["mentions"]})
     graph = {

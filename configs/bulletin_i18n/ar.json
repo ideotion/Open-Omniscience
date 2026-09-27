@@ -389,5 +389,8 @@
   "Note": "الملاحظة",
   "Language": "اللغة",
   "Form": "الصيغة",
-  "Mentions": "الإشارات"
+  "Mentions": "الإشارات",
+
+  "“{translation}” (translated from {language}: {term})": "«{translation}» (مترجمة من {language}: {term})",
+  "{term} (in {language})": "{term} (بلغة {language})"
 }

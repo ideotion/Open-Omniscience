@@ -390,5 +390,8 @@
   "Note": "Remarque",
   "Language": "Langue",
   "Form": "Forme",
-  "Mentions": "Mentions"
+  "Mentions": "Mentions",
+
+  "“{translation}” (translated from {language}: {term})": "« {translation} » (traduit de {language} : {term})",
+  "{term} (in {language})": "{term} (en {language})"
 }

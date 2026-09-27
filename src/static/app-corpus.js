@@ -1144,9 +1144,16 @@
         // than re-rendering the payload it holds, whose translations belong to the old
         // one (M8); with nothing loaded `anRenderKwChips` returns early.
         [null, "anRenderKwChips", {refetch: true}],
+        // ...and its mind map, whose nodes carry the same translations (M7).
+        ["an-mindmap", "anMindmapRepaint"],
         // The Home cards translate their own term since Q411 = a, so they are the same
         // frozen-locale shape as the keyword rows and need the same repaint.
         ["briefing-feed", "loadBriefing"],
+        // Insights -> Groups: its member chips draw the label too (M7, K-repaint).
+        ["sg-list", "loadSuperGroups"],
+        // The Observatory's readout names member keywords through the label (M7); it
+        // re-asks for them only when the tab was opened (`_obsRelabel` checks).
+        [null, "_obsRelabel"],
       ];
       for (const [hostId, fn, arg] of callers) {
         try {
@@ -1429,9 +1436,10 @@
       } catch (e) { toast(_failMsg("Translate failed: {error}", e), "err"); }
     }
     function termListHtml(terms, extra) {
-      if (!terms.length) return '<div class="muted">Nothing yet — index the corpus.</div>';
+      const T = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      if (!terms.length) return '<div class="muted">' + esc(T("Nothing yet — index the corpus.")) + "</div>";
       return terms.map(t => `<div style="padding:4px 0;border-bottom:1px solid var(--border);display:flex;align-items:baseline;gap:6px">
-        <button class="tiny danger" title="exclude this keyword" style="margin:0;padding:0 6px"
+        <button class="tiny danger" title="${esc(T("exclude this keyword"))}" style="margin:0;padding:0 6px"
           onclick='excludeKeyword(${esc(JSON.stringify(t.term))})'>✕</button>
         <a href="#" data-kwstat="${esc(t.term)}"${kwTipExtraAttr(t)} title="${esc(t.term)}" onclick='pickTerm(${esc(JSON.stringify(t.term))});return false'>${kwLabelHtml(t, {inLink: true})}</a>${kwQidHtml(t)}
         <span class="pill">${esc(t.kind)}</span> <span class="muted">${extra(t)}</span></div>`).join("");
@@ -1479,7 +1487,7 @@
         const fill = v == null ? ""
           : `<span class="tb-fill" style="width:${Math.max(2, Math.round((v / max) * 100))}%"></span>`;
         return `<div class="tb-row">
-          <button class="tiny danger tb-x" title="exclude this keyword" onclick='excludeKeyword(${esc(JSON.stringify(t.term))})'>✕</button>
+          <button class="tiny danger tb-x" title="${esc(T("exclude this keyword"))}" onclick='excludeKeyword(${esc(JSON.stringify(t.term))})'>✕</button>
           <a class="tb-label" href="#" data-kwstat="${esc(t.term)}"${kwExtra(t)} title="${esc(t.term + " — " + T("open in analysis (trend + worldwide spread)") + kwAcross(t))}"
              onclick='openAnalysisFor(${esc(JSON.stringify(t.term))});return false'>${kwLabelHtml(t, {inLink: true})}</a>
           <span class="tb-bar" aria-hidden="true">${fill}</span>
@@ -1523,6 +1531,26 @@
       const title = titleParts.join(" · ");
       return `<span class="basis-chip${est ? " est" : ""}"${title ? ` title="${esc(title)}"` : ""}>${esc(label)}</span>`;
     }
+    // THE TREND VALUE LINES, KEYED (the 2026-09-27 cross-batch finding K-strings). They
+    // were English template literals beside translated rows -- "↑2.1× (9 recent · 3 prior)"
+    // in fr, ar and zh -- and, being composed, no walker could ever match them. One frame
+    // each; the numbers are data. A count of one takes the singular keys that exist (N14).
+    function trendRateText(row, opts) {
+      const TF = (s2, v) => _kwTf(s2, v);
+      if (!row) return "";
+      if (opts && opts.short) return TF("↑{growth}× · {recent} recent", {growth: row.growth, recent: row.recent});
+      if (opts && opts.window && row.window_days != null && row.baseline_days != null) {
+        return TF("↑{growth}× ({recent} recent · {prior} prior, {window} days vs {baseline} days)",
+                  {growth: row.growth, recent: row.recent, prior: row.prior,
+                   window: row.window_days, baseline: row.baseline_days});
+      }
+      return TF("↑{growth}× ({recent} recent · {prior} prior)",
+                {growth: row.growth, recent: row.recent, prior: row.prior});
+    }
+    function mentionsArticlesText(n, m) {
+      const T = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      return `${n} ${n === 1 ? T("mention") : T("mentions")} · ${m} ${m === 1 ? T("article") : T("articles")}`;
+    }
     async function loadTrends() {
       const wd = $("trd-window").value, bd = $("trd-base").value, kind = $("trd-kind").value, cc = $("trd-country").value.trim();
       const qp = (extra) => `kind=${encodeURIComponent(kind)}${cc?"&country="+encodeURIComponent(cc):""}${tgtLangParam()}${extra||""}`;
@@ -1536,10 +1564,12 @@
         // says so in words, rather than drawing a count as the longest bar on the chart.
         $("trd-rising").innerHTML = termBarsHtml(rising.terms,
           t => (growthIsRatio(t) === true ? t.growth : null),
-          t => growthFallback(t) || `↑${t.growth}× (${t.recent} recent · ${t.prior} prior)`);
+          t => growthFallback(t) || trendRateText(t));
         $("trd-top").innerHTML = termBarsHtml(top.terms, t => t.mentions,
-          t => `${t.mentions} mentions · ${t.articles} articles`);
-        $("trd-method").textContent = rising.method ? "Rising = " + rising.method : "";
+          t => mentionsArticlesText(t.mentions, t.articles));
+        // The method is a FIXED server sentence, so it is keyed like every other one.
+        const T = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+        $("trd-method").textContent = rising.method ? _kwTf("Rising = {method}", {method: T(rising.method)}) : "";
         const bc = $("trd-basis"); if (bc) bc.innerHTML = basisChip(top.counts, top.basis || rising.basis);
       } catch (e) { toast(_failMsg("Trends failed: {error}", e), "err"); }
       loadTrendWindows();
@@ -1584,17 +1614,17 @@
             return `<div style="padding:6px 0;border-bottom:1px solid var(--border)">
               <div style="display:flex;align-items:baseline;gap:6px">
                 <a href="#" onclick='pickTerm(${esc(JSON.stringify(x.term))});return false'>${kwLabelHtml(x, {inLink: true})}</a>${kwQidHtml(x)}
-                <span class="muted" style="font-size:12px">${esc(growthFallback(x) || `↑${x.growth}× · ${x.recent} recent`)}</span>
+                <span class="muted" style="font-size:12px">${esc(growthFallback(x) || trendRateText(x, {short: true}))}</span>
                 <button class="ghost tiny" style="margin-inline-start:auto" onclick="enlargeTrend(${wi},${ti})" title="${esc(t("Enlarge the chart"))}" aria-label="${esc(t("Enlarge the chart"))}">⛶</button>
               </div>${dashChartSvg(pts, "", axis)}</div>`;
           }).join("");
           const rest = terms.filter(x => !Array.isArray(x.series));
           const restList = rest.length
-            ? termListHtml(rest, t2 => growthFallback(t2) || `↑${t2.growth}× · ${t2.recent} recent`)
+            ? termListHtml(rest, t2 => growthFallback(t2) || trendRateText(t2, {short: true}))
             : "";
           return `<div style="flex:1;min-width:240px">${head}${spark}${restList}</div>`;
         }).join("") || `<div class="muted">${esc(t("No rising keywords in this window yet."))}</div>`;
-        const note = $("trd-windows-note"); if (note) note.textContent = d.caveat || "";
+        const note = $("trd-windows-note"); if (note) note.textContent = d.caveat ? t(d.caveat) : "";
         // If a non-default lens (slope / small multiples) is active, re-render it with
         // the fresh payload (visibility was already set by setTrendLens).
         if (_trdLens === "slope") renderTrendSlope();
@@ -1615,7 +1645,7 @@
       const LABELS = {"24h": t("Past 24h"), "7d": t("Past week"), "30d": t("Past month")};
       const title = x.term + " — " + (LABELS[w.label] || w.label);
       const points = x.series.map(p => ({t: p.date, v: p.count}));
-      chartEnlarge(title, [{label: x.term, unit: t("mentions"), points}], d.caveat || "");
+      chartEnlarge(title, [{label: x.term, unit: t("mentions"), points}], d.caveat ? t(d.caveat) : "");
     }
 
     // -- ooViz honest lenses over the trending-windows payload (batch F item 2) ---- //

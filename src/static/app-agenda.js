@@ -197,6 +197,30 @@
     let _bulExcludeSections = new Set();
     let _bulExcludeStories = new Set();
     let _bulFile = null;
+    // WHAT A LANGUAGE SWITCH REPAINTS FROM (K-repaint). Every line this panel writes was
+    // composed in the language on screen at the time, and none of it is a key the DOM
+    // walker could match again, so the Review, the list, the gate and the status lines
+    // all stayed in the old language after a switch. They keep their INPUTS instead --
+    // the payloads they drew and each status line as its key and values -- and
+    // `_bulRepaint` (called from app-boot's one `oo:langchange` listener) redraws from
+    // those. It never fetches.
+    let _bulGate = null, _bulView = null, _bulEditions = null, _bulPrivacyData = null;
+    const _bulMsgs = {};
+    function _bulSay(id, key, vars) {
+      _bulMsgs[id] = {key, vars: vars || null};
+      _bulPaintMsg(id);
+    }
+    function _bulPaintMsg(id) {
+      const el = $(id), m = _bulMsgs[id];
+      if (!el || !m) return;
+      el.textContent = m.vars ? _bulTf(m.key, m.vars) : _bulT(m.key);
+    }
+    function _bulRepaint() {
+      _bulPaintGate();
+      if (_bulEditions) _bulPaintEditions();
+      if (_bulView && _bulFile) { _bulRender(_bulView); _bulPaintPrivacy(); }
+      for (const id of Object.keys(_bulMsgs)) _bulPaintMsg(id);
+    }
 
     function _bulQuery() {
       const p = new URLSearchParams();
@@ -215,7 +239,16 @@
       if (!gate) return;
       let g = null;
       try { g = await api("/api/bulletin/availability"); }
-      catch (e) { gate.textContent = _bulT("Could not check this machine: ") + e.message; return; }
+      catch (e) { _bulSay("bulletin-gate", "Could not check this machine: {error}", {error: e.message}); return; }
+      delete _bulMsgs["bulletin-gate"];
+      _bulGate = g;
+      _bulPaintGate();
+      if (g.available) await loadBulletinEditions();
+    }
+
+    function _bulPaintGate() {
+      const g = _bulGate, gate = $("bulletin-gate"), controls = $("bulletin-controls");
+      if (!g || !gate || !controls) return;
       if (!g.available) {
         // A refusal states its REASON and points at the override, because the
         // gate is never a hard block -- it is a default with a stated basis.
@@ -232,7 +265,6 @@
       // so the model verdict is rendered on its own control -- disabled, unticked,
       // with the hardware reason beside it rather than a failure at build time.
       _bulPaintNarrationGate(g);
-      await loadBulletinEditions();
     }
 
     function _bulPaintNarrationGate(g) {
@@ -247,8 +279,8 @@
       if (ok) { box.textContent = ""; return; }
       // The reason is the gate's own words. Paraphrasing a hardware fact into a
       // second wording is how two surfaces come to disagree about one machine.
-      box.textContent = _bulT("Narration is unavailable on this machine: ")
-        + (g.narration_reason || _bulT("this machine cannot practically run a local model"))
+      box.textContent = _bulTf("Narration is unavailable on this machine: {reason}",
+        {reason: g.narration_reason || _bulT("this machine cannot practically run a local model")})
         + " " + _bulT("The document is complete without it.");
     }
 
@@ -257,8 +289,18 @@
       if (!box) return;
       let d = null;
       try { d = await api("/api/bulletin/editions"); }
-      catch (e) { box.innerHTML = `<div class="muted">${esc(_bulT("Could not list editions: ") + e.message)}</div>`; return; }
-      const rows = d.editions || [];
+      catch (e) {
+        _bulEditions = null;
+        box.innerHTML = `<div class="muted">${esc(_bulTf("Could not list editions: {error}", {error: e.message}))}</div>`;
+        return;
+      }
+      _bulEditions = d.editions || [];
+      _bulPaintEditions();
+    }
+
+    function _bulPaintEditions() {
+      const box = $("bulletin-list"), rows = _bulEditions || [];
+      if (!box) return;
       if (!rows.length) {
         box.innerHTML = `<div class="muted">${esc(_bulT("No editions yet. Build a draft above."))}</div>`;
         return;
@@ -276,35 +318,39 @@
     }
 
     async function bulletinGenerate(btn) {
-      const status = $("bulletin-status");
       const cadence = ($("bul-cadence") || {}).value || "weekly";
       const narrate = !!($("bul-narrate") || {}).checked;
       btn.disabled = true;
-      status.textContent = _bulT("Building…");
+      _bulSay("bulletin-status", "Building…");
       try {
         const out = await api(
           `/api/bulletin/generate?cadence=${encodeURIComponent(cadence)}&persist=true&narrate=${narrate}`,
           {method: "POST"});
-        status.textContent = out.persisted
-          ? _bulT("Draft built.")
-          : _bulT("Built, but not saved: ") + (out.persist_error || "");
+        if (out.persisted) _bulSay("bulletin-status", "Draft built.");
+        else _bulSay("bulletin-status", "Built, but not saved: {error}", {error: out.persist_error || ""});
         await loadBulletinEditions();
         if (out.filename) bulletinReview(out.filename);
       } catch (e) {
-        status.textContent = _bulT("Could not build: ") + e.message;
+        _bulSay("bulletin-status", "Could not build: {error}", {error: e.message});
       } finally { btn.disabled = false; }
     }
 
     async function bulletinReview(filename) {
       const box = $("bulletin-review");
       if (!box) return;
+      // A status line belongs to the edition it was about: opening ANOTHER one drops it,
+      // while re-reading the same one (after narration finishes) keeps it on screen.
+      if (filename !== _bulFile) delete _bulMsgs["bul-pub"];
       _bulFile = filename;
+      _bulView = null;
+      _bulPrivacyData = null;
       _bulExcludeSections = new Set();
       _bulExcludeStories = new Set();
       box.innerHTML = `<div class="muted">${esc(_bulT("Loading…"))}</div>`;
       let v = null;
       try { v = await api(`/api/bulletin/editions/${encodeURIComponent(filename)}/review`); }
-      catch (e) { box.innerHTML = `<div class="muted">${esc(_bulT("Could not open this edition: ") + e.message)}</div>`; return; }
+      catch (e) { box.innerHTML = `<div class="muted">${esc(_bulTf("Could not open this edition: {error}", {error: e.message}))}</div>`; return; }
+      _bulView = v;
       _bulRender(v);
       // The §18 enumeration is fetched right after the review renders, so it is on
       // screen before the operator reaches the download button rather than after.
@@ -321,7 +367,7 @@
       ).join("");
       const label = u.narrated
         ? `<div class="warn">${esc(_bulT("AI-derived — unreliable"))}${u.partial ? esc(_bulT("; sentences naming something absent from the sources were removed")) : ""}</div>`
-        : `<div class="muted">${esc(_bulT("No model text: "))}${esc(u.fallback_reason || "")}</div>`;
+        : `<div class="muted">${esc(_bulTf("No model text: {reason}", {reason: u.fallback_reason || ""}))}</div>`;
       return `<div style="margin:8px 0">${label}<div>${esc(u.text || "")}</div>` +
         (sents ? `<ul style="margin:4px 0 0 12px">${sents}</ul>` : "") + `</div>`;
     }
@@ -338,14 +384,21 @@
         // during review rather than discovered afterwards.
         const w = s.window || {};
         const win = (w.days != null && w.matches_period === false)
-          ? ` <span class="warn">${esc(_bulT("window:"))} ${esc(w.days)} ${esc(_bulT("days"))}</span>` : "";
+          ? ` <span class="warn">${esc(_bulTf("window: {days} days", {days: w.days}))}</span>` : "";
+        // A skip reason is a FIXED producer sentence where it can be (keyed x12), and
+        // data where it carries a number; `_bulT` returns the latter unchanged.
         const why = s.error
           ? ` <span class="warn">${esc(_bulT("failed:"))} ${esc(s.error)}</span>`
-          : (s.skipped ? ` <span class="muted">${esc(_bulT("skipped:"))} ${esc(s.skipped)}</span>` : "");
+          : (s.skipped ? ` <span class="muted">${esc(_bulTf("skipped: {reason}", {reason: _bulT(s.skipped)}))}</span>` : "");
+        // The heading the DOCUMENT prints for this section (render.py `_section_heading`:
+        // the slug humanised and capitalised), through the same keys -- the raw slug
+        // ("rising concepts") was the one English word left in a translated review.
+        const slug = String(s.section).replace(/_/g, " ");
+        const heading = _bulT(slug.charAt(0).toUpperCase() + slug.slice(1));
         return `<label class="row" style="gap:8px;align-items:baseline">
           <input type="checkbox" ${off ? "" : "checked"} onchange="bulletinToggleSection(${esc(JSON.stringify(s.section))})">
-          <span><strong>${esc(String(s.section).replace(/_/g, " "))}</strong>
-            <span class="muted">${esc(s.rows)} ${esc(_bulT("row(s)"))}</span>${win}${why}</span></label>`;
+          <span><strong>${esc(heading)}</strong>
+            <span class="muted">${esc(_bulTf("{n} row(s)", {n: s.rows}))}</span>${win}${why}</span></label>`;
       }).join("");
 
       const stories = (v.stories || []).map(s => {
@@ -358,7 +411,7 @@
         ).join("");
         const label = s.narrated
           ? `<div class="warn">${esc(_bulT("AI-derived — unreliable"))}${s.partial ? esc(_bulT("; sentences naming something absent from the sources were removed")) : ""}</div>`
-          : `<div class="muted">${esc(_bulT("No model text: "))}${esc(s.fallback_reason || "")}</div>`;
+          : `<div class="muted">${esc(_bulTf("No model text: {reason}", {reason: s.fallback_reason || ""}))}</div>`;
         return `<div style="margin:8px 0">
           <label class="row" style="gap:8px;align-items:baseline">
             <input type="checkbox" ${off ? "" : "checked"} onchange="bulletinToggleStory('${esc(s.key)}')">
@@ -376,8 +429,8 @@
         : "";
 
       box.innerHTML = `<h3 style="margin:0 0 4px">${esc(_bulT("Review"))} ${state}</h3>
-        <p class="hint" style="margin-top:0">${esc(v.caveat || "")}</p>
-        <p class="hint">${esc(v.method || "")}</p>
+        <p class="hint" style="margin-top:0">${esc(_bulT(v.caveat || ""))}</p>
+        <p class="hint">${esc(_bulT(v.method || ""))}</p>
         ${intro}
         <h4 style="margin:12px 0 4px">${esc(_bulT("Sections"))}</h4>${secs || `<div class="muted">${esc(_bulT("None."))}</div>`}
         ${stories ? `<h4 style="margin:12px 0 4px">${esc(_bulT("Stories"))}</h4>${stories}` : ""}
@@ -391,6 +444,7 @@
         </div>
         <p class="hint">${esc(_bulT("The annexes are one Markdown file per article the report cites, numbered to match, with a contents page. They carry the sources' own text — keep them where you keep the corpus."))}</p>
         <div id="bul-privacy" class="hint" style="margin-top:8px"></div>`;
+      _bulPaintMsg("bul-pub");
     }
 
     // §18: what a READER of the export can see, stated where the operator clicks —
@@ -404,24 +458,35 @@
       const box = $("bul-privacy");
       if (!box || !_bulFile) return;
       const q = _bulQuery(); q.set("kind", "annexes");
-      let d = null;
-      try { d = await api(`/api/bulletin/editions/${encodeURIComponent(_bulFile)}/export-privacy?${q}`); }
-      catch (e) {
+      try {
+        _bulPrivacyData = {d: await api(`/api/bulletin/editions/${encodeURIComponent(_bulFile)}/export-privacy?${q}`)};
+      } catch (e) { _bulPrivacyData = {error: e.message}; }
+      _bulPaintPrivacy();
+    }
+
+    // The enumeration's own sentences are FIXED server strings (privacy.py), keyed x12
+    // like every other caveat: the what, why and caveat are the consent text an operator
+    // reads before a file leaves the machine, and they were the one English block left.
+    function _bulPaintPrivacy() {
+      const box = $("bul-privacy"), p = _bulPrivacyData;
+      if (!box || !p) return;
+      if (p.error != null) {
         // A failed enumeration is an UNANSWERED question, never an all-clear. Saying
         // so is the whole point of the tri-state underneath it.
-        box.textContent = _bulT("What a reader of these files could see could not be listed: ")
-          + e.message + " " + _bulT("That is an unanswered question, not an all-clear.");
+        box.textContent = _bulTf("What a reader of these files could see could not be listed: {error}",
+          {error: p.error}) + " " + _bulT("That is an unanswered question, not an all-clear.");
         return;
       }
+      const d = p.d || {};
       const rows = (d.items || []).map(it => {
         const mark = it.present === true
           ? (it.n != null ? `${_bulT("yes")} (${it.n})` : _bulT("yes"))
           : (it.present === false ? _bulT("no") : _bulT("NOT MEASURED"));
-        return `<li><strong>${esc(it.what)}</strong> — ${esc(mark)}<br>
-          <span class="muted">${esc(it.why_it_matters)}</span></li>`;
+        return `<li><strong>${esc(_bulT(it.what))}</strong> — ${esc(mark)}<br>
+          <span class="muted">${esc(_bulT(it.why_it_matters))}</span></li>`;
       }).join("");
       box.innerHTML = `<strong>${esc(_bulT("What a reader of these files can see"))}</strong>
-        <p class="muted" style="margin:4px 0">${esc(d.caveat || "")}</p>
+        <p class="muted" style="margin:4px 0">${esc(_bulT(d.caveat || ""))}</p>
         <ul style="margin:4px 0 0 18px">${rows}</ul>`;
     }
 
@@ -454,11 +519,10 @@
     // failure mode, which is why the query is built once here.
     async function bulletinDownloadBundle(btn) {
       if (!_bulFile) return;
-      const out = $("bul-pub");
       const q = _bulQuery();
       const base = `/api/bulletin/editions/${encodeURIComponent(_bulFile)}`;
       btn.disabled = true;
-      if (out) out.textContent = _bulT("Building the annexes…");
+      _bulSay("bul-pub", "Building the annexes…");
       try {
         const rq = new URLSearchParams(q); rq.set("fmt", "markdown");
         const report = await fetch(`${base}/render?${rq}`);
@@ -469,13 +533,10 @@
         await _throwIfNotOk(zip);
         const n = zip.headers.get("X-OO-Annex-Articles");
         _saveBlob(await zip.blob(), _filenameOf(zip, "annexes.zip"));
-        if (out) {
-          out.textContent = n && n !== "0"
-            ? _bulTf("Downloaded: the report and {n} annexed article(s).", {n: n})
-            : _bulT("Downloaded the report. This edition names no articles, so the annexes are empty — regenerate it to populate them.");
-        }
+        if (n && n !== "0") _bulSay("bul-pub", "Downloaded: the report and {n} annexed article(s).", {n: n});
+        else _bulSay("bul-pub", "Downloaded the report. This edition names no articles, so the annexes are empty — regenerate it to populate them.");
       } catch (e) {
-        if (out) out.textContent = _bulT("Could not download: ") + e.message;
+        _bulSay("bul-pub", "Could not download: {error}", {error: e.message});
       } finally { btn.disabled = false; }
     }
 
@@ -530,15 +591,14 @@
 
     async function bulletinNarrate(btn) {
       if (!_bulFile) return;
-      const out = $("bul-pub");
       btn.disabled = true;
       try {
         await api(`/api/bulletin/editions/${encodeURIComponent(_bulFile)}/narrate?${_bulQuery()}`,
           {method: "POST"});
-        if (out) out.textContent = _bulT("Narrating in the background — watch it in the task manager.");
+        _bulSay("bul-pub", "Narrating in the background — watch it in the task manager.");
         _bulWatchNarration();
       } catch (e) {
-        if (out) out.textContent = _bulT("Could not start narration: ") + e.message;
+        _bulSay("bul-pub", "Could not start narration: {error}", {error: e.message});
         btn.disabled = false;
       }
     }
@@ -552,15 +612,15 @@
         let d = null;
         try { d = await api("/api/bulletin/narration"); }
         catch { clearInterval(_bulNarratePoll); _bulNarratePoll = null; return; }
-        const job = d.job || {}, out = $("bul-pub"), btn = $("bul-narrate-run");
+        const job = d.job || {}, btn = $("bul-narrate-run");
         const n = {done: job.done || 0, total: job.total || 0};
         if (job.running) {
-          if (out) out.textContent = _bulTf("Narrating — units: {done} of {total}", n);
+          _bulSay("bul-pub", "Narrating — units: {done} of {total}", n);
           return;
         }
         clearInterval(_bulNarratePoll); _bulNarratePoll = null;
         if (btn) btn.disabled = false;
-        if (out) {
+        {
           // Three outcomes, three sentences. An ERROR is named rather than folded
           // into "finished" -- a run that lost its model must not read as a run that
           // had nothing to say -- and a CANCEL says how to resume, because the cursor
@@ -572,12 +632,12 @@
           // gets its own keyable frame, and the counts stay label:value so nothing
           // has to conjugate with a number in twelve languages.
           if (job.state === "error") {
-            out.textContent = _bulT("Narration stopped: ") + (job.error || "");
+            _bulSay("bul-pub", "Narration stopped: {error}", {error: job.error || ""});
           } else if (job.state === "cancelled") {
-            out.textContent = _bulTf(
+            _bulSay("bul-pub",
               "Narration stopped — units: {done} of {total}. Start it again to resume.", n);
           } else {
-            out.textContent = _bulTf("Narration finished — units: {done} of {total}", n);
+            _bulSay("bul-pub", "Narration finished — units: {done} of {total}", n);
           }
         }
         if (_bulFile) bulletinReview(_bulFile);
@@ -586,16 +646,15 @@
 
     async function bulletinPublish(btn) {
       if (!_bulFile) return;
-      const out = $("bul-pub");
       btn.disabled = true;
       try {
         const r = await api(
           `/api/bulletin/editions/${encodeURIComponent(_bulFile)}/publish?${_bulQuery()}`,
           {method: "POST"});
-        out.textContent = _bulT("Published — the record itself is unchanged.");
+        _bulSay("bul-pub", "Published — the record itself is unchanged.");
         toast(_bulT("Published. Nothing was sent anywhere; the document is yours to share."));
         if (r) await loadBulletinEditions();
-      } catch (e) { out.textContent = _bulT("Could not publish: ") + e.message; }
+      } catch (e) { _bulSay("bul-pub", "Could not publish: {error}", {error: e.message}); }
       finally { btn.disabled = false; }
     }
 
@@ -603,9 +662,12 @@
       if (!confirm(_bulT("Delete this edition? The corpus is untouched — only the document goes."))) return;
       try {
         await api(`/api/bulletin/editions/${encodeURIComponent(filename)}`, {method: "DELETE"});
-        if (_bulFile === filename) { _bulFile = null; $("bulletin-review").innerHTML = ""; }
+        if (_bulFile === filename) {
+          _bulFile = null; _bulView = null; _bulPrivacyData = null; delete _bulMsgs["bul-pub"];
+          $("bulletin-review").innerHTML = "";
+        }
         await loadBulletinEditions();
-      } catch (e) { toast(_bulT("Could not delete: ") + e.message, "err"); }
+      } catch (e) { toast(_bulTf("Could not delete: {error}", {error: e.message}), "err"); }
     }
 
     // -- Calendar feed directory: candidates -> explicit verify/import ------- //
