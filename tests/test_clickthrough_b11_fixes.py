@@ -87,7 +87,11 @@ def test_every_byte_formatter_goes_through_one_localised_writer():
     assert "_sizeText(" in function_body(app, "_fmtBytes")
     assert "_sizeText(" in function_body(app, "_storageSignedBytes")
     body = function_body(app, "_sizeText")
-    assert "OOI18N.current()" in body and "-u-nu-latn" in body, "the number is not formatted for the UI language"
+    # The number keeps the app's one ruled convention (fmtNum's decimal POINT in every
+    # locale); only the unit's written form follows the UI language.
+    assert "v.toFixed(dec)" in body and "Intl.NumberFormat" not in body, (
+        "a byte size must not take the locale's decimal mark: fmtNum writes a point app-wide"
+    )
     assert '"\\u2068"' in body and '"\\u2069"' in body, "the size is not isolated for right-to-left text"
     for frame in _UNIT_FRAMES:
         assert f'TF("{frame}"' in body, f"{frame!r} is not written through the keyed frame"

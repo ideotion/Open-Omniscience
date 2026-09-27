@@ -1658,14 +1658,10 @@
       let v = v0, i = 0;
       while (v >= 1024 && i < 4) { v /= 1024; i++; }
       const dec = decimals(i, v);
-      let num;
-      try {
-        const lang = (window.OOI18N && OOI18N.current && OOI18N.current()) || "en";
-        const cache = _sizeText.nf || (_sizeText.nf = {});
-        const nf = cache[lang + "|" + dec] || (cache[lang + "|" + dec] = new Intl.NumberFormat(
-          lang + "-u-nu-latn", { minimumFractionDigits: dec, maximumFractionDigits: dec, useGrouping: false }));
-        num = nf.format(v);
-      } catch (e) { num = v.toFixed(dec); }   // no Intl, or a language tag it refuses
+      // The NUMBER keeps the app's one ruled convention (fmtNum: Latin digits and a
+      // decimal POINT in every locale, SI style), so a size never reads "35,6" beside a
+      // "1.2 s" in the same panel; only the unit's written form is translated.
+      let num = v.toFixed(dec);
       if (sign) num = "\u2068" + sign + num + "\u2069";
       const s = i === 0 ? TF("{n} B", { n: num })
         : i === 1 ? TF("{n} KB", { n: num })

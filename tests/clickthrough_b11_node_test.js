@@ -82,18 +82,18 @@ const MIB = 1024 * 1024, GIB = 1024 * MIB;
 const bare = (s) => String(s).replace(/[\u2068\u2069]/g, "").replace(/\u00a0/g, " ");
 
 // =========================== P8: byte sizes ================================ //
-test("P8: the unit's written form and the decimal mark follow the UI language", () => {
+test("P8: the unit's written form follows the UI language; the number keeps the app's decimal point", () => {
   const en = load("en"), fr = load("fr"), ar = load("ar"), zh = load("zh"), ru = load("ru");
   assert(en.humanBytes(8.5 * MIB) === FSI + "8.5" + NB + "MB" + PDI, "en: " + JSON.stringify(en.humanBytes(8.5 * MIB)));
   assert(en.humanBytes(0) === FSI + "0" + NB + "B" + PDI, "en zero: " + JSON.stringify(en.humanBytes(0)));
-  assert(fr.humanBytes(8.5 * MIB) === FSI + "8,5" + NB + "Mo" + PDI, "fr: " + JSON.stringify(fr.humanBytes(8.5 * MIB)));
+  assert(fr.humanBytes(8.5 * MIB) === FSI + "8.5" + NB + "Mo" + PDI, "fr: " + JSON.stringify(fr.humanBytes(8.5 * MIB)));
   assert(fr.humanBytes(0) === FSI + "0" + NB + "o" + PDI, "fr zero: " + JSON.stringify(fr.humanBytes(0)));
-  assert(fr.humanBytes(480 * 1024) === FSI + "480,0" + NB + "ko" + PDI, "fr KB: " + JSON.stringify(fr.humanBytes(480 * 1024)));
-  assert(fr.humanBytes(20 * GIB) === FSI + "20,0" + NB + "Go" + PDI, "fr GB: " + JSON.stringify(fr.humanBytes(20 * GIB)));
+  assert(fr.humanBytes(480 * 1024) === FSI + "480.0" + NB + "ko" + PDI, "fr KB: " + JSON.stringify(fr.humanBytes(480 * 1024)));
+  assert(fr.humanBytes(20 * GIB) === FSI + "20.0" + NB + "Go" + PDI, "fr GB: " + JSON.stringify(fr.humanBytes(20 * GIB)));
   assert(ar.humanBytes(8.5 * MIB) === FSI + "8.5" + NB + "ميغابايت" + PDI, "ar: " + JSON.stringify(ar.humanBytes(8.5 * MIB)));
   assert(ar.humanBytes(0) === FSI + "0" + NB + "بايت" + PDI, "ar zero: " + JSON.stringify(ar.humanBytes(0)));
   assert(zh.humanBytes(8.5 * MIB) === FSI + "8.5" + NB + "MB" + PDI, "zh: " + JSON.stringify(zh.humanBytes(8.5 * MIB)));
-  assert(ru.humanBytes(8.5 * MIB) === FSI + "8,5" + NB + "МБ" + PDI, "ru: " + JSON.stringify(ru.humanBytes(8.5 * MIB)));
+  assert(ru.humanBytes(8.5 * MIB) === FSI + "8.5" + NB + "МБ" + PDI, "ru: " + JSON.stringify(ru.humanBytes(8.5 * MIB)));
 });
 
 test("P8: every locale isolates the size, fills the frame, and writes Latin digits", () => {
@@ -133,7 +133,7 @@ test("P8: a signed growth keeps its sign on the digits, inside the size's own is
 test("P8: a rate is the size's frame inside the locale's per-second frame", () => {
   const ar = load("ar"), fr = load("fr"), en = load("en");
   assert(bare(en.tmFmtRate(MIB)) === "1.0 MB/s", bare(en.tmFmtRate(MIB)));
-  assert(bare(fr.tmFmtRate(MIB)) === "1,0 Mo/s", bare(fr.tmFmtRate(MIB)));
+  assert(bare(fr.tmFmtRate(MIB)) === "1.0 Mo/s", bare(fr.tmFmtRate(MIB)));
   const r = bare(ar.tmFmtRate(MIB));
   assert(r.includes("ميغابايت") && r.includes("/ث") && !/\/s\b/.test(r), "ar rate: " + r);
   assert(en.tmFmtRate(null) === "—", "an absent rate stays a dash");

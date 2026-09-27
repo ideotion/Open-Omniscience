@@ -234,14 +234,9 @@
     var TF = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : function (s, o) { return s.replace("{n}", o.n); };
     var v = Number(n), i = 0;
     while (v >= 1024 && i < 4) { v /= 1024; i++; }
-    var dec = i === 0 ? 0 : 1, num;
-    try {
-      var lang = (window.OOI18N && OOI18N.current && OOI18N.current()) || "en";
-      var cache = fmtBytes.nf || (fmtBytes.nf = {});
-      var nf = cache[lang + "|" + dec] || (cache[lang + "|" + dec] = new Intl.NumberFormat(
-        lang + "-u-nu-latn", { minimumFractionDigits: dec, maximumFractionDigits: dec, useGrouping: false }));
-      num = nf.format(v);
-    } catch (e) { num = v.toFixed(dec); }
+    // The app's one number convention (a decimal POINT in every locale, as fmtNum and
+    // app-core.js's _sizeText write it); only the unit's written form is translated.
+    var dec = i === 0 ? 0 : 1, num = v.toFixed(dec);
     var s = i === 0 ? TF("{n} B", { n: num })
       : i === 1 ? TF("{n} KB", { n: num })
       : i === 2 ? TF("{n} MB", { n: num })
