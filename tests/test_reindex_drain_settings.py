@@ -61,6 +61,8 @@ def drain(monkeypatch):
         "calls": [], "bumps": [], "backlog_reads": 0,
         # R22: the deferral marker's lifecycle, which the worker owns for the whole run.
         "deferrals": [], "finishes": [],
+        # What each finish_deferral call was handed, and every corpus lease taken.
+        "finish_kw": [], "leases": [],
     }
     state = {
         "batches": [{"batch_id": 7, "articles": 4}, {"batch_id": 9, "articles": 6}],
@@ -70,6 +72,8 @@ def drain(monkeypatch):
         "env_commit_batch": 1,
         # R22: whether the durable deferral marker can be written at all.
         "deferral_can_open": True,
+        # A marker an EARLIER run left open (a drain that yielded to an import).
+        "marker_open": False,
         "stats": {
             "articles": 2,
             "wall_s": 10.0,
@@ -130,9 +134,11 @@ def drain(monkeypatch):
     )
     monkeypatch.setattr("src.scheduler.runner.get_scheduler", lambda: _Sched())
     monkeypatch.setattr(bv2, "exclusive_window_open", lambda: state["exclusive"])
-    monkeypatch.setattr(
-        "src.database.corpus_lease.corpus_lease", lambda *_a, **_k: contextlib.nullcontext()
-    )
+    def _lease(name, *_a, **_k):
+        rec["leases"].append(name)
+        return contextlib.nullcontext()
+
+    monkeypatch.setattr("src.database.corpus_lease.corpus_lease", _lease)
     monkeypatch.setattr(
         "src.database.session.session_scope", lambda *_a, **_k: contextlib.nullcontext(object())
     )
@@ -147,11 +153,15 @@ def drain(monkeypatch):
         rec["deferrals"].append(reason)
         return "2026-09-23T00:00:00+00:00"
 
-    def _finish(_s):
+    def _finish(_s, **kw):
         rec["finishes"].append(True)
+        rec["finish_kw"].append(kw)
         return {"reconciled": True, "closed": True, "complete": True}
 
     monkeypatch.setattr("src.analytics.counter_deferral.open_deferral", _open)
+    monkeypatch.setattr(
+        "src.analytics.counter_deferral.is_deferral_open", lambda _s: bool(state["marker_open"])
+    )
     monkeypatch.setattr("src.analytics.store.finish_deferral", _finish)
     return state, rec
 
@@ -500,3 +510,75 @@ def test_an_interrupted_drain_still_reconciles_what_it_stopped_maintaining(drain
     assert rec["calls"][0]["extra"]["defer_counters"] is True
     assert rec["finishes"] == [True], "the cancelled run still reconciled its own drift"
     assert out["counter_reconcile"]["closed"] is True
+
+
+# --------------------------------------------------------------------------- #
+# 5. The closing sweep never runs beside an import (2026-09-27)               #
+# --------------------------------------------------------------------------- #
+
+
+def _window_opens_after_the_first_batch(monkeypatch, rec) -> None:
+    """An import claims the machine once one batch has been re-indexed: batch 1 runs with
+    the exclusive settings, and the drain yields at the top of batch 2."""
+    monkeypatch.setattr(bv2, "exclusive_window_open", lambda: len(rec["calls"]) >= 1)
+
+
+def test_a_drain_that_yields_to_an_import_leaves_the_sweep_to_the_next_run(drain, monkeypatch):
+    """THE REGRESSION. On a yield, the finally ran the whole-corpus reconcile on the live
+    file while the import snapshotted, merged and swapped it -- and a sweep straddling the
+    swap closed the marker in the new file over counters it never reconciled (reproduced:
+    27,143 keywords drifted, read as exact). The marker must stay open instead, and the
+    result must say why no reconcile ran."""
+    state, rec = drain
+    _window_opens_after_the_first_batch(monkeypatch, rec)
+
+    out = bv2._reindex_resume_worker(_Ctx())
+
+    assert out["paused_for_import"] is True
+    assert rec["calls"][0]["extra"]["defer_counters"] is True, "precondition: batch 1 deferred"
+    assert rec["finishes"] == [], "the whole-corpus sweep ran beside an import"
+    assert out["counter_reconcile"]["closed"] is False
+    assert "an import has claimed the machine" in out["counter_reconcile"]["deferred"]
+
+
+def test_the_closing_sweep_holds_a_lease_and_stops_for_an_import(drain):
+    """When it does run, the swap must wait for it rather than land under it (the lease),
+    and it must stop at its next slice if an import claims the machine meanwhile."""
+    state, rec = drain
+
+    bv2._reindex_resume_worker(_Ctx())
+
+    assert rec["finishes"] == [True]
+    assert rec["leases"] == ["reindex-resume"] * 3, "one per batch, and one for the sweep"
+    should_stop = rec["finish_kw"][0]["should_stop"]
+    assert should_stop() is False
+    state["exclusive"] = True
+    assert should_stop() is True, "the sweep's stop is wired to the import window"
+
+
+def test_a_clean_run_closes_a_marker_an_earlier_yield_left_open(drain):
+    """The drain the queue restarts after an import may find the collector running and never
+    defer, so it has no marker of its own -- the yielded run's must still be closed, or the
+    counters read `estimated` for good."""
+    state, rec = drain
+    state["scheduler_running"] = True  # this run never gets the machine
+    state["marker_open"] = True        # the yielded run's
+
+    out = bv2._reindex_resume_worker(_Ctx())
+
+    assert rec["deferrals"] == [], "precondition: this run opened nothing"
+    assert rec["finishes"] == [True]
+    assert out["counter_reconcile"]["left_by_an_earlier_run"] is True
+
+
+def test_an_earlier_marker_is_left_alone_by_a_run_that_did_not_end_cleanly(drain):
+    """Only a clean end takes on another run's sweep: a cancelled run leaves it, as does a
+    run that is itself yielding to an import."""
+    state, rec = drain
+    state["scheduler_running"] = True
+    state["marker_open"] = True
+
+    out = bv2._reindex_resume_worker(_Ctx(stopping=True))
+
+    assert rec["finishes"] == []
+    assert "counter_reconcile" not in out

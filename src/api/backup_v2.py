@@ -863,7 +863,7 @@ def _reindex_resume_worker(ctx, **_kw) -> dict:
     means a stop mid-batch is resumed exactly, never redone from the top.
     """
     from src.analytics.corpus_epoch import bump_corpus_epoch
-    from src.analytics.counter_deferral import open_deferral
+    from src.analytics.counter_deferral import is_deferral_open, open_deferral
     from src.analytics.store import finish_deferral
     from src.backup.merge import (
         default_reindex_commit_batch,
@@ -978,6 +978,7 @@ def _reindex_resume_worker(ctx, **_kw) -> dict:
 
     if batches:
         _bump("reindex-resume:start")
+    clean_end = False  # every batch walked, nothing raised, nothing stopped the run
     try:
         for b in batches:
             # Read `stopping` ONCE: re-reading it for the reason would let a cancel that
@@ -1041,19 +1042,58 @@ def _reindex_resume_worker(ctx, **_kw) -> dict:
             out["articles_failed"] += int(res.get("failed") or 0)
             _accumulate(run, st, commit_batch=commit_batch, idle=idle)
             ctx.set_metrics(_drain_metrics(run))
+        clean_end = not out["stopped"]
     finally:
         # In a finally for the same reason as the bump below, and BEFORE it: whatever
-        # ended the run -- a cancel, an import yield, a crash on the last batch -- the
-        # counters it stopped maintaining must be reconciled and the disclosure lifted.
-        # A run that ends early still reconciles: the articles it DID re-index are
-        # committed, so their counters are drifted whether or not the drain finished.
-        # finish_deferral never raises, and leaves the marker open if it could not
-        # finish, so an interrupted drain degrades to an honest `estimated` rather than
-        # to a silent `exact`.
-        if deferring:
+        # ended the run -- a cancel, a crash on the last batch -- the counters it stopped
+        # maintaining must be reconciled and the disclosure lifted. A run that ends early
+        # still reconciles: the articles it DID re-index are committed, so their counters
+        # are drifted whether or not the drain finished. finish_deferral never raises, and
+        # leaves the marker open if it could not finish, so an interrupted drain degrades to
+        # an honest `estimated` rather than to a silent `exact`.
+        #
+        # EXCEPT WHILE AN IMPORT OWNS THE MACHINE (2026-09-27). The reconcile is an
+        # unbounded whole-corpus sweep committing slice by slice on the LIVE file, and an
+        # import that made this drain yield is about to snapshot that file, merge into the
+        # copy and swap it in. Run beside it, the sweep straddled the swap: slices it
+        # reconciled after the snapshot were discarded with the old file, it carried on
+        # against the new one, completed, and closed the marker there -- `exact` over
+        # counters it never reconciled. Reproduced with the app's own finish_deferral,
+        # snapshot and swap on 300,000 keywords, snapshot at 30% of the sweep and swap at
+        # 60%: the new file had no marker, read `exact`, and held 27,143 drifted keywords,
+        # exactly the slices reconciled between the two (0 when the sweep ended first).
+        # So on a yield the marker is LEFT OPEN, counters read `estimated`, and the drain
+        # the import queue restarts after its run closes it. The sweep that does run holds
+        # a corpus lease, so a swap waits for it rather than landing under it, and stops at
+        # its next slice if an import claims the machine meanwhile.
+        #
+        # A marker an EARLIER run left open that way is this run's to close when it ends
+        # cleanly, even if this run never deferred (a restarted drain that finds the
+        # collector running has no marker of its own, and would otherwise leave that one
+        # open for good).
+        window = _yield_to_import()
+        leftover = False
+        if not deferring and clean_end and not ctx.stopping and not window:
             try:
                 with session_scope() as _s:
-                    out["counter_reconcile"] = finish_deferral(_s)
+                    leftover = is_deferral_open(_s)
+            except Exception:  # noqa: BLE001 - unreadable: the next run looks again
+                _LOG.warning("could not read the counter-deferral marker", exc_info=True)
+        if (deferring or leftover) and window:
+            out["counter_reconcile"] = {
+                "reconciled": False, "closed": False, "complete": False,
+                "deferred": (
+                    "an import has claimed the machine, so the whole-corpus counter sweep "
+                    "does not run beside it; the counters stay disclosed as estimated until "
+                    "the drain the import queue restarts after its run completes the sweep"
+                ),
+            }
+        elif deferring or leftover:
+            try:
+                with corpus_lease("reindex-resume"), session_scope() as _s:
+                    out["counter_reconcile"] = finish_deferral(_s, should_stop=_yield_to_import)
+                if leftover:
+                    out["counter_reconcile"]["left_by_an_earlier_run"] = True
             except Exception:  # noqa: BLE001 - never let it mask what ended the run
                 _LOG.warning("deferred-counter reconcile failed", exc_info=True)
         if out["articles_reindexed"]:

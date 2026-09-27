@@ -147,6 +147,45 @@ def test_the_envelope_never_says_exact_zero_while_deferred():
         "an empty store with no marker is still an exact 0")
 
 
+def test_a_reconcile_asked_to_stop_stops_at_its_next_slice_and_says_so(monkeypatch):
+    """The closing sweep's exit (2026-09-27): polled after every slice's commit, so an
+    import claiming the machine stops it at a slice boundary -- incomplete, and saying so."""
+    import src.analytics.store as store
+
+    monkeypatch.setattr(store, "_RECONCILE_SCAN_CHUNK", 2)
+    s = _session()
+    index_article(s, _article(s, "a"), extractor=_FakeExtractor(_terms(5)), country=None, city=None)
+    s.commit()
+
+    out = store.reconcile_keyword_counters(s, budget_s=0, restart=True, should_stop=lambda: True)
+    assert out["stopped"] is True and out["complete"] is False
+    assert out["keywords"] == 2, "stopped after exactly one slice"
+
+    again = store.reconcile_keyword_counters(s, budget_s=0, restart=True)
+    assert again["complete"] is True and again["stopped"] is False, "no stop asked, none taken"
+
+
+def test_a_stopped_closing_sweep_leaves_the_marker_open():
+    """A sweep stopped for an import is incomplete, so the disclosure stays: the counters
+    read `estimated` until a later drain finishes, never `exact` over a half-swept corpus."""
+    from src.analytics.store import finish_deferral
+
+    s = _session()
+    open_deferral(s, reason="test")
+    index_article(
+        s, _article(s, "a"), extractor=_FakeExtractor(_terms(3)), country=None, city=None,
+        maintain_counters=False,
+    )
+    s.commit()
+
+    out = finish_deferral(s, should_stop=lambda: True)
+    assert out == {"reconciled": True, "closed": False, "complete": False, "stopped": True}
+    assert is_deferral_open(s) is True
+    assert counter_envelope(s).basis == "estimated"
+
+    assert finish_deferral(s)["closed"] is True, "an unhurried sweep still closes it"
+
+
 def test_the_marker_outlives_the_process_that_opened_it():
     """The case it exists for is a crash mid-drain. An in-process flag would die with the
     process that knew the counters were wrong; this one is read back from the store by a
