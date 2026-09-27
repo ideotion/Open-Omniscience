@@ -356,3 +356,47 @@ def test_the_html_declares_its_charset_and_viewport():
 def test_the_footer_names_the_record_the_numbers_came_from():
     for fmt in ("markdown", "html"):
         assert "20260731-OOS-weekly-abcd1234.json" in render(_EDITION, fmt)
+
+
+# -- a keyword's language, named in the document (M7) ------------------------ #
+
+
+def _labelled_edition():
+    rising = {
+        "section": "rising_concepts",
+        "window": {"days": 7, "matches_period": True},
+        "baseline_days": 30,
+        "terms": [
+            {"term": "выборы", "normalized": "выборы", "language": "ru", "recent": 40,
+             "prior": 30, "expected": 7.0, "growth": 5.7, "growth_is_ratio": True},
+            {"term": "climat", "normalized": "climat", "language": "fr", "recent": 30,
+             "prior": 20, "expected": 5.0, "growth": 6.0, "growth_is_ratio": True},
+        ],
+    }
+    # The across-channels rows are the SAME keywords and name only the term.
+    across = {
+        "section": "across_channels",
+        "window": {"days": 7, "matches_period": True},
+        "channels": [{"provenance": "news", "concepts_first_here": 1}],
+        "terms": [{"term": "выборы", "normalized": "выборы", "first_seen": "2026-07-26",
+                   "channel": "news"}],
+    }
+    return dict(_EDITION, sections=[rising, across])
+
+
+@pytest.mark.parametrize("fmt", ["markdown", "html"])
+def test_a_keyword_in_another_language_says_so_in_the_document(fmt):
+    """M7: a French edition printed a Russian keyword bare, as though it were French.
+
+    The word stays quoted in its own language (the disclosure line's promise); the
+    document now adds what it is: the VERIFIED ring translation first, else "(in X)",
+    with the language as its 639-2/T code like every other language in the document --
+    and a row that names only the term (across channels) reads the same as its rising
+    row."""
+    en = render(_labelled_edition(), fmt, lang="en")
+    assert en.count("выборы (in rus)") == 2, en
+    assert "climate” (translated from fra: climat)" in en
+    fr = render(_labelled_edition(), fmt, lang="fr")
+    assert fr.count("выборы (en rus)") == 2
+    # Already in the document's language: nothing is added.
+    assert "climat (en fra)" not in fr and "(traduit de fra" not in fr

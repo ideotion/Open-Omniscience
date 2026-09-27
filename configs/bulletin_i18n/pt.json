@@ -389,5 +389,8 @@
   "Note": "Nota",
   "Language": "Idioma",
   "Form": "Forma",
-  "Mentions": "Menções"
+  "Mentions": "Menções",
+
+  "“{translation}” (translated from {language}: {term})": "“{translation}” (traduzido de {language}: {term})",
+  "{term} (in {language})": "{term} (em {language})"
 }

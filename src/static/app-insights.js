@@ -542,8 +542,9 @@
       } catch (e) { toast(t("Drill failed: ") + (e && e.message || e), "err"); }
     }
     async function loadSuperGroups() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const box = $("sg-list");
-      box.innerHTML = '<div class="muted">Loading…</div>';
+      box.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
       try {
         // series_top: only the top-mentioned groups get a windowed rate + sparkline
         // (S1.5, bounded — never all ~77 groups on every load).
@@ -566,9 +567,9 @@
         _conceptRings = rings.rings || [];
         renderConceptBrowse();
         box.innerHTML = sgs.supergroups.length ? sgs.supergroups.map(sgCard).join("")
-          : '<div class="muted">No super-groups yet. Create one above, then add families or groups to it.</div>';
+          : `<div class="muted">${esc(t("No super-groups yet. Create one above, then add families or groups to it."))}</div>`;
         const bc = $("sg-basis"); if (bc) bc.innerHTML = basisChip(sgs.counts);
-      } catch (e) { box.innerHTML = `<div class="muted">Could not load: ${esc(e.message)}</div>`; }
+      } catch (e) { box.innerHTML = `<div class="muted">${esc(t("Could not load") + ": " + e.message)}</div>`; }
       _sgScrollToTarget();  // S3: land on the deep-linked group after it renders
       _conceptApplyPending();  // §D: land on the deep-linked concept-map ring, if any
     }
@@ -603,13 +604,18 @@
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const chips = shown.length ? shown.map(m => {
         const isRing = !!m.ring_id;
+        // THE ONE LABEL (M7): a family member is a keyword like any other, translated or
+        // tagged by the same rules; a ring member is the concept, named in the reader's
+        // language with its id in the hover (the ring has no single source language, so
+        // it draws no "translated from" tag -- the same rule a merged ring row follows).
+        const label = kwLabelHtml(Object.assign({}, m, {term: isRing ? m.ring_id : m.normalized}), {inButton: true});
         const inner = isRing
-          ? `⊕ ${esc(m.ring_id)}${kwTransHtml(m)} <span class="muted">group·${(m.ring_members || []).length}</span>`
-          : esc(m.normalized);
+          ? `⊕ ${label} <span class="muted">${esc(_kwTf("group · {n}", {n: (m.ring_members || []).length}))}</span>`
+          : label;
         // Row 2 (cross-group overlap): a member also counted in other groups gets
         // that stated in its hover, never silently summed as if exclusive.
         const alsoIn = (m.also_in && m.also_in.length)
-          ? ` — also in: ${m.also_in.join(", ")}` : "";
+          ? " — " + _kwTf("also in: {groups}", {groups: m.also_in.join(", ")}) : "";
         // §B circle grammar: a ring/group member gets the box-shadow ring + the
         // translated level hover appended (colour reinforces, the hover carries it).
         const levelTip = isRing ? " — " + lvlTitle("group") : "";
@@ -622,7 +628,7 @@
           ? ` <button class="ghost tiny" title="${esc(t("Open on the cross-country concept map"))}"
                onclick="openConceptMap(${esc(JSON.stringify(m.ring_id))})">🗺</button>` : "";
         return `<button class="chip${isRing ? " lvl-group" : ""}" onclick="openCorpus(${esc(JSON.stringify(m.normalized))})"
-           title="${tip}">${inner} <span class="muted">${m.mentions}</span>${alsoIn ? " *" : ""}</button>${mapLink}`;
+           title="${tip}">${inner} <span class="muted">${m.mentions}</span>${alsoIn ? " *" : ""}</button>${kwSensesAfterHtml(m)}${mapLink}`;
       }).join("")
         : '<span class="muted">No members yet.</span>';
       const tf = (s2, v) => (window.OOI18N && OOI18N.tf) ? OOI18N.tf(s2, v)
@@ -633,15 +639,21 @@
       // Row 1 (dominance): the mandatory "which member accounts for the total"
       // disclosure — a group total without it misleads by construction. Keyed as one
       // frame (M14): the member is data, the sentence around it translates.
+      // The member is named as its chip names it (M7): "voting" read "voting" in the French
+      // line directly above a chip reading "vote".
+      const domM = g.dominance ? g.members.find(m => m.normalized === g.dominance.member) : null;
+      const domName = (domM && typeof kwLabelParts === "function")
+        ? (kwLabelParts(Object.assign({}, domM, {term: domM.ring_id || domM.normalized})).shown || g.dominance.member)
+        : (g.dominance && g.dominance.member);
       const domLine = g.dominance
-        ? `<div class="hint muted" style="margin-top:2px">${esc(tf("Dominated by “{member}” ({share}% of this total)", {member: g.dominance.member, share: Math.round(g.dominance.share * 100)}))}</div>`
+        ? `<div class="hint muted" style="margin-top:2px">${esc(tf("Dominated by “{member}” ({share}% of this total)", {member: domName, share: Math.round(g.dominance.share * 100)}))}</div>`
         : "";
       // S1.5: a windowed rate + sparkline, present only on the top series_top groups
       // (bounded — never all groups); both summed over the SAME deduped id set the
       // headline total uses, so the chart can never disagree with the number beside it.
       const rateLine = g.rate
         ? `<div class="hint muted" style="margin-top:2px">${esc(growthFallback(g.rate, {window: true})
-            || `↑${g.rate.growth}× (${g.rate.recent} recent · ${g.rate.prior} prior, ${g.rate.window_days}d vs ${g.rate.baseline_days}d)`)}</div>`
+            || trendRateText(g.rate, {window: true}))}</div>`
         : "";
       // PRH-31: drawn on the SERVER'S window, not on the points. The series omits
       // its zero days, so an index-placed chart renders day 1 and day 5 adjacent —

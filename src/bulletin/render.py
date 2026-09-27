@@ -151,6 +151,7 @@ def render_markdown(edition: dict, *, lang: str = "en", tr: Translator | None = 
     how the bulletin-language diagnostic measures a real edition rather than a guess.
     """
     T = tr or Translator(lang)
+    _prime_term_languages(edition, T)
     p = edition.get("period") or {}
     m = edition.get("masthead") or {}
     out: list[str] = [f"# {_title(edition, T)}", ""]
@@ -410,6 +411,62 @@ def _is_ratio(row: dict) -> bool | None:
         return None
 
 
+def _prime_term_languages(edition: dict, T: Translator) -> None:
+    """Record each named keyword's language from the rows that state one (M7).
+
+    Only the rising rows carry ``language``; the across-channels rows are the SAME
+    keywords re-read for their earliest channel and name only the term. Reading the
+    language off the record's own rows keeps one keyword one label across sections,
+    without a second query and without writing anything back to the record.
+    """
+    for section in edition.get("sections") or []:
+        for row in section.get("terms") or []:
+            if not isinstance(row, dict):
+                continue
+            norm = str(row.get("normalized") or "").strip().casefold()
+            lang = str(row.get("language") or "").strip().casefold()
+            if norm and lang and lang != "?":
+                T.term_languages.setdefault(norm, lang)
+
+
+def _term_label(row: dict, T: Translator) -> str:
+    """A keyword as the DOCUMENT names it -- R7's grammar, rendered at read time (M7).
+
+    The record keeps the stored word, and so does the document: a keyword is QUOTED, in
+    its own language, which is what the disclosure line promises ("words quoted from
+    sources ... stay in their own language"). What R7 adds is the reader's side of it:
+    a keyword whose recorded language is not the document's carries what it is -- the
+    VERIFIED ring translation first, as the Q411 card title does, or else "(in X)" --
+    so a French edition no longer prints "избиратель" as though it were French.
+
+    Resolved through the ONE ladder every keyword surface uses, at render time rather
+    than baked into the record, so a re-render in another language is a different
+    reading of the same record and never a second record. Only the verified rung is
+    used: a tentative AI translation belongs to a reader who can see its marker, and a
+    published document is not that reader. The language is its 639-2/T code, the form
+    every other language in this document is printed in (S8).
+    """
+    term = str(row.get("term") or row.get("normalized") or "—")
+    norm = str(row.get("normalized") or term).strip().casefold()
+    src = str(row.get("language") or T.term_languages.get(norm) or "").strip().casefold()
+    if not src or src.split("-")[0] == T.lang:
+        return term
+    from src.analytics.equivalence import TIER_VERIFIED, resolve_translation
+
+    code = language_display_code(src) or src
+    try:
+        res = resolve_translation(src, norm, T.lang)
+    except Exception:  # noqa: BLE001 - a label must never take a document down
+        res = None
+    text = (res.text or "") if res is not None and res.tier == TIER_VERIFIED else ""
+    if text and text.casefold() not in {norm, term.casefold()}:
+        return T.f(
+            "“{translation}” (translated from {language}: {term})",
+            translation=text, language=code, term=term,
+        )
+    return T.f("{term} (in {language})", term=term, language=code)
+
+
 def _term_row(row: dict, *, baseline_days: Any = None, T: Translator) -> tuple[str, str]:
     """A ``terms`` row as (term, description), chosen by the row's OWN fields.
 
@@ -420,7 +477,7 @@ def _term_row(row: dict, *, baseline_days: Any = None, T: Translator) -> tuple[s
     "— — mentions (×None vs the prior period)", a line that means nothing. The
     row decides, not the container it arrived in.
     """
-    term = str(row.get("term") or row.get("normalized") or "—")
+    term = _term_label(row, T)
     if "first_seen" in row:
         return term, T.f(
             "first seen {when} in {channel}",
@@ -1352,6 +1409,7 @@ def render_html(edition: dict, *, lang: str = "en", tr: Translator | None = None
     us guessing at it.
     """
     T = tr or Translator(lang)
+    _prime_term_languages(edition, T)
     p = edition.get("period") or {}
     m = edition.get("masthead") or {}
     body: list[str] = []

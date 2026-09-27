@@ -389,5 +389,8 @@
   "Note": "टिप्पणी",
   "Language": "भाषा",
   "Form": "रूप",
-  "Mentions": "उल्लेख"
+  "Mentions": "उल्लेख",
+
+  "“{translation}” (translated from {language}: {term})": "“{translation}” ({language} से अनूदित: {term})",
+  "{term} (in {language})": "{term} ({language} में)"
 }

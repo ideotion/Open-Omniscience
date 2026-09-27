@@ -1452,7 +1452,7 @@ def insights_corpus_coordination(
     return _deadlined(db, key, _compute)
 
 
-def _annotate_windows(payload, tl: str | None):
+def _annotate_windows(payload, tl: str | None, db: Session | None = None, country: str | None = None):
     """Add the verified ring translations to a /trending-windows payload (S3.3).
 
     Works on a DEEP COPY: ``_cached`` returns ``{**hit, ...}``, a TOP-level copy
@@ -1470,13 +1470,25 @@ def _annotate_windows(payload, tl: str | None):
     windows = payload.get("windows")
     if not isinstance(windows, list):
         return payload
-    from src.analytics.queries import _annotate_translations
+    from datetime import date as _date
+    from datetime import timedelta as _td
+
+    from src.analytics.queries import _annotate_translations, annotate_label_languages
 
     out = copy.deepcopy(payload)
+    # The window each row was counted over ends after today (the endpoint passes no
+    # `end`), so the label's per-language counts are read over that same window (M11, M12).
+    w_end = _date.today() + _td(days=1)
     for w in out.get("windows") or []:
         terms = w.get("terms") if isinstance(w, dict) else None
         if isinstance(terms, list):
             _annotate_translations(terms, tl)
+            wdays = w.get("window_days")
+            if db is not None and isinstance(wdays, int) and wdays > 0:
+                annotate_label_languages(
+                    db, terms, tl, start=w_end - _td(days=wdays), end=w_end, days=wdays,
+                    country=country,
+                )
     return out
 
 
@@ -1631,7 +1643,7 @@ def insights_trending_windows(
         db, country=country, kind=_kind(kind), limit=limit, series_top=series_top,
         target_lang=None,
     ))
-    return _annotate_windows(out, tl)
+    return _annotate_windows(out, tl, db, country)
 
 
 def _xkey(expand: bool, ui_lang: str | None, sense, literal_cap: bool) -> dict:
@@ -1875,6 +1887,7 @@ def insights_trend(
     if tl and isinstance(resolved, dict):
         rows = [dict(resolved)]
         q._annotate_translations(rows, tl, None, q._tentative_for(db, rows, tl))
+        q.annotate_label_languages(db, rows, tl)
         out = {**out, "resolved": rows[0]}
     return out
 
@@ -2666,6 +2679,9 @@ def insights_ring_country_articles(
 def insights_observatory(
     window_days: int = Query(7, ge=1, le=90),
     baseline_days: int = Query(30, ge=1, le=365),
+    target_lang: str | None = Query(
+        None, description="label language for the member keywords the readout names (M7)"
+    ),
     db: Session = Depends(get_db),
 ) -> dict:
     """The Observatory's universe (cluster) + galaxy (super-group) data spine
@@ -2680,10 +2696,55 @@ def insights_observatory(
     baseline_days = baseline_days if isinstance(baseline_days, int) else 30
 
     key = _ckey("observatory", window_days=window_days, baseline_days=baseline_days)
-    return _deadlined(
+    payload = _deadlined(
         db, key,
         lambda: observatory_payload(db, window_days=window_days, baseline_days=baseline_days),
     )
+    return _observatory_member_labels(payload, db, _tlang(target_lang))
+
+
+def _observatory_member_labels(payload, db: Session, tl: str | None):
+    """The label fields for the member KEYWORDS the Observatory's readout names (M7).
+
+    A galaxy's name is a curated group label, but its dominance line and its shared-member
+    line name MEMBERS -- keywords and rings -- which were printed as stored keys ("voting"
+    in a French readout). Annotated AFTER the cache, on a copy, like ``_annotate_windows``:
+    the cached sky is language-free and one reader's language never reaches another's.
+    Only the members the readout can name are resolved, never every member of every group.
+    """
+    if not tl or not isinstance(payload, dict) or not payload.get("galaxies"):
+        return payload
+    from src.analytics.queries import _annotate_translations, annotate_label_languages
+    from src.database.models import Keyword, KeywordSuperGroupMember
+
+    keys: set[str] = set()
+    for g in payload["galaxies"]:
+        dom = g.get("dominance") or {}
+        if dom.get("member"):
+            keys.add(str(dom["member"]))
+        keys.update(str(k) for k in (g.get("cross_group_overlap") or {}))
+    if not keys:
+        return payload
+    ring_of: dict[str, str | None] = {
+        str(norm): rid
+        for norm, rid in db.query(
+            KeywordSuperGroupMember.normalized_term, KeywordSuperGroupMember.ring_id
+        ).filter(KeywordSuperGroupMember.normalized_term.in_(sorted(keys)))
+    }
+    rows = [{"normalized": k, "term": k, **({"ring_id": ring_of[k]} if ring_of.get(k) else {})}
+            for k in sorted(keys)]
+    fams = [r["normalized"] for r in rows if not r.get("ring_id")]
+    stored: dict[str, str | None] = {
+        str(norm): lang
+        for norm, lang in db.query(Keyword.normalized_term, Keyword.language).filter(
+            Keyword.normalized_term.in_(fams)
+        )
+    } if fams else {}
+    _annotate_translations(rows, tl, stored)
+    annotate_label_languages(db, rows, tl)
+    out = copy.deepcopy(payload)
+    out["member_labels"] = {r.pop("normalized"): r for r in rows}
+    return out
 
 
 @router.get("/source-laundering")
@@ -3055,7 +3116,7 @@ def list_supergroups(
     ``target_lang`` binds the verified cross-language ``translation`` to each ring
     member (the maintainer ruling: translations bind to keyword families AND groups),
     so a super-ring shows its concept in the reader's language."""
-    from src.analytics.equivalence import ring_meta, ring_translation
+    from src.analytics.equivalence import ring_meta
     from src.analytics.supergroup_stats import cross_group_membership, member_overlaps
     from src.database.models import KeywordSuperGroup
 
@@ -3094,11 +3155,8 @@ def list_supergroups(
                 meta = ring_meta(m.ring_id)
                 entry["ring_id"] = m.ring_id
                 entry["ring_members"] = [f"{lg}:{term}" for lg, term in (meta.members if meta else ())]
-                if tl:
-                    tr = ring_translation(m.ring_id, tl)
-                    if tr:
-                        entry["translation"] = tr
-                        entry["translation_source"] = "ring"
+                # Its translation is the ladder's, resolved by ring id with every other
+                # member's below (M7), so the two can never disagree.
             other_groups = [n for n in cross.get((m.normalized_term, m.ring_id), []) if n != sg.name]
             if other_groups:
                 entry["also_in"] = other_groups  # row 2 disclosure, per member
@@ -3145,6 +3203,29 @@ def list_supergroups(
             }
         )
     out.sort(key=lambda s: -cast(int, s["mentions"]))
+
+    # M7: the members are keywords the reader sees, so they carry the SAME label fields
+    # every keyword list does -- a family member translated or tagged through the ladder
+    # (by its stored language), a ring member named in the reader's language -- and the
+    # mention languages behind a foreign-looking tag (M11). Only when a language is asked.
+    if tl:
+        from src.analytics.queries import (
+            _annotate_translations,
+            _tentative_for,
+            annotate_label_languages,
+        )
+        from src.database.models import Keyword
+
+        all_members = [m for entry in out for m in cast(list, entry["members"])]
+        fams = sorted({m["normalized"] for m in all_members if not m.get("ring_id")})
+        stored_lang: dict[str, str | None] = {}
+        for i in range(0, len(fams), 900):
+            for norm, lang in db.query(Keyword.normalized_term, Keyword.language).filter(
+                Keyword.normalized_term.in_(fams[i : i + 900])
+            ):
+                stored_lang.setdefault(norm, lang)
+        _annotate_translations(all_members, tl, stored_lang, _tentative_for(db, all_members, tl))
+        annotate_label_languages(db, all_members, tl)
 
     # S1.5 (bounded, never all groups): the top series_top groups of the already-
     # sorted list gain a windowed rate + daily series, over the SAME deduped id set
@@ -3446,6 +3527,9 @@ def insights_graph(
     start: str | None = Query(None, description="window start (YYYY-MM-DD)"),
     end: str | None = Query(None, description="window end (YYYY-MM-DD)"),
     cap: int = Query(1000, ge=1, le=5000),
+    target_lang: str | None = Query(
+        None, description="label language for an article-set map's nodes (M7); UI locale"
+    ),
     db: Session = Depends(get_db),
 ) -> dict:
     """The layered keyword graph (maintainer-ruled 2026-06-10): a keyword with
@@ -3471,10 +3555,12 @@ def insights_graph(
             expand=expand, ui_lang=ui_lang, sense=sense,
             literal_cap=-1 if literal_cap else None,
         )
-        # Cache by the exact id set so re-opening the same analysis mindmap is instant.
+        # Cache by the exact id set so re-opening the same analysis mindmap is instant --
+        # and by the label language, whose translations the nodes now carry (M7).
+        _tl = _tlang(target_lang)
         return _deadlined(
-            db, _ckey("graph-articles", ids=",".join(map(str, ids))),
-            lambda: rm.article_graph(db, article_ids=ids),
+            db, _ckey("graph-articles", ids=",".join(map(str, ids)), tl=_tl),
+            lambda: rm.article_graph(db, article_ids=ids, target_lang=_tl),
             on_timeout=lambda exc: _graph_degraded(exc, level="article", n_articles=len(ids)),
         )
     if level not in ("keyword", "family", "supergroup"):

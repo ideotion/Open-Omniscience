@@ -50,9 +50,9 @@ const src =
   // locale through CLDR. Stubbed with a table that is deliberately NOT the identity, so
   // an assertion below can tell a rendered NAME from a rendered CODE -- with the identity
   // the two are indistinguishable and the Q402 claim would pass for free.
-  "var _NAMES = {fr: 'French', de: 'German', ar: 'Arabic', zh: 'Chinese'};\n" +
+  "var _NAMES = {fr: 'French', de: 'German', ar: 'Arabic', zh: 'Chinese', en: 'English', es: 'Spanish'};\n" +
   "function ooLangName(code, fb){ return _NAMES[code] || fb || code; }\n" +
-  "var window = {};\n" +
+  "var window = {}; var OOI18N;\n" +
   "function openLinkPreview(){}\n" +
   // Records what a sense pick opened (M4), so the test can read the pin it carried.
   "var _opened = [];\n" +
@@ -61,6 +61,13 @@ const src =
   extract("kwLangName") + "\n" +
   extract("kwTier") + "\n" +
   extract("kwLangBreakdownText") + "\n" +
+  extract("uiLangCode") + "\n" +
+  extract("_kwLangCells") + "\n" +
+  extract("_kwScopeTail") + "\n" +
+  extract("kwMentionLangs") + "\n" +
+  extract("kwLangListName") + "\n" +
+  extract("_kwLabelState") + "\n" +
+  extract("kwLabelParts") + "\n" +
   extract("kwHoverText") + "\n" +
   extract("kwQidHtml") + "\n" +
   extract("kwHasTag") + "\n" +
@@ -70,6 +77,9 @@ const src =
   extract("kwPickSense") + "\n" +
   extract("kwLabelHtml") + "\n" +
   "module.exports = { kwLabelHtml, kwTier, kwHoverText, kwSensePickerHtml, kwLangName, kwLangBreakdownText,\n" +
+  // The UI language, as the browser sees it (`window.OOI18N` IS the global there): only
+  // `current`, so every string still takes the un-i18n'd fallback path.
+  "  kwLabelParts, kwMentionLangs, setUi: function (c) { OOI18N = window.OOI18N = {current: function () { return c; }}; },\n" +
   "  kwQidHtml, kwHasTag, kwTipExtraAttr, kwSensesAfterHtml, kwPickSense, opened: _opened };";
 const K = (() => {
   const m = { exports: {} };
@@ -308,6 +318,66 @@ const K = (() => {
   assert.ok(!/<a\b/.test(inLink), "a label drawn inside a link still nests an anchor: " + inLink);
   assert.ok(/>logiciel</.test(inLink) && /translated from French/.test(inLink), inLink);
   assert.ok(/class="kw-qid"/.test(K.kwLabelHtml(verified)), "the default label lost its QID");
+}
+
+// --- A SPLIT KEYWORD IS NOT CALLED FOREIGN (M11) ---------------------------- //
+// Keys are language-agnostic (Q416), so one keyword holds English "software" AND Spanish
+// "software"; its `translation_source_lang` is the MAJORITY, and the label used to tag the
+// English word "in Spanish" in the English UI. The server now measures the row's OWN
+// mentions (`mention_languages`) and the label must name the split instead -- or, when the
+// reader's language is the only one, draw no tag at all.
+{
+  K.setUi("en");
+  const split = { term: "software", normalized: "software", translation_tier: "untranslated",
+    translation_source_lang: "es", mention_languages: { en: 36, es: 27 },
+    language_counts_scope: "corpus" };
+  const out = K.kwLabelHtml(split);
+  assert.ok(!/>in es</.test(out) && !/in Spanish</.test(out),
+    "a keyword used in the reader's own language is still tagged as foreign: " + out);
+  assert.ok(/>in English and Spanish</.test(out),
+    "the split is not named on the tag: " + out);
+  assert.ok(/Mentions by language: \S+ 36 · \S+ 27 \(in your whole corpus\)/.test(out),
+    "the hover does not carry the per-language counts WITH their scope: " + out);
+  assert.strictEqual(K.kwHasTag(split), true);
+  // The reader's language is the ONLY one measured: no tag, and no translation shown.
+  const onlyUi = { term: "software", normalized: "software", translation: "programa",
+    translation_tier: "verified", translation_source_lang: "es", mention_languages: { en: 12 } };
+  const o2 = K.kwLabelHtml(onlyUi);
+  assert.ok(/>software</.test(o2) && !/>programa</.test(o2),
+    "a word only ever used in the reader's language was 'translated' into it: " + o2);
+  assert.ok(!/kw-tag/.test(o2), "a word only in the reader's language still draws a tag: " + o2);
+  assert.strictEqual(K.kwHasTag(onlyUi), false);
+  // Another UI: the same split is foreign to a French reader, and translated from both.
+  K.setUi("fr");
+  const fr = Object.assign({}, split, { translation: "logiciel", translation_tier: "verified" });
+  const o3 = K.kwLabelHtml(fr);
+  assert.ok(/>logiciel</.test(o3), o3);
+  // The list grammar is the UI language's own (CLDR ListFormat), not an English "and".
+  assert.ok(/translated from English et Spanish/.test(o3),
+    "the translation's tag names only the majority language: " + o3);
+  // Without a measurement the label falls back to the ladder's one language, as before.
+  K.setUi("en");
+  const plain = K.kwLabelHtml({ term: "haushaltsdefizit", normalized: "haushaltsdefizit",
+    translation_tier: "untranslated", translation_source_lang: "de" });
+  assert.ok(/in German/.test(plain), plain);
+}
+
+// --- THE BREAKDOWN SAYS WHICH COUNT IT IS (M12) ------------------------------ //
+{
+  K.setUi("en");
+  const windowed = K.kwLangBreakdownText({ language_breakdown: { fr: 7, de: 2, "?": 3 },
+    language_counts_scope: "window", language_counts_days: 7 });
+  assert.ok(/\(in the last 7 days\)$/.test(windowed), "a windowed breakdown does not say so: " + windowed);
+  assert.ok(/Language not recorded 3/.test(windowed) && !/\? 3/.test(windowed),
+    "an unrecorded mention language is printed as a bare '?': " + windowed);
+  const day = K.kwLangBreakdownText({ language_breakdown: { fr: 1 },
+    language_counts_scope: "window", language_counts_days: 1 });
+  assert.ok(/\(in the last day\)$/.test(day), day);
+  const whole = K.kwLangBreakdownText({ language_breakdown: { fr: 1 }, language_counts_scope: "corpus" });
+  assert.ok(/\(in your whole corpus\)$/.test(whole), whole);
+  // A country-narrowed read claims no scope rather than "the whole corpus".
+  const narrowed = K.kwLangBreakdownText({ language_breakdown: { fr: 1 }, language_counts_scope: "country" });
+  assert.ok(!/\(/.test(narrowed), narrowed);
 }
 
 console.log("keyword_label_node_test.js: OK");

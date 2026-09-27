@@ -69,9 +69,13 @@ def test_reader_marks_and_hover_handler():
     assert "function enrichKwStat(" in _READER
     assert '"/api/insights/keyword-stats?term=" + encodeURIComponent(term)' in _READER
     assert "kwStatLine(d)" in _READER
-    # counts + the caveat, never a score
-    assert '" mentions · "' in _READER
-    assert "d.caveat" in _READER
+    # counts + the caveat, never a score -- through the SAME keys the SPA's bubble uses,
+    # and the caveat through t(): a fixed server sentence appended verbatim read English
+    # inside every translated reader (K-reader, 2026-09-27; the key exists since N7).
+    assert 'T(d.mentions === 1 ? "mention" : "mentions")' in _READER
+    assert 'T(d.caveat)' in _READER
+    assert '" · " + d.caveat' not in _READER, "the reader's caveat is appended untranslated"
+    assert '" mentions · "' not in _READER, "the reader's count line is an English literal"
 
 
 def test_strings_translated_x12():

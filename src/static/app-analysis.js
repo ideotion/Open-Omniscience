@@ -955,7 +955,7 @@
     // {a,b,weight}, plus level/method/caveat. Font size scales with node size.
     // In-map controls (mind-map rules): a Cloud SECOND view, a text-size control and
     // ⛶ Enlarge. State is kept so the controls re-render from the same graph.
-    const _anMM = { graph: null, cloud: false, concept: false, arms: null, scale: 100, big: false };
+    const _anMM = { graph: null, gp: null, cloud: false, concept: false, arms: null, scale: 100, big: false };
     function anMMset(patch) { Object.assign(_anMM, patch); if (_anMM.graph) renderAnMindmap(_anMM.graph); }
     // Q512: THE RING AT THE CENTRE, ONE ARM PER LANGUAGE, ASSOCIATIONS OFF THE ARMS.
     // A third view beside Map and Cloud rather than a replacement for Map: they answer
@@ -1030,8 +1030,8 @@
       const g = _anMM.graph || {};
       const all = (g.nodes || []);
       const controls = `<div class="row" style="gap:8px;align-items:center;margin-bottom:6px;flex-wrap:wrap">`
-        + `<button class="ghost tiny${(!_anMM.cloud && !_anMM.concept) ? " on" : ""}" onclick="anMMset({cloud:false,concept:false})">Map</button>`
-        + `<button class="ghost tiny${_anMM.cloud ? " on" : ""}" onclick="anMMset({cloud:true,concept:false})">Cloud</button>`
+        + `<button class="ghost tiny${(!_anMM.cloud && !_anMM.concept) ? " on" : ""}" onclick="anMMset({cloud:false,concept:false})">${esc(t("Map"))}</button>`
+        + `<button class="ghost tiny${_anMM.cloud ? " on" : ""}" onclick="anMMset({cloud:true,concept:false})">${esc(t("Cloud"))}</button>`
         // Offered only when the term IS in a ring the corpus carries more than one form
         // of: a Concept view over a single language is a straight line drawn as though
         // it were a structure.
@@ -1131,13 +1131,28 @@
           `<line stroke="var(--border)" stroke-width="1.4" x1="${cx}" y1="${cy}"`
           + ` x2="${n._x.toFixed(1)}" y2="${n._y.toFixed(1)}"></line>`).join("");
       }
+      // THE SAME LABEL EVERY KEYWORD LIST DRAWS (M7), through the ONE rule set
+      // (`kwLabelParts`): the translation where a verified ring allows, the word itself
+      // otherwise, and the small tag saying which -- a second line here, since an SVG
+      // `<text>` cannot hold the HTML span. The hover (`<title>`) carries the rest.
+      // `data-i18n-dyn`: the walker must never translate a keyword.
       const drawNode = (n) => {
         const col = n.id === center.id ? "var(--ok)" : "var(--accent)";
+        const lp = (typeof kwLabelParts === "function")
+          ? kwLabelParts(Object.assign({term: n.label || n.id}, n)) : {shown: n.label || n.id, tag: "", hover: ""};
         const fam = (n.members || []).length > 1;
-        const title = fam ? `<title>${esc((n.members || []).join(", "))}</title>` : "";
-        return `<g transform="translate(${n._x.toFixed(1)},${n._y.toFixed(1)})">${title}`
-          + `<text text-anchor="middle" dominant-baseline="central" font-size="${fsOf(n).toFixed(1)}"`
-          + ` font-weight="${n.id === center.id ? 700 : 500}" fill="${col}">${esc(n.label || n.id)}</text></g>`;
+        const tip = [lp.tag ? lp.tag + " — " + lp.hover : "", fam ? (n.members || []).join(", ") : ""]
+          .filter(Boolean).join(" — ");
+        const title = tip ? `<title>${esc(tip)}</title>` : "";
+        const fs = fsOf(n);
+        const tag = lp.tag
+          ? `<text text-anchor="middle" dominant-baseline="central" y="${(fs * 0.95).toFixed(1)}"`
+            + ` font-size="${Math.max(8, fs * 0.5).toFixed(1)}" fill="var(--muted)">${esc(lp.tag)}</text>`
+          : "";
+        return `<g transform="translate(${n._x.toFixed(1)},${n._y.toFixed(1)})" data-i18n-dyn>${title}`
+          + `<text text-anchor="middle" dominant-baseline="central" font-size="${fs.toFixed(1)}"`
+          + ` font-weight="${n.id === center.id ? 700 : 500}" fill="${col}">${esc(lp.shown || n.label || n.id)}</text>`
+          + `${tag}</g>`;
       };
       const nodesSvg = drawNode(center) + neighbours.map(drawNode).join("");
       const desc = _anMM.cloud
@@ -1147,8 +1162,23 @@
         + `<svg viewBox="0 0 ${W} ${H}" width="${svgW}" style="background:var(--panel2);max-width:none;`
         + `border:1px solid var(--border);border-radius:8px">${edges}${nodesSvg}</svg>` + boxClose
         + `<div class="hint muted" style="margin-top:6px">${esc(desc)} `
-        + `<b>${esc(t("Font size = shared-article volume."))}</b> ${esc(g.method || "")} ${esc(g.caveat || "")}</div>`;
+        + `<b>${esc(t("Font size = shared-article volume."))}</b> ${esc(g.method ? t(g.method) : "")} ${esc(g.caveat ? t(g.caveat) : "")}</div>`;
       centreBox();
+    }
+    // A LANGUAGE SWITCH RE-FETCHES THE MAP (M7). Its nodes carry translations INTO the
+    // language they were fetched for, so re-drawing the payload it holds would paint the
+    // old language's words under the new language's tags; the controls' own words are
+    // re-keyed by the same render. Nothing loaded (or no scope kept) -> nothing fetched.
+    async function anMindmapRepaint() {
+      if (!_anMM.graph || !_anMM.gp) return;
+      const host = $("an-mindmap");
+      if (!host || !host.children.length) return;
+      const gp = new URLSearchParams(_anMM.gp);
+      gp.set("target_lang", uiLangCode());
+      try {
+        const g = await api("/api/insights/graph?" + gp.toString());
+        renderAnMindmap(g, host);
+      } catch (_e) { renderAnMindmap(null, host); }
     }
     // Inline near-dup annotation (maintainer-ruled: "1 voice" inline in lists, PR 3):
     // badge article-row links that are near-identical COPIES (= effectively one voice,
@@ -2139,6 +2169,10 @@
           // corpus-wide keyword graph for every seeded/searched analysis.
           const gp = new URLSearchParams(p);
           gp.set("level", "keyword"); gp.set("term", top); gp.set("hops", "2");
+          // Kept WITHOUT the label language, so a language switch re-asks for the same
+          // scope in the new one (`anMindmapRepaint`).
+          _anMM.gp = gp.toString();
+          gp.set("target_lang", uiLangCode());
           // Q512: the Concept view's own payload, fetched beside the graph and keyed on
           // the TYPED term rather than on the corpus's top keyword -- "the ring" means
           // the ring of the word the reader searched, not of whatever happens to be
