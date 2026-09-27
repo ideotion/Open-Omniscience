@@ -49,6 +49,15 @@
     if (window.OOI18N && window.OOI18N.tf) return window.OOI18N.tf(s, v);
     return String(s).replace(/\{(\w+)\}/g, function (m, k) { return (v && v[k] != null) ? String(v[k]) : m; });
   }
+  // "Label: value" through the ONE keyed frame the SPA's ooLabelText uses, so each locale
+  // states its own separator (French puts a space before the colon) instead of an English
+  // ": " welded on (click-through B19, Q9). Markers, so a value holding "{x}" is never
+  // read as a slot.
+  function rdLabelText(label, value) {
+    return TF("{prefix}: {text}", { prefix: "\u0001", text: "\u0002" })
+      .replace("\u0001", function () { return String(label); })
+      .replace("\u0002", function () { return String(value == null ? "" : value); });
+  }
   function uiLang() {
     try {
       return (window.OOI18N && window.OOI18N.current && window.OOI18N.current())
@@ -118,13 +127,13 @@
     if (tier === "verified") hover.push(T("Verified translation (cross-language concept)."));
     else if (tier === "tentative") hover.push(T("AI-generated tentative translation — unreliable, not verified."));
     else if (tier === "untranslated") hover.push(T("Not translated — shown in its own language."));
-    if (shown !== original && original) hover.push(T("Original") + ": " + original);
+    if (shown !== original && original) hover.push(rdLabelText(T("Original"), original));
     var split = countsLine(ml);
     if (split) hover.push(T("Mentions by language:") + " " + split);
-    else if (names) hover.push(T("Language") + ": " + names);
+    else if (names) hover.push(rdLabelText(T("Language"), names));
     var across = countsLine(row.language_breakdown);
     if (across) hover.push(T("Across languages:") + " " + across);
-    if (row.translation_qid) hover.push("Wikidata: " + row.translation_qid);
+    if (row.translation_qid) hover.push(rdLabelText("Wikidata", row.translation_qid));
     return { shown: shown, tag: tag, cls: cls, hover: hover.join(" — ") };
   }
   // `data-i18n-dyn`: the walker must never translate a keyword (a corpus holding the
@@ -254,10 +263,15 @@
       + " · " + num(d.articles) + " " + T(d.articles === 1 ? "article" : "articles")];
     var tr = d.trend || {};
     if (tr.recent || tr.prior) {
-      bits.push(T("trend") + " " + tr.growth + "× (" + tr.window_days + "d " + T("vs") + " " + tr.baseline_days + "d)");
+      // One frame for the whole measurement, the day spans as the keyed unit frame: the
+      // welded "30d vs 90d" kept an English unit in every locale (B19, Q9).
+      bits.push(rdLabelText(T("trend"), TF("{growth}× ({window} vs {baseline})", {
+        growth: fmtNum(tr.growth == null ? null : Number(tr.growth)),
+        window: TF("{n} d", { n: num(tr.window_days) }),
+        baseline: TF("{n} d", { n: num(tr.baseline_days) }) })));
     }
     var co = (d.cooccurrences || []).slice(0, 4).map(function (c) { return c.term; }).filter(Boolean);
-    if (co.length) bits.push(T("with") + ": " + co.join(", "));
+    if (co.length) bits.push(rdLabelText(T("with"), co.join(", ")));
     return bits.join(" · ") + (d.caveat ? " · " + T(d.caveat) : "");
   }
   // THE CACHE HOLDS THE PAYLOAD, NOT THE SENTENCE (K-cache/K-reader). It used to hold the
@@ -505,8 +519,11 @@
   // fabricated 0. Conservative render: a term list + density, NOT an inline highlight over the body
   // (char-offset spans over rendered HTML drift; a highlight surface is a later browser-verified slice).
   function renderSubjectivity(pane, d) {
-    var method = '<p class="r-method">' + esc((d && d.method) || "") + "</p>";
-    var caveat = '<p class="r-caveat">' + esc((d && d.caveat) || "") + "</p>";
+    // The method and the caveat are FIXED sentences (src/analytics/subjectivity.py), keyed
+    // x12: piped through as sent, the caveat -- an informed-consent surface -- read English
+    // in every translated reader (click-through B19, Q9).
+    var method = '<p class="r-method">' + esc(T((d && d.method) || "")) + "</p>";
+    var caveat = '<p class="r-caveat">' + esc(T((d && d.caveat) || "")) + "</p>";
     if (!d || d.available === false) {
       var reason = (d && d.reason) || "not available";
       pane.innerHTML = '<h2 class="r-h2">Loaded language</h2>'

@@ -16,6 +16,10 @@ stop the other — never a silent pile-up.
 
 from __future__ import annotations
 
+import functools
+import json
+from pathlib import Path
+
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
@@ -64,9 +68,12 @@ def _dump_label(wiki: str, kind: str) -> str:
 # `label_i18n` -- the frame, which is the UI locale key -- and `label_vars`, the values,
 # and the task managers (app-core.js `_jobLabel`, taskmanager.html `jobLabel`) write the
 # frame in the UI language. The conventions they share: a number is formatted there; a
-# var named `language` is a language CODE, written as its name in the UI language; any
-# other value is data and shown as given. `label` itself is unchanged: it is the API's
-# answer, the arbitration line (`busy_with`) and what an older page prints.
+# var named `language` is a language CODE, written as its name in the UI language; a var
+# that is itself ``{"i18n": key, "vars": {...}}`` is a keyed phrase, written in the UI
+# language by the same rules (click-through B19: "Large data", a backup phase, "3 volumes");
+# any other value is data and shown as given. `label` itself is unchanged: it is the API's
+# answer, the arbitration line (`busy_with`) and what an older page prints. A job's
+# `detail` line travels the same way (`detail_i18n` / `detail_vars`).
 _DUMP_KIND_FRAMES = {
     "articles dump": "{language} Wikipedia — articles dump",
     "articles dump index": "{language} Wikipedia — articles dump index",
@@ -76,6 +83,23 @@ _DUMP_KIND_FRAMES = {
 def _label_frame(frame: str, **values) -> dict:
     """The ``label_i18n`` / ``label_vars`` pair for a label carrying values."""
     return {"label_i18n": frame, "label_vars": values}
+
+
+def _keyed(key: str, **values) -> dict:
+    """A frame VALUE that is itself a keyed phrase (see the conventions above)."""
+    return {"i18n": key, "vars": values} if values else {"i18n": key}
+
+
+def _count_phrase(n: int, one: str, many: str) -> dict:
+    """A count and its noun as ONE keyed phrase, the frame chosen by the count."""
+    return _keyed(one if n == 1 else many, n=n)
+
+
+def _detail_frame(src: dict) -> dict:
+    """The ``detail_i18n`` / ``detail_vars`` pair a producer published, passed on as is."""
+    if not src.get("detail_i18n"):
+        return {}
+    return {"detail_i18n": src["detail_i18n"], "detail_vars": dict(src.get("detail_vars") or {})}
 
 
 def _dump_label_frame(wiki: str, kind: str) -> dict:
@@ -264,6 +288,7 @@ def _task_jobs() -> list[dict]:
                 "label": t.get("label") or "background task",
                 **frame,
                 "detail": t.get("detail"),
+                **_detail_frame(t),
                 "state": "running",
                 "elapsed_s": t.get("elapsed_s"),
                 "progress": prog,
@@ -335,12 +360,78 @@ def _volume_backup_jobs() -> list[dict]:
             "id": "volume-backup",
             "kind": "volume-backup",
             "label": f"{verb} — {detail}" if detail else verb,
+            **_volume_label_frame(verb, s.get("mode"), phase, vols),
             "state": state,
             "progress": None,
             "error": s.get("error"),
             "actions": [],
         }
     ]
+
+
+# The volume engine's phase CODES, named as the backup dialog names them (app-backup.js
+# `_uxVolPhase`, whose keys these are): the English label prints the code ("parity"), which
+# no locale can match (click-through B19, Q2). A phase the dialog does not name either --
+# the sub-second post-commit housekeeping stages -- is left out of the keyed label rather
+# than shown as a code; the English `label` still carries it.
+_VOLUME_BACKUP_PHASES = {
+    "starting": "Preparing…", "building": "Building encrypted volumes…",
+    "volumes": "Writing encrypted volumes…", "parity": "Writing parity…",
+    "verifying": "Verifying volumes…", "done": "Done.",
+}
+_VOLUME_RESTORE_PHASES = {
+    "verifying": "Verifying volumes…", "reassembling": "Reassembling the archive…",
+    "merging": "Merging (additive)…", "reindexing": "Re-indexing merged articles…",
+    "done": "Done.", "verify": "Verifying the merge…",
+    "snapshot_working_copy": "Snapshotting your corpus…",
+    "pre_restore_snapshot": "Snapshotting your corpus…", "swap": "Committing…",
+}
+
+
+def _volume_label_frame(verb: str, mode, phase: str, vols) -> dict:
+    """The keyed twin of the volume job's label: the verb and the phase as keyed phrases,
+    the volume count as a count with its noun."""
+    table = _VOLUME_BACKUP_PHASES if mode == "backup" else _VOLUME_RESTORE_PHASES
+    named = table.get(phase)
+    values: dict = {"verb": _keyed(verb)}
+    if named:
+        values["phase"] = _keyed(named)
+    if vols:
+        values["volumes"] = _count_phrase(int(vols), "{n} volume", "{n} volumes")
+    shape = tuple(k for k in ("phase", "volumes") if k in values)
+    if not shape:   # the verb alone is a fixed sentence: its own key
+        return _label_frame(verb)
+    frame = {
+        ("phase", "volumes"): "{verb} — {phase}, {volumes}",
+        ("phase",): "{verb} — {phase}",
+        ("volumes",): "{verb} — {volumes}",
+    }[shape]
+    return _label_frame(frame, **values)
+
+
+# The words the Import dialog sends as the label of an item that has no file name of its
+# own (app-backup.js: t("Large data"), t("Newsletters"), t("Corpus backup")). The page
+# sends them in ITS language at the moment of the click, so the queue holds "Données
+# volumineuses" or "Large data" alike, and "Importing {label}" printed that word in
+# whichever language it was queued in (click-through B19, Q1). Recognised here in any of
+# the twelve, it goes out as the KEY and each page writes it in its own; any other label
+# (a file name, an API caller's own words) is data and stays as given.
+_IMPORT_ITEM_WORDS = ("Large data", "Newsletters", "Corpus backup")
+
+
+@functools.lru_cache(maxsize=1)
+def _import_item_word_index() -> dict[str, str]:
+    idx = {k: k for k in _IMPORT_ITEM_WORDS}
+    for f in sorted((Path(__file__).resolve().parents[1] / "static" / "locales").glob("*.json")):
+        try:
+            data = json.loads(f.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        for k in _IMPORT_ITEM_WORDS:
+            v = data.get(k)
+            if isinstance(v, str) and v.strip():
+                idx.setdefault(v, k)
+    return idx
 
 
 def _import_queue_jobs() -> list[dict]:
@@ -377,7 +468,8 @@ def _import_queue_jobs() -> list[dict]:
     tail = str(((s.get("live") or {}).get("progress") or s.get("live") or {}).get("phase") or "")
     # The item's own label comes from the import queue (src/backup/import_queue.py) and is
     # data here: the frame carries it as a value.
-    frame = _label_frame("Importing {label}", label=label) if label else {}
+    word = _import_item_word_index().get(label)
+    frame = _label_frame("Importing {label}", label=_keyed(word) if word else label) if label else {}
     if label:
         job_label = f"Importing {label}"
     elif tail:
@@ -689,6 +781,7 @@ def _background_jobs() -> list[dict]:
                 "state": state,
                 "progress": s.get("progress"),
                 "detail": s.get("detail"),
+                **_detail_frame(s),
                 "error": s.get("error"),
                 "actions": actions,
             }

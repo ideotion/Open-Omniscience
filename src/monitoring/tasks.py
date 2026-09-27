@@ -16,8 +16,10 @@ an optional detail, an optional done/total it chooses to publish) — never a
 fabricated percentage or ETA. A label that carries a value ("Summarizing “{title}”")
 may also be given as its FRAME and values (``label_i18n`` / ``label_vars``), which the
 task managers write in the UI language; ``label`` stays the English sentence
-(click-through B17, T11). Kinds group the rows in the UI (``llm`` /
-``analytics`` / ``index`` …); the scrape/download jobs keep their own owners
+(click-through B17, T11). The ``detail`` line may travel the same way
+(``detail_i18n`` / ``detail_vars``: "model {model}", click-through B19, Q5). Kinds
+group the rows in the UI (``llm`` / ``analytics`` / ``index`` …); the
+scrape/download jobs keep their own owners
 (``/api/jobs`` aggregates both).
 """
 
@@ -46,6 +48,8 @@ def register(
     total: int | None = None,
     label_i18n: str | None = None,
     label_vars: dict | None = None,
+    detail_i18n: str | None = None,
+    detail_vars: dict | None = None,
 ) -> int:
     """Register a running background task; returns a token to update/finish it."""
     tok = next(_SEQ)
@@ -58,6 +62,8 @@ def register(
             "label_i18n": label_i18n,
             "label_vars": dict(label_vars) if label_vars else None,
             "detail": detail,
+            "detail_i18n": detail_i18n,
+            "detail_vars": dict(detail_vars) if detail_vars else None,
             "total": total,
             "done": 0,
             "started_at": now,
@@ -72,6 +78,8 @@ def update(
     detail: str | None = None,
     done: int | None = None,
     total: int | None = None,
+    detail_i18n: str | None = None,
+    detail_vars: dict | None = None,
 ) -> None:
     """Publish real progress the owner chose to report (never a fabricated %)."""
     with _LOCK:
@@ -80,6 +88,10 @@ def update(
             return
         if detail is not None:
             t["detail"] = detail
+            # A new detail replaces its frame too: a frame left from the previous detail
+            # would write the OLD sentence in every language but English.
+            t["detail_i18n"] = detail_i18n
+            t["detail_vars"] = dict(detail_vars) if detail_vars else None
         if done is not None:
             t["done"] = done
         if total is not None:
@@ -102,11 +114,14 @@ def track(
     total: int | None = None,
     label_i18n: str | None = None,
     label_vars: dict | None = None,
+    detail_i18n: str | None = None,
+    detail_vars: dict | None = None,
 ) -> Iterator[int]:
     """Context manager: the task is visible for the duration of the ``with`` block
     and always removed on exit (success or error)."""
     tok = register(
-        kind, label, detail=detail, total=total, label_i18n=label_i18n, label_vars=label_vars
+        kind, label, detail=detail, total=total, label_i18n=label_i18n, label_vars=label_vars,
+        detail_i18n=detail_i18n, detail_vars=detail_vars,
     )
     try:
         yield tok

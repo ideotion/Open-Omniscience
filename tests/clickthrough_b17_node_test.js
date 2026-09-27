@@ -524,8 +524,9 @@ async function run() {
     const I = i18n(lang);
     const out = {textContent: ""};
     const els = {"qualify-bulk-status": out, "qualify-bulk-cancel-btn": {style: {}}};
+    // B19 (Q12): the progress line and the ending reason go through _framedText/_jobLabel.
     const src = [FMTNUM, extract("_qualTf", null, AI), extract("_qualDeclinedText", null, AI),
-      extract("_jobStillRunning", null, CORE),
+      extract("_jobStillRunning", null, CORE), extract("_jobLabel", null, CORE), extract("_framedText", null, CORE),
       extract("qualifyBulkStart", "async function qualifyBulkStart(", AI), "return qualifyBulkStart;"].join("\n");
     // eslint-disable-next-line no-new-func
     const fn = new Function("window", "OOI18N", "$", "api", "ensureOnline", "pollJobStatus", "loadQualifyBulk", src)(

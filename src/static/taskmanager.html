@@ -267,15 +267,30 @@
     if (s < 5400) return "~" + tf("{n} min", { n: fmtNum(Math.round(s / 60), 0) });
     return "~" + tf("{n} h", { n: fmtNum(s / 3600, 1) });
   }
+  // A relative time as the locale writes it (click-through B19, Q3): the span is a keyed
+  // unit frame, the direction a keyed frame around it ("in {t}", "{t} ago"), so neither
+  // the English "in"/"ago" nor a welded "7m" reaches another language.
   function fmtRel(iso) {
     if (!iso) return "—";
     var d = new Date(iso), s = Math.round((Date.now() - d.getTime()) / 1000);
     if (isNaN(s)) return "—";
     var fut = s < 0; s = Math.abs(s);
-    var v = s < 60 ? s + "s" : s < 3600 ? Math.round(s / 60) + "m" : Math.round(s / 3600) + "h";
-    return fut ? "in " + v : v + " ago";
+    var v = s < 60 ? tf("{n} s", { n: fmtNum(s, 0) })
+      : s < 3600 ? tf("{n} min", { n: fmtNum(Math.round(s / 60), 0) })
+      : tf("{n} h", { n: fmtNum(Math.round(s / 3600), 0) });
+    return fut ? tf("in {t}", { t: v }) : tf("{t} ago", { t: v });
   }
-  function fmtLocal(iso) { try { return new Date(iso).toLocaleString(); } catch (e) { return iso || ""; } }
+  // The exact moment in the APP's language, as the SPA's fmtDateTime (app-shell.js) writes
+  // it -- the browser's own locale is not the language the operator chose (B19, Q3).
+  function fmtLocal(iso) {
+    var d = new Date(iso);
+    if (isNaN(d.getTime())) return iso || "";
+    try {
+      var lang = (window.OOI18N && OOI18N.current) ? OOI18N.current() : undefined;
+      return new Intl.DateTimeFormat(lang,
+        { year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(d);
+    } catch (e) { return d.toLocaleString(); }
+  }
 
   async function api(path, opts) {
     var res = await fetch(path, Object.assign({ headers: { "Content-Type": "application/json" } }, opts || {}));
@@ -341,7 +356,8 @@
   // here exactly as the in-app window's _jobLabel writes it (click-through B17, T11): a
   // number through fmtNum, `language` (a CODE) as the name in the UI language, anything
   // else as data in an isolate. A fixed label is still a key: t(). A language this page
-  // cannot name keeps the server's English sentence whole.
+  // cannot name keeps the server's English sentence whole. A value that is itself
+  // {i18n, vars} is a keyed phrase, written by these same rules (click-through B19).
   function jobLabel(j) {
     if (!j.label_i18n) return t(j.label || "");
     var vars = j.label_vars || {}, out = {};
@@ -349,6 +365,8 @@
       if (!Object.prototype.hasOwnProperty.call(vars, k)) continue;
       var x = vars[k];
       if (typeof x === "number") out[k] = fmtNum(x, 0);
+      else if (x && typeof x === "object" && x.i18n)
+        out[k] = jobLabel({ label: x.i18n, label_i18n: x.i18n, label_vars: x.vars || {} });
       else if (k === "language") {
         var name = langName(x);
         if (!name) return t(j.label || "");
@@ -356,6 +374,15 @@
       } else out[k] = "\u2068" + String(x == null ? "" : x) + "\u2069";
     }
     return tf(j.label_i18n, out);
+  }
+
+  // A job's detail line ("model {model}") arrives with its keyed frame beside the English
+  // (`detail_i18n` / `detail_vars`) and is written by jobLabel's rules; a fixed line is
+  // still a key (click-through B19, Q5).
+  function jobDetail(j) {
+    return j.detail_i18n
+      ? jobLabel({ label: j.detail, label_i18n: j.detail_i18n, label_vars: j.detail_vars || {} })
+      : t(j.detail || "");
   }
 
   // WHY a download is not moving (S04-08's S5, Q1014): who paused it, or the failure
@@ -393,7 +420,7 @@
       prog = '<div class="cap-bar" role="progressbar" aria-valuenow="' + pct + '" aria-valuemin="0" aria-valuemax="100"><i style="width:' + pct + '%"></i></div>' +
              '<div class="muted" style="font-size:11px">' + unit + " · " + pct + '%</div>';
     } else if (j.elapsed_s != null) {
-      prog = '<div class="muted" style="font-size:11px">' + esc(t("running for")) + " " + fmtDur(j.elapsed_s) + "</div>";
+      prog = '<div class="muted" style="font-size:11px">' + esc(tf("running for {t}", { t: fmtDur(j.elapsed_s) })) + "</div>";
     }
     var acts = [];
     if (j.id === "collect:current")
@@ -425,7 +452,7 @@
     // A fixed job label is keyed x12; one carrying a value arrives as a frame (jobLabel).
     return '<div class="job"><span class="pill ' + pill + '">' + esc(t(j.state)) + '</span><span class="label">' + esc(jobLabel(j)) + "</span>" + qpos +
            '<span class="acts">' + acts.join("") + "</span>" +
-           (j.detail ? '<div class="detail">' + esc(j.detail) + "</div>" : "") +
+           (j.detail ? '<div class="detail">' + esc(jobDetail(j)) + "</div>" : "") +
            '<div style="flex-basis:100%">' + prog + jobWhy(j) + "</div></div>";
   }
 
@@ -587,17 +614,20 @@
     _push(_perf.net, netRate);
     return { diskRate: diskRate, netRate: netRate };
   }
+  // A count and its noun as ONE keyed frame chosen by the count (click-through B19, Q6).
+  function nounCount(n, one, many) { return tf(Number(n) === 1 ? one : many, { n: fmtNum(Number(n), 0) }); }
   function renderPerformance(v, rates) {
     var p = (v && v.process) || {}, sc = (v && v.scraping) || {};
     var cur = _perf.cpu.length ? _perf.cpu[_perf.cpu.length - 1] : null;
     var grid = '<div class="perf-grid">' +
-      perfCard(t("CPU"), (p.cpu_percent == null ? "—" : p.cpu_percent + "%"),
-               (p.cpu_cores ? p.cpu_cores + " " + t("cores") : "") + (p.num_threads != null ? " · " + p.num_threads + " " + t("threads") : ""),
+      perfCard(t("CPU"), (p.cpu_percent == null ? "—" : fmtNum(p.cpu_percent, 1) + "%"),
+               (p.cpu_cores ? nounCount(p.cpu_cores, "{n} core", "{n} cores") : "")
+                 + (p.num_threads != null ? (p.cpu_cores ? " · " : "") + nounCount(p.num_threads, "{n} thread", "{n} threads") : ""),
                _perf.cpu, { max: 100, color: "var(--accent, #4a9eff)", label: t("CPU") }) +
       perfCard(t("Memory"), fmtBytes(p.rss_bytes),
                t("resident set size"), _perf.memPct, { max: _memMax, color: "var(--ok, #2ecc71)", label: t("Memory") }) +
       perfCard(t("Network ↓"), fmtRate(rates && rates.netRate),
-               t("this app’s own fetches") + " · " + esc(fmtBytes(sc.bytes_total)) + " · " + (sc.fetches_total || 0) + "×",
+               t("this app’s own fetches") + " · " + fmtBytes(sc.bytes_total) + " · " + fmtNum(sc.fetches_total || 0, 0) + "×",
                _perf.net, { color: "var(--warn, #d9a441)", label: t("Network ↓") }) +
       perfCard(t("Disk I/O"), fmtRate(rates && rates.diskRate),
                t("read + write"), _perf.disk, { color: "#b07be0", label: t("Disk I/O") }) +
@@ -649,10 +679,10 @@
     }
     $("tm-summary").innerHTML =
       '<span class="tm-state ' + stateCls + '"><span class="tm-dot"></span>' + esc(stateTxt) + "</span>" +
-      metric(t("CPU"), p.cpu_percent == null ? "—" : p.cpu_percent + "%") +
+      metric(t("CPU"), p.cpu_percent == null ? "—" : fmtNum(p.cpu_percent, 1) + "%") +
       metric(t("Memory"), fmtBytes(p.rss_bytes)) +
       metric(t("Network ↓"), fmtRate(rates && rates.netRate)) +
-      metric(t("active"), String(nJobs));
+      metric(t("active"), fmtNum(nJobs, 0));
   }
   // The tab row sticks right under the strip (the .tm-tabs rule reads --tm-sum-h). The
   // strip's height is not a constant -- it wraps at phone width and when a language's

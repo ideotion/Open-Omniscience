@@ -1060,7 +1060,9 @@ def test_ai_pill_is_backend_agnostic_no_count_and_offers_start_or_install():
     (vLLM first) before falling back to the install/Settings path -- never a
     silent re-check only."""
     app = app_js()
-    assert 'el.textContent = "AI"' in app, (
+    # Written through t() since click-through B19 (Q7): the pill carries data-i18n-dyn, so
+    # it translates its own one word -- still one constant word, never a count.
+    assert 'el.textContent = t("AI")' in app, (
         "the AI pill must read just 'AI' (no model count, maintainer 2026-07-24)"
     )
     assert "`${h.installed_models.length} LLM`" not in app and "LLM offline" not in app, (
@@ -2431,7 +2433,9 @@ def test_ui_invariants():
     assert ".activity.paused { color:var(--muted)" not in html, (
         "the paused chip must NOT use the reverted muted color (CLAUDE.md Item V)"
     )
-    assert 'T("Collecting paused") + "…"' in html, (
+    # ONE keyed string since click-through B19 (Q10): the "…" welded on after the
+    # translation was an English glyph a locale could not place or drop.
+    assert 'T("Collecting paused…")' in html, (
         "the paused label must read 'Collecting paused…' (CLAUDE.md Item V)"
     )
     assert "s.online !== _netOnline" in html, (

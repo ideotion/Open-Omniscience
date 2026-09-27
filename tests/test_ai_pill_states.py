@@ -235,7 +235,7 @@ def test_the_label_never_changes_so_the_footprint_never_moves() -> None:
     """Invariant #3: the top bar's chips keep a constant footprint, so nothing to their
     right shifts. Every branch of the painter writes the same constant label."""
     body = _js_function("_paintAiPill")
-    assert body.count('el.textContent = "AI"') == 1, (
+    assert body.count('el.textContent = t("AI")') == 1, (
         "the label must be set once, unconditionally -- a per-state label is a per-state "
         "width"
     )

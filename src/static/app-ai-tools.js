@@ -400,9 +400,16 @@
         // The counts the operator needs BEFORE pressing anything, each answering one
         // question: what the file holds, what this install already took from it, and what
         // adopting now would change. Kept apart -- a single total answers none of them.
+        // Each shipped count is ONE keyed frame chosen by the count, as the bulk run's
+        // own tally writes it: "{n} qualified" read "1 qualifiées" in French, a plural
+        // adjective on a single verdict (click-through B19, Q11).
+        const pair = (x, one, many) => {
+          const n = Number(x) || 0;
+          return tf(n === 1 ? one : many, {n: fmtNum(n, 0)});
+        };
         const head = `<div>${esc(tf("{n} verdicts ship with this install", {n: d.in_overlay}))}`
-          + ` (${esc(tf("{n} qualified", {n: d.shipped_qualified}))}`
-          + `, ${esc(tf("{n} disqualified", {n: d.shipped_disqualified}))})${since}</div>`
+          + ` (${esc(pair(d.shipped_qualified, "{n} source qualified", "{n} sources qualified"))}`
+          + `, ${esc(pair(d.shipped_disqualified, "{n} source disqualified", "{n} sources disqualified"))})${since}</div>`
           + `<div>${esc(tf("{n} of them are in force here", {n: d.adopted_here}))}`
           + ` · ${esc(tf("{n} can be put back", {n: d.revertible}))}</div>`;
         const dec = d.declined || {};
@@ -628,7 +635,9 @@
           onProgress: (s) => {
             if (!s) return;
             const p = s.progress ? ` ${fmtNum(s.done, 0)}/${fmtNum(s.total, 0)}` : "";
-            say((s.detail || t("Working…")) + p);
+            // The job's line arrives with its keyed frame (detail_i18n / detail_vars), so
+            // it is written in the UI language, not piped through in English (B19, Q12).
+            say((s.detail ? _framedText(s.detail, s.detail_i18n, s.detail_vars, t) : t("Working…")) + p);
           },
         });
         if (st && st.state === "error") {
@@ -653,7 +662,8 @@
           say(tally(r.qualified, "{n} source qualified", "{n} sources qualified") + " · "
             + tally(r.disqualified, "{n} source disqualified", "{n} sources disqualified") + " · "
             + tally(r.no_evidence, "{n} source with no evidence yet", "{n} sources with no evidence yet")
-            + (r.paused_reason ? ` — ${r.paused_reason}` : ""));
+            + (r.paused_reason
+              ? " — " + _framedText(r.paused_reason, r.paused_reason_i18n, r.paused_reason_vars, t) : ""));
         }
       } catch (e) {
         say(t("Qualification failed — see console"));
@@ -895,7 +905,10 @@
       if (!el) return;
       el.style.cursor = "pointer";
       el.onclick = aiPillClick;
-      el.textContent = "AI";      // constant footprint, never a count
+      // Constant footprint, never a count. The pill carries `data-i18n-dyn` (its hover is
+      // state-driven, and the walker reverted it to the markup's "AI status"), so it
+      // writes its own word through t() (click-through B19, Q7).
+      el.textContent = t("AI");
 
       // STARTING outranks the last health reading on purpose: we know we just asked
       // for a start, which makes any earlier "offline" reading stale by definition.
@@ -910,8 +923,13 @@
       if (h && h.available) {
         if (_aiBusy()) {
           el.className = "pill ok ai-busy";
-          el.title = (_aiBusyLabel ? _aiBusyLabel + " — " : "")
-            + t("AI is working right now");
+          // The label is written HERE, at paint time, from the keyed twin the server
+          // sends beside it (the task-manager rows' own label_i18n / label_vars), so a
+          // language switch rewrites it with no request. A model name is data.
+          const busy = !_aiBusyLabel ? ""
+            : (_aiBusyLabel.data != null ? _aiBusyLabel.data
+              : (typeof _jobLabel === "function" ? _jobLabel(_aiBusyLabel, t) : t(_aiBusyLabel.label)));
+          el.title = (busy ? busy + " — " : "") + t("AI is working right now");
         } else {
           el.className = "pill ok";
           el.title = t("AI — click to open AI settings");
@@ -984,7 +1002,9 @@
           // MODEL is still a real fact worth putting in the title, and the counter
           // alone carries no words. Both come from the same payload — this composes
           // what is there, it does not invent a label when there is none.
-          _aiBusyLabel = (a && (a.label || (a.models || [])[0])) || null;
+          _aiBusyLabel = (a && a.label)
+            ? { label: a.label, label_i18n: a.label_i18n || null, label_vars: a.label_vars || null }
+            : ((a && (a.models || [])[0]) ? { data: String(a.models[0]) } : null);
           if (was !== _aiBusyServer) _paintAiPill();
           else if (_aiBusyServer) _paintAiPill();   // the label may have moved on
         } catch (e) { /* transient -- keep the last known state, never invent one */ }
@@ -998,6 +1018,9 @@
       if (!el) return;
       try { _aiHealth = await api("/api/llm/health"); }
       catch (e) { _aiHealth = null; }    // null = the probe failed, never a fake "fine"
+      // The pill writes its own words now (data-i18n-dyn): at boot this read can beat the
+      // locale fetch, so it paints once the locale is in (OOI18N.ready), never in English.
+      try { await (window.OOI18N && OOI18N.ready); } catch (e) { /* English fallback */ }
       _paintAiPill();
       _ensureAiActivityPoll();           // only polls while a backend is actually up
     }

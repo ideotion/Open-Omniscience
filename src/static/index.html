@@ -126,7 +126,7 @@
         <div class="status-cluster" id="statusCluster">
           <span id="activity" class="activity" hidden role="status" aria-live="polite" title="Activity &amp; vitals — click to open the task manager" tabindex="0" style="cursor:pointer" onclick="openTaskManager()" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openTaskManager();}"><span class="spin" aria-hidden="true"></span><span id="activity-label">Working…</span><span id="activity-host" class="act-host"></span></span>
           <span id="health" title="Backend status"><span class="dot"></span> checking…</span>
-          <span id="llm" class="pill" title="AI status">AI</span>
+          <span id="llm" class="pill" title="AI status" data-i18n-dyn>AI</span>
         </div>
         <button class="icon-btn" id="tm-open" onclick="openTaskManager()" title="Tasks &amp; system" aria-label="Open the task manager (new tab)">
           <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12h4l2-6 4 13 2-7h6"/></svg></button>

@@ -589,7 +589,7 @@
         el.classList.toggle("paused", paused);
         const TF = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
           : ((s2, v) => String(s2).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? String(v[k]) : m));
-        $("activity-label").textContent = paused ? T("Collecting paused") + "…"
+        $("activity-label").textContent = paused ? T("Collecting paused…")
           : _bgProgress ? TF("Collecting {done}/{total}…",
               {done: fmtNum(_bgProgress.done, 0), total: fmtNum(_bgProgress.total, 0)})
           : _bg;
@@ -1951,7 +1951,10 @@
       const t9 = (window.OOI18N && window.OOI18N.t) ? window.OOI18N.t : (x => x);
       const tf = (window.OOI18N && window.OOI18N.tf)
         ? window.OOI18N.tf : ((x, v) => x.replace(/\{(\w+)\}/g, (_, k) => v[k]));
-      const dur = (sec) => (window.ooTimeline ? window.ooTimeline.fmtDur(sec) : (sec == null ? "—" : String(Math.round(sec)) + " s"));
+      // Each unit is its keyed frame ("{n} h", "{n} min" …), never a welded "7 m"
+      // (click-through B19, Q8).
+      const dur = (sec) => (window.ooTimeline ? window.ooTimeline.fmtDur(sec, tf)
+        : (sec == null ? "—" : tf("{n} s", { n: fmtNum(Math.round(sec), 0) })));
       const row = (k, val, title) =>
         `<div class="vr"><span>${esc(k)}</span><b${title ? ` title="${esc(title)}"` : ""}>${esc(val)}</b></div>`;
       const rows = [];
@@ -2116,7 +2119,9 @@
     // the UI language; anything else is data, held in an isolate so a Latin title or path
     // stays one run inside a right-to-left sentence. A fixed label is still a key: t().
     // A language CLDR cannot name (it hands the code back: "simple") keeps the server's
-    // English sentence whole rather than print the code where a name belongs.
+    // English sentence whole rather than print the code where a name belongs. A value that
+    // is itself {i18n, vars} is a keyed phrase ("Large data", a backup phase, "3 volumes")
+    // and is written in the UI language by these same rules (click-through B19).
     function _jobLabel(j, t) {
       if (!j.label_i18n) return t(j.label || "");
       const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
@@ -2125,6 +2130,8 @@
       for (const k of Object.keys(vars)) {
         const x = vars[k];
         if (typeof x === "number") out[k] = fmtNum(x, 0);
+        else if (x && typeof x === "object" && x.i18n)
+          out[k] = _jobLabel({ label: x.i18n, label_i18n: x.i18n, label_vars: x.vars || {} }, t);
         else if (k === "language") {
           const code = String(x == null ? "" : x);
           // A code with a subtag ("be-tarask", "zh-min-nan") is its own edition, and
@@ -2139,6 +2146,14 @@
       }
       return tf(j.label_i18n, out);
     }
+    // A LINE that travels as English text plus its keyed frame -- a job's `detail` beside
+    // `detail_i18n` / `detail_vars`, a result's `paused_reason` beside its `_i18n` twin
+    // (src/jobs/background.py Framed) -- written by _jobLabel's rules. With no frame the
+    // English line is data and is shown as given (click-through B19, Q12).
+    function _framedText(text, frame, vars, t) {
+      if (!frame) return String(text == null ? "" : text);
+      return _jobLabel({ label: text, label_i18n: frame, label_vars: vars || {} }, t);
+    }
 
     function _jobRow(j, queuedKeysByKind, t) {
         const pill = j.state === "running" ? "ok" : (j.state === "failed" ? "err" : "warn");
@@ -2148,11 +2163,13 @@
           // EVERY progress was formatted as BYTES, but four producers publish counts
           // (items/stages/files/articles) -- so a re-index of 700,000 articles read
           // "700 kB / 1.4 MB" and a one-item import read "1 B / 1 B". The unit was
-          // already travelling with the numbers; nothing read it.
-          const unit = j.progress.unit || "bytes";
+          // already travelling with the numbers; nothing read it. A progress with NO unit
+          // is a plain count: every producer names bytes when it means bytes, so reading
+          // an unnamed number as bytes put "3 B / 12 B" on a count (click-through B19, Q12).
+          const unit = j.progress.unit || "";
           const amount = unit === "bytes"
             ? `${_fmtBytes(j.progress.done)} / ${_fmtBytes(j.progress.total)}`
-            : `${fmtNum(j.progress.done, 0)} / ${fmtNum(j.progress.total, 0)} ${esc(t(unit))}`;
+            : `${fmtNum(j.progress.done, 0)} / ${fmtNum(j.progress.total, 0)}` + (unit ? ` ${esc(t(unit))}` : "");
           prog = `<div class="cap-bar" role="progressbar" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100"><i style="width:${pct}%"></i></div>` +
                  `<div class="muted" style="font-size:11px">${amount}${_rateNote(j, t)} · ${pct}%</div>`;
         }

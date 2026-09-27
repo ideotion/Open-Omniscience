@@ -391,12 +391,18 @@ test("a byte job still renders bytes", () => {
   assert(/1(\.0)? MB \/ 4(\.0)? MB/.test(row.replace(/[\u2068\u2069]/g, "").replace(/\u00a0/g, " ")), `bytes must keep their formatter (got ${row})`);
 });
 
-test("a job with no unit at all is treated as bytes (the historic default)", () => {
+// CHANGED in click-through B19 (Q12). This test pinned "no unit = bytes" as the historic
+// default. Since B17 every producer in src/api/jobs.py and src/jobs/background.py names
+// its unit -- bytes included -- so the only rows that still reach this branch carry a
+// number nobody named, and reading it as bytes is what drew "3 B / 12 B" on a count. A
+// count that claims nothing is the honest default; the byte case above keeps its unit.
+test("a job with no unit at all is a plain count, never bytes", () => {
   const row = mod._jobRow(
     { id: "x", kind: "dump", label: "x", state: "running",
-      progress: { done: 1048576, total: 4194304, percent: 25.0 }, actions: [] },
+      progress: { done: 3, total: 12, percent: 25.0 }, actions: [] },
     {}, (s) => s);
-  assert(row.indexOf("MB") !== -1, "an absent unit must not change what already shipped");
+  assert(row.indexOf("3 / 12") !== -1, `an unnamed number is shown as the count it is (got ${row})`);
+  assert(!/\bB\b|KB|MB/.test(row.replace(/[⁨⁩]/g, "")), `no byte unit is invented (got ${row})`);
 });
 
 console.log(`\n${passed} passed`);

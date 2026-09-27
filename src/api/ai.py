@@ -160,6 +160,7 @@ def extract_keywords(
         "analytics", f"Extracting AI keywords · {len(work)} article(s)",
         detail=f"model {model}", total=len(work),
         label_i18n="Extracting AI keywords · {n} article(s)", label_vars={"n": len(work)},
+        detail_i18n="model {model}", detail_vars={"model": model},
     )
 
     def _stream():
@@ -432,6 +433,7 @@ def run_custom_prompt(
         "analytics", f"AI: {label} · {len(work)} article(s)",
         detail=f"model {model}", total=len(work),
         label_i18n="AI: {label} · {n} article(s)", label_vars={"label": label, "n": len(work)},
+        detail_i18n="model {model}", detail_vars={"model": model},
     )
 
     def _stream():
@@ -619,7 +621,10 @@ def _langdetect_worker(
     consecutive_failures = 0
     with session_scope() as session:
         estimate_total = _langdetect_candidate_count(session)
-    ctx.set_progress(done=0, total=estimate_total, detail=f"model {mdl}")
+    from src.jobs.background import Framed
+
+    # The English line, plus its keyed frame for the task managers (click-through B19, Q5).
+    ctx.set_progress(done=0, total=estimate_total, detail=Framed(f"model {mdl}", "model {model}", model=mdl))
 
     while True:
         if ctx.stopping:
