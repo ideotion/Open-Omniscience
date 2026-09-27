@@ -223,6 +223,7 @@
   "no rising concepts to attribute for this period": "इस अवधि के लिए आरोपित करने योग्य कोई उभरती अवधारणा नहीं",
   "the period's concepts resolved to no plain keywords": "इस अवधि की अवधारणाएँ किसी सामान्य मुख्य शब्द से मेल नहीं खाईं",
   "none of the period's concepts resolved to a stored keyword": "इस अवधि की कोई भी अवधारणा किसी संचित मुख्य शब्द से मेल नहीं खाई",
+  "the period spans {days} days; past {max} the 'same days in earlier years' lens stops being a lens — it becomes the whole of an earlier year, which the corpus already shows elsewhere": "अवधि {days} दिनों की है; {max} के बाद 'पिछले वर्षों के यही दिन' वाला लेंस लेंस नहीं रहता — यह पिछले वर्ष का पूरा साल बन जाता है, जिसे कोष पहले से कहीं और दिखाता है",
 
   "{shown} of {total} sections": "{total} खंडों में से {shown}",
   "{shown} of {total} stories": "{total} कहानियों में से {shown}",

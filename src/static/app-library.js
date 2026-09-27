@@ -217,6 +217,23 @@
     // fetched", the Advanced-tab precedent). Each view loads once per session.
     let _libViewTabs = null, _libView = "overview";
     const _libViewLoaded = new Set();
+    // The two GRAPH views read their payloads through `_libGet`, whose cache lives as long
+    // as the view stays open: a repaint (the language switch in app-boot.js) redraws the
+    // tiles from what they were drawn from, and REOPENING the view -- selecting it again
+    // after another one -- drops that view's payloads and fetches fresh ones, the one
+    // exception to "loads once per session" above. Before, the repaint re-ran every tile's
+    // request behind a "Loading…" flash, while a reopen showed the first numbers for the
+    // rest of the session (click-through B16, V11).
+    const _LIB_REFRESH_ON_REOPEN = new Set(["activity", "tracked"]);
+    const _libFetched = new Map();   // request URL -> payload, for as long as its view is open
+    function _libViewOfUrl(url) { return /[?&]metric=(wiki|law)_/.test(url) ? "tracked" : "activity"; }
+    function _libGet(url) {
+      if (_libFetched.has(url)) return Promise.resolve(_libFetched.get(url));
+      return api(url).then((d) => { _libFetched.set(url, d); return d; });
+    }
+    function _libForgetView(view) {
+      for (const url of [..._libFetched.keys()]) if (_libViewOfUrl(url) === view) _libFetched.delete(url);
+    }
     const _LIB_VIEW_LOADERS = {
       overview: () => { renderLibraryOverview(); },
       activity: () => { renderLibraryActivityGraphs(); },
@@ -227,12 +244,14 @@
     };
     function selectLibraryView(key) {
       if (!_LIB_VIEW_LOADERS[key]) key = "overview";
+      const reopened = key !== _libView && _libViewLoaded.has(key) && _LIB_REFRESH_ON_REOPEN.has(key);
       _libView = key;
       document.querySelectorAll("#tab-library .lib-view").forEach(el => {
         el.style.display = (el.id === "lib-view-" + key) ? "" : "none";
       });
-      if (!_libViewLoaded.has(key)) {
+      if (!_libViewLoaded.has(key) || reopened) {
         _libViewLoaded.add(key);
+        _libForgetView(key);
         try { _LIB_VIEW_LOADERS[key](); }
         catch (e) { _libViewLoaded.delete(key); }   // a failed load must be retryable
       }
@@ -391,7 +410,7 @@
       const label = t(LIB_METRIC_LABEL_KEYS[metric] || metric);
       let d;
       try {
-        d = await api(`/api/library/history?metric=${encodeURIComponent(metric)}&days=${cur}`);
+        d = await _libGet(`/api/library/history?metric=${encodeURIComponent(metric)}&days=${cur}`);
       } catch (e) {
         return `<div id="lib-tile-${esc(metric)}" style="flex:1;min-width:180px;padding:6px;border:1px solid var(--border);border-radius:8px">
           <b style="font-size:12.5px">${esc(label)}</b>
@@ -498,7 +517,7 @@
       try {
         const all = await Promise.all(
           LIB_QUAL_METRICS.concat([LIB_QUAL_SPLIT_METRIC]).map(m =>
-            api(`/api/library/history?metric=${encodeURIComponent(m)}&days=${cur}`)));
+            _libGet(`/api/library/history?metric=${encodeURIComponent(m)}&days=${cur}`)));
         payloads = all.slice(0, LIB_QUAL_METRICS.length);
         splitPayload = all[all.length - 1];
       } catch (e) {
@@ -640,7 +659,7 @@
       const label = t("Growth by language");
       let d;
       try {
-        d = await api(`/api/library/languages?days=${cur}&top_n=${LIB_LANG_TOP_N}`);
+        d = await _libGet(`/api/library/languages?days=${cur}&top_n=${LIB_LANG_TOP_N}`);
       } catch (e) {
         return `<div id="lib-tile-__lang" style="flex:1 1 100%;padding:6px;border:1px solid var(--border);border-radius:8px">
           <b style="font-size:12.5px">${esc(label)}</b>

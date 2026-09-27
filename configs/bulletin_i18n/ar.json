@@ -223,6 +223,7 @@
   "no rising concepts to attribute for this period": "لا مفاهيم صاعدة يمكن نسبها إلى هذه الفترة",
   "the period's concepts resolved to no plain keywords": "لم تُطابق مفاهيم الفترة أي كلمة مفتاحية بسيطة",
   "none of the period's concepts resolved to a stored keyword": "لم يُطابق أي من مفاهيم الفترة كلمة مفتاحية مخزنة",
+  "the period spans {days} days; past {max} the 'same days in earlier years' lens stops being a lens — it becomes the whole of an earlier year, which the corpus already shows elsewhere": "تمتد الفترة على {days} يومًا؛ وبعد {max} لا تعود عدسة «الأيام نفسها في السنوات السابقة» عدسةً — بل تصبح سنة سابقة كاملة، وهو ما تعرضه المجموعة في مكان آخر بالفعل",
 
   "{shown} of {total} sections": "{shown} من {total} قسمًا",
   "{shown} of {total} stories": "{shown} من {total} قصة",

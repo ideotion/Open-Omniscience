@@ -373,6 +373,10 @@
     }
 
     function _bulRender(v) {
+      // One style for the Review's two checkbox rows, sections and stories, so they cannot
+      // come to disagree: the box keeps its natural size beside a label that wraps itself.
+      const _BUL_CHECK_ROW = "gap:8px;align-items:baseline;flex-wrap:nowrap";
+      const _BUL_CHECK_BOX = "width:auto;flex:none;margin:0;padding:0";
       const box = $("bulletin-review");
       const state = v.state === "published"
         ? `<span class="pill">${esc(_bulT("published"))}</span>`
@@ -389,15 +393,20 @@
         // data where it carries a number; `_bulT` returns the latter unchanged.
         const why = s.error
           ? ` <span class="warn">${esc(_bulT("failed:"))} ${esc(s.error)}</span>`
-          : (s.skipped ? ` <span class="muted">${esc(_bulTf("skipped: {reason}", {reason: _bulT(s.skipped)}))}</span>` : "");
+          : (s.skipped ? ` <span class="muted">${esc(_bulTf("skipped: {reason}", {reason: s.skipped_i18n
+              // A reason carrying a number is a FRAME plus its values (click-through B16, V5).
+              ? _bulTf(s.skipped_i18n, s.skipped_vars || {}) : _bulT(s.skipped)}))}</span>` : "");
         // The heading the DOCUMENT prints for this section (render.py `_section_heading`:
         // the slug humanised and capitalised), through the same keys -- the raw slug
         // ("rising concepts") was the one English word left in a translated review.
         const slug = String(s.section).replace(/_/g, " ");
         const heading = _bulT(slug.charAt(0).toUpperCase() + slug.slice(1));
-        return `<label class="row" style="gap:8px;align-items:baseline">
-          <input type="checkbox" ${off ? "" : "checked"} onchange="bulletinToggleSection(${esc(JSON.stringify(s.section))})">
-          <span><strong>${esc(heading)}</strong>
+        // The checkbox sits INLINE with its label (click-through B16, V6): app.css gives
+        // every input `width:100%`, so inside this wrapping flex row the box took a line of
+        // its own and pushed the section name under it.
+        return `<label class="row" style="${_BUL_CHECK_ROW}">
+          <input type="checkbox" style="${_BUL_CHECK_BOX}" ${off ? "" : "checked"} onchange="bulletinToggleSection(${esc(JSON.stringify(s.section))})">
+          <span style="flex:1;min-width:0"><strong>${esc(heading)}</strong>
             <span class="muted">${esc(_bulTf("{n} row(s)", {n: s.rows}))}</span>${win}${why}</span></label>`;
       }).join("");
 
@@ -413,9 +422,9 @@
           ? `<div class="warn">${esc(_bulT("AI-derived — unreliable"))}${s.partial ? esc(_bulT("; sentences naming something absent from the sources were removed")) : ""}</div>`
           : `<div class="muted">${esc(_bulTf("No model text: {reason}", {reason: s.fallback_reason || ""}))}</div>`;
         return `<div style="margin:8px 0">
-          <label class="row" style="gap:8px;align-items:baseline">
-            <input type="checkbox" ${off ? "" : "checked"} onchange="bulletinToggleStory('${esc(s.key)}')">
-            <span><strong>${esc((s.shared_terms || []).join(", ") || "—")}</strong>
+          <label class="row" style="${_BUL_CHECK_ROW}">
+            <input type="checkbox" style="${_BUL_CHECK_BOX}" ${off ? "" : "checked"} onchange="bulletinToggleStory('${esc(s.key)}')">
+            <span style="flex:1;min-width:0"><strong>${esc((s.shared_terms || []).join(", ") || "—")}</strong>
               <span class="muted">${esc(s.articles)} ${esc(_bulT("articles"))} · ${esc(s.distinct_sources)} ${esc(_bulT("sources"))}${s.single_source ? esc(_bulT(" · one source only")) : ""}</span></span></label>
           ${label}${sents ? `<ul style="margin:4px 0 0 26px">${sents}</ul>` : ""}</div>`;
       }).join("");
@@ -951,9 +960,16 @@
     }
     function agRow(e) {
       const T = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      // Every sentence on the row is ONE keyed frame with its values as variables, so a
+      // locale orders and punctuates it itself -- "also in 2" and "from Nager" were built
+      // by gluing an English word to a number or a name (click-through B16, V3).
+      const tfa = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((s2, v) =>
+        String(s2).replace(/\{(\w+)\}/g, (m2, k) => (v && v[k] != null) ? v[k] : m2));
       const conf = agConfPill(e);
       const tags = (e.tags||[]).map(t => `<span class="ag-tag" onclick="$('agenda-tag').value='${esc(t)}';renderAgenda()">${esc(t)}</span>`).join("");
-      const alsoIn = (e.also_in && e.also_in.length) ? ` <span class="pill" title="this event also appears in: ${esc(e.also_in.join(', '))}">also in ${e.also_in.length}</span>` : "";
+      const alsoIn = (e.also_in && e.also_in.length)
+        ? ` <span class="pill" title="${esc(tfa("This event also appears in: {calendars}", {calendars: e.also_in.join(", ")}))}">`
+          + `${esc(tfa("also in {n}", {n: e.also_in.length}))}</span>` : "";
       const imp = (e.imported && e.source_count > 1)
         ? ` <span class="pill" title="${esc((e.family_names || [e.family_name || ""]).filter(Boolean).join(', '))}">${e.source_count}×</span>` : "";
       // Visible provenance on every imported event: WHICH feed(s) delivered it —
@@ -966,12 +982,12 @@
         const names = e.sources.map(id => (fm && fm[id] && fm[id].name) || id);
         const detail = e.sources.map(id => fm && fm[id] ? `${fm[id].name} — ${fm[id].url}` : id).join("\n");
         const label = names[0] + (names.length > 1 ? ` +${names.length - 1}` : "");
-        prov = ` <span class="pill" title="${esc(T("Calendar feed(s) this event came from:") + "\n" + detail)}">${esc(T("from"))} ${esc(label)}</span>`;
+        prov = ` <span class="pill" title="${esc(T("Calendar feed(s) this event came from:") + "\n" + detail)}">${esc(tfa("from {feed}", {feed: label}))}</span>`;
       } else if (e.imported && e.family_name) {
-        prov = ` <span class="pill" title="${esc(T("Imported calendar folder"))}">${esc(T("from"))} ${esc(e.family_name)}</span>`;
+        prov = ` <span class="pill" title="${esc(T("Imported calendar folder"))}">${esc(tfa("from {feed}", {feed: e.family_name}))}</span>`;
       }
       const variants = (e.date_variants && e.date_variants.length > 1)
-        ? `<div class="hint" style="color:var(--warn)">date varies by source: ${esc(e.date_variants.join(' · '))}</div>` : "";
+        ? `<div class="hint" style="color:var(--warn)">${esc(tfa("date varies by source: {dates}", {dates: e.date_variants.join(" · ")}))}</div>` : "";
       // agenda-span-display (2026-09-09). `_span_for`, `_span_end_date`,
       // `_in_active_range` and the origin_year/until_year fields shipped with their
       // own test file on 2026-07-31 and REACHED NO SURFACE: app-agenda.js read
@@ -988,8 +1004,6 @@
       // `until_year` is worded about the LISTING rather than the world: the
       // catalogue suppresses occurrences past that year, which is a fact about what
       // this app will show, not a claim that the event will never happen again.
-      const tfa = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((s2, v) =>
-        String(s2).replace(/\{(\w+)\}/g, (m2, k) => (v && v[k] != null) ? v[k] : m2));
       const catalogNote = esc(T("Stated by the event catalog (asserted, not deduced)."));
       let span = "";
       if (e.span && e.span.start && e.span.end) {
@@ -1004,7 +1018,7 @@
       ].filter(Boolean).join(" · ");
       const yearNote = years
         ? ` <span class="muted" title="${catalogNote}">· ${esc(years)}</span>` : "";
-      const src = e.official_url ? " · " + extLink(e.official_url, "official source ↗") : "";
+      const src = e.official_url ? " · " + extLink(e.official_url, T("official source ↗")) : "";
       // The event title opens the unified analysis window over this event in your
       // corpus (maintainer 2026-06-16: agenda content "highly visible and clickable").
       // A DEDUCED event opens its EXACT article set (the dates came from those

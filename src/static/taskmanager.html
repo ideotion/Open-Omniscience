@@ -34,16 +34,6 @@
 <style>
   body { margin: 0; background: var(--bg, #0d0f12); color: var(--fg, #e7e9ee);
          font: 14px/1.5 system-ui, sans-serif; }
-  .tm-status { margin-inline-start: auto; display: inline-flex; align-items: center; gap: 8px; }
-  .tm-status .muted { font-size: 12px; }
-  .tm-sbtn { display: inline-flex; align-items: center; justify-content: center; min-width: 28px; height: 28px;
-    padding: 0 8px; border: 1px solid var(--line, #232733); border-radius: 8px; background: transparent;
-    color: var(--fg, #e7e9ee); cursor: pointer; font-size: 14px; line-height: 1; text-decoration: none; }
-  .tm-sbtn:hover { border-color: var(--accent, #4a9eff); }
-  .tm-sbtn.off { color: var(--err, #e05555); border-color: var(--err, #e05555); }
-  .tm-sbtn.on { color: var(--ok, #2ecc71); border-color: var(--ok, #2ecc71); }
-  .tm-sel { height: 28px; border: 1px solid var(--line, #232733); border-radius: 8px; background: var(--panel2, #161a22);
-    color: var(--fg, #e7e9ee); font-size: 12px; padding: 0 4px; }
   /* Persistent resource summary strip — always visible, optimises the header space.
      It sticks at the TOP of the viewport, and the tab row sticks right under its MEASURED
      height (--tm-sum-h, kept by a ResizeObserver below). The old constants, 43px and 86px,
@@ -320,8 +310,12 @@
     var prog = "";
     if (j.progress && j.progress.total) {
       var pct = j.progress.percent || Math.round(100 * j.progress.done / j.progress.total);
+      // A count names WHAT it counts ("12 / 40 keywords"), the unit keyed x12 as the
+      // in-app window's _jobRow draws it; "12 / 40" alone was the keyword fold's row
+      // (click-through B16, V10).
+      var what = j.progress.unit && j.progress.unit !== "bytes" ? " " + esc(t(j.progress.unit)) : "";
       var unit = isDl(j.kind) ? (fmtBytes(j.progress.done) + " / " + fmtBytes(j.progress.total))
-                              : (j.progress.done + " / " + j.progress.total);
+                              : (j.progress.done + " / " + j.progress.total + what);
       prog = '<div class="cap-bar" role="progressbar" aria-valuenow="' + pct + '" aria-valuemin="0" aria-valuemax="100"><i style="width:' + pct + '%"></i></div>' +
              '<div class="muted" style="font-size:11px">' + unit + " · " + pct + '%</div>';
     } else if (j.elapsed_s != null) {

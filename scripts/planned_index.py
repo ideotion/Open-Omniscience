@@ -29,6 +29,7 @@ as "nothing is planned here").
 
 from __future__ import annotations
 
+import os
 import re
 import sys
 from dataclasses import dataclass
@@ -57,6 +58,10 @@ _GATE_ROW = re.compile(r"`(RELEASE_0\.\d_GATE\.md)`\s*row\s*([A-Z0-9]+)", re.I)
 #: than one that leaves them anonymous, because the wrong id sends the reader to the wrong
 #: ruling with full confidence.
 _RULING_ID = re.compile(r"\b((?:Q|RC|PF|R)\d{1,4})\b")
+#: The next labelled field of a brief's header (``**Implements:**``, ``**Gated on:**``...).
+#: A backticked one is prose ABOUT a field -- S03-01's scope names the README's
+#: `**Version:**` line -- and never the start of one.
+_NEXT_FIELD = re.compile(r"(?<!`)\*\*[A-Z][A-Za-z ,/()-]{0,40}:\*\*")
 
 #: How many QUEUE rows one path may carry. The queue is 14,703 lines and some paths are
 #: named in dozens of entries; twenty pointers is the same as none.
@@ -100,9 +105,18 @@ def _by_name() -> dict[str, tuple[str, ...]]:
     if _NAMES is None:
         acc: dict[str, list[str]] = {}
         skip = {".git", "node_modules", ".venv", "__pycache__", ".mypy_cache", ".pytest_cache"}
-        for p in ROOT.rglob("*"):
-            if p.is_file() and not skip & set(p.parts):
-                acc.setdefault(p.name, []).append(str(p.relative_to(ROOT)))
+        # OTHER CHECKOUTS ARE NOT THIS TREE. An agent worktree under `.claude/worktrees/`
+        # is a whole second copy of the repository, so every filename in it has two
+        # paths and a bare `ci.yml` stopped resolving -- the tool went quiet about the
+        # CI-policy queue entry in exactly the checkout that holds parallel sessions.
+        # Pruned while walking, not filtered after: a copy per worktree is also the
+        # slowest thing the walk could read.
+        worktrees = ROOT / ".claude" / "worktrees"
+        for dirpath, dirnames, filenames in os.walk(ROOT):
+            here = Path(dirpath)
+            dirnames[:] = [d for d in dirnames if d not in skip and here / d != worktrees]
+            for name in filenames:
+                acc.setdefault(name, []).append(str((here / name).relative_to(ROOT)))
         _NAMES = {k: tuple(v) for k, v in acc.items()}
     return _NAMES
 
@@ -207,6 +221,17 @@ def from_briefs() -> list[Entry]:
         for marker in ("Must NOT touch:", "Must not touch:", "MUST NOT touch:"):
             if marker in header:
                 scope, forbidden = header.split(marker, 1)
+                # THE CLAUSE ENDS WHERE ITS FIELD ENDS. "Must NOT touch:" sits inside the
+                # Scope field, and the header is one joined line -- so everything after
+                # it, **Implements:** and **Gated on:** included, used to be read as
+                # forbidden. S05-03 and S06-03 name `docs/SECURITY.md` in their Gated on
+                # (a precondition: the host list must exist first), and the tool called
+                # it FORBIDDEN on every lookup. What follows the clause's own field goes
+                # back to the scope side, to be read exactly as in a brief with no clause.
+                end = _NEXT_FIELD.search(forbidden)
+                if end:
+                    scope = f"{scope} {forbidden[end.start():]}"
+                    forbidden = forbidden[:end.start()]
                 break
         # 'Gated on:' names a PRECONDITION, not this slice's own files -- and a slice whose
         # gate is an unanswered question is one no session may start.

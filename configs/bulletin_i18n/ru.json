@@ -223,6 +223,7 @@
   "no rising concepts to attribute for this period": "нет растущих понятий, которые можно отнести к этому периоду",
   "the period's concepts resolved to no plain keywords": "понятия периода не сопоставились ни с одним простым ключевым словом",
   "none of the period's concepts resolved to a stored keyword": "ни одно понятие периода не сопоставилось с сохранённым ключевым словом",
+  "the period spans {days} days; past {max} the 'same days in earlier years' lens stops being a lens — it becomes the whole of an earlier year, which the corpus already shows elsewhere": "период охватывает {days} дн.; свыше {max} линза «те же дни в прошлые годы» перестаёт быть линзой — она становится целым прошлым годом, который корпус уже показывает в другом месте",
 
   "{shown} of {total} sections": "{shown} из {total} разделов",
   "{shown} of {total} stories": "{shown} из {total} сюжетов",

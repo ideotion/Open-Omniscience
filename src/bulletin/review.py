@@ -71,6 +71,11 @@ def review_view(edition: dict[str, Any]) -> dict[str, Any]:
             row["error"] = s["error"]
         if s.get("skipped"):
             row["skipped"] = s["skipped"]
+            # A reason that carries numbers travels as its frame and values too, so the
+            # review panel translates the frame and fills it (click-through B16, V5).
+            if s.get("skipped_i18n"):
+                row["skipped_i18n"] = s["skipped_i18n"]
+                row["skipped_vars"] = s.get("skipped_vars") or {}
         sections.append(row)
 
     by_key = {}

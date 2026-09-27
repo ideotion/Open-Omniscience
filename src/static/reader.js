@@ -24,7 +24,23 @@
     d.textContent = s == null ? "" : String(s);
     return d.innerHTML;
   }
-  function num(n) { return (n == null ? 0 : n).toLocaleString(); }
+  // THE SPA'S NUMBER WRITER, PORTED (click-through B16, V16). toLocaleString() reads the
+  // BROWSER's locale, which the app's language switcher never changes, so this page wrote
+  // "6,402" beside an SPA that writes "6 402" (U+202F grouping, a decimal point, Latin
+  // digits in every locale -- the ruled formatter, fmtNum in app-markets.js). This page
+  // cannot load the SPA bundle, so the function is copied, not imported; KEEP THE TWO IN
+  // STEP -- tests/clickthrough_b16_node_test.js runs both over the same values.
+  function fmtNum(v, maxDec) {
+    if (v == null || !isFinite(v)) return "—";
+    var a = Math.abs(v);
+    var dec = maxDec != null ? maxDec : (a >= 1000 ? 1 : a >= 100 ? 1 : a >= 1 ? 2 : 3);
+    var s = v.toFixed(dec).replace(/\.?0+$/, function (m) { return m.indexOf(".") !== -1 ? "" : m; });
+    var parts = s.split(".");
+    var grouped = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, " ");
+    return parts[1] ? grouped + "." + parts[1] : grouped;
+  }
+  // Every caller passes a COUNT, which the SPA writes with fmtNum(n, 0).
+  function num(n) { return fmtNum(n == null ? 0 : n, 0); }
 
   // The page loads i18n.js (deferred, ahead of this file), so its t()/tf() are the SPA's
   // own. Each is guarded: a reader must still read if the engine did not load.
@@ -698,10 +714,35 @@
   // Keywords tab (one loopback fetch serves both).
   primeKeywords();
 
+  // The footer's "Original source: <url>" through the ONE "label: value" frame the SPA
+  // uses (ooLabelHtml's "{prefix}: {text}"), so each locale writes its own separator
+  // (click-through B16, V4). The server's anchor NODE is moved, never re-serialised, so
+  // its href and its visible text -- the full URL, invariant #6 -- stay exactly the
+  // server's. A frame missing either marker keeps the server's English rather than
+  // dropping the link.
+  function paintOrigSource() {
+    var box = document.querySelector(".src-orig");
+    var a = box && box.querySelector("a.src-link");
+    if (!box || !a) return;
+    var frame = TF("{prefix}: {text}", {prefix: "\u0001", text: "\u0002"});
+    if (frame.indexOf("\u0001") < 0 || frame.indexOf("\u0002") < 0) return;
+    var frag = document.createDocumentFragment();
+    frame.split(/(\u0001|\u0002)/).forEach(function (part) {
+      if (part === "\u0001") frag.appendChild(document.createTextNode(T("Original source")));
+      else if (part === "\u0002") frag.appendChild(a);
+      else if (part) frag.appendChild(document.createTextNode(part));
+    });
+    box.textContent = "";
+    box.appendChild(frag);
+  }
+  if (window.OOI18N && window.OOI18N.ready) window.OOI18N.ready.then(paintOrigSource);
+  else paintOrigSource();
+
   // A language switch re-asks for the keywords in the new language and redraws the tab
   // if it was open: the labels carry translations INTO the old one. (This page has no
   // switcher of its own; the listener costs nothing and keeps the port's contract.)
   document.addEventListener("oo:langchange", function () {
+    paintOrigSource();
     primeKeywords();
     var pane = document.getElementById("rp-keywords");
     if (loaded.keywords && pane && _kwPromise) {

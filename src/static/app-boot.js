@@ -290,6 +290,9 @@
           loadNewsletterAttach();
         }
       } catch (_e) {}
+      // The task manager's System panel (click-through B16, V9) draws its labels with t()
+      // at render; redrawn from the last two samples it holds, so a switch never fetches.
+      try { if (typeof repaintVitalsFromCache === "function") repaintVitalsFromCache(); } catch (_e) {}
     });
 
     // Global shortcuts: dispatched from the user's (rebindable) bindings — Ctrl/⌘-K opens

@@ -289,7 +289,7 @@
       <section class="panel" id="home-trends-panel" hidden>
         <div class="phead"><h2>Trending now</h2><span class="sp"></span>
           <a href="#insights" class="hint" style="margin:0" onclick="showTab('insights');_insSubtabs&&_insSubtabs.select('trends');return false">More in Insights →</a></div>
-        <div id="home-trends"><div class="muted">Loading…</div></div>
+        <div id="home-trends"><div class="muted" data-oo-placeholder>Loading…</div></div>
       </section>
 
       <!-- Home dashboard: "Most recent by tag" — a recency lens onto the corpus
@@ -353,7 +353,7 @@
         <p class="hint" style="margin-top:8px"><span>Equal view — every source is counted once; no source is de-amplified in this version.</span>
           <span><b>The app gathers and measures; you judge.</b></span>
           <span>Each Lead is one measured signal with its evidence and caveat, never a verdict.</span></p>
-        <div id="briefing-feed" style="margin-top:6px"><div class="muted">Loading the briefing…</div></div>
+        <div id="briefing-feed" style="margin-top:6px"><div class="muted" data-oo-placeholder>Loading the briefing…</div></div>
       </section>
 
       <section class="panel" id="draft-panel" hidden>
@@ -1205,7 +1205,7 @@
 
       <details id="ins-landscape-wrap" open style="margin-top:12px">
         <summary style="cursor:pointer;font-size:13px;font-weight:600">Corpus landscape <span class="muted">— families by kind (zoom out); click one to zoom in</span></summary>
-        <div id="ins-landscape"><div class="muted" style="margin-top:8px">Loading…</div></div>
+        <div id="ins-landscape"><div class="muted" data-oo-placeholder style="margin-top:8px">Loading…</div></div>
       </details>
 
       <div id="ins-trend" style="margin-top:12px"></div>
@@ -1266,7 +1266,7 @@
         <button class="tiny secondary" data-trdlens="slope" onclick="setTrendLens('slope')" aria-pressed="false">Rate slope</button>
         <button class="tiny secondary" data-trdlens="multiples" onclick="setTrendLens('multiples')" aria-pressed="false">Small multiples</button>
       </div>
-      <div class="row" id="trd-windows" style="gap:20px"><div class="muted">Loading…</div></div>
+      <div class="row" id="trd-windows" style="gap:20px"><div class="muted" data-oo-placeholder>Loading…</div></div>
       <div id="trd-windows-note" class="hint" style="margin:4px 0 14px"></div>
       <div id="trd-slope" style="display:none"></div>
       <div id="trd-multiples" style="display:none"></div>
@@ -1315,7 +1315,7 @@
         <span id="fam-status" class="hint"></span>
       </div>
       <p class="hint muted" style="margin:4px 0 0">"all" aggregates every non-term kind (server-side, before any limit). person / org / location kinds await a future NER/gazetteer pass — the extractor does not yet assign them, so they are not offered here rather than shown as a fabricated, always-empty choice.</p>
-      <div id="fam-list" style="margin-top:10px"><div class="muted">Loading…</div></div>
+      <div id="fam-list" style="margin-top:10px"><div class="muted" data-oo-placeholder>Loading…</div></div>
     </section>
 
     <section class="panel ins-view" id="ins-supergroups" style="display:none">
@@ -1325,7 +1325,7 @@
         <button class="secondary" onclick="loadSuperGroups()">Refresh</button>
         <span id="sg-status" class="hint"></span>
       </div>
-      <div id="sg-list" style="margin-top:12px"><div class="muted">Loading…</div></div>
+      <div id="sg-list" style="margin-top:12px"><div class="muted" data-oo-placeholder>Loading…</div></div>
       <div style="margin-top:16px;padding-top:12px;border-top:1px solid var(--border)">
         <h2 style="font-size:13px;margin:0">Cross-country map of a concept</h2>
         <p class="hint" style="margin-top:2px">Pick a cross-language group — one concept counted across every language — to see where its coverage comes from, split by the producing source's country and language. Counts only; a source with an unknown country is shown honestly (never mapped, never guessed).</p>
@@ -2657,7 +2657,7 @@
         <div style="flex:0 0 auto;align-self:end"><button class="secondary" onclick="loadFamilyCuration()">Refresh</button></div>
         <span id="famc-status" class="hint"></span>
       </div>
-      <div id="famc-list" style="margin-top:10px"><div class="muted">Loading…</div></div>
+      <div id="famc-list" style="margin-top:10px"><div class="muted" data-oo-placeholder>Loading…</div></div>
       <div id="fam-overrides" style="margin-top:14px"></div>
     </section>
     <section class="panel">
