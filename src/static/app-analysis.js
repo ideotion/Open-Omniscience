@@ -405,6 +405,19 @@
         grab("/api/insights/corpus-sources"), grab("/api/insights/corpus-sentiment"),
       ]);
       clearTimeout(slow);
+      // A newer Overview (another corpus) owns the panel; this reply is dropped.
+      if (_anOverviewKey !== key) return;
+      _anOverviewLast = { key, kw, www, src, sent };
+      host.innerHTML = _anOverviewHtml(_anOverviewLast);
+      host.dataset.done = "1";
+    }
+    // The payloads the Overview was last drawn from, kept beside its own cache key so a
+    // LANGUAGE SWITCH redraws its tiles with no request (the 2026-09-27 re-walk, N-4): a
+    // tile's sub-line and its "Open" are t() text composed here, beyond the i18n walker.
+    let _anOverviewLast = null;
+    function _anOverviewHtml(o) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const { kw, www, src, sent } = o;
       const topKw = kw && kw.terms && kw.terms.length ? kw.terms[0] : null;
       const topPlace = www && www.where && www.where.length ? www.where[0] : null;
       const topWho = www && www.who && www.who.length ? www.who[0] : null;
@@ -425,9 +438,8 @@
       tiles.push(tile("links", t("Links"), t("Shared outbound origins")));
       tiles.push(tile("related", t("Related"), t("Near-duplicate clusters")));
       tiles.push(tile("articles", t("Articles"), t("The matched articles")));
-      host.innerHTML = `<div class="hint" style="margin-bottom:8px">${esc(t("A headline from each lens — counts only, never a verdict. Open any to dig in."))}</div>`
+      return `<div class="hint" style="margin-bottom:8px">${esc(t("A headline from each lens — counts only, never a verdict. Open any to dig in."))}</div>`
         + `<div class="an-ov-grid">${tiles.join("")}</div>`;
-      host.dataset.done = "1";
     }
 
     // --- Commodity price × coverage overlay (Markets item, Group G) --------- //
@@ -649,8 +661,11 @@
         // "articles", the hover said "22 articles" for a week holding 7, beside the
         // Insights hover reading "22 mentions · 7 articles" for the same term, and the
         // By-language view of the SAME sums already said "mentions".
+        // The unit is kept as its KEY and translated where the chart is drawn: put in as
+        // t() text here it froze in the fetch language, so after a live switch the legend,
+        // the hover and the data table still said "mentions" under a Chinese caption.
         if (main && main.resolved && (main.points || []).length)
-          series.push({ label: term, unit: t("mentions"), color: "var(--accent)", points: main.points.map(pt => ({ t: pt.date, v: pt.count })) });
+          series.push({ label: term, unitKey: "mentions", color: "var(--accent)", points: main.points.map(pt => ({ t: pt.date, v: pt.count })) });
         // Related keywords are corpora too: overlay each one's own coverage series.
         const rel = ((assoc && assoc.nodes) || []).map(n => n.label || n.id)
           .filter(x => x && x.toLowerCase() !== term.toLowerCase()).slice(0, 4);
@@ -659,7 +674,7 @@
           api("/api/insights/trend?bucket=week&term=" + encodeURIComponent(rt) + lens).catch(() => null)));
         relTrends.forEach((rd, i) => {
           if (rd && rd.resolved && (rd.points || []).length)
-            series.push({ label: rel[i], unit: t("mentions"), color: palette[i % palette.length], points: rd.points.map(pt => ({ t: pt.date, v: pt.count })) });
+            series.push({ label: rel[i], unitKey: "mentions", color: palette[i % palette.length], points: rd.points.map(pt => ({ t: pt.date, v: pt.count })) });
         });
         _anTrend.counts = series;
         // Q502/Q417: the per-language halves the aggregate already publishes. Captured
@@ -703,7 +718,9 @@
       const picks = Object.keys(_anTrend.picked);
       const indexed = _anTrend.mode === "indexed";
       // Counts always; commodity PRICE series only in indexed mode (different unit).
-      const list = counts.slice();
+      // Each count series' unit is translated HERE, from the key it was kept under, so a
+      // redraw after a language switch names it in the new language (N-4).
+      const list = counts.map((s) => (s.unitKey ? Object.assign({}, s, { unit: t(s.unitKey) }) : s));
       if (indexed) for (const sym of picks) {
         const c = _anTrend.picked[sym];
         const pts = (c.prices || []).map(p => ({ t: p.observed_on, v: +p.price })).filter(p => isFinite(p.v));
@@ -858,56 +875,69 @@
           api("/api/insights/corpus-coordination?" + qs).catch(() => null),
           api("/api/links/corpus?" + qs).catch(() => null),
         ]);
+        // A NEWER RUN OWNS THE PANEL: `loadAnalysis` nulls the key, so a reply that comes
+        // back after it is dropped rather than painted -- and kept -- over the new corpus.
+        if (_anRelated.key !== key) return;
         _anRelatedClusters = (cd && cd.clusters) || [];
         _anRelatedLinks = (ld && ld.items) || [];
-        let html = `<div class="row" style="gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap">`
-          + `<button class="secondary tiny" onclick="branchSelectedRelated()">${esc(t("Branch selected into a new corpus →"))}</button>`
-          + ` <span id="an-rel-selcount" class="muted" style="font-size:11px"></span></div>`
-          + `<div class="hint"><b>${_anRelatedClusters.length}</b> ${esc(t("Near-identical clusters"))}`
-          // The method and the caveat below are fixed server sentences, keyed x12 (N-2).
-          + ` <span class="muted">· ${esc((cd && cd.method) ? t(cd.method) : "")}</span></div>`;
-        if (!_anRelatedClusters.length) {
-          html += `<div class="muted" style="margin:6px 0 2px">`
-            + `${esc(t("No near-identical clusters detected in this corpus — not proof there is no coordination, only that none was found at this threshold."))}</div>`;
-        } else {
-          html += _anRelatedClusters.map((c, i) => {
-            const voice = c.single_source
-              ? t("{n} near-identical copies from one source = one voice").replace("{n}", c.size)
-              : t("{n} near-identical copies across {m} sources = effectively one voice").replace("{n}", c.size).replace("{m}", c.distinct_sources);
-            const ex = (c.members || []).slice(0, 6).map((m) =>
-              `<li><a href="/api/articles/${m.id}/view" target="_blank" rel="noopener">${esc(m.title || t("(untitled)"))}</a>`
-              + ` <span class="muted">· ${esc(m.source || "")}</span></li>`).join("");
-            const more = c.size > 6 ? `<li class="muted">+${c.size - 6} ${esc(t("more"))}</li>` : "";
-            return `<div class="card" style="padding:10px;margin-top:8px">`
-              + `<div class="row" style="justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">`
-              + `<span style="display:flex;align-items:center;gap:6px"><input type="checkbox" class="an-rel-pick" data-kind="c" data-idx="${i}" onchange="anRelUpdateSel()" aria-label="${esc(t("Select for branching"))}"><b>${esc(voice)}</b></span>`
-              + `<button class="secondary tiny" onclick="branchFromRelated(${i})" title="${esc(t("Open these articles as a new analysis corpus"))}">${esc(t("Branch into a new corpus →"))}</button></div>`
-              + `<details style="margin-top:6px"><summary class="muted" style="cursor:pointer">${esc(t("Show all"))}</summary>`
-              + `<ul style="margin:6px 0 0">${ex}${more}</ul></details></div>`;
-          }).join("") + `<p class="card-caveat" style="margin-top:8px">${esc((cd && cd.caveat) ? t(cd.caveat) : "")}</p>`;
-        }
-        // --- Shared origins: articles citing the SAME outbound page (one origin,
-        // not independent confirmation — the anti-false-triangulation lens). ---
-        html += `<div class="hint" style="margin-top:16px"><b>${_anRelatedLinks.length}</b> ${esc(t("Shared origins"))}`
-          + ` <span class="muted">· ${esc(t("articles in this corpus citing the same outbound page"))}</span></div>`;
-        if (!_anRelatedLinks.length) {
-          html += `<div class="muted" style="margin:6px 0 2px">${esc(t("No outbound page is cited by 2+ articles in this corpus yet."))}</div>`;
-        } else {
-          html += _anRelatedLinks.map((it, i) => {
-            const label = it.domain || it.link_text || it.normalized_url;
-            return `<div class="card" style="padding:10px;margin-top:8px">`
-              + `<div class="row" style="justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">`
-              + `<span style="display:flex;align-items:center;gap:6px"><input type="checkbox" class="an-rel-pick" data-kind="o" data-idx="${i}" onchange="anRelUpdateSel()" aria-label="${esc(t("Select for branching"))}">`
-              + `<span>${extLink(it.sample_url || it.normalized_url, esc(label), "", "")} `
-              + `<span class="muted">· ${it.citations}× ${esc(t("cited"))}</span></span></span>`
-              + `<button class="secondary tiny" onclick="branchFromOrigin(${i})" title="${esc(t("Open every article citing this origin as a new corpus"))}">${esc(t("Branch into a new corpus →"))}</button></div></div>`;
-          }).join("")
-            // The SAME /api/links/corpus sentence the Links tab draws, keyed x12 (N-2).
-            + `<p class="card-caveat" style="margin-top:8px">${esc((ld && ld.caveat) ? t(ld.caveat) : t("Several articles citing the same page are not independent confirmation — one origin, several echoes."))}</p>`;
-        }
-        host.innerHTML = html;
+        _anPanelsLast.related = { cd, ld };
+        host.innerHTML = _anRelatedHtml(cd, ld);
         host.dataset.done = "1";
       } catch (e) { host.innerHTML = `<div class="note err">${esc(e.message)}</div>`; }
+    }
+    // The Related tab from its two payloads, so a LANGUAGE SWITCH redraws it with no
+    // request (the 2026-09-27 re-walk, N-4): its counts, method line and caveats are t()
+    // text composed here, which the i18n walker cannot reach. The row indices are the
+    // payloads' own, so the branch buttons and a kept selection still point at the same rows.
+    function _anRelatedHtml(cd, ld) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const clusters = (cd && cd.clusters) || [], links = (ld && ld.items) || [];
+      let html = `<div class="row" style="gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap">`
+        + `<button class="secondary tiny" onclick="branchSelectedRelated()">${esc(t("Branch selected into a new corpus →"))}</button>`
+        + ` <span id="an-rel-selcount" class="muted" style="font-size:11px"></span></div>`
+        + `<div class="hint"><b>${clusters.length}</b> ${esc(t("Near-identical clusters"))}`
+        // The method and the caveat below are fixed server sentences, keyed x12 (N-2).
+        + ` <span class="muted">· ${esc((cd && cd.method) ? t(cd.method) : "")}</span></div>`;
+      if (!clusters.length) {
+        html += `<div class="muted" style="margin:6px 0 2px">`
+          + `${esc(t("No near-identical clusters detected in this corpus — not proof there is no coordination, only that none was found at this threshold."))}</div>`;
+      } else {
+        html += clusters.map((c, i) => {
+          const voice = c.single_source
+            ? t("{n} near-identical copies from one source = one voice").replace("{n}", c.size)
+            : t("{n} near-identical copies across {m} sources = effectively one voice").replace("{n}", c.size).replace("{m}", c.distinct_sources);
+          const ex = (c.members || []).slice(0, 6).map((m) =>
+            `<li><a href="/api/articles/${m.id}/view" target="_blank" rel="noopener">${esc(m.title || t("(untitled)"))}</a>`
+            + ` <span class="muted">· ${esc(m.source || "")}</span></li>`).join("");
+          const more = c.size > 6 ? `<li class="muted">+${c.size - 6} ${esc(t("more"))}</li>` : "";
+          return `<div class="card" style="padding:10px;margin-top:8px">`
+            + `<div class="row" style="justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">`
+            + `<span style="display:flex;align-items:center;gap:6px"><input type="checkbox" class="an-rel-pick" data-kind="c" data-idx="${i}" onchange="anRelUpdateSel()" aria-label="${esc(t("Select for branching"))}"><b>${esc(voice)}</b></span>`
+            + `<button class="secondary tiny" onclick="branchFromRelated(${i})" title="${esc(t("Open these articles as a new analysis corpus"))}">${esc(t("Branch into a new corpus →"))}</button></div>`
+            + `<details style="margin-top:6px"><summary class="muted" style="cursor:pointer">${esc(t("Show all"))}</summary>`
+            + `<ul style="margin:6px 0 0">${ex}${more}</ul></details></div>`;
+        }).join("") + `<p class="card-caveat" style="margin-top:8px">${esc((cd && cd.caveat) ? t(cd.caveat) : "")}</p>`;
+      }
+      // --- Shared origins: articles citing the SAME outbound page (one origin,
+      // not independent confirmation — the anti-false-triangulation lens). ---
+      html += `<div class="hint" style="margin-top:16px"><b>${links.length}</b> ${esc(t("Shared origins"))}`
+        + ` <span class="muted">· ${esc(t("articles in this corpus citing the same outbound page"))}</span></div>`;
+      if (!links.length) {
+        html += `<div class="muted" style="margin:6px 0 2px">${esc(t("No outbound page is cited by 2+ articles in this corpus yet."))}</div>`;
+      } else {
+        html += links.map((it, i) => {
+          const label = it.domain || it.link_text || it.normalized_url;
+          return `<div class="card" style="padding:10px;margin-top:8px">`
+            + `<div class="row" style="justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">`
+            + `<span style="display:flex;align-items:center;gap:6px"><input type="checkbox" class="an-rel-pick" data-kind="o" data-idx="${i}" onchange="anRelUpdateSel()" aria-label="${esc(t("Select for branching"))}">`
+            + `<span>${extLink(it.sample_url || it.normalized_url, esc(label), "", "")} `
+            + `<span class="muted">· ${it.citations}× ${esc(t("cited"))}</span></span></span>`
+            + `<button class="secondary tiny" onclick="branchFromOrigin(${i})" title="${esc(t("Open every article citing this origin as a new corpus"))}">${esc(t("Branch into a new corpus →"))}</button></div></div>`;
+        }).join("")
+          // The SAME /api/links/corpus sentence the Links tab draws, keyed x12 (N-2).
+          + `<p class="card-caveat" style="margin-top:8px">${esc((ld && ld.caveat) ? t(ld.caveat) : t("Several articles citing the same page are not independent confirmation — one origin, several echoes."))}</p>`;
+      }
+      return html;
     }
     function branchFromRelated(i) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
@@ -990,7 +1020,8 @@
     // {a,b,weight}, plus level/method/caveat. Font size scales with node size.
     // In-map controls (mind-map rules): a Cloud SECOND view, a text-size control and
     // ⛶ Enlarge. State is kept so the controls re-render from the same graph.
-    const _anMM = { graph: null, gp: null, cloud: false, concept: false, arms: null, scale: 100, big: false };
+    const _anMM = { graph: null, gp: null, cloud: false, concept: false, arms: null, scale: 100, big: false,
+                   ro: null };   // `ro`: a hidden map waiting for a width to centre in (N-7)
     function anMMset(patch) { Object.assign(_anMM, patch); if (_anMM.graph) renderAnMindmap(_anMM.graph); }
     // Q512: THE RING AT THE CENTRE, ONE ARM PER LANGUAGE, ASSOCIATIONS OFF THE ARMS.
     // A third view beside Map and Cloud rather than a replacement for Map: they answer
@@ -1113,12 +1144,28 @@
       const boxOpen = `<div class="an-mm-box${big ? " an-mm-big" : ""}"`
         + ` style="overflow:auto;max-width:100%${big ? ";max-height:80vh" : ""}">`;
       const boxClose = "</div>";
+      // A MAP DRAWN WHILE ITS SUBTAB IS HIDDEN has no width to centre in: `loadAnalysis`
+      // draws it behind whichever tab is open, so on a phone the Map view opened at its
+      // start edge with the seed out of view (the 2026-09-27 re-walk, N-7). It is centred
+      // the first time its box HAS a width instead -- once, so a reader's own scroll is
+      // never undone (the browser keeps it across a hide and a show).
       const centreBox = () => {
+        if (_anMM.ro) { _anMM.ro.disconnect(); _anMM.ro = null; }   // a previous draw's wait
         const sc = host.querySelector(".an-mm-box");
         if (!sc) return;
-        const rtl = getComputedStyle(sc).direction === "rtl";   // RTL scrollLeft runs negative
-        sc.scrollLeft = (rtl ? -1 : 1) * (sc.scrollWidth - sc.clientWidth) / 2;
-        sc.scrollTop = (sc.scrollHeight - sc.clientHeight) / 2;
+        const centre = () => {
+          const rtl = getComputedStyle(sc).direction === "rtl";   // RTL scrollLeft runs negative
+          sc.scrollLeft = (rtl ? -1 : 1) * (sc.scrollWidth - sc.clientWidth) / 2;
+          sc.scrollTop = (sc.scrollHeight - sc.clientHeight) / 2;
+        };
+        if (sc.clientWidth || typeof ResizeObserver !== "function") { centre(); return; }
+        const ro = new ResizeObserver(() => {
+          if (!sc.clientWidth) return;
+          ro.disconnect(); if (_anMM.ro === ro) _anMM.ro = null;
+          centre();
+        });
+        _anMM.ro = ro;
+        ro.observe(sc);
       };
       const R = Math.min(W, H) * 0.36;
       const maxSize = Math.max(center.size || 1, ...neighbours.map((n) => n.size || 1), 1);
@@ -2323,37 +2370,8 @@
       try {
         const d = await api("/api/insights/corpus-www?" + p.toString());
         if (stale()) return;
-        _anFacets = {
-          who: ((d.who && d.who.entities) || []).map((e) => ({
-            facet: "entity", value: e.name, label: e.name,
-            sub: e.class || "", n: e.articles})),
-          where: ((d.where && d.where.places) || []).map((pl) => ({
-            facet: "place", value: pl.name, label: pl.name,
-            sub: pl.country ? ooCountryCode(pl.country) : "", n: pl.articles})),
-          when: ((d.when && d.when.years) || []).map((yr) => ({
-            facet: "when", value: String(yr.year), label: String(yr.year),
-            sub: "", n: yr.articles})),
-        };
-        const chips = (group) => {
-          const items = _anFacets[group];
-          if (!items.length) return `<span class="muted">—</span>`;
-          return items.map((it, i) =>
-            `<button type="button" class="chip an-facet" onclick="branchByFacet('${group}',${i})" `
-            + `title="${esc(t("Narrow the corpus to articles that mention this") + " — " + it.value)}">`
-            + `${esc(it.label)}${it.sub ? ` <span class="muted">(${esc(it.sub)})</span>` : ""}`
-            + ` <span class="muted">· ${it.n}</span></button>`).join(" ");
-        };
-        const col = (title, group) =>
-          `<div style="min-width:200px;flex:1"><div class="vsect">${esc(title)}</div>`
-          + `<div class="an-facet-row" style="display:flex;flex-wrap:wrap;gap:6px;margin:4px 0">`
-          + `${chips(group)}</div></div>`;
-        $("an-www").innerHTML =
-          // A fixed server sentence, keyed x12 like the Links / Sentiment / Sources caveats
-          // below (the 2026-09-27 re-walk, N-2) -- verbatim it read English everywhere.
-          `<div class="hint muted">${esc(d.caveat ? t(d.caveat) : "")} `
-          + `${esc(t("Click a value to narrow the corpus to articles that mention it."))}</div>`
-          + `<div style="display:flex;gap:28px;flex-wrap:wrap;margin-top:8px">`
-          + col(t("Who"), "who") + col(t("Where"), "where") + col(t("When"), "when") + `</div>`;
+        _anPanelsLast.www = d;
+        $("an-www").innerHTML = _anWwwHtml(d);
       } catch (e) { $("an-www").innerHTML = `<div class="note err">${esc(e.message)}</div>`; }
       // Links: outbound URLs SHARED by 2+ of the matched articles (shared-origin
       // structure; convergence is corroboration only when paths are independent).
@@ -2404,6 +2422,41 @@
     // t() -- appended verbatim they read in English in every locale, beside labels that
     // were translated (the 2026-09-27 re-walk, N-2). A caveat that holds a translation
     // and still shows English is the informed-consent non-negotiable failing quietly.
+    // When/Where/Who from its payload: the chips AND the facet list the drill reads, so a
+    // redraw after a language switch (N-4) rebuilds the same indices from the same payload.
+    function _anWwwHtml(d) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      _anFacets = {
+        who: ((d.who && d.who.entities) || []).map((e) => ({
+          facet: "entity", value: e.name, label: e.name,
+          sub: e.class || "", n: e.articles})),
+        where: ((d.where && d.where.places) || []).map((pl) => ({
+          facet: "place", value: pl.name, label: pl.name,
+          sub: pl.country ? ooCountryCode(pl.country) : "", n: pl.articles})),
+        when: ((d.when && d.when.years) || []).map((yr) => ({
+          facet: "when", value: String(yr.year), label: String(yr.year),
+          sub: "", n: yr.articles})),
+      };
+      const chips = (group) => {
+        const items = _anFacets[group];
+        if (!items.length) return `<span class="muted">—</span>`;
+        return items.map((it, i) =>
+          `<button type="button" class="chip an-facet" onclick="branchByFacet('${group}',${i})" `
+          + `title="${esc(t("Narrow the corpus to articles that mention this") + " — " + it.value)}">`
+          + `${esc(it.label)}${it.sub ? ` <span class="muted">(${esc(it.sub)})</span>` : ""}`
+          + ` <span class="muted">· ${it.n}</span></button>`).join(" ");
+      };
+      const col = (title, group) =>
+        `<div style="min-width:200px;flex:1"><div class="vsect">${esc(title)}</div>`
+        + `<div class="an-facet-row" style="display:flex;flex-wrap:wrap;gap:6px;margin:4px 0">`
+        + `${chips(group)}</div></div>`;
+      // A fixed server sentence, keyed x12 like the Links / Sentiment / Sources caveats
+      // below (the 2026-09-27 re-walk, N-2) -- verbatim it read English everywhere.
+      return `<div class="hint muted">${esc(d.caveat ? t(d.caveat) : "")} `
+        + `${esc(t("Click a value to narrow the corpus to articles that mention it."))}</div>`
+        + `<div style="display:flex;gap:28px;flex-wrap:wrap;margin-top:8px">`
+        + col(t("Who"), "who") + col(t("Where"), "where") + col(t("When"), "when") + `</div>`;
+    }
     function _anLinksHtml(d) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       // THE INDEPENDENCE READOUT, per row. The retired #corpus-win modal showed a
@@ -2474,20 +2527,38 @@
     // Registered in app-boot's ONE `oo:langchange` listener, beside `_anRepaintXLang`.
     // Redraws, from what each surface already holds and NEVER with a request, the analysis
     // panels whose words are composed at render time (the 2026-09-27 re-walk, N-4): the
-    // Articles list, an open Trend chart, and the Links, Sentiment and Sources panels.
-    // Each only when it is actually drawn -- a panel showing "Loading…" or a failure keeps
-    // it, and one never opened stays empty.
+    // Articles list, an open Trend chart, the Overview tiles, and the When/Where/Who, Links,
+    // Sentiment, Sources, Related and Competitive panels. Each only when it is actually
+    // drawn -- a panel showing "Loading…" or a failure keeps it, and one never opened
+    // stays empty.
     function _anRepaintOnLangChange() {
       _anRepaintArticles();
       // The Trend chart measures its host, so it is redrawn only while it is SHOWN; a
       // hidden one redraws itself from the same cache when its subtab is next opened.
       const tr = $("an-trend");
       if (tr && tr.offsetParent !== null && $("an-trend-chart") && (_anTrend.counts || []).length) drawAnTrend();
-      [["an-links", "links", _anLinksHtml], ["an-sentiment", "sentiment", _anSentimentHtml],
-       ["an-sources", "sources", _anSourcesHtml]].forEach(([id, k, draw]) => {
+      [["an-www", "www", _anWwwHtml], ["an-links", "links", _anLinksHtml],
+       ["an-sentiment", "sentiment", _anSentimentHtml], ["an-sources", "sources", _anSourcesHtml],
+       ["an-competitive", "competitive", (d) => _anCompetitiveHtml(d.cs, d.fr, d.query)]].forEach(([id, k, draw]) => {
         const el = $(id), d = _anPanelsLast[k];
         if (el && d) el.innerHTML = draw(d);
       });
+      // The Overview keeps its own cache key, so its payload is matched against that key.
+      const ov = $("an-overview");
+      if (ov && _anOverviewLast && ov.dataset.done === "1" && _anOverviewLast.key === _anOverviewKey)
+        ov.innerHTML = _anOverviewHtml(_anOverviewLast);
+      // Related keeps what the reader ticked and unfolded: its checkboxes feed the Branch
+      // action, so a language switch must not quietly drop a selection.
+      const rel = $("an-related"), rd = _anPanelsLast.related;
+      if (rel && rd && rel.dataset.done === "1") {
+        const ticked = Array.from(rel.querySelectorAll(".an-rel-pick:checked"))
+          .map((cb) => cb.dataset.kind + cb.dataset.idx);
+        const open = Array.from(rel.querySelectorAll("details")).map((d) => d.open);
+        rel.innerHTML = _anRelatedHtml(rd.cd, rd.ld);
+        rel.querySelectorAll(".an-rel-pick").forEach((cb) => { cb.checked = ticked.includes(cb.dataset.kind + cb.dataset.idx); });
+        rel.querySelectorAll("details").forEach((d, i) => { d.open = !!open[i]; });
+        anRelUpdateSel();
+      }
     }
 
     // Source-competitive subtab — ported from the retired #corpus-win modal into the
@@ -2518,9 +2589,20 @@
           query ? api("/api/framing?query=" + encodeURIComponent(query)).catch(() => null) : Promise.resolve(null),
         ]);
       } catch (e) { host.innerHTML = `<div class="note err">${esc(e.message)}</div>`; return; }
+      // A NEWER RUN OVER ANOTHER CORPUS OWNS THE PANEL (its own render is on the way).
+      if (_anLastParams && _anLastParams.toString() !== key) return;
+      _anPanelsLast.competitive = { cs, fr, query };
+      host.innerHTML = _anCompetitiveHtml(cs, fr, query);
+      _anCompetitive.key = key;   // cache AFTER a successful render (retry on error)
+    }
+    // The Competitive tab from its two payloads, so a LANGUAGE SWITCH redraws it with no
+    // request (the 2026-09-27 re-walk, N-4) -- the not-a-ranking line, the headers and
+    // both caveats (the sources one and /api/framing's, keyed x12 for N-2) are t() text.
+    function _anCompetitiveHtml(cs, fr, query) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const rows = (cs && cs.sources) || [];
-      if (!rows.length) { host.innerHTML = `<div class="muted">${esc(t("No sources for this corpus yet."))}</div>`; _anCompetitive.key = key; return; }
-      if (rows.length === 1) { host.innerHTML = `<div class="muted">${esc(t("Only one source in this corpus — nothing to compare."))}</div>`; _anCompetitive.key = key; return; }
+      if (!rows.length) return `<div class="muted">${esc(t("No sources for this corpus yet."))}</div>`;
+      if (rows.length === 1) return `<div class="muted">${esc(t("Only one source in this corpus — nothing to compare."))}</div>`;
       const byName = {}; ((fr && fr.framing) || []).forEach(f => { if (f.source) byName[f.source] = f; });
       const fmt = (n) => fmtNum(n || 0, 0);
       const firsts = rows.map(r => r.first).filter(Boolean).sort();
@@ -2558,8 +2640,7 @@
           <td style="padding:5px 8px">${emphasis}</td>
         </tr>`;
       }).join("");
-      host.innerHTML =
-        `<div class="hint" title="${esc(t("How each source APPROACHES this concept, side by side: volume (exact article count), tone (VADER mean + label), timing (first→last publication span) and the outlet's distinctive emphasised terms. A microscope on divergence, not a verdict — no source is ranked above another, no quality is judged, no composite score is computed."))}">${esc(notRanking)}</div>` +
+      return         `<div class="hint" title="${esc(t("How each source APPROACHES this concept, side by side: volume (exact article count), tone (VADER mean + label), timing (first→last publication span) and the outlet's distinctive emphasised terms. A microscope on divergence, not a verdict — no source is ranked above another, no quality is judged, no composite score is computed."))}">${esc(notRanking)}</div>` +
         `<table style="width:100%;border-collapse:collapse;font-size:13px">
            <thead><tr style="border-bottom:1px solid var(--line)">
              <th style="text-align:start;padding:5px 8px">${esc(t("Source"))}</th>
@@ -2574,7 +2655,6 @@
           `${(corpusFirst && corpusLast) ? ` · ${esc(day(corpusFirst))} → ${esc(day(corpusLast))}` : ""}` +
           `${cs.capped ? ` · ${esc(t("(scoped to the top matched articles)"))}` : ""}. ` +
           `${esc(cs.caveat ? t(cs.caveat) : "")} ${esc((fr && fr.caveat) ? t(fr.caveat) : "")}</div>`;
-      _anCompetitive.key = key;   // cache AFTER a successful render (retry on error)
     }
 
     // === Search-lockout fix (audit P0 finding 3) ============================= //

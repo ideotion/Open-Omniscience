@@ -64,6 +64,18 @@ def _served_caveat(rel: str, func: str) -> str:
     raise AssertionError(f"no literal caveat in {rel}:{func} -- was it moved?")
 
 
+def _module_constant(rel: str, name: str) -> str:
+    """A module-level string constant, read out of its SOURCE rather than imported:
+    ``src/awareness/framing.py`` builds VADER and the keyword extractor at import time."""
+    tree = ast.parse((_ROOT / rel).read_text(encoding="utf-8"))
+    for node in tree.body:
+        if (isinstance(node, ast.Assign)
+                and any(isinstance(t, ast.Name) and t.id == name for t in node.targets)
+                and isinstance(node.value, ast.Constant) and isinstance(node.value.value, str)):
+            return node.value.value
+    raise AssertionError(f"no string constant {name} in {rel} -- was it moved?")
+
+
 def _caveats() -> dict[str, str]:
     from src.analytics.queries import _COORD_CAVEAT, _COORD_METHOD, _SENTIMENT_CAVEAT
 
@@ -76,6 +88,9 @@ def _caveats() -> dict[str, str]:
         "www": _served_caveat("src/api/insights.py", "insights_corpus_www"),
         "coordination": _COORD_CAVEAT,
         "coordination method": _COORD_METHOD,
+        # The Competitive tab draws /api/framing's own sentence beside the sources one; it
+        # had no key in any locale, so it read English in all twelve (the round-2 review).
+        "framing": _module_constant("src/awareness/framing.py", "_CAVEAT"),
     }
 
 
@@ -110,14 +125,21 @@ _VERBATIM = re.compile(
 
 def test_the_panels_draw_their_caveats_through_t() -> None:
     js = read_static("app-analysis.js")
-    for fn in ("_anLinksHtml", "_anSentimentHtml", "_anSourcesHtml", "loadAnalysis",
-               "renderAnCompetitive"):
+    # The renderers a language switch also calls (N-4): When/Where/Who and Competitive
+    # moved out of loadAnalysis / renderAnCompetitive into their own.
+    for fn in ("_anLinksHtml", "_anSentimentHtml", "_anSourcesHtml", "_anWwwHtml",
+               "_anCompetitiveHtml"):
         body = strip_comments(function_body(js, fn))
         assert not _VERBATIM.findall(body), f"{fn} draws a server caveat without t()"
         assert "t(d.caveat)" in body or "t(cs.caveat)" in body, fn
+    for fn in ("loadAnalysis", "renderAnCompetitive", "renderAnRelated"):
+        assert not _VERBATIM.findall(strip_comments(function_body(js, fn))), (
+            f"{fn} draws a server caveat without t()")
+    # ...and beside the sources caveat, /api/framing's own sentence.
+    assert "t(fr.caveat)" in strip_comments(function_body(js, "_anCompetitiveHtml"))
     # The Related tab draws the SAME /api/links/corpus sentence the Links tab does, and
     # the near-duplicate clusters' own method line and caveat.
-    related = strip_comments(function_body(js, "renderAnRelated"))
+    related = strip_comments(function_body(js, "_anRelatedHtml"))
     assert not _VERBATIM.findall(related), "the Related tab draws a server caveat without t()"
     for call in ("t(ld.caveat)", "t(cd.caveat)", "t(cd.method)"):
         assert call in related, f"the Related tab no longer draws {call}"
@@ -141,9 +163,14 @@ def test_the_trend_counts_are_labelled_as_what_the_endpoint_sums() -> None:
     src = (_ROOT / "src" / "analytics" / "queries.py").read_text(encoding="utf-8")
     assert "func.sum(KeywordMention.count)" in src, (
         "the trend no longer sums mention counts -- the Counts label must follow it")
-    body = strip_comments(function_body(read_static("app-analysis.js"), "renderAnTrend"))
+    js = read_static("app-analysis.js")
+    body = strip_comments(function_body(js, "renderAnTrend"))
     assert 'unit: t("articles")' not in body
-    assert body.count('unit: t("mentions")') == 2, "both the term and its relatives are mentions"
+    assert body.count('unitKey: "mentions"') == 2, "both the term and its relatives are mentions"
+    # Kept as the KEY and translated where it is drawn: a t() at fetch time froze the unit
+    # in the fetch language, under a caption that followed a live switch (N-4, round 2).
+    assert "unit: t(" not in body, "the trend's unit is translated when it is fetched"
+    assert "t(s.unitKey)" in strip_comments(function_body(js, "drawAnTrend"))
 
 
 def test_the_new_keys_are_keyed_in_all_twelve_locales() -> None:
@@ -199,11 +226,17 @@ def test_a_language_switch_repaints_the_analysis_window_without_a_request() -> N
     assert any("_anRepaintOnLangChange()" in b for b in bodies), (
         f"{len(bodies)} oo:langchange listener(s), none repaints the analysis panels")
     js = read_static("app-analysis.js")
+    drawers = ("_anWwwHtml", "_anLinksHtml", "_anSentimentHtml", "_anSourcesHtml",
+               "_anRelatedHtml", "_anCompetitiveHtml", "_anOverviewHtml")
     for fn in ("_anRepaintOnLangChange", "_anRepaintArticles", "_anDrawArticles",
-               "_anLinksHtml", "_anSentimentHtml", "_anSourcesHtml",
-               "_anRefillFormSlots", "_anApplyDupBadges"):
+               "_anRefillFormSlots", "_anApplyDupBadges", "anRelUpdateSel", *drawers):
         assert "api(" not in strip_comments(function_body(js, fn)), (
             f"{fn} runs on a language switch and must never fetch")
+    # Every panel the window composes at render time is in the repaint (round 2 added
+    # When/Where/Who, Related, Competitive and the Overview tiles).
+    repaint = strip_comments(function_body(js, "_anRepaintOnLangChange"))
+    for fn in drawers:
+        assert fn in repaint, f"a language switch does not redraw {fn}"
     load = strip_comments(function_body(js, "loadAnalysis"))
     assert "_anPanelsLast = {};" in load and "_anFormCountsLast = {};" in load, (
         "a new run must drop the previous corpus's payloads, or a switch paints them back")

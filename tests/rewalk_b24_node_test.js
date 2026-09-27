@@ -13,9 +13,11 @@
 //   u6  the price x coverage svg is drawn left to right under rtl; its label is keyed
 //   n2  the Links / Sentiment / Sources caveats go through t()
 //   n4  a language switch redraws those panels, the Trend and the form counts, no fetch
+//       (the Trend's unit included), and When/Where/Who, Related, Competitive, Overview
 //   n5  the locale's own separators: the label frame and the list frame
 //   n6  the enlarge button names what a click does NOW
-//   n7  the mind map is never drawn below its own scale on a narrow screen
+//   n7  the mind map is never drawn below its own scale on a narrow screen, and a map
+//       drawn while its subtab is hidden opens centred once shown
 
 "use strict";
 
@@ -70,6 +72,8 @@ const NAMES = [
   "_anLinksHtml", "_anSentimentHtml", "_anSourcesHtml", "_anSourceCatalogHtml",
   "_anRepaintOnLangChange", "_anFormCountsHtml", "_anFormCountsFailedHtml",
   "_anRefillFormSlots",
+  // the panels a switch also redraws (the round-2 review of N-4)
+  "_anWwwHtml", "_anRelatedHtml", "_anCompetitiveHtml", "_anOverviewHtml",
 ];
 const found = NAMES.map((n) => [n, extract(n)]);
 const MISSING = found.filter(([, s]) => !s).map(([n]) => n);
@@ -82,6 +86,12 @@ const src = [
   "function ooLangCell(v){return '<span>' + esc(String(v == null ? '' : v)) + '</span>';}",
   "function ooLangCode(v){return String(v).toUpperCase();}",
   "function anQuery(){return '';}",
+  "function ooCountryCode(c){return String(c).toUpperCase();}",
+  "function anRelUpdateSel(){H.selUpdated++;}",
+  "function getComputedStyle(el){return {direction: el.dir || 'ltr'};}",
+  // A ResizeObserver the test fires by hand: `cb` is the callback, `off` its disconnect.
+  "function ResizeObserver(cb){const o = {cb, off: false, targets: [],"
+    + " observe(el){o.targets.push(el);}, disconnect(){o.off = true;}}; H.ros.push(o); return o;}",
   "function $(id){return H.el[id] || null;}",
   "function api(u){H.api.push(u); return H.respond(u);}",
   "function ooChart(host, list, opts){H.charts.push({host, list, opts});}",
@@ -93,13 +103,16 @@ const src = [
     + " byLang: null, concept: null, articles: null};",
   "var _anMM = {graph: null, gp: null, cloud: false, concept: false, arms: null, scale: 100, big: false};",
   "var _anPanelsLast = {}, _anFormCountsLast = {};",
+  "var _anFacets = {who: [], where: [], when: []}, _anOverviewKey = null, _anOverviewLast = null;",
   ...found.filter(([, s]) => s).map(([, s]) => s),
   "module.exports = {" + found.filter(([, s]) => s).map(([n]) => n).join(", ")
-    + ", state: () => ({_anTrend, _anMM, _anPanelsLast, _anFormCountsLast}),"
-    + " setPanels: (v) => { _anPanelsLast = v; }, setForms: (v) => { _anFormCountsLast = v; } };",
+    + ", state: () => ({_anTrend, _anMM, _anPanelsLast, _anFormCountsLast, _anFacets}),"
+    + " setPanels: (v) => { _anPanelsLast = v; }, setForms: (v) => { _anFormCountsLast = v; },"
+    + " setOverview: (k, v) => { _anOverviewKey = k; _anOverviewLast = v; } };",
 ].join("\n");
 
-const H = { el: {}, api: [], charts: [], articlesRepainted: 0, respond: () => Promise.resolve(null) };
+const H = { el: {}, api: [], charts: [], articlesRepainted: 0, selUpdated: 0, ros: [],
+  respond: () => Promise.resolve(null) };
 const DOC = { documentElement: { dir: "ltr" } };
 const M = (() => {
   const m = { exports: {} };
@@ -110,11 +123,11 @@ const M = (() => {
 
 function el(extra) {
   return Object.assign({ innerHTML: "", offsetParent: {}, dataset: {},
-    querySelector() { return null; } }, extra || {});
+    querySelector() { return null; }, querySelectorAll() { return []; } }, extra || {});
 }
 function reset(lang) {
   LANG = lang || "en"; DOC.documentElement.dir = LANG === "ar" ? "rtl" : "ltr";
-  H.el = {}; H.api = []; H.charts = []; H.articlesRepainted = 0;
+  H.el = {}; H.api = []; H.charts = []; H.articlesRepainted = 0; H.selUpdated = 0; H.ros = [];
   H.respond = () => Promise.reject(new Error("no request was expected here"));
 }
 // The Trend host and the two children its render writes into (a stub host makes no
@@ -123,6 +136,24 @@ function trendHosts(extra) {
   H.el["an-trend"] = el(extra);
   H.el["an-trend-chart"] = el();
   H.el["an-trend-dual"] = el();
+}
+// A host whose checkboxes and folds are REBUILT, unticked and closed, from every innerHTML
+// it is given -- as a real DOM's are -- so a selection that survives a redraw was put back.
+function rebuildingHost(extra) {
+  let html = "", boxes = [], folds = [];
+  const h = el(extra);
+  Object.defineProperty(h, "innerHTML", {
+    get: () => html,
+    set: (v) => {
+      html = v;
+      boxes = [...v.matchAll(/class="an-rel-pick" data-kind="(\w)" data-idx="(\d+)"/g)]
+        .map((m) => ({ checked: false, dataset: { kind: m[1], idx: m[2] } }));
+      folds = [...v.matchAll(/<details/g)].map(() => ({ open: false }));
+    },
+  });
+  h.querySelectorAll = (sel) => sel === ".an-rel-pick:checked" ? boxes.filter((b) => b.checked)
+    : sel === ".an-rel-pick" ? boxes : sel === "details" ? folds : [];
+  return h;
 }
 function need(...names) {
   const gone = names.filter((n) => MISSING.includes(n));
@@ -141,6 +172,16 @@ const CAV = Object.assign({
     + "count that bounds how many independent paths there could be; even distinct outlets "
     + "may still share an upstream origin this view cannot see.",
 }, process.env.B24_CAVEATS ? JSON.parse(process.env.B24_CAVEATS) : {});
+
+function needServed(...keys) {
+  const gone = keys.filter((k) => !CAV[k]);
+  assert.deepStrictEqual(gone, [], "run through tests/test_rewalk_b24_analysis.py, which hands in the served caveats: " + gone);
+}
+const WWW = { caveat: "", who: { entities: [{ name: "Kim", class: "person", articles: 2 }] },
+  where: { places: [] }, when: { years: [{ year: 2024, articles: 8 }] } };
+const SOURCES2 = { caveat: "", n_articles: 3, sources: [{ name: "A", articles: 2 }, { name: "B", articles: 1 }] };
+const CLUSTERS = [{ size: 3, single_source: true, distinct_sources: 1, members: [], article_ids: [1, 2, 3] },
+  { size: 2, single_source: false, distinct_sources: 2, members: [], article_ids: [4, 5] }];
 
 const PRICES = [
   { observed_on: "2025-01-01", price: 289 }, { observed_on: "2025-02-01", price: 281.7 },
@@ -224,7 +265,9 @@ GROUPS.u6 = () => {
 
 // N-2. Fixed server sentences, keyed x12 -- drawn verbatim they read English everywhere.
 GROUPS.n2 = () => {
-  need("_anLinksHtml", "_anSentimentHtml", "_anSourcesHtml");
+  need("_anLinksHtml", "_anSentimentHtml", "_anSourcesHtml", "_anWwwHtml", "_anRelatedHtml",
+    "_anCompetitiveHtml");
+  needServed("www", "coordination", "coordination method", "framing");
   for (const lang of ["fr", "zh", "ar", "ja"]) {
     reset(lang);
     const cases = [
@@ -233,6 +276,17 @@ GROUPS.n2 = () => {
       ["sentiment", M._anSentimentHtml({ caveat: CAV.sentiment, n_scored: 4, n_articles: 5,
         english_scored: 2, mean_score: -0.2, labels: { positive: 1, negative: 3 } })],
       ["sources", M._anSourcesHtml({ caveat: CAV.sources, sources: [] })],
+      // When/Where/Who, the Related tab's method line and caveat, and the Competitive tab,
+      // which draws /api/framing's own sentence beside the sources one (the round-2 review).
+      ["www", M._anWwwHtml(Object.assign({}, WWW, { caveat: CAV.www }))],
+      ["coordination", M._anRelatedHtml({ caveat: CAV.coordination, method: CAV["coordination method"],
+        clusters: CLUSTERS }, { items: [] })],
+      ["coordination method", M._anRelatedHtml({ caveat: "", method: CAV["coordination method"],
+        clusters: [] }, { items: [] })],
+      ["sources", M._anCompetitiveHtml(Object.assign({}, SOURCES2, { caveat: CAV.sources }),
+        { caveat: CAV.framing, framing: [] }, "climate")],
+      ["framing", M._anCompetitiveHtml(Object.assign({}, SOURCES2, { caveat: CAV.sources }),
+        { caveat: CAV.framing, framing: [] }, "climate")],
     ];
     for (const [k, html] of cases) {
       const tr = T(lang, CAV[k]);
@@ -244,14 +298,14 @@ GROUPS.n2 = () => {
 };
 
 // N-4. The switch redraws from what each panel already holds, and asks for nothing.
-GROUPS.n4 = () => {
+GROUPS.n4 = async () => {
   need("_anRepaintOnLangChange", "_anRefillFormSlots");
   reset("en");
   const S = M.state();
   M.setPanels({ links: { caveat: CAV.links, items: [] },
                 sentiment: { caveat: CAV.sentiment, n_scored: 0 },
                 sources: { caveat: CAV.sources, sources: [] } });
-  S._anTrend.counts = [{ label: "climate", unit: "mentions", points: [{ t: "2026-09-21", v: 22 }] }];
+  S._anTrend.counts = [{ label: "climate", unitKey: "mentions", points: [{ t: "2026-09-21", v: 22 }] }];
   S._anTrend.mode = "counts"; S._anTrend.picked = {}; S._anTrend.byLang = null;
   reset("fr");
   for (const id of ["an-links", "an-sentiment", "an-sources"]) H.el[id] = el({ innerHTML: "EN" });
@@ -289,6 +343,78 @@ GROUPS.n4 = () => {
     "a failed count came back as an empty slot, which reads as nothing to count");
   assert.strictEqual(H.el["an-xforms-kept"].innerHTML, "…", "a slot already showing something was overwritten");
   assert.deepStrictEqual(H.api, []);
+
+  // THE TREND'S UNIT follows the switch too (the round-2 review): fetched in English, then
+  // redrawn in Chinese, the legend, the hover and the data table name it in Chinese.
+  reset("en");
+  trendHosts();
+  H.respond = (u) => Promise.resolve(u.startsWith("/api/insights/trend")
+    ? { resolved: true, points: [{ date: "2026-09-21", count: 22 }], articles: 7 }
+    : { nodes: [] });
+  S._anTrend.key = null;
+  await M.renderAnTrend(new URLSearchParams("query=climate"));
+  assert.strictEqual(H.charts[0].list[0].unit, T("en", "mentions"));
+  reset("zh");
+  trendHosts({ innerHTML: "EN" });
+  M._anRepaintOnLangChange();
+  assert.deepStrictEqual(H.api, [], "a language switch sent a request");
+  assert.notStrictEqual(T("zh", "mentions"), "mentions", "the zh table has no word for mentions");
+  assert.strictEqual(H.charts.length, 1);
+  assert.strictEqual(H.charts[0].list[0].unit, T("zh", "mentions"),
+    "the charted unit stayed in the language the trend was fetched in");
+  assert.strictEqual(S._anTrend.counts[0].unit, undefined,
+    "the retained series holds a translation, which the next switch cannot undo");
+  need("_anWwwHtml", "_anRelatedHtml", "_anCompetitiveHtml", "_anOverviewHtml");
+  needServed("www", "coordination", "framing");
+
+  // When/Where/Who, Related, Competitive and the Overview tiles: every panel the window
+  // composes at render time redraws from what it holds, and asks for nothing.
+  reset("en");
+  M.setPanels({
+    www: Object.assign({}, WWW, { caveat: CAV.www }),
+    related: { cd: { caveat: CAV.coordination, method: CAV["coordination method"], clusters: CLUSTERS },
+               ld: { caveat: CAV.links, items: [] } },
+    competitive: { cs: Object.assign({}, SOURCES2, { caveat: CAV.sources }),
+                   fr: { caveat: CAV.framing, framing: [] }, query: "climate" },
+  });
+  const OV = { key: "k1", kw: { terms: [{ term: "climate" }] }, www: null, src: null, sent: null };
+  M.setOverview("k1", OV);
+  const rel = rebuildingHost({ dataset: { done: "1" } });
+  rel.innerHTML = M._anRelatedHtml(M.state()._anPanelsLast.related.cd, M.state()._anPanelsLast.related.ld);
+  rel.querySelectorAll(".an-rel-pick").find((b) => b.dataset.kind === "c" && b.dataset.idx === "1").checked = true;
+  rel.querySelectorAll("details")[0].open = true;
+  reset("zh");
+  H.el["an-www"] = el({ innerHTML: "EN" });
+  H.el["an-competitive"] = el({ innerHTML: "EN" });
+  H.el["an-overview"] = el({ innerHTML: "EN", dataset: { done: "1" } });
+  H.el["an-related"] = rel;
+  M._anRepaintOnLangChange();
+  assert.deepStrictEqual(H.api, [], "a language switch sent a request");
+  const www = H.el["an-www"].innerHTML;
+  assert.ok(www.includes(esc(T("zh", CAV.www))), "When/Where/Who kept its caveat in English");
+  assert.ok(www.includes(esc(T("zh", "Who"))) && www.includes("branchByFacet('who',0)"));
+  assert.strictEqual(M.state()._anFacets.who[0].value, "Kim", "the facet the drill reads was not rebuilt");
+  const comp = H.el["an-competitive"].innerHTML;
+  assert.ok(comp.includes(esc(T("zh", CAV.framing))), "the framing caveat stayed in English");
+  assert.ok(comp.includes(esc(T("zh", "Volume"))), "the Competitive headers stayed in English");
+  const ov = H.el["an-overview"].innerHTML;
+  assert.ok(ov.includes(esc(T("zh", "Open"))) && !ov.includes(">Open "), "the Overview tiles kept \"Open\"");
+  const rh = rel.innerHTML;
+  assert.ok(rh.includes(esc(T("zh", CAV.coordination))), "the Related caveat stayed in English");
+  assert.ok(rh.includes(esc(T("zh", CAV["coordination method"]))), "the Related method line stayed in English");
+  const ticked = rel.querySelectorAll(".an-rel-pick:checked").map((b) => b.dataset.kind + b.dataset.idx);
+  assert.deepStrictEqual(ticked, ["c1"], "a switch dropped the reader's selection for branching");
+  assert.deepStrictEqual(rel.querySelectorAll("details").map((d) => d.open), [true, false],
+    "a switch folded what the reader had unfolded");
+  assert.strictEqual(H.selUpdated, 1, "the selected-count line is not redrawn in the new language");
+  // Not drawn, or drawn for another corpus: left as it is.
+  reset("fr");
+  M.setOverview("k2", OV);   // the Overview now belongs to another corpus
+  H.el["an-overview"] = el({ innerHTML: "ZH", dataset: { done: "1" } });
+  H.el["an-related"] = el({ innerHTML: "Loading…", dataset: { done: "" } });
+  M._anRepaintOnLangChange();
+  assert.strictEqual(H.el["an-overview"].innerHTML, "ZH", "an Overview for another corpus was painted over");
+  assert.strictEqual(H.el["an-related"].innerHTML, "Loading…", "a Related tab still loading was painted over");
 };
 
 // N-5. The reader's own separators, through keyed frames every locale states once.
@@ -321,7 +447,7 @@ GROUPS.n5 = () => {
   }
   reset("zh");
   const S = M.state();
-  S._anTrend.counts = [{ label: "climate", unit: "mentions", points: [{ t: "2026-09-21", v: 22 }] }];
+  S._anTrend.counts = [{ label: "climate", unitKey: "mentions", points: [{ t: "2026-09-21", v: 22 }] }];
   S._anTrend.mode = "counts"; S._anTrend.picked = {}; S._anTrend.suggested = []; S._anTrend.byLang = null;
   trendHosts();
   M.drawAnTrend();
@@ -367,6 +493,39 @@ GROUPS.n7 = () => {
     assert.ok(/<div class="an-mm-box[^"]*" style="overflow:auto;max-width:100%/.test(html),
       `big=${big}: the map has no box of its own to scroll in`);
   }
+  // DRAWN WHILE ITS SUBTAB IS HIDDEN (the round-2 review): `loadAnalysis` draws the Map
+  // behind whichever tab is open, where the box measures 0 and nothing can be centred.
+  const S = M.state();
+  const box = (dir) => ({ dir, clientWidth: 0, scrollWidth: 0, clientHeight: 0, scrollHeight: 0,
+    scrollLeft: 0, scrollTop: 0 });
+  const show = (b) => Object.assign(b, { clientWidth: 301, scrollWidth: 680, clientHeight: 460, scrollHeight: 460 });
+  const draw = (b) => {
+    S._anMM.big = false; S._anMM.cloud = false; S._anMM.concept = false; S._anMM.arms = null;
+    M.renderAnMindmap({ nodes: THREE }, el({ querySelector: (sel) => (sel === ".an-mm-box" ? b : null) }));
+  };
+  for (const [dir, sign] of [["ltr", 1], ["rtl", -1]]) {
+    reset(dir === "rtl" ? "ar" : "en");
+    const b = box(dir);
+    draw(b);
+    assert.strictEqual(b.scrollLeft, 0);
+    assert.strictEqual(H.ros.length, 1, `[${dir}] a map drawn hidden does not wait for a width to centre in`);
+    H.ros[0].cb();                        // still hidden: a resize to nothing changes nothing
+    assert.ok(!H.ros[0].off && b.scrollLeft === 0);
+    show(b); H.ros[0].cb();               // the reader opens the subtab
+    assert.strictEqual(b.scrollLeft, sign * (680 - 301) / 2, `[${dir}] the map did not open on its centre`);
+    assert.ok(H.ros[0].off, `[${dir}] the wait is not one-shot, so it would undo the reader's own scroll`);
+  }
+  // Shown already: centred at once, with nothing left waiting.
+  reset("en");
+  const vis = show(box("ltr"));
+  draw(vis);
+  assert.strictEqual(vis.scrollLeft, (680 - 301) / 2);
+  assert.strictEqual(H.ros.length, 0);
+  // Redrawn while still hidden (a language switch re-fetches it): the older wait is dropped.
+  draw(box("ltr")); draw(box("ltr"));
+  assert.strictEqual(H.ros.length, 2);
+  assert.ok(H.ros[0].off && !H.ros[1].off, "a replaced map's wait is left running");
+  assert.strictEqual(S._anMM.ro, H.ros[1]);
 };
 
 function esc(s) {

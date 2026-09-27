@@ -181,7 +181,10 @@ def test_mindmap_keeps_the_cloud_view_and_its_in_map_controls():
 
 
 def test_competitive_keeps_all_four_columns_and_the_not_a_ranking_disclosure():
-    comp = function_source(_ANALYSIS, "renderAnCompetitive")
+    # Fetched by renderAnCompetitive and DRAWN by _anCompetitiveHtml since the 2026-09-27
+    # re-walk (N-4), so a language switch redraws the table from the retained payloads.
+    comp = (function_source(_ANALYSIS, "renderAnCompetitive")
+            + function_source(_ANALYSIS, "_anCompetitiveHtml"))
     for needle in ("Volume", "Tone", "Timing", "Emphasis"):
         assert_present(comp, needle, why="a column the modal's Competitive view had")
     assert_present(comp, "never a ranking or a credibility judgement")
