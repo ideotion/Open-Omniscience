@@ -15264,4 +15264,13 @@ migration or a re-index is DEFERRED with the change it would make, and is listed
   how a law card names its country. Cosmetic and self-healing; noted so a re-walk does not re-report it.
 - **The analysis mind map's per-node tag lines** add clutter where node words already overlap in the top
   cluster (predates the walk). A layout question for the mind-map rules, not a defect of the tag itself.
+- **The app has no plural rules.** A count before a noun or adjective is written today with two keyed frames,
+  one and many, which is right for English and French but wrong for Arabic (six CLDR categories), Russian (four)
+  and several others. The fixes used that pair wherever a count met a word («1 sources», «4 qualifié»). The
+  lasting fix is one helper over the browser's own `Intl.PluralRules(lang)` (offline, no egress) choosing a keyed
+  frame per CLDR category, with the i18n gates taught that a plural key is one key with several forms. A design
+  change to the locale files and the gates, so it is left for its own slice rather than folded into a fix batch.
+- **A one-off 400 on `POST /api/diagnostics/frontend-error` at unlock** is a client that closed the connection
+  mid-body (FastAPI answers a disconnect with 400); reproduced only that way, never from the payload. Noise, not a
+  fault; noted so a re-walk does not re-report it.
 
