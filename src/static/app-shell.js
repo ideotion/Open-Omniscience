@@ -774,7 +774,9 @@
         // window, but hoisting it above a matching command would mean typing "Settings"
         // and getting an analysis OF the word Settings. This change makes the surface
         // honest about today's behaviour without deciding that.
-        live.unshift({grp: t("Search"), label: `${t("Analysis")}: “${raw}”`,
+        // The reader's own separator through the ONE keyed label frame -- "Analyse : “…”"
+        // in fr, "分析：“…”" in zh (the 2026-09-27 re-walk, N-5), never a welded ": ".
+        live.unshift({grp: t("Search"), label: ooLabelText(t("Analysis"), `“${raw}”`),
           sub: statics.length ? "↗" : "↵ ↗", run: () => openAnalysisInNewTab(raw)});
       }
       _palFiltered = [...statics, ...live];

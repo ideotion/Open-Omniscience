@@ -5301,5 +5301,17 @@
   "airplane mode engaged — progress is saved, start again to resume": "وضع الطيران مفعّل — حُفظ التقدّم، ابدأ من جديد للاستئناف",
   "paused: {reason} — progress is saved, start again once memory recovers": "متوقف مؤقتًا: {reason} — حُفظ التقدّم، ابدأ من جديد عندما تتعافى الذاكرة",
   "declined on this machine: {reason} — nothing was judged; restart the app with {env}=1 to run it anyway": "رُفض على هذا الجهاز: {reason} — لم يُحكم على أي شيء؛ أعد تشغيل التطبيق مع {env}=1 لتشغيله رغم ذلك",
-  "stopped after {n} consecutive batches with no evidence to judge — the remaining candidates could not be evaluated (no reachable feed / no prior articles); they stay unqualified and will be retried on a later run": "توقّف بعد دفعات متتالية بلا أدلة للحكم عددها {n} — تعذّر تقييم المرشحين المتبقين (لا خلاصة يمكن الوصول إليها / لا مقالات سابقة)؛ يبقون غير مُقيَّمين وستُعاد محاولتهم في تشغيل لاحق"
+  "stopped after {n} consecutive batches with no evidence to judge — the remaining candidates could not be evaluated (no reachable feed / no prior articles); they stay unqualified and will be retried on a later run": "توقّف بعد دفعات متتالية بلا أدلة للحكم عددها {n} — تعذّر تقييم المرشحين المتبقين (لا خلاصة يمكن الوصول إليها / لا مقالات سابقة)؛ يبقون غير مُقيَّمين وستُعاد محاولتهم في تشغيل لاحق",
+  "Mention counts on a shared time axis.": "أعداد الإشارات على محور زمني مشترك.",
+  "Price × coverage: {prices} price points, {coverage} coverage points": "السعر × التغطية: {prices} نقطة سعر، {coverage} نقطة تغطية",
+  "Shrink the mindmap": "تصغير الخريطة الذهنية",
+  "{list}, {item}": "{list}، {item}",
+  "{term} ({count}, Association {pmi})": "{term} ({count}، ارتباط {pmi})",
+  "{term} ({count})": "{term} ({count})",
+  "Tone is measured by VADER, an ENGLISH-lexicon method; scores for non-English articles are unreliable (see the English share). Counts only, never a verdict.": "تُقاس النبرة بـ VADER، وهي طريقة قائمة على معجم إنجليزي؛ درجات المقالات غير الإنجليزية غير موثوقة (انظر الحصة الإنجليزية). أعداد فقط، وليست حكمًا أبدًا.",
+  "Volume and timing are exact counts; mean tone is VADER (English-lexicon, unreliable for non-English). No ranking and no verdict -- coverage, not credibility.": "الحجم والتوقيت أعداد دقيقة؛ متوسط النبرة من VADER (معجم إنجليزي، غير موثوق لغير الإنجليزية). لا ترتيب ولا حكم — تغطية، لا مصداقية.",
+  "Shared-origin structure, counts only. Several articles citing the SAME link are not independent confirmation -- one origin, several echoes. Citing sources is the count that bounds how many independent paths there could be; even distinct outlets may still share an upstream origin this view cannot see.": "بنية المصدر المشترك، أعداد فقط. عدة مقالات تستشهد بالرابط نفسه ليست تأكيدًا مستقلاً — مصدر واحد وأصداء متعددة. «المصادر المُستشهِدة» هو العدد الذي يحدّ عدد المسارات المستقلة الممكنة؛ وحتى المنافذ المتمايزة قد تشترك في مصدر أعلى لا يمكن لهذا العرض رؤيته.",
+  "Deduced from article text, never confirmed; counts only.": "مستنتج من نص المقالات، ولم يُؤكَّد قط؛ أعداد فقط.",
+  "Near-duplicate clustering (MinHash + LSH, high-precision, Jaccard >= 0.7) within the matched set; independence is measured by DISTINCT SOURCES, never article count.": "تجميع شبه المكررات (MinHash + LSH، دقة عالية، Jaccard >= 0.7) ضمن المجموعة المطابقة؛ تُقاس الاستقلالية بعدد المصادر المتمايزة، لا بعدد المقالات أبدًا.",
+  "Structural near-duplication: articles sharing near-identical text count as ONE voice, not independent confirmation. This is NOT proof of collusion, and the absence of a flag is not the absence of coordination. Counts only, no score.": "شبه تكرار بنيوي: المقالات التي تتشارك نصًا شبه متطابق تُحسب صوتًا واحدًا، لا تأكيدًا مستقلاً. هذا ليس دليلاً على التواطؤ، وغياب الإشارة ليس غيابًا للتنسيق. أعداد فقط، بلا درجة."
 }

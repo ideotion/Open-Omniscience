@@ -70,6 +70,9 @@ function load(host) {
   `;
   new Function("__host", "ctx",
     prelude + objLiteral("FAM_HUE") + "\n" + fnSource("famHue") + "\n"
+    // "Method: ..." and "From this Lead: <card>" go through app-core's ONE keyed label
+    // frame since the 2026-09-27 re-walk (N-5) -- extracted, never re-typed.
+    + fnSource("ooLabelHtml") + "\n"
     + fnSource("_anRenderProvenance")
     + "\nctx.render = _anRenderProvenance;")(host, ctx);
   return ctx.render;

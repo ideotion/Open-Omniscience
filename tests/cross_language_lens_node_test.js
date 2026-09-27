@@ -41,7 +41,10 @@ function extract(name) {
 // slow first paint actually gets.
 const NAMES = ["_anParseLens", "_anApplyLens", "_anLensSeed", "_anApplyLensSeed",
                "_anWriteLensToUrl", "_anUrlNamesActiveTab", "_anSlug", "_anFormCountsHtml", "_anLangCell",
-               "_anGroupRowsByLanguage", "_crossLangNotice"];
+               "_anGroupRowsByLanguage", "_crossLangNotice",
+               // app-core's keyed "Label: value" frame, which the notice's per-language
+               // line uses since the 2026-09-27 re-walk (N-5): extracted, never shimmed.
+               "ooLabelHtml"];
 const src = "function esc(s){return String(s==null?'':s).replace(/[&<>\"]/g,"
   + "c=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;'}[c]));}\n"
   + "var window = {};\n"

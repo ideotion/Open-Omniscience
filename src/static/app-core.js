@@ -55,6 +55,17 @@
       return tf("{prefix}: {text}", {prefix: "\u0001", text: "\u0002"})
         .replace("\u0001", () => String(label)).replace("\u0002", () => String(value == null ? "" : value));
     }
+    // A plain enumeration ("a, b, c") with the READER's list punctuation -- "、" in zh
+    // and ja, "،" in ar -- through ONE keyed frame that appends each item, the list
+    // counterpart of the label frame above (the 2026-09-27 re-walk, N-5: a hover read
+    // "(2 مقالة, ارتباط 3.9)" with a Latin comma). Plain TEXT in, plain text out.
+    function ooListJoin(items) {
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
+        : ((s, v) => String(s).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? String(v[k]) : m));
+      return (items || []).map(String).reduce((acc, x, i) =>
+        (i === 0 ? x : tf("{list}, {item}", {list: "\u0001", item: "\u0002"})
+          .replace("\u0001", () => acc).replace("\u0002", () => x)), "");
+    }
 
     // ===================================================================== //
     //  COUNTRY AND LANGUAGE CODES ON SCREEN (ruling Q301 = c step 1, Q302's  //

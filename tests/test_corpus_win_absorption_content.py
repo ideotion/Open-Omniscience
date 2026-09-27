@@ -46,7 +46,12 @@ _ANALYSIS = read_static("app-analysis.js")
 _CORPUS = read_static("app-corpus.js")
 _BOOT = read_static("app-boot.js")
 
-_LOAD_ANALYSIS = function_source(_ANALYSIS, "loadAnalysis")
+# The Links and Sources tables are drawn by their own renderers since the 2026-09-27
+# re-walk (N-4), so a language switch redraws them from the retained payload; the
+# loader and both renderers are read together.
+_LOAD_ANALYSIS = (function_source(_ANALYSIS, "loadAnalysis")
+                  + function_source(_ANALYSIS, "_anLinksHtml")
+                  + function_source(_ANALYSIS, "_anSourcesHtml"))
 
 
 def test_the_name_only_guard_is_not_mistaken_for_a_content_guard():

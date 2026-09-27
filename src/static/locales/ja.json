@@ -5301,5 +5301,17 @@
   "airplane mode engaged — progress is saved, start again to resume": "機内モードがオンです — 進捗は保存されています。再開するにはもう一度開始してください",
   "paused: {reason} — progress is saved, start again once memory recovers": "一時停止：{reason} — 進捗は保存されています。メモリが回復したらもう一度開始してください",
   "declined on this machine: {reason} — nothing was judged; restart the app with {env}=1 to run it anyway": "このマシンでは見送られました：{reason} — 何も判定していません。それでも実行するには {env}=1 でアプリを再起動してください",
-  "stopped after {n} consecutive batches with no evidence to judge — the remaining candidates could not be evaluated (no reachable feed / no prior articles); they stay unqualified and will be retried on a later run": "判定できる根拠のないバッチが {n} 回連続したため停止しました — 残りの候補は評価できませんでした（到達できるフィードなし／過去の記事なし）。未審査のまま残り、後の実行で再試行されます"
+  "stopped after {n} consecutive batches with no evidence to judge — the remaining candidates could not be evaluated (no reachable feed / no prior articles); they stay unqualified and will be retried on a later run": "判定できる根拠のないバッチが {n} 回連続したため停止しました — 残りの候補は評価できませんでした（到達できるフィードなし／過去の記事なし）。未審査のまま残り、後の実行で再試行されます",
+  "Mention counts on a shared time axis.": "共通の時間軸上の言及数。",
+  "Price × coverage: {prices} price points, {coverage} coverage points": "価格 × 報道量：価格 {prices} 点、報道量 {coverage} 点",
+  "Shrink the mindmap": "マインドマップを縮小",
+  "{list}, {item}": "{list}、{item}",
+  "{term} ({count}, Association {pmi})": "{term}（{count}、関連 {pmi}）",
+  "{term} ({count})": "{term}（{count}）",
+  "Tone is measured by VADER, an ENGLISH-lexicon method; scores for non-English articles are unreliable (see the English share). Counts only, never a verdict.": "トーンは英語辞書ベースの手法である VADER で測定しています。英語以外の記事のスコアは信頼できません（英語の割合を参照）。件数のみで、判定ではありません。",
+  "Volume and timing are exact counts; mean tone is VADER (English-lexicon, unreliable for non-English). No ranking and no verdict -- coverage, not credibility.": "件数と時期は正確な集計です。平均トーンは VADER（英語辞書ベース、英語以外では信頼できません）。順位付けも判定もありません——報道量であって、信頼性ではありません。",
+  "Shared-origin structure, counts only. Several articles citing the SAME link are not independent confirmation -- one origin, several echoes. Citing sources is the count that bounds how many independent paths there could be; even distinct outlets may still share an upstream origin this view cannot see.": "共通の出典の構造で、件数のみです。同じリンクを引用する複数の記事は独立した裏付けではありません——出典は一つ、反響は複数。引用元の数が、独立した経路がいくつあり得るかの上限です。別々の媒体でも、この表示からは見えない上流の出典を共有している可能性があります。",
+  "Deduced from article text, never confirmed; counts only.": "記事本文から推定したもので、確認されたものではありません。件数のみです。",
+  "Near-duplicate clustering (MinHash + LSH, high-precision, Jaccard >= 0.7) within the matched set; independence is measured by DISTINCT SOURCES, never article count.": "一致した集合内でのほぼ重複のクラスタリング（MinHash + LSH、高精度、Jaccard >= 0.7）。独立性は記事数ではなく、異なる情報源の数で測ります。",
+  "Structural near-duplication: articles sharing near-identical text count as ONE voice, not independent confirmation. This is NOT proof of collusion, and the absence of a flag is not the absence of coordination. Counts only, no score.": "構造的なほぼ重複：ほぼ同一の本文を持つ記事は、独立した裏付けではなく「一つの声」として数えます。これは共謀の証拠ではなく、フラグがないことは調整がないことを意味しません。件数のみで、スコアはありません。"
 }
