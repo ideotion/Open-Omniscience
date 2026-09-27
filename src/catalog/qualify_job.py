@@ -189,15 +189,22 @@ def run_bulk_qualification(
             # "done [0/79977] starting…". A decline is a named refusal, carried to the
             # result and the progress line with the switch that lifts it; never complete.
             env = str(result.get("override_env") or "OO_ALLOW_BIG_SCANS")
-            declined = {k: result.get(k) for k in ("reason", "available_mb", "need_mb", "caveat")}
+            declined = {k: result.get(k) for k in ("reason", "reason_i18n", "reason_vars",
+                                                   "available_mb", "need_mb", "caveat")}
             declined["override_env"] = env
             why = str(result.get("reason") or "below the memory floor")
+            # The reason rides as its own keyed clause when the floor sent one, so the
+            # progress line is not a translated frame around an English measurement.
+            why_value: object = (
+                {"i18n": result["reason_i18n"], "vars": result.get("reason_vars") or {}}
+                if result.get("reason_i18n") else why
+            )
             paused_reason = Framed(
                 "declined on this machine: " + why
                 + f" — nothing was judged; restart the app with {env}=1 to run it anyway",
                 "declined on this machine: {reason} — nothing was judged; "
                 "restart the app with {env}=1 to run it anyway",
-                reason=why, env=env,
+                reason=why_value, env=env,
             )
             ctx.set_progress(done=0, total=total_backlog, detail=paused_reason)
             break

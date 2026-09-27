@@ -611,7 +611,10 @@ def qualify_sources_bulk_status(request: Request, db: Session = Depends(get_db))
     return {
         **_BULK_QUALIFICATION_JOB.status(),
         "backlog": initial_backlog_estimate(db),
+        # `reason_i18n` / `reason_vars` carry the reason as its keyed frame, so the panel
+        # writes it in the UI language instead of an English parenthesis (re-walk S-5).
         "floor": {k: floor.get(k) for k in ("declines", "below", "overridden", "reason",
+                                             "reason_i18n", "reason_vars",
                                              "available_mb", "total_mb", "override_env")},
     }
 

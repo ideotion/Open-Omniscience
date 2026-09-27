@@ -305,14 +305,22 @@
       // i18n gate can see (the value sits inside a composed node the DOM walker cannot
       // match). The DOMAIN beside it is data and stays untranslated, deliberately.
       const wasStatus = e.prior_status ? t(e.prior_status) : t("never judged");
+      // TWO COLUMNS THAT WRAP, never one crushed column (click-through re-walk S-1/S-2).
+      // The info column has a real BASIS, wider than its own one-line stamp, so when the
+      // action does not fit beside it the row wraps and the action drops onto its own line.
+      // The S8 form (`flex:0 0 auto` on the action, basis 0 on the info) could never wrap:
+      // at 375 px it squeezed the info column to 46 px, printed the domain one word per
+      // line and pushed the nowrap stamp 154 px out of its own column. The action may
+      // shrink, so "Undone" and its stamp can break apart on a narrow screen; only the
+      // stamp itself stays whole.
       return `<div class="row" style="gap:10px;align-items:center;justify-content:space-between;padding:4px 0">
-        <div>
+        <div style="flex:1 1 16em;min-width:0">
           <strong>${esc(e.domain || e.name || "")}</strong>
           <span class="muted"> · ${ooLabelHtml(esc(t("Collection was")), esc(was))}`
         + ` · ${ooLabelHtml(esc(t("Status was")), esc(wasStatus))}`
         + ` · ${when}</span>
         </div>
-        <div style="flex:0 0 auto">${undone}</div>
+        <div style="flex:0 1 auto">${undone}</div>
       </div>`;
     }
 
@@ -338,11 +346,16 @@
         // The GAP, published as a gap: sources collection reaches that this audit has no
         // record of admitting (the shipped catalogue, an inherited stamp, a restore).
         // Drawn only when there IS one -- a caveat may claim only what the data exhibits.
+        // The count is a SENTENCE, full stop inside the frame (the locale's own), because
+        // the note follows it on the same line: without one the two read as one run-on
+        // clause in every language (re-walk S-9). A full-width stop is its own spacing, so
+        // no Latin space follows it (zh / ja read "。 此处" as a typo).
+        const gapLine = tf("{n} of {total} collecting sources are not accounted for here.",
+                           {n: d.unaccounted, total: d.collecting});
         const gap = (d.unaccounted > 0)
           ? `<div class="card-caveat" style="margin-top:8px">`
-            + esc(tf("{n} of {total} collecting sources are not accounted for here",
-                     {n: d.unaccounted, total: d.collecting}))
-            + ` ${esc(t(d.coverage_note || ""))}</div>`
+            + esc(gapLine) + (/[。！？]$/.test(gapLine) ? "" : " ")
+            + `${esc(t(d.coverage_note || ""))}</div>`
           : "";
         host.innerHTML = `<div class="muted" style="margin-bottom:6px">${esc(shown)}${esc(undoneNote)}</div>`
           + evs.map(_admissionRow).join("")
@@ -367,12 +380,24 @@
         // of the three left the headline contradicting the scope sentence right under
         // it until a reload (click-through S2). loadQualificationGates repaints the
         // headline and re-runs the scope count, the audit and the overlay editor --
-        // the same refresh adopt and revert already use.
-        loadQualificationGates();
+        // the same refresh adopt and revert already use -- and _qualRefresh adds the
+        // backlog line, which has its own loader (re-walk S-3).
+        _qualRefresh();
       } catch (e) {
         toast(_apiErrorMessage(e), "err");
         if (btn) btn.disabled = false;
       }
+    }
+
+    // EVERY WRITE ON THIS PANEL REFRESHES BOTH OF ITS LOADERS. loadQualificationGates
+    // repaints the headline, the scope line, the audit and the overlay editor; the
+    // "Catch up the backlog" line has a loader of its own, and an undo, an adopt or a
+    // revert that ran only the first left "5 candidates awaiting qualification" under a
+    // headline that already said 6 until a reload (re-walk S-3, the class of F1). The
+    // section opener and the language switch already call both; the writes call this.
+    function _qualRefresh() {
+      loadQualificationGates();
+      if (typeof loadQualifyBulk === "function") loadQualifyBulk();
     }
 
     // THE SHIPPED-OVERLAY EDITOR (ruling Q1106 = a): adopt / export / revert over the
@@ -456,13 +481,23 @@
       if (btn) btn.disabled = true;
       try {
         const r = await api("/api/sources/overlay/adopt", {method: "POST"});
-        toast(tf("Adopted {n} verdicts; {admitted} sources started being collected.",
-                 {n: r.adopted || 0, admitted: r.admitted || 0}), "ok");
+        // ONE WHOLE SENTENCE PER ONE/MANY COMBINATION, chosen by the counts -- the pair()
+        // idiom of loadOverlayEditor with two counts in the sentence. A single plural frame
+        // toasted "1 sources started being collected" in English itself (re-walk S-11),
+        // and fragments welded with "; " would fix English by taking the punctuation and
+        // the word order away from every other locale.
+        const n = Number(r.adopted) || 0, admitted = Number(r.admitted) || 0;
+        const frame = (n === 1)
+          ? (admitted === 1 ? "Adopted {n} verdict; {admitted} source started being collected."
+            : "Adopted {n} verdict; {admitted} sources started being collected.")
+          : (admitted === 1 ? "Adopted {n} verdicts; {admitted} source started being collected."
+            : "Adopted {n} verdicts; {admitted} sources started being collected.");
+        toast(tf(frame, {n: fmtNum(n, 0), admitted: fmtNum(admitted, 0)}), "ok");
         if (r.preference_held === false) {
           // Half an operation is worse than none if nobody is told which half.
           toast(t("The verdicts were adopted, but the startup preference could not be saved."), "err");
         }
-        loadQualificationGates();
+        _qualRefresh();
       } catch (e) { toast(_apiErrorMessage(e), "err"); }
       finally { if (btn) btn.disabled = false; }
     }
@@ -474,12 +509,18 @@
       if (btn) btn.disabled = true;
       try {
         const r = await api("/api/sources/overlay/revert", {method: "POST"});
-        toast(tf("Put back {n} sources; {undone} admissions undone.",
-                 {n: r.reverted || 0, undone: r.admissions_undone || 0}), "ok");
+        // One whole sentence per one/many combination, as the adopt toast (re-walk S-11).
+        const n = Number(r.reverted) || 0, undone = Number(r.admissions_undone) || 0;
+        const frame = (n === 1)
+          ? (undone === 1 ? "Put back {n} source; {undone} admission undone."
+            : "Put back {n} source; {undone} admissions undone.")
+          : (undone === 1 ? "Put back {n} sources; {undone} admission undone."
+            : "Put back {n} sources; {undone} admissions undone.");
+        toast(tf(frame, {n: fmtNum(n, 0), undone: fmtNum(undone, 0)}), "ok");
         if (r.preference_held === false) {
           toast(t("The sources were put back, but the startup preference could not be saved, so the next start will adopt them again."), "err");
         }
-        loadQualificationGates();
+        _qualRefresh();
       } catch (e) { toast(_apiErrorMessage(e), "err"); }
       finally { if (btn) btn.disabled = false; }
     }
@@ -516,6 +557,7 @@
       body.append("include_this_instance", "true");
       if (btn) btn.disabled = true;
       _qualMergeLast = null;
+      _qualMergeRefusal = null;
       if (out) out.textContent = t("Merging…");
       try {
         const res = await fetch("/api/diagnostics/source-qualification-merge",
@@ -523,8 +565,16 @@
         // The server's refusal is the answer the operator needs ("…: not valid JSON",
         // "no 'verdicts' list"), so it is read through the shared helper WITH the
         // response -- a plain-text error body parses to null and still says its status.
+        // A refusal that carries its keyed frame (`detail_i18n` / `detail_vars`: the
+        // core's sentence with the file name as a data slot) is written in the UI
+        // language and KEPT, so a language switch redraws it as it does a report; the
+        // English `detail` stays the command line's words (re-walk S-6).
         const d = await res.json().catch(() => null);
-        if (!res.ok) throw new Error(_apiErrorMessage(d, res));
+        if (!res.ok) {
+          if (d && d.detail_i18n) _qualMergeRefusal = d;
+          throw new Error((d && d.detail_i18n)
+            ? _framedText(d.detail, d.detail_i18n, d.detail_vars, t) : _apiErrorMessage(d, res));
+        }
         _qualMergeLast = d;
         _renderOverlayMerge();
         _overlaySaveAs(d.overlay_yaml || "", "source_qualification.yml");
@@ -538,11 +588,20 @@
     // already holds (the frozen-locale class, click-through S3): its lines are tf()
     // frames welded to the report's counts, which the i18n walker cannot re-derive.
     let _qualMergeLast = null;
+    // The last KEYED refusal, kept for the same reason: a switch after a refused merge
+    // must redraw the refusal in the new language, never leave the old one or paint an
+    // earlier report over it. A refusal with no frame is data and is left as shown.
+    let _qualMergeRefusal = null;
     function _renderOverlayMerge() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
       const tf = _qualTf;
       const out = $("qual-ov-merge-out");
       const d = _qualMergeLast;
+      if (out && !d && _qualMergeRefusal) {
+        const r = _qualMergeRefusal;
+        out.textContent = _framedText(r.detail, r.detail_i18n, r.detail_vars, t);
+        return;
+      }
       if (!out || !d) return;
       const rep = d.report || {};
       const conflicts = (rep.conflicts || []).length;
@@ -575,15 +634,26 @@
       try {
         await api("/api/scheduler/config", {method: "PUT", body: JSON.stringify(body)});
         toast(t("Saved."), "ok");
-        loadQualificationGates();
+        _qualRefresh();
       } catch (e) { toast(_apiErrorMessage(e), "err"); }
     }
 
-    function _qualDeclinedText(reason, env) {
+    // The memory floor's refusal, in the UI language. Its REASON -- what this machine
+    // measured, against which half of the floor -- arrives as a keyed frame beside the
+    // English sentence (`reason_i18n` / `reason_vars`, src/config/machine_floor.py), and is
+    // written by the job-line rules: the megabytes are formatted numbers, each clause is a
+    // key. Printed raw it was an English parenthesis inside a French refusal (re-walk S-5).
+    // A payload with no frame (an older server, a test double) still shows the English as
+    // data, never nothing.
+    function _qualDeclinedText(reason, env, frame, vars) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      return t("Qualification is declined on this machine: it is below the memory floor, so no candidate is judged.")
-        + (reason ? " (" + reason + ")" : "")
-        + " " + _qualTf("To run it anyway, restart the app with {env}=1.", { env: env || "OO_ALLOW_BIG_SCANS" });
+      const why = reason ? _framedText(reason, frame, vars, t) : "";
+      const lead = t("Qualification is declined on this machine: it is below the memory floor, so no candidate is judged.");
+      // A full-width stop carries its own spacing; a Latin space after it reads as a typo.
+      const sep = /[。！？]$/.test(lead) ? "" : " ";
+      return lead
+        + (why ? sep + "(" + why + ")" + " " : sep)
+        + _qualTf("To run it anyway, restart the app with {env}=1.", { env: env || "OO_ALLOW_BIG_SCANS" });
     }
 
     async function loadQualifyBulk() {
@@ -596,19 +666,48 @@
         const backlog = (bl.unqualified || 0) + (bl.due_disqualified || 0);
         const cancelBtn = $("qualify-bulk-cancel-btn");
         if (st.running) {
-          out.textContent = (st.detail || t("Working…"))
-            + (st.progress ? ` (${st.done}/${st.total})` : "");
+          // The job's line with its keyed frame, as the run's own progress writes it --
+          // a panel opened mid-run showed the English detail on a translated page.
+          out.textContent = (st.detail ? _framedText(st.detail, st.detail_i18n, st.detail_vars, t) : t("Working…"))
+            + (st.progress ? ` (${fmtNum(st.done, 0)}/${fmtNum(st.total, 0)})` : "");
           if (cancelBtn) cancelBtn.style.display = "";
         } else {
+          // A SENTENCE, one keyed frame per count with its full stop inside: the decline
+          // below follows on the same line, and "6 candidates awaiting qualification
+          // Qualification is declined…" read as one run-on clause (re-walk S-12). The
+          // singular frame also stops "1 candidates" in English.
           out.textContent = backlog
-            ? `${fmtNum(backlog)} ${esc(t("candidates awaiting qualification"))}`
+            ? _qualTf(backlog === 1 ? "{n} candidate awaiting qualification." : "{n} candidates awaiting qualification.",
+                      {n: fmtNum(backlog, 0)})
             : t("No candidates awaiting qualification.");
           // FD03 = a (2026-09-24): below the memory floor every qualification pass
           // declines. Said here, with the switch that lifts it, rather than left for
           // the operator to infer from a backlog that never moves.
           const fl = st.floor || {};
           if (fl.declines) {
-            out.textContent += " " + _qualDeclinedText(fl.reason, fl.override_env);
+            out.textContent += (/[。！？]$/.test(out.textContent) ? "" : " ")
+              + _qualDeclinedText(fl.reason, fl.override_env, fl.reason_i18n, fl.reason_vars);
+          }
+          // A CONTROL THAT RENDERS CLAIMS ITS CAPABILITY (re-walk S-7): below the floor the
+          // job declines, so the button that starts it is disabled and DESCRIBED BY the
+          // line above it, which names the refusal and its override -- it used to open the
+          // network-consent popup and offer to take the whole app online for a job that
+          // then did nothing. Not a `title`: the i18n walker keeps a static element's
+          // first-seen attribute as its English original and re-applies it on every pass,
+          // so a title set here froze in the language it was first written in (measured:
+          // English on the fr and ar pages). Only a state THIS loader set is lifted again,
+          // so a run in flight keeps its own.
+          const btn = $("qualify-bulk-btn");
+          if (btn) {
+            if (fl.declines) {
+              btn.disabled = true;
+              btn.dataset.floorDeclined = "1";
+              btn.setAttribute("aria-describedby", "qualify-bulk-status");
+            } else if (btn.dataset.floorDeclined === "1") {
+              btn.disabled = false;
+              delete btn.dataset.floorDeclined;
+              btn.removeAttribute("aria-describedby");
+            }
           }
           if (cancelBtn) cancelBtn.style.display = "none";
         }
@@ -618,6 +717,18 @@
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const out = $("qualify-bulk-status");
       const say = (msg) => { if (out) out.textContent = msg; };
+      // THE REFUSAL COMES BEFORE THE CONSENT POPUP (re-walk S-7). Below the memory floor the
+      // job declines without judging anything, so asking to take the app online for it
+      // would name an action that never egresses. The floor is read over loopback first;
+      // a declining machine gets the named refusal and a disabled button instead. If the
+      // read fails, the job still refuses by name on its own, so nothing is hidden.
+      try {
+        const pre = await api("/api/sources/qualify-bulk/status");
+        if (pre && pre.floor && pre.floor.declines) {
+          if (typeof loadQualifyBulk === "function") loadQualifyBulk();
+          return;
+        }
+      } catch (e) { /* the job's own decline still names itself */ }
       if (typeof ensureOnline === "function"
           && !await ensureOnline(t("Qualify the source backlog — a background job that trial-fetches a few articles from each candidate to judge extraction validity")))
         return;
@@ -648,7 +759,7 @@
         } else if (st && st.result && st.result.declined) {
           // A named refusal, never "0 qualified" read as a finished run (QUAL-1).
           const d = st.result.declined;
-          say(_qualDeclinedText(d.reason, d.override_env));
+          say(_qualDeclinedText(d.reason, d.override_env, d.reason_i18n, d.reason_vars));
         } else if (st && st.result) {
           // Each count is ONE keyed frame chosen by the count, the noun inside it
           // (click-through B17, T12): a number welded to an adjective keyed in the
