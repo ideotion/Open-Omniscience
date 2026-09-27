@@ -15333,6 +15333,49 @@ summed mention counts as articles, about 3× the real article count. **OPEN:**
   cannot name South Sudan or Suriname. B20 was told to derive a missing claimant only from a source field, and
   otherwise to say on the map that the source records one claimant, never to hand-author a geopolitical claim.
 
+
+**The re-walk's fixes (2026-09-27, R37; batches B20–B30 in PR #1191).** All 119 items are fixed in code except
+three: R-6, R-14 and R-24 are the Q1150 When / Where embed, which was never built, so they are resolved by the
+gate's corrected text and the embed goes with `0.5`'s map work (the ASSUMPTION above). **OPEN until the next walk
+passes**, and that walk checks only these fixes and each row's steps (R37). Deferred, each with its reason:
+- **J-1's full fix: make the export ONE server-side job.** The minimum fix records the export's request in
+  `oo-export-request.json` and the summary reads «Backup incomplete» when a part is missing, so a reload during
+  the corpus phase no longer drops the large-data copy SILENTLY. It is still two client-chained jobs; one job
+  that chains the volume copy into the folder copy would lose nothing on a reload. A change to the export's job
+  model, so its own slice.
+- **Leads the round-2 batches found beside their work, NOT fixed (the loop converges, R37):** the synthesis
+  result caveat drawn in English (`app-analysis.js`, `esc(r.caveat)`); the per-article keyword badge hover
+  welded from three `t()` calls; ooChart / `dashChartSvg` may flip their text anchors in RTL (unverified); the AI
+  pill's hardware and backend reasons are server prose with no reason codes (`src/llm/backend.py`), and Settings
+  → AI's «Active backend», vLLM and GPU lines are unkeyed; `/api/custody/settings` takes 5.7 s during a running
+  fold (the consent popup is bounded, other readers wait); a data tag equal to a chrome key is translated by the
+  page walker wherever it lacks `data-i18n-dyn` (fixed on the guided-setup chips only; `app-insights.js` term
+  cells and Home keyword chips still carry it); 25 of 31 card-back «Why am I seeing this?» sentences and 56 of 62
+  exact-math labels in `src/briefing/producers.py` are not keyed; Settings → Leads catalogue labels, the source
+  profile's method and caveat, and `skeleton_echo` are not keyed; Home Latest's caveat is drawn raw; the Arabic
+  «changes today» frame has no plural agreement (the no-plural-rules entry above); three locale keys are unused
+  («Discovered candidates», «Automatic collection: {state}», the old By-channel hint); fr at 375 px the Trends
+  window row scrolls sideways (pre-existing, `#trd-windows`); a timed-out graph reads «No strong associations
+  yet»; the import checklist's counts and the export progress still build ASCII brackets by concatenation (the
+  J-3 class); Arabic Settings breadcrumbs keep a left-to-right arrow; a few literal toasts rely on the page
+  walker; the Import dialog's per-backup plan prints raw table names and English step timings; the Import
+  passphrase field keeps its value across a close; `i18n.js`'s `doAttrs` keeps a static element's first-seen
+  title, so JS that sets `.title` on a static element after first paint stays in that language; the zh/ja
+  memory-floor refusal keeps half-width parentheses; the welded `t("Failed:") + " "` still stands in
+  `taskmanager.html`, `app-diagnostics.js`, `app-backup.js` and `app-gov-law.js`; the Insights map's city-dot
+  titles are not repainted; calendar family names are English catalogue data (`configs/calendar_feeds.yml`,
+  needs a data-side label or a ruling); `map_by_area`'s caveat still says «None value» (no UI prints it); country
+  paths on the maps still carry an SVG `<title>`, so touch cannot reach a country's name (the contested areas
+  can); the level map's «No stored figures» and «No comparable, mappable figures» empty states are unkeyed.
+- **Walk environment facts for the next walk:** booting with `OO_NO_SCHEDULER=1` leaves the kill switch CLEAR,
+  so `ensureOnline` returns without a popup; engage airplane mode first (`POST /api/system/network`
+  `online:false`) or a consent check proves nothing. Copied seed folders carry a pre-fix `briefing_cache.json`;
+  refresh it (`POST /api/briefing/refresh`) or data-bearing Lead sentences fall back to English by design. For
+  I-4 in RTL, measure the stage-row gap against the nearest glyph box on the dot's line.
+- **Presentational, worth a maintainer look (not a defect):** the net coach is now an in-flow strip with an arrow
+  at the plane rather than a floating bubble. The 2026-06-13 ruling (a coachmark points at the ONE airplane
+  button) is still met by the arrow; Q-VIS-7 (the coach's accent-filled primary action) stays open.
+
 ## 2026-09-26 — What the read memory stop does NOT cover (deliberate, PR #1190)
 
 The stop (`statement_deadline`, `MemoryShort`) was built after a 3.9 GB instance died in 25
