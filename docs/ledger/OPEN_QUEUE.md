@@ -43,6 +43,8 @@
   string, `tests/test_release_run.py`); relabelling it is session work, owed with the next fix batch.
   Nothing else moved: `RC02`, `RC03` and `RC12` stay PENDING, and the pre-flight round's other twelve
   questions stay unanswered.
+  **UPDATE (same day):** (4) the Claude walk of row R ran and FAILS on 2 P2 and 8 P3 defects (the 2026-09-26
+  click-through entry below, «The re-walk»); (6) the relabel is in fix batch B20 beside row R's fixes.
 
 - **THE SEARCH INDEX NOW FOLDS ARABIC AND SEGMENTS CHINESE AND JAPANESE (`S04-07` S8, Q506 🔒 = b,
   Q507 = a, built 2026-09-25): WHAT IS OWED, WHAT WAS LEFT UNDECIDED, AND ONE FINDING OUTSIDE THE
@@ -15309,6 +15311,26 @@ migration or a re-index is DEFERRED with the change it would make, and is listed
 - **A one-off 400 on `POST /api/diagnostics/frontend-error` at unlock** is a client that closed the connection
   mid-body (FastAPI answers a disconnect with 400); reproduced only that way, never from the payload. Noise, not a
   fault; noted so a re-walk does not re-report it.
+
+**The re-walk (2026-09-27, `docs/audit/delegated-rewalk-2026-09-27/`).** The fixed build (`0deff9c4`) re-walked
+in Chromium on the first walk's terms, rows H to U, plus the first Claude walk of row R (the five maps). Of the
+234 first-walk defects the walkers checked, 227 are fixed, 3 are only partly fixed (row M's M1, M7 and M14) and
+4 could not be checked in a sandbox. Every walkable step of H, I, J, L, O, T and U passes; M, N, P and S fail
+one to three steps; row R fails. An independent re-checker confirmed **119 items: 1 P1, 23 P2, 95 P3** (some
+repeat across rows, and 17 are a failing step that restates a defect). The P1: the trend's Counts mode labels
+summed mention counts as articles, about 3× the real article count. **OPEN:**
+- **Which of the 119 before the tag** — asked on a decision card in the «What's left for v0.4» thread
+  (2026-09-27 ~11:00 UTC): «All of them» (recommended: R36's bar; the next walk checks only these fixes and
+  each row's steps, so the loop ends) or «P1 and P2 only» (the P3s recorded for 0.5). Work proceeds on the
+  recommended option until the maintainer answers: batches B20 (row R + the release-run relabel) and B21–B30.
+- **ASSUMPTION, not a ruling: the When / Where ooMap embed (Q1150 = «Keep») is built with `0.5`'s map work.**
+  It was scoped and never built (`shipped.csv` 2026-09-10); the 0.4 gate's row R had read Q1150 as naming an
+  existing surface and is corrected. Register M3's recommended build is option (b), places aggregated to
+  country on the existing choropleth, with the anti-capping line. The default placement is `S05-05` beside
+  0.5 row L; the maintainer may ask for it in `0.4` instead.
+- **Row R's single-claimant areas** (Abyei, Tigri Area, Lawa Headwaters): Natural Earth's viewpoint fields
+  cannot name South Sudan or Suriname. B20 was told to derive a missing claimant only from a source field, and
+  otherwise to say on the map that the source records one claimant, never to hand-author a geopolitical claim.
 
 ## 2026-09-26 — What the read memory stop does NOT cover (deliberate, PR #1190)
 
