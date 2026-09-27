@@ -4731,5 +4731,11 @@
   "Paused for an import — setting each keyword's language from its mentions": "एक आयात के लिए रोका गया — उल्लेखों से हर कीवर्ड की भाषा तय करना",
   "keyword fold paused (resumable; it survives a restart)": "कीवर्ड मिलान रोका गया (फिर शुरू किया जा सकता है; रीस्टार्ट के बाद भी बना रहता है)",
   "keyword fold cancelled (what it already folded stays folded; folding again starts a new pass)": "कीवर्ड मिलान रद्द (जो मिल चुका वह मिला रहेगा; दोबारा करने पर नया दौर शुरू होगा)",
-  "keyword fold resumed": "कीवर्ड मिलान फिर शुरू हुआ"
+  "keyword fold resumed": "कीवर्ड मिलान फिर शुरू हुआ",
+  "Sources collecting": "संग्रह में स्रोत",
+  "Enabled, not qualified": "सक्रिय, योग्य नहीं",
+  "Discovered candidates": "खोजे गए उम्मीदवार",
+  "{n} of your {total} sources: enabled AND qualified — what collection actually reaches. This is the headline source count.": "आपके {total} स्रोतों में से {n}: सक्रिय और योग्य — जिन तक संग्रह वास्तव में पहुँचता है। यही स्रोतों की मुख्य संख्या है।",
+  "{n} of your {total} sources: enabled but not qualified — awaiting a verdict, or judged and refused. Collection does not reach them.": "आपके {total} स्रोतों में से {n}: सक्रिय पर योग्य नहीं — निर्णय की प्रतीक्षा में, या जाँचे जाकर अस्वीकृत। संग्रह इन तक नहीं पहुँचता।",
+  "{n} of your {total} sources: discovered candidates, not enabled, awaiting review. Collection does not reach them.": "आपके {total} स्रोतों में से {n}: खोजे गए उम्मीदवार, सक्रिय नहीं, समीक्षा की प्रतीक्षा में। संग्रह इन तक नहीं पहुँचता।"
 }

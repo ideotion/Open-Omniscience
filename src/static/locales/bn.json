@@ -4731,5 +4731,11 @@
   "Paused for an import — setting each keyword's language from its mentions": "একটি ইমপোর্টের জন্য থামানো — উল্লেখগুলো থেকে প্রতিটি কীওয়ার্ডের ভাষা নির্ধারণ",
   "keyword fold paused (resumable; it survives a restart)": "কীওয়ার্ড একীকরণ থামানো হয়েছে (আবার চালানো যায়; রিস্টার্টের পরেও থাকে)",
   "keyword fold cancelled (what it already folded stays folded; folding again starts a new pass)": "কীওয়ার্ড একীকরণ বাতিল (যা একীভূত হয়েছে তা থাকবে; আবার করলে নতুন পর্ব শুরু হবে)",
-  "keyword fold resumed": "কীওয়ার্ড একীকরণ আবার শুরু হয়েছে"
+  "keyword fold resumed": "কীওয়ার্ড একীকরণ আবার শুরু হয়েছে",
+  "Sources collecting": "সংগ্রহে থাকা উৎস",
+  "Enabled, not qualified": "সক্রিয়, যোগ্য নয়",
+  "Discovered candidates": "আবিষ্কৃত প্রার্থী",
+  "{n} of your {total} sources: enabled AND qualified — what collection actually reaches. This is the headline source count.": "আপনার {total}টি উৎসের মধ্যে {n}টি: সক্রিয় এবং যোগ্য — সংগ্রহ আসলে যেগুলোতে পৌঁছায়। এটিই উৎসের প্রধান সংখ্যা।",
+  "{n} of your {total} sources: enabled but not qualified — awaiting a verdict, or judged and refused. Collection does not reach them.": "আপনার {total}টি উৎসের মধ্যে {n}টি: সক্রিয় কিন্তু যোগ্য নয় — রায়ের অপেক্ষায়, অথবা যাচাই করে প্রত্যাখ্যাত। সংগ্রহ এগুলোতে পৌঁছায় না।",
+  "{n} of your {total} sources: discovered candidates, not enabled, awaiting review. Collection does not reach them.": "আপনার {total}টি উৎসের মধ্যে {n}টি: আবিষ্কৃত প্রার্থী, সক্রিয় নয়, পর্যালোচনার অপেক্ষায়। সংগ্রহ এগুলোতে পৌঁছায় না।"
 }

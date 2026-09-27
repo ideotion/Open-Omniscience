@@ -4731,5 +4731,11 @@
   "Paused for an import — setting each keyword's language from its mentions": "Paused for an import — setting each keyword's language from its mentions",
   "keyword fold paused (resumable; it survives a restart)": "keyword fold paused (resumable; it survives a restart)",
   "keyword fold cancelled (what it already folded stays folded; folding again starts a new pass)": "keyword fold cancelled (what it already folded stays folded; folding again starts a new pass)",
-  "keyword fold resumed": "keyword fold resumed"
+  "keyword fold resumed": "keyword fold resumed",
+  "Sources collecting": "Sources collecting",
+  "Enabled, not qualified": "Enabled, not qualified",
+  "Discovered candidates": "Discovered candidates",
+  "{n} of your {total} sources: enabled AND qualified — what collection actually reaches. This is the headline source count.": "{n} of your {total} sources: enabled AND qualified — what collection actually reaches. This is the headline source count.",
+  "{n} of your {total} sources: enabled but not qualified — awaiting a verdict, or judged and refused. Collection does not reach them.": "{n} of your {total} sources: enabled but not qualified — awaiting a verdict, or judged and refused. Collection does not reach them.",
+  "{n} of your {total} sources: discovered candidates, not enabled, awaiting review. Collection does not reach them.": "{n} of your {total} sources: discovered candidates, not enabled, awaiting review. Collection does not reach them."
 }

@@ -4731,5 +4731,11 @@
   "Paused for an import — setting each keyword's language from its mentions": "Приостановлено ради импорта — определение языка каждого ключевого слова по упоминаниям",
   "keyword fold paused (resumable; it survives a restart)": "объединение ключевых слов приостановлено (можно продолжить; переживает перезапуск)",
   "keyword fold cancelled (what it already folded stays folded; folding again starts a new pass)": "объединение ключевых слов отменено (уже объединённое остаётся; повторный запуск начнёт новый проход)",
-  "keyword fold resumed": "объединение ключевых слов возобновлено"
+  "keyword fold resumed": "объединение ключевых слов возобновлено",
+  "Sources collecting": "Собираемые источники",
+  "Enabled, not qualified": "Включены, не прошли отбор",
+  "Discovered candidates": "Найденные кандидаты",
+  "{n} of your {total} sources: enabled AND qualified — what collection actually reaches. This is the headline source count.": "{n} из {total} ваших источников: включены И прошли отбор — то, до чего сбор действительно доходит. Это основное число источников.",
+  "{n} of your {total} sources: enabled but not qualified — awaiting a verdict, or judged and refused. Collection does not reach them.": "{n} из {total} ваших источников: включены, но не прошли отбор — ожидают решения или были оценены и отклонены. Сбор до них не доходит.",
+  "{n} of your {total} sources: discovered candidates, not enabled, awaiting review. Collection does not reach them.": "{n} из {total} ваших источников: найденные кандидаты, не включены, ожидают проверки. Сбор до них не доходит."
 }

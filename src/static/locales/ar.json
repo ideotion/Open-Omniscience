@@ -4731,5 +4731,11 @@
   "Paused for an import — setting each keyword's language from its mentions": "متوقف مؤقتًا لأجل استيراد — تحديد لغة كل كلمة مفتاحية من إشاراتها",
   "keyword fold paused (resumable; it survives a restart)": "توقف دمج الكلمات المفتاحية مؤقتًا (يمكن استئنافه؛ ويبقى بعد إعادة التشغيل)",
   "keyword fold cancelled (what it already folded stays folded; folding again starts a new pass)": "أُلغي دمج الكلمات المفتاحية (ما دُمج يبقى مدموجًا؛ والدمج من جديد يبدأ جولة جديدة)",
-  "keyword fold resumed": "استُؤنف دمج الكلمات المفتاحية"
+  "keyword fold resumed": "استُؤنف دمج الكلمات المفتاحية",
+  "Sources collecting": "مصادر قيد الجمع",
+  "Enabled, not qualified": "مفعّلة، غير مؤهَّلة",
+  "Discovered candidates": "مرشَّحون مكتشَفون",
+  "{n} of your {total} sources: enabled AND qualified — what collection actually reaches. This is the headline source count.": "{n} من مصادرك البالغ عددها {total}: مفعّلة ومؤهَّلة معًا — وهي ما يصل إليه الجمع فعلًا. هذا هو العدد الرئيسي للمصادر.",
+  "{n} of your {total} sources: enabled but not qualified — awaiting a verdict, or judged and refused. Collection does not reach them.": "{n} من مصادرك البالغ عددها {total}: مفعّلة لكنها غير مؤهَّلة — في انتظار الحكم، أو حُكم عليها ورُفضت. لا يصل إليها الجمع.",
+  "{n} of your {total} sources: discovered candidates, not enabled, awaiting review. Collection does not reach them.": "{n} من مصادرك البالغ عددها {total}: مرشَّحون مكتشَفون، غير مفعّلين، في انتظار المراجعة. لا يصل إليهم الجمع."
 }

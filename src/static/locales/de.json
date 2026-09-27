@@ -4731,5 +4731,11 @@
   "Paused for an import — setting each keyword's language from its mentions": "Für einen Import pausiert — die Sprache jedes Schlagworts aus seinen Nennungen bestimmen",
   "keyword fold paused (resumable; it survives a restart)": "Schlagwort-Zusammenführung pausiert (fortsetzbar; übersteht einen Neustart)",
   "keyword fold cancelled (what it already folded stays folded; folding again starts a new pass)": "Schlagwort-Zusammenführung abgebrochen (bereits Zusammengeführtes bleibt; ein neuer Start beginnt einen neuen Durchgang)",
-  "keyword fold resumed": "Schlagwort-Zusammenführung fortgesetzt"
+  "keyword fold resumed": "Schlagwort-Zusammenführung fortgesetzt",
+  "Sources collecting": "Quellen in Erfassung",
+  "Enabled, not qualified": "Aktiviert, nicht qualifiziert",
+  "Discovered candidates": "Entdeckte Kandidaten",
+  "{n} of your {total} sources: enabled AND qualified — what collection actually reaches. This is the headline source count.": "{n} Ihrer {total} Quellen: aktiviert UND qualifiziert — das, was die Erfassung tatsächlich erreicht. Das ist die maßgebliche Quellenzahl.",
+  "{n} of your {total} sources: enabled but not qualified — awaiting a verdict, or judged and refused. Collection does not reach them.": "{n} Ihrer {total} Quellen: aktiviert, aber nicht qualifiziert — sie warten auf ein Urteil oder wurden geprüft und abgelehnt. Die Erfassung erreicht sie nicht.",
+  "{n} of your {total} sources: discovered candidates, not enabled, awaiting review. Collection does not reach them.": "{n} Ihrer {total} Quellen: entdeckte Kandidaten, nicht aktiviert, warten auf Prüfung. Die Erfassung erreicht sie nicht."
 }

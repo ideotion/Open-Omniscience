@@ -4731,5 +4731,11 @@
   "Paused for an import — setting each keyword's language from its mentions": "Dijeda untuk impor — menetapkan bahasa setiap kata kunci dari penyebutannya",
   "keyword fold paused (resumable; it survives a restart)": "penggabungan kata kunci dijeda (dapat dilanjutkan; tetap ada setelah dimulai ulang)",
   "keyword fold cancelled (what it already folded stays folded; folding again starts a new pass)": "penggabungan kata kunci dibatalkan (yang sudah digabung tetap tergabung; menggabung lagi memulai putaran baru)",
-  "keyword fold resumed": "penggabungan kata kunci dilanjutkan"
+  "keyword fold resumed": "penggabungan kata kunci dilanjutkan",
+  "Sources collecting": "Sumber yang dikumpulkan",
+  "Enabled, not qualified": "Aktif, belum lolos kualifikasi",
+  "Discovered candidates": "Kandidat yang ditemukan",
+  "{n} of your {total} sources: enabled AND qualified — what collection actually reaches. This is the headline source count.": "{n} dari {total} sumber Anda: aktif DAN lolos kualifikasi — yang benar-benar dijangkau pengumpulan. Inilah angka utama sumber.",
+  "{n} of your {total} sources: enabled but not qualified — awaiting a verdict, or judged and refused. Collection does not reach them.": "{n} dari {total} sumber Anda: aktif tetapi belum lolos kualifikasi — menunggu putusan, atau sudah dinilai dan ditolak. Pengumpulan tidak menjangkaunya.",
+  "{n} of your {total} sources: discovered candidates, not enabled, awaiting review. Collection does not reach them.": "{n} dari {total} sumber Anda: kandidat yang ditemukan, tidak aktif, menunggu peninjauan. Pengumpulan tidak menjangkaunya."
 }

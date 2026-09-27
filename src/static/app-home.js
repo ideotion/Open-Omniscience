@@ -18,14 +18,92 @@
    not, and the failure is a TDZ error at load rather than anything a reader would
    spot in review. Add new code inside the module it belongs to.
 */
+    // ONE label map for the /api/database/stats counts, shared by the Home strip and
+    // Library -> Database & storage (loadDbStats), so the two surfaces cannot drift apart
+    // again. They had: the Library carried its own map for the three source keys only and
+    // printed `commodity_prices` raw, while Home had every key but those three and fell
+    // back to `k.replace(/_/g, " ")` -- a string no locale file holds. The i18n gates never
+    // saw either gap, because a label reached t() through a variable rather than as a
+    // literal; tests/test_clickthrough_b8_fixes.py now checks every value here against the
+    // twelve locale files (2026-09-26 click-through H8, P7, S4, S6, U5).
     const HOME_STAT_LABELS = {
       articles: "Articles", sources: "Sources",
       keywords: "Keywords", commodity_prices: "Commodity prices",
       article_links: "Article links", mentioned_dates: "Mentioned dates",
+      // Q1114 = a: the three-way split of the sources table, each labelled by what it
+      // counts. The first is THE headline source figure (enabled AND qualified, what
+      // select_sources admits); the three sum to the flat total by construction.
+      sources_qualified: "Sources collecting",
+      sources_pending: "Enabled, not qualified",
+      sources_candidates: "Discovered candidates",
     };
+    // The long form of each split figure, for the #oo-tip hover (invariant #17): what it
+    // counts, and that it is one part of the total. The visible surface keeps the
+    // predicate; the total and the "collection does not reach them" live here.
+    const HOME_SOURCE_SPLIT_HOVER = {
+      sources_qualified: "{n} of your {total} sources: enabled AND qualified — what collection actually reaches. This is the headline source count.",
+      sources_pending: "{n} of your {total} sources: enabled but not qualified — awaiting a verdict, or judged and refused. Collection does not reach them.",
+      sources_candidates: "{n} of your {total} sources: discovered candidates, not enabled, awaiting review. Collection does not reach them.",
+    };
+    const HOME_SOURCE_SPLIT_KEYS = ["sources_qualified", "sources_pending", "sources_candidates"];
     function homeStatLabel(k) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       return t(HOME_STAT_LABELS[k] || k.replace(/_/g, " "));
+    }
+    // The hover for one split figure, or "" for any other key. `total` is the flat
+    // COUNT(*) when the payload has it, else the sum -- the same number, since the three
+    // partition the table.
+    function homeSourceSplitHover(k, counts) {
+      const frame = HOME_SOURCE_SPLIT_HOVER[k];
+      if (!frame) return "";
+      const c = counts || {};
+      const total = (typeof c.sources === "number") ? c.sources
+        : HOME_SOURCE_SPLIT_KEYS.reduce((a, sk) => a + (c[sk] || 0), 0);
+      const F = (window.OOI18N && OOI18N.tf)
+        ? OOI18N.tf
+        : ((s, v) => String(s).replace(/\{(\w+)\}/g, (m, x) => (v && v[x] != null ? String(v[x]) : m)));
+      return F(frame, {n: (c[k] || 0).toLocaleString(), total: total.toLocaleString()});
+    }
+    // The strip's entries, in the server's order, except that the flat "sources" figure
+    // is REPLACED IN PLACE by its three-way split (S4). Q1114 = a: the flat COUNT(*) blends
+    // what collection reaches with discovered candidates and enabled-but-unqualified rows,
+    // so beside the split it read as a fourth, bare number describing the corpus -- the
+    // Library already hid it for exactly that reason. Without the split (a payload that
+    // predates it) the flat figure stays, labelled plainly as before.
+    function homeStatEntries(counts) {
+      const c = counts || {};
+      const split = HOME_SOURCE_SPLIT_KEYS.every(k => typeof c[k] === "number");
+      if (!split) return Object.entries(c);
+      const entries = Object.entries(c).filter(([k]) => !HOME_SOURCE_SPLIT_KEYS.includes(k));
+      const parts = HOME_SOURCE_SPLIT_KEYS.map(k => [k, c[k]]);
+      const at = entries.findIndex(([k]) => k === "sources");
+      if (at >= 0) entries.splice(at, 1, ...parts); else entries.push(...parts);
+      return entries;
+    }
+    // THE LAST READING, so a LANGUAGE SWITCH repaints the strip from it instead of
+    // spending a request. The whole strip sits inside [data-i18n-dyn], so the DOM walker
+    // never revisits it, and the oo:langchange listener (app-boot.js) used to repaint only
+    // its Wikipedia figure and its read-failure line -- every other label stayed in the
+    // previous language until the next 15 s poll (click-through U5). Null until the first
+    // paint; a failed read never overwrites them.
+    let _homeStatsLast = null;     // {counts, payload} of the last stats painted
+    let _homeRunningLast = null;   // the last collection state painted (true / false)
+    let _homeGlanceAwaitingI18n = false;
+    function repaintHomeGlance() {
+      if (_homeStatsLast && !_homeStatsFailed) {
+        renderHomeStats(_homeStatsLast.counts, _homeStatsLast.payload, true);
+      }
+      if (_homeRunningLast !== null) renderHomeStatus(_homeRunningLast);
+    }
+    // THE BOOT RACE, the same one renderHomeStatsFailure() handles below: boot
+    // dispatches no oo:langchange, so a strip painted before the locale map loaded stays
+    // English (measured: still English 5 s after a reload in fr). Repaint once from the
+    // cache when OOI18N.ready resolves -- a promise, so a late asker still gets an answer.
+    function _homeGlanceWhenReady() {
+      if (_homeGlanceAwaitingI18n) return;
+      if (!(window.OOI18N && OOI18N.ready && OOI18N.ready.then)) return;
+      _homeGlanceAwaitingI18n = true;
+      OOI18N.ready.then(() => repaintHomeGlance()).catch(() => {});
     }
     // S3.4 (d): a served-stale payload states its REAL age. The counts now come
     // from a background-refreshed cache (S3.2), so on a busy server they can be a
@@ -43,21 +121,37 @@
       try {
         const d = new Date(payload.as_of);
         if (!isNaN(d.getTime())) {
-          stamp = d.toLocaleTimeString([], {hour: "2-digit", minute: "2-digit"});
+          // In the APP language, not the browser's: "as of 08:11 PM" stayed English in fr
+          // (click-through U5). The same rule fmtDateTime (app-shell.js) follows.
+          const opts = {hour: "2-digit", minute: "2-digit"};
+          const loc = (window.OOI18N && OOI18N.current && OOI18N.current()) || undefined;
+          try { stamp = d.toLocaleTimeString(loc, opts); }
+          catch (_e) { stamp = d.toLocaleTimeString([], opts); }
         }
       } catch (e) { stamp = ""; }
       if (!stamp) return "";
       return t("as of {time} (server busy)").replace("{time}", stamp);
     }
-    function renderHomeStats(counts, payload) {
+    function renderHomeStats(counts, payload, fromCache) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const el = $("home-stats"); if (!el) return;
-      const entries = Object.entries(counts || {});
+      // Real stats are what the strip shows now, whichever path painted them. A poll
+      // that succeeds after a failed first read used to leave the failure flag set, so a
+      // language switch would have repainted the failure line over real numbers.
+      _homeStatsLast = {counts, payload};
+      _homeStatsFailed = false;
+      const entries = homeStatEntries(counts);
       const allZero = entries.length > 0 && entries.every(([, v]) => !v);
       const note = homeStatsAgeNote(payload, t);
+      // A split figure carries its own hover, so it owns that attribute: data-i18n-dyn
+      // keeps the walker from caching the already-translated title as "the English".
+      const item = ([k, v]) => {
+        const hover = homeSourceSplitHover(k, counts);
+        const attrs = hover ? ` title="${esc(hover)}" data-i18n-dyn` : "";
+        return `<span class="s"${attrs}><b>${(v || 0).toLocaleString()}</b> <span>${esc(homeStatLabel(k))}</span></span>`;
+      };
       el.innerHTML = (entries.length && !allZero)
-        ? entries.map(([k, v]) =>
-            `<span class="s"><b>${(v || 0).toLocaleString()}</b> <span>${esc(homeStatLabel(k))}</span></span>`).join("")
+        ? entries.map(item).join("")
           + (note ? `<span class="s muted">${esc(note)}</span>` : "")
         : `<div class="muted">${esc(t("Your library is empty — head to Collect to gather your first material."))}</div>`;
       // Q714 = a: the Wikipedia lane gets "its own figure" on the strip, appended
@@ -65,7 +159,13 @@
       // article in the press corpus unless its text was stored -- adding it to the
       // articles headline would inflate a number the ruling says "stays press unless
       // a lane filter is chosen".
-      renderHomeWikiFigure();
+      // A repaint from the cache re-appends the figure from ITS cache and never asks
+      // the lane again; with no cached figure there is nothing to put back (a lane that
+      // has not measured renders nothing, and a first read still in flight appends
+      // itself when it lands).
+      if (!fromCache) renderHomeWikiFigure();
+      else if (_homeWikiLane) renderHomeWikiFigure(true);
+      _homeGlanceWhenReady();
     }
 
     // Q714's own figure: "Wikipedia: N pages · M changes today".
@@ -116,6 +216,8 @@
     function renderHomeStatus(running) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const el = $("home-status"); if (!el) return;
+      _homeRunningLast = !!running;
+      _homeGlanceWhenReady();
       const priv = t("Your corpus stays on this machine — no cloud, no telemetry; fetching follows your Network mode.");
       el.innerHTML =
         `${esc(t("Automatic collection"))}: <span class="pill ${running ? "ok" : ""}">${esc(t(running ? "running" : "stopped"))}</span> ` +

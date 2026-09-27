@@ -4731,5 +4731,11 @@
   "Paused for an import — setting each keyword's language from its mentions": "インポートのため一時停止中 — 言及から各キーワードの言語を設定する処理",
   "keyword fold paused (resumable; it survives a restart)": "キーワードの統合を一時停止しました（再開可能。再起動後も保持されます）",
   "keyword fold cancelled (what it already folded stays folded; folding again starts a new pass)": "キーワードの統合を取り消しました（統合済みの分はそのまま。再実行すると新しい処理が始まります）",
-  "keyword fold resumed": "キーワードの統合を再開しました"
+  "keyword fold resumed": "キーワードの統合を再開しました",
+  "Sources collecting": "収集中の情報源",
+  "Enabled, not qualified": "有効・未適格",
+  "Discovered candidates": "発見された候補",
+  "{n} of your {total} sources: enabled AND qualified — what collection actually reaches. This is the headline source count.": "{total} 件の情報源のうち {n} 件：有効かつ適格 — 収集が実際に到達する範囲です。これが情報源の主要な件数です。",
+  "{n} of your {total} sources: enabled but not qualified — awaiting a verdict, or judged and refused. Collection does not reach them.": "{total} 件の情報源のうち {n} 件：有効だが未適格 — 判定待ち、または判定の結果却下されたもの。収集はこれらに到達しません。",
+  "{n} of your {total} sources: discovered candidates, not enabled, awaiting review. Collection does not reach them.": "{total} 件の情報源のうち {n} 件：発見された候補で、無効のまま審査待ち。収集はこれらに到達しません。"
 }

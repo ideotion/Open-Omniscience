@@ -61,9 +61,14 @@
   .tm-metric { display: inline-flex; align-items: baseline; gap: 5px; font-size: 12px; }
   .tm-metric b { font-size: 13px; font-variant-numeric: tabular-nums; }
   .tm-metric .ml { opacity: .6; text-transform: uppercase; letter-spacing: .04em; font-size: 10px; }
+  /* The row scrolls INSIDE its own box rather than widening the page: five unwrapped
+     tabs are ~500 px, which gave the whole page 144 px of sideways scroll at 375 px
+     (2026-09-26 click-through T6). One row, not a wrap, so the sticky offsets above
+     keep describing a constant height. */
   .tm-tabs { display: flex; gap: 2px; padding: 8px 12px 0; border-bottom: 1px solid var(--line, #232733);
-             background: var(--panel, #14171d); position: sticky; top: 86px; z-index: 1; }
-  .tm-tabs button { background: transparent; border: 0; color: var(--fg, #e7e9ee); opacity: .6;
+             background: var(--panel, #14171d); position: sticky; top: 86px; z-index: 1;
+             overflow-x: auto; }
+  .tm-tabs button { flex: none; background: transparent; border: 0; color: var(--fg, #e7e9ee); opacity: .6;
                     padding: 8px 14px; border-bottom: 2px solid transparent; cursor: pointer;
                     font: inherit; border-radius: 6px 6px 0 0; }
   .tm-tabs button.active { opacity: 1; border-bottom-color: var(--accent, #4a9eff); font-weight: 600; }
@@ -197,11 +202,20 @@
   // Reuse the SPA's translations: most task-manager strings are keyed; genuinely new
   // redesign strings fall back to English (keyable later — i18n gate stays 100%).
   function t(s) { return (window.OOI18N && OOI18N.t) ? OOI18N.t(s) : s; }
+  // setLang is ASYNC (it fetches the locale). The whole-document apply() below used to
+  // run straight after it, against a still-empty map: it recorded the English <title>
+  // as the original and left it English, and nothing walked <head> again, because
+  // setLang's own apply() and the walker's observer both start at document.body. So the
+  // tab read "Task manager · FOOS" in every language (2026-09-26 click-through O4).
+  // Awaiting it makes this pass the one that translates the title.
   function applyLang() {
     try {
       var lang = localStorage.getItem("oo.lang");
-      if (lang && window.OOI18N && OOI18N.setLang) OOI18N.setLang(lang);
-      if (window.OOI18N && OOI18N.apply) OOI18N.apply(document);
+      var I = window.OOI18N;
+      if (!I) return;
+      Promise.resolve(lang && I.setLang ? I.setLang(lang) : null)
+        .then(function () { if (I.apply) I.apply(document); })
+        .catch(function () { /* locale unreadable: English fallback */ });
     } catch (e) { /* private mode / engine absent: English fallback */ }
   }
   try {
@@ -603,6 +617,8 @@
 
   // ---- adaptive refresh: fast while something is live, slow when idle ---- //
   var _busy = false;
+  // The last vitals + rates painted, so a language switch repaints from them (below).
+  var _lastVitals = null, _lastRates = null, _painted = false;
   async function refresh() {
     if (_busy) return; _busy = true;
     var live = false, jobs = null, act = window._act || null, v = null;
@@ -610,6 +626,7 @@
     try { act = await api("/api/scheduler/activity"); window._act = act; live = live || !!act.active; } catch (e) { /* keep last */ }
     try { v = await api("/api/system/vitals"); } catch (e) { /* keep last */ }
     var rates = recordSample(v);
+    _lastVitals = v; _lastRates = rates; _painted = true;
     if (jobs) { renderProcesses(jobs, act); renderQueue(jobs, act); }
     renderSchedule(act);
     renderPerformance(v, rates);
@@ -731,7 +748,29 @@
   // is a listener rather than memory -- so here it is. Found while verifying
   // Q1126 = a in a browser, on the string that ruling is about; it changes no copy
   // and adds no key, and it is what makes "re-translated x12" true on BOTH paths.
-  document.addEventListener("oo:langchange", function () { paintAir(); });
+  //
+  // The same listener repaints the rest of the page's painted text from what it already
+  // holds -- never a fetch. The summary strip, the panels and the health pill are built
+  // with t() at paint time too, so after ar -> zh they stayed Arabic until the next poll
+  // (2.3 s measured, up to 15 s; click-through T5). The <title> is re-walked here as well:
+  // setLang's own apply() starts at document.body, so without this the tab title kept
+  // the language the page opened in (O4).
+  document.addEventListener("oo:langchange", function () {
+    paintAir();
+    try { if (window.OOI18N && OOI18N.apply) OOI18N.apply(document.head); } catch (e) { /* title only */ }
+    repaintFromCache();
+  });
+  function repaintFromCache() {
+    if (_painted) {
+      var act = window._act || null;
+      if (_jobs) { renderProcesses(_jobs, act); renderQueue(_jobs, act); }
+      renderSchedule(act);
+      renderPerformance(_lastVitals, _lastRates);
+      renderSummary(_lastVitals, act, _lastRates);
+      var c = $("tm-conn"); if (c && !/err/.test(c.className)) c.textContent = t("Live");
+    }
+    paintHealth();
+  }
   // Same direction-aware flash + toast as the app (maintainer 2026-06-21: the
   // airplane button must give identical visual feedback everywhere). #net-flash +
   // its .go-on/.go-off keyframes live in the shared app.css.
@@ -757,11 +796,21 @@
   // The health + AI pills mirror the app's (the AI pill reads just "AI", no model
   // count, per B4 2026-07-24; both route into the app on click — the full
   // start-or-install logic lives there, this standalone page just links back).
+  // The pill paints from the last READING, so a language switch can repaint it without
+  // asking the backend again (T5). Null until the first answer: "checking…" stays.
+  var _healthState = null;   // "healthy" | "degraded" | "offline"
+  function paintHealth() {
+    var el = $("health"); if (!el || !_healthState) return;
+    var label = _healthState === "healthy" ? t("healthy")
+      : _healthState === "degraded" ? t("degraded") : t("offline");
+    el.innerHTML = '<span class="dot"></span> ' + esc(label);
+  }
   async function loadHealth() {
     var el = $("health"); if (!el) return;
     try { var h = await api("/api/health"); var ok = h && (h.status === "healthy" || h.status === "ok" || h.ok === true || h.healthy === true);  // /api/health answers status "healthy"
-      el.innerHTML = '<span class="dot"></span> ' + esc(ok ? t("healthy") : t("degraded"));
-    } catch (e) { el.innerHTML = '<span class="dot"></span> ' + esc(t("offline")); }
+      _healthState = ok ? "healthy" : "degraded";
+    } catch (e) { _healthState = "offline"; }
+    paintHealth();
   }
   async function loadLlm() {
     var el = $("llm"); if (!el) return;

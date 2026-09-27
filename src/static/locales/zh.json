@@ -4731,5 +4731,11 @@
   "Paused for an import — setting each keyword's language from its mentions": "因导入而暂停 — 根据提及确定每个关键词的语言",
   "keyword fold paused (resumable; it survives a restart)": "关键词归并已暂停（可继续；重启后仍保留）",
   "keyword fold cancelled (what it already folded stays folded; folding again starts a new pass)": "关键词归并已取消（已归并的保持不变；再次归并将开始新一轮）",
-  "keyword fold resumed": "关键词归并已继续"
+  "keyword fold resumed": "关键词归并已继续",
+  "Sources collecting": "采集中的来源",
+  "Enabled, not qualified": "已启用，未合格",
+  "Discovered candidates": "发现的候选来源",
+  "{n} of your {total} sources: enabled AND qualified — what collection actually reaches. This is the headline source count.": "您的 {total} 个来源中有 {n} 个：已启用且已合格——采集实际覆盖的范围。这是来源的主要数字。",
+  "{n} of your {total} sources: enabled but not qualified — awaiting a verdict, or judged and refused. Collection does not reach them.": "您的 {total} 个来源中有 {n} 个：已启用但未合格——等待判定，或经判定被拒。采集不会覆盖它们。",
+  "{n} of your {total} sources: discovered candidates, not enabled, awaiting review. Collection does not reach them.": "您的 {total} 个来源中有 {n} 个：发现的候选来源，未启用，等待审核。采集不会覆盖它们。"
 }
