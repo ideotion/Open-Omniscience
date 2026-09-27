@@ -137,7 +137,9 @@ def test_an_open_filter_list_spans_the_filter_row_on_a_phone():
     block = _phone_block(css, ".src-filter-row .msel .msel-list")
     assert re.search(r"\.src-filter-row \{ position:relative; \}", block), "the row is not the containing block"
     assert re.search(r"\.src-filter-row \.msel \{ position:static; \}", block)
-    rule = re.search(r"\.src-filter-row \.msel \.msel-list \{([^}]*)\}", block).group(1)
+    found = re.search(r"\.src-filter-row \.msel \.msel-list \{([^}]*)\}", block)
+    assert found, "the open list has no phone rule"
+    rule = found.group(1)
     assert "left:0" in rule and "right:0" in rule and "min-width:0" in rule, rule
     assert re.search(r"\.src-filter-row \.msel-opt \{ white-space:normal; \}", block)
 
@@ -212,18 +214,83 @@ def test_the_glossary_guard_catches_a_second_term(tmp_path, monkeypatch):
 
 # --- O-5: the reader's own separator ------------------------------------------------------ #
 
-def test_no_welded_colon_is_left_in_the_lines_this_batch_owns():
-    _keyed_everywhere(
-        "Failed",
-        "Last run failed",
-        "This machine, read at boot",
-        "This machine, read just now",
-        "Your budgets can still take {room}; the drive has {free} free. That is more than the drive has free.",
-    )
-    for name in ("app-core.js", "app-settings.js", "app-living.js"):
-        src = strip_comments(read_static(name))
-        assert 't("Failed:") + " "' not in src, f"{name} welds 'Failed:' to a space"
-        assert 't("Could not load") + ": "' not in src, f"{name} welds a colon after 'Could not load'"
-    zh = _locales()["zh"]
+# Every shape that welds a Latin space or colon onto a translated label or sentence. The
+# first round's guard matched only 't("Failed:") + " "' and 't("Could not load") + ": "',
+# so it could not see the twenty-odd other welds in the same files (the reviewer's O-5
+# finding); these four cover the concatenated and the template-literal forms.
+_WELDS = {
+    "a colon label, then a space": re.compile(r't\("[^"]*[:\uff1a]"\)\s*\+\s*" "'),
+    "a colon label, then a space (template)": re.compile(r'\$\{(?:esc\()?t\("[^"]*[:\uff1a]"\)\)?\} '),
+    "a label, then a welded colon": re.compile(
+        r'(?:t\("[^"]*"\)|esc\(t\("[^"]*"\)\))\s*\+\s*": "|\$\{(?:esc\()?t\("[^"]*"\)\)?\}:[ <]'),
+    "a sentence, then a space and more": re.compile(
+        r'\$\{(?:esc\()?t\("[^"]*[.\u3002]"\)\)?\} \$\{|t\("[^"]*[.\u3002]"\)\s*\+\s*" "\s*\+\s*(?:t\(|esc\(t\()'),
+}
+# The files this batch swept whole. app-shell.js's one weld is B24's (N-5), app-boot.js's
+# two sit in B24's range, and app-map.js's in B20's and B30's -- handed to them, not
+# silently left out.
+_SWEPT = ("app-core.js", "app-settings.js", "app-living.js", "app-sources.js")
+
+_O5_LABELS = (
+    "Failed", "Last run failed", "This machine, read at boot", "This machine, read just now",
+    "Could not prepare the installer", "Error", "Could not determine the default model",
+    "Download failed", "Model info unavailable", "Active model set", "Could not set the active model",
+    "Remove failed", "Compaction failed", "Pull failed", "Storage could not be read", "Not saved",
+    "Top country", "Another job is writing to the database", "Import failed", "Licence",
+    "floor", "First cited by", "Discovery",
+)
+_O5_FRAMES = (
+    "Your budgets can still take {room}; the drive has {free} free. That is more than the drive has free.",
+    "Done. {stored} labelled · {none} unclear · {total} scanned",
+    "Last run: {stored} labelled · {none} unclear · {total} scanned",
+    "Compacted. Space freed: {freed} · {secs} s",
+    "{n} imported newsletters removed. Re-import the cleaned files to replace them.",
+    "Anonymisation: {redacted} recipient echoes redacted, {stripped} tracker tokens stripped, "
+    "{flagged} tracker wrappers flagged.",
+    "AI check: {checked} checked — {articles} read as articles, {junk} as navigation soup, "
+    "{unreadable} unreadable — a proposal only; nothing about this source was changed.",
+)
+
+
+def _welds(src: str) -> list[str]:
+    return [f"{what}: {m.group(0)!r}" for what, rx in _WELDS.items() for m in rx.finditer(src)]
+
+
+def test_no_welded_label_or_sentence_is_left_in_the_files_this_batch_swept():
+    _keyed_everywhere(*_O5_LABELS, *_O5_FRAMES)
+    for name in _SWEPT:
+        left = _welds(strip_comments(read_static(name)))
+        assert not left, f"{name} still welds a separator onto translated text: {left}"
+
+
+def test_the_weld_scan_bites():
+    """A mutant per shape, so the guard above is known to see each one."""
+    for mutant in ('t("Download failed:") + " " + e.message',
+                   '`${esc(t("Import failed:"))} ${esc(e.message)}`',
+                   '`${t("AI check")}: ${n}`',
+                   '`<strong>${esc(t("Discovery"))}:</strong> `',
+                   '`${t("Done.")} ${n} labelled`'):
+        assert _welds(mutant), f"the scan misses {mutant}"
+    assert not _welds('ooLabelText(t("Download failed"), e.message)')
+
+
+def test_the_composed_zh_and_ja_lines_put_no_latin_space_after_full_width_marks():
+    locs = _locales()
+    for code in ("zh", "ja"):
+        for key in _O5_FRAMES:
+            val = locs[code][key]
+            assert not re.search(r"[\u3002\uff1a\uff0c] ", val), f"{code} {key!r}: {val!r}"
+    zh = locs["zh"]
     joined = zh["Your budgets can still take {room}; the drive has {free} free. That is more than the drive has free."]
-    assert "。 " not in joined and "。这" in joined, joined
+    assert "\u3002 " not in joined and "\u3002\u8fd9" in joined, joined
+
+
+def test_the_swept_sites_call_the_frames():
+    settings = strip_comments(read_static("app-settings.js"))
+    poll = strip_comments(function_body(read_static("app-settings.js"), "pollLangDetect"))
+    assert 'tf("Done. {stored} labelled' in poll and 'tf("Last run: {stored} labelled' in poll
+    assert 'tf("Compacted. Space freed: {freed}' in settings
+    assert settings.count("esc(_nlAnonLine(tl))") == 2, "both newsletter paths share the one keyed tally"
+    assert "{n} imported newsletters removed. Re-import" in settings
+    core = strip_comments(function_body(read_static("app-core.js"), "arbitrate"))
+    assert 'ooLabelText(t("Another job is writing to the database"), busy)' in core

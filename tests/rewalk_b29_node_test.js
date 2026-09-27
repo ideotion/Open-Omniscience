@@ -11,7 +11,9 @@
  *              one opens the tracked changes, not Settings;
  *   O-3        a live switch keeps an open stream diff and an open law diff;
  *   O-6        clicking a tracked page while on the Wikipedia panel reloads nothing;
- *   O-5        composed zh lines take the locale's own separator, never "： " or "。 ".
+ *   O-5        composed zh lines take the locale's own separator, never "： " or "。 " (the
+ *              Storage lines, the failed-download line, and the round-2 sweep of the
+ *              batch's files: the newsletter tally and the keyed failure labels).
  *
  * Every function under test is EXTRACTED FROM THE SHIPPED SOURCE by name -- a re-typed
  * copy would pass while the real code was still broken (the sibling-test convention).
@@ -412,6 +414,23 @@ async function run() {
     I.set("en");
     const en = visible(set[1]({ disk: { free_bytes: 15e9, total_bytes: 64e9 }, claimable_bytes: 20e9, budgets_fit: false }));
     assert(en.includes("free. That is more than the drive has free."), en);
+  });
+
+  // The reviewer's round-2 finding: the same welds sat elsewhere in the batch's own files.
+  await test("O-5: the newsletter anonymisation tally and a failed-download label in zh", async () => {
+    const I = i18n("zh");
+    const F = new Function("window", HELPERS + "\n" + extract("_nlAnonLine", null, SETTINGS) +
+      "\nreturn { _nlAnonLine, ooLabelText };")({ OOI18N: I });
+    const line = F._nlAnonLine({ recipient_redactions: 3, tracker_params_stripped: 1200, trackers_flagged: 0 });
+    assert(!/[\u3002\uff1a\uff0c] /.test(line), "a Latin space after full-width punctuation: " + JSON.stringify(line));
+    assert(line === "匿名化：3 处收件人痕迹已隐去，1\u202f200 个跟踪令牌已剥离，0 个跟踪包装已标记。", JSON.stringify(line));
+    const dl = F.ooLabelText(I.t("Download failed"), "HTTP 503");
+    assert(dl === "下载失败：HTTP 503", JSON.stringify(dl));
+    I.set("fr");
+    assert(F.ooLabelText(I.t("Download failed"), "HTTP 503") === "Échec du téléchargement : HTTP 503", "fr keeps its own spaced colon");
+    I.set("en");
+    assert(F._nlAnonLine({ recipient_redactions: 3, tracker_params_stripped: 1, trackers_flagged: 0 }) ===
+      "Anonymisation: 3 recipient echoes redacted, 1 tracker tokens stripped, 0 tracker wrappers flagged.", "the English line changed");
   });
 
   console.log(`all assertions passed (${passed} tests)`);

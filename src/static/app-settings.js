@@ -293,7 +293,7 @@
       if (detail) detail.textContent = t("Downloading and verifying…");
       let d;
       try { d = await api("/api/llm/install/prepare", {method: "POST"}); }
-      catch (e) { if (detail) detail.textContent = t("Could not prepare the installer:") + " " + e.message; if (btn) btn.disabled = false; return; }
+      catch (e) { if (detail) detail.textContent = ooLabelText(t("Could not prepare the installer"), e.message); if (btn) btn.disabled = false; return; }
       if (btn) btn.style.display = "none";
       // Show the verified version + checksum + how to run it. The checksum is the
       // publisher's own attestation we verified the bytes against — show it so the
@@ -339,13 +339,13 @@
             if (!line.trim()) continue;
             let o; try { o = JSON.parse(line); } catch (_e) { continue; }
             if (o.event === "line") { log.textContent += o.text + "\n"; log.scrollTop = log.scrollHeight; }
-            else if (o.event === "error") { log.textContent += "\n" + t("Error:") + " " + o.error + "\n"; }
+            else if (o.event === "error") { log.textContent += "\n" + ooLabelText(t("Error"), o.error) + "\n"; }
             else if (o.event === "done") { exitCode = o.exit_code; }
           }
         }
         log.textContent += "\n" + (exitCode === 0 ? t("Installation finished.") : t("Installer exited with code") + " " + exitCode) + "\n";
       } catch (e) {
-        log.textContent += "\n" + t("Error:") + " " + e.message + "\n";
+        log.textContent += "\n" + ooLabelText(t("Error"), e.message) + "\n";
       } finally {
         _ollamaInstalling = false;
         recheckOllama();
@@ -390,7 +390,7 @@
       let p = null;
       try { p = await api("/api/llm/default-model"); }
       catch (e) {
-        host.innerHTML = `<p class="muted">${esc(t("Could not determine the default model:"))} ${esc(e.message || e)}</p>`;
+        host.innerHTML = `<p class="muted">${ooLabelHtml(esc(t("Could not determine the default model")), esc(e.message || e))}</p>`;
         return;
       }
       const already = p.installed === true;
@@ -453,11 +453,11 @@
             clearTimeout(_dlModelPoll);
             _dlModelPoll = setTimeout(_paintDefaultModel, 3000);
           } else if (j.error) {
-            lines.push(`<p class="card-caveat">${esc(t("Download failed:"))} ${esc(j.error)}</p>`);
+            lines.push(`<p class="card-caveat">${ooLabelHtml(esc(t("Download failed")), esc(j.error))}</p>`);
           }
         } catch (e) { /* the block still renders without the live line */ }
       }
-      lines.push(`<p class="card-caveat">${esc(t("Licence:"))} ${esc(p.license || "")}. ${esc((p.caveats || []).join(" "))}</p>`);
+      lines.push(`<p class="card-caveat">${ooLabelHtml(esc(t("Licence")), esc(p.license || ""))}. ${esc((p.caveats || []).join(" "))}</p>`);
       host.innerHTML = lines.join("");
     }
 
@@ -474,7 +474,7 @@
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       let p = null;
       try { p = await api("/api/llm/default-model"); }
-      catch (e) { toast(t("Could not determine the default model:") + " " + (e.message || e), "err"); return; }
+      catch (e) { toast(ooLabelText(t("Could not determine the default model"), e.message || e), "err"); return; }
       // Consent BEFORE the bytes: this is multi-gigabyte clearnet traffic (the model
       // registry / Hugging Face), and it does NOT go through Tor. Stated with the real
       // artifact and size rather than a generic "download?".
@@ -501,7 +501,7 @@
         _aiPillSettle();
         _paintDefaultModel();
       } catch (e) {
-        toast(t("Download failed:") + " " + (e.message || e), "err");
+        toast(ooLabelText(t("Download failed"), e.message || e), "err");
       } finally {
         if (btn) { btn.disabled = false; btn.textContent = was; }
       }
@@ -513,7 +513,7 @@
       if (!box) return;
       let d;
       try { d = await api("/api/llm/models"); }
-      catch (e) { box.innerHTML = `<p class="muted">${esc(t("Model info unavailable:"))} ${esc(e.message)}</p>`; return; }
+      catch (e) { box.innerHTML = `<p class="muted">${ooLabelHtml(esc(t("Model info unavailable")), esc(e.message))}</p>`; return; }
       if (!d.available) {
         // Ollama is not answering. This used to return HERE, which hid the Launch
         // control and the one-click model install in the EXACT state where they are
@@ -571,8 +571,8 @@
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       try {
         await api("/api/settings", {method: "PUT", body: JSON.stringify({llm_model: tag})});
-        toast(t("Active model set:") + " " + tag); loadLlmModels();
-      } catch (e) { toast(t("Could not set the active model:") + " " + e.message, "err"); }
+        toast(ooLabelText(t("Active model set"), tag)); loadLlmModels();
+      } catch (e) { toast(ooLabelText(t("Could not set the active model"), e.message), "err"); }
     }
     async function removeModel(tag) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
@@ -580,7 +580,7 @@
       try {
         await api("/api/llm/remove", {method: "POST", body: JSON.stringify({model: tag})});
         toast(t("Removed") + " " + tag); loadLlmModels();
-      } catch (e) { toast(t("Remove failed:") + " " + e.message, "err"); }
+      } catch (e) { toast(ooLabelText(t("Remove failed"), e.message), "err"); }
     }
     function pullModelFromBox() {
       const el = $("llm-pull-tag"); if (!el) return;
@@ -686,7 +686,7 @@
         } else {
           _llmPullStartPoll();
         }
-      } catch (e) { if (prog) prog.textContent = t("Download failed:") + " " + e.message; }
+      } catch (e) { if (prog) prog.textContent = ooLabelText(t("Download failed"), e.message); }
     }
     async function cancelPull(model) {
       try { await api("/api/llm/pull/cancel", {method: "POST", body: JSON.stringify({model})}); _llmPullRefresh(); }
@@ -830,6 +830,7 @@
       if (_langDetectPolling) return;
       _langDetectPolling = true;
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((s, v) => s.replace(/\{(\w+)\}/g, (_, k) => v[k]));
       const el = $("langdetect-status");
       let fails = 0;
       try {
@@ -854,7 +855,10 @@
             // non-loopback model address): unavailable means not running, and saying
             // "or airplane mode" sent the reader online to fix a local problem.
             if (res.ran === false) el.textContent = t("The local model is unavailable: the local AI is not running.");
-            else el.textContent = `${t("Done.")} ${res.stored || 0} ${t("labelled")} · ${res.none || 0} ${t("unclear")} · ${res.total || 0} ${t("scanned")}`;
+            // ONE keyed sentence, so each locale joins "Done." to its tally its own way:
+            // welded with a Latin space it read "完成。 3 已标注" (2026-09-27 re-walk O-5).
+            else el.textContent = tf("Done. {stored} labelled · {none} unclear · {total} scanned",
+              { stored: fmtNum(res.stored || 0, 0), none: fmtNum(res.none || 0, 0), total: fmtNum(res.total || 0, 0) });
           } else if (st === "cancelled") el.textContent = t("Cancelled.");
           else if (st === "error") el.textContent = ooLabelText(t("Failed"), s.error || "");
           else if (s.last_run) {
@@ -863,7 +867,8 @@
             // restart, not read as blank/never-run).
             const lr = s.last_run;
             if (lr.state === "error") el.textContent = ooLabelText(t("Last run failed"), lr.error || "");
-            else el.textContent = `${t("Last run:")} ${lr.stored || 0} ${t("labelled")} · ${lr.none || 0} ${t("unclear")} · ${lr.total || 0} ${t("scanned")}`;
+            else el.textContent = tf("Last run: {stored} labelled · {none} unclear · {total} scanned",
+              { stored: fmtNum(lr.stored || 0, 0), none: fmtNum(lr.none || 0, 0), total: fmtNum(lr.total || 0, 0) });
           } else el.textContent = "";
           break;
         }
@@ -1339,11 +1344,13 @@
       try {
         const r = await api("/api/database/vacuum", {method: "POST"});
         const freed = (r.bytes_reclaimed == null) ? "—" : _fmtBytes(r.bytes_reclaimed);
-        out.textContent = t("Compacted.") + " " + t("Space freed:") + " " + freed +
-          " · " + ((r.duration_ms / 1000).toFixed(1)) + " s";
+        // One keyed sentence: welded, zh read "压缩完成。 已释放空间： 1.2 GB" (re-walk O-5).
+        const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((s, v) => s.replace(/\{(\w+)\}/g, (_, k) => v[k]));
+        out.textContent = tf("Compacted. Space freed: {freed} · {secs} s",
+          { freed, secs: (r.duration_ms / 1000).toFixed(1) });
         _dbReclaimBytes = 0; _paintReclaim();
       } catch (e) {
-        out.textContent = t("Compaction failed:") + " " + e.message;
+        out.textContent = ooLabelText(t("Compaction failed"), e.message);
       } finally { btn.disabled = false; }
     }
 
@@ -1377,6 +1384,16 @@
     }
 
     // ---- Local .eml newsletter import (zero network; anonymised at ingest) ---- //
+    // The anonymisation tally of a newsletter import or a mailbox pull: ONE keyed sentence,
+    // so each locale writes its own colon and commas. Welded out of "Anonymisation:" and
+    // "…redacted," pieces it read "匿名化： 3 处收件人痕迹已隐去， 2 …" in Chinese -- a
+    // Latin space after each full-width mark (2026-09-27 re-walk O-5).
+    function _nlAnonLine(tl) {
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((s, v) => s.replace(/\{(\w+)\}/g, (_, k) => v[k]));
+      const n = (x) => fmtNum(x || 0, 0);
+      return tf("Anonymisation: {redacted} recipient echoes redacted, {stripped} tracker tokens stripped, {flagged} tracker wrappers flagged.",
+        { redacted: n(tl.recipient_redactions), stripped: n(tl.tracker_params_stripped), flagged: n(tl.trackers_flagged) });
+    }
     async function importNewsletters(btn) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const input = $("nl-files");
@@ -1398,10 +1415,7 @@
           `<b>${n(tl.stored)}</b> ${esc(t("imported"))} · ${n(tl.duplicate)} ${esc(t("duplicates skipped"))} · ` +
           `${n(tl.empty)} ${esc(t("empty"))}` +
           (tl.skipped_non_eml ? ` · ${n(tl.skipped_non_eml)} ${esc(t("not .eml"))}` : "") +
-          `<div class="muted" style="margin-top:5px">${esc(t("Anonymisation:"))} ` +
-          `${n(tl.recipient_redactions)} ${esc(t("recipient echoes redacted"))}, ` +
-          `${n(tl.tracker_params_stripped)} ${esc(t("tracker tokens stripped"))}, ` +
-          `${n(tl.trackers_flagged)} ${esc(t("tracker wrappers flagged"))}.</div>`;
+          `<div class="muted" style="margin-top:5px">${esc(_nlAnonLine(tl))}</div>`;
         input.value = "";
         toast(t("Newsletters imported."), "ok");
         // Q1151: say where the articles WENT, immediately and on this same screen -- but in
@@ -1411,7 +1425,7 @@
         _nlLastRun = tl;
         loadNewsletterAttach();
       } catch (e) {
-        $("nl-result").innerHTML = `<span class="note err">${esc(t("Import failed:"))} ${esc(e.message)}</span>`;
+        $("nl-result").innerHTML = `<span class="note err">${ooLabelHtml(esc(t("Import failed")), esc(e.message))}</span>`;
       } finally { btn.disabled = false; }
     }
 
@@ -1525,7 +1539,7 @@
         input.value = "";
         toast(t("PDFs imported."), "ok");
       } catch (e) {
-        $("pdf-result").innerHTML = `<span class="note err">${esc(t("Import failed:"))} ${esc(e.message)}</span>`;
+        $("pdf-result").innerHTML = `<span class="note err">${ooLabelHtml(esc(t("Import failed")), esc(e.message))}</span>`;
       } finally { btn.disabled = false; }
     }
     async function importPdfFolder(btn) {
@@ -1539,7 +1553,7 @@
         $("pdf-folder-result").innerHTML = _pdfTallyHtml(d.tally || {});
         toast(t("PDFs imported."), "ok");
       } catch (e) {
-        $("pdf-folder-result").innerHTML = `<span class="note err">${esc(t("Import failed:"))} ${esc(e.message)}</span>`;
+        $("pdf-folder-result").innerHTML = `<span class="note err">${ooLabelHtml(esc(t("Import failed")), esc(e.message))}</span>`;
       } finally { btn.disabled = false; }
     }
 
@@ -1632,9 +1646,12 @@
       try {
         const d = await api("/api/newsletters/remove-imported",
           {method: "POST", body: JSON.stringify({confirm: true})});
+        // One keyed sentence pair with the count dropped in, so each locale joins its
+        // own two sentences: welded, zh read "…简报。 重新导入…" (re-walk O-5).
+        const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((s, v) => s.replace(/\{(\w+)\}/g, (_, k) => v[k]));
         $("nl-remove-result").innerHTML =
-          `<b>${N(d.removed_articles)}</b> ${esc(t("imported newsletters removed."))} ` +
-          esc(t("Re-import the cleaned files to replace them."));
+          esc(tf("{n} imported newsletters removed. Re-import the cleaned files to replace them.", {n: "\u0001"}))
+            .replace("\u0001", () => `<b>${N(d.removed_articles)}</b>`);
         toast(t("Imported newsletters removed."), "ok");
         loadNewsletterRemoveCount();
       } catch (e) {
@@ -1673,7 +1690,7 @@
           onProgress: (s) => { if (out && s && s.detail) out.textContent = esc(s.detail); },
         });
         if (st && st.state === "error") {
-          if (out) out.innerHTML = `<span class="note err">${esc(t("Pull failed:"))} ${esc(st.error || "")}</span>`;
+          if (out) out.innerHTML = `<span class="note err">${ooLabelHtml(esc(t("Pull failed")), esc(st.error || ""))}</span>`;
           return;
         }
         if (_jobStillRunning(st)) {
@@ -1685,13 +1702,12 @@
         const res = (st && st.result) || {};
         const tl = res.tally || {}, n = (x) => fmtNum(x || 0, 0);
         if (out) out.innerHTML = `<b>${n(tl.stored)}</b> ${esc(t("imported"))} · ${n(tl.duplicate)} ${esc(t("duplicates skipped"))}`
-          + `<div class="muted" style="margin-top:5px">${esc(t("Anonymisation:"))} ${n(tl.recipient_redactions)} ${esc(t("recipient echoes redacted,"))} `
-          + `${n(tl.tracker_params_stripped)} ${esc(t("tracker tokens stripped,"))} ${n(tl.trackers_flagged)} ${esc(t("tracker wrappers flagged."))}</div>`
+          + `<div class="muted" style="margin-top:5px">${esc(_nlAnonLine(tl))}</div>`
           + (res.disclosure ? `<div class="muted" style="margin-top:4px">${esc(res.disclosure)}</div>` : "");
       } catch (e) {
         // 409 = airplane refusal (named as the kill switch), 422 = a network-free
         // validation refusal. Both still answer synchronously, before any socket.
-        if (out) out.innerHTML = `<span class="note err">${esc(t("Pull failed:"))} ${esc(e.message)}</span>`;
+        if (out) out.innerHTML = `<span class="note err">${ooLabelHtml(esc(t("Pull failed")), esc(e.message))}</span>`;
       } finally { if (btn) btn.disabled = false; }
     }
 
@@ -1926,7 +1942,7 @@
         _paintLaneStorage(rep);
       } catch (e) {
         if ($("storage-lanes")) {
-          $("storage-lanes").innerHTML = `<span class="note err">${esc(t("Storage could not be read:"))} ${esc(e.message)}</span>`;
+          $("storage-lanes").innerHTML = `<span class="note err">${ooLabelHtml(esc(t("Storage could not be read")), esc(e.message))}</span>`;
         }
       }
     }
@@ -1952,7 +1968,7 @@
         const fresh = $("storage-budget-msg-" + kind);
         if (fresh) fresh.textContent = t("Saved.");
       } catch (e) {
-        if (msg) msg.textContent = t("Not saved:") + " " + e.message;
+        if (msg) msg.textContent = ooLabelText(t("Not saved"), e.message);
       } finally { if (btn) btn.disabled = false; }
     }
 

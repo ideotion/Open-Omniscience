@@ -158,7 +158,7 @@
         const w = Math.max(0.5, scale(r.sources || 0));
         const floorPct = (r.min_sources != null) ? scale(r.min_sources) : null;
         const marker = floorPct == null ? "" :
-          `<span title="${esc(t("floor"))}: ${esc(String(r.min_sources))}" style="position:absolute;`
+          `<span title="${esc(ooLabelText(t("floor"), r.min_sources))}" style="position:absolute;`
           + `left:${floorPct.toFixed(1)}%;top:-2px;bottom:-2px;width:2px;background:var(--fg);opacity:.55"></span>`;
         return `<div style="display:flex;align-items:center;gap:8px;font-size:12px;line-height:1.8">`
           + `<span style="flex:0 0 30%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.region)}</span>`
@@ -202,7 +202,8 @@
         _regionFloorBars(reg.regions) +
         `<div style="overflow:auto;margin-top:6px"><table>` +
         `<tr><th>Region</th><th>Sources / floor</th><th>Countries / floor</th></tr>${rows}</table></div>` +
-        `<div style="margin-top:6px">${esc(t("Top country:"))} <strong>${ooCountryCell(tc.code, {empty: "—"})}</strong> — ` +
+        // The reader's own separator (ooLabelHtml): welded, zh read "首位国家： DEU" (re-walk O-5).
+        `<div style="margin-top:6px">${ooLabelHtml(esc(t("Top country")), `<strong>${ooCountryCell(tc.code, {empty: "—"})}</strong>`)} — ` +
         esc(tf("{n} sources, {pct}% of located", {n: tc.sources, pct: tc.share_pct})) +
         (tc.max_share_pct != null
           ? ` <span class="pill ${over ? "warn" : "ok"}">${esc(tf(over ? "above the {pct}% guard" : "within the {pct}% guard", {pct: tc.max_share_pct}))}</span>` : "") +
@@ -500,11 +501,12 @@
           {method: "POST", body: JSON.stringify({source_id: sourceId})});
         // Read against the module's REAL keys (article_count / junk_count /
         // unparseable_count / canary), not an assumed {counts: …} shape.
-        const msg = `${t("AI check")}: ${r.checked != null ? r.checked : "?"} ${t("checked")} — `
-          + `${r.article_count != null ? r.article_count : "?"} ${t("read as articles")}, `
-          + `${r.junk_count != null ? r.junk_count : "?"} ${t("as navigation soup")}, `
-          + `${r.unparseable_count != null ? r.unparseable_count : "?"} ${t("unreadable")}`
-          + ` — ${t("a proposal only; nothing about this source was changed.")}`;
+        // ONE keyed sentence: welded out of "AI check" + ": " + number + noun pieces it
+        // put a Latin colon and commas into every locale's line (2026-09-27 re-walk O-5).
+        const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((s, v) => s.replace(/\{(\w+)\}/g, (_, k) => v[k]));
+        const num = (x) => (x != null ? fmtNum(x, 0) : "?");
+        const msg = tf("AI check: {checked} checked — {articles} read as articles, {junk} as navigation soup, {unreadable} unreadable — a proposal only; nothing about this source was changed.",
+          { checked: num(r.checked), articles: num(r.article_count), junk: num(r.junk_count), unreadable: num(r.unparseable_count) });
         // A failed canary means the run itself is untrustworthy, which matters more
         // than any of its numbers — so it is stated first, not buried.
         const bad = r.canary && r.canary.ok === false;
@@ -567,16 +569,16 @@
           : "");
       const basisAttr = basisTitle ? ` title="${esc(basisTitle)}"` : "";
       let html = `<div><span class="pill ${qsClass}"${basisAttr}>${esc(qsLabel)}${esc(basisSuffix)}</span></div>`;
-      html += `<div style="margin-top:6px"><strong>${esc(t("Discovery"))}:</strong> `
-        + `${esc(prov.channel || "—")} <span class="muted">— ${esc(prov.detail || "")}</span></div>`;
+      html += `<div style="margin-top:6px">${ooLabelHtml(`<strong>${esc(t("Discovery"))}</strong>`,
+        `${esc(prov.channel || "—")} <span class="muted">— ${esc(prov.detail || "")}</span>`)}</div>`;
       if (prov.citing_trail) {
         const ct = prov.citing_trail;
         const citerLink = ct.citing_source_domain
           ? ` (<a href="#" onclick="srcJumpToDomain(${esc(JSON.stringify(ct.citing_source_domain))});return false">${esc(ct.citing_source_name || ct.citing_source_domain)}</a>)`
           : (ct.citing_source_name ? ` (${esc(ct.citing_source_name)})` : "");
-        html += `<div class="muted" style="margin-top:2px">${esc(t("First cited by"))}: `
-          + `<a href="/api/articles/${ct.article_id}/view" target="_blank" rel="noopener">${esc(ct.article_title || ("#" + ct.article_id))}</a>`
-          + citerLink + "</div>";
+        html += `<div class="muted" style="margin-top:2px">${ooLabelHtml(esc(t("First cited by")),
+          `<a href="/api/articles/${ct.article_id}/view" target="_blank" rel="noopener">${esc(ct.article_title || ("#" + ct.article_id))}</a>`
+          + citerLink)}</div>`;
       }
       // Four DRILLABLE classes (qualified/disqualified/pending/never-registered) --
       // each chip's number is exactly the length of the list it expands to (never a
@@ -591,7 +593,7 @@
       ];
       const chips = classes.map(([k, arr]) => {
         const label = k === "never_registered" ? t("never-registered") : t(k);
-        return `<button class="tiny ghost" onclick="_srcTrailToggleClass(${id},'${k}')">${esc(label)}: ${arr.length}</button>`;
+        return `<button class="tiny ghost" onclick="_srcTrailToggleClass(${id},'${k}')">${ooLabelHtml(esc(label), fmtNum(arr.length, 0))}</button>`;
       }).join(" ");
       html += `<div style="margin-top:8px">${chips}</div>`;
       html += `<div id="src-trail-cls-${id}" class="muted" style="display:none;margin:4px 0;font-size:.85em"></div>`;

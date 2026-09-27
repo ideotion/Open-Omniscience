@@ -194,8 +194,13 @@ async function check(id, what, fn) {
 
   await check("L17", "the regional balance names the top country by code, in keyed frames", () => {
     const host = {innerHTML: ""};
-    const F = build(["renderCoverageRegions"], "function _regionFloorBars(){ return ''; }",
-      "renderCoverageRegions", {$: () => host, window: {OOI18N: MARKED}, OOI18N: MARKED});
+    // The label goes through ooLabelHtml since the 2026-09-27 re-walk (O-5), which fills
+    // its frame with control-character markers; this engine keeps them raw (MARKED's
+    // JSON.stringify would escape them away and drop the label).
+    const RAW = {t: MARKED.t, current: MARKED.current,
+      tf: (s, v) => "TF[" + s + "]" + Object.keys(v || {}).map((k) => k + "=" + v[k]).join(",")};
+    const F = build(["ooLabelHtml", "renderCoverageRegions"], "function _regionFloorBars(){ return ''; }",
+      "renderCoverageRegions", {$: () => host, window: {OOI18N: RAW}, OOI18N: RAW});
     F.renderCoverageRegions({regional: {
       regions: [{region: "Europe", sources: 9, countries_total: 2, countries_covered: 2}],
       top_country: {code: "de", sources: 4, share_pct: 44, max_share_pct: 30},
@@ -204,7 +209,9 @@ async function check(id, what, fn) {
     const h = host.innerHTML;
     assert.ok(/>DEU</.test(h), "the top country's CODE is on screen: " + h);
     assert.ok(!/>Germany</.test(h), "the server's English name is no longer the text: " + h);
-    for (const k of ["Top country:", "{n} sources, {pct}% of located", "above the {pct}% guard",
+    assert.ok(h.includes("T[Top country]") && h.includes("TF[{prefix}: {text}]"),
+      "the top-country label takes the reader's separator: " + h);
+    for (const k of ["{n} sources, {pct}% of located", "above the {pct}% guard",
                      "{pct}% of sources carry a country", "floor {pct}%"]) {
       assert.ok(h.includes(k + "]"), "this part of the line is not keyed: " + k + " in " + h);
     }

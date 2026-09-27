@@ -2633,7 +2633,9 @@
       // "network task" was wrong for the collision this actually fires on -- it fires
       // ONLY on db_writers_busy, and a re-index is not a network task. Re-keyed, not
       // re-worded around, so the twelve reviewed translations carry the new claim.
-      return confirm(`${t("Another job is writing to the database:")} ${busy}\n\n`
+      // The reader's own separator (ooLabelText): welded, zh read "…写入数据库： re-index"
+      // (2026-09-27 re-walk O-5).
+      return confirm(`${ooLabelText(t("Another job is writing to the database"), busy)}\n\n`
         + (note ? note + "\n\n" : "")
         + `${t("Start anyway? (Cancel waits — the running task keeps the bandwidth and the database writer to itself.)")} ${actionLabel}`);
     }
