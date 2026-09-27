@@ -5412,7 +5412,7 @@ def test_supergroup_stats_ui():
     # "recent · prior, Nd vs Nd" literal never translated), so the fact is pinned in two
     # halves: sgCard hands g.rate to trendRateText, and that frame prints its growth,
     # recent, prior and both windows.
-    rate_fn = src[src.index("function trendRateText(") : src.index("function mentionsArticlesText(")]
+    rate_fn = _js_function_body(src, "trendRateText")
     assert "g.rate.growth" in fn or (
         "trendRateText(g.rate" in fn
         and all(f"row.{k}" in rate_fn for k in ("growth", "recent", "prior", "window_days", "baseline_days"))

@@ -40,6 +40,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.js_source_helper import function_source
+
 _ROOT = Path(__file__).resolve().parent.parent
 _STATIC = _ROOT / "src" / "static"
 
@@ -477,8 +479,7 @@ def test_intl_displaynames_is_reached_only_through_the_two_owning_helpers() -> N
         "reader.js": "langName -- the reader page does not load app-map.js",
     }
     reader = (_STATIC / "reader.js").read_text(encoding="utf-8")
-    body = reader[reader.index("function langName(") :]
-    body = body[: body.index("\n  }\n") + 4]
+    body = function_source(reader, "langName")
     assert reader.count("new Intl.DisplayNames") == 1 and "new Intl.DisplayNames" in body, (
         "reader.js constructs Intl.DisplayNames outside its one langName helper"
     )

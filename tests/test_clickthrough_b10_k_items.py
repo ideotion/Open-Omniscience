@@ -23,6 +23,7 @@ import subprocess
 from pathlib import Path
 
 from tests.js_source_helper import (
+    array_literal,
     assert_absent,
     event_listener_bodies,
     function_body,
@@ -151,8 +152,7 @@ def test_the_trend_and_group_surfaces_repaint_on_a_language_switch():
     """Insights -> Groups draws the keyword label and the rate line; the Trends rows'
     value labels are keyed frames now, so `loadTrends` re-running draws them again."""
     js = read_static("app-corpus.js")
-    callers = js[js.index("function ooKwRepaintOnLangChange"):]
-    callers = callers[: callers.index("for (const [hostId, fn, arg] of callers)")]
+    callers = array_literal(function_body(js, "ooKwRepaintOnLangChange"), "callers")
     for entry in ('["sg-list", "loadSuperGroups"]', '["trd-top", "loadTrends"]',
                   '["trd-windows", "loadTrendWindows"]'):
         assert entry in callers, f"{entry} is not repainted on a switch"
