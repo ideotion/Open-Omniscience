@@ -34,6 +34,9 @@ Everything not listed here is already recorded and needs no restating (`docs/led
 > **How to answer now:** write a letter after any `ANSWER RCnn:` line below. The lines are untouched and
 > each blank is still a live question; answering one replaces its assumption and needs no other edit.
 > Index entry: the `OPEN_QUEUE.md` head entry of 2026-09-15; one `RULINGS_INDEX.md` row per `RCnn`.
+>
+> **UPDATE 2026-09-27: two answered in chat, copied onto their lines** — `RC01` = (a) and `RC10` = (b). PENDING
+> is now `RC02` ⛔, `RC03` ⛔ and `RC12`; the other sixteen assumptions stand.
 
 ## §0 — How to answer, and how the answers are processed
 
@@ -61,7 +64,7 @@ row 5 (the Tier-A quarantine run, 8 articles) was never run, and A1 is now defer
 - (b) **0.4 row G waits for row 5 (A1's deferral holds everything).** _Impact: the version stays `0.3.0` until
   you run the quarantine; nothing else changes._
 Default if blank: (b) — A1 deferred means deferred.
-ANSWER RC01:
+ANSWER RC01: a — given in chat 2026-09-27 08:56 UTC and copied here by the recording session: «OK for RC01, I'll do the versino switching after all current draft PRs are merged»
 
 #### RC02 ⛔ · C1 vs Q215 — the legacy single-file restore
 Sheet (morning): Q215 = **(a) keep the restore half forever, as the docstring commits; close C1**. Register
@@ -173,7 +176,7 @@ sense inventory and ambiguity map (slices 4 and 6), never dump ingestion.
 - (b) **Exclude it for now (E2 stands); the other hosts are added.** _Impact: those two slices stay
   operator-side; nothing else changes._
 Default if blank: none (⛔ — an egress decision).
-ANSWER RC10:
+ANSWER RC10: b — given in chat 2026-09-27 08:56 UTC and copied here by the recording session: «RC10: go with your recommendation» (the 2026-09-25 sheet recommended (b))
 
 #### RC11 · G1 — the detailed V1-1..V1-9 round
 «I can't answer these now. Not enough details. Mark them for future development as questions to ask me with

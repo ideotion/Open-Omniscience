@@ -20,6 +20,9 @@ named above, then every ruling in §1 as it stands in `docs/ledger/RULINGS_INDEX
 own section for those questions (their verified context and option lists). Grep the tree before building
 anything — the sheet's anchors were verified at `main`@`bebcef4` on 2026-09-12 and may have moved.
 
+**AMENDED 2026-09-27 (`PF06` = a):** this slice also carries Q803's DEFAULT, OSM's border convention as of a
+stated date opening every map, moved from 0.4 row R; its bar is `RELEASE_0.5_GATE.md` row L.
+
 ## 1. The rulings this slice implements — verbatim, by ID
 
 - **Q314** — **(a)** «(a) ISO 3166-2 (`FR-75`, `US-CA`) where OSM carries the `ISO3166-2` tag; the OSM

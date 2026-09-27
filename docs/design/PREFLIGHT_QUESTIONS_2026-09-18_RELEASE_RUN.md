@@ -107,7 +107,7 @@ the tag.
   artifacts it waits on, with a row that says so.
 - **b** — row R stays OPEN and the 0.4 exit waits for the 0.5 OSM artifacts.
 Default if blank: **a**, labelled ASSUMPTION in Prompt 17's PR — the tag is your own act and can wait on **b**.
-ANSWER PF06:
+ANSWER PF06: a — given in chat 2026-09-27 08:56 UTC and copied here per §0: «Row R: OK to move that to 0.5»
 
 #### PF07 · Where the fix for the three broken ride-along opt-outs lands (row H)
 Disclosed 2026-09-16, not fixed (live-reproduced): the calendars and law ride-alongs gate on settings fields that
@@ -174,7 +174,7 @@ today, used for keyword extraction only.
 - **b** — keep `janome` (pure Python, dictionary bundled, already installed) on the FTS path too, and record
   Q506's `sudachipy` clause as superseded by this letter.
 Default if blank: **a** (Q506 is a locked ruling; the session follows it unless you write **b**).
-ANSWER PF12:
+ANSWER PF12: (no letter copied) — given in chat 2026-09-27 08:56 UTC: «Row N: keep sudachipy», answering the question as the thread put it («sudachipy, which is what's built, or janome»). Recorded as `sudachipy` on the search path, as built. Option (a)'s second half, retiring `janome` from `[segmentation]`, was not in that question, so the keyword path keeps `janome` and nothing is retired.
 
 #### PF13 · The twelve maintainer click-throughs (rows H, I, J, K, L, M, N, O, P, S, T, U)
 Q1128 = (a): Chromium in the sandbox + your own click-through = verified. Every one of those rows now has its

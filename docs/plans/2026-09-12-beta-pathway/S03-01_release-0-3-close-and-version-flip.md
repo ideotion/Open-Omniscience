@@ -34,6 +34,11 @@ asks whether the version flip may proceed on the existing `v0.3.0` pre-release w
 pre-release is not taken as the flip's base. A1 stays `deferred`, with no date. Reversed by writing a letter
 at `ANSWER RC01` — `a` would let the flip proceed now and move row 5 into 0.4's operator rows.
 
+**ANSWERED 2026-09-27 — `RC01` = (a), in chat** («OK for RC01, I'll do the versino switching after all current draft PRs are merged»). The ASSUMPTION
+above is reversed. §5 step 1 is answered: the 2026-08-23 pre-release IS the `0.3` close. S2 (row 5) moves to
+0.4 row W. S3 (the flip) is the MAINTAINER's own act, after the current draft PRs merge; a session does not open
+it unless asked. S1's README correction (the «latest tagged release» note) was made in PR #1191.
+
 ## 2. Where this stands in the tree — the staleness guard, with anchors
 
 - Sheet §2 context (VERIFIED at `bebcef4`): "0.3 measured-and-verified (closing: one open row, the Tier-A

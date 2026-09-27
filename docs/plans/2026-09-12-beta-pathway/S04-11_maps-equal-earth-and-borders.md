@@ -36,6 +36,11 @@ on 2026-09-12 and may have moved; this brief re-checked them at `7ca142e`.
   as default»
 - **Q826** — **(a)** «Rendered CONTESTED with both claims, never a silent pick; confirm.»
 
+**AMENDED 2026-09-27 (`PF06` = a, in chat: «Row R: OK to move that to 0.5»):** S3's DEFAULT half, OSM's
+convention as of a stated date opening every map, moved to 0.5 (`RELEASE_0.5_GATE.md` row L, brief `S05-05`),
+beside the OSM artifacts it waits on. This slice's row closes on the seam, 50m, the CONTESTED layer and the
+worldview toggle, with the default left at `contested`.
+
 ## 2. Where this stands in the tree — the staleness guard, with anchors
 
 - The one projection is equirectangular at `app-map.js:21–24` (sheet VERIFIED; confirmed: `MAP_W = 720,

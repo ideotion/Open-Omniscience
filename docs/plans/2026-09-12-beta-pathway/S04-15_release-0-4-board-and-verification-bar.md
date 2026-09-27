@@ -90,6 +90,9 @@ register's H2 / L2). Grep the tree before building anything — the sheet's anch
   probes `dumps.wikimedia.org` and one control host and records the HTTP status; until it is not `000`, every
   live-verification step in the other briefs reads `not-measurable-here`.
 - **Why (ruling):** Q114 ⛔ = a. **Acceptance:** the probe returns an HTTP status (gate).
+- **AMENDED 2026-09-27 (`RC10` = b, in chat):** `dumps.wikimedia.org` is excluded for now, so the probe goes to
+  each Q114 host that stays (sixteen, one name per wildcard) and the acceptance is an HTTP status from each.
+  Measured the same morning from a session: all seventeen, the excluded host included, answered `000`.
 
 ## 4. Verification
 

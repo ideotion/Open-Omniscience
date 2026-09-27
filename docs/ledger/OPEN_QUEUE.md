@@ -22,6 +22,25 @@
 
 ## Open queue (when maintainer says proceed)
 
+- **THE FOUR 0.4 BLOCKING DECISIONS, ANSWERED IN CHAT (2026-09-27 08:56 UTC; recorded the same turn in
+  PR #1191).** The maintainer, verbatim: «FYI, the blocking decisions: OK for RC01, I'll do the versino switching after all current draft PRs are merged. RC10: go with your recommendation. Row R: OK to move that to 0.5. Row N: keep sudachipy».
+  Each answers a question the «What's left for v0.4» thread named on 2026-09-26 as blocking the tag, with
+  that thread's recommendation: `RC01` = (a) · `RC10` ⛔ = (b), with row V's closing probe moved off the
+  excluded host · `PF06` = (a) · `PF12` = `sudachipy`, as built. One line each in
+  [`RULINGS_INDEX.md`](RULINGS_INDEX.md); the gate edits are in `RELEASE_0.3_GATE.md` (row 5 moved),
+  `RELEASE_0.4_GATE.md` (rows G, N, R, V; row W added; the exit clause) and `RELEASE_0.5_GATE.md` (row L added).
+  **STILL OWED, AND BY WHOM:** (1) the flip to `0.4.0` — the MAINTAINER's own act, after the draft PRs open
+  on 2026-09-27 are merged (0.4 row G); no session opens it. (2) The Tier-A quarantine run, `0.3`'s row 5,
+  now 0.4 row W — the operator, through the release run's opt-in step. (3) The Q114 hosts except
+  `dumps.wikimedia.org` added to the session environment's allowlist — the operator. **Measured from a
+  session at about 09:00 UTC the same day: all seventeen, `dumps.wikimedia.org` included, answered `000`**
+  (the proxy refused each CONNECT), so row V's probe cannot pass yet. (4) Row R's click-through (Q1128 = a):
+  R35 delegated that half to Claude for rows H–U; row R was not in its list because it could not close
+  then, and a Claude-run walk on the same terms is the session's reading of R35, not a new ruling.
+  (5) `PF12` does not reach the keyword path: `janome` stays there and retiring it needs its own word.
+  Nothing else moved: `RC02`, `RC03` and `RC12` stay PENDING, and the pre-flight round's other twelve
+  questions stay unanswered.
+
 - **THE SEARCH INDEX NOW FOLDS ARABIC AND SEGMENTS CHINESE AND JAPANESE (`S04-07` S8, Q506 🔒 = b,
   Q507 = a, built 2026-09-25): WHAT IS OWED, WHAT WAS LEFT UNDECIDED, AND ONE FINDING OUTSIDE THE
   RULING.** The sync triggers index `oo_fts_norm(text)` rather than the stored text, and the search
@@ -34,10 +53,11 @@
     keep its report (counts by script, the segmenter versions it ran with, the time taken), with a
     few before/after searches. The fixture numbers are in the PR; nothing here stands in for the
     real corpus.
-  - **UNDECIDED, AND FOLLOWED AS DEFAULT: `sudachipy` versus `janome` for ja (brief §6, PF12 is
-    BLANK and non-⛔, default a = sudachipy per Q506).** Q506 is followed on the SEARCH path only;
-    the keyword path keeps `janome`, and nothing was retired. If PF12 is answered "retire janome",
-    the keyword path moves in its own change, with the keyword engine identity bump that implies.
+  - **DECIDED 2026-09-27: `sudachipy` for ja on the SEARCH path, as built (`PF12`, in chat: «Row N: keep
+    sudachipy»).** It was UNDECIDED and followed as the default until then (brief §6, PF12 blank and
+    non-⛔, default a = sudachipy per Q506). The keyword path keeps `janome`, and nothing was retired:
+    the answer chose the search splitter only. If the maintainer later says "retire janome", the keyword
+    path moves in its own change, with the keyword engine identity bump that implies.
   - **A CONSEQUENCE TO KNOW, NOT A DECISION TAKEN HERE:** `jieba` moved from `[segmentation]` into
     core because the brief places each segmenter per Q1015 = a (pure Python in core). The keyword
     path already used it whenever it was importable, so a default install (which never had
@@ -693,7 +713,9 @@
   click-throughs, PF14 the `guarded_session` SSRF gap before or beside the soak). The sheet's §0 says how a
   blank is read (⛔ → PENDING; otherwise the stated default as a labelled ASSUMPTION); the receiving session
   records one `RULINGS_INDEX.md` row per PFnn. The RC blanks that the same pre-flight depends on (`RC01`,
-  `RC10` ⛔, `RC13`'s eclipse suffix) are pointed at, not re-asked.
+  `RC10` ⛔, `RC13`'s eclipse suffix) are pointed at, not re-asked. **UPDATE 2026-09-27: `PF06` = (a) and
+  `PF12` (keep `sudachipy`) were answered in chat, with `RC01` = (a) and `RC10` = (b); each has its
+  `RULINGS_INDEX.md` row. The other twelve PF questions and `RC13`'s eclipse suffix stay unanswered.**
 - **THE COLLECTION-SPEED KNOB MISSTATES ITS OWN UNIT BY 8.192x, ON FOUR USER-FACING SURFACES —
   found while building the per-process budget (S04-13 S1, Q1012), NOT fixed here.**
   `collect_target_kbps` is **kilobits** per second: `collect_perf._measure_rate` computes
@@ -791,6 +813,10 @@
   [`docs/design/RULINGS_CONFIRMATION_2026-09-15_REGISTER_ROUND.md`](../design/RULINGS_CONFIRMATION_2026-09-15_REGISTER_ROUND.md)
   (a PROCESSING RECORD banner above its §0; every `ANSWER RCnn:` line untouched); the one-line index is
   [`RULINGS_INDEX.md`](RULINGS_INDEX.md) rows `RC01`–`RC17`. **THIS ENTRY IS THE INDEX.**
+  **UPDATE 2026-09-27: `RC01` ANSWERED (a) and `RC10` ANSWERED (b), in chat** — `0.3` closes on the existing
+  pre-release and the maintainer flips the version after the current draft PRs merge, with row 5 carried as
+  0.4 row W; `dumps.wikimedia.org` is excluded for now. PENDING is now three (`RC02`, `RC03`, `RC12`) and
+  the ASSUMPTIONS seventeen; what follows is the 2026-09-15 record, unchanged.
   **THE PARSE, run mechanically per the round's own §0** (letters matched with word boundaries, each letter
   asserted to be an option OF THAT QUESTION, a note after the letter recorded verbatim and taken as the ruling
   where it contradicts the letter): 22 `ANSWER` lines · **0 answered** · **4 PENDING** · **18 ASSUMPTIONS**.
@@ -886,10 +912,12 @@
   the `lean-*` scale from the offerable vocabulary vs Q1129 = a keep the stance «reported, never filtered»;
   RC16) · **L10** (`default` = filter the coverage-state prefixes too vs Q1130 = a `via:*` only; RC17) · 5
   PENDING: **A1** `deferred` (the quarantine run + `v0.3.0` tag operator step; RC01 asks whether 0.4 row G's
-  version flip may proceed on the existing pre-release) · **C4 ⛔** answered `default` (yes / OOENC2 / yes /
+  version flip may proceed on the existing pre-release — **RC01 ANSWERED (a) 2026-09-27: it may; the run is
+  0.4 row W**) · **C4 ⛔** answered `default` (yes / OOENC2 / yes /
   yes) at 15:12Z where Q1009 was left blank that morning — a ⛔ question answered through the second channel
   only: RC03 asks for the four values written out before any of rows 3–6 is executed; 0.9 row F and S05-06's
-  seam stay · **E2** «I don't know yet» (`dumps.wikimedia.org`, one minute before F1's «add them»; RC10 ⛔) ·
+  seam stay · **E2** «I don't know yet» (`dumps.wikimedia.org`, one minute before F1's «add them»; RC10 ⛔ — **ANSWERED (b)
+  2026-09-27: excluded for now**) ·
   **G1** «I can't answer these now. Not enough details. Mark them for future development as questions to ask
   me with more details and an overall impact evaluation.» — a detailed V1-1..V1-9 round with an overall
   impact evaluation is OWED; the 2026-09-07 rulings (the R-series) and the sheet's refinements STAND as
@@ -912,7 +940,7 @@
   at the end of §1 (S03-01, S04-04, S04-06, S04-10, S04-12, S04-13, S04-14, S05-08, S05-09, S05-10, S06-04,
   S09-01) saying what is contested and stopping there. No gate row changed status; no brief's slices were
   rewritten; `CLAUDE.md` is untouched (no non-negotiable or UI invariant is touched by the 65).
-  **PENDING:** `RC01`–`RC17`; the detailed V1-1..V1-9 round (G1); the six placements of `RC08`; the §Poll
+  **PENDING:** `RC01`–`RC17` (`RC01` and `RC10` answered 2026-09-27); the detailed V1-1..V1-9 round (G1); the six placements of `RC08`; the §Poll
   analysis rewrite (after `RC12`); section M1 of the register (ratify or reverse the two self-closed items:
   the unrounded i18n percentage and the calls-not-names drift guard) — never in the artifact, still open.
   **LESSON** (in `LESSONS.md`, 2026-09-15, «two open channels for one question round»): a round re-asked in
