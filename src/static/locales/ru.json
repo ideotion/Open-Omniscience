@@ -5737,5 +5737,14 @@
   "Entity": "Сущность",
   "import {batch} ({articles})": "импорт {batch} ({articles})",
   "engine not recorded": "движок не записан",
-  "Sources already judged here are counted per backup, below: the backups of one run overlap, so those counts are not added up.": "Источники, уже оценённые здесь, подсчитаны отдельно для каждой резервной копии ниже: копии одного запуска пересекаются, поэтому эти числа не суммируются."
+  "Sources already judged here are counted per backup, below: the backups of one run overlap, so those counts are not added up.": "Источники, уже оценённые здесь, подсчитаны отдельно для каждой резервной копии ниже: копии одного запуска пересекаются, поэтому эти числа не суммируются.",
+  "Enabled: topic-discovery queries will be sent to DuckDuckGo.": "Включено: запросы поиска тем будут отправляться в DuckDuckGo.",
+  "Disabled (the default): no topic query leaves this machine.": "Выключено (по умолчанию): ни один запрос по теме не покидает этот компьютер.",
+  "External topic discovery enabled.": "Внешний поиск по теме включён.",
+  "External topic discovery disabled.": "Внешний поиск по теме выключен.",
+  "({text})": "({text})",
+  "Backup incomplete →": "Резервное копирование не завершено →",
+  "Incomplete — requested for this export but not in this folder: {members}": "Не завершено — запрошено для этого экспорта, но отсутствует в этой папке: {members}",
+  "Starts the large-data copy into this same folder. The encrypted volumes already in it are not touched.": "Запускает копирование больших данных в эту же папку. Зашифрованные тома, которые уже в ней, не затрагиваются.",
+  "Copy the large-data files now": "Скопировать большие данные сейчас"
 }

@@ -45,7 +45,9 @@ def test_the_dated_folder_is_allocated_once_and_reaches_both_phases():
     # both phase starts are given. A phase computing its own name would give two folders
     # whenever an export crosses a minute boundary.
     assert 'const parent = (document.getElementById("ux-dest").value || "").trim();' in run
-    assert "JSON.stringify({ parent })" in run
+    # The allocation also carries what the export was asked for (the re-walk's J-1), so
+    # the server records it in the folder beside the backup.
+    assert "parent, corpus: wantCorpus, categories: blobs, inside }" in run
     assert run.count("/api/backup/export-folder") == 1, "the folder is allocated more than once"
     assert "{ dest, passphrase: pass" in run, "the volumes phase does not get the folder"
     assert "JSON.stringify({ dest, categories: blobs })" in run, (

@@ -5737,5 +5737,14 @@
   "Entity": "इकाई",
   "import {batch} ({articles})": "आयात {batch} ({articles})",
   "engine not recorded": "इंजन दर्ज नहीं",
-  "Sources already judged here are counted per backup, below: the backups of one run overlap, so those counts are not added up.": "यहाँ पहले से जाँचे गए स्रोत नीचे हर बैकअप के लिए अलग से गिने गए हैं: एक ही रन के बैकअप एक-दूसरे से मेल खाते हैं, इसलिए ये गिनतियाँ जोड़ी नहीं जातीं।"
+  "Sources already judged here are counted per backup, below: the backups of one run overlap, so those counts are not added up.": "यहाँ पहले से जाँचे गए स्रोत नीचे हर बैकअप के लिए अलग से गिने गए हैं: एक ही रन के बैकअप एक-दूसरे से मेल खाते हैं, इसलिए ये गिनतियाँ जोड़ी नहीं जातीं।",
+  "Enabled: topic-discovery queries will be sent to DuckDuckGo.": "सक्षम: विषय-खोज क्वेरी DuckDuckGo को भेजी जाएँगी।",
+  "Disabled (the default): no topic query leaves this machine.": "अक्षम (डिफ़ॉल्ट): कोई भी विषय क्वेरी इस मशीन से बाहर नहीं जाती।",
+  "External topic discovery enabled.": "बाहरी विषय-खोज सक्षम की गई।",
+  "External topic discovery disabled.": "बाहरी विषय-खोज अक्षम की गई।",
+  "({text})": "({text})",
+  "Backup incomplete →": "बैकअप अधूरा →",
+  "Incomplete — requested for this export but not in this folder: {members}": "अधूरा — इस निर्यात के लिए माँगा गया, पर इस फ़ोल्डर में नहीं: {members}",
+  "Starts the large-data copy into this same folder. The encrypted volumes already in it are not touched.": "बड़े डेटा की कॉपी इसी फ़ोल्डर में शुरू करता है। इसमें पहले से मौजूद एन्क्रिप्टेड वॉल्यूम को छुआ नहीं जाता।",
+  "Copy the large-data files now": "बड़ा डेटा अभी कॉपी करें"
 }

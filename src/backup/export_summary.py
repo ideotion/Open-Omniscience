@@ -56,6 +56,7 @@ from src.backup.attribution import (
     files_signal,
     signals_from_tables,
 )
+from src.backup.export_folder import REQUEST_NAME, read_export_request
 
 _LOG = logging.getLogger(__name__)
 
@@ -246,6 +247,7 @@ def export_facts(
         parity = bool((manifest.get("parity") or {}).get("volumes"))
     else:
         count, parity = None, False
+    request = read_export_request(d)
     facts: dict[str, Any] = {
         "destination": str(d),
         "folder": d.name,
@@ -289,8 +291,39 @@ def export_facts(
         "attribution_error": attribution_error,
         "notes": list((summary or {}).get("notes") or []),
         "reuse": {"reused": False, "note": FULL_WRITE_NOTE},
+        "requested": request,
+        "missing": missing_members(
+            request, corpus_present=corpus_facts is not None, copy_done=folder is not None
+        ),
     }
     return facts
+
+
+def missing_members(
+    request: dict[str, Any] | None, *, corpus_present: bool, copy_done: bool
+) -> dict[str, Any]:
+    """What the export ASKED for and this folder does not hold (the re-walk's J-1).
+
+    Compared against the folder, never against a job's memory: ``volumes.json`` says
+    the corpus is here, and ``oo-folder-backup.json`` -- which the large-data copy
+    writes only at the end of a COMPLETE pass -- says the copy finished. A copy that
+    never started (the page reloaded between the phases), was paused or failed all
+    leave that file absent, and all three are the same fact to the reader: the files
+    they asked for are not in this backup.
+
+    ``known`` is False when the folder carries no request record (an export written
+    before the record existed): what was asked for is then unknown, which is not the
+    same as "nothing is missing" and is never drawn as a warning either. Members that
+    rode INSIDE the artifact owe no separate copy, so they are never listed here.
+    """
+    if request is None:
+        return {"known": False, "corpus": False, "categories": []}
+    owed = [] if request.get("inside") else list(request.get("categories") or [])
+    return {
+        "known": True,
+        "corpus": bool(request.get("corpus")) and not corpus_present,
+        "categories": owed if (owed and not copy_done) else [],
+    }
 
 
 def _volume_manifest(dest: Path) -> dict[str, Any] | None:
@@ -392,13 +425,32 @@ def render_summary_markdown(facts: dict[str, Any]) -> str:
         ]
     else:
         out += ["- **Encrypted volumes:** none — no corpus was selected for this export."]
+    missing = facts.get("missing") or {}
+    owed = list(missing.get("categories") or [])
     files = facts.get("files") or []
     if files:
         out.append("- **Files copied, per category:**")
         for c in files:
             out.append(f"  - `{c['category']}`: {c['files']} files · {_human(c['bytes'])}")
+    elif owed:
+        out.append("- **Files copied:** none — the large-data copy this export asked for did not complete.")
     else:
         out.append("- **Files copied:** none.")
+    # What was ASKED for and is not here (J-1), read against the request this export
+    # recorded when its folder was made. Said in the file too, because the file is what
+    # a reader of the drive has years later, with no dialog to ask.
+    if missing.get("corpus"):
+        out.append(
+            "- **INCOMPLETE — the corpus:** this export was asked for the encrypted corpus, "
+            "and this folder holds no volume set (no `volumes.json`)."
+        )
+    if owed:
+        cats = ", ".join(f"`{c}`" for c in owed)
+        out.append(
+            f"- **INCOMPLETE — large-data files:** this export was asked to copy {cats}, and "
+            "this folder holds no completed copy of them (no `oo-folder-backup.json`). "
+            f"What was asked for is recorded in `{REQUEST_NAME}`."
+        )
     out += [
         f"- **Elapsed (corpus):** {_seconds(el.get('corpus_s'))}",
         (

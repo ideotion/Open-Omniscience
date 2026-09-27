@@ -5737,5 +5737,14 @@
   "Entity": "Entitas",
   "import {batch} ({articles})": "impor {batch} ({articles})",
   "engine not recorded": "mesin tidak tercatat",
-  "Sources already judged here are counted per backup, below: the backups of one run overlap, so those counts are not added up.": "Sumber yang sudah dinilai di sini dihitung per cadangan, di bawah: cadangan dalam satu proses saling tumpang tindih, jadi jumlah tersebut tidak dijumlahkan."
+  "Sources already judged here are counted per backup, below: the backups of one run overlap, so those counts are not added up.": "Sumber yang sudah dinilai di sini dihitung per cadangan, di bawah: cadangan dalam satu proses saling tumpang tindih, jadi jumlah tersebut tidak dijumlahkan.",
+  "Enabled: topic-discovery queries will be sent to DuckDuckGo.": "Aktif: kueri penemuan topik akan dikirim ke DuckDuckGo.",
+  "Disabled (the default): no topic query leaves this machine.": "Nonaktif (bawaan): tidak ada kueri topik yang meninggalkan mesin ini.",
+  "External topic discovery enabled.": "Penemuan topik eksternal diaktifkan.",
+  "External topic discovery disabled.": "Penemuan topik eksternal dinonaktifkan.",
+  "({text})": "({text})",
+  "Backup incomplete →": "Cadangan belum lengkap →",
+  "Incomplete — requested for this export but not in this folder: {members}": "Belum lengkap — diminta untuk ekspor ini tetapi tidak ada di folder ini: {members}",
+  "Starts the large-data copy into this same folder. The encrypted volumes already in it are not touched.": "Memulai penyalinan data besar ke folder yang sama ini. Volume terenkripsi yang sudah ada di dalamnya tidak disentuh.",
+  "Copy the large-data files now": "Salin data besar sekarang"
 }

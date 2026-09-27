@@ -5737,5 +5737,14 @@
   "Entity": "实体",
   "import {batch} ({articles})": "导入 {batch}（{articles}）",
   "engine not recorded": "引擎未记录",
-  "Sources already judged here are counted per backup, below: the backups of one run overlap, so those counts are not added up.": "此处已判定的来源按每个备份分别计数，见下方：同一次运行中的备份相互重叠，因此这些数目不相加。"
+  "Sources already judged here are counted per backup, below: the backups of one run overlap, so those counts are not added up.": "此处已判定的来源按每个备份分别计数，见下方：同一次运行中的备份相互重叠，因此这些数目不相加。",
+  "Enabled: topic-discovery queries will be sent to DuckDuckGo.": "已启用：主题发现查询将发送至 DuckDuckGo。",
+  "Disabled (the default): no topic query leaves this machine.": "已停用（默认）：任何主题查询都不会离开本机。",
+  "External topic discovery enabled.": "外部主题发现已启用。",
+  "External topic discovery disabled.": "外部主题发现已停用。",
+  "({text})": "（{text}）",
+  "Backup incomplete →": "备份不完整 →",
+  "Incomplete — requested for this export but not in this folder: {members}": "不完整——本次导出已请求但此文件夹中没有：{members}",
+  "Starts the large-data copy into this same folder. The encrypted volumes already in it are not touched.": "将大数据复制到同一个文件夹中。其中已有的加密卷不会被改动。",
+  "Copy the large-data files now": "立即复制大数据"
 }

@@ -5737,5 +5737,14 @@
   "Entity": "固有名",
   "import {batch} ({articles})": "インポート {batch}（{articles}）",
   "engine not recorded": "エンジン未記録",
-  "Sources already judged here are counted per backup, below: the backups of one run overlap, so those counts are not added up.": "ここで判定済みのソースは、下のバックアップごとに数えています。1 回の実行に含まれるバックアップは重複するため、これらの数は合算しません。"
+  "Sources already judged here are counted per backup, below: the backups of one run overlap, so those counts are not added up.": "ここで判定済みのソースは、下のバックアップごとに数えています。1 回の実行に含まれるバックアップは重複するため、これらの数は合算しません。",
+  "Enabled: topic-discovery queries will be sent to DuckDuckGo.": "有効：トピック検索のクエリは DuckDuckGo に送信されます。",
+  "Disabled (the default): no topic query leaves this machine.": "無効（既定）：トピックのクエリはこのマシンの外に出ません。",
+  "External topic discovery enabled.": "外部トピック検索を有効にしました。",
+  "External topic discovery disabled.": "外部トピック検索を無効にしました。",
+  "({text})": "（{text}）",
+  "Backup incomplete →": "バックアップ未完了 →",
+  "Incomplete — requested for this export but not in this folder: {members}": "未完了 — このエクスポートで要求されたが、このフォルダーにないもの：{members}",
+  "Starts the large-data copy into this same folder. The encrypted volumes already in it are not touched.": "大容量データのコピーをこの同じフォルダーに開始します。すでに中にある暗号化ボリュームには手を触れません。",
+  "Copy the large-data files now": "大容量データを今すぐコピー"
 }

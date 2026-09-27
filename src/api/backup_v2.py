@@ -580,9 +580,19 @@ def volume_backup_pause() -> dict:
 #  the browser, so a page reload no longer decapitates a running import.
 # --------------------------------------------------------------------------- #
 class ExportFolderBody(BaseModel):
-    """The PARENT the operator chose; the dated folder is allocated under it."""
+    """The PARENT the operator chose; the dated folder is allocated under it.
+
+    The other three fields are what the export was ASKED to hold (J-1), recorded in
+    the folder so a reopened dialog can tell a finished export from one whose
+    large-data copy never ran. Optional: a caller that sends none of them gets the
+    folder and no record, exactly as before -- and an unknown request, never an
+    empty one.
+    """
 
     parent: str
+    corpus: bool | None = None
+    categories: list[str] | None = None
+    inside: bool = False
 
 
 class ExportSummaryBody(BaseModel):
@@ -603,13 +613,30 @@ def export_folder_allocate(body: ExportFolderBody) -> dict:
     somebody's backup (Q213 = c, no reuse of a previous export, is a property of the
     folder rather than a flag anyone has to remember to pass).
     """
-    from src.backup.export_folder import ExportFolderError, allocate_export_folder
+    from src.backup.export_folder import (
+        ExportFolderError,
+        allocate_export_folder,
+        write_export_request,
+    )
 
     try:
         d = allocate_export_folder(body.parent)
     except ExportFolderError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return {"dir": str(d), "name": d.name, "parent": str(d.parent)}
+    recorded = None
+    if body.corpus is not None or body.categories is not None:
+        recorded = write_export_request(
+            d,
+            corpus=bool(body.corpus),
+            categories=list(body.categories or []),
+            inside=body.inside,
+        )
+    return {
+        "dir": str(d),
+        "name": d.name,
+        "parent": str(d.parent),
+        "request_recorded": recorded is not None,
+    }
 
 
 def _export_summary_facts(dirname: str) -> dict:

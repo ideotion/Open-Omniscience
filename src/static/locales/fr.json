@@ -5737,5 +5737,14 @@
   "Entity": "Entité",
   "import {batch} ({articles})": "importation {batch} ({articles})",
   "engine not recorded": "moteur non enregistré",
-  "Sources already judged here are counted per backup, below: the backups of one run overlap, so those counts are not added up.": "Les sources déjà jugées ici sont comptées par sauvegarde, ci-dessous : les sauvegardes d'une même exécution se recoupent, ces nombres ne sont donc pas additionnés."
+  "Sources already judged here are counted per backup, below: the backups of one run overlap, so those counts are not added up.": "Les sources déjà jugées ici sont comptées par sauvegarde, ci-dessous : les sauvegardes d'une même exécution se recoupent, ces nombres ne sont donc pas additionnés.",
+  "Enabled: topic-discovery queries will be sent to DuckDuckGo.": "Activé : les requêtes de découverte de sujets seront envoyées à DuckDuckGo.",
+  "Disabled (the default): no topic query leaves this machine.": "Désactivé (par défaut) : aucune requête de sujet ne quitte cette machine.",
+  "External topic discovery enabled.": "Découverte externe par sujet activée.",
+  "External topic discovery disabled.": "Découverte externe par sujet désactivée.",
+  "({text})": "({text})",
+  "Backup incomplete →": "Sauvegarde incomplète →",
+  "Incomplete — requested for this export but not in this folder: {members}": "Incomplète — demandé pour cet export mais absent de ce dossier : {members}",
+  "Starts the large-data copy into this same folder. The encrypted volumes already in it are not touched.": "Lance la copie des données volumineuses dans ce même dossier. Les volumes chiffrés qui s'y trouvent déjà ne sont pas modifiés.",
+  "Copy the large-data files now": "Copier les données volumineuses maintenant"
 }

@@ -5737,5 +5737,14 @@
   "Entity": "সত্তা",
   "import {batch} ({articles})": "আমদানি {batch} ({articles})",
   "engine not recorded": "ইঞ্জিন রেকর্ড করা হয়নি",
-  "Sources already judged here are counted per backup, below: the backups of one run overlap, so those counts are not added up.": "এখানে আগেই বিচার করা উৎসগুলো নিচে প্রতিটি ব্যাকআপের জন্য আলাদাভাবে গোনা হয়েছে: একই রানের ব্যাকআপগুলো একে অপরের সঙ্গে মিলে যায়, তাই সেই সংখ্যাগুলো যোগ করা হয় না।"
+  "Sources already judged here are counted per backup, below: the backups of one run overlap, so those counts are not added up.": "এখানে আগেই বিচার করা উৎসগুলো নিচে প্রতিটি ব্যাকআপের জন্য আলাদাভাবে গোনা হয়েছে: একই রানের ব্যাকআপগুলো একে অপরের সঙ্গে মিলে যায়, তাই সেই সংখ্যাগুলো যোগ করা হয় না।",
+  "Enabled: topic-discovery queries will be sent to DuckDuckGo.": "চালু: বিষয়-অনুসন্ধানের কোয়েরি DuckDuckGo-তে পাঠানো হবে।",
+  "Disabled (the default): no topic query leaves this machine.": "বন্ধ (ডিফল্ট): কোনো বিষয়-কোয়েরি এই মেশিনের বাইরে যায় না।",
+  "External topic discovery enabled.": "বাহ্যিক বিষয়-অনুসন্ধান চালু হয়েছে।",
+  "External topic discovery disabled.": "বাহ্যিক বিষয়-অনুসন্ধান বন্ধ হয়েছে।",
+  "({text})": "({text})",
+  "Backup incomplete →": "ব্যাকআপ অসম্পূর্ণ →",
+  "Incomplete — requested for this export but not in this folder: {members}": "অসম্পূর্ণ — এই রপ্তানির জন্য চাওয়া হয়েছিল কিন্তু এই ফোল্ডারে নেই: {members}",
+  "Starts the large-data copy into this same folder. The encrypted volumes already in it are not touched.": "বড় ডেটার কপি এই একই ফোল্ডারে শুরু করে। এতে আগে থেকে থাকা এনক্রিপ্টেড ভলিউমে হাত দেওয়া হয় না।",
+  "Copy the large-data files now": "বড় ডেটা এখনই কপি করুন"
 }
