@@ -211,6 +211,10 @@
       // cannot relabel them either. Relabel from the last payload -- no fetch, and
       // nothing at all until the tiles were ever drawn (2026-09-26 click-through S6).
       try { if (typeof _paintDbStatLabels === "function") _paintDbStatLabels(); } catch (_e) {}
+      // ...and the #db-file line under them plus every Storage footprint panel already
+      // drawn (Library and the task manager's System tab): same class, same cure -- from
+      // the last payloads, never a fetch and never a new disk walk.
+      try { if (typeof repaintDbStorageFromCache === "function") repaintDbStorageFromCache(); } catch (_e) {}
       // The Observatory is the same class again, and worse: its canvas has no DOM
       // for the i18n walker to reach at all, so EVERY label it paints (the orbit
       // ticks, the domain wedge names) plus its tf()-built disclosures would stay
@@ -655,6 +659,27 @@
         // openWikiTC goes to Living sources -> Wikipedia itself, through the tab's
         // subtab component; the view left Settings with the dialog (Q1016).
         openWikiTC(id, "", "");
+      } catch (e) { /* a malformed deep link must never break boot */ }
+    })();
+
+    // The standalone task manager (/tasks) hands a download's Resume over here when it is
+    // offline: a resume re-opens a fetch, and the ONE consent popup (invariant #14) lives
+    // in this app, not on that page. "/?resume=<job id>" runs the SAME jobResume the
+    // in-app window's button runs, so the popup asks first, with its own reason, and
+    // nothing is sent if the operator stays offline. Only the two download kinds are
+    // accepted (a local job needs no hand-off; anything else is dropped, never posted),
+    // and the parameter leaves the URL at once, so a reload never asks again. After the
+    // locale is ready, so the popup's reason is in the operator's language.
+    (function _hydrateResumeHandoff() {
+      try {
+        const sp = new URLSearchParams(location.search);
+        const id = sp.get("resume");
+        if (!id) return;
+        sp.delete("resume");
+        const qs = sp.toString();
+        history.replaceState(null, "", location.pathname + (qs ? "?" + qs : "") + location.hash);
+        if (!/^(dump|osm):./.test(id) || typeof jobResume !== "function") return;
+        Promise.resolve(window.OOI18N && OOI18N.ready).then(() => jobResume(id), () => jobResume(id));
       } catch (e) { /* a malformed deep link must never break boot */ }
     })();
 

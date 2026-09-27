@@ -75,12 +75,15 @@
     function _qualTunableHtml(row) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
       // The hover carries the long form (impact + why the bound is where it is); the
-      // visible surface keeps the value, the unit and the range present.
-      const why = [row.impact, row.floor_reason].filter(Boolean).join(" — ");
+      // visible surface keeps the value, the unit and the range present. Every sentence
+      // the backend declares here is a key in all twelve locales: the panel renders the
+      // engine's own vocabulary so it cannot drift, and t() is what stops it rendering
+      // that vocabulary in English under every language (click-through, batch B12).
+      const why = [row.impact, row.floor_reason].filter(Boolean).map((x) => t(x)).join(" — ");
       return `<div class="row" style="gap:8px;align-items:baseline;flex-wrap:wrap;margin:4px 0">
-        <span title="${esc(why)}"><b>${esc(row.label)}</b></span>
+        <span title="${esc(why)}"><b>${esc(t(row.label))}</b></span>
         <span>${esc(_qualShare(row))}</span>
-        <span class="muted">${esc(row.unit || "")}</span>
+        <span class="muted">${esc(row.unit ? t(row.unit) : "")}</span>
         <span class="hint" title="${esc(t("The safe range. Outside it the value is corrected AND reported — never silently."))}">${t("safe range")} ${row.lo}–${row.hi}</span>
       </div>`;
     }
@@ -102,11 +105,17 @@
         // contradiction -- the gap is ordinary since judging began enabling sources.
         // "How many could the current floor actually disqualify" is worth more than any
         // control on the page: on the field corpus that number is zero.
+        //
+        // Keyed FRAMES, label before count: "4 qualifié" read as a singular after a plural
+        // count in French, and an adjective after a number cannot agree with it in a
+        // language that inflects when the app has no plural rules. A label ("qualifiées :
+        // 4") names the category and needs none -- the house label:value shape. The
+        // colons are the locale's own, inside the frame.
         const _n = (k) => `<b title="${esc(t(cl[k] || ""))}">${c[k] || 0}</b>`;
-        state.innerHTML = `${t("Collecting now")}: ${_n("collecting")}`
-          + ` · ${t("Judged so far")}: ${_n("qualified")} ${t("qualified")}`
-          + ` · ${_n("disqualified")} ${t("disqualified")}`
-          + ` · ${_n("unqualified")} ${t("not yet judged")}`;
+        state.innerHTML = _qualTfHtml("Collecting now: {n}", {n: _n("collecting")})
+          + " · " + _qualTfHtml(
+            "Judged so far — qualified: {qualified} · disqualified: {disqualified} · not yet judged: {unqualified}",
+            {qualified: _n("qualified"), disqualified: _n("disqualified"), unqualified: _n("unqualified")});
 
         const en = $("qual-enabled");
         const perPass = (cfg.gates || []).flatMap(g => g.tunables || [])
@@ -147,8 +156,8 @@
           </div>`).join("") + floorLine;
 
         host.innerHTML = (cfg.gates || []).map(g => `<div class="panel" style="margin:10px 0">
-          <h3 style="margin:0">${esc(g.question)}</h3>
-          <p class="hint" style="margin:4px 0">${esc(g.note)} <span class="muted">${t("Verdict")}: ${esc(g.verdict)}</span></p>
+          <h3 style="margin:0">${esc(t(g.question))}</h3>
+          <p class="hint" style="margin:4px 0">${esc(t(g.note))} <span class="muted">${esc(_qualTf("Verdict: {verdict}", {verdict: t(g.verdict)}))}</span></p>
           ${(g.tunables || []).map(_qualTunableHtml).join("")}
         </div>`).join("");
 
@@ -227,6 +236,19 @@
     function _qualTf(str, vars) {
       return (window.OOI18N && OOI18N.tf) ? OOI18N.tf(str, vars)
         : String(str).replace(/\{(\w+)\}/g, (m, k) => (vars && vars[k] != null) ? String(vars[k]) : m);
+    }
+
+    // `_qualTf` for a frame whose slots are MARKUP (a count carrying its own hover): the
+    // frame is translated with a private-use marker in each slot, escaped as text, and
+    // only then are the markers replaced by the markup -- so the words stay one key the
+    // locale can reorder, and nothing a translation holds is ever read as HTML.
+    function _qualTfHtml(str, html) {
+      const keys = Object.keys(html || {});
+      const marks = {};
+      keys.forEach((k, i) => { marks[k] = "\uE000" + i + "\uE001"; });
+      let out = esc(_qualTf(str, marks));
+      keys.forEach((k, i) => { out = out.split("\uE000" + i + "\uE001").join(html[k]); });
+      return out;
     }
 
     // THE ADMISSION AUDIT (ruling Q1101). Judging now enables a source by itself, so this
@@ -514,8 +536,10 @@
         + ` · ${esc(tf("{n} added", {n: rep.added || 0}))}`
         + ` · ${esc(tf("{n} updated", {n: rep.updated || 0}))}`
         + ` · ${esc(tf("{n} carried through untouched", {n: rep.carried_through_untouched || 0}))}</div>`,
+        // The server names its own verdicts "this instance" (route "measured here"): that
+        // one is a label, so it is keyed; an uploaded file's name is data and stays as is.
         `<div class="muted">${(rep.inputs || []).map((i) =>
-          `${esc(i.name)} (${esc(String(i.verdicts))})`).join(" · ")}</div>`,
+          `${esc(i.route === "measured here" ? t("this instance") : i.name)} (${esc(String(i.verdicts))})`).join(" · ")}</div>`,
       ];
       if (conflicts) {
         // A disagreement between instances is a FINDING. Named, listed, and left at

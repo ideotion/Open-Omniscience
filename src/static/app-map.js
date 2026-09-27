@@ -2163,16 +2163,19 @@
     // -- Official figures (Group N): consented fetch · vintaged store · triangulation.
     // English-only strings here (matching the keyword-explorer / diagnostics Settings
     // sub-features) so i18n stays 100% with zero new keys; the BACKEND enforces the
-    // honesty contract (no score, gaps as null, side-by-side never averaged).
+    // honesty contract (no score, gaps as null, side-by-side never averaged). The ONE
+    // exception is the consent popup's reason: that popup is the informed-consent
+    // instrument, and every consent string ships in all twelve locales.
     function _statfigFmt(v) { return v === null || v === undefined ? "—" : Number(v).toLocaleString(); }
     async function fetchStatFigure() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
       const src = $("statfig-source").value;
       const series = ($("statfig-series").value || "").trim();
       const country = ($("statfig-country").value || "").trim() || "all";
       const msg = $("statfig-msg"), btn = $("statfig-fetch");
       if (!series) { if (msg) msg.textContent = "Enter an indicator or dataset id first."; return; }
       // The fetch egresses over the configured transport -> the ONE consent popup.
-      if (typeof ensureOnline === "function" && !await ensureOnline("Fetch official statistics figures")) return;
+      if (typeof ensureOnline === "function" && !await ensureOnline(t("Fetch official statistics figures"))) return;
       const body = src === "worldbank"
         ? { source: "worldbank", indicator: series, country }
         : { source: "eurostat", dataset: series };

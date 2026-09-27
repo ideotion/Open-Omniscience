@@ -219,8 +219,15 @@
       _homeRunningLast = !!running;
       _homeGlanceWhenReady();
       const priv = t("Your corpus stays on this machine — no cloud, no telemetry; fetching follows your Network mode.");
-      el.innerHTML =
-        `${esc(t("Automatic collection"))}: <span class="pill ${running ? "ok" : ""}">${esc(t(running ? "running" : "stopped"))}</span> ` +
+      // ONE keyed frame around the state pill, never a label with a colon welded on after
+      // t(): the colon is the locale's to write (French puts a space before it, Chinese and
+      // Japanese use a full-width one). The frame is translated with a placeholder the
+      // pill's markup then replaces, so the pill stays markup and the words stay a key.
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
+        : ((s, v) => String(s).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? String(v[k]) : m));
+      const pill = `<span class="pill ${running ? "ok" : ""}">${esc(t(running ? "running" : "stopped"))}</span>`;
+      const [pre, post] = tf("Automatic collection: {state}", {state: "\u0001"}).split("\u0001");
+      el.innerHTML = esc(pre) + pill + esc(post || "") + " " +
         `· <span class="muted">${esc(priv)}</span>`;
     }
     // ======================= FEED (rulings 8-13, 40-41) =======================

@@ -49,10 +49,16 @@
   .tm-sbtn.on { color: var(--ok, #2ecc71); border-color: var(--ok, #2ecc71); }
   .tm-sel { height: 28px; border: 1px solid var(--line, #232733); border-radius: 8px; background: var(--panel2, #161a22);
     color: var(--fg, #e7e9ee); font-size: 12px; padding: 0 4px; }
-  /* Persistent resource summary strip — always visible, optimises the header space. */
+  /* Persistent resource summary strip — always visible, optimises the header space.
+     It sticks at the TOP of the viewport, and the tab row sticks right under its MEASURED
+     height (--tm-sum-h, kept by a ResizeObserver below). The old constants, 43px and 86px,
+     described a sticky .tm-head this page no longer has: the header is now the app's
+     header.topbar, which scrolls away, so scrolled content showed through a 43px band above
+     the strip, and at 375px the strip wraps to two rows (64px) and the tabs covered its
+     bottom 21px (click-through, batch B12). */
   .tm-summary { display: flex; align-items: center; gap: 8px 18px; flex-wrap: wrap;
                 padding: 8px 16px; border-bottom: 1px solid var(--line, #232733);
-                background: var(--panel2, #161a21); position: sticky; top: 43px; z-index: 2; }
+                background: var(--panel2, #161a21); position: sticky; top: 0; z-index: 2; }
   .tm-state { display: inline-flex; align-items: center; gap: 7px; font-weight: 600; font-size: 13px; }
   .tm-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted, #888); }
   .tm-state.on   .tm-dot { background: var(--ok, #2ecc71); box-shadow: 0 0 6px var(--ok, #2ecc71); }
@@ -63,10 +69,10 @@
   .tm-metric .ml { opacity: .6; text-transform: uppercase; letter-spacing: .04em; font-size: 10px; }
   /* The row scrolls INSIDE its own box rather than widening the page: five unwrapped
      tabs are ~500 px, which gave the whole page 144 px of sideways scroll at 375 px
-     (2026-09-26 click-through T6). One row, not a wrap, so the sticky offsets above
-     keep describing a constant height. */
+     (2026-09-26 click-through T6). One row, not a wrap; its offset is the summary's
+     measured height, since the summary is the strip that wraps. */
   .tm-tabs { display: flex; gap: 2px; padding: 8px 12px 0; border-bottom: 1px solid var(--line, #232733);
-             background: var(--panel, #14171d); position: sticky; top: 86px; z-index: 1;
+             background: var(--panel, #14171d); position: sticky; top: var(--tm-sum-h, 37px); z-index: 1;
              overflow-x: auto; }
   .tm-tabs button { flex: none; background: transparent; border: 0; color: var(--fg, #e7e9ee); opacity: .6;
                     padding: 8px 14px; border-bottom: 2px solid transparent; cursor: pointer;
@@ -348,7 +354,7 @@
       if (a.indexOf("pause") >= 0)
         acts.push('<button class="tbtn" onclick="TM.cancel(\'' + esc(j.id) + '\')">' + esc(t("Pause")) + "</button>");
       if (a.indexOf("resume") >= 0)
-        acts.push('<button class="tbtn" onclick="TM.resume(\'' + esc(j.id) + '\')">' + esc(t("Resume")) + "</button>");
+        acts.push('<button class="tbtn" onclick="TM.resume(\'' + esc(j.id) + '\', true)">' + esc(t("Resume")) + "</button>");
       if (a.indexOf("cancel") >= 0 && a.indexOf("pause") < 0 && j.kind === "keyword-fold")
         acts.push('<button class="tbtn" onclick="TM.cancel(\'' + esc(j.id) + '\')">' + esc(t("Cancel")) + "</button>");
     }
@@ -586,6 +592,18 @@
       metric(t("Network ↓"), fmtRate(rates && rates.netRate)) +
       metric(t("active"), String(nJobs));
   }
+  // The tab row sticks right under the strip (the .tm-tabs rule reads --tm-sum-h). The
+  // strip's height is not a constant -- it wraps at phone width and when a language's
+  // labels run long -- so it is measured, and re-measured whenever it changes size.
+  (function stickTabsUnderSummary() {
+    var sum = $("tm-summary"); if (!sum) return;
+    var set = function () {
+      document.documentElement.style.setProperty("--tm-sum-h", Math.ceil(sum.getBoundingClientRect().height) + "px");
+    };
+    set();
+    if (window.ResizeObserver) new ResizeObserver(set).observe(sum);
+    else window.addEventListener("resize", set);
+  })();
 
   // ---- controls (POST the same endpoints the in-app window used) ---- //
   window.TM = {
@@ -593,7 +611,19 @@
       try { var r = await api("/api/jobs/" + encodeURIComponent(id) + "/cancel", { method: "POST" }); toast(r.detail ? t(r.detail) : t("Cancelled.")); }
       catch (e) { toast(e.message, "err"); }
     },
-    resume: async function (id) {
+    // A download's resume RE-OPENS A FETCH, so it passes the app's ONE consent popup first
+    // (invariant #14), exactly as the in-app window's jobResume does. That popup lives in
+    // the app, so offline -- or when the state cannot be read -- this page hands the
+    // resume over as "/?resume=<id>", the way its airplane button hands over going online,
+    // and posts nothing itself. Online, the POST goes straight through as before. A LOCAL
+    // job (`local`: re-index, keyword fold, search re-index) opens no connection and asks
+    // nothing.
+    resume: async function (id, local) {
+      if (!local) {
+        var online = null;
+        try { online = (await api("/api/system/network")).online === true; } catch (e) { online = null; }
+        if (online !== true) { location.href = "/?resume=" + encodeURIComponent(id); return; }
+      }
       try { var r = await api("/api/jobs/" + encodeURIComponent(id) + "/resume", { method: "POST" }); toast(r.detail ? t(r.detail) : t("Resumed.")); }
       catch (e) { toast(e.message, "err"); }
     },
@@ -704,6 +734,15 @@
     try { if (window.OOI18N && OOI18N.setLang) await OOI18N.setLang(code); } catch (e) {}
     _paintLangButton();
   }
+  // A language picked in ANOTHER tab -- the app's own menu, usually, since this page is
+  // opened beside it -- reaches this one through the `storage` event, which fires only in
+  // the origin's OTHER tabs. Without it this page kept the language it opened with until
+  // a reload. Compared with the page's own <html lang>, not with OOI18N.current(): that
+  // reads the same shared key, which already holds the new value when the event lands.
+  window.addEventListener("storage", function (e) {
+    if (e.key !== "oo.lang" || !e.newValue || e.newValue === document.documentElement.lang) return;
+    pickLang(e.newValue);
+  });
   (function wireChrome() {
     var ls = $("lang-switch"); if (ls) ls.addEventListener("click", toggleLangMenu);
     var o = $("tm-omni");      // the search bar routes to the app (search/palette live there)

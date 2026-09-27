@@ -970,8 +970,47 @@
       }
     }
 
+    // The #db-file line, painted from the last payload -- on every poll and on a language
+    // switch (repaintDbStorageFromCache below), never with a fetch of its own. It used to be
+    // built inline in loadDbStats with "Backend" and "on disk" as bare English, and a switch
+    // left it in the old language until the next poll (click-through, batch B12).
+    function _paintDbFile() {
+      const s = _dbStatsLast, host = $("db-file");
+      if (!s || !host) return;
+      const _t = (window.OOI18N && OOI18N.t) ? OOI18N.t : (x => x);
+      // The DB file is ONE component of the whole footprint; once the Storage-footprint
+      // panel has measured it, show the all-stores total here too so the number is honest
+      // about being only the database (never implying it is the app's whole disk use).
+      const gt = _sfCache && (_sfCache.totals || {}).grand_total_bytes;
+      const foot = gt ? ` <span class="muted">· ${esc(_t("all stores"))} <strong>${esc(_fmtBytes(gt))}</strong> (${esc(_t("see Storage footprint below"))})</span>` : "";
+      host.innerHTML = s.file
+        ? `${esc(_t("Backend"))} <span class="pill">${esc(s.backend)}</span> · ${esc(_t("on disk"))} ` +
+          `<strong>${humanBytes(s.file.bytes)}</strong> ` +
+          `<span class="muted">(${esc(s.file.path)})</span>` + foot
+        : `${esc(_t("Backend"))} <span class="pill">${esc(s.backend)}</span> · ${esc(s.url_summary)}`;
+    }
+
+    // A language switch (app-boot.js's oo:langchange): the #db-file line and every Storage
+    // footprint panel already drawn are repainted from what they last showed. Both are
+    // built with t() at paint time, so the DOM walker cannot re-translate them, and the
+    // footprint is a disk walk that is never re-run for a relabel. A panel still measuring
+    // is left alone: its own fetch paints it when it lands.
+    function repaintDbStorageFromCache() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : (x => x);
+      _paintDbFile();
+      // The empty grid is drawn only when the key list changes, so it is redrawn here.
+      const grid = $("db-stats");
+      if (DB_KEYS === "" && grid) grid.innerHTML = `<div class="muted">${esc(t("No tables yet."))}</div>`;
+      if (!_sfCache || _sfPending) return;
+      for (const id of ["library-storage", "vitals-storage"]) {
+        const host = document.getElementById(id);
+        if (host && host.querySelector(".sf-row, button")) _sfPaint(host, _sfCache, t);
+      }
+    }
+
     async function loadDbStats() {
       const el = $("db-stats");
+      const _t = (window.OOI18N && OOI18N.t) ? OOI18N.t : (x => x);
       try {
         const s = await api("/api/database/stats", {polled: true});
         const entries = Object.entries(s.counts || {}).filter(([k]) => !DB_STAT_HIDDEN_KEYS.has(k));
@@ -981,7 +1020,7 @@
           el.innerHTML = entries.length
             ? entries.map(([k]) =>
                 `<div class="stat" id="db-t-${k}" data-i18n-dyn><div class="n" id="db-n-${k}" data-v="0">0</div><div class="k"></div></div>`).join("")
-            : '<div class="muted">No tables yet.</div>';
+            : `<div class="muted">${esc(_t("No tables yet."))}</div>`;
         }
         _dbStatsLast = s;
         _paintDbStatLabels();
@@ -989,18 +1028,8 @@
           const n = document.getElementById("db-n-" + k);
           if (n) animateCount(n, v);
         }
-        // The DB file is ONE component of the whole footprint; once the Storage-footprint
-        // panel has measured it, show the all-stores total here too so the number is honest
-        // about being only the database (never implying it is the app's whole disk use).
-        const _t = (window.OOI18N && OOI18N.t) ? OOI18N.t : (x => x);
-        const gt = _sfCache && (_sfCache.totals || {}).grand_total_bytes;
-        const foot = gt ? ` <span class="muted">· ${esc(_t("all stores"))} <strong>${esc(_fmtBytes(gt))}</strong> (${esc(_t("see Storage footprint below"))})</span>` : "";
-        $("db-file").innerHTML = s.file
-          ? `Backend <span class="pill">${esc(s.backend)}</span> · on disk ` +
-            `<strong>${humanBytes(s.file.bytes)}</strong> ` +
-            `<span class="muted">(${esc(s.file.path)})</span>` + foot
-          : `Backend <span class="pill">${esc(s.backend)}</span> · ${esc(s.url_summary)}`;
-      } catch (e) { el.innerHTML = `<div class="note err">Could not load stats: ${esc(e.message)}</div>`; DB_KEYS = null; }
+        _paintDbFile();
+      } catch (e) { el.innerHTML = `<div class="note err">${esc(_t("Could not load stats:"))} ${esc(e.message)}</div>`; DB_KEYS = null; }
     }
 
     // Live polling manager: each tab can register a refresh fn + interval; only
