@@ -3011,6 +3011,16 @@ def _run_ephemeral(argv: list[str]) -> None:
 def _serve() -> None:
     import uvicorn
 
+    # Arm the native crash trace FIRST (2026-09-26): a SIGSEGV/SIGABRT anywhere from
+    # here on -- the startup seeding included -- leaves every thread's stack in
+    # diagnostics/crash_trace.log for the next boot to report. Best-effort by design.
+    try:
+        from src.monitoring.exit_evidence import arm_crash_trace
+
+        arm_crash_trace()
+    except Exception:  # noqa: BLE001 - a crash recorder never blocks startup
+        logger.debug("could not arm the crash trace", exc_info=True)
+
     # First-run legal notice (non-blocking): point the user at the documents to
     # accept. Acceptance itself happens via the web UI modal or `accept-terms`;
     # this never blocks startup (see docs/legal/IMPLEMENTATION_NOTES.md).
@@ -3086,7 +3096,18 @@ def _serve() -> None:
     # which skips the lifespan shutdown entirely and reads as a crash on the next
     # boot. 30 s is long enough for an ordinary request and short enough to lose the
     # race with nothing.
-    uvicorn.run(app, host=host, port=port, timeout_graceful_shutdown=30)
+    try:
+        uvicorn.run(app, host=host, port=port, timeout_graceful_shutdown=30)
+    except (KeyboardInterrupt, SystemExit):
+        raise
+    except BaseException as exc:
+        # An exception that escaped the server loop ends the process WITHOUT the
+        # lifespan shutdown, so it reads as a crash on the next boot -- and its
+        # traceback went only to the launcher window. Keep it (2026-09-26).
+        from src.monitoring.exit_evidence import note_fatal_exception
+
+        note_fatal_exception(exc)
+        raise
 
 
 if __name__ == "__main__":

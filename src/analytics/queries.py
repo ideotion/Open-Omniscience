@@ -2243,13 +2243,24 @@ def trending(
     w_start = w_end - timedelta(days=window_days)
     b_start = w_start - timedelta(days=baseline_days)
 
-    def _counts(lo, hi):
-        q = session.query(KeywordMention.keyword_id, func.sum(KeywordMention.count)).filter(
+    def _counts(lo, hi, keep):
+        """``(kept, groups)``: ``{keyword_id: SUM(count)}`` for the keywords ``keep``
+        accepts, and how many keywords had any mention in ``[lo, hi)``.
+
+        ``dict(query.all())`` held every keyword of both windows at once, which grows
+        with the keyword count (millions on a field corpus). Only the keywords the
+        scoring loop below reads are kept, in the order the query returns them, so the
+        answer is unchanged."""
+        from sqlalchemy import select
+
+        from src.database.query import grouped_counts
+
+        stmt = select(KeywordMention.keyword_id, func.sum(KeywordMention.count)).where(
             KeywordMention.observed_on >= lo, KeywordMention.observed_on < hi
         )
         if country:
-            q = q.filter(KeywordMention.country == country.lower())
-        return dict(q.group_by(KeywordMention.keyword_id).all())
+            stmt = stmt.where(KeywordMention.country == country.lower())
+        return grouped_counts(session, stmt.group_by(KeywordMention.keyword_id), keep)
 
     # Opt-in rollup serve: sum the in-memory keyword_daily rollup for the two windows
     # instead of scanning keyword_mentions (the freeze). Time-window only — never per-country
@@ -2264,9 +2275,14 @@ def trending(
         _p = rollup_serve.windowed_counts(session, lo=b_start, hi=w_start - timedelta(days=1))
         if _r is not None and _p is not None:
             recent, prior, _served = _r, _p, True
+            recent_keywords = len(recent)
     if not _served:
-        recent = _counts(w_start, w_end)
-        prior = _counts(b_start, w_start)
+        # The loop below skips a keyword under ``min_recent`` before reading anything
+        # else about it, and reads a prior count only for a keyword it kept.
+        recent, recent_keywords = _counts(
+            w_start, w_end, lambda _kid, rc: int(rc or 0) >= min_recent
+        )
+        prior, _ = _counts(b_start, w_start, lambda kid, _pc: kid in recent)
 
     scored = []
     for kid, rc in recent.items():
@@ -2359,7 +2375,7 @@ def trending(
         # candidates were screened to surface these winners — with many terms
         # scanned, some ratios will be high by chance (winner's curse).
         "scanned": len(scored),
-        "keywords_with_recent_mentions": len(recent),
+        "keywords_with_recent_mentions": recent_keywords,
         "method": "recent volume vs prior-period rate (ratio, not a significance test)",
     }
     if _served:  # disclose the served source + as-of (honesty by construction)
