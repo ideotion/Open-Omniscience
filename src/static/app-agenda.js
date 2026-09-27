@@ -148,19 +148,8 @@
         // persisted) until the user makes an explicit choice, so a newly-added catalog
         // calendar is auto-included and nothing is ever silently dropped (honors the flag).
         if (_agPrefs && !_agPrefs.configured) _agPrefs.subs = new Set(fac.calendars.map(c => c.key));
-        // Q308 rules PICKERS specifically -- "by localised name, the code as a
-        // secondary column" -- which is why this surface shows BOTH where an
-        // ordinary cell shows the code alone (Q302). An <option> carries no
-        // reliable hover, so the layered form Q302 relies on is not available here
-        // and the more specific ruling is the one that can actually be honoured.
-        // The VALUE stays the stored alpha-2: a picker that silently changed what
-        // it submits would break every filter reading it.
-        $("agenda-country").innerHTML = '<option value="">all</option>' +
-          fac.countries.slice().sort(ooCountryCompare).map(x => {
-            const code = ooCountryCode(x), name = ooCountryName(x, "");
-            const label = name && name !== code ? `${name} (${code})` : code;
-            return `<option value="${esc(x)}">${agFlag(x)} ${esc(label)}</option>`;
-          }).join("");
+        AG.countries = fac.countries || [];
+        _agFillCountryOptions();
         $("agenda-tag").innerHTML = '<option value="">all</option>' + fac.tags.map(x => `<option value="${esc(x)}">${esc(x)}</option>`).join("");
         if (!_agViewTabs) _agViewTabs = ooSubtabs($("agenda-views"), agendaSetView);
         renderAgendaCatChips();
@@ -171,6 +160,28 @@
       // and loads only when that section is expanded. The agenda's own per-event
       // provenance pills do not depend on it: _agFeedById() self-loads the map on
       // first use when _feedDir is still null.
+    }
+
+    // Q308 rules PICKERS specifically -- "by localised name, the code as a
+    // secondary column" -- which is why this surface shows BOTH where an
+    // ordinary cell shows the code alone (Q302). An <option> carries no
+    // reliable hover, so the layered form Q302 relies on is not available here
+    // and the more specific ruling is the one that can actually be honoured.
+    // The VALUE stays the stored alpha-2: a picker that silently changed what
+    // it submits would break every filter reading it.
+    // The names AND their order are the reader's language, so a switch rebuilds the
+    // options from the facet list drawn last -- never a fetch -- keeping the pick
+    // (2026-09-27 re-walk, L-3: they stayed English, in English order, until a reload).
+    function _agFillCountryOptions() {
+      const sel = $("agenda-country"); if (!sel || !AG.countries) return;
+      const cur = sel.value;
+      sel.innerHTML = '<option value="">all</option>' +
+        AG.countries.slice().sort(ooCountryCompare).map(x => {
+          const code = ooCountryCode(x), name = ooCountryName(x, "");
+          const label = name && name !== code ? `${name} (${code})` : code;
+          return `<option value="${esc(x)}">${agFlag(x)} ${esc(label)}</option>`;
+        }).join("");
+      sel.value = cur;
     }
 
     // -- The Bulletin (design record §13/§16) -------------------------------- //
@@ -229,12 +240,19 @@
       const p = new URLSearchParams();
       if (_bulExcludeSections.size) p.set("exclude_sections", [..._bulExcludeSections].join(","));
       if (_bulExcludeStories.size) p.set("exclude_stories", [..._bulExcludeStories].join(","));
-      // The document is written in the language the operator is READING the app in.
-      // Built here, in the one place both the report and the annexes take their query
-      // from, so the two can never come out in different languages.
-      const lang = (window.OOI18N && OOI18N.current) ? OOI18N.current() : "en";
-      if (lang && lang !== "en") p.set("lang", lang);
+      const lang = _bulLang();
+      if (lang) p.set("lang", lang);
       return p;
+    }
+    // The document is written in the language the operator is READING the app in.
+    // ONE helper for every URL that renders an edition -- the report and the annexes
+    // (through _bulQuery) and the editions list's Open -- so no two of them can come
+    // out in different languages: Open built its own URL without it and opened an
+    // English document on a French page (2026-09-27 re-walk, M-12). null = English,
+    // the server's default, so an English reader's URL is unchanged.
+    function _bulLang() {
+      const lang = (window.OOI18N && OOI18N.current) ? OOI18N.current() : "en";
+      return lang && lang !== "en" ? lang : null;
     }
 
     async function loadBulletin() {
@@ -594,8 +612,12 @@
     // review screen, where you can see what you are excluding -- carrying one
     // silently into a list click would hand you a document you did not choose.
     function bulletinOpenFile(filename) {
+      const p = new URLSearchParams();
+      const lang = _bulLang();
+      if (lang) p.set("lang", lang);
+      p.set("fmt", "html");
       window.open(
-        `/api/bulletin/editions/${encodeURIComponent(filename)}/render?fmt=html`, "_blank", "noopener");
+        `/api/bulletin/editions/${encodeURIComponent(filename)}/render?${p}`, "_blank", "noopener");
     }
 
     // Narration is a BACKGROUND JOB (§14), not a request that returns when the model
@@ -698,16 +720,32 @@
       try { _feedDir = await api("/api/events/feeds"); } catch { _feedDir = null; }
       if (!_feedDir) { $("feeddir-list").innerHTML = '<div class="muted">Could not load this document.</div>'; return; }
       const kinds = [...new Set(_feedDir.families.map(f => f.kind))].sort();
+      // The option's VALUE stays the stored kind code; its text is the kind's keyed
+      // English label, so the i18n walker translates the option both ways on a switch.
+      // The codes were printed raw, and only `civic` had a key, so the menu read "tout,
+      // civique, community, holidays" in French (2026-09-27 re-walk, U-3).
       $("feeddir-kind").innerHTML = '<option value="">all</option>' +
-        kinds.map(k => `<option value="${esc(k)}">${esc(k)}</option>`).join("");
+        kinds.map(k => `<option value="${esc(k)}">${esc(_feedKindLabel(k))}</option>`).join("");
       renderFeedDir();
       renderUserCalendars();
     }
+    // A calendar family's KIND is a stored code (configs/calendar_feeds.yml); it shows
+    // through a keyed label and a code with no label shows as stored. Capitalised
+    // labels on purpose: "Science", "Space", "Civic" and "Other" are the World map's
+    // existing keys, and a bare lowercase "science" key would also make the walker
+    // translate a corpus keyword spelled that way (LESSONS 2026-09-16).
+    const _FEED_KIND_LABEL = {
+      holidays: "Public holidays", religion: "Religion", civic: "Civic",
+      community: "Community", science: "Science", space: "Space", other: "Other",
+    };
+    function _feedKindLabel(k) { return _FEED_KIND_LABEL[k] || String(k == null ? "" : k); }
     function _verdictChip(v, feed) {
       if (!v) return '<span class="pill">not checked yet</span>';
       if (v.status === "ok") {
         const stale = v.stale_year ? ' <span class="pill warn">stale year</span>' : "";
-        return `<span class="pill ok">reachable · ${v.events}</span>${stale}`;
+        // "reachable · 12" was one text node no key matches; the word is keyed and
+        // the count stays data (drawn by renderFeedDir, which repaints on a switch).
+        return `<span class="pill ok">${esc(_bulT("reachable"))} · ${esc(fmtNum(v.events || 0, 0))}</span>${stale}`;
       }
       if (v.status === "not_ical") return '<span class="pill warn">not an iCal file</span>';
       return `<span class="pill err" title="${esc(v.error || "")}">unreachable</span>`;
@@ -770,10 +808,16 @@
       // instead, with the REAL backlog — so the automation is visible rather than
       // implied (ruling 10/11). Every figure is a count the backend measured.
       const _v = _feedDir.verification || {};
+      // Keyed frames with the counts as data (2026-09-27 re-walk, U-3 / L-8): the line
+      // was one English literal with a t()'d tail welded on, so it read "241 feeds ·
+      // 241 folders · 0 checked · 241 pas encore vérifié". It is composed here, so
+      // app-boot.js's oo:langchange listener redraws it -- the walker cannot.
+      const n = (x) => fmtNum(x || 0, 0);
       $("feeddir-status").innerHTML =
-        esc(`${_feedDir.total_feeds} feeds · ${_feedDir.families.length} folders · ${_feedDir.checked} checked`) +
+        esc(_bulTf("{feeds} feeds · {folders} folders · {checked} checked", {
+          feeds: n(_feedDir.total_feeds), folders: n(_feedDir.families.length), checked: n(_feedDir.checked) })) +
         (_v.unchecked
-          ? ` <span class="muted" title="${esc(_v.method || "")}">· ${_v.unchecked} ${esc(t("not checked yet"))}</span>`
+          ? ` <span class="muted" title="${esc(_v.method ? t(_v.method) : "")}">· ${esc(_bulTf("{n} not checked yet", {n: n(_v.unchecked)}))}</span>`
           : "");
       const bulk = `<div class="row" style="gap:6px;margin-bottom:8px;align-items:center;flex-wrap:wrap">
         <button class="secondary tiny" onclick="agExcludeBulk('dysfunctional')">Exclude dysfunctional</button>
@@ -792,13 +836,21 @@
         const isExcl = excl.has(f.key);
         return `<details class="cs-row${isExcl ? " excluded" : ""}" style="padding:6px 10px">
           <summary style="cursor:pointer">${esc(f.name)}
-            ${f.duplicates ? `<span class="pill" title="Several providers publish this calendar — compare them below">${f.feeds.length} sources</span>` : ""}
-            ${f.imported_events ? `<span class="pill ok">${f.imported_events} imported</span>` : ""}
+            ${f.duplicates ? `<span class="pill" title="Several providers publish this calendar — compare them below">${esc(_bulTf("{n} sources", {n: n(f.feeds.length)}))}</span>` : ""}
+            ${f.imported_events ? `<span class="pill ok">${esc(_bulTf("{n} imported", {n: n(f.imported_events)}))}</span>` : ""}
             ${isExcl ? `<span class="pill warn">excluded</span>` : ""}
-            <span class="muted">· ${esc(f.kind)}${f.country ? " · " + ooCountryCell(f.country) : ""}</span>
+            <span class="muted">· ${esc(t(_feedKindLabel(f.kind)))}${f.country ? " · " + ooCountryCell(f.country) : ""}</span>
             <button class="ghost tiny" style="float:inline-end" onclick="event.preventDefault();event.stopPropagation();agToggleExclude(${esc(JSON.stringify(f.key))})">${isExcl ? "Include" : "Exclude"}</button></summary>
           ${feeds}</details>`;
-      }).join("") + (total > 40 ? `<div class="hint">+${total - 40} — type to filter</div>` : "");
+      }).join("") + (total > 40 ? `<div class="hint">${esc(_bulTf("+{n} — type to filter", {n: n(total - 40)}))}</div>` : "");
+    }
+    // A language switch redraws the directory from the payload it holds -- never a
+    // fetch. Guarded on the status line, which only renderFeedDir writes: `_feedDir`
+    // alone is not enough, since the Agenda's provenance pills load it without the
+    // directory ever being opened (2026-09-27 re-walk, U-3).
+    function repaintFeedDirFromCache() {
+      const st = $("feeddir-status");
+      if (_feedDir && st && st.textContent.trim()) renderFeedDir();
     }
     async function feedAction(id, action) {
       try {
@@ -882,7 +934,7 @@
     function agWhen(e) {
       return e.next_occurrence
         ? `<span class="pill ok">${esc(e.next_occurrence)}</span>`
-        : `<span class="pill" title="exact date moves each year">${e.month ? esc(_MONTHS[e.month-1]) : esc(e.cadence||"")}</span>`;
+        : `<span class="pill" title="exact date moves each year">${e.month ? esc(_agMonth(e.month-1)) : esc(e.cadence||"")}</span>`;
     }
     // Election date-confidence tiers (src/civic/elections.py, maintainer ruling
     // 2026-07-14, V1_PATHWAY §4.5): catalog.agenda() annotates every ELECTIONS-calendar
@@ -1103,6 +1155,15 @@
       return "\u{1F310}";   // globe for INT / non-ISO entities
     }
     function agLocale() { return document.documentElement.lang || "en"; }
+    // A month's short name in the reader's language, through Intl like the grids'
+    // weekday names, rather than the English _MONTHS array: the undated pill and the
+    // "by month" headings read "Aug" on a French page -- the class the 2026-09-27
+    // re-walk measured on the World map (L-6). Both redraw with renderAgenda on a switch.
+    function _agMonth(i) {
+      try {
+        return new Intl.DateTimeFormat(agLocale(), {month: "short", timeZone: "UTC"}).format(Date.UTC(2001, i, 15));
+      } catch (_e) { return _MONTHS[i] || ""; }
+    }
     // The concrete anchor date the views pivot on (picked day, else 1st of the
     // displayed month, else today) — drives the Week window.
     function agAnchorDate() {
@@ -1507,7 +1568,7 @@
       if (!rows.length) { box.innerHTML = `<p class="hint">${esc(AG.caveat)}</p><div class="muted">${esc(tt("No events this month — adjust filters or subscribe to more calendars in Settings."))}</div>`; return; }
       const groups = {};
       for (const e of rows) {
-        const k = groupBy === "month" ? (e.next_occurrence ? _MONTHS[+e.next_occurrence.slice(5,7)-1] : (e.month ? _MONTHS[e.month-1] : "Movable / no fixed date"))
+        const k = groupBy === "month" ? (e.next_occurrence ? _agMonth(+e.next_occurrence.slice(5,7)-1) : (e.month ? _agMonth(e.month-1) : tt("Movable / no fixed date")))
                 : groupBy === "calendar" ? (AG.meta[e.calendar]?.name || e.calendar)
                 // Grouping by COUNTRY keys on the stored value (so two spellings of
                 // one country cannot become two groups) and the heading renders the

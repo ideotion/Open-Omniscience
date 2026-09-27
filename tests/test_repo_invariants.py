@@ -3705,8 +3705,10 @@ def test_agenda_category_chips_and_country_flags():
     # file and failed against correct code, on the TAG picker eight lines down,
     # which renders a raw tag and always should -- the recorded non-unique-needle
     # trap, in a guard written to catch a display change.
-    _country_picker = html[html.index('$("agenda-country").innerHTML'):]
-    _country_picker = _country_picker[: _country_picker.index('$("agenda-tag")')]
+    # AMENDED 2026-09-27 (re-walk L-3): the options are built by `_agFillCountryOptions`,
+    # which the load AND a language switch both call, so the slice is that function.
+    _country_picker = html[html.index("function _agFillCountryOptions("):]
+    _country_picker = _country_picker[: _country_picker.index("\n    }\n")]
     assert "${esc(x)}</option>" not in _country_picker, (
         "the raw stored code must no longer be the country option's visible label"
     )
@@ -7810,7 +7812,8 @@ def test_evidence_links_underlined_and_use_the_shared_extlink_class():
     # Was >= 2 (the live ooMap signal-detail site + the dead temporal-map showTmapDetail's
     # duplicate). The UI-04 dead-code cleanup (2026-09-08) deleted showTmapDetail — it had
     # zero live callers — leaving the one live ooMap call site, which must keep its style.
-    assert js.count('extLink(url, "Official / reference source ↗", "tiny secondary", "align-self:center")') >= 1, \
+    # AMENDED 2026-09-27 (re-walk L-6): the label is keyed ×12 now, so it goes through t().
+    assert js.count('extLink(url, t("Official / reference source ↗"), "tiny secondary", "align-self:center")') >= 1, \
         "the live ooMap signal-detail source-link call site must keep its style but drop the override"
 
 
