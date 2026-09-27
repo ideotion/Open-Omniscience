@@ -413,7 +413,14 @@ def test_a_still_running_job_is_not_reported_as_a_finished_export(tmp_path):
     st = _status(dest, summary, {"state": "verified"})
     st["state"] = "running"
     facts = export_facts(dest, volume_status=st)
-    assert facts["corpus_included"] is False
+    # None of the running job's own figures are reported. (The folder DOES hold a
+    # finished volume set here -- the fixture wrote one -- so the corpus is reported as
+    # present, from volumes.json, with its measurements "not held" rather than as
+    # "no corpus": the 2026-09-26 click-through, J1.)
+    assert facts["corpus_facts"] == "not_held"
+    assert facts["tables"] == []
+    assert facts["volumes"]["plaintext_bytes"] is None
+    assert facts["verify"]["state"] != "verified"
 
 
 def test_the_summary_carries_the_ruled_fields(exported):
@@ -499,3 +506,251 @@ def test_a_folder_written_by_the_export_reads_back_byte_for_byte(tmp_path):
     out = Path(staged.staging_dir) / "corpus.db" if hasattr(staged, "staging_dir") else None
     assert out is not None and out.exists(), staged
     assert out.read_bytes() == before, "the corpus did not survive the round trip"
+
+
+# --------------------------------------------------------------------------- #
+#  The 2026-09-26 delegated click-through, row J
+#  (docs/audit/delegated-clickthrough-2026-09-26/defects.csv, J1 J2 J4 J5 J6 J7)
+# --------------------------------------------------------------------------- #
+_LOCALES = Path(__file__).resolve().parents[1] / "src" / "static" / "locales"
+_LANGS = ("ar", "bn", "de", "en", "es", "fr", "hi", "id", "ja", "pt", "ru", "zh")
+
+
+def _job_fn(tmp_path: Path, tag: str):
+    """The volume manager's backup seam, running the REAL stream writer on a fixture."""
+    work = tmp_path / tag
+    work.mkdir()
+
+    def fn(dest, pw, *, include_newsletters, parity_fraction, should_stop, progress_cb, include_blobs):
+        src = CorpusSource(
+            path=_corpus(work), member_name="corpus.db", encrypted=False, freeze=_no_freeze
+        )
+        side = work / "state.json"
+        side.write_text('{"a": 1}', encoding="utf-8")
+        return write_stream_backup(
+            dest,
+            pw,
+            corpus_source=src,
+            side_members=[MemberFile("state.json", "state", side)],
+            volume_size=128 * 1024,
+            should_stop=should_stop,
+            progress_cb=progress_cb,
+        )
+
+    return fn
+
+
+def _run_to_done(mgr, timeout: float = 60.0) -> dict:
+    import time
+
+    t0 = time.time()
+    while mgr.status()["running"] and time.time() - t0 < timeout:
+        time.sleep(0.02)
+    st = mgr.status()
+    assert st["state"] == "done", st
+    return st
+
+
+def test_a_folder_holding_a_set_is_never_reported_as_holding_no_corpus(tmp_path):
+    """J1: "Encrypted volumes: none — no corpus was selected" for a folder with four
+    volumes in it. Whether the corpus is IN the folder is read off the folder; only the
+    export's own measurements depend on what this process still remembers."""
+    mine = allocate_export_folder(tmp_path / "drive")
+    _export(tmp_path, mine)
+    other = allocate_export_folder(tmp_path / "drive")
+    b = tmp_path / "b"
+    b.mkdir()
+    summary = _export(b, other)
+    facts = export_facts(mine, volume_status=_status(other, summary, {"state": "verified"}))
+    manifest = json.loads((mine / MANIFEST_NAME).read_text(encoding="utf-8"))
+
+    assert facts["corpus_included"] is True
+    assert facts["corpus_facts"] == "not_held"
+    assert facts["volumes"]["count"] == len(manifest["volumes"])
+    assert facts["tables"] == [], "another export's counts were reported under this folder"
+    assert facts["verify"]["state"] == "not_held"
+    md = render_summary_markdown(facts)
+    assert "no corpus was selected" not in md
+    assert "NOT verified" not in md, "an unknown verdict was written as an alarm"
+
+
+def test_an_export_s_facts_survive_a_later_export_to_another_folder(tmp_path, monkeypatch):
+    """J1 end to end through the endpoint the reopened panel reads: export A, then a
+    corpus-only export B. The manager's live status is B's, and A's facts used to be
+    refused as "another job's" -- so A read back as holding no corpus at all."""
+    import src.backup.volume_job as vj
+    from src.api.backup_v2 import export_summary_read
+
+    mgr = vj.VolumeBackupManager()
+    monkeypatch.setattr(vj, "_MANAGER", mgr)
+    a = allocate_export_folder(tmp_path / "drive")
+    mgr.start_backup(str(a), _PASS, _backup_fn=_job_fn(tmp_path, "a"))
+    _run_to_done(mgr)
+    b = allocate_export_folder(tmp_path / "drive")
+    mgr.start_backup(str(b), _PASS, _backup_fn=_job_fn(tmp_path, "b"))
+    assert _run_to_done(mgr)["dest"] == str(b)
+
+    facts = export_summary_read(str(a))
+    assert facts["corpus_included"] is True and facts.get("corpus_facts") == "measured"
+    assert {r["name"]: r["rows"] for r in facts["tables"]}["articles"] == 300
+    assert facts["verify"]["state"] == "verified"
+    assert facts["destination"] == str(a)
+
+
+def test_the_job_writes_BACKUP_SUMMARY_md_itself_before_it_reports_done(tmp_path, monkeypatch):
+    """J2: the file used to be written only by the page, at the end of its own run --
+    a reload mid-export left a complete, verified backup with no summary beside it."""
+    import src.backup.volume_job as vj
+    from src.api.backup_v2 import export_summary_read
+
+    mgr = vj.VolumeBackupManager()
+    monkeypatch.setattr(vj, "_MANAGER", mgr)
+    dest = allocate_export_folder(tmp_path / "drive")
+    mgr.start_backup(str(dest), _PASS, _backup_fn=_job_fn(tmp_path, "a"))
+    _run_to_done(mgr)
+
+    written = dest / SUMMARY_NAME
+    assert written.is_file(), "no BACKUP_SUMMARY.md without the page's POST"
+    md = written.read_text(encoding="utf-8")
+    assert "Verified — all" in md, "the file does not carry the verify verdict"
+    assert "| `articles` | 300 |" in md
+    # The same renderer the page's POST uses: identical but for the time it was written.
+    again = render_summary_markdown(export_facts(dest, volume_status=mgr.status()))
+
+    def strip(s: str) -> list[str]:
+        return [x for x in s.splitlines() if not x.startswith("- **Written:**")]
+
+    assert strip(md) == strip(again)
+    # …and the endpoint the reopened panel reads now says where it is.
+    assert export_summary_read(str(dest)).get("summary_path") == str(written)
+
+
+def test_the_job_never_writes_a_summary_outside_a_dated_export_folder(tmp_path):
+    """The older volume-backup dialog writes into whatever folder the operator names; a
+    file appearing there would be a change nobody asked for."""
+    from src.backup.volume_job import VolumeBackupManager
+
+    mgr = VolumeBackupManager()
+    legacy = tmp_path / "my-backups"
+    mgr.start_backup(str(legacy), _PASS, _backup_fn=_job_fn(tmp_path, "a"))
+    _run_to_done(mgr)
+    assert (legacy / MANIFEST_NAME).exists()
+    assert not (legacy / SUMMARY_NAME).exists()
+
+
+def test_the_large_data_phase_rewrites_the_summary_with_both_halves(tmp_path, monkeypatch):
+    """J2, second writer: the copy completes after the corpus phase, so ITS rewrite is
+    the one left on the drive -- and it must still carry the corpus half, even when the
+    volume manager has run another export since."""
+    import src.backup.volume_job as vj
+    from src.backup.folder_backup import BackupItem, FolderBackupManager
+
+    mgr = vj.VolumeBackupManager()
+    monkeypatch.setattr(vj, "_MANAGER", mgr)
+    dest = allocate_export_folder(tmp_path / "drive")
+    mgr.start_backup(str(dest), _PASS, _backup_fn=_job_fn(tmp_path, "a"))
+    _run_to_done(mgr)
+    other = allocate_export_folder(tmp_path / "drive")
+    mgr.start_backup(str(other), _PASS, _backup_fn=_job_fn(tmp_path, "b"))
+    _run_to_done(mgr)
+
+    blob = tmp_path / "weights.bin"
+    blob.write_bytes(b"w" * 4096)
+    fmgr = FolderBackupManager()
+    fmgr.start(str(dest), ["models"], _items=[BackupItem("models", "m/weights.bin", blob, 4096)])
+    _run_to_done(fmgr)
+
+    md = (dest / SUMMARY_NAME).read_text(encoding="utf-8")
+    assert "`models`: 1 files" in md, "the copied files are not in the rewritten summary"
+    assert "| `articles` | 300 |" in md, "the rewrite dropped the corpus half"
+    assert "Verified — all" in md
+
+
+def test_a_rewrite_that_no_longer_holds_the_corpus_facts_keeps_the_file_that_does(exported):
+    dest, summary = exported
+    good = export_facts(dest, volume_status=_status(dest, summary, {"state": "verified", "total": 3}))
+    path = write_backup_summary(dest, good)
+    before = path.read_text(encoding="utf-8")
+    thin = export_facts(dest, volume_status=None)
+    assert thin.get("corpus_facts") == "not_held"
+    write_backup_summary(dest, thin)
+    assert path.read_text(encoding="utf-8") == before, "a complete summary was replaced by dashes"
+
+
+def test_the_first_export_carries_the_key_that_signs_it(tmp_path, monkeypatch):
+    """J4: on an install with no evidence key yet, the key was created by the envelope
+    AFTER the side members were collected -- the first export had one volume fewer than
+    every later one and did not carry the identity that signed it."""
+    data = tmp_path / "data"
+    monkeypatch.setenv("OO_DATA_DIR", str(data))
+    assert not (data / "keys").exists()
+    dest = allocate_export_folder(tmp_path / "drive")
+    src = CorpusSource(
+        path=_corpus(tmp_path), member_name="corpus.db", encrypted=False, freeze=_no_freeze
+    )
+    summary = write_stream_backup(dest, _PASS, corpus_source=src, volume_size=128 * 1024)
+    names = [m["name"] for m in summary["envelope"]["manifest"]["members"]]
+    assert "keys/evidence_ed25519.pem" in names, names
+    assert summary["envelope"]["manifest"]["keys_included"] is True
+
+
+def test_a_plaintext_corpus_is_not_called_unencrypted_inside_encrypted_volumes(exported):
+    """J5: "Corpus at rest in this backup: no", directly above "The corpus and every
+    member of the artifact are encrypted". The flag is the database FILE's SQLCipher
+    state; the volumes around it are always encrypted."""
+    dest, summary = exported  # the fixture's corpus source is a plaintext SQLite file
+    facts = export_facts(dest, volume_status=_status(dest, summary, {"state": "verified"}))
+    assert facts["encryption"]["corpus_encrypted"] is False
+    md = render_summary_markdown(facts)
+    line = [x for x in md.splitlines() if "Corpus at rest" in x][0]
+    assert not line.rstrip().endswith("no"), line
+    assert "not separately encrypted" in line and "volumes" in line, line
+
+
+def test_the_re_read_is_announced_before_the_first_volume_is_hashed(exported, monkeypatch):
+    """J6: verify_volume_set reports after each volume, so the whole read of the first
+    one used to go on reading "Writing parity…"."""
+    import src.backup.volumes as volumes_mod
+    from src.backup.volume_job import VolumeBackupManager
+
+    dest, _ = exported
+    mgr = VolumeBackupManager()
+    mgr._on_prog({"phase": "parity", "volumes_written": 3})
+    seen: dict = {}
+    real = volumes_mod.verify_volume_set
+
+    def spy(*a, **k):
+        seen["phase"] = mgr.status()["progress"].get("phase")
+        return real(*a, **k)
+
+    monkeypatch.setattr(volumes_mod, "verify_volume_set", spy)
+    assert mgr._verify_after_write(dest, True)["state"] == "verified"
+    assert seen["phase"] == "verifying"
+
+
+def test_every_server_sentence_the_panel_translates_is_keyed_in_all_12_locales(exported):
+    """J7: the Elapsed and Encryption hovers are English sentences the server sends and
+    the panel looks up with t(). The i18n gate reads literal t("...") calls only, so it
+    cannot see these -- this is the gate for them. A caveat ships x12."""
+    dest, summary = exported
+    no_files = export_facts(dest, volume_status=_status(dest, summary, {"state": "verified"}))
+    (dest / "oo-folder-backup.json").write_text(
+        json.dumps({"categories": {"models": [{"category": "models", "rel": "a", "size": 1}]}}),
+        encoding="utf-8",
+    )
+    with_files = export_facts(dest, volume_status=_status(dest, summary, {"state": "verified"}))
+    sentences = {
+        no_files["elapsed"]["files_s_reason"],
+        with_files["elapsed"]["files_s_reason"],
+        no_files["encryption"]["note"],
+    }
+    assert len(sentences) == 3, sentences
+    maps = {
+        lang: json.loads((_LOCALES / f"{lang}.json").read_text(encoding="utf-8"))
+        for lang in _LANGS
+    }
+    for s in sentences:
+        for lang, m in maps.items():
+            assert s in m, f"{lang}.json has no key for the hover {s!r}"
+            if lang != "en":
+                assert m[s] != s, f"{lang}.json leaves the hover {s!r} in English"

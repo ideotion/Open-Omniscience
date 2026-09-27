@@ -191,3 +191,30 @@ def test_a_PRESENT_lane_reports_the_size_of_the_FILE_not_a_placeholder(db, monke
         assert "law" not in lanes["breakdown"]
     finally:
         lane_store.dispose_all()
+
+
+def test_every_not_exportable_reason_is_a_caveat_keyed_in_all_12_locales(monkeypatch):
+    """The 2026-09-26 click-through (O1, P8, J7): the Living sources row's reason is
+    the hover that says why a row cannot be ticked -- a caveat, so it ships x12. The
+    dialog looks the server's English up with t(), and the i18n gate reads literal
+    t("...") calls only, so a reason the server adds or rewords is invisible to it. This
+    is the gate for them: every reason is a key in all 12 locale files, and translated.
+    """
+    import json
+    from pathlib import Path
+
+    monkeypatch.setattr(inv, "_blob_totals", lambda: {})
+    monkeypatch.setattr(inv, "_db_bytes", lambda: 0)
+    reasons = {
+        m["not_exportable_reason"]
+        for m in inv.backup_inventory(None)["members"]
+        if m.get("not_exportable_reason")
+    }
+    assert reasons, "no member carries a reason any more -- this guard guards nothing"
+    root = Path(__file__).resolve().parents[1] / "src" / "static" / "locales"
+    for lang in ("ar", "bn", "de", "en", "es", "fr", "hi", "id", "ja", "pt", "ru", "zh"):
+        m = json.loads((root / f"{lang}.json").read_text(encoding="utf-8"))
+        for r in reasons:
+            assert r in m, f"{lang}.json has no key for the reason {r!r}"
+            if lang != "en":
+                assert m[r] != r, f"{lang}.json leaves the reason {r!r} in English"

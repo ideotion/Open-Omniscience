@@ -4737,5 +4737,13 @@
   "Discovered candidates": "Entdeckte Kandidaten",
   "{n} of your {total} sources: enabled AND qualified — what collection actually reaches. This is the headline source count.": "{n} Ihrer {total} Quellen: aktiviert UND qualifiziert — das, was die Erfassung tatsächlich erreicht. Das ist die maßgebliche Quellenzahl.",
   "{n} of your {total} sources: enabled but not qualified — awaiting a verdict, or judged and refused. Collection does not reach them.": "{n} Ihrer {total} Quellen: aktiviert, aber nicht qualifiziert — sie warten auf ein Urteil oder wurden geprüft und abgelehnt. Die Erfassung erreicht sie nicht.",
-  "{n} of your {total} sources: discovered candidates, not enabled, awaiting review. Collection does not reach them.": "{n} Ihrer {total} Quellen: entdeckte Kandidaten, nicht aktiviert, warten auf Prüfung. Die Erfassung erreicht sie nicht."
+  "{n} of your {total} sources: discovered candidates, not enabled, awaiting review. Collection does not reach them.": "{n} Ihrer {total} Quellen: entdeckte Kandidaten, nicht aktiviert, warten auf Prüfung. Die Erfassung erreicht sie nicht.",
+  "a lane is a live encrypted database; its backup format is not settled yet": "eine Spur ist eine lebende verschlüsselte Datenbank; ihr Sicherungsformat steht noch nicht fest",
+  "the large-data copy records no timing of its own": "das Kopieren der großen Daten zeichnet keine eigene Dauer auf",
+  "no large-data files were copied": "es wurden keine großen Dateien kopiert",
+  "The corpus and every member of the artifact are encrypted. Copied large-data files (dumps, maps, model weights) are public, re-downloadable blobs and are NOT encrypted — that is what makes a 100 GB export feasible, and it is stated rather than implied.": "Das Korpus und jedes Mitglied des Artefakts sind verschlüsselt. Kopierte große Dateien (Dumps, Karten, Modellgewichte) sind öffentliche, erneut herunterladbare Daten und NICHT verschlüsselt — das macht einen Export von 100 GB überhaupt möglich, und es wird gesagt statt nur angedeutet.",
+  "no files": "keine Dateien",
+  "corpus database not separately encrypted (the backup's volumes are)": "Korpus-Datenbank nicht separat verschlüsselt (die Volumes der Sicherung sind es)",
+  "Verify result not known here — the app no longer holds what this export measured (it has run another job or restarted since). The volume figures below are read off the drive.": "Prüfergebnis hier nicht bekannt — die App hält nicht mehr, was dieser Export gemessen hat (sie hat seitdem einen anderen Auftrag ausgeführt oder wurde neu gestartet). Die Volume-Angaben unten sind vom Laufwerk gelesen.",
+  "{prefix}: {text}": "{prefix}: {text}"
 }

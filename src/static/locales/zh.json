@@ -4737,5 +4737,13 @@
   "Discovered candidates": "发现的候选来源",
   "{n} of your {total} sources: enabled AND qualified — what collection actually reaches. This is the headline source count.": "您的 {total} 个来源中有 {n} 个：已启用且已合格——采集实际覆盖的范围。这是来源的主要数字。",
   "{n} of your {total} sources: enabled but not qualified — awaiting a verdict, or judged and refused. Collection does not reach them.": "您的 {total} 个来源中有 {n} 个：已启用但未合格——等待判定，或经判定被拒。采集不会覆盖它们。",
-  "{n} of your {total} sources: discovered candidates, not enabled, awaiting review. Collection does not reach them.": "您的 {total} 个来源中有 {n} 个：发现的候选来源，未启用，等待审核。采集不会覆盖它们。"
+  "{n} of your {total} sources: discovered candidates, not enabled, awaiting review. Collection does not reach them.": "您的 {total} 个来源中有 {n} 个：发现的候选来源，未启用，等待审核。采集不会覆盖它们。",
+  "a lane is a live encrypted database; its backup format is not settled yet": "通道是一个实时的加密数据库；其备份格式尚未确定",
+  "the large-data copy records no timing of its own": "大数据复制不记录自身的耗时",
+  "no large-data files were copied": "未复制任何大数据文件",
+  "The corpus and every member of the artifact are encrypted. Copied large-data files (dumps, maps, model weights) are public, re-downloadable blobs and are NOT encrypted — that is what makes a 100 GB export feasible, and it is stated rather than implied.": "语料库及工件的每个成员均已加密。复制的大数据文件（转储、地图、模型权重）是可重新下载的公开数据，未加密——正因如此，100 GB 的导出才可行；这一点明确说明，而非暗示。",
+  "no files": "无文件",
+  "corpus database not separately encrypted (the backup's volumes are)": "语料库数据库未单独加密（备份的卷已加密）",
+  "Verify result not known here — the app no longer holds what this export measured (it has run another job or restarted since). The volume figures below are read off the drive.": "此处未知校验结果——应用已不再保留此次导出所测得的数据（此后它运行了其他任务或已重启）。下方的卷数据读取自磁盘。",
+  "{prefix}: {text}": "{prefix}：{text}"
 }

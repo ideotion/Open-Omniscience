@@ -1904,7 +1904,7 @@
   "Loading what's available…": "Загрузка доступного…",
   "dates": "даты",
   "keywords": "ключевые слова",
-  "LLM models": "модели LLM",
+  "LLM models": "Модели LLM",
   "Offline maps": "Офлайн-карты",
   "What do you want to back up?": "Что вы хотите сохранить?",
   "Could not load the inventory — see console": "Не удалось загрузить опись — см. консоль",
@@ -4737,5 +4737,13 @@
   "Discovered candidates": "Найденные кандидаты",
   "{n} of your {total} sources: enabled AND qualified — what collection actually reaches. This is the headline source count.": "{n} из {total} ваших источников: включены И прошли отбор — то, до чего сбор действительно доходит. Это основное число источников.",
   "{n} of your {total} sources: enabled but not qualified — awaiting a verdict, or judged and refused. Collection does not reach them.": "{n} из {total} ваших источников: включены, но не прошли отбор — ожидают решения или были оценены и отклонены. Сбор до них не доходит.",
-  "{n} of your {total} sources: discovered candidates, not enabled, awaiting review. Collection does not reach them.": "{n} из {total} ваших источников: найденные кандидаты, не включены, ожидают проверки. Сбор до них не доходит."
+  "{n} of your {total} sources: discovered candidates, not enabled, awaiting review. Collection does not reach them.": "{n} из {total} ваших источников: найденные кандидаты, не включены, ожидают проверки. Сбор до них не доходит.",
+  "a lane is a live encrypted database; its backup format is not settled yet": "полоса — это живая зашифрованная база данных; формат её резервной копии ещё не утверждён",
+  "the large-data copy records no timing of its own": "копирование больших данных не записывает собственное время",
+  "no large-data files were copied": "файлы больших данных не копировались",
+  "The corpus and every member of the artifact are encrypted. Copied large-data files (dumps, maps, model weights) are public, re-downloadable blobs and are NOT encrypted — that is what makes a 100 GB export feasible, and it is stated rather than implied.": "Корпус и каждый элемент артефакта зашифрованы. Скопированные файлы больших данных (дампы, карты, веса моделей) — это общедоступные данные, которые можно скачать заново, и они НЕ зашифрованы — именно это делает возможным экспорт на 100 ГБ, и это сказано прямо, а не подразумевается.",
+  "no files": "нет файлов",
+  "corpus database not separately encrypted (the backup's volumes are)": "база данных корпуса не зашифрована отдельно (тома резервной копии зашифрованы)",
+  "Verify result not known here — the app no longer holds what this export measured (it has run another job or restarted since). The volume figures below are read off the drive.": "Результат проверки здесь неизвестен — приложение больше не хранит то, что измерил этот экспорт (с тех пор оно выполнило другую задачу или было перезапущено). Данные о томах ниже прочитаны с диска.",
+  "{prefix}: {text}": "{prefix}: {text}"
 }

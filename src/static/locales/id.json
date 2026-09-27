@@ -1904,7 +1904,7 @@
   "Loading what's available…": "Memuat yang tersedia…",
   "dates": "tanggal",
   "keywords": "kata kunci",
-  "LLM models": "model LLM",
+  "LLM models": "Model LLM",
   "Offline maps": "Peta luring",
   "What do you want to back up?": "Apa yang ingin Anda cadangkan?",
   "Could not load the inventory — see console": "Tidak dapat memuat inventaris — lihat konsol",
@@ -4737,5 +4737,13 @@
   "Discovered candidates": "Kandidat yang ditemukan",
   "{n} of your {total} sources: enabled AND qualified — what collection actually reaches. This is the headline source count.": "{n} dari {total} sumber Anda: aktif DAN lolos kualifikasi — yang benar-benar dijangkau pengumpulan. Inilah angka utama sumber.",
   "{n} of your {total} sources: enabled but not qualified — awaiting a verdict, or judged and refused. Collection does not reach them.": "{n} dari {total} sumber Anda: aktif tetapi belum lolos kualifikasi — menunggu putusan, atau sudah dinilai dan ditolak. Pengumpulan tidak menjangkaunya.",
-  "{n} of your {total} sources: discovered candidates, not enabled, awaiting review. Collection does not reach them.": "{n} dari {total} sumber Anda: kandidat yang ditemukan, tidak aktif, menunggu peninjauan. Pengumpulan tidak menjangkaunya."
+  "{n} of your {total} sources: discovered candidates, not enabled, awaiting review. Collection does not reach them.": "{n} dari {total} sumber Anda: kandidat yang ditemukan, tidak aktif, menunggu peninjauan. Pengumpulan tidak menjangkaunya.",
+  "a lane is a live encrypted database; its backup format is not settled yet": "lajur adalah basis data terenkripsi yang hidup; format cadangannya belum ditetapkan",
+  "the large-data copy records no timing of its own": "penyalinan data besar tidak mencatat waktunya sendiri",
+  "no large-data files were copied": "tidak ada berkas data besar yang disalin",
+  "The corpus and every member of the artifact are encrypted. Copied large-data files (dumps, maps, model weights) are public, re-downloadable blobs and are NOT encrypted — that is what makes a 100 GB export feasible, and it is stated rather than implied.": "Korpus dan setiap anggota artefak terenkripsi. Berkas data besar yang disalin (dump, peta, bobot model) adalah data publik yang dapat diunduh ulang dan TIDAK dienkripsi — itulah yang membuat ekspor 100 GB menjadi mungkin, dan hal itu dinyatakan, bukan hanya disiratkan.",
+  "no files": "tidak ada berkas",
+  "corpus database not separately encrypted (the backup's volumes are)": "basis data korpus tidak dienkripsi tersendiri (volume cadangan terenkripsi)",
+  "Verify result not known here — the app no longer holds what this export measured (it has run another job or restarted since). The volume figures below are read off the drive.": "Hasil verifikasi tidak diketahui di sini — aplikasi tidak lagi menyimpan apa yang diukur ekspor ini (sejak itu aplikasi menjalankan tugas lain atau dimulai ulang). Angka volume di bawah dibaca dari drive.",
+  "{prefix}: {text}": "{prefix}: {text}"
 }

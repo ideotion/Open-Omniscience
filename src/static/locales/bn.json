@@ -4737,5 +4737,13 @@
   "Discovered candidates": "আবিষ্কৃত প্রার্থী",
   "{n} of your {total} sources: enabled AND qualified — what collection actually reaches. This is the headline source count.": "আপনার {total}টি উৎসের মধ্যে {n}টি: সক্রিয় এবং যোগ্য — সংগ্রহ আসলে যেগুলোতে পৌঁছায়। এটিই উৎসের প্রধান সংখ্যা।",
   "{n} of your {total} sources: enabled but not qualified — awaiting a verdict, or judged and refused. Collection does not reach them.": "আপনার {total}টি উৎসের মধ্যে {n}টি: সক্রিয় কিন্তু যোগ্য নয় — রায়ের অপেক্ষায়, অথবা যাচাই করে প্রত্যাখ্যাত। সংগ্রহ এগুলোতে পৌঁছায় না।",
-  "{n} of your {total} sources: discovered candidates, not enabled, awaiting review. Collection does not reach them.": "আপনার {total}টি উৎসের মধ্যে {n}টি: আবিষ্কৃত প্রার্থী, সক্রিয় নয়, পর্যালোচনার অপেক্ষায়। সংগ্রহ এগুলোতে পৌঁছায় না।"
+  "{n} of your {total} sources: discovered candidates, not enabled, awaiting review. Collection does not reach them.": "আপনার {total}টি উৎসের মধ্যে {n}টি: আবিষ্কৃত প্রার্থী, সক্রিয় নয়, পর্যালোচনার অপেক্ষায়। সংগ্রহ এগুলোতে পৌঁছায় না।",
+  "a lane is a live encrypted database; its backup format is not settled yet": "লেন একটি সক্রিয় এনক্রিপ্টেড ডেটাবেস; এর ব্যাকআপ ফরম্যাট এখনও চূড়ান্ত হয়নি",
+  "the large-data copy records no timing of its own": "বড় ডেটার কপি নিজের সময় রেকর্ড করে না",
+  "no large-data files were copied": "বড় ডেটার কোনো ফাইল কপি করা হয়নি",
+  "The corpus and every member of the artifact are encrypted. Copied large-data files (dumps, maps, model weights) are public, re-downloadable blobs and are NOT encrypted — that is what makes a 100 GB export feasible, and it is stated rather than implied.": "কর্পাস এবং আর্টিফ্যাক্টের প্রতিটি সদস্য এনক্রিপ্টেড। কপি করা বড় ডেটার ফাইলগুলি (ডাম্প, মানচিত্র, মডেলের ওজন) সর্বজনীন, আবার ডাউনলোডযোগ্য ফাইল এবং এনক্রিপ্টেড নয় — এটাই 100 GB-এর এক্সপোর্টকে সম্ভব করে, এবং তা ইঙ্গিতে নয়, স্পষ্টভাবে বলা হয়েছে।",
+  "no files": "কোনো ফাইল নেই",
+  "corpus database not separately encrypted (the backup's volumes are)": "কর্পাস ডেটাবেস আলাদাভাবে এনক্রিপ্টেড নয় (ব্যাকআপের ভলিউমগুলি এনক্রিপ্টেড)",
+  "Verify result not known here — the app no longer holds what this export measured (it has run another job or restarted since). The volume figures below are read off the drive.": "যাচাইয়ের ফলাফল এখানে অজানা — এই এক্সপোর্ট যা মেপেছিল অ্যাপটি তা আর ধরে রাখে না (তারপর থেকে এটি অন্য কাজ চালিয়েছে বা পুনরায় চালু হয়েছে)। নিচের ভলিউমের সংখ্যাগুলি ড্রাইভ থেকে পড়া।",
+  "{prefix}: {text}": "{prefix}: {text}"
 }

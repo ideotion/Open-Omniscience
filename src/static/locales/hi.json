@@ -4737,5 +4737,13 @@
   "Discovered candidates": "खोजे गए उम्मीदवार",
   "{n} of your {total} sources: enabled AND qualified — what collection actually reaches. This is the headline source count.": "आपके {total} स्रोतों में से {n}: सक्रिय और योग्य — जिन तक संग्रह वास्तव में पहुँचता है। यही स्रोतों की मुख्य संख्या है।",
   "{n} of your {total} sources: enabled but not qualified — awaiting a verdict, or judged and refused. Collection does not reach them.": "आपके {total} स्रोतों में से {n}: सक्रिय पर योग्य नहीं — निर्णय की प्रतीक्षा में, या जाँचे जाकर अस्वीकृत। संग्रह इन तक नहीं पहुँचता।",
-  "{n} of your {total} sources: discovered candidates, not enabled, awaiting review. Collection does not reach them.": "आपके {total} स्रोतों में से {n}: खोजे गए उम्मीदवार, सक्रिय नहीं, समीक्षा की प्रतीक्षा में। संग्रह इन तक नहीं पहुँचता।"
+  "{n} of your {total} sources: discovered candidates, not enabled, awaiting review. Collection does not reach them.": "आपके {total} स्रोतों में से {n}: खोजे गए उम्मीदवार, सक्रिय नहीं, समीक्षा की प्रतीक्षा में। संग्रह इन तक नहीं पहुँचता।",
+  "a lane is a live encrypted database; its backup format is not settled yet": "लेन एक सक्रिय एन्क्रिप्टेड डेटाबेस है; इसका बैकअप प्रारूप अभी तय नहीं हुआ है",
+  "the large-data copy records no timing of its own": "बड़े डेटा की कॉपी अपना समय दर्ज नहीं करती",
+  "no large-data files were copied": "बड़े डेटा की कोई फ़ाइल कॉपी नहीं की गई",
+  "The corpus and every member of the artifact are encrypted. Copied large-data files (dumps, maps, model weights) are public, re-downloadable blobs and are NOT encrypted — that is what makes a 100 GB export feasible, and it is stated rather than implied.": "कॉर्पस और आर्टिफ़ैक्ट का हर सदस्य एन्क्रिप्टेड है। कॉपी की गई बड़े डेटा की फ़ाइलें (डंप, मानचित्र, मॉडल वेट) सार्वजनिक, फिर से डाउनलोड की जा सकने वाली फ़ाइलें हैं और एन्क्रिप्टेड नहीं हैं — इसी से 100 GB का निर्यात संभव होता है, और यह बात संकेत में नहीं, स्पष्ट रूप से कही गई है।",
+  "no files": "कोई फ़ाइल नहीं",
+  "corpus database not separately encrypted (the backup's volumes are)": "कॉर्पस डेटाबेस अलग से एन्क्रिप्टेड नहीं है (बैकअप के वॉल्यूम एन्क्रिप्टेड हैं)",
+  "Verify result not known here — the app no longer holds what this export measured (it has run another job or restarted since). The volume figures below are read off the drive.": "सत्यापन परिणाम यहाँ ज्ञात नहीं — ऐप के पास अब वह नहीं है जो इस निर्यात ने मापा था (तब से उसने कोई दूसरा काम चलाया है या पुनः आरंभ हुआ है)। नीचे के वॉल्यूम आँकड़े ड्राइव से पढ़े गए हैं।",
+  "{prefix}: {text}": "{prefix}: {text}"
 }

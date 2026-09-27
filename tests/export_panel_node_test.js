@@ -203,6 +203,165 @@ const render = (over) => { host.innerHTML = ""; _uxRenderExportPanel({ ...base, 
   assert.ok(!/BACKUP_SUMMARY/.test(render({})), "a summary path was claimed with none written");
   assert.ok(/BACKUP_SUMMARY\.md/.test(render({ summary_path: "/mnt/stick/x/BACKUP_SUMMARY.md" })),
     "the written summary path is not shown");
+  // J2: a file that could not be written is NAMED, never passed over in silence.
+  const failed = render({ summary_error: "Permission denied" });
+  assert.ok(/note err/.test(failed) && /summary file could not be/.test(failed) && /Permission denied/.test(failed),
+    "a summary that could not be written is not reported: " + failed);
 }
 
-console.log("export panel node suite: ok");
+// ========================================================================== //
+//  The 2026-09-26 delegated click-through, row J (J1, J3, J5, J6, J7, J9)
+// ========================================================================== //
+
+// --- J1: a folder whose measurements the app no longer holds is NOT "no corpus" //
+{
+  const out = render({
+    corpus_facts: "not_held", corpus_included: true, tables: [],
+    volumes: { count: 4, bytes: 800, plaintext_bytes: null, parity: true },
+    verify: { state: "not_held", reason: "gone", method: null },
+  });
+  assert.ok(!/no corpus was selected/.test(out),
+    "a folder holding four encrypted volumes was described as holding no corpus: " + out);
+  assert.ok(/>4 · 800 B/.test(out), "the volume figures read off the drive are not drawn: " + out);
+  assert.ok(/not known here/.test(out), "the unknown verdict is not named: " + out);
+  assert.ok(!/note err/.test(out),
+    "an export this app merely no longer remembers was painted as a failure: " + out);
+  assert.ok(!/Not verified|NOT verified/.test(_uxVerifySentence({ state: "not_held" }, t)),
+    "'not held' is not a not-verified verdict");
+}
+
+// --- J3: left-to-right data keeps its own direction inside an RTL panel ----- //
+{
+  const out = render({ attribution: [{ key: "w", text: "Wikipedia — CC BY-SA 4.0.", because: "table:wiki_pages" }],
+                       summary_path: "/mnt/stick/x/BACKUP_SUMMARY.md" });
+  assert.ok(/<code dir="ltr"[^>]*>\/mnt\/stick\/202609121045_OpenOmniscience_Backup<\/code>/.test(out),
+    "the Destination path is not isolated left-to-right: " + out);
+  assert.ok(/<code dir="ltr">\/mnt\/stick\/x\/BACKUP_SUMMARY\.md<\/code>/.test(out),
+    "the summary path is not isolated left-to-right");
+  assert.ok(/<div dir="auto"[^>]*>Wikipedia — CC BY-SA 4\.0\.<\/div>/.test(out),
+    "an English licence line inherits the panel's direction: " + out);
+}
+
+// --- J5: the plaintext-corpus Encryption row no longer contradicts its note -- //
+{
+  const out = render({ encryption: { corpus_encrypted: false, files_encrypted: null, note: "n" } });
+  assert.ok(!/stored unencrypted/.test(out),
+    "a corpus inside encrypted volumes is still called 'stored unencrypted': " + out);
+  assert.ok(/not separately encrypted/.test(out) && /volumes are/.test(out),
+    "the row does not say which layer the flag measures: " + out);
+}
+
+// --- J7 + J9: hovers and the files-none value go through the locale --------- //
+{
+  const FR = {
+    "the large-data copy records no timing of its own": "FR-untimed",
+    "no large-data files were copied": "FR-nofiles",
+    "NOTE-EN": "FR-note",
+    "none": "aucune",
+    "no files": "aucun fichier",
+  };
+  const tFr = (s) => (FR[s] == null ? s : FR[s]);
+  host.innerHTML = "";
+  _uxRenderExportPanel({ ...base, encryption: { corpus_encrypted: true, note: "NOTE-EN" } }, tFr);
+  const out = host.innerHTML;
+  assert.ok(/title="FR-nofiles"/.test(out), "the Elapsed hover stayed in English: " + out);
+  assert.ok(/title="FR-note"/.test(out), "the Encryption hover stayed in English: " + out);
+  assert.ok(!/title="NOTE-EN"/.test(out), "the raw backend note reached the hover");
+  assert.ok(/Files copied<\/span><span>aucun fichier/.test(out),
+    "'Files copied' borrows the shared (feminine) 'none': " + out);
+}
+
+// --- J6: the verify-after-write re-read is named, with its own count -------- //
+{
+  const m = { exports: {} };
+  const psrc =
+    "function esc(s){return String(s==null?'':s).replace(/[&<>\"]/g," +
+    "c=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;'}[c]));}\n" +
+    "function humanBytes(n){return String(n)+' B';}\n" +
+    "var window = {};\n" +
+    extract("_uxVolPhase") + "\n" + extract("_uxPhaseCount") + "\n" + extract("_uxProgressView") + "\n" +
+    "module.exports = { _uxProgressView };";
+  new Function("module", "exports", psrc)(m, m.exports);
+  const view = (p) => m.exports._uxProgressView("volumes", { mode: "backup", state: "running", progress: p }, t).text;
+  const v = view({ phase: "verifying", volumes_verified: 1, volumes_total: 3 });
+  assert.ok(/Verifying volumes…/.test(v), "the re-read is not named: " + v);
+  assert.ok(!/Backing up…/.test(v), "the re-read fell through to the generic label: " + v);
+  assert.ok(/1\/3 volumes/.test(v), "the re-read's own count is not shown: " + v);
+  // The first report comes before any volume is hashed and carries no total: named,
+  // but no invented "0/?".
+  const first = view({ phase: "verifying", volumes_verified: 0 });
+  assert.ok(/Verifying volumes…/.test(first) && !/\d\/|\/\?/.test(first), "the first report drew a made-up count: " + first);
+}
+
+// --- J1: a reopened dialog shows the LATER export, not the folder job's older one //
+{
+  const PICK = APP.includes("function _uxPickLastExport(") ? extract("_uxPickLastExport") : "";
+  const el = () => ({ innerHTML: "", textContent: "", value: "", style: {}, dataset: {},
+                      removeAttribute() {}, setAttribute() {} });
+  async function reopen(statuses, facts) {
+    const dom = { "ux-progress": el(), "ux-bar": el(), "ux-pause": el(), "ux-dest": el(), "ux-summary": el() };
+    const calls = [];
+    const api = async (url, opts) => {
+      calls.push({ url, method: (opts && opts.method) || "GET" });
+      if (url === "/api/backup/v2/volumes/status") return statuses.vol;
+      if (url === "/api/backup/folder/status") return statuses.fold;
+      if (url.startsWith("/api/backup/export-summary?dir=")) return facts(decodeURIComponent(url.split("=")[1]));
+      if (url === "/api/backup/export-summary") return { summary_path: "/written/BACKUP_SUMMARY.md", facts: facts("POST") };
+      throw new Error("unexpected " + url);
+    };
+    const rsrc =
+      "function esc(s){return String(s==null?'':s).replace(/[&<>\"]/g," +
+      "c=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;'}[c]));}\n" +
+      "function humanBytes(n){return String(n)+' B';}\n" +
+      "var window = {}; var _uxExportDir = null, _uxPhase = null, _uxExportFacts = null;\n" +
+      "var document = { getElementById: function(id){ return DOM[id] || null; } };\n" +
+      "function _uxShowPaused(){ DOM['ux-progress'].innerHTML = 'PAUSED'; }\n" +
+      extract("_uxSamePath") + "\n" + PICK + "\n" +
+      extract("_uxRenderExportPanel") + "\n" + extract("_uxVerifySentence") + "\n" + extract("_uxVerifyDetail") + "\n" +
+      // extract() starts at "function", so the async keyword is put back here.
+      "async " + extract("_uxShowLastCompletedExportSummary") + "\n" +
+      "module.exports = { run: _uxShowLastCompletedExportSummary, phase: () => _uxPhase, dir: () => _uxExportDir };";
+    const mod = { exports: {} };
+    new Function("module", "exports", "DOM", "api", rsrc)(mod, mod.exports, dom, api);
+    await mod.exports.run();
+    return { dom, calls, phase: mod.exports.phase(), dir: mod.exports.dir() };
+  }
+  const A = "/x/202609262011_OpenOmniscience_Backup", B = "/x/202609262012_OpenOmniscience_Backup";
+  const withPath = (d) => ({ ...base, destination: d, summary_path: d + "/BACKUP_SUMMARY.md" });
+  (async () => {
+    // Export A carried models (both managers -> A); export B was corpus-only (volumes -> B).
+    const r = await reopen({
+      vol: { mode: "backup", state: "done", dest: B, started_at: 300 },
+      fold: { mode: "backup", state: "done", dest: A, started_at: 100 },
+    }, withPath);
+    assert.ok(r.dom["ux-progress"].innerHTML.includes(B) && !r.dom["ux-progress"].innerHTML.includes(A),
+      "the reopened dialog names the OLDER export: " + r.dom["ux-progress"].innerHTML);
+    assert.ok(r.calls.some((c) => c.url.includes(encodeURIComponent(B))), "the facts were read for the wrong folder");
+    assert.ok(/<span dir="ltr"/.test(r.dom["ux-progress"].innerHTML), "the completion path is not isolated LTR (J3)");
+
+    // One export, both phases: the folder job is the later state of the SAME export.
+    const same = await reopen({
+      vol: { mode: "backup", state: "done", dest: A, started_at: 100 },
+      fold: { mode: "backup", state: "paused", dest: A, started_at: 150 },
+    }, withPath);
+    assert.strictEqual(same.phase, "folder", "a paused large-data phase lost its Resume target");
+
+    // A PAUSED later corpus export must win over an older finished one, or its Resume is lost.
+    const paused = await reopen({
+      vol: { mode: "backup", state: "paused", dest: B, started_at: 300 },
+      fold: { mode: "backup", state: "done", dest: A, started_at: 100 },
+    }, withPath);
+    assert.strictEqual(paused.phase, "volumes", "the later, paused corpus export was hidden behind an older one");
+    assert.strictEqual(paused.dir, B);
+
+    // J2: the file is missing on reopen -> it is asked for once, and the panel names it.
+    const missing = await reopen({ vol: { mode: "backup", state: "done", dest: B, started_at: 1 }, fold: null },
+      (d) => (d === "POST" ? { ...base, destination: B } : { ...base, destination: B, summary_path: null }));
+    assert.ok(missing.calls.some((c) => c.url === "/api/backup/export-summary" && c.method === "POST"),
+      "a missing BACKUP_SUMMARY.md was not asked for on reopen");
+    assert.ok(/\/written\/BACKUP_SUMMARY\.md/.test(missing.dom["ux-summary"].innerHTML),
+      "the recovered summary path is not shown");
+
+    console.log("export panel node suite: ok");
+  })().catch((e) => { console.error(e); process.exit(1); });
+}
