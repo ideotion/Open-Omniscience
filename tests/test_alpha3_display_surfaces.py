@@ -142,7 +142,7 @@ _SURFACES: tuple[tuple[str, str, str], ...] = (
     # --- Markets ------------------------------------------------------------ #
     (
         "app-markets.js",
-        "ooAreaCell(r.ref_area, r.area_kind, r.area_name)",
+        "ooAreaCell(r.ref_area, r.area_kind, r.area_name ? t(r.area_name) : r.area_name)",
         "the minerals supply table's area (WLD disclosed as an aggregate)",
     ),
     # --- The corpus window -------------------------------------------------- #

@@ -95,6 +95,11 @@ const src = [
   functionSource(APP, "ooLangDisplayName"),
   functionSource(APP, "ooLangCell"),
   functionSource(APP, "_aiCheckLine"),
+  // B18 R2/R14: the label frame, the number formatter and the unit isolate -- shipped.
+  functionSource(APP, "ooLabelHtml"),
+  functionSource(APP, "ooLabelText"),
+  functionSource(APP, "fmtNum"),
+  functionSource(APP, "_diagIso"),
   functionSource(APP, "_renderAiCheck"),
   "return { _renderAiCheck, esc, ooLangCell };",
 ].join("\n");
@@ -195,7 +200,8 @@ check("a clean gate renders NO refusal — the negative-space twin", () => {
   // Counted PER FIELD, never summed into one number: 'who 1 cleared · where 1 cleared'
   // says which field, where a bare '3' would be the composite this report refuses.
   assert.ok(
-    /who 1 cleared.*where 1 cleared.*when 1 cleared/.test(html),
+    // B18 R14: label: value, so no count has to agree with an English participle.
+    /who cleared: 1.*where cleared: 1.*when cleared: 1/.test(html),
     "the per-field counts are still shown, per field",
   );
 });
@@ -227,9 +233,9 @@ check("the per-field counts carry every state that is non-empty", () => {
     refused_fields: [{ language: "hi", field: "who", reason: "r" }],
     partly_cleared: [], field_counts: { cleared: 1, refused: 1, unmeasured: 2, total: 4 },
   });
-  assert.ok(html.includes("1 cleared"), "cleared count");
-  assert.ok(html.includes("1 refused"), "refused count");
-  assert.ok(html.includes("2 unmeasured"), "unmeasured count -- never folded into refused");
+  assert.ok(html.includes("cleared: 1"), "cleared count");
+  assert.ok(html.includes("refused: 1"), "refused count");
+  assert.ok(html.includes("unmeasured: 2"), "unmeasured count -- never folded into refused");
 });
 
 check("an old report with no per-field verdicts says so instead of showing a gap", () => {

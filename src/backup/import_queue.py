@@ -1101,6 +1101,10 @@ class ImportQueueManager:
             out["skipped"] = "already-merged"
             out["merged_as_batch"] = summary.get("merged_as_batch")
             out["merged_at"] = summary.get("merged_at")
+            # Which of the two answers it was: already in the corpus (a batch and a
+            # date), or already in THIS run's unsaved working copy (neither). The
+            # restore sets it; dropping it here left the row unable to say which.
+            out["in_open_checkpoint_group"] = bool(summary.get("in_open_checkpoint_group"))
         return out
 
     def _run_legacy(self, item: dict) -> dict:

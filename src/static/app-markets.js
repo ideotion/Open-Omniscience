@@ -112,7 +112,7 @@
         // Drop any stale active tag no longer present in the data.
         _idxTags = new Set([..._idxTags].filter(x => tags.includes(x)));
         tagRow.innerHTML = tags.length > 1
-          ? `<span class="muted" style="font-size:12px;margin-right:4px">${esc(t("Tags"))}:</span>`
+          ? `<span class="muted" style="font-size:12px;margin-right:4px">${ooLabelHtml(esc(t("Tags")), "")}</span>`
             + tags.map(tag =>
                 `<button type="button" class="chip${_idxTags.has(tag) ? " on" : ""}" data-tag="${esc(tag)}"
                    onclick="toggleIndexTag(${esc(JSON.stringify(tag))})">${esc(tag)}</button>`).join("")
@@ -170,7 +170,7 @@
       // Need at least 2 series for a meaningful overlay; with 1 selected, invite a second.
       const ready = n >= 2;
       bar.innerHTML =
-        `<span class="muted" style="font-size:12px">${esc(t("Comparing"))}: <b>${names}</b></span>`
+        `<span class="muted" style="font-size:12px">${ooLabelHtml(esc(t("Comparing")), `<b>${names}</b>`)}</span>`
         + `<button type="button" class="tiny${ready ? "" : " secondary"}"${ready ? "" : " disabled"}
              title="${esc(t("Overlay the selected series on one graph"))}"
              onclick="openIdxComparison()">${esc(t("Compare"))} (${n}) ↗</button>`
@@ -437,7 +437,12 @@
       try {
         const q = category ? `?category=${encodeURIComponent(category)}&keys=` : "?keys=";
         const r = await api(`/api/markets/feeds/import-all${q}${encodeURIComponent(keys)}`, {method: "POST"});
-        toast(`${t("Retry finished:")} ${r.points_imported} ${t("new point(s);")} ${r.failed} ${t("still failing.")}`);
+        // ONE keyed frame, label: value inside it so no count has to agree with a
+        // word, the numbers grouped (R14) -- it welded three fragments around raw counts.
+        const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
+          : ((x, v) => x.replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? String(v[k]) : m));
+        toast(tf("Retry finished — new points: {n} · still failing: {k}", {
+          n: fmtNum(r.points_imported || 0, 0), k: fmtNum(r.failed || 0, 0) }));
         _renderFeedVerdicts(elId, r, category);
       } catch (e) { if (el) el.textContent = e.message; }
     }
@@ -490,7 +495,10 @@
             // USGS writes alpha-2 (`US`) for a country and `WLD` for the world: the
             // area cell renders the first as its alpha-3 with the name in the hover,
             // and discloses the second as a published aggregate (Q302/Q303, L9).
-            `<tr><td>${ooAreaCell(r.ref_area, r.area_kind, r.area_name)}</td>`
+            // The aggregate's NAME arrives in English from the server ("European Union"),
+            // so it goes through t() here, as _statAreaLocal does for the statistics
+            // tables (R6) -- the hover read "European Union — تجميع منشور".
+            `<tr><td>${ooAreaCell(r.ref_area, r.area_kind, r.area_name ? t(r.area_name) : r.area_name)}</td>`
             + `<td class="muted">${esc(r.time_period)}</td>`
             + `<td style="text-align:right;font-variant-numeric:tabular-nums">${r.value === null || r.value === undefined ? "—" : (typeof fmtNum === "function" ? fmtNum(r.value) : r.value)}</td>`
             + `<td class="muted">${esc(r.unit || "")}</td></tr>`).join("");
@@ -790,7 +798,9 @@
     // shown verbatim rather than replaced by a guess.
     function _figAsOf(iso) {
       const d = new Date(iso);
-      return isFinite(+d) ? d.toLocaleString() : String(iso);
+      // The app's date formatter, in the UI language (R14) -- toLocaleString() followed
+      // the BROWSER's locale, so a French page could print an English date.
+      return isFinite(+d) ? fmtDateTime(iso) : String(iso);
     }
 
     // --- F3: absence is not zero ------------------------------------------ //

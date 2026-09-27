@@ -60,6 +60,13 @@ const src = [
   outcomeTable,
   extract("function _uxOutcome("),
   extract("function _uxFmtDur("),
+  // B18: a duration is ONE keyed frame, isolated (R9); an already-merged backup states
+  // its batch and date (R11); summary lines are label: value (R14). The real helpers.
+  extract("function _uxDurIso("),
+  extract("function _uxDurTf("),
+  extract("function _uxMergedLine("),
+  extract("function fmtDateTime("),
+  extract("function ooLabelText("),
   extract("function _uxPerItemView("),
   extract("function _uxCorpusDeltaView("),
   extract("function _uxStageLabel("),
@@ -146,7 +153,7 @@ test("the per-backup view names every item, with its own numbers and time", () =
   // fmtNum's grouping (U+202F), not the browser's locale "1,000" (W18).
   assert(html.includes("1\u202F000") && html.includes("250"), "each item's own count is printed, not only the total");
   assert(!html.includes("1,000"), "a count went through the browser's locale: " + html);
-  assert(html.includes("2 h 0 min"), "the run's own measured elapsed time is shown");
+  assert(html.includes("\u20682\u00a0h\u00a00\u00a0min\u2069"), "the run's own measured elapsed time is shown");
 });
 
 test("an item that imported nothing gets no bar rather than a fake sliver", () => {
@@ -272,8 +279,8 @@ test("Y4: 'Articles awaiting indexing' is the server's backlog, not the plan's n
   // 1,900 -- the server measured 4,300 pending, and the line said 2,400.
   const html = render([viaProducer(deferredReport(2400, 4300))],
                       { state: "done", elapsed_s: 7, items_done: 1, items_total: 1 });
-  assert(html.includes("4\u202F300 Articles awaiting indexing"), html);
-  assert(!html.includes("2\u202F400 Articles awaiting indexing"), "the plan's new count is not the backlog");
+  assert(html.includes("Articles awaiting indexing: 4\u202F300"), html);
+  assert(!html.includes("Articles awaiting indexing: 2\u202F400"), "the plan's new count is not the backlog");
   // ...and the caveat and the queue line are the SAME reading.
   assert(html.includes("4\u202F300 article(s) still to index"), html);
 });
@@ -282,8 +289,8 @@ test("Y4: with no item snapshot, the line takes the re-index job's own read", ()
   const html = render([viaProducer(deferredReport(2400))],
                       { state: "done", elapsed_s: 7, items_done: 1, items_total: 1,
                         rx: { backlog: { available: true, articles_pending: 5000 } } });
-  assert(html.includes("5\u202F000 Articles awaiting indexing"), html);
-  assert(!html.includes("2\u202F400 Articles awaiting indexing"), html);
+  assert(html.includes("Articles awaiting indexing: 5\u202F000"), html);
+  assert(!html.includes("Articles awaiting indexing: 2\u202F400"), html);
   // Nothing read at all: no figure is invented from the plan.
   const none = render([viaProducer(deferredReport(2400))],
                       { state: "done", elapsed_s: 7, items_done: 1, items_total: 1 });
@@ -355,8 +362,8 @@ test("_uxFmtDur refuses to invent a duration it does not have", () => {
   assert(mod._uxFmtDur(null) === "—", "a missing measurement is not 0 s");
   assert(mod._uxFmtDur(undefined) === "—", "undefined is not 0 s");
   assert(mod._uxFmtDur(-1) === "—", "a negative is not a duration");
-  assert(mod._uxFmtDur(0) === "0.0 s", "a real zero IS reportable");
-  assert(mod._uxFmtDur(61585).includes("17 h"), "hours are readable, not '61585.0 s'");
+  assert(mod._uxFmtDur(0) === "\u20680.0\u00a0s\u2069", "a real zero IS reportable");
+  assert(mod._uxFmtDur(61585).includes("17\u00a0h"), "hours are readable, not '61585.0 s'");
 });
 
 console.log(`\n${passed} passed`);
