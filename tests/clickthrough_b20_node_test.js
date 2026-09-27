@@ -167,7 +167,10 @@ async function run() {
   // ============ R4: the two maps that did not follow a language switch ========= //
   await test("R4: the Statistics map redraws from its cached payload, only when drawn, no fetch", async () => {
     const drawn = [];
-    const hostWith = (hasSvg) => ({ querySelector: (sel) => (sel === "svg#oo-choro" && hasSvg ? {} : null) });
+    // A selector LIST matches when any of its parts names an element the host holds.
+    const hostHolding = (...held) => ({ querySelector: (sel) =>
+      (sel.split(",").map((x) => x.trim()).some((x) => held.includes(x)) ? {} : null) });
+    const hostWith = (hasSvg) => (hasSvg ? hostHolding("svg#oo-choro") : hostHolding());
     const make = (host, last) => {
       const src = "let _statMapLast = LAST;\n" + extract("repaintStatMapFromCache", null, MAP)
         + "\nreturn repaintStatMapFromCache;";
@@ -186,6 +189,13 @@ async function run() {
     await Promise.resolve();
     assert(drawn.length === 1 && drawn[0][2] === last.d && drawn[0][3] === last.series,
       "did not redraw from the cached payload: " + JSON.stringify(drawn));
+    // L-3 (re-walk): the LEVEL map draws a ranked table, not the choropleth svg, and its
+    // note, refusal line and aggregate names are translated when drawn, so it must redraw too.
+    const level = { d: { rows: [1] }, series: "NY.GDP.MKTP.CD", isLevel: true };
+    make(hostHolding("table"), level)();
+    await Promise.resolve();
+    assert(drawn.length === 2 && drawn[1][2] === level.d && drawn[1][4] === true,
+      "the level map kept the old language after a switch: " + JSON.stringify(drawn));
   });
 
   await test("R4: the ring map redraws through showRingMap with the payload it holds", () => {

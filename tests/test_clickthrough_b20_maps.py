@@ -81,8 +81,11 @@ def test_the_language_switch_redraws_the_statistics_and_ring_maps_from_cache():
     )
     stat = strip_comments(function_body(read_static("app-map.js"), "repaintStatMapFromCache"))
     ring = strip_comments(function_body(read_static("app-insights.js"), "repaintRingMapFromCache"))
+    # The level map draws a ranked table instead of the svg (re-walk L-3), so the
+    # statistics guard names both; the ring map only ever draws the svg.
+    assert 'querySelector("svg#oo-choro, table")' in stat, "redraw only a map that is on screen"
+    assert 'querySelector("svg#oo-choro")' in ring, "redraw only a map that is on screen"
     for body in (stat, ring):
-        assert 'querySelector("svg#oo-choro")' in body, "redraw only a map that is on screen"
         assert "api(" not in body, "a language switch must never fetch"
 
 

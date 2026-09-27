@@ -2568,7 +2568,10 @@
     }
     function repaintStatMapFromCache() {
       const host = $("statfig-map");
-      if (!_statMapLast || !host || !host.querySelector("svg#oo-choro")) return;
+      // The LEVEL map draws a ranked table, not the choropleth svg, and its refusal
+      // line, caveat and aggregate hovers are translated when drawn (B30, L-5): it is a
+      // drawn map too. A "Loading…" or "Could not map" host holds neither.
+      if (!_statMapLast || !host || !host.querySelector("svg#oo-choro, table")) return;
       const { d, series, isLevel } = _statMapLast;
       _statMapDraw(host, $("statfig-map-meta"), d, series, isLevel)
         .catch((e) => { host.innerHTML = `<div class="muted">Could not map: ${esc(e && e.message || e)}</div>`; });
