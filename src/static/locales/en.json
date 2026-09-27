@@ -5301,5 +5301,14 @@
   "airplane mode engaged — progress is saved, start again to resume": "airplane mode engaged — progress is saved, start again to resume",
   "paused: {reason} — progress is saved, start again once memory recovers": "paused: {reason} — progress is saved, start again once memory recovers",
   "declined on this machine: {reason} — nothing was judged; restart the app with {env}=1 to run it anyway": "declined on this machine: {reason} — nothing was judged; restart the app with {env}=1 to run it anyway",
-  "stopped after {n} consecutive batches with no evidence to judge — the remaining candidates could not be evaluated (no reachable feed / no prior articles); they stay unqualified and will be retried on a later run": "stopped after {n} consecutive batches with no evidence to judge — the remaining candidates could not be evaluated (no reachable feed / no prior articles); they stay unqualified and will be retried on a later run"
+  "stopped after {n} consecutive batches with no evidence to judge — the remaining candidates could not be evaluated (no reachable feed / no prior articles); they stay unqualified and will be retried on a later run": "stopped after {n} consecutive batches with no evidence to judge — the remaining candidates could not be evaluated (no reachable feed / no prior articles); they stay unqualified and will be retried on a later run",
+  "Enabled: topic-discovery queries will be sent to DuckDuckGo.": "Enabled: topic-discovery queries will be sent to DuckDuckGo.",
+  "Disabled (the default): no topic query leaves this machine.": "Disabled (the default): no topic query leaves this machine.",
+  "External topic discovery enabled.": "External topic discovery enabled.",
+  "External topic discovery disabled.": "External topic discovery disabled.",
+  "({text})": "({text})",
+  "Backup incomplete →": "Backup incomplete →",
+  "Incomplete — requested for this export but not in this folder: {members}": "Incomplete — requested for this export but not in this folder: {members}",
+  "Starts the large-data copy into this same folder. The encrypted volumes already in it are not touched.": "Starts the large-data copy into this same folder. The encrypted volumes already in it are not touched.",
+  "Copy the large-data files now": "Copy the large-data files now"
 }

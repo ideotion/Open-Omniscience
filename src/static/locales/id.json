@@ -5301,5 +5301,14 @@
   "airplane mode engaged — progress is saved, start again to resume": "mode pesawat aktif — kemajuan tersimpan, mulai lagi untuk melanjutkan",
   "paused: {reason} — progress is saved, start again once memory recovers": "dijeda: {reason} — kemajuan tersimpan, mulai lagi setelah memori pulih",
   "declined on this machine: {reason} — nothing was judged; restart the app with {env}=1 to run it anyway": "ditolak di mesin ini: {reason} — tidak ada yang dinilai; mulai ulang aplikasi dengan {env}=1 untuk tetap menjalankannya",
-  "stopped after {n} consecutive batches with no evidence to judge — the remaining candidates could not be evaluated (no reachable feed / no prior articles); they stay unqualified and will be retried on a later run": "dihentikan setelah {n} batch berturut-turut tanpa bukti untuk dinilai — kandidat yang tersisa tidak dapat dievaluasi (tidak ada feed yang terjangkau / tidak ada artikel sebelumnya); mereka tetap belum dinilai dan akan dicoba lagi pada proses berikutnya"
+  "stopped after {n} consecutive batches with no evidence to judge — the remaining candidates could not be evaluated (no reachable feed / no prior articles); they stay unqualified and will be retried on a later run": "dihentikan setelah {n} batch berturut-turut tanpa bukti untuk dinilai — kandidat yang tersisa tidak dapat dievaluasi (tidak ada feed yang terjangkau / tidak ada artikel sebelumnya); mereka tetap belum dinilai dan akan dicoba lagi pada proses berikutnya",
+  "Enabled: topic-discovery queries will be sent to DuckDuckGo.": "Aktif: kueri penemuan topik akan dikirim ke DuckDuckGo.",
+  "Disabled (the default): no topic query leaves this machine.": "Nonaktif (bawaan): tidak ada kueri topik yang meninggalkan mesin ini.",
+  "External topic discovery enabled.": "Penemuan topik eksternal diaktifkan.",
+  "External topic discovery disabled.": "Penemuan topik eksternal dinonaktifkan.",
+  "({text})": "({text})",
+  "Backup incomplete →": "Cadangan belum lengkap →",
+  "Incomplete — requested for this export but not in this folder: {members}": "Belum lengkap — diminta untuk ekspor ini tetapi tidak ada di folder ini: {members}",
+  "Starts the large-data copy into this same folder. The encrypted volumes already in it are not touched.": "Memulai penyalinan data besar ke folder yang sama ini. Volume terenkripsi yang sudah ada di dalamnya tidak disentuh.",
+  "Copy the large-data files now": "Salin data besar sekarang"
 }

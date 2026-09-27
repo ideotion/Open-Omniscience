@@ -5301,5 +5301,14 @@
   "airplane mode engaged — progress is saved, start again to resume": "飞行模式已开启 — 进度已保存，再次开始即可继续",
   "paused: {reason} — progress is saved, start again once memory recovers": "已暂停：{reason} — 进度已保存，内存恢复后再次开始",
   "declined on this machine: {reason} — nothing was judged; restart the app with {env}=1 to run it anyway": "在此机器上被拒绝：{reason} — 未作任何评判；如仍要运行，请以 {env}=1 重启应用",
-  "stopped after {n} consecutive batches with no evidence to judge — the remaining candidates could not be evaluated (no reachable feed / no prior articles); they stay unqualified and will be retried on a later run": "连续 {n} 批均无可评判的证据，已停止 — 其余候选无法评估（没有可访问的订阅源／没有既往文章）；它们保持未审核状态，将在之后的运行中重试"
+  "stopped after {n} consecutive batches with no evidence to judge — the remaining candidates could not be evaluated (no reachable feed / no prior articles); they stay unqualified and will be retried on a later run": "连续 {n} 批均无可评判的证据，已停止 — 其余候选无法评估（没有可访问的订阅源／没有既往文章）；它们保持未审核状态，将在之后的运行中重试",
+  "Enabled: topic-discovery queries will be sent to DuckDuckGo.": "已启用：主题发现查询将发送至 DuckDuckGo。",
+  "Disabled (the default): no topic query leaves this machine.": "已停用（默认）：任何主题查询都不会离开本机。",
+  "External topic discovery enabled.": "外部主题发现已启用。",
+  "External topic discovery disabled.": "外部主题发现已停用。",
+  "({text})": "（{text}）",
+  "Backup incomplete →": "备份不完整 →",
+  "Incomplete — requested for this export but not in this folder: {members}": "不完整——本次导出已请求但此文件夹中没有：{members}",
+  "Starts the large-data copy into this same folder. The encrypted volumes already in it are not touched.": "将大数据复制到同一个文件夹中。其中已有的加密卷不会被改动。",
+  "Copy the large-data files now": "立即复制大数据"
 }

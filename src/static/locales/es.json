@@ -5301,5 +5301,14 @@
   "airplane mode engaged — progress is saved, start again to resume": "modo avión activado — el progreso está guardado, vuelva a iniciar para continuar",
   "paused: {reason} — progress is saved, start again once memory recovers": "en pausa: {reason} — el progreso está guardado, vuelva a iniciar cuando se recupere la memoria",
   "declined on this machine: {reason} — nothing was judged; restart the app with {env}=1 to run it anyway": "rechazado en esta máquina: {reason} — no se juzgó nada; reinicie la aplicación con {env}=1 para ejecutarlo de todos modos",
-  "stopped after {n} consecutive batches with no evidence to judge — the remaining candidates could not be evaluated (no reachable feed / no prior articles); they stay unqualified and will be retried on a later run": "detenido tras {n} lotes consecutivos sin evidencia que juzgar — los candidatos restantes no pudieron evaluarse (ningún feed accesible / ningún artículo previo); siguen sin juzgar y se reintentarán en una ejecución posterior"
+  "stopped after {n} consecutive batches with no evidence to judge — the remaining candidates could not be evaluated (no reachable feed / no prior articles); they stay unqualified and will be retried on a later run": "detenido tras {n} lotes consecutivos sin evidencia que juzgar — los candidatos restantes no pudieron evaluarse (ningún feed accesible / ningún artículo previo); siguen sin juzgar y se reintentarán en una ejecución posterior",
+  "Enabled: topic-discovery queries will be sent to DuckDuckGo.": "Activado: las consultas de descubrimiento de temas se enviarán a DuckDuckGo.",
+  "Disabled (the default): no topic query leaves this machine.": "Desactivado (predeterminado): ninguna consulta de tema sale de este equipo.",
+  "External topic discovery enabled.": "Descubrimiento externo por tema activado.",
+  "External topic discovery disabled.": "Descubrimiento externo por tema desactivado.",
+  "({text})": "({text})",
+  "Backup incomplete →": "Copia incompleta →",
+  "Incomplete — requested for this export but not in this folder: {members}": "Incompleta — solicitado para esta exportación pero no está en esta carpeta: {members}",
+  "Starts the large-data copy into this same folder. The encrypted volumes already in it are not touched.": "Inicia la copia de los datos grandes en esta misma carpeta. Los volúmenes cifrados que ya contiene no se tocan.",
+  "Copy the large-data files now": "Copiar ahora los datos grandes"
 }

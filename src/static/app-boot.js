@@ -77,6 +77,14 @@
       // "Corpus size" line stayed English in fr while the pills beside it translated.
       // Repaints from the CACHED payload, so a switch costs no request.
       try { if (typeof _renderPatternsGate === "function") _renderPatternsGate(); } catch (_e) {}
+      // Settings → Advanced → Safety (the 2026-09-27 re-walk, U-2 and H-2): the at-rest
+      // encryption lines and the topic-discovery result line are composed at render time
+      // through t() inside `data-i18n-dyn` hosts, so the walker never repaints them --
+      // measured: "المجموعة: مشفّر" stayed Arabic on an English page after ar→en. Both
+      // redraw from what they last showed (a doctor reading, a saved on/off) and never
+      // fetch; each returns at once if it has never been drawn.
+      try { if (typeof _renderAtRest === "function") _renderAtRest(); } catch (_e) {}
+      try { if (typeof _paintDiscoveryResult === "function") _paintDiscoveryResult(); } catch (_e) {}
       // Settings → Advanced → Quality gates is the same class (click-through S3): its
       // headline, scope sentence, admission rows, floor notes and backlog line are t()
       // and tf() frames welded to measured numbers at render time, so after a switch

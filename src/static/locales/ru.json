@@ -5301,5 +5301,14 @@
   "airplane mode engaged — progress is saved, start again to resume": "включён режим полёта — прогресс сохранён, запустите снова, чтобы продолжить",
   "paused: {reason} — progress is saved, start again once memory recovers": "приостановлено: {reason} — прогресс сохранён, запустите снова, когда память освободится",
   "declined on this machine: {reason} — nothing was judged; restart the app with {env}=1 to run it anyway": "отклонено на этой машине: {reason} — ничего не оценено; перезапустите приложение с {env}=1, чтобы всё равно выполнить",
-  "stopped after {n} consecutive batches with no evidence to judge — the remaining candidates could not be evaluated (no reachable feed / no prior articles); they stay unqualified and will be retried on a later run": "остановлено после {n} пакетов подряд без данных для оценки — оставшихся кандидатов оценить не удалось (нет доступной ленты / нет прежних статей); они остаются непроверенными и будут повторены при следующем запуске"
+  "stopped after {n} consecutive batches with no evidence to judge — the remaining candidates could not be evaluated (no reachable feed / no prior articles); they stay unqualified and will be retried on a later run": "остановлено после {n} пакетов подряд без данных для оценки — оставшихся кандидатов оценить не удалось (нет доступной ленты / нет прежних статей); они остаются непроверенными и будут повторены при следующем запуске",
+  "Enabled: topic-discovery queries will be sent to DuckDuckGo.": "Включено: запросы поиска тем будут отправляться в DuckDuckGo.",
+  "Disabled (the default): no topic query leaves this machine.": "Выключено (по умолчанию): ни один запрос по теме не покидает этот компьютер.",
+  "External topic discovery enabled.": "Внешний поиск по теме включён.",
+  "External topic discovery disabled.": "Внешний поиск по теме выключен.",
+  "({text})": "({text})",
+  "Backup incomplete →": "Резервное копирование не завершено →",
+  "Incomplete — requested for this export but not in this folder: {members}": "Не завершено — запрошено для этого экспорта, но отсутствует в этой папке: {members}",
+  "Starts the large-data copy into this same folder. The encrypted volumes already in it are not touched.": "Запускает копирование больших данных в эту же папку. Зашифрованные тома, которые уже в ней, не затрагиваются.",
+  "Copy the large-data files now": "Скопировать большие данные сейчас"
 }

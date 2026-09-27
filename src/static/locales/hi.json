@@ -5301,5 +5301,14 @@
   "airplane mode engaged — progress is saved, start again to resume": "हवाई जहाज़ मोड चालू — प्रगति सहेजी गई है, जारी रखने के लिए फिर से शुरू करें",
   "paused: {reason} — progress is saved, start again once memory recovers": "रुका हुआ: {reason} — प्रगति सहेजी गई है, मेमोरी ठीक होने पर फिर से शुरू करें",
   "declined on this machine: {reason} — nothing was judged; restart the app with {env}=1 to run it anyway": "इस मशीन पर अस्वीकृत: {reason} — कुछ भी जाँचा नहीं गया; फिर भी चलाने के लिए ऐप को {env}=1 के साथ पुनः आरंभ करें",
-  "stopped after {n} consecutive batches with no evidence to judge — the remaining candidates could not be evaluated (no reachable feed / no prior articles); they stay unqualified and will be retried on a later run": "लगातार {n} बैचों में जाँचने लायक कोई प्रमाण न मिलने पर रोका गया — शेष उम्मीदवारों का मूल्यांकन नहीं हो सका (कोई पहुँच योग्य फ़ीड नहीं / कोई पिछला लेख नहीं); वे अभी नहीं परखे गए रहेंगे और बाद के रन में फिर आज़माए जाएँगे"
+  "stopped after {n} consecutive batches with no evidence to judge — the remaining candidates could not be evaluated (no reachable feed / no prior articles); they stay unqualified and will be retried on a later run": "लगातार {n} बैचों में जाँचने लायक कोई प्रमाण न मिलने पर रोका गया — शेष उम्मीदवारों का मूल्यांकन नहीं हो सका (कोई पहुँच योग्य फ़ीड नहीं / कोई पिछला लेख नहीं); वे अभी नहीं परखे गए रहेंगे और बाद के रन में फिर आज़माए जाएँगे",
+  "Enabled: topic-discovery queries will be sent to DuckDuckGo.": "सक्षम: विषय-खोज क्वेरी DuckDuckGo को भेजी जाएँगी।",
+  "Disabled (the default): no topic query leaves this machine.": "अक्षम (डिफ़ॉल्ट): कोई भी विषय क्वेरी इस मशीन से बाहर नहीं जाती।",
+  "External topic discovery enabled.": "बाहरी विषय-खोज सक्षम की गई।",
+  "External topic discovery disabled.": "बाहरी विषय-खोज अक्षम की गई।",
+  "({text})": "({text})",
+  "Backup incomplete →": "बैकअप अधूरा →",
+  "Incomplete — requested for this export but not in this folder: {members}": "अधूरा — इस निर्यात के लिए माँगा गया, पर इस फ़ोल्डर में नहीं: {members}",
+  "Starts the large-data copy into this same folder. The encrypted volumes already in it are not touched.": "बड़े डेटा की कॉपी इसी फ़ोल्डर में शुरू करता है। इसमें पहले से मौजूद एन्क्रिप्टेड वॉल्यूम को छुआ नहीं जाता।",
+  "Copy the large-data files now": "बड़ा डेटा अभी कॉपी करें"
 }

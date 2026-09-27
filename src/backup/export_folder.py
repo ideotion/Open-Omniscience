@@ -33,13 +33,30 @@ deletes an existing path.
 
 from __future__ import annotations
 
+import json
+import logging
 import os
 from datetime import datetime
 from pathlib import Path
+from typing import Any
+
+_LOG = logging.getLogger(__name__)
 
 #: The spelled-out token (Q212 = c). One constant so the rename the ledger still
 #: expects for the app's name is one edit here.
 BACKUP_FOLDER_TOKEN = "OpenOmniscience"
+
+#: What the operator ASKED this export to hold, written into the dated folder the moment
+#: it is allocated (the 2026-09-27 re-walk, J-1). The export's second phase -- the
+#: large-data copy -- is started by the page once the corpus phase is done, so a page
+#: reload between the two phases meant the copy never started, and nothing anywhere
+#: remembered it had been asked for: the reopened dialog read "Backup complete" over a
+#: folder with no models in it. With the request on the drive beside the backup,
+#: :func:`src.backup.export_summary.export_facts` compares it with what is actually there
+#: and names what is missing. A record, never a gate: nothing reads it to decide what
+#: to write.
+REQUEST_NAME = "oo-export-request.json"
+REQUEST_SCHEMA = "oo-export-request-1"
 
 #: ``YYYYMMDDHHMM_OpenOmniscience_Backup``. The suffix is part of the ruled name.
 BACKUP_FOLDER_SUFFIX = "Backup"
@@ -128,3 +145,70 @@ def allocate_export_folder(
         f"Cannot create an export folder in {base}: "
         f"{folder_name(when)} and {_MAX_ORDINAL - 1} numbered siblings already exist."
     )
+
+
+def write_export_request(
+    folder: str | os.PathLike[str],
+    *,
+    corpus: bool,
+    categories: list[str],
+    inside: bool = False,
+) -> Path | None:
+    """Record, inside a freshly allocated export folder, what the export was asked for.
+
+    ``categories`` are the large-data categories the operator ticked; ``inside`` says
+    they ride INSIDE the encrypted artifact rather than being copied beside it, in
+    which case no separate copy is owed. Only known categories are kept, in the order
+    given, so a stray value from a client can never name a member that does not exist.
+
+    NEVER RAISES. The record is an aid to reporting, not part of the backup: a drive
+    that refuses this small write will refuse the volumes a moment later, and that
+    failure is the one worth reporting. Returns the path, or ``None`` when it could
+    not be written (logged).
+    """
+    from src.backup.folder_backup import _CATEGORIES
+
+    d = Path(folder)
+    seen: list[str] = []
+    for c in categories or []:
+        if c in _CATEGORIES and c not in seen:
+            seen.append(c)
+    record = {
+        "schema": REQUEST_SCHEMA,
+        "requested_at": datetime.now().astimezone().isoformat(timespec="seconds"),
+        "corpus": bool(corpus),
+        "categories": seen,
+        "inside": bool(inside) and bool(corpus) and bool(seen),
+    }
+    p = d / REQUEST_NAME
+    tmp = d / (REQUEST_NAME + ".oopart")
+    try:
+        tmp.write_text(json.dumps(record, indent=2), encoding="utf-8")
+        os.replace(tmp, p)
+    except OSError:
+        _LOG.warning("export folder: could not record the request in %s", d, exc_info=True)
+        return None
+    return p
+
+
+def read_export_request(folder: str | os.PathLike[str]) -> dict[str, Any] | None:
+    """The request recorded by :func:`write_export_request`, or ``None``.
+
+    ``None`` for a folder written before the record existed, or one whose record is
+    unreadable: in both cases what was asked for is UNKNOWN, which the caller must
+    report as unknown rather than as "nothing was asked for".
+    """
+    p = Path(folder) / REQUEST_NAME
+    try:
+        raw = json.loads(p.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if not isinstance(raw, dict) or raw.get("schema") != REQUEST_SCHEMA:
+        return None
+    cats = raw.get("categories")
+    return {
+        "corpus": bool(raw.get("corpus")),
+        "categories": [str(c) for c in cats] if isinstance(cats, list) else [],
+        "inside": bool(raw.get("inside")),
+        "requested_at": raw.get("requested_at"),
+    }

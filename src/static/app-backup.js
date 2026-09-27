@@ -118,8 +118,12 @@
         // run itself ended on, built from the same server-side facts rather than from a
         // remembered sentence.
         // dir="ltr": a path is left-to-right data, and inside the Arabic dialog its
-        // leading slash was drawn at the far end (J3).
-        prog.innerHTML = `<b>${esc(t("Backup complete →"))}</b> <span dir="ltr" style="overflow-wrap:anywhere">${esc(dest)}</span> (${esc(t("last completed export"))})`;
+        // leading slash was drawn at the far end (J3). The brackets are the LOCALE's, from
+        // a keyed frame: welded ASCII ones read "(上次已完成的导出)" in Chinese (J-3).
+        const tfb = (window.OOI18N && OOI18N.tf)
+          ? OOI18N.tf
+          : ((str, vars) => str.replace(/\{(\w+)\}/g, (m, k) => (vars && vars[k] != null) ? String(vars[k]) : m));
+        prog.innerHTML = `<b>${esc(t("Backup complete →"))}</b> <span dir="ltr" style="overflow-wrap:anywhere">${esc(dest)}</span> ${esc(tfb("({text})", { text: t("last completed export") }))}`;
         if (dest) {
           try {
             let facts = await api("/api/backup/export-summary?dir=" + encodeURIComponent(dest));
@@ -136,6 +140,12 @@
               }
             }
             _uxRenderExportPanel(facts, t);
+            // J-1: a folder missing a member the export was asked for is not a completed
+            // backup, whatever the job that last wrote into it reported.
+            const miss = (facts && facts.missing) || {};
+            if (miss.corpus || (miss.categories || []).length) {
+              prog.innerHTML = `<b>${esc(t("Backup incomplete →"))}</b> <span dir="ltr" style="overflow-wrap:anywhere">${esc(dest)}</span>`;
+            }
           } catch (e) { /* best-effort: the completion line stands on its own */ }
         }
       }
@@ -276,7 +286,38 @@
       // dialog is not a toast.
       const verdictCls = verify.state === "verified" ? "" : (verify.state === "not_held" ? "muted" : "");
       const verdictCol = (verify.state === "verified" || verify.state === "not_held") ? "" : "color:var(--err);";
-      host.innerHTML =
+      // INCOMPLETE (J-1): what this export was asked for and the folder does not hold,
+      // read by the server from the request recorded when the folder was made. It leads
+      // the panel, above the verify verdict, because a clean "Verified" over a backup
+      // missing a member the operator ticked reads as a finished export -- and the
+      // missing large-data files get a button that copies them into this same folder.
+      const miss = facts.missing || {};
+      const owed = miss.categories || [];
+      const lost = [];
+      if (miss.corpus) lost.push(t("Corpus"));
+      if (owed.length) {
+        // The inventory's own member list names the tick each category came from, so
+        // "models" + "hf_models" read as the one "LLM models" the operator ticked.
+        const members = (typeof _uxInv !== "undefined" && _uxInv && _uxInv.members) || [
+          { label: "LLM models", categories: ["models", "hf_models"] },
+          { label: "Offline maps", categories: ["osm_regions"] },
+          { label: "Wikipedia dumps", categories: ["wiki_dumps"] },
+        ];
+        for (const m of members) {
+          if ((m.categories || []).some((c) => owed.includes(c))) lost.push(t(m.label));
+        }
+        for (const c of owed) {
+          if (!members.some((m) => (m.categories || []).includes(c))) lost.push(c);
+        }
+      }
+      const incomplete = !lost.length ? ""
+        : `<div class="ux-incomplete" style="margin-top:8px;color:var(--err)">` +
+          `<b>${esc(tf("Incomplete — requested for this export but not in this folder: {members}", { members: lost.join(" · ") }))}</b>` +
+          (owed.length
+            ? `<div style="margin-top:4px"><button type="button" class="secondary" data-ux-complete title="${esc(t("Starts the large-data copy into this same folder. The encrypted volumes already in it are not touched."))}">${esc(t("Copy the large-data files now"))}</button></div>`
+            : "") +
+          `</div>`;
+      host.innerHTML = incomplete +
         `<div class="ux-verdict ${verdictCls}" style="margin-top:8px;${verdictCol}"${_uxVerifyDetail(verify) ? ` title="${esc(_uxVerifyDetail(verify))}"` : ""}>${esc(_uxVerifySentence(verify, t))}</div>` +
         `<div style="margin-top:6px;display:flex;flex-direction:column;gap:2px;font-size:12px">${rows.join("")}</div>` +
         `<div class="card-caveat" style="margin-top:6px;font-size:11px">${esc(t("Every export writes a new dated folder and every volume in it: nothing is reused from an earlier backup, so this folder's bytes were all written by this one pass."))}</div>` +
@@ -285,6 +326,9 @@
           : (facts.summary_error
             ? `<div style="color:var(--err);margin-top:4px;font-size:11px;overflow-wrap:anywhere">${esc(t("The backup is written, but its summary file could not be:"))} ${esc(facts.summary_error)}</div>`
             : ""));
+      // A listener, not an inline handler: the button is re-drawn on every repaint.
+      const again = host.querySelector ? host.querySelector("[data-ux-complete]") : null;
+      if (again) again.addEventListener("click", () => _uxCompleteExport(again));
     }
 
     // The verify verdict as ONE sentence. The five not-verified cases stay apart: "off",
@@ -382,7 +426,7 @@
             ? parts.map(([k, x]) => ooLabelText(k, `${files(x.count || 0)} · ${humanBytes(x.bytes || 0)}`)).join(" · ")
             : "");
           const state = (offerable && (d.count || 0) > 0) ? "checked" : "disabled";
-          return `<label class="switch" style="margin:0"${title ? ` title="${esc(title)}"` : ""}><input type="checkbox" id="ux-c-${id}" data-cats="${esc((d.categories || []).join(","))}" ${state}> ${esc(label)} <span class="muted">(${esc(files(d.count || 0))} · ${humanBytes(d.bytes || 0)})</span></label>`;
+          return `<label class="switch" style="margin:0"${title ? ` title="${esc(title)}"` : ""}><input type="checkbox" id="ux-c-${id}" data-cats="${esc((d.categories || []).join(","))}" ${state}> ${esc(label)} <span class="muted">${esc(tf("({text})", { text: `${files(d.count || 0)} · ${humanBytes(d.bytes || 0)}` }))}</span></label>`;
         };
         // ONE ordered list from the server drives the rows AND the categories each one
         // exports (`data-cats`), so a lane that lands later becomes a row with a real
@@ -403,12 +447,13 @@
         // asks for a passphrase when the corpus is among them, so a corpus-less export
         // restores exactly as it is written.
         box.innerHTML =
-          `<label class="switch" style="margin:0"><input type="checkbox" id="ux-c-corpus" checked> ${esc(t("Corpus"))} <span class="muted">(${esc([
+          `<label class="switch" style="margin:0"><input type="checkbox" id="ux-c-corpus" checked> ${esc(t("Corpus"))} <span class="muted">${esc(tf("({text})", { text: [
             b.articles === 1 ? tf("{n} article", { n: fmtNum(1, 0) }) : tf("{n} articles", { n: fmtNum(b.articles || 0, 0) }),
             b.sources === 1 ? tf("{n} source", { n: fmtNum(1, 0) }) : tf("{n} sources", { n: fmtNum(b.sources || 0, 0) }),
             b.dates === 1 ? tf("{n} date", { n: fmtNum(1, 0) }) : tf("{n} dates", { n: fmtNum(b.dates || 0, 0) }),
             b.keywords === 1 ? tf("{n} keyword", { n: fmtNum(1, 0) }) : tf("{n} keywords", { n: fmtNum(b.keywords || 0, 0) }),
-          ].join(" · "))} · ${humanBytes(c.bytes || 0)})</span></label>` +
+            humanBytes(c.bytes || 0),
+          ].join(" · ") }))}</span></label>` +
           members.map((m) => opt(m.key, t(m.label), m)).join("") +
           // S6.2: the same three categories, one artifact instead of two things. Not a
           // better option -- a different trade, so it is a choice and the hover says what
@@ -769,7 +814,13 @@
       if (!dest) {
         prog.innerHTML = `<span class="muted">${esc(t("Preparing the export folder…"))}</span>`;
         try {
-          const made = await api("/api/backup/export-folder", { method: "POST", body: JSON.stringify({ parent }) });
+          // What this export is ASKED to hold rides the allocation, and the server records
+          // it in the new folder (J-1): the large-data copy is started from THIS page once
+          // the corpus phase is done, so a reload in between left the copy unstarted with
+          // nothing anywhere remembering it was wanted. The reopened panel now compares
+          // the record with the folder and names what is missing.
+          const made = await api("/api/backup/export-folder", { method: "POST", body: JSON.stringify({
+            parent, corpus: wantCorpus, categories: blobs, inside }) });
           dest = made.dir;
         } catch (e) {
           prog.innerHTML = `<span style="color:var(--err)">${esc(t("Could not create the export folder:"))} ${esc(e.message || e)}</span>`;
@@ -856,10 +907,58 @@
       try {
         const written = await api("/api/backup/export-summary", { method: "POST", body: JSON.stringify({ dir: dest }) });
         _uxRenderExportPanel({ ...(written.facts || {}), summary_path: written.summary_path }, t);
+        // The folder, not this page, has the last word on whether it is complete (J-1).
+        const miss = (written.facts && written.facts.missing) || {};
+        if (miss.corpus || (miss.categories || []).length) {
+          prog.innerHTML = `<b>${esc(t("Backup incomplete →"))}</b> <span dir="ltr" style="overflow-wrap:anywhere">${esc(dest)}</span>`;
+        }
       } catch (e) {
         if (sumHost) sumHost.innerHTML = `<div style="color:var(--err);margin-top:8px">${esc(t("The backup is written, but its summary file could not be:"))} ${esc(e.message || e)}</div>`;
         console.error("ux summary", e);
       }
+    }
+
+    // Finish an INCOMPLETE export (J-1): copy the large-data files its folder is missing
+    // INTO THAT SAME FOLDER, which is exactly the phase _uxRun would have started had the
+    // page not been reloaded -- same endpoint, same destination guard, same completion.
+    // What to copy comes from the panel's facts, i.e. from the request the server
+    // recorded in the folder, never from the checklist, whose ticks may have changed.
+    async function _uxCompleteExport(btn) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const facts = _uxExportFacts || {};
+      const dest = facts.destination;
+      const cats = ((facts.missing || {}).categories || []).slice();
+      if (!dest || !cats.length) return;
+      const prog = document.getElementById("ux-progress");
+      const bar = document.getElementById("ux-bar");
+      const pauseBtn = document.getElementById("ux-pause");
+      const runBtn = document.getElementById("ux-run");
+      if (btn) btn.disabled = true;
+      if (runBtn) runBtn.disabled = true;
+      _uxExportDir = dest;
+      _uxExportIncluded = { corpus: !!facts.corpus_included, blobs: cats };
+      const sumHost = document.getElementById("ux-summary");
+      if (sumHost) sumHost.innerHTML = "";
+      if (pauseBtn) { pauseBtn.style.display = ""; pauseBtn.disabled = false; pauseBtn.dataset.mode = "pause"; pauseBtn.textContent = t("Pause"); }
+      try {
+        _uxPhase = "folder";
+        const s2 = await _uxStartThenPoll(
+          () => api("/api/backup/folder/start", { method: "POST", body: JSON.stringify({ dest, categories: cats }) }),
+          "/api/backup/folder/status", "folder", { bar, label: prog, prefix: t("Large data") },
+          { dest });
+        if (s2 && s2.state === "paused") { _uxShowPaused(prog, bar, pauseBtn, t); if (runBtn) runBtn.disabled = false; return; }
+        _uxPhase = null;
+        if (bar) bar.style.display = "none";
+        if (pauseBtn) pauseBtn.style.display = "none";
+        await _uxFinishExport(prog, dest, t);
+      } catch (e) {
+        _uxPhase = null;
+        if (bar) bar.style.display = "none";
+        if (pauseBtn) pauseBtn.style.display = "none";
+        prog.innerHTML = `<span style="color:var(--err)">${esc(t("Backup failed:"))} ${esc(ooServerText(e.message || e))}</span>`;
+        console.error("ux complete", e);
+      }
+      if (runBtn) runBtn.disabled = false;
     }
 
     // Paused ≠ complete (the paused-state label, field-test Item 9): show the honest state
@@ -3116,36 +3215,62 @@
         toast("Fetch mode saved.");
       } catch (e) { toast(_failMsg("Save failed: {error}", e), "err"); }
     }
+    //: The state the discovery result line last reported (null: nothing saved yet), so a
+    //: language switch can redraw it. The line is `data-i18n-dyn`: it is written through
+    //: t() in the active language, and the walker would otherwise cache that translated
+    //: text as "the English" and freeze it (the re-walk's H-2).
+    let _discoveryResultOn = null;
+    function _paintDiscoveryResult() {
+      const box = $("discovery-external-result");
+      if (!box || _discoveryResultOn === null) return;
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      // The disclosure of an egress is a consent string: it ships x12 like the box beside it.
+      box.textContent = _discoveryResultOn
+        ? t("Enabled: topic-discovery queries will be sent to DuckDuckGo.")
+        : t("Disabled (the default): no topic query leaves this machine.");
+    }
     async function saveDiscoveryExternal() {
       // ETH-02/RM-03: the one external-service call is an explicit, knowing opt-in.
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const on = $("discovery-external").checked;
       try {
         await api("/api/safety/settings",
           {method: "PUT", body: JSON.stringify({discovery_external_enabled: on})});
-        $("discovery-external-result").textContent = on
-          ? "Enabled: topic-discovery queries will be sent to DuckDuckGo."
-          : "Disabled (the default): no topic query leaves this machine.";
-        toast(on ? "External topic discovery enabled." : "External topic discovery disabled.");
+        _discoveryResultOn = on;
+        _paintDiscoveryResult();
+        toast(on ? t("External topic discovery enabled.") : t("External topic discovery disabled."));
       } catch (e) {
         $("discovery-external").checked = !on;  // revert the visual state on failure
         toast(_failMsg("Save failed: {error}", e), "err");
       }
     }
     // -- At-rest encryption (PR-E): doctor attestation + one-way encrypt ----- //
+    //: The last /api/system/doctor reading the at-rest lines were drawn from, so a language
+    //: switch redraws them from it without a request (the re-walk's U-2). #atrest-state is
+    //: `data-i18n-dyn`: its lines are composed at render time in the active language, and
+    //: the walker would cache "المجموعة: " as the English and never let it go.
+    let _atRestDoc = null;
     async function loadAtRestState() {
       const box = $("atrest-state"); if (!box) return;
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      if (!_atRestDoc) box.textContent = t("Checking…");
       try {
-        const d = await api("/api/system/doctor");
-        const word = (s) => s.state === "encrypted" ? t("Encrypted (SQLCipher 4)")
-                          : s.state === "plaintext" ? t("NOT encrypted") : t("not created yet");
-        // Each line on the locale's label frame (R2), not an English colon.
-        box.innerHTML =
-          `<div>${ooLabelHtml(esc(t("Corpus")), `<b>${esc(word(d.corpus))}</b>`)}` +
-          (d.corpus.cipher ? ` <span class="muted">${esc(d.corpus.cipher)}</span>` : "") + `</div>` +
-          `<div>${ooLabelHtml(esc(t("Custody log")), `<b>${esc(word(d.custody_log))}</b>`)}</div>`;
-        $("atrest-encrypt").style.display = d.corpus.state === "plaintext" ? "" : "none";
+        _atRestDoc = await api("/api/system/doctor");
+        _renderAtRest();
       } catch (e) { box.textContent = e.message; }
+    }
+    function _renderAtRest() {
+      const box = $("atrest-state"), d = _atRestDoc;
+      if (!box || !d) return;
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const word = (s) => s.state === "encrypted" ? t("Encrypted (SQLCipher 4)")
+                        : s.state === "plaintext" ? t("NOT encrypted") : t("not created yet");
+      // Each line on the locale's label frame (R2), not an English colon.
+      box.innerHTML =
+        `<div>${ooLabelHtml(esc(t("Corpus")), `<b>${esc(word(d.corpus))}</b>`)}` +
+        (d.corpus.cipher ? ` <span class="muted">${esc(d.corpus.cipher)}</span>` : "") + `</div>` +
+        `<div>${ooLabelHtml(esc(t("Custody log")), `<b>${esc(word(d.custody_log))}</b>`)}</div>`;
+      $("atrest-encrypt").style.display = d.corpus.state === "plaintext" ? "" : "none";
     }
     async function encryptCorpus(btn) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);

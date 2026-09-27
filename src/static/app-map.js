@@ -282,10 +282,18 @@
         return;
       }
       _fpState.current = d.path;
-      $("fp-path").textContent = d.path;
+      // A path and a folder name are LEFT-TO-RIGHT data (the 2026-09-27 re-walk, J-2):
+      // inside the Arabic dialog the path's leading slash was drawn at the far end, and
+      // "202609271124_OpenOmniscience_Backup_2" read "OpenOmniscience_Backup_2_2026…" --
+      // a dated export that does not exist on disk, on the screen that lists earlier
+      // exports. Each rides an LTR <bdi>, so it keeps its own order while the line keeps
+      // the dialog's alignment. overflow-wrap:anywhere on the rows (J-4): an
+      // underscore-joined name has no break opportunity, so at 375 px it ran into the
+      // list's sideways scroll and two same-minute exports read identically.
+      $("fp-path").innerHTML = `<bdi dir="ltr">${esc(d.path)}</bdi>`;
       const rows = [];
       if (d.parent) rows.push(`<div class="fp-row" data-path="${esc(d.parent)}" style="padding:6px 10px;cursor:pointer;border-bottom:1px solid var(--line)">⬆ ${esc(t("Parent folder"))}</div>`);
-      for (const e of (d.entries || [])) rows.push(`<div class="fp-row" data-path="${esc(e.path)}" style="padding:6px 10px;cursor:pointer;border-bottom:1px solid var(--line)">📁 ${esc(e.name)}</div>`);
+      for (const e of (d.entries || [])) rows.push(`<div class="fp-row" data-path="${esc(e.path)}" style="padding:6px 10px;cursor:pointer;border-bottom:1px solid var(--line);overflow-wrap:anywhere">📁 <bdi dir="ltr">${esc(e.name)}</bdi></div>`);
       if (!(d.entries || []).length) rows.push(`<div class="muted" style="padding:10px">${esc(t("No sub-folders here."))}</div>`);
       $("fp-list").innerHTML = rows.join("");
       $("fp-list").querySelectorAll(".fp-row").forEach(el => el.addEventListener("click", () => _fpNav(el.dataset.path)));
