@@ -276,6 +276,14 @@
     const _FEED_MARK_KEY = "oo.feed.mark";     // the cursor reached, per order
     const _FEED_ORDER_KEY = "oo.feed.order";
     let _feedBusy = false, _feedDone = false, _feedHeld = null;
+    // What the walk has DRAWN, so a language switch repaints the Feed without a request:
+    // every row appended so far, the last page (its method + caveat), and the last
+    // failure's message (null when the last page landed). The controls, the held-back
+    // line, "Load more" and each card's chrome are written with t() in the reader's
+    // language, and the DOM walker records a node's FIRST-SEEN text as "the English", so
+    // after a switch that started in French they stayed French in ar, zh and en (re-walk
+    // T-3, found again on this tab by the batch review). See _repaintFeed.
+    let _feedRows = [], _feedLast = null, _feedErr = null;
     // Bumped by every restart (reshuffle, start-from-the-top, order switch). A page
     // that was already in flight when one of those happened belongs to the ORDER the
     // reader just left, so it is discarded on arrival rather than appended.
@@ -326,6 +334,7 @@
       // flight without the two of them racing to append.
       _feedGen++; _feedBusy = false;
       _feedDone = false; _feedHeld = null;
+      _feedRows = []; _feedLast = null; _feedErr = null;
       const list = $("feed-list"); if (list) list.innerHTML = "";
       loadFeed(true);
     }
@@ -363,7 +372,7 @@
       const more = (a.excerpt_full || "").length > (a.excerpt || "").length;
       return `<article class="feed-card" data-aid="${a.id}">`
         + `<h3 class="feed-t"><a href="${esc(a.reader_url)}" target="_blank" rel="noopener">`
-        + `${esc(a.title) || '<span class="muted">(untitled)</span>'}</a></h3>`
+        + `${esc(a.title) || `<span class="muted">${esc(t("(untitled)"))}</span>`}</a></h3>`
         + `<div class="feed-meta muted">${esc(a.source || "")}`
         + (when ? ` · ${esc(when)}` : "")
         + (lang ? ` · ${ooLangCell(lang)}` : "")
@@ -417,25 +426,64 @@
         // make impossible, so this page is dropped instead.
         if (gen !== _feedGen) return;
         if (d.held_back) _feedHeld = d.held_back;
-        list.insertAdjacentHTML("beforeend", (d.results || []).map(_feedCard).join(""));
+        const rows = d.results || [];
+        list.insertAdjacentHTML("beforeend", rows.map(_feedCard).join(""));
+        for (const a of rows) _feedRows.push(a);
+        _feedLast = d; _feedErr = null;
         _feedSetMark(order, d.next_cursor || "");
         _feedDone = !d.has_more || !d.next_cursor;
         _feedNote(d);
-        if (more) {
-          more.innerHTML = _feedDone
-            ? `<div class="muted" style="margin:10px 0">${esc(t("That is the end of this pass."))}</div>`
-            : `<button class="tiny" onclick="loadFeed(false)">${esc(t("Load more"))}</button>`;
-        }
+        if (more) more.innerHTML = _feedMoreHtml();
       } catch (e) {
         // Same reason as the discard above: a page the reader has already navigated away
         // from must not report ITS failure over the walk that replaced it.
-        if (gen === _feedGen && more) {
-          more.innerHTML = `<div class="note err">${esc((e && e.message) || t("The feed could not load."))}</div>`;
+        if (gen === _feedGen) {
+          _feedErr = (e && e.message) || "";
+          if (more) more.innerHTML = _feedMoreHtml();
         }
       } finally {
         // Only the CURRENT walk may release the flag: a discarded page returning late
         // would otherwise clear the busy flag of the walk that replaced it.
         if (gen === _feedGen) _feedBusy = false;
+      }
+    }
+    // The line under the list, from what the walk last reached: the end of the pass, more
+    // to load, or the last failure (the server's own words, or the keyed fallback).
+    function _feedMoreHtml() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      if (_feedErr != null) return `<div class="note err">${esc(_feedErr || t("The feed could not load."))}</div>`;
+      return _feedDone
+        ? `<div class="muted" style="margin:10px 0">${esc(t("That is the end of this pass."))}</div>`
+        : `<button class="tiny" onclick="loadFeed(false)">${esc(t("Load more"))}</button>`;
+    }
+    // THE REPAINT, called from app-boot.js's ONE `oo:langchange` listener. Redraws the
+    // controls, the cards, the note and the line under the list from what the walk already
+    // holds -- NEVER a fetch, and nothing at all for a Feed that was never opened. A card
+    // the reader had expanded stays expanded: it is the same text, in a new frame.
+    function _repaintFeed() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const ctl = $("feed-controls"), list = $("feed-list"), more = $("feed-more");
+      if (!ctl || !ctl.children.length) return;
+      _feedControls();
+      if (list && _feedLast) {
+        const open = new Set();
+        list.querySelectorAll('.feed-x[data-open="1"]').forEach((p) => {
+          const c = p.closest(".feed-card"); if (c) open.add(c.getAttribute("data-aid"));
+        });
+        list.innerHTML = _feedRows.map(_feedCard).join("");
+        if (open.size) {
+          list.querySelectorAll(".feed-card").forEach((c) => {
+            if (!open.has(c.getAttribute("data-aid"))) return;
+            const b = c.querySelector('button[onclick^="_feedExpand"]');
+            if (b) _feedExpand(b);
+          });
+        }
+        _feedNote(_feedLast);
+      }
+      if (more) {
+        // A page in flight writes its own line when it lands, in the new language.
+        if (_feedBusy) more.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
+        else if (_feedLast || _feedErr != null) more.innerHTML = _feedMoreHtml();
       }
     }
 

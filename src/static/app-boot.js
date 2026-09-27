@@ -107,6 +107,10 @@
       // fetch, and nothing at all for a surface never drawn.
       try { if (typeof _renderHomeRecent === "function") _renderHomeRecent(); } catch (_e) {}
       try { if (typeof _renderHomeLatest === "function") _renderHomeLatest(); } catch (_e) {}
+      // The Feed tab is the same class, found by the review of that fix: its order
+      // controls, held-back line, "Load more" and card chrome stayed French in ar and zh.
+      // Redraws from the rows the walk holds; never a fetch, nothing for a Feed never opened.
+      try { if (typeof _repaintFeed === "function") _repaintFeed(); } catch (_e) {}
       try {
         const ct = $("collect-toggle");
         const st = ct && ct.getAttribute("data-collect-state");

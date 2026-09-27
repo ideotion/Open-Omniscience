@@ -3,7 +3,7 @@
  * at-a-glance strip's age note (H-1, P-5, T-4, U-1), the Home status line's agreement
  * (U-10), the "By channel" chips (U-8), the split-figure label (S-10), and the surfaces
  * that stayed in a previous language after a switch that started in a non-English locale
- * (T-3: Home "Most recent", Home "Latest", the Settings Collection toggle).
+ * (T-3: Home "Most recent", Home "Latest", the Settings Collection toggle, the Feed tab).
  *
  * Every function under test is EXTRACTED FROM THE SHIPPED SOURCE by name, and the
  * translations come from the REAL locale files -- the sibling-test convention (see
@@ -24,6 +24,7 @@ const STATIC = path.join(__dirname, "..", "src", "static");
 const HOME = fs.readFileSync(path.join(STATIC, "app-home.js"), "utf-8");
 const SOURCES = fs.readFileSync(path.join(STATIC, "app-sources.js"), "utf-8");
 const BOOT = fs.readFileSync(path.join(STATIC, "app-boot.js"), "utf-8");
+const CORE = fs.readFileSync(path.join(STATIC, "app-core.js"), "utf-8");
 const LOCALE = (code) => JSON.parse(fs.readFileSync(path.join(STATIC, "locales", code + ".json"), "utf-8"));
 const LANGS = ["ar", "bn", "de", "en", "es", "fr", "hi", "id", "ja", "pt", "ru", "zh"];
 
@@ -333,7 +334,7 @@ async function run() {
     assert(btn.getAttribute("data-collect-state") === "on", "state not updated");
   });
 
-  await test("T-3: the ONE oo:langchange listener redraws all three, guarded, never fetching", () => {
+  await test("T-3: the ONE oo:langchange listener redraws all four, guarded, never fetching", () => {
     const at = BOOT.indexOf('document.addEventListener("oo:langchange"');
     assert(at !== -1, "no oo:langchange listener");
     const body = BOOT.slice(at, BOOT.indexOf("\n    });", at));
@@ -341,6 +342,96 @@ async function run() {
     assert(/typeof _renderHomeLatest === "function"\) _renderHomeLatest\(\)/.test(body), "latest panel not repainted");
     assert(/getAttribute\("data-collect-state"\)/.test(body) && /_paintCollectToggle\(st === "on"\)/.test(body),
       "collection toggle not repainted from its own state");
+    assert(/typeof _repaintFeed === "function"\) _repaintFeed\(\)/.test(body), "the Feed tab not repainted");
+  });
+
+  // ========== T-3, found again by the batch review: the Feed tab repaints ========== //
+  // Reviewer's repro: cold in fr, open the Feed, switch live to ar then zh -> the order
+  // controls, the held-back line and "Load more" stayed French. The cards' own chrome
+  // ("Show less", the keyword hover) was the same class, measured in the same walk.
+  const feedSb = (I, els, extra) => sandbox(I, els, `
+    ${extract("ooLabelHtml", null, CORE)}
+    const _toneChip = () => "";
+    const ooLangCell = (c) => esc(c);
+    const expanded = this.expanded;
+    function _feedExpand(b) { expanded.push(b.aid); }
+    function _feedOrder() { return "shuffled"; }
+    let _feedBusy = false, _feedDone = false, _feedHeld = null;
+    let _feedRows = [], _feedLast = null, _feedErr = null;
+    ${extract("_feedControls", null, HOME)}
+    ${extract("_feedCard", null, HOME)}
+    ${extract("_feedNote", null, HOME)}
+    ${extract("_feedMoreHtml", null, HOME)}
+    ${extract("_repaintFeed", null, HOME)}
+    this.repaint = _repaintFeed;
+    this.set = (o) => {
+      if ("rows" in o) _feedRows = o.rows; if ("last" in o) _feedLast = o.last;
+      if ("held" in o) _feedHeld = o.held; if ("done" in o) _feedDone = o.done;
+      if ("err" in o) _feedErr = o.err; if ("busy" in o) _feedBusy = o.busy;
+    };
+  `, Object.assign({ expanded: [] }, extra || {}));
+  const feedEls = () => {
+    const list = makeEl();
+    // One card (aid 7) is open; the repaint must reopen it after redrawing.
+    list.querySelectorAll = (sel) => sel.indexOf('data-open="1"') !== -1
+      ? [{ closest: () => ({ getAttribute: () => "7" }) }]
+      : [{ getAttribute: () => "7", querySelector: () => ({ aid: "7" }) },
+         { getAttribute: () => "8", querySelector: () => ({ aid: "8" }) }];
+    const ctl = makeEl(); ctl.children = { length: 0 };
+    return { "feed-controls": ctl, "feed-note": makeEl(), "feed-list": list, "feed-more": makeEl() };
+  };
+  const ROWS = [
+    { id: 7, title: "A", reader_url: "/r/7", source: "S", published_at: "2026-06-01", language: "fr",
+      keywords: [{ term: "vote", count: 2 }], excerpt: "short", excerpt_full: "short and long" },
+    { id: 8, title: "", reader_url: "/r/8", source: "S", keywords: [], excerpt: "x", excerpt_full: "x" },
+  ];
+  const PAGE = { method: "A fixed order chosen by a seed — it uses each article's id and that seed and nothing else. No reading history is kept or consulted.",
+    caveat: "c", results: ROWS };
+
+  await test("T-3: the Feed painted in fr repaints in ar and zh from what it drew, no fetch", () => {
+    const I = makeI18n("fr");
+    const els = feedEls();
+    const sb = feedSb(I, els);
+    // Never opened: the listener must leave every node alone.
+    sb.repaint();
+    assert(els["feed-controls"].innerHTML === "" && els["feed-list"].innerHTML === "" && els["feed-more"].innerHTML === "",
+      "a Feed never opened was painted");
+    els["feed-controls"].children.length = 1;
+    sb.set({ rows: ROWS, last: PAGE, held: { source_not_qualified: 83 }, done: false, err: null });
+    sb.repaint();
+    const fr = LOCALE("fr");
+    assert(els["feed-controls"].innerHTML.indexOf(esc(fr["Shuffled"])) !== -1, "fr controls: " + els["feed-controls"].innerHTML);
+    for (const code of ["ar", "zh"]) {
+      I.use(code);
+      sb.expanded.length = 0;
+      sb.repaint();
+      const L = LOCALE(code);
+      const ctl = els["feed-controls"].innerHTML, list = els["feed-list"].innerHTML;
+      assert(ctl.indexOf(esc(fr["Shuffled"])) === -1 && ctl.indexOf(esc(fr["Reshuffle"])) === -1, code + ": French left in the controls: " + ctl);
+      for (const k of ["Shuffled", "Newest first", "Reshuffle", "Start from the top", "Draw a new order and start again from the top."]) {
+        assert(ctl.indexOf(esc(L[k])) !== -1, code + ": controls miss " + k + ": " + ctl);
+      }
+      assert(els["feed-note"].innerHTML.indexOf(esc(L["{n} held back: their source has not been qualified yet"].replace("{n}", "83"))) !== -1,
+        code + ": held-back line not repainted: " + els["feed-note"].innerHTML);
+      assert(els["feed-more"].innerHTML.indexOf(esc(L["Load more"])) !== -1, code + ": 'Load more' not repainted: " + els["feed-more"].innerHTML);
+      assert(list.indexOf(esc(L["Read more"])) !== -1, code + ": card 'Read more' not repainted");
+      assert(list.indexOf(esc(L["Mentions in this article — open this keyword's corpus."])) !== -1, code + ": keyword hover not repainted");
+      assert(list.indexOf(esc(L["(untitled)"])) !== -1, code + ": '(untitled)' not repainted");
+      assert(list.indexOf('data-aid="7"') !== -1 && list.indexOf('data-aid="8"') !== -1, code + ": a card was lost");
+      assert(sb.expanded.length === 1 && sb.expanded[0] === "7", code + ": the open card was not reopened: " + sb.expanded);
+    }
+    // The end of the pass, and a failed page, redraw in the new language too.
+    sb.set({ done: true });
+    sb.repaint();
+    assert(els["feed-more"].innerHTML.indexOf(esc(LOCALE("zh")["That is the end of this pass."])) !== -1, "zh end-of-pass line");
+    I.use("ar");
+    sb.set({ err: "" });
+    sb.repaint();
+    assert(els["feed-more"].innerHTML.indexOf(esc(LOCALE("ar")["The feed could not load."])) !== -1, "ar failure line");
+    sb.set({ err: null, busy: true });
+    sb.repaint();
+    assert(els["feed-more"].innerHTML.indexOf(esc(LOCALE("ar")["Loading…"])) !== -1, "ar in-flight line");
+    assert(sb.calls.length === 0, "the repaint fetched");
   });
 
   console.log("all assertions passed (" + passed + " tests)");

@@ -60,16 +60,21 @@ function harness() {
   const src =
     extract("loadFeed") + "\n" +
     extract("_feedRestart") + "\n" +
+    extract("_feedMoreHtml") + "\n" +
     "ctx.loadFeed=loadFeed; ctx._feedRestart=_feedRestart;\n" +
-    "ctx.peek=()=>({busy:_feedBusy, done:_feedDone, gen:_feedGen});";
+    "ctx.peek=()=>({busy:_feedBusy, done:_feedDone, gen:_feedGen,\n" +
+    "  rows:_feedRows.map((a)=>a.id), last:_feedLast, err:_feedErr});";
 
   const ctx = {};
   new Function(
     "ctx", "$", "esc", "api", "window", "OOI18N", "localStorage",
     "_feedControls", "_feedOrder", "_feedSeed", "_feedMark", "_feedSetMark",
     "_feedCard", "_feedNote", "URLSearchParams",
-    // The module-level state the two functions close over in app.js.
-    "let _feedBusy = false, _feedDone = false, _feedHeld = null, _feedGen = 0;\n" + src
+    // The module-level state the two functions close over in app.js. _feedRows /
+    // _feedLast / _feedErr are what the language-switch repaint redraws from, so an
+    // abandoned page must reach none of them either.
+    "let _feedBusy = false, _feedDone = false, _feedHeld = null, _feedGen = 0;\n" +
+    "let _feedRows = [], _feedLast = null, _feedErr = null;\n" + src
   )(
     ctx,
     (id) => els[id] || null,
@@ -129,6 +134,8 @@ const page = (ids, cursor) => ({
     assert.ok(h.list.html.includes('data-id="21"'), "the restarted page never arrived");
     assert.strictEqual(h.store["mark:shuffled"], "NEW-CURSOR", "the live cursor must be the new one");
     assert.strictEqual(h.ctx.peek().busy, false, "the live walk must be released when it lands");
+    // The rows a language switch would redraw are the live walk's, never the abandoned page's.
+    assert.deepStrictEqual(h.ctx.peek().rows, [21, 22], "the abandoned page reached the repaint's rows");
   }
 
   // --- the negative-space twin: with NO restart, a page must still append -----------
@@ -154,6 +161,7 @@ const page = (ids, cursor) => ({
       h.more.innerHTML, "SENTINEL",
       "an abandoned page reported its own failure over the live walk"
     );
+    assert.strictEqual(h.ctx.peek().err, null, "an abandoned failure reached the repaint's state");
   }
 
   console.log("feed restart race: ok");
