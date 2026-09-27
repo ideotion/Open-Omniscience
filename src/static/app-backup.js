@@ -930,6 +930,13 @@
       const bar = document.getElementById("ux-imp-bar"); if (bar) bar.style.display = "none";
       document.getElementById("ux-imp-pass-row").style.display = "none";
       document.getElementById("ux-imp-run").disabled = true;
+      // ...and the scan's OTHER two parts (2026-09-27 re-walk, I-5). Only a scan sets the
+      // trust row, so it stayed up -- a trust statement and its caveat under an empty
+      // checklist -- and the folder stayed in the field though `_uxImSrc` (the folder the
+      // dialog considers scanned) is cleared just below. A reopen is a fresh page (R1):
+      // the whole scan goes, not two thirds of it.
+      _uxImTrustRow(false);
+      document.getElementById("ux-imp-src").value = "";
       _uxImFound = null; _uxImSrc = "";
       // The re-index read is module-level and outlives the dialog, so a reopen used to
       // render the PREVIOUS run's snapshot -- a stage-4 figure and an "analytics are
@@ -1176,7 +1183,8 @@
         lines.push(`<div class="muted">${esc(nVol)} · ${ooLabelHtml(esc(t("signature")), esc(String(rep.signature || "—")))}${rep.decrypted ? " · " + esc(t("decrypted & checked")) : ""}</div>`);
       }
       const probs = Array.isArray(rep.problems) ? rep.problems : [];
-      if (probs.length) lines.push(`<ul style="margin:4px 0 0;padding-left:18px">${probs.map(p => `<li>${esc(p)}</li>`).join("")}</ul>`);
+      // padding-inline-START (I-4's class): in RTL the bullets sit on the right.
+      if (probs.length) lines.push(`<ul style="margin:4px 0 0;padding-inline-start:18px">${probs.map(p => `<li>${esc(p)}</li>`).join("")}</ul>`);
       if (rep.bad_volumes && rep.bad_volumes.length || (rep.missing_volumes && rep.missing_volumes.length)) {
         const bad = (rep.bad_volumes || []).concat(rep.missing_volumes || []);
         const rec = rep.recoverable ? esc(t("recoverable from parity")) : esc(t("NOT recoverable — the backup is incomplete"));
@@ -1871,7 +1879,9 @@
         // The NAME breaks anywhere (it is a folder name, not prose), so it starts beside
         // its dot instead of leaving the dot alone on a line; the words after it still
         // break only at spaces.
-        const html = `<div style="overflow-wrap:anywhere"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${dot};margin-right:6px"></span>`
+        // margin-inline-END (2026-09-27 re-walk, I-4): a physical margin-right sat on the
+        // dot's OUTER side in RTL, and the label touched it.
+        const html = `<div style="overflow-wrap:anywhere"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${dot};margin-inline-end:6px"></span>`
           + `<b style="word-break:break-all">${label}</b> <span class="muted">— ${state}${el}</span>${stg}${live}</div>${err}`;
         _uxPatchRow(rows, String(it.id || it.label || it.kind), html, html);
       }
@@ -1894,10 +1904,15 @@
         // A run that ENDED is not pending, and grey-like-pending is how the backend's
         // own distinction became invisible. Deliberate endings (the operator stopped or
         // cancelled) are warned, not errored; an interrupt or a failure is an error.
-        const dot = { done: "var(--ok)", running: "var(--accent)", pending: "var(--muted)",
+        // Stage 4's dot reads the SAME status its text does (2026-09-27 re-walk, I-7): the
+        // queue reports that row as "external" by design -- it does not own the re-index
+        // -- so a dot keyed on the row's state stayed not-started grey through the whole
+        // drain and after it, beside a line counting up to "complete".
+        const dot = key === "reindex" ? _uxImReindexDot(rx, st) : ({
+                      done: "var(--ok)", running: "var(--accent)", pending: "var(--muted)",
                       external: "var(--muted)", stopped: "var(--warn)",
                       cancelled: "var(--warn)", interrupted: "var(--err)",
-                      error: "var(--err)" }[sRow.state] || "var(--muted)";
+                      error: "var(--err)" }[sRow.state] || "var(--muted)");
         const bits = [];
         // The error words are COLOURED TEXT, never the toast `.note` box: an inline toast
         // (11 px padding, a shadow, a slide-in) inside a row overlaps the rows above and
@@ -1932,7 +1947,7 @@
         const link = key === "reindex"
           ? ` <a href="#" onclick="event.preventDefault();openTaskManager()">${esc(t("open the task manager"))}</a>`
           : "";
-        const html = `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${dot};margin-right:6px"></span>`
+        const html = `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${dot};margin-inline-end:6px"></span>`
           + `<b>${sRow.n}. ${title}</b> <span class="muted">— ${bits.filter(Boolean).join(" · ")}</span>${link}`;
         _uxPatchRow(host, key, html, html);
       }
@@ -1968,6 +1983,21 @@
       }
       if (left === 0) return (st && st.state === "running") ? esc(t("not started")) : esc(t("complete"));
       return `<span class="muted">${esc(t("not measured"))}</span>`;
+    }
+
+    // Stage 4's DOT, branch for branch the states _uxImReindexBits words, so the colour
+    // can never say something the line beside it does not (I-7): running is the accent,
+    // work owed with nothing draining it is a warning, a measured empty backlog after the
+    // run is done, and everything unread, unmeasured or not yet started stays grey.
+    function _uxImReindexDot(rx, st) {
+      if (!rx) return "var(--muted)";
+      const bk = rx.backlog || null;
+      if (bk && bk.available === false) return "var(--muted)";
+      if (rx.state === "running") return "var(--accent)";
+      const left = bk ? bk.articles_pending : null;
+      if (left != null && left > 0) return "var(--warn)";
+      if (left === 0) return (st && st.state === "running") ? "var(--muted)" : "var(--ok)";
+      return "var(--muted)";
     }
 
     // Q203 = a: the three statements, each keyed on ITEM STATE (unambiguous) rather
@@ -2554,8 +2584,17 @@
       // Source QUALIFICATION carried by this import (field ask 2026-08-10). Counts
       // only; `qualEngines` maps criteria version -> n, which is the "by which
       // engine" half — never inferred, only what the incoming stamp recorded.
-      let qualGained = 0, disqGained = 0, qualKept = 0, qualDisagreed = 0;
+      let qualGained = 0, disqGained = 0;
       const qualEngines = {};
+      // "Already judged here, kept" and "Backup disagreed" are SNAPSHOTS, one per item,
+      // each read against the corpus as that item found it -- which the items before it
+      // in the same run had already grown. A source carried by four backups was counted
+      // four times, and a source the first backup introduced read as "already judged
+      // here" by the second: a cumulative run summed 6,400 + 6,422 + 6,418 + 14 into
+      // "kept: 19,254" over a 6,446-source corpus (2026-09-27 re-walk, I-1). So they are
+      // collected per item and never added up; introduced/adopted and the engines above
+      // ARE disjoint across items (a source lands once), and are summed as before.
+      const qualSnaps = [];
       // Metadata a DUPLICATE article contributed (field question 2026-08-10). The
       // article was not stored again; only fields this corpus never had were filled.
       let metaEnriched = 0;
@@ -2624,14 +2663,13 @@
           if (pq) {
             qualGained += (pq.introduced_qualified || 0) + (pq.adopted_qualified || 0);
             disqGained += (pq.introduced_disqualified || 0) + (pq.adopted_disqualified || 0);
-            qualKept += pq.local_verdict_kept || 0;
-            qualDisagreed += pq.local_verdict_disagreed || 0;
+            qualSnaps.push(pq);
             for (const [eng, n] of Object.entries(pq.engines || {})) {
               qualEngines[eng] = (qualEngines[eng] || 0) + (n || 0);
             }
           }
           discoveryAdded += (p.source_candidates && p.source_candidates.new) || 0;
-          detail.push({ title: sm.title, body:
+          detail.push({ title: sm.title, pq: pq || null, body:
             (sm.merged ? `<div class="hint">${esc(_uxMergedLine(sm.merged, t, tf))}</div>` : "")
             + _v2PlanTable(p) + _uxTimingsView(sm.timings, t, tf) });
 
@@ -2761,19 +2799,33 @@
       // an interpolated count cannot conjugate, and this app has no CLDR plural rules,
       // so a "{n} sources were ..." frame is wrong in most of the twelve locales.
       let qualBlock = "";
+      // Local-wins, stated rather than left to be inferred from numbers that do not add
+      // up: a verdict this machine reached itself is never overwritten. ONE item's
+      // snapshot is the run's; with several, each stays in its own backup's detail below
+      // and the aggregate says why it shows none (I-1).
+      const keptLines = (pq) => {
+        const out = [];
+        if (pq && pq.local_verdict_kept) out.push(tf("Already judged here, kept: {n}", { n: num(pq.local_verdict_kept) }));
+        if (pq && pq.local_verdict_disagreed) out.push(tf("Backup disagreed, your verdict kept: {n}", { n: num(pq.local_verdict_disagreed) }));
+        return out;
+      };
+      const qualPerBackup = !!(qualGained || disqGained) && qualSnaps.length > 1;
       if (qualGained || disqGained) {
         const lead = [];
         if (qualGained) lead.push(tf("Qualified sources added: {n}", { n: num(qualGained) }));
         if (disqGained) lead.push(tf("Arrived disqualified: {n}", { n: num(disqGained) }));
         const sub = [];
-        // Local-wins, stated rather than left to be inferred from numbers that do not
-        // add up: a verdict this machine reached itself is never overwritten.
-        if (qualKept) sub.push(tf("Already judged here, kept: {n}", { n: num(qualKept) }));
-        if (qualDisagreed) sub.push(tf("Backup disagreed, your verdict kept: {n}", { n: num(qualDisagreed) }));
+        if (!qualPerBackup) sub.push(...keptLines(qualSnaps[0]));
+        else if (qualSnaps.some((pq) => keptLines(pq).length)) {
+          sub.push(t("Sources already judged here are counted per backup, below: the backups of one run overlap, so those counts are not added up."));
+        }
         const engNames = Object.keys(qualEngines);
         if (engNames.length) {
+          // "unrecorded" is the merge's SENTINEL for a verdict that carried no criteria
+          // version (merge.py _qualification_tally), not an engine's name: worded, where
+          // a real version (v1, ...) stays data (2026-09-27 re-walk, I-2).
           sub.push(tf("Judged by: {engines}", {
-            engines: engNames.map((e) => `${e} (${num(qualEngines[e])})`).join(", "),
+            engines: engNames.map((e) => `${e === "unrecorded" ? t("engine not recorded") : e} (${num(qualEngines[e])})`).join(", "),
           }));
         }
         qualBlock =
@@ -2813,9 +2865,14 @@
       // opened body -- the plan table, whose conflict samples are unbroken JSON -- took
       // the dialog to 428 px. So the name may wrap and is isolated, as the per-backup
       // table's already is (I13/I12), and the body scrolls inside its own box.
+      // Each backup's own qualification snapshot, when several were not added up (I-1).
+      const detailQual = (d) => {
+        const lines = qualPerBackup ? keptLines(d.pq) : [];
+        return lines.length ? `<div class="hint">${esc(lines.join(" · "))}</div>` : "";
+      };
       const detailBlocks = detail.map((d) =>
         `<details style="margin-top:6px"><summary class="muted" style="overflow-wrap:anywhere"><bdi>${esc(d.title)}</bdi></summary>`
-        + `<div style="overflow-x:auto">${d.body}</div></details>`).join("");
+        + `<div style="overflow-x:auto">${detailQual(d)}${d.body}</div></details>`).join("");
 
       // OUTCOME-AWARE HEADER. This was hardcoded "✓ Import successful", so a run in
       // which two of six backups failed announced itself exactly like a clean one.
@@ -3065,7 +3122,7 @@
       const active = rows.filter(r => r.new || r.dup || r.conf);
       const quiet = rows.length - active.length;
       let html = `<table style="width:100%;font-size:13px;border-collapse:collapse"><thead><tr>` +
-        `<th style="text-align:left">${esc(t("Data"))}</th><th>${esc(t("New"))}</th>` +
+        `<th style="text-align:start">${esc(t("Data"))}</th><th>${esc(t("New"))}</th>` +
         `<th>${esc(t("Already present"))}</th><th>${esc(t("Conflicts (your version kept)"))}</th></tr></thead><tbody>`;
       for (const r of active) {
         html += `<tr><td style="padding:2px 6px">${esc(r.tbl)}</td>` +

@@ -2008,7 +2008,7 @@
       <p class="hint" style="margin-top:0">Point to a folder ON THIS MACHINE and every .eml under it is imported as a pausable background job — for a 20&nbsp;GB+ archive the file picker can't handle. Same anonymise-at-ingest path, zero network. Already-imported messages are skipped, so you can pause and resume safely.</p>
       <div class="row" style="align-items:end;gap:8px;flex-wrap:wrap;margin-top:6px">
         <div style="flex:2"><label for="nl-folder">Folder path (on this machine)</label>
-          <input id="nl-folder" placeholder="For example: /home/you/newsletters" size="30"></div>
+          <input id="nl-folder" dir="ltr" placeholder="For example: /home/you/newsletters" size="30"></div>
         <div style="flex:0 0 auto;align-self:end"><button class="secondary" type="button" onclick="ooFolderPicker('nl-folder', false)">Browse…</button></div>
         <div style="flex:0 0 auto;align-self:end"><button class="secondary" onclick="startFolderImport(this)">Import folder</button></div>
       </div>
@@ -2034,7 +2034,7 @@
       <p class="hint" style="margin-top:0">Point to a folder ON THIS MACHINE and every PDF under it is imported. Same local, zero-network path; already-imported documents are skipped.</p>
       <div class="row" style="align-items:end;gap:8px;flex-wrap:wrap;margin-top:6px">
         <div style="flex:2"><label for="pdf-folder">Folder path (on this machine)</label>
-          <input id="pdf-folder" placeholder="For example: /home/you/pdfs" size="30"></div>
+          <input id="pdf-folder" dir="ltr" placeholder="For example: /home/you/pdfs" size="30"></div>
         <div style="flex:0 0 auto;align-self:end"><button class="secondary" type="button" onclick="ooFolderPicker('pdf-folder', false)">Browse…</button></div>
         <div style="flex:0 0 auto;align-self:end"><button class="secondary" onclick="importPdfFolder(this)">Import folder</button></div>
       </div>
@@ -3268,7 +3268,7 @@
       <h3 style="margin:0 0 4px">Import</h3>
       <p class="muted" style="margin-top:0">Point at a folder and we'll find what's importable inside it — a backup to restore, large data (models&nbsp;/&nbsp;maps&nbsp;/&nbsp;dumps), or newsletters. Restore is always additive: nothing you already have is overwritten.</p>
       <div><label for="ux-imp-src">Folder to import from</label>
-        <div class="row" style="gap:6px"><input id="ux-imp-src" type="text" placeholder="/mnt/backup  or  D:\oo-backup" style="flex:2 1 12em;min-width:12em">
+        <div class="row" style="gap:6px"><input id="ux-imp-src" type="text" dir="ltr" placeholder="/mnt/backup  or  D:\oo-backup" style="flex:2 1 12em;min-width:12em">
           <button class="secondary" type="button" onclick="ooFolderPicker('ux-imp-src', false)">Browse…</button>
           <button class="secondary" type="button" onclick="_uxImScan(this)">Scan</button>
           <button class="secondary" type="button" onclick="_uxImVerify(this)" title="Check the backup's manifest signature and every volume + parity checksum without restoring anything — the live corpus is untouched.">Verify</button></div></div>

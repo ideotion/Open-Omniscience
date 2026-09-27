@@ -5301,5 +5301,8 @@
   "airplane mode engaged — progress is saved, start again to resume": "mode pesawat aktif — kemajuan tersimpan, mulai lagi untuk melanjutkan",
   "paused: {reason} — progress is saved, start again once memory recovers": "dijeda: {reason} — kemajuan tersimpan, mulai lagi setelah memori pulih",
   "declined on this machine: {reason} — nothing was judged; restart the app with {env}=1 to run it anyway": "ditolak di mesin ini: {reason} — tidak ada yang dinilai; mulai ulang aplikasi dengan {env}=1 untuk tetap menjalankannya",
-  "stopped after {n} consecutive batches with no evidence to judge — the remaining candidates could not be evaluated (no reachable feed / no prior articles); they stay unqualified and will be retried on a later run": "dihentikan setelah {n} batch berturut-turut tanpa bukti untuk dinilai — kandidat yang tersisa tidak dapat dievaluasi (tidak ada feed yang terjangkau / tidak ada artikel sebelumnya); mereka tetap belum dinilai dan akan dicoba lagi pada proses berikutnya"
+  "stopped after {n} consecutive batches with no evidence to judge — the remaining candidates could not be evaluated (no reachable feed / no prior articles); they stay unqualified and will be retried on a later run": "dihentikan setelah {n} batch berturut-turut tanpa bukti untuk dinilai — kandidat yang tersisa tidak dapat dievaluasi (tidak ada feed yang terjangkau / tidak ada artikel sebelumnya); mereka tetap belum dinilai dan akan dicoba lagi pada proses berikutnya",
+  "import {batch} ({articles})": "impor {batch} ({articles})",
+  "engine not recorded": "mesin tidak tercatat",
+  "Sources already judged here are counted per backup, below: the backups of one run overlap, so those counts are not added up.": "Sumber yang sudah dinilai di sini dihitung per cadangan, di bawah: cadangan dalam satu proses saling tumpang tindih, jadi jumlah tersebut tidak dijumlahkan."
 }

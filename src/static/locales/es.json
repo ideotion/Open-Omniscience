@@ -5301,5 +5301,8 @@
   "airplane mode engaged — progress is saved, start again to resume": "modo avión activado — el progreso está guardado, vuelva a iniciar para continuar",
   "paused: {reason} — progress is saved, start again once memory recovers": "en pausa: {reason} — el progreso está guardado, vuelva a iniciar cuando se recupere la memoria",
   "declined on this machine: {reason} — nothing was judged; restart the app with {env}=1 to run it anyway": "rechazado en esta máquina: {reason} — no se juzgó nada; reinicie la aplicación con {env}=1 para ejecutarlo de todos modos",
-  "stopped after {n} consecutive batches with no evidence to judge — the remaining candidates could not be evaluated (no reachable feed / no prior articles); they stay unqualified and will be retried on a later run": "detenido tras {n} lotes consecutivos sin evidencia que juzgar — los candidatos restantes no pudieron evaluarse (ningún feed accesible / ningún artículo previo); siguen sin juzgar y se reintentarán en una ejecución posterior"
+  "stopped after {n} consecutive batches with no evidence to judge — the remaining candidates could not be evaluated (no reachable feed / no prior articles); they stay unqualified and will be retried on a later run": "detenido tras {n} lotes consecutivos sin evidencia que juzgar — los candidatos restantes no pudieron evaluarse (ningún feed accesible / ningún artículo previo); siguen sin juzgar y se reintentarán en una ejecución posterior",
+  "import {batch} ({articles})": "importación {batch} ({articles})",
+  "engine not recorded": "motor no registrado",
+  "Sources already judged here are counted per backup, below: the backups of one run overlap, so those counts are not added up.": "Las fuentes ya juzgadas aquí se cuentan por copia de seguridad, abajo: las copias de una misma ejecución se solapan, así que esas cifras no se suman."
 }

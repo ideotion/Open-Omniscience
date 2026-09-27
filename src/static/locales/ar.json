@@ -5301,5 +5301,8 @@
   "airplane mode engaged — progress is saved, start again to resume": "وضع الطيران مفعّل — حُفظ التقدّم، ابدأ من جديد للاستئناف",
   "paused: {reason} — progress is saved, start again once memory recovers": "متوقف مؤقتًا: {reason} — حُفظ التقدّم، ابدأ من جديد عندما تتعافى الذاكرة",
   "declined on this machine: {reason} — nothing was judged; restart the app with {env}=1 to run it anyway": "رُفض على هذا الجهاز: {reason} — لم يُحكم على أي شيء؛ أعد تشغيل التطبيق مع {env}=1 لتشغيله رغم ذلك",
-  "stopped after {n} consecutive batches with no evidence to judge — the remaining candidates could not be evaluated (no reachable feed / no prior articles); they stay unqualified and will be retried on a later run": "توقّف بعد دفعات متتالية بلا أدلة للحكم عددها {n} — تعذّر تقييم المرشحين المتبقين (لا خلاصة يمكن الوصول إليها / لا مقالات سابقة)؛ يبقون غير مُقيَّمين وستُعاد محاولتهم في تشغيل لاحق"
+  "stopped after {n} consecutive batches with no evidence to judge — the remaining candidates could not be evaluated (no reachable feed / no prior articles); they stay unqualified and will be retried on a later run": "توقّف بعد دفعات متتالية بلا أدلة للحكم عددها {n} — تعذّر تقييم المرشحين المتبقين (لا خلاصة يمكن الوصول إليها / لا مقالات سابقة)؛ يبقون غير مُقيَّمين وستُعاد محاولتهم في تشغيل لاحق",
+  "import {batch} ({articles})": "الاستيراد {batch} ({articles})",
+  "engine not recorded": "محرك غير مسجَّل",
+  "Sources already judged here are counted per backup, below: the backups of one run overlap, so those counts are not added up.": "تُحصى المصادر التي سبق الحكم عليها هنا لكل نسخة احتياطية على حدة، أدناه: النسخ الاحتياطية في عملية واحدة تتداخل، لذا لا تُجمع هذه الأعداد."
 }

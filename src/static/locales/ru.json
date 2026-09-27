@@ -5301,5 +5301,8 @@
   "airplane mode engaged — progress is saved, start again to resume": "включён режим полёта — прогресс сохранён, запустите снова, чтобы продолжить",
   "paused: {reason} — progress is saved, start again once memory recovers": "приостановлено: {reason} — прогресс сохранён, запустите снова, когда память освободится",
   "declined on this machine: {reason} — nothing was judged; restart the app with {env}=1 to run it anyway": "отклонено на этой машине: {reason} — ничего не оценено; перезапустите приложение с {env}=1, чтобы всё равно выполнить",
-  "stopped after {n} consecutive batches with no evidence to judge — the remaining candidates could not be evaluated (no reachable feed / no prior articles); they stay unqualified and will be retried on a later run": "остановлено после {n} пакетов подряд без данных для оценки — оставшихся кандидатов оценить не удалось (нет доступной ленты / нет прежних статей); они остаются непроверенными и будут повторены при следующем запуске"
+  "stopped after {n} consecutive batches with no evidence to judge — the remaining candidates could not be evaluated (no reachable feed / no prior articles); they stay unqualified and will be retried on a later run": "остановлено после {n} пакетов подряд без данных для оценки — оставшихся кандидатов оценить не удалось (нет доступной ленты / нет прежних статей); они остаются непроверенными и будут повторены при следующем запуске",
+  "import {batch} ({articles})": "импорт {batch} ({articles})",
+  "engine not recorded": "движок не записан",
+  "Sources already judged here are counted per backup, below: the backups of one run overlap, so those counts are not added up.": "Источники, уже оценённые здесь, подсчитаны отдельно для каждой резервной копии ниже: копии одного запуска пересекаются, поэтому эти числа не суммируются."
 }

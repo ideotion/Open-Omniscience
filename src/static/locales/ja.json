@@ -5301,5 +5301,8 @@
   "airplane mode engaged — progress is saved, start again to resume": "機内モードがオンです — 進捗は保存されています。再開するにはもう一度開始してください",
   "paused: {reason} — progress is saved, start again once memory recovers": "一時停止：{reason} — 進捗は保存されています。メモリが回復したらもう一度開始してください",
   "declined on this machine: {reason} — nothing was judged; restart the app with {env}=1 to run it anyway": "このマシンでは見送られました：{reason} — 何も判定していません。それでも実行するには {env}=1 でアプリを再起動してください",
-  "stopped after {n} consecutive batches with no evidence to judge — the remaining candidates could not be evaluated (no reachable feed / no prior articles); they stay unqualified and will be retried on a later run": "判定できる根拠のないバッチが {n} 回連続したため停止しました — 残りの候補は評価できませんでした（到達できるフィードなし／過去の記事なし）。未審査のまま残り、後の実行で再試行されます"
+  "stopped after {n} consecutive batches with no evidence to judge — the remaining candidates could not be evaluated (no reachable feed / no prior articles); they stay unqualified and will be retried on a later run": "判定できる根拠のないバッチが {n} 回連続したため停止しました — 残りの候補は評価できませんでした（到達できるフィードなし／過去の記事なし）。未審査のまま残り、後の実行で再試行されます",
+  "import {batch} ({articles})": "インポート {batch}（{articles}）",
+  "engine not recorded": "エンジン未記録",
+  "Sources already judged here are counted per backup, below: the backups of one run overlap, so those counts are not added up.": "ここで判定済みのソースは、下のバックアップごとに数えています。1 回の実行に含まれるバックアップは重複するため、これらの数は合算しません。"
 }

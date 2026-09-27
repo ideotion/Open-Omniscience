@@ -5301,5 +5301,8 @@
   "airplane mode engaged — progress is saved, start again to resume": "Flugmodus aktiv — der Fortschritt ist gespeichert, erneut starten, um fortzufahren",
   "paused: {reason} — progress is saved, start again once memory recovers": "pausiert: {reason} — der Fortschritt ist gespeichert, erneut starten, sobald sich der Speicher erholt hat",
   "declined on this machine: {reason} — nothing was judged; restart the app with {env}=1 to run it anyway": "auf diesem Rechner abgelehnt: {reason} — nichts wurde beurteilt; die App mit {env}=1 neu starten, um es trotzdem auszuführen",
-  "stopped after {n} consecutive batches with no evidence to judge — the remaining candidates could not be evaluated (no reachable feed / no prior articles); they stay unqualified and will be retried on a later run": "nach {n} aufeinanderfolgenden Stapeln ohne beurteilbare Belege angehalten — die übrigen Kandidaten konnten nicht bewertet werden (kein erreichbarer Feed / keine früheren Artikel); sie bleiben ungeprüft und werden bei einem späteren Lauf erneut versucht"
+  "stopped after {n} consecutive batches with no evidence to judge — the remaining candidates could not be evaluated (no reachable feed / no prior articles); they stay unqualified and will be retried on a later run": "nach {n} aufeinanderfolgenden Stapeln ohne beurteilbare Belege angehalten — die übrigen Kandidaten konnten nicht bewertet werden (kein erreichbarer Feed / keine früheren Artikel); sie bleiben ungeprüft und werden bei einem späteren Lauf erneut versucht",
+  "import {batch} ({articles})": "Import {batch} ({articles})",
+  "engine not recorded": "Engine nicht aufgezeichnet",
+  "Sources already judged here are counted per backup, below: the backups of one run overlap, so those counts are not added up.": "Hier bereits beurteilte Quellen werden unten pro Sicherung gezählt: Die Sicherungen eines Laufs überschneiden sich, daher werden diese Zahlen nicht addiert."
 }

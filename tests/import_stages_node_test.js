@@ -62,6 +62,8 @@ const src = [
   extract("function _uxPruneRows("),
   extract("function _uxVolPhase("),
   extract("function _uxImReindexBits("),
+  // 2026-09-27 re-walk (B25, I-7): stage 4's dot reads the status its text reads.
+  extract("function _uxImReindexDot("),
   extract("function _uxImStatements("),
   extract("function _uxImRenderStatements("),
   extract("function _uxImRenderStages("),
@@ -567,6 +569,52 @@ test("Y7: a running import's partial reports are not the LAST import", () => {
   // And the line itself reads through the filter: the fix is not a helper nobody calls.
   const body = extract("async function _uxImLastLine(");
   assert(/_uxImFinishedReports\(/.test(body), "the Last import line does not filter the running run's reports");
+});
+
+// ── the 2026-09-27 re-walk (B25) ─────────────────────────────────────────────
+// I-7: the queue reports stage 4 as "external" by design (it does not own the
+// re-index), and a dot keyed on that state stayed not-started grey through the whole
+// drain -- beside a line counting up to "complete". The dot reads what the line reads.
+function reindexDot(rx, run) {
+  resetDom();
+  mod._uxImRenderStages(Object.assign({ stages: STAGES }, run), rx, t, tf);
+  const row = dom["ux-imp-stages"].children.find((r) => r.getAttribute("data-row-key") === "reindex");
+  return (row.innerHTML.match(/background:([^;"]+)/) || [])[1];
+}
+
+test("I-7: stage 4's dot is the running colour while the re-index drains", () => {
+  const rx = { state: "running", done: 1200, total: 4800, backlog: { available: true, articles_pending: 3600 } };
+  assert(reindexDot(rx, { state: "done" }) === "var(--accent)", reindexDot(rx, { state: "done" }));
+});
+
+test("I-7: done when the measured backlog is empty after the run, a warning when work is owed", () => {
+  assert(reindexDot(RX_CLEAN, { state: "done" }) === "var(--ok)", reindexDot(RX_CLEAN, { state: "done" }));
+  assert(reindexDot(RX_PENDING, { state: "done" }) === "var(--warn)", reindexDot(RX_PENDING, { state: "done" }));
+});
+
+test("I-7: unread, unreadable and not-yet-started stay grey -- no colour the line does not claim", () => {
+  assert(reindexDot(null, { state: "done" }) === "var(--muted)", "an unread status is not a state");
+  assert(reindexDot({ state: "idle", backlog: { available: false } }, { state: "done" }) === "var(--muted)");
+  // an empty backlog while the run is still in flight reads "not started" (I2), so grey
+  assert(reindexDot(RX_CLEAN, { state: "running" }) === "var(--muted)");
+  // ...and the other rows still take their colour from their own state
+  resetDom();
+  mod._uxImRenderStages({ stages: STAGES, state: "running" }, RX_CLEAN, t, tf);
+  const first = dom["ux-imp-stages"].children[0].innerHTML;
+  assert(first.indexOf("background:var(--ok)") !== -1, "stage 1 is done: " + first);
+});
+
+test("I-4: the status dot's gap is on its inline END, so RTL keeps it off the label", () => {
+  resetDom();
+  mod._uxImRenderStages({ stages: STAGES }, RX_CLEAN, t, tf);
+  const body = html("ux-imp-stages");
+  assert(body.indexOf("margin-inline-end:6px") !== -1, body);
+  assert(!/margin-right/.test(body), "a physical margin lands on the dot's outer side in RTL: " + body);
+  // the per-backup rows draw the same dot in a renderer this suite does not run
+  // (line comments stripped: the one explaining the fix names the old property)
+  const queue = extract("function _uxImRenderQueue(").replace(/^\s*\/\/.*$/gm, "");
+  assert(queue.indexOf("margin-inline-end:6px") !== -1 && !/margin-right/.test(queue),
+    "the per-backup rows' dot still carries a physical margin");
 });
 
 // ── I8 (2026-09-26): a refused Verify never adopts the import's own restore ──
