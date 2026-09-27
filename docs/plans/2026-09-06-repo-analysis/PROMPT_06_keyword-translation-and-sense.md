@@ -2,9 +2,9 @@
 
 > **Scope:** `src/analytics/equivalence.py`, `src/analytics/month_occupancy.py`, the ring corpus,
 > `scripts/generate_wikidata_rings.py`.
-> **Gated on:** E1 ⏳ (the month-occupancy number, operator), E2 ⏳ (`dumps.wikimedia.org` allowlist),
+> **Gated on:** E1 ⏳ (the month-occupancy number, operator), E2 ⏳ (`dumps.wikimedia.org` allowlist; answered 2026-09-27 through `RC10` = (b): excluded for now, so S2 and the runs of slices 4 and 6 are operator-side),
 > E3, E4.
-> **Sequencing:** independent. S1 is buildable the moment E1 arrives; S2 cannot start without E2.
+> **Sequencing:** independent. S1 is buildable the moment E1 arrives; S2 cannot start without E2 (since 2026-09-27: S2 is operator-side, `RC10` = b).
 
 ## 0. Working mode
 

@@ -115,7 +115,8 @@ worldview toggle, with the default left at `contested`.
   PR (§6) — nothing is hand-drawn from memory.
 - **Why (ruling):** Q803 + note, Q826, the 2026-07-13 ruling the label cites.
 - **Acceptance:** the CONTESTED rendering and the toggle in the Chromium click-through record on the five
-  surfaces; a fixture disputed area proves both claims are emitted and the default is OSM's.
+  surfaces; a fixture disputed area proves both claims are emitted; the default stays `contested` (OSM's default
+  moved to `RELEASE_0.5_GATE.md` row L by `PF06` = a, 2026-09-27).
 - **May not decide:** the `<date>` value and the data source for OSM's convention in 0.4 (§6).
 
 ## 4. Verification
@@ -135,12 +136,12 @@ by any of it (the asset is bundled — say so). The `shipped.csv` numstat + dupl
    Equal Earth coefficients from the published paper and run the 50m rebuild on the maintainer's machine;
    artifacts: the rebuilt JSON + the confirmed constants with their source, recorded in the PR.
 2. The click-through of the five surfaces, the CONTESTED areas and the worldview toggle (Q1128 = a).
-3. The `<date>` for "OSM's convention as of `<date>`" — the maintainer's word if the session cannot derive it
+3. *(Moved to `S05-05` / 0.5 row L, 2026-09-27.)* The `<date>` for "OSM's convention as of `<date>`" — the maintainer's word if the session cannot derive it
    from a dated OSM source; recorded in the ledger in the turn it is given.
 
 ## 6. What this slice may not decide
 
-- **The `<date>`** in Q803 and the SOURCE of OSM's disputed-area claims before the 0.5 artifacts (Natural
+- *(Moved to `S05-05` / 0.5 row L, 2026-09-27.)* **The `<date>`** in Q803 and the SOURCE of OSM's disputed-area claims before the 0.5 artifacts (Natural
   Earth's own disputed-areas layer, an OSM relation extract, or a dated curated list) — the PR names it; the
   maintainer may move it. The ruling forbids only one thing: a silent pick.
 - **Which toggles** — per convention, per claim, or both; the note says "toggles"; the default is ruled.

@@ -180,7 +180,8 @@ def _row_is_pending(cells: list[str]) -> bool:
     a forbidden path.
 
     The authoritative signals, validated against twelve known-truth rows (six pending:
-    Q823, Q925, Q1009, Q1113, RC02, RC10; six not: Q301, Q1101, Q1103, L5, R26, R28):
+    Q823, Q925, Q1009, Q1113, RC02, RC03; not: Q301, Q1101, Q1103, L5, R26, R28, and RC10 and RC01,
+    both answered 2026-09-27):
     the SOURCE column says pending («sheet pending», «RC round (blank…)» whose verdict
     opens PENDING), or the verdict itself opens with PENDING / reads «→ PENDING»."""
     source, verdict = cells[3], cells[2]

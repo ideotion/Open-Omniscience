@@ -1,6 +1,8 @@
 # Release gate — v0.3.0 ("measured & verified")
 
-**Status: OPEN.** This is the checkable inventory for closing the `0.3` cycle. The
+**Status: CLOSED 2026-09-27 (`RC01` = a) on the `v0.3.0` pre-release of 2026-08-23 (the lightweight tag at
+`917e8095`); row 5 carried to [`RELEASE_0.4_GATE.md`](RELEASE_0.4_GATE.md) row W (§3, 2026-09-27).** Below is
+the record as it stood. This is the checkable inventory for closing the `0.3` cycle. The
 version already reads `0.3.0` (the 2026-07-18 sequence: P0 pass → `v0.2.0` tag → flip),
 so this gate governs **tagging**, not the version number.
 
@@ -9,7 +11,7 @@ Amended twice since; the amendment log is §3. The narrative board lives in
 [`docs/CHANGES.md`](../CHANGES.md) under `0.3.0`; this file is the part you tick.
 
 **The sequence from here to the tag is [§7](#7-the-path-to-the-tag--what-is-left-in-order).**
-One row remains and it needs a **run**, not a decision — the criteria were agreed on
+*(Before 2026-09-27; row 5 is now 0.4 row W.)* One row remained and it needs a **run**, not a decision — the criteria were agreed on
 2026-08-23. §7.1 is the four commands; §7.4 records what a session already verified, and
 what that is worth.
 
@@ -217,7 +219,7 @@ demonstration that nobody writes down becomes a demonstration that never happens
 
 ---
 
-### Row 5 — the article clean-up · OPEN, criteria agreed, the pass has not been run
+### Row 5 — the article clean-up · MOVED TO 0.4 (row W, `RC01` = a, 2026-09-27); criteria agreed, the pass has not been run
 
 **Bar:** discussed → **agreed** (explicit sign-off before execution) → implemented →
 **executed** on the real corpus, removing the undesired-article class (nav soup, section
@@ -613,7 +615,7 @@ human UX pass".
 | 2026-09-07 | **The calibration prose arm can now finish, and aims at the population under decision.** It had a cursor by design and no way to carry it: the bundle passed `after_id=0, limit=500` literally, so every export re-measured the same lowest-id 500 and both field reports stopped at `last_id: 695`. It also walked by ascending id rather than by the index pages Tier B is about. Now: a persisted per-scope cursor (invalidated by a `CRITERIA_VERSION` change, so two detectors' verdicts are never summed), a `prose_gate_scope` of `all` or `index_pages`, an exact `remaining`, and the population named in the report. Eleven tests | session |
 | 2026-09-07 | **Row 7b's missing instrument built** — `GET /api/diagnostics/soak-window`, bundle member `soak-window.json`. Six instruments held the soak's answer across six different windows, several far shorter than the bar; this composes them and states per block the window it read, with a not-measurable state wherever the window does not reach. Three counters became durable to make it possible (write-gate `total_held_s`, memory-guard `engagements`/`total_engaged_s`, both shapes of an aborted statement) and the error log now publishes its own `records_cap` beside every count. Verdict-free: `reaches_bar` is a fact about the window's length. 29 tests, 17 mutations each reddening by name | session |
 | 2026-09-07 | **§4's Observatory line corrected.** It read "designed, browser-gated, prerequisites unmet" — written when the surface was design-only and stale on all three counts by the time it was read: the prerequisites had been met (the S1 stats core; the `domain:` field, 2026-07-20), and PR #1033 shipped the `ooSky` renderer + the tab, Chromium-verified. It stays OUT of this gate, which is what the section is for — the remaining tiers are backlog (`PARKED.md`) and the UX pass is 0.4 row F | session |
-| 2026-09-27 | **`0.3` CLOSED on the existing `v0.3.0` pre-release; row 5 MOVED TO 0.4 (row W).** `RC01` = (a), answered in chat: «OK for RC01, I'll do the versino switching after all current draft PRs are merged». The tag at `917e8095` (2026-08-23, lightweight, published as a pre-release by `release.yml`) stands as the close, where §7.3 had prescribed an annotated tag after row 5; the maintainer took it as it is rather than re-doing pass → tag. Row 5's criteria and §7.1 are unchanged, and the run is owed on the `0.4` board. The version flip is the maintainer's own, after the current draft PRs merge. | maintainer (chat) · recorded by the session, PR #1191 |
+| 2026-09-27 | **`0.3` CLOSED on the existing `v0.3.0` pre-release; row 5 MOVED TO 0.4 (row W).** `RC01` = (a), answered in chat: «OK for RC01, I'll do the versino switching after all current draft PRs are merged». The tag at `917e8095` (2026-08-23, lightweight; the GitHub pre-release was created under the maintainer's account at 12:42Z, and `release.yml` attached the wheel, sdist and `SHA256SUMS` at 13:01Z) stands as the close, where §7.3 had prescribed an annotated tag after row 5; the maintainer took it as it is rather than re-doing pass → tag. Row 5's criteria and §7.1 are unchanged, and the run is owed on the `0.4` board. The version flip is the maintainer's own, after the current draft PRs merge. | maintainer (chat) · recorded by the session, PR #1191 |
 
 ---
 
@@ -792,6 +794,9 @@ outlier rate).
 
 ## 7. The path to the tag — what is left, in order
 
+*(2026-09-27: `RC01` = a took the existing pre-release as the tag; §7.1's commands now serve 0.4 row W, and
+§7.3 is not re-run for `0.3`.)*
+
 **One thing is left before the tag: run the row-5 quarantine pass.** The criteria were
 agreed on 2026-08-23 — *"proceed with tier A"* — so the decision step is behind us and what
 remains is four commands on your instance ([§7.1](#71-row-5--run-the-pass-four-commands)).
@@ -887,7 +892,8 @@ fix does not change.
 
 ### 7.3 Tag day
 
-**Do not start this until 7.1 is done and row 5 is ticked in §1.** A row closes
+*(Superseded 2026-09-27 by `RC01` = a: the existing pre-release stands as the tag.)* **Do not start this until
+7.1 is done and row 5 is ticked in §1.** A row closes
 on a named artifact, never on "it was built".
 
 1. **Every row closed.** §1 shows rows 1, 2, 3, 5, 6, 7a and 8 closed, with rows 4, 7b and

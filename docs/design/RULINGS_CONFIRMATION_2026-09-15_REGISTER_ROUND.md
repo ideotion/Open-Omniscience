@@ -36,7 +36,8 @@ Everything not listed here is already recorded and needs no restating (`docs/led
 > Index entry: the `OPEN_QUEUE.md` head entry of 2026-09-15; one `RULINGS_INDEX.md` row per `RCnn`.
 >
 > **UPDATE 2026-09-27: two answered in chat, copied onto their lines** — `RC01` = (a) and `RC10` = (b). PENDING
-> is now `RC02` ⛔, `RC03` ⛔ and `RC12`; the other sixteen assumptions stand.
+> is now `RC02` ⛔, `RC03` ⛔ and `RC12`; the other seventeen assumptions stand (the
+> eighteen of 2026-09-15 less `RC01`; `RC10` was PENDING, not an assumption).
 
 ## §0 — How to answer, and how the answers are processed
 

@@ -213,9 +213,11 @@ def test_the_pending_rule_agrees_with_twelve_KNOWN_TRUTH_rows():
     predicate has to disagree with the ledger out loud."""
     pending = planned_index.pending_ruling_ids()
 
-    for rid in ("Q823", "Q925", "Q1009", "Q1113", "RC02", "RC10"):
+    for rid in ("Q823", "Q925", "Q1009", "Q1113", "RC02", "RC03"):
         assert rid in pending, f"{rid} is unanswered and must read pending"
-    for rid in ("Q301", "Q1101", "Q1103", "L5", "R26", "R28"):
+    # RC10 read pending until the maintainer answered it in chat on 2026-09-27; its row
+    # still records the old blank in words, which must not read as pending again.
+    for rid in ("Q301", "Q1101", "Q1103", "L5", "R26", "R28", "RC10", "RC01"):
         assert rid not in pending, f"{rid} is answered and must not read pending"
 
 

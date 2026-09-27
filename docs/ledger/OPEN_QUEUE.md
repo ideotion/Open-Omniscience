@@ -29,15 +29,18 @@
   excluded host · `PF06` = (a) · `PF12` = `sudachipy`, as built. One line each in
   [`RULINGS_INDEX.md`](RULINGS_INDEX.md); the gate edits are in `RELEASE_0.3_GATE.md` (row 5 moved),
   `RELEASE_0.4_GATE.md` (rows G, N, R, V; row W added; the exit clause) and `RELEASE_0.5_GATE.md` (row L added).
-  **STILL OWED, AND BY WHOM:** (1) the flip to `0.4.0` — the MAINTAINER's own act, after the draft PRs open
-  on 2026-09-27 are merged (0.4 row G); no session opens it. (2) The Tier-A quarantine run, `0.3`'s row 5,
+  **STILL OWED, AND BY WHOM:** (1) the flip to `0.4.0` — the MAINTAINER's own act, after all current draft
+  PRs are merged (0.4 row G); no session opens it unless the maintainer asks. (2) The Tier-A quarantine run, `0.3`'s row 5,
   now 0.4 row W — the operator, through the release run's opt-in step. (3) The Q114 hosts except
   `dumps.wikimedia.org` added to the session environment's allowlist — the operator. **Measured from a
   session at about 09:00 UTC the same day: all seventeen, `dumps.wikimedia.org` included, answered `000`**
   (the proxy refused each CONNECT), so row V's probe cannot pass yet. (4) Row R's click-through (Q1128 = a):
-  R35 delegated that half to Claude for rows H–U; row R was not in its list because it could not close
-  then, and a Claude-run walk on the same terms is the session's reading of R35, not a new ruling.
-  (5) `PF12` does not reach the keyword path: `janome` stays there and retiring it needs its own word.
+  R35 delegated that half to Claude for rows H, I, J, L, M, N, O, P, S, T and U; row R is not among them
+  and R35 gives no reason, so a Claude-run walk on the same terms is the session's reading, not a ruling.
+  (5) `PF12` does not reach the keyword path: retiring `janome` there is undecided, and the status quo is
+  kept until the maintainer's word. (6) The release run still labels row W's result as board row `G`, and
+  its checkbox still says «deferred by ruling A1» (`src/monitoring/release_run.py`, the ×12 checkbox
+  string, `tests/test_release_run.py`); relabelling it is session work, owed with the next fix batch.
   Nothing else moved: `RC02`, `RC03` and `RC12` stay PENDING, and the pre-flight round's other twelve
   questions stay unanswered.
 
@@ -715,7 +718,8 @@
   records one `RULINGS_INDEX.md` row per PFnn. The RC blanks that the same pre-flight depends on (`RC01`,
   `RC10` ⛔, `RC13`'s eclipse suffix) are pointed at, not re-asked. **UPDATE 2026-09-27: `PF06` = (a) and
   `PF12` (keep `sudachipy`) were answered in chat, with `RC01` = (a) and `RC10` = (b); each has its
-  `RULINGS_INDEX.md` row. The other twelve PF questions and `RC13`'s eclipse suffix stay unanswered.**
+  `RULINGS_INDEX.md` row. PF12's second half (retiring `janome` from the keyword path) was not asked and
+  stays open. The other twelve PF questions and `RC13`'s eclipse suffix stay unanswered.**
 - **THE COLLECTION-SPEED KNOB MISSTATES ITS OWN UNIT BY 8.192x, ON FOUR USER-FACING SURFACES —
   found while building the per-process budget (S04-13 S1, Q1012), NOT fixed here.**
   `collect_target_kbps` is **kilobits** per second: `collect_perf._measure_rate` computes
@@ -2279,7 +2283,8 @@
   outside (so it over-states what a date-aware block would newly admit). Neither is corrected,
   because correcting either needs a number nobody has. `by_language` is where the decision lives and
   `by_token` makes a PARTIAL fix decidable (drop the block for the worst handful rather than all 82).
-  Slice 4 remains blocked on `dumps.wikimedia.org` (the allowlist, five sessions running).
+  Slice 4 remains blocked on `dumps.wikimedia.org` (the allowlist, five sessions running). *(2026-09-27:
+  `RC10` = (b) excludes the host for now, so slice 4 is operator-side.)*
   A FIFTH commit closes a gap slice 1 opened in itself: `search_omni` published a `cross_language`
   block, a per-row `via_ring` and a `cross_language_items` count that NO frontend read — the
   dead-end shape, in the slice whose own message cites that lesson — and rendering it exposed a real
@@ -9345,7 +9350,10 @@
 - **THE 0.3 CLOSE GATE (maintainer RULED 2026-07-20 — the conditions for tagging v0.3.0;
   the analog of the P0 validation that closed 0.2; rows 6–8 + the row-1/row-4 amendments
   added same day):** the version already reads 0.3.0 (the 2026-07-18 sequence: P0 pass →
-  v0.2.0 tag → flip), so this gate governs CLOSING the 0.3 cycle. EIGHT gate rows, all
+  v0.2.0 tag → flip), so this gate governs CLOSING the 0.3 cycle. **UPDATE 2026-09-27 — `RC01` = (a), in chat: the
+  existing `v0.3.0` pre-release (2026-08-23, `917e8095`) is the 0.3 close; row 5 is no longer required
+  before the tag and is carried as `RELEASE_0.4_GATE.md` row W (see the 2026-09-27 head entry). What
+  follows is the record as it stood.** EIGHT gate rows, all
   required before the tag: (1) **the entire 2026-07-20
   source-management program implemented AND DOUBLE-CHECKED** — the qualification lifecycle
   (admission gate · stamp · background job · re-qualification ladder) · newsletter

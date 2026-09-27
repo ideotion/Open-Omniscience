@@ -27,6 +27,10 @@ pre-flight step depends on them. Nothing here is decided by this session.
 ## §1 — The run itself (operational; each changes the checklist, none changes the code)
 
 #### PF01 · The 0.3 row-5 quarantine pass — tick the opt-in, and on which instance?
+**UPDATE 2026-09-27 (`RC01` = a, answered in chat):** row 5 is now `RELEASE_0.4_GATE.md` row W and holds the
+`v0.4.0` tag, not row G or the version flip, which is the maintainer's own after all current draft PRs merge.
+Read «row G» in the options below as «row W»; option (c) now leaves row W open. The «Not asked here» pointer
+to `RC01` is answered.
 Ruling `A1` deferred the Tier-A quarantine run with no date; `RC01` is blank, so its ASSUMPTION (b) keeps the
 version at `0.3.0` until row 5 runs. The button carries row 5 as an opt-in checkbox that defaults OFF, because a
 button may not decide an operator step. Ticked, it runs `RELEASE_0.3_GATE.md` §7.1's four commands in order
@@ -174,7 +178,7 @@ today, used for keyword extraction only.
 - **b** — keep `janome` (pure Python, dictionary bundled, already installed) on the FTS path too, and record
   Q506's `sudachipy` clause as superseded by this letter.
 Default if blank: **a** (Q506 is a locked ruling; the session follows it unless you write **b**).
-ANSWER PF12: (no letter copied) — given in chat 2026-09-27 08:56 UTC: «Row N: keep sudachipy», answering the question as the thread put it («sudachipy, which is what's built, or janome»). Recorded as `sudachipy` on the search path, as built. Option (a)'s second half, retiring `janome` from `[segmentation]`, was not in that question, so the keyword path keeps `janome` and nothing is retired.
+ANSWER PF12: (no letter copied) — given in chat 2026-09-27 08:56 UTC: «Row N: keep sudachipy», answering the question as the thread put it («sudachipy, which is what's built, or janome»). Recorded as `sudachipy` on the search path, as built. Option (a)'s second half, retiring `janome` from `[segmentation]`, was not in that question, so retiring `janome` from the keyword path stays undecided and nothing is retired.
 
 #### PF13 · The twelve maintainer click-throughs (rows H, I, J, K, L, M, N, O, P, S, T, U)
 Q1128 = (a): Chromium in the sandbox + your own click-through = verified. Every one of those rows now has its
