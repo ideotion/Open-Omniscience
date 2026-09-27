@@ -37,7 +37,7 @@ const code =
   "function esc(s){return String(s==null?'':s).replace(/[&<>\"']/g," +
   "c=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',\"'\":'&#39;'}[c]));}\n" +
   "var window = {}; var localStorage = {getItem: function(){ return null; }}; var _langDN = {};\n" +
-  ["T", "TF", "uiLang", "langName", "langList", "countsLine", "rdLabel", "rdLabelHtml"]
+  ["T", "TF", "rdLabelText", "uiLang", "langName", "langList", "countsLine", "rdLabel", "rdLabelHtml"]
     .map(extract).join("\n") + "\n" +
   "module.exports = { rdLabel, rdLabelHtml, langName, setUi: function (c) { window.OOI18N = {current: function () { return c; }}; } };";
 const R = (() => { const m = { exports: {} }; new Function("module", "exports", code)(m, m.exports); return m.exports; })();

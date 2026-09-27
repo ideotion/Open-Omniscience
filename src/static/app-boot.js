@@ -115,6 +115,9 @@
         if (typeof _paintWikiLane === "function" && typeof _wikiLaneState !== "undefined"
             && _wikiLaneState) _paintWikiLane(_wikiLaneState, _wikiLaneActive);
       } catch (_e) {}
+      // The AI pill is the same class (click-through B19, Q7): it carries `data-i18n-dyn`
+      // and writes its word and hover itself. Repaints from the state it holds; no fetch.
+      try { if (typeof _paintAiPill === "function") _paintAiPill(); } catch (_e) {}
       // The airplane coachmark is positioned in pixels from the plane, and a switch
       // into or out of Arabic mirrors the top bar without resizing the window, so the
       // coach stayed at its old spot -- 1,019 px from the plane, over the sidebar

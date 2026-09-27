@@ -576,6 +576,10 @@ def llm_activity() -> dict:
     from src.monitoring.tasks import snapshot
 
     labels: list[str] = []
+    # The keyed twin of each label, index for index (click-through B19, Q7): a label that
+    # carries a value ("Summarizing “{title}”") names its frame, as the task-manager rows
+    # do; a fixed sentence is its own key and needs none.
+    frames: list[dict] = []
     sources: list[str] = []
 
     # 1. THE STRUCTURAL ONE: calls actually open at the client seam right now.
@@ -594,6 +598,10 @@ def llm_activity() -> dict:
                 if "tasks" not in sources:
                     sources.append("tasks")
                 labels.append(str(t.get("label") or "").strip())
+                frames.append(
+                    {"label_i18n": t["label_i18n"], "label_vars": dict(t.get("label_vars") or {})}
+                    if t.get("label_i18n") else {}
+                )
     except Exception:  # noqa: BLE001
         pass
 
@@ -603,7 +611,9 @@ def llm_activity() -> dict:
         hold = user_batch_active()
         if hold.get("held"):
             sources.append("user_batch")
-            labels.extend(str(r) for r in (hold.get("holders") or []))
+            for r in hold.get("holders") or []:
+                labels.append(str(r))
+                frames.append({})
     except Exception:  # noqa: BLE001
         pass
     try:
@@ -612,15 +622,24 @@ def llm_activity() -> dict:
         if st.get("state") == "running":
             sources.append("coordinator")
             labels.append(str(st.get("detail") or "background AI sweeps"))
+            frames.append(
+                {"label_i18n": st["detail_i18n"], "label_vars": dict(st.get("detail_vars") or {})}
+                if st.get("detail") and st.get("detail_i18n") else {}
+            )
     except Exception:  # noqa: BLE001
         pass
 
-    labels = [x for x in labels if x]
+    # Paired by index, never zip: a frame that failed to build must cost its label nothing.
+    kept = [(x, frames[i] if i < len(frames) else {}) for i, x in enumerate(labels) if x]
+    labels = [x for x, _ in kept]
+    first = kept[0][1] if kept else {}
     return {
         "working": bool(sources),
         # ONE label, because the caller is a hover title on a 46px pill. The count
         # rides beside it so one label is never read as the whole picture.
         "label": labels[0] if labels else None,
+        "label_i18n": first.get("label_i18n"),
+        "label_vars": first.get("label_vars"),
         "n_labels": len(labels),
         "calls_in_flight": calls["n"],
         "models": calls["models"],
@@ -2037,7 +2056,8 @@ def summarize_article(
     _t = (article.title or "article")[:48]
     try:
         with track("llm", f"Summarizing “{_t}”", detail=f"model {model}",
-                   label_i18n="Summarizing “{title}”", label_vars={"title": _t}):
+                   label_i18n="Summarizing “{title}”", label_vars={"title": _t},
+                   detail_i18n="model {model}", detail_vars={"model": model}):
             text, method = _run_over_long_text(
                 client, op="summary", title=article.title or "", content=article.content,
                 model=model, system=system, keep_alive=_effective_keep_alive(),
@@ -2101,6 +2121,7 @@ def translate_article(
     _t = (article.title or "article")[:48]
     try:
         with track("llm", f"Translating → {req.target_language}: “{_t}”", detail=f"model {model}",
+                   detail_i18n="model {model}", detail_vars={"model": model},
                    **_translate_label_frame(req.target_language, "Translating → {language}: “{title}”",
                                             title=_t)):
             text, method = _run_over_long_text(
@@ -2552,7 +2573,8 @@ def bulk_llm(
         else _translate_label_frame(target, "Translating → {language} {n} article(s)", n=total)
     )
     _tok = _bgtasks.register(
-        "llm", f"{_verb} {total} article(s)", detail=f"model {model}", total=total, **_frame
+        "llm", f"{_verb} {total} article(s)", detail=f"model {model}", total=total, **_frame,
+        detail_i18n="model {model}", detail_vars={"model": model},
     )
 
     def _stream():

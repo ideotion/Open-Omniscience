@@ -54,6 +54,8 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Any, Callable
 
+from src.jobs.background import Framed
+
 _LOG = logging.getLogger(__name__)
 
 #: One coordinator turn runs at most this many batches of a member, so no single
@@ -304,7 +306,8 @@ def run_coordinator(
                 continue
             due = [m for m in members if m.key not in done]
             if not due:
-                ctx.set_progress(done=turns, detail="all enabled sweeps are up to date")
+                ctx.set_progress(done=turns, detail=Framed("all enabled sweeps are up to date",
+                                                           "all enabled sweeps are up to date"))
                 sleep(IDLE_SLEEP_S)
                 done.clear()          # re-check later: new articles/keywords may have arrived
                 continue
@@ -351,7 +354,13 @@ def run_coordinator(
                 per_member[key] = out
                 if out.get("complete"):
                     done.add(key)
-            ctx.set_progress(done=turns, detail=f"turn {turns} — {len(due)} sweep(s) advanced")
+            # The English line as before, plus its keyed frame: this is the line the AI
+            # pill's hover names while the lane works (click-through B19, Q7).
+            ctx.set_progress(done=turns, detail=Framed(
+                f"turn {turns} — {len(due)} sweep(s) advanced",
+                "turn {turns} — {n} sweep advanced" if len(due) == 1 else "turn {turns} — {n} sweeps advanced",
+                turns=turns, n=len(due),
+            ))
     finally:
         # IN A `finally`, so the three ways a lane ends all give the card back: it
         # finished its members, the operator cancelled it, or a member raised past the

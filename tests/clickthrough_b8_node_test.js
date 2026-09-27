@@ -347,6 +347,7 @@ async function run() {
       var _painted = true, _healthState = "healthy";
       ${extract("fmtBytes", null, TM)}
       ${extract("fmtRate", null, TM)}
+      ${extract("fmtNum", null, TM)}
       ${extract("renderSummary", null, TM)}
       ${extract("paintHealth", null, TM)}
       ${extract("repaintFromCache", null, TM)}
