@@ -532,6 +532,15 @@ def alerts(session, period: Period) -> dict:
 # --------------------------------------------------------------------------- #
 
 
+#: Why the cross-time lens is skipped for a long period, as a FRAME: ``{days}`` is the
+#: period's length and ``{max}`` is ``_ANNIVERSARY_MAX_DAYS``.
+_THROUGH_TIME_SKIP = (
+    "the period spans {days} days; past {max} the 'same days in earlier years' lens stops "
+    "being a lens — it becomes the whole of an earlier year, which the corpus already "
+    "shows elsewhere"
+)
+
+
 def through_time(session, period: Period, *, years_back: int = 5) -> dict:
     """The same calendar days, in earlier years — the cross-time counterweight.
 
@@ -546,15 +555,18 @@ def through_time(session, period: Period, *, years_back: int = 5) -> dict:
     from src.database.models import Article
 
     if period.days > _ANNIVERSARY_MAX_DAYS:
+        skip_vars = {"days": period.days, "max": _ANNIVERSARY_MAX_DAYS}
         return {
             "section": "through_time",
             "window": _window_of(period),
             "years": [],
-            "skipped": (
-                f"the period spans {period.days} days; past {_ANNIVERSARY_MAX_DAYS} the "
-                "'same days in earlier years' lens stops being a lens — it becomes the "
-                "whole of an earlier year, which the corpus already shows elsewhere"
-            ),
+            "skipped": _THROUGH_TIME_SKIP.format(**skip_vars),
+            # The same sentence as a keyed FRAME plus its numbers (click-through B16, V5):
+            # the filled English carries two numbers, so no fixed key could ever match it
+            # and the review and the document printed it in English in every language.
+            # `skipped` stays the English sentence for readers of an older record.
+            "skipped_i18n": _THROUGH_TIME_SKIP,
+            "skipped_vars": skip_vars,
             "method": "same (month, day) set, earlier years only",
             "caveat": _TIME_CAVEAT,
         }

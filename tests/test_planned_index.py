@@ -22,6 +22,7 @@ are both silent:
 
 from __future__ import annotations
 
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -235,3 +236,61 @@ def test_a_queue_entrys_marker_is_found_DEEP_IN_ITS_BODY_not_only_at_the_top(ent
 def test_strict_PASSES_on_a_file_a_ruling_merely_names_as_its_ENFORCEMENT_SITE():
     out = _run("--strict", "tests/test_repo_invariants.py")
     assert out.returncode == 0, out.stdout
+
+
+# --------------------------------------------------------------------------- #
+# A "Must NOT touch" clause ends where its own field ends (fix batch B16, V1)   #
+# --------------------------------------------------------------------------- #
+
+
+def test_a_MUST_NOT_TOUCH_clause_ends_at_the_next_header_field(entries):
+    """REGRESSION, the same over-match as the two above, one clause over. The header
+    is read as one joined line, and "Must NOT touch:" sits INSIDE the Scope field -- so
+    everything after it, **Implements:** and **Gated on:** included, was read as
+    forbidden. S05-03 and S06-03 name `docs/SECURITY.md` in their Gated on (the host
+    list is a PRECONDITION of theirs), and `planned.py docs/SECURITY.md` answered
+    FORBIDDEN twice for a file no brief forbids."""
+    forbidden = {(e.id, e.path) for e in entries if e.status == "must-not-touch"}
+    for sid in ("S05-03", "S06-03"):
+        assert (sid, "docs/SECURITY.md") not in forbidden, f"{sid}'s Gated on read as forbidden"
+        mine = [e for e in _by_path(entries, "docs/SECURITY.md") if e.id == sid]
+        assert mine and mine[0].status == "precondition", (
+            f"{sid} names docs/SECURITY.md in its Gated on; it must still be indexed, as a "
+            f"precondition -- ending the clause must not drop what follows it")
+    # A path the clause really names is still forbidden: the fix bounds the clause, it
+    # does not empty it.
+    assert ("S06-05", "tests/test_legal_documents.py") in forbidden
+
+
+def test_every_forbidden_path_is_named_inside_its_briefs_own_clause(entries):
+    """The general form of the regression: each must-not-touch row's path is written
+    between that brief's "Must NOT touch:" and the next labelled field."""
+    clauses = {}
+    for f in planned_index.BRIEFS.glob("S*.md"):
+        header = planned_index._header_block(f.read_text(encoding="utf-8"))
+        if "Must NOT touch:" not in header:
+            continue
+        tail = header.split("Must NOT touch:", 1)[1]
+        end = re.search(r"(?<!`)\*\*[A-Z][A-Za-z ,/()-]{0,40}:\*\*", tail)
+        clauses[f.stem.split("_")[0]] = tail[:end.start()] if end else tail
+    assert clauses, "no brief carries a Must NOT touch clause -- the fixture moved"
+    for e in entries:
+        if e.status == "must-not-touch":
+            assert e.id in clauses and e.path in planned_index._paths_in(clauses[e.id]), (
+                f"{e.id} forbids {e.path}, which its Must NOT touch clause does not name")
+
+
+def test_a_worktree_copy_does_not_make_a_bare_filename_ambiguous(tmp_path, monkeypatch):
+    """An agent worktree under `.claude/worktrees/` is a second copy of the repository,
+    so every bare filename in it had two paths and stopped resolving -- which is why the
+    DEEP queue test above failed in a checkout holding parallel sessions and passed in
+    a clean one at the same commit."""
+    (tmp_path / "configs").mkdir()
+    (tmp_path / "configs" / "only_here.yml").write_text("x", encoding="utf-8")
+    copy = tmp_path / ".claude" / "worktrees" / "agent-x" / "configs"
+    copy.mkdir(parents=True)
+    (copy / "only_here.yml").write_text("x", encoding="utf-8")
+    monkeypatch.setattr(planned_index, "ROOT", tmp_path)
+    monkeypatch.setattr(planned_index, "_NAMES", None)
+    assert planned_index._by_name()["only_here.yml"] == ("configs/only_here.yml",)
+    assert planned_index._clean_path("only_here.yml") == "configs/only_here.yml"

@@ -187,6 +187,10 @@ const CONSTS = ["LIB_WINDOWS", "LIB_DEFAULT_DAYS", "LIB_LANG_TOP_N"].map(name =>
 const tileSrc = [
   ...CONSTS,
   "let _libTileDays = {};",
+  // The tile fetches through the Library's per-open-view cache (V11), which calls the
+  // `api` stub below on a miss; a fresh Map per tile source keeps the tests independent.
+  "const _libFetched = new Map();",
+  extract("_libGet"),
   extract("_libWindowChips"),
   src,
   extract("_libLanguageTile"),

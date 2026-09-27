@@ -2187,10 +2187,16 @@ def view_article(request: Request, article_id: int, db: Session = Depends(get_db
         else ""
     )
 
+    # The label and its colon are ONE keyed frame, re-set in the reader's language by
+    # reader.js (`paintOrigSource`) with the locale's own separator -- "Source originale :"
+    # in French, a full-width colon in Chinese. "Original source: " was an untranslatable
+    # text node welded to the link (click-through B16, V4). The span is the frame's host;
+    # this English is what a reader sees only if the script does not run.
     orig_html = (
+        "<span class='src-orig' data-i18n-dyn>"
         "Original source: <a class='ext src-link' href='"
         + _html.escape(safe_src)
-        + f"' rel='noopener noreferrer'>{_html.escape(safe_src)}</a>"
+        + f"' rel='noopener noreferrer'>{_html.escape(safe_src)}</a></span>"
         if safe_src
         else "<span class='muted'>No original (http/https) URL recorded.</span>"
     )

@@ -223,6 +223,7 @@
   "no rising concepts to attribute for this period": "এই সময়কালের জন্য আরোপ করার কোনও উঠতি ধারণা নেই",
   "the period's concepts resolved to no plain keywords": "এই সময়কালের ধারণাগুলি কোনও সাধারণ মূল শব্দের সঙ্গে মেলেনি",
   "none of the period's concepts resolved to a stored keyword": "এই সময়কালের কোনও ধারণাই সঞ্চিত মূল শব্দের সঙ্গে মেলেনি",
+  "the period spans {days} days; past {max} the 'same days in earlier years' lens stops being a lens — it becomes the whole of an earlier year, which the corpus already shows elsewhere": "সময়কালটি {days} দিনের; {max} পেরোলে 'আগের বছরগুলোর একই দিন' লেন্সটি আর লেন্স থাকে না — এটি আগের একটি পুরো বছর হয়ে যায়, যা কর্পাস ইতিমধ্যে অন্যত্র দেখায়",
 
   "{shown} of {total} sections": "{total} টি অনুচ্ছেদের মধ্যে {shown} টি",
   "{shown} of {total} stories": "{total} টি কাহিনির মধ্যে {shown} টি",

@@ -223,6 +223,7 @@
   "no rising concepts to attribute for this period": "本期没有可归属的上升概念",
   "the period's concepts resolved to no plain keywords": "本期的概念未能对应到任何普通关键词",
   "none of the period's concepts resolved to a stored keyword": "本期的概念没有一个能对应到已存储的关键词",
+  "the period spans {days} days; past {max} the 'same days in earlier years' lens stops being a lens — it becomes the whole of an earlier year, which the corpus already shows elsewhere": "该时段跨越 {days} 天；超过 {max} 天后，“往年同日”这一视角便不再是视角——它会变成整整一个往年，而语料库已在别处展示",
 
   "{shown} of {total} sections": "{total} 节中的 {shown} 节",
   "{shown} of {total} stories": "{total} 个故事中的 {shown} 个",

@@ -264,7 +264,9 @@ def test_the_seasons_carry_their_own_chapter_27_method():
     assert "ch. 27" in method and "lunar" not in method and "planetary" not in method, method
     out = astronomy_endpoint(year=2026)
     assert out["seasons_method"] == method
-    assert out["seasons_accuracy"] == astronomy._ACCURACY
+    # The seasons' OWN accuracy since click-through B16 (V7): the moon's "~2 minutes" was
+    # a figure about ch. 49 (tests/test_clickthrough_b16_fixes.py pins the new sentence).
+    assert out["seasons_accuracy"] == astronomy._SEASON_ACCURACY
     assert "ch. 49" in out["method"], "the top-level method stays the moon's"
     _keyed_everywhere(method)
 

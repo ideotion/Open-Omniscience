@@ -223,6 +223,7 @@
   "no rising concepts to attribute for this period": "keine aufsteigenden Begriffe, die diesem Zeitraum zuzuordnen wären",
   "the period's concepts resolved to no plain keywords": "die Begriffe des Zeitraums ließen sich keinen einfachen Schlüsselwörtern zuordnen",
   "none of the period's concepts resolved to a stored keyword": "keiner der Begriffe des Zeitraums ließ sich einem gespeicherten Schlüsselwort zuordnen",
+  "the period spans {days} days; past {max} the 'same days in earlier years' lens stops being a lens — it becomes the whole of an earlier year, which the corpus already shows elsewhere": "der Zeitraum umfasst {days} Tage; über {max} hinaus ist die Linse „dieselben Tage in früheren Jahren“ keine Linse mehr – sie wird zu einem ganzen früheren Jahr, das der Korpus bereits anderswo zeigt",
 
   "{shown} of {total} sections": "{shown} von {total} Abschnitten",
   "{shown} of {total} stories": "{shown} von {total} Erzählsträngen",

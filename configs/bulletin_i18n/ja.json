@@ -223,6 +223,7 @@
   "no rising concepts to attribute for this period": "この期間に帰属させられる上昇概念はありません",
   "the period's concepts resolved to no plain keywords": "この期間の概念は、いずれの単純なキーワードにも対応しませんでした",
   "none of the period's concepts resolved to a stored keyword": "この期間の概念は、いずれも保存済みキーワードに対応しませんでした",
+  "the period spans {days} days; past {max} the 'same days in earlier years' lens stops being a lens — it becomes the whole of an earlier year, which the corpus already shows elsewhere": "期間は {days} 日にわたります。{max} 日を超えると「過去の年の同じ日」というレンズはレンズでなくなり、過去の丸一年になります。それはコーパスがすでに別の場所で示しています",
 
   "{shown} of {total} sections": "{total} 節中 {shown} 節",
   "{shown} of {total} stories": "{total} 件のストーリー中 {shown} 件",

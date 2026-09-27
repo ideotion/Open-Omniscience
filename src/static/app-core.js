@@ -1829,11 +1829,24 @@
       if (s < 90) return `~${Math.max(1, Math.round(s))} s`;
       return `~${Math.round(s / 60)} min`;
     }
-    function _renderVitals(v) {
+    // The pair the panel was last drawn from, so a language switch redraws it at once
+    // (app-boot.js's oo:langchange listener) rather than on the next 2 s poll -- and from
+    // the SAME two samples: re-rendering the last sample against ITSELF would compute a
+    // download rate over a zero interval, i.e. no rate, where the panel showed one.
+    let _vitalsLast = null;
+    function repaintVitalsFromCache() {
+      if (_vitalsOpen && _vitalsLast) _renderVitals(_vitalsLast.v, _vitalsLast.prev);
+    }
+    function _renderVitals(v, prev = _vitalsPrev) {
+      _vitalsLast = {v, prev};
       const p = v.process || {}, sc = v.scraping || {};
-      const dl = _rateBytes(v, _vitalsPrev, x => x.scraping && x.scraping.bytes_total);
+      const dl = _rateBytes(v, prev, x => x.scraping && x.scraping.bytes_total);
       const a = _actData || {};
       const pg = a.progress, plan = a.plan || {}, rates = a.per_host_rates || [];
+      // Every label and fixed phrase through t() at render (click-through B16, V9): the
+      // panel redraws on a switch, so it cannot lean on the DOM walker's cache, and
+      // "Collecting…" was never keyed at all.
+      const t9 = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
       const row = (k, val) => `<div class="vr"><span>${k}</span><b>${val}</b></div>`;
       const sect = (t) => `<div class="vsect">${t}</div>`;
       // A rate is the size's own frame plus the locale's per-second frame (P8).
@@ -1845,10 +1858,10 @@
       if (pg && pg.total) {
         const pct = Math.round(100 * Math.min(pg.done, pg.total) / pg.total);
         nowHtml =
-          row("Now collecting", `${esc(pg.current || "…")}`) +
+          row(esc(t9("Now collecting")), `${esc(pg.current || "…")}`) +
           `<div class="cap-bar" role="progressbar" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100">` +
           `<div class="cap-fill" style="width:${pct}%"></div><span class="cap-txt">${pg.done}/${pg.total} · ${pct}%</span></div>` +
-          (pg.pages ? row("Pages this run", String(pg.pages)) : "");
+          (pg.pages ? row(esc(t9("Pages this run")), String(pg.pages)) : "");
       } else {
         const nr = a.next_run ? new Date(a.next_run) : null;
         const mins = nr ? Math.max(0, Math.round((nr - Date.now()) / 60000)) : null;
@@ -1861,38 +1874,37 @@
           background: "Background tasks (markets · calendars · checks)",
           briefing: "Building the briefing",
         }[a.phase];
-        nowHtml = row("Now collecting", a.active
-          ? `<span class="muted">${esc(_phaseTxt || "Collecting…")}</span>`
+        nowHtml = row(esc(t9("Now collecting")), a.active
+          ? `<span class="muted">${esc(t9(_phaseTxt || "Collecting…"))}</span>`
           : a.running
-            ? `<span class="muted">idle</span>${mins != null ? ` · <span title="${esc(fmtDateTime(a.next_run))}">⏱ ${mins} min</span>` : ""}`
-            : '<span class="muted">scheduler stopped</span>');
+            ? `<span class="muted">${esc(t9("idle"))}</span>${mins != null ? ` · <span title="${esc(fmtDateTime(a.next_run))}">⏱ ${esc(tf("{n} min", {n: mins}))}</span>` : ""}`
+            : `<span class="muted">${esc(t9("scheduler stopped"))}</span>`);
       }
       // -- Next pass: targets as domain chips + the honest estimate --------- //
       const chips = (plan.next_targets || []).map(d => `<span class="cap-chip">${esc(d)}</span>`).join("");
       const extra = Math.max(0, (plan.planned_total || 0) - (plan.next_targets || []).length);
       const planHtml = (plan.planned_total || plan.estimated_seconds != null) ?
-        sect("Next pass") +
-        row("Targets", `${plan.planned_total || 0}`) +
+        sect(esc(t9("Next pass"))) +
+        row(esc(t9("Targets")), `${plan.planned_total || 0}`) +
         (chips ? `<div class="cap-chips">${chips}${extra ? `<span class="cap-chip muted">+${extra}</span>` : ""}</div>` : "") +
         (plan.estimated_seconds != null
-          ? row("Estimated duration", `${_fmtDur(plan.estimated_seconds)}`) +
+          ? row(esc(t9("Estimated duration")), `${_fmtDur(plan.estimated_seconds)}`) +
             `<div class="vnote">${esc(plan.estimate_method || "")}</div>`
           : "") : "";
       // -- Per-source rates: the app's OWN fetches, discrete ---------------- //
       const rateHtml = rates.length
-        ? sect("Per-source download rate") +
+        ? sect(esc(t9("Per-source download rate"))) +
           rates.map(r => `<div class="vr vr-dim"><span>${esc(r.host)}</span>` +
             `<b>${esc(perSec(r.kbps * 1024))} <span class="muted">· ${_fmtBytes(r.bytes)} · ${r.fetches}×</span></b></div>`).join("") +
-          '<div class="vnote">Measured from this app’s own responses (bytes ÷ transfer time) — not a system network counter.</div>'
+          `<div class="vnote">${esc(t9("Measured from this app’s own responses (bytes ÷ transfer time) — not a system network counter."))}</div>`
         : "";
       // -- System: the hardware row, compact -------------------------------- //
       // Keyed (the 2026-09-26 leftovers, Y9): "Scraping ↓" had no key at all, and "total"
       // was welded into the middle of a text node the i18n walker can never match, so all
       // three read English in every locale. "Memory" is translated here too rather than
       // left to the walker, so the row's two halves come from the same call.
-      const t9 = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
-      const sysHtml = sect("System") +
-        row("CPU", p.cpu_percent == null ? "—" : p.cpu_percent + "%") +
+      const sysHtml = sect(esc(t9("System"))) +
+        row(esc(t9("CPU")), p.cpu_percent == null ? "—" : p.cpu_percent + "%") +
         row(esc(t9("Memory")), _fmtBytes(p.rss_bytes)) +
         row(esc(t9("Scraping ↓")), (dl == null ? "—" : esc(perSec(dl))) +
             ` <span class="muted">· ${esc(tf("total {size}", { size: _fmtBytes(sc.bytes_total) }))} · ${sc.fetches_total||0}×</span>`);

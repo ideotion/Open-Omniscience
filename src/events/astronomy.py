@@ -312,11 +312,23 @@ _SEASON_METHOD = (
     "24 periodic terms; computed locally, no data files"
 )
 
+#: The SEASONS' own accuracy (click-through B16, V7). They carried the moon's sentence
+#: ("typically within ~2 minutes"), a figure about ch. 49's truncated lunar series that
+#: nobody measured for ch. 27. What IS measured is stated and nothing more: the book's
+#: worked example 27.a to within 9 s (tests/test_astronomy.py pins 1e-4 day; the error
+#: measured there is 0.15 s) and the published 2024 dates, which is two checks, not an
+#: error bound for every year -- so the sentence says it is not one.
+_SEASON_ACCURACY = (
+    "checked against the book's worked example 27.a (within 9 s) and the published 2024 "
+    "dates, not a general error bound; times are TD (ΔT≈70 s vs UTC not applied — "
+    "immaterial at agenda granularity, stated rather than hidden)"
+)
+
 
 def seasons_for_year(year: int) -> dict:
     """The four season points of a year (UTC), hemisphere-neutrally named."""
     out: dict[str, Any] = {"year": year, "seasons": [], "method": _SEASON_METHOD,
-           "accuracy": _ACCURACY,
+           "accuracy": _SEASON_ACCURACY,
            "naming": (
                "astronomical names only — 'June solstice', never 'summer "
                "solstice': seasons are opposite across hemispheres and "

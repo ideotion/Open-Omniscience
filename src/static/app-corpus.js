@@ -1160,7 +1160,14 @@
           if (typeof window[fn] !== "function") continue;
           if (hostId === null) { window[fn](arg); continue; }
           const host = document.getElementById(hostId);
-          if (host && host.children && host.children.length) window[fn](arg);
+          // A host still holding its MARKUP placeholder (`data-oo-placeholder`, the static
+          // "Loading…") was never opened: its loader has not run, and the first open draws
+          // it in the new language anyway. Counting that placeholder as rows made every
+          // switch fetch for five Insights and Settings panels the reader had not opened
+          // (click-through B16, V11). A loader's own "Loading…" carries no marker, so a
+          // panel opened mid-fetch still re-runs for the new language.
+          if (host && host.children && host.children.length
+              && !host.querySelector(":scope > [data-oo-placeholder]")) window[fn](arg);
         } catch (_e) { /* one stale surface must never stop the rest */ }
       }
     }

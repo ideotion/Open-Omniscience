@@ -1429,7 +1429,9 @@
         `<a class="chip tiny" href="#" onclick='openAnalysisFor(${esc(JSON.stringify(x.term))});return false'`
         + ` title="${esc(t("Open this keyword's own analysis window"))}">${kwLabelHtml(x, {inLink: true})}`
         + ` <span class="muted">${esc(growthFallback(x) || `↑${x.growth}× · ${x.recent}`)}</span></a>${kwQidHtml(x)}`).join("");
-      host.innerHTML = `<div class="ov-trend"><span class="muted">${esc(t("Trending now"))}:</span>${chips}`
+      // The label takes the locale's own separator ("Tendances :", "热门："), not a welded
+      // English colon (click-through B16, V13); the chips are the value that follows it.
+      host.innerHTML = `<div class="ov-trend"><span class="muted">${ooLabelHtml(esc(t("Trending now")), "").trimEnd()}</span>${chips}`
         + `<a class="ov-more" href="#" onclick="showTab('insights');return false">${esc(t("More in Insights"))} →</a></div>`
         + (_homeTrendCaveat ? `<div class="hint muted" style="font-size:11px">${esc(_homeTrendCaveat)}</div>` : "");
     }

@@ -1003,6 +1003,21 @@ def _section_heading(section: dict, T: Translator) -> str:
     return T.t(str(section.get("section", "section")).replace("_", " ").capitalize())
 
 
+def _skip_reason(section: dict, T: Translator) -> str:
+    """Why a section is not shown, in the document's language.
+
+    A reason that carries a number arrives as a FRAME plus its values (``skipped_i18n``
+    / ``skipped_vars``, click-through B16, V5): the filled English can match no catalog
+    entry, so it was printed in English in every language. A fixed reason stays one
+    whole sentence keyed on itself, and a record from before the frame existed keeps
+    its English sentence.
+    """
+    frame = section.get("skipped_i18n")
+    if frame:
+        return T.f(str(frame), **(section.get("skipped_vars") or {}))
+    return T.t(str(section["skipped"]))
+
+
 def _md_section(section: dict, T: Translator) -> list[str]:
     out = [f"## {_section_heading(section, T)}", ""]
     if section.get("error"):
@@ -1012,7 +1027,7 @@ def _md_section(section: dict, T: Translator) -> list[str]:
         ]
         return out
     if section.get("skipped"):
-        out += [T.f("*Not shown: {reason}.*", reason=T.t(str(section["skipped"]))), ""]
+        out += [T.f("*Not shown: {reason}.*", reason=_skip_reason(section, T)), ""]
         return out
 
     w = section.get("window") or {}
@@ -1642,7 +1657,7 @@ def _html_section(section: dict, T: Translator) -> list[str]:
     if section.get("skipped"):
         out.append(
             '<p class="meta">'
-            + _e(T.f("Not shown: {reason}.", reason=T.t(str(section["skipped"]))))
+            + _e(T.f("Not shown: {reason}.", reason=_skip_reason(section, T)))
             + "</p>"
         )
         return out

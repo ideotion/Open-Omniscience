@@ -1230,27 +1230,32 @@
     }
 
     function _hwChips(gpu, cap) {
+      // The label, the fallback value and every hover are keyed x12 (click-through B16,
+      // V8): "Cores" and the two GPU sentences were the English left on a French card.
+      // GPU / VRAM / RAM stay as written -- they are the same abbreviations in every locale.
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const chip = (label, value, title) =>
         `<span class="pill" title="${esc(title || "")}"><span class="muted">${esc(label)}</span> ${esc(value)}</span>`;
       const out = [];
       if (gpu && gpu.available) {
-        out.push(chip("GPU", gpu.name || "detected", "A dedicated GPU was detected, so vLLM can serve here."));
+        out.push(chip("GPU", gpu.name || t("detected"), t("A dedicated GPU was detected, so vLLM can serve here.")));
         // Sizes through the one localised writer (Y9), from bytes: the probe reports
         // MiB (nvidia-smi) and the RAM figure GiB (psutil / 1024**3), the same binary
         // steps `_sizeText` divides by, so the number is unchanged and only the unit's
         // written form follows the UI language. Whole GB for VRAM, as before.
         if (gpu.vram_mb) out.push(chip("VRAM", _sizeText(gpu.vram_mb * 1048576, () => 0), ""));
       } else {
-        out.push(chip("GPU", (window.OOI18N && OOI18N.t ? OOI18N.t("none detected") : "none detected"),
-          "No dedicated GPU was found. vLLM needs one; Ollama runs on the CPU."));
+        out.push(chip("GPU", t("none detected"),
+          t("No dedicated GPU was found. vLLM needs one; Ollama runs on the CPU.")));
       }
       // Field names read from inference_capability()'s real payload, not assumed:
       // total_ram_gb / cpu_cores / unified_ram_gb. A missing one is omitted rather
       // than rendered as a blank chip.
       if (cap) {
         const ram = cap.total_ram_gb || cap.unified_ram_gb;
-        if (ram) out.push(chip("RAM", _sizeText(ram * 1073741824, (i, v) => (v % 1 ? 1 : 0)), cap.method || ""));
-        if (cap.cpu_cores) out.push(chip("Cores", String(cap.cpu_cores), ""));
+        // The method is a FIXED server sentence (backend.py _CAPABILITY_METHOD), keyed.
+        if (ram) out.push(chip("RAM", _sizeText(ram * 1073741824, (i, v) => (v % 1 ? 1 : 0)), cap.method ? t(cap.method) : ""));
+        if (cap.cpu_cores) out.push(chip(t("Cores"), String(cap.cpu_cores), ""));
       }
       return `<div class="row" style="gap:6px;flex-wrap:wrap;margin-top:6px">${out.join("")}</div>`;
     }
@@ -1363,15 +1368,19 @@
       // (near-empty) beside a size reads as "you have no models" to an operator whose
       // real store holds twenty GB, which is how "the app downloaded them into
       // ~/.ollama" gets discovered by opening a file manager instead of this panel.
+      // Each "label: path" through the locale's own separator ("dossier de l'app, inutilisé :"),
+      // never an English colon welded after the label (click-through B16, V14).
       if (r.ollama.in_app_folder === false) {
-        html += `<div style="margin-top:2px">Ollama: <code>${esc(r.ollama.detected)}</code>` +
+        html += `<div style="margin-top:2px">` + ooLabelHtml("Ollama", `<code>${esc(r.ollama.detected)}</code>`) +
                 `${gb(r.ollama.detected_bytes)} <span class="muted">${esc(t("in use"))}</span></div>` +
-                `<div class="muted">${esc(t("app folder, not in use"))}: ` +
-                `<code>${esc(r.ollama.configured)}</code>${gb(r.ollama.bytes)}</div>`;
+                `<div class="muted">` + ooLabelHtml(esc(t("app folder, not in use")),
+                  `<code>${esc(r.ollama.configured)}</code>`) + `${gb(r.ollama.bytes)}</div>`;
       } else {
-        html += `<div style="margin-top:2px">Ollama: <code>${esc(r.ollama.configured)}</code>${gb(r.ollama.bytes)}</div>`;
+        html += `<div style="margin-top:2px">` + ooLabelHtml("Ollama", `<code>${esc(r.ollama.configured)}</code>`) +
+                `${gb(r.ollama.bytes)}</div>`;
       }
-      html += `<div>Hugging Face: <code>${esc(r.huggingface.configured)}</code>${gb(r.huggingface.bytes)}</div>`;
+      html += `<div>` + ooLabelHtml("Hugging Face", `<code>${esc(r.huggingface.configured)}</code>`) +
+              `${gb(r.huggingface.bytes)}</div>`;
       // A SPLIT is its own state, and it is the one the operator actually reported
       // ("models did download into ~/.ollama, yet there is another folder containing
       // ollama models in .../data/models/ollama"). It is NOT covered by the note above:
