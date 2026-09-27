@@ -676,8 +676,8 @@
           // REAL substance figures (counts, never a score): word count (flagged when the
           // language is unsegmented, where word_count is meaningless) + cited sources.
           const wc = (a.word_count != null && !a.unsegmented)
-            ? `${esc(String(a.word_count))} ${esc(t("words"))}` : "";
-          const cs = `${esc(String(a.cited_sources || 0))} ${esc(t("cited sources"))}`;
+            ? `${esc(fmtNum(a.word_count))} ${esc(t("words"))}` : "";
+          const cs = `${esc(fmtNum(a.cited_sources || 0))} ${esc(t("cited sources"))}`;
           const chan = src.source_type ? `<span class="pill">${esc(homeChannelLabel(src.source_type))}</span>` : "";
           const facts = [wc, cs].filter(Boolean).join(" · ");
           // Spread honesty (anti-false-triangulation): count DISTINCT OTHER outlets that
@@ -687,7 +687,9 @@
           const others = (a.also_reported_by || []).length;
           const also = others > 0
             ? ` <span class="muted">— ${esc(t("also reported by {n} more").replace("{n}", String(others)))}</span>` : "";
-          return `<div class="home-recent-row"><a href="${esc(a.url || ("/api/articles/" + a.id + "/view"))}" target="_blank" rel="noopener" title="${esc(t("offline stored copy"))}">${esc(a.title || t("(untitled)"))}</a>`
+          // The LOCAL reader first (invariant #6), as the Recent panel does: the row used
+          // to open the external original while its hover said "offline stored copy".
+          return `<div class="home-recent-row"><a href="/api/articles/${encodeURIComponent(a.id)}/view" target="_blank" rel="noopener" title="${esc(t("offline stored copy"))}">${esc(a.title || t("(untitled)"))}</a>`
             + (meta ? ` <span class="muted">— ${meta}</span>` : "")
             + `<div class="muted small" style="margin-top:2px">${chan} ${facts}${also}</div></div>`;
         }).join("")

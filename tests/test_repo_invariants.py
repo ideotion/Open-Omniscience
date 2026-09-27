@@ -2597,6 +2597,11 @@ def test_ui_invariants():
     bare = _re.findall(r'target="_blank"[^>]*>(?:source|official source|official|'
                        r'Official[^<]*source)(?:&nbsp;|\s)?↗?</a>', html)
     assert not bare, f"bare external source↗ links must route through extLink (#6e): {bare[:3]}"
+    # 6 (article rows): an article's title link opens the LOCAL reader, never its external
+    # url first. Home's Latest panel did (href = a.url || reader) under an "offline stored
+    # copy" hover until 2026-09-27.
+    url_first = _re.findall(r'href="\$\{esc\(\w+\.url\s*\|\|', html)
+    assert not url_first, f"an article link opens the external original before the local reader (#6): {url_first[:3]}"
     # 18. ONE universal subtab component (keystone, ruled 2026-06-13): a single
     #     reusable helper drives the vertical subtab grammar everywhere — lateral
     #     sidebar = main tabs, vertical subtabs = facets. It owns ARIA + keyboard
