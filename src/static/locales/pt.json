@@ -5308,7 +5308,7 @@
   "Not enabled": "Não ativadas",
   "{n} of your {total} sources: not enabled — discovered candidates awaiting review, and any source switched off or whose admission was undone. Collection does not reach them.": "{n} das suas {total} fontes: não ativadas — candidatas descobertas à espera de revisão, e qualquer fonte desligada ou cuja admissão foi anulada. A recolha não as alcança.",
   "{channel}: the channel its sources assert (source type “{code}”), never a quality score. Click to explore its articles.": "{channel}: o canal que as suas fontes declaram (tipo de fonte «{code}»), nunca uma pontuação de qualidade. Clique para explorar os seus artigos.",
-  "Each chip is a content channel its sources assert, never a quality score. Click a channel to explore its corpus.": "Cada etiqueta é um canal de conteúdo que as suas fontes declaram, nunca uma pontuação de qualidade. Clique num canal para explorar o seu corpus.",
+  "Each chip is a content channel its sources assert, never a quality score. Click a channel to explore its corpus.": "Cada chip é um canal de conteúdo que as suas fontes declaram, nunca uma pontuação de qualidade. Clique num canal para explorar o seu corpus.",
   "News": "Notícias",
   "Legal": "Jurídico",
   "Wiki": "Wiki",

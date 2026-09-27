@@ -5308,7 +5308,7 @@
   "Not enabled": "未启用",
   "{n} of your {total} sources: not enabled — discovered candidates awaiting review, and any source switched off or whose admission was undone. Collection does not reach them.": "您的 {total} 个来源中有 {n} 个：未启用——等待审核的发现候选来源，以及任何被关闭或撤销准入的来源。采集不会覆盖它们。",
   "{channel}: the channel its sources assert (source type “{code}”), never a quality score. Click to explore its articles.": "{channel}：其来源所声明的渠道（来源类型“{code}”），绝非质量评分。点击以浏览其文章。",
-  "Each chip is a content channel its sources assert, never a quality score. Click a channel to explore its corpus.": "每个标签都是其来源所声明的内容渠道，绝非质量评分。点击某个渠道以浏览其语料库。",
+  "Each chip is a content channel its sources assert, never a quality score. Click a channel to explore its corpus.": "此处每一项都是其来源所声明的内容渠道，绝非质量评分。点击某个渠道以浏览其语料库。",
   "News": "新闻",
   "Legal": "法律类",
   "Wiki": "维基",

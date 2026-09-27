@@ -214,3 +214,25 @@ def test_the_disabled_figure_is_labelled_by_its_predicate():
     assert 'sources_candidates: "Not enabled"' in object_literal(home, "HOME_STAT_LABELS")
     hover = object_literal(home, "HOME_SOURCE_SPLIT_HOVER")
     assert "switched off" in hover and "admission was undone" in hover
+
+
+def test_the_by_channel_hint_never_calls_a_chip_a_tag():
+    """U-8, from the batch review: the zh and pt hints named the chip with the word Home
+    uses for a TAG ("每个标签…", "Cada etiqueta…") on a page that also filters by tag, so the
+    hint read "each tag is a content channel". Every locale's hint must avoid the word its
+    own tag strings use; the stems are checked against those strings so the list stays
+    honest if a locale's vocabulary moves."""
+    hint = ("Each chip is a content channel its sources assert, never a quality score. "
+            "Click a channel to explore its corpus.")
+    tag_stems = {
+        "ar": ["وسم", "وسوم"], "bn": ["ট্যাগ"], "de": ["tag"], "es": ["etiqueta"],
+        "fr": ["étiquette"], "hi": ["टैग"], "id": ["tag"], "ja": ["タグ"],
+        "pt": ["etiqueta"], "ru": ["тег", "метк"], "zh": ["标签"],
+    }
+    for code, stems in tag_stems.items():
+        loc = _locales()[code]
+        tag_text = (loc["All tags"] + " " + loc["No articles for this tag yet."]).lower()
+        assert any(s in tag_text for s in stems), f"{code}: none of {stems} names a tag any more"
+        value = loc[hint].lower()
+        for s in stems:
+            assert s not in value, f"{code}: the By-channel hint calls a chip a tag ({s!r}): {loc[hint]}"
