@@ -384,7 +384,14 @@ def register(dbapi_connection) -> None:
     """Register the three functions the sync triggers call on one SQLite connection.
 
     Every connection that can write ``articles`` needs them: a trigger calling a function
-    the connection does not have fails, and so does the write that fired it. Idempotent."""
+    the connection does not have fails, and so does the write that fired it.
+
+    Call it when a connection is OPENED (``connect.py`` and the pool hook do), or before
+    its transaction writes anything. Re-registering is harmless only while no statement is
+    active: SQLite refuses to replace a function while one is (``Error creating function``),
+    and inside a write transaction that has written the FTS index, FTS5's open blob reader
+    counts as active -- which is how a per-chunk call failed every import adding more than
+    20,000 articles (2026-09-27). Between transactions it is idempotent."""
     create: Callable | None = getattr(dbapi_connection, "create_function", None)
     if create is None:
         return
