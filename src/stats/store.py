@@ -152,10 +152,13 @@ def list_figures(
         # rather than printing the producer's code bare.
         "figures": [{**_row_dict(r), **area_classification(r.ref_area)} for r in rows],
         "method": "Stored official-statistics observations; latest vintage per series unless history requested.",
+        # A reader's sentence, keyed x12 and t()'d by the table that prints it: "A None
+        # value" named a Python token the reader never sees -- the gap cell is drawn
+        # as "—" (2026-09-27 re-walk, L-4).
         "caveat": (
             "Each figure is a STANCED producer's published value (never a credibility "
-            "score). A None value is a published gap, not zero. Producers are shown, "
-            "never averaged."
+            "score). A missing value (—) is a published gap, not zero. Producers are "
+            "shown, never averaged."
         ),
     }
 
@@ -214,10 +217,12 @@ def minerals_supply_summary(session: Session, *, limit: int = 4000) -> dict:
             "USGS Mineral Commodity Summaries — annual supply statistics, latest vintage "
             "per observation, grouped by commodity and measure."
         ),
+        # Keyed x12 and t()'d by the Minerals-supply board, like the reason below; it
+        # said "A None value", a Python token -- the board draws a gap as "—" (L-4).
         "caveat": (
             "SUPPLY data — production, reserves, net-import-reliance. NOT market prices: "
             "no free rare-earth spot-price source exists and none is fabricated here. A "
-            "None value is a published gap. Producers are shown, never averaged."
+            "missing value (—) is a published gap. Producers are shown, never averaged."
         ),
         "reason": (
             None

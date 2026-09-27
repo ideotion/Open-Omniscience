@@ -328,6 +328,18 @@
           renderAgenda();
         }
       } catch (_e) {}
+      // The 2026-09-27 re-walk (L-3, U-3) found six more, each a name or a count localised
+      // at render and so left in the old language until a reload: the Agenda's Country
+      // picker (names AND order), the Insights map tables, the World map's detail panel,
+      // the statistics producers directory and the calendar directory -- plus the
+      // Governments country pickers, which repaintGovViewsFromCache above now rebuilds.
+      // Each redraws from what it already holds, never fetches, and does nothing for a
+      // surface that was never drawn.
+      try { if (typeof _agFillCountryOptions === "function") _agFillCountryOptions(); } catch (_e) {}
+      try { if (typeof repaintInsMapFromCache === "function") repaintInsMapFromCache(); } catch (_e) {}
+      try { if (typeof repaintOoMapDetailFromCache === "function") repaintOoMapDetailFromCache(); } catch (_e) {}
+      try { if (typeof repaintStatAgenciesFromCache === "function") repaintStatAgenciesFromCache(); } catch (_e) {}
+      try { if (typeof repaintFeedDirFromCache === "function") repaintFeedDirFromCache(); } catch (_e) {}
       // Re-translate the airplane button's JS-managed (data-i18n-dyn) title.
       try { if (_netOnline !== null && typeof _paintNetwork === "function") _paintNetwork(_netOnline); } catch (_e) {}
       // Re-render the AI prompt editor (remark 13): its labels are auto-translated by the

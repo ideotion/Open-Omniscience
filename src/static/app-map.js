@@ -1530,8 +1530,26 @@
     // straight from the map-coverage row (counts only, no score). The mean-tone line
     // carries the VADER English-only caveat + its n. A button opens the Sources tab
     // so the user can explore that country's sources.
+    // What the detail panel under the map last showed -- a country's breakdown or one
+    // signal -- so a language switch redraws it from the same objects, with no fetch
+    // and no scroll. The heading's hover (DEU -> "Germany") is localised at render, so
+    // without this it kept the old language beside a translated panel (2026-09-27
+    // re-walk, L-3); the signal detail's dates and pills are the same class (L-6).
+    // `_ooMapDetailRepaint` is true only while this redraw runs, so the redraw does not
+    // scroll the page the way a click on the map does.
+    let _ooMapDetailLast = null, _ooMapDetailRepaint = false;
+    function repaintOoMapDetailFromCache() {
+      const host = $("oo-coverage-detail"), last = _ooMapDetailLast;
+      if (!last || !host || !host.firstElementChild) return;
+      _ooMapDetailRepaint = true;
+      try {
+        if (last.kind === "country") _ooMapCountryDetail(last.row, last.dim);
+        else if (last.kind === "signal") _ooMapSignalDetail(last.s, last.visible, last.win);
+      } finally { _ooMapDetailRepaint = false; }
+    }
     function _ooMapCountryDetail(row, dim) {
       const host = $("oo-coverage-detail"); if (!host) return;
+      _ooMapDetailLast = { kind: "country", row, dim };
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : (x => x);
       if (!row) { host.innerHTML = `<div class="panel" style="padding:10px 12px;background:var(--panel2)"><span class="muted">${esc(t("No coverage recorded for this country yet."))}</span></div>`; return; }
       const iso = (row.country || "").toLowerCase();
@@ -1559,14 +1577,14 @@
           <button class="tiny secondary" onclick="showTab('sources')">${esc(t("Explore sources"))}</button>
         </div>
       </div>`;
-      host.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      if (!_ooMapDetailRepaint) host.scrollIntoView({ behavior: "smooth", block: "nearest" });
     }
     // Signal click-to-detail (slice 5a.2 — ported faithfully from the temporal map's
     // showTmapDetail so retiring #oo-tmap loses nothing): the event's kind/title,
     // confirmed/geocode honesty, date·place·country·coords·source, note, reference
     // link, "find coverage in your corpus", and the co-occurrence "near in space &
-    // time" seed (the same honest never-a-cause framing). English to match the
-    // retired panel (no regression); keyable later.
+    // time" seed (the same honest never-a-cause framing). The chrome is keyed and the
+    // dates localised (2026-09-27 re-walk, L-6); it repaints on a language switch.
     let _ooMapSigSet = [], _ooMapSigWin = 25;
     // "Near in space & time" co-occurrence is a TIGHT, FIXED window (field test
     // 2026-06-19 #14: it used the slider's focus window — ~span/12, i.e. ~166 years on
@@ -1590,6 +1608,7 @@
       const host = $("oo-coverage-detail"); if (!host || !s) return;
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : (x => x);
       _ooMapSigSet = visible || []; _ooMapSigWin = win || 25;
+      _ooMapDetailLast = { kind: "signal", s, visible, win };
       const url = s.url ? safeUrl(s.url) : null;
       // Item 2 (field-feedback A6, ruled): for a hazard, the composed search
       // combines TYPE + PLACE (two real, provider-asserted facts) rather than the
@@ -1598,8 +1617,10 @@
       const cov = (s.kind === "hazard")
         ? [s.hazard_type, s.place].filter(Boolean).join(" ").trim()
         : (s.place || s.title || "").replace(/\s*\([^)]*\)\s*$/, "").trim();
-      const geo = s.geocode === "country" ? `<span class="pill warn" title="country-level stand-in point, not the exact spot">≈ country</span>`
-                : s.geocode === "city" ? `<span class="pill" title="placed at a known city">city</span>` : "";
+      // The precision pill's WORD is keyed, like its hover already was (L-6: "≈ country"
+      // read in English beside a translated hover); the panel repaints on a switch.
+      const geo = s.geocode === "country" ? `<span class="pill warn" title="country-level stand-in point, not the exact spot">${esc(t("≈ country"))}</span>`
+                : s.geocode === "city" ? `<span class="pill" title="placed at a known city">${esc(t("city"))}</span>` : "";
       const conf = s.source === "corpus-mention" ? `<span class="pill warn" title="a date extracted from article text">mentioned · extracted</span>`
                  : s.confirmed ? `<span class="pill ok">confirmed</span>` : `<span class="pill warn">unconfirmed / scheduled</span>`;
       // Item 2: the INTERNAL article/reader link, once the hazard has been
@@ -1621,7 +1642,7 @@
         </div>
         ${s.note ? `<div class="hint" style="margin-top:5px">${esc(s.note)}</div>` : ""}
         <div class="row" style="margin-top:7px;gap:8px">
-          ${url ? extLink(url, "Official / reference source ↗", "tiny secondary", "align-self:center") : ""}
+          ${url ? extLink(url, t("Official / reference source ↗"), "tiny secondary", "align-self:center") : ""}
           ${localLink}
           ${cov ? `<button class="tiny secondary" onclick="tmapFindCoverage(${esc(JSON.stringify(cov))})">Find coverage in your corpus</button>` : ""}
         </div>
@@ -1634,11 +1655,11 @@
             ${esc((n.o.title || "").slice(0, 38))} <span class="muted">${n.o.year != null ? esc(String(n.o.year)) : ""}</span></button>`).join("");
           return `<div style="margin-top:8px;border-top:1px solid var(--border);padding-top:6px">
             <div style="font-size:12px"><strong>Near in space &amp; time</strong>
-              <span class="warn" title="These signals are merely close in place and time within your current window.">— co-occurrence, not a connection or cause. You judge.</span></div>
+              <span class="warn" title="These signals are merely close in place and time within your current window.">${esc(t("— co-occurrence, not a connection or cause. You judge."))}</span></div>
             <div style="margin-top:4px">${items}</div></div>`;
         })()}
       </div>`;
-      host.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      if (!_ooMapDetailRepaint) host.scrollIntoView({ behavior: "smooth", block: "nearest" });
     }
     // Item 3 (field-feedback A6, ruled): deep-link from the Home Alerts strip to
     // the World map, "centred on the event" -- switches to the map, selects the
@@ -1774,24 +1795,36 @@
       }
     }
 
+    // What the two Insights map tables last drew. Their country hovers are localised at
+    // render, so a language switch redraws them from this -- never a refetch -- or BRA
+    // kept hovering "Brazil" on a French page until a reload (2026-09-27 re-walk, L-3).
+    let _insMapLast = null;
     async function loadMap() {
       const days = $("map-days").value, kind = $("map-kind").value;
       try {
         const d = await api(`/api/insights/map?days=${days}&kind=${encodeURIComponent(kind)}`);
-        // A COUNTRY row carries `code` (the stored alpha-2 the index keys on) and a CITY
-        // row carries `name` + `country`, so `code` must go through the country cell --
-        // printing it raw put `br`/`de` in the first column with no hover (L2).
-        const rowsFor = (areas, label) => areas.length
-          ? "<tr><th>" + label + "</th><th>Top keywords</th></tr>" + areas.map(a =>
-              `<tr><td><strong>${a.code ? ooCountryCell(a.code) : esc(a.name)}</strong>${a.country&&a.name?` <span class="muted">${ooCountryCell(a.country)}</span>`:""}</td><td>` +
-              a.top.map(t => `<span class="pill" style="cursor:pointer" onclick='pickTerm(${esc(JSON.stringify(t.term))})'>${esc(t.term)} ${t.mentions}</span>`).join(" ") +
-              `</td></tr>`).join("")
-          : `<tr><td class="muted">No data — index the corpus (sources need a country/city).</td></tr>`;
+        _insMapLast = d;
         $("map-svg").innerHTML = buildMapSvg(d.cities || []);
         MAP_VB = {x: 0, y: 0, w: MAP_W, h: MAP_H}; wireMapDrag();
-        $("map-countries").innerHTML = rowsFor(d.countries, "Country");
-        $("map-cities").innerHTML = rowsFor(d.cities, "City");
+        _insMapTables(d);
       } catch (e) { toast(_failMsg("Map failed: {error}", e), "err"); }
+    }
+    function _insMapTables(d) {
+      // A COUNTRY row carries `code` (the stored alpha-2 the index keys on) and a CITY
+      // row carries `name` + `country`, so `code` must go through the country cell --
+      // printing it raw put `br`/`de` in the first column with no hover (L2).
+      const rowsFor = (areas, label) => areas.length
+        ? "<tr><th>" + label + "</th><th>Top keywords</th></tr>" + areas.map(a =>
+            `<tr><td><strong>${a.code ? ooCountryCell(a.code) : esc(a.name)}</strong>${a.country&&a.name?` <span class="muted">${ooCountryCell(a.country)}</span>`:""}</td><td>` +
+            a.top.map(t => `<span class="pill" style="cursor:pointer" onclick='pickTerm(${esc(JSON.stringify(t.term))})'>${esc(t.term)} ${t.mentions}</span>`).join(" ") +
+            `</td></tr>`).join("")
+        : `<tr><td class="muted">No data — index the corpus (sources need a country/city).</td></tr>`;
+      $("map-countries").innerHTML = rowsFor(d.countries || [], "Country");
+      $("map-cities").innerHTML = rowsFor(d.cities || [], "City");
+    }
+    function repaintInsMapFromCache() {
+      const box = $("map-countries");
+      if (_insMapLast && box && box.querySelector("tr")) _insMapTables(_insMapLast);
     }
 
     // -- World map (ooMap): choropleth + space-time signals + a time slider -- //
@@ -1817,16 +1850,38 @@
 
     const MON = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 
-    function fmtYear(t) {                          // fractional year -> "Sep 2001"
+    // Month names and date order in the APP language (Intl, as fmtDateTime does), not
+    // the English MON array: the Stories detail, the dot hovers and the slider read
+    // "Aug 17, 2027" on a French, Arabic or Chinese page (2026-09-27 re-walk, L-6).
+    // setUTCFullYear, never Date.UTC alone, which maps a year below 100 to 19xx -- AD 79
+    // would print as 1979. A year below 1 keeps the signed number the slider always
+    // showed, with only the month localised: an era suffix would silently renumber it
+    // (astronomical -3000 is 3001 BC). MON stays as the fallback if Intl throws.
+    function _tmapFmt(y, mon, day) {
+      const lc = (window.OOI18N && OOI18N.current && OOI18N.current()) || "en";
+      const at = (yy) => { const d = new Date(Date.UTC(2000, 0, 1)); d.setUTCFullYear(yy, mon, day || 1); return d; };
+      try {
+        if (y < 1) {
+          const mn = new Intl.DateTimeFormat(lc, { month: "short", timeZone: "UTC" }).format(at(2001));
+          return day ? `${mn} ${day}, ${y}` : `${mn} ${y}`;
+        }
+        const o = { year: "numeric", month: "short", timeZone: "UTC" };
+        if (day) o.day = "numeric";
+        return new Intl.DateTimeFormat(lc, o).format(at(y));
+      } catch (_e) {
+        return day ? `${MON[mon]} ${day}, ${y}` : `${MON[mon]} ${y}`;
+      }
+    }
+    function fmtYear(t) {                          // fractional year -> "Sep 2001" (localised)
       if (t == null) return "—";
       const y = Math.floor(t), doy = Math.round((t - y) * 365);
       const d = new Date(2001, 0, 1); d.setDate(doy + 1);
-      return `${MON[d.getMonth()]} ${y < 0 ? "" : ""}${y}`;
+      return _tmapFmt(y, d.getMonth(), 0);
     }
-    function fmtDate(s) {                          // a signal's ISO date -> "Oct 24, 79"
+    function fmtDate(s) {                          // a signal's ISO date -> "Oct 24, 79" (localised)
       const m = /^(\-?\d+)-(\d{2})-(\d{2})/.exec(s.date || "");
       if (!m) return s.date || "";
-      return `${MON[+m[2]-1]} ${+m[3]}, ${+m[1]}`;
+      return _tmapFmt(+m[1], +m[2]-1, +m[3]);
     }
 
     // The honest seed of "convergence": other signals close in BOTH place and time.
@@ -2186,43 +2241,56 @@
     //    Descriptive only: NO figures, NO score, NO verdict label (ruling #50 —   //
     //    a producer is a STANCED source, stated as a caveat; the user judges).    //
     //    home URLs open the LOCAL link-preview first (extLink, invariant #6/#6e). //
+    // The directory's last payload: its country hovers are localised at render, so a
+    // language switch redraws it from this -- never a refetch -- or RUS kept hovering
+    // "Russia" on a French page until a reload (2026-09-27 re-walk, L-3).
+    let _statAgenciesLast = null;
+    function repaintStatAgenciesFromCache() {
+      const box = $("stat-agencies");
+      if (_statAgenciesLast && box && box.querySelector("table")) _renderStatAgencies(_statAgenciesLast);
+    }
     async function loadStatAgencies() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const box = $("stat-agencies"); if (!box) return;
       box.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
       try {
-        const d = await api("/api/stats/agencies");
-        const ags = d.agencies || [];
-        const cov = $("stat-coverage");
-        if (cov) {
-          // Honest coverage line: how many continents have at least one national producer.
-          const n = (d.continents_covered || []).length;
-          // Keyed frames with grouped numbers (R14): "12 producers" welded a raw count
-          // to an English noun.
-          cov.textContent = _mapTf("Continents covered: {n}", { n: fmtNum(n, 0) })
-            + " · " + (ags.length === 1 ? _mapTf("{n} producer", { n: fmtNum(1, 0) })
-              : _mapTf("{n} producers", { n: fmtNum(ags.length, 0) }));
-        }
-        if (!ags.length) { box.innerHTML = `<div class="muted">${esc(t("No producers listed."))}</div>`; return; }
-        // The API already orders international-first, then by region, then name —
-        // render in that order (no client re-sort needed). Scope is labelled, not raw.
-        const scope = (s) => s === "international" ? t("International")
-          : s === "national" ? t("National") : (s || "");
-        const rows = ags.map(a => `<tr>
-            <td><strong>${esc(a.name)}</strong>${a.acronym ? ` <span class="muted">(${esc(a.acronym)})</span>` : ""}</td>
-            <td>${esc(scope(a.scope))}</td>
-            <td>${a.country ? ooCountryCell(a.country) : "<span class=\"muted\">—</span>"}</td>
-            <td>${esc(a.region || "")}</td>
-            <td>${a.home_url ? extLink(a.home_url, a.home_url) : ""}</td>
-          </tr>`).join("");
-        box.innerHTML = `<table>
-          <tr><th>${esc(t("Name"))}</th><th>${esc(t("Scope"))}</th><th>${esc(t("Country"))}</th>`
-          + `<th>${esc(t("Region"))}</th><th>${esc(t("Official site"))}</th></tr>${rows}</table>`;
-        // The API caveat travels with the data, visible by default (informed consent).
-        if (d.caveat) box.innerHTML += `<div class="hint" style="margin-top:8px">${esc(d.caveat)}</div>`;
+        _statAgenciesLast = await api("/api/stats/agencies");
+        _renderStatAgencies(_statAgenciesLast);
       } catch (e) {
         box.innerHTML = `<div class="muted">${esc(t("Could not load the statistics directory."))}</div>`;
       }
+    }
+    function _renderStatAgencies(d) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const box = $("stat-agencies"); if (!box) return;
+      const ags = d.agencies || [];
+      const cov = $("stat-coverage");
+      if (cov) {
+        // Honest coverage line: how many continents have at least one national producer.
+        const n = (d.continents_covered || []).length;
+        // Keyed frames with grouped numbers (R14): "12 producers" welded a raw count
+        // to an English noun.
+        cov.textContent = _mapTf("Continents covered: {n}", { n: fmtNum(n, 0) })
+          + " · " + (ags.length === 1 ? _mapTf("{n} producer", { n: fmtNum(1, 0) })
+            : _mapTf("{n} producers", { n: fmtNum(ags.length, 0) }));
+      }
+      if (!ags.length) { box.innerHTML = `<div class="muted">${esc(t("No producers listed."))}</div>`; return; }
+      // The API already orders international-first, then by region, then name —
+      // render in that order (no client re-sort needed). Scope is labelled, not raw.
+      const scope = (s) => s === "international" ? t("International")
+        : s === "national" ? t("National") : (s || "");
+      const rows = ags.map(a => `<tr>
+          <td><strong>${esc(a.name)}</strong>${a.acronym ? ` <span class="muted">(${esc(a.acronym)})</span>` : ""}</td>
+          <td>${esc(scope(a.scope))}</td>
+          <td>${a.country ? ooCountryCell(a.country) : "<span class=\"muted\">—</span>"}</td>
+          <td>${esc(a.region || "")}</td>
+          <td>${a.home_url ? extLink(a.home_url, a.home_url) : ""}</td>
+        </tr>`).join("");
+      box.innerHTML = `<table>
+        <tr><th>${esc(t("Name"))}</th><th>${esc(t("Scope"))}</th><th>${esc(t("Country"))}</th>`
+        + `<th>${esc(t("Region"))}</th><th>${esc(t("Official site"))}</th></tr>${rows}</table>`;
+      // The API caveat travels with the data, visible by default (informed consent).
+      if (d.caveat) box.innerHTML += `<div class="hint" style="margin-top:8px">${esc(d.caveat)}</div>`;
     }
     async function ingestStatSources() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
@@ -2357,7 +2425,9 @@
       box.innerHTML = `<div class="hint">${esc(hint)}</div>
         <table><tr>${th("Agency")}${th("Series")}${th("Area")}${th("Period")}${th("Value", true)}`
         + `${th("Unit")}${th("SA/NSA")}${th("Base yr")}</tr>${rows}</table>`
-        + (d.caveat ? `<div class="hint" style="margin-top:8px">${esc(d.caveat)}</div>` : "");
+        // The store's fixed caveat, keyed x12 like the headers above (L-4's class: it
+        // said "A None value" and stayed English under translated headers).
+        + (d.caveat ? `<div class="hint" style="margin-top:8px">${esc(t(d.caveat))}</div>` : "");
     }
     // Redraw the two statistics tables from what they last drew, in the language now
     // current. Only what is on screen: a table never loaded stays unloaded.

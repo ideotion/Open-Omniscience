@@ -481,14 +481,26 @@
       let d;
       try { d = await api("/api/stats/minerals-supply"); }
       catch { host.innerHTML = ""; return; }   // best-effort; never break the board
+      // The caveat and the empty-board reason are the endpoint's fixed sentences, keyed
+      // x12 (2026-09-27 re-walk, L-4): passed raw they read in English in every locale.
       const head = `<h2 style="font-size:14px;margin:0 0 4px">${esc(t("Minerals supply"))} `
         + `<span class="muted" style="font-weight:400">${esc(t("(USGS — supply data, not prices)"))}</span></h2>`
-        + `<div class="hint muted" style="margin-bottom:8px">${esc(d.caveat || "")}</div>`;
+        + `<div class="hint muted" style="margin-bottom:8px">${esc(d.caveat ? t(d.caveat) : "")}</div>`;
       if (!d.available) {
         host.innerHTML = head
-          + `<div class="muted">${esc(d.reason || t("No USGS supply figures stored yet."))}</div>`;
+          + `<div class="muted">${esc(d.reason ? t(d.reason) : t("No USGS supply figures stored yet."))}</div>`;
         return;
       }
+      // The measure names, the unit WORDS and the commodity are a small vocabulary this
+      // board reads through t() (L-4): the measures are the parser's closed set
+      // (src/stats/usgs.py _SUPPLY_MEASURES), and a unit or commodity with no key -- the
+      // USGS id of a mineral nobody keyed yet -- falls through t() as published.
+      // Numbers stay fmtNum's; only the words translate. The measure and commodity
+      // labels are keyed CAPITALISED ("Production", "Rare earths"; the section titles
+      // are upper-cased by CSS anyway): the walker translates ANY text node equal to a
+      // key, and a bare "reserves" or "production" key would also translate a corpus
+      // keyword spelled that way on a surface that does not opt out (LESSONS 2026-09-16).
+      const cap = (s) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
       const blocks = (d.commodities || []).map((c) => {
         const measures = Object.keys(c.measures || {}).sort().map((m) => {
           const rows = (c.measures[m] || []).slice(0, 12).map((r) =>
@@ -501,13 +513,13 @@
             `<tr><td>${ooAreaCell(r.ref_area, r.area_kind, r.area_name ? t(r.area_name) : r.area_name)}</td>`
             + `<td class="muted">${esc(r.time_period)}</td>`
             + `<td style="text-align:right;font-variant-numeric:tabular-nums">${r.value === null || r.value === undefined ? "—" : (typeof fmtNum === "function" ? fmtNum(r.value) : r.value)}</td>`
-            + `<td class="muted">${esc(r.unit || "")}</td></tr>`).join("");
-          return `<div class="vsect" style="margin-top:6px">${esc(m.replace(/_/g, " "))}</div>`
+            + `<td class="muted">${esc(r.unit ? t(r.unit) : "")}</td></tr>`).join("");
+          return `<div class="vsect" style="margin-top:6px">${esc(t(cap(m.replace(/_/g, " "))))}</div>`
             + `<table class="data"><thead><tr><th>${esc(t("Area"))}</th><th>${esc(t("Year"))}</th>`
             + `<th style="text-align:right">${esc(t("Value"))}</th><th>${esc(t("Unit"))}</th></tr></thead>`
             + `<tbody>${rows}</tbody></table>`;
         }).join("");
-        return `<div class="an-panel" style="margin-top:10px"><h3 style="font-size:13px;margin:0 0 2px">${esc(c.commodity.replace(/-/g, " "))}</h3>${measures}</div>`;
+        return `<div class="an-panel" style="margin-top:10px"><h3 style="font-size:13px;margin:0 0 2px">${esc(t(cap(String(c.commodity || "").replace(/-/g, " "))))}</h3>${measures}</div>`;
       }).join("");
       host.innerHTML = head + blocks;
     }

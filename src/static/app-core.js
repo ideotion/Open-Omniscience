@@ -258,18 +258,22 @@
     // An aggregate keeps its code on screen and discloses what it is in the hover;
     // before this it went through the country cell and hovered "not a recognised
     // country code", which is a different claim -- that we could not read it
-    // (2026-09-26 click-through, defects L9/L13). The producer's name is DATA and stays
-    // as published, except "World", which is a keyed string. NOT CLDR's M49 `001`:
-    // measured in Chromium, a build without region display data hands `001` straight
-    // back (the hover read "001 — published aggregate"), and English CLDR says "world"
-    // in lower case where it does name it.
+    // (2026-09-26 click-through, defects L9/L13). "World" is a keyed string. NOT CLDR's
+    // M49 `001`: measured in Chromium, a build without region display data hands `001`
+    // straight back (the hover read "001 — published aggregate"), and English CLDR says
+    // "world" in lower case where it does name it. The producer's name arrives in
+    // English ("High income") and goes through t() HERE, the one place every caller
+    // shares: the tables each t()'d it themselves (W8, R6), and the statistics level
+    // map, which did not, hovered "High income — agrégat publié" (2026-09-27 re-walk,
+    // L-5). A name with no key falls through as published; t() of a name a caller
+    // already translated finds no key and returns it unchanged.
     function ooAreaCell(value, kind, name, opts) {
       if (kind !== "aggregate") return ooCountryCell(value, opts);
       const code = String(value == null ? "" : value).trim().toUpperCase();
       if (!code) return "";
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const o = opts || {};
-      const shown = code === "WLD" ? t("World") : (name || "");
+      const shown = code === "WLD" ? t("World") : (name ? t(name) : "");
       const title = (shown ? shown + " — " : "") + t("published aggregate");
       const cls = o.cls ? ` class="${esc(o.cls)}"` : "";
       return `<span${cls} title="${esc(title)}">${esc(code)}</span>`;

@@ -351,17 +351,24 @@
     });
 
     var domain = comparableCount > 0 ? [vmin, vmax] : null;
+    // The caveat and the refusal are READ -- the statistics map prints both -- so they
+    // go through the app's translator HERE, the one place they are written, and every
+    // caller gets the reader's language (2026-09-27 re-walk, L-5: English under a
+    // French, Arabic or Chinese table). `root.OOI18N`, never a bare `window`, as
+    // oosky.js does: this module also runs in Node (tests/ooviz_node_test.js), where
+    // there is no translator and the English stands. Both sentences are keyed x12.
+    var _t = (root.OOI18N && typeof root.OOI18N.t === "function") ? root.OOI18N.t : function (s) { return s; };
     var caveat =
       kind === "level"
-        ? "A level (count or total) is shown as area-proportional symbols, not colour — a choropleth would make a large area look like 'more' just for being big. Symbol area is proportional to the value."
-        : "Coloured by comparable values only — areas on a different unit, base year or seasonal adjustment show as no-data (never recoloured to one scale), as do areas with no value for this period.";
+        ? _t("A level (count or total) is shown as area-proportional symbols, not colour — a choropleth would make a large area look like 'more' just for being big. Symbol area is proportional to the value.")
+        : _t("Coloured by comparable values only — areas on a different unit, base year or seasonal adjustment show as no-data (never recoloured to one scale), as do areas with no value for this period.");
 
     return {
       mode: kind === "level" ? "symbols" : "choropleth",
       refusedChoropleth: kind === "level",
       refusalReason:
         kind === "level"
-          ? "A level is not comparable across areas of different size; it is shown as proportional symbols."
+          ? _t("A level is not comparable across areas of different size; it is shown as proportional symbols.")
           : null,
       basis: basis,
       cells: cells,

@@ -167,6 +167,7 @@
       // The two indicator pickers and the map's legend carry the catalogue's names (R5).
       _govPaintIndOptions($("gov-grp-ind"));
       _govPaintIndOptions($("gov-map-ind"));
+      _govRepaintCountryPickers();
       if (_govMapLast) {
         const host = $("gov-map-host");
         if (host && host.innerHTML) _govMapDraw(host, _govMapLast.meta, _govMapLast.data);
@@ -313,6 +314,21 @@
     function _govPickLabel(code) {
       const c = ooCountryCode(code), name = ooCountryName(code, "");
       return name && name !== c ? `${name} (${c})` : c;
+    }
+    // The three country pickers (Countries, and Compare's two) are filled once, with
+    // names AND order in the reader's language (Q308), so a switch left them reading
+    // "Albania (ALB), Algeria (DZA)" on a French page (2026-09-27 re-walk, L-3). Each is
+    // rebuilt from the codes it already holds -- its own option values, no fetch -- and
+    // keeps its pick; a picker never filled has no options and is left alone.
+    function _govRepaintCountryPickers() {
+      ["gov-country", "gov-cmp-a", "gov-cmp-b"].forEach((id) => {
+        const sel = $(id);
+        if (!sel || !sel.options || !sel.options.length) return;
+        const cur = sel.value;
+        const codes = Array.from(sel.options, (o) => o.value).sort(ooCountryCompare);
+        sel.innerHTML = _govCountryOptions(codes, cur);
+        sel.value = cur;
+      });
     }
 
     function _govNames(codes, head) {
@@ -914,6 +930,31 @@
       }).join("") + more + `</div>`;
     }
 
+    // The byte delta of a revision: "{delta} bytes" is the keyed frame, the number is
+    // fmtNum's with its sign ("+120", "-640") isolated left-to-right.
+    function _lawBytes(n) {
+      const v = Number(n) || 0;
+      const num = (v > 0 ? "+" : "") + fmtNum(v, 0);
+      return _govTf("{delta} bytes", { delta: (v && typeof _ltrIsolate === "function") ? _ltrIsolate(num) : num });
+    }
+    // A flag REASON and a document CATEGORY are stored CODES. Each shows through a keyed
+    // label with the code itself in the hover; a code with no label shows as stored.
+    // Law revisions are flagged on size alone (src/law/track.py -> flag_revision with a
+    // byte delta), so these two are the reasons it can write; a hyphenated spelling of
+    // either reads the same. `data-i18n-dyn`: the label is already translated and the
+    // hover is the stored code, so the walker must not "translate" either of them.
+    // The category labels are capitalised on purpose: the walker translates ANY text
+    // node equal to a key, and a bare "legislation" key would also translate a corpus
+    // keyword spelled that way on a surface that does not opt out (LESSONS 2026-09-16).
+    const _LAW_FLAG_LABEL = { large_removal: "large removal", large_addition: "large addition" };
+    const _LAW_CATEGORY_LABEL = { legislation: "Legislation", ip: "Intellectual property" };
+    function _lawCodeLabel(map, code) {
+      const tr = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const raw = String(code == null ? "" : code);
+      const label = map[raw.replace(/-/g, "_")];
+      return label ? `<span data-i18n-dyn title="${esc(raw)}">${esc(tr(label))}</span>` : esc(raw);
+    }
+    function _lawFlagReason(code) { return _lawCodeLabel(_LAW_FLAG_LABEL, code); }
     async function loadLawChanges() {
       const box = $("law-changes");
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
@@ -939,14 +980,18 @@
           }
           return;
         }
-        box.innerHTML = `<p class="hint">${esc(d.caveat)}</p>` + d.changes.map(ch =>
+        // Every word on a change is keyed and the codes go through labels (2026-09-27
+        // re-walk, L-7): the pill read "+120 bytes" and the links "open reader" in every
+        // locale. The byte count is data -- fmtNum, its sign isolated so an Arabic page
+        // cannot move it after the number (W9) -- and only the unit word translates.
+        box.innerHTML = `<p class="hint">${esc(d.caveat ? t(d.caveat) : "")}</p>` + d.changes.map(ch =>
           `<div class="panel" style="background:var(--panel2); margin-top:8px">
             <b>${ooCountryCell(ch.jurisdiction)}</b> · ${esc(ch.title)}
-            <span class="pill ${ch.flagged?'warn':''}">${ch.delta_bytes>0?'+':''}${ch.delta_bytes} bytes</span>
-            ${(ch.flag_reasons||[]).length?'<span class="hint">'+ch.flag_reasons.map(esc).join(', ')+'</span>':''}
+            <span class="pill ${ch.flagged?'warn':''}">${esc(_lawBytes(ch.delta_bytes))}</span>
+            ${(ch.flag_reasons||[]).length?'<span class="hint">'+ch.flag_reasons.map(_lawFlagReason).join(', ')+'</span>':''}
             <div class="hint" style="margin-top:4px">${ch.observed_at?fmtDateTime(ch.observed_at):''} ·
-              <a href="/api/law/documents/${ch.document_id}/view" target="_blank" rel="noopener" title="offline stored copy + history">open reader</a> ·
-              ${extLink(ch.official_url, "official source ↗", "muted")}</div>
+              <a href="/api/law/documents/${ch.document_id}/view" target="_blank" rel="noopener" title="offline stored copy + history">${esc(t("open reader"))}</a> ·
+              ${extLink(ch.official_url, t("official source ↗"), "muted")}</div>
             ${renderDiff(ch.diff)}
             <div class="law-ai-summary" data-rev="${ch.id}">${lawAiSummaryHtml(ch.id, ch.ai_summary)}</div>
           </div>`).join("");
@@ -1006,13 +1051,18 @@
         const tbl = $("law-docs");
         _lawDocsById = {};
         d.documents.forEach(x => { _lawDocsById[x.id] = x; });
-        tbl.innerHTML = "<thead><tr><th>Jurisdiction</th><th>Title</th><th>Category</th><th>Status</th><th>Changes</th><th></th></tr></thead><tbody>" +
+        // The row's words are keyed and its category is a label over the stored code
+        // (2026-09-27 re-walk, L-7 / U-9): "legislation … 2 (1 flagged) reader ·
+        // official ↗" read in English in every locale. The listener re-runs this on a
+        // switch, so the headers are t()'d here rather than left to the walker.
+        const th = (k) => `<th>${esc(tr(k))}</th>`;
+        tbl.innerHTML = `<thead><tr>${th("Jurisdiction")}${th("Title")}${th("Category")}${th("Status")}${th("Changes")}<th></th></tr></thead><tbody>` +
           d.documents.map(x =>
-            `<tr${x.watched?'':' style="opacity:.55"'}><td>${ooCountryCell(x.jurisdiction)}</td><td>${esc(x.title)}</td><td>${esc(x.category)}</td>
+            `<tr${x.watched?'':' style="opacity:.55"'}><td>${ooCountryCell(x.jurisdiction)}</td><td>${esc(x.title)}</td><td>${_lawCodeLabel(_LAW_CATEGORY_LABEL, x.category)}</td>
               <td>${lawVerdictBadge(x)}${x.watched?'':' <span class="pill">'+esc(tr("not tracked"))+'</span>'}</td>
-              <td>${x.revisions}${x.flagged?` (${x.flagged} flagged)`:''}</td>
-              <td><a href="/api/law/documents/${x.id}/view" target="_blank" rel="noopener" title="offline stored copy + history">reader</a>
-                · ${extLink(x.official_url||x.url, "official ↗", "muted")}
+              <td>${esc(fmtNum(x.revisions || 0, 0))}${x.flagged?` ${esc(_govTf("({n} flagged)", {n: fmtNum(x.flagged, 0)}))}`:''}</td>
+              <td><a href="/api/law/documents/${x.id}/view" target="_blank" rel="noopener" title="offline stored copy + history">${esc(tr("reader"))}</a>
+                · ${extLink(x.official_url||x.url, tr("official ↗"), "muted")}
                 · <a href="#" onclick="lawSetWatched(${x.id}, ${!x.watched}); return false" title="${x.watched?esc(tr('Stop tracking this document (its history stays).')):esc(tr('Resume tracking this document.'))}">${x.watched?esc(tr('stop')):esc(tr('resume'))}</a></td></tr>`).join("") +
           "</tbody>";
       } catch (e) { /* table optional */ }
