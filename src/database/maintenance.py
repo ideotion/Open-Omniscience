@@ -1605,6 +1605,92 @@ class StatementTimeout(RuntimeError):
     maps this to HTTP 503 with the deadline stated, never a hung request)."""
 
 
+class MemoryShort(StatementTimeout):
+    """A read was stopped, or never started, because the machine was nearly out of memory.
+
+    A SUBCLASS of :class:`StatementTimeout` on purpose: every caller already handles a
+    deadline abort at any progress tick (the API's 503, a diagnostics member's "skipped",
+    a probe's "timed out"), and this is the same abort for a different reason. Its message
+    names the reason and the numbers, so it never reads as a slow query.
+
+    WHY A TIME DEADLINE WAS NOT ENOUGH (crash bundle, 2026-09-26, a 3.9 GB machine): in
+    its last half minute the app gained 13.5 million Python objects, about 575,000 a
+    second, and its memory grew 39 MB a second on average and 64 at the steepest. Available
+    memory went from 1,065 MB to 135 MB in 25 seconds, and the session ended there. A
+    60-second deadline cannot stop that; a floor on available memory can.
+    """
+
+
+#: How stale an available-memory reading may be before a progress tick re-reads it. The
+#: handler fires every 20,000 opcodes, which on a streaming read is hundreds of times a
+#: second; re-reading on every tick would put a system call on the hot path of the very
+#: query it is watching. A quarter second, at the steepest growth measured (64 MB/s), lets
+#: a read go about 16 MB past the floor before it stops.
+_AVAIL_READ_EVERY_S = 0.25
+_AVAIL_CACHE: tuple[float, float | None] = (float("-inf"), None)
+
+
+def _available_mb_now() -> float | None:
+    """Available system memory in MB, measured; ``None`` when it cannot be read.
+
+    ``None`` never stops anything: a machine that cannot report its memory gets no
+    memory stop, never one fabricated from a missing reading (the memory guard's rule).
+    """
+    try:
+        import psutil
+
+        return float(psutil.virtual_memory().available) / (1024 * 1024)
+    except Exception:  # noqa: BLE001 - a reading is best-effort
+        return None
+
+
+def _available_mb() -> float | None:
+    """The available-memory reading, re-read at most every ``_AVAIL_READ_EVERY_S``.
+
+    Shared across threads. Two threads racing past a stale entry both read and both store;
+    each stores a whole tuple, so a reader never sees a time from one reading beside a
+    value from another."""
+    global _AVAIL_CACHE
+    now = time.monotonic()
+    at, value = _AVAIL_CACHE
+    if now - at >= _AVAIL_READ_EVERY_S:
+        value = _available_mb_now()
+        _AVAIL_CACHE = (now, value)
+    return value
+
+
+def _read_memory_floor_mb() -> float | None:
+    """The available-memory floor below which a deadlined read stops, or ``None`` when off.
+
+    It is the MEMORY GUARD'S OWN floor (``OO_MEM_GUARD_AVAIL_MB``, default 256), read from
+    the live guard, so the two never disagree about what "nearly out of memory" means: the
+    guard pauses collection at that line, and a read stops at it. ``OO_READ_MEMORY_STOP=0``
+    turns the read stop off without touching the guard.
+    """
+    if os.environ.get("OO_READ_MEMORY_STOP", "1").strip() == "0":
+        return None
+    try:
+        from src.scheduler import memguard
+
+        floor = float(memguard.memory_guard.avail_floor_mb)
+    except Exception:  # noqa: BLE001 - no guard, no floor: never a fabricated one
+        return None
+    return floor if floor > 0 else None
+
+
+def _memory_short_message(avail: float, floor: float, *, elapsed: float | None) -> str:
+    where = (
+        "did not start this read"
+        if elapsed is None
+        else f"stopped this read after {elapsed:.0f}s"
+    )
+    return (
+        f"{where}: the machine was nearly out of memory ({avail:.0f} MB available, "
+        f"at or below the {floor:.0f} MB floor the memory guard uses), and letting it "
+        "run risked the whole app being killed"
+    )
+
+
 def _deadline_seconds() -> float:
     """Heavy-read deadline in seconds (OO_STATEMENT_TIMEOUT_S; 0 disables)."""
     try:
@@ -1643,6 +1729,12 @@ def statement_deadline(session, seconds: float | None = None) -> Iterator[None]:
     typed StatementTimeout instead of an unbounded hang. Read paths only —
     an aborted write would roll back, but none of the wrapped endpoints write.
     No-op for non-SQLite backends or when the deadline is 0/None.
+
+    The same handler also watches MEMORY: a read that starts with available memory at or
+    below the memory guard's floor is refused, and one that drives it there is stopped,
+    both with a typed :class:`MemoryShort`. The stop rides the deadline, so a disabled
+    deadline disables it too. It sees what grows while SQLite is producing rows, which is
+    where a whole-table ``.all()`` grows; Python work after the last row is outside it.
     """
     limit = _deadline_seconds() if seconds is None else seconds
     if not limit or limit <= 0:
@@ -1660,6 +1752,17 @@ def statement_deadline(session, seconds: float | None = None) -> Iterator[None]:
     if not hasattr(raw, "set_progress_handler"):
         yield
         return
+    floor = _read_memory_floor_mb()
+    if floor is not None:
+        avail_at_start = _available_mb()
+        if avail_at_start is not None and avail_at_start <= floor:
+            _LOG.warning(
+                "memory stop: refused a read on thread %s (%.0f MB available, floor %.0f MB)",
+                threading.current_thread().name, avail_at_start, floor,
+            )
+            raise MemoryShort(_memory_short_message(avail_at_start, floor, elapsed=None))
+    # The reading that stopped the read, for the message. A list so the handler can set it.
+    short_at: list[float] = []
     started = time.monotonic()
     deadline_at = started + limit
     # S2.2: publish the expiry so a LOOP can treat it as its own budget. The
@@ -1679,7 +1782,14 @@ def statement_deadline(session, seconds: float | None = None) -> Iterator[None]:
     def _check() -> int:
         if threading.get_ident() != owner:
             return 0
-        return 1 if (time.monotonic() - started) > limit else 0
+        if (time.monotonic() - started) > limit:
+            return 1
+        if floor is not None:
+            avail = _available_mb()
+            if avail is not None and avail <= floor:
+                short_at[:] = [avail]
+                return 1
+        return 0
 
     # A progress handler is per-DBAPI-CONNECTION, and a block may legitimately RECONNECT
     # while we are inside it: the briefing registry's WAL guard closes its cursor and
@@ -1717,8 +1827,19 @@ def statement_deadline(session, seconds: float | None = None) -> Iterator[None]:
         yield
     except Exception as exc:
         # Both sqlite3 and sqlcipher3 surface an interrupt as OperationalError;
-        # translate only when WE caused it (the deadline elapsed).
-        if (time.monotonic() - started) > limit and "interrupt" in str(exc).lower():
+        # translate only when WE caused it (the deadline elapsed, or memory ran short).
+        interrupted = "interrupt" in str(exc).lower()
+        if interrupted and short_at and floor is not None:
+            elapsed = time.monotonic() - started
+            _LOG.warning(
+                "memory stop: stopped a read on thread %s after %.1f s "
+                "(%.0f MB available, floor %.0f MB)",
+                threading.current_thread().name, elapsed, short_at[-1], floor,
+            )
+            raise MemoryShort(
+                _memory_short_message(short_at[-1], floor, elapsed=elapsed)
+            ) from exc
+        if (time.monotonic() - started) > limit and interrupted:
             raise StatementTimeout(
                 f"statement exceeded the {limit:.0f}s deadline and was aborted"
             ) from exc

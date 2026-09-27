@@ -88,8 +88,11 @@ def resolve_member_keyword_ids(
     if canon_to_keys:
         # A family's morphological variants (country<->countries): canonical_key is a
         # Python function, not a column, so this scan is unavoidable -- but only over
-        # the small (id, normalized_term) columns, never mentions/content.
-        for kid, norm in db.query(Keyword.id, Keyword.normalized_term).all():
+        # the small (id, normalized_term) columns, never mentions/content, and in
+        # id-ordered chunks rather than one ``.all()`` of the whole table.
+        from src.database.query import keyset_scan
+
+        for kid, norm in keyset_scan(db.query(Keyword.id, Keyword.normalized_term), Keyword.id):
             keys = canon_to_keys.get(canonical_key(norm))
             if keys:
                 for key in keys:
