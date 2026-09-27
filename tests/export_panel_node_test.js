@@ -50,6 +50,7 @@ const src =
   "c=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;'}[c]));}\n" +
   "function humanBytes(n){return String(n)+' B';}\n" +
   "var window = {};\n" +
+  extract("fmtNum") + "\n" +
   "var document = { getElementById: function(id){ return id === 'ux-summary' ? HOST : null; } };\n" +
   extract("_uxRenderExportPanel") + "\n" +
   extract("_uxVerifySentence") + "\n" +
@@ -115,9 +116,12 @@ const render = (over) => { host.innerHTML = ""; _uxRenderExportPanel({ ...base, 
 
 // --- a failed verify paints the alarming style, a clean one does not -------- //
 {
-  assert.ok(!/note err/.test(render({})), "a verified export drew an error note");
+  const VERDICT_ERR = /class="ux-verdict[^"]*" style="[^"]*color:var\(--err\)/;
+  assert.ok(!/note err/.test(render({})) && !VERDICT_ERR.test(render({})), "a verified export drew an error style");
   const bad = render({ verify: { state: "failed", total: 5, bad: ["vol-00001.ooenc"], method: "sha-256 re-read" } });
-  assert.ok(/note err/.test(bad), "a FAILED verify drew no error style");
+  assert.ok(VERDICT_ERR.test(bad), "a FAILED verify drew no error style: " + bad);
+  // B18 R3: the verdict is a status line in the dialog, not the floating toast box.
+  assert.ok(!/class="note/.test(bad), "the verdict still wears the toast box: " + bad);
   assert.ok(bad.includes("vol-00001.ooenc"), "the bad volume is not named in the panel");
   assert.strictEqual(_uxVerifyDetail({ reason: "r", method: "m" }), "r · m");
   assert.strictEqual(_uxVerifyDetail({}), "", "an empty detail must draw no hover at all");
@@ -142,7 +146,7 @@ const render = (over) => { host.innerHTML = ""; _uxRenderExportPanel({ ...base, 
     volumes: { count: 0, bytes: 0, plaintext_bytes: 0, parity: false },
     elapsed: { corpus_s: 0, files_s: null, files_s_reason: "not timed" },
   });
-  assert.ok(/>0 · 0 B/.test(zero), "a measured zero volume count was not drawn: " + zero);
+  assert.ok(/>0 volumes · 0 B/.test(zero), "a measured zero volume count was not drawn: " + zero);
   assert.ok(/0\.0 s/.test(zero), "a measured zero elapsed was not drawn: " + zero);
   assert.ok(/none/.test(zero), "parity: false must draw 'none', not a blank");
 
@@ -151,7 +155,7 @@ const render = (over) => { host.innerHTML = ""; _uxRenderExportPanel({ ...base, 
     elapsed: { corpus_s: null, files_s: null, files_s_reason: "not timed" },
   });
   assert.ok(/—/.test(absent), "an absent figure did not draw a dash: " + absent);
-  assert.ok(!/>0 · 0 B/.test(absent), "an absent volume count was drawn as zero: " + absent);
+  assert.ok(!/>0 volumes · 0 B/.test(absent), "an absent volume count was drawn as zero: " + absent);
   assert.ok(!/0\.0 s/.test(absent), "an absent elapsed was drawn as zero: " + absent);
 }
 
@@ -162,7 +166,8 @@ const render = (over) => { host.innerHTML = ""; _uxRenderExportPanel({ ...base, 
   assert.ok(out.indexOf("articles") < out.indexOf("keyword_mentions"),
     "articles must lead the counts even when another table is larger");
   assert.ok(!/law_documents/.test(out), "an empty table was listed as content");
-  assert.ok(/1 more tables are empty/.test(out), "the empty tables were not counted: " + out);
+  // One empty table is ONE table (B18 R10): the singular frame, not "1 more tables are".
+  assert.ok(/1 more table is empty/.test(out), "the empty tables were not counted: " + out);
 }
 
 // --- the licence block: absent, present, and refused ----------------------- //
@@ -226,9 +231,9 @@ const render = (over) => { host.innerHTML = ""; _uxRenderExportPanel({ ...base, 
   });
   assert.ok(!/no corpus was selected/.test(out),
     "a folder holding four encrypted volumes was described as holding no corpus: " + out);
-  assert.ok(/>4 · 800 B/.test(out), "the volume figures read off the drive are not drawn: " + out);
+  assert.ok(/>4 volumes · 800 B/.test(out), "the volume figures read off the drive are not drawn: " + out);
   assert.ok(/not known here/.test(out), "the unknown verdict is not named: " + out);
-  assert.ok(!/note err/.test(out),
+  assert.ok(!/note err/.test(out) && !/ux-verdict[^>]*color:var\(--err\)/.test(out),
     "an export this app merely no longer remembers was painted as a failure: " + out);
   assert.ok(!/Not verified|NOT verified/.test(_uxVerifySentence({ state: "not_held" }, t)),
     "'not held' is not a not-verified verdict");
@@ -282,7 +287,7 @@ const render = (over) => { host.innerHTML = ""; _uxRenderExportPanel({ ...base, 
     "function esc(s){return String(s==null?'':s).replace(/[&<>\"]/g," +
     "c=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;'}[c]));}\n" +
     "function humanBytes(n){return String(n)+' B';}\n" +
-    "var window = {};\n" +
+    "var window = {};\n" + extract("fmtNum") + "\n" +
     extract("_uxVolPhase") + "\n" + extract("_uxPhaseCount") + "\n" + extract("_uxProgressView") + "\n" +
     "module.exports = { _uxProgressView };";
   new Function("module", "exports", psrc)(m, m.exports);
@@ -290,7 +295,7 @@ const render = (over) => { host.innerHTML = ""; _uxRenderExportPanel({ ...base, 
   const v = view({ phase: "verifying", volumes_verified: 1, volumes_total: 3 });
   assert.ok(/Verifying volumes…/.test(v), "the re-read is not named: " + v);
   assert.ok(!/Backing up…/.test(v), "the re-read fell through to the generic label: " + v);
-  assert.ok(/1\/3 volumes/.test(v), "the re-read's own count is not shown: " + v);
+  assert.ok(/1 of 3 volumes/.test(v), "the re-read's own count is not shown: " + v);
   // The first report comes before any volume is hashed and carries no total: named,
   // but no invented "0/?".
   const first = view({ phase: "verifying", volumes_verified: 0 });
@@ -318,6 +323,7 @@ const render = (over) => { host.innerHTML = ""; _uxRenderExportPanel({ ...base, 
       "c=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;'}[c]));}\n" +
       "function humanBytes(n){return String(n)+' B';}\n" +
       "var window = {}; var _uxExportDir = null, _uxPhase = null, _uxExportFacts = null;\n" +
+      extract("fmtNum") + "\n" +
       "var document = { getElementById: function(id){ return DOM[id] || null; } };\n" +
       "function _uxShowPaused(){ DOM['ux-progress'].innerHTML = 'PAUSED'; }\n" +
       extract("_uxSamePath") + "\n" + PICK + "\n" +
@@ -383,6 +389,7 @@ const render = (over) => { host.innerHTML = ""; _uxRenderExportPanel({ ...base, 
         "function humanBytes(n){return String(n)+' B';}\n" +
         "function ooServerText(s){return String(s);}\n" +
         "var window = {}; var _uxExportDir = DIR, _uxPhase = 'folder', _uxExportFacts = null;\n" +
+        extract("fmtNum") + "\n" +
         "var _uxExportIncluded = { corpus: true, blobs: ['models'] };\n" +
         "var document = { getElementById: function(id){ return DOM[id] || null; } };\n" +
         "function _uxShowPaused(){ DOM['ux-progress'].innerHTML = 'PAUSED'; }\n" +

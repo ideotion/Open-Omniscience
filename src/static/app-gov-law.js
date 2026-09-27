@@ -164,7 +164,12 @@
         _govPaintGroupNote();
         _govPaintGroupOptions();
       }
+      // The two indicator pickers and the map's legend carry the catalogue's names (R5).
+      _govPaintIndOptions($("gov-grp-ind"));
+      _govPaintIndOptions($("gov-map-ind"));
       if (_govMapLast) {
+        const host = $("gov-map-host");
+        if (host && host.innerHTML) _govMapDraw(host, _govMapLast.meta, _govMapLast.data);
         const cav = $("gov-map-caveat");
         if (cav) cav.textContent = _govMapCaveatText(_govMapLast.meta, _govMapLast.data, t);
       }
@@ -210,7 +215,7 @@
         : "";
       // A definition where the number reads as an error and is not one. Rides the
       // #oo-tip hover convention (invariant #17), which marks the element for free.
-      const note = ind.note ? ` title="${esc(ind.note)}"` : "";
+      const note = ind.note ? ` title="${esc(_govIndLabel(ind.note))}"` : "";
       // The display bound, stated only where it BIT. `series_stored` is what the store
       // holds; the series is what this response carried. Silence here is what makes a
       // 30-year sparkline indistinguishable from a producer that started reporting in
@@ -222,7 +227,7 @@
             {shown: (ind.series || []).length, stored: stored}))}</div>`
         : "";
       return `<div class="gov-ind">
-        <div class="gov-ind-label"${note}>${esc(ind.label)}</div>
+        <div class="gov-ind-label"${note}>${esc(_govIndLabel(ind.label))}</div>
         <div class="gov-ind-val">${esc(val)}${yr}</div>
         <div class="gov-ind-spark">${spark}</div>${cut}</div>`;
     }
@@ -232,8 +237,37 @@
       const cats = {};
       (d.indicators || []).forEach(i => { (cats[i.category] = cats[i.category] || []).push(i); });
       return Object.keys(cats).map(c =>
-        `<h3 style="font-size:13px;margin:14px 0 6px;text-transform:capitalize">${esc(c)}</h3>
+        `<h3 style="font-size:13px;margin:14px 0 6px">${esc(_govCatLabel(c))}</h3>
          <div class="gov-ind-grid">${cats[c].map(_govIndCard).join("")}</div>`).join("");
+    }
+
+    // THE CATALOGUE'S WORDS (R5). The 36 indicator names, their two definitional notes
+    // and the eleven category names are fixed English strings from
+    // src/stats/indicators.py, so each is looked up as a key, like the caveats beside
+    // them: a French page read "GDP (current US$)" under a French heading. Currency and
+    // unit codes inside a name stay as the producer writes them. tests/
+    // test_clickthrough_b18_fixes.py pins every one of them as a key in all 12 locales,
+    // because the i18n gate cannot see a string that only arrives over the wire.
+    function _govIndLabel(s) { return s ? _govT(s) : ""; }
+    // The categories arrive as lowercase ids ("energy & environment") and were
+    // capitalised by CSS, which capitalises every word and cannot translate any.
+    const _GOV_CAT_LABEL = {
+      economy: "Economy", prices: "Prices", demography: "Demography", health: "Health",
+      labour: "Labour", education: "Education", "energy & environment": "Energy & environment",
+      connectivity: "Connectivity", military: "Military", "public finance": "Public finance",
+      inequality: "Inequality",
+    };
+    function _govCatLabel(c) { return _govT(_GOV_CAT_LABEL[c] || c); }
+    // Relabel an indicator <select> in place, keeping what the reader picked: the
+    // option TEXT is drawn in the UI language, so a switch must redraw it (R5).
+    function _govPaintIndOptions(sel) {
+      if (!sel || !_govInds || !sel.options.length) return;
+      const byId = {};
+      _govInds.forEach((i) => { byId[i.id] = i; });
+      Array.from(sel.options).forEach((o) => {
+        const i = byId[o.value];
+        if (i) o.textContent = _govIndLabel(i.label);
+      });
     }
 
     // Guarded composite lookup: the TEMPLATE is the key and the numbers are data, so
@@ -345,14 +379,14 @@
           + ` <span class="muted">(${esc(ind.latest.year)})</span></td>`;
       };
       const rows = Object.keys(cats).map(c =>
-        `<tr class="gov-cmp-cat"><th colspan="3">${esc(c)}</th></tr>`
+        `<tr class="gov-cmp-cat"><th colspan="3">${esc(_govCatLabel(c))}</th></tr>`
         + cats[c].map(ind => {
-            const note = ind.note ? ` title="${esc(ind.note)}"` : "";
+            const note = ind.note ? ` title="${esc(_govIndLabel(ind.note))}"` : "";
             const ia = ma[ind.id], ib = mb[ind.id];
             // A row where NEITHER side has a figure is still shown: an indicator both
             // countries lack is a real, readable fact about coverage, and dropping it
             // would quietly shorten the comparison to whatever happens to be held.
-            return `<tr><th scope="row"${note}>${esc(ind.label)}</th>${cell(ia)}${cell(ib)}</tr>`;
+            return `<tr><th scope="row"${note}>${esc(_govIndLabel(ind.label))}</th>${cell(ia)}${cell(ib)}</tr>`;
           }).join("")
       ).join("");
       return `<div style="overflow-x:auto"><table class="gov-cmp">
@@ -478,7 +512,7 @@
       if (!isel.options.length) {
         await loadGovIndicators();
         isel.innerHTML = (_govInds || []).map(i =>
-          `<option value="${esc(i.id)}">${esc(i.label)}</option>`).join("");
+          `<option value="${esc(i.id)}">${esc(_govIndLabel(i.label))}</option>`).join("");
       }
       renderGovGroup();
     }
@@ -690,7 +724,7 @@
 
       const period = d.aggregate && d.aggregate.period;
       const head = `<div class="gov-grp-head"><strong>${esc(roster.label ? t(roster.label) : (roster.group || ""))}</strong>`
-        + ` — ${esc(agg.label || agg.indicator || "")}`
+        + ` — ${esc(agg.label ? t(agg.label) : (agg.indicator || ""))}`
         + (period ? ` <span class="muted">(${esc(period)})</span>` : "")
         + ` <span class="pill">${esc(t("computed here"))}</span></div>`;
 
@@ -711,7 +745,7 @@
       if (!_govMapInit) {
         _govMapInit = true;
         await loadGovIndicators();
-        sel.innerHTML = (_govInds || []).map(i => `<option value="${esc(i.id)}">${esc(i.label)}</option>`).join("");
+        sel.innerHTML = (_govInds || []).map(i => `<option value="${esc(i.id)}">${esc(_govIndLabel(i.label))}</option>`).join("");
       }
       const indicator = sel.value || (_govInds && _govInds[0] && _govInds[0].id);
       if (!indicator) return;
@@ -745,7 +779,13 @@
         $("gov-map-caveat").textContent = "";
         return;
       }
-      const meta = data.indicator || {};
+      await _govMapDraw(host, data.indicator || {}, data);
+    }
+    // The map itself, from one payload -- shared by renderGovMap and by the language
+    // switch (repaintGovViewsFromCache), which redraws the last one without a request so
+    // the legend's indicator name follows the switch (R5).
+    async function _govMapDraw(host, meta, data) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const values = {}, names = {};
       (data.by_country || []).forEach(r => {
         if (r.value != null) values[r.country] = r.value;
@@ -753,14 +793,14 @@
       });
       await ooMap(host, {
         values, names,
-        scale: "sequential", label: meta.label || "", unit: meta.unit || "",
+        scale: "sequential", label: _govIndLabel(meta.label), unit: meta.unit || "",
         // A map tooltip IS the hover Q302 puts the name in, and it is also what a
         // screen reader is handed -- so the NAME stays here deliberately, with the
         // code beside it so the two readings agree. `ooCountryTitle`, not the bare
         // name: it is the name PLUS Q303's disclosure, and a map tooltip that says
         // "Kosovo" beside `XKX` with no "not an ISO code" is the one place the
         // disclosure went missing (2026-09-26 click-through, L13).
-        valueLabel: (iso, v) => `${ooCountryCode(iso)} · ${ooCountryTitle(iso) || iso}: ${_govFmt(v, meta.unit)}`,
+        valueLabel: (iso, v) => ooLabelText(`${ooCountryCode(iso)} · ${ooCountryTitle(iso) || iso}`, _govFmt(v, meta.unit)),
         // The producer caveat is the endpoint's fixed sentence, a key (W8).
         caveat: data.caveat ? t(data.caveat) : "",
         onCountry: (iso) => {   // click a country -> its detail in the Countries subtab
@@ -773,7 +813,7 @@
       $("gov-map-caveat").textContent = _govMapCaveatText(meta, data, t);
     }
     function _govMapCaveatText(meta, data, t) {
-      return (meta.label ? meta.label + " · " : "")
+      return (meta.label ? _govIndLabel(meta.label) + " · " : "")
         + (data.year ? data.year + " · " : t("Latest available") + " · ") + (data.caveat ? t(data.caveat) : "");
     }
 
@@ -792,7 +832,11 @@
         toast(t("Loading country data in the background…"), "ok",
           (typeof openTaskManager === "function") ? openTaskManager : null);
         const st = await pollJobStatus("/api/governments/load-standard/status", {
-          onProgress: (s) => { if (btn && s.total) btn.textContent = t("Loading…") + " " + (s.done || 0) + "/" + s.total; },
+          onProgress: (s) => {
+            if (btn && s.total) {
+              btn.textContent = _govTf("Loading… {done} of {total}", { done: fmtNum(s.done || 0, 0), total: fmtNum(s.total, 0) });
+            }
+          },
         });
         if (st.state === "error") {
           toast((st.error) || t("Could not load country data."), "err");
@@ -803,7 +847,10 @@
             (typeof openTaskManager === "function") ? openTaskManager : null);
         } else {
           const res = st.result || {};
-          let msg = t("Loaded country data:") + " " + (res.stored || 0) + " " + t("figures.");
+          // ONE keyed frame per number (R14), not a label, a bare count and "figures."
+          const nFig = res.stored || 0;
+          let msg = nFig === 1 ? _govTf("Loaded country data: {n} figure.", { n: fmtNum(1, 0) })
+            : _govTf("Loaded country data: {n} figures.", { n: fmtNum(nFig, 0) });
           if (res.complete === false) msg += " " + t("(stopped early — partial)");
           toast(msg, "ok");
         }

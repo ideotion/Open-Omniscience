@@ -83,6 +83,10 @@ const src = [
   extract("function _uxImPhaseBits("),
   extract("function _uxImLive("),
   extract("function _uxImDur("),
+  // B18 (R14): the queue row's elapsed time goes through the shared keyed, isolated
+  // duration frames -- the real helpers, extracted.
+  extract("function _uxDurIso("),
+  extract("function _uxDurTf("),
   stateTable,
   stageTable,
   // The chain's own state, extracted rather than stubbed: _uxImRenderQueue reads
@@ -305,7 +309,7 @@ test("I9: a tick that only moves the clock rewrites the clock and nothing else",
   });
   mod._uxImRenderQueue(Object.assign({}, STAGED_RUN, { elapsed_s: 8 }));
   assert(writes === 0, "the staged line was rewritten (and its animation replayed) by a clock tick");
-  assert(host.children[0].innerHTML.indexOf("8s") !== -1, "the clock itself did move");
+  assert(host.children[0].innerHTML.indexOf("\u20688\u00a0s\u2069") !== -1, "the clock itself did move");
 });
 
 test("I12: a backup's folder name is isolated from the surrounding text direction", () => {

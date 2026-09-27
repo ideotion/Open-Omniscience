@@ -488,9 +488,9 @@
       const _mib = (v) => _fmtBytes(Number(v) * 1048576);
       const _tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((x, v) => x.replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? String(v[k]) : m));
       if (smp)
-        ph += '<div class="muted">' + esc(t("Last recorded memory")) + ": " +
+        ph += '<div class="muted">' + ooLabelHtml(esc(t("Last recorded memory")),
               (smp.rss_mb != null ? esc(_mib(smp.rss_mb)) + " RSS" : "—") +
-              (smp.mem_avail_mb != null ? " · " + esc(_tf("{size} available", { size: _mib(smp.mem_avail_mb) })) : "") + "</div>";
+              (smp.mem_avail_mb != null ? " · " + esc(_tf("{size} available", { size: _mib(smp.mem_avail_mb) })) : "")) + "</div>";
       if (prev.method) ph += '<div class="card-caveat">' + esc(prev.method) + "</div>";  // verbatim inference
       if (prev.note) ph += '<div class="muted">' + esc(prev.note) + "</div>";
       parts.push('<div style="margin-top:6px">' + ph + "</div>");
@@ -499,13 +499,15 @@
       const u = d.last_unlock || prev.last_unlock;
       if (u) {
         let uh = "<div><b>" + esc(t("Last unlock")) + "</b> ";
-        if (u.synchronous_total_ms != null) uh += esc((u.synchronous_total_ms / 1000).toFixed(1)) + " s";
+        // The seconds through the shared "{n} s" frame, isolated (R14): "1.2 s" read
+        // "s 1.2" on an Arabic page.
+        if (u.synchronous_total_ms != null) uh += esc(_diagIso(_tf("{n} s", { n: fmtNum(u.synchronous_total_ms / 1000, 1) })));
         uh += "</div>";
         if (u.wal_bytes_before_open != null)
-          uh += '<div class="muted">' + esc(t("WAL before first open")) + ": " + esc(humanBytes(u.wal_bytes_before_open)) + "</div>";
+          uh += '<div class="muted">' + ooLabelHtml(esc(t("WAL before first open")), esc(humanBytes(u.wal_bytes_before_open))) + "</div>";
         if (Array.isArray(u.phases) && u.phases.length)
-          uh += '<div class="muted">' + esc(t("phases")) + ": " +
-                u.phases.map((p) => esc(p.phase) + " (" + esc(Math.round(p.ms)) + " ms)").join(" · ") + "</div>";
+          uh += '<div class="muted">' + ooLabelHtml(esc(t("phases")),
+                u.phases.map((p) => esc(p.phase) + " (" + esc(_diagIso(_tf("{n} ms", { n: fmtNum(Math.round(p.ms), 0) }))) + ")").join(" · ")) + "</div>";
         if (u.method) uh += '<div class="card-caveat">' + esc(u.method) + "</div>";  // verbatim method
         parts.push('<div style="margin-top:8px">' + uh + "</div>");
       }
@@ -514,10 +516,10 @@
       const inv = d.inventory || {};
       const tot = inv.totals || {};
       let ih = "<div><b>" + esc(t("Data folder")) + '</b> <span class="muted">' + esc(inv.data_dir || "") + "</span></div>";
-      ih += '<div class="muted">' + esc(t("Total on disk")) + ": " + esc(humanBytes(tot.total_bytes || 0)) +
+      ih += '<div class="muted">' + ooLabelHtml(esc(t("Total on disk")), esc(humanBytes(tot.total_bytes || 0)) +
             " (" + esc(t("database")) + " " + esc(humanBytes(tot.db_bytes || 0)) +
             " · WAL " + esc(humanBytes(tot.wal_bytes || 0)) +
-            " · " + esc(t("other")) + " " + esc(humanBytes(tot.other_bytes || 0)) + ")</div>";
+            " · " + esc(t("other")) + " " + esc(humanBytes(tot.other_bytes || 0)) + ")") + "</div>";
       const stg = inv.suspect_staging || [];
       if (stg.length) {
         let sh = '<div class="note warn" style="margin-top:6px"><b>' + esc(t("Orphaned staging detected")) + "</b> " +
@@ -533,7 +535,8 @@
       if (ent.length)
         ih += '<div class="muted" style="margin-top:4px">' +
               ent.map((e) => esc(e.name) + ' <span class="pill">' + esc(e.kind) + "</span> " + esc(humanBytes(e.bytes || 0)) +
-                (e.files ? " · " + esc(e.files) + " " + esc(t("files")) : "")).join("<br>") + "</div>";
+                (e.files ? " · " + esc(e.files === 1 ? _tf("{n} file", { n: fmtNum(1, 0) })
+                  : _tf("{n} files", { n: fmtNum(e.files, 0) })) : "")).join("<br>") + "</div>";
       if (inv.method) ih += '<div class="card-caveat">' + esc(inv.method) + "</div>";  // verbatim method
       if (inv.note) ih += '<div class="muted">' + esc(inv.note) + "</div>";
       parts.push('<div style="margin-top:8px">' + ih + "</div>");
@@ -2392,12 +2395,17 @@
     // rather than disabling, so a multi-minute run never leaves a dead control.
     let _aiCheckPolling = false;
 
+    // A number-and-unit inside a line, isolated so an RTL page keeps "1.2 s" in its
+    // own order (R14) -- and its space made unbreakable, so the unit never wraps away.
+    function _diagIso(txt) { return "\u2068" + String(txt).replace(/ /g, "\u00a0") + "\u2069"; }
     function _aiCheckLine(label, body) {
       return `<div><b>${esc(label)}</b> — ${body}</div>`;
     }
 
     function _renderAiCheck(res) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
+        : ((x, v) => x.replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? String(v[k]) : m));
       const out = $("aicheck-result");
       if (!out) return;
       if (!res) { out.innerHTML = ""; return; }
@@ -2414,9 +2422,10 @@
       if (th) {
         rows.push(_aiCheckLine(
           t("Throughput"),
-          `${esc(String(th.best_calls_per_hour))} ${esc(t("per hour"))} `
-          + `${esc(t("at concurrency"))} ${esc(String(th.best_measured_concurrency))} `
-          + `(${esc(t("configured"))} ${esc(String(th.configured_concurrency))})`
+          // ONE keyed frame with grouped numbers (R14), not four welded fragments.
+          esc(tf("{n} per hour at concurrency {c} (configured {k})", {
+            n: fmtNum(th.best_calls_per_hour, 0), c: fmtNum(th.best_measured_concurrency, 0),
+            k: fmtNum(th.configured_concurrency, 0) }))
           + `<div class="hint">${esc(th.action || "")}</div>`,
         ));
       }
@@ -2428,20 +2437,22 @@
       // distinction dying at this boundary instead of the one above it.
       const g = r.extraction_gate;
       if (g && !g.error) {
-        let body = `${esc(t("cleared"))}: ${esc((g.cleared || []).join(", ") || t("none"))}`
-          + ((g.refused || []).length ? ` · ${esc(t("refused"))}: ${esc(g.refused.join(", "))}` : "")
-          + ((g.unmeasured || []).length ? ` · ${esc(t("unmeasured"))}: ${esc(g.unmeasured.join(", "))}` : "");
+        // label: value through the shared frame (R2), and the per-field counts in the
+        // same form (R14) -- "3 cleared" asked a count to agree with an English participle.
+        let body = ooLabelHtml(esc(t("cleared")), esc((g.cleared || []).join(", ") || t("none")))
+          + ((g.refused || []).length ? ` · ${ooLabelHtml(esc(t("refused")), esc(g.refused.join(", ")))}` : "")
+          + ((g.unmeasured || []).length ? ` · ${ooLabelHtml(esc(t("unmeasured")), esc(g.unmeasured.join(", ")))}` : "");
         const byField = g.by_field || {};
         const fieldNames = Object.keys(byField);
         if (fieldNames.length) {
           const parts = fieldNames.map((f) => {
             const v = byField[f] || {};
-            const bits = [`${(v.cleared || []).length} ${t("cleared")}`];
-            if ((v.refused || []).length) bits.push(`${v.refused.length} ${t("refused")}`);
-            if ((v.unmeasured || []).length) bits.push(`${v.unmeasured.length} ${t("unmeasured")}`);
+            const bits = [ooLabelText(t("cleared"), fmtNum((v.cleared || []).length, 0))];
+            if ((v.refused || []).length) bits.push(ooLabelText(t("refused"), fmtNum(v.refused.length, 0)));
+            if ((v.unmeasured || []).length) bits.push(ooLabelText(t("unmeasured"), fmtNum(v.unmeasured.length, 0)));
             return `${esc(f)} ${esc(bits.join(" · "))}`;
           });
-          body += `<div class="hint">${esc(t("By field"))}: ${parts.join(" — ")}</div>`;
+          body += `<div class="hint">${ooLabelHtml(esc(t("By field")), parts.join(" — "))}</div>`;
         }
         // Named, not counted: the reason says WHICH floor it hit, and that is the
         // difference between a model that invents and one that stays silent.
@@ -2469,7 +2480,7 @@
           const shape = Object.keys(perField)
             .map((f) => `${esc(f)} ×${perField[f]}`).join(" · ");
           body += `<details class="gate-refused"><summary class="card-caveat">`
-            + `${esc(t("Refused fields"))}: ${refusals.length} — ${shape}</summary>`
+            + `${ooLabelHtml(esc(t("Refused fields")), `${esc(fmtNum(refusals.length, 0))} — ${shape}`)}</summary>`
             + refusals.map((rf) =>
               `<div class="card-caveat">${ooLangCell(rf.language)} · ${esc(rf.field)} — `
               + `${esc(rf.reason || "")}</div>`).join("")
@@ -2479,7 +2490,7 @@
         const partly = (g.partly_cleared || [])
           .map((p) => `${ooLangCell(p.language)} (${esc((p.not_cleared || []).join(", "))})`);
         if (partly.length) {
-          body += `<div class="hint">${esc(t("Cleared for some fields only"))}: ${partly.join(", ")}</div>`;
+          body += `<div class="hint">${ooLabelHtml(esc(t("Cleared for some fields only")), partly.join(", "))}</div>`;
         }
         if (g.no_field_verdicts) {
           body += `<div class="hint">${esc(g.no_field_verdicts.reason || "")}</div>`;
@@ -2497,10 +2508,11 @@
           .map(([why, who]) => `${esc(why)} (${who.length})`).join(" · ");
         rows.push(_aiCheckLine(
           t("Models measured"),
-          `${esc(String(ran))} ${esc(t("model/backend pairs"))}`
-          + (both.length ? ` · ${esc(String(both.length))} ${esc(t("on both backends"))}` : "")
-          + (skipped ? `<div class="hint">${esc(t("skipped"))}: ${skipped}</div>` : "")
-          + `<div class="hint">${esc(t("Anchor accuracy"))}: ${esc(m.anchor_accuracy || "")}</div>`,
+          esc(ran === 1 ? tf("{n} model/backend pair", { n: fmtNum(1, 0) })
+            : tf("{n} model/backend pairs", { n: fmtNum(ran, 0) }))
+          + (both.length ? ` · ${esc(tf("{n} on both backends", { n: fmtNum(both.length, 0) }))}` : "")
+          + (skipped ? `<div class="hint">${ooLabelHtml(esc(t("skipped")), skipped)}</div>` : "")
+          + `<div class="hint">${ooLabelHtml(esc(t("Anchor accuracy")), esc(m.anchor_accuracy || ""))}</div>`,
         ));
       } else if (m && m.refused) {
         rows.push(_aiCheckLine(t("Models measured"), `<span class="warn">${esc(m.refused)}</span>`));
@@ -2508,13 +2520,13 @@
       // Every step, with its own time — including the ones that failed, because a
       // report from a half-broken machine is most useful when it says which half.
       const steps = (res.steps || []).map((s) =>
-        `${esc(s.step)} ${s.ok ? "✓" : "✗"} ${esc(String(s.seconds))}s`
+        `${esc(s.step)} ${s.ok ? "✓" : "✗"} ${esc(_diagIso(tf("{n} s", { n: fmtNum(Number(s.seconds) || 0, 2) })))}`
         + (s.ok ? "" : ` <span class="warn">${esc((s.error || "").slice(0, 120))}</span>`),
       ).join(" · ");
       rows.push(`<div class="hint" style="margin-top:4px">${steps}</div>`);
       const sep = (res.not_run_here || []).map((n) =>
         `${esc(n.name)} — ${esc(n.why)} (${esc(n.where)})`).join("<br>");
-      if (sep) rows.push(`<div class="hint muted" style="margin-top:4px">${t("Not part of this check")}: ${sep}</div>`);
+      if (sep) rows.push(`<div class="hint muted" style="margin-top:4px">${ooLabelHtml(esc(t("Not part of this check")), sep)}</div>`);
       if (res.caveat) rows.push(`<div class="card-caveat" style="margin-top:4px">${esc(res.caveat)}</div>`);
       out.innerHTML = rows.join("");
     }

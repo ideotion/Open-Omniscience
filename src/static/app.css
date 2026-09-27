@@ -1425,8 +1425,10 @@
     .note { padding:11px 15px; border-radius:var(--radius-sm); background:var(--panel);
       border:1px solid var(--border); box-shadow:var(--shadow); max-width:360px; font-size:14px;
       animation:slidein .22s ease; }
-    .note.ok { border-left:3px solid var(--ok); } .note.err { border-left:3px solid var(--err); }
-    .note.warn { border-left:3px solid var(--warn); }
+    /* The accent stripe sits on the INLINE-START side (R4): a left border drew on the
+       reading END of an Arabic note. */
+    .note.ok { border-inline-start:3px solid var(--ok); } .note.err { border-inline-start:3px solid var(--err); }
+    .note.warn { border-inline-start:3px solid var(--warn); }
     @keyframes slidein { from{ opacity:0; transform:translateY(8px); } to{ opacity:1; transform:none; } }
 
     /* ---- Dashboard -------------------------------------------------- */

@@ -511,14 +511,15 @@ def test_dump_and_osm_pollers_clear_before_set():
     osm_poll = _fn_body("function _osmPoll(")
     assert "if (_osmPollTimer) clearInterval(_osmPollTimer);" in osm_poll
 
-    # The three already-fixed pollers this fix mirrors must still clear-before-set
+    # The already-fixed pollers this fix mirrors must still clear-before-set
     # (a regression guard on the PATTERN this fix relies on, not just the two new
     # sites) -- each declares its own module-level timer + a `if (TIMER) clearInterval`
-    # guard before assigning a new one.
+    # guard before assigning a new one. The third one, _fbStartPoll, was removed with
+    # the dead large-data folder panel it drove (2026-09-27 fix batch B18, R1): no
+    # element, button or handler reached it.
     for timer, fn_marker in (
         ("_llmPullPoll", "function _llmPullStartPoll("),
         ("_volPollTimer", "function _volStartPoll("),
-        ("_fbPoll", "function _fbStartPoll("),
     ):
         body = _fn_body(fn_marker)
         assert f"if ({timer}) clearInterval({timer});" in body, (
@@ -1782,11 +1783,17 @@ def test_large_data_folder_backup():
     assert "def _folder_backup_jobs(" in jobs and '"folder-backup"' in jobs
     # UI: reached through the unified Export/Import dialog (the standalone
     # "folder-backup-panel" was retired 2026-07-01 when Import/Export was unified).
-    # The dialog streams the chosen blob categories to /folder/start and restores
-    # from a server-side folder via /folder/restore.
+    # The dialog streams the chosen blob categories to /folder/start. A restore goes
+    # through the import queue, whose "blobs" item drives the SAME folder manager in
+    # restore mode. (The page's only direct /folder/restore caller was the dead
+    # folderRestoreStart, removed with the rest of the #fb-* plan in B18 R1: it drew
+    # into elements no page carried.)
     assert "async function openUnifiedExport(" in app and 'id="ux-export"' in html
     assert "function openUnifiedImport(" in app and 'id="ux-import"' in html
-    assert '"/api/backup/folder/start"' in app and '"/api/backup/folder/restore"' in app
+    assert '"/api/backup/folder/start"' in app
+    assert '"/api/backup/import-queue/start"' in app
+    queue = (_SRC / "backup" / "import_queue.py").read_text(encoding="utf-8")
+    assert 'get_folder_manager()' in queue and 'mode="restore"' in queue
 
 
 def test_gui_shutdown_button_and_endpoint():

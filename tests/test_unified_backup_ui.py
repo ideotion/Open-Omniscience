@@ -391,7 +391,8 @@ def test_the_corpus_checkbox_can_actually_be_unticked():
 
     from tests.js_source_helper import function_body, strip_comments
 
-    src = strip_comments(function_body(_APP, "_uxLoadInventory"))
+    # Drawn by _uxPaintInventory since B18 (R10), so a language switch can redraw it.
+    src = strip_comments(function_body(_APP, "_uxPaintInventory"))
     tag = re.search(r'<input type="checkbox" id="ux-c-corpus"[^>]*>', src)
     assert tag, "the corpus checkbox is gone from the export inventory"
     assert "disabled" not in tag.group(0), (

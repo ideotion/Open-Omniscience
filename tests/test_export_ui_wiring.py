@@ -139,7 +139,10 @@ def test_the_panel_owns_its_own_translation_because_it_carries_DATA():
 
 def test_member_sizes_come_from_the_inventory_and_the_categories_from_the_member():
     """Q219: the size shown before the export starts is the size the export writes."""
-    inv = function_body(_APP, "_uxLoadInventory")
+    # The checklist is drawn by _uxPaintInventory since B18 (R10), so a language switch
+    # can redraw its counts; _uxLoadInventory fetches and hands the payload to it.
+    assert "_uxPaintInventory(inv, t, false)" in function_body(_APP, "_uxLoadInventory")
+    inv = function_body(_APP, "_uxPaintInventory")
     assert "inv.members" in inv, "the dialog no longer reads the server's member list"
     assert 'data-cats="' in inv, "a member must carry the categories its tick exports"
     run = function_body(_APP, "_uxRun")

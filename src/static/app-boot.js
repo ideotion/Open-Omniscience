@@ -177,6 +177,10 @@
         const mins = $("mkt-minerals-supply");
         if (mins && mins.querySelector("table") && typeof loadMineralsSupply === "function") loadMineralsSupply();
       } catch (_e) {}
+      // Settings -> Statistics: the figures and revision-anomalies tables draw their
+      // count lines and headers in the reader's language (B18 R7/R8). Redrawn from the
+      // payload each last drew -- never a fetch, and nothing for a table never opened.
+      try { if (typeof repaintStatTablesFromCache === "function") repaintStatTablesFromCache(); } catch (_e) {}
       // home-lead-title-frozen-locale (P1): renderBriefing() (Home Leads + the
       // corpus-tier badge it renders internally via renderCorpusTier) builds
       // OOI18N.tf()-templated titles that were never re-rendered on a language

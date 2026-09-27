@@ -68,7 +68,7 @@ function load(lang) {
     "var document = { getElementById: function (id) { return id === 'ux-summary' ? HOST : null; } };\n" +
     "var _uxExportFacts = null;\n" +
     extractConst("esc", APP) + "\n" +
-    ["_sizeText", "_fmtBytes", "humanBytes", "_storageSignedBytes",
+    ["_sizeText", "_fmtBytes", "humanBytes", "_storageSignedBytes", "fmtNum",
      "_uxRenderExportPanel", "_uxVerifySentence", "_uxVerifyDetail"].map((n) => extract(n, APP)).join("\n") + "\n" +
     extract("fmtBytes", TM).replace("function fmtBytes(", "function tmFmtBytes(").replace(/fmtBytes\.nf/g, "tmFmtBytes.nf") + "\n" +
     extract("fmtRate", TM).replace("function fmtRate(", "function tmFmtRate(").replace("fmtBytes(bps)", "tmFmtBytes(bps)") + "\n" +

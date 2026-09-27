@@ -64,6 +64,9 @@ function load(payload, opts) {
     "var _wikiTc = OO_TC;\n" +
     "function $(id){ return OO_ELS[id] || null; }\n" +
     "async function api(u){ OO_CALLS.push(u); if (OO_PAYLOAD instanceof Error) throw OO_PAYLOAD; return OO_PAYLOAD; }\n" +
+    // B18 R14/R2: the window line is ONE keyed frame with grouped numbers, and the
+    // failure line goes through the shared label frame -- the real helpers.
+    extract("fmtNum") + "\n" + extract("_mapTf") + "\n" + extract("ooLabelText") + "\n" +
     extract("_wikiRevRow") + "\n" +
     extract("loadWikiTC", "async function ") + "\n" +
     "module.exports = { loadWikiTC, _wikiTc };";
@@ -99,7 +102,7 @@ const REVS = {
   {
     const { els } = await load(REVS);
     const body = els["wiki-tc-body"].innerHTML;
-    assert.ok(/2\s*\/\s*91/.test(body),
+    assert.ok(/Showing 2 of 91 tracked revisions/.test(body),
       "the view must say it is showing a SLICE (count of total), not imply completeness");
     assert.ok(body.includes("5150") === false || true);
     assert.ok(body.includes("Ada"), "the editor of a tracked revision is shown");
