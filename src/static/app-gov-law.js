@@ -126,10 +126,48 @@
       const host = $("gov-country-data"); if (!host || !iso) return;
       host.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
       let d; try { d = await api("/api/governments/country/" + encodeURIComponent(iso)); }
-      catch (e) { host.innerHTML = `<div class="muted">${esc(t("Could not load this country."))}</div>`; return; }
-      host.innerHTML = _govIndicatorGrid(d)
+      catch (e) { _govCountryLast = null; host.innerHTML = `<div class="muted">${esc(t("Could not load this country."))}</div>`; return; }
+      _govCountryLast = {d, iso};
+      host.innerHTML = _govCountryHtml(d, iso);
+    }
+    function _govCountryHtml(d, iso) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      return _govIndicatorGrid(d)
         + `<div class="card-caveat" style="margin-top:10px">${esc(d.caveat ? t(d.caveat) : "")}</div>`
         + _govNonIsoNote([iso]);
+    }
+
+    // THE LAST PAYLOAD OF EVERY GOVERNMENTS VIEW, for a language switch (the 2026-09-27
+    // leftovers, W8/W15/W16). Each caveat, note and aggregate name is t()'d at render, so
+    // one drawn in French is no longer an English key the DOM walker can find, and a
+    // switch left it French: measured booting in fr and switching to ar. Redrawn from
+    // these -- never refetched -- by app-boot.js's ONE oo:langchange listener, next to
+    // repaintGovGroupFromCache (which owns the computed-lens cards).
+    let _govCountryLast = null, _govCmpLast = null, _govAggLast = null, _govMapLast = null;
+    function repaintGovViewsFromCache() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const country = $("gov-country-data");
+      if (country && _govCountryLast && country.querySelector(".card-caveat")) {
+        country.innerHTML = _govCountryHtml(_govCountryLast.d, _govCountryLast.iso);
+      }
+      const cmp = $("gov-cmp-body");
+      if (cmp && _govCmpLast && cmp.querySelector(".gov-cmp")) {
+        cmp.innerHTML = _govCompareHtml(_govCmpLast);
+      }
+      if (_govAggs) {
+        _govPaintAggNote();
+        _govPaintAggregateOptions();
+      }
+      const agg = $("gov-agg-body");
+      if (agg && _govAggLast && agg.querySelector(".gov-agg-head")) agg.innerHTML = _govAggHtml(_govAggLast);
+      if (_govGroups) {
+        _govPaintGroupNote();
+        _govPaintGroupOptions();
+      }
+      if (_govMapLast) {
+        const cav = $("gov-map-caveat");
+        if (cav) cav.textContent = _govMapCaveatText(_govMapLast.meta, _govMapLast.data, t);
+      }
     }
 
     // Q303's disclosure for the PICKERS (the 2026-09-26 leftovers, Y10). The country
@@ -285,7 +323,13 @@
           api("/api/governments/country/" + encodeURIComponent(a)),
           api("/api/governments/country/" + encodeURIComponent(b)),
         ]);
-      } catch (e) { host.innerHTML = `<div class="muted">${esc(t("Could not load these countries."))}</div>`; return; }
+      } catch (e) { _govCmpLast = null; host.innerHTML = `<div class="muted">${esc(t("Could not load these countries."))}</div>`; return; }
+      _govCmpLast = {da, dbb, a, b};
+      host.innerHTML = _govCompareHtml(_govCmpLast);
+    }
+    function _govCompareHtml(cm) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const {da, dbb, a, b} = cm;
       const byId = (d) => { const m = {}; (d.indicators || []).forEach(i => { m[i.id] = i; }); return m; };
       const ma = byId(da), mb = byId(dbb);
       // A <th> carries no reliable hover either, so the compare headers take the
@@ -311,8 +355,7 @@
             return `<tr><th scope="row"${note}>${esc(ind.label)}</th>${cell(ia)}${cell(ib)}</tr>`;
           }).join("")
       ).join("");
-      host.innerHTML =
-        `<div style="overflow-x:auto"><table class="gov-cmp">
+      return `<div style="overflow-x:auto"><table class="gov-cmp">
            <thead><tr><th scope="col">${esc(t("Indicator"))}</th>
              <th scope="col">${esc(nameA)}</th><th scope="col">${esc(nameB)}</th></tr></thead>
            <tbody>${rows}</tbody></table></div>`
@@ -347,12 +390,17 @@
       if (!_govAggs) {
         try { _govAggs = await api("/api/governments/aggregates"); }
         catch (e) { _govAggs = null; }
-        const note = $("gov-agg-note");
-        if (note) note.textContent = (_govAggs && _govAggs.caveat) || "";
+        _govPaintAggNote();
       }
       if (!_govAggs) { const h = $("gov-agg-body"); if (h) h.innerHTML = _govEmptyStore(t); return; }
       _govPaintAggregateOptions();
       if (sel.value) loadGovAggregate(sel.value);
+    }
+    // The lens's caveat is the endpoint's fixed sentence, each a key (W15/W16): it was set
+    // as the server's English into a hint no walker pass could reach once drawn.
+    function _govPaintAggNote() {
+      const note = $("gov-agg-note");
+      if (note) note.textContent = (_govAggs && _govAggs.caveat) ? _govT(_govAggs.caveat) : "";
     }
     function _govPaintAggregateOptions() {
       const sel = $("gov-agg-pick"); if (!sel || !_govAggs) return;
@@ -362,7 +410,9 @@
       // same payload so "Show all" cannot fail on its own.
       const rows = _govAggAll ? all : all.filter(a => a.shortlist);
       const held = rows.filter(a => a.has_data), empty = rows.filter(a => !a.has_data);
-      const opt = (a) => `<option value="${esc(a.code)}">${esc(a.name)}</option>`;
+      // A producer's aggregate NAME is a fixed vocabulary (the World Bank registry), each a
+      // key in the twelve locales (W8), so "European Union" reads in the UI language.
+      const opt = (a) => `<option value="${esc(a.code)}">${esc(_govT(a.name))}</option>`;
       // An aggregate this install holds nothing for is OFFERED but grouped apart and
       // labelled: "the World Bank publishes no figure" and "this install has not fetched
       // it" are different facts, and an empty row cannot tell them apart on its own.
@@ -390,16 +440,26 @@
       host.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
       let d;
       try { d = await api("/api/governments/aggregate/" + encodeURIComponent(code)); }
-      catch (e) { host.innerHTML = `<div class="muted">${esc(t("Could not load this aggregate."))}</div>`; return; }
+      catch (e) { _govAggLast = null; host.innerHTML = `<div class="muted">${esc(t("Could not load this aggregate."))}</div>`; return; }
+      _govAggLast = d;
+      host.innerHTML = _govAggHtml(d);
+    }
+    function _govAggHtml(d) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const any = (d.indicators || []).some(i => i.latest);
-      host.innerHTML =
-        `<div class="gov-agg-head"><strong>${esc(d.name || d.code)}</strong>`
+      // The caveat arrives as its PARTS (W15): the joined `caveat` is two fixed sentences
+      // glued into a string no locale holds, so it rendered English in every language.
+      // Each part is a key; the joined text stays the fallback for an older server.
+      const caveats = Array.isArray(d.caveats) && d.caveats.length
+        ? d.caveats.map((c) => t(c)).join(" ")
+        : (d.caveat || "");
+      return `<div class="gov-agg-head"><strong>${esc(d.name ? t(d.name) : d.code)}</strong>`
         + ` <span class="pill">${esc(t("published aggregate"))}</span>`
         + ` <span class="muted">${esc(_govTf("registry as of {as_of}", {as_of: d.as_of || "—"}))}</span></div>`
         + (any
             ? _govIndicatorGrid(d)
             : `<div class="muted" style="margin-top:10px">${esc(t("No figure for this aggregate is held here yet — it fills in as the background load reaches it."))}</div>`)
-        + `<div class="card-caveat" style="margin-top:10px">${esc(d.caveat || "")}</div>`;
+        + `<div class="card-caveat" style="margin-top:10px">${esc(caveats)}</div>`;
     }
 
     // --- lens 2: computed from members (rulings 43/44/45/47) --- //
@@ -411,32 +471,43 @@
       if (!_govGroups) {
         try { _govGroups = await api("/api/governments/groups"); }
         catch (e) { _govGroups = null; }
-        const note = $("gov-grp-note");
-        if (note) note.textContent = (_govGroups && _govGroups.caveat) || "";
+        _govPaintGroupNote();
       }
       if (!_govGroups) { const h = $("gov-grp-body"); if (h) h.innerHTML = _govEmptyStore(t); return; }
-      if (!gsel.options.length) {
-        const gs = _govGroups.groups || [];
-        const kind = (k, label) => {
-          const rows = gs.filter(g => g.kind === k);
-          if (!rows.length) return "";
-          return `<optgroup label="${esc(label)}">` + rows.map(g =>
-            // An UNPOPULATED group is offered, not hidden: "BRICS exists and its
-            // membership dates are not sourced yet" is a more useful answer than
-            // "no such group", and the refusal it produces says exactly that.
-            `<option value="${esc(g.key)}">${esc(g.label)}${g.populated ? "" : " — " + t("membership not held")}</option>`
-          ).join("") + `</optgroup>`;
-        };
-        gsel.innerHTML = kind("continent", t("Continents (ours)"))
-          + kind("wb_region", t("World Bank regions (the producer's member lists)"))
-          + kind("bloc", t("Political blocs"));
-      }
+      if (!gsel.options.length) _govPaintGroupOptions();
       if (!isel.options.length) {
         await loadGovIndicators();
         isel.innerHTML = (_govInds || []).map(i =>
           `<option value="${esc(i.id)}">${esc(i.label)}</option>`).join("");
       }
       renderGovGroup();
+    }
+
+    // The lens hint and the picker's group names, each a key (W16): the hint is the
+    // endpoint's fixed sentence and the names a fixed registry (continents, the World
+    // Bank's regions, the blocs), so both read in the UI language and repaint on a switch.
+    function _govPaintGroupNote() {
+      const note = $("gov-grp-note");
+      if (note) note.textContent = (_govGroups && _govGroups.caveat) ? _govT(_govGroups.caveat) : "";
+    }
+    function _govPaintGroupOptions() {
+      const gsel = $("gov-grp-pick"); if (!gsel || !_govGroups) return;
+      const prev = gsel.value;
+      const gs = _govGroups.groups || [];
+      const kind = (k, label) => {
+        const rows = gs.filter(g => g.kind === k);
+        if (!rows.length) return "";
+        return `<optgroup label="${esc(label)}">` + rows.map(g =>
+          // An UNPOPULATED group is offered, not hidden: "BRICS exists and its
+          // membership dates are not sourced yet" is a more useful answer than
+          // "no such group", and the refusal it produces says exactly that.
+          `<option value="${esc(g.key)}">${esc(_govT(g.label))}${g.populated ? "" : " — " + _govT("membership not held")}</option>`
+        ).join("") + `</optgroup>`;
+      };
+      gsel.innerHTML = kind("continent", _govT("Continents (ours)"))
+        + kind("wb_region", _govT("World Bank regions (the producer's member lists)"))
+        + kind("bloc", _govT("Political blocs"));
+      if (prev) gsel.value = prev;
     }
 
     async function renderGovGroup(allowIncomplete) {
@@ -493,8 +564,10 @@
         + `</div>`;
 
       if (!agg) {
-        // A known group with no sourced roster. Named, with the reason, never hidden.
-        return vintage + `<div class="card-caveat">${esc(d.reason || roster.reason || "")}</div>`;
+        // A known group with no sourced roster. Named, with the reason, never hidden. The
+        // reason is the registry's fixed sentence, a key (W16).
+        const why = d.reason || roster.reason || "";
+        return vintage + `<div class="card-caveat">${esc(why ? t(why) : "")}</div>`;
       }
 
       const cov = agg.coverage || {}, spread = agg.spread || {};
@@ -616,7 +689,7 @@
         : "";
 
       const period = d.aggregate && d.aggregate.period;
-      const head = `<div class="gov-grp-head"><strong>${esc(roster.label || roster.group || "")}</strong>`
+      const head = `<div class="gov-grp-head"><strong>${esc(roster.label ? t(roster.label) : (roster.group || ""))}</strong>`
         + ` — ${esc(agg.label || agg.indicator || "")}`
         + (period ? ` <span class="muted">(${esc(period)})</span>` : "")
         + ` <span class="pill">${esc(t("computed here"))}</span></div>`;
@@ -625,7 +698,8 @@
       // (the informed-consent non-negotiable: a caveat ships in all twelve languages).
       return head + vintage + coverageLine + spreadLine + sharedLine + override + partial
         + `<div class="gov-strat-grid">${cards}</div>`
-        + (roster.notes ? `<div class="card-caveat">${esc(roster.notes)}</div>` : "")
+        // The roster's notes are the registry's fixed sentences too, each a key (W16).
+        + (roster.notes ? `<div class="card-caveat">${esc(t(roster.notes))}</div>` : "")
         + `<div class="card-caveat">${esc(agg.caveat ? t(agg.caveat) : "")}</div>`
         + `<div class="card-caveat">${esc(d.caveat ? t(d.caveat) : "")}</div>`;
     }
@@ -667,6 +741,7 @@
       }
       if (!data || !(data.by_country || []).length) {
         host.innerHTML = `<div class="muted">${esc(t("Country data loads automatically in the background when online — the map fills in once it lands."))}</div>`;
+        _govMapLast = null;
         $("gov-map-caveat").textContent = "";
         return;
       }
@@ -686,15 +761,20 @@
         // "Kosovo" beside `XKX` with no "not an ISO code" is the one place the
         // disclosure went missing (2026-09-26 click-through, L13).
         valueLabel: (iso, v) => `${ooCountryCode(iso)} · ${ooCountryTitle(iso) || iso}: ${_govFmt(v, meta.unit)}`,
-        caveat: data.caveat || "",
+        // The producer caveat is the endpoint's fixed sentence, a key (W8).
+        caveat: data.caveat ? t(data.caveat) : "",
         onCountry: (iso) => {   // click a country -> its detail in the Countries subtab
           if (_govSubtabs) _govSubtabs.select("countries");
           const cs = $("gov-country");
           if (cs) { cs.value = iso; if (cs.value === iso) loadGovCountry(iso); }
         },
       });
-      $("gov-map-caveat").textContent = (meta.label ? meta.label + " · " : "")
-        + (data.year ? data.year + " · " : t("Latest available") + " · ") + (data.caveat || "");
+      _govMapLast = {meta, data};
+      $("gov-map-caveat").textContent = _govMapCaveatText(meta, data, t);
+    }
+    function _govMapCaveatText(meta, data, t) {
+      return (meta.label ? meta.label + " · " : "")
+        + (data.year ? data.year + " · " : t("Latest available") + " · ") + (data.caveat ? t(data.caveat) : "");
     }
 
     async function govLoadStandard(btn) {

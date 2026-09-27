@@ -66,10 +66,8 @@ def test_the_behaviour_runs_as_real_code_under_node():
 
 #: Files another agent owned while this batch ran, or that cannot reach the formatter,
 #: each with its reason. A number there is still a known gap, not a ruled exception.
-_Z1_NOT_SWEPT = {
-    "app-map.js": "the map statistics tables were another batch's region",
-    "app-backup.js": "the import dialog (and the Insights header's animateCount) were another batch's file",
-    "app-diagnostics.js": "the re-index panels were another batch's file",
+_Z1_NOT_SWEPT: dict[str, str] = {
+    # app-map.js, app-backup.js and app-diagnostics.js were swept by batch B15 (W18).
 }
 #: The only toLocaleString() calls left in the swept files: each formats a DATE, whose
 #: locale is the reader's clock, not the number convention.

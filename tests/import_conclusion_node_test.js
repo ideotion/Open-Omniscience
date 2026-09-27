@@ -73,6 +73,12 @@ const src = [
   APP.slice(APP.indexOf("const _OO_SPACE_WHAT = {"), APP.indexOf("function ooServerText(")),
   extract("function ooServerText("),
   extract("function _sizeText("),
+  // The counts go through the app's one number formatter, and a signed delta through the
+  // shared left-to-right isolate (the 2026-09-27 leftovers, W9/W18): both are the real
+  // shipped functions, extracted rather than stubbed.
+  extract("function fmtNum("),
+  APP.slice(APP.indexOf("const _LTR_ISOLATE = "), APP.indexOf("function _ltrIsolate(")),
+  extract("function _ltrIsolate("),
   // Collaborators the renderer calls that are not what is under test.
   "function esc(s){return String(s==null?'':s).replace(/[&<>\"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',\"'\":'&#39;'}[c]));}",
   "function _v2PlanTable(p){return '<table data-plan></table>';}",
@@ -137,7 +143,9 @@ test("the per-backup view names every item, with its own numbers and time", () =
                       { state: "done", elapsed_s: 7200, items_done: 2, items_total: 2 });
   assert(html.includes("What each backup brought"), "the per-backup view renders for a multi-run");
   assert(html.includes("older-set") && html.includes("newer-set"), "every item is named");
-  assert(html.includes("1,000") && html.includes("250"), "each item's own count is printed, not only the total");
+  // fmtNum's grouping (U+202F), not the browser's locale "1,000" (W18).
+  assert(html.includes("1\u202F000") && html.includes("250"), "each item's own count is printed, not only the total");
+  assert(!html.includes("1,000"), "a count went through the browser's locale: " + html);
   assert(html.includes("2 h 0 min"), "the run's own measured elapsed time is shown");
 });
 
@@ -191,7 +199,7 @@ test("a deferred re-index reaches the screen, with its real pending count", () =
   }))], { state: "done", elapsed_s: 118.6, items_done: 1, items_total: 1 });
 
   assert(html.includes("Indexing continues in the background"), "the deferral must be stated");
-  assert(html.includes("12,778"), "with the REAL backlog, thousands-separated");
+  assert(html.includes("12\u202F778"), "with the REAL backlog, thousands-separated (by fmtNum, W18)");
   assert(html.includes("absent from analytics"), "and with what being un-indexed actually costs");
   assert(html.includes("card-caveat"), "it is a caveat about corpus completeness, styled as one");
 });
@@ -225,8 +233,8 @@ test("several backups' backlogs are the LAST snapshot, never a sum of snapshots"
     viaProducer(restoreReport({ deferred: true, articles_pending: 3600, started: false }), "a"),
     viaProducer(restoreReport({ deferred: true, articles_pending: 4800, started: true }), "b"),
   ], { state: "done", elapsed_s: 400, items_done: 2, items_total: 2 });
-  assert(html.includes("4,800"), "the backlog the run ended with is the last snapshot");
-  assert(!html.includes("8,400"), "summing whole-corpus snapshots double-counts: " + html);
+  assert(html.includes("4\u202F800"), "the backlog the run ended with is the last snapshot");
+  assert(!html.includes("8\u202F400"), "summing whole-corpus snapshots double-counts: " + html);
 });
 
 test("an unreadable last snapshot says so rather than repeating an older figure", () => {
@@ -236,7 +244,7 @@ test("an unreadable last snapshot says so rather than repeating an older figure"
                                 pending_unreadable_reason: "database is locked" }), "b"),
   ], { state: "done", elapsed_s: 400, items_done: 2, items_total: 2 });
   assert(html.includes("could not be read"), "the current backlog was not read: " + html);
-  assert(!html.includes("3,600"), "an earlier snapshot is not the current backlog");
+  assert(!html.includes("3\u202F600"), "an earlier snapshot is not the current backlog");
 });
 
 test("I13/I12: the per-backup table lets a folder name wrap, and isolates it", () => {
@@ -264,18 +272,18 @@ test("Y4: 'Articles awaiting indexing' is the server's backlog, not the plan's n
   // 1,900 -- the server measured 4,300 pending, and the line said 2,400.
   const html = render([viaProducer(deferredReport(2400, 4300))],
                       { state: "done", elapsed_s: 7, items_done: 1, items_total: 1 });
-  assert(html.includes("4,300 Articles awaiting indexing"), html);
-  assert(!html.includes("2,400 Articles awaiting indexing"), "the plan's new count is not the backlog");
+  assert(html.includes("4\u202F300 Articles awaiting indexing"), html);
+  assert(!html.includes("2\u202F400 Articles awaiting indexing"), "the plan's new count is not the backlog");
   // ...and the caveat and the queue line are the SAME reading.
-  assert(html.includes("4,300 article(s) still to index"), html);
+  assert(html.includes("4\u202F300 article(s) still to index"), html);
 });
 
 test("Y4: with no item snapshot, the line takes the re-index job's own read", () => {
   const html = render([viaProducer(deferredReport(2400))],
                       { state: "done", elapsed_s: 7, items_done: 1, items_total: 1,
                         rx: { backlog: { available: true, articles_pending: 5000 } } });
-  assert(html.includes("5,000 Articles awaiting indexing"), html);
-  assert(!html.includes("2,400 Articles awaiting indexing"), html);
+  assert(html.includes("5\u202F000 Articles awaiting indexing"), html);
+  assert(!html.includes("2\u202F400 Articles awaiting indexing"), html);
   // Nothing read at all: no figure is invented from the plan.
   const none = render([viaProducer(deferredReport(2400))],
                       { state: "done", elapsed_s: 7, items_done: 1, items_total: 1 });
@@ -306,6 +314,23 @@ test("Y1: a date in the date-range row never breaks inside itself", () => {
   const row = html.slice(html.indexOf("Date range"));
   const dates = row.match(/<span dir="ltr" style="unicode-bidi:isolate;white-space:nowrap">[0-9-]{10}<\/span>/g) || [];
   assert(dates.length === 4, "each of the four dates is one isolated, unbreakable token: " + row);
+});
+
+test("W9: a signed corpus delta keeps its sign on the number's left in an RTL panel", () => {
+  // A leading "+"/"-" is a weak bidi character: bare, it resolved to the Arabic
+  // paragraph's direction and read "2,400+". Each delta is a first-strong isolate.
+  const snap = (n) => ({ articles: n, sources: 5, languages: 2, countries: 3, keywords: 10, date_min: null, date_max: null });
+  const html = mod._uxCorpusDeltaView(snap(100), snap(2500), (x) => x);
+  assert(html.includes("⁨+2 400⁩"), "the growth is not isolated: " + html);
+  const shrink = mod._uxCorpusDeltaView(snap(2500), snap(100), (x) => x);
+  assert(shrink.includes("⁨-2 400⁩"), "a decrease is not isolated: " + shrink);
+  assert(html.includes("⁨±0⁩"), "a zero delta is not isolated: " + html);
+});
+
+test("W7: the per-backup table is marked to stack at phone width", () => {
+  const html = render([ok("202609261808_OpenOmniscience_Backup", 1000, 0), ok("b", 250, 0)],
+                      { state: "done", elapsed_s: 60, items_done: 2, items_total: 2 });
+  assert(/<table class="ux-peritem"/.test(html), "the per-item table carries no stacking hook: " + html);
 });
 
 test("Y1: a conflict sample (one JSON token) may break rather than widen the table", () => {

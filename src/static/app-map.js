@@ -1288,7 +1288,9 @@
         if (tor) bits.push(`${fmtNum(tor)} ${t("unavailable (Tor/proxy)")}`);
         serverMeta = bits.join(" · ");
       }
-      const fmtCount = v => dim.id === "sentiment" ? (v >= 0 ? "+" : "") + fmtNum(v, 2) : `${fmtNum(v)} ${dim.unit}`;
+      // A signed tone is ISOLATED (W9): a leading "+"/"-" is a weak bidi character and
+      // was drawn after the number on an Arabic page.
+      const fmtCount = v => dim.id === "sentiment" ? _ltrIsolate((v >= 0 ? "+" : "") + fmtNum(v, 2)) : `${fmtNum(v)} ${dim.unit}`;
       const fmtV = (iso, v) => continentMode
         ? `${t((rowBy[iso] || {}).continent || "")} — ${fmtCount(v)}`
         : (dim.id === "sentiment"
@@ -1452,7 +1454,7 @@
       const line = (label, v, extra) => (v != null && isFinite(v))
         ? `<div style="display:flex;justify-content:space-between;gap:12px"><span class="muted">${esc(label)}</span><span>${esc(fmtNum(v))}${extra ? " " + esc(extra) : ""}</span></div>` : "";
       const tone = (row.sentiment != null && isFinite(row.sentiment))
-        ? `<div style="display:flex;justify-content:space-between;gap:12px"><span class="muted">${esc(t("Mean tone"))}</span><span>${row.sentiment >= 0 ? "+" : ""}${esc(fmtNum(row.sentiment, 2))} · ${esc(t("n="))}${row.sentiment_n || 0}</span></div>` : "";
+        ? `<div style="display:flex;justify-content:space-between;gap:12px"><span class="muted">${esc(t("Mean tone"))}</span><span>${esc(_ltrIsolate((row.sentiment >= 0 ? "+" : "") + fmtNum(row.sentiment, 2)))} · ${esc(t("n="))}${row.sentiment_n || 0}</span></div>` : "";
       host.innerHTML = `<div class="panel" style="padding:10px 12px;background:var(--panel2)">
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
           <strong>${heading}</strong>${row.continent ? ` <span class="pill">${esc(t(row.continent))}</span>` : ""}
@@ -2140,7 +2142,7 @@
         // LOCAL DB write — the endpoint opens ZERO external sockets, so this works in
         // airplane mode and never needs the network-consent gate (no ensureOnline).
         const d = await api("/api/stats/sources/ingest", { method: "POST" });
-        const n = (x) => (x || 0).toLocaleString();
+        const n = (x) => fmtNum(x || 0, 0);
         if (msg) {
           // The enabled / awaiting split is the point of the news_url field: it says
           // exactly how many producers still need a researched news section before
@@ -2165,33 +2167,51 @@
     // sub-features) so i18n stays 100% with zero new keys; the BACKEND enforces the
     // honesty contract (no score, gaps as null, side-by-side never averaged). The ONE
     // exception is the consent popup's reason: that popup is the informed-consent
-    // instrument, and every consent string ships in all twelve locales.
-    function _statfigFmt(v) { return v === null || v === undefined ? "—" : Number(v).toLocaleString(); }
+    // instrument, and every consent string ships in all twelve locales. The fetch
+    // line's own messages and tally are keyed too (the 2026-09-27 leftovers, W4):
+    // they answer the button beside them, in the language the rest of the tab is in.
+    // A figure keeps the three fraction digits it always showed (a revision of
+    // 101.234 -> 101.236 must not round into "101.2 -> 101.2"), through fmtNum,
+    // not the browser's locale (W18).
+    function _statfigFmt(v) { return v === null || v === undefined ? "—" : fmtNum(Number(v), 3); }
+    // A published aggregate's name ("European Union") arrives in English from the
+    // server; the shared area cell shows it in the hover as given, so it is put
+    // through t() here, the one place these tables read it (W8).
+    function _statAreaLocal(rows) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      return (rows || []).map((r) => (r && r.area_name ? { ...r, area_name: t(r.area_name) } : r));
+    }
     async function fetchStatFigure() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
       const src = $("statfig-source").value;
       const series = ($("statfig-series").value || "").trim();
       const country = ($("statfig-country").value || "").trim() || "all";
       const msg = $("statfig-msg"), btn = $("statfig-fetch");
-      if (!series) { if (msg) msg.textContent = "Enter an indicator or dataset id first."; return; }
+      if (!series) { if (msg) msg.textContent = t("Enter an indicator or dataset id first."); return; }
       // The fetch egresses over the configured transport -> the ONE consent popup.
       if (typeof ensureOnline === "function" && !await ensureOnline(t("Fetch official statistics figures"))) return;
       const body = src === "worldbank"
         ? { source: "worldbank", indicator: series, country }
         : { source: "eurostat", dataset: series };
       if (btn) btn.disabled = true;
-      if (msg) msg.textContent = "Fetching…";
+      if (msg) msg.textContent = t("Fetching…");
       try {
         const d = await api("/api/stats/figures/fetch", { method: "POST", body: JSON.stringify(body) });
-        if (msg) msg.innerHTML = `<b>${(d.fetched || 0).toLocaleString()}</b> fetched · `
-          + `${(d.stored || 0).toLocaleString()} stored · ${(d.duplicate || 0).toLocaleString()} already had this vintage · `
-          + `${(d.gaps || 0).toLocaleString()} published gaps`
-          + (d.caveat ? `<div class="muted" style="margin-top:5px">${esc(d.caveat)}</div>` : "");
+        // _govTf, the file's own interpolating helper (see runSeriesCorpus), never a
+        // local binding: an identity fallback would print "{fetched}" to the reader.
+        const tally = _govTf("{fetched} fetched · {stored} stored · {duplicate} already had this vintage · {gaps} published gaps", {
+          fetched: "\u0001", stored: fmtNum(d.stored || 0, 0),
+          duplicate: fmtNum(d.duplicate || 0, 0), gaps: fmtNum(d.gaps || 0, 0),
+        });
+        if (msg) msg.innerHTML = esc(tally).replace("\u0001", () => `<b>${fmtNum(d.fetched || 0, 0)}</b>`)
+          // The fetch's caveat is the endpoint's fixed sentence, a key (W4).
+          + (d.caveat ? `<div class="muted" style="margin-top:5px">${esc(t(d.caveat))}</div>` : "");
         $("statfig-view-series").value = series;
         loadStatFigures();
       } catch (e) {
         // Honest verdicts: 409 = airplane mode refusal, 502 = transport/endpoint failure.
-        if (msg) msg.innerHTML = `<span class="note err">Fetch failed: ${esc(e.message)}</span>`;
+        // In the error colour, not the floating .note toast box (the B13 import-dialog fix).
+        if (msg) msg.innerHTML = `<span style="color:var(--err)">${esc(_failMsg("Fetch failed: {error}", e))}</span>`;
       } finally { if (btn) btn.disabled = false; }
     }
     async function loadStatFigures() {
@@ -2201,7 +2221,7 @@
       try {
         const qs = series ? "?series_id=" + encodeURIComponent(series) : "";
         const d = await api("/api/stats/figures" + qs);
-        const figs = d.figures || [];
+        const figs = _statAreaLocal(d.figures);
         if (!figs.length) { box.innerHTML = `<div class="muted">No stored figures yet — fetch some above.</div>`; return; }
         // The AREA through the shared statistics cell (the 2026-09-26 leftovers, Y10): the
         // alpha-3 on screen, the localised name or "published aggregate" in the hover, the
@@ -2212,7 +2232,7 @@
             <td>${esc(f.time_period)}</td><td style="text-align:right">${_statfigFmt(f.value)}</td>
             <td>${esc(f.unit || "")}</td><td>${esc(f.adjustment || "")}</td><td>${esc(f.base_year || "")}</td>
           </tr>`).join("");
-        box.innerHTML = `<div class="hint">${(d.shown||figs.length)} of ${(d.count||figs.length).toLocaleString()} shown · latest vintage</div>
+        box.innerHTML = `<div class="hint">${fmtNum(d.shown || figs.length, 0)} of ${fmtNum(d.count || figs.length, 0)} shown · latest vintage</div>
           <table><tr><th>Agency</th><th>Series</th><th>Area</th><th>Period</th><th style="text-align:right">Value</th>`
           + `<th>Unit</th><th>SA/NSA</th><th>Base yr</th></tr>${rows}</table>`
           + (d.caveat ? `<div class="hint" style="margin-top:8px">${esc(d.caveat)}</div>` : "");
@@ -2225,7 +2245,7 @@
       box.innerHTML = `<div class="muted">Loading…</div>`;
       try {
         const d = await api("/api/stats/triangulate?series_id=" + encodeURIComponent(series));
-        const cells = d.cells || [];
+        const cells = _statAreaLocal(d.cells);
         if (!cells.length) { box.innerHTML = `<div class="muted">No producers stored for "${esc(series)}" yet.</div>`; return; }
         const cellHtml = cells.map(c => {
           const cols = c.producers.map(p => `${esc(p.agency)}: <b>${_statfigFmt(p.value)}</b>${p.unit ? " " + esc(p.unit) : ""}`).join(" &nbsp;·&nbsp; ");
@@ -2248,7 +2268,9 @@
       try {
         const qs = series ? "?series_id=" + encodeURIComponent(series) : "";
         const d = await api("/api/stats/revision-anomalies" + qs);
-        const items = d.anomalies || [];
+        // The area through the same shared cell the figures table uses (W5): the server
+        // now sends area_kind/area_name beside each ref_area, as B13 did for figures.
+        const items = _statAreaLocal(d.anomalies);
         if (!items.length) {
           box.innerHTML = `<div class="muted">No revision anomalies. A figure needs several prior revisions before an outlier can be judged, and only a recent revision unusually large for its own history is flagged.</div>`;
           return;
@@ -2256,7 +2278,7 @@
         const rows = items.map(a => {
           const rel = (a.rel_change != null) ? ` <span class="muted">(${(a.rel_change * 100).toFixed(1)}%)</span>` : "";
           return `<tr>
-            <td>${esc(a.agency)}</td><td>${esc(a.series_id)}</td><td>${esc(a.ref_area)}</td><td>${esc(a.time_period)}</td>
+            <td>${esc(a.agency)}</td><td>${esc(a.series_id)}</td><td>${ooAreaCell(a.ref_area, a.area_kind, a.area_name)}</td><td>${esc(a.time_period)}</td>
             <td style="text-align:right">${_statfigFmt(a.from_value)} → ${_statfigFmt(a.to_value)}</td>
             <td style="text-align:right">${_statfigFmt(a.abs_change)}${rel}</td>
             <td style="text-align:right">${(a.robust_z).toFixed(1)}</td>

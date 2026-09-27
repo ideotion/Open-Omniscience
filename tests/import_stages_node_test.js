@@ -317,7 +317,8 @@ test("the last-import line states the count and links the report", () => {
     { filename: "restore-x.json", created_at: "2026-09-12T10:45:00Z", articles: 12340,
       articles_basis: "merged", outcome: "ok" }, t, tf);
   assert(out.indexOf("Last import") !== -1, out);
-  assert(/12,?340 articles/.test(out), out);
+  // Grouped by fmtNum (U+202F), never the browser's locale (the 2026-09-27 leftovers, W18).
+  assert(out.indexOf("12 340 articles") !== -1 && out.indexOf("12,340") === -1, out);
   assert(out.indexOf("import-reports/restore-x.json") !== -1, out);
   assert(out.indexOf("did not complete") === -1, "a clean run must not be labelled: " + out);
 });
@@ -514,7 +515,7 @@ test("I7: the newest run's reports are summed into ONE import", () => {
   assert(s.articles === 4800, "four 1,200-article backups are one 4,800-article import: " + s.articles);
   assert(s.filename === "restore-4.json", "the link stays the newest report");
   const line = mod._uxImLastLineHtml(s, t, tf);
-  assert(/4,?800 articles/.test(line) && !/1,?200 articles/.test(line), line);
+  assert(line.indexOf("4 800 articles") !== -1 && !/1[, ]?200 articles/.test(line), line);
 });
 
 test("I7: a member with no figure, or only a PLANNED one, makes the total unknown", () => {

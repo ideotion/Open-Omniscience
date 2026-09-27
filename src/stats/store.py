@@ -287,12 +287,20 @@ def revision_anomalies(
     if ref_area:
         q = q.where(StatFigureRow.ref_area == ref_area.strip().upper())
     figures = [StatFigure(**_row_dict(r)) for r in session.execute(q).scalars()]
-    return find_revision_anomalies(
+    out = find_revision_anomalies(
         figures,
         min_prior_revisions=min_prior_revisions,
         z_min=z_min,
         max_items=max_items,
     )
+    # Each flagged figure carries its area's classification, as the stored-figures and
+    # triangulation rows do (the 2026-09-26 leftovers, W5): the anomalies table printed
+    # the producer's ``ref_area`` bare, so WLD read as an unknown country code and XKX
+    # lost its non-ISO disclosure. The pure detector stays unaware of the catalogue.
+    out["anomalies"] = [
+        {**a, **area_classification(a.get("ref_area"))} for a in out.get("anomalies") or []
+    ]
+    return out
 
 
 def chart_series(

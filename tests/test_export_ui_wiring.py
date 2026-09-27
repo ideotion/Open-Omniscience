@@ -19,7 +19,7 @@ from pathlib import Path
 
 import pytest
 
-from tests.js_source_helper import app_js, function_body, read_static
+from tests.js_source_helper import app_js, function_body, read_static, strip_comments
 
 _ROOT = Path(__file__).resolve().parents[1]
 _APP = app_js()
@@ -89,16 +89,23 @@ def test_the_summary_is_written_last_and_a_failure_is_not_a_failed_backup():
     run = function_body(_APP, "_uxRun")
     i_corpus = run.index("/api/backup/v2/volumes/start")
     i_folder = run.index("/api/backup/folder/start")
-    i_summary = run.index("/api/backup/export-summary")
+    # The completion (and the summary POST inside it) is ONE helper since W1, shared with
+    # a resumed large-data copy, which used to end without writing the file at all.
+    i_summary = run.index("_uxFinishExport(")
     assert i_corpus < i_folder < i_summary, (
         "BACKUP_SUMMARY.md must be written after BOTH phases, so it can carry the "
         "verify verdict instead of promising one"
     )
+    assert "_uxFinishExport(" in function_body(_APP, "_uxResume"), (
+        "a resumed large-data copy must end on the same completion as a straight run"
+    )
+    finish = function_body(_APP, "_uxFinishExport")
     # The summary POST has its OWN try/catch: the bytes are on the drive and verified by
     # then, so a failure here degrades to a named note beside a completion line that
     # stands — never to "Backup failed".
-    tail = run[i_summary - 400 :]
+    tail = finish[finish.index("/api/backup/export-summary") - 400 :]
     assert "The backup is written, but its summary file could not be:" in tail
+    assert "Backup failed" not in strip_comments(finish)
 
 
 def test_the_panel_renders_the_SERVER_S_facts_and_computes_no_figure_of_its_own():
@@ -161,8 +168,9 @@ def test_paths_keep_their_own_direction_in_the_arabic_dialog():
 
     tag = re.search(r'<input id="ux-dest"[^>]*>', _HTML)
     assert tag and 'dir="ltr"' in tag.group(0), "the destination input inherits the page direction"
-    # Every "Backup complete →" path, on each of the three code paths that draw one.
-    for fn in ("_uxRun", "_uxResume", "_uxShowLastCompletedExportSummary"):
+    # Every "Backup complete →" path: the one completion helper (a straight run and a resumed
+    # copy both end there since W1) and the reopened dialog.
+    for fn in ("_uxFinishExport", "_uxShowLastCompletedExportSummary"):
         body = function_body(_APP, fn)
         i = body.index('t("Backup complete →")')
         assert '<span dir="ltr"' in body[i : i + 200], f"{fn} draws the path without an LTR isolate"

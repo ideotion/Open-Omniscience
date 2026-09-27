@@ -40,7 +40,8 @@
           const r = await api("/api/insights/reindex?limit=300", {method: "POST"});
           backlog = r.never_attempted ?? r.remaining;
           const rem = $("ins-remaining");
-          if (rem) rem.innerHTML = r.remaining ? `· <strong>${r.remaining.toLocaleString()}</strong> to index` : "";
+          // The same keyed "{n} to index" the Insights header draws (W17), not English.
+          if (rem) rem.innerHTML = _insRemainingHtml(r);
           // Bound each pass to 40 batches (~12k articles): plenty to drain a normal
           // corpus in one go, but never the old 500-batch (150k) blast.
           // A backlog that did not shrink means the queue is not rotating — the wedge
@@ -76,7 +77,7 @@
         const r = await api(`/api/insights/reindex-all?limit=300&after_id=${after}`, { method: "POST" });
         total += r.reindexed || 0;
         after = r.last_id || after;
-        if (st) st.textContent = `${total} ${t("re-indexed")}${r.remaining ? ` · ${r.remaining.toLocaleString()} ${t("to go")}` : ""}`;
+        if (st) st.textContent = `${fmtNum(total, 0)} ${t("re-indexed")}${r.remaining ? ` · ${fmtNum(r.remaining, 0)} ${t("to go")}` : ""}`;
         if (r.done || ++guard > 5000) break;
       }
       return total;
@@ -110,13 +111,13 @@
         catch { break; }
         if (st) {
           const tal = s.tally || {};
-          const bits = [`${(tal.reindexed || 0).toLocaleString()} ${t("re-indexed")}`];
+          const bits = [`${fmtNum(tal.reindexed || 0, 0)} ${t("re-indexed")}`];
           if (s.articles_total) bits.push(`${s.percent || 0}%`);
           // Speed, so a long run can be estimated rather than guessed at. Both rates
           // are measurements over THIS run and are absent until real -- never a 0/h.
-          if (s.keywords_per_hour) bits.push(`${Math.round(s.keywords_per_hour).toLocaleString()} ${t("keywords/h")}`);
-          if (s.articles_per_hour) bits.push(`${Math.round(s.articles_per_hour).toLocaleString()} ${t("articles/h")}`);
-          if (tal.pruned != null) bits.push(`${(tal.pruned || 0).toLocaleString()} ${t("unused keywords removed")}`);
+          if (s.keywords_per_hour) bits.push(`${fmtNum(Math.round(s.keywords_per_hour), 0)} ${t("keywords/h")}`);
+          if (s.articles_per_hour) bits.push(`${fmtNum(Math.round(s.articles_per_hour), 0)} ${t("articles/h")}`);
+          if (tal.pruned != null) bits.push(`${fmtNum(tal.pruned || 0, 0)} ${t("unused keywords removed")}`);
           if (s.state === "done") bits.push(t("done"));
           else if (s.state === "paused") bits.push(t("paused"));
           else if (s.state === "error") bits.push(esc(s.error || t("error")));
@@ -144,8 +145,8 @@
       } catch (_e) { /* status is a courtesy here; never block the action on it */ }
       const ask = paused
         ? t("Resume the keyword cleanup? It continues from where it stopped — {done} of {total} articles ({percent}%) are already re-indexed.")
-            .replace("{done}", (paused.articles_done || 0).toLocaleString())
-            .replace("{total}", (paused.articles_total || 0).toLocaleString())
+            .replace("{done}", fmtNum(paused.articles_done || 0, 0))
+            .replace("{total}", fmtNum(paused.articles_total || 0, 0))
             .replace("{percent}", String(paused.percent || 0))
         : t("Clean up keywords now? This re-indexes every article with the current engine, then removes the keywords left with no mentions. Heavy on a large corpus; keywords still in use and anything you curated are kept.");
       if (!confirm(ask)) return;
@@ -168,7 +169,7 @@
     // reads "Label: n" so no language has to agree a number with a noun.
     function _foldStatusText(s, report, t) {
       if (!s) return "";
-      const n = (v) => Number(v || 0).toLocaleString();
+      const n = (v) => fmtNum(Number(v || 0), 0);
       if (s.refusal === "lemmatisation-off") {
         return t("Lemmatisation is off in this install (OO_EXTRACT_LEMMA=0), so there is no base form to fold into.");
       }
@@ -229,8 +230,8 @@
       const paused = s0 && (s0.state === "paused" || s0.state === "error");
       const ask = paused
         ? t("Continue folding keyword forms? It resumes where it stopped. Keywords already checked: {done} of {total}.")
-            .replace("{done}", Number(s0.keywords_done || 0).toLocaleString())
-            .replace("{total}", Number(s0.keywords_total || 0).toLocaleString())
+            .replace("{done}", fmtNum(Number(s0.keywords_done || 0), 0))
+            .replace("{total}", fmtNum(Number(s0.keywords_total || 0), 0))
         : t("Fold keyword forms now? Older keywords are filed under the base form new articles already use, so “studies” and “study” become one keyword. Phrases, names and keywords your families or groups use are left as they are. It runs in the background and can be paused from the task manager. A fold cannot be undone.");
       if (!confirm(ask)) return;
       if (btn) btn.disabled = true;
@@ -248,7 +249,7 @@
     // with a noun, and an error is named by its CODE, never by exception text.
     function _searchReindexStatusText(s, report, t) {
       if (!s) return "";
-      const n = (v) => Number(v || 0).toLocaleString();
+      const n = (v) => fmtNum(Number(v || 0), 0);
       if (s.state === "error" && s.error === "index-not-upgraded") {
         return t("This store's search index has not been upgraded yet. Restart the app once, then run this again.");
       }
@@ -718,11 +719,14 @@
         if (note) { note.textContent = d.caveat || ""; note.style.display = d.caveat ? "" : "none"; }
         const body = $("chart-enlarge-body"); if (!body) return;
         const tot = d.totals || {}, heaps = d.heaps || {}, rate = d.minting_rate_per_1000_words || {};
-        const head = `${esc(t("Keywords"))}: <b>${(tot.keywords || 0).toLocaleString()}</b> · `
-          + `${esc(t("words"))}: <b>${(tot.tokens || 0).toLocaleString()}</b>`
+        // Each "Label: n" through the ONE keyed separator frame (W18; B14's Z3), and each
+        // count through fmtNum, not the browser's locale.
+        const head = ooLabelHtml(esc(t("Keywords")), `<b>${fmtNum(tot.keywords || 0, 0)}</b>`) + " · "
+          + ooLabelHtml(esc(t("words")), `<b>${fmtNum(tot.tokens || 0, 0)}</b>`)
           + (heaps.beta != null ? ` · Heaps β = <b>${esc(String(heaps.beta))}</b>` : "")
           + (rate.start != null && rate.end != null
-              ? ` · ${esc(t("new keywords / 1,000 words"))}: <b>${esc(String(rate.start))} → ${esc(String(rate.end))}</b>` : "");
+              ? " · " + ooLabelHtml(esc(t("new keywords / 1,000 words")),
+                `<b>${esc(String(rate.start))} → ${esc(String(rate.end))}</b>`) : "");
         body.innerHTML = `<div class="hint" style="margin-bottom:6px">${head}</div>` + _growthSvg(d.series, t);
         if (typeof dlg.showModal === "function" && !dlg.open) dlg.showModal();
       } catch (e) {

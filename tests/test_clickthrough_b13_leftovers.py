@@ -122,9 +122,10 @@ def test_hardware_and_memory_sizes_go_through_the_one_writer():
     assert_present(forensics, '_tf("{size} available"')
     erase = function_body(js, "secureErase")
     assert_absent(erase, "MiB")
-    plan = function_body(js, "folderBackupPlan")
-    assert_absent(plan, "needed_human")
-    assert_absent(plan, "free_human")
+    # folderBackupPlan, the last reader of `needed_human`/`free_human`, was dead code and is
+    # removed (the 2026-09-27 leftovers, W2): nothing on any page reached it.
+    assert "function folderBackupPlan(" not in js
+    assert_absent(js, "d.needed_human")
     vitals = function_body(js, "_renderVitals")
     assert_present(vitals, 't9("Memory")')
     assert_present(vitals, 't9("Scraping ↓")')
@@ -249,8 +250,12 @@ def test_a_non_iso_pick_is_disclosed_beside_the_pickers_caveats():
     note = function_body(js, "_govNonIsoNote")
     assert_present(note, 'ooCountryKind(c) !== "non-iso"')
     assert_present(note, "ooCountryTitle(c)")
-    assert_present(function_body(js, "loadGovCountry"), "_govNonIsoNote([iso])")
-    assert_present(function_body(js, "renderGovCompare"), "_govNonIsoNote([a, b])")
+    # The two views render through pure helpers since W16 (a language switch redraws them
+    # from their cached payloads), and the loaders call those helpers.
+    assert_present(function_body(js, "_govCountryHtml"), "_govNonIsoNote([iso])")
+    assert_present(function_body(js, "loadGovCountry"), "_govCountryHtml(d, iso)")
+    assert_present(function_body(js, "_govCompareHtml"), "_govNonIsoNote([a, b])")
+    assert_present(function_body(js, "renderGovCompare"), "_govCompareHtml(_govCmpLast)")
 
 
 # --- Y11: the season hover names its own computation, in keyed frames ---------- #

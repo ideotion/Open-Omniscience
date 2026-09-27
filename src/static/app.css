@@ -411,6 +411,18 @@
     dialog { background:var(--panel); color:var(--fg); border:1px solid var(--border);
       border-radius:12px; box-shadow:var(--shadow); }
     dialog::backdrop { background:rgba(0,0,0,.5); }
+    /* The import result's "What each backup brought" table STACKS at phone width
+       (2026-09-27 leftovers, W7). As four table cells, the name cell's
+       overflow-wrap:anywhere gave it a one-character min-content width, so auto layout
+       squeezed a backup's folder name to about three characters a line at 375 px while
+       the bar cell kept its 40%. Stacked, each item reads as a block: the name on its
+       own line, then the bar, the counts and the time. !important because the cells
+       carry their desktop padding and width inline. */
+    @media (max-width:600px) {
+      .ux-peritem, .ux-peritem tbody, .ux-peritem tr, .ux-peritem td { display:block; }
+      .ux-peritem tr { padding:4px 0; border-bottom:1px solid var(--border); }
+      .ux-peritem td { width:auto !important; padding:1px 0 !important; text-align:start !important; }
+    }
     .panel > h2:first-child, .panel > .phead:first-child { margin-top:0; }
     /* .panel h2's own size/weight/colour moved to the app-wide type scale further down
        (2026-09-07, PRH-32). It used to be 12.5px uppercase --muted HERE, which is the

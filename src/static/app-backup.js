@@ -238,9 +238,11 @@
       const lic = facts.attribution || [];
       if (facts.attribution_error) {
         // The visible sentence is keyed; the backend's own words (which name the ruling
-        // and the tables) ride the hover as technical detail rather than as the caveat.
+        // and the tables) ride the hover as technical detail rather than as the caveat --
+        // behind a keyed lead, so the hover opens in the reader's language before the
+        // server's English detail (W14). In the dialog's error colour, not the toast box (W6).
         row(t("Licences"),
-            `<span class="note err" title="${esc(facts.attribution_error)}">${esc(t("The attribution lines could not be completed — a licence question is unanswered, so this backup is reported without them."))}</span>`);
+            `<span style="color:var(--err)" title="${esc(tf("The attribution query failed: {detail}", { detail: facts.attribution_error }))}">${esc(t("The attribution lines could not be completed — a licence question is unanswered, so this backup is reported without them."))}</span>`);
       } else if (lic.length) {
         // Each line is the server's English sentence, looked up as a key: a licence line
         // is a caveat about what the reader may do with the data, and a caveat ships x12.
@@ -266,7 +268,7 @@
         (facts.summary_path
           ? `<div class="muted" style="margin-top:4px;font-size:11px;overflow-wrap:anywhere">${esc(t("A summary of these facts was written beside the backup:"))} <code dir="ltr">${esc(facts.summary_path)}</code></div>`
           : (facts.summary_error
-            ? `<div class="note err" style="margin-top:4px;font-size:11px;overflow-wrap:anywhere">${esc(t("The backup is written, but its summary file could not be:"))} ${esc(facts.summary_error)}</div>`
+            ? `<div style="color:var(--err);margin-top:4px;font-size:11px;overflow-wrap:anywhere">${esc(t("The backup is written, but its summary file could not be:"))} ${esc(facts.summary_error)}</div>`
             : ""));
     }
 
@@ -681,6 +683,9 @@
       // control silently flips.
       const vBox = document.getElementById("ux-verify");
       const verifyAfterWrite = !vBox || vBox.checked;
+      // What THIS export carries, fixed at its start, so a folder copy resumed later
+      // names the same parts rather than re-reading ticks the user may have changed (W1).
+      _uxExportIncluded = { corpus: wantCorpus, blobs: blobs.slice() };
       btn.disabled = true;
       const sumHost = document.getElementById("ux-summary");
       if (sumHost) sumHost.innerHTML = "";
@@ -696,7 +701,7 @@
           const made = await api("/api/backup/export-folder", { method: "POST", body: JSON.stringify({ parent }) });
           dest = made.dir;
         } catch (e) {
-          prog.innerHTML = `<span class="note err">${esc(t("Could not create the export folder:"))} ${esc(e.message || e)}</span>`;
+          prog.innerHTML = `<span style="color:var(--err)">${esc(t("Could not create the export folder:"))} ${esc(e.message || e)}</span>`;
           btn.disabled = false;
           if (pauseBtn) pauseBtn.style.display = "none";
           return;
@@ -739,38 +744,51 @@
         _uxPhase = null;
         if (bar) bar.style.display = "none";
         if (pauseBtn) pauseBtn.style.display = "none";
-        // Name what is actually in it. Now that the corpus can be left out, "Backup
-        // complete" alone would let a models-only export read months later as a full one
-        // -- the reader has no other way to tell, and that is the expensive direction to
-        // be wrong in.
-        const included = [];
-        if (wantCorpus) included.push(t("Corpus"));
-        if (blobs.includes("models")) included.push(t("LLM models"));
-        if (blobs.includes("osm_regions")) included.push(t("Offline maps"));
-        if (blobs.includes("wiki_dumps")) included.push(t("Wikipedia dumps"));
-        prog.innerHTML = `<b>${esc(t("Backup complete →"))}</b> <span dir="ltr" style="overflow-wrap:anywhere">${esc(dest)}</span>`
-          + `<div class="muted" style="font-size:12px;margin-top:2px">`
-          + `${esc(t("Included:"))} ${esc(included.join(" · "))}</div>`;
-        // BACKUP_SUMMARY.md is written LAST (Q209 = a), after both phases and after the
-        // verify-after-write pass -- which is what lets it carry the verify verdict
-        // rather than promise one. A failure HERE is not a failed backup: the bytes are
-        // on the drive and verified, so it degrades to a named note beside a completion
-        // line that stands, never to "Backup failed".
-        try {
-          const written = await api("/api/backup/export-summary", { method: "POST", body: JSON.stringify({ dir: dest }) });
-          _uxRenderExportPanel({ ...(written.facts || {}), summary_path: written.summary_path }, t);
-        } catch (e) {
-          if (sumHost) sumHost.innerHTML = `<div class="note err" style="margin-top:8px">${esc(t("The backup is written, but its summary file could not be:"))} ${esc(e.message || e)}</div>`;
-          console.error("ux summary", e);
-        }
+        await _uxFinishExport(prog, dest, t);
       } catch (e) {
         _uxPhase = null;
         if (bar) bar.style.display = "none";
         if (pauseBtn) pauseBtn.style.display = "none";
-        prog.innerHTML = `<span class="note err">${esc(t("Backup failed:"))} ${esc(ooServerText(e.message || e))}</span>`;
+        // The dialog's own error colour, not the floating .note toast box (W6; B13's fix
+        // for the import dialog): the toast class slid in with a shadow inside the panel.
+        prog.innerHTML = `<span style="color:var(--err)">${esc(t("Backup failed:"))} ${esc(ooServerText(e.message || e))}</span>`;
         console.error("ux run", e);
       }
       btn.disabled = false;
+    }
+
+    // THE ONE COMPLETION, for a straight run and a resumed large-data copy alike (W1). A
+    // folder copy resumed after a pause used to end on a bare "Backup complete →" line:
+    // no "Included:" line, no facts panel, and -- because the summary POST lived only in
+    // _uxRun -- no BACKUP_SUMMARY.md written into the folder at all.
+    let _uxExportIncluded = null;
+    async function _uxFinishExport(prog, dest, t) {
+      const sumHost = document.getElementById("ux-summary");
+      // Name what is actually in it. Now that the corpus can be left out, "Backup
+      // complete" alone would let a models-only export read months later as a full one
+      // -- the reader has no other way to tell, and that is the expensive direction to
+      // be wrong in.
+      const inc = _uxExportIncluded || { corpus: false, blobs: [] };
+      const included = [];
+      if (inc.corpus) included.push(t("Corpus"));
+      if (inc.blobs.includes("models")) included.push(t("LLM models"));
+      if (inc.blobs.includes("osm_regions")) included.push(t("Offline maps"));
+      if (inc.blobs.includes("wiki_dumps")) included.push(t("Wikipedia dumps"));
+      prog.innerHTML = `<b>${esc(t("Backup complete →"))}</b> <span dir="ltr" style="overflow-wrap:anywhere">${esc(dest)}</span>`
+        + (included.length ? `<div class="muted" style="font-size:12px;margin-top:2px">`
+          + `${esc(t("Included:"))} ${esc(included.join(" · "))}</div>` : "");
+      // BACKUP_SUMMARY.md is written LAST (Q209 = a), after both phases and after the
+      // verify-after-write pass -- which is what lets it carry the verify verdict
+      // rather than promise one. A failure HERE is not a failed backup: the bytes are
+      // on the drive and verified, so it degrades to a named note beside a completion
+      // line that stands, never to "Backup failed".
+      try {
+        const written = await api("/api/backup/export-summary", { method: "POST", body: JSON.stringify({ dir: dest }) });
+        _uxRenderExportPanel({ ...(written.facts || {}), summary_path: written.summary_path }, t);
+      } catch (e) {
+        if (sumHost) sumHost.innerHTML = `<div style="color:var(--err);margin-top:8px">${esc(t("The backup is written, but its summary file could not be:"))} ${esc(e.message || e)}</div>`;
+        console.error("ux summary", e);
+      }
     }
 
     // Paused ≠ complete (the paused-state label, field-test Item 9): show the honest state
@@ -811,10 +829,11 @@
           if (s && s.state === "paused") { _uxShowPaused(prog, bar, btn, t); return; }
           _uxPhase = null;
           if (bar) bar.style.display = "none"; btn.style.display = "none";
-          prog.innerHTML = `<b>${esc(t("Backup complete →"))}</b> <span dir="ltr" style="overflow-wrap:anywhere">${esc(_uxExportDir || (document.getElementById("ux-dest").value || "").trim())}</span>`;
+          // The same completion the straight run shows, summary file included (W1).
+          await _uxFinishExport(prog, _uxExportDir || (document.getElementById("ux-dest").value || "").trim(), t);
         } catch (e) {
           _uxPhase = null; if (bar) bar.style.display = "none"; btn.style.display = "none";
-          prog.innerHTML = `<span class="note err">${esc(t("Backup failed:"))} ${esc(ooServerText(e.message || e))}</span>`;
+          prog.innerHTML = `<span style="color:var(--err)">${esc(t("Backup failed:"))} ${esc(ooServerText(e.message || e))}</span>`;
         }
         return;
       }
@@ -950,7 +969,7 @@
       bits.push(`<b>${esc(t("Last import"))}</b>`);
       if (rep.created_at) bits.push(esc(fmtDateTime(rep.created_at)));
       if (rep.articles != null) {
-        const n = Number(rep.articles).toLocaleString();
+        const n = fmtNum(Number(rep.articles), 0);
         bits.push(rep.articles_basis === "planned"
           ? esc(tf("{n} articles planned", { n }))
           : esc(tf("{n} articles", { n })));
@@ -1659,7 +1678,7 @@
       const stagedLine = (st.items_staged > 0)
         ? `<div class="card-caveat">${esc(tf(
             "Merged, not yet saved: {n} — written to your corpus at the next checkpoint, one every {k} backups.",
-            { n: Number(st.items_staged).toLocaleString(), k: cp.k || 1 }
+            { n: fmtNum(Number(st.items_staged), 0), k: cp.k || 1 }
           ))}</div>`
         : "";
       // THE TAIL PHASE HAS TO HAVE A HOME (field report 2026-08-11). A run does not end
@@ -1987,7 +2006,7 @@
         // The backup it came from (I7), isolated for RTL like every folder name (I12).
         if (r.label) bits.push(`<bdi style="overflow-wrap:anywhere">${esc(r.label)}</bdi>`);
         if (r.articles != null) {
-          const n = Number(r.articles).toLocaleString();
+          const n = fmtNum(Number(r.articles), 0);
           bits.push(r.articles_basis === "planned"
             ? esc(tf("{n} articles planned", { n }))
             : esc(tf("{n} articles", { n })));
@@ -2206,7 +2225,7 @@
     // it did not make.
     function _uxPerItemView(rows, t, tf) {
       if (rows.length < 2) return "";   // one item: the headline already IS its story
-      const num = (n) => Number(n || 0).toLocaleString();
+      const num = (n) => fmtNum(Number(n || 0), 0);
       const max = rows.reduce((m, r) => Math.max(m, r.total), 0);
       const body = rows.map((r) => {
         const oc = _uxOutcome(r.state);
@@ -2242,7 +2261,10 @@
       return `<div style="margin-top:10px">`
         + `<div class="muted" style="font-size:12px;margin-bottom:2px">`
         + `${esc(t("What each backup brought"))} <span style="opacity:.7">${esc(tf("(bars are relative to the largest of the {n} items)", { n: rows.length }))}</span></div>`
-        + `<table style="width:100%;border-collapse:collapse">${body}</table></div>`;
+        // `ux-peritem` STACKS the four cells at phone width (W7, app.css): as a table the
+        // name cell's `overflow-wrap:anywhere` let auto layout shrink it to ~3 characters
+        // a line at 375 px while the bar kept its 40%.
+        + `<table class="ux-peritem" style="width:100%;border-collapse:collapse">${body}</table></div>`;
     }
     function _uxTimingsView(timings, t, tf) {
       if (!timings || !timings.stages) return "";
@@ -2270,7 +2292,7 @@
     // number since a day-count alone would hide what actually moved.
     function _uxCorpusDeltaView(before, after, t) {
       if (!before || !after) return "";
-      const num = (n) => Number(n || 0).toLocaleString();
+      const num = (n) => fmtNum(Number(n || 0), 0);
       // Each date is ONE unbreakable, left-to-right token (Y1, measured at 375 px): the
       // "before" cell broke INSIDE a date ("2023-01-" / "07 –"), and on an Arabic page the
       // bidi pass then moved each fragment's hyphen to the other end ("-2023-01"). The
@@ -2285,7 +2307,10 @@
       ];
       const rows = dims.map(([label, b, a]) => {
         const d = (a || 0) - (b || 0);
-        const dTxt = d === 0 ? "±0" : (d > 0 ? "+" + num(d) : num(d));
+        // ISOLATED (W9): a leading "+" or "-" is a weak bidi character, so on an Arabic
+        // page it resolved to the paragraph's direction and was drawn AFTER the number
+        // ("2 400+"). The first-strong isolate keeps the sign on the number's left.
+        const dTxt = _ltrIsolate(d === 0 ? "±0" : (d > 0 ? "+" + num(d) : num(d)));
         const dCol = d > 0 ? "var(--ok, #4caf50)" : (d < 0 ? "var(--err, #d9534f)" : "");
         return `<tr><td style="padding:2px 8px 2px 0">${esc(label)}</td>`
           + `<td style="text-align:right;padding:2px 8px" class="muted">${esc(num(b))}</td>`
@@ -2459,7 +2484,7 @@
       }
       if (eventsAdded) perType.push({ keys: [], label: t("Events"), n: eventsAdded });
 
-      const num = (n) => Number(n || 0).toLocaleString();
+      const num = (n) => fmtNum(Number(n || 0), 0);
       const seg = (v, col) => v > 0 ? `<span style="flex:${v};background:${col}"></span>` : "";
       const stat = (n, label, col) =>
         `<div style="text-align:center;min-width:88px"><div style="font-size:22px;font-weight:700;color:${col}">${esc(num(n))}</div>`
@@ -2683,7 +2708,7 @@
         const body = unreadable
           ? t("Indexing continues in the background. The number still to index could not be read.")
           : tf("Indexing continues in the background: {n} article(s) still to index. Until it finishes they carry no keywords and are absent from analytics.",
-               { n: pend.toLocaleString() });
+               { n: fmtNum(pend, 0) });
         indexingLine =
           `<div class="card-caveat" style="margin-top:6px">${esc(body)}</div>`;
       }
@@ -2710,23 +2735,8 @@
         + `</div>`;
     }
 
-    async function folderBackupPlan(btn) {
-      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      const dest = ($("fb-dest").value || "").trim();
-      if (!dest) { toast(t("Enter a destination folder."), "warn"); return; }
-      btn.disabled = true; $("fb-plan").textContent = t("Checking…");
-      try {
-        const d = await api("/api/backup/folder/plan",
-          { method: "POST", body: JSON.stringify({ dest, categories: _fbCats() }) });
-        $("fb-plan").innerHTML =
-          // The byte counts, not the server's `*_human` strings (Y9): those carry English
-          // units in every locale; humanBytes writes the same figure in the UI language.
-          `${(d.files || 0).toLocaleString()} ${esc(t("files"))} · ${esc(t("needs"))} <b>${esc(humanBytes(d.needed_bytes))}</b> · ` +
-          `${esc(humanBytes(d.free_bytes))} ${esc(t("free"))}` +
-          (d.enough_space ? "" : ` <span class="warn">— ${esc(t("not enough space"))}</span>`);
-      } catch (e) { $("fb-plan").innerHTML = `<span class="note err">${esc(e.message)}</span>`; }
-      finally { btn.disabled = false; }
-    }
+    // folderBackupPlan is gone (W2): no element, button or palette entry reached it --
+    // `#fb-dest` and `#fb-plan` are in no page, and `_fbCats` it called is defined nowhere.
     async function folderBackupStart(btn) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const dest = ($("fb-dest").value || "").trim();
@@ -3200,15 +3210,17 @@
     // -- Database tab ------------------------------------------------------- //
     // Tween a stat number from its current value to `to` (ease-in-out) so the
     // database visibly "grows" on each poll. Cosmetic only — the value is real.
+    // Every frame goes through fmtNum, the intermediate ones too (W17): the browser's
+    // locale drew "6,402" under a French UI for the 600 ms of the tween.
     function animateCount(el, to) {
       to = Math.round(to || 0);
       const from = parseInt(el.dataset.v || "0", 10) || 0;
-      if (from === to) { el.dataset.v = to; el.textContent = to.toLocaleString(); return; }
+      if (from === to) { el.dataset.v = to; el.textContent = fmtNum(to, 0); return; }
       const start = performance.now(), dur = 600;
       function step(t) {
         const k = Math.min(1, (t - start) / dur);
         const eased = 0.5 - 0.5 * Math.cos(k * Math.PI);
-        el.textContent = Math.round(from + (to - from) * eased).toLocaleString();
+        el.textContent = fmtNum(Math.round(from + (to - from) * eased), 0);
         if (k < 1) requestAnimationFrame(step); else el.dataset.v = to;
       }
       requestAnimationFrame(step);
