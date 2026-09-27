@@ -33,10 +33,15 @@ def _analyzer():
     # Lazy + GRACEFUL: VADER ships in the optional [analysis] extra. A CORE install
     # (without it) must never crash ingest — we return None and simply score nothing.
     try:
-        from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
+        from vaderSentiment import vaderSentiment  # noqa: F401 -- probing for the extra
     except ImportError:
         return None
-    return SentimentIntensityAnalyzer()
+    # Stock VADER's scores in time LINEAR in the text, where stock is quadratic: an 80 KB
+    # English page took 1.5 s per pass, now 36 ms. It falls back to the stock analyzer
+    # for any VADER it was not checked against (src/analytics/vader_linear.py).
+    from src.analytics.vader_linear import make_analyzer
+
+    return make_analyzer()
 
 
 def _label(compound: float) -> str:

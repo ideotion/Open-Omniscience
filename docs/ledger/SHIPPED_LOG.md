@@ -10091,3 +10091,95 @@ These, and the two refresh paths that can run at once, are recorded in `OPEN_QUE
 generated at 22:47:29 UTC and holds flood cards. The timing fits the refresh; nothing proves it.
 The second instance's 15:53 UTC death has no refresh recorded in its session and is not
 attributed.
+
+## 2026-09-27 — Imports adding more than 20,000 articles no longer fail at the search index (PR #1192)
+
+Found by the import-speed audit of 2026-09-26/27 (133 agents, every finding hand-re-verified
+before this change), reproduced independently on current main: through the real
+`merge_corpus`, 20,000 new articles passed and 20,001 and 45,000 raised `OperationalError:
+Error creating function` at `fts.py:645`, on both `sqlite3` and `sqlcipher3`. A regression from
+#1187, which routed the merge's chunked bulk index through `index_articles`, and that function
+re-registered the search transform's SQL functions on every chunk. **Isolated step by step:**
+re-registering works after `_store_caps` and after the article `SELECT`, and fails only after
+`_index_rows`' first index write, because FTS5 keeps a blob reader open for the rest of the
+write transaction and SQLite refuses to replace a function while any statement is active. The
+call is REMOVED, not moved: `index_articles` never calls the functions (the transform runs in
+Python), and the merge's connection has had them since `db_connect` opened it
+(`connect.py:409`). `register`'s docstring, whose "Idempotent" made the per-chunk call look
+safe, now says when that holds. The regression test shrinks `_FTS_BULK_BATCH` to 4, puts the
+Arabic article the transform changes in the third chunk, and compares everything a search sees
+against the same merge in one chunk; it fails on the unfixed code with the field's error.
+914 tests across the search, merge, restore and import files pass. `fts.py` and `fts_norm.py`
+are outside `ENGINE_MODULES`, so no article is re-stamped. Lesson: `LESSONS.md`, the entry
+dated by this PR.
+
+## 2026-09-27 — Three counter defects the import-speed audit found, fixed (PR #1192)
+
+Found by the 2026-09-26/27 import-speed audit; each reproduced by this session before the fix,
+each with a test that fails on the unfixed code.
+
+**The envelope said `exact 0` while counters were deferred.** `counter_envelope` honoured the
+R22 marker only when n > 0, and a fresh store's first deferred drain writes mentions and no
+counter, so n is 0 there. The marker now wins whatever n is.
+
+**A checkpoint scoped its post-swap stages to its own batch (K > 1).** Measured with a two-item
+group whose items touch disjoint sources: the held item's source counter read 2 over 5
+articles and was reported exact, the quarantine scan screened 1 of 4 new articles, and the held
+item's calendar event missed the durable mirror. `merge.py::_swap_group`, read just before the
+swap, returns every batch the working copy carries that the live corpus does not; the three
+stages scope to it and widen on doubt (the counters reconcile everything, the quarantine scan
+screens this item and says so, the mirror refreshes). Each part of the fix undone alone is
+caught by its own assertion in the end-to-end test.
+
+**A drain that yielded to an import swept the counters beside it.** The `finally` ran
+`finish_deferral`'s unbounded whole-corpus sweep on the live file, without a lease, while the
+import snapshotted and swapped it. Reproduced with the app's own functions on 300,000
+keywords (snapshot at 30% of the sweep, swap at 60%): the new file had no marker, read `exact`,
+and held 27,143 drifted keywords; 0 when the sweep ended first. The sweep no longer starts
+while an import owns the machine, holds a corpus lease, stops at its next slice for an import,
+and a marker a yielded run leaves open is closed by the next clean run; a cancel still
+reconciles. Through the fixed flow the marker survives into the new file and the envelope
+reads `estimated`.
+
+969 tests across 93 related files pass; mypy clean. `store.py` is in `ENGINE_MODULES`, so this
+PR changes the engine identity once. Lessons: `LESSONS.md`, the four entries dated by this PR
+after the FTS one.
+
+## 2026-09-27 — VADER sentiment in time linear in the text, with the same scores (PR #1192)
+
+Row 6 of the import-speed audit's synthesis, asked for by the maintainer after the four defects
+above. VADER 3.3.2 is quadratic in a text's length in three places. `_negation_check` and
+`_special_idioms_check` lowercase every token of the document on each call, up to four calls
+per lexicon word. `_but_check` re-finds each score with `list.index` and replaces it with
+`pop` + `insert`. `src/analytics/vader_linear.py` subclasses the analyzer: the two checks read
+a lowercased copy made once per document, and are otherwise stock line for line. The "but"
+check answers "the first position holding an equal score" with a min-heap of positions per
+score, and computes the new score from the score READ, as stock does.
+
+**Measured,** stock against linear, on the start of `docs/USER_MANUAL.md`: 3.1 against 1.6 ms
+at 3 KB, 21 against 4.0 ms at 10 KB, 144 against 10 ms at 25 KB, 1,527 against 36 ms at 80 KB.
+The real drain (`reindex_articles`, three workers, 600 English texts of about 27 KB cut from
+this repo's docs) went from 157 s to 54 s, its precompute from 139.5 s to 36.9 s, with the
+write phase unchanged at 16.9 s. Comparing the two drained files, all 50 tables matched column
+for column apart from the run's timestamps and the engine stamp, and all 600 sentiment scores
+were identical. Separately, the per-document lowercasing is most of the cost: at 80 KB it alone
+takes stock from 1.7 s to 134 ms, and the heap takes it to 37 ms.
+
+**The guard is the file's bytes, not the version string.** `make_analyzer()` hashes the
+imported `vaderSentiment.py` and uses the linear class only for 3.3.2's, whose bytes are the
+same in the wheel and the sdist (both hashes pinned in `requirements.lock`). Anything else gets
+the stock analyzer, which is slower and gives the same scores. Registered as
+`vader-linear-reproduction` in `configs/external_artifacts.yml`. Framing uses the same analyzer.
+
+**Tests.** The differential tests compare against the installed stock class, per-token scores
+by `repr`, on 54 hand-written cases, 20,000 random "but" lists, 2,000 token soups and English
+prose. The count pins show the tokens are read a fixed number of times and the "but" check
+makes no scan, and each pin fires on stock. Every non-equivalent mutant is caught; the one
+survivor is equivalent (see `LESSONS.md`). `vader_linear.py` joins `ENGINE_MODULES`, so the
+engine identity changes, as it already does in this PR.
+
+**Reproduced, not corrected:** the "but" rule matches scores by value, so a score after the
+"but" can go unboosted. Measured on the same 600 texts, correcting it would move the rounded
+compound of 478 and the label of 16. That is recorded as a deliberate omission in
+`OPEN_QUEUE.md`, dated by this PR. Lessons: `LESSONS.md`, the two entries dated by this PR
+after the counter ones.

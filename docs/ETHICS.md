@@ -580,6 +580,7 @@ Registered in `configs/external_artifacts.yml` (freshness/attribution tracked th
 |-------|---------|---------------------|
 | Fonts (Inter · Outfit · Manrope · JetBrains Mono · Source Serif 4 · Cantarell) | SIL OFL 1.1 | `src/static/fonts/*.woff2`, license text in `src/static/fonts/OFL-*.txt` |
 | Alpine.js v3.14.1 (GUI gallery) | MIT | Vendored locally, sha256-pinned, no CDN — `src/static/guis/vendor/alpine.min.js` |
+| vaderSentiment 3.3.2 — three analyzer methods adapted for linear time | MIT | **Copyright (c) 2016 C.J. Hutto**; the notice is reproduced in `src/analytics/vader_linear.py`, which runs only on the exact file it was checked against (sha256-pinned) |
 | DB-IP IP-to-Country Lite (offline geolocation) | CC BY 4.0 | **Attribution required:** "IP geolocation by DB-IP (https://db-ip.com) — CC BY 4.0" — `src/geo/data/dbip_country_lite.csv.gz` |
 | stopwords-iso (multilingual stopword lists) | MIT | `configs/stopwords_iso/*.txt` |
 | Natural Earth (coastline + country polygons) | Public domain | `src/static/world_outline.json`, `src/static/world_countries.json` |
