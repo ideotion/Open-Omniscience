@@ -100,3 +100,52 @@ def test_fresh_cache_is_served_without_recompute(corpus, monkeypatch):
     view = service.get_briefing(corpus)
     assert called["n"] == 0, "a fresh cache must not be recomputed"
     assert any(c["id"] == "sentinel" for c in view["cards"])
+
+
+def _write_versioned_cache(version: str, cards: list, article_count: int) -> None:
+    payload = {
+        "version": version,
+        "generated_at": datetime.now(UTC).isoformat(),
+        "article_count": article_count,
+        "cards": cards,
+    }
+    service._cache_path().write_text(json.dumps(payload), encoding="utf-8")
+
+
+_V2_SENTINEL = {
+    "id": "v2-sentinel", "type": "x", "title": "V2 SENTINEL", "summary": "s",
+    "bucket": "rising", "method": "m", "caveat": "c",
+}
+
+
+def test_a_v2_cache_without_frames_is_recomputed_once(corpus, monkeypatch):
+    """Re-walk 2026-09-27 (L-1/N-8/M-6): the i18n frames are written at CACHE-WRITE time,
+    so a cache from before them kept Home English in fr/ar/zh until a scrape or 10%
+    corpus growth -- which an airplane-mode install may never see. A v2 cache must be
+    recomputed on the first read even though the corpus has not grown."""
+    monkeypatch.setattr(service, "_article_count", lambda _s: 12)
+    _write_versioned_cache("oo-briefing-cache-2", [_V2_SENTINEL], 12)
+    view = service.get_briefing(corpus)
+    assert not any(c["id"] == "v2-sentinel" for c in view["cards"]), "a v2 cache was served as fresh"
+    stored = json.loads(service._cache_path().read_text(encoding="utf-8"))
+    assert stored["version"] == service.CACHE_VERSION
+    assert all("i18n" in c for c in stored["cards"]), "the recompute must write the frames"
+
+
+def test_a_v2_cache_is_served_while_the_background_recompute_runs(corpus, monkeypatch):
+    """The HTTP path never recomputes on the request thread: it kicks ONE background
+    refresh and keeps the old cards on screen (English, but not an empty Home)."""
+    monkeypatch.setattr(service, "_article_count", lambda _s: 12)
+    _write_versioned_cache("oo-briefing-cache-2", [_V2_SENTINEL], 12)
+    kicked = {"n": 0}
+    monkeypatch.setattr(service, "_ensure_background_refresh", lambda: kicked.__setitem__("n", kicked["n"] + 1))
+    view = service.get_briefing(corpus, background=True)
+    assert kicked["n"] == 1, "a v2 cache must start the one background recompute"
+    assert any(c["id"] == "v2-sentinel" for c in view["cards"]), "the old cards stay up meanwhile"
+
+
+def test_a_v1_cache_is_still_refused(corpus, monkeypatch):
+    """A v1 cache predates article_ids (cards could not hard-link): never served."""
+    monkeypatch.setattr(service, "_article_count", lambda _s: 12)
+    _write_versioned_cache("oo-briefing-cache-1", [_V2_SENTINEL], 12)
+    assert service._read_cache() is None

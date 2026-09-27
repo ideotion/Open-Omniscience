@@ -6548,8 +6548,9 @@ def test_home_card_click_diagnostics_and_download_all_wired():
     assert "Download keyword log (.zip)" not in html  # the old verbose label is gone
 
     # The live hard-linking fix: cache version bumped so a pre-fix cached briefing
-    # (cards without article_ids) is recomputed once.
-    assert 'CACHE_VERSION = "oo-briefing-cache-2"' in svc
+    # (cards without article_ids) is recomputed once. Bumped again to 3 when cards
+    # gained keyed i18n frames (re-walk L-1); a v2 cache is served while it recomputes.
+    assert 'CACHE_VERSION = "oo-briefing-cache-3"' in svc
 
 
 def test_http_error_responses_recorded_in_diagnostic_log():
