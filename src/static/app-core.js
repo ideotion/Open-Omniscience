@@ -1632,11 +1632,51 @@
       const s = String(u).replace(/^https?:\/\//i, "").replace(/^www\./i, "");
       return s.length > 40 ? s.slice(0, 39) + "…" : s;
     }
+    // A byte count as a reader of THIS language writes it (2026-09-26 click-through P8).
+    // Every size used to print English units in every locale ("8.5 MB", "0 B"), and in
+    // an Arabic line the bidi algorithm drew it as "MB 8.5". Now:
+    //   * the UNIT is one keyed frame per unit, so a locale that writes it differently
+    //     does ("{n} Mo" in fr, "{n} МБ" in ru, "{n} ميغابايت" in ar) and also decides
+    //     which side of the number it sits on;
+    //   * the NUMBER is formatted for the UI language -- OOI18N.current(), never the
+    //     browser's locale, which the language switcher does not touch -- with Latin
+    //     digits, like every other figure the app prints;
+    //   * the result rides in a FIRST STRONG ISOLATE (U+2068 ... U+2069), so it stays one
+    //     run inside a right-to-left line. Plain characters, not markup: they survive
+    //     esc() and work in a title, a textContent or an <option>;
+    //   * the number and its unit are held together by a NO-BREAK SPACE: measured at
+    //     375 px in Arabic, the Storage table's narrow On-disk cell broke "17.8" from its
+    //     (longer) unit onto two lines.
+    // What does NOT change is the value: binary steps of 1024 under the SI-style names,
+    // exactly as before. `decimals(i, v)` keeps each caller's own precision rule. A
+    // `sign` ("+" or U+2212) rides in an isolate of its own WITH the digits, so a growth
+    // figure keeps its sign on the number in an Arabic line too.
+    function _sizeText(bytes, decimals, sign) {
+      const v0 = Number(bytes);
+      if (bytes == null || !isFinite(v0)) return "—";
+      const TF = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((s, o) => s.replace("{n}", o.n));
+      let v = v0, i = 0;
+      while (v >= 1024 && i < 4) { v /= 1024; i++; }
+      const dec = decimals(i, v);
+      let num;
+      try {
+        const lang = (window.OOI18N && OOI18N.current && OOI18N.current()) || "en";
+        const cache = _sizeText.nf || (_sizeText.nf = {});
+        const nf = cache[lang + "|" + dec] || (cache[lang + "|" + dec] = new Intl.NumberFormat(
+          lang + "-u-nu-latn", { minimumFractionDigits: dec, maximumFractionDigits: dec, useGrouping: false }));
+        num = nf.format(v);
+      } catch (e) { num = v.toFixed(dec); }   // no Intl, or a language tag it refuses
+      if (sign) num = "\u2068" + sign + num + "\u2069";
+      const s = i === 0 ? TF("{n} B", { n: num })
+        : i === 1 ? TF("{n} KB", { n: num })
+        : i === 2 ? TF("{n} MB", { n: num })
+        : i === 3 ? TF("{n} GB", { n: num })
+        : TF("{n} TB", { n: num });
+      return "\u2068" + s.replace(/ /g, "\u00a0") + "\u2069";
+    }
     function _fmtBytes(n) {
-      if (n == null) return "—";
-      const u = ["B","KB","MB","GB","TB"]; let i = 0, v = n;
-      while (v >= 1024 && i < u.length - 1) { v /= 1024; i++; }
-      return (v >= 100 || i === 0 ? Math.round(v) : v.toFixed(1)) + " " + u[i];
+      // Whole numbers for bytes and from 100 up; one decimal below that.
+      return _sizeText(n, (i, v) => (v >= 100 || i === 0 ? 0 : 1));
     }
     function _rateBytes(curr, prev, pick) {
       if (!prev) return null;
@@ -1713,6 +1753,9 @@
       const pg = a.progress, plan = a.plan || {}, rates = a.per_host_rates || [];
       const row = (k, val) => `<div class="vr"><span>${k}</span><b>${val}</b></div>`;
       const sect = (t) => `<div class="vsect">${t}</div>`;
+      // A rate is the size's own frame plus the locale's per-second frame (P8).
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((s, o) => s.replace("{rate}", o.rate));
+      const perSec = (bytes) => tf("{rate}/s", { rate: _fmtBytes(bytes) });
       // -- Now: live run progress (domains only, a real bar) ---------------- //
       let nowHtml;
       if (pg && pg.total) {
@@ -1755,14 +1798,14 @@
       const rateHtml = rates.length
         ? sect("Per-source download rate") +
           rates.map(r => `<div class="vr vr-dim"><span>${esc(r.host)}</span>` +
-            `<b>${r.kbps} KB/s <span class="muted">· ${_fmtBytes(r.bytes)} · ${r.fetches}×</span></b></div>`).join("") +
+            `<b>${esc(perSec(r.kbps * 1024))} <span class="muted">· ${_fmtBytes(r.bytes)} · ${r.fetches}×</span></b></div>`).join("") +
           '<div class="vnote">Measured from this app’s own responses (bytes ÷ transfer time) — not a system network counter.</div>'
         : "";
       // -- System: the hardware row, compact -------------------------------- //
       const sysHtml = sect("System") +
         row("CPU", p.cpu_percent == null ? "—" : p.cpu_percent + "%") +
         row("Memory", _fmtBytes(p.rss_bytes)) +
-        row("Scraping ↓", (dl == null ? "—" : _fmtBytes(dl) + "/s") +
+        row("Scraping ↓", (dl == null ? "—" : esc(perSec(dl))) +
             ` <span class="muted">· total ${_fmtBytes(sc.bytes_total)} · ${sc.fetches_total||0}×</span>`);
       $("vitals-body").innerHTML = nowHtml + planHtml + _budgetHtml(a) + rateHtml + sysHtml + _sessionHtml(v.session);
       $("vitals-note").innerHTML = "";

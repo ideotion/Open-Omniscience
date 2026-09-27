@@ -4745,5 +4745,18 @@
   "corpus database not separately encrypted (the backup's volumes are)": "base de datos del corpus sin cifrado propio (los volúmenes de la copia sí están cifrados)",
   "Verify result not known here — the app no longer holds what this export measured (it has run another job or restarted since). The volume figures below are read off the drive.": "Resultado de verificación desconocido aquí: la aplicación ya no conserva lo que midió esta exportación (desde entonces ha ejecutado otra tarea o se ha reiniciado). Las cifras de volúmenes de abajo se leen del disco.",
   "{prefix}: {text}": "{prefix}: {text}",
-  "The 'also scrape unqualified sources' setting has been retired (ruling Q1101, 2026-09-15). A source that passes qualification is now enabled for collection automatically, so there is nothing left for the setting to relax. Every automatic admission is listed in Settings > Advanced > Quality gates > Admission audit, where it can be undone.": "El ajuste «también recopilar fuentes no cualificadas» se ha retirado (decisión Q1101, 2026-09-15). Una fuente que supera la cualificación ahora se habilita automáticamente para la recopilación, así que no queda nada que relajar. Cada admisión automática aparece en Ajustes > Avanzado > Controles de calidad > Registro de admisiones, donde puede deshacerse."
+  "The 'also scrape unqualified sources' setting has been retired (ruling Q1101, 2026-09-15). A source that passes qualification is now enabled for collection automatically, so there is nothing left for the setting to relax. Every automatic admission is listed in Settings > Advanced > Quality gates > Admission audit, where it can be undone.": "El ajuste «también recopilar fuentes no cualificadas» se ha retirado (decisión Q1101, 2026-09-15). Una fuente que supera la cualificación ahora se habilita automáticamente para la recopilación, así que no queda nada que relajar. Cada admisión automática aparece en Ajustes > Avanzado > Controles de calidad > Registro de admisiones, donde puede deshacerse.",
+  "{n} B": "{n} B",
+  "{n} KB": "{n} KB",
+  "{n} MB": "{n} MB",
+  "{n} GB": "{n} GB",
+  "{n} TB": "{n} TB",
+  "{d} for the corpus": "{d} para el corpus",
+  "not recorded for the corpus": "no registrado para el corpus",
+  "{d} for the files": "{d} para los archivos",
+  "not recorded for the files": "no registrado para los archivos",
+  "Wikipedia text — CC BY-SA 4.0 (https://creativecommons.org/licenses/by-sa/4.0/). Attribute Wikipedia and its contributors, and share any work derived from this text alike.": "Texto de Wikipedia — CC BY-SA 4.0 (https://creativecommons.org/licenses/by-sa/4.0/). Atribuya a Wikipedia y a sus colaboradores, y comparta bajo la misma licencia toda obra derivada de este texto.",
+  "Tracked legal documents — this corpus records NO licence metadata for them. Each document's terms are those of the official source it was mirrored from (the official URL stored with the document); check them before redistributing. That is a gap in what was recorded, never a grant.": "Documentos jurídicos seguidos — este corpus NO registra metadatos de licencia para ellos. Los términos de cada documento son los de la fuente oficial de la que se copió (la URL oficial guardada con el documento); compruébelos antes de redistribuirlo. Es un vacío en lo registrado, nunca una autorización.",
+  "IP geolocation by DB-IP (https://db-ip.com) — CC BY 4.0": "Geolocalización IP de DB-IP (https://db-ip.com) — CC BY 4.0",
+  "Open-Meteo open data, CC BY 4.0 (https://open-meteo.com/) — ERA5-family reanalysis: a model estimate for a grid cell, not a station record.": "Datos abiertos de Open-Meteo, CC BY 4.0 (https://open-meteo.com/) — reanálisis de la familia ERA5: una estimación de modelo para una celda de la cuadrícula, no un registro de estación."
 }

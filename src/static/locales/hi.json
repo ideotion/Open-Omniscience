@@ -4745,5 +4745,18 @@
   "corpus database not separately encrypted (the backup's volumes are)": "कॉर्पस डेटाबेस अलग से एन्क्रिप्टेड नहीं है (बैकअप के वॉल्यूम एन्क्रिप्टेड हैं)",
   "Verify result not known here — the app no longer holds what this export measured (it has run another job or restarted since). The volume figures below are read off the drive.": "सत्यापन परिणाम यहाँ ज्ञात नहीं — ऐप के पास अब वह नहीं है जो इस निर्यात ने मापा था (तब से उसने कोई दूसरा काम चलाया है या पुनः आरंभ हुआ है)। नीचे के वॉल्यूम आँकड़े ड्राइव से पढ़े गए हैं।",
   "{prefix}: {text}": "{prefix}: {text}",
-  "The 'also scrape unqualified sources' setting has been retired (ruling Q1101, 2026-09-15). A source that passes qualification is now enabled for collection automatically, so there is nothing left for the setting to relax. Every automatic admission is listed in Settings > Advanced > Quality gates > Admission audit, where it can be undone.": "“अन-परखे स्रोत भी एकत्र करें” सेटिंग हटा दी गई है (निर्णय Q1101, 2026-09-15)। जो स्रोत परीक्षा पास करता है वह अब संग्रह के लिए स्वचालित रूप से सक्षम हो जाता है, इसलिए ढील देने को कुछ नहीं बचा। हर स्वचालित प्रवेश सेटिंग्स > उन्नत > गुणवत्ता द्वार > प्रवेश लेखा-परीक्षा में सूचीबद्ध है, जहाँ उसे पूर्ववत किया जा सकता है।"
+  "The 'also scrape unqualified sources' setting has been retired (ruling Q1101, 2026-09-15). A source that passes qualification is now enabled for collection automatically, so there is nothing left for the setting to relax. Every automatic admission is listed in Settings > Advanced > Quality gates > Admission audit, where it can be undone.": "“अन-परखे स्रोत भी एकत्र करें” सेटिंग हटा दी गई है (निर्णय Q1101, 2026-09-15)। जो स्रोत परीक्षा पास करता है वह अब संग्रह के लिए स्वचालित रूप से सक्षम हो जाता है, इसलिए ढील देने को कुछ नहीं बचा। हर स्वचालित प्रवेश सेटिंग्स > उन्नत > गुणवत्ता द्वार > प्रवेश लेखा-परीक्षा में सूचीबद्ध है, जहाँ उसे पूर्ववत किया जा सकता है।",
+  "{n} B": "{n} B",
+  "{n} KB": "{n} KB",
+  "{n} MB": "{n} MB",
+  "{n} GB": "{n} GB",
+  "{n} TB": "{n} TB",
+  "{d} for the corpus": "कॉर्पस के लिए {d}",
+  "not recorded for the corpus": "कॉर्पस के लिए दर्ज नहीं",
+  "{d} for the files": "फ़ाइलों के लिए {d}",
+  "not recorded for the files": "फ़ाइलों के लिए दर्ज नहीं",
+  "Wikipedia text — CC BY-SA 4.0 (https://creativecommons.org/licenses/by-sa/4.0/). Attribute Wikipedia and its contributors, and share any work derived from this text alike.": "विकिपीडिया का पाठ — CC BY-SA 4.0 (https://creativecommons.org/licenses/by-sa/4.0/)। विकिपीडिया और उसके योगदानकर्ताओं को श्रेय दें, और इस पाठ से बने किसी भी कार्य को समान शर्तों पर साझा करें।",
+  "Tracked legal documents — this corpus records NO licence metadata for them. Each document's terms are those of the official source it was mirrored from (the official URL stored with the document); check them before redistributing. That is a gap in what was recorded, never a grant.": "ट्रैक किए गए कानूनी दस्तावेज़ — यह कॉर्पस इनके लिए कोई लाइसेंस मेटाडेटा दर्ज नहीं करता। हर दस्तावेज़ की शर्तें उसी आधिकारिक स्रोत की हैं जिससे उसकी प्रतिलिपि ली गई (दस्तावेज़ के साथ सहेजा गया आधिकारिक URL); दोबारा वितरित करने से पहले उन्हें जाँच लें। यह दर्ज जानकारी में एक कमी है, कभी कोई अनुमति नहीं।",
+  "IP geolocation by DB-IP (https://db-ip.com) — CC BY 4.0": "DB-IP द्वारा IP भू-स्थान (https://db-ip.com) — CC BY 4.0",
+  "Open-Meteo open data, CC BY 4.0 (https://open-meteo.com/) — ERA5-family reanalysis: a model estimate for a grid cell, not a station record.": "Open-Meteo का खुला डेटा, CC BY 4.0 (https://open-meteo.com/) — ERA5-परिवार का पुनर्विश्लेषण: किसी ग्रिड सेल के लिए मॉडल का अनुमान, किसी स्टेशन का रिकॉर्ड नहीं।"
 }

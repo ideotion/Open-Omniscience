@@ -45,6 +45,7 @@ const src =
   "function esc(s){return String(s==null?'':s).replace(/[&<>\"]/g," +
   "c=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;'}[c]));}\n" +
   "var window = {};\n" +
+  extract("_sizeText") + "\n" +
   extract("_fmtBytes") + "\n" +
   extract("_fmtDur") + "\n" +
   extract("_rateNote") + "\n" +
@@ -56,6 +57,9 @@ const { _rateNote } = (() => {
 })();
 
 const t = (s) => s; // the identity the real t() falls back to before i18n loads
+// A size rides in its own bidi isolate since P8 (2026-09-26), with a no-break space before
+// its unit; read the text without the one and with the other as a space.
+const bare = (s) => String(s).replace(/[\u2068\u2069]/g, "").replace(/\u00a0/g, " ");
 
 // --- a measured rate draws, with its method in the hover ------------------- //
 {
@@ -63,7 +67,7 @@ const t = (s) => s; // the identity the real t() falls back to before i18n loads
     measured: true, bytes_per_s: 1048576, window_s: 12.0, samples: 13,
     method: "bytes received by the download worker itself, divided by the wall time",
   } }, t);
-  assert.ok(out.includes("1.0 MB/s"), "the measured rate is not drawn: " + out);
+  assert.ok(bare(out).includes("1.0 MB/s"), "the measured rate is not drawn: " + out);
   assert.ok(out.includes("title="), "the method is not offered on hover: " + out);
   assert.ok(/Not an estimate made in the browser/.test(out),
     "the hover does not say whose measurement this is: " + out);
@@ -75,7 +79,7 @@ const t = (s) => s; // the identity the real t() falls back to before i18n loads
   const out = _rateNote({ state: "running", rate: {
     measured: true, bytes_per_s: 1048576, eta_seconds: 240, method: "m",
   } }, t);
-  assert.ok(out.includes("1.0 MB/s"), out);
+  assert.ok(bare(out).includes("1.0 MB/s"), out);
   assert.ok(out.includes("4 min"), "the ETA is not drawn: " + out);
   assert.ok(out.includes("left"), out);
 }
@@ -100,7 +104,7 @@ for (const reason of [
   // which omits rather than zeroes, and this pins that the renderer does not
   // quietly paper over a producer that starts fabricating zeroes.
   const z = _rateNote({ state: "running", rate: { measured: true, bytes_per_s: 0, method: "m" } }, t);
-  assert.ok(z.includes("0 B/s"), z);
+  assert.ok(bare(z).includes("0 B/s"), z);
 }
 
 // --- A STALL draws, and ONLY for a job that is supposed to be moving -------- //

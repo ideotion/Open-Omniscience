@@ -211,10 +211,9 @@
     }
 
     function humanBytes(n) {
-      if (n == null) return "—";
-      const u = ["B","KB","MB","GB","TB"]; let i = 0;
-      while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
-      return n.toFixed(i ? 1 : 0) + " " + u[i];
+      // One decimal above bytes. The unit's written form, the number's decimal mark and
+      // the bidi isolate are _sizeText's (app-core.js), shared with _fmtBytes (P8).
+      return _sizeText(n, (i) => (i ? 1 : 0));
     }
 
     // Boot: fetch the version once. The PILL is no longer painted from here --
@@ -235,6 +234,19 @@
     // Real on-disk DB size (main+wal+shm), refreshed by loadSettings from
     // /api/database/stats; feeds vacuumNow's honest size-gate estimate (DB-10 §1.4).
     let _dbFileBytes = null;
+    // The Reclaimable-space figure is written once, by loadSettings at boot -- which can
+    // run before the locale map has loaded (the race i18n.js's `ready` documents), and a
+    // language switch repaints nothing of it. Measured in Chromium (P8): after a full
+    // reload in French it still read "0 B". So the figure is kept, and re-drawn when the
+    // map is ready and on every switch. `undefined` = not read yet (the "—" stays).
+    let _dbReclaimBytes;
+    function _paintReclaim() {
+      const el = $("vacuum-reclaim");
+      if (!el || _dbReclaimBytes === undefined) return;
+      el.textContent = _dbReclaimBytes == null ? "—" : _fmtBytes(_dbReclaimBytes);
+    }
+    document.addEventListener("oo:langchange", _paintReclaim);
+    if (window.OOI18N && OOI18N.ready && OOI18N.ready.then) OOI18N.ready.then(_paintReclaim).catch(() => {});
 
     // --- Ollama BINARY installer (Settings → AI) ------------------------------ //
     // The missing half of model management (maintainer 2026-06-20: "can't find the
@@ -1006,8 +1018,8 @@
       // Backup support is backend-dependent; reflect reality, never assume.
       try {
         const st = await api("/api/database/stats");
-        $("vacuum-reclaim").textContent =
-          (st.reclaimable_bytes == null) ? "—" : _fmtBytes(st.reclaimable_bytes);
+        _dbReclaimBytes = st.reclaimable_bytes == null ? null : st.reclaimable_bytes;
+        _paintReclaim();
         _dbFileBytes = (st.file && st.file.bytes != null) ? st.file.bytes : null;
       } catch (e) { /* the reclaim readout stays at its placeholder — no panel to report into */ }
       loadDumpLanguages();
@@ -1320,7 +1332,7 @@
         const freed = (r.bytes_reclaimed == null) ? "—" : _fmtBytes(r.bytes_reclaimed);
         out.textContent = t("Compacted.") + " " + t("Space freed:") + " " + freed +
           " · " + ((r.duration_ms / 1000).toFixed(1)) + " s";
-        $("vacuum-reclaim").textContent = _fmtBytes(0);
+        _dbReclaimBytes = 0; _paintReclaim();
       } catch (e) {
         out.textContent = t("Compaction failed:") + " " + e.message;
       } finally { btn.disabled = false; }
@@ -1702,8 +1714,10 @@
     }
     function _storageSignedBytes(n) {
       // A U+2212 minus, and the sign always shown: "+1.2 GB" and "−300 MB" are the two
-      // facts a growth column states, and a bare "1.2 GB" would not say which.
-      return (n > 0 ? "+" : n < 0 ? "−" : "") + humanBytes(Math.abs(n));
+      // facts a growth column states, and a bare "1.2 GB" would not say which. The sign
+      // goes INSIDE the size's isolate, with the digits: outside it, an Arabic line put
+      // the sign on the far side of the unit.
+      return _sizeText(Math.abs(n), (i) => (i ? 1 : 0), n > 0 ? "+" : n < 0 ? "−" : "");
     }
     function _storagePct(share) {
       const pct = share * 100;
@@ -1719,17 +1733,18 @@
       // must fall through to the words, not to a figure.
       if (g.measured === true && typeof g.delta_bytes === "number" && typeof g.span_days === "number") {
         const days = Math.max(1, Math.round(g.span_days));
-        // The dates and the signed figures go through _ltrIsolate (app-library.js): in the
-        // Arabic page "+6.0 MB" otherwise renders as "MB 6.0+" and an ISO date with its
-        // year at the wrong end -- a misread, not only an ugly one.
+        // The dates go through _ltrIsolate (app-library.js) and the signed figures carry
+        // their own isolate (_sizeText): in the Arabic page "+6.0 MB" otherwise renders
+        // as "MB 6.0+" and an ISO date with its year at the wrong end -- a misread, not
+        // only an ugly one.
         const how = tf("Measured from {n} readings of this lane’s own size, {from} to {to}. A rate, not a forecast.",
           { n: g.samples, from: _ltrIsolate(String(g.from || "").slice(0, 10)), to: _ltrIsolate(String(g.to || "").slice(0, 10)) });
         if (g.delta_bytes === 0) {
           return `<span title="${esc(how)}">${esc(tf("No change in {days} days", { days }))}</span>`;
         }
-        const head = tf("{delta} in {days} days", { delta: _ltrIsolate(_storageSignedBytes(g.delta_bytes)), days });
+        const head = tf("{delta} in {days} days", { delta: _storageSignedBytes(g.delta_bytes), days });
         const rate = typeof g.per_30_days_bytes === "number"
-          ? `<div class="muted">${esc(tf("≈ {rate} per 30 days at that rate", { rate: _ltrIsolate(_storageSignedBytes(g.per_30_days_bytes)) }))}</div>`
+          ? `<div class="muted">${esc(tf("≈ {rate} per 30 days at that rate", { rate: _storageSignedBytes(g.per_30_days_bytes) }))}</div>`
           : "";
         return `<span title="${esc(how)}">${esc(head)}</span>${rate}`;
       }

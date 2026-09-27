@@ -4745,5 +4745,18 @@
   "corpus database not separately encrypted (the backup's volumes are)": "语料库数据库未单独加密（备份的卷已加密）",
   "Verify result not known here — the app no longer holds what this export measured (it has run another job or restarted since). The volume figures below are read off the drive.": "此处未知校验结果——应用已不再保留此次导出所测得的数据（此后它运行了其他任务或已重启）。下方的卷数据读取自磁盘。",
   "{prefix}: {text}": "{prefix}：{text}",
-  "The 'also scrape unqualified sources' setting has been retired (ruling Q1101, 2026-09-15). A source that passes qualification is now enabled for collection automatically, so there is nothing left for the setting to relax. Every automatic admission is listed in Settings > Advanced > Quality gates > Admission audit, where it can be undone.": "“也采集未审核来源”设置已废除（裁定 Q1101，2026-09-15）。通过审核的来源现在会自动启用以供采集，因此该设置已无可放宽之处。每一次自动准入都列在“设置 > 高级 > 质量关卡 > 准入审计”中，可在那里撤销。"
+  "The 'also scrape unqualified sources' setting has been retired (ruling Q1101, 2026-09-15). A source that passes qualification is now enabled for collection automatically, so there is nothing left for the setting to relax. Every automatic admission is listed in Settings > Advanced > Quality gates > Admission audit, where it can be undone.": "“也采集未审核来源”设置已废除（裁定 Q1101，2026-09-15）。通过审核的来源现在会自动启用以供采集，因此该设置已无可放宽之处。每一次自动准入都列在“设置 > 高级 > 质量关卡 > 准入审计”中，可在那里撤销。",
+  "{n} B": "{n} B",
+  "{n} KB": "{n} KB",
+  "{n} MB": "{n} MB",
+  "{n} GB": "{n} GB",
+  "{n} TB": "{n} TB",
+  "{d} for the corpus": "语料库：{d}",
+  "not recorded for the corpus": "语料库：未记录",
+  "{d} for the files": "文件：{d}",
+  "not recorded for the files": "文件：未记录",
+  "Wikipedia text — CC BY-SA 4.0 (https://creativecommons.org/licenses/by-sa/4.0/). Attribute Wikipedia and its contributors, and share any work derived from this text alike.": "维基百科文本 — CC BY-SA 4.0 (https://creativecommons.org/licenses/by-sa/4.0/)。请署名维基百科及其贡献者，并以相同方式共享由此文本衍生的任何作品。",
+  "Tracked legal documents — this corpus records NO licence metadata for them. Each document's terms are those of the official source it was mirrored from (the official URL stored with the document); check them before redistributing. That is a gap in what was recorded, never a grant.": "跟踪的法律文件 — 本语料库未记录它们的任何许可元数据。每份文件的条款以其镜像来源的官方来源为准（与文件一同保存的官方 URL）；再分发前请先核实。这是记录上的空白，绝不代表授权。",
+  "IP geolocation by DB-IP (https://db-ip.com) — CC BY 4.0": "IP 地理定位由 DB-IP 提供 (https://db-ip.com) — CC BY 4.0",
+  "Open-Meteo open data, CC BY 4.0 (https://open-meteo.com/) — ERA5-family reanalysis: a model estimate for a grid cell, not a station record.": "Open-Meteo 开放数据，CC BY 4.0 (https://open-meteo.com/) — ERA5 系列再分析：网格单元的模型估算，而非气象站记录。"
 }

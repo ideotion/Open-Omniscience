@@ -4745,5 +4745,18 @@
   "corpus database not separately encrypted (the backup's volumes are)": "Korpus-Datenbank nicht separat verschlüsselt (die Volumes der Sicherung sind es)",
   "Verify result not known here — the app no longer holds what this export measured (it has run another job or restarted since). The volume figures below are read off the drive.": "Prüfergebnis hier nicht bekannt — die App hält nicht mehr, was dieser Export gemessen hat (sie hat seitdem einen anderen Auftrag ausgeführt oder wurde neu gestartet). Die Volume-Angaben unten sind vom Laufwerk gelesen.",
   "{prefix}: {text}": "{prefix}: {text}",
-  "The 'also scrape unqualified sources' setting has been retired (ruling Q1101, 2026-09-15). A source that passes qualification is now enabled for collection automatically, so there is nothing left for the setting to relax. Every automatic admission is listed in Settings > Advanced > Quality gates > Admission audit, where it can be undone.": "Die Einstellung „auch nicht qualifizierte Quellen sammeln“ wurde zurückgezogen (Entscheidung Q1101, 2026-09-15). Eine Quelle, die die Qualifizierung besteht, wird jetzt automatisch zur Sammlung aktiviert, es bleibt also nichts zu lockern. Jede automatische Zulassung steht unter Einstellungen > Erweitert > Qualitätsprüfungen > Aufnahmeprotokoll und kann dort rückgängig gemacht werden."
+  "The 'also scrape unqualified sources' setting has been retired (ruling Q1101, 2026-09-15). A source that passes qualification is now enabled for collection automatically, so there is nothing left for the setting to relax. Every automatic admission is listed in Settings > Advanced > Quality gates > Admission audit, where it can be undone.": "Die Einstellung „auch nicht qualifizierte Quellen sammeln“ wurde zurückgezogen (Entscheidung Q1101, 2026-09-15). Eine Quelle, die die Qualifizierung besteht, wird jetzt automatisch zur Sammlung aktiviert, es bleibt also nichts zu lockern. Jede automatische Zulassung steht unter Einstellungen > Erweitert > Qualitätsprüfungen > Aufnahmeprotokoll und kann dort rückgängig gemacht werden.",
+  "{n} B": "{n} B",
+  "{n} KB": "{n} KB",
+  "{n} MB": "{n} MB",
+  "{n} GB": "{n} GB",
+  "{n} TB": "{n} TB",
+  "{d} for the corpus": "{d} für das Korpus",
+  "not recorded for the corpus": "für das Korpus nicht aufgezeichnet",
+  "{d} for the files": "{d} für die Dateien",
+  "not recorded for the files": "für die Dateien nicht aufgezeichnet",
+  "Wikipedia text — CC BY-SA 4.0 (https://creativecommons.org/licenses/by-sa/4.0/). Attribute Wikipedia and its contributors, and share any work derived from this text alike.": "Wikipedia-Text — CC BY-SA 4.0 (https://creativecommons.org/licenses/by-sa/4.0/). Nennen Sie Wikipedia und ihre Autorinnen und Autoren, und geben Sie jedes aus diesem Text abgeleitete Werk unter gleichen Bedingungen weiter.",
+  "Tracked legal documents — this corpus records NO licence metadata for them. Each document's terms are those of the official source it was mirrored from (the official URL stored with the document); check them before redistributing. That is a gap in what was recorded, never a grant.": "Verfolgte Rechtsdokumente — dieses Korpus erfasst für sie KEINE Lizenz-Metadaten. Für jedes Dokument gelten die Bedingungen der amtlichen Quelle, von der es gespiegelt wurde (die mit dem Dokument gespeicherte amtliche URL); prüfen Sie sie vor einer Weitergabe. Das ist eine Lücke in dem, was erfasst wurde, niemals eine Erlaubnis.",
+  "IP geolocation by DB-IP (https://db-ip.com) — CC BY 4.0": "IP-Geolokalisierung von DB-IP (https://db-ip.com) — CC BY 4.0",
+  "Open-Meteo open data, CC BY 4.0 (https://open-meteo.com/) — ERA5-family reanalysis: a model estimate for a grid cell, not a station record.": "Offene Daten von Open-Meteo, CC BY 4.0 (https://open-meteo.com/) — Reanalyse der ERA5-Familie: eine Modellschätzung für eine Gitterzelle, keine Stationsmessung."
 }

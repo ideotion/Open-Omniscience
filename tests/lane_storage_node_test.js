@@ -49,7 +49,7 @@ function extractConst(name) {
 }
 
 const NAMES = [
-  "humanBytes", "_storageLaneName", "_storageLaneHover", "_storageSignedBytes", "_storagePct",
+  "_sizeText", "humanBytes", "_storageLaneName", "_storageLaneHover", "_storageSignedBytes", "_storagePct",
   "_storageGrowthHtml", "_storageBudgetHtml", "_storageSizeHtml", "_storageTableHtml",
   "_storageReadingHtml", "_storageDiskHtml",
 ];
@@ -133,8 +133,11 @@ const GIB = 1024 ** 3, MIB = 1024 ** 2;
   assert.strictEqual(visible(flat), "No change in 9 days");
   noJunk(up + down + flat, "measured growth");
   // In a right-to-left page a signed size and an ISO date reorder against the sentence
-  // ("MB 6.0+", the year at the wrong end), so each rides inside a bidi isolate.
-  assert.ok(up.includes(FSI + "+1.3 GB" + PDI) && up.includes(FSI + "+2.7 GB" + PDI),
+  // ("MB 6.0+", the year at the wrong end), so each rides inside a bidi isolate. Since
+  // P8 (2026-09-26) the size carries its own isolate, and the sign sits in an inner one
+  // WITH the digits -- outside it, an Arabic unit put the sign on the unit's far side --
+  // and a no-break space holds the number to its unit.
+  assert.ok(up.includes(FSI + FSI + "+1.3" + PDI + "\u00a0GB" + PDI) && up.includes(FSI + FSI + "+2.7" + PDI + "\u00a0GB" + PDI),
     "a signed growth figure is not isolated for RTL: " + JSON.stringify(up));
   assert.ok(rawHovers(up).includes(FSI + "2026-09-11" + PDI) && rawHovers(up).includes(FSI + "2026-09-25" + PDI),
     "a hover date is not isolated for RTL: " + JSON.stringify(rawHovers(up)));

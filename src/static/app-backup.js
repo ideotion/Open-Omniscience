@@ -166,7 +166,7 @@
       // (Described, not pasted as a call: both i18n scans read RAW SOURCE, so a
       // call-shaped literal in a comment is counted as a live UI string.)
       const secs = (n) => (n == null ? null
-        : (n < 90 ? esc(TF("{n} s", {n: n.toFixed(1)})) : esc(TF("{n} min", {n: Math.round(n / 60)}))));
+        : (n < 90 ? TF("{n} s", {n: n.toFixed(1)}) : TF("{n} min", {n: Math.round(n / 60)})));
       const rows = [];
       const row = (label, value, title) =>
         rows.push(`<div class="row" style="gap:6px;align-items:baseline"><span class="muted" style="min-width:150px"${title ? ` title="${esc(title)}"` : ""}>${esc(label)}</span><span>${value}</span></div>`);
@@ -202,10 +202,19 @@
       // as keys: they are caveats, and a caveat ships x12 (J7). The server strings are
       // pinned as keys in all 12 locales by tests/test_export_folder.py, because the
       // i18n gate cannot see a string that only arrives over the wire.
+      // ONE keyed frame per case, so each part reads as a phrase in every locale. The old
+      // form set a time (or "not recorded") beside a bare noun, and read "— corpus · not
+      // recorded files" in English and "non enregistré fichiers" in French. A part for
+      // something this export did not carry is left out rather than drawn as a dash.
       const corpusS = secs(el.corpus_s), filesS = secs(el.files_s);
-      row(t("Elapsed"),
-          `${esc(corpusS || dash)} <span class="muted">${esc(t("corpus"))}</span>` +
-          (files.length ? ` · ${esc(filesS || t("not recorded"))} <span class="muted">${esc(t("files"))}</span>` : ""),
+      const spans = [];
+      if (facts.corpus_included) {
+        spans.push(corpusS ? tf("{d} for the corpus", { d: corpusS }) : t("not recorded for the corpus"));
+      }
+      if (files.length) {
+        spans.push(filesS ? tf("{d} for the files", { d: filesS }) : t("not recorded for the files"));
+      }
+      row(t("Elapsed"), esc(spans.length ? spans.join(" · ") : dash),
           el.files_s_reason ? t(el.files_s_reason) : "");
       // 6-9. destination, encryption, schema, app version.
       // A filesystem path is ONE unbreakable token, and the dated folder made it longer:
@@ -233,10 +242,14 @@
         row(t("Licences"),
             `<span class="note err" title="${esc(facts.attribution_error)}">${esc(t("The attribution lines could not be completed — a licence question is unanswered, so this backup is reported without them."))}</span>`);
       } else if (lic.length) {
-        // dir="auto": the licence texts are English data, and inside an Arabic panel
-        // their closing periods were drawn at the start of the line (J3).
+        // Each line is the server's English sentence, looked up as a key: a licence line
+        // is a caveat about what the reader may do with the data, and a caveat ships x12.
+        // tests/test_export_folder.py pins every line the registry can emit as a key in
+        // all 12 locales, since the i18n gate cannot see a string that arrives over the
+        // wire. dir="auto": a line with no key yet stays English data, and inside an
+        // Arabic panel its closing period was drawn at the start of the line (J3).
         row(t("Licences"),
-            lic.map((l) => `<div dir="auto" title="${esc(tf("applies because: {signal}", { signal: l.because }))}">${esc(l.text)}</div>`).join(""));
+            lic.map((l) => `<div dir="auto" title="${esc(tf("applies because: {signal}", { signal: l.because }))}">${esc(t(l.text))}</div>`).join(""));
       } else {
         row(t("Licences"), `<span class="muted">${esc(t("no attribution line applies to what this backup holds"))}</span>`);
       }

@@ -104,6 +104,8 @@ const src = [
   "let _uxImLastStatus = null; let _uxImView = null;",
   extract("function _jobRow("),
   extract("function _fmtBytes("),
+  // ...and _fmtBytes writes through the shared localised formatter (P8), the same trap.
+  extract("function _sizeText("),
   // _jobRow calls these two (PERF-09's rate line). Extracted rather than stubbed,
   // for the reason this whole harness exists: a stand-in would let the copy under
   // test drift from the shipped code. Adding a call to a function this suite
@@ -359,7 +361,9 @@ test("a byte job still renders bytes", () => {
     { id: "dump:en", kind: "dump", label: "en dump", state: "running",
       progress: { done: 1048576, total: 4194304, unit: "bytes", percent: 25.0 }, actions: [] },
     {}, (s) => s);
-  assert(/1(\.0)? MB \/ 4(\.0)? MB/.test(row), `bytes must keep their formatter (got ${row})`);
+  // Each size rides in its own bidi isolate since P8 (2026-09-26), with a no-break space
+  // before its unit; strip the one and read the other as a space.
+  assert(/1(\.0)? MB \/ 4(\.0)? MB/.test(row.replace(/[\u2068\u2069]/g, "").replace(/\u00a0/g, " ")), `bytes must keep their formatter (got ${row})`);
 });
 
 test("a job with no unit at all is treated as bytes (the historic default)", () => {

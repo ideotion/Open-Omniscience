@@ -4745,5 +4745,18 @@
   "corpus database not separately encrypted (the backup's volumes are)": "コーパスのデータベースは個別には暗号化されていません（バックアップのボリュームは暗号化済み）",
   "Verify result not known here — the app no longer holds what this export measured (it has run another job or restarted since). The volume figures below are read off the drive.": "検証結果はここでは不明です — アプリはこのエクスポートが計測した内容をもう保持していません（その後、別のジョブを実行したか再起動しました）。下のボリュームの数値はドライブから読み取ったものです。",
   "{prefix}: {text}": "{prefix}：{text}",
-  "The 'also scrape unqualified sources' setting has been retired (ruling Q1101, 2026-09-15). A source that passes qualification is now enabled for collection automatically, so there is nothing left for the setting to relax. Every automatic admission is listed in Settings > Advanced > Quality gates > Admission audit, where it can be undone.": "「未審査の情報源も収集する」設定は廃止されました（裁定 Q1101、2026-09-15）。審査を通過した情報源は自動的に収集対象として有効化されるため、緩和すべきものは残っていません。自動許可はすべて「設定 > 詳細 > 品質ゲート > 許可履歴」に一覧され、そこで取り消せます。"
+  "The 'also scrape unqualified sources' setting has been retired (ruling Q1101, 2026-09-15). A source that passes qualification is now enabled for collection automatically, so there is nothing left for the setting to relax. Every automatic admission is listed in Settings > Advanced > Quality gates > Admission audit, where it can be undone.": "「未審査の情報源も収集する」設定は廃止されました（裁定 Q1101、2026-09-15）。審査を通過した情報源は自動的に収集対象として有効化されるため、緩和すべきものは残っていません。自動許可はすべて「設定 > 詳細 > 品質ゲート > 許可履歴」に一覧され、そこで取り消せます。",
+  "{n} B": "{n} B",
+  "{n} KB": "{n} KB",
+  "{n} MB": "{n} MB",
+  "{n} GB": "{n} GB",
+  "{n} TB": "{n} TB",
+  "{d} for the corpus": "コーパス：{d}",
+  "not recorded for the corpus": "コーパス：未記録",
+  "{d} for the files": "ファイル：{d}",
+  "not recorded for the files": "ファイル：未記録",
+  "Wikipedia text — CC BY-SA 4.0 (https://creativecommons.org/licenses/by-sa/4.0/). Attribute Wikipedia and its contributors, and share any work derived from this text alike.": "ウィキペディアの本文 — CC BY-SA 4.0 (https://creativecommons.org/licenses/by-sa/4.0/)。ウィキペディアとその執筆者のクレジットを表示し、この本文から派生した作品は同じ条件で共有してください。",
+  "Tracked legal documents — this corpus records NO licence metadata for them. Each document's terms are those of the official source it was mirrored from (the official URL stored with the document); check them before redistributing. That is a gap in what was recorded, never a grant.": "追跡中の法令文書 — このコーパスはこれらのライセンス情報を一切記録していません。各文書の条件は、ミラー元の公式ソース（文書とともに保存された公式URL）の条件です。再配布の前に確認してください。これは記録の欠落であり、許諾ではありません。",
+  "IP geolocation by DB-IP (https://db-ip.com) — CC BY 4.0": "DB-IP による IP ジオロケーション (https://db-ip.com) — CC BY 4.0",
+  "Open-Meteo open data, CC BY 4.0 (https://open-meteo.com/) — ERA5-family reanalysis: a model estimate for a grid cell, not a station record.": "Open-Meteo のオープンデータ、CC BY 4.0 (https://open-meteo.com/) — ERA5 系の再解析：観測所の記録ではなく、格子セルに対するモデル推定値です。"
 }
