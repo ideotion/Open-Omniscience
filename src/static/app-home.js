@@ -62,7 +62,11 @@
       const F = (window.OOI18N && OOI18N.tf)
         ? OOI18N.tf
         : ((s, v) => String(s).replace(/\{(\w+)\}/g, (m, x) => (v && v[x] != null ? String(v[x]) : m)));
-      return F(frame, {n: (c[k] || 0).toLocaleString(), total: total.toLocaleString()});
+      // fmtNum, never toLocaleString(): that reads the BROWSER's locale, which the app's
+      // language switcher never changes, so a French strip read "6,402" (click-through
+      // B14). Guarded, because node suites extract this function without the formatter.
+      const N = (x) => (typeof fmtNum === "function") ? fmtNum(x || 0, 0) : String(x || 0);
+      return F(frame, {n: N(c[k]), total: N(total)});
     }
     // The strip's entries, in the server's order, except that the flat "sources" figure
     // is REPLACED IN PLACE by its three-way split (S4). Q1114 = a: the flat COUNT(*) blends
@@ -148,7 +152,8 @@
       const item = ([k, v]) => {
         const hover = homeSourceSplitHover(k, counts);
         const attrs = hover ? ` title="${esc(hover)}" data-i18n-dyn` : "";
-        return `<span class="s"${attrs}><b>${(v || 0).toLocaleString()}</b> <span>${esc(homeStatLabel(k))}</span></span>`;
+        const n = (typeof fmtNum === "function") ? fmtNum(v || 0, 0) : String(v || 0);
+        return `<span class="s"${attrs}><b>${n}</b> <span>${esc(homeStatLabel(k))}</span></span>`;
       };
       el.innerHTML = (entries.length && !allZero)
         ? entries.map(item).join("")
@@ -196,9 +201,10 @@
       const span = document.createElement("span");
       span.className = "s";
       span.id = "home-wiki-figure";
+      const N = (x) => (typeof fmtNum === "function") ? fmtNum(x || 0, 0) : String(x || 0);
       span.textContent = F("Wikipedia: {pages} pages · {changes} changes today", {
-        pages: (lane.pages || 0).toLocaleString(),
-        changes: (lane.changes_today || 0).toLocaleString(),
+        pages: N(lane.pages),
+        changes: N(lane.changes_today),
       });
       // The method and the SEPARATENESS in the hover (invariant #17's layering); the
       // figure itself stays whole on the visible surface.
@@ -307,7 +313,7 @@
         + `onclick="_feedSetOrder('${v}')" title="${esc(tip)}">${esc(label)}</button>`;
       host.innerHTML =
         `<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:6px">`
-        + `<span class="muted" style="font-size:.85em">${esc(t("Order"))}:</span>`
+        + `<span class="muted" style="font-size:.85em">${ooLabelHtml(esc(t("Order")), "").trimEnd()}</span>`
         + btn("shuffled", t("Shuffled"), t("A fixed order chosen by a seed — it uses each article's id and that seed and nothing else."))
         + btn("recent", t("Newest first"), t("By publication date, newest first."))
         + `<button class="tiny ghost" style="margin-inline-start:8px" onclick="feedReshuffle()" `
@@ -420,13 +426,14 @@
       const held = _feedHeld;
       if (held && (held.quarantined || held.source_not_qualified)) {
         const bits = [];
+        const N = (x) => (typeof fmtNum === "function") ? fmtNum(x, 0) : String(x);
         if (held.source_not_qualified) {
           bits.push(t("{n} held back: their source has not been qualified yet")
-            .replace("{n}", held.source_not_qualified.toLocaleString()));
+            .replace("{n}", N(held.source_not_qualified)));
         }
         if (held.quarantined) {
           bits.push(t("{n} held back as quarantined")
-            .replace("{n}", held.quarantined.toLocaleString()));
+            .replace("{n}", N(held.quarantined)));
         }
         h += `<div class="card-caveat">${esc(bits.join(" · "))}</div>`;
       }
@@ -938,7 +945,7 @@
       if (d.hazards_available) {
         const age = (d.hazards_age_hours != null) ? " (" + esc(t("{h}h old").replace("{h}", Math.round(d.hazards_age_hours))) + ")" : "";
         const asof = d.hazards_as_of ? esc(String(d.hazards_as_of).slice(0, 16).replace("T", " ")) : "—";
-        stale = `<span class="hint">${esc(t("Hazard snapshot"))}: ${asof}${age}${d.hazards_stale ? " · " + esc(t("stale")) : ""}</span>`;
+        stale = `<span class="hint">${ooLabelHtml(esc(t("Hazard snapshot")), asof + age)}${d.hazards_stale ? " · " + esc(t("stale")) : ""}</span>`;
       } else {
         stale = `<span class="hint">${esc(t("No local hazard snapshot — silence is not safety."))}</span>`;
       }
@@ -1023,8 +1030,9 @@
       const el = $("home-tier"); if (!el) return;
       if (!ct || !ct.tier) { el.hidden = true; el.innerHTML = ""; el.removeAttribute("title"); return; }
       const tier = ct.tier;
-      const arts = (ct.articles || 0).toLocaleString();
-      const days = (ct.age_days || 0).toLocaleString();
+      const N = (x) => (typeof fmtNum === "function") ? fmtNum(x || 0, 0) : String(x || 0);
+      const arts = N(ct.articles);
+      const days = N(ct.age_days);
       const th = ct.thresholds || {};
       // The stage word (one of three constant labels — each keyed ×12).
       const stageLabel = t(tier === "early" ? "Early corpus"
@@ -1649,7 +1657,7 @@
       const _whyRows = (c.trigger && c.trigger.math || []).map(r =>
         `<tr><td>${esc(r.label)}</td><td class="why-val">${esc(r.value)}</td></tr>`).join("");
       const _whyPlain = (c.trigger && c.trigger.plain) ? `<p class="why-plain">${esc(c.trigger.plain)}</p>` : "";
-      const methodBlock = c.method ? `<div class="mc"><b>${esc(t("Method"))}:</b> ${esc(c.method)}</div>` : "";
+      const methodBlock = c.method ? `<div class="mc">${ooLabelHtml(`<b>${esc(t("Method"))}</b>`, esc(c.method))}</div>` : "";
       const mathBlock = _whyRows
         ? `<details class="card-info"><summary>${esc(t("The exact math"))}</summary>
              <table class="why-math">${_whyRows}</table></details>` : "";

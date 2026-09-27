@@ -2015,7 +2015,7 @@
           // `an-art-total` is the ONE number a reader takes away from this list, and it
           // had no anchor: a walk trying to read it had to guess which `.hint` on the
           // surface it was, and the expansion rail above carries that class too.
-          + `<div class="hint" id="an-art-total"><b>${total.toLocaleString()}</b> ${esc(t("Articles"))} <span class="muted">· ${esc(t("Open an article to read it, see its original source, and summarize or translate it."))}</span></div>`
+          + `<div class="hint" id="an-art-total"><b>${fmtNum(total, 0)}</b> ${esc(t("Articles"))} <span class="muted">· ${esc(t("Open an article to read it, see its original source, and summarize or translate it."))}</span></div>`
           + pager
           + _anGroupByLangControl()
           + `<table style="margin-top:6px"><tr>`
@@ -2321,7 +2321,7 @@
       if (!rows.length) { host.innerHTML = `<div class="muted">${esc(t("No sources for this corpus yet."))}</div>`; _anCompetitive.key = key; return; }
       if (rows.length === 1) { host.innerHTML = `<div class="muted">${esc(t("Only one source in this corpus — nothing to compare."))}</div>`; _anCompetitive.key = key; return; }
       const byName = {}; ((fr && fr.framing) || []).forEach(f => { if (f.source) byName[f.source] = f; });
-      const fmt = (n) => (n || 0).toLocaleString();
+      const fmt = (n) => fmtNum(n || 0, 0);
       const firsts = rows.map(r => r.first).filter(Boolean).sort();
       const lasts = rows.map(r => r.last).filter(Boolean).sort();
       const corpusFirst = firsts[0] || null, corpusLast = lasts[lasts.length - 1] || null;

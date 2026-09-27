@@ -34,6 +34,28 @@
       return cleaned;                                            // relative / same-origin
     };
 
+    // "Label: value" with the READER's separator. French puts a space before the colon,
+    // Chinese and Japanese write a full-width one, so the colon cannot be a hard-coded
+    // ": " welded after a t() label -- that printed "seuil absolu: 0.5" and "Privé (local
+    // ; …): 12 Go" in French (click-through B14, Z3). Both go through the ONE keyed frame
+    // the import dialog's progress line already uses ("{prefix}: {text}", J9), so every
+    // locale states its own separator once. `labelHtml` and `valueHtml` are HTML the
+    // caller has already escaped; the frame is filled with markers and escaped first, so
+    // nothing a translation holds is ever read as markup.
+    function ooLabelHtml(labelHtml, valueHtml) {
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
+        : ((s, v) => String(s).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? String(v[k]) : m));
+      return esc(tf("{prefix}: {text}", {prefix: "\u0001", text: "\u0002"}))
+        .replace("\u0001", () => labelHtml).replace("\u0002", () => valueHtml);
+    }
+    // The same for plain TEXT (a title, a toast, textContent): nothing escaped here.
+    function ooLabelText(label, value) {
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
+        : ((s, v) => String(s).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? String(v[k]) : m));
+      return tf("{prefix}: {text}", {prefix: "\u0001", text: "\u0002"})
+        .replace("\u0001", () => String(label)).replace("\u0002", () => String(value == null ? "" : value));
+    }
+
     // ===================================================================== //
     //  COUNTRY AND LANGUAGE CODES ON SCREEN (ruling Q301 = c step 1, Q302's  //
     //  note, Q303, Q306, Q307, Q308)                                        //
@@ -628,6 +650,16 @@
       _paintLangButton();
     }
     _paintLangButton();
+    // A language picked in ANOTHER tab of this origin (a second app window, or the /tasks
+    // page, which has its own menu) arrives as a `storage` event, which fires only in the
+    // origin's OTHER tabs. Without this listener this tab kept its language until a
+    // reload, while the shared key already named the new one. Compared with the page's own
+    // <html lang> rather than OOI18N.current(): that reads the same key, which already
+    // holds the new value when the event lands. The same listener /tasks carries.
+    window.addEventListener("storage", (e) => {
+      if (e.key !== "oo.lang" || !e.newValue || e.newValue === document.documentElement.lang) return;
+      pickLang(e.newValue);
+    });
 
     // -- First-launch guided setup (maintainer-ruled 2026-06-13) -------------- //
     // A ONE-TIME, stepped GUI to a working app. SLICE 1: shell + Language step +
@@ -2410,7 +2442,7 @@
         sect(t("Collection coverage")) +
         `<div class="vr"><span>${esc(t("Tags with any coverage"))}</span><b>${reachedTags}/${tags.length}</b></div>` +
         `<div class="vr"><span>${esc(t("RSS sources reached"))}</span><b>${tot.reached || 0}/${tot.total || 0} · ${Math.round(100 * (tot.reach_pct || 0))}%</b></div>` +
-        `<div class="vr"><span>${esc(t("Fresh in the last N hours"))}</span><b title="${esc(t("Freshness window (hours)"))}: ${esc(String(d.fresh_window_hours))}">${tot.fresh || 0} · ${Math.round(100 * (tot.fresh_pct || 0))}%</b></div>` +
+        `<div class="vr"><span>${esc(t("Fresh in the last N hours"))}</span><b title="${esc(ooLabelText(t("Freshness window (hours)"), d.fresh_window_hours))}">${tot.fresh || 0} · ${Math.round(100 * (tot.fresh_pct || 0))}%</b></div>` +
         (tot.backed_off ? `<div class="vr"><span>${esc(t("Backed off (de-churn, not failures)"))}</span><b>${tot.backed_off}</b></div>` : "") +
         (d.crawl_sources ? `<div class="vr"><span>${esc(t("Crawl sources (reach not tracked)"))}</span><b>${d.crawl_sources}</b></div>` : "");
       // Per-tag rows, least-reached first (the backend already sorts them so —

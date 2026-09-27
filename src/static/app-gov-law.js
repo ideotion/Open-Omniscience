@@ -128,7 +128,7 @@
       let d; try { d = await api("/api/governments/country/" + encodeURIComponent(iso)); }
       catch (e) { host.innerHTML = `<div class="muted">${esc(t("Could not load this country."))}</div>`; return; }
       host.innerHTML = _govIndicatorGrid(d)
-        + `<div class="card-caveat" style="margin-top:10px">${esc(d.caveat || "")}</div>`;
+        + `<div class="card-caveat" style="margin-top:10px">${esc(d.caveat ? t(d.caveat) : "")}</div>`;
     }
 
     // ONE indicator card, reused by the Countries, Compare and Aggregates surfaces.
@@ -301,7 +301,7 @@
              <th scope="col">${esc(nameA)}</th><th scope="col">${esc(nameB)}</th></tr></thead>
            <tbody>${rows}</tbody></table></div>`
         + `<div class="card-caveat" style="margin-top:10px">${esc(t("Each side carries its own most recent year: the two producers do not publish on the same calendar, so a difference between two years is not a difference between two countries. A dash is a published gap, never a zero."))}</div>`
-        + `<div class="card-caveat">${esc(da.caveat || "")}</div>`;
+        + `<div class="card-caveat">${esc(da.caveat ? t(da.caveat) : "")}</div>`;
     }
 
     // ---- Groups subtab: two lenses (rulings 32, 43, 44, 45, 47) ---- //
@@ -436,8 +436,20 @@
         + (yr ? "&year=" + encodeURIComponent(yr) : "")
         + (allowIncomplete ? "&allow_incomplete=true" : "");
       try { d = await api(q); }
-      catch (e) { host.innerHTML = `<div class="muted">${esc(t("Could not compute this group."))}</div>`; return; }
+      catch (e) { _govGrpLast = null; host.innerHTML = `<div class="muted">${esc(t("Could not compute this group."))}</div>`; return; }
+      _govGrpLast = {d, allowIncomplete};
       host.innerHTML = _govGroupHtml(d, allowIncomplete);
+    }
+    // The last group payload. Every sentence on the cards is drawn in the reader's
+    // language at render (labels, methods, refusals, caveats), so a language switch left
+    // them in the old one: measured in Chromium, fr -> ar kept the French cards
+    // (click-through B14, Z4). Redrawn from this -- never refetched -- by app-boot.js's
+    // ONE `oo:langchange` listener, and only while the card set it drew is on screen.
+    let _govGrpLast = null;
+    function repaintGovGroupFromCache() {
+      const host = $("gov-grp-body");
+      if (!host || !_govGrpLast || !host.querySelector(".gov-strat-grid")) return;
+      host.innerHTML = _govGroupHtml(_govGrpLast.d, _govGrpLast.allowIncomplete);
     }
 
     // Pure renderer over a /group-aggregate payload, so it is testable without a DOM.
@@ -473,31 +485,87 @@
       // Presentation order is the engine's own STRATEGIES order — never a ranking. The
       // default is a starting VIEW and is marked as that word, not as a winner.
       const order = ["sum", "mean", "median", "population_weighted", "gdp_weighted", "labour_force_weighted"];
+
+      // THE ENGINE'S VOCABULARY IN THE READER'S LANGUAGE (click-through B14, Z4). Each
+      // result carries its English sentence AND a code (`refused_code`, or `method_code`
+      // plus the weight it used), and the sentence is redrawn here as a keyed frame from
+      // the code and the payload's own numbers. A result without a code (an older server,
+      // or a refusal the engine has not coded) keeps the engine's sentence verbatim, so a
+      // card is never blank. The helpers live inside this pure renderer on purpose: the
+      // node suites extract it by name and must get all of it.
+      const weightName = (w) => (w === "population" ? t("population")
+        : w === "gdp" ? t("GDP") : w === "labour_force" ? t("labour force")
+        : String(w || "").replace(/_/g, " "));
+      const methodText = (r) => {
+        const w = weightName(r.weight);
+        let s;
+        if (r.method_code === "sum") s = t("The members' reported values, added.");
+        else if (r.method_code === "members") s = t("Each member counts once, whatever its size — a statement about COUNTRIES, not about people.");
+        else if (r.method_code === "median") s = t("The middle member value; unlike the mean it is not moved by one extreme member.");
+        else if (r.method_code === "weighted_exact") {
+          s = _govTf("Sum of (value x {weight}) divided by the summed {weight}. This indicator is measured PER {weight}, so the reconstructed numerator is the real one and this is the group's true figure, not an estimate.", {weight: w});
+        } else if (r.method_code === "weighted_approx") {
+          s = r.denominator
+            ? _govTf("Sum of (value x {weight}) divided by the summed {weight}. APPROXIMATE: this indicator is measured per {denominator}, not per {weight}, so the reconstructed numerator is not the real one.", {weight: w, denominator: weightName(r.denominator)})
+            : _govTf("Sum of (value x {weight}) divided by the summed {weight}. APPROXIMATE: this indicator is not measured per a quantity this app holds a series for, so the reconstructed numerator is not the real one.", {weight: w});
+        } else return r.method || "";
+        if (cov.complete === false) {
+          s += " " + _govTf("PARTIAL: computed over {reported} of {members} members; {missing} did not report.", {
+            reported: cov.reported || 0, members: cov.members || 0, missing: (cov.missing || []).length});
+        }
+        return s;
+      };
+      const refusalText = (r) => {
+        // The partial-roster refusal is drawn from the coverage it describes, naming the
+        // button below by its own label: the server's sentence is English and named the
+        // request parameter instead (row L).
+        if (r.refused_code === "incomplete") {
+          return _govTf("{missing} of {members} members did not report this indicator for this period ({who}). A figure over the members that happen to have reported is not the group's figure, and nothing downstream could tell the difference. Choose “{action}” to compute it anyway — the missing members travel with the result.", {
+            missing: (cov.missing || []).length, members: cov.members || 0,
+            who: _govNames(cov.missing || []).short,
+            action: t("Compute over the members that did report"),
+          });
+        }
+        const w = weightName(r.weight);
+        switch (r.refused_code) {
+          case "no_data": return t("No member reported a value for this indicator and period, so there is nothing to aggregate. This is a published gap, not a zero.");
+          // The catalog's own sentence for an indicator no aggregate can honestly produce
+          // (the Gini index): a fixed sentence, so it is its own key.
+          case "no_aggregate": return t(r.refused);
+          case "intensive": return t("This indicator is intensive — a rate, share, index or per-capita value — so its members' values do not add up to anything. A summed percentage is not a large percentage; it is not a statistic at all.");
+          case "no_weight_series": return _govTf("The {weight} series is not held for this group and period, so this weighting cannot be computed. It is not falling back to an unweighted mean, which would answer a different question under the same label.", {weight: w});
+          case "missing_weight": return _govTf("{n} member(s) reported a value but have no {weight} weight ({who}). Dropping them would compute over a different membership than the label claims, and weighting them as unweighted would silently mix two methods.", {
+            n: (r.missing_weight || []).length, weight: w, who: _govNames(r.missing_weight || []).short});
+          case "zero_weight": return _govTf("The {weight} weights sum to zero for this group, so a weighted mean is undefined.", {weight: w});
+          default: return r.refused;
+        }
+      };
+      // A refusal of the WHOLE series -- a partial roster, no member reporting, an
+      // indicator no aggregate can produce -- is one sentence for every strategy, and it
+      // printed six times, once per card (Z4). It is said ONCE, above the cards; each
+      // card keeps its label and says only that it was not computed.
+      const present = order.filter(k => strategies[k]).map(k => strategies[k]);
+      const whole = new Set(["incomplete", "no_data", "no_aggregate"]);
+      const shared = (present.length && present.every(r => r.refused && whole.has(r.refused_code)
+          && r.refused_code === present[0].refused_code)) ? present[0] : null;
+      const sharedLine = shared
+        ? `<div class="card-caveat gov-grp-refusal">${esc(refusalText(shared))}</div>` : "";
       const cards = order.filter(k => strategies[k]).map(k => {
         const r = strategies[k];
         const isDefault = agg.default_strategy === k;
+        // The six labels are a fixed vocabulary (aggregate.STRATEGIES), each a key.
+        const label = r.label ? t(r.label) : k;
         if (r.refused) {
-          // The partial-roster refusal is drawn as a keyed frame from the coverage it
-          // describes, naming the button below by its own label: the server's sentence is
-          // English and named the request parameter instead (row L). Every other refusal
-          // is the engine's sentence, verbatim.
-          const why = r.refused_code === "incomplete"
-            ? _govTf("{missing} of {members} members did not report this indicator for this period ({who}). A figure over the members that happen to have reported is not the group's figure, and nothing downstream could tell the difference. Choose “{action}” to compute it anyway — the missing members travel with the result.", {
-                missing: (cov.missing || []).length, members: cov.members || 0,
-                who: _govNames(cov.missing || []).short,
-                action: t("Compute over the members that did report"),
-              })
-            : r.refused;
           return `<div class="gov-strat gov-strat-refused">
-            <div class="gov-strat-label">${esc(r.label || k)}</div>
-            <div class="gov-strat-why">${esc(why)}</div></div>`;
+            <div class="gov-strat-label">${esc(label)}</div>
+            <div class="gov-strat-why">${esc(shared ? t("Not computed: the reason is stated above the cards.") : refusalText(r))}</div></div>`;
         }
         return `<div class="gov-strat${isDefault ? " gov-strat-default" : ""}">
-          <div class="gov-strat-label">${esc(r.label || k)}${isDefault
+          <div class="gov-strat-label">${esc(label)}${isDefault
             ? ` <span class="pill" title="${esc(t("A starting view, not a winner: the strategies answer different questions and are never ranked or blended."))}">${esc(t("opens here"))}</span>` : ""}</div>
           <div class="gov-strat-val">${esc(_govFmt(r.value, agg.unit))}</div>
           <div class="gov-strat-basis">${esc(r.basis === "exact" ? t("exact") : t("approximate"))}</div>
-          <div class="gov-strat-why">${esc(r.method || "")}</div></div>`;
+          <div class="gov-strat-why">${esc(methodText(r))}</div></div>`;
       }).join("");
 
       // Ruling 47's corollary: the SPREAD rides beside every central figure, because a
@@ -536,11 +604,13 @@
         + (period ? ` <span class="muted">(${esc(period)})</span>` : "")
         + ` <span class="pill">${esc(t("computed here"))}</span></div>`;
 
-      return head + vintage + coverageLine + spreadLine + override + partial
+      // The two caveats are the engine's and the endpoint's fixed sentences, each a key
+      // (the informed-consent non-negotiable: a caveat ships in all twelve languages).
+      return head + vintage + coverageLine + spreadLine + sharedLine + override + partial
         + `<div class="gov-strat-grid">${cards}</div>`
         + (roster.notes ? `<div class="card-caveat">${esc(roster.notes)}</div>` : "")
-        + `<div class="card-caveat">${esc(agg.caveat || "")}</div>`
-        + `<div class="card-caveat">${esc(d.caveat || "")}</div>`;
+        + `<div class="card-caveat">${esc(agg.caveat ? t(agg.caveat) : "")}</div>`
+        + `<div class="card-caveat">${esc(d.caveat ? t(d.caveat) : "")}</div>`;
     }
 
     // ---- Map subtab ---- //

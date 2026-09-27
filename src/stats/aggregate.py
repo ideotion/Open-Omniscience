@@ -186,15 +186,28 @@ def aggregate_indicator(
         }
 
     # --- the whole-series refusals, before any arithmetic ------------------- #
+    # Every result below carries a CODE beside its English sentence -- ``refused_code``
+    # for a refusal, ``method_code`` (plus the weight it used) for a figure -- so the
+    # Governments screen draws each one as a keyed frame in the reader's language. The
+    # English stays the answer an API caller gets; the codes are what a translation can
+    # key, since a sentence with a count or a member list inside it never can be.
+    # Every card carries its label too: without one the screen printed the strategy's
+    # internal key ("population_weighted") above the refusal.
     if no_aggregate:
-        return _out({k: {"refused": no_aggregate} for k, _label, _w in STRATEGIES})
+        return _out({
+            k: {"label": label, "refused": no_aggregate, "refused_code": "no_aggregate"}
+            for k, label, _w in STRATEGIES
+        })
 
     if not reported:
         gap = (
             "No member reported a value for this indicator and period, so there is "
             "nothing to aggregate. This is a published gap, not a zero."
         )
-        return _out({k: {"refused": gap} for k, _label, _w in STRATEGIES})
+        return _out({
+            k: {"label": label, "refused": gap, "refused_code": "no_data"}
+            for k, label, _w in STRATEGIES
+        })
 
     if not complete and not allow_incomplete:
         # The members as the screen beside this sentence names them (alpha-3, Q301 step
@@ -235,6 +248,7 @@ def aggregate_indicator(
             if not extensive:
                 results[key] = {
                     "label": label,
+                    "refused_code": "intensive",
                     "refused": (
                         "This indicator is intensive — a rate, share, index or "
                         "per-capita value — so its members' values do not add up to "
@@ -247,6 +261,7 @@ def aggregate_indicator(
                 "label": label,
                 "value": sum(values),
                 "basis": "exact" if complete else "approximate",
+                "method_code": "sum",
                 "method": "The members' reported values, added." + partial,
             }
             continue
@@ -258,6 +273,7 @@ def aggregate_indicator(
                 # Exact arithmetic over the members present, but under partial coverage
                 # it is not the GROUP's mean -- same reason the total degrades.
                 "basis": "exact" if complete else "approximate",
+                "method_code": "members",
                 "method": _MEMBERS_METHOD + partial,
             }
             continue
@@ -267,6 +283,7 @@ def aggregate_indicator(
                 "label": label,
                 "value": float(_median(values)),
                 "basis": "exact" if complete else "approximate",
+                "method_code": "median",
                 "method": (
                     "The middle member value; unlike the mean it is not moved by one "
                     "extreme member." + partial
@@ -282,6 +299,8 @@ def aggregate_indicator(
         if not series:
             results[key] = {
                 "label": label,
+                "refused_code": "no_weight_series",
+                "weight": weight_name,
                 "refused": (
                     f"The {human} series is not held for this "
                     "group and period, so this weighting cannot be computed. It is not "
@@ -296,6 +315,9 @@ def aggregate_indicator(
             shown = ", ".join(missing_weight[:8]) + ("…" if len(missing_weight) > 8 else "")
             results[key] = {
                 "label": label,
+                "refused_code": "missing_weight",
+                "weight": weight_name,
+                "missing_weight": missing_weight,
                 "refused": (
                     f"{len(missing_weight)} member(s) reported a value but have no "
                     f"{human} weight ({shown}). Dropping them "
@@ -307,6 +329,8 @@ def aggregate_indicator(
         if value is None:
             results[key] = {
                 "label": label,
+                "refused_code": "zero_weight",
+                "weight": weight_name,
                 "refused": (
                     f"The {human} weights sum to zero for this "
                     "group, so a weighted mean is undefined."
@@ -319,6 +343,9 @@ def aggregate_indicator(
             "label": label,
             "value": value,
             "basis": "exact" if (exact and complete) else "approximate",
+            "method_code": "weighted_exact" if exact else "weighted_approx",
+            "weight": weight_name,
+            "denominator": denominator,
             "method": (
                 (
                     f"Sum of (value x {human}) divided by the "

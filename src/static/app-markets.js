@@ -296,7 +296,9 @@
       });
     }
 
-    function _num(n) { return n == null ? "—" : Number(n).toLocaleString(undefined, {maximumFractionDigits: 2}); }
+    // The ruled formatter (fmtNum, below), never toLocaleString(): that follows the
+    // BROWSER's locale, which the app's language switcher never changes.
+    function _num(n) { return n == null ? "—" : fmtNum(Number(n), 2); }
 
     // The indices tile's own compact preview. It stays a 42px tile rather than
     // becoming a dashChartSvg: the card's CLICK opens the full interactive ooChart
