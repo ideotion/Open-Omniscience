@@ -462,7 +462,7 @@ artifacts:
       release can only make sentiment slower, never different.
     upstream: https://pypi.org/project/vaderSentiment/ (https://github.com/cjhutto/vaderSentiment)
     check_upstream: "pypi.org/pypi/vaderSentiment/json - compare info.version; 3.3.2 (2020-05-22) was the newest on 2026-09-27"
-    license: MIT (C.J. Hutto); the reproduced methods carry the attribution in the module docstring
+    license: MIT, Copyright (c) 2016 C.J. Hutto; the notice is reproduced in vader_linear.py above the class that carries the adapted methods
     pin: {floor: "3.3.2", verified: "3.3.2"}
     refresh: >
       On a new release: diff its vaderSentiment.py against 3.3.2; carry any change to

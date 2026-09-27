@@ -3,8 +3,8 @@
 Open Omniscience - Global Intelligence Platform for Investigative Journalism
 Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 
-Three methods below are adapted from vaderSentiment 3.3.2 (Copyright (c) 2014 C.J.
-Hutto, MIT License; the notice ships in that distribution's LICENSE.txt).
+Three methods below are adapted from vaderSentiment 3.3.2, Copyright (c) 2016 C.J. Hutto,
+under the MIT License; its notice is reproduced above the class that carries them.
 
 WHY THIS EXISTS. Stock VADER is quadratic in the length of a text, in three places:
 
@@ -83,6 +83,30 @@ def _lowered(words_and_emoticons: list[str]) -> list[str]:
     return [str(w).lower() for w in words_and_emoticons]
 
 
+# _special_idioms_check and _negation_check below are adapted from vaderSentiment 3.3.2, and
+# _but_check reimplements the same rule, under this notice (the distribution's LICENSE.txt):
+#
+#   The MIT License (MIT)
+#
+#   Copyright (c) 2016 C.J. Hutto
+#
+#   Permission is hereby granted, free of charge, to any person obtaining a copy
+#   of this software and associated documentation files (the "Software"), to deal
+#   in the Software without restriction, including without limitation the rights
+#   to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+#   copies of the Software, and to permit persons to whom the Software is
+#   furnished to do so, subject to the following conditions:
+#
+#   The above copyright notice and this permission notice shall be included in all
+#   copies or substantial portions of the Software.
+#
+#   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+#   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+#   FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+#   AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+#   LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+#   OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+#   SOFTWARE.
 class LinearSentimentIntensityAnalyzer(vader.SentimentIntensityAnalyzer):
     """``SentimentIntensityAnalyzer`` with its three quadratic helpers made linear (the
     "but" check O(n log n)). Everything else -- the lexicon load, ``polarity_scores``,

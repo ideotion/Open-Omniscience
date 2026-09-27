@@ -321,6 +321,20 @@ def test_ingest_and_framing_score_with_the_linear_analyzer():
     assert type(framing._analyzer) is Linear
 
 
+def test_the_adapted_code_carries_vaders_own_license_notice():
+    """MIT requires its notice with any substantial copy. Read the copyright line from the
+    installed distribution rather than retyping it: the first draft of this module
+    misquoted the year."""
+    from importlib.metadata import distribution
+
+    license_text = distribution("vaderSentiment").read_text("LICENSE.txt") or ""
+    copyright_line = next(ln for ln in license_text.splitlines() if ln.startswith("Copyright"))
+    source = Path(vl.__file__).read_text(encoding="utf-8")
+    assert copyright_line in source
+    assert "The above copyright notice and this permission notice shall be included" in source
+    assert copyright_line in (_REPO / "docs" / "ETHICS.md").read_text(encoding="utf-8")
+
+
 def test_the_release_is_the_same_everywhere_it_is_named():
     registry = yaml.safe_load((_REPO / "configs" / "external_artifacts.yml").read_text())
     entry = next(a for a in registry["artifacts"] if a["id"] == "vader-linear-reproduction")
