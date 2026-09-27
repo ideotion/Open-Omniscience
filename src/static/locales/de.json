@@ -4737,5 +4737,9 @@
   "Discovered candidates": "Entdeckte Kandidaten",
   "{n} of your {total} sources: enabled AND qualified — what collection actually reaches. This is the headline source count.": "{n} Ihrer {total} Quellen: aktiviert UND qualifiziert — das, was die Erfassung tatsächlich erreicht. Das ist die maßgebliche Quellenzahl.",
   "{n} of your {total} sources: enabled but not qualified — awaiting a verdict, or judged and refused. Collection does not reach them.": "{n} Ihrer {total} Quellen: aktiviert, aber nicht qualifiziert — sie warten auf ein Urteil oder wurden geprüft und abgelehnt. Die Erfassung erreicht sie nicht.",
-  "{n} of your {total} sources: discovered candidates, not enabled, awaiting review. Collection does not reach them.": "{n} Ihrer {total} Quellen: entdeckte Kandidaten, nicht aktiviert, warten auf Prüfung. Die Erfassung erreicht sie nicht."
+  "{n} of your {total} sources: discovered candidates, not enabled, awaiting review. Collection does not reach them.": "{n} Ihrer {total} Quellen: entdeckte Kandidaten, nicht aktiviert, warten auf Prüfung. Die Erfassung erreicht sie nicht.",
+  "in the last day": "am letzten Tag",
+  "in the last {days} days": "in den letzten {days} Tagen",
+  "in your whole corpus": "in Ihrem gesamten Korpus",
+  "Mentions by language:": "Erwähnungen nach Sprache:"
 }

@@ -4737,5 +4737,9 @@
   "Discovered candidates": "আবিষ্কৃত প্রার্থী",
   "{n} of your {total} sources: enabled AND qualified — what collection actually reaches. This is the headline source count.": "আপনার {total}টি উৎসের মধ্যে {n}টি: সক্রিয় এবং যোগ্য — সংগ্রহ আসলে যেগুলোতে পৌঁছায়। এটিই উৎসের প্রধান সংখ্যা।",
   "{n} of your {total} sources: enabled but not qualified — awaiting a verdict, or judged and refused. Collection does not reach them.": "আপনার {total}টি উৎসের মধ্যে {n}টি: সক্রিয় কিন্তু যোগ্য নয় — রায়ের অপেক্ষায়, অথবা যাচাই করে প্রত্যাখ্যাত। সংগ্রহ এগুলোতে পৌঁছায় না।",
-  "{n} of your {total} sources: discovered candidates, not enabled, awaiting review. Collection does not reach them.": "আপনার {total}টি উৎসের মধ্যে {n}টি: আবিষ্কৃত প্রার্থী, সক্রিয় নয়, পর্যালোচনার অপেক্ষায়। সংগ্রহ এগুলোতে পৌঁছায় না।"
+  "{n} of your {total} sources: discovered candidates, not enabled, awaiting review. Collection does not reach them.": "আপনার {total}টি উৎসের মধ্যে {n}টি: আবিষ্কৃত প্রার্থী, সক্রিয় নয়, পর্যালোচনার অপেক্ষায়। সংগ্রহ এগুলোতে পৌঁছায় না।",
+  "in the last day": "গত এক দিনে",
+  "in the last {days} days": "গত {days} দিনে",
+  "in your whole corpus": "আপনার সম্পূর্ণ কর্পাসে",
+  "Mentions by language:": "ভাষা অনুযায়ী উল্লেখ:"
 }

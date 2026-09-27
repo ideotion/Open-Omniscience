@@ -4737,5 +4737,9 @@
   "Discovered candidates": "Kandidat yang ditemukan",
   "{n} of your {total} sources: enabled AND qualified — what collection actually reaches. This is the headline source count.": "{n} dari {total} sumber Anda: aktif DAN lolos kualifikasi — yang benar-benar dijangkau pengumpulan. Inilah angka utama sumber.",
   "{n} of your {total} sources: enabled but not qualified — awaiting a verdict, or judged and refused. Collection does not reach them.": "{n} dari {total} sumber Anda: aktif tetapi belum lolos kualifikasi — menunggu putusan, atau sudah dinilai dan ditolak. Pengumpulan tidak menjangkaunya.",
-  "{n} of your {total} sources: discovered candidates, not enabled, awaiting review. Collection does not reach them.": "{n} dari {total} sumber Anda: kandidat yang ditemukan, tidak aktif, menunggu peninjauan. Pengumpulan tidak menjangkaunya."
+  "{n} of your {total} sources: discovered candidates, not enabled, awaiting review. Collection does not reach them.": "{n} dari {total} sumber Anda: kandidat yang ditemukan, tidak aktif, menunggu peninjauan. Pengumpulan tidak menjangkaunya.",
+  "in the last day": "dalam sehari terakhir",
+  "in the last {days} days": "dalam {days} hari terakhir",
+  "in your whole corpus": "di seluruh korpus Anda",
+  "Mentions by language:": "Sebutan per bahasa:"
 }

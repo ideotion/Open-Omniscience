@@ -1452,7 +1452,7 @@ def insights_corpus_coordination(
     return _deadlined(db, key, _compute)
 
 
-def _annotate_windows(payload, tl: str | None):
+def _annotate_windows(payload, tl: str | None, db: Session | None = None, country: str | None = None):
     """Add the verified ring translations to a /trending-windows payload (S3.3).
 
     Works on a DEEP COPY: ``_cached`` returns ``{**hit, ...}``, a TOP-level copy
@@ -1470,13 +1470,25 @@ def _annotate_windows(payload, tl: str | None):
     windows = payload.get("windows")
     if not isinstance(windows, list):
         return payload
-    from src.analytics.queries import _annotate_translations
+    from datetime import date as _date
+    from datetime import timedelta as _td
+
+    from src.analytics.queries import _annotate_translations, annotate_label_languages
 
     out = copy.deepcopy(payload)
+    # The window each row was counted over ends after today (the endpoint passes no
+    # `end`), so the label's per-language counts are read over that same window (M11, M12).
+    w_end = _date.today() + _td(days=1)
     for w in out.get("windows") or []:
         terms = w.get("terms") if isinstance(w, dict) else None
         if isinstance(terms, list):
             _annotate_translations(terms, tl)
+            wdays = w.get("window_days")
+            if db is not None and isinstance(wdays, int) and wdays > 0:
+                annotate_label_languages(
+                    db, terms, tl, start=w_end - _td(days=wdays), end=w_end, days=wdays,
+                    country=country,
+                )
     return out
 
 
@@ -1631,7 +1643,7 @@ def insights_trending_windows(
         db, country=country, kind=_kind(kind), limit=limit, series_top=series_top,
         target_lang=None,
     ))
-    return _annotate_windows(out, tl)
+    return _annotate_windows(out, tl, db, country)
 
 
 def _xkey(expand: bool, ui_lang: str | None, sense, literal_cap: bool) -> dict:
@@ -1875,6 +1887,7 @@ def insights_trend(
     if tl and isinstance(resolved, dict):
         rows = [dict(resolved)]
         q._annotate_translations(rows, tl, None, q._tentative_for(db, rows, tl))
+        q.annotate_label_languages(db, rows, tl)
         out = {**out, "resolved": rows[0]}
     return out
 

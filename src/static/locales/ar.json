@@ -4737,5 +4737,9 @@
   "Discovered candidates": "مرشَّحون مكتشَفون",
   "{n} of your {total} sources: enabled AND qualified — what collection actually reaches. This is the headline source count.": "{n} من مصادرك البالغ عددها {total}: مفعّلة ومؤهَّلة معًا — وهي ما يصل إليه الجمع فعلًا. هذا هو العدد الرئيسي للمصادر.",
   "{n} of your {total} sources: enabled but not qualified — awaiting a verdict, or judged and refused. Collection does not reach them.": "{n} من مصادرك البالغ عددها {total}: مفعّلة لكنها غير مؤهَّلة — في انتظار الحكم، أو حُكم عليها ورُفضت. لا يصل إليها الجمع.",
-  "{n} of your {total} sources: discovered candidates, not enabled, awaiting review. Collection does not reach them.": "{n} من مصادرك البالغ عددها {total}: مرشَّحون مكتشَفون، غير مفعّلين، في انتظار المراجعة. لا يصل إليهم الجمع."
+  "{n} of your {total} sources: discovered candidates, not enabled, awaiting review. Collection does not reach them.": "{n} من مصادرك البالغ عددها {total}: مرشَّحون مكتشَفون، غير مفعّلين، في انتظار المراجعة. لا يصل إليهم الجمع.",
+  "in the last day": "في اليوم الأخير",
+  "in the last {days} days": "في آخر {days} يومًا",
+  "in your whole corpus": "في كامل مجموعتك",
+  "Mentions by language:": "الإشارات حسب اللغة:"
 }

@@ -4737,5 +4737,9 @@
   "Discovered candidates": "発見された候補",
   "{n} of your {total} sources: enabled AND qualified — what collection actually reaches. This is the headline source count.": "{total} 件の情報源のうち {n} 件：有効かつ適格 — 収集が実際に到達する範囲です。これが情報源の主要な件数です。",
   "{n} of your {total} sources: enabled but not qualified — awaiting a verdict, or judged and refused. Collection does not reach them.": "{total} 件の情報源のうち {n} 件：有効だが未適格 — 判定待ち、または判定の結果却下されたもの。収集はこれらに到達しません。",
-  "{n} of your {total} sources: discovered candidates, not enabled, awaiting review. Collection does not reach them.": "{total} 件の情報源のうち {n} 件：発見された候補で、無効のまま審査待ち。収集はこれらに到達しません。"
+  "{n} of your {total} sources: discovered candidates, not enabled, awaiting review. Collection does not reach them.": "{total} 件の情報源のうち {n} 件：発見された候補で、無効のまま審査待ち。収集はこれらに到達しません。",
+  "in the last day": "直近 1 日間",
+  "in the last {days} days": "直近 {days} 日間",
+  "in your whole corpus": "コーパス全体",
+  "Mentions by language:": "言語別の言及数:"
 }

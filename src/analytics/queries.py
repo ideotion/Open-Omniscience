@@ -768,6 +768,144 @@ def _annotate_translations(terms, target_lang, stored_lang=None, tentative=None)
     return terms
 
 
+def annotate_label_languages(
+    session,
+    terms: list[dict],
+    target_lang: str | None,
+    *,
+    start: date | None = None,
+    end: date | None = None,
+    days: int | None = None,
+    country: str | None = None,
+) -> list[dict]:
+    """The MENTION languages behind a displayed keyword's label (M11) and the ring members
+    behind its translation (M12), read for the rows a surface displays and no others.
+
+    Runs after :func:`_annotate_translations`, which names ONE source language per row:
+    ``Keyword.language``, the majority of the keyword's mentions (Q414). Keys are
+    language-agnostic (Q416 keys a term by its lemma alone), so one key can hold English
+    ``errors`` and Spanish ``errores`` at once, and a Spanish majority then tagged the
+    English word "in Spanish" in the English UI. So for every row whose label draws a
+    language (a translation, or a foreign-word tag) the recorded languages of its OWN
+    mentions are counted, and when they are several, or one other than the tag's, the row
+    carries them as ``mention_languages`` ({language: mentions}) for the label to name.
+    Making the key itself language-aware is a change to stored keys and is not done here.
+
+    A row the ladder resolved to a verified ring (a SOLO row -- a merged ring row already
+    carries its breakdown) gains that ring's members present in the corpus, with their
+    per-language mention counts, as ``language_breakdown``: the shape
+    :func:`trending` emits on a ring row, so the hover's existing branch renders it (Q418).
+
+    THE SCOPE IS THE ROW'S OWN. Pass ``start``/``end`` (``end`` EXCLUSIVE) and ``days`` when
+    the row's own number is windowed, as on the trend surfaces; leave them out and the
+    counts are the whole corpus. Every row given counts says which (``language_counts_scope``
+    = ``"window"`` with ``language_counts_days``, ``"corpus"``, or ``"country"`` when a
+    country filter narrows a whole-corpus read), so the hover can say what they cover.
+
+    Counts only. A mention written before its language was recorded (Q414's column has no
+    backfill) counts under ``"?"`` -- never guessed from the keyword's majority, which is
+    the very figure this corrects -- and it never makes a split on its own.
+    """
+    tl = (target_lang or "").strip().casefold()
+    if not tl or session is None or not terms:
+        return terms
+    from src.analytics import equivalence
+
+    windowed = start is not None or end is not None
+    scope = "window" if windowed else ("country" if country else "corpus")
+
+    def _scoped(r: dict) -> None:
+        r["language_counts_scope"] = scope
+        if scope == "window" and days:
+            r["language_counts_days"] = int(days)
+
+    own: dict[str, list[dict]] = {}  # casefolded key -> the rows whose label names a language
+    ringed: list[tuple[dict, str]] = []  # (solo row, the ring its translation came from)
+    for r in terms:
+        if r.get("ring_id"):
+            # A merged ring row's breakdown was summed over this same scope by its caller.
+            if r.get("language_breakdown") and not r.get("language_counts_scope"):
+                _scoped(r)
+            continue
+        norm = (r.get("normalized") or "").strip()
+        src = (r.get("translation_source_lang") or "").casefold()
+        tier = r.get("translation_tier")
+        if not norm or not src or src == tl or tier not in (
+            equivalence.TIER_VERIFIED, equivalence.TIER_TENTATIVE, equivalence.TIER_UNTRANSLATED
+        ):
+            continue
+        own.setdefault(equivalence._norm(norm), []).append(r)
+        if tier == equivalence.TIER_VERIFIED and not r.get("language_breakdown"):
+            rid = equivalence.resolve_translation(src, norm, tl).ring_id
+            if rid:
+                ringed.append((r, rid))
+    if not own:
+        return terms
+
+    wanted: set[str] = set(own)
+    members_of: dict[str, tuple[tuple[str, str], ...]] = {}
+    for _r, rid in ringed:
+        meta = equivalence.ring_meta(rid)
+        members_of[rid] = tuple(meta.members) if meta else ()
+        wanted.update(t for _lg, t in members_of[rid])
+    # An entity key keeps its acronym's case (``USA``) while ring members are written
+    # casefolded, so both spellings are asked for and the answer is folded back.
+    ask = sorted(wanted | {w.upper() for w in wanted})
+    counts: dict[str, dict[str, int]] = {}
+    for i in range(0, len(ask), _IN_CHUNK):
+        chunk = ask[i : i + _IN_CHUNK]
+        q = (
+            session.query(Keyword.normalized_term, KeywordMention.language, func.sum(KeywordMention.count))
+            .join(KeywordMention, KeywordMention.keyword_id == Keyword.id)
+            .filter(Keyword.normalized_term.in_(chunk))
+        )
+        if start is not None:
+            q = q.filter(KeywordMention.observed_on >= start)
+        if end is not None:
+            q = q.filter(KeywordMention.observed_on < end)
+        if country:
+            q = q.filter(KeywordMention.country == country.lower())
+        for norm, lang, n in q.group_by(Keyword.normalized_term, KeywordMention.language):
+            key = equivalence._norm(norm or "")
+            lg = (lang or "").strip().casefold() or "?"
+            per = counts.setdefault(key, {})
+            per[lg] = per.get(lg, 0) + int(n or 0)
+
+    for key, rows in own.items():
+        per = counts.get(key) or {}
+        known = {lg: n for lg, n in per.items() if lg != "?" and n > 0}
+        if not known:
+            continue
+        for r in rows:
+            src = (r.get("translation_source_lang") or "").casefold()
+            if len(known) > 1 or src not in known:
+                r["mention_languages"] = dict(sorted(known.items(), key=lambda kv: (-kv[1], kv[0])))
+                _scoped(r)
+    for r, rid in ringed:
+        breakdown: dict[str, int] = {}
+        members: list[dict] = []
+        unrecorded: set[str] = set()
+        for lg, term in members_of.get(rid, ()):
+            per = counts.get(equivalence._norm(term)) or {}
+            n = per.get(lg.casefold(), 0)
+            if n > 0:
+                breakdown[lg] = breakdown.get(lg, 0) + n
+                members.append({"term": term, "language": lg, "mentions": n})
+            if per.get("?"):
+                unrecorded.add(equivalence._norm(term))
+        missing = sum((counts.get(t) or {}).get("?", 0) for t in unrecorded)
+        if missing:
+            breakdown["?"] = missing
+        if breakdown:
+            r["language_breakdown"] = dict(sorted(breakdown.items(), key=lambda kv: (-kv[1], kv[0])))
+            # Not ``members``: a family row already carries its forms under that name.
+            r["translation_ring_members"] = sorted(
+                members, key=lambda m: (-m["mentions"], m["language"])
+            )
+            _scoped(r)
+    return terms
+
+
 def _bucket_key(d: date, bucket: str) -> str:
     if bucket == "day":
         return d.isoformat()
@@ -1211,6 +1349,15 @@ def top_terms(
     _annotate_translations(
         terms, target_lang, stored_lang, _tentative_for(session, terms, target_lang)
     )
+    # The row's own scope (M12): the window the counts above were summed over, or the
+    # whole corpus. `end=None` keeps the legacy inclusive-of-today lower bound.
+    if days:
+        _lo = (end - timedelta(days=days)) if end is not None else (date.today() - timedelta(days=days))
+        annotate_label_languages(
+            session, terms, target_lang, start=_lo, end=end, days=days, country=country
+        )
+    else:
+        annotate_label_languages(session, terms, target_lang, country=country)
     out: dict[str, Any] = {
         "count": len(terms),
         "days": days,
@@ -1289,6 +1436,7 @@ def corpus_keywords(
     _annotate_translations(
         terms, target_lang, None, _tentative_for(session, terms, target_lang)
     )
+    annotate_label_languages(session, terms, target_lang)
     out = {"count": len(terms), "n_articles": len(article_ids), "terms": terms}
     note = unsegmented_note(session, article_ids)
     if note:
@@ -2391,6 +2539,10 @@ def trending(
     out = out[:limit]
     _annotate_translations(
         out, target_lang, stored_lang, _tentative_for(session, out, target_lang)
+    )
+    # Counted over the SAME recent window the row's own number is (M12).
+    annotate_label_languages(
+        session, out, target_lang, start=w_start, end=w_end, days=window_days, country=country
     )
     res: dict[str, Any] = {
         "count": len(out),

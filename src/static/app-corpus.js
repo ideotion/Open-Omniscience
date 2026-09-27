@@ -871,28 +871,123 @@
     // concept would hide it exactly where the ring table is thinnest.
     function kwLangBreakdownText(row) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      const lb = row && row.language_breakdown;
-      if (!lb || typeof lb !== "object") return "";
-      const cells = Object.keys(lb).map((k) => [k, +lb[k] || 0]).filter((x) => x[1] > 0)
-        .sort((a, b) => b[1] - a[1] || String(a[0]).localeCompare(String(b[0])))
-        .map((x) => kwLangName(x[0]) + " " + x[1]);
-      if (!cells.length) return "";
+      const cells = _kwLangCells(row && row.language_breakdown);
+      if (!cells) return "";
       // The figures OVERLAP -- one article carrying two forms is counted under both --
       // so the sentence never presents them as adding up to anything.
-      return t("Across languages:") + " " + cells.join(" · ");
+      return t("Across languages:") + " " + cells + _kwScopeTail(row);
+    }
+
+    // {language: n} as "Spanish 27 · English 36", largest first. A mention written before
+    // its language was recorded (Q414's column has no backfill) arrives as "?" and is NAMED
+    // as such, never printed as a bare question mark or folded into a guessed language.
+    function _kwLangCells(counts) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      if (!counts || typeof counts !== "object") return "";
+      return Object.keys(counts).map((k) => [k, +counts[k] || 0]).filter((x) => x[1] > 0)
+        .sort((a, b) => b[1] - a[1] || String(a[0]).localeCompare(String(b[0])))
+        .map((x) => (x[0] === "?" ? t("Language not recorded") : kwLangName(x[0])) + " " + x[1])
+        .join(" · ");
+    }
+
+    // WHICH COUNT THIS IS (M12). A trend row's number is its window's and a Library row's is
+    // the whole corpus's; the server counts the per-language figures over the row's OWN
+    // scope and says which, so the hover never sets a 7-day figure beside a lifetime one
+    // without saying so. A country-narrowed read names no scope rather than claim the corpus.
+    function _kwScopeTail(row) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const sc = row && row.language_counts_scope;
+      const days = row && +row.language_counts_days;
+      let phrase = "";
+      if (sc === "window" && days === 1) phrase = t("in the last day");
+      else if (sc === "window" && days > 1) phrase = _kwTf("in the last {days} days", {days: days});
+      else if (sc === "corpus") phrase = t("in your whole corpus");
+      return phrase ? " (" + phrase + ")" : "";
+    }
+
+    // THE LANGUAGES A KEYWORD'S OWN MENTIONS ARE IN (M11). A key is language-agnostic (Q416
+    // keys a term by its lemma alone), so one keyword can hold English "software" and
+    // Spanish "software" at once, and `translation_source_lang` -- the MAJORITY -- then
+    // tagged the English word "in Spanish" in the English UI. When the server measured the
+    // row's mentions (`mention_languages`, largest first) the label names them all; without
+    // that measurement it falls back to the one language the ladder named, as before.
+    function kwMentionLangs(row) {
+      const ml = row && row.mention_languages;
+      if (ml && typeof ml === "object") {
+        const ks = Object.keys(ml).filter((k) => k && k !== "?" && (+ml[k] || 0) > 0)
+          .sort((a, b) => (+ml[b] || 0) - (+ml[a] || 0) || a.localeCompare(b));
+        if (ks.length) return ks;
+      }
+      const src = row && row.translation_source_lang;
+      return src ? [src] : [];
+    }
+
+    // "Spanish and English", in the UI language's own list grammar (CLDR, through the
+    // browser, the same source as the names themselves); a plain comma list if the platform
+    // has no ListFormat.
+    function kwLangListName(codes) {
+      const names = (codes || []).map(kwLangName).filter(Boolean);
+      if (names.length < 2) return names[0] || "";
+      try { return new Intl.ListFormat(uiLangCode(), {type: "conjunction"}).format(names); }
+      catch (_e) { return names.join(", "); }
+    }
+
+    // THE LABEL'S RULES, ONCE (M7, M11). `kwLabelHtml` draws them as HTML and the analysis
+    // mind map draws them as SVG text, so both read `kwLabelParts` rather than each
+    // re-deriving when a word is foreign -- the second-renderer defect this helper exists
+    // to prevent. The state below is what the tag AND the hover are both decided from.
+    function _kwLabelState(row) {
+      const original = (row && (row.term || row.normalized)) || "";
+      let tier = kwTier(row);
+      const langs = kwMentionLangs(row);
+      const ui = String(uiLangCode()).split("-")[0].toLowerCase();
+      const inUi = !!(row && row.mention_languages)
+        && langs.some((c) => String(c).split("-")[0].toLowerCase() === ui);
+      // A word the corpus ALSO uses in the reader's own language is not foreign to them:
+      // it is shown as written, and tagged with every language it is used in -- or with
+      // nothing, when the reader's language is the only one.
+      if (inUi && (tier === "verified" || tier === "tentative")) tier = "untranslated";
+      const shown = (tier === "verified" || tier === "tentative") && row && row.translation
+        ? row.translation : original;
+      return {original: original, tier: tier, inUi: inUi, onlyUi: inUi && langs.length === 1,
+              names: kwLangListName(langs), shown: shown};
+    }
+
+    // Returns {shown, tier, tag, tagClass, hover}; `tag` is "" when the label draws none.
+    function kwLabelParts(row) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      if (!row) return {shown: "", tier: "untranslated", tag: "", tagClass: "", hover: ""};
+      const st = _kwLabelState(row);
+      let tag = "", tagClass = "";
+      if (st.tier === "verified" && st.names) {
+        tag = _kwTf("translated from {language}", {language: st.names});
+      } else if (st.tier === "tentative" && st.names) {
+        tag = "≈ " + _kwTf("translated from {language}", {language: st.names});
+        tagClass = "kw-tentative";
+      } else if (st.tier === "untranslated" && !st.inUi && row.translation_declined === "several-senses") {
+        tag = t("Several senses");
+        tagClass = "kw-senses";
+      } else if (st.tier === "untranslated" && st.names && !st.onlyUi) {
+        // R7: a keyword we cannot translate is still TAGGED with what it is, never
+        // left as an unexplained foreign word.
+        tag = _kwTf("in {language}", {language: st.names});
+        tagClass = "kw-untranslated";
+      }
+      return {shown: st.shown, tier: st.tier, tag: tag, tagClass: tagClass, hover: kwHoverText(row)};
     }
 
     function kwHoverText(row) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      const tier = kwTier(row);
+      const st = _kwLabelState(row);
       const parts = [];
-      if (tier === "verified") parts.push(t("Verified translation (cross-language concept)."));
-      else if (tier === "tentative") parts.push(t("AI-generated tentative translation — unreliable, not verified."));
-      else if (tier === "untranslated") parts.push(t("Not translated — shown in its own language."));
-      const term = row && (row.term || row.normalized);
-      if (row && row.translation && term) parts.push(t("Original") + ": " + term);
-      const src = row && row.translation_source_lang;
-      if (src) parts.push(t("Language") + ": " + kwLangName(src));
+      if (st.tier === "verified") parts.push(t("Verified translation (cross-language concept)."));
+      else if (st.tier === "tentative") parts.push(t("AI-generated tentative translation — unreliable, not verified."));
+      else if (st.tier === "untranslated") parts.push(t("Not translated — shown in its own language."));
+      if (st.shown !== st.original && st.original) parts.push(t("Original") + ": " + st.original);
+      // The split, with its counts, when the server measured one (M11); else the one name.
+      const split = _kwLangCells(row && row.mention_languages);
+      if (split) parts.push(t("Mentions by language:") + " " + split + _kwScopeTail(row));
+      else if (st.names) parts.push(t("Language") + ": " + st.names);
       const across = kwLangBreakdownText(row);
       if (across) parts.push(across);
       if (row && row.translation_model) parts.push(t("Model") + ": " + row.translation_model);
@@ -916,11 +1011,7 @@
     // Whether the label draws a tier tag at all (a term in the reader's own language, or
     // one whose language nobody measured, draws none).
     function kwHasTag(row) {
-      if (!row) return false;
-      const tier = kwTier(row);
-      if (tier === "untranslated" && row.translation_declined === "several-senses") return true;
-      return (tier === "verified" || tier === "tentative" || tier === "untranslated")
-        && !!kwLangName(row.translation_source_lang);
+      return !!(row && kwLabelParts(row).tag);
     }
 
     // THE TAG'S HOVER FOR A READER WHO CANNOT POINT AT THE TAG (M2). A keyword row marked
@@ -946,31 +1037,13 @@
     // `kwQidHtml(row)` after its closing tag.
     function kwLabelHtml(row, opts) {
       if (!row) return "";
-      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      const tier = kwTier(row);
-      const original = row.term || row.normalized || "";
-      const shown = (tier === "verified" || tier === "tentative") && row.translation
-        ? row.translation : original;
-      const hover = kwHoverText(row);
+      const p = kwLabelParts(row);
       // `data-i18n-dyn` on the TERM span: the walker must never translate a keyword.
-      let html = `<span class="kw-term" data-i18n-dyn>${esc(shown)}</span>`;
-      const srcName = kwLangName(row.translation_source_lang);
-      if (tier === "verified" && srcName) {
-        html += ` <span class="kw-tag" data-i18n-dyn title="${esc(hover)}">`
-          + esc(_kwTf("translated from {language}", {language: srcName})) + `</span>`;
-      } else if (tier === "tentative" && srcName) {
-        html += ` <span class="kw-tag kw-tentative" data-i18n-dyn title="${esc(hover)}">≈ `
-          + esc(_kwTf("translated from {language}", {language: srcName})) + `</span>`;
-      } else if (tier === "untranslated") {
-        if (row.translation_declined === "several-senses") {
-          html += ` <span class="kw-tag kw-senses" data-i18n-dyn title="${esc(hover)}">`
-            + esc(t("Several senses")) + `</span>` + ((opts && opts.inButton) ? "" : kwSensePickerHtml(row));
-        } else if (srcName) {
-          // R7: a keyword we cannot translate is still TAGGED with what it is, never
-          // left as an unexplained foreign word.
-          html += ` <span class="kw-tag kw-untranslated" data-i18n-dyn title="${esc(hover)}">`
-            + esc(_kwTf("in {language}", {language: srcName})) + `</span>`;
-        }
+      let html = `<span class="kw-term" data-i18n-dyn>${esc(p.shown)}</span>`;
+      if (p.tag) {
+        html += ` <span class="kw-tag${p.tagClass ? " " + p.tagClass : ""}" data-i18n-dyn title="${esc(p.hover)}">`
+          + esc(p.tag) + `</span>`;
+        if (p.tagClass === "kw-senses" && !(opts && opts.inButton)) html += kwSensePickerHtml(row);
       }
       return html + ((opts && opts.inLink) ? "" : kwQidHtml(row));
     }

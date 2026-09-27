@@ -4737,5 +4737,9 @@
   "Discovered candidates": "发现的候选来源",
   "{n} of your {total} sources: enabled AND qualified — what collection actually reaches. This is the headline source count.": "您的 {total} 个来源中有 {n} 个：已启用且已合格——采集实际覆盖的范围。这是来源的主要数字。",
   "{n} of your {total} sources: enabled but not qualified — awaiting a verdict, or judged and refused. Collection does not reach them.": "您的 {total} 个来源中有 {n} 个：已启用但未合格——等待判定，或经判定被拒。采集不会覆盖它们。",
-  "{n} of your {total} sources: discovered candidates, not enabled, awaiting review. Collection does not reach them.": "您的 {total} 个来源中有 {n} 个：发现的候选来源，未启用，等待审核。采集不会覆盖它们。"
+  "{n} of your {total} sources: discovered candidates, not enabled, awaiting review. Collection does not reach them.": "您的 {total} 个来源中有 {n} 个：发现的候选来源，未启用，等待审核。采集不会覆盖它们。",
+  "in the last day": "最近一天内",
+  "in the last {days} days": "最近 {days} 天内",
+  "in your whole corpus": "在您的整个语料库中",
+  "Mentions by language:": "按语言统计的提及："
 }

@@ -4737,5 +4737,9 @@
   "Discovered candidates": "Discovered candidates",
   "{n} of your {total} sources: enabled AND qualified — what collection actually reaches. This is the headline source count.": "{n} of your {total} sources: enabled AND qualified — what collection actually reaches. This is the headline source count.",
   "{n} of your {total} sources: enabled but not qualified — awaiting a verdict, or judged and refused. Collection does not reach them.": "{n} of your {total} sources: enabled but not qualified — awaiting a verdict, or judged and refused. Collection does not reach them.",
-  "{n} of your {total} sources: discovered candidates, not enabled, awaiting review. Collection does not reach them.": "{n} of your {total} sources: discovered candidates, not enabled, awaiting review. Collection does not reach them."
+  "{n} of your {total} sources: discovered candidates, not enabled, awaiting review. Collection does not reach them.": "{n} of your {total} sources: discovered candidates, not enabled, awaiting review. Collection does not reach them.",
+  "in the last day": "in the last day",
+  "in the last {days} days": "in the last {days} days",
+  "in your whole corpus": "in your whole corpus",
+  "Mentions by language:": "Mentions by language:"
 }

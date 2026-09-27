@@ -4737,5 +4737,9 @@
   "Discovered candidates": "Найденные кандидаты",
   "{n} of your {total} sources: enabled AND qualified — what collection actually reaches. This is the headline source count.": "{n} из {total} ваших источников: включены И прошли отбор — то, до чего сбор действительно доходит. Это основное число источников.",
   "{n} of your {total} sources: enabled but not qualified — awaiting a verdict, or judged and refused. Collection does not reach them.": "{n} из {total} ваших источников: включены, но не прошли отбор — ожидают решения или были оценены и отклонены. Сбор до них не доходит.",
-  "{n} of your {total} sources: discovered candidates, not enabled, awaiting review. Collection does not reach them.": "{n} из {total} ваших источников: найденные кандидаты, не включены, ожидают проверки. Сбор до них не доходит."
+  "{n} of your {total} sources: discovered candidates, not enabled, awaiting review. Collection does not reach them.": "{n} из {total} ваших источников: найденные кандидаты, не включены, ожидают проверки. Сбор до них не доходит.",
+  "in the last day": "за последний день",
+  "in the last {days} days": "за последние {days} дн.",
+  "in your whole corpus": "во всём вашем корпусе",
+  "Mentions by language:": "Упоминания по языкам:"
 }

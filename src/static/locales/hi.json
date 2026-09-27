@@ -4737,5 +4737,9 @@
   "Discovered candidates": "खोजे गए उम्मीदवार",
   "{n} of your {total} sources: enabled AND qualified — what collection actually reaches. This is the headline source count.": "आपके {total} स्रोतों में से {n}: सक्रिय और योग्य — जिन तक संग्रह वास्तव में पहुँचता है। यही स्रोतों की मुख्य संख्या है।",
   "{n} of your {total} sources: enabled but not qualified — awaiting a verdict, or judged and refused. Collection does not reach them.": "आपके {total} स्रोतों में से {n}: सक्रिय पर योग्य नहीं — निर्णय की प्रतीक्षा में, या जाँचे जाकर अस्वीकृत। संग्रह इन तक नहीं पहुँचता।",
-  "{n} of your {total} sources: discovered candidates, not enabled, awaiting review. Collection does not reach them.": "आपके {total} स्रोतों में से {n}: खोजे गए उम्मीदवार, सक्रिय नहीं, समीक्षा की प्रतीक्षा में। संग्रह इन तक नहीं पहुँचता।"
+  "{n} of your {total} sources: discovered candidates, not enabled, awaiting review. Collection does not reach them.": "आपके {total} स्रोतों में से {n}: खोजे गए उम्मीदवार, सक्रिय नहीं, समीक्षा की प्रतीक्षा में। संग्रह इन तक नहीं पहुँचता।",
+  "in the last day": "पिछले एक दिन में",
+  "in the last {days} days": "पिछले {days} दिनों में",
+  "in your whole corpus": "आपके पूरे कॉर्पस में",
+  "Mentions by language:": "भाषा के अनुसार उल्लेख:"
 }
