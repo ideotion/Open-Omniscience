@@ -146,7 +146,11 @@ def list_figures(
     return {
         "count": total,
         "shown": len(rows),
-        "figures": [_row_dict(r) for r in rows],
+        # Each figure carries its area's classification (the 2026-09-26 leftovers, Y10),
+        # so the stored-figures table renders WLD as a published aggregate and XKX with
+        # its non-ISO disclosure through the cell every other statistics surface uses,
+        # rather than printing the producer's code bare.
+        "figures": [{**_row_dict(r), **area_classification(r.ref_area)} for r in rows],
         "method": "Stored official-statistics observations; latest vintage per series unless history requested.",
         "caveat": (
             "Each figure is a STANCED producer's published value (never a credibility "
@@ -482,6 +486,7 @@ def triangulate(
         figs.sort(key=lambda f: f["agency"])
         out.append({
             "ref_area": area,
+            **area_classification(area),
             "time_period": period,
             "producers": figs,
             "n_producers": len({f["agency"] for f in figs}),

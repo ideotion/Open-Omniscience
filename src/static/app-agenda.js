@@ -1171,6 +1171,14 @@
     // ONE label map for the four phases, so the two grids (month and week) can
     // never disagree about what a glyph means. A kind with no entry falls back
     // to the kind itself rather than mislabelling it as one of the others.
+    // The four season points, by the server's event id. The hover printed the id itself
+    // ("june_solstice"), which is no key, so it read raw in every locale; the names are
+    // the astronomical ones the server's naming rule prescribes (never "summer").
+    function _seasonLabel(ev, tr) {
+      const L = {march_equinox: "March equinox", june_solstice: "June solstice",
+                 september_equinox: "September equinox", december_solstice: "December solstice"};
+      return L[ev] ? tr(L[ev]) : String(ev || "");
+    }
     function _moonLabel(kind, tr) {
       const L = {new: "New moon", first_quarter: "First quarter moon",
                  full: "Full moon", last_quarter: "Last quarter moon"};
@@ -1180,8 +1188,18 @@
     // server sends (src/events/astronomy.py, Meeus), so they are keyed and translated
     // here; appended verbatim they read in English in every locale (the 2026-09-26
     // click-through, U9). One helper so the month and week grids cannot disagree.
-    function _astroNote(x, tr) {
-      return tr(x.method || "") + "; " + tr(x.acc || "");
+    //
+    // KEYED FRAMES, not joins (the 2026-09-26 leftovers, Y11): the two halves were
+    // glued with a literal "; " and the hover with " UTC — ", so an Arabic hover read
+    // an ASCII ";" between two Arabic sentences. Each locale now writes its own
+    // separator. A half the server did not send is left out, never an empty slot.
+    function _astroNote(x, tr, tfn) {
+      const m = x.method ? tr(x.method) : "", a = x.acc ? tr(x.acc) : "";
+      return (m && a) ? tfn("{method}; {accuracy}", { method: m, accuracy: a }) : (m || a);
+    }
+    // The whole hover: what, when (UTC, as the server computed it), and how.
+    function _astroTitle(what, x, tr, tfn) {
+      return tfn("{event} {time} UTC — {note}", { event: what, time: x.time, note: _astroNote(x, tr, tfn) });
     }
     async function _ensureAstro(year) {
       if (_astroYear === year) return;
@@ -1200,8 +1218,13 @@
         // Seasons (equinoxes/solstices, Meeus ch.27) — named astronomically
         // (hemisphere-honest); a solstice sun glyph, an equinox star.
         for (const s of (d.seasons || [])) {
+          // The SEASON'S OWN method (Y11): Meeus ch. 27, which the server computes and
+          // now sends as `seasons_method`. The hover used the payload's top-level method,
+          // which is the MOON's (ch. 49) -- a method note naming the wrong computation.
+          // No fallback to it: a season without its own method says only its accuracy.
           _seasonByDate[s.date] = {glyph: /solstice/i.test(s.event) ? "☀" : "✦",
-            name: s.event, time: s.time_utc, method: d.method, acc: d.accuracy};
+            name: s.event, time: s.time_utc,
+            method: d.seasons_method || "", acc: d.seasons_accuracy || d.accuracy};
         }
         _astroYear = year;
       } catch (_e) { _astroByDate = {}; _seasonByDate = {}; _astroYear = null; }
@@ -1250,6 +1273,8 @@
       const t = new Date();
       const inThisMonth = t.getFullYear() === y && t.getMonth() + 1 === m;
       const t9m = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      const tf9m = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
+        : ((x, v) => x.replace(/\{(\w+)\}/g, (mm, k) => (v && v[k] != null) ? String(v[k]) : mm));
       const wd = [...Array(7)].map((_, i) =>
         new Intl.DateTimeFormat(loc, { weekday: "short" }).format(new Date(2024, 0, i + 1))); // 2024-01-01 was a Monday
       let html = `<div class="ag-grid ag-grid-head">` + wd.map(w => `<div class="ag-wd">${esc(w)}</div>`).join("") + `</div>`;
@@ -1260,11 +1285,11 @@
         const iso = `${y}-${String(m).padStart(2, "0")}-${String(c.d).padStart(2, "0")}`;
         const moon = _astroByDate[iso];
         const moonHtml = moon
-          ? `<span class="ag-moon" style="float:inline-end;font-size:11px" title="${esc(_moonLabel(moon.kind, t9m) + " " + moon.time + " UTC — " + _astroNote(moon, t9m))}">${moon.glyph}</span>`
+          ? `<span class="ag-moon" style="float:inline-end;font-size:11px" title="${esc(_astroTitle(_moonLabel(moon.kind, t9m), moon, t9m, tf9m))}">${moon.glyph}</span>`
           : "";
         const season = _seasonByDate[iso];
         const seasonHtml = season
-          ? `<span class="ag-season" style="float:inline-end;font-size:11px;margin-inline-end:2px" title="${esc(t9m(season.name) + " " + season.time + " UTC — " + _astroNote(season, t9m))}">${season.glyph}</span>`
+          ? `<span class="ag-season" style="float:inline-end;font-size:11px;margin-inline-end:2px" title="${esc(_astroTitle(_seasonLabel(season.name, t9m), season, t9m, tf9m))}">${season.glyph}</span>`
           : "";
         const chips = evs.slice(0, 3).map(e =>
           `<span class="ag-chip${agChipCls(e) ? " " + agChipCls(e) : ""}" title="${esc(e.title + agChipTitleSuffix(e, e.confirmed ? "" : " — exact date moves; check the official source"))}">${esc(e.title.length > 22 ? e.title.slice(0, 21) + "…" : e.title)}</span>`).join("");
@@ -1309,6 +1334,8 @@
         new Intl.DateTimeFormat(loc, { month: "short", day: "numeric" }).format(monday) + " – " +
         new Intl.DateTimeFormat(loc, { month: "short", day: "numeric", year: "numeric" }).format(sunday);
       const t9 = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const tf9 = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
+        : ((x, v) => x.replace(/\{(\w+)\}/g, (mm, k) => (v && v[k] != null) ? String(v[k]) : mm));
       const now = new Date();
       const same = (a, b) => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
       const monthsInWeek = new Set(days.map(d => d.getMonth() + 1));
@@ -1319,7 +1346,7 @@
         const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
         const moon = _astroByDate[iso];
         const moonHtml = moon
-          ? `<span class="ag-moon" style="float:inline-end;font-size:11px" title="${esc(_moonLabel(moon.kind, t9) + " " + moon.time + " UTC — " + _astroNote(moon, t9))}">${moon.glyph}</span>`
+          ? `<span class="ag-moon" style="float:inline-end;font-size:11px" title="${esc(_astroTitle(_moonLabel(moon.kind, t9), moon, t9, tf9))}">${moon.glyph}</span>`
           : "";
         const wd = new Intl.DateTimeFormat(loc, { weekday: "short" }).format(d);
         const dn = new Intl.DateTimeFormat(loc, { day: "numeric", month: "short" }).format(d);

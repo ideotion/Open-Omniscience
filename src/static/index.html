@@ -3302,8 +3302,11 @@
       <div id="ux-imp-summary" style="margin-top:8px"></div>
       <!-- Q216 = a (K = 3): what the checkpoint costs, stated where the operator
            decides. Filled by _uxImCheckpointNote from the queue's own resolved K, so
-           it can never disagree with the number the run will actually use. -->
-      <p id="ux-imp-checkpoint" class="note" style="margin-top:8px"></p>
+           it can never disagree with the number the run will actually use. A caveat in
+           the dialog's own caveat style, never the toast `.note` box (the 2026-09-26
+           click-through's leftovers, Y2): that box is a floating notification's, with a
+           shadow and a slide-in, and drew an empty framed box when K was unread. -->
+      <p id="ux-imp-checkpoint" class="card-caveat" style="margin-top:8px"></p>
       <!-- The Q701 NOTE's import-time half. Shown only once the scan has found a
            corpus or legacy backup, because a .eml or large-data import carries no
            scraping history and a toggle over nothing is a control that claims a
@@ -3314,7 +3317,7 @@
           <input type="checkbox" id="ux-imp-trust" style="width:auto"
                  title="A backup records what each source last served — the validators that let a server answer &quot;nothing changed&quot; instead of sending the whole feed again. Trusting that record is what stops a restored install re-downloading everything it already has.">
           <span>Trust the backup's scraping history</span></label>
-        <p class="note" id="ux-imp-trust-note" style="margin:4px 0 0">Trusting it skips re-fetching what the history says was already fetched; not trusting it re-fetches everything from scratch.</p>
+        <p class="card-caveat" id="ux-imp-trust-note" style="margin:4px 0 0">Trusting it skips re-fetching what the history says was already fetched; not trusting it re-fetches everything from scratch.</p>
       </div>
       <div class="row" style="margin-top:12px;justify-content:flex-end;gap:8px">
         <button id="ux-imp-stop" class="secondary" style="display:none" onclick="_uxImStop(this)" title="Stops the import now. Before a backup's atomic swap this is a complete abort — your corpus is untouched. After it, that backup has already merged and this stops the remaining work (the re-index resumes later from where it left off); it is not an undo.">Stop</button>

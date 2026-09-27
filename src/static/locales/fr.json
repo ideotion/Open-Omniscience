@@ -4758,5 +4758,19 @@
   "Wikipedia text — CC BY-SA 4.0 (https://creativecommons.org/licenses/by-sa/4.0/). Attribute Wikipedia and its contributors, and share any work derived from this text alike.": "Texte de Wikipédia — CC BY-SA 4.0 (https://creativecommons.org/licenses/by-sa/4.0/). Attribuez Wikipédia et ses contributeurs, et partagez dans les mêmes conditions toute œuvre dérivée de ce texte.",
   "Tracked legal documents — this corpus records NO licence metadata for them. Each document's terms are those of the official source it was mirrored from (the official URL stored with the document); check them before redistributing. That is a gap in what was recorded, never a grant.": "Documents juridiques suivis — ce corpus n’enregistre AUCUNE métadonnée de licence pour eux. Les conditions de chaque document sont celles de la source officielle dont il est la copie (l’URL officielle conservée avec le document) ; vérifiez-les avant toute redistribution. C’est une lacune de ce qui a été enregistré, jamais une autorisation.",
   "IP geolocation by DB-IP (https://db-ip.com) — CC BY 4.0": "Géolocalisation IP par DB-IP (https://db-ip.com) — CC BY 4.0",
-  "Open-Meteo open data, CC BY 4.0 (https://open-meteo.com/) — ERA5-family reanalysis: a model estimate for a grid cell, not a station record.": "Données ouvertes Open-Meteo, CC BY 4.0 (https://open-meteo.com/) — réanalyse de la famille ERA5 : une estimation par modèle pour une maille de la grille, pas un relevé de station."
+  "Open-Meteo open data, CC BY 4.0 (https://open-meteo.com/) — ERA5-family reanalysis: a model estimate for a grid cell, not a station record.": "Données ouvertes Open-Meteo, CC BY 4.0 (https://open-meteo.com/) — réanalyse de la famille ERA5 : une estimation par modèle pour une maille de la grille, pas un relevé de station.",
+  "Interleave languages": "Entrelacer les langues",
+  "{what}: not enough free space — needs about {needed}, only {free} free at {path}. Free up space or choose another location, or use the large-data/volume backup for a big corpus.": "{what} : espace libre insuffisant — il faut environ {needed}, seulement {free} libres à {path}. Libérez de l'espace ou choisissez un autre emplacement, ou utilisez la sauvegarde des données volumineuses ou par volumes pour un gros corpus.",
+  "Not enough free space at {path}: needs {needed}, only {free} free.": "Espace libre insuffisant à {path} : il faut {needed}, seulement {free} libres.",
+  "Backup": "Sauvegarde",
+  "Restore": "Restauration",
+  "Volume backup": "Sauvegarde par volumes",
+  "Unpacking the backup to restore it": "Décompression de la sauvegarde pour la restaurer",
+  "{size} RAM detected": "{size} de RAM détectés",
+  "{size} available": "{size} disponibles",
+  "Scraping ↓": "Collecte ↓",
+  "total {size}": "{size} au total",
+  "{method}; {accuracy}": "{method} ; {accuracy}",
+  "{event} {time} UTC — {note}": "{event} {time} UTC — {note}",
+  "Meeus, Astronomical Algorithms (2nd ed.) ch. 27: mean equinox or solstice + 24 periodic terms; computed locally, no data files": "Meeus, Astronomical Algorithms (2e éd.), chap. 27 : équinoxe ou solstice moyen + 24 termes périodiques ; calculé localement, sans fichier de données"
 }

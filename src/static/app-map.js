@@ -2200,8 +2200,12 @@
         const d = await api("/api/stats/figures" + qs);
         const figs = d.figures || [];
         if (!figs.length) { box.innerHTML = `<div class="muted">No stored figures yet — fetch some above.</div>`; return; }
+        // The AREA through the shared statistics cell (the 2026-09-26 leftovers, Y10): the
+        // alpha-3 on screen, the localised name or "published aggregate" in the hover, the
+        // non-ISO disclosure for XKX -- from the classification the server sends beside
+        // each code. It printed the producer's code bare, with no hover at all.
         const rows = figs.map(f => `<tr>
-            <td>${esc(f.agency)}</td><td>${esc(f.series_id)}</td><td>${esc(f.ref_area)}</td>
+            <td>${esc(f.agency)}</td><td>${esc(f.series_id)}</td><td>${ooAreaCell(f.ref_area, f.area_kind, f.area_name)}</td>
             <td>${esc(f.time_period)}</td><td style="text-align:right">${_statfigFmt(f.value)}</td>
             <td>${esc(f.unit || "")}</td><td>${esc(f.adjustment || "")}</td><td>${esc(f.base_year || "")}</td>
           </tr>`).join("");
@@ -2226,7 +2230,7 @@
           const flag = cmp.comparable
             ? `<span class="pill ok">comparable</span>`
             : `<span class="pill warn">not comparable — differs on ${esc((cmp.differs_on||[]).join(", "))}</span>`;
-          return `<tr><td>${esc(c.ref_area)}</td><td>${esc(c.time_period)}</td><td>${c.n_producers}</td><td>${cols}</td><td>${flag}</td></tr>`;
+          return `<tr><td>${ooAreaCell(c.ref_area, c.area_kind, c.area_name)}</td><td>${esc(c.time_period)}</td><td>${c.n_producers}</td><td>${cols}</td><td>${flag}</td></tr>`;
         }).join("");
         box.innerHTML = `<table><tr><th>Area</th><th>Period</th><th>#</th><th>Producers (side by side)</th><th>Comparability</th></tr>${cellHtml}</table>`
           + (d.caveat ? `<div class="hint" style="margin-top:8px">${esc(d.caveat)}</div>` : "");

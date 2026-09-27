@@ -1203,7 +1203,11 @@
       const out = [];
       if (gpu && gpu.available) {
         out.push(chip("GPU", gpu.name || "detected", "A dedicated GPU was detected, so vLLM can serve here."));
-        if (gpu.vram_mb) out.push(chip("VRAM", Math.round(gpu.vram_mb / 1024) + " GB", ""));
+        // Sizes through the one localised writer (Y9), from bytes: the probe reports
+        // MiB (nvidia-smi) and the RAM figure GiB (psutil / 1024**3), the same binary
+        // steps `_sizeText` divides by, so the number is unchanged and only the unit's
+        // written form follows the UI language. Whole GB for VRAM, as before.
+        if (gpu.vram_mb) out.push(chip("VRAM", _sizeText(gpu.vram_mb * 1048576, () => 0), ""));
       } else {
         out.push(chip("GPU", (window.OOI18N && OOI18N.t ? OOI18N.t("none detected") : "none detected"),
           "No dedicated GPU was found. vLLM needs one; Ollama runs on the CPU."));
@@ -1213,7 +1217,7 @@
       // than rendered as a blank chip.
       if (cap) {
         const ram = cap.total_ram_gb || cap.unified_ram_gb;
-        if (ram) out.push(chip("RAM", ram + " GB", cap.method || ""));
+        if (ram) out.push(chip("RAM", _sizeText(ram * 1073741824, (i, v) => (v % 1 ? 1 : 0)), cap.method || ""));
         if (cap.cpu_cores) out.push(chip("Cores", String(cap.cpu_cores), ""));
       }
       return `<div class="row" style="gap:6px;flex-wrap:wrap;margin-top:6px">${out.join("")}</div>`;

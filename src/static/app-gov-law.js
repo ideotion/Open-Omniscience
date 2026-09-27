@@ -128,7 +128,23 @@
       let d; try { d = await api("/api/governments/country/" + encodeURIComponent(iso)); }
       catch (e) { host.innerHTML = `<div class="muted">${esc(t("Could not load this country."))}</div>`; return; }
       host.innerHTML = _govIndicatorGrid(d)
-        + `<div class="card-caveat" style="margin-top:10px">${esc(d.caveat || "")}</div>`;
+        + `<div class="card-caveat" style="margin-top:10px">${esc(d.caveat || "")}</div>`
+        + _govNonIsoNote([iso]);
+    }
+
+    // Q303's disclosure for the PICKERS (the 2026-09-26 leftovers, Y10). The country
+    // pickers read "Kosovo (XKX)", and an <option> carries no hover, so the "not an ISO
+    // code" every other surface puts in its hover had nowhere to go. It rides beside the
+    // picked country's other caveats instead: one line per non-ISO code picked, the code
+    // and the same `ooCountryTitle` sentence the hovers use, so the two cannot differ.
+    function _govNonIsoNote(codes) {
+      const seen = new Set();
+      return (codes || []).filter((c) => {
+        const k = ooCountryCode(c);
+        if (!k || seen.has(k) || ooCountryKind(c) !== "non-iso") return false;
+        seen.add(k);
+        return true;
+      }).map((c) => `<div class="card-caveat">${esc(ooCountryCode(c))} · ${esc(ooCountryTitle(c))}</div>`).join("");
     }
 
     // ONE indicator card, reused by the Countries, Compare and Aggregates surfaces.
@@ -301,7 +317,8 @@
              <th scope="col">${esc(nameA)}</th><th scope="col">${esc(nameB)}</th></tr></thead>
            <tbody>${rows}</tbody></table></div>`
         + `<div class="card-caveat" style="margin-top:10px">${esc(t("Each side carries its own most recent year: the two producers do not publish on the same calendar, so a difference between two years is not a difference between two countries. A dash is a published gap, never a zero."))}</div>`
-        + `<div class="card-caveat">${esc(da.caveat || "")}</div>`;
+        + `<div class="card-caveat">${esc(da.caveat || "")}</div>`
+        + _govNonIsoNote([a, b]);
     }
 
     // ---- Groups subtab: two lenses (rulings 32, 43, 44, 45, 47) ---- //

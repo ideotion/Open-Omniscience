@@ -767,7 +767,7 @@
         _uxPhase = null;
         if (bar) bar.style.display = "none";
         if (pauseBtn) pauseBtn.style.display = "none";
-        prog.innerHTML = `<span class="note err">${esc(t("Backup failed:"))} ${esc(e.message || e)}</span>`;
+        prog.innerHTML = `<span class="note err">${esc(t("Backup failed:"))} ${esc(ooServerText(e.message || e))}</span>`;
         console.error("ux run", e);
       }
       btn.disabled = false;
@@ -814,7 +814,7 @@
           prog.innerHTML = `<b>${esc(t("Backup complete →"))}</b> <span dir="ltr" style="overflow-wrap:anywhere">${esc(_uxExportDir || (document.getElementById("ux-dest").value || "").trim())}</span>`;
         } catch (e) {
           _uxPhase = null; if (bar) bar.style.display = "none"; btn.style.display = "none";
-          prog.innerHTML = `<span class="note err">${esc(t("Backup failed:"))} ${esc(e.message || e)}</span>`;
+          prog.innerHTML = `<span class="note err">${esc(t("Backup failed:"))} ${esc(ooServerText(e.message || e))}</span>`;
         }
         return;
       }
@@ -835,6 +835,7 @@
       document.getElementById("ux-imp-status").textContent = "";
       document.getElementById("ux-imp-progress").textContent = "";
       document.getElementById("ux-imp-summary").innerHTML = "";
+      _uxImSummaryArgs = null;
       document.getElementById("ux-imp-last").innerHTML = "";
       const bar = document.getElementById("ux-imp-bar"); if (bar) bar.style.display = "none";
       document.getElementById("ux-imp-pass-row").style.display = "none";
@@ -880,16 +881,41 @@
         : ((s, vars) => s.replace(/\{(\w+)\}/g, (m, k) => (vars && vars[k] != null) ? String(vars[k]) : m));
       const host = document.getElementById("ux-imp-last");
       if (!host) return;
-      let reports = null;
+      let reports = null, st = null;
       try {
-        const r = await api("/api/backup/import-reports");
+        const [r, q] = await Promise.all([
+          api("/api/backup/import-reports"),
+          // Which run is in flight, if any (Y7). Unreadable is not fatal: the line then
+          // reads as it always did, rather than going blank over a status we lack.
+          api("/api/backup/import-queue/status").catch(() => null),
+        ]);
         reports = (r && r.reports) || [];
+        st = q;
       } catch (e) {
         host.innerHTML = "";  // could not read: say nothing, never "no imports yet"
         return;
       }
+      reports = _uxImFinishedReports(reports, st);
       if (!reports.length) { host.innerHTML = ""; return; }
       host.innerHTML = _uxImLastLineHtml(_uxImRunSummary(reports), t, tf);
+    }
+
+    // THE LAST FINISHED IMPORT (2026-09-26 leftovers, Y7). A run of several backups
+    // persists a report as each one commits, so while it was still going the line summed
+    // the reports it had written SO FAR and called that "Last import" -- "2,400 articles"
+    // for an import half-way to 4,800, a total no import ever had. Pure: while the queue
+    // reports a run in flight, every report written since that run STARTED is its own
+    // (one run at a time holds the import window) and is left out, so the line describes
+    // the import before it. The time test rather than the run id, because a report is
+    // stamped with its run only after it lands; between the two it would read as a
+    // run of its own.
+    function _uxImFinishedReports(reports, st) {
+      if (!st || st.state !== "running" || st.started_at == null) return reports || [];
+      const since = Number(st.started_at) * 1000;
+      return (reports || []).filter((r) => {
+        const at = Date.parse(r && r.created_at);
+        return !(Number.isFinite(at) && at >= since);
+      });
     }
 
     // THE LAST IMPORT, not the last REPORT (2026-09-26, I7). One run of several backups
@@ -929,8 +955,10 @@
           ? esc(tf("{n} articles planned", { n }))
           : esc(tf("{n} articles", { n })));
       }
+      // Coloured text, never the toast `.note` box inside a sentence (Y2, as I9 did for
+      // the run header): the box's padding and shadow broke the one quiet line apart.
       if (rep.outcome && rep.outcome !== "ok") {
-        bits.push(`<span class="note err">${esc(t("did not complete"))}</span>`);
+        bits.push(`<span style="color:var(--err)">${esc(t("did not complete"))}</span>`);
       }
       const href = `/api/backup/import-reports/${encodeURIComponent(rep.filename)}?format=md`;
       bits.push(`<a href="${href}" target="_blank" rel="noopener">${esc(t("open report"))}</a>`);
@@ -1025,7 +1053,7 @@
         st.textContent = "";
       } catch (e) {
         if (bar) bar.style.display = "none"; prog.textContent = "";
-        summary.innerHTML = `<span class="note err">${esc(t("Verification failed:"))} ${esc(e.message || e)}</span>`;
+        summary.innerHTML = `<span style="color:var(--err)">${esc(t("Verification failed:"))} ${esc(ooServerText(e.message || e))}</span>`;
         st.textContent = "";
       }
       btn.disabled = false;
@@ -1203,7 +1231,7 @@
       } catch (e) {
         btn.disabled = false;
         if (bgBtn) bgBtn.style.display = "none";
-        document.getElementById("ux-imp-progress").innerHTML = `<span class="note err">${esc(t("Import failed:"))} ${esc(e.message || e)}</span>`;
+        document.getElementById("ux-imp-progress").innerHTML = `<span style="color:var(--err)">${esc(t("Import failed:"))} ${esc(ooServerText(e.message || e))}</span>`;
         return;
       }
       _uxImWatchQueue();
@@ -1240,6 +1268,9 @@
     // overlapping-messages defect this chain exists to have removed. Found 2026-09-16 by
     // an adversarial read, not by a test, which is why the fix is structural.
     let _uxImGen = 0;
+    // What the result block was last drawn from, so a language switch can redraw it in
+    // the new language without re-reading the queue (Y6).
+    let _uxImSummaryArgs = null;
 
     // STAGE 4 RIDES THE SAME CHAIN, at its own cadence. The backlog read behind it is
     // LINEAR in the pending article count -- measured on a plaintext fixture, median
@@ -1504,11 +1535,27 @@
         }
       }
       if (summaries.length) {
-        _renderImportSummary(document.getElementById("ux-imp-summary"), summaries, {
-          state: st.state, elapsed_s: st.elapsed_s,
-          items_done: st.items_done, items_total: st.items_total,
-        });
+        _uxImSummaryArgs = {
+          summaries,
+          run: {
+            state: st.state, elapsed_s: st.elapsed_s,
+            items_done: st.items_done, items_total: st.items_total,
+            // The re-index job's own read, taken unpaced on this terminal tick (I1): the
+            // backlog "Articles awaiting indexing" falls back to when no item carries a
+            // hand-off snapshot (Y4).
+            rx: _uxImRx,
+          },
+        };
+        _renderImportSummary(document.getElementById("ux-imp-summary"), summaries, _uxImSummaryArgs.run);
       }
+      // What just finished is now the LAST import (Y7), and a history list the operator
+      // already opened in Settings -> Data gains its row (Y5). Both re-read the persisted
+      // reports; neither is drawn from this run's in-memory state.
+      try { _uxImLastLine(); } catch (_e) {}
+      try {
+        const h = document.getElementById("imp-history");
+        if (h && h.innerHTML.trim()) loadImportHistory();
+      } catch (_e) {}
       const dlg = document.getElementById("ux-import");
       if (dlg && !dlg.open) {
         if (st.state === "done") toast(t("Import complete."));
@@ -1665,7 +1712,11 @@
         const label = `<bdi>${esc(it.label || it.kind)}</bdi>`;
         const state = esc(t(_UX_IM_STATE_LABEL[it.state] || it.state));
         const el = it.elapsed_s != null ? ` · ${esc(_uxImDur(it.elapsed_s))}` : "";
-        const err = it.error ? `<div class="note err" style="margin-left:14px">${esc(it.error)}</div>` : "";
+        // The item's error as the dialog's inline text (Y2), not the toast `.note` box --
+        // a floating notification's padding, shadow and slide-in inside a list of rows.
+        const err = it.error
+          ? `<div class="hint" style="color:var(--err);margin:2px 0 0;margin-inline-start:14px;overflow-wrap:anywhere">${esc(ooServerText(it.error))}</div>`
+          : "";
         const live = it.state === "running" ? _uxImLive(st.live, t) : "";
         const dot = {
           done: "var(--ok)", error: "var(--err)", running: "var(--accent)",
@@ -1775,12 +1826,14 @@
       const left = bk ? bk.articles_pending : null;
       if (rx.state === "running") {
         const done = rx.done || 0, total = rx.total || 0;
+        // Through fmtNum (Y3), the app's one ruled number writer: raw, "1200 of 4800"
+        // sat beside "3,600 articles left" one line over, and grouped no thousands at all.
         return total
-          ? esc(tf("resuming re-index — {done} of {total} articles", { done, total }))
+          ? esc(tf("resuming re-index — {done} of {total} articles", { done: fmtNum(done, 0), total: fmtNum(total, 0) }))
           : esc(t("resuming re-index"));
       }
       if (left != null && left > 0) {
-        return esc(tf("{n} articles left to re-index", { n: Number(left).toLocaleString() }));
+        return esc(tf("{n} articles left to re-index", { n: fmtNum(Number(left), 0) }));
       }
       if (left === 0) return (st && st.state === "running") ? esc(t("not started")) : esc(t("complete"));
       return `<span class="muted">${esc(t("not measured"))}</span>`;
@@ -1823,7 +1876,7 @@
       } else if ((bk.articles_pending || 0) > 0) {
         out.push({ ok: false, text: tf(
           "Analytics are still catching up: {n} imported article(s) carry no keywords until the re-index finishes.",
-          { n: Number(bk.articles_pending).toLocaleString() }) });
+          { n: fmtNum(Number(bk.articles_pending), 0) }) });
       } else if (st.state === "running" || rx.state === "running") {
         // AFTER STAGE 4, and not before (Q203 = a; 2026-09-26, I2). An empty backlog at
         // the START of a run is a fact about the corpus BEFORE this import -- nothing it
@@ -1913,7 +1966,7 @@
       } catch (e) {
         // A failed READ is not an empty history. Saying "no imports yet" here would
         // be a positive claim about the operator's data made from a broken request.
-        host.innerHTML = `<span class="note err">${esc(t("The import history could not be read."))}</span>`;
+        host.innerHTML = `<span style="color:var(--err)">${esc(t("The import history could not be read."))}</span>`;
         return;
       }
       host.innerHTML = _uxImHistoryHtml(reports, t, tf);
@@ -1942,7 +1995,7 @@
           bits.push(`<span class="muted">${esc(t("article count not recorded"))}</span>`);
         }
         if (r.outcome && r.outcome !== "ok") {
-          bits.push(`<span class="note err">${esc(t("did not complete"))} (${esc(r.outcome)})</span>`);
+          bits.push(`<span style="color:var(--err)">${esc(t("did not complete"))} (${esc(r.outcome)})</span>`);
         }
         const href = `/api/backup/import-reports/${encodeURIComponent(r.filename)}?format=md`;
         bits.push(`<a href="${href}" target="_blank" rel="noopener">${esc(t("open report"))}</a>`);
@@ -2169,7 +2222,7 @@
             + seg(r.new, "var(--accent, #4a90d9)") + seg(r.dup, "var(--muted-bg, #888)")
             + seg(r.conf, "var(--err, #d9534f)") + `</div>`
           : `<div class="muted" style="font-size:11px">${esc(
-              r.error ? String(r.error).slice(0, 120)
+              r.error ? ooServerText(r.error).slice(0, 120)
                       : t(_lostIts ? _UX_IM_STATE_LABEL[r.state] : "nothing imported")
             )}</div>`;
         const counts = r.total > 0
@@ -2218,7 +2271,11 @@
     function _uxCorpusDeltaView(before, after, t) {
       if (!before || !after) return "";
       const num = (n) => Number(n || 0).toLocaleString();
-      const fmtDate = (iso) => iso ? String(iso).slice(0, 10) : "—";
+      // Each date is ONE unbreakable, left-to-right token (Y1, measured at 375 px): the
+      // "before" cell broke INSIDE a date ("2023-01-" / "07 –"), and on an Arabic page the
+      // bidi pass then moved each fragment's hyphen to the other end ("-2023-01"). The
+      // range still wraps, at the dash, and the page direction orders its two ends.
+      const fmtDate = (iso) => `<span dir="ltr" style="unicode-bidi:isolate;white-space:nowrap">${esc(iso ? String(iso).slice(0, 10) : "—")}</span>`;
       const dims = [
         [t("Articles"), before.articles, after.articles],
         [t("Sources"), before.sources, after.sources],
@@ -2236,8 +2293,8 @@
           + `<td style="text-align:right;padding:2px 0"><b style="color:${dCol}">${esc(dTxt)}</b></td></tr>`;
       }).join("");
       const dateRow = `<tr><td style="padding:2px 8px 2px 0">${esc(t("Date range"))}</td>`
-        + `<td style="text-align:right;padding:2px 8px" class="muted">${esc(fmtDate(before.date_min))} – ${esc(fmtDate(before.date_max))}</td>`
-        + `<td style="text-align:right;padding:2px 8px" colspan="2">${esc(fmtDate(after.date_min))} – ${esc(fmtDate(after.date_max))}</td></tr>`;
+        + `<td style="text-align:right;padding:2px 8px" class="muted">${fmtDate(before.date_min)} – ${fmtDate(before.date_max)}</td>`
+        + `<td style="text-align:right;padding:2px 8px" colspan="2">${fmtDate(after.date_min)} – ${fmtDate(after.date_max)}</td></tr>`;
       return `<div style="margin-top:8px">`
         + `<div class="muted" style="font-size:12px;margin-bottom:2px">${esc(t("How your corpus grew"))}</div>`
         + `<table style="width:100%;font-size:13px;border-collapse:collapse">`
@@ -2293,7 +2350,7 @@
       // Fallback headline for a tally-only run (no plan at all — newsletters/large
       // data): reproduces the ORIGINAL generic imported/deduplicated stat, unchanged.
       let tallyNew = 0, tallyDup = 0;
-      let newSources = 0, discoveryAdded = 0, eventsAdded = 0, unindexed = 0;
+      let newSources = 0, discoveryAdded = 0, eventsAdded = 0, unindexed = 0, deferredNew = false;
       // Source QUALIFICATION carried by this import (field ask 2026-08-10). Counts
       // only; `qualEngines` maps criteria version -> n, which is the "by which
       // engine" half — never inferred, only what the incoming stamp recorded.
@@ -2378,8 +2435,15 @@
           // Real re-index failures only — reindex_imported_articles ran (or was
           // skipped entirely; either way the true count of never-reindexed imported
           // articles is knowable, never guessed).
+          //
+          // A DEFERRED re-index is not a failure (2026-09-26 leftovers, Y4). This used to
+          // add every NEW article of an item whose re-index did not run in-line, so the
+          // line said "4,800 Articles awaiting indexing" whatever the corpus's real backlog
+          // was -- an article already carrying current-engine rows is not owed, and an
+          // earlier import's backlog is owed too. Those items are counted below from the
+          // backlog the SERVER measured, never from the plan.
           if (sm.reindexed) unindexed += sm.reindexed.failed || 0;
-          else if (art.new) unindexed += art.new;  // re-index was skipped for this run
+          else if (art.new) deferredNew = true;
           if (sm.delta && sm.delta.before && sm.delta.after) {
             if (!deltaBefore) deltaBefore = sm.delta.before;
             deltaAfter = sm.delta.after;
@@ -2451,10 +2515,30 @@
         : "";
       const deltaView = _uxCorpusDeltaView(deltaBefore, deltaAfter, t);
 
+      // THE BACKLOG, ONE READING, read once for the two lines that state it (the
+      // "still indexing" caveat and "Articles awaiting indexing" below), so they cannot
+      // print two different numbers. The items' hand-off snapshots come first, by I6's
+      // rule (the LATEST, never a sum -- see the caveat). A run whose items carry none
+      // (every backup held for a checkpoint) falls back to the re-index job's own read,
+      // which the queue's terminal tick takes just before rendering (`run.rx`).
+      const _rxd = summaries.map((s2) => (s2 && s2.report && s2.report.reindex_deferred) || s2.reindex_deferred)
+        .filter(Boolean);
+      const _live = (run && run.rx) ? (run.rx.backlog || { available: false }) : null;
+      const _bk = _rxd.length
+        ? _rxd[_rxd.length - 1]
+        : ((deferredNew && _live)
+            ? { articles_pending: _live.available === false ? null : _live.articles_pending }
+            : null);
+      const _bkUnreadable = !!_bk && typeof _bk.articles_pending !== "number";
+
       // WORK INDUCED: stated honestly, only when there is actually something queued.
       const queueLines = [];
       if (newSources > 0) queueLines.push(`${num(newSources)} ${t("New sources")}`);
-      if (unindexed > 0) queueLines.push(`${num(unindexed)} ${t("Articles awaiting indexing")}`);
+      // Awaiting indexing (Y4): an in-line re-index's real FAILURES, or -- when the
+      // re-index was deferred -- the backlog the server measured, which already holds any
+      // failure too. Unreadable: no number, and the caveat above says why.
+      const awaiting = deferredNew ? ((_bk && !_bkUnreadable) ? _bk.articles_pending : null) : unindexed;
+      if (awaiting != null && awaiting > 0) queueLines.push(`${num(awaiting)} ${t("Articles awaiting indexing")}`);
       if (discoveryAdded > 0) queueLines.push(`${num(discoveryAdded)} ${t("Discovery candidates")}`);
       // SOURCE QUALIFICATION carried by this import (field ask 2026-08-10: "display the
       // amount of qualified sources imported"). Rendered only when the import actually
@@ -2508,8 +2592,17 @@
 
       const extraLine = extra.length
         ? `<div class="muted" style="font-size:12px;margin-top:4px">${esc(extra.join(" · "))}</div>` : "";
+      // THE 375 px OVERFLOW (the 2026-09-26 leftovers, Y1). Measured in Chromium: the
+      // result block held the dialog 26-28 px wider than its content box, and hiding
+      // the rows one at a time put it HERE, not in "How your corpus grew" (whose date
+      // range fits): each summary is the backup's folder name, one unbreakable token
+      // ("202609261808_OpenOmniscience_Backup_2") 59 px wider than the summary, and an
+      // opened body -- the plan table, whose conflict samples are unbroken JSON -- took
+      // the dialog to 428 px. So the name may wrap and is isolated, as the per-backup
+      // table's already is (I13/I12), and the body scrolls inside its own box.
       const detailBlocks = detail.map((d) =>
-        `<details style="margin-top:6px"><summary class="muted">${esc(d.title)}</summary>${d.body}</details>`).join("");
+        `<details style="margin-top:6px"><summary class="muted" style="overflow-wrap:anywhere"><bdi>${esc(d.title)}</bdi></summary>`
+        + `<div style="overflow-x:auto">${d.body}</div></details>`).join("");
 
       // OUTCOME-AWARE HEADER. This was hardcoded "✓ Import successful", so a run in
       // which two of six backups failed announced itself exactly like a clean one.
@@ -2572,9 +2665,10 @@
       // says so rather than showing 0: "could not read" and "nothing pending" must never
       // look alike.
       let indexingLine = "";
-      const _rxd = summaries.map((s2) => (s2 && s2.report && s2.report.reindex_deferred) || s2.reindex_deferred)
-        .filter(Boolean);
-      if (_rxd.length) {
+      // A MEASURED zero is nothing still to index (Y4): a re-import whose every article was
+      // already here read "Indexing continues in the background: 0 article(s) still to
+      // index", a caveat about work that does not exist. An unreadable reading still says so.
+      if (_bk && (_bkUnreadable || _bk.articles_pending > 0)) {
         // THE LATEST READING, never a sum (2026-09-26, I6). Each item's
         // `articles_pending` is the WHOLE corpus backlog at the moment that item
         // committed (volume_job.hand_off_reindex reads reindex_backlog()), so the
@@ -2584,9 +2678,8 @@
         // the backlog the run ended with. An unreadable LAST snapshot says so: an earlier
         // readable one is a stale undercount, and printing it as current would be the same
         // wrong number in the other direction.
-        const lastRx = _rxd[_rxd.length - 1];
-        const unreadable = typeof lastRx.articles_pending !== "number";
-        const pend = unreadable ? 0 : lastRx.articles_pending;
+        const unreadable = _bkUnreadable;
+        const pend = unreadable ? 0 : _bk.articles_pending;
         const body = unreadable
           ? t("Indexing continues in the background. The number still to index could not be read.")
           : tf("Indexing continues in the background: {n} article(s) still to index. Until it finishes they carry no keywords and are absent from analytics.",
@@ -2626,8 +2719,10 @@
         const d = await api("/api/backup/folder/plan",
           { method: "POST", body: JSON.stringify({ dest, categories: _fbCats() }) });
         $("fb-plan").innerHTML =
-          `${(d.files || 0).toLocaleString()} ${esc(t("files"))} · ${esc(t("needs"))} <b>${esc(d.needed_human)}</b> · ` +
-          `${esc(d.free_human)} ${esc(t("free"))}` +
+          // The byte counts, not the server's `*_human` strings (Y9): those carry English
+          // units in every locale; humanBytes writes the same figure in the UI language.
+          `${(d.files || 0).toLocaleString()} ${esc(t("files"))} · ${esc(t("needs"))} <b>${esc(humanBytes(d.needed_bytes))}</b> · ` +
+          `${esc(humanBytes(d.free_bytes))} ${esc(t("free"))}` +
           (d.enough_space ? "" : ` <span class="warn">— ${esc(t("not enough space"))}</span>`);
       } catch (e) { $("fb-plan").innerHTML = `<span class="note err">${esc(e.message)}</span>`; }
       finally { btn.disabled = false; }
@@ -2703,7 +2798,7 @@
           } else if (s.state === "cancelled") {
             if (prog) prog.textContent = t("Cancelled.");
           } else if (s.state === "error") {
-            if (prog) prog.textContent = t("Failed:") + " " + (s.error || t("unknown error"));
+            if (prog) prog.textContent = t("Failed:") + " " + (s.error ? ooServerText(s.error) : t("unknown error"));
           }
         }
       } catch (e) { if (prog) prog.textContent = t("Status check failed."); if (btn) btn.disabled = false; }
@@ -2813,7 +2908,7 @@
         prog.innerHTML = `<b>${esc(t("Done."))}</b> ${(p.copied || 0)} ${esc(t("copied"))}, ` +
           `${(p.restored || 0)} ${esc(t("restored"))}, ${(p.skipped || 0)} ${esc(t("skipped"))}.` + caveat;
       } else if (s.state === "error") {
-        prog.innerHTML = `<span class="note err">${esc(s.error || t("failed"))}</span>`;
+        prog.innerHTML = `<span class="note err">${esc(s.error ? ooServerText(s.error) : t("failed"))}</span>`;
       } else { prog.textContent = ""; }
     }
 
@@ -2834,7 +2929,9 @@
           `<td style="text-align:center">${r.conf ? `<b>${r.conf}</b>` : "0"}</td></tr>`;
         if (r.conflicts.length) {
           const det = r.conflicts.slice(0, 5).map(c => esc(JSON.stringify(c))).join("<br>");
-          html += `<tr><td colspan="4" class="muted" style="font-size:12px;padding:0 6px 6px"><details><summary>` +
+          // A sample is one JSON token with no break opportunity; it may break anywhere
+          // rather than widen the table past a phone's dialog (Y1).
+          html += `<tr><td colspan="4" class="muted" style="font-size:12px;padding:0 6px 6px;overflow-wrap:anywhere"><details><summary>` +
             esc(t("conflict samples (local value kept)")) + `</summary>${det}</details></td></tr>`;
         }
       }
@@ -2961,10 +3058,11 @@
         toast("Running full overwrite… this can take a while.", "warn");
         const r = await api("/api/safety/secure-erase",
           {method: "POST", body: JSON.stringify({confirm: true, passes})});
-        const mib = Math.round((r.bytes_written || 0) / 1048576);
+        // The size through the one localised writer (Y9): "MiB" was English in every
+        // locale and the only binary-prefixed unit the app printed anywhere.
         if (box) box.innerHTML +=
           `<div class="hint" style="margin-top:6px"><span class="pill warn">overwritten</span> ` +
-          `${r.passes}× — ${mib} MiB. <span class="muted">${esc(r.limit)}</span></div>`;
+          `${r.passes}× — ${esc(_fmtBytes(r.bytes_written || 0))}. <span class="muted">${esc(r.limit)}</span></div>`;
         toast("Full overwrite complete. Restart the app.", "warn");
       } catch (e) { toast(_failMsg("Full overwrite failed: {error}", e), "err"); }
     }
@@ -3148,9 +3246,20 @@
             if (_uxImView === "fresh") {
               _uxImRenderFresh(_uxImLastStatus, _uxImRx, t, tf);
             } else {
-              _uxImRenderStages(_uxImLastStatus, _uxImRx, t, tf);
-              _uxImRenderStatements(_uxImLastStatus, _uxImRx, t, tf);
+              // The WHOLE run view (2026-09-26 leftovers, Y6), not only its stage rows and
+              // statements: the header ("4/4 imported") and the per-backup rows ("— Done ·
+              // 4s") are drawn by the same renderer, and once the run was over nothing drew
+              // them again, so they stayed in the language the run ended in.
+              _uxImRenderQueue(_uxImLastStatus);
             }
+          }
+        } catch (_e) {}
+        // ...and the result block under it, from the arguments it was drawn with. Only
+        // while it is still on screen: a scan or a new run empties it on purpose.
+        try {
+          const sh = document.getElementById("ux-imp-summary");
+          if (_uxImSummaryArgs && sh && sh.innerHTML.trim()) {
+            _renderImportSummary(sh, _uxImSummaryArgs.summaries, _uxImSummaryArgs.run);
           }
         } catch (_e) {}
       }

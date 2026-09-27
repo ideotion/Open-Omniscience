@@ -302,9 +302,20 @@ def _jde_season(year: int, which: str) -> float:
     return jde0 + (0.00001 * s) / dlam
 
 
+#: The SEASONS' own method (the 2026-09-26 leftovers, Y11). It was the moon's sentence
+#: with "ch. 49" swapped for "ch. 27", so it still said "mean lunar phase + ... planetary
+#: corrections" about an equinox. What `_jde_season` actually does: Meeus's mean JDE0
+#: polynomial for the event (Table 27.B, years 1000-3000) plus the 24 periodic terms of
+#: Table 27.C, divided by Δλ.
+_SEASON_METHOD = (
+    "Meeus, Astronomical Algorithms (2nd ed.) ch. 27: mean equinox or solstice + "
+    "24 periodic terms; computed locally, no data files"
+)
+
+
 def seasons_for_year(year: int) -> dict:
     """The four season points of a year (UTC), hemisphere-neutrally named."""
-    out: dict[str, Any] = {"year": year, "seasons": [], "method": _METHOD.replace("ch. 49", "ch. 27"),
+    out: dict[str, Any] = {"year": year, "seasons": [], "method": _SEASON_METHOD,
            "accuracy": _ACCURACY,
            "naming": (
                "astronomical names only — 'June solstice', never 'summer "

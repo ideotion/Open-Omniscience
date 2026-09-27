@@ -4758,5 +4758,19 @@
   "Wikipedia text — CC BY-SA 4.0 (https://creativecommons.org/licenses/by-sa/4.0/). Attribute Wikipedia and its contributors, and share any work derived from this text alike.": "Teks Wikipedia — CC BY-SA 4.0 (https://creativecommons.org/licenses/by-sa/4.0/). Cantumkan atribusi kepada Wikipedia dan para kontributornya, dan bagikan setiap karya turunan dari teks ini dengan lisensi yang sama.",
   "Tracked legal documents — this corpus records NO licence metadata for them. Each document's terms are those of the official source it was mirrored from (the official URL stored with the document); check them before redistributing. That is a gap in what was recorded, never a grant.": "Dokumen hukum yang dilacak — korpus ini TIDAK mencatat metadata lisensi apa pun untuknya. Ketentuan setiap dokumen adalah ketentuan sumber resmi tempat dokumen itu dicerminkan (URL resmi yang disimpan bersama dokumen); periksa sebelum mendistribusikan ulang. Itu adalah celah dalam apa yang tercatat, bukan izin.",
   "IP geolocation by DB-IP (https://db-ip.com) — CC BY 4.0": "Geolokasi IP oleh DB-IP (https://db-ip.com) — CC BY 4.0",
-  "Open-Meteo open data, CC BY 4.0 (https://open-meteo.com/) — ERA5-family reanalysis: a model estimate for a grid cell, not a station record.": "Data terbuka Open-Meteo, CC BY 4.0 (https://open-meteo.com/) — reanalisis keluarga ERA5: estimasi model untuk satu sel grid, bukan catatan stasiun."
+  "Open-Meteo open data, CC BY 4.0 (https://open-meteo.com/) — ERA5-family reanalysis: a model estimate for a grid cell, not a station record.": "Data terbuka Open-Meteo, CC BY 4.0 (https://open-meteo.com/) — reanalisis keluarga ERA5: estimasi model untuk satu sel grid, bukan catatan stasiun.",
+  "Interleave languages": "Selang-selingkan bahasa",
+  "{what}: not enough free space — needs about {needed}, only {free} free at {path}. Free up space or choose another location, or use the large-data/volume backup for a big corpus.": "{what}: ruang kosong tidak cukup — perlu sekitar {needed}, hanya {free} kosong di {path}. Kosongkan ruang atau pilih lokasi lain, atau gunakan cadangan data besar/volume untuk korpus yang besar.",
+  "Not enough free space at {path}: needs {needed}, only {free} free.": "Ruang kosong di {path} tidak cukup: perlu {needed}, hanya {free} kosong.",
+  "Backup": "Cadangan",
+  "Restore": "Pemulihan",
+  "Volume backup": "Cadangan volume",
+  "Unpacking the backup to restore it": "Membongkar cadangan untuk memulihkannya",
+  "{size} RAM detected": "RAM terdeteksi: {size}",
+  "{size} available": "{size} tersedia",
+  "Scraping ↓": "Pengumpulan ↓",
+  "total {size}": "jumlah {size}",
+  "{method}; {accuracy}": "{method}; {accuracy}",
+  "{event} {time} UTC — {note}": "{event} {time} UTC — {note}",
+  "Meeus, Astronomical Algorithms (2nd ed.) ch. 27: mean equinox or solstice + 24 periodic terms; computed locally, no data files": "Meeus, Astronomical Algorithms (edisi ke-2) bab 27: ekuinoks atau titik balik matahari rata-rata + 24 suku periodik; dihitung secara lokal, tanpa berkas data"
 }

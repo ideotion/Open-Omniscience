@@ -1900,9 +1900,16 @@
         + ` aria-pressed="${on ? "true" : "false"}" onclick="_anSetGroupByLang(${mode})"`
         + ` title="${esc(t("Groups the articles already listed. It runs no new search and changes no count."))}">`
         + `${esc(label)}</button>`;
+      // The ungrouped label names the order the list is REALLY in (the 2026-09-26
+      // leftovers, Y8, after N4). "Interleave by date" is the ruled default and true only
+      // while the list is sorted by date; with "Relevance / recency", a column sort or the
+      // keyword-count sort picked, the same pressed button claimed a date order the list
+      // did not have. It still only (un)groups -- the order stays the Sort by control's.
+      const sb = $("an-adv-sort");
+      const byDate = !_anKwSort && !!sb && sb.value === "date";
       return `<div class="row" style="gap:6px;align-items:center;margin-top:6px">`
         + `<span class="muted" style="font-size:11px">${esc(t("View"))}:</span>`
-        + seg(!_anGroupByLang, "false", t("Interleave by date"))
+        + seg(!_anGroupByLang, "false", byDate ? t("Interleave by date") : t("Interleave languages"))
         + seg(_anGroupByLang, "true", t("Group by language"))
         + `</div>`;
     }

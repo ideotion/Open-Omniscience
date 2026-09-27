@@ -480,10 +480,16 @@
         ph += '<div class="muted">' + esc(t("Started")) + " " + esc(_fmtTs(prev.started_at)) +
               " · " + esc(t("Ended")) + " " + esc(_fmtTs(prev.ended_at)) + "</div>";
       const smp = prev.last_collector_sample;
+      // Sizes through the one localised writer (Y9), from bytes: the collector samples
+      // MiB (psutil / 1024**2), the binary step `_sizeText` divides by. "RSS" is the
+      // measure's own name (resident set size) and stays as it is; the "available" half is
+      // a keyed frame, so a locale decides where its word goes.
+      const _mib = (v) => _fmtBytes(Number(v) * 1048576);
+      const _tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((x, v) => x.replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? String(v[k]) : m));
       if (smp)
         ph += '<div class="muted">' + esc(t("Last recorded memory")) + ": " +
-              (smp.rss_mb != null ? esc(smp.rss_mb) + " MB RSS" : "—") +
-              (smp.mem_avail_mb != null ? " · " + esc(smp.mem_avail_mb) + " MB " + esc(t("available")) : "") + "</div>";
+              (smp.rss_mb != null ? esc(_mib(smp.rss_mb)) + " RSS" : "—") +
+              (smp.mem_avail_mb != null ? " · " + esc(_tf("{size} available", { size: _mib(smp.mem_avail_mb) })) : "") + "</div>";
       if (prev.method) ph += '<div class="card-caveat">' + esc(prev.method) + "</div>";  // verbatim inference
       if (prev.note) ph += '<div class="muted">' + esc(prev.note) + "</div>";
       parts.push('<div style="margin-top:6px">' + ph + "</div>");
