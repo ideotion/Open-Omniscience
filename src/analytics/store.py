@@ -2357,9 +2357,11 @@ def counter_envelope(session: Session, *, window_hours: int | None = None, now=N
     # R22. A deferred re-index stops maintaining the counters WITHOUT touching
     # last_reconciled_at, so the watermarks below would keep answering `exact` over
     # counters that are drifting. The marker is checked FIRST and overrides them: while
-    # it is open the only honest basis is `estimated`, whatever the watermarks say.
+    # it is open the only honest basis is `estimated`, whatever the watermarks say. That
+    # includes n == 0: a fresh store's first deferred drain writes mentions and no counter,
+    # and `exact 0` there claimed that nothing was counted while it was being written.
     deferred_since = deferral_open_since(session)
-    if deferred_since is not None and n > 0:
+    if deferred_since is not None:
         return Envelope.estimated(
             n,
             as_of=deferred_since,

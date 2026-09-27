@@ -122,6 +122,31 @@ def test_the_envelope_says_estimated_while_deferred_even_with_every_watermark_fr
     assert counter_envelope(s).basis == "exact", "closing must restore the real answer"
 
 
+def test_the_envelope_never_says_exact_zero_while_deferred():
+    """REGRESSION (2026-09-27). A fresh store's FIRST deferred drain writes mentions and no
+    counter, so no keyword has a counter behind it yet -- and the envelope answered `exact
+    0`, a verified claim that nothing is counted, while mentions were being written. The
+    marker was honoured only when n > 0, and every re-index of a fresh VM's imported
+    backups starts in exactly this state."""
+    s = _session()
+    a = _article(s, "a")
+    open_deferral(s, reason="test")
+    index_article(
+        s, a, extractor=_FakeExtractor(_terms(3)), country=None, city=None,
+        maintain_counters=False,
+    )
+    s.commit()
+    assert _live_counts(s), "precondition: mentions were written"
+
+    env = counter_envelope(s)
+    assert env.value == 0, "precondition: no counter backs anything yet"
+    assert env.basis == "estimated", f"read {env.basis} {env.value} while counters were deferred"
+    assert "DEFERRED" in env.method
+
+    assert counter_envelope(_session()).basis == "exact", (
+        "an empty store with no marker is still an exact 0")
+
+
 def test_the_marker_outlives_the_process_that_opened_it():
     """The case it exists for is a crash mid-drain. An in-process flag would die with the
     process that knew the counters were wrong; this one is read back from the store by a
