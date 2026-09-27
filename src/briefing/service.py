@@ -32,7 +32,16 @@ _LOG = logging.getLogger(__name__)
 # exact citing set). Bumping the version forces ONE recompute so live cards gain their
 # article_ids. The home-card click diagnostics tool (GET /api/diagnostics/home-cards)
 # is the recurring check that every card hard-links.
-CACHE_VERSION = "oo-briefing-cache-2"
+# Bumped 2->3 (re-walk 2026-09-27, L-1/L-2/N-8/M-6): cards now carry keyed i18n frames
+# and the ranking line its order_explain_i18n, both written at CACHE-WRITE time, so a
+# v2 cache kept Home English in fr/ar/zh until a scrape or 10% corpus growth, which an
+# airplane-mode install may never see. A v2 cache is still SERVED (its shape is a
+# subset: the renderer falls back to the English fields) but counts as stale, so the
+# first read recomputes it -- in the background on the HTTP path, with the old cards
+# on screen meanwhile rather than an empty "building" Home. A v1 cache (no
+# article_ids) is still refused outright.
+CACHE_VERSION = "oo-briefing-cache-3"
+_SERVABLE_PRIOR_VERSIONS: frozenset[str] = frozenset({"oo-briefing-cache-2"})
 
 # Register the built-in producers once, at import.
 register_default_producers()
@@ -193,10 +202,15 @@ def _sorted(cards: list[dict]) -> list[dict]:
         # explanation can never drift from the sort that produced it, because
         # both come from the same order_key here.
         try:
-            from src.briefing.leads import explain_order as _leads_explain
+            from src.briefing.card import frames_text
+            from src.briefing.leads import explain_order_frames
 
             for c in out:
-                c["order_explain"] = _leads_explain(_wrap(c), now=now)
+                # The keyed frames beside their English (re-walk N-8): Home renders the
+                # frames in the reader's language, and a cache written before they
+                # existed still has the English line.
+                c["order_explain_i18n"] = explain_order_frames(_wrap(c), now=now)
+                c["order_explain"] = frames_text(c["order_explain_i18n"])
         except Exception:  # noqa: BLE001 - an explanation is additive, never load-bearing
             _LOG.warning("Leads-2.0 order explanation failed; cards keep their order", exc_info=True)
         return out
@@ -314,7 +328,7 @@ def _read_cache() -> dict | None:
         return None
     try:
         data = json.loads(path.read_text("utf-8"))
-        if data.get("version") != CACHE_VERSION:
+        if data.get("version") != CACHE_VERSION and data.get("version") not in _SERVABLE_PRIOR_VERSIONS:
             return None
         return data
     except Exception:  # noqa: BLE001 - a corrupt cache just triggers a recompute
@@ -387,7 +401,10 @@ def get_briefing(
             _counted.append(_article_count(session))
         return _counted[0]
 
-    stale = cached is not None and _is_cache_stale(session, cached, current=_count_once())
+    stale = cached is not None and (
+        cached.get("version") != CACHE_VERSION  # a servable prior shape: recompute once
+        or _is_cache_stale(session, cached, current=_count_once())
+    )
     need_recompute = force or cached is None or stale
     if need_recompute and background:
         # Off-request: kick one background recompute, serve the current cache meanwhile.
@@ -395,7 +412,7 @@ def get_briefing(
         payload = cached
     elif need_recompute:
         if stale:
-            _LOG.info("briefing cache is stale (corpus grew); recomputing")
+            _LOG.info("briefing cache is stale (corpus grew, or an older cache shape); recomputing")
         payload = refresh_briefing(session)
     else:
         payload = cached

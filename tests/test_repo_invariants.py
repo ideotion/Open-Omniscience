@@ -2889,7 +2889,9 @@ def test_ui_invariants():
     assert "card-face card-front" in card_html and "card-face card-back" in card_html, (
         "Lead cards must have a flip FRONT + BACK (maintainer 2026-06-23)"
     )
-    assert '<p class="card-caveat">${esc(c.caveat)}</p>' in card_html, (
+    # (re-walk L-2/N-8: the caveat renders through cardText -- its keyed frames in the
+    # reader's language, else t() of the stored English -- still in the visible line.)
+    assert '<p class="card-caveat">${esc(cardText(c, "caveat"))}</p>' in card_html, (
         "every Lead card must render its caveat VISIBLE BY DEFAULT in a .card-caveat "
         "line (CLAUDE.md informed-consent: never hidden behind a calm-UI toggle)"
     )
@@ -2901,7 +2903,7 @@ def test_ui_invariants():
     back_region = card_html.split("card-face card-back", 1)[1]
     assert "${caveatLine}" in back_region, "the caveat must render on the card BACK face"
     # The verbose method renders on the back (the flip IS the detail layer now).
-    assert "esc(c.method)" in card_html and 'class="mc"' in card_html, (
+    assert 'esc(cardText(c, "method"))' in card_html and 'class="mc"' in card_html, (
         "the method must render on the card back (the flip replaced the per-card '?')"
     )
     # Clicking flips; the standardized, family-themed button opens the corpus IN A NEW WINDOW.
@@ -6560,8 +6562,9 @@ def test_home_card_click_diagnostics_and_download_all_wired():
     assert "Download keyword log (.zip)" not in html  # the old verbose label is gone
 
     # The live hard-linking fix: cache version bumped so a pre-fix cached briefing
-    # (cards without article_ids) is recomputed once.
-    assert 'CACHE_VERSION = "oo-briefing-cache-2"' in svc
+    # (cards without article_ids) is recomputed once. Bumped again to 3 when cards
+    # gained keyed i18n frames (re-walk L-1); a v2 cache is served while it recomputes.
+    assert 'CACHE_VERSION = "oo-briefing-cache-3"' in svc
 
 
 def test_http_error_responses_recorded_in_diagnostic_log():
@@ -6915,7 +6918,9 @@ def test_home_overview_absorbs_the_retired_leads_carousel():
     # NEW, and the reason the ordering surface exists again: the disclosed reason.
     assert "order_explain" in ov, "each Overview card must state why it leads its family"
     svc = (_SRC / "briefing" / "service.py").read_text(encoding="utf-8")
-    assert "explain_order as _leads_explain" in svc, (
+    # (re-walk N-8: the reason travels as keyed frames beside its English, both built
+    # from the one explain_order_frames call in the sort itself.)
+    assert "explain_order_frames" in svc and 'c["order_explain_i18n"]' in svc, (
         "the disclosed reason must ride the SAME payload the feed already fetches, so the "
         "explanation can never drift from the sort that produced it"
     )

@@ -211,7 +211,10 @@
       if (prov.producer) {
         // The producer identity, shown as the card TYPE the reader already saw on the
         // card's own chip -- same vocabulary on both surfaces.
-        bits.push(`<span class="chip">${esc(String(prov.producer).replace(/_/g, " "))}</span>`);
+        // Through Home's keyed type labels (re-walk L-2), so the chip reads in the UI language.
+        const typeLabel = (typeof cardTypeLabel === "function")
+          ? cardTypeLabel(prov.producer) : String(prov.producer).replace(/_/g, " ");
+        bits.push(`<span class="chip">${esc(typeLabel)}</span>`);
       }
       // The trigger's plain sentence is ONE constant per card type (keyable), and each
       // math row is a constant label + a language-neutral value -- so both translate.
