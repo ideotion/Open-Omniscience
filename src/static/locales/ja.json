@@ -5301,5 +5301,19 @@
   "airplane mode engaged — progress is saved, start again to resume": "機内モードがオンです — 進捗は保存されています。再開するにはもう一度開始してください",
   "paused: {reason} — progress is saved, start again once memory recovers": "一時停止：{reason} — 進捗は保存されています。メモリが回復したらもう一度開始してください",
   "declined on this machine: {reason} — nothing was judged; restart the app with {env}=1 to run it anyway": "このマシンでは見送られました：{reason} — 何も判定していません。それでも実行するには {env}=1 でアプリを再起動してください",
-  "stopped after {n} consecutive batches with no evidence to judge — the remaining candidates could not be evaluated (no reachable feed / no prior articles); they stay unqualified and will be retried on a later run": "判定できる根拠のないバッチが {n} 回連続したため停止しました — 残りの候補は評価できませんでした（到達できるフィードなし／過去の記事なし）。未審査のまま残り、後の実行で再試行されます"
+  "stopped after {n} consecutive batches with no evidence to judge — the remaining candidates could not be evaluated (no reachable feed / no prior articles); they stay unqualified and will be retried on a later run": "判定できる根拠のないバッチが {n} 回連続したため停止しました — 残りの候補は評価できませんでした（到達できるフィードなし／過去の記事なし）。未審査のまま残り、後の実行で再試行されます",
+  "PMI/co-occurrence association, two hops (relatives, and their relatives)": "PMI/共起による関連、2ホップ（関連語と、その関連語）",
+  "Association is not causation; PMI on small samples is noisy.": "関連は因果ではありません。小さな標本での PMI はノイズが多くなります。",
+  "shared-article overlap between keyword FAMILIES (top members each)": "キーワードのファミリー間で共有される記事の重なり（各ファミリーの上位メンバー）",
+  "Families group surface forms of one entity; overlap counts articles, not causation.": "ファミリーは一つの実体の表記ゆれをまとめたものです。重なりは記事数を数えるもので、因果ではありません。",
+  "shared-article overlap between SUPER-GROUPS (curated groups of families); top unassigned families shown for context": "スーパーグループ（ファミリーを整理したグループ）間で共有される記事の重なり。未割り当ての上位ファミリーも参考として表示",
+  "Super-groups are the user's own curation; overlap counts articles, not causation.": "スーパーグループは利用者自身が整理したものです。重なりは記事数を数えるもので、因果ではありません。",
+  "Bounded view for responsiveness: up to {nodes} nodes, {branches} hop-2 branches, ≤{articles} articles sampled per term. Narrow the term or the time window for a finer view.": "応答性のための制限付き表示：最大 {nodes} ノード、2ホップ目の枝 {branches} 本、語ごとに ≤{articles} 件の記事を抽出。より細かく見るには語または期間を絞り込んでください。",
+  "These are measurable framing SIGNALS (tone via VADER sentiment; emphasised terms via frequency), not a judgement that any outlet is biased. VADER is an ENGLISH lexicon, so tone is measured ONLY for English articles: an outlet with no English coverage here reports NO tone at all. That is an honest gap, never a 'neutral' -- an unreadable language scores 0.0 on an English lexicon, which is the absence of a measurement, not a measurement of absence. Each outlet states how many of its articles the lexicon could actually read. Read the linked articles and attribute for yourself.": "これらは測定可能なフレーミングの「シグナル」（トーンは VADER 感情分析、強調語は頻度による）であり、いずれかのメディアが偏っているという判断ではありません。VADER は英語の辞書なので、トーンは英語の記事についてのみ測定されます。ここで英語の報道がないメディアにはトーンがまったく表示されません。これは正直な空白であり、決して「中立」ではありません。読めない言語は英語辞書では 0.0 になりますが、それは測定がないということであり、何もないことを測定したのではありません。各メディアについて、辞書が実際に読めた記事の数を示しています。リンク先の記事を読み、ご自身で判断してください。",
+  "{n} mentions — click to zoom in": "{n} 件の言及 — クリックで拡大",
+  "family of {n}: {members}": "{n} 語のファミリー：{members}",
+  "Person": "人物",
+  "Organisation": "組織",
+  "Place": "場所",
+  "Entity": "固有名"
 }

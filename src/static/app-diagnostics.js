@@ -104,28 +104,109 @@
         await api(`/api/insights/reindex-job?${q}`, { method: "POST" });
       } catch (_e) { /* 409 = one already running; fall through and poll it */ }
     }
-    async function _pollReindexJob(st, t) {
-      for (;;) {
-        let s;
-        try { s = await api("/api/insights/reindex-job/status"); }
-        catch { break; }
-        if (st) {
-          const tal = s.tally || {};
-          const bits = [`${fmtNum(tal.reindexed || 0, 0)} ${t("re-indexed")}`];
-          if (s.articles_total) bits.push(`${s.percent || 0}%`);
-          // Speed, so a long run can be estimated rather than guessed at. Both rates
-          // are measurements over THIS run and are absent until real -- never a 0/h.
-          if (s.keywords_per_hour) bits.push(`${fmtNum(Math.round(s.keywords_per_hour), 0)} ${t("keywords/h")}`);
-          if (s.articles_per_hour) bits.push(`${fmtNum(Math.round(s.articles_per_hour), 0)} ${t("articles/h")}`);
-          if (tal.pruned != null) bits.push(`${fmtNum(tal.pruned || 0, 0)} ${t("unused keywords removed")}`);
-          if (s.state === "done") bits.push(t("done"));
-          else if (s.state === "paused") bits.push(t("paused"));
-          else if (s.state === "error") bits.push(esc(s.error || t("error")));
-          st.textContent = bits.join(" · ");
-        }
-        if (s.state !== "running" || !s.running) break;
-        await new Promise((r) => setTimeout(r, 1500));
+    function _reindexStatusText(s, _report, t) {
+      const tal = s.tally || {};
+      const bits = [`${fmtNum(tal.reindexed || 0, 0)} ${t("re-indexed")}`];
+      if (s.articles_total) bits.push(`${s.percent || 0}%`);
+      // Speed, so a long run can be estimated rather than guessed at. Both rates
+      // are measurements over THIS run and are absent until real -- never a 0/h.
+      if (s.keywords_per_hour) bits.push(`${fmtNum(Math.round(s.keywords_per_hour), 0)} ${t("keywords/h")}`);
+      if (s.articles_per_hour) bits.push(`${fmtNum(Math.round(s.articles_per_hour), 0)} ${t("articles/h")}`);
+      if (tal.pruned != null) bits.push(`${fmtNum(tal.pruned || 0, 0)} ${t("unused keywords removed")}`);
+      if (s.state === "done") bits.push(t("done"));
+      else if (s.state === "paused") bits.push(t("paused"));
+      else if (s.state === "error") bits.push(esc(s.error || t("error")));
+      return bits.join(" · ");
+    }
+    function _pollReindexJob(st, t) {
+      return _watchJobLine("reindex", "/api/insights/reindex-job/status", null, _reindexStatusText, st, t).settled;
+    }
+
+    // THE STATUS LINE FOLLOWS THE JOB, WHEREVER THE JOB IS DRIVEN FROM (the 2026-09-27
+    // re-walk, M-7). Each of the three lines below used to be written by ONE loop, started
+    // by its own button and ended the moment the job stopped running -- so a Pause and a
+    // Resume from the task manager left "paused" on screen through the whole rest of the
+    // run and past its end, and a Diagnostics section opened on a paused or running job
+    // (after a reload or a restart) showed nothing at all. Now one watcher per line reads
+    // the status when the section opens and whenever an action starts; it keeps reading
+    // every 2 s while the job runs and, while the section is open, every 8 s while it is
+    // paused or parked, so a resume from anywhere is picked up and the final line replaces
+    // "paused". A second start KICKS the running watcher instead of starting another loop.
+    //
+    // Returns the watch: `done` ends with the watch itself, `settled` as soon as a read finds
+    // the job NOT running. A button waits on `settled`, so it comes back at a pause exactly
+    // as it did when the loop ended there -- the button is how a paused run is continued
+    // from here -- while the watch goes on following the job.
+    const _jobWatch = {};
+    function _diagSectionOpen() {
+      const d = document.querySelector('#set-advanced details.adv-sec[data-adv="diagnostics"]');
+      return !!(d && d.open);
+    }
+    // A fresh `settled` for a new waiter; an earlier waiter's promise resolves with it. The
+    // generation stops a read that was already in flight when the waiter arrived (taken
+    // before its start reached the server) from releasing it.
+    function _armJobSettle(me) {
+      const prev = me._settle;
+      me.gen = (me.gen || 0) + 1;
+      me.settled = new Promise((r) => { me._settle = () => { r(); if (prev) prev(); }; });
+    }
+    function _settleJob(me) {
+      const f = me._settle;
+      me._settle = null;
+      if (f) f();
+    }
+    function _watchJobLine(key, statusUrl, reportUrl, render, st, t, quietIdle) {
+      const w = _jobWatch[key];
+      if (w) {
+        if (!quietIdle) { w.quietIdle = false; _armJobSettle(w); }
+        if (w.kick) w.kick();
+        return w;
       }
+      const me = {quietIdle: !!quietIdle, kick: null, done: null, settled: null, _settle: null, gen: 0};
+      _armJobSettle(me);
+      _jobWatch[key] = me;
+      me.done = (async () => {
+        try {
+          for (;;) {
+            const gen = me.gen;
+            let s;
+            try { s = await api(statusUrl); }
+            catch { break; }
+            let report = null;
+            if (s.state === "done" && reportUrl) {
+              try { report = await api(reportUrl); }
+              catch (_e) { /* no report yet: the line says "done" and nothing it cannot show */ }
+            }
+            // Opening the section on a job that never ran says nothing: the line is for a
+            // job, and there is none. A refusal is still named, as the button would.
+            const idle = !s.state || s.state === "idle" || s.state === "cancelled";
+            if (st && !(me.quietIdle && idle && !s.refusal)) st.textContent = render(s, report, t);
+            const running = s.state === "running" && !!s.running;
+            // A start came in while this read was in flight: read again before deciding.
+            if (gen !== me.gen) continue;
+            if (!running) _settleJob(me);
+            const waiting = !running && (s.state === "paused" || s.state === "running" || !!s.parked_for_exclusive);
+            if (!running && !(waiting && _diagSectionOpen())) break;
+            await new Promise((r) => { me.kick = r; setTimeout(r, running ? 2000 : 8000); });
+            me.kick = null;
+          }
+        } finally {
+          _settleJob(me);
+          if (_jobWatch[key] === me) delete _jobWatch[key];
+        }
+      })();
+      return me;
+    }
+    // Called when Settings → Advanced → Diagnostics opens (app-boot.js): one status read per
+    // job line, which keeps watching only if that job is running or paused.
+    function watchDiagnosticsJobs() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      _watchJobLine("reindex", "/api/insights/reindex-job/status", null, _reindexStatusText,
+        $("reindex-all-status"), t, true);
+      _watchJobLine("fold", "/api/insights/keyword-fold-job/status", "/api/insights/keyword-fold-job/report",
+        _foldStatusText, $("kw-fold-status"), t, true);
+      _watchJobLine("fts", "/api/search/index-job/status", "/api/search/index-job/report",
+        _searchReindexStatusText, $("fts-reindex-status"), t, true);
     }
 
 
@@ -204,20 +285,9 @@
       else if (s.state === "paused") bits.push(t("paused"));
       return bits.join(" · ");
     }
-    async function _pollFoldJob(st, t) {
-      for (;;) {
-        let s;
-        try { s = await api("/api/insights/keyword-fold-job/status"); }
-        catch { break; }
-        let report = null;
-        if (s.state === "done") {
-          try { report = await api("/api/insights/keyword-fold-job/report"); }
-          catch (_e) { /* no report yet: the line says "done" and nothing it cannot show */ }
-        }
-        if (st) st.textContent = _foldStatusText(s, report, t);
-        if (s.state !== "running" || !s.running) break;
-        await new Promise((r) => setTimeout(r, 2000));
-      }
+    function _pollFoldJob(st, t) {
+      return _watchJobLine("fold", "/api/insights/keyword-fold-job/status",
+        "/api/insights/keyword-fold-job/report", _foldStatusText, st, t).settled;
     }
     async function foldKeywords(btn) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
@@ -284,20 +354,9 @@
       else if (s.state === "paused") bits.push(t("paused"));
       return bits.join(" · ");
     }
-    async function _pollSearchReindex(st, t) {
-      for (;;) {
-        let s;
-        try { s = await api("/api/search/index-job/status"); }
-        catch { break; }
-        let report = null;
-        if (s.state === "done") {
-          try { report = await api("/api/search/index-job/report"); }
-          catch (_e) { /* no report yet: the line says "done" and nothing it cannot show */ }
-        }
-        if (st) st.textContent = _searchReindexStatusText(s, report, t);
-        if (s.state !== "running" || !s.running) break;
-        await new Promise((r) => setTimeout(r, 2000));
-      }
+    function _pollSearchReindex(st, t) {
+      return _watchJobLine("fts", "/api/search/index-job/status", "/api/search/index-job/report",
+        _searchReindexStatusText, st, t).settled;
     }
     async function reindexSearch(btn) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
@@ -379,13 +438,18 @@
       // label welded to its value ("Corpus size: 24 / 100000") is not a key and can
       // never be translated -- measured in the Chromium walk, where this line stayed
       // English in fr while the pills beside it translated.
-      const corpus = `<span>${esc(t("Corpus size"))}</span>: <b>${num(g.corpus_articles)}</b> / ${num(g.corpus_bar)}`
+      // The separator is the READER's, through the one keyed "{prefix}: {text}" frame
+      // (re-walk U-7): a hard-coded ": " printed "Taille du corpus: 453" in fr and
+      // "语料库规模: 453" in zh, where the At-rest panel beside it wrote "Corpus : …".
+      const corpus = ooLabelHtml(`<span>${esc(t("Corpus size"))}</span>`,
+        `<b>${num(g.corpus_articles)}</b> / ${num(g.corpus_bar)}`)
         + ` <span class="pill ${g.corpus_met ? "ok" : "warn"}">${esc(g.corpus_met ? t("met") : t("not met"))}</span>`;
       // ABSENT, never zero -- `!= null`, because 0.0 is a legal rate and a much
       // stronger claim than "we have not measured it".
+      const fpLabel = `<span>${esc(t("False-positive rate"))}</span>`;
       const fp = g.false_positive_rate != null
-        ? `<span>${esc(t("False-positive rate"))}</span>: <b>${(100 * g.false_positive_rate).toFixed(1)}%</b> / ${(100 * g.false_positive_bar).toFixed(0)}%`
-        : `<span>${esc(t("False-positive rate"))}</span>: <span class="pill warn">${esc(t("unmeasured"))}</span>`
+        ? ooLabelHtml(fpLabel, `<b>${(100 * g.false_positive_rate).toFixed(1)}%</b> / ${(100 * g.false_positive_bar).toFixed(0)}%`)
+        : ooLabelHtml(fpLabel, `<span class="pill warn">${esc(t("unmeasured"))}</span>`)
           + ` <span class="muted">${esc(t("needs a labelled sample judged by a person"))}</span>`;
       box.innerHTML = `<div>${corpus}</div><div>${fp}</div>`
         + `<div class="card-caveat">${esc(t(g.caveat || ""))}</div>`;

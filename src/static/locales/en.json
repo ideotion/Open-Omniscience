@@ -5301,5 +5301,19 @@
   "airplane mode engaged — progress is saved, start again to resume": "airplane mode engaged — progress is saved, start again to resume",
   "paused: {reason} — progress is saved, start again once memory recovers": "paused: {reason} — progress is saved, start again once memory recovers",
   "declined on this machine: {reason} — nothing was judged; restart the app with {env}=1 to run it anyway": "declined on this machine: {reason} — nothing was judged; restart the app with {env}=1 to run it anyway",
-  "stopped after {n} consecutive batches with no evidence to judge — the remaining candidates could not be evaluated (no reachable feed / no prior articles); they stay unqualified and will be retried on a later run": "stopped after {n} consecutive batches with no evidence to judge — the remaining candidates could not be evaluated (no reachable feed / no prior articles); they stay unqualified and will be retried on a later run"
+  "stopped after {n} consecutive batches with no evidence to judge — the remaining candidates could not be evaluated (no reachable feed / no prior articles); they stay unqualified and will be retried on a later run": "stopped after {n} consecutive batches with no evidence to judge — the remaining candidates could not be evaluated (no reachable feed / no prior articles); they stay unqualified and will be retried on a later run",
+  "PMI/co-occurrence association, two hops (relatives, and their relatives)": "PMI/co-occurrence association, two hops (relatives, and their relatives)",
+  "Association is not causation; PMI on small samples is noisy.": "Association is not causation; PMI on small samples is noisy.",
+  "shared-article overlap between keyword FAMILIES (top members each)": "shared-article overlap between keyword FAMILIES (top members each)",
+  "Families group surface forms of one entity; overlap counts articles, not causation.": "Families group surface forms of one entity; overlap counts articles, not causation.",
+  "shared-article overlap between SUPER-GROUPS (curated groups of families); top unassigned families shown for context": "shared-article overlap between SUPER-GROUPS (curated groups of families); top unassigned families shown for context",
+  "Super-groups are the user's own curation; overlap counts articles, not causation.": "Super-groups are the user's own curation; overlap counts articles, not causation.",
+  "Bounded view for responsiveness: up to {nodes} nodes, {branches} hop-2 branches, ≤{articles} articles sampled per term. Narrow the term or the time window for a finer view.": "Bounded view for responsiveness: up to {nodes} nodes, {branches} hop-2 branches, ≤{articles} articles sampled per term. Narrow the term or the time window for a finer view.",
+  "These are measurable framing SIGNALS (tone via VADER sentiment; emphasised terms via frequency), not a judgement that any outlet is biased. VADER is an ENGLISH lexicon, so tone is measured ONLY for English articles: an outlet with no English coverage here reports NO tone at all. That is an honest gap, never a 'neutral' -- an unreadable language scores 0.0 on an English lexicon, which is the absence of a measurement, not a measurement of absence. Each outlet states how many of its articles the lexicon could actually read. Read the linked articles and attribute for yourself.": "These are measurable framing SIGNALS (tone via VADER sentiment; emphasised terms via frequency), not a judgement that any outlet is biased. VADER is an ENGLISH lexicon, so tone is measured ONLY for English articles: an outlet with no English coverage here reports NO tone at all. That is an honest gap, never a 'neutral' -- an unreadable language scores 0.0 on an English lexicon, which is the absence of a measurement, not a measurement of absence. Each outlet states how many of its articles the lexicon could actually read. Read the linked articles and attribute for yourself.",
+  "{n} mentions — click to zoom in": "{n} mentions — click to zoom in",
+  "family of {n}: {members}": "family of {n}: {members}",
+  "Person": "Person",
+  "Organisation": "Organisation",
+  "Place": "Place",
+  "Entity": "Entity"
 }

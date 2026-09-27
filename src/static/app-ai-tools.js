@@ -2102,11 +2102,16 @@
           const tone = (f.avg_tone != null)
             ? `<span class="pill ${cls}">${esc(f.tone_label || '')} ${f.avg_tone.toFixed(2)}</span>`
             : `<span class="muted" title="${esc(tLoc('VADER is an English lexicon: tone is measured only for English coverage. No tone here means unmeasured — not neutral.'))}">—</span>`;
-          return `<tr><td>${esc(f.source)}</td>
+          // The outlet and its emphasised terms are DATA: data-i18n-dyn keeps the DOM walker
+          // from translating a word that happens to equal an interface key (re-walk M-15).
+          return `<tr><td data-i18n-dyn>${esc(f.source)}</td>
                <td>${tone}</td>
                <td class="muted">${f.article_count}</td>
-               <td class="muted" style="font-size:12px">${(f.top_terms||[]).slice(0,6).map(esc).join(", ")}</td></tr>`;
+               <td class="muted" style="font-size:12px" data-i18n-dyn>${(f.top_terms||[]).slice(0,6).map(esc).join(", ")}</td></tr>`;
         }).join("");
+        // The caveat is the server's fixed English sentence, and a locale KEY (re-walk M-10):
+        // left as its own text node so the DOM walker translates it and re-translates it
+        // on a language switch, like the headers beside it.
         el.innerHTML = `<table><tr><th>Outlet</th><th>Tone (VADER)</th><th>#</th><th>Emphasised terms</th></tr>${rows}</table>
           <div class="hint">${esc(d.caveat||"")}</div>`;
       } catch (e) {

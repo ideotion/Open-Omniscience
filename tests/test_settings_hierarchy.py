@@ -127,7 +127,15 @@ def test_data_and_backup_kept_what_is_actually_about_data():
 def test_opening_advanced_still_fetches_nothing_for_diagnostics():
     """Folded must not mean fetched — satisfied here by construction rather than by a
     loader, because every report in the section is button-driven. Pinned so that a
-    future eager load has to be a deliberate edit to this test."""
+    future eager load has to be a deliberate edit to this test.
+
+    DELIBERATELY EDITED 2026-09-27 (re-walk M-7), and narrowly: opening the EXPANDED
+    section now reads the three job-status lines' own status (re-index, keyword fold,
+    search re-index), because a line that is only written by its button's loop read
+    "paused" through a whole resumed run and was blank on a paused job after a reload.
+    Those reads are the jobs' in-memory state (and, for a finished job, its report file),
+    never a count over the corpus. Every REPORT in the section stays button-driven, which
+    is the property this test exists for: none of them may run on expand."""
     loaders = object_literal(APP, "_ADV_LOADERS")
     assert "diagnostics:" not in loaders, (
         "the diagnostics section needs no loader; adding one means something now "
@@ -137,6 +145,17 @@ def test_opening_advanced_still_fetches_nothing_for_diagnostics():
     data_line = next(ln for ln in show.splitlines() if 'cat === "data"' in ln)
     for gone in ("loadSessionForensics", "runAllDiagnostics", "loadLemmaPreview"):
         assert gone not in data_line
+    # What opening it DOES read: the job lines' status, through one watcher, and nothing else.
+    watch = function_body(APP, "watchDiagnosticsJobs")
+    urls = set(re.findall(r'"(/api/[^"]+)"', watch))
+    assert urls == {
+        "/api/insights/reindex-job/status",
+        "/api/insights/keyword-fold-job/status", "/api/insights/keyword-fold-job/report",
+        "/api/search/index-job/status", "/api/search/index-job/report",
+    }, urls
+    for report in ("loadPatternsGate", "runAllDiagnostics", "loadSessionForensics",
+                   "loadLemmaPreview", "loadChronology"):
+        assert report not in watch, f"{report} would now run on every expand"
 
 
 # --------------------------------------------------------------------------- #

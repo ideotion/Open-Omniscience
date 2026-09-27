@@ -467,6 +467,16 @@ def _term_label(row: dict, T: Translator) -> str:
     return T.f("{term} (in {language})", term=term, language=code)
 
 
+def _story_terms(story: dict, T: Translator) -> str:
+    """A story's shared terms, each named the way the document names a keyword (re-walk
+    M-3/M-5): a Russian story in a French edition printed its terms bare. A record from
+    before the stories carried their terms' languages falls back to the languages the
+    edition's own keyword sections recorded (:func:`_prime_term_languages`)."""
+    from src.bulletin.review import story_term_rows
+
+    return ", ".join(_term_label(r, T) for r in story_term_rows(story)) or "—"
+
+
 def _term_row(row: dict, *, baseline_days: Any = None, T: Translator) -> tuple[str, str]:
     """A ``terms`` row as (term, description), chosen by the row's OWN fields.
 
@@ -747,7 +757,7 @@ def _coverage_blocks(section: dict, T: Translator) -> list[tuple[str | None, str
         listed = ", ".join(
             T.f(
                 "{term} {mentions} ({articles} art.)",
-                term=t.get("term"),
+                term=_term_label(t, T),
                 mentions=_fmt(t.get("mentions")),
                 articles=_fmt(t.get("articles")),
             )
@@ -1087,7 +1097,7 @@ def _md_section(section: dict, T: Translator) -> list[str]:
 
 
 def _md_story(story: dict, T: Translator) -> list[str]:
-    terms = ", ".join(story.get("shared_terms") or []) or "—"
+    terms = _story_terms(story, T)
     voice = f" · **{T.t('one source only')}**" if story.get("single_source") else ""
     out = [
         f"### {terms}",
@@ -1720,7 +1730,7 @@ def _html_section(section: dict, T: Translator) -> list[str]:
 
 
 def _html_story(story: dict, T: Translator) -> list[str]:
-    terms = ", ".join(story.get("shared_terms") or []) or "—"
+    terms = _story_terms(story, T)
     voice = f" · {T.t('one source only')}" if story.get("single_source") else ""
     out = [
         f"<h3>{_e(terms)}</h3>",
