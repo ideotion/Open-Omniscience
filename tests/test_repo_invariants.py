@@ -8421,7 +8421,10 @@ def test_library_graphs_wired_and_downloaded_section_compressed():
     # The Downloaded tiles are now inside a collapsed-by-default disclosure (the
     # same adv-collect convention Settings already uses for legacy/advanced
     # sections), not a permanently-open 9-tile grid.
-    assert 'details class="adv-collect"' in app.split("function renderLibraryOverview", 1)[1].split(
+    # (The tiles are drawn by `_paintLibraryOverview`, which `renderLibraryOverview` calls
+    # after its fetch and the language-switch repaint calls from cache -- click-through
+    # B14, Z2 -- so the disclosure is read from the painter.)
+    assert 'details class="adv-collect"' in app.split("function _paintLibraryOverview", 1)[1].split(
         "\n    }\n", 1
     )[0], "the Downloaded tiles must be wrapped in a collapsed-by-default <details>"
 

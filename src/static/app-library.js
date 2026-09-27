@@ -89,8 +89,10 @@
         // Honest label (no fabricated security): the private sum includes -shm + backup
         // staging, which are NOT necessarily encrypted — so it is "Private (local)", with the
         // corpus's at-rest encryption noted, not a blanket "encrypted" claim over every byte.
-        + `${esc(t("Private (local; corpus encrypted at rest)"))}: <b>${esc(_fmtBytes(priv))}</b> · `
-        + `${esc(t("Re-downloadable (dumps / maps / models)"))}: <b>${esc(_fmtBytes(pub))}</b></div>`
+        // Label and value through the locale's own separator (ooLabelHtml): a ": " welded
+        // after t() read "Privé (local ; …): 12 Go" in French (click-through B14, Z3).
+        + ooLabelHtml(esc(t("Private (local; corpus encrypted at rest)")), `<b>${esc(_fmtBytes(priv))}</b>`) + ` · `
+        + ooLabelHtml(esc(t("Re-downloadable (dumps / maps / models)")), `<b>${esc(_fmtBytes(pub))}</b>`) + `</div>`
         + rows;
     }
 
@@ -244,7 +246,6 @@
     async function renderLibraryOverview() {
       const host = $("library-overview");
       if (!host) return;
-      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : (x => x);
       let d, fig;
       try {
         // Figures endpoint is 60 s-cached server-side, so polling it here is cheap.
@@ -256,6 +257,26 @@
       const stamp = JSON.stringify([d.downloaded, d.derived, fig]);
       if (stamp === _libOvStamp) return;   // live poll: unchanged, no repaint
       _libOvStamp = stamp;
+      _libOvLast = {d, fig};
+      _paintLibraryOverview(host, d, fig);
+    }
+    // The last overview payload. The live poll repaints only on a DATA change, so a
+    // language switch changed nothing here: the tiles' sizes ("3 · 35.6 MB", the unit
+    // translated at render) and every interpolated label stayed in the old locale while
+    // the view stayed open (click-through B14, Z2). Redrawn from this, never refetched.
+    let _libOvLast = null;
+    // Registered in app-boot.js's ONE `oo:langchange` listener.
+    function repaintLibraryOverviewFromCache() {
+      const host = $("library-overview");
+      if (!host || !_libOvLast) return;
+      const dl = host.querySelector("details.adv-collect");
+      const open = !!(dl && dl.open);
+      _paintLibraryOverview(host, _libOvLast.d, _libOvLast.fig);
+      const again = host.querySelector("details.adv-collect");
+      if (again && open) again.open = true;   // a disclosure the reader opened stays open
+    }
+    function _paintLibraryOverview(host, d, fig) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : (x => x);
       const num = v => (v == null ? "—" : fmtNum(v));
       const sz = v => (v == null || !v) ? "—" : _fmtBytes(v);
       const tile = (n, k) => `<div class="stat"><div class="n">${esc(n)}</div><div class="k">${esc(k)}</div></div>`;
@@ -893,8 +914,8 @@
               : `${d.excluded_quarantined} quarantined articles excluded`)}</div>`
           : "") +
         ((ex.languages || []).length
-          ? `<div class="hint muted">${esc(t("Excluded languages"))}: ` +
-            (ex.languages || []).map(l => esc(ooLangName(l))).join(", ") + `</div>`
+          ? `<div class="hint muted">` + ooLabelHtml(esc(t("Excluded languages")),
+              (ex.languages || []).map(l => esc(ooLangName(l))).join(", ")) + `</div>`
           : "") +
         figMeta(d);
     }

@@ -132,12 +132,20 @@
         // OWN absolute floor -- and one of them has none. So the floor is rendered PER
         // CRITERION rather than as a single number beside the list, and a criterion with no
         // floor says why instead of showing a blank where the other shows 0.5.
+        //
+        // Every sentence here is the engine's vocabulary and a key in all twelve locales
+        // (click-through B14, Z5): the criterion's NAME (its id stays in the hover, where
+        // a log line can be matched to it), its description, and the floor note sentence
+        // by sentence. The floor's colon is the locale's (ooLabelText): "seuil absolu:
+        // 0.5" lacked the French space.
         const floorBits = (x) => {
           if (!x.can_disqualify) return "";
           const val = (x.absolute_floor === null || x.absolute_floor === undefined)
             ? t("no absolute floor")
-            : `${t("absolute floor")}: ${x.absolute_floor}`;
-          return ` <span class="muted" title="${esc(t(x.absolute_floor_note || ""))}">· ${esc(val)}</span>`;
+            : ooLabelText(t("absolute floor"), x.absolute_floor);
+          const note = (x.absolute_floor_note_parts || (x.absolute_floor_note ? [x.absolute_floor_note] : []))
+            .map((s) => t(s)).join(" ");
+          return ` <span class="muted" title="${esc(note)}">· ${esc(val)}</span>`;
         };
         const floor = cfg.pathology_floor_status || {};
         // Q1107 = a: the floor is kept AND said to be unreachable, VISIBLY -- a number an
@@ -149,7 +157,7 @@
           : "";
         crit.innerHTML = `<h3 style="margin:0 0 6px">${t("What the source gate looks at")}</h3>` +
           (cfg.criteria || []).map(x => `<div style="margin:6px 0">
-            <span title="${esc(x.desc)}"><b>${esc(x.name)}</b></span>
+            <span title="${esc(ooLabelText(x.name, t(x.desc || "")))}"><b>${esc(x.label ? t(x.label) : x.name)}</b></span>
             ${x.can_disqualify
               ? `<span class="warn" title="${esc(t("A criterion that can disqualify a source — it is an extraction-failure signature, not a judgement about what the source publishes. The others are style-ambiguous, so they can never exceed a watch flag; that cap is deliberate and is not adjustable."))}">${t("can disqualify")}</span>`
               : `<span class="muted">${t("watch only")}</span>`}${floorBits(x)}
@@ -300,8 +308,8 @@
       return `<div class="row" style="gap:10px;align-items:center;justify-content:space-between;padding:4px 0">
         <div>
           <strong>${esc(e.domain || e.name || "")}</strong>
-          <span class="muted"> · ${t("Collection was")}: ${was}`
-        + ` · ${t("Status was")}: ${esc(wasStatus)}`
+          <span class="muted"> · ${ooLabelHtml(esc(t("Collection was")), esc(was))}`
+        + ` · ${ooLabelHtml(esc(t("Status was")), esc(wasStatus))}`
         + ` · ${when}</span>
         </div>
         <div style="flex:0 0 auto">${undone}</div>
@@ -388,7 +396,7 @@
           return;
         }
         const since = f.generated_at
-          ? ` · ${t("Measured up to")}: <span dir="ltr">⁨${esc(String(f.generated_at))}⁩</span>` : "";
+          ? ` · ` + ooLabelHtml(esc(t("Measured up to")), `<span dir="ltr">⁨${esc(String(f.generated_at))}⁩</span>`) : "";
         // The counts the operator needs BEFORE pressing anything, each answering one
         // question: what the file holds, what this install already took from it, and what
         // adopting now would change. Kept apart -- a single total answers none of them.
@@ -400,21 +408,21 @@
         const dec = d.declined || {};
         // A refusal with its reason, never a silent skip. Drawn only when there IS one.
         const declined = (dec.judged_here_since || dec.was_curated_before)
-          ? `<div>${esc(t("Left alone by a revert"))}: `
-            + (dec.judged_here_since
+          ? `<div>` + ooLabelHtml(esc(t("Left alone by a revert")),
+              (dec.judged_here_since
                 ? esc(tf("{n} judged here since", {n: dec.judged_here_since})) + " " : "")
-            + (dec.was_curated_before
-                ? esc(tf("{n} that carried the catalogue's own stamp", {n: dec.was_curated_before})) : "")
+              + (dec.was_curated_before
+                ? esc(tf("{n} that carried the catalogue's own stamp", {n: dec.was_curated_before})) : ""))
             + `</div>`
           : "";
         // THE PREVIEW. Adopting is a write, so both directions are on the screen first --
         // including the one a reader would not think to ask about, where a shipped
         // `disqualified` verdict takes a source OUT of collection.
         const preview = d.would_adopt
-          ? `<div>${esc(t("Adopting now would"))}: `
-            + esc(tf("stamp {n} sources", {n: d.would_adopt}))
-            + (d.would_admit ? `, ${esc(tf("start collecting {n}", {n: d.would_admit}))}` : "")
-            + (d.would_withdraw ? `, ${esc(tf("stop collecting {n}", {n: d.would_withdraw}))}` : "")
+          ? `<div>` + ooLabelHtml(esc(t("Adopting now would")),
+              esc(tf("stamp {n} sources", {n: d.would_adopt}))
+              + (d.would_admit ? `, ${esc(tf("start collecting {n}", {n: d.would_admit}))}` : "")
+              + (d.would_withdraw ? `, ${esc(tf("stop collecting {n}", {n: d.would_withdraw}))}` : ""))
             + `</div>`
           : `<div class="muted">${esc(t("Adopting now would change nothing: every shipped verdict is either already in force here or overruled by one this install reached itself."))}</div>`;
         const startup = d.adopting_at_startup
@@ -1813,7 +1821,7 @@
         const lg = s.server_log || {};
         const gap = lg.elided_bytes > 0
           ? `<p class="muted">${esc(OOI18N && OOI18N.tf
-              ? OOI18N.tf("… {n} bytes not shown …", {n: lg.elided_bytes.toLocaleString()})
+              ? OOI18N.tf("… {n} bytes not shown …", {n: fmtNum(lg.elided_bytes, 0)})
               : `… ${lg.elided_bytes} bytes not shown …`)}</p>`
           : "";
         const pre = (txt) => `<pre style="max-height:16em;overflow:auto;white-space:pre-wrap">${esc(txt)}</pre>`;

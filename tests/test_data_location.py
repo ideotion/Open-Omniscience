@@ -65,6 +65,51 @@ def test_an_existing_folder_is_not_removed_by_the_probe(tmp_path) -> None:
     assert (keep / "theirs.txt").exists()
 
 
+def test_the_preflight_removes_the_parent_folders_it_created_too(tmp_path) -> None:
+    """A typed path whose parents do not exist yet is created with ``parents=True``, and
+    the cleanup used to remove only the ``OOS data`` leaf -- so asking about
+    ``<drive>/new/place`` left an empty ``new/place`` behind (click-through B14, Z9)."""
+    typed = tmp_path / "new" / "place"
+    out = dl.preflight(str(typed))
+    assert out["usable"] is True, out
+    assert not (tmp_path / "new").exists(), sorted(p.name for p in tmp_path.rglob("*"))
+    assert tmp_path.exists(), "the folder that existed before the question must stay"
+
+
+def test_the_preflight_never_removes_a_parent_that_already_existed(tmp_path) -> None:
+    """Only what the probe made goes: an existing, EMPTY parent is the operator's."""
+    theirs = tmp_path / "theirs"
+    theirs.mkdir()
+    dl.preflight(str(theirs / "fresh" / "deeper"))
+    assert theirs.is_dir(), "an empty folder the operator already had was removed"
+    assert list(theirs.iterdir()) == [], "the probe left its own folders behind"
+
+
+def test_a_created_parent_that_filled_meanwhile_is_kept(tmp_path, monkeypatch) -> None:
+    """rmdir only ever removes an EMPTY folder, and the walk stops at the first one that
+    is not, so nothing written into a folder during the probe can be lost."""
+    typed = tmp_path / "a" / "b"
+    real_fs = dl._filesystem_type
+
+    def _write_meanwhile(path):
+        (typed / "someone-elses.txt").write_text("x", encoding="utf-8")
+        return real_fs(path)
+
+    monkeypatch.setattr(dl, "_filesystem_type", _write_meanwhile)
+    assert dl.preflight(str(typed))["usable"] is True
+    assert (typed / "someone-elses.txt").exists()
+    assert not (typed / dl.DATA_SUBDIR).exists(), "the empty leaf is still the probe's to remove"
+
+
+def test_a_refused_path_leaves_no_parent_folders_either(tmp_path, monkeypatch) -> None:
+    """The refusal paths clean up the same way: a "no" is not a reason to leave folders."""
+    typed = tmp_path / "x" / "y"
+    monkeypatch.setattr(dl.os, "access", lambda *_a, **_k: False)
+    out = dl.preflight(str(typed))
+    assert out["usable"] is False and out["reason_code"] == "not_writable"
+    assert not (tmp_path / "x").exists()
+
+
 def test_a_relative_path_is_refused(tmp_path) -> None:
     out = dl.preflight("some/where")
     assert out["usable"] is False

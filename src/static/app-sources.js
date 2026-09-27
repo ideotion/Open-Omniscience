@@ -1320,17 +1320,17 @@
         el.textContent = t9("Pick at least one edition and a budget to see the share.");
         return;
       }
-      // Shown to ONE decimal and never rounded to zero: a twelve-way split of a
-      // small budget is a real number the operator is entitled to see. Formatted
-      // through toLocaleString rather than toFixed, because toFixed always emits a
-      // POINT -- which a German or Spanish reader reads as a thousands separator, so
-      // "1.7 GB" would say 1,700 to them.
+      // Shown to ONE decimal (two below 0.1) so a twelve-way split of a small budget
+      // stays a real number the operator can read. Written by fmtNum, the app's ruled
+      // number formatter: a decimal POINT in every locale, as every size and every other
+      // figure in the app now reads (units/precision ruling). The earlier
+      // toLocaleString() took the BROWSER's locale, which the app's language switcher
+      // never changes, so the same line read "1.7" or "1,7" by browser, not by language.
       const share = gb / n;
       const digits = share < 0.1 ? 2 : 1;
       el.textContent = _wizTf(
         "About {share} GB for each of {n} editions — the total divided by the editions you follow.",
-        {share: share.toLocaleString(undefined, {minimumFractionDigits: digits,
-                                                 maximumFractionDigits: digits}), n: n});
+        {share: fmtNum(share, digits), n: n});
     }
 
     function _wizSelectAll(on) {

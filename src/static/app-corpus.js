@@ -191,7 +191,7 @@
         host.innerHTML = `<div class="muted">${esc(t("No sources for this corpus yet."))}</div>`;
         return;
       }
-      const fmt = (n) => (n || 0).toLocaleString();
+      const fmt = (n) => fmtNum(n || 0, 0);
       const chips = (arr) => (arr || []).filter(Boolean)
         .map(x => `<span class="pill" style="font-size:11px">${esc(x)}</span>`).join(" ");
       const cards = rows.map(r => {
@@ -275,7 +275,7 @@
       // Index framing per source (by name; tone label + emphasised terms live there).
       const byName = {};
       ((fr && fr.framing) || []).forEach(f => { if (f.source) byName[f.source] = f; });
-      const fmt = (n) => (n || 0).toLocaleString();
+      const fmt = (n) => fmtNum(n || 0, 0);
       // Relative timing readout vs the WHOLE corpus span (real dates, never a score):
       // the corpus's earliest/latest publication across these sources.
       const firsts = rows.map(r => r.first).filter(Boolean).sort();
@@ -370,7 +370,7 @@
       };
       pairs.sort(sorters[_ckwSort] || sorters.pmi);
       const nA = d.n_articles_with_term || 0;
-      const fmt = (n) => (n || 0).toLocaleString();
+      const fmt = (n) => fmtNum(n || 0, 0);
       // Headers carry honest method/caveat in the #oo-tip hover (translated title).
       const th = (key, label, title) =>
         `<th data-sort="${key}" role="button" tabindex="0" style="cursor:pointer;text-align:right;padding:4px 8px;white-space:nowrap"

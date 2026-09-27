@@ -182,7 +182,7 @@ function load(names, prelude, exportsList) {
       undone: true, undone_at: "2026-09-26T19:56:47+00:00",
       reversible: false, blocked_by: "already-undone",
     };
-    const withFmt = load(["_admissionRow"],
+    const withFmt = load(["ooLabelHtml", "_admissionRow"],
       "var window = {};\nfunction fmtDateTime(ts) { return 'FMT[' + ts + ']'; }");
     const out = withFmt._admissionRow(BASE);
     for (const iso of [BASE.occurred_at, BASE.undone_at]) {
@@ -198,7 +198,7 @@ function load(names, prelude, exportsList) {
     assert.ok(!/dir="ltr"/.test(out), "a localised date must not be forced left-to-right: " + out);
 
     // Without the formatter (a node harness, a boot-time render) the raw stamp still shows.
-    const bare = load(["_admissionRow"], "var window = {};")._admissionRow(BASE);
+    const bare = load(["ooLabelHtml", "_admissionRow"], "var window = {};")._admissionRow(BASE);
     assert.ok(bare.includes(BASE.occurred_at), bare);
   }
 

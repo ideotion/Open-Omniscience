@@ -126,12 +126,17 @@ def preflight(raw: str) -> dict[str, Any]:
     # onto its own keyed template, plus this module's own ``text`` for the readers that
     # are not the page -- the API, a log line, a diagnostic.
     warnings: list[dict[str, Any]] = []
-    created_now = False
+    # EVERY folder this probe is about to create, deepest first -- not only the leaf. A
+    # typed path whose parents do not exist yet (``/mnt/usb/new/place``) is created with
+    # ``parents=True``, so a cleanup that removed only ``OOS data`` left ``new/place``
+    # behind: an answer given as a side effect. Recorded BEFORE the mkdir, so a folder
+    # that already existed can never be on the list.
+    created: list[Path] = _missing_dirs(target)
     try:
-        existed = target.exists()
         target.mkdir(parents=True, exist_ok=True)
-        created_now = not existed
     except OSError as exc:
+        # A partial mkdir (the parents made, the leaf refused) is undone as well.
+        _cleanup(created)
         return {
             "usable": False,
             "reason_code": "cannot_create",
@@ -140,7 +145,7 @@ def preflight(raw: str) -> dict[str, Any]:
             "path": str(target),
         }
     if not os.access(target, os.W_OK):
-        _cleanup(target, created_now)
+        _cleanup(created)
         return {"usable": False, "reason_code": "not_writable",
                 "reason": f"{target} is not writable", "input": raw,
                 "path": str(target)}
@@ -188,7 +193,7 @@ def preflight(raw: str) -> dict[str, Any]:
                     "GB, so this may fill up",
         })
 
-    _cleanup(target, created_now)
+    _cleanup(created)
     return {
         "usable": True,
         "input": raw,
@@ -207,19 +212,37 @@ def preflight(raw: str) -> dict[str, Any]:
     }
 
 
-def _cleanup(target: Path, created_now: bool) -> None:
-    """Leave the filesystem as we found it when the probe created the folder itself.
+def _missing_dirs(target: Path) -> list[Path]:
+    """The folders ``target.mkdir(parents=True)`` would create, deepest first.
+
+    Walks up from ``target`` to the first ancestor that exists. Whatever exists is not
+    listed, so nothing the operator already had can reach ``_cleanup``.
+    """
+    missing: list[Path] = []
+    cur = target
+    while not cur.exists() and cur.parent != cur:
+        missing.append(cur)
+        cur = cur.parent
+    return missing
+
+
+def _cleanup(created: list[Path]) -> None:
+    """Leave the filesystem as we found it: remove the folders this probe created.
 
     A preflight is a QUESTION. An operator who types a path, is told it will not do, and
-    then finds an empty "OOS data" folder sitting in it has been answered with a side
-    effect. Only a directory this call made, and only while it is still empty.
+    then finds an empty "OOS data" folder -- or the empty parent folders that led to it --
+    sitting on their drive has been answered with a side effect. Only directories this
+    call made, deepest first, and only while each is still empty: ``rmdir`` refuses a
+    folder with anything in it, and the first refusal stops the walk, so a parent is
+    never removed while something it holds is kept.
     """
-    if not created_now:
-        return
-    try:
-        target.rmdir()
-    except OSError:
-        pass
+    for folder in created:
+        try:
+            folder.rmdir()
+        except FileNotFoundError:
+            continue   # never made: a mkdir that failed part-way stops short of the leaf
+        except OSError:
+            return
 
 
 def persist(raw: str) -> dict[str, Any]:

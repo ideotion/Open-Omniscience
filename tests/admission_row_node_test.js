@@ -41,6 +41,8 @@ const src =
   "function esc(s){return String(s==null?'':s).replace(/[&<>\"]/g," +
   "c=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;'}[c]));}\n" +
   "var window = {};\n" +   // OOI18N absent = the boot-time state, so t()'s fallback runs
+  // The row's "label: value" pairs go through the shared keyed-separator helper (B14 Z3).
+  extract("ooLabelHtml") + "\n" +
   extract("_admissionRow") + "\n" +
   "module.exports = { _admissionRow };";
 const { _admissionRow } = (() => {

@@ -1357,16 +1357,18 @@
       try {
         const r = await api("/api/integrity/fixity");
         const bad = (r.mismatched || 0) + (r.missing_hash || 0);
+        // fmtNum, never toLocaleString(): the browser's locale is not the app's language.
+        const n = (x) => fmtNum(x || 0, 0);
         $("fixity-summary").innerHTML =
-          `<b>${(r.checked || 0).toLocaleString()}</b> ${esc(t("checked"))} · ` +
-          `<span class="pill ok">${(r.ok || 0).toLocaleString()} ${esc(t("intact"))}</span>` +
-          (bad ? ` · <span class="pill err">${bad.toLocaleString()} ${esc(t("diverged"))}</span>` : "");
+          `<b>${n(r.checked)}</b> ${esc(t("checked"))} · ` +
+          `<span class="pill ok">${n(r.ok)} ${esc(t("intact"))}</span>` +
+          (bad ? ` · <span class="pill err">${n(bad)} ${esc(t("diverged"))}</span>` : "");
         if (bad) {
           const rows = (r.mismatches || []).slice(0, 200).map(m =>
             `<div class="vr"><span>#${m.id} ${esc(m.title || m.url || "")}</span>` +
             `<b class="muted" title="${esc(m.reason || "")}">${esc((m.stored_hash || "—").slice(0, 12))} ≠ ${esc((m.computed_hash || "").slice(0, 12))}</b></div>`).join("");
           $("fixity-result").innerHTML =
-            `<div class="note err">${esc(bad.toLocaleString())} ${esc(t("articles diverge from their capture-time hash — evidence of tampering or bit-rot. Nothing was changed."))}</div>` + rows;
+            `<div class="note err">${esc(n(bad))} ${esc(t("articles diverge from their capture-time hash — evidence of tampering or bit-rot. Nothing was changed."))}</div>` + rows;
         } else {
           $("fixity-result").innerHTML = `<div class="note ok">${esc(t("All articles match their capture-time hash."))}</div>`;
         }
@@ -1391,12 +1393,12 @@
         const r = await fetch("/api/newsletters/import", { method: "POST", body: fd });
         if (!r.ok) throw new Error("HTTP " + r.status);
         const d = await r.json(), tl = d.tally || {};
-        const n = (x) => (x || 0).toLocaleString();
+        const n = (x) => fmtNum(x || 0, 0);
         $("nl-result").innerHTML =
           `<b>${n(tl.stored)}</b> ${esc(t("imported"))} · ${n(tl.duplicate)} ${esc(t("duplicates skipped"))} · ` +
           `${n(tl.empty)} ${esc(t("empty"))}` +
           (tl.skipped_non_eml ? ` · ${n(tl.skipped_non_eml)} ${esc(t("not .eml"))}` : "") +
-          `<div class="muted" style="margin-top:5px">${esc(t("Anonymisation"))}: ` +
+          `<div class="muted" style="margin-top:5px">${esc(t("Anonymisation:"))} ` +
           `${n(tl.recipient_redactions)} ${esc(t("recipient echoes redacted"))}, ` +
           `${n(tl.tracker_params_stripped)} ${esc(t("tracker tokens stripped"))}, ` +
           `${n(tl.trackers_flagged)} ${esc(t("tracker wrappers flagged"))}.</div>`;
@@ -1409,7 +1411,7 @@
         _nlLastRun = tl;
         loadNewsletterAttach();
       } catch (e) {
-        $("nl-result").innerHTML = `<span class="note err">${esc(t("Import failed"))}: ${esc(e.message)}</span>`;
+        $("nl-result").innerHTML = `<span class="note err">${esc(t("Import failed:"))} ${esc(e.message)}</span>`;
       } finally { btn.disabled = false; }
     }
 
@@ -1427,7 +1429,7 @@
     function _attachTallyHtml(tl) {
       if (!tl) return "";
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      const n = (x) => (x || 0).toLocaleString();
+      const n = (x) => fmtNum(x || 0, 0);
       const existing = tl.attached_existing || 0, fresh = tl.attached_new_source || 0;
       const refused = tl.attach_refused || 0;
       if (!existing && !fresh && !refused) return "";
@@ -1447,11 +1449,11 @@
       // Loopback, read-only, zero network -- never ensureOnline-gated.
       try { d = await api("/api/newsletters/attach/summary"); } catch (e) { host.style.display = "none"; return; }
       if (!d || !d.attached) { host.style.display = "none"; return; }
-      const n = (x) => (x || 0).toLocaleString();
+      const n = (x) => fmtNum(x || 0, 0);
       const rows = (d.groups || []).map((g) =>
         `<div class="vr"><span>${esc(g.source_name || g.source_domain || "—")}` +
         `${g.source_enabled === false ? ` <span class="muted">${esc(t("disabled"))}</span>` : ""}</span>` +
-        `<b title="${esc(t("How this was decided"))}: ${esc(g.action || "")}${g.basis ? " · " + esc(g.basis) : ""}">${n(g.articles)}</b></div>`
+        `<b title="${esc(ooLabelText(t("How this was decided"), (g.action || "") + (g.basis ? " · " + g.basis : "")))}">${n(g.articles)}</b></div>`
       ).join("");
       // The server sends these in English; the UI renders them through the i18n engine so a
       // caveat is never the one line on the screen the reader cannot read. (Informed consent
@@ -1461,7 +1463,7 @@
       const lastRun = _attachTallyHtml(_nlLastRun);
       $("nl-attach-body").innerHTML =
         (lastRun ? `<div style="margin-bottom:6px">${lastRun}</div>` : "") +
-        `<div>${esc(t("Automatically filed newsletters"))}: <b>${n(d.attached)}</b></div>${rows}`;
+        `<div>${ooLabelHtml(esc(t("Automatically filed newsletters")), `<b>${n(d.attached)}</b>`)}</div>${rows}`;
       host.style.display = "";
     }
 
@@ -1472,24 +1474,24 @@
       try {
         // Loopback POST, zero network.
         const d = await api("/api/newsletters/attach/undo", { method: "POST" });
-        const n = (x) => (x || 0).toLocaleString();
+        const n = (x) => fmtNum(x || 0, 0);
         toast(`${n(d.restored)} ${t("newsletters moved back to the import bucket.")}`, "ok");
         $("nl-result").innerHTML =
           `<b>${n(d.restored)}</b> ${esc(t("newsletters moved back to the import bucket."))}` +
           ((d.sources_deleted || []).length
-            ? `<div class="muted" style="margin-top:5px">${esc(t("Removed the now-empty sources this filing had created"))}: ${esc(d.sources_deleted.join(", "))}</div>`
+            ? `<div class="muted" style="margin-top:5px">${esc(ooLabelText(t("Removed the now-empty sources this filing had created"), d.sources_deleted.join(", ")))}</div>`
             : "");
         _nlLastRun = null;  // the run it described has just been reversed
         await loadNewsletterAttach();
       } catch (e) {
-        $("nl-result").innerHTML = `<span class="note err">${esc(t("Undo failed"))}: ${esc(e.message)}</span>`;
+        $("nl-result").innerHTML = `<span class="note err">${esc(ooLabelText(t("Undo failed"), e.message))}</span>`;
       } finally { btn.disabled = false; }
     }
 
     // -- Local PDF-document import (mirrors the .eml importer; zero network) ----- //
     function _pdfTallyHtml(tl) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      const n = (x) => (x || 0).toLocaleString();
+      const n = (x) => fmtNum(x || 0, 0);
       let html = `<b>${n(tl.imported)}</b> ${esc(t("imported"))} · ${n(tl.duplicate)} ${esc(t("duplicates skipped"))} · ` +
         `${n(tl.skipped)} ${esc(t("skipped"))}`;
       if (tl.skipped_non_pdf) html += ` · ${n(tl.skipped_non_pdf)} ${esc(t("not PDF"))}`;
@@ -1523,7 +1525,7 @@
         input.value = "";
         toast(t("PDFs imported."), "ok");
       } catch (e) {
-        $("pdf-result").innerHTML = `<span class="note err">${esc(t("Import failed"))}: ${esc(e.message)}</span>`;
+        $("pdf-result").innerHTML = `<span class="note err">${esc(t("Import failed:"))} ${esc(e.message)}</span>`;
       } finally { btn.disabled = false; }
     }
     async function importPdfFolder(btn) {
@@ -1537,7 +1539,7 @@
         $("pdf-folder-result").innerHTML = _pdfTallyHtml(d.tally || {});
         toast(t("PDFs imported."), "ok");
       } catch (e) {
-        $("pdf-folder-result").innerHTML = `<span class="note err">${esc(t("Import failed"))}: ${esc(e.message)}</span>`;
+        $("pdf-folder-result").innerHTML = `<span class="note err">${esc(t("Import failed:"))} ${esc(e.message)}</span>`;
       } finally { btn.disabled = false; }
     }
 
@@ -1606,7 +1608,8 @@
         const d = await api("/api/newsletters/imported-count");
         const n = d.count || 0;
         panel.style.display = n > 0 ? "" : "none";
-        if (lab) lab.textContent = n > 0 ? `${n.toLocaleString()} ${t("imported newsletters in your corpus")}` : "";
+        const N = (x) => fmtNum(x || 0, 0);
+        if (lab) lab.textContent = n > 0 ? `${N(n)} ${t("imported newsletters in your corpus")}` : "";
       } catch (e) { panel.style.display = "none"; }
     }
     function downloadBackupFirst(btn) {
@@ -1621,7 +1624,8 @@
       let n = 0;
       try { n = (await api("/api/newsletters/imported-count")).count || 0; } catch (e) {}
       if (!n) { toast(t("No imported newsletters to remove."), "warn"); loadNewsletterRemoveCount(); return; }
-      if (!confirm(t("Remove") + ` ${n.toLocaleString()} ` +
+      const N = (x) => fmtNum(x || 0, 0);
+      if (!confirm(t("Remove") + ` ${N(n)} ` +
           t("imported newsletters from your corpus? This cannot be undone except from a backup."))) return;
       btn.disabled = true;
       $("nl-remove-result").textContent = t("Removing…");
@@ -1629,12 +1633,12 @@
         const d = await api("/api/newsletters/remove-imported",
           {method: "POST", body: JSON.stringify({confirm: true})});
         $("nl-remove-result").innerHTML =
-          `<b>${(d.removed_articles || 0).toLocaleString()}</b> ${esc(t("imported newsletters removed."))} ` +
+          `<b>${N(d.removed_articles)}</b> ${esc(t("imported newsletters removed."))} ` +
           esc(t("Re-import the cleaned files to replace them."));
         toast(t("Imported newsletters removed."), "ok");
         loadNewsletterRemoveCount();
       } catch (e) {
-        $("nl-remove-result").innerHTML = `<span class="note err">${esc(t("Removal failed"))}: ${esc(e.message)}</span>`;
+        $("nl-remove-result").innerHTML = `<span class="note err">${esc(ooLabelText(t("Removal failed"), e.message))}</span>`;
       } finally { btn.disabled = false; }
     }
     // -- Pull from a mailbox (IMAP/POP3) — ruling #11. English-only, except the consent
@@ -1679,7 +1683,7 @@
           return;
         }
         const res = (st && st.result) || {};
-        const tl = res.tally || {}, n = (x) => (x || 0).toLocaleString();
+        const tl = res.tally || {}, n = (x) => fmtNum(x || 0, 0);
         if (out) out.innerHTML = `<b>${n(tl.stored)}</b> ${esc(t("imported"))} · ${n(tl.duplicate)} ${esc(t("duplicates skipped"))}`
           + `<div class="muted" style="margin-top:5px">${esc(t("Anonymisation:"))} ${n(tl.recipient_redactions)} ${esc(t("recipient echoes redacted,"))} `
           + `${n(tl.tracker_params_stripped)} ${esc(t("tracker tokens stripped,"))} ${n(tl.trackers_flagged)} ${esc(t("tracker wrappers flagged."))}</div>`
@@ -1887,13 +1891,35 @@
       }
       return html;
     }
+    // The last /api/storage/lanes payload, so a language switch redraws the panel in the
+    // new locale without asking the server again. Every size in it is written by
+    // _sizeText, whose unit is translated ("35.6 MB" / "35.6 Mo"), and every line is a
+    // tf() frame welded to a measured number, so the DOM walker can repaint none of it:
+    // the panel kept the old locale for as long as it stayed open (click-through B14, Z2).
+    let _laneStorageLast = null;
+    function _paintLaneStorage(rep) {
+      if ($("storage-reading")) $("storage-reading").innerHTML = _storageReadingHtml(rep);
+      if ($("storage-lanes")) $("storage-lanes").innerHTML = _storageTableHtml(rep);
+      if ($("storage-disk")) $("storage-disk").innerHTML = _storageDiskHtml(rep);
+    }
+    // Registered in app-boot.js's ONE `oo:langchange` listener. Never fetches, and does
+    // nothing until the panel was first drawn. A budget the operator is typing survives
+    // the redraw: a language switch is not a reason to lose input.
+    function repaintLaneStorageFromCache() {
+      if (!_laneStorageLast) return;
+      const kept = {};
+      document.querySelectorAll('#storage-lanes input[id^="storage-budget-"]').forEach((el) => {
+        kept[el.id] = el.value;
+      });
+      _paintLaneStorage(_laneStorageLast);
+      Object.keys(kept).forEach((id) => { const el = $(id); if (el) el.value = kept[id]; });
+    }
     async function loadLaneStorage() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       try {
         const rep = await api("/api/storage/lanes");
-        if ($("storage-reading")) $("storage-reading").innerHTML = _storageReadingHtml(rep);
-        if ($("storage-lanes")) $("storage-lanes").innerHTML = _storageTableHtml(rep);
-        if ($("storage-disk")) $("storage-disk").innerHTML = _storageDiskHtml(rep);
+        _laneStorageLast = rep;
+        _paintLaneStorage(rep);
       } catch (e) {
         if ($("storage-lanes")) {
           $("storage-lanes").innerHTML = `<span class="note err">${esc(t("Storage could not be read:"))} ${esc(e.message)}</span>`;

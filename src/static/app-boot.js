@@ -221,6 +221,15 @@
       // redraws them from the payloads and status keys they last drew -- no fetch, and
       // nothing at all for a panel never opened.
       try { if (typeof _bulRepaint === "function") _bulRepaint(); } catch (_e) {}
+      // Settings → Data & backup → Storage and the Library overview's tiles: every size
+      // is written with its unit translated at render, inside a tf() frame or beside an
+      // interpolated count, so the walker cannot repaint them and they kept the old
+      // locale while the view stayed open (click-through B14, Z2). Both redraw from the
+      // payload they last drew -- never a fetch -- and only once they were ever drawn.
+      try { if (typeof repaintLaneStorageFromCache === "function") repaintLaneStorageFromCache(); } catch (_e) {}
+      try { if (typeof repaintLibraryOverviewFromCache === "function") repaintLibraryOverviewFromCache(); } catch (_e) {}
+      // Governments -> Groups: the aggregate cards are keyed frames drawn at render (Z4).
+      try { if (typeof repaintGovGroupFromCache === "function") repaintGovGroupFromCache(); } catch (_e) {}
       // The Observatory is the same class again, and worse: its canvas has no DOM
       // for the i18n walker to reach at all, so EVERY label it paints (the orbit
       // ticks, the domain wedge names) plus its tf()-built disclosures would stay

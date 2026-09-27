@@ -493,21 +493,21 @@
         // Detail: the per-language mention split (from /top?group=true) + unlocated + a table.
         const lb = _ringLangIndex[ringId];
         const langBd = (lb && Object.keys(lb).length)
-          ? `<div class="hint" style="margin-top:4px"><b>${esc(t("By language"))}:</b> `
+          ? `<div class="hint" style="margin-top:4px">` + ooLabelHtml(`<b>${esc(t("By language"))}</b>`,
             // Q306's display step: every language CODE on screen is 639-2/T with the
             // name in the hover -- these two lines and the group chips printed the
             // stored 639-1 (`es 84 · en 47`), the one place the sweep missed (L10).
-            + Object.entries(lb).sort((a, b) => b[1] - a[1]).map(([lg, n]) =>
-                `${lg === "?" ? esc(t("unknown")) : ooLangCell(lg)} <span class="muted">${n}</span>`).join(" · ")
+              Object.entries(lb).sort((a, b) => b[1] - a[1]).map(([lg, n]) =>
+                `${lg === "?" ? esc(t("unknown")) : ooLangCell(lg)} <span class="muted">${n}</span>`).join(" · "))
             + ` <span class="muted">— ${esc(t("mentions per language"))}</span></div>`
           : "";
         const langs = (d.languages || []).length
-          ? `<div class="hint"><b>${esc(t("Languages"))}:</b> ${(d.languages || []).map((l) => ooLangCell(l)).join(" · ")}</div>` : "";
+          ? `<div class="hint">${ooLabelHtml(`<b>${esc(t("Languages"))}</b>`, (d.languages || []).map((l) => ooLangCell(l)).join(" · "))}</div>` : "";
         // §D: the "not mapped" bucket is CLICKABLE too -- often the largest bucket,
         // and it must be investigable, never a dead end.
         const unlocNote = unloc
           ? `<button class="secondary" style="display:block;width:100%;text-align:left;margin-top:6px" onclick="_conceptDrillCountry('${esc(ringId)}', null)">`
-            + `${esc(t("Not mapped (source country unknown)"))}: ${unloc.articles} ${esc(t("articles"))} · ${unloc.mentions} ${esc(t("mentions"))}</button>` : "";
+            + ooLabelHtml(esc(t("Not mapped (source country unknown)")), `${unloc.articles} ${esc(t("articles"))} · ${unloc.mentions} ${esc(t("mentions"))}`) + `</button>` : "";
         const rows = (d.countries || []).filter(c => c.country)
           .map(c => `<tr style="cursor:pointer" onclick="_conceptDrillCountry('${esc(ringId)}','${esc(c.country)}')">`
             + `<td>${ooCountryCell(c.country)}</td><td style="text-align:right">${c.articles}</td><td style="text-align:right">${c.mentions}</td></tr>`).join("");
@@ -1154,7 +1154,7 @@
         }
       } catch (e) {
         // Additive panel — degrade quietly, never throw.
-        box.innerHTML = `<div class="muted">${esc(t("Could not load") + ": " + e.message)}</div>`;
+        box.innerHTML = `<div class="muted">${esc(t("Could not load:") + " " + e.message)}</div>`;
       }
     }
 
@@ -1211,7 +1211,7 @@
         box.innerHTML = summary + noneNote + `<div style="overflow:auto"><table>${header}${rows}</table></div>`;
       } catch (e) {
         // Additive panel — degrade quietly, never throw.
-        box.innerHTML = `<div class="muted">${esc(t("Could not load") + ": " + e.message)}</div>`;
+        box.innerHTML = `<div class="muted">${esc(t("Could not load:") + " " + e.message)}</div>`;
       }
     }
 
@@ -1260,7 +1260,7 @@
           + (d.preregistration ? `<div class="card-caveat" style="margin-top:4px">${esc(d.preregistration)}</div>` : "")
           + `<div class="card-caveat" style="margin-top:4px">${esc(t("A single test, not corrected for multiple comparisons — screen many keywords for an honest, FDR-corrected result."))}</div>`;
       } catch (e) {
-        out.innerHTML = `<div class="muted">${esc(t("Could not load") + ": " + e.message)}</div>`;
+        out.innerHTML = `<div class="muted">${esc(t("Could not load:") + " " + e.message)}</div>`;
       }
     }
 
@@ -1445,7 +1445,7 @@
         animateCount($("ins-n-entities"), s.entities);
         animateCount($("ins-n-mentions"), s.mentions);
         $("ins-pill").className = "pill " + (s.remaining === 0 ? "ok" : "warn");
-        $("ins-remaining").innerHTML = s.remaining ? `· <strong>${s.remaining.toLocaleString()}</strong> to index` : "";
+        $("ins-remaining").innerHTML = s.remaining ? `· <strong>${fmtNum(s.remaining, 0)}</strong> to index` : "";
         if (s.remaining > 0 && !_indexing) autoIndexInsights();  // background top-up; no button (§6)
       } catch (e) { if (!_insStatusBuilt) $("ins-status").textContent = _failMsg("Status unavailable: {error}", e); }
       loadLandscape();
