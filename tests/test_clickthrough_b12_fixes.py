@@ -137,7 +137,8 @@ def test_the_hover_says_part_of_the_lane_is_programs_the_app_cannot_limit():
     assert_present(body, f"t({json.dumps(_SPAWNED, ensure_ascii=False)})")
     _keyed_everywhere(_SPAWNED)
     for code, d in _locales().items():
-        assert "ollama.com" in d[_SPAWNED], f"{code}: the hostname must stay in Latin script"
+        # The hostname is a token of the sentence, kept in Latin script in every locale.
+        assert re.search(r"(?<![\w.])ollama\.com(?![\w.])", d[_SPAWNED]), f"{code}: the hostname must stay in Latin script"
 
 
 # --- X4: loopback Ollama is not stopped by airplane mode --------------------- #
