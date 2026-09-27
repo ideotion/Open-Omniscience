@@ -215,7 +215,18 @@ def test_a_chain_merges_the_plural_with_its_singular_and_a_loop_merges_neither(m
     lemmatiser LOOP stops where it closes, so the two words of the loop keep their own
     keys -- ru ``актиний`` (actinium) and ``актиния`` (a sea anemone) are two words."""
     monkeypatch.setenv("OO_EXTRACT_LEMMA", "1")
-    assert _key("cooperativas", "pt") == _key("cooperativa", "pt") == "cooperativo"
+    # Where the chain ENDS is the installed dictionary's business: simplemma 1.2.0 (the
+    # lock) takes cooperativa on to cooperativo, 1.1 stops at cooperativa. What is ours is
+    # that both forms land on that end, and that the end is a fixed point.
+    end, seen = "cooperativa", set()
+    while end not in seen and len(seen) < 8:
+        seen.add(end)
+        nxt = lemmatize(end, "pt")
+        if nxt == end:
+            break
+        end = nxt
+    assert _key("cooperativas", "pt") == _key("cooperativa", "pt") == end
+    assert _key(end, "pt") == end
     assert _key("актиний", "ru") != _key("актиния", "ru")
     assert _key("bacterias", "en") == "bacteria"
 

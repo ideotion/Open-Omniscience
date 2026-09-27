@@ -246,7 +246,10 @@ def test_a_second_run_moves_nothing_even_where_the_lemma_is_not_a_lemma(tmp_path
     s.expire_all()
     once = _mentions(s)
     keys = {t for t, _h, _c, _o in once}
-    assert "cooperativo" in keys and not ({"cooperativas", "cooperativa"} & keys), keys
+    # The plural and its singular end under ONE key -- which one is the installed
+    # dictionary's chain (cooperativo under simplemma 1.2.0, cooperativa under 1.1).
+    coop = {"cooperativas", "cooperativa", "cooperativo"} & keys
+    assert len(coop) == 1, keys
     assert "filar" not in keys, "the noun 'fila' (a queue) was filed under the verb 'to spin'"
     assert "fila" in keys and "filas" not in keys, keys
     assert first.status()["tally"].get("mentions_moved", 0) > 0

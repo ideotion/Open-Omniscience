@@ -24,6 +24,7 @@ TWO layers, and the split matters because a fix to either alone is worse than us
 from __future__ import annotations
 
 import ast
+import re
 import subprocess
 from pathlib import Path
 
@@ -190,7 +191,9 @@ def test_every_growth_render_site_routes_through_the_fallback() -> None:
     app = strip_comments(read_static("app.js"))
     for name, expected in _SITES.items():
         body = strip_comments(function_body(app, name))
-        if ".growth" not in body:
+        # A site renders growth directly (``.growth``) or through the keyed Trends frame
+        # ``trendRateText`` (B10 K-strings), which prints ``row.growth`` as a multiple.
+        if ".growth" not in body and "trendRateText(" not in body:
             raise AssertionError(f"{name} no longer renders growth -- update this guard")
         n = body.count("growthFallback(")
         assert n == expected, (
@@ -243,3 +246,21 @@ def test_growth_sentinel_node_suite() -> None:
     )
     assert proc.returncode == 0, proc.stdout + proc.stderr
     assert "passed" in proc.stdout
+
+
+def test_the_keyed_trend_frame_is_only_ever_reached_through_the_fallback() -> None:
+    """``trendRateText`` prints ``row.growth`` as a multiple ("↑{growth}×"), so it is safe
+    only where ``growthFallback`` has already said the value IS a ratio. Every call must
+    be the right-hand side of ``growthFallback(...) || trendRateText(...)``."""
+    app = strip_comments(read_static("app.js"))
+    # Each match captures the "||" before the name, or nothing; the definition
+    # ("function trendRateText(") is the one legitimate match without it.
+    calls = re.findall(r"(\|\|\s*)?trendRateText\(", app)
+    defs = app.count("function trendRateText(")
+    bare = sum(1 for c in calls if not c) - defs
+    assert defs == 1, "trendRateText is defined more than once"
+    assert len(calls) - defs > 0, "no surface calls trendRateText -- update this guard"
+    assert bare == 0, (
+        f"{bare} call(s) of trendRateText are not behind growthFallback: a count would be "
+        "printed as a multiple"
+    )
