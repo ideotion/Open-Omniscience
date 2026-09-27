@@ -230,6 +230,10 @@
       try { if (typeof repaintLibraryOverviewFromCache === "function") repaintLibraryOverviewFromCache(); } catch (_e) {}
       // Governments -> Groups: the aggregate cards are keyed frames drawn at render (Z4).
       try { if (typeof repaintGovGroupFromCache === "function") repaintGovGroupFromCache(); } catch (_e) {}
+      // Governments' other views (Countries, Compare, the aggregate lens, the group picker,
+      // the map line) and the Insights header: t()'d at render, redrawn from cache (W16/W17).
+      try { if (typeof repaintGovViewsFromCache === "function") repaintGovViewsFromCache(); } catch (_e) {}
+      try { if (typeof repaintInsightsStatusFromCache === "function") repaintInsightsStatusFromCache(); } catch (_e) {}
       // The Observatory is the same class again, and worse: its canvas has no DOM
       // for the i18n walker to reach at all, so EVERY label it paints (the orbit
       // ticks, the domain wedge names) plus its tf()-built disclosures would stay

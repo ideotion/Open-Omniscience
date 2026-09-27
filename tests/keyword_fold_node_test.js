@@ -35,7 +35,10 @@ function extract(name) {
 
 const { _foldStatusText } = (() => {
   const m = { exports: {} };
-  new Function("module", "exports", extract("_foldStatusText") + "\nmodule.exports = { _foldStatusText };")(m, m.exports);
+  // fmtNum rides along, extracted from the shipped source too: the counts go through the
+  // app's one number formatter, not the browser's locale (the 2026-09-27 leftovers, W18).
+  new Function("module", "exports",
+    extract("fmtNum") + "\n" + extract("_foldStatusText") + "\nmodule.exports = { _foldStatusText };")(m, m.exports);
   return m.exports;
 })();
 
@@ -109,5 +112,10 @@ const segs = [
 for (const s of segs) {
   assert.ok(s.startsWith("«") && s.endsWith("»"), "a segment skipped t(): " + s);
 }
+
+// --- a count is the app's number, not the browser's (W18) ------------------------------ //
+// toLocaleString() drew "12,345" under a French UI; fmtNum groups with U+202F everywhere.
+const big = _foldStatusText(run({ keywords_total: 12345, keywords_done: 6789, percent: 55 }), null, id);
+assert.ok(big.includes("6 789 of 12 345"), "a count skipped fmtNum: " + big);
 
 console.log("keyword fold status line: all assertions passed");

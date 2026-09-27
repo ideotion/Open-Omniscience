@@ -23,6 +23,15 @@ from src.catalog.countries import country_query_forms
 
 router = APIRouter(prefix="/api/stats", tags=["stats"])
 
+#: The caveat every fetch answers with. A fixed sentence, so the page looks it up as a key
+#: and it reads in all twelve languages (the 2026-09-27 leftovers, W4); the locale files
+#: are pinned against THIS constant by tests/test_clickthrough_b15_fixes.py.
+FETCH_CAVEAT = (
+    "Stored with the producer's published value + provenance only — no score. "
+    "A re-fetch later is a new vintage (revisions preserved). Producers are "
+    "compared side by side, never averaged."
+)
+
 
 @router.get("/agencies")
 def stat_agencies() -> dict:
@@ -190,11 +199,7 @@ def fetch_figures(body: FigureFetchBody) -> dict:
         "fetched": len(figures),
         **tally,
         "sample": [f.to_dict() for f in figures[:10]],
-        "caveat": (
-            "Stored with the producer's published value + provenance only — no score. "
-            "A re-fetch later is a new vintage (revisions preserved). Producers are "
-            "compared side by side, never averaged."
-        ),
+        "caveat": FETCH_CAVEAT,
     }
 
 

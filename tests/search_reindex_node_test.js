@@ -36,8 +36,10 @@ function extract(name) {
 
 const { _searchReindexStatusText: line } = (() => {
   const m = { exports: {} };
+  // fmtNum rides along, extracted from the shipped source too (the 2026-09-27 leftovers, W18).
   new Function("module", "exports",
-    extract("_searchReindexStatusText") + "\nmodule.exports = { _searchReindexStatusText };")(m, m.exports);
+    extract("fmtNum") + "\n" + extract("_searchReindexStatusText")
+      + "\nmodule.exports = { _searchReindexStatusText };")(m, m.exports);
   return m.exports;
 })();
 

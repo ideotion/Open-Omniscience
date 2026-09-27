@@ -176,12 +176,15 @@ const render = (over) => { host.innerHTML = ""; _uxRenderExportPanel({ ...base, 
   assert.ok(/applies because/.test(some), "the measured reason is not carried");
 
   const refused = render({ attribution: [], attribution_error: "Q823 (ODbL) is unanswered" });
-  assert.ok(/note err/.test(refused),
+  // The dialog's own error colour, never the floating .note toast box (W6).
+  assert.ok(/color:var\(--err\)/.test(refused) && !/note err/.test(refused),
     "an attribution REFUSAL was drawn as if nothing applied: " + refused);
   assert.ok(!/no attribution line applies/.test(refused),
     "a refusal was reported as 'none apply', which is a different fact: " + refused);
   // The backend's words stay reachable as the hover detail, and out of the sentence.
-  assert.ok(/title="Q823/.test(refused), "the refusal detail is not on the hover: " + refused);
+  // W14: behind a KEYED lead, so the hover opens in the reader's language, not the server's.
+  assert.ok(/title="The attribution query failed: Q823/.test(refused),
+    "the refusal detail is not on the hover behind its keyed lead: " + refused);
   assert.ok(/could not be completed/.test(refused), "the keyed sentence is missing: " + refused);
 }
 
@@ -205,7 +208,8 @@ const render = (over) => { host.innerHTML = ""; _uxRenderExportPanel({ ...base, 
     "the written summary path is not shown");
   // J2: a file that could not be written is NAMED, never passed over in silence.
   const failed = render({ summary_error: "Permission denied" });
-  assert.ok(/note err/.test(failed) && /summary file could not be/.test(failed) && /Permission denied/.test(failed),
+  assert.ok(/color:var\(--err\)/.test(failed) && !/note err/.test(failed)
+    && /summary file could not be/.test(failed) && /Permission denied/.test(failed),
     "a summary that could not be written is not reported: " + failed);
 }
 
@@ -361,6 +365,46 @@ const render = (over) => { host.innerHTML = ""; _uxRenderExportPanel({ ...base, 
       "a missing BACKUP_SUMMARY.md was not asked for on reopen");
     assert.ok(/\/written\/BACKUP_SUMMARY\.md/.test(missing.dom["ux-summary"].innerHTML),
       "the recovered summary path is not shown");
+
+    // W1: a large-data copy RESUMED after a pause ends on the same completion as a
+    // straight run -- the "Included:" line, BACKUP_SUMMARY.md written, the facts panel.
+    // It ended on a bare "Backup complete →" line and never wrote the summary file.
+    {
+      const dom = { "ux-progress": el(), "ux-bar": el(), "ux-pause": el(), "ux-dest": el(), "ux-summary": el() };
+      const calls = [];
+      const api = async (url, opts) => {
+        calls.push({ url, method: (opts && opts.method) || "GET" });
+        if (url === "/api/backup/export-summary") return { summary_path: A + "/BACKUP_SUMMARY.md", facts: withPath(A) };
+        throw new Error("unexpected " + url);
+      };
+      const wsrc =
+        "function esc(s){return String(s==null?'':s).replace(/[&<>\"]/g," +
+        "c=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;'}[c]));}\n" +
+        "function humanBytes(n){return String(n)+' B';}\n" +
+        "function ooServerText(s){return String(s);}\n" +
+        "var window = {}; var _uxExportDir = DIR, _uxPhase = 'folder', _uxExportFacts = null;\n" +
+        "var _uxExportIncluded = { corpus: true, blobs: ['models'] };\n" +
+        "var document = { getElementById: function(id){ return DOM[id] || null; } };\n" +
+        "function _uxShowPaused(){ DOM['ux-progress'].innerHTML = 'PAUSED'; }\n" +
+        "function _uxRun(){ throw new Error('the folder resume re-ran the whole export'); }\n" +
+        "async function _uxStartThenPoll(start){ await start(); return { state: 'done' }; }\n" +
+        extract("_uxRenderExportPanel") + "\n" + extract("_uxVerifySentence") + "\n" + extract("_uxVerifyDetail") + "\n" +
+        "async " + extract("_uxFinishExport") + "\n" +
+        "async " + extract("_uxResume") + "\n" +
+        "module.exports = { resume: _uxResume };";
+      const mod = { exports: {} };
+      const apiAll = async (url, opts) => (url === "/api/backup/folder/resume" ? { ok: true } : api(url, opts));
+      new Function("module", "exports", "DOM", "api", "DIR", wsrc)(mod, mod.exports, dom, apiAll, A);
+      await mod.exports.resume(dom["ux-pause"]);
+      const line = dom["ux-progress"].innerHTML;
+      assert.ok(/Backup complete →/.test(line) && line.includes(A), "the resumed copy did not complete: " + line);
+      assert.ok(/Included:/.test(line) && /Corpus/.test(line) && /LLM models/.test(line),
+        "the resumed copy's completion does not say what the backup holds: " + line);
+      assert.ok(calls.some((c) => c.url === "/api/backup/export-summary" && c.method === "POST"),
+        "a resumed export never wrote BACKUP_SUMMARY.md");
+      assert.ok(/BACKUP_SUMMARY\.md/.test(dom["ux-summary"].innerHTML) && /Encrypted volumes/.test(dom["ux-summary"].innerHTML),
+        "the resumed export's facts panel is not drawn: " + dom["ux-summary"].innerHTML);
+    }
 
     console.log("export panel node suite: ok");
   })().catch((e) => { console.error(e); process.exit(1); });

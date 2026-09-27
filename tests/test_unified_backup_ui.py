@@ -448,8 +448,12 @@ def test_the_corpus_data_safety_gate_survives_the_change():
 def test_the_completion_message_names_what_the_backup_actually_holds():
     """Now that the corpus can be left out, a bare "Backup complete" would let a
     models-only export read months later as a full one, and the reader has no other way
-    to tell."""
-    src = _ux_run_src()
+    to tell. The completion is one helper since W1 (a resumed large-data copy ends there
+    too), and _uxRun fixes what the export carries at its start."""
+    from tests.js_source_helper import function_body, strip_comments
+
+    assert "_uxExportIncluded = { corpus: wantCorpus, blobs: blobs.slice() };" in _ux_run_src()
+    src = strip_comments(function_body(_APP, "_uxFinishExport"))
     assert 't("Included:")' in src, "the completion line does not say what is in the backup"
     for label in ('t("Corpus")', 't("LLM models")', 't("Offline maps")', 't("Wikipedia dumps")'):
         assert f"included.push({label})" in src, f"{label} is never named in the summary"

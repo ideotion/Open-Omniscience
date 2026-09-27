@@ -1425,27 +1425,66 @@
       }
     }
 
-    let _insStatusBuilt = false;
+    // The header's words are KEYED FRAMES around the animated counters (W17): the English
+    // text nodes between the spans were not keys, so "keywords", "entities" and "to index"
+    // stayed English in every locale while "mentions" alone happened to match one. Each
+    // counter is a marker substituted after escaping, so the spans the tween writes into
+    // survive translation; data-i18n-dyn keeps the DOM walker from caching the translated
+    // frame as an "original", and repaintInsightsStatusFromCache redraws it on a switch.
+    let _insStatusBuilt = false, _insStatusLast = null;
+    function _insStatusFrame(s) {
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
+        : ((x, v) => x.replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null ? String(v[k]) : m)));
+      const n = (id, key) => {
+        const v = Math.round((s && s[key]) || 0);
+        return `<span id="${id}" data-v="${v}">${fmtNum(v, 0)}</span>`;
+      };
+      const fill = (frame, spans) => {
+        const marks = {}; Object.keys(spans).forEach((k, i) => { marks[k] = String.fromCharCode(1 + i); });
+        let html = esc(tf(frame, marks));
+        Object.keys(spans).forEach((k) => { html = html.replace(marks[k], () => spans[k]); });
+        return html;
+      };
+      const pill = fill("{indexed}/{total} articles indexed",
+        { indexed: n("ins-n-indexed", "indexed_articles"), total: n("ins-n-total", "total_articles") });
+      const kw = fill("{keywords} keywords ({entities} entities)",
+        { keywords: n("ins-n-keywords", "keywords"), entities: n("ins-n-entities", "entities") });
+      const men = fill("{mentions} mentions", { mentions: n("ins-n-mentions", "mentions") });
+      return `<span data-i18n-dyn><span class="pill" id="ins-pill">${pill}</span> · ${kw} · ${men} ` +
+        `<span id="ins-remaining" class="muted"></span></span>`;
+    }
+    function _insRemainingHtml(s) {
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
+        : ((x, v) => x.replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null ? String(v[k]) : m)));
+      if (!s || !s.remaining) return "";
+      return "· " + esc(tf("{n} to index", { n: "\u0001" }))
+        .replace("\u0001", () => `<strong>${fmtNum(s.remaining, 0)}</strong>`);
+    }
+    function _paintInsStatus(s) {
+      animateCount($("ins-n-indexed"), s.indexed_articles);
+      animateCount($("ins-n-total"), s.total_articles);
+      animateCount($("ins-n-keywords"), s.keywords);
+      animateCount($("ins-n-entities"), s.entities);
+      animateCount($("ins-n-mentions"), s.mentions);
+      $("ins-pill").className = "pill " + (s.remaining === 0 ? "ok" : "warn");
+      $("ins-remaining").innerHTML = _insRemainingHtml(s);
+    }
+    // A language switch redraws the frame from the last status, at its current values:
+    // no fetch, and no tween back up from zero.
+    function repaintInsightsStatusFromCache() {
+      if (!_insStatusBuilt || !_insStatusLast || !$("ins-status")) return;
+      $("ins-status").innerHTML = _insStatusFrame(_insStatusLast);
+      _paintInsStatus(_insStatusLast);
+    }
     async function loadInsights() {
       try {
         const s = await api("/api/insights/status");
+        _insStatusLast = s;
         if (!_insStatusBuilt) {
           _insStatusBuilt = true;
-          $("ins-status").innerHTML =
-            `<span class="pill" id="ins-pill"><span id="ins-n-indexed" data-v="0">0</span>/` +
-            `<span id="ins-n-total" data-v="0">0</span> articles indexed</span> · ` +
-            `<span id="ins-n-keywords" data-v="0">0</span> keywords ` +
-            `(<span id="ins-n-entities" data-v="0">0</span> entities) · ` +
-            `<span id="ins-n-mentions" data-v="0">0</span> mentions ` +
-            `<span id="ins-remaining" class="muted"></span>`;
+          $("ins-status").innerHTML = _insStatusFrame(null);
         }
-        animateCount($("ins-n-indexed"), s.indexed_articles);
-        animateCount($("ins-n-total"), s.total_articles);
-        animateCount($("ins-n-keywords"), s.keywords);
-        animateCount($("ins-n-entities"), s.entities);
-        animateCount($("ins-n-mentions"), s.mentions);
-        $("ins-pill").className = "pill " + (s.remaining === 0 ? "ok" : "warn");
-        $("ins-remaining").innerHTML = s.remaining ? `· <strong>${fmtNum(s.remaining, 0)}</strong> to index` : "";
+        _paintInsStatus(s);
         if (s.remaining > 0 && !_indexing) autoIndexInsights();  // background top-up; no button (§6)
       } catch (e) { if (!_insStatusBuilt) $("ins-status").textContent = _failMsg("Status unavailable: {error}", e); }
       loadLandscape();
