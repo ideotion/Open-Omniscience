@@ -527,8 +527,8 @@ _RETIRED_KEYS: dict[str, str] = {
         "The 'also scrape unqualified sources' setting has been retired (ruling Q1101, "
         "2026-09-15). A source that passes qualification is now enabled for collection "
         "automatically, so there is nothing left for the setting to relax. Every "
-        "automatic admission is listed in Settings > Sources > Admission audit, where it "
-        "can be undone."
+        "automatic admission is listed in Settings > Advanced > Quality gates > Admission "
+        "audit, where it can be undone."
     ),
 }
 # Process-global, so one boot emits one disclosure per retired key rather than one per

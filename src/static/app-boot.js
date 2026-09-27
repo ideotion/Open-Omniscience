@@ -70,6 +70,21 @@
       // "Corpus size" line stayed English in fr while the pills beside it translated.
       // Repaints from the CACHED payload, so a switch costs no request.
       try { if (typeof _renderPatternsGate === "function") _renderPatternsGate(); } catch (_e) {}
+      // Settings → Advanced → Quality gates is the same class (click-through S3): its
+      // headline, scope sentence, admission rows, floor notes and backlog line are t()
+      // and tf() frames welded to measured numbers at render time, so after a switch
+      // they stayed in the old locale while the static text around them translated.
+      // Re-read ONLY a section that was already expanded (its loader is guarded by
+      // `advLoaded`), over loopback -- a switch never fetches for a fold nobody opened.
+      // The last merge report redraws from the payload it kept, with no request at all.
+      try {
+        const qd = document.querySelector('#set-advanced details.adv-sec[data-adv="qualification"]');
+        if (qd && qd.dataset.advLoaded === "1" && typeof loadQualificationGates === "function") {
+          loadQualificationGates();
+          if (typeof loadQualifyBulk === "function") loadQualifyBulk();
+          if (typeof _renderOverlayMerge === "function") _renderOverlayMerge();
+        }
+      } catch (_e) {}
       // S04-14 (session 2): Home's "By channel" total line is built from a tf() frame
       // plus measured counts, so it is the same frozen-locale class -- the walker cannot
       // match a composed sentence against its English key. Measured in the Chromium walk:

@@ -46,7 +46,8 @@ EXPECTED_LOCALES = {"en", "fr", "es", "de", "pt", "ru", "zh", "ja", "ar", "hi", 
 RENDERERS = ("_admissionRow", "loadAdmissionAudit")
 # The overlay editor's four (Q1106 = a). Listed apart from the audit's so a failure names
 # which surface lost its keys, and so neither list can quietly absorb the other.
-OVERLAY_RENDERERS = ("loadOverlayEditor", "overlayAdopt", "overlayRevert", "overlayMerge")
+OVERLAY_RENDERERS = ("loadOverlayEditor", "overlayAdopt", "overlayRevert", "overlayMerge",
+                     "_renderOverlayMerge")
 
 
 def _locale(code: str) -> dict:
@@ -235,9 +236,12 @@ def test_the_overlay_editor_passes_the_server_prose_through_the_translator() -> 
     assert "t(d.caveat" in editor, (
         "loadOverlayEditor no longer passes the server caveat through t()"
     )
-    merge = function_body(src, "overlayMerge")
+    # The merge report is drawn by `_renderOverlayMerge` since the click-through's S3 fix
+    # (so a language switch can redraw it from the kept payload); overlayMerge calls it.
+    assert "_renderOverlayMerge()" in function_body(src, "overlayMerge")
+    merge = function_body(src, "_renderOverlayMerge")
     for expr in ("t(d.note", "t(d.conflicts_note"):
-        assert expr in merge, f"overlayMerge no longer passes {expr}...) through t()"
+        assert expr in merge, f"_renderOverlayMerge no longer passes {expr}...) through t()"
 
 
 def test_the_three_statuses_are_keyed_and_DISTINCT_in_every_locale() -> None:

@@ -3716,7 +3716,6 @@
   "Showing {shown} of {total} admissions": "{total} 件の許可のうち {shown} 件を表示",
   "{n} undone": "{n} 件取り消し済み",
   "Admission is about EXTRACTION VALIDITY only -- never editorial merit, and never a score. An undo reverses this instance's decision; it does not disqualify the source, so a later pass may admit it again.": "許可は抽出の妥当性のみを対象とします — 編集上の価値ではなく、スコアでもありません。取り消しはこのインスタンスの判断を戻すだけで、情報源を失格にはしないため、後の回で再び許可されることがあります。",
-  "The 'also scrape unqualified sources' setting has been retired (ruling Q1101, 2026-09-15). A source that passes qualification is now enabled for collection automatically, so there is nothing left for the setting to relax. Every automatic admission is listed in Settings > Sources > Admission audit, where it can be undone.": "「未審査の情報源も収集する」設定は廃止されました（裁定 Q1101、2026-09-15）。審査を通過した情報源は自動的に収集対象として有効化されるため、緩和すべきものは残っていません。自動許可はすべて「設定 > 情報源 > 許可履歴」に一覧され、そこで取り消せます。",
   "This lists admissions made by judging. Sources can also be collecting because they came stamped in the shipped catalogue, carried an inherited stamp, or arrived in a restored backup -- those are not judgements made here and have no row to undo.": "ここには審査による許可のみが一覧されます。情報源は、同梱カタログに最初からスタンプ済みで含まれていた、継承されたスタンプを持っていた、または復元されたバックアップから到着したという理由で収集されることもあります — これらはここで下された判断ではなく、取り消すべき行もありません。",
   "{n} of {total} collecting sources are not accounted for here": "収集中の {total} 件のうち {n} 件はここで説明できません",
   "unqualified": "未審査",
@@ -4731,5 +4730,6 @@
   "Paused for an import — setting each keyword's language from its mentions": "インポートのため一時停止中 — 言及から各キーワードの言語を設定する処理",
   "keyword fold paused (resumable; it survives a restart)": "キーワードの統合を一時停止しました（再開可能。再起動後も保持されます）",
   "keyword fold cancelled (what it already folded stays folded; folding again starts a new pass)": "キーワードの統合を取り消しました（統合済みの分はそのまま。再実行すると新しい処理が始まります）",
-  "keyword fold resumed": "キーワードの統合を再開しました"
+  "keyword fold resumed": "キーワードの統合を再開しました",
+  "The 'also scrape unqualified sources' setting has been retired (ruling Q1101, 2026-09-15). A source that passes qualification is now enabled for collection automatically, so there is nothing left for the setting to relax. Every automatic admission is listed in Settings > Advanced > Quality gates > Admission audit, where it can be undone.": "「未審査の情報源も収集する」設定は廃止されました（裁定 Q1101、2026-09-15）。審査を通過した情報源は自動的に収集対象として有効化されるため、緩和すべきものは残っていません。自動許可はすべて「設定 > 詳細 > 品質ゲート > 許可履歴」に一覧され、そこで取り消せます。"
 }
