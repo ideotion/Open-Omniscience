@@ -220,6 +220,26 @@ def test_arabic_names_parity_and_the_corpus_one_way_on_the_export_surface():
     ]
     assert "المجموعة المشفّرة كوحدات + تكافؤ" in intro and "المتن" not in intro, intro
     assert ar["Corpus"] == "المجموعة"
+    # The review round: the export's own passphrase toast, and the import dialog beside it
+    # (the same file, the same surface), still said المتن -- and one line said أجزاء for
+    # the volumes the rest of the dialog calls وحدات.
+    corpus_keys = [
+        "Enter a passphrase for the encrypted corpus.",
+        "Restore corpus backup",
+        "Enter the passphrase to restore the corpus.",
+        "Check the backup's manifest signature and every volume + parity checksum without "
+        "restoring anything — the live corpus is untouched.",
+        "Restore merges this backup into your corpus (additive — nothing is replaced). Continue?",
+        "Stops the import now. Before a backup's atomic swap this is a complete abort — your "
+        "corpus is untouched. After it, that backup has already merged and this stops the "
+        "remaining work (the re-index resumes later from where it left off); it is not an undo.",
+        "Stop this import? Any backup that has not yet been swapped in is abandoned completely — "
+        "your corpus is untouched. A backup already merged stays merged (there is no undo); only "
+        "the remaining work stops, and its re-index resumes later.",
+    ]
+    for k in corpus_keys:
+        assert "متن" not in ar[k] and "أجزاء" not in ar[k], f"ar {k!r}: {ar[k]!r}"
+        assert "مجموع" in ar[k], f"ar {k!r} does not name the corpus as the dialog does: {ar[k]!r}"
     # The label sits on the right in RTL and the path on its left: the arrow points left.
     for k in ("Backup complete →", "Backup incomplete →"):
         assert ar[k].endswith("←") and "→" not in ar[k], ar[k]
@@ -233,6 +253,17 @@ def test_the_export_s_brackets_are_keyed_frames():
     paint = function_body(app, "_uxPaintInventory")
     assert paint.count('tf("({text})"') == 2, "both checklist count brackets must be keyed frames"
     assert_absent(paint, '<span class="muted">(${')
+    # The import checklist and the restore's progress line had the same welded brackets.
+    scan = function_body(app, "_uxImScan")
+    assert_present(scan, 'esc(tfs("({text})", { text: "\\u0001" }))')
+    assert scan.count("${paren(") == 4 and scan.count('" " + paren(') == 1, "five checklist brackets"
+    assert_absent(scan, '<span class="muted">(', why="welded ASCII brackets on the import checklist (J-3)")
+    assert_absent(scan, "parts.push(`wiki", why="an English category word welded to a raw count")
+    assert_present(scan, "f.legacy_backup.map(x => ltr(x.name))")
+    assert_present(scan, "f.source_csv.map(ltr)")
+    view = function_body(app, "_uxProgressView")
+    assert view.count('tf("({text})"') == 2, "the merge and re-index brackets must be keyed frames"
+    assert_absent(view, '<span class="muted">(', why="welded ASCII brackets on the restore progress (J-3)")
     loc = _locales()
     assert loc["zh"]["({text})"] == "（{text}）" and loc["ja"]["({text})"] == "（{text}）"
 

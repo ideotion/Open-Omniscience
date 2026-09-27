@@ -606,7 +606,7 @@
       if (p.merge_steps) {
         const frac = Math.min(1, (p.merge_step || 0) / p.merge_steps);
         const label = p.merge_label
-          ? `${esc(_uxVolPhase("merging", s.mode, t))} <span class="muted">(${p.merge_step}/${p.merge_steps} · ${esc(p.merge_label)})</span>`
+          ? `${esc(_uxVolPhase("merging", s.mode, t))} <span class="muted">${esc(tf("({text})", { text: `${fmtNum(p.merge_step || 0, 0)}/${fmtNum(p.merge_steps, 0)} · ${p.merge_label}` }))}</span>`
           : esc(_uxVolPhase("merging", s.mode, t));
         // phaseKey scopes the rule-of-three ETA to THIS phase (see _uxPoll): the
         // merge and the re-index are different units of work at wildly different
@@ -620,7 +620,8 @@
         const rx = p.reindex_total === 1
           ? tf("{done} of {total} article", { done: fmtNum(p.reindex_done || 0, 0), total: fmtNum(p.reindex_total, 0) })
           : tf("{done} of {total} articles", { done: fmtNum(p.reindex_done || 0, 0), total: fmtNum(p.reindex_total, 0) });
-        const label = `${esc(_uxVolPhase("reindexing", s.mode, t))} <span class="muted">(${esc(rx)})</span>`;
+        // The brackets are the keyed frame (J-3), so zh and ja get their full-width pair.
+        const label = `${esc(_uxVolPhase("reindexing", s.mode, t))} <span class="muted">${esc(tf("({text})", { text: rx }))}</span>`;
         return { pct: Math.round(frac * 100), indeterminate: false, frac, phaseKey: "reindex",
           text: label + `<span class="muted">${phaseCount}</span>` };
       }
@@ -1331,32 +1332,43 @@
         const f = r.found || {};
         const rows = [];
         const corpus = Array.isArray(f.corpus) ? f.corpus : (f.corpus ? [f.corpus] : []);
+        const tfs = (window.OOI18N && OOI18N.tf)
+          ? OOI18N.tf
+          : ((str, vars) => str.replace(/\{(\w+)\}/g, (m, k) => (vars && vars[k] != null) ? String(vars[k]) : m));
+        // Every bracket on this checklist is the keyed "({text})" frame, as on the export
+        // side's (J-3): welded ASCII brackets put "(加密卷 …)" around Chinese text, where
+        // the locale writes （…）. The frame is filled with a marker and escaped, then the
+        // marker is swapped for the (already escaped) HTML, so a file name can ride inside
+        // it as an LTR isolate: in Arabic "2 .eml" drew as "eml. 2" (J-2's rule for names).
+        const paren = (html) => esc(tfs("({text})", { text: "\u0001" })).replace("\u0001", () => html);
+        const ltr = (s) => `<bdi dir="ltr" style="overflow-wrap:anywhere">${esc(s)}</bdi>`;
         if (corpus.length) {
           const nv = corpus.reduce((a, c) => a + (c.volumes || 0), 0);
-          const tfs = (window.OOI18N && OOI18N.tf)
-            ? OOI18N.tf
-            : ((str, vars) => str.replace(/\{(\w+)\}/g, (m, k) => (vars && vars[k] != null) ? String(vars[k]) : m));
           // Counts as keyed one/many frames through fmtNum (R14).
-          const where = corpus.length > 1 ? ` · ${esc(tfs("{n} sets", { n: fmtNum(corpus.length, 0) }))}` : "";
-          const vols = !nv ? "" : ` · ${esc(nv === 1 ? tfs("{n} volume", { n: fmtNum(1, 0) }) : tfs("{n} volumes", { n: fmtNum(nv, 0) }))}`;
-          rows.push(`<label class="switch" style="margin:0"><input type="checkbox" id="ux-i-corpus" checked> ${esc(t("Restore corpus backup"))} <span class="muted">(${esc(t("encrypted volumes — additive, nothing you already have is overwritten"))}${vols}${where})</span></label>`);
+          const bits = [t("encrypted volumes — additive, nothing you already have is overwritten")];
+          if (nv) bits.push(nv === 1 ? tfs("{n} volume", { n: fmtNum(1, 0) }) : tfs("{n} volumes", { n: fmtNum(nv, 0) }));
+          if (corpus.length > 1) bits.push(tfs("{n} sets", { n: fmtNum(corpus.length, 0) }));
+          rows.push(`<label class="switch" style="margin:0"><input type="checkbox" id="ux-i-corpus" checked> ${esc(t("Restore corpus backup"))} <span class="muted">${paren(esc(bits.join(" · ")))}</span></label>`);
         }
         if (f.legacy_backup && f.legacy_backup.length) {
           const n = f.legacy_backup.length;
           // One key per number (R14): an English "s" was welded onto the TRANSLATED label.
           const legacy = n === 1 ? t("Restore legacy backup file") : t("Restore legacy backup files");
-          rows.push(`<label class="switch" style="margin:0"><input type="checkbox" id="ux-i-legacy" checked> ${esc(legacy)} <span class="muted">(${esc(fmtNum(n, 0))} · ${esc(f.legacy_backup.map(x => x.name).join(", "))})</span></label>`);
+          rows.push(`<label class="switch" style="margin:0"><input type="checkbox" id="ux-i-legacy" checked> ${esc(legacy)} <span class="muted">${paren(`${esc(fmtNum(n, 0))} · ${f.legacy_backup.map(x => ltr(x.name)).join(", ")}`)}</span></label>`);
         }
         if (f.blobs) {
+          // Each category by the export checklist's own label with a keyed file count:
+          // "wiki 3 · maps 1" was English in every locale.
           const b = f.blobs, parts = [];
-          if (b.wiki) parts.push(`wiki ${b.wiki.count}`);
-          if (b.maps) parts.push(`maps ${b.maps.count}`);
-          if (b.models) parts.push(`models ${b.models.count}`);
-          rows.push(`<label class="switch" style="margin:0"><input type="checkbox" id="ux-i-blobs" checked> ${esc(t("Restore large data"))} <span class="muted">(${parts.join(" · ")})</span></label>`);
+          const files = (n) => (n === 1 ? tfs("{n} file", { n: fmtNum(n, 0) }) : tfs("{n} files", { n: fmtNum(n, 0) }));
+          if (b.wiki) parts.push(ooLabelText(t("Wikipedia dumps"), files(b.wiki.count || 0)));
+          if (b.maps) parts.push(ooLabelText(t("Offline maps"), files(b.maps.count || 0)));
+          if (b.models) parts.push(ooLabelText(t("LLM models"), files(b.models.count || 0)));
+          rows.push(`<label class="switch" style="margin:0"><input type="checkbox" id="ux-i-blobs" checked> ${esc(t("Restore large data"))} <span class="muted">${paren(esc(parts.join(" · ")))}</span></label>`);
         }
-        if (f.newsletters) rows.push(`<label class="switch" style="margin:0"><input type="checkbox" id="ux-i-eml" checked> ${esc(t("Import newsletters"))} <span class="muted">(${f.newsletters.count}${f.newsletters.capped ? "+" : ""} .eml)</span></label>`);
+        if (f.newsletters) rows.push(`<label class="switch" style="margin:0"><input type="checkbox" id="ux-i-eml" checked> ${esc(t("Import newsletters"))} <span class="muted">${paren(ltr(`${fmtNum(f.newsletters.count, 0)}${f.newsletters.capped ? "+" : ""} .eml`))}</span></label>`);
         const notes = [];
-        if (f.source_csv) notes.push(esc(t("Source CSV found — import it from the Sources panel for now.")) + ` (${esc(f.source_csv.join(", "))})`);
+        if (f.source_csv) notes.push(esc(t("Source CSV found — import it from the Sources panel for now.")) + " " + paren(f.source_csv.map(ltr).join(", ")));
         box.innerHTML = rows.join("") || `<span class="muted">${esc(t("Nothing importable found in this folder."))}</span>`;
         if (notes.length) box.innerHTML += `<p class="muted" style="margin:4px 0 0">${notes.join("<br>")}</p>`;
         // A passphrase is needed for the encrypted corpus AND for legacy archives.

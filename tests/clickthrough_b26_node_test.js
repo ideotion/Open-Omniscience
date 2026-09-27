@@ -288,6 +288,65 @@ test("H-2: the discovery result line goes through t() and redraws from the saved
   assert.strictEqual(box.textContent, "«Disabled (the default): no topic query leaves this machine.»");
 });
 
+// ------------------------------------------------------------------------------ //
+//  J-3 (review round): the import checklist and the restore's progress brackets   //
+// ------------------------------------------------------------------------------ //
+// A zh translator: the "({text})" frame is full-width, everything else is MARKED so a
+// string that skipped t() / tf() shows up bare.
+const zhFrameTf = (s, v) => (s === "({text})" ? "（{text}）" : mark(s))
+  .replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null ? String(v[k]) : m));
+
+test("J-3: every bracket on the import checklist is the keyed frame, and the large-data parts are keyed", async () => {
+  const dom = { "ux-imp-src": { ...el(), value: "/mnt/stick" }, "ux-imp-status": el(), "ux-imp-checklist": el(),
+                "ux-imp-summary": el(), "ux-imp-pass-row": el(), "ux-imp-run": el() };
+  const found = {
+    corpus: [{ path: "/mnt/stick/a", volumes: 3 }, { path: "/mnt/stick/b", volumes: 2 }],
+    legacy_backup: [{ name: "old.oob" }],
+    blobs: { wiki: { count: 3 }, maps: { count: 1 }, models: { count: 2 } },
+    newsletters: { count: 12, capped: false },
+    source_csv: ["sources.csv"],
+  };
+  const I18N = { t: mark, tf: zhFrameTf };
+  const src = ESC +
+    "function fmtNum(n){ return String(n); }\n" +
+    "function toast(){}\n" +
+    "async function _uxImTrustRow(){}\n" +
+    "var _uxImFound = null, _uxImSrc = '';\n" +
+    "var document = { getElementById: function(id){ return DOM[id] || null; } };\n" +
+    extract("ooLabelText") + "\n" +
+    "async " + extract("_uxImScan") + "\n" +
+    "return { run: _uxImScan };";
+  const mod = new Function("window", "OOI18N", "DOM", "api", src)(
+    { OOI18N: I18N }, I18N, dom, async () => ({ found }));
+  await mod.run(el());
+  const html = dom["ux-imp-checklist"].innerHTML;
+  assert.ok(!html.replace(/（[^）]*）/g, "").includes("("), "an ASCII bracket is still welded in code: " + html);
+  assert.strictEqual((html.match(/（/g) || []).length, 5, "corpus, legacy, large data, newsletters and the CSV note: " + html);
+  assert.ok(html.includes("（«encrypted volumes — additive, nothing you already have is overwritten» · «5 volumes» · «2 sets»）"), html);
+  assert.ok(html.includes("«Wikipedia dumps»") && html.includes("«LLM models»"), "the large-data categories are not keyed: " + html);
+  assert.ok(!/wiki 3|maps 1|models 2/.test(html), "English category words welded to raw counts: " + html);
+  // File names ride inside the frame as LTR isolates, so Arabic does not draw "eml. 12".
+  for (const name of ["old.oob", "12 .eml", "sources.csv"]) {
+    assert.ok(html.includes(`<bdi dir="ltr" style="overflow-wrap:anywhere">${name}</bdi>`), name + " is not isolated: " + html);
+  }
+});
+
+test("J-3: the restore's merge and re-index brackets are the keyed frame", () => {
+  const src = ESC +
+    "function fmtNum(n){ return String(n); }\n" +
+    "function humanBytes(n){ return n + ' B'; }\n" +
+    "function _uxEta(){ return ''; }\n" +
+    "function _uxVolPhase(phase){ return '«' + phase + '»'; }\n" +
+    extract("_uxPhaseCount") + "\n" + extract("_uxProgressView") + "\n" +
+    "return { view: _uxProgressView };";
+  const I18N = { t: mark, tf: zhFrameTf };
+  const mod = new Function("window", "OOI18N", src)({ OOI18N: I18N }, I18N);
+  const merge = mod.view("volumes", { mode: "restore", progress: { merge_step: 3, merge_steps: 14, merge_label: "articles" } }, mark).text;
+  assert.ok(merge.includes("（3/14 · articles）") && !/\(3\/14/.test(merge), "the merge line: " + merge);
+  const rx = mod.view("volumes", { mode: "restore", progress: { reindex_done: 5, reindex_total: 10 } }, mark).text;
+  assert.ok(rx.includes("（«5 of 10 articles»）") && !/\(«5/.test(rx), "the re-index line: " + rx);
+});
+
 Promise.all(pending).then(() => {
   console.log(`clickthrough b26 node suite: ${n} ok`);
 }).catch((e) => { console.error(e); process.exit(1); });
