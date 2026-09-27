@@ -80,6 +80,10 @@ _CACHE: dict[str, dict] = {}
 # One build lock PER KEY: a cold /figures must not block a warm /stats behind it.
 _BUILD_LOCKS: dict[str, threading.Lock] = {}
 _BUILD_LOCKS_GUARD = threading.Lock()
+# key -> when the background recount now in flight for it started (under _LOCK).
+# Published as ``recount_running_s``, so a client can say "the server is busy"
+# only when a recount has MEASURABLY failed to finish, never from age alone.
+_RECOUNT_STARTED: dict[str, float] = {}
 # Only a handful of fixed keys exist (they are module constants at the call
 # sites, never user input), but bound the dict anyway.
 _MAX_KEYS = 16
@@ -136,13 +140,31 @@ def _iso(epoch: float) -> str:
     return datetime.fromtimestamp(epoch, UTC).isoformat(timespec="seconds")
 
 
-def _decorate(entry: dict, *, ttl_s: int, cached: bool, now: float) -> dict:
+def _decorate(
+    entry: dict,
+    *,
+    ttl_s: int,
+    cached: bool,
+    now: float,
+    verified: bool = False,
+    recount_started: float | None = None,
+) -> dict:
     """Attach the visible freshness disclosure to a DEEP COPY of the cached payload.
 
     A deep copy because ``{**payload}`` copies only the top level: a caller that
     mutated a nested dict in a served result (``counts`` here) would corrupt the
     shared object every later serve reuses. These payloads are small maps of
     integers, so copying them is nothing next to the scan being avoided.
+
+    AGE IS NOT STALENESS. ``cache_age_s`` is time since the value was BUILT, and on
+    an idle app it grows without bound because nothing is ever rebuilt -- correctly,
+    since nothing was written. Home read every such value as "(server busy)" beside
+    "Automatic collection: stopped" (2026-09-27 re-walk H-1, P-5, T-4, U-1). So the
+    payload also says what the server KNOWS: ``verified_current`` is true only when
+    the write counter proves nothing was written since ``as_of`` (the value is exact
+    now, whatever its age; a missing probe is never read as verified), and
+    ``recount_running_s`` is how long the background recount in flight has run, or
+    ``None`` when none is -- a measurement a "busy" claim can rest on.
     """
     built_at = entry["built_at"]
     out = copy.deepcopy(entry["payload"])
@@ -151,7 +173,16 @@ def _decorate(entry: dict, *, ttl_s: int, cached: bool, now: float) -> dict:
     out["as_of"] = _iso(built_at)
     out["cache_age_s"] = max(0, int(now - built_at))
     out["cached"] = bool(cached)
+    out["verified_current"] = bool(verified)
+    out["recount_running_s"] = (
+        None if recount_started is None else max(0, int(now - recount_started))
+    )
     return out
+
+
+def _recount_started(key: str) -> float | None:
+    with _LOCK:
+        return _RECOUNT_STARTED.get(key)
 
 
 def _store(key: str, payload: dict, bind: object | None, probe: int | None) -> None:
@@ -201,6 +232,8 @@ def _kick_background_refresh(key: str, compute) -> None:
     lock = _build_lock(key)
     if not lock.acquire(blocking=False):
         return  # a rebuild for this key is already running
+    with _LOCK:
+        _RECOUNT_STARTED[key] = time.time()
 
     def _run() -> None:
         # The probe is read BEFORE the compute: a write that lands mid-scan must
@@ -210,9 +243,18 @@ def _kick_background_refresh(key: str, compute) -> None:
         try:
             refresh(key, compute, probe=before)
         finally:
+            with _LOCK:
+                _RECOUNT_STARTED.pop(key, None)
             lock.release()
 
-    threading.Thread(target=_run, name=f"served-cache-{key}", daemon=True).start()
+    try:
+        threading.Thread(target=_run, name=f"served-cache-{key}", daemon=True).start()
+    except Exception:
+        # A thread that never started must not look in flight, nor hold the lock.
+        with _LOCK:
+            _RECOUNT_STARTED.pop(key, None)
+        lock.release()
+        raise
 
 
 def cached(key: str, compute, session: Session, *, ttl_s: int) -> dict:
@@ -232,8 +274,9 @@ def cached(key: str, compute, session: Session, *, ttl_s: int) -> dict:
 
     if snapshot is not None:
         age = now - snapshot["checked_at"]
+        verified = probe is not None and probe == snapshot["probe"]
         if age >= ttl_s:
-            if probe is not None and probe == snapshot["probe"]:
+            if verified:
                 # Nothing was written since this value was computed, so it is not
                 # merely fresh enough -- it is still exactly right. Re-stamp the
                 # CHECK time and leave built_at alone, so `as_of` keeps telling the
@@ -244,7 +287,8 @@ def cached(key: str, compute, session: Session, *, ttl_s: int) -> dict:
                         live["checked_at"] = now
             else:
                 _kick_background_refresh(key, compute)
-        return _decorate(snapshot, ttl_s=ttl_s, cached=True, now=now)
+        return _decorate(snapshot, ttl_s=ttl_s, cached=True, now=now, verified=verified,
+                         recount_started=_recount_started(key))
 
     # Cold (or a bind we may not answer for): compute ONCE, under the per-key
     # build lock, and let concurrent cold callers reuse that one result.
@@ -255,11 +299,16 @@ def cached(key: str, compute, session: Session, *, ttl_s: int) -> dict:
             servable = entry is not None and _same_bind(session, entry.get("bind"))
             snapshot = dict(entry) if (servable and entry is not None) else None
         if snapshot is not None:
-            return _decorate(snapshot, ttl_s=ttl_s, cached=True, now=time.time())
+            later = change_probe()
+            return _decorate(snapshot, ttl_s=ttl_s, cached=True, now=time.time(),
+                             verified=later is not None and later == snapshot["probe"],
+                             recount_started=_recount_started(key))
         fresh = compute(session)
         _store(key, fresh, _bind_of(session), probe)
         built = {"payload": fresh, "built_at": time.time()}
-        return _decorate(built, ttl_s=ttl_s, cached=False, now=time.time())
+        later = change_probe()
+        return _decorate(built, ttl_s=ttl_s, cached=False, now=time.time(),
+                         verified=probe is not None and later == probe)
 
 
 def invalidate(key: str | None = None) -> None:

@@ -35,7 +35,11 @@
       // select_sources admits); the three sum to the flat total by construction.
       sources_qualified: "Sources collecting",
       sources_pending: "Enabled, not qualified",
-      sources_candidates: "Discovered candidates",
+      // Labelled by its PREDICATE (`enabled IS FALSE`), not by the largest population
+      // inside it -- the old label, Discovered candidates, also counted a qualified source
+      // the operator had switched off and one whose admission was undone (re-walk S-10,
+      // Q1114).
+      sources_candidates: "Not enabled",
     };
     // The long form of each split figure, for the #oo-tip hover (invariant #17): what it
     // counts, and that it is one part of the total. The visible surface keeps the
@@ -43,7 +47,7 @@
     const HOME_SOURCE_SPLIT_HOVER = {
       sources_qualified: "{n} of your {total} sources: enabled AND qualified — what collection actually reaches. This is the headline source count.",
       sources_pending: "{n} of your {total} sources: enabled but not qualified — awaiting a verdict, or judged and refused. Collection does not reach them.",
-      sources_candidates: "{n} of your {total} sources: discovered candidates, not enabled, awaiting review. Collection does not reach them.",
+      sources_candidates: "{n} of your {total} sources: not enabled — discovered candidates awaiting review, and any source switched off or whose admission was undone. Collection does not reach them.",
     };
     const HOME_SOURCE_SPLIT_KEYS = ["sources_qualified", "sources_pending", "sources_candidates"];
     function homeStatLabel(k) {
@@ -114,10 +118,20 @@
     // minute or two old -- and a number that is quietly old is worse than one that
     // says how old it is. Below the threshold nothing is added: stamping every
     // render with an age would turn a normal reading into a warning.
+    //
+    // AN OLD VALUE IS NOT A STALE ONE. `cache_age_s` counts from the value's BUILD, and
+    // an idle app never rebuilds (nothing was written), so the age grew without bound
+    // and every idle install read "(server busy)" beside "Automatic collection: stopped"
+    // (2026-09-27 re-walk H-1, P-5, T-4, U-1). The server now says what it knows
+    // (served_cache._decorate): a value it VERIFIED unchanged gets no note at all, and
+    // "server busy" is said only when a recount has been running for at least the
+    // cache's own interval -- measured, never inferred from age. Anything else behind a
+    // write says only that a recount is pending.
     const _STALE_NOTE_S = 90;
     function homeStatsAgeNote(payload, t) {
       const age = payload && payload.cache_age_s;
       if (!(typeof age === "number" && age >= _STALE_NOTE_S)) return "";
+      if (payload.verified_current === true) return "";
       // The time comes from the payload's own as_of, never from the browser clock
       // minus an age -- two clocks would disagree and the payload's is the one
       // that describes the measurement.
@@ -134,7 +148,10 @@
         }
       } catch (e) { stamp = ""; }
       if (!stamp) return "";
-      return t("as of {time} (server busy)").replace("{time}", stamp);
+      const run = payload.recount_running_s, ttl = payload.cache_ttl_s;
+      const busy = typeof run === "number" && typeof ttl === "number" && run >= ttl;
+      const frame = busy ? t("as of {time} (server busy)") : t("as of {time} (recount pending)");
+      return frame.replace("{time}", stamp);
     }
     function renderHomeStats(counts, payload, fromCache) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
@@ -229,10 +246,19 @@
       // t(): the colon is the locale's to write (French puts a space before it, Chinese and
       // Japanese use a full-width one). The frame is translated with a placeholder the
       // pill's markup then replaces, so the pill stays markup and the words stay a key.
+      //
+      // The state WORD is inside the frame too, one whole sentence per state, with the
+      // pill's edges as two markers the translator places: the generic "stopped" key is
+      // shared with the scheduler pill, and its French 'arrêté' could not agree with the
+      // feminine 'collecte' (re-walk U-10, 'Collecte automatique : arrêté').
       const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
         : ((s, v) => String(s).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? String(v[k]) : m));
-      const pill = `<span class="pill ${running ? "ok" : ""}">${esc(t(running ? "running" : "stopped"))}</span>`;
-      const [pre, post] = tf("Automatic collection: {state}", {state: "\u0001"}).split("\u0001");
+      const line = running
+        ? tf("Automatic collection: {pill}running{endpill}", {pill: "\u0001", endpill: "\u0002"})
+        : tf("Automatic collection: {pill}stopped{endpill}", {pill: "\u0001", endpill: "\u0002"});
+      const [pre, rest] = line.split("\u0001");
+      const [word, post] = String(rest || "").split("\u0002");
+      const pill = `<span class="pill ${running ? "ok" : ""}">${esc(word || "")}</span>`;
       el.innerHTML = esc(pre) + pill + esc(post || "") + " " +
         `· <span class="muted">${esc(priv)}</span>`;
     }
@@ -250,6 +276,14 @@
     const _FEED_MARK_KEY = "oo.feed.mark";     // the cursor reached, per order
     const _FEED_ORDER_KEY = "oo.feed.order";
     let _feedBusy = false, _feedDone = false, _feedHeld = null;
+    // What the walk has DRAWN, so a language switch repaints the Feed without a request:
+    // every row appended so far, the last page (its method + caveat), and the last
+    // failure's message (null when the last page landed). The controls, the held-back
+    // line, "Load more" and each card's chrome are written with t() in the reader's
+    // language, and the DOM walker records a node's FIRST-SEEN text as "the English", so
+    // after a switch that started in French they stayed French in ar, zh and en (re-walk
+    // T-3, found again on this tab by the batch review). See _repaintFeed.
+    let _feedRows = [], _feedLast = null, _feedErr = null;
     // Bumped by every restart (reshuffle, start-from-the-top, order switch). A page
     // that was already in flight when one of those happened belongs to the ORDER the
     // reader just left, so it is discarded on arrival rather than appended.
@@ -300,6 +334,7 @@
       // flight without the two of them racing to append.
       _feedGen++; _feedBusy = false;
       _feedDone = false; _feedHeld = null;
+      _feedRows = []; _feedLast = null; _feedErr = null;
       const list = $("feed-list"); if (list) list.innerHTML = "";
       loadFeed(true);
     }
@@ -337,7 +372,7 @@
       const more = (a.excerpt_full || "").length > (a.excerpt || "").length;
       return `<article class="feed-card" data-aid="${a.id}">`
         + `<h3 class="feed-t"><a href="${esc(a.reader_url)}" target="_blank" rel="noopener">`
-        + `${esc(a.title) || '<span class="muted">(untitled)</span>'}</a></h3>`
+        + `${esc(a.title) || `<span class="muted">${esc(t("(untitled)"))}</span>`}</a></h3>`
         + `<div class="feed-meta muted">${esc(a.source || "")}`
         + (when ? ` · ${esc(when)}` : "")
         + (lang ? ` · ${ooLangCell(lang)}` : "")
@@ -391,25 +426,64 @@
         // make impossible, so this page is dropped instead.
         if (gen !== _feedGen) return;
         if (d.held_back) _feedHeld = d.held_back;
-        list.insertAdjacentHTML("beforeend", (d.results || []).map(_feedCard).join(""));
+        const rows = d.results || [];
+        list.insertAdjacentHTML("beforeend", rows.map(_feedCard).join(""));
+        for (const a of rows) _feedRows.push(a);
+        _feedLast = d; _feedErr = null;
         _feedSetMark(order, d.next_cursor || "");
         _feedDone = !d.has_more || !d.next_cursor;
         _feedNote(d);
-        if (more) {
-          more.innerHTML = _feedDone
-            ? `<div class="muted" style="margin:10px 0">${esc(t("That is the end of this pass."))}</div>`
-            : `<button class="tiny" onclick="loadFeed(false)">${esc(t("Load more"))}</button>`;
-        }
+        if (more) more.innerHTML = _feedMoreHtml();
       } catch (e) {
         // Same reason as the discard above: a page the reader has already navigated away
         // from must not report ITS failure over the walk that replaced it.
-        if (gen === _feedGen && more) {
-          more.innerHTML = `<div class="note err">${esc((e && e.message) || t("The feed could not load."))}</div>`;
+        if (gen === _feedGen) {
+          _feedErr = (e && e.message) || "";
+          if (more) more.innerHTML = _feedMoreHtml();
         }
       } finally {
         // Only the CURRENT walk may release the flag: a discarded page returning late
         // would otherwise clear the busy flag of the walk that replaced it.
         if (gen === _feedGen) _feedBusy = false;
+      }
+    }
+    // The line under the list, from what the walk last reached: the end of the pass, more
+    // to load, or the last failure (the server's own words, or the keyed fallback).
+    function _feedMoreHtml() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      if (_feedErr != null) return `<div class="note err">${esc(_feedErr || t("The feed could not load."))}</div>`;
+      return _feedDone
+        ? `<div class="muted" style="margin:10px 0">${esc(t("That is the end of this pass."))}</div>`
+        : `<button class="tiny" onclick="loadFeed(false)">${esc(t("Load more"))}</button>`;
+    }
+    // THE REPAINT, called from app-boot.js's ONE `oo:langchange` listener. Redraws the
+    // controls, the cards, the note and the line under the list from what the walk already
+    // holds -- NEVER a fetch, and nothing at all for a Feed that was never opened. A card
+    // the reader had expanded stays expanded: it is the same text, in a new frame.
+    function _repaintFeed() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const ctl = $("feed-controls"), list = $("feed-list"), more = $("feed-more");
+      if (!ctl || !ctl.children.length) return;
+      _feedControls();
+      if (list && _feedLast) {
+        const open = new Set();
+        list.querySelectorAll('.feed-x[data-open="1"]').forEach((p) => {
+          const c = p.closest(".feed-card"); if (c) open.add(c.getAttribute("data-aid"));
+        });
+        list.innerHTML = _feedRows.map(_feedCard).join("");
+        if (open.size) {
+          list.querySelectorAll(".feed-card").forEach((c) => {
+            if (!open.has(c.getAttribute("data-aid"))) return;
+            const b = c.querySelector('button[onclick^="_feedExpand"]');
+            if (b) _feedExpand(b);
+          });
+        }
+        _feedNote(_feedLast);
+      }
+      if (more) {
+        // A page in flight writes its own line when it lands, in the new language.
+        if (_feedBusy) more.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
+        else if (_feedLast || _feedErr != null) more.innerHTML = _feedMoreHtml();
       }
     }
 
@@ -542,6 +616,7 @@
     // Hidden until the corpus has recent articles so Home is never blank-and-silent (the
     // Briefing still renders); when it HAS articles but none pass the gates it shows the
     // panel with an honest "loosen the gates" message so the controls stay reachable.
+    let _homeLatestPayload = null;   // the last payload read; see _renderHomeLatest
     async function loadHomeLatest() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const panel = $("home-latest-panel"), box = $("home-latest");
@@ -552,6 +627,9 @@
       const tg = (($("latest-tag") || {}).value || "").trim();
       const collapse = ($("latest-collapse") ? $("latest-collapse").checked : true) ? "1" : "0";
       box.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
+      // Dropped first, so a failed read leaves nothing a language switch could redraw
+      // over the hidden panel.
+      _homeLatestPayload = null;
       try {
         const p = new URLSearchParams({
           limit: "12", min_words: String(mw), min_sources: String(ms),
@@ -559,7 +637,21 @@
         });
         if (ct) p.set("content_type", ct);
         if (tg) p.set("tag", tg);
-        const d = await api("/api/insights/latest?" + p.toString());
+        _homeLatestPayload = await api("/api/insights/latest?" + p.toString());
+        _renderHomeLatest();
+      } catch (e) { panel.hidden = true; box.innerHTML = ""; }
+    }
+    // THE LAST PAYLOAD and ITS RENDER HALF, split for the same reason as the channel
+    // chips below: the rows carry their channel's NAME, "words" and "cited sources"
+    // translated at render time, and the facet options likewise, so after a live switch
+    // they stayed in the old language (the frozen-locale class, re-walk T-3 / U-8).
+    // `oo:langchange` redraws from the payload, never a fetch.
+    function _renderHomeLatest() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const panel = $("home-latest-panel"), box = $("home-latest");
+      const d = _homeLatestPayload;
+      if (!panel || !box || !d) return;
+      {
         const arts = d.articles || [];
         const types = d.available_content_types || {};
         const tags = d.available_tags || [];
@@ -570,7 +662,7 @@
         }
         panel.hidden = false;
         _fillLatestFacet($("latest-channel"), t("All channels"),
-          Object.keys(types).map(k => ({v: k, label: k, n: types[k]})));
+          Object.keys(types).map(k => ({v: k, label: homeChannelLabel(k), n: types[k]})));
         _fillLatestFacet($("latest-tag"), t("All tags"),
           tags.map(x => ({v: x.tag, label: x.tag, n: x.articles})));
         if (!arts.length) {
@@ -586,7 +678,7 @@
           const wc = (a.word_count != null && !a.unsegmented)
             ? `${esc(String(a.word_count))} ${esc(t("words"))}` : "";
           const cs = `${esc(String(a.cited_sources || 0))} ${esc(t("cited sources"))}`;
-          const chan = src.source_type ? `<span class="pill">${esc(src.source_type)}</span>` : "";
+          const chan = src.source_type ? `<span class="pill">${esc(homeChannelLabel(src.source_type))}</span>` : "";
           const facts = [wc, cs].filter(Boolean).join(" · ");
           // Spread honesty (anti-false-triangulation): count DISTINCT OTHER outlets that
           // ran the same story (the backend's deduped `also_reported_by`, which excludes
@@ -600,7 +692,7 @@
             + `<div class="muted small" style="margin-top:2px">${chan} ${facts}${also}</div></div>`;
         }).join("")
           + `<div class="hint muted" style="font-size:11px;margin-top:6px">${esc(d.caveat || "")}</div>`;
-      } catch (e) { panel.hidden = true; box.innerHTML = ""; }
+      }
     }
     // Populate a Latest facet <select> once (preserving the current selection), an "all"
     // default first then each option with its article count. Idempotent: repopulates so a
@@ -632,6 +724,34 @@
     // listener, and split this way so that repaint costs no request -- the switch must
     // never ask the backend anything behind the reader.
     let _homeChannelsPayload = null;
+    // A channel's NAME for the reader, keyed x12; the raw `source_type` stays the value
+    // every filter and click uses. The chips printed the raw codes ('news', 'hazard',
+    // 'legal') in every locale while the hint above them named the channels in the
+    // reader's language, so one panel spoke two vocabularies (re-walk U-8). The keys are
+    // the types the app's own ingest paths assign plus the catalog's; a type this map
+    // does not know is shown as the code itself -- data, never a guessed name.
+    const HOME_CHANNEL_LABELS = {
+      news: "News", newsletter: "Newsletters", legal: "Legal", law: "Law",
+      hazard: "Hazards", wiki: "Wiki", wikipedia: "Wikipedia", statistics: "Statistics",
+      document: "Documents", cited: "Cited sources", unknown: "Unknown type", untyped: "Untyped",
+      broadcaster: "Broadcasters", "scientific-journal": "Scientific journals",
+      magazine: "Magazines", gazette: "Gazettes", stock_exchange: "Stock exchanges",
+      "wire-agency": "Wire agencies", investigative: "Investigative outlets",
+      commodity: "Commodities", "government-primary": "Government (primary)",
+      financial: "Financial", "academic-research": "Academic research",
+      scientific: "Scientific", ip: "Intellectual property", "fact-checker": "Fact-checkers",
+      geopolitical: "Geopolitical", technology: "Technology", "think-tank": "Think tanks",
+      case_law: "Case law", blog: "Blogs", religious: "Religious", institution: "Institutions",
+      igo: "Intergovernmental organisations", "ngo-civil-society": "NGOs and civil society",
+      "data-portal": "Data portals", "financial-data": "Financial data",
+    };
+    function homeChannelLabel(code) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const k = String(code == null ? "" : code);
+      const name = Object.prototype.hasOwnProperty.call(HOME_CHANNEL_LABELS, k.toLowerCase())
+        ? HOME_CHANNEL_LABELS[k.toLowerCase()] : null;
+      return name ? t(name) : k;
+    }
     async function loadHomeChannels() {
       const panel = $("home-channels-panel"), box = $("home-channels");
       if (!panel || !box) return;
@@ -674,9 +794,15 @@
         const totalLine = (window.OOI18N && OOI18N.tf)
           ? OOI18N.tf("{n} articles across {k} channels", {n: fmtNum(total), k: facets.length})
           : `${fmtNum(total)} articles across ${facets.length} channels`;
+        // Each chip's hover names ITS channel and the raw type it filters on, from the
+        // same map as its label, so the two cannot drift apart again (U-8).
+        const tfr = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
+          : ((s, v) => String(s).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? String(v[k]) : m));
+        const hover = (f) => tfr("{channel}: the channel its sources assert (source type “{code}”), never a quality score. Click to explore its articles.",
+          {channel: homeChannelLabel(f.source_type), code: f.source_type});
         box.innerHTML = `<div class="hint muted" style="margin-bottom:4px">${esc(totalLine)}</div>`
           + `<div style="display:flex;gap:6px;flex-wrap:wrap">` + facets.map(f =>
-          `<button class="chip" onclick="openChannelCorpus(${esc(JSON.stringify(f.source_type))})" title="${esc(t("An asserted content channel (newsletter, web article, wiki, statistic, law, market, discovery), never a quality score. Click a channel to explore its corpus."))}">${esc(f.source_type)} <span class="muted">${esc(String(f.articles))} · ${esc(share(f.articles))}</span></button>`).join("")
+          `<button class="chip" onclick="openChannelCorpus(${esc(JSON.stringify(f.source_type))})" title="${esc(hover(f))}" data-i18n-dyn>${esc(homeChannelLabel(f.source_type))} <span class="muted">${esc(fmtNum(f.articles))} · ${esc(share(f.articles))}</span></button>`).join("")
           + `</div>`;
       }
     }
@@ -690,7 +816,7 @@
         const d = await api("/api/articles?source_type=" + encodeURIComponent(st) + "&limit=1000");
         const ids = (d.results || []).map(a => a.id).filter(Boolean);
         if (!ids.length) { toast(t("No articles for this channel yet.")); return; }
-        openAnalysisForIds(ids, t("Channel: {c}").replace("{c}", st));
+        openAnalysisForIds(ids, t("Channel: {c}").replace("{c}", homeChannelLabel(st)));
       } catch (e) { toast((e && e.message) || String(e), "err"); }
     }
     // Home "Most recent by tag" (item #36 / Home helicopter view): a recency LENS onto the
@@ -712,6 +838,13 @@
         await loadHomeRecentList(sel.value);
       } catch (e) { panel.hidden = true; }
     }
+    // THE LAST ROWS READ, so a LANGUAGE SWITCH repaints the list without a request. Its
+    // empty-state line and link hovers are written with t() in the reader's language,
+    // and the DOM walker records a node's FIRST-SEEN text as "the English": a line
+    // painted in French was then looked up as a key in every later language and stayed
+    // French in ar, zh and en (re-walk T-3). Null until a read lands, and after a failed
+    // one, whose message is the server's own words and has nothing to repaint.
+    let _homeRecentLast = null;
     async function loadHomeRecentList(tag) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const panel = $("home-recent-panel"), box = $("home-recent");
@@ -721,15 +854,10 @@
       try {
         const q = "/api/articles?tags=" + encodeURIComponent(tag) + "&sort_by=date&sort_dir=desc&limit=8";
         const d = await api(q);
-        const rows = d.results || [];
-        if (!rows.length) { box.innerHTML = `<div class="muted">${esc(t("No articles for this tag yet."))}</div>`; panel.hidden = false; return; }
-        box.innerHTML = rows.map(a => {
-          const meta = [esc(a.source || ""), esc(String(a.published_at || "").slice(0, 10))].filter(Boolean).join(" · ");
-          return `<div class="home-recent-row"><a href="/api/articles/${a.id}/view" target="_blank" rel="noopener" title="${esc(t("offline stored copy"))}">${esc(a.title || t("(untitled)"))}</a>`
-            + (meta ? ` <span class="muted">— ${meta}</span>` : "") + `</div>`;
-        }).join("");
-        panel.hidden = false;
+        _homeRecentLast = {rows: d.results || []};
+        _renderHomeRecent();
       } catch (e) {
+        _homeRecentLast = null;
         // home-recent-panel-hidden-on-error (P1): both SUCCESS paths above clear
         // `hidden`, but this catch branch set an honest error message into the
         // panel's own box while leaving the panel itself hidden -- the message was
@@ -738,6 +866,21 @@
         box.innerHTML = `<div class="muted">${esc(e && e.message || e)}</div>`;
         panel.hidden = false;
       }
+    }
+    // THE RENDER HALF: reads only the cached rows, so `oo:langchange` (app-boot.js) can
+    // call it freely. Returns quietly when nothing has been read yet.
+    function _renderHomeRecent() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const panel = $("home-recent-panel"), box = $("home-recent");
+      const rows = _homeRecentLast && _homeRecentLast.rows;
+      if (!panel || !box || !rows) return;
+      if (!rows.length) { box.innerHTML = `<div class="muted">${esc(t("No articles for this tag yet."))}</div>`; panel.hidden = false; return; }
+      box.innerHTML = rows.map(a => {
+        const meta = [esc(a.source || ""), esc(String(a.published_at || "").slice(0, 10))].filter(Boolean).join(" · ");
+        return `<div class="home-recent-row"><a href="/api/articles/${a.id}/view" target="_blank" rel="noopener" title="${esc(t("offline stored copy"))}">${esc(a.title || t("(untitled)"))}</a>`
+          + (meta ? ` <span class="muted">— ${meta}</span>` : "") + `</div>`;
+      }).join("");
+      panel.hidden = false;
     }
     // Home "Trending now" glance (UI rethink, Home → helicopter view). Compact +
     // REDUNDANT by design: the past-week RISING keywords (the disclosed window-vs-
