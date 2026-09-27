@@ -15242,3 +15242,26 @@ the re-walk, not on this one.
 merged batches, each defect with a test that fails before it and a Chromium check; a fix that needs a ruling, a
 migration or a re-index is DEFERRED with the change it would make, and is listed here rather than dropped.
 
+**Deferred from the fixes (2026-09-27), each with the change it would make.** OPEN until ruled or scheduled:
+- **M11, the fold-refusal half** (the label half shipped: a keyword whose mentions are split across languages
+  names the split). Keys are language-agnostic by design, so the fold merges English «errors» and Spanish
+  «errores» into one key «error», and the majority vote (Q414) then labels the shared row Spanish. The change:
+  in `fold_page` and `_get_or_create_keyword`, skip a mention whose language differs from every language already
+  recorded for the target. It changes stored keys, and it breaks the fold's «equal to a lemmatised re-index»
+  test on Dutch «studies» → «studie», so it needs a ruling (S04-06's S5 forbids it as the brief stands).
+- **The «spread across {n} sources» card under Q411.** The card now carries the term as `title_vars` like the
+  rising card, so the serve-time pass can show its translation; whether its title keeps the trailing «spread
+  across {n} sources» clause beside Q411's «"{term_translation}" (translated from {term_lang}: {term})» form is a
+  template choice Q411 did not make.
+- **Explicit `OO_DATA_DIR` and the first-launch data-location step.** `unlock.html`'s `legalToDataLocation`
+  comment says an explicit `OO_DATA_DIR` skips the step; the backend's `offerable` ignores `explicit_override`, so
+  it is offered anyway. Which one is right is a product decision; the code and the comment must end up agreeing.
+- **Stage 3 after a kill in an import's tail** (the deferred sub-part of I4). A run killed after its stage-4 read
+  now boots as finished, but `optimize_after_bulk` (stage 3) is not re-run on boot, so full-text segments stay
+  unmerged until the next import or re-index. The fix is a boot-time writer, which the deferred-startup path does
+  not host today.
+- **A stored briefing keeps its old law-card title until the next briefing refresh** after the L fixes changed
+  how a law card names its country. Cosmetic and self-healing; noted so a re-walk does not re-report it.
+- **The analysis mind map's per-node tag lines** add clutter where node words already overlap in the top
+  cluster (predates the walk). A layout question for the mind-map rules, not a defect of the tag itself.
+

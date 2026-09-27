@@ -9946,3 +9946,17 @@ dialog's top layer covering it. Measure what is topmost at the point
 
 **STILL OWED.** Fix the confirmed defects, then re-walk the nine failed rows; each row's operator
 steps are unchanged.
+
+## 2026-09-27 — The click-through defects fixed before the tag (R36, PR #1191)
+
+**WHAT.** All 115 confirmed defects of the delegated walk, plus 22 more the fix batches found beside
+their own work, fixed in merged batches; each with a test that fails before it and a Chromium check
+where visible. Deferred with the change each would make: M11's fold-refusal half and the «spread
+across» card's clause under Q411 (both in `OPEN_QUEUE.md`).
+
+**LESSONS** (copied to `LESSONS.md`). A test that pins a third-party library's answer is a test of
+that version, and CI installs two simplemma versions: assert the property (one pass is a fixed
+point), not the word. A fix that localises a number's decimal mark broke the ruled `fmtNum`
+convention; only a unit's written form translates.
+
+**STILL OWED.** The re-walk of the failed rows; each row's operator steps are unchanged.

@@ -12443,3 +12443,27 @@ en/fr/zh). **A check that stands in for a human's eyes must ask what is TOPMOST 
 whether the element exists and has a size. Any floating UI a modal can cover (tooltips, toasts,
 menus) needs that check, or it must itself enter the top layer (a popover, or a child of the open
 dialog).**
+
+### A TEST THAT PINS A THIRD-PARTY LIBRARY'S ANSWER IS A TEST OF THAT VERSION, AND CI RUNS TWO (2026-09-27, the click-through fixes)
+
+The keyword fix batch pinned the Portuguese lemma chain as the lock file's simplemma 1.2.0 answers
+it («cooperativas» → «cooperativa» → «cooperativo»). CI's core-only job installs simplemma 1.1.x,
+whose dictionary stops one step earlier, so three tests went red there and green everywhere else,
+including on the machine that wrote them. The property the fix exists for is version-free: ONE
+pass of `lemma_key` reaches a fixed point, so a second pass moves nothing. The tests now compute the
+chain's end from the installed library and assert that property, and were run under both versions
+before the push. **When a test's expected value comes from someone else's data (a dictionary, a
+segmenter, a model), assert the property your code guarantees about that data, not the value one
+release of it happens to give; and when CI installs more than one set of versions, run the test
+under each before calling it green.**
+
+### A FIX THAT "LOCALISES" A NUMBER CAN BREAK THE ONE RULED NUMBER FORMAT (2026-09-27, the click-through fixes)
+
+The byte-unit batch made sizes follow the UI language by formatting the number with
+`Intl.NumberFormat(lang)`, so French read «35,6 Mo». The app's ruled number writer, `fmtNum`, writes
+a decimal POINT in every locale (Latin digits, SI style), and the same panel showed «1.2 s» beside
+it: two conventions for one quantity on one screen, introduced by a fix for a translation defect.
+Only the unit's written form translates (Mo, МБ, the Arabic unit words); the number keeps `fmtNum`'s
+convention (c2bc6f3b). **Before a translation fix touches how a number is written, find the app's
+ruled formatter and write through it: a locale's decimal mark is a number-format decision, and this
+one was already made.**
