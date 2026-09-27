@@ -480,18 +480,52 @@ def lemma_key(
     fold job would file old mentions under one keyword and new articles would keep
     filing the same word under another, which is the split the job exists to remove.
     The opt-out (``OO_EXTRACT_LEMMA``) is the caller's to check, not this function's.
+
+    ONE PASS IS A FIXED POINT (M10, the delegated click-through of 2026-09-26). The
+    lemmatiser's own answer is not always one: pt ``cooperativas`` -> ``cooperativa`` ->
+    ``cooperativo``, and measured over its dictionaries about 3% of pt entries and 20% of de
+    ones take a second step. Adopting only the first step made the fold move a keyword
+    again on every run, and made extraction file ``cooperativas`` under a key that
+    ``cooperativa`` itself does not use. So the chain is FOLLOWED, each step through the
+    same guards the first one passes, and the key is where it stops:
+
+    * at a fixed point (the lemma of the lemma is itself);
+    * at the last step that passed the guards, when the next one would be filtered
+      (for the first step that is ``word``, exactly as before);
+    * at the node the walk RETURNS to, when the lemmatiser loops (en ``bacteria`` <->
+      ``bacterium``, ru ``актиний`` <-> ``актиния``, which are two words). That node's own
+      walk comes back to it, so it keys to itself, and the two words of the loop are never
+      merged with each other -- only the forms that lead into the loop are;
+    * at ``word`` itself when the walk runs past :data:`_LEMMA_CHAIN_MAX` steps.
+
+    Following rather than refusing a multi-step lemma is deliberate: refusing would keep
+    ``cooperativas`` apart from ``cooperativa``, a plural split from its singular, where
+    following merges them both into the one key a second pass leaves alone. Every value
+    this returns is its own key, which is what makes a re-run of the fold a no-op.
     """
-    lem = extraction_lemma(word, language, kind="term")
-    if lem == word:
-        return word
-    if (
-        len(lem) < _term_floor(lem, segmented)
-        or lem in stop
-        or lem.isdigit()
-        or (code_filter and _is_code_token_shape(lem))
-    ):
-        return word  # a lemma that would have been filtered is not a usable key
-    return lem
+    key = word
+    seen = {word}
+    for _ in range(_LEMMA_CHAIN_MAX):
+        lem = extraction_lemma(key, language, kind="term")
+        if lem == key:
+            return key
+        if (
+            len(lem) < _term_floor(lem, segmented)
+            or lem in stop
+            or lem.isdigit()
+            or (code_filter and _is_code_token_shape(lem))
+        ):
+            return key  # a lemma that would have been filtered is not a usable key
+        if lem in seen:
+            return lem  # the lemmatiser loops: stop where the loop closes
+        seen.add(lem)
+        key = lem
+    return word  # an unusually long walk: keep the word rather than guess where it ends
+
+
+#: How far :func:`lemma_key` follows a lemma chain. The longest walk measured over the
+#: nine lemmatised dictionaries (simplemma 1.2.0, 2026-09-27) is six steps, in Dutch.
+_LEMMA_CHAIN_MAX = 8
 
 
 @dataclass

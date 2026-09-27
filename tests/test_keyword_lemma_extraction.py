@@ -137,6 +137,100 @@ def test_lemmatisation_is_idempotent(monkeypatch):
         assert lemmatize(key, "en") == key, f"a second pass moved the key again: {key!r}"
 
 
+#: Words whose lemma is NOT itself a fixed point of the lemmatiser, one or more per
+#: lemmatised language, found by walking simplemma 1.2.0's dictionaries (2026-09-27).
+#: Each is a chain (pt cooperativas -> cooperativa -> cooperativo) or a loop (en bacteria
+#: <-> bacterium) -- the two shapes the M10 fold defect came from.
+_CHAINS = {
+    "de": ("gemässigten", "ermäßigt"),
+    "en": ("bacterias", "bacteria", "bacterium", "brahmins"),
+    "es": ("apuestas", "calces"),
+    "fr": ("abstenue", "abstenu"),
+    "id": ("menarikan", "semenarik"),
+    "it": ("abbandonata", "abbandonati"),
+    "nl": ("aaitjes", "aaien", "afghaantjes"),
+    "pt": ("cooperativas", "cooperativa", "abinha"),
+    "ru": ("актиниев", "актиния", "актиний"),
+}
+
+
+def _key(word: str, language: str) -> str:
+    from src.analytics.extract import _stopset, lemma_key
+
+    return lemma_key(word, language, stop=_stopset(language), segmented=False, code_filter=True)
+
+
+def _dictionary_chains(language: str, cap: int = 1500) -> list[str]:
+    """Up to ``cap`` dictionary words of ``language`` whose lemma lemmatises again.
+
+    The dictionary is read through simplemma's own factory, which is an internal surface,
+    so a different release that moves it returns nothing here and the fixed words above
+    still carry the test. Sorted, then strided, so the sample is the same on every run."""
+    try:
+        from simplemma.strategies import DefaultDictionaryFactory
+
+        d = DefaultDictionaryFactory().get_dictionary(language)
+    except Exception:  # noqa: BLE001 - an internal surface; the fixed list still runs
+        return []
+    found = sorted(
+        str(k) for k, v in d.items()
+        if isinstance(k, str) and k == k.lower() and v in d and d[v] != v
+    )
+    step = max(1, len(found) // cap)
+    return found[::step][:cap]
+
+
+@_needs_lemmatizer
+@pytest.mark.parametrize("language", sorted(LEMMA_LANGS))
+def test_one_pass_of_lemma_key_is_a_fixed_point_in_every_lemmatised_language(
+    language, monkeypatch
+):
+    """M10 (the delegated click-through of 2026-09-26): the fold moved 27 mentions on its
+    SECOND run, because ``lemma_key`` adopted a lemma that is not itself a lemma
+    (pt ``cooperativas`` -> ``cooperativa``, whose own lemma is ``cooperativo``).
+
+    The property the fold and extraction share is on ``lemma_key``, not on ``lemmatize``:
+    whatever key a word is filed under must key to itself, or a re-index and a second fold
+    both walk it one step further. Asserted in EVERY lemmatised language, over the words
+    that exercise it -- a list of plain words would pass while measuring nothing, which is
+    how the English-only version of this test stayed green over the defect."""
+    monkeypatch.setenv("OO_EXTRACT_LEMMA", "1")
+    words = list(_CHAINS[language]) + _dictionary_chains(language)
+    # ANTI-VACUITY: at least one word here must need a second step, or this proves nothing.
+    assert any(lemmatize(lemmatize(w, language), language) != lemmatize(w, language)
+               for w in words), f"{language}: no word in the sample exercises a lemma chain"
+    moved = []
+    for w in words:
+        once = _key(w, language)
+        twice = _key(once, language)
+        if twice != once:
+            moved.append(f"{w!r} -> {once!r} -> {twice!r}")
+    assert not moved, f"{language}: a second pass moves the key again: " + "; ".join(moved[:10])
+
+
+@_needs_lemmatizer
+def test_a_chain_merges_the_plural_with_its_singular_and_a_loop_merges_neither(monkeypatch):
+    """The chain is FOLLOWED rather than refused: refusing a multi-step lemma would keep
+    ``cooperativas`` and ``cooperativa`` apart, a plural split from its singular. And a
+    lemmatiser LOOP stops where it closes, so the two words of the loop keep their own
+    keys -- ru ``актиний`` (actinium) and ``актиния`` (a sea anemone) are two words."""
+    monkeypatch.setenv("OO_EXTRACT_LEMMA", "1")
+    assert _key("cooperativas", "pt") == _key("cooperativa", "pt") == "cooperativo"
+    assert _key("актиний", "ru") != _key("актиния", "ru")
+    assert _key("bacterias", "en") == "bacteria"
+
+
+@_needs_lemmatizer
+def test_the_queue_is_not_filed_under_the_verb_to_spin(monkeypatch):
+    """M10: pt ``fila`` (a queue, a row) lemmatises to the verb ``filar`` (to spin), and
+    the seeded fold filed the noun under the verb. Denylisted, so the noun keeps its key
+    and its plural joins it."""
+    monkeypatch.setenv("OO_EXTRACT_LEMMA", "1")
+    assert lemmatize("fila", "pt") == "fila"
+    assert _key("fila", "pt") == "fila"
+    assert _key("filas", "pt") == "fila"
+
+
 @_needs_lemmatizer
 def test_the_lemma_is_computed_per_language_and_never_across_them():
     """`families.py`'s rule, enforced at the index. A German plural must not be resolved
