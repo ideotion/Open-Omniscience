@@ -129,10 +129,9 @@ def test_the_size_panels_repaint_on_a_language_switch_without_a_fetch():
 _Z3_FILES = ("app-home.js", "app-library.js", "app-settings.js", "app-insights.js",
              "app-ai-tools.js", "app-core.js", "taskmanager.html")
 #: Left, each in a region another batch owned while this one ran.
-_Z3_LEFT = {
-    ("app-home.js", "Trending now"): "the Trends strip was the keyword batch's region",
-    ("app-ai-tools.js", "app folder, not in use"): "the model-store sizes were the import batch's region",
-}
+# Empty since B16 (V13, V14) moved the two it held onto the label frame. Kept as the
+# place a deliberate exception would be written down, with its reason.
+_Z3_LEFT: dict[tuple[str, str], str] = {}
 
 
 def test_no_label_on_a_walked_surface_welds_its_own_colon():
