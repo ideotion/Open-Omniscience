@@ -5734,5 +5734,8 @@
   "Person": "Персона",
   "Organisation": "Организация",
   "Place": "Место",
-  "Entity": "Сущность"
+  "Entity": "Сущность",
+  "import {batch} ({articles})": "импорт {batch} ({articles})",
+  "engine not recorded": "движок не записан",
+  "Sources already judged here are counted per backup, below: the backups of one run overlap, so those counts are not added up.": "Источники, уже оценённые здесь, подсчитаны отдельно для каждой резервной копии ниже: копии одного запуска пересекаются, поэтому эти числа не суммируются."
 }

@@ -36,7 +36,7 @@ from pydantic import BaseModel
 
 from src.backup.artifact import ArtifactError, StagedArtifact, cleanup_staging, read_artifact
 from src.backup.merge import MergeError, RestoreRefused, run_restore
-from src.jobs.background import BackgroundJob, register_job
+from src.jobs.background import BackgroundJob, Framed, register_job
 from src.scheduler.runner import exclusive_window_open
 
 _LOG = logging.getLogger("api.backup_v2")
@@ -897,7 +897,10 @@ def _reindex_resume_worker(ctx, **_kw) -> dict:
         raise RuntimeError(f"could not read the re-index backlog: {bk.get('reason')}")
 
     batches = bk.get("batches") or []
-    ctx.set_progress(done=0, total=int(bk.get("articles_pending") or 0), detail="starting")
+    # The same job's first line, keyed too (I-6's class): "starting" matched no key, so it
+    # printed in English wherever the task manager looked it up.
+    ctx.set_progress(done=0, total=int(bk.get("articles_pending") or 0),
+                     detail=Framed("starting…", "starting…"))
     out: dict = {"batches": [], "articles_reindexed": 0, "articles_failed": 0, "stopped": False}
     walked = 0
     # The measured split, accumulated ACROSS batches and republished after each one, so a
@@ -1005,7 +1008,17 @@ def _reindex_resume_worker(ctx, **_kw) -> dict:
                 out["paused_for_import"] = not stopping
                 break
             bid = int(b["batch_id"])
-            ctx.set_progress(detail=f"import {bid} ({b['articles']} article(s))")
+            # A keyed FRAME beside the English (2026-09-27 re-walk, I-6): a plain str left
+            # detail_i18n null, so the task manager printed "import 2 (1200 article(s))"
+            # in every language with its count ungrouped. The count is its own one/many
+            # phrase (the task manager formats the number); the batch id is data.
+            n_art = int(b["articles"])
+            ctx.set_progress(detail=Framed(
+                f"import {bid} ({n_art} article(s))", "import {batch} ({articles})",
+                batch=str(bid),
+                articles={"i18n": "{n} article" if n_art == 1 else "{n} articles",
+                          "vars": {"n": n_art}},
+            ))
 
             def _progress(done: int, _total: int, _base: int = walked) -> None:
                 ctx.set_progress(done=_base + done)

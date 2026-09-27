@@ -5734,5 +5734,8 @@
   "Person": "人物",
   "Organisation": "組織",
   "Place": "場所",
-  "Entity": "固有名"
+  "Entity": "固有名",
+  "import {batch} ({articles})": "インポート {batch}（{articles}）",
+  "engine not recorded": "エンジン未記録",
+  "Sources already judged here are counted per backup, below: the backups of one run overlap, so those counts are not added up.": "ここで判定済みのソースは、下のバックアップごとに数えています。1 回の実行に含まれるバックアップは重複するため、これらの数は合算しません。"
 }

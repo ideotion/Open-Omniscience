@@ -5734,5 +5734,8 @@
   "Person": "व्यक्ति",
   "Organisation": "संगठन",
   "Place": "स्थान",
-  "Entity": "इकाई"
+  "Entity": "इकाई",
+  "import {batch} ({articles})": "आयात {batch} ({articles})",
+  "engine not recorded": "इंजन दर्ज नहीं",
+  "Sources already judged here are counted per backup, below: the backups of one run overlap, so those counts are not added up.": "यहाँ पहले से जाँचे गए स्रोत नीचे हर बैकअप के लिए अलग से गिने गए हैं: एक ही रन के बैकअप एक-दूसरे से मेल खाते हैं, इसलिए ये गिनतियाँ जोड़ी नहीं जातीं।"
 }

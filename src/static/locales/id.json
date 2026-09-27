@@ -5734,5 +5734,8 @@
   "Person": "Orang",
   "Organisation": "Organisasi",
   "Place": "Tempat",
-  "Entity": "Entitas"
+  "Entity": "Entitas",
+  "import {batch} ({articles})": "impor {batch} ({articles})",
+  "engine not recorded": "mesin tidak tercatat",
+  "Sources already judged here are counted per backup, below: the backups of one run overlap, so those counts are not added up.": "Sumber yang sudah dinilai di sini dihitung per cadangan, di bawah: cadangan dalam satu proses saling tumpang tindih, jadi jumlah tersebut tidak dijumlahkan."
 }

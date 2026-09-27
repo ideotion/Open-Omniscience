@@ -5734,5 +5734,8 @@
   "Person": "شخص",
   "Organisation": "منظمة",
   "Place": "مكان",
-  "Entity": "كيان"
+  "Entity": "كيان",
+  "import {batch} ({articles})": "الاستيراد {batch} ({articles})",
+  "engine not recorded": "محرك غير مسجَّل",
+  "Sources already judged here are counted per backup, below: the backups of one run overlap, so those counts are not added up.": "تُحصى المصادر التي سبق الحكم عليها هنا لكل نسخة احتياطية على حدة، أدناه: النسخ الاحتياطية في عملية واحدة تتداخل، لذا لا تُجمع هذه الأعداد."
 }

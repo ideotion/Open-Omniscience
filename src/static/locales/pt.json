@@ -5734,5 +5734,8 @@
   "Person": "Pessoa",
   "Organisation": "Organização",
   "Place": "Lugar",
-  "Entity": "Entidade"
+  "Entity": "Entidade",
+  "import {batch} ({articles})": "importação {batch} ({articles})",
+  "engine not recorded": "motor não registado",
+  "Sources already judged here are counted per backup, below: the backups of one run overlap, so those counts are not added up.": "As fontes já julgadas aqui são contadas por backup, abaixo: os backups de uma mesma execução sobrepõem-se, por isso essas contagens não são somadas."
 }

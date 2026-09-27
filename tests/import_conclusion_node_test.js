@@ -358,6 +358,52 @@ test("Y9: a per-item free-space refusal is written from the keyed frame", () => 
   assert(!html.includes("Not enough free space for the restore"), html);
 });
 
+// ── the 2026-09-27 re-walk (B25) ─────────────────────────────────────────────
+// The persisted per-item reports of the re-walk's cumulative run (rep-5..8.json):
+// each item's "kept" is read against the corpus as that item found it, which the items
+// before it had already grown, so the four overlap.
+const qual = (kept, introQ, introD, engines, disagreed) => ({ _source_qualification: {
+  introduced_qualified: introQ, introduced_disqualified: introD, adopted_qualified: 0,
+  adopted_disqualified: 0, local_verdict_kept: kept, local_verdict_disagreed: disagreed || 0,
+  engines: engines } });
+const okq = (title, q) => ({ title, state: "done", elapsed_s: 5, plan: Object.assign(plan(10, 0), q) });
+const CUMULATIVE = [
+  okq("b5", qual(6400, 21, 1, { unrecorded: 1, v1: 21 })),
+  okq("b6", qual(6422, 4, 0, { v1: 4 })),
+  okq("b7", qual(6418, 0, 0, {})),
+  okq("b8", qual(14, 0, 0, {})),
+];
+const RUN4 = { state: "done", elapsed_s: 60, items_done: 4, items_total: 4 };
+
+test("I-1: per-backup 'already judged here' snapshots are never added up", () => {
+  const html = render(CUMULATIVE, RUN4);
+  assert(!/19.254/.test(html), "the four snapshots were summed into one figure: " + html);
+  assert(html.includes("counted per backup"), "the aggregate must say why it shows no total: " + html);
+  // each backup keeps ITS figure, in its own detail -- four lines, one per backup
+  assert((html.match(/Already judged here, kept: /g) || []).length === 4, html);
+  for (const n of [/kept: 6.400/, /kept: 6.422/, /kept: 6.418/, /kept: 14</]) {
+    assert(n.test(html), "a backup's own figure is missing: " + n);
+  }
+  // the counters that ARE disjoint across items still add up
+  assert(html.includes("Qualified sources added: 25"), html);
+  assert(html.includes("Arrived disqualified: 1"), html);
+});
+
+test("I-1: a single backup's snapshot is the run's and is stated in the aggregate", () => {
+  const html = render([okq("one", qual(6400, 21, 1, { v1: 22 }, 3))],
+                      { state: "done", elapsed_s: 5, items_done: 1, items_total: 1 });
+  assert(/Already judged here, kept: 6.400/.test(html), html);
+  assert(html.includes("Backup disagreed, your verdict kept: 3"), html);
+  assert(!html.includes("counted per backup"), "one backup has nothing to overlap with: " + html);
+});
+
+test("I-2: the merge's 'unrecorded' sentinel is worded, a real version stays data", () => {
+  const html = render(CUMULATIVE, RUN4);
+  assert(html.includes("engine not recorded (1)"), html);
+  assert(!/unrecorded \(/.test(html), "the backend's sentinel was printed as an engine name: " + html);
+  assert(html.includes("v1 (25)"), "a criteria version is data and stays as it is: " + html);
+});
+
 test("_uxFmtDur refuses to invent a duration it does not have", () => {
   assert(mod._uxFmtDur(null) === "—", "a missing measurement is not 0 s");
   assert(mod._uxFmtDur(undefined) === "—", "undefined is not 0 s");
