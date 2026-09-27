@@ -1731,11 +1731,14 @@
       // Flip cards (maintainer 2026-06-23): the front is the lead at a glance; the
       // BACK carries the method + the exact math + the caveat + evidence + the action
       // row. The verbose "why"/math is no longer behind a per-card "?" — the flip IS
-      // the detail layer (the back has room). Labels are i18n-translated; math values
+      // the detail layer (the back has room). The plain sentence is ONE constant per
+      // card type and each math label a constant, so both go through t() here, exactly
+      // as the analysis window's provenance block does (re-walk L-2: the "Why am I
+      // seeing this?" sentence stayed English under a translated method); math values
       // are numbers/symbols (language-neutral).
       const _whyRows = (c.trigger && c.trigger.math || []).map(r =>
-        `<tr><td>${esc(r.label)}</td><td class="why-val">${esc(r.value)}</td></tr>`).join("");
-      const _whyPlain = (c.trigger && c.trigger.plain) ? `<p class="why-plain">${esc(c.trigger.plain)}</p>` : "";
+        `<tr><td>${esc(t(r.label))}</td><td class="why-val">${esc(r.value)}</td></tr>`).join("");
+      const _whyPlain = (c.trigger && c.trigger.plain) ? `<p class="why-plain">${esc(t(c.trigger.plain))}</p>` : "";
       const methodBlock = c.method ? `<div class="mc">${ooLabelHtml(`<b>${esc(t("Method"))}</b>`, esc(cardText(c, "method")))}</div>` : "";
       const mathBlock = _whyRows
         ? `<details class="card-info"><summary>${esc(t("The exact math"))}</summary>

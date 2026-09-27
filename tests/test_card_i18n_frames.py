@@ -21,7 +21,10 @@ What is pinned here, and why each is not a grep:
     survive translation);
   * the laundering card of L-1 renders in French/Arabic/Chinese from its frames, end to
     end through the real producer;
-  * "1 source candidate await your review" (M-6) is now a whole singular frame.
+  * "1 source candidate await your review" (M-6) is now a whole singular frame;
+  * the back face -- the "Why am I seeing this?" sentence, the math labels and every
+    word a frame's ``tr`` var can carry (the eight emotions, the tiers) -- is keyed too,
+    and Home puts the sentence and labels through t() (review of L-2).
 The Home renderer that consumes the frames is proven in tests/card_frames_node_test.js.
 """
 
@@ -304,6 +307,128 @@ def test_every_card_type_has_a_keyed_type_label(locales):
     assert types <= set(labels), sorted(types - set(labels))
     for card_type, label in labels.items():
         _assert_keyed(label, locales, f"type label {card_type}")
+
+
+# --------------------------------------------------------------------------- #
+#  the back face: "Why am I seeing this?" and "The exact math" (review of L-2)
+# --------------------------------------------------------------------------- #
+def _module_dicts(tree: ast.Module) -> dict[str, ast.Dict]:
+    out: dict[str, ast.Dict] = {}
+    for node in tree.body:
+        if isinstance(node, ast.Assign) and isinstance(node.value, ast.Dict):
+            for target in node.targets:
+                if isinstance(target, ast.Name):
+                    out[target.id] = node.value
+    return out
+
+
+def _assigned(fn: ast.AST, name: str) -> list[ast.AST]:
+    return [
+        n.value for n in ast.walk(fn)
+        if isinstance(n, ast.Assign) and any(isinstance(t, ast.Name) and t.id == name for t in n.targets)
+    ]
+
+
+def _trigger_texts() -> tuple[dict[str, str], dict[str, str], list[str]]:
+    """Every ``_trigger(plain, math_rows)`` a producer can emit, from producers.py's AST:
+    the plain sentence (a literal, a local chosen between two literals, or a module
+    dict indexed by tier) and every constant math-row label. Labels built from data
+    are returned apart, as source text, so the caller can say which are expected."""
+    rel = "src/briefing/producers.py"
+    tree = ast.parse((_ROOT / rel).read_text("utf-8"))
+    dicts = _module_dicts(tree)
+    plains: dict[str, str] = {}
+    labels: dict[str, str] = {}
+    dynamic: list[str] = []
+    for fn in ast.walk(tree):
+        if not isinstance(fn, ast.FunctionDef):
+            continue
+        for call in ast.walk(fn):
+            if not (isinstance(call, ast.Call) and getattr(call.func, "id", "") == "_trigger"):
+                continue
+            plain, math = call.args
+            if isinstance(plain, ast.Name):
+                found = [s for v in _assigned(fn, plain.id) for s in _strs(v)]
+            elif isinstance(plain, ast.Subscript) and getattr(plain.value, "id", "") in dicts:
+                found = [s for v in dicts[plain.value.id].values for s in _strs(v)]
+            else:
+                found = _strs(plain)
+            assert found, f"{rel}:{call.lineno}: a trigger sentence this scan cannot read"
+            for s in found:
+                plains.setdefault(s, f"{rel}:{call.lineno}")
+            rows = [math] if isinstance(math, ast.List) else (
+                _assigned(fn, math.id) if isinstance(math, ast.Name) else [])
+            for lst in rows:
+                for row in getattr(lst, "elts", []):
+                    texts = _strs(row.elts[0]) if isinstance(row, ast.Tuple) else []
+                    for s in texts:
+                        labels.setdefault(s, f"{rel}:{row.lineno}")
+                    if not texts:
+                        dynamic.append(ast.unparse(row.elts[0] if isinstance(row, ast.Tuple) else row))
+    return plains, labels, dynamic
+
+
+def test_every_trigger_sentence_is_keyed_in_all_twelve_locales(locales):
+    """The back face's "Why am I seeing this?" sentence was English for 25 of the 31
+    constant sentences (the laundering card included, right under its French method),
+    plus the three hazard-tier sentences and one of the two reading-diet ones."""
+    plains, _labels, _dynamic = _trigger_texts()
+    assert len(plains) >= 36, len(plains)  # a floor: a scan that stops finding them fails
+    for text, where in plains.items():
+        _assert_keyed(text, locales, where)
+
+
+def test_every_math_label_is_keyed_in_all_twelve_locales(locales):
+    """The labels of "The exact math" beside it. A label built from a module constant is
+    keyed at its current value (tuning the constant re-keys it here, not in a walk);
+    the one label that carries data -- the dominant emotion -- is the known exception."""
+    from src.briefing import producers as p
+
+    _plains, labels, dynamic = _trigger_texts()
+    assert len(labels) >= 115, len(labels)
+    for text, where in labels.items():
+        _assert_keyed(text, locales, where)
+    built = {
+        f"Articles collected in the last {p._DIET_DAYS} days",
+        f"Articles collected in the last {p._COVERAGE_DAYS} days",
+        f"Fastest source: articles per day (last {p._CAPACITY_DAYS} days)",
+    }
+    for term in ({"recent": 50, "prior": 30, "growth": 5}, {"recent": 5, "prior": 0, "growth": 5},
+                 {"recent": 5, "prior": 3, "growth": 5}):
+        for prefix in ("", "Its "):
+            built.add(p._growth_math_row(term, prefix=prefix)[0])
+    for text in built:
+        _assert_keyed(text, locales, "built math label")
+    assert sorted(set(dynamic)) == sorted({
+        "_growth_math_row(term)",
+        "_growth_math_row(top, prefix='Its ')",
+        "f'Articles collected in the last {_DIET_DAYS} days'",
+        "f'Articles collected in the last {_COVERAGE_DAYS} days'",
+        "f'Fastest source: articles per day (last {_CAPACITY_DAYS} days)'",
+        "f\"Of which in the leading category ({prof['dominant']})\"",
+    }), sorted(set(dynamic))
+
+
+def test_every_translated_frame_value_is_keyed(locales):
+    """A frame's ``tr`` var holds a WORD the reader's t() translates (an emotion, a tier,
+    "an unknown source"). Four of the eight lexicon emotions had no key in any locale,
+    so a sadness-dominant card read « sadness » inside a French title."""
+    from src.awareness.emotion import load_lexicon
+    from src.briefing import producers as p
+
+    lexicon, _version = load_lexicon()
+    assert len(lexicon) == 8, sorted(lexicon)
+    for word in (*lexicon, *p._TIER_LABELS.values(), "an unknown source"):
+        _assert_keyed(word, locales, f"tr value {word!r}")
+
+
+def test_home_back_face_translates_the_trigger():
+    """Home rendered ``esc(c.trigger.plain)`` and ``esc(r.label)`` raw, leaning on the DOM
+    walker; the analysis window's provenance block already went through t()."""
+    js = (_ROOT / "src" / "static" / "app-home.js").read_text("utf-8")
+    assert "esc(t(c.trigger.plain))" in js
+    assert "<td>${esc(t(r.label))}</td>" in js
+    assert "esc(c.trigger.plain)" not in js and "<td>${esc(r.label)}</td>" not in js
 
 
 # --------------------------------------------------------------------------- #
