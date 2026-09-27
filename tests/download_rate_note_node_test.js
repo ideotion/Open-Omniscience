@@ -45,6 +45,8 @@ const src =
   "function esc(s){return String(s==null?'':s).replace(/[&<>\"]/g," +
   "c=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;'}[c]));}\n" +
   "var window = {};\n" +
+  // fmtNum: _fmtDur writes its number through the app's ruled formatter (B17, T7).
+  extract("fmtNum") + "\n" +
   extract("_sizeText") + "\n" +
   extract("_fmtBytes") + "\n" +
   extract("_fmtDur") + "\n" +

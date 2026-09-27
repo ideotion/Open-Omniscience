@@ -153,8 +153,11 @@ def test_the_trend_and_group_surfaces_repaint_on_a_language_switch():
     value labels are keyed frames now, so `loadTrends` re-running draws them again."""
     js = read_static("app-corpus.js")
     callers = array_literal(function_body(js, "ooKwRepaintOnLangChange"), "callers")
+    # The windows row carries a fourth element since click-through B17 (T2): it names the
+    # loader that already re-runs it ("loadTrends"), so one switch fetches it once. The
+    # entry is still there; only its closing bracket moved.
     for entry in ('["sg-list", "loadSuperGroups"]', '["trd-top", "loadTrends"]',
-                  '["trd-windows", "loadTrendWindows"]'):
+                  '["trd-windows", "loadTrendWindows"'):
         assert entry in callers, f"{entry} is not repainted on a switch"
 
 

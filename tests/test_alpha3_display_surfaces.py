@@ -464,7 +464,9 @@ def test_intl_displaynames_is_reached_only_through_the_two_owning_helpers() -> N
     a missing CLDR name looks like. Keeping construction inside ``ooRegionName`` and
     ``ooLangName`` means one place converts, and that place is tested."""
     sites: list[str] = []
-    for path in sorted(_STATIC.glob("*.js")):
+    # The standalone pages carry inline scripts, so the HTML is scanned as well as the
+    # modules (the /tasks page became an owner in click-through B17, T11).
+    for path in sorted(_STATIC.glob("*.js")) + sorted(_STATIC.glob("*.html")):
         text = path.read_text(encoding="utf-8")
         for m in re.finditer(r"new[ \t]+Intl\.DisplayNames", text):
             line = text.count("\n", 0, m.start()) + 1
@@ -474,10 +476,19 @@ def test_intl_displaynames_is_reached_only_through_the_two_owning_helpers() -> N
     # (/api/articles/{id}/view), which loads only i18n.js and itself, so it cannot reach
     # ooLangName; its ONE construction must stay inside its own `langName`, which
     # base-normalises the code and refuses to pass a CLDR echo off as a name.
+    # taskmanager.html (/tasks) is in the same position for a job label's `language`
+    # value: one construction, inside its own `langName`, refusing an echo.
     owners = {
         "app-map.js": "ooRegionName / ooLangName",
         "reader.js": "langName -- the reader page does not load app-map.js",
+        "taskmanager.html": "langName -- the /tasks page loads neither app-map.js nor reader.js",
     }
+    tm = (_STATIC / "taskmanager.html").read_text(encoding="utf-8")
+    tm_body = function_source(tm, "langName")
+    assert tm.count("new Intl.DisplayNames") == 1 and "new Intl.DisplayNames" in tm_body, (
+        "taskmanager.html constructs Intl.DisplayNames outside its one langName helper"
+    )
+    assert "!== src.toLowerCase()" in tm_body, "taskmanager.html langName lost its echo refusal"
     reader = (_STATIC / "reader.js").read_text(encoding="utf-8")
     body = function_source(reader, "langName")
     assert reader.count("new Intl.DisplayNames") == 1 and "new Intl.DisplayNames" in body, (

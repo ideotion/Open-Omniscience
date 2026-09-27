@@ -247,7 +247,13 @@ async function run() {
       var isLocal = function (k) { return k === "reindex" || k === "keyword-fold" || k === "search-reindex"; };
       var dlKey = function (j) { return j.id; };
       ${extract("fmtBytes", null, TM)}
+      ${extract("tf", null, TM)}
+      ${extract("fmtNum", null, TM)}
       ${extract("fmtDur", null, TM)}
+      var _langDN = {};
+      ${extract("langName", null, TM)}
+      ${extract("jobPct", null, TM)}
+      ${extract("jobLabel", null, TM)}
       ${extract("jobWhy", null, TM)}
       ${extract("jobRow", null, TM)}
       this.row = jobRow;

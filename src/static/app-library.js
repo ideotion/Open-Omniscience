@@ -388,7 +388,11 @@
     // unbounded) history cap.
     const LIB_WINDOWS = [[7, "7d"], [30, "30d"], [90, "90d"], [3650, "All"]];
     const LIB_DEFAULT_DAYS = 30;
-    let _libTileDays = {};    // metric (or "__qual") -> the window currently shown
+    // metric (or "__qual" / "__lang") -> the window the tile shows. A tile's CHOSEN window
+    // wins over the default its renderer passes: the Activity view redraws every tile on a
+    // language switch and on a reopen, and both passed LIB_DEFAULT_DAYS, so a tile switched
+    // to 7d snapped back to 30d (click-through B17, T1). Kept for the life of the page.
+    let _libTileDays = {};
     let _libGraphData = {};   // metric -> last-fetched /api/library/history payload
     function _libAllZero(nums) {
       // "zero/no-data" (ruled): every point is 0, or there simply are no points —
@@ -405,7 +409,7 @@
     }
     async function _libGraphTile(metric, days) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      const cur = days || _libTileDays[metric] || LIB_DEFAULT_DAYS;
+      const cur = _libTileDays[metric] || days || LIB_DEFAULT_DAYS;
       _libTileDays[metric] = cur;
       const label = t(LIB_METRIC_LABEL_KEYS[metric] || metric);
       let d;
@@ -510,7 +514,7 @@
     }
     async function _libQualificationTile(days) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      const cur = days || _libTileDays.__qual || LIB_DEFAULT_DAYS;
+      const cur = _libTileDays.__qual || days || LIB_DEFAULT_DAYS;
       _libTileDays.__qual = cur;
       const label = t("Source qualification");
       let payloads, splitPayload = null;
@@ -654,7 +658,7 @@
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const tf = (window.OOI18N && OOI18N.tf)
         ? OOI18N.tf : ((tpl, v) => String(tpl).replace(/\{(\w+)\}/g, (m, k) => (k in v ? v[k] : m)));
-      const cur = days || _libTileDays.__lang || LIB_DEFAULT_DAYS;
+      const cur = _libTileDays.__lang || days || LIB_DEFAULT_DAYS;
       _libTileDays.__lang = cur;
       const label = t("Growth by language");
       let d;
@@ -688,11 +692,14 @@
 
     // Re-render exactly ONE tile in place when its window chip is clicked —
     // never the whole panel (a switch on one metric must not disturb the
-    // others' state or cause a visible flash across the row).
+    // others' state or cause a visible flash across the row). The chip is the one
+    // place a window is CHOSEN, so it is recorded here, where every later redraw of the
+    // tile reads it first.
     async function _libSetWindow(key, days) {
       const el = $(key === "__qual" ? "lib-tile-__qual"
         : key === "__lang" ? "lib-tile-__lang" : "lib-tile-" + key);
       if (!el) return;
+      _libTileDays[key] = days;
       const html = key === "__qual" ? await _libQualificationTile(days)
         : key === "__lang" ? await _libLanguageTile(days)
         : await _libGraphTile(key, days);

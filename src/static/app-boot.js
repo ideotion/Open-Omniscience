@@ -293,6 +293,9 @@
       // The task manager's System panel (click-through B16, V9) draws its labels with t()
       // at render; redrawn from the last two samples it holds, so a switch never fetches.
       try { if (typeof repaintVitalsFromCache === "function") repaintVitalsFromCache(); } catch (_e) {}
+      // The top-bar activity chip composes "Collecting {done}/{total}…" at paint time
+      // (click-through B17, T10); repainted from the state it holds, no fetch.
+      try { if (typeof _paintActivity === "function") _paintActivity(); } catch (_e) {}
     });
 
     // Global shortcuts: dispatched from the user's (rebindable) bindings — Ctrl/⌘-K opens

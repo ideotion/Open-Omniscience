@@ -122,6 +122,10 @@ const src = [
   // And the cause line S04-08's S5 added to the row (why a download is paused or
   // failed) -- the same trap, sprung again the day that call landed.
   extract("function _jobWhy("),
+  // ...and a fourth (click-through B17, T5/T11): the whole-number percent and the keyed
+  // label frame the row now draws through.
+  extract("function _jobPct("),
+  extract("function _jobLabel("),
   "function esc(s){return String(s==null?'':s).replace(/[&<>\"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',\"'\":'&#39;'}[c]));}",
   "function fmtDateTime(ms){return 'DATE';}",
   "function _isDownloadKind(k){return false;}",

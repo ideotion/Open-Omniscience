@@ -2036,7 +2036,8 @@ def summarize_article(
 
     _t = (article.title or "article")[:48]
     try:
-        with track("llm", f"Summarizing “{_t}”", detail=f"model {model}"):
+        with track("llm", f"Summarizing “{_t}”", detail=f"model {model}",
+                   label_i18n="Summarizing “{title}”", label_vars={"title": _t}):
             text, method = _run_over_long_text(
                 client, op="summary", title=article.title or "", content=article.content,
                 model=model, system=system, keep_alive=_effective_keep_alive(),
@@ -2099,7 +2100,9 @@ def translate_article(
 
     _t = (article.title or "article")[:48]
     try:
-        with track("llm", f"Translating → {req.target_language}: “{_t}”", detail=f"model {model}"):
+        with track("llm", f"Translating → {req.target_language}: “{_t}”", detail=f"model {model}",
+                   **_translate_label_frame(req.target_language, "Translating → {language}: “{title}”",
+                                            title=_t)):
             text, method = _run_over_long_text(
                 client, op="translate", title=article.title or "", content=article.content,
                 model=model, system=system, keep_alive=_effective_keep_alive(),
@@ -2385,6 +2388,17 @@ _LANG_EN = {
 }
 
 
+def _translate_label_frame(target_name: str, frame: str, **values) -> dict:
+    """A translation task's label as a keyed frame (click-through B17, T11): the target
+    goes as its language CODE so the task manager names it in the UI language. A target
+    this table cannot map (free text) gets no frame, and the English label stands."""
+    tgt = (target_name or "").strip().lower()
+    code = next((c for c, name in _LANG_EN.items() if name.lower() == tgt or c == tgt), None)
+    if code is None:
+        return {}
+    return {"label_i18n": frame, "label_vars": {"language": code, **values}}
+
+
 def _is_target_language(article_lang: str | None, target_name: str) -> bool:
     """True when an article is ALREADY in the translation target (so it is skipped).
     Unknown language -> False (never skip on a guess)."""
@@ -2532,8 +2546,13 @@ def bulk_llm(
     from src.monitoring import tasks as _bgtasks
 
     _verb = "Summarizing" if op == "summarize" else f"Translating → {target}"
+    _frame = (
+        {"label_i18n": "Summarizing {n} article(s)", "label_vars": {"n": total}}
+        if op == "summarize"
+        else _translate_label_frame(target, "Translating → {language} {n} article(s)", n=total)
+    )
     _tok = _bgtasks.register(
-        "llm", f"{_verb} {total} article(s)", detail=f"model {model}", total=total
+        "llm", f"{_verb} {total} article(s)", detail=f"model {model}", total=total, **_frame
     )
 
     def _stream():

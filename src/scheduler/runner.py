@@ -650,10 +650,17 @@ def plan_preview(session, settings: SchedulerSettings, *, last_result: dict | No
             (last_result.get("pages_fetched") or 0) / last_result["sources_processed"],
         )
     est = round(total * median_delay * per_source)
-    method = (
-        f"{total} source(s) × ~{median_delay:.1f}s politeness delay × "
-        f"~{per_source:.1f} fetch(es) each (from the last run) — an assumption, "
-        "not a promise; robots crawl-delays can stretch it."
+    # The sentence also travels as its FRAME and its numbers (click-through B17, T6): with
+    # the numbers welded in, no locale key could ever match it, and the task manager showed
+    # it in English in every language. `estimate_method` is the same frame filled here, so
+    # the English answer is unchanged.
+    method_frame = (
+        "{sources} source(s) × ~{delay}s politeness delay × ~{fetches} fetch(es) each "
+        "(from the last run) — an assumption, not a promise; robots crawl-delays can "
+        "stretch it."
+    )
+    method = method_frame.format(
+        sources=total, delay=f"{median_delay:.1f}", fetches=f"{per_source:.1f}"
     )
     return {
         "lane": "press",
@@ -662,6 +669,12 @@ def plan_preview(session, settings: SchedulerSettings, *, last_result: dict | No
         "strata": strata,
         "estimated_seconds": est,
         "estimate_method": method,
+        "estimate_method_i18n": method_frame,
+        "estimate_method_vars": {
+            "sources": total,
+            "delay": round(median_delay, 1),
+            "fetches": round(per_source, 1),
+        },
     }
 
 

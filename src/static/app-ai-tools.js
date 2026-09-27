@@ -627,7 +627,7 @@
           intervalMs: 4000,
           onProgress: (s) => {
             if (!s) return;
-            const p = s.progress ? ` ${s.done}/${s.total}` : "";
+            const p = s.progress ? ` ${fmtNum(s.done, 0)}/${fmtNum(s.total, 0)}` : "";
             say((s.detail || t("Working…")) + p);
           },
         });
@@ -641,9 +641,18 @@
           const d = st.result.declined;
           say(_qualDeclinedText(d.reason, d.override_env));
         } else if (st && st.result) {
+          // Each count is ONE keyed frame chosen by the count, the noun inside it
+          // (click-through B17, T12): a number welded to an adjective keyed in the
+          // singular read "3 qualifié" in French, and a locale could not agree the word
+          // with its number. The singular frame is for one, as the app's other pairs.
           const r = st.result;
-          say(`${r.qualified || 0} ${t("qualified")} · ${r.disqualified || 0} ${t("disqualified")} · `
-            + `${r.no_evidence || 0} ${t("no evidence yet")}`
+          const tally = (x, one, many) => {
+            const n = Number(x) || 0;
+            return _qualTf(n === 1 ? one : many, {n: fmtNum(n, 0)});
+          };
+          say(tally(r.qualified, "{n} source qualified", "{n} sources qualified") + " · "
+            + tally(r.disqualified, "{n} source disqualified", "{n} sources disqualified") + " · "
+            + tally(r.no_evidence, "{n} source with no evidence yet", "{n} sources with no evidence yet")
             + (r.paused_reason ? ` — ${r.paused_reason}` : ""));
         }
       } catch (e) {
@@ -1362,7 +1371,10 @@
       if (!box) return;
       let r = null;
       try { r = await api("/api/llm/model-store"); } catch (e) { box.textContent = ""; return; }
-      const gb = (n) => (n === null || n === undefined) ? "" : ` <span class="muted">(${(n / 1e9).toFixed(1)} GB)</span>`;
+      // Sizes through the app's ONE size writer (click-through B17, T8): this helper wrote
+      // "GB" by hand, so the unit stayed English in every locale and "0.0 GB" was all a
+      // few-megabyte store could say. _fmtBytes keys the unit and picks it by magnitude.
+      const gb = (n) => (n === null || n === undefined) ? "" : ` <span class="muted">(${esc(_fmtBytes(n))})</span>`;
       let html = `<div>${esc(t("Models are stored in"))} <code>${esc(r.root)}</code></div>`;
       // The path IN USE leads when it is not the app's: printing the configured one
       // (near-empty) beside a size reads as "you have no models" to an operator whose

@@ -516,11 +516,21 @@
     }
     var terms = d.terms || [];
     var chips = terms.map(function (t) { return '<span class="r-chip">' + esc(t) + "</span>"; }).join(" ");
+    // The score through the ONE "label: value" frame, and the count as ONE keyed frame
+    // chosen by the number it counts (click-through B17, T9): "Loaded-term density:" and
+    // "(3 of 120 words)" were English words around numbers, so no key could match them
+    // and they stayed English in every locale while the heading above them translated.
+    var nTok = Number(d.n_tokens) || 0;
+    var score = esc(TF("{prefix}: {text}", {prefix: "\u0001", text: "\u0002"}))
+      .replace("\u0001", function () { return esc(T("Loaded-term density")); })
+      .replace("\u0002", function () { return "<b>" + esc(d.density) + "</b>"; });
+    var ofWords = TF(nTok === 1 ? "({n} of {m} word)" : "({n} of {m} words)",
+      {n: num(d.n_loaded || 0), m: num(nTok)});
     pane.innerHTML =
       '<h2 class="r-h2">Loaded language</h2>'
       + '<p class="r-muted">Deduced from the text (rule-based, never AI) — a prompt to read closely, never a verdict.</p>'
-      + '<p class="r-score">Loaded-term density: <b>' + esc(d.density) + "</b> "
-      + '<span class="r-muted">(' + num(d.n_loaded || 0) + " of " + num(d.n_tokens || 0) + " words)</span></p>"
+      + '<p class="r-score">' + score + " "
+      + '<span class="r-muted">' + esc(ofWords) + "</span></p>"
       + (chips
           ? '<p class="r-muted">Loaded terms found:</p><p>' + chips + "</p>"
           : '<p class="r-muted">No loaded terms found — a real measurement, not a gap.</p>')
@@ -570,7 +580,10 @@
 
     var svg = '<svg class="r-mm" viewBox="0 0 ' + W + " " + H + '" role="img" aria-label="Keyword mindmap for this article">'
       + edges + circles + labels + "</svg>";
-    var moreNote = more ? '<p class="r-muted">+ ' + num(more) + " more keyword" + (more === 1 ? "" : "s") + " not shown.</p>" : "";
+    // One keyed frame per count, the singular for one (click-through B17, T9).
+    var moreNote = more ? '<p class="r-muted">'
+      + esc(TF(more === 1 ? "+ {n} more keyword not shown." : "+ {n} more keywords not shown.", {n: num(more)}))
+      + "</p>" : "";
     pane.innerHTML = '<h2 class="r-h2">Mindmap</h2>' + svg + moreNote + method + caveat;
   }
 

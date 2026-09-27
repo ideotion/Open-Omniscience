@@ -159,6 +159,7 @@ def extract_keywords(
     _tok = _bgtasks.register(
         "analytics", f"Extracting AI keywords · {len(work)} article(s)",
         detail=f"model {model}", total=len(work),
+        label_i18n="Extracting AI keywords · {n} article(s)", label_vars={"n": len(work)},
     )
 
     def _stream():
@@ -430,6 +431,7 @@ def run_custom_prompt(
     _tok = _bgtasks.register(
         "analytics", f"AI: {label} · {len(work)} article(s)",
         detail=f"model {model}", total=len(work),
+        label_i18n="AI: {label} · {n} article(s)", label_vars={"label": label, "n": len(work)},
     )
 
     def _stream():
