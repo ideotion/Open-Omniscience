@@ -52,7 +52,7 @@ def _markets() -> str:
 def test_both_feed_refresh_actions_have_a_trigger_again() -> None:
     html = _index()
     for fn, tab in (("loadIndicesData", "tab-indices"), ("loadMarketData", "tab-markets")):
-        m = re.search(rf'<button[^>]*onclick="{fn}\(this\)"[^>]*>', html)
+        m = re.search(rf'<button[^>]*data-on-click="{fn}\(this\)"[^>]*>', html)
         assert m, f"{fn} has no trigger button; its status/verdict panes can never fill"
         assert 'title="' in m.group(0), (
             f"{fn}'s button needs a translated title — it rides the #oo-tip hover "

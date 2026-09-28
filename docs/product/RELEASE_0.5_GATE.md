@@ -220,8 +220,27 @@ inventory keeps it non-exportable until S04-04 owns the lane format); the walk's
 `lane_models.py` names the one table the toggle will gate. (2) S3 names `tor_throughput.py`, which is the
 scheduler's kind ladder and records nothing, so the walk writes its own per-transport samples per hour.
 (3) Only the first pass is built; when to walk an edition again is not ruled. (4) Round-robin is the
-proposed per-edition order (the brief's §6 leaves it unruled). (5) Q1009 ⛔ still caps the depth. **Still
-owed in this row:** WARM (S1), COLD text, analytics 4–5 (S4) and the operator's run (S5).
+proposed per-edition order (the brief's §6 leaves it unruled). (5) Q1009 ⛔ still caps the depth.
+
+**2026-09-28 — WARM is built (S1, PR #1200), off by default.** `src/wiki/warm.py` reads the stream's own
+change log (`versioned_changes`, Q708 = b) forward from its bookmark and queues each changed page the lane does
+not follow in `wiki_warm_pages`, so there is one record of what the wiki reported and WARM reads it. In the
+lane's idle time, after the drain and before the walk (Q707's HOT, then WARM, then COLD), it asks for the pages
+that have waited longest, 50 to a request, and for each page's NEWEST text: a page edited ten times while it
+waited costs one fetch. A row holds at most the latest and the previous text (Q710 🔒 = a); a page deleted later
+keeps its text (Q713), and a page that becomes followed stops being asked for and keeps what WARM held. It
+stops at `WARM_BUDGET_SHARE` (0.9) of the lane's budget under its own named reason and leaves the rest to HOT;
+that share is a **proposed default, not a ruling**, and every surface that shows the pause says so. Its
+refusals are the walk's: a spent budget, airplane mode and protected mode with no usable proxy pause it by
+name and it never goes direct (Q722 = b); one edition's refusal backs off that edition alone. Its counts ride
+the lane counters artifact as a `warm` block, and Living sources' Wikipedia panel shows an «Other changed
+pages» group above the walk's. The switch is Settings → Wikipedia, «Also fetch the text of other changed
+pages», **off** until the operator turns it on; where WARM runs was put on a decision card and is built at the
+recommended «Switch, off» meanwhile. Chromium-verified (remote sandbox) in `en` and `ar` · awaiting human UX
+pass. **Where its texts live (`R52`, «In the lane»):** in `wiki.db`, under the budget, never corpus articles
+by themselves (Q719). So this row also owes the lane's own search index over them, their hits in the one
+search box beside the corpus's, and «Add to corpus» per hit for the version hit; none of that is in this PR.
+**Still owed in this row:** that search, COLD text, analytics 4–5 (S4) and the operator's run (S5).
 
 **RC round 2026-09-15 — BLANK, so the round's §0 rule applies and nothing here is resolved.** `RC03` ⛔ (C4 = Q1009, the storage round-2 rows
 3–6 — blob-store dedup · OOENC2 for pack AEAD · keyed-HMAC blob addressing with opaque pack names · the
@@ -355,7 +374,10 @@ the default. Brief `S05-05`, with `S04-11` S3's toggle.
 | 2026-09-28 | **The 0.5 start, answered in chat** («D1: Yes, start. … D2: a D3: a», with a question about the Wikipedia walk): `R38` — row B before row J, never concurrently; `R39` — the hi/bn tokenizer rebuild is paid inside row B's window, and row B now also closes on its measured rebuild time and a hi fixture; `R40` — row F is built first so its operator run overlaps the build (order only; no gate moved). Wave 1 starts with rows A and I in their own threads. **No row changed status.** | maintainer (chat, 2026-09-28 11:07 UTC) · recorded by the session |
 | 2026-09-28 | **Row F: the walk built (S2 + S3), off by default.** The `allpages` walk, its per-edition bookmark, its coverage and per-transport counters in the lane counters artifact, a Living sources group and a task-manager row; the switch that decides where it runs is asked on a card and built at the recommended «off» meanwhile (`OPEN_QUEUE.md` «THE WALK'S SWITCH»). Five seams stated in the row, the fetch-history round trip first. **No row changed status.** | session, PR #1197 |
 | 2026-09-28 | **`R51`: the walk runs only where it is switched on, off by default** («Switch, off» on the decision card, the recommended option). Row F's text now names the ruling where it named the open question; the default was already built this way, so only a test pinning it was added. **No row changed status.** | decision card in the project thread «Plan v0.5», 2026-09-28 12:41 UTC |
+| 2026-09-28 | **`R52`: WARM's texts stay in the lane, with a search index of their own** («In the lane» on the decision card, the recommended option, after the maintainer's stated intent: one search, and a Wikipedia hit — an article, an edit or a previous version — can be added to the corpus). Row F now owes, beside WARM itself, the lane search index, its hits in the one search box and «Add to corpus» per hit. **No row changed status.** | decision card in the project thread «Plan v0.5», 2026-09-28 13:20 UTC |
 | 2026-09-28 | **Row A built (S05-01, PR #1198).** All nineteen rulings implemented; Chromium-verified in the remote sandbox in English and Arabic (the builder, the timescale, list and table views, did-you-mean, save and re-open, the permalink, history, the omnibar's Enter, the first-launch history step); the did-you-mean table on the 200 MB reference corpus: 873,889 rows, 4.9 s, 12.6 MB. Status stays short of CLOSED until a human UX pass. | session |
+| 2026-09-28 | **Row I, first PR (S05-09 S1 + S3, and S2 for the main app):** the inline-handler ratchet exists at the measured count, 656 on `main`@00af1d9 with its own published pattern (`tests/test_inline_handler_ratchet.py`; the brief's 602/613 were other patterns); the main app's 644 converted to allowlisted `data-on-*` bindings (`src/static/oo-on.js`), leaving the measured residue pinned: `taskmanager.html` 11, `unlock.html` 1, six inline `<script>` blocks (task manager, unlock, investigate, the reader, the law reader). `'unsafe-inline'` stays in `script-src` until that residue is zero (next entry). The theme cull: slate → Ink, arctic → Ink, mist → Light (surface ΔE76 1.92 / 1.81 / 1.25; next pair 3.87), 14 named themes, invariant #12's pin `>= 16` → `>= 13` in the same PR (`tests/test_theme_cull.py`). Chromium walk under `script-src 'self'` at 1440×900; the three-width sweep is owed with the CSP-drop PR. **Row stays OPEN.** | session (0.5 row I thread) |
+| 2026-09-28 | **Row I, the CSP drop (S2 end, pushed onto the same PR #1199):** the residue reached ZERO. The task manager's 11 handlers became `data-tm` bindings, unlock's one a listener, and the six inline `<script>` blocks became files (`taskmanager.js`, `unlock.js`, `investigate.js`, `ext-confirm.js`, and `reader.js` for the Dates pane). Both ratchet maps are empty and `script-src` is `'self'` alone (NET-04 closed, no nonce needed; `style-src 'unsafe-inline'` stays, unruled). Chromium-verified under the real header: 14 named themes plus System × 1440×900, 768×1024 and 390×844, the main app's Home, Settings, Search, Insights and Living sources plus `/tasks`, `/investigate`, `/unlock`, the article reader and the law reader: 45 runs, 0 CSP violations, 0 console errors, 0 horizontal overflow; both reader link confirms, unlock's console button and the task manager's cancel and resume bindings driven for real. No axe run (not available offline in the sandbox). The ratchet, CSP and cull halves of this row are done; **row stays OPEN** for S4 (the Ring dial, Q1120/Q1121) and S5, S6 waiting on the maintainer. | session (0.5 row I thread) |
 
 ---
 

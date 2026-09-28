@@ -16,12 +16,14 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from tests.js_source_helper import page_source
+
 _ROOT = Path(__file__).resolve().parents[1]
 _STATIC = _ROOT / "src" / "static"
 
 
 def _unlock() -> str:
-    return (_STATIC / "unlock.html").read_text(encoding="utf-8")
+    return page_source("unlock.html")
 
 
 def test_preparing_view_has_elapsed_and_migration_explanation() -> None:

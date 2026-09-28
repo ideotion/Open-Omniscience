@@ -1014,7 +1014,8 @@ def view_law_document(
      EXACTLY, which is why every phrase this page emits is in its own element with
      the dates and byte counts beside it as data. -->
 <script src="/static/i18n.js" defer></script>
-</head><body>
+<script src="/static/ext-confirm.js" defer></script>
+</head><body data-ext-confirm="law">
 <div class="wrap">
   <div class="crumb">Open Omniscience · World law · offline stored copy — a research mirror, not legal advice</div>
   <article><h1>{title}</h1><div class="meta">{meta_rows}</div>{paras}</article>
@@ -1027,15 +1028,5 @@ def view_law_document(
     <div style="font-size:12px">Opening the gazette makes a live request from your machine; you'll be asked to confirm.</div>
   </footer>
 </div>
-<script>
-  document.addEventListener('click', function(e){{
-    var a = e.target.closest && e.target.closest('a.ext');
-    if(!a) return; e.preventDefault();
-    var t = (window.OOI18N && OOI18N.t) ? OOI18N.t : function(x){{ return x; }};
-    if(window.confirm(t("Open the official source on the public web?") + "\\n\\n" + a.href +
-      "\\n\\n" + t("This leaves your local copy and makes a live request from your machine — the site may see your visit. Continue?")))
-      window.open(a.href, '_blank', 'noopener');
-  }});
-</script>
 </body></html>"""
     return HTMLResponse(content=doc_html)

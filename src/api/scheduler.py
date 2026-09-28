@@ -120,6 +120,8 @@ class SchedulerConfigUpdate(BaseModel):
     wiki_lane_wizard_done: bool | None = None
     # The walk's switch (Q701 = c). Declared for the same settingUnreachable reason.
     wiki_walk_enabled: bool | None = None
+    # WARM's switch, declared for the same reason.
+    wiki_warm_enabled: bool | None = None
 
 
 def _status_payload() -> dict:
@@ -246,6 +248,7 @@ def _wiki_lane_settings_block() -> dict:
         "budget_gb": int(getattr(settings, "wiki_lane_budget_gb", 20)),
         "wizard_done": bool(getattr(settings, "wiki_lane_wizard_done", False)),
         "walk_enabled": bool(getattr(settings, "wiki_walk_enabled", False)),
+        "warm_enabled": bool(getattr(settings, "wiki_warm_enabled", False)),
         "service": lane_service_status(),
     }
     try:

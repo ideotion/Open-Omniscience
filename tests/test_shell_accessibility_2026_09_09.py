@@ -44,6 +44,7 @@ from tests.js_source_helper import (
     assert_absent,
     assert_present,
     function_source,
+    page_source,
     read_static,
 )
 
@@ -59,7 +60,7 @@ def _index() -> str:
 
 
 def _taskmanager() -> str:
-    return (_STATIC / "taskmanager.html").read_text(encoding="utf-8")
+    return page_source("taskmanager.html")
 
 
 # ---------------------------------------------------------------------------

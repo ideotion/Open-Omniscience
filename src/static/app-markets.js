@@ -115,7 +115,7 @@
           ? `<span class="muted" style="font-size:12px;margin-right:4px">${ooLabelHtml(esc(t("Tags")), "")}</span>`
             + tags.map(tag =>
                 `<button type="button" class="chip${_idxTags.has(tag) ? " on" : ""}" data-tag="${esc(tag)}"
-                   onclick="toggleIndexTag(${esc(JSON.stringify(tag))})">${esc(tag)}</button>`).join("")
+                   data-on-click="toggleIndexTag(${esc(JSON.stringify(tag))})">${esc(tag)}</button>`).join("")
           : "";
       }
       if (_idxView !== "families") applyIndexFilters();   // cards-view filtering only
@@ -173,8 +173,8 @@
         `<span class="muted" style="font-size:12px">${ooLabelHtml(esc(t("Comparing")), `<b>${names}</b>`)}</span>`
         + `<button type="button" class="tiny${ready ? "" : " secondary"}"${ready ? "" : " disabled"}
              title="${esc(t("Overlay the selected series on one graph"))}"
-             onclick="openIdxComparison()">${esc(t("Compare"))} (${n}) ↗</button>`
-        + `<button type="button" class="tiny secondary" onclick="clearIdxCompare()">${esc(t("Clear"))}</button>`
+             data-on-click="openIdxComparison()">${esc(t("Compare"))} (${n}) ↗</button>`
+        + `<button type="button" class="tiny secondary" data-on-click="clearIdxCompare()">${esc(t("Clear"))}</button>`
         + (ready ? "" : ` <span class="hint muted" style="font-size:11px">${esc(t("Pick at least two."))}</span>`);
     }
     async function openIdxComparison() {
@@ -369,7 +369,7 @@
       // catalog entries stay inert until a first import.
       const open = has
         ? ` style="cursor:pointer" title="open detailed chart"
-            onclick="indexDetail(${esc(JSON.stringify(c.symbol))}, ${esc(JSON.stringify(c.name || c.symbol))}, ${esc(JSON.stringify(c.currency || ""))})"`
+            data-on-click="indexDetail(${esc(JSON.stringify(c.symbol))}, ${esc(JSON.stringify(c.name || c.symbol))}, ${esc(JSON.stringify(c.currency || ""))})"`
         : "";
       // The GRAPH is a first-class entry into the analysis WINDOW (ledger
       // MARKETS item 4): an "Analyse ↗" affordance opens the index's corpus
@@ -390,7 +390,7 @@
       const cmpBtn = has
         ? ` · <button class="tiny${cmp ? "" : " secondary"}" type="button"
               title="${esc(t2(cmp ? "Remove from the comparison overlay" : "Add to the comparison overlay"))}"
-              onclick="event.stopPropagation(); toggleIdxCompare(${esc(JSON.stringify(c.symbol))}, ${esc(JSON.stringify(c.name || c.symbol))}, ${esc(JSON.stringify(c.currency || ""))}, ${esc(JSON.stringify(c.unit || ""))})">${cmp ? "✓ " + esc(t2("Comparing")) : "＋ " + esc(t2("Compare"))}</button>`
+              data-on-click="ooStop(event);toggleIdxCompare(${esc(JSON.stringify(c.symbol))}, ${esc(JSON.stringify(c.name || c.symbol))}, ${esc(JSON.stringify(c.currency || ""))}, ${esc(JSON.stringify(c.unit || ""))})">${cmp ? "✓ " + esc(t2("Comparing")) : "＋ " + esc(t2("Compare"))}</button>`
         : "";
       return `<div class="idx-card${cmp ? " comparing" : ""}" data-symbol="${esc(c.symbol)}"${facets}${open}>
         <div class="idx-top">
@@ -403,11 +403,11 @@
         ${has && c.spark && c.spark.length >= 2
           ? `<div class="idx-range hint muted"><span>${esc(c.spark[0][0])}</span><span>${esc(c.spark[c.spark.length - 1][0])}</span></div>`
           : ""}
-        <div class="idx-foot muted" onclick="event.stopPropagation()">${has ? `as of ${esc(c.latest.observed_on)}` : "no data yet — click Load"}
+        <div class="idx-foot muted" data-on-click="ooStop(event)">${has ? `as of ${esc(c.latest.observed_on)}` : "no data yet — click Load"}
           · ${esc(c.currency || "")} · ${extLink(c.url, "source")}
           · <button class="tiny secondary" type="button"
               title="${esc(t2("Open this in the analysis window — its corpus coverage"))}"
-              onclick="openAnalysisFor(${esc(JSON.stringify(idxQ))})">${esc(t2("Analyse"))} ↗</button>${cmpBtn}</div>
+              data-on-click="openAnalysisFor(${esc(JSON.stringify(idxQ))})">${esc(t2("Analyse"))} ↗</button>${cmpBtn}</div>
       </div>`;
     }
 
@@ -424,7 +424,7 @@
         ` <span class="muted">— ${esc(x.verdict_note || x.detail || "")}</span></div>`).join("");
       const retry = (r.retryable_failed_keys || []);
       const btn = retry.length
-        ? `<button class="secondary tiny" style="margin-top:4px" onclick="retryFailedFeeds('${esc(category||"")}', '${esc(retry.join(","))}', '${esc(elId)}')">` +
+        ? `<button class="secondary tiny" style="margin-top:4px" data-on-click="retryFailedFeeds('${esc(category||"")}', '${esc(retry.join(","))}', '${esc(elId)}')">` +
           esc(t("Retry failed feeds")) + ` (${retry.length})</button>`
         : "";
       el.innerHTML = rows + btn;
@@ -1490,16 +1490,16 @@
           // window's Price subtab OVERLAYS the price curve with the term's corpus
           // coverage timeline (the commodity identity rides along in cOpts, below).
           return `<div class="stat" style="cursor:pointer" title="open detail + correlation"
-              onclick="chartSymbol(${esc(JSON.stringify(s.symbol))}, ${esc(JSON.stringify(last?last.unit:''))})">
+              data-on-click="chartSymbol(${esc(JSON.stringify(s.symbol))}, ${esc(JSON.stringify(last?last.unit:''))})">
             <div style="display:flex;justify-content:space-between;align-items:baseline">
               <button type="button" title="${esc(s.name || s.symbol)}"
                 style="background:none;border:none;padding:0;margin:0;font:inherit;font-weight:700;color:var(--accent);cursor:pointer;text-decoration:none"
-                onclick="event.stopPropagation(); openAnalysisFor(${esc(JSON.stringify(q))}, ${cOpts})">${esc(s.symbol)} ⊞</button> ${change}</div>
+                data-on-click="ooStop(event);openAnalysisFor(${esc(JSON.stringify(q))}, ${cOpts})">${esc(s.symbol)} ⊞</button> ${change}</div>
             <div class="muted" style="font-size:12px;margin:2px 0 6px">${lv}</div>
             ${dashChartSvg(pts, last ? `${last.currency}/${last.unit}` : "", {t0: axT0, t1: axT1})}
             <div style="margin-top:4px"><button class="tiny secondary" type="button"
                 title="${esc(t("Open this in the analysis window — its corpus coverage"))}"
-                onclick="event.stopPropagation(); openAnalysisFor(${esc(JSON.stringify(q))}, ${cOpts})">${esc(t("Analyse"))} ↗</button></div></div>`;
+                data-on-click="ooStop(event);openAnalysisFor(${esc(JSON.stringify(q))}, ${cOpts})">${esc(t("Analyse"))} ↗</button></div></div>`;
         }).join("") + `</div>`
       ).join("");
       _renderMktViewToggle(t);
@@ -1591,9 +1591,9 @@
             <td class="muted">${esc(r.source_name||"")}</td>
             <td class="muted" style="font-size:12px;max-width:240px">${esc(r.last_status||"never run")}</td>
             <td style="white-space:nowrap">
-              <button class="tiny secondary" onclick="runMarketRule(${r.id})" title="Fetch once and apply the rule">Test</button>
-              <button class="tiny secondary" onclick="chartSymbol(${esc(JSON.stringify(r.symbol))}, ${esc(JSON.stringify(r.unit||''))})">Chart</button>
-              <button class="tiny danger" onclick="deleteMarketRule(${r.id})">Delete</button></td></tr>`).join("")
+              <button class="tiny secondary" data-on-click="runMarketRule(${r.id})" title="Fetch once and apply the rule">Test</button>
+              <button class="tiny secondary" data-on-click="chartSymbol(${esc(JSON.stringify(r.symbol))}, ${esc(JSON.stringify(r.unit||''))})">Chart</button>
+              <button class="tiny danger" data-on-click="deleteMarketRule(${r.id})">Delete</button></td></tr>`).join("")
             : `<tr><td colspan="5" class="muted">No extraction rules. Feeds cover most needs; add a rule below to scrape a price off a specific page.</td></tr>`);
       } catch (e) { /* rules optional */ }
     }
@@ -1611,8 +1611,8 @@
             <td class="muted">${esc(f.currency)}/${esc(f.unit)}</td>
             <td class="muted">${f.points}</td>
             <td style="white-space:nowrap">
-              <button class="tiny secondary" onclick="importFeed(${esc(JSON.stringify(f.key))})">Import</button>
-              <button class="tiny secondary" onclick="chartSymbol(${esc(JSON.stringify(f.symbol))}, ${esc(JSON.stringify(f.unit))})">Chart</button>
+              <button class="tiny secondary" data-on-click="importFeed(${esc(JSON.stringify(f.key))})">Import</button>
+              <button class="tiny secondary" data-on-click="chartSymbol(${esc(JSON.stringify(f.symbol))}, ${esc(JSON.stringify(f.unit))})">Chart</button>
             </td></tr>`).join("");
       } catch (e) { /* feeds optional */ }
     }
@@ -2300,7 +2300,7 @@
       // becomes keyboard-reachable with its pressed state announced.
       //
       // Careful: the loop below used to only ASSIGN elm._oo, and the inline
-      // `onclick="this._oo&&this._oo()"` was what invoked it \u2014 so that property was
+      // inline click handler `this._oo&&this._oo()` was what invoked it \u2014 so that property was
       // not a listener and dropping the inline attribute alone would have left the
       // toggle dead. It is now a real addEventListener; _oo stays because
       // ooChart re-renders the legend on every draw and the property is the

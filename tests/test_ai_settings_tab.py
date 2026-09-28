@@ -162,7 +162,7 @@ def test_the_model_step_does_not_ask_a_SECOND_time_for_the_same_bytes():
 def test_the_standalone_download_button_still_confirms():
     """The per-component controls are unchanged (the Desk lesson): the fused box
     is additive, and a user who ignores it must still be asked."""
-    assert 'onclick="installDefaultModel(this)"' in _APP
+    assert 'data-on-click="installDefaultModel(this)"' in _APP
     src = _fn("installDefaultModel")
     assert "_installDefaultModel(btn, {})" in src
 
@@ -188,7 +188,7 @@ def test_the_duplicate_start_button_is_gone_from_the_models_panel():
     assert "Start the local AI" not in src, (
         "the top-bar AI pill is the one start control (maintainer review 2026-07-31)"
     )
-    assert 'onclick="aiPillClick()"' not in src
+    assert 'data-on-click="aiPillClick()"' not in src
 
 
 def test_the_message_POINTS_AT_the_pill_instead_of_duplicating_it():

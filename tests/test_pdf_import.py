@@ -128,8 +128,8 @@ def test_pdf_import_ui_is_wired():
     root = Path(__file__).resolve().parents[1] / "src" / "static"
     html = (root / "index.html").read_text(encoding="utf-8")
     js = app_js()
-    assert 'id="pdf-files"' in html and 'onclick="importPdfs(this)"' in html
-    assert 'onclick="importPdfFolder(this)"' in html
+    assert 'id="pdf-files"' in html and 'data-on-click="importPdfs(this)"' in html
+    assert 'data-on-click="importPdfFolder(this)"' in html
     assert "function importPdfs(" in js and "function importPdfFolder(" in js
     assert "/api/documents/pdf/upload" in js and "/api/documents/pdf/import-folder" in js
 

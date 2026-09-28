@@ -40,7 +40,7 @@ enough**: ``#tab-analyze`` and Settings' panel both exist as DOM ids, but NEITHE
 ``.nav-item[data-tab=...]`` sidebar button to reach them any more -- the sidebar carries only
 home/insights/timemap/law/agenda/indices/library (confirmed via ``grep 'class="nav-item"'``);
 Settings opens via a dedicated gear button in the sidebar footer
-(``button[onclick="showTab('settings')"]``), and the analysis window has NO static click target
+(``button[data-on-click="showTab('settings')"]``), and the analysis window has NO static click target
 at all -- it is reached exclusively by spawning a search (``openAnalysisFor(query)``, the same
 function a keyword-chip click or the omnibar's Enter invokes; ``_anSpawn`` dedupes by query so
 repeated calls with the same ``search_query`` reuse one tab rather than accumulating). A driver
@@ -139,7 +139,7 @@ FLAGSHIP_SURFACES: tuple[Surface, ...] = (
         "The post-import screen",
         nav_tab="settings",
         subtab="data",
-        trigger='button[onclick="openUnifiedImport()"]',
+        trigger='button[data-on-click="openUnifiedImport()"]',
         dom_id="ux-import",
         note=(
             "dom_id is the import DIALOG, deliberately: #ux-imp-summary (the 2026-08-13 "
@@ -184,7 +184,7 @@ BACKLOG_SURFACES: tuple[Surface, ...] = (
         "Export / Import (unified dialog)",
         nav_tab="settings",
         subtab="data",
-        trigger='button[onclick="openUnifiedExport()"]',
+        trigger='button[data-on-click="openUnifiedExport()"]',
         dom_id="ux-export",
         note="the compartmented-export ask -- verify articles are no longer a forced checkbox",
     ),

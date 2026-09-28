@@ -15,15 +15,15 @@ import ast
 import re
 from pathlib import Path
 
-from tests.js_source_helper import app_js, app_modules, event_listener_bodies
+from tests.diagnostics_source import diagnostics_source
+from tests.js_source_helper import app_js, app_modules, event_listener_bodies, page_source
 from tests.js_source_helper import assert_absent as _assert_js_absent
-from tests.js_source_helper import css_rule as _css_rule
 from tests.js_source_helper import assert_present as _assert_js_present
+from tests.js_source_helper import css_rule as _css_rule
 from tests.js_source_helper import function_body as _js_function_body
 from tests.js_source_helper import function_source as _js_function_source
 from tests.js_source_helper import python_function_source as _py_function_source
 from tests.js_source_helper import strip_comments as _strip_js_comments
-from tests.diagnostics_source import diagnostics_source
 
 _ROOT = Path(__file__).resolve().parents[1]
 _SRC = _ROOT / "src"
@@ -1033,7 +1033,7 @@ def test_seamless_install_and_language_first_first_launch():
     )
 
     # (2) The fresh-store first launch shows a language step FIRST.
-    unlock = (_SRC / "static" / "unlock.html").read_text(encoding="utf-8")
+    unlock = page_source("unlock.html")
     assert 'id="view-language"' in unlock and "showLanguageStep" in unlock, (
         "fresh first launch must offer a language step (view-language / showLanguageStep)"
     )
@@ -1144,8 +1144,8 @@ def test_triage_and_source_tags_are_progressive_toggles_not_numeric_one_shots():
     assert 'id="kt-toggle-btn"' in html and 'id="st-toggle-btn"' in html, (
         "one ON/OFF toggle button must replace the old separate run/cancel buttons"
     )
-    assert 'onclick="runKeywordTriage(this)"' not in html
-    assert 'onclick="runSourceTags(this)"' not in html
+    assert 'data-on-click="runKeywordTriage(this)"' not in html
+    assert 'data-on-click="runSourceTags(this)"' not in html
 
     app = app_js()
     assert "async function toggleKeywordTriage(" in app and "async function toggleSourceTags(" in app
@@ -1423,7 +1423,7 @@ def test_task_manager_reorder_moves_rows_optimistically():
     or the next poll. Both task managers (in-app + the standalone /tasks page) renumber
     the cached queue and REPAINT before the POST, then reconcile."""
     app = app_js()
-    tm = (_SRC / "static" / "taskmanager.html").read_text(encoding="utf-8")
+    tm = page_source("taskmanager.html")
     # in-app: a paint-from-cache path + jobMove repaints before awaiting the reorder POST
     assert "function _paintJobs(" in app, "render-from-cache path for an instant move"
     mv = app[app.index("async function jobMove("):]
@@ -1545,8 +1545,8 @@ def test_remove_imported_newsletters_live_action():
     assert "backfill_keyword_counters" in email, "counters reconciled after the bulk delete"
     assert "with write_lock():" in email, "the bulk delete takes the single-writer gate"
     # UI: the panel (shown only when there's something to remove) + the two buttons
-    assert 'id="nl-remove-panel"' in html and 'onclick="removeImportedNewsletters(' in html
-    assert 'onclick="downloadBackupFirst(' in html  # the back-up-first nudge
+    assert 'id="nl-remove-panel"' in html and 'data-on-click="removeImportedNewsletters(' in html
+    assert 'data-on-click="downloadBackupFirst(' in html  # the back-up-first nudge
     assert "function removeImportedNewsletters(" in app and "function loadNewsletterRemoveCount(" in app
     assert "/api/newsletters/remove-imported" in app
 
@@ -1641,7 +1641,7 @@ def test_newsletter_folder_import_job():
     # /api/jobs surfaces it as a DB-WRITER (kind="import" -> arbitration with collect)
     assert "def _import_jobs(" in jobs and '"kind": "import"' in jobs and '"newsletter-import"' in jobs
     # UI
-    assert 'id="nl-folder"' in html and 'onclick="startFolderImport(' in html
+    assert 'id="nl-folder"' in html and 'data-on-click="startFolderImport(' in html
     assert "function startFolderImport(" in app and "/api/newsletters/import-folder" in app
 
 
@@ -1806,7 +1806,7 @@ def test_gui_shutdown_button_and_endpoint():
     html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
     app = app_js()
     sysapi = (_SRC / "api" / "system.py").read_text(encoding="utf-8")
-    assert 'id="app-shutdown"' in html and 'onclick="appShutdown()"' in html
+    assert 'id="app-shutdown"' in html and 'data-on-click="appShutdown()"' in html
     assert "async function appShutdown(" in app and "/api/system/shutdown" in app
     # Scoped to appShutdown's own body. Whole-file, `"confirm(" in app` matched ~30
     # unrelated call sites, so the confirmation could be deleted from the shutdown
@@ -1845,7 +1845,7 @@ def test_airplane_flash_feedback_is_consistent_everywhere():
     (.go-on/.go-off, animated in the shared app.css); the standalone /tasks page must
     fire the same flash when engaging airplane (the toggle that happens there)."""
     app = app_js()
-    tm = (_SRC / "static" / "taskmanager.html").read_text(encoding="utf-8")
+    tm = page_source("taskmanager.html")
     css = (_SRC / "static" / "app.css").read_text(encoding="utf-8")
     assert "#net-flash" in css and ".go-off" in css and "@keyframes netflash" in css
     assert 'classList.add(online ? "go-on" : "go-off")' in app, "the app fires the flash"
@@ -2172,8 +2172,8 @@ def test_custom_extractor_run_from_analysis_window_is_wired():
     and the search toolbar (ctx-aware). Browser-unverified — this pins the wiring."""
     src = _ui_source()
     # the ctx-aware run control is reachable from both surfaces
-    assert "onclick=\"aiRunPrompt('an')\"" in src, "analysis window needs a 'Run extractor' action"
-    assert "onclick=\"aiRunPrompt('search')\"" in src, "search toolbar needs a 'Run extractor' action"
+    assert "data-on-click=\"aiRunPrompt('an')\"" in src, "analysis window needs a 'Run extractor' action"
+    assert "data-on-click=\"aiRunPrompt('search')\"" in src, "search toolbar needs a 'Run extractor' action"
     assert "async function aiRunPrompt(" in src and "async function aiRunPromptStart(" in src
     # mirrors the bulk-LLM streaming run (same ctx-keyed selection + abort), POSTs to the endpoint
     assert "_bulkParams(ctx)" in src
@@ -2227,7 +2227,7 @@ def test_ui_invariants():
     # 5. the eye brand mark (grid-iris path is its fingerprint) — in index.html
     #    AND the /unlock screen (must be THE SAME canonical eye, not a variant).
     assert "C8 6.5, 24 6.5, 30 16" in html, "brand mark must be the ASCII-eye vector"
-    unlock = (_SRC / "static" / "unlock.html").read_text(encoding="utf-8")
+    unlock = page_source("unlock.html")
     assert "C8 6.5, 24 6.5, 30 16" in unlock and "M11 12.5 H21" in unlock, (
         "the /unlock screen must use THE canonical eye (pointed-oval + grid-iris)"
     )
@@ -2303,8 +2303,12 @@ def test_ui_invariants():
     assert ".drawer .seg" not in html, "the drawer is retired; .seg styles must be unscoped"
     # 12. the Typeface picker exists and the theme catalog never shrinks.
     assert 'id="dr-faces"' in html, "the Typeface picker must exist (CLAUDE.md)"
-    # 16 CSS blocks: 17 named themes, Ink lives in :root (System is JS-only).
-    assert html.count('html[data-theme="') >= 16, "the theme catalog must not shrink"
+    # AMENDED 2026-09-15 (Q1123 = b): the catalogue MAY be culled to a floor of 10 named
+    # themes, and this pin moves IN THE SAME PR as the cull (0.5 row I, S05-09 S3). The cull
+    # retired slate, arctic and mist (measured near-duplicates, tests/test_theme_cull.py):
+    # 13 CSS blocks = 14 named themes, Ink lives in :root (System is JS-only). The pin sits
+    # at the real count, so a further shrink needs its own PR lowering it -- never below 10.
+    assert html.count('html[data-theme="') >= 13, "the theme catalog must not shrink"
     # 13. the agenda shows DATA, never plumbing (maintainer principle 2026-06-11):
     #     the feed directory lives in Settings → Agenda, and the month grid is
     #     the tab's default view.
@@ -2663,7 +2667,7 @@ def test_ui_invariants():
     assert 'id="home-trends-panel" hidden' in home, (
         "the Home trends panel must default hidden (Home never blank-and-silent, Item 4b)"
     )
-    assert "_insSubtabs&&_insSubtabs.select('trends')" in home, (
+    assert 'data-on-click="openInsightsTrends();return false"' in home, (
         "the Home 'More in Insights' link must deep-link to the Trends subtab (Item 4b)"
     )
     # 20. Task-manager window (ruled ×3): the vitals BUBBLE graduates to a
@@ -2918,7 +2922,7 @@ def test_ui_invariants():
     # specifically, resolving the ancestor .card via closest() -- see
     # test_lead_card_flip_trigger_is_not_nested_inside_an_interactive_role for the
     # full structural regression coverage of this restructuring.
-    assert "function leadFlip(" in html and "leadFlip(this.closest('.card'),event)" in card_html, (
+    assert "function leadFlip(" in html and "leadFlipFrom(this, event)" in card_html, (
         "clicking a Lead card's front face must flip it (maintainer 2026-06-23)"
     )
     # corpus-open-dblclick-duplicate-tabs (P1): the direct window.open() moved into the
@@ -3149,16 +3153,16 @@ def test_diagnostics_panel_button_consolidation():
         "/api/diagnostics/source-audit?download=1",
         "/api/diagnostics/source-audit-selftest?download=1",
         "/api/diagnostics/home-cards?download=1",
-        "/api/diagnostics/dates',",
-        "/api/diagnostics/network',",
-        "/api/diagnostics/performance',",
-        "/api/diagnostics/benchmark',",
-        "/api/diagnostics/debug-bundle',",
-        "/api/diagnostics/request-latency',",
-        "/api/diagnostics/slow-queries',",
-        "/api/diagnostics/schema-drift',",
-        "/api/diagnostics/integrity',",
-        "/api/diagnostics/frontend-errors',",
+        "/api/diagnostics/dates')",
+        "/api/diagnostics/network')",
+        "/api/diagnostics/performance')",
+        "/api/diagnostics/benchmark')",
+        "/api/diagnostics/debug-bundle')",
+        "/api/diagnostics/request-latency')",
+        "/api/diagnostics/slow-queries')",
+        "/api/diagnostics/schema-drift')",
+        "/api/diagnostics/integrity')",
+        "/api/diagnostics/frontend-errors')",
     )
     for url in removed_download_urls:
         assert url not in html, f"a covered per-report download button survived: {url}"
@@ -3167,20 +3171,20 @@ def test_diagnostics_panel_button_consolidation():
     #   - the full keyword-corpus dump (both size variants): the manifest's own
     #     'excluded' block says the bundle carries only the bounded DIGEST, so these
     #     buttons are each report's ONLY full-dump access, not a redundant download.
-    assert "window.open('/api/diagnostics/keywords?format=zip','_blank')" in html
+    assert "ooOpenUrl('/api/diagnostics/keywords?format=zip')" in html
     assert "per_lang=1000000" in html and "All keywords (.zip)" in html
     #   - source-quality + rollup-benchmark: explicitly named as surviving ACTIONS in
     #     the AMENDED ruling despite living in the same button row.
-    assert "window.open('/api/diagnostics/source-quality?download=1','_blank')" in html
-    assert "window.open('/api/diagnostics/rollup-benchmark','_blank')" in html
+    assert "ooOpenUrl('/api/diagnostics/source-quality?download=1')" in html
+    assert "ooOpenUrl('/api/diagnostics/rollup-benchmark')" in html
     #   - the 4 statistical-signal reports: on DIFFERENT routers (signals.py/insights.py),
     #     never scanned by the diagnostics-router ratchet and not bundle members --
     #     removing them would strand that data behind no UI at all.
     for url in (
         "/api/signals/fdr-selftest?download=1",
-        "/api/signals/flood',",
-        "/api/signals/bury',",
-        "/api/insights/lunar-correlation',",
+        "/api/signals/flood')",
+        "/api/signals/bury')",
+        "/api/insights/lunar-correlation')",
     ):
         assert url in html, f"a cross-router signal report (outside the ratchet) must stay: {url}"
 
@@ -4150,8 +4154,8 @@ def test_analysis_mindmap_controls():
     assert "anMMset({cloud:false,concept:true})" in flat, (
         "Q512's Concept view (the ring at the centre, one arm per language) is missing"
     )
-    assert "anMMset({big:!_anMM.big})" in flat, "⛶ enlarge"
-    assert "anMMset({scale:+this.value})" in flat, "text-size control"
+    assert "anMMtoggleBig()" in flat, "⛶ enlarge"
+    assert "anMMsetScale(this.value)" in flat, "text-size control"
     import json
     en = json.loads((_SRC / "static" / "locales" / "en.json").read_text(encoding="utf-8"))
     for k in ("Map", "Cloud", "Concept", "Enlarge the mindmap"):
@@ -4563,7 +4567,7 @@ def test_commodity_card_opens_analysis():
     )
     assert "openAnalysisFor(" in html, "the title must open the analysis window"
     # must not hijack the card's own (chartSymbol) click
-    assert "event.stopPropagation(); openAnalysisFor(" in html, (
+    assert "ooStop(event);openAnalysisFor(" in html, (
         "the title click must stopPropagation so the card's chartSymbol stays"
     )
     # the "co-occurrence … never causation" GRAPH caveat was REMOVED from charts
@@ -4677,7 +4681,7 @@ def test_temporal_map_retired_into_ooMap():
     for gone in (
         'id="tmap-slider"', 'id="tmap-svg"', 'id="tmap-wrap"', 'id="tmap-legend"',
         'id="tmap-mentions-toggle"', "Temporal map <span",
-        'onclick="toggleTmapPlay()"', 'onclick="toggleTmapMentions()"', 'oninput="onTmapSlide()"',
+        'data-on-click="toggleTmapPlay()"', 'data-on-click="toggleTmapMentions()"', 'data-on-input="onTmapSlide()"',
     ):
         assert gone not in html, f"the retired temporal-map panel must not ship: {gone}"
 
@@ -4949,7 +4953,7 @@ def test_oochart_enlarge_indices():
     # it pulls the FULL series from the prices endpoint, not the truncated spark
     assert "/api/commodities/${encodeURIComponent(symbol)}/prices" in html
     # index cards open the detail (the click path is wired, with data only)
-    assert "onclick=\"indexDetail(" in html, "index cards must open the ooChart detail"
+    assert "data-on-click=\"indexDetail(" in html, "index cards must open the ooChart detail"
     assert 'id="idx-chart"' in html, "the indices detail mount container must exist"
     # the commodity board detail still uses ooChart too — now via the ONE shared
     # fullscreen overlay (P2-10: chartSymbol → chartEnlarge → ooChart), not a forked
@@ -4986,13 +4990,13 @@ def test_commodity_corpus_entry():
     # price-detail click (stopPropagation), seeds the curated family query, AND
     # carries the commodity identity (Item 3) so the Price overlay subtab can show
     # the price curve x corpus coverage.
-    assert "event.stopPropagation(); openAnalysisFor(${esc(JSON.stringify(q))}, ${cOpts})" in html, (
+    assert "ooStop(event);openAnalysisFor(${esc(JSON.stringify(q))}, ${cOpts})" in html, (
         "the commodity graph 'Analyse' must open the window on the family query + commodity opts"
     )
     # the PRICE-DETAIL + correlation path is NOT removed (the Desk lesson)
     assert "function chartSymbol(" in html, "the commodity price-detail handler must stay"
     assert "function correlateSymbol(" in html, "the price-vs-news correlation must stay"
-    assert 'onclick="chartSymbol(' in html, "the commodity card body must still open price detail"
+    assert 'data-on-click="chartSymbol(' in html, "the commodity card body must still open price detail"
     assert "function indexDetail(" in html, "the index price-detail handler must stay"
     # honest term: the curated family seed, else the real name — never fabricated
     assert "COMMODITY_QUERY[s.symbol] || s.name" in html, (
@@ -5385,7 +5389,7 @@ def test_family_curation_relocated_to_settings_and_single_member_guarded():
     set_j = src.index("</details>", set_i)  # the whole Advanced → Keywords section
     set_section = src[set_i:set_j]
     assert 'id="famc-list"' in set_section, "the relocated curation list must exist in Settings"
-    assert 'onclick="familyMerge()"' in set_section
+    assert 'data-on-click="familyMerge()"' in set_section
     assert 'id="fam-overrides"' in set_section, "the overrides list rides along (nothing lost)"
 
     app = app_js()
@@ -5460,7 +5464,7 @@ def test_supergroup_curation_relocated_to_settings():
     ONLY the read-only data view (stats/dominance/trend/members-with-provenance),
     per the Desk rule -- nothing lost, just relocated."""
     src = _ui_source()
-    assert 'id="sgc-name"' in src and 'onclick="createSuperGroup()"' in src, (
+    assert 'id="sgc-name"' in src and 'data-on-click="createSuperGroup()"' in src, (
         "the create-group input must live in the Settings curation panel"
     )
     assert "function loadSupergroupCuration(" in src and "function sgCurationCard(" in src
@@ -5654,7 +5658,7 @@ def test_circle_grammar_level_marking_is_wired_and_contrast_verified():
         assert d.get(key_group), f"{loc}: missing translation for the group-level hover"
         assert d.get(key_super), f"{loc}: missing translation for the super-group-level hover"
 
-    # Contrast math (mirrors the #23 caveat-colour precedent): all 17 themes' own
+    # Contrast math (mirrors the #23 caveat-colour precedent): all 14 themes' own
     # --accent/--fg mixed the SAME way the CSS declares, checked against every
     # theme's --panel/--panel2/--panel3. Decorative box-shadow rings are governed
     # by WCAG 1.4.11 (non-text UI components, >=3:1) since the level information
@@ -5662,24 +5666,21 @@ def test_circle_grammar_level_marking_is_wired_and_contrast_verified():
     # alone (WCAG 1.4.1) -- so 3:1 is the applicable bar, verified with margin.
     themes = {
         "ink": ("#14181f", "#1b212b", "#232b38", "#e8ebf0", "#5b9dd9"),
-        "slate": ("#161b23", "#1e2531", "#28323f", "#e8ebf0", "#7aa2f7"),
         "midnight": ("#10142e", "#171c3c", "#1f2650", "#e8eaff", "#8b7dff"),
         "terminal": ("#0a1013", "#0e1619", "#13211d", "#c8f7d4", "#36d97a"),
         "sepia": ("#262019", "#2f2820", "#3a3127", "#efe5d6", "#d8a657"),
         "contrast": ("#0a0a0a", "#161616", "#222222", "#ffffff", "#ffd400"),
         "light": ("#ffffff", "#f3f5f9", "#e7ecf3", "#1b1f27", "#2f6fb3"),
         "paper": ("#fbf8f1", "#f1ebdc", "#e6ddc8", "#2b271f", "#9a6a2f"),
-        "arctic": ("#171c22", "#1e242c", "#262e38", "#e5e9f0", "#88c0d0"),
         "solar": ("#073642", "#0a4150", "#11505f", "#eee8d5", "#b58900"),
         "forest": ("#131a14", "#19231a", "#223024", "#e3ece2", "#6fbf73"),
         "aubergine": ("#1a1424", "#231b30", "#2e2440", "#ece6f4", "#c084fc"),
         "garnet": ("#1f1419", "#291a20", "#35222a", "#f0e6ea", "#d96c7f"),
         "cyber": ("#0d1120", "#131830", "#1a2140", "#dbe6ff", "#22d3ee"),
-        "mist": ("#f9fafc", "#eff2f6", "#e3e8ef", "#222831", "#5e81ac"),
         "dawn": ("#fffaf3", "#f2e9e1", "#e9dfd5", "#575279", "#b4637a"),
         "mint": ("#f8fbf8", "#ecf2ed", "#dfe9e1", "#1f2a23", "#2e7d5b"),
     }
-    assert len(themes) == 17
+    assert len(themes) == 14  # 17 until the 0.5 theme cull (Q1123 = b)
 
     def hx(h):
         h = h.lstrip("#")
@@ -5756,8 +5757,8 @@ def test_concept_map_two_tier_browse_and_clickable_countries():
     # Clickable countries: the ooMap polygon drill, the table-row drill, and the
     # "not mapped" bucket drill all resolve through the SAME shared function.
     assert "onCountry: (iso) => _conceptDrillCountry(ringId, iso)" in js
-    assert '<tr style="cursor:pointer" onclick="_conceptDrillCountry(' in js
-    assert 'onclick="_conceptDrillCountry(\'${esc(ringId)}\', null)"' in js, (
+    assert '<tr style="cursor:pointer" data-on-click="_conceptDrillCountry(' in js
+    assert 'data-on-click="_conceptDrillCountry(\'${esc(ringId)}\', null)"' in js, (
         "the not-mapped/unlocated bucket must be a clickable drill, never a dead-end div"
     )
     assert "/api/insights/ring-country-articles" in js
@@ -5766,8 +5767,8 @@ def test_concept_map_two_tier_browse_and_clickable_countries():
     # Every ⦾ group chip in the app deep-links to the map (openConceptMap), at
     # each identified render site: the family-panel pill, the sgCard chip's map
     # link, and the sgCurationCard chip's map link.
-    assert 'onclick="openConceptMap(${esc(JSON.stringify(f.ring_id))})"' in js
-    assert js.count('onclick="openConceptMap(${esc(JSON.stringify(m.ring_id))})"') >= 2, (
+    assert 'data-on-click="openConceptMap(${esc(JSON.stringify(f.ring_id))})"' in js
+    assert js.count('data-on-click="openConceptMap(${esc(JSON.stringify(m.ring_id))})"') >= 2, (
         "both sgCard and sgCurationCard ring-member chips must offer the map deep-link"
     )
 
@@ -5796,7 +5797,7 @@ def test_task_manager_opens_in_a_standalone_tab():
     over the EXISTING job/scheduler/system APIs. It may ENGAGE airplane (the safe
     direction) but never goes ONLINE itself (P2-12: consent lives in the app)."""
     html = _ui_source()  # index.html + app.js + app.css
-    assert 'onclick="openTaskManager()"' in html, "#tm-open must open the standalone task tab"
+    assert 'data-on-click="openTaskManager()"' in html, "#tm-open must open the standalone task tab"
     assert "function openTaskManager(" in html and 'window.open("/tasks"' in html, (
         "openTaskManager must window.open the /tasks page (a named target stays in place)"
     )
@@ -5804,7 +5805,7 @@ def test_task_manager_opens_in_a_standalone_tab():
     assert '"/tasks"' in main_src and "taskmanager.html" in main_src, (
         "the /tasks route must serve the standalone taskmanager.html"
     )
-    tm = (_ROOT / "src" / "static" / "taskmanager.html").read_text(encoding="utf-8")
+    tm = page_source("taskmanager.html")
     for ep in ("/api/jobs", "/api/scheduler/activity", "/api/system/vitals"):
         assert ep in tm, f"the task page must read the existing {ep} endpoint (no new backend)"
     # The status-bar airplane control may engage airplane (offline = the SAFE
@@ -5826,7 +5827,7 @@ def test_task_manager_shows_pass_phase_and_upcoming_sources():
         a fixed reorderable queue — that distinction was the user's confusion)."""
     import json as _json
 
-    tm = (_ROOT / "src" / "static" / "taskmanager.html").read_text(encoding="utf-8")
+    tm = page_source("taskmanager.html")
     app = app_js()
     for src, name in ((tm, "taskmanager.html"), (app, "app.js")):
         # Phase mapping keyed off a.phase, gated on a.active (not a bare 'idle').
@@ -5861,7 +5862,7 @@ def test_task_manager_displays_actual_language_and_tag_strata():
     'stratified by language and tag'. Both surfaces read plan.strata (derived cheaply
     from the bounded sample plan_preview already fetched — no new unbounded scan on the
     hot poll). The backend plan_preview must emit the strata."""
-    tm = (_ROOT / "src" / "static" / "taskmanager.html").read_text(encoding="utf-8")
+    tm = page_source("taskmanager.html")
     app = app_js()
     for src, name in ((tm, "taskmanager.html"), (app, "app.js")):
         assert "plan.strata" in src, f"{name}: must read the actual strata from the plan"
@@ -6027,7 +6028,7 @@ def test_task_manager_redesign_windows_style():
     (maintainer 2026-06-18): a persistent resource summary + Processes /
     Performance / Queue / Schedule / History tabs, airplane-aware, showing what
     actually runs (incl. LLM/analysis tasks) with live hardware charts."""
-    tm = (_ROOT / "src" / "static" / "taskmanager.html").read_text(encoding="utf-8")
+    tm = page_source("taskmanager.html")
     # The five tabs + their panels.
     for panel in ("processes", "performance", "queue", "schedule", "history"):
         assert f'data-panel="{panel}"' in tm, f"missing tab: {panel}"
@@ -6066,7 +6067,7 @@ def test_task_manager_status_bar_and_sessions(monkeypatch=None):
     top-bar controls MINUS search — a status bar with airplane + a language
     picker + help; the Up-next list is a full vertical list; History is reframed
     as 'online sessions'; Performance adapts to window size (auto-fit grid)."""
-    tm = (_ROOT / "src" / "static" / "taskmanager.html").read_text(encoding="utf-8")
+    tm = page_source("taskmanager.html")
     # Status bar: now IDENTICAL to the app's top bar (maintainer 2026-06-20) — the same
     # header.topbar markup (omni search + health/LLM pills + airplane + language flag + help).
     assert 'id="tm-status"' in tm, "the status bar must exist"
@@ -6234,7 +6235,7 @@ def test_unlock_enters_when_queryable_not_after_full_upkeep():
         < finish.index("mark_queryable()")
         < finish.index("def _upkeep")
     ), "mark_queryable must be called after init_db and before the background upkeep thread"
-    html = (_ROOT / "src" / "static" / "unlock.html").read_text(encoding="utf-8")
+    html = page_source("unlock.html")
     enter = html.split("async function waitReadyThenEnter", 1)[1].split("async function", 1)[0]
     assert "s.queryable" in enter, (
         "the unlock page must enter the Console as soon as the corpus is queryable, "
@@ -6258,7 +6259,7 @@ def test_unlock_error_reshows_the_form_and_is_translated():
     "passphrases do not match") is also now run through t() instead of assigned
     verbatim, so it renders in the user's chosen language like every other string
     on this page."""
-    unlock = (_ROOT / "src" / "static" / "unlock.html").read_text(encoding="utf-8")
+    unlock = page_source("unlock.html")
 
     prep = unlock.split("function _startPrep(", 1)[1].split("\n    }\n", 1)[0]
     assert prep.startswith("priorView) {"), (
@@ -6557,7 +6558,7 @@ def test_home_card_click_diagnostics_and_download_all_wired():
     # window.open('/api/diagnostics/all') froze the single-worker server for ~36 min on a
     # large corpus, so the button POSTs /all-job (backend below), polls status, downloads
     # when ready.
-    assert 'onclick="runAllDiagnostics(this)"' in html and 'id="all-diag-status"' in html
+    assert 'data-on-click="runAllDiagnostics(this)"' in html and 'id="all-diag-status"' in html
     assert '@router.post("/all-job")' in diag  # the non-blocking background-job endpoint
     assert ">All diagnostics (.zip)<" in html
     assert ">Keyword log (.zip)<" in html  # kept -- the FULL dump, exempt from the bundle
@@ -6756,7 +6757,7 @@ def test_all_diagnostics_runs_as_a_background_job():
     assert 'id="all-diag-status"' in ui, "a live-progress status element must exist"
     assert "Connection hiccup" in ui, "a dropped poll must degrade honestly, not say 'failed'"
     # The old synchronous window.open('/api/diagnostics/all') blocking click is gone.
-    assert "window.open('/api/diagnostics/all','_blank')" not in ui, "the synchronous /all click must be replaced"
+    assert "ooOpenUrl('/api/diagnostics/all')" not in ui, "the synchronous /all click must be replaced"
 
 
 def test_llm_langdetect_is_optin_labelled_and_never_touches_trusted_channels():
@@ -7690,28 +7691,25 @@ def test_severe_contrast_findings_fixed_across_all_17_themes():
     assert ".nav-item.adv .badge { color:var(--warn-fg)" in css, \
         ".nav-item.adv .badge must render its text via --warn-fg, not --warn"
 
-    # 17 themes: (accent, accent_fg [FINAL resolved value: root default or the
+    # 14 themes (17 before the Q1123 cull): (accent, accent_fg [FINAL resolved value: root default or the
     # theme's own explicit override], panel2, bg2, warn_fg [FINAL resolved value]).
     themes = {
         "ink":       ("#5b9dd9", "#0a0f16", "#1b212b", "#0f1218", "#d9a441"),
-        "slate":     ("#7aa2f7", "#0a0f16", "#1e2531", "#11151c", "#d9a441"),
         "midnight":  ("#8b7dff", "#0a0f16", "#171c3c", "#0b0e22", "#d9a441"),
         "terminal":  ("#36d97a", "#04140b", "#0e1619", "#06090c", "#d9a441"),
         "sepia":     ("#d8a657", "#241a0c", "#2f2820", "#201911", "#d9a441"),
         "contrast":  ("#ffd400", "#000000", "#161616", "#000000", "#ffd400"),
         "light":     ("#2f6fb3", "#ffffff", "#f3f5f9", "#e6eaf0", "#7a4308"),
         "paper":     ("#9a6a2f", "#ffffff", "#f1ebdc", "#ebe5d6", "#7a4308"),
-        "arctic":    ("#88c0d0", "#0b1216", "#1e242c", "#12161b", "#d9a441"),
         "solar":     ("#b58900", "#002b36", "#0a4150", "#00313d", "#d9a441"),
         "forest":    ("#6fbf73", "#0a140b", "#19231a", "#0f150f", "#d9a441"),
         "aubergine": ("#c084fc", "#160e20", "#231b30", "#150f1d", "#d9a441"),
         "garnet":    ("#d96c7f", "#1c0d12", "#291a20", "#191014", "#d9a441"),
         "cyber":     ("#22d3ee", "#04121a", "#131830", "#090c15", "#d9a441"),
-        "mist":      ("#5e81ac", "#0a0f16", "#eff2f6", "#e4e8ee", "#7a4308"),
         "dawn":      ("#b4637a", "#000000", "#f2e9e1", "#f4ece2", "#7a4308"),
         "mint":      ("#2e7d5b", "#ffffff", "#ecf2ed", "#e4ece6", "#7a4308"),
     }
-    assert len(themes) == 17
+    assert len(themes) == 14  # 17 until the 0.5 theme cull (Q1123 = b)
 
     # Every hex value above must actually appear in the CSS as the resolved value
     # for that theme (catches a copy-paste slip in this test's own fixture data,
@@ -7872,15 +7870,15 @@ def test_lead_card_flip_trigger_is_not_nested_inside_an_interactive_role():
         'class="card-face card-front" tabindex="0" role="button" aria-label="${esc(_title)}"'
     ) in card_html, "the FRONT face must carry the flip-trigger role/tabindex"
     assert (
-        "onclick=\"leadFlip(this.closest('.card'),event)\" "
-        "onkeydown=\"leadFlipKey(this.closest('.card'),event)\""
+        "data-on-click=\"leadFlipFrom(this, event)\" "
+        "data-on-keydown=\"leadFlipKeyFrom(this, event)\""
     ) in card_html, "the front face's handlers must resolve to the ancestor .card via closest()"
 
     # The back's flip-back hint is now a real, explicitly-scoped <button> (not a
     # bare <span> that relied on an interactive-role ancestor it shared with other
     # buttons on the same face).
     assert (
-        '<button class="lead-flip-hint back" onclick="leadFlip(this.closest(\'.card\'))">'
+        '<button class="lead-flip-hint back" data-on-click="leadFlipFrom(this)">'
     ) in card_html, "the back's flip-back hint must be its own dedicated <button>"
 
     # Regression proof for the guard-defeats-itself trap: leadFlip's own
@@ -7892,8 +7890,8 @@ def test_lead_card_flip_trigger_is_not_nested_inside_an_interactive_role():
     lead_flip_fn = js.split("function leadFlip(card, ev) {", 1)[1].split("\n    }\n", 1)[0]
     assert 'ev.target.closest("button,a,input,label,details,summary")' in lead_flip_fn, \
         "sanity: leadFlip's interactive-descendant guard must still exist"
-    assert "leadFlip(this.closest('.card'))" in card_html and \
-        "leadFlip(this.closest('.card'),event)" in card_html, (
+    assert 'data-on-click="leadFlipFrom(this)"' in card_html and \
+        "leadFlipFrom(this, event)" in card_html, (
         "the Back button must call leadFlip WITHOUT an event arg (bypassing its own "
         "guard, which would otherwise match the button being clicked); the front "
         "face must still pass the event (so its OWN interactive-descendant guard "
@@ -8518,7 +8516,7 @@ def test_library_qualification_tile_window_switcher_hide_flat_auto_log():
     assert "const LIB_WINDOWS = [[7," in app
     assert '"7d"' in app and '"30d"' in app and '"90d"' in app
     assert "function _libSetWindow" in app
-    assert "onclick=\"_libSetWindow(" in app
+    assert "data-on-click=\"_libSetWindow(" in app
     assert "const LIB_DEFAULT_DAYS = 30" in app
     # every render call site starts on the SAME default window (never a per-tile
     # divergent starting point) — articles_per_hour used to hardcode 7d.
@@ -9228,7 +9226,7 @@ def test_the_ai_install_egress_window_is_wired_and_states_its_limit():
     #     screen where their own exposure is invisible -- and its plain offline
     #     hover is FALSE while a window is open. Same strings as the app, so this
     #     costs no new translation.
-    tm = (_SRC / "static" / "taskmanager.html").read_text(encoding="utf-8")
+    tm = page_source("taskmanager.html")
     assert '"/api/system/egress-window"' in tm, "/tasks must read the window state"
     assert 'id="egress-window-bar"' in tm, "/tasks must show an open window"
     assert "except the AI install you allowed" in tm, (

@@ -31,6 +31,7 @@ from tests.js_source_helper import (
     css_rule,
     event_listener_bodies,
     function_body,
+    page_source,
     read_static,
     strip_comments,
 )
@@ -70,11 +71,14 @@ def test_the_task_manager_resume_never_posts_a_download_resume_without_the_popup
     """The page has no consent popup of its own, so a download resume reads the network
     state and, unless it is ONLINE, goes to the app (``/?resume=<id>``), where
     ``jobResume`` passes the ONE popup. A local job keeps its direct POST."""
-    tm = read_static("taskmanager.html")
+    tm = page_source("taskmanager.html")
     assert_present(tm, 'location.href = "/?resume=" + encodeURIComponent(id)')
     assert_present(tm, "if (online !== true)")
-    assert_present(tm, "TM.resume(\\'' + esc(j.id) + '\\', true)",
+    # The row's controls are data-tm bindings since 0.5 row I (Q1127 = a); the local one
+    # carries data-local="1", which the delegated listener passes as TM.resume's local flag.
+    assert_present(tm, 'data-tm="resume" data-local="1" data-id="',
                    why="the local-job Resume must say it is local")
+    assert_present(tm, 'window.TM.resume(id, b.getAttribute("data-local") === "1")')
     boot = read_static("app-boot.js")
     body = function_body(boot, "_hydrateResumeHandoff")
     assert_present(body, "jobResume(id)")
@@ -336,7 +340,7 @@ def test_home_collection_state_is_one_frame_so_the_colon_is_the_locales():
 
 
 def test_the_task_manager_follows_a_language_picked_in_another_tab():
-    tm = read_static("taskmanager.html")
+    tm = page_source("taskmanager.html")
     m = re.search(r'window\.addEventListener\("storage", function \(e\) \{(.*?)\n  \}\);', tm, re.S)
     assert m, "the task manager has no storage listener"
     assert_present(m.group(1), 'e.key !== "oo.lang"')
@@ -348,7 +352,7 @@ def test_the_sticky_strips_stack_on_measured_heights():
     the old sticky .tm-head the 43/86 px offsets were written for), so scrolled content
     showed through a 43 px band above the summary, and the summary wraps to 64 px, so the
     tabs covered its bottom 21 px."""
-    tm = read_static("taskmanager.html")
+    tm = page_source("taskmanager.html")
     summary = css_rule(tm, ".tm-summary").replace(" ", "")
     tabs = css_rule(tm, ".tm-tabs").replace(" ", "")
     assert "position:sticky" in summary and "top:0;" in summary, summary

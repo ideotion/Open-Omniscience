@@ -358,9 +358,9 @@
           <td>${esc(r.covers_through || r.filename)}</td>
           <td>${esc(r.cadence ? _bulT(_BUL_CADENCE_LABEL[r.cadence] || r.cadence) : "—")}</td>
           <td class="row" style="gap:6px;justify-content:flex-end">
-            <button class="secondary" onclick="bulletinReview(${esc(JSON.stringify(r.filename))})">${esc(_bulT("Review"))}</button>
-            <button class="secondary" onclick="bulletinOpenFile(${esc(JSON.stringify(r.filename))})">${esc(_bulT("Open"))}</button>
-            <button class="secondary" onclick="bulletinDelete(${esc(JSON.stringify(r.filename))})">${esc(_bulT("Delete"))}</button>
+            <button class="secondary" data-on-click="bulletinReview(${esc(JSON.stringify(r.filename))})">${esc(_bulT("Review"))}</button>
+            <button class="secondary" data-on-click="bulletinOpenFile(${esc(JSON.stringify(r.filename))})">${esc(_bulT("Open"))}</button>
+            <button class="secondary" data-on-click="bulletinDelete(${esc(JSON.stringify(r.filename))})">${esc(_bulT("Delete"))}</button>
           </td></tr>`).join("") + "</table></div>";
     }
 
@@ -452,7 +452,7 @@
         // every input `width:100%`, so inside this wrapping flex row the box took a line of
         // its own and pushed the section name under it.
         return `<label class="row" style="${_BUL_CHECK_ROW}">
-          <input type="checkbox" style="${_BUL_CHECK_BOX}" ${off ? "" : "checked"} onchange="bulletinToggleSection(${esc(JSON.stringify(s.section))})">
+          <input type="checkbox" style="${_BUL_CHECK_BOX}" ${off ? "" : "checked"} data-on-change="bulletinToggleSection(${esc(JSON.stringify(s.section))})">
           <span style="flex:1;min-width:0"><strong>${esc(heading)}</strong>
             <span class="muted">${esc(_bulTf("{n} row(s)", {n: s.rows}))}</span>${win}${why}</span></label>`;
       }).join("");
@@ -477,7 +477,7 @@
           + " · " + _bulTf(nSrc === 1 ? "{n} source" : "{n} sources", {n: fmtNum(nSrc, 0)});
         return `<div style="margin:8px 0">
           <label class="row" style="${_BUL_CHECK_ROW}">
-            <input type="checkbox" style="${_BUL_CHECK_BOX}" ${off ? "" : "checked"} onchange="bulletinToggleStory('${esc(s.key)}')">
+            <input type="checkbox" style="${_BUL_CHECK_BOX}" ${off ? "" : "checked"} data-on-change="bulletinToggleStory('${esc(s.key)}')">
             <span style="flex:1;min-width:0"><strong>${_bulStoryTermsHtml(s)}</strong>
               <span class="muted">${esc(counts)}${s.single_source ? esc(_bulT(" · one source only")) : ""}</span></span></label>
           ${label}${sents ? `<ul style="margin:4px 0 0 26px">${sents}</ul>` : ""}</div>`;
@@ -498,11 +498,11 @@
         <h4 style="margin:12px 0 4px">${esc(_bulT("Sections"))}</h4>${secs || `<div class="muted">${esc(_bulT("None."))}</div>`}
         ${stories ? `<h4 style="margin:12px 0 4px">${esc(_bulT("Stories"))}</h4>${stories}` : ""}
         <div class="row" style="gap:8px;margin-top:12px;flex-wrap:wrap">
-          <button class="secondary" onclick="bulletinNarrate(this)" id="bul-narrate-run">${esc(_bulT("Narrate with the local model"))}</button>
-          <button class="secondary" onclick="bulletinOpen('html')">${esc(_bulT("Preview"))}</button>
-          <button class="secondary" onclick="bulletinDownloadBundle(this)">${esc(_bulT("Download report + annexes"))}</button>
-          <button class="secondary" onclick="bulletinOpen('markdown')">${esc(_bulT("Report only"))}</button>
-          <button onclick="bulletinPublish(this)">${esc(_bulT("Publish"))}</button>
+          <button class="secondary" data-on-click="bulletinNarrate(this)" id="bul-narrate-run">${esc(_bulT("Narrate with the local model"))}</button>
+          <button class="secondary" data-on-click="bulletinOpen('html')">${esc(_bulT("Preview"))}</button>
+          <button class="secondary" data-on-click="bulletinDownloadBundle(this)">${esc(_bulT("Download report + annexes"))}</button>
+          <button class="secondary" data-on-click="bulletinOpen('markdown')">${esc(_bulT("Report only"))}</button>
+          <button data-on-click="bulletinPublish(this)">${esc(_bulT("Publish"))}</button>
           <div id="bul-pub" class="hint" style="align-self:center"></div>
         </div>
         <p class="hint">${esc(_bulT("The annexes are one Markdown file per article the report cites, numbered to match, with a contents page. They carry the sources' own text — keep them where you keep the corpus."))}</p>
@@ -872,17 +872,17 @@
           ? ` <span class="muted" title="${esc(_v.method ? t(_v.method) : "")}">· ${esc(_bulTf("{n} not checked yet", {n: n(_v.unchecked)}))}</span>`
           : "");
       const bulk = `<div class="row" style="gap:6px;margin-bottom:8px;align-items:center;flex-wrap:wrap">
-        <button class="secondary tiny" onclick="agExcludeBulk('dysfunctional')">Exclude dysfunctional</button>
-        <button class="secondary tiny" onclick="agExcludeBulk('shown')">Exclude shown</button>
-        ${excl.size ? `<button class="ghost tiny" onclick="agExcludeClear()">Clear exclusions</button>
+        <button class="secondary tiny" data-on-click="agExcludeBulk('dysfunctional')">Exclude dysfunctional</button>
+        <button class="secondary tiny" data-on-click="agExcludeBulk('shown')">Exclude shown</button>
+        ${excl.size ? `<button class="ghost tiny" data-on-click="agExcludeClear()">Clear exclusions</button>
           <span class="hint">${excl.size} <span>excluded</span></span>` : ""}</div>`;
       $("feeddir-list").innerHTML = bulk + fams.map(f => {
         const feeds = f.feeds.map(fd => `
           <div class="vr">
             <span>${esc(fd.provider)}${fd.year_pinned ? ` <span class="muted">· ${fd.year_pinned}</span>` : ""}</span>
             <b>${_verdictChip(fd.verdict, fd)}
-              <button class="ghost tiny" onclick="feedAction('${esc(fd.id)}','verify')">Verify</button>
-              <button class="secondary tiny" onclick="feedAction('${esc(fd.id)}','import')">Import</button></b>
+              <button class="ghost tiny" data-on-click="feedAction('${esc(fd.id)}','verify')">Verify</button>
+              <button class="secondary tiny" data-on-click="feedAction('${esc(fd.id)}','import')">Import</button></b>
           </div>
           <div class="hint" style="word-break:break-all;margin:0 0 4px"><a href="${esc(fd.url)}" target="_blank" rel="noopener noreferrer">${esc(fd.url)}</a></div>`).join("");
         const isExcl = excl.has(f.key);
@@ -892,7 +892,7 @@
             ${f.imported_events ? `<span class="pill ok">${esc(_bulTf("{n} imported", {n: n(f.imported_events)}))}</span>` : ""}
             ${isExcl ? `<span class="pill warn">excluded</span>` : ""}
             <span class="muted">· ${esc(t(_feedKindLabel(f.kind)))}${f.country ? " · " + ooCountryCell(f.country) : ""}</span>
-            <button class="ghost tiny" style="float:inline-end" onclick="event.preventDefault();event.stopPropagation();agToggleExclude(${esc(JSON.stringify(f.key))})">${isExcl ? "Include" : "Exclude"}</button></summary>
+            <button class="ghost tiny" style="float:inline-end" data-on-click="ooPreventStop(event);agToggleExclude(${esc(JSON.stringify(f.key))})">${isExcl ? "Include" : "Exclude"}</button></summary>
           ${feeds}</details>`;
       }).join("") + (total > 40 ? `<div class="hint">${esc(_bulTf("+{n} — type to filter", {n: n(total - 40)}))}</div>` : "");
     }
@@ -958,7 +958,7 @@
       if (!d.feeds || !d.feeds.length) { box.innerHTML = ""; return; }
       box.innerHTML = `<h3 style="margin-bottom:6px">Your calendars</h3>` + d.feeds.map(f =>
         `<div class="vr"><span>${esc(f.name)} <span class="muted">· ${f.events}</span></span>` +
-        `<button class="ghost tiny" onclick="removeUserCalendar('${esc(f.key)}')">Remove</button></div>`).join("");
+        `<button class="ghost tiny" data-on-click="removeUserCalendar('${esc(f.key)}')">Remove</button></div>`).join("");
     }
     async function removeUserCalendar(key) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
@@ -973,7 +973,7 @@
         // aria-pressed: subscribed/not is a TOGGLE state, and after the contrast fix
         // it is carried by the accent background + border. Colour alone must never be
         // the only channel, so the state is announced too.
-        `<button class="ag-cal${subs.has(c.key) ? " on" : ""}" data-k="${esc(c.key)}" onclick="toggleCalSub(this)"
+        `<button class="ag-cal${subs.has(c.key) ? " on" : ""}" data-k="${esc(c.key)}" data-on-click="toggleCalSub(this)"
            aria-pressed="${subs.has(c.key) ? "true" : "false"}"
            title="${esc(c.description || "")}">${esc(c.name)} <span class="muted">${c.count}</span></button>`).join("");
     }
@@ -1080,7 +1080,7 @@
       const tfa = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((s2, v) =>
         String(s2).replace(/\{(\w+)\}/g, (m2, k) => (v && v[k] != null) ? v[k] : m2));
       const conf = agConfPill(e);
-      const tags = (e.tags||[]).map(t => `<span class="ag-tag" onclick="$('agenda-tag').value='${esc(t)}';renderAgenda()">${esc(t)}</span>`).join("");
+      const tags = (e.tags||[]).map(t => `<span class="ag-tag" data-on-click="ooSetValue('agenda-tag', '${esc(t)}');renderAgenda()">${esc(t)}</span>`).join("");
       const alsoIn = (e.also_in && e.also_in.length)
         ? ` <span class="pill" title="${esc(tfa("This event also appears in: {calendars}", {calendars: e.also_in.join(", ")}))}">`
           + `${esc(tfa("also in {n}", {n: e.also_in.length}))}</span>` : "";
@@ -1150,7 +1150,7 @@
       const openExpr = (e.deduced && Array.isArray(e.article_ids) && e.article_ids.length)
         ? `openAnalysisForIds(${esc(JSON.stringify(e.article_ids))}, ${esc(JSON.stringify(e.title))})`
         : `openAnalysisFor(${esc(JSON.stringify(e.title))})`;
-      const titleEl = `<b class="ag-evtitle" style="cursor:pointer" title="Open in analysis — explore this event in your corpus" onclick="event.stopPropagation();${openExpr}">${esc(e.title)}</b>`;
+      const titleEl = `<b class="ag-evtitle" style="cursor:pointer" title="Open in analysis — explore this event in your corpus" data-on-click="ooStop(event);${openExpr}">${esc(e.title)}</b>`;
       return `<div class="ag-row"><div class="ag-when">${agWhen(e)}</div>
         <div class="ag-body"><div>${titleEl} <span class="pill">${esc(e.category)}</span> ${e.country&&e.country!=='INT'?ooCountryCell(e.country,{cls:"pill"}):""} ${conf}${span}${alsoIn}${imp}${prov}${yearNote}</div>
           ${variants}
@@ -1182,9 +1182,9 @@
       const box = $("agenda-cats"); if (!box) return;
       // Labels are the English category slugs (all keyed ×12) emitted as DOM text,
       // so the i18n engine translates them live on a language switch.
-      const chips = [`<button type="button" class="ag-catchip${_agCat === "" ? " on" : ""}" onclick="agSetCat('')">all</button>`];
+      const chips = [`<button type="button" class="ag-catchip${_agCat === "" ? " on" : ""}" data-on-click="agSetCat('')">all</button>`];
       for (const c of (AG.categories || [])) {
-        chips.push(`<button type="button" class="ag-catchip${_agCat === c ? " on" : ""}" style="--cat:${agCatHue(c)}" onclick="agSetCat('${esc(c)}')"><span class="ag-catdot"></span>${esc(c)}</button>`);
+        chips.push(`<button type="button" class="ag-catchip${_agCat === c ? " on" : ""}" style="--cat:${agCatHue(c)}" data-on-click="agSetCat('${esc(c)}')"><span class="ag-catdot"></span>${esc(c)}</button>`);
       }
       box.innerHTML = chips.join("");
     }
@@ -1271,7 +1271,7 @@
         const chips = evs.slice(0, 4).map(e =>
           `<span class="ag-chip${agChipCls(e) ? " " + agChipCls(e) : ""}" title="${esc(e.title + agChipTitleSuffix(e))}">${esc(e.title.length > 20 ? e.title.slice(0, 19) + "…" : e.title)}</span>`).join("");
         const more = evs.length > 4 ? `<span class="ag-more">+${evs.length - 4}</span>` : "";
-        cards += `<div class="ag-ycard${isCur ? " today" : ""}${evs.length ? " has" : ""}" onclick="agOpenMonth(${m})" title="${esc(name)}">
+        cards += `<div class="ag-ycard${isCur ? " today" : ""}${evs.length ? " has" : ""}" data-on-click="agOpenMonth(${m})" title="${esc(name)}">
           <div class="ag-ymon">${esc(name)} <span class="muted">${evs.length || ""}</span></div>${chips}${more}</div>`;
       }
       box.innerHTML = `<div class="ag-ygrid">${cards}</div>`;
@@ -1298,7 +1298,7 @@
       const chips = evs.slice(0, 4).map(e =>
         `<span class="ag-chip${agChipCls(e) ? " " + agChipCls(e) : ""}" title="${esc(e.title + agChipTitleSuffix(e))}">${esc(e.title.length > 20 ? e.title.slice(0, 19) + "…" : e.title)}</span>`).join("");
       const more = evs.length > 4 ? `<span class="ag-more">+${evs.length - 4}</span>` : "";
-      return `<div class="ag-ycard${isCur ? " today" : ""}${evs.length ? " has" : ""}" onclick="agOpenMonthYear(${y},${m})" title="${esc(name)}">
+      return `<div class="ag-ycard${isCur ? " today" : ""}${evs.length ? " has" : ""}" data-on-click="agOpenMonthYear(${y},${m})" title="${esc(name)}">
         <div class="ag-ymon">${esc(name)} <span class="muted">${evs.length || ""}</span></div>${chips}${more}</div>`;
     }
     // TRIMESTER (3 months) + SEMESTER (6 months): a row of consecutive month
@@ -1340,7 +1340,7 @@
       let cells = "";
       for (let y = y0; y < y0 + 10; y++) {
         const n = yearCount(y), isCur = y === curY;
-        cells += `<div class="ag-ycard${isCur ? " today" : ""}${n ? " has" : ""}" onclick="agOpenYear(${y})" title="${y}">
+        cells += `<div class="ag-ycard${isCur ? " today" : ""}${n ? " has" : ""}" data-on-click="agOpenYear(${y})" title="${y}">
           <div class="ag-ymon">${y} <span class="muted">${n || ""}</span></div></div>`;
       }
       box.innerHTML = `<div class="ag-dgrid">${cells}</div>`;
@@ -1503,7 +1503,7 @@
         const chips = evs.slice(0, 3).map(e =>
           `<span class="ag-chip${agChipCls(e) ? " " + agChipCls(e) : ""}" title="${esc(e.title + agChipTitleSuffix(e, e.confirmed ? "" : " — exact date moves; check the official source"))}">${esc(e.title.length > 22 ? e.title.slice(0, 21) + "…" : e.title)}</span>`).join("");
         const more = evs.length > 3 ? `<span class="ag-more">+${evs.length - 3}</span>` : "";
-        return `<div class="ag-cell${today ? " today" : ""}${evs.length ? " has" : ""}${AGV.day === c.d ? " sel" : ""}" onclick="agShowDay(${c.d})">
+        return `<div class="ag-cell${today ? " today" : ""}${evs.length ? " has" : ""}${AGV.day === c.d ? " sel" : ""}" data-on-click="agShowDay(${c.d})">
           <span class="ag-dn">${c.d}</span>${moonHtml}${seasonHtml}${chips}${more}</div>`;
       }).join("") + `</div>`;
       const t9 = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
@@ -1562,7 +1562,7 @@
         const chips = evs.slice(0, 6).map(e =>
           `<span class="ag-chip${agChipCls(e) ? " " + agChipCls(e) : ""}" title="${esc(e.title + agChipTitleSuffix(e, e.confirmed ? "" : " — exact date moves; check the official source"))}">${esc(e.title.length > 30 ? e.title.slice(0, 29) + "…" : e.title)}</span>`).join("");
         const more = evs.length > 6 ? `<span class="ag-more">+${evs.length - 6}</span>` : "";
-        return `<div class="ag-cell${isToday ? " today" : ""}${evs.length ? " has" : ""}${isSel ? " sel" : ""}" onclick="agPickDate(${d.getFullYear()},${d.getMonth() + 1},${d.getDate()})">
+        return `<div class="ag-cell${isToday ? " today" : ""}${evs.length ? " has" : ""}${isSel ? " sel" : ""}" data-on-click="agPickDate(${d.getFullYear()},${d.getMonth() + 1},${d.getDate()})">
           <div class="ag-wd">${esc(wd)} <span class="ag-wd-d">${esc(dn)}</span>${moonHtml}</div>${chips}${more}</div>`;
       }).join("") + `</div>`;
       const monthOnly = rows.filter(e => e.month && !e.day && !e.next_occurrence && monthsInWeek.has(e.month));

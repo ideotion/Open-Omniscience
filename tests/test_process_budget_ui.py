@@ -22,6 +22,8 @@ import json
 import pathlib
 import subprocess
 
+from tests.js_source_helper import page_source
+
 _ROOT = pathlib.Path(__file__).resolve().parents[1]
 _LOCALES = _ROOT / "src" / "static" / "locales"
 
@@ -183,7 +185,7 @@ def test_net_coach_actions_carry_equal_visual_weight() -> None:
 
 
 def test_the_task_manager_online_title_makes_the_stronger_true_claim() -> None:
-    tm = (_ROOT / "src" / "static" / "taskmanager.html").read_text(encoding="utf-8")
+    tm = page_source("taskmanager.html")
     assert f't("{_AIRPLANE_ONLINE_TITLE}")' in tm, (
         "the task manager does not paint the stronger claim Q1126 ruled"
     )
@@ -193,7 +195,7 @@ def test_the_weaker_claim_is_gone_from_the_code_and_from_every_locale() -> None:
     """Both halves. The old key was used by exactly one call site, so leaving it in
     the locales would orphan eleven translations -- and a future reader would have no
     way to tell an orphan from a live string."""
-    tm = (_ROOT / "src" / "static" / "taskmanager.html").read_text(encoding="utf-8")
+    tm = page_source("taskmanager.html")
     # The removal's own explanation quotes the retired wording, so assert the CALL
     # rather than the words: the recorded "a must-be-gone guard trips on the comment
     # that records the removal" trap, in its silent direction.
@@ -221,7 +223,7 @@ def test_the_stronger_title_is_translated_in_all_twelve_locales() -> None:
 def test_both_surfaces_paint_the_same_claim_for_the_same_state() -> None:
     """The defect Q1126 names, stated as a property: two surfaces describing ONE
     mechanism differently is how an operator comes to believe the weaker one."""
-    tm = (_ROOT / "src" / "static" / "taskmanager.html").read_text(encoding="utf-8")
+    tm = page_source("taskmanager.html")
     core = (_ROOT / "src" / "static" / "app-core.js").read_text(encoding="utf-8")
     assert _AIRPLANE_ONLINE_TITLE in tm and _AIRPLANE_ONLINE_TITLE in core
 
@@ -234,7 +236,7 @@ def test_the_offline_third_state_is_still_mirrored() -> None:
         "Offline (airplane mode), except the AI install you allowed — collection "
         "stays stopped. Click to go fully online."
     )
-    tm = (_ROOT / "src" / "static" / "taskmanager.html").read_text(encoding="utf-8")
+    tm = page_source("taskmanager.html")
     core = (_ROOT / "src" / "static" / "app-core.js").read_text(encoding="utf-8")
     assert third in tm and third in core
 
@@ -251,7 +253,7 @@ def test_the_task_manager_re_translates_its_painted_title_on_a_language_switch()
     re-calls ``_paintNetwork`` from the same event); this page never registered,
     which is the recorded frozen-locale class on a render-once surface.
     """
-    tm = (_ROOT / "src" / "static" / "taskmanager.html").read_text(encoding="utf-8")
+    tm = page_source("taskmanager.html")
     # Comment-stripped: the explanation above the listener necessarily names the
     # event it registers, so a bare substring search would pass with the listener
     # deleted -- the recorded must-be-present-satisfied-by-its-own-comment trap, in

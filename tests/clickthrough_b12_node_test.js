@@ -22,7 +22,7 @@ const path = require("path");
 
 const STATIC = path.join(__dirname, "..", "src", "static");
 const read = (name) => fs.readFileSync(path.join(STATIC, name), "utf-8");
-const TM = read("taskmanager.html");
+const TM = require("./app_source.js").pageSource("taskmanager.html");
 const BOOT = read("app-boot.js");
 const GOV = read("app-gov-law.js");
 const QUAL = read("app-ai-tools.js");

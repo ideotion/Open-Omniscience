@@ -124,6 +124,20 @@ def _wiki_stream(since: datetime) -> dict[str, Any]:
     }
 
 
+def _state_since_switch(enabled: bool | None, live: dict | None) -> str:
+    """A tier's state as this process last measured it -- unless the switch moved since.
+
+    Both the walk and WARM read their switch once, at the start of a window, so for up to
+    one drain interval after the operator turns one ON its last state is still ``off``:
+    the old setting's answer, not a measurement of the new one. That reads as not started
+    yet, which is what it is; drawing "Off" beside a ticked box would contradict the box.
+    """
+    if not live:
+        return "not_running"
+    state = str(live.get("state") or "not_running")
+    return "not_started" if enabled and state == "off" else state
+
+
 def _wiki_walk() -> dict[str, Any]:
     """The ``allpages`` walk (Q701 = c): pages seen of each edition's own count, and what it
     is doing now.
@@ -147,7 +161,7 @@ def _wiki_walk() -> dict[str, Any]:
     live = (lane_service_status() or {}).get("walk")
     out: dict[str, Any] = {
         "enabled": enabled,
-        "state": (live or {}).get("state") if live else "not_running",
+        "state": _state_since_switch(enabled, live),
         "reason": (live or {}).get("reason") if live else None,
     }
     if not lane_path("wiki").is_file():
@@ -159,6 +173,49 @@ def _wiki_walk() -> dict[str, Any]:
         return {**out, "measured": False, "reason_counts": "lane-never-run"}
     except SQLAlchemyError:
         _LOG.warning("living overview: the walk's rows could not be read", exc_info=True)
+        return {**out, "measured": False, "reason_counts": "unreadable"}
+    if not coverage.get("measured"):
+        return {**out, "measured": False, "reason_counts": coverage.get("reason")}
+    return {**out, **coverage}
+
+
+def _wiki_warm() -> dict[str, Any]:
+    """Q707's WARM tier: the latest and previous text of every other changed page.
+
+    Three sources, never blended, for the reason ``_wiki_walk`` gives: the switch is the
+    operator's setting; the state (fetching, paused and why, waiting, caught up) is this
+    process's fetcher, measured, and ``not_running`` when none exists here; the counts are
+    the lane's own rows through the one reader the counters artifact uses
+    (``warm_coverage``).
+    """
+    from src.scheduler.settings import load_settings
+    from src.versioned.store import LaneAbsentError, lane_path, lane_session
+    from src.wiki.service import lane_service_status
+    from src.wiki.warm import WARM_BUDGET_SHARE, warm_coverage
+
+    try:
+        enabled: bool | None = bool(getattr(load_settings(), "wiki_warm_enabled", False))
+    except Exception:  # noqa: BLE001 - an unreadable switch is named, never guessed
+        _LOG.warning("living overview: WARM's switch could not be read", exc_info=True)
+        enabled = None
+    live = (lane_service_status() or {}).get("warm")
+    out: dict[str, Any] = {
+        "enabled": enabled,
+        "state": _state_since_switch(enabled, live),
+        "reason": (live or {}).get("reason") if live else None,
+        # Per edition, the refusal it is waiting out -- this process's, never a row.
+        "waiting": dict((live or {}).get("waiting") or {}),
+        "share": WARM_BUDGET_SHARE,
+    }
+    if not lane_path("wiki").is_file():
+        return {**out, "measured": False, "reason_counts": "lane-never-run"}
+    try:
+        with lane_session("wiki") as lane:
+            coverage = warm_coverage(lane)
+    except LaneAbsentError:
+        return {**out, "measured": False, "reason_counts": "lane-never-run"}
+    except SQLAlchemyError:
+        _LOG.warning("living overview: the WARM rows could not be read", exc_info=True)
         return {**out, "measured": False, "reason_counts": "unreadable"}
     if not coverage.get("measured"):
         return {**out, "measured": False, "reason_counts": coverage.get("reason")}
@@ -322,6 +379,7 @@ def living_overview(db: Session = Depends(get_db)) -> dict[str, Any]:
                 "kind": "wiki",
                 "stream": _wiki_stream(since),
                 "tracked": _wiki_tracked(db, since.replace(tzinfo=None)),
+                "warm": _wiki_warm(),
                 "walk": _wiki_walk(),
                 "storage": storage.get("wiki"),
             },
@@ -341,7 +399,9 @@ def living_overview(db: Session = Depends(get_db)) -> dict[str, Any]:
             "stream: the lane file's own rows -- pages followed, changes the stream reported "
             "for them, how many had their text stored, and changes it reported for pages you "
             "do not follow. Complete through: the earliest point every feed was read without "
-            "a break. Tracked pages, law: the main database's rows, with the newest and oldest "
+            "a break. Other changed pages (WARM) and the page walk: the lane file's own rows, "
+            "each with its own counts, and this process's state for each. Tracked pages, law: "
+            "the main database's rows, with the newest and oldest "
             "check. Maps: the download manager's regions and the bytes on disk. Storage: the "
             "same rows as Settings -> Storage. Nothing is sent anywhere."
         ),

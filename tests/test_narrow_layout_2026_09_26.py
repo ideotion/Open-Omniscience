@@ -41,7 +41,7 @@ def test_the_dump_button_groups_wrap_instead_of_widening_the_row():
     html = read_static("index.html")
     for first in ("dumpFtsBuild", "dumpSearchTitles"):
         m = re.search(
-            r'<div style="([^"]*)">\s*<button class="secondary" onclick="' + first + r'\(\)">', html
+            r'<div style="([^"]*)">\s*<button class="secondary" data-on-click="' + first + r'\(\)">', html
         )
         assert m, f"the {first} button group moved"
         style = m.group(1).replace(" ", "")
