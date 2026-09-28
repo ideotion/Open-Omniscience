@@ -105,14 +105,19 @@ _APP_SRC = os.path.dirname(os.path.dirname(os.path.abspath(__file__))).replace("
 
 _LOCK = threading.Lock()
 _MARKS: dict[str, Any] = {}
-_LAST_WRITE = 0.0
-_LAST_COMPOSITION = 0.0
-_LAST_PRESSURE = 0.0
+# "Never", for the monotonic times of the last write, composition, snapshot and burst.
+# Not 0.0: time.monotonic() counts from the MACHINE's boot, so 0.0 reads as "a moment
+# ago" for an app started with its machine, and the first burst of its first five
+# minutes was never snapshotted (found 2026-09-27 as two tests failing on a 284 s host).
+_NEVER = float("-inf")
+_LAST_WRITE = _NEVER
+_LAST_COMPOSITION = _NEVER
+_LAST_PRESSURE = _NEVER
 _PRESSURE: list[dict[str, Any]] = []
 _PRESSURE_TAKEN = 0
 _EPISODE_LOW: float | None = None  # lowest available at a snapshot; None = no episode
 _LAST_BLOCKS: tuple[float, int] | None = None  # (monotonic, blocks) at the last liveness read
-_LAST_BURST = 0.0
+_LAST_BURST = _NEVER
 _PREV: dict[str, Any] | None = None
 _PREV_LOADED = False
 
@@ -472,8 +477,8 @@ def _pressure_snapshot(readings: dict[str, float], why: str) -> dict[str, Any]:
 def _reset_snapshots() -> None:
     """This session's snapshot state, emptied. Caller holds ``_LOCK``."""
     global _PRESSURE, _PRESSURE_TAKEN, _EPISODE_LOW, _LAST_PRESSURE, _LAST_BLOCKS, _LAST_BURST
-    _PRESSURE, _PRESSURE_TAKEN, _EPISODE_LOW, _LAST_PRESSURE = [], 0, None, 0.0
-    _LAST_BLOCKS, _LAST_BURST = None, 0.0
+    _PRESSURE, _PRESSURE_TAKEN, _EPISODE_LOW, _LAST_PRESSURE = [], 0, None, _NEVER
+    _LAST_BLOCKS, _LAST_BURST = None, _NEVER
 
 
 def capture_previous() -> dict[str, Any] | None:
@@ -487,7 +492,7 @@ def capture_previous() -> dict[str, Any] | None:
             _PREV = _read_record()
             _PREV_LOADED = True
         _MARKS = {"pid": os.getpid(), "started_at": _now()}
-        _LAST_WRITE = 0.0
+        _LAST_WRITE = _NEVER
         _reset_snapshots()
         _write(dict(_MARKS))
         try:
@@ -639,6 +644,6 @@ def reset_for_tests() -> None:
         _PREV = None
         _PREV_LOADED = False
         _MARKS = {}
-        _LAST_WRITE = 0.0
-        _LAST_COMPOSITION = 0.0
+        _LAST_WRITE = _NEVER
+        _LAST_COMPOSITION = _NEVER
         _reset_snapshots()
