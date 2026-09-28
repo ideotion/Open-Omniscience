@@ -48,7 +48,9 @@ this section were still open.
 ### Import, export and backup
 
 - **The import lifecycle**: a fresh page, four visible stages, one poll chain (#1144); imports
-  adding more than 20,000 articles no longer fail at the search index (#1192).
+  adding more than 20,000 articles no longer fail at the search index (#1192); and the custody
+  import reads the imported chains in slices instead of whole, after two ~1M-article imports ran
+  out of memory there on a 7 GB machine (#1193).
 - **The export**: a dated `OpenOmniscience_Backup` folder, verified after it is written, with a
   completion panel and a `BACKUP_SUMMARY.md` (#1145).
 - **One backup-format bump** carrying five new payloads, with every older format still readable

@@ -12618,6 +12618,15 @@ a state production never reaches. **When a mutant survives, first ask whether it
 any reachable state; if it cannot, correct the reasoning and the comments that carried it, and
 leave the suite alone.**
 
+### A SIDE STAGE SCALES WITH THE CORPUS TOO — AND IT RUNS LAST, WHEN A KILL COSTS THE MOST (2026-09-28)
+
+The import's merge, verify and re-index had all been bounded and measured at a million
+articles; the custody import beside them still `fetchall()`-ed a table that grows by one row
+per ingested article, and parsed every row into a second list. Because it runs after hours of
+merging and before the swap, its out-of-memory kill threw all of that work away, twice. **Any
+table that grows with the corpus is corpus-scale, whatever stage reads it: stream it, and look
+hardest at the stages between an expensive step and its commit.**
+
 ### TAG `vX` ONLY WHERE THE VERSION ALREADY READS `X` -- A DEFERRED FLIP MOVES THE MISMATCH TO THE NEXT TAG (PR #1195)
 
 The project's sequence is pass → tag → flip: tag `vX` while `pyproject.toml` reads `X`, then flip to
