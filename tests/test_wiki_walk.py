@@ -607,10 +607,11 @@ def _locales() -> dict[str, dict]:
 
 
 def _js_table(name: str) -> dict[str, str]:
-    """A ``const NAME = {...}`` string table from app-living.js, read as the page reads it."""
-    src = (_ROOT / "src" / "static" / "app-living.js").read_text(encoding="utf-8")
-    at = src.index(f"const {name} = {{")
-    body = src[at : src.index("};", at)]
+    """A ``const NAME = {...}`` string table from app-living.js, brace-matched by the shared
+    helper rather than sliced by hand (``tests/test_source_slicing_discipline.py``)."""
+    from tests.js_source_helper import object_literal, read_static
+
+    body = object_literal(read_static("app-living.js"), name)
     return dict(re.findall(r'(\w+):\s*"([^"]*)"', body))
 
 
