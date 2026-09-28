@@ -1334,6 +1334,19 @@
       const st = document.getElementById("ux-imp-status");
       const box = document.getElementById("ux-imp-checklist");
       document.getElementById("ux-imp-summary").innerHTML = "";
+      _uxImSummaryArgs = null;
+      // A new scan is a new import in the making, so a FINISHED run's rows and its
+      // "Import failed:" line go with the old checklist (2026-09-28 walk): left in place
+      // they sat under the new folder's checklist as if they described it. A run still
+      // going keeps its rows -- they are live, and Stop lives among them.
+      if (!(_uxImLastStatus && _uxImLastStatus.state === "running")) {
+        _uxImResetRunView();
+        if (_uxImWatch !== "verify") {   // a Verify in flight keeps its chain and its line
+          _uxImStopChain();
+          const pr = document.getElementById("ux-imp-progress");
+          if (pr) pr.textContent = "";
+        }
+      }
       st.textContent = t("Scanning…"); box.innerHTML = ""; btn.disabled = true;
       try {
         const r = await api("/api/backup/import-scan?path=" + encodeURIComponent(src));
@@ -1447,6 +1460,17 @@
       // point of asking here: the honest answer is "yes, and nothing is lost".
       if (!await arbitrate(t("Import"), t("A running re-index pauses while the import runs and resumes afterwards — nothing is lost."))) return;
       btn.disabled = true;
+      // A NEW RUN STARTS ON A BLANK RUN VIEW (2026-09-28 walk). Only a reopen reset these
+      // surfaces, so an import started in the SAME opening as a failed one drew its first
+      // rows under the failed run's: "2 failed · Failed", both backups red with their
+      // error, "Analytics are complete" -- until the first tick replaced them, which is as
+      // long as the start request takes on a big backup. The chain is stopped too, or a
+      // stage-4 watch left by the last run repaints that run's rows from its own status.
+      // The start line in #ux-imp-progress is the only thing shown until the run reports.
+      _uxImStopChain();
+      _uxImResetRunView();
+      const progEl = document.getElementById("ux-imp-progress");
+      if (progEl) progEl.textContent = t("Starting…");
       const bgBtn = document.getElementById("ux-imp-bg");
       if (bgBtn) bgBtn.style.display = "";
       try {
@@ -1457,6 +1481,7 @@
         document.getElementById("ux-imp-progress").innerHTML = `<span style="color:var(--err)">${esc(t("Import failed:"))} ${esc(ooServerText(e.message || e))}</span>`;
         return;
       }
+      if (progEl) progEl.textContent = "";
       _uxImWatchQueue();
     }
 
@@ -1834,6 +1859,10 @@
     // _UX_IM_STATE_LABEL above, so the four words are the ones already shipped x12. The
     // backend's own set is `_ENDED` in import_queue._stage_rows.
     const _UX_IM_ENDED = { interrupted: 1, error: 1, cancelled: 1, stopped: 1 };
+    // The RUN's own terminal states (import_queue: `_state` once the loop has left).
+    // Named, not "anything but running", so a status that carries no state at all is
+    // never read as a finished run.
+    const _UX_IM_RUN_ENDED = { done: 1, error: 1, stopped: 1, interrupted: 1 };
 
     const _UX_IM_STAGE_LABEL = {
       verify_stage: "Check the backup and unpack it",
@@ -2004,11 +2033,24 @@
     // it could not be read -- which the row SAYS, rather than showing a zero.
     // `only` ("reindex") draws stage 4 alone: the fresh page a reopen shows while the
     // re-index of a finished run is still draining (_uxImFreshView).
+    // Did the run END having brought nothing into the corpus? Pure. Every restore failed,
+    // was cancelled or discarded -- none is done, and none was skipped as already there.
+    // Stages 3 and 4 then have nothing of this import's to work on, and their own words
+    // ("done", "complete") would claim otherwise beside two red "Failed" rows (2026-09-28
+    // walk: a wrong passphrase read "Merge the search index -- done" and "Re-index the
+    // imported articles -- complete").
+    function _uxImNothingMerged(st) {
+      if (!st || !_UX_IM_RUN_ENDED[st.state]) return false;
+      const restores = (st.items || []).filter((i) => i.kind === "corpus" || i.kind === "legacy");
+      return restores.length > 0 && !restores.some((i) => i.state === "done" || i.state === "skipped");
+    }
+
     function _uxImRenderStages(st, rx, t, tf, only) {
       const host = document.getElementById("ux-imp-stages");
       if (!host) return;
       const stages = (st.stages || []).filter((r) => !only || String(r.key || r.n) === only);
       if (!stages.length) { host.innerHTML = ""; return; }   // older server: no claim
+      const none = _uxImNothingMerged(st);
       for (const sRow of stages) {
         const key = String(sRow.key || sRow.n);
         const title = esc(t(_UX_IM_STAGE_LABEL[key] || key));
@@ -2019,7 +2061,11 @@
         // queue reports that row as "external" by design -- it does not own the re-index
         // -- so a dot keyed on the row's state stayed not-started grey through the whole
         // drain and after it, beside a line counting up to "complete".
-        const dot = key === "reindex" ? _uxImReindexDot(rx, st) : ({
+        const idle = none && (key === "reindex"
+          ? !(rx && (rx.state === "running" || rx.state === "paused"))
+            && !(rx && rx.backlog && Number(rx.backlog.articles_pending) > 0)
+          : key === "search_index" && sRow.state === "done");
+        const dot = idle ? "var(--muted)" : key === "reindex" ? _uxImReindexDot(rx, st) : ({
                       done: "var(--ok)", running: "var(--accent)", pending: "var(--muted)",
                       external: "var(--muted)", stopped: "var(--warn)",
                       cancelled: "var(--warn)", interrupted: "var(--err)",
@@ -2028,7 +2074,9 @@
         // The error words are COLOURED TEXT, never the toast `.note` box: an inline toast
         // (11 px padding, a shadow, a slide-in) inside a row overlaps the rows above and
         // below it -- the overlap R2 calls a defect (I9).
-        if (key === "reindex") {
+        if (idle) {
+          bits.push(esc(t("nothing to do — no backup was imported")));
+        } else if (key === "reindex") {
           bits.push(_uxImReindexBits(rx, t, tf, st));
         } else if (sRow.measured && sRow.total) {
           bits.push(esc(tf("{done} of {total} backups", { done: sRow.done || 0, total: sRow.total })));
@@ -2136,30 +2184,54 @@
       // the whole run decides whether the folder is finished with (see above).
       const saved = restores.length > 0 && restores.every(done) && items.every(done);
       const out = [];
+      // A RUN THAT HAS ENDED WITHOUT SAVING EVERYTHING (2026-09-28 walk). "Keep the import
+      // files until this import is saved" and "Closing the app now abandons whatever has
+      // not been saved yet" are about a run in flight; after a wrong passphrase they sat
+      // under two failed backups for good, promising a save that will never come -- and
+      // "Analytics are complete -- every imported article is indexed" was vacuously true
+      // of an import that brought in nothing. Once the run is over, say what it left.
+      if (_UX_IM_RUN_ENDED[st.state] && restores.length > 0 && !saved) {
+        if (!restores.some(done)) {
+          out.push({ ok: false, text: t("Nothing from this import reached your corpus — it is exactly as it was before.") });
+          out.push({ ok: false, text: t("Keep the import files: once the cause is fixed, import them again.") });
+          return out;
+        }
+        out.push({ ok: false, text: t("Keep the import files of the backups that did not finish — they have to be imported again.") });
+        out.push({ ok: true, text: t("Safe to close or update the app — the re-index picks up where it left off on the next start.") });
+        out.push(..._uxImAnalyticsStatement(st, rx, t, tf));
+        return out;
+      }
       out.push(saved
         ? { ok: true, text: t("The import files can be removed — everything they carried is in your corpus now.") }
         : { ok: false, text: t("Keep the import files until this import is saved — nothing is durable until then.") });
       out.push(saved
         ? { ok: true, text: t("Safe to close or update the app — the re-index picks up where it left off on the next start.") }
         : { ok: false, text: t("Closing the app now abandons whatever has not been saved yet; your corpus is untouched.") });
+      out.push(..._uxImAnalyticsStatement(st, rx, t, tf));
+      return out;
+    }
+
+    // The third statement, about stage 4, on its own: an ended run that saved part of its
+    // backups carries it too, beside its own first two.
+    function _uxImAnalyticsStatement(st, rx, t, tf) {
       const bk = rx && rx.backlog;
       if (!rx || !bk || bk.available === false) {
-        out.push({ ok: false, text: t("Whether analytics have caught up could not be read.") });
-      } else if ((bk.articles_pending || 0) > 0) {
-        out.push({ ok: false, text: tf(
+        return [{ ok: false, text: t("Whether analytics have caught up could not be read.") }];
+      }
+      if ((bk.articles_pending || 0) > 0) {
+        return [{ ok: false, text: tf(
           "Analytics are still catching up: {n} imported article(s) carry no keywords until the re-index finishes.",
-          { n: fmtNum(Number(bk.articles_pending), 0) }) });
-      } else if (st.state === "running" || rx.state === "running") {
+          { n: fmtNum(Number(bk.articles_pending), 0) }) }];
+      }
+      if (st.state === "running" || rx.state === "running") {
         // AFTER STAGE 4, and not before (Q203 = a; 2026-09-26, I2). An empty backlog at
         // the START of a run is a fact about the corpus BEFORE this import -- nothing it
         // carries has been merged, let alone re-indexed -- and the check mark read
         // "Analytics are complete" at 0 of 4 imported. While the run (stages 1-3) or the
         // drain (stage 4) is still going, the statement says what it is waiting for.
-        out.push({ ok: false, text: t("Analytics are complete once the re-index (stage 4) finishes.") });
-      } else {
-        out.push({ ok: true, text: t("Analytics are complete — every imported article is indexed.") });
+        return [{ ok: false, text: t("Analytics are complete once the re-index (stage 4) finishes.") }];
       }
-      return out;
+      return [{ ok: true, text: t("Analytics are complete — every imported article is indexed.") }];
     }
 
     // `only` ("reindex") keeps the analytics statement alone -- the one of the three that
@@ -2865,15 +2937,23 @@
 
       // Positive-but-honest framing (ruling: "imports should give positive
       // feedback" — the delta IS the good news, no fabricated praise).
-      const growLine = (deltaBefore && deltaAfter)
-        ? `<div style="margin-top:6px">${esc(tf(
-            "Your corpus grew by {articles} articles from {sources} new sources spanning {languages} new languages.",
-            {
-              articles: num(Math.max(0, deltaAfter.articles - deltaBefore.articles)),
-              sources: num(Math.max(0, deltaAfter.sources - deltaBefore.sources)),
-              languages: num(Math.max(0, deltaAfter.languages - deltaBefore.languages)),
-            }
-          ))}</div>`
+      // The frame names only what grew (2026-09-28 walk): "from 0 new sources spanning 0
+      // new languages" read as a finding about the import rather than an absence, and an
+      // import that added no article at all has no growth to announce -- its headline
+      // already says "0 imported" beside what was deduplicated.
+      const grow = (deltaBefore && deltaAfter) ? {
+        articles: Math.max(0, deltaAfter.articles - deltaBefore.articles),
+        sources: Math.max(0, deltaAfter.sources - deltaBefore.sources),
+        languages: Math.max(0, deltaAfter.languages - deltaBefore.languages),
+      } : null;
+      const growFrame = !grow || !grow.articles ? null
+        : grow.languages ? "Your corpus grew by {articles} articles from {sources} new sources spanning {languages} new languages."
+        : grow.sources ? "Your corpus grew by {articles} articles from {sources} new sources."
+        : "Your corpus grew by {articles} articles.";
+      const growLine = growFrame
+        ? `<div style="margin-top:6px">${esc(tf(growFrame, {
+            articles: num(grow.articles), sources: num(grow.sources), languages: num(grow.languages),
+          }))}</div>`
         : "";
       const deltaView = _uxCorpusDeltaView(deltaBefore, deltaAfter, t);
 

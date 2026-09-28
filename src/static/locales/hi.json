@@ -6230,5 +6230,12 @@
   "first in your corpus": "आपके कॉर्पस में पहला",
   "none silent: every one your corpus holds speaks in this trail": "कोई मौन नहीं: आपके कॉर्पस का हर स्रोत इस निशान में मौजूद है",
   "Articles without a publication date: {n}. They sit at the end of the timeline.": "बिना प्रकाशन तिथि वाले लेख: {n}। वे समयरेखा के अंत में हैं।",
-  "The claim states figures ({figures}). The dataset or document they come from would tell the claim apart better than reports repeating them.": "दावे में आँकड़े हैं ({figures})। जिस डेटासेट या दस्तावेज़ से वे आए हैं, वह उन्हें दोहराने वाली रिपोर्टों से बेहतर ढंग से दावे को परखने में मदद करेगा।"
+  "The claim states figures ({figures}). The dataset or document they come from would tell the claim apart better than reports repeating them.": "दावे में आँकड़े हैं ({figures})। जिस डेटासेट या दस्तावेज़ से वे आए हैं, वह उन्हें दोहराने वाली रिपोर्टों से बेहतर ढंग से दावे को परखने में मदद करेगा।",
+  "Nothing from this import reached your corpus — it is exactly as it was before.": "इस आयात का कुछ भी आपके कॉर्पस तक नहीं पहुँचा — वह ठीक वैसा ही है जैसा पहले था।",
+  "Keep the import files: once the cause is fixed, import them again.": "आयात फ़ाइलें रखें: कारण ठीक हो जाने पर उन्हें फिर से आयात करें।",
+  "Keep the import files of the backups that did not finish — they have to be imported again.": "जो बैकअप पूरे नहीं हुए, उनकी आयात फ़ाइलें रखें — उन्हें फिर से आयात करना होगा।",
+  "nothing to do — no backup was imported": "करने को कुछ नहीं — कोई बैकअप आयात नहीं हुआ",
+  "Could not open this backup: the passphrase is wrong, or its files have been altered.": "यह बैकअप खोला नहीं जा सका: पासफ़्रेज़ गलत है, या इसकी फ़ाइलें बदली गई हैं।",
+  "Your corpus grew by {articles} articles.": "आपका कॉर्पस {articles} लेखों से बढ़ा।",
+  "Your corpus grew by {articles} articles from {sources} new sources.": "आपका कॉर्पस {sources} नए स्रोतों से {articles} लेखों से बढ़ा।"
 }

@@ -6230,5 +6230,12 @@
   "first in your corpus": "আপনার কর্পাসে প্রথম",
   "none silent: every one your corpus holds speaks in this trail": "কেউ নীরব নয়: আপনার কর্পাসের প্রতিটি উৎস এই চিহ্নরেখায় উপস্থিত",
   "Articles without a publication date: {n}. They sit at the end of the timeline.": "প্রকাশের তারিখ ছাড়া নিবন্ধ: {n}। সেগুলি সময়রেখার শেষে থাকে।",
-  "The claim states figures ({figures}). The dataset or document they come from would tell the claim apart better than reports repeating them.": "দাবিতে সংখ্যা আছে ({figures})। যে ডেটাসেট বা নথি থেকে সেগুলি এসেছে, তা সেগুলির পুনরাবৃত্তি করা প্রতিবেদনের চেয়ে দাবিটি ভালোভাবে যাচাই করতে সাহায্য করবে।"
+  "The claim states figures ({figures}). The dataset or document they come from would tell the claim apart better than reports repeating them.": "দাবিতে সংখ্যা আছে ({figures})। যে ডেটাসেট বা নথি থেকে সেগুলি এসেছে, তা সেগুলির পুনরাবৃত্তি করা প্রতিবেদনের চেয়ে দাবিটি ভালোভাবে যাচাই করতে সাহায্য করবে।",
+  "Nothing from this import reached your corpus — it is exactly as it was before.": "এই আমদানির কিছুই আপনার কর্পাসে পৌঁছায়নি — এটি ঠিক আগের মতোই আছে।",
+  "Keep the import files: once the cause is fixed, import them again.": "আমদানি ফাইলগুলি রাখুন: কারণটি ঠিক হলে সেগুলি আবার আমদানি করুন।",
+  "Keep the import files of the backups that did not finish — they have to be imported again.": "যে ব্যাকআপগুলি শেষ হয়নি সেগুলির আমদানি ফাইল রাখুন — সেগুলি আবার আমদানি করতে হবে।",
+  "nothing to do — no backup was imported": "করার কিছু নেই — কোনো ব্যাকআপ আমদানি হয়নি",
+  "Could not open this backup: the passphrase is wrong, or its files have been altered.": "এই ব্যাকআপটি খোলা যায়নি: পাসফ্রেজ ভুল, অথবা এর ফাইলগুলি পরিবর্তিত হয়েছে।",
+  "Your corpus grew by {articles} articles.": "আপনার কর্পাস {articles} টি নিবন্ধ যোগ হয়ে বেড়েছে।",
+  "Your corpus grew by {articles} articles from {sources} new sources.": "আপনার কর্পাস {sources} টি নতুন উৎস থেকে {articles} টি নিবন্ধ যোগ হয়ে বেড়েছে।"
 }

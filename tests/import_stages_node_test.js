@@ -65,6 +65,10 @@ const src = [
   // 2026-09-27 re-walk (B25, I-7): stage 4's dot reads the status its text reads.
   extract("function _uxImReindexDot("),
   extract("function _uxImStatements("),
+  // 2026-09-28 walk: the analytics statement on its own (an ended run reuses it), and
+  // the "nothing of this import reached the corpus" test stages 3 and 4 read.
+  extract("function _uxImAnalyticsStatement("),
+  extract("function _uxImNothingMerged("),
   extract("function _uxImRenderStatements("),
   extract("function _uxImRenderStages("),
   extract("function _uxImLastLineHtml("),
@@ -615,6 +619,58 @@ test("I-4: the status dot's gap is on its inline END, so RTL keeps it off the la
   const queue = extract("function _uxImRenderQueue(").replace(/^\s*\/\/.*$/gm, "");
   assert(queue.indexOf("margin-inline-end:6px") !== -1 && !/margin-right/.test(queue),
     "the per-backup rows' dot still carries a physical margin");
+});
+
+// ── 2026-09-28 walk: a run that ENDED without saving everything ─────────────
+// A wrong passphrase failed both backups in a second, and the finished run then read
+// "3. Merge the search index — done", "4. Re-index the imported articles — complete",
+// "✓ Analytics are complete — every imported article is indexed", and kept promising
+// "until this import is saved" beside two red rows.
+const FAILED_RUN = { state: "error", items: [{ kind: "corpus", state: "error" }, { kind: "corpus", state: "error" }] };
+const ENDED_STAGES = [
+  { n: 1, key: "verify_stage", state: "error", done: 0, total: 2, failed: 2, measured: true },
+  { n: 2, key: "merge_swap", state: "error", done: 0, total: 2, failed: 2, measured: true },
+  { n: 3, key: "search_index", state: "done", done: 1, total: 1, measured: false },
+  { n: 4, key: "reindex", state: "external", measured: false, reads: "/x" },
+];
+
+test("walk: a run that brought nothing in says so, and promises no save", () => {
+  const out = mod._uxImStatements(FAILED_RUN, RX_CLEAN, t, tf);
+  assert(out.length === 2, "no analytics claim about an import that imported nothing: " + JSON.stringify(out));
+  assert(out[0].ok === false && out[0].text.indexOf("Nothing from this import reached your corpus") === 0, out[0].text);
+  assert(out[1].ok === false && out[1].text.indexOf("import them again") !== -1, out[1].text);
+  assert(!out.some((l) => /until this import is saved|Closing the app now|Analytics are complete/.test(l.text)),
+    "a statement about a run in flight survived its end: " + JSON.stringify(out));
+});
+
+test("walk: stages 3 and 4 of that run have nothing to do, and do not say done", () => {
+  resetDom();
+  mod._uxImRenderStages({ ...FAILED_RUN, stages: ENDED_STAGES }, RX_CLEAN, t, tf);
+  const out = text("ux-imp-stages");
+  assert(out.indexOf("— done") === -1 && out.indexOf("complete") === -1, "a failed import claims finished stages: " + out);
+  assert((out.match(/nothing to do — no backup was imported/g) || []).length === 2, out);
+  // ...and the backlog an EARLIER import left is still a fact, stated as one.
+  resetDom();
+  mod._uxImRenderStages({ ...FAILED_RUN, stages: ENDED_STAGES }, RX_PENDING, t, tf);
+  const owed = text("ux-imp-stages");
+  assert(owed.indexOf("900") !== -1, "a real backlog was hidden behind 'nothing to do': " + owed);
+});
+
+test("walk: a run that saved part of its backups names the ones to import again", () => {
+  const st = { state: "error", items: [{ kind: "corpus", state: "done" }, { kind: "corpus", state: "error" }] };
+  const out = mod._uxImStatements(st, RX_CLEAN, t, tf);
+  assert(out[0].ok === false && out[0].text.indexOf("did not finish") !== -1, out[0].text);
+  assert(out[1].ok === true && out[1].text.indexOf("Safe to close") === 0, "nothing is in flight any more: " + out[1].text);
+  assert(out[2] && out[2].text.indexOf("Analytics") === 0, "the backup that landed still owes stage 4: " + JSON.stringify(out));
+  resetDom();
+  mod._uxImRenderStages({ ...st, stages: ENDED_STAGES }, RX_CLEAN, t, tf);
+  assert(text("ux-imp-stages").indexOf("nothing to do") === -1, "one backup did land: " + text("ux-imp-stages"));
+});
+
+test("walk: a status with no run state is never read as a finished run", () => {
+  // The in-flight fixtures above carry no `state`; neither may the new branch.
+  const out = mod._uxImStatements({ items: [{ kind: "corpus", state: "error" }] }, RX_CLEAN, t, tf);
+  assert(out[0].text.indexOf("Keep the import files until") === 0, out[0].text);
 });
 
 // ── I8 (2026-09-26): a refused Verify never adopts the import's own restore ──

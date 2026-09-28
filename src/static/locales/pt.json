@@ -842,7 +842,7 @@
   "Not checked": "Não verificado",
   "Sort": "Ordenar",
   "The same event carried by several feeds is shown once, listing every source; a date disagreement stays visible as separate entries.": "Um mesmo evento presente em vários feeds é mostrado uma só vez, listando cada fonte; uma divergência de data permanece visível como entradas separadas.",
-  "imported": "importado",
+  "imported": "importados",
   "Exclude": "Excluir",
   "Include": "Incluir",
   "excluded": "excluído",
@@ -6230,5 +6230,12 @@
   "first in your corpus": "primeiro no seu corpus",
   "none silent: every one your corpus holds speaks in this trail": "nenhuma silenciosa: todas as que o seu corpus contém falam neste rastro",
   "Articles without a publication date: {n}. They sit at the end of the timeline.": "Artigos sem data de publicação: {n}. Aparecem no fim da cronologia.",
-  "The claim states figures ({figures}). The dataset or document they come from would tell the claim apart better than reports repeating them.": "A afirmação apresenta números ({figures}). O conjunto de dados ou o documento de onde vêm permitiria distinguir a afirmação melhor do que as reportagens que os repetem."
+  "The claim states figures ({figures}). The dataset or document they come from would tell the claim apart better than reports repeating them.": "A afirmação apresenta números ({figures}). O conjunto de dados ou o documento de onde vêm permitiria distinguir a afirmação melhor do que as reportagens que os repetem.",
+  "Nothing from this import reached your corpus — it is exactly as it was before.": "Nada desta importação chegou ao seu corpus — está exatamente como estava antes.",
+  "Keep the import files: once the cause is fixed, import them again.": "Guarde os ficheiros de importação: depois de corrigida a causa, importe-os de novo.",
+  "Keep the import files of the backups that did not finish — they have to be imported again.": "Guarde os ficheiros de importação das cópias que não terminaram — têm de ser importadas de novo.",
+  "nothing to do — no backup was imported": "nada a fazer — nenhuma cópia foi importada",
+  "Could not open this backup: the passphrase is wrong, or its files have been altered.": "Não foi possível abrir esta cópia: a frase-passe está errada ou os seus ficheiros foram alterados.",
+  "Your corpus grew by {articles} articles.": "Seu corpus cresceu em {articles} artigos.",
+  "Your corpus grew by {articles} articles from {sources} new sources.": "Seu corpus cresceu em {articles} artigos de {sources} novas fontes."
 }

@@ -6230,5 +6230,12 @@
   "first in your corpus": "pertama di korpus Anda",
   "none silent: every one your corpus holds speaks in this trail": "tidak ada yang diam: setiap yang dimuat korpus Anda bersuara dalam jejak ini",
   "Articles without a publication date: {n}. They sit at the end of the timeline.": "Artikel tanpa tanggal terbit: {n}. Artikel itu berada di akhir linimasa.",
-  "The claim states figures ({figures}). The dataset or document they come from would tell the claim apart better than reports repeating them.": "Klaim ini menyebut angka ({figures}). Kumpulan data atau dokumen asal angka itu akan lebih membantu menguji klaim daripada laporan yang mengulanginya."
+  "The claim states figures ({figures}). The dataset or document they come from would tell the claim apart better than reports repeating them.": "Klaim ini menyebut angka ({figures}). Kumpulan data atau dokumen asal angka itu akan lebih membantu menguji klaim daripada laporan yang mengulanginya.",
+  "Nothing from this import reached your corpus — it is exactly as it was before.": "Tidak ada dari impor ini yang masuk ke korpus Anda — korpus tetap persis seperti sebelumnya.",
+  "Keep the import files: once the cause is fixed, import them again.": "Simpan berkas impor: setelah penyebabnya diperbaiki, impor lagi.",
+  "Keep the import files of the backups that did not finish — they have to be imported again.": "Simpan berkas impor dari cadangan yang tidak selesai — cadangan itu harus diimpor lagi.",
+  "nothing to do — no backup was imported": "tidak ada yang perlu dikerjakan — tidak ada cadangan yang diimpor",
+  "Could not open this backup: the passphrase is wrong, or its files have been altered.": "Cadangan ini tidak dapat dibuka: frasa sandinya salah, atau berkasnya telah diubah.",
+  "Your corpus grew by {articles} articles.": "Korpus Anda bertambah {articles} artikel.",
+  "Your corpus grew by {articles} articles from {sources} new sources.": "Korpus Anda bertambah {articles} artikel dari {sources} sumber baru."
 }

@@ -6230,5 +6230,12 @@
   "first in your corpus": "الأول في مجموعتك",
   "none silent: every one your corpus holds speaks in this trail": "لا مصدر غائب: كل مصدر في مجموعتك حاضر في هذا الأثر",
   "Articles without a publication date: {n}. They sit at the end of the timeline.": "مقالات بلا تاريخ نشر: {n}. تظهر في آخر التسلسل الزمني.",
-  "The claim states figures ({figures}). The dataset or document they come from would tell the claim apart better than reports repeating them.": "يذكر الادعاء أرقامًا ({figures}). مجموعة البيانات أو الوثيقة التي جاءت منها تحسم أمر الادعاء أفضل من التقارير التي تكررها."
+  "The claim states figures ({figures}). The dataset or document they come from would tell the claim apart better than reports repeating them.": "يذكر الادعاء أرقامًا ({figures}). مجموعة البيانات أو الوثيقة التي جاءت منها تحسم أمر الادعاء أفضل من التقارير التي تكررها.",
+  "Nothing from this import reached your corpus — it is exactly as it was before.": "لم يصل أي شيء من هذا الاستيراد إلى مجموعتك — فهي كما كانت تمامًا من قبل.",
+  "Keep the import files: once the cause is fixed, import them again.": "احتفظ بملفات الاستيراد: بعد إصلاح السبب، استوردها من جديد.",
+  "Keep the import files of the backups that did not finish — they have to be imported again.": "احتفظ بملفات الاستيراد الخاصة بالنسخ الاحتياطية التي لم تكتمل — إذ يجب استيرادها من جديد.",
+  "nothing to do — no backup was imported": "لا شيء للقيام به — لم تُستورد أي نسخة احتياطية",
+  "Could not open this backup: the passphrase is wrong, or its files have been altered.": "تعذّر فتح هذه النسخة الاحتياطية: عبارة المرور خاطئة، أو أن ملفاتها قد عُدِّلت.",
+  "Your corpus grew by {articles} articles.": "نمت مجموعتك بمقدار {articles} مقالة.",
+  "Your corpus grew by {articles} articles from {sources} new sources.": "نمت مجموعتك بمقدار {articles} مقالة من {sources} مصادر جديدة."
 }

@@ -6230,5 +6230,12 @@
   "first in your corpus": "コーパス内で最初",
   "none silent: every one your corpus holds speaks in this trail": "沈黙しているものはありません：コーパスが保持するすべてがこの跡で発言しています",
   "Articles without a publication date: {n}. They sit at the end of the timeline.": "公開日のない記事：{n}。タイムラインの末尾に表示されます。",
-  "The claim states figures ({figures}). The dataset or document they come from would tell the claim apart better than reports repeating them.": "この主張には数値（{figures}）が含まれています。その出典であるデータセットや文書のほうが、それを繰り返す報道よりも主張を見極める助けになります。"
+  "The claim states figures ({figures}). The dataset or document they come from would tell the claim apart better than reports repeating them.": "この主張には数値（{figures}）が含まれています。その出典であるデータセットや文書のほうが、それを繰り返す報道よりも主張を見極める助けになります。",
+  "Nothing from this import reached your corpus — it is exactly as it was before.": "このインポートからコーパスに入ったものはありません — コーパスは以前とまったく同じです。",
+  "Keep the import files: once the cause is fixed, import them again.": "インポート用ファイルは保持してください。原因を解消したら、もう一度インポートしてください。",
+  "Keep the import files of the backups that did not finish — they have to be imported again.": "完了しなかったバックアップのインポート用ファイルは保持してください — もう一度インポートする必要があります。",
+  "nothing to do — no backup was imported": "処理なし — インポートされたバックアップはありません",
+  "Could not open this backup: the passphrase is wrong, or its files have been altered.": "このバックアップを開けませんでした。パスフレーズが間違っているか、ファイルが改変されています。",
+  "Your corpus grew by {articles} articles.": "コーパスの記事が{articles}件増えました。",
+  "Your corpus grew by {articles} articles from {sources} new sources.": "コーパスは{sources}件の新しい情報源から{articles}件の記事が増えました。"
 }

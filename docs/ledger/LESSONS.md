@@ -12731,3 +12731,24 @@ default: on one Search tab, `salt*` would have been a prefix in the corpus's lis
 surface shown beside the corpus's passes `grammar=True`, and decides out loud what its own index
 cannot answer**: the lane drops the SQL field filters, names them and says so on screen, and
 never widens them into a search of everything (`fields_not_applied`, `test_one_query_means_in_these_texts_what_it_means_in_the_corpus`).
+
+### A RUN VIEW RESET ONLY WHEN THE DIALOG OPENS SHOWS THE LAST RUN UNDER THE NEXT ONE (PR #1205, import dialog walk)
+
+The Import dialog emptied its run surfaces (header, stage rows, statements, per-backup rows) in
+`openUnifiedImport` and nowhere else. An operator who mistypes the passphrase does not close the
+dialog: they fix it and press Import again, in the same opening, and the new run's first rows were
+drawn under the failed run's "2 failed · Failed" until the first tick replaced them -- as long as
+the start request takes, which grows with the backup. Nothing in a test saw it, because each test
+renders one run into a fresh DOM. **A surface that one action fills is reset when that action
+STARTS, not only when its container opens; walk the second attempt in the same opening, not just
+the first** (`_uxImRun`, `_uxImScan`, and the four `walk:` cases in `tests/import_stages_node_test.js`).
+
+### A GEOMETRIC OVERLAP CHECK MUST SKIP A CLOSED `<details>`: CHROMIUM STILL REPORTS ITS TEXT'S BOXES (PR #1205, import dialog walk)
+
+The walk's overlap probe (every text node's `Range.getClientRects()`, pairwise) flagged 140 overlaps
+on the finished import report, every one inside the collapsed "How long did this take?" and
+"Details by source" blocks: Chromium lays out a closed `<details>`' content (`content-visibility:
+hidden`) and returns rectangles for text nobody can see. **Filter with `el.checkVisibility({
+contentVisibilityAuto: true, visibilityProperty: true, opacityProperty: true })` and drop text inside
+`details:not([open])` outside its `<summary>`**; with that, the same frames measured zero overlaps
+(`docs/audit/import-dialog-walk-2026-09-28/walk_import.py`).

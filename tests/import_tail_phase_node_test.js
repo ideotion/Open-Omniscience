@@ -98,6 +98,8 @@ const src = [
   extract("function _uxRowNode("),
   extract("function _uxImReindexBits("),
   extract("function _uxImStatements("),
+  extract("function _uxImAnalyticsStatement("),
+  extract("function _uxImNothingMerged("),
   extract("function _uxImRenderStatements("),
   extract("function _uxImRenderStages("),
   extract("function _uxImRenderQueue("),
@@ -340,6 +342,21 @@ test("Y2/Y9: a row's error is the dialog's inline error line, in the page's word
   assert(rows.indexOf('class="note') === -1, "the toast class in a dialog row: " + rows);
   assert(rows.indexOf("color:var(--err)") !== -1, "the error keeps its colour: " + rows);
   assert(rows.indexOf("Restore: not enough free space") !== -1, rows);
+});
+
+test("walk 2026-09-28: a wrong passphrase reads in the page's words, not the server's", () => {
+  // The commonest failure there is arrived as English on the French, German and Arabic
+  // pages alike. Both shapes the server sends -- bare, and prefixed by merge.py.
+  for (const error of ["could not restore this backup: wrong passphrase or the file has been altered",
+                       "wrong passphrase or the file has been altered"]) {
+    resetDom();
+    mod._uxImRenderQueue(Object.assign({}, STAGED_RUN, {
+      state: "error", items: [{ id: "0", label: "b1", kind: "corpus", state: "error", error }],
+    }));
+    const rows = childHtml("ux-imp-queue-rows");
+    assert(rows.indexOf("Could not open this backup: the passphrase is wrong, or its files have been altered.") !== -1, rows);
+    assert(rows.indexOf("wrong passphrase or the file") === -1, "the server's sentence is still drawn: " + rows);
+  }
 });
 
 test("I13: a long folder name may wrap rather than run out of a 375 px dialog", () => {

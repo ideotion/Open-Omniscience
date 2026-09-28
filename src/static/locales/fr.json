@@ -842,7 +842,7 @@
   "Not checked": "Non vérifié",
   "Sort": "Trier",
   "The same event carried by several feeds is shown once, listing every source; a date disagreement stays visible as separate entries.": "Un même événement présent dans plusieurs flux est affiché une seule fois, en listant chaque source ; un désaccord de date reste visible sous forme d'entrées distinctes.",
-  "imported": "importé",
+  "imported": "importés",
   "Exclude": "Exclure",
   "Include": "Inclure",
   "excluded": "exclu",
@@ -6230,5 +6230,12 @@
   "first in your corpus": "premier dans votre corpus",
   "none silent: every one your corpus holds speaks in this trail": "aucune silencieuse : chacune de celles que détient votre corpus s'exprime dans ce fil",
   "Articles without a publication date: {n}. They sit at the end of the timeline.": "Articles sans date de publication : {n}. Ils figurent à la fin de la chronologie.",
-  "The claim states figures ({figures}). The dataset or document they come from would tell the claim apart better than reports repeating them.": "L'affirmation avance des chiffres ({figures}). Le jeu de données ou le document dont ils proviennent permettrait mieux de départager l'affirmation que les reportages qui les répètent."
+  "The claim states figures ({figures}). The dataset or document they come from would tell the claim apart better than reports repeating them.": "L'affirmation avance des chiffres ({figures}). Le jeu de données ou le document dont ils proviennent permettrait mieux de départager l'affirmation que les reportages qui les répètent.",
+  "Nothing from this import reached your corpus — it is exactly as it was before.": "Rien de cette importation n'a atteint votre corpus — il est exactement tel qu'il était avant.",
+  "Keep the import files: once the cause is fixed, import them again.": "Conservez les fichiers d'importation : une fois la cause corrigée, importez-les de nouveau.",
+  "Keep the import files of the backups that did not finish — they have to be imported again.": "Conservez les fichiers d'importation des sauvegardes qui n'ont pas abouti — elles doivent être importées de nouveau.",
+  "nothing to do — no backup was imported": "rien à faire — aucune sauvegarde n'a été importée",
+  "Could not open this backup: the passphrase is wrong, or its files have been altered.": "Impossible d'ouvrir cette sauvegarde : la phrase secrète est incorrecte, ou ses fichiers ont été modifiés.",
+  "Your corpus grew by {articles} articles.": "Votre corpus s'est enrichi de {articles} articles.",
+  "Your corpus grew by {articles} articles from {sources} new sources.": "Votre corpus s'est enrichi de {articles} articles provenant de {sources} nouvelles sources."
 }
