@@ -306,7 +306,12 @@
       el._ovMounted = true;
       mount(el, el.getAttribute("data-ov-base"), {
         to: el.getAttribute("data-ov-to"),
-        onLanguage: (id) => { location.href = el.getAttribute("data-ov-base").replace(/\/\d+$/, "/" + id) + "/view"; },
+        // Built from the numeric id alone, never from the attribute's text, so no
+        // markup can steer the navigation off this machine's own law reader.
+        onLanguage: (id) => {
+          const n = Number(id);
+          if (Number.isInteger(n) && n > 0) location.assign("/api/law/documents/" + n + "/view");
+        },
       });
     });
   }
