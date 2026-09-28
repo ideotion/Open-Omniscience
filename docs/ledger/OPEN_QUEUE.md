@@ -36,7 +36,9 @@
   (6) **The Place body is composed on read, not stored as a corpus Article** — also because of Q823; row D's Q817
   (notable Places become Articles) is where that changes. (7) **An open Q823 question for S4:** whether a gazetteer
   artifact built from OSM may be SHIPPED in the repository at all (ODbL share-alike on a derived database) is the
-  same ⛔ question, and S4 cannot ship its artifact until it is answered.
+  same ⛔ question, and S4 cannot ship its artifact until it is answered. (8) **For row B (S05-02):** `places.country`
+  is stored alpha-2 like every other country column today, so it is the SEVENTH narrow column row B's migration
+  widens (`tests/test_alpha3_payload_boundary.py` counts seven).
 - **THE WALK'S SWITCH: WHERE THE WIKIPEDIA WALK RUNS — RULED 2026-09-28, «Switch, off» (`R51`; answered on
   the decision card in the project thread «Plan v0.5» at 12:41 UTC, the recommended option).** The question,
   as put: «Run the Wikipedia walk only where you switch it on, or on every instance?» — over «Switch, on» (every

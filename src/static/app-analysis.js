@@ -4235,7 +4235,7 @@
       const meta = {};
       (body.metadata || []).forEach((m) => { meta[m.key] = m.value; });
       const coord = meta.coordinates ? `${(+meta.coordinates.lat).toFixed(4)}, ${(+meta.coordinates.lon).toFixed(4)}` : "";
-      const pop = meta.population != null ? Number(meta.population).toLocaleString(String(typeof uiLangCode === "function" ? uiLangCode() : "en")) : "";
+      const pop = meta.population != null ? fmtNum(Number(meta.population)) : "";
       const inception = meta.inception && meta.inception.time ? String(meta.inception.time).replace(/^\+/, "").slice(0, meta.inception.precision >= 11 ? 10 : 4) : "";
       let html = "";
       // The description is prose a source wrote, so it is quoted as that source's, with its
