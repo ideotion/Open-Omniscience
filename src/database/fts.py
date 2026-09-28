@@ -108,7 +108,6 @@ _GRAMMAR_TOKEN_RE = re.compile(
     r'|"[^"]*"\**'
     r'|\(|\)|[^\s()"]+'
 )
-_NEAR_RE = re.compile(r'(?is)NEAR\((.*)\)')
 _NEAR_DIST_RE = re.compile(r'\s*(-?\d+)\s*')
 _NEAR_ITEM_RE = re.compile(r'"[^"]*"|[^\s",]+')
 _FIELD_RE = re.compile(r'(?is)(title|author|source|url|tag):(=?)(.*)')
@@ -179,8 +178,9 @@ def _near_node(tok: str):
     The body is split into quoted phrases and bare words; commas, quotes and parentheses
     never survive into an item, so an item is always a value for ``_quote`` and never FTS5
     syntax. A trailing ``, N`` is the distance, clamped to ``[NEAR_MIN, NEAR_MAX]``."""
-    m = _NEAR_RE.fullmatch(tok)
-    body = m.group(1) if m else ""
+    # The token regex only yields `NEAR(` ... `)` here, so the body is sliced, not matched:
+    # a `NEAR\((.*)\)` pattern was flagged polynomial by CodeQL on `near(near(a...`.
+    body = tok[5:-1] if tok[:5].upper() == "NEAR(" and tok.endswith(")") else ""
     distance: int | None = None
     # The distance is whatever follows the LAST comma, when that is a bare integer. Split
     # with rpartition rather than one lazy regex over the whole body: `^(.*?),\s*(-?\d+)`

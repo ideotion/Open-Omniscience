@@ -3490,9 +3490,11 @@
         const tk = toks[i];
         const neg = i > 0 && toks[i - 1].text === "NOT";
         const start = neg ? toks[i - 1].start : tk.start;
-        let m = /^NEAR\(([\s\S]*)\)$/i.exec(tk.text);
-        if (m) {
-          let inner = m[1], dist = null;
+        // Sliced, not matched: the token regex only yields NEAR( ... ) here (the server's
+        // twin of a `NEAR\((.*)\)` pattern was a polynomial-backtracking finding).
+        const isNear = tk.text.slice(0, 5).toUpperCase() === "NEAR(" && tk.text.endsWith(")");
+        if (isNear) {
+          let inner = tk.text.slice(5, -1), dist = null;
           // After the LAST comma, when that is a bare integer (split, not one lazy regex
           // over the body: the server's twin was a polynomial-backtracking finding).
           const cut = inner.lastIndexOf(",");
@@ -3502,7 +3504,7 @@
           chips.push({kind: "near", items, dist, neg, start, end: tk.end});
           continue;
         }
-        m = /^(title|author|source|url|tag):(=?)([\s\S]*)$/i.exec(tk.text);
+        const m = /^(title|author|source|url|tag):(=?)([\s\S]*)$/i.exec(tk.text);
         if (m) {
           let raw = m[3], mode = m[2] ? "exact" : "contains";
           if (!m[2] && raw.endsWith("*")) { mode = "prefix"; raw = raw.replace(/\*+$/, ""); }
