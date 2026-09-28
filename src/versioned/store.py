@@ -316,6 +316,25 @@ def _lane_specific_models(kind: str) -> tuple[type[DeclarativeBase], ...]:
         return WIKI_LANE_MODELS
     return ()
 
+
+def _lane_specific_setup(kind: str, engine: Engine) -> None:
+    """What ONE lane needs beyond its tables, imported lazily like its models.
+
+    The wiki lane's search index (``R52``, ``src/wiki/lane_search.py``) is an FTS5 table and
+    the triggers that queue each new text for it -- SQL that ``create_all`` cannot express.
+    Created HERE, with the schema, so the triggers exist before the lane's first write can
+    need them. It never fails the schema: a lane that cannot hold the index still collects,
+    and the next open tries again.
+    """
+    if kind != "wiki":
+        return
+    try:
+        from src.wiki.lane_search import ensure_index
+
+        ensure_index(engine)
+    except Exception:  # noqa: BLE001 - the search index must never stop the lane opening
+        _LOG.warning("the Wikipedia lane search index could not be set up", exc_info=True)
+
 class LaneSchemaError(RuntimeError):
     """A lane file whose schema this build cannot reconcile without a real migration."""
 
@@ -435,6 +454,7 @@ def create_schema(kind: str, engine: Engine | None = None) -> None:
             raise ValueError(
                 f"{lane_path(kind).name} says it holds the {row.kind!r} lane, not {kind!r}"
             )
+    _lane_specific_setup(kind, eng)
 
 
 @contextmanager
