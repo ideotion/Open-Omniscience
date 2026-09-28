@@ -41,7 +41,7 @@ and the two hard preconditions above stand unchanged.
 | D | The OSM lane seeded: the first country's places, roads and buildings; the tag-completeness view | session + operator (extract + planet history download) | ruled (R16; Q106, Q806–Q811, Q813, Q814, Q815 · 1, Q817, Q819 · 3, Q820, Q822, Q824, Q825, Q828, Q1008) · `S05-04` | **OPEN** — ODbL (Q823 ⛔) PENDING |
 | E | OSM-derived admin-0 / admin-1 artifacts keyed ISO 3166-2, on all five surfaces | session + operator (artifact build) | ruled (Q314, Q816, Q802 second half); Q804 an ASSUMPTION at its default · `S05-05` | **OPEN** |
 | F | Wikipedia: the WARM tier and the `allpages` tail walk under budget | session + operator (the run) | ruled (R12; Q701 ⛔ = c, Q707, Q712 · 4–5, Q722 = b, Q727; `R40` built first) · `S05-06` | **OPEN** — the Phase-C store (Q1009 ⛔) PENDING |
-| G | Laws: the evolution surface — versions, the reader, point-in-time search, analytics 3–5 | session | ruled (R14; Q107, Q905, Q908, Q914 · 3–5, Q916, Q918, Q920) · `S05-07` | **OPEN** |
+| G | Laws: the evolution surface — versions, the reader, point-in-time search, analytics 3–5 | session | ruled (R14; Q107, Q905, Q908, Q914 · 3–5, Q916, Q918, Q920) · `S05-07` | **BUILT 2026-09-28 (PR #1203)** — Chromium-verified (remote sandbox) in en and ar · awaiting human UX pass; the real-source 2019 search is operator |
 | H | The AI-coordinator translation sweep; titles, summaries and on-demand full text; the model bench | session | ruled (Q405, Q513 = b + c, Q1142, Q1143, Q1144) · `S05-08` | **OPEN** |
 | I | The UI shell: "rings, not gates", the first-run default, the inline-handler retirement + CSP, the theme cull | session | ruled (Q1120, Q1121, Q1123, Q1127) · `S05-09` | **OPEN** |
 | J | A source is keyed on its FEED — the migration and its data-safety review | session + operator (a real restore) | ruled (Q1102 ⛔ = b; `R38` after row B); *proposed placement* 0.5 · `S05-10` | **OPEN** |
@@ -249,7 +249,7 @@ The four values are still unwritten, so none of rows 3–6 may be executed and *
 shut** — unchanged from before the round, and stated here so the pending is visible where the work is
 blocked rather than only on the 0.9 board. The tail walk's own bar (Q722 = b) is untouched.
 
-### Row G — Laws: the evolution surface · ruled (Q107, Q905, Q908, Q914, Q916, Q918, Q920) · OPEN
+### Row G — Laws: the evolution surface · ruled (Q107, Q905, Q908, Q914, Q916, Q918, Q920) · BUILT 2026-09-28 (PR #1203), awaiting human UX pass
 
 **What it must demonstrate.** The reader — version selector · side-by-side diff · provision navigation · an ELI
 / CELEX permalink · the licence line · "AI-derived · unreliable" on summaries · translation provenance —
@@ -263,6 +263,18 @@ identifiers from rules, never the model (Q920); the versioning primitive of 0.4 
 **Closes when** a law's 2019 text is findable by point-in-time search on the fixture jurisdiction and on one
 real source, the reader's diff is Chromium-verified + click-through beside the wiki reader's (same controls,
 same disclosures), and the map of amendment activity states its vintage. Brief `S05-07`.
+
+**2026-09-28 — built (PR #1203).** ONE version reader, `src/static/ooversions.js`, mounted by the standalone law
+page, the Living sources Law panel and the Wikipedia tracked-changes panel, fed by one payload shape
+(`src/law/versions.py`, `src/wiki/versions.py`) and one comparison computed locally from the two full texts
+(`src/versioned/compare.py`, bounded by the lane's own diff limits). Parts are a law's provisions or a page's
+`== sections ==`; a version whose text was never stored refuses the comparison by name. Dating follows ONE rule:
+official where the source states it, else the observation day, labelled. Point-in-time search is a contentless
+FTS5 index in `law.db` synced on read (`src/law/pit_search.py`), with a coverage line naming the versions it
+cannot search. Analytics 3–5 are in `src/law/analytics.py` (by topic across jurisdictions; the Equal Earth map
+with its window and newest capture; this week in the laws you watch). Verified on the fixture jurisdiction
+(`tests/test_law_evolution_surface.py`, `tests/test_law_evolution_ui.py`) and walked in Chromium in en and ar.
+**Still open:** the 2019 search against one REAL source (operator) and the human UX pass.
 
 ### Row H — The AI-coordinator translation sweep and the model bench · ruled (Q405, Q513, Q1142, Q1143, Q1144) · OPEN
 
@@ -378,6 +390,7 @@ the default. Brief `S05-05`, with `S04-11` S3's toggle.
 | 2026-09-28 | **Row A built (S05-01, PR #1198).** All nineteen rulings implemented; Chromium-verified in the remote sandbox in English and Arabic (the builder, the timescale, list and table views, did-you-mean, save and re-open, the permalink, history, the omnibar's Enter, the first-launch history step); the did-you-mean table on the 200 MB reference corpus: 873,889 rows, 4.9 s, 12.6 MB. Status stays short of CLOSED until a human UX pass. | session |
 | 2026-09-28 | **Row I, first PR (S05-09 S1 + S3, and S2 for the main app):** the inline-handler ratchet exists at the measured count, 656 on `main`@00af1d9 with its own published pattern (`tests/test_inline_handler_ratchet.py`; the brief's 602/613 were other patterns); the main app's 644 converted to allowlisted `data-on-*` bindings (`src/static/oo-on.js`), leaving the measured residue pinned: `taskmanager.html` 11, `unlock.html` 1, six inline `<script>` blocks (task manager, unlock, investigate, the reader, the law reader). `'unsafe-inline'` stays in `script-src` until that residue is zero (next entry). The theme cull: slate → Ink, arctic → Ink, mist → Light (surface ΔE76 1.92 / 1.81 / 1.25; next pair 3.87), 14 named themes, invariant #12's pin `>= 16` → `>= 13` in the same PR (`tests/test_theme_cull.py`). Chromium walk under `script-src 'self'` at 1440×900; the three-width sweep is owed with the CSP-drop PR. **Row stays OPEN.** | session (0.5 row I thread) |
 | 2026-09-28 | **Row I, the CSP drop (S2 end, pushed onto the same PR #1199):** the residue reached ZERO. The task manager's 11 handlers became `data-tm` bindings, unlock's one a listener, and the six inline `<script>` blocks became files (`taskmanager.js`, `unlock.js`, `investigate.js`, `ext-confirm.js`, and `reader.js` for the Dates pane). Both ratchet maps are empty and `script-src` is `'self'` alone (NET-04 closed, no nonce needed; `style-src 'unsafe-inline'` stays, unruled). Chromium-verified under the real header: 14 named themes plus System × 1440×900, 768×1024 and 390×844, the main app's Home, Settings, Search, Insights and Living sources plus `/tasks`, `/investigate`, `/unlock`, the article reader and the law reader: 45 runs, 0 CSP violations, 0 console errors, 0 horizontal overflow; both reader link confirms, unlock's console button and the task manager's cancel and resume bindings driven for real. No axe run (not available offline in the sandbox). The ratchet, CSP and cull halves of this row are done; **row stays OPEN** for S4 (the Ring dial, Q1120/Q1121) and S5, S6 waiting on the maintainer. | session (0.5 row I thread) |
+| 2026-09-28 | **Row G built (S05-07, PR #1203).** One version reader for law and Wikipedia (selector, side-by-side diff, provision or section navigation, permalink, licence, AI-derived label, language switch, provenance), point-in-time search over law versions with its coverage stated, and analytics 3–5; Chromium-verified in en and ar. The real-source search and the UX pass remain. |
 
 ---
 
