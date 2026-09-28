@@ -10285,3 +10285,19 @@ by making each loop iteration take 130 ms, which gives the same `assert 3 >= (4 
 now drives the liveness loop with a stop event whose wait advances a fake clock, at the real
 cadence (a read every 5 s, a tick every 60 s), and asserts the exact read and tick times. It
 passes with each read slowed to 130 ms, and five breakages of the loop are each caught.
+
+## 2026-09-28 — The version flip to 0.4.0, after the `v0.4.0` tag (PR #1195)
+
+The maintainer merged the draft PRs and tagged `v0.4.0` on `ad0f2062`, the PR #1191 merge, with a
+GitHub pre-release. `pyproject.toml` there still read `0.3.0`, because the flip after `v0.3.0` had
+been deferred through the cycle (`RC01`). `release.yml` run 36368552522 passed its full suite and
+stopped at its tag-matches-version step, so the release had no wheel, sdist or `SHA256SUMS`. At the
+maintainer's pick, this PR is `S03-01`'s S3: `pyproject.toml` to `0.4.0`, the README version line and
+status, a `0.4.0` section in `docs/CHANGES.md`, the version lines in `docs/CONTRIBUTING.md` (with the
+rule that a tag goes only where the version already matches), `docs/ROADMAP.md` and `CLAUDE.md` (the
+same line count, so its ratchet is unchanged), `RELEASE_0.4_GATE.md` (row G closed, the tag recorded
+with the rows open at it) and a note on `RELEASE_0.5_GATE.md`'s entry. Moving the tag is the
+maintainer's step, spelled out in row G. CI then caught a date bomb the flip set off:
+`test_default_user_agent_is_the_honest_versioned_one` asserted that `"0.4"` never appears in the
+User-Agent, which carries the package version; it now asserts that the UA names the installed
+version. Lessons: `LESSONS.md`, the two entries dated by this PR.

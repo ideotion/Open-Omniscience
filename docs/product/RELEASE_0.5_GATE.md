@@ -25,7 +25,9 @@ step.
 
 **Entry.** `v0.4.0` tagged (`RELEASE_0.4_GATE.md` rows A–E, G–W closed; row W was added 2026-09-27 by `RC01` = a). Two 0.4 rows are hard preconditions
 here by ruling: row K (the backup-format bump, exercised on a real restore) precedes row B below (Q301 = c),
-and row O (the substrate) precedes rows D and F.
+and row O (the substrate) precedes rows D and F. **2026-09-28:** the maintainer tagged `v0.4.0` with 0.4 rows
+still open (`RELEASE_0.4_GATE.md` §3, 2026-09-28); the tag half of this entry is met, the closed-rows half is not,
+and the two hard preconditions above stand unchanged.
 
 ---
 

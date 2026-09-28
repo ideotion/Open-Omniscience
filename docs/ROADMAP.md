@@ -48,7 +48,7 @@ That exposed the theme of the whole cycle: **the app works, but does not yet sca
 scaling failures now cause crashes and data loss, not just slowness.** So 0.2's north star is
 *"the version that survives a 100 GB field run."*
 
-- `pyproject` version is **`0.3.0`**; the default branch is **`main`** (permanent since
+- `pyproject` version is **`0.4.0`** (tagged `v0.4.0`, 2026-09-28); the default branch is **`main`** (permanent since
   2026-07-15 — branch name and version are independent).
 - The **`v0.2.0` tag is DONE** — the maintainer ran the in-app P0 validation job on the
   live corpus and tagged (2026-07 — see `docs/CHANGES.md` 0.2.0). The P0 scale set (§2)

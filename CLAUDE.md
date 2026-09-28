@@ -155,19 +155,19 @@ finding things, or it finds so much that every answer is the same answer).
   present. Every consent/caveat string ships ×12 locales. Applies to every
   surface built or reworked from now on (T9+); the network consent popup
   (invariant #14) and the restore preview (T6) are the reference patterns.
-- **The current cycle branch is `main` (version `0.3.0`), the measured-and-verified cycle.**
+- **The current cycle branch is `main` (version `0.4.0`), the living-sources cycle.**
   The maintainer renamed the default branch `0.2 → main` PERMANENTLY on 2026-07-15 —
   the branch name and the version number are independent, and version flips no longer
   rename the branch. Cut/rebase branches from `origin/main` and open PRs onto `main`;
-  `git fetch` the tip first. Version single-sourced from pyproject (`0.3.0`).
+  `git fetch` the tip first. Version single-sourced from pyproject (`0.4.0`).
   Historical `0.0.8`/`0.08`/`0.09`/`0.1`/`0.2` tags + "draft PR onto 0.09"/"onto
   0.1"/"onto 0.2" shipped-log entries are RECORDS of when those were the branch, not
-  the current one. **`v0.2.0` IS TAGGED (2026-07-18, maintainer):** the maintainer ran
-  the S1 push-button P0 validation job on the live corpus and tagged — the 0.2
-  data-safety-at-scale cycle is CLOSED as a tagged release (the sequencing ruling +
-  the flip record are in the Open queue, 2026-07-18). The 0.3 cycle = the recursive
-  improvement loop v1 + the six delegated 2026-07-18 calibration executions + the law
-  vertical + the browser-verification burn-down (V1_PATHWAY §3's 0.3 step).
+  the current one. **TAGGED by the maintainer, each a GitHub pre-release: `v0.2.0`
+  (2026-07-18, after the live P0 validation; the sequencing ruling is in the Open queue),
+  `v0.3.0` (2026-08-23, the 0.3 close per `RC01`) and `v0.4.0` (2026-09-28).** `v0.4.0` was
+  first cut where pyproject still read `0.3.0`, and `release.yml` refuses a tag ≠ the version:
+  the fix is the `0.4.0` flip + the tag moved onto it (`RELEASE_0.4_GATE.md` row G). The 0.5
+  cycle (the investigator's desk) follows; its `0.5.0` flip is `RELEASE_0.5_GATE.md` §4.
 - No bundling of Ollama/models in the repo (GitHub 100 MB limit). Model catalog
   stays date-stamped (`CATALOG_AS_OF` + freshness test); clearnet is a stated
   install prerequisite for model downloads.
@@ -674,7 +674,7 @@ finding things, or it finds so much that every answer is the same answer).
   rebase onto the FRESH default tip before merging.)
 - Never use backticks inside `git commit -m` heredocs (shell substitution).
 - Update the CURRENT release-gate rows you close, every session — today
-  `docs/product/RELEASE_0.3_GATE.md` and `RELEASE_0.4_GATE.md`. (This line named
+  `docs/product/RELEASE_0.4_GATE.md` (its operator rows) and `RELEASE_0.5_GATE.md`. (This line named
   `RELEASE_0.1_RC_GATE.md`, which has not existed for two cycles; corrected 2026-09-07,
   after it sent a session looking for it.)
 - **PER-RELEASE: RE-CONFIRM THE NO-TELEMETRY CLAIM (recorded 2026-09-07; it existed in no memory

@@ -12656,3 +12656,27 @@ reads per tick. A macOS runner fit three. Any count of iterations over a wall-cl
 on the machine's speed, the same bet as the absolute time bar recorded above. When the code under
 test takes its waits from one object (here the stop event), hand it a fake whose `wait` advances a
 fake clock, and assert the exact schedule: the test becomes exact and runs in milliseconds.
+
+### TAG `vX` ONLY WHERE THE VERSION ALREADY READS `X` -- A DEFERRED FLIP MOVES THE MISMATCH TO THE NEXT TAG (PR #1195)
+
+The project's sequence is pass → tag → flip: tag `vX` while `pyproject.toml` reads `X`, then flip to
+the next number, so a whole cycle runs under the version it will be released as. The flip after
+`v0.3.0` was deferred for the whole `0.4` cycle (it waited on `RC01`), so `main` still read `0.3.0`
+when the maintainer tagged `v0.4.0`. `release.yml` compares the tag with the package version before
+it builds anything: it passed its 30-minute full-suite job, then refused. The published pre-release
+had GitHub's own changelog and no wheel, sdist, checksums or generated notes, and the tagged tree
+called itself `0.3.0` in the sidebar, in diagnostics and in backups. Nothing warned the person
+tagging, because the check runs in the workflow, after the tag exists. **When a flip is deferred,
+the next tag waits for it, and whoever records the deferral says so where the tagger will read it:
+the gate's version paragraph and `docs/CONTRIBUTING.md`.**
+
+### AN ABSENCE CHECK ON A VERSION-BEARING STRING IS A DATE BOMB SET FOR THAT VERSION (PR #1195)
+
+`test_default_user_agent_is_the_honest_versioned_one` (2026-06-13) made sure the stale hardcoded
+`OpenOmniscienceBot/0.4` User-Agent did not come back by asserting that `"0.4"` never appears in
+the UA. The UA it guarded is built from the package version, so the assertion held for every
+version from its writing to `0.3.0`, and failed in CI on the flip to `0.4.0`. **Pin what the value
+must be (here, the UA names the installed package version), never a string it must not contain:
+an absence check on a string that carries a version fails the day the version reaches it.** The
+five map and catalogue build scripts under `scripts/` still hardcode `OpenOmniscienceBot/0.4`; they
+read true again only by coincidence.

@@ -15509,3 +15509,20 @@ scores would not be comparable until a full re-extraction.
 - the change is two lines in `_but_check` (scale position k, not the first equal one);
 - the differential test's reference would become that rule rather than stock;
 - a re-extraction is needed, and the engine identity already changes when that file does.
+
+## 2026-09-28 — `v0.4.0` tagged with 0.4 rows open: where they go is unruled; and a release made on GitHub first keeps its own notes (PR #1195)
+
+**The rows.** The maintainer tagged `v0.4.0` on 2026-09-28 before `RELEASE_0.4_GATE.md`'s exit clause was
+met: rows A–E, W and the operator halves of rows H to V were open (the gate's §3 entry of that date lists
+them). Nothing moved with the tag. **Unruled:** whether those rows stay on the 0.4 board as post-tag operator
+runs or move to `0.5`. Until the maintainer says, they stay where they are, and `RELEASE_0.5_GATE.md`'s two
+hard preconditions (0.4 row K before its row B, row O before its rows D and F) hold as written.
+
+**The notes (a gap, not fixed here).** `release.yml` only writes its generated notes (the `shipped.csv` rows
+since the previous tag and the no-telemetry re-check, row V) when it CREATES the release. When the release
+already exists, as it did at `v0.2.0` and at the first `v0.4.0` (both made on GitHub's Releases page with
+the tag), the workflow uploads the files, appends only the checksums and keeps the existing notes, so the
+no-telemetry re-check never reaches them and no warning says so. The `v0.4.0` instructions in row G avoid it
+by deleting the release before the tag moves. A lasting fix would append the generated notes' re-check
+section when an existing body lacks it; `S03-01` forbade touching `release.yml` in the flip, so it waits
+for a ruling or its own PR.

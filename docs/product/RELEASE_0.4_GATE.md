@@ -1,7 +1,8 @@
 # Release gate — v0.4.0
 
 **Status: OPEN — RULED 2026-09-15 (rows A–F), and grown to rows G–V by the answered roadmap sheet; row W added
-2026-09-27 (`RC01` = a).**
+2026-09-27 (`RC01` = a). `v0.4.0` TAGGED by the maintainer 2026-09-28 with the exit clause unmet (§3, 2026-09-28):
+the rows still open stay open below.**
 This is the checkable inventory for closing the `0.4`
 cycle. It exists now, before the `0.3` tag, because [`RELEASE_0.3_GATE.md`](RELEASE_0.3_GATE.md)
 §5 says in its own words that the `0.4` board *"starts from this list"*, and a postponed
@@ -41,7 +42,11 @@ tag → flip). Nothing on this board touches the version. **AMENDED 2026-09-27 (
 chat):** the `v0.3.0` tag the remote has carried since 2026-08-23, a pre-release, IS the `0.3` close, so the
 flip no longer waits on `0.3`'s row 5, which is carried here as row W. The flip is the maintainer's own act,
 «OK for RC01, I'll do the versino switching after all current draft PRs are merged»; no session opens it unless
-the maintainer asks.
+the maintainer asks. **AMENDED 2026-09-28:** the maintainer tagged `v0.4.0` on `ad0f2062` (the PR #1191 merge),
+where `pyproject.toml` still read `0.3.0`, and `release.yml` refused it at its tag-matches-version step (run
+36368552522; the full-suite job had passed), so the release carried no wheel, sdist or checksums. The flip to
+`0.4.0` followed at the maintainer's pick, in PR #1195, for the tag to move onto its merge (the maintainer's
+step: a session never moves a tag). Row G records it.
 
 ---
 
@@ -55,7 +60,7 @@ the maintainer asks.
 | D | Row B's evidence is readable from one artifact | session | *proposed* → **BAR, ruled 2026-09-15 (Q117 = a)** | **BUILT, and DRIVEN end to end at fixture scale 2026-09-15** — four of six blocks measured, the other two `measured: false` with a reason; still awaiting a ≥ 72 h run to read |
 | E | Row A's demonstration has tooling that can state its own result | session | *proposed* → **BAR, ruled 2026-09-15 (Q117 = a)** | **PARTIAL** — built, riding the bundle, and driven end to end 2026-09-15 in BOTH directions (clean → `consistent`; seeded laundering → `inversions-found`, named); the RUN is Row A's |
 | F | The browser bar reaches a human, a second engine, or is closed as-is | shared | *proposed* → **closed as-is, ruled 2026-09-15 (Q117 = a on Q1128 = a)** | **CLOSED 2026-09-15** — the bar is Chromium-in-sandbox + the maintainer's click-through; Gecko best-effort. The citable sentence lives in §2 row F behind `<!-- release-notes: verification-bar -->`, and the release notes quote it from there |
-| G | `0.3` closed and the version flipped | operator | ruled 2026-09-15 (Q109 = a); 2026-09-27 (`RC01` = a) · brief `S03-01` | **OPEN — waiting on the maintainer's flip.** `RC01` ANSWERED (a) 2026-09-27: the existing `v0.3.0` pre-release is the `0.3` close, the maintainer flips to `0.4.0` after the current draft PRs merge, and `0.3`'s row 5 moved to row W |
+| G | `0.3` closed and the version flipped | operator | ruled 2026-09-15 (Q109 = a); 2026-09-27 (`RC01` = a) · brief `S03-01` | **CLOSED 2026-09-28 — `main` reads `0.4.0` (PR #1195).** `RC01` ANSWERED (a) 2026-09-27: the existing `v0.3.0` pre-release is the `0.3` close and `0.3`'s row 5 moved to row W. The flip came after the `v0.4.0` tag, which was cut while the version read `0.3.0`; the tag moves onto the flip's merge (the maintainer's step) |
 | H | `docs/SECURITY.md` enumerates every host; the consent hover lists them per lane | session | ruled (Q1001, Q1002) · `S04-01` | **BUILT 2026-09-16, awaiting the maintainer's own click-through** — the enumeration (14 lanes, PR #1135), the hover, and `tests/test_security_endpoint_enumeration.py`; Chromium-verified in the sandbox (en/ar/zh, 900px and 375px), recorded in `docs/audit/net-consent-hosts-2026-09-16/`. Three broken ride-along opt-outs found and DISCLOSED, not fixed — the fix needs a ruling on where it lands (`OPEN_QUEUE.md`, 2026-09-16) · **DELEGATED CLICK-THROUGH 2026-09-26 (R35): FAILS (P1 1 · P3 7): the per-lane host bubble is drawn under the modal consent popup — `docs/audit/delegated-clickthrough-2026-09-26/`** · **RE-WALKED 2026-09-27 on the fixed build: every walkable step passes and all 19 first-walk defects checked are fixed; OPEN on 5 new items (P2 2 · P3 3), among them the Home strip's false «server busy» — `docs/audit/delegated-rewalk-2026-09-27/`** · **RE-WALK ITEMS FIXED 2026-09-27 (R37, PR #1191): 5 items fixed; the row closes when its next walk, of these fixes and its steps, passes** · **FIX-CHECK WALK 2026-09-27 (R37): the click-through clause PASSES — every walkable step passes and all 5 re-walk items fixed; not walkable in a sandbox: H9 asks the maintainer's word on the 15 lane names and 3 headings, and H10 needs going online — `docs/audit/delegated-fixcheck-2026-09-27/`** |
 | I | The import lifecycle: fresh page, four visible stages, one poll chain, K = 3, one API path | session | ruled (R1–R3; Q201–Q207, Q214, Q216, Q217, Q221, Q222) · `S04-02` | **BUILT 2026-09-16, awaiting the operator's real restore and the maintainer's click-through.** The fresh page + its quiet line, the four stage rows, the three statements, one poll chain, K = 3, the `v2/restore/*` deletion with `allow_unverified`/`include_newsletters` carried onto the queue, the boot auto-resume, and the history list in Settings → Data & backup. Chromium-verified in the sandbox on a REAL import (en/fr/ar/zh, 21 coverage rows, `docs/audit/import-lifecycle-clickthrough-2026-09-16/`). **Q207 is an ASSUMPTION** (blank sheet, default a). **Q217 measured and PARKED** — prepare dominates (0.976 s of a 0.804 s stage sum across four backups, matching the field's 54%), but 73% of it is `stage_a:reassemble` rather than the validate/upgrade pair the ruling names, and the three C3 blockers are unlifted; the field-scale read is the operator's. **Five defects found by the adversarial passes and fixed**, the worst a refused backup reading `done` beside the two good ones reading `discarded`. Remaining: a real four-backup restore at corpus scale, a kill between stages 3 and 4 on that machine · **DELEGATED CLICK-THROUGH 2026-09-26 (R35): FAILS (P2 9 · P3 6): Q203/Q204/Q205 statements and stage 4, and R1's fresh page on reopen — `docs/audit/delegated-clickthrough-2026-09-26/`** · **RE-WALKED 2026-09-27: every walkable step passes, 25 first-walk defects checked are fixed; OPEN on 8 new items (P2 1 · P3 7), among them «Already judged here, kept» over-counting — `docs/audit/delegated-rewalk-2026-09-27/`** · **RE-WALK ITEMS FIXED 2026-09-27 (R37, PR #1191): 8 items fixed; the row closes when its next walk, of these fixes and its steps, passes** · **FIX-CHECK WALK 2026-09-27 (R37): the click-through clause PASSES — every walkable step passes and all 8 re-walk items fixed; not walkable in a sandbox: I1 needs the real install and its import history, which is the operator's restore run — `docs/audit/delegated-fixcheck-2026-09-27/`** |
 | J | The export: dated `OpenOmniscience_Backup` folder, completion panel, `BACKUP_SUMMARY.md`, verify-after-write | session | ruled (R4, R5; Q208–Q213, Q218–Q220, Q1008) · `S04-03` | **BUILT 2026-09-16, awaiting the operator's removable-drive export and the maintainer's click-through.** The dated folder (local time, `_2` on collision, exclusive `mkdir` so an existing folder is never entered), verify-after-write ON by default with its four verdicts kept apart, the completion panel and `BACKUP_SUMMARY.md` rendered from ONE `export_facts`, Q1008's licence lines in all three carriers, Q219's member hook, and Q220 stated as a non-feature. Chromium-verified in the sandbox on THREE REAL exports (en/fr/ar, `docs/audit/export-folder-clickthrough-2026-09-16/`). **Q823 ⛔ is the stated seam** — no ODbL line, and an OSM-derived corpus table makes the attribution layer REFUSE rather than ship a short block. Remaining: the operator's export to a real removable drive (the re-read cost is `not-measurable-here`) and their word on the reference VM · **DELEGATED CLICK-THROUGH 2026-09-26 (R35): PASSES for everything a sandbox reaches (P2 2 · P3 7 to fix); the removable drive stays the operator's — `docs/audit/delegated-clickthrough-2026-09-26/`** · **RE-WALKED 2026-09-27: every walkable step passes, 14 fixed; OPEN on 4 new items (P2 1 · P3 3): a reload during the corpus phase silently drops the large-data copy — `docs/audit/delegated-rewalk-2026-09-27/`** · **RE-WALK ITEMS FIXED 2026-09-27 (R37, PR #1191): 4 items fixed; J-1 by the minimum fix (a reload no longer drops the large-data copy silently), the one-job export deferred; the row closes when its next walk, of these fixes and its steps, passes** · **FIX-CHECK WALK 2026-09-27 (R37): the click-through clause PASSES — every walkable step passes and all 4 re-walk items fixed (J-1 by the minimum fix); not walkable in a sandbox: J7 and J8 need the removable drive, which is the operator's export run (their sandbox equivalents pass) — `docs/audit/delegated-fixcheck-2026-09-27/`** |
@@ -83,7 +88,8 @@ notes carry the no-telemetry re-check (row V). A PENDING ⛔ question blocks onl
 Q925 blocks nothing on row Q beyond the adapter order; Q1113 blocks nothing on row S (the status quo
 excludes those hosts); Q823 and Q1009 are `0.5` matters. No date (Q110 = c). **2026-09-27:** row W (`0.3`'s
 row 5, `RC01` = a) joins the clause; row R closes without Q803's default, which moved to the `0.5` board
-(`PF06` = a); row V's probe leaves out `dumps.wikimedia.org` (`RC10` = b).
+(`PF06` = a); row V's probe leaves out `dumps.wikimedia.org` (`RC10` = b). **2026-09-28:** the maintainer tagged
+`v0.4.0` before this clause was met (§3); the rows it names that were open then are still open below.
 
 ---
 
@@ -390,7 +396,7 @@ sentences marked *proposed placement* or *design note* are the planning session'
 when" names an artifact a later reader can re-open. Where the sandbox cannot measure a bar the row says so
 and names the operator step (`not-measurable-here` is a legitimate state, `pass` on a proxy is not).
 
-### Row G — `0.3` closed and the version flipped · ruled (Q109 = a) · OPEN
+### Row G — `0.3` closed and the version flipped · ruled (Q109 = a) · CLOSED 2026-09-28
 
 **What it must demonstrate.** The `0.3` board's row 5 (the Tier-A quarantine run, 8 articles — the four
 commands in `RELEASE_0.3_GATE.md` §7.1) is run from the maintainer's machine and the `v0.3.0` tag exists;
@@ -423,6 +429,22 @@ flip itself (`pyproject.toml`, the README `**Version:**` line and a `0.4.0` sect
 `S03-01`'s S3) is the maintainer's own act, after all current draft PRs are merged. **Closes when**
 `main` reads `0.4.0`; the tag is already on the remote. The README's stale «latest tagged release: `v0.2.0`»
 was corrected in the PR that recorded the answer (#1191); its version number waits for the flip.
+
+**CLOSED 2026-09-28 — `main` reads `0.4.0` (PR #1195).** The maintainer merged the draft PRs and tagged
+`v0.4.0` on `ad0f2062`, the PR #1191 merge, publishing a GitHub pre-release at 02:06 UTC with GitHub's own
+generated notes. The version file was not changed, so that tree reads `0.3.0`: it calls itself `0.3.0` in the
+sidebar, `doctor`, diagnostics bundles and backup manifests, and `release.yml` run 36368552522 stopped at
+«Verify the tag matches the package version» (`tag=0.4.0 pkg=0.3.0`) after its full-suite job passed, so no
+wheel, sdist or `SHA256SUMS` were built and no generated notes were written. At the maintainer's pick in the
+project thread, PR #1195 is `S03-01`'s S3: `pyproject.toml`, the README `**Version:**` line and status, a
+`0.4.0` section in `docs/CHANGES.md`, the version lines in `docs/CONTRIBUTING.md`, `docs/ROADMAP.md` and
+`CLAUDE.md`, this row and the ledger. **The tag is the maintainer's step**, after the merge: delete the
+`v0.4.0` GitHub release (not the tag), then move the tag onto the merge (`git fetch origin && git tag -f
+v0.4.0 origin/main && git push -f origin v0.4.0`). `release.yml` then runs on the moved tag, finds no release
+and creates one with the generated notes (the shipped rows since `v0.3.0` and the no-telemetry re-check, row
+V), the wheel, the sdist and `SHA256SUMS`. Keeping the existing release instead also gets the files, but the
+workflow then keeps its notes and appends only the checksums, so the no-telemetry re-check would not reach
+the notes. If no run starts on the moved tag, Actions → Release → Run workflow on the tag does the same.
 
 ### Row H — `docs/SECURITY.md` enumerates every host; the consent hover lists them per lane · ruled (Q1001 = a, Q1002 = a) · BUILT, the delegated click-through passed 2026-09-27
 
@@ -954,6 +976,7 @@ The `0.3` gate's own log is the format.
 
 | Date | Change | Source |
 |---|---|---|
+| 2026-09-28 | **`v0.4.0` TAGGED by the maintainer before the exit clause was met; the version flip followed (row G CLOSED).** The maintainer: «I merged all PRs and bumped the version to v0.4.0». The tag is on `ad0f2062` (the PR #1191 merge), with a GitHub pre-release published 02:06 UTC; that tree read `0.3.0`, so `release.yml` run 36368552522 passed its full-suite job and stopped at its tag-matches-version step, and the release carried no wheel, sdist or `SHA256SUMS`. PR #1195 flips the version at the maintainer's pick; moving the tag onto its merge is the maintainer's step, spelled out in row G. **Rows open at the tag, none changed by this entry:** A and B (the release run of 2026-09-26 covered both, read in the project thread «Release candidate diagnostics», whose two live defects PR #1188 fixed; they close once the maintainer has read its report), D and E (read from that same run), C, W, and the operator halves of rows H to V, K and Q among them (every click-through clause among H to U passed the 2026-09-27 fix-check walk); F closed 2026-09-15. Whether those rows stay on this board after the tag or move to `0.5` is not decided here, and `RELEASE_0.5_GATE.md`'s two hard preconditions (row K before its row B, row O before its rows D and F) stand as written. | maintainer (chat, 2026-09-28 02:41 UTC) · recorded by the session, PR #1195 |
 | 2026-09-27 | **The fix-check walk (R37): the click-through clause of rows H, I, J, L, M, N, O, P, R, S, T and U passes.** One walker per row re-ran that row's steps and reproduced each of its re-walk items on build `9eb10528`, encrypted, locked at boot, in airplane mode, and did not hunt for new defects. 117 of the 119 items were fixed there and every walkable step passed; an independent re-checker confirmed the two left, N-4 (the Diagnostics job lines kept their language after a live switch) and O-5 (the `/tasks` failure line's zh spacing), both P3. Both were fixed in `38965c0e` and re-checked in Chromium with the re-checker's own scripts. What a sandbox cannot walk is listed per row and is the operator's runs (the real install, the removable drive, going online) or the maintainer's word (H9, the lane names). 32 incidental notes are recorded in `incidental.csv` and `OPEN_QUEUE.md`, not fixed, so the loop ends here. The rows' OTHER clauses (the operator runs, row V, row W, the flip) are unchanged. | `docs/audit/delegated-fixcheck-2026-09-27/`; PR #1191 |
 | 2026-09-27 | **The 119 re-walk items fixed (R37; no row closed).** Batches B20 to B30, merged into PR #1191, each item with a test that fails before its fix and a Chromium check, each batch read by an independent reviewer. 116 are fixed in code. J-1 has the minimum fix (the export records its request and the summary reads «Backup incomplete» when a part is missing); making the export one server-side job is deferred to its own slice. R-6, R-14 and R-24 are the Q1150 embed that was never built: the row R text is corrected and the embed goes with `0.5`'s map work unless the maintainer asks for it in `0.4`. The release run now files the Tier-A quarantine pass under row W. Each row closes only when its next walk, of these fixes and its own steps, passes. Leads found beside the fixes are recorded in `OPEN_QUEUE.md`, not fixed, so the loop converges. | PR #1191 (batches B20–B30) |
 | 2026-09-27 | **The delegated re-walk (rows H–U) and the first Claude walk of row R (no row closed).** On the fixed build (`0deff9c4`), 227 of the 234 first-walk defects the walkers checked are fixed, 3 are only partly fixed (row M's M1, M7, M14) and 4 could not be checked in a sandbox. Every walkable step of H, I, J, L, O, T and U passes; M, N, P and S fail one to three steps; row R fails. An independent re-checker confirmed 119 items (1 P1, 23 P2, 95 P3), mostly the first walk's defect classes on surfaces it had skimmed. Each row's board cell names its count. Row R's Q1150 clause is CORRECTED: the When / Where embed was scoped, never built. The fixes run as batches B20–B30 in PR #1191. Asked on a card, the maintainer ruled all 119 fixed before the tag, the next walk checking only those fixes and each row's steps (`R37`, 11:04 UTC). | the session, PR #1191 (`docs/audit/delegated-rewalk-2026-09-27/`) |
@@ -1027,7 +1050,8 @@ Kept explicit so nothing drifts in by assumption:
 - **The `v0.3.0` tag.** It is the `0.3` gate's §7.3, and this board does not gate it. *(2026-09-27: `RC01` = a
   takes the existing 2026-08-23 pre-release as that tag.)*
 - **The version flip to `0.4.0`.** It follows the `v0.3.0` tag, mechanically. *(2026-09-27: the maintainer does
-  it, after the current draft PRs merge; row G records it.)*
+  it, after the current draft PRs merge; row G records it. 2026-09-28: it came after the `v0.4.0` tag, in
+  PR #1195, at the maintainer's pick.)*
 - **The 5M-article framing.** Withdrawn 2026-07-30 and not reinstated here; it returns as a
   later-cycle target once the throughput work makes it reachable.
 - **Everything the answers put in `0.5` or later** (see `RELEASE_0.5_GATE.md` … `RELEASE_0.9_GATE.md`):
