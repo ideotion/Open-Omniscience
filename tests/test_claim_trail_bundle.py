@@ -123,7 +123,7 @@ def test_an_offer_knows_when_its_slice_is_already_held(corpus, data_dir, no_netw
     TS, ids = corpus
     _drought(TS, [ids["wire"]])
     url = _ws(TS)["corroboration"]["offers"][0]["request_url"]
-    cache_path(url).write_text(json.dumps({"ok": True, "daily": {"time": []}, "units": {}}))
+    cache_path(url).write_text(json.dumps({"ok": True, "daily": {"time": []}, "units": {}}), encoding="utf-8")
     assert _ws(TS)["corroboration"]["offers"][0]["cached"] is True
 
 
@@ -242,7 +242,7 @@ def test_the_open_meteo_line_rides_only_with_a_carried_slice(corpus, data_dir, n
     assert report["weather_slices"] == 0 and "Open-Meteo" not in _zip(data).read("ATTRIBUTION.md").decode()
     cache_path(ws["corroboration"]["offers"][0]["request_url"]).write_text(
         json.dumps({"ok": True, "daily": {"time": ["2026-08-28"], "precipitation_sum": [0.0]},
-                    "units": {"precipitation_sum": "mm"}}))
+                    "units": {"precipitation_sum": "mm"}}), encoding="utf-8")
     with TS() as s:
         data, report = cb.build_trail_bundle(s, ws, signer=signer)
     zf = _zip(data)

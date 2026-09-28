@@ -364,9 +364,10 @@ def test_every_string_the_workspace_draws_is_keyed_in_all_twelve_locales():
     lits = {m.replace('\\"', '"') for m in re.findall(r'\btf?\("((?:[^"\\]|\\.)*)"', js)}
     assert len(lits) > 40
     # The weather variables' names, which the shared renderer passes through t() from a map.
+    from tests.js_source_helper import object_literal
+
     home = (_ROOT / "src/static/app-home.js").read_text(encoding="utf-8")
-    table = home[home.index("const _WX_VAR_LABELS = {"):]
-    table = table[: table.index("};")]
+    table = object_literal(home, "_WX_VAR_LABELS")
     labels = set(re.findall(r':\s*"([^"]+)"', table))
     assert len(labels) == 7
     lits |= labels
