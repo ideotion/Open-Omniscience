@@ -381,12 +381,15 @@ def page_versions(page_id: int, db: Session = Depends(get_db)) -> dict:
 @router.get("/pages/{page_id}/compare")
 def page_compare(
     page_id: int,
-    a: int = Query(..., alias="from"),
-    b: int = Query(..., alias="to"),
+    a: str = Query(..., alias="from", pattern=r"^[tbl]\d{1,12}$"),
+    b: str = Query(..., alias="to", pattern=r"^[tbl]\d{1,12}$"),
     part: str | None = Query(None, max_length=512),
     db: Session = Depends(get_db),
 ) -> dict:
-    """Two stored revisions side by side, with the section navigation between them."""
+    """Two stored revisions side by side, with the section navigation between them.
+
+    A version id names its store: ``t`` the page tracker, ``b`` / ``l`` the Wikipedia
+    lane's baseline and revisions (``src/wiki/versions.py``)."""
     from src.wiki.versions import compare_payload
 
     page = db.query(WikiPage).filter_by(id=page_id).first()

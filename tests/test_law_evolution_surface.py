@@ -75,7 +75,9 @@ class _TextFetcher:
 @pytest.fixture
 def corpus(tmp_path):
     engine = create_engine(
-        f"sqlite:///{tmp_path / 'corpus.db'}", future=True, connect_args={"check_same_thread": False}
+        f"sqlite:///{tmp_path / 'corpus.db'}",
+        future=True,
+        connect_args={"check_same_thread": False},
     )
     Base.metadata.create_all(engine)
     yield sessionmaker(bind=engine, future=True)
@@ -126,10 +128,7 @@ def act(corpus, lane):
         )
         track_document(s, _Fetcher("act.translation"), fr)
         revs = (
-            s.query(LawRevision)
-            .filter_by(document_id=doc.id)
-            .order_by(LawRevision.id.asc())
-            .all()
+            s.query(LawRevision).filter_by(document_id=doc.id).order_by(LawRevision.id.asc()).all()
         )
         return {"doc": doc.id, "fr": fr.id, "v1": revs[0].id, "v2": revs[1].id}
 
@@ -183,8 +182,20 @@ def test_a_version_with_no_official_date_is_labelled_dated_by_observation(corpus
     from src.law.pit_search import search
 
     with corpus() as s:
-        doc = _doc(s, jurisdiction="ZZZ", title="Plain Notice", url="https://gazette.zzz.test/n", language="zxx")
-        track_document(s, _TextFetcher("A notice about lighthouse keepers and the lamps they keep lit at night. " * 8), doc)
+        doc = _doc(
+            s,
+            jurisdiction="ZZZ",
+            title="Plain Notice",
+            url="https://gazette.zzz.test/n",
+            language="zxx",
+        )
+        track_document(
+            s,
+            _TextFetcher(
+                "A notice about lighthouse keepers and the lamps they keep lit at night. " * 8
+            ),
+            doc,
+        )
         today = datetime.now(UTC).strftime("%Y-%m-%d")
         out = search(s, "lighthouse", on=today)
     assert len(out["hits"]) == 1
@@ -214,7 +225,7 @@ def test_the_index_reports_versions_whose_text_was_never_stored(corpus, act):
 def test_query_syntax_is_not_interpreted_as_fts_operators():
     from src.law.pit_search import match_expression
 
-    assert match_expression('NOT (standard') == '"NOT" "(standard"'
+    assert match_expression("NOT (standard") == '"NOT" "(standard"'
     assert match_expression('"a phrase" word*') == '"a phrase" "word"*'
     assert match_expression("   ") is None
 
@@ -241,12 +252,18 @@ def _wiki(s) -> int:
     t0 = datetime(2026, 1, 1, tzinfo=UTC)
     s.add_all(
         [
-            WikiRevision(page_id=page.id, revid=10, timestamp=t0, full_text="Lead.\n== History ==\nOld line."),
             WikiRevision(
-                page_id=page.id, revid=11, timestamp=t0 + timedelta(days=1),
+                page_id=page.id, revid=10, timestamp=t0, full_text="Lead.\n== History ==\nOld line."
+            ),
+            WikiRevision(
+                page_id=page.id,
+                revid=11,
+                timestamp=t0 + timedelta(days=1),
                 full_text="Lead.\n== History ==\nNew line.\n== Units ==\nMetre.",
             ),
-            WikiRevision(page_id=page.id, revid=12, timestamp=t0 + timedelta(days=2), full_text=None),
+            WikiRevision(
+                page_id=page.id, revid=12, timestamp=t0 + timedelta(days=2), full_text=None
+            ),
         ]
     )
     s.commit()
@@ -263,8 +280,20 @@ def test_law_and_wiki_readers_return_ONE_payload_shape(corpus, act):
         law = law_payload(s, s.get(LawDocument, act["doc"]))
         wiki = wiki_payload(s, s.get(WikiPage, _wiki(s)))
     shared = {
-        "kind", "id", "title", "language", "versions", "total", "permalink", "identifier",
-        "licence", "provenance", "languages", "parts_name", "method", "caveat",
+        "kind",
+        "id",
+        "title",
+        "language",
+        "versions",
+        "total",
+        "permalink",
+        "identifier",
+        "licence",
+        "provenance",
+        "languages",
+        "parts_name",
+        "method",
+        "caveat",
     }
     assert shared <= set(law) and shared <= set(wiki)
     assert set(law["versions"][0]) == set(wiki["versions"][0])
@@ -293,7 +322,9 @@ def test_a_scoped_comparison_shows_only_that_provision(corpus, act):
     from src.law.versions import compare_payload
 
     with corpus() as s:
-        out = compare_payload(s, s.get(LawDocument, act["doc"]), act["v1"], act["v2"], part="Part 2 Duties/4")
+        out = compare_payload(
+            s, s.get(LawDocument, act["doc"]), act["v1"], act["v2"], part="Part 2 Duties/4"
+        )
     assert [r["op"] for r in out["rows"] if r["op"] != "eq"] == ["ins"]
 
 
@@ -302,7 +333,10 @@ def test_a_version_without_stored_text_refuses_by_name(corpus, act):
 
     with corpus() as s:
         pid = _wiki(s)
-        ids = [r.id for r in s.query(WikiRevision).filter_by(page_id=pid).order_by(WikiRevision.revid)]
+        ids = [
+            f"t{r.id}"
+            for r in s.query(WikiRevision).filter_by(page_id=pid).order_by(WikiRevision.revid)
+        ]
         out = compare_payload(s, s.get(WikiPage, pid), ids[1], ids[2])
     assert out["method"] == "text-not-held"
     assert out["missing"] == [ids[2]]
@@ -314,10 +348,91 @@ def test_wiki_sections_are_the_part_navigation(corpus, act):
 
     with corpus() as s:
         pid = _wiki(s)
-        ids = [r.id for r in s.query(WikiRevision).filter_by(page_id=pid).order_by(WikiRevision.revid)]
+        ids = [
+            f"t{r.id}"
+            for r in s.query(WikiRevision).filter_by(page_id=pid).order_by(WikiRevision.revid)
+        ]
         out = compare_payload(s, s.get(WikiPage, pid), ids[0], ids[1])
     status = {p["address"]: p["status"] for p in out["parts"]}
     assert status == {"(lead)": "unchanged", "History": "changed", "Units": "added"}
+
+
+@pytest.fixture
+def wiki_lane(tmp_path, monkeypatch):
+    store.dispose_all()
+    monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("OO_DB_PLAINTEXT", "1")
+    try:
+        store.create_lane("wiki")
+        yield tmp_path
+    finally:
+        store.dispose_all()
+
+
+def _lane_versions(title: str = "Measurement") -> None:
+    """The lane's baseline (revid 11, which the tracker ALSO holds, without text here)
+    and one later lane revision (revid 13) for the same page."""
+    from src.versioned.adapters.wiki import external_id_for
+    from src.versioned.models import VersionedBaseline, VersionedEntity, VersionedRevision
+
+    t0 = datetime(2026, 1, 2, tzinfo=UTC)
+    with store.lane_session("wiki") as lane:
+        ent = VersionedEntity(external_id=external_id_for("en", title), title=title, language="en")
+        lane.add(ent)
+        lane.flush()
+        lane.add(
+            VersionedBaseline(
+                entity_id=ent.id,
+                revision_ref="11",
+                revised_at=t0,
+                content_hash="h11",
+                content="Lead.\n== History ==\nNew line.\n== Units ==\nMetre.",
+            )
+        )
+        lane.add(
+            VersionedRevision(
+                entity_id=ent.id,
+                revision_ref="13",
+                revised_at=t0 + timedelta(days=3),
+                content_hash="h13",
+                content="Lead.\n== History ==\nNew line.\n== Units ==\nMetre and second.",
+            )
+        )
+
+
+def test_the_wiki_reader_lists_the_lanes_versions_beside_the_trackers(corpus, wiki_lane):
+    """Since Q1020 the scheduler's captures land in the Wikipedia lane, not in
+    wiki_revisions: a reader of the tracker's store alone would show a lane-running
+    instance only what "Track now" caught. One edit held in both is listed ONCE."""
+    from src.wiki.versions import compare_payload, reader_payload
+
+    _lane_versions()
+    with corpus() as s:
+        pid = _wiki(s)
+        # The tracker's copy of revid 11 loses its text, so the lane's copy must win.
+        s.query(WikiRevision).filter_by(page_id=pid, revid=11).update({"full_text": None})
+        s.commit()
+        page = s.get(WikiPage, pid)
+        out = reader_payload(s, page)
+        ids = [v["id"] for v in out["versions"]]
+        assert ids[0].startswith("l") and ids[1].startswith("t")  # revid 13 (lane) newest, then 12
+        assert out["total"] == 4  # revids 10, 11, 12, 13: 11 once, not twice
+        assert out["stores"] == ["lane", "tracker"]
+        eleven = next(v for v in out["versions"] if v["id"].startswith("b"))
+        assert eleven["has_text"] and eleven["dating"] == "edit"
+        cmp = compare_payload(s, page, eleven["id"], ids[0])
+    assert cmp["method"] == "line"
+    assert {p["address"]: p["status"] for p in cmp["parts"]}["Units"] == "changed"
+
+
+def test_the_wiki_reader_without_a_lane_reads_the_tracker_alone(corpus, tmp_path, monkeypatch):
+    from src.wiki.versions import reader_payload
+
+    store.dispose_all()
+    monkeypatch.setenv("OO_DATA_DIR", str(tmp_path / "empty"))
+    with corpus() as s:
+        out = reader_payload(s, s.get(WikiPage, _wiki(s)))
+    assert out["stores"] == ["tracker"] and out["total"] == 3
 
 
 def test_a_version_of_another_document_is_a_404_never_a_neighbour(corpus, act):
@@ -381,7 +496,13 @@ def test_a_summary_carries_the_ai_label_and_a_missing_one_is_absent(corpus, act)
     from src.law.versions import AI_LABEL, reader_payload
 
     with corpus() as s:
-        s.add(LawRevisionSummary(revision_id=act["v2"], summary="Section 2 now names a published standard.", model="m"))
+        s.add(
+            LawRevisionSummary(
+                revision_id=act["v2"],
+                summary="Section 2 now names a published standard.",
+                model="m",
+            )
+        )
         s.commit()
         out = reader_payload(s, s.get(LawDocument, act["doc"]))
     by_id = {v["id"]: v for v in out["versions"]}
@@ -421,8 +542,22 @@ def test_the_amendment_map_states_its_vintage_and_keeps_non_countries_off_it(cor
         s.add(LawDocument(jurisdiction="eu", title="Reg", url="https://x.test/eu"))
         s.commit()
         fr = s.query(LawDocument).filter_by(jurisdiction="fr").one()
-        s.add(LawRevision(document_id=fr.id, observed_at=datetime.now(UTC), content_hash="h", diff_basis="previous"))
-        s.add(LawRevision(document_id=fr.id, observed_at=datetime.now(UTC), content_hash="h0", diff_basis="first"))
+        s.add(
+            LawRevision(
+                document_id=fr.id,
+                observed_at=datetime.now(UTC),
+                content_hash="h",
+                diff_basis="previous",
+            )
+        )
+        s.add(
+            LawRevision(
+                document_id=fr.id,
+                observed_at=datetime.now(UTC),
+                content_hash="h0",
+                diff_basis="first",
+            )
+        )
         s.commit()
         out = amendment_map(s, days=30)
     assert out["values"] == {"fr": 1}
@@ -466,15 +601,49 @@ def test_the_routes_serve_the_same_payloads(corpus, act):
         c = TestClient(app)
         v = c.get(f"/api/law/documents/{act['doc']}/versions")
         assert v.status_code == 200 and v.json()["kind"] == "law"
-        cmp_ = c.get(f"/api/law/documents/{act['doc']}/compare", params={"from": act["v1"], "to": act["v2"]})
+        cmp_ = c.get(
+            f"/api/law/documents/{act['doc']}/compare", params={"from": act["v1"], "to": act["v2"]}
+        )
         assert cmp_.status_code == 200 and cmp_.json()["parts"]
         pit = c.get("/api/law/versions/search", params={"q": _2019_WORDS, "on": "2020-01-01"})
         assert [h["version_id"] for h in pit.json()["hits"]] == [act["v1"]]
-        assert c.get("/api/law/versions/search", params={"q": "x", "on": "2020-1-1"}).status_code == 422
+        assert (
+            c.get("/api/law/versions/search", params={"q": "x", "on": "2020-1-1"}).status_code
+            == 422
+        )
         assert c.get("/api/law/amendment-map").json()["window_to"]
         assert c.get("/api/law/this-week").status_code == 200
         assert c.get("/api/law/topics", params={"q": "standard"}).json()["rows"]
-        assert c.get(f"/api/law/documents/{act['doc']}/compare", params={"from": 99999, "to": act["v2"]}).status_code == 404
+        assert (
+            c.get(
+                f"/api/law/documents/{act['doc']}/compare", params={"from": 99999, "to": act["v2"]}
+            ).status_code
+            == 404
+        )
+        with corpus() as s:
+            pid = _wiki(s)
+            ids = [
+                f"t{r.id}"
+                for r in s.query(WikiRevision).filter_by(page_id=pid).order_by(WikiRevision.revid)
+            ]
+        wv = c.get(f"/api/wiki/pages/{pid}/versions").json()
+        assert {v["id"] for v in wv["versions"]} == set(ids)
+        assert (
+            c.get(f"/api/wiki/pages/{pid}/compare", params={"from": ids[0], "to": ids[1]}).json()[
+                "method"
+            ]
+            == "line"
+        )
+        assert (
+            c.get(f"/api/wiki/pages/{pid}/compare", params={"from": "x1", "to": ids[1]}).status_code
+            == 422
+        )
+        assert (
+            c.get(
+                f"/api/wiki/pages/{pid}/compare", params={"from": "t99999", "to": ids[1]}
+            ).status_code
+            == 404
+        )
         reader = c.get(f"/api/law/documents/{act['doc']}/view").text
         assert "ooversions.js" in reader and 'data-ov-base="/api/law/documents/' in reader
     finally:

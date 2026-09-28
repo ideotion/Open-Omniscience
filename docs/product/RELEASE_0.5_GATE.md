@@ -268,7 +268,8 @@ same disclosures), and the map of amendment activity states its vintage. Brief `
 page, the Living sources Law panel and the Wikipedia tracked-changes panel, fed by one payload shape
 (`src/law/versions.py`, `src/wiki/versions.py`) and one comparison computed locally from the two full texts
 (`src/versioned/compare.py`, bounded by the lane's own diff limits). Parts are a law's provisions or a page's
-`== sections ==`; a version whose text was never stored refuses the comparison by name. Dating follows ONE rule:
+`== sections ==`; a version whose text was never stored refuses the comparison by name. A Wikipedia page's
+versions are read from both stores, the old tracker's and the Wikipedia lane's, one row per edit. Dating follows ONE rule:
 official where the source states it, else the observation day, labelled. Point-in-time search is a contentless
 FTS5 index in `law.db` synced on read (`src/law/pit_search.py`), with a coverage line naming the versions it
 cannot search. Analytics 3–5 are in `src/law/analytics.py` (by topic across jurisdictions; the Equal Earth map

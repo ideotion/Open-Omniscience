@@ -134,7 +134,7 @@
     host.classList.add("ov");
     host.setAttribute("data-i18n-dyn", "");
 
-    function byId(id) { return (st.d && st.d.versions || []).find((v) => v.id === id) || null; }
+    function byId(id) { return (st.d && st.d.versions || []).find((v) => String(v.id) === String(id)) || null; }
 
     function paintFacts(t, tf) {
       const d = st.d, to = byId(st.to);
@@ -226,7 +226,7 @@
           + `<p class="card-caveat ov-caveat">${_esc(t(d.caveat))}</p><p class="ov-muted ov-method">${_esc(t(d.method))}</p>`;
         return;
       }
-      const opts2 = (sel) => versions.map((v) => `<option value="${v.id}"${v.id === sel ? " selected" : ""}>${_esc(versionOption(v, t, tf))}</option>`).join("");
+      const opts2 = (sel) => versions.map((v) => `<option value="${_esc(String(v.id))}"${String(v.id) === String(sel) ? " selected" : ""}>${_esc(versionOption(v, t, tf))}</option>`).join("");
       host.innerHTML = head
         + `<div class="ov-pick"><label>${_esc(t("From"))}<select data-ov="from">${opts2(st.from)}</select></label>`
         + `<label>${_esc(t("To"))}<select data-ov="to">${opts2(st.to)}</select></label>`
@@ -263,9 +263,12 @@
       const pool = withText.length >= 2 ? withText : st.d.versions;
       st.to = pool[0] ? pool[0].id : null;
       st.from = pool[1] ? pool[1].id : null;
-      if (opts.to != null && byId(Number(opts.to))) {
-        st.to = Number(opts.to);
-        const i = st.d.versions.findIndex((v) => v.id === st.to);
+      // Ids are compared as strings: a law version's id is a number, a wiki version's
+      // names its store ("t12", "l40"), and one comparison serves both.
+      const pinned = opts.to != null ? byId(opts.to) : null;
+      if (pinned) {
+        st.to = pinned.id;
+        const i = st.d.versions.findIndex((v) => v === pinned);
         const older = st.d.versions.slice(i + 1).find((v) => v.has_text) || st.d.versions[i + 1];
         if (older) st.from = older.id;
       }
@@ -276,7 +279,9 @@
     host.addEventListener("change", (e) => {
       const which = e.target && e.target.getAttribute && e.target.getAttribute("data-ov");
       if (which !== "from" && which !== "to") return;
-      st[which] = Number(e.target.value);
+      const picked = byId(e.target.value);
+      if (!picked) return;
+      st[which] = picked.id;
       st.part = null;
       compare();
     });
