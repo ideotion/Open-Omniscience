@@ -131,7 +131,8 @@ def test_a_stored_culled_pick_maps_to_its_survivor_everywhere_the_look_is_read()
     # ... and said out loud once, after the locale is ready
     boot = (STATIC / "app-boot.js").read_text(encoding="utf-8")
     assert "announceRetiredTheme" in boot
-    for page in ("taskmanager.html", "investigate.html"):
+    # Their scripts moved out of the page into a same-named .js (0.5 row I, Q1127 = a).
+    for page in ("taskmanager.js", "investigate.js"):
         text = (STATIC / page).read_text(encoding="utf-8")
         m = re.search(r"RETIRED_THEMES = \{([^}]*)\}", text)
         assert m, f"{page} reads oo.ui itself and must map a culled pick too"

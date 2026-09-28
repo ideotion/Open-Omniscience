@@ -5846,5 +5846,14 @@
   "{country} — public holidays": "{country} — hari libur nasional",
   "UN International Days & Weeks": "Hari dan Pekan Internasional PBB",
   "Open-source conferences & meetups": "Konferensi dan pertemuan sumber terbuka",
-  "The {old} theme was retired as a near-duplicate of {new}, so you are now on {new} with its accent kept.": "Tema {old} dihapus karena hampir sama dengan {new}; kini Anda memakai {new} dengan aksennya tetap."
+  "The {old} theme was retired as a near-duplicate of {new}, so you are now on {new} with its accent kept.": "Tema {old} dihapus karena hampir sama dengan {new}; kini Anda memakai {new} dengan aksennya tetap.",
+  "Comment": "Komentar",
+  "Flags": "Penanda",
+  "Coverage summary unavailable.": "Ringkasan cakupan tidak tersedia.",
+  "Extracting…": "Mengekstrak…",
+  "No date tags found.": "Tidak ada tag tanggal yang ditemukan.",
+  "No flagged tracked edits stored for this wiki.": "Tidak ada suntingan terpantau yang ditandai tersimpan untuk wiki ini.",
+  "No stored coverage on these terms since the promised date.": "Tidak ada liputan tersimpan tentang istilah ini sejak tanggal yang dijanjikan.",
+  "Snippet (provenance)": "Cuplikan (asal-usul)",
+  "Unknown investigation view": "Tampilan investigasi tidak dikenal"
 }

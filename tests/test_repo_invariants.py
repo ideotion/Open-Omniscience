@@ -15,15 +15,15 @@ import ast
 import re
 from pathlib import Path
 
-from tests.js_source_helper import app_js, app_modules, event_listener_bodies
+from tests.diagnostics_source import diagnostics_source
+from tests.js_source_helper import app_js, app_modules, event_listener_bodies, page_source
 from tests.js_source_helper import assert_absent as _assert_js_absent
-from tests.js_source_helper import css_rule as _css_rule
 from tests.js_source_helper import assert_present as _assert_js_present
+from tests.js_source_helper import css_rule as _css_rule
 from tests.js_source_helper import function_body as _js_function_body
 from tests.js_source_helper import function_source as _js_function_source
 from tests.js_source_helper import python_function_source as _py_function_source
 from tests.js_source_helper import strip_comments as _strip_js_comments
-from tests.diagnostics_source import diagnostics_source
 
 _ROOT = Path(__file__).resolve().parents[1]
 _SRC = _ROOT / "src"
@@ -1033,7 +1033,7 @@ def test_seamless_install_and_language_first_first_launch():
     )
 
     # (2) The fresh-store first launch shows a language step FIRST.
-    unlock = (_SRC / "static" / "unlock.html").read_text(encoding="utf-8")
+    unlock = page_source("unlock.html")
     assert 'id="view-language"' in unlock and "showLanguageStep" in unlock, (
         "fresh first launch must offer a language step (view-language / showLanguageStep)"
     )
@@ -1423,7 +1423,7 @@ def test_task_manager_reorder_moves_rows_optimistically():
     or the next poll. Both task managers (in-app + the standalone /tasks page) renumber
     the cached queue and REPAINT before the POST, then reconcile."""
     app = app_js()
-    tm = (_SRC / "static" / "taskmanager.html").read_text(encoding="utf-8")
+    tm = page_source("taskmanager.html")
     # in-app: a paint-from-cache path + jobMove repaints before awaiting the reorder POST
     assert "function _paintJobs(" in app, "render-from-cache path for an instant move"
     mv = app[app.index("async function jobMove("):]
@@ -1845,7 +1845,7 @@ def test_airplane_flash_feedback_is_consistent_everywhere():
     (.go-on/.go-off, animated in the shared app.css); the standalone /tasks page must
     fire the same flash when engaging airplane (the toggle that happens there)."""
     app = app_js()
-    tm = (_SRC / "static" / "taskmanager.html").read_text(encoding="utf-8")
+    tm = page_source("taskmanager.html")
     css = (_SRC / "static" / "app.css").read_text(encoding="utf-8")
     assert "#net-flash" in css and ".go-off" in css and "@keyframes netflash" in css
     assert 'classList.add(online ? "go-on" : "go-off")' in app, "the app fires the flash"
@@ -2227,7 +2227,7 @@ def test_ui_invariants():
     # 5. the eye brand mark (grid-iris path is its fingerprint) — in index.html
     #    AND the /unlock screen (must be THE SAME canonical eye, not a variant).
     assert "C8 6.5, 24 6.5, 30 16" in html, "brand mark must be the ASCII-eye vector"
-    unlock = (_SRC / "static" / "unlock.html").read_text(encoding="utf-8")
+    unlock = page_source("unlock.html")
     assert "C8 6.5, 24 6.5, 30 16" in unlock and "M11 12.5 H21" in unlock, (
         "the /unlock screen must use THE canonical eye (pointed-oval + grid-iris)"
     )
@@ -5804,7 +5804,7 @@ def test_task_manager_opens_in_a_standalone_tab():
     assert '"/tasks"' in main_src and "taskmanager.html" in main_src, (
         "the /tasks route must serve the standalone taskmanager.html"
     )
-    tm = (_ROOT / "src" / "static" / "taskmanager.html").read_text(encoding="utf-8")
+    tm = page_source("taskmanager.html")
     for ep in ("/api/jobs", "/api/scheduler/activity", "/api/system/vitals"):
         assert ep in tm, f"the task page must read the existing {ep} endpoint (no new backend)"
     # The status-bar airplane control may engage airplane (offline = the SAFE
@@ -5826,7 +5826,7 @@ def test_task_manager_shows_pass_phase_and_upcoming_sources():
         a fixed reorderable queue — that distinction was the user's confusion)."""
     import json as _json
 
-    tm = (_ROOT / "src" / "static" / "taskmanager.html").read_text(encoding="utf-8")
+    tm = page_source("taskmanager.html")
     app = app_js()
     for src, name in ((tm, "taskmanager.html"), (app, "app.js")):
         # Phase mapping keyed off a.phase, gated on a.active (not a bare 'idle').
@@ -5861,7 +5861,7 @@ def test_task_manager_displays_actual_language_and_tag_strata():
     'stratified by language and tag'. Both surfaces read plan.strata (derived cheaply
     from the bounded sample plan_preview already fetched — no new unbounded scan on the
     hot poll). The backend plan_preview must emit the strata."""
-    tm = (_ROOT / "src" / "static" / "taskmanager.html").read_text(encoding="utf-8")
+    tm = page_source("taskmanager.html")
     app = app_js()
     for src, name in ((tm, "taskmanager.html"), (app, "app.js")):
         assert "plan.strata" in src, f"{name}: must read the actual strata from the plan"
@@ -6027,7 +6027,7 @@ def test_task_manager_redesign_windows_style():
     (maintainer 2026-06-18): a persistent resource summary + Processes /
     Performance / Queue / Schedule / History tabs, airplane-aware, showing what
     actually runs (incl. LLM/analysis tasks) with live hardware charts."""
-    tm = (_ROOT / "src" / "static" / "taskmanager.html").read_text(encoding="utf-8")
+    tm = page_source("taskmanager.html")
     # The five tabs + their panels.
     for panel in ("processes", "performance", "queue", "schedule", "history"):
         assert f'data-panel="{panel}"' in tm, f"missing tab: {panel}"
@@ -6066,7 +6066,7 @@ def test_task_manager_status_bar_and_sessions(monkeypatch=None):
     top-bar controls MINUS search — a status bar with airplane + a language
     picker + help; the Up-next list is a full vertical list; History is reframed
     as 'online sessions'; Performance adapts to window size (auto-fit grid)."""
-    tm = (_ROOT / "src" / "static" / "taskmanager.html").read_text(encoding="utf-8")
+    tm = page_source("taskmanager.html")
     # Status bar: now IDENTICAL to the app's top bar (maintainer 2026-06-20) — the same
     # header.topbar markup (omni search + health/LLM pills + airplane + language flag + help).
     assert 'id="tm-status"' in tm, "the status bar must exist"
@@ -6234,7 +6234,7 @@ def test_unlock_enters_when_queryable_not_after_full_upkeep():
         < finish.index("mark_queryable()")
         < finish.index("def _upkeep")
     ), "mark_queryable must be called after init_db and before the background upkeep thread"
-    html = (_ROOT / "src" / "static" / "unlock.html").read_text(encoding="utf-8")
+    html = page_source("unlock.html")
     enter = html.split("async function waitReadyThenEnter", 1)[1].split("async function", 1)[0]
     assert "s.queryable" in enter, (
         "the unlock page must enter the Console as soon as the corpus is queryable, "
@@ -6258,7 +6258,7 @@ def test_unlock_error_reshows_the_form_and_is_translated():
     "passphrases do not match") is also now run through t() instead of assigned
     verbatim, so it renders in the user's chosen language like every other string
     on this page."""
-    unlock = (_ROOT / "src" / "static" / "unlock.html").read_text(encoding="utf-8")
+    unlock = page_source("unlock.html")
 
     prep = unlock.split("function _startPrep(", 1)[1].split("\n    }\n", 1)[0]
     assert prep.startswith("priorView) {"), (
@@ -9225,7 +9225,7 @@ def test_the_ai_install_egress_window_is_wired_and_states_its_limit():
     #     screen where their own exposure is invisible -- and its plain offline
     #     hover is FALSE while a window is open. Same strings as the app, so this
     #     costs no new translation.
-    tm = (_SRC / "static" / "taskmanager.html").read_text(encoding="utf-8")
+    tm = page_source("taskmanager.html")
     assert '"/api/system/egress-window"' in tm, "/tasks must read the window state"
     assert 'id="egress-window-bar"' in tm, "/tasks must show an open window"
     assert "except the AI install you allowed" in tm, (

@@ -16,6 +16,8 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from tests.js_source_helper import page_source
+
 _ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -193,7 +195,7 @@ def test_every_relative_link_in_the_legal_docs_resolves_to_a_real_file():
 def test_unlock_first_launch_inserts_legal_step_before_passphrase():
     """The first-launch flow goes language -> ACCEPT LEGAL -> passphrase; decline needs
     a typed confirmation and uninstalls. Browser-unverified; this pins the wiring."""
-    html = (_ROOT / "src" / "static" / "unlock.html").read_text(encoding="utf-8")
+    html = page_source("unlock.html")
     assert 'id="view-legal"' in html
     # the language choice routes THROUGH the legal step (not straight to the passphrase)
     assert "showLegalStep(code)" in html

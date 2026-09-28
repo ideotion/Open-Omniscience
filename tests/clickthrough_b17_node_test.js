@@ -34,7 +34,7 @@ const CORPUS = read("app-corpus.js");
 const MARKETS = read("app-markets.js");
 const MAP = read("app-map.js");
 const READER = read("reader.js");
-const TM = read("taskmanager.html");
+const TM = require("./app_source.js").pageSource("taskmanager.html");
 const LOCALE = (code) => JSON.parse(fs.readFileSync(path.join(STATIC, "locales", code + ".json"), "utf-8"));
 
 let passed = 0;

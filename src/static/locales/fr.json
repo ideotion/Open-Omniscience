@@ -5846,5 +5846,14 @@
   "{country} — public holidays": "{country} — jours fériés",
   "UN International Days & Weeks": "Journées et semaines internationales de l'ONU",
   "Open-source conferences & meetups": "Conférences et rencontres open source",
-  "The {old} theme was retired as a near-duplicate of {new}, so you are now on {new} with its accent kept.": "Le thème {old} a été retiré car presque identique à {new} : vous êtes maintenant sur {new}, avec son accent conservé."
+  "The {old} theme was retired as a near-duplicate of {new}, so you are now on {new} with its accent kept.": "Le thème {old} a été retiré car presque identique à {new} : vous êtes maintenant sur {new}, avec son accent conservé.",
+  "Comment": "Commentaire",
+  "Flags": "Indicateurs",
+  "Coverage summary unavailable.": "Résumé de couverture indisponible.",
+  "Extracting…": "Extraction…",
+  "No date tags found.": "Aucune balise de date trouvée.",
+  "No flagged tracked edits stored for this wiki.": "Aucune modification suivie signalée n’est stockée pour ce wiki.",
+  "No stored coverage on these terms since the promised date.": "Aucune couverture stockée sur ces termes depuis la date promise.",
+  "Snippet (provenance)": "Extrait (provenance)",
+  "Unknown investigation view": "Vue d’enquête inconnue"
 }

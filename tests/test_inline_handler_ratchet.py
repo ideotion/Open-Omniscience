@@ -44,20 +44,14 @@ INLINE_SCRIPT = re.compile(r"<script\b(?![^>]*\bsrc\s*=)[^>]*>", re.I)
 
 # Measured on main @ 00af1d9 (2026-09-28) with HANDLER above: 656 -- index.html 353, the
 # nineteen app-*.js modules 291, taskmanager.html 11, unlock.html 1. The SPA (index.html +
-# app-*.js, 644) converted to data-on-* in the same PR; what is left is pinned here.
-HANDLER_PINS: dict[str, int] = {
-    "src/static/taskmanager.html": 11,
-    "src/static/unlock.html": 1,
-}
+# app-*.js, 644) converted to data-on-* in the first PR (#1199); the second moved the task
+# manager and unlock pages' handlers and the six inline <script> blocks (task manager,
+# unlock, investigate, the article reader's two, the law reader's one) into files. Both
+# maps are EMPTY: zero is the pin, and CSP script-src no longer allows 'unsafe-inline'.
+HANDLER_PINS: dict[str, int] = {}
 
 # Inline <script> blocks on served pages (the reader and law reader are rendered in Python).
-INLINE_SCRIPT_PINS: dict[str, int] = {
-    "src/api/law.py": 1,
-    "src/api/main.py": 2,
-    "src/static/investigate.html": 1,
-    "src/static/taskmanager.html": 1,
-    "src/static/unlock.html": 1,
-}
+INLINE_SCRIPT_PINS: dict[str, int] = {}
 
 
 def _served_files() -> list[Path]:

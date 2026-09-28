@@ -515,18 +515,16 @@ def test_fresh_opens_those_two_paths_and_nothing_else(monkeypatch):
 # The first-launch step itself
 # --------------------------------------------------------------------------- #
 def _unlock_script() -> str:
-    """The inline script of the first-launch page, comment-stripped.
+    """The first-launch page's script (``unlock.js``, an inline block until 0.5 row I,
+    Q1127 = a), comment-stripped.
 
     Comment-stripped because every assertion below about what the page must NOT do sits
     next to a comment EXPLAINING it, and those comments necessarily quote the thing being
     forbidden -- the recorded trap where a negative guard passes (or fails) on its own
     rationale. Bodies are then taken with the shared slicer rather than a guessed
     delimiter, so this file adds no hand-rolled slice of its own."""
-    import re
-
-    html = read_static("unlock.html")
-    js = "\n".join(re.findall(r"<script>(.*?)</script>", html, re.S))
-    return strip_comments(js)
+    assert '<script src="/static/unlock.js"' in read_static("unlock.html")
+    return strip_comments(read_static("unlock.js"))
 
 
 def test_the_step_sits_between_the_legal_accept_and_the_passphrase() -> None:

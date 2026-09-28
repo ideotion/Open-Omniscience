@@ -11653,6 +11653,7 @@ until the inline handlers do, and the count re-derived by the 2026-09-06 analysi
 the ledger recorded, which counted `index.html` only and predates the module split. Prompt 15
 S2 owns the retirement; landing the nonce first breaks the app. Recorded here so the
 sequencing survives the two prompts being executed by different sessions.
+**CLOSED 2026-09-28 (0.5 row I, Q1127 = a):** the handlers and the six inline `<script>` blocks are gone (656 handlers measured with the ratchet's own pattern), and `script-src` is `'self'` alone. No nonce was needed, because nothing inline is left to allow. Enforced by `tests/test_inline_handler_ratchet.py` and `tests/test_security_hardening.py::test_script_src_allows_no_inline_script`. `style-src 'unsafe-inline'` stays; it was not ruled.
 **CARRY-OVER FROM THE PROMPT-17 SWEEP (2026-09-07, PR #1027 — four items, each measured; none
 of them blocks the PR, and none of them was silently dropped).** The sweep found prompt 17's
 S1-S7 already shipped and fixed the one real defect it turned up (the concept map's country cap);

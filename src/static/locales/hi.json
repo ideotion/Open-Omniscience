@@ -5846,5 +5846,14 @@
   "{country} — public holidays": "{country} — सार्वजनिक अवकाश",
   "UN International Days & Weeks": "संयुक्त राष्ट्र के अंतरराष्ट्रीय दिवस और सप्ताह",
   "Open-source conferences & meetups": "ओपन-सोर्स सम्मेलन और मीटअप",
-  "The {old} theme was retired as a near-duplicate of {new}, so you are now on {new} with its accent kept.": "{old} थीम को {new} की लगभग प्रतिलिपि होने के कारण हटा दिया गया; अब आप {new} पर हैं और उसका एक्सेंट रंग बना रहा।"
+  "The {old} theme was retired as a near-duplicate of {new}, so you are now on {new} with its accent kept.": "{old} थीम को {new} की लगभग प्रतिलिपि होने के कारण हटा दिया गया; अब आप {new} पर हैं और उसका एक्सेंट रंग बना रहा।",
+  "Comment": "टिप्पणी",
+  "Flags": "फ़्लैग",
+  "Coverage summary unavailable.": "कवरेज सारांश उपलब्ध नहीं है।",
+  "Extracting…": "निकाला जा रहा है…",
+  "No date tags found.": "कोई तारीख टैग नहीं मिला।",
+  "No flagged tracked edits stored for this wiki.": "इस विकी के लिए कोई फ़्लैग किया गया ट्रैक संपादन संग्रहीत नहीं है।",
+  "No stored coverage on these terms since the promised date.": "वादा की गई तारीख से इन शब्दों पर कोई संग्रहीत कवरेज नहीं है।",
+  "Snippet (provenance)": "अंश (स्रोत)",
+  "Unknown investigation view": "अज्ञात जाँच दृश्य"
 }

@@ -5846,5 +5846,14 @@
   "{country} — public holidays": "{country} — 祝日",
   "UN International Days & Weeks": "国連の国際デー・国際週間",
   "Open-source conferences & meetups": "オープンソースのカンファレンスとミートアップ",
-  "The {old} theme was retired as a near-duplicate of {new}, so you are now on {new} with its accent kept.": "{old} テーマは {new} とほぼ同じため廃止されました。現在は {new} を使用しており、アクセント色はそのままです。"
+  "The {old} theme was retired as a near-duplicate of {new}, so you are now on {new} with its accent kept.": "{old} テーマは {new} とほぼ同じため廃止されました。現在は {new} を使用しており、アクセント色はそのままです。",
+  "Comment": "コメント",
+  "Flags": "フラグ",
+  "Coverage summary unavailable.": "カバレッジの概要は利用できません。",
+  "Extracting…": "抽出中…",
+  "No date tags found.": "日付タグは見つかりませんでした。",
+  "No flagged tracked edits stored for this wiki.": "このウィキには、フラグ付きの追跡中の編集は保存されていません。",
+  "No stored coverage on these terms since the promised date.": "約束の日付以降、これらの語に関する保存済みの報道はありません。",
+  "Snippet (provenance)": "抜粋（出所）",
+  "Unknown investigation view": "不明な調査ビュー"
 }
