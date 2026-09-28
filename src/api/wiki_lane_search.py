@@ -155,6 +155,7 @@ def lane_version(
         "title": held.title,
         "revid": held.revid,
         "revised_at": held.revised_at.isoformat() if held.revised_at else None,
+        "which": held.which,
         "deleted": held.deleted,
         "newest_followed": held.newest_followed,
         "url": wiki_version_url(held.edition, held.title, held.revid),

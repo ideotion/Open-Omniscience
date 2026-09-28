@@ -310,6 +310,9 @@
           if (typeof repaintWikiTCFromCache === "function") repaintWikiTCFromCache();
         }
       } catch (_e) {}
+      // The held Wikipedia version (R52) opens from the palette whether or not Living
+      // sources was ever opened, so it redraws on its own test: the dialog is open.
+      try { if (typeof repaintLaneVersionFromCache === "function") repaintLaneVersionFromCache(); } catch (_e) {}
       // The Activity view is the same class again, and it recurred the moment a new
       // interpolated string was added there: the qualification tile's composition note
       // ("Of 3 awaiting a verdict, 1 have never been attempted…") is built with

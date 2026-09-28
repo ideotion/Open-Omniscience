@@ -93,6 +93,15 @@ EXTENT_FULL = "full"
 EXTENT_DROPPED = "dropped"
 STATE_KEY = "index"
 
+#: WHICH held text a hit or a version is, as TOKENS (the UI composes the words, ×12). A WARM
+#: row keeps a page's ``latest`` and ``previous`` text; every indexed version of a followed
+#: page is an ``earlier`` one, because its ``newest`` is the corpus article (and is read only
+#: when a version is opened, never found by this index).
+WHICH_LATEST = "latest"
+WHICH_PREVIOUS = "previous"
+WHICH_EARLIER = "earlier"
+WHICH_NEWEST = "newest"
+
 #: Why the index cannot answer, as TOKENS (the UI composes the words, ×12).
 UNAVAILABLE_SQLITE = "sqlite_too_old"
 UNAVAILABLE_NOT_BUILT = "index_not_built"
@@ -610,6 +619,9 @@ def _state(lane: Any, caps: int, now: datetime) -> Any:
             docs=0, chars=0, created_at=now, updated_at=now,
         )
         lane.add(state)
+        # A lane session does not autoflush, and ``get`` finds only what was flushed: a second
+        # batch in the same session would otherwise make a second row under this key.
+        lane.flush()
     return state
 
 
@@ -1124,6 +1136,9 @@ class HeldVersion:
     revid: int
     revised_at: datetime | None
     text: str
+    #: ``WHICH_*``: ``latest``/``previous`` for a WARM row; ``newest``/``earlier`` for a
+    #: followed page, and ``None`` when ``check_newest`` was off and so it was not asked.
+    which: str | None = None
     #: The newest held version of a followed page: the corpus article already is it.
     newest_followed: bool = False
     deleted: bool = False
@@ -1151,17 +1166,17 @@ def held_version(
         if head is None:
             return None
         if head.latest_revid == revid:
-            which, warm_at = "latest", head.latest_revised_at
+            warm_which, warm_at = WHICH_LATEST, head.latest_revised_at
         elif head.previous_revid == revid:
-            which, warm_at = "previous", head.previous_revised_at
+            warm_which, warm_at = WHICH_PREVIOUS, head.previous_revised_at
         else:
             return None
-        warm_text = _warm_text(lane, owner_id, which)
+        warm_text = _warm_text(lane, owner_id, warm_which)
         if warm_text is None:
             return None
         return HeldVersion(
             source=SOURCE_WARM, owner_id=owner_id, edition=head.edition, page_id=head.page_id,
-            title=head.title, revid=revid, revised_at=warm_at, text=warm_text,
+            title=head.title, revid=revid, revised_at=warm_at, text=warm_text, which=warm_which,
             deleted=head.deleted_at is not None,
         )
     if source != SOURCE_HOT:
@@ -1194,14 +1209,25 @@ def held_version(
     if body is None:
         return None
     newest = False
+    which: str | None = None
     if check_newest:
         chain = hot_chain(lane, owner_id)
         newest = bool(chain) and chain[-1].revid == revid
+        which = WHICH_NEWEST if newest else WHICH_EARLIER
     return HeldVersion(
         source=SOURCE_HOT, owner_id=owner_id, edition=ident.wiki, page_id=ident.page_id,
-        title=entity.title or ident.title, revid=revid, revised_at=at, text=body,
+        title=entity.title or ident.title, revid=revid, revised_at=at, text=body, which=which,
         newest_followed=newest, deleted=entity.deleted_at is not None,
     )
+
+
+def _hit_which(doc: Any) -> str:
+    """A hit's ``WHICH_*`` token, from its entry alone: a WARM row's latest text has no
+    successor and its previous one does; a followed page's indexed versions are all earlier,
+    because its newest is never indexed here (the corpus article is it)."""
+    if doc.source == SOURCE_WARM:
+        return WHICH_LATEST if doc.successor_revid is None else WHICH_PREVIOUS
+    return WHICH_EARLIER
 
 
 def _indexed_body(lane: Any, doc: Any) -> str | None:
@@ -1317,6 +1343,7 @@ def search(
             "title": title,
             "revid": doc.revid,
             "extent": doc.extent,
+            "which": _hit_which(doc),
             "successor_revid": doc.successor_revid,
             "revised_at": doc.revised_at.isoformat() if doc.revised_at else None,
             "deleted": bool(owner and owner[1] is not None),

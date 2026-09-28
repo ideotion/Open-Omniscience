@@ -660,6 +660,8 @@ def test_the_version_route_reads_back_exactly_the_version_a_hit_named(lane):
     assert old["text"] == S.plain_text("Once it said ''copper''.") and "copper" in old["text"]
     assert "tin" not in old["text"] and old["revid"] == 2001
     assert old["revised_at"] == T0.isoformat() and old["url"].endswith("&oldid=2001")
+    assert old["which"] == "previous"
+    assert R.lane_version(source="warm", owner_id=row_id, revid=2002)["which"] == "latest"
     with pytest.raises(HTTPException) as exc:
         R.lane_version(source="warm", owner_id=row_id, revid=1999)
     assert exc.value.status_code == 404 and exc.value.detail == "not-held"
@@ -669,8 +671,24 @@ def test_the_newest_followed_version_says_the_corpus_already_has_it(lane):
     from src.api import wiki_lane_search as R
 
     eid = _hot([(2101, "old\n", T0), (2102, "new\n", T0 + timedelta(days=1))])
-    assert R.lane_version(source="hot", owner_id=eid, revid=2102)["newest_followed"] is True
-    assert R.lane_version(source="hot", owner_id=eid, revid=2101)["newest_followed"] is False
+    newest = R.lane_version(source="hot", owner_id=eid, revid=2102)
+    earlier = R.lane_version(source="hot", owner_id=eid, revid=2101)
+    assert newest["newest_followed"] is True and newest["which"] == "newest"
+    assert earlier["newest_followed"] is False and earlier["which"] == "earlier"
+
+
+def test_every_hit_says_which_held_text_it_is(lane):
+    """The UI words these tokens ×12; a hit that did not say which text it is would read as
+    the page's current text, which a previous or earlier version is not."""
+    _warm(
+        title="Which page",
+        latest=(2151, "Tokenword stays in the latest text.", T0 + timedelta(days=1)),
+        previous=(2150, "Tokenword was here. Oldword only here.", T0),
+    )
+    _hot([(2160, "Tokenword kept.\nOldword went.\n", T0), (2161, "Tokenword kept.\n", T0 + timedelta(days=2))])
+    _index()
+    which = sorted((h["source"], h["which"]) for h in _search("Tokenword OR Oldword")["items"])
+    assert which == [("hot", "earlier"), ("warm", "latest"), ("warm", "previous")]
 
 
 def _corpus():
@@ -823,6 +841,23 @@ def test_a_lane_whose_index_is_not_built_yet_says_so_rather_than_answering_zero(
     with _session() as db:
         names = {r[0] for r in db.execute(text("SELECT name FROM sqlite_master"))}
     assert S.FTS_TABLE not in names, "a search reads; it never builds the index"
+
+
+def test_a_batch_that_only_sets_aside_still_finds_the_state_row_its_session_made(lane):
+    """Lane sessions do not autoflush, and ``get`` finds only flushed rows. A first batch that
+    creates the state row, then a second in the same session whose every unit is set aside
+    (so nothing else flushes), made a second row under the same key and the commit failed.
+    The indexer opens a session per batch; a caller that does not must not break the index."""
+    _warm(title="Readable", latest=(2901, "Readable words.", T0))
+    bad = _warm(title="Damaged later", latest=(2902, "Damaged words.", T0))
+    _corrupt_latest(bad)
+    with _session() as db:
+        first = S.index_batch(db, limit=1, caps=CAPS)
+        second = S.index_batch(db, limit=1, caps=CAPS)
+        assert (first.written, second.failed) == (1, 1)
+        assert S.index_status(db)["entries"] == 1, "the session reads its own state row"
+    with _session() as db:
+        assert db.execute(select(func.count()).select_from(WikiLaneIndexState)).scalar() == 1
 
 
 def test_the_search_tab_answer_says_what_it_looked_through(lane, monkeypatch):

@@ -666,3 +666,162 @@
       }
       renderLivingMaps();
     }
+
+    // --- One held Wikipedia version, read before it is added (R52) --------------------
+    // The Wikipedia lane's search finds texts the corpus does not hold: a changed page's
+    // latest and previous text (WARM) and the earlier versions of the pages the stream
+    // follows. A hit opens THAT version here, and «Add to corpus» adds it as one article,
+    // one click per version: the lane's texts never become articles by themselves (Q719).
+    // The renderers are pure (payload, t, tf) -> HTML, driven in node
+    // (tests/lane_version_node_test.js); openLaneVersion and laneVersionAdd alone touch
+    // the DOM, and their network is loopback.
+    const _LANE_WHICH = {
+      latest: "latest text held",
+      previous: "previous text held",
+      earlier: "earlier version",
+      newest: "newest version",
+    };
+    // A token outside the four is shown as the server sent it, never mapped onto the
+    // nearest known word (the rule Living's change kinds follow).
+    function laneWhichText(which, t) {
+      return _LANE_WHICH[which] ? t(_LANE_WHICH[which]) : String(which || "");
+    }
+
+    // The command palette's rows for the lane's hits: beside the corpus hits, marked as
+    // Wikipedia, each opening THAT version. `run` only opens the dialog below.
+    function laneOmniRows(lane, t) {
+      const items = (lane && lane.available && Array.isArray(lane.items)) ? lane.items : [];
+      return items.map((it) => ({
+        label: it.title || ("#" + it.page_id),
+        sub: [it.edition || "", laneWhichText(it.which, t), (it.revised_at || "").slice(0, 10)]
+          .filter(Boolean).join(" · "),
+        run: () => openLaneVersion(it.source, it.owner_id, it.revid),
+      }));
+    }
+
+    function laneVersionMetaHtml(d, t, tf) {
+      return esc([
+        d.edition || "",
+        laneWhichText(d.which, t),
+        d.revised_at ? livingWhen(d.revised_at, t) : "",
+        tf("revision {revid}", {revid: d.revid}),
+      ].filter(Boolean).join(" · "));
+    }
+
+    // Visible by default, never behind a toggle: where this text lives, and what adding it
+    // does. The newest version of a followed page is already the corpus article.
+    function laneVersionNotesHtml(d, t) {
+      const notes = [d.newest_followed
+        ? t("This is the newest version of a page the stream follows. Your corpus already holds it as an article.")
+        : t("Held on this machine by the Wikipedia lane, not in your corpus. Adding it creates one article for this exact version.")];
+      if (d.deleted) notes.push(t("The page has been deleted on Wikipedia since. Its text stays here."));
+      return notes.map((n) => `<div class="hint">${esc(n)}</div>`).join("");
+    }
+
+    // Invariant #6: the outbound link's visible text IS the full address, and the
+    // capture-phase guard (#7) still confirms before it opens.
+    function laneVersionOutHtml(d, t) {
+      if (!d.url) return "";
+      return `<div class="muted small">${esc(t("The transparent outbound link — its text is the full address; opening it leaves this machine:"))}</div>`
+        + `<a href="${esc(safeUrl(d.url))}" target="_blank" rel="noopener noreferrer" dir="ltr" style="word-break:break-all">${esc(d.url)}</a>`;
+    }
+
+    // What «Add to corpus» did. Every outcome that names an article links to it in the
+    // local reader, so "already there" is one click from the article it means.
+    function laneAddedHtml(r, t) {
+      const said = {
+        created: "Added to your corpus as its own article.",
+        exists: "This version is already in your corpus.",
+        same_text: "Your corpus already holds an article with exactly these words.",
+        "skipped-empty-after-strip": "Nothing to add: no text is left once the wiki markup is removed.",
+      }[r && r.status];
+      const words = said ? t(said) : String((r && r.status) || "");
+      const link = (r && r.article_id != null)
+        ? ` <a href="/api/articles/${encodeURIComponent(r.article_id)}/view" target="_blank" rel="noopener">${esc(t("Open it in the reader"))}</a>`
+        : "";
+      return `<div class="note${r && r.status === "created" ? " ok" : ""}">${esc(words)}${link}</div>`;
+    }
+
+    // The routes' named refusals, in words; anything else is the server's own message.
+    function laneFailText(e, t) {
+      const said = {
+        "not-held": "This version is no longer held on this machine.",
+        "no-title": "The lane holds no title for this page, and an article needs one.",
+        "lane-unreadable": "The Wikipedia lane could not be read just now.",
+        "lane-never-run": "The Wikipedia lane has not run on this machine yet.",
+      }[e && e.detail];
+      return said ? t(said) : String((e && e.message) || e || "");
+    }
+
+    let _laneVersionLast = null;   // what the dialog drew: {d, added, failed, busy}
+    let _laneVersionSeq = 0;       // a later open supersedes an earlier one still loading
+    let _laneVersionWired = false;
+    function _laneVersionWire() {
+      if (_laneVersionWired || !$("lane-version")) return;
+      _laneVersionWired = true;
+      $("lv-close").addEventListener("click", () => $("lane-version").close());
+      $("lv-add").addEventListener("click", () => laneVersionAdd());
+    }
+
+    function renderLaneVersion() {
+      const s = _laneVersionLast;
+      if (!s || !$("lane-version")) return;
+      const t = _livingT(), tf = _livingTf(), d = s.d;
+      $("lv-title").textContent = d.title || ("#" + d.page_id);
+      $("lv-meta").innerHTML = laneVersionMetaHtml(d, t, tf);
+      $("lv-notes").innerHTML = laneVersionNotesHtml(d, t);
+      $("lv-text").textContent = d.text || "";
+      $("lv-out").innerHTML = laneVersionOutHtml(d, t);
+      $("lv-result").innerHTML = s.added ? laneAddedHtml(s.added, t)
+        : (s.failed ? `<div class="note err">${esc(laneFailText(s.failed, t))}</div>` : "");
+      $("lv-add").disabled = Boolean(s.added || s.busy);
+    }
+
+    async function openLaneVersion(source, ownerId, revid) {
+      const dlg = $("lane-version");
+      if (!dlg) return;
+      _laneVersionWire();
+      const t = _livingT(), seq = ++_laneVersionSeq;
+      _laneVersionLast = null;
+      $("lv-title").textContent = "";
+      $("lv-meta").textContent = t("Loading…");
+      ["lv-notes", "lv-out", "lv-result"].forEach((id) => { $(id).innerHTML = ""; });
+      $("lv-text").textContent = "";
+      $("lv-add").disabled = true;
+      if (!dlg.open) dlg.showModal();
+      const q = new URLSearchParams({source: String(source), owner_id: String(ownerId), revid: String(revid)});
+      try {
+        const d = await api("/api/wiki/lane/version?" + q.toString());
+        if (seq !== _laneVersionSeq) return;
+        _laneVersionLast = {d, added: null, failed: null, busy: false};
+        renderLaneVersion();
+      } catch (e) {
+        if (seq !== _laneVersionSeq) return;
+        $("lv-meta").innerHTML = `<div class="note err">${esc(laneFailText(e, t))}</div>`;
+      }
+    }
+
+    // ONE version, on one click: the route adds it only when the lane still holds it, and
+    // answers "already there" rather than storing a second copy.
+    async function laneVersionAdd() {
+      const s = _laneVersionLast;
+      if (!s || s.added || s.busy) return;
+      s.busy = true; s.failed = null;
+      renderLaneVersion();
+      try {
+        s.added = await api("/api/wiki/lane/add-to-corpus", {method: "POST",
+          body: JSON.stringify({source: s.d.source, owner_id: s.d.owner_id, revid: s.d.revid})});
+      } catch (e) {
+        s.failed = e;
+      } finally {
+        s.busy = false;
+        if (_laneVersionLast === s) renderLaneVersion();
+      }
+    }
+
+    // A language switch (app-boot.js) redraws the open dialog from what it holds, never a
+    // fetch: its lines are composed with t()/tf(), out of the i18n walker's reach.
+    function repaintLaneVersionFromCache() {
+      const dlg = $("lane-version");
+      if (dlg && dlg.open && _laneVersionLast) renderLaneVersion();
+    }
