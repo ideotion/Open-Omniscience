@@ -1889,7 +1889,10 @@ The memory killers write to the system journal, which only members of `adm` or
 says so instead of calling the log empty. With no witness at all, the report
 says the end is unknown, never that it was clean.
 
-The same report says what the memory was made of at the session's peak, and
+The same report says what the memory was made of at the session's peak. When
+that peak came with memory already too short to read the C heap safely, which is
+usually the case just before an out-of-memory crash, it also shows the newest
+earlier peak that did read it, with that peak's own size and time. It also says
 what every thread was doing (its name, the app code it was running and the CPU
 it used) at two kinds of moment: when available memory fell below 15% of RAM
 (at most 1 GB), first at the crossing and again at each new low, and when the
