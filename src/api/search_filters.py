@@ -99,6 +99,13 @@ class AdvancedSearch:
     include_quarantined: bool = False
     exact: bool = False
     near: int = NEAR_DEFAULT
+    # The PUBLISHED range, in the stored form only. The search surfaces take it as the
+    # original ``start_date``/``end_date`` parameters (so the dependency never declares
+    # these), but a saved search has no URL to carry them: without the pair here a saved
+    # "the 2025 election" search would re-run over every year. Same bounds, same
+    # semantics as those two parameters, so a re-opened saved search and its view agree.
+    published_from: str | None = None
+    published_to: str | None = None
 
     # -- the stored form (saved searches) ---------------------------------------- #
 
@@ -162,6 +169,11 @@ class AdvancedSearch:
                 sq = sq.filter(Source.region.in_(self.regions))
             ids = [sid for (sid,) in sq]
             conds.append(Article.source_id.in_(ids) if ids else false())
+        if self.published_from:
+            conds.append(Article.published_at >= datetime.fromisoformat(self.published_from))
+        if self.published_to:
+            # `<=` midnight, exactly as `/api/articles`' own `end_date` reads it.
+            conds.append(Article.published_at <= datetime.fromisoformat(self.published_to))
         if self.collected_from:
             conds.append(Article.created_at >= datetime.fromisoformat(self.collected_from))
         if self.collected_to:
@@ -204,6 +216,8 @@ def _validated(a: AdvancedSearch) -> AdvancedSearch:
         raise HTTPException(status_code=400, detail="sources must be article-source ids") from exc
     a.countries = [str(v).strip() for v in (a.countries or []) if str(v).strip()][:100]
     a.regions = [str(v).strip() for v in (a.regions or []) if str(v).strip()][:50]
+    a.published_from = _iso_date(a.published_from, "published_from")
+    a.published_to = _iso_date(a.published_to, "published_to")
     a.collected_from = _iso_date(a.collected_from, "collected_from")
     a.collected_to = _iso_date(a.collected_to, "collected_to")
     a.mentions_from = _iso_date(a.mentions_from, "mentions_from")
@@ -264,7 +278,11 @@ def advanced_search_params(
     exact: bool = Query(
         False, description="Q610: match case and accents exactly (default folds them)."
     ),
-    near: int = Query(NEAR_DEFAULT, description="Q612: the distance a NEAR without one takes."),
+    near: int | None = Query(
+        None,
+        description="Q612: the distance a NEAR without one takes; absent = the reader's "
+        "own default (Settings, `search_near_default`).",
+    ),
 ) -> AdvancedSearch:
     """The FastAPI dependency; every endpoint that searches articles declares it."""
     return _validated(
@@ -284,9 +302,22 @@ def advanced_search_params(
             mentions_to=mentions_to,
             include_quarantined=include_quarantined,
             exact=exact,
-            near=near,
+            near=near if near is not None else _near_preference(),
         )
     )
+
+
+def _near_preference() -> int:
+    """The reader's own NEAR default (Q612's note: "the user should be able to change the
+    default number"), read where the request is resolved -- so it holds for EVERY search,
+    a keyword click and a watch as much as the builder, not only where a surface happens
+    to send it. A settings read that fails falls back to the grammar's default."""
+    try:
+        from src.config.app_settings import load_settings
+
+        return int(load_settings().search_near_default)
+    except Exception:  # noqa: BLE001 - a preference read must never fail a search
+        return NEAR_DEFAULT
 
 
 #: What each order IS, in one sentence -- the payload, the export header and the table

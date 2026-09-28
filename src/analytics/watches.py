@@ -158,6 +158,10 @@ def _filters_blob(filters: dict | None) -> str | None:
     except (HTTPException, TypeError) as exc:
         raise ValueError(getattr(exc, "detail", None) or str(exc)) from exc
     stored = adv.to_dict()
+    if "near" in known:
+        # An explicit distance is kept even when it equals the grammar's default: absent
+        # means "the reader's own default", which may be a different number.
+        stored["near"] = adv.near
     return json.dumps(stored, sort_keys=True) if stored else None
 
 
@@ -169,7 +173,14 @@ def watch_filters(w: Watch):
         data = json.loads(w.filters) if w.filters else None
     except (TypeError, ValueError):
         data = None
-    return AdvancedSearch.from_dict(data)
+    adv = AdvancedSearch.from_dict(data)
+    if not (isinstance(data, dict) and "near" in data):
+        # No distance stored: the reader's own default, exactly as a search that names
+        # none reads it (Q612's note) -- so a watch and its view agree about NEAR.
+        from src.api.search_filters import _near_preference
+
+        adv.near = _near_preference()
+    return adv
 
 
 def create_watch(

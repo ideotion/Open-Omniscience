@@ -336,6 +336,10 @@ def did_you_mean(session, query: str | None) -> dict | None:
         "query": suggested,
         "built_at": st.get("built_at"),
         "caveat": CAVEAT,
+        # The method's numbers on their own, so a surface can render the sentence in the
+        # reader's language through a keyed frame instead of echoing this English one.
+        "limits": {"max_distance": MAX_DISTANCE, "short_word": SHORT_WORD,
+                   "min_articles": MIN_ARTICLES},
         "method": (
             f"Words within {MAX_DISTANCE} edits (1 for words of {SHORT_WORD} letters or "
             f"fewer) among your keywords seen in at least {MIN_ARTICLES} articles; nearest "

@@ -93,6 +93,19 @@ def search_facets(db: Session = Depends(get_db)) -> dict:
         .filter(Article.language.is_(None), Article.detected_language.isnot(None))
         .group_by(Article.detected_language)
     }
+    # The date spans the two time components are drawn over. One aggregate per query:
+    # SQLite answers a lone min() or max() from the index, and a query asking for both
+    # scans the table instead.
+    def _day(col, agg) -> str | None:
+        v = db.query(agg(col)).scalar()
+        return str(v)[:10] if v else None
+
+    spans = {
+        "published": {"min": _day(Article.published_at, func.min),
+                      "max": _day(Article.published_at, func.max)},
+        "collected": {"min": _day(Article.created_at, func.min),
+                      "max": _day(Article.created_at, func.max)},
+    }
     langs = sorted(set(asserted) | set(detected), key=lambda c: -(asserted.get(c, 0) + detected.get(c, 0)))
     return {
         "sources": sources,
@@ -107,6 +120,7 @@ def search_facets(db: Session = Depends(get_db)) -> dict:
         "field_modes": list(FIELD_MODES),
         "near": {"default": load_settings().search_near_default, "min": NEAR_MIN, "max": NEAR_MAX},
         "caveats": FILTER_CAVEATS,
+        "spans": spans,
     }
 
 

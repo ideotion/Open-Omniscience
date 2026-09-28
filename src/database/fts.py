@@ -109,7 +109,7 @@ _GRAMMAR_TOKEN_RE = re.compile(
     r'|\(|\)|[^\s()"]+'
 )
 _NEAR_RE = re.compile(r'(?is)NEAR\((.*)\)')
-_NEAR_TAIL_RE = re.compile(r'^(.*?),\s*(-?\d+)\s*$', re.S)
+_NEAR_DIST_RE = re.compile(r'\s*(-?\d+)\s*')
 _NEAR_ITEM_RE = re.compile(r'"[^"]*"|[^\s",]+')
 _FIELD_RE = re.compile(r'(?is)(title|author|source|url|tag):(=?)(.*)')
 # Characters that carry searchable content (anything else tokenizes to nothing).
@@ -182,10 +182,15 @@ def _near_node(tok: str):
     m = _NEAR_RE.fullmatch(tok)
     body = m.group(1) if m else ""
     distance: int | None = None
-    tail = _NEAR_TAIL_RE.match(body)
+    # The distance is whatever follows the LAST comma, when that is a bare integer. Split
+    # with rpartition rather than one lazy regex over the whole body: `^(.*?),\s*(-?\d+)`
+    # backtracks polynomially on a long comma-free body (CodeQL py/polynomial-redos), and
+    # the body is the reader's typed text.
+    head, sep, last = body.rpartition(",")
+    tail = _NEAR_DIST_RE.fullmatch(last) if sep else None
     if tail:
-        body = tail.group(1)
-        distance = max(NEAR_MIN, min(NEAR_MAX, int(tail.group(2))))
+        body = head
+        distance = max(NEAR_MIN, min(NEAR_MAX, int(tail.group(1))))
     items = []
     for raw in _NEAR_ITEM_RE.findall(body):
         v = raw[1:-1].strip() if raw.startswith('"') and raw.endswith('"') and len(raw) >= 2 else raw
