@@ -27,10 +27,10 @@ _JS = app_js()
 
 
 def test_get_signal_buttons_present():
-    assert "window.open('/api/signals/fdr-selftest?download=1','_blank')" in _HTML
-    assert "window.open('/api/signals/flood','_blank')" in _HTML
-    assert "window.open('/api/signals/bury','_blank')" in _HTML
-    assert "window.open('/api/insights/lunar-correlation','_blank')" in _HTML
+    assert "ooOpenUrl('/api/signals/fdr-selftest?download=1')" in _HTML
+    assert "ooOpenUrl('/api/signals/flood')" in _HTML
+    assert "ooOpenUrl('/api/signals/bury')" in _HTML
+    assert "ooOpenUrl('/api/insights/lunar-correlation')" in _HTML
 
 
 def test_poll_transparency_is_gone():

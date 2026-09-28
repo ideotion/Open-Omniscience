@@ -339,7 +339,7 @@ def test_world_discovery_wiring_composes_end_to_end():
     assert frontend_routes - backend_routes == set()  # every JS call hits a real route
 
     # the Diagnostics panel wires the button + status line, consent-gated
-    assert 'onclick="discoverWorld(this)"' in html_src
+    assert 'data-on-click="discoverWorld(this)"' in html_src
     assert 'id="discover-world-status"' in html_src
     assert "ensureOnline" in js_src.split("async function discoverWorld", 1)[1][:1500]
 

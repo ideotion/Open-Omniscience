@@ -319,7 +319,7 @@ def test_the_button_is_wired_to_the_function_that_exists() -> None:
     from tests.js_source_helper import app_js, read_static
 
     html = read_static("index.html")
-    assert 'onclick="windowsLocksReport(this)"' in html
+    assert 'data-on-click="windowsLocksReport(this)"' in html
     assert 'id="win-locks-status"' in html, "the reading has nowhere to render"
     assert "async function windowsLocksReport(" in app_js()
 
