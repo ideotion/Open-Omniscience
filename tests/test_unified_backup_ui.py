@@ -264,7 +264,7 @@ def test_backup_verify_job_is_wired_into_the_import_dialog():
     restoring (the live corpus untouched), reporting bad/missing volumes + recoverability."""
     assert "_uxImVerify" in _APP and "_uxRenderVerify" in _APP
     assert "/api/backup/v2/volumes/verify" in _APP
-    assert 'onclick="_uxImVerify(this)"' in _HTML
+    assert 'data-on-click="_uxImVerify(this)"' in _HTML
     # honest report fields (no score): bad/missing volumes + parity recoverability
     assert "bad_volumes" in _APP and "recoverable" in _APP
 

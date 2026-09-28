@@ -106,7 +106,7 @@ def test_the_panel_is_filled_by_a_CONTROL_and_never_by_expanding_the_section():
         "render empty forever, which is the failure the loader was reached for"
     )
     tag = html[html.rfind("<button", 0, control):html.index("</button>", control) + 9]
-    assert 'onclick="loadPatternsGate()"' in tag, f"the control must be a button: {tag[:90]!r}"
+    assert 'data-on-click="loadPatternsGate()"' in tag, f"the control must be a button: {tag[:90]!r}"
     label = tag[tag.index(">") + 1:tag.index("</button>")].strip()
     en = json.loads((_ROOT / "src" / "static" / "locales" / "en.json").read_text(encoding="utf-8"))
     assert label in en, f"the button label {label!r} must be keyed, or it is English x12"

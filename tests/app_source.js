@@ -49,4 +49,16 @@ function appJs() {
   return appModules().map((m) => fs.readFileSync(path.join(STATIC, m), "utf-8")).join("");
 }
 
-module.exports = { appJs, appModules, STATIC };
+// A standalone page's markup followed by its own script (js_source_helper.page_source).
+// taskmanager.html / unlock.html / investigate.html moved their one inline <script> to a
+// same-named .js in 0.5 row I (Q1127 = a); a suite asserting on the page means both.
+function pageSource(name) {
+  const html = fs.readFileSync(path.join(STATIC, name), "utf-8");
+  const js = name.replace(/\.html$/, ".js");
+  if (!html.includes('<script src="/static/' + js + '"')) {
+    throw new Error(name + " no longer loads /static/" + js);
+  }
+  return html + "\n" + fs.readFileSync(path.join(STATIC, js), "utf-8");
+}
+
+module.exports = { appJs, appModules, pageSource, STATIC };

@@ -25,11 +25,10 @@ import re
 
 import pytest
 
-from tests.js_source_helper import function_source, read_static, strip_comments
+from tests.js_source_helper import function_source, page_source, read_static, strip_comments
 
 _LOCALES = pathlib.Path("src/static/locales")
 _INDEX = pathlib.Path("src/static/index.html")
-_UNLOCK = pathlib.Path("src/static/unlock.html")
 
 #: Every function that renders a string on this surface. NAMED, never derived by
 #: scanning the file: the recorded defect is an extraction that read only some of the
@@ -86,7 +85,7 @@ def test_it_is_reachable_from_SETTINGS():
 def test_it_is_reachable_from_the_FIRST_LAUNCH_flow():
     """unlock.html hands off rather than carrying a second copy: that page runs before
     the corpus is open, so it cannot read or write a lane setting at all."""
-    unlock = _UNLOCK.read_text(encoding="utf-8")
+    unlock = page_source("unlock.html")
     assert "/?wikiwizard=1" in unlock
     assert "waitReadyThenEnter(btn.id === \"btn-create\")" in unlock, (
         "only a FRESH corpus is sent to the wizard -- an operator who already "

@@ -84,7 +84,7 @@
       host.innerHTML =
         `<div class="row" style="justify-content:space-between;align-items:baseline;gap:8px">`
         + `<div><b style="font-size:1.15em">${esc(_fmtBytes(total))}</b> <span class="muted">${esc(t("on disk, all stores"))}</span></div>`
-        + `<button class="secondary" style="font-size:11px;padding:2px 8px" onclick="renderStorageFootprint('${esc(host.id)}', true)">${esc(t("Re-measure"))}</button></div>`
+        + `<button class="secondary" style="font-size:11px;padding:2px 8px" data-on-click="renderStorageFootprint('${esc(host.id)}', true)">${esc(t("Re-measure"))}</button></div>`
         + `<div class="muted" style="font-size:11px;margin:3px 0 8px"${d.method ? ` title="${esc(d.method)}"` : ""}>`
         // Honest label (no fabricated security): the private sum includes -shm + backup
         // staging, which are NOT necessarily encrypted — so it is "Private (local)", with the
@@ -404,7 +404,7 @@
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       return `<div style="display:flex;gap:3px;margin-top:4px" class="lib-win-row">` +
         LIB_WINDOWS.map(([d, lbl]) =>
-          `<button type="button" class="chip tiny${d === current ? " on" : ""}" onclick="_libSetWindow('${key}', ${d})">${esc(t(lbl))}</button>`
+          `<button type="button" class="chip tiny${d === current ? " on" : ""}" data-on-click="_libSetWindow('${key}', ${d})">${esc(t(lbl))}</button>`
         ).join("") + `</div>`;
     }
     async function _libGraphTile(metric, days) {
@@ -444,7 +444,7 @@
       return `<div id="lib-tile-${esc(metric)}" style="flex:1;min-width:180px;padding:6px;border:1px solid var(--border);border-radius:8px">
         <div style="display:flex;align-items:baseline;gap:6px;justify-content:space-between">
           <b style="font-size:12.5px">${esc(label)}</b>
-          <button class="ghost tiny" onclick="enlargeLibMetric('${metric}')" title="${esc(t("Enlarge the chart"))}" aria-label="${esc(t("Enlarge the chart"))}">⛶</button>
+          <button class="ghost tiny" data-on-click="enlargeLibMetric('${metric}')" title="${esc(t("Enlarge the chart"))}" aria-label="${esc(t("Enlarge the chart"))}">⛶</button>
         </div>${body}${began}${_libWindowChips(metric, cur)}</div>`;
     }
     async function _renderLibGraphHost(hostId, metrics) {
@@ -553,7 +553,7 @@
       return `<div id="lib-tile-__qual" style="flex:2;min-width:280px;padding:6px;border:1px solid var(--border);border-radius:8px">
         <div style="display:flex;align-items:baseline;gap:6px;justify-content:space-between">
           <b style="font-size:12.5px">${esc(label)}</b>
-          <button class="ghost tiny" onclick="enlargeLibQualification()" title="${esc(t("Enlarge the chart"))}" aria-label="${esc(t("Enlarge the chart"))}">⛶</button>
+          <button class="ghost tiny" data-on-click="enlargeLibQualification()" title="${esc(t("Enlarge the chart"))}" aria-label="${esc(t("Enlarge the chart"))}">⛶</button>
         </div>${body}${_libQualSplitNote(payloads, splitPayload)}${beganNote}${_libWindowChips("__qual", cur)}</div>`;
     }
     // The composition of the "Awaiting a verdict" line, in words. Extracted as a pure

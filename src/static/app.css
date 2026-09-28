@@ -131,7 +131,6 @@
       --mono: "JetBrains Mono", ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas, monospace;
       color-scheme: dark; /* native widgets (selects, date pickers, scrollbars) match the theme */
     }
-    html[data-theme="slate"]{ --bg:#0e1116; --bg2:#11151c; --panel:#161b23; --panel2:#1e2531; --panel3:#28323f; --accent:#7aa2f7; --border:#28303d; }
     html[data-theme="midnight"]{ --bg:#080a1a; --bg2:#0b0e22; --panel:#10142e; --panel2:#171c3c; --panel3:#1f2650; --fg:#e8eaff; --fg-soft:#c3c7ee; --muted:#8a90c0; --accent:#8b7dff; --border:#23284f; }
     html[data-theme="terminal"]{ --bg:#04070a; --bg2:#06090c; --panel:#0a1013; --panel2:#0e1619; --panel3:#13211d; --fg:#c8f7d4; --fg-soft:#a3e9ba; --muted:#5f8c72; --accent:#36d97a; --accent-fg:#04140b; --border:#16291f; --ff:var(--mono); }
     html[data-theme="sepia"]{ --bg:#1b150e; --bg2:#201911; --panel:#262019; --panel2:#2f2820; --panel3:#3a3127; --fg:#efe5d6; --fg-soft:#d8cab4; --muted:#a8967c; --accent:#d8a657; --accent-fg:#241a0c; --border:#3a3128; --ff:"Source Serif 4", Georgia, serif; }
@@ -150,9 +149,8 @@
       --muted:color-mix(in srgb, var(--fg) 35%, #7a715c 65%);
       --accent-text:color-mix(in srgb, var(--fg) 35%, var(--accent) 65%); }
     /* New colorways (2026-06-11, maintainer: "people like tuning with themes").
-       Bundled-font pairings: Arctic→Inter, Cyber→Outfit, Mint→Manrope,
+       Bundled-font pairings: Cyber→Outfit, Mint→Manrope,
        Sepia/Paper→Source Serif 4. The Typeface picker overrides any of them. */
-    html[data-theme="arctic"]{ --bg:#0f1216; --bg2:#12161b; --panel:#171c22; --panel2:#1e242c; --panel3:#262e38; --fg:#e5e9f0; --fg-soft:#c8cfdb; --muted:#8a94a6; --accent:#88c0d0; --accent-fg:#0b1216; --border:#262e3a; --ff:"Inter", system-ui, sans-serif; }
     html[data-theme="solar"]{ --bg:#002b36; --bg2:#00313d; --panel:#073642; --panel2:#0a4150; --panel3:#11505f; --fg:#eee8d5; --fg-soft:#cfc7ab; --muted:color-mix(in srgb, var(--fg) 55%, #8d9d9e 45%); --accent:#b58900; --accent-fg:#002b36; --accent-text:color-mix(in srgb, var(--fg) 60%, #b58900 40%); --ok:#859900; --warn:#db5118; --err:#dc322f; --border:#0e4754; }
     /* solar sits among this batch of "New colorways" but RENDERS DARK
        (color-scheme:dark, near-black panel) even though paper/mist/dawn beside
@@ -163,14 +161,6 @@
     html[data-theme="aubergine"]{ --bg:#120d18; --bg2:#150f1d; --panel:#1a1424; --panel2:#231b30; --panel3:#2e2440; --fg:#ece6f4; --fg-soft:#cfc5e0; --muted:#9a8cb4; --accent:#c084fc; --accent-fg:#160e20; --border:#2c2240; }
     html[data-theme="garnet"]{ --bg:#150e11; --bg2:#191014; --panel:#1f1419; --panel2:#291a20; --panel3:#35222a; --fg:#f0e6ea; --fg-soft:#d8c6cd; --muted:#a88b96; --accent:#d96c7f; --accent-fg:#1c0d12; --border:#33222a; }
     html[data-theme="cyber"]{ --bg:#070910; --bg2:#090c15; --panel:#0d1120; --panel2:#131830; --panel3:#1a2140; --fg:#dbe6ff; --fg-soft:#b6c5ec; --muted:#7787b8; --accent:#22d3ee; --accent-fg:#04121a; --border:#1c2444; --ff:"Outfit", system-ui, sans-serif; }
-    html[data-theme="mist"]{ --bg:#eceff2; --bg2:#e4e8ee; --panel:#f9fafc; --panel2:#eff2f6; --panel3:#e3e8ef; --fg:#222831; --fg-soft:#3d4654; --muted:#66707e; --accent:#5e81ac; --ok:#2e8b57; --warn:#b07a17; --warn-fg:#7a4308; --err:#bf4040; --border:#d8dee7; --border-soft:#e5e9f0;
-      --shadow:0 14px 38px -20px rgba(30,40,55,.25), 0 2px 6px -3px rgba(30,40,55,.12); --caveat:#8a4d0a; color-scheme:light;
-      /* Same contrast-corrected-sweep fix as paper/solar/dawn (2026-09-08): this
-         theme's own --muted/--accent measured 3.86-4.47:1 as TEXT against
-         --panel2 (accent also against --bg2/--panel3). Re-derived via color-mix
-         toward --fg; worst case now 5.03:1 (muted) / 5.10:1 (accent-text). */
-      --muted:color-mix(in srgb, var(--fg) 20%, #66707e 80%);
-      --accent-text:color-mix(in srgb, var(--fg) 35%, var(--accent) 65%); }
     html[data-theme="dawn"]{ --bg:#faf4ed; --bg2:#f4ece2; --panel:#fffaf3; --panel2:#f2e9e1; --panel3:#e9dfd5; --fg:#575279; --fg-soft:#6e6a86; --muted:#756f86; --accent:#b4637a; --accent-fg:#000000; --ok:#56949f; --warn:#c77b15; --warn-fg:#7a4308; --err:#c34043; --border:#ddd3c8; --border-soft:#ece3da;
       --shadow:0 14px 38px -20px rgba(90,70,60,.20), 0 2px 6px -3px rgba(90,70,60,.10); --caveat:#8a4d0a; color-scheme:light;
       /* Same contrast-corrected-sweep fix (2026-09-08): --muted/--fg-soft/--accent,
@@ -194,6 +184,8 @@
          fix, same reason: re-derived via color-mix toward --fg. */
       --muted:color-mix(in srgb, var(--fg) 20%, #5f7466 80%);
       --accent-text:color-mix(in srgb, var(--fg) 20%, var(--accent) 80%); }
+    /* The language menu's row hover (was an inline onmouseover/onmouseout pair; Q1127). */
+    #lang-menu [role="menuitem"]:hover, #lang-menu [role="menuitem"]:focus-visible { background:var(--line); }
     html[data-density="compact"]{ --space:13px; --pad:12px; --radius:9px; --sidebar-w:228px; }
 
     * { box-sizing: border-box; }

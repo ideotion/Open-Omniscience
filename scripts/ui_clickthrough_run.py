@@ -1887,10 +1887,10 @@ def investigate_state_d_import(pw, report: Report, shots: Path) -> None:
         _unlock_if_locked(page, report, "state_d", STATE_D_URL)  # no-op unless encrypted
         _dismiss_guide_wizard(page, report, "state_d")
         driver.goto(Surface("state_d_import_dialog", "Import dialog", nav_tab="settings",
-                            subtab="data", trigger='button[onclick="openUnifiedImport()"]',
+                            subtab="data", trigger='button[data-on-click="openUnifiedImport()"]',
                             dom_id="ux-import"))
         page.fill("#ux-imp-src", IMPORT_ARTIFACT_DIR)
-        page.click('button[onclick="_uxImScan(this)"]')
+        page.click('button[data-on-click="_uxImScan(this)"]')
         page.wait_for_selector("#ux-i-corpus", timeout=20000)
         page.wait_for_timeout(300)
         if not page.evaluate("() => document.getElementById('ux-i-corpus').checked"):
@@ -1968,7 +1968,7 @@ def _import_lifecycle_checks(page, driver, report: Report) -> None:
     than a follow-up -- the informed-consent non-negotiable puts every caveat in twelve
     locales, and a sentence that renders in English for an Arabic operator IS the defect.
     """
-    close_btn = "#ux-import button[onclick*=\'close()\']"
+    close_btn = "#ux-import button[data-on-click*=\'ooCloseDialog\']"
 
     # (1) FOUR STAGE ROWS, by their own keys (Q202 = a).
     keys = page.evaluate(
@@ -2020,7 +2020,7 @@ def _import_lifecycle_checks(page, driver, report: Report) -> None:
     # persisted report.
     page.click(close_btn)
     page.wait_for_timeout(400)
-    page.click('button[onclick="openUnifiedImport()"]')
+    page.click('button[data-on-click="openUnifiedImport()"]')
     page.wait_for_timeout(2000)
     fresh = page.evaluate(
         "() => { const a = document.querySelector('#ux-imp-last a');"

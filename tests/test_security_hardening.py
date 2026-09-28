@@ -159,6 +159,19 @@ def test_security_headers_present(client):
     )
 
 
+def test_script_src_allows_no_inline_script(client):
+    """S-006's last clause / NET-04 (0.5 row I, Q1127 = a): script runs only from files.
+
+    Every inline handler became a data-on-* binding run by /static/oo-on.js and every
+    inline <script> a file; tests/test_inline_handler_ratchet.py holds both at zero. The
+    browser is what enforces the policy, so the policy must actually say it. style-src
+    keeps 'unsafe-inline' (unruled), which is why this reads the script-src directive only.
+    """
+    csp = client.get("/").headers["Content-Security-Policy"]
+    directives = {d.split()[0]: d.split()[1:] for d in (x.strip() for x in csp.split(";")) if d}
+    assert directives["script-src"] == ["'self'"], csp
+
+
 def test_swagger_docs_exempt_from_strict_csp(client):
     # /docs loads CDN assets; it must not get the strict 'self' CSP.
     assert "Content-Security-Policy" not in client.get("/docs").headers

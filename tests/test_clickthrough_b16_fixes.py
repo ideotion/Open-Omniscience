@@ -34,6 +34,7 @@ from tests.js_source_helper import (
     assert_present,
     css_rule,
     function_body,
+    page_source,
     read_static,
     strip_comments,
 )
@@ -232,7 +233,7 @@ def test_the_vitals_panel_repaints_on_a_switch_from_what_it_holds():
 # --- V10: job progress units and fixed labels ---------------------------------------- #
 
 def test_the_task_manager_page_names_what_a_count_counts():
-    tm = read_static("taskmanager.html")
+    tm = page_source("taskmanager.html")
     body = function_body(tm, "jobRow")
     assert_present(body, "esc(t(j.progress.unit))")
     for unit in ("keywords", "articles", "files", "stages"):
@@ -369,7 +370,7 @@ def test_the_two_walked_labels_take_the_locales_own_separator():
 # --- V15: dead task-manager rules --------------------------------------------------- #
 
 def test_the_task_manager_carries_no_rule_for_a_class_nothing_uses():
-    tm = read_static("taskmanager.html")
+    tm = page_source("taskmanager.html")
     style = tm[tm.index("<style>"): tm.index("</style>")]
     for cls in ("tm-status", "tm-sbtn", "tm-sel"):
         assert not re.search(r"\." + cls + r"\b", style), f".{cls} is styled but never used"

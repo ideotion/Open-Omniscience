@@ -2181,8 +2181,8 @@
         const rows = (q.results || []).map((r) => {
           const cur = q.relevances[r.article_id];
           const btns = [0, 1, 2].map((g) =>
-            `<button class="tiny${cur === g ? " active" : ""}" data-g="${g}" onclick="goldBuilderGrade(${qi},${r.article_id},${g})">${g}</button>`).join("");
-          return `<div class="gb-row" tabindex="0" data-q="${qi}" data-a="${r.article_id}" onkeydown="goldBuilderKey(event,${qi},${r.article_id})" style="display:flex;gap:8px;align-items:center;padding:2px 0">`
+            `<button class="tiny${cur === g ? " active" : ""}" data-g="${g}" data-on-click="goldBuilderGrade(${qi},${r.article_id},${g})">${g}</button>`).join("");
+          return `<div class="gb-row" tabindex="0" data-q="${qi}" data-a="${r.article_id}" data-on-keydown="goldBuilderKey(event,${qi},${r.article_id})" style="display:flex;gap:8px;align-items:center;padding:2px 0">`
             + `<span style="min-width:70px">${btns}</span>`
             + `<a href="/api/articles/${r.article_id}/view" target="_blank" rel="noopener" title="offline stored copy">${esc(r.title || ("#" + r.article_id))}</a>`
             + `<span class="muted" style="font-size:11px">${esc(r.source || "")}${r.language ? " · " + ooLangCell(r.language) : ""}</span></div>`;
@@ -2278,10 +2278,10 @@
       const body = $("mb-anchors-body"); if (!body) return;
       const rows = (_mbAnchors || []).map((a, i) => {
         const vb = ["junk", "content", "unsure"].map((v) =>
-          `<button class="tiny${a.verdict === v ? " active" : ""}" data-v="${v}" onclick="mbAnchorGrade(${i},'${v}')">${v[0].toUpperCase()}</button>`).join("");
+          `<button class="tiny${a.verdict === v ? " active" : ""}" data-v="${v}" data-on-click="mbAnchorGrade(${i},'${v}')">${v[0].toUpperCase()}</button>`).join("");
         const kb = ["person", "org", "place", "other"].map((k) =>
-          `<button class="tiny${a.kind === k ? " active" : ""}" data-k="${k}" onclick="mbAnchorKind(${i},'${k}')">${esc(k)}</button>`).join("");
-        return `<div class="mb-row" tabindex="0" data-i="${i}" onkeydown="mbAnchorKey(event,${i})" style="display:flex;gap:8px;align-items:center;padding:2px 0">`
+          `<button class="tiny${a.kind === k ? " active" : ""}" data-k="${k}" data-on-click="mbAnchorKind(${i},'${k}')">${esc(k)}</button>`).join("");
+        return `<div class="mb-row" tabindex="0" data-i="${i}" data-on-keydown="mbAnchorKey(event,${i})" style="display:flex;gap:8px;align-items:center;padding:2px 0">`
           + `<span style="min-width:78px">${vb}</span>`
           + `<span style="min-width:170px">${esc(a.term)}</span>`
           + `<span class="muted" style="font-size:11px;min-width:26px">${ooLangCell(a.language)}</span>`

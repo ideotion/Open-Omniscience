@@ -779,4 +779,24 @@
       _kwPromise.then(function (d) { renderKeywords(pane, d); }).catch(function () {});
     }
   });
+
+  // The Dates pane's confirm / reject / extract buttons (were an inline <script> the
+  // server appended; moved here so the CSP can drop script-src 'unsafe-inline', Q1127).
+  document.addEventListener("click", function (e) {
+    var b = e.target.closest && e.target.closest(".amd-act");
+    if (b) {
+      e.preventDefault();
+      fetch("/api/article-dates/" + b.dataset.id + "/" + b.dataset.act, {method: "POST"})
+        .then(function () { location.reload(); }).catch(function () {});
+      return;
+    }
+    var x = e.target.closest && e.target.closest("#amd-extract");
+    if (x && aid) {
+      e.preventDefault();
+      x.disabled = true;
+      x.textContent = T("Extracting…");
+      fetch("/api/article-dates/article/" + aid, {method: "POST"})
+        .then(function () { location.reload(); }).catch(function () {});
+    }
+  });
 })();

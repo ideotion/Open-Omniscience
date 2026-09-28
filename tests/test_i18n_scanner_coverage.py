@@ -116,54 +116,58 @@ def test_reader_scan_is_wired_into_audit_chrome():
 
 
 # --------------------------------------------------------------------------- #
-# (2) taskmanager.html / unlock.html inline <script> blocks
+# (2) taskmanager / unlock / investigate page scripts (inline until 0.5 row I)
 # --------------------------------------------------------------------------- #
 
 
-def test_aux_inline_js_finds_the_one_inline_script_in_each_shell():
+def test_the_standalone_pages_scripts_are_scanned_as_files():
+    """0.5 row I (Q1127 = a) moved the ONE inline ``<script>`` each of taskmanager.html,
+    unlock.html and investigate.html into a same-named ``.js``, so the CSP could drop
+    ``script-src 'unsafe-inline'``. The gap this section closed must stay closed from
+    the other side: those files are now ordinary files, found through each page's own
+    ``<script src>`` tag, and the reader pages' link confirm (``ext-confirm.js``) with them.
+    investigate.html's block was never in the old inline list at all; moving it to a
+    file is what brought its strings into the scan (and nine were keyed that day)."""
     mod = _module()
-    inline = mod._aux_inline_js()
-    assert set(inline) == {"taskmanager.html#inline", "unlock.html#inline"}, (
-        f"expected exactly the two known aux shells, got {sorted(inline)}"
+    mods = mod._aux_js()
+    for name in ("taskmanager.js", "unlock.js", "investigate.js", "ext-confirm.js"):
+        assert name in mods, f"{name} is not scanned -- its t() calls went dark again"
+    assert mod._aux_inline_js() == {}, (
+        "a standalone page grew an inline <script> again; CSP script-src no longer "
+        "allows one (tests/test_inline_handler_ratchet.py)"
     )
-    for name, text in inline.items():
-        assert len(text) > 5000, f"{name} looks truncated ({len(text)} chars) -- check the regex"
-        assert "t(" in text or "t9(" in text, f"{name}: no t()/t9()/t9m() call at all -- suspicious"
 
 
 def test_aux_inline_js_excludes_the_external_i18n_script_tag():
-    """Both shells ALSO carry ``<script src="/static/i18n.js"></script>`` --
-    the negative lookahead must skip that tag rather than capturing an empty
-    inline body for it (which would silently pass the "exactly one block"
-    shape while hiding a wiring bug)."""
+    """Both shells carry ``<script src="/static/i18n.js"></script>`` -- the negative
+    lookahead must skip a src'd tag rather than capturing an empty inline body for it."""
     mod = _module()
     for text in mod._aux_inline_js().values():
         assert "i18n.js" not in text
 
 
-def test_removing_aux_inline_js_measurably_lowers_both_gates():
-    """THE regression, proven by removing the fix rather than re-deriving
-    numbers by hand: with the two inline scripts hidden from the scanner (the
-    pre-fix behaviour), the two blocking gates must go DOWN -- proving those
-    ~120 t() call sites and their chrome-shaped literals were real
-    contributions, not zero-effect plumbing.
-    """
+def test_removing_the_page_scripts_measurably_lowers_both_gates():
+    """THE regression, proven by removing the files from the scan rather than
+    re-deriving numbers by hand: without the standalone pages' scripts, both counts
+    must go DOWN -- so those t() call sites are real contributions to the gates."""
     mod = _module()
     before_t = mod.unkeyed_t_calls()
     before_chrome = mod.audit_chrome()
 
-    mod._aux_inline_js = lambda: {}  # simulate the pre-fix scanner
+    real = mod._aux_js
+    pages = {"taskmanager.js", "unlock.js", "investigate.js"}
+    mod._aux_js = lambda: tuple(m for m in real() if m not in pages)
 
     after_t = mod.unkeyed_t_calls()
     after_chrome = mod.audit_chrome()
 
     assert after_t["sites"] < before_t["sites"], (
-        "hiding the two inline <script> blocks did not reduce t()-call-site "
-        "count -- unkeyed_t_calls() may no longer be reading _aux_inline_js()"
+        "hiding the page scripts did not reduce the t()-call-site count -- "
+        "unkeyed_t_calls() may no longer be reading them"
     )
     assert after_chrome["ui_strings"] < before_chrome["ui_strings"], (
-        "hiding the two inline <script> blocks did not reduce the chrome "
-        "count -- audit_chrome() may no longer be reading _aux_inline_js()"
+        "hiding the page scripts did not reduce the chrome count -- "
+        "audit_chrome() may no longer be reading them"
     )
 
 

@@ -13,7 +13,8 @@ REPLACES so the unlock screen never sits in the back stack.
 from __future__ import annotations
 
 from pathlib import Path
-from tests.js_source_helper import app_js
+
+from tests.js_source_helper import app_js, page_source
 
 _STATIC = Path(__file__).resolve().parents[1] / "src" / "static"
 # index.html's JS was externalised into cached app.js (audit PR H); the tab-nav
@@ -29,7 +30,7 @@ _INDEX = "\n".join(
         (_STATIC / "app.css").read_text(encoding="utf-8"),
     ]
 )
-_UNLOCK = (_STATIC / "unlock.html").read_text(encoding="utf-8")
+_UNLOCK = page_source("unlock.html")
 
 
 def test_tab_nav_pushes_history_and_handles_back():

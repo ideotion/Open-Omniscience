@@ -155,6 +155,72 @@
       return { title: t("Page walk"), facts };
     }
 
+    // Q707's WARM tier (S05-06's S1): the newest text of every OTHER page the stream reports
+    // changed, latest + previous (Q710). Counts only. The share of the budget it leaves to
+    // the followed pages is a proposed default, and the hover says so.
+    const _LIVING_WARM_STATE = {
+      off: "Off", fetching: "Fetching", paused: "Paused", waiting: "Waiting", caught_up: "Caught up",
+      not_started: "Not started yet", not_running: "Not running now",
+    };
+    const _LIVING_WARM_WHY = {
+      network_off: "Airplane mode is on.",
+      transport_unavailable: "Protected mode has no usable proxy, and the lane never goes direct.",
+      storage_budget_spent: "The lane's storage budget is spent.",
+      warm_share_spent: "Changed pages have used their share of the storage budget; the rest is kept for the pages you follow.",
+      connection_failed: "The connection or the proxy did not answer.",
+      service_busy: "The wiki asked clients to slow down.",
+      request_refused: "The wiki refused the request.",
+      malformed_response: "The answer could not be read.",
+    };
+
+    function livingWarmGroup(src, t, tf) {
+      const w = src.warm || {};
+      const stateKey = w.enabled === false ? "off" : (w.state || "not_running");
+      const word = _LIVING_WARM_STATE[stateKey] ? t(_LIVING_WARM_STATE[stateKey]) : String(stateKey);
+      const value = w.reason && _LIVING_WARM_WHY[w.reason]
+        ? ooLabelText(word, t(_LIVING_WARM_WHY[w.reason])) : word;
+      const facts = [{
+        label: t("State"), value,
+        hover: w.enabled === false
+          ? t("The lane can fetch the newest text of every other page the stream reports changed, 50 pages a request. That fetching is off: switch it on in Settings → Wikipedia.")
+          : t("The lane fetches the newest text of every other page the stream reports changed, 50 pages a request, the longest-waiting first, and keeps each page's latest and previous text. It runs only while the live stream runs."),
+      }];
+      if (w.measured !== true) return { title: t("Other changed pages"), facts };
+      facts.push(
+        { label: t("Pages with text"), value: _livingCount(w.pages_with_text),
+          hover: t("Pages holding a stored text: the latest this machine fetched and the one before it. A page deleted later keeps its text.") },
+        { label: t("Waiting for text"), value: _livingCount(w.due),
+          hover: t("Changed pages whose newest text has not been fetched yet, across every edition.") },
+        { label: t("Texts fetched"), value: _livingCount(w.texts_fetched),
+          hover: t("Every text stored. A page fetched three times counts three.") },
+        { label: t("Now followed"), value: _livingCount(w.promoted),
+          hover: t("Pages that became pages you follow after they changed. Every version of them is kept from then on, and the texts fetched before stay.") },
+        { label: t("Requests answered"), value: _livingCount(w.requests),
+          hover: t("Answers read in full, across every edition. A refused request is not counted here.") },
+        { label: t("Answers weighed"), value: humanBytes(w.response_bytes || 0),
+          hover: t("The size of the JSON the wiki sent back, as it was read.") },
+      );
+      if (typeof w.share === "number") {
+        facts.push({ label: t("Stops at"), value: tf("{pct}% of the budget", { pct: Math.round(w.share * 100) }),
+          hover: t("These texts stop when the lane file holds this share of its storage budget, and the rest is kept for the pages you follow. The share is a proposed default, not a ruling.") });
+      }
+      const waiting = w.waiting || {};
+      for (const e of (w.editions || [])) {
+        const code = (typeof ooLangCode === "function" ? ooLangCode(e.edition) : "") || String(e.edition);
+        const name = typeof ooLangName === "function" ? ooLangName(e.edition, "") : "";
+        let row = tf("{n} with text · {m} to fetch", { n: _livingCount(e.pages_with_text), m: _livingCount(e.due) });
+        const token = waiting[e.edition];
+        if (token) row += " · " + t("waiting");
+        const refusal = token && _LIVING_WARM_WHY[token]
+          ? " " + t(_LIVING_WARM_WHY[token]) + " " + t("It is asked again after a pause that doubles each time, up to an hour.")
+          : "";
+        const explain = t("Pages holding a text in this edition, and changed pages still waiting for theirs.");
+        facts.push({ label: code, value: row,
+          hover: (name && name !== code ? ooLabelText(name, explain) : explain) + refusal });
+      }
+      return { title: t("Other changed pages"), facts };
+    }
+
     function livingWikiGroups(src, t, tf) {
       const s = src.stream || {};
       const stream = s.measured !== true ? _livingUnmeasured(s, t) : [
@@ -186,8 +252,10 @@
         { label: t("Flagged"), value: String(k.flagged),
           hover: t("Revisions a heuristic flagged, such as a large removal. A flag is a reason to look, not a finding.") },
       ];
+      // Q707's order: the followed pages (the stream), the other changed pages, the tail.
       return [
         { title: t("Live stream"), facts: stream },
+        livingWarmGroup(src, t, tf),
         livingWalkGroup(src, t, tf),
         { title: t("Pages you track"), facts: tracked },
         livingStorageGroup(src.storage, t),
@@ -279,7 +347,7 @@
           what = `<span title="${esc(t("Under a budget the stream stores the text of some changes and counts the rest. A counted change has no diff."))}">${esc(t("Counted only: its text was not stored."))}</span>`;
         } else if (c.diff_method === "unified") {
           what = esc(tf("Lines added: {added}, removed: {removed}", { added: c.diff_added, removed: c.diff_removed }))
-            + ` <button class="tiny secondary" data-diff-rev="${Number(c.revision_id)}" onclick="livingShowDiff(${Number(c.revision_id)}, this)">${esc(t("Show diff"))}</button>`;
+            + ` <button class="tiny secondary" data-diff-rev="${Number(c.revision_id)}" data-on-click="livingShowDiff(${Number(c.revision_id)}, this)">${esc(t("Show diff"))}</button>`;
         } else if (c.diff_method === "no-previous-text") {
           what = esc(t("Text stored; there was no earlier stored text to compare it with."));
         } else if (c.diff_method === "too-large") {
@@ -404,6 +472,13 @@
       }
     }
 
+    // A switch Living sources shows was saved elsewhere (Settings → Wikipedia): a view already
+    // drawn re-reads its overview, so it never keeps the state from before the change. A view
+    // never opened is left alone -- it reads everything when it opens.
+    function livingRefreshIfShown() {
+      if (_livingOverview) loadLivingOverview();
+    }
+
     async function loadLivingOverview() {
       const t = _livingT();
       try {
@@ -497,7 +572,7 @@
       if (!box || !d) return;
       const pages = (d.pages || []).filter((p) => p.watched !== false);
       box.innerHTML = pages.length
-        ? pages.map((p) => `<button class="tiny secondary living-page" onclick="openWikiTC(${Number(p.id)}, ${esc(JSON.stringify(String(p.title || "")))}, ${esc(JSON.stringify(String(p.wiki || "")))})"`
+        ? pages.map((p) => `<button class="tiny secondary living-page" data-on-click="openWikiTC(${Number(p.id)}, ${esc(JSON.stringify(String(p.title || "")))}, ${esc(JSON.stringify(String(p.wiki || "")))})"`
             + ` title="${esc(t("See this page's tracked revision history — the stored edits, newest first, with each diff."))}">`
             + `${esc(p.wiki ? p.wiki + " · " : "")}${esc(p.title || "?")} <span class="muted">${esc(String(p.revisions || 0))}</span></button>`).join(" ")
         : `<div class="muted">${esc(t("No pages tracked yet. Add them in Settings → Wikipedia."))}</div>`;

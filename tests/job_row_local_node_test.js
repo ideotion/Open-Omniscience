@@ -21,7 +21,7 @@ const assert = require("assert");
 const fs = require("fs");
 const path = require("path");
 const APP = require("./app_source.js").appJs();
-const TM = fs.readFileSync(path.join(__dirname, "..", "src", "static", "taskmanager.html"), "utf8");
+const TM = require("./app_source.js").pageSource("taskmanager.html");
 
 function extract(SRC, name) {
   const at = SRC.indexOf("function " + name + "(");
@@ -84,7 +84,9 @@ const tmRow = (j, t) => {
 
 const t = (s) => s;
 const buttons = (html) => [...html.matchAll(/<button([^>]*)>([^<]*)<\/button>/g)]
-  .map((m) => ({ label: m[2], onclick: (m[1].match(/onclick="([^"]*)"/) || [])[1] || "" }));
+  .map((m) => ({ label: m[2], onclick: (m[1].match(/(?:data-on-click|onclick)="([^"]*)"/) || [])[1] ||
+    // taskmanager.js binds by data-tm="<action>" through one delegated listener.
+    ((m[1].match(/data-tm="([a-z]+)"/) || [])[1] ? "TM." + m[1].match(/data-tm="([a-z]+)"/)[1] + "(" : "") }));
 const labels = (html) => buttons(html).map((b) => b.label);
 
 const fold = (state, actions) => ({

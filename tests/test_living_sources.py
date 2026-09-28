@@ -391,7 +391,7 @@ def test_the_tracked_changes_DIALOG_is_gone_and_its_view_lives_in_the_tab():
     tab = _tab(html)
     for needle in ('<section id="wiki-tc"', 'id="wiki-tc-body"', 'id="wiki-tc-title"',
                    'id="wiki-tc-flagged"', 'id="wiki-tc-method" class="card-caveat"',
-                   'onchange="loadWikiTC()"'):
+                   'data-on-change="loadWikiTC()"'):
         assert needle in tab, f"the tracked-changes view lost {needle} in its move"
 
 

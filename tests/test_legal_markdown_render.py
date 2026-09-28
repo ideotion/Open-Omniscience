@@ -32,8 +32,9 @@ from pathlib import Path
 
 import pytest
 
+from tests.js_source_helper import page_source
+
 _ROOT = Path(__file__).resolve().parents[1]
-_UNLOCK_HTML = _ROOT / "src" / "static" / "unlock.html"
 
 
 def _extract(src: str, signature: str) -> str:
@@ -45,7 +46,7 @@ def _extract(src: str, signature: str) -> str:
 
 
 def _extract_renderer() -> str:
-    html = _UNLOCK_HTML.read_text(encoding="utf-8")
+    html = page_source("unlock.html")
     return _extract(html, "function escHtml(s) {") + "\n" + _extract(html, "function renderLegalMarkdown(md) {")
 
 

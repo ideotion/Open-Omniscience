@@ -16,7 +16,7 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
-from tests.js_source_helper import event_listener_bodies, function_body, read_static
+from tests.js_source_helper import event_listener_bodies, function_body, page_source, read_static
 
 _ROOT = Path(__file__).resolve().parents[1]
 
@@ -39,7 +39,7 @@ def test_the_one_langchange_listener_repaints_the_diagnostics_job_lines():
 
 
 def test_the_tasks_page_failure_line_uses_the_keyed_label_frame():
-    tm = read_static("taskmanager.html")
+    tm = page_source("taskmanager.html")
     why = function_body(tm, "jobWhy")
     assert 'tf("{prefix}: {text}"' in why, "the /tasks failure line must use the keyed label frame (O-5)"
     assert 't("Failed:") + " "' not in why

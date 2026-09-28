@@ -30,7 +30,7 @@
       if (!_docList.length) { $("doc-nav").innerHTML = '<div class="muted">Docs unavailable.</div>'; return; }
       $("doc-nav").innerHTML = _docList.map(d =>
         `<button class="doc-link ${d.slug === _docSlug ? "active" : ""}" ${d.available ? "" : "disabled"}
-           onclick="openDoc('${d.slug}')">${esc(d.title)}<small>${esc(d.blurb)}</small></button>`).join("");
+           data-on-click="openDoc('${d.slug}')">${esc(d.title)}<small>${esc(d.blurb)}</small></button>`).join("");
       if (!_docSlug) openDoc((_docList.find(d => d.slug === "user-manual") || _docList[0] || {}).slug);
     }
     // `anchor` (2026-09-09) is optional and additive: the omnibar's Help-content group
@@ -42,7 +42,7 @@
       if (!slug) return;
       _docSlug = slug;
       document.querySelectorAll(".doc-link").forEach(b =>
-        b.classList.toggle("active", b.getAttribute("onclick").includes("'" + slug + "'")));
+        b.classList.toggle("active", b.getAttribute("data-on-click").includes("'" + slug + "'")));
       const prose = $("doc-prose"); prose.innerHTML = '<div class="muted">Loading…</div>';
       try {
         // Serve the reader's UI language when a translated draft exists; the
@@ -293,7 +293,7 @@
       box.innerHTML = `<div class="panel" style="border-color:var(--accent)">` +
         `<strong>${esc(t("Install Ollama"))}</strong>` +
         `<p class="muted" style="margin:6px 0">${esc(t("Ollama is not installed yet. The app can download the official installer, verify its checksum against the publisher's attestation, and run it. Installing needs administrator rights and downloads over the clear internet (not this app's Tor proxy)."))}</p>` +
-        `<button id="llm-install-prepare-btn" onclick="prepareOllamaInstall()">${esc(t("Download & verify the official installer"))}</button>` +
+        `<button id="llm-install-prepare-btn" data-on-click="prepareOllamaInstall()">${esc(t("Download & verify the official installer"))}</button>` +
         `<div id="llm-install-detail" class="hint" style="margin-top:8px"></div>` +
         `<pre id="llm-install-log" style="display:none;max-height:220px;overflow:auto;background:var(--bg2);padding:8px;border-radius:6px;margin-top:8px;font:12px ui-monospace,monospace;white-space:pre-wrap"></pre></div>`;
     }
@@ -316,14 +316,14 @@
       let st = {};
       try { st = await api("/api/llm/install/status"); } catch (_e) {}
       const runNow = st.can_run_unattended
-        ? `<button onclick="runOllamaInstall(${esc(JSON.stringify(d.path))})" style="margin-top:8px">${esc(t("Install now"))}</button>`
+        ? `<button data-on-click="runOllamaInstall(${esc(JSON.stringify(d.path))})" style="margin-top:8px">${esc(t("Install now"))}</button>`
         : "";
       const manual = `<p class="muted" style="margin:8px 0 2px">${esc(st.can_run_unattended ? t("Or run it yourself in a terminal:") : t("Administrator rights are needed and the app cannot ask for your password. Run this in a terminal:"))}</p>` +
         `<pre style="background:var(--bg2);padding:8px;border-radius:6px;font:12px ui-monospace,monospace;white-space:pre-wrap">${esc(d.manual_command)}</pre>`;
       if (detail) detail.innerHTML =
         `<div>${esc(t("Verified Ollama"))} <code>${esc(d.version)}</code> · SHA-256 <code>${esc((d.sha256||"").slice(0,16))}…</code></div>` +
         runNow + manual +
-        `<p class="muted" style="margin-top:6px">${esc(t("After installing, click Recheck below."))} <button class="tiny secondary" onclick="recheckOllama()">${esc(t("Recheck"))}</button></p>`;
+        `<p class="muted" style="margin-top:6px">${esc(t("After installing, click Recheck below."))} <button class="tiny secondary" data-on-click="recheckOllama()">${esc(t("Recheck"))}</button></p>`;
     }
     async function runOllamaInstall(path) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
@@ -433,7 +433,7 @@
             `<label for="llm-model-pick" style="flex:0 0 auto;margin:0">${esc(t("Model in use"))}</label>` +
             `<select id="llm-model-pick" style="flex:1;max-width:420px"` +
             ` title="${esc((p.reason || "") + " " + (p.mechanism_note || ""))}"` +
-            ` onchange="setActiveModel(this.value)">${opts}</select>` +
+            ` data-on-change="setActiveModel(this.value)">${opts}</select>` +
             `<span class="pill">${esc(p.backend)}</span></div>`;
         }
       } catch (e) { /* fall through to the download line below */ }
@@ -449,7 +449,7 @@
           ` <span class="pill">${esc(p.backend)}</span>` +
           (already
             ? ` <span class="pill ok">${esc(t("Downloaded"))}</span>`
-            : ` <button onclick="installDefaultModel(this)">${esc(t("Download the default model"))}</button>`) +
+            : ` <button data-on-click="installDefaultModel(this)">${esc(t("Download the default model"))}</button>`) +
           `</p>`,
           `<p class="hint">${esc(p.reason || "")}</p>`);
         if (p.installed === null && !already) {
@@ -560,10 +560,10 @@
           d.installed.map(m => {
             const isActive = m.tag === active;
             const badge = isActive ? ` <span class="pill ok">${esc(t("active"))}</span>` : "";
-            const setBtn = isActive ? "" : `<button class="tiny secondary" onclick="setActiveModel(${esc(JSON.stringify(m.tag))})">${esc(t("Set active"))}</button> `;
+            const setBtn = isActive ? "" : `<button class="tiny secondary" data-on-click="setActiveModel(${esc(JSON.stringify(m.tag))})">${esc(t("Set active"))}</button> `;
             return `<tr><td><code>${esc(m.tag)}</code>${badge}</td>` +
               `<td>${m.size_gb != null ? esc(_sizeText(m.size_gb * 1073741824, (i, v) => (v % 1 ? 1 : 0))) : ""}</td><td>${esc((m.modified || "").slice(0,10))}</td>` +
-              `<td style="white-space:nowrap">${setBtn}<button class="tiny danger" onclick="removeModel(${esc(JSON.stringify(m.tag))})">${esc(t("Remove"))}</button></td></tr>`;
+              `<td style="white-space:nowrap">${setBtn}<button class="tiny danger" data-on-click="removeModel(${esc(JSON.stringify(m.tag))})">${esc(t("Remove"))}</button></td></tr>`;
           }).join("") + "</table>"
         : `<p class="muted">${esc(t("No models installed yet — pull one below."))}</p>`;
       // THE "SUGGESTED MODELS" TABLE IS GONE (maintainer, 2026-08-04: "remove the
@@ -729,13 +729,13 @@
         html += `<div class="row" style="align-items:center;gap:8px;margin-bottom:4px">` +
           `<code>${esc(active.model)}</code> <span class="pill">${esc(t("Pulling"))}</span> ` +
           `<span class="muted">${esc(active.status || "")} ${pct}%</span>` +
-          `<button class="tiny danger" onclick="cancelPull(${esc(JSON.stringify(active.model))})">${esc(t("Cancel"))}</button></div>` +
+          `<button class="tiny danger" data-on-click="cancelPull(${esc(JSON.stringify(active.model))})">${esc(t("Cancel"))}</button></div>` +
           `<progress value="${pct}" max="100" style="width:100%"></progress>`;
       }
       for (const m of queue) {
         html += `<div class="row" style="align-items:center;gap:8px;margin-top:4px">` +
           `<code>${esc(m)}</code> <span class="pill muted">${esc(t("Queued"))}</span>` +
-          `<button class="tiny secondary" onclick="cancelPull(${esc(JSON.stringify(m))})">${esc(t("Cancel"))}</button></div>`;
+          `<button class="tiny secondary" data-on-click="cancelPull(${esc(JSON.stringify(m))})">${esc(t("Cancel"))}</button></div>`;
       }
       box.innerHTML = html; box.style.display = "";
     }
@@ -1201,7 +1201,7 @@
                step="${step}" data-default="${esc(String(tn.default))}">
         <span class="muted card-tune-range">${esc(t("safe range"))} ${range}</span>
         <button class="ghost tiny card-tune-reset" ${changed ? "" : "disabled"}
-                onclick="cardResetTunable('${esc(prod)}','${esc(tn.key)}')"
+                data-on-click="cardResetTunable('${esc(prod)}','${esc(tn.key)}')"
                 title="${esc(t("Put this back to the value the app ships with."))}">${esc(t("Reset"))}</button>
         <div class="hint card-tune-impact">${esc(tn.impact)}${
           tn.floor_reason ? ` <span class="card-tune-floor">${esc(tn.floor_reason)}</span>` : ""}</div>
@@ -1218,13 +1218,13 @@
           ${fam.producers.map(p => `<div class="card-prod" data-prod="${esc(p.name)}">
             <label class="switch">
               <input type="checkbox" class="card-on" value="${esc(p.name)}" ${p.enabled ? "checked" : ""}
-                     onchange="cardSetEnabled(this)"> <b>${esc(p.label)}</b></label>
+                     data-on-change="cardSetEnabled(this)"> <b>${esc(p.label)}</b></label>
             <div class="hint card-prod-d">${esc(p.description)}</div>
             ${p.tunables.length ? p.tunables.map(tn => _cardTunableRow(p.name, tn)).join("") : ""}
           </div>`).join("")}
         </details>`;
       }).join("") + `<div class="row" style="margin-top:10px;gap:8px">
-        <button onclick="saveCardSettings()">${esc(t("Save Lead settings"))}</button></div>`;
+        <button data-on-click="saveCardSettings()">${esc(t("Save Lead settings"))}</button></div>`;
     }
     function cardSetEnabled(cb) {
       const fam = cb.closest(".card-fam");
@@ -1836,7 +1836,7 @@
           + `<input type="number" id="storage-budget-${k}" min="${b.min_gb}" max="${b.max_gb}" step="1" value="${esc(b.gb)}" style="width:6em" aria-label="${esc(t("Budget in GB"))}">`
           // esc(JSON.stringify(...)), never a hand-written '...' around esc(): '&#39;'
           // decodes back to a quote BEFORE the handler runs (onclick_xss_esc_node_test.js).
-          + `<button class="secondary" onclick="saveLaneBudget(${esc(JSON.stringify(String(lane.kind)))}, ${esc(JSON.stringify(String(b.setting)))}, this)">${esc(t("Save budget"))}</button>`
+          + `<button class="secondary" data-on-click="saveLaneBudget(${esc(JSON.stringify(String(lane.kind)))}, ${esc(JSON.stringify(String(b.setting)))}, this)">${esc(t("Save budget"))}</button>`
           + `<span id="storage-budget-msg-${k}" class="hint" role="status" aria-live="polite"></span></div>`;
       }
       return html;

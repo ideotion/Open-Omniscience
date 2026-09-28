@@ -155,6 +155,17 @@ class WikiClient:
         )
         return {**mw.parse_walk_batch(payload), "response_bytes": size}
 
+    def fetch_warm_texts(self, wiki: str, pageids: list[int]) -> dict:
+        """The LATEST text of up to 50 changed pages, ONE request (Q707's WARM tier).
+
+        Returns :func:`src.wiki.mediawiki.parse_warm_texts`'s shape plus
+        ``response_bytes``. Like every method here it does not chunk: over 50 ids is
+        refused by the params builder rather than truncated. An HTTP refusal RAISES; an
+        API refusal carried in a 200 (``maxlag``) comes back as ``error``.
+        """
+        payload, size = self._get_measured(wiki, mw.build_warm_texts_params(pageids))
+        return {**mw.parse_warm_texts(payload), "response_bytes": size}
+
     def fetch_edition_statistics(self, wiki: str) -> dict:
         """The edition's own ``articles`` / ``pages`` counts: the walk's denominator."""
         return mw.parse_statistics(self._get(wiki, mw.build_statistics_params()))

@@ -124,7 +124,21 @@ def _aux_js() -> tuple[str, ...]:
         "oosky.js dropped out of index.html's <script src> list -- the canvas "
         "domain labels it paints would go dark to both JS ratchets again"
     )
-    return (*mods, "reader.js")
+    # The standalone pages' own scripts (0.5 row I, Q1127 = a): taskmanager.html,
+    # unlock.html and investigate.html each moved their ONE inline <script> to a
+    # same-named .js so the CSP could drop script-src 'unsafe-inline', and the two
+    # server-rendered readers (main.py's article page, law.py's) moved their
+    # external-link confirm to ext-confirm.js. Read from each page's own <script
+    # src> tags, for the reason the index.html list is: a hand-kept name drifts.
+    extra: list[str] = []
+    for page in _AUX_HTML:
+        path = _static_dir() / page
+        if not path.exists():
+            continue
+        for m in re.finditer(r'<script src="/static/([A-Za-z0-9_.-]+\.js)"', path.read_text(encoding="utf-8")):
+            if m.group(1) not in mods and m.group(1) not in extra:
+                extra.append(m.group(1))
+    return (*mods, *extra, "reader.js", "ext-confirm.js")
 
 
 # The two aux HTML shells (taskmanager.html, unlock.html) each carry ONE large
@@ -137,7 +151,7 @@ def _aux_js() -> tuple[str, ...]:
 # never visited. `[^>]*\bsrc=` in the negative lookahead is what keeps this from
 # also swallowing each file's own `<script src="/static/i18n.js">` tag as a
 # second, empty "inline" body.
-_AUX_INLINE_JS_HOSTS = ("taskmanager.html", "unlock.html")
+_AUX_INLINE_JS_HOSTS = ("taskmanager.html", "unlock.html", "investigate.html")
 
 
 def _aux_inline_js() -> dict[str, str]:

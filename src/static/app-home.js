@@ -345,15 +345,15 @@
       const order = _feedOrder();
       const btn = (v, label, tip) =>
         `<button class="tiny${order === v ? "" : " ghost"}" aria-pressed="${order === v}" `
-        + `onclick="_feedSetOrder('${v}')" title="${esc(tip)}">${esc(label)}</button>`;
+        + `data-on-click="_feedSetOrder('${v}')" title="${esc(tip)}">${esc(label)}</button>`;
       host.innerHTML =
         `<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:6px">`
         + `<span class="muted" style="font-size:.85em">${ooLabelHtml(esc(t("Order")), "").trimEnd()}</span>`
         + btn("shuffled", t("Shuffled"), t("A fixed order chosen by a seed — it uses each article's id and that seed and nothing else."))
         + btn("recent", t("Newest first"), t("By publication date, newest first."))
-        + `<button class="tiny ghost" style="margin-inline-start:8px" onclick="feedReshuffle()" `
+        + `<button class="tiny ghost" style="margin-inline-start:8px" data-on-click="feedReshuffle()" `
         + `title="${esc(t("Draw a new order and start again from the top."))}">${esc(t("Reshuffle"))}</button>`
-        + `<button class="tiny ghost" onclick="feedClearSeen()" `
+        + `<button class="tiny ghost" data-on-click="feedClearSeen()" `
         + `title="${esc(t("Keep this order and start again from the top."))}">${esc(t("Start from the top"))}</button>`
         + `</div>`;
     }
@@ -361,7 +361,7 @@
     function _feedCard(a) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const kws = (a.keywords || []).map(k =>
-        `<button type="button" class="an-facet" onclick="openAnalysisFor(${esc(JSON.stringify(k.term))})" `
+        `<button type="button" class="an-facet" data-on-click="openAnalysisFor(${esc(JSON.stringify(k.term))})" `
         + `title="${esc(t("Mentions in this article — open this keyword's corpus."))}">`
         + `${esc(k.term)} <span class="muted">${k.count}</span></button>`).join(" ");
       const when = (a.published_at || "").slice(0, 10);
@@ -386,7 +386,7 @@
         + `<p class="feed-x" data-short="${esc(a.excerpt || "")}" data-full="${esc(a.excerpt_full || "")}">`
         + `${esc(a.excerpt || "")}${more ? "…" : ""}</p>`
         + (more
-            ? `<button class="tiny ghost" onclick="_feedExpand(this)">${esc(t("Read more"))}</button> `
+            ? `<button class="tiny ghost" data-on-click="_feedExpand(this)">${esc(t("Read more"))}</button> `
             : "")
         + (a.truncated
             ? `<span class="muted" style="font-size:.85em">${esc(t("This is the opening of the article — open it to read the rest."))}</span>`
@@ -454,7 +454,7 @@
       if (_feedErr != null) return `<div class="note err">${esc(_feedErr || t("The feed could not load."))}</div>`;
       return _feedDone
         ? `<div class="muted" style="margin:10px 0">${esc(t("That is the end of this pass."))}</div>`
-        : `<button class="tiny" onclick="loadFeed(false)">${esc(t("Load more"))}</button>`;
+        : `<button class="tiny" data-on-click="loadFeed(false)">${esc(t("Load more"))}</button>`;
     }
     // THE REPAINT, called from app-boot.js's ONE `oo:langchange` listener. Redraws the
     // controls, the cards, the note and the line under the list from what the walk already
@@ -474,7 +474,7 @@
         if (open.size) {
           list.querySelectorAll(".feed-card").forEach((c) => {
             if (!open.has(c.getAttribute("data-aid"))) return;
-            const b = c.querySelector('button[onclick^="_feedExpand"]');
+            const b = c.querySelector('button[data-on-click^="_feedExpand"]');
             if (b) _feedExpand(b);
           });
         }
@@ -804,7 +804,7 @@
           {channel: homeChannelLabel(f.source_type), code: f.source_type});
         box.innerHTML = `<div class="hint muted" style="margin-bottom:4px">${esc(totalLine)}</div>`
           + `<div style="display:flex;gap:6px;flex-wrap:wrap">` + facets.map(f =>
-          `<button class="chip" onclick="openChannelCorpus(${esc(JSON.stringify(f.source_type))})" title="${esc(hover(f))}" data-i18n-dyn>${esc(homeChannelLabel(f.source_type))} <span class="muted">${esc(fmtNum(f.articles))} · ${esc(share(f.articles))}</span></button>`).join("")
+          `<button class="chip" data-on-click="openChannelCorpus(${esc(JSON.stringify(f.source_type))})" title="${esc(hover(f))}" data-i18n-dyn>${esc(homeChannelLabel(f.source_type))} <span class="muted">${esc(fmtNum(f.articles))} · ${esc(share(f.articles))}</span></button>`).join("")
           + `</div>`;
       }
     }
@@ -922,11 +922,11 @@
           // Click-to-enlarge into the interactive ooChart (invariant #16), matching
           // the Insights Trends UX — the daily series is already in the payload.
           const enlarge = Array.isArray(x.series)
-            ? `<button class="ghost tiny" style="margin-inline-start:auto" onclick="enlargeHomeTrend(${i})" title="${esc(t("Enlarge the chart"))}" aria-label="${esc(t("Enlarge the chart"))}">⛶</button>`
+            ? `<button class="ghost tiny" style="margin-inline-start:auto" data-on-click="enlargeHomeTrend(${i})" title="${esc(t("Enlarge the chart"))}" aria-label="${esc(t("Enlarge the chart"))}">⛶</button>`
             : "";
           return `<div style="flex:1;min-width:180px;padding:6px;border:1px solid var(--border);border-radius:8px">
             <div style="display:flex;align-items:baseline;gap:6px">
-              <a href="#" onclick='openAnalysisFor(${esc(JSON.stringify(x.term))});return false' title="${esc(t("Open this keyword's own analysis window"))}">${kwLabelHtml(x, {inLink: true})}</a>${kwQidHtml(x)}
+              <a href="#" data-on-click='openAnalysisFor(${esc(JSON.stringify(x.term))});return false' title="${esc(t("Open this keyword's own analysis window"))}">${kwLabelHtml(x, {inLink: true})}</a>${kwQidHtml(x)}
               <span class="muted" style="font-size:12px">${esc(growthFallback(x) || `↑${x.growth}× · ${x.recent}`)}</span>${enlarge}
             </div>${spark}</div>`;
         }).join("");
@@ -1030,7 +1030,7 @@
         ? ` <span class="pill tiny" title="${esc(t("Same hazard type, within 0.5° and 2 hours — a deduced grouping of two providers' reports of one event, never a merge of the stored records."))}">${esc(t("grouped"))}</span>`
         : "";
       const mapBtn = (typeof h.lat === "number" && typeof h.lon === "number")
-        ? ` <button class="ghost tiny" onclick="openWorldMapAt(${h.lat}, ${h.lon}, ${esc(JSON.stringify(h.time || null))}, ${h.article_id != null ? h.article_id : "null"})" title="${esc(t("Open on the World map"))}">🗺</button>`
+        ? ` <button class="ghost tiny" data-on-click="openWorldMapAt(${h.lat}, ${h.lon}, ${esc(JSON.stringify(h.time || null))}, ${h.article_id != null ? h.article_id : "null"})" title="${esc(t("Open on the World map"))}">🗺</button>`
         : "";
       const artLink = (h.article_id != null)
         ? ` <a href="/api/articles/${h.article_id}/view" target="_blank" rel="noopener" class="ghost tiny" title="${esc(t("Open the local article"))}">📄</a>`
@@ -1064,7 +1064,7 @@
           const note = major.length
             ? t("{n} more, below the M{m} display floor — open the World map")
             : t("{n} more — open the World map");
-          items.push(`<li class="alert-more"><button class="ghost tiny" onclick="openWorldMapHazards()">`
+          items.push(`<li class="alert-more"><button class="ghost tiny" data-on-click="openWorldMapHazards()">`
             + esc(note.replace("{n}", String(hidden))
                      .replace("{m}", fmtNum(d.major_min_magnitude != null ? d.major_min_magnitude : 6, 1)))
             + ` →</button></li>`);
@@ -1080,7 +1080,7 @@
           items.push(`<li>${pl}${meta}</li>`);
         });
         const open = (Array.isArray(T.article_ids) && T.article_ids.length)
-          ? ` <button class="ghost tiny" onclick="openAnalysisForIds(${esc(JSON.stringify(T.article_ids))}, ${esc(JSON.stringify(TIER_LABEL[tier]))})">${esc(t("Open corpus"))} ↗</button>`
+          ? ` <button class="ghost tiny" data-on-click="openAnalysisForIds(${esc(JSON.stringify(T.article_ids))}, ${esc(JSON.stringify(TIER_LABEL[tier]))})">${esc(t("Open corpus"))} ↗</button>`
           : "";
         return `<div class="alert-tier"><span class="pill ${TIER_CLASS[tier]}">${esc(TIER_LABEL[tier])} · ${esc(String(T.count))}</span>${open}<ul>${items.join("")}</ul></div>`;
       }).join("");
@@ -1364,7 +1364,7 @@
           // zero-specificity `:where(.panel, dialog) :where(h3)` default -- measured
           // before and after: family 13px, card title 15px, width 354px, unchanged.
           + `<h3 class="ov-fam"><span class="fam-dot" style="background:${famHue(b.bucket)}"></span>${esc(b.label)}`
-          + ` <a href="#" class="ov-more" onclick='selectHomeFamily(${esc(JSON.stringify(String(bi)))});return false'>`
+          + ` <a href="#" class="ov-more" data-on-click='selectHomeFamily(${esc(JSON.stringify(String(bi)))});return false'>`
           + `${esc(t("all {n}").replace("{n}", String((b.cards || []).length)))} →</a></h3>`
           + `<div class="cards">${cardHtml(c)}</div>${why}</div>`;
       }).join("");
@@ -1396,9 +1396,9 @@
         `<div class="carousel" role="region" aria-roledescription="${esc(t("carousel"))}" aria-label="${esc(t("Leads"))}" tabindex="0">`
         + `<div class="carousel-face" id="carousel-face" aria-live="polite"></div>`
         + `<div class="carousel-ctl">`
-        +   `<button class="tiny secondary" onclick="carouselStep(-1)" aria-label="${esc(t("Previous Lead"))}">‹</button>`
-        +   `<button class="tiny secondary" id="carousel-pause" onclick="carouselToggle()" aria-pressed="false" aria-label="${esc(t("Pause the carousel"))}">⏸</button>`
-        +   `<button class="tiny secondary" onclick="carouselStep(1)" aria-label="${esc(t("Next Lead"))}">›</button>`
+        +   `<button class="tiny secondary" data-on-click="carouselStep(-1)" aria-label="${esc(t("Previous Lead"))}">‹</button>`
+        +   `<button class="tiny secondary" id="carousel-pause" data-on-click="carouselToggle()" aria-pressed="false" aria-label="${esc(t("Pause the carousel"))}">⏸</button>`
+        +   `<button class="tiny secondary" data-on-click="carouselStep(1)" aria-label="${esc(t("Next Lead"))}">›</button>`
         +   `<span class="carousel-dots" id="carousel-dots"></span>`
         + `</div></div>`;
       const car = host.querySelector(".carousel");
@@ -1432,11 +1432,11 @@
         + `<h4${cardTitleTip(c)}>${esc(cardTitle(c))}</h4>`
         + (c.summary ? `<p class="sum">${esc(cardText(c, "summary"))}</p>` : "")
         + caveat
-        + `<div><button class="tiny" onclick="${action}">${esc(t("Open corpus"))} ↗</button></div>`
+        + `<div><button class="tiny" data-on-click="${action}">${esc(t("Open corpus"))} ↗</button></div>`
         + `</div>`;
       const dots = $("carousel-dots");
       if (dots) dots.innerHTML = _carCards.map((_, i) =>
-        `<button class="carousel-dot${i === _carIdx ? " on" : ""}" onclick="carouselGo(${i})" aria-label="${esc(t("Lead"))} ${i + 1}"${i === _carIdx ? ' aria-current="true"' : ""}></button>`).join("");
+        `<button class="carousel-dot${i === _carIdx ? " on" : ""}" data-on-click="carouselGo(${i})" aria-label="${esc(t("Lead"))} ${i + 1}"${i === _carIdx ? ' aria-current="true"' : ""}></button>`).join("");
     }
 
     function carouselStep(d) {
@@ -1574,13 +1574,13 @@
       // as on every other keyword surface; the QID goes after the chip, since a nested
       // anchor would close this one early.
       const chips = terms.slice(0, 6).map(x =>
-        `<a class="chip tiny" href="#" onclick='openAnalysisFor(${esc(JSON.stringify(x.term))});return false'`
+        `<a class="chip tiny" href="#" data-on-click='openAnalysisFor(${esc(JSON.stringify(x.term))});return false'`
         + ` title="${esc(t("Open this keyword's own analysis window"))}">${kwLabelHtml(x, {inLink: true})}`
         + ` <span class="muted">${esc(growthFallback(x) || `↑${x.growth}× · ${x.recent}`)}</span></a>${kwQidHtml(x)}`).join("");
       // The label takes the locale's own separator ("Tendances :", "热门："), not a welded
       // English colon (click-through B16, V13); the chips are the value that follows it.
       host.innerHTML = `<div class="ov-trend"><span class="muted">${ooLabelHtml(esc(t("Trending now")), "").trimEnd()}</span>${chips}`
-        + `<a class="ov-more" href="#" onclick="showTab('insights');return false">${esc(t("More in Insights"))} →</a></div>`
+        + `<a class="ov-more" href="#" data-on-click="showTab('insights');return false">${esc(t("More in Insights"))} →</a></div>`
         + (_homeTrendCaveat ? `<div class="hint muted" style="font-size:11px">${esc(_homeTrendCaveat)}</div>` : "");
     }
 
@@ -1690,6 +1690,9 @@
     }
     // Click a Lead card to FLIP it (front <-> back). Inner controls (buttons/links/
     // inputs) are not flip triggers. Keyboard: Enter/Space flips when focused.
+    // The bindings pass the clicked control; the card is its nearest .card.
+    function leadFlipFrom(el, ev) { return leadFlip(el.closest(".card"), ev); }
+    function leadFlipKeyFrom(el, ev) { return leadFlipKey(el.closest(".card"), ev); }
     function leadFlip(card, ev) {
       if (ev && ev.target && ev.target.closest("button,a,input,label,details,summary")) return;
       card.classList.toggle("flipped");
@@ -1842,20 +1845,20 @@
           ? `<a href="/api/articles/${e.article_id}/view" target="_blank" rel="noopener" title="offline stored copy">${label}</a>`
           : (e.url
             ? (ext
-              ? `<a href="${esc(safeUrl(e.url))}" onclick="event.preventDefault();openLinkPreview(${esc(JSON.stringify(safeUrl(e.url)))})" title="Opens the local preview first — what your database knows about this link">${label}</a>`
+              ? `<a href="${esc(safeUrl(e.url))}" data-on-click="ooPrevent(event);openLinkPreview(${esc(JSON.stringify(safeUrl(e.url)))})" title="Opens the local preview first — what your database knows about this link">${label}</a>`
               : `<a href="${esc(safeUrl(e.url))}" target="_blank" rel="noopener noreferrer">${label}</a>`)
             : label);
         return `<span>${link}${meta ? ` <span class="muted">— ${meta}</span>` : ""}</span>`;
       }).join("");
       const evidBlock = evid ? `<div class="evid">${evid}</div>` : "";
       const dismiss = c.dismissible === false ? ""
-        : `<button class="ghost tiny" onclick="dismissCard(${esc(JSON.stringify(c.id))}, ${esc(JSON.stringify(c.type || ''))})">Dismiss</button>`;
+        : `<button class="ghost tiny" data-on-click="dismissCard(${esc(JSON.stringify(c.id))}, ${esc(JSON.stringify(c.type || ''))})">Dismiss</button>`;
       // Echo-chamber cards carry an actor signature: offer user-guided collapse (never auto).
       let collapseBtn = "";
       if (c.type === "echo_chamber" && sig.signature) {
         collapseBtn = sig.collapse_applied
-          ? `<button class="secondary tiny" onclick="cardCollapse('${esc(sig.signature)}', false)">Expand (revert)</button>`
-          : `<button class="secondary tiny" onclick="cardCollapse('${esc(sig.signature)}', true)" title="Count this coordinated network as one voice (reversible, stays flagged)">Collapse to one actor</button>`;
+          ? `<button class="secondary tiny" data-on-click="cardCollapse('${esc(sig.signature)}', false)">Expand (revert)</button>`
+          : `<button class="secondary tiny" data-on-click="cardCollapse('${esc(sig.signature)}', true)" title="Count this coordinated network as one voice (reversible, stays flagged)">Collapse to one actor</button>`;
       }
       // Weather-corroboration cards (if-this-then-SUGGEST, 2026-06-12): the
       // bounded Open-Meteo fetch happens ONLY from this button, behind the one
@@ -1863,7 +1866,7 @@
       let weatherBtn = "";
       let weatherBox = "";
       if (c.type === "weather_corroboration" && sig.lat != null && sig.lon != null) {
-        weatherBtn = `<button class="secondary tiny" onclick="cardWeatherFetch('${c.id}')" title="Fetches the bounded Open-Meteo slice for this place and window — only after your consent.">Fetch weather context</button>`;
+        weatherBtn = `<button class="secondary tiny" data-on-click="cardWeatherFetch('${c.id}')" title="Fetches the bounded Open-Meteo slice for this place and window — only after your consent.">Fetch weather context</button>`;
         weatherBox = `<div class="wx" id="wx-${c.id}" style="margin-top:6px"></div>`;
       }
       // Investigation recipe (0.0.8 WP8/RM-20): opens /investigate in a NEW tab,
@@ -1903,7 +1906,7 @@
         ? `openCardCorpus(${esc(JSON.stringify(_aIds))}, ${esc(JSON.stringify(_aq))}, ${esc(JSON.stringify(_tab))}, ${esc(JSON.stringify(_prov))})`
         : `openCardCorpusQuery(${esc(JSON.stringify(_aq))}, ${esc(JSON.stringify(_tab))}, ${esc(JSON.stringify(_prov))})`;
       const openBtn = _aq
-        ? `<button class="lead-open" onclick="${_openCorpus}" title="${esc(t("Open this Lead's corpus in a new window"))}">${esc(t("Open corpus"))} ↗</button>`
+        ? `<button class="lead-open" data-on-click="${_openCorpus}" title="${esc(t("Open this Lead's corpus in a new window"))}">${esc(t("Open corpus"))} ↗</button>`
         : "";
       const chip = `<span class="chip">${esc(cardTypeLabel(c.type))}</span>`;
       const _title = cardTitle(c);
@@ -1924,7 +1927,7 @@
       return `<div class="card bk-${esc(c.bucket)}" data-card="${c.id}" role="group" aria-label="${esc(_title)}">
         <div class="card-inner">
           <div class="card-face card-front" tabindex="0" role="button" aria-label="${esc(_title)}"
-               onclick="leadFlip(this.closest('.card'),event)" onkeydown="leadFlipKey(this.closest('.card'),event)">
+               data-on-click="leadFlipFrom(this, event)" data-on-keydown="leadFlipKeyFrom(this, event)">
             ${chip}
             <h4${cardTitleTip(c)}>${esc(_title)}</h4>
             <p class="sum">${esc(cardText(c, "summary"))}</p>
@@ -1944,11 +1947,11 @@
               ${openBtn}
               ${recipeBtn}
               ${weatherBtn}
-              <button class="secondary tiny" onclick="addToDraft('${c.id}')">+ Add to draft</button>
+              <button class="secondary tiny" data-on-click="addToDraft('${c.id}')">+ Add to draft</button>
               ${collapseBtn}
               ${dismiss}
             </div>
-            <button class="lead-flip-hint back" onclick="leadFlip(this.closest('.card'))">⟲ ${esc(t("Back"))}</button>
+            <button class="lead-flip-hint back" data-on-click="leadFlipFrom(this)">⟲ ${esc(t("Back"))}</button>
             <!-- the Back button intentionally omits ",event": leadFlip's own
                  interactive-descendant guard (ev.target.closest("button,a,...")) would
                  always match the button ITSELF (ev.target IS the button), silently
@@ -2051,7 +2054,7 @@
       const u = safeUrl(url);
       const classes = cls ? `ext-link ${cls}` : "ext-link";
       return `<a class="${classes}"${style ? ` style="${style}"` : ""} href="${esc(u)}" rel="noopener" `
-        + `onclick="event.preventDefault();openLinkPreview(${esc(JSON.stringify(u))})" `
+        + `data-on-click="ooPrevent(event);openLinkPreview(${esc(JSON.stringify(u))})" `
         + `title="Opens the local preview first — what your database knows about this link">`
         + `${esc(label)}</a>`;
     }
@@ -2187,9 +2190,9 @@
             <div class="di-body">
               <div class="di-title">${esc(cardTitle(c))}</div>
               <div class="hint" style="margin-top:2px">${esc(cardText(c, "summary"))}</div>
-              <textarea placeholder="Your note (ships in the export)…" onchange="saveDraftItemNote('${c.id}', this.value)">${esc(it.note||"")}</textarea>
+              <textarea placeholder="Your note (ships in the export)…" data-on-change="saveDraftItemNote('${c.id}', this.value)">${esc(it.note||"")}</textarea>
             </div>
-            <button class="ghost tiny" onclick="removeDraftItem('${c.id}')">Remove</button>
+            <button class="ghost tiny" data-on-click="removeDraftItem('${c.id}')">Remove</button>
           </div>`;
         }).join("");
       } catch (e) { box.innerHTML = '<div class="muted">Could not load the draft.</div>'; }
@@ -2245,8 +2248,8 @@
         box.innerHTML = `<p class="hint">${esc(d.caveat)}</p>` + d.actors.map(a => {
           const members = a.sources.map(esc).join(", ");
           const btn = a.applied
-            ? `<button class="secondary tiny" onclick="collapseAction('${esc(a.signature)}', false)">Expand (revert)</button>`
-            : `<button class="secondary tiny" onclick="collapseAction('${esc(a.signature)}', true)">Apply collapse</button>`;
+            ? `<button class="secondary tiny" data-on-click="collapseAction('${esc(a.signature)}', false)">Expand (revert)</button>`
+            : `<button class="secondary tiny" data-on-click="collapseAction('${esc(a.signature)}', true)">Apply collapse</button>`;
           const flag = a.applied ? '<span class="pill ok">collapsed</span> ' : '<span class="pill warn">annotated only</span> ';
           return `<div class="panel" style="background:var(--panel2); margin-top:8px">
             ${flag}<b>${a.size} sources</b> · ${a.shared_stories} shared story(ies)
@@ -2303,7 +2306,7 @@
         box.innerHTML = d.annotations.map((a, i) =>
           `<div class="draft-item"><div class="di-body"><b>${esc(a.target)}</b> · <span class="chip">${esc(a.kind)}</span> ${esc(a.value)}
             ${a.note ? '<div class="hint">'+esc(a.note)+'</div>' : ''}</div>
-            <button class="ghost tiny" onclick="removeAnnotation(${i})">Remove</button></div>`).join("");
+            <button class="ghost tiny" data-on-click="removeAnnotation(${i})">Remove</button></div>`).join("");
       } catch (e) { box.innerHTML = '<div class="muted">Could not load.</div>'; }
     }
     async function removeAnnotation(i) {
@@ -2329,8 +2332,8 @@
           `<div class="draft-item"><div class="di-body"><b>${esc(a.author_name||a.author_id.slice(0,12))}</b>
             <span class="hint">· ${a.annotations} annotation(s) · ${esc(a.author_id.slice(0,16))}…</span></div>
             <label class="switch" style="margin-top:0"><input type="checkbox" ${a.trusted?"checked":""}
-              onchange="trustAuthor('${a.author_id}', this.checked)"> trust</label>
-            <button class="ghost tiny" onclick="removeAuthor('${a.author_id}')">Remove</button></div>`).join("");
+              data-on-change="trustAuthor('${a.author_id}', this.checked)"> trust</label>
+            <button class="ghost tiny" data-on-click="removeAuthor('${a.author_id}')">Remove</button></div>`).join("");
       } catch (e) { box.innerHTML = '<div class="muted">Could not load.</div>'; }
     }
     async function trustAuthor(id, trusted) {

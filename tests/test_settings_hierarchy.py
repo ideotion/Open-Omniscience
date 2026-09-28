@@ -108,7 +108,7 @@ def test_nothing_was_lost_in_the_move():
         "/api/signals/bury",
         "/api/insights/lunar-correlation",
     ):
-        click = f"window.open('{endpoint}','_blank')"
+        click = f"ooOpenUrl('{endpoint}')"
         assert HTML.count(click) == 1, f"{click} is not a unique anchor"
         assert _view_of(click) == "set-advanced", f"{endpoint}'s button was left behind"
 

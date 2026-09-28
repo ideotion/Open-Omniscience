@@ -1,4 +1,4 @@
-// P0 regression: inner-JS-string breakout in inline onclick="…openLinkPreview('…')"
+// P0 regression: inner-JS-string breakout in inline data-on-click="…openLinkPreview('…')"
 // handlers. esc() (app-core.js) HTML-entity-escapes the OUTER attribute delimiter
 // correctly (audit 0.0.9, finding G1) -- but a hand-written INNER single-quoted JS
 // string literal around the escaped value is a second, independent delimiter that
@@ -29,6 +29,7 @@
 const fs = require("fs");
 const path = require("path");
 const assert = require("assert");
+const { runBinding } = require("./oo_on_harness.js");
 const vm = require("vm");
 
 const APP = require("./app_source.js").appJs();
@@ -89,30 +90,24 @@ function htmlDecodeAttr(s) {
     .replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
 }
 
-// Renders `html`, pulls the onclick="…" attribute out of it, decodes it as a browser
+// Renders `html`, pulls the data-on-click="…" attribute out of it, decodes it as a browser
 // would, then actually EXECUTES the decoded text as the handler body (mirroring how
 // the browser compiles an intrinsic event-handler attribute into a function) against
 // stubs that record whether the payload ran as CODE or arrived as inert DATA.
 function runOnclick(html, cookieValue) {
-  const m = html.match(/onclick="([^"]*)"/);
+  const m = html.match(/data-on-click="([^"]*)"/);
   assert.ok(m, "rendered markup carries no onclick attribute:\n" + html);
   const decoded = htmlDecodeAttr(m[1]);
 
   let alertFired = false;
   let capturedArg = null;
-  const sandbox = {
-    document: { cookie: cookieValue },
+  // Run through the REAL dispatcher (src/static/oo-on.js): the binding is PARSED by its
+  // grammar and can only call allowlisted names with data arguments, so a payload that
+  // broke out of its string would fail to parse (and be logged), never run.
+  const { threw } = runBinding(decoded, {
     alert: () => { alertFired = true; },
     openLinkPreview: (u) => { capturedArg = u; },
-  };
-  vm.createContext(sandbox);
-  let threw = null;
-  try {
-    const handler = vm.runInContext("(function(event){ " + decoded + " })", sandbox);
-    handler({ preventDefault() {} });
-  } catch (e) {
-    threw = e;
-  }
+  });
   return { decoded, alertFired, capturedArg, threw };
 }
 

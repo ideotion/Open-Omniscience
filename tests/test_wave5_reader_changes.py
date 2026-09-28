@@ -73,13 +73,13 @@ def test_tracked_changes_view_exists_in_the_living_sources_tab():
     assert 'id="wiki-tc-method" class="card-caveat"' in seg, (
         "the caveat/method must render in a VISIBLE .card-caveat line, never hidden"
     )
-    assert 'onchange="loadWikiTC()"' in seg, "the flagged-only toggle must reload the view"
+    assert 'data-on-change="loadWikiTC()"' in seg, "the flagged-only toggle must reload the view"
 
 
 def test_watched_page_row_opens_tracked_changes():
     """Each watched-page row carries a Tracked-changes affordance that opens the view."""
     app = _app()
-    assert 'onclick="openWikiTC(' in app, (
+    assert 'data-on-click="openWikiTC(' in app, (
         "the watched-pages table must offer a per-page Tracked-changes button"
     )
     # The button lives in loadWikiPages, alongside Track / Delete.

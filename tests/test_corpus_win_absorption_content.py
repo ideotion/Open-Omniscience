@@ -173,8 +173,10 @@ def test_keyword_chips_still_carry_the_stats_hover_that_absorbs_the_modals_count
 
 def test_mindmap_keeps_the_cloud_view_and_its_in_map_controls():
     mm = function_source(_ANALYSIS, "renderAnMindmap")
-    for needle in ("cloud:true", "cloud:false", "Text size", "anMMset({big:"):
+    for needle in ("cloud:true", "cloud:false", "Text size", "anMMtoggleBig()"):
         assert_present(mm, needle, why="an in-map control the modal's mind-map kit had")
+    # The enlarge control binds a named wrapper since 0.5 row I (Q1127 = a).
+    assert_present(function_source(_ANALYSIS, "anMMtoggleBig"), "anMMset({big:")
 
 
 # --- COMPETITIVE: volume / tone / timing / emphasis ----------------------------- #

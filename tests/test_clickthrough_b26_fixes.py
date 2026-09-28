@@ -38,6 +38,7 @@ from tests.js_source_helper import (
     event_listener_bodies,
     function_body,
     function_source,
+    page_source,
     read_static,
 )
 
@@ -320,7 +321,7 @@ def test_the_at_rest_lines_repaint_from_cache_on_a_language_switch():
 
 
 def test_the_data_location_paths_are_ltr_isolates():
-    html = read_static("unlock.html")
+    html = page_source("unlock.html")
     rule = re.search(r"\.path \{([^}]*)\}", html)
     assert rule, "the .path rule moved"
     assert "direction:ltr" in rule.group(1) and "unicode-bidi:isolate" in rule.group(1), rule.group(1)

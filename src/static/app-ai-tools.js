@@ -32,8 +32,8 @@
               : `catalog entry for ${ooCountryCell(c.evidence.country)} (you have ${esc(c.evidence.your_sources_there)} there)`;
             return `<tr><td>${esc(c.domain)}</td><td>${esc(c.channel)}</td><td>${ev}</td>` +
               `<td>${esc((c.first_seen || "").slice(0, 10))}</td>` +
-              `<td><button class="secondary tiny" onclick="candidateAct(${c.id}, 'promote')">Promote (disabled)</button> ` +
-              `<button class="ghost tiny" onclick="candidateAct(${c.id}, 'dismiss')">Dismiss</button></td></tr>`;
+              `<td><button class="secondary tiny" data-on-click="candidateAct(${c.id}, 'promote')">Promote (disabled)</button> ` +
+              `<button class="ghost tiny" data-on-click="candidateAct(${c.id}, 'dismiss')">Dismiss</button></td></tr>`;
           }).join("") + "</table>";
       } catch (e) { /* candidates are optional surface; stay quiet */ }
     }
@@ -1263,7 +1263,7 @@
       const action = manual
         ? `<p><a href="${esc(manual.download_url)}" target="_blank" rel="noopener">${esc(t("Open ollama.com/download ↗"))}</a> ` +
           `<span class="muted">${esc(t("then return here — the rest is one click."))}</span></p>`
-        : `<p><button id="ai-setup-btn" onclick="runAiSetup(this)">${esc(t("Set up local AI"))}</button></p>`;
+        : `<p><button id="ai-setup-btn" data-on-click="runAiSetup(this)">${esc(t("Set up local AI"))}</button></p>`;
       box.style.display = "";
       box.innerHTML =
         `<div class="panel" style="border-color:var(--accent);margin:0 0 10px">` +
@@ -1450,12 +1450,12 @@
                ((health.installed_models || []).length
                   ? ` <span class="muted">${esc(health.installed_models[0])}</span>` : "");
         if (act.backend === "vllm") {
-          action = `<button class="ghost" onclick="stopVllm(this)">${esc(t("Stop"))}</button>`;
+          action = `<button class="ghost" data-on-click="stopVllm(this)">${esc(t("Stop"))}</button>`;
         }
       } else if (act.can_start) {
         head = `<span class="warn">●</span> ` +
                esc(_tf("Installed but not running — {backend}", {backend: name}));
-        action = `<button onclick="aiStartNow(this)">${esc(t("Start the local AI"))}</button>`;
+        action = `<button data-on-click="aiStartNow(this)">${esc(t("Start the local AI"))}</button>`;
       } else {
         head = `<span class="muted">●</span> ` + esc(t("Not set up on this machine yet"));
       }
@@ -1561,14 +1561,14 @@
         html += `<div class="card-caveat" style="margin-top:4px">${esc(r.ollama.note)}</div>`;
       }
       if (r.ollama.note || r.ollama.split_note) {
-        html += `<div style="margin-top:4px"><button class="ghost tiny" onclick="migrateOllamaStore(this)">` +
+        html += `<div style="margin-top:4px"><button class="ghost tiny" data-on-click="migrateOllamaStore(this)">` +
                 esc(t("Move them into the app folder")) + `</button>`;
         // The reclaim is a SEPARATE button, and only after a copy has put every model in
         // the app folder. A copy alone does not finish the job the operator asked for --
         // the folder they wanted emptied is still full -- but folding the deletion into
         // the copy would make a destructive step the default, and an interrupted "move"
         // over a multi-GB store is how both copies get lost.
-        html += ` <button class="ghost tiny" onclick="migrateOllamaStore(this, true)" ` +
+        html += ` <button class="ghost tiny" data-on-click="migrateOllamaStore(this, true)" ` +
                 `title="${esc(t("Deletes only the files confirmed already copied into the app folder. Run the copy first."))}">` +
                 esc(t("…then delete the originals")) + `</button></div>`;
       }
@@ -1619,14 +1619,14 @@
         return `<div style="margin-top:6px"><b>${esc(name)}</b>${size}` +
           (b.removable ? "" : ` <span class="muted">— ${esc(t("this app cannot remove it"))}</span>`) +
           `${why}<div style="margin-top:4px">` +
-          `<button class="ghost tiny" onclick="uninstallAi(${esc(JSON.stringify([b.backend]))}, this)">` +
+          `<button class="ghost tiny" data-on-click="uninstallAi(${esc(JSON.stringify([b.backend]))}, this)">` +
           `${esc(t("Uninstall"))} ${esc(name)}</button></div></div>`;
       }).join("");
       // Offered only when BOTH are here, because that is when it is a different action
       // rather than a second name for the same one.
       const both = plan.both_installed
         ? `<div style="margin-top:8px"><button class="ghost tiny" ` +
-          `onclick="uninstallAi(${esc(JSON.stringify(["vllm", "ollama"]))}, this)">` +
+          `data-on-click="uninstallAi(${esc(JSON.stringify(["vllm", "ollama"]))}, this)">` +
           `${esc(t("Uninstall both backends"))}</button></div>` : "";
       const stores = (plan.stores || []).filter((st) => st.exists);
       const storeRows = stores.length
@@ -1764,7 +1764,7 @@
         // whereas hiding the button on a guess would strand the operator.
         const action = m.installed === true
           ? `<span class="pill ok">${esc(t("Downloaded"))}</span>`
-          : `<button data-mckey="${esc(m.key)}" onclick="installOneModel(${esc(JSON.stringify(m.key))}, this)">` +
+          : `<button data-mckey="${esc(m.key)}" data-on-click="installOneModel(${esc(JSON.stringify(m.key))}, this)">` +
             `${esc(t("Download"))}</button>` +
             (m.installed === null
               ? ` <span class="hint">${esc(t("already present? — could not read"))}</span>` : "");
@@ -1871,7 +1871,7 @@
             : "";
           hwHtml = line + warns +
             `<p><label><input type="checkbox" id="ai-hw-override"${chk}` +
-            ` onchange="setAllowImpracticalHw(this.checked)"> ` +
+            ` data-on-change="setAllowImpracticalHw(this.checked)"> ` +
             `${esc(t("Run local AI anyway on this hardware"))}</label>` +
             ` <span class="muted">${esc(t("Your choice always wins — this is a default, never a block."))}</span></p>` +
             `<p class="hint">${esc(hw.method)} ${esc(hw.caveat)}</p>`;
@@ -1892,7 +1892,7 @@
           // backend that is absent gets the install box instead, never a Launch button
           // that could only fail.
           (oll.can_launch
-            ? `<p><button class="btn" onclick="launchOllama(this)">${esc(t("Launch Ollama"))}</button>` +
+            ? `<p><button class="btn" data-on-click="launchOllama(this)">${esc(t("Launch Ollama"))}</button>` +
               ` <span class="muted">${esc(t("starts the local Ollama service"))}</span></p>`
             : "") +
           (b.vllm_can_launch
@@ -2023,7 +2023,7 @@
             installBox.innerHTML =
               `<p class="muted">vLLM is not installed. This downloads ${esc(s.estimated_size_note || "several GB")} ` +
               `(vLLM + torch + the CUDA runtime) into a dedicated venv — never the app's own environment.</p>` +
-              `<button onclick="installVllm(this)">Install vLLM (${esc(s.verified_version || "")})</button>` +
+              `<button data-on-click="installVllm(this)">Install vLLM (${esc(s.verified_version || "")})</button>` +
               `<div id="vllm-install-progress" class="hint" style="margin-top:6px"></div>`;
           }
         } else {

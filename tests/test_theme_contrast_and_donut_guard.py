@@ -213,7 +213,8 @@ def _theme_tokens() -> dict[str, dict[str, str]]:
 @pytest.mark.parametrize("variable,minimum,why", _ROLES)
 def test_colour_role_clears_its_contrast_bar_on_every_theme(variable, minimum, why):
     tokens = _theme_tokens()
-    assert len(tokens) >= 17, f"expected >=17 themes, parsed {len(tokens)}"
+    # 17 until the 0.5 theme cull (Q1123 = b) retired slate, arctic and mist.
+    assert len(tokens) >= 14, f"expected >=14 themes, parsed {len(tokens)}"
     v = variable.lstrip("-")
     # A token the resolver could not compute is scored as :root's inherited value,
     # which is somebody else's colour. Refuse to pass on one rather than let an

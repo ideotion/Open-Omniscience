@@ -817,7 +817,7 @@
         $("ins-trend").innerHTML =
           `<div style="margin-bottom:6px">${esc(t8("Resolved to"))} <strong>${kwLabelHtml(r)}</strong> ` +
           `<span class="pill">${esc(kwKindLabel(r.kind))}</span> · ${esc(tf8("{n} mentions in {articles} articles", {n: fmtNum(tr.total), articles: fmtNum(tr.articles)}))} ` +
-          `<button class="tiny secondary" onclick="openCorpus(${esc(JSON.stringify(r.term))})" title="${esc(t8("Open this keyword as a corpus window: trend, member articles, and shared outbound links (the sources' sources)."))}">⊞ ${esc(t8("Corpus"))}</button></div>` +
+          `<button class="tiny secondary" data-on-click="openCorpus(${esc(JSON.stringify(r.term))})" title="${esc(t8("Open this keyword as a corpus window: trend, member articles, and shared outbound links (the sources' sources)."))}">⊞ ${esc(t8("Corpus"))}</button></div>` +
           `<div style="margin-bottom:8px"><div class="hint">${esc(t8("Time range"))}</div>` +
           `<div id="ins-trend-scope"></div></div>` +
           `<div id="ins-trend-oo"></div>`;
@@ -1122,7 +1122,7 @@
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const url = "https://www.wikidata.org/wiki/" + encodeURIComponent(qid);
       return ` <a href="#" class="kw-qid" data-i18n-dyn title="${esc(t("Open a local preview of this source first"))}"`
-        + ` onclick='event.stopPropagation();openLinkPreview(${esc(JSON.stringify(url))});return false'>${esc(qid)}</a>`;
+        + ` data-on-click='ooStop(event);openLinkPreview(${esc(JSON.stringify(url))});return false'>${esc(qid)}</a>`;
     }
 
     // A keyword's KIND as chrome (re-walk M-6): the Resolved line's pill printed the stored
@@ -1381,7 +1381,7 @@
         const g = glyph(s.level);
         const title = esc(lvlTitle(s.level) || t("Open this corpus"));
         const handlerIdx = idx0 + i;
-        const clickable = _lvlCrumbHandlers[handlerIdx] ? ` onclick="_lvlCrumbFire(${handlerIdx})"` : "";
+        const clickable = _lvlCrumbHandlers[handlerIdx] ? ` data-on-click="_lvlCrumbFire(${handlerIdx})"` : "";
         return `<button class="seg" type="button" title="${title}"${clickable}>${g ? g + " " : ""}${esc(s.label)}</button>`;
       });
       return `<span class="lvl-crumb">` + parts.join(`<span class="sep">▸</span>`) + `</span>`;
@@ -1408,10 +1408,10 @@
         + `${esc(t("set algebra over N keywords. The set expression is the corpus label; counts only, never a score."))}</div>`
         + `<div class="row" style="flex-wrap:wrap;gap:6px;align-items:center;margin-top:6px">`
         + `<input id="an-conj-terms" placeholder="${esc(t("keyword, keyword, keyword…"))}" style="flex:1;min-width:180px" `
-        + `onkeydown="if(event.key==='Enter')anCombine('intersection')">`
-        + `<button class="secondary" onclick="anCombine('intersection')" title="${esc(t("articles mentioning ALL terms"))}">${esc(t("∩ All"))}</button>`
-        + `<button class="secondary" onclick="anCombine('union')" title="${esc(t("articles mentioning ANY term"))}">${esc(t("∪ Any"))}</button>`
-        + `<button class="secondary" onclick="anCombine('difference')" title="${esc(t("the first term and none of the rest"))}">${esc(t("∖ First-only"))}</button>`
+        + `data-on-key="Enter" data-on-keydown="anCombine('intersection')">`
+        + `<button class="secondary" data-on-click="anCombine('intersection')" title="${esc(t("articles mentioning ALL terms"))}">${esc(t("∩ All"))}</button>`
+        + `<button class="secondary" data-on-click="anCombine('union')" title="${esc(t("articles mentioning ANY term"))}">${esc(t("∪ Any"))}</button>`
+        + `<button class="secondary" data-on-click="anCombine('difference')" title="${esc(t("the first term and none of the rest"))}">${esc(t("∖ First-only"))}</button>`
         + `</div><div id="an-conj-result" style="margin-top:8px"></div></div>`;
     }
     function _anConjSep(op) { return op === "difference" ? " ∖ " : (op === "union" ? " ∪ " : " ∩ "); }
@@ -1427,7 +1427,7 @@
       const bounded = d.result_bounded
         ? `<div class="card-caveat" title="${esc(t("the set scan reached its cap"))}">${esc(t("Result bounded — a true SUBSET of the answer (it may miss members), never a fabricated one."))}</div>` : "";
       const open = (d.n_combined > 0)
-        ? `<button class="secondary" onclick="anOpenCombined()">${esc(tf("Open {n} article(s) as a corpus →", {n: d.n_combined}))}</button>`
+        ? `<button class="secondary" data-on-click="anOpenCombined()">${esc(tf("Open {n} article(s) as a corpus →", {n: d.n_combined}))}</button>`
         : `<div class="muted">${esc(t("Empty set — no articles match this combination."))}</div>`;
       // The server's caveat is a fixed sentence unless the scan was bounded (that variant
       // interpolates the cap, and falls back to the server's English).
@@ -1493,14 +1493,14 @@
       // carries the double-ring .lvl-super marking + the translated level hover
       // appended to the existing action hover (never replacing it).
       const sgChips = (term) => (term.supergroups || []).map((g) =>
-        `<button class="chip tiny lvl-super" onclick="openSupergroup(${g.id})"`
+        `<button class="chip tiny lvl-super" data-on-click="openSupergroup(${g.id})"`
         + ` title="${esc(t("Open this group's own trend + members") + " — " + lvlTitle("super"))}">⊕ ${esc(g.name)}</button>`).join(" ");
       // The sense picker is drawn AFTER the chip, never inside it (M4): its buttons nested
       // in this <button> were hoisted out by the parser, leaving the count dangling. The
       // window's own lens says which sense the reader pinned, so the choice stays marked.
       const pins = (typeof _anSenses === "object" && _anSenses) ? _anSenses : null;
       const chips = d.terms.map((term) =>
-        `<button class="chip" data-kwstat="${esc(term.term)}"${kwTipExtraAttr(term)} onclick="openCorpus(${esc(JSON.stringify(term.term))})"`
+        `<button class="chip" data-kwstat="${esc(term.term)}"${kwTipExtraAttr(term)} data-on-click="openCorpus(${esc(JSON.stringify(term.term))})"`
         + ` title="${esc(t("Open this keyword's own analysis window"))}">${kwLabelHtml(term, {inButton: true})}`
         + ` <span class="muted">${term.articles}</span></button>${kwSensesAfterHtml(term, pins)}${sgChips(term)}`).join(" ");
       // Audit-07 B1 disclosure: our extractor does NOT segment CJK, so those keywords
@@ -1510,7 +1510,7 @@
       // Offer the tentative LLM fallback only when some keyword has NO verified
       // translation into the reader's language (Phase 4; explicit action, never auto).
       const btn = d.terms.some(_anKwNeedsTentative)
-        ? ` <button class="ghost tiny" onclick="anFillTentative()" title="${esc(t("AI-generated tentative translation — unreliable, not verified."))}">✦ ${esc(t("Translate the rest (AI, tentative)"))}</button>`
+        ? ` <button class="ghost tiny" data-on-click="anFillTentative()" title="${esc(t("AI-generated tentative translation — unreliable, not verified."))}">✦ ${esc(t("Translate the rest (AI, tentative)"))}</button>`
         : "";
       // The caveat carries a count, so the server sends its FRAME + vars (M14); an older
       // payload without them keeps the server's English sentence.
@@ -1584,8 +1584,8 @@
       if (!terms.length) return '<div class="muted">' + esc(T("Nothing yet — index the corpus.")) + "</div>";
       return terms.map(t => `<div class="kw-row" style="padding:4px 0;border-bottom:1px solid var(--border);display:flex;align-items:baseline;gap:6px">
         <button class="tiny danger" title="${esc(T("exclude this keyword"))}" style="margin:0;padding:0 6px"
-          onclick='excludeKeyword(${esc(JSON.stringify(t.term))})'>✕</button>
-        <a href="#" data-kwstat="${esc(t.term)}"${kwTipExtraAttr(t)} title="${esc(t.term)}" onclick='pickTerm(${esc(JSON.stringify(t.term))});return false'>${kwLabelHtml(t, {inLink: true})}</a>${kwQidHtml(t)}
+          data-on-click='excludeKeyword(${esc(JSON.stringify(t.term))})'>✕</button>
+        <a href="#" data-kwstat="${esc(t.term)}"${kwTipExtraAttr(t)} title="${esc(t.term)}" data-on-click='pickTerm(${esc(JSON.stringify(t.term))});return false'>${kwLabelHtml(t, {inLink: true})}</a>${kwQidHtml(t)}
         <span class="pill">${esc(kwKindLabel(t.kind))}</span> <span class="muted">${extra(t)}</span></div>`).join("");
     }
     // Trends as clickable horizontal BAR graphs (field test 2026-06-19 #25): keywords
@@ -1631,9 +1631,9 @@
         const fill = v == null ? ""
           : `<span class="tb-fill" style="width:${Math.max(2, Math.round((v / max) * 100))}%"></span>`;
         return `<div class="tb-row">
-          <button class="tiny danger tb-x" title="${esc(T("exclude this keyword"))}" onclick='excludeKeyword(${esc(JSON.stringify(t.term))})'>✕</button>
+          <button class="tiny danger tb-x" title="${esc(T("exclude this keyword"))}" data-on-click='excludeKeyword(${esc(JSON.stringify(t.term))})'>✕</button>
           <a class="tb-label" href="#" data-kwstat="${esc(t.term)}"${kwExtra(t)} title="${esc(t.term + " — " + T("open in analysis (trend + worldwide spread)") + kwAcross(t))}"
-             onclick='openAnalysisFor(${esc(JSON.stringify(t.term))});return false'>${kwLabelHtml(t, {inLink: true})}</a>
+             data-on-click='openAnalysisFor(${esc(JSON.stringify(t.term))});return false'>${kwLabelHtml(t, {inLink: true})}</a>
           <span class="tb-bar" aria-hidden="true">${fill}</span>
           <span class="tb-val muted">${esc(labelOf(t))}</span>${kwQidHtml(t)}
         </div>`;
@@ -1757,9 +1757,9 @@
               ? {t0: w.series_window.start, t1: w.series_window.end} : {};
             return `<div style="padding:6px 0;border-bottom:1px solid var(--border)">
               <div class="kw-row" style="display:flex;align-items:baseline;gap:6px">
-                <a href="#" onclick='pickTerm(${esc(JSON.stringify(x.term))});return false'>${kwLabelHtml(x, {inLink: true})}</a>${kwQidHtml(x)}
+                <a href="#" data-on-click='pickTerm(${esc(JSON.stringify(x.term))});return false'>${kwLabelHtml(x, {inLink: true})}</a>${kwQidHtml(x)}
                 <span class="muted" style="font-size:12px">${esc(growthFallback(x) || trendRateText(x, {short: true}))}</span>
-                <button class="ghost tiny" style="margin-inline-start:auto" onclick="enlargeTrend(${wi},${ti})" title="${esc(t("Enlarge the chart"))}" aria-label="${esc(t("Enlarge the chart"))}">⛶</button>
+                <button class="ghost tiny" style="margin-inline-start:auto" data-on-click="enlargeTrend(${wi},${ti})" title="${esc(t("Enlarge the chart"))}" aria-label="${esc(t("Enlarge the chart"))}">⛶</button>
               </div>${dashChartSvg(pts, "", axis)}</div>`;
           }).join("");
           const rest = terms.filter(x => !Array.isArray(x.series));
@@ -1866,7 +1866,7 @@
         }
         const dots = finite.map(p => `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="2.6" fill="${col}"><title>${esc(se.label)}: ${fmtNum(p.value)}</title></circle>`).join("");
         const lp = finite[finite.length - 1];
-        const lbl = `<text x="${(lp.x + 5).toFixed(1)}" y="${(lp.y + 3).toFixed(1)}" font-size="9" fill="var(--fg)" style="cursor:pointer" onclick='openAnalysisFor(${esc(JSON.stringify(se.label))});return false'>${esc(se.label)}</text>`;
+        const lbl = `<text x="${(lp.x + 5).toFixed(1)}" y="${(lp.y + 3).toFixed(1)}" font-size="9" fill="var(--fg)" style="cursor:pointer" data-on-click='openAnalysisFor(${esc(JSON.stringify(se.label))});return false'>${esc(se.label)}</text>`;
         return segs + dots + lbl;
       }).join("");
       const legend = `<div class="hint" style="margin-top:2px"><span style="color:var(--ok)">▲</span> ${esc(t("rising"))} · <span style="color:var(--err)">▼</span> ${esc(t("falling"))}`
@@ -1957,7 +1957,7 @@
         const gr = `<line x1="${padL}" x2="${w - padR}" y1="${Y(maxV).toFixed(1)}" y2="${Y(maxV).toFixed(1)}" stroke="var(--border)" stroke-dasharray="2 3" stroke-width="0.5"/>`
           + `<line x1="${padL}" x2="${w - padR}" y1="${baseY.toFixed(1)}" y2="${baseY.toFixed(1)}" stroke="var(--border)" stroke-width="0.5"/>`;
         const svg = `<svg viewBox="0 0 ${w} ${h}" width="100%" role="img" aria-label="${esc((p.label || "") + " — n=" + nReal + (nReal < n ? " (" + (n - nReal) + " gaps)" : ""))}" style="display:block">${gr}${body}</svg>`;
-        const oc = p.term != null ? `onclick='openAnalysisFor(${esc(JSON.stringify(p.term))});return false'` : "";
+        const oc = p.term != null ? `data-on-click='openAnalysisFor(${esc(JSON.stringify(p.term))});return false'` : "";
         const head = `<div style="display:flex;justify-content:space-between;align-items:baseline;gap:4px">`
           + `<a href="#" ${oc} title="${esc(t("Open this keyword's own analysis window"))}" style="font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(p.label || "")}</a>`
           + `<span class="muted" style="font-size:10px"${nReal < n ? ` title="${esc(t("Periods with no data are drawn as gaps, never as zero."))}"` : ""}>n=${nReal}${nReal < n ? " · " + (n - nReal) + "\u00a0◦" : ""}</span></div>`;

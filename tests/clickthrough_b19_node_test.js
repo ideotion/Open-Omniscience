@@ -32,7 +32,7 @@ const CORE = read("app-core.js");
 const AI = read("app-ai-tools.js");
 const MARKETS = read("app-markets.js");
 const READER = read("reader.js");
-const TM = read("taskmanager.html");
+const TM = require("./app_source.js").pageSource("taskmanager.html");
 const TIMELINE = require(path.join(STATIC, "ootimeline.js"));
 const LOCALE = (code) => JSON.parse(fs.readFileSync(path.join(STATIC, "locales", code + ".json"), "utf-8"));
 const EN = LOCALE("en");

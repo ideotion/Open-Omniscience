@@ -28,7 +28,7 @@ def test_recent_panel_exists_and_starts_hidden():
     assert m, "the Most-recent panel must exist"
     assert "hidden" in m.group(0), "it starts hidden (Home is never blank-and-silent)"
     assert 'id="home-recent-tag"' in _HTML and 'id="home-recent"' in _HTML
-    assert 'onchange="loadHomeRecentList(this.value)"' in _HTML
+    assert 'data-on-change="loadHomeRecentList(this.value)"' in _HTML
 
 
 def test_wired_into_loadHome_and_trend_strip_kept():

@@ -409,9 +409,9 @@ const { _anParseLens, _anApplyLens, _anLensSeed, _anApplyLensSeed, _anWriteLensT
     terms: [{term: "covid", normalized: "covid", expanded: true, concept: "covid-19",
              by_language: {en: ["coronavirus"]}}]};
   const html = _crossLangNotice(CAPPED, false, false);
-  assert.ok(/onclick="_anSetCap\(false\)"/.test(html), "a capped search offers no way to lift it");
+  assert.ok(/data-on-click="_anSetCap\(false\)"/.test(html), "a capped search offers no way to lift it");
   assert.ok(html.includes("most-mentioned forms"), "the cap is applied and never mentioned");
-  assert.ok(!/onclick="_anSetCap\(true\)"/.test(html), "both cap sentences were drawn at once");
+  assert.ok(!/data-on-click="_anSetCap\(true\)"/.test(html), "both cap sentences were drawn at once");
 }
 
 // 17. With the cap OFF the payload says nothing, so the way BACK has to come from the
@@ -420,9 +420,9 @@ const { _anParseLens, _anApplyLens, _anLensSeed, _anApplyLensSeed, _anWriteLensT
 //     control on screen and no way to learn the lens was still set.
 {
   const html = _crossLangNotice(null, false, true);
-  assert.ok(/onclick="_anSetCap\(true\)"/.test(html),
+  assert.ok(/data-on-click="_anSetCap\(true\)"/.test(html),
     "with the cap off there is no way to restore it");
-  assert.ok(!/onclick="_anSetCap\(false\)"/.test(html), "both cap sentences were drawn at once");
+  assert.ok(!/data-on-click="_anSetCap\(false\)"/.test(html), "both cap sentences were drawn at once");
   // and the default state still renders NOTHING, so the rail stays worth reading.
   assert.strictEqual(_crossLangNotice(null, false, false), "", "a plain search must be silent");
 }

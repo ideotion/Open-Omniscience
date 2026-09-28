@@ -235,7 +235,7 @@ def test_the_concept_view_says_it_shows_every_language():
     body = function_body(app_js(), "renderAnMindmap")
     assert_present(body, f't("{key}")')
     assert_present(body, 'const literal = _anExpand ? ""')
-    assert_present(body, 'onclick="_anSetExpand(true)"')
+    assert_present(body, 'data-on-click="_anSetExpand(true)"')
     _keyed_everywhere(key)
 
 
