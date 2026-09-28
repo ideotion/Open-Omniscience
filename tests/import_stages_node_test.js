@@ -667,6 +667,13 @@ test("walk: a run that saved part of its backups names the ones to import again"
   assert(text("ux-imp-stages").indexOf("nothing to do") === -1, "one backup did land: " + text("ux-imp-stages"));
 });
 
+test("walk: a STOPPED run that saved nothing names no cause to fix", () => {
+  const st = { state: "stopped", items: [{ kind: "corpus", state: "stopped" }, { kind: "corpus", state: "cancelled" }] };
+  const out = mod._uxImStatements(st, RX_CLEAN, t, tf);
+  assert(out[0].text.indexOf("Nothing from this import reached your corpus") === 0, out[0].text);
+  assert(out[1].text === "Keep the import files to import them again.", out[1].text);
+});
+
 test("walk: a status with no run state is never read as a finished run", () => {
   // The in-flight fixtures above carry no `state`; neither may the new branch.
   const out = mod._uxImStatements({ items: [{ kind: "corpus", state: "error" }] }, RX_CLEAN, t, tf);

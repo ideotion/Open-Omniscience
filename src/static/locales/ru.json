@@ -6237,5 +6237,6 @@
   "nothing to do — no backup was imported": "делать нечего — ни одна резервная копия не импортирована",
   "Could not open this backup: the passphrase is wrong, or its files have been altered.": "Не удалось открыть эту резервную копию: неверная парольная фраза, или её файлы были изменены.",
   "Your corpus grew by {articles} articles.": "Ваш корпус пополнился на {articles} статей.",
-  "Your corpus grew by {articles} articles from {sources} new sources.": "Ваш корпус пополнился на {articles} статей из {sources} новых источников."
+  "Your corpus grew by {articles} articles from {sources} new sources.": "Ваш корпус пополнился на {articles} статей из {sources} новых источников.",
+  "Keep the import files to import them again.": "Сохраните файлы импорта, чтобы импортировать их снова."
 }

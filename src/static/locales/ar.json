@@ -6237,5 +6237,6 @@
   "nothing to do — no backup was imported": "لا شيء للقيام به — لم تُستورد أي نسخة احتياطية",
   "Could not open this backup: the passphrase is wrong, or its files have been altered.": "تعذّر فتح هذه النسخة الاحتياطية: عبارة المرور خاطئة، أو أن ملفاتها قد عُدِّلت.",
   "Your corpus grew by {articles} articles.": "نمت مجموعتك بمقدار {articles} مقالة.",
-  "Your corpus grew by {articles} articles from {sources} new sources.": "نمت مجموعتك بمقدار {articles} مقالة من {sources} مصادر جديدة."
+  "Your corpus grew by {articles} articles from {sources} new sources.": "نمت مجموعتك بمقدار {articles} مقالة من {sources} مصادر جديدة.",
+  "Keep the import files to import them again.": "احتفظ بملفات الاستيراد لتستوردها من جديد."
 }

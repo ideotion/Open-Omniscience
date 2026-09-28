@@ -6237,5 +6237,6 @@
   "nothing to do — no backup was imported": "करने को कुछ नहीं — कोई बैकअप आयात नहीं हुआ",
   "Could not open this backup: the passphrase is wrong, or its files have been altered.": "यह बैकअप खोला नहीं जा सका: पासफ़्रेज़ गलत है, या इसकी फ़ाइलें बदली गई हैं।",
   "Your corpus grew by {articles} articles.": "आपका कॉर्पस {articles} लेखों से बढ़ा।",
-  "Your corpus grew by {articles} articles from {sources} new sources.": "आपका कॉर्पस {sources} नए स्रोतों से {articles} लेखों से बढ़ा।"
+  "Your corpus grew by {articles} articles from {sources} new sources.": "आपका कॉर्पस {sources} नए स्रोतों से {articles} लेखों से बढ़ा।",
+  "Keep the import files to import them again.": "आयात फ़ाइलें रखें ताकि उन्हें फिर से आयात कर सकें।"
 }

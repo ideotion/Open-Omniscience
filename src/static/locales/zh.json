@@ -6237,5 +6237,6 @@
   "nothing to do — no backup was imported": "无需处理——没有导入任何备份",
   "Could not open this backup: the passphrase is wrong, or its files have been altered.": "无法打开此备份：密码短语错误，或其文件已被改动。",
   "Your corpus grew by {articles} articles.": "你的语料库新增了 {articles} 篇文章。",
-  "Your corpus grew by {articles} articles from {sources} new sources.": "你的语料库新增了 {articles} 篇文章，来自 {sources} 个新来源。"
+  "Your corpus grew by {articles} articles from {sources} new sources.": "你的语料库新增了 {articles} 篇文章，来自 {sources} 个新来源。",
+  "Keep the import files to import them again.": "请保留导入文件，以便再次导入。"
 }

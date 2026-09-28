@@ -6237,5 +6237,6 @@
   "nothing to do — no backup was imported": "করার কিছু নেই — কোনো ব্যাকআপ আমদানি হয়নি",
   "Could not open this backup: the passphrase is wrong, or its files have been altered.": "এই ব্যাকআপটি খোলা যায়নি: পাসফ্রেজ ভুল, অথবা এর ফাইলগুলি পরিবর্তিত হয়েছে।",
   "Your corpus grew by {articles} articles.": "আপনার কর্পাস {articles} টি নিবন্ধ যোগ হয়ে বেড়েছে।",
-  "Your corpus grew by {articles} articles from {sources} new sources.": "আপনার কর্পাস {sources} টি নতুন উৎস থেকে {articles} টি নিবন্ধ যোগ হয়ে বেড়েছে।"
+  "Your corpus grew by {articles} articles from {sources} new sources.": "আপনার কর্পাস {sources} টি নতুন উৎস থেকে {articles} টি নিবন্ধ যোগ হয়ে বেড়েছে।",
+  "Keep the import files to import them again.": "আমদানি ফাইলগুলি রাখুন, যাতে সেগুলি আবার আমদানি করা যায়।"
 }

@@ -6237,5 +6237,6 @@
   "nothing to do — no backup was imported": "処理なし — インポートされたバックアップはありません",
   "Could not open this backup: the passphrase is wrong, or its files have been altered.": "このバックアップを開けませんでした。パスフレーズが間違っているか、ファイルが改変されています。",
   "Your corpus grew by {articles} articles.": "コーパスの記事が{articles}件増えました。",
-  "Your corpus grew by {articles} articles from {sources} new sources.": "コーパスは{sources}件の新しい情報源から{articles}件の記事が増えました。"
+  "Your corpus grew by {articles} articles from {sources} new sources.": "コーパスは{sources}件の新しい情報源から{articles}件の記事が増えました。",
+  "Keep the import files to import them again.": "もう一度インポートできるよう、インポート用ファイルは保持してください。"
 }

@@ -2200,7 +2200,10 @@
       if (_UX_IM_RUN_ENDED[st.state] && restores.length > 0 && !saved) {
         if (!restores.some(done)) {
           out.push({ ok: false, text: t("Nothing from this import reached your corpus — it is exactly as it was before.") });
-          out.push({ ok: false, text: t("Keep the import files: once the cause is fixed, import them again.") });
+          // A Stop has no cause to fix: it was the operator's own choice.
+          out.push({ ok: false, text: st.state === "stopped"
+            ? t("Keep the import files to import them again.")
+            : t("Keep the import files: once the cause is fixed, import them again.") });
           return out;
         }
         out.push({ ok: false, text: t("Keep the import files of the backups that did not finish — they have to be imported again.") });

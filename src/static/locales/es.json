@@ -6237,5 +6237,6 @@
   "nothing to do — no backup was imported": "nada que hacer: no se importó ninguna copia",
   "Could not open this backup: the passphrase is wrong, or its files have been altered.": "No se pudo abrir esta copia: la frase de contraseña es incorrecta o sus archivos se han alterado.",
   "Your corpus grew by {articles} articles.": "Tu corpus creció en {articles} artículos.",
-  "Your corpus grew by {articles} articles from {sources} new sources.": "Tu corpus creció en {articles} artículos de {sources} nuevas fuentes."
+  "Your corpus grew by {articles} articles from {sources} new sources.": "Tu corpus creció en {articles} artículos de {sources} nuevas fuentes.",
+  "Keep the import files to import them again.": "Conserve los archivos de importación para volver a importarlos."
 }

@@ -6237,5 +6237,6 @@
   "nothing to do — no backup was imported": "tidak ada yang perlu dikerjakan — tidak ada cadangan yang diimpor",
   "Could not open this backup: the passphrase is wrong, or its files have been altered.": "Cadangan ini tidak dapat dibuka: frasa sandinya salah, atau berkasnya telah diubah.",
   "Your corpus grew by {articles} articles.": "Korpus Anda bertambah {articles} artikel.",
-  "Your corpus grew by {articles} articles from {sources} new sources.": "Korpus Anda bertambah {articles} artikel dari {sources} sumber baru."
+  "Your corpus grew by {articles} articles from {sources} new sources.": "Korpus Anda bertambah {articles} artikel dari {sources} sumber baru.",
+  "Keep the import files to import them again.": "Simpan berkas impor untuk mengimpornya lagi."
 }
