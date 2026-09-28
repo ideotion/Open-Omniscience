@@ -92,8 +92,9 @@ anything — the sheet's anchors were verified at `main`@`bebcef4` on 2026-09-12
   storage cap (`src/wiki/tiers.py` says why "daily" reads as that cap), and WARM stops at a PROPOSED 90 % of it
   so the pages the lane follows keep the rest; (2) the growth line is Settings → Storage's existing measured
   per-lane rate (Q1006), which WARM's bytes feed, and no second one was built; (3) "indexed" is `R52`: the
-  texts stay in the lane with a search index of their own, and that index, its hits in the one search box
-  and «Add to corpus» per hit are the next PR, not this one. Where WARM runs was put on a decision card; it
+  texts stay in the lane with a search index of their own: the index, its hits in the command palette
+  and the Search tab, and «Add to corpus» per hit are PR #1202 (`src/wiki/lane_search.py`,
+  `src/api/wiki_lane_search.py`, `openLaneVersion`, `searchLaneHits`). Where WARM runs was put on a decision card; it
   is built at the recommended answer, a switch that is off by default.
 
 ### S2 — The `allpages` walker (Q701 ⛔ = c, the Q701 note)

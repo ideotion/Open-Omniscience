@@ -432,6 +432,11 @@
       <div id="bulk-llm-search" class="bulk-llm" style="display:none;margin-top:10px"></div>
       <div id="bulk-queue-search" class="bulk-queue" style="margin-top:8px"></div>
       <div style="overflow:auto; margin-top:10px;"><table id="results"></table></div>
+      <!-- R52 («In the lane», 2026-09-28): the Wikipedia texts THIS machine holds, found by
+           the same words and listed BESIDE the corpus's results, never ranked into them.
+           What was searched is said with every answer. Composed with t() in app-living.js,
+           so the walker leaves it alone and a language switch redraws it from cache. -->
+      <div id="search-lane" class="lane-search" data-i18n-dyn hidden></div>
     </section>
     </div>
 
@@ -3578,6 +3583,24 @@
     <div id="lp-out" style="margin-top:10px"></div>
     <div style="margin-top:12px;display:flex;justify-content:flex-end">
       <button class="secondary" data-on-click="ooCloseDialog('link-preview')">Close</button>
+    </div>
+  </dialog>
+
+  <!-- R52: one Wikipedia version the lane holds, read before it is added to the corpus.
+       Opened from a lane hit in the command palette. Its lines are composed with t()/tf()
+       at render time (data-i18n-dyn), and a language switch redraws them from the payload
+       it holds (repaintLaneVersionFromCache); the title and the text are data. No inline
+       handlers: _laneVersionWire binds the two buttons once. -->
+  <dialog id="lane-version" style="width:min(760px,94vw);padding:18px">
+    <h3 id="lv-title" dir="auto" data-i18n-dyn style="margin:0 0 4px"></h3>
+    <div id="lv-meta" class="muted small" data-i18n-dyn></div>
+    <div id="lv-notes" data-i18n-dyn style="margin-top:6px;display:flex;flex-direction:column;gap:4px"></div>
+    <pre id="lv-text" dir="auto" style="margin:8px 0 0;max-height:46vh;overflow:auto;white-space:pre-wrap;word-break:break-word;font-family:inherit;font-size:13px;border:1px solid var(--line);border-radius:8px;padding:10px"></pre>
+    <div id="lv-out" data-i18n-dyn style="margin-top:8px"></div>
+    <div id="lv-result" data-i18n-dyn aria-live="polite" style="margin-top:8px"></div>
+    <div style="margin-top:12px;display:flex;gap:8px;justify-content:flex-end">
+      <button class="secondary" type="button" id="lv-close">Close</button>
+      <button type="button" id="lv-add">Add to corpus</button>
     </div>
   </dialog>
 

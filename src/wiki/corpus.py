@@ -105,6 +105,50 @@ def wiki_page_ref(canonical_url: str) -> tuple[str, str] | None:
     return wiki, title
 
 
+def wiki_version_url(wiki: str, title: str | None, revid: int) -> str:
+    """The address of ONE revision of a page on its wiki (``R52``'s «Add to corpus»).
+
+    NEVER the page's canonical ``/wiki/`` address. That one keys the corpus article of the
+    page's NEWEST text (``upsert_wiki_corpus_article``), so an older version added under it
+    would overwrite the page's current text, or be overwritten by the next sync. A version
+    keyed on its own ``oldid`` is a second article beside the current one, which is what
+    adding a version means. ``quote`` escapes ``&``, ``=``, ``?`` and ``#``, so the title
+    cannot end the query early. Without a title it is the bare ``oldid`` form, which names
+    the same revision; a corpus article is never keyed on that form (see the caller).
+    """
+    w = (wiki or "en").strip().lower()
+    rev = int(revid)
+    if not title:
+        return f"https://{w}.wikipedia.org/w/index.php?oldid={rev}"
+    return f"https://{w}.wikipedia.org/w/index.php?title={quote(title.replace(' ', '_'))}&oldid={rev}"
+
+
+#: Exactly the titled shape ``wiki_version_url`` builds.
+_WIKI_VERSION_URL_RE = re.compile(
+    r"^https://([a-z0-9-]+)\.wikipedia\.org/w/index\.php\?title=([^&#]+)&oldid=([1-9][0-9]*)$"
+)
+
+
+def wiki_version_ref(url: str) -> tuple[str, str, int] | None:
+    """The (wiki, title, revid) a titled version URL was built FROM, or ``None``.
+
+    The exact inverse of :func:`wiki_version_url`, verified BY ROUND TRIP for the reason
+    :func:`wiki_page_ref` gives: re-minting the URL from the candidate and requiring it back
+    byte-for-byte accepts exactly what this app mints and nothing else. The title is a
+    lookup key, never a path.
+    """
+    m = _WIKI_VERSION_URL_RE.match((url or "").strip())
+    if not m:
+        return None
+    wiki, raw, rev = m.group(1), m.group(2), int(m.group(3))
+    title = unquote(raw).replace("_", " ")
+    if not title.strip():
+        return None
+    if wiki_version_url(wiki, title, rev) != url.strip():
+        return None
+    return wiki, title, rev
+
+
 #: The three DELIMITED BLOCKS this strip removes. They are NOT written as
 #: ``OPEN.*?CLOSE`` regexes, and that is the whole point: an opener with no closer
 #: makes the lazy ``.*?`` scan to end-of-document, fail, and RESTART from the next
@@ -372,6 +416,90 @@ def upsert_wiki_corpus_article(
         "status": "created" if created else "updated",
         "article_id": art.id,
         "revid": revid,
+        "source_revision": art.source_revision,
+        "mentions": tally.get("mentions", 0),
+    }
+
+
+def add_wiki_version_article(
+    session: Session,
+    *,
+    wiki: str,
+    title: str,
+    plain: str,
+    revid: int,
+    published_at=None,
+    extractor=None,
+) -> dict:
+    """Add ONE held version of a Wikipedia page to the corpus as its own article.
+
+    ``R52``'s «Add to corpus»: a term found in a text the Wikipedia lane holds -- a changed
+    page's latest text, or an older version of a page -- becomes corpus material for analysis
+    only when the operator asks, and then as THAT version: keyed on the version's own address
+    (:func:`wiki_version_url`), its ``source_revision`` the revid, its date the date the wiki
+    gave that revision (``None`` when the lane never learned it, rather than today's date,
+    which would place an old text in the present). It goes through the ONE ``index_article``
+    hook like every other article.
+
+    NOTHING IS STORED TWICE. An article already keyed on this version answers ``exists``. A
+    version whose plain text is byte-identical to an article the corpus already holds -- often
+    the page's own current article, when the edit changed only markup the strip drops --
+    answers ``same_text`` with THAT article (``Article.hash`` is unique, and a second row for
+    the same words would count them twice in every figure).
+    """
+    from sqlalchemy.exc import IntegrityError
+
+    w = (wiki or "en").strip().lower()
+    rev = int(revid)
+    if not plain or not plain.strip():
+        return {"status": "skipped-empty-after-strip", "title": title, "revid": rev}
+    url = wiki_version_url(w, title, rev)
+    existing = session.query(Article.id, Article.title).filter(Article.canonical_url == url).first()
+    if existing is not None:
+        return {"status": "exists", "article_id": existing[0], "title": existing[1], "revid": rev}
+    content_hash = hashlib.sha256(plain.encode()).hexdigest()
+    same = session.query(Article.id, Article.title).filter(Article.hash == content_hash).first()
+    if same is not None:
+        return {"status": "same_text", "article_id": same[0], "title": same[1], "revid": rev}
+    src = ensure_wiki_source(session, w)
+    art = Article(
+        url=url,
+        canonical_url=url,
+        source_id=src.id,
+        title=title,
+        content=plain,
+        language=(w if w in _KNOWN_LANGS else None),
+        hash=content_hash,
+        published_at=published_at,
+        source_revision=str(rev),
+    )
+    session.add(art)
+    try:
+        session.commit()
+    except IntegrityError:
+        # Two clicks at once: the other one stored it first. Name what is there.
+        session.rollback()
+        again = (
+            session.query(Article.id, Article.title)
+            .filter((Article.canonical_url == url) | (Article.hash == content_hash))
+            .first()
+        )
+        if again is None:
+            raise
+        return {"status": "exists", "article_id": again[0], "title": again[1], "revid": rev}
+
+    if extractor is None:
+        from src.analytics.extract import BaselineExtractor
+
+        extractor = BaselineExtractor()
+    from src.analytics.store import index_article
+
+    tally = index_article(session, art, extractor=extractor)
+    return {
+        "status": "created",
+        "article_id": art.id,
+        "title": title,
+        "revid": rev,
         "source_revision": art.source_revision,
         "mentions": tally.get("mentions", 0),
     }
