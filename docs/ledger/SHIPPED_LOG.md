@@ -10215,6 +10215,33 @@ compound of 478 and the label of 16. That is recorded as a deliberate omission i
 `OPEN_QUEUE.md`, dated by this PR. Lessons: `LESSONS.md`, the two entries dated by this PR
 after the counter ones.
 
+## 2026-09-28 — A restore's custody import no longer loads whole chains into memory (PR #1193)
+
+Found from the user's diagnostics bundle of 2026-09-28 04:01 UTC (Qubes VM, 7.2 GB RAM, 1 GB
+swap). Two imports of about one million articles each ended the same way: hours of merging
+finished, `verify` passed, `side_files_and_custody` began, and the process died there before
+the swap — 12:38 UTC run at 6.0 GB RSS with 59 MB available after 18 minutes in the stage, the
+21:40 UTC run SIGKILLed 48 s into it (RSS 2.4 → 5.6 GB, +18 M Python blocks). Every thread
+snapshot in that window was `merge_custody` (the last one inside `json.loads` in
+`_verify_chain_rows`). The live `custody_log.db` on that instance was 5.3 GB.
+
+**Cause.** `merge_custody` `fetchall()`-ed each chain of the staged custody file (the origin's
+own chain and every chain it had itself imported), then built a list of parsed `CustodyEntry`
+objects beside the tuples. Custody grows by one entry per ingested article and every heir
+corpus carries its ancestors' chains, so on a large backup that is gigabytes held twice.
+
+**Fix.** Two passes per chain, each reading `_CUSTODY_FETCH_ROWS` (5,000) rows at a time: the
+first verifies (the verdict is stored on every row, so it must be known before the first
+insert), the second inserts with `executemany`. `verify_entries` accepts any iterable and a
+`max_issues` bound (the first 50 issues, then a count), so a chain broken near its start cannot
+build an issue list as long as itself; `ok` still counts every issue. Rows, verdicts, notes and
+the duplicate count are unchanged. Measured with `tracemalloc` on a 20,000-entry chain of ~1 KB
+rows: 67 MB peak before, under 8 MB after (the test's bound).
+
+**Not changed:** the per-entry signature verification is still CPU-heavy (the 19:35 UTC import
+spent about 45 minutes in this stage); `CustodyLog.verify()` on the LOCAL chain still loads it
+whole via `all_entries()`. Neither is what killed these imports.
+
 ## 2026-09-28 — A crash report keeps the last C-heap reading (PR #1194)
 
 PR #1190 made the report say what the memory was made of at the session's RSS peak, including
