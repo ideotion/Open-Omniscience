@@ -25,6 +25,7 @@ from pathlib import Path
 import pytest
 
 from src.monitoring import activity_ledger as al
+from tests.js_source_helper import function_body, object_literal
 
 _ROOT = Path(__file__).resolve().parent.parent
 _RUNNER = _ROOT / "src" / "scheduler" / "runner.py"
@@ -350,7 +351,7 @@ def test_every_ledger_sentence_is_keyed_x12(key):
 
 def test_the_window_names_every_category_and_is_keyed_x12():
     js = (_ROOT / "src" / "static" / "taskmanager.js").read_text(encoding="utf-8")
-    block = js[js.index("var LEDGER_CATEGORY = {"): js.index("};", js.index("var LEDGER_CATEGORY = {"))]
+    block = object_literal(js, "LEDGER_CATEGORY")
     labels = dict(re.findall(r'"([a-z-]+)":\s*"([^"]+)"', block))
     assert set(labels) == set(al.CATEGORIES)
     for code, d in _locales().items():
@@ -365,7 +366,7 @@ def test_the_ledger_lens_lives_in_the_existing_task_manager():
     html = (_ROOT / "src" / "static" / "taskmanager.html").read_text(encoding="utf-8")
     js = (_ROOT / "src" / "static" / "taskmanager.js").read_text(encoding="utf-8")
     assert 'data-panel="ledger" role="tab" data-i18n>Ledger' in html and 'id="p-ledger"' in html
-    body = js[js.index("async function renderLedger("): js.index("// ---- the persistent summary strip")]
+    body = function_body(js, "renderLedger")
     assert "/api/jobs/ledger" in body
     for label in ("Why", "Touched", "Budget", "Caveat", "Undo"):
         assert f'row("{label}"' in body, f"the {label} field is not drawn"

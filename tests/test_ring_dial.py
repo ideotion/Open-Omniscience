@@ -19,6 +19,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from tests.js_source_helper import function_body, object_literal
+
 _STATIC = Path(__file__).resolve().parent.parent / "src" / "static"
 
 
@@ -27,8 +29,7 @@ def _read(name: str) -> str:
 
 
 def _fn(src: str, name: str) -> str:
-    start = src.index(f"function {name}(")
-    return src[start: src.index("\n    }\n", start)]
+    return function_body(src, name)
 
 
 def test_the_dial_sits_in_settings_general_with_three_depths():
@@ -43,7 +44,7 @@ def test_an_install_that_never_chose_is_at_full():
     shell = _read("app-shell.js")
     body = _fn(shell, "uiDepth")
     assert 'return DEPTHS.includes(d) ? d : "full";' in body
-    assert "depth" not in shell[shell.index("const UI_DEFAULTS"): shell.index("\n", shell.index("const UI_DEFAULTS"))], (
+    assert "depth" not in object_literal(shell, "UI_DEFAULTS"), (
         "a default depth in UI_DEFAULTS would give every existing install that depth on upgrade")
     assert 'r.setAttribute("data-depth", uiDepth(ui));' in _fn(shell, "applyUi")
 
