@@ -18,12 +18,11 @@ from datetime import datetime, timedelta
 
 import pytest
 from fastapi.testclient import TestClient
-
-from src.api.ratelimit import limiter
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.api.main import app
+from src.api.ratelimit import limiter
 from src.database.models import Article, ArticleMentionedDate, Base, Keyword, KeywordMention, Source
 from src.database.session import get_db
 
