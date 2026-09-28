@@ -55,7 +55,7 @@ const HELPERS = [
 ];
 const LIVING = [
   "livingWhen", "livingSigned", "livingFactHtml", "livingGroupsHtml", "_livingUnmeasured",
-  "livingStorageGroup", "_livingCount", "livingWalkGroup", "livingWikiGroups", "livingLawGroups",
+  "livingStorageGroup", "_livingCount", "livingWalkGroup", "livingWarmGroup", "livingWikiGroups", "livingLawGroups",
   "livingMapGroups", "livingGroupsFor",
   "livingDiffHtml", "livingStreamRowsHtml", "livingLawRowsHtml", "livingMapRowsHtml",
 ];
@@ -70,6 +70,8 @@ const src =
   extractConst("_LIVING_MAP_STATE") + "\n" +
   extractConst("_LIVING_WALK_STATE") + "\n" +
   extractConst("_LIVING_WALK_WHY") + "\n" +
+  extractConst("_LIVING_WARM_STATE") + "\n" +
+  extractConst("_LIVING_WARM_WHY") + "\n" +
   extractConst("_LIVING_TRANSPORT") + "\n" +
   "var window = {};\n" +
   // The Q302 display helpers are STUBBED to mark what passed through them: their own
@@ -323,8 +325,8 @@ const WIKI = {
 // --- 10. the page walk (Q701 = c): "N of M", never a percentage; absence is a word ---- //
 {
   const titles = R.livingWikiGroups(WIKI, t, tf).map((g) => g.title);
-  assert.deepStrictEqual(titles, ["Live stream", "Page walk", "Pages you track", "Storage"],
-    "the walk group is not where the stream's reader expects it");
+  assert.deepStrictEqual(titles, ["Live stream", "Other changed pages", "Page walk", "Pages you track", "Storage"],
+    "Q707's order: the followed pages, the other changed pages, then the walk's tail");
   // Off is the operator's switch: the state says so and names where it is set.
   const off = R.livingWalkGroup({ walk: { enabled: false, state: "off", measured: false,
     reason_counts: "walk-never-run" } }, t, tf);
@@ -416,6 +418,97 @@ const WIKI = {
     "a walking walk drew a cause line it does not have");
   assert.ok(!visible(R._jobWhy({ kind: "wiki-walk", state: "paused", paused_by: "airplane" }, t)).includes("Paused by"),
     "the walk took a download's cause line: it is not a download");
+}
+
+// --- 12. the other changed pages (Q707's WARM tier): counts, and absence as a word --- //
+{
+  // No fetcher in this process, or an older server with no warm block: a word, never a zero.
+  for (const src of [{ warm: { state: "not_running", measured: false, reason_counts: "lane-never-run" } }, {}]) {
+    const g = R.livingWarmGroup(src, t, tf);
+    assert.strictEqual(g.title, "Other changed pages");
+    assert.strictEqual(g.facts.length, 1, "a WARM tier with nothing measured drew figures");
+    assert.strictEqual(g.facts[0].label, "State",
+      "the group's title was repeated as its first label (the defect the Chromium walk found)");
+    const html = R.livingGroupsHtml([g]);
+    assert.ok(visible(html).includes("Not running now") && !/\d/.test(visible(html)), html);
+    noJunk(html, "an unmeasured WARM tier");
+  }
+  // Rows not written yet: the state says so, and neither a count nor the share is drawn.
+  const fresh = R.livingWarmGroup({ warm: { state: "not_started", measured: false,
+    reason_counts: "warm-never-run", share: 0.9 } }, t, tf);
+  assert.strictEqual(fresh.facts[0].value, "Not started yet");
+  assert.strictEqual(fresh.facts.length, 1, "a WARM tier with no rows drew a count or its share");
+  // Paused, with its named reason in the reader's own label frame.
+  const share = R.livingWarmGroup({ warm: { state: "paused", reason: "warm_share_spent", measured: false } }, t, tf);
+  assert.strictEqual(share.facts[0].value,
+    "Paused: Changed pages have used their share of the storage budget; the rest is kept for the pages you follow.",
+    "a WARM tier stopped at its share must say the rest is kept for the followed pages");
+  const tor = R.livingWarmGroup({ warm: { state: "paused", reason: "transport_unavailable", measured: false } }, t, tf);
+  assert.ok(tor.facts[0].value.includes("never goes direct"),
+    "a WARM tier held by protected mode must say it waits rather than going direct");
+  // A state or a reason this build does not know is shown as sent, never mapped.
+  assert.strictEqual(R.livingWarmGroup({ warm: { state: "dozing" } }, t, tf).facts[0].value, "dozing");
+  assert.strictEqual(R.livingWarmGroup({ warm: { state: "paused", reason: "a_new_token" } }, t, tf).facts[0].value,
+    "Paused", "an unknown reason was drawn as if this build knew it");
+  const WARM = {
+    state: "fetching", reason: null, measured: true, share: 0.9, waiting: { ar: "service_busy" },
+    pages_with_text: 1500, due: 320, texts_fetched: 2100, promoted: 4, requests: 60, response_bytes: 2 * GIB,
+    editions: [
+      { edition: "fr", pages_with_text: 1500, due: 20, texts_fetched: 2100, requests: 58, response_bytes: 1, promoted: 4 },
+      { edition: "ar", pages_with_text: 0, due: 300, texts_fetched: 0, requests: 2, response_bytes: 1, promoted: 0 },
+    ],
+  };
+  const g = R.livingWarmGroup({ warm: WARM }, t, tf);
+  const html = R.livingGroupsHtml([g]);
+  const fact = (label) => {
+    const f = g.facts.find((x) => x.label === label);
+    assert.ok(f, `no "${label}" fact in ${g.facts.map((x) => x.label)}`);
+    return f;
+  };
+  assert.strictEqual(fact("State").value, "Fetching");
+  assert.strictEqual(fact("Pages with text").value, "1500");
+  assert.strictEqual(fact("Waiting for text").value, "320");
+  assert.strictEqual(fact("Texts fetched").value, "2100");
+  assert.strictEqual(fact("Now followed").value, "4");
+  assert.ok(fact("Now followed").hover.includes("the texts fetched before stay"),
+    "a page that became followed must say its earlier texts were kept");
+  assert.strictEqual(fact("Requests answered").value, "60");
+  assert.strictEqual(fact("Stops at").value, "90% of the budget");
+  assert.ok(fact("Stops at").hover.includes("proposed default, not a ruling"),
+    "the WARM share reads as ruled: it is a proposed default");
+  assert.strictEqual(fact("L3(fr)").value, "1500 with text · 20 to fetch");
+  assert.ok(fact("L3(fr)").hover.startsWith("NAME(fr): "),
+    "Q302/Q306: the code shows and the name in the UI language is the hover");
+  const ar = fact("L3(ar)");
+  assert.strictEqual(ar.value, "0 with text · 300 to fetch · waiting");
+  assert.ok(ar.hover.includes("The wiki asked clients to slow down.") && ar.hover.includes("doubles each time"),
+    "a waiting edition does not say why, or when it is asked again");
+  assert.ok(!R.livingWarmGroup({ warm: { ...WARM, share: undefined } }, t, tf).facts.some((f) => f.label === "Stops at"),
+    "an older server with no share drew one");
+  // Off is the operator's switch: the state says so and names where it is set.
+  const off = R.livingWarmGroup({ warm: { enabled: false, state: "off", measured: false,
+    reason_counts: "warm-never-run" } }, t, tf);
+  assert.strictEqual(off.facts.length, 1, "an off WARM tier that never fetched drew figures");
+  assert.strictEqual(off.facts[0].value, "Off");
+  assert.ok(off.facts[0].hover.includes("Settings → Wikipedia"), "an off WARM tier does not say where it is switched on");
+  // Switched off after it fetched: the texts it kept are still there, so they are still counted.
+  const offKept = R.livingWarmGroup({ warm: { ...WARM, enabled: false, state: "off" } }, t, tf);
+  assert.strictEqual(offKept.facts[0].value, "Off");
+  assert.strictEqual(offKept.facts.find((f) => f.label === "Pages with text").value, "1500",
+    "switching WARM off hid the texts it kept");
+  noJunk(html, "the measured WARM tier");
+  noVerdict(html, "the measured WARM tier");
+  // Every word but the language code goes through the translator.
+  const seen = new Set();
+  const tt = (x) => { seen.add(x); return "«" + x + "»"; };
+  const ttf = (x, v) => { seen.add(x); return tf(x, v); };
+  R.livingWarmGroup({ warm: WARM }, tt, ttf);
+  for (const label of ["Other changed pages", "State", "Fetching", "Pages with text", "Waiting for text",
+    "Texts fetched", "Now followed", "Requests answered", "Answers weighed", "Stops at", "{pct}% of the budget",
+    "{n} with text · {m} to fetch", "waiting", "The wiki asked clients to slow down.",
+    "It is asked again after a pause that doubles each time, up to an hour."]) {
+    assert.ok(seen.has(label), `"${label}" never reached the translator`);
+  }
 }
 
 console.log("living_sources_node_test: all checks passed");

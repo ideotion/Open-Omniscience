@@ -21,12 +21,11 @@ import sqlite3
 
 import pytest
 from fastapi.testclient import TestClient
-
-from src.api.ratelimit import limiter
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.api.main import app
+from src.api.ratelimit import limiter
 from src.database import fts
 from src.database.fts import SearchQueryError, build_match, parse_query
 from src.database.models import Article, Base, Source

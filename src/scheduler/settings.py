@@ -269,6 +269,12 @@ class SchedulerSettings:
     # happens to have the lane on. It runs only while the lane itself runs, through the
     # lane's own client, so it adds no host and no consent path of its own.
     wiki_walk_enabled: bool = False
+    # WARM'S OWN SWITCH (Q707's second tier; S05-06's S1), off by default for the walk's
+    # reason: WARM fetches the text of every page the stream reports changed and does not
+    # follow, until the lane file holds its share of the budget (``WARM_BUDGET_SHARE``), and
+    # an update must not start filling that on every machine that has the lane on. Like the
+    # walk it runs only while the lane runs, through the lane's own client.
+    wiki_warm_enabled: bool = False
 
     # COUNTRY-DATA ride-along (2026-07-24 field-feedback Session A §2, ruled: Governments-
     # tab figures should load automatically, not only via the manual "Load standard
@@ -727,6 +733,7 @@ def load_settings() -> SchedulerSettings:
             raw.get("wiki_lane_wizard_done"), d.wiki_lane_wizard_done
         ),
         wiki_walk_enabled=_coerce_bool(raw.get("wiki_walk_enabled"), d.wiki_walk_enabled),
+        wiki_warm_enabled=_coerce_bool(raw.get("wiki_warm_enabled"), d.wiki_warm_enabled),
         country_data_per_pass=_coerce_int(
             raw.get("country_data_per_pass"), d.country_data_per_pass, 0, 100
         ),
@@ -809,6 +816,10 @@ def save_settings(updates: dict) -> SchedulerSettings:
     if "wiki_walk_enabled" in updates and updates["wiki_walk_enabled"] is not None:
         current.wiki_walk_enabled = _coerce_bool(
             updates["wiki_walk_enabled"], current.wiki_walk_enabled
+        )
+    if "wiki_warm_enabled" in updates and updates["wiki_warm_enabled"] is not None:
+        current.wiki_warm_enabled = _coerce_bool(
+            updates["wiki_warm_enabled"], current.wiki_warm_enabled
         )
     if "crawl_supplement" in updates and updates["crawl_supplement"] is not None:
         current.crawl_supplement = _coerce_bool(

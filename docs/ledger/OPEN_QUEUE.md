@@ -34,6 +34,70 @@
   on needs no restart. What the ruling ADDED is the pin: `tests/test_wiki_walk.py` now fails if the default
   flips, or if a settings file written before the switch existed loads it as on. Whatever the switch says,
   the walk still never runs offline, never without the stream and never past the budget.
+- **WHERE WARM'S TEXTS LIVE — RULED 2026-09-28, «In the lane» (`R52`; answered on the decision card in the
+  project thread «Plan v0.5» at 13:20 UTC, the recommended option).** The question, as put: «Keep Wikipedia's WARM
+  page texts in the Wikipedia lane, or add them to your article corpus?» — over «In the corpus» (each changed page
+  becomes a Wikipedia article, about 100k a day by the answer sheet's estimate, outside what the storage budget can
+  cap) and «Lane, no index» (the texts serve diffs and analytics and become searchable only when a page turns HOT).
+  **The intent behind the answer, verbatim, in chat at 13:00 UTC:** «My intent is that the search becomes as unified
+  as possible, and when a user searches a term present in wikipedia articles (whether an article or the edit of an
+  article, or a previous version of an article), the user can incorporate that in its created corpus for analysis.
+  my guts tells me to go for B, but I'm not sure A, your recommendation, wouldn't give the same result, in that case
+  I'd follow your recommendation.» The thread answered that A gives that result ON TWO CONDITIONS, which are now
+  part of the ruling rather than a promise in chat: (1) the ONE search box (the omnibar and the Search tab) also
+  searches the lane's texts — the latest and previous text of every changed page (Q710), and the held versions of
+  the pages the stream follows — and shows those hits beside the corpus hits, marked as Wikipedia; (2) each such hit
+  offers «Add to corpus», which adds THAT version as an article, one hit at a time. B was not chosen because it
+  would break Q719 🔒 (a lane never bloats the corpus), flood the press counts, searches and the Home briefing, and
+  still find only each page's latest text. **Where it stands:** the WARM fetch keeps its texts in `wiki_warm_pages`
+  (`src/wiki/warm.py`), which is what the ruling asks of storage. The lane's own search index and «Add to corpus»
+  are built (PR #1202), and both conditions are met: the command palette lists the lane's hits under
+  «Wikipedia texts held on this machine» beside the corpus's groups, and the Search tab lists them in a section
+  below the corpus's results that first says what was searched (the texts the lane holds on this machine, per
+  edition, never Wikipedia itself; what still waits for the index; WARM's switch when off) — the line this entry
+  owed. Each hit opens THAT version, and «Add to corpus» adds it, one version per click, from the row or the window.
+  **OWED with it, and met by PR #1202:** say in the Search tab which texts the Wikipedia hits come from (which
+  instance's lane, which editions, how many pages hold a text), so a search with no Wikipedia hit is never read as
+  «Wikipedia does not say this».
+- **THE LANE SEARCH INDEX — WHAT IT DELIBERATELY DOES NOT DO (stated 2026-09-28 with it, not asked; `R52`'s
+  index, `src/wiki/lane_search.py`).** Eight choices a later session must not undo as oversights: (1) an OLDER
+  version is indexed by the lines the next held version no longer has, not in full — the rest of it is in the
+  newer version, already found, and a full copy per version would cost about the text's own size again (an
+  FTS5 index of 1.94 MB of prose measured 1.03 MB); the price is the caveat every hit list carries, that a query
+  whose words sit partly in kept lines and partly in removed ones finds neither version; (2) the index is built
+  ONLY in the lane runner's idle time -- by the lane's one writer, never at boot, never by a search and never by a
+  second thread -- so it runs only while the operator is online with the lane running, which is also the only
+  time new texts arrive; offline, the index stays as the last session left it, and each search says how many
+  texts still wait (`pending`); (3) «Add to corpus» takes ONE version
+  per request, never a set, as `R52` says; (4) the lane's hits are a labelled list BESIDE the corpus's, never
+  ranked into it — two BM25 scores from two indexes are not one scale; (5) a query reads with the corpus search's
+  grammar (S05-01: prefix, `NEAR` at the reader's own distance, `title:`), but its SQL field filters
+  (`source:`, `author:`, `url:`, `tag:`, `title:=`) and the Search tab's Source, Language and Time boxes describe
+  ARTICLES: they are dropped for these texts, named (`fields_not_applied`) and said on screen, never widened into
+  a search of every held text and never approximated (an edition is not an article language); (6) the
+  cross-language lens (R1) does not widen the lane search, which reads the words as typed; (7) exports, the
+  analysis window, synthesis and the bulk actions work on corpus articles only — «Add to corpus» is the bridge;
+  (8) the index holds the LANE's texts only: downloaded dumps keep their own index (the search box's Wikipedia
+  group reads it), and the revisions the old tracker stores for watched pages (`wiki_revisions.full_text` in the
+  corpus file, written by «Track now» in Settings → Wikipedia, `src/wiki/track.py`) are searched nowhere yet.
+  So the Search tab's line names the lane, never «every Wikipedia text on this machine». Bringing the tracked
+  revisions in needs a decision this index cannot make for itself: where their index lives (the corpus file,
+  or the lane, which since Q1020 = a is what holds watched pages' new versions), UNRULED.
+  A text that cannot be read is set aside (`failed_at`), counted from the queue's own rows and retried once per
+  lane start and on the page's next change, never silently dropped.
+- **WARM'S SWITCH: WHERE WARM RUNS — PENDING (asked 2026-09-28 13:22 UTC on a decision card in the project thread
+  «Plan v0.5»; built at the recommended option meanwhile).** The question, as put: «Fetch other changed pages'
+  texts (WARM) on every instance, or only where you switch it on?», options «Switch, off» (recommended: an update
+  should not start filling up to 90 % of a lane's budget, about 18 GB at the 20 GB default, on each instance
+  unasked, the walk's reason in `R51`), «Switch, on» and «No switch» (Q707 as it reads today: WARM wherever the
+  stream runs). **Built meanwhile:** `wiki_warm_enabled`, off by default, Settings → Wikipedia «Also fetch the text
+  of other changed pages»; off means no scan, no request and no row, and the scan's bookmark waits. The answer is
+  recorded as `R53`; «Switch, on» flips one default, «No switch» removes the box and its field.
+- **WARM'S SHARE OF THE BUDGET — A PROPOSED DEFAULT, NOT A RULING (stated 2026-09-28, not asked).** WARM stops
+  when the lane file holds `WARM_BUDGET_SHARE` = 0.9 of its storage budget, so the pages the lane follows (HOT)
+  keep the last tenth; without a share, a lower tier would fill the one cap Q707 gives the lane and HOT's texts
+  would stop first. S05-06 rules no number. Every surface that shows the pause says the share is a proposed
+  default, and the number is one constant in `src/wiki/warm.py`, so a ruling changes one line and its tests.
 - **THE 0.5 START, ANSWERED IN CHAT (2026-09-28 11:07 UTC; recorded the same turn).** The maintainer,
   verbatim, in the project thread «Plan v0.5»: «D1: Yes, start. v0.4.0 release is done. D2: a D3: a One
   question, I'm wondering about the long wikipedia walk, wouldn't it be better to do something and let it

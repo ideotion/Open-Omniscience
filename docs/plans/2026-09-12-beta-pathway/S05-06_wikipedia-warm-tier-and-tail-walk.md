@@ -84,6 +84,18 @@ anything — the sheet's anchors were verified at `main`@`bebcef4` on 2026-09-12
   wizard set; per-tier counts on the Living sources view; the budget surface's growth line computed from
   MEASURED bytes ("at your current rate this lane grows ~N GB/month"), never a projection without a rate.
 - **Acceptance:** the fixture edition of 0.4 row O ingests WARM pages up to the budget and stops, saying so.
+- **BUILT 2026-09-28 (PR #1200), off by default:** `src/wiki/warm.py` + three `wiki.db` tables in
+  `src/wiki/lane_models.py`, fed from the drain's own change log rather than a second listener; latest +
+  previous per page (Q710); the counters artifact's `warm` block and the Living sources «Other changed pages»
+  group; `tests/test_wiki_warm.py` (the fixture edition warmed with zero name resolutions; the stop at the
+  share, said by name). Read against this section: (1) "the per-edition daily budget" is the lane's one
+  storage cap (`src/wiki/tiers.py` says why "daily" reads as that cap), and WARM stops at a PROPOSED 90 % of it
+  so the pages the lane follows keep the rest; (2) the growth line is Settings → Storage's existing measured
+  per-lane rate (Q1006), which WARM's bytes feed, and no second one was built; (3) "indexed" is `R52`: the
+  texts stay in the lane with a search index of their own: the index, its hits in the command palette
+  and the Search tab, and «Add to corpus» per hit are PR #1202 (`src/wiki/lane_search.py`,
+  `src/api/wiki_lane_search.py`, `openLaneVersion`, `searchLaneHits`). Where WARM runs was put on a decision card; it
+  is built at the recommended answer, a switch that is off by default.
 
 ### S2 — The `allpages` walker (Q701 ⛔ = c, the Q701 note)
 - **What:** per edition, `allpages` batched 50 titles per request (the unit read from the sheet's

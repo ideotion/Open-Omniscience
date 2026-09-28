@@ -1,12 +1,12 @@
-"""The Wikipedia lane's own tables in ``wiki.db``: the ``allpages`` walk's page list and bookmark.
+"""The Wikipedia lane's own tables in ``wiki.db``: the ``allpages`` walk, WARM's texts, and their search.
 
 Open Omniscience - Global Intelligence Platform for Investigative Journalism
 Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 
 Q701 = c, verbatim: «Stream-forward plus a slow ``allpages`` walk for the tail, batched 50
 per request, serial, under the storage budget (Q707), coverage reported per edition.» The
-stream is ``versioned_*`` (0.4, S04-09). The walk is these three tables, and it is 0.5's
-row F (S05-06, S2 + S3).
+stream is ``versioned_*`` (0.4, S04-09). The walk is the three ``wiki_walk_*`` tables (0.5's
+row F, S05-06's S2 + S3), and Q707's WARM tier the three ``wiki_warm_*`` ones (S1).
 
 WHY THE WALK DOES NOT WRITE ``versioned_entities``. That table is the list of pages the
 lane FOLLOWS: ``src/wiki/hotset.py`` loads every entity on every drain as a HOT page id,
@@ -29,13 +29,24 @@ on restore. These rows ARE that history for the walk. The lane is not a backup m
 opt-in member, unbuilt), so the round trip waits on the lane riding, and the toggle
 (``src/backup/fetch_history.py``) applies when it does. Stated rather than implied.
 
-The three tables are three different kinds of thing when that day comes, by the rule
-``fetch_history.py`` already applies to the corpus. ``wiki_walk_cursors`` is fetch history
-in its exact sense -- state whose only purpose is to decide what to ask the server next --
-so it is what the trust toggle gates. ``wiki_walk_pages`` is CONTENT (the COLD tier's
-metadata), and untrusting a history must never delete content. ``wiki_walk_samples``
+The walk's three tables are three different kinds of thing when that day comes, by the
+rule ``fetch_history.py`` already applies to the corpus. ``wiki_walk_cursors`` is fetch
+history in its exact sense -- state whose only purpose is to decide what to ask the server
+next -- so it is what the trust toggle gates. ``wiki_walk_pages`` is CONTENT (the COLD
+tier's metadata), and untrusting a history must never delete content. ``wiki_walk_samples``
 measures THIS machine's transport, so it stays behind, for the reason ``last_checked_at``
 does: a foreign instance's rate would claim a measurement this machine never made.
+
+WARM's three follow the same rule. ``wiki_warm_pages`` is CONTENT (Q707's WARM texts,
+latest + previous per Q710). ``wiki_warm_editions`` counts what THIS machine fetched, and
+``wiki_warm_scan`` is a bookmark into this lane file's own change-row ids, which mean
+nothing in another file -- so both stay behind.
+
+The search index's three (``R52``, ``src/wiki/lane_search.py``) are DERIVED, all of them:
+``wiki_lane_docs`` says which stretch of which held text each index entry came from,
+``wiki_lane_index_queue`` what is waiting to be (re)indexed, and ``wiki_lane_index_state``
+the counts. Every one of them can be rebuilt from the texts above and the stream's own
+versions, so none needs to ride a backup, and a restore rebuilds rather than trusts them.
 """
 
 from __future__ import annotations
@@ -45,7 +56,7 @@ from datetime import UTC, datetime
 from sqlalchemy import BigInteger, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
-from src.versioned.models import LaneBase, LaneUTCDateTime
+from src.versioned.models import LaneBase, LaneCompressedText, LaneUTCDateTime
 
 
 def _utcnow() -> datetime:
@@ -172,6 +183,237 @@ class WikiWalkSample(LaneBase):
         return f"<WikiWalkSample({self.hour_start} {self.transport}: {self.pages} pages)>"
 
 
+class WikiWarmPage(LaneBase):
+    """One page of Q707's WARM tier: a changed page that is not HOT, and its text.
+
+    Q707 = a: «WARM = every other changed page (full text, indexed lazily under the daily
+    budget)». Q710 🔒 = a: «WARM: latest + previous». So a row holds AT MOST TWO texts --
+    the latest this machine fetched and the one before it -- and a third fetch moves the
+    latest into ``previous_*`` and drops the older. Two columns rather than a revisions
+    table because two is the ruling, and a table would need a pruning pass to enforce what
+    the shape here enforces by construction.
+
+    WHY NOT ``versioned_entities``. For the reason the walk gives (see this module's
+    docstring): every entity is a followed page, loaded on every drain as a HOT page id,
+    whose every change is fetched and indexed. A WARM page kept there would be HOT by
+    accident on its first fetch and forever after.
+
+    THE QUEUE IS ``due_since``. It is set when the stream reports a revision newer than the
+    stored text, cleared when a fetch stores one at least that new, and indexed with the
+    edition so the next batch -- the pages that have waited longest -- is one range scan.
+    ``wanted_revid`` is the newest revision the stream reported; ``wanted_at`` is when this
+    app recorded that change. Both are the stream's, never guessed.
+
+    A NORMAL ROWID TABLE, unlike ``wiki_walk_pages``: these rows carry whole wikitexts, and
+    ``WITHOUT ROWID`` suits rows that are small beside a page of the file, which these are
+    not.
+    """
+
+    __tablename__ = "wiki_warm_pages"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    edition: Mapped[str] = mapped_column(String(16), nullable=False)
+    page_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    #: The page's name as the latest answer gave it. NULL until the first fetch: the
+    #: stream's change rows carry the page id, and a title guessed from elsewhere would
+    #: be a second, unmeasured source for the same fact.
+    title: Mapped[str | None] = mapped_column(String(512))
+    wanted_revid: Mapped[int | None] = mapped_column(Integer)
+    wanted_at: Mapped[datetime] = mapped_column(LaneUTCDateTime, nullable=False, default=_utcnow)
+    due_since: Mapped[datetime | None] = mapped_column(LaneUTCDateTime)
+    #: The latest text this machine fetched (Q704: the WIKITEXT, the source of truth).
+    latest_revid: Mapped[int | None] = mapped_column(Integer)
+    latest_text: Mapped[str | None] = mapped_column(LaneCompressedText)
+    #: The UNCOMPRESSED length in UTF-8 bytes, as ``versioned_revisions.byte_size`` is --
+    #: never the disk figure, which only the lane file's own size can give.
+    latest_bytes: Mapped[int | None] = mapped_column(Integer)
+    latest_revised_at: Mapped[datetime | None] = mapped_column(LaneUTCDateTime)
+    fetched_at: Mapped[datetime | None] = mapped_column(LaneUTCDateTime)
+    previous_revid: Mapped[int | None] = mapped_column(Integer)
+    previous_text: Mapped[str | None] = mapped_column(LaneCompressedText)
+    previous_bytes: Mapped[int | None] = mapped_column(Integer)
+    previous_revised_at: Mapped[datetime | None] = mapped_column(LaneUTCDateTime)
+    #: Set when the stream reported a deletion, or the wiki answered that the page is
+    #: missing. The texts are KEPT (Q713: «a deleted page keeps its last text and is
+    #: marked deleted»); only the queue stops asking.
+    deleted_at: Mapped[datetime | None] = mapped_column(LaneUTCDateTime)
+    #: Set when the page became HOT (the drain now follows it). WARM stops asking for it
+    #: and KEEPS the texts it held: they are the page's history from BEFORE it was
+    #: followed, which HOT's own versions start after, so dropping them would lose the
+    #: one local copy of an older version.
+    promoted_at: Mapped[datetime | None] = mapped_column(LaneUTCDateTime)
+    #: Why the latest answer stored no text for a page that still exists, as a token:
+    #: ``not_an_article`` (moved out of the main namespace, or now a redirect -- Q703's
+    #: scope), ``text_hidden`` (the wiki suppressed the revision's text) or ``unreadable``
+    #: (a complete answer this app could not read as a text). NULL when the latest answer
+    #: stored text. The next change the stream reports queues the page again.
+    no_text_reason: Mapped[str | None] = mapped_column(String(32))
+
+    __table_args__ = (
+        UniqueConstraint("edition", "page_id", name="uq_wiki_warm_page"),
+        Index("ix_wiki_warm_due", "edition", "due_since"),
+    )
+
+    def __repr__(self) -> str:  # pragma: no cover - debugging aid
+        return f"<WikiWarmPage({self.edition}:{self.page_id} r{self.latest_revid})>"
+
+
+class WikiWarmEdition(LaneBase):
+    """One edition's WARM counts, written in the SAME transaction as the rows they count.
+
+    For the reason ``WikiWalkCursor`` keeps its own: a status read touches twelve rows
+    rather than counting a million, and a count written beside the rows it counts cannot
+    disagree with them. ``pages_with_text`` is pages holding at least one stored text;
+    ``texts_fetched`` counts every text stored, a page fetched three times counting three.
+    """
+
+    __tablename__ = "wiki_warm_editions"
+
+    edition: Mapped[str] = mapped_column(String(16), primary_key=True)
+    pages_with_text: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    texts_fetched: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    requests: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    #: BIG for the reason ``WikiWalkCursor.response_bytes`` is.
+    response_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    #: Pages that became HOT after WARM queued them. WARM stops asking for them and keeps
+    #: the texts it already held; HOT keeps every version from then on (Q710).
+    promoted: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    updated_at: Mapped[datetime] = mapped_column(LaneUTCDateTime, nullable=False, default=_utcnow)
+
+
+class WikiWarmScan(LaneBase):
+    """How far WARM has read the stream's own change log: ONE row, keyed ``"changes"``.
+
+    WARM is fed from ``versioned_changes`` -- the rows the drain already records for EVERY
+    edit of every page (Q708 = b) -- rather than from a second listener on the stream, so
+    there is one record of what the wiki reported and WARM reads it. The bookmark is the
+    last change row's id, which only grows.
+    """
+
+    __tablename__ = "wiki_warm_scan"
+
+    key: Mapped[str] = mapped_column(String(16), primary_key=True)
+    last_change_id: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    updated_at: Mapped[datetime] = mapped_column(LaneUTCDateTime, nullable=False, default=_utcnow)
+
+
+class WikiLaneDoc(LaneBase):
+    """One entry of the lane's own search index (``R52``): which held text it was read from.
+
+    R52 keeps WARM's texts in the lane and gives them a search index of their own, so a
+    term in a changed page's text, or in an older version of a page, is found from the one
+    search box and can be added to the corpus as THAT version. The index is a contentless
+    FTS5 table (``wiki_lane_fts``, created by ``src/wiki/lane_search.py``); its rowid is this
+    row's ``id``, and this row is how a hit is traced back to the text it came from.
+
+    ``extent`` says HOW MUCH of the version the entry holds, and it is the one thing a
+    reader of a hit must know:
+
+    * ``full`` -- the whole text. A WARM page's latest text, which the corpus does not hold;
+      and an older version whose next version's text this lane does not keep, since nothing
+      else would cover it.
+    * ``dropped`` -- only the lines this version has and the next held version
+      (``successor_revid``) no longer has: the lines an edit removed. Everything else in the
+      older version is in the newer one, where it is already searchable, and indexing it
+      again for every version would roughly double the lane's size for text that is
+      already found. So an older version is found by what a later edit took out of it.
+
+    ``source`` is ``warm`` (``owner_id`` is the ``wiki_warm_pages`` row) or ``hot``
+    (``owner_id`` is the ``versioned_entities`` row, the page the stream follows, whose
+    NEWEST text is the corpus article and is searched there, never here). ``mask`` is the
+    ``src.database.fts_norm`` transform the entry was indexed under (Arabic folding, CJK
+    segmentation), recorded for the reason ``article_fts_norm`` records it.
+    """
+
+    __tablename__ = "wiki_lane_docs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    source: Mapped[str] = mapped_column(String(8), nullable=False)
+    owner_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    edition: Mapped[str] = mapped_column(String(16), nullable=False)
+    #: The wiki's page id where the lane knows it (a legacy title-keyed HOT page has none).
+    page_id: Mapped[int | None] = mapped_column(Integer)
+    title: Mapped[str | None] = mapped_column(String(512))
+    #: The version this entry was read from.
+    revid: Mapped[int] = mapped_column(Integer, nullable=False)
+    extent: Mapped[str] = mapped_column(String(8), nullable=False)
+    #: For ``dropped``: the later version these lines are gone from. NULL for a ``full`` latest.
+    successor_revid: Mapped[int | None] = mapped_column(Integer)
+    #: When the SOURCE says this version came into being, where it says so.
+    revised_at: Mapped[datetime | None] = mapped_column(LaneUTCDateTime)
+    mask: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    #: Characters of plain text indexed, a measurement of the entry rather than of the page.
+    chars: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    indexed_at: Mapped[datetime] = mapped_column(LaneUTCDateTime, nullable=False, default=_utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("source", "owner_id", "revid", "extent", name="uq_wiki_lane_doc"),
+        Index("ix_wiki_lane_doc_owner", "source", "owner_id"),
+    )
+
+    def __repr__(self) -> str:  # pragma: no cover - debugging aid
+        return f"<WikiLaneDoc({self.source}:{self.owner_id} r{self.revid} {self.extent})>"
+
+
+class WikiLaneIndexQueue(LaneBase):
+    """What waits to be (re)indexed: a WARM page whose text changed, a HOT version just stored.
+
+    Filled by TRIGGERS on ``wiki_warm_pages`` and ``versioned_revisions``
+    (``src/wiki/lane_search.py`` creates them), in the same transaction as the write they
+    follow, so no text change can be missed however the indexer is scheduled and whatever
+    the clock does. ``kind`` is ``warm`` (``ref`` = the WARM row) or ``hot`` (``ref`` = the
+    revision). One row per thing, however often it changed while it waited.
+
+    ``failed_at`` marks an item whose text could not be read into the index. It STAYS here,
+    out of the way of the pending ones, so the count of such items is a count of rows rather
+    than a tally that could drift from them, and it is tried again when the lane next starts
+    or the page next changes -- a text a fault kept out is never out for good.
+    """
+
+    __tablename__ = "wiki_lane_index_queue"
+
+    kind: Mapped[str] = mapped_column(String(8), primary_key=True)
+    ref: Mapped[int] = mapped_column(Integer, primary_key=True)
+    failed_at: Mapped[datetime | None] = mapped_column(LaneUTCDateTime)
+
+    __table_args__ = ({"sqlite_with_rowid": False},)
+
+
+class WikiLaneIndexState(LaneBase):
+    """The index's one state row, keyed ``"index"``: its format, its segmenters, its counts.
+
+    The counts are written in the SAME transaction as the entries they count, for the
+    reason ``WikiWarmEdition`` keeps its own: a status read touches one row instead of
+    counting millions, and cannot disagree with the rows. ``format_version`` is what a later
+    build compares to decide the index must be rebuilt rather than trusted.
+    """
+
+    __tablename__ = "wiki_lane_index_state"
+
+    key: Mapped[str] = mapped_column(String(16), primary_key=True)
+    format_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    #: The ``src.database.fts_norm`` segmenters (jieba, sudachipy) the entries were written
+    #: with. When this process has a different set, every held text is queued again, so the
+    #: lane's Chinese and Japanese are split the way a query now splits them -- what the
+    #: corpus's own re-index job does for ``article_fts``.
+    segmenters: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    docs: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    #: BIG: characters of text indexed across every entry, which can pass 2**31.
+    chars: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    created_at: Mapped[datetime] = mapped_column(LaneUTCDateTime, nullable=False, default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(LaneUTCDateTime, nullable=False, default=_utcnow)
+
+
 #: The wiki lane's own tables. ``src/versioned/store.create_schema`` materialises these in
 #: ``wiki.db`` ONLY, exactly as ``LAW_LANE_MODELS`` go to ``law.db`` only.
-WIKI_LANE_MODELS: tuple[type[LaneBase], ...] = (WikiWalkPage, WikiWalkCursor, WikiWalkSample)
+WIKI_LANE_MODELS: tuple[type[LaneBase], ...] = (
+    WikiWalkPage,
+    WikiWalkCursor,
+    WikiWalkSample,
+    WikiWarmPage,
+    WikiWarmEdition,
+    WikiWarmScan,
+    WikiLaneDoc,
+    WikiLaneIndexQueue,
+    WikiLaneIndexState,
+)

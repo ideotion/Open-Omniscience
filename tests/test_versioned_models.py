@@ -36,13 +36,27 @@ from src.versioned.models import (
 #: The measured ceiling, not an aspiration. The Q1140 NOTE asks new tables to
 #: anticipate PostgreSQL's column limits; this pins the widest lane table so a slice
 #: that widens one has to raise the number deliberately and say why in its diff.
-COLUMN_CEILING = 15
+#:
+#: RAISED 15 -> 19 by 0.5 row F (S05-06's S1, 2026-09-28): ``wiki_warm_pages`` holds
+#: Q710's «latest + previous» as two groups of four columns (revid, text, bytes, revised
+#: at), so the table's SHAPE is what keeps WARM to two texts per page rather than a
+#: pruning pass over a revisions table, plus the queue, deletion and promotion marks.
+#: PostgreSQL allows 1,600 columns; the limit Q1140 warns about is nowhere near.
+COLUMN_CEILING = 19
 
 #: A column name containing any of these would be this project forming an opinion.
 FORBIDDEN_NAME_PARTS = ("score", "rating", "ranking", "grade", "confidence", "trust")
 
 
 def _lane_tables():
+    # Each lane's OWN tables (``src/law/lane_models.py``, ``src/wiki/lane_models.py``) join
+    # the shared metadata only when their module is imported -- the store imports them
+    # lazily, per lane -- so a file run before any lane was opened measured the substrate
+    # alone. Importing them here makes every check below cover every lane table, whatever
+    # ran first (found 2026-09-28, when the widest table became a wiki one).
+    import src.law.lane_models  # noqa: F401
+    import src.wiki.lane_models  # noqa: F401
+
     return LaneBase.metadata.tables
 
 

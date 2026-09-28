@@ -2080,9 +2080,14 @@ def view_article(request: Request, article_id: int, db: Session = Depends(get_db
     # attribution from every dump-ingested page.
     _ref = None
     try:
-        from src.wiki.corpus import wiki_page_ref
+        from src.wiki.corpus import wiki_page_ref, wiki_version_ref
 
         _ref = wiki_page_ref(a.canonical_url or a.url or "")
+        if _ref is None:
+            # A held older VERSION added from the Wikipedia lane's search (R52) is keyed on
+            # its own oldid address, and is Wikipedia text under the same licence.
+            _ver = wiki_version_ref(a.canonical_url or a.url or "")
+            _ref = (_ver[0], _ver[1]) if _ver else None
     except Exception:  # noqa: BLE001 - the reader must never break on provenance
         logger.warning("wiki page ref failed in reader", exc_info=True)
 

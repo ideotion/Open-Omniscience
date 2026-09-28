@@ -432,6 +432,11 @@
       <div id="bulk-llm-search" class="bulk-llm" style="display:none;margin-top:10px"></div>
       <div id="bulk-queue-search" class="bulk-queue" style="margin-top:8px"></div>
       <div style="overflow:auto; margin-top:10px;"><table id="results"></table></div>
+      <!-- R52 («In the lane», 2026-09-28): the Wikipedia texts THIS machine holds, found by
+           the same words and listed BESIDE the corpus's results, never ranked into them.
+           What was searched is said with every answer. Composed with t() in app-living.js,
+           so the walker leaves it alone and a language switch redraws it from cache. -->
+      <div id="search-lane" class="lane-search" data-i18n-dyn hidden></div>
     </section>
     </div>
 
@@ -1945,6 +1950,15 @@
         <input type="checkbox" id="wiki-walk-enabled" style="width:auto;flex:none;margin-top:3px">
         <span style="flex:1;min-width:0"><b>Also walk every article title.</b>
           <span>Slow and long: 50 titles a request, one request at a time, for several days across the editions above. It keeps titles, sizes and Wikidata ids, never text, inside the same storage budget, and runs only while the stream runs.</span></span>
+      </label>
+      <!-- Q707's WARM tier (S05-06 S1), OFF unless switched on HERE, per machine, for the
+           walk's reason (R51): it fills most of the lane's budget with texts. The cost and
+           where the texts go are stated VISIBLY. No new host: the edition's own API. -->
+      <label class="row" style="margin-top:10px;gap:8px;align-items:flex-start;flex-wrap:nowrap;cursor:pointer"
+             title="Other changed pages are the pages the live stream hears about but does not follow. How many hold a text, and why fetching waits when it waits, are in Living sources.">
+        <input type="checkbox" id="wiki-warm-enabled" style="width:auto;flex:none;margin-top:3px">
+        <span style="flex:1;min-width:0"><b>Also fetch the text of other changed pages.</b>
+          <span>The newest text of every page the stream reports changed but does not follow, 50 pages a request, keeping each page's latest and previous text until the lane file holds 90% of its storage budget. The texts stay in the lane file, not in your corpus, and it runs only while the stream runs.</span></span>
       </label>
       <div class="hint" style="margin-top:8px" title="The same reasoning this app applies to the World Bank and SDMX statistics endpoints: robots.txt governs crawling, not documented public APIs, and blanket-applying it would wrongly block legitimate API use.">
         <b>Robots.</b>
@@ -3571,6 +3585,24 @@
     <div id="lp-out" style="margin-top:10px"></div>
     <div style="margin-top:12px;display:flex;justify-content:flex-end">
       <button class="secondary" data-on-click="ooCloseDialog('link-preview')">Close</button>
+    </div>
+  </dialog>
+
+  <!-- R52: one Wikipedia version the lane holds, read before it is added to the corpus.
+       Opened from a lane hit in the command palette. Its lines are composed with t()/tf()
+       at render time (data-i18n-dyn), and a language switch redraws them from the payload
+       it holds (repaintLaneVersionFromCache); the title and the text are data. No inline
+       handlers: _laneVersionWire binds the two buttons once. -->
+  <dialog id="lane-version" style="width:min(760px,94vw);padding:18px">
+    <h3 id="lv-title" dir="auto" data-i18n-dyn style="margin:0 0 4px"></h3>
+    <div id="lv-meta" class="muted small" data-i18n-dyn></div>
+    <div id="lv-notes" data-i18n-dyn style="margin-top:6px;display:flex;flex-direction:column;gap:4px"></div>
+    <pre id="lv-text" dir="auto" style="margin:8px 0 0;max-height:46vh;overflow:auto;white-space:pre-wrap;word-break:break-word;font-family:inherit;font-size:13px;border:1px solid var(--line);border-radius:8px;padding:10px"></pre>
+    <div id="lv-out" data-i18n-dyn style="margin-top:8px"></div>
+    <div id="lv-result" data-i18n-dyn aria-live="polite" style="margin-top:8px"></div>
+    <div style="margin-top:12px;display:flex;gap:8px;justify-content:flex-end">
+      <button class="secondary" type="button" id="lv-close">Close</button>
+      <button type="button" id="lv-add">Add to corpus</button>
     </div>
   </dialog>
 

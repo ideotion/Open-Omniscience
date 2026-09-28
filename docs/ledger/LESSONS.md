@@ -12680,3 +12680,45 @@ must be (here, the UA names the installed package version), never a string it mu
 an absence check on a string that carries a version fails the day the version reaches it.** The
 five map and catalogue build scripts under `scripts/` still hardcode `OpenOmniscienceBot/0.4`; they
 read true again only by coincidence.
+
+
+### A RELEASED SAVEPOINT COMMITS WHEN NOTHING WAS WRITTEN BEFORE IT -- ON THE LANE ENGINES, A PER-UNIT SAVEPOINT IS A PER-UNIT COMMIT (PR #1202)
+
+The first draft of the lane search indexer ran each unit in `session.begin_nested()` so a text that
+could not be read would roll back alone. Measured before trusting it: the driver's legacy
+transaction handling opens a transaction only before an INSERT, UPDATE or DELETE, so a SAVEPOINT
+sent after reads alone is the OUTERMOST transaction to SQLite, its RELEASE commits, and a later
+`session.rollback()` undoes nothing (`test_a_released_savepoint_commits_on_this_driver_which_is_why_there_are_none`).
+The code read as one transaction and committed unit by unit, and the counts written at the end
+would have drifted from the entries after any crash between them. The corpus's read-snapshot
+engine fixes this (`isolation_level = None` plus a `begin` listener, `src/database/read_snapshot.py`);
+the lane engines (`src/versioned/store.py:_build_engine`) do not. **On a lane, derive a unit in full
+before writing any of it, and keep the batch one transaction; never reach for `begin_nested` there
+without that engine fix.**
+
+### A CONTENTLESS FTS5 TABLE TAKES A SECOND ENTRY UNDER A ROWID IT HOLDS, AND THE FIRST CAN THEN NEVER BE REMOVED (PR #1202)
+
+Measured on SQLite 3.45 while building `wiki_lane_fts` (`contentless_delete=1`): inserting under a
+rowid the table already holds succeeds, and after that the first entry's words stay findable even
+once the rowid is deleted -- an entry nothing can remove. A rowid deleted first and then written
+again is clean. **Delete an entry's rowid before writing it again, every time, and delete the row
+that owns it in the same transaction** (`_apply` in `src/wiki/lane_search.py`).
+
+### `create_lane` RUNS ON EVERY DRAIN OPEN, SO EVERYTHING IN A LANE'S SCHEMA HOOK RUNS EVERY THIRTY SECONDS (PR #1202)
+
+`wiki_lane_session` calls `create_lane("wiki")` on every open, so `create_schema` and its
+`_lane_specific_setup` run with every drain. The first draft retried the search index's set-aside
+texts from there, which would have retried and logged each unreadable text every thirty seconds.
+**A schema hook must be idempotent and cheap on its "all present" path; anything meant once per
+start belongs to the runner** (`LaneIndexer.index_for` retries set-aside items in its first window).
+
+### A SEARCH LISTED BESIDE THE CORPUS'S MUST PARSE WITH THE CORPUS'S GRAMMAR -- `build_match` STILL DEFAULTS TO THE OLD ONE (PR #1202)
+
+Advanced search (#1198) turned the grammar on in `search_ids` (`grammar=True`: prefix, `NEAR`,
+field filters) and left `build_match`'s default OFF, so the Wikipedia dump index's MATCH stays
+byte-identical. The lane search was written before that merge and called `build_match` with the
+default: on one Search tab, `salt*` would have been a prefix in the corpus's list and the word
+"salt" in the lane's, and a `source:` filter a phrase search for the word "source". **A search
+surface shown beside the corpus's passes `grammar=True`, and decides out loud what its own index
+cannot answer**: the lane drops the SQL field filters, names them and says so on screen, and
+never widens them into a search of everything (`fields_not_applied`, `test_one_query_means_in_these_texts_what_it_means_in_the_corpus`).

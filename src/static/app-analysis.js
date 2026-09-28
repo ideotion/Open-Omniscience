@@ -2791,6 +2791,12 @@
       // uniform means there is no exception to remember, which is what let the analysis
       // tab drift in the first place.
       const p = _articleQuery(searchParams()); p.set("limit", String(DEFAULT_LIMIT));
+      // R52: the texts the Wikipedia lane holds, searched with the same words and
+      // listed beside these results (app-living.js). Not awaited: this list never waits.
+      if (typeof searchLaneHits === "function") {
+        searchLaneHits(p.get("query") || "",
+          ["source", "language", "start_date", "end_date"].some((k) => p.get(k)));
+      }
       // The reader's language rides every search, query or not, so the list can carry a
       // ≈ title where the opt-in title sweep wrote one (S05-08 S2). It only ever ADDS a
       // line under the original title; the server attaches nothing when the sweep is off.

@@ -310,6 +310,11 @@
           if (typeof repaintWikiTCFromCache === "function") repaintWikiTCFromCache();
         }
       } catch (_e) {}
+      // The held Wikipedia version (R52) opens from the palette whether or not Living
+      // sources was ever opened, so it redraws on its own test: the dialog is open. The
+      // Search tab's Wikipedia section is composed the same way and redraws beside it.
+      try { if (typeof repaintLaneVersionFromCache === "function") repaintLaneVersionFromCache(); } catch (_e) {}
+      try { if (typeof repaintLaneSearchFromCache === "function") repaintLaneSearchFromCache(); } catch (_e) {}
       // The Activity view is the same class again, and it recurred the moment a new
       // interpolated string was added there: the qualification tile's composition note
       // ("Of 3 awaiting a verdict, 1 have never been attempted…") is built with
@@ -831,6 +836,8 @@
       if (budget) budget.addEventListener("input", () => _wizShare());
       const walk = $("wiki-walk-enabled");
       if (walk) walk.addEventListener("change", () => saveWikiWalk(walk.checked));
+      const warm = $("wiki-warm-enabled");
+      if (warm) warm.addEventListener("change", () => saveWikiWarm(warm.checked));
       try {
         if (new URLSearchParams(location.search).get("wikiwizard") === "1"
             && typeof openWikiWizard === "function") {

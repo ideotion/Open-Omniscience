@@ -115,11 +115,16 @@ def walk_lane_session() -> Iterator[Any]:
     from src.versioned.store import create_lane, lane_path, lane_session
 
     here = str(lane_path("wiki"))
-    if _WALK_SCHEMA_READY != here:
+    if here != _WALK_SCHEMA_READY:
         create_lane("wiki")
         _WALK_SCHEMA_READY = here
     with lane_session("wiki") as lane:
         yield lane
+
+
+def _warm_enabled() -> bool:
+    """WARM's switch, re-read every window, so turning it on or off needs no restart."""
+    return bool(getattr(_settings(), "wiki_warm_enabled", False))
 
 
 def _walk_enabled() -> bool:
@@ -251,9 +256,11 @@ def _build():
     from src.database.session import SessionLocal
     from src.wiki.client import WikiClient
     from src.wiki.lane import WikiStreamAdapter
+    from src.wiki.lane_search import LaneIndexer
     from src.wiki.runner import WikiLaneRunner
     from src.wiki.stream import WikiEventStream
     from src.wiki.walk import WikiWalker
+    from src.wiki.warm import WarmFetcher
 
     editions = _editions()
     if not editions:
@@ -276,6 +283,18 @@ def _build():
         enabled=_walk_enabled,
         transport=lambda: session_transport(client.session),
     )
+    # WARM TOO (Q707): the same client, so one request at a time across the drain's text,
+    # WARM and the walk, and one transport for all three.
+    warm = WarmFetcher(
+        client=client,
+        editions=editions,
+        lane_session=walk_lane_session,
+        budget=_budget,
+        enabled=_warm_enabled,
+    )
+    # THE SEARCH INDEX (R52) reads what the drain and WARM stored and requests nothing, so
+    # it needs no client; it pays for its entries from the same budget as the texts.
+    indexer = LaneIndexer(lane_session=walk_lane_session, budget=_budget)
     return WikiLaneRunner(
         adapter=adapter,
         stream=stream,
@@ -287,6 +306,8 @@ def _build():
         resume_from=_resume_from,
         pageviews=lambda: _refresh_one_pageview_top(client),
         walker=walker,
+        warm=warm,
+        indexer=indexer,
     )
 
 
@@ -348,7 +369,7 @@ def lane_service_status() -> dict:
         drain_alive = bool(_DRAIN_THREAD is not None and _DRAIN_THREAD.is_alive())
     if runner is None:
         return {"streaming": False, "draining": False, "drains": 0, "last_drain": None,
-                "stream": None, "walk": None}
+                "stream": None, "walk": None, "warm": None, "index": None}
     return {
         "streaming": bool(runner.streaming),
         "draining": drain_alive,
@@ -362,4 +383,10 @@ def lane_service_status() -> dict:
         # rows in the lane, read by ``src.wiki.walk.walk_coverage``; this is only what no
         # row holds. ``None`` for a runner built without a walker.
         "walk": runner.walk_status(),
+        # WARM's in-process state, likewise; its counts are rows read by
+        # ``src.wiki.warm.warm_coverage``.
+        "warm": runner.warm_status(),
+        # The search indexer's in-process state; its counts are rows read by
+        # ``src.wiki.lane_search.index_status``.
+        "index": runner.index_status(),
     }
