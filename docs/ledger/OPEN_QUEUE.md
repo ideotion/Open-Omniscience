@@ -15494,7 +15494,7 @@ scores would not be comparable until a full re-extraction.
 - the differential test's reference would become that rule rather than stock;
 - a re-extraction is needed, and the engine identity already changes when that file does.
 
-## 2026-09-28 — `v0.4.0` tagged with 0.4 rows open: where they go is unruled; and a release made on GitHub first keeps its own notes (PR #NNNN)
+## 2026-09-28 — `v0.4.0` tagged with 0.4 rows open: where they go is unruled; and a release made on GitHub first keeps its own notes (PR #1195)
 
 **The rows.** The maintainer tagged `v0.4.0` on 2026-09-28 before `RELEASE_0.4_GATE.md`'s exit clause was
 met: rows A–E, W and the operator halves of rows H to V were open (the gate's §3 entry of that date lists

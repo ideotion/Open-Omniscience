@@ -12618,7 +12618,7 @@ a state production never reaches. **When a mutant survives, first ask whether it
 any reachable state; if it cannot, correct the reasoning and the comments that carried it, and
 leave the suite alone.**
 
-### TAG `vX` ONLY WHERE THE VERSION ALREADY READS `X` -- A DEFERRED FLIP MOVES THE MISMATCH TO THE NEXT TAG (PR #NNNN)
+### TAG `vX` ONLY WHERE THE VERSION ALREADY READS `X` -- A DEFERRED FLIP MOVES THE MISMATCH TO THE NEXT TAG (PR #1195)
 
 The project's sequence is pass → tag → flip: tag `vX` while `pyproject.toml` reads `X`, then flip to
 the next number, so a whole cycle runs under the version it will be released as. The flip after

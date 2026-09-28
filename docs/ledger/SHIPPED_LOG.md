@@ -10215,7 +10215,7 @@ compound of 478 and the label of 16. That is recorded as a deliberate omission i
 `OPEN_QUEUE.md`, dated by this PR. Lessons: `LESSONS.md`, the two entries dated by this PR
 after the counter ones.
 
-## 2026-09-28 — The version flip to 0.4.0, after the `v0.4.0` tag (PR #NNNN)
+## 2026-09-28 — The version flip to 0.4.0, after the `v0.4.0` tag (PR #1195)
 
 The maintainer merged the draft PRs and tagged `v0.4.0` on `ad0f2062`, the PR #1191 merge, with a
 GitHub pre-release. `pyproject.toml` there still read `0.3.0`, because the flip after `v0.3.0` had
