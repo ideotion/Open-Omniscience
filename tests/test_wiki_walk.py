@@ -287,6 +287,24 @@ def test_the_switch_OFF_makes_no_request(lane):
     assert _cursor() is None, "not even a bookmark row"
 
 
+def test_the_switch_is_OFF_by_default_R51(tmp_path, monkeypatch):
+    """R51 («Switch, off»): the walk runs only where the operator turns it on.
+
+    Two ways the default could flip without anyone choosing it: the dataclass default, and
+    a settings file saved BEFORE the switch existed (every 0.4 install has one), which
+    must load it as off rather than as whatever a missing key happens to coerce to.
+    """
+    from src.scheduler import settings as sset
+
+    assert sset.SchedulerSettings().wiki_walk_enabled is False
+    path = tmp_path / "scheduler_settings.json"
+    monkeypatch.setattr(sset, "_settings_path", lambda: path)
+    path.write_text(json.dumps({"wiki_lane_state": "running", "continuous": True}), "utf-8")
+    assert sset.load_settings().wiki_walk_enabled is False
+    assert sset.save_settings({"wiki_walk_enabled": True}).wiki_walk_enabled is True
+    assert sset.load_settings().wiki_walk_enabled is True, "the operator's choice sticks"
+
+
 def test_airplane_mode_PAUSES_the_walk_by_name_and_moves_no_bookmark(lane):
     """A real client over the real guarded session: the refusal is the session's own."""
     from src.wiki.client import WikiClient

@@ -22,24 +22,18 @@
 
 ## Open queue (when maintainer says proceed)
 
-- **THE WALK'S SWITCH: WHERE THE WIKIPEDIA WALK RUNS — PENDING (asked 2026-09-28 on a decision card in the
-  project thread «Plan v0.5»; built at the recommended option meanwhile, so nothing waits on it).** The
-  question, as put: «Run the Wikipedia walk only where you switch it on, or on every instance?» (a) **Switch,
-  off** — a switch in Settings → Wikipedia, off until the operator turns it on for the instance that should
-  carry the multi-day run (the recommendation: one chosen instance walks while the others keep collecting as
-  they do today, and nothing starts a week of requests on an instance nobody chose); (b) **Switch, on** — the
-  same switch, on by default, so every instance whose stream runs also walks, each asking the twelve
-  editions for every title in parallel with the others; (c) **No switch** — the walk runs wherever the stream
-  runs. **BUILT AS (a)** (0.5 row F, PR #1197): `wiki_walk_enabled = False` in `src/scheduler/settings.py`,
-  the checkbox `#wiki-walk-enabled` («Also walk every article title»), stored through
-  `PUT /api/scheduler/config` and re-read by `src/wiki/service.py:_walk_enabled` every window, so a change
-  needs no restart. **What (b) changes:** that one default flips to `True`, and every existing install starts
-  walking at its next online drain, which the release notes must then say, because it starts requests
-  nobody switched on. **What (c) changes:** the setting, the checkbox and their strings ×12 go, and
-  `test_the_switch_OFF_makes_no_request` becomes a test that the walk follows the stream. Whichever it is,
-  the walk still never runs offline, never without the stream and never past the budget. **When answered:**
-  an `R` row in [`RULINGS_INDEX.md`](RULINGS_INDEX.md), this entry closed, and the default or the switch
-  changed in the same PR.
+- **THE WALK'S SWITCH: WHERE THE WIKIPEDIA WALK RUNS — RULED 2026-09-28, «Switch, off» (`R51`; answered on
+  the decision card in the project thread «Plan v0.5» at 12:41 UTC, the recommended option).** The question,
+  as put: «Run the Wikipedia walk only where you switch it on, or on every instance?» — over «Switch, on» (every
+  instance whose stream runs also walks) and «No switch» (the walk runs wherever the stream runs). **What it
+  means:** one chosen instance carries the multi-day run while the others keep collecting as they do today,
+  and nothing starts a week of requests on an instance nobody chose. It was already BUILT this way (0.5 row F,
+  PR #1197), so no code changed: `wiki_walk_enabled = False` in `src/scheduler/settings.py`, the checkbox
+  `#wiki-walk-enabled` («Also walk every article title») in Settings → Wikipedia, stored through
+  `PUT /api/scheduler/config` and re-read by `src/wiki/service.py:_walk_enabled` every window, so turning it
+  on needs no restart. What the ruling ADDED is the pin: `tests/test_wiki_walk.py` now fails if the default
+  flips, or if a settings file written before the switch existed loads it as on. Whatever the switch says,
+  the walk still never runs offline, never without the stream and never past the budget.
 - **THE 0.5 START, ANSWERED IN CHAT (2026-09-28 11:07 UTC; recorded the same turn).** The maintainer,
   verbatim, in the project thread «Plan v0.5»: «D1: Yes, start. v0.4.0 release is done. D2: a D3: a One
   question, I'm wondering about the long wikipedia walk, wouldn't it be better to do something and let it

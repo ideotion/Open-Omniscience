@@ -98,7 +98,7 @@ anything — the sheet's anchors were verified at `main`@`bebcef4` on 2026-09-12
   `wiki.db` tables), the counters artifact's `walk` block, the Living sources «Page walk» group and the
   task-manager row; `tests/test_wiki_walk.py`. The fetch-history round trip is the one acceptance item NOT
   met: it waits on the lane riding a backup (Q721), and `lane_models.py` names the table the toggle will
-  gate. Where the walk runs is asked (`OPEN_QUEUE.md` «THE WALK'S SWITCH»).
+  gate. Where the walk runs is ruled: only where the operator switches it on, off by default (`R51`).
 
 ### S3 — Transport (Q722 = b, Q1014)
 - **What:** the walk follows the transport setting, Tor included — it WAITS for the transport the user

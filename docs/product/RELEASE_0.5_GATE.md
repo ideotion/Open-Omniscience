@@ -213,8 +213,8 @@ edition backs off that edition alone, 60 s doubling to an hour. Coverage per edi
 edition's own article count, read from `siteinfo` — and the measured rate per transport ride the lane
 counters artifact as its `walk` block; Living sources' Wikipedia panel shows a «Page walk» group, and the task
 manager shows the walk while it walks, pauses or waits, with counts and no ETA. The switch is Settings →
-Wikipedia, «Also walk every article title», **off** until the maintainer answers where it runs
-(`OPEN_QUEUE.md` «THE WALK'S SWITCH»). Chromium-verified (remote sandbox) in `en` and `ar` · awaiting human UX
+Wikipedia, «Also walk every article title», **off** until the operator turns it on for the instance
+that should carry the run (`R51`, «Switch, off»). Chromium-verified (remote sandbox) in `en` and `ar` · awaiting human UX
 pass. **Seams, stated:** (1) S2's fetch-history round trip waits on the lane riding a backup (Q721; the
 inventory keeps it non-exportable until S04-04 owns the lane format); the walk's rows are that history, and
 `lane_models.py` names the one table the toggle will gate. (2) S3 names `tor_throughput.py`, which is the
@@ -354,6 +354,7 @@ the default. Brief `S05-05`, with `S04-11` S3's toggle.
 | 2026-09-27 | **Row L added: Q803's default moved here from 0.4 row R** (`PF06` = a, «Row R: OK to move that to 0.5»), beside row E's OSM artifacts it waits on. The entry clause now names 0.4 rows G–W (row W, `RC01` = a), and the exit clause A–L. | maintainer (chat, 2026-09-27) · recorded by the session, PR #1191 |
 | 2026-09-28 | **The 0.5 start, answered in chat** («D1: Yes, start. … D2: a D3: a», with a question about the Wikipedia walk): `R38` — row B before row J, never concurrently; `R39` — the hi/bn tokenizer rebuild is paid inside row B's window, and row B now also closes on its measured rebuild time and a hi fixture; `R40` — row F is built first so its operator run overlaps the build (order only; no gate moved). Wave 1 starts with rows A and I in their own threads. **No row changed status.** | maintainer (chat, 2026-09-28 11:07 UTC) · recorded by the session |
 | 2026-09-28 | **Row F: the walk built (S2 + S3), off by default.** The `allpages` walk, its per-edition bookmark, its coverage and per-transport counters in the lane counters artifact, a Living sources group and a task-manager row; the switch that decides where it runs is asked on a card and built at the recommended «off» meanwhile (`OPEN_QUEUE.md` «THE WALK'S SWITCH»). Five seams stated in the row, the fetch-history round trip first. **No row changed status.** | session, PR #1197 |
+| 2026-09-28 | **`R51`: the walk runs only where it is switched on, off by default** («Switch, off» on the decision card, the recommended option). Row F's text now names the ruling where it named the open question; the default was already built this way, so only a test pinning it was added. **No row changed status.** | decision card in the project thread «Plan v0.5», 2026-09-28 12:41 UTC |
 
 ---
 
