@@ -124,6 +124,47 @@ def _wiki_stream(since: datetime) -> dict[str, Any]:
     }
 
 
+def _wiki_walk() -> dict[str, Any]:
+    """The ``allpages`` walk (Q701 = c): pages seen of each edition's own count, and what it
+    is doing now.
+
+    THREE SOURCES, NEVER BLENDED. The switch is the operator's setting; the state (walking,
+    paused and why, waiting) is this process's walker, measured, and ``not_running`` when
+    no walker exists here -- the lane is off, or offline; the counts are the lane's own rows
+    through the one reader the counters artifact uses (``walk_coverage``), so this view and
+    the soak bundle cannot disagree about a number.
+    """
+    from src.scheduler.settings import load_settings
+    from src.versioned.store import LaneAbsentError, lane_path, lane_session
+    from src.wiki.service import lane_service_status
+    from src.wiki.walk import walk_coverage
+
+    try:
+        enabled = bool(getattr(load_settings(), "wiki_walk_enabled", False))
+    except Exception:  # noqa: BLE001 - an unreadable switch is named, never guessed
+        _LOG.warning("living overview: the walk switch could not be read", exc_info=True)
+        enabled = None
+    live = (lane_service_status() or {}).get("walk")
+    out: dict[str, Any] = {
+        "enabled": enabled,
+        "state": (live or {}).get("state") if live else "not_running",
+        "reason": (live or {}).get("reason") if live else None,
+    }
+    if not lane_path("wiki").is_file():
+        return {**out, "measured": False, "reason_counts": "lane-never-run"}
+    try:
+        with lane_session("wiki") as lane:
+            coverage = walk_coverage(lane)
+    except LaneAbsentError:
+        return {**out, "measured": False, "reason_counts": "lane-never-run"}
+    except SQLAlchemyError:
+        _LOG.warning("living overview: the walk's rows could not be read", exc_info=True)
+        return {**out, "measured": False, "reason_counts": "unreadable"}
+    if not coverage.get("measured"):
+        return {**out, "measured": False, "reason_counts": coverage.get("reason")}
+    return {**out, **coverage}
+
+
 def _wiki_tracked(db: Session, since: datetime) -> dict[str, Any]:
     """The pages the operator follows by hand (Settings -> Wikipedia), in the main database."""
     from src.database.models import WikiPage, WikiRevision
@@ -281,6 +322,7 @@ def living_overview(db: Session = Depends(get_db)) -> dict[str, Any]:
                 "kind": "wiki",
                 "stream": _wiki_stream(since),
                 "tracked": _wiki_tracked(db, since.replace(tzinfo=None)),
+                "walk": _wiki_walk(),
                 "storage": storage.get("wiki"),
             },
             {

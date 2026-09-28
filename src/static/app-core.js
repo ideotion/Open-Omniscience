@@ -2142,6 +2142,13 @@
     // "paused", the same as one the operator stopped, and a failed one showed no reason
     // at all, though the owner kept it: a proxy that refused was invisible here.
     function _jobWhy(j, t) {
+      // The Wikipedia walk says WHY it waits (airplane mode, no usable proxy, the budget),
+      // keyed x12 through its detail frame. It is not a download, so none of the lines
+      // below apply to it.
+      if (j.kind === "wiki-walk") {
+        const line = j.detail ? _framedText(j.detail, j.detail_i18n, j.detail_vars, t) : "";
+        return line ? `<div class="muted" style="font-size:11px">${esc(line)}</div>` : "";
+      }
       if (!_isDownloadKind(j.kind)) return "";
       let line = "";
       if (j.state === "paused") {

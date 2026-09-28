@@ -366,3 +366,197 @@ def parse_hot_pages(payload: dict) -> dict[int, dict]:
                 enriched["timestamp"] = _parse_ts(newest.get("timestamp"))
         out[pid] = enriched
     return out
+
+
+# --------------------------------------------------------------------------- #
+# The ``allpages`` walk (Q701 = c; S05-06's S2), 50 pages per request, serial.
+# --------------------------------------------------------------------------- #
+#: The walk's ``prop`` set. ``info`` answers ``length`` and ``lastrevid``; ``pageprops``,
+#: narrowed to ``wikibase_item`` by ``ppprop``, answers the Wikidata item. Nothing else:
+#: a walked page is COLD (Q707, "metadata now"), and every extra prop is bytes over
+#: somebody else's bandwidth, twenty-four million times.
+_WALK_PROPS = "info|pageprops"
+
+
+def build_walk_params(
+    continue_params: dict | None = None, *, limit: int = MAX_PAGES_PER_REQUEST
+) -> dict:
+    """Params for ONE batch of the walk: up to 50 article pages, in the edition's title order.
+
+    Namespace 0 (articles) and ``nonredirects`` only: a redirect is a second name for a
+    page the walk lists anyway, and counting it would inflate "pages seen" past anything
+    the edition calls an article.
+
+    ``continue_params`` is the previous answer's ``continue`` object, merged in AS GIVEN --
+    MediaWiki's contract is "send back exactly what you were given", and a walk that rebuilt
+    it from the last title would skip or repeat pages wherever the edition's collation and
+    ours disagree. :func:`parse_walk_batch` has already refused one that tries to set
+    anything but a continuation key, so this merge cannot change what is being asked.
+
+    A ``limit`` above 50 is REFUSED rather than clamped, for the reason
+    :func:`src.wiki.client.WikiClient.fetch_hot_pages` gives: a silent clamp is an undercount
+    nothing reports.
+    """
+    if not 1 <= int(limit) <= MAX_PAGES_PER_REQUEST:
+        raise ValueError(
+            f"a walk batch is 1 to {MAX_PAGES_PER_REQUEST} pages for an anonymous client, "
+            f"not {limit}"
+        )
+    params: dict = {
+        "action": "query",
+        "generator": "allpages",
+        "gapnamespace": 0,
+        "gapfilterredir": "nonredirects",
+        "gaplimit": int(limit),
+        "prop": _WALK_PROPS,
+        "ppprop": "wikibase_item",
+        "format": "json",
+        "formatversion": 2,
+    }
+    for key, value in (continue_params or {}).items():
+        params[str(key)] = value
+    return params
+
+
+def _continuation(value) -> tuple[dict | None, str | None]:
+    """The ``continue`` object if it is one, else ``(None, why)``.
+
+    A continuation is a flat map of ``*continue`` keys to strings or numbers. Anything
+    else -- a list, a nested object, a key such as ``action`` or ``generator`` -- is not a
+    continuation, and merging it into the next request would let a response rewrite the
+    question. Refused by name, so the walk records it instead of following it.
+    """
+    if not isinstance(value, dict) or not value:
+        return None, "continuation-not-an-object"
+    for key, item in value.items():
+        if not isinstance(key, str) or not key.endswith("continue"):
+            return None, "continuation-foreign-key"
+        if isinstance(item, bool) or not isinstance(item, (str, int)):
+            return None, "continuation-foreign-value"
+    return dict(value), None
+
+
+def parse_walk_batch(payload) -> dict:
+    """Parse one walk answer -> pages, the next continuation, and whether the pass is done.
+
+    Returns ``{"pages", "continue", "complete", "props_complete", "error", "malformed",
+    "skipped"}``. EXACTLY ONE of three things is true of a well-formed answer: it carries
+    an ``error`` (the API's own code, e.g. ``maxlag``), a ``continue`` (more to come), or it
+    is ``complete`` (no ``continue`` AND the API's ``batchcomplete``). An answer that is
+    none of these -- no continuation and no ``batchcomplete``, a ``query`` that is not an
+    object -- is ``malformed``, NEVER complete: a truncated body that happened to parse
+    would otherwise end a pass at the page it was cut off at, and say it had finished.
+
+    ``props_complete`` is the API's ``batchcomplete``. When it is false the NEXT request
+    returns the same pages with the rest of their props, so a page without a
+    ``wikibase_item`` here may simply not have been answered yet; the walk keeps an
+    existing QID in that case rather than erasing it.
+
+    ``skipped`` counts page objects that were not article pages this walk can key: no
+    ``pageid`` (the API's ``missing``/``invalid``), a namespace other than 0, or a
+    redirect. They are counted, never silently dropped and never stored.
+    """
+    out: dict = {
+        "pages": [],
+        "continue": None,
+        "complete": False,
+        "props_complete": False,
+        "error": None,
+        "malformed": None,
+        "skipped": 0,
+    }
+    if not isinstance(payload, dict):
+        out["malformed"] = "not-an-object"
+        return out
+    error = payload.get("error")
+    if error is not None:
+        code = error.get("code") if isinstance(error, dict) else None
+        out["error"] = str(code) if code else "unnamed-error"
+        return out
+    query = payload.get("query", {})
+    if not isinstance(query, dict):
+        out["malformed"] = "query-not-an-object"
+        return out
+    pages = query.get("pages", [])
+    if not isinstance(pages, list):
+        # formatversion=2 answers a LIST. A map keyed by page id is formatversion=1's
+        # shape, and reading it as a list would silently find no pages at all.
+        out["malformed"] = "pages-not-a-list"
+        return out
+    out["props_complete"] = bool(payload.get("batchcomplete"))
+    if "continue" in payload:
+        cont, why = _continuation(payload.get("continue"))
+        if cont is None:
+            out["malformed"] = why
+            return out
+        out["continue"] = cont
+    elif out["props_complete"]:
+        out["complete"] = True
+    else:
+        out["malformed"] = "neither-continue-nor-batchcomplete"
+        return out
+    for page in pages:
+        if not isinstance(page, dict):
+            out["skipped"] += 1
+            continue
+        pid = page.get("pageid")
+        title = page.get("title")
+        if (
+            isinstance(pid, bool)
+            or not isinstance(pid, int)
+            or pid <= 0
+            or not isinstance(title, str)
+            or not title
+            or page.get("ns", 0) != 0
+            or page.get("redirect")
+        ):
+            out["skipped"] += 1
+            continue
+        props = page.get("pageprops")
+        qid = props.get("wikibase_item") if isinstance(props, dict) else None
+        length = page.get("length")
+        revid = page.get("lastrevid")
+        out["pages"].append(
+            {
+                "page_id": pid,
+                "title": title,
+                "qid": qid if isinstance(qid, str) and qid else None,
+                "length_bytes": length if isinstance(length, int) and not isinstance(length, bool) else None,
+                "last_revid": revid if isinstance(revid, int) and not isinstance(revid, bool) else None,
+            }
+        )
+    return out
+
+
+def build_statistics_params() -> dict:
+    """Params for the edition's own counts (``meta=siteinfo``, ``siprop=statistics``)."""
+    return {
+        "action": "query",
+        "meta": "siteinfo",
+        "siprop": "statistics",
+        "format": "json",
+        "formatversion": 2,
+    }
+
+
+def parse_statistics(payload) -> dict:
+    """The edition's own ``articles`` and ``pages`` counts, or ``{"malformed": why}``.
+
+    ``articles`` is the edition's content-page count, counted its own way (its
+    ``$wgArticleCountMethod``); it is the walk's DENOMINATOR because it is the one figure
+    the source publishes for "how many articles", and it is not exactly the set the walk
+    lists -- which is why every surface that divides by it says so. Only integers are
+    kept; a missing one is absent, never 0.
+    """
+    query = payload.get("query") if isinstance(payload, dict) else None
+    stats = query.get("statistics") if isinstance(query, dict) else None
+    if not isinstance(stats, dict):
+        return {"malformed": "no-statistics"}
+    out: dict = {}
+    for key in ("articles", "pages"):
+        value = stats.get(key)
+        if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+            out[key] = value
+    if "articles" not in out:
+        return {"malformed": "no-article-count"}
+    return out

@@ -703,6 +703,72 @@ def _search_reindex_jobs() -> list[dict]:
     ]
 
 
+#: The walk's pause reasons as the task manager's detail line, keyed x12 (``detail_i18n``).
+#: The SAME sentences, and so the same keys, the Living sources view draws for the same
+#: tokens (``app-living.js:_LIVING_WALK_WHY``): one cause, one wording, in both places.
+_WALK_WHY = {
+    "network_off": "Airplane mode is on.",
+    "transport_unavailable": "Protected mode has no usable proxy, and the walk never goes direct.",
+    "storage_budget_spent": "The lane's storage budget is spent.",
+}
+_WALK_ALL_WAITING = "Every edition is waiting out a refusal from the wiki."
+
+
+def _wiki_walk_jobs() -> list[dict]:
+    """The Wikipedia ``allpages`` walk as a visible job (Q701 = c; S05-06's S2).
+
+    A NETWORK job, not a DB writer in the arbitration sense: it writes the lane's own file,
+    never ``corpus.db``, so it takes no part in the single-writer ask. Shown while THIS
+    process's walker is walking, paused or waiting; nothing when it is off, finished, or no
+    lane is running here. COUNTS ONLY, and no progress bar: the only total is the edition's
+    own article count, which counts a slightly different set than the walk lists, so a bar
+    against it could read past 100% -- and no ETA, because a rate measured over one hour of
+    a multi-day walk is not a promise about the rest.
+    """
+    from src.wiki.service import lane_service_status
+
+    live = (lane_service_status() or {}).get("walk") or {}
+    state = live.get("state")
+    if state not in ("walking", "paused", "waiting"):
+        return []
+    seen = None
+    try:
+        from src.versioned.store import lane_path, lane_session
+        from src.wiki.walk import walk_coverage
+
+        if lane_path("wiki").is_file():
+            with lane_session("wiki") as lane:
+                cov = walk_coverage(lane)
+            if cov.get("measured"):
+                seen = int(cov.get("pages_seen") or 0)
+    except Exception:  # noqa: BLE001 - the row still shows without its count
+        seen = None
+    reason = live.get("reason")
+    why = _WALK_WHY.get(reason or "")
+    job: dict = {
+        "id": "wiki-walk",
+        "kind": "wiki-walk",
+        "state": "running" if state == "walking" else "paused",
+        "progress": None,
+        "eta_seconds": None,
+        "actions": [],
+    }
+    if seen is None:
+        job["label"] = "Wikipedia page walk"
+    else:
+        job["label"] = f"Wikipedia page walk — {seen} page{'' if seen == 1 else 's'} seen"
+        job.update(
+            _label_frame(
+                "Wikipedia page walk — {pages}",
+                pages=_count_phrase(seen, "{n} page seen", "{n} pages seen"),
+            )
+        )
+    line = why or (_WALK_ALL_WAITING if state == "waiting" else None)
+    if line:
+        job.update({"detail": line, "detail_i18n": line, "detail_vars": {}})
+    return [job]
+
+
 def _model_pull_jobs() -> list[dict]:
     """Model downloads as visible jobs (§2.C1): one active pull, the rest queued.
     A NETWORK job (clearnet via the Ollama process) — NOT a DB writer. Ollama's pull
@@ -826,6 +892,7 @@ def list_jobs() -> dict:
     jobs.extend(_quarantine_jobs())
     jobs.extend(_keyword_fold_jobs())
     jobs.extend(_search_reindex_jobs())
+    jobs.extend(_wiki_walk_jobs())
     jobs.extend(_model_pull_jobs())
     jobs.extend(_background_jobs())
     jobs.extend(_task_jobs())
