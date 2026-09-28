@@ -1417,6 +1417,10 @@
     .an-th:hover { color:var(--fg); }
     .an-th:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
     .an-th[aria-pressed="true"] { color:var(--accent-text); }
+    /* The Articles list's segmented pairs (Show as, Interleave/Group) said their state to a
+       screen reader only; the Chromium walk of S05-01 found no visible difference. */
+    #an-articles button.ghost.tiny[aria-pressed="true"] { color:var(--accent-text);
+      box-shadow:inset 0 -2px 0 var(--accent); font-weight:600; }
     /* Offline-map regions as a LIST, not a dropdown (#15): every region visible at once. */
     .osm-region-list { max-height:340px; overflow:auto; border:1px solid var(--border); border-radius:8px; }
     .osm-region-row { display:flex; align-items:center; justify-content:space-between; gap:10px;
@@ -1448,6 +1452,40 @@
       border-radius:7px; margin:0; padding:4px 10px; font:inherit; font-size:11.5px; cursor:pointer; }
     .ts-presets button:hover { color:var(--fg); background:var(--panel2); }
     .ts-presets button:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+    .ts-scale-l { display:flex; align-items:center; gap:6px; font-size:12px; color:var(--muted); }
+    .ts-scale { background:var(--panel2); color:var(--fg); border:1px solid var(--border);
+      border-radius:6px; padding:3px 6px; font:inherit; font-size:12px; margin:0; }
+
+    /* ---- The advanced-search builder (S05-01, Q602): chips above the query box, the
+       filter grid below it. Theme tokens only; logical properties, so RTL mirrors. */
+    .adv-chips { display:flex; flex-wrap:wrap; gap:6px; min-height:4px; margin:6px 0; }
+    .adv-chip { display:inline-flex; align-items:center; gap:4px; padding:3px 6px;
+      border:1px solid var(--border); border-radius:8px; background:var(--panel2); font-size:12px; }
+    .adv-chip.neg { border-style:dashed; }
+    .adv-chip select, .adv-chip input { font:inherit; font-size:12px; padding:2px 4px; margin:0;
+      background:var(--bg); color:var(--fg); border:1px solid var(--border); border-radius:5px; }
+    .adv-chip input.adv-v { width:12ch; }
+    .adv-chip input.adv-near-n { width:6ch; }
+    .adv-chip .adv-x { padding:0 5px; margin:0; background:transparent; color:var(--muted);
+      border:0; cursor:pointer; font-size:13px; }
+    .adv-ops { display:flex; flex-wrap:wrap; gap:4px; align-items:center; }
+    .adv-ops button { margin:0; }
+    .adv-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(230px, 1fr));
+      gap:10px 14px; margin-top:10px; }
+    .adv-f { display:flex; flex-direction:column; gap:3px; min-width:0; }
+    .adv-f > .muted:first-child { font-size:12px; }
+    .adv-f select[multiple] { min-height:6.5em; }
+    .adv-wide { grid-column:1 / -1; }
+    .adv-caveat { font-size:11.5px; color:var(--caveat); }
+    .adv-dym { margin:6px 0; }
+    .adv-dym button { margin:0 4px 0 0; }
+    .adv-hist-list { max-height:14em; overflow:auto; margin:4px 0; padding:0; list-style:none; }
+    .adv-hist-list li { margin:2px 0; }
+    .an-order { font-size:12px; margin:4px 0; }
+    .an-cards { display:grid; gap:8px; margin-top:6px; }
+    .an-card { border:1px solid var(--border); border-radius:8px; padding:8px 10px; background:var(--panel2); }
+    .an-card .an-card-meta { font-size:12px; color:var(--muted); margin-top:2px; }
+    .an-q-reason { font-size:11.5px; color:var(--caveat); }
 
     #toast { position:fixed; right:18px; bottom:18px; display:grid; gap:8px; z-index:200; }
     .note { padding:11px 15px; border-radius:var(--radius-sm); background:var(--panel);

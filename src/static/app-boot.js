@@ -71,6 +71,9 @@
       // prose, so the walker cannot reach them. It redraws from the payload it already
       // has and NEVER fetches, so a switch cannot re-run a search behind the reader.
       try { if (typeof _anRepaintXLang === "function") _anRepaintXLang(); } catch (_e) {}
+      // S05-01: the advanced search's caveats, chips and mode hovers are drawn by JS from
+      // t() and the cached facets -- the same frozen-locale class. Never fetches.
+      try { if (typeof _advRepaintCaveats === "function") _advRepaintCaveats(); } catch (_e) {}
       // S04-14 (Q1124): the Patterns-lens gate panel is built at render time from
       // t() calls plus measured numbers, so the walker cannot repaint its composed
       // lines -- the same frozen-locale class. Measured in the Chromium walk: the
@@ -676,6 +679,10 @@
     // its real, documented entry point, instead of every fresh tab always showing
     // exactly the one query it was seeded with.
     _anRestoreTabs();
+    // S05-01: the lists' view switch and "did you mean" (no request), and the search
+    // history choice made on the first-launch page before the corpus existed (Q614).
+    try { _advWireLists(); } catch (_e) { /* never block boot */ }
+    try { _advApplyFirstRunHistoryChoice(); } catch (_e) { /* retried on the next load */ }
 
     // Deep-link a Lead's corpus opened "in a new window" (maintainer 2026-06-23): a
     // card's back button does window.open("/?corpus=1,2,3&label=…"); this fresh SPA
@@ -684,8 +691,12 @@
     (function _hydrateCardCorpus() {
       try {
         const sp = new URLSearchParams(location.search);
-        const corpus = sp.get("corpus"), analyze = sp.get("analyze");
-        if (!corpus && !analyze) return;
+        const corpus = sp.get("corpus");
+        // `has`, not truthiness: a filter-only search is spelled "?analyze=&langs=fr"
+        // (S05-01, Q616), and its empty query is still a search to open.
+        const analyze = sp.has("analyze") ? (sp.get("analyze") || "") : null;
+        const adv = _advPick(sp);
+        if (!corpus && (analyze == null || (!analyze && !Object.keys(adv).length))) return;
         // The deep link IS the tab to show: mark Analysis hydrated BEFORE opening it, so
         // showTab does not first load the RESTORED active tab as well. Loading both raced
         // two runs into the same panels and wrote the restored tab's sense into this
@@ -693,7 +704,7 @@
         // leak). Only when a spawn will follow: a ?corpus= with no usable id falls back
         // to the restored tab, exactly as before.
         const ids = corpus ? corpus.split(",").map(Number).filter((n) => Number.isFinite(n) && n > 0) : [];
-        if (analyze || ids.length) _anHydrated = true;
+        if (analyze != null || ids.length) _anHydrated = true;
         // Q504: the cross-language lens travels in the link, so a shared "?analyze=climat
         // &expand=0" opens the search the sender was actually looking at rather than the
         // default one. It rides as part of the SEED, not as a setting applied beside it:
@@ -709,8 +720,11 @@
         const prov = _anProvTake(sp.get("prov"));
         if (corpus) {
           if (ids.length) openAnalysisForIds(ids, sp.get("label") || "", prov, lens);
-        } else if (analyze) {
-          openAnalysisFor(analyze, (prov || lens) ? {prov, lens} : undefined);
+        } else if (analyze != null) {
+          // The permalink's order and view (Q616) are the window's controls, set before
+          // the tab loads so its first list is already in that order.
+          _anApplyUrlListState(sp);
+          openAnalysisFor(analyze, (prov || lens || Object.keys(adv).length) ? {prov, lens, adv} : undefined);
         }
         // Deep-link a specific analysis subtab (?tab=keywords from an in-article
         // keyword click). _anSubtabs is wired just AFTER this IIFE, so stash the

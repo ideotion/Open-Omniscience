@@ -12,7 +12,7 @@ value is rejected with an explicit 400 rather than silently coerced.
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, StrictBool
 
 from src.config.app_settings import (
     VALID_THEMES,
@@ -72,6 +72,12 @@ class SettingsUpdate(BaseModel):
     # accepted-and-discarded consent decision, which is worse than a refusal
     # (live-reproduced on `auto_track_signals`, 2026-09-16).
     trust_backup_fetch_history: bool | None = None
+    # THE ADVANCED SEARCH (S05-01): local history, opt-in (Q614), and the NEAR default
+    # the reader can change (Q612's note). Declared here for the same reason as above.
+    # StrictBool: pydantic's lax mode reads "yes" as True, which would let a truthy
+    # string switch a privacy setting on before save_settings could refuse it.
+    search_history_enabled: StrictBool | None = None
+    search_near_default: int | None = None
 
 
 def _payload() -> dict:

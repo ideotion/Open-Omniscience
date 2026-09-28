@@ -59,12 +59,13 @@ from sqlalchemy.sql.operators import ColumnOperators
 
 # Router wiring (every include_router call) lives in _wiring.py (audit PR H).
 from src.api._wiring import wire
+from src.api.search_filters import AdvancedSearch, advanced_search_params, result_ordering
 from src.catalog.provenance import (
     NEWSLETTER_DOMAINS,
     PROVENANCE_CLASSES,
     provenance_of,
 )
-from src.database.fts import SearchQueryError, search_ids
+from src.database.fts import SearchQueryError, has_ranked_part, search_ids
 from src.database.models import Article, Source
 from src.database.session import dispose_engine, get_db, init_db, session_scope
 
@@ -1047,7 +1048,21 @@ def _structured_filters(
 # Advanced-search sorting (brief §2.D, "important" — thinner corpus creation): order
 # articles by a chosen METADATA field instead of always recency/relevance. These are
 # honest orderings of real metadata, never a relevance/quality score.
-_SORT_FIELDS = {"date", "source", "title", "language", "top_keyword"}
+_SORT_FIELDS = {"date", "source", "title", "language", "top_keyword", "words", "sentiment",
+                "relevance"}
+# The metadata sorts that read one Article column (``source`` joins, ``relevance`` is the
+# FTS order). ``words`` and ``sentiment`` are Q615's table columns: a stored count and a
+# stored VADER score, each sorted as the number it is -- never combined into anything.
+# A row with no value (no word count yet, a non-English article with no sentiment) sorts
+# as the lowest value, in either direction's natural place, rather than being dropped.
+_SORT_COLUMNS: dict = {
+    "title": Article.title,
+    "language": Article.language,
+    "date": Article.published_at,
+    "top_keyword": Article.top_keyword_count,
+    "words": Article.word_count,
+    "sentiment": Article.sentiment_score,
+}
 # "top_keyword" orders by Article.top_keyword_count -- the PRECOMPUTED count of the
 # article's OWN most-mentioned keyword (rulings 23/38/39), which is a different
 # question from _KEYWORD_COUNT_SORT below: that one counts the keyword you SEARCHED
@@ -1200,6 +1215,14 @@ def _article_row(
         if a.content and len(a.content) > 500
         else (a.content or ""),
         "hash": a.hash,
+        # Q615's table column: the stored count, null when never measured.
+        "word_count": a.word_count,
+        # Q617: a quarantined item reaches a result only when the reader included them,
+        # and then it says WHY it was quarantined, on its own row.
+        **(
+            {"quarantined": True, "quarantine_reason": a.quarantine_reason}
+            if a.quarantined else {}
+        ),
     }
 
 
@@ -1230,6 +1253,10 @@ def _fts_id_sort_key(sort_by: str):
         return lambda r: (r[1] or "")
     if sort_by == "top_keyword":
         return lambda r: (r[1] or 0)
+    if sort_by in ("words", "sentiment"):
+        # NULL sorts lowest, as SQLite orders it on the browse path, so one list keeps
+        # one order whichever path produced it.
+        return lambda r: (r[1] if r[1] is not None else float("-inf"))
     return lambda r: (r[1].replace(tzinfo=None) if r[1] else datetime.min)  # date
 
 
@@ -1354,8 +1381,14 @@ def _query_articles(
     source_type: str | None = None,
     keyword_id: int | None = None,
     expand: object | None = None,
+    adv: object | None = None,
 ) -> tuple[list, int]:
     """Return ``(articles, total)`` applying full-text search + structured filters.
+
+    ``adv`` is the advanced search's filter set (:class:`~src.api.search_filters.
+    AdvancedSearch`, S05-01): its conditions join the structured ones, it can include
+    quarantined items (Q617), and it carries the ``exact`` and ``near`` grammar settings
+    down to the index. ``None`` is "no advanced filter", byte-identical to before.
 
     Text search uses SQLite FTS5 (real Boolean AND/OR/NOT, phrases, parenthesised
     precedence) and orders results by relevance; otherwise results are ordered by
@@ -1382,13 +1415,37 @@ def _query_articles(
         provenance=provenance,
         source_type=source_type,
     )
+    from src.api.search_filters import AdvancedSearch
+    from src.database.fts import field_only_where
+
+    adv = adv if isinstance(adv, AdvancedSearch) else AdvancedSearch()
+    filters.extend(adv.conditions(session))
+    # Q617: quarantined items are EXCLUDED unless the reader includes them, advanced-only.
+    _q_gate = [] if adv.include_quarantined else [Article.quarantined.isnot(True)]
     descending = (sort_dir or "desc").lower() != "asc"
+
+    # A query of field filters only (``author:smith``) has nothing to rank: it is a
+    # BROWSE with one more condition, so it takes the uncapped browse path below rather
+    # than search_ids' bounded candidate list (the displayed total must never be a cap).
+    if query:
+        try:
+            _fo = field_only_where(query, near_default=adv.near, exact=adv.exact)
+        except SearchQueryError as exc:
+            raise HTTPException(status_code=400, detail=f"Invalid search query: {exc}") from exc
+        if _fo is not None:
+            from sqlalchemy import text as _sql_text
+
+            filters.append(_sql_text(_fo[0]).bindparams(**_fo[1]))
+            query = None
 
     fts_ids: list | None = None
     _timer = _new_search_timer(query)  # S5: per-phase search timing (best-effort, near-zero)
     if query:
         try:
-            fts_ids = search_ids(session, query, expand=expand)  # type: ignore[arg-type]
+            fts_ids = search_ids(
+                session, query, expand=expand,  # type: ignore[arg-type]
+                near_default=adv.near, exact=adv.exact,
+            )
         except SearchQueryError as exc:
             raise HTTPException(status_code=400, detail=f"Invalid search query: {exc}") from exc
         if _timer is not None:
@@ -1409,14 +1466,8 @@ def _query_articles(
             id_q = session.query(Article.id, Source.name).outerjoin(
                 Source, Article.source_id == Source.id
             )
-        elif sort_by in _SORT_FIELDS:  # title | language | date
-            _col = {
-                "title": Article.title,
-                "language": Article.language,
-                "date": Article.published_at,
-                "top_keyword": Article.top_keyword_count,
-            }[sort_by]
-            id_q = session.query(Article.id, _col)
+        elif sort_by in _SORT_COLUMNS:  # title | language | date | words | sentiment | top_keyword
+            id_q = session.query(Article.id, _SORT_COLUMNS[sort_by])
         else:  # relevance | keyword_count -> id only
             id_q = session.query(Article.id)
         # Audit finding 2026-07-17: fts_ids can carry up to search_ids's own
@@ -1440,7 +1491,7 @@ def _query_articles(
             # below), so an FTS match on a quarantined article's text still never
             # surfaces it. `.isnot(True)` also keeps a pre-migration NULL row (never
             # judged) -- treated identically to quarantined=False.
-            cq = id_q.filter(Article.id.in_(chunk), Article.quarantined.isnot(True))
+            cq = id_q.filter(Article.id.in_(chunk), *_q_gate)
             if filters:
                 cq = cq.filter(and_(*filters))
             id_rows.extend(cq.all())
@@ -1453,7 +1504,7 @@ def _query_articles(
             cmap = _keyword_counts(session, keyword_id, surviving)
             surviving.sort(key=lambda i: cmap.get(i, 0), reverse=descending)
             ordered_ids = surviving
-        elif sort_by in _SORT_FIELDS:
+        elif sort_by is not None and sort_by in _SORT_COLUMNS:
             ordered_ids = [
                 r[0]
                 for r in sorted(id_rows, key=_fts_id_sort_key(sort_by), reverse=descending)
@@ -1474,9 +1525,10 @@ def _query_articles(
     # gated on `if filters:` (so the common no-filter browse still excludes them),
     # and `_browse_total_cached` is itself quarantine-aware so the S2.3 cached-total
     # optimisation is preserved rather than forced onto the live-count path below.
-    q = session.query(Article).filter(Article.quarantined.isnot(True))
-    if filters:
-        q = q.filter(and_(*filters))
+    q = session.query(Article).filter(*_q_gate)
+    if filters or adv.include_quarantined:
+        if filters:
+            q = q.filter(and_(*filters))
         total = q.count()  # filtered: bounded by the filter, computed live
     else:
         total = _browse_total_cached(session)  # S2.3: data-aware cached corpus COUNT(*)
@@ -1499,7 +1551,11 @@ def _query_articles(
         order_col = Article.language
     elif sort_by == "top_keyword":
         order_col = Article.top_keyword_count
-    else:  # date / default
+    elif sort_by == "words":
+        order_col = Article.word_count
+    elif sort_by == "sentiment":
+        order_col = Article.sentiment_score
+    else:  # date / relevance without a query / default
         order_col = Article.published_at
     q = q.order_by(order_col.desc() if descending else order_col.asc(), Article.id.desc())
     if limit is not None:
@@ -1535,6 +1591,7 @@ def search_articles(  # plain def -> Starlette threadpool (S2.5): the synchronou
         description="Q503: cap the cross-language fan-out at 40 forms, most frequent "
         "first. false = search every form the concept has.",
     ),
+    adv: AdvancedSearch = Depends(advanced_search_params),
     db: Session = Depends(get_db),
 ):
     """
@@ -1571,6 +1628,12 @@ def search_articles(  # plain def -> Starlette threadpool (S2.5): the synchronou
     Each result carries ``provenance`` (its content-provenance class) and
     ``keyword_count`` (mentions of the searched keyword, or null); the response carries
     ``keyword_for_count`` -- the resolved keyword whose counts are shown, or null.
+
+    The advanced filter set (S05-01, :func:`~src.api.search_filters.advanced_search_params`)
+    adds languages over asserted and detected, sources, countries, regions, the collected
+    range, word counts, sentiment, mentioned dates, include-quarantined and the exact /
+    NEAR settings. The response's ``ordering`` states what order the list is in, because
+    a relevance-ranked list is not a sample of anything (LESSONS.md, 2026-09-05).
     """
     logger.info(f"Search request: query={query}, source={source}, limit={limit}, offset={offset}")
 
@@ -1618,7 +1681,8 @@ def search_articles(  # plain def -> Starlette threadpool (S2.5): the synchronou
             a.id: a
             for a in (
                 db.query(Article)
-                .filter(Article.id.in_(id_list), Article.quarantined.isnot(True))
+                .filter(Article.id.in_(id_list),
+                        *([] if adv.include_quarantined else [Article.quarantined.isnot(True)]))
                 .all()
                 if id_list
                 else []
@@ -1654,14 +1718,17 @@ def search_articles(  # plain def -> Starlette threadpool (S2.5): the synchronou
             "offset": 0,
             "results": results,
             "keyword_for_count": kw_term,
+            "ordering": result_ordering(None, sort_by, sort_dir, ids=True),
         }
 
     # R1 (2026-09-05): cross-language expansion, ON by default per the ruling and
     # DISCLOSED in the payload below. `expand=false` is the "narrow to the literal term"
     # click -- the same request with the hook off, so the two readings are one parameter
     # apart and the reader can always get back to exactly what they typed.
+    # Q610: the "exact" reading is what the reader typed, so it does not widen to the
+    # concept's other languages either -- the payload's `exact` says so.
     expander = _query_expander(
-        query, enabled=expand, ui_lang=ui_lang, senses=sense,
+        query, enabled=expand and not adv.exact, ui_lang=ui_lang, senses=sense,
         cap=-1 if literal_cap else None,
     )
     articles, total = _query_articles(
@@ -1680,6 +1747,7 @@ def search_articles(  # plain def -> Starlette threadpool (S2.5): the synchronou
         source_type=source_type,
         keyword_id=kw_id,
         expand=expander,
+        adv=adv,
     )
 
     # Per-article keyword count for the displayed page only (a cheap mentions-only
@@ -1696,7 +1764,22 @@ def search_articles(  # plain def -> Starlette threadpool (S2.5): the synchronou
         "offset": offset,
         "results": results,
         "keyword_for_count": kw_term,
+        "ordering": result_ordering(query if has_ranked_part(query) else None, sort_by, sort_dir),
     }
+    if not adv.is_default:
+        payload["advanced"] = adv.to_dict()
+    # Q605 = b: "did you mean", OFFERED beside the literal results -- the query above ran
+    # exactly as typed, and this block only names a query the reader may click. Absent
+    # when every word is a known keyword or the table has never been built.
+    if query:
+        try:
+            from src.analytics.spell_index import did_you_mean
+
+            dym = did_you_mean(db, query)
+        except Exception:  # noqa: BLE001 - a suggestion must never fail the search it sits beside
+            dym = None
+        if dym is not None:
+            payload["did_you_mean"] = dym
     # R1 honesty rail: expansion changed WHICH articles matched, so it is stated here and
     # rendered by default. Absent when no query term touched a ring -- an ordinary search
     # carries no extra weight.
@@ -1720,10 +1803,25 @@ def export_articles(  # plain def -> threadpool (S2.5): export uses limit=None, 
     language: str | None = None,
     tags: str | None = None,
     ids: str | None = None,
+    sort_by: str | None = None,
+    sort_dir: str | None = None,
+    provenance: str | None = None,
+    source_type: str | None = None,
+    expand: bool = True,
+    ui_lang: str | None = None,
+    sense: list[str] | None = Query(None),
+    literal_cap: bool = True,
+    adv: AdvancedSearch = Depends(advanced_search_params),
     db: Session = Depends(get_db),
 ):
     """
     Export articles in CSV or JSON format with advanced filters.
+
+    Q607 = a: this takes EVERY parameter ``/api/articles`` takes -- the same filters, the
+    same cross-language controls, the same advanced set and the same sort -- and resolves
+    them through the same ``_query_articles`` call, so the file holds exactly the ids of
+    the filtered view, in its order. The order is stated in the envelope (``ordering``),
+    as the X-OO-Query header of a CSV and inside the JSON wrapper.
 
     Parameters:
     - format: Export format (csv or json).
@@ -1745,6 +1843,33 @@ def export_articles(  # plain def -> threadpool (S2.5): export uses limit=None, 
         raise HTTPException(status_code=400, detail="Unsupported format. Use 'csv' or 'json'.")
     _validate_date(start_date, "start_date")
     _validate_date(end_date, "end_date")
+    provenance = (provenance or "").strip().lower() or None
+    if provenance == "all":
+        provenance = None
+    source_type = (source_type or "").strip().lower() or None
+    if source_type == "all":
+        source_type = None
+    if sort_by is not None and sort_by not in _SORT_FIELDS and sort_by != _KEYWORD_COUNT_SORT:
+        raise HTTPException(
+            status_code=400,
+            detail=f"sort_by must be one of {sorted(_SORT_FIELDS | {_KEYWORD_COUNT_SORT})}",
+        )
+    if provenance is not None and provenance not in PROVENANCE_CLASSES:
+        raise HTTPException(
+            status_code=400, detail=f"provenance must be one of {sorted(PROVENANCE_CLASSES)}"
+        )
+    ordering = result_ordering(
+        query if has_ranked_part(query) else None, sort_by, sort_dir, ids=bool(ids)
+    )
+    envelope_query = {
+        "query": query, "source": source, "start_date": start_date, "end_date": end_date,
+        "language": language, "tags": tags, "provenance": provenance,
+        "source_type": source_type, "sort_by": sort_by, "sort_dir": sort_dir,
+        **({} if expand else {"expand": "false"}),
+        **{k: (",".join(map(str, v)) if isinstance(v, list) else v)
+           for k, v in adv.to_dict().items()},
+    }
+    ordering_label = str(ordering["by"]) + (f" {ordering['direction']}" if ordering["direction"] else "")
 
     if ids:
         # An explicit id set bypasses the filter query entirely, exactly as
@@ -1756,7 +1881,8 @@ def export_articles(  # plain def -> threadpool (S2.5): export uses limit=None, 
             a.id: a
             for a in (
                 db.query(Article)
-                .filter(Article.id.in_(id_list), Article.quarantined.isnot(True))
+                .filter(Article.id.in_(id_list),
+                        *([] if adv.include_quarantined else [Article.quarantined.isnot(True)]))
                 .all()
                 if id_list
                 else []
@@ -1764,7 +1890,13 @@ def export_articles(  # plain def -> threadpool (S2.5): export uses limit=None, 
         }
         articles = [by_id[i] for i in id_list if i in by_id]
     else:
-        # limit=None -> export every matching row, faithful to the filter.
+        # limit=None -> export every matching row, faithful to the filter. The SAME call
+        # /api/articles makes, with the same arguments, so the two cannot disagree.
+        kw_id, _kw_term = _resolve_count_keyword(db, query)
+        expander = _query_expander(
+            query, enabled=expand and not adv.exact, ui_lang=ui_lang, senses=sense,
+            cap=-1 if literal_cap else None,
+        )
         articles, _total = _query_articles(
             db,
             query=query,
@@ -1775,6 +1907,13 @@ def export_articles(  # plain def -> threadpool (S2.5): export uses limit=None, 
             tags=tags,
             limit=None,
             offset=0,
+            sort_by=sort_by,
+            sort_dir=sort_dir,
+            provenance=provenance,
+            source_type=source_type,
+            keyword_id=kw_id,
+            expand=expander,
+            adv=adv,
         )
 
     if format == "csv":
@@ -1820,11 +1959,9 @@ def export_articles(  # plain def -> threadpool (S2.5): export uses limit=None, 
                 "Content-Disposition": "attachment; filename=articles.csv",
                 # Versioned export contract (WP2/RM-15): provenance travels as
                 # headers so the CSV body stays plain columns.
-                **envelope_headers(
-                    kind="articles",
-                    query={"query": query, "source": source, "start_date": start_date,
-                           "end_date": end_date, "language": language, "tags": tags},
-                ),
+                **envelope_headers(kind="articles", query=envelope_query),
+                # The file's order, stated where the provenance travels (S05-01 S5).
+                "X-OO-Ordering": ordering_label,
             },
         )
 
@@ -1847,15 +1984,9 @@ def export_articles(  # plain def -> threadpool (S2.5): export uses limit=None, 
         }
         for a in articles
     ]
-    return JSONResponse(
-        content=envelope(
-            kind="articles",
-            query={"query": query, "source": source, "start_date": start_date,
-                   "end_date": end_date, "language": language, "tags": tags},
-            count=len(rows),
-            payload=rows,
-        )
-    )
+    body = envelope(kind="articles", query=envelope_query, count=len(rows), payload=rows)
+    body["ordering"] = ordering
+    return JSONResponse(content=body)
 
 
 @app.get("/api/articles/{article_id}/view", response_class=HTMLResponse)

@@ -35,7 +35,7 @@ and the two hard preconditions above stand unchanged.
 
 | # | Row | Owner | Origin | Status |
 |---|---|---|---|---|
-| A | The advanced search — one UI for every search need | session | ruled (R11; Q505, Q601–Q618) · brief `S05-01` | **OPEN** |
+| A | The advanced search — one UI for every search need | session | ruled (R11; Q505, Q601–Q618) · brief `S05-01` | **BUILT 2026-09-28 (PR #1198)** — Chromium-verified (remote sandbox) in en and ar · awaiting human UX pass |
 | B | ISO 3166-1 alpha-3, step 2: the store, the configs, the payload flip | session + operator (a real restore) | ruled (Q301 ⛔ = c step 2, Q304, Q305, Q313; `R38` first of B/J, `R39` the hi/bn rebuild; Q306 storage step *proposed placement*) · `S05-02` | **OPEN** — needs 0.4 row K exercised |
 | C | The entity spine: QIDs, Wikidata items, the Place entity, the gazetteer artifacts | session + operator (artifact build) | ruled (Q415, Q724, Q805, Q818, Q827) · `S05-03` | **OPEN** |
 | D | The OSM lane seeded: the first country's places, roads and buildings; the tag-completeness view | session + operator (extract + planet history download) | ruled (R16; Q106, Q806–Q811, Q813, Q814, Q815 · 1, Q817, Q819 · 3, Q820, Q822, Q824, Q825, Q828, Q1008) · `S05-04` | **OPEN** — ODbL (Q823 ⛔) PENDING |
@@ -58,7 +58,7 @@ allows; if Q1009 ⛔ is still blank, the walk runs under the existing store and 
 
 ## 2. The rows
 
-### Row A — The advanced search · ruled (R11; Q505, Q601–Q618) · OPEN
+### Row A — The advanced search · ruled (R11; Q505, Q601–Q618) · BUILT 2026-09-28 (PR #1198), awaiting human UX pass
 
 **What it must demonstrate.** The v1 filter list confirmed (Q601: language multi-select over asserted **and**
 detected, labelled · sources facet with counts · source tags · provenance / channel · source country + region
@@ -355,6 +355,7 @@ the default. Brief `S05-05`, with `S04-11` S3's toggle.
 | 2026-09-28 | **The 0.5 start, answered in chat** («D1: Yes, start. … D2: a D3: a», with a question about the Wikipedia walk): `R38` — row B before row J, never concurrently; `R39` — the hi/bn tokenizer rebuild is paid inside row B's window, and row B now also closes on its measured rebuild time and a hi fixture; `R40` — row F is built first so its operator run overlaps the build (order only; no gate moved). Wave 1 starts with rows A and I in their own threads. **No row changed status.** | maintainer (chat, 2026-09-28 11:07 UTC) · recorded by the session |
 | 2026-09-28 | **Row F: the walk built (S2 + S3), off by default.** The `allpages` walk, its per-edition bookmark, its coverage and per-transport counters in the lane counters artifact, a Living sources group and a task-manager row; the switch that decides where it runs is asked on a card and built at the recommended «off» meanwhile (`OPEN_QUEUE.md` «THE WALK'S SWITCH»). Five seams stated in the row, the fetch-history round trip first. **No row changed status.** | session, PR #1197 |
 | 2026-09-28 | **`R51`: the walk runs only where it is switched on, off by default** («Switch, off» on the decision card, the recommended option). Row F's text now names the ruling where it named the open question; the default was already built this way, so only a test pinning it was added. **No row changed status.** | decision card in the project thread «Plan v0.5», 2026-09-28 12:41 UTC |
+| 2026-09-28 | **Row A built (S05-01, PR #1198).** All nineteen rulings implemented; Chromium-verified in the remote sandbox in English and Arabic (the builder, the timescale, list and table views, did-you-mean, save and re-open, the permalink, history, the omnibar's Enter, the first-launch history step); the did-you-mean table on the 200 MB reference corpus: 873,889 rows, 4.9 s, 12.6 MB. Status stays short of CLOSED until a human UX pass. | session |
 
 ---
 

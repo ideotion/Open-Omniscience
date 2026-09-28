@@ -37,10 +37,25 @@ def envelope(*, kind: str, query: dict, count: int, payload) -> dict:
     }
 
 
+def _header_safe(value) -> str:
+    from urllib.parse import quote
+
+    text = str(value)
+    try:
+        text.encode("latin-1")
+        return text
+    except UnicodeEncodeError:
+        return quote(text, safe=" ,:*\"()=")
+
+
 def envelope_headers(*, kind: str, query: dict) -> dict[str, str]:
     """The same provenance as HTTP headers — for CSV, whose body must stay
     plain columns (a comment line would break naive CSV readers)."""
-    q = "&".join(f"{k}={v}" for k, v in query.items() if v is not None)
+    # Percent-encoded beyond Latin-1: an HTTP header value is Latin-1, so a query in
+    # Chinese, Arabic or Hindi raised UnicodeEncodeError and failed the whole export.
+    q = "&".join(
+        f"{k}={_header_safe(v)}" for k, v in query.items() if v is not None
+    )
     return {
         "X-OO-Export-Schema": EXPORT_SCHEMA,
         "X-OO-Export-Kind": kind,

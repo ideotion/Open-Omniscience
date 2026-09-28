@@ -64,6 +64,7 @@ logger = logging.getLogger(__name__)
 FN_NORM = "oo_fts_norm"  # (text, mask) -> the text as it is indexed under that mask
 FN_CAPS = "oo_fts_caps"  # () -> the mask this connection would index new text under
 FN_USED = "oo_fts_used"  # (title, content, caps) -> the part of caps that changes either text
+FN_FOLD = "oo_search_fold"  # (text) -> case- and accent-folded, for the advanced field filters
 
 #: The per-document record. See the module docstring.
 STATE_TABLE = "article_fts_norm"
@@ -106,6 +107,22 @@ _AR_ANY = re.compile(
     "[ؐ-ًؚ-ٰٟۖ-ۜ۟-۪ۤۧۨ-ۭـ"
     "آأإةىٱ]"
 )
+
+
+def search_fold(text: str | None) -> str | None:
+    """Case- and accent-fold ``text`` the way the article index folds it (Q610 = a).
+
+    The index's ``unicode61 remove_diacritics 2`` folds case and strips diacritics, so a
+    field filter that is answered in SQL rather than by the index (``author:``, ``url:``,
+    ``source:``, ``tag:``, ``title:=``) folds with this to mean the same thing: ``é`` = ``e``,
+    ``Ä`` = ``a``. NFKD then dropping combining marks, then ``casefold``. ``None`` stays
+    ``None`` so a SQL ``NULL`` column is never mistaken for an empty one."""
+    if text is None:
+        return None
+    import unicodedata
+
+    decomposed = unicodedata.normalize("NFKD", str(text))
+    return "".join(c for c in decomposed if not unicodedata.combining(c)).casefold()
 
 
 def fold_arabic(text: str) -> str:
@@ -381,7 +398,8 @@ def _normalize_sql(text: str | None, mask: int) -> str | None:
 
 
 def register(dbapi_connection) -> None:
-    """Register the three functions the sync triggers call on one SQLite connection.
+    """Register the three functions the sync triggers call on one SQLite connection
+    (and ``oo_search_fold``, which the advanced search's SQL field filters call).
 
     Every connection that can write ``articles`` needs them: a trigger calling a function
     the connection does not have fails, and so does the write that fired it.
@@ -400,10 +418,12 @@ def register(dbapi_connection) -> None:
         create(FN_NORM, 2, _normalize_sql, deterministic=True)
         create(FN_USED, 3, used_mask, deterministic=True)
         create(FN_CAPS, 0, lambda: caps)
+        create(FN_FOLD, 1, search_fold, deterministic=True)
     except TypeError:  # an old driver without the deterministic flag
         create(FN_NORM, 2, _normalize_sql)
         create(FN_USED, 3, used_mask)
         create(FN_CAPS, 0, lambda: caps)
+        create(FN_FOLD, 1, search_fold)
 
 
 def _on_connect(dbapi_connection, _connection_record) -> None:

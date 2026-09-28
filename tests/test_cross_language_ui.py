@@ -298,7 +298,8 @@ def test_the_lens_survives_a_reload_and_a_shared_link() -> None:
     # It must travel as part of the SEED. Applied beside the spawn instead, the new tab's
     # own _anApplySeed would overwrite it and _anWriteLensToUrl would erase it from the
     # URL in the same breath -- which is what the first version of this did.
-    assert "openAnalysisFor(analyze, (prov || lens) ? {prov, lens} : undefined)" in hydrate
+    # (S05-01 adds the link's filters to the same seed object, for the same reason.)
+    assert "openAnalysisFor(analyze, (prov || lens || Object.keys(adv).length) ? {prov, lens, adv} : undefined)" in hydrate
     assert "openAnalysisForIds(ids, sp.get(\"label\") || \"\", prov, lens)" in hydrate
 
 

@@ -30,6 +30,7 @@ from src.analytics import queries as q
 from src.analytics import readmodel as rm
 from src.analytics.convergence import find_convergences
 from src.api.heavy import HeavyBusy, flight_key, guarded_read, run_heavy
+from src.api.search_filters import AdvancedSearch, advanced_search_params
 from src.database.maintenance import StatementTimeout, statement_deadline
 from src.database.session import get_db
 from src.jobs.background import BackgroundJob, register_job
@@ -163,6 +164,17 @@ _read_cache = SimpleCache(max_size=128, default_ttl=max(1, _CACHE_TTL_S))
 
 def _ckey(name: str, **params) -> str:
     return name + "|" + "|".join(f"{k}={params[k]}" for k in sorted(params))
+
+
+def _akey(adv: AdvancedSearch | None) -> dict:
+    """The advanced filter set's part of a cache key: NOTHING for the default set, so
+    every key -- and every warmed key -- a search without advanced filters builds stays
+    byte-identical; the whole stored form otherwise, so two filter sets never share one."""
+    if adv is None or adv.is_default:
+        return {}
+    import json
+
+    return {"adv": json.dumps(adv.to_dict(), sort_keys=True)}
 
 
 # --- S3.3: ONE key builder per cached endpoint ----------------------------- #
@@ -393,8 +405,13 @@ def _resolve_corpus(
     ui_lang: str | None = None,
     sense: list[str] | None = None,
     literal_cap: int | None = -1,
+    adv: AdvancedSearch | None = None,
 ) -> tuple[list[int], int]:
     """Resolve the analysis corpus to ``(ids, total)``.
+
+    ``adv`` is the advanced search's filter set (S05-01): the analysis window analyses
+    exactly the set its Advanced subtab describes, through the same ``_query_articles``
+    call the Articles list and the export make.
 
     An EXPLICIT article-id set (a Home card / agenda event's *precise* selection,
     comma-separated) takes precedence — deduped, order-preserving, bounded by ``cap``;
@@ -434,12 +451,13 @@ def _resolve_corpus(
         return ids[:cap], len(ids)
     from src.api.main import _query_articles, _query_expander
 
+    exact = bool(adv is not None and adv.exact)
     expander = _query_expander(
-        query, enabled=expand, ui_lang=ui_lang, senses=sense, cap=literal_cap
+        query, enabled=expand and not exact, ui_lang=ui_lang, senses=sense, cap=literal_cap
     )
     articles, total = _query_articles(
         db, query=query, source=source, start_date=start_date, end_date=end_date,
-        language=language, tags=tags, limit=cap, offset=0, expand=expander,
+        language=language, tags=tags, limit=cap, offset=0, expand=expander, adv=adv,
     )
     return [a.id for a in articles], total
 
@@ -510,7 +528,7 @@ def _cross_language_block(
     from src.database.fts import build_match
 
     try:
-        build_match(query, expand=exp)
+        build_match(query, expand=exp, grammar=True)
     except Exception:  # noqa: BLE001 - a disclosure must never blank the tab it explains
         return None
     return exp.disclosure()
@@ -924,6 +942,7 @@ def insights_corpus_keywords(
     limit: int = Query(30, ge=1, le=100),
     cap: int = Query(1000, ge=1, le=5000),
     target_lang: str | None = Query(None, description="UI language for verified ring translations"),
+    adv: AdvancedSearch = Depends(advanced_search_params),
     db: Session = Depends(get_db),
 ) -> dict:
     """Top keywords across the analysis corpus — either an EXPLICIT article-id set (a
@@ -937,7 +956,7 @@ def insights_corpus_keywords(
     # this subtab is instant instead of re-paying the search + aggregation (field test
     # 2026-06-24: the analysis window's "Loading…"). Resolve INSIDE the compute so a hit
     # skips the search too. TTL-disclosed (cached/computed_at), like every cached endpoint.
-    key = _ckey("corpus-keywords", **_xkey(expand, ui_lang, sense, literal_cap),
+    key = _ckey("corpus-keywords", **_akey(adv), **_xkey(expand, ui_lang, sense, literal_cap),
                 ids=article_ids, q=query, src=source, sd=start_date,
                 ed=end_date, lang=language, tags=tags, kind=kind, limit=limit, cap=cap, tl=target_lang)
 
@@ -946,8 +965,7 @@ def insights_corpus_keywords(
             db, article_ids, query=query, source=source, start_date=start_date,
             end_date=end_date, language=language, tags=tags, cap=cap,
             expand=expand, ui_lang=ui_lang, sense=sense,
-            literal_cap=-1 if literal_cap else None,
-        )
+            literal_cap=-1 if literal_cap else None, adv=adv)
         res = q.corpus_keywords(db, article_ids=ids, kind=_kind(kind), limit=limit, target_lang=_tlang(target_lang))
         res["total_matched"] = total
         _xl = _cross_language_block(
@@ -1020,6 +1038,7 @@ def insights_corpus_www(
     ] = True,
     limit: int = Query(40, ge=1, le=200),
     cap: int = Query(1000, ge=1, le=5000),
+    adv: AdvancedSearch = Depends(advanced_search_params),
     db: Session = Depends(get_db),
 ) -> dict:
     """Who (people/orgs) + Where (places) + When (mentioned years) DEDUCED across the
@@ -1027,7 +1046,7 @@ def insights_corpus_www(
     When/Where/Who facet surface. Each facet value is clickable (the drill endpoint
     below narrows the corpus). Deduced from text, never confirmed; no score. Bounded to
     ``cap`` (disclosed)."""
-    key = _ckey("corpus-www", **_xkey(expand, ui_lang, sense, literal_cap),
+    key = _ckey("corpus-www", **_akey(adv), **_xkey(expand, ui_lang, sense, literal_cap),
                 ids=article_ids, q=query, src=source, sd=start_date,
                 ed=end_date, lang=language, tags=tags, limit=limit, cap=cap)
 
@@ -1036,8 +1055,7 @@ def insights_corpus_www(
             db, article_ids, query=query, source=source, start_date=start_date,
             end_date=end_date, language=language, tags=tags, cap=cap,
             expand=expand, ui_lang=ui_lang, sense=sense,
-            literal_cap=-1 if literal_cap else None,
-        )
+            literal_cap=-1 if literal_cap else None, adv=adv)
         return {
             "who": q.corpus_who(db, article_ids=ids, limit=limit),
             "where": q.corpus_where(db, article_ids=ids, limit=limit),
@@ -1085,6 +1103,7 @@ def insights_corpus_facet_articles(
         ),
     ] = True,
     cap: int = Query(1000, ge=1, le=5000),
+    adv: AdvancedSearch = Depends(advanced_search_params),
     db: Session = Depends(get_db),
 ) -> dict:
     """The facet DRILL — the article ids WITHIN the current analysis corpus that carry a
@@ -1104,8 +1123,7 @@ def insights_corpus_facet_articles(
         db, article_ids, query=query, source=source, start_date=start_date,
         end_date=end_date, language=language, tags=tags, cap=cap,
         expand=expand, ui_lang=ui_lang, sense=sense,
-        literal_cap=-1 if literal_cap else None,
-    )
+        literal_cap=-1 if literal_cap else None, adv=adv)
     matched = q.corpus_facet_article_ids(db, article_ids=ids, facet=facet, value=value)
     return {
         "facet": facet,
@@ -1150,6 +1168,7 @@ def insights_corpus_source_language_facets(
         ),
     ] = True,
     cap: int = Query(1000, ge=1, le=5000),
+    adv: AdvancedSearch = Depends(advanced_search_params),
     db: Session = Depends(get_db),
 ) -> dict:
     """Sources + languages PRESENT in the CURRENT corpus, with counts — the facet list
@@ -1160,8 +1179,7 @@ def insights_corpus_source_language_facets(
         db, article_ids, query=query, source=source, start_date=start_date,
         end_date=end_date, language=language, tags=tags, cap=cap,
         expand=expand, ui_lang=ui_lang, sense=sense,
-        literal_cap=-1 if literal_cap else None,
-    )
+        literal_cap=-1 if literal_cap else None, adv=adv)
     facets = q.corpus_source_language_facets(db, article_ids=ids)
     return {
         "sources": facets["sources"],
@@ -1290,6 +1308,7 @@ def insights_corpus_sentiment(
         ),
     ] = True,
     cap: int = Query(1000, ge=1, le=5000),
+    adv: AdvancedSearch = Depends(advanced_search_params),
     db: Session = Depends(get_db),
 ) -> dict:
     """Tone distribution across the analysis corpus (an explicit article-id set or the
@@ -1297,7 +1316,7 @@ def insights_corpus_sentiment(
     English-lexicon based, so the response carries the English share + a caveat that
     non-English scores are unreliable. Counts only; tone is a measured word-valence,
     never a verdict. Bounded to ``cap`` (disclosed)."""
-    key = _ckey("corpus-sentiment", **_xkey(expand, ui_lang, sense, literal_cap),
+    key = _ckey("corpus-sentiment", **_akey(adv), **_xkey(expand, ui_lang, sense, literal_cap),
                 ids=article_ids, q=query, src=source, sd=start_date,
                 ed=end_date, lang=language, tags=tags, cap=cap)
 
@@ -1306,8 +1325,7 @@ def insights_corpus_sentiment(
             db, article_ids, query=query, source=source, start_date=start_date,
             end_date=end_date, language=language, tags=tags, cap=cap,
             expand=expand, ui_lang=ui_lang, sense=sense,
-            literal_cap=-1 if literal_cap else None,
-        )
+            literal_cap=-1 if literal_cap else None, adv=adv)
         res = q.corpus_sentiment(db, article_ids=ids)
         res["total_matched"] = total
         _xl = _cross_language_block(
@@ -1355,13 +1373,14 @@ def insights_corpus_sources(
     ] = True,
     limit: int = Query(40, ge=1, le=200),
     cap: int = Query(1000, ge=1, le=5000),
+    adv: AdvancedSearch = Depends(advanced_search_params),
     db: Session = Depends(get_db),
 ) -> dict:
     """How each SOURCE covers the analysis corpus (an explicit article-id set or the
     search) — the source view: per-source volume, mean tone, publication span. Counts +
     dates exact; mean tone inherits the VADER English caveat. No ranking, no verdict —
     coverage, not credibility. Bounded to ``cap`` (disclosed)."""
-    key = _ckey("corpus-sources", **_xkey(expand, ui_lang, sense, literal_cap),
+    key = _ckey("corpus-sources", **_akey(adv), **_xkey(expand, ui_lang, sense, literal_cap),
                 ids=article_ids, q=query, src=source, sd=start_date,
                 ed=end_date, lang=language, tags=tags, limit=limit, cap=cap)
 
@@ -1370,8 +1389,7 @@ def insights_corpus_sources(
             db, article_ids, query=query, source=source, start_date=start_date,
             end_date=end_date, language=language, tags=tags, cap=cap,
             expand=expand, ui_lang=ui_lang, sense=sense,
-            literal_cap=-1 if literal_cap else None,
-        )
+            literal_cap=-1 if literal_cap else None, adv=adv)
         res = q.corpus_sources(db, article_ids=ids, limit=limit)
         res["n_articles"] = len(ids)
         _xl = _cross_language_block(
@@ -1419,6 +1437,7 @@ def insights_corpus_coordination(
         ),
     ] = True,
     cap: int = Query(400, ge=1, le=2000),
+    adv: AdvancedSearch = Depends(advanced_search_params),
     db: Session = Depends(get_db),
 ) -> dict:
     """Near-duplicate / coordination clusters within the analysis corpus (an explicit
@@ -1427,7 +1446,7 @@ def insights_corpus_coordination(
     near-duplication only (MinHash+LSH, high-precision); independence = distinct sources;
     counts only, NO score. Bounded to ``cap`` (disclosed) because clustering reads full
     article text."""
-    key = _ckey("corpus-coordination", **_xkey(expand, ui_lang, sense, literal_cap),
+    key = _ckey("corpus-coordination", **_akey(adv), **_xkey(expand, ui_lang, sense, literal_cap),
                 ids=article_ids, q=query, src=source, sd=start_date,
                 ed=end_date, lang=language, tags=tags, cap=cap)
 
@@ -1436,8 +1455,7 @@ def insights_corpus_coordination(
             db, article_ids, query=query, source=source, start_date=start_date,
             end_date=end_date, language=language, tags=tags, cap=cap,
             expand=expand, ui_lang=ui_lang, sense=sense,
-            literal_cap=-1 if literal_cap else None,
-        )
+            literal_cap=-1 if literal_cap else None, adv=adv)
         res = q.corpus_coordination(db, article_ids=ids)
         res["total_matched"] = total
         _xl = _cross_language_block(
@@ -3534,6 +3552,7 @@ def insights_graph(
     target_lang: str | None = Query(
         None, description="label language for an article-set map's nodes (M7); UI locale"
     ),
+    adv: AdvancedSearch = Depends(advanced_search_params),
     db: Session = Depends(get_db),
 ) -> dict:
     """The layered keyword graph (maintainer-ruled 2026-06-10): a keyword with
@@ -3557,8 +3576,7 @@ def insights_graph(
             db, article_ids, query=query, source=source, start_date=start_date,
             end_date=end_date, language=language, tags=tags, cap=cap,
             expand=expand, ui_lang=ui_lang, sense=sense,
-            literal_cap=-1 if literal_cap else None,
-        )
+            literal_cap=-1 if literal_cap else None, adv=adv)
         # Cache by the exact id set so re-opening the same analysis mindmap is instant --
         # and by the label language, whose translations the nodes now carry (M7).
         _tl = _tlang(target_lang)

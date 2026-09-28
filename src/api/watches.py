@@ -22,18 +22,24 @@ router = APIRouter(prefix="/api/watches", tags=["watches"])
 
 class WatchBody(BaseModel):
     name: str = Field("", max_length=200)
-    query: str = Field(..., min_length=1, max_length=2000)
-    threshold: int = Field(3, ge=1, le=10000)
+    # Empty is allowed only for a saved search that carries filters (checked in
+    # create_watch): "every German article from these three sources" has no query text.
+    query: str = Field("", max_length=2000)
+    # 0 = a SAVED SEARCH (Q606 = a): re-run on demand, never evaluated, never fires.
+    threshold: int = Field(3, ge=0, le=10000)
     window_days: int = Field(7, ge=1, le=3650)
     enabled: bool = True
+    # The advanced search's filter set, in the stored form of AdvancedSearch.to_dict().
+    filters: dict | None = None
 
 
 class WatchPatch(BaseModel):
     name: str | None = Field(None, max_length=200)
     query: str | None = Field(None, max_length=2000)
-    threshold: int | None = Field(None, ge=1, le=10000)
+    threshold: int | None = Field(None, ge=0, le=10000)
     window_days: int | None = Field(None, ge=1, le=3650)
     enabled: bool | None = None
+    filters: dict | None = None
 
 
 @router.get("")
@@ -61,18 +67,23 @@ def create_watch(body: WatchBody, db: Session = Depends(get_db)) -> dict:
         w = _create(
             db, name=body.name, query=body.query,
             threshold=body.threshold, window_days=body.window_days, enabled=body.enabled,
+            filters=body.filters,
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     db.commit()
-    return {"id": w.id, "name": w.name, "query": w.query, "enabled": bool(w.enabled)}
+    return {"id": w.id, "name": w.name, "query": w.query, "enabled": bool(w.enabled),
+            "saved_search": w.threshold == 0}
 
 
 @router.patch("/{watch_id}")
 def update_watch(watch_id: int, body: WatchPatch, db: Session = Depends(get_db)) -> dict:
     from src.analytics.watches import update_watch as _update
 
-    w = _update(db, watch_id, **body.model_dump(exclude_none=True))
+    try:
+        w = _update(db, watch_id, **body.model_dump(exclude_none=True))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     if w is None:
         raise HTTPException(status_code=404, detail="no such watch")
     db.commit()
