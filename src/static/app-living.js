@@ -453,7 +453,7 @@
       _LIVING_KINDS.forEach((v) => { const el = $("living-" + v); if (el) el.style.display = (v === kind) ? "" : "none"; });
       loadLivingOverview();
       if (kind === "wiki") { _livingStreamOffset = 0; loadLivingStream(); loadLivingPages(); }
-      else if (kind === "law") loadLivingLaw();
+      else if (kind === "law") { loadLivingLaw(); loadLawEvolution(); }
       else if (kind === "osm") loadLivingMaps();
     }
 
@@ -599,14 +599,18 @@
         + livingLawRowsHtml(d.changes, t);
     }
 
-    async function loadLivingLaw() {
-      const t = _livingT();
-      const box = $("living-law-changes");
-      if (!box) return;
+    // The evolution surface (row G) loads beside the change stream, not inside it: the
+    // stream is one fetch with its own failure line, and each panel below has its own.
+    function loadLawEvolution() {
       _wireLawEvolution();
       loadLawWeek();
       loadLivingLawDocs();
       loadLawAmendMap();
+    }
+    async function loadLivingLaw() {
+      const t = _livingT();
+      const box = $("living-law-changes");
+      if (!box) return;
       box.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
       try {
         _livingLawLast = await api("/api/law/changes?limit=50");
@@ -669,7 +673,7 @@
       if (!box || !d) return;
       const rows = (d.items || []).map((i) => `<div class="living-row">`
         + `<a href="${esc(i.reader_url)}" target="_blank" rel="noopener">${esc(i.title || "?")}</a>`
-        + ` <span class="muted">${esc((i.jurisdiction || "").toUpperCase())}${i.language ? " · " + esc(i.language) : ""}</span>`
+        + ` <span class="muted">${ooCountryCell(i.jurisdiction)}${i.language ? " · " + ooLangCell(i.language) : ""}</span>`
         + ` · ${esc(tf("{n} new versions captured", { n: fmtNum(i.changes, 0) }))}`
         + ` · <span class="muted">${esc(livingWhen(i.newest, t))}</span></div>`).join("");
       box.innerHTML = (rows || `<div class="muted">${esc(tf("Nothing you follow changed in the last {n} days.", { n: d.window_days }))}</div>`)
@@ -700,11 +704,11 @@
         : "";
       const hits = (d.hits || []).map((h) => {
         const others = (h.other_languages || []).map((o) => o.id != null
-          ? `<a href="/api/law/documents/${Number(o.id)}/view" target="_blank" rel="noopener">${esc(o.language)}</a>`
-          : `<span class="muted">${esc(o.language)}</span>`).join(" ");
+          ? `<a href="/api/law/documents/${Number(o.id)}/view" target="_blank" rel="noopener">${ooLangCell(o.language)}</a>`
+          : `<span class="muted">${ooLangCell(o.language)}</span>`).join(" ");
         return `<div class="living-row" data-i18n-dyn>`
           + `<a href="${esc(h.reader_url)}" target="_blank" rel="noopener">${esc(h.title || "?")}</a>`
-          + ` <span class="muted">${esc((h.jurisdiction || "").toUpperCase())}${h.language ? " · " + esc(h.language) : ""}</span>`
+          + ` <span class="muted">${ooCountryCell(h.jurisdiction)}${h.language ? " · " + ooLangCell(h.language) : ""}</span>`
           + `<div>${esc(lawSpan(h, tf))} <span class="muted">(${esc(lawDatingWords(h.dating, t))})</span>`
           + (h.current ? ` · ${esc(t("the newest held version"))}` : "") + `</div>`
           + `<div class="muted" style="unicode-bidi:plaintext">${esc(h.snippet || "")}</div>`
@@ -736,7 +740,7 @@
       box.innerHTML = docs.length
         ? docs.map((x) => `<button type="button" class="tiny secondary living-page" data-law-doc="${Number(x.id)}"`
             + ` title="${esc(t("Compare this document's stored versions side by side."))}">`
-            + `${esc((x.jurisdiction || "").toUpperCase())} · ${esc(x.title || "?")} <span class="muted">${esc(String(x.revisions || 0))}</span></button>`).join(" ")
+            + `${ooCountryCell(x.jurisdiction)} · ${esc(x.title || "?")} <span class="muted">${esc(String(x.revisions || 0))}</span></button>`).join(" ")
         : `<div class="muted">${esc(t("No legal documents tracked yet."))}</div>`;
     }
     async function loadLivingLawDocs() {
@@ -751,7 +755,7 @@
       const doc = ((_lawDocsLast && _lawDocsLast.documents) || []).find((x) => x.id === id);
       _lawTc = { id, title: doc ? doc.title : "" };
       const ttl = $("law-tc-title");
-      if (ttl) ttl.textContent = doc ? `${(doc.jurisdiction || "").toUpperCase()} · ${doc.title}` : "";
+      if (ttl) ttl.textContent = doc ? `${ooCountryCode(doc.jurisdiction)} · ${doc.title}` : "";
       const base = `/api/law/documents/${Number(id)}`;
       if (_lawReader) _lawReader.load(base);
       else _lawReader = ooVersionReader(host, base, { onLanguage: (other) => openLawVersions(other) });
@@ -773,7 +777,7 @@
       const box = $("law-topic-results"), d = _lawTopicLast;
       if (!box || !d) return;
       if (d.status === "no-lane") { box.innerHTML = `<div class="muted">${esc(t(d.reason))}</div>`; return; }
-      const rows = (d.rows || []).map((r) => `<tr><td>${esc((r.jurisdiction || "").toUpperCase())}</td>`
+      const rows = (d.rows || []).map((r) => `<tr><td>${ooCountryCell(r.jurisdiction)}</td>`
         + `<td>${esc(fmtNum(r.versions_matching, 0))}</td><td>${esc(fmtNum(r.documents_matching, 0))}</td>`
         + `<td>${esc(fmtNum(r.documents_current_matching, 0))}</td><td>${esc(fmtNum(r.tracked_documents, 0))}</td></tr>`).join("");
       box.innerHTML = (rows
@@ -805,8 +809,8 @@
       const off = $("law-amend-off");
       if (off) {
         off.innerHTML = (d.not_on_the_map || []).length
-          ? `<p class="hint">${esc(t("Not on the map (not a country):"))} ` + d.not_on_the_map.map((r) =>
-              esc(tf("{j}: {n} amendments, {docs} documents tracked", { j: (r.jurisdiction || "").toUpperCase(), n: fmtNum(r.amendments, 0), docs: fmtNum(r.tracked_documents, 0) }))).join(" · ") + `</p>`
+          ? `<p class="hint">${esc(ooLabelText(t("Not on the map (not a country)"), d.not_on_the_map.map((r) =>
+              tf("{j}: {n} amendments, {docs} documents tracked", { j: ooCountryCode(r.jurisdiction), n: fmtNum(r.amendments, 0), docs: fmtNum(r.tracked_documents, 0) })).join(" · ")))}</p>`
           : "";
       }
       if (typeof ooMap !== "function") return;
@@ -886,5 +890,5 @@
         });
       }
       renderLivingMaps();
-      repaintLawEvolutionFromCache();
+      if (typeof repaintLawEvolutionFromCache === "function") repaintLawEvolutionFromCache();
     }
