@@ -7028,8 +7028,9 @@ def test_guided_wizard_sources_by_theme_step():
     app = app_js()
     # the step DOM exists (theme picker + language-emphasis group)
     assert 'data-step="sources"' in html and 'id="gw-themes"' in html and 'id="gw-emph-langs"' in html
-    # the flow is sources -> finish (language step already dropped)
-    assert '_GW_STEPS = ["sources", "finish"]' in app
+    # the flow is depth -> sources -> finish (language step already dropped; the depth
+    # question opens the guide since S05-09 S4, Q1121 = a)
+    assert '_GW_STEPS = ["depth", "sources", "finish"]' in app
     # themes come from the REAL catalog tag taxonomy (the app's own loopback coverage endpoint)
     rs = app[app.index("async function _gwRenderSources(") : app.index("function _gwUpdateThemeNote(")]
     assert "/api/scheduler/coverage" in rs, "themes must come from the real tag taxonomy"

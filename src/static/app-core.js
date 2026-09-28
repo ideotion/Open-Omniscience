@@ -706,7 +706,11 @@
     // stay unreachable (the Desk lesson). S4.7: the real SOURCES-BY-THEME step is now
     // slotted before Finish (theme picker + language emphasis; loopback reads/writes only,
     // never external egress — the finish step's consented go-online is the only network path).
-    const _GW_STEPS = ["sources", "finish"];
+    // S05-09 S4 (Q1121 = a): the interface-depth question opens the guide. Standard is
+    // pre-selected, so closing or skipping the guide leaves Standard; Essentials only by
+    // a real choice. The guide only ever opens on an EMPTY corpus (checkEmptyCorpus), so
+    // an existing install is never asked and stays at Full.
+    const _GW_STEPS = ["depth", "sources", "finish"];
     let _gwIdx = 0;
     function _guideState() {
       try { return JSON.parse(localStorage.getItem(_GUIDE_KEY)) || {}; } catch { return {}; }
@@ -756,6 +760,7 @@
       if (next) next.hidden = last;
       if (fin) fin.hidden = !last;
       if (step === "lang") _gwRenderLangs();
+      if (step === "depth") _gwRenderDepth();
       if (step === "sources") _gwRenderSources();
       if (step === "finish") _gwRenderFinish();
     }
@@ -874,6 +879,17 @@
         } catch (_e) { /* best-effort local settings write; never block the guide */ }
       }
     }
+    function _gwRenderDepth() {
+      const stored = (typeof getUi === "function") ? getUi().depth : null;
+      const want = ["essentials", "standard", "full"].includes(stored) ? stored : "standard";
+      document.querySelectorAll('#guide-wizard input[name="gw-depth"]').forEach((i) => { i.checked = i.value === want; });
+    }
+    // Applied on leaving the step AND on any way of closing the guide, so a skipped
+    // question still leaves the pre-selected Standard (Q1121) rather than no answer.
+    function _gwApplyDepth() {
+      const pick = document.querySelector('#guide-wizard input[name="gw-depth"]:checked');
+      if (pick && typeof setDepth === "function") setDepth(pick.value);
+    }
     function openGuide() {
       const dlg = $("guide-wizard"); if (!dlg) return;
       _gwIdx = 0; _gwPaint();
@@ -894,6 +910,7 @@
     // network — that is the finish step's explicit, consented choice.
     function closeGuide(markDone) {
       const dlg = $("guide-wizard"); if (!dlg) return;
+      _gwApplyDepth();
       if (markDone !== false) { const s = _guideState(); s.done = true; _guideSave(s); }
       try { dlg.close(); } catch { dlg.removeAttribute("open"); }
       _syncRerunGuide();
@@ -911,6 +928,7 @@
       const next = $("gw-next"), back = $("gw-back"), fin = $("gw-finish"),
             close = $("gw-close"), go = $("gw-go-online"), stay = $("gw-stay-offline");
       if (next) next.onclick = async () => {
+        if (_GW_STEPS[_gwIdx] === "depth") _gwApplyDepth();                // apply on leaving the step
         if (_GW_STEPS[_gwIdx] === "sources") await _gwApplySourcePrefs();  // apply on leaving the step
         if (_gwIdx < _GW_STEPS.length - 1) { _gwIdx++; _gwPaint(); }
       };

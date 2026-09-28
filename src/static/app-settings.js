@@ -1207,6 +1207,23 @@
           tn.floor_reason ? ` <span class="card-tune-floor">${esc(tn.floor_reason)}</span>` : ""}</div>
       </div>`;
     }
+    // RING 2 (S05-09 S4): each Lead's numeric fine-tuning is one layer deeper, never
+    // removed. Open at Full; folded at Standard and Essentials, EXCEPT where a value
+    // already differs from the one the app ships with -- a changed setting is never
+    // tucked out of sight. saveCardSettings reads the rows wherever they sit.
+    function _cardFineTune(p) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
+        : ((x, v) => x.replace(/\{(\w+)\}/g, (m, k) => (v[k] != null ? v[k] : m)));
+      const changed = p.tunables.filter(tn => Number(tn.value) !== Number(tn.default)).length;
+      const depth = (typeof uiDepth === "function") ? uiDepth() : "full";
+      const open = depth === "full" || changed > 0;
+      const n = (typeof fmtNum === "function") ? fmtNum(p.tunables.length, 0) : String(p.tunables.length);
+      return `<details class="card-finetune"${open ? " open" : ""}>
+        <summary>${esc(tf("Fine-tune ({n})", {n}))}${changed ? ` <span class="muted">· ${esc(tf("{n} changed", {n: String(changed)}))}</span>` : ""}</summary>
+        ${p.tunables.map(tn => _cardTunableRow(p.name, tn)).join("")}
+      </details>`;
+    }
     function renderCardCatalog() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
       const host = $("cards-host"); if (!host || !_cardCat) return;
@@ -1220,7 +1237,7 @@
               <input type="checkbox" class="card-on" value="${esc(p.name)}" ${p.enabled ? "checked" : ""}
                      data-on-change="cardSetEnabled(this)"> <b>${esc(p.label)}</b></label>
             <div class="hint card-prod-d">${esc(p.description)}</div>
-            ${p.tunables.length ? p.tunables.map(tn => _cardTunableRow(p.name, tn)).join("") : ""}
+            ${p.tunables.length ? _cardFineTune(p) : ""}
           </div>`).join("")}
         </details>`;
       }).join("") + `<div class="row" style="margin-top:10px;gap:8px">

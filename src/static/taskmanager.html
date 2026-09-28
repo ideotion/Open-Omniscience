@@ -100,6 +100,18 @@
      `var(--muted)` composites to 6.09:1 on this page's panel and, unlike an opacity
      chain, cannot be dimmed a second time by an ancestor. */
   .muted { color: var(--muted, #8c95a6); } .err-line { color: var(--err, #d66); }
+  /* The Activity Ledger (S05-09 S5): one entry per action the app took on its own. Every
+     field is visible by default, the caveat included (informed consent is layered, never
+     hidden); secondary text uses the real --muted colour, not opacity (see above). */
+  .led { padding: 8px 0; border-bottom: 1px solid var(--line, #1c2029); }
+  .led-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+  .led-what { font-size: 13px; font-weight: 600; }
+  .led-when { font-size: 11px; margin-inline-start: auto; }
+  .led dl { margin: 4px 0 0; display: grid; grid-template-columns: max-content 1fr; gap: 2px 10px;
+            font-size: 12px; }
+  .led dt { color: var(--muted, #8c95a6); }
+  .led dd { margin: 0; }
+  .led .led-reserved { font-size: 11px; margin-top: 4px; }
   /* Performance cards: a metric + a live sparkline (built from a rolling buffer). */
   .perf-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
   .perf-card { border: 1px solid var(--line, #232733); border-radius: 10px; padding: 10px 12px;
@@ -172,6 +184,7 @@
     <button data-panel="queue" role="tab" data-i18n>Queue</button>
     <button data-panel="schedule" role="tab" data-i18n>Schedule</button>
     <button data-panel="history" role="tab" data-i18n>Sessions</button>
+    <button data-panel="ledger" role="tab" data-i18n>Ledger</button>
   </nav>
   <div class="tm-body">
     <div class="tm-panel" id="p-processes"><div id="jobs-body"></div></div>
@@ -179,6 +192,7 @@
     <div class="tm-panel" id="p-queue" hidden><div id="queue-body"></div></div>
     <div class="tm-panel" id="p-schedule" hidden><div id="sched-body"></div></div>
     <div class="tm-panel" id="p-history" hidden><div id="hist-body"></div></div>
+    <div class="tm-panel" id="p-ledger" hidden><div id="ledger-body"></div></div>
   </div>
   </main>
   <footer id="tm-foot" data-i18n>This window updates on its own. Collection runs continuously while online; airplane mode stops it.</footer>
