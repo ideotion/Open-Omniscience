@@ -409,7 +409,25 @@
        squeezed a backup's folder name to about three characters a line at 375 px while
        the bar cell kept its 40%. Stacked, each item reads as a block: the name on its
        own line, then the bar, the counts and the time. !important because the cells
-       carry their desktop padding and width inline. */
+       carry their desktop padding and width inline.
+       And at EVERY width the name has a line of its own (2026-09-28 walk): the dialog is
+       never wider than 560 px, so on a desktop the same squeeze drew
+       "202609281926_OpenOmniscience_Backup" as four lines of ten characters beside a
+       40 % bar. Each row is a grid instead: the name across the top, then the bar, the
+       counts and the time. The phone rule below still stacks all four. */
+    .ux-peritem { display:block; }
+    .ux-peritem > tbody { display:block; }
+    .ux-peritem tr { display:grid; grid-template-columns:minmax(0,2fr) minmax(0,3fr) auto;
+      column-gap:8px; align-items:center; padding:4px 0; border-bottom:1px solid var(--border); }
+    .ux-peritem td { width:auto !important; padding:1px 0 !important; border-bottom:0; }
+    .ux-peritem td:first-child { grid-column:1 / -1; }
+    .ux-peritem td:nth-child(2) { grid-column:1; }
+    .ux-peritem td:nth-child(3) { grid-column:2; }
+    .ux-peritem td:nth-child(4) { grid-column:3; }
+    /* A backup that brought nothing has no counts: its reason (an error, "already merged")
+       takes the counts' room instead of wrapping in the bar's two-fifths. */
+    .ux-peritem td:nth-child(3):empty { display:none; }
+    .ux-peritem td:nth-child(2):has(+ td:empty) { grid-column:1 / 3; }
     @media (max-width:600px) {
       .ux-peritem, .ux-peritem tbody, .ux-peritem tr, .ux-peritem td { display:block; }
       .ux-peritem tr { padding:4px 0; border-bottom:1px solid var(--border); }
@@ -2159,6 +2177,33 @@
 .living-diff-l { white-space: pre-wrap; overflow-wrap: anywhere; unicode-bidi: plaintext; }
 .living-pages { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
 .living-tc { border-top: 1px solid var(--line); margin-top: 8px; padding-top: 10px; }
+
+/* The Claim Workspace (S05-11 S1): steps in order, each with its method sentence visible. */
+#tab-claim textarea, #tab-claim input[type="text"] { width: 100%; box-sizing: border-box; }
+.claim-label { display: block; font-weight: 600; margin: 10px 0 4px; }
+.claim-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 10px 0; }
+.claim-step { border-top: 1px solid var(--line); padding: 12px 0 6px; }
+.claim-step h3 { margin: 0 0 4px; font-size: 15px; }
+.claim-num { color: var(--accent); margin-inline-end: 4px; }
+.claim-method { color: var(--muted); font-size: 13px; margin: 0 0 8px; }
+.claim-later { opacity: .75; }
+.claim-query code { overflow-wrap: anywhere; }
+.claim-list { padding-inline-start: 28px; margin: 6px 0; }
+.claim-list li { margin: 3px 0; overflow-wrap: anywhere; }
+.claim-pill { font-size: 11px; border: 1px solid var(--line); border-radius: 6px; padding: 0 4px; }
+.claim-path { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; margin: 8px 0; }
+.claim-path-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; }
+.claim-refs { font-variant-numeric: tabular-nums; color: var(--muted); unicode-bidi: isolate; direction: ltr; }
+.claim-joins { margin: 6px 0 0; padding-inline-start: 18px; }
+.claim-join-kind { font-weight: 600; }
+.claim-join-detail { overflow-wrap: anywhere; font-family: var(--mono); font-size: 12px; unicode-bidi: isolate; direction: ltr; }
+.claim-timeline td { vertical-align: top; }
+.claim-date { white-space: nowrap; font-variant-numeric: tabular-nums; unicode-bidi: isolate; direction: ltr; }
+.claim-said { display: block; margin-top: 3px; font-size: 13px; unicode-bidi: plaintext; }
+.claim-badge { font-size: 11px; border-radius: 6px; padding: 0 5px; background: color-mix(in srgb, var(--accent) 16%, transparent); }
+.claim-silent { display: inline-block; margin-inline-end: 8px; }
+.claim-disc li { margin: 4px 0; }
+.claim-table-wrap { overflow-x: auto; }
 /* The Search tab's Wikipedia section (R52): set apart from the corpus's results by a rule
    and its own heading, so its hits never read as ranked among them. */
 .lane-search { border-top: 1px solid var(--line); margin-top: 14px; padding-top: 10px; }

@@ -202,6 +202,29 @@ def test_the_suspend_restores_the_trigger_when_the_body_raises() -> None:
     assert present(), "the finally did not restore the FTS insert trigger"
 
 
+def test_a_stop_that_rolled_the_drop_back_is_still_reported_as_the_stop() -> None:
+    """A Stop mid-merge must reach the operator as the Stop (2026-09-28 import walk).
+
+    Pressed while a small backup merged, the stop rolled the open transaction back
+    inside the suspend, and transactional DDL undid the DROP with it. The finally's
+    CREATE then raised "trigger article_fts_ai already exists", which replaced the
+    stop's own exception: the backup read "Failed" with a raw database error instead of
+    "stopped -- nothing was written to your corpus".
+    """
+    con = sqlite3.connect(":memory:", isolation_level=None)
+    con.execute("CREATE TABLE articles (id INTEGER PRIMARY KEY, title TEXT, content TEXT)")
+    for ddl in _FTS_DDL:
+        con.execute(ddl)
+    con.execute("BEGIN IMMEDIATE")
+    with pytest.raises(merge_mod.RestoreAborted, match="stopped during the merge"), \
+            merge_mod._fts_insert_suspended(con):
+        con.execute("ROLLBACK")   # what the stop path does; the DROP goes with it
+        raise merge_mod.RestoreAborted("stopped during the merge (before the 'x' step)")
+    assert con.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='trigger' AND name='article_fts_ai'"
+    ).fetchone(), "the trigger must be there, restored once"
+
+
 def test_a_failed_merge_leaves_the_working_copy_able_to_index(tmp_path) -> None:
     """The property that matters at the merge level, claimed at its real strength.
 

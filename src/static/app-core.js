@@ -1809,6 +1809,14 @@
       const size = (n, u) => _sizeText(Number(n) * Math.pow(1024, U[u]), (i) => (i ? 1 : 0));
       // A path is Latin text inside what may be a right-to-left sentence.
       const iso = (p) => "\u2068" + p + "\u2069";
+      // The commonest import failure there is, a mistyped passphrase, arrived as the
+      // server's English sentence in every locale (2026-09-28 walk: "could not restore
+      // this backup: wrong passphrase or the file has been altered" on the French page).
+      // src/safety/crypto.py raises it bare; backup/merge.py prefixes "could not <action>
+      // this backup: ". Both shapes, whole-message only, so nothing else is rewritten.
+      if (/^(?:could not \w+ this backup: )?wrong passphrase or the file has been altered\.?$/i.test(s.trim())) {
+        return t("Could not open this backup: the passphrase is wrong, or its files have been altered.");
+      }
       for (const [re, kind] of _OO_SPACE_RES) {
         const m = re.exec(s);
         if (!m) continue;

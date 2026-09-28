@@ -33,6 +33,7 @@
       {id:"ingest",   label:"Collect",            grp:"Collect"},
       {id:"sources",  label:"Sources",            grp:"Collect"},
       {id:"living",   label:"Living sources",     grp:"Investigate"},
+      {id:"claim",    label:"Claim workspace",    grp:"Investigate"},   // off the sidebar, like Search (S05-11 S1)
       {id:"library",  label:"Library",            grp:"Collect"},
       {id:"custody",  label:"Evidence & custody", grp:"Trust"},
       {id:"integrity",label:"Source integrity",   grp:"Trust"},
@@ -69,6 +70,7 @@
       timemap: () => loadOoMapCoverage(),   // slice 5b: the Map tab is now the unified ooMap (the temporal map was folded in + retired)
       law: () => loadGovernments(),   // Governments tab (Countries · Map · Law subtabs)
       agenda: () => loadAgenda(),
+      claim: () => _claimWire(),   // the Claim Workspace (gate row K, S05-11 S1)
       living: () => loadLiving(),   // Living sources: Wikipedia · Law · Maps (Q1016, S04-08 S6)
       library: () => { _wireLibraryViews(); },  // per-view lazy loaders (2026-08-01 ruling 9); stats ride the live poller (startLive)
       custody: () => loadCustody(),
@@ -826,6 +828,12 @@
             if (typeof _advHistRecord === "function") _advHistRecord(raw, {});
             openAnalysisInNewTab(raw);
           }});
+      }
+      // The Claim Workspace (S05-11 S1): the SECOND row, directly under Analysis, so it is
+      // one arrow key away and never what Enter runs (Q608 = a keeps Enter on Analysis).
+      if (raw) {
+        live.splice(1, 0, {grp: t("Search"), label: ooLabelText(t("Check as a claim"), `“${raw}”`),
+          sub: t("Claim workspace"), run: () => openClaimWorkspace(raw)});
       }
       // An EXPLICIT selection survives the live results arriving: the omnibar redraws
       // when its fetch lands, and resetting to row 0 then would turn "I arrowed to
