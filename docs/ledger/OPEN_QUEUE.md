@@ -109,6 +109,23 @@
   Commons Mirror's eight questions; `Q1136`, `Q1001`/`Q1002` for any relay. Processing: the §0 of the memo
   (the pre-flight round's protocol) — letters parsed mechanically, one `RULINGS_INDEX.md` row per ANSWERED
   `PSnn`, none for a blank ⛔, contradictions listed never resolved.
+- **ROW C'S PROPOSED DEFAULTS — NOT RULINGS (0.5 row C, `S05-03`, 2026-09-28, thread «Build the entity spine»;
+  ids `R71`–`R75` are held for this row and none is used yet).** The brief's §6 leaves these to the maintainer; each
+  was BUILT at the default below so the row could move, and each is reversible. (1) **The API:** the Wikidata Action
+  API `wbgetentities` on `www.wikidata.org`, 50 items a request — the host the keyword rings already reach, so no new
+  host; SPARQL was not used. (2) **`Place.kind`** is the OSM `place=*` value verbatim (`city`, `town`, `village` …),
+  shown untranslated on the card; a translated vocabulary is a later choice. (3) **`admin_path`** is a JSON list of
+  Place ids, outermost first, and stays EMPTY until row E's boundaries exist; **`geometry_ref`** stays NULL until
+  row D. (4) **Where they live:** `wikidata_items` and `places` are tables in `corpus.db`, not a lane file. (5) **Not
+  carried by a backup** (`_MERGE_NOT_CARRIED` in `src/backup/merge.py`, with reasons): Q823 ⛔ (ODbL) is open, so
+  Place rows never leave the machine, and a restore re-resolves them from its own mention rows by construction; the
+  item cache is refetchable. If Q823 is answered to allow carrying OSM-derived rows, both can join the backup.
+  (6) **The Place body is composed on read, not stored as a corpus Article** — also because of Q823; row D's Q817
+  (notable Places become Articles) is where that changes. (7) **An open Q823 question for S4:** whether a gazetteer
+  artifact built from OSM may be SHIPPED in the repository at all (ODbL share-alike on a derived database) is the
+  same ⛔ question, and S4 cannot ship its artifact until it is answered. (8) **For row B (S05-02):** `places.country`
+  is stored alpha-2 like every other country column today, so it is the SEVENTH narrow column row B's migration
+  widens (`tests/test_alpha3_payload_boundary.py` counts seven).
 - **THE WALK'S SWITCH: WHERE THE WIKIPEDIA WALK RUNS — RULED 2026-09-28, «Switch, off» (`R51`; answered on
   the decision card in the project thread «Plan v0.5» at 12:41 UTC, the recommended option).** The question,
   as put: «Run the Wikipedia walk only where you switch it on, or on every instance?» — over «Switch, on» (every

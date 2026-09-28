@@ -35,6 +35,16 @@ class City:
     lon: float
     country: str | None = None
     population: int | None = None
+    #: S05-03 (Q805 / Q818): the fields the Place gazetteer artifact carries and the
+    #: shipped sample does not. ``osm`` is the OSM object as OSM writes it
+    #: (``node/240109189``) and is what a Place is keyed on; ``kind`` is the OSM
+    #: ``place=*`` value verbatim; ``names`` is OSM's ``name:xx`` tags. All optional: an
+    #: entry without ``osm`` resolves nothing, and says so, rather than becoming a Place
+    #: under an invented id.
+    qid: str | None = None
+    osm: str | None = None
+    kind: str | None = None
+    names: dict[str, str] | None = None
 
     def to_dict(self) -> dict:
         return {
@@ -60,6 +70,7 @@ def load_cities(path: Path | None = None) -> list[City]:
             lat, lon = float(c["lat"]), float(c["lon"])
         except (KeyError, TypeError, ValueError):
             continue
+        names = c.get("names")
         out.append(
             City(
                 name=str(c["name"]),
@@ -67,9 +78,61 @@ def load_cities(path: Path | None = None) -> list[City]:
                 lon=lon,
                 country=(str(c.get("country", "")).lower() or None),
                 population=c.get("population"),
+                qid=_clean_qid(c.get("qid")),
+                osm=_clean_osm(c.get("osm")),
+                kind=(str(c["kind"]).strip() or None) if c.get("kind") else None,
+                names=(
+                    {str(k).strip().lower(): str(v) for k, v in names.items() if k and v}
+                    if isinstance(names, dict) else None
+                ),
             )
         )
     return out
+
+
+_QID_RE = re.compile(r"^Q[1-9][0-9]*$")
+_OSM_RE = re.compile(r"^(node|way|relation)/[1-9][0-9]*$")
+
+
+def _clean_qid(value) -> str | None:
+    """A QID exactly as Wikidata writes one, or None -- never a repaired guess."""
+    v = str(value or "").strip()
+    return v if _QID_RE.match(v) else None
+
+
+def _clean_osm(value) -> str | None:
+    """An OSM object reference (``node/123``), or None -- never a repaired guess."""
+    v = str(value or "").strip().lower()
+    return v if _OSM_RE.match(v) else None
+
+
+def gazetteer_path() -> Path:
+    """The gazetteer the app reads: the generated artifact when present, else the sample."""
+    return GAZETTEER_PATH if GAZETTEER_PATH.exists() else SAMPLE_PATH
+
+
+@lru_cache(maxsize=1)
+def gazetteer_meta() -> dict:
+    """WHICH gazetteer answered, and its VINTAGE (Q805: shown wherever it resolves a place).
+
+    The vintage is the artifact's own top-level ``as_of``, written at build time on the
+    maintainer's machine. The shipped sample carries none, and says so as ``None`` rather
+    than borrowing a date it does not have.
+    """
+    p = gazetteer_path()
+    vintage = None
+    if p.exists():
+        try:
+            data = yaml.safe_load(p.read_text("utf-8")) or {}
+            raw = data.get("as_of") if isinstance(data, dict) else None
+            vintage = str(raw) if raw else None
+        except (OSError, yaml.YAMLError):
+            vintage = None
+    return {
+        "path": p.name,
+        "artifact": p == GAZETTEER_PATH,
+        "vintage": vintage,
+    }
 
 
 def build_index(cities: list[City]) -> dict:
