@@ -308,6 +308,12 @@ def _lane_specific_models(kind: str) -> tuple[type[DeclarativeBase], ...]:
         from src.law.lane_models import LAW_LANE_MODELS
 
         return LAW_LANE_MODELS
+    if kind == "wiki":
+        # The ``allpages`` walk's page list and bookmark (Q701 = c; S05-06). Its own
+        # tables, never ``versioned_entities``: see ``src/wiki/lane_models.py``.
+        from src.wiki.lane_models import WIKI_LANE_MODELS
+
+        return WIKI_LANE_MODELS
     return ()
 
 class LaneSchemaError(RuntimeError):

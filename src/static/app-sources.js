@@ -1505,8 +1505,33 @@
         }
         if (!lane.wizard_done) bits.push(t9("using the defaults"));
         el.textContent = bits.join(" · ");
+        // The walk's switch mirrors the STORED setting, never the box's last click: a
+        // save that failed must not leave a ticked box over a walk that is off.
+        const walk = $("wiki-walk-enabled");
+        if (walk) walk.checked = !!lane.walk_enabled;
       } catch (_e) {
         el.textContent = t9("The lane's settings could not be read.");
+      }
+    }
+
+    // Q701 = c's walk switch (Settings → Wikipedia). Saved the moment it changes: the
+    // walker re-reads it every window, so nothing restarts. No consent popup of its own --
+    // the walk runs only while the lane runs, and the lane is only ever online through
+    // the one popup (invariant #14); the visible text beside the box is the disclosure.
+    async function saveWikiWalk(on) {
+      const t9 = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      try {
+        const cfg = await api("/api/scheduler/config",
+          {method: "PUT", body: JSON.stringify({wiki_walk_enabled: !!on})});
+        const stored = !!(cfg && cfg.wiki_walk_enabled);
+        const box = $("wiki-walk-enabled");
+        if (box) box.checked = stored;
+        toast(stored ? t9("The walk is on. It starts with the live stream, when you are online.")
+                     : t9("The walk is off. Pages it already listed are kept."));
+      } catch (e) {
+        const box = $("wiki-walk-enabled");
+        if (box) box.checked = !on;
+        toast(_failMsg("Update failed: {error}", e), "err");
       }
     }
 

@@ -276,6 +276,76 @@ class FixtureWikiClient:
                     out[rev["revid"]] = rev["text"]
         return out
 
+    def _walkable(self) -> list[tuple[str, dict, dict]]:
+        """(title, page, newest visible revision) for every page the edition would LIST now,
+        in title order -- a deleted page and a page with no visible revision are not listed,
+        exactly as ``allpages`` does not list them."""
+        out = []
+        for title in sorted(self._pages()):
+            page = self._pages()[title]
+            if self._deleted(page):
+                continue
+            visible = [r for r in page["revisions"] if self._visible(r)]
+            if visible:
+                out.append((title, page, visible[-1]))
+        return out
+
+    def fetch_walk_batch(
+        self, wiki: str, *, continue_params: dict | None = None, limit: int = 50
+    ) -> dict:
+        """ONE ``allpages`` batch over the fixture edition, in the real client's shape.
+
+        The payload is BUILT in the API's own formatversion=2 shape and handed to the SAME
+        parser the real client uses, so a parser bug shows up here too instead of being
+        papered over by a double that returns pre-parsed rows. The bookmark is the next
+        title, as ``gapcontinue`` is. The fixture holds no Wikidata links, so every page
+        has no QID -- which is the absence the store must keep as absent.
+        """
+        self._note("fetch_walk_batch")
+        self._check(wiki)
+        from src.wiki.mediawiki import MAX_PAGES_PER_REQUEST, parse_walk_batch
+
+        if not 1 <= int(limit) <= MAX_PAGES_PER_REQUEST:
+            raise ValueError(
+                f"a walk batch is 1 to {MAX_PAGES_PER_REQUEST} pages for an anonymous client, "
+                f"not {limit}"
+            )
+        rows = self._walkable()
+        start = 0
+        after = (continue_params or {}).get("gapcontinue")
+        if after is not None:
+            titles = [t for t, _p, _r in rows]
+            start = next((i for i, t in enumerate(titles) if t >= str(after)), len(titles))
+        batch = rows[start : start + int(limit)]
+        payload: dict[str, Any] = {
+            "batchcomplete": True,
+            "query": {
+                "pages": [
+                    {
+                        "pageid": page["pageid"],
+                        "ns": 0,
+                        "title": title,
+                        "lastrevid": rev["revid"],
+                        "length": len(rev["text"].encode("utf-8")),
+                    }
+                    for title, page, rev in batch
+                ]
+            },
+        }
+        if start + int(limit) < len(rows):
+            payload["continue"] = {
+                "gapcontinue": rows[start + int(limit)][0],
+                "continue": "gapcontinue||",
+            }
+        size = len(json.dumps(payload).encode("utf-8"))
+        return {**parse_walk_batch(payload), "response_bytes": size}
+
+    def fetch_edition_statistics(self, wiki: str) -> dict:
+        """The fixture edition's own article count: the pages ``allpages`` would list."""
+        self._note("fetch_edition_statistics")
+        self._check(wiki)
+        return {"articles": len(self._walkable()), "pages": len(self._pages())}
+
     def fetch_categories(self, wiki: str, title: str) -> list[str]:
         """The fixture declares no categories; an empty list is the honest answer."""
         self._note("fetch_categories")

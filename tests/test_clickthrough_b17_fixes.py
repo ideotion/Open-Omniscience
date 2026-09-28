@@ -75,6 +75,7 @@ _FRAMES = {
         "Paused for a corpus import — importing newsletters from {folder}",
         "Downloading model {model}",
         "Model {model}",
+        "Wikipedia page walk — {pages}",
     ),
     "src/api/llm.py": (
         "Summarizing “{title}”",

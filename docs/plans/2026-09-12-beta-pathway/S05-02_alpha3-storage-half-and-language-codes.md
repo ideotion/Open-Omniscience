@@ -8,11 +8,11 @@
 > `ISO3166-1:alpha2` tag, the DB-IP table — alpha-2 behind converters), the frontend display (0.4 row L),
 > the backup format version (bumped once, 0.4 row K), the restore path's forever-acceptance of old backups.
 > **Implements:** Q304, Q305 — via the gate row also Q301 ⛔ = c (step 2), Q313 (the old column dropped),
-> Q306 = b (*proposed placement*: the storage step).
+> Q306 = b (*proposed placement*: the storage step); `R39` (the hi/bn tokenizer rebuild, S6).
 > **Gated on:** 0.4 row K SHIPPED AND EXERCISED on a real restore (Q301 = c's own words — the entry
 > precondition of the 0.5 gate); 0.4 row L shipped (display + boundary, the loader normalising).
 > **Sequencing:** data-safety-critical — never concurrent with S05-10 (both touch the merge and a stored
-> identity; the gate row J's own reason). The order between rows B and J inside 0.5 is not ruled (§6).
+> identity; the gate row J's own reason). **Row B goes first, then row J (`R38`, 2026-09-28).**
 
 ## 0. Working mode
 
@@ -102,6 +102,18 @@ older backup is ever stranded; this row re-proves it AFTER the store changes.
   duplicate-key scan; the P0 data-safety trio runs on the migrated store.
 - **Acceptance:** the scan reports 0 duplicates (the scan output is the artifact); the trio is green.
 
+### S6 — The `article_fts` tokenizer rebuild, in the same window (`R39`)
+- **What:** recreate `article_fts` (`src/database/fts.py`, today `unicode61 remove_diacritics 2`) with the
+  option that keeps combining marks inside a word — the finding measured `categories 'L* N* Co M*'` on
+  SQLite 3.45 (`OPEN_QUEUE.md`, «FINDING OUTSIDE Q507») — and rebuild it in full during S1's app-stopped
+  window, with the estimate shown before it starts (RC08.1's migrate-op carries it). Re-measure the option
+  on the SQLite the app ships before relying on it; confirm the CJK and Arabic paths of 0.4 row N
+  (`fts_norm.py`) are unchanged by it.
+- **Why (ruling):** `R39` («D3: a», 2026-09-28): one stop of the app, not two.
+- **Acceptance:** a fixture where a search for सरक no longer matches सरकार and a vocalised Bengali word
+  stays one token; `tests/test_fts_cjk_arabic.py` green; the rebuild's measured time on the reference
+  corpus recorded beside S1's row counts (operator; `not-measurable-here` at corpus scale).
+
 ## 4. Verification
 
 The gates verbatim (`_WORKING_MODE.md` §4), each run separately with its exit code captured. Plus: the full
@@ -122,7 +134,8 @@ laws, wiki) in `en` and `ar`, proving no surface regressed to a bare code. The r
 
 ## 6. What this slice may not decide
 
-- The order between rows B and J inside 0.5 — not ruled; the brief only forbids running them concurrently.
+- ~~The order between rows B and J inside 0.5~~ — **RULED 2026-09-28 (`R38`): row B first, then row J**; never
+  concurrently.
 - The surviving export header (`country` carrying alpha-3, or `country_iso3`) — Q313 names the value that
   is dropped, not the header that stays; proposed in the PR body.
 - Whether the loader's both-forms acceptance is permanent for user-edited configs (the brief keeps it).

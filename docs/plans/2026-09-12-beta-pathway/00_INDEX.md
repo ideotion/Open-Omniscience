@@ -31,7 +31,8 @@ ruling's `where enforced` cell.
 
 ## The slices
 
-Dependency order inside a release is the gate file's row order; across releases each gate's entry clause names
+Dependency order inside a release is the gate file's row order (a DEPENDENCY order, not a build sequence: in 0.5
+row F is built first so its operator run overlaps the build, `R40`); across releases each gate's entry clause names
 what must precede it (the 0.4 format bump before the 0.5 storage half; the substrate before the lanes; the OSM
 seed before the change tracking). Operator steps are listed in every brief's §5 and are unbounded by ruling
 (Q115 = c).

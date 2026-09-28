@@ -51,10 +51,12 @@ function extractConst(name) {
 const HELPERS = [
   "_sizeText", "humanBytes", "_storageLaneName", "_storageLaneHover", "_storageSignedBytes", "_storagePct",
   "_storageGrowthHtml", "_storageBudgetHtml", "_storageSizeHtml", "ooLabelText", "_jobWhy",
+  "_jobLabel", "_framedText",
 ];
 const LIVING = [
   "livingWhen", "livingSigned", "livingFactHtml", "livingGroupsHtml", "_livingUnmeasured",
-  "livingStorageGroup", "livingWikiGroups", "livingLawGroups", "livingMapGroups", "livingGroupsFor",
+  "livingStorageGroup", "_livingCount", "livingWalkGroup", "livingWikiGroups", "livingLawGroups",
+  "livingMapGroups", "livingGroupsFor",
   "livingDiffHtml", "livingStreamRowsHtml", "livingLawRowsHtml", "livingMapRowsHtml",
 ];
 // `window` is defined so `window.OOI18N && ...` resolves to the fallbacks: a sandbox
@@ -66,6 +68,9 @@ const src =
   extractConst("_isDownloadKind") + "\n" +
   extractConst("_LIVING_CHANGE_KINDS") + "\n" +
   extractConst("_LIVING_MAP_STATE") + "\n" +
+  extractConst("_LIVING_WALK_STATE") + "\n" +
+  extractConst("_LIVING_WALK_WHY") + "\n" +
+  extractConst("_LIVING_TRANSPORT") + "\n" +
   "var window = {};\n" +
   // The Q302 display helpers are STUBBED to mark what passed through them: their own
   // behaviour (the alpha-3 / 639-2/T code, the localised hover) is pinned by
@@ -73,9 +78,11 @@ const src =
   // this view hands them the value instead of printing it raw.
   "function ooCountryCell(v, o) { return '<span class=\"' + ((o && o.cls) || '') + '\">CC(' + esc(v) + ')</span>'; }\n" +
   "function ooLangCell(v, o) { return '<span class=\"' + ((o && o.cls) || '') + '\">LC(' + esc(v) + ')</span>'; }\n" +
+  "function ooLangCode(v) { return 'L3(' + v + ')'; }\n" +
+  "function ooLangName(v, fb) { return 'NAME(' + v + ')'; }\n" +
   HELPERS.map(extract).join("\n") + "\n" +
   LIVING.map(extract).join("\n") + "\n" +
-  "module.exports = {humanBytes, " + LIVING.join(", ") + "};";
+  "module.exports = {humanBytes, _jobWhy, " + LIVING.join(", ") + "};";
 const R = (() => {
   const m = { exports: {} };
   new Function("module", "exports", src)(m, m.exports);
@@ -311,6 +318,104 @@ const WIKI = {
     text_stored: false, revision_id: null }], tt, tf);
   assert.ok(visible(rows).includes("«edit»"), "a known change kind was not translated");
   assert.ok(visible(rows).includes("«never»"), "a missing date was not translated");
+}
+
+// --- 10. the page walk (Q701 = c): "N of M", never a percentage; absence is a word ---- //
+{
+  const titles = R.livingWikiGroups(WIKI, t, tf).map((g) => g.title);
+  assert.deepStrictEqual(titles, ["Live stream", "Page walk", "Pages you track", "Storage"],
+    "the walk group is not where the stream's reader expects it");
+  // Off is the operator's switch: the state says so and names where it is set.
+  const off = R.livingWalkGroup({ walk: { enabled: false, state: "off", measured: false,
+    reason_counts: "walk-never-run" } }, t, tf);
+  assert.strictEqual(off.title, "Page walk");
+  assert.strictEqual(off.facts.length, 1, "a walk that never ran drew figures");
+  assert.strictEqual(off.facts[0].label, "State",
+    "the group's title was repeated as its first label (the defect the Chromium walk found)");
+  assert.strictEqual(off.facts[0].value, "Off");
+  assert.ok(off.facts[0].hover.includes("Settings → Wikipedia"), "an off walk does not say where it is switched on");
+  // No walker in this process, or an older server with no walk block: a word, never a zero.
+  for (const src of [{ walk: { enabled: true, state: "not_running", measured: false, reason_counts: "lane-never-run" } }, {}]) {
+    const html = R.livingGroupsHtml([R.livingWalkGroup(src, t, tf)]);
+    assert.ok(visible(html).includes("Not running now") && !/\d/.test(visible(html)), html);
+    noJunk(html, "an unmeasured walk");
+  }
+  // Paused, with its named reason in the reader's own label frame.
+  const paused = R.livingWalkGroup({ walk: { enabled: true, state: "paused", reason: "network_off",
+    measured: false } }, t, tf);
+  assert.strictEqual(paused.facts[0].value, "Paused: Airplane mode is on.");
+  const tor = R.livingWalkGroup({ walk: { enabled: true, state: "paused", reason: "transport_unavailable",
+    measured: false } }, t, tf);
+  assert.ok(tor.facts[0].value.includes("never goes direct"),
+    "a walk held by protected mode must say it waits rather than going direct");
+  // A state this build does not know is shown as sent, never mapped onto a known word.
+  assert.strictEqual(R.livingWalkGroup({ walk: { enabled: true, state: "dozing" } }, t, tf).facts[0].value, "dozing");
+  const WALK = {
+    enabled: true, state: "walking", reason: null, measured: true,
+    pages_seen: 1234567, requests: 24700, response_bytes: 3 * GIB,
+    editions: [
+      { edition: "fr", pages_seen: 1234000, edition_articles: 2600000, completed_at: null,
+        consecutive_failures: 0, last_error: null },
+      { edition: "de", pages_seen: 567, edition_articles: 500, completed_at: "2026-09-28T10:00:00+00:00",
+        consecutive_failures: 0, last_error: null },
+      { edition: "ar", pages_seen: 0, edition_articles: null, completed_at: null,
+        consecutive_failures: 3, last_error: "service_busy" },
+    ],
+    throughput: { window_days: 7, by_transport: {
+      pool: { hours: 4, requests: 240, pages: 12000, response_bytes: 1, busy_ms: 1 },
+      direct: { hours: 0, requests: 0, pages: 0, response_bytes: 0, busy_ms: 0 },
+    } },
+  };
+  const g = R.livingWalkGroup({ walk: WALK }, t, tf);
+  const html = R.livingGroupsHtml([g]);
+  const fact = (label) => {
+    const f = g.facts.find((x) => x.label === label);
+    assert.ok(f, `no "${label}" fact in ${g.facts.map((x) => x.label)}`);
+    return f;
+  };
+  assert.strictEqual(fact("State").value, "Walking");
+  assert.strictEqual(fact("Pages seen").value, "1234567");
+  assert.ok(!visible(html).includes("%") && !hovers(html).includes("%") && !/<progress|<meter/i.test(html),
+    "the walk drew a percentage or a bar: the edition counts a different set, so the ratio can pass 100%");
+  assert.strictEqual(fact("L3(fr)").value, "1234000 of 2600000");
+  assert.ok(fact("L3(fr)").hover.startsWith("NAME(fr): "),
+    "Q302/Q306: the code shows and the name in the UI language is the hover");
+  assert.strictEqual(fact("L3(de)").value, "567 of 500 · pass complete",
+    "a count past the edition's own figure must be shown as measured, never capped");
+  const ar = fact("L3(ar)");
+  assert.strictEqual(ar.value, "0 of an unknown total · waiting",
+    "an edition whose own count is unknown must say so, never divide by nothing");
+  assert.ok(ar.hover.includes("The wiki asked clients to slow down.") && ar.hover.includes("doubles each time"),
+    "a waiting edition does not say why, or when it is asked again");
+  const rate = fact("Measured rate, your proxy pool");
+  assert.strictEqual(rate.value, "3000 pages an hour");
+  assert.ok(!g.facts.some((f) => f.label.includes("direct connection")),
+    "a transport with no measured hour drew a rate: no hours is no rate, not a rate of zero");
+  noJunk(html, "the measured walk");
+  noVerdict(html, "the measured walk");
+  // Every word but the language code goes through the translator.
+  const seen = new Set();
+  const tt = (x) => { seen.add(x); return "«" + x + "»"; };
+  const ttf = (x, v) => { seen.add(x); return tf(x, v); };
+  R.livingWalkGroup({ walk: WALK }, tt, ttf);
+  for (const label of ["Page walk", "State", "Walking", "Pages seen", "Requests answered", "Answers weighed",
+    "{n} of {m}", "{n} of an unknown total", "pass complete", "waiting", "Measured rate, {transport}",
+    "your proxy pool", "{n} pages an hour", "The wiki asked clients to slow down."]) {
+    assert.ok(seen.has(label), `"${label}" never reached the translator`);
+  }
+}
+
+// --- 11. the task manager says why the walk waits; a download's line never ----------- //
+// (The frame is written by OOI18N.tf in the page -- this sandbox has none, so the English
+// comes back; that the frame IS a key in all twelve locales is test_wiki_walk.py's.)
+{
+  const why = R._jobWhy({ kind: "wiki-walk", state: "paused", detail: "Airplane mode is on.",
+    detail_i18n: "Airplane mode is on.", detail_vars: {} }, t);
+  assert.strictEqual(visible(why), "Airplane mode is on.", "the walk's cause was not drawn");
+  assert.strictEqual(R._jobWhy({ kind: "wiki-walk", state: "running" }, t), "",
+    "a walking walk drew a cause line it does not have");
+  assert.ok(!visible(R._jobWhy({ kind: "wiki-walk", state: "paused", paused_by: "airplane" }, t)).includes("Paused by"),
+    "the walk took a download's cause line: it is not a download");
 }
 
 console.log("living_sources_node_test: all checks passed");

@@ -942,7 +942,11 @@ is read from this machine; nothing is fetched to draw it.
   change newest first; **Show diff** opens the diff stored when the change arrived.
   A change that was only counted says so and has no diff. The pages you track by
   hand (Settings → Wikipedia) are listed too: pick one to read its tracked
-  revisions.
+  revisions. When the **page walk** is on (below), a *Page walk* group says what it
+  is doing (walking; paused, and why; or waiting out a refusal from the wiki) and,
+  per edition, the pages it has listed **of the edition's own article count**
+  ("1 234 000 of 2 700 000"). That is two counts, never a percentage: each edition
+  counts its articles its own way, so the first number can pass the second.
 - **Law:** the documents the law tracker follows, the newest and oldest check, and
   each real change (a re-check that changed nothing is not counted) with its
   stored diff and a link to your local copy.
@@ -986,6 +990,19 @@ activity; (3) the analyzed text is wikitext reduced to plain text — never
 passed off as the rendered article. Everything stays local; the change
 history remains available per page, and the **Living sources** tab shows it
 ([3.6b](#36b-living-sources)).
+
+**The page walk (off unless you switch it on):** the live stream only ever hears
+about pages someone edits, so most of an encyclopedia never reaches it. Ticking
+**Also walk every article title** (Settings → Wikipedia, under *The live edit
+stream*) lists every article of the editions you chose, 50 titles a request, one
+request at a time, between the stream's own reads, for several days. It keeps each
+page's title, size, newest revision and Wikidata id, never its text, inside the same
+storage budget, and it is never turned into a page the stream follows in full. It
+runs only while the live stream runs, on the same connection: airplane mode, or
+protected mode with no usable proxy, makes it **wait** (it never goes direct), and a
+wiki that asks it to slow down is asked again after a pause that doubles up to an
+hour. A restart resumes each edition where it stopped. Its progress is in **Living
+sources** and in the task manager.
 
 Heavy **offline full-text baselines** (whole-edition dumps) are *separate* and live
 in **Settings → Wikipedia** — you don't need them for change-tracking. See

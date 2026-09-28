@@ -198,7 +198,10 @@ def test_an_entity_with_no_recorded_reason_is_UNRECORDED_and_says_what_that_mean
 def test_the_reading_names_every_block_that_has_NOTHING_to_say(lane):
     with lane_session("wiki") as db:
         out = lane_counters(db, now=NOW)
-    assert set(out["unmeasured"]) == {"rows_per_day", "bytes_per_day"}
+    # "walk" too: a lane whose page walk never ran reports the walk ABSENT (0.5 row F),
+    # never as zero pages seen.
+    assert set(out["unmeasured"]) == {"rows_per_day", "bytes_per_day", "walk"}
+    assert out["walk"] == {"measured": False, "reason": "walk-never-run"}
     assert "no counters file" in out["method"]
 
 
