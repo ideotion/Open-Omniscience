@@ -15593,3 +15593,18 @@ no-telemetry re-check never reaches them and no warning says so. The `v0.4.0` in
 by deleting the release before the tag moves. A lasting fix would append the generated notes' re-check
 section when an existing body lacks it; `S03-01` forbade touching `release.yml` in the flip, so it waits
 for a ruling or its own PR.
+
+## 2026-09-28 — THE CLAIM WORKSPACE'S PLACEMENT — PENDING (0.5 row K, brief `S05-11` §6; ruling id R66 held for the answer)
+
+Brief `S05-11` §6 leaves the workspace's placement to the maintainer («a main tab, a palette command, an
+analysis-window subtab … proposed in the PR body, asked»). **Built at the proposed default:** a tab kept OFF
+the sidebar (like the analysis window), opened by the omnibar's SECOND row «Check as a claim» (Enter stays on
+Analysis, Q608 = a), the Search tab's «Check as a claim» button, and the palette's page list. The other two
+options: a sidebar main tab (invariant #2's roster grows by one, as R32 did for Living sources), or a subtab of
+the analysis window (the claim then shares the window's per-query tabs). Asked on a decision card in the row K
+thread; record the answer as R66 in `RULINGS_INDEX.md`, here and in the gate's §3.
+
+**Also recorded, not fixed here (a gate gap the walk found):** `scripts/i18n_report.py`'s unkeyed-`t()` gate
+skips a literal carrying a `{placeholder}`, and its unkeyed-`tf()` gate does not see a frame called through a
+parameter. Two of the workspace's sentences passed all four i18n gates while keyed in no locale. The view's
+own test now checks its literals; widening the shared gates is its own PR (it would measure every module).

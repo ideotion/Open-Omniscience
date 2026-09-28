@@ -12680,3 +12680,13 @@ must be (here, the UA names the installed package version), never a string it mu
 an absence check on a string that carries a version fails the day the version reaches it.** The
 five map and catalogue build scripts under `scripts/` still hardcode `OpenOmniscienceBot/0.4`; they
 read true again only by coincidence.
+
+### A GREEN i18n GATE PROVES THE STRINGS IT CAN SEE ARE KEYED, NOT THAT THE PAGE IS TRANSLATED (0.5 row K, S05-11 S1)
+
+The Claim Workspace passed `--min 100`, `--max-untranslatable 0`, `--max-unkeyed-t-calls 0` and
+`--max-unkeyed-tf-frames 0`, and still drew two sentences in English on the Arabic page: they were keyed in
+no locale at all. The `t()` gate skips a literal that carries a `{placeholder}`, and the `tf()` gate reads
+`tf("…")` call sites, so a frame handed to a callback as `(tf, v) => tf("…", v)` or looked up through
+`t(frame)` is invisible to both. The Chromium walk in Arabic caught it, by reading the page rather than the
+keys. **After adding strings, walk the page in a second language and read it; and a view with its own
+string table checks its own literals against all twelve locales (`tests/test_claim_workspace.py`).**

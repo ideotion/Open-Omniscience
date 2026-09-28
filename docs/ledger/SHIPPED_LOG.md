@@ -10301,3 +10301,12 @@ maintainer's step, spelled out in row G. CI then caught a date bomb the flip set
 `test_default_user_agent_is_the_honest_versioned_one` asserted that `"0.4"` never appears in the
 User-Agent, which carries the package version; it now asserts that the UA names the installed
 version. Lessons: `LESSONS.md`, the two entries dated by this PR.
+
+## 2026-09-28 — The Claim Workspace, slice 1 (0.5 row K, S05-11 S1)
+
+Steps ① ② ③ ⑤ of design A-2 over the local corpus, one read (`GET /api/claims/workspace`), composed from the
+index, near-duplicate, wire-attribution and shared-link primitives; ④ and ⑥ drawn as not built. Articles join
+into one path by same source, near-identical text, a shared outbound page or the same wire; a path of one is
+"no shared origin found", never independent. Chromium-walked in `en` and `ar`. The walk found two sentences
+keyed in no locale that every i18n gate had passed: the `t()` gate skips a literal with a `{placeholder}` and
+the `tf()` gate does not see a frame called through a parameter (lesson copied to `LESSONS.md`).

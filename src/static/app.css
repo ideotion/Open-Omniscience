@@ -2156,3 +2156,30 @@
 .living-diff-l { white-space: pre-wrap; overflow-wrap: anywhere; unicode-bidi: plaintext; }
 .living-pages { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
 .living-tc { border-top: 1px solid var(--line); margin-top: 8px; padding-top: 10px; }
+
+/* The Claim Workspace (S05-11 S1): steps in order, each with its method sentence visible. */
+#tab-claim textarea, #tab-claim input[type="text"] { width: 100%; box-sizing: border-box; }
+.claim-label { display: block; font-weight: 600; margin: 10px 0 4px; }
+.claim-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 10px 0; }
+.claim-step { border-top: 1px solid var(--line); padding: 12px 0 6px; }
+.claim-step h3 { margin: 0 0 4px; font-size: 15px; }
+.claim-num { color: var(--accent); margin-inline-end: 4px; }
+.claim-method { color: var(--muted); font-size: 13px; margin: 0 0 8px; }
+.claim-later { opacity: .75; }
+.claim-query code { overflow-wrap: anywhere; }
+.claim-list { padding-inline-start: 28px; margin: 6px 0; }
+.claim-list li { margin: 3px 0; overflow-wrap: anywhere; }
+.claim-pill { font-size: 11px; border: 1px solid var(--line); border-radius: 6px; padding: 0 4px; }
+.claim-path { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; margin: 8px 0; }
+.claim-path-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; }
+.claim-refs { font-variant-numeric: tabular-nums; color: var(--muted); unicode-bidi: isolate; direction: ltr; }
+.claim-joins { margin: 6px 0 0; padding-inline-start: 18px; }
+.claim-join-kind { font-weight: 600; }
+.claim-join-detail { overflow-wrap: anywhere; font-family: var(--mono); font-size: 12px; unicode-bidi: isolate; direction: ltr; }
+.claim-timeline td { vertical-align: top; }
+.claim-date { white-space: nowrap; font-variant-numeric: tabular-nums; unicode-bidi: isolate; direction: ltr; }
+.claim-said { display: block; margin-top: 3px; font-size: 13px; unicode-bidi: plaintext; }
+.claim-badge { font-size: 11px; border-radius: 6px; padding: 0 5px; background: color-mix(in srgb, var(--accent) 16%, transparent); }
+.claim-silent { display: inline-block; margin-inline-end: 8px; }
+.claim-disc li { margin: 4px 0; }
+.claim-table-wrap { overflow-x: auto; }
