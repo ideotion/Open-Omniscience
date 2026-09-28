@@ -6166,5 +6166,7 @@
   "the newest held version": "সবচেয়ে নতুন সংরক্ষিত সংস্করণ",
   "the source states only part of this date": "উৎস এই তারিখের কেবল একটি অংশ উল্লেখ করে",
   "words or \"a phrase\"": "শব্দ বা \"একটি বাক্যাংশ\"",
-  "Searched {searched} of {total} stored versions; {missing} cannot be searched (no stored text, or no version key); {pending} are still being indexed.": "{total}টি সংরক্ষিত সংস্করণের মধ্যে {searched}টি খোঁজা হয়েছে; {missing}টি খোঁজা যায় না (সংরক্ষিত পাঠ্য নেই, বা সংস্করণ কী নেই); {pending}টি এখনও সূচিবদ্ধ হচ্ছে।"
+  "Searched {searched} of {total} stored versions; {missing} cannot be searched (no stored text, or no version key); {pending} are still being indexed.": "{total}টি সংরক্ষিত সংস্করণের মধ্যে {searched}টি খোঁজা হয়েছে; {missing}টি খোঁজা যায় না (সংরক্ষিত পাঠ্য নেই, বা সংস্করণ কী নেই); {pending}টি এখনও সূচিবদ্ধ হচ্ছে।",
+  "Adds this exact version to your corpus as its own article.": "ঠিক এই সংস্করণটিকে একটি আলাদা নিবন্ধ হিসেবে আপনার কর্পাসে যোগ করে।",
+  "This version's text was not stored on this machine, so it cannot be added.": "এই সংস্করণের পাঠ্য এই যন্ত্রে সংরক্ষিত হয়নি, তাই এটি যোগ করা যায় না।"
 }

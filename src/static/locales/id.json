@@ -6166,5 +6166,7 @@
   "the newest held version": "versi terbaru yang dimiliki",
   "the source states only part of this date": "sumber hanya menyatakan sebagian dari tanggal ini",
   "words or \"a phrase\"": "kata-kata atau \"sebuah frasa\"",
-  "Searched {searched} of {total} stored versions; {missing} cannot be searched (no stored text, or no version key); {pending} are still being indexed.": "Mencari {searched} dari {total} versi tersimpan; {missing} tidak dapat dicari (tidak ada teks tersimpan, atau tidak ada kunci versi); {pending} masih diindeks."
+  "Searched {searched} of {total} stored versions; {missing} cannot be searched (no stored text, or no version key); {pending} are still being indexed.": "Mencari {searched} dari {total} versi tersimpan; {missing} tidak dapat dicari (tidak ada teks tersimpan, atau tidak ada kunci versi); {pending} masih diindeks.",
+  "Adds this exact version to your corpus as its own article.": "Menambahkan versi yang persis ini ke korpus Anda sebagai artikel tersendiri.",
+  "This version's text was not stored on this machine, so it cannot be added.": "Teks versi ini tidak disimpan di mesin ini, jadi tidak dapat ditambahkan."
 }

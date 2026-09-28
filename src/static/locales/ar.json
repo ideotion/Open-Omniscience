@@ -6166,5 +6166,7 @@
   "the newest held version": "أحدث إصدار محفوظ",
   "the source states only part of this date": "لا يذكر المصدر سوى جزء من هذا التاريخ",
   "words or \"a phrase\"": "كلمات أو «عبارة»",
-  "Searched {searched} of {total} stored versions; {missing} cannot be searched (no stored text, or no version key); {pending} are still being indexed.": "جرى البحث في {searched} من أصل {total} إصدارًا مخزَّنًا؛ لا يمكن البحث في {missing} (لا نص مخزَّن أو لا مفتاح إصدار)؛ ولا يزال {pending} قيد الفهرسة."
+  "Searched {searched} of {total} stored versions; {missing} cannot be searched (no stored text, or no version key); {pending} are still being indexed.": "جرى البحث في {searched} من أصل {total} إصدارًا مخزَّنًا؛ لا يمكن البحث في {missing} (لا نص مخزَّن أو لا مفتاح إصدار)؛ ولا يزال {pending} قيد الفهرسة.",
+  "Adds this exact version to your corpus as its own article.": "يضيف هذه النسخة بالتحديد إلى مجموعتك كمقالة مستقلة.",
+  "This version's text was not stored on this machine, so it cannot be added.": "لم يُخزَّن نص هذا الإصدار على هذا الجهاز، لذا لا يمكن إضافته."
 }

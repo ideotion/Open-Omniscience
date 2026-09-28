@@ -6166,5 +6166,7 @@
   "the newest held version": "सबसे नया उपलब्ध संस्करण",
   "the source states only part of this date": "स्रोत इस तारीख का केवल एक हिस्सा बताता है",
   "words or \"a phrase\"": "शब्द या \"एक वाक्यांश\"",
-  "Searched {searched} of {total} stored versions; {missing} cannot be searched (no stored text, or no version key); {pending} are still being indexed.": "{total} संग्रहीत संस्करणों में से {searched} खोजे गए; {missing} खोजे नहीं जा सकते (कोई संग्रहीत पाठ नहीं, या कोई संस्करण कुंजी नहीं); {pending} अभी अनुक्रमित हो रहे हैं।"
+  "Searched {searched} of {total} stored versions; {missing} cannot be searched (no stored text, or no version key); {pending} are still being indexed.": "{total} संग्रहीत संस्करणों में से {searched} खोजे गए; {missing} खोजे नहीं जा सकते (कोई संग्रहीत पाठ नहीं, या कोई संस्करण कुंजी नहीं); {pending} अभी अनुक्रमित हो रहे हैं।",
+  "Adds this exact version to your corpus as its own article.": "ठीक इसी संस्करण को एक अलग लेख के रूप में आपके कॉर्पस में जोड़ता है।",
+  "This version's text was not stored on this machine, so it cannot be added.": "इस संस्करण का पाठ इस मशीन पर संग्रहीत नहीं किया गया, इसलिए इसे जोड़ा नहीं जा सकता।"
 }

@@ -6166,5 +6166,7 @@
   "the newest held version": "самая новая имеющаяся версия",
   "the source states only part of this date": "источник указывает только часть этой даты",
   "words or \"a phrase\"": "слова или \"фраза\"",
-  "Searched {searched} of {total} stored versions; {missing} cannot be searched (no stored text, or no version key); {pending} are still being indexed.": "Просмотрено сохранённых версий: {searched} из {total}; недоступно для поиска: {missing} (нет сохранённого текста или ключа версии); ещё индексируется: {pending}."
+  "Searched {searched} of {total} stored versions; {missing} cannot be searched (no stored text, or no version key); {pending} are still being indexed.": "Просмотрено сохранённых версий: {searched} из {total}; недоступно для поиска: {missing} (нет сохранённого текста или ключа версии); ещё индексируется: {pending}.",
+  "Adds this exact version to your corpus as its own article.": "Добавляет именно эту версию в ваш корпус как отдельную статью.",
+  "This version's text was not stored on this machine, so it cannot be added.": "Текст этой версии не был сохранён на этой машине, поэтому её нельзя добавить."
 }

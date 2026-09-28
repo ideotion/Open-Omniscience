@@ -23,6 +23,13 @@ reader that read only the first would show a lane-running instance nothing but w
 old tracker happened to catch. So each version's id NAMES its store (``t`` tracker, ``b``
 the lane's baseline, ``l`` a lane revision), and one edit held in both is listed once,
 preferring the copy whose text is stored.
+
+ANY LISTED VERSION CAN BECOME A CORPUS ARTICLE (``R52``'s «Add to corpus»). The lane search
+offers it for the texts it finds; the reader offers it for the version at either end of a
+comparison, from either store, through the same ``add_wiki_version_article``: that
+version's own text, keyed on its own ``oldid`` address, dated by its edit, never stored
+twice. A version the corpus already holds is named in the payload, so the reader says so
+instead of offering the add.
 """
 
 from __future__ import annotations
@@ -40,6 +47,10 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
 
 #: Newest revisions listed at most; ``total`` says how many exist.
 MAX_LISTED = 200
+
+
+class NothingToAdd(ValueError):
+    """A listed version that cannot become a corpus article; the message names why."""
 
 
 def _section_parts(text: str | None) -> list[Part] | None:
@@ -146,6 +157,66 @@ def _all_rows(db: Session, page: WikiPage) -> list[dict]:
     return sorted(by_revid.values(), key=lambda r: (_key(r), r["key"]), reverse=True)
 
 
+def _in_corpus(db: Session, page: WikiPage, rows: list[dict]) -> dict[str, int]:
+    """The listed versions the corpus already holds, as ``{version id: article id}``.
+
+    Two ways a version is there: an article keyed on the version's own address (an earlier
+    «Add to corpus»), or the page's own article while its text is that revision (a followed
+    page's sync records the revid it came from in ``source_revision``). One query each."""
+    from src.database.models import Article
+    from src.wiki.corpus import wiki_article_url, wiki_version_url
+
+    by_revid = {str(r["revid"]): r["key"] for r in rows if str(r["revid"]).isdigit()}
+    if not by_revid:
+        return {}
+    urls = {wiki_version_url(page.wiki, page.title, int(rev)): rev for rev in by_revid}
+    out: dict[str, int] = {}
+    for article_id, url in db.query(Article.id, Article.canonical_url).filter(
+        Article.canonical_url.in_(list(urls))
+    ):
+        out[by_revid[urls[url]]] = article_id
+    current = (
+        db.query(Article.id, Article.source_revision)
+        .filter(Article.canonical_url == wiki_article_url(page.wiki, page.title))
+        .first()
+    )
+    if current is not None and current[1] in by_revid:
+        out.setdefault(by_revid[current[1]], current[0])
+    return out
+
+
+def add_version_to_corpus(db: Session, page: WikiPage, version_id: str) -> dict:
+    """Add ONE listed version of the page to the corpus as its own article (``R52``).
+
+    The lane search's «Add to corpus» for any version the reader lists, from either store:
+    the version's wikitext reduced the corpus's one way, keyed on its own ``oldid``
+    address, dated by its edit (``None`` when the store never learned it). Answers as
+    :func:`~src.wiki.corpus.add_wiki_version_article` does -- ``created``, ``exists`` or
+    ``same_text`` naming the article -- plus which version and store it came from.
+
+    Raises ``LookupError`` when the page lists no such version, and :class:`NothingToAdd`
+    when there is nothing to add: its text was never stored (``text-not-held``) or it carries
+    no revision number to key it on (``no-revision``)."""
+    from src.wiki.corpus import add_wiki_version_article, plain_from_wikitext
+
+    row = next((r for r in _all_rows(db, page) if r["key"] == str(version_id)), None)
+    if row is None:
+        raise LookupError("not-held")
+    if row["text"] is None:
+        raise NothingToAdd("text-not-held")
+    if not str(row["revid"]).isdigit():
+        raise NothingToAdd("no-revision")
+    out = add_wiki_version_article(
+        db,
+        wiki=page.wiki,
+        title=page.title,
+        plain=plain_from_wikitext(row["text"]),
+        revid=int(row["revid"]),
+        published_at=row["when"],
+    )
+    return out | {"version": row["key"], "store": row["store"]}
+
+
 def reader_payload(db: Session, page: WikiPage) -> dict:
     """The shared version reader's payload for one watched page (newest first)."""
     held = _all_rows(db, page)
@@ -198,6 +269,10 @@ def reader_payload(db: Session, page: WikiPage) -> dict:
         "languages": [],
         "parts_name": "sections",
         "stores": stores,
+        # «Add to corpus» (R52): its presence is what makes the reader offer the add, and
+        # ``articles`` names the listed versions the corpus already holds. A law payload
+        # has no such key, so the same component offers nothing there.
+        "corpus_add": {"articles": _in_corpus(db, page, held[:MAX_LISTED])},
         "method": (
             "The revisions this machine stored for this page, from the Wikipedia lane and "
             "from the page tracker, one row per edit, dated by each edit's own timestamp. "

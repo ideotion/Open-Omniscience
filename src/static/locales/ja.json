@@ -6166,5 +6166,7 @@
   "the newest held version": "保持している最新の版",
   "the source states only part of this date": "ソースはこの日付の一部しか記載していません",
   "words or \"a phrase\"": "語句または「フレーズ」",
-  "Searched {searched} of {total} stored versions; {missing} cannot be searched (no stored text, or no version key); {pending} are still being indexed.": "保存済みの {total} 版のうち {searched} 版を検索しました。{missing} 版は検索できません（テキスト未保存、または版キーなし）。{pending} 版は索引作成中です。"
+  "Searched {searched} of {total} stored versions; {missing} cannot be searched (no stored text, or no version key); {pending} are still being indexed.": "保存済みの {total} 版のうち {searched} 版を検索しました。{missing} 版は検索できません（テキスト未保存、または版キーなし）。{pending} 版は索引作成中です。",
+  "Adds this exact version to your corpus as its own article.": "この版そのものを独立した記事としてコーパスに追加します。",
+  "This version's text was not stored on this machine, so it cannot be added.": "この版の本文はこのマシンに保存されていないため、追加できません。"
 }

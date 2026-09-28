@@ -6166,5 +6166,7 @@
   "the newest held version": "所存最新版本",
   "the source states only part of this date": "来源仅载明此日期的一部分",
   "words or \"a phrase\"": "词语或“一个短语”",
-  "Searched {searched} of {total} stored versions; {missing} cannot be searched (no stored text, or no version key); {pending} are still being indexed.": "已搜索 {total} 个已保存版本中的 {searched} 个；{missing} 个无法搜索（未保存文本或无版本键）；{pending} 个仍在建立索引。"
+  "Searched {searched} of {total} stored versions; {missing} cannot be searched (no stored text, or no version key); {pending} are still being indexed.": "已搜索 {total} 个已保存版本中的 {searched} 个；{missing} 个无法搜索（未保存文本或无版本键）；{pending} 个仍在建立索引。",
+  "Adds this exact version to your corpus as its own article.": "将这个确切版本作为一篇独立条目加入你的语料库。",
+  "This version's text was not stored on this machine, so it cannot be added.": "此版本的文本未存储在本机，因此无法加入。"
 }

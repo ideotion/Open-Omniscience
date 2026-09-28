@@ -6166,5 +6166,7 @@
   "the newest held version": "a versão conservada mais recente",
   "the source states only part of this date": "a fonte indica apenas parte desta data",
   "words or \"a phrase\"": "palavras ou \"uma frase\"",
-  "Searched {searched} of {total} stored versions; {missing} cannot be searched (no stored text, or no version key); {pending} are still being indexed.": "Pesquisadas {searched} de {total} versões conservadas; {missing} não podem ser pesquisadas (sem texto conservado ou sem chave de versão); {pending} ainda estão a ser indexadas."
+  "Searched {searched} of {total} stored versions; {missing} cannot be searched (no stored text, or no version key); {pending} are still being indexed.": "Pesquisadas {searched} de {total} versões conservadas; {missing} não podem ser pesquisadas (sem texto conservado ou sem chave de versão); {pending} ainda estão a ser indexadas.",
+  "Adds this exact version to your corpus as its own article.": "Adiciona esta versão exata ao seu corpus como um artigo próprio.",
+  "This version's text was not stored on this machine, so it cannot be added.": "O texto desta versão não foi armazenado nesta máquina, por isso ela não pode ser adicionada."
 }
