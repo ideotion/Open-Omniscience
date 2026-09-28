@@ -2856,6 +2856,11 @@ class Watch(Base):
     last_evaluated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     last_matched_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     last_seen_ids: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON list of last firing ids
+    # The advanced search's filter set (S05-01, Q606 = a): the stored form of
+    # ``src.api.search_filters.AdvancedSearch`` as JSON, NULL = none. A watch whose
+    # ``threshold`` is 0 is a SAVED SEARCH: it re-runs this query + these filters on
+    # demand and never fires, so it never interrupts the reader with a Lead card.
+    filters: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     matches = relationship("WatchMatch", back_populates="watch", cascade="all, delete-orphan")
 

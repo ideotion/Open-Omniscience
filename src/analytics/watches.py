@@ -104,6 +104,26 @@ def _fts_matcher(session: Session, query: str) -> list[int] | None:
     )
 
 
+def _filtered_matcher(adv) -> Matcher:
+    """The production matcher under a watch's advanced settings: the same search, with the
+    watch's ``near`` / ``exact`` grammar settings.
+
+    Quarantined items stay EXCLUDED even when the saved filters include them (Q617): the
+    reason ``_fts_matcher`` gives holds here unchanged -- a firing interrupts the reader,
+    and an alert raised on nav soup is worse than a row in a list. The filter still
+    applies where the reader asked for it, when the saved search is re-opened."""
+    from src.database.fts import search_ids
+
+    def _m(session: Session, query: str) -> list[int] | None:
+        return search_ids(
+            session, query, exclude_quarantined=True,
+            expand=None if adv.exact else watch_concept(session, query),
+            near_default=adv.near, exact=adv.exact,
+        )
+
+    return _m
+
+
 def _id_list(blob: str | None) -> list[int]:
     if not blob:
         return []
@@ -120,18 +140,56 @@ def _loads_ids(blob: str | None) -> set[int]:
 # --------------------------------------------------------------------------- #
 # CRUD (the Watches view: create / list / edit / enable-disable / delete)
 # --------------------------------------------------------------------------- #
+def _filters_blob(filters: dict | None) -> str | None:
+    """The stored form of an advanced filter set, or None for "no advanced filter".
+
+    Validated through the ONE definition (``AdvancedSearch``), so a watch can never hold a
+    filter the search surfaces would read differently; a value no filter can mean raises
+    ``ValueError`` (the API turns it into a 422) rather than being stored and ignored."""
+    if not filters:
+        return None
+    from fastapi import HTTPException
+
+    from src.api.search_filters import AdvancedSearch, _validated
+
+    known = {k: v for k, v in filters.items() if k in AdvancedSearch.__dataclass_fields__}
+    try:
+        adv = _validated(AdvancedSearch(**known))
+    except (HTTPException, TypeError) as exc:
+        raise ValueError(getattr(exc, "detail", None) or str(exc)) from exc
+    stored = adv.to_dict()
+    return json.dumps(stored, sort_keys=True) if stored else None
+
+
+def watch_filters(w: Watch):
+    """The watch's advanced filter set (an ``AdvancedSearch``; the default when none)."""
+    from src.api.search_filters import AdvancedSearch
+
+    try:
+        data = json.loads(w.filters) if w.filters else None
+    except (TypeError, ValueError):
+        data = None
+    return AdvancedSearch.from_dict(data)
+
+
 def create_watch(
     session: Session, *, name: str, query: str, threshold: int = 3, window_days: int = 7,
-    enabled: bool = True,
+    enabled: bool = True, filters: dict | None = None,
 ) -> Watch:
-    """Save a new watch. ``enabled`` defaults TRUE (the engine is ON by default, #3)."""
+    """Save a new watch. ``enabled`` defaults TRUE (the engine is ON by default, #3).
+
+    ``threshold`` 0 is a SAVED SEARCH (Q606 = a): the same row, re-run on demand with
+    its query and ``filters``, and never evaluated by the engine -- it has no count to
+    cross, so it can never fire or surface a Lead card. A saved search may hold filters
+    and no query text (every German article from these three sources, say)."""
+    blob = _filters_blob(filters)
     name = (name or "").strip() or (query or "").strip()[:120] or "watch"
-    if not (query or "").strip():
+    if not (query or "").strip() and not (int(threshold) == 0 and blob):
         raise ValueError("a watch needs a query condition")
     w = Watch(
-        name=name[:120], query=query.strip(),
-        threshold=max(1, int(threshold)), window_days=max(1, int(window_days)),
-        enabled=bool(enabled),
+        name=name[:120], query=(query or "").strip(),
+        threshold=max(0, int(threshold)), window_days=max(1, int(window_days)),
+        enabled=bool(enabled), filters=blob,
     )
     session.add(w)
     session.flush()
@@ -164,6 +222,10 @@ def _watch_dict(w: Watch) -> dict:
     return {
         "id": w.id, "name": w.name, "query": w.query,
         "threshold": w.threshold, "window_days": w.window_days, "enabled": bool(w.enabled),
+        # Q606 = a: threshold 0 is a saved search. The filters travel with the row so
+        # re-opening it sends exactly what was saved.
+        "saved_search": w.threshold == 0,
+        "filters": watch_filters(w).to_dict(),
         "created_at": w.created_at.isoformat() if w.created_at else None,
         "last_evaluated_at": w.last_evaluated_at.isoformat() if w.last_evaluated_at else None,
         "last_matched_at": w.last_matched_at.isoformat() if w.last_matched_at else None,
@@ -188,7 +250,9 @@ def update_watch(session: Session, watch_id: int, **fields) -> Watch | None:
     if "query" in fields and str(fields["query"]).strip():
         w.query = str(fields["query"]).strip()
     if "threshold" in fields and fields["threshold"] is not None:
-        w.threshold = max(1, int(fields["threshold"]))
+        w.threshold = max(0, int(fields["threshold"]))
+    if "filters" in fields and fields["filters"] is not None:
+        w.filters = _filters_blob(fields["filters"])
     if "window_days" in fields and fields["window_days"] is not None:
         w.window_days = max(1, int(fields["window_days"]))
     if "enabled" in fields and fields["enabled"] is not None:
@@ -218,16 +282,23 @@ def watch_history(session: Session, watch_id: int, *, limit: int = 50) -> list[d
 # Evaluation — the engine (runs after each scrape pass; ON by default)
 # --------------------------------------------------------------------------- #
 def _recent_matching(
-    session: Session, query: str, window_days: int, matcher: Matcher
+    session: Session, query: str, window_days: int, matcher: Matcher, adv=None
 ) -> list[int]:
     """Article ids matching ``query`` whose date falls within ``window_days``.
 
     Uses published_at when present, else created_at (the ingest time) — so a freshly
     scraped article without a publication date still counts as recent evidence.
+
+    ``adv`` is the watch's advanced filter set; its conditions narrow the matched ids in
+    the same chunked lookup that reads the dates, so a watch saved from a filtered view
+    fires on that view, never on the wider query.
     """
     ids = matcher(session, query)
     if not ids:  # None (no positive constraint) or [] (matched nothing) -> nothing fires
         return []
+    conds = adv.conditions(session) if adv is not None and not adv.is_default else []
+    if conds:
+        conds.append(Article.quarantined.isnot(True))
     cutoff = datetime.now(UTC) - timedelta(days=window_days)
     cutoff_naive = cutoff.replace(tzinfo=None)  # stored datetimes are naive UTC
     rows: list[Any] = []
@@ -236,7 +307,7 @@ def _recent_matching(
         rows.extend(
             session.execute(
                 select(Article.id, Article.published_at, Article.created_at)
-                .where(Article.id.in_(chunk))
+                .where(Article.id.in_(chunk), *conds)
             ).all()
         )
     recent = []
@@ -264,9 +335,19 @@ def evaluate_watches(
     now_naive = now.replace(tzinfo=None)
     matcher = matcher or _fts_matcher
     fired: list[dict] = []
-    for w in session.execute(select(Watch).where(Watch.enabled.is_(True))).scalars():
+    # threshold 0 = a saved search (Q606): never evaluated, so it can never fire.
+    for w in session.execute(
+        select(Watch).where(Watch.enabled.is_(True), Watch.threshold > 0)
+    ).scalars():
         try:
-            recent = _recent_matching(session, w.query, w.window_days, matcher)
+            adv = watch_filters(w)
+            if adv.is_default:
+                recent = _recent_matching(session, w.query, w.window_days, matcher)
+            else:
+                recent = _recent_matching(
+                    session, w.query, w.window_days,
+                    matcher if matcher is not _fts_matcher else _filtered_matcher(adv), adv,
+                )
         except Exception:  # noqa: BLE001 - one bad watch query must never break the pass
             w.last_evaluated_at = now_naive
             continue

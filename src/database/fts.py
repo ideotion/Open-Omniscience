@@ -51,6 +51,67 @@ _LOG = logging.getLogger(__name__)
 _OPERATORS = {"AND", "OR", "NOT"}
 # A token is: a "quoted phrase", a parenthesis, or a run of non-space/paren/quote.
 _TOKEN_RE = re.compile(r'"[^"]*"|\(|\)|[^\s()"]+')
+
+# --------------------------------------------------------------------------- #
+# THE ADVANCED GRAMMAR'S TOKEN CLASS (S05-01 S1; Q603, Q604, Q611, Q612, Q613).
+#
+# Three FTS5-native forms and five field filters, recognised ONLY when a caller asks for
+# the grammar (``grammar=True``) -- the article search does, the Wikipedia dump index does
+# not, so its MATCH stays byte-identical. Each form is recognised here as a WHOLE token and
+# carried into the AST as a typed node; nothing the reader typed is ever pasted into the
+# MATCH string. Every value still leaves through ``_quote``, and the only unquoted things
+# the renderer emits are FTS5 syntax this module writes itself (``NEAR(``, ``*``, ``^``, a
+# column name from ``_FTS_COLUMNS``) and an integer it parsed. That is the whole of the
+# injection argument, and ``tests/test_search_grammar.py`` mutation-checks it by name.
+#
+#   word*  "a phrase"*        prefix (FTS5 native). At least two characters before the *.
+#   NEAR(a b, N)  NEAR(a b)   the words within N tokens of each other (FTS5 native). N is
+#                             optional; without it the caller's ``near_default`` applies
+#                             (Q612: 10, and the reader can change the default).
+#   field:value               field search; ``field`` is title, author, source, url or tag.
+#   field:value*              ... "starts with"
+#   field:=value              ... "is exactly"
+#                             (no suffix = "contains"). Values may be "quoted phrases".
+#
+# ``title`` contains / starts-with run INSIDE the FTS index (the column filter ``title :``
+# and the initial-token marker ``^``). ``author``, ``source``, ``url``, ``tag`` and
+# ``title:=`` are NOT indexed columns of ``article_fts`` -- the index holds title and content
+# only, and recreating it is out of this slice's reach -- so they compile to SQL predicates
+# with bound values (:func:`field_where`). A SQL predicate cannot sit inside an FTS5 OR, so
+# those five may be combined only with AND / NOT at the top level of a query; anywhere else
+# they are refused with a sentence, never silently widened.
+#
+# DELIBERATE OMISSION (Q613 = a): regular expressions. FTS5 has no regex operator, so a
+# regex would be a full scan of every article's text on every search -- the scan-on-type the
+# search surface promises never to do -- and a pattern language is also a second injection
+# surface this grammar exists to keep closed. ``title:/x/`` is simply a contains-search for
+# the characters "/x/".
+# --------------------------------------------------------------------------- #
+
+#: The field filters, in the order the builder lists them.
+FIELDS = ("title", "author", "source", "url", "tag")
+#: The match modes a field filter takes (Q611 note): the text form of each is the suffix.
+FIELD_MODES = ("contains", "prefix", "exact")
+#: Fields the FTS index can answer itself, per mode. Everything else is a SQL predicate.
+_FTS_FIELD_MODES = {("title", "contains"), ("title", "prefix")}
+#: The NEAR distance when a query gives none (Q612 = a). Callers pass the reader's own.
+NEAR_DEFAULT = 10
+#: Bounds on a NEAR distance. FTS5 accepts any integer; a stepper and a sane ceiling.
+NEAR_MIN, NEAR_MAX = 0, 1000
+#: The shortest prefix accepted. A one-character prefix expands to a large share of the
+#: index's vocabulary on a real corpus, and FTS5 then reads every one of those doclists.
+PREFIX_MIN_CHARS = 2
+
+_GRAMMAR_TOKEN_RE = re.compile(
+    r'(?i:NEAR)\([^()]*\)'
+    r'|(?i:title|author|source|url|tag):=?(?:"[^"]*"\**|[^\s()"]+)'
+    r'|"[^"]*"\**'
+    r'|\(|\)|[^\s()"]+'
+)
+_NEAR_RE = re.compile(r'(?is)NEAR\((.*)\)')
+_NEAR_TAIL_RE = re.compile(r'^(.*?),\s*(-?\d+)\s*$', re.S)
+_NEAR_ITEM_RE = re.compile(r'"[^"]*"|[^\s",]+')
+_FIELD_RE = re.compile(r'(?is)(title|author|source|url|tag):(=?)(.*)')
 # Characters that carry searchable content (anything else tokenizes to nothing).
 _HAS_WORD_CHAR = re.compile(r"\w", re.UNICODE)
 
@@ -62,6 +123,37 @@ class SearchQueryError(ValueError):
 @dataclass
 class _Term:
     value: str  # the raw text (phrase contents or a single word)
+
+
+@dataclass
+class _Prefix:
+    """``word*`` / ``"a phrase"*``: the (last) word as a prefix (FTS5 native)."""
+
+    value: str
+
+
+@dataclass
+class _Near:
+    """``NEAR(a b, N)``: every item within ``distance`` tokens (``None`` = the default)."""
+
+    items: list
+    distance: int | None = None
+
+
+@dataclass
+class FieldFilter:
+    """``field:value`` in one of three match modes (Q611). Public: the SQL half of a
+    parsed query is a list of these, and the builder's chips are the same shape."""
+
+    field: str
+    mode: str  # contains | prefix | exact
+    value: str
+    negated: bool = False
+
+    @property
+    def in_index(self) -> bool:
+        """True when the FTS index answers this filter itself (title contains / prefix)."""
+        return (self.field, self.mode) in _FTS_FIELD_MODES
 
 
 @dataclass
@@ -77,16 +169,66 @@ class _AndGroup:
     excludes: list = field(default_factory=list)
 
 
-def _tokenize(query: str) -> list[str]:
-    return _TOKEN_RE.findall(query)
+def _tokenize(query: str, grammar: bool = False) -> list[str]:
+    return (_GRAMMAR_TOKEN_RE if grammar else _TOKEN_RE).findall(query)
+
+
+def _near_node(tok: str):
+    """A ``NEAR(...)`` token -> ``_Near`` (or a plain term / nothing when it has <2 items).
+
+    The body is split into quoted phrases and bare words; commas, quotes and parentheses
+    never survive into an item, so an item is always a value for ``_quote`` and never FTS5
+    syntax. A trailing ``, N`` is the distance, clamped to ``[NEAR_MIN, NEAR_MAX]``."""
+    m = _NEAR_RE.fullmatch(tok)
+    body = m.group(1) if m else ""
+    distance: int | None = None
+    tail = _NEAR_TAIL_RE.match(body)
+    if tail:
+        body = tail.group(1)
+        distance = max(NEAR_MIN, min(NEAR_MAX, int(tail.group(2))))
+    items = []
+    for raw in _NEAR_ITEM_RE.findall(body):
+        v = raw[1:-1].strip() if raw.startswith('"') and raw.endswith('"') and len(raw) >= 2 else raw
+        if v.upper() in _OPERATORS or not _HAS_WORD_CHAR.search(v):
+            continue
+        items.append(v)
+    if not items:
+        return None
+    if len(items) == 1:
+        return _Term(items[0])
+    return _Near(items, distance)
+
+
+def _field_node(tok: str):
+    """``field:value`` / ``field:value*`` / ``field:=value`` -> ``FieldFilter`` (or None)."""
+    m = _FIELD_RE.fullmatch(tok)
+    if m is None:  # pragma: no cover - the token regex only yields matching tokens
+        return None
+    field_name, eq, raw = m.group(1).lower(), m.group(2), m.group(3)
+    mode = "exact" if eq else "contains"
+    if not eq and raw.endswith("*"):
+        mode = "prefix"
+        raw = raw.rstrip("*")
+    if raw.startswith('"') and raw.endswith('"') and len(raw) >= 2:
+        raw = raw[1:-1]
+    value = raw.strip()
+    if not _HAS_WORD_CHAR.search(value):
+        return None
+    if mode == "prefix" and field_name == "title" and len(value.strip()) < PREFIX_MIN_CHARS:
+        raise SearchQueryError(
+            f"a prefix needs at least {PREFIX_MIN_CHARS} characters before the *"
+        )
+    return FieldFilter(field_name, mode, value)
 
 
 class _Parser:
-    """Recursive-descent parser producing an AST of _Or / _AndGroup / _Term."""
+    """Recursive-descent parser producing an AST of _Or / _AndGroup / _Term (and, with
+    ``grammar=True``, _Prefix / _Near / FieldFilter)."""
 
-    def __init__(self, tokens: list[str]):
+    def __init__(self, tokens: list[str], grammar: bool = False):
         self._tokens = tokens
         self._i = 0
+        self._grammar = grammar
 
     def _peek(self):
         return self._tokens[self._i] if self._i < len(self._tokens) else None
@@ -149,10 +291,27 @@ class _Parser:
             return inner
         if tok == ")":
             raise SearchQueryError("unbalanced parentheses: unexpected ')'")
+        prefix = False
+        if self._grammar:
+            if tok[:5].upper() == "NEAR(" and tok.endswith(")"):
+                return _near_node(tok)
+            if _FIELD_RE.fullmatch(tok) and ":" in tok:
+                return _field_node(tok)
+            if tok.endswith("*") and tok.rstrip("*"):
+                prefix = True
+                tok = tok.rstrip("*")
         if tok.startswith('"') and tok.endswith('"') and len(tok) >= 2:
             value = tok[1:-1].strip()
         else:
             value = tok
+        if prefix:
+            if not _HAS_WORD_CHAR.search(value):
+                return None
+            if len(value.strip()) < PREFIX_MIN_CHARS:
+                raise SearchQueryError(
+                    f"a prefix needs at least {PREFIX_MIN_CHARS} characters before the *"
+                )
+            return _Prefix(value)
         if not _HAS_WORD_CHAR.search(value):
             # Pure punctuation carries no searchable content -- drop it.
             return None
@@ -228,19 +387,81 @@ def _render_term(node: _Term, expand: ExpandTerms | None, variants: LiteralVaria
     return "(" + " OR ".join(_render_literal(v) for v in literals) + ")"
 
 
-def _render(node, expand: ExpandTerms | None = None, variants: LiteralVariants | None = None) -> str | None:
+def _string_forms(value: str, variants: LiteralVariants | None) -> list[str]:
+    """The STRING forms a literal takes to meet the index (the literal first).
+
+    Prefix and NEAR items take only these: a segmented (tuple) form is already a NEAR of
+    its own, and nesting one NEAR inside another is not FTS5 syntax. What that leaves out
+    is disclosed in the builder's hover: a prefix or NEAR over Chinese or Japanese text
+    matches the index as typed, not re-segmented."""
+    forms = [value]
+    if variants is not None:
+        for v in variants(value):
+            if isinstance(v, str) and v and v not in forms:
+                forms.append(v)
+    return forms
+
+
+def _render_prefix(node: _Prefix, variants: LiteralVariants | None) -> str:
+    forms = [_quote(f) + "*" for f in _string_forms(node.value, variants)]
+    return forms[0] if len(forms) == 1 else "(" + " OR ".join(forms) + ")"
+
+
+def _render_near(node: _Near, variants: LiteralVariants | None, near_default: int) -> str:
+    distance = node.distance if node.distance is not None else near_default
+    distance = max(NEAR_MIN, min(NEAR_MAX, int(distance)))
+    per_item = [_string_forms(v, variants) for v in node.items]
+    # Two readings at most: every item as typed, and every item in its index form (the
+    # Arabic fold). A cartesian product of forms would multiply for no gain -- an item's
+    # forms differ only when the fold changed it, and the index holds ONE of the two.
+    readings = [[f[0] for f in per_item]]
+    folded = [f[-1] for f in per_item]
+    if folded != readings[0]:
+        readings.append(folded)
+    parts = ["NEAR(" + " ".join(_quote(w) for w in r) + f", {distance})" for r in readings]
+    return parts[0] if len(parts) == 1 else "(" + " OR ".join(parts) + ")"
+
+
+def _render_field(
+    node: FieldFilter, expand: ExpandTerms | None, variants: LiteralVariants | None
+) -> str | None:
+    """A field filter the index answers itself: ``title :`` contains / starts with."""
+    if not node.in_index:  # pragma: no cover - SQL fields are split off before rendering
+        raise AssertionError(f"field {node.field}:{node.mode} is not an index filter")
+    if node.mode == "prefix":
+        forms = [_quote(f) + "*" for f in _string_forms(node.value, variants)]
+        return "(" + " OR ".join(f"{node.field} : ^ {f}" for f in forms) + ")"
+    return f"{node.field} : " + _parenthesise(_render_term(_Term(node.value), expand, variants))
+
+
+def _parenthesise(expr: str) -> str:
+    return expr if expr.startswith("(") and expr.endswith(")") else "(" + expr + ")"
+
+
+def _render(
+    node,
+    expand: ExpandTerms | None = None,
+    variants: LiteralVariants | None = None,
+    near_default: int = NEAR_DEFAULT,
+) -> str | None:
     if node is None:
         return None
     if isinstance(node, _Term):
         return _render_term(node, expand, variants)
+    if isinstance(node, _Prefix):
+        return _render_prefix(node, variants)
+    if isinstance(node, _Near):
+        return _render_near(node, variants, near_default)
+    if isinstance(node, FieldFilter):
+        return _render_field(node, expand, variants)
     if isinstance(node, _Or):
-        parts = [p for p in (_render(c, expand, variants) for c in node.children) if p]
+        parts = [p for p in (_render(c, expand, variants, near_default) for c in node.children) if p]
         if not parts:
             return None
         return "(" + " OR ".join(parts) + ")"
     if isinstance(node, _AndGroup):
-        inc = [p for p in (_render(c, expand, variants) for c in node.includes) if p]
-        exc = [p for p in (_render(c, expand, variants) for c in node.excludes) if p]
+        inc = [p for p in (_render(c, expand, variants, near_default) for c in node.includes) if p]
+        exc = [p for p in (_render(c, expand, variants, near_default) for c in node.excludes) if p]
         if not inc:
             # FTS5 MATCH cannot express a purely-negative query; ignore the
             # exclusions rather than error. (Caller may treat None as "no match".)
@@ -252,11 +473,109 @@ def _render(node, expand: ExpandTerms | None = None, variants: LiteralVariants |
     raise AssertionError(f"unknown node type: {type(node)!r}")
 
 
+def _is_sql_field(node) -> bool:
+    return isinstance(node, FieldFilter) and not node.in_index
+
+
+def _contains_sql_field(node) -> bool:
+    if _is_sql_field(node):
+        return True
+    if isinstance(node, _Or):
+        return any(_contains_sql_field(c) for c in node.children)
+    if isinstance(node, _AndGroup):
+        return any(_contains_sql_field(c) for c in node.includes + node.excludes)
+    return False
+
+
+_SQL_FIELD_PLACEMENT = (
+    "author:, source:, url:, tag: and title:= can only be combined with AND or NOT at the "
+    "top level of a query, never inside OR or parentheses"
+)
+
+
+@dataclass
+class ParsedQuery:
+    """A query split into the part the FTS index answers and the part SQL answers.
+
+    ``ast`` is the FTS part (``None`` when there is none); ``fields`` are the SQL field
+    filters, each marked ``negated`` when it sat after a NOT. ``negative_only`` is True
+    when, once the fields left, the FTS part holds exclusions and nothing else -- the one
+    shape FTS5 cannot run on its own (``author:x NOT climate``), which the caller then
+    runs as an exclusion (:func:`build_negative_match`)."""
+
+    ast: object | None
+    fields: list = field(default_factory=list)
+    negative_only: bool = False
+
+
+def parse_query(query: str | None, *, grammar: bool = True) -> ParsedQuery:
+    """Parse ``query`` and split its SQL field filters off the FTS part.
+
+    Raises :class:`SearchQueryError` on structurally invalid input, and on a SQL field
+    anywhere but the top level (:data:`_SQL_FIELD_PLACEMENT`)."""
+    if not query or not query.strip():
+        return ParsedQuery(None)
+    tokens = _tokenize(query, grammar)
+    if not tokens:
+        return ParsedQuery(None)
+    root = _Parser(tokens, grammar).parse()
+    if not grammar:
+        return ParsedQuery(root)
+    fields: list[FieldFilter] = []
+    if _is_sql_field(root):
+        return ParsedQuery(None, [root])
+    if isinstance(root, _AndGroup):
+        keep_inc, keep_exc = [], []
+        for c in root.includes:
+            if _is_sql_field(c):
+                fields.append(c)
+            elif _contains_sql_field(c):
+                raise SearchQueryError(_SQL_FIELD_PLACEMENT)
+            else:
+                keep_inc.append(c)
+        for c in root.excludes:
+            if _is_sql_field(c):
+                fields.append(FieldFilter(c.field, c.mode, c.value, negated=True))
+            elif _contains_sql_field(c):
+                raise SearchQueryError(_SQL_FIELD_PLACEMENT)
+            else:
+                keep_exc.append(c)
+        if not keep_inc and not keep_exc:
+            return ParsedQuery(None, fields)
+        if not keep_inc:
+            return ParsedQuery(_AndGroup([], keep_exc), fields, negative_only=True)
+        if len(keep_inc) == 1 and not keep_exc:
+            return ParsedQuery(keep_inc[0], fields)
+        return ParsedQuery(_AndGroup(keep_inc, keep_exc), fields)
+    if _contains_sql_field(root):
+        raise SearchQueryError(_SQL_FIELD_PLACEMENT)
+    return ParsedQuery(root, fields)
+
+
+def build_negative_match(
+    parsed: ParsedQuery,
+    *,
+    expand: ExpandTerms | None = None,
+    variants: LiteralVariants | None = None,
+    near_default: int = NEAR_DEFAULT,
+) -> str | None:
+    """The EXCLUSIONS of a negative-only FTS part as one positive MATCH (their OR), for
+    the caller to subtract. ``None`` when the parsed query is not negative-only."""
+    if not parsed.negative_only or not isinstance(parsed.ast, _AndGroup):
+        return None
+    parts = [p for p in (_render(c, expand, variants, near_default) for c in parsed.ast.excludes) if p]
+    if not parts:
+        return None
+    return parts[0] if len(parts) == 1 else "(" + " OR ".join(parts) + ")"
+
+
 def build_match(
     query: str | None,
     *,
     expand: ExpandTerms | None = None,
     variants: LiteralVariants | None = None,
+    grammar: bool = False,
+    near_default: int = NEAR_DEFAULT,
 ) -> str | None:
     """Translate a user Boolean query into a safe FTS5 MATCH expression.
 
@@ -273,14 +592,17 @@ def build_match(
     ``variants`` is the index-shape hook (:data:`LiteralVariants`); for a query with no
     Arabic, Chinese or Japanese in it the article index's variants are the literal alone,
     so the MATCH is byte-identical there too.
+
+    ``grammar`` turns on the advanced token class (prefix, NEAR, field filters; see the
+    block above :data:`FIELDS`). ``False`` -- the default, and what the Wikipedia dump
+    index passes -- keeps the MATCH byte-identical to before it existed. With it on, the
+    SQL field filters are NOT in the returned MATCH: :func:`parse_query` hands them back
+    separately, and :func:`search_ids` / :func:`search_total` apply them.
     """
-    if not query or not query.strip():
+    parsed = parse_query(query, grammar=grammar)
+    if parsed.negative_only:
         return None
-    tokens = _tokenize(query)
-    if not tokens:
-        return None
-    ast = _Parser(tokens).parse()
-    return _render(ast, expand, variants)
+    return _render(parsed.ast, expand, variants, near_default)
 
 
 # --------------------------------------------------------------------------- #
@@ -889,6 +1211,163 @@ def _bm25_weights() -> tuple[float, float]:
     return _w("OO_BM25_TITLE_WEIGHT", 4.0), _w("OO_BM25_BODY_WEIGHT", 1.0)
 
 
+# --------------------------------------------------------------------------- #
+# The SQL half of the advanced grammar: field filters and the "exact" toggle
+# --------------------------------------------------------------------------- #
+
+#: Which stored columns each SQL-answered field reads. ``a`` is ``articles``, ``s`` its
+#: ``sources`` row. A field over two columns matches when EITHER does (a source is its name
+#: or its domain; an article's address is its URL or its canonical URL).
+_FIELD_COLUMNS = {
+    "title": ("a.title",),
+    "author": ("a.author",),
+    "url": ("a.url", "a.canonical_url"),
+    "source": ("s.name", "s.domain"),
+    "tag": ("s.tags",),
+}
+
+
+def _field_condition(ff: FieldFilter, pname: str, exact: bool) -> tuple[str, dict]:
+    """One field filter as a SQL boolean over ``a``/``s`` with ONE bound value.
+
+    Folded by default (Q610 = a: the column and the value both through ``oo_search_fold``,
+    so ``José`` finds ``jose``); ``exact`` compares the stored bytes. The three modes are
+    ``instr`` (contains), ``instr = 1`` (starts with) and ``=`` (is exactly) -- no LIKE, so
+    a ``%`` or ``_`` the reader typed is a character, never a wildcard. Every column name
+    comes from :data:`_FIELD_COLUMNS`; the value is always ``:pname``."""
+    from src.database.fts_norm import FN_FOLD, search_fold
+
+    value = ff.value.strip()
+    bound = value if exact else (search_fold(value) or "")
+    conds = []
+    for col in _FIELD_COLUMNS[ff.field]:
+        x = col if exact else f"{FN_FOLD}({col})"
+        if ff.field == "tag":
+            # Tags are one comma-separated string per source ("europe, politics"). Starts
+            # with / is exactly apply to EACH tag, so the string is normalised to
+            # ",europe,politics," and the value is anchored on the commas.
+            norm = f"(',' || replace(replace({x}, ', ', ','), ' ,', ',') || ',')"
+            if ff.mode == "exact":
+                conds.append(f"instr({norm}, ',' || :{pname} || ',') > 0")
+            elif ff.mode == "prefix":
+                conds.append(f"instr({norm}, ',' || :{pname}) > 0")
+            else:
+                conds.append(f"instr({x}, :{pname}) > 0")
+            continue
+        if ff.mode == "exact":
+            conds.append(f"{x} = :{pname}")
+        elif ff.mode == "prefix":
+            conds.append(f"instr({x}, :{pname}) = 1")
+        else:
+            conds.append(f"instr({x}, :{pname}) > 0")
+    return "(" + " OR ".join(conds) + ")", {pname: bound}
+
+
+def field_where(
+    fields: Sequence[FieldFilter], *, outer: str, exact: bool = False, prefix: str = "oof"
+) -> tuple[str, dict]:
+    """The SQL field filters as ONE boolean, correlated on ``outer`` (an article-id
+    expression: ``article_fts.rowid`` inside the index query, ``articles.id`` in an ORM
+    query). ``("", {})`` when there are none.
+
+    A negated filter is ``NOT EXISTS`` rather than ``NOT (...)``: an article whose author
+    is ``NULL`` IS "not by Smith", and ``NOT (instr(NULL, 'smith') > 0)`` is ``NULL`` --
+    which a WHERE reads as false, silently dropping every unattributed article."""
+    if outer not in ("article_fts.rowid", "articles.id", "a0.id"):
+        raise ValueError(f"unexpected correlation {outer!r}")
+    parts: list[str] = []
+    params: dict = {}
+    for i, ff in enumerate(fields):
+        cond, p = _field_condition(ff, f"{prefix}{i}", exact)
+        params.update(p)
+        body = (
+            "SELECT 1 FROM articles a LEFT JOIN sources s ON s.id = a.source_id "  # nosec B608 - `outer` is checked against three literals above; `cond` is built from _FIELD_COLUMNS literals and one bound :param
+            f"WHERE a.id = {outer} AND {cond}"
+        )
+        parts.append(("NOT EXISTS (" if ff.negated else "EXISTS (") + body + ")")
+    return (" AND ".join(parts), params) if parts else ("", {})
+
+
+def _exact_condition(node, params: dict, prefix: str) -> str | None:
+    """The positive literals of an FTS part, as byte-exact ``instr`` tests (Q610's toggle).
+
+    The index folds case and diacritics at INDEX time (``remove_diacritics 2``), so it
+    cannot tell ``café`` from ``cafe``. The exact reading therefore runs the folded match
+    and then keeps only the articles whose stored title or text holds each positive literal
+    exactly as typed. EXCLUSIONS stay folded -- ``NOT café`` still drops an article saying
+    ``cafe`` -- because the index already removed those rows and a post-filter can only
+    narrow; that is the stricter of the two readings and the builder's hover says so."""
+
+    def bind(v: str) -> str:
+        name = f"{prefix}{len(params)}"
+        params[name] = v
+        return name
+
+    if node is None:
+        return None
+    if isinstance(node, (_Term, _Prefix)):
+        n = bind(node.value)
+        return f"(instr(a.title, :{n}) > 0 OR instr(a.content, :{n}) > 0)"
+    if isinstance(node, _Near):
+        parts = [_exact_condition(_Term(v), params, prefix) for v in node.items]
+        return "(" + " AND ".join(p for p in parts if p) + ")"
+    if isinstance(node, FieldFilter):
+        n = bind(node.value)
+        return f"(instr(a.title, :{n}) {'= 1' if node.mode == 'prefix' else '> 0'})"
+    if isinstance(node, _Or):
+        parts = [p for p in (_exact_condition(c, params, prefix) for c in node.children) if p]
+        return ("(" + " OR ".join(parts) + ")") if parts else None
+    if isinstance(node, _AndGroup):
+        parts = [p for p in (_exact_condition(c, params, prefix) for c in node.includes) if p]
+        return ("(" + " AND ".join(parts) + ")") if parts else None
+    return None
+
+
+def exact_where(parsed: ParsedQuery, *, outer: str, prefix: str = "oox") -> tuple[str, dict]:
+    """The exact-reading filter (see :func:`_exact_condition`), correlated on ``outer``;
+    ``("", {})`` when the query has no positive FTS literal to hold to."""
+    if outer not in ("article_fts.rowid", "articles.id", "a0.id"):
+        raise ValueError(f"unexpected correlation {outer!r}")
+    params: dict = {}
+    cond = _exact_condition(parsed.ast, params, prefix)
+    if not cond:
+        return "", {}
+    return (
+        "EXISTS (SELECT 1 FROM articles a WHERE a.id = "  # nosec B608 - `outer` is checked against three literals above; `cond` holds only instr() over two literal columns and bound :params
+        f"{outer} AND {cond})",
+        params,
+    )
+
+
+def _grammar_sql(
+    query: str | None,
+    *,
+    expand: ExpandTerms | None,
+    near_default: int,
+    exact: bool,
+    outer: str,
+) -> tuple[str | None, str | None, str, dict, bool]:
+    """``(match, negative_match, extra_where, params, has_constraint)`` for one query."""
+    from src.database.fts_norm import query_variants
+
+    parsed = parse_query(query, grammar=True)
+    match = None if parsed.negative_only else _render(parsed.ast, expand, query_variants, near_default)
+    neg = build_negative_match(parsed, expand=expand, variants=query_variants, near_default=near_default)
+    where_parts: list[str] = []
+    params: dict = {}
+    fw, fp = field_where(parsed.fields, outer=outer, exact=exact)
+    if fw:
+        where_parts.append(fw)
+        params.update(fp)
+    if exact:
+        ew, ep = exact_where(parsed, outer=outer)
+        if ew:
+            where_parts.append(ew)
+            params.update(ep)
+    has = match is not None or bool(parsed.fields)
+    return match, neg, " AND ".join(where_parts), params, has
+
+
 def search_ids(
     session: Session,
     query: str | None,
@@ -897,6 +1376,9 @@ def search_ids(
     weights: tuple[float, float] | None = None,
     exclude_quarantined: bool = False,
     expand: ExpandTerms | None = None,
+    grammar: bool = True,
+    near_default: int = NEAR_DEFAULT,
+    exact: bool = False,
 ) -> list[int] | None:
     """Return article ids matching ``query``, ranked best-first (BM25F).
 
@@ -925,28 +1407,131 @@ def search_ids(
 
     ``expand`` is the cross-language hook (see :func:`build_match`); ``None`` leaves the
     emitted MATCH and therefore the returned ids byte-identical to before it existed.
+
+    ``grammar`` (default on) reads the advanced token class -- prefix, ``NEAR``, and the
+    field filters, whose SQL half is applied HERE rather than left to each caller, so no
+    caller of this function can drop an ``author:`` it never heard of and return a wider
+    set than the query asked for. A query of field filters alone (``author:smith``) has no
+    FTS part; it returns the matching ids newest first, since there is nothing to rank by.
+    ``exact`` is Q610's toggle (see :func:`exact_where`); ``near_default`` the distance a
+    ``NEAR`` without one takes.
     """
     from src.database.fts_norm import query_variants
 
-    match = build_match(query, expand=expand, variants=query_variants)
-    if match is None:
-        return None
+    if not grammar:
+        match = build_match(query, expand=expand, variants=query_variants)
+        if match is None:
+            return None
+        extra, params = "", {}
+    else:
+        match, neg, extra, params, has = _grammar_sql(
+            query, expand=expand, near_default=near_default, exact=exact,
+            outer="article_fts.rowid",
+        )
+        if not has:
+            return None
+        if match is None:
+            return _field_only_ids(
+                session, query, limit=limit, exclude_quarantined=exclude_quarantined,
+                expand=expand, near_default=near_default, exact=exact, neg=neg,
+            )
     wt, wb = weights if weights is not None else _bm25_weights()
     gate = _QUARANTINE_GATE if exclude_quarantined else ""
     # `gate` is one of the two constant fragments chosen just above -- never a
-    # caller-supplied value, and every value is bound. bandit attributes B608 to the
-    # first line of the concatenation, so the marker belongs HERE and not on the
+    # caller-supplied value, and every value is bound. `extra` is built by field_where /
+    # exact_where from module literals and bound :params only. bandit attributes B608 to
+    # the first line of the concatenation, so the marker belongs HERE and not on the
     # enclosing text(...) call, where it silently does nothing.
     sql = (
-        "SELECT rowid FROM article_fts WHERE article_fts MATCH :q"  # nosec B608 - only the constant `gate` fragment above is concatenated; every value is a bound :param
+        "SELECT rowid FROM article_fts WHERE article_fts MATCH :q"  # nosec B608 - only the constant `gate` fragment and the literal-built `extra` are concatenated; every value is a bound :param
         + gate
+        + (" AND " + extra if extra else "")
         + " ORDER BY bm25(article_fts, :wt, :wb) LIMIT :lim"
     )
     rows = session.execute(
         text(sql),
-        {"q": match, "wt": wt, "wb": wb, "lim": limit},
+        {"q": match, "wt": wt, "wb": wb, "lim": limit, **params},
     ).fetchall()
     return [r[0] for r in rows]
+
+
+def _field_only_sql(
+    query: str | None,
+    *,
+    exclude_quarantined: bool,
+    expand: ExpandTerms | None,
+    near_default: int,
+    exact: bool,
+    neg: str | None,
+) -> tuple[str, dict]:
+    """The WHERE clause over ``articles a0`` for a query with no positive FTS part."""
+    _m, _n, extra, params, _h = _grammar_sql(
+        query, expand=expand, near_default=near_default, exact=exact, outer="a0.id"
+    )
+    where = "1 = 1"
+    if exclude_quarantined:
+        where += " AND a0.quarantined IS NOT 1"
+    if extra:
+        where += " AND " + extra
+    if neg:
+        where += " AND a0.id NOT IN (SELECT rowid FROM article_fts WHERE article_fts MATCH :neg)"
+        params = {**params, "neg": neg}
+    return where, params
+
+
+def has_ranked_part(query: str | None) -> bool:
+    """True when ``query`` has a positive FTS part to rank by (the grammar on).
+
+    A field-only query (``source:reuters``) or an empty one has nothing for bm25 to
+    score, so its results are a browse, newest first -- and the ordering statement must
+    say so rather than claim relevance. A query that does not parse reports ``True``:
+    it will be refused with its own message, and this is not the place to pre-empt it."""
+    try:
+        parsed = parse_query(query, grammar=True)
+    except SearchQueryError:
+        return True
+    return parsed.ast is not None and not parsed.negative_only
+
+
+def field_only_where(
+    query: str | None, *, near_default: int = NEAR_DEFAULT, exact: bool = False
+) -> tuple[str, dict] | None:
+    """For a query with NO positive FTS part but field filters (``author:smith``,
+    ``source:reuters NOT climate``): one boolean correlated on ``articles.id``, so the
+    caller can BROWSE with it -- uncapped and in its own order -- instead of taking
+    :func:`search_ids`' candidate list, which is bounded by :data:`MAX_CANDIDATES` and so
+    would make the displayed total a cap. ``None`` for every other query."""
+    from src.database.fts_norm import query_variants
+
+    parsed = parse_query(query, grammar=True)
+    if not parsed.fields:
+        return None
+    if parsed.ast is not None and not parsed.negative_only:
+        return None
+    neg = build_negative_match(parsed, variants=query_variants, near_default=near_default)
+    where, params = _field_only_sql(
+        query, exclude_quarantined=False, expand=None, near_default=near_default,
+        exact=exact, neg=neg,
+    )
+    return (
+        "EXISTS (SELECT 1 FROM articles a0 WHERE a0.id = articles.id AND "  # nosec B608 - `where` is built by _field_only_sql from literals and bound :params only
+        + where + ")",
+        params,
+    )
+
+
+def _field_only_ids(session: Session, query, *, limit, exclude_quarantined, expand,
+                    near_default, exact, neg) -> list[int]:
+    where, params = _field_only_sql(
+        query, exclude_quarantined=exclude_quarantined, expand=expand,
+        near_default=near_default, exact=exact, neg=neg,
+    )
+    sql = (
+        "SELECT a0.id FROM articles a0 WHERE "  # nosec B608 - `where` is built by _field_only_sql from literals and bound :params only
+        + where
+        + " ORDER BY a0.published_at DESC, a0.id DESC LIMIT :lim"
+    )
+    return [r[0] for r in session.execute(text(sql), {**params, "lim": limit}).fetchall()]
 
 
 def search_total(
@@ -955,6 +1540,9 @@ def search_total(
     *,
     exclude_quarantined: bool = False,
     expand: ExpandTerms | None = None,
+    grammar: bool = True,
+    near_default: int = NEAR_DEFAULT,
+    exact: bool = False,
 ) -> int | None:
     """The EXACT number of articles matching ``query`` — no cap, no ranking.
 
@@ -986,19 +1574,40 @@ def search_total(
     the literal query while its rows described the concept. Q515 = b (exact, uncapped)
     is a ruling about THIS function, so the fix belongs here rather than at each caller.
     The index-shape variants are passed for the same reason: rows and count, one set.
+
+    The grammar arguments are :func:`search_ids`'s, for the same reason as ``expand``.
     """
     from src.database.fts_norm import query_variants
 
-    match = build_match(query, expand=expand, variants=query_variants)
-    if match is None:
-        return None
+    if not grammar:
+        match = build_match(query, expand=expand, variants=query_variants)
+        if match is None:
+            return None
+        extra, params = "", {}
+    else:
+        match, neg, extra, params, has = _grammar_sql(
+            query, expand=expand, near_default=near_default, exact=exact,
+            outer="article_fts.rowid",
+        )
+        if not has:
+            return None
+        if match is None:
+            where, fparams = _field_only_sql(
+                query, exclude_quarantined=exclude_quarantined, expand=expand,
+                near_default=near_default, exact=exact, neg=neg,
+            )
+            row = session.execute(
+                text("SELECT count(*) FROM articles a0 WHERE " + where), fparams  # nosec B608 - `where` is built by _field_only_sql from literals and bound :params only
+            ).fetchone()
+            return int(row[0]) if row else 0
     gate = _QUARANTINE_GATE if exclude_quarantined else ""
     # As in search_ids: `gate` is one of two CONSTANT fragments, never caller-supplied,
-    # and the only value is a bound :param. bandit attributes B608 to the first line of
-    # the concatenation, so the marker belongs here.
+    # `extra` is literal-built, and every value is a bound :param. bandit attributes B608
+    # to the first line of the concatenation, so the marker belongs here.
     sql = (
-        "SELECT count(*) FROM article_fts WHERE article_fts MATCH :q"  # nosec B608 - only the constant `gate` fragment above is concatenated; the query is a bound :param
+        "SELECT count(*) FROM article_fts WHERE article_fts MATCH :q"  # nosec B608 - only the constant `gate` fragment and the literal-built `extra` are concatenated; the query is a bound :param
         + gate
+        + (" AND " + extra if extra else "")
     )
-    row = session.execute(text(sql), {"q": match}).fetchone()
+    row = session.execute(text(sql), {"q": match, **params}).fetchone()
     return int(row[0]) if row else 0
