@@ -5973,5 +5973,6 @@
   "Saved: a NEAR without its own number now means {n} words.": "সংরক্ষিত: নিজস্ব সংখ্যা ছাড়া একটি NEAR এখন {n}টি শব্দ বোঝায়।",
   "Suggestion table built {when}.": "পরামর্শ সারণি তৈরি হয়েছে {when}।",
   "{n} words": "{n}টি শব্দ",
-  "Could not load the filter lists: {error}": "ফিল্টার তালিকা লোড করা যায়নি: {error}"
+  "Could not load the filter lists: {error}": "ফিল্টার তালিকা লোড করা যায়নি: {error}",
+  "OR": "অথবা"
 }

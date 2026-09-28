@@ -1417,6 +1417,10 @@
     .an-th:hover { color:var(--fg); }
     .an-th:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
     .an-th[aria-pressed="true"] { color:var(--accent-text); }
+    /* The Articles list's segmented pairs (Show as, Interleave/Group) said their state to a
+       screen reader only; the Chromium walk of S05-01 found no visible difference. */
+    #an-articles button.ghost.tiny[aria-pressed="true"] { color:var(--accent-text);
+      box-shadow:inset 0 -2px 0 var(--accent); font-weight:600; }
     /* Offline-map regions as a LIST, not a dropdown (#15): every region visible at once. */
     .osm-region-list { max-height:340px; overflow:auto; border:1px solid var(--border); border-radius:8px; }
     .osm-region-row { display:flex; align-items:center; justify-content:space-between; gap:10px;

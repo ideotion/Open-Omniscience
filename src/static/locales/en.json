@@ -5973,5 +5973,6 @@
   "Saved: a NEAR without its own number now means {n} words.": "Saved: a NEAR without its own number now means {n} words.",
   "Suggestion table built {when}.": "Suggestion table built {when}.",
   "{n} words": "{n} words",
-  "Could not load the filter lists: {error}": "Could not load the filter lists: {error}"
+  "Could not load the filter lists: {error}": "Could not load the filter lists: {error}",
+  "OR": "OR"
 }

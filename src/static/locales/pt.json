@@ -5973,5 +5973,6 @@
   "Saved: a NEAR without its own number now means {n} words.": "Salvo: um NEAR sem o seu próprio número agora significa {n} palavras.",
   "Suggestion table built {when}.": "Tabela de sugestões construída {when}.",
   "{n} words": "{n} palavras",
-  "Could not load the filter lists: {error}": "Não foi possível carregar as listas de filtros: {error}"
+  "Could not load the filter lists: {error}": "Não foi possível carregar as listas de filtros: {error}",
+  "OR": "OU"
 }

@@ -5973,5 +5973,6 @@
   "Saved: a NEAR without its own number now means {n} words.": "सहेजा गया: अपनी संख्या के बिना NEAR का अर्थ अब {n} शब्द है।",
   "Suggestion table built {when}.": "सुझाव तालिका {when} बनी।",
   "{n} words": "{n} शब्द",
-  "Could not load the filter lists: {error}": "फ़िल्टर सूचियाँ लोड नहीं हो सकीं: {error}"
+  "Could not load the filter lists: {error}": "फ़िल्टर सूचियाँ लोड नहीं हो सकीं: {error}",
+  "OR": "या"
 }

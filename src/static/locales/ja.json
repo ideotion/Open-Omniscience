@@ -5973,5 +5973,6 @@
   "Saved: a NEAR without its own number now means {n} words.": "保存しました：独自の数値を持たない NEAR は今後 {n} 語を意味します。",
   "Suggestion table built {when}.": "候補表は {when} に作成されました。",
   "{n} words": "{n} 語",
-  "Could not load the filter lists: {error}": "フィルターリストを読み込めませんでした：{error}"
+  "Could not load the filter lists: {error}": "フィルターリストを読み込めませんでした：{error}",
+  "OR": "または"
 }

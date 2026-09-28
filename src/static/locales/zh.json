@@ -5973,5 +5973,6 @@
   "Saved: a NEAR without its own number now means {n} words.": "已保存：不带自身数字的 NEAR 现在表示 {n} 个词。",
   "Suggestion table built {when}.": "建议表构建于 {when}。",
   "{n} words": "{n} 个词",
-  "Could not load the filter lists: {error}": "无法加载筛选列表：{error}"
+  "Could not load the filter lists: {error}": "无法加载筛选列表：{error}",
+  "OR": "或"
 }

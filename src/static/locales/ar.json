@@ -5973,5 +5973,6 @@
   "Saved: a NEAR without its own number now means {n} words.": "تم الحفظ: NEAR بلا رقم خاص يعني الآن {n} كلمات.",
   "Suggestion table built {when}.": "بُني جدول الاقتراحات {when}.",
   "{n} words": "{n} كلمات",
-  "Could not load the filter lists: {error}": "تعذّر تحميل قوائم المرشحات: {error}"
+  "Could not load the filter lists: {error}": "تعذّر تحميل قوائم المرشحات: {error}",
+  "OR": "أو"
 }

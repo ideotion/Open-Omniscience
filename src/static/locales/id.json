@@ -5973,5 +5973,6 @@
   "Saved: a NEAR without its own number now means {n} words.": "Tersimpan: NEAR tanpa angkanya sendiri kini berarti {n} kata.",
   "Suggestion table built {when}.": "Tabel saran dibangun {when}.",
   "{n} words": "{n} kata",
-  "Could not load the filter lists: {error}": "Tidak dapat memuat daftar filter: {error}"
+  "Could not load the filter lists: {error}": "Tidak dapat memuat daftar filter: {error}",
+  "OR": "ATAU"
 }

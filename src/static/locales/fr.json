@@ -5973,5 +5973,6 @@
   "Saved: a NEAR without its own number now means {n} words.": "Enregistré : un NEAR sans son propre nombre signifie maintenant {n} mots.",
   "Suggestion table built {when}.": "Table de suggestions construite {when}.",
   "{n} words": "{n} mots",
-  "Could not load the filter lists: {error}": "Impossible de charger les listes de filtres : {error}"
+  "Could not load the filter lists: {error}": "Impossible de charger les listes de filtres : {error}",
+  "OR": "OU"
 }

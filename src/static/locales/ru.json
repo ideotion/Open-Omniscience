@@ -5973,5 +5973,6 @@
   "Saved: a NEAR without its own number now means {n} words.": "Сохранено: NEAR без собственного числа теперь означает {n} слов.",
   "Suggestion table built {when}.": "Таблица подсказок построена {when}.",
   "{n} words": "{n} слов",
-  "Could not load the filter lists: {error}": "Не удалось загрузить списки фильтров: {error}"
+  "Could not load the filter lists: {error}": "Не удалось загрузить списки фильтров: {error}",
+  "OR": "ИЛИ"
 }
