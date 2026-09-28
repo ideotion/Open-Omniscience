@@ -1848,6 +1848,14 @@ _MERGE_NOT_CARRIED: dict[str, str] = {
     # keyword vocabulary by its own job; a carried copy would point at another corpus'
     # keyword ids. The next build after a restore covers the merged vocabulary.
     "spell_deletes": "the did-you-mean table, derived from the keywords and rebuilt by its job",
+    # S05-08 S2 (Q513 = b): the ≈ titles and one-line summaries a local model wrote for
+    # list rows. Q513 is silent on backups and the brief leaves it open, so the proposed
+    # default is not to carry them: they are derived, never the article, and the title
+    # sweep re-fills them for the articles the operator actually reads in lists.
+    "article_title_translations": (
+        "tentative ≈ titles from the local model, never the article; the title sweep "
+        "re-fills them after a restore"
+    ),
     # `feed_fetch_state` LEFT THIS LIST on 2026-09-16 (the Q701 note, gate row K). The
     # reading above -- per-machine, self-healing, re-learned next pass -- was correct
     # about the mechanism and was overturned as a POLICY: re-learning it costs a full

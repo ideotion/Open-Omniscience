@@ -15638,3 +15638,27 @@ thread; record the answer as R66 in `RULINGS_INDEX.md`, here and in the gate's �
 skips a literal carrying a `{placeholder}`, and its unkeyed-`tf()` gate does not see a frame called through a
 parameter. Two of the workspace's sentences passed all four i18n gates while keyed in no locale. The view's
 own test now checks its literals; widening the shared gates is its own PR (it would measure every module).
+
+## 2026-09-28 — ROW H'S PROPOSED DEFAULTS (S05-08, not rulings; each reversible in one line)
+
+The translation sweep had to pick four numbers and one placement that the brief (§6) says a session may not
+decide. They are built as stated defaults, each an environment knob or a one-line change, and wait for the
+maintainer's word or a measurement on the reference VM:
+
+- **The keyword head: 2,000** (`OO_TRANSLATION_SWEEP_HEAD`) — the ladder's own read cap, in the triage
+  sweep's order (article spread, then mentions). Brief §6: "the sweep's head size and cadence — the
+  coordinator's budget, measured on the reference VM, then stated".
+- **The title head: 500 newest articles** (`OO_TITLE_SWEEP_HEAD`) and **a 6-hour rest** between passes of
+  either sweep (`REPASS_AFTER`).
+- **The ≈ titles are NOT carried by a restore** (`article_title_translations` in `_MERGE_NOT_CARRIED`).
+  Brief §6: "Whether the article-level ≈ titles/summaries ride the backup (Q404's table does; Q513 is
+  silent — asked)". Not carrying them is the cheap, reversible side; carrying them would need a merge
+  handler and is a format question.
+- **The target language is the INTERFACE language the SPA last reported** (last browser wins; none
+  reported = the sweep does nothing and says so, never guesses English). A separate "translate into"
+  setting was not built.
+- **Display of keyword ≈ rows is not gated on the coordinator.** Q405 says "shown by default once
+  persisted, ≈-marked, when the AI coordinator is on"; 0.4 row M's ladder already shows a tentative row
+  wherever one exists, and rows only exist once a sweep or the manual button wrote them. Gating the
+  display on the master too would hide stored answers whenever the lane is paused; left as built in 0.4
+  unless ruled otherwise. The ≈ TITLES are gated on both switches, as Q513 = b reads.
