@@ -1,8 +1,9 @@
 # Release gate — v0.4.0
 
 **Status: OPEN — RULED 2026-09-15 (rows A–F), and grown to rows G–V by the answered roadmap sheet; row W added
-2026-09-27 (`RC01` = a). `v0.4.0` TAGGED by the maintainer 2026-09-28 with the exit clause unmet (§3, 2026-09-28):
-the rows still open stay open below.**
+2026-09-27 (`RC01` = a). `v0.4.0` TAGGED by the maintainer 2026-09-28 with the exit clause unmet (§3, 2026-09-28), and PUBLISHED
+the same day by `release.yml` once the tag moved onto the `0.4.0` flip (row G): the rows still open stay open
+below.**
 This is the checkable inventory for closing the `0.4`
 cycle. It exists now, before the `0.3` tag, because [`RELEASE_0.3_GATE.md`](RELEASE_0.3_GATE.md)
 §5 says in its own words that the `0.4` board *"starts from this list"*, and a postponed
@@ -46,7 +47,7 @@ the maintainer asks. **AMENDED 2026-09-28:** the maintainer tagged `v0.4.0` on `
 where `pyproject.toml` still read `0.3.0`, and `release.yml` refused it at its tag-matches-version step (run
 36368552522; the full-suite job had passed), so the release carried no wheel, sdist or checksums. The flip to
 `0.4.0` followed at the maintainer's pick, in PR #1195, for the tag to move onto its merge (the maintainer's
-step: a session never moves a tag). Row G records it.
+step: a session never moves a tag). Row G records it, and the release published from the moved tag.
 
 ---
 
@@ -445,6 +446,15 @@ and creates one with the generated notes (the shipped rows since `v0.3.0` and th
 V), the wheel, the sdist and `SHA256SUMS`. Keeping the existing release instead also gets the files, but the
 workflow then keeps its notes and appends only the checksums, so the no-telemetry re-check would not reach
 the notes. If no run starts on the moved tag, Actions → Release → Run workflow on the tag does the same.
+
+**PUBLISHED 2026-09-28 11:00 UTC.** A first attempt from GitHub's website re-published the release on the
+old tag and started no run: the website can neither delete nor move a tag, so the release reused
+`ad0f2062`. With no release left in place, the maintainer then moved the tag at 10:13 UTC from a GitHub
+Codespace on `main` (`ad0f2062...00af1d9c`, the PR #1195 merge). `release.yml` run 36408430314 passed its
+full-suite job on `00af1d9c` (pytest 10:14–10:59 UTC), passed «Verify the tag matches the package version»,
+found no release, and created the `v0.4.0` pre-release with the generated notes (the shipped rows since
+`v0.3.0`, the no-telemetry re-check with the socket-importer ratchet passing, and the verification bar), the
+wheel, the sdist and `SHA256SUMS`.
 
 ### Row H — `docs/SECURITY.md` enumerates every host; the consent hover lists them per lane · ruled (Q1001 = a, Q1002 = a) · BUILT, the delegated click-through passed 2026-09-27
 
@@ -976,6 +986,7 @@ The `0.3` gate's own log is the format.
 
 | Date | Change | Source |
 |---|---|---|
+| 2026-09-28 | **`v0.4.0` PUBLISHED from the moved tag (row G; no other row changed).** With the GitHub release deleted, the maintainer moved `v0.4.0` onto `00af1d9c`, the PR #1195 merge, from a GitHub Codespace at 10:13 UTC; a website attempt before it had re-published the release on the old tag without a run, since GitHub's website cannot move or delete a tag. `release.yml` run 36408430314 passed its full-suite job and the tag-matches-version step, then created the pre-release with the generated notes (no-telemetry re-check passing), the wheel, the sdist and `SHA256SUMS` at 11:00 UTC. The rows open at the tag are unchanged. | maintainer (Codespace, 10:13 UTC) · `release.yml` run 36408430314 · recorded by the session |
 | 2026-09-28 | **`v0.4.0` TAGGED by the maintainer before the exit clause was met; the version flip followed (row G CLOSED).** The maintainer: «I merged all PRs and bumped the version to v0.4.0». The tag is on `ad0f2062` (the PR #1191 merge), with a GitHub pre-release published 02:06 UTC; that tree read `0.3.0`, so `release.yml` run 36368552522 passed its full-suite job and stopped at its tag-matches-version step, and the release carried no wheel, sdist or `SHA256SUMS`. PR #1195 flips the version at the maintainer's pick; moving the tag onto its merge is the maintainer's step, spelled out in row G. **Rows open at the tag, none changed by this entry:** A and B (the release run of 2026-09-26 covered both, read in the project thread «Release candidate diagnostics», whose two live defects PR #1188 fixed; they close once the maintainer has read its report), D and E (read from that same run), C, W, and the operator halves of rows H to V, K and Q among them (every click-through clause among H to U passed the 2026-09-27 fix-check walk); F closed 2026-09-15. Whether those rows stay on this board after the tag or move to `0.5` is not decided here, and `RELEASE_0.5_GATE.md`'s two hard preconditions (row K before its row B, row O before its rows D and F) stand as written. | maintainer (chat, 2026-09-28 02:41 UTC) · recorded by the session, PR #1195 |
 | 2026-09-27 | **The fix-check walk (R37): the click-through clause of rows H, I, J, L, M, N, O, P, R, S, T and U passes.** One walker per row re-ran that row's steps and reproduced each of its re-walk items on build `9eb10528`, encrypted, locked at boot, in airplane mode, and did not hunt for new defects. 117 of the 119 items were fixed there and every walkable step passed; an independent re-checker confirmed the two left, N-4 (the Diagnostics job lines kept their language after a live switch) and O-5 (the `/tasks` failure line's zh spacing), both P3. Both were fixed in `38965c0e` and re-checked in Chromium with the re-checker's own scripts. What a sandbox cannot walk is listed per row and is the operator's runs (the real install, the removable drive, going online) or the maintainer's word (H9, the lane names). 32 incidental notes are recorded in `incidental.csv` and `OPEN_QUEUE.md`, not fixed, so the loop ends here. The rows' OTHER clauses (the operator runs, row V, row W, the flip) are unchanged. | `docs/audit/delegated-fixcheck-2026-09-27/`; PR #1191 |
 | 2026-09-27 | **The 119 re-walk items fixed (R37; no row closed).** Batches B20 to B30, merged into PR #1191, each item with a test that fails before its fix and a Chromium check, each batch read by an independent reviewer. 116 are fixed in code. J-1 has the minimum fix (the export records its request and the summary reads «Backup incomplete» when a part is missing); making the export one server-side job is deferred to its own slice. R-6, R-14 and R-24 are the Q1150 embed that was never built: the row R text is corrected and the embed goes with `0.5`'s map work unless the maintainer asks for it in `0.4`. The release run now files the Tier-A quarantine pass under row W. Each row closes only when its next walk, of these fixes and its own steps, passes. Leads found beside the fixes are recorded in `OPEN_QUEUE.md`, not fixed, so the loop converges. | PR #1191 (batches B20–B30) |
@@ -1051,7 +1062,7 @@ Kept explicit so nothing drifts in by assumption:
   takes the existing 2026-08-23 pre-release as that tag.)*
 - **The version flip to `0.4.0`.** It follows the `v0.3.0` tag, mechanically. *(2026-09-27: the maintainer does
   it, after the current draft PRs merge; row G records it. 2026-09-28: it came after the `v0.4.0` tag, in
-  PR #1195, at the maintainer's pick.)*
+  PR #1195, at the maintainer's pick, and the tag moved onto it; the release published from it.)*
 - **The 5M-article framing.** Withdrawn 2026-07-30 and not reinstated here; it returns as a
   later-cycle target once the throughput work makes it reachable.
 - **Everything the answers put in `0.5` or later** (see `RELEASE_0.5_GATE.md` … `RELEASE_0.9_GATE.md`):

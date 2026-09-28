@@ -111,7 +111,12 @@ else derives from it:
 workflow (`.github/workflows/release.yml`) refuses any other tag before it builds anything, so
 a tag cut ahead of its version bump publishes a release with no wheel, sdist or checksums. The
 first `v0.4.0` was cut that way on 2026-09-28; the version was set afterwards and the tag moved
-onto it (`docs/product/RELEASE_0.4_GATE.md` row G).
+onto it (`docs/product/RELEASE_0.4_GATE.md` row G). **Moving a tag takes git:** GitHub's website
+can neither delete nor move one, and a release published there reuses the existing tag without
+starting the workflow. Without a local clone that can push, open a Codespace on `main` and run
+`git fetch origin && git tag -f vX.Y.Z origin/main && git push -f origin vX.Y.Z`. Delete the GitHub
+release first if the workflow should write the generated notes: it keeps an existing release's
+notes and only adds the files and checksums.
 
 ### The maturity ladder (where we are, where we're going)
 
