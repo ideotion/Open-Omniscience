@@ -23,6 +23,8 @@ import math
 import re
 from pathlib import Path
 
+from tests.js_source_helper import function_body
+
 ROOT = Path(__file__).resolve().parents[1]
 STATIC = ROOT / "src" / "static"
 SURFACE = ("bg", "bg2", "panel", "panel2", "panel3", "border")
@@ -88,8 +90,9 @@ def test_the_culled_themes_are_gone_and_the_floor_holds():
     for gone in RETIRED:
         assert gone not in pal, f"{gone} was culled (Q1123 = b) and must not come back as a CSS block"
     shell = (STATIC / "app-shell.js").read_text(encoding="utf-8")
-    themes = shell.split("const THEMES = [", 1)[1].split("];", 1)[0]
-    ids = re.findall(r'id:"(\w+)"', themes)
+    m = re.search(r"THEMES = \[(.*?)\];", shell, re.S)
+    assert m, "the Graphics picker's THEMES list must parse"
+    ids = re.findall(r'id:"(\w+)"', m.group(1))
     for gone in RETIRED:
         assert gone not in ids, f"{gone} must not be offered in the Graphics picker"
     named = [i for i in ids if i != "system"]
@@ -114,13 +117,15 @@ def test_each_culled_theme_is_named_with_its_nearest_survivor():
 
 def test_a_stored_culled_pick_maps_to_its_survivor_everywhere_the_look_is_read():
     shell = (STATIC / "app-shell.js").read_text(encoding="utf-8")
-    block = shell.split("const RETIRED_THEMES = {", 1)[1].split("};", 1)[0]
+    m = re.search(r"RETIRED_THEMES = \{(.*?)\};", shell, re.S)
+    assert m, "app-shell.js's RETIRED_THEMES map must parse"
+    block = m.group(1)
     shell_map = dict(re.findall(r'(\w+):\s*\{theme:"(\w+)"', block))
     assert shell_map == SURVIVOR
     # the retired theme's own accent rides along, never over one the operator chose
     assert 'slate:  {theme:"ink",   accent:"#7aa2f7"}' in block
     assert 'arctic: {theme:"ink",   accent:"#88c0d0", face:"inter"}' in block
-    getui = shell.split("function getUi()", 1)[1].split("function announceRetiredTheme", 1)[0]
+    getui = function_body(shell, "getUi")
     assert "if (!ui.accent && r.accent)" in getui and "if (!ui.face && r.face)" in getui
     assert "saveUi(ui)" in getui, "the mapping is persisted, so it happens once"
     # ... and said out loud once, after the locale is ready
