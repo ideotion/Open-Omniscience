@@ -453,7 +453,7 @@
       _LIVING_KINDS.forEach((v) => { const el = $("living-" + v); if (el) el.style.display = (v === kind) ? "" : "none"; });
       loadLivingOverview();
       if (kind === "wiki") { _livingStreamOffset = 0; loadLivingStream(); loadLivingPages(); }
-      else if (kind === "law") loadLivingLaw();
+      else if (kind === "law") { loadLivingLaw(); loadLawEvolution(); }
       else if (kind === "osm") loadLivingMaps();
     }
 
@@ -599,6 +599,14 @@
         + livingLawRowsHtml(d.changes, t);
     }
 
+    // The evolution surface (row G) loads beside the change stream, not inside it: the
+    // stream is one fetch with its own failure line, and each panel below has its own.
+    function loadLawEvolution() {
+      _wireLawEvolution();
+      loadLawWeek();
+      loadLivingLawDocs();
+      loadLawAmendMap();
+    }
     async function loadLivingLaw() {
       const t = _livingT();
       const box = $("living-law-changes");
@@ -611,6 +619,223 @@
         _livingLawLast = null;
         box.innerHTML = _livingFailHtml(e.message, t);
       }
+    }
+
+    // ---- 0.5 row G: the law evolution surface (brief S05-07) ------------------------ //
+    // Every block reads what this machine stored; none of them fetches from the web, so
+    // none passes the network consent gate (invariant #14 gates egress, not local reads).
+    // Each keeps its last payload so a language switch redraws without a request, and
+    // each prints its method and caveat VISIBLY (informed consent), never on hover only.
+    let _lawWeekLast = null, _lawDocsLast = null, _lawPitLast = null, _lawTopicLast = null, _lawMapLast = null;
+    let _lawReader = null, _wikiReader = null, _lawTc = null;
+
+    // The one dating vocabulary, worded once for every surface (src/law/versions.py).
+    function lawDatingWords(dating, t) {
+      if (dating === "official") return t("as the document states it");
+      if (dating === "observed") return t("dated by observation — this instance saw the text on this day; the source stated no date of its own");
+      return t("recorded before this app tracked how the date was determined");
+    }
+    function lawSpan(h, tf) {
+      return h.valid_to
+        ? tf("from {from} until {until}", { from: h.valid_from || "—", until: h.valid_to })
+        : tf("from {from} (the newest held)", { from: h.valid_from || "—" });
+    }
+    function lawMethodHtml(d, t) {
+      return (d.caveat ? `<p class="card-caveat">${esc(t(d.caveat))}</p>` : "")
+        + (d.method ? `<p class="hint">${esc(t(d.method))}</p>` : "");
+    }
+
+    function _wireLawEvolution() {
+      const pit = $("law-pit-form");
+      if (pit && !pit._wired) {
+        pit._wired = true;
+        pit.addEventListener("submit", (e) => { e.preventDefault(); lawPitSearch(); });
+      }
+      const topic = $("law-topic-form");
+      if (topic && !topic._wired) {
+        topic._wired = true;
+        topic.addEventListener("submit", (e) => { e.preventDefault(); lawTopicCompare(); });
+      }
+      const docs = $("living-law-docs");
+      if (docs && !docs._wired) {
+        docs._wired = true;
+        docs.addEventListener("click", (e) => {
+          const b = e.target.closest && e.target.closest("[data-law-doc]");
+          if (b) openLawVersions(Number(b.getAttribute("data-law-doc")));
+        });
+      }
+    }
+
+    // -- analytic 5: what changed this week in the laws I follow --
+    function renderLawWeek() {
+      const t = _livingT(), tf = _livingTf();
+      const box = $("living-law-week"), d = _lawWeekLast;
+      if (!box || !d) return;
+      const rows = (d.items || []).map((i) => `<div class="living-row">`
+        + `<a href="${esc(i.reader_url)}" target="_blank" rel="noopener">${esc(i.title || "?")}</a>`
+        + ` <span class="muted">${ooCountryCell(i.jurisdiction)}${i.language ? " · " + ooLangCell(i.language) : ""}</span>`
+        + ` · ${esc(tf("{n} new versions captured", { n: fmtNum(i.changes, 0) }))}`
+        + ` · <span class="muted">${esc(livingWhen(i.newest, t))}</span></div>`).join("");
+      box.innerHTML = (rows || `<div class="muted">${esc(tf("Nothing you follow changed in the last {n} days.", { n: d.window_days }))}</div>`)
+        + `<p class="hint">${esc(tf("{n} documents followed · {from} to {to}", { n: fmtNum(d.followed_documents, 0), from: d.window_from, to: d.window_to }))}</p>`
+        + lawMethodHtml(d, t);
+    }
+    async function loadLawWeek() {
+      const box = $("living-law-week");
+      if (!box) return;
+      try { _lawWeekLast = await api("/api/law/this-week?days=7"); renderLawWeek(); }
+      catch (e) { _lawWeekLast = null; box.innerHTML = _livingFailHtml(e.message, _livingT()); }
+    }
+
+    // -- point-in-time search (Q916) --
+    function renderLawPit() {
+      const t = _livingT(), tf = _livingTf();
+      const box = $("law-pit-results"), d = _lawPitLast;
+      if (!box || !d) return;
+      if (d.status === "no-lane") { box.innerHTML = `<div class="muted">${esc(t(d.reason))}</div>`; return; }
+      const cov = d.coverage || {};
+      const head = `<p class="hint">${esc(d.on
+        ? tf("{n} versions in force on {day} contain these words, in {docs} documents.", { n: fmtNum(d.matched || 0, 0), day: d.on, docs: fmtNum(d.documents || 0, 0) })
+        : tf("{n} stored versions contain these words, in {docs} documents.", { n: fmtNum(d.matched || 0, 0), docs: fmtNum(d.documents || 0, 0) }))}</p>`;
+      const covLine = cov.versions_total != null
+        ? `<p class="hint">${esc(tf("Searched {searched} of {total} stored versions; {missing} cannot be searched (no stored text, or no version key); {pending} are still being indexed.", {
+            searched: fmtNum(cov.versions_searchable || 0, 0), total: fmtNum(cov.versions_total || 0, 0),
+            missing: fmtNum(cov.versions_without_text || 0, 0), pending: fmtNum(cov.versions_pending || 0, 0) }))}</p>`
+        : "";
+      const hits = (d.hits || []).map((h) => {
+        const others = (h.other_languages || []).map((o) => o.id != null
+          ? `<a href="/api/law/documents/${Number(o.id)}/view" target="_blank" rel="noopener">${ooLangCell(o.language)}</a>`
+          : `<span class="muted">${ooLangCell(o.language)}</span>`).join(" ");
+        return `<div class="living-row" data-i18n-dyn>`
+          + `<a href="${esc(h.reader_url)}" target="_blank" rel="noopener">${esc(h.title || "?")}</a>`
+          + ` <span class="muted">${ooCountryCell(h.jurisdiction)}${h.language ? " · " + ooLangCell(h.language) : ""}</span>`
+          + `<div>${esc(lawSpan(h, tf))} <span class="muted">(${esc(lawDatingWords(h.dating, t))})</span>`
+          + (h.current ? ` · ${esc(t("the newest held version"))}` : "") + `</div>`
+          + `<div class="muted" style="unicode-bidi:plaintext">${esc(h.snippet || "")}</div>`
+          + (others ? `<div>${esc(t("Also tracked in"))} ${others}</div>` : "")
+          + `</div>`;
+      }).join("");
+      box.innerHTML = head + covLine + (hits || `<div class="muted">${esc(t("No held version contains these words on that day."))}</div>`)
+        + (d.truncated ? `<p class="hint">${esc(t("More versions matched than are shown; narrow the words."))}</p>` : "")
+        + lawMethodHtml(d, t);
+    }
+    async function lawPitSearch() {
+      const t = _livingT();
+      const box = $("law-pit-results"), q = ($("law-pit-q") || {}).value || "", on = ($("law-pit-on") || {}).value || "";
+      if (!box) return;
+      if (!q.trim()) { box.innerHTML = `<div class="muted">${esc(t("Type the words to find."))}</div>`; return; }
+      box.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
+      try {
+        _lawPitLast = await api(`/api/law/versions/search?q=${encodeURIComponent(q)}` + (on ? `&on=${encodeURIComponent(on)}` : ""));
+        renderLawPit();
+      } catch (e) { _lawPitLast = null; box.innerHTML = _livingFailHtml(e.message, t); }
+    }
+
+    // -- the documents list and the ONE version reader (Q918 + note) --
+    function renderLivingLawDocs() {
+      const t = _livingT();
+      const box = $("living-law-docs"), d = _lawDocsLast;
+      if (!box || !d) return;
+      const docs = d.documents || [];
+      box.innerHTML = docs.length
+        ? docs.map((x) => `<button type="button" class="tiny secondary living-page" data-law-doc="${Number(x.id)}"`
+            + ` title="${esc(t("Compare this document's stored versions side by side."))}">`
+            + `${ooCountryCell(x.jurisdiction)} · ${esc(x.title || "?")} <span class="muted">${esc(String(x.revisions || 0))}</span></button>`).join(" ")
+        : `<div class="muted">${esc(t("No legal documents tracked yet."))}</div>`;
+    }
+    async function loadLivingLawDocs() {
+      const box = $("living-law-docs");
+      if (!box) return;
+      try { _lawDocsLast = await api("/api/law/documents"); renderLivingLawDocs(); }
+      catch (e) { _lawDocsLast = null; box.innerHTML = _livingFailHtml(e.message, _livingT()); }
+    }
+    function openLawVersions(id) {
+      const host = $("law-tc-versions");
+      if (!host || typeof ooVersionReader !== "function") return;
+      const doc = ((_lawDocsLast && _lawDocsLast.documents) || []).find((x) => x.id === id);
+      _lawTc = { id, title: doc ? doc.title : "" };
+      const ttl = $("law-tc-title");
+      if (ttl) ttl.textContent = doc ? `${ooCountryCode(doc.jurisdiction)} · ${doc.title}` : "";
+      const base = `/api/law/documents/${Number(id)}`;
+      if (_lawReader) _lawReader.load(base);
+      else _lawReader = ooVersionReader(host, base, { onLanguage: (other) => openLawVersions(other) });
+      const sec = $("law-tc");
+      if (sec && typeof sec.scrollIntoView === "function") sec.scrollIntoView({ block: "start" });
+    }
+    // The Wikipedia panel's tracked page gets the SAME reader (called by openWikiTC).
+    function livingMountWikiVersions(pageId) {
+      const host = $("wiki-tc-versions");
+      if (!host || typeof ooVersionReader !== "function" || pageId == null) return;
+      const base = `/api/wiki/pages/${Number(pageId)}`;
+      if (_wikiReader) _wikiReader.load(base);
+      else _wikiReader = ooVersionReader(host, base, {});
+    }
+
+    // -- analytic 3: a topic across jurisdictions --
+    function renderLawTopic() {
+      const t = _livingT();
+      const box = $("law-topic-results"), d = _lawTopicLast;
+      if (!box || !d) return;
+      if (d.status === "no-lane") { box.innerHTML = `<div class="muted">${esc(t(d.reason))}</div>`; return; }
+      const rows = (d.rows || []).map((r) => `<tr><td>${ooCountryCell(r.jurisdiction)}</td>`
+        + `<td>${esc(fmtNum(r.versions_matching, 0))}</td><td>${esc(fmtNum(r.documents_matching, 0))}</td>`
+        + `<td>${esc(fmtNum(r.documents_current_matching, 0))}</td><td>${esc(fmtNum(r.tracked_documents, 0))}</td></tr>`).join("");
+      box.innerHTML = (rows
+        ? `<table class="living-table"><thead><tr><th>${esc(t("Jurisdiction"))}</th><th>${esc(t("Versions containing it"))}</th>`
+          + `<th>${esc(t("Documents containing it"))}</th><th>${esc(t("In the newest held version"))}</th><th>${esc(t("Documents tracked"))}</th></tr></thead><tbody>${rows}</tbody></table>`
+        : `<div class="muted">${esc(t("No tracked law contains these words."))}</div>`) + lawMethodHtml(d, t);
+    }
+    async function lawTopicCompare() {
+      const t = _livingT();
+      const box = $("law-topic-results"), q = ($("law-topic-q") || {}).value || "";
+      if (!box) return;
+      if (!q.trim()) { box.innerHTML = `<div class="muted">${esc(t("Type the words to find."))}</div>`; return; }
+      box.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
+      try { _lawTopicLast = await api(`/api/law/topics?q=${encodeURIComponent(q)}`); renderLawTopic(); }
+      catch (e) { _lawTopicLast = null; box.innerHTML = _livingFailHtml(e.message, t); }
+    }
+
+    // -- analytic 4: amendment activity on the equal-area map, with its vintage --
+    async function renderLawAmendMap() {
+      const t = _livingT(), tf = _livingTf();
+      const d = _lawMapLast, host = $("law-amend-map");
+      if (!d || !host) return;
+      const vint = $("law-amend-vintage");
+      if (vint) {
+        vint.textContent = d.newest_capture
+          ? tf("Amendments captured from {from} to {to}. The newest capture counted: {newest}.", { from: d.window_from, to: d.window_to, newest: d.newest_capture.slice(0, 10) })
+          : tf("No amendment was captured from {from} to {to}.", { from: d.window_from, to: d.window_to });
+      }
+      const off = $("law-amend-off");
+      if (off) {
+        off.innerHTML = (d.not_on_the_map || []).length
+          ? `<p class="hint">${esc(ooLabelText(t("Not on the map (not a country)"), d.not_on_the_map.map((r) =>
+              tf("{j}: {n} amendments, {docs} documents tracked", { j: ooCountryCode(r.jurisdiction), n: fmtNum(r.amendments, 0), docs: fmtNum(r.tracked_documents, 0) })).join(" · ")))}</p>`
+          : "";
+      }
+      if (typeof ooMap !== "function") return;
+      const names = {};
+      Object.keys(d.values || {}).forEach((iso) => { names[iso] = typeof ooRegionName === "function" ? ooRegionName(iso) : iso; });
+      await ooMap(host, {
+        values: d.values || {}, names,
+        label: t("Amendments captured"),
+        valueLabel: (iso, v) => tf("{n} amendments captured · {docs} documents tracked", { n: fmtNum(v, 0), docs: fmtNum((d.tracked_documents || {})[iso] || 0, 0) }),
+        caveat: t(d.caveat),
+      });
+      host.insertAdjacentHTML("beforeend", `<p class="hint">${esc(t(d.method))}</p>`);
+    }
+    async function loadLawAmendMap() {
+      const host = $("law-amend-map");
+      if (!host) return;
+      try { _lawMapLast = await api("/api/law/amendment-map?days=365"); await renderLawAmendMap(); }
+      catch (e) { _lawMapLast = null; host.innerHTML = _livingFailHtml(e.message, _livingT()); }
+    }
+
+    function repaintLawEvolutionFromCache() {
+      renderLawWeek(); renderLivingLawDocs(); renderLawPit(); renderLawTopic();
+      const tc = $("law-tc-title");
+      if (tc && _lawTc && !_lawTc.title) tc.textContent = "";
+      void renderLawAmendMap();
     }
 
     function renderLivingMaps() {
@@ -665,6 +890,7 @@
         });
       }
       renderLivingMaps();
+      if (typeof repaintLawEvolutionFromCache === "function") repaintLawEvolutionFromCache();
     }
 
     // --- One held Wikipedia version, read before it is added (R52) --------------------
