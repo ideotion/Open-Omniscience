@@ -1048,6 +1048,103 @@
       }
     }
 
+    // -- S05-03: places and people on the entity spine (Q724, Q818, R8) ------ //
+    //
+    // The same two postures as the ring load above. `loadEntitySpine` reads what a fetch
+    // WOULD ask for from the local tables, so it is not gated; `entitySpineFetch` egresses,
+    // so it passes the ONE consent, sends `consent: true`, and the endpoint refuses without
+    // it. `entitySpineResolve` reads the gazetteer file on this machine and is not gated.
+    let _entitySpineWired = false;
+    function _entitySpineWire() {
+      if (_entitySpineWired || !$("es-fetch")) return;
+      _entitySpineWired = true;
+      $("es-resolve").addEventListener("click", entitySpineResolve);
+      $("es-fetch").addEventListener("click", entitySpineFetch);
+    }
+
+    async function loadEntitySpine() {
+      _entitySpineWire();
+      const box = $("es-pending");
+      if (!box) return;
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
+        : ((str, v) => String(str).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? String(v[k]) : m));
+      box.innerHTML = '<div class="muted">' + esc(t("Loading…")) + "</div>";
+      try {
+        const d = await api("/api/entities/items/pending");
+        const g = d.gazetteer || {};
+        // WHICH gazetteer, and its vintage (Q805) -- or that the shipped sample names no
+        // OpenStreetMap object, which is why no place resolves without the built artifact.
+        const gz = g.artifact
+          ? tf("Gazetteer: the built artifact, vintage {date}", {date: g.vintage || "?"})
+          : t("Gazetteer: the small shipped sample, which names no OpenStreetMap object, so no place resolves until the full gazetteer is built.");
+        const src = d.sources || {};
+        box.innerHTML = '<div data-i18n-dyn>' + esc(gz) + "</div>"
+          + '<div data-i18n-dyn style="margin-top:4px">'
+          + esc(tf("{mentioned} Wikidata items mentioned ({places} places, {entities} people and organisations) · {cached} on this machine · {pending} to fetch",
+            {mentioned: d.mentioned || 0, places: src.from_places || 0, entities: src.from_entities || 0,
+             cached: d.cached || 0, pending: d.pending || 0}))
+          + (d.missing_on_wikidata ? " · " + esc(tf("{n} no longer on Wikidata", {n: d.missing_on_wikidata})) : "")
+          + "</div>"
+          // THE RATE, NOT AN ETA (invariant #20): the cost as the rate it is.
+          + '<div data-i18n-dyn class="muted" style="margin-top:4px" title="' + esc(d.method || "") + '">'
+          + esc(tf("{n} requests, one every 10 seconds", {n: d.requests_needed || 0})) + "</div>";
+      } catch (e) {
+        box.innerHTML = '<div class="muted">' + esc(t("Could not read the pending items:")) + " " + esc(e.message) + "</div>";
+      }
+    }
+
+    async function entitySpineResolve() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
+        : ((str, v) => String(str).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? String(v[k]) : m));
+      const st = $("es-status");
+      if (st) st.textContent = t("Resolving places…");
+      try {
+        await api("/api/entities/places/resolve-mentioned", {method: "POST"});
+        const job = await pollJobStatus("/api/entities/places/resolve-mentioned/status");
+        if (job.state === "error") { if (st) st.textContent = t("Could not resolve places:") + " " + (job.error || ""); return; }
+        if (_jobStillRunning(job)) { if (st) st.textContent = t("Still running in the background — check the task manager for the result."); return; }
+        const r = job.result || {};
+        if (st) {
+          st.textContent = tf("{places} places from {resolved} of {n} mentioned places", {places: r.places || 0, resolved: r.resolved || 0, n: r.distinct_mentions || 0});
+          st.title = r.method || "";
+        }
+        loadEntitySpine();
+      } catch (e) { if (st) st.textContent = t("Could not resolve places:") + " " + e.message; }
+    }
+
+    async function entitySpineFetch() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
+        : ((str, v) => String(str).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? String(v[k]) : m));
+      const st = $("es-status");
+      // The ONE consent (invariant #14); its answer is USED.
+      if (typeof ensureOnline === "function"
+          && !await ensureOnline(t("Fetch Wikidata items for the places and people in your corpus (one request every 10 seconds, over your transport)"))) return;
+      if (st) st.textContent = t("Fetching in the background…");
+      try {
+        await api("/api/entities/items/fetch", {method: "POST", body: JSON.stringify({consent: true})});
+        const job = await pollJobStatus("/api/entities/items/status");
+        if (job.state === "error") { if (st) st.textContent = t("Wikidata fetch failed:") + " " + (job.error || ""); return; }
+        if (_jobStillRunning(job)) { if (st) st.textContent = t("Still running in the background — check the task manager for the result."); return; }
+        const r = job.result || {};
+        if (st) {
+          st.textContent = tf("{fetched} fetched · {missing} no longer on Wikidata · {refused} refused · {pending} left", {
+            fetched: r.fetched || 0, missing: r.missing_on_wikidata || 0, refused: r.refused || 0, pending: r.pending || 0})
+            + (r.stopped_by_airplane_mode ? " · " + t("stopped: airplane mode was turned on") : (r.stopped ? " · " + t("stopped early") : ""));
+          st.title = r.method || "";
+        }
+        loadEntitySpine();
+      } catch (e) {
+        // A 409 is the kill switch, and it is NAMED as such (invariant #14e's corollary).
+        const msg = (e && (e.status === 409 || /airplane mode/i.test(String(e.message))))
+          ? t("Refused: airplane mode is on. Turn the network on to fetch Wikidata items.")
+          : t("Wikidata fetch failed:") + " " + e.message;
+        if (st) st.textContent = msg;
+      }
+    }
+
     // -- Most-cited sources (corpus-wide co-citation) ----------------------- //
     async function loadCitedSources() {
       const box = $("cs-list");
