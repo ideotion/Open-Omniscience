@@ -2224,6 +2224,15 @@ def test_ui_invariants():
     assert 'id="version"' in brand, "the version span must live inside the sidebar brand block"
     # 2. sidebar: medium widths collapse to a rail, not off-canvas
     assert "@media (max-width:860px) and (min-width:601px)" in html
+    # 2b. (R46, amended 2026-09-28) the Essentials depth un-pins ONLY Ring-1 tabs, never the
+    #     open one, behind a Show-more row that always carries text; no stored depth = Full.
+    assert ('html[data-depth="essentials"] #navGroups:not(.more-open) '
+            '.nav-item[data-ring="1"]:not(.active) { display:none; }') in html
+    assert 'id="nav-more"' in html and 'class="nav-more-long"' in html and 'class="nav-more-short"' in html
+    assert ".nav-more .nav-more-short { display:block;" in html, "the rail row must keep a text label"
+    shell = (_SRC / "static" / "app-shell.js").read_text(encoding="utf-8")
+    assert 'const RING0_TABS = ["home", "feed"];' in shell
+    assert 'return DEPTHS.includes(d) ? d : "full";' in shell, "an install that never chose must be at Full"
     # 5. the eye brand mark (grid-iris path is its fingerprint) — in index.html
     #    AND the /unlock screen (must be THE SAME canonical eye, not a variant).
     assert "C8 6.5, 24 6.5, 30 16" in html, "brand mark must be the ASCII-eye vector"
@@ -8253,7 +8262,7 @@ def test_docs_index_covers_live_docs():
 #: RAISED 2026-09-25 (Q1016's NOTE, ruling R32): 761 -> 768, seven lines for UI invariant #32
 #: (Living sources is a main tab). A new UI invariant is the growth the clause above names as
 #: normal; the build detail stays in the gate row and the slice's own tests.
-_CLAUDE_MD_LINE_CEILING = 768
+_CLAUDE_MD_LINE_CEILING = 774
 
 
 def _claude_md_lines() -> int:

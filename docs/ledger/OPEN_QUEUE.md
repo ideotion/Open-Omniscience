@@ -15624,14 +15624,16 @@ by deleting the release before the tag moves. A lasting fix would append the gen
 section when an existing body lacks it; `S03-01` forbade touching `release.yml` in the flip, so it waits
 for a ruling or its own PR.
 
-## 2026-09-28 — Row I's Essentials depth amends invariant #2: PENDING the maintainer's word (PR #1208)
+## 2026-09-28 — Row I's Essentials depth amends invariant #2: ANSWERED «Yes, amend #2» 19:33 UTC (R46, PR #1208)
 
 The Ring dial (S05-09 S4, Q1120 = a, Q1121 = a) is built with all three depths. Essentials pins Home and Feed
 and lists the other tabs behind a permanent, labelled "Show more (N)" row, which touches invariant #2 ("the
 left sidebar lists all tabs"). The brief (§6) forbids merging that ring before the maintainer's word; a
 decision card is posted in the row I thread and the amendment text is in PR #1208's body. **On "Yes":** add
 the amendment to CLAUDE.md invariant #2, extend `test_ui_invariants`, record it as R46. **On "No":** remove
-Essentials from the dial (Standard and Full need no amendment and stay).
+Essentials from the dial (Standard and Full need no amendment and stay). **ANSWERED «Yes, amend #2»
+(2026-09-28 19:33 UTC):** the amendment is in CLAUDE.md invariant #2, enforced by test_ui_invariants
+(#2b), recorded as R46; Essentials ships in PR #1208.
 
 ## 2026-09-28 — The Ledger's grammar found an automated DELETE in a reserved category: unruled (PR #1208)
 
