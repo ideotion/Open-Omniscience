@@ -6026,5 +6026,14 @@
   "No flagged tracked edits stored for this wiki.": "لا توجد تعديلات متتبَّعة معلَّمة مخزَّنة لهذه الويكي.",
   "No stored coverage on these terms since the promised date.": "لا توجد تغطية مخزَّنة لهذه المصطلحات منذ التاريخ الموعود.",
   "Snippet (provenance)": "مقتطف (المصدر)",
-  "Unknown investigation view": "عرض تحقيق غير معروف"
+  "Unknown investigation view": "عرض تحقيق غير معروف",
+  "≈ Tentative translation from {lang}, written by your local model {model}. It may be wrong; the original title is above.": "≈ ترجمة مبدئية من {lang}، كتبها نموذجك المحلي {model}. قد تكون خاطئة؛ العنوان الأصلي في الأعلى.",
+  "≈ What the opening says: {gist}": "≈ ما تقوله البداية: {gist}",
+  "tentative translation": "ترجمة مبدئية",
+  "≈ Tentative translation by your local model {model} (prompt {version}), {when}. Never stored as the article; the original is beside it.": "≈ ترجمة مبدئية من نموذجك المحلي {model} (التعليمة {version})، {when}. لا تُحفَظ أبدًا بوصفها المقال؛ الأصل بجانبها.",
+  "Working locally… {s} s — also listed in the task manager.": "جارٍ العمل محليًا… {s} ث — ويظهر أيضًا في مدير المهام.",
+  "Keyword translation (≈)": "ترجمة الكلمات المفتاحية (≈)",
+  "≈ Titles in search results (opt-in)": "≈ عناوين في نتائج البحث (اختياري)",
+  "Translates your most-used keywords into your interface language where no verified translation exists. Each answer is tentative, marked ≈, kept with the model that wrote it, and never enters the keyword index.": "يترجم كلماتك المفتاحية الأكثر استخدامًا إلى لغة الواجهة حيث لا توجد ترجمة موثَّقة. كل إجابة مبدئية، معلَّمة بـ ≈، تُحفَظ مع النموذج الذي كتبها، ولا تدخل أبدًا فهرس الكلمات المفتاحية.",
+  "Opt-in. Writes a tentative ≈ title, and a one-sentence summary of the article's opening, for recent articles in other languages. Shown under the original title in search results, never instead of it, and never stored as the article.": "اختياري. يكتب عنوانًا مبدئيًا ≈ وملخصًا من جملة واحدة لبداية المقال، للمقالات الحديثة بلغات أخرى. يظهر تحت العنوان الأصلي في نتائج البحث، لا بدلًا منه أبدًا، ولا يُحفَظ أبدًا بوصفه المقال."
 }

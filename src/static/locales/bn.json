@@ -6026,5 +6026,14 @@
   "No flagged tracked edits stored for this wiki.": "এই উইকির জন্য কোনো ফ্ল্যাগ করা ট্র্যাক সম্পাদনা সংরক্ষিত নেই।",
   "No stored coverage on these terms since the promised date.": "প্রতিশ্রুত তারিখ থেকে এই শব্দগুলির কোনো সংরক্ষিত কভারেজ নেই।",
   "Snippet (provenance)": "অংশ (উৎস)",
-  "Unknown investigation view": "অজানা অনুসন্ধান দৃশ্য"
+  "Unknown investigation view": "অজানা অনুসন্ধান দৃশ্য",
+  "≈ Tentative translation from {lang}, written by your local model {model}. It may be wrong; the original title is above.": "≈ {lang} থেকে অস্থায়ী অনুবাদ, আপনার স্থানীয় মডেল {model} লিখেছে। এটি ভুল হতে পারে; মূল শিরোনাম উপরে আছে।",
+  "≈ What the opening says: {gist}": "≈ শুরুতে যা বলা হয়েছে: {gist}",
+  "tentative translation": "অস্থায়ী অনুবাদ",
+  "≈ Tentative translation by your local model {model} (prompt {version}), {when}. Never stored as the article; the original is beside it.": "≈ আপনার স্থানীয় মডেল {model} (প্রম্পট {version}) দিয়ে অস্থায়ী অনুবাদ, {when}। কখনো নিবন্ধ হিসেবে সংরক্ষিত হয় না; মূলটি পাশেই আছে।",
+  "Working locally… {s} s — also listed in the task manager.": "স্থানীয়ভাবে কাজ চলছে… {s} সে — টাস্ক ম্যানেজারেও দেখা যাচ্ছে।",
+  "Keyword translation (≈)": "কীওয়ার্ড অনুবাদ (≈)",
+  "≈ Titles in search results (opt-in)": "≈ অনুসন্ধানের ফলাফলে শিরোনাম (ঐচ্ছিক)",
+  "Translates your most-used keywords into your interface language where no verified translation exists. Each answer is tentative, marked ≈, kept with the model that wrote it, and never enters the keyword index.": "যেখানে কোনো যাচাই করা অনুবাদ নেই, সেখানে আপনার সবচেয়ে বেশি ব্যবহৃত কীওয়ার্ডগুলো ইন্টারফেসের ভাষায় অনুবাদ করে। প্রতিটি উত্তর অস্থায়ী, ≈ চিহ্নিত, যে মডেল লিখেছে তার সাথে রাখা হয়, এবং কখনো কীওয়ার্ড সূচিতে ঢোকে না।",
+  "Opt-in. Writes a tentative ≈ title, and a one-sentence summary of the article's opening, for recent articles in other languages. Shown under the original title in search results, never instead of it, and never stored as the article.": "ঐচ্ছিক। অন্যান্য ভাষার সাম্প্রতিক নিবন্ধের জন্য একটি অস্থায়ী ≈ শিরোনাম এবং নিবন্ধের শুরুর এক বাক্যের সারাংশ লেখে। অনুসন্ধানের ফলাফলে মূল শিরোনামের নিচে দেখায়, কখনো তার বদলে নয়, এবং কখনো নিবন্ধ হিসেবে সংরক্ষিত হয় না।"
 }

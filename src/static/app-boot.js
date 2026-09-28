@@ -872,3 +872,20 @@
         toggleSidebar();
       });
     })();
+    // S05-08: the background translation sweeps fill the INTERFACE language, which only
+    // this page knows. Reported once the locale is ready and again on every switch --
+    // a loopback write of one code, never a model call and never an egress. A locked
+    // store or an older server simply refuses; nothing here may disturb the page.
+    (function _wireInterfaceLangReport() {
+      const report = () => {
+        const code = (window.OOI18N && OOI18N.current) ? OOI18N.current() : "";
+        if (!code) return;
+        fetch("/api/ai/interface-language", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ lang: code }),
+        }).catch(() => {});
+      };
+      Promise.resolve(window.OOI18N && OOI18N.ready).then(report, report);
+      document.addEventListener("oo:langchange", report);
+    })();

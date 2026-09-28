@@ -6026,5 +6026,14 @@
   "No flagged tracked edits stored for this wiki.": "Tidak ada suntingan terpantau yang ditandai tersimpan untuk wiki ini.",
   "No stored coverage on these terms since the promised date.": "Tidak ada liputan tersimpan tentang istilah ini sejak tanggal yang dijanjikan.",
   "Snippet (provenance)": "Cuplikan (asal-usul)",
-  "Unknown investigation view": "Tampilan investigasi tidak dikenal"
+  "Unknown investigation view": "Tampilan investigasi tidak dikenal",
+  "≈ Tentative translation from {lang}, written by your local model {model}. It may be wrong; the original title is above.": "≈ Terjemahan sementara dari {lang}, ditulis oleh model lokal Anda {model}. Bisa saja keliru; judul aslinya ada di atas.",
+  "≈ What the opening says: {gist}": "≈ Isi bagian pembuka: {gist}",
+  "tentative translation": "terjemahan sementara",
+  "≈ Tentative translation by your local model {model} (prompt {version}), {when}. Never stored as the article; the original is beside it.": "≈ Terjemahan sementara oleh model lokal Anda {model} (prompt {version}), {when}. Tidak pernah disimpan sebagai artikelnya; teks asli ada di sebelahnya.",
+  "Working locally… {s} s — also listed in the task manager.": "Sedang diproses secara lokal… {s} d — juga tercantum di pengelola tugas.",
+  "Keyword translation (≈)": "Terjemahan kata kunci (≈)",
+  "≈ Titles in search results (opt-in)": "≈ Judul di hasil pencarian (opsional)",
+  "Translates your most-used keywords into your interface language where no verified translation exists. Each answer is tentative, marked ≈, kept with the model that wrote it, and never enters the keyword index.": "Menerjemahkan kata kunci yang paling sering Anda gunakan ke bahasa antarmuka jika belum ada terjemahan terverifikasi. Setiap jawaban bersifat sementara, ditandai ≈, disimpan bersama model yang menulisnya, dan tidak pernah masuk ke indeks kata kunci.",
+  "Opt-in. Writes a tentative ≈ title, and a one-sentence summary of the article's opening, for recent articles in other languages. Shown under the original title in search results, never instead of it, and never stored as the article.": "Opsional. Menulis judul sementara ≈ dan ringkasan satu kalimat dari bagian pembuka artikel, untuk artikel terbaru dalam bahasa lain. Ditampilkan di bawah judul asli di hasil pencarian, tidak pernah menggantikannya, dan tidak pernah disimpan sebagai artikelnya."
 }

@@ -6026,5 +6026,14 @@
   "No flagged tracked edits stored for this wiki.": "Nenhuma edição acompanhada marcada armazenada para este wiki.",
   "No stored coverage on these terms since the promised date.": "Nenhuma cobertura armazenada sobre estes termos desde a data prometida.",
   "Snippet (provenance)": "Trecho (proveniência)",
-  "Unknown investigation view": "Vista de investigação desconhecida"
+  "Unknown investigation view": "Vista de investigação desconhecida",
+  "≈ Tentative translation from {lang}, written by your local model {model}. It may be wrong; the original title is above.": "≈ Tradução provisória de {lang}, escrita pelo seu modelo local {model}. Pode estar errada; o título original está acima.",
+  "≈ What the opening says: {gist}": "≈ O que diz o início: {gist}",
+  "tentative translation": "tradução provisória",
+  "≈ Tentative translation by your local model {model} (prompt {version}), {when}. Never stored as the article; the original is beside it.": "≈ Tradução provisória pelo seu modelo local {model} (prompt {version}), {when}. Nunca guardada como o artigo; o original está ao lado.",
+  "Working locally… {s} s — also listed in the task manager.": "A trabalhar localmente… {s} s — também listado no gestor de tarefas.",
+  "Keyword translation (≈)": "Tradução de palavras-chave (≈)",
+  "≈ Titles in search results (opt-in)": "≈ Títulos nos resultados de pesquisa (opcional)",
+  "Translates your most-used keywords into your interface language where no verified translation exists. Each answer is tentative, marked ≈, kept with the model that wrote it, and never enters the keyword index.": "Traduz as suas palavras-chave mais usadas para o idioma da interface quando não existe tradução verificada. Cada resposta é provisória, marcada com ≈, guardada com o modelo que a escreveu, e nunca entra no índice de palavras-chave.",
+  "Opt-in. Writes a tentative ≈ title, and a one-sentence summary of the article's opening, for recent articles in other languages. Shown under the original title in search results, never instead of it, and never stored as the article.": "Opcional. Escreve um título provisório ≈ e um resumo de uma frase do início do artigo, para artigos recentes noutras línguas. Mostrado sob o título original nos resultados de pesquisa, nunca em vez dele, e nunca guardado como o artigo."
 }

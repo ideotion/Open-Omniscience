@@ -6026,5 +6026,14 @@
   "No flagged tracked edits stored for this wiki.": "このウィキには、フラグ付きの追跡中の編集は保存されていません。",
   "No stored coverage on these terms since the promised date.": "約束の日付以降、これらの語に関する保存済みの報道はありません。",
   "Snippet (provenance)": "抜粋（出所）",
-  "Unknown investigation view": "不明な調査ビュー"
+  "Unknown investigation view": "不明な調査ビュー",
+  "≈ Tentative translation from {lang}, written by your local model {model}. It may be wrong; the original title is above.": "≈ ローカルモデル {model} が {lang} から訳した暫定訳です。誤りがあり得ます。元のタイトルは上にあります。",
+  "≈ What the opening says: {gist}": "≈ 冒頭の内容：{gist}",
+  "tentative translation": "暫定訳",
+  "≈ Tentative translation by your local model {model} (prompt {version}), {when}. Never stored as the article; the original is beside it.": "≈ ローカルモデル {model}（プロンプト {version}）による暫定訳、{when}。記事そのものとしては保存されません。原文は隣にあります。",
+  "Working locally… {s} s — also listed in the task manager.": "ローカルで処理中… {s} 秒 — タスクマネージャーにも表示されます。",
+  "Keyword translation (≈)": "キーワード翻訳（≈）",
+  "≈ Titles in search results (opt-in)": "≈ 検索結果のタイトル（任意）",
+  "Translates your most-used keywords into your interface language where no verified translation exists. Each answer is tentative, marked ≈, kept with the model that wrote it, and never enters the keyword index.": "検証済みの訳がない場合に、よく使われるキーワードをインターフェースの言語に翻訳します。各回答は暫定で ≈ が付き、書いたモデルとともに保存され、キーワード索引には入りません。",
+  "Opt-in. Writes a tentative ≈ title, and a one-sentence summary of the article's opening, for recent articles in other languages. Shown under the original title in search results, never instead of it, and never stored as the article.": "任意。他言語の最近の記事について、暫定の ≈ タイトルと記事冒頭の一文要約を書きます。検索結果では元のタイトルの下に表示され、置き換えることはなく、記事そのものとしても保存されません。"
 }

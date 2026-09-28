@@ -6026,5 +6026,14 @@
   "No flagged tracked edits stored for this wiki.": "Aucune modification suivie signalée n’est stockée pour ce wiki.",
   "No stored coverage on these terms since the promised date.": "Aucune couverture stockée sur ces termes depuis la date promise.",
   "Snippet (provenance)": "Extrait (provenance)",
-  "Unknown investigation view": "Vue d’enquête inconnue"
+  "Unknown investigation view": "Vue d’enquête inconnue",
+  "≈ Tentative translation from {lang}, written by your local model {model}. It may be wrong; the original title is above.": "≈ Traduction provisoire depuis {lang}, écrite par votre modèle local {model}. Elle peut être fausse ; le titre original figure au-dessus.",
+  "≈ What the opening says: {gist}": "≈ Ce que dit le début : {gist}",
+  "tentative translation": "traduction provisoire",
+  "≈ Tentative translation by your local model {model} (prompt {version}), {when}. Never stored as the article; the original is beside it.": "≈ Traduction provisoire par votre modèle local {model} (prompt {version}), {when}. Jamais enregistrée comme l’article ; l’original est à côté.",
+  "Working locally… {s} s — also listed in the task manager.": "Travail en local… {s} s — visible aussi dans le gestionnaire de tâches.",
+  "Keyword translation (≈)": "Traduction des mots-clés (≈)",
+  "≈ Titles in search results (opt-in)": "≈ Titres dans les résultats de recherche (sur activation)",
+  "Translates your most-used keywords into your interface language where no verified translation exists. Each answer is tentative, marked ≈, kept with the model that wrote it, and never enters the keyword index.": "Traduit vos mots-clés les plus utilisés dans la langue de l’interface lorsqu’aucune traduction vérifiée n’existe. Chaque réponse est provisoire, marquée ≈, conservée avec le modèle qui l’a écrite, et n’entre jamais dans l’index des mots-clés.",
+  "Opt-in. Writes a tentative ≈ title, and a one-sentence summary of the article's opening, for recent articles in other languages. Shown under the original title in search results, never instead of it, and never stored as the article.": "Sur activation. Écrit un titre provisoire ≈ et un résumé en une phrase du début de l’article, pour les articles récents en d’autres langues. Affiché sous le titre original dans les résultats de recherche, jamais à sa place, et jamais enregistré comme l’article."
 }
