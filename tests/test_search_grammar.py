@@ -124,7 +124,9 @@ def test_negative_only_with_fields_keeps_the_exclusion() -> None:
 def test_regex_is_a_deliberate_omission() -> None:
     """Q613 = a: a slash pattern is characters, never a regex."""
     assert build_match("/clim.*te/", grammar=True) == '"/clim.*te/"'
-    assert "regular expressions" in fts.__doc__ or "Q613" in open(fts.__file__, encoding="utf-8").read()
+    from pathlib import Path
+
+    assert "Q613" in Path(fts.__file__).read_text(encoding="utf-8")
 
 
 # --------------------------------------------------------------------------- #

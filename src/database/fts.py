@@ -1315,11 +1315,19 @@ def _exact_condition(node, params: dict, prefix: str) -> str | None:
         n = bind(node.value)
         return f"(instr(a.title, :{n}) {'= 1' if node.mode == 'prefix' else '> 0'})"
     if isinstance(node, _Or):
-        parts = [p for p in (_exact_condition(c, params, prefix) for c in node.children) if p]
-        return ("(" + " OR ".join(parts) + ")") if parts else None
+        ors: list[str] = []
+        for c in node.children:
+            part = _exact_condition(c, params, prefix)
+            if part:
+                ors.append(part)
+        return ("(" + " OR ".join(ors) + ")") if ors else None
     if isinstance(node, _AndGroup):
-        parts = [p for p in (_exact_condition(c, params, prefix) for c in node.includes) if p]
-        return ("(" + " AND ".join(parts) + ")") if parts else None
+        ands: list[str] = []
+        for c in node.includes:
+            part = _exact_condition(c, params, prefix)
+            if part:
+                ands.append(part)
+        return ("(" + " AND ".join(ands) + ")") if ands else None
     return None
 
 
@@ -1422,7 +1430,8 @@ def search_ids(
         match = build_match(query, expand=expand, variants=query_variants)
         if match is None:
             return None
-        extra, params = "", {}
+        extra = ""
+        params: dict = {}
     else:
         match, neg, extra, params, has = _grammar_sql(
             query, expand=expand, near_default=near_default, exact=exact,
@@ -1583,7 +1592,8 @@ def search_total(
         match = build_match(query, expand=expand, variants=query_variants)
         if match is None:
             return None
-        extra, params = "", {}
+        extra = ""
+        params: dict = {}
     else:
         match, neg, extra, params, has = _grammar_sql(
             query, expand=expand, near_default=near_default, exact=exact,

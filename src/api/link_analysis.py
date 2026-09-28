@@ -25,9 +25,9 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import desc, func
 from sqlalchemy.orm import Session
 
+from src.api.search_filters import AdvancedSearch, advanced_search_params
 from src.catalog.normalize import registrable_domain
 from src.database.models import Article, ArticleLink, Source
-from src.api.search_filters import AdvancedSearch, advanced_search_params
 from src.database.session import get_db
 
 router = APIRouter(prefix="/api/links", tags=["links"])

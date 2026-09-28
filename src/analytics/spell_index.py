@@ -264,15 +264,15 @@ def suggest(session, word: str) -> list[dict]:
     ids = [kid for _d, kid, _t in scored]
     counts: dict[int, int] = {}
     for i in range(0, len(ids), 400):
-        chunk = ids[i:i + 400]
-        params = {f"i{j}": v for j, v in enumerate(chunk)}
-        marks = ", ".join(f":i{j}" for j in range(len(chunk)))
+        id_chunk = ids[i:i + 400]
+        id_params = {f"i{j}": v for j, v in enumerate(id_chunk)}
+        marks = ", ".join(f":i{j}" for j in range(len(id_chunk)))
         for kid, n in session.execute(
             text(
                 "SELECT keyword_id, COUNT(*) FROM keyword_mentions "  # nosec B608 - only generated :iN placeholders are interpolated
                 f"WHERE keyword_id IN ({marks}) GROUP BY keyword_id"
             ),
-            params,
+            id_params,
         ):
             counts[int(kid)] = int(n)
     scored.sort(key=lambda r: (r[0], -counts.get(r[1], 0), r[2]))
@@ -315,7 +315,7 @@ def did_you_mean(session, query: str | None) -> dict | None:
     words = query_words(query)
     if not words:
         return None
-    found = []
+    found: list[dict] = []
     for w in words:
         sug = suggest(session, w)
         if sug:

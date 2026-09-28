@@ -59,13 +59,13 @@ from sqlalchemy.sql.operators import ColumnOperators
 
 # Router wiring (every include_router call) lives in _wiring.py (audit PR H).
 from src.api._wiring import wire
+from src.api.search_filters import AdvancedSearch, advanced_search_params, result_ordering
 from src.catalog.provenance import (
     NEWSLETTER_DOMAINS,
     PROVENANCE_CLASSES,
     provenance_of,
 )
 from src.database.fts import SearchQueryError, has_ranked_part, search_ids
-from src.api.search_filters import AdvancedSearch, advanced_search_params, result_ordering
 from src.database.models import Article, Source
 from src.database.session import dispose_engine, get_db, init_db, session_scope
 
@@ -1504,7 +1504,7 @@ def _query_articles(
             cmap = _keyword_counts(session, keyword_id, surviving)
             surviving.sort(key=lambda i: cmap.get(i, 0), reverse=descending)
             ordered_ids = surviving
-        elif sort_by in _SORT_COLUMNS:
+        elif sort_by is not None and sort_by in _SORT_COLUMNS:
             ordered_ids = [
                 r[0]
                 for r in sorted(id_rows, key=_fts_id_sort_key(sort_by), reverse=descending)
@@ -1869,7 +1869,7 @@ def export_articles(  # plain def -> threadpool (S2.5): export uses limit=None, 
         **{k: (",".join(map(str, v)) if isinstance(v, list) else v)
            for k, v in adv.to_dict().items()},
     }
-    ordering_label = ordering["by"] + (f" {ordering['direction']}" if ordering["direction"] else "")
+    ordering_label = str(ordering["by"]) + (f" {ordering['direction']}" if ordering["direction"] else "")
 
     if ids:
         # An explicit id set bypasses the filter query entirely, exactly as
