@@ -2779,7 +2779,8 @@
       const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
         : ((s, v) => s.replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null ? String(v[k]) : m)));
       const lines = [tf("≈ Tentative translation from {lang}, written by your local model {model}. It may be wrong; the original title is above.",
-        { lang: tt.source_lang || "?", model: tt.model || "?" })];
+        { lang: (typeof ooLangName === "function" && tt.source_lang) ? ooLangName(tt.source_lang) : (tt.source_lang || "?"),
+          model: tt.model || "?" })];
       if (tt.summary) lines.push(tf("≈ What the opening says: {gist}", { gist: tt.summary }));
       return `<div class="approx-title" lang="${esc(window.OOI18N && OOI18N.current ? OOI18N.current() : "")}" title="${esc(lines.join("\n"))}">`
         + `<span class="approx-mark" aria-label="${esc(t("tentative translation"))}">≈</span> ${esc(tt.title)}</div>`;

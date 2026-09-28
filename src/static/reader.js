@@ -638,6 +638,14 @@
       });
   }
 
+  function promptHtml(an) {
+    return an.prompt_text
+      ? '<details class="r-an-prompt"><summary>prompt used'
+        + (an.prompt_version ? " (" + esc(an.prompt_version) + ")" : "")
+        + '</summary><div class="r-an-promptbody">' + esc(an.prompt_text) + "</div></details>"
+      : "";
+  }
+
   function itemHtml(an, key) {
     var when = (an.created_at || "").slice(0, 16).replace("T", " ");
     var tgt = (key === "translation" && an.target_language) ? " → " + esc(an.target_language) : "";
@@ -646,17 +654,16 @@
       // article. The provenance (model, prompt version, date) is in the hover as well.
       var prov = TF("≈ Tentative translation by your local model {model} (prompt {version}), {when}. Never stored as the article; the original is beside it.",
         { model: an.model || "?", version: an.prompt_version || "?", when: when || "?" });
-      tgt = '<span class="r-approx" title="' + esc(prov) + '">≈ ' + esc(T("tentative translation")) + "</span>" + tgt;
+      var badge = '<span class="r-approx" title="' + esc(prov) + '">≈ ' + esc(T("tentative translation")) + "</span> ";
+      return '<div class="r-an-meta">' + badge + esc(an.model || "(model unknown)") + tgt
+        + (when ? " · " + esc(when) : "") + "</div>"
+        + '<div class="r-an-body" dir="auto">' + esc(an.result) + "</div>" + promptHtml(an);
     }
     // The exact prompt used is recorded with each result (provenance) — folded away.
-    var prompt = an.prompt_text
-      ? '<details class="r-an-prompt"><summary>prompt used'
-        + (an.prompt_version ? " (" + esc(an.prompt_version) + ")" : "")
-        + '</summary><div class="r-an-promptbody">' + esc(an.prompt_text) + "</div></details>"
-      : "";
+    var prompt = promptHtml(an);
     return '<div class="r-an-meta">' + esc(an.model || "(model unknown)") + tgt
       + (when ? " · " + esc(when) : "") + "</div>"
-      + '<div class="r-an-body">' + esc(an.result) + "</div>" + prompt;
+      + '<div class="r-an-body" dir="auto">' + esc(an.result) + "</div>" + prompt;
   }
 
   function controlHtml(key) {
@@ -685,7 +692,7 @@
       if (key === "translation") {
         // Side by side: the original on one side, the ≈ reading on the other (S3).
         html += '<div class="r-tr-grid"><div class="r-tr-orig"><h3 class="r-h3">' + esc(T("Original"))
-          + '</h3><div class="r-an-body">' + esc(originalText()) + '</div></div>'
+          + '</h3><div class="r-an-body" dir="auto">' + esc(originalText()) + '</div></div>'
           + '<div class="r-an latest r-tr-approx">' + itemHtml(list[0], key) + "</div></div>";
       } else {
         html += '<div class="r-an latest">' + itemHtml(list[0], key) + "</div>";
