@@ -1,0 +1,152 @@
+{
+ "row": "L",
+ "walk": {
+  "row": "L",
+  "environment": "Build: the read-only worktree /tmp/claude-0/rewalk2/tree at 9eb10528. I never edited it and ran no git write commands. The server ran from that folder through /tmp/claude-0/rewalk2/out/L/launch.py, which drops the proxy variables, OO_DB_PASSPHRASE and OO_DB_PLAINTEXT, then execs the repo venv python with -c 'from src.api.main import main; main()'. Port 9609. Data dir: /tmp/claude-0/rewalk2/out/L/data, seeded FRESH (not copied), so there was no old-build briefing_cache. Seeding: scripts/ui_clickthrough_seed.py (default STATE C, 453 articles), then the row-L supplementary seed_extra.py, copied from /tmp/claude-0/rewalk/L-recheck, with the same passphrase and the server stopped. seed_extra adds synthetic World Bank figures (3 indicators, 44 countries including XKX, plus WB aggregates), 6 USGS rare-earth rows, index series, law revisions (GBR/EUU/FRA, one flagged large-removal) and Wikipedia-lane changes. Both steps ran with OO_DB_PASSPHRASE='walk-pass-2026' and OO_DB_PLAINTEXT unset. At rest: open_omniscience.db and wiki.db do not start with 'SQLite format 3', both after seeding and after the walk. Boot: neither variable set, no OO_NO_SCHEDULER, so boot engaged airplane mode. /api/system/lock-state read 'locked' at boot. I unlocked through the real #pw / #btn-unlock form, after which it read 'unlocked-encrypted' (res-smoke.json). A curl GET /api/system/network before unlock returned 503 'database is locked'; that was my own probe. Network: /api/system/network was online:false at boot, and I also POSTed {online:false}. I then POSTed /api/briefing/refresh (200) over loopback. online stayed false throughout, including after every consent Cancel. I opened the 'Load standard country data' consent popup (#net-consent) in en/fr/ar/zh, read it, screenshotted it (steps/shots/L11-consent-load-standard-{en,fr,ar,zh}.png) and cancelled it with 'Stay offline'. 'Go online' was never pressed. Across all 57 result files the browser recorded zero non-loopback requests. Browser: Playwright Chromium at /opt/pw-browsers/chromium, headless, args --disable-background-networking --disable-component-update --no-proxy-server. Viewports: 1440x950 in en/fr/ar/zh and 375x800 in en. Live switches used the top-bar #lang-switch / #lang-menu with no reload. Scratch: /tmp/claude-0/rewalk2/out/L (item scripts w_*.py, results *.json and res-*.json, shots/). The step scripts are in /tmp/claude-0/rewalk2/out/L/steps (w_l1..w_l13, w_375, res-*.json, shots/), adapted from the re-walk's own scripts. Server stopped by PID 32172 (the wrapper shell 32170 first); port 9609 confirmed closed.",
+  "steps": [
+   {
+    "id": "L1",
+    "verdict": "pass",
+    "locales": "en",
+    "evidence": "Governments > Law > Tracked laws: 27 docs. The Jurisdiction column holds only CAN, DEU, EUU, FRA, GBR, INT, TLS, USA, while the API stores ca/de/eu/fr/gb/int/tl/uk/us. jur_bad=[], and every cell is dotted-underline oo-tip-target. #oo-tip bubbles: GBR 'United Kingdom', DEU 'Germany', EUU 'European Union — not an ISO code', INT 'International — not an ISO code', FRA 'France', CAN 'Canada', USA 'United States'. The Legal changes codes GBR/EUU/FRA each hover their name. Re-seed toast: 'Seeded 0 sources, 0 laws.', 27 rows before and after. Files: steps/res-L1.json, res-L1b.json. Shots: steps/shots/L1-law-changes-en.png, L1-tip-EUU-en.png, L1-tip-INT-en.png, L1-reseed-toast2-en.png."
+   },
+   {
+    "id": "L2",
+    "verdict": "pass",
+    "locales": "en",
+    "evidence": "#agenda-country has 33 options: 'all', '🇦🇷 Argentina (ARG)', '🇦🇺 Australia (AUS)', '🇧🇪 Belgium (BEL)' … '🇺🇸 United States (USA)'. Intl.Collator sort is true, bad=[], EUU reads '🇪🇺 European Union (EUU)' and INT '🌐 International (INT)'. Picking FRA filters the list to 'showing 3 of 153' with a FRA pill, and resetting gives 153 of 153. Group by country: INT 75 (hover 'International — not an ISO code'), CHN 3 ('China'), USA 9 … 'No country 2'. Event pill hovers: EUU 'European Union — not an ISO code', FRA 'France', CHN 'China'. Calendar-directory codes are all alpha-3 with hovers (ALA 'Åland Islands', BES, BVT, IOT). Files: steps/res-L2.json, res-L2c.json. Shots: steps/shots/L2-list-country-en.png, L2-group-INT-tip-en.png, L2-pill-EUU-tip-en.png."
+   },
+   {
+    "id": "L3",
+    "verdict": "pass",
+    "locales": "en",
+    "evidence": "Settings > Advanced > Sources: 6418 sources, 'Page 1 of 129'. The Country column is alpha-3 with hovers (ISR→Israel), none bad. The Lang column is ISO 639-2/T with hovers (eng→English), none bad. The Country filter has 209 'Name (CODE) ·n' entries sorted by name, and va/ai/ck read 'Vatican City (VAT) ·2', 'Anguilla (AIA) ·1', 'Cook Islands (COK) ·1'. The Language filter has 79 entries, 'English (eng) ·2954' first. Closed labels read 'FRA' / 'eng'. FRA gives '130 source(s)' with only FRA rows; FRA+eng gives 17; Clear restores 'Any'/'Any'. Producers: 29 rows, Country column alpha-3 (RUS hover 'Russia'), 8 rows show '—', none bad. Files: steps/res-L3.json, res-L3b.json. Shots: steps/shots/L3-country-filter-open-en.png, L3-filters-closed-en.png, L3-producers-tip-en.png."
+   },
+   {
+    "id": "L4",
+    "verdict": "pass",
+    "locales": "en",
+    "evidence": "#src-csv-hint lists all 13 columns ending in country_iso3 and says 'Country takes a 2- or 3-letter code or a country name. The export adds country_iso3; an import falls back to it when country is empty or unreadable, and refuses a row where the two disagree.' The downloaded open-omniscience-sources.csv has 6418 rows with country_iso3 as the last header. fr→FRA, de→DEU, va→VAT, ck→COK, ai→AIA, gb→GBR. 1458 rows have both cells empty, no row has a country with an empty iso3, and no multi-mapping. Downloaded only; nothing imported. File: steps/res-L4.json, steps/open-omniscience-sources.csv. Shot: steps/shots/L4-csv-hint-en.png."
+   },
+   {
+    "id": "L5",
+    "verdict": "pass",
+    "locales": "en",
+    "evidence": "Library > World coverage map tooltips: 'France — 56 articles', 'Germany — 56 articles', 'United States — 33 articles'. 0 point markers. The table has 209 rows, all alpha-3 with hovers (DEU/Germany, VAT, AIA, COK). The first row is 'no country recorded' and hovers the same. 'Not covered (43)' pills are alpha-3 with hovers (ATA→Antarctica). The filter finds DEU from 'DEU', 'deu' and 'Germ'. 'Top country: USA — 239 sources, 4.9% of located within the 12% guard', where USA hovers 'United States'. Clicking FRA jumps to Settings > Sources with label 'FRA', fr ticked and 130 rows; adding DEU gives '2 selected', 190. File: steps/res-L5.json. Shots: steps/shots/L5-coverage-map-en.png, L5-first-row-tip-en.png, L5-filter-DEU-en.png, L5-jump-FRA-sources-en.png, L5-top-country-en.png."
+   },
+   {
+    "id": "L6",
+    "verdict": "pass",
+    "locales": "en→fr→ar→zh live, no reload",
+    "evidence": "World coverage, switched through the top-bar #lang-menu without reload. The DEU hover goes 'Germany' → 'Allemagne' → 'ألمانيا' → '德国'. Map titles follow: 'Allemagne — 56 articles', 'ألمانيا — 56 مقالة', '德国 — 56 篇文章'. In ar the page is lang=ar dir=rtl and the code stays 'DEU'. Gaps pills re-localise (ATA 'Antarctique' / 'أنتاركتيكا' / '南极洲'), and so does the Top-country line ('Premier pays : USA …', USA 'États-Unis'). The tiles are now fully translated: 'PEU COUVERTS (<3)' / 'تغطية ضعيفة (<3)' / '覆盖薄弱（<3）'. File: steps/res-L6.json. Shots: steps/shots/L6-DEU-tip-{en,fr,ar,zh}.png, L6-gaps-*.png, L6-regions-*.png."
+   },
+   {
+    "id": "L7",
+    "verdict": "pass",
+    "locales": "en, fr, ar, zh",
+    "evidence": "World map > Coverage shape titles: 'France — 130 sources', 'Allemagne — 60 sources', 'ألمانيا — مصادر: 60', '德国 — 60 个来源'. No shape is drawn as a point (points=[]). Clicking Germany gives the heading <span title='Germany|Allemagne|ألمانيا|德国' class='oo-tip-target'>DEU</span>, and the bubble matches. The Worldview picker reads 'Name (CODE)' sorted by the localised name ('Allemagne (DEU)', 'Arabie saoudite (SAU)' … in fr). Stories detail: '17 août 2027 · Jakarta (IDN) · -6.21, 106.85 · agenda', where IDN hovers 'Indonesia' / 'Indonésie' / 'إندونيسيا' / '印度尼西亚'. Files: steps/res-L7-{en,fr,ar,zh}.json. Shots: steps/shots/L7-coverage-detail-DEU-*.png, L7-stories-detail-*.png."
+   },
+   {
+    "id": "L8",
+    "verdict": "pass",
+    "locales": "en, fr, ar, zh",
+    "evidence": "Insights > Map 'By country' first column: BRA, CHN, DEU, EGY, ESP, FRA, GBR, MEX, PRT, RUS, SAU, USA, each with a hover (BRA → Brazil / Brésil / البرازيل / 巴西). 'By city' shows 'No data' because the seed has no cities, as in the re-walk, so that half is not measurable. Super-groups > Elections & democracy chips use 639-2/T ('citizenship (ara/ben/deu/eng/spa/fra/hin/ind/jpn/por/rus/zho)') with language hovers. Concept map: 'Languages: ara · eng · spa · por · zho' with ara → Arabic / arabe / العربية / 阿拉伯语, and the country table SAU → Saudi Arabia / Arabie saoudite / … . Files: steps/res-L8-{en,fr,ar,zh}.json. Shots: steps/shots/L8-insights-by-country-*.png, L8-concept-map-*.png."
+   },
+   {
+    "id": "L9",
+    "verdict": "pass",
+    "locales": "en",
+    "evidence": "Settings > Wikipedia #wiki-lang is a SELECT with 0 optgroups and 147 options, UI locales first: '中文 — Chinese (zh)', 'English — English (en)', 'Français — French (fr)', 'Deutsch — German (de)'. Page hscroll 0. Living sources > Wikipedia pills read 'fra'/'eng' and hover 'French'/'English'. Living sources > Law pills hover GBR 'United Kingdom', EUU 'European Union — not an ISO code', FRA 'France'. File: steps/res-L9-en.json. Shots: steps/shots/L9-wiki-edition-en.png, L9-living-wiki-pill-en.png, L9-living-law-EUU-en.png."
+   },
+   {
+    "id": "L10",
+    "verdict": "pass",
+    "locales": "en, fr, ar",
+    "evidence": "Synthetic index and USGS data, so the 'real install' clause is not measurable here, as in the re-walk. The Indices board is labelled by index name ('France — share prices', 'Germany — share prices', 'United Kingdom — share prices'), with no country codes. Minerals supply Area cells are all alpha-3 with hovers: USA 'United States' / 'États-Unis' / 'الولايات المتحدة', CHN, AUS; WLD 'World — published aggregate' / 'Monde — agrégat publié' / 'العالم — تجميع منشور'. The feed table grey lines name producers ('EIA/FRED'). Files: steps/res-L10-{en,fr,ar}.json. Shots: steps/shots/L10-indices-*.png, L10-minerals-supply-{en,fr,ar}.png."
+   },
+   {
+    "id": "L11",
+    "verdict": "pass",
+    "locales": "en, fr, ar, zh",
+    "evidence": "Synthetic World Bank figures. Countries and Compare A/B have 44 'Name (CODE)' options each, sorted by the localised name (fr 'Afghanistan (AFG)', 'Afrique du Sud (ZAF)', 'Albanie (ALB)'; zh '阿尔巴尼亚 (ALB)' …); none bad and collator-sorted in every locale. 'Load standard country data' opens #net-consent: 'This action needs the network: Load standard country data', local IP 'eth0: 192.0.2.2' only (fr/ar/zh translated). Cancelled; online stayed false. Map hovers: 'France — FRA · France: 72M', 'Kosovo — XKX · Kosovo — not an ISO code: 1.9M' (fr 'pas un code ISO'). Clicking Germany selects 'Germany (DEU)' on Countries. Groups > computed > Europe, population: 'Range … 1.9M (XKX) to 88M (DEU)'; the missing list 'AND, ALA, BIH …' carries the full alpha-3 list in its hover. Statistics placeholders read 'FRA or all' / 'FRA'. Level-map hovers: WLD 'World — published aggregate', HIC/EAS/EUU/LIC/SSF '… — published aggregate', localised in fr/ar/zh. Files: steps/res-L11-{en,fr,ar,zh}.json. Shots: steps/shots/L11-consent-load-standard-{en,fr,ar,zh}.png, L11-gov-map-*.png, L11-groups-computed-*.png, L11-statistics-level-table-*.png."
+   },
+   {
+    "id": "L12",
+    "verdict": "pass",
+    "locales": "en",
+    "evidence": "The Bulletin is a top-level Advanced fold, not nested in Uninstall (order tail diagnostics, safety, uninstall, bulletin). A Yearly draft was built ('Draft built.') and opened in a new tab at /api/bulletin/editions/20260926-OOS-yearly-163b4acf.json/render?fmt=html. The document reads 'Source countries: RUS 21, CHN 19, FRA 16, DEU 14, USA 11 …; 2 from sources with no country recorded.' and 'Languages: eng 23, rus 20, zho 19, ara 18, por 17, fra 15, spa 14, deu 13.' By-country heads read 'Russia (RUS) · Europe' and so on. The law lines read 'Law changed (FRA): Walk Code civil (extract)' and 'jurisdiction FRA'. The only two-letter code in parentheses is the Wikipedia edition '(en)'. The Home law card reads 'Law changed (FRA): …'. The edition was deleted afterwards ('No editions yet.'). Files: steps/res-L12.json, steps/bulletin-doc.txt. Shots: steps/shots/L12-bulletin-panel-en.png, L12-bulletin-doc-en.png, L12-home-law-card-en.png."
+   },
+   {
+    "id": "L13",
+    "verdict": "pass",
+    "locales": "fr, ar, zh",
+    "evidence": "Bare top-bar switch with no reload, then after reload, the page is fr ltr / ar rtl / zh ltr. Law hovers: DEU 'Allemagne' / 'ألمانيا' / '德国'; EUU 'Union européenne — pas un code ISO' / 'الاتحاد الأوروبي — ليس رمزًا من رموز أيزو' / '欧盟 — 非 ISO 代码'; INT likewise. The Agenda Country list is re-sorted: fr 'tout', '🇿🇦 Afrique du Sud (ZAF)', '🇩🇪 Allemagne (DEU)'; ar 'الكل', '🇪🇹 إثيوبيا (ETH)'; zh '全部', '🇦🇷 阿根廷 (ARG)'. The Sources Country filter is re-sorted (fr 'Afghanistan (AFG) ·4', 'Afrique du Sud (ZAF) ·60'). The Language filter reads 'anglais (eng)', 'الإنجليزية (eng)', '英语 (eng)'. ISR hovers 'Israël' / 'إسرائيل' / '以色列'. The pager and calendar status are translated too. Home law card: 'Loi modifiée (FRA) : …', 'تغيّر قانون (FRA): …', '法律已变更（FRA）：…' (home-{fr,ar,zh}-boot.json). Files: steps/res-L13-{fr,ar,zh}.json. Shots: steps/shots/L13-*.png, shots/home-laundering-front-{ar,zh}-boot.png."
+   },
+   {
+    "id": "L375",
+    "verdict": "pass",
+    "locales": "en",
+    "evidence": "375x800: page hscroll 0 and no unclipped overflowing element on Law, Agenda list (grouped by country), World coverage, World map, Insights map, Governments Map / Countries / Statistics, Living sources, Indices, Commodities, Settings > Wikipedia, Sources, Calendar directory and Bulletin. The Sources filters sit in a two-column grid (Language/Country at x 35/193, width 147 each; row 2 Type/Tag). The Country filter opens; ticking FRA gives label 'FRA' and '130 source(s)'. EUU hover on Law: 'European Union — not an ISO code'. The open Country list now stays inside the viewport (see L-10). File: steps/res-L375-en.json. Shots: steps/shots/L375-*.png, L375-sources-country-open-en.png."
+   }
+  ],
+  "items": [
+   {
+    "id": "L-1",
+    "verdict": "fixed",
+    "evidence": "The laundering card ('wire-agency.example') was read after live top-bar switches to fr, ar and zh, and after booting straight into fr, ar and zh. fr front: 'BLANCHIMENT DE SOURCE' / '3 sources, une seule origine : wire-agency.example' / '3 articles de 3 sources distinctes (DE Regional Herald de, …) citent tous la même origine — une corroboration apparente qui remonte à UNE seule source…'. fr back caveat: 'Plusieurs sources citant la même origine unique ne sont PAS une corroboration indépendante — une seule source sous plusieurs casquettes…'. The Method line ('Méthode : Origines sortantes citées par >= 3 sources distinctes…') and 'Why am I seeing this?' are French too. ar: 'غسل المصادر' / '3 مصادر، أصل واحد: wire-agency.example' with an Arabic caveat. zh: '来源洗白' / '3 个来源，同一出处：wire-agency.example' with a Chinese caveat. Only source names and the origin domain stay as data. Files: /tmp/claude-0/rewalk2/out/L/home-{fr,ar,zh}-live.json, home-{fr,ar,zh}-boot.json. Shots: /tmp/claude-0/rewalk2/out/L/shots/home-laundering-front-{fr,ar,zh}-live.png, home-laundering-back-{fr,ar,zh}-live.png, home-laundering-*-fr-boot.png."
+   },
+   {
+    "id": "L-2",
+    "verdict": "fixed",
+    "evidence": "All 16 Leads read in en, then fr/ar/zh (live switch) and fr/ar/zh (boot). No card's type label, title, summary, caveat, method, 'why' sentence or math label is identical to its English text. An English-word scan found only French cognates and the DB status code 'candidate'. Type labels: 'Signal isolé', 'Changement de loi', 'Affirmation recyclée', 'À travers le temps', 'Régime de lecture', 'Propagation d'un récit', 'Sources candidates' (ar 'إشارة منفردة'…, zh '孤立信号'…). The two formerly English titles now read 'À travers le temps : ce jour-là, les années passées' and 'Votre régime de lecture repose sur quelques sources' (zh '穿越时间：往年的今天'). Summaries: 'Ceci n'a été publié que par ZH Regional Herald cn ; aucune autre source…' and 'Un document juridique suivi a changé de -640 octets par rapport à sa référence — large-removal.' Caveats: law 'Un miroir de recherche, PAS la source faisant foi…'; lonely signal '« Source unique, sans écho » est la SEULE affirmation…'. The Overview ranking note is 'Classé selon un ordre explicite (sources indépendantes → taille de l'échantillon → récence), jamais un score. Cette piste : …' (ar/zh translated too). One residue, recorded as incidental: the flag code 'large-removal' inside the law summary. Files: /tmp/claude-0/rewalk2/out/L/home-{en-boot,fr-live,ar-live,zh-live,fr-boot,ar-boot,zh-boot}.json. Shots: shots/home-overview-{fr,ar,zh}-live.png, home-laundering-back-fr-live.png (the law and lonely-signal cards are visible beside it)."
+   },
+   {
+    "id": "L-3",
+    "verdict": "fixed",
+    "evidence": "Every surface was rendered in en, switched to fr through the top bar WITHOUT reload, re-read (hovers from the real #oo-tip bubble), then reloaded in fr. The same run was repeated for zh. After the live switch (fr): Agenda options '🇿🇦 Afrique du Sud (ZAF)', '🇩🇪 Allemagne (DEU)', '🇦🇷 Argentine (ARG)' (names AND order); Insights BRA 'Brésil'; concept map SAU 'Arabie saoudite', ara 'arabe', lines 'Langues : …' (with the French space) and '— mentions par langue'; World map detail DEU 'Allemagne', with the rest of the panel French; Governments picker 'Afghanistan (AFG)', 'Afrique du Sud (ZAF)', 'Albanie (ALB)'; statistics map WLD 'Monde — agrégat publié'; Producers RUS 'Russie'; calendar directory '241 flux · 241 dossiers · 0 vérifiés · pas encore vérifiés : 241'. Each after-switch value equals the after-reload value. zh after switch: '🇦🇷 阿根廷 (ARG)', BRA '巴西', SAU '沙特阿拉伯', DEU '德国', '阿尔巴尼亚 (ALB)', WLD '世界 — 已公布的汇总组', RUS '俄罗斯', '241 个数据源 · …'. Files: /tmp/claude-0/rewalk2/out/L/live-fr.json, res-live-fr.json, out-live-zh.txt. Shots: shots/live-agenda-after-fr.png vs live-agenda-reload-fr.png, live-wm-detail-after-fr.png vs live-wm-detail-reload-fr.png (zh equivalents too)."
+   },
+   {
+    "id": "L-4",
+    "verdict": "fixed",
+    "evidence": "Commodities > Minerals supply. en caveat: '… A missing value (—) is a published gap. Producers are shown, never averaged.' (no 'None'; the API caveat says the same). fr: caveat 'Données d'OFFRE — production, réserves, dépendance nette aux importations. PAS des prix de marché : … Une valeur manquante (—) est une lacune publiée…'; commodity 'Terres rares'; measures 'Dépendance nette aux importations' / 'Production' / 'Réserves'; units 'pour cent' / 'tonnes métriques d'OTR (oxydes de terres rares)'. ar: Arabic caveat with 'القيمة المفقودة (—) فجوة منشورة', commodity 'العناصر الأرضية النادرة', measures 'الاعتماد الصافي على الاستيراد' / 'الإنتاج' / 'الاحتياطيات', units 'بالمئة' / 'طن متري من مكافئ أكاسيد العناصر النادرة (REO)'. Files: /tmp/claude-0/rewalk2/out/L/min-{en,fr,ar}.json. Shots: shots/min-{en,fr,ar}.png."
+   },
+   {
+    "id": "L-5",
+    "verdict": "fixed",
+    "evidence": "Governments > Statistics > Map by country, NY.GDP.MKTP.CD with 'level' ticked. The meta and refusal lines are translated in fr ('Un niveau (effectif ou total) est représenté par des symboles proportionnels en surface, pas par la couleur…' / 'Un niveau n'est pas comparable entre des zones de tailles différentes ; il est représenté par des symboles proportionnels.'), in ar ('يُعرض المستوى (عدد أو مجموع) برموز…' / 'المستوى غير قابل للمقارنة…') and in zh ('水平值（计数或总量）以面积与数值成比例的符号表示…' / '水平值在大小不同的地区之间不可比较…'). Aggregate hovers (title attribute and #oo-tip bubble): fr HIC 'Revenu élevé — agrégat publié', EAS 'Asie de l’Est et Pacifique — agrégat publié', EUU 'Union européenne — agrégat publié'; ar 'الدخل المرتفع — تجميع منشور', 'شرق آسيا والمحيط الهادئ — …', 'الاتحاد الأوروبي — …'; zh '高收入 — 已公布的汇总组', '东亚与太平洋 — …', '欧洲联盟 — …'. These match the Aggregates picker names. Files: /tmp/claude-0/rewalk2/out/L/stat-{fr,ar,zh}.json. Shots: shots/stat-HIC-hover-{fr,ar,zh}.png, stat-map-{fr,ar,zh}.png."
+   },
+   {
+    "id": "L-6",
+    "verdict": "fixed",
+    "evidence": "World map > Stories, detail for 'Independence Day (Indonesia)'. fr: 'Politique · confirmé · ≈ pays', '17 août 2027 · Jakarta (IDN) · …', 'Source officielle / de référence ↗'. ar: '≈ البلد', '17 أغسطس 2027', 'المصدر الرسمي / المرجعي ↗'. zh: '≈ 国家', '2027年8月17日', '官方 / 参考来源 ↗'. Dot titles use locale month names ('Eruption of Krakatoa — 27 août 1883 · Catastrophe…', ar '27 أغسطس 1883', zh '1883年8月27日'). The pill hover is translated ('point de substitution au niveau du pays…'). en is unchanged ('Aug 17, 2027', '≈ country'). Files: /tmp/claude-0/rewalk2/out/L/stories-{en,fr,ar,zh}.json. Shots: shots/stories-detail-{fr,ar,zh}.png."
+   },
+   {
+    "id": "L-7",
+    "verdict": "fixed",
+    "evidence": "Governments > Law. fr Legal changes: 'GBR · Walk Act 2026 ⁨+120⁩ octets', 'FRA · Walk Code civil (extract) ⁨-640⁩ octets suppression importante', links 'ouvrir le lecteur · source officielle ↗'. Tracked laws rows: 'FRA Walk Code civil (extract) Législation pas encore vérifié 2 (signalées : 1) lecteur · officiel ↗ · arrêter'; categories 'Législation' / 'Propriété intellectuelle'. ar: 'بايت', 'حذف كبير', 'فتح القارئ', 'التشريع', '(الموسومة: 1)', 'القارئ · الرسمي ↗'. zh: '字节', '大量删除', '打开阅读器', '立法', '（1 个已标记）', '阅读器 · 官方 ↗'. No 'bytes', 'open reader', 'reader', 'official', 'legislation', 'large-removal' or '(1 flagged)' remains in fr/ar/zh. Files: /tmp/claude-0/rewalk2/out/L/law-{fr,ar,zh}.json. Shots: shots/law-changes-{fr,ar,zh}.png, law-docs-{fr,ar,zh}.png."
+   },
+   {
+    "id": "L-8",
+    "verdict": "fixed",
+    "evidence": "#src-page reads 'Page 1 sur 129' / 'صفحة 1 من 129' / '第 1 页，共 129 页'. #feeddir-status reads '241 flux · 241 dossiers · 0 vérifiés · pas encore vérifiés : 241' / 'الموجزات: 241 · المجلدات: 241 · المفحوصة: 0 · لم يُفحص بعد: 241' / '241 个数据源 · 241 个文件夹 · 已检查 0 个 · 241 个尚未检查'. No English frame is left. Files: /tmp/claude-0/rewalk2/out/L/srccov-{fr,ar,zh}.json. Shots: shots/src-pager-{fr,ar,zh}.png, feeddir-status-{fr,ar,zh}.png."
+   },
+   {
+    "id": "L-9",
+    "verdict": "fixed",
+    "evidence": "Library > World coverage tiles. fr: '206/249 PAYS · 82.7% COUVERTURE · 43 NON COUVERT · 39 PEU COUVERTS (<3)'. ar: 'دول · التغطية · غير مُغطّى · تغطية ضعيفة (<3)'. zh: '个国家 · 覆盖率 · 未覆盖 · 覆盖薄弱（<3）'. The tile also follows a live switch (steps/res-L6.json). Files: /tmp/claude-0/rewalk2/out/L/srccov-{fr,ar,zh}.json. Shots: shots/cov-tiles-{fr,ar,zh}.png."
+   },
+   {
+    "id": "L-10",
+    "verdict": "fixed",
+    "evidence": "375x800, en, reached through the hamburger, Settings > Advanced > Sources. Country list open: summary at x 193-283; list left 35, right 340, width 305 on a 375 px viewport. 0 of 209 option boxes past the edge; 0 options with clipped text; 'Antigua & Barbuda (ATG) ·5' is whole, right edge 335. Document scrollWidth 375 while open. A horizontal wheel over the list gives window.scrollX 0, and scrollTo(1000) gives 0. Tag list: left 35, right 340, 0 of 202 past the edge. Language and Type also stay within 35-340. File: /tmp/claude-0/rewalk2/out/L/375-en.json. Shots: shots/375-src-msel-country-open-en.png, 375-src-msel-tag-open-en.png."
+   }
+  ],
+  "incidental": [
+   "Home law-change Lead summary keeps the raw flag code in fr/ar/zh: '… a changé de -640 octets par rapport à sa référence — large-removal.' (ar '— large-removal.', zh '— large-removal。'), while the Law panel shows the same flag as 'suppression importante' / 'حذف كبير' / '大量删除'. Lead: src/briefing/producers.py:1614-1616 passes reasons=… as a plain var, not a translated (tr) var."
+  ],
+  "page_errors": [],
+  "http_errors": [],
+  "summary": "Row L passes on build 9eb10528. All 14 steps pass (L1-L13 and L375), and all 10 re-walk items (L-1 to L-10) are fixed. The instance was freshly seeded and encrypted (STATE C plus the row-L seed_extra); it booted locked, was unlocked through #pw / #btn-unlock, and stayed in airplane mode throughout. The Lead cards now read in fr/ar/zh end to end: type labels, titles, summaries, methods, caveats and the ranking note, on both live switch and boot. The laundering card is fully translated. A live language switch repaints every surface L-3 named, in fr and in zh, and each matches the after-reload reading. Minerals supply, the statistics level map, Stories, the Law panels, the Sources pager, the calendar status line and the coverage 'thin' tile are all localised. At 375 px the open Country and Tag lists stay inside the viewport (left 35, right 340) with no page scroll. The 'Load standard country data' consent popup was opened in en/fr/ar/zh and cancelled each time; the app stayed offline and the browser made zero non-loopback requests. There were no page errors, console errors or HTTP errors. Not measurable here, as in the re-walk: 'By city' (the seed has no cities) and the real-install data for Governments and Markets (synthetic figures). One incidental item: the Home law card's summary still shows the raw flag code 'large-removal'."
+ },
+ "recheck": null
+}

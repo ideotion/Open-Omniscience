@@ -296,7 +296,12 @@ def test_reopening_the_import_dialog_offers_the_last_run_without_re_rendering_it
     assert "async function _uxImLastLine(" in _APP
     fn = function_body(_APP, "_uxImLastLine")
     assert "/api/backup/import-reports" in fn, "the line reads the persisted reports"
-    assert "_uxImLastLineHtml(reports[0]" in fn, "the NEWEST report is the subject"
+    # The NEWEST RUN is the subject (I7, 2026-09-26): one report per backup, so the
+    # newest report alone named the last backup's 1,200 of a 4,800-article import.
+    # _uxImRunSummary folds the newest report's run together (behaviour pinned in
+    # tests/import_stages_node_test.js).
+    assert "_uxImLastLineHtml(_uxImRunSummary(reports)" in fn, "the NEWEST run is the subject"
+    assert "reports[0]" in function_body(_APP, "_uxImRunSummary")
     # a failed READ renders nothing -- never a fabricated "no imports yet"
     assert 'host.innerHTML = ""' in fn
     # the line itself LINKS the report; it does not re-render it
@@ -386,7 +391,8 @@ def test_the_corpus_checkbox_can_actually_be_unticked():
 
     from tests.js_source_helper import function_body, strip_comments
 
-    src = strip_comments(function_body(_APP, "_uxLoadInventory"))
+    # Drawn by _uxPaintInventory since B18 (R10), so a language switch can redraw it.
+    src = strip_comments(function_body(_APP, "_uxPaintInventory"))
     tag = re.search(r'<input type="checkbox" id="ux-c-corpus"[^>]*>', src)
     assert tag, "the corpus checkbox is gone from the export inventory"
     assert "disabled" not in tag.group(0), (
@@ -443,8 +449,12 @@ def test_the_corpus_data_safety_gate_survives_the_change():
 def test_the_completion_message_names_what_the_backup_actually_holds():
     """Now that the corpus can be left out, a bare "Backup complete" would let a
     models-only export read months later as a full one, and the reader has no other way
-    to tell."""
-    src = _ux_run_src()
+    to tell. The completion is one helper since W1 (a resumed large-data copy ends there
+    too), and _uxRun fixes what the export carries at its start."""
+    from tests.js_source_helper import function_body, strip_comments
+
+    assert "_uxExportIncluded = { corpus: wantCorpus, blobs: blobs.slice() };" in _ux_run_src()
+    src = strip_comments(function_body(_APP, "_uxFinishExport"))
     assert 't("Included:")' in src, "the completion line does not say what is in the backup"
     for label in ('t("Corpus")', 't("LLM models")', 't("Offline maps")', 't("Wikipedia dumps")'):
         assert f"included.push({label})" in src, f"{label} is never named in the summary"

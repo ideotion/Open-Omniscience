@@ -30,9 +30,12 @@
     document.addEventListener("oo:langchange", () => {
       // Only when a panel is actually on screen: re-rendering into a hidden host would
       // resurrect a previous export's panel the next time the dialog opens.
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      // The checklist's counts too (R10), while the export dialog is open.
+      const dlg = document.getElementById("ux-export");
+      if (dlg && dlg.open && _uxInv) _uxPaintInventory(_uxInv, t, true);
       const host = document.getElementById("ux-summary");
       if (!host || !host.innerHTML || !_uxExportFacts) return;
-      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       _uxRenderExportPanel(_uxExportFacts, t);
     });
 
@@ -46,6 +49,22 @@
       dlg.showModal();
       await _uxLoadInventory();
       _uxShowLastCompletedExportSummary();  // best-effort; never blocks opening the dialog
+    }
+
+    // Which of the two managers' finished states is the LAST export (2026-09-26
+    // click-through, J1). The folder phase runs after the corpus phase of the same
+    // export, so when both name ONE folder the folder job is the later state. When they
+    // name DIFFERENT folders they are two exports -- a corpus-only export leaves the
+    // folder manager holding an OLDER export's destination -- and the later START wins.
+    // (The old rule let the folder job win unconditionally, so the dialog named the
+    // older export, and a paused corpus export lost its Resume button to it.)
+    // Returns whichever of the two statuses to show, or null.
+    function _uxPickLastExport(vol, fold) {
+      if (vol && fold) {
+        return (_uxSamePath(vol.dest, fold.dest) || (fold.started_at || 0) >= (vol.started_at || 0))
+          ? fold : vol;
+      }
+      return vol || fold || null;
     }
 
     // Mirrors _uxShowLastCompletedSummary() for the Import dialog (audit finding
@@ -64,18 +83,21 @@
       const prog = document.getElementById("ux-progress");
       const bar = document.getElementById("ux-bar");
       const pauseBtn = document.getElementById("ux-pause");
-      let shown = null, phase = null;
+      const exportState = (s) => s && s.mode === "backup" && (s.state === "done" || s.state === "paused");
+      let vol = null, fold = null;
       try {
         const s = await api("/api/backup/v2/volumes/status");
-        if (s && s.mode === "backup" && (s.state === "done" || s.state === "paused")) { shown = s; phase = "volumes"; }
+        if (exportState(s)) vol = s;
       } catch (e) { /* best-effort: one endpoint failing must not hide the other */ }
       try {
-        // The folder (large-data) phase runs AFTER volumes in a full export -- if it
-        // also completed/paused, it is the more recent state to show.
         const s = await api("/api/backup/folder/status");
-        if (s && s.mode === "backup" && (s.state === "done" || s.state === "paused")) { shown = s; phase = "folder"; }
+        if (exportState(s)) fold = s;
       } catch (e) { /* best-effort */ }
+      const shown = _uxPickLastExport(vol, fold);
       if (!shown) return;
+      let phase = null;
+      if (shown === fold) phase = "folder";
+      else phase = "volumes";
       const dest = shown.dest || (document.getElementById("ux-dest").value || "").trim();
       // Recover the folder BEFORE the branch: a PAUSED export resumed after a page
       // reload must re-enter the folder it paused in, and the only place that survives
@@ -95,11 +117,35 @@
         // A completed export: the panel a reopened dialog shows is the same panel the
         // run itself ended on, built from the same server-side facts rather than from a
         // remembered sentence.
-        prog.innerHTML = `<b>${esc(t("Backup complete →"))}</b> <span style="overflow-wrap:anywhere">${esc(dest)}</span> (${esc(t("last completed export"))})`;
+        // dir="ltr": a path is left-to-right data, and inside the Arabic dialog its
+        // leading slash was drawn at the far end (J3). The brackets are the LOCALE's, from
+        // a keyed frame: welded ASCII ones read "(上次已完成的导出)" in Chinese (J-3).
+        const tfb = (window.OOI18N && OOI18N.tf)
+          ? OOI18N.tf
+          : ((str, vars) => str.replace(/\{(\w+)\}/g, (m, k) => (vars && vars[k] != null) ? String(vars[k]) : m));
+        prog.innerHTML = `<b>${esc(t("Backup complete →"))}</b> <span dir="ltr" style="overflow-wrap:anywhere">${esc(dest)}</span> ${esc(tfb("({text})", { text: t("last completed export") }))}`;
         if (dest) {
           try {
-            const facts = await api("/api/backup/export-summary?dir=" + encodeURIComponent(dest));
+            let facts = await api("/api/backup/export-summary?dir=" + encodeURIComponent(dest));
+            // J2: the job writes BACKUP_SUMMARY.md when it completes. Should the file
+            // still be missing (that write failed), ask for it once more here, and if
+            // that fails too the panel NAMES the missing file rather than reading as
+            // if one were there.
+            if (facts && !facts.summary_path && shown.state === "done") {
+              try {
+                const w = await api("/api/backup/export-summary", { method: "POST", body: JSON.stringify({ dir: dest }) });
+                facts = { ...(w.facts || {}), summary_path: w.summary_path };
+              } catch (e) {
+                facts = { ...facts, summary_error: String((e && e.message) || e) };
+              }
+            }
             _uxRenderExportPanel(facts, t);
+            // J-1: a folder missing a member the export was asked for is not a completed
+            // backup, whatever the job that last wrote into it reported.
+            const miss = (facts && facts.missing) || {};
+            if (miss.corpus || (miss.categories || []).length) {
+              prog.innerHTML = `<b>${esc(t("Backup incomplete →"))}</b> <span dir="ltr" style="overflow-wrap:anywhere">${esc(dest)}</span>`;
+            }
           } catch (e) { /* best-effort: the completion line stands on its own */ }
         }
       }
@@ -133,14 +179,18 @@
       // (Described, not pasted as a call: both i18n scans read RAW SOURCE, so a
       // call-shaped literal in a comment is counted as a live UI string.)
       const secs = (n) => (n == null ? null
-        : (n < 90 ? esc(TF("{n} s", {n: n.toFixed(1)})) : esc(TF("{n} min", {n: Math.round(n / 60)}))));
+        : (n < 90 ? TF("{n} s", {n: n.toFixed(1)}) : TF("{n} min", {n: Math.round(n / 60)})));
       const rows = [];
       const row = (label, value, title) =>
         rows.push(`<div class="row" style="gap:6px;align-items:baseline"><span class="muted" style="min-width:150px"${title ? ` title="${esc(title)}"` : ""}>${esc(label)}</span><span>${value}</span></div>`);
 
       // 1-2. volumes and the bytes they occupy.
       if (facts.corpus_included) {
-        row(t("Encrypted volumes"), `${esc(String(v.count == null ? dash : v.count))} · ${esc(bytes(v.bytes))} ${esc(t("on the drive"))} · ${esc(bytes(v.plaintext_bytes))} ${esc(t("of content"))}`);
+        // The count through fmtNum inside ONE keyed frame per number (R10): the raw
+        // `String(count)` read "12345" under a French UI and carried no noun of its own.
+        const vCount = v.count == null ? dash
+          : (v.count === 1 ? tf("{n} volume", { n: fmtNum(v.count, 0) }) : tf("{n} volumes", { n: fmtNum(v.count, 0) }));
+        row(t("Encrypted volumes"), `${esc(vCount)} · ${esc(bytes(v.bytes))} ${esc(t("on the drive"))} · ${esc(bytes(v.plaintext_bytes))} ${esc(t("of content"))}`);
         row(t("Parity (corruption recovery)"), esc(v.parity ? t("written") : t("none")));
       } else {
         row(t("Encrypted volumes"), esc(t("none — no corpus was selected for this export")));
@@ -150,65 +200,141 @@
       const filled = tables.filter((r) => r.rows > 0);
       const empty = tables.length - filled.length;
       if (tables.length) {
-        const cells = filled.map((r) => `<span class="pill" style="margin:0 4px 4px 0"><b>${esc(r.name)}</b> ${esc(String(r.rows))}</span>`).join("");
-        const more = empty ? `<div class="muted" style="font-size:11px">${esc(tf("{n} more tables are empty in this backup.", { n: empty }))}</div>` : "";
+        const cells = filled.map((r) => `<span class="pill" style="margin:0 4px 4px 0"><b>${esc(r.name)}</b> ${esc(fmtNum(r.rows, 0))}</span>`).join("");
+        const more = !empty ? ""
+          : `<div class="muted" style="font-size:11px">${esc(empty === 1
+            ? tf("{n} more table is empty in this backup.", { n: fmtNum(empty, 0) })
+            : tf("{n} more tables are empty in this backup.", { n: fmtNum(empty, 0) }))}</div>`;
         row(t("Rows per table"), `<div style="display:flex;flex-wrap:wrap">${cells}</div>${more}`,
             t("The counts the export measured while it streamed the corpus, articles first."));
       }
       // 4. files copied, per category.
       const files = facts.files || [];
       if (files.length) {
-        row(t("Files copied"), files.map((c) => `<span class="pill" style="margin:0 4px 4px 0"><b>${esc(c.category)}</b> ${esc(String(c.files))} · ${esc(bytes(c.bytes))}</span>`).join(""));
+        row(t("Files copied"), files.map((c) => `<span class="pill" style="margin:0 4px 4px 0"><b>${esc(c.category)}</b> ${esc(c.files === 1
+          ? tf("{n} file", { n: fmtNum(c.files, 0) }) : tf("{n} files", { n: fmtNum(c.files, 0) }))} · ${esc(bytes(c.bytes))}</span>`).join(""));
       } else {
-        row(t("Files copied"), esc(t("none")));
+        // Its own key, not the shared "none": the shared one agrees with a feminine noun
+        // in French (parité : aucune), and "files" needs the masculine (J9).
+        row(t("Files copied"), esc(t("no files")));
       }
       // 5. elapsed -- an unmeasured span says so; it never renders as zero.
+      // The hovers here and on Encryption are the server's English sentences, looked up
+      // as keys: they are caveats, and a caveat ships x12 (J7). The server strings are
+      // pinned as keys in all 12 locales by tests/test_export_folder.py, because the
+      // i18n gate cannot see a string that only arrives over the wire.
+      // ONE keyed frame per case, so each part reads as a phrase in every locale. The old
+      // form set a time (or "not recorded") beside a bare noun, and read "— corpus · not
+      // recorded files" in English and "non enregistré fichiers" in French. A part for
+      // something this export did not carry is left out rather than drawn as a dash.
       const corpusS = secs(el.corpus_s), filesS = secs(el.files_s);
-      row(t("Elapsed"),
-          `${esc(corpusS || dash)} <span class="muted">${esc(t("corpus"))}</span>` +
-          (files.length ? ` · ${esc(filesS || t("not recorded"))} <span class="muted">${esc(t("files"))}</span>` : ""),
-          el.files_s_reason || "");
+      const spans = [];
+      if (facts.corpus_included) {
+        spans.push(corpusS ? tf("{d} for the corpus", { d: corpusS }) : t("not recorded for the corpus"));
+      }
+      if (files.length) {
+        spans.push(filesS ? tf("{d} for the files", { d: filesS }) : t("not recorded for the files"));
+      }
+      row(t("Elapsed"), esc(spans.length ? spans.join(" · ") : dash),
+          el.files_s_reason ? t(el.files_s_reason) : "");
       // 6-9. destination, encryption, schema, app version.
       // A filesystem path is ONE unbreakable token, and the dated folder made it longer:
       // measured at 390px it ran 165px past the viewport with no way to read its end.
       // `anywhere` rather than `break-word` because there is no space to break at.
-      row(t("Destination"), `<code style="overflow-wrap:anywhere">${esc(facts.destination || "")}</code>`);
+      // dir="ltr": it is left-to-right data inside a possibly right-to-left panel (J3).
+      row(t("Destination"), `<code dir="ltr" style="overflow-wrap:anywhere">${esc(facts.destination || "")}</code>`);
+      // corpus_encrypted is the SQLCipher state of the corpus DATABASE FILE inside the
+      // volumes -- never whether the corpus is encrypted in this backup, which it always
+      // is. The false case says which layer it measures, so it no longer contradicts the
+      // note on its own hover (J5).
       row(t("Encryption"),
           esc(enc.corpus_encrypted == null
               ? dash
-              : (enc.corpus_encrypted ? t("corpus encrypted at rest inside the backup") : t("corpus stored unencrypted in this backup"))) +
+              : (enc.corpus_encrypted ? t("corpus encrypted at rest inside the backup") : t("corpus database not separately encrypted (the backup's volumes are)"))) +
           (files.length ? ` · ${esc(t("copied files are not encrypted"))}` : ""),
-          enc.note || "");
+          enc.note ? t(enc.note) : "");
       row(t("Schema version"), esc(`${sch.backup_schema || dash} · ${sch.container || dash} · ${t("database")} ${sch.alembic_rev || dash}`));  // esc(): alembic_rev is read out of a database, not a constant
       row(t("App version"), esc(facts.app_version || dash));
       // 10. the licence lines that apply (Q1008 = a).
       const lic = facts.attribution || [];
       if (facts.attribution_error) {
         // The visible sentence is keyed; the backend's own words (which name the ruling
-        // and the tables) ride the hover as technical detail rather than as the caveat.
+        // and the tables) ride the hover as technical detail rather than as the caveat --
+        // behind a keyed lead, so the hover opens in the reader's language before the
+        // server's English detail (W14). In the dialog's error colour, not the toast box (W6).
         row(t("Licences"),
-            `<span class="note err" title="${esc(facts.attribution_error)}">${esc(t("The attribution lines could not be completed — a licence question is unanswered, so this backup is reported without them."))}</span>`);
+            `<span style="color:var(--err)" title="${esc(tf("The attribution query failed: {detail}", { detail: facts.attribution_error }))}">${esc(t("The attribution lines could not be completed — a licence question is unanswered, so this backup is reported without them."))}</span>`);
       } else if (lic.length) {
+        // Each line is the server's English sentence, looked up as a key: a licence line
+        // is a caveat about what the reader may do with the data, and a caveat ships x12.
+        // tests/test_export_folder.py pins every line the registry can emit as a key in
+        // all 12 locales, since the i18n gate cannot see a string that arrives over the
+        // wire. dir="auto": a line with no key yet stays English data, and inside an
+        // Arabic panel its closing period was drawn at the start of the line (J3).
         row(t("Licences"),
-            lic.map((l) => `<div title="${esc(tf("applies because: {signal}", { signal: l.because }))}">${esc(l.text)}</div>`).join(""));
+            lic.map((l) => `<div dir="auto" title="${esc(tf("applies because: {signal}", { signal: l.because }))}">${esc(t(l.text))}</div>`).join(""));
       } else {
         row(t("Licences"), `<span class="muted">${esc(t("no attribution line applies to what this backup holds"))}</span>`);
       }
 
       const verify = facts.verify || {};
-      host.innerHTML =
-        `<div class="note ${verify.state === "verified" ? "" : "err"}" style="margin-top:8px"${_uxVerifyDetail(verify) ? ` title="${esc(_uxVerifyDetail(verify))}"` : ""}>${esc(_uxVerifySentence(verify, t))}</div>` +
+      // Red for every not-verified verdict EXCEPT "not held": there the export may well
+      // have verified its set, and what is missing is this app's memory of it -- an
+      // unknown, which a red box would turn into an alarm about a sound backup.
+      // A plain status line in the dialog's own colours (R3): the `.note` class is the
+      // floating TOAST box -- its shadow and slide-in animation -- and a verdict inside a
+      // dialog is not a toast.
+      const verdictCls = verify.state === "verified" ? "" : (verify.state === "not_held" ? "muted" : "");
+      const verdictCol = (verify.state === "verified" || verify.state === "not_held") ? "" : "color:var(--err);";
+      // INCOMPLETE (J-1): what this export was asked for and the folder does not hold,
+      // read by the server from the request recorded when the folder was made. It leads
+      // the panel, above the verify verdict, because a clean "Verified" over a backup
+      // missing a member the operator ticked reads as a finished export -- and the
+      // missing large-data files get a button that copies them into this same folder.
+      const miss = facts.missing || {};
+      const owed = miss.categories || [];
+      const lost = [];
+      if (miss.corpus) lost.push(t("Corpus"));
+      if (owed.length) {
+        // The inventory's own member list names the tick each category came from, so
+        // "models" + "hf_models" read as the one "LLM models" the operator ticked.
+        const members = (typeof _uxInv !== "undefined" && _uxInv && _uxInv.members) || [
+          { label: "LLM models", categories: ["models", "hf_models"] },
+          { label: "Offline maps", categories: ["osm_regions"] },
+          { label: "Wikipedia dumps", categories: ["wiki_dumps"] },
+        ];
+        for (const m of members) {
+          if ((m.categories || []).some((c) => owed.includes(c))) lost.push(t(m.label));
+        }
+        for (const c of owed) {
+          if (!members.some((m) => (m.categories || []).includes(c))) lost.push(c);
+        }
+      }
+      const incomplete = !lost.length ? ""
+        : `<div class="ux-incomplete" style="margin-top:8px;color:var(--err)">` +
+          `<b>${esc(tf("Incomplete — requested for this export but not in this folder: {members}", { members: lost.join(" · ") }))}</b>` +
+          (owed.length
+            ? `<div style="margin-top:4px"><button type="button" class="secondary" data-ux-complete title="${esc(t("Starts the large-data copy into this same folder. The encrypted volumes already in it are not touched."))}">${esc(t("Copy the large-data files now"))}</button></div>`
+            : "") +
+          `</div>`;
+      host.innerHTML = incomplete +
+        `<div class="ux-verdict ${verdictCls}" style="margin-top:8px;${verdictCol}"${_uxVerifyDetail(verify) ? ` title="${esc(_uxVerifyDetail(verify))}"` : ""}>${esc(_uxVerifySentence(verify, t))}</div>` +
         `<div style="margin-top:6px;display:flex;flex-direction:column;gap:2px;font-size:12px">${rows.join("")}</div>` +
         `<div class="card-caveat" style="margin-top:6px;font-size:11px">${esc(t("Every export writes a new dated folder and every volume in it: nothing is reused from an earlier backup, so this folder's bytes were all written by this one pass."))}</div>` +
         (facts.summary_path
-          ? `<div class="muted" style="margin-top:4px;font-size:11px;overflow-wrap:anywhere">${esc(t("A summary of these facts was written beside the backup:"))} <code>${esc(facts.summary_path)}</code></div>`
-          : "");
+          ? `<div class="muted" style="margin-top:4px;font-size:11px;overflow-wrap:anywhere">${esc(t("A summary of these facts was written beside the backup:"))} <code dir="ltr">${esc(facts.summary_path)}</code></div>`
+          : (facts.summary_error
+            ? `<div style="color:var(--err);margin-top:4px;font-size:11px;overflow-wrap:anywhere">${esc(t("The backup is written, but its summary file could not be:"))} ${esc(facts.summary_error)}</div>`
+            : ""));
+      // A listener, not an inline handler: the button is re-drawn on every repaint.
+      const again = host.querySelector ? host.querySelector("[data-ux-complete]") : null;
+      if (again) again.addEventListener("click", () => _uxCompleteExport(again));
     }
 
     // The verify verdict as ONE sentence. The five not-verified cases stay apart: "off",
     // "cancelled", "could not be re-read", "no result recorded" and "FAILED" are
     // different facts, and a single missing "verified" would flatten the last one into
-    // the others.
+    // the others. A sixth, "not known here", is not a not-verified case at all.
     //
     // EVERY branch is a CLIENT-side keyed template, never the backend's own `reason`
     // string. The job writes those in English, and this is a caveat surface, which ships
@@ -226,6 +352,10 @@
       if (verify.state === "off") return t("Not verified — verify-after-write was turned off for this export.");
       if (verify.state === "stopped") return t("Not verified — the re-read was cancelled. The volumes were written, but they were not read back.");
       if (verify.state === "unavailable") return t("Not verified — the volume set could not be read back off the destination.");
+      // The folder holds a volume set whose export this app no longer remembers (it ran
+      // another job or restarted since). Not a "Not verified": nobody has found anything
+      // wrong, and "no corpus" -- what this used to render as -- was simply false (J1).
+      if (verify.state === "not_held") return t("Verify result not known here — the app no longer holds what this export measured (it has run another job or restarted since). The volume figures below are read off the drive.");
       return t("Not verified — this export recorded no verify result.");
     }
 
@@ -244,6 +374,35 @@
       st.textContent = t("Loading what's available…");
       try {
         const inv = await api("/api/backup/inventory");
+        _uxPaintInventory(inv, t, false);
+        box.addEventListener("change", _uxSyncInside);
+        st.textContent = t("What do you want to back up?");
+      } catch (e) {
+        st.textContent = t("Could not load the inventory — see console");
+        console.error("ux inventory", e);
+      }
+    }
+
+    //: The inventory the checklist was last drawn from, so a language switch can redraw
+    //: its counts (R10) -- they are t()-rendered text the DOM walker cannot re-translate.
+    let _uxInv = null;
+    // Draws the checklist from one inventory read. A REDRAW (keep) keeps every tick the
+    // operator already changed: the boxes are read before and written back after. A
+    // fresh load starts from the defaults, as it always has.
+    function _uxPaintInventory(inv, t, keep) {
+      const box = document.getElementById("ux-checklist");
+      if (!box || !inv) return;
+      _uxInv = inv;
+      const kept = {};
+      for (const el of (keep ? Array.from(box.querySelectorAll("input[type=checkbox]")) : [])) {
+        if (el.id) kept[el.id] = el.checked;
+      }
+      const tf = (window.OOI18N && OOI18N.tf)
+        ? OOI18N.tf
+        : ((str, vars) => str.replace(/\{(\w+)\}/g, (m, k) => (vars && vars[k] != null) ? String(vars[k]) : m));
+      // ONE keyed frame per count, chosen by number, the number through fmtNum (R10).
+      const files = (n) => (n === 1 ? tf("{n} file", { n: fmtNum(n, 0) }) : tf("{n} files", { n: fmtNum(n, 0) }));
+      {
         const c = inv.corpus || {}, b = c.breakdown || {};
         // "Everything" is the default: a present category (count > 0) is CHECKED so a
         // backup includes the whole corpus + wiki + maps + models unless the user
@@ -264,10 +423,10 @@
           const offerable = d.exportable !== false;
           const why = offerable ? "" : t(d.not_exportable_reason || "");
           const title = why || (parts.length > 1
-            ? parts.map(([k, x]) => `${k}: ${x.count || 0} · ${humanBytes(x.bytes || 0)}`).join(" · ")
+            ? parts.map(([k, x]) => ooLabelText(k, `${files(x.count || 0)} · ${humanBytes(x.bytes || 0)}`)).join(" · ")
             : "");
           const state = (offerable && (d.count || 0) > 0) ? "checked" : "disabled";
-          return `<label class="switch" style="margin:0"${title ? ` title="${esc(title)}"` : ""}><input type="checkbox" id="ux-c-${id}" data-cats="${esc((d.categories || []).join(","))}" ${state}> ${esc(label)} <span class="muted">(${d.count || 0} · ${humanBytes(d.bytes || 0)})</span></label>`;
+          return `<label class="switch" style="margin:0"${title ? ` title="${esc(title)}"` : ""}><input type="checkbox" id="ux-c-${id}" data-cats="${esc((d.categories || []).join(","))}" ${state}> ${esc(label)} <span class="muted">${esc(tf("({text})", { text: `${files(d.count || 0)} · ${humanBytes(d.bytes || 0)}` }))}</span></label>`;
         };
         // ONE ordered list from the server drives the rows AND the categories each one
         // exports (`data-cats`), so a lane that lands later becomes a row with a real
@@ -288,20 +447,25 @@
         // asks for a passphrase when the corpus is among them, so a corpus-less export
         // restores exactly as it is written.
         box.innerHTML =
-          `<label class="switch" style="margin:0"><input type="checkbox" id="ux-c-corpus" checked> ${esc(t("Corpus"))} <span class="muted">(${b.articles || 0} ${esc(t("articles"))} · ${b.sources || 0} ${esc(t("sources"))} · ${b.dates || 0} ${esc(t("dates"))} · ${b.keywords || 0} ${esc(t("keywords"))} · ${humanBytes(c.bytes || 0)})</span></label>` +
+          `<label class="switch" style="margin:0"><input type="checkbox" id="ux-c-corpus" checked> ${esc(t("Corpus"))} <span class="muted">${esc(tf("({text})", { text: [
+            b.articles === 1 ? tf("{n} article", { n: fmtNum(1, 0) }) : tf("{n} articles", { n: fmtNum(b.articles || 0, 0) }),
+            b.sources === 1 ? tf("{n} source", { n: fmtNum(1, 0) }) : tf("{n} sources", { n: fmtNum(b.sources || 0, 0) }),
+            b.dates === 1 ? tf("{n} date", { n: fmtNum(1, 0) }) : tf("{n} dates", { n: fmtNum(b.dates || 0, 0) }),
+            b.keywords === 1 ? tf("{n} keyword", { n: fmtNum(1, 0) }) : tf("{n} keywords", { n: fmtNum(b.keywords || 0, 0) }),
+            humanBytes(c.bytes || 0),
+          ].join(" · ") }))}</span></label>` +
           members.map((m) => opt(m.key, t(m.label), m)).join("") +
           // S6.2: the same three categories, one artifact instead of two things. Not a
           // better option -- a different trade, so it is a choice and the hover says what
           // it costs. Disabled without a corpus because there would be no artifact to
           // carry them in, and an ignored tickbox is worse than a disabled one.
           `<label class="switch" style="margin:0" title="${esc(t("Inside the artifact they are encrypted and repairable like the corpus, so a restore needs one thing; copied alongside they stay readable on their own and cost nothing to write."))}"><input type="checkbox" id="ux-c-inside"> ${esc(t("Carry them inside the encrypted backup"))}</label>`;
-        _uxSyncInside();
-        box.addEventListener("change", _uxSyncInside);
-        st.textContent = t("What do you want to back up?");
-      } catch (e) {
-        st.textContent = t("Could not load the inventory — see console");
-        console.error("ux inventory", e);
       }
+      for (const [id, on] of Object.entries(kept)) {
+        const el = document.getElementById(id);
+        if (el && !el.disabled) el.checked = on;
+      }
+      _uxSyncInside();
     }
 
     //: Every rendered opt-in member row (the corpus is not one -- it is always offered
@@ -353,8 +517,12 @@
     // knows no total ahead of time, so we show an INDETERMINATE bar + the phase + how
     // many volumes are done — never a fabricated/animated-fake percentage.
     function _uxVolPhase(phase, mode, t) {
+      // `verifying` is the verify-after-write re-read (Q218), the pass that can double an
+      // export's time on a slow drive. Without its own entry it fell through to the
+      // "Backing up…" default and was never named on screen (J6).
       const back = { starting: t("Preparing…"), building: t("Building encrypted volumes…"),
-        volumes: t("Writing encrypted volumes…"), parity: t("Writing parity…"), done: t("Done.") };
+        volumes: t("Writing encrypted volumes…"), parity: t("Writing parity…"),
+        verifying: t("Verifying volumes…"), done: t("Done.") };
       const rest = { verifying: t("Verifying volumes…"), reassembling: t("Reassembling the archive…"),
         merging: t("Merging (additive)…"), reindexing: t("Re-indexing merged articles…"), done: t("Done."),
         // "Progress everywhere" (§4 item 2): named labels for the run_restore
@@ -399,20 +567,34 @@
     }
     function _uxProgressView(kind, s, t) {
       const p = s.progress || {};
+      // Every count here is ONE keyed frame chosen by number, its figures through fmtNum
+      // (R14): "12/40 files" and "3 restored, 0 skipped" welded raw numbers to English
+      // nouns and adjectives that agree with nothing in most of the twelve locales.
+      const tf = (window.OOI18N && OOI18N.tf)
+        ? OOI18N.tf
+        : ((str, vars) => str.replace(/\{(\w+)\}/g, (m, k) => (vars && vars[k] != null) ? String(vars[k]) : m));
       if (kind === "newsletters") {
         const total = s.files_total || 0, done = s.files_done || 0;
         const pct = total ? (s.percent != null ? s.percent : Math.round(100 * done / total)) : null;
-        return { pct, indeterminate: !total, text: `${done}/${total || "?"} ${esc(t("files"))}${esc(_uxEta(s.eta_seconds, t, true))}` };
+        // Each call passes its slots as a literal, which is what the slot check reads.
+        const cnt = total === 1
+          ? tf("{done} of {total} file", { done: fmtNum(done, 0), total: fmtNum(1, 0) })
+          : tf("{done} of {total} files", { done: fmtNum(done, 0), total: total ? fmtNum(total, 0) : "?" });
+        return { pct, indeterminate: !total, text: `${esc(cnt)}${esc(_uxEta(s.eta_seconds, t, true))}` };
       }
       if (kind === "folder") {
         const bt = p.bytes_total || 0, bc = p.bytes_copied || 0;
         const pct = bt ? Math.round(100 * bc / bt) : null;
-        const verb = s.mode === "restore" ? esc(t("restored")) : esc(t("copied"));
         const n = s.mode === "restore" ? (p.restored || 0) : (p.copied || 0);
+        const k = p.skipped || 0;
+        const done = s.mode === "restore"
+          ? (n === 1 ? tf("{n} file restored", { n: fmtNum(n, 0) }) : tf("{n} files restored", { n: fmtNum(n, 0) }))
+          : (n === 1 ? tf("{n} file copied", { n: fmtNum(n, 0) }) : tf("{n} files copied", { n: fmtNum(n, 0) }));
+        const skipped = k === 1 ? tf("{n} file skipped", { n: fmtNum(k, 0) }) : tf("{n} files skipped", { n: fmtNum(k, 0) });
         // frac drives the client-side rule-of-three ETA in _uxPoll (bytes are the honest
         // size measure for wiki/maps/models — the big, slow copies the user waits on).
         return { pct, indeterminate: !bt, frac: bt ? bc / bt : null,
-          text: `${n} ${verb}, ${p.skipped || 0} ${esc(t("skipped"))}` };
+          text: `${esc(done)}, ${esc(skipped)}` };
       }
       // volumes: mostly phase-driven + indeterminate, EXCEPT the merge/reindex phases,
       // which report real N-of-M progress — show a real bar there + drive the
@@ -424,7 +606,7 @@
       if (p.merge_steps) {
         const frac = Math.min(1, (p.merge_step || 0) / p.merge_steps);
         const label = p.merge_label
-          ? `${esc(_uxVolPhase("merging", s.mode, t))} <span class="muted">(${p.merge_step}/${p.merge_steps} · ${esc(p.merge_label)})</span>`
+          ? `${esc(_uxVolPhase("merging", s.mode, t))} <span class="muted">${esc(tf("({text})", { text: `${fmtNum(p.merge_step || 0, 0)}/${fmtNum(p.merge_steps, 0)} · ${p.merge_label}` }))}</span>`
           : esc(_uxVolPhase("merging", s.mode, t));
         // phaseKey scopes the rule-of-three ETA to THIS phase (see _uxPoll): the
         // merge and the re-index are different units of work at wildly different
@@ -435,13 +617,27 @@
       }
       if (p.reindex_total) {
         const frac = Math.min(1, (p.reindex_done || 0) / p.reindex_total);
-        const label = `${esc(_uxVolPhase("reindexing", s.mode, t))} <span class="muted">(${p.reindex_done || 0}/${p.reindex_total} ${esc(t("articles"))})</span>`;
+        const rx = p.reindex_total === 1
+          ? tf("{done} of {total} article", { done: fmtNum(p.reindex_done || 0, 0), total: fmtNum(p.reindex_total, 0) })
+          : tf("{done} of {total} articles", { done: fmtNum(p.reindex_done || 0, 0), total: fmtNum(p.reindex_total, 0) });
+        // The brackets are the keyed frame (J-3), so zh and ja get their full-width pair.
+        const label = `${esc(_uxVolPhase("reindexing", s.mode, t))} <span class="muted">${esc(tf("({text})", { text: rx }))}</span>`;
         return { pct: Math.round(frac * 100), indeterminate: false, frac, phaseKey: "reindex",
           text: label + `<span class="muted">${phaseCount}</span>` };
       }
       let extra = "";
-      if (p.volumes_written) extra += ` · ${p.volumes_written} ${esc(t("volumes"))}`;
+      if (p.volumes_written) {
+        extra += ` · ${esc(p.volumes_written === 1 ? tf("{n} volume", { n: fmtNum(1, 0) }) : tf("{n} volumes", { n: fmtNum(p.volumes_written, 0) }))}`;
+      }
       if (p.bytes_written) extra += ` · ${esc(humanBytes(p.bytes_written))}`;
+      // The re-read's own count, in the merge label's N/M shape. Only once the total is
+      // known: the first report (sent before any volume is hashed) carries none, and a
+      // "0/?" would be a figure made up for the gap.
+      if (p.phase === "verifying" && p.volumes_total) {
+        extra += ` · ${esc(p.volumes_total === 1
+          ? tf("{done} of {total} volume", { done: fmtNum(p.volumes_verified || 0, 0), total: fmtNum(p.volumes_total, 0) })
+          : tf("{done} of {total} volumes", { done: fmtNum(p.volumes_verified || 0, 0), total: fmtNum(p.volumes_total, 0) }))}`;
+      }
       return { pct: null, indeterminate: true, phaseKey: `phase:${p.phase || ""}`,
         text: `${esc(_uxVolPhase(p.phase, s.mode, t))}${extra}<span class="muted">${phaseCount}</span>` };
     }
@@ -455,7 +651,17 @@
     // Resolves with the final status object (so the caller can read its summary/tally).
     function _uxPoll(url, kind, ui) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      const prefix = ui.prefix ? `${esc(ui.prefix)}: ` : "";
+      const tf = (window.OOI18N && OOI18N.tf)
+        ? OOI18N.tf
+        : ((str, vars) => str.replace(/\{(\w+)\}/g, (m, k) => (vars && vars[k] != null) ? String(vars[k]) : m));
+      // "Corpus: Preparing…". The separator is the LOCALE's -- French puts a space before
+      // the colon, Chinese and Japanese use a full-width one -- so it comes from a keyed
+      // frame rather than a hardcoded ": " (J9). The frame is filled with two markers and
+      // escaped first, then the markers are swapped for the prefix (text, escaped here)
+      // and the progress (already HTML), so neither is escaped twice or not at all.
+      const withPrefix = (html) => (!ui.prefix ? html
+        : esc(tf("{prefix}: {text}", { prefix: "\u0001", text: "\u0002" }))
+          .replace("\u0001", () => esc(ui.prefix)).replace("\u0002", () => html));
       // PER-PHASE ETA baseline (field report 2026-07-29: a 50,000-article import
       // quoted "~4000 min left"). This used to be ONE startMs for the whole job while
       // `view.frac` resets to ~0 at every phase boundary, so the rule of three computed
@@ -485,7 +691,7 @@
               return reject(new Error(t("Lost contact with the backup job — check the task manager; it may still be running.")));
             }
             if (ui.label) {
-              ui.label.innerHTML = prefix + `<span class="muted">${esc(t("Connection hiccup — retrying…"))}</span>`;
+              ui.label.innerHTML = withPrefix(`<span class="muted">${esc(t("Connection hiccup — retrying…"))}</span>`);
             }
             setTimeout(tick, Math.min(1200 * Math.pow(1.6, fails - 1), 15000));
             return;
@@ -499,7 +705,7 @@
           if (key !== etaKey) { etaKey = key; etaStart = Date.now(); }
           const etaSec = _uxRuleOfThree(etaStart, view.frac);
           const etaTxt = etaSec != null ? _uxEta(etaSec, t, true) : "";
-          if (ui.label) ui.label.innerHTML = prefix + view.text + esc(etaTxt);
+          if (ui.label) ui.label.innerHTML = withPrefix(view.text + esc(etaTxt));
           if (state === "done" || state === "paused") return resolve(s);  // paused = stopped, not a hang
           if (state === "error" || state === "cancelled") {
             // Surface the REAL backend error (the volume manifest/checksum message),
@@ -594,6 +800,9 @@
       // control silently flips.
       const vBox = document.getElementById("ux-verify");
       const verifyAfterWrite = !vBox || vBox.checked;
+      // What THIS export carries, fixed at its start, so a folder copy resumed later
+      // names the same parts rather than re-reading ticks the user may have changed (W1).
+      _uxExportIncluded = { corpus: wantCorpus, blobs: blobs.slice() };
       btn.disabled = true;
       const sumHost = document.getElementById("ux-summary");
       if (sumHost) sumHost.innerHTML = "";
@@ -606,10 +815,16 @@
       if (!dest) {
         prog.innerHTML = `<span class="muted">${esc(t("Preparing the export folder…"))}</span>`;
         try {
-          const made = await api("/api/backup/export-folder", { method: "POST", body: JSON.stringify({ parent }) });
+          // What this export is ASKED to hold rides the allocation, and the server records
+          // it in the new folder (J-1): the large-data copy is started from THIS page once
+          // the corpus phase is done, so a reload in between left the copy unstarted with
+          // nothing anywhere remembering it was wanted. The reopened panel now compares
+          // the record with the folder and names what is missing.
+          const made = await api("/api/backup/export-folder", { method: "POST", body: JSON.stringify({
+            parent, corpus: wantCorpus, categories: blobs, inside }) });
           dest = made.dir;
         } catch (e) {
-          prog.innerHTML = `<span class="note err">${esc(t("Could not create the export folder:"))} ${esc(e.message || e)}</span>`;
+          prog.innerHTML = `<span style="color:var(--err)">${esc(t("Could not create the export folder:"))} ${esc(e.message || e)}</span>`;
           btn.disabled = false;
           if (pauseBtn) pauseBtn.style.display = "none";
           return;
@@ -652,38 +867,99 @@
         _uxPhase = null;
         if (bar) bar.style.display = "none";
         if (pauseBtn) pauseBtn.style.display = "none";
-        // Name what is actually in it. Now that the corpus can be left out, "Backup
-        // complete" alone would let a models-only export read months later as a full one
-        // -- the reader has no other way to tell, and that is the expensive direction to
-        // be wrong in.
-        const included = [];
-        if (wantCorpus) included.push(t("Corpus"));
-        if (blobs.includes("models")) included.push(t("LLM models"));
-        if (blobs.includes("osm_regions")) included.push(t("Offline maps"));
-        if (blobs.includes("wiki_dumps")) included.push(t("Wikipedia dumps"));
-        prog.innerHTML = `<b>${esc(t("Backup complete →"))}</b> <span style="overflow-wrap:anywhere">${esc(dest)}</span>`
-          + `<div class="muted" style="font-size:12px;margin-top:2px">`
-          + `${esc(t("Included:"))} ${esc(included.join(" · "))}</div>`;
-        // BACKUP_SUMMARY.md is written LAST (Q209 = a), after both phases and after the
-        // verify-after-write pass -- which is what lets it carry the verify verdict
-        // rather than promise one. A failure HERE is not a failed backup: the bytes are
-        // on the drive and verified, so it degrades to a named note beside a completion
-        // line that stands, never to "Backup failed".
-        try {
-          const written = await api("/api/backup/export-summary", { method: "POST", body: JSON.stringify({ dir: dest }) });
-          _uxRenderExportPanel({ ...(written.facts || {}), summary_path: written.summary_path }, t);
-        } catch (e) {
-          if (sumHost) sumHost.innerHTML = `<div class="note err" style="margin-top:8px">${esc(t("The backup is written, but its summary file could not be:"))} ${esc(e.message || e)}</div>`;
-          console.error("ux summary", e);
-        }
+        await _uxFinishExport(prog, dest, t);
       } catch (e) {
         _uxPhase = null;
         if (bar) bar.style.display = "none";
         if (pauseBtn) pauseBtn.style.display = "none";
-        prog.innerHTML = `<span class="note err">${esc(t("Backup failed:"))} ${esc(e.message || e)}</span>`;
+        // The dialog's own error colour, not the floating .note toast box (W6; B13's fix
+        // for the import dialog): the toast class slid in with a shadow inside the panel.
+        prog.innerHTML = `<span style="color:var(--err)">${esc(t("Backup failed:"))} ${esc(ooServerText(e.message || e))}</span>`;
         console.error("ux run", e);
       }
       btn.disabled = false;
+    }
+
+    // THE ONE COMPLETION, for a straight run and a resumed large-data copy alike (W1). A
+    // folder copy resumed after a pause used to end on a bare "Backup complete →" line:
+    // no "Included:" line, no facts panel, and -- because the summary POST lived only in
+    // _uxRun -- no BACKUP_SUMMARY.md written into the folder at all.
+    let _uxExportIncluded = null;
+    async function _uxFinishExport(prog, dest, t) {
+      const sumHost = document.getElementById("ux-summary");
+      // Name what is actually in it. Now that the corpus can be left out, "Backup
+      // complete" alone would let a models-only export read months later as a full one
+      // -- the reader has no other way to tell, and that is the expensive direction to
+      // be wrong in.
+      const inc = _uxExportIncluded || { corpus: false, blobs: [] };
+      const included = [];
+      if (inc.corpus) included.push(t("Corpus"));
+      if (inc.blobs.includes("models")) included.push(t("LLM models"));
+      if (inc.blobs.includes("osm_regions")) included.push(t("Offline maps"));
+      if (inc.blobs.includes("wiki_dumps")) included.push(t("Wikipedia dumps"));
+      prog.innerHTML = `<b>${esc(t("Backup complete →"))}</b> <span dir="ltr" style="overflow-wrap:anywhere">${esc(dest)}</span>`
+        + (included.length ? `<div class="muted" style="font-size:12px;margin-top:2px">`
+          + `${esc(t("Included:"))} ${esc(included.join(" · "))}</div>` : "");
+      // BACKUP_SUMMARY.md is written LAST (Q209 = a), after both phases and after the
+      // verify-after-write pass -- which is what lets it carry the verify verdict
+      // rather than promise one. A failure HERE is not a failed backup: the bytes are
+      // on the drive and verified, so it degrades to a named note beside a completion
+      // line that stands, never to "Backup failed".
+      try {
+        const written = await api("/api/backup/export-summary", { method: "POST", body: JSON.stringify({ dir: dest }) });
+        _uxRenderExportPanel({ ...(written.facts || {}), summary_path: written.summary_path }, t);
+        // The folder, not this page, has the last word on whether it is complete (J-1).
+        const miss = (written.facts && written.facts.missing) || {};
+        if (miss.corpus || (miss.categories || []).length) {
+          prog.innerHTML = `<b>${esc(t("Backup incomplete →"))}</b> <span dir="ltr" style="overflow-wrap:anywhere">${esc(dest)}</span>`;
+        }
+      } catch (e) {
+        if (sumHost) sumHost.innerHTML = `<div style="color:var(--err);margin-top:8px">${esc(t("The backup is written, but its summary file could not be:"))} ${esc(e.message || e)}</div>`;
+        console.error("ux summary", e);
+      }
+    }
+
+    // Finish an INCOMPLETE export (J-1): copy the large-data files its folder is missing
+    // INTO THAT SAME FOLDER, which is exactly the phase _uxRun would have started had the
+    // page not been reloaded -- same endpoint, same destination guard, same completion.
+    // What to copy comes from the panel's facts, i.e. from the request the server
+    // recorded in the folder, never from the checklist, whose ticks may have changed.
+    async function _uxCompleteExport(btn) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const facts = _uxExportFacts || {};
+      const dest = facts.destination;
+      const cats = ((facts.missing || {}).categories || []).slice();
+      if (!dest || !cats.length) return;
+      const prog = document.getElementById("ux-progress");
+      const bar = document.getElementById("ux-bar");
+      const pauseBtn = document.getElementById("ux-pause");
+      const runBtn = document.getElementById("ux-run");
+      if (btn) btn.disabled = true;
+      if (runBtn) runBtn.disabled = true;
+      _uxExportDir = dest;
+      _uxExportIncluded = { corpus: !!facts.corpus_included, blobs: cats };
+      const sumHost = document.getElementById("ux-summary");
+      if (sumHost) sumHost.innerHTML = "";
+      if (pauseBtn) { pauseBtn.style.display = ""; pauseBtn.disabled = false; pauseBtn.dataset.mode = "pause"; pauseBtn.textContent = t("Pause"); }
+      try {
+        _uxPhase = "folder";
+        const s2 = await _uxStartThenPoll(
+          () => api("/api/backup/folder/start", { method: "POST", body: JSON.stringify({ dest, categories: cats }) }),
+          "/api/backup/folder/status", "folder", { bar, label: prog, prefix: t("Large data") },
+          { dest });
+        if (s2 && s2.state === "paused") { _uxShowPaused(prog, bar, pauseBtn, t); if (runBtn) runBtn.disabled = false; return; }
+        _uxPhase = null;
+        if (bar) bar.style.display = "none";
+        if (pauseBtn) pauseBtn.style.display = "none";
+        await _uxFinishExport(prog, dest, t);
+      } catch (e) {
+        _uxPhase = null;
+        if (bar) bar.style.display = "none";
+        if (pauseBtn) pauseBtn.style.display = "none";
+        prog.innerHTML = `<span style="color:var(--err)">${esc(t("Backup failed:"))} ${esc(ooServerText(e.message || e))}</span>`;
+        console.error("ux complete", e);
+      }
+      if (runBtn) runBtn.disabled = false;
     }
 
     // Paused ≠ complete (the paused-state label, field-test Item 9): show the honest state
@@ -724,10 +1000,11 @@
           if (s && s.state === "paused") { _uxShowPaused(prog, bar, btn, t); return; }
           _uxPhase = null;
           if (bar) bar.style.display = "none"; btn.style.display = "none";
-          prog.innerHTML = `<b>${esc(t("Backup complete →"))}</b> ${esc(_uxExportDir || (document.getElementById("ux-dest").value || "").trim())}`;
+          // The same completion the straight run shows, summary file included (W1).
+          await _uxFinishExport(prog, _uxExportDir || (document.getElementById("ux-dest").value || "").trim(), t);
         } catch (e) {
           _uxPhase = null; if (bar) bar.style.display = "none"; btn.style.display = "none";
-          prog.innerHTML = `<span class="note err">${esc(t("Backup failed:"))} ${esc(e.message || e)}</span>`;
+          prog.innerHTML = `<span style="color:var(--err)">${esc(t("Backup failed:"))} ${esc(ooServerText(e.message || e))}</span>`;
         }
         return;
       }
@@ -748,10 +1025,18 @@
       document.getElementById("ux-imp-status").textContent = "";
       document.getElementById("ux-imp-progress").textContent = "";
       document.getElementById("ux-imp-summary").innerHTML = "";
+      _uxImSummaryArgs = null;
       document.getElementById("ux-imp-last").innerHTML = "";
       const bar = document.getElementById("ux-imp-bar"); if (bar) bar.style.display = "none";
       document.getElementById("ux-imp-pass-row").style.display = "none";
       document.getElementById("ux-imp-run").disabled = true;
+      // ...and the scan's OTHER two parts (2026-09-27 re-walk, I-5). Only a scan sets the
+      // trust row, so it stayed up -- a trust statement and its caveat under an empty
+      // checklist -- and the folder stayed in the field though `_uxImSrc` (the folder the
+      // dialog considers scanned) is cleared just below. A reopen is a fresh page (R1):
+      // the whole scan goes, not two thirds of it.
+      _uxImTrustRow(false);
+      document.getElementById("ux-imp-src").value = "";
       _uxImFound = null; _uxImSrc = "";
       // The re-index read is module-level and outlives the dialog, so a reopen used to
       // render the PREVIOUS run's snapshot -- a stage-4 figure and an "analytics are
@@ -760,6 +1045,11 @@
       // honest momentary answer; a stale number presented as current is not. The zeroed
       // timestamp makes the very next tick take the read rather than wait out its pacing.
       _uxImRx = null; _uxImRxAt = 0;
+      // ...and the RUN's own surfaces too (R1). Nothing cleared them, so a finished run's
+      // header, stage rows, statements and per-backup rows were still in the DOM from
+      // the last time the dialog was open, whatever _uxImReattach then decided. Emptied
+      // here with their signatures, so the reattach renders onto a genuinely blank page.
+      _uxImResetRunView();
       document.getElementById("ux-import").showModal();
       // A FRESH PAGE (R1, Q201 = a). Reopening after an import used to re-render the
       // whole previous run here -- summary, per-item rows, corpus delta -- so the
@@ -788,16 +1078,64 @@
         : ((s, vars) => s.replace(/\{(\w+)\}/g, (m, k) => (vars && vars[k] != null) ? String(vars[k]) : m));
       const host = document.getElementById("ux-imp-last");
       if (!host) return;
-      let reports = null;
+      let reports = null, st = null;
       try {
-        const r = await api("/api/backup/import-reports");
+        const [r, q] = await Promise.all([
+          api("/api/backup/import-reports"),
+          // Which run is in flight, if any (Y7). Unreadable is not fatal: the line then
+          // reads as it always did, rather than going blank over a status we lack.
+          api("/api/backup/import-queue/status").catch(() => null),
+        ]);
         reports = (r && r.reports) || [];
+        st = q;
       } catch (e) {
         host.innerHTML = "";  // could not read: say nothing, never "no imports yet"
         return;
       }
+      reports = _uxImFinishedReports(reports, st);
       if (!reports.length) { host.innerHTML = ""; return; }
-      host.innerHTML = _uxImLastLineHtml(reports[0], t, tf);
+      host.innerHTML = _uxImLastLineHtml(_uxImRunSummary(reports), t, tf);
+    }
+
+    // THE LAST FINISHED IMPORT (2026-09-26 leftovers, Y7). A run of several backups
+    // persists a report as each one commits, so while it was still going the line summed
+    // the reports it had written SO FAR and called that "Last import" -- "2,400 articles"
+    // for an import half-way to 4,800, a total no import ever had. Pure: while the queue
+    // reports a run in flight, every report written since that run STARTED is its own
+    // (one run at a time holds the import window) and is left out, so the line describes
+    // the import before it. The time test rather than the run id, because a report is
+    // stamped with its run only after it lands; between the two it would read as a
+    // run of its own.
+    function _uxImFinishedReports(reports, st) {
+      if (!st || st.state !== "running" || st.started_at == null) return reports || [];
+      const since = Number(st.started_at) * 1000;
+      return (reports || []).filter((r) => {
+        const at = Date.parse(r && r.created_at);
+        return !(Number.isFinite(at) && at >= since);
+      });
+    }
+
+    // THE LAST IMPORT, not the last REPORT (2026-09-26, I7). One run of several backups
+    // leaves one report per backup, stamped with the run's id, so the line quoted
+    // whichever backup finished last: "1,200 articles" for a 4,800-article import, and
+    // "0 articles" for a run of cumulative backups whose last one added nothing new.
+    // Pure: the newest report's run, summed. Each report counts only what ITS backup
+    // added (measured against what the earlier ones had already merged), so the sum
+    // never counts an article twice; and if any member's figure is absent or merely
+    // PLANNED the total is unknown, and the line prints no number rather than a part.
+    function _uxImRunSummary(reports) {
+      const head = reports && reports[0];
+      if (!head || !head.run_id) return head || null;
+      const members = reports.filter((r) => r && r.run_id === head.run_id);
+      if (members.length < 2) return head;
+      const whole = members.every((r) => r.articles != null && r.articles_basis === "merged");
+      const failed = members.find((r) => r.outcome && r.outcome !== "ok");
+      return {
+        ...head,
+        articles: whole ? members.reduce((a, r) => a + Number(r.articles || 0), 0) : null,
+        articles_basis: whole ? "merged" : head.articles_basis,
+        outcome: failed ? failed.outcome : head.outcome,
+      };
     }
 
     // The line itself, as a PURE function of one report row: the only way to assert
@@ -809,13 +1147,15 @@
       bits.push(`<b>${esc(t("Last import"))}</b>`);
       if (rep.created_at) bits.push(esc(fmtDateTime(rep.created_at)));
       if (rep.articles != null) {
-        const n = Number(rep.articles).toLocaleString();
+        const n = fmtNum(Number(rep.articles), 0);
         bits.push(rep.articles_basis === "planned"
           ? esc(tf("{n} articles planned", { n }))
           : esc(tf("{n} articles", { n })));
       }
+      // Coloured text, never the toast `.note` box inside a sentence (Y2, as I9 did for
+      // the run header): the box's padding and shadow broke the one quiet line apart.
       if (rep.outcome && rep.outcome !== "ok") {
-        bits.push(`<span class="note err">${esc(t("did not complete"))}</span>`);
+        bits.push(`<span style="color:var(--err)">${esc(t("did not complete"))}</span>`);
       }
       const href = `/api/backup/import-reports/${encodeURIComponent(rep.filename)}?format=md`;
       bits.push(`<a href="${href}" target="_blank" rel="noopener">${esc(t("open report"))}</a>`);
@@ -887,26 +1227,39 @@
       document.getElementById("ux-imp-pass-row").style.display = "block";
       const passEl = document.getElementById("ux-imp-pass");
       const pass = (passEl && passEl.value) || "";
+      // NOT DURING AN IMPORT (2026-09-26, I8). The volumes manager runs one job at a time
+      // and the import's restore IS that job, so a verify cannot start -- and pointing the
+      // one chain at it froze the run's rows. Said in plain words, before anything moves.
+      if (_uxImWatch === "queue" || (_uxImLastStatus && _uxImLastStatus.state === "running")) {
+        toast(t("An import is running — verify the backup once it has finished."), "err");
+        return;
+      }
       summary.innerHTML = ""; st.textContent = t("Verifying…"); btn.disabled = true;
       try {
         // ONE chain (Q206 = a): the start is still guarded by the same
         // job-state-as-truth check _uxStartThenPoll applies -- a lost START response
         // must not print a fatal over a job that is genuinely running -- and the
         // POLLING then belongs to _uxImTick, which is the only thing in this dialog
-        // that owns #ux-imp-bar.
+        // that owns #ux-imp-bar. The guard accepts only a live VERIFY job (I8).
         await _uxImStartGuarded(
           () => api("/api/backup/v2/volumes/verify", { method: "POST", body: JSON.stringify({ src, passphrase: pass }) }),
-          "/api/backup/v2/volumes/status");
+          "/api/backup/v2/volumes/status", "verify");
         const s = await _uxImWatchVerify();
         if (bar) bar.style.display = "none"; prog.textContent = "";
         _uxRenderVerify(summary, (s && s.summary && s.summary.report) || {}, t);
         st.textContent = "";
       } catch (e) {
         if (bar) bar.style.display = "none"; prog.textContent = "";
-        summary.innerHTML = `<span class="note err">${esc(t("Verification failed:"))} ${esc(e.message || e)}</span>`;
+        summary.innerHTML = `<span style="color:var(--err)">${esc(t("Verification failed:"))} ${esc(ooServerText(e.message || e))}</span>`;
         st.textContent = "";
       }
       btn.disabled = false;
+      // The chain was the verify's; hand it back to whatever the dialog was watching
+      // before, so a run (or a draining stage 4) does not stay frozen after it (I8).
+      if (!_uxImWatch && _uxImLastStatus) {
+        if (_uxImLastStatus.state === "running") _uxImWatchQueue();
+        else if (_uxImStage4Owed(_uxImRx)) _uxImWatchReindex();
+      }
     }
 
     function _uxRenderVerify(host, rep, t) {
@@ -920,10 +1273,18 @@
         : `<b style="color:var(--err)">✗ ${esc(t("Verification found problems:"))}</b>`);
       if (typeof rep.volumes === "number") {
         host.dataset.ok = String(rep.ok);
-        lines.push(`<div class="muted">${rep.volumes} ${esc(t("volumes"))} · ${esc(t("signature:"))} ${esc(String(rep.signature || "—"))}${rep.decrypted ? " · " + esc(t("decrypted & checked")) : ""}</div>`);
+        const tfv = (window.OOI18N && OOI18N.tf)
+          ? OOI18N.tf
+          : ((str, vars) => str.replace(/\{(\w+)\}/g, (m, k) => (vars && vars[k] != null) ? String(vars[k]) : m));
+        // The count in a keyed frame (R14) and the signature through the shared label
+        // frame (R2): "5 volumes" welded a raw count to an English noun, and "signature:"
+        // carried its own colon.
+        const nVol = rep.volumes === 1 ? tfv("{n} volume", { n: fmtNum(1, 0) }) : tfv("{n} volumes", { n: fmtNum(rep.volumes, 0) });
+        lines.push(`<div class="muted">${esc(nVol)} · ${ooLabelHtml(esc(t("signature")), esc(String(rep.signature || "—")))}${rep.decrypted ? " · " + esc(t("decrypted & checked")) : ""}</div>`);
       }
       const probs = Array.isArray(rep.problems) ? rep.problems : [];
-      if (probs.length) lines.push(`<ul style="margin:4px 0 0;padding-left:18px">${probs.map(p => `<li>${esc(p)}</li>`).join("")}</ul>`);
+      // padding-inline-START (I-4's class): in RTL the bullets sit on the right.
+      if (probs.length) lines.push(`<ul style="margin:4px 0 0;padding-inline-start:18px">${probs.map(p => `<li>${esc(p)}</li>`).join("")}</ul>`);
       if (rep.bad_volumes && rep.bad_volumes.length || (rep.missing_volumes && rep.missing_volumes.length)) {
         const bad = (rep.bad_volumes || []).concat(rep.missing_volumes || []);
         const rec = rep.recoverable ? esc(t("recoverable from parity")) : esc(t("NOT recoverable — the backup is incomplete"));
@@ -979,25 +1340,43 @@
         const f = r.found || {};
         const rows = [];
         const corpus = Array.isArray(f.corpus) ? f.corpus : (f.corpus ? [f.corpus] : []);
+        const tfs = (window.OOI18N && OOI18N.tf)
+          ? OOI18N.tf
+          : ((str, vars) => str.replace(/\{(\w+)\}/g, (m, k) => (vars && vars[k] != null) ? String(vars[k]) : m));
+        // Every bracket on this checklist is the keyed "({text})" frame, as on the export
+        // side's (J-3): welded ASCII brackets put "(加密卷 …)" around Chinese text, where
+        // the locale writes （…）. The frame is filled with a marker and escaped, then the
+        // marker is swapped for the (already escaped) HTML, so a file name can ride inside
+        // it as an LTR isolate: in Arabic "2 .eml" drew as "eml. 2" (J-2's rule for names).
+        const paren = (html) => esc(tfs("({text})", { text: "\u0001" })).replace("\u0001", () => html);
+        const ltr = (s) => `<bdi dir="ltr" style="overflow-wrap:anywhere">${esc(s)}</bdi>`;
         if (corpus.length) {
           const nv = corpus.reduce((a, c) => a + (c.volumes || 0), 0);
-          const where = corpus.length > 1 ? ` · ${corpus.length} ${esc(t("sets"))}` : "";
-          rows.push(`<label class="switch" style="margin:0"><input type="checkbox" id="ux-i-corpus" checked> ${esc(t("Restore corpus backup"))} <span class="muted">(${esc(t("encrypted volumes — additive, nothing you already have is overwritten"))}${nv ? ` · ${nv} ${esc(t("volumes"))}` : ""}${where})</span></label>`);
+          // Counts as keyed one/many frames through fmtNum (R14).
+          const bits = [t("encrypted volumes — additive, nothing you already have is overwritten")];
+          if (nv) bits.push(nv === 1 ? tfs("{n} volume", { n: fmtNum(1, 0) }) : tfs("{n} volumes", { n: fmtNum(nv, 0) }));
+          if (corpus.length > 1) bits.push(tfs("{n} sets", { n: fmtNum(corpus.length, 0) }));
+          rows.push(`<label class="switch" style="margin:0"><input type="checkbox" id="ux-i-corpus" checked> ${esc(t("Restore corpus backup"))} <span class="muted">${paren(esc(bits.join(" · ")))}</span></label>`);
         }
         if (f.legacy_backup && f.legacy_backup.length) {
           const n = f.legacy_backup.length;
-          rows.push(`<label class="switch" style="margin:0"><input type="checkbox" id="ux-i-legacy" checked> ${esc(t("Restore legacy backup file"))}${n > 1 ? "s" : ""} <span class="muted">(${n} · ${esc(f.legacy_backup.map(x => x.name).join(", "))})</span></label>`);
+          // One key per number (R14): an English "s" was welded onto the TRANSLATED label.
+          const legacy = n === 1 ? t("Restore legacy backup file") : t("Restore legacy backup files");
+          rows.push(`<label class="switch" style="margin:0"><input type="checkbox" id="ux-i-legacy" checked> ${esc(legacy)} <span class="muted">${paren(`${esc(fmtNum(n, 0))} · ${f.legacy_backup.map(x => ltr(x.name)).join(", ")}`)}</span></label>`);
         }
         if (f.blobs) {
+          // Each category by the export checklist's own label with a keyed file count:
+          // "wiki 3 · maps 1" was English in every locale.
           const b = f.blobs, parts = [];
-          if (b.wiki) parts.push(`wiki ${b.wiki.count}`);
-          if (b.maps) parts.push(`maps ${b.maps.count}`);
-          if (b.models) parts.push(`models ${b.models.count}`);
-          rows.push(`<label class="switch" style="margin:0"><input type="checkbox" id="ux-i-blobs" checked> ${esc(t("Restore large data"))} <span class="muted">(${parts.join(" · ")})</span></label>`);
+          const files = (n) => (n === 1 ? tfs("{n} file", { n: fmtNum(n, 0) }) : tfs("{n} files", { n: fmtNum(n, 0) }));
+          if (b.wiki) parts.push(ooLabelText(t("Wikipedia dumps"), files(b.wiki.count || 0)));
+          if (b.maps) parts.push(ooLabelText(t("Offline maps"), files(b.maps.count || 0)));
+          if (b.models) parts.push(ooLabelText(t("LLM models"), files(b.models.count || 0)));
+          rows.push(`<label class="switch" style="margin:0"><input type="checkbox" id="ux-i-blobs" checked> ${esc(t("Restore large data"))} <span class="muted">${paren(esc(parts.join(" · ")))}</span></label>`);
         }
-        if (f.newsletters) rows.push(`<label class="switch" style="margin:0"><input type="checkbox" id="ux-i-eml" checked> ${esc(t("Import newsletters"))} <span class="muted">(${f.newsletters.count}${f.newsletters.capped ? "+" : ""} .eml)</span></label>`);
+        if (f.newsletters) rows.push(`<label class="switch" style="margin:0"><input type="checkbox" id="ux-i-eml" checked> ${esc(t("Import newsletters"))} <span class="muted">${paren(ltr(`${fmtNum(f.newsletters.count, 0)}${f.newsletters.capped ? "+" : ""} .eml`))}</span></label>`);
         const notes = [];
-        if (f.source_csv) notes.push(esc(t("Source CSV found — import it from the Sources panel for now.")) + ` (${esc(f.source_csv.join(", "))})`);
+        if (f.source_csv) notes.push(esc(t("Source CSV found — import it from the Sources panel for now.")) + " " + paren(f.source_csv.map(ltr).join(", ")));
         box.innerHTML = rows.join("") || `<span class="muted">${esc(t("Nothing importable found in this folder."))}</span>`;
         if (notes.length) box.innerHTML += `<p class="muted" style="margin:4px 0 0">${notes.join("<br>")}</p>`;
         // A passphrase is needed for the encrypted corpus AND for legacy archives.
@@ -1075,7 +1454,7 @@
       } catch (e) {
         btn.disabled = false;
         if (bgBtn) bgBtn.style.display = "none";
-        document.getElementById("ux-imp-progress").innerHTML = `<span class="note err">${esc(t("Import failed:"))} ${esc(e.message || e)}</span>`;
+        document.getElementById("ux-imp-progress").innerHTML = `<span style="color:var(--err)">${esc(t("Import failed:"))} ${esc(ooServerText(e.message || e))}</span>`;
         return;
       }
       _uxImWatchQueue();
@@ -1112,6 +1491,9 @@
     // overlapping-messages defect this chain exists to have removed. Found 2026-09-16 by
     // an adversarial read, not by a test, which is why the fix is structural.
     let _uxImGen = 0;
+    // What the result block was last drawn from, so a language switch can redraw it in
+    // the new language without re-reading the queue (Y6).
+    let _uxImSummaryArgs = null;
 
     // STAGE 4 RIDES THE SAME CHAIN, at its own cadence. The backlog read behind it is
     // LINEAR in the pending article count -- measured on a plaintext fixture, median
@@ -1125,6 +1507,10 @@
     // the interpolated surfaces from the same facts -- never polled from, never a
     // second source of truth: the chain overwrites it on every tick.
     let _uxImLastStatus = null;
+    // WHICH PICTURE of that status the dialog is showing: "run" (a run watched live --
+    // every row) or "fresh" (a reopened dialog: the quiet line, plus only what is still
+    // unfinished -- see _uxImFreshView). null before either.
+    let _uxImView = null;
 
     // JOB-STATE-AS-TRUTH for the START request (the property _uxStartThenPoll carries
     // for the export dialog): the POST returns AFTER the worker thread is spawned, so
@@ -1134,7 +1520,13 @@
     // to the chain; anything else re-throws so a real 400/409 still surfaces. NOT
     // "done": a just-started job cannot be instantly done, so a stale "done" here must
     // never mask a failed start as complete.
-    async function _uxImStartGuarded(startCall, statusUrl) {
+    //
+    // THE JOB MUST BE THE ONE WE STARTED (2026-09-26, I8). The volumes manager runs ONE
+    // job of three modes, and during an import that job is the import's own RESTORE -- so
+    // a Verify refused with 409 found "a live job" here, fell through, and pointed the one
+    // chain at the import's restore: the run's rows froze and "Verify:" narrated someone
+    // else's merge. `mode`, when given, has to match as well as the state.
+    async function _uxImStartGuarded(startCall, statusUrl, mode) {
       try {
         await startCall();
       } catch (e) {
@@ -1142,6 +1534,7 @@
         try { st = await api(statusUrl); } catch (_) { throw e; }
         const s = (st && st.state) || "";
         if (!(s === "running" || s === "paused")) throw e;
+        if (mode && (st && st.mode) !== mode) throw e;
       }
     }
 
@@ -1159,6 +1552,57 @@
       _uxImGen++;
       if (_uxImPollTimer) { clearTimeout(_uxImPollTimer); _uxImPollTimer = null; }
       _uxImTick();
+    }
+
+    // Point the chain at STAGE 4 alone (2026-09-26, I1). The re-index outlives the run:
+    // it only STARTS once the run's exclusive window has closed, so the queue's terminal
+    // tick -- the last thing that ever read it -- saw at best the backlog before the drain
+    // began, and the row froze there ("3,600 left" while 4,800 drained). Same timer, same
+    // generation, its own subject, at the pace the backlog read can afford; it stops when
+    // the re-index has nothing left or the dialog is closed.
+    function _uxImWatchReindex() {
+      _uxImWatch = "reindex";
+      _uxImFails = 0;
+      _uxImGen++;
+      if (_uxImPollTimer) { clearTimeout(_uxImPollTimer); _uxImPollTimer = null; }
+      _uxImPollTimer = setTimeout(_uxImTick, _UX_IM_RX_INTERVAL_MS);
+    }
+
+    // Stage 4's ONE read, shared by the queue tick, the reattach and the stage-4 watch so
+    // they can never disagree about where it comes from. Unread is null -- the row then
+    // SAYS it could not be read -- and never a zero.
+    async function _uxImReadRx() {
+      _uxImRxAt = Date.now();
+      try { _uxImRx = await api("/api/backup/reindex-backlog/resume/status"); }
+      catch (e) { _uxImRx = null; }
+      return _uxImRx;
+    }
+
+    // Is stage 4 still OWED? Pure. Running, or a readable backlog above zero. An unread
+    // status (null) or an unreadable backlog is NOT owed: it is unknown, and a row that
+    // could only say "could not be read" on a page that is otherwise fresh adds nothing.
+    function _uxImStage4Owed(rx) {
+      if (!rx) return false;
+      if (rx.state === "running" || rx.state === "paused") return true;
+      const bk = rx.backlog || null;
+      return !!(bk && bk.available !== false && Number(bk.articles_pending) > 0);
+    }
+
+    // What a REOPEN shows of a run that is not running (R1, Q201 = a -- and Q204/Q205,
+    // which put stage 4 inside the import experience). Pure, so the decision is testable
+    // apart from the DOM. A finished run is NOT re-rendered: the dialog is a fresh page
+    // with one quiet line. Two facts may still stand beside that line, because both are
+    // about work that has not finished rather than a report of work that has: an
+    // INTERRUPTED run (its backups must be imported again -- the one thing a fresh page
+    // must not swallow), and a stage 4 still draining ("resuming re-index").
+    function _uxImFreshView(st, rx) {
+      const running = !!(st && st.state === "running");
+      const hasRun = !!(st && (st.items || []).length);
+      return {
+        full: running,
+        interrupted: !running && hasRun && st.state === "interrupted",
+        stage4: !running && hasRun && _uxImStage4Owed(rx),
+      };
     }
 
     // Point the chain at a volumes VERIFY job and resolve when it reaches a terminal
@@ -1185,7 +1629,9 @@
       if (!subject) return;
       const url = subject === "verify"
         ? "/api/backup/v2/volumes/status"
-        : "/api/backup/import-queue/status";
+        : subject === "reindex"
+          ? "/api/backup/reindex-backlog/resume/status"
+          : "/api/backup/import-queue/status";
       let st = null;
       try {
         st = await api(url);
@@ -1202,12 +1648,37 @@
           return;
         }
         if (_uxImWatch !== subject || _uxImGen !== gen) return;  // superseded while we awaited
+        if (subject === "reindex") {
+          // Stage 4 is watched only for someone looking at it: no retries behind a
+          // closed dialog.
+          const dlg = document.getElementById("ux-import");
+          if (!dlg || !dlg.open) { _uxImStopChain(); return; }
+        }
         _uxImPollTimer = setTimeout(_uxImTick, Math.min(1200 * Math.pow(1.6, _uxImFails - 1), 15000));
         return;
       }
       if (_uxImWatch !== subject || _uxImGen !== gen) return;  // a newer chain owns the bar
       if (subject === "verify") { _uxImTickVerify(st, t); return; }
+      if (subject === "reindex") { _uxImTickReindex(st, t); return; }
       await _uxImTickQueue(st, t, gen);
+    }
+
+    // One stage-4 tick: repaint stage 4 and the analytics statement from the run the
+    // dialog is already showing (never a second queue read), and keep going while the
+    // re-index still owes work and the dialog is open to see it.
+    function _uxImTickReindex(rx, t) {
+      _uxImRx = rx; _uxImRxAt = Date.now();
+      const dlg = document.getElementById("ux-import");
+      const st = _uxImLastStatus;
+      if (!dlg || !dlg.open || !st) { _uxImStopChain(); return; }
+      const tf = (window.OOI18N && OOI18N.tf)
+        ? OOI18N.tf
+        : ((s, vars) => s.replace(/\{(\w+)\}/g, (m, k) => (vars && vars[k] != null) ? String(vars[k]) : m));
+      const only = _uxImView === "fresh" ? "reindex" : null;
+      _uxImRenderStages(st, rx, t, tf, only);
+      _uxImRenderStatements(st, rx, t, tf, only);
+      if (_uxImStage4Owed(rx)) { _uxImPollTimer = setTimeout(_uxImTick, _UX_IM_RX_INTERVAL_MS); return; }
+      _uxImStopChain();
     }
 
     function _uxImTickVerify(st, t) {
@@ -1216,7 +1687,8 @@
       const state = st.state || "";
       const view = _uxProgressView("volumes", st, t);
       _uxPaintBar(bar, view);
-      if (prog) prog.innerHTML = `${esc(t("Verify"))}: ` + view.text;
+      // The locale's separator (R2), not an English colon welded after the label.
+      if (prog) prog.innerHTML = ooLabelHtml(esc(t("Verify")), view.text);
       if (state === "done" || state === "paused") {
         const settle = _uxImSettle; _uxImSettle = null; _uxImStopChain();
         if (settle) settle.resolve(st);
@@ -1234,11 +1706,11 @@
       // Stage 4 is a SEPARATE, resumable job that outlives this run, so its numbers
       // come from the job itself rather than from the queue (which would be reporting
       // on work it does not own). Paced; see _UX_IM_RX_INTERVAL_MS.
+      // UNPACED ON THE TERMINAL TICK (2026-09-26, I1): the pacing usually made the last
+      // tick skip the read, so the row the run ended on was up to five seconds old.
       const now = Date.now();
-      if (now - _uxImRxAt >= _UX_IM_RX_INTERVAL_MS) {
-        _uxImRxAt = now;
-        try { _uxImRx = await api("/api/backup/reindex-backlog/resume/status"); }
-        catch (e) { _uxImRx = null; }   // unread: the row says so, never a zero
+      if (st.state !== "running" || now - _uxImRxAt >= _UX_IM_RX_INTERVAL_MS) {
+        await _uxImReadRx();   // unread: the row says so, never a zero
         // RE-GUARDED after ITS OWN await, not only after the caller's. A stale queue
         // tick resuming here rendered over whatever owned the bar and, on a terminal
         // status, called _uxImStopChain() -- which nulls the chain state whoever owns
@@ -1267,12 +1739,29 @@
         // "Import successful". A six-backup run with two failures looked identical
         // to one with none.
         const base = { title: it.label, state: it.state, error: it.error, elapsed_s: it.elapsed_s, kind: it.kind };
+        // An artifact this corpus had ALREADY merged completes in milliseconds with an
+        // empty report. Its row read "nothing imported" -- true, and indistinguishable
+        // from a backup that held nothing -- while the server's summary said WHEN and as
+        // WHICH batch it was merged (R11). That answer travels with the row now.
+        if (sm.skipped === "already-merged") {
+          base.merged = {
+            batch: sm.merged_as_batch, at: sm.merged_at,
+            open_group: !!sm.in_open_checkpoint_group,
+          };
+        }
         if (it.kind === "corpus" || it.kind === "legacy") {
           const rep = sm.report || sm || {};
           summaries.push({ ...base, plan: rep.plan || {}, ..._uxPlanExtras(rep) });
         } else if (it.kind === "blobs") {
-          summaries.push({ ...base, tally: { restored: sm.restored || 0, skipped: sm.skipped || 0 },
-            lines: [`${sm.restored || 0} ${t("restored")}`, `${sm.skipped || 0} ${t("skipped")}`],
+          // Counts as keyed one/many frames with a grouped number (R14): "3 restored"
+          // welded a raw count to an English-ordered adjective that agrees with nothing.
+          const TF = _uxDurTf();
+          const nR = sm.restored || 0, nS = sm.skipped || 0;
+          summaries.push({ ...base, tally: { restored: nR, skipped: nS },
+            lines: [
+              nR === 1 ? TF("{n} file restored", { n: fmtNum(nR, 0) }) : TF("{n} files restored", { n: fmtNum(nR, 0) }),
+              nS === 1 ? TF("{n} file skipped", { n: fmtNum(nS, 0) }) : TF("{n} files skipped", { n: fmtNum(nS, 0) }),
+            ],
             // A member the restore TURNED AWAY has to be readable in the artifact an
             // operator reads afterwards. This used to ride only on the recovered
             // last-completed summary (removed 2026-09-16 with R1); the queue's own
@@ -1281,23 +1770,48 @@
             caveat: _fbRefusalLines(sm) });
         } else if (it.kind === "newsletters") {
           const tl = sm.tally || {};
-          summaries.push({ ...base, tally: { stored: tl.stored || 0, duplicate: tl.duplicate || 0, empty: tl.empty || 0, errors: tl.errors || 0 },
-            lines: [`${tl.stored || 0} ${t("stored")}`, `${tl.duplicate || 0} ${t("already present")}`,
-                    `${tl.empty || 0} ${t("empty")}`, `${tl.errors || 0} ${t("errors")}`] });
+          const TF = _uxDurTf();
+          const nSt = tl.stored || 0, nDu = tl.duplicate || 0, nEm = tl.empty || 0, nEr = tl.errors || 0;
+          summaries.push({ ...base, tally: { stored: nSt, duplicate: nDu, empty: nEm, errors: nEr },
+            lines: [
+              nSt === 1 ? TF("{n} newsletter stored", { n: fmtNum(nSt, 0) }) : TF("{n} newsletters stored", { n: fmtNum(nSt, 0) }),
+              nDu === 1 ? TF("{n} newsletter already present", { n: fmtNum(nDu, 0) }) : TF("{n} newsletters already present", { n: fmtNum(nDu, 0) }),
+              nEm === 1 ? TF("{n} newsletter empty", { n: fmtNum(nEm, 0) }) : TF("{n} newsletters empty", { n: fmtNum(nEm, 0) }),
+              nEr === 1 ? TF("{n} error", { n: fmtNum(nEr, 0) }) : TF("{n} errors", { n: fmtNum(nEr, 0) }),
+            ] });
         }
       }
       if (summaries.length) {
-        _renderImportSummary(document.getElementById("ux-imp-summary"), summaries, {
-          state: st.state, elapsed_s: st.elapsed_s,
-          items_done: st.items_done, items_total: st.items_total,
-        });
+        _uxImSummaryArgs = {
+          summaries,
+          run: {
+            state: st.state, elapsed_s: st.elapsed_s,
+            items_done: st.items_done, items_total: st.items_total,
+            // The re-index job's own read, taken unpaced on this terminal tick (I1): the
+            // backlog "Articles awaiting indexing" falls back to when no item carries a
+            // hand-off snapshot (Y4).
+            rx: _uxImRx,
+          },
+        };
+        _renderImportSummary(document.getElementById("ux-imp-summary"), summaries, _uxImSummaryArgs.run);
       }
+      // What just finished is now the LAST import (Y7), and a history list the operator
+      // already opened in Settings -> Data gains its row (Y5). Both re-read the persisted
+      // reports; neither is drawn from this run's in-memory state.
+      try { _uxImLastLine(); } catch (_e) {}
+      try {
+        const h = document.getElementById("imp-history");
+        if (h && h.innerHTML.trim()) loadImportHistory();
+      } catch (_e) {}
       const dlg = document.getElementById("ux-import");
       if (dlg && !dlg.open) {
         if (st.state === "done") toast(t("Import complete."));
         else if (st.state === "stopped") toast(t("Import stopped."));
         else if (st.state === "error") toast(t("Import finished with errors."), "err");
       }
+      // The run is over; stage 4 is not (I1). Keep its row counting while someone can
+      // see it -- the drain only starts once the run's window has closed.
+      if (dlg && dlg.open && (_uxImStage4Owed(_uxImRx) || !_uxImRx)) _uxImWatchReindex();
     }
 
     const _UX_IM_STATE_LABEL = {
@@ -1376,18 +1890,27 @@
       const runBtn = document.getElementById("ux-imp-run");
       if (runBtn && st.state === "running") runBtn.disabled = true;
       // The run header: what it is doing overall + the collection statement (ruling 12).
-      const head = `${items.filter(i => i.state === "done").length}/${items.length} ${esc(t("imported"))}`;
+      // The run's own keyed frame, its numbers grouped (R14): "3/6 imported" welded a
+      // bare fraction to an English participle.
+      const head = esc(tf("{done} of {total} backups imported", {
+        done: fmtNum(items.filter(i => i.state === "done").length, 0), total: fmtNum(items.length, 0) }));
       // COMMITTED vs STAGED, at any moment (the checkpoint-interval ask). Rendered
       // ONLY when something is actually staged: at K = 1 there never is, so this
       // says nothing rather than printing a 0 that would read as a finding about
       // the import. The sentence names what a Stop would cost, because that is the
       // one thing the number alone does not say.
       const cp = st.checkpoint || {};
+      //
+      // PLAIN BLOCK TEXT, never the toast class (2026-09-26, I9, R2). These lines were
+      // inline `<span class="note">` -- the TOAST style: 11 px padding, a shadow and a
+      // slide-in animation -- so the box overlapped the header line above it, and because
+      // the header carried the elapsed seconds the whole note was rewritten every tick and
+      // the animation replayed once a second. The blinking R2 names, by construction.
       const stagedLine = (st.items_staged > 0)
-        ? `<br><span class="note">${esc(tf(
+        ? `<div class="card-caveat">${esc(tf(
             "Merged, not yet saved: {n} — written to your corpus at the next checkpoint, one every {k} backups.",
-            { n: Number(st.items_staged).toLocaleString(), k: cp.k || 1 }
-          ))}</span>`
+            { n: fmtNum(Number(st.items_staged), 0), k: cp.k || 1 }
+          ))}</div>`
         : "";
       // THE TAIL PHASE HAS TO HAVE A HOME (field report 2026-08-11). A run does not end
       // when its last item does: _tune_after_run then merges the search index, inside the
@@ -1397,7 +1920,7 @@
       // item read "Done", collection was still paused and one core sat at 100%. The
       // backend was already publishing it; there was simply no element to put it in.
       const tail = items.some((i) => i.state === "running") ? "" : _uxImPhaseBits(st.live, t);
-      const tailLine = (st.state === "running" && tail) ? `<br><span class="note">${tail}</span>` : "";
+      const tailLine = (st.state === "running" && tail) ? `<div>${tail}</div>` : "";
       // The RUN's bar counts STAGES, not items: with every item done the item count is
       // 100% while the search-index merge still holds the machine, and a full bar beside
       // a run that has not finished is exactly the claim this reports wrongly. `stages_*`
@@ -1413,22 +1936,37 @@
           runBar.style.display = "none";
         }
       }
-      const noteHtml = `<b>${head}</b>${st.elapsed_s != null ? ` · ${esc(_uxImDur(st.elapsed_s))}` : ""}`
-        + stagedLine
+      // TWO PARTS, patched apart (I9): the header carries the elapsed seconds and changes
+      // every tick; everything under it changes only when the run's facts do, and is not
+      // touched in between.
+      const headHtml = `<b>${head}</b>${st.elapsed_s != null ? ` · ${esc(_uxImDur(st.elapsed_s))}` : ""}`;
+      const bodyHtml = stagedLine
         + tailLine
-        + (st.state === "running" && st.collection_paused ? `<br>${esc(t("Background collection is paused for this whole import and resumes when it finishes."))}` : "")
-        + (st.state === "interrupted" ? `<br><span class="note err">${esc(t("This import was interrupted when the app stopped. It cannot resume (the passphrase is never stored) — start it again."))}</span>` : "");
-      if (note && note.dataset.sig !== noteHtml) { note.dataset.sig = noteHtml; note.innerHTML = noteHtml; }
+        + (st.state === "running" && st.collection_paused ? `<div>${esc(t("Background collection is paused for this whole import and resumes when it finishes."))}</div>` : "")
+        + (st.state === "interrupted" ? _uxImInterruptedHtml(t) : "");
+      if (note) {
+        _uxPatchRow(note, "head", headHtml, headHtml);
+        _uxPatchRow(note, "body", bodyHtml, bodyHtml);
+      }
 
       _uxImLastStatus = st;
+      _uxImView = "run";
       _uxImRenderStages(st, _uxImRx, t, tf);
       _uxImRenderStatements(st, _uxImRx, t, tf);
 
       for (const it of items) {
-        const label = esc(it.label || it.kind);
+        // ISOLATED (2026-09-26, I12): a folder name is Latin text with a leading digit run,
+        // and in an RTL page an un-isolated one is reordered around its neighbours --
+        // "202609261808_OpenOmniscience_Backup_2" drew as "OpenOmniscience_Backup_2 — Done ·
+        // 4s_202609261808". <bdi> keeps it one unit in either direction.
+        const label = `<bdi>${esc(it.label || it.kind)}</bdi>`;
         const state = esc(t(_UX_IM_STATE_LABEL[it.state] || it.state));
         const el = it.elapsed_s != null ? ` · ${esc(_uxImDur(it.elapsed_s))}` : "";
-        const err = it.error ? `<div class="note err" style="margin-left:14px">${esc(it.error)}</div>` : "";
+        // The item's error as the dialog's inline text (Y2), not the toast `.note` box --
+        // a floating notification's padding, shadow and slide-in inside a list of rows.
+        const err = it.error
+          ? `<div class="hint" style="color:var(--err);margin:2px 0 0;margin-inline-start:14px;overflow-wrap:anywhere">${esc(ooServerText(it.error))}</div>`
+          : "";
         const live = it.state === "running" ? _uxImLive(st.live, t) : "";
         const dot = {
           done: "var(--ok)", error: "var(--err)", running: "var(--accent)",
@@ -1439,11 +1977,23 @@
         // Which of the four stages THIS item is in. Absent for a kind that does not
         // walk them (a large-data copy, a newsletter import): the backend says which
         // is which with `stage_applicable`, so an empty cell is never a failed read.
-        const stg = (it.stage_applicable && it.stage)
+        //
+        // ONLY WHILE IT IS ON ITS WAY (2026-09-26, I14). The stage is a high-water mark, so a
+        // FINISHED backup kept "stage 2 of 4" -- the last stage it walked itself, stages 3
+        // and 4 belonging to the run -- and a row reading "Done · stage 2 of 4" says both
+        // "finished" and "half-way". A running item is in that stage; a staged one waits
+        // in it for the checkpoint; any other state has left the per-item stages behind.
+        const stg = (it.stage_applicable && it.stage && (it.state === "running" || it.state === "staged"))
           ? ` <span class="muted">· ${esc(tf("stage {n} of {total}", { n: it.stage, total: 4 }))}</span>`
           : "";
-        const html = `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${dot};margin-right:6px"></span>`
-          + `<b>${label}</b> <span class="muted">— ${state}${el}</span>${stg}${live}${err}`;
+        // overflow-wrap (I13): at 375 px an unbroken folder name ran 46 px past the dialog.
+        // The NAME breaks anywhere (it is a folder name, not prose), so it starts beside
+        // its dot instead of leaving the dot alone on a line; the words after it still
+        // break only at spaces.
+        // margin-inline-END (2026-09-27 re-walk, I-4): a physical margin-right sat on the
+        // dot's OUTER side in RTL, and the label touched it.
+        const html = `<div style="overflow-wrap:anywhere"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${dot};margin-inline-end:6px"></span>`
+          + `<b style="word-break:break-all">${label}</b> <span class="muted">— ${state}${el}</span>${stg}${live}</div>${err}`;
         _uxPatchRow(rows, String(it.id || it.label || it.kind), html, html);
       }
       _uxPruneRows(rows, items.map((it) => String(it.id || it.label || it.kind)));
@@ -1452,10 +2002,12 @@
     // Q202 = a: four rows with their own progress. `rx` is the re-index job's own
     // status (stage 4 outlives the run, so the queue cannot speak for it) or null when
     // it could not be read -- which the row SAYS, rather than showing a zero.
-    function _uxImRenderStages(st, rx, t, tf) {
+    // `only` ("reindex") draws stage 4 alone: the fresh page a reopen shows while the
+    // re-index of a finished run is still draining (_uxImFreshView).
+    function _uxImRenderStages(st, rx, t, tf, only) {
       const host = document.getElementById("ux-imp-stages");
       if (!host) return;
-      const stages = st.stages || [];
+      const stages = (st.stages || []).filter((r) => !only || String(r.key || r.n) === only);
       if (!stages.length) { host.innerHTML = ""; return; }   // older server: no claim
       for (const sRow of stages) {
         const key = String(sRow.key || sRow.n);
@@ -1463,16 +2015,24 @@
         // A run that ENDED is not pending, and grey-like-pending is how the backend's
         // own distinction became invisible. Deliberate endings (the operator stopped or
         // cancelled) are warned, not errored; an interrupt or a failure is an error.
-        const dot = { done: "var(--ok)", running: "var(--accent)", pending: "var(--muted)",
+        // Stage 4's dot reads the SAME status its text does (2026-09-27 re-walk, I-7): the
+        // queue reports that row as "external" by design -- it does not own the re-index
+        // -- so a dot keyed on the row's state stayed not-started grey through the whole
+        // drain and after it, beside a line counting up to "complete".
+        const dot = key === "reindex" ? _uxImReindexDot(rx, st) : ({
+                      done: "var(--ok)", running: "var(--accent)", pending: "var(--muted)",
                       external: "var(--muted)", stopped: "var(--warn)",
                       cancelled: "var(--warn)", interrupted: "var(--err)",
-                      error: "var(--err)" }[sRow.state] || "var(--muted)";
+                      error: "var(--err)" }[sRow.state] || "var(--muted)");
         const bits = [];
+        // The error words are COLOURED TEXT, never the toast `.note` box: an inline toast
+        // (11 px padding, a shadow, a slide-in) inside a row overlaps the rows above and
+        // below it -- the overlap R2 calls a defect (I9).
         if (key === "reindex") {
-          bits.push(_uxImReindexBits(rx, t, tf));
+          bits.push(_uxImReindexBits(rx, t, tf, st));
         } else if (sRow.measured && sRow.total) {
           bits.push(esc(tf("{done} of {total} backups", { done: sRow.done || 0, total: sRow.total })));
-          if (sRow.failed) bits.push(`<span class="note err">${esc(tf("{n} failed", { n: sRow.failed }))}</span>`);
+          if (sRow.failed) bits.push(`<span style="color:var(--err)">${esc(tf("{n} failed", { n: sRow.failed }))}</span>`);
         } else if (sRow.state === "done") {
           bits.push(esc(t("done")));
         } else if (sRow.state === "running") {
@@ -1480,7 +2040,9 @@
           bits.push(esc(t("running")));
         } else if (sRow.skipped) {
           bits.push(esc(t("skipped — the import was stopped")));
-        } else {
+        } else if (!_UX_IM_ENDED[sRow.state]) {
+          // "not started" is a claim about the FUTURE; on an ended row the ending below
+          // is the whole truth (a stage the process died in HAD started).
           bits.push(esc(t("not started")));
         }
         // ...and it SAYS which ending it was, reusing _UX_IM_STATE_LABEL -- the same four
@@ -1488,7 +2050,7 @@
         // backups" with nothing else cannot distinguish "two still to come" from "the app
         // died after two", which is the whole point of the backend carrying the ending.
         if (_UX_IM_ENDED[sRow.state]) {
-          bits.push(`<span class="note err">${esc(t(_UX_IM_STATE_LABEL[sRow.state] || sRow.state))}</span>`);
+          bits.push(`<span style="color:var(--err)">${esc(t(_UX_IM_STATE_LABEL[sRow.state] || sRow.state))}</span>`);
         }
         if (sRow.phase) {
           bits.push(`<span class="muted">${esc(_uxVolPhase(sRow.phase, "restore", t))}</span>`);
@@ -1496,7 +2058,7 @@
         const link = key === "reindex"
           ? ` <a href="#" onclick="event.preventDefault();openTaskManager()">${esc(t("open the task manager"))}</a>`
           : "";
-        const html = `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${dot};margin-right:6px"></span>`
+        const html = `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${dot};margin-inline-end:6px"></span>`
           + `<b>${sRow.n}. ${title}</b> <span class="muted">— ${bits.filter(Boolean).join(" · ")}</span>${link}`;
         _uxPatchRow(host, key, html, html);
       }
@@ -1507,7 +2069,12 @@
     // states, kept apart on purpose: unread (we could not ask), idle-with-a-backlog
     // (work is owed and nothing is draining it), and running (a measured count). A
     // `0` for any of the first two would claim the re-index is finished.
-    function _uxImReindexBits(rx, t, tf) {
+    //
+    // `st`, the run, decides what an EMPTY backlog means (2026-09-26, I2). A run still
+    // in flight has not reached stage 4 -- nothing it carries has been merged yet, or
+    // its re-index is deferred to the run's end -- so an empty backlog then is "not
+    // started", and "complete" at 0 of 4 imported claimed a stage nobody had begun.
+    function _uxImReindexBits(rx, t, tf, st) {
       if (!rx) return `<span class="muted">${esc(t("could not be read"))}</span>`;
       const bk = rx.backlog || null;
       if (bk && bk.available === false) {
@@ -1516,15 +2083,32 @@
       const left = bk ? bk.articles_pending : null;
       if (rx.state === "running") {
         const done = rx.done || 0, total = rx.total || 0;
+        // Through fmtNum (Y3), the app's one ruled number writer: raw, "1200 of 4800"
+        // sat beside "3,600 articles left" one line over, and grouped no thousands at all.
         return total
-          ? esc(tf("resuming re-index — {done} of {total} articles", { done, total }))
+          ? esc(tf("resuming re-index — {done} of {total} articles", { done: fmtNum(done, 0), total: fmtNum(total, 0) }))
           : esc(t("resuming re-index"));
       }
       if (left != null && left > 0) {
-        return esc(tf("{n} articles left to re-index", { n: Number(left).toLocaleString() }));
+        return esc(tf("{n} articles left to re-index", { n: fmtNum(Number(left), 0) }));
       }
-      if (left === 0) return esc(t("complete"));
+      if (left === 0) return (st && st.state === "running") ? esc(t("not started")) : esc(t("complete"));
       return `<span class="muted">${esc(t("not measured"))}</span>`;
+    }
+
+    // Stage 4's DOT, branch for branch the states _uxImReindexBits words, so the colour
+    // can never say something the line beside it does not (I-7): running is the accent,
+    // work owed with nothing draining it is a warning, a measured empty backlog after the
+    // run is done, and everything unread, unmeasured or not yet started stays grey.
+    function _uxImReindexDot(rx, st) {
+      if (!rx) return "var(--muted)";
+      const bk = rx.backlog || null;
+      if (bk && bk.available === false) return "var(--muted)";
+      if (rx.state === "running") return "var(--accent)";
+      const left = bk ? bk.articles_pending : null;
+      if (left != null && left > 0) return "var(--warn)";
+      if (left === 0) return (st && st.state === "running") ? "var(--muted)" : "var(--ok)";
+      return "var(--muted)";
     }
 
     // Q203 = a: the three statements, each keyed on ITEM STATE (unambiguous) rather
@@ -1564,17 +2148,27 @@
       } else if ((bk.articles_pending || 0) > 0) {
         out.push({ ok: false, text: tf(
           "Analytics are still catching up: {n} imported article(s) carry no keywords until the re-index finishes.",
-          { n: Number(bk.articles_pending).toLocaleString() }) });
+          { n: fmtNum(Number(bk.articles_pending), 0) }) });
+      } else if (st.state === "running" || rx.state === "running") {
+        // AFTER STAGE 4, and not before (Q203 = a; 2026-09-26, I2). An empty backlog at
+        // the START of a run is a fact about the corpus BEFORE this import -- nothing it
+        // carries has been merged, let alone re-indexed -- and the check mark read
+        // "Analytics are complete" at 0 of 4 imported. While the run (stages 1-3) or the
+        // drain (stage 4) is still going, the statement says what it is waiting for.
+        out.push({ ok: false, text: t("Analytics are complete once the re-index (stage 4) finishes.") });
       } else {
         out.push({ ok: true, text: t("Analytics are complete — every imported article is indexed.") });
       }
       return out;
     }
 
-    function _uxImRenderStatements(st, rx, t, tf) {
+    // `only` ("reindex") keeps the analytics statement alone -- the one of the three that
+    // is about stage 4 -- for the fresh page a reopen shows (_uxImFreshView).
+    function _uxImRenderStatements(st, rx, t, tf, only) {
       const host = document.getElementById("ux-imp-statements");
       if (!host) return;
-      const lines = _uxImStatements(st, rx, t, tf);
+      const all = _uxImStatements(st, rx, t, tf);
+      const lines = only === "reindex" ? all.slice(2) : all;
       const html = lines.map((l) =>
         `<div><span aria-hidden="true">${l.ok ? "✓" : "•"}</span> ${esc(l.text)}</div>`
       ).join("");
@@ -1593,10 +2187,19 @@
       const p = (live && (live.progress || live)) || {};
       if (!p.phase) return "";
       const bits = [esc(_uxVolPhase(p.phase, "restore", t))];
-      if (p.phase_index && p.phase_total) bits.push(`${p.phase_index}/${p.phase_total}`);
-      if (p.merge_steps) bits.push(`${p.merge_step || 0}/${p.merge_steps} ${esc(t("steps"))}`);
+      // Keyed frames with grouped numbers (R14): "2/1 200 articles" welded a raw
+      // fraction to an English noun.
+      const tf = (window.OOI18N && OOI18N.tf)
+        ? OOI18N.tf
+        : ((str, vars) => str.replace(/\{(\w+)\}/g, (m, k) => (vars && vars[k] != null) ? String(vars[k]) : m));
+      if (p.phase_index && p.phase_total) bits.push(esc(tf("phase {n} of {total}", { n: fmtNum(p.phase_index, 0), total: fmtNum(p.phase_total, 0) })));
+      if (p.merge_steps) {
+        bits.push(esc(p.merge_steps === 1 ? tf("{done} of {total} step", { done: fmtNum(p.merge_step || 0, 0), total: fmtNum(1, 0) })
+          : tf("{done} of {total} steps", { done: fmtNum(p.merge_step || 0, 0), total: fmtNum(p.merge_steps, 0) })));
+      }
       if (p.reindex_total) {
-        bits.push(`${p.reindex_done || 0}/${p.reindex_total} ${esc(t("articles"))}`);
+        bits.push(esc(p.reindex_total === 1 ? tf("{done} of {total} article", { done: fmtNum(p.reindex_done || 0, 0), total: fmtNum(1, 0) })
+          : tf("{done} of {total} articles", { done: fmtNum(p.reindex_done || 0, 0), total: fmtNum(p.reindex_total, 0) })));
       }
       return bits.join(" · ");
     }
@@ -1609,12 +2212,16 @@
       return bits ? ` <span class="muted">· ${bits}</span>` : "";
     }
 
+    // A queue row's elapsed time: the shared keyed duration frames, isolated and
+    // unbreakable like the per-item duration (R14). "3m 5s" was English shorthand in
+    // every locale, and "0s" had its unit read first beside Arabic text.
     function _uxImDur(s) {
       s = Math.max(0, Math.round(Number(s) || 0));
-      if (s < 60) return `${s}s`;
+      const TF = _uxDurTf();
+      if (s < 60) return _uxDurIso(TF("{n} s", { n: s }));
       const m = Math.floor(s / 60);
-      if (m < 60) return `${m}m ${s % 60}s`;
-      return `${Math.floor(m / 60)}h ${m % 60}m`;
+      if (m < 60) return _uxDurIso(TF("{m} min {s} s", { m, s: s % 60 }));
+      return _uxDurIso(TF("{h} h {m} min", { h: Math.floor(m / 60), m: m % 60 }));
     }
 
     // REMOVED 2026-09-16 (Q207 = a, R2): `_uxImDetails` and the "Show details"
@@ -1644,7 +2251,7 @@
       } catch (e) {
         // A failed READ is not an empty history. Saying "no imports yet" here would
         // be a positive claim about the operator's data made from a broken request.
-        host.innerHTML = `<span class="note err">${esc(t("The import history could not be read."))}</span>`;
+        host.innerHTML = `<span style="color:var(--err)">${esc(t("The import history could not be read."))}</span>`;
         return;
       }
       host.innerHTML = _uxImHistoryHtml(reports, t, tf);
@@ -1662,8 +2269,10 @@
         const bits = [];
         bits.push(`<b>${esc(fmtDateTime(r.created_at))}</b>`);
         if (r.kind) bits.push(`<span class="muted">${esc(r.kind)}</span>`);
+        // The backup it came from (I7), isolated for RTL like every folder name (I12).
+        if (r.label) bits.push(`<bdi style="overflow-wrap:anywhere">${esc(r.label)}</bdi>`);
         if (r.articles != null) {
-          const n = Number(r.articles).toLocaleString();
+          const n = fmtNum(Number(r.articles), 0);
           bits.push(r.articles_basis === "planned"
             ? esc(tf("{n} articles planned", { n }))
             : esc(tf("{n} articles", { n })));
@@ -1671,7 +2280,7 @@
           bits.push(`<span class="muted">${esc(t("article count not recorded"))}</span>`);
         }
         if (r.outcome && r.outcome !== "ok") {
-          bits.push(`<span class="note err">${esc(t("did not complete"))} (${esc(r.outcome)})</span>`);
+          bits.push(`<span style="color:var(--err)">${esc(t("did not complete"))} (${esc(r.outcome)})</span>`);
         }
         const href = `/api/backup/import-reports/${encodeURIComponent(r.filename)}?format=md`;
         bits.push(`<a href="${href}" target="_blank" rel="noopener">${esc(t("open report"))}</a>`);
@@ -1692,14 +2301,84 @@
       _uxImWatchQueue();
     }
 
-    // Reattach to a run already in flight (or just finished) when the dialog opens --
-    // the whole point of moving the sequencing server-side (ruling 16).
+    // Reattach to a run already in flight when the dialog opens -- the whole point of
+    // moving the sequencing server-side (ruling 16).
+    //
+    // ONLY a RUNNING run is re-rendered (2026-09-26, I3; R1, Q201 = a). This used to
+    // render ANY persisted run with items, so every reopen after an import -- and every
+    // one after a restart -- redrew the previous run's header, stage rows, statements and
+    // per-backup rows under the quiet "Last import" line that was meant to replace them.
+    // A finished run gets the fresh page (_uxImFreshView): the line, plus only what is
+    // still unfinished. Stage 4 is READ BEFORE anything renders (I1): the reopen used to
+    // draw it from a cleared read and then never read it again.
     async function _uxImReattach() {
       let st = null;
       try { st = await api("/api/backup/import-queue/status"); } catch { return; }
       if (!st || !(st.items || []).length) return;
-      _uxImRenderQueue(st);
-      if (st.state === "running") { _uxImWatchQueue(); }
+      await _uxImReadRx();
+      const view = _uxImFreshView(st, _uxImRx);
+      if (view.full) { _uxImRenderQueue(st); _uxImWatchQueue(); return; }
+      // A chain still pointed at a finished run (or at the stage-4 watch of an earlier
+      // opening) is superseded; a Verify in flight keeps its own.
+      if (_uxImWatch && _uxImWatch !== "verify") _uxImStopChain();
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const tf = (window.OOI18N && OOI18N.tf)
+        ? OOI18N.tf
+        : ((s, vars) => s.replace(/\{(\w+)\}/g, (m, k) => (vars && vars[k] != null) ? String(vars[k]) : m));
+      _uxImRenderFresh(st, _uxImRx, t, tf);
+      if (view.stage4 && !_uxImWatch) _uxImWatchReindex();
+    }
+
+    // The one quiet line an INTERRUPTED run keeps on a fresh page, and the same line in
+    // the live header. Coloured text, not the toast box (I9).
+    function _uxImInterruptedHtml(t) {
+      return `<div style="color:var(--err)">${esc(t("This import was interrupted when the app stopped. It cannot resume (the passphrase is never stored) — start it again."))}</div>`;
+    }
+
+    // Empty every surface of the run view, signatures included, so nothing a previous
+    // opening drew can survive into this one (R1).
+    function _uxImResetRunView() {
+      for (const id of ["ux-imp-queue-note", "ux-imp-stages", "ux-imp-statements", "ux-imp-queue-rows"]) {
+        const el = document.getElementById(id);
+        if (el) { el.innerHTML = ""; delete el.dataset.sig; }
+      }
+      const box = document.getElementById("ux-imp-queue");
+      if (box) box.style.display = "none";
+      for (const id of ["ux-imp-stop", "ux-imp-bg"]) {
+        const b = document.getElementById(id);
+        if (b) b.style.display = "none";
+      }
+      _uxImLastStatus = null;
+      _uxImView = null;
+    }
+
+    // The FRESH PAGE's run surfaces (see _uxImFreshView): nothing at all for a finished
+    // run whose re-index is done, else the interrupted line and/or stage 4 alone.
+    function _uxImRenderFresh(st, rx, t, tf) {
+      const box = document.getElementById("ux-imp-queue");
+      const note = document.getElementById("ux-imp-queue-note");
+      const rows = document.getElementById("ux-imp-queue-rows");
+      const stages = document.getElementById("ux-imp-stages");
+      const stmts = document.getElementById("ux-imp-statements");
+      if (!box) return;
+      const view = _uxImFreshView(st, rx);
+      _uxImLastStatus = st;
+      _uxImView = "fresh";
+      if (rows) _uxPruneRows(rows, []);
+      if (!view.interrupted && !view.stage4) { box.style.display = "none"; return; }
+      box.style.display = "";
+      if (note) {
+        _uxPruneRows(note, ["body"]);
+        const body = view.interrupted ? _uxImInterruptedHtml(t) : "";
+        _uxPatchRow(note, "body", body, body);
+      }
+      if (view.stage4) {
+        _uxImRenderStages(st, rx, t, tf, "reindex");
+        _uxImRenderStatements(st, rx, t, tf, "reindex");
+      } else {
+        if (stages) stages.innerHTML = "";
+        if (stmts) { stmts.innerHTML = ""; delete stmts.dataset.sig; }
+      }
     }
 
     // Leave the (modal) Import dialog while the import keeps running as background
@@ -1751,13 +2430,30 @@
     // estimated number anywhere here -- every value came straight off the
     // backend's own StageTimings report.
     function _uxStageLabel(name, t) {
-      if (name.indexOf("merge_step:") === 0) return `${t("merge step")}: ${name.slice(11)}`;
-      if (name.indexOf("stage_a:") === 0) return `${t("stage A")}: ${name.slice(8).replace(/_/g, " ")}`;
+      // The label frame (R2): the separator is the locale's, the step name is data.
+      if (name.indexOf("merge_step:") === 0) return ooLabelText(t("merge step"), name.slice(11));
+      if (name.indexOf("stage_a:") === 0) return ooLabelText(t("stage A"), name.slice(8).replace(/_/g, " "));
       return name.replace(/_/g, " ");
     }
+    // A duration as a reader of THIS language writes it (2026-09-27 fix batch B18, R9),
+    // the way _sizeText writes a size: the UNIT rides inside one keyed frame per shape
+    // ("{n} s" is "{n} ثانية" in Arabic, "{n} 秒" in Chinese), so the locale decides the
+    // word and its side; the whole figure rides in a FIRST STRONG ISOLATE (U+2068 ...
+    // U+2069), so an Arabic line no longer draws "8.5 s" as "s 8.5"; and its spaces are
+    // NO-BREAK, so a narrow cell cannot split the number from its unit. The numbers are
+    // unchanged: the same rounding as before, Latin digits and a decimal point.
+    function _uxDurIso(txt) {
+      return "⁨" + String(txt).replace(/ /g, " ") + "⁩";
+    }
+    function _uxDurTf() {
+      const TF = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
+        : ((x, v) => String(x).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? String(v[k]) : m));
+      return TF;
+    }
     function _uxFmtS(s) {
+      const TF = _uxDurTf();
       const n = Number(s) || 0;
-      return n < 1 ? `${Math.round(n * 1000)} ms` : `${n.toFixed(1)} s`;
+      return _uxDurIso(n < 1 ? TF("{n} ms", { n: Math.round(n * 1000) }) : TF("{n} s", { n: n.toFixed(1) }));
     }
     // A whole-run/whole-item duration, which for a real import is hours. _uxFmtS is
     // for STAGE times (sub-second to minutes) and prints "61585.0 s" here, which is a
@@ -1772,9 +2468,10 @@
       if (s === null || s === undefined || s === "") return "—";
       const n = Number(s);
       if (!isFinite(n) || n < 0) return "—";      // no measurement, never a fake 0
-      if (n < 60) return `${n.toFixed(n < 10 ? 1 : 0)} s`;
-      if (n < 3600) return `${Math.floor(n / 60)} min ${Math.round(n % 60)} s`;
-      return `${Math.floor(n / 3600)} h ${Math.round((n % 3600) / 60)} min`;
+      const TF = _uxDurTf();
+      if (n < 60) return _uxDurIso(TF("{n} s", { n: n.toFixed(n < 10 ? 1 : 0) }));
+      if (n < 3600) return _uxDurIso(TF("{m} min {s} s", { m: Math.floor(n / 60), s: Math.round(n % 60) }));
+      return _uxDurIso(TF("{h} h {m} min", { h: Math.floor(n / 3600), m: Math.round((n % 3600) / 60) }));
     }
 
     // Per-item outcome, kept in ONE place so the badge, the aggregate filter and the
@@ -1810,9 +2507,23 @@
     // so nothing rests on reading a width. An item that produced nothing gets no bar
     // rather than a minimum-width one -- a visible sliver would claim a contribution
     // it did not make.
+    // The already-merged answer, in the server's own terms (R11): as WHICH batch and
+    // WHEN, the date through the app's date formatter -- or, for an artifact already in
+    // this run's unsaved working copy, that instead. Both values are isolated so an RTL
+    // page cannot reorder them into the words around them.
+    function _uxMergedLine(m, t, tf) {
+      const iso = (x) => "⁨" + String(x) + "⁩";
+      if (m.open_group) return t("Already merged earlier in this run, not yet saved — nothing new to import.");
+      const when = m.at ? fmtDateTime(m.at) : "";
+      if (m.batch != null && when) {
+        return tf("Already merged as batch {batch} on {date} — nothing new to import.",
+          { batch: iso(m.batch), date: iso(when) });
+      }
+      return t("Already merged — nothing new to import.");
+    }
     function _uxPerItemView(rows, t, tf) {
       if (rows.length < 2) return "";   // one item: the headline already IS its story
-      const num = (n) => Number(n || 0).toLocaleString();
+      const num = (n) => fmtNum(Number(n || 0), 0);
       const max = rows.reduce((m, r) => Math.max(m, r.total), 0);
       const body = rows.map((r) => {
         const oc = _uxOutcome(r.state);
@@ -1828,15 +2539,36 @@
             + seg(r.new, "var(--accent, #4a90d9)") + seg(r.dup, "var(--muted-bg, #888)")
             + seg(r.conf, "var(--err, #d9534f)") + `</div>`
           : `<div class="muted" style="font-size:11px">${esc(
-              r.error ? String(r.error).slice(0, 120)
+              r.error ? ooServerText(r.error).slice(0, 120)
+                      : (!_lostIts && r.merged) ? _uxMergedLine(r.merged, t, tf)
                       : t(_lostIts ? _UX_IM_STATE_LABEL[r.state] : "nothing imported")
             )}</div>`;
-        const counts = r.total > 0
-          ? `${num(r.new)} ${t("imported")} · ${num(r.dup)} ${t("deduplicated")}`
-            + (r.conf ? ` · ${num(r.conf)} ${t("conflicts (your version kept)")}` : "")
-          : "";
+        // Each count is ONE keyed frame chosen by number (R9): "1 200 imported" welded a
+        // count to an English-ordered adjective, which read as "1 200 مستورد" -- a
+        // singular adjective after a plural count -- and could agree with nothing.
+        const cnt = [];
+        if (r.total > 0) {
+          if (r.kind === "blobs") {
+            cnt.push(r.new === 1 ? tf("{n} file restored", { n: num(r.new) }) : tf("{n} files restored", { n: num(r.new) }));
+            cnt.push(r.dup === 1 ? tf("{n} file skipped", { n: num(r.dup) }) : tf("{n} files skipped", { n: num(r.dup) }));
+          } else if (r.kind === "newsletters") {
+            cnt.push(r.new === 1 ? tf("{n} newsletter stored", { n: num(r.new) }) : tf("{n} newsletters stored", { n: num(r.new) }));
+            cnt.push(r.dup === 1 ? tf("{n} newsletter already present", { n: num(r.dup) }) : tf("{n} newsletters already present", { n: num(r.dup) }));
+          } else {
+            cnt.push(r.new === 1 ? tf("{n} article imported", { n: num(r.new) }) : tf("{n} articles imported", { n: num(r.new) }));
+            cnt.push(r.dup === 1 ? tf("{n} duplicate", { n: num(r.dup) }) : tf("{n} duplicates", { n: num(r.dup) }));
+          }
+          if (r.conf) {
+            cnt.push(r.conf === 1 ? tf("{n} conflict (your version kept)", { n: num(r.conf) })
+              : tf("{n} conflicts (your version kept)", { n: num(r.conf) }));
+          }
+        }
+        const counts = cnt.join(" · ");
+        // The backup's folder name may WRAP and is ISOLATED (2026-09-26, I13/I12): kept on
+        // one line it held this table 130-170 px wider than a 375 px dialog, clipping the
+        // names at its edge; un-isolated, an RTL page reordered its digits around it.
         return `<tr>`
-          + `<td style="padding:3px 8px 3px 0;white-space:nowrap"><span style="color:${oc.col}">${esc(oc.icon)}</span> ${esc(r.title)}</td>`
+          + `<td style="padding:3px 8px 3px 0;overflow-wrap:anywhere"><span style="color:${oc.col}">${esc(oc.icon)}</span> <bdi>${esc(r.title)}</bdi></td>`
           + `<td style="padding:3px 8px;width:40%">${bar}</td>`
           + `<td style="padding:3px 8px;font-size:12px" class="muted">${esc(counts)}</td>`
           + `<td style="padding:3px 0;text-align:right;font-size:12px;white-space:nowrap" class="muted">${esc(_uxFmtDur(r.elapsed_s))}</td>`
@@ -1845,7 +2577,10 @@
       return `<div style="margin-top:10px">`
         + `<div class="muted" style="font-size:12px;margin-bottom:2px">`
         + `${esc(t("What each backup brought"))} <span style="opacity:.7">${esc(tf("(bars are relative to the largest of the {n} items)", { n: rows.length }))}</span></div>`
-        + `<table style="width:100%;border-collapse:collapse">${body}</table></div>`;
+        // `ux-peritem` STACKS the four cells at phone width (W7, app.css): as a table the
+        // name cell's `overflow-wrap:anywhere` let auto layout shrink it to ~3 characters
+        // a line at 375 px while the bar kept its 40%.
+        + `<table class="ux-peritem" style="width:100%;border-collapse:collapse">${body}</table></div>`;
     }
     function _uxTimingsView(timings, t, tf) {
       if (!timings || !timings.stages) return "";
@@ -1873,8 +2608,12 @@
     // number since a day-count alone would hide what actually moved.
     function _uxCorpusDeltaView(before, after, t) {
       if (!before || !after) return "";
-      const num = (n) => Number(n || 0).toLocaleString();
-      const fmtDate = (iso) => iso ? String(iso).slice(0, 10) : "—";
+      const num = (n) => fmtNum(Number(n || 0), 0);
+      // Each date is ONE unbreakable, left-to-right token (Y1, measured at 375 px): the
+      // "before" cell broke INSIDE a date ("2023-01-" / "07 –"), and on an Arabic page the
+      // bidi pass then moved each fragment's hyphen to the other end ("-2023-01"). The
+      // range still wraps, at the dash, and the page direction orders its two ends.
+      const fmtDate = (iso) => `<span dir="ltr" style="unicode-bidi:isolate;white-space:nowrap">${esc(iso ? String(iso).slice(0, 10) : "—")}</span>`;
       const dims = [
         [t("Articles"), before.articles, after.articles],
         [t("Sources"), before.sources, after.sources],
@@ -1884,7 +2623,10 @@
       ];
       const rows = dims.map(([label, b, a]) => {
         const d = (a || 0) - (b || 0);
-        const dTxt = d === 0 ? "±0" : (d > 0 ? "+" + num(d) : num(d));
+        // ISOLATED (W9): a leading "+" or "-" is a weak bidi character, so on an Arabic
+        // page it resolved to the paragraph's direction and was drawn AFTER the number
+        // ("2 400+"). The first-strong isolate keeps the sign on the number's left.
+        const dTxt = _ltrIsolate(d === 0 ? "±0" : (d > 0 ? "+" + num(d) : num(d)));
         const dCol = d > 0 ? "var(--ok, #4caf50)" : (d < 0 ? "var(--err, #d9534f)" : "");
         return `<tr><td style="padding:2px 8px 2px 0">${esc(label)}</td>`
           + `<td style="text-align:right;padding:2px 8px" class="muted">${esc(num(b))}</td>`
@@ -1892,8 +2634,8 @@
           + `<td style="text-align:right;padding:2px 0"><b style="color:${dCol}">${esc(dTxt)}</b></td></tr>`;
       }).join("");
       const dateRow = `<tr><td style="padding:2px 8px 2px 0">${esc(t("Date range"))}</td>`
-        + `<td style="text-align:right;padding:2px 8px" class="muted">${esc(fmtDate(before.date_min))} – ${esc(fmtDate(before.date_max))}</td>`
-        + `<td style="text-align:right;padding:2px 8px" colspan="2">${esc(fmtDate(after.date_min))} – ${esc(fmtDate(after.date_max))}</td></tr>`;
+        + `<td style="text-align:right;padding:2px 8px" class="muted">${fmtDate(before.date_min)} – ${fmtDate(before.date_max)}</td>`
+        + `<td style="text-align:right;padding:2px 8px" colspan="2">${fmtDate(after.date_min)} – ${fmtDate(after.date_max)}</td></tr>`;
       return `<div style="margin-top:8px">`
         + `<div class="muted" style="font-size:12px;margin-bottom:2px">${esc(t("How your corpus grew"))}</div>`
         + `<table style="width:100%;font-size:13px;border-collapse:collapse">`
@@ -1949,12 +2691,21 @@
       // Fallback headline for a tally-only run (no plan at all — newsletters/large
       // data): reproduces the ORIGINAL generic imported/deduplicated stat, unchanged.
       let tallyNew = 0, tallyDup = 0;
-      let newSources = 0, discoveryAdded = 0, eventsAdded = 0, unindexed = 0;
+      let newSources = 0, discoveryAdded = 0, eventsAdded = 0, unindexed = 0, deferredNew = false;
       // Source QUALIFICATION carried by this import (field ask 2026-08-10). Counts
       // only; `qualEngines` maps criteria version -> n, which is the "by which
       // engine" half — never inferred, only what the incoming stamp recorded.
-      let qualGained = 0, disqGained = 0, qualKept = 0, qualDisagreed = 0;
+      let qualGained = 0, disqGained = 0;
       const qualEngines = {};
+      // "Already judged here, kept" and "Backup disagreed" are SNAPSHOTS, one per item,
+      // each read against the corpus as that item found it -- which the items before it
+      // in the same run had already grown. A source carried by four backups was counted
+      // four times, and a source the first backup introduced read as "already judged
+      // here" by the second: a cumulative run summed 6,400 + 6,422 + 6,418 + 14 into
+      // "kept: 19,254" over a 6,446-source corpus (2026-09-27 re-walk, I-1). So they are
+      // collected per item and never added up; introduced/adopted and the engines above
+      // ARE disjoint across items (a source lands once), and are summed as before.
+      const qualSnaps = [];
       // Metadata a DUPLICATE article contributed (field question 2026-08-10). The
       // article was not stored again; only fields this corpus never had were filled.
       let metaEnriched = 0;
@@ -1973,6 +2724,7 @@
           const a = sm.plan.articles || {};
           perItem.push({
             title: sm.title, state: sm.state, error: sm.error, elapsed_s: sm.elapsed_s,
+            kind: sm.kind, merged: sm.merged,
             new: counted ? (a.new || 0) : 0, dup: counted ? (a.duplicate || 0) : 0,
             conf: counted ? (a.conflict || 0) : 0,
             total: counted ? ((a.new || 0) + (a.duplicate || 0) + (a.conflict || 0)) : 0,
@@ -1983,6 +2735,7 @@
           const nDup = counted ? ((tl0.duplicate || 0) + (tl0.skipped || 0)) : 0;
           perItem.push({
             title: sm.title, state: sm.state, error: sm.error, elapsed_s: sm.elapsed_s,
+            kind: sm.kind, merged: sm.merged,
             new: nNew, dup: nDup, conf: 0, total: nNew + nDup,
           });
         }
@@ -2021,21 +2774,29 @@
           if (pq) {
             qualGained += (pq.introduced_qualified || 0) + (pq.adopted_qualified || 0);
             disqGained += (pq.introduced_disqualified || 0) + (pq.adopted_disqualified || 0);
-            qualKept += pq.local_verdict_kept || 0;
-            qualDisagreed += pq.local_verdict_disagreed || 0;
+            qualSnaps.push(pq);
             for (const [eng, n] of Object.entries(pq.engines || {})) {
               qualEngines[eng] = (qualEngines[eng] || 0) + (n || 0);
             }
           }
           discoveryAdded += (p.source_candidates && p.source_candidates.new) || 0;
-          detail.push({ title: sm.title, body: _v2PlanTable(p) + _uxTimingsView(sm.timings, t, tf) });
+          detail.push({ title: sm.title, pq: pq || null, body:
+            (sm.merged ? `<div class="hint">${esc(_uxMergedLine(sm.merged, t, tf))}</div>` : "")
+            + _v2PlanTable(p) + _uxTimingsView(sm.timings, t, tf) });
 
           if (sm.events_added) eventsAdded += sm.events_added;
           // Real re-index failures only — reindex_imported_articles ran (or was
           // skipped entirely; either way the true count of never-reindexed imported
           // articles is knowable, never guessed).
+          //
+          // A DEFERRED re-index is not a failure (2026-09-26 leftovers, Y4). This used to
+          // add every NEW article of an item whose re-index did not run in-line, so the
+          // line said "4,800 Articles awaiting indexing" whatever the corpus's real backlog
+          // was -- an article already carrying current-engine rows is not owed, and an
+          // earlier import's backlog is owed too. Those items are counted below from the
+          // backlog the SERVER measured, never from the plan.
           if (sm.reindexed) unindexed += sm.reindexed.failed || 0;
-          else if (art.new) unindexed += art.new;  // re-index was skipped for this run
+          else if (art.new) deferredNew = true;
           if (sm.delta && sm.delta.before && sm.delta.after) {
             if (!deltaBefore) deltaBefore = sm.delta.before;
             deltaAfter = sm.delta.after;
@@ -2044,14 +2805,20 @@
           const tl = sm.tally || {};
           tallyNew += (tl.stored || 0) + (tl.restored || 0);
           tallyDup += (tl.duplicate || 0) + (tl.skipped || 0);
-          if (tl.empty)  extra.push(`${tl.empty} ${t("empty")}`);
-          if (tl.errors) extra.push(`${tl.errors} ${t("errors")}`);
+          if (tl.empty) {
+            extra.push(tl.empty === 1 ? tf("{n} newsletter empty", { n: fmtNum(tl.empty, 0) })
+              : tf("{n} newsletters empty", { n: fmtNum(tl.empty, 0) }));
+          }
+          if (tl.errors) {
+            extra.push(tl.errors === 1 ? tf("{n} error", { n: fmtNum(tl.errors, 0) })
+              : tf("{n} errors", { n: fmtNum(tl.errors, 0) }));
+          }
           detail.push({ title: sm.title, body: `<div class="hint">${(sm.lines || []).map(esc).join(" · ")}</div>` });
         }
       }
       if (eventsAdded) perType.push({ keys: [], label: t("Events"), n: eventsAdded });
 
-      const num = (n) => Number(n || 0).toLocaleString();
+      const num = (n) => fmtNum(Number(n || 0), 0);
       const seg = (v, col) => v > 0 ? `<span style="flex:${v};background:${col}"></span>` : "";
       const stat = (n, label, col) =>
         `<div style="text-align:center;min-width:88px"><div style="font-size:22px;font-weight:700;color:${col}">${esc(num(n))}</div>`
@@ -2087,8 +2854,11 @@
           + `</div>`;
       }
 
-      const typeLabels = perType.filter((r) => r.n > 0).map((r) => `${num(r.n)} ${r.label}`);
-      const catchAll = allNew ? [`${num(allNew)} ${t("database records, all types")}`] : [];
+      // label: value through the shared frame (R14), the house style the qualification
+      // block below already states the reason for: an interpolated count cannot agree,
+      // and "8 Sources" welded a count to a capitalised English noun.
+      const typeLabels = perType.filter((r) => r.n > 0).map((r) => ooLabelText(r.label, num(r.n)));
+      const catchAll = allNew ? [ooLabelText(t("database records, all types"), num(allNew))] : [];
       const typeBlock = (typeLabels.length || catchAll.length)
         ? `<div class="muted" style="font-size:12px;margin-top:4px">${typeLabels.concat(catchAll).map(esc).join(" · ")}</div>`
         : "";
@@ -2107,11 +2877,31 @@
         : "";
       const deltaView = _uxCorpusDeltaView(deltaBefore, deltaAfter, t);
 
+      // THE BACKLOG, ONE READING, read once for the two lines that state it (the
+      // "still indexing" caveat and "Articles awaiting indexing" below), so they cannot
+      // print two different numbers. The items' hand-off snapshots come first, by I6's
+      // rule (the LATEST, never a sum -- see the caveat). A run whose items carry none
+      // (every backup held for a checkpoint) falls back to the re-index job's own read,
+      // which the queue's terminal tick takes just before rendering (`run.rx`).
+      const _rxd = summaries.map((s2) => (s2 && s2.report && s2.report.reindex_deferred) || s2.reindex_deferred)
+        .filter(Boolean);
+      const _live = (run && run.rx) ? (run.rx.backlog || { available: false }) : null;
+      const _bk = _rxd.length
+        ? _rxd[_rxd.length - 1]
+        : ((deferredNew && _live)
+            ? { articles_pending: _live.available === false ? null : _live.articles_pending }
+            : null);
+      const _bkUnreadable = !!_bk && typeof _bk.articles_pending !== "number";
+
       // WORK INDUCED: stated honestly, only when there is actually something queued.
       const queueLines = [];
-      if (newSources > 0) queueLines.push(`${num(newSources)} ${t("New sources")}`);
-      if (unindexed > 0) queueLines.push(`${num(unindexed)} ${t("Articles awaiting indexing")}`);
-      if (discoveryAdded > 0) queueLines.push(`${num(discoveryAdded)} ${t("Discovery candidates")}`);
+      if (newSources > 0) queueLines.push(ooLabelText(t("New sources"), num(newSources)));
+      // Awaiting indexing (Y4): an in-line re-index's real FAILURES, or -- when the
+      // re-index was deferred -- the backlog the server measured, which already holds any
+      // failure too. Unreadable: no number, and the caveat above says why.
+      const awaiting = deferredNew ? ((_bk && !_bkUnreadable) ? _bk.articles_pending : null) : unindexed;
+      if (awaiting != null && awaiting > 0) queueLines.push(ooLabelText(t("Articles awaiting indexing"), num(awaiting)));
+      if (discoveryAdded > 0) queueLines.push(ooLabelText(t("Discovery candidates"), num(discoveryAdded)));
       // SOURCE QUALIFICATION carried by this import (field ask 2026-08-10: "display the
       // amount of qualified sources imported"). Rendered only when the import actually
       // carried a verdict — a run that carried none says nothing rather than "0", which
@@ -2120,19 +2910,33 @@
       // an interpolated count cannot conjugate, and this app has no CLDR plural rules,
       // so a "{n} sources were ..." frame is wrong in most of the twelve locales.
       let qualBlock = "";
+      // Local-wins, stated rather than left to be inferred from numbers that do not add
+      // up: a verdict this machine reached itself is never overwritten. ONE item's
+      // snapshot is the run's; with several, each stays in its own backup's detail below
+      // and the aggregate says why it shows none (I-1).
+      const keptLines = (pq) => {
+        const out = [];
+        if (pq && pq.local_verdict_kept) out.push(tf("Already judged here, kept: {n}", { n: num(pq.local_verdict_kept) }));
+        if (pq && pq.local_verdict_disagreed) out.push(tf("Backup disagreed, your verdict kept: {n}", { n: num(pq.local_verdict_disagreed) }));
+        return out;
+      };
+      const qualPerBackup = !!(qualGained || disqGained) && qualSnaps.length > 1;
       if (qualGained || disqGained) {
         const lead = [];
         if (qualGained) lead.push(tf("Qualified sources added: {n}", { n: num(qualGained) }));
         if (disqGained) lead.push(tf("Arrived disqualified: {n}", { n: num(disqGained) }));
         const sub = [];
-        // Local-wins, stated rather than left to be inferred from numbers that do not
-        // add up: a verdict this machine reached itself is never overwritten.
-        if (qualKept) sub.push(tf("Already judged here, kept: {n}", { n: num(qualKept) }));
-        if (qualDisagreed) sub.push(tf("Backup disagreed, your verdict kept: {n}", { n: num(qualDisagreed) }));
+        if (!qualPerBackup) sub.push(...keptLines(qualSnaps[0]));
+        else if (qualSnaps.some((pq) => keptLines(pq).length)) {
+          sub.push(t("Sources already judged here are counted per backup, below: the backups of one run overlap, so those counts are not added up."));
+        }
         const engNames = Object.keys(qualEngines);
         if (engNames.length) {
+          // "unrecorded" is the merge's SENTINEL for a verdict that carried no criteria
+          // version (merge.py _qualification_tally), not an engine's name: worded, where
+          // a real version (v1, ...) stays data (2026-09-27 re-walk, I-2).
           sub.push(tf("Judged by: {engines}", {
-            engines: engNames.map((e) => `${e} (${num(qualEngines[e])})`).join(", "),
+            engines: engNames.map((e) => `${e === "unrecorded" ? t("engine not recorded") : e} (${num(qualEngines[e])})`).join(", "),
           }));
         }
         qualBlock =
@@ -2164,8 +2968,22 @@
 
       const extraLine = extra.length
         ? `<div class="muted" style="font-size:12px;margin-top:4px">${esc(extra.join(" · "))}</div>` : "";
+      // THE 375 px OVERFLOW (the 2026-09-26 leftovers, Y1). Measured in Chromium: the
+      // result block held the dialog 26-28 px wider than its content box, and hiding
+      // the rows one at a time put it HERE, not in "How your corpus grew" (whose date
+      // range fits): each summary is the backup's folder name, one unbreakable token
+      // ("202609261808_OpenOmniscience_Backup_2") 59 px wider than the summary, and an
+      // opened body -- the plan table, whose conflict samples are unbroken JSON -- took
+      // the dialog to 428 px. So the name may wrap and is isolated, as the per-backup
+      // table's already is (I13/I12), and the body scrolls inside its own box.
+      // Each backup's own qualification snapshot, when several were not added up (I-1).
+      const detailQual = (d) => {
+        const lines = qualPerBackup ? keptLines(d.pq) : [];
+        return lines.length ? `<div class="hint">${esc(lines.join(" · "))}</div>` : "";
+      };
       const detailBlocks = detail.map((d) =>
-        `<details style="margin-top:6px"><summary class="muted">${esc(d.title)}</summary>${d.body}</details>`).join("");
+        `<details style="margin-top:6px"><summary class="muted" style="overflow-wrap:anywhere"><bdi>${esc(d.title)}</bdi></summary>`
+        + `<div style="overflow-x:auto">${detailQual(d)}${d.body}</div></details>`).join("");
 
       // OUTCOME-AWARE HEADER. This was hardcoded "✓ Import successful", so a run in
       // which two of six backups failed announced itself exactly like a clean one.
@@ -2228,18 +3046,25 @@
       // says so rather than showing 0: "could not read" and "nothing pending" must never
       // look alike.
       let indexingLine = "";
-      const _rxd = summaries.map((s2) => (s2 && s2.report && s2.report.reindex_deferred) || s2.reindex_deferred)
-        .filter(Boolean);
-      if (_rxd.length) {
-        let pend = 0, unreadable = false;
-        for (const r of _rxd) {
-          if (typeof r.articles_pending === "number") pend += r.articles_pending;
-          else unreadable = true;
-        }
-        const body = unreadable && !pend
+      // A MEASURED zero is nothing still to index (Y4): a re-import whose every article was
+      // already here read "Indexing continues in the background: 0 article(s) still to
+      // index", a caveat about work that does not exist. An unreadable reading still says so.
+      if (_bk && (_bkUnreadable || _bk.articles_pending > 0)) {
+        // THE LATEST READING, never a sum (2026-09-26, I6). Each item's
+        // `articles_pending` is the WHOLE corpus backlog at the moment that item
+        // committed (volume_job.hand_off_reindex reads reindex_backlog()), so the
+        // second snapshot already contains the first: a four-backup, 4,800-article
+        // import summed 3,600 + 4,800 into "8,400 still to index". Inside one run the
+        // drain waits for the run's window to close, so the last readable snapshot is
+        // the backlog the run ended with. An unreadable LAST snapshot says so: an earlier
+        // readable one is a stale undercount, and printing it as current would be the same
+        // wrong number in the other direction.
+        const unreadable = _bkUnreadable;
+        const pend = unreadable ? 0 : _bk.articles_pending;
+        const body = unreadable
           ? t("Indexing continues in the background. The number still to index could not be read.")
           : tf("Indexing continues in the background: {n} article(s) still to index. Until it finishes they carry no keywords and are absent from analytics.",
-               { n: pend.toLocaleString() });
+               { n: fmtNum(pend, 0) });
         indexingLine =
           `<div class="card-caveat" style="margin-top:6px">${esc(body)}</div>`;
       }
@@ -2266,48 +3091,12 @@
         + `</div>`;
     }
 
-    async function folderBackupPlan(btn) {
-      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      const dest = ($("fb-dest").value || "").trim();
-      if (!dest) { toast(t("Enter a destination folder."), "warn"); return; }
-      btn.disabled = true; $("fb-plan").textContent = t("Checking…");
-      try {
-        const d = await api("/api/backup/folder/plan",
-          { method: "POST", body: JSON.stringify({ dest, categories: _fbCats() }) });
-        $("fb-plan").innerHTML =
-          `${(d.files || 0).toLocaleString()} ${esc(t("files"))} · ${esc(t("needs"))} <b>${esc(d.needed_human)}</b> · ` +
-          `${esc(d.free_human)} ${esc(t("free"))}` +
-          (d.enough_space ? "" : ` <span class="warn">— ${esc(t("not enough space"))}</span>`);
-      } catch (e) { $("fb-plan").innerHTML = `<span class="note err">${esc(e.message)}</span>`; }
-      finally { btn.disabled = false; }
-    }
-    async function folderBackupStart(btn) {
-      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      const dest = ($("fb-dest").value || "").trim();
-      if (!dest) { toast(t("Enter a destination folder."), "warn"); return; }
-      btn.disabled = true;
-      try {
-        await api("/api/backup/folder/start",
-          { method: "POST", body: JSON.stringify({ dest, categories: _fbCats() }) });
-        _fbStartPoll();
-      } catch (e) { toast(e.message, "err"); } finally { btn.disabled = false; }
-    }
-    async function folderRestoreStart(btn) {
-      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      const src = ($("fb-src").value || "").trim();
-      if (!src) { toast(t("Enter a folder to restore from."), "warn"); return; }
-      btn.disabled = true;
-      try {
-        await api("/api/backup/folder/restore",
-          { method: "POST", body: JSON.stringify({ src, categories: _fbCats() }) });
-        _fbStartPoll();
-      } catch (e) { toast(e.message, "err"); } finally { btn.disabled = false; }
-    }
-    async function folderBackupAction(action, btn) {
-      btn.disabled = true;
-      try { await api("/api/backup/folder/" + action, { method: "POST" }); _fbRefresh(); }
-      catch (e) { toast(e.message, "err"); } finally { btn.disabled = false; }
-    }
+    // The old large-data folder panel is gone (W2, then R1): folderBackupPlan,
+    // folderBackupStart, folderRestoreStart, folderBackupAction and their poller
+    // (_fbStartPoll / _fbRefresh) drew into `#fb-*` elements that are in no page, and no
+    // button, palette entry or handler reached any of them. The unified export and import
+    // dialogs drive the same /api/backup/folder engine; _fbRefusalLines below is still
+    // theirs.
 
     // Large ENCRYPTED backup as a volume set + Reed-Solomon parity (field test
     // 2026-06-24; slice 1c). Server-side folder, cancellable background job.
@@ -2352,7 +3141,7 @@
           } else if (s.state === "cancelled") {
             if (prog) prog.textContent = t("Cancelled.");
           } else if (s.state === "error") {
-            if (prog) prog.textContent = t("Failed:") + " " + (s.error || t("unknown error"));
+            if (prog) prog.textContent = t("Failed:") + " " + (s.error ? ooServerText(s.error) : t("unknown error"));
           }
         }
       } catch (e) { if (prog) prog.textContent = t("Status check failed."); if (btn) btn.disabled = false; }
@@ -2422,48 +3211,18 @@
         const tail = named.length
           ? " — " + named.join(" · ") + (hidden > 0 ? " " + tf("+ {n} more (not shown)", { n: hidden }) : "")
           : "";
-        lines.push(t("Refused — bytes did not match the checksum this backup recorded, so they were NOT restored")
-          + ": " + refused + tail);
+        // The locale's own separator (ooLabelText, R2): a colon welded here was the
+        // English one in every language, and the count goes through fmtNum like every
+        // other figure the app prints.
+        lines.push(ooLabelText(t("Refused — bytes did not match the checksum this backup recorded, so they were NOT restored"),
+          fmtNum(refused, 0) + tail));
       }
       const unverified = p.restored_unverified || 0;
       if (unverified) {
-        lines.push(t("Restored, but not content-verified — this backup recorded no checksum for them")
-          + ": " + unverified);
+        lines.push(ooLabelText(t("Restored, but not content-verified — this backup recorded no checksum for them"),
+          fmtNum(unverified, 0)));
       }
       return lines;
-    }
-    function _fbStartPoll() {
-      if (_fbPoll) clearInterval(_fbPoll);
-      _fbRefresh();
-      _fbPoll = setInterval(_fbRefresh, 1500);
-    }
-    async function _fbRefresh() {
-      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      const prog = $("fb-progress"); if (!prog) return;
-      let s;
-      try { s = await api("/api/backup/folder/status"); } catch (e) { return; }
-      const active = s.state === "running" || s.state === "paused";
-      if (!active && _fbPoll) { clearInterval(_fbPoll); _fbPoll = null; }
-      $("fb-controls").style.display = active ? "" : "none";
-      if ($("fb-pause")) $("fb-pause").style.display = s.state === "running" ? "" : "none";
-      if ($("fb-resume")) $("fb-resume").style.display = s.state === "paused" ? "" : "none";
-      const p = s.progress || {};
-      const verb = s.mode === "restore" ? t("Restoring") : t("Backing up");
-      if (active) {
-        const pct = p.bytes_total ? Math.round(100 * (p.bytes_copied || 0) / p.bytes_total) : 0;
-        prog.innerHTML = `${esc(verb)}… ${pct}% · ${(p.copied || 0)} ${esc(t("copied"))}, ` +
-          `${(p.skipped || 0)} ${esc(t("skipped"))}` + (s.state === "paused" ? ` (${esc(t("paused"))})` : "");
-      } else if (s.state === "done") {
-        // A refusal is NOT a footnote: it rides a visible caveat line beside "Done.",
-        // never a muted hint and never behind a toggle (invariant #23).
-        const refusals = _fbRefusalLines(p);
-        const caveat = refusals.length
-          ? `<div class="card-caveat" style="margin-top:6px">${refusals.map(esc).join("<br>")}</div>` : "";
-        prog.innerHTML = `<b>${esc(t("Done."))}</b> ${(p.copied || 0)} ${esc(t("copied"))}, ` +
-          `${(p.restored || 0)} ${esc(t("restored"))}, ${(p.skipped || 0)} ${esc(t("skipped"))}.` + caveat;
-      } else if (s.state === "error") {
-        prog.innerHTML = `<span class="note err">${esc(s.error || t("failed"))}</span>`;
-      } else { prog.textContent = ""; }
     }
 
     function _v2PlanTable(plan) {
@@ -2474,7 +3233,7 @@
       const active = rows.filter(r => r.new || r.dup || r.conf);
       const quiet = rows.length - active.length;
       let html = `<table style="width:100%;font-size:13px;border-collapse:collapse"><thead><tr>` +
-        `<th style="text-align:left">${esc(t("Data"))}</th><th>${esc(t("New"))}</th>` +
+        `<th style="text-align:start">${esc(t("Data"))}</th><th>${esc(t("New"))}</th>` +
         `<th>${esc(t("Already present"))}</th><th>${esc(t("Conflicts (your version kept)"))}</th></tr></thead><tbody>`;
       for (const r of active) {
         html += `<tr><td style="padding:2px 6px">${esc(r.tbl)}</td>` +
@@ -2483,7 +3242,9 @@
           `<td style="text-align:center">${r.conf ? `<b>${r.conf}</b>` : "0"}</td></tr>`;
         if (r.conflicts.length) {
           const det = r.conflicts.slice(0, 5).map(c => esc(JSON.stringify(c))).join("<br>");
-          html += `<tr><td colspan="4" class="muted" style="font-size:12px;padding:0 6px 6px"><details><summary>` +
+          // A sample is one JSON token with no break opportunity; it may break anywhere
+          // rather than widen the table past a phone's dialog (Y1).
+          html += `<tr><td colspan="4" class="muted" style="font-size:12px;padding:0 6px 6px;overflow-wrap:anywhere"><details><summary>` +
             esc(t("conflict samples (local value kept)")) + `</summary>${det}</details></td></tr>`;
         }
       }
@@ -2523,35 +3284,62 @@
         toast("Fetch mode saved.");
       } catch (e) { toast(_failMsg("Save failed: {error}", e), "err"); }
     }
+    //: The state the discovery result line last reported (null: nothing saved yet), so a
+    //: language switch can redraw it. The line is `data-i18n-dyn`: it is written through
+    //: t() in the active language, and the walker would otherwise cache that translated
+    //: text as "the English" and freeze it (the re-walk's H-2).
+    let _discoveryResultOn = null;
+    function _paintDiscoveryResult() {
+      const box = $("discovery-external-result");
+      if (!box || _discoveryResultOn === null) return;
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      // The disclosure of an egress is a consent string: it ships x12 like the box beside it.
+      box.textContent = _discoveryResultOn
+        ? t("Enabled: topic-discovery queries will be sent to DuckDuckGo.")
+        : t("Disabled (the default): no topic query leaves this machine.");
+    }
     async function saveDiscoveryExternal() {
       // ETH-02/RM-03: the one external-service call is an explicit, knowing opt-in.
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const on = $("discovery-external").checked;
       try {
         await api("/api/safety/settings",
           {method: "PUT", body: JSON.stringify({discovery_external_enabled: on})});
-        $("discovery-external-result").textContent = on
-          ? "Enabled: topic-discovery queries will be sent to DuckDuckGo."
-          : "Disabled (the default): no topic query leaves this machine.";
-        toast(on ? "External topic discovery enabled." : "External topic discovery disabled.");
+        _discoveryResultOn = on;
+        _paintDiscoveryResult();
+        toast(on ? t("External topic discovery enabled.") : t("External topic discovery disabled."));
       } catch (e) {
         $("discovery-external").checked = !on;  // revert the visual state on failure
         toast(_failMsg("Save failed: {error}", e), "err");
       }
     }
     // -- At-rest encryption (PR-E): doctor attestation + one-way encrypt ----- //
+    //: The last /api/system/doctor reading the at-rest lines were drawn from, so a language
+    //: switch redraws them from it without a request (the re-walk's U-2). #atrest-state is
+    //: `data-i18n-dyn`: its lines are composed at render time in the active language, and
+    //: the walker would cache "المجموعة: " as the English and never let it go.
+    let _atRestDoc = null;
     async function loadAtRestState() {
       const box = $("atrest-state"); if (!box) return;
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      if (!_atRestDoc) box.textContent = t("Checking…");
       try {
-        const d = await api("/api/system/doctor");
-        const word = (s) => s.state === "encrypted" ? t("Encrypted (SQLCipher 4)")
-                          : s.state === "plaintext" ? t("NOT encrypted") : t("not created yet");
-        box.innerHTML =
-          `<div>${esc(t("Corpus"))}: <b>${esc(word(d.corpus))}</b>` +
-          (d.corpus.cipher ? ` <span class="muted">${esc(d.corpus.cipher)}</span>` : "") + `</div>` +
-          `<div>${esc(t("Custody log"))}: <b>${esc(word(d.custody_log))}</b></div>`;
-        $("atrest-encrypt").style.display = d.corpus.state === "plaintext" ? "" : "none";
+        _atRestDoc = await api("/api/system/doctor");
+        _renderAtRest();
       } catch (e) { box.textContent = e.message; }
+    }
+    function _renderAtRest() {
+      const box = $("atrest-state"), d = _atRestDoc;
+      if (!box || !d) return;
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const word = (s) => s.state === "encrypted" ? t("Encrypted (SQLCipher 4)")
+                        : s.state === "plaintext" ? t("NOT encrypted") : t("not created yet");
+      // Each line on the locale's label frame (R2), not an English colon.
+      box.innerHTML =
+        `<div>${ooLabelHtml(esc(t("Corpus")), `<b>${esc(word(d.corpus))}</b>`)}` +
+        (d.corpus.cipher ? ` <span class="muted">${esc(d.corpus.cipher)}</span>` : "") + `</div>` +
+        `<div>${ooLabelHtml(esc(t("Custody log")), `<b>${esc(word(d.custody_log))}</b>`)}</div>`;
+      $("atrest-encrypt").style.display = d.corpus.state === "plaintext" ? "" : "none";
     }
     async function encryptCorpus(btn) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
@@ -2587,8 +3375,12 @@
         const rec = plaintext
           ? t("Your store was not encrypted, so a full disk-overwrite is recommended before you stop.")
           : t("For defence-in-depth against forensic recovery, you can also overwrite the freed disk space. This is optional — the corpus is already cryptographically unrecoverable.");
+        // The file count is ONE keyed frame, its numbers grouped (R14).
+        const tfw = (window.OOI18N && OOI18N.tf)
+          ? OOI18N.tf
+          : ((str, vars) => str.replace(/\{(\w+)\}/g, (m, k) => (vars && vars[k] != null) ? String(vars[k]) : m));
         $("panic-result").innerHTML =
-          `<span class="pill warn">crypto-erased</span> ${r.files_wiped}/${r.files_seen} files. ` +
+          `<span class="pill warn">${esc(t("crypto-erased"))}</span> ${esc(tfw("{done} of {total} files erased.", { done: fmtNum(r.files_wiped || 0, 0), total: fmtNum(r.files_seen || 0, 0) }))} ` +
           `${esc(t("The corpus key is destroyed — the encrypted store is now permanently unrecoverable."))} ` +
           `<span class="muted">${esc(r.limit)}</span>` +
           `<div class="hint" style="margin-top:8px">${esc(rec)}` +
@@ -2597,7 +3389,7 @@
           `<button class="danger" onclick="secureErase(3)">${esc(t("Triple pass"))}</button>` +
           `<button class="danger" onclick="secureErase(8)">${esc(t("Octuple pass"))}</button>` +
           `</div><div class="muted" style="margin-top:4px">${esc(t("This may take several minutes on a large disk. Restart the app when you are done."))}</div></div>`;
-        toast("Local data crypto-erased. Restart the app.", "warn");
+        toast(t("Local data crypto-erased. Restart the app."), "warn");
       } catch (e) { toast(_failMsg("Panic wipe failed: {error}", e), "err"); }
     }
 
@@ -2610,10 +3402,11 @@
         toast("Running full overwrite… this can take a while.", "warn");
         const r = await api("/api/safety/secure-erase",
           {method: "POST", body: JSON.stringify({confirm: true, passes})});
-        const mib = Math.round((r.bytes_written || 0) / 1048576);
+        // The size through the one localised writer (Y9): "MiB" was English in every
+        // locale and the only binary-prefixed unit the app printed anywhere.
         if (box) box.innerHTML +=
           `<div class="hint" style="margin-top:6px"><span class="pill warn">overwritten</span> ` +
-          `${r.passes}× — ${mib} MiB. <span class="muted">${esc(r.limit)}</span></div>`;
+          `${r.passes}× — ${esc(_fmtBytes(r.bytes_written || 0))}. <span class="muted">${esc(r.limit)}</span></div>`;
         toast("Full overwrite complete. Restart the app.", "warn");
       } catch (e) { toast(_failMsg("Full overwrite failed: {error}", e), "err"); }
     }
@@ -2705,7 +3498,12 @@
     async function checkEmptyCorpus() {
       try {
         const s = await api("/api/database/stats");
-        if (s.counts && s.counts.articles === 0 && !guideDone()) openGuide();
+        if (!(s.counts && s.counts.articles === 0 && !guideDone())) return;
+        // One first-run dialog at a time, in one order: the Wikipedia wizard the fresh-corpus
+        // hand-off asked for first, this guide when it closes (U8, see wikiWizardPending).
+        if (typeof wikiWizardPending === "function" && wikiWizardPending()) {
+          $("wiki-wizard").addEventListener("close", () => { if (!guideDone()) openGuide(); }, { once: true });
+        } else openGuide();
       } catch (e) { /* stats unavailable -> no banner */ }
     }
 
@@ -2746,15 +3544,17 @@
     // -- Database tab ------------------------------------------------------- //
     // Tween a stat number from its current value to `to` (ease-in-out) so the
     // database visibly "grows" on each poll. Cosmetic only — the value is real.
+    // Every frame goes through fmtNum, the intermediate ones too (W17): the browser's
+    // locale drew "6,402" under a French UI for the 600 ms of the tween.
     function animateCount(el, to) {
       to = Math.round(to || 0);
       const from = parseInt(el.dataset.v || "0", 10) || 0;
-      if (from === to) { el.dataset.v = to; el.textContent = to.toLocaleString(); return; }
+      if (from === to) { el.dataset.v = to; el.textContent = fmtNum(to, 0); return; }
       const start = performance.now(), dur = 600;
       function step(t) {
         const k = Math.min(1, (t - start) / dur);
         const eased = 0.5 - 0.5 * Math.cos(k * Math.PI);
-        el.textContent = Math.round(from + (to - from) * eased).toLocaleString();
+        el.textContent = fmtNum(Math.round(from + (to - from) * eased), 0);
         if (k < 1) requestAnimationFrame(step); else el.dataset.v = to;
       }
       requestAnimationFrame(step);
@@ -2788,8 +3588,24 @@
             const tf = (window.OOI18N && OOI18N.tf)
               ? OOI18N.tf
               : ((x, v) => x.replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? String(v[k]) : m));
-            _uxImRenderStages(_uxImLastStatus, _uxImRx, t, tf);
-            _uxImRenderStatements(_uxImLastStatus, _uxImRx, t, tf);
+            // The SAME picture it was showing: a fresh page stays fresh (R1).
+            if (_uxImView === "fresh") {
+              _uxImRenderFresh(_uxImLastStatus, _uxImRx, t, tf);
+            } else {
+              // The WHOLE run view (2026-09-26 leftovers, Y6), not only its stage rows and
+              // statements: the header ("4/4 imported") and the per-backup rows ("— Done ·
+              // 4s") are drawn by the same renderer, and once the run was over nothing drew
+              // them again, so they stayed in the language the run ended in.
+              _uxImRenderQueue(_uxImLastStatus);
+            }
+          }
+        } catch (_e) {}
+        // ...and the result block under it, from the arguments it was drawn with. Only
+        // while it is still on screen: a scan or a new run empties it on purpose.
+        try {
+          const sh = document.getElementById("ux-imp-summary");
+          if (_uxImSummaryArgs && sh && sh.innerHTML.trim()) {
+            _renderImportSummary(sh, _uxImSummaryArgs.summaries, _uxImSummaryArgs.run);
           }
         } catch (_e) {}
       }

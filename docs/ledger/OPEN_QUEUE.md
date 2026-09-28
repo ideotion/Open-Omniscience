@@ -22,6 +22,30 @@
 
 ## Open queue (when maintainer says proceed)
 
+- **THE FOUR 0.4 BLOCKING DECISIONS, ANSWERED IN CHAT (2026-09-27 08:56 UTC; recorded the same turn in
+  PR #1191).** The maintainer, verbatim: «FYI, the blocking decisions: OK for RC01, I'll do the versino switching after all current draft PRs are merged. RC10: go with your recommendation. Row R: OK to move that to 0.5. Row N: keep sudachipy».
+  Each answers a question the «What's left for v0.4» thread named on 2026-09-26 as blocking the tag, with
+  that thread's recommendation: `RC01` = (a) · `RC10` ⛔ = (b), with row V's closing probe moved off the
+  excluded host · `PF06` = (a) · `PF12` = `sudachipy`, as built. One line each in
+  [`RULINGS_INDEX.md`](RULINGS_INDEX.md); the gate edits are in `RELEASE_0.3_GATE.md` (row 5 moved),
+  `RELEASE_0.4_GATE.md` (rows G, N, R, V; row W added; the exit clause) and `RELEASE_0.5_GATE.md` (row L added).
+  **STILL OWED, AND BY WHOM:** (1) the flip to `0.4.0` — the MAINTAINER's own act, after all current draft
+  PRs are merged (0.4 row G); no session opens it unless the maintainer asks. (2) The Tier-A quarantine run, `0.3`'s row 5,
+  now 0.4 row W — the operator, through the release run's opt-in step. (3) The Q114 hosts except
+  `dumps.wikimedia.org` added to the session environment's allowlist — the operator. **Measured from a
+  session at about 09:00 UTC the same day: all seventeen, `dumps.wikimedia.org` included, answered `000`**
+  (the proxy refused each CONNECT), so row V's probe cannot pass yet. (4) Row R's click-through (Q1128 = a):
+  R35 delegated that half to Claude for rows H, I, J, L, M, N, O, P, S, T and U; row R is not among them
+  and R35 gives no reason, so a Claude-run walk on the same terms is the session's reading, not a ruling.
+  (5) `PF12` does not reach the keyword path: retiring `janome` there is undecided, and the status quo is
+  kept until the maintainer's word. (6) The release run still labels row W's result as board row `G`, and
+  its checkbox still says «deferred by ruling A1» (`src/monitoring/release_run.py`, the ×12 checkbox
+  string, `tests/test_release_run.py`); relabelling it is session work, owed with the next fix batch.
+  Nothing else moved: `RC02`, `RC03` and `RC12` stay PENDING, and the pre-flight round's other twelve
+  questions stay unanswered.
+  **UPDATE (same day):** (4) the Claude walk of row R ran and FAILS on 2 P2 and 8 P3 defects (the 2026-09-26
+  click-through entry below, «The re-walk»); (6) the relabel is in fix batch B20 beside row R's fixes.
+
 - **THE SEARCH INDEX NOW FOLDS ARABIC AND SEGMENTS CHINESE AND JAPANESE (`S04-07` S8, Q506 🔒 = b,
   Q507 = a, built 2026-09-25): WHAT IS OWED, WHAT WAS LEFT UNDECIDED, AND ONE FINDING OUTSIDE THE
   RULING.** The sync triggers index `oo_fts_norm(text)` rather than the stored text, and the search
@@ -34,10 +58,11 @@
     keep its report (counts by script, the segmenter versions it ran with, the time taken), with a
     few before/after searches. The fixture numbers are in the PR; nothing here stands in for the
     real corpus.
-  - **UNDECIDED, AND FOLLOWED AS DEFAULT: `sudachipy` versus `janome` for ja (brief §6, PF12 is
-    BLANK and non-⛔, default a = sudachipy per Q506).** Q506 is followed on the SEARCH path only;
-    the keyword path keeps `janome`, and nothing was retired. If PF12 is answered "retire janome",
-    the keyword path moves in its own change, with the keyword engine identity bump that implies.
+  - **DECIDED 2026-09-27: `sudachipy` for ja on the SEARCH path, as built (`PF12`, in chat: «Row N: keep
+    sudachipy»).** It was UNDECIDED and followed as the default until then (brief §6, PF12 blank and
+    non-⛔, default a = sudachipy per Q506). The keyword path keeps `janome`, and nothing was retired:
+    the answer chose the search splitter only. If the maintainer later says "retire janome", the keyword
+    path moves in its own change, with the keyword engine identity bump that implies.
   - **A CONSEQUENCE TO KNOW, NOT A DECISION TAKEN HERE:** `jieba` moved from `[segmentation]` into
     core because the brief places each segmenter per Q1015 = a (pure Python in core). The keyword
     path already used it whenever it was importable, so a default install (which never had
@@ -693,7 +718,10 @@
   click-throughs, PF14 the `guarded_session` SSRF gap before or beside the soak). The sheet's §0 says how a
   blank is read (⛔ → PENDING; otherwise the stated default as a labelled ASSUMPTION); the receiving session
   records one `RULINGS_INDEX.md` row per PFnn. The RC blanks that the same pre-flight depends on (`RC01`,
-  `RC10` ⛔, `RC13`'s eclipse suffix) are pointed at, not re-asked.
+  `RC10` ⛔, `RC13`'s eclipse suffix) are pointed at, not re-asked. **UPDATE 2026-09-27: `PF06` = (a) and
+  `PF12` (keep `sudachipy`) were answered in chat, with `RC01` = (a) and `RC10` = (b); each has its
+  `RULINGS_INDEX.md` row. PF12's second half (retiring `janome` from the keyword path) was not asked and
+  stays open. The other twelve PF questions and `RC13`'s eclipse suffix stay unanswered.**
 - **THE COLLECTION-SPEED KNOB MISSTATES ITS OWN UNIT BY 8.192x, ON FOUR USER-FACING SURFACES —
   found while building the per-process budget (S04-13 S1, Q1012), NOT fixed here.**
   `collect_target_kbps` is **kilobits** per second: `collect_perf._measure_rate` computes
@@ -791,6 +819,10 @@
   [`docs/design/RULINGS_CONFIRMATION_2026-09-15_REGISTER_ROUND.md`](../design/RULINGS_CONFIRMATION_2026-09-15_REGISTER_ROUND.md)
   (a PROCESSING RECORD banner above its §0; every `ANSWER RCnn:` line untouched); the one-line index is
   [`RULINGS_INDEX.md`](RULINGS_INDEX.md) rows `RC01`–`RC17`. **THIS ENTRY IS THE INDEX.**
+  **UPDATE 2026-09-27: `RC01` ANSWERED (a) and `RC10` ANSWERED (b), in chat** — `0.3` closes on the existing
+  pre-release and the maintainer flips the version after the current draft PRs merge, with row 5 carried as
+  0.4 row W; `dumps.wikimedia.org` is excluded for now. PENDING is now three (`RC02`, `RC03`, `RC12`) and
+  the ASSUMPTIONS seventeen; what follows is the 2026-09-15 record, unchanged.
   **THE PARSE, run mechanically per the round's own §0** (letters matched with word boundaries, each letter
   asserted to be an option OF THAT QUESTION, a note after the letter recorded verbatim and taken as the ruling
   where it contradicts the letter): 22 `ANSWER` lines · **0 answered** · **4 PENDING** · **18 ASSUMPTIONS**.
@@ -886,10 +918,12 @@
   the `lean-*` scale from the offerable vocabulary vs Q1129 = a keep the stance «reported, never filtered»;
   RC16) · **L10** (`default` = filter the coverage-state prefixes too vs Q1130 = a `via:*` only; RC17) · 5
   PENDING: **A1** `deferred` (the quarantine run + `v0.3.0` tag operator step; RC01 asks whether 0.4 row G's
-  version flip may proceed on the existing pre-release) · **C4 ⛔** answered `default` (yes / OOENC2 / yes /
+  version flip may proceed on the existing pre-release — **RC01 ANSWERED (a) 2026-09-27: it may; the run is
+  0.4 row W**) · **C4 ⛔** answered `default` (yes / OOENC2 / yes /
   yes) at 15:12Z where Q1009 was left blank that morning — a ⛔ question answered through the second channel
   only: RC03 asks for the four values written out before any of rows 3–6 is executed; 0.9 row F and S05-06's
-  seam stay · **E2** «I don't know yet» (`dumps.wikimedia.org`, one minute before F1's «add them»; RC10 ⛔) ·
+  seam stay · **E2** «I don't know yet» (`dumps.wikimedia.org`, one minute before F1's «add them»; RC10 ⛔ — **ANSWERED (b)
+  2026-09-27: excluded for now**) ·
   **G1** «I can't answer these now. Not enough details. Mark them for future development as questions to ask
   me with more details and an overall impact evaluation.» — a detailed V1-1..V1-9 round with an overall
   impact evaluation is OWED; the 2026-09-07 rulings (the R-series) and the sheet's refinements STAND as
@@ -912,7 +946,7 @@
   at the end of §1 (S03-01, S04-04, S04-06, S04-10, S04-12, S04-13, S04-14, S05-08, S05-09, S05-10, S06-04,
   S09-01) saying what is contested and stopping there. No gate row changed status; no brief's slices were
   rewritten; `CLAUDE.md` is untouched (no non-negotiable or UI invariant is touched by the 65).
-  **PENDING:** `RC01`–`RC17`; the detailed V1-1..V1-9 round (G1); the six placements of `RC08`; the §Poll
+  **PENDING:** `RC01`–`RC17` (`RC01` and `RC10` answered 2026-09-27); the detailed V1-1..V1-9 round (G1); the six placements of `RC08`; the §Poll
   analysis rewrite (after `RC12`); section M1 of the register (ratify or reverse the two self-closed items:
   the unrounded i18n percentage and the calls-not-names drift guard) — never in the artifact, still open.
   **LESSON** (in `LESSONS.md`, 2026-09-15, «two open channels for one question round»): a round re-asked in
@@ -2251,7 +2285,8 @@
   outside (so it over-states what a date-aware block would newly admit). Neither is corrected,
   because correcting either needs a number nobody has. `by_language` is where the decision lives and
   `by_token` makes a PARTIAL fix decidable (drop the block for the worst handful rather than all 82).
-  Slice 4 remains blocked on `dumps.wikimedia.org` (the allowlist, five sessions running).
+  Slice 4 remains blocked on `dumps.wikimedia.org` (the allowlist, five sessions running). *(2026-09-27:
+  `RC10` = (b) excludes the host for now, so slice 4 is operator-side.)*
   A FIFTH commit closes a gap slice 1 opened in itself: `search_omni` published a `cross_language`
   block, a per-row `via_ring` and a `cross_language_items` count that NO frontend read — the
   dead-end shape, in the slice whose own message cites that lesson — and rendering it exposed a real
@@ -9317,7 +9352,10 @@
 - **THE 0.3 CLOSE GATE (maintainer RULED 2026-07-20 — the conditions for tagging v0.3.0;
   the analog of the P0 validation that closed 0.2; rows 6–8 + the row-1/row-4 amendments
   added same day):** the version already reads 0.3.0 (the 2026-07-18 sequence: P0 pass →
-  v0.2.0 tag → flip), so this gate governs CLOSING the 0.3 cycle. EIGHT gate rows, all
+  v0.2.0 tag → flip), so this gate governs CLOSING the 0.3 cycle. **UPDATE 2026-09-27 — `RC01` = (a), in chat: the
+  existing `v0.3.0` pre-release (2026-08-23, `917e8095`) is the 0.3 close; row 5 is no longer required
+  before the tag and is carried as `RELEASE_0.4_GATE.md` row W (see the 2026-09-27 head entry). What
+  follows is the record as it stood.** EIGHT gate rows, all
   required before the tag: (1) **the entire 2026-07-20
   source-management program implemented AND DOUBLE-CHECKED** — the qualification lifecycle
   (admission gate · stamp · background job · re-qualification ladder) · newsletter
@@ -15217,6 +15255,161 @@ decided by it:** nothing about a Home family. The renderers in `src/static/app-l
 
 ---
 
+## 2026-09-26 — The 0.4 click-through DELEGATED to Claude (R35), and the first delegated walk
+
+Asked what was left before v0.4, the maintainer was told the rows H, I, J, L, M, N, O, P, S, T and U each still
+owed their own click-through (Q1128 = a). Offered a checklist to walk, they answered in the project thread,
+2026-09-26 17:23 UTC: **«no, Don't write a checklist for me. I want to delegate the click-through to YOU or a claude
+code session, or an entire workflow.»** Recorded as `R35`. A Claude-run Chromium walk on an encrypted,
+locked-at-boot install, every reported defect independently reproduced before it counts, now meets the
+click-through half of Q1128 = a for those rows. **What it does NOT delegate:** each row's operator steps, which
+need the maintainer's machine (the real restore at corpus scale, the real-corpus fold and re-index reports, the
+removable drive, the upgrade of their own encrypted install), and anything after «Go online».
+
+**The first delegated walk ran the same day** (`docs/audit/delegated-clickthrough-2026-09-26/`, 44 agents: draft,
+adversarial step check, walk, independent re-check). **J and O pass** for everything a sandbox reaches; **H, I, L,
+M, N, P, S, T and U fail** on 115 confirmed defects (5 P1, 38 P2, 72 P3; two more judged by design). The three P1
+causes: every `#oo-tip` hover inside a `showModal()` dialog is drawn under the dialog's top layer, so the consent
+popup's per-lane hosts and transport are unreadable (H, O, P); a deep-linked analysis tab can paint another tab's
+results (N); the task-manager page always reads online because `/api/scheduler/activity` never carries `online`
+(T). **OPEN:** fix the confirmed defects, then walk the failed rows again; a row's click-through clause closes on
+the re-walk, not on this one.
+
+**Which defects before the tag: all of them (`R36`, 2026-09-26 23:32 UTC).** Offered «All 115», «P1 and P2» or
+«P1 only» on a decision card, the maintainer picked «All 115», the recommended option. The fixes land in PR #1191 as
+merged batches, each defect with a test that fails before it and a Chromium check; a fix that needs a ruling, a
+migration or a re-index is DEFERRED with the change it would make, and is listed here rather than dropped.
+
+**Deferred from the fixes (2026-09-27), each with the change it would make.** OPEN until ruled or scheduled:
+- **M11, the fold-refusal half** (the label half shipped: a keyword whose mentions are split across languages
+  names the split). Keys are language-agnostic by design, so the fold merges English «errors» and Spanish
+  «errores» into one key «error», and the majority vote (Q414) then labels the shared row Spanish. The change:
+  in `fold_page` and `_get_or_create_keyword`, skip a mention whose language differs from every language already
+  recorded for the target. It changes stored keys, and it breaks the fold's «equal to a lemmatised re-index»
+  test on Dutch «studies» → «studie», so it needs a ruling (S04-06's S5 forbids it as the brief stands).
+- **The «spread across {n} sources» card under Q411.** The card now carries the term as `title_vars` like the
+  rising card, so the serve-time pass can show its translation; whether its title keeps the trailing «spread
+  across {n} sources» clause beside Q411's «"{term_translation}" (translated from {term_lang}: {term})» form is a
+  template choice Q411 did not make.
+- **Explicit `OO_DATA_DIR` and the first-launch data-location step.** `unlock.html`'s `legalToDataLocation`
+  comment says an explicit `OO_DATA_DIR` skips the step; the backend's `offerable` ignores `explicit_override`, so
+  it is offered anyway. Which one is right is a product decision; the code and the comment must end up agreeing.
+- **Stage 3 after a kill in an import's tail** (the deferred sub-part of I4). A run killed after its stage-4 read
+  now boots as finished, but `optimize_after_bulk` (stage 3) is not re-run on boot, so full-text segments stay
+  unmerged until the next import or re-index. The fix is a boot-time writer, which the deferred-startup path does
+  not host today.
+- **A stored briefing keeps its old law-card title until the next briefing refresh** after the L fixes changed
+  how a law card names its country. Cosmetic and self-healing; noted so a re-walk does not re-report it.
+- **The analysis mind map's per-node tag lines** add clutter where node words already overlap in the top
+  cluster (predates the walk). A layout question for the mind-map rules, not a defect of the tag itself.
+- **The app has no plural rules.** A count before a noun or adjective is written today with two keyed frames,
+  one and many, which is right for English and French but wrong for Arabic (six CLDR categories), Russian (four)
+  and several others. The fixes used that pair wherever a count met a word («1 sources», «4 qualifié»). The
+  lasting fix is one helper over the browser's own `Intl.PluralRules(lang)` (offline, no egress) choosing a keyed
+  frame per CLDR category, with the i18n gates taught that a plural key is one key with several forms. A design
+  change to the locale files and the gates, so it is left for its own slice rather than folded into a fix batch.
+- **A one-off 400 on `POST /api/diagnostics/frontend-error` at unlock** is a client that closed the connection
+  mid-body (FastAPI answers a disconnect with 400); reproduced only that way, never from the payload. Noise, not a
+  fault; noted so a re-walk does not re-report it.
+
+**The re-walk (2026-09-27, `docs/audit/delegated-rewalk-2026-09-27/`).** The fixed build (`0deff9c4`) re-walked
+in Chromium on the first walk's terms, rows H to U, plus the first Claude walk of row R (the five maps). Of the
+234 first-walk defects the walkers checked, 227 are fixed, 3 are only partly fixed (row M's M1, M7 and M14) and
+4 could not be checked in a sandbox. Every walkable step of H, I, J, L, O, T and U passes; M, N, P and S fail
+one to three steps; row R fails. An independent re-checker confirmed **119 items: 1 P1, 23 P2, 95 P3** (some
+repeat across rows, and 17 are a failing step that restates a defect). The P1: the trend's Counts mode labels
+summed mention counts as articles, about 3× the real article count. **OPEN:**
+- **Which of the 119 before the tag: ALL OF THEM (`R37`, 2026-09-27 11:04 UTC).** Offered «All of them» (recommended:
+  R36's bar; the next walk checks only these fixes and each row's steps, so the loop ends) or «P1 and P2 only» (the
+  P3s recorded for 0.5) on a decision card in the «What's left for v0.4» thread, the maintainer picked «All of
+  them». The fixes are batches B20 (row R + the release-run relabel) and B21–B30 in PR #1191. OPEN until they merge
+  and the next walk passes.
+- **ASSUMPTION, not a ruling: the When / Where ooMap embed (Q1150 = «Keep») is built with `0.5`'s map work.**
+  It was scoped and never built (`shipped.csv` 2026-09-10); the 0.4 gate's row R had read Q1150 as naming an
+  existing surface and is corrected. Register M3's recommended build is option (b), places aggregated to
+  country on the existing choropleth, with the anti-capping line. The default placement is `S05-05` beside
+  0.5 row L; the maintainer may ask for it in `0.4` instead.
+- **Row R's single-claimant areas** (Abyei, Tigri Area, Lawa Headwaters): Natural Earth's viewpoint fields
+  cannot name South Sudan or Suriname. B20 was told to derive a missing claimant only from a source field, and
+  otherwise to say on the map that the source records one claimant, never to hand-author a geopolitical claim.
+
+
+**The re-walk's fixes (2026-09-27, R37; batches B20–B30 in PR #1191).** All 119 items are fixed in code except
+three: R-6, R-14 and R-24 are the Q1150 When / Where embed, which was never built, so they are resolved by the
+gate's corrected text and the embed goes with `0.5`'s map work (the ASSUMPTION above). **OPEN until the next walk
+passes**, and that walk checks only these fixes and each row's steps (R37). **THAT WALK PASSED (2026-09-27, the
+fix-check walk below):** 117 fixed on `9eb10528`, the last two (N-4, O-5) on `38965c0e`. Deferred, each with its reason:
+- **J-1's full fix: make the export ONE server-side job.** The minimum fix records the export's request in
+  `oo-export-request.json` and the summary reads «Backup incomplete» when a part is missing, so a reload during
+  the corpus phase no longer drops the large-data copy SILENTLY. It is still two client-chained jobs; one job
+  that chains the volume copy into the folder copy would lose nothing on a reload. A change to the export's job
+  model, so its own slice.
+- **Leads the round-2 batches found beside their work, NOT fixed (the loop converges, R37):** the synthesis
+  result caveat drawn in English (`app-analysis.js`, `esc(r.caveat)`); the per-article keyword badge hover
+  welded from three `t()` calls; ooChart / `dashChartSvg` may flip their text anchors in RTL (unverified); the AI
+  pill's hardware and backend reasons are server prose with no reason codes (`src/llm/backend.py`), and Settings
+  → AI's «Active backend», vLLM and GPU lines are unkeyed; `/api/custody/settings` takes 5.7 s during a running
+  fold (the consent popup is bounded, other readers wait); a data tag equal to a chrome key is translated by the
+  page walker wherever it lacks `data-i18n-dyn` (fixed on the guided-setup chips only; `app-insights.js` term
+  cells and Home keyword chips still carry it); 25 of 31 card-back «Why am I seeing this?» sentences and 56 of 62
+  exact-math labels in `src/briefing/producers.py` are not keyed; Settings → Leads catalogue labels, the source
+  profile's method and caveat, and `skeleton_echo` are not keyed; Home Latest's caveat is drawn raw; the Arabic
+  «changes today» frame has no plural agreement (the no-plural-rules entry above); three locale keys are unused
+  («Discovered candidates», «Automatic collection: {state}», the old By-channel hint); fr at 375 px the Trends
+  window row scrolls sideways (pre-existing, `#trd-windows`); a timed-out graph reads «No strong associations
+  yet»; the import checklist's counts and the export progress still build ASCII brackets by concatenation (the
+  J-3 class); Arabic Settings breadcrumbs keep a left-to-right arrow; a few literal toasts rely on the page
+  walker; the Import dialog's per-backup plan prints raw table names and English step timings; the Import
+  passphrase field keeps its value across a close; `i18n.js`'s `doAttrs` keeps a static element's first-seen
+  title, so JS that sets `.title` on a static element after first paint stays in that language; the zh/ja
+  memory-floor refusal keeps half-width parentheses; the welded `t("Failed:") + " "` still stands in
+  `app-diagnostics.js`, `app-backup.js` and `app-gov-law.js` (`taskmanager.html`'s was fixed as O-5, `38965c0e`); the Insights map's city-dot
+  titles are not repainted; calendar family names are English catalogue data (`configs/calendar_feeds.yml`,
+  needs a data-side label or a ruling); `map_by_area`'s caveat still says «None value» (no UI prints it); country
+  paths on the maps still carry an SVG `<title>`, so touch cannot reach a country's name (the contested areas
+  can); the level map's «No stored figures» and «No comparable, mappable figures» empty states are unkeyed.
+- **Walk environment facts for the next walk:** booting with `OO_NO_SCHEDULER=1` leaves the kill switch CLEAR,
+  so `ensureOnline` returns without a popup; engage airplane mode first (`POST /api/system/network`
+  `online:false`) or a consent check proves nothing. Copied seed folders carry a pre-fix `briefing_cache.json`;
+  refresh it (`POST /api/briefing/refresh`) or data-bearing Lead sentences fall back to English by design. For
+  I-4 in RTL, measure the stage-row gap against the nearest glyph box on the dot's line.
+- **Presentational, worth a maintainer look (not a defect):** the net coach is now an in-flow strip with an arrow
+  at the plane rather than a floating bubble. The 2026-06-13 ruling (a coachmark points at the ONE airplane
+  button) is still met by the arrow; Q-VIS-7 (the coach's accent-filled primary action) stays open.
+
+**The fix-check walk (2026-09-27, `docs/audit/delegated-fixcheck-2026-09-27/`; R37's last walk).** One walker per
+row re-ran its steps and reproduced its re-walk items on `9eb10528`, encrypted, locked at boot, in airplane mode,
+with no hunt for new defects. Every walkable step of rows H, I, J, L, M, N, O, P, R, S, T and U passes; 117 of
+the 119 items were fixed there, and the two an independent re-checker confirmed (N-4's Diagnostics half, O-5's
+`/tasks` line, both P3) were fixed in `38965c0e` and re-checked in Chromium. **The click-through loop is CLOSED
+for 0.4.** What a sandbox could not walk is the operator's runs or the maintainer's word, listed per row in the
+walk's README; H9 asks the maintainer whether the 15 lane names and 3 headings are fine (the walker found they
+still match `docs/SECURITY.md` one to one).
+- **Incidental notes, NOT fixed and NOT re-checked (32, one line each with a lead, in the walk's
+  `incidental.csv`):** they neither fail a row nor reopen the loop. The recurring ones: the consent popup lists
+  «Chain of custody» under «Could not read whether these are on» on a first open (seen on rows H, M, O, S, R; the
+  M-14 2 s read budget against the slow `/api/custody/settings` read already listed above); raw tokens in
+  translated lines (the import history's `restore` kind, `app-backup.js` ~2271; the Lead's `large-removal` flag,
+  `src/briefing/producers.py` ~1614, passed as a plain var rather than a translated one; the preview's `news`
+  source type, `_renderSchedTargets`); hard-coded joins (the chart hover's `: `, `app-markets.js` ~2420; the
+  engines list's `, ` and half-width `(n)`; the zh qualify refusal's ASCII parentheses, `_qualDeclinedText`);
+  the fr `{prefix}: {text}` frame uses a plain space before the colon, so free text can break before « :»
+  (`fr.json` ~4738, and the consent hover's `Transport :` values ~4522); surfaces that keep their first language
+  after a live switch (the retired-mode notice, `renderRetiredMode` in `app-sources.js` ~870; the newsletter
+  import result, recorded as by design); layout (the fr discovery checkbox at 375 px scrolls the page 80 px
+  sideways, `index.html` ~3121, exposed by the H-5 width fix; the fr Trends Rising list overlapping the Top list
+  and the ar trend-chart ticks clipped; the Home tag select at 375 px clipping its value, `app.css` ~438; the
+  selected ring chip's white text on a 16% accent fill, `app.css` ~562); and the bulletin's country coverage
+  lines and ISO 639-3 tags in English (`src/bulletin/render.py` ~734).
+- **One incidental note has a behavioural effect (O-i1; the walker's reading, not re-checked):** a reload in a non-English
+  UI retires the offline coach with no user action. The boot-time `oo:langchange` (`i18n.js` ~162) makes
+  `app-boot.js` ~344 call `_paintNetwork(_netOnline)` while `_netOnline` still holds its initial `true`
+  (`app-core.js` ~568), and `app-core.js` ~1093 then calls `dismissNetCoach(true)`. Nothing goes online; the
+  coach just never shows again on that profile.
+- **J's step text is out of date after J-1's minimum fix:** J3 and J8 expect only `volumes.json`,
+  `BACKUP_SUMMARY.md` and the volume files; every export folder now also carries `oo-export-request.json`, by
+  design. The operator's J8 instructions should say so.
+
 ## 2026-09-26 — What the read memory stop does NOT cover (deliberate, PR #1190)
 
 The stop (`statement_deadline`, `MemoryShort`) was built after a 3.9 GB instance died in 25
@@ -15266,6 +15459,11 @@ nobody reads it as a general memory cap:
   holds flood cards): the refresh fits, on timing only. The second died at 15:53 UTC on 26 Sept,
   27 minutes into the first pass after a restart and 30 minutes after the unlock, with no
   refresh recorded in that session and UI reads running: not attributed.
+- **A burst within five minutes of the MACHINE's boot is not snapshotted (found 2026-09-27, not fixed).**
+  `_LAST_BURST` starts at `0.0` and `_burst_due` (`src/monitoring/session_hwm.py`) skips a burst while `time.monotonic() - _LAST_BURST < 300`;
+  `time.monotonic()` counts from the machine's boot, so on a host up for under 300 s (an instance started at
+  boot) the first burst is dropped. Seen as two `test_exit_evidence.py` burst tests failing in a sandbox whose
+  uptime was 284 s; CI hosts are up longer. The fix is to start `_LAST_BURST` unset rather than at zero.
 - **Which read made the 2026-09-26 burst is not known.** When the next crash's thread snapshots
   (PR #1190) name it, check whether it runs inside a deadline; if not, that read needs its own
   bound, and this entry should say which.

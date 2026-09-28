@@ -1,0 +1,701 @@
+{
+ "row": "M",
+ "steps_walked": {
+  "row": "M",
+  "title": "Keywords in your own language: the \"translated from…\" tags, \"several senses\", loading translation rings from Wikidata, and the keyword clean-up (fold)",
+  "prerequisites": [
+   "A THROWAWAY data folder with the synthetic multilingual corpus, seeded with lemmatisation OFF so the fold has older word forms to fold. Seed first with no server running; the seed writes straight into the database file. From your Open-Omniscience folder run: (1) OO_DATA_DIR=\"$HOME/oo-rowM\" OO_DB_PLAINTEXT=1 OO_EXTRACT_LEMMA=0 .venv/bin/python scripts/ui_clickthrough_seed.py  (2) OO_DATA_DIR=\"$HOME/oo-rowM\" OO_DB_PLAINTEXT=1 .venv/bin/python -m uvicorn src.api.main:app --host 127.0.0.1 --port 8010  then open http://127.0.0.1:8010. Do NOT set OO_EXTRACT_LEMMA or OO_NO_SCHEDULER on the second command. The app must boot normally: lemmatisation on, and airplane mode on (the plane icon in the top bar is filled). Plaintext is fine because this row is not about encryption. If a first-launch language or terms screen appears, accept it and decline any offer to go online. To throw everything away afterwards, stop the server and delete $HOME/oo-rowM.",
+   "On the throwaway, do NOT press Settings → Advanced → Diagnostics → \"Clean up keywords (re-index, then prune)\" before M1. It re-indexes with lemmatisation on and leaves nothing for the fold to fold.",
+   "Your REAL encrypted install, unlocked, on its usual address. You need it for M3 parts (3)–(4) (the synthetic corpus has almost no acronyms, so the entity lists are empty there), for M6 if the throwaway has no multi-meaning word, for M7 if the throwaway shows no \"rising\" Lead card, and for M10–M11.",
+   "A FRESH BACKUP of the real install before M11 (and ideally before M10): Settings → Data & backup → Export / Backup panel → \"Export / Back up…\" (#set-data). Or stop the app and copy the whole data folder (USER_MANUAL §5.1). A fold cannot be undone without a backup.",
+   "Optional, for M5(c): your local AI (Ollama with a model installed) running on this machine. The app reaches a local Ollama over loopback even in airplane mode, so this does NOT require going online.",
+   "A browser window at least 1280 px wide (the sandbox measured at 1280×900), and a way to record: for each step id, write pass or fail plus a screenshot per surface and per language. The session files these under docs/audit/ as the Q1128 = a record.",
+   "Rule for the whole walk: never click the small red ✕ beside a keyword (in Insights lists and on the Trends bar rows). It hides that keyword everywhere. If you click one by mistake: Settings → Advanced → \"Keywords — explore, curate, filter\" → Keyword filtering → delete the word from \"Excluded keywords (yours)\" → press \"Save keyword filter\"."
+  ],
+  "steps": [
+   {
+    "id": "M1",
+    "where": "THROWAWAY (port 8010). Settings (button at the bottom of the sidebar) → Advanced → open the section \"Diagnostics — logs and reports about this install, generated only when you click\" → the row just below \"Clean up keywords (re-index, then prune)\": \"Fold keyword forms (studies → study)\" (#kw-fold-btn) and \"Fold report (.json)\" (#kw-fold-report), with a small grey status line to their right (#kw-fold-status)",
+    "do": "(a) Click \"Fold report (.json)\" BEFORE any fold and look at the browser tab it opens, then close that tab. (b) Click \"Fold keyword forms (studies → study)\", read the confirmation, and press OK. (c) Watch the grey status line until it stops changing (it refreshes every 2 seconds).",
+    "expect": "(a) The new tab shows only a short error answer containing \"no-report\". No report, whether invented or all zeros, appears before a fold has finished. (b) The confirmation says older keywords are filed under the base form, so “studies” and “study” become one keyword; that phrases, names and keywords your families or groups use are left as they are; that it runs in the background and can be paused from the task manager. It ends with \"A fold cannot be undone.\" (c) On this small corpus the line may jump straight to the end. If you catch it mid-run, it reads \"Keywords checked: X of Y (Z%)\" (possibly followed by \"· Mentions moved: N\") and then \"Setting each keyword's language from its mentions…\". The final line reads \"Keywords folded: N · mentions moved: M · keywords whose language changed: K\" with N and M above 0, because this folder was seeded with lemmatisation off. There is no raw error text. If the line instead says \"Lemmatisation is off in this install (OO_EXTRACT_LEMMA=0)…\", the server was started with that variable: restart it without the variable. That is a setup error, not a fail.",
+    "flags": [
+     "mutates-data",
+     "needs-seed-data"
+    ],
+    "evidence": "src/static/index.html:2961-2973; src/static/app-diagnostics.js:169-241; src/static/app-boot.js:563-569; src/api/insights.py:835-869; src/analytics/keyword_fold.py:172-180 (refusals), 531-564; gate board line docs/product/RELEASE_0.4_GATE.md:59"
+   },
+   {
+    "id": "M2",
+    "where": "THROWAWAY. The same Diagnostics row as M1",
+    "do": "Click \"Fold report (.json)\" again, read it, and if you want it in the record save it now (Ctrl+S / Cmd+S), because the next fold overwrites it. Then click \"Fold keyword forms (studies → study)\" a second time and press OK.",
+    "expect": "The report now opens. It contains a \"fold\" block of counts (keywords_folded, mentions_moved, mentions_merged, skipped_phrase, unchanged…). It contains a \"largest_folds\" list of entries shaped {\"from\", \"to\", \"lang\", \"mentions\"}. In each entry, \"to\" is the base form of the SAME word in that \"lang\" (e.g. from \"districts\" to \"district\" with \"lang\": \"en\"); no entry merges two different words or turns a word into another language's word. It contains \"curated_left_unfolded_sample\" (may be empty). It contains a \"language\" block, which is the reconcile pass (Q413/Q414), with relanguaged, votes_from_mentions, votes_from_articles and \"complete\": true. It contains a \"lemmatiser\" block whose \"languages\" are exactly de, en, es, fr, id, it, nl, pt, ru (no zh, ja or ar), and a plain-language \"method\". The second fold finishes with \"Keywords folded: 0 · mentions moved: 0 · keywords whose language changed: …\" (normally 0), which shows it is safe to re-run.",
+    "flags": [
+     "mutates-data",
+     "needs-seed-data"
+    ],
+    "evidence": "src/analytics/keyword_fold.py:531-564 (a finished run restarts fresh), 617-634 (largest_folds entries), 778-801 (report shape); src/analytics/lemma.py:71 (LEMMA_LANGS); src/analytics/store.py:2064-2074 (language block); gate :59 'Both run as one job and one report'"
+   },
+   {
+    "id": "M3",
+    "where": "THROWAWAY, UI in English. (1) Insights → Explore → \"Corpus landscape\" (#ins-landscape), every column. (2) The Analysis window's \"Keywords\" subtab (#an-keywords): Insights → Trends → click a foreign word in the \"Top\" list; the Analysis window opens → \"Keywords\". Then on the REAL install: (3) Insights → Families with Kind = \"all\" (#fam-list); (4) Settings → Advanced → \"Keywords — explore, curate, filter\" → \"Entity family curation\" (#famc-list)",
+    "do": "On each surface, look at keywords in a language other than English and at a few English ones. Then click one tagged foreign keyword in the Corpus landscape.",
+    "expect": "Each non-English keyword shows the word as the articles used it, followed by a small grey tag with a dotted underline naming its language in English, e.g. \"in Russian\", \"in Spanish\", \"in Portuguese\". Language names are always full names, never codes like \"ru\". English keywords carry NO tag. Where a foreign word has a verified English translation, the ENGLISH word is the visible term and an accent-coloured tag reads \"translated from <Language>\". A merged concept row has no tag, and that is by design; you recognise it by the \"group\" pill in Families, or a landscape chip whose hover says \"family of …\". Apart from those rows, a foreign-looking word with NO tag is a fail to record, because it means the app does not know the word's language. No tag is cut off, overlaps the count beside it, or wraps under the next row. Clicking a tagged foreign word explores that word (\"Resolved to …\"), which shows untranslated words stay searchable. On the throwaway, (3) and (4) may read \"No entity families yet…\" or \"No families with a decision to review…\"; that is not a fail, so check them on the real install.",
+    "flags": [
+     "needs-seed-data"
+    ],
+    "evidence": "src/static/app-corpus.js:834-840 (kwTier), 911-943 (kwLabelHtml, the ONE helper), 1135-1160 (analysis chips); src/static/app-insights.js:119-146 (landscape), 158-171 (Families, kind non_term), 184-214 (curation); src/static/index.html:1307-1310 (Kind: entities / all = non_term); src/analytics/queries.py:708-730 (ring rows get no source language; self-identical translation → untranslated); src/static/app.css:1856-1874; docs/audit/keyword-ladder-clickthrough-2026-09-17/report.json"
+   },
+   {
+    "id": "M4",
+    "where": "THROWAWAY. Top-bar language menu (#lang-switch; it shows a flag and a two-letter code) → Français, then العربية, then 中文; once also 日本語 for the ring panel. Surfaces: the M3 ones still on screen (Corpus landscape, Analysis window Keywords) plus Settings → Advanced → \"Keywords — explore, curate, filter\" → \"Keyword translations — load rings from Wikidata\"",
+    "do": "With the M3 surfaces on screen, switch to Français WITHOUT reloading and look at the tags. Then reload the page (F5), reopen the same surfaces and look again. Do the same for العربية and 中文. For the ring panel only, check fr, ar, zh and 日本語 (ja).",
+    "expect": "After a reload the tags read, in fr: \"en russe\" / \"en anglais\" (e.g. \"district en anglais\") / \"traduit de : anglais\" (the seeded English \"software\" appears as \"logiciel\"). In ar: \"اللغة: الروسية\" / \"مترجم من لغة: الإنجليزية\" (e.g. \"برمجيات\"). In zh: \"语言：俄语\" / \"译自：英语\" (e.g. \"软件\"). Language names are in the UI language (russe, الروسية, 俄语). The foreign word itself never changes; only its tag changes, plus the visible word where a verified translation exists. In ar the page runs right to left, each tag stays beside its own word, and nothing is clipped. The ruling (invariant #15) is that one click switches the entire UI, so the no-reload view must already match the reloaded one. Record per surface whether it did. Predicted from the code, to confirm or refute: the Corpus landscape keeps the previous language's tags until a reload, and the Analysis window changes the tag words and language names but keeps the previous language's translated WORD (e.g. still \"logiciel\" in ar) until you open a new analysis. In fr, ar, zh and ja the ring panel's title, caveat, buttons and \"concepts have no ring\" line are translated and nothing overflows its box.",
+    "flags": [
+     "locale-check",
+     "needs-seed-data"
+    ],
+    "evidence": "src/static/app-corpus.js:962-996 (repaint list); src/static/app-insights.js:118-120 (loadLandscape returns early once loaded); src/static/app-analysis.js:2001-2003 + app-corpus.js:1135-1136 (chips redrawn from the payload fetched with the old target_lang); src/static/app-boot.js:41-48; locales fr/ar/zh/ja keys 'translated from {language}', 'in {language}', 'Keyword translations'; equivalence.resolve_translation('en','software',fr|ar|zh) = logiciel / برمجيات / 软件 (Q7397); docs/audit/keyword-ladder-clickthrough-2026-09-17/report.json + report-rings.json"
+   },
+   {
+    "id": "M5",
+    "where": "THROWAWAY, UI in Français. Insights → Explore (\"Explorer\") → field \"Mot-clé ou entité\" (Keyword or entity, #ins-term): type software → \"Explorer\" → \"⊞ Corpus\" → the Analysis window → \"Mots-clés\" (Keywords) → the chip \"logiciel  traduit de : anglais  Q7397\"",
+    "do": "(a) Rest the MOUSE pointer on the tag after \"logiciel\", and then on the tag of an untranslated foreign word (\"… en russe\"). On touch, long-press instead. Also press Tab until a keyword chip is focused, and note what the bubble shows. (b) Click the small \"Q7397\". In the dialog that opens, click the long https://www.wikidata.org/wiki/Q7397 link and press Cancel at the confirmation. Close the dialog. (c) Optional, with local Ollama running and airplane mode still ON: click \"✦ Traduire le reste (IA, provisoire)\" (Translate the rest (AI, tentative)).",
+    "expect": "(a) One styled bubble opens, its parts joined by \" — \". For logiciel: \"Traduction vérifiée (concept translangue). — Original: software — Langue: anglais — Wikidata: Q7397\". For an untranslated word: \"Non traduit — affiché dans sa propre langue. — Langue: russe\". Q401/Q418 also ask for the ring's other members with per-language counts in this hover. Record whether they appear; the code never puts them in a tag's hover, so expect them missing (a gap to report). Keyboard focus lands on the whole chip and shows the chip's own bubble (\"Ouvrir d'abord…\" / \"Open this keyword's own analysis window\"), not the tag's explanation. Record that as a keyboard-access gap. (b) The Q-number opens the app's own \"link preview\" dialog, not a browser tab. The dialog says \"Construit uniquement depuis votre base locale — aucun appel réseau.\" and its outbound link's visible text is the full https://www.wikidata.org/wiki/Q7397 address. Clicking that link first asks \"Ouvrir ce lien externe dans votre navigateur ?\"; Cancel keeps you on the machine, and the plane stays filled. Also record whether the keyword's own analysis opened behind the dialog: the Q-number sits inside the clickable chip, so the chip's click may fire too, which would be a defect. (c) Q403 says untranslated chips should gain \"≈ traduit de : <langue>\" in muted dashed italics, with the ≈ always visible, a hover of \"Traduction provisoire générée par IA — non fiable, non vérifiée.\" plus \"Modèle: …\", and never \"vérifiée\". From the code, expect nothing to change except that the button disappears, because the page keeps the server's \"untranslated\" label over the AI answer. Report that as a fail of the tentative rung. If a toast says \"L'IA locale est hors ligne — démarrez Ollama (et désactivez le mode avion)…\", Ollama is not reachable. Do NOT go online for this: the airplane-mode advice is misleading, and noting that is part of the record.",
+    "flags": [
+     "needs-seed-data",
+     "locale-check"
+    ],
+    "evidence": "src/static/app-corpus.js:834-840 (kwTier prefers the server tier), 879-906 (kwHoverText, kwQidHtml → openLinkPreview), 911-943, 1155-1158 (the QID anchor sits inside the chip button that has an openCorpus handler), 1077-1079 + 1207-1224 (anFillTentative sets tm.tentative only); src/analytics/queries.py:711-715 (only merged ring rows carry language_breakdown, and they get no tag); src/static/app-boot.js:293-303 (bubble opens for the closest titled element; the tag span is not focusable), 429 (external-link confirm); src/static/app-home.js:1693-1722; src/api/ai.py:274-299; src/llm/ollama.py:532-545 (loopback allowed under the kill switch); CLAUDE.md invariants #6, #7, #17"
+   },
+   {
+    "id": "M6",
+    "where": "THROWAWAY, UI in Français. Insights → Explore → \"Mot-clé ou entité\" (#ins-term): type election → \"Explorer\" → \"⊞ Corpus\" → Analysis window → \"Mots-clés\"; also look for the word in Insights → Explore → \"Paysage du corpus\" (Corpus landscape). If Explore answers \"No indexed mentions of “election”\", do this step on the REAL install with a word NOT in the UI language: German strom (best), wahl or markt; Russian выборы or рынок; Spanish/Portuguese mercado; Arabic انتخابات or سوق; English election or market",
+    "do": "Find the word's chip. Hover the \"Plusieurs sens\" tag, then each small meaning button after it. Click one meaning button.",
+    "expect": "The word stays as written (e.g. \"election\") and gets NO single translation. It carries a \"Plusieurs sens\" (Several senses) tag in the caveat colour, followed by one small button per meaning, each labelled by what that meaning reads as in French, never a bare id. For election, both buttons read \"élection\", because its two meanings (\"election\" and \"public election\") translate the same. Only the hover (\"Concept: election\" / \"Concept: public election\", in English) tells them apart; record whether that is understandable. For strom, the buttons read \"électricité\" and \"fleuve ou rivière\". In zh the election buttons read \"election\" (no Chinese label exists for that concept, so the English concept name is used) and \"選舉\". The tag's own hover reads \"Non traduit — affiché dans sa propre langue. — Langue: anglais\". Q412 = a says clicking a meaning pins it. Record what the click actually does: nothing on main reads these buttons, so expect nothing to happen, or in a list where the buttons sit inside the keyword link, the keyword's own action firing instead. Either way it is a FAIL to report. Also note if the meaning buttons look detached from the keyword chip, with the article count after them; the chip is itself a button, so the browser moves them out of it.",
+    "flags": [
+     "needs-seed-data",
+     "locale-check"
+    ],
+    "evidence": "src/analytics/equivalence.py:1035-1053 (_senses_for), 1093-1126 (refusal with senses); src/static/app-corpus.js:928-931, 945-956 (buttons carry data-kwpin; no reader of data-kwpin anywhere in src/static), 1155-1158; src/static/app.css:1874-1878; read-only resolve_translation: ('en','election','fr') → 2 senses both 'élection', zh → 'election'/'選舉'; ('de','strom','fr') → 'électricité'/'fleuve ou rivière'; the throwaway's only collision word is en 'election' (91 pairs in _multi_index)"
+   },
+   {
+    "id": "M7",
+    "where": "REAL install (or the throwaway if Home shows a \"rising\" Lead), UI in Français. Home → \"Vue d'ensemble\" (Overview, the Lead carousel) and \"Toutes les pistes\" (All Leads)",
+    "do": "Find a Lead card from the rising family (in English its title reads \"“<word>” is rising\"; in French \"« <mot> » est en hausse\") whose word is NOT French. Then switch to العربية and look at the same card again.",
+    "expect": "Q411 = a and Q402 = a say a card whose word has a verified French translation is titled « <French word> » (traduit de : <language NAME in French> — <original>), e.g. « climat » (traduit de : anglais — climate). In ar it reads «…» (مترجم من لغة: … — …). A card whose word has no translation keeps « <mot> » est en hausse, with no empty «», no literal {term_translation}, and no \"traduit de\". French words keep the normal title. Record whether the language appears as a NAME (\"anglais\") or a CODE (\"en\"). The server fills that slot with the stored code and nothing turns it into a name, so \"(traduit de : en — climate)\" is expected and is a FAIL of Q402 to report. Also record any other keyword card that keeps an English title, e.g. \"Appeared everywhere at once: “…”\": only the rising cards use the translatable title on main.",
+    "flags": [
+     "locale-check",
+     "needs-seed-data"
+    ],
+    "evidence": "src/api/briefing.py:48-92 (term_lang = raw Keyword.language code), 125-128 (template); src/briefing/producers.py:294-299 (the only title_i18n producer), 2298 (English-only emergence title); src/static/app-home.js:847, 1162, 1327-1330 (cardTitle → OOI18N.tf); src/static/i18n.js:163-170 (tf substitutes vars verbatim); src/static/locales/fr.json:3532, ar.json:3532"
+   },
+   {
+    "id": "M8",
+    "where": "UI in Français, throwaway (or real). (a) Home → \"Vue d'ensemble\" → the \"Tendances actuelles :\" (Trending now) chip row; (b) Insights → Trends → every row of \"Rising — three windows\" (each has a small chart) and the \"Rising\" and \"Top\" bar lists; (c) Insights → Explore after exploring a word: the \"Resolved to …\" line, the \"Associated keywords (mind-map)\" and its \"Word cloud\" view; (d) Analysis window → \"Mindmap\" subtab; (e) Insights → Super-groups cards; (f) Observatory (the galaxy detail and shared-member lists, and the ranked table); (g) any article's local reader (open an article title from the Analysis window's \"Articles\" subtab) → its \"Keywords\" tab; (h) Settings → Advanced → \"Bulletin\"",
+    "do": "On each surface, find a foreign-language keyword and write down \"tag present\" or \"tag absent\". For (h): on the throwaway you may press \"Build a draft\" and open it; on the real install, only open an edition you already have.",
+    "expect": "The row closes only when EVERY keyword surface shows a \"traduit de : …\", \"en …\" or \"Plusieurs sens\" tag beside each foreign keyword, so write one verdict per surface. From the code, expect \"absent\" on all of them: they draw the bare word. Super-groups still use the older \"⊕ ring → translation\" pair without a tier tag, and Observatory galaxy names are curated super-group labels (e.g. \"Elections & democracy\") rather than keywords, which stay English. That is evidence of the remaining gap, not a mistake on your side. The sandbox photographed tags on Home on 2026-09-17, but that panel is now always hidden and Home shows the tagless chip row instead. The Search tab's result rows list only Title / Source / Published / Lang, so there is no keyword there to tag.",
+    "flags": [
+     "needs-seed-data",
+     "locale-check",
+     "mutates-data"
+    ],
+    "evidence": "src/static/app-home.js:1256-1261 (trends panel force-hidden), 1293-1306 (Overview chips esc(x.term)); src/static/app-corpus.js:698-701 (Resolved to), 1246-1283 (bars esc(t.term)), 1346-1392 (limit=6 & series_top=6: every row takes the chart branch with esc(x.term)); src/analytics/queries.py:2468-2482; src/static/app-insights.js:595-604, 692-696 (kwTransHtml); src/analytics/observatory.py:139 (galaxy = super-group name); src/static/reader.js:241-246 + src/api/main.py:2539; src/static/app-analysis.js:2306-2340 (search table columns); grep: no translation_tier or kwLabelHtml in app-observatory.js or reader.js"
+   },
+   {
+    "id": "M9",
+    "where": "THROWAWAY (or real), airplane mode ON (filled plane in the top bar). Settings → Advanced → open \"Keywords — explore, curate, filter\" → last panel, \"Keyword translations — load rings from Wikidata\"",
+    "do": "Read the panel; its gap line loads by itself when the section opens. Hover the \"Load from Wikidata\" button. Click \"Refresh\". Set \"Concepts to load\" to 5 and click \"Load from Wikidata\". In the popup, hover the \"Keyword translations\" line, then click \"Stay offline\".",
+    "expect": "The caveat, in the caveat colour, is readable on the page without hovering: \"These rings come from Wikidata and nobody reviews them … a hand-curated ring always wins … do not delete the whole of it.\" Below the buttons: \"N concepts have no ring · two Wikidata requests each, one request every 10 seconds\", then one pill per language with a count, and no time estimate. The button's hover says one request per 10 seconds to www.wikidata.org and \"Refused while airplane mode is on.\" Refresh keeps the plane filled, because the gap is read locally. Load opens the \"Go online?\" popup. It names \"Load keyword translations from Wikidata (one request every 10 seconds, over your transport)\". It lists \"Keyword translations n=1\" under \"Only when you ask for it:\", and the hover on that line shows www.wikidata.org. It also lists what \"Runs on every collection pass:\", which discloses that going online starts collection. It shows only your LOCAL network addresses, never a public IP. After \"Stay offline\": the popup closes, the plane is still filled, the status beside the buttons stays empty, and the \"no ring\" count is unchanged.",
+    "flags": [
+     "needs-seed-data"
+    ],
+    "evidence": "src/static/index.html:2699-2717, 3496-3524; src/static/app-insights.js:935-999; src/static/app-shell.js:496-497 (gap loads on expand); src/static/app-core.js:1236-1280 (lane lists), 1297-1327 (ensureOnline); src/static/net-hosts.js:156-162; src/api/insights.py:3751-3767 (gap = no network); audit report-rings.json 'consent' block"
+   },
+   {
+    "id": "M10",
+    "where": "Same panel; RECOMMENDED on your real install, where the gap is real (the throwaway also works). Then the top-bar \"Tasks & system\" icon (#tm-open), which opens the task manager in a separate browser tab (/tasks) → \"Processes\" → the \"AI & analysis\" group",
+    "do": "Note the \"concepts have no ring\" number. Set \"Concepts to load\" to 5, click \"Load from Wikidata\", then \"Go online\". Open the task manager straight away and watch until the row disappears. Back in Settings, read the status line, hover it, and note the \"no ring\" number again. Finally click the plane icon to go back to airplane mode.",
+    "expect": "The status line shows \"Loading in the background…\". In the task manager, under \"AI & analysis\", a \"running\" row reads \"Loading keyword translations from Wikidata\" (in English in every UI language). It has a bar \"i / 5 · P%\" and, under it, the keyword being looked up: the word itself, never a web address. The bar never reaches 5/5, because it counts keywords started and the row vanishes when the job ends. R8 allows at most one request per 10 seconds: each keyword takes at least 10 s, or at least 20 s when Wikidata finds a match, so 5 keywords can never finish in under about 40 s and usually take 1.5–2 minutes. A faster run breaks R8. At the end the status reads \"Rings loaded: W/5\" (W from 0 to 5; \"stopped early\" only if it was stopped). Its hover shows the method (\"…spaced at one per 10 seconds…\") and the caveat word for word. Report as a contradiction: that caveat ends \"Edit or delete the file to undo a load.\", while the panel says \"do not delete the whole of it\". The \"no ring\" number has dropped, usually by at least W. Also record whether the task manager offers a Cancel button for this job: the server marks it cancellable, but no code draws a button for this job kind. The plane is empty (online) during the load and filled again after you click it.",
+    "flags": [
+     "online",
+     "mutates-data"
+    ],
+    "evidence": "src/analytics/ring_loader.py:110-160 (RateGate: interval between requests, first request immediate), 330-417 (search, then entity read only on a match; result method + caveat), 424-470 (writes source: wikidata, note 'loaded from Wikidata, unreviewed'); src/analytics/equivalence.py:64-75 (<data dir>/rings/keyword_rings_local.yml); src/api/insights.py:3718-3801; src/api/jobs.py:605-633 (running rows only, actions ['cancel']); src/static/taskmanager.html:251-313 (no buttons drawn for this kind, label untranslated); src/api/system.py:203-270. UNDO: in <data folder>/rings/keyword_rings_local.yml remove only the entries marked source: wikidata (note \"loaded from Wikidata, unreviewed\"), never the whole file, which also holds rings restored from a backup; then restart the app, because rings are cached in memory. Or restore your backup; on the throwaway just delete the folder. Going online also starts collection and the Wikipedia live stream, exactly as the top-bar plane does."
+   },
+   {
+    "id": "M11",
+    "where": "REAL install, airplane mode ON (so no collection pass competes for the database). First Settings → Data & backup → Export / Backup → \"Export / Back up…\" (or stop the app and copy the data folder). Then Settings → Advanced → Diagnostics → \"Fold keyword forms (studies → study)\", and the top-bar \"Tasks & system\" → Processes → \"AI & analysis\"",
+    "do": "Make the backup. Click \"Fold keyword forms (studies → study)\" and press OK. Open the task manager while it runs. Optional resumability probe, if the fold runs long enough: shut the app down with the top-bar power icon (\"Shut down the app\"), start and unlock it again, open the task manager, then click \"Fold keyword forms (studies → study)\" again and press OK. When the Diagnostics line shows the final counts, click \"Fold report (.json)\" and save that page (Ctrl+S / Cmd+S) as keyword_fold_report-<date>.json for the record, before any re-run overwrites it.",
+    "expect": "The task manager shows a \"running\" row \"Folding keyword forms into their base form\" with a bar \"N / M · P%\" (M = keywords at the start), and then \"Setting each keyword's language from its mentions\". If an import or restore takes the machine, the label becomes \"Paused for an import — …\" rather than failing. Record whether Pause, Resume or Cancel buttons appear for this job. The fold button's hover promises \"pausable from the task manager\", but no code draws those buttons for this job kind, so expect none, which is a fail to report. Resumability probe: after the restart the task manager lists the job as \"paused\". Fold's confirmation then reads \"Continue folding keyword forms? It resumes where it stopped. Keywords already checked: X of Y.\" with X above 0, and OK continues rather than starting again at 0. The Diagnostics line ends \"Keywords folded: … · mentions moved: … · keywords whose language changed: …\". The report opens (it does not say \"no-report\"). Every \"largest_folds\" entry is a genuine inflection of one word within its \"lang\" (plural to singular, verb forms), never two different words merged and never a word turned into another language's word. \"curated_left_unfolded_sample\" lists up to 20 terms your families or super-groups use that were left alone (it may be empty). The \"language\" block is present with \"complete\": true. That block is the reconcile report the gate names as the artifact (Q413), and its votes_from_articles counts older mentions that voted through their article's language (Q414).",
+    "flags": [
+     "mutates-data",
+     "destructive",
+     "needs-backup-file"
+    ],
+    "evidence": "src/api/jobs.py:478-515 (job row, label, actions); src/static/taskmanager.html:282-313 and src/static/app-core.js:1855-1895 (buttons drawn only for collect, downloads and reindex); src/analytics/keyword_fold.py:398-409 (parks only for an import or restore), 502-526 (an interrupted run is restored as paused), 778-801 (report); src/static/app-diagnostics.js:228-234 (the 'Continue folding' confirm); brief S04-06 §5 step 2 (docs/plans/2026-09-12-beta-pathway/S04-06_keyword-translation-ladder.md:182-190). UNDO: only by restoring the backup; the fold is irreversible"
+   }
+  ],
+  "clause_coverage": [
+   {
+    "clause": "Closes when: every keyword surface renders a tier tag (a click-through record across the 'eleven silent surfaces'), and the maintainer's own pass under Q1128 = a (half met by the sandbox walk)",
+    "step_ids": [
+     "M3",
+     "M4",
+     "M5",
+     "M6",
+     "M7",
+     "M8"
+    ]
+   },
+   {
+    "clause": "Q401: the translation is the visible term, a small 'translated from X' tag follows it, and the hover shows the original, the ring's other members with counts, and the source",
+    "step_ids": [
+     "M3",
+     "M4",
+     "M5"
+    ]
+   },
+   {
+    "clause": "Q402: the source language is named in the UI language",
+    "step_ids": [
+     "M3",
+     "M4",
+     "M7"
+    ]
+   },
+   {
+    "clause": "Q403: the three-tier ladder (verified / tentative, always ≈ / untranslated but tagged and still searchable)",
+    "step_ids": [
+     "M3",
+     "M5",
+     "M6"
+    ]
+   },
+   {
+    "clause": "Q418: the hover contents, with the QID through a LOCAL preview first (invariant #6)",
+    "step_ids": [
+     "M5"
+    ]
+   },
+   {
+    "clause": "Q411: cards translate the term, using the template '“{term_translation}” (translated from {term_lang}: {term})'",
+    "step_ids": [
+     "M7"
+    ]
+   },
+   {
+    "clause": "Q412: collision terms get 'several senses' plus a sense picker",
+    "step_ids": [
+     "M6"
+    ]
+   },
+   {
+    "clause": "Q406 ⛔ = b / Q407 / Q408 / R8: rings auto-load without review at ≤ 1 request per 10 s, worst-covered first (gap digest), under the ONE consent, visible in the task manager, disclosed as from Wikidata and unreviewed",
+    "step_ids": [
+     "M9",
+     "M10"
+    ]
+   },
+   {
+    "clause": "Q413 / Q414: the reconcile_keyword_language pass runs in this gate and its report is the artifact (brief operator step 2, on the real corpus); per-mention language with the majority deciding",
+    "step_ids": [
+     "M2",
+     "M11"
+    ]
+   },
+   {
+    "clause": "Q416: a job re-normalises existing keywords (lemmatisation migration), visible in the task manager and resumable; its report on the real corpus (operator step 2)",
+    "step_ids": [
+     "M1",
+     "M2",
+     "M11"
+    ]
+   },
+   {
+    "clause": "Brief §4 locales: en, fr, ar (right-to-left), zh; ja for the ring panel, as the S6 walk added",
+    "step_ids": [
+     "M4",
+     "M5",
+     "M6",
+     "M7"
+    ]
+   },
+   {
+    "clause": "A fixture proves the 10 s spacing and the refusal under the kill switch (a human can only watch the consent gate and the spacing; the proof is automated)",
+    "step_ids": [
+     "M9",
+     "M10"
+    ]
+   }
+  ],
+  "not_clickable": [
+   "'A fixture proves the 10 s spacing and the refusal under the kill switch' is an automated-test clause (tests/test_keyword_ring_loader.py, tests/test_ring_load_ui.py; CI or pytest). In the UI the consent popup always comes first, so the endpoint's own named refusal (HTTP 409 'network refused: airplane mode is engaged', src/api/insights.py:3783-3789) cannot be reached by clicking. M9 and M10 only let a human watch the gate and the spacing.",
+   "'simplemma is in pyproject core with its registry entry' is a file fact, not a click. It is already true on main: pyproject.toml:119 inside [project] dependencies, and configs/external_artifacts.yml:381 'simplemma-dictionaries'.",
+   "'Every keyword surface renders a tier tag' cannot be CLOSED by clicking on main. The M8 surfaces (Home's 'Trending now' chips; every row of Trends 'Rising — three windows' plus the 'Rising' and 'Top' bars; Explore's 'Resolved to' line and mind map / word cloud; the Analysis 'Mindmap'; Super-groups; Observatory; the article reader's 'Keywords' tab; the bulletin) do not call the one label helper kwLabelHtml, so a code change is needed first. The click-through can only record the gap per surface. The brief says the 'eleven surfaces' were never enumerated by name (§6), so M3 plus M8 is the working enumeration.",
+   "'the seven endpoints gain target_lang', '_annotate_translations gains translation_source_lang / translation_tier / senses' and 'through ONE display helper' are code facts (tests/test_keyword_label_ui.py, tests/keyword_label_node_test.js). A click shows a tag but cannot show which function drew it.",
+   "Q410 / brief operator step 1: regenerate configs/keyword_rings_generated.yml with scripts/generate_wikidata_rings.py at the polite rate, top 2,000 keywords per language (≈ 24,000 lookups, about 3 days in the background), before each tag, and record it in the release notes. This is a script run on the maintainer's machine, not a UI action.",
+   "The stoplist merge (the Q1103 = b 'frozen' vs Q1104 = a 'batch by batch' CONFLICT, brief operator step 4) needs the maintainer's ruling, recorded in docs/ledger/OPEN_QUEUE.md and RULINGS_INDEX.md. Nothing is merged in the meantime, and no click decides it.",
+   "Q411's 'the i18n.js:162 note is amended in the same change' is a source comment. On main, src/static/i18n.js:161-162 still reads 'whose data (the keyword term) must not translate' and does not mention the exception; the exception is documented only in src/api/briefing.py:51. A session must fix it; clicking cannot check it.",
+   "Q404 / Q403, the ≈ tentative rung: it cannot be seen by clicking on main at all. record_tentative / record_tentative_batch (src/analytics/translation_store.py:64,110) have no production caller, and POST /api/ai/translate-keywords does not store its results. Even within one session, kwTier() prefers the server's translation_tier over the in-page AI answer (app-corpus.js:834-840), so no ≈ tag is ever drawn. M5(c) can only record the gap.",
+   "The gate's design note that an auto-loaded ring 'stays editable in Settings': no Settings editor for Wikidata-loaded rings exists on main, only the local YAML file named in the panel caveat. A loaded ring also resolves to the 'verified' tier on the keyword itself. The brief says this note binds nobody except its disclosure half, so adopting it or writing down why not is a maintainer or session decision, not a click.",
+   "Filing the maintainer's results as the record under docs/audit/ and updating row M in RELEASE_0.4_GATE.md is session work, done after the maintainer reports M1–M11."
+  ],
+  "surfaces": [
+   "Settings > Advanced > Diagnostics (Fold keyword forms / Fold report)",
+   "Settings > Advanced > Keywords > Keyword translations — load rings from Wikidata",
+   "Settings > Advanced > Keywords > Entity family curation",
+   "Settings > Advanced > Keywords > Keyword filtering (undo for ✕)",
+   "Settings > Data & backup > Export / Backup",
+   "Settings > Advanced > Bulletin",
+   "Insights > Explore (Corpus landscape, Resolved to line, mind map / word cloud)",
+   "Insights > Families",
+   "Insights > Trends (Rising — three windows, Rising, Top)",
+   "Insights > Super-groups",
+   "Analysis window > Keywords / Mindmap / Articles",
+   "Article reader > Keywords",
+   "Home > Overview / All Leads (Lead cards, Trending now row)",
+   "Observatory",
+   "Go online? consent popup",
+   "Link preview dialog (Wikidata Q-number)",
+   "Task manager (Tasks & system, /tasks) > Processes",
+   "Top-bar language menu"
+  ],
+  "estimate_minutes": 110,
+  "notes": "WHAT THIS IS: the second half of the Q1128 = a bar for row M. Chromium in the sandbox did the first half on 2026-09-17 (docs/audit/keyword-ladder-clickthrough-2026-09-17/: labels in en/fr/ar/zh, ring panel in en/fr/ar/ja, consent with zero off-site requests). That walk did NOT reach the analysis window's subtabs, the mind maps, the Observatory, the bulletin, the article reader, the sense picker, the tentative tier, a real Wikidata load, the task-manager row, or the fold job (built 2026-09-25, after the walk). It also switched languages in a way that did not test repainting without a reload. Suggested order: M1–M6, M8 and M9 on the throwaway (fold first, so the label steps see folded keywords); then M3 parts (3)–(4), M7 (if the throwaway had no rising Lead), M10 and M11 on the real install. Record pass or fail per step id, plus screenshots.\n\nLIKELY FAILURES I found reading main (hand-checked in the source, not run). Please confirm or refute each by looking:\n(1) Home's 'Trending now' panel, which the sandbox photographed with tags, is now always hidden (app-home.js:1258-1261). Home shows a compact chip row of bare words instead (1293-1306).\n(2) These surfaces draw no tier tag: every row of 'Rising — three windows' (each row takes the chart branch), the Trends 'Rising'/'Top' bars, Explore's 'Resolved to' line, both mind maps, Super-groups (the old '→ translation' pair), the Observatory, the article reader's Keywords tab and the bulletin.\n(3) Switching language without a reload leaves the Corpus landscape in the old language (loadLandscape returns early once loaded), and leaves the Analysis window showing the old language's translated word.\n(4) The ≈ tentative tier is never drawn. The page prefers the server's 'untranslated' label over the in-page AI answer. The 'local AI is offline' toast also tells you to turn airplane mode off, although a local Ollama works in airplane mode.\n(5) A tag's hover never lists the ring's other members with counts (Q401/Q418). The tag cannot be reached with the keyboard.\n(6) The Q-number link sits inside a clickable chip on the Corpus landscape and in the Analysis Keywords, so the chip's own action may fire behind the preview dialog.\n(7) The 'several senses' buttons have no click handler anywhere in src/static (data-kwpin is never read). For the seeded word 'election' both buttons read 'élection'.\n(8) Card titles fill {term_lang} with the stored language CODE, so expect '(traduit de : en — climate)'. Only the 'rising' cards use the translatable title at all.\n(9) Neither task-manager surface draws Pause, Resume or Cancel for the 'keyword-fold' or 'wikidata-rings' jobs, although the API lists those actions and the fold button's tooltip promises 'pausable from the task manager'. A stopped fold can only be continued from the Diagnostics button, and only after an app restart turns it into 'paused'.\n(10) A ring loaded from Wikidata without review resolves to the 'verified' tier, so its hover says 'Verified translation (cross-language concept).' The load result's caveat says 'Edit or delete the file', while the panel says not to delete the whole file.\n(11) Task-manager job titles stay in English in every UI language (taskmanager.html prints j.label untranslated). This is general, not specific to row M.\n(12) Optional extra probe for M10: start a 3-concept load and turn airplane mode ON mid-run. Invariant #14e's corollary says the refusal should be named. On main each failed lookup is counted as a generic error (ring_loader.py:379-381), so expect 'Rings loaded: 0/3' with no mention of airplane mode.\n\nALSO: the ring panel's caveat text has changed since the sandbox walk, so report-rings.json quotes an older sentence; the text that matters is at src/static/index.html:2706. Going online anywhere (M10) also starts collection and the Wikipedia live stream (src/api/system.py:203-270). On the throwaway the seeded sources are .example domains that cannot resolve, but the Wikipedia stream and the ride-along lanes (markets, calendars, hazard feeds) still reach their real hosts. A 5-concept load keeps the online window to about 2 minutes. The standalone task manager opens at /tasks in a separate browser tab. A merged ring row (one concept across languages) deliberately has no 'translated from' tag; that is not a failure. Phone width (375 px) is not required by this row and was not added."
+ },
+ "walk": {
+  "row": "M",
+  "environment": {
+   "encrypted": true,
+   "seed": "scripts/ui_clickthrough_seed.py (default STATE C: 440 language-pool articles, 453 total, 2254 keywords) into an ENCRYPTED store: OO_DB_PASSPHRASE='walk-pass-2026', OO_DB_PLAINTEXT unset, OO_EXTRACT_LEMMA=0 at seed time only. The file header is ciphertext.",
+   "ports": [
+    8826,
+    8827
+   ],
+   "scratch_dir": "/tmp/claude-0/walk/M",
+   "notes": "Launched only with the console script. Servers: 8826 was PID 29769 (data1, the throwaway for M1-M9). 8827 was PID 3323 (data2), shut down from the app's own power icon during the M11 probe, then restarted as PID 3539. Both were started with neither OO_DB_PASSPHRASE nor OO_DB_PLAINTEXT nor OO_EXTRACT_LEMMA, so each booted LOCKED with lemmatisation on and was unlocked through #pw/#btn-unlock. Both are killed now; the data dirs remain. Airplane mode stayed on throughout, and zero off-host requests were recorded. No consent 'Go online' was ever clicked. There is no 'real install' in this sandbox, so a second identical encrypted seed (data2) stood in for it in M11. M3 parts (3)-(4), M7 and M10 need a real corpus or egress. Playwright needed executable_path=/opt/pw-browsers/chromium (the bundled headless shell 1243 is absent). Once in five opens, the consent popup's lanes list still showed '…' 2.5 s after opening. A dedicated retry measured it filling in 0.28 s, and it was not reproduced, so it is not filed as a defect. The step text predicts 'software' reads 'translated from English', but the fold's language pass set that keyword to es, so every locale reads 'translated from Spanish' (see the language-reconcile defect). Full report: /tmp/claude-0/walk/M/report.json; fold reports: fold_report_first.json, fold_report_second.json, keyword_fold_report-2026-09-26.json; the backup is in /tmp/claude-0/walk/M/backup2."
+  },
+  "steps": [
+   {
+    "id": "M1",
+    "result": "pass",
+    "locales": [
+     "en"
+    ],
+    "screenshot": "shots/M/M-M1-foldline-en.png",
+    "observed": "(a) Before any fold, 'Fold report (.json)' opened a new tab at /api/insights/keyword-fold-job/report showing only {\"detail\":{\"code\":\"no-report\"}} (HTTP 404), with no invented report (M-M1a-noreport-en.png). (b) The confirm read, verbatim: 'Fold keyword forms now? Older keywords are filed under the base form new articles already use, so “studies” and “study” become one keyword. Phrases, names and keywords your families or groups use are left as they are. It runs in the background and can be paused from the task manager. A fold cannot be undone.' (c) The status line, polled every 250 ms, read 'Keywords checked: 0 of 2,254 (0%)' → '169 of 2,254 (7.5%) · Mentions moved: 1,078' → … → '1,626 of 2,254 (72.1%) · Mentions moved: 6,769', and ended at 18 s with 'Keywords folded: 350 · mentions moved: 7,552 · keywords whose language changed: 10'. Both N and M are above 0, and there was no raw error text. The 'Setting each keyword's language from its mentions…' phase line was seen during the second run (M2)."
+   },
+   {
+    "id": "M2",
+    "result": "fail",
+    "locales": [
+     "en"
+    ],
+    "screenshot": "shots/M/M-M2-second-fold-en.png",
+    "observed": "The report opened (saved as fold_report_first.json). It has every block the step names: fold {keywords_folded 350, mentions_moved 7374, mentions_merged 178, skipped_phrase 887, unchanged 1170, …}; largest_folds with 50 {from,to,lang,mentions} entries; curated_left_unfolded_sample [art, film, sport, tennis, culture, force, statute, temperature]; language {relanguaged 10, votes_from_mentions 31441, votes_from_articles 0, complete: true}; lemmatiser.languages exactly [de,en,es,fr,id,it,nl,pt,ru]; and a plain-language method. Almost every largest_folds entry is a genuine inflection (autorités→autorité fr, registros→registro es, berichteten→berichten de, districts→district fr). One is not: {from:'fila', to:'filar', lang:'pt'} turns the noun 'fila' (queue) into a different word, the verb 'filar'. FAIL on re-run safety: the second fold ended with 'Keywords folded: 1 · mentions moved: 27 · keywords whose language changed: 0', not 0 · 0. Its report's only largest_fold is {from:'cooperativa', to:'cooperativo', lang:'pt', mentions:27}. simplemma is not idempotent (cooperativas→cooperativa→cooperativo), so one pass is not a fixed point."
+   },
+   {
+    "id": "M3",
+    "result": "fail",
+    "locales": [
+     "en"
+    ],
+    "screenshot": "shots/M/M-M3-an-keywords-en.png",
+    "observed": "(1) Corpus landscape (only the Themes column exists on this corpus; 16 chips): non-English words carry a grey dotted tag with the full language name ('in Spanish' ×7, 'in Russian' ×2, 'in French', 'in Portuguese'), never a code. There are 0 clipped and 0 wrapped tags. Merged concept rows (transport ·3, budget ·5) have no tag, and their hover reads 'family of 3: transport, transporte, النقل …' (by design). regional, district and local are English and untagged. (2) Analysis window Keywords for 'software' (30 chips): 'in Russian' ×27, 'in Spanish' ×2. FAILS: (i) the English words 'software' and 'errors' carry 'in Spanish' in the English UI. (ii) Clicking the tagged chip 'nouvelle in French' answered 'Resolved to nouvelle term · 0 mentions in 0 articles', not a searchable word, because after the fold the display term resolves to the emptied pre-fold keyword. (iii) On the Analysis chips the tag is effectively invisible: 1.14:1 contrast. No verified 'translated from' tag appears in the English UI, because 'software' translated into en is itself and so tiers as untranslated. (3) Families with Kind=all shows only 'A-Z entity · 1 mentions'. (4) Entity family curation shows 'Aucune famille avec une décision à examiner…'. Both are expected on the throwaway, and there is no real install to check them on."
+   },
+   {
+    "id": "M4",
+    "result": "fail",
+    "locales": [
+     "fr",
+     "ar",
+     "zh",
+     "ja"
+    ],
+    "screenshot": "shots/M/M-M4-an-reload-ar.png",
+    "observed": "AFTER A RELOAD the tags are correct and localised. fr: 'en russe', 'en espagnol', 'en anglais', 'en portugais', and 'logiciel' + 'traduit de : espagnol' + Q7397. ar (dir=rtl): 'اللغة: الروسية', 'اللغة: الإنجليزية', and 'برمجيات' + 'مترجم من لغة: الإسبانية'. zh: '语言：俄语', '语言：英语', and '软件' + '译自：西班牙语'. Language names are in the UI language. In ar each tag stays beside its word, with 0 clipped tags and 0 horizontal scroll. The source language is Spanish, not English, because of the fold's language pass. WITHOUT A RELOAD (invariant #15 fail): switching en→fr left the Corpus landscape entirely in English ('in Spanish'), and switching fr→ar→zh left it in the previous language (Arabic tags on the zh page). The Analysis window repainted the tag words but kept the previous translated WORD: 'logiciel' under an Arabic tag, and 'برمجيات' under the Chinese '译自：西班牙语'. Both predictions are confirmed. The ring panel in fr, ar (rtl), zh and ja is fully translated (title, caveat, buttons, '470 concepts sans anneau · …', '470 مفهومًا بلا حلقة …', '470 个概念没有语义环 …', '470 件の概念にリングがありません …', and the language pills), with nothing overflowing its box."
+   },
+   {
+    "id": "M5",
+    "result": "fail",
+    "locales": [
+     "fr"
+    ],
+    "screenshot": "shots/M/M-M5b-linkpreview-fr.png",
+    "observed": "(a) Corpus landscape, mouse hover: the logiciel tag's bubble reads 'Traduction vérifiée (concept translangue). — Original: software — Langue: espagnol — Wikidata: Q7397'. An untranslated tag's bubble reads 'Non traduit — affiché dans sa propre langue. — Langue: anglais'. The ring's other members with per-language counts (Q401/Q418) are ABSENT. In the ANALYSIS WINDOW the tag's own explanation never shows: at 20, 60, 150, 400 and 900 ms after hovering the tag, the bubble holds the keyword-stats line ('software — 90 mentions · 72 articles · tendance … · Counts only, never a score…', partly in English). Keyboard: Tab lands on the whole chip, and the bubble shows the stats line ('районах — 0 mentions · 0 articles …' beside a chip that says 55). The tag spans are not focusable. (b) Clicking 'Q7397' opened the app's own link-preview dialog, which states 'Construit uniquement depuis votre base locale — aucun appel réseau.'; its outbound link's visible text is the full https://www.wikidata.org/wiki/Q7397. Clicking it raised the confirm 'Ouvrir ce lien externe dans votre navigateur ? …'; Cancel opened no tab and left airplane mode on. BUT the chip's own action fires behind the dialog: in the Corpus landscape, with Explore showing 'semana', clicking Q7590 on the transport chip switched Explore to 'Resolved to transport' (M-M5b-landscape-qid-behind-fr.png). (c) There is no Ollama in this sandbox. '✦ Traduire le reste (IA, provisoire)' raised the toast 'L'IA locale est hors ligne — démarrez Ollama (et désactivez le mode avion) pour des traductions provisoires.', which is misleading advice, because loopback Ollama works in airplane mode. No ≈ tag was drawn, and the tentative rung itself is not measurable here."
+   },
+   {
+    "id": "M6",
+    "result": "fail",
+    "locales": [
+     "fr",
+     "zh"
+    ],
+    "screenshot": "shots/M/M-M6-senses-fr.png",
+    "observed": "Explore 'election' → ⊞ Corpus → Mots-clés. The chip reads 'election' plus a 'Plusieurs sens' tag in the caveat colour, and the word stays as written. There are two meaning buttons, both labelled 'élection'. Their hovers are 'Concept: election' and 'Concept: public election', English concept names that are the only thing telling them apart. The buttons are DETACHED from the chip: they render as two separate full-size chips on the next line, with the chip's count '20' left dangling after them. Clicking one did nothing (hash, query and keyword HTML unchanged; no pressed state). Hovering the tag in the analysis window shows the keyword-stats line, never 'Non traduit — … Langue: anglais'. zh after a reload: buttons 'election' and '選舉', tag '多种含义' (as expected). zh WITHOUT a reload: the tag switched to '多种含义' but the buttons still read 'élection'. The Corpus landscape has no sense picker."
+   },
+   {
+    "id": "M7",
+    "result": "blocked",
+    "locales": [
+     "fr",
+     "ar"
+    ],
+    "screenshot": "shots/M/M-M7-home-fr.png",
+    "observed": "The synthetic corpus produced no 'rising' Lead: its 14 cards are single-source, resurfaced, spread-across, 'Through time' and reading-diet cards. There is no real install in this sandbox, so the Q411/Q402 title (and whether the slot shows 'en' or 'anglais') could not be observed. Observed on the way: EVERY Home card title stays English in fr and ar, including the keyword cards '“registros” spread across 3 sources', '“semana” spread across 3 sources' and '“local” spread across 3 sources', with no tag and no translation."
+   },
+   {
+    "id": "M8",
+    "result": "fail",
+    "locales": [
+     "fr"
+    ],
+    "screenshot": "shots/M/M-M8d-an-mindmap-fr.png",
+    "observed": "Verdicts per surface (fr). The legacy #home-trends panel is hidden, as predicted. (a) Home 'Tendances actuelles' chip row: tag ABSENT; zh keywords 投票率, 交通 预算, 合作社 and 小型 诊所 are bare. (b) Trends 'Rising — three windows': tag ABSENT (the same zh words bare in every row). The 'Rising' bars list was empty ('Rien pour l'instant — indexez le corpus.'), so it could not be judged. The 'Top' bars: tag ABSENT (избирателей, избирательные, из-за… bare). (c) Explore 'Resolved to' line: tag ABSENT, and the line is untranslated English ('Resolved to избирателей term · 0 mentions in 0 articles'). The Explore mind map and word cloud for that word showed 'Pas encore d'associations fortes.', so no keywords were present to judge. (d) Analysis 'Mindmap': tag ABSENT (районах, software, избирателей… bare in the SVG). (e) Super-groups: tag ABSENT, still the old '⊕ voting → vote' and '⊕ public-election → élection' pairs, with English 'N members · N mentions Dominated by …'. (f) Observatory: galaxy names are English super-group labels ('Elections & democracy', 'Transport & mobility') and there are no keyword tags; the ranked table's language column is localised ('espagnol'). (g) Article reader → 'Mots-clés' tab: tag ABSENT (合作社 2 mentions, 小型 诊所…). (h) Bulletin: the fold is reachable only INSIDE 'Uninstall & wipe'. A draft was built ('Draft built.'); its Review list and the rendered document list Russian stories bare (tag ABSENT). The bulletin chrome is partly English ('COVERS THROUGH', 'Review', 'weekly')."
+   },
+   {
+    "id": "M9",
+    "result": "pass",
+    "locales": [
+     "en"
+    ],
+    "screenshot": "shots/M/M-M9-consent-en.png",
+    "observed": "The caveat is visible without hovering, in the caveat colour rgb(138,77,10): 'These rings come from Wikidata and nobody reviews them. … so a hand-curated ring always wins. … do not delete the whole of it.' The gap line, loaded on expand, reads '470 concepts have no ring · two Wikidata requests each, one request every 10 seconds', followed by pills German·60, Russian·60, Arabic·60, Portuguese·60, French·60, English·60, Spanish·60, Chinese·50, and no time estimate. The Load button's hover reads 'Sends one request per 10 seconds to www.wikidata.org, … Refused while airplane mode is on.' Refresh kept airplane mode on ({online:false}). With 5 concepts, Load opened 'Go online?' naming 'Load keyword translations from Wikidata (one request every 10 seconds, over your transport)'. The popup lists 'Keyword translations n=1' under 'Only when you ask for it:', whose hover reads 'www.wikidata.org — Transport: direct — protected mode is off, so these hosts see your address.' It also lists 'Runs on every collection pass:' (Press collection n=9033, Wikipedia / Wikimedia n=5, Law n=260 …) and only the local address 'eth0: 192.0.2.2'. After 'Stay offline' the popup closed, the app stayed offline, #ring-status was empty and the count was still 470. Zero off-host requests."
+   },
+   {
+    "id": "M10",
+    "result": "not-measurable-here",
+    "locales": [
+     "en"
+    ],
+    "screenshot": "shots/M/M-M9-consent-en.png",
+    "observed": "The load starts only after 'Go online', which this walk must not press, and this sandbox has no egress to www.wikidata.org. The consent gate itself was walked in M9. Still unobserved: the 'Loading keyword translations from Wikidata' task-manager row, the 10 s spacing, 'Rings loaded: W/5' with its method and caveat hover, and the gap count drop. By code (taskmanager.html:297-309), no Cancel button is drawn for the wikidata-rings kind; this matches what M11 measured for the fold kind."
+   },
+   {
+    "id": "M11",
+    "result": "fail",
+    "locales": [
+     "en"
+    ],
+    "screenshot": "shots/M/M-M11-taskmanager-paused-en.png",
+    "observed": "On data2 (a stand-in for the real install; not the operator's corpus). Backup through Settings → Data & backup → 'Export / Back up…' to /tmp/claude-0/walk/M/backup2: 'Verified — all 3 volumes were re-read and matched their checksums', corpus encrypted at rest inside the backup. Fold → OK. The standalone task manager (/tasks) showed 'running · Folding keyword forms into their base form · 551 / 2254 · 24.4%' with NO buttons at all (FAIL: the tooltip promises 'pausable from the task manager'). Resumability probe: shut down with the top-bar power icon at 619/2254, restarted and unlocked. The task manager listed 'paused · Folding keyword forms into their base form · 1067 / 2254 · 47.3%', still with no Resume/Cancel buttons, although /api/jobs returned actions ['resume','cancel']. The Diagnostics fold button's confirm read 'Continue folding keyword forms? It resumes where it stopped. Keywords already checked: 1,067 of 2,254.' OK continued from 1,067, not from 0. The final line was 'Keywords folded: 350 · mentions moved: 7,552 · keywords whose language changed: 10', identical to the uninterrupted run on data1, as are its largest_folds. The report opened and is saved as keyword_fold_report-2026-09-26.json, with language.complete true and votes_from_articles 0. largest_folds carries the same fila→filar entry. The 'Setting each keyword's language' phase row was too short to catch in the task manager."
+   }
+  ],
+  "page_errors": [],
+  "http_errors": [
+   "404 GET http://127.0.0.1:8826/api/insights/keyword-fold-job/report (M1a, before any fold: the expected {\"detail\":{\"code\":\"no-report\"}})",
+   "net::ERR_CONNECTION_REFUSED on 8827 /tasks and /#settings polls right after the deliberate top-bar shutdown in M11 (expected)"
+  ],
+  "junk_text": [
+   "No undefined / NaN / null / [object Object] was found on any walked surface.",
+   "fr/ar/zh Explore: 'Resolved to <term> term · N mentions in N articles' is untranslated English (src/static/app-corpus.js:699)",
+   "fr/ar: Analysis Keywords caveat 'Counts only, never a score — scoped to the top N matched article(s) by relevance.' is English",
+   "fr/zh: Analysis Combine picker '… set algebra over N keywords. The set expression is the corpus label; counts only, never a score.' is English",
+   "fr: keyword-stats bubble caveat 'Counts only, never a score. The trend ratio is noisy on a young corpus; co-occurrence and PMI are association, not causation. Deduced from your corpus, not a claim about the world.' is English",
+   "fr: meaning-button hovers 'Concept: election' / 'Concept: public election' use English concept names",
+   "fr/ar: every Home Lead title is English, e.g. 'Single-source: “…”', 'Resurfaced after 336 days: …', '“registros” spread across 3 sources', 'Through time: this day in past years'",
+   "fr: Super-groups '7 members · 469 mentions Dominated by voting (78% of this total)' is English",
+   "fr: Bulletin list 'COVERS THROUGH', 'Review', 'weekly', 'Draft built.' are English",
+   "all locales: task-manager job label 'Folding keyword forms into their base form' is English (taskmanager.html prints j.label)",
+   "fr grammar: Trends/Home 'N mentions, contre 2 sur les période précédente' ('les' + singular)"
+  ],
+  "defects": [
+   {
+    "title": "After a fold, keyword surfaces show the old inflected term, and clicking or hovering it resolves to the emptied pre-fold keyword (0 mentions)",
+    "severity": "P2",
+    "step_ids": [
+     "M3",
+     "M5",
+     "M8"
+    ],
+    "repro": "Seed with OO_EXTRACT_LEMMA=0, boot normally, run Settings → Advanced → Diagnostics → 'Fold keyword forms'. Then Insights → Explore → Corpus landscape → click the chip 'nouvelle in French' (or explore 'избирателей', or hover the Analysis chip 'районах').",
+    "expected": "The keyword opens with its mentions (the landscape says 109; /api/insights/trend?term=nouveau returns total 109).",
+    "actual": "'Resolved to nouvelle term · 0 mentions in 0 articles'. /api/insights/trend?term=registros returns 0 while the Top list shows 'registros' with 83. The keyword-stats bubble reads 'районах — 0 mentions · 0 articles' beside a chip showing 55. The fold keeps the old surface form as the display term but moves the mentions to the lemma key, and the resolver matches the emptied row, which the fold leaves in place ('removed by the regular keyword cleanup').",
+    "evidence": "/tmp/claude-0/walk/M/M-M3-landscape-click-en.png; walk_b.json M3_after_click_trend; walk_g.json c_resolved_line_text; walk_c.json M5a_untranslated_hover; src/static/app-insights.js:139 (pickTerm(f.term)); src/analytics/keyword_fold.py method string"
+   },
+   {
+    "title": "In the Analysis window the tier tag's hover is replaced by the keyword-stats bubble, so Q418's hover (original, language, QID) is unreachable by mouse or keyboard",
+    "severity": "P2",
+    "step_ids": [
+     "M5",
+     "M6"
+    ],
+    "repro": "UI in fr. Explore 'software' → ⊞ Corpus → Mots-clés. Hover the 'traduit de : espagnol' tag after 'logiciel', or the 'Plusieurs sens' tag on 'election'. Or Tab to a chip.",
+    "expected": "'Traduction vérifiée (concept translangue). — Original: software — Langue: espagnol — Wikidata: Q7397' (the Corpus landscape shows exactly this).",
+    "actual": "At every sample from 20 to 900 ms the bubble holds 'software — 90 mentions · 72 articles · tendance … · Counts only, never a score…'. The tag's title is still in the DOM but is never shown. The tag spans are not focusable.",
+    "evidence": "walk_d.json M5a_an_verified_tag_hover_timeline + M5a_an_verified_tag_title_attr_now; M-M5a-hover-verified-fr.png vs M-M5a-hover-landscape-verified-fr.png; src/static/app-boot.js ooKwStatInit applyTo() (~lines 366-395) writes tip.textContent whenever hovered === the [data-kwstat] chip, overriding the #oo-tip opened for the inner .kw-tag"
+   },
+   {
+    "title": "Tier tag is unreadable on Analysis-window keyword chips (contrast 1.14:1, light theme)",
+    "severity": "P2",
+    "step_ids": [
+     "M3",
+     "M4",
+     "M5",
+     "M6"
+    ],
+    "repro": "Light theme. Explore 'election' → ⊞ Corpus → Keywords. Look at the 'in English' / 'in Russian' tag inside a blue chip.",
+    "expected": "The tag, which is the informed-consent disclosure of the tier, is readable (WCAG AA 4.5:1). In the Corpus landscape it measures 5.4:1.",
+    "actual": "The tag colour rgb(92,101,115) sits on the chip background rgb(47,111,179): 1.14:1. The tags and the Q-number are nearly invisible in every locale.",
+    "evidence": "walk_h.json an_untranslated_tag vs landscape_untranslated_tag; /tmp/claude-0/walk/M/M-M6-senses-fr.png; /tmp/claude-0/walk/M/M-M4-an-reload-ar.png; src/static/app.css .kw-tag (~1856-1874) has no override inside .chip"
+   },
+   {
+    "title": "The 'several senses' picker does nothing, its buttons render outside the chip, and both meanings read the same",
+    "severity": "P2",
+    "step_ids": [
+     "M6"
+    ],
+    "repro": "UI in fr. Explore 'election' → ⊞ Corpus → Mots-clés. Look at the 'election Plusieurs sens' chip and click a meaning button.",
+    "expected": "Q412 = a: clicking a meaning pins it, and the meaning buttons sit with their keyword and are distinguishable.",
+    "actual": "The two buttons both read 'élection'; only the English hovers 'Concept: election' / 'Concept: public election' tell them apart. They are hoisted out of the chip (a button nested in a button), rendering as separate chips with the count '20' dangling after them. A click changes nothing: no reader of data-kwpin exists.",
+    "evidence": "/tmp/claude-0/walk/M/M-M6-senses-fr.png; walk_d.json M6_senses_buttons / M6_click_effect; src/static/app-corpus.js kwSensePickerHtml (~945-956) + anRenderKwChips (~1155-1158)"
+   },
+   {
+    "title": "The task manager draws no Pause, Resume or Cancel for the keyword-fold job, although the API offers them and the fold button promises 'pausable from the task manager'",
+    "severity": "P2",
+    "step_ids": [
+     "M11",
+     "M10"
+    ],
+    "repro": "Start a fold, open the top-bar 'Tasks & system' (/tasks). Or shut down mid-fold, restart and unlock, then open /tasks.",
+    "expected": "Pause while running; Resume and Cancel while paused, as /api/jobs lists them (actions ['resume','cancel']).",
+    "actual": "The rows 'running · Folding keyword forms into their base form · 551 / 2254 · 24.4%' and 'paused · … 1067 / 2254 · 47.3%' have zero buttons. A paused fold can be continued only from the Diagnostics button.",
+    "evidence": "/tmp/claude-0/walk/M/M-M11-taskmanager-fold-en.png, M-M11-taskmanager-paused-en.png; walk_i.json tm_rows; walk_j.json jobs_api_after_restart + tm_after_restart; src/static/taskmanager.html:297-309 (buttons only for collect:current and download kinds)"
+   },
+   {
+    "title": "The Bulletin section is nested inside the destructive 'Uninstall & wipe' fold",
+    "severity": "P2",
+    "step_ids": [
+     "M8"
+    ],
+    "repro": "Settings → Advanced. Look for 'Bulletin' among the top-level folds.",
+    "expected": "A top-level 'Bulletin' fold at the bottom of Advanced (per the markup comment).",
+    "actual": "The Bulletin fold is invisible until 'Uninstall & wipe — irreversible: destroy the key and remove this install' is expanded (DOM: closest parent details = data-adv=uninstall). The bulletin details sit inside #uninstall-panel's header div, just above 'Wipe everything now'.",
+    "evidence": "walk_g.json h_bulletin_nesting {parent_details:'uninstall'}; /tmp/claude-0/walk/M/M-M8h-bulletin-inside-uninstall-fr.png; src/static/index.html:3105-3112 (<details data-adv=bulletin> opened inside <div class=\"phead\"> of #uninstall-panel)"
+   },
+   {
+    "title": "Most keyword surfaces still draw bare foreign words with no tier tag (the gate's closing criterion)",
+    "severity": "P2",
+    "step_ids": [
+     "M8"
+    ],
+    "repro": "UI in fr. Walk Home 'Tendances actuelles', Trends 'Rising — three windows' and 'Top', Explore 'Resolved to', the Analysis Mindmap, Super-groups, Observatory, the reader's Mots-clés tab and the Bulletin.",
+    "expected": "Each foreign keyword carries 'traduit de : …', 'en …' or 'Plusieurs sens'.",
+    "actual": "Tag absent on all of them (zh 投票率 / 合作社, ru избирателей / районах bare). Super-groups still show '⊕ voting → vote'.",
+    "evidence": "walk_g.json M8 block; /tmp/claude-0/walk/M/M-M8b-trends-fr.png, M-M8d-an-mindmap-fr.png, M-M8e-supergroups-fr.png, M-M8g-reader-keywords-fr.png"
+   },
+   {
+    "title": "A language switch without a reload leaves the Corpus landscape in the old language, and leaves the old translated word in the Analysis window (invariant #15)",
+    "severity": "P3",
+    "step_ids": [
+     "M4",
+     "M6"
+    ],
+    "repro": "With the Corpus landscape and an Analysis 'software' Keywords tab loaded, switch the top-bar language en→fr→ar→zh without reloading.",
+    "expected": "One click switches the entire UI, so the view matches the reloaded one.",
+    "actual": "The landscape keeps the previous locale's tags ('in Spanish' on the fr page; Arabic tags on the zh page). The Analysis window repaints the tag but keeps 'logiciel' under the Arabic tag and 'برمجيات' under the Chinese tag. The sense buttons stay 'élection' on the zh page.",
+    "evidence": "walk_b.json M4_fr_noreload_landscape; walk_e.json M4_ar_noreload_*, M4_zh_noreload_*; /tmp/claude-0/walk/M/M-M4-an-noreload-zh.png; src/static/app-insights.js:119-120 (loadLandscape returns early once loaded); src/static/app-corpus.js:1135-1136 (chips re-rendered from the payload fetched with the old target_lang)"
+   },
+   {
+    "title": "Clicking a keyword's Q-number also fires the enclosing chip's action behind the link-preview dialog",
+    "severity": "P3",
+    "step_ids": [
+     "M5"
+    ],
+    "repro": "UI in fr. Insights → Explore: explore 'semana'. Then click 'Q7590' inside the Corpus landscape's 'transport' chip.",
+    "expected": "Only the local link-preview opens.",
+    "actual": "The preview opens AND Explore behind it switches to 'Resolved to transport term · 209 mentions…', because the chip's pickTerm ran.",
+    "evidence": "walk_d.json M5b_trend_before vs M5b_trend_after_qid_click; /tmp/claude-0/walk/M/M-M5b-landscape-qid-behind-fr.png; src/static/app-corpus.js:904-905 (kwQidHtml onclick returns false without stopPropagation) inside the button chip at src/static/app-insights.js:139"
+   },
+   {
+    "title": "Fold is not a fixed point, so a second run folds again, and one largest_fold merges two different words",
+    "severity": "P3",
+    "step_ids": [
+     "M2",
+     "M11"
+    ],
+    "repro": "Run 'Fold keyword forms' twice on the seeded corpus.",
+    "expected": "The second run ends 'Keywords folded: 0 · mentions moved: 0'. Every largest_folds entry is an inflection of one word.",
+    "actual": "The second run ends 'Keywords folded: 1 · mentions moved: 27' (pt cooperativa→cooperativo; simplemma cooperativas→cooperativa→cooperativo). largest_folds contains {from:'fila', to:'filar', lang:'pt'} (noun 'queue' → verb 'to spin').",
+    "evidence": "/tmp/claude-0/walk/M/fold_report_first.json, fold_report_second.json, keyword_fold_report-2026-09-26.json; simplemma.lemmatize checks: cooperativa→cooperativo, fila→filar"
+   },
+   {
+    "title": "Language reconcile tags English words as Spanish in the English UI ('software in Spanish', 'errors in Spanish')",
+    "severity": "P3",
+    "step_ids": [
+     "M3",
+     "M4",
+     "M5"
+    ],
+    "repro": "After the fold, UI in en: Insights → Explore → Corpus landscape, and Analysis 'software' Keywords.",
+    "expected": "English keywords carry no tag in the English UI. The seeded English 'software' reads 'traduit de : anglais' in fr.",
+    "actual": "'software' and 'errors' show 'in Spanish' in en. fr shows 'logiciel traduit de : espagnol' (ar 'مترجم من لغة: الإسبانية', zh '译自：西班牙语'). The fold merges en 'errors' and es 'errores' into one language-agnostic key 'error', and the majority vote (Q414) then relabels the shared row es.",
+    "evidence": "walk_b.json M3_landscape_en / M3_an_kw_en; /api/insights/top?group=false&target_lang=fr → software language 'es'; fold report language.relanguaged 10"
+   },
+   {
+    "title": "A tag's hover lacks the ring's other members with per-language counts (Q401/Q418)",
+    "severity": "P3",
+    "step_ids": [
+     "M5"
+    ],
+    "repro": "UI in fr. Corpus landscape → hover the 'traduit de : espagnol' tag after 'logiciel'.",
+    "expected": "The original, the ring's other members with per-language counts, and the source.",
+    "actual": "'Traduction vérifiée (concept translangue). — Original: software — Langue: espagnol — Wikidata: Q7397', with no ring members. The 'Across languages:' breakdown appears only on rows carrying language_breakdown, which tagged rows do not.",
+    "evidence": "walk_d.json M5a_landscape_verified_tag_hover; src/static/app-corpus.js kwHoverText / kwLangBreakdownText (~858-892)"
+   },
+   {
+    "title": "The 'local AI offline' toast tells the user to switch off airplane mode for a loopback Ollama",
+    "severity": "P3",
+    "step_ids": [
+     "M5"
+    ],
+    "repro": "UI in fr, no Ollama running, airplane mode on. Analysis Mots-clés → '✦ Traduire le reste (IA, provisoire)'.",
+    "expected": "Advice to start the local Ollama. Loopback Ollama is allowed under the kill switch, so going online is not needed.",
+    "actual": "'L'IA locale est hors ligne — démarrez Ollama (et désactivez le mode avion) pour des traductions provisoires.'",
+    "evidence": "/tmp/claude-0/walk/M/M-M5c-ai-fr.png; walk_c.json M5c_toasts; src/static/app-corpus.js anFillTentative (~1213-1216)"
+   },
+   {
+    "title": "Untranslated English on keyword surfaces in fr/ar/zh",
+    "severity": "P3",
+    "step_ids": [
+     "M4",
+     "M5",
+     "M7",
+     "M8"
+    ],
+    "repro": "UI in fr (also ar, zh). Explore a word; open Analysis Keywords; view Home, Super-groups, the Bulletin and the task manager.",
+    "expected": "Chrome translated ×12.",
+    "actual": "'Resolved to … term · N mentions in N articles'; 'Counts only, never a score — scoped to the top N matched article(s) by relevance.'; '… set algebra over N keywords …'; the keyword-stats caveat; every Home Lead title ('Single-source:', 'Resurfaced after N days', '“registros” spread across 3 sources'); Super-groups 'N members · N mentions Dominated by …'; bulletin 'COVERS THROUGH' / 'Review' / 'weekly' / 'Draft built.'; the task-manager job label. Also the fr grammar slip 'sur les période précédente'.",
+    "evidence": "walk_c.json an_hint_fr; walk_e.json M4_zh_an_hint; walk_g.json M7_card_titles_fr/ar and the M8 samples; /tmp/claude-0/walk/M/M-M7-home-fr.png"
+   }
+  ],
+  "not_measurable": [
+   "M10 end to end: a real Wikidata load needs 'Go online' plus egress to www.wikidata.org (the sandbox has none, and the walk rules forbid it). So the 10 s spacing, the task-manager row, 'Rings loaded: W/5' with its caveat contradiction, and the gap drop were not observed.",
+   "M5(c) the tentative ≈ rung: no local Ollama here. Only the offline toast was observed.",
+   "M7: no 'rising' Lead on the synthetic corpus and no real install, so Q411/Q402 card titles (code vs name) were not observed.",
+   "M3 parts (3)-(4) Families (Kind=all) and Entity family curation on a real corpus with entities: the throwaway has only 'A-Z entity' and no curation decisions.",
+   "M11 on the operator's REAL corpus: it was walked on a second synthetic encrypted seed (backup, fold, task manager, shutdown/resume, report). A real-corpus report is still owed.",
+   "Explore mind map and word cloud (M8c): the explored word had 'Pas encore d'associations fortes.' after the fold, so no keywords were drawn to judge.",
+   "Trends 'Rising' bars (M8b): empty on this corpus.",
+   "The automated 10 s spacing and kill-switch refusal fixture: not a click."
+  ],
+  "summary": "Row M's click-through clause does NOT close on this walk. The fold job (M1) and the Wikidata consent gate (M9) pass, and the tags render correctly in en/fr/ar/zh after a reload. But most keyword surfaces (Trends, mind maps, Super-groups, reader, bulletin, Home chips) still draw bare foreign words, and several things are broken: the language switch without a reload, the tag hover in the Analysis window (replaced by keyword stats, and the tag sits at 1.14:1 contrast there), the 'several senses' picker (dead, detached), and task-manager control of the fold job (no buttons). A fold also leaves inflected display terms resolving to empty keywords. M7 (no rising Lead) and M10 (needs egress) could not be observed here, and M11 ran on a synthetic stand-in, not the operator's real corpus."
+ },
+ "recheck": {
+  "row": "M",
+  "verdicts": [
+   {
+    "title": "After a fold, keyword surfaces show the old inflected term, and clicking or hovering it resolves to the emptied pre-fold keyword (0 mentions)",
+    "verdict": "confirmed",
+    "severity": "P2",
+    "reason": "Reproduced on my own encrypted seed (OO_EXTRACT_LEMMA=0 at seed time only, port 8828). I ran the fold from Diagnostics, then clicked the landscape chip 'nouvelle in French'. It gave 'Resolved to nouvelle term · 0 mentions in 0 articles', while typing 'nouveau' gave 109 mentions in 55 articles (Mr-D1-landscape-click-nouvelle-en.png, r2.json). The API shows the same thing: /api/insights/top returns {term:'nouvelle', normalized:'nouveau', mentions:109}; trend?term=nouvelle returns 0; registros→0 and registro→83; keyword-stats?term=районах returns 0 mentions, while район returns 55. The emptied rows really remain in the DB ('errors' and 'errores' at mention_count 0). They persist indefinitely on an offline install, because the prune runs only in the scheduler's idle window (src/scheduler/maintenance.py), and the scheduler does not start in airplane mode.",
+    "root_cause": "src/analytics/queries.py:220-225 resolve_keyword returns the first exact normalized_term match before it tries _resolve_by_lemma, even when that row has zero mentions. The fold (src/analytics/keyword_fold.py:273-277) creates or keeps the target with term=src.term, the inflected surface, and deliberately leaves the emptied source row for prune_orphan_keywords (OPEN_QUEUE 'LEFT OUT: deleting the keywords a fold empties'). Every click and hover passes the display term (app-insights.js:142 pickTerm(f.term); app-corpus.js:1156 data-kwstat=term.term; termListHtml 1231), so it lands on the orphan.",
+    "suggested_fix": "In resolve_keyword, when the exact normalized hit has mention_count == 0, fall through to _resolve_by_lemma and return that row when it finds one, keeping the orphan only as a last resort. The alternative is to have the fold call prune_orphan_keywords on the rows it emptied as its final step. Either one keeps the fold equal to a re-index."
+   },
+   {
+    "title": "In the Analysis window the tier tag's hover is replaced by the keyword-stats bubble, so Q418's hover (original, language, QID) is unreachable by mouse or keyboard",
+    "verdict": "confirmed",
+    "severity": "P2",
+    "reason": "Reproduced in fr: I explored 'software', opened ⊞ Corpus → Mots-clés and hovered the 'traduit de : espagnol' tag after 'logiciel'. At 30 ms the bubble reads 'Chargement des stats du mot-clé…'. From 100 ms to 1500 ms, and on a second hover, it reads 'software — 90 mentions · 72 articles · tendance… · Counts only, never a score…'. The tag's own title is still 'Traduction vérifiée (concept translangue). — Original: software — Langue: espagnol — Wikidata: Q7397' in the DOM, but it is never shown (r2.json d2_*). The tag spans have tabIndex -1, so keyboard focus reaches only the chip. The landscape chips carry no data-kwstat, and there the same tag hover shows correctly.",
+    "root_cause": "src/static/app-boot.js:411-416. onHover takes e.target.closest('[data-kwstat]'), which is the enclosing button.chip, even when the pointer is on a nested .oo-tip-target (the .kw-tag). applyTo (app-boot.js:391-392) then overwrites #oo-tip's textContent whenever hovered === that chip, replacing the bubble the ooTipInit handler (app-boot.js:293-297) had just opened for the inner tag.",
+    "suggested_fix": "In ooKwStatInit's onHover, ignore the event when the nearest .oo-tip-target is a descendant of the [data-kwstat] element rather than the element itself. For example: const inner = e.target.closest('.oo-tip-target'); if (inner && inner !== el) { hovered = null; return; }. For keyboard reach, append the tier hover text to the chip through data-oo-tip-extra, which applyTo already preserves."
+   },
+   {
+    "title": "Tier tag is unreadable on Analysis-window keyword chips (contrast 1.14:1, light theme)",
+    "verdict": "confirmed",
+    "severity": "P2",
+    "reason": "Measured in Chromium (light theme, fr), on the tag inside button.chip, whose background is rgb(47,111,179). The untranslated tag 'en russe' and the QID 'Q7397' are rgb(92,101,115) = 1.14:1. The VERIFIED tag 'traduit de : espagnol' is worse than reported: it is rgb(47,111,179) on rgb(47,111,179) = 1.00:1, i.e. fully invisible. The chip's own term text is 5.19:1. The screenshot shows 'logiciel' with no visible tag at all (Mr-D3-crop.png, Mr-D3-an-keywords-fr.png). The tier tag is the informed-consent disclosure (app.css comment at 1850), so this breaks the visible-by-default caveat.",
+    "root_cause": "src/static/app.css:1856 (.kw-tag color: var(--accent)), 1869 (.kw-untranslated color: var(--muted)) and 1882 (.kw-qid color: var(--muted)) have no override for a filled chip. app.css:441 gives every button background: var(--accent), and the Analysis chips are <button class=\"chip\"> (app-corpus.js:1156).",
+    "suggested_fix": "Add a rule for tags inside filled chips, e.g. '.chip .kw-tag, .chip .kw-qid { color: inherit; border-bottom-color: currentColor; }'. Or draw the tag with the chip's accent-fg and a translucent underline. Then re-run the 17-theme contrast check on the chip pairing."
+   },
+   {
+    "title": "The 'several senses' picker does nothing, its buttons render outside the chip, and both meanings read the same",
+    "verdict": "confirmed",
+    "severity": "P2",
+    "reason": "Reproduced in fr: explore 'election' → Mots-clés. Both .kw-sense buttons read 'élection' and differ only in the English hovers 'Concept: election' and 'Concept: public election'. Their closest('.chip') is null: the chip's outerHTML ends at the kw-senses span, and the next sibling is the first sense button (r2.json d4_*). Clicking one fired no /api/ request beyond the regular network/scheduler polls, changed no keyword text, left the analysis query at '“election”', and added no tab or pressed state (r3.json senses_click). No code anywhere in src/static reads data-kwpin. Its own comment (app-corpus.js:942-944) calls this exact shape a dead end, and OPEN_QUEUE notes that 'a refusal with no proceed path is unfinished'.",
+    "root_cause": "src/static/app-corpus.js:945-956. kwSensePickerHtml emits <button class=\"kw-sense\">, which kwLabelHtml (932-934) inlines inside anRenderKwChips' <button class=\"chip\"> (app-corpus.js:1156-1158). The HTML parser closes the outer button at the nested one, hoisting the senses out of the chip and leaving the count dangling. Each label is x.translation, identical for both rings. No listener for [data-kwpin] exists.",
+    "suggested_fix": "Render the picker after the chip's closing tag, not inside it, and add one delegated click handler on [data-kwpin] that reopens the analysis with the pin ('term:ring_id', the grammar parse_sense_pins reads) and marks the choice aria-pressed. When two senses share a translation, add the concept name (translated) to the label."
+   },
+   {
+    "title": "The task manager draws no Pause, Resume or Cancel for the keyword-fold job, although the API offers them and the fold button promises 'pausable from the task manager'",
+    "verdict": "confirmed",
+    "severity": "P2",
+    "reason": "Reproduced: I started the fold with /tasks open. Every sampled row read 'running Folding keyword forms into their base form 5 / 2254 · 0.2%' with buttons: [], while /api/jobs returned actions ['pause','cancel'] for the same job (r1.json first_tm, Mr-M11-taskmanager-en.png). The confirm the operator accepts reads '…can be paused from the task manager. A fold cannot be undone.', and the button's title says 'pausable from the task manager' (index.html:2970). The backend pause and resume exist (src/api/jobs.py:783-789, 885-900); only the UI omits them. That is a false promise inside the consent text for an irreversible job.",
+    "root_cause": "src/static/taskmanager.html:297-309 (jobRow) and src/static/app-core.js:1871-1890 (_jobRow) draw controls only for collect:current, download kinds and (app-core only) 'reindex'. Neither reads j.actions, so kind 'keyword-fold' (and likewise 'search-reindex') gets no buttons.",
+    "suggested_fix": "Render controls from j.actions in both renderers: 'pause'/'cancel' → the existing cancel call (POST /api/jobs/{id}/cancel pauses the fold), 'resume' → the existing resume call. At minimum, add 'keyword-fold' beside 'reindex' in both files."
+   },
+   {
+    "title": "The Bulletin section is nested inside the destructive 'Uninstall & wipe' fold",
+    "verdict": "confirmed",
+    "severity": "P2",
+    "reason": "Reproduced (en): with Settings → Advanced open and 'Uninstall & wipe' closed, the top-level folds are AI…Safety, Uninstall & wipe. The Bulletin details has checkVisibility() false; its parent details is data-adv=uninstall and it sits inside .phead. After opening Uninstall & wipe, the Bulletin appears (at y=896) above 'Wipe everything now' (y=1159) (r4 output, Mr-D6-advanced-bottom-closed-en.png, Mr-D6-bulletin-inside-uninstall-en.png). This contradicts the markup's own comment ('a folded section at the VERY BOTTOM of Advanced') and the uninstall comment ('Kept LAST').",
+    "root_cause": "src/static/index.html:3108. The Bulletin block (3108-3139) was spliced into the middle of the line '<div class=\"phead\"><h2>Uninstall &amp; wipe</h2>', inside #uninstall-panel. The stray '</div>' at 3141 then closes the phead.",
+    "suggested_fix": "Close the phead right after its <h2> (restore '</div>') and move the whole '<details class=\"adv-sec\" data-adv=\"bulletin\">…</details>' block to the Advanced top level, e.g. just before the uninstall <details>, so Uninstall stays last as its comment requires."
+   },
+   {
+    "title": "Most keyword surfaces still draw bare foreign words with no tier tag (the gate's closing criterion)",
+    "verdict": "confirmed",
+    "severity": "P2",
+    "reason": "Re-walked in fr with 0 .kw-tag found on: Home 'Tendances actuelles' (投票率, 交通 预算, 合作社, 小型 诊所 bare); Trends 'Rising — three windows' (0 tags; избирателей, votantes, software bare); the Trends top bars (0); Analysis Mindmap (0; SVG texts turnout/district/...); Super-groups (0, still '⊕ voting → vote'); the reader's Mots-clés tab (новая, среды bare) (r3.json; Mr-D7-*.png). The code agrees: those renderers never call kwLabelHtml. RELEASE_0.4_GATE row M: 'Closes when every keyword surface renders a tier tag', and brief S04-06 §4 lists Home cards, Insights rising/trending/top, the analysis subtabs, search rows, the mind map, the Observatory labels and the bulletin. The 2026-09-25 amendment says only the operator report and the click-through are still owed, so this gap is not recorded as known.",
+    "root_cause": "Bare esc(x.term) renderers: src/static/app-home.js:1299-1301 (_renderOverviewTrends); src/static/app-corpus.js:1379 (trending-windows rows carrying a series, i.e. all of them, since series_top == limit; only the series-less remainder reaches termListHtml); termBarsHtml's label; the analysis mindmap and super-group renderers; src/static/reader.js renderKeywords (which also fetches corpus-keywords without target_lang); src/briefing/producers.py:2762 ('spread across' card title as an f-string without title_i18n/term_translation, unlike the rising card at :298).",
+    "suggested_fix": "Route each of those labels through kwLabelHtml, with the endpoint called with tgtLangParam() so the row carries translation_tier/translation_source_lang. Give the other keyword card producers the Q411 title_vars treatment the rising card has. Register every new renderer in ooKwRepaintOnLangChange."
+   },
+   {
+    "title": "A language switch without a reload leaves the Corpus landscape in the old language, and leaves the old translated word in the Analysis window (invariant #15)",
+    "verdict": "confirmed",
+    "severity": "P3",
+    "reason": "Reproduced: after the en→fr switch via #lang-switch, the landscape still read 'nouvelle in French', 'registros in Spanish', 'software in Spanish' (Mr-D8-landscape-noreload-fr.png). After a reload it read 'registros en espagnol', 'logiciel traduit de : espagnol Q7397'. In the Analysis window, fr→zh without a reload gave 'logiciel 译自：西班牙语 Q7397': the French translation under a Chinese tag (Mr-D8-an-noreload-zh.png). A reload fixes both, hence P3.",
+    "root_cause": "src/static/app-corpus.js:962-990. ooKwRepaintOnLangChange calls window.loadLandscape() with no argument, and loadLandscape returns early once _landscapeLoaded is true (src/static/app-insights.js:118-119). For the analysis window it calls anRenderKwChips, which re-renders _anKwData fetched with the previous target_lang (app-corpus.js:1135-1136), so translation text stays in the old locale while kwLangName repaints the tag.",
+    "suggested_fix": "Call loadLandscape(true) from the repaint list (add a per-entry force flag). For the analysis window, re-fetch the corpus-keywords payload with the new tgtLangParam() rather than re-rendering the cached one, since translations depend on target_lang."
+   },
+   {
+    "title": "Clicking a keyword's Q-number also fires the enclosing chip's action behind the link-preview dialog",
+    "verdict": "confirmed",
+    "severity": "P3",
+    "reason": "Reproduced (en): I explored 'semana' ('Resolved to semana term · 83 mentions'), then clicked 'Q7590' inside the landscape chip 'transport Q7590 ·3'. The local link-preview opened, and behind it #ins-term became 'transport' with 'Resolved to transport term · 209 mentions in 162 articles' (r2.json d9_*, Mr-D9-qid-behind-en.png). The same markup sits inside the Analysis chips' button, whose onclick is openCorpus.",
+    "root_cause": "src/static/app-corpus.js:904-905. kwQidHtml's inline onclick ('openLinkPreview(...);return false') prevents the default but not propagation. The <a class=\"kw-qid\"> is nested in <button class=\"ls-chip\" onclick=\"pickTerm(...)\"> (app-insights.js:139-142) and <button class=\"chip\" onclick=\"openCorpus(...)\"> (app-corpus.js:1156), so the click bubbles to the chip.",
+    "suggested_fix": "Make the handler 'event.stopPropagation();openLinkPreview(...);return false'. Better, render the QID outside the button so no interactive content nests in a button."
+   },
+   {
+    "title": "Fold is not a fixed point, so a second run folds again, and one largest_fold merges two different words",
+    "verdict": "confirmed",
+    "severity": "P3",
+    "reason": "Reproduced: the first fold ended 'Keywords folded: 350 · mentions moved: 7,552 · keywords whose language changed: 10'. The second run, from the same UI button, ended 'Keywords folded: 1 · mentions moved: 27 · keywords whose language changed: 0', with largest_folds [{from:'cooperativa', to:'cooperativo', lang:'pt', mentions:27}] and targets_created 1 (r1.json, fold_report_second.json). This contradicts OPEN_QUEUE's 'the fold is idempotent (a second run moves nothing, tested)' and the Q416 index note 'the lemma is pinned idempotent'. Measured with the app's own lemmatize: cooperativas→cooperativa→cooperativo and filas→fila→filar. The idempotence test (tests/test_keyword_lemma_extraction.py:122) only checks 'en'. Since lemma_key is shared, extraction of new articles files 'cooperativas' under 'cooperativa' while a later fold moves it to 'cooperativo', recreating the split the job exists to remove. The fila→filar entry (noun 'queue' filed under verb 'filar') is simplemma's dictionary, applied identically at extraction, so it is a lemma-quality issue rather than a fold bug. No mention is lost, hence P3.",
+    "root_cause": "src/analytics/extract.py:461-494. lemma_key adopts a lemma that is not itself a fixed point of extraction_lemma (src/analytics/lemma.py lemmatize), and keyword_fold.py's classify step (rules.movable(norm), ~keyword_fold.py:656) re-applies it to keys that are already lemmas.",
+    "suggested_fix": "In lemma_key, adopt lem only when extraction_lemma(lem, language) == lem, otherwise keep word, so one pass is always a fixed point for both callers. Extend test_lemmatisation_is_idempotent to every LEMMA_LANGS language. Add 'fila' to the evidence-grown MISLEMMA_DENYLIST."
+   },
+   {
+    "title": "Language reconcile tags English words as Spanish in the English UI ('software in Spanish', 'errors in Spanish')",
+    "verdict": "confirmed",
+    "severity": "P3",
+    "reason": "Half confirmed, half by design. 'software': the seed's English and Spanish specimen texts both use the word, and its mentions are en 18 / es 27. Q414 = a ('derive the keyword's language as the majority') makes it es, and the ladder tags it 'in Spanish'; that half is by design. 'errors' is a real defect. Before the fold, 'errors' (en) and 'errores' (es) were separate keywords. The fold keyed both to lemma 'error', one row with mentions en 18 / es 27, whose display term is the English surface 'errors' and whose language is es. So the UI shows the English word 'errors' labelled 'in Spanish', a false statement (DB read, walk en/fr: 'errors en espagnol 45'). Brief S04-06 S5 requires lemmatisation 'at EXTRACTION, never across languages (families.py:336)', where the display-time grouping keys (kind, lang, lemma).",
+    "root_cause": "src/analytics/extract.py:461-494 (lemma_key) keys a term by its lemma alone, and src/analytics/store.py:197-204 (_get_or_create_keyword) and keyword_fold.py:268-277 match targets on normalized_term only. Two languages' different words that share a lemma therefore merge into one row. The fold names the target with the first source's surface (term=src.term, keyword_fold.py:276), while reconcile_keyword_language sets the majority language.",
+    "suggested_fix": "Do not adopt a lemma (at extraction and in the fold) when it would merge surfaces from different languages into one key. The smallest check is in the fold: skip a target whose existing mentions are in another language. Otherwise record it for a ruling, since S5 forbids it. At the label, when a keyword's mention languages are split, name the split ('in Spanish and English', with counts in the hover) rather than a single language."
+   },
+   {
+    "title": "A tag's hover lacks the ring's other members with per-language counts (Q401/Q418)",
+    "verdict": "confirmed",
+    "severity": "P3",
+    "reason": "Reproduced (fr): the landscape 'logiciel' tag's bubble reads 'Traduction vérifiée (concept translangue). — Original: software — Langue: espagnol — Wikidata: Q7397', with no ring members or counts. The API row for 'software' (target_lang=en/fr) carries language_breakdown: None, while only merged ring rows such as 'transport' carry {fr:69, es:56, ar:28}. Q401 (a) requires 'the ring's other members with counts', and Q418 (a) requires 'ring members with per-language counts'.",
+    "root_cause": "src/analytics/queries.py:682-731. _annotate_translations adds only tier/source language/QID/senses to a solo verified row. src/static/app-corpus.js:880-893 kwHoverText adds kwLangBreakdownText only when row.language_breakdown exists, which it never does for these rows.",
+    "suggested_fix": "When the ladder resolves a solo row to a verified ring, attach that ring's members present in the corpus with their per-language mention counts (the same shape queries.trending already emits as language_breakdown), so kwHoverText's existing branch renders them."
+   },
+   {
+    "title": "The 'local AI offline' toast tells the user to switch off airplane mode for a loopback Ollama",
+    "verdict": "confirmed",
+    "severity": "P3",
+    "reason": "Reproduced (fr, no Ollama, airplane on): '✦ Traduire le reste' raised 'L'IA locale est hors ligne — démarrez Ollama (et désactivez le mode avion) pour des traductions provisoires.' (Mr-D13-ai-toast-fr.png). Loopback Ollama is explicitly allowed under the kill switch: src/llm/ollama.py:532-574 (_check_kill_switch refuses only a non-loopback base_url or a clearnet pull); the triage_job docstring confirms that loopback runs work in airplane mode, as does CLAUDE.md's airplane non-negotiable. The advice needlessly nudges the operator to go online.",
+    "root_cause": "src/static/app-corpus.js:1215, the toast string (and its 12 locale entries). The stale docstring in src/api/ai.py:283-284 ('including airplane mode') repeats the same wrong premise.",
+    "suggested_fix": "Change the string to say only 'Local AI is offline — start Ollama for tentative translations.' ×12. Mention airplane mode only when OO_OLLAMA_URL is non-loopback, which the client already names in its own error. Correct the endpoint docstring."
+   },
+   {
+    "title": "Untranslated English on keyword surfaces in fr/ar/zh",
+    "verdict": "confirmed",
+    "severity": "P3",
+    "reason": "Re-observed in fr: 'Resolved to software term · 90 mentions in 72 articles' (explore line); the Analysis Combine hint '… set algebra over N keywords. The set expression is the corpus label; counts only, never a score.'; the keyword-stats bubble caveat 'Counts only, never a score. The trend ratio is noisy…'; Super-groups '· 7 members · 469 mentions Dominated by voting (78% of this total)'; the task-manager label 'Folding keyword forms into their base form'; and the fr grammar slip '2 mentions, contre 2 sur les période précédente' on Home Tendances actuelles. fr.json has no key at all for 'Resolved to', 'set algebra over', 'Folding keyword forms…', 'Single-source', 'spread across', 'Resurfaced after' or 'Through time'. The Home card titles are plain English f-strings (producers.py:1038, 2146, 2762); only the rising card has title_i18n (:298).",
+    "root_cause": "src/static/app-corpus.js:699 ('Resolved to' literal, not t()) and :1089 (Combine hint literal); caveats sent by the server and rendered with esc(d.caveat) without a locale key; src/static/taskmanager.html:312 and app-core.js:1893 print esc(j.label) from src/api/jobs.py:497-499 without t(); src/briefing/producers.py card titles lack title_i18n; the fr.json template '{n} mentions, contre {prior} sur les {window}' hard-codes the plural article before a {window} that can be singular ('période précédente').",
+    "suggested_fix": "Wrap the literals in t()/tf() with keys ×12. Key the job labels and card titles as templates (title_i18n + title_vars, as the rising card does). Reword the fr template to avoid the article (e.g. 'contre {prior} ({window})')."
+   }
+  ]
+ }
+}

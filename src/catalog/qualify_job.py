@@ -59,6 +59,8 @@ import time
 from collections.abc import Callable
 from datetime import UTC, datetime
 
+from src.jobs.background import Framed
+
 _LOG = logging.getLogger(__name__)
 
 # Consecutive batches with ZERO stamped progress (qualified + disqualified == 0)
@@ -128,7 +130,10 @@ def run_bulk_qualification(
         "no_evidence": 0, "trial_fetch_errors": 0,
     }
     consecutive_no_progress = 0
-    paused_reason: str | None = None
+    # Every line below is a Framed string: the English sentence exactly as before, plus
+    # the keyed frame the task managers and the Sources panel write in the UI language
+    # (click-through B19, Q12).
+    paused_reason: Framed | None = None
     declined: dict | None = None
     complete = False
     cohort: dict | None = None
@@ -140,21 +145,17 @@ def run_bulk_qualification(
         the two can never disagree about the machine."""
         return bool(memguard.memory_guard.poll())
 
-    ctx.set_progress(done=0, total=total_backlog, detail="starting…")
+    ctx.set_progress(done=0, total=total_backlog, detail=Framed("starting…", "starting…"))
 
     while True:
         if ctx.stopping:
-            paused_reason = "cancelled — progress is saved (each source's status), start again to resume"
+            paused_reason = _fixed("cancelled — progress is saved (each source's status), start again to resume")
             break
         if kill_switch_active():
-            paused_reason = "airplane mode engaged — progress is saved, start again to resume"
+            paused_reason = _fixed("airplane mode engaged — progress is saved, start again to resume")
             break
         if memguard.memory_guard.poll():
-            paused_reason = (
-                "paused: "
-                + (memguard.memory_guard.state().get("reason") or "memory pressure")
-                + " — progress is saved, start again once memory recovers"
-            )
+            paused_reason = _memory_paused(memguard.memory_guard.state().get("reason") or "memory pressure")
             break
 
         now = now_fn() if now_fn is not None else datetime.now(UTC)
@@ -178,11 +179,7 @@ def run_bulk_qualification(
             )
         if result.get("paused"):
             # S5.2: the scan itself gave up under pressure. Nothing was stamped.
-            paused_reason = (
-                "paused: "
-                + str(result.get("reason") or "memory pressure")
-                + " — progress is saved, start again once memory recovers"
-            )
+            paused_reason = _memory_paused(str(result.get("reason") or "memory pressure"))
             break
         if result.get("skipped") == "memory":
             # QUAL-1 (field round 2026-09-24): the pass DECLINED its whole-corpus scan
@@ -192,11 +189,22 @@ def run_bulk_qualification(
             # "done [0/79977] starting…". A decline is a named refusal, carried to the
             # result and the progress line with the switch that lifts it; never complete.
             env = str(result.get("override_env") or "OO_ALLOW_BIG_SCANS")
-            declined = {k: result.get(k) for k in ("reason", "available_mb", "need_mb", "caveat")}
+            declined = {k: result.get(k) for k in ("reason", "reason_i18n", "reason_vars",
+                                                   "available_mb", "need_mb", "caveat")}
             declined["override_env"] = env
-            paused_reason = (
-                "declined on this machine: " + str(result.get("reason") or "below the memory floor")
-                + f" — nothing was judged; restart the app with {env}=1 to run it anyway"
+            why = str(result.get("reason") or "below the memory floor")
+            # The reason rides as its own keyed clause when the floor sent one, so the
+            # progress line is not a translated frame around an English measurement.
+            why_value: object = (
+                {"i18n": result["reason_i18n"], "vars": result.get("reason_vars") or {}}
+                if result.get("reason_i18n") else why
+            )
+            paused_reason = Framed(
+                "declined on this machine: " + why
+                + f" — nothing was judged; restart the app with {env}=1 to run it anyway",
+                "declined on this machine: {reason} — nothing was judged; "
+                "restart the app with {env}=1 to run it anyway",
+                reason=why_value, env=env,
             )
             ctx.set_progress(done=0, total=total_backlog, detail=paused_reason)
             break
@@ -225,14 +233,19 @@ def run_bulk_qualification(
         ctx.set_progress(
             done=totals["evaluated"],
             total=max(total_backlog, totals["evaluated"]),  # the estimate is a floor, not a cap
-            detail=_tally(totals) + " so far",
+            detail=Framed(_tally(totals) + " so far", "so far: {qualified} · {disqualified} · {no_evidence}",
+                          **_tally_vars(totals)),
         )
         if consecutive_no_progress >= _MAX_CONSECUTIVE_NO_PROGRESS:
-            paused_reason = (
+            paused_reason = Framed(
                 f"stopped after {consecutive_no_progress} consecutive batches with no "
                 "evidence to judge — the remaining candidates could not be evaluated "
                 "(no reachable feed / no prior articles); they stay unqualified and "
-                "will be retried on a later run"
+                "will be retried on a later run",
+                "stopped after {n} consecutive batches with no evidence to judge — the "
+                "remaining candidates could not be evaluated (no reachable feed / no prior "
+                "articles); they stay unqualified and will be retried on a later run",
+                n=consecutive_no_progress,
             )
             break
 
@@ -249,14 +262,22 @@ def run_bulk_qualification(
             done=totals["evaluated"],
             total=max(total_backlog, totals["evaluated"]),
             detail=(
-                f"{paused_reason} ({_tally(totals)})" if paused_reason
-                else "finished: nothing left to judge (" + _tally(totals) + ")"
+                Framed(f"{paused_reason} ({_tally(totals)})",
+                       "{reason} ({qualified} · {disqualified} · {no_evidence})",
+                       reason=_phrase(paused_reason), **_tally_vars(totals))
+                if paused_reason
+                else Framed("finished: nothing left to judge (" + _tally(totals) + ")",
+                            "finished: nothing left to judge ({qualified} · {disqualified} · {no_evidence})",
+                            **_tally_vars(totals))
             ),
         )
 
     summary: dict = {"complete": complete, **totals, "initial_backlog": backlog}
     if paused_reason:
-        summary["paused_reason"] = paused_reason
+        summary["paused_reason"] = str(paused_reason)
+        # The keyed twin, so the Sources panel writes the reason in the UI language.
+        summary["paused_reason_i18n"] = paused_reason.i18n
+        summary["paused_reason_vars"] = dict(paused_reason.vars)
     if declined is not None:
         summary["declined"] = declined
     return summary
@@ -267,6 +288,38 @@ def _tally(totals: dict) -> str:
         f"{totals['qualified']} qualified · {totals['disqualified']} disqualified · "
         f"{totals['no_evidence']} no-evidence"
     )
+
+
+def _tally_vars(totals: dict) -> dict:
+    """The tally as keyed phrases, each count with its noun in ONE frame chosen by the
+    count -- the pairs the Sources panel's own final line uses (app-ai-tools.js)."""
+    def phrase(n: int, one: str, many: str) -> dict:
+        return {"i18n": one if n == 1 else many, "vars": {"n": n}}
+
+    return {
+        "qualified": phrase(totals["qualified"], "{n} source qualified", "{n} sources qualified"),
+        "disqualified": phrase(totals["disqualified"], "{n} source disqualified", "{n} sources disqualified"),
+        "no_evidence": phrase(totals["no_evidence"], "{n} source with no evidence yet",
+                              "{n} sources with no evidence yet"),
+    }
+
+
+def _fixed(text: str) -> Framed:
+    """A fixed sentence: its own frame."""
+    return Framed(text, text)
+
+
+def _memory_paused(reason: str) -> Framed:
+    return Framed(
+        "paused: " + reason + " — progress is saved, start again once memory recovers",
+        "paused: {reason} — progress is saved, start again once memory recovers",
+        reason=reason,
+    )
+
+
+def _phrase(framed: Framed) -> dict:
+    """A Framed line as a frame VALUE (a keyed phrase inside another frame)."""
+    return {"i18n": framed.i18n, "vars": dict(framed.vars)}
 
 
 def qualification_pass(db, fetcher, batch_size: int, now: datetime, *,

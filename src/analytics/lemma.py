@@ -77,7 +77,12 @@ LEMMA_LANGS: frozenset[str] = frozenset({"en", "fr", "de", "es", "it", "pt", "nl
 #: which re-keying for one underscore would un-translate) - so a grep for either name
 #: must land here. Same for ``_LEMMA_LANGS`` -> :data:`LEMMA_LANGS`.
 MISLEMMA_DENYLIST: frozenset[str] = frozenset(
-    {"media", "data", "us", "good", "better", "was", "be", "left", "right"}
+    {
+        "media", "data", "us", "good", "better", "was", "be", "left", "right",
+        # pt "fila" (a queue, a row) lemmatises to the verb "filar" (to spin); the
+        # seeded fold of 2026-09-26 filed the noun under the verb (click-through M10).
+        "fila",
+    }
 )
 
 #: Why a language is not lemmatised, when it is not. Kept as reasons rather than a

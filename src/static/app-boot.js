@@ -51,6 +51,13 @@
       // frozen-locale class -- nothing in the walker can repaint a sentence it never
       // saw in English. Registered in THIS listener for the reason stated above.
       try { if (typeof _wizShare === "function") _wizShare(); } catch (_e) {}
+      // The rest of the Home at-a-glance strip -- its counts and their labels, the "as
+      // of" stamp and the automatic-collection line -- is built with t() inside the same
+      // [data-i18n-dyn] subtree, so it is the same frozen-locale class: measured staying
+      // English after a switch to fr or ar until the next 15 s poll (2026-09-26
+      // click-through U5). Repaints from the LAST READING (app-home.js), never fetches,
+      // and never over the read-failure line, which has its own branch further down.
+      try { if (typeof repaintHomeGlance === "function") repaintHomeGlance(); } catch (_e) {}
       // The Home strip's own Wikipedia figure is built from a tf() frame AND carries
       // `data-i18n-dyn`, so BOTH repaint paths skip it -- the walker because the node
       // opts out, and this listener because it was not listed. Measured by the Chromium
@@ -70,6 +77,29 @@
       // "Corpus size" line stayed English in fr while the pills beside it translated.
       // Repaints from the CACHED payload, so a switch costs no request.
       try { if (typeof _renderPatternsGate === "function") _renderPatternsGate(); } catch (_e) {}
+      // Settings → Advanced → Safety (the 2026-09-27 re-walk, U-2 and H-2): the at-rest
+      // encryption lines and the topic-discovery result line are composed at render time
+      // through t() inside `data-i18n-dyn` hosts, so the walker never repaints them --
+      // measured: "المجموعة: مشفّر" stayed Arabic on an English page after ar→en. Both
+      // redraw from what they last showed (a doctor reading, a saved on/off) and never
+      // fetch; each returns at once if it has never been drawn.
+      try { if (typeof _renderAtRest === "function") _renderAtRest(); } catch (_e) {}
+      try { if (typeof _paintDiscoveryResult === "function") _paintDiscoveryResult(); } catch (_e) {}
+      // Settings → Advanced → Quality gates is the same class (click-through S3): its
+      // headline, scope sentence, admission rows, floor notes and backlog line are t()
+      // and tf() frames welded to measured numbers at render time, so after a switch
+      // they stayed in the old locale while the static text around them translated.
+      // Re-read ONLY a section that was already expanded (its loader is guarded by
+      // `advLoaded`), over loopback -- a switch never fetches for a fold nobody opened.
+      // The last merge report redraws from the payload it kept, with no request at all.
+      try {
+        const qd = document.querySelector('#set-advanced details.adv-sec[data-adv="qualification"]');
+        if (qd && qd.dataset.advLoaded === "1" && typeof loadQualificationGates === "function") {
+          loadQualificationGates();
+          if (typeof loadQualifyBulk === "function") loadQualifyBulk();
+          if (typeof _renderOverlayMerge === "function") _renderOverlayMerge();
+        }
+      } catch (_e) {}
       // S04-14 (session 2): Home's "By channel" total line is built from a tf() frame
       // plus measured counts, so it is the same frozen-locale class -- the walker cannot
       // match a composed sentence against its English key. Measured in the Chromium walk:
@@ -77,6 +107,23 @@
       // English beside chips that translated, while booting straight into `ar` rendered
       // it correctly. Repaints from the CACHED payload, so a switch costs no request.
       try { if (typeof _renderHomeChannels === "function") _renderHomeChannels(); } catch (_e) {}
+      // Home's "Most recent" and "Latest in your corpus" panels and the Settings
+      // Collection toggle are the same class, seen only on a switch that STARTS in a
+      // non-English locale: the walker had recorded their French text as "the English",
+      // so it stayed French in ar, zh and en (2026-09-27 re-walk T-3). Each redraws from
+      // what it last drew -- the rows, the payload, the state on the button -- never a
+      // fetch, and nothing at all for a surface never drawn.
+      try { if (typeof _renderHomeRecent === "function") _renderHomeRecent(); } catch (_e) {}
+      try { if (typeof _renderHomeLatest === "function") _renderHomeLatest(); } catch (_e) {}
+      // The Feed tab is the same class, found by the review of that fix: its order
+      // controls, held-back line, "Load more" and card chrome stayed French in ar and zh.
+      // Redraws from the rows the walk holds; never a fetch, nothing for a Feed never opened.
+      try { if (typeof _repaintFeed === "function") _repaintFeed(); } catch (_e) {}
+      try {
+        const ct = $("collect-toggle");
+        const st = ct && ct.getAttribute("data-collect-state");
+        if (st && typeof _paintCollectToggle === "function") _paintCollectToggle(st === "on");
+      } catch (_e) {}
       // S04-14 (session 2): the analysis window's near-duplicate CAVEAT and its "≈N"
       // pill hovers are a keyed frame plus a measured count, so they are the same
       // frozen-locale class. A caveat that holds a translation in all twelve locales and
@@ -93,6 +140,23 @@
         if (typeof _paintWikiLane === "function" && typeof _wikiLaneState !== "undefined"
             && _wikiLaneState) _paintWikiLane(_wikiLaneState, _wikiLaneActive);
       } catch (_e) {}
+      // The AI pill is the same class (click-through B19, Q7): it carries `data-i18n-dyn`
+      // and writes its word and hover itself. Repaints from the state it holds; no fetch.
+      try { if (typeof _paintAiPill === "function") _paintAiPill(); } catch (_e) {}
+      // The collection-speed knob is the same class (2026-09-27 re-walk T-1): its hover
+      // kept the language of its last click. Repaints from the mode it holds; no fetch.
+      try { if (typeof _paintRateMode === "function" && _rateMode) _paintRateMode(_rateMode); } catch (_e) {}
+      // Settings → Collection's targets line (re-walk O-2, S-4): keyed frames welded to
+      // the counts, redrawn from the payload it last drew -- never a fetch.
+      try { if (typeof _renderSchedTargets === "function") _renderSchedTargets(); } catch (_e) {}
+      // The airplane coachmark is positioned in pixels from the plane, and a switch
+      // into or out of Arabic mirrors the top bar without resizing the window, so the
+      // coach stayed at its old spot -- 1,019 px from the plane, over the sidebar
+      // (delegated click-through, rows N and T). Re-place it now and once the walker's
+      // reflow has settled. _placeCoach returns at once when the coach is not showing.
+      try {
+        if (typeof _placeCoach === "function") { _placeCoach(); setTimeout(_placeCoach, 220); }
+      } catch (_e) {}
       try { if (_ooMapPayload && typeof _renderOoMapDim === "function") _renderOoMapDim(); } catch (_e) {}
       // World-map lens desc + story chips are rendered at render time (kindLabel/t), so
       // re-render them too so the whole map surface tracks the new locale (field-test Item 6).
@@ -100,8 +164,17 @@
       try { if (typeof _renderOoMapLensBar === "function") _renderOoMapLensBar(); } catch (_e) {}
       try { if (typeof _renderMapBasis === "function") _renderMapBasis(); } catch (_e) {}
       try {
+        // `loadManagedSources` is the TABLE; `loadSources` -- what this called -- only
+        // refills the ingest <select> since the sources split, so the country/language
+        // hovers in the table kept the old locale. The facet checklist labels
+        // ("Name (CODE)", localised at render) are re-read too; a re-fill keeps its ticks.
         const tbl = $("src-table");
-        if (tbl && tbl.querySelector("tr") && typeof loadSources === "function") loadSources();
+        if (tbl && tbl.querySelector("tr") && typeof loadManagedSources === "function") {
+          loadManagedSources();
+          if (typeof loadSrcFacets === "function") loadSrcFacets();
+          // Its "…languages we can't analyse yet" line is a tf() frame now: same class.
+          if (typeof loadUnmanagedLanguages === "function") loadUnmanagedLanguages();
+        }
       } catch (_e) {}
       // World coverage is the same frozen-locale class, and it needed BOTH halves --
       // which is why the first fix looked like a fix and was not. Its two repaint
@@ -116,6 +189,32 @@
         const cov = $("coverage-table");
         if (cov && cov.querySelector("tr") && typeof loadCoverage === "function") loadCoverage();
       } catch (_e) {}
+      // Governments → Law is the same class: its jurisdiction cells bake the localised
+      // name into their hover at render time, so after a switch GBR still hovered
+      // "United Kingdom" in fr/ar/zh until a reload (2026-09-26 click-through, L15).
+      // Re-read ONLY a panel already painted -- the same guard as the two above -- and
+      // over loopback, so a switch never fetches for a tab the reader has not opened.
+      // The documents table is the guard for BOTH: `loadLaw` fills the two together,
+      // and `#law-changes` starts life holding a "Loading…" line, so its own children
+      // would read as "painted" before the tab was ever opened.
+      try {
+        const lawDocs = $("law-docs");
+        if (lawDocs && lawDocs.querySelector("tr") && typeof loadLawDocs === "function") {
+          loadLawDocs();
+          if (typeof loadLawChanges === "function") loadLawChanges();
+        }
+      } catch (_e) {}
+      // Markets → Minerals supply: its area cells hover the country name, or "World —
+      // published aggregate", baked at render time (L9). Same guard: only a table
+      // already painted is re-read, over loopback.
+      try {
+        const mins = $("mkt-minerals-supply");
+        if (mins && mins.querySelector("table") && typeof loadMineralsSupply === "function") loadMineralsSupply();
+      } catch (_e) {}
+      // Settings -> Statistics: the figures and revision-anomalies tables draw their
+      // count lines and headers in the reader's language (B18 R7/R8). Redrawn from the
+      // payload each last drew -- never a fetch, and nothing for a table never opened.
+      try { if (typeof repaintStatTablesFromCache === "function") repaintStatTablesFromCache(); } catch (_e) {}
       // home-lead-title-frozen-locale (P1): renderBriefing() (Home Leads + the
       // corpus-tier badge it renders internally via renderCorpusTier) builds
       // OOI18N.tf()-templated titles that were never re-rendered on a language
@@ -145,6 +244,45 @@
           renderCompositionFigures();
         }
       } catch (_e) {}
+      // Library -> Database & storage: the tiles own their labels (data-i18n-dyn, so a
+      // label painted in French is never cached as the English), which means the walker
+      // cannot relabel them either. Relabel from the last payload -- no fetch, and
+      // nothing at all until the tiles were ever drawn (2026-09-26 click-through S6).
+      try { if (typeof _paintDbStatLabels === "function") _paintDbStatLabels(); } catch (_e) {}
+      // ...and the #db-file line under them plus every Storage footprint panel already
+      // drawn (Library and the task manager's System tab): same class, same cure -- from
+      // the last payloads, never a fetch and never a new disk walk.
+      try { if (typeof repaintDbStorageFromCache === "function") repaintDbStorageFromCache(); } catch (_e) {}
+      // Agenda -> Bulletin is the same class (the 2026-09-27 cross-batch finding
+      // K-repaint): its Review, editions list, gate and status lines are composed at
+      // render time, so a switch left all of them in the old language. `_bulRepaint`
+      // redraws them from the payloads and status keys they last drew -- no fetch, and
+      // nothing at all for a panel never opened.
+      try { if (typeof _bulRepaint === "function") _bulRepaint(); } catch (_e) {}
+      // Settings → Data & backup → Storage and the Library overview's tiles: every size
+      // is written with its unit translated at render, inside a tf() frame or beside an
+      // interpolated count, so the walker cannot repaint them and they kept the old
+      // locale while the view stayed open (click-through B14, Z2). Both redraw from the
+      // payload they last drew -- never a fetch -- and only once they were ever drawn.
+      try { if (typeof repaintLaneStorageFromCache === "function") repaintLaneStorageFromCache(); } catch (_e) {}
+      try { if (typeof repaintLibraryOverviewFromCache === "function") repaintLibraryOverviewFromCache(); } catch (_e) {}
+      // Governments -> Groups: the aggregate cards are keyed frames drawn at render (Z4).
+      try { if (typeof repaintGovGroupFromCache === "function") repaintGovGroupFromCache(); } catch (_e) {}
+      // Governments' other views (Countries, Compare, the aggregate lens, the group picker,
+      // the map line) and the Insights header: t()'d at render, redrawn from cache (W16/W17).
+      try { if (typeof repaintGovViewsFromCache === "function") repaintGovViewsFromCache(); } catch (_e) {}
+      try { if (typeof repaintInsightsStatusFromCache === "function") repaintInsightsStatusFromCache(); } catch (_e) {}
+      // The Statistics map and the Super-groups ring map are ooMap surfaces like the World
+      // map and the Governments map above: the legend, the contested line and the worldview
+      // picker are t()'d at render, so they kept the old language until re-run (row R, R4).
+      // Each redraws from the payload it last drew, and only when it holds a drawn map.
+      try { if (typeof repaintStatMapFromCache === "function") repaintStatMapFromCache(); } catch (_e) {}
+      try { if (typeof repaintRingMapFromCache === "function") repaintRingMapFromCache(); } catch (_e) {}
+      // Settings → Advanced → Diagnostics: the three job lines (re-index, keyword fold,
+      // search re-index) are composed sentences no English key matches, and their watch
+      // loop ends once the job is done, so a switch left them in the old language until
+      // the fold was reopened (re-walk N-4). Redrawn from the last reading, no fetch.
+      try { if (typeof repaintDiagnosticsJobsFromCache === "function") repaintDiagnosticsJobsFromCache(); } catch (_e) {}
       // The Observatory is the same class again, and worse: its canvas has no DOM
       // for the i18n walker to reach at all, so EVERY label it paints (the orbit
       // ticks, the domain wedge names) plus its tf()-built disclosures would stay
@@ -156,12 +294,14 @@
         }
       } catch (_e) {}
       // Living sources builds every figure and row with t()/tf() at render time, so a
-      // switch re-reads the panel on screen (loopback only) -- and only if the tab was
-      // ever opened, which is when _livingOverview holds a payload.
+      // switch redraws it -- and only if the tab was ever opened, which is when
+      // _livingOverview holds a payload. From the payloads it already holds, never a
+      // fetch: re-reading rebuilt every list and collapsed the diffs the reader had open
+      // (2026-09-27 re-walk O-3). The tracked page's history redraws the same way.
       try {
-        if (typeof _livingOverview !== "undefined" && _livingOverview && typeof showLivingView === "function") {
-          showLivingView(_livingView);
-          if (_livingView === "wiki" && _wikiTc && _wikiTc.id != null) loadWikiTC();
+        if (typeof _livingOverview !== "undefined" && _livingOverview && typeof repaintLivingFromCache === "function") {
+          repaintLivingFromCache();
+          if (typeof repaintWikiTCFromCache === "function") repaintWikiTCFromCache();
         }
       } catch (_e) {}
       // The Activity view is the same class again, and it recurred the moment a new
@@ -176,6 +316,35 @@
           renderLibraryActivityGraphs();
         }
       } catch (_e) {}
+      // The 2026-09-26 click-through (N5, U9) found three more members of the class, each
+      // built at render time from t()/tf() and so out of the walker's reach: the Insights
+      // watch rows, the analysis Price overlay's in-SVG axis label, and the Agenda grids
+      // (weekday names from Intl in the page's language, and the moon hovers). Each redraws
+      // from what it already holds -- the watch payload, the price series, the loaded
+      // agenda -- and only when it was ever drawn, so a switch never fetches for them.
+      try { if (typeof _renderWatches === "function") _renderWatches(); } catch (_e) {}
+      try { if (typeof _anRepaintPrice === "function") _anRepaintPrice(); } catch (_e) {}
+      // The rest of the analysis window (the 2026-09-27 re-walk, N-4): the Articles list,
+      // an open Trend chart and the Links, Sentiment and Sources panels, each redrawn from
+      // the payload it last drew -- never a fetch, and nothing for a panel never drawn.
+      try { if (typeof _anRepaintOnLangChange === "function") _anRepaintOnLangChange(); } catch (_e) {}
+      try {
+        if (typeof AG !== "undefined" && AG.cals && AG.cals.length && typeof renderAgenda === "function") {
+          renderAgenda();
+        }
+      } catch (_e) {}
+      // The 2026-09-27 re-walk (L-3, U-3) found six more, each a name or a count localised
+      // at render and so left in the old language until a reload: the Agenda's Country
+      // picker (names AND order), the Insights map tables, the World map's detail panel,
+      // the statistics producers directory and the calendar directory -- plus the
+      // Governments country pickers, which repaintGovViewsFromCache above now rebuilds.
+      // Each redraws from what it already holds, never fetches, and does nothing for a
+      // surface that was never drawn.
+      try { if (typeof _agFillCountryOptions === "function") _agFillCountryOptions(); } catch (_e) {}
+      try { if (typeof repaintInsMapFromCache === "function") repaintInsMapFromCache(); } catch (_e) {}
+      try { if (typeof repaintOoMapDetailFromCache === "function") repaintOoMapDetailFromCache(); } catch (_e) {}
+      try { if (typeof repaintStatAgenciesFromCache === "function") repaintStatAgenciesFromCache(); } catch (_e) {}
+      try { if (typeof repaintFeedDirFromCache === "function") repaintFeedDirFromCache(); } catch (_e) {}
       // Re-translate the airplane button's JS-managed (data-i18n-dyn) title.
       try { if (_netOnline !== null && typeof _paintNetwork === "function") _paintNetwork(_netOnline); } catch (_e) {}
       // Re-render the AI prompt editor (remark 13): its labels are auto-translated by the
@@ -192,6 +361,12 @@
           loadNewsletterAttach();
         }
       } catch (_e) {}
+      // The task manager's System panel (click-through B16, V9) draws its labels with t()
+      // at render; redrawn from the last two samples it holds, so a switch never fetches.
+      try { if (typeof repaintVitalsFromCache === "function") repaintVitalsFromCache(); } catch (_e) {}
+      // The top-bar activity chip composes "Collecting {done}/{total}…" at paint time
+      // (click-through B17, T10); repainted from the state it holds, no fetch.
+      try { if (typeof _paintActivity === "function") _paintActivity(); } catch (_e) {}
     });
 
     // Global shortcuts: dispatched from the user's (rebindable) bindings — Ctrl/⌘-K opens
@@ -275,10 +450,28 @@
         if (n.nodeType === 1) { if (n.hasAttribute && n.hasAttribute("title")) mark({querySelectorAll: () => [n]}); mark(n); }
       }))).observe(document.body, {childList: true, subtree: true});
       let cur = null, hideT = null;
+      // A title set on an element AFTER it was rendered (a toggle repainting its own
+      // hover on click) is marked like any other, and when that element's bubble is the
+      // one open, the bubble takes the new text at once, instead of naming the state
+      // before the click until the pointer leaves (row P's stale W hover).
+      new MutationObserver((muts) => muts.forEach((m) => {
+        const el = m.target, v = el.getAttribute && el.getAttribute("title");
+        if (!v || !v.trim()) return;
+        el.classList.add("oo-tip-target");
+        if (el === cur) { el.dataset.ooTip = v; el.removeAttribute("title"); tip.textContent = v; }
+      })).observe(document.body, {attributes: true, attributeFilter: ["title"], subtree: true});
       function show(el, x, y) {
         const text = el.getAttribute("title") || el.dataset.ooTip || "";
         if (!text.trim()) return;
         el.dataset.ooTip = text; el.removeAttribute("title");  // suppress the native double bubble
+        // A MODAL DIALOG IS IN THE BROWSER'S TOP LAYER, which paints above every z-index
+        // in the document, so a bubble left on <body> is drawn UNDER any showModal()
+        // dialog: the consent popup's per-lane hosts (Q1002) were unreadable behind a
+        // green is_visible() check (docs/audit/delegated-clickthrough-2026-09-26, P1).
+        // Host the bubble in the open dialog that holds the element; position:fixed
+        // still resolves to the viewport, because no dialog here sets a transform.
+        const host = (el.closest && el.closest("dialog[open]")) || document.body;
+        if (tip.parentNode !== host) host.appendChild(tip);
         cur = el; tip.textContent = text;
         tip.style.left = Math.min(x + 12, window.innerWidth - 346) + "px";
         tip.style.top = Math.min(y + 14, window.innerHeight - tip.offsetHeight - 12) + "px";
@@ -286,7 +479,11 @@
         tip.classList.add("show");
       }
       function hide() {
-        if (cur && cur.dataset.ooTip != null) { cur.setAttribute("title", cur.dataset.ooTip); }
+        // A control REPAINTED while its bubble was open (the top-bar toggles set a new
+        // title on click) already carries its new title: keep it, and never write the
+        // text captured before the click back over it (the stale-hover defect, row P).
+        if (cur && cur.hasAttribute("title")) { cur.dataset.ooTip = cur.getAttribute("title"); }
+        else if (cur && cur.dataset.ooTip != null) { cur.setAttribute("title", cur.dataset.ooTip); }
         cur = null; tip.classList.remove("show");
         tip.setAttribute("aria-hidden", "true");
       }
@@ -322,7 +519,7 @@
     // and, when that element's bubble is already open, updates it live (hint -> loading
     // -> stats) without touching the ooTip internals.
     (function ooKwStatInit() {
-      const cache = new Map();   // term -> formatted line ; null = in-flight
+      const cache = new Map();   // term -> keyword-stats payload ; null = in-flight
       let hovered = null;
       function fmt(d) {
         const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
@@ -338,11 +535,15 @@
           const none = t("Not in your corpus yet — no stats.");
           return unresolved ? `${unresolved} — ${none}` : none;
         }
-        const bits = [`${d.mentions} ${t("mentions")} · ${d.articles} ${t("articles")}`];
+        // "1 articles" read as a slip (N14): the singular keys exist, so a count of one
+        // takes them. (No CLDR plural rules here; this fixes the one form every locale
+        // has, and leaves the rest of the counting grammar where it was.)
+        const bits = [`${d.mentions} ${d.mentions === 1 ? t("mention") : t("mentions")}`
+          + ` · ${d.articles} ${d.articles === 1 ? t("article") : t("articles")}`];
         const tr = d.trend || {};
         if (tr.recent || tr.prior) {
           const fb = growthFallback(tr, {window: true});
-          bits.push(fb ? `${t("trend")}: ${fb}`
+          bits.push(fb ? ooLabelText(t("trend"), fb)
                        : `${t("trend")} ${tr.growth}× (${tr.window_days}d ${t("vs")} ${tr.baseline_days}d)`);
         }
         // THE MEASURED NUMBERS, not just the names. keyword-stats returns each
@@ -353,14 +554,25 @@
         // strength cannot be read: it says "these appear together" without saying how
         // often or how much more than chance. PMI stays paired with the raw count on
         // purpose (it is noisy on small samples, exactly as the endpoint's caveat says).
+        //
+        // Each item is ONE keyed frame, so the parentheses and the comma inside them are
+        // the reader's ("（2 篇文章，关联 3.9）", "، ارتباط"), and the items are joined with the
+        // reader's list punctuation -- it read "(2 مقالة, ارتباط 3.9)" with a Latin comma and
+        // "avec: assembly" with an English colon (the 2026-09-27 re-walk, N-5).
+        const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
+          : ((s, v) => String(s).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? String(v[k]) : m));
         const co = (d.cooccurrences || []).slice(0, 4).filter((c) => c && c.term).map((c) => {
-          const n = (c.cooccur != null) ? ` (${c.cooccur} ${t("articles")}` : "";
-          const pmi = (n && c.pmi != null) ? `, ${t("Association")} ${c.pmi.toFixed(1)}` : "";
-          return `${c.term}${n}${pmi}${n ? ")" : ""}`;
+          if (c.cooccur == null) return c.term;
+          const count = t(c.cooccur === 1 ? "{n} article" : "{n} articles").replace("{n}", c.cooccur);
+          return (c.pmi != null)
+            ? tf("{term} ({count}, Association {pmi})", {term: c.term, count, pmi: c.pmi.toFixed(1)})
+            : tf("{term} ({count})", {term: c.term, count});
         });
-        if (co.length) bits.push(`${t("with")}: ${co.join(", ")}`);
+        if (co.length) bits.push(ooLabelText(t("with"), ooListJoin(co)));
         const head = d.resolved.term || d.term || "";
-        return `${head} — ${bits.join(" · ")}${d.caveat ? " · " + d.caveat : ""}`;
+        // The caveat is a FIXED server sentence, so it is keyed and goes through t() --
+        // appended verbatim it read in English inside every translated bubble (N7, M14).
+        return `${head} — ${bits.join(" · ")}${d.caveat ? " · " + t(d.caveat) : ""}`;
       }
       function applyTo(el, text, persist) {
         // THIS HANDLER OVERWRITES THE TITLE, so anything the RENDERER put there is gone
@@ -393,14 +605,15 @@
       }
       async function load(el, term) {
         const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-        if (cache.has(term)) { const v = cache.get(term); if (v) applyTo(el, v, true); return; }
+        // The PAYLOAD is cached, not the formatted line: the line is words in the active
+        // language, and a line cached in English was served unchanged after a switch.
+        if (cache.has(term)) { const v = cache.get(term); if (v) applyTo(el, fmt(v), true); return; }
         cache.set(term, null);                              // in-flight guard (no dup fetch)
         applyTo(el, t("Loading keyword stats…"), false);    // live bubble only — never persisted
         try {
           const d = await api("/api/insights/keyword-stats?term=" + encodeURIComponent(term));
-          const text = fmt(d);
-          cache.set(term, text);
-          applyTo(el, text, true);
+          cache.set(term, d || {});
+          applyTo(el, fmt(d), true);
         } catch (_e) {
           cache.delete(term);                               // allow a later retry
           // if still hovering, revert the transient "Loading…" back to the element's own hint
@@ -411,6 +624,13 @@
       function onHover(e) {
         const el = e.target && e.target.closest ? e.target.closest("[data-kwstat]") : null;
         if (!el) { hovered = null; return; }
+        // A hover target of its OWN inside the keyword row -- the tier tag, its QID --
+        // keeps the bubble ooTipInit just opened for it. Without this the stats line
+        // overwrote it at once, so Q418's hover (original, language, QID) was unreachable
+        // on every data-kwstat chip (M2). Its text also rides the row's
+        // data-oo-tip-extra, which is how a keyboard reader gets it.
+        const inner = e.target.closest(".oo-tip-target");
+        if (inner && inner !== el && el.contains(inner)) { hovered = null; return; }
         hovered = el;
         const term = el.getAttribute("data-kwstat");
         if (term) load(el, term);
@@ -418,6 +638,16 @@
       document.addEventListener("mouseover", onHover, true);
       document.addEventListener("focusin", onHover, true);
     })();
+
+    // Q412's sense picker (M4): ONE delegated listener for every [data-kwpin] button on
+    // every keyword surface. CAPTURE phase and stopped here, so a picker drawn inside a
+    // clickable row (a keyword link) never also fires that row's own action.
+    document.addEventListener("click", (e) => {
+      const b = e.target && e.target.closest ? e.target.closest("[data-kwpin]") : null;
+      if (!b || typeof kwPickSense !== "function") return;
+      e.preventDefault(); e.stopPropagation();
+      kwPickSense(b);
+    }, true);
 
     document.addEventListener("click", function _externalLinkGuard(e) {
       const a = e.target && e.target.closest ? e.target.closest("a[href]") : null;
@@ -456,19 +686,28 @@
         const sp = new URLSearchParams(location.search);
         const corpus = sp.get("corpus"), analyze = sp.get("analyze");
         if (!corpus && !analyze) return;
+        // The deep link IS the tab to show: mark Analysis hydrated BEFORE opening it, so
+        // showTab does not first load the RESTORED active tab as well. Loading both raced
+        // two runs into the same panels and wrote the restored tab's sense into this
+        // tab's URL (the 2026-09-26 delegated click-through, row N: P1 + the sense-pin
+        // leak). Only when a spawn will follow: a ?corpus= with no usable id falls back
+        // to the restored tab, exactly as before.
+        const ids = corpus ? corpus.split(",").map(Number).filter((n) => Number.isFinite(n) && n > 0) : [];
+        if (analyze || ids.length) _anHydrated = true;
+        // Q504: the cross-language lens travels in the link, so a shared "?analyze=climat
+        // &expand=0" opens the search the sender was actually looking at rather than the
+        // default one. It rides as part of the SEED, not as a setting applied beside it:
+        // the spawned tab's own _anApplySeed would otherwise overwrite it a moment later
+        // and rewrite the URL without it. Read BEFORE showTab: when showTab hydrates the
+        // restored tab it writes THAT tab's lens into this URL, and a read after it took
+        // another tab's sense as this link's own (row N, N2).
+        const lens = _anReadLensFromUrl();
         showTab("analyze", false);
         // Ruling 16: the Lead's provenance travels with the deep link (a one-shot
         // localStorage token, taken and deleted here) so the new window can show WHICH
         // Lead it came from and on what basis. Absent -> no header, never an invented one.
         const prov = _anProvTake(sp.get("prov"));
-        // Q504: the cross-language lens travels in the link, so a shared "?analyze=climat
-        // &expand=0" opens the search the sender was actually looking at rather than the
-        // default one. It rides as part of the SEED, not as a setting applied beside it:
-        // the spawned tab's own _anApplySeed would otherwise overwrite it a moment later
-        // and rewrite the URL without it.
-        const lens = _anReadLensFromUrl();
         if (corpus) {
-          const ids = corpus.split(",").map(Number).filter((n) => Number.isFinite(n) && n > 0);
           if (ids.length) openAnalysisForIds(ids, sp.get("label") || "", prov, lens);
         } else if (analyze) {
           openAnalysisFor(analyze, (prov || lens) ? {prov, lens} : undefined);
@@ -524,6 +763,27 @@
       } catch (e) { /* a malformed deep link must never break boot */ }
     })();
 
+    // The standalone task manager (/tasks) hands a download's Resume over here when it is
+    // offline: a resume re-opens a fetch, and the ONE consent popup (invariant #14) lives
+    // in this app, not on that page. "/?resume=<job id>" runs the SAME jobResume the
+    // in-app window's button runs, so the popup asks first, with its own reason, and
+    // nothing is sent if the operator stays offline. Only the two download kinds are
+    // accepted (a local job needs no hand-off; anything else is dropped, never posted),
+    // and the parameter leaves the URL at once, so a reload never asks again. After the
+    // locale is ready, so the popup's reason is in the operator's language.
+    (function _hydrateResumeHandoff() {
+      try {
+        const sp = new URLSearchParams(location.search);
+        const id = sp.get("resume");
+        if (!id) return;
+        sp.delete("resume");
+        const qs = sp.toString();
+        history.replaceState(null, "", location.pathname + (qs ? "?" + qs : "") + location.hash);
+        if (!/^(dump|osm):./.test(id) || typeof jobResume !== "function") return;
+        Promise.resolve(window.OOI18N && OOI18N.ready).then(() => jobResume(id), () => jobResume(id));
+      } catch (e) { /* a malformed deep link must never break boot */ }
+    })();
+
     // Q725's wizard, reached BOTH ways the ruling asks for. The Settings button is
     // the door an operator can go back through at any time; "/?wikiwizard=1" is the
     // hand-off unlock.html makes for a FRESH corpus only, so an operator who has
@@ -566,6 +826,12 @@
       if (btn) btn.addEventListener("click", () => foldKeywords(btn));
       const rep = $("kw-fold-report");
       if (rep) rep.addEventListener("click", () => window.open("/api/insights/keyword-fold-job/report", "_blank"));
+      // The job lines read their job when Diagnostics OPENS (re-walk M-7): a fold paused or
+      // resumed from the task manager, or left paused by a restart, is shown as it is.
+      const diag = document.querySelector('#set-advanced details.adv-sec[data-adv="diagnostics"]');
+      if (diag) diag.addEventListener("toggle", () => {
+        if (diag.open && typeof watchDiagnosticsJobs === "function") watchDiagnosticsJobs();
+      });
     })();
 
     // The search re-index (S04-07 S8): Settings → Advanced. Bound here rather than inline.

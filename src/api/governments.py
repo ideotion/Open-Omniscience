@@ -367,7 +367,11 @@ def aggregate_data(code: str, history: int = 30, db: Session = Depends(get_db)) 
         "kind": "aggregate",
         "as_of": aggs.WB_AGGREGATES_AS_OF,
         **body,
+        # The two fixed sentences separately as well (the 2026-09-27 leftovers, W15): the
+        # page translates each as its own key, which the joined string can never be. The
+        # joined text stays for any reader of the older shape.
         "caveat": _AGG_CAVEAT + " " + _CAVEAT,
+        "caveats": [_AGG_CAVEAT, _CAVEAT],
     }
 
 

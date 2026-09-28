@@ -132,7 +132,12 @@ def test_stage_four_is_the_first_frontend_caller_of_the_resume_status():
     """The resume endpoints had ZERO frontend callers: the backlog was reported and
     then nobody could act on it from the app. Stage 4 is the caller."""
     assert "/api/backup/reindex-backlog/resume/status" in _SRC
-    assert "reindex-backlog/resume/status" in function_body(_APP, "_uxImTickQueue")
+    # ONE reader since I1/I3 (2026-09-26): the run's tick, the reopen and the stage-4
+    # watch that outlives the run all read stage 4 through _uxImReadRx, so the reopen
+    # can no longer render it from a cleared read and never ask again.
+    assert "reindex-backlog/resume/status" in function_body(_APP, "_uxImReadRx")
+    assert "_uxImReadRx()" in function_body(_APP, "_uxImTickQueue")
+    assert "_uxImReadRx()" in function_body(_APP, "_uxImReattach")
 
 
 def test_the_stage_four_read_is_paced_rather_than_polled_every_tick():
@@ -195,9 +200,17 @@ def test_a_language_switch_re_renders_the_interpolated_import_surfaces():
     own = [h for h in handlers if "ux-import" in h]
     assert len(own) == 1, f"expected exactly one import-dialog langchange listener, got {len(own)}"
     listener = own[0]
-    for fn in ("_uxImCheckpointNote()", "_uxImLastLine()", "_uxImRenderStages(",
-               "_uxImRenderStatements("):
+    for fn in ("_uxImCheckpointNote()", "_uxImLastLine()"):
         assert fn in listener, f"{fn} is not re-rendered on a language switch"
+    # The rows and the statements: called directly, or -- since the 2026-09-26 leftovers
+    # (Y6), which found the header and per-backup rows frozen too -- through the whole
+    # run renderer, which draws them itself. Either way both must be reached.
+    if "_uxImRenderQueue(_uxImLastStatus)" in listener:
+        via = function_body(body, "_uxImRenderQueue")
+    else:
+        via = listener
+    for fn in ("_uxImRenderStages(", "_uxImRenderStatements("):
+        assert fn in via, f"{fn} is not re-rendered on a language switch"
     # ...and it re-renders from the SAME facts, never a re-fetch of the queue.
     assert "_uxImLastStatus" in listener
     assert "import-queue/status" not in listener, (
@@ -260,3 +273,68 @@ def test_the_safety_statements_cover_every_item_that_reads_the_folder():
     assert "restores.length > 0 && restores.every(done)" in body, (
         "...and still require a restore, so a blobs-only run never claims the corpus"
     )
+
+
+# --------------------------------------------------------------------------- #
+#  The 2026-09-26 click-through walk (row I, batch B1): the halves a behavioural
+#  suite cannot see -- wiring, markup and the locale files
+# --------------------------------------------------------------------------- #
+def test_the_run_hands_stage_four_to_its_own_watch_when_it_ends():
+    """I1. The drain STARTS only once the run's exclusive window closes, so the queue's
+    terminal tick -- the last thing that ever read stage 4 -- saw at best the backlog
+    before it began, and the row froze at '3,600 left' while 4,800 drained."""
+    qtick = strip_comments(function_body(_APP, "_uxImTickQueue"))
+    assert "_uxImWatchReindex()" in qtick
+    watch = strip_comments(function_body(_APP, "_uxImWatchReindex"))
+    assert "setTimeout(_uxImTick, _UX_IM_RX_INTERVAL_MS)" in watch, (
+        "the same ONE timer at the pace the backlog read can afford"
+    )
+    tick = strip_comments(function_body(_APP, "_uxImTickReindex"))
+    assert "dlg.open" in tick, "no stage-4 polling behind a closed dialog"
+
+
+def test_a_reopen_reads_stage_four_before_it_renders_and_starts_on_a_blank_page():
+    """I1/I3 (R1). The opener cleared the stage-4 read and then rendered from it, and
+    nothing ever read it again; the run's own surfaces were never cleared at all."""
+    opener = strip_comments(function_body(_APP, "openUnifiedImport"))
+    assert opener.index("_uxImResetRunView()") < opener.index("_uxImReattach()")
+    reattach = strip_comments(function_body(_APP, "_uxImReattach"))
+    assert reattach.index("await _uxImReadRx()") < reattach.index("_uxImFreshView(")
+    assert "_uxImRenderFresh(" in reattach, "a finished run gets the fresh page"
+
+
+def test_verify_is_refused_while_an_import_runs_and_accepts_only_its_own_job():
+    """I8. The volumes manager runs ONE job, and during an import it is the import's
+    restore -- a refused Verify adopted it and froze the run's rows."""
+    body = strip_comments(function_body(_APP, "_uxImVerify"))
+    refusal = body.index("An import is running")
+    assert refusal < body.index("_uxImStartGuarded("), "refused before anything moves"
+    assert '"/api/backup/v2/volumes/status", "verify")' in body
+
+
+def test_every_state_and_stage_label_is_translated_in_all_twelve_locales():
+    """I11. The labels reach t() through a lookup table, so the extractor never saw
+    them: 'Done', 'Waiting', 'Skipped', 'Interrupted' and 'Cancelled' rendered in
+    English in every locale. The table is read out of the real module."""
+    import json
+
+    labels: list[str] = []
+    for table in ("_UX_IM_STATE_LABEL", "_UX_IM_STAGE_LABEL"):
+        m = re.search(r"const " + table + r" = \{(.*?)\};", _APP, re.S)
+        assert m, f"{table} not found"
+        labels += re.findall(r':\s*"([^"]+)"', m.group(1))
+    assert "Done" in labels and "Merge the search index" in labels, labels
+    locales = sorted((_ROOT / "src" / "static" / "locales").glob("*.json"))
+    assert len(locales) == 12
+    for path in locales:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        missing = [s for s in labels if not data.get(s)]
+        assert not missing, f"{path.name} lacks {missing}"
+
+
+def test_the_folder_field_keeps_a_usable_width_at_phone_size():
+    """I13. At 375 px the source field shrank to 43 px beside its two buttons."""
+    html = read_static("index.html")
+    m = re.search(r'<input id="ux-imp-src"[^>]*style="([^"]*)"', html)
+    assert m, "the folder field is gone"
+    assert "min-width:12em" in m.group(1), m.group(1)

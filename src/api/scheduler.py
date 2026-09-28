@@ -273,8 +273,18 @@ def scheduler_activity(db: Session = Depends(get_db)) -> dict:
     """The collection-activity panel (the top-bar chip's detail view): live run
     progress (domains only), the next pass's targets + an honest duration
     estimate (method stated), and per-host transfer rates measured from the
-    app's OWN fetches — never OS-wide counters."""
-    return get_scheduler().activity(db)
+    app's OWN fetches — never OS-wide counters.
+
+    Carries ``online`` exactly as every other scheduler response does
+    (``_status_payload``): the task-manager page paints its airplane toggle and its
+    Schedule state from THIS route, and an absent key read as "online", so in airplane
+    mode the page told the operator the opposite of the truth (the 2026-09-26 delegated
+    click-through, row T, P1)."""
+    from src.ingest import kill_switch_active
+
+    out = get_scheduler().activity(db)
+    out["online"] = not kill_switch_active()
+    return out
 
 
 @router.get("/coverage")

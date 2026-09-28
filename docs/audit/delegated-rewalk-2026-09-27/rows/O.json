@@ -1,0 +1,336 @@
+{
+ "row": "O",
+ "walk": {
+  "row": "O",
+  "environment": "Build: the read-only worktree /tmp/claude-0/rewalk/tree at 0deff9c4 (git status clean before and after, no .pyc written: PYTHONDONTWRITEBYTECODE=1). Launcher: /tmp/claude-0/rewalk/O/launch.py, a Python exec wrapper that drops HTTP(S)_PROXY/ALL_PROXY (both cases), OO_DB_PASSPHRASE and OO_DB_PLAINTEXT, chdirs into the tree and runs `python -c \"from src.api.main import main; main()\"` with OO_AUTOSEED=0, as the first walk did. Encrypted at rest, as the first walk was, with FRESH folders (no existing folder copied). Instance A (/tmp/claude-0/rewalk/O/dataA, port 8918): the row's own seeds (docs/audit/living-sources-clickthrough-2026-09-25/seed.py, then storage-budgets-clickthrough-2026-09-25/seed.py, byte-identical to scripts/O/seed_*.py and copied to scratch) run from the tree with OO_DB_PASSPHRASE=walk-pass-2026, OO_DB_PLAINTEXT unset and OO_AUTOSEED=0. The first bytes of open_omniscience.db and wiki.db are ciphertext. Booted with neither variable set, /api/system/lock-state read {state: locked}, and the app was unlocked through the real #pw/#btn-unlock form (after unlock: unlocked-encrypted, network {online:false}). A was restarted twice later for extra checks (T5/P8, glyph order); each time it booted locked and was unlocked through the form. Instance B (dataB, port 9018): an empty encrypted corpus (seed_empty.py: init_db plus scheduler_settings.json {\"mode\": \"markets\"}), booted locked and unlocked through the form, then stopped by PID. O15a: A was shut down through the top-bar power icon and its confirm, `cp -a` copied to dataCopy, and the copy started on 9018 locked. The copy was shut down through the power icon and dataCopy deleted after a path check. Chromium /opt/pw-browsers/chromium, headless, args --disable-background-networking --disable-component-update --no-proxy-server, proxy variables unset. Passes: 1440x950 en (main); fr, ar and zh fully through the top-bar #lang-switch; 375x800 en; coach placement also in fr/ar/zh at 1440, ar at 1024, and en/ar at 375. The walker's scripts (scripts/O/*.py) were adapted to the ports. I added a bubble check that reads the tip's host and viewport rect, and screenshots taken while hovering. elementFromPoint cannot prove the bubble is on top because #oo-tip has pointer-events:none, so the screenshots are the proof. Differences from the first walk: this disk had 15.2 GB free (first walk 26.3 GB), so the Storage 'budgets can still take' line is in the caveat colour even at the 20 GB default, which is correct arithmetic. Corpus reads 3.9-4.0 MB and the wiki lane 480.0 KB because the store is encrypted, as on the first walk. Nothing went online: no POST /api/system/network appears in any server log, every consent popup was closed with Stay offline, and /api/system/network read {online:false} throughout. Scratch, logs, raw JSON and scripts: /tmp/claude-0/rewalk/O/. Screenshots: /tmp/claude-0/rewalk/O/shots/ (108 files). PIDs: A 20489 (power icon), then 24544 and 26162 (killed by PID); B 22966 (killed by PID); copy 24254 (power icon). Ports 8918 and 9018 are free at the end.",
+  "steps": [
+   {
+    "id": "O1",
+    "verdict": "pass",
+    "locales": "en, fr, ar, zh",
+    "evidence": "Storage is the first panel of Data & backup (#storage-panel). The 9 subtabs are unchanged. Line 1 reads 'This machine, read at boot: 4 CPU cores · 15.7 GB of RAM · 15.2 GB of free disk' (hover: 'Read on this machine with no network: …'). The reference-machine sentence is exact. No verdict words, and the only colours are text, muted and caveat. Header: LANE · ON DISK · BUDGET · GROWTH, LAST 30 DAYS. Corpus: 3.9 MB · No published budget · '+6.0 MB in 19 days' / '≈ +9.5 MB per 30 days at that rate'. Wikipedia / Wikimedia: 480.0 KB · '20 GB the published default' · '<1% used' · number box + Save budget · 'Not measured yet'. Law and Maps: 'Not built yet' · 'No published budget' · empty growth. Disk line 'Disk left: 15.2 GB free of 252.0 GB …'. The budgets line is in the caveat colour because this drive has only 15.2 GB free (< 20 GB, correct). The visible caveat is exact. All 7 hovers are exact, including growth 'Measured from 3 readings …, 2026-09-07 to 2026-09-26. A rate, not a forecast.', 'there are 2 so far', 'The app never invents one.', and the -wal/-shm, hourly, whole-MiB, 1 GB = 1024³ method. Fully translated in fr/ar/zh, and the panel repainted on a live switch while open. shots/O-O1-storage-en.png, O-O9-storage-fr.png, O-O9-storage-ar.png; raw-a-unlock-o1-o2.json, raw-loc-fr-ar-zh.json"
+   },
+   {
+    "id": "O2",
+    "verdict": "pass",
+    "locales": "en (refusal and 'Saved.' also in fr/ar/zh)",
+    "evidence": "35 → 'Saved.', '35 GB yours; the published default is 20 GB'. 1.5 and 5000 → 'Enter a whole number of GB from 1 to 2000.'; the typed value stays in the box, the bold figure stays '35 GB' and the config is unchanged. 2000 → 'Saved.', 'Your budgets can still take 2.0 TB; the drive has 15.2 GB free. That is more than the drive has free.' in the caveat colour, with no forecast. The wizard (#wiki-wizard) budget box read 2000 ('About 166.7 GB for each of 12 editions'); no consent popup opened, and it was closed with Not now. 20 → 'Saved.', '20 GB the published default'. The caveat colour stays only because this drive has 15.2 GB free (< 20 GB), which is correct arithmetic. fr: 'Saisissez un nombre entier de Go entre 1 et 2000.' / 'Enregistré.'; ar: 'تم الحفظ.'; zh: '已保存。'. shots/O-O2-refused-5000-en.png, O-O2-budget-2000-en.png, O-O2-wizard-en.png"
+   },
+   {
+    "id": "O3",
+    "verdict": "pass",
+    "locales": "en, fr, ar, zh",
+    "evidence": "Main sidebar tab between Commodities and Library, with its highlight on and no dialog. Heading, subtabs Wikipedia · Law · Maps, 'Read 2026-09-27 07:58 UTC. Counts cover the last 30 days.' The caveat is visible and exact. Live stream: 2 · 4 · '2 of 4' · 1 · Last change 07:54 UTC · Complete through 01:56 UTC (6 h behind) · Open gaps 1. Pages you track: Pages 2, Never checked 1, Newest/Oldest both 06:56 UTC, Revisions 2, Flagged 1. Storage group: 480.0 KB, '20 GB the published default', '<1% used', with no box and no button. 'Showing 4 of 4 changes, newest first.' Rows as the gate states (+38 with 'Lines added: 2, removed: 1' and Show diff; -120 and log counted only, with no button; create +16 'Text stored; there was no earlier stored text…'). Language pills now read eng/fra. The hovers are exact. The 'log' hover reads 'The source's own word for this change, shown as it was sent.'; the walker's generic pill selector first hits the 'eng' pill, whose hover is 'English'. No junk and no score. shots/O-O3-living-wiki-en.png, O-O9-living-wiki-{fr,ar,zh}.png"
+   },
+   {
+    "id": "O4",
+    "verdict": "pass",
+    "locales": "en, fr, ar, zh",
+    "evidence": "Before any click: 'Pick a page above to read its tracked revisions.' Show diff opens in place: '--- 1001' … '+It has <b>many</b> churches.', shown as literal text with no <b> element. The note is exact, and the button toggles to 'Hide diff', which closes the diff. 'en · Walk Tracked Page 2' fills the in-tab section: 'Showing 2 of 2 tracked revisions', a -3000 row by 192.0.2.7 marked anon and flagged large-removal, and a +812 row by WalkEditor. 'flagged only' leaves 'Showing 1 of 1', and unticking restores both. The method caveat is visible. Settings → Wikipedia → Tracked changes lands on #living with the history open and the sidebar highlight on Living sources. /?wikitc=1 lands the same way. No dialog was ever open, and no dialog#wiki-tc exists. shots/O-O4-diff-en.png, O-O4-tracked-en.png, O-O4-from-settings-en.png, O-O4-deeplink-en.png"
+   },
+   {
+    "id": "O5",
+    "verdict": "pass",
+    "locales": "en, fr, ar, zh",
+    "evidence": "Law: Documents 2 · Jurisdictions 2 · Never checked 1 · Newest/Oldest 03:56 UTC · Changes 1 · Flagged 1; Storage 'Not built yet' / 'No published budget'. The research-mirror caveat is visible. One row: FRA · Walk Code civil (extract) · -640 · large-removal · Read locally · Stored diff. The diff expands to '-Article 12: the old wording.' / '+Article 12: the new wording.' 'Read locally' points at http://127.0.0.1:8918/api/law/documents/1/view (hover 'offline stored copy + history'). Maps: 3/1/0/1/1, 231.7 MB, 'Not recorded' with the exact header-date hover. Regions: Antarctica Downloaded 29.6 MB / 29.6 MB; Asia Paused, 'Paused by airplane mode. Resume asks to go online first.', 202.2 MB / 1.2 GB; Africa Failed, 'Failed: HTTP 503 from the mirror', 0 B. Region names are now translated (Antarctique, القارة القطبية الجنوبية, 南极洲). shots/O-O5-law-en.png, O-O5-maps-en.png"
+   },
+   {
+    "id": "O6",
+    "verdict": "pass",
+    "locales": "en, fr, ar, zh",
+    "evidence": "#tm-open ('Tasks & system') opens 'Task manager · FOOS' at /tasks, with Processes active. Downloads (2): Asia paused, '202.2 MB / 1.2 GB · 16%', 'Paused by airplane mode. Resume asks to go online first.'; Africa failed, 'Failed: HTTP 503 from the mirror'. Antarctica is not listed. Resume was not pressed. The pill reads 'healthy' and the summary reads 'Airplane mode'. fr/ar/zh: the body and the TAB TITLE are translated ('Gestionnaire de tâches · FOOS', 'مدير المهام · FOOS', '任务管理器 · FOOS'). shots/O-O6-taskmanager-en.png, O-O9-taskmanager-{fr,ar,zh}.png"
+   },
+   {
+    "id": "O7",
+    "verdict": "pass",
+    "locales": "en, fr, ar, zh",
+    "evidence": "Rows: Corpus, LLM models, Offline maps, Wikipedia dumps, 'Living sources (1 file · 480.0 KB)' (the same size as Storage), and 'Carry them inside…'. The Living sources box is disabled and unticked, and a real click leaves it unticked. The hover now SHOWS above the modal (bubble hosted in #ux-export, rect 732..1062 x 371..425): 'a lane is a live encrypted database; its backup format is not settled yet', translated in fr/ar/zh. Closed with Close; Back up was not pressed. shots/O-O7-export-hover-en.png, O-O9-export-{fr,ar,zh}.png, O-O10-export-hover-375-en.png"
+   },
+   {
+    "id": "O8",
+    "verdict": "pass",
+    "locales": "en, fr, ar, zh",
+    "evidence": "Both saves toast 'Fetch mode saved.'; safety transport is 'direct', then 'proxy'. Groups: 'Runs on every collection pass:' / 'Only when you ask for it:' / 'Switched off right now:'. All 15 lane hovers were shown and are VISIBLE over the modal (host #net-consent, in viewport), each with hosts and one transport sentence; Law, Markets and Calendars carry the always-on note and Hazard feeds the unreachable-switch note. (a) Transparent: fetcher lanes read 'Transport: direct — protected mode is off, so these hosts see your address.' Local AI reads 'Mostly not through this app's fetcher or proxy — only the installer check uses the fetcher.' (the deliberate H5 change). Newsletter and Chain of custody read 'Not through this app's fetcher or proxy.' The hint reads 'Protected mode is off, so fetches go direct …'. (b) Protected: 12 fetcher lanes read 'Transport: through your proxy.' Local AI reads 'mostly direct, even with protected mode on …'. Newsletter and custody read 'direct, even with protected mode on …'. The hint reads 'Fetches ride the proxy you configured; a lane never falls back to the clear internet on its own.' Discover by topic is listed under 'Switched off right now:' (the deliberate H4 change). Stay offline each time: dialog closed, plane fill=currentColor, the coach hint shown, {online:false}. shots/O-O8a-consent-hover0-transparent-en.png, O-O8b-consent-hover0-protected-en.png; raw-a-o8-o11-doctor-o14a-fixups.json"
+   },
+   {
+    "id": "O9",
+    "verdict": "pass",
+    "locales": "fr, ar, zh",
+    "evidence": "fr is fully translated on Storage, Living sources (diff, stored diff), the task manager, the export hover and the popup hovers ('Sources vivantes', 'Wikipédia · Droit · Cartes', 'Pas encore mesuré', 'Aucun budget publié', 'Pas encore disponible', 'Lignes ajoutées : 2, supprimées : 1', 'Compté seulement : …', 'Transport : via votre proxy.', 'Mis en pause par le mode avion. …'). ar: dir=rtl, with the expected Arabic labels. Glyph order was measured: +6.0, +9.5, +38, -120, -640, -3000 and +812 have the sign first; dates keep the year first; every diff line is unicode-bidi:plaintext with its +/- at the start ('+' of '+Rome is the capital…' at x=37, the final '.' at x=282). The '*.wikipedia.org' hover reads correctly in ar. After Stay offline (fr and ar), the language menu opens ABOVE the coach (z 380 vs 52) and all 12 items are hit-testable. zh: '活跃信息源', '存储', '传输：经过你的代理。'. A live switch repaints Storage and Living sources (fr/ar/zh) with no stale text. Leftovers seen: 'large-removal', the stored error 'HTTP 503 from the mirror', the seeded 'Walk …' data, and the Preview-targets line (see new defects). shots/O-O9-*-{fr,ar,zh}.png, O-O9-langmenu-over-coach-{fr,ar}.png"
+   },
+   {
+    "id": "O10",
+    "verdict": "pass",
+    "locales": "en",
+    "evidence": "At 375x800 the sidebar is off-canvas (Living sources at x -240..-11) until #hamburger opens it (10..239). On Living sources Wikipedia/Law/Maps the page scrollWidth-clientWidth is 0, figures sit at one left edge (x=37), and nothing overflows or is clipped. Storage: page scroll 0; the table scrolls inside #storage-lanes (398 > 301, overflow-x auto). Popup: page scroll 0; #net-consent-body scrolls on its own (746 > 464, wheel → 282); Stay offline and Go online stay in view (y 640..683); a lane hover is visible inside the viewport over the modal. The Export dialog hover is visible at 375. /tasks at 375 has 0 sideways scroll. The coach covers no control. shots/O-O10-*-375-en.png"
+   },
+   {
+    "id": "O11",
+    "verdict": "not-measurable-here",
+    "locales": "en",
+    "evidence": "Offline half measured: with Protected mode and socks5h://127.0.0.1:9 saved, the W hover reads 'Wikipedia stream: running — Chosen; airplane mode is holding it until you go online.' The popup was opened, read (15 lanes, the proxy hint, eth0: 192.0.2.2, the honest public-IP wording) and cancelled; {online:false}. The online half needs 'Go online', which is forbidden here. Also checked on the same W control: after a click (pause) the hover updates at once with the pointer still on W ('Wikipedia stream: paused — …'). Resuming opens the ONE consent popup ('Resume the Wikipedia stream'), which was cancelled, and the choice was restored to running through a loopback settings PUT. shots/O-O11-consent-before-cancel-en.png, W-after-pause-hover-en.png, W-resume-consent-en.png; raw-wcheck.json"
+   },
+   {
+    "id": "O12",
+    "verdict": "pass",
+    "locales": "en, fr, ar",
+    "evidence": "Empty encrypted folder with the legacy {mode: markets}, unlocked through the form. Living sources Wikipedia: only State 'Not run yet' (hover 'This lane has no database file yet: it has never run.'); 'The live stream has not run yet, so there is no timeline. Turn it on with the W button in the top bar.'; 'No pages tracked yet. Add them in Settings → Wikipedia.'; Storage group 'Not created yet'. Law shows zeros and 'never', with the 'No changes recorded …' line. Maps: 'No map regions downloaded yet. …'. Storage panel: Wikipedia 'Not created yet' (never 0 B); Corpus growth 'Not measured yet' with the hover 'No size readings yet. …'. Collection → Advanced (legacy): no scheduler Mode select (the harness's generic select[id*=mode] matched #uninstall-mode, the uninstall picker). The notice is word for word, both boxes are ticked, and Crawl depth / Max pages are shown with the hint. The notice is translated in fr, and in ar with direction rtl. Dismiss hides it. After unticking price rules, Save schedule showed 'Schedule saved.'; after a reload the notice is gone, price rules stays unticked and statistics stays ticked (retired_mode '', retired []). Folder after stop: open_omniscience.db present, NO wiki.db (listing-B-after-stop.txt); /api/storage/lanes reported wiki absent before and after. The Export row reads 'Living sources (0 files · 0 B)', judged by design (O3). shots/O-O12-*.png; raw-b.json"
+   },
+   {
+    "id": "O13",
+    "verdict": "not-measurable-here",
+    "locales": "",
+    "evidence": "Needs the maintainer's real encrypted install and its upgrade; neither exists in this sandbox. The encrypted-throwaway analog is O13a."
+   },
+   {
+    "id": "O13a",
+    "verdict": "pass",
+    "locales": "en",
+    "evidence": "The corpus passphrase alone unlocked A; no lane passphrase was ever asked. /api/system/doctor: corpus {encrypted, 4.12.0 community}, custody_log encrypted, lanes wiki {encrypted, 4.12.0 community}, law {absent}, osm {absent}. Storage shows the wiki lane at 480.0 KB; Law and Maps read 'Not built yet'. The folder has wiki.db (+ -shm/-wal) beside open_omniscience.db and no law.db or osm.db (listing-A-stopped.txt). The At-rest box lists 'Corpus: Encrypted (SQLCipher 4) 4.12.0 community' and 'Custody log: Encrypted (SQLCipher 4)', consistent with doctor. shots/O-O13a-doctor-en.png, X-atrest-en.png"
+   },
+   {
+    "id": "O14",
+    "verdict": "not-measurable-here",
+    "locales": "",
+    "evidence": "Needs the maintainer's real install and its stored scheduler choices. The analog on the non-migrated encrypted throwaway is O14a."
+   },
+   {
+    "id": "O14a",
+    "verdict": "pass",
+    "locales": "en",
+    "evidence": "Instance A (never in a retired mode): no Mode dropdown and no retired-mode notice. Crawl depth and Max pages / source are visible with the crawl-supplement hint. Price rules is unticked and statistics refresh is ticked (the R31 default). Nothing was saved or started. shots/O-O14a-scheduler-en.png"
+   },
+   {
+    "id": "O15",
+    "verdict": "not-measurable-here",
+    "locales": "",
+    "evidence": "Needs a copy of the maintainer's real data folder on an encrypted drive. The analog on the encrypted throwaway is O15a."
+   },
+   {
+    "id": "O15a",
+    "verdict": "pass",
+    "locales": "en",
+    "evidence": "A was shut down through #app-shutdown; the confirm 'Shut down the app? The server will stop and you'll need to relaunch it. Your data is untouched.' was accepted and the process exited. The whole folder was cp -a copied and started on 9018 with neither variable set; it started LOCKED. A wrong passphrase gave a visible '#msg': 'the passphrase does not open open_omniscience.db (or the file is damaged)', the page stayed on /unlock (server 403). The real passphrase unlocked the copy. Wikipedia lane 491520 bytes, the same as the original. /api/living/overview equals the original's apart from its read times. The Living sources figures are identical. It started offline (plane filled, {online:false}), and doctor shows the wiki lane encrypted. The copy was shut down through the power icon and its folder deleted after a path check. shots/O-O15-wrong-passphrase-en.png, O-O15-copy-storage-en.png, O-O15-copy-living-en.png; raw-copy.json, raw-shutdown-a.json"
+   }
+  ],
+  "old_defects": [
+   {
+    "id": "O5",
+    "verdict": "fixed",
+    "evidence": "The bubble is now hosted in the open dialog (app-boot.js show(): el.closest('dialog[open]')) and painted over it. Export dialog: parent #ux-export, rect 732..1062 x 371..425, visibly drawn over the dialog edge (shots/O-O7-export-hover-en.png). Consent popup: all 15 lane hovers in both fetch modes were shown with parent #net-consent and inside the viewport, and are visible in shots/O-O8a-consent-hover0-transparent-en.png, O-O8b-consent-hover0-protected-en.png, O-O9-consent-{fr,ar,zh}.png and O-O10-popup-hover-375-en.png. After the dialog closes, a non-modal Storage hover moves the bubble back to BODY and shows (raw-h2probe3.json)."
+   },
+   {
+    "id": "O1",
+    "verdict": "fixed",
+    "evidence": "The Export dialog's Living sources hover is translated and visible: fr 'une voie est une base de données chiffrée vivante ; son format de sauvegarde n'est pas encore arrêté', ar 'المسار قاعدة بيانات حيّة مشفّرة؛ ولم يُحسم بعدُ تنسيق نسخها الاحتياطي', zh '通道是一个实时的加密数据库；其备份格式尚未确定' (raw-loc-fr-ar-zh.json export_living_tip_seen; shots/O-O9-export-{fr,ar,zh}.png)."
+   },
+   {
+    "id": "O2",
+    "verdict": "fixed",
+    "evidence": "The coach is now placed below the whole chrome. Fresh profiles in fr/ar/zh at 1440, ar at 1024 and en/ar at 375, on Home, Settings → Data, Settings → Advanced and Living sources Wikipedia/Law/Maps: 0 interactive elements under the coach. Trial clicks on every Settings subtab, every Living sources subtab, #net-toggle, #lang-switch, #tm-open, #rate-toggle, #wiki-toggle, #app-shutdown and #hamburger all 'ok' (no interception). In ar the coach re-anchors to the plane after a live switch (plane x 186..220, coach 186..456; at 375 plane 277..311, coach 97..367). raw-coach.json; shots/coach-*.png. Residual: it now sits over the first lines of the tab content, including a caveat (new P3 below)."
+   },
+   {
+    "id": "O4",
+    "verdict": "fixed",
+    "evidence": "document.title after the #tm-open real click reads 'Gestionnaire de tâches · FOOS' / 'مدير المهام · FOOS' / '任务管理器 · FOOS' at 2 s and 7 s. The task tab also follows a language switch made in the main tab (en→fr) and through its own menu (fr→ar, ar→zh at 300 ms, zh→en at 800 ms) with no leftover text (raw-loc-fr-ar-zh.json, raw-extra.json, raw-t5p8.json)."
+   },
+   {
+    "id": "H1",
+    "verdict": "fixed",
+    "evidence": "Same cause as O5: the per-lane host bubble in the 'Go online?' popup is drawn above the modal in en/fr/ar/zh and at 375 px (shots/O-O8b-consent-hover0-protected-en.png, O-O9-consent-ar.png)."
+   },
+   {
+    "id": "H2",
+    "verdict": "fixed",
+    "evidence": "Lane spans carry tabindex=0. From the initial focus on Stay offline, Tab reaches Go online, then wraps into Press collection → Source discovery → …, and each focus opens the bubble with the lane's hosts (3/3 trials: raw-h2probe2.json; also raw-h2probe.json, raw-h2probe3.json). One earlier run (raw-final.json, right after three language switches) cycled Stay offline/Go online for ~15 presses before reaching the lanes; that did not reproduce in 4 later runs, including the same export-dialog sequence."
+   },
+   {
+    "id": "H3",
+    "verdict": "fixed",
+    "evidence": "ar Wikipedia lane bubble: hosts are wrapped in LRI/PDI isolates and '*.wikipedia.org' reads intact (shots/O-O9-consent-ar.png)."
+   },
+   {
+    "id": "H4",
+    "verdict": "fixed",
+    "evidence": "With discovery off, 'Discover by topic' is listed under 'Switched off right now:' in both modes (raw-a-o8-o11-doctor-o14a-fixups.json)."
+   },
+   {
+    "id": "H5",
+    "verdict": "fixed",
+    "evidence": "Transparent mode, Local AI hover: 'Mostly not through this app's fetcher or proxy — only the installer check uses the fetcher.' (raw-a-o8-o11-doctor-o14a-fixups.json O8.a)."
+   },
+   {
+    "id": "H7",
+    "verdict": "fixed",
+    "evidence": "fr popup: 'Votre machine présente ces adresses réseau locales :' wraps with its colon on the word's line (shots/O-O9-consent-fr.png)."
+   },
+   {
+    "id": "P1",
+    "verdict": "fixed",
+    "evidence": "Same as O5/H1: consent-popup host and transport lines and the export-row reason are visible over their modals (screenshots cited under O5)."
+   },
+   {
+    "id": "P2",
+    "verdict": "fixed",
+    "evidence": "W hover with the pointer left on W: before 'Wikipedia stream: running — Chosen; …'; 2.5 s after the click 'Wikipedia stream: paused — The connection is closed and your place is kept; …'; toast 'Wikipedia stream: paused' (raw-wcheck.json, shots/W-after-pause-hover-en.png)."
+   },
+   {
+    "id": "P6",
+    "verdict": "fixed",
+    "evidence": "Clicking W from paused opens the consent popup titled 'Resume the Wikipedia stream' with Wikipedia / Wikimedia under 'Runs on every collection pass:', not 'Switched off right now:'. Cancelled; nothing went online (raw-wcheck.json, shots/W-resume-consent-en.png)."
+   },
+   {
+    "id": "P8",
+    "verdict": "fixed",
+    "evidence": "Export reason translated (see O1). Byte units localised with the decimal point kept: fr '480.0 ko', '0 o', '4.0 Mo'; Settings → Wikipedia summary fr '12 éditions · budget de 20 Go · occupe 480.0 ko · avec les paramètres par défaut' (raw-t5p8.json)."
+   },
+   {
+    "id": "T1",
+    "verdict": "fixed",
+    "evidence": "/tasks in airplane mode: summary 'Airplane mode' / 'Mode avion'; #net-plane fill=currentColor (filled); hover 'غير متصل (وضع الطيران) — انقر لجعل التطبيق متصلاً؛ …' (raw-extra.json tasks)."
+   },
+   {
+    "id": "T2",
+    "verdict": "fixed",
+    "evidence": "/tasks health pill reads 'healthy' / 'sain' / 'سليم' / '正常' (raw-loc-fr-ar-zh.json tm_head, raw-narrow-en.json)."
+   },
+   {
+    "id": "T4",
+    "verdict": "fixed",
+    "evidence": "The coach re-anchors on a live switch to ar: coach rect 186..456 beside the plane at 186..220 (1440), 97..367 beside the plane at 277..311 (375) (raw-coach.json after_live_switch_coach)."
+   },
+   {
+    "id": "T5",
+    "verdict": "fixed",
+    "evidence": "/tasks own menu ar→zh: no Arabic text at 300, 800 or 1500 ms, title '任务管理器 · FOOS'; zh→en: no CJK at 800 ms (raw-t5p8.json)."
+   },
+   {
+    "id": "T6",
+    "verdict": "fixed",
+    "evidence": "/tasks at 375 px: documentElement scrollWidth-clientWidth = 0, no overflowing element (raw-narrow-en.json tasks; shots/O-O10-tasks-375-en.png)."
+   },
+   {
+    "id": "T7",
+    "verdict": "fixed",
+    "evidence": "ar at 1440 and 1024: trial clicks on #tm-open, #rate-toggle, #wiki-toggle, #net-toggle, #lang-switch and #app-shutdown are all 'ok' while the coach is shown (raw-coach.json)."
+   },
+   {
+    "id": "N10",
+    "verdict": "fixed",
+    "evidence": "At 375 px in en and ar, with the coach shown (prominent): palette results (11 items for 'li') and the opened sidebar's nav items are not covered (raw-n10.json; shots/N10-palette-375-en.png, N10-sidebar-375-ar.png)."
+   },
+   {
+    "id": "J7",
+    "verdict": "cannot-check",
+    "evidence": "The part on this row's surface is fixed: every visible title in #ux-export (4 each) is translated in fr/ar/zh, including the Living sources reason (raw-final.json). The Elapsed and Encryption hovers only exist after a finished export, and row O forbids pressing Back up (O7), so that half was not exercised."
+   }
+  ],
+  "new_defects": [
+   {
+    "title": "The offline coach now sits over the first lines of the tab content, hiding part of the Living sources caveat until 'Not now'",
+    "severity": "P3",
+    "repro": "Fresh browser profile, offline (the coach shows on the first launches). 1440x950 en: unlock, open Living sources (Wikipedia). Also ar at 1440 and en at 375.",
+    "expected": "The coach points at the plane without hiding a caveat that the informed-consent non-negotiable requires visible by default. It can sit over neutral space or leave the caveat line readable.",
+    "actual": "The coach (270x172, fixed at 984..1254 x 125..297 in en) lands on the tab's heading and caveat. 92 of 372 sampled points of #living-caveat are under it, so the middle of 'A change counted is not a change read: under a budget the stream stores the text of some…' cannot be read. It also clips the tail of the Storage reference-machine line. In ar it covers the caveat's left end, and at 375 px the Living sources heading and caveat. No control is covered (the B3 fix holds); the text reappears after 'Not now'. The coach shows on at most 6 launches.",
+    "evidence": "raw-extra.json caveat_covered_points {sampled: 372, under_coach: 92}; shots/X-coach-over-living-caveat-en.png, coach-last-ar-1440.png, O-O10-living-wiki-375-en.png, O-O1-storage-en.png",
+    "root_cause_lead": "src/static/app-core.js:1104-1131 (_placeCoach): top = guardBottom + gap, which puts the coach directly on the first lines of the active tab panel (where Living sources and Storage keep their caveat and reading lines); src/static/app.css:1870 (#net-coach position:fixed, z-index 52)."
+   },
+   {
+    "title": "The Collection → Advanced (legacy) targets line stays English in fr and ar, and renders without Preview targets being pressed",
+    "severity": "P3",
+    "repro": "Instance B (or any folder), Settings → Advanced → Collection → Advanced (legacy), then switch to Français or العربية.",
+    "expected": "The line is translated like the rest of the panel (the retired-mode notice, the labels and the hint are all translated).",
+    "actual": "'0 sources targeted of 0 enabled · this run will process up to 0 / by language: — / by type: —' stays English in fr and ar. The gate step calls it a known leftover, but no defect id and no OPEN_QUEUE deferral tracks it, so nothing schedules its fix.",
+    "evidence": "raw-b.json R.sched.fr.preview_line and R.sched.ar.preview_line; shots/O-O12-retired-notice-fr.png, O-O12-retired-notice-ar.png",
+    "root_cause_lead": "src/static/app-sources.js:1520-1523 (previewTargets) builds the sentence from hard-coded English template literals ('sources targeted', 'of … enabled · this run will process up to', 'by language:', 'by type:') instead of tf() keys."
+   },
+   {
+    "title": "A live language switch collapses an open diff on Living sources (stream 'Show diff' and Law 'Stored diff')",
+    "severity": "P3",
+    "repro": "Living sources → Wikipedia, click Show diff on the Walk Rome +38 row, then switch the top bar to Français. Separately, Law → open 'Stored diff', then switch language.",
+    "expected": "The panel repaints in the new language and keeps what the reader had open (the tracked-page selection is kept, so the view is meant to survive a switch).",
+    "actual": "After en→fr the diff is gone (no .living-diff in the stream) and the button reads 'Afficher le diff' again. After fr→zh the Law details element is closed. The tracked page's history stays open.",
+    "evidence": "raw-extra.json live_fr.diff_open=false, live_fr.diff_btn=['Afficher le diff'], live_fr.law_after_second_switch.law_diff_open=false (the same after ar→fr); shots/X-live-switch-living-fr.png",
+    "root_cause_lead": "src/static/app-boot.js:259 calls showLivingView(_livingView) on oo:langchange, which re-renders the rows from _livingOverview (src/static/app-living.js:207 empty #living-diff-<id> container, :220 closed <details>) without recording which diffs were open."
+   },
+   {
+    "title": "fr: 'lane' is translated two ways across row-O surfaces ('file' and 'voie')",
+    "severity": "P3",
+    "repro": "Français: Settings → Data & backup → Storage (header, hovers); the Go online? popup's hint; then Export / Sauvegarder… → hover Sources vivantes; Settings → Advanced → Collection summary and the retired-mode notice.",
+    "expected": "One French term for the one concept, as in ar ('المسار') and zh ('通道').",
+    "actual": "Storage header 'FILE', Storage hovers ('propre à la file Wikipédia'), the popup ('une file ne repasse jamais d'elle-même…'): 'file'. Export reason ('une voie est une base de données chiffrée vivante…'), Collection summary ('planification, voies, …') and the retired notice ('comme une voie'): 'voie'. fr.json uses 'file' in 25 lane keys and 'voie' in 10.",
+    "evidence": "raw-loc-fr-ar-zh.json fr.storage, fr.export_living_tip, fr.consent_body; raw-b.json sched.fr.notice_text",
+    "root_cause_lead": "src/static/locales/fr.json:4506 ('Lane': 'File') against :4737 ('a lane is a live encrypted database…': 'une voie …') and the other 'voie' keys."
+   },
+   {
+    "title": "zh: composed lines put an ASCII space after full-width punctuation (Storage and the failed-download line)",
+    "severity": "P3",
+    "repro": "中文: Settings → Data & backup → Storage; Living sources → Maps; /tasks.",
+    "expected": "No Latin space after '：' or '。' in Chinese text.",
+    "actual": "'本机（启动时读取）： 4 个 CPU 核心 · …', '…该驱动器有 15.1 GB 可用。 这超过了该驱动器的可用空间。', '失败： HTTP 503 from the mirror' (Maps table and task manager).",
+    "evidence": "raw-loc-fr-ar-zh.json zh.storage, zh.maps_regions, zh.tm_jobs",
+    "root_cause_lead": "The joins add a literal ' ': src/static/app-settings.js:1856 (`${esc(lead)} ${esc(bits.join(' · '))}`), app-settings.js:1889 (`${esc(line)} ${esc(t('That is more than the drive has free.'))}`), app-core.js:2099 and taskmanager.html:400 (t('Failed:') + ' ' + j.error). The zh keys already end in full-width punctuation."
+   }
+  ],
+  "page_errors": [],
+  "http_errors": [
+   "403 POST http://127.0.0.1:9018/api/system/unlock: the deliberate wrong passphrase on the O15a copy, shown to the user as a visible error. Expected.",
+   "Console only: net::ERR_CONNECTION_REFUSED after each deliberate shutdown through the power icon (A and the copy). No other console error, and no response >= 400, on any walked surface."
+  ],
+  "summary": "Row O passes again on the fixed build (0deff9c4) for everything a sandbox reaches. The run used encrypted, locked-at-boot seeded and empty folders, unlocked through the real form, in en/fr/ar/zh and at 375 px, with 0 page errors and nothing going online. Pass: O1-O10, O12, and the encrypted-throwaway analogs O13a, O14a and O15a. Not measurable here: the online half of O11 and O13-O15 on the maintainer's real install. All four confirmed row-O defects are fixed. O5 (P1): hover bubbles inside the export dialog and the consent popup are now hosted in the dialog and drawn over it, for every lane in both fetch modes, in all locales and at 375 px. O2: the coach covers no control in any locale or width and re-anchors in RTL. O1: the backup-row reason is translated ×3. O4: the task-manager tab title is translated and follows live switches. The related defects on this row's surfaces are fixed too: H1-H5, H7, P1, P2, P6, P8, T1, T2, T4-T7 and N10. J7 could only be checked for its export-dialog half. O3 still reads '(0 files · 0 B)' for an absent lane, which was judged by design. Five new P3s, none blocking: (1) the coach now sits over the first lines of the tab content and hides part of the Living sources caveat until 'Not now'; (2) the scheduler targets line is English in fr/ar, with no defect id or deferral tracking it; (3) a live language switch collapses open diffs on Living sources; (4) fr translates 'lane' as both 'file' and 'voie'; (5) zh composed lines insert an ASCII space after full-width punctuation. One difference from the gate is environmental: this disk had 15.2 GB free, so the Storage budgets line stays in the caveat colour even at the 20 GB default, which is correct arithmetic."
+ },
+ "recheck": {
+  "row": "O",
+  "items": [
+   {
+    "ref": "new:The offline coach now sits over the first lines of the tab content, hiding part of the Living sources caveat until 'Not now'",
+    "verdict": "confirmed",
+    "severity": "P3",
+    "evidence": "I used my own fresh encrypted instance A: dataA seeded from the tree with the row's two seeds (living-sources then storage-budgets, byte-identical to the repo copies), OO_DB_PASSPHRASE set and OO_DB_PLAINTEXT unset. The first bytes of both open_omniscience.db and wiki.db are ciphertext. It booted on 8968 with /api/system/lock-state = locked and was unlocked through #pw/#btn-unlock. Each case ran in a fresh Chromium context, so the coach was on its first or second launch. Figures are from /tmp/claude-0/rewalk/O-recheck/raw-r1.json.\n\nHow much of #living-caveat was under the coach:\n- en 1440: 92 of 372 sampled points (coach [984,125,1254,297], z-index 52). The h2 had 69 of 279 under it.\n- fr 1440: 92 of 372. zh 1440: 46 of 186.\n- ar 1440: 88 of 372, at the caveat's left end (coach [186,125,456,260]).\n- en 375: 100 of 325, and 140 of 175 for the h2.\n- Settings → Data & backup → Storage, en: #storage-reading had 115 of 465 under it, which clips the reference-machine line.\n- After 'Not now': 0 of 372.\n\nWith the page at the top, no control's centre was under the coach (covered: [] every time) and no nav click was intercepted, so the B3 fix holds there.\n\nOne case is worse than the walker described. On instance B, I opened Settings → Advanced → Collection → Advanced (legacy) and scrolled to #sched-targets. The fixed coach then covered a control: coach_cover.covered = ['#sch-pages: 50'], the 'Max pages / source' input (raw-r4-B.json coach_scrolled_adv).\n\nThe cap on launches is real: app-core.js:1152 stops the coach once seen >= 6.\n\nShots (in /tmp/claude-0/rewalk/O-recheck/shots/): R1-coach-living-en-1440.png, R1-coach-living-ar-1440.png, R1-coach-living-en-375.png, R1-coach-storage-en-1440.png, R1-living-en-1440-after-notnow.png, R1s-coach-over-adv-scrolled-en.png. R5-maps-zh.png shows the same over the Maps caveat.\n\nIn the 375 shot, the 'Pages the live stream follows…' bubble is a harness artifact: the mouse was left over the card after the hamburger nav. It is not part of this finding.",
+    "root_cause": "src/static/app-core.js:1104-1120 (_placeCoach). The fix for O-2 always sets top = guardBottom + gap, where guardBottom is the bottom of .chrome and the protected top-bar buttons. That is exactly where every tab-page begins: its h2 and its visible-by-default .card-caveat (#living-caveat, index.html:1485) sit there. src/static/app.css:1870 makes #net-coach position:fixed, so it also covers whatever the user scrolls under it. The guard (_COACH_GUARD, app-core.js:1101) protects only the chrome and buttons, never caveat text or form controls in the content.",
+    "suggested_fix": "Stop overlaying content. Render the coach in the page flow as a slim strip inside .chrome, under the top bar and with the arrow pointing at the plane, so it pushes the tab content down instead of covering it. The ResizeObserver on .chrome (app-core.js:1168-1171) already re-places things when the chrome's height changes. If it must stay a floating bubble, add the active tab's h2, its visible .card-caveat elements and any focusable control to the guard rects. When no free rectangle exists below the chrome, fall back to a compact placement that covers nothing, for example the bottom corner of .main-col, or collapse the bubble to a dot on the plane."
+   },
+   {
+    "ref": "new:The Collection → Advanced (legacy) targets line stays English in fr and ar, and renders without Preview targets being pressed",
+    "verdict": "confirmed",
+    "severity": "P3",
+    "evidence": "On instance A at 8968 and on my own instance B at 9068 (empty encrypted corpus plus scheduler_settings.json {mode: markets}, booted locked and unlocked through the form), #sched-targets reads '0 sources targeted of 0 enabled · this run will process up to 0 / by language: — / by type: —' in all three cases below, in en, fr and ar:\n- after a live #lang-switch;\n- on a fresh load of the panel, before any press;\n- after pressing the real 'Aperçu des cibles' / Arabic button.\n\nEverything around it is translated: the button, the retired-mode notice ('Le mode « Marchés »…', 'أُلغي وضع «الأسواق»…'), the summaries and the crawl hint (raw-r2-A.json item2, raw-r2-B.json; shots R2-B-targets-fr.png, R2-B-targets-ar.png, R2-A-legacy-targets-fr.png).\n\nNo string in the line has a key in fr.json.\n\nThe line is not tracked anywhere as a deferral:\n- The gate's O12 calls it a 'Known leftover', but that is an acknowledgement, not a ruling.\n- The 2026-09-26 OPEN_QUEUE entry's 'Deferred from the fixes' list does not include it.\n- No defect id tracks it.\n- docs/audit/scheduler-lanes-clickthrough-2026-09-25/README.md:19 only calls it out of scope.\n\nThe gate's wording ('the line the \"Preview targets\" button prints') is also inaccurate. loadScheduler calls previewTargets() every time the panel opens (app-sources.js:1491), and Save calls it too (:1576).",
+    "root_cause": "src/static/app-sources.js:1520-1523 (previewTargets) builds the line from a hard-coded English template literal ('sources targeted', 'of … enabled · this run will process up to', 'by language:', 'by type:') with no t()/tf(). The i18n gates do not catch it because it is not a t() call. The DOM walker cannot translate it because every fragment is welded to a number. Nothing repaints it on oo:langchange.",
+    "suggested_fix": "Write the line through keyed tf() frames, 12 locales each, using the one/many frame pair until plural rules land: '{n} sources targeted', 'of {total} enabled · this run will process up to {n}'. Write 'by language' and 'by type' through ooLabelHtml so each locale supplies its own separator. Keep the last /api/scheduler/targets payload and re-render it from app-boot.js's oo:langchange listener. Correct the O12 gate text to say the line renders when the panel opens."
+   },
+   {
+    "ref": "new:A live language switch collapses an open diff on Living sources (stream 'Show diff' and Law 'Stored diff')",
+    "verdict": "confirmed",
+    "severity": "P3",
+    "evidence": "Clean reproduction (raw-r3-clean.json):\n1. Living sources → Wikipedia. Click the 'Walk Tracked Page' button first, then 'Show diff' on the Walk Rome +38 row. The diff is open and the button reads 'Hide diff' (shot R3c-a-before-en.png).\n2. Switch to Français through #lang-switch. .living-diff is gone and the button reads 'Afficher le diff' (R3c-a-after-fr.png).\n3. The tracked page is kept: #wiki-tc-title still reads 'en · Walk Tracked Page', with 16 rows.\n4. Law: open 'Stored diff' (details[open] = true), then switch fr→ar. It is closed (R3c-law-after-ar.png). The same happened fr→zh in raw-r2-A.json item3.\n\nThe walker's own evidence did not isolate the switch. In extra.py, 'Walk Tracked Page' is clicked AFTER 'Show diff', and that click alone collapses the diff. The walker's before.diff_btn already reads 'Show diff'. So live_fr.diff_open=false did not prove the switch closed it. My run above does prove it (see also the new tracked-page item below).",
+    "root_cause": "src/static/app-boot.js:259: the oo:langchange listener calls showLivingView(_livingView). That goes through src/static/app-living.js:275 to loadLivingStream(), which re-fetches and replaces the list (app-living.js:325, box.innerHTML = html), dropping every filled #living-diff-N box. For Law it goes to loadLivingLaw(), which rebuilds the list (app-living.js:382) with closed <details>. Only the tracked page is explicitly restored (app-boot.js:260, loadWikiTC).",
+    "suggested_fix": "Before re-rendering on oo:langchange, record the open stream diffs (revision ids of non-empty #living-diff-* boxes) and the open law <details> (give each one a data-change-id). Then re-render from the cached payload and re-open them: call livingShowDiff(id) for each open revision, and set details.open for each recorded law id. Or re-translate the existing rows in place instead of rebuilding them. Add a Node test that opens a diff, dispatches oo:langchange and asserts the diff is still open."
+   },
+   {
+    "ref": "new:fr: 'lane' is translated two ways across row-O surfaces ('file' and 'voie')",
+    "verdict": "confirmed",
+    "severity": "P3",
+    "evidence": "In Français (raw-r2-A.json item4):\n- The Storage header reads 'FILE' (CSS upper-cases 'File').\n- The Wikipedia lane hover reads 'Le fichier de base de données propre à la file Wikipédia…'.\n- The Export / Sauvegarder… hover on 'Sources vivantes' reads 'une voie est une base de données chiffrée vivante ; son format de sauvegarde n'est pas encore arrêté'.\n- The Collection summary reads '— planification, voies, ingestion manuelle et par lots'.\n\nOn instance B (raw-r2-B.json), the retired notice reads '…s'exécutent désormais comme une voie…'.\n\nThe consent popup hint only appears in protected mode with a proxy. Under the default transparent mode the hint names no lane: 'Le mode protégé est désactivé…'. I set protected mode with socks5h://127.0.0.1:9 on my throwaway B, as the walker's O8b did, and put it back afterwards. The fr hint then reads 'Les requêtes transitent par le proxy que vous avez configuré ; une file ne repasse jamais d'elle-même…' (raw-r4-B.json fr_hint; shot R4-consent-protected-fr.png). The popup was cancelled and /api/system/network read {online:false}.\n\nIn fr.json, among the 36 keys containing 'lane', 26 use 'file' and 10 use 'voie'. Even the two sibling hints of one function disagree: _transportHint uses 'file' for proxy (fr.json:3392) and 'voie' for pool (fr.json:4535). ar ('المسار') and zh ('通道') are consistent.",
+    "root_cause": "The two terms in src/static/locales/fr.json:\n- 'file': lines 3392, 4478 and 4506 ('Lane': 'File'), and 23 other lane keys.\n- 'voie': lines 4374, 4400, 4462, 4469, 4470, 4529, 4535 and 4737.\nNo French glossary entry or ruling fixes the term, so translation batches chose independently.",
+    "suggested_fix": "Choose one French term and align all 36 lane keys to it. I suggest 'voie': the upper-cased 'FILE' header reads as the English word 'file', and 'la file' sits awkwardly beside 'fichier' in the Storage hover. Then add a small glossary check to scripts/i18n_report.py that flags any fr value for a key containing 'lane' that lacks the chosen term, so a later batch cannot reintroduce the split."
+   },
+   {
+    "ref": "new:zh: composed lines put an ASCII space after full-width punctuation (Storage and the failed-download line)",
+    "verdict": "confirmed",
+    "severity": "P3",
+    "evidence": "In 中文 on instance A (raw-r2-A.json item5):\n- #storage-reading innerHTML contains '本机（启动时读取）： 4 个 CPU 核心 · …'.\n- #storage-disk contains '<div class=\"card-caveat\">你的预算还可以再占用 20.0 GB；该驱动器有 15.7 GB 可用。 这超过了该驱动器的可用空间。</div>'.\n- Living sources → Maps reads '失败： HTTP 503 from the mirror'.\n- The /tasks window (lang zh) reads '失败： HTTP 503 from the mirror'.\n\nThe gap is visible in shots R5-storage-zh-crop.png, R5-maps-zh.png and R5-tasks-zh.png. 'HTTP 503 from the mirror' itself is the seeded error, shown verbatim by design (the _jobWhy comment says the failure is shown verbatim), so it is not part of this finding.",
+    "root_cause": "Three places weld an ASCII space after a translated label:\n- src/static/app-settings.js:1856: `${esc(lead)} ${esc(bits.join(\" · \"))}`, where lead is '本机（启动时读取）：'.\n- src/static/app-settings.js:1889: `${esc(line)} ${esc(t(\"That is more than the drive has free.\"))}`, where line ends in '。'.\n- src/static/app-core.js:2099 (_jobWhy): `t(\"Failed:\") + \" \" + j.error`. The Living sources Maps table (app-living.js:252) and the task manager both use this.\nThe app already has the right tool, ooLabelHtml/ooLabelText (app-core.js:36-57), which uses the keyed '{prefix}: {text}' frame ('{prefix}：{text}' in zh/ja, '{prefix} : {text}' in fr). These sites do not use it.",
+    "suggested_fix": "Change three calls:\n- app-settings.js:1856: ooLabelHtml(esc(stripColon(lead)), esc(bits.join(' · '))), or re-key lead without its colon.\n- app-core.js:2099: ooLabelText(t('Failed'), j.error).\n- app-settings.js:1889: join the two sentences with a keyed frame such as tf('{a} {b}') whose zh/ja value is '{a}{b}', or fold them into one tf sentence.\nThen sweep the same `t(\"Failed:\") + \" \"` pattern at app-backup.js:2976, app-diagnostics.js:1155/1228/1294/1553, app-gov-law.js:971/973 and app-settings.js:859/904/915."
+   },
+   {
+    "ref": "new:Clicking a tracked page on Living sources → Wikipedia collapses an open stream diff (the whole panel reloads)",
+    "verdict": "confirmed",
+    "severity": "P3",
+    "evidence": "I found this while checking the walker's third item. Steps (raw-r3-clean.json, part b, in fr):\n1. Living sources → Wikipedia. Click 'Afficher le diff' on Walk Rome +38; the diff is open (b_diff_open=true).\n2. Click the 'Walk Tracked Page' button under 'Pages que vous suivez'.\n3. The diff is gone and the button reads 'Afficher le diff' again (b_after_tracked_click.diff=false).\nThis also explains why the walker's pre-switch state already had the diff closed.\n\nExpected: the tracked page's history opens below and the diff the reader opened in the stream stays open. Opening one view should not reset another.",
+    "root_cause": "src/static/app-map.js:2958 (openWikiTC): `if (opened) _livingSubtabs.select(\"wiki\")` runs even when the Wikipedia subtab is already showing. select() calls showLivingView (src/static/app-living.js:270-275), which re-fetches the overview, the stream and the pages. loadLivingStream then replaces #living-stream (app-living.js:325), dropping the open diff.",
+    "suggested_fix": "In openWikiTC, call showTab/select only when the Living sources tab or the wiki subtab is not already the one showing, for example `if (opened && _livingView !== \"wiki\") _livingSubtabs.select(\"wiki\")`, plus the same guard for showTab. Otherwise just set the title, scroll to #wiki-tc and call loadWikiTC()."
+   }
+  ],
+  "summary": "I reproduced all five of the walker's items on my own fresh encrypted instances and confirm each one as a P3 defect on build 0deff9c4. I also found one related new P3.\n\n**Setup**\n- Instance A (dataA, port 8968): the row's two seeds, run from the tree. Instance B (dataB, port 9068): an empty corpus plus scheduler_settings.json {mode: markets}. No existing data folder was copied.\n- Both were seeded with OO_DB_PASSPHRASE set and OO_DB_PLAINTEXT unset; the database headers are ciphertext.\n- Both booted locked and were unlocked through the #pw/#btn-unlock form.\n- Chromium headless with the required flags and no proxy variables. No page errors, console errors or HTTP ≥ 400 in any run.\n- Both server logs contain no POST /api/system/network, and /api/system/network read {online:false} at the end. Both servers were stopped by PID, ports 8968 and 9068 are free, and the tree is still clean (git status empty, no .pyc).\n\n**Findings**\n1. **Coach over the Living sources caveat.** Confirmed: 92 of 372 caveat points are under the coach in en and fr at 1440, 88 of 372 in ar, and 100 of 325 at 375 px. It also clips the Storage reference-machine line (115 of 465). It is worse than the walker described: once the page is scrolled, the fixed coach covers a control, the 'Max pages / source' input (#sch-pages).\n2. **Targets line stays English.** Confirmed in en, fr and ar, both before and after pressing the button. The line renders on every panel open (app-sources.js:1491). No ruling, OPEN_QUEUE entry or defect id tracks it; the gate's O12 only calls it a \"known leftover\".\n3. **A live language switch collapses open diffs.** Confirmed with a clean reproduction: the stream diff closes on en→fr and the Law 'Stored diff' closes on fr→ar. The walker's evidence was confounded, because the tracked-page click they made after opening the diff already collapses it on its own.\n4. **French translates 'lane' as both 'file' and 'voie'.** Confirmed on the Storage header and hover, the export hover, the Collection summary, the retired notice, and the consent hint in protected mode. In fr.json, 26 lane keys use 'file' and 10 use 'voie'; even the proxy and pool hints of the same function disagree.\n5. **Chinese lines put an ASCII space after '：' and '。'.** Confirmed in the Storage reading, the Storage disk caveat, the Maps table and the task manager. The existing ooLabelText/ooLabelHtml helpers are the fix and are not used at these sites.\n6. **New.** Clicking a tracked page on Living sources → Wikipedia reloads the whole panel and collapses an open stream diff (app-map.js:2958).\n\nScripts, raw JSON and screenshots are in /tmp/claude-0/rewalk/O-recheck/."
+ }
+}

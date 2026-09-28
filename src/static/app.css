@@ -411,6 +411,18 @@
     dialog { background:var(--panel); color:var(--fg); border:1px solid var(--border);
       border-radius:12px; box-shadow:var(--shadow); }
     dialog::backdrop { background:rgba(0,0,0,.5); }
+    /* The import result's "What each backup brought" table STACKS at phone width
+       (2026-09-27 leftovers, W7). As four table cells, the name cell's
+       overflow-wrap:anywhere gave it a one-character min-content width, so auto layout
+       squeezed a backup's folder name to about three characters a line at 375 px while
+       the bar cell kept its 40%. Stacked, each item reads as a block: the name on its
+       own line, then the bar, the counts and the time. !important because the cells
+       carry their desktop padding and width inline. */
+    @media (max-width:600px) {
+      .ux-peritem, .ux-peritem tbody, .ux-peritem tr, .ux-peritem td { display:block; }
+      .ux-peritem tr { padding:4px 0; border-bottom:1px solid var(--border); }
+      .ux-peritem td { width:auto !important; padding:1px 0 !important; text-align:start !important; }
+    }
     .panel > h2:first-child, .panel > .phead:first-child { margin-top:0; }
     /* .panel h2's own size/weight/colour moved to the app-wide type scale further down
        (2026-09-07, PRH-32). It used to be 12.5px uppercase --muted HERE, which is the
@@ -419,12 +431,24 @@
     .phead { display:flex; align-items:center; gap:10px; margin:0 0 12px; }
     .phead h2 { margin:0; }
     .phead .sp { flex:1; }
+    /* A <select> beside a panel heading takes its own width, not the row's: the global
+       `select { width:100% }` squeezed Home's "Most recent" heading down to its
+       min-content -- two lines at 1440 px, one character per line in Chinese (2026-09-27
+       re-walk T-9). Capped, and allowed to shrink, so a long tag list cannot do the same. */
+    .phead > select { width:auto; min-width:0; max-width:60%; }
     label { display:block; font-size:12px; color:var(--muted); margin:9px 0 3px; }
     input, select, textarea { width:100%; background:var(--panel2); border:1px solid var(--border);
       color:var(--fg); border-radius:var(--radius-sm); padding:9px 11px; font:inherit; transition:border-color .12s; }
     input:focus, select:focus, textarea:focus { border-color:var(--accent); outline:none; }
     input::placeholder, textarea::placeholder { color:var(--muted); opacity:.7; }
-    input[type="checkbox"], input[type="radio"] { accent-color:var(--accent); }
+    /* A tick box keeps its NATIVE size. The rule above gives every input width:100%,
+       which is right for a text field and wrong for a checkbox: in a flex label the box
+       took a share of the row (#discovery-external 150-209 px, its label squeezed into
+       three narrow lines) and in a wrapping .row it sat on a line of its own above its
+       label (#qual-enabled, 188-233 px). Rows fixed one at a time with style="width:auto"
+       (.switch, .modlist, .bi-row ...) kept the class alive, so it is fixed here, once
+       (2026-09-27 re-walk H-5, S-8). */
+    input[type="checkbox"], input[type="radio"] { accent-color:var(--accent); width:auto; flex:0 0 auto; }
     /* Range sliders: themed track + thumb (browser defaults clash with dark themes). */
     input[type="range"] { -webkit-appearance:none; appearance:none; height:24px; padding:0;
       background:transparent; border:none; cursor:pointer; }
@@ -832,6 +856,15 @@
     .gov-strat-basis { font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; }
     .gov-strat-why { font-size:10px; color:var(--muted); line-height:1.4; margin-top:4px; }
     .vitals-head { display:flex; align-items:center; justify-content:space-between; margin-bottom:4px; }
+    /* The .vr row app-wide: label left, value right, as in the task manager. Its rules
+       below were scoped to .vitals-pop (and once to #nl-attach-body), so every other .vr --
+       the fixity mismatches, the calendar feed directory, "Your calendars" -- ran its
+       label into its value with no gap at all. The /tasks page's own .vr rules come later
+       in its cascade and keep winning there; min-width:0 lets a long title wrap instead of
+       pushing the value off a phone screen. */
+    .vr { display:flex; align-items:baseline; justify-content:space-between; gap:10px; padding:2px 0; }
+    .vr > span { min-width:0; overflow-wrap:anywhere; }
+    .vr > b { text-align:end; font-variant-numeric:tabular-nums; }
     .vitals-pop .vr { display:flex; align-items:center; justify-content:space-between; gap:10px;
       padding:4px 0; border-top:1px solid color-mix(in srgb,var(--border) 60%,transparent); }
     .vitals-pop .vr:first-child { border-top:0; }
@@ -839,6 +872,12 @@
     .vitals-pop .vr b { font-variant-numeric:tabular-nums; font-weight:600; max-width:160px;
       overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .vitals-pop .vnote { margin-top:7px; color:var(--muted); font-size:11px; line-height:1.35; }
+    /* Settings -> newsletters: the per-source rows reuse the .vr markup, whose rules above are
+       scoped to the task manager, so the name and its count ran together ("BBC News1";
+       2026-09-26 click-through U7). Name left, count right, as in the task manager. */
+    #nl-attach-body .vr { display:flex; align-items:baseline; justify-content:space-between; gap:10px;
+      padding:2px 0; max-width:420px; }
+    #nl-attach-body .vr b { font-variant-numeric:tabular-nums; flex:0 0 auto; }
     /* App-wide network mode (the kill switch as a first-class control) */
     body.net-offline header.topbar, body.net-offline .topbar { box-shadow: inset 0 -2px 0 var(--err); }
     /* Offline emphasis is a STATIC red ring + colour — NOT an animated box-shadow.
@@ -1149,6 +1188,13 @@
     .ls-chip { background:transparent; border:0; padding:1px 3px; color:var(--fg); cursor:pointer;
       line-height:1.25; border-bottom:1px dotted transparent; }
     .ls-chip:hover { color:var(--accent); border-bottom-color:var(--accent); }
+    /* A keyword's language tag can name four languages ("auf Englisch, Deutsch, Portugiesisch
+       und Spanisch"), and .kw-tag's nowrap kept it on one line: at 375 px the landscape chips
+       and the Trends rows ran past the viewport and the page scrolled sideways in de, fr and
+       ru (the 2026-09-27 re-walk's review of M-8/M-11). The .tb-label cure: the tag wraps. */
+    .ls-chip { max-width:100%; white-space:normal; text-align:start; }
+    .kw-row { flex-wrap:wrap; }
+    .ls-chip .kw-tag, .kw-row .kw-tag { white-space:normal; overflow-wrap:anywhere; }
 
     .stat-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(150px,1fr)); gap:11px; }
     .stat { background:var(--panel2); border:1px solid var(--border); border-radius:var(--radius-sm); padding:13px; }
@@ -1257,10 +1303,26 @@
     .term-bars { display:flex; flex-direction:column; gap:3px; }
     .tb-row { display:flex; align-items:center; gap:8px; padding:3px 0; }
     .tb-x { margin:0; padding:0 6px; flex:0 0 auto; }
-    .tb-label { flex:0 0 34%; max-width:34%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    /* The label is the term PLUS its language tag, and the ellipsis used to eat the tag
+       first: at 375 px no foreign word in the Top list showed "in Russian" at all (the
+       2026-09-27 re-walk, M-8). Only the TERM truncates now; the tag wraps under it when
+       the two do not fit side by side, and wraps within itself rather than being cut. */
+    .tb-label { flex:0 0 34%; max-width:34%; min-width:0; display:flex; flex-wrap:wrap;
+      align-items:baseline; column-gap:4px; }
+    .tb-label .kw-term { min-width:0; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .tb-label .kw-tag { min-width:0; max-width:100%; white-space:normal; overflow-wrap:anywhere; }
     .tb-bar { flex:1 1 auto; height:14px; background:var(--panel3, var(--panel2)); border-radius:7px; overflow:hidden; }
     .tb-fill { display:block; height:100%; background:var(--accent); border-radius:7px; min-width:3px; }
     .tb-val { flex:0 0 auto; font-size:12px; white-space:nowrap; }
+    /* A long value ("22 mentions — new in this period, nothing prior to compare") could
+       neither shrink nor wrap, so Insights → Trends scrolled 178 px sideways at 375 px
+       (the 2026-09-26 click-through, N9). On a phone it takes its own line and wraps. */
+    @media (max-width:600px) {
+      .tb-row { flex-wrap:wrap; }
+      .tb-val { flex:1 1 100%; min-width:0; white-space:normal; }
+    }
+    /* ...and on a phone the label gets half the row, so a term and its tag fit (M-8). */
+    @media (max-width:600px) { .tb-label { flex-basis:48%; max-width:48%; } }
     .brief-toolbar { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
     .brief-toolbar .sp { flex:1; }
     .switch { display:inline-flex; align-items:center; gap:6px; font-size:12px; color:var(--muted); cursor:pointer; }
@@ -1391,8 +1453,10 @@
     .note { padding:11px 15px; border-radius:var(--radius-sm); background:var(--panel);
       border:1px solid var(--border); box-shadow:var(--shadow); max-width:360px; font-size:14px;
       animation:slidein .22s ease; }
-    .note.ok { border-left:3px solid var(--ok); } .note.err { border-left:3px solid var(--err); }
-    .note.warn { border-left:3px solid var(--warn); }
+    /* The accent stripe sits on the INLINE-START side (R4): a left border drew on the
+       reading END of an Arabic note. */
+    .note.ok { border-inline-start:3px solid var(--ok); } .note.err { border-inline-start:3px solid var(--err); }
+    .note.warn { border-inline-start:3px solid var(--warn); }
     @keyframes slidein { from{ opacity:0; transform:translateY(8px); } to{ opacity:1; transform:none; } }
 
     /* ---- Dashboard -------------------------------------------------- */
@@ -1400,9 +1464,17 @@
        (UI_SHELL_REDESIGN_PLAN §5): compact, never a screenful. */
     .home-glance { display:flex; flex-wrap:wrap; align-items:baseline; gap:6px 18px;
       padding:11px 16px; margin-bottom:14px; }
-    .stat-strip { display:flex; flex-wrap:wrap; gap:5px 16px; align-items:baseline; flex:1 1 auto; }
-    .stat-strip .s { display:inline-flex; align-items:baseline; gap:5px; white-space:nowrap; }
-    .stat-strip .s b { font-size:15px; font-weight:700; letter-spacing:-.01em; }
+    /* An item stays whole on its line while it fits and wraps INSIDE itself only when it
+       is wider than the strip. A whole-item nowrap, with the strip at its default
+       min-width:auto, made the strip as wide as its widest item: in French at 375 px
+       '117 PRIX DES MATIÈRES PREMIÈRES' and the Wikipedia figure pushed the page 28 px
+       sideways and were cut at the card edge (2026-09-27 re-walk P-2, P-4; Russian
+       measured 22 px). The corpus-tier fix below is the same rule. A number never
+       breaks. */
+    .stat-strip { display:flex; flex-wrap:wrap; gap:5px 16px; align-items:baseline; flex:1 1 auto;
+      min-width:0; max-width:100%; }
+    .stat-strip .s { display:inline-flex; align-items:baseline; gap:5px; min-width:0; max-width:100%; }
+    .stat-strip .s b { font-size:15px; font-weight:700; letter-spacing:-.01em; white-space:nowrap; }
     .stat-strip .s span { font-size:10.5px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; }
     /* Home severity alert strip (Wave 3 H) — compact, honest tiers. Reuses .pill /
        .card-caveat / .hint; only the list density is bespoke. */
@@ -1426,7 +1498,14 @@
     .home-alerts .alert-tier li.alert-more { list-style:none; margin-top:3px; }
     /* Corpus maturity tier — a descriptive STAGE chip beside the glance numbers.
        Subtle per-stage accent only; never a score bar, never fake precision. */
-    .corpus-tier { display:inline-flex; align-items:baseline; gap:7px; white-space:nowrap; }
+    /* It WRAPS BETWEEN its parts (badge · numbers · caveat) and never overflows the
+       strip: a whole-chip nowrap pushed the early-corpus caveat 71 px off a 375 px
+       screen, cut at "thin evidence — r" (2026-09-26 click-through S7, T3) -- a caveat
+       off-screen is a hidden caveat. The badge and the numbers stay whole; the caveat
+       may wrap inside itself as a last resort, so it stays readable at any width. */
+    .corpus-tier { display:inline-flex; flex-wrap:wrap; align-items:baseline; gap:4px 7px;
+      max-width:100%; min-width:0; }
+    .corpus-tier .tier-badge, .corpus-tier .tier-nums { white-space:nowrap; }
     .corpus-tier .tier-badge { font-size:10.5px; font-weight:700; text-transform:uppercase;
       letter-spacing:.05em; padding:2px 8px; border-radius:999px;
       border:1px solid var(--tier-ac, var(--border)); color:var(--tier-ac, var(--muted)); }
@@ -1602,6 +1681,14 @@
     .seg-toggle button { flex:1; min-width:0; margin:0; }
     .seg-toggle.wrap { flex-wrap:wrap; }
     .seg-toggle.wrap button { flex:1 1 28%; white-space:nowrap; }
+    /* The mind-map level and view toggles sit in a `.row` beside four other groups, and
+       `.row > div { flex:1 }` gave each group an equal share -- too little for "Keywords",
+       which the min-width:0 above then let the button cut to "Keywo" at 1440 px (the
+       2026-09-27 re-walk, M-16). In a row the group takes the width its words need and,
+       when the row has less than that, wraps its own buttons onto another line rather
+       than cutting one; it still never grows past the row, so nothing escapes its box. */
+    .row > .seg-toggle { flex:0 1 auto; flex-wrap:wrap; max-width:100%; }
+    .row > .seg-toggle button { flex:1 0 auto; min-width:max-content; white-space:nowrap; }
     /* Selected-state marker mismatch: dr-density/dr-faces/dr-sidebar toggle
        ".sel" (app-shell.js), but the mind-map level/view toggle (#mm-levels/
        #mm-views, index.html + app-corpus.js mmLevel/mmView) toggles ".active"
@@ -1619,13 +1706,21 @@
     .modlist input { width:auto; }
 
     /* ---- Docs / Help reader ----------------------------------------- */
-    .doc-layout { display:grid; grid-template-columns:230px 1fr; gap:var(--space); align-items:start; }
+    /* minmax(0,1fr), not 1fr: a 1fr track's minimum is its content's min-content, so one
+       unbreakable <pre> line widened the column past the viewport (406 px of sideways
+       scroll at 375 px; 2026-09-26 click-through U4). At 0 the pre's own overflow-x scrolls. */
+    .doc-layout { display:grid; grid-template-columns:230px minmax(0,1fr); gap:var(--space); align-items:start; }
     .doc-nav .doc-link { display:block; width:100%; text-align:left; background:transparent; border:0;
       color:var(--fg-soft); border-radius:8px; padding:8px 11px; margin:1px 0; cursor:pointer; font:inherit; }
     .doc-nav .doc-link:hover { background:var(--panel2); color:var(--fg); }
     .doc-nav .doc-link.active { background:color-mix(in srgb,var(--accent) 16%, transparent); color:var(--fg); }
     .doc-nav .doc-link small { display:block; color:var(--muted); font-size:11px; }
-    .prose { font-size:15px; line-height:1.7; color:var(--fg-soft); max-width:78ch; }
+    /* overflow-wrap: the manual's inline <code> holds unbroken tokens up to 543 px wide
+       (GET /api/law/status|documents|...), which pushed Help 210 px past a 375 px screen
+       once the column itself stopped growing (U4). break-word, not anywhere: it breaks a
+       token only when it cannot fit, and leaves min-content -- so a table's columns and
+       the pre blocks' own scrolling -- as they were. */
+    .prose { font-size:15px; line-height:1.7; color:var(--fg-soft); max-width:78ch; overflow-wrap:break-word; }
     .prose h1,.prose h2,.prose h3,.prose h4 { color:var(--fg); line-height:1.3; margin:1.5em 0 .5em; }
     .prose h1 { font-size:1.7em; } .prose h2 { font-size:1.35em; border-bottom:1px solid var(--border); padding-bottom:.3em; }
     .prose h3 { font-size:1.12em; } .prose h1:first-child,.prose h2:first-child { margin-top:0; }
@@ -1672,7 +1767,7 @@
       body.nav-open .scrim { display:block; }
       .scrim { display:none; position:fixed; inset:0; background:rgba(0,0,0,.5); z-index:55; }
       #hamburger { display:inline-flex; }
-      .doc-layout { grid-template-columns:1fr; }
+      .doc-layout { grid-template-columns:minmax(0,1fr); }
     }
     /* Phone-width top bar (<=600px, the same breakpoint the sidebar already treats as
        mobile). 2026-08-20 matrix session T1: at 375x900 the ONE universal horizontal
@@ -1724,6 +1819,28 @@
          resolved box. The dropdown's option list is a native popup and renders
          full-width regardless. */
       .row select, .row input { max-width:100%; }
+      /* The Manage sources filter row is the one row whose children are all
+         `flex:1` (basis 0) AND carry a fixed-width control -- the .msel summary's
+         90px min-width. With the wrapper min-width released above, a basis of 0 lets
+         all seven wrappers fit one line at ~13px each, so flex-wrap never fires and
+         each 90px summary paints over its neighbours: "LanguCountrTypeTags", and a
+         click on Country landed on the next control (2026-09-26 click-through, L4). A
+         real basis makes the row WRAP instead; min-width stays 0, so a wrapper alone
+         on its line still shrinks and the page never widens. `!important` because the
+         Search and button wrappers carry inline `flex`. Search takes its own line. */
+      .src-filter-row > div:not(:last-child) { flex:1 1 130px !important; }
+      .src-filter-row > div:first-child { flex-basis:100% !important; }
+      /* ...and a filter that wrapped into the RIGHT column opened its list from its own
+         left edge, 180 px or more wide, so the Country list ran 64 px past a 375 px
+         viewport and a sideways wheel scrolled the whole page (2026-09-27 re-walk L-10).
+         On a phone each open list spans the filter ROW instead: the row is the
+         containing block, left/right pin it inside the panel, and `top` stays auto so
+         it still opens right under its own summary. Long names wrap rather than push
+         their count off the edge. */
+      .src-filter-row { position:relative; }
+      .src-filter-row .msel { position:static; }
+      .src-filter-row .msel .msel-list { left:0; right:0; min-width:0; }
+      .src-filter-row .msel-opt { white-space:normal; }
       /* The Agenda month bar carries a deliberate inline flex-wrap:nowrap (the
          ‹ month › cluster reads as one unit on a desktop); at phone width its
          trailing hint span protruded 106px past the viewport (measured). Wrapping
@@ -1799,20 +1916,31 @@
     /* Airplane-mode onboarding coachmark (maintainer-ruled 2026-06-13): a
        dismissible invitation that teaches the ONE online/offline switch. It is
        the invitation layer only — going online still passes the consent popup
-       (ensureOnline). Prominent on first launches, subtle after, never naggy. */
-    #net-coach { position: fixed; z-index: 360; max-width: 270px; background: var(--panel);
-      color: var(--fg); border: 1px solid var(--line); border-inline-start: 3px solid var(--accent);
-      border-radius: 10px; padding: 12px 14px; font-size: 12.5px; line-height: 1.5;
-      box-shadow: 0 10px 30px rgba(0,0,0,.35); display: none; }
-    #net-coach.show { display: block; }
+       (ensureOnline). Prominent on first launches, subtle after, never naggy.
+       A STRIP IN THE STICKY CHROME, IN FLOW (2026-09-27 re-walk O-1). As a
+       position:fixed bubble "below the whole chrome" it sat exactly where every tab
+       page begins, over its heading and its visible-by-default caveat, and over a
+       form input once scrolled. In flow it covers nothing: the page starts below it.
+       Being inside .chrome (z-index 50) it also stays under everything the operator
+       opens on purpose -- the phone drawer (55/60), the enlarged mind map (140), the
+       palette (150/151), toasts (200), the language menu (380) -- with no z-index of
+       its own to keep in step with theirs. The arrow is the only positioned part:
+       _placeCoach() moves it under the plane. */
+    #net-coach { position: relative; display: none; margin: 6px 18px 8px;
+      background: var(--panel); color: var(--fg); border: 1px solid var(--line);
+      border-inline-start: 3px solid var(--accent); border-radius: 10px;
+      padding: 7px 12px; font-size: 12.5px; line-height: 1.5; }
+    #net-coach.show { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 12px; }
     #net-coach.prominent { animation: coachpulse 2.4s ease-in-out infinite; }
-    @keyframes coachpulse { 0%,100% { box-shadow: 0 10px 30px rgba(0,0,0,.35); }
-      50% { box-shadow: 0 10px 30px rgba(0,0,0,.35), 0 0 0 4px color-mix(in srgb, var(--accent) 32%, transparent); } }
-    #net-coach .coach-sub { color: var(--muted); margin-top: 4px; }
-    #net-coach .coach-actions { display: flex; gap: 8px; margin-top: 11px; justify-content: flex-end; }
+    @keyframes coachpulse { 0%,100% { box-shadow: 0 0 0 0 transparent; }
+      50% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 32%, transparent); } }
+    #net-coach .coach-body { flex: 0 1 auto; }
+    #net-coach .coach-sub { color: var(--muted); flex: 1 1 auto; }
+    #net-coach .coach-actions { display: flex; gap: 8px; margin-inline-start: auto; }
     #net-coach .coach-actions button { padding: 5px 11px; font-size: 12px; }
-    #net-coach .coach-arrow { position: absolute; width: 11px; height: 11px; background: var(--panel);
-      border-left: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+    #net-coach .coach-arrow { position: absolute; top: -6px; width: 11px; height: 11px;
+      background: var(--panel); border-left: 1px solid var(--line); border-bottom: 1px solid var(--line);
+      transform: rotate(135deg); }
     /* First-launch guided setup (maintainer-ruled 2026-06-13). RTL-aware:
        logical properties + flex order follow document.dir, so the stepper and
        footer mirror correctly for Arabic. */
@@ -1876,6 +2004,15 @@
       border: 1px solid var(--line); border-radius: 10px; background: var(--panel);
       color: var(--fg); cursor: pointer; }
     .kw-senses .kw-sense:hover { border-color: var(--accent); }
+    .kw-senses .kw-sense[aria-pressed="true"] { border-color: var(--accent); font-weight: 600; }
+
+    /* INSIDE A FILLED CHIP the tag takes the chip's own text colour (M3). The analysis
+       window's keyword chips are <button class="chip">, painted var(--accent) with
+       var(--accent-fg) text by the global button rule, and the tag's own accent / muted /
+       caveat colours measured 1.14:1 on that fill -- the tier disclosure was unreadable
+       exactly where it is most often seen. The dotted/dashed underline and the tag's own
+       words still tell the tiers apart; colour was only ever reinforcing. */
+    button.chip .kw-tag, button.chip .kw-qid { color: inherit; border-bottom-color: currentColor; }
 
     /* The QID chip. Opens the LOCAL preview first (invariant #6) -- it is a button in an
        anchor's clothing, so it carries no outbound affordance of its own. */

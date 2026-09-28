@@ -52,6 +52,10 @@
 .r-kw { font-weight: 600; color: var(--accent); text-decoration: none; }
 .r-kw:hover, .r-kw:focus-visible { text-decoration: underline; }
 .r-kn { color: var(--mut); white-space: nowrap; }
+/* The keyword label's tag (M7: "in Russian", "translated from French"): quieter than
+   the word it qualifies, so the keyword stays the thing a reader scans for. */
+.r-kw-tag { font-weight: 400; font-size: .85em; color: var(--mut); }
+.r-kw-tentative { font-style: italic; }
 /* In-article keyword marks: a dotted accent underline (a nod to the SPA's
    hover-info convention) — legible, never a wall of solid links. */
 .r-kw-mark {

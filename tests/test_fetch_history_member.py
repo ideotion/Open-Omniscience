@@ -326,7 +326,12 @@ def test_the_caveat_is_VISIBLE_never_behind_the_hover():
         at = html.index(f'id="{note_id}"')
         line_start = html.rindex("<", 0, at)
         block = html[line_start : html.index("</p>", at)]
-        assert 'class="note"' in block, f"{note_id} is not rendered as a visible note"
+        # Visible, in either of the two visible styles: the guide's `.note`, or -- inside
+        # the import dialog, where the toast box's padding, shadow and slide-in read as a
+        # popup over the form (the 2026-09-26 leftovers, Y2) -- the caveat line.
+        assert 'class="note"' in block or 'class="card-caveat"' in block, (
+            f"{note_id} is not rendered as a visible note"
+        )
         assert "hidden" not in block, f"{note_id} ships hidden"
         assert "not trusting it re-fetches everything from scratch" in block, (
             f"{note_id} no longer states what NOT trusting the history does -- half the "

@@ -1,0 +1,20 @@
+from playwright.sync_api import sync_playwright
+from common import *
+rec = Rec("probe_strip2")
+with sync_playwright() as p:
+    br = p.chromium.launch(executable_path=CHROMIUM, args=["--no-sandbox"])
+    pg = br.new_page(viewport={"width": 1440, "height": 950}); rec.attach(pg)
+    pg.goto("http://127.0.0.1:8850/", wait_until="domcontentloaded"); pg.wait_for_timeout(5000)
+    close_unrelated_dialogs(pg)
+    rec.note("en", text_of(pg, "#home-stats"))
+    switch_lang(pg, "fr")
+    rec.note("fr_+1.2s", text_of(pg, "#home-stats"))
+    pg.wait_for_timeout(5000)
+    rec.note("fr_+6s", text_of(pg, "#home-stats"))
+    pg.wait_for_timeout(15000)
+    rec.note("fr_+21s", text_of(pg, "#home-stats"))
+    shot(pg, "U-U1-home-strip-fr-seeded")
+    pg.reload(wait_until="domcontentloaded"); pg.wait_for_timeout(5000)
+    close_unrelated_dialogs(pg)
+    rec.note("fr_after_reload", text_of(pg, "#home-stats"))
+    rec.save(); br.close()

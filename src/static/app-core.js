@@ -34,6 +34,39 @@
       return cleaned;                                            // relative / same-origin
     };
 
+    // "Label: value" with the READER's separator. French puts a space before the colon,
+    // Chinese and Japanese write a full-width one, so the colon cannot be a hard-coded
+    // ": " welded after a t() label -- that printed "seuil absolu: 0.5" and "Privé (local
+    // ; …): 12 Go" in French (click-through B14, Z3). Both go through the ONE keyed frame
+    // the import dialog's progress line already uses ("{prefix}: {text}", J9), so every
+    // locale states its own separator once. `labelHtml` and `valueHtml` are HTML the
+    // caller has already escaped; the frame is filled with markers and escaped first, so
+    // nothing a translation holds is ever read as markup.
+    function ooLabelHtml(labelHtml, valueHtml) {
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
+        : ((s, v) => String(s).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? String(v[k]) : m));
+      return esc(tf("{prefix}: {text}", {prefix: "\u0001", text: "\u0002"}))
+        .replace("\u0001", () => labelHtml).replace("\u0002", () => valueHtml);
+    }
+    // The same for plain TEXT (a title, a toast, textContent): nothing escaped here.
+    function ooLabelText(label, value) {
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
+        : ((s, v) => String(s).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? String(v[k]) : m));
+      return tf("{prefix}: {text}", {prefix: "\u0001", text: "\u0002"})
+        .replace("\u0001", () => String(label)).replace("\u0002", () => String(value == null ? "" : value));
+    }
+    // A plain enumeration ("a, b, c") with the READER's list punctuation -- "、" in zh
+    // and ja, "،" in ar -- through ONE keyed frame that appends each item, the list
+    // counterpart of the label frame above (the 2026-09-27 re-walk, N-5: a hover read
+    // "(2 مقالة, ارتباط 3.9)" with a Latin comma). Plain TEXT in, plain text out.
+    function ooListJoin(items) {
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
+        : ((s, v) => String(s).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? String(v[k]) : m));
+      return (items || []).map(String).reduce((acc, x, i) =>
+        (i === 0 ? x : tf("{list}, {item}", {list: "\u0001", item: "\u0002"})
+          .replace("\u0001", () => acc).replace("\u0002", () => x)), "");
+    }
+
     // ===================================================================== //
     //  COUNTRY AND LANGUAGE CODES ON SCREEN (ruling Q301 = c step 1, Q302's  //
     //  note, Q303, Q306, Q307, Q308)                                        //
@@ -80,6 +113,9 @@
       uga:ug ukr:ua are:ae gbr:gb usa:us ury:uy uzb:uz vut:vu ven:ve vnm:vn yem:ye zmb:zm
       zwe:zw hkg:hk mac:mo pri:pr twn:tw pse:ps grl:gl xkx:xk ncl:nc pyf:pf abw:aw cuw:cw
       sxm:sx tca:tc vir:vi asm:as gum:gu mnp:mp vgb:vg cym:ky bmu:bm fro:fo gib:gi imn:im
+      ala:ax aia:ai ata:aq atf:tf blm:bl bes:bq bvt:bv cck:cc cok:ck cxr:cx esh:eh flk:fk
+      guf:gf ggy:gg glp:gp sgs:gs hmd:hm iot:io jey:je maf:mf mtq:mq msr:ms nfk:nf niu:nu
+      spm:pm pcn:pn reu:re shn:sh sjm:sj tkl:tk umi:um vat:va wlf:wf myt:yt
     `;
     const OO_ISO3_TO_ISO2 = {};
     const OO_ISO2_TO_ISO3 = {};
@@ -211,6 +247,36 @@
       const cls = o.cls ? ` class="${esc(o.cls)}"` : "";
       const ti = title ? ` title="${esc(title)}"` : "";
       return `<span${cls}${ti}>${esc(code)}</span>`;
+    }
+
+    // A statistics AREA: a country, or one of a producer's own PUBLISHED AGGREGATES
+    // (the World Bank's WLD/HIC/EAS, USGS's WLD). Only the server can tell the two
+    // apart -- it holds the aggregate table read off the live API
+    // (`src/catalog/aggregates.py`) -- so it sends its `classify_ref_area` answer beside
+    // the code (`area_kind`, `area_name`) and this renders THAT, rather than keeping a
+    // third copy of the list here. A country goes through `ooCountryCell` unchanged.
+    // An aggregate keeps its code on screen and discloses what it is in the hover;
+    // before this it went through the country cell and hovered "not a recognised
+    // country code", which is a different claim -- that we could not read it
+    // (2026-09-26 click-through, defects L9/L13). "World" is a keyed string. NOT CLDR's
+    // M49 `001`: measured in Chromium, a build without region display data hands `001`
+    // straight back (the hover read "001 — published aggregate"), and English CLDR says
+    // "world" in lower case where it does name it. The producer's name arrives in
+    // English ("High income") and goes through t() HERE, the one place every caller
+    // shares: the tables each t()'d it themselves (W8, R6), and the statistics level
+    // map, which did not, hovered "High income — agrégat publié" (2026-09-27 re-walk,
+    // L-5). A name with no key falls through as published; t() of a name a caller
+    // already translated finds no key and returns it unchanged.
+    function ooAreaCell(value, kind, name, opts) {
+      if (kind !== "aggregate") return ooCountryCell(value, opts);
+      const code = String(value == null ? "" : value).trim().toUpperCase();
+      if (!code) return "";
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const o = opts || {};
+      const shown = code === "WLD" ? t("World") : (name ? t(name) : "");
+      const title = (shown ? shown + " — " : "") + t("published aggregate");
+      const cls = o.cls ? ` class="${esc(o.cls)}"` : "";
+      return `<span${cls} title="${esc(title)}">${esc(code)}</span>`;
     }
 
     // Q308: order by LOCALISED NAME, with the code as the secondary key so the
@@ -491,6 +557,12 @@
     //     persistent "Collecting… <host>" chip; the host is the URL being fetched
     //     right now (live, truncated). Click the chip for a vitals popover.
     let _inflight = 0, _bg = null, _spinTimer = null, _curHost = null;
+    // The running pass's position ({done, total}) while one is being collected, set by
+    // _pollVitals from /api/scheduler/activity. The chip is COMPOSED from it here: the
+    // poll used to write "Collecting 3/10…" into the chip and then call _paintActivity,
+    // which wrote `_bg` straight over it, so the count never reached the screen -- and it
+    // was an English sentence with raw numbers besides (click-through B17, T10).
+    let _bgProgress = null;
     // Last known network state (airplane mode). Default true (online): never paint
     // "paused" until we actually learn we are offline (no fabricated status either way).
     let _netOnline = true;
@@ -530,7 +602,12 @@
         el.hidden = false;
         el.classList.toggle("bg", !paused);
         el.classList.toggle("paused", paused);
-        $("activity-label").textContent = paused ? T("Collecting paused") + "…" : _bg;
+        const TF = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
+          : ((s2, v) => String(s2).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? String(v[k]) : m));
+        $("activity-label").textContent = paused ? T("Collecting paused…")
+          : _bgProgress ? TF("Collecting {done}/{total}…",
+              {done: fmtNum(_bgProgress.done, 0), total: fmtNum(_bgProgress.total, 0)})
+          : _bg;
         host.textContent = paused ? "" : (_curHost || "");
       }
       else if (_inflight > 0) { el.hidden = false; el.classList.remove("bg"); el.classList.remove("paused");
@@ -549,7 +626,7 @@
     function setBackgroundActivity(label) {
       const next = label || null;
       if (next === _bg) return;
-      _bg = next; if (!_bg) _curHost = null;
+      _bg = next; if (!_bg) { _curHost = null; _bgProgress = null; }
       _paintActivity();
       if (!_bg) _bumpInflight(0);   // re-evaluate any still-pending in-flight spinner
       _ensureVitalsPoll();
@@ -599,6 +676,16 @@
       _paintLangButton();
     }
     _paintLangButton();
+    // A language picked in ANOTHER tab of this origin (a second app window, or the /tasks
+    // page, which has its own menu) arrives as a `storage` event, which fires only in the
+    // origin's OTHER tabs. Without this listener this tab kept its language until a
+    // reload, while the shared key already named the new one. Compared with the page's own
+    // <html lang> rather than OOI18N.current(): that reads the same key, which already
+    // holds the new value when the event lands. The same listener /tasks carries.
+    window.addEventListener("storage", (e) => {
+      if (e.key !== "oo.lang" || !e.newValue || e.newValue === document.documentElement.lang) return;
+      pickLang(e.newValue);
+    });
 
     // -- First-launch guided setup (maintainer-ruled 2026-06-13) -------------- //
     // A ONE-TIME, stepped GUI to a working app. SLICE 1: shell + Language step +
@@ -687,7 +774,8 @@
         const rows = (d.interfaces || []).map((i) => `${i.interface}: ${i.addresses.join(", ")}`);
         box.textContent = rows.length ? rows.join("\n") : t("No non-loopback network interfaces were found.");
       } catch (e) {
-        box.textContent = t("No non-loopback network interfaces were found.");
+        // A failed read is UNREAD, never "none were found" (2026-09-27 re-walk M-14).
+        box.textContent = t("This machine's network interfaces could not be read just now.");
       }
     }
     // S4.7 sources-by-theme step. Real catalog tag taxonomy from the app's OWN loopback
@@ -717,10 +805,15 @@
           _gwSrc.picked = {};
           tags.forEach((tg) => { _gwSrc.picked[tg] = curTags.length ? curTags.indexOf(tg) >= 0 : true; });
         }
+        // A source TAG is data, so it renders verbatim: `data-i18n-dyn` keeps the DOM
+        // walker from translating the one tag that happens to equal a chrome key
+        // ("technology" became "technologie" among fifteen English tags). The count goes
+        // through fmtNum like every other count in the app (2026-09-27 re-walk U-11).
+        const _n = (x) => (typeof fmtNum === "function") ? fmtNum(x || 0, 0) : String(x || 0);
         box.innerHTML = tags.map((tg) =>
           `<label class="gw-theme" style="display:inline-flex;align-items:center;gap:5px;border:1px solid var(--line);border-radius:8px;padding:4px 9px;cursor:pointer">`
           + `<input type="checkbox" data-theme="${esc(tg)}"${_gwSrc.picked[tg] ? " checked" : ""}> `
-          + `<span>${esc(tg)}</span> <span class="muted">${byTotal[tg] || 0}</span></label>`).join("");
+          + `<span data-i18n-dyn dir="auto">${esc(tg)}</span> <span class="muted">${_n(byTotal[tg])}</span></label>`).join("");
         box.querySelectorAll("input[data-theme]").forEach((cb) => {
           cb.onchange = () => { _gwSrc.picked[cb.dataset.theme] = cb.checked; _gwUpdateThemeNote(); };
         });
@@ -1014,53 +1107,38 @@
     function _coachSave(s) {
       try { localStorage.setItem(_COACH_KEY, JSON.stringify(s)); } catch { /* private mode */ }
     }
+    // THE COACH IS A STRIP IN THE CHROME, IN FLOW (2026-09-27 re-walk O-1), so only its
+    // ARROW is placed here. History, because each step fixed the last one's victim: a
+    // floating bubble beside the plane landed in the top bar's own row (in Arabic every
+    // time, over #tm-open, #rate-toggle, #wiki-toggle and #llm); below the top-bar
+    // buttons it sat on the facet-subtab strip `.chrome` relocates there; below the
+    // whole chrome it sat where every tab page begins -- on the heading and the
+    // visible-by-default caveat (#living-caveat), and once scrolled on a form input
+    // (#sch-pages). A position:fixed box has no free rectangle to go to, because the
+    // page fills the viewport. In flow under the top bar it covers nothing by
+    // construction, in either reading direction and at any width, and the arrow still
+    // points at the plane: its centre is put under the plane's centre, clamped inside
+    // the strip. The strip spans the main column, so the clamp only bites on a plane
+    // near a corner.
+    let _coachRO = null;
     function _placeCoach() {
       const el = $("net-coach"), btn = $("net-toggle");
       if (!el || !btn || !el.classList.contains("show")) return;
-      const b = btn.getBoundingClientRect();
-      const w = el.offsetWidth, h = el.offsetHeight, gap = 12, pad = 8;
       const arrow = el.querySelector(".coach-arrow");
-      let left, top, side;
-      if (b.right + gap + w <= window.innerWidth - pad) {   // prefer to the right of the button
-        left = b.right + gap; top = b.top + b.height / 2 - h / 2; side = "left";
-      } else {
-        // No room to the right. The coach must go BELOW the whole protected-button
-        // cluster, never above it: the topbar sits at the very top of the viewport,
-        // so placing it above the button (its top computed from the button's own
-        // top, minus the gap and the coach's height) is almost always deeply
-        // negative, and the clamp below collapses it right back into the topbar's
-        // own row -- overlapping every button in it (net-coach-blocks-topbar-buttons,
-        // P0; this was the exact, guaranteed-every-time root cause, not an
-        // occasional mispositioning). Below the union of every button the coach
-        // must never cover is the one direction structurally guaranteed to have
-        // room and to never overlap any of them.
-        const guard = ["net-toggle", "lang-switch", "tm-open", "app-shutdown"]
-          .map((id) => $(id)).filter(Boolean).map((e) => e.getBoundingClientRect());
-        const guardBottom = guard.length ? Math.max(...guard.map((r) => r.bottom)) : b.bottom;
-        left = b.left; top = guardBottom + gap; side = "below";
-      }
-      left = Math.max(pad, Math.min(left, window.innerWidth - w - pad));
-      top = Math.max(pad, Math.min(top, window.innerHeight - h - pad));
-      el.style.left = left + "px"; el.style.top = top + "px";
-      if (arrow) {
-        if (side === "left") {
-          arrow.style.left = "-6px"; arrow.style.right = "auto";
-          arrow.style.top = Math.max(8, Math.min(b.top + b.height / 2 - top - 5, h - 16)) + "px";
-          arrow.style.transform = "rotate(45deg)";
-        } else {
-          // "below": the arrow must point UP at the button cluster, so it peeks out
-          // the TOP edge (mirrors the "left" case's left:-6px) -- never the bottom,
-          // which was only correct for the old, unsafe above-the-button placement.
-          arrow.style.top = "-6px";
-          arrow.style.left = Math.max(8, Math.min(b.left + b.width / 2 - left - 5, w - 16)) + "px";
-          arrow.style.transform = "rotate(45deg)";
-        }
-      }
+      if (!arrow) return;
+      const b = btn.getBoundingClientRect(), c = el.getBoundingClientRect();
+      const half = 5.5;   // half the arrow's 11 px box
+      // `left` is measured from the padding box, inside the left border (3 px of accent
+      // in LTR, where border-inline-start is the left one; 1 px in RTL): clientLeft.
+      const x = b.left + b.width / 2 - c.left - (el.clientLeft || 0) - half;
+      const inner = el.clientWidth || c.width;
+      arrow.style.left = Math.max(8, Math.min(x, inner - 2 * half - 8)) + "px";
     }
     function dismissNetCoach(permanent) {
       const el = $("net-coach"); if (el) el.classList.remove("show", "prominent");
       if (permanent) { const s = _coachState(); s.dismissed = true; _coachSave(s); }
       window.removeEventListener("resize", _placeCoach);
+      if (_coachRO) _coachRO.disconnect();
     }
     function maybeShowNetCoach() {
       const el = $("net-coach"), btn = $("net-toggle"); if (!el || !btn) return;
@@ -1074,6 +1152,10 @@
       // was already showing, for the reverse ordering).
       const wiz = $("guide-wizard");
       if (wiz && wiz.open) return;
+      // The same for the first-run Wikipedia wizard, which now opens BEFORE the guide
+      // (U8): shown behind that modal the coach is a prompt nobody can press, and the
+      // guide that follows it hides the coach anyway.
+      if (typeof wikiWizardPending === "function" && wikiWizardPending()) return;
       const s = _coachState();
       if (s.dismissed || (s.seen || 0) >= 6) return;     // respected + never naggy
       s.seen = (s.seen || 0) + 1; _coachSave(s);
@@ -1085,6 +1167,15 @@
       _placeCoach();
       setTimeout(_placeCoach, 220);                      // reposition after i18n reflow
       window.addEventListener("resize", _placeCoach);
+      // The chrome changes height WITHOUT a window resize: a tab with facet subtabs
+      // relocates its strip under the top bar, and a language switch re-wraps both.
+      // Re-place on those too (a direction flip is re-placed from app-boot.js's
+      // oo:langchange listener, since it moves the plane without resizing anything).
+      const chrome = btn.closest(".chrome");
+      if (chrome && typeof ResizeObserver === "function") {
+        if (!_coachRO) _coachRO = new ResizeObserver(() => _placeCoach());
+        _coachRO.observe(chrome);
+      }
     }
     // ONE consent design for every offline->online transition: what will
     // happen + the machine's LOCAL addresses (kernel tables; fetching a
@@ -1141,10 +1232,21 @@
     const _NET_STATE_ON = "on", _NET_STATE_OFF = "off",
           _NET_STATE_ASK = "ask", _NET_STATE_UNKNOWN = "unknown";
 
-    function _laneState(lane, cfg) {
+    // `enabling` names the lane the action being consented to turns ON (the Wikipedia
+    // toggle's Start). The popup describes the state the operator is agreeing to, so
+    // that lane is sorted as switched on -- never under "Switched off right now", which
+    // is the very state the click is about to end (delegated click-through, row P).
+    //
+    // `whenOn: "ask"` is a lane whose switch only PERMITS a request the operator then
+    // makes by hand (Discover by topic): switched on it is "only when you ask for it",
+    // never "runs on every collection pass" -- docs/SECURITY.md's row says it is never
+    // part of the scheduler, and the popup must say the same thing (row H).
+    function _laneState(lane, cfg, enabling) {
       if (lane.trigger === "pass") return _NET_STATE_ON;
       if (lane.trigger === "click") return _NET_STATE_ASK;
       if (lane.noOptOut && lane.trigger === "ride-along") return _NET_STATE_ON;
+      const on = lane.whenOn === "ask" ? _NET_STATE_ASK : _NET_STATE_ON;
+      if (enabling && lane.id === enabling) return on;
       const src = cfg[lane.settingFrom];
       if (!lane.setting || src === undefined) return _NET_STATE_ON;
       if (src === null) return _NET_STATE_UNKNOWN;           // the read failed
@@ -1161,7 +1263,7 @@
         if (typeof v === "number") return v > 0 ? _NET_STATE_ON : _NET_STATE_OFF;
         return v ? _NET_STATE_ON : _NET_STATE_OFF;
       });
-      if (states.includes(_NET_STATE_ON)) return _NET_STATE_ON;
+      if (states.includes(_NET_STATE_ON)) return on;
       if (states.includes(_NET_STATE_UNKNOWN)) return _NET_STATE_UNKNOWN;
       return _NET_STATE_OFF;
     }
@@ -1187,7 +1289,14 @@
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
       const protectedMode = kind === "proxy" || kind === "pool" || kind === "refused";
       if (lane.fetcher === false) {
-        if (!protectedMode) return t("Not through this app's fetcher or proxy.");
+        // A MIXED lane says so in every mode, not only with protected mode on: its
+        // installer check IS a guarded fetch (docs/SECURITY.md's "Mixed." row), so
+        // the plain "not through the fetcher" line would deny a path it takes (row H).
+        if (!protectedMode) {
+          return lane.mixed
+            ? t("Mostly not through this app's fetcher or proxy — only the installer check uses the fetcher.")
+            : t("Not through this app's fetcher or proxy.");
+        }
         // With no usable proxy the installer check is refused, not proxied, so the
         // "mostly direct" line would overclaim; the plain direct line is the true one.
         return (lane.mixed && kind !== "refused")
@@ -1218,13 +1327,24 @@
     function _laneHostTitle(lane, kind) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
       const parts = [];
-      if (lane.hosts && lane.hosts.length) parts.push(lane.hosts.join(" · "));
+      // Each host sits in a left-to-right ISOLATE (U+2066 … U+2069). The bubble is
+      // plain text in an RTL document under Arabic, so without it the bidi algorithm
+      // moved the "*." of "*.wikipedia.org" to the far end of the line (row H). The
+      // isolates are invisible and change no host's spelling.
+      if (lane.hosts && lane.hosts.length) {
+        parts.push(lane.hosts.map((h) => "⁦" + h + "⁩").join(" · "));
+      }
       if (lane.hostsFrom) {
         parts.push(String(lane.hostCount) + " " + t("hosts") + " — " +
                    t("the full list is in the security notes"));
       }
       if (!parts.length) parts.push(t("a host you name yourself — nothing is bundled"));
       parts.push(_laneTransport(lane, kind));
+      // A STEP, not only a host: part of this lane is programs the app starts, and the
+      // installer script's own download of Ollama is one of them (net-hosts.js `spawned`).
+      if (lane.spawned) {
+        parts.push(t("Part of this lane is programs the app starts — pip, the Hugging Face downloader and Ollama's own install script, which downloads the Ollama program from ollama.com (and, for an NVIDIA GPU with no driver, the driver from NVIDIA's and your system's package servers). The app cannot limit where these programs connect."));
+      }
       if (lane.noOptOut) {
         parts.push(t("Always on: the code reads a switch that does not exist yet, so this cannot be turned off today."));
       }
@@ -1243,10 +1363,13 @@
       // hover spells the number out in words, where the only lanes that reach it
       // are the two classes, whose counts are never 1.
       const count = n ? ` <span class="muted">n=${n}</span>` : "";
-      return `<div><span title="${esc(_laneHostTitle(lane, kind))}">${esc(t(lane.label))}</span>${count}</div>`;
+      // tabindex="0": the hosts live in the hover, and invariant #17 opens the bubble on
+      // hover, KEYBOARD FOCUS or long-press. A plain span never takes focus, so Tab
+      // skipped every lane and a keyboard user could not read one host (row H).
+      return `<div><span tabindex="0" title="${esc(_laneHostTitle(lane, kind))}">${esc(t(lane.label))}</span>${count}</div>`;
     }
 
-    function _renderNetLanes(cfg) {
+    function _renderNetLanes(cfg, enabling) {
       const box = document.getElementById("net-consent-lanes");
       if (!box) return;
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
@@ -1256,7 +1379,7 @@
         return;
       }
       const by = {on: [], ask: [], off: [], unknown: []};
-      lanes.forEach((l) => by[_laneState(l, cfg)].push(l));
+      lanes.forEach((l) => by[_laneState(l, cfg, enabling)].push(l));
       const kind = _transportKind(cfg);
       const line = (l) => _laneLine(l, kind);
       const out = [];
@@ -1286,12 +1409,32 @@
     // Three loopback reads, in parallel, each degrading to null -- which renders
     // as "could not read", never as "off". They egress nothing, so they are not
     // themselves gated (invariant #14e is about calls that LEAVE the machine).
-    async function _netConsentConfig() {
-      const one = (path) => api(path).catch(() => null);
-      const [scheduler, safety, custody] = await Promise.all([
-        one("/api/scheduler/config"), one("/api/safety/settings"), one("/api/custody/settings"),
-      ]);
-      return {scheduler, safety, custody};
+    //
+    // BOUNDED, and the popup's "Go online" waits for the answer (2026-09-27 re-walk
+    // M-14). This used to be a bare Promise.all: the lanes rendered only after the
+    // SLOWEST read, while the button was live from the first frame. Under a running
+    // fold /api/custody/settings took 5.7 s, so for that long the popup read "…"
+    // where it says that consenting starts collection -- consent clickable, the
+    // disclosure missing. Now a read that has not answered by _NET_CONSENT_READ_MS
+    // counts as unreadable ("could not read whether these are on", never "off") for
+    // the first render, and `onLate` re-renders with the real answer if it lands
+    // while the popup is still open.
+    const _NET_CONSENT_READ_MS = 2000;
+    let _netConsentGen = 0;   // which opening of #net-consent a late answer belongs to
+    function _netConsentConfig(onLate) {
+      const cfg = {scheduler: null, safety: null, custody: null};
+      let answered = false;
+      const reads = [["scheduler", "/api/scheduler/config"], ["safety", "/api/safety/settings"],
+                     ["custody", "/api/custody/settings"]].map(([key, path]) =>
+        api(path).then((v) => {
+          cfg[key] = v;
+          if (answered && onLate) onLate(Object.assign({}, cfg));
+        }, () => { /* stays null: rendered as "could not read" */ }));
+      const late = new Promise((res) => setTimeout(res, _NET_CONSENT_READ_MS));
+      return Promise.race([Promise.all(reads), late]).then(() => {
+        answered = true;
+        return Object.assign({}, cfg);
+      });
     }
 
     async function ensureOnline(reason, opts) {
@@ -1307,14 +1450,43 @@
       dlg.querySelector("#net-consent-reason b").textContent = reason;
       const lanesBox = document.getElementById("net-consent-lanes");
       if (lanesBox) lanesBox.textContent = "…";
-      _netConsentConfig().then(_renderNetLanes).catch(() => _renderNetLanes({}));
+      // "Go online" stays disabled until the disclosure is COMPLETE -- the lanes and the
+      // interfaces both rendered, each either read or honestly marked unreadable -- so
+      // consent is never clickable beside a "…" (2026-09-27 re-walk M-14). Every read
+      // below settles (the lane reads are bounded, the rest fall back to a sentence),
+      // so the button cannot stay disabled for good. `gen` drops a late answer from an
+      // earlier opening of this same dialog.
+      const gen = (_netConsentGen += 1);
+      const okBtn = document.getElementById("net-consent-ok");
+      if (okBtn) okBtn.disabled = true;
+      const current = () => gen === _netConsentGen && dlg.open;
+      // opts.enabling: the lane id this action turns on (see _laneState).
+      const lanesDone = _netConsentConfig((cfg) => { if (current()) _renderNetLanes(cfg, opts.enabling); })
+        .then((cfg) => { if (gen === _netConsentGen) _renderNetLanes(cfg, opts.enabling); })
+        .catch(() => { if (gen === _netConsentGen) _renderNetLanes({}, opts.enabling); });
       const box = document.getElementById("net-consent-ifaces");
       box.textContent = "…";
-      api("/api/system/interfaces").then(d => {
+      const ifacesRead = api("/api/system/interfaces").then(d => {
+        if (gen !== _netConsentGen) return;
         const rows = (d.interfaces || []).map(i => `${i.interface}: ${i.addresses.join(", ")}`);
         box.textContent = rows.length ? rows.join("\n") : t("No non-loopback network interfaces were found.");
         box.style.whiteSpace = "pre-line";
-      }).catch(() => { box.textContent = t("No non-loopback network interfaces were found."); });
+      }).catch(() => {
+        // A failed read is UNREAD, never "none were found": that would be a false claim
+        // inside the disclosure itself (the batch's "unreadable, never off" rule).
+        if (gen === _netConsentGen) box.textContent = t("This machine's network interfaces could not be read just now.");
+      });
+      // The same bound as the lanes: a read still out by then is SAID to be unread
+      // (the answer still replaces the sentence if it lands), never left as "…".
+      const ifacesDone = Promise.race([ifacesRead, new Promise((res) => setTimeout(() => {
+        if (gen === _netConsentGen && box.textContent === "…") {
+          box.textContent = t("This machine's network interfaces could not be read just now.");
+        }
+        res();
+      }, _NET_CONSENT_READ_MS))]);
+      Promise.all([lanesDone, ifacesDone]).then(() => {
+        if (gen === _netConsentGen && okBtn) okBtn.disabled = false;
+      });
       return new Promise((resolve) => {
         const ok = document.getElementById("net-consent-ok");
         const cancel = document.getElementById("net-consent-cancel");
@@ -1561,11 +1733,97 @@
       const s = String(u).replace(/^https?:\/\//i, "").replace(/^www\./i, "");
       return s.length > 40 ? s.slice(0, 39) + "…" : s;
     }
+    // A byte count as a reader of THIS language writes it (2026-09-26 click-through P8).
+    // Every size used to print English units in every locale ("8.5 MB", "0 B"), and in
+    // an Arabic line the bidi algorithm drew it as "MB 8.5". Now:
+    //   * the UNIT is one keyed frame per unit, so a locale that writes it differently
+    //     does ("{n} Mo" in fr, "{n} МБ" in ru, "{n} ميغابايت" in ar) and also decides
+    //     which side of the number it sits on;
+    //   * the NUMBER is formatted for the UI language -- OOI18N.current(), never the
+    //     browser's locale, which the language switcher does not touch -- with Latin
+    //     digits, like every other figure the app prints;
+    //   * the result rides in a FIRST STRONG ISOLATE (U+2068 ... U+2069), so it stays one
+    //     run inside a right-to-left line. Plain characters, not markup: they survive
+    //     esc() and work in a title, a textContent or an <option>;
+    //   * the number and its unit are held together by a NO-BREAK SPACE: measured at
+    //     375 px in Arabic, the Storage table's narrow On-disk cell broke "17.8" from its
+    //     (longer) unit onto two lines.
+    // What does NOT change is the value: binary steps of 1024 under the SI-style names,
+    // exactly as before. `decimals(i, v)` keeps each caller's own precision rule. A
+    // `sign` ("+" or U+2212) rides in an isolate of its own WITH the digits, so a growth
+    // figure keeps its sign on the number in an Arabic line too.
+    function _sizeText(bytes, decimals, sign) {
+      const v0 = Number(bytes);
+      if (bytes == null || !isFinite(v0)) return "—";
+      const TF = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((s, o) => s.replace("{n}", o.n));
+      let v = v0, i = 0;
+      while (v >= 1024 && i < 4) { v /= 1024; i++; }
+      const dec = decimals(i, v);
+      // The NUMBER keeps the app's one ruled convention (fmtNum: Latin digits and a
+      // decimal POINT in every locale, SI style), so a size never reads "35,6" beside a
+      // "1.2 s" in the same panel; only the unit's written form is translated.
+      let num = v.toFixed(dec);
+      if (sign) num = "\u2068" + sign + num + "\u2069";
+      const s = i === 0 ? TF("{n} B", { n: num })
+        : i === 1 ? TF("{n} KB", { n: num })
+        : i === 2 ? TF("{n} MB", { n: num })
+        : i === 3 ? TF("{n} GB", { n: num })
+        : TF("{n} TB", { n: num });
+      return "\u2068" + s.replace(/ /g, "\u00a0") + "\u2069";
+    }
     function _fmtBytes(n) {
-      if (n == null) return "—";
-      const u = ["B","KB","MB","GB","TB"]; let i = 0, v = n;
-      while (v >= 1024 && i < u.length - 1) { v /= 1024; i++; }
-      return (v >= 100 || i === 0 ? Math.round(v) : v.toFixed(1)) + " " + u[i];
+      // Whole numbers for bytes and from 100 up; one decimal below that.
+      return _sizeText(n, (i, v) => (v >= 100 || i === 0 ? 0 : 1));
+    }
+    // A SERVER SENTENCE the page can read back into its parts (the 2026-09-26
+    // click-through's leftovers, Y9). The free-space refusals are raised in English by
+    // the backup code (src/backup/artifact.py preflight_free_space, and the folder
+    // backup's own check in src/backup/folder_backup.py) with sizes already written by
+    // `human_bytes`, and every surface that shows a job's error showed them as sent --
+    // English words and English units in every locale. Their shape is fixed, so the
+    // page recognises it, rebuilds the sizes (binary steps, as `human_bytes` wrote them)
+    // through `_sizeText`, and writes the sentence from a keyed frame. Anything else --
+    // an error this does not know -- comes back UNCHANGED: a sentence it cannot parse
+    // is shown as the server wrote it, never dropped or guessed at. The server's text
+    // stays English on purpose: it is also the log line and the API's answer.
+    const _OO_SPACE_WHAT = {
+      "backup": "Backup", "restore": "Restore", "volume backup": "Volume backup",
+      "restore staging": "Unpacking the backup to restore it",
+    };
+    const _OO_SIZE_RE = "([0-9]+(?:\\.[0-9]+)?) (B|KB|MB|GB|TB)";
+    const _OO_SPACE_RES = [
+      // artifact.py: preflight_free_space
+      [new RegExp("Not enough free space for the (.+?): needs about " + _OO_SIZE_RE + ", only "
+        + _OO_SIZE_RE + " free at (.+?)\\. Free up space or choose another location, or use the "
+        + "large-data/volume backup for a big corpus\\."), "what"],
+      // folder_backup.py: the large-data folder backup's own check
+      [new RegExp("Not enough free space at (.+?): needs " + _OO_SIZE_RE + ", only "
+        + _OO_SIZE_RE + " free\\."), "folder"],
+    ];
+    function ooServerText(msg) {
+      const s = String(msg == null ? "" : msg);
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      const tf = (window.OOI18N && OOI18N.tf)
+        ? OOI18N.tf
+        : ((x, v) => x.replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? String(v[k]) : m));
+      const U = { B: 0, KB: 1, MB: 2, GB: 3, TB: 4 };
+      const size = (n, u) => _sizeText(Number(n) * Math.pow(1024, U[u]), (i) => (i ? 1 : 0));
+      // A path is Latin text inside what may be a right-to-left sentence.
+      const iso = (p) => "\u2068" + p + "\u2069";
+      for (const [re, kind] of _OO_SPACE_RES) {
+        const m = re.exec(s);
+        if (!m) continue;
+        const out = kind === "what"
+          ? tf("{what}: not enough free space — needs about {needed}, only {free} free at {path}. Free up space or choose another location, or use the large-data/volume backup for a big corpus.", {
+              what: _OO_SPACE_WHAT[m[1]] ? t(_OO_SPACE_WHAT[m[1]]) : m[1],
+              needed: size(m[2], m[3]), free: size(m[4], m[5]), path: iso(m[6]),
+            })
+          : tf("Not enough free space at {path}: needs {needed}, only {free} free.", {
+              path: iso(m[1]), needed: size(m[2], m[3]), free: size(m[4], m[5]),
+            });
+        return s.slice(0, m.index) + out + s.slice(m.index + m[0].length);
+      }
+      return s;
     }
     function _rateBytes(curr, prev, pick) {
       if (!prev) return null;
@@ -1622,35 +1880,69 @@
       if (_bg) {
         const pg = _actData && _actData.progress;
         _curHost = pg && pg.current ? pg.current : (cur ? _shortUrl(cur.url) : null);
-        if (pg && pg.total) {
-          $("activity-label").textContent = `Collecting ${Math.min(pg.done + 1, pg.total)}/${pg.total}…`;
-        }
+        _bgProgress = pg && pg.total ? {done: Math.min(pg.done + 1, pg.total), total: pg.total} : null;
         _paintActivity();
       }
       if (_vitalsOpen) { _renderVitals(v); _renderJobs(); _renderSchedule(); }
       _vitalsPrev = v;
     }
+    // A duration as the locale writes it (click-through B17, T7): the unit is the keyed
+    // frame the rest of the app already writes ("{n} s", "{n} min"), so a locale spells it
+    // its own way and on its own side of the number; the number keeps fmtNum's convention,
+    // and the "~" is a symbol, not a word.
     function _fmtDur(s) {
       if (s == null) return "—";
-      if (s < 90) return `~${Math.max(1, Math.round(s))} s`;
-      return `~${Math.round(s / 60)} min`;
+      const TF = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
+        : ((f, v) => String(f).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? String(v[k]) : m));
+      if (s < 90) return "~" + TF("{n} s", {n: fmtNum(Math.max(1, Math.round(s)), 0)});
+      return "~" + TF("{n} min", {n: fmtNum(Math.round(s / 60), 0)});
     }
-    function _renderVitals(v) {
+    // The pair the panel was last drawn from, so a language switch redraws it at once
+    // (app-boot.js's oo:langchange listener) rather than on the next 2 s poll -- and from
+    // the SAME two samples: re-rendering the last sample against ITSELF would compute a
+    // download rate over a zero interval, i.e. no rate, where the panel showed one.
+    let _vitalsLast = null;
+    function repaintVitalsFromCache() {
+      if (_vitalsOpen && _vitalsLast) _renderVitals(_vitalsLast.v, _vitalsLast.prev);
+    }
+    // The estimate's method sentence (click-through B17, T6). The server writes it in
+    // English with its numbers in it, so no key could ever match it; it also sends the
+    // sentence as a FRAME and the numbers apart (runner.plan_preview), and the page writes
+    // the frame in the UI language with the numbers through fmtNum. A payload without the
+    // frame (an older server) keeps the server's sentence rather than showing nothing.
+    function _estimateMethodText(plan, tf) {
+      const p = plan || {};
+      if (!p.estimate_method_i18n) return p.estimate_method || "";
+      const v = p.estimate_method_vars || {};
+      return tf(p.estimate_method_i18n, {
+        sources: fmtNum(v.sources, 0), delay: fmtNum(v.delay, 1), fetches: fmtNum(v.fetches, 1),
+      });
+    }
+    function _renderVitals(v, prev = _vitalsPrev) {
+      _vitalsLast = {v, prev};
       const p = v.process || {}, sc = v.scraping || {};
-      const dl = _rateBytes(v, _vitalsPrev, x => x.scraping && x.scraping.bytes_total);
+      const dl = _rateBytes(v, prev, x => x.scraping && x.scraping.bytes_total);
       const a = _actData || {};
       const pg = a.progress, plan = a.plan || {}, rates = a.per_host_rates || [];
+      // Every label and fixed phrase through t() at render (click-through B16, V9): the
+      // panel redraws on a switch, so it cannot lean on the DOM walker's cache, and
+      // "Collecting…" was never keyed at all.
+      const t9 = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
       const row = (k, val) => `<div class="vr"><span>${k}</span><b>${val}</b></div>`;
       const sect = (t) => `<div class="vsect">${t}</div>`;
+      // A rate is the size's own frame plus the locale's per-second frame (P8).
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
+        : ((s, o) => s.replace(/\{(\w+)\}/g, (m, k) => (o && o[k] != null) ? String(o[k]) : m));
+      const perSec = (bytes) => tf("{rate}/s", { rate: _fmtBytes(bytes) });
       // -- Now: live run progress (domains only, a real bar) ---------------- //
       let nowHtml;
       if (pg && pg.total) {
         const pct = Math.round(100 * Math.min(pg.done, pg.total) / pg.total);
         nowHtml =
-          row("Now collecting", `${esc(pg.current || "…")}`) +
+          row(esc(t9("Now collecting")), `${esc(pg.current || "…")}`) +
           `<div class="cap-bar" role="progressbar" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100">` +
-          `<div class="cap-fill" style="width:${pct}%"></div><span class="cap-txt">${pg.done}/${pg.total} · ${pct}%</span></div>` +
-          (pg.pages ? row("Pages this run", String(pg.pages)) : "");
+          `<div class="cap-fill" style="width:${pct}%"></div><span class="cap-txt">${fmtNum(pg.done, 0)}/${fmtNum(pg.total, 0)} · ${pct}%</span></div>` +
+          (pg.pages ? row(esc(t9("Pages this run")), fmtNum(pg.pages, 0)) : "");
       } else {
         const nr = a.next_run ? new Date(a.next_run) : null;
         const mins = nr ? Math.max(0, Math.round((nr - Date.now()) / 60000)) : null;
@@ -1663,36 +1955,40 @@
           background: "Background tasks (markets · calendars · checks)",
           briefing: "Building the briefing",
         }[a.phase];
-        nowHtml = row("Now collecting", a.active
-          ? `<span class="muted">${esc(_phaseTxt || "Collecting…")}</span>`
+        nowHtml = row(esc(t9("Now collecting")), a.active
+          ? `<span class="muted">${esc(t9(_phaseTxt || "Collecting…"))}</span>`
           : a.running
-            ? `<span class="muted">idle</span>${mins != null ? ` · <span title="${esc(fmtDateTime(a.next_run))}">⏱ ${mins} min</span>` : ""}`
-            : '<span class="muted">scheduler stopped</span>');
+            ? `<span class="muted">${esc(t9("idle"))}</span>${mins != null ? ` · <span title="${esc(fmtDateTime(a.next_run))}">⏱ ${esc(tf("{n} min", {n: mins}))}</span>` : ""}`
+            : `<span class="muted">${esc(t9("scheduler stopped"))}</span>`);
       }
       // -- Next pass: targets as domain chips + the honest estimate --------- //
       const chips = (plan.next_targets || []).map(d => `<span class="cap-chip">${esc(d)}</span>`).join("");
       const extra = Math.max(0, (plan.planned_total || 0) - (plan.next_targets || []).length);
       const planHtml = (plan.planned_total || plan.estimated_seconds != null) ?
-        sect("Next pass") +
-        row("Targets", `${plan.planned_total || 0}`) +
+        sect(esc(t9("Next pass"))) +
+        row(esc(t9("Targets")), `${plan.planned_total || 0}`) +
         (chips ? `<div class="cap-chips">${chips}${extra ? `<span class="cap-chip muted">+${extra}</span>` : ""}</div>` : "") +
         (plan.estimated_seconds != null
-          ? row("Estimated duration", `${_fmtDur(plan.estimated_seconds)}`) +
-            `<div class="vnote">${esc(plan.estimate_method || "")}</div>`
+          ? row(esc(t9("Estimated duration")), `${_fmtDur(plan.estimated_seconds)}`) +
+            `<div class="vnote">${esc(_estimateMethodText(plan, tf))}</div>`
           : "") : "";
       // -- Per-source rates: the app's OWN fetches, discrete ---------------- //
       const rateHtml = rates.length
-        ? sect("Per-source download rate") +
+        ? sect(esc(t9("Per-source download rate"))) +
           rates.map(r => `<div class="vr vr-dim"><span>${esc(r.host)}</span>` +
-            `<b>${r.kbps} KB/s <span class="muted">· ${_fmtBytes(r.bytes)} · ${r.fetches}×</span></b></div>`).join("") +
-          '<div class="vnote">Measured from this app’s own responses (bytes ÷ transfer time) — not a system network counter.</div>'
+            `<b>${esc(perSec(r.kbps * 1024))} <span class="muted">· ${_fmtBytes(r.bytes)} · ${r.fetches}×</span></b></div>`).join("") +
+          `<div class="vnote">${esc(t9("Measured from this app’s own responses (bytes ÷ transfer time) — not a system network counter."))}</div>`
         : "";
       // -- System: the hardware row, compact -------------------------------- //
-      const sysHtml = sect("System") +
-        row("CPU", p.cpu_percent == null ? "—" : p.cpu_percent + "%") +
-        row("Memory", _fmtBytes(p.rss_bytes)) +
-        row("Scraping ↓", (dl == null ? "—" : _fmtBytes(dl) + "/s") +
-            ` <span class="muted">· total ${_fmtBytes(sc.bytes_total)} · ${sc.fetches_total||0}×</span>`);
+      // Keyed (the 2026-09-26 leftovers, Y9): "Scraping ↓" had no key at all, and "total"
+      // was welded into the middle of a text node the i18n walker can never match, so all
+      // three read English in every locale. "Memory" is translated here too rather than
+      // left to the walker, so the row's two halves come from the same call.
+      const sysHtml = sect(esc(t9("System"))) +
+        row(esc(t9("CPU")), p.cpu_percent == null ? "—" : p.cpu_percent + "%") +
+        row(esc(t9("Memory")), _fmtBytes(p.rss_bytes)) +
+        row(esc(t9("Scraping ↓")), (dl == null ? "—" : esc(perSec(dl))) +
+            ` <span class="muted">· ${esc(tf("total {size}", { size: _fmtBytes(sc.bytes_total) }))} · ${sc.fetches_total||0}×</span>`);
       $("vitals-body").innerHTML = nowHtml + planHtml + _budgetHtml(a) + rateHtml + sysHtml + _sessionHtml(v.session);
       $("vitals-note").innerHTML = "";
     }
@@ -1708,7 +2004,10 @@
       const t9 = (window.OOI18N && window.OOI18N.t) ? window.OOI18N.t : (x => x);
       const tf = (window.OOI18N && window.OOI18N.tf)
         ? window.OOI18N.tf : ((x, v) => x.replace(/\{(\w+)\}/g, (_, k) => v[k]));
-      const dur = (sec) => (window.ooTimeline ? window.ooTimeline.fmtDur(sec) : (sec == null ? "—" : String(Math.round(sec)) + " s"));
+      // Each unit is its keyed frame ("{n} h", "{n} min" …), never a welded "7 m"
+      // (click-through B19, Q8).
+      const dur = (sec) => (window.ooTimeline ? window.ooTimeline.fmtDur(sec, tf)
+        : (sec == null ? "—" : tf("{n} s", { n: fmtNum(Math.round(sec), 0) })));
       const row = (k, val, title) =>
         `<div class="vr"><span>${esc(k)}</span><b${title ? ` title="${esc(title)}"` : ""}>${esc(val)}</b></div>`;
       const rows = [];
@@ -1797,6 +2096,9 @@
     // its own queue), so jobMove takes the kind. The id is "<prefix>:<key>"; the
     // key may itself contain ':' so slice after the FIRST colon, never a fixed N.
     const _isDownloadKind = (k) => k === "wiki-dump" || k === "osm-map";
+    // Local DB work: resumable from a cursor, and never a network fetch, so a resume
+    // needs no consent popup (jobResume's `local`).
+    const _LOCAL_JOB_KINDS = new Set(["reindex", "keyword-fold", "search-reindex"]);
     const _dlKey = (j) => j.id.slice(j.id.indexOf(":") + 1);
     const _reorderEndpoint = (k) => k === "osm-map" ? "/api/jobs/osm/reorder" : "/api/jobs/dumps/reorder";
     // PERF-09. The rate is the OWNER's measurement (the download loop's own
@@ -1847,24 +2149,82 @@
         else if (j.paused_by === "operator") line = t("Paused by you.");
         else if (j.paused_by === "restart") line = t("Paused when the app stopped mid-download; the partial file is kept.");
       } else if (j.state === "failed" && j.error) {
-        line = t("Failed:") + " " + j.error;
+        // The reader's own separator (ooLabelText): a welded ": " printed "失败： HTTP 503"
+        // in Chinese, a Latin space after a full-width colon (2026-09-27 re-walk O-5).
+        line = ooLabelText(t("Failed"), j.error);
       }
       return line ? `<div class="muted" style="font-size:11px">${esc(line)}</div>` : "";
+    }
+
+    // A job's percent as a WHOLE number (click-through B17, T5): the fold and the re-index
+    // publish one decimal ("86.8%"), which says nothing the exact count beside it does not.
+    // It never reads 100 while work is left -- a rounded "100%" on a running row is a
+    // finished job that is not finished -- so 99.5 and up stays 99 until the count is full.
+    function _jobPct(p) {
+      const done = Number(p.done) || 0, total = Number(p.total) || 0;
+      if (total > 0 && done >= total) return 100;
+      const raw = (typeof p.percent === "number" && isFinite(p.percent)) ? p.percent
+        : (total > 0 ? 100 * done / total : 0);
+      return Math.min(99, Math.max(0, Math.round(raw)));
+    }
+    // A job label that carries a value travels as a keyed FRAME plus its values
+    // (`label_i18n` / `label_vars`, beside the unchanged English `label` -- src/api/jobs.py),
+    // so a locale writes the whole sentence and orders it itself (click-through B17, T11).
+    // A number goes through fmtNum; `language` is a language CODE, written as the name in
+    // the UI language; anything else is data, held in an isolate so a Latin title or path
+    // stays one run inside a right-to-left sentence. A fixed label is still a key: t().
+    // A language CLDR cannot name (it hands the code back: "simple") keeps the server's
+    // English sentence whole rather than print the code where a name belongs. A value that
+    // is itself {i18n, vars} is a keyed phrase ("Large data", a backup phase, "3 volumes")
+    // and is written in the UI language by these same rules (click-through B19).
+    function _jobLabel(j, t) {
+      if (!j.label_i18n) return t(j.label || "");
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
+        : ((f, v) => String(f).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? String(v[k]) : m));
+      const vars = j.label_vars || {}, out = {};
+      for (const k of Object.keys(vars)) {
+        const x = vars[k];
+        if (typeof x === "number") out[k] = fmtNum(x, 0);
+        else if (x && typeof x === "object" && x.i18n)
+          out[k] = _jobLabel({ label: x.i18n, label_i18n: x.i18n, label_vars: x.vars || {} }, t);
+        else if (k === "language") {
+          const code = String(x == null ? "" : x);
+          // A code with a subtag ("be-tarask", "zh-min-nan") is its own edition, and
+          // ooLangName names its base: the English sentence is the honest one there.
+          if (/[-_]/.test(code)) return t(j.label || "");
+          const name = typeof ooLangName === "function" ? ooLangName(code, "") : "";
+          const shown = typeof ooLangCode === "function" ? String(ooLangCode(code) || "") : "";
+          if (!name || name.toLowerCase() === code.toLowerCase()
+              || (shown && name.toLowerCase() === shown.toLowerCase())) return t(j.label || "");
+          out[k] = name;
+        } else out[k] = "\u2068" + String(x == null ? "" : x) + "\u2069";
+      }
+      return tf(j.label_i18n, out);
+    }
+    // A LINE that travels as English text plus its keyed frame -- a job's `detail` beside
+    // `detail_i18n` / `detail_vars`, a result's `paused_reason` beside its `_i18n` twin
+    // (src/jobs/background.py Framed) -- written by _jobLabel's rules. With no frame the
+    // English line is data and is shown as given (click-through B19, Q12).
+    function _framedText(text, frame, vars, t) {
+      if (!frame) return String(text == null ? "" : text);
+      return _jobLabel({ label: text, label_i18n: frame, label_vars: vars || {} }, t);
     }
 
     function _jobRow(j, queuedKeysByKind, t) {
         const pill = j.state === "running" ? "ok" : (j.state === "failed" ? "err" : "warn");
         let prog = "";
         if (j.progress && j.progress.total) {
-          const pct = j.progress.percent || Math.round(100 * j.progress.done / j.progress.total);
+          const pct = _jobPct(j.progress);
           // EVERY progress was formatted as BYTES, but four producers publish counts
           // (items/stages/files/articles) -- so a re-index of 700,000 articles read
           // "700 kB / 1.4 MB" and a one-item import read "1 B / 1 B". The unit was
-          // already travelling with the numbers; nothing read it.
-          const unit = j.progress.unit || "bytes";
+          // already travelling with the numbers; nothing read it. A progress with NO unit
+          // is a plain count: every producer names bytes when it means bytes, so reading
+          // an unnamed number as bytes put "3 B / 12 B" on a count (click-through B19, Q12).
+          const unit = j.progress.unit || "";
           const amount = unit === "bytes"
             ? `${_fmtBytes(j.progress.done)} / ${_fmtBytes(j.progress.total)}`
-            : `${fmtNum(j.progress.done, 0)} / ${fmtNum(j.progress.total, 0)} ${esc(t(unit))}`;
+            : `${fmtNum(j.progress.done, 0)} / ${fmtNum(j.progress.total, 0)}` + (unit ? ` ${esc(t(unit))}` : "");
           prog = `<div class="cap-bar" role="progressbar" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100"><i style="width:${pct}%"></i></div>` +
                  `<div class="muted" style="font-size:11px">${amount}${_rateNote(j, t)} · ${pct}%</div>`;
         }
@@ -1881,16 +2241,25 @@
         // partial file). It routes through the ONE network-consent popup.
         if (_isDownloadKind(j.kind) && (j.state === "paused" || j.state === "failed"))
           acts.push(`<button class="tiny secondary" onclick="jobResume(${esc(JSON.stringify(j.id))})">${esc(t("Resume"))}</button>`);
-        // The whole-corpus re-index (Phase 1.1) is a DB-writer job pausable from here:
-        // pause (running) stops between batches; resume continues from the persisted
-        // cursor — so closing the tab no longer restarts it from article 0.
-        if (j.kind === "reindex" && j.state === "running")
-          acts.push(`<button class="tiny secondary" onclick="jobCancel(${esc(JSON.stringify(j.id))})">${esc(t("Pause"))}</button>`);
-        if (j.kind === "reindex" && (j.state === "paused" || j.state === "failed"))
-          acts.push(`<button class="tiny secondary" onclick="jobResume(${esc(JSON.stringify(j.id))})">${esc(t("Resume"))}</button>`);
+        // The local DB-writer jobs (the whole-corpus re-index, the keyword fold, the search
+        // re-index) draw the controls the server lists in `actions` for their state: pause
+        // (running) stops between batches; resume continues from the persisted cursor, so
+        // closing the tab never restarts one from the beginning. "cancel" on a RUNNING job
+        // is the same pause and is not drawn twice; on a stopped keyword fold it discards
+        // the saved cursor (jobs.py), the only place a paused fold can be abandoned.
+        if (_LOCAL_JOB_KINDS.has(j.kind)) {
+          const a = Array.isArray(j.actions) ? j.actions : [];
+          if (a.includes("pause"))
+            acts.push(`<button class="tiny secondary" onclick="jobCancel(${esc(JSON.stringify(j.id))})">${esc(t("Pause"))}</button>`);
+          if (a.includes("resume"))
+            acts.push(`<button class="tiny secondary" onclick="jobResume(${esc(JSON.stringify(j.id))}, true)">${esc(t("Resume"))}</button>`);
+          if (a.includes("cancel") && !a.includes("pause") && j.kind === "keyword-fold")
+            acts.push(`<button class="tiny secondary" onclick="jobCancel(${esc(JSON.stringify(j.id))})">${esc(t("Cancel"))}</button>`);
+        }
         const qpos = j.queue_position ? ` <span class="muted">#${j.queue_position} ${esc(t("in queue"))}</span>` : "";
+        // A fixed job label is keyed ×12; one carrying a value arrives as a frame (_jobLabel).
         return `<div style="display:flex;align-items:center;gap:8px;padding:3px 0;flex-wrap:wrap">` +
-          `<span class="pill ${pill}">${esc(t(j.state))}</span><b style="font-size:12.5px">${esc(j.label)}</b>${qpos}` +
+          `<span class="pill ${pill}">${esc(t(j.state))}</span><b style="font-size:12.5px">${esc(_jobLabel(j, t))}</b>${qpos}` +
           `<span style="margin-inline-start:auto;display:flex;gap:4px">${acts.join("")}</span>` +
           `<div style="flex-basis:100%">${prog}${_jobWhy(j, t)}</div></div>`;
     }
@@ -1974,19 +2343,20 @@
       try {
         const r = await api(`/api/jobs/${encodeURIComponent(id)}/cancel`, {method: "POST"});
         if (typeof r.online === "boolean") _paintNetwork(r.online);
-        toast(r.detail || t("Cancelled."));
+        toast(r.detail ? t(r.detail) : t("Cancelled."));   // a fixed detail is keyed ×12
         _renderJobs();
       } catch (e) { toast(e.message, "err"); }
     }
-    async function jobResume(id) {
+    async function jobResume(id, local) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
       // A resume re-opens a network fetch -> the ONE consent popup first
       // (invariant #14; a no-op when already online). The download path itself
-      // still refuses while the kill switch is engaged.
-      if (typeof ensureOnline === "function" && !await ensureOnline(t("Resume a paused download"))) return;
+      // still refuses while the kill switch is engaged. A LOCAL job (`local`: a
+      // re-index or the keyword fold) opens no connection, so it asks nothing.
+      if (!local && typeof ensureOnline === "function" && !await ensureOnline(t("Resume a paused download"))) return;
       try {
         const r = await api(`/api/jobs/${encodeURIComponent(id)}/resume`, {method: "POST"});
-        toast(r.detail || t("Resumed."));
+        toast(r.detail ? t(r.detail) : t("Resumed."));
         _renderJobs();
       } catch (e) { toast(e.message, "err"); }
     }
@@ -2083,7 +2453,8 @@
       const lastHtml = a.last_run
         ? row(t("Last run"), `<span title="${esc(fmtLocal(a.last_run))}">${esc(fmtRelative(a.last_run))}</span>`)
         : row(t("Last run"), `<span class="muted">${esc(t("no run yet"))}</span>`);
-      const modeHtml = row(t("Mode"), `<span class="muted">${esc(s.mode || a.mode || "")}</span>`);
+      // No "Mode" row: the scheduler mode was RETIRED (Q1020 = a, b45bed19), so the
+      // row it fed read "Mode" beside nothing, in every state (2026-09-27 re-walk T-5).
       // -- A resume still waiting for the previous pass (SCHED-1, 2026-09-24) --- //
       // Before this, a resume that ran out of retries left collection OFF with one log
       // line; a field machine sat five days that way. Now it is pending, and shown.
@@ -2101,7 +2472,7 @@
         _concurrencyHtml(a.concurrency, pg, t, row, sect) +
         sect(t("Schedule")) +
         `<div class="vr"><span>${esc(t("Cadence"))}</span><b>${cadence}</b></div>` +
-        nextHtml + lastHtml + modeHtml +
+        nextHtml + lastHtml +
         _housekeepingHtml(a.housekeeping, t, row, sect) +
         `<div class="vnote">${esc(t("These are the scheduler’s own facts — the schedule is managed in Settings. Times are relative; hover for the exact local moment and the method."))}</div>`;
     }
@@ -2281,7 +2652,7 @@
         sect(t("Collection coverage")) +
         `<div class="vr"><span>${esc(t("Tags with any coverage"))}</span><b>${reachedTags}/${tags.length}</b></div>` +
         `<div class="vr"><span>${esc(t("RSS sources reached"))}</span><b>${tot.reached || 0}/${tot.total || 0} · ${Math.round(100 * (tot.reach_pct || 0))}%</b></div>` +
-        `<div class="vr"><span>${esc(t("Fresh in the last N hours"))}</span><b title="${esc(t("Freshness window (hours)"))}: ${esc(String(d.fresh_window_hours))}">${tot.fresh || 0} · ${Math.round(100 * (tot.fresh_pct || 0))}%</b></div>` +
+        `<div class="vr"><span>${esc(t("Fresh in the last N hours"))}</span><b title="${esc(ooLabelText(t("Freshness window (hours)"), d.fresh_window_hours))}">${tot.fresh || 0} · ${Math.round(100 * (tot.fresh_pct || 0))}%</b></div>` +
         (tot.backed_off ? `<div class="vr"><span>${esc(t("Backed off (de-churn, not failures)"))}</span><b>${tot.backed_off}</b></div>` : "") +
         (d.crawl_sources ? `<div class="vr"><span>${esc(t("Crawl sources (reach not tracked)"))}</span><b>${d.crawl_sources}</b></div>` : "");
       // Per-tag rows, least-reached first (the backend already sorts them so —
@@ -2316,7 +2687,9 @@
       // "network task" was wrong for the collision this actually fires on -- it fires
       // ONLY on db_writers_busy, and a re-index is not a network task. Re-keyed, not
       // re-worded around, so the twelve reviewed translations carry the new claim.
-      return confirm(`${t("Another job is writing to the database:")} ${busy}\n\n`
+      // The reader's own separator (ooLabelText): welded, zh read "…写入数据库： re-index"
+      // (2026-09-27 re-walk O-5).
+      return confirm(`${ooLabelText(t("Another job is writing to the database"), busy)}\n\n`
         + (note ? note + "\n\n" : "")
         + `${t("Start anyway? (Cancel waits — the running task keeps the bandwidth and the database writer to itself.)")} ${actionLabel}`);
     }
@@ -2500,6 +2873,13 @@
     // string this helper exists to abolish, re-entered through the sibling case.
     // Prefer the object's own `error`/`detail`/`msg` prose; JSON.stringify only as
     // a last resort so a shape we did not anticipate is still readable.
+    // AMENDED 2026-09-27 (click-through S1): about twenty callers pass ONE argument, a
+    // caught Error, as `_apiErrorMessage(e)`. An Error that api() raised carries
+    // `.detail`; one a caller built itself around fetch(), or one api() raised for a
+    // body with no `detail` (a plain-text 500), does not -- and then `res.status` threw
+    // a TypeError INSIDE the catch block, so the refusal never reached the screen and
+    // the "Merging…" line beside the button stayed forever. With no response to read,
+    // the Error's own message is the answer.
     function _apiErrorMessage(data, res) {
       const d = data && data.detail;
       let msg;
@@ -2510,7 +2890,8 @@
       } else {
         msg = d;
       }
-      return msg || (res.status + " " + res.statusText);
+      if (msg) return msg;
+      return res ? (res.status + " " + res.statusText) : ((data && data.message) || String(data || ""));
     }
     // ------------------------------------------------------------------ //
     //  Is the server actually there? (field report 2026-08-07, item 4)     //

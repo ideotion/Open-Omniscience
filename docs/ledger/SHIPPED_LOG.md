@@ -9930,6 +9930,37 @@ suite also caught a test's raw `sqlite3` writes to `articles`, the disclosed kno
 **STILL OWED.** Row N's operator steps: the re-index on the real corpus with its report, the
 agreement comparison, Q515's cost, and the maintainer's click-through.
 
+## 2026-09-26 — The 0.4 click-through, delegated to Claude and walked (R35)
+
+**WHAT.** The maintainer delegated the click-through of rows H, I, J, L, M, N, O, P, S, T and U to
+Claude (R35). A 44-agent workflow walked them in Chromium on an ENCRYPTED, locked-at-boot install,
+in airplane mode, in en/fr/ar/zh and at 375 px. It ran in four stages: steps drafted from the
+gate, an adversarial step check against main, one walker per row, and an independent re-check of
+every defect. J and O pass for everything a sandbox reaches. The other nine rows fail on 115
+confirmed defects (5 P1, 38 P2, 72 P3). Record: `docs/audit/delegated-clickthrough-2026-09-26/`.
+
+**LESSON.** "Is visible" is not "can be seen" (copied to `LESSONS.md`). The earlier walk passed
+the consent popup's host bubble with `locator.is_visible()`, which is blind to a `showModal()`
+dialog's top layer covering it. Measure what is topmost at the point
+(`elementFromPoint`, a pixel diff).
+
+**STILL OWED.** Fix the confirmed defects, then re-walk the nine failed rows; each row's operator
+steps are unchanged.
+
+## 2026-09-27 — The click-through defects fixed before the tag (R36, PR #1191)
+
+**WHAT.** All 115 confirmed defects of the delegated walk, plus 22 more the fix batches found beside
+their own work, fixed in merged batches; each with a test that fails before it and a Chromium check
+where visible. Deferred with the change each would make: M11's fold-refusal half and the «spread
+across» card's clause under Q411 (both in `OPEN_QUEUE.md`).
+
+**LESSONS** (copied to `LESSONS.md`). A test that pins a third-party library's answer is a test of
+that version, and CI installs two simplemma versions: assert the property (one pass is a fixed
+point), not the word. A fix that localises a number's decimal mark broke the ruled `fmtNum`
+convention; only a unit's written form translates.
+
+**STILL OWED.** The re-walk of the failed rows; each row's operator steps are unchanged.
+
 ## 2026-09-26 — The next crash says how it ended (PR #1190)
 
 Two field instances on 4 GB machines died within a minute of running out of memory, and the next

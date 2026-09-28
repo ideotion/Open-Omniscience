@@ -34,25 +34,16 @@
 <style>
   body { margin: 0; background: var(--bg, #0d0f12); color: var(--fg, #e7e9ee);
          font: 14px/1.5 system-ui, sans-serif; }
-  .tm-head { display: flex; align-items: center; gap: 10px; padding: 10px 16px;
-             border-bottom: 1px solid var(--line, #232733); position: sticky; top: 0;
-             background: var(--panel, #14171d); z-index: 3; }
-  .tm-head h1 { font-size: 15px; margin: 0; font-weight: 600; }
-  .tm-head .eye { width: 22px; height: 22px; }
-  .tm-status { margin-inline-start: auto; display: inline-flex; align-items: center; gap: 8px; }
-  .tm-status .muted { font-size: 12px; }
-  .tm-sbtn { display: inline-flex; align-items: center; justify-content: center; min-width: 28px; height: 28px;
-    padding: 0 8px; border: 1px solid var(--line, #232733); border-radius: 8px; background: transparent;
-    color: var(--fg, #e7e9ee); cursor: pointer; font-size: 14px; line-height: 1; text-decoration: none; }
-  .tm-sbtn:hover { border-color: var(--accent, #4a9eff); }
-  .tm-sbtn.off { color: var(--err, #e05555); border-color: var(--err, #e05555); }
-  .tm-sbtn.on { color: var(--ok, #2ecc71); border-color: var(--ok, #2ecc71); }
-  .tm-sel { height: 28px; border: 1px solid var(--line, #232733); border-radius: 8px; background: var(--panel2, #161a22);
-    color: var(--fg, #e7e9ee); font-size: 12px; padding: 0 4px; }
-  /* Persistent resource summary strip — always visible, optimises the header space. */
+  /* Persistent resource summary strip — always visible, optimises the header space.
+     It sticks at the TOP of the viewport, and the tab row sticks right under its MEASURED
+     height (--tm-sum-h, kept by a ResizeObserver below). The old constants, 43px and 86px,
+     described a sticky .tm-head this page no longer has: the header is now the app's
+     header.topbar, which scrolls away, so scrolled content showed through a 43px band above
+     the strip, and at 375px the strip wraps to two rows (64px) and the tabs covered its
+     bottom 21px (click-through, batch B12). */
   .tm-summary { display: flex; align-items: center; gap: 8px 18px; flex-wrap: wrap;
                 padding: 8px 16px; border-bottom: 1px solid var(--line, #232733);
-                background: var(--panel2, #161a21); position: sticky; top: 43px; z-index: 2; }
+                background: var(--panel2, #161a21); position: sticky; top: 0; z-index: 2; }
   .tm-state { display: inline-flex; align-items: center; gap: 7px; font-weight: 600; font-size: 13px; }
   .tm-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted, #888); }
   .tm-state.on   .tm-dot { background: var(--ok, #2ecc71); box-shadow: 0 0 6px var(--ok, #2ecc71); }
@@ -61,9 +52,14 @@
   .tm-metric { display: inline-flex; align-items: baseline; gap: 5px; font-size: 12px; }
   .tm-metric b { font-size: 13px; font-variant-numeric: tabular-nums; }
   .tm-metric .ml { opacity: .6; text-transform: uppercase; letter-spacing: .04em; font-size: 10px; }
+  /* The row scrolls INSIDE its own box rather than widening the page: five unwrapped
+     tabs are ~500 px, which gave the whole page 144 px of sideways scroll at 375 px
+     (2026-09-26 click-through T6). One row, not a wrap; its offset is the summary's
+     measured height, since the summary is the strip that wraps. */
   .tm-tabs { display: flex; gap: 2px; padding: 8px 12px 0; border-bottom: 1px solid var(--line, #232733);
-             background: var(--panel, #14171d); position: sticky; top: 86px; z-index: 1; }
-  .tm-tabs button { background: transparent; border: 0; color: var(--fg, #e7e9ee); opacity: .6;
+             background: var(--panel, #14171d); position: sticky; top: var(--tm-sum-h, 37px); z-index: 1;
+             overflow-x: auto; }
+  .tm-tabs button { flex: none; background: transparent; border: 0; color: var(--fg, #e7e9ee); opacity: .6;
                     padding: 8px 14px; border-bottom: 2px solid transparent; cursor: pointer;
                     font: inherit; border-radius: 6px 6px 0 0; }
   .tm-tabs button.active { opacity: 1; border-bottom-color: var(--accent, #4a9eff); font-weight: 600; }
@@ -197,42 +193,123 @@
   // Reuse the SPA's translations: most task-manager strings are keyed; genuinely new
   // redesign strings fall back to English (keyable later — i18n gate stays 100%).
   function t(s) { return (window.OOI18N && OOI18N.t) ? OOI18N.t(s) : s; }
+  // setLang is ASYNC (it fetches the locale). The whole-document apply() below used to
+  // run straight after it, against a still-empty map: it recorded the English <title>
+  // as the original and left it English, and nothing walked <head> again, because
+  // setLang's own apply() and the walker's observer both start at document.body. So the
+  // tab read "Task manager · FOOS" in every language (2026-09-26 click-through O4).
+  // Awaiting it makes this pass the one that translates the title.
   function applyLang() {
     try {
       var lang = localStorage.getItem("oo.lang");
-      if (lang && window.OOI18N && OOI18N.setLang) OOI18N.setLang(lang);
-      if (window.OOI18N && OOI18N.apply) OOI18N.apply(document);
+      var I = window.OOI18N;
+      if (!I) return;
+      Promise.resolve(lang && I.setLang ? I.setLang(lang) : null)
+        .then(function () { if (I.apply) I.apply(document); })
+        .catch(function () { /* locale unreadable: English fallback */ });
     } catch (e) { /* private mode / engine absent: English fallback */ }
   }
-  try {
-    var th = localStorage.getItem("oo.theme");
-    if (th) document.documentElement.setAttribute("data-theme", th);
-  } catch (e) { /* ignore */ }
-
-  function fmtBytes(n) {
-    if (n == null) return "—";
-    var u = ["B", "KB", "MB", "GB", "TB"], i = 0;
-    n = Number(n);
-    while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
-    return (i === 0 ? n : n.toFixed(1)) + " " + u[i];
+  // The app's LOOK, read from the one place the app keeps it: localStorage "oo.ui", a
+  // JSON blob with .theme and .accent (app-shell.js getUi/applyUi). This page read an
+  // "oo.theme" key that nothing has ever written, so it rendered Ink under a Paper or a
+  // Solar app (2026-09-27 re-walk T-8). The theme is mapped the way applyThemeAttr maps
+  // it: "system" follows the OS preference (light -> the Light theme, dark -> Ink), "ink"
+  // or nothing is the :root palette, anything else is its own data-theme. Re-applied
+  // when another tab changes the look (the storage listener below) and when the OS
+  // flips light/dark under "system".
+  var _lightQuery = window.matchMedia ? window.matchMedia("(prefers-color-scheme: light)") : null;
+  function applyAppLook() {
+    var ui = {};
+    try { ui = JSON.parse(localStorage.getItem("oo.ui") || "{}") || {}; } catch (e) { ui = {}; }
+    var theme = ui.theme || "ink";
+    var eff = theme === "system" ? (_lightQuery && _lightQuery.matches ? "light" : "")
+      : theme === "ink" ? "" : theme;
+    var r = document.documentElement;
+    if (eff) r.setAttribute("data-theme", eff); else r.removeAttribute("data-theme");
+    if (ui.accent) r.style.setProperty("--accent", ui.accent); else r.style.removeProperty("--accent");
   }
-  function fmtRate(bps) { return bps == null ? "—" : fmtBytes(bps) + "/s"; }
+  applyAppLook();
+  if (_lightQuery && _lightQuery.addEventListener) {
+    _lightQuery.addEventListener("change", applyAppLook);
+  }
+
+  // The SPA's _sizeText (app-core.js), for this page (2026-09-26 click-through P8): the
+  // unit is one keyed frame per unit, so a locale writes it its own way and on its own
+  // side of the number; the number is formatted for the UI language with Latin digits;
+  // the result rides in a first-strong isolate so an Arabic line cannot reorder it; and
+  // a no-break space keeps the number on its unit's line. The value is unchanged:
+  // binary steps of 1024 under the SI-style names.
+  function fmtBytes(n) {
+    if (n == null || !isFinite(Number(n))) return "—";
+    var TF = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : function (s, o) { return s.replace("{n}", o.n); };
+    var v = Number(n), i = 0;
+    while (v >= 1024 && i < 4) { v /= 1024; i++; }
+    // The app's one number convention (a decimal POINT in every locale, as fmtNum and
+    // app-core.js's _sizeText write it); only the unit's written form is translated.
+    var dec = i === 0 ? 0 : 1, num = v.toFixed(dec);
+    var s = i === 0 ? TF("{n} B", { n: num })
+      : i === 1 ? TF("{n} KB", { n: num })
+      : i === 2 ? TF("{n} MB", { n: num })
+      : i === 3 ? TF("{n} GB", { n: num })
+      : TF("{n} TB", { n: num });
+    return "\u2068" + s.replace(/ /g, "\u00a0") + "\u2069";
+  }
+  function fmtRate(bps) {
+    var TF = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : function (s, o) { return s.replace("{rate}", o.rate); };
+    return bps == null ? "—" : TF("{rate}/s", { rate: fmtBytes(bps) });
+  }
+  function tf(s, v) {
+    if (window.OOI18N && OOI18N.tf) return OOI18N.tf(s, v);
+    return String(s).replace(/\{(\w+)\}/g, function (m, k) { return (v && v[k] != null) ? String(v[k]) : m; });
+  }
+  // The app's ruled number formatter (fmtNum in app-markets.js: Latin digits, a decimal
+  // POINT and a narrow no-break space between thousands in every locale). This page does
+  // not load the SPA bundle, so the function is copied, not imported; KEEP THE TWO IN STEP
+  // -- tests/clickthrough_b17_node_test.js runs both over the same values. Every count on
+  // this page goes through it, as the in-app window's do (click-through B17, T5).
+  function fmtNum(v, maxDec) {
+    if (v == null || !isFinite(v)) return "—";
+    var a = Math.abs(v);
+    var dec = maxDec != null ? maxDec : (a >= 1000 ? 1 : a >= 100 ? 1 : a >= 1 ? 2 : 3);
+    var s = v.toFixed(dec).replace(/\.?0+$/, function (m) { return m.indexOf(".") !== -1 ? "" : m; });
+    var parts = s.split(".");
+    var grouped = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, "\u202f");
+    return parts[1] ? grouped + "." + parts[1] : grouped;
+  }
+  // A duration as the locale writes it (click-through B17, T7): each unit is a keyed frame
+  // ("{n} s", "{n} min", "{n} h"), as the in-app window's _fmtDur writes them, so a locale
+  // spells the unit its own way and on its own side of the number.
   function fmtDur(s) {
     if (s == null) return "—";
     s = Math.round(s);
-    if (s < 90) return "~" + Math.max(1, s) + " s";
-    if (s < 5400) return "~" + Math.round(s / 60) + " min";
-    return "~" + (s / 3600).toFixed(1) + " h";
+    if (s < 90) return "~" + tf("{n} s", { n: fmtNum(Math.max(1, s), 0) });
+    if (s < 5400) return "~" + tf("{n} min", { n: fmtNum(Math.round(s / 60), 0) });
+    return "~" + tf("{n} h", { n: fmtNum(s / 3600, 1) });
   }
+  // A relative time as the locale writes it (click-through B19, Q3): the span is a keyed
+  // unit frame, the direction a keyed frame around it ("in {t}", "{t} ago"), so neither
+  // the English "in"/"ago" nor a welded "7m" reaches another language.
   function fmtRel(iso) {
     if (!iso) return "—";
     var d = new Date(iso), s = Math.round((Date.now() - d.getTime()) / 1000);
     if (isNaN(s)) return "—";
     var fut = s < 0; s = Math.abs(s);
-    var v = s < 60 ? s + "s" : s < 3600 ? Math.round(s / 60) + "m" : Math.round(s / 3600) + "h";
-    return fut ? "in " + v : v + " ago";
+    var v = s < 60 ? tf("{n} s", { n: fmtNum(s, 0) })
+      : s < 3600 ? tf("{n} min", { n: fmtNum(Math.round(s / 60), 0) })
+      : tf("{n} h", { n: fmtNum(Math.round(s / 3600), 0) });
+    return fut ? tf("in {t}", { t: v }) : tf("{t} ago", { t: v });
   }
-  function fmtLocal(iso) { try { return new Date(iso).toLocaleString(); } catch (e) { return iso || ""; } }
+  // The exact moment in the APP's language, as the SPA's fmtDateTime (app-shell.js) writes
+  // it -- the browser's own locale is not the language the operator chose (B19, Q3).
+  function fmtLocal(iso) {
+    var d = new Date(iso);
+    if (isNaN(d.getTime())) return iso || "";
+    try {
+      var lang = (window.OOI18N && OOI18N.current) ? OOI18N.current() : undefined;
+      return new Intl.DateTimeFormat(lang,
+        { year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(d);
+    } catch (e) { return d.toLocaleString(); }
+  }
 
   async function api(path, opts) {
     var res = await fetch(path, Object.assign({ headers: { "Content-Type": "application/json" } }, opts || {}));
@@ -249,6 +326,7 @@
 
   // ---- which job kind belongs to which Processes group ---- //
   var isDl = function (k) { return k === "wiki-dump" || k === "osm-map"; };
+  var isLocal = function (k) { return k === "reindex" || k === "keyword-fold" || k === "search-reindex"; };
   var dlKey = function (j) { return j.id.slice(j.id.indexOf(":") + 1); };
   var reorderEp = function (k) { return k === "osm-map" ? "/api/jobs/osm/reorder" : "/api/jobs/dumps/reorder"; };
   // Processes are grouped like Windows groups apps/background/services.
@@ -265,6 +343,67 @@
 
   var _jobs = null;
 
+  // THE THIRD OWNER of the Intl language-name constructor (test_alpha3_display_surfaces):
+  // this page loads neither app-map.js's `ooLangName` nor the reader's `langName`. A CLDR
+  // answer that merely ECHOES the code is not a name, and is refused here: the caller
+  // then keeps the server's English sentence rather than print "simple Wikipedia".
+  var _langDN = {};
+  function langName(code) {
+    var src = String(code == null ? "" : code).trim();
+    if (!src) return "";
+    var ui = "en";
+    try { ui = (window.OOI18N && OOI18N.current && OOI18N.current()) || "en"; } catch (e) { ui = "en"; }
+    try {
+      if (!_langDN[ui]) _langDN[ui] = new Intl.DisplayNames([ui], { type: "language" });
+      var name = _langDN[ui].of(src);
+      return (name && name.toLowerCase() !== src.toLowerCase()) ? name : "";
+    } catch (e) { return ""; }
+  }
+  // A job's percent as a WHOLE number (click-through B17, T5), as the in-app window's
+  // _jobPct draws it: the fold and the re-index publish one decimal ("86.8%"), which says
+  // nothing the exact count beside it does not; and it never reads 100 while work is
+  // left, so 99.5 and up stays 99 until the count is full.
+  function jobPct(p) {
+    var done = Number(p.done) || 0, total = Number(p.total) || 0;
+    if (total > 0 && done >= total) return 100;
+    var raw = (typeof p.percent === "number" && isFinite(p.percent)) ? p.percent
+      : (total > 0 ? 100 * done / total : 0);
+    return Math.min(99, Math.max(0, Math.round(raw)));
+  }
+  // A job label carrying a value arrives as a keyed FRAME plus its values (`label_i18n` /
+  // `label_vars`, beside the unchanged English `label` -- src/api/jobs.py), and is written
+  // here exactly as the in-app window's _jobLabel writes it (click-through B17, T11): a
+  // number through fmtNum, `language` (a CODE) as the name in the UI language, anything
+  // else as data in an isolate. A fixed label is still a key: t(). A language this page
+  // cannot name keeps the server's English sentence whole. A value that is itself
+  // {i18n, vars} is a keyed phrase, written by these same rules (click-through B19).
+  function jobLabel(j) {
+    if (!j.label_i18n) return t(j.label || "");
+    var vars = j.label_vars || {}, out = {};
+    for (var k in vars) {
+      if (!Object.prototype.hasOwnProperty.call(vars, k)) continue;
+      var x = vars[k];
+      if (typeof x === "number") out[k] = fmtNum(x, 0);
+      else if (x && typeof x === "object" && x.i18n)
+        out[k] = jobLabel({ label: x.i18n, label_i18n: x.i18n, label_vars: x.vars || {} });
+      else if (k === "language") {
+        var name = langName(x);
+        if (!name) return t(j.label || "");
+        out[k] = name;
+      } else out[k] = "\u2068" + String(x == null ? "" : x) + "\u2069";
+    }
+    return tf(j.label_i18n, out);
+  }
+
+  // A job's detail line ("model {model}") arrives with its keyed frame beside the English
+  // (`detail_i18n` / `detail_vars`) and is written by jobLabel's rules; a fixed line is
+  // still a key (click-through B19, Q5).
+  function jobDetail(j) {
+    return j.detail_i18n
+      ? jobLabel({ label: j.detail, label_i18n: j.detail_i18n, label_vars: j.detail_vars || {} })
+      : t(j.detail || "");
+  }
+
   // WHY a download is not moving (S04-08's S5, Q1014): who paused it, or the failure
   // verbatim. The same causes app-core.js's _jobWhy draws in the in-app window -- this
   // page is where the top-bar task-manager button lands, so a cause drawn only there
@@ -277,7 +416,11 @@
       else if (j.paused_by === "operator") line = t("Paused by you.");
       else if (j.paused_by === "restart") line = t("Paused when the app stopped mid-download; the partial file is kept.");
     } else if (j.state === "failed" && j.error) {
-      line = t("Failed:") + " " + j.error;
+      // The keyed label frame app-core.js's _jobWhy uses (ooLabelText), so zh/ja take
+      // their full-width colon with no Latin space after it (re-walk O-5).
+      line = tf("{prefix}: {text}", { prefix: "\u0001", text: "\u0002" })
+        .replace("\u0001", function () { return t("Failed"); })
+        .replace("\u0002", function () { return String(j.error); });
     }
     return line ? '<div class="muted" style="font-size:11px">' + esc(line) + "</div>" : "";
   }
@@ -286,13 +429,21 @@
     var pill = j.state === "running" ? "ok" : (j.state === "failed" ? "err" : "warn");
     var prog = "";
     if (j.progress && j.progress.total) {
-      var pct = j.progress.percent || Math.round(100 * j.progress.done / j.progress.total);
-      var unit = isDl(j.kind) ? (fmtBytes(j.progress.done) + " / " + fmtBytes(j.progress.total))
-                              : (j.progress.done + " / " + j.progress.total);
+      var pct = jobPct(j.progress);
+      // A count names WHAT it counts ("12 / 40 keywords"), the unit keyed x12 as the
+      // in-app window's _jobRow draws it; "12 / 40" alone was the keyword fold's row
+      // (click-through B16, V10).
+      var what = j.progress.unit && j.progress.unit !== "bytes" ? " " + esc(t(j.progress.unit)) : "";
+      // Bytes by the unit the producer publishes, as the in-app _jobRow reads it: a model
+      // pull's bytes are not a download KIND here and printed "1288490188 / 4831838208"
+      // (click-through B17, T5). A row with no unit is a download's bytes or a task's count.
+      var bytes = j.progress.unit ? j.progress.unit === "bytes" : isDl(j.kind);
+      var unit = bytes ? (fmtBytes(j.progress.done) + " / " + fmtBytes(j.progress.total))
+                       : (fmtNum(j.progress.done, 0) + " / " + fmtNum(j.progress.total, 0) + what);
       prog = '<div class="cap-bar" role="progressbar" aria-valuenow="' + pct + '" aria-valuemin="0" aria-valuemax="100"><i style="width:' + pct + '%"></i></div>' +
              '<div class="muted" style="font-size:11px">' + unit + " · " + pct + '%</div>';
     } else if (j.elapsed_s != null) {
-      prog = '<div class="muted" style="font-size:11px">' + esc(t("running for")) + " " + fmtDur(j.elapsed_s) + "</div>";
+      prog = '<div class="muted" style="font-size:11px">' + esc(tf("running for {t}", { t: fmtDur(j.elapsed_s) })) + "</div>";
     }
     var acts = [];
     if (j.id === "collect:current")
@@ -307,10 +458,24 @@
     }
     if (isDl(j.kind) && (j.state === "paused" || j.state === "failed"))
       acts.push('<button class="tbtn" onclick="TM.resume(\'' + esc(j.id) + '\')">' + esc(t("Resume")) + "</button>");
-    var qpos = j.queue_position ? ' <span class="muted">#' + j.queue_position + " " + esc(t("in queue")) + "</span>" : "";
-    return '<div class="job"><span class="pill ' + pill + '">' + esc(t(j.state)) + '</span><span class="label">' + esc(j.label) + "</span>" + qpos +
+    // The local DB-writer jobs (re-index, keyword fold, search re-index) draw the controls
+    // the server lists in `actions` for their state, as the in-app window's _jobRow does.
+    // "cancel" on a RUNNING job is the same pause and is not drawn twice; on a stopped
+    // keyword fold it discards the saved cursor (jobs.py).
+    if (isLocal(j.kind)) {
+      var a = Array.isArray(j.actions) ? j.actions : [];
+      if (a.indexOf("pause") >= 0)
+        acts.push('<button class="tbtn" onclick="TM.cancel(\'' + esc(j.id) + '\')">' + esc(t("Pause")) + "</button>");
+      if (a.indexOf("resume") >= 0)
+        acts.push('<button class="tbtn" onclick="TM.resume(\'' + esc(j.id) + '\', true)">' + esc(t("Resume")) + "</button>");
+      if (a.indexOf("cancel") >= 0 && a.indexOf("pause") < 0 && j.kind === "keyword-fold")
+        acts.push('<button class="tbtn" onclick="TM.cancel(\'' + esc(j.id) + '\')">' + esc(t("Cancel")) + "</button>");
+    }
+    var qpos = j.queue_position ? ' <span class="muted">#' + fmtNum(j.queue_position, 0) + " " + esc(t("in queue")) + "</span>" : "";
+    // A fixed job label is keyed x12; one carrying a value arrives as a frame (jobLabel).
+    return '<div class="job"><span class="pill ' + pill + '">' + esc(t(j.state)) + '</span><span class="label">' + esc(jobLabel(j)) + "</span>" + qpos +
            '<span class="acts">' + acts.join("") + "</span>" +
-           (j.detail ? '<div class="detail">' + esc(j.detail) + "</div>" : "") +
+           (j.detail ? '<div class="detail">' + esc(jobDetail(j)) + "</div>" : "") +
            '<div style="flex-basis:100%">' + prog + jobWhy(j) + "</div></div>";
   }
 
@@ -329,7 +494,7 @@
     GROUPS.forEach(function (g) {
       var rows = byGroup[g.id];
       if (!rows || !rows.length) return;
-      html += '<div class="vsect">' + esc(t(g.title)) + ' <span class="count">' + rows.length + "</span></div>" +
+      html += '<div class="vsect">' + esc(t(g.title)) + ' <span class="count">' + fmtNum(rows.length, 0) + "</span></div>" +
               rows.map(function (j) { return jobRow(j, queuedKeysByKind); }).join("");
     });
     if (!html) {
@@ -361,7 +526,7 @@
       // the backend didn't enumerate, never a fabricated row.
       qHtml += '<div class="vsect">' + esc(t("Up next this pass")) + "</div>" +
         '<ol class="tm-upnext">' + ups.map(function (d) { return "<li>" + esc(d) + "</li>"; }).join("") +
-        (more ? '<li class="muted">+' + more + " " + esc(t("more")) + "</li>" : "") + "</ol>" +
+        (more ? '<li class="muted">+' + fmtNum(more, 0) + " " + esc(t("more")) + "</li>" : "") + "</ol>" +
         '<div class="vnote">' + esc(t("Order is re-randomised every pass — stratified by language and tag, not a fixed queue.")) + "</div>";
       // The ACTUAL strata the pass interleaves by (#5): real counts per language & tag.
       var st = plan.strata || {};
@@ -370,7 +535,7 @@
           var bucket = String(x.key || "").charAt(0) === "·";
           var label = bucket ? esc(t(x.key === "·untagged" ? "untagged" : "unknown")) : esc(x.key);
           return '<span class="cap-chip' + (bucket ? " muted" : "") + '">' + label +
-            '<span class="muted"> ·' + x.n + "</span></span>";
+            '<span class="muted"> ·' + fmtNum(x.n, 0) + "</span></span>";
         }).join("");
       };
       if ((st.languages || []).length) {
@@ -401,8 +566,8 @@
     var now;
     if (pg && pg.total && !offline) {
       var pct = Math.round(100 * Math.min(pg.done, pg.total) / pg.total);
-      now = row(t("Current pass"), esc(pg.current || "…") + ' <span class="muted">· ' + esc(pg.mode || "") + "</span>") +
-        '<div class="cap-bar"><div class="cap-fill" style="width:' + pct + '%"></div><span class="cap-txt">' + pg.done + "/" + pg.total + " · " + pct + '%</span></div>';
+      now = row(t("Current pass"), esc(pg.current || "…")) +
+        '<div class="cap-bar"><div class="cap-fill" style="width:' + pct + '%"></div><span class="cap-txt">' + fmtNum(pg.done, 0) + "/" + fmtNum(pg.total, 0) + " · " + pct + '%</span></div>';
     } else if (offline && a.active) {
       now = row(t("Current pass"), '<span class="muted">' + esc(t("winding down — airplane mode engaged")) + "</span>");
     } else if (a.active) {
@@ -421,9 +586,11 @@
       : row(t("Next pass"), '<span class="muted">' + esc(t("scheduled — timing not yet known")) + "</span>");
     var last = a.last_run ? row(t("Last run"), '<span title="' + esc(fmtLocal(a.last_run)) + '">' + esc(fmtRel(a.last_run)) + "</span>")
                           : row(t("Last run"), '<span class="muted">' + esc(t("no run yet")) + "</span>");
+    // No "Mode" row and no mode after the current domain: the scheduler mode was
+    // RETIRED (Q1020 = a, b45bed19) and neither the settings, the activity nor the
+    // pass progress carries one, so both read as an empty value (2026-09-27 re-walk T-5).
     el.innerHTML = sect(t("Collection")) + '<div class="vr"><span>' + esc(t("State")) + "</span><b>" + state + "</b></div>" + now +
       sect(t("Schedule")) + '<div class="vr"><span>' + esc(t("Cadence")) + "</span><b>" + cadence + "</b></div>" + next + last +
-      row(t("Mode"), '<span class="muted">' + esc(s.mode || a.mode || "") + "</span>") +
       '<div class="vnote">' + esc(t("These are the scheduler’s own facts — the schedule is managed in Settings. Times are relative; hover for the exact local moment and the method.")) + "</div>";
   }
 
@@ -472,17 +639,20 @@
     _push(_perf.net, netRate);
     return { diskRate: diskRate, netRate: netRate };
   }
+  // A count and its noun as ONE keyed frame chosen by the count (click-through B19, Q6).
+  function nounCount(n, one, many) { return tf(Number(n) === 1 ? one : many, { n: fmtNum(Number(n), 0) }); }
   function renderPerformance(v, rates) {
     var p = (v && v.process) || {}, sc = (v && v.scraping) || {};
     var cur = _perf.cpu.length ? _perf.cpu[_perf.cpu.length - 1] : null;
     var grid = '<div class="perf-grid">' +
-      perfCard(t("CPU"), (p.cpu_percent == null ? "—" : p.cpu_percent + "%"),
-               (p.cpu_cores ? p.cpu_cores + " " + t("cores") : "") + (p.num_threads != null ? " · " + p.num_threads + " " + t("threads") : ""),
+      perfCard(t("CPU"), (p.cpu_percent == null ? "—" : fmtNum(p.cpu_percent, 1) + "%"),
+               (p.cpu_cores ? nounCount(p.cpu_cores, "{n} core", "{n} cores") : "")
+                 + (p.num_threads != null ? (p.cpu_cores ? " · " : "") + nounCount(p.num_threads, "{n} thread", "{n} threads") : ""),
                _perf.cpu, { max: 100, color: "var(--accent, #4a9eff)", label: t("CPU") }) +
       perfCard(t("Memory"), fmtBytes(p.rss_bytes),
                t("resident set size"), _perf.memPct, { max: _memMax, color: "var(--ok, #2ecc71)", label: t("Memory") }) +
       perfCard(t("Network ↓"), fmtRate(rates && rates.netRate),
-               t("this app’s own fetches") + " · " + esc(fmtBytes(sc.bytes_total)) + " · " + (sc.fetches_total || 0) + "×",
+               t("this app’s own fetches") + " · " + fmtBytes(sc.bytes_total) + " · " + fmtNum(sc.fetches_total || 0, 0) + "×",
                _perf.net, { color: "var(--warn, #d9a441)", label: t("Network ↓") }) +
       perfCard(t("Disk I/O"), fmtRate(rates && rates.diskRate),
                t("read + write"), _perf.disk, { color: "#b07be0", label: t("Disk I/O") }) +
@@ -507,13 +677,15 @@
       var when = r.finished_at || r.started_at;
       var dur = res.duration_s != null ? fmtDur(res.duration_s) : "—";
       var pill = ok ? '<span class="pill ok">' + esc(t("ok")) + "</span>" : '<span class="pill err">' + esc(t("error")) + "</span>";
-      var detail = ok ? (stored + " " + esc(t("articles")) + " · " + (res.mode || r.mode || "") + " · " + dur)
+      // No mode segment: since Q1020 = a every run is the press lane and no run report
+      // carries a mode, so reading one printed an empty "· ·" (2026-09-27 re-walk T-5).
+      var detail = ok ? (fmtNum(stored, 0) + " " + esc(t("articles")) + " · " + dur)
                       : esc(String(r.error || t("failed")).slice(0, 160));
       return '<div class="job"><span>' + pill + '</span><span class="label">' + esc(fmtRel(when)) +
              ' <span class="muted" title="' + esc(fmtLocal(when)) + '" style="font-weight:400">' + esc(fmtLocal(when)) + "</span></span>" +
              '<div class="detail">' + detail + "</div></div>";
     }).join("");
-    el.innerHTML = '<div class="vsect">' + esc(t("Online sessions")) + ' <span class="count">' + runs.length + "</span></div>" + rows;
+    el.innerHTML = '<div class="vsect">' + esc(t("Online sessions")) + ' <span class="count">' + fmtNum(runs.length, 0) + "</span></div>" + rows;
   }
 
   // ---- the persistent summary strip ---- //
@@ -534,20 +706,44 @@
     }
     $("tm-summary").innerHTML =
       '<span class="tm-state ' + stateCls + '"><span class="tm-dot"></span>' + esc(stateTxt) + "</span>" +
-      metric(t("CPU"), p.cpu_percent == null ? "—" : p.cpu_percent + "%") +
+      metric(t("CPU"), p.cpu_percent == null ? "—" : fmtNum(p.cpu_percent, 1) + "%") +
       metric(t("Memory"), fmtBytes(p.rss_bytes)) +
       metric(t("Network ↓"), fmtRate(rates && rates.netRate)) +
-      metric(t("active"), String(nJobs));
+      metric(t("active"), fmtNum(nJobs, 0));
   }
+  // The tab row sticks right under the strip (the .tm-tabs rule reads --tm-sum-h). The
+  // strip's height is not a constant -- it wraps at phone width and when a language's
+  // labels run long -- so it is measured, and re-measured whenever it changes size.
+  (function stickTabsUnderSummary() {
+    var sum = $("tm-summary"); if (!sum) return;
+    var set = function () {
+      document.documentElement.style.setProperty("--tm-sum-h", Math.ceil(sum.getBoundingClientRect().height) + "px");
+    };
+    set();
+    if (window.ResizeObserver) new ResizeObserver(set).observe(sum);
+    else window.addEventListener("resize", set);
+  })();
 
   // ---- controls (POST the same endpoints the in-app window used) ---- //
   window.TM = {
     cancel: async function (id) {
-      try { var r = await api("/api/jobs/" + encodeURIComponent(id) + "/cancel", { method: "POST" }); toast(r.detail || t("Cancelled.")); }
+      try { var r = await api("/api/jobs/" + encodeURIComponent(id) + "/cancel", { method: "POST" }); toast(r.detail ? t(r.detail) : t("Cancelled.")); }
       catch (e) { toast(e.message, "err"); }
     },
-    resume: async function (id) {
-      try { var r = await api("/api/jobs/" + encodeURIComponent(id) + "/resume", { method: "POST" }); toast(r.detail || t("Resumed.")); }
+    // A download's resume RE-OPENS A FETCH, so it passes the app's ONE consent popup first
+    // (invariant #14), exactly as the in-app window's jobResume does. That popup lives in
+    // the app, so offline -- or when the state cannot be read -- this page hands the
+    // resume over as "/?resume=<id>", the way its airplane button hands over going online,
+    // and posts nothing itself. Online, the POST goes straight through as before. A LOCAL
+    // job (`local`: re-index, keyword fold, search re-index) opens no connection and asks
+    // nothing.
+    resume: async function (id, local) {
+      if (!local) {
+        var online = null;
+        try { online = (await api("/api/system/network")).online === true; } catch (e) { online = null; }
+        if (online !== true) { location.href = "/?resume=" + encodeURIComponent(id); return; }
+      }
+      try { var r = await api("/api/jobs/" + encodeURIComponent(id) + "/resume", { method: "POST" }); toast(r.detail ? t(r.detail) : t("Resumed.")); }
       catch (e) { toast(e.message, "err"); }
     },
     move: async function (key, dir, kind) {
@@ -587,6 +783,8 @@
 
   // ---- adaptive refresh: fast while something is live, slow when idle ---- //
   var _busy = false;
+  // The last vitals + rates painted, so a language switch repaints from them (below).
+  var _lastVitals = null, _lastRates = null, _painted = false;
   async function refresh() {
     if (_busy) return; _busy = true;
     var live = false, jobs = null, act = window._act || null, v = null;
@@ -594,6 +792,7 @@
     try { act = await api("/api/scheduler/activity"); window._act = act; live = live || !!act.active; } catch (e) { /* keep last */ }
     try { v = await api("/api/system/vitals"); } catch (e) { /* keep last */ }
     var rates = recordSample(v);
+    _lastVitals = v; _lastRates = rates; _painted = true;
     if (jobs) { renderProcesses(jobs, act); renderQueue(jobs, act); }
     renderSchedule(act);
     renderPerformance(v, rates);
@@ -654,6 +853,16 @@
     try { if (window.OOI18N && OOI18N.setLang) await OOI18N.setLang(code); } catch (e) {}
     _paintLangButton();
   }
+  // A language picked in ANOTHER tab -- the app's own menu, usually, since this page is
+  // opened beside it -- reaches this one through the `storage` event, which fires only in
+  // the origin's OTHER tabs. Without it this page kept the language it opened with until
+  // a reload. Compared with the page's own <html lang>, not with OOI18N.current(): that
+  // reads the same shared key, which already holds the new value when the event lands.
+  window.addEventListener("storage", function (e) {
+    if (e.key === "oo.ui") { applyAppLook(); return; }   // a theme picked in the app (T-8)
+    if (e.key !== "oo.lang" || !e.newValue || e.newValue === document.documentElement.lang) return;
+    pickLang(e.newValue);
+  });
   (function wireChrome() {
     var ls = $("lang-switch"); if (ls) ls.addEventListener("click", toggleLangMenu);
     var o = $("tm-omni");      // the search bar routes to the app (search/palette live there)
@@ -715,7 +924,29 @@
   // is a listener rather than memory -- so here it is. Found while verifying
   // Q1126 = a in a browser, on the string that ruling is about; it changes no copy
   // and adds no key, and it is what makes "re-translated x12" true on BOTH paths.
-  document.addEventListener("oo:langchange", function () { paintAir(); });
+  //
+  // The same listener repaints the rest of the page's painted text from what it already
+  // holds -- never a fetch. The summary strip, the panels and the health pill are built
+  // with t() at paint time too, so after ar -> zh they stayed Arabic until the next poll
+  // (2.3 s measured, up to 15 s; click-through T5). The <title> is re-walked here as well:
+  // setLang's own apply() starts at document.body, so without this the tab title kept
+  // the language the page opened in (O4).
+  document.addEventListener("oo:langchange", function () {
+    paintAir();
+    try { if (window.OOI18N && OOI18N.apply) OOI18N.apply(document.head); } catch (e) { /* title only */ }
+    repaintFromCache();
+  });
+  function repaintFromCache() {
+    if (_painted) {
+      var act = window._act || null;
+      if (_jobs) { renderProcesses(_jobs, act); renderQueue(_jobs, act); }
+      renderSchedule(act);
+      renderPerformance(_lastVitals, _lastRates);
+      renderSummary(_lastVitals, act, _lastRates);
+      var c = $("tm-conn"); if (c && !/err/.test(c.className)) c.textContent = t("Live");
+    }
+    paintHealth();
+  }
   // Same direction-aware flash + toast as the app (maintainer 2026-06-21: the
   // airplane button must give identical visual feedback everywhere). #net-flash +
   // its .go-on/.go-off keyframes live in the shared app.css.
@@ -741,11 +972,25 @@
   // The health + AI pills mirror the app's (the AI pill reads just "AI", no model
   // count, per B4 2026-07-24; both route into the app on click — the full
   // start-or-install logic lives there, this standalone page just links back).
+  // The pill paints from the last READING, so a language switch can repaint it without
+  // asking the backend again (T5). Null until the first answer: "checking…" stays.
+  var _healthState = null;   // "healthy" | "degraded" | "offline"
+  function paintHealth() {
+    var el = $("health"); if (!el || !_healthState) return;
+    var label = _healthState === "healthy" ? t("healthy")
+      : _healthState === "degraded" ? t("degraded") : t("offline");
+    // The dot carries the state's class, as the app's own pill does (app-core.js
+    // _paintHealth: dot ok / dot err). Without one, app.css's bare .dot is --muted, so
+    // the dot was grey beside "healthy" and beside "offline" alike (2026-09-27 re-walk T-6).
+    var cls = { healthy: "ok", degraded: "warn", offline: "err" }[_healthState] || "";
+    el.innerHTML = '<span class="dot ' + cls + '"></span> ' + esc(label);
+  }
   async function loadHealth() {
     var el = $("health"); if (!el) return;
-    try { var h = await api("/api/health"); var ok = h && (h.status === "ok" || h.ok === true || h.healthy === true);
-      el.innerHTML = '<span class="dot"></span> ' + esc(ok ? t("healthy") : t("degraded"));
-    } catch (e) { el.innerHTML = '<span class="dot"></span> ' + esc(t("offline")); }
+    try { var h = await api("/api/health"); var ok = h && (h.status === "healthy" || h.status === "ok" || h.ok === true || h.healthy === true);  // /api/health answers status "healthy"
+      _healthState = ok ? "healthy" : "degraded";
+    } catch (e) { _healthState = "offline"; }
+    paintHealth();
   }
   async function loadLlm() {
     var el = $("llm"); if (!el) return;

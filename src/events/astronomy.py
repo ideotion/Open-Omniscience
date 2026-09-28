@@ -302,10 +302,33 @@ def _jde_season(year: int, which: str) -> float:
     return jde0 + (0.00001 * s) / dlam
 
 
+#: The SEASONS' own method (the 2026-09-26 leftovers, Y11). It was the moon's sentence
+#: with "ch. 49" swapped for "ch. 27", so it still said "mean lunar phase + ... planetary
+#: corrections" about an equinox. What `_jde_season` actually does: Meeus's mean JDE0
+#: polynomial for the event (Table 27.B, years 1000-3000) plus the 24 periodic terms of
+#: Table 27.C, divided by Δλ.
+_SEASON_METHOD = (
+    "Meeus, Astronomical Algorithms (2nd ed.) ch. 27: mean equinox or solstice + "
+    "24 periodic terms; computed locally, no data files"
+)
+
+#: The SEASONS' own accuracy (click-through B16, V7). They carried the moon's sentence
+#: ("typically within ~2 minutes"), a figure about ch. 49's truncated lunar series that
+#: nobody measured for ch. 27. What IS measured is stated and nothing more: the book's
+#: worked example 27.a to within 9 s (tests/test_astronomy.py pins 1e-4 day; the error
+#: measured there is 0.15 s) and the published 2024 dates, which is two checks, not an
+#: error bound for every year -- so the sentence says it is not one.
+_SEASON_ACCURACY = (
+    "checked against the book's worked example 27.a (within 9 s) and the published 2024 "
+    "dates, not a general error bound; times are TD (ΔT≈70 s vs UTC not applied — "
+    "immaterial at agenda granularity, stated rather than hidden)"
+)
+
+
 def seasons_for_year(year: int) -> dict:
     """The four season points of a year (UTC), hemisphere-neutrally named."""
-    out: dict[str, Any] = {"year": year, "seasons": [], "method": _METHOD.replace("ch. 49", "ch. 27"),
-           "accuracy": _ACCURACY,
+    out: dict[str, Any] = {"year": year, "seasons": [], "method": _SEASON_METHOD,
+           "accuracy": _SEASON_ACCURACY,
            "naming": (
                "astronomical names only — 'June solstice', never 'summer "
                "solstice': seasons are opposite across hemispheres and "

@@ -36,7 +36,7 @@ from pydantic import BaseModel
 
 from src.backup.artifact import ArtifactError, StagedArtifact, cleanup_staging, read_artifact
 from src.backup.merge import MergeError, RestoreRefused, run_restore
-from src.jobs.background import BackgroundJob, register_job
+from src.jobs.background import BackgroundJob, Framed, register_job
 from src.scheduler.runner import exclusive_window_open
 
 _LOG = logging.getLogger("api.backup_v2")
@@ -580,9 +580,19 @@ def volume_backup_pause() -> dict:
 #  the browser, so a page reload no longer decapitates a running import.
 # --------------------------------------------------------------------------- #
 class ExportFolderBody(BaseModel):
-    """The PARENT the operator chose; the dated folder is allocated under it."""
+    """The PARENT the operator chose; the dated folder is allocated under it.
+
+    The other three fields are what the export was ASKED to hold (J-1), recorded in
+    the folder so a reopened dialog can tell a finished export from one whose
+    large-data copy never ran. Optional: a caller that sends none of them gets the
+    folder and no record, exactly as before -- and an unknown request, never an
+    empty one.
+    """
 
     parent: str
+    corpus: bool | None = None
+    categories: list[str] | None = None
+    inside: bool = False
 
 
 class ExportSummaryBody(BaseModel):
@@ -603,20 +613,40 @@ def export_folder_allocate(body: ExportFolderBody) -> dict:
     somebody's backup (Q213 = c, no reuse of a previous export, is a property of the
     folder rather than a flag anyone has to remember to pass).
     """
-    from src.backup.export_folder import ExportFolderError, allocate_export_folder
+    from src.backup.export_folder import (
+        ExportFolderError,
+        allocate_export_folder,
+        write_export_request,
+    )
 
     try:
         d = allocate_export_folder(body.parent)
     except ExportFolderError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return {"dir": str(d), "name": d.name, "parent": str(d.parent)}
+    recorded = None
+    if body.corpus is not None or body.categories is not None:
+        recorded = write_export_request(
+            d,
+            corpus=bool(body.corpus),
+            categories=list(body.categories or []),
+            inside=body.inside,
+        )
+    return {
+        "dir": str(d),
+        "name": d.name,
+        "parent": str(d.parent),
+        "request_recorded": recorded is not None,
+    }
 
 
 def _export_summary_facts(dirname: str) -> dict:
     from src.backup.export_summary import export_facts
     from src.backup.volume_job import get_volume_manager
 
-    return export_facts(dirname, volume_status=get_volume_manager().status())
+    # THIS folder's completed backup, not the manager's last job: a restore or a verify
+    # run since the export would otherwise stand in for it and be refused, and the
+    # folder read back as holding no corpus (J1).
+    return export_facts(dirname, volume_status=get_volume_manager().backup_status_for(dirname))
 
 
 def _is_export_destination(dirname: str) -> bool:
@@ -654,8 +684,19 @@ def export_summary_read(folder: str = Query(..., alias="dir")) -> dict:
 
     The same :func:`~src.backup.export_summary.export_facts` the written file renders
     from, so a reopened dialog and the file on the drive cannot disagree.
+
+    ``summary_path`` says whether ``BACKUP_SUMMARY.md`` is actually beside the backup
+    (``None`` when it is not), so a reopened panel can name the file -- or its absence
+    -- instead of implying one (J2).
     """
-    return _export_summary_facts(folder)
+    from pathlib import Path
+
+    from src.backup.export_summary import SUMMARY_NAME
+
+    facts = _export_summary_facts(folder)
+    p = Path(folder) / SUMMARY_NAME
+    facts["summary_path"] = str(p) if p.is_file() else None
+    return facts
 
 
 @router.post("/export-summary")
@@ -663,7 +704,10 @@ def export_summary_write(body: ExportSummaryBody) -> dict:
     """Write ``BACKUP_SUMMARY.md`` beside ``volumes.json`` and return the facts (Q209 = a).
 
     Called LAST, after both phases and after the verify-after-write pass, which is
-    what lets the file carry the verify verdict rather than promising one.
+    what lets the file carry the verify verdict rather than promising one. Each export
+    phase now writes the file itself when it completes (J2), so this is an idempotent
+    rewrite from the same facts -- and the way a reopened dialog recovers a file the
+    job could not write.
     """
     from src.backup.export_summary import SUMMARY_NAME, write_backup_summary
 
@@ -880,7 +924,10 @@ def _reindex_resume_worker(ctx, **_kw) -> dict:
         raise RuntimeError(f"could not read the re-index backlog: {bk.get('reason')}")
 
     batches = bk.get("batches") or []
-    ctx.set_progress(done=0, total=int(bk.get("articles_pending") or 0), detail="starting")
+    # The same job's first line, keyed too (I-6's class): "starting" matched no key, so it
+    # printed in English wherever the task manager looked it up.
+    ctx.set_progress(done=0, total=int(bk.get("articles_pending") or 0),
+                     detail=Framed("starting…", "starting…"))
     out: dict = {"batches": [], "articles_reindexed": 0, "articles_failed": 0, "stopped": False}
     walked = 0
     # The measured split, accumulated ACROSS batches and republished after each one, so a
@@ -989,7 +1036,17 @@ def _reindex_resume_worker(ctx, **_kw) -> dict:
                 out["paused_for_import"] = not stopping
                 break
             bid = int(b["batch_id"])
-            ctx.set_progress(detail=f"import {bid} ({b['articles']} article(s))")
+            # A keyed FRAME beside the English (2026-09-27 re-walk, I-6): a plain str left
+            # detail_i18n null, so the task manager printed "import 2 (1200 article(s))"
+            # in every language with its count ungrouped. The count is its own one/many
+            # phrase (the task manager formats the number); the batch id is data.
+            n_art = int(b["articles"])
+            ctx.set_progress(detail=Framed(
+                f"import {bid} ({n_art} article(s))", "import {batch} ({articles})",
+                batch=str(bid),
+                articles={"i18n": "{n} article" if n_art == 1 else "{n} articles",
+                          "vars": {"n": n_art}},
+            ))
 
             def _progress(done: int, _total: int, _base: int = walked) -> None:
                 ctx.set_progress(done=_base + done)

@@ -1,0 +1,293 @@
+{
+ "row": "P",
+ "walk": {
+  "row": "P",
+  "environment": "Build: the read-only worktree /tmp/claude-0/rewalk/tree at 0deff9c4. Every server ran from it through /tmp/claude-0/rewalk/P/launch.py, which drops HTTP(S)_PROXY, ALL_PROXY, NO_PROXY, OO_DB_PASSPHRASE and OO_DB_PLAINTEXT, sets PYTHONDONTWRITEBYTECODE=1, chdirs to the tree and execs `.venv/bin/python -c \"from src.api.main import main; main()\"`. All runs used port 8921, one server at a time: folder A, then folder A again after the restart, then folder B. Every server was stopped by PID (22371 and 23350 for A, 23548 for B); the first A exited through the app's own power icon. No data folder was copied from the first walk; both were built fresh.\n\nFolder A (/tmp/claude-0/rewalk/P/dataA): fresh, started with OO_AUTOSEED=0 and made ENCRYPTED through the real first-launch screens (language, legal, the 'Where should your corpus live?' step, passphrase walk-pass-2026). /api/system/lock-state read 'fresh', then 'unlocked-encrypted'. After the power-icon quit and relaunch it read 'locked' and was unlocked through #pw / #btn-unlock.\n\nFolder B (/tmp/claude-0/rewalk/P/dataB): seeded at 08:07 UTC on 2026-09-27 (machine timezone UTC, so after 03:00 and the expected 'changes today' is 4). First scripts/ui_clickthrough_seed.py (453 articles), then docs/audit/living-sources-clickthrough-2026-09-25/seed.py, copied to /tmp/claude-0/rewalk/P/seed_living.py and run with PYTHONPATH=tree. Both seeds ran with OO_DB_PASSPHRASE=walk-pass-2026 and OO_DB_PLAINTEXT unset. The first 16 bytes of open_omniscience.db and wiki.db are ciphertext, not 'SQLite format 3'. B was booted with neither variable set. lock-state read 'locked', and the unlock went through #pw.\n\nEvery log reads 'Booted in airplane mode (offline)', /api/system/network answered online:false at every check, and 'Go online' was never pressed. Every consent popup was opened, read, screenshotted and closed with 'Stay offline'.\n\nHarness setup, disclosed: between the three language passes of P11, W was put back to 'running' with a loopback PUT /api/scheduler/config {wiki_lane_state:'running'} followed by a reload. Offline there is no UI path back from stopped to running without consent. With the kill switch engaged the server does not start the lane (src/api/scheduler.py _apply_wiki_lane_state), and network stayed online:false.\n\nBrowser: Playwright Chromium /opt/pw-browsers/chromium, headless, args --disable-background-networking --disable-component-update --no-proxy-server --no-sandbox --disable-dev-shm-usage, launched with the proxy variables unset. A request listener logged 0 off-host requests. The main pass ran at 1440x950 in en, then live switches to ar, zh and fr through #lang-switch. 375x800 passes ran in en, and also in fr and ar.\n\nScripts, JSON and screenshots are in /tmp/claude-0/rewalk/P/: walk_a.py, restart_a.py, walk_b.py, probe_live.py, probe_home375.py, probe_pct.py, the a_*.json, b_*.json, restart_a_*.json and probe_*.json results, and shots/P-*.png. Differences from the first walk: the port, the date, the Python -c launcher instead of the console script, and the first-launch data-location step now appearing (known and recorded when OO_DATA_DIR is explicit).",
+  "steps": [
+   {
+    "id": "P1",
+    "verdict": "pass",
+    "locales": "en",
+    "evidence": "Folder A, fresh and encrypted. The flow ran: language, then legal ('I have read and accept these documents.' / 'Accept and continue'), then 'Where should your corpus live?' (GET /api/system/data-location 200; the step is shown because OO_DATA_DIR is explicit, which is known and recorded; pressed Continue), then 'Create your corpus passphrase', then Create. It landed on /?wikiwizard=1#home with ONLY #wiki-wizard open: the guide was not stacked on it and the coach was not shown behind it (U8 fixed). Read without hovering: 'What it contacts.' with the host line exactly '*.wikipedia.org · stream.wikimedia.org · wikimedia.org · ores.wikimedia.org · dumps.wikimedia.org', 'Robots.', 'Licence.' (CC BY-SA 4.0, page history = authors, images not stored). There are 12 editions, all ticked, native name first ('中文 (zh)', 'English (en)', 'Français (fr)', 'العربية (ar)'…). It reads '12 of 12 editions', budget 20 with 'GB in total', and 'About 1.7 GB for each of 12 editions — the total divided by the editions you follow.'; the STORED-not-speed sentence is present. The airplane stayed filled. 'Not now' closed the wizard, and only then did the 'Welcome to Open Omniscience' guide open (closed with ×). Config afterwards: wizard_done=false, state running, budget 20; network online:false; lock-state unlocked-encrypted. No junk text. Shots: shots/P-P1-datadir-en.png, P-P1-wizard-top-en.png, P-P1-wizard-bottom-en.png, P-P1-after-not-now-en.png; data in a_p1_p2_p3_p4_p5.json P1."
+   },
+   {
+    "id": "P2",
+    "verdict": "pass",
+    "locales": "en",
+    "evidence": "The summary before saving read exactly '12 editions · 20 GB budget · not yet measured — this lane has not run · using the defaults'. Robots./Licence. are visible on the panel. Dialog: with en and de unticked it read '10 of 12 editions' and 'About 2 GB for each of 10 editions…'. The step text says '2.0'; fmtNum now drops the trailing .0 by the numbers-through-fmtNum ruling, so this is not a defect. Clear gave '0 of 12 editions' and 'Pick at least one edition and a budget to see the share.' Save with none gave the toast 'Pick at least one edition — a lane with none follows nothing.' (class 'note err', red edge) and the dialog stayed open. The toast is drawn under the modal's backdrop, dimmed but readable. Budget 0 gave the same 'Pick at least one…'. Budget 24 gave 'About 2 GB for each of 12 editions…'. Saving closed the dialog with 'Saved. The stream starts when you go online.', and the airplane stayed filled. The summary became '12 editions · 24 GB budget · not yet measured — this lane has not run'. Reopened: 24, with 12 ticked. Storage row: 'Wikipedia / Wikimedia | Not created yet | 24 GB yours; the published default is 20 GB'. Offline baselines still offers 'Read a page from a downloaded dump' and 'Search downloaded dumps (full text)', with no add-to-corpus button. Q717 RECORD: 'use ORES scores' (#wiki-ores) is now UNTICKED on a fresh corpus. Shots: P-P2-settings-wikipedia-en.png, P-P2-wizard-save-empty-en.png, P-P2-after-save-en.png, P-P2-storage-en.png."
+   },
+   {
+    "id": "P3",
+    "verdict": "pass",
+    "locales": "en, ar, zh, fr",
+    "evidence": "(1) Default ON: W filled in the accent colour rgb(47,111,179) at opacity .72 with box-shadow none. The bubble reads 'Wikipedia stream: running — Chosen; airplane mode is holding it until you go online.' / 'Pause the Wikipedia stream' / 'Shift+click stops the stream completely.' / 'This lane contacts stream.wikimedia.org, …'. (2) Airplane opens 'Go online?', which lists 'Wikipedia / Wikimedia n=5' under 'Runs on every collection pass:'. Hovering it now shows the bubble INSIDE the modal (parent #net-consent, topmost at its centre, visible in the screenshot): the five hosts plus 'Transport: direct — protected mode is off, so these hosts see your address.' Tab also reaches the lane names, and focus opens the same bubble. 'Stay offline' closed it with the airplane still filled. (3) A real mouse click with the pointer kept on W: outlined, grey rgb(92,101,115), 3 px grey ring, class wiki-halted, no popup, toast 'Wikipedia stream: paused'. The bubble updated while still hovered and after leaving and re-hovering to 'Wikipedia stream: paused — The connection is closed and your place is kept; Resume continues from where it stopped.' / 'Resume the Wikipedia stream' / 'Shift+click stops…'. There is no stale bubble. (4) Shift+click: outlined, no ring, toast 'Wikipedia stream: stopped', bubble 'Wikipedia stream: stopped — Nothing is connected. Starting again may leave a gap…' / 'Start the Wikipedia stream'. W is 34x34 in every state. The x of gauge/W/airplane/language/?/power stayed at 1128/1174/1220/1266/1342/1388. The fill transition is 'fill .35s', the same as the gauge needle's transform .35s. Animation verdict: the three static states read clearly; breathing is not measurable offline. The Shift+click stop is now named in the running and paused bubbles. The same cycle in ar, zh and fr gave translated bubbles and toasts, with no stale text. Shots: P-P3-W-hover-running-en.png, P-P3-consent-airplane-wiki-hover-en.png, P-P3-W-paused-hovered-en.png, P-P3-W-paused-rehover-en.png, P-P3-W-stopped-rehover-en.png, P-P11-W-paused-hovered-{ar,zh,fr}.png."
+   },
+   {
+    "id": "P4",
+    "verdict": "pass",
+    "locales": "en, ar, zh, fr",
+    "evidence": "With W stopped and airplane on, one click opened 'Go online?' with 'This action needs the network:' / 'Start the Wikipedia stream', the local addresses ('eth0: 192.0.2.2'), and both visible caveats (the public-address one and 'Airplane mode here controls only this app's network…'). 'Wikipedia / Wikimedia n=5' now sits under 'Runs on every collection pass:', the state the action would create (the P6 fix). The step's 'Switched off right now' recording question is therefore answered: it no longer reads confusingly. The Wikipedia lane hover is visible and topmost inside the modal. After 'Stay offline': airplane filled, W outlined with no ring, config 'stopped', no toast, and the bubble unchanged ('stopped' text). Shots: P-P4-consent-start-W-en.png, P-P11-consent-start-W-{ar,zh,fr}.png."
+   },
+   {
+    "id": "P5",
+    "verdict": "not-measurable-here",
+    "locales": "en",
+    "evidence": "Everything after consent needs egress to Wikimedia, and 'Go online' was never pressed. Offline parts checked in folder A. Clicking W (stopped) opened 'Start the Wikipedia stream'. 'Runs on every collection pass:' lists Press collection n=9033, Source discovery n=2, Wikipedia / Wikimedia n=5, Law n=260, Official statistics n=3, Markets & commodities n=4, Calendars n=14 and Hazard feeds n=2; closed with Stay offline. Home: 'Your library is empty — head to Collect…' and no Wikipedia item; /api/wiki/lane/status says measured:false, reason lane-never-run. Living sources → Wikipedia: State 'Not run yet', 'The live stream has not run yet… Turn it on with the W button in the top bar.', Budget '24 GB yours; the published default is 20 GB'. World map: no in-map Wikipedia button, only 'No located sources yet…'. Restart: the power icon raised confirm 'Shut down the app? …' (accepted), the process exited cleanly, and it was relaunched with the same command. It opened on the lock screen, was unlocked through #pw and came up in airplane mode (online:false, plane filled). W showed its persisted 'stopped' state because the online resume could not happen here. The default-on boot view was checked on folder B's first boot: W filled at opacity .72 with no ring, bubble 'Chosen; airplane mode is holding it until you go online.', scheduler reason 'airplane-mode', app offline. The default-on choice did not take the app online. Not measured: the breathing ring, the 60 s lag, Home counters growing, the Q714 inflation check, pause/resume gap behaviour, going offline mid-stream. Shots: P-P5-consent-en.png, P-P5-home-folderA-en.png, P-P5-living-folderA-en.png, P-P5-worldmap-folderA-en.png, P-P5-shutdown-en.png, P-P5-start-lockscreen-en.png, P-P5-start-topbar-en.png, P-P3-boot-W-running-folderB-en.png."
+   },
+   {
+    "id": "P6",
+    "verdict": "pass",
+    "locales": "en, fr, ar",
+    "evidence": "Folder B, World map, 'Coverage' lens active. The in-map 'Wikipedia' bubble (topmost) reads exactly 'Wikipedia pages your lane follows that carry a coordinate. A page with no coordinate is absent, never placed at 0,0.' Clicked: aria-pressed=true, style border-color/color var(--accent) (rgb 47,111,179), legend '● Wikipedia page (linked to Wikidata) · ○ Wikipedia page (not yet linked)'. There are 0 Wikipedia layer nodes; /api/wiki/lane/places answered measured:true with 0 points, and nothing sits at 0°,0° in the screenshot. Clicked again: legend gone, aria-pressed=false, plain border. French: button 'Wikipédia', hover and legend translated. A live switch to ar with the layer on repainted the button, hover and legend in Arabic. Shots: P-P6-map-wiki-hover-en.png, P-P6-map-wiki-on-en.png, P-map-wiki-live-ar.png."
+   },
+   {
+    "id": "P7",
+    "verdict": "pass",
+    "locales": "en, ar, zh, fr",
+    "evidence": "The strip ends with its own item 'Wikipedia: 2 pages · 4 changes today', separate from '453 ARTICLES'; /api/wiki/lane/status gives pages 2 and changes_today 4. The hover (topmost) is exactly 'Counted by the Wikipedia lane itself, separately from your article count: … Today means since local midnight.' No {pages}/{changes} placeholder. ar 'ويكيبيديا: 2 صفحة · 4 تغيير اليوم', zh '维基百科：2 个页面 · 今天 4 项变更', fr 'Wikipédia : 2 pages · 4 modifications aujourd'hui', each hover translated. The source split now reads '13 SOURCES COLLECTING / 0 ENABLED, NOT QUALIFIED / 5 DISCOVERED CANDIDATES', with predicate hovers and translations in all three languages. A live switch while on Home repaints the whole strip at once. Two new defects were found on this strip and are listed separately: the '(server busy)' age note on an idle app, and a 28 px overflow at 375 px in French. Shots: P-P7-home-strip-{en,ar,zh,fr}.png, P-home-strip-live-fr.png."
+   },
+   {
+    "id": "P8",
+    "verdict": "pass",
+    "locales": "en, ar, zh, fr",
+    "evidence": "The caveat is visible and starts 'Freshness is shown as dates, never judged…'. Live stream: Pages followed 2; Changes reported, last 30 days 4; Text stored for '2 of 4'; not followed 1; Last change recorded 08:05 UTC (2 min before seeding); Complete through 02:07 UTC (6 h before seeding, the older feed); Open gaps 1; all times end in UTC. The seven Live-stream hovers were read by a real hover, are topmost and match the code, and are translated in ar/zh/fr. 'Showing 4 of 4 changes, newest first.' Rows: Walk Rome edit '+38' 'Lines added: 2, removed: 1' [Show diff], which opens in place with red '-Rome is a city.', green '+' lines, '<b>many</b>' as literal text (no bold node), the stored-diff note, and the button reading 'Hide diff'. Walk Lyon '-120' 'Counted only: its text was not stored.' with no button. The 'log' pill hover reads 'The source's own word for this change, shown as it was sent.' (translated in ar/zh/fr). Walk Rome create '+16' 'Text stored; there was no earlier stored text to compare it with.' Pages you track: 3 buttons. Clicking 'en · Walk Tracked Page' filled Tracked changes in the tab ('Showing 2 of 2 tracked revisions'); 0 new windows, 0 dialogs. Arabic: diff lines are unicode-bidi:plaintext, each starting with its '+'/'-' (first glyph x=37); '-120' keeps the minus in front (glyph x: '-' 37, '1' 42). No undefined/null/NaN. Shots: P-P8-living-{en,ar,zh,fr}.png, P-P8-living-diff-{en,ar,zh,fr}.png, P-P8-tracked-{en,ar,zh,fr}.png, P-living-logpill-hover-{ar,zh,fr}.png."
+   },
+   {
+    "id": "P9",
+    "verdict": "pass",
+    "locales": "en, ar, zh, fr",
+    "evidence": "Top-bar search 'Coastal Infrastructure Act': the Articles group lists 'Coastal Infrastructure Act 2025-11-01' and '… (consolidated) 2026-01-15'. Picking the first opened /api/articles/448/view in a new tab. The licence block is visible without expanding: 'Wikipedia text, reused under a free licence. The authors are the page's editors — credited through its history.' plus 'the article on Wikipedia ↗ · page history (the authors) ↗ · CC BY-SA 4.0 ↗' (all class ext) and 'This licence covers the TEXT. Images … are not stored here.' Clicking the history link raised a confirm naming the history URL; Cancel kept the reader on the page and opened 0 pages. The confirm is now translated: ar 'هل تريد فتح موقع خارجي على الويب العام؟…', zh '要打开公共网络上的外部网站吗？…', fr 'Ouvrir un site EXTERNE sur le web public ?…'. The licence block and link labels are translated in all three, and ar renders dir=rtl. Shots: P-P9-palette-en.png, P-P9-reader-licence-{en,ar,zh,fr}.png."
+   },
+   {
+    "id": "P10",
+    "verdict": "pass",
+    "locales": "en, ar, zh, fr",
+    "evidence": "The status reads 'What do you want to back up?'. 'Corpus (453 articles · 18 sources · 129 dates · 2 239 keywords · 13.8 MB)' is ticked and separate. 'Living sources (1 file · 480.0 KB)' is disabled and unticked, never 0 (inventory exportable:false, 491520 bytes). Hovering it now shows the bubble INSIDE the modal (parent #ux-export, topmost, visible) with 'a lane is a live encrypted database; its backup format is not settled yet'. The reason is translated: fr 'une voie est une base de données chiffrée vivante ; son format de sauvegarde n'est pas encore arrêté', ar and zh likewise. Sizes use localized units (fr '480.0 ko', ar '480.0 كيلوبايت', zh keeps 'KB'). 'Close' closed the dialog, and nothing was written. Shots: P-P10-export-living-hover-{en,fr,ar,zh}.png."
+   },
+   {
+    "id": "P11",
+    "verdict": "fail",
+    "locales": "ar, zh, fr",
+    "evidence": "Translated, with numbers filled, in all three languages, each after a LIVE switch without a reload: the W bubble in running, paused and stopped states, including the Shift+click line; the toasts ('Flux Wikipédia : en pause', 'تدفق ويكيبيديا: متوقف', '维基百科流：已停止'); the popup (ar dir=rtl, fr colons kept on their word with U+00A0); the wizard title, blocks and buttons, with the share line fr 'Environ 1.7 Go…', ar 'نحو 1.7 غيغابايت…' and zh '12 个版本，每个约 1.7 GB…'; the Settings panel and summary (fr '… occupe 480.0 ko …', repainted live on a switch while on that page); Storage rows; the Home item; the Living labels and hovers; the reader's licence sentence, link labels and confirm. The consent bubble keeps '*.wikipedia.org' intact in ar (the '*' glyph sits before 'w'). The decimal mark stays '1.7' by ruling. FAIL: in Arabic, the wizard's 'What it contacts' host line (#wiki-wizard-hosts) does not show the hosts as written. It reads 'wikipedia.org · stream.wikimedia.org · wikimedia.org · ores.wikimedia.org ·.*' / 'dumps.wikimedia.org', with the '*.' of '*.wikipedia.org' moved to the far end (new defect below). Shots: P-P11-wizard-{ar,zh,fr}.png, zoom-wizard-hosts-ar.png, P-P11-consent-wiki-hover-{ar,zh,fr}.png, P-P11-W-*-{ar,zh,fr}.png, P-P11-settings-wikipedia-{ar,zh,fr}.png, P-P11-storage-{ar,zh,fr}.png, P-settings-wiki-live-zh.png, P-living-live-ar.png."
+   },
+   {
+    "id": "N375",
+    "verdict": "fail",
+    "locales": "en, fr, ar",
+    "evidence": "en passes on every surface. scrollWidth − clientWidth was 0 on Home, Living sources, World map, Settings → Wikipedia (the old 29 px is gone; the #dumpfts-q input is 301 px wide with its label on one line), the wizard (339 px; bottom buttons visible), Settings → Data & backup, the Export dialog, the consent popup (both buttons visible) and the reader. fr and ar are 0 on every one of those except fr Home, which scrolls sideways by 28 px, with strip labels clipped at the card edge (new defect below). ar Home is 0. The top-bar icons wrap to a second row at 375 px. Shots: P-N375-*-{en,fr,ar}.png, P-N375-home-fr-reload.png; data in b_narrow_narrowlangs_coach.json and probe_home375.json."
+   }
+  ],
+  "old_defects": [
+   {
+    "id": "P1",
+    "verdict": "fixed",
+    "evidence": "Hovering the 'Wikipedia / Wikimedia' lane in the modal #net-consent now shows #oo-tip parented to the dialog. It is topmost at its centre, and the hosts plus 'Transport: direct…' text is visible in shots/P-P3-consent-airplane-wiki-hover-en.png and P-P11-consent-wiki-hover-{ar,zh,fr}.png. The same holds for the Export dialog's 'Living sources' row (parent #ux-export, topmost; P-P10-export-living-hover-*.png)."
+   },
+   {
+    "id": "P2",
+    "verdict": "fixed",
+    "evidence": "A real mouse click on W with the pointer kept on it: the open bubble updated to the paused text, and after leaving and re-hovering it still read 'Wikipedia stream: paused …'. Same for Shift+click (stopped). The title attribute after leaving holds the fresh text. Reproduced clean in en, ar, zh and fr. Gauge #rate-toggle: after the click the hovered bubble, the title after leaving and the re-hover all read '500 KiB/s target…' (b_en_gauge.json gauge)."
+   },
+   {
+    "id": "P3",
+    "verdict": "fixed",
+    "evidence": "The reader's external-link confirm is translated: ar 'هل تريد فتح موقع خارجي على الويب العام؟ …', zh '要打开公共网络上的外部网站吗？…', fr 'Ouvrir un site EXTERNE sur le web public ? …'. Cancel opened nothing (b_locales_ar_zh_fr.json P11.*.reader.confirm_dialogs)."
+   },
+   {
+    "id": "P4",
+    "verdict": "fixed",
+    "evidence": "On a fresh encrypted folder, GET /api/system/data-location answered 200 during the first-launch flow, and 'Where should your corpus live?' was shown (shots/P-P1-datadir-en.png). No 503 was recorded anywhere."
+   },
+   {
+    "id": "P5",
+    "verdict": "fixed",
+    "evidence": "W's running and paused bubbles now carry 'Shift+click stops the stream completely.' (ar 'النقر مع الضغط على Shift يوقف التدفق تمامًا.', zh 'Shift+点击可完全停止该流。', fr translated). The stopped bubble omits it, correctly."
+   },
+   {
+    "id": "P6",
+    "verdict": "fixed",
+    "evidence": "Clicking W from stopped opens a popup that lists 'Wikipedia / Wikimedia n=5' under 'Runs on every collection pass:' (not 'Switched off right now:'). The toasts now confirm the state: 'Wikipedia stream: paused' / 'Wikipedia stream: stopped', translated in ar, zh and fr."
+   },
+   {
+    "id": "P7",
+    "verdict": "fixed",
+    "evidence": "The strip reads 'SOURCES COLLECTING / ENABLED, NOT QUALIFIED / DISCOVERED CANDIDATES' with predicate hovers, translated: fr 'SOURCES EN COLLECTE / ACTIVÉES, NON QUALIFIÉES / CANDIDATES DÉCOUVERTES'; ar 'مصادر قيد الجمع / مفعّلة، غير مؤهَّلة / مرشَّحون مكتشَفون'; zh '采集中的来源 / 已启用，未合格 / 发现的候选来源'."
+   },
+   {
+    "id": "P8",
+    "verdict": "fixed",
+    "evidence": "The Living sources reason is translated in fr, ar and zh (export row title and bubble). Byte units are localized: fr summary '12 éditions · budget de 20 Go · occupe 480.0 ko', rows '14.0 Mo', '0 o'; ar '480.0 كيلوبايت', '13.9 ميغابايت'. The decimal point is kept by ruling."
+   },
+   {
+    "id": "P9",
+    "verdict": "fixed",
+    "evidence": "At 375x800, Settings → Wikipedia measures scrollWidth − clientWidth = 0 in en, fr and ar, with no offending elements. The dump button group wraps, and #dumpfts-q is 301 px wide with a one-line label (P-N375-settings-wikipedia-dumps-*.png)."
+   },
+   {
+    "id": "P10",
+    "verdict": "fixed",
+    "evidence": "'use ORES scores' (#wiki-ores) is unticked on a brand-new corpus made through the first-launch screens (a_p1_p2_p3_p4_p5.json P2.ores_checked=false), and it is also unticked on the seeded folder."
+   },
+   {
+    "id": "H1",
+    "verdict": "fixed",
+    "evidence": "The same fix as P1: each consent-popup lane bubble is topmost inside #net-consent in en, fr, zh and ar. In ar the bubble extends past the dialog edge and is fully visible, not dimmed (P-P11-consent-wiki-hover-ar.png)."
+   },
+   {
+    "id": "H2",
+    "verdict": "fixed",
+    "evidence": "Tab inside 'Go online?' reaches the lane spans (tabindex=0): 'Press collection' took focus, and #oo-tip opened, topmost inside the dialog (a_*.json P3.popup_airplane.tab_seq/focus_tip)."
+   },
+   {
+    "id": "H3",
+    "verdict": "fixed",
+    "evidence": "In the ar consent bubble, the hosts are wrapped in LRI/PDI isolates. The '*' glyph (x=1105) precedes 'w' (x=1115) on the same line, so '*.wikipedia.org' is intact. The same class of break still exists in the wizard's host line; that is a new defect below."
+   },
+   {
+    "id": "H7",
+    "verdict": "fixed",
+    "evidence": "The fr popup headings carry U+00A0 before each colon ('S'exécute à chaque passe de collecte :', 'Votre machine présente ces adresses réseau locales :' keeps the colon on its word in P-P11-consent-wiki-hover-fr.png)."
+   },
+   {
+    "id": "H8",
+    "verdict": "fixed",
+    "evidence": "The Home strip labels are translated in fr and ar (see P7), as is 'Collecte automatique : arrêté' in P-N375-home-fr.png."
+   },
+   {
+    "id": "U5",
+    "verdict": "fixed",
+    "evidence": "A live switch en → fr while on Home repainted the whole strip at once, with no navigation: '13 SOURCES EN COLLECTE…', 'à 08:20 (serveur occupé)', the 'Wikipédia : 2 pages…' item and its hover (probe_live.json home_fr_live_items)."
+   },
+   {
+    "id": "U8",
+    "verdict": "fixed",
+    "evidence": "On a fresh install only #wiki-wizard was open on arrival. The guide opened only after the wizard's 'Not now' (a_*.json P1.dialogs_open_on_arrival=['wiki-wizard'], dialogs_open_after_not_now=['guide-wizard'])."
+   },
+   {
+    "id": "I15",
+    "verdict": "fixed",
+    "evidence": "Same as P4: data-location answered 200 on the fresh encrypted folder, and the step was offered."
+   },
+   {
+    "id": "U1",
+    "verdict": "fixed",
+    "evidence": "Same as P4: 'Where should your corpus live?' appeared (P-P1-datadir-en.png)."
+   },
+   {
+    "id": "O1",
+    "verdict": "fixed",
+    "evidence": "Same as P8: the Living sources backup-row reason is translated in fr, ar and zh."
+   },
+   {
+    "id": "T4",
+    "verdict": "fixed",
+    "evidence": "A live switch en → ar with the coach showing: the plane moved to x=186, and the coach re-anchored to [186,74,456,210] (b_narrow_narrowlangs_coach.json coach.ar_live)."
+   },
+   {
+    "id": "T7",
+    "verdict": "fixed",
+    "evidence": "In ar at 1440 the coach overlaps none of #tm-open, #rate-toggle, #wiki-toggle, #net-toggle, #llm, #lang-switch, #health or .omni (overlaps=[]). The same holds in en (P-coach-ar.png, P-coach-en.png)."
+   },
+   {
+    "id": "S4",
+    "verdict": "fixed",
+    "evidence": "The bare flat 'SOURCES' count is gone. The strip shows '13 SOURCES COLLECTING', with the hover '13 of your 18 sources: enabled AND qualified — … This is the headline source count.', plus the two labelled remainders."
+   }
+  ],
+  "new_defects": [
+   {
+    "title": "Arabic (RTL): the Wikipedia wizard's 'What it contacts' host line breaks '*.wikipedia.org'; its '*.' is drawn at the far end of the line",
+    "severity": "P3",
+    "repro": "Folder B (or any folder), 1440x950 or 375x800. Switch the top bar to العربية, then Settings → ويكيبيديا → 'النسخ وميزانية التخزين…' (#wiki-wizard-open), and read the monospace host line under 'ما الذي يتواصل معه.'",
+    "expected": "Each host reads left to right as one intact token, exactly as in English: '*.wikipedia.org · stream.wikimedia.org · wikimedia.org · ores.wikimedia.org · dumps.wikimedia.org' (P11: host names stay exactly as written; the same fix H3 made for the consent bubble).",
+    "actual": "The line reads 'wikipedia.org · stream.wikimedia.org · wikimedia.org · ores.wikimedia.org ·.*' with 'dumps.wikimedia.org' on the next line. The leading '*.' is resolved RTL and placed at the right-hand end, so the first host looks like plain 'wikipedia.org' followed by a stray '.*'. This is the lane's consent disclosure. It was already present in the first walk's /tmp/claude-0/walk/P/P-P11-wizard-ar.png but not reported.",
+    "evidence": "/tmp/claude-0/rewalk/P/shots/P-P11-wizard-ar.png, zoom-wizard-hosts-ar.png (this build), zoom-firstwalk-wizard-hosts-ar.png (first walk), P-N375-wizard-ar.png (same at 375 px). Contrast: the consent bubble in ar is fixed (P-P11-consent-wiki-hover-ar.png).",
+    "root_cause_lead": "src/static/app-sources.js:1387-1388 (_wizPaintHosts) sets el.textContent = hosts.join(' · ') into src/static/index.html:3469 <div id=\"wiki-wizard-hosts\">, which inherits dir=rtl and has no dir=\"ltr\"/unicode-bidi isolate. H3's fix wrapped each host in LRI/PDI only in the consent lane hover (app-core.js _laneHostTitle). Giving the div dir=\"ltr\" (or isolating each host) would fix it."
+   },
+   {
+    "title": "375 px, French: the Home at-a-glance strip scrolls the page sideways by 28 px and clips its labels ('Wikipédia : 2 pages · 4 modifications aujourd…')",
+    "severity": "P3",
+    "repro": "Folder B, viewport 375x800, unlock, switch the top bar to Français (a live switch or after a reload; both measured), and stay on Accueil.",
+    "expected": "document.documentElement.scrollWidth − clientWidth = 0, with every strip item wrapping inside its card (as en and ar do at 375 px, and as the P9/S7/T3 fixes intend for this width).",
+    "actual": "The overflow is 28 px. #home-stats grows to 366 px (right edge 403) inside a 301 px column. The Wikipedia item 'Wikipédia : 2 pages · 4 modifications aujourd'hui' is white-space:nowrap (right 403), and '5 CANDIDATES DÉCOUVERTES' (right 398) and '117 PRIX DES MATIÈRES PREMIÈRES' (right 382) are also nowrap. On screen they are cut at the card edge ('CANDIDATES DÉCOUVER', 'PRIX DES MATIÈRES PREMIÈRE', '4 modifications aujourd'). en (right edge 319) and ar/zh measure 0 only because their strings are shorter; larger counts would overflow there too.",
+    "evidence": "/tmp/claude-0/rewalk/P/shots/P-N375-home-fr-reload.png, P-N375-home-fr.png; /tmp/claude-0/rewalk/P/probe_home375.json (fr_live and fr_reload scroll_x 28; zh/ar/en 0); b_narrow_narrowlangs_coach.json narrow.fr.home_off.",
+    "root_cause_lead": "src/static/app.css:1440 `.stat-strip .s { display:inline-flex; …; white-space:nowrap; }` applies to every strip item, including the long #home-wiki-figure span that src/static/app-home.js:201-207 creates with class 's'. A nowrap item wider than the column forces the flex-wrap strip wider than the card. Allowing the Wikipedia figure (and the long split labels) to wrap, or giving them min-width:0 with overflow-wrap, would fix it."
+   },
+   {
+    "title": "Home strip says 'as of 08:20 AM (server busy)' on an idle, offline app whose counts are current",
+    "severity": "P3",
+    "repro": "Folder B, 1440x950, en. Unlock, stay in airplane mode with nothing running (scheduler running:false), wait about 2 minutes after the first stats read, then open Home (or switch language on Home).",
+    "expected": "No 'server busy' claim while the server is idle. An age note should appear only when the numbers may really be stale, for example when writes happened since the cached build or a rebuild is pending, and its wording should say what is actually known.",
+    "actual": "The strip adds 'as of 08:20 AM (server busy)' (fr 'à 08:20 (serveur occupé)'). At that moment /api/database/stats returned cached:true, cache_age_s 471, and /api/scheduler/status running:false with network offline. The server is idle and nothing was written, so the counts are exact, yet the strip tells the reader the server is busy and implies the figures are stale.",
+    "evidence": "/tmp/claude-0/rewalk/P/shots/P-home-strip-idle-age-note-en.png; probe_live.json (home_en_items, stats_api {cache_age_s: 471, cached: true}, scheduler_status {running: false}); P-N375-home-fr-reload.png ('à 08:20 (serveur occupé)').",
+    "root_cause_lead": "src/static/app-home.js:117-137 (homeStatsAgeNote) labels any payload with cache_age_s ≥ 90 as '(server busy)'. src/api/served_cache.py is serve-stale by design: 'an idle app rebuilds nothing at all' when the change probe is unchanged, so cache_age_s (time since build, src/api/served_cache.py:152) grows without limit on an idle app, although the entry was re-verified (checked_at) against an unchanged probe. The note keys on age alone, never on whether a write happened, so it fires on exactly the idle case."
+   },
+   {
+    "title": "Search palette's Wikipedia group shows the same page twice with identical labels that do different things",
+    "severity": "P3",
+    "repro": "Folder B, en. Top-bar search, type 'Coastal Infrastructure Act', and look at the WIKIPEDIA group. Click the first row, then reopen and click the second.",
+    "expected": "One row per page, or rows whose labels say what each opens (the local reader copy versus the watched page's tracked history).",
+    "actual": "The group lists 'Coastal Infrastructure Act · en' twice with nothing to tell them apart. The first opens the local reader (/api/articles/448/view) in a new tab. The second navigates to #settings, the Settings → Wikipedia watched-pages list, rather than to the page's tracked changes, which now live in Living sources (R32). This was already visible in the first walk's palette capture (b_p9p10.json) and was not reported.",
+    "evidence": "/tmp/claude-0/rewalk/P/shots/P-palette-wiki-group-en.png, P-palette-wiki-second-row-en.png; probe_live.json pal_rows (WIKIPEDIA rows 7 and 8), second_row_effect {url: '…/#settings'}; GET /api/search/omni?q=Coastal%20Infrastructure%20Act wiki items [{article_id:448,…}, {page_id:1,…}].",
+    "root_cause_lead": "src/api/search_omni.py:350-356 appends watched-page title items after the content hits without de-duplicating by (title, edition). src/static/app-shell.js:703-708 renders both with label it.title and sub it.wiki, running window.open(it.url) for one and showTab('wiki') (→ Settings → Wikipedia, app-shell.js:117) for the other."
+   }
+  ],
+  "page_errors": [],
+  "http_errors": [],
+  "summary": "Row P re-walked on the fixed build 0deff9c4. Both folders were encrypted and locked at boot, the walk stayed in airplane mode throughout, and 'Go online' was never pressed. All ten confirmed row-P defects are fixed:\n- Hover bubbles now show inside modal dialogs: the consent popup's per-lane hosts and transport line, and the export row's reason.\n- The W bubble no longer goes stale after a click; neither does the gauge's.\n- The reader's external-link confirm is translated.\n- The first-launch data-location step answers 200.\n- The Shift+click stop is named in the W hover.\n- The popup lists Wikipedia as it will be once started, and the toasts confirm the state.\n- The Home strip's source-split labels are translated.\n- The Living sources export reason is translated, and byte units are localized.\n- Settings → Wikipedia no longer scrolls sideways at 375 px.\n- ORES starts unticked.\n\nThe overlapping defects from other rows that I could check are also fixed: H1, H2, H3, H7, H8, I15/U1, O1, S4, T4, T7, U5 and U8.\n\nSteps P1-P4 and P6-P10 pass in en, and in ar, zh and fr where walked. P5 is not measurable after consent. Its offline parts pass: consent gate, restart into airplane mode, default-on boot held offline.\n\nP11 fails on one point. In Arabic, the Wikipedia wizard's host line breaks '*.wikipedia.org': the '*.' is drawn at the far end of the line. This is the H3 class of defect on a surface H3's fix did not cover (new, P3).\n\nThe 375 px pass is clean in en. In French, the Home strip scrolls sideways by 28 px and clips its labels (new, P3).\n\nTwo more new P3s:\n- On an idle, offline app, the Home strip says 'as of 08:20 AM (server busy)' even though the counts are current.\n- The search palette shows the same Wikipedia page twice with identical labels that open different things.\n\nNo page errors, no HTTP errors >= 400 from the app, no undefined/NaN/null/[object Object] text, and no off-host browser requests. The only console errors were the expected ERR_CONNECTION_REFUSED after the power-icon shutdown. The one 404 in the logs was my own curl to /api/stats and is excluded."
+ },
+ "recheck": {
+  "row": "P",
+  "items": [
+   {
+    "ref": "P11",
+    "verdict": "confirmed",
+    "severity": "P3",
+    "evidence": "I used my own fresh folder, /tmp/claude-0/rewalk/P-recheck/dataB. I seeded it with scripts/ui_clickthrough_seed.py plus a copy of the living-sources seed, with OO_DB_PASSPHRASE=walk-pass-2026 and OO_DB_PLAINTEXT unset. The first 16 bytes of both .db files are ciphertext. I booted it on port 8971 with neither variable set. lock-state read 'locked' and I unlocked through #pw / #btn-unlock. The log says 'Booted in airplane mode (offline)'. At 1440x950 I switched #lang-switch live to en, ar, zh and fr, and each time opened Settings → Wikipedia → #wiki-wizard-open. In en, zh and fr, #wiki-wizard-hosts reads '*.wikipedia.org · stream.wikimedia.org · wikimedia.org · ores.wikimedia.org · dumps.wikimedia.org' left to right: '*' at x=399, then 'w' at x=413. In ar the element has direction rtl and no isolate characters. The '*' glyph is drawn at x=1034 and the '.' after it at x=1027, which is the far right end of line 1, while the 'w' of 'wikipedia' starts the line at x=487. On screen that is 'wikipedia.org · stream.wikimedia.org · wikimedia.org · ores.wikimedia.org ·.*', with 'dumps.wikimedia.org' on line 2. The same happens at 375 px. As a control, the consent popup's Wikipedia-lane bubble in ar is fixed: each host is wrapped in U+2066/U+2069 and '*' (x=1105) sits before 'w' (x=1115). Every consent popup was cancelled and network stayed online:false. There were no page errors, console errors, HTTP >= 400 or off-host requests. Shots: /tmp/claude-0/rewalk/P-recheck/shots/Prc-wizard-ar.png, Prc-zoom-wizard-hosts-ar.png, Prc-zoom-wizard-hosts-en.png, Prc-N375-zoom-wizard-hosts-ar.png, Prc-consent-wiki-hover-ar.png. Data: rc_main.json (wizard.ar, consent.ar). I did not re-walk P11's other sub-checks (toasts, W bubble states, reader). The step's one FAIL reproduces, so the step fails.",
+    "root_cause": "src/static/app-sources.js:1388 (_wizPaintHosts) sets el.textContent = hosts.join(' · ') with no LTR isolation. It sits inside the RTL dialog, so the bidi algorithm moves the neutral leading '*.' of '*.wikipedia.org' to the visual end of the line. The H3 fix wrapped hosts in isolates only in src/static/app-core.js:1329 (_laneHostTitle, the consent bubble), not in this second place that renders the same host table.",
+    "suggested_fix": "Give the host line dir=\"ltr\" in index.html:3469, since host names are always LTR tokens. Or wrap each host as the consent bubble does: hosts.map(h => '⁦' + h + '⁩').join(' · '). A small node or pytest check should then pin both call sites."
+   },
+   {
+    "ref": "N375",
+    "verdict": "confirmed",
+    "severity": "P3",
+    "evidence": "My own instance and browser at 375x800, 'scrollWidth − clientWidth'. Home: en 0 (live and reload), zh 0, ar 0, fr 28 (both after the live switch and after a reload). Settings → Wikipedia: en, fr and ar 0. Wizard: en, fr and ar 0. Living sources: en, fr and ar 0. Consent popup: 0 in all three, with both buttons inside the viewport. In fr, #home-stats is 366 px wide (left 37, right 403) inside a card whose right edge is 355. The elements past the viewport are '7 CANDIDATES DÉCOUVERTES' (right 398), '117 PRIX DES MATIÈRES PREMIÈRES' (right 382) and #home-wiki-figure 'Wikipédia : 2 pages · 4 modifications aujourd…' (right 403). All are white-space:nowrap, and they are cut at the viewport edge on screen. Shots: /tmp/claude-0/rewalk/P-recheck/shots/Prc-N375-home-fr-reload.png, Prc-N375-home-fr-live.png, Prc-N375-home-en-live.png. Data: rc_narrow.json.",
+    "root_cause": "src/static/app.css:1440 `.stat-strip .s { … white-space:nowrap; }`. Each strip item can never wrap. .stat-strip at app.css:1439 is a flex item with the default min-width:auto, so its min-content grows to the widest nowrap item, and in fr that is wider than the ~301 px column. The S7/T3 fix only relaxed .corpus-tier, not the strip items.",
+    "suggested_fix": "Let an item wrap inside itself at narrow widths: `.stat-strip { min-width:0; } .stat-strip .s { white-space:normal; flex-wrap:wrap; max-width:100%; }`, keeping `.stat-strip .s b { white-space:nowrap }` so a number stays whole. Or scope that to the existing @media (max-width:600px) block. Then add a 375 px overflow assertion over all 12 locales."
+   },
+   {
+    "ref": "new:Arabic (RTL): the Wikipedia wizard's 'What it contacts' host line breaks '*.wikipedia.org'; its '*.' is drawn at the far end of the line",
+    "verdict": "confirmed",
+    "severity": "P3",
+    "evidence": "This is the same measurement as P11, on my own instance. In ar, #wiki-wizard-hosts has computed direction rtl and html dir=rtl, and its textContent carries no U+2066–2069. The '*' is drawn at x=1034 and its '.' at x=1027, at the end of line 1 (y=302). The 'w' of 'wikipedia' is drawn at x=487, at the start of line 1. 'dumps.wikimedia.org' wraps to line 2 (y=320). The rendered line matches the walker's report exactly: 'wikipedia.org · stream.wikimedia.org · wikimedia.org · ores.wikimedia.org ·.*'. In en, zh and fr the line is correct. The consent bubble, which shows the same host list and was already fixed (H3), is correct in ar. Shots: /tmp/claude-0/rewalk/P-recheck/shots/Prc-zoom-wizard-hosts-ar.png, Prc-N375-zoom-wizard-hosts-ar.png, Prc-wizard-ar.png, Prc-consent-wiki-hover-ar.png.",
+    "root_cause": "src/static/app-sources.js:1388 joins the hosts as bare text inside an RTL-inherited div (index.html:3469). The H3 isolate fix at app-core.js:1329 was applied only to the consent-bubble path.",
+    "suggested_fix": "Add dir=\"ltr\" (or style=\"direction:ltr;unicode-bidi:isolate\") to #wiki-wizard-hosts in index.html:3469, or map each host through the LRI…PDI wrapper as _laneHostTitle does. Pin it with a test that both places rendering the Wikipedia host list isolate their hosts."
+   },
+   {
+    "ref": "new:375 px, French: the Home at-a-glance strip scrolls the page sideways by 28 px and clips its labels ('Wikipédia : 2 pages · 4 modifications aujourd…')",
+    "verdict": "confirmed",
+    "severity": "P3",
+    "evidence": "My own seed and instance, at 375x800. On Accueil, scroll_x is 28 both after the live switch to Français and after a reload. #home-stats measures right 403 and width 366, while its .panel card measures right 355, width 335 and overflow visible. The nowrap items past the viewport are '7 CANDIDATES DÉCOUVERTES' (398), '117 PRIX DES MATIÈRES PREMIÈRES' (382) and the Wikipedia figure (403). My seed shows 7 candidates where the walker's showed 5; the result is the same. The screenshot shows 'CANDIDATES DÉCOUVER', 'PRIX DES MATIÈRES PREMIÈRE' and '4 modifications aujourd' cut at the edge. en, zh and ar measure 0, and their strips stay at 301 px wide. Shots: /tmp/claude-0/rewalk/P-recheck/shots/Prc-N375-home-fr-reload.png, Prc-N375-home-fr-live.png. Data: rc_narrow.json home_fr_live/home_fr_reload.",
+    "root_cause": "src/static/app.css:1440 sets `.stat-strip .s { white-space:nowrap }`. With app.css:1439's .stat-strip being a flex item with default min-width:auto, the strip cannot shrink below its widest item. This is separate from the corpus-tier fix (S7/T3, .corpus-tier) that landed.",
+    "suggested_fix": "`.stat-strip { min-width:0; }` plus letting `.stat-strip .s` wrap (white-space:normal; flex-wrap:wrap; max-width:100%), with only the <b> number kept nowrap. This can go in the existing max-width:600px block. Add a 375 px no-overflow assertion for Home in the longest locales (fr, de, ru)."
+   },
+   {
+    "ref": "new:Home strip says 'as of 08:20 AM (server busy)' on an idle, offline app whose counts are current",
+    "verdict": "confirmed",
+    "severity": "P3",
+    "evidence": "My own instance, en, 1440x950, idle and offline: scheduler running:false and /api/system/network online:false throughout. At 10:13:00 /api/database/stats returned as_of 10:11:59, cache_age_s 60, and the strip showed no note. By 10:13:49 cache_age_s was 109, and after a live switch to fr and back and after a reload the strip read 'as of 10:11 AM (server busy)'. fr reads 'à 10:11 (serveur occupé)' and ar reads 'حتى 10:11 ص (الخادم مشغول)'. Four curl samples 20 s apart (10:14:15 to 10:15:15) returned the same built_at 10:11:59, with age going 135 → 155 → 175 → 195 against cache_ttl_s 30. By served_cache.cached, an entry past its TTL keeps its built_at only when the write-gate probe is unchanged, so the server itself had verified that nothing was written and the counts were exact. The server log has no 'served-cache background refresh failed'. The same /api/scheduler/status reported server_load loop_lag latest_ms 0.0, heavy in_flight 0 and memory_guard engaged:false, so the server was demonstrably not busy. Shots: /tmp/claude-0/rewalk/P-recheck/shots/Prc-home-0-en.png (no note at age 60), Prc-home-idle-age-note-en.png, Prc-home-idle-age-note-en-reload.png, Prc-home-idle-age-note-fr.png. Data: rc_main.json (stats0, stats_samples, home_strip_*), stats_idle_samples.txt. This is not by-design. Brief S3.4(d) (docs/design/AUTONOMOUS_SESSION_BRIEF_2026-09-02_CRASH_ROOT_CAUSE.md:825) asks for the note on a STALE-served payload. served_cache.py:233-240 itself says an idle, probe-verified entry 'is not merely fresh enough -- it is still exactly right'. Audit 11 (:473) praised the note as appearing 'only when the stats cache is genuinely stale', which this contradicts.",
+    "root_cause": "src/static/app-home.js:117-137. homeStatsAgeNote decides on cache_age_s >= 90 alone and always appends '(server busy)'. src/api/served_cache.py:236-245 re-stamps checked_at but deliberately keeps built_at on an idle, probe-verified serve. _decorate (served_cache.py:139-153) exposes only as_of, cache_age_s and cached, never whether the value was verified unchanged or is waiting on a recount. So on every idle install the note fires 90 s after the first build and stays.",
+    "suggested_fix": "In served_cache.cached, add a field to the decorated payload: `verified_current: probe is not None and probe == snapshot['probe']`, or `refresh_pending: True` when _kick_background_refresh ran. In homeStatsAgeNote, show the note only when the payload is not verified current, and word it by what is known ('as of {time} · recount pending') rather than asserting 'server busy'. Alternatively, add '(server busy)' only when /api/scheduler/status server_load shows heavy.in_flight > 0 or loop lag. Add a node test: an idle payload with age 400 and verified_current:true renders no note."
+   },
+   {
+    "ref": "new:Search palette's Wikipedia group shows the same page twice with identical labels that do different things",
+    "verdict": "confirmed",
+    "severity": "P3",
+    "evidence": "My own instance, en, 1440x950. I clicked the top-bar .omni and typed 'Coastal Infrastructure Act'. The WIKIPEDIA group lists row 7 'Coastal Infrastructure Act · en' and row 8 'Coastal Infrastructure Act · en', identical label and sub. GET /api/search/omni returns wiki items [{article_id:448, title:'Coastal Infrastructure Act', wiki:'en', url:'/api/articles/448/view'}, {page_id:1, title:'Coastal Infrastructure Act', wiki:'en'}], note 'FTS5 content match over your Wikipedia corpus + watched-page titles'. Clicking row 7 opened a new tab at http://127.0.0.1:8971/api/articles/448/view ('Coastal Infrastructure Act · FOOS'). Clicking row 8 opened no tab and navigated to http://127.0.0.1:8971/#settings with the settings subtab 'wikipedia' active, the top of that panel, and tab-living not active. It did not open the page's tracked changes, which live in Living sources since R32/Q1016. The same article also appears once under ARTICLES, which is a different group and not part of this defect. Shots: /tmp/claude-0/rewalk/P-recheck/shots/Prc-palette-wiki-group-en.png, Prc-palette-wiki-first-row-en.png, Prc-palette-wiki-second-row-en.png. Data: rc_pal.json, rc_main.json (pal_rows, first_row_effect, second_row_effect).",
+    "root_cause": "src/api/search_omni.py:352-359 appends watched-page title_items after content_items without deduplicating by (wiki, title), so a watched page whose text was synced as a corpus article (article 448 ↔ WikiPage 1) is returned twice. src/static/app-shell.js:703-708 gives both rows the same label (it.title) and sub (it.wiki). The page_id row runs showTab('wiki'), which app-shell.js:117-121 redirects to Settings → Wikipedia. The code comment there still calls that 'the Wikipedia settings/tracker', but the tracker became Living sources' Wikipedia panel (openWikiTC, src/static/app-map.js:2951).",
+    "suggested_fix": "Server: skip a title_item whose (wiki, title) matches a content_item already in the list. Or keep both and make each row say what it opens: the content row with sub '{wiki} · local copy' opening the reader, and the page row with sub '{wiki} · tracked changes' running openWikiTC(it.page_id, it.title, it.wiki). Translate both subs x12, and update the stale comment at app-shell.js:705-706."
+   }
+  ],
+  "summary": "I reproduced all six of the walker's items on my own instance, and all six are confirmed on build 0deff9c4. The instance was a fresh encrypted seed (ui_clickthrough_seed plus the living-sources seed), booted locked on port 8971, unlocked through #pw, and kept in airplane mode throughout. Every consent popup was cancelled, with 0 off-host requests, 0 page or console errors and 0 HTTP >= 400.\n\n- **P11 and the new Arabic wizard defect (same cause):** in ar, the wizard's #wiki-wizard-hosts line draws the '*.' of '*.wikipedia.org' at the far right end of the line (x=1034, while 'wikipedia' starts at x=487). The cause is app-sources.js:1388, which joins the hosts with no LTR isolation. The H3 isolate fix went only into the consent bubble (app-core.js:1329), and that bubble is correct in ar.\n- **N375 and the new French Home overflow (same cause):** in fr at 375 px, Home scrolls sideways by 28 px, both after a live switch and after a reload. The strip items are white-space:nowrap (app.css:1440), so #home-stats grows to 366 px against a 301 px column. en, zh and ar measure 0, and so does every other N375 surface I measured in en, fr and ar: Settings → Wikipedia, the wizard, Living sources and the consent popup.\n- **'(server busy)' on an idle app:** after 90 s idle, the strip says 'as of 10:11 AM (server busy)'. The server's cache had kept built_at 10:11:59 for 195 s against a 30 s TTL, which it does only when its write probe shows nothing was written, and server_load showed no lag and 0 heavy reads in flight. So the claim is false. The cause is homeStatsAgeNote (app-home.js:117-137), which keys on age alone because served_cache does not say whether a value is verified current. This is not by-design: brief S3.4(d) asks for the note only on a stale-served payload.\n- **Palette's duplicate Wikipedia rows:** the Wikipedia group lists 'Coastal Infrastructure Act · en' twice. The first row opens the local reader (/api/articles/448/view). The second goes to #settings → Wikipedia, not to the page's tracked changes in Living sources. The cause is search_omni.py:352-359, which returns the same page twice without deduplicating, and app-shell.js:703-708, which gives both rows the same label and sub.\n\nMy server (PID 1557) is stopped by PID. Scripts, JSON and screenshots are in /tmp/claude-0/rewalk/P-recheck/."
+ }
+}

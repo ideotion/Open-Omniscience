@@ -223,6 +223,7 @@
   "no rising concepts to attribute for this period": "tidak ada konsep yang naik untuk diatribusikan pada periode ini",
   "the period's concepts resolved to no plain keywords": "konsep pada periode ini tidak memetakan ke kata kunci sederhana mana pun",
   "none of the period's concepts resolved to a stored keyword": "tidak satu pun konsep pada periode ini memetakan ke kata kunci yang tersimpan",
+  "the period spans {days} days; past {max} the 'same days in earlier years' lens stops being a lens — it becomes the whole of an earlier year, which the corpus already shows elsewhere": "periode ini mencakup {days} hari; lewat dari {max}, lensa 'hari yang sama pada tahun-tahun sebelumnya' tidak lagi menjadi lensa — ia menjadi satu tahun penuh sebelumnya, yang sudah ditampilkan korpus di tempat lain",
 
   "{shown} of {total} sections": "{shown} dari {total} bagian",
   "{shown} of {total} stories": "{shown} dari {total} cerita",
@@ -389,5 +390,8 @@
   "Note": "Catatan",
   "Language": "Bahasa",
   "Form": "Bentuk",
-  "Mentions": "Penyebutan"
+  "Mentions": "Penyebutan",
+
+  "“{translation}” (translated from {language}: {term})": "“{translation}” (diterjemahkan dari {language}: {term})",
+  "{term} (in {language})": "{term} (dalam {language})"
 }

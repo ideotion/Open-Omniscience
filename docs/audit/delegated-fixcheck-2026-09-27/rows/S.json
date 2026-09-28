@@ -1,0 +1,148 @@
+{
+ "row": "S",
+ "walk": {
+  "row": "S",
+  "environment": "Build: read-only worktree /tmp/claude-0/rewalk2/tree at 9eb10528. I ran no git command against it. Afterwards there was no configs/source_qualification.yml in it and no file newer than my seed outside its audit/ log folder.\n\nApp: started by /tmp/claude-0/rewalk2/out/S/launch.py, a copy of the re-checker's launcher with only the paths changed.\n- It drops every *proxy* variable plus OO_DB_PASSPHRASE and OO_DB_PLAINTEXT, sets cwd and PYTHONPATH to the tree, imports src.api.main and calls main() (never -m). The log confirms 'SRC FROM /tmp/claude-0/rewalk2/tree/src/api/main.py'.\n- Environment: OO_NO_SCHEDULER=1, OO_AUTOSEED=0, OO_LLM_AUTOSTART=0, OO_PORT=9624, OO_DATA_DIR=/tmp/claude-0/rewalk2/out/S/data.\n- It points qualification_overlay.DEFAULT_OVERLAY_PATH at /tmp/claude-0/rewalk2/out/S/configs/source_qualification.yml, so the S7 overlay was never written into the tree.\n- `--small` injects machine_floor._mem_readings = (3924, 800) for S10.\n\nSeed: fresh, built by this build. No old data folder was copied, so there was no stale briefing_cache.json. scheduler_settings.json {\"scrape_unqualified\": true} was written first. Then the row's seed.py (the 2026-09-18 admission seed, sys.path pointed at the new tree) ran from the tree with OO_DB_PASSPHRASE=walk-pass-2026 and OO_DB_PLAINTEXT unset. It printed 11 sources, 3 collecting, 3 admission events (1 undone), 2 of 3 unaccounted.\n\nData folders under /tmp/claude-0/rewalk2/out/S/:\n- data.snapshot: the fresh seed.\n- data.after-main-walk: the state after S1–S9.\n- data.after-s10: the state after the S10 boots.\n- phase D ran on a fresh copy of the snapshot.\n\nEncryption proof: the DB header is b'\\xf9\\x11\\xbb\\xeb…', not 'SQLite format 3'. /api/system/lock-state read {state: locked, plaintext_mode: false} at all four boots: main PID 21738, small-memory 24944, OO_ALLOW_BIG_SCANS override 25939, fresh copy 26965. Each boot was unlocked in Chromium through #pw / #btn-unlock. All servers were stopped by PID only.\n\nAirplane proof:\n- Each OO_NO_SCHEDULER boot started online. The first action each time was one real click on #net-toggle. The toasts read 'Going offline — cutting new network requests…' and 'Offline — every new network request is refused…', #net-plane fill became currentColor, and /api/system/network read online:false. No consent popup appears for that direction.\n- The page request listener recorded zero non-loopback requests in every phase.\n- The one consent popup this row reaches ('Qualify the backlog') was opened three times: main boot en, override boot en, override boot fr. Each time I read it, screenshotted it (S-X-consent-qualify-main-en.png, S-S10-override-press_en-consent.png, S-S10-override-press_fr-consent.png) and cancelled with 'Stay offline'. The network stayed online:false and the job stayed idle. 'Go online' was never pressed.\n\nBrowser: Playwright (/home/user/Open-Omniscience/.venv), Chromium /opt/pw-browsers/chromium, headless, args --disable-background-networking, --disable-component-update, --no-proxy-server, proxy variables removed.\n- Main pass at 1440x950 in en, a live switch to fr, then fresh renders in fr, zh and ar.\n- 375x800 in en and ar, on the fresh seed and after S9; 540 px en once.\n\nScripts (walk_a.py, walk_a2.py, walk_b.py, walk_x.py, walk_s10.py, walk_d.py, rlib.py), logs, raw_*.json and 111 screenshots are in /tmp/claude-0/rewalk2/out/S/ (shots in /tmp/claude-0/rewalk2/out/S/shots/).",
+  "steps": [
+   {
+    "id": "S1",
+    "verdict": "pass",
+    "locales": "en",
+    "evidence": "Lock and network:\n- /api/system/lock-state read locked; unlocked via #pw.\n- online:true → one click on #net-toggle → toasts 'Going offline — cutting new network requests…' / 'Offline — every new network request is refused. One in-flight request may finish.'\n- plane fill none→currentColor, /api/system/network online:false, and no consent dialog opened.\n\nBefore expanding, #qual-state read 'Loading…'.\n\nHeadline: 'Collecting now: 3 · Judged so far — qualified: 4 · disqualified: 2 · not yet judged: 5', equal to the API counts (collecting 3, qualified 4, disqualified 2, unqualified 5).\n\nThe four #oo-tip bubbles are visible and read, in order:\n- 'enabled AND qualified — what collection actually reaches…'\n- 'qualified, whether or not enabled…'\n- 'judged and found wanting…'\n- 'not yet judged…'\n\nCriteria: six, by human name. 'Repeated page furniture can disqualify · absolute floor: 0.5' and 'Link-dense articles can disqualify · no absolute floor'; the other four read 'watch only'. The amber 'Kept as a rare-catastrophe detector…' line is visible.\n\nScope: 'This will scrape 3 sources (of 6 enabled).' #qual-scope-retired is visible and ends '…listed in Settings > Advanced > Quality gates > Admission audit, where it can be undone.'\n\nHatch: with Collection and Sources expanded there are 40 checkboxes under Advanced, and none offers to scrape unqualified sources.\n\nShots: /tmp/claude-0/rewalk2/out/S/shots/S-S1-airplane-en.png, S-S1-hover-collecting-en.png, S-S1-quality-gates-en.png. Data: raw_a.json steps.S1."
+   },
+   {
+    "id": "S2",
+    "verdict": "pass",
+    "locales": "en",
+    "evidence": "Audit header: 'Showing 3 of 3 admissions · 1 undone'.\n- admitted-undone.example ends 'Undone September 18, 2026 at 01:00 PM' with no button.\n- admitted-then-refused.example ends 'A later verdict replaced this one' with no button.\n- admitted-live.example has an 'Undo' button.\n- All three read 'Collection was: off · Status was: unqualified'.\n- Then the caveat, and '2 of 3 collecting sources are not accounted for here.'\n\nShipped verdicts: the empty-overlay sentence. Adopt and Revert are disabled; Export and Merge are enabled.\n\nBacklog: '5 candidates awaiting qualification.' The API reads floor.declines=false, there is no floor sentence, and no 'done [0/'.\n\nStamps are localized whole minutes, white-space nowrap, getClientRects 1. The hover gives the exact stamp '2026-09-18T12:00:00+00:00'.\n\nShots: S-S2-admission-en.png, S-S2-lower-panel-en.png, S-S2-stamp-hover-en.png. Data: raw_a.json steps.S2."
+   },
+   {
+    "id": "S3",
+    "verdict": "pass",
+    "locales": "en",
+    "evidence": "Home #home-stats reads '0 Articles', '3 Sources collecting', '3 Enabled, not qualified', '5 Not enabled', '0 Keywords', '0 Commodity prices', '0 Article links', '0 Mentioned dates'. There is no bare '11 Sources'. The third split figure is relabelled by the S-10 fix. Each split figure has a hover such as '3 of your 11 sources: enabled AND qualified …'.\n\nLibrary → storage tiles: Articles, Keywords, Commodity prices, Article links, Mentioned dates, 'Sources collecting' 3, 'Enabled, not qualified' 3, 'Not enabled' 5.\n\nPreview targets (in the nested legacy fold, sch-langs/types/tags blank): '3 sources targeted of 6 enabled · this run will process up to 3 / By language: Unknown language 3 / By type: news 3'. The API reads matched 3 and total_enabled 6.\n\nEvery collecting figure equals 3, and /api/database/stats reads sources_qualified 3.\n\nShots: S-S3-home-strip-en.png, S-S3-library-db-en.png, S-S3-preview-targets-en.png. Data: raw_a2.json steps.S3."
+   },
+   {
+    "id": "S4",
+    "verdict": "pass",
+    "locales": "en → fr (live switch, no reload)",
+    "evidence": "With the panel open I switched through #lang-switch to Français: html lang='fr', button '🇫🇷 FR'.\n\nAt 1.5 s and again at 5 s every composed line was French:\n- 'Collecte en cours : 3 · Jugées jusqu’ici — qualifiées : 4 · disqualifiées : 2 · pas encore jugées : 5'\n- 'Cela collectera 3 sources (sur 6 activées).'\n- 'Affichage de 3 admissions sur 3 · 1 annulées'\n- rows 'Collecte était : désactivée · Statut était : non jugé · 18 septembre 2026 à 12:00'\n- 'Annulée 18 septembre 2026 à 13:00'\n- 'seuil absolu : 0.5'\n- '5 candidats en attente de qualification.'\n- '5 sources par passe de collecte'\n- the gate cards and the retired line\n\nThe only lines byte-identical to English are 'tokens' and 'articles', which are also the fr.json values. The number hovers repainted in French.\n\nThe Preview targets result repainted live: '3 sources ciblées sur 6 activées · cette exécution en traitera jusqu’à 3 / Par langue : Langue inconnue 3 / Par type : news 3'.\n\nHome strip and Library tiles repainted live ('Sources en collecte', 'Activées, non qualifiées', 'Non activées').\n\nAfter a reload: lang fr.\n\nShots: S-S4-live-switch-fr.png, S-S4-live-switch-fr-top.png, S-S4-preview-targets-live-fr.png, S-S4-home-live-fr.png. Data: raw_a2.json steps.S4."
+   },
+   {
+    "id": "S5",
+    "verdict": "pass",
+    "locales": "fr, zh, ar (fresh renders)",
+    "evidence": "The numbers match S1/S2 in all three languages.\n\nfr: headline as in S4. Editor buttons 'Adopter les verdicts livrés' / 'Les annuler' / 'Exporter ce que cette installation a mesuré' / 'Construire un fichier fusionné'.\n\nzh:\n- '当前采集：3 · 迄今已判定 — 已认证：4 · 已取消资格：2 · 尚未判定：5'\n- '这将采集 3 个来源（共 6 个已启用）。'\n- '更近的一次判定已取代此判定'; button '撤销'\n- no English lines\n\nar:\n- 'قيد الجمع الآن: 3 · … مؤهلة: 4 · غير مؤهلة: 2 · لم يُحكم عليها بعد: 5'\n- 'سيجري جمع 3 مصدرًا (من أصل 6 مُفعّلة).'\n- 'عرض 3 من أصل 3 قبول · تمّ التراجع عن 1'\n- button 'تراجع'\n- documentElement.dir and body direction are rtl\n- each row's action or reason box sits at the left (x 35–245) and the info box at the right (x 255–1155)\n- rows are 27 px tall, so each stamp is on one line\n\nThe retired line names each UI's own path, matching the on-screen subtab, summary and h3 labels: 'Paramètres > Avancé > Contrôles de qualité > Journal des admissions', '设置 > 高级 > 质量关卡 > 准入审计', 'الإعدادات > متقدم > بوابات الجودة > سجل القبول'.\n\nHome split labels, Library tiles and Preview targets are translated in all three (fr 'Aperçu des cibles' …, zh '目标来源 3 个（共 6 个已启用）…', ar '3 مصادر مستهدفة من أصل 6 مُفعّلة…').\n\nShots: S-S5-headline-{fr,zh,ar}.png, S-S5-admission-{fr,zh,ar}.png, S-S5-retired-{fr,zh,ar}.png, S-S5-home-{fr,zh,ar}.png, S-S5-library-{fr,zh,ar}.png, S-S5-preview-targets-{fr,zh,ar}.png. Data: raw_a2.json steps.S5.per_lang."
+   },
+   {
+    "id": "S6",
+    "verdict": "pass",
+    "locales": "ar",
+    "evidence": "A real click on 'تراجع' in the admitted-live.example row.\n\nAt 1.5 s, with no reload:\n- toast 'تمّ التراجع عن القبول.'\n- the row shows 'تمّ التراجع 27 سبتمبر 2026 في 08:51 م' with no button; the other two rows are unchanged\n- header 'عرض 3 من أصل 3 قبول · تمّ التراجع عن 2'\n- scope 'سيجري جمع 2 مصدرًا (من أصل 5 مُفعّلة).'\n- headline 'قيد الجمع الآن: 2 · … مؤهلة: 3 · غير مؤهلة: 2 · لم يُحكم عليها بعد: 6', equal to the API (collecting 2, 3/2/6)\n- the backlog line already read 'مرشحون في انتظار التأهيل: 6.', equal to the API (unqualified 6)\n\nIdentical at 8 s and after a reload.\n\nShots: S-S6-after-undo-ar.png, S-S6-admission-after-undo-ar.png, S-S6-after-undo-backlog-ar.png. Data: raw_a2.json steps.S6."
+   },
+   {
+    "id": "S7",
+    "verdict": "pass",
+    "locales": "en",
+    "evidence": "Overlay written to /tmp/claude-0/rewalk2/out/S/configs/source_qualification.yml, sha256 31a62cc9f2b7cbabe07e0902026cc684dc91265bec89f89e6b637b020129828f (the same bytes as the earlier walks).\n\nHeadline: 'Collecting now: 2 · Judged so far — qualified: 3 · disqualified: 2 · not yet judged: 6'. Scope: 'This will scrape 2 sources (of 5 enabled).' Audit: 'Showing 3 of 3 admissions · 2 undone', with no Undo, and '2 of 2 collecting sources are not accounted for here.'\n\nShipped verdicts, line by line:\n- '3 verdicts ship with this install (2 sources qualified, 1 source disqualified) · Measured up to: 2026-09-18'\n- '0 of them are in force here · 0 can be put back'\n- 'Adopting now would: stamp 3 sources, start collecting 1'\n- 'Shipped verdicts are adopted at startup. Adopting changes only rows…'\n\nAdopt enabled, Revert disabled, Export and Merge enabled.\n\nShots: S-S7-overlay-populated-en.png, S-S7-headline-en.png. Data: raw_b.json steps.S7."
+   },
+   {
+    "id": "S8",
+    "verdict": "pass",
+    "locales": "en (+ fr live repaint, fr/zh/ar fresh refusals)",
+    "evidence": "Export: toast 'Exported what this install measured.'; the file source_qualification.yml is YAML with 'verdicts: []'. Its header names 'Settings > Advanced > Quality gates > Build a merged file (or with scripts/merge_source_qualification.py)'.\n\nMerge with the picker empty:\n- '3 verdicts in the merged file · 0 added · 0 updated · 3 carried through untouched / this instance (0) / Nothing was written. … configs/source_qualification.yml — it ships…'\n- a merged file holding the 3 .example rows downloaded\n- overlay sha256 unchanged, collecting still 2\n- a live switch to fr repainted the report ('3 verdicts dans le fichier fusionné · 0 ajoutés…', 'cette instance (0)')\n\nProbes (each rendered, no pageerror, button re-enabled):\n- (A) Export's own YAML is accepted: merged and downloaded, 'export-source_qualification.yml (0) · this instance (0)'.\n- (B) The merged overlay is refused by name (400): '…reads as an overlay (a merged or shipped source_qualification.yml), not an instance's export…'.\n- (C) not-an-export.json (400): 'not-an-export.json: no 'verdicts' list — is this a source-qualification export?'.\n- (D) A garbage .zip (400) gets the same refusal.\n\nShots: S-S8-merge-empty-picker-en.png, S-S8-merge-out-live-fr.png, S-S8-probe-*.png. Data: raw_b.json steps.S8."
+   },
+   {
+    "id": "S9",
+    "verdict": "pass",
+    "locales": "en",
+    "evidence": "After Adopt:\n- toast 'Adopted 3 verdicts; 1 source started being collected.'\n- '3 of them are in force here · 3 can be put back' and 'Adopting now would change nothing…'; Revert enabled\n- audit 'Showing 4 of 4 admissions · 2 undone', with a new top row 'awaiting.example · Collection was: on · Status was: unqualified · September 27, 2026 at 08:56 PM' carrying Undo, and '2 of 3 collecting…'\n- headline 'Collecting now: 3 · … qualified: 5 · disqualified: 3 · not yet judged: 3', scope '(of 5 enabled)'\n- candidate-0.example stayed enabled=false\n- the backlog line reads '3 candidates awaiting qualification.', equal to the API (3)\n\nRevert, dismissed: one confirm, no toast, every figure unchanged.\n\nRevert, accepted:\n- confirm 'Put back every source the shipped verdicts stamped here, and stop adopting them at startup? …'\n- toast 'Put back 3 sources; 1 admission undone.'\n- '0 of them are in force here · 0 can be put back' and 'Adopting now would: stamp 3 sources, start collecting 1'\n- the amber line begins 'Adopting at startup is off, so a revert holds. Adopt turns it back on.'\n- Revert disabled\n- awaiting.example shows 'Undone September 27, 2026 at 08:56 PM'; header '4 of 4 · 3 undone'\n- headline back to 2 and 3/2/6; backlog line '6 candidates awaiting qualification.', equal to the API (6)\n\nA reload gave the same.\n\nShots: S-S9-after-adopt-*.png, S-S9-after-revert-*.png. Data: raw_b.json steps.S9."
+   },
+   {
+    "id": "S10",
+    "verdict": "pass",
+    "locales": "en (+ fr live and fresh, zh, ar)",
+    "evidence": "Small-memory restart:\n- Restarted by PID with the injected 3924/800 MB reading. It booted locked and was unlocked via #pw; one click took it offline.\n- The backlog line reads '6 candidates awaiting qualification. Qualification is declined on this machine: it is below the memory floor, so no candidate is judged. (this machine has 3 924 MB of RAM with 800 MB available — total under the 4 096 MB floor and available under the 1 024 MB floor) To run it anyway, restart the app with OO_ALLOW_BIG_SCANS=1.'\n- 'done [0/' appears nowhere.\n- After the restart, Shipped verdicts still reads 'Adopting at startup is off, so a revert holds…'.\n- In fr the whole refusal is French.\n\nOverride boot (OO_ALLOW_BIG_SCANS=1):\n- Only '6 candidates awaiting qualification.' remains (API floor.overridden=true, declines=false). The same in fr, zh and ar.\n\nShots: S-S10-small-bulk-en.png, S-S10-small-bulkline-{en,fr,fr-live,zh,ar}.png, S-S10-override-bulkline-en.png. Data: raw_s10_small.json, raw_s10_override.json."
+   },
+   {
+    "id": "L375",
+    "verdict": "pass",
+    "locales": "en, ar",
+    "evidence": "Horizontal overflow (scrollWidth − clientWidth) is 0 on Home, Quality gates and Library, in en and ar, on the fresh seed and after S9. The clip and off-screen scan found nothing on #tab-home, #qualification-panel or #db-stats (raw_d.json).\n\n#home-tier fits: en x 37–338, ar x 50–338. Its caveat 'thin evidence — read with care' / 'أدلة ضئيلة — اقرأها بحذر' is on screen.\n\nAdmission rows now wrap instead of crushing.\n\nen, fresh seed:\n- The info column is 305 px, and the action drops below it ('Undone …' 249 px, 'A later verdict…' 193 px).\n- The live row keeps Undo beside a 232 px info column.\n- Row heights are 92/92/64 px, each domain is on one line, and no stamp overflows its column (0 px).\n\nar, fresh seed:\n- info 305/305/236 px, action below, 0 px overflow.\n\nAfter S9 (4 rows), en and ar: every info column is 305 px, action below, 0 px overflow.\n\n540 px: 0 px overflow.\n\nShots: S-375-admission-viewport-{en,ar}.png, S-D-375-admission-viewport-{en,ar}.png, S-375-admission-after-s9-viewport-{en,ar}.png, S-375-home-{en,ar}.png, S-375-library-{en,ar}.png. Data: raw_a.json narrow_en / narrow_ar, raw_d.json, raw_x.json."
+   }
+  ],
+  "items": [
+   {
+    "id": "S-1",
+    "verdict": "fixed",
+    "evidence": "This is L375's admission-row failure. At 375x800 on the fresh seed (raw_a.json narrow_en / narrow_ar, raw_d.json):\n- en info columns are 305/305/232 px (the defect had 45.6/102.4/231.6).\n- The 'Undone <stamp>' and 'A later verdict…' action boxes wrap below the info (act_below_info true).\n- Each domain is on one line (getClientRects 1). The two wrapped rows are 92 px tall, where the tallest was 212.5 px before.\n- Stamp overflow past its column is 0 px (153.7 px before).\n- ar: info 305/305/236 px, stamp overflow 0 (72.6 px before).\n- The same after S9 with 4 rows. At 540 px the undone row wraps and the others sit side by side with 0 overflow.\n\nShots: /tmp/claude-0/rewalk2/out/S/shots/S-D-375-admission-viewport-en.png, S-375-admission-viewport-ar.png, S-540-admission-en.png."
+   },
+   {
+    "id": "S-2",
+    "verdict": "fixed",
+    "evidence": "Same reproduction as S-1: the row-S seed at 375x800 in en and ar, Settings → Advanced → Quality gates → Admission audit.\n- No info column is narrower than 232 px, and none prints word-per-line ('admitted-then-refused.example' is on one line).\n- The nowrap timestamp stays inside its own column: ts_overflows_info_by 0 and ts_overflows_act_by 0 on every row, in en and ar, fresh and after S9.\n- In ar the undone stamp sits on its own line below the info (action x 130–340 under info x 35–340).\n\nData: raw_a.json narrow_*, raw_x.json narrow_after_s9_*, raw_d.json. Shots: S-375-admission-{en,ar}.png, S-375-admission-after-s9-{en,ar}.png."
+   },
+   {
+    "id": "S-3",
+    "verdict": "fixed",
+    "evidence": "Undo, en at 1440, fresh copy (raw_d.json undo_en): before, '5 candidates awaiting qualification.' with API 5. I pressed Undo and waited 8 s: the line reads '6 candidates awaiting qualification.', API unqualified 6, and the headline reads 'not yet judged: 6'.\n\nUndo, ar (raw_a2.json S6): 1.5 s after Undo the line reads 'مرشحون في انتظار التأهيل: 6.' with API 6.\n\nAdopt (raw_b.json S9): 'Adopted…' then the line reads '3 candidates awaiting qualification.' with API 3, both immediately and at 6 s.\n\nRevert accepted: '6 candidates awaiting qualification.' with API 6.\n\nShots: S-D-after-undo-backlog-en.png, S-S6-after-undo-backlog-ar.png, S-S9-after-adopt-backlog-en.png, S-S9-after-revert-backlog-en.png."
+   },
+   {
+    "id": "S-4",
+    "verdict": "fixed",
+    "evidence": "Fresh render after switching through the top-bar menu and reloading, then Settings → Advanced → Collection → the legacy fold → 'Preview targets':\n- fr, button 'Aperçu des cibles': '3 sources ciblées sur 6 activées · cette exécution en traitera jusqu’à 3 / Par langue : Langue inconnue 3 / Par type : news 3'\n- zh: '目标来源 3 个（共 6 个已启用）· 本次运行最多处理 3 个 / 按语言：未知语言 3 / 按类型：news 3'\n- ar: '3 مصادر مستهدفة من أصل 6 مُفعّلة · سيعالج هذا التشغيل حتى 3 / حسب اللغة: لغة غير معروفة 3 / حسب النوع: news 3'\n\nThe '?' bucket now reads 'Unknown language' (keyed).\n\nAfter a live en→fr switch with the result already painted, it repainted in French within 1.5 s.\n\nOnly the source-type token 'news' stays as data.\n\nShots: S-S5-preview-targets-{fr,zh,ar}.png, S-S4-preview-targets-live-fr.png. Data: raw_a2.json S5.per_lang.*.preview_targets, S4.preview_targets_live_fr_1_5s."
+   },
+   {
+    "id": "S-5",
+    "verdict": "fixed",
+    "evidence": "Small-memory boot (injected 3924/800 MB; API floor.declines true, reason_i18n / reason_vars present).\n\nfr after a live switch and on a fresh render: '6 candidats en attente de qualification. La qualification est refusée sur cette machine : elle est sous le seuil mémoire, aucun candidat n'est donc jugé. (cette machine a 3 924 Mo de RAM dont 800 Mo disponibles — total sous le seuil de 4 096 Mo et disponible sous le seuil de 1 024 Mo) Pour l'exécuter malgré tout, redémarrez l'application avec OO_ALLOW_BIG_SCANS=1.'\n\nThe parenthesised reason is French, and its numbers are fmtNum-grouped. zh and ar are translated as well.\n\nShots: S-S10-small-bulkline-fr.png, S-S10-small-bulkline-fr-live.png, S-S10-small-bulkline-zh.png, S-S10-small-bulkline-ar.png. Data: raw_s10_small.json bulk_fr_live / bulk_fr_fresh."
+   },
+   {
+    "id": "S-6",
+    "verdict": "fixed",
+    "evidence": "fr fresh render (button 'Construire un fichier fusionné'):\n- {\"hello\":\"world\"} → '⁨not-an-export.json⁩ : aucune liste 'verdicts' — s'agit-il d'un export de qualification des sources ?'\n- the merged overlay the app had just downloaded → '⁨merge-empty-source_qualification.yml⁩ se lit comme un overlay (un source_qualification.yml fusionné ou livré), pas comme l'export d'une instance : ses lignes ne portent aucun 'basis'…'\n- a fake .zip → the French no-verdicts refusal\n\nzh and ar fresh renders give their own translations of both refusals.\n\nThe en refusal shown before a live switch to fr repainted to French: '⁨not-a-bundle.zip⁩ : aucune liste 'verdicts'…'.\n\nThe file name stays as isolated data. Every request returned the designed 400, with no pageerror.\n\nShots: S-S8-fr-fresh-not-export.png, S-S8-fr-fresh-merged-overlay.png, S-S8-fr-fresh-bad-zip.png, S-S8-zh-fresh-*.png, S-S8-ar-fresh-*.png, S-S8-refusal-live-fr.png. Data: raw_b.json S8.fr_fresh_* / zh_fresh_* / ar_fresh_* / refusal_after_live_fr."
+   },
+   {
+    "id": "S-7",
+    "verdict": "fixed",
+    "evidence": "Small-memory boot, offline. The line names the decline.\n\n#qualify-bulk-btn is disabled=true with aria-describedby='qualify-bulk-status', in en, and in fr live and fresh, zh and ar. Pressing it (Playwright refuses to click a disabled button) opened no consent popup in en or fr: #net-consent never opened, the network stayed online:false, the job stayed idle with result null, and the line still names the refusal.\n\nControl, override boot: the button is enabled and opens the 'Go online?' popup, which I cancelled. So consent still gates the real job.\n\nShots: S-S10-small-bulk-en.png (disabled button under the decline line), S-S10-override-press_en-consent.png. Data: raw_s10_small.json press_en_* / press_fr_*, raw_s10_override.json."
+   },
+   {
+    "id": "S-8",
+    "verdict": "fixed",
+    "evidence": "At 1440 px, #qual-enabled is 13 px wide (computed width 13px), with no inline style. It sits on the same line as 'Judge sources automatically' (same_line true) in en, fr, zh and ar; in ar it is on the right, beside its label.\n\nIt matches #qual-scope-shipped (13 px, same line).\n\nShots: S-S1-judge-checkbox-en.png, S-S5-judge-checkbox-{fr,zh,ar}.png, S-S1-hover-collecting-en.png. Data: raw_a.json S1.checkbox, raw_a2.json S5.per_lang.*.checkbox."
+   },
+   {
+    "id": "S-9",
+    "verdict": "fixed",
+    "evidence": "The gap line now ends with the locale's full stop before its note:\n- en '2 of 3 collecting sources are not accounted for here. This lists admissions made by judging.'\n- fr '2 des 3 sources collectées ne sont pas expliquées ici. Cette liste…'\n- zh '…有 2 个在此无法追溯。此处仅列出…'\n- ar '…غير مُفسّرة هنا. يسرد هذا…'\n\nThe en caveats use typographic dashes: 'EXTRACTION VALIDITY only — never editorial merit', '…restored backup — those are not judgements…'. The merge note reads '…configs/source_qualification.yml — it ships to every fresh install…'.\n\nShots: S-S2-admission-en.png, S-S5-admission-{fr,zh,ar}.png, S-S8-merge-empty-picker-en.png. Data: raw_a.json S2.caveats, raw_a2.json S5.per_lang.*.caveats, raw_b.json S8.merge_out."
+   },
+   {
+    "id": "S-10",
+    "verdict": "fixed",
+    "evidence": "The figure is now labelled by its predicate: Home and Library read '5 Not enabled' ('6 Not enabled' after S9). The hover bubble reads '6 of your 11 sources: not enabled — discovered candidates awaiting review, and any source switched off or whose admission was undone. Collection does not reach them.' That covers the switched-off qualified source and the undone admission.\n\nTranslated as fr 'Non activées' / '…toute source désactivée ou dont l'admission a été annulée…', zh '未启用', ar 'غير مفعّلة' / '…وأي مصدر أُوقف تشغيله أو أُلغي قبوله…'. The Library tile has the same hover.\n\nShots: S-X-home-not-enabled-hover-en.png, S-X-home-not-enabled-hover-ar.png, S-X-library-not-enabled-hover-{en,ar}.png. Data: raw_x.json, raw_a2.json S3/S5."
+   },
+   {
+    "id": "S-11",
+    "verdict": "fixed",
+    "evidence": "Overlay in scratch configs (awaiting→qualified, candidate-0→qualified, candidate-1→disqualified):\n- 'Adopt the shipped verdicts' toasted 'Adopted 3 verdicts; 1 source started being collected.'\n- 'Revert them', with its confirm accepted, toasted 'Put back 3 sources; 1 admission undone.'\n\nBoth singular forms are now correct.\n\nData: raw_b.json steps.S9.adopt_toasts / revert_toasts."
+   },
+   {
+    "id": "S-12",
+    "verdict": "fixed",
+    "evidence": "Small-memory boot:\n- en: '6 candidates awaiting qualification. Qualification is declined on this machine…', with a full stop between the two sentences.\n- fr: '6 candidats en attente de qualification. La qualification est refusée…'.\n- zh: '6 个候选来源正等待资格审核。本机拒绝进行资格审核…'.\n- ar: 'مرشحون في انتظار التأهيل: 6. التأهيل مرفوض…'.\n\nOn the normal boot the line ends with '.' too ('5 candidates awaiting qualification.').\n\nShots: S-S10-small-bulkline-en.png, S-S10-small-bulkline-fr.png. Data: raw_s10_small.json bulk / bulk_fr_fresh."
+   }
+  ],
+  "incidental": [
+   "zh memory-floor refusal: the translated reason sits in ASCII parentheses with Latin spaces around it inside Chinese text ('…不评判任何候选来源。(本机有 3 924 MB 内存… 下限) 若仍要运行…'). _qualDeclinedText hard-codes \"(\" + why + \")\" + \" \" (src/static/app-ai-tools.js, around lines 657-667). Shot: /tmp/claude-0/rewalk2/out/S/shots/S-S10-small-bulkline-zh.png.",
+   "Consent popup (main boot, 'Qualify the backlog') listed 'Chain of custody n=3' under 'Could not read whether these are on' while a 'Working…' pill was showing in the top bar. When idle, /api/custody/settings answers in 0.16 s over loopback, so it looks like a transient miss of the 2 s read budget (src/static/app-core.js:1416-1428). Shot: /tmp/claude-0/rewalk2/out/S/shots/S-X-consent-qualify-main-en.png.",
+   "Preview targets: the source-type value stays the raw token 'news' in every locale ('Par type : news 3', '按类型：news 3', 'حسب النوع: news 3'), while the language bucket is now translated (src/static/app-sources.js _renderSchedTargets)."
+  ],
+  "page_errors": [],
+  "http_errors": [
+   "POST /api/diagnostics/source-qualification-merge → 400, 10 times: the designed merge refusals of the S8 / S-6 probes. en ×3 (merged overlay, not-an-export.json, bad .zip), fr ×3, zh ×2, ar ×2. Each rendered under the button; the browser console logged the matching 'Failed to load resource … 400'. No other HTTP error in any phase."
+  ],
+  "summary": "Row S passes. All 11 steps pass: S1–S10 and L375. All 12 re-walk items (S-1 to S-12) are fixed on build 9eb10528, walked encrypted, locked at boot and in airplane mode.\n\n- **375 px regression (S-1/S-2):** gone. At 375 px the admission rows wrap: the info column is 305 px, the action drops below it, and stamp overflow is 0 px in en and ar, on the fresh seed and after S9. Home, Quality gates and Library have 0 horizontal overflow.\n- **Backlog line (S-3):** now follows Undo (6), Adopt (3) and Revert (6), equal to the API.\n- **Translations:** the Preview targets line (S-4), the memory-floor reason (S-5) and the merge refusals (S-6) render in fr, zh and ar, and repaint on a live switch.\n- **Floor decline (S-7):** below the memory floor the 'Qualify the backlog' button is disabled and opens no consent popup. On the override boot the consent popup still gates the job, and I cancelled it there.\n- **Smaller fixes:** the checkbox sits beside its label (S-8); sentences are punctuated and dashes are typographic (S-9, S-12); the 'Not enabled' figure is labelled by its predicate (S-10); the toasts use singular forms (S-11).\n\nThere were no page errors and no non-loopback requests. The only HTTP errors are the 10 designed 400 merge refusals. I recorded three incidental items and did not re-check them: ASCII parentheses around the zh floor reason, a transient custody 'could not read' line in the consent popup, and the raw 'news' type token in Preview targets."
+ },
+ "recheck": null
+}

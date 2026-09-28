@@ -20,6 +20,7 @@ from tests.js_source_helper import assert_absent as _assert_js_absent
 from tests.js_source_helper import css_rule as _css_rule
 from tests.js_source_helper import assert_present as _assert_js_present
 from tests.js_source_helper import function_body as _js_function_body
+from tests.js_source_helper import function_source as _js_function_source
 from tests.js_source_helper import python_function_source as _py_function_source
 from tests.js_source_helper import strip_comments as _strip_js_comments
 from tests.diagnostics_source import diagnostics_source
@@ -511,14 +512,15 @@ def test_dump_and_osm_pollers_clear_before_set():
     osm_poll = _fn_body("function _osmPoll(")
     assert "if (_osmPollTimer) clearInterval(_osmPollTimer);" in osm_poll
 
-    # The three already-fixed pollers this fix mirrors must still clear-before-set
+    # The already-fixed pollers this fix mirrors must still clear-before-set
     # (a regression guard on the PATTERN this fix relies on, not just the two new
     # sites) -- each declares its own module-level timer + a `if (TIMER) clearInterval`
-    # guard before assigning a new one.
+    # guard before assigning a new one. The third one, _fbStartPoll, was removed with
+    # the dead large-data folder panel it drove (2026-09-27 fix batch B18, R1): no
+    # element, button or handler reached it.
     for timer, fn_marker in (
         ("_llmPullPoll", "function _llmPullStartPoll("),
         ("_volPollTimer", "function _volStartPoll("),
-        ("_fbPoll", "function _fbStartPoll("),
     ):
         body = _fn_body(fn_marker)
         assert f"if ({timer}) clearInterval({timer});" in body, (
@@ -1060,7 +1062,9 @@ def test_ai_pill_is_backend_agnostic_no_count_and_offers_start_or_install():
     (vLLM first) before falling back to the install/Settings path -- never a
     silent re-check only."""
     app = app_js()
-    assert 'el.textContent = "AI"' in app, (
+    # Written through t() since click-through B19 (Q7): the pill carries data-i18n-dyn, so
+    # it translates its own one word -- still one constant word, never a count.
+    assert 'el.textContent = t("AI")' in app, (
         "the AI pill must read just 'AI' (no model count, maintainer 2026-07-24)"
     )
     assert "`${h.installed_models.length} LLM`" not in app and "LLM offline" not in app, (
@@ -1344,7 +1348,8 @@ def test_analysis_articles_paginated():
     app = app_js()
     assert "function _anLoadArticles(" in app and "function _anArtGo(" in app and "_anArtPager(" in app
     assert 'q.set("offset"' in app and 'q.set("limit"' in app, "pagination must fetch by limit+offset"
-    assert "_anLoadArticles(p, 0)" in app, "loadAnalysis must use the paginated loader"
+    # (p, 0, run) since 2026-09-26: the run token lets a superseded analysis run skip its write.
+    assert "_anLoadArticles(p, 0, run)" in app, "loadAnalysis must use the paginated loader"
     assert app.count("+ pager") >= 2, "the pager must render BOTH above and below the results list"
     # RE-ANCHORED 2026-09-18 (S04-14) ONTO A STRICTLY STRONGER FACT, not a looser one.
     # This line used to assert the two FRAGMENTS the label was welded from, t("Page") and
@@ -1781,11 +1786,17 @@ def test_large_data_folder_backup():
     assert "def _folder_backup_jobs(" in jobs and '"folder-backup"' in jobs
     # UI: reached through the unified Export/Import dialog (the standalone
     # "folder-backup-panel" was retired 2026-07-01 when Import/Export was unified).
-    # The dialog streams the chosen blob categories to /folder/start and restores
-    # from a server-side folder via /folder/restore.
+    # The dialog streams the chosen blob categories to /folder/start. A restore goes
+    # through the import queue, whose "blobs" item drives the SAME folder manager in
+    # restore mode. (The page's only direct /folder/restore caller was the dead
+    # folderRestoreStart, removed with the rest of the #fb-* plan in B18 R1: it drew
+    # into elements no page carried.)
     assert "async function openUnifiedExport(" in app and 'id="ux-export"' in html
     assert "function openUnifiedImport(" in app and 'id="ux-import"' in html
-    assert '"/api/backup/folder/start"' in app and '"/api/backup/folder/restore"' in app
+    assert '"/api/backup/folder/start"' in app
+    assert '"/api/backup/import-queue/start"' in app
+    queue = (_SRC / "backup" / "import_queue.py").read_text(encoding="utf-8")
+    assert 'get_folder_manager()' in queue and 'mode="restore"' in queue
 
 
 def test_gui_shutdown_button_and_endpoint():
@@ -2430,7 +2441,9 @@ def test_ui_invariants():
     assert ".activity.paused { color:var(--muted)" not in html, (
         "the paused chip must NOT use the reverted muted color (CLAUDE.md Item V)"
     )
-    assert 'T("Collecting paused") + "…"' in html, (
+    # ONE keyed string since click-through B19 (Q10): the "…" welded on after the
+    # translation was an English glyph a locale could not place or drop.
+    assert 'T("Collecting paused…")' in html, (
         "the paused label must read 'Collecting paused…' (CLAUDE.md Item V)"
     )
     assert "s.online !== _netOnline" in html, (
@@ -2585,6 +2598,11 @@ def test_ui_invariants():
     bare = _re.findall(r'target="_blank"[^>]*>(?:source|official source|official|'
                        r'Official[^<]*source)(?:&nbsp;|\s)?↗?</a>', html)
     assert not bare, f"bare external source↗ links must route through extLink (#6e): {bare[:3]}"
+    # 6 (article rows): an article's title link opens the LOCAL reader, never its external
+    # url first. Home's Latest panel did (href = a.url || reader) under an "offline stored
+    # copy" hover until 2026-09-27.
+    url_first = _re.findall(r'href="\$\{esc\(\w+\.url\s*\|\|', html)
+    assert not url_first, f"an article link opens the external original before the local reader (#6): {url_first[:3]}"
     # 18. ONE universal subtab component (keystone, ruled 2026-06-13): a single
     #     reusable helper drives the vertical subtab grammar everywhere — lateral
     #     sidebar = main tabs, vertical subtabs = facets. It owns ARIA + keyboard
@@ -2877,7 +2895,9 @@ def test_ui_invariants():
     assert "card-face card-front" in card_html and "card-face card-back" in card_html, (
         "Lead cards must have a flip FRONT + BACK (maintainer 2026-06-23)"
     )
-    assert '<p class="card-caveat">${esc(c.caveat)}</p>' in card_html, (
+    # (re-walk L-2/N-8: the caveat renders through cardText -- its keyed frames in the
+    # reader's language, else t() of the stored English -- still in the visible line.)
+    assert '<p class="card-caveat">${esc(cardText(c, "caveat"))}</p>' in card_html, (
         "every Lead card must render its caveat VISIBLE BY DEFAULT in a .card-caveat "
         "line (CLAUDE.md informed-consent: never hidden behind a calm-UI toggle)"
     )
@@ -2889,7 +2909,7 @@ def test_ui_invariants():
     back_region = card_html.split("card-face card-back", 1)[1]
     assert "${caveatLine}" in back_region, "the caveat must render on the card BACK face"
     # The verbose method renders on the back (the flip IS the detail layer now).
-    assert "esc(c.method)" in card_html and 'class="mc"' in card_html, (
+    assert 'esc(cardText(c, "method"))' in card_html and 'class="mc"' in card_html, (
         "the method must render on the card back (the flip replaced the per-card '?')"
     )
     # Clicking flips; the standardized, family-themed button opens the corpus IN A NEW WINDOW.
@@ -3365,20 +3385,42 @@ def test_net_coach_never_places_above_the_topbar_row():
     direction structurally guaranteed to have room near a top-anchored topbar -- confirmed
     live: at both 1400px (room to the right, "left" branch) and 900px (no room, "below"
     branch forced), all four buttons independently resolve document.elementFromPoint() to
-    themselves while the coach is showing."""
+    themselves while the coach is showing.
+
+    AMENDED 2026-09-26 (delegated click-through, rows N, O and T): the "to the right of the
+    button" branch was the same collapse in RTL -- the plane sits at the LEFT in Arabic, so
+    the branch was always taken and the clamp pulled the coach into the top bar over
+    #tm-open, #rate-toggle, #wiki-toggle and #llm -- and "below the four buttons" still
+    landed on the facet-subtab strip `.chrome` relocates under the top bar. So the side
+    branch is gone and the guard is the whole `.chrome` plus seven buttons. The geometry is
+    driven for real, LTR and RTL at 1440 and 375 px, in tests/net_coach_place_node_test.js.
+
+    AMENDED 2026-09-27 (re-walk O-1): "below the whole chrome" was where every tab page
+    begins, so the fixed bubble sat on the page's heading and its visible-by-default
+    caveat, and over a form input once scrolled. The coach is now a strip IN FLOW inside
+    `.chrome`, under the top bar: it can cover no top-bar button, no subtab and no page
+    content, because it occupies its own row. The guard list and the below-the-guard
+    arithmetic are gone with the bubble; what stays pinned is that nothing brings the
+    fixed placement back (tests/test_net_coach_placement.py pins the markup and CSS)."""
     js = app_js()
     fn = js.split("function _placeCoach() {", 1)[1].split("\n    }\n", 1)[0]
     assert "top = b.top - gap - h" not in fn, (
         "the old always-fails-near-the-topbar fallback (place above the single button, "
         "then clamp) must be gone"
     )
-    assert '"net-toggle", "lang-switch", "tm-open", "app-shutdown"' in fn, (
-        "the fallback must compute a union rect over ALL FOUR protected buttons, not just "
-        "the one #net-toggle it points at"
+    assert "b.right + gap" not in fn and 'side = "left"' not in fn, (
+        "the beside-the-button branch is back: the coach is taller than the top bar, so it "
+        "lands in the top bar's own row (in RTL, every time)"
     )
-    assert "guardBottom + gap" in fn, (
-        "the fallback must place the coach BELOW the guard-button union (never above), the "
-        "one direction guaranteed to have room near a top-anchored topbar"
+    assert "el.style.top" not in fn and "el.style.left" not in fn, (
+        "_placeCoach positions the coach itself again; it is in flow in the chrome and only "
+        "its arrow is placed"
+    )
+    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    chrome_at = html.index('<div class="chrome">')
+    coach_at = html.index('<div id="net-coach"')
+    assert chrome_at < coach_at < html.index("</div><!-- /.chrome -->"), (
+        "#net-coach must sit inside .chrome, in flow, where it covers nothing"
     )
 
 
@@ -3391,15 +3433,23 @@ def test_the_OPEN_language_menu_sits_above_the_net_coach():
     on the coach instead (S04-08 S5's Chromium walk, 2026-09-25: Playwright's own log said
     the coach's subtree "intercepts pointer events", and elementFromPoint at the item's
     centre returned the coach's body). A menu the operator has just opened outranks a
-    passive invitation; #oo-tip may still sit above both, since it takes no pointer events."""
+    passive invitation; #oo-tip may still sit above both, since it takes no pointer events.
+
+    AMENDED 2026-09-27 (re-walk O-1): the coach now lives in the sticky `.chrome` with no
+    z-index of its own, so it stacks at the CHROME's level; the menu must outrank that."""
     html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
     css = (_SRC / "static" / "app.css").read_text(encoding="utf-8")
     menu = re.search(r'<div id="lang-menu"[^>]*?style="[^"]*?z-index:\s*(\d+)', html)
-    coach = re.search(r"#net-coach \{[^}]*?z-index:\s*(\d+)", css)
-    assert menu and coach, "the language menu or the coach lost its z-index -- re-anchor this test"
-    assert int(menu.group(1)) > int(coach.group(1)), (
+    coach_rule = re.search(r"#net-coach \{[^}]*\}", css)
+    chrome = re.search(r"\.chrome \{[^}]*?z-index:\s*(\d+)", css)
+    assert menu and coach_rule and chrome, (
+        "the language menu, the coach or the chrome moved -- re-anchor this test"
+    )
+    coach_z = re.search(r"z-index:\s*(\d+)", coach_rule.group(0))
+    level = int(coach_z.group(1)) if coach_z else int(chrome.group(1))
+    assert int(menu.group(1)) > level, (
         f"#lang-menu (z-index {menu.group(1)}) must stack above #net-coach "
-        f"(z-index {coach.group(1)}), or the coach eats clicks on the open menu"
+        f"(stacking at {level}), or the coach eats clicks on the open menu"
     )
     tip = re.search(r"#oo-tip \{[^}]*?pointer-events:\s*none", css)
     assert tip, "#oo-tip stacks above the menu, which is only harmless while it takes no pointer events"
@@ -3677,8 +3727,9 @@ def test_agenda_category_chips_and_country_flags():
     # file and failed against correct code, on the TAG picker eight lines down,
     # which renders a raw tag and always should -- the recorded non-unique-needle
     # trap, in a guard written to catch a display change.
-    _country_picker = html[html.index('$("agenda-country").innerHTML'):]
-    _country_picker = _country_picker[: _country_picker.index('$("agenda-tag")')]
+    # AMENDED 2026-09-27 (re-walk L-3): the options are built by `_agFillCountryOptions`,
+    # which the load AND a language switch both call, so the slice is that function.
+    _country_picker = _js_function_source(html, "_agFillCountryOptions")
     assert "${esc(x)}</option>" not in _country_picker, (
         "the raw stored code must no longer be the country option's visible label"
     )
@@ -5391,7 +5442,15 @@ def test_supergroup_stats_ui():
         "PRH-31: and it must be drawn on the window the server sliced that series "
         "against — an index-placed daily series renders day 1 and day 5 adjacent"
     )
-    assert "g.rate.growth" in fn, "S1.5: the disclosed recent-vs-baseline rate must render"
+    # The rate line now goes through the keyed Trends frame (B10 K-strings: the English
+    # "recent · prior, Nd vs Nd" literal never translated), so the fact is pinned in two
+    # halves: sgCard hands g.rate to trendRateText, and that frame prints its growth,
+    # recent, prior and both windows.
+    rate_fn = _js_function_body(src, "trendRateText")
+    assert "g.rate.growth" in fn or (
+        "trendRateText(g.rate" in fn
+        and all(f"row.{k}" in rate_fn for k in ("growth", "recent", "prior", "window_days", "baseline_days"))
+    ), "S1.5: the disclosed recent-vs-baseline rate must render"
 
 
 def test_supergroup_curation_relocated_to_settings():
@@ -6309,8 +6368,13 @@ def test_keyword_views_show_verified_translations():
     assert any("ooKwRepaintOnLangChange" in h for h in handlers), (
         f"({len(handlers)} oo:langchange listener(s), none repaints the keyword labels)"
     )
-    # termListHtml renders through the one helper.
-    assert "${kwLabelHtml(term)}" in html, "termListHtml must render through the one label helper"
+    # termListHtml renders through the one helper. Anchored on the function's OWN body:
+    # this line used to match `${kwLabelHtml(term)}` anywhere, which was the analysis
+    # chips' call (termListHtml's row is `t`), so the chips gaining an options argument
+    # (M4) failed it while termListHtml itself had not changed.
+    body = _js_function_body(html, "termListHtml")
+    assert "${kwLabelHtml(t, {inLink: true})}" in body, "termListHtml must render through the one label helper"
+    assert "${esc(t.term)}</a>" not in body, "termListHtml draws a bare keyword again"
     # The three keyword fetches request the verified translation for the UI language.
     assert "/api/insights/trending-windows?limit=6&series_top=6\" + tgtLangParam()" in html
     assert "/api/insights/trending-windows?limit=4&series_top=4\" + tgtLangParam()" in html
@@ -6505,8 +6569,9 @@ def test_home_card_click_diagnostics_and_download_all_wired():
     assert "Download keyword log (.zip)" not in html  # the old verbose label is gone
 
     # The live hard-linking fix: cache version bumped so a pre-fix cached briefing
-    # (cards without article_ids) is recomputed once.
-    assert 'CACHE_VERSION = "oo-briefing-cache-2"' in svc
+    # (cards without article_ids) is recomputed once. Bumped again to 3 when cards
+    # gained keyed i18n frames (re-walk L-1); a v2 cache is served while it recomputes.
+    assert 'CACHE_VERSION = "oo-briefing-cache-3"' in svc
 
 
 def test_http_error_responses_recorded_in_diagnostic_log():
@@ -6860,7 +6925,9 @@ def test_home_overview_absorbs_the_retired_leads_carousel():
     # NEW, and the reason the ordering surface exists again: the disclosed reason.
     assert "order_explain" in ov, "each Overview card must state why it leads its family"
     svc = (_SRC / "briefing" / "service.py").read_text(encoding="utf-8")
-    assert "explain_order as _leads_explain" in svc, (
+    # (re-walk N-8: the reason travels as keyed frames beside its English, both built
+    # from the one explain_order_frames call in the sort itself.)
+    assert "explain_order_frames" in svc and 'c["order_explain_i18n"]' in svc, (
         "the disclosed reason must ride the SAME payload the feed already fetches, so the "
         "explanation can never drift from the sort that produced it"
     )
@@ -7769,7 +7836,8 @@ def test_evidence_links_underlined_and_use_the_shared_extlink_class():
     # Was >= 2 (the live ooMap signal-detail site + the dead temporal-map showTmapDetail's
     # duplicate). The UI-04 dead-code cleanup (2026-09-08) deleted showTmapDetail — it had
     # zero live callers — leaving the one live ooMap call site, which must keep its style.
-    assert js.count('extLink(url, "Official / reference source ↗", "tiny secondary", "align-self:center")') >= 1, \
+    # AMENDED 2026-09-27 (re-walk L-6): the label is keyed ×12 now, so it goes through t().
+    assert js.count('extLink(url, t("Official / reference source ↗"), "tiny secondary", "align-self:center")') >= 1, \
         "the live ooMap signal-detail source-link call site must keep its style but drop the override"
 
 
@@ -8391,7 +8459,10 @@ def test_library_graphs_wired_and_downloaded_section_compressed():
     # The Downloaded tiles are now inside a collapsed-by-default disclosure (the
     # same adv-collect convention Settings already uses for legacy/advanced
     # sections), not a permanently-open 9-tile grid.
-    assert 'details class="adv-collect"' in app.split("function renderLibraryOverview", 1)[1].split(
+    # (The tiles are drawn by `_paintLibraryOverview`, which `renderLibraryOverview` calls
+    # after its fetch and the language-switch repaint calls from cache -- click-through
+    # B14, Z2 -- so the disclosure is read from the painter.)
+    assert 'details class="adv-collect"' in app.split("function _paintLibraryOverview", 1)[1].split(
         "\n    }\n", 1
     )[0], "the Downloaded tiles must be wrapped in a collapsed-by-default <details>"
 

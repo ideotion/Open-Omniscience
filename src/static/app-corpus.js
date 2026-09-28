@@ -191,7 +191,7 @@
         host.innerHTML = `<div class="muted">${esc(t("No sources for this corpus yet."))}</div>`;
         return;
       }
-      const fmt = (n) => (n || 0).toLocaleString();
+      const fmt = (n) => fmtNum(n || 0, 0);
       const chips = (arr) => (arr || []).filter(Boolean)
         .map(x => `<span class="pill" style="font-size:11px">${esc(x)}</span>`).join(" ");
       const cards = rows.map(r => {
@@ -275,7 +275,7 @@
       // Index framing per source (by name; tone label + emphasised terms live there).
       const byName = {};
       ((fr && fr.framing) || []).forEach(f => { if (f.source) byName[f.source] = f; });
-      const fmt = (n) => (n || 0).toLocaleString();
+      const fmt = (n) => fmtNum(n || 0, 0);
       // Relative timing readout vs the WHOLE corpus span (real dates, never a score):
       // the corpus's earliest/latest publication across these sources.
       const firsts = rows.map(r => r.first).filter(Boolean).sort();
@@ -370,7 +370,7 @@
       };
       pairs.sort(sorters[_ckwSort] || sorters.pmi);
       const nA = d.n_articles_with_term || 0;
-      const fmt = (n) => (n || 0).toLocaleString();
+      const fmt = (n) => fmtNum(n || 0, 0);
       // Headers carry honest method/caveat in the #oo-tip hover (translated title).
       const th = (key, label, title) =>
         `<th data-sort="${key}" role="button" tabindex="0" style="cursor:pointer;text-align:right;padding:4px 8px;white-space:nowrap"
@@ -465,14 +465,14 @@
         if (!_mmTerm) { host.innerHTML = '<div class="muted">Pick a keyword above to see its relatives (two hops).</div>'; return; }
         host.innerHTML = '<div class="muted">Loading…</div>';
         try {
-          const g = await api(`/api/insights/graph?level=keyword&term=${encodeURIComponent(_mmTerm)}&hops=2${_mmWindowQS()}`);
+          const g = await api(`/api/insights/graph?level=keyword&term=${encodeURIComponent(_mmTerm)}&hops=2${_mmWindowQS()}` + tgtLangParam());
           renderGraph(g);
         } catch (e) { host.innerHTML = `<div class="muted">${esc(e.message)}</div>`; }
         return;
       }
       host.innerHTML = '<div class="muted">Loading…</div>';
       try {
-        const g = await api(`/api/insights/graph?level=${level}${_mmWindowQS()}`);
+        const g = await api(`/api/insights/graph?level=${level}${_mmWindowQS()}` + tgtLangParam());
         renderGraph(g);
       } catch (e) { host.innerHTML = `<div class="muted">${esc(e.message)}</div>`; }
     }
@@ -482,7 +482,7 @@
       document.querySelectorAll("#mm-levels button").forEach(b =>
         b.classList.toggle("active", b.dataset.level === "keyword"));
       try {
-        const g = await api(`/api/insights/graph?level=keyword&term=${encodeURIComponent(center)}&hops=2${_mmWindowQS()}`);
+        const g = await api(`/api/insights/graph?level=keyword&term=${encodeURIComponent(center)}&hops=2${_mmWindowQS()}` + tgtLangParam());
         renderGraph(g);
       } catch (e) { $("ins-mindmap").innerHTML = `<div class="muted">${esc(e.message)}</div>`; }
     }
@@ -497,6 +497,77 @@
       if (kinds.has("supergroup")) items.push(`${sw("var(--ok)")} <span>super-group</span>`);
       return items.join(" &nbsp;·&nbsp; ");
     }
+    // ---- label geometry for the mind map and the cloud (re-walk M-13) ---------------- //
+    // A word's box is MEASURED, in the SVG's own units (its font-size is in viewBox units,
+    // so a canvas measure at that size in the page's font is the same length), and the
+    // tag line below it counts too. A canvas that cannot be made falls back to an honest
+    // over-estimate rather than to nothing, so a word is never assumed to take no room.
+    let _mmMeasureCtx = null;
+    function _mmTextWidth(s, fs, weight) {
+      const str = String(s || "");
+      try {
+        if (!_mmMeasureCtx) _mmMeasureCtx = document.createElement("canvas").getContext("2d");
+        const fam = (getComputedStyle(document.body).fontFamily) || "sans-serif";
+        _mmMeasureCtx.font = `${weight || 500} ${fs}px ${fam}`;
+        const w = _mmMeasureCtx.measureText(str).width;
+        if (w > 0) return w;
+      } catch (_e) { /* no canvas: estimate below */ }
+      return str.length * fs * 0.62;
+    }
+    function _mmLabelBox(n, tagFs) {
+      const w = Math.max(_mmTextWidth(n.lp.shown || n.label, n.fs, n.center ? 700 : 500),
+        n.lp.tag ? _mmTextWidth(n.lp.tag, tagFs, 400) : 0) + 6;
+      return {w: w, top: n.fs * 0.62, bottom: n.lp.tag ? n.fs * 0.95 + tagFs * 0.66 : n.fs * 0.62};
+    }
+    // Whether a box centred at (x, y) meets any of `placed` (2 units of air around each).
+    function _mmHits(placed, x, y, b) {
+      for (const o of placed) {
+        if (Math.abs(o.x - x) * 2 < o.box.w + b.w + 4
+            && y - b.top < o.y + o.box.bottom + 2 && y + b.bottom > o.y - o.box.top - 2) return true;
+      }
+      return false;
+    }
+    // Each node in `order` after the first keeps its angle and moves OUTWARD along its ray
+    // from the centre until its label clears every label placed before it.
+    function _mmDeclutter(order, cx, cy) {
+      const placed = [];
+      for (const n of order) {
+        if (!n || n.x == null) continue;
+        if (placed.length && !n.center) {
+          let dx = n.x - cx, dy = n.y - cy;
+          const d = Math.hypot(dx, dy);
+          if (d < 1) { dx = 0; dy = -1; } else { dx /= d; dy /= d; }
+          const step = Math.max(4, (n.box.top + n.box.bottom) * 0.5);
+          for (let k = 0; k < 80 && _mmHits(placed, n.x, n.y, n.box); k++) { n.x += dx * step; n.y += dy * step; }
+        }
+        placed.push(n);
+      }
+    }
+    // The cloud: heaviest first, each word walking out along a spiral from the centre
+    // until its box meets no word already placed.
+    function _mmCloudPlace(sorted, cx, cy) {
+      const placed = [];
+      for (const n of sorted) {
+        let x = cx, y = cy, th = 0;
+        for (let s = 0; s < 8000; s++) {
+          const r = 1.6 * th;   // ~10 units further out per turn, ~6 units per step
+          x = cx + r * Math.cos(th) * 1.6; y = cy + r * Math.sin(th);
+          if (!_mmHits(placed, x, y, n.box)) break;
+          th += Math.min(0.5, 6 / Math.max(r, 6));
+        }
+        n.x = x; n.y = y; placed.push(n);
+      }
+    }
+    // The first view: the W x H frame, widened to hold every label with a margin.
+    function _mmFitBox(nodes, W, H) {
+      let x0 = 0, y0 = 0, x1 = W, y1 = H;
+      for (const n of nodes) {
+        if (n.x == null || !n.box) continue;
+        x0 = Math.min(x0, n.x - n.box.w / 2 - 8); x1 = Math.max(x1, n.x + n.box.w / 2 + 8);
+        y0 = Math.min(y0, n.y - n.box.top - 8); y1 = Math.max(y1, n.y + n.box.bottom + 8);
+      }
+      return {x: +x0.toFixed(1), y: +y0.toFixed(1), w: +(x1 - x0).toFixed(1), h: +(y1 - y0).toFixed(1)};
+    }
     function renderGraph(g) {
       _mmGraph = g;
       if (_mmRAF) { cancelAnimationFrame(_mmRAF); _mmRAF = null; }
@@ -508,18 +579,32 @@
       const maxSize = Math.max(...g.nodes.map(n => n.size || 1), 1);
       const fsOf = (n) => ((n.center ? 17 : 9 + 9 * Math.sqrt((n.size || 1) / maxSize)) * scale);
 
-      // ---- layout: mind-map rules (center → arms → ALWAYS outward) -------- //
-      const nodes = g.nodes.slice(0, 60).map(n => ({...n, fs: fsOf(n)}));
+      // ---- labels: THE SAME LABEL EVERY KEYWORD LIST DRAWS (re-walk M-3/M-5) ---- //
+      // Through `kwLabelParts`, as the analysis mind map already does: the translation
+      // where a verified ring allows, the word itself otherwise, and the small tag saying
+      // which as a second line (an SVG <text> cannot hold the HTML span). The graph is
+      // fetched with the reader's language, so the nodes carry the fields the tag needs.
+      const tagFsOf = (n) => Math.max(8, n.fs * 0.5);
+      const nodes = g.nodes.slice(0, 60).map(n => {
+        const lp = (typeof kwLabelParts === "function")
+          ? kwLabelParts(Object.assign({term: n.label || n.id}, n)) : {shown: n.label || n.id, tag: "", hover: ""};
+        const m = {...n, fs: fsOf(n), lp: lp};
+        m.box = _mmLabelBox(m, tagFsOf(m));
+        return m;
+      });
       const byId = {}; nodes.forEach(n => byId[n.id] = n);
       let treeEdges = [];
+      // Placed in this order, each pushed OUTWARD along its own ray until its label box
+      // clears the ones already placed (M-13): the arms and leaves keep their angles, so
+      // the mind-map rules hold (centre -> arms -> always outward, no cross-tangle), and
+      // a crowded arm grows another ring instead of stacking words on one another.
+      let declutter = [];
       if (_mmViewMode === "cloud") {
-        // Word cloud: weight-ordered spiral from the centre, no edges.
-        const sorted = [...nodes].sort((a, b) => (b.size || 1) - (a.size || 1));
-        sorted.forEach((n, i) => {
-          const ang = i * 2.39996, r = 16 * Math.sqrt(i);   // golden-angle spiral
-          n.x = W / 2 + r * Math.cos(ang) * 1.6;
-          n.y = H / 2 + r * Math.sin(ang);
-        });
+        // Word cloud: weight-ordered, no edges. Each word walks out along a spiral from
+        // the centre until its MEASURED box touches no word already placed -- the
+        // golden-angle spiral this replaced placed by index alone and piled 9-18 px
+        // words 60-130 px wide on top of one another (M-13).
+        _mmCloudPlace([...nodes].sort((a, b) => (b.size || 1) - (a.size || 1)), W / 2, H / 2);
       } else if (g.level === "keyword") {
         const center = nodes.find(n => n.center) || nodes[0];
         center.x = W / 2; center.y = H / 2;
@@ -543,6 +628,7 @@
           (kids[p.id] = kids[p.id] || []).push(n);
           n._p = p;
         });
+        const leafOrder = [];
         for (const pid in kids) {
           const p = byId[pid], ks = kids[pid];
           const span = (2 * Math.PI / Math.max(arms.length, 1)) * 0.8;
@@ -550,8 +636,10 @@
             const a = p.ang + span * ((j + 1) / (ks.length + 1) - 0.5);
             n.x = W / 2 + R2 * Math.cos(a); n.y = H / 2 + R2 * Math.sin(a);
             treeEdges.push({a: p, b: n, w: 1});
+            leafOrder.push(n);
           });
         }
+        declutter = [center, ...arms, ...leafOrder];
       } else {
         // family / super-group: ONE spanning tree grown outward from the
         // heaviest node, so a node's position and the edge that connects it
@@ -605,6 +693,7 @@
           treeEdges.push({a: root, b: n, w: n._parentW || 1});
         });
         let frontier = arms;
+        declutter = [root, ...arms];
         while (frontier.length) {
           const next = [];
           frontier.forEach(p => {
@@ -620,14 +709,29 @@
               next.push(n);
             });
           });
+          declutter = declutter.concat(next);
           frontier = next;
         }
       }
+      _mmDeclutter(declutter, W / 2, H / 2);
 
+      // The words are DATA: `data-i18n-dyn` keeps the i18n walker from translating a
+      // keyword that happens to equal a chrome key ("errors" drawn as "erreurs", M-15), and
+      // this hint is drawn in the reader's language here, so the walker skips it too.
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const view1 = _mmViewMode === "map"
+        ? t("Branches grow outward from the centre; each leaf hangs off its strongest relative.")
+        : t("Cloud view: weight-ordered, no links.");
+      const dv = g.disclosure_vars || {};
+      const cav = g.caveat_i18n
+        ? t(g.caveat_i18n) + (g.disclosure_i18n ? " " + _kwTf(g.disclosure_i18n,
+            {nodes: fmtNum(dv.nodes), branches: fmtNum(dv.branches), articles: fmtNum(dv.articles)}) : "")
+        : t(g.caveat || "");
       host.innerHTML =
         `<div class="hint" id="mm-legend">${mmLegend(g)}</div>` +
         `<svg id="mm-svg" viewBox="0 0 ${W} ${H}" width="100%" style="background:var(--panel2);border:1px solid var(--border);border-radius:8px;touch-action:none;cursor:grab"><g id="mm-view"></g></svg>` +
-        `<div class="hint">Drag to pan · scroll to zoom (far out goes up a level) · click a word to dive in. <b>Font size = shared-article volume.</b> ${_mmViewMode === "map" ? "Branches grow outward from the centre; each leaf hangs off its strongest relative." : "Cloud view: weight-ordered, no links."} ${esc(g.method || "")} ${esc(g.caveat || "")}</div>`;
+        `<div class="hint" data-i18n-dyn>${esc(t("Drag to pan · scroll to zoom (far out goes up a level) · click a word to dive in."))} `
+        + `<b>${esc(t("Font size = shared-article volume."))}</b> ${esc(view1)} ${esc(t(g.method || ""))} ${esc(cav)}</div>`;
       const svg = $("mm-svg"), view = $("mm-view");
       const maxW = Math.max(...treeEdges.map(e => e.w || 1), 1);
       view.innerHTML =
@@ -639,13 +743,22 @@
             : n.kind === "family" ? "var(--warn)"
             : n.hop === 2 ? "var(--muted)" : "var(--accent)";
           const fam = (n.members || []).length > 1;
-          const title = fam ? `<title>${esc((n.members || []).join(", "))}</title>` : "";
-          return `<g class="mm-node" data-i="${i}" style="cursor:pointer" transform="translate(${n.x.toFixed(1)},${n.y.toFixed(1)})">${title}` +
-            `<text text-anchor="middle" dominant-baseline="central" font-size="${n.fs.toFixed(1)}" font-weight="${n.center ? 700 : 500}" fill="${col}">${esc(n.label)}</text></g>`;
+          const tip = [n.lp.tag ? n.lp.tag + " — " + n.lp.hover : "", fam ? (n.members || []).join(", ") : ""]
+            .filter(Boolean).join(" — ");
+          const title = tip ? `<title>${esc(tip)}</title>` : "";
+          const tag = n.lp.tag
+            ? `<text class="mm-tag" text-anchor="middle" dominant-baseline="central" y="${(n.fs * 0.95).toFixed(1)}"`
+              + ` font-size="${tagFsOf(n).toFixed(1)}" fill="var(--muted)">${esc(n.lp.tag)}</text>`
+            : "";
+          return `<g class="mm-node" data-i="${i}" data-i18n-dyn style="cursor:pointer" transform="translate(${n.x.toFixed(1)},${n.y.toFixed(1)})">${title}` +
+            `<text text-anchor="middle" dominant-baseline="central" font-size="${n.fs.toFixed(1)}" font-weight="${n.center ? 700 : 500}" fill="${col}">${esc(n.lp.shown || n.label)}</text>${tag}</g>`;
         }).join("");
 
       // -- pan / zoom (level-up on far zoom-out) + click-to-dive ------------- //
-      let vb = {x: 0, y: 0, w: W, h: H};
+      // The first view frames every label: a crowded map grows past W x H rather than
+      // stacking words (M-13), so the initial box widens to hold what was pushed out.
+      let vb = _mmFitBox(nodes, W, H);
+      svg.setAttribute("viewBox", `${vb.x} ${vb.y} ${vb.w} ${vb.h}`);
       const applyVB = () => svg.setAttribute("viewBox", `${vb.x} ${vb.y} ${vb.w} ${vb.h}`);
       const ptVB = (e) => { const m2 = svg.getScreenCTM().inverse(); const p = svg.createSVGPoint();
         p.x = e.clientX; p.y = e.clientY; return p.matrixTransform(m2); };
@@ -681,37 +794,47 @@
       });
     }
 
-    async function exploreTerm() {
+    // `opts.repaint`: re-run by a language switch (ooKwRepaintOnLangChange), which must
+    // never complain about an empty box the reader cleared after exploring.
+    async function exploreTerm(opts) {
       const term = $("ins-term").value.trim();
-      if (!term) { toast("Enter a keyword or entity.", "err"); return; }
+      if (!term) { if (!(opts && opts.repaint)) toast("Enter a keyword or entity.", "err"); return; }
       $("ins-trend").innerHTML = '<div class="muted">Loading…</div>';
       $("ins-mindmap").innerHTML = ""; $("ins-context").innerHTML = ""; $("ins-framing").innerHTML = "";
       try {
         const [tr, assoc, ctx] = await Promise.all([
-          api("/api/insights/trend?bucket=week&term=" + encodeURIComponent(term)),
+          api("/api/insights/trend?bucket=week&term=" + encodeURIComponent(term) + tgtLangParam()),
           api("/api/insights/associations?term=" + encodeURIComponent(term)),
           api("/api/insights/context?term=" + encodeURIComponent(term)),
         ]);
         if (!tr.resolved) { $("ins-trend").innerHTML = `<div class="note err">No indexed mentions of “${esc(term)}”. Index the corpus, or try another term.</div>`; return; }
         const r = tr.resolved;
         const t8 = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+        const tf8 = (s2, v) => (window.OOI18N && OOI18N.tf) ? OOI18N.tf(s2, v)
+          : String(s2).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? String(v[k]) : m);
+        // The resolved keyword through THE label helper (M7: the translation is the
+        // visible term, the tier tag follows), and the chrome around it keyed (M14).
         $("ins-trend").innerHTML =
-          `<div style="margin-bottom:6px">Resolved to <strong>${esc(r.term)}</strong> ` +
-          `<span class="pill">${esc(r.kind)}</span> · ${tr.total} mentions in ${tr.articles} articles ` +
-          `<button class="tiny secondary" onclick="openCorpus(${esc(JSON.stringify(r.term))})" title="Open this keyword as a corpus window: trend, member articles, and shared outbound links (the sources' sources).">⊞ Corpus</button></div>` +
+          `<div style="margin-bottom:6px">${esc(t8("Resolved to"))} <strong>${kwLabelHtml(r)}</strong> ` +
+          `<span class="pill">${esc(kwKindLabel(r.kind))}</span> · ${esc(tf8("{n} mentions in {articles} articles", {n: fmtNum(tr.total), articles: fmtNum(tr.articles)}))} ` +
+          `<button class="tiny secondary" onclick="openCorpus(${esc(JSON.stringify(r.term))})" title="${esc(t8("Open this keyword as a corpus window: trend, member articles, and shared outbound links (the sources' sources)."))}">⊞ ${esc(t8("Corpus"))}</button></div>` +
           `<div style="margin-bottom:8px"><div class="hint">${esc(t8("Time range"))}</div>` +
           `<div id="ins-trend-scope"></div></div>` +
           `<div id="ins-trend-oo"></div>`;
         // FULL bucketed series fetched once; the ooTimeScope window FILTERS it
         // client-side (invariant #16 — never thinned; ooChart unchanged).
         const allPts = tr.points || [];
-        const insDraw = (pts) => ooChart($("ins-trend-oo"), [{label: r.term, unit: "mentions",
+        // The unit is chrome, so it is keyed (M-10: the legend read "n=20 · mentions" in zh).
+        const insDraw = (pts) => ooChart($("ins-trend-oo"), [{label: r.term, unit: t8("mentions"),
           points: pts.map(pt => ({t: pt.date, v: pt.count}))}],
           {height: 180, zeroBase: true, lineMin: 8, bucket: "week",
            onSelectRange: _brushToCorpus(r.term, "week")});
         const insDef = _buildTrendScope($("ins-trend-scope"), allPts, insDraw);
         insDraw(_windowTrendPoints(allPts, insDef.from, insDef.to));
-        renderMindmap(r.term, assoc.pairs);
+        // A language switch re-runs this; it must redraw the level the reader was on, not
+        // drop them back to the keyword view (the map is re-fetched for the new language).
+        if (opts && opts.repaint && _mmTerm === r.term && _mmLevel !== "keyword") mmLevel(_mmLevel);
+        else renderMindmap(r.term, assoc.pairs);
         loadFraming(r.term);
         $("ins-context").innerHTML = (ctx.mentions || []).length
           ? ctx.mentions.map(m => `<div class="note" style="max-width:none;margin-bottom:6px">
@@ -865,28 +988,123 @@
     // concept would hide it exactly where the ring table is thinnest.
     function kwLangBreakdownText(row) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      const lb = row && row.language_breakdown;
-      if (!lb || typeof lb !== "object") return "";
-      const cells = Object.keys(lb).map((k) => [k, +lb[k] || 0]).filter((x) => x[1] > 0)
-        .sort((a, b) => b[1] - a[1] || String(a[0]).localeCompare(String(b[0])))
-        .map((x) => kwLangName(x[0]) + " " + x[1]);
-      if (!cells.length) return "";
+      const cells = _kwLangCells(row && row.language_breakdown);
+      if (!cells) return "";
       // The figures OVERLAP -- one article carrying two forms is counted under both --
       // so the sentence never presents them as adding up to anything.
-      return t("Across languages:") + " " + cells.join(" · ");
+      return t("Across languages:") + " " + cells + _kwScopeTail(row);
+    }
+
+    // {language: n} as "Spanish 27 · English 36", largest first. A mention written before
+    // its language was recorded (Q414's column has no backfill) arrives as "?" and is NAMED
+    // as such, never printed as a bare question mark or folded into a guessed language.
+    function _kwLangCells(counts) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      if (!counts || typeof counts !== "object") return "";
+      return Object.keys(counts).map((k) => [k, +counts[k] || 0]).filter((x) => x[1] > 0)
+        .sort((a, b) => b[1] - a[1] || String(a[0]).localeCompare(String(b[0])))
+        .map((x) => (x[0] === "?" ? t("Language not recorded") : kwLangName(x[0])) + " " + x[1])
+        .join(" · ");
+    }
+
+    // WHICH COUNT THIS IS (M12). A trend row's number is its window's and a Library row's is
+    // the whole corpus's; the server counts the per-language figures over the row's OWN
+    // scope and says which, so the hover never sets a 7-day figure beside a lifetime one
+    // without saying so. A country-narrowed read names no scope rather than claim the corpus.
+    function _kwScopeTail(row) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const sc = row && row.language_counts_scope;
+      const days = row && +row.language_counts_days;
+      let phrase = "";
+      if (sc === "window" && days === 1) phrase = t("in the last day");
+      else if (sc === "window" && days > 1) phrase = _kwTf("in the last {days} days", {days: days});
+      else if (sc === "corpus") phrase = t("in your whole corpus");
+      return phrase ? " (" + phrase + ")" : "";
+    }
+
+    // THE LANGUAGES A KEYWORD'S OWN MENTIONS ARE IN (M11). A key is language-agnostic (Q416
+    // keys a term by its lemma alone), so one keyword can hold English "software" and
+    // Spanish "software" at once, and `translation_source_lang` -- the MAJORITY -- then
+    // tagged the English word "in Spanish" in the English UI. When the server measured the
+    // row's mentions (`mention_languages`, largest first) the label names them all; without
+    // that measurement it falls back to the one language the ladder named, as before.
+    function kwMentionLangs(row) {
+      const ml = row && row.mention_languages;
+      if (ml && typeof ml === "object") {
+        const ks = Object.keys(ml).filter((k) => k && k !== "?" && (+ml[k] || 0) > 0)
+          .sort((a, b) => (+ml[b] || 0) - (+ml[a] || 0) || a.localeCompare(b));
+        if (ks.length) return ks;
+      }
+      const src = row && row.translation_source_lang;
+      return src ? [src] : [];
+    }
+
+    // "Spanish and English", in the UI language's own list grammar (CLDR, through the
+    // browser, the same source as the names themselves); a plain comma list if the platform
+    // has no ListFormat.
+    function kwLangListName(codes) {
+      const names = (codes || []).map(kwLangName).filter(Boolean);
+      if (names.length < 2) return names[0] || "";
+      try { return new Intl.ListFormat(uiLangCode(), {type: "conjunction"}).format(names); }
+      catch (_e) { return names.join(", "); }
+    }
+
+    // THE LABEL'S RULES, ONCE (M7, M11). `kwLabelHtml` draws them as HTML and the analysis
+    // mind map draws them as SVG text, so both read `kwLabelParts` rather than each
+    // re-deriving when a word is foreign -- the second-renderer defect this helper exists
+    // to prevent. The state below is what the tag AND the hover are both decided from.
+    function _kwLabelState(row) {
+      const original = (row && (row.term || row.normalized)) || "";
+      let tier = kwTier(row);
+      const langs = kwMentionLangs(row);
+      const ui = String(uiLangCode()).split("-")[0].toLowerCase();
+      const inUi = !!(row && row.mention_languages)
+        && langs.some((c) => String(c).split("-")[0].toLowerCase() === ui);
+      // A word the corpus ALSO uses in the reader's own language is not foreign to them:
+      // it is shown as written, and tagged with every language it is used in -- or with
+      // nothing, when the reader's language is the only one.
+      if (inUi && (tier === "verified" || tier === "tentative")) tier = "untranslated";
+      const shown = (tier === "verified" || tier === "tentative") && row && row.translation
+        ? row.translation : original;
+      return {original: original, tier: tier, inUi: inUi, onlyUi: inUi && langs.length === 1,
+              names: kwLangListName(langs), shown: shown};
+    }
+
+    // Returns {shown, tier, tag, tagClass, hover}; `tag` is "" when the label draws none.
+    function kwLabelParts(row) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      if (!row) return {shown: "", tier: "untranslated", tag: "", tagClass: "", hover: ""};
+      const st = _kwLabelState(row);
+      let tag = "", tagClass = "";
+      if (st.tier === "verified" && st.names) {
+        tag = _kwTf("translated from {language}", {language: st.names});
+      } else if (st.tier === "tentative" && st.names) {
+        tag = "≈ " + _kwTf("translated from {language}", {language: st.names});
+        tagClass = "kw-tentative";
+      } else if (st.tier === "untranslated" && !st.inUi && row.translation_declined === "several-senses") {
+        tag = t("Several senses");
+        tagClass = "kw-senses";
+      } else if (st.tier === "untranslated" && st.names && !st.onlyUi) {
+        // R7: a keyword we cannot translate is still TAGGED with what it is, never
+        // left as an unexplained foreign word.
+        tag = _kwTf("in {language}", {language: st.names});
+        tagClass = "kw-untranslated";
+      }
+      return {shown: st.shown, tier: st.tier, tag: tag, tagClass: tagClass, hover: kwHoverText(row)};
     }
 
     function kwHoverText(row) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      const tier = kwTier(row);
+      const st = _kwLabelState(row);
       const parts = [];
-      if (tier === "verified") parts.push(t("Verified translation (cross-language concept)."));
-      else if (tier === "tentative") parts.push(t("AI-generated tentative translation — unreliable, not verified."));
-      else if (tier === "untranslated") parts.push(t("Not translated — shown in its own language."));
-      const term = row && (row.term || row.normalized);
-      if (row && row.translation && term) parts.push(t("Original") + ": " + term);
-      const src = row && row.translation_source_lang;
-      if (src) parts.push(t("Language") + ": " + kwLangName(src));
+      if (st.tier === "verified") parts.push(t("Verified translation (cross-language concept)."));
+      else if (st.tier === "tentative") parts.push(t("AI-generated tentative translation — unreliable, not verified."));
+      else if (st.tier === "untranslated") parts.push(t("Not translated — shown in its own language."));
+      if (st.shown !== st.original && st.original) parts.push(t("Original") + ": " + st.original);
+      // The split, with its counts, when the server measured one (M11); else the one name.
+      const split = _kwLangCells(row && row.mention_languages);
+      if (split) parts.push(t("Mentions by language:") + " " + split + _kwScopeTail(row));
+      else if (st.names) parts.push(t("Language") + ": " + st.names);
       const across = kwLangBreakdownText(row);
       if (across) parts.push(across);
       if (row && row.translation_model) parts.push(t("Model") + ": " + row.translation_model);
@@ -895,64 +1113,123 @@
     }
 
     // The QID opens the LOCAL preview first (invariant #6, Q418's "a LOCAL preview
-    // first"): never a bare outbound shortcut, even to Wikidata.
+    // first"): never a bare outbound shortcut, even to Wikidata. It sits inside keyword
+    // chips and rows that are clickable themselves, so the click STOPS here: without it
+    // the preview opened AND the enclosing chip's own action ran behind it (M9).
     function kwQidHtml(row) {
       const qid = row && row.translation_qid;
       if (!qid) return "";
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const url = "https://www.wikidata.org/wiki/" + encodeURIComponent(qid);
       return ` <a href="#" class="kw-qid" data-i18n-dyn title="${esc(t("Open a local preview of this source first"))}"`
-        + ` onclick='openLinkPreview(${esc(JSON.stringify(url))});return false'>${esc(qid)}</a>`;
+        + ` onclick='event.stopPropagation();openLinkPreview(${esc(JSON.stringify(url))});return false'>${esc(qid)}</a>`;
+    }
+
+    // A keyword's KIND as chrome (re-walk M-6): the Resolved line's pill printed the stored
+    // code ("term") in every locale. The known kinds are keyed; a kind this list does not
+    // know is data and is shown as stored rather than guessed at.
+    function kwKindLabel(kind) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const L = {term: "Term", person: "Person", org: "Organisation", location: "Place", entity: "Entity"};
+      return L[kind] ? t(L[kind]) : String(kind || "");
+    }
+
+    // Whether the label draws a tier tag at all (a term in the reader's own language, or
+    // one whose language nobody measured, draws none).
+    function kwHasTag(row) {
+      return !!(row && kwLabelParts(row).tag);
+    }
+
+    // THE TAG'S HOVER FOR A READER WHO CANNOT POINT AT THE TAG (M2). A keyword row marked
+    // `data-kwstat` gets its bubble rewritten with live stats, and the tag inside it is a
+    // span no keyboard reaches, so the tier hover (Q418) is carried on the ROW through
+    // `data-oo-tip-extra`, the channel `ooKwStatInit` appends rather than overwrites.
+    // Without a tag it carries only the per-language breakdown, as it did before.
+    function kwTipExtraAttr(row) {
+      const extra = kwHasTag(row) ? kwHoverText(row) : kwLangBreakdownText(row);
+      return extra ? ` data-oo-tip-extra="${esc(extra)}"` : "";
     }
 
     // THE LABEL. Returns the whole visible unit: the term the reader should see, plus the
     // tier tag. Callers render `${kwLabelHtml(row)}` instead of `${esc(row.term)}` + a
     // translation suffix, which is what makes the translation the VISIBLE term (Q401).
-    function kwLabelHtml(row) {
+    // `opts.inButton`: the caller draws the label INSIDE a <button>, where the sense
+    // picker's own buttons cannot go (the parser closes the outer button at the first
+    // nested one, M4), so it is left out here and the caller draws
+    // `kwSensePickerHtml(row)` after its closing tag.
+    // `opts.inLink`: the caller draws the label INSIDE an <a>, where the QID's own anchor
+    // cannot go -- the parser closes the outer link at the nested one, so the rest of the
+    // row falls out of it -- so the QID is left out here and the caller draws
+    // `kwQidHtml(row)` after its closing tag.
+    function kwLabelHtml(row, opts) {
       if (!row) return "";
-      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      const tier = kwTier(row);
-      const original = row.term || row.normalized || "";
-      const shown = (tier === "verified" || tier === "tentative") && row.translation
-        ? row.translation : original;
-      const hover = kwHoverText(row);
+      const p = kwLabelParts(row);
       // `data-i18n-dyn` on the TERM span: the walker must never translate a keyword.
-      let html = `<span class="kw-term" data-i18n-dyn>${esc(shown)}</span>`;
-      const srcName = kwLangName(row.translation_source_lang);
-      if (tier === "verified" && srcName) {
-        html += ` <span class="kw-tag" data-i18n-dyn title="${esc(hover)}">`
-          + esc(_kwTf("translated from {language}", {language: srcName})) + `</span>`;
-      } else if (tier === "tentative" && srcName) {
-        html += ` <span class="kw-tag kw-tentative" data-i18n-dyn title="${esc(hover)}">≈ `
-          + esc(_kwTf("translated from {language}", {language: srcName})) + `</span>`;
-      } else if (tier === "untranslated") {
-        if (row.translation_declined === "several-senses") {
-          html += ` <span class="kw-tag kw-senses" data-i18n-dyn title="${esc(hover)}">`
-            + esc(t("Several senses")) + `</span>` + kwSensePickerHtml(row);
-        } else if (srcName) {
-          // R7: a keyword we cannot translate is still TAGGED with what it is, never
-          // left as an unexplained foreign word.
-          html += ` <span class="kw-tag kw-untranslated" data-i18n-dyn title="${esc(hover)}">`
-            + esc(_kwTf("in {language}", {language: srcName})) + `</span>`;
-        }
+      let html = `<span class="kw-term" data-i18n-dyn>${esc(p.shown)}</span>`;
+      if (p.tag) {
+        html += ` <span class="kw-tag${p.tagClass ? " " + p.tagClass : ""}" data-i18n-dyn title="${esc(p.hover)}">`
+          + esc(p.tag) + `</span>`;
+        if (p.tagClass === "kw-senses" && !(opts && opts.inButton)) html += kwSensePickerHtml(row);
       }
-      return html + kwQidHtml(row);
+      return html + ((opts && opts.inLink) ? "" : kwQidHtml(row));
     }
 
     // Q412 = a's picker. A refusal that names a choice and offers no way to make it is a
     // dead end one level past the unread-flag trap, so the senses ride the row and each
     // one is offered by what it READS AS, never by a bare ring id.
-    function kwSensePickerHtml(row) {
+    // TWO SENSES CAN READ THE SAME in the reader's language ("election" and "public
+    // election" both translate to "élection"), which left two identical buttons told apart
+    // only by an English hover (M4). A label shared by several senses carries its concept
+    // too; the concept is the ring's identifier, data like the term, so it is not keyed.
+    // `pinned` ({normalized term: ring id}, the analysis window's lens) marks the sense the
+    // reader already chose, so a re-render after the pick still shows it pressed.
+    function kwSensePickerHtml(row, pinned) {
       const senses = (row && row.senses) || [];
       if (!senses.length) return "";
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const base = (x) => x.translation || x.concept || x.ring_id;
+      const seen = {};
+      senses.forEach((x) => { const k = String(base(x)).toLowerCase(); seen[k] = (seen[k] || 0) + 1; });
       const opts = senses.map((x) => {
-        const label = x.translation || x.concept || x.ring_id;
-        const pin = (row.normalized || row.term || "") + ":" + x.ring_id;
-        return `<button class="kw-sense" type="button" data-i18n-dyn data-kwpin="${esc(pin)}"`
-          + ` title="${esc(t("Concept") + ": " + (x.concept || x.ring_id))}">${esc(label)}</button>`;
+        const shared = seen[String(base(x)).toLowerCase()] > 1;
+        const concept = x.concept || x.ring_id;
+        const label = shared && concept && concept !== base(x) ? `${base(x)} (${concept})` : base(x);
+        const norm = row.normalized || row.term || "";
+        const pin = norm + ":" + x.ring_id;
+        const on = !!(pinned && pinned[norm] === x.ring_id);
+        return `<button class="kw-sense" type="button" data-i18n-dyn data-kwpin="${esc(pin)}" aria-pressed="${on}"`
+          + ` title="${esc(t("Concept") + ": " + concept)}">${esc(label)}</button>`;
       });
       return ` <span class="kw-senses" data-i18n-dyn>` + opts.join("") + `</span>`;
+    }
+
+    // The picker a `{inButton: true}` caller draws after its own closing tag: exactly the
+    // picker `kwLabelHtml` would have drawn inline, and nothing for any other row.
+    function kwSensesAfterHtml(row, pinned) {
+      return (row && kwTier(row) === "untranslated" && row.translation_declined === "several-senses")
+        ? kwSensePickerHtml(row, pinned) : "";
+    }
+
+    // THE PICK (Q412 = a, M4). The picker was drawn and read by nobody: a click changed
+    // nothing. Picking a sense opens the keyword's analysis with that sense PINNED -- the
+    // `term:ring_id` grammar `parse_sense_pins` reads, carried as the tab's lens seed like
+    // the analysis window's own sense buttons (`_anPickSense`) -- and the choice is marked
+    // pressed. Reached from ONE delegated capture-phase listener (app-boot.js), so a picker
+    // drawn inside a clickable row never also fires the row.
+    function kwPickSense(btn) {
+      const raw = btn && btn.getAttribute && btn.getAttribute("data-kwpin");
+      if (!raw) return false;
+      const i = raw.lastIndexOf(":");
+      if (i <= 0) return false;
+      const term = raw.slice(0, i).trim().toLowerCase(), ring = raw.slice(i + 1).trim();
+      if (!term || !ring) return false;
+      const group = btn.closest ? btn.closest(".kw-senses") : null;
+      if (group) group.querySelectorAll("[data-kwpin]").forEach((b) => b.setAttribute("aria-pressed", "false"));
+      btn.setAttribute("aria-pressed", "true");
+      if (typeof openAnalysisFor === "function") {
+        openAnalysisFor(term, {lens: {expand: true, cap: true, senses: {[term]: ring}}});
+      }
+      return true;
     }
 
     // The frozen-locale half of the `data-i18n-dyn` opt-out. Called from app-boot.js's
@@ -971,25 +1248,63 @@
       // Each is guarded on the host ALREADY HAVING ROWS: a language switch must never
       // FETCH for a panel the reader has not opened (the convention app-boot.js's own
       // listener follows for `src-table` and the coverage table).
+      //
+      // The third element is the ARGUMENT the loader needs to actually re-run (M8): the
+      // landscape loader returns early once loaded unless forced, so `loadLandscape()`
+      // alone left the landscape in the previous locale's tags. The fourth names a loader
+      // that already re-runs this one, so a switch that started it skips this entry.
       const callers = [
         ["home-trends", "loadHomeTrends"],
-        ["ins-landscape", "loadLandscape"],
+        // Home's Overview "Trending now" row renders from the SAME stash; it refuses a
+        // stash translated for another language, so on a switch it waits for the
+        // re-fetch above rather than painting the old words under the new tags.
+        ["ov-trending", "_renderOverviewTrends"],
+        ["ins-landscape", "loadLandscape", true],
         ["fam-list", "loadFamilies"],
         ["famc-list", "loadFamilyCuration"],
-        ["trd-windows", "loadTrendWindows"],
-        // The analysis window re-renders from data it already holds, so it needs no
-        // fetch guard -- `anRenderKwChips` returns early when there is nothing loaded.
-        [null, "anRenderKwChips"],
+        // The Trends tab's two bar charts (rising, top) draw the label too.
+        ["trd-top", "loadTrends"],
+        // loadTrends ends by re-running loadTrendWindows, so when it ran above the windows
+        // are already on their way: calling it here as well fetched trending-windows twice
+        // per switch (click-through B17, T2). It still runs on its own when the bar charts
+        // never drew (their fetch failed) and the windows did.
+        ["trd-windows", "loadTrendWindows", undefined, "loadTrends"],
+        // Explore's "Resolved to" header (M7); the flag keeps a cleared box silent.
+        ["ins-trend", "exploreTerm", {repaint: true}],
+        // ...and its mind map / word cloud, whose nodes carry translations into the language
+        // they were fetched for (re-walk M-3/M-5). exploreTerm re-fetches it when it ran; a
+        // map drawn at the family or super-group level with no term is re-fetched here.
+        ["ins-mindmap", "mmReload", undefined, "exploreTerm"],
+        // The analysis window RE-FETCHES its keywords for the new target language rather
+        // than re-rendering the payload it holds, whose translations belong to the old
+        // one (M8); with nothing loaded `anRenderKwChips` returns early.
+        [null, "anRenderKwChips", {refetch: true}],
+        // ...and its mind map, whose nodes carry the same translations (M7).
+        ["an-mindmap", "anMindmapRepaint"],
         // The Home cards translate their own term since Q411 = a, so they are the same
         // frozen-locale shape as the keyword rows and need the same repaint.
         ["briefing-feed", "loadBriefing"],
+        // Insights -> Groups: its member chips draw the label too (M7, K-repaint).
+        ["sg-list", "loadSuperGroups"],
+        // The Observatory's readout names member keywords through the label (M7); it
+        // re-asks for them only when the tab was opened (`_obsRelabel` checks).
+        [null, "_obsRelabel"],
       ];
-      for (const [hostId, fn] of callers) {
+      const ran = new Set();   // the loaders this switch has already started
+      for (const [hostId, fn, arg, coveredBy] of callers) {
         try {
           if (typeof window[fn] !== "function") continue;
-          if (hostId === null) { window[fn](); continue; }
+          if (coveredBy && ran.has(coveredBy)) continue;   // that loader re-runs this one
+          if (hostId === null) { window[fn](arg); ran.add(fn); continue; }
           const host = document.getElementById(hostId);
-          if (host && host.children && host.children.length) window[fn]();
+          // A host still holding its MARKUP placeholder (`data-oo-placeholder`, the static
+          // "Loading…") was never opened: its loader has not run, and the first open draws
+          // it in the new language anyway. Counting that placeholder as rows made every
+          // switch fetch for five Insights and Settings panels the reader had not opened
+          // (click-through B16, V11). A loader's own "Loading…" carries no marker, so a
+          // panel opened mid-fetch still re-runs for the new language.
+          if (host && host.children && host.children.length
+              && !host.querySelector(":scope > [data-oo-placeholder]")) { window[fn](arg); ran.add(fn); }
         } catch (_e) { /* one stale surface must never stop the rest */ }
       }
     }
@@ -1085,40 +1400,49 @@
     // and opens the exact result set as its own corpus via openAnalysisForIds. Counts only, never
     // a score; the bounded flag + method/caveat are surfaced. Browser-unverified per fork-3.
     function anConjunctionHtml() {
+      // Keyed (M14): the hint, the placeholder, the three operators and their hovers were
+      // English literals in every locale.
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       return `<div style="margin-bottom:10px;padding:8px;border:1px solid var(--line);border-radius:6px">`
-        + `<div class="hint" style="margin-top:0"><b>Combine keywords</b> — set algebra over N keywords. `
-        + `The set expression is the corpus label; counts only, never a score.</div>`
+        + `<div class="hint" style="margin-top:0"><b>${esc(t("Combine keywords"))}</b> — `
+        + `${esc(t("set algebra over N keywords. The set expression is the corpus label; counts only, never a score."))}</div>`
         + `<div class="row" style="flex-wrap:wrap;gap:6px;align-items:center;margin-top:6px">`
-        + `<input id="an-conj-terms" placeholder="keyword, keyword, keyword…" style="flex:1;min-width:180px" `
+        + `<input id="an-conj-terms" placeholder="${esc(t("keyword, keyword, keyword…"))}" style="flex:1;min-width:180px" `
         + `onkeydown="if(event.key==='Enter')anCombine('intersection')">`
-        + `<button class="secondary" onclick="anCombine('intersection')" title="articles mentioning ALL terms">∩ All</button>`
-        + `<button class="secondary" onclick="anCombine('union')" title="articles mentioning ANY term">∪ Any</button>`
-        + `<button class="secondary" onclick="anCombine('difference')" title="the first term and none of the rest">∖ First-only</button>`
+        + `<button class="secondary" onclick="anCombine('intersection')" title="${esc(t("articles mentioning ALL terms"))}">${esc(t("∩ All"))}</button>`
+        + `<button class="secondary" onclick="anCombine('union')" title="${esc(t("articles mentioning ANY term"))}">${esc(t("∪ Any"))}</button>`
+        + `<button class="secondary" onclick="anCombine('difference')" title="${esc(t("the first term and none of the rest"))}">${esc(t("∖ First-only"))}</button>`
         + `</div><div id="an-conj-result" style="margin-top:8px"></div></div>`;
     }
     function _anConjSep(op) { return op === "difference" ? " ∖ " : (op === "union" ? " ∪ " : " ∩ "); }
     function anCombineHtml(d) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const tf = (s2, v) => (window.OOI18N && OOI18N.tf) ? OOI18N.tf(s2, v)
+        : String(s2).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? String(v[k]) : m);
       const terms = (d && d.terms) || [];
-      if (!terms.length) return `<div class="muted">${esc((d && d.method) || "No resolvable keyword given.")}</div>`;
+      if (!terms.length) return `<div class="muted">${esc(t((d && d.method) || "No resolvable keyword given."))}</div>`;
       const expr = terms.map((x) => esc(x.normalized || x.term)).join(_anConjSep(d.op));
       const perTerm = terms.map((x) =>
-        `<span class="chip" title="exact corpus-wide article count for this term">${esc(x.term)} <span class="muted">${esc(String(x.n))}</span></span>`).join(" ");
+        `<span class="chip" title="${esc(t("exact corpus-wide article count for this term"))}">${esc(x.term)} <span class="muted">${esc(String(x.n))}</span></span>`).join(" ");
       const bounded = d.result_bounded
-        ? `<div class="card-caveat" title="the set scan reached its cap">Result bounded — a true SUBSET of the answer (it may miss members), never a fabricated one.</div>` : "";
+        ? `<div class="card-caveat" title="${esc(t("the set scan reached its cap"))}">${esc(t("Result bounded — a true SUBSET of the answer (it may miss members), never a fabricated one."))}</div>` : "";
       const open = (d.n_combined > 0)
-        ? `<button class="secondary" onclick="anOpenCombined()">Open ${esc(String(d.n_combined))} article(s) as a corpus →</button>`
-        : `<div class="muted">Empty set — no articles match this combination.</div>`;
-      return `<div class="hint" style="margin-top:0"><b>${esc(expr)}</b> · <b>${esc(String(d.n_combined))}</b> article(s)</div>`
+        ? `<button class="secondary" onclick="anOpenCombined()">${esc(tf("Open {n} article(s) as a corpus →", {n: d.n_combined}))}</button>`
+        : `<div class="muted">${esc(t("Empty set — no articles match this combination."))}</div>`;
+      // The server's caveat is a fixed sentence unless the scan was bounded (that variant
+      // interpolates the cap, and falls back to the server's English).
+      return `<div class="hint" style="margin-top:0"><b>${esc(expr)}</b> · ${esc(tf("{n} article(s)", {n: d.n_combined}))}</div>`
         + `<div style="margin-top:4px;display:flex;flex-wrap:wrap;gap:4px">${perTerm}</div>`
         + `<div style="margin-top:6px">${open}</div>${bounded}`
-        + `<div class="card-caveat" title="${esc(d.method || "")}">${esc(d.caveat || "")}</div>`;
+        + `<div class="card-caveat" title="${esc(d.method || "")}">${esc(t(d.caveat || ""))}</div>`;
     }
     async function anCombine(op) {
       const inp = $("an-conj-terms"), out = $("an-conj-result");
       if (!inp || !out) return;
       const terms = (inp.value || "").split(",").map((s) => s.trim()).filter(Boolean);
-      if (!terms.length) { out.innerHTML = `<div class="muted">Enter at least one keyword to combine.</div>`; return; }
-      out.innerHTML = `<div class="muted">Combining…</div>`;
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      if (!terms.length) { out.innerHTML = `<div class="muted">${esc(t("Enter at least one keyword to combine."))}</div>`; return; }
+      out.innerHTML = `<div class="muted">${esc(t("Combining…"))}</div>`;
       try {
         const d = await api("/api/insights/corpus-algebra?terms=" + encodeURIComponent(terms.join(","))
           + "&op=" + encodeURIComponent(op));
@@ -1132,7 +1456,26 @@
       const expr = ((d.terms) || []).map((x) => x.normalized || x.term).join(_anConjSep(d.op));
       openAnalysisForIds(d.article_ids, expr);   // the exact-set precedent — a fresh corpus tab
     }
-    function anRenderKwChips() {
+    // A LANGUAGE SWITCH RE-FETCHES, it does not only re-render (M8). The translations in
+    // `_anKwData` were resolved for the `target_lang` of the fetch that brought them, so
+    // re-rendering the cached payload repainted the tag in the new language beside the
+    // OLD language's translated word ("logiciel" under an Arabic tag). A failed re-fetch
+    // keeps what is on screen; a newer analysis that replaced the payload meanwhile wins.
+    async function _anRefetchKw() {
+      const d0 = _anKwData;
+      if (!_anKwHost || !d0 || typeof _anLastParams === "undefined" || !_anLastParams) {
+        anRenderKwChips(); return;
+      }
+      try {
+        const d = await api("/api/insights/corpus-keywords?" + _anLastParams.toString() + tgtLangParam());
+        if (_anKwData !== d0) return;
+        d._context = d0._context;
+        _anKwData = d;
+      } catch (_e) { /* keep the payload on screen; the chrome around it still repaints */ }
+      anRenderKwChips();
+    }
+    function anRenderKwChips(opts) {
+      if (opts && opts.refetch) { _anRefetchKw(); return; }
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const d = _anKwData, kw = _anKwHost;
       if (!kw) return;
@@ -1152,10 +1495,14 @@
       const sgChips = (term) => (term.supergroups || []).map((g) =>
         `<button class="chip tiny lvl-super" onclick="openSupergroup(${g.id})"`
         + ` title="${esc(t("Open this group's own trend + members") + " — " + lvlTitle("super"))}">⊕ ${esc(g.name)}</button>`).join(" ");
+      // The sense picker is drawn AFTER the chip, never inside it (M4): its buttons nested
+      // in this <button> were hoisted out by the parser, leaving the count dangling. The
+      // window's own lens says which sense the reader pinned, so the choice stays marked.
+      const pins = (typeof _anSenses === "object" && _anSenses) ? _anSenses : null;
       const chips = d.terms.map((term) =>
-        `<button class="chip" data-kwstat="${esc(term.term)}" onclick="openCorpus(${esc(JSON.stringify(term.term))})"`
-        + ` title="${esc(t("Open this keyword's own analysis window"))}">${kwLabelHtml(term)}`
-        + ` <span class="muted">${term.articles}</span></button>${sgChips(term)}`).join(" ");
+        `<button class="chip" data-kwstat="${esc(term.term)}"${kwTipExtraAttr(term)} onclick="openCorpus(${esc(JSON.stringify(term.term))})"`
+        + ` title="${esc(t("Open this keyword's own analysis window"))}">${kwLabelHtml(term, {inButton: true})}`
+        + ` <span class="muted">${term.articles}</span></button>${kwSensesAfterHtml(term, pins)}${sgChips(term)}`).join(" ");
       // Audit-07 B1 disclosure: our extractor does NOT segment CJK, so those keywords
       // are unreliable; surface it when CJK terms are present.
       const cjk = d.terms.some((tm) => /[぀-ヿ㐀-䶿一-鿿가-힯]/.test(tm.term));
@@ -1165,9 +1512,14 @@
       const btn = d.terms.some(_anKwNeedsTentative)
         ? ` <button class="ghost tiny" onclick="anFillTentative()" title="${esc(t("AI-generated tentative translation — unreliable, not verified."))}">✦ ${esc(t("Translate the rest (AI, tentative)"))}</button>`
         : "";
+      // The caveat carries a count, so the server sends its FRAME + vars (M14); an older
+      // payload without them keeps the server's English sentence.
+      const tfK = (s2, v) => (window.OOI18N && OOI18N.tf) ? OOI18N.tf(s2, v)
+        : String(s2).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? String(v[k]) : m);
+      const cav = d.caveat_i18n ? tfK(d.caveat_i18n, d.caveat_vars || {}) : (d.caveat || "");
       kw.innerHTML = anConjunctionHtml()
         + `<div class="hint"><b>${d.terms.length}</b> ${esc(t("Keywords"))}`
-        + ` · <span class="muted">${esc(d.caveat || "")}</span>${cjkNote}${btn}</div>`
+        + ` · <span class="muted">${esc(cav)}</span>${cjkNote}${btn}</div>`
         + `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px">${chips}</div>`
         + anContextHtml();
     }
@@ -1213,7 +1565,11 @@
         const r = await api("/api/ai/translate-keywords",
           {method: "POST", body: JSON.stringify({terms: items, target_lang: uiLangCode()})});
         if (!r.available) {
-          toast(t("Local AI is offline — start Ollama (and turn airplane mode off) for tentative translations."), "err");
+          // The local AI is LOOPBACK, and airplane mode lets loopback through
+          // (OllamaClient._check_kill_switch refuses only a non-loopback address, which
+          // _require_loopback already refuses at construction). So the one thing to tell
+          // the reader is to start Ollama; sending them online would be wrong advice (M13).
+          toast(t("Local AI is offline — start Ollama for tentative translations."), "err");
           return;
         }
         const tx = r.translations || {};
@@ -1224,12 +1580,13 @@
       } catch (e) { toast(_failMsg("Translate failed: {error}", e), "err"); }
     }
     function termListHtml(terms, extra) {
-      if (!terms.length) return '<div class="muted">Nothing yet — index the corpus.</div>';
-      return terms.map(t => `<div style="padding:4px 0;border-bottom:1px solid var(--border);display:flex;align-items:baseline;gap:6px">
-        <button class="tiny danger" title="exclude this keyword" style="margin:0;padding:0 6px"
+      const T = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      if (!terms.length) return '<div class="muted">' + esc(T("Nothing yet — index the corpus.")) + "</div>";
+      return terms.map(t => `<div class="kw-row" style="padding:4px 0;border-bottom:1px solid var(--border);display:flex;align-items:baseline;gap:6px">
+        <button class="tiny danger" title="${esc(T("exclude this keyword"))}" style="margin:0;padding:0 6px"
           onclick='excludeKeyword(${esc(JSON.stringify(t.term))})'>✕</button>
-        <a href="#" data-kwstat="${esc(t.term)}" title="${esc(t.term)}" onclick='pickTerm(${esc(JSON.stringify(t.term))});return false'>${kwLabelHtml(t)}</a>
-        <span class="pill">${esc(t.kind)}</span> <span class="muted">${extra(t)}</span></div>`).join("");
+        <a href="#" data-kwstat="${esc(t.term)}"${kwTipExtraAttr(t)} title="${esc(t.term)}" onclick='pickTerm(${esc(JSON.stringify(t.term))});return false'>${kwLabelHtml(t, {inLink: true})}</a>${kwQidHtml(t)}
+        <span class="pill">${esc(kwKindLabel(t.kind))}</span> <span class="muted">${extra(t)}</span></div>`).join("");
     }
     // Trends as clickable horizontal BAR graphs (field test 2026-06-19 #25): keywords
     // top→down, bar length ∝ the REAL measured value (mentions count / rising rate —
@@ -1259,9 +1616,11 @@
       // and gone the moment anyone points at the row. `data-oo-tip-extra` is the channel
       // that handler appends rather than replaces, so the row's own fact reaches the
       // bubble beside the stats instead of being destroyed by them.
+      // A TAGGED row carries the tag's own hover there too (M2, M7): the tier, the
+      // original, the language -- which already ends with this same breakdown.
       const kwExtra = (row) => {
-        const across = kwLangBreakdownText(row);
-        return across ? ` data-oo-tip-extra="${esc(across)}"` : "";
+        const extra = kwHasTag(row) ? kwHoverText(row) : kwLangBreakdownText(row);
+        return extra ? ` data-oo-tip-extra="${esc(extra)}"` : "";
       };
       if (!terms.length) return '<div class="muted">' + esc(T("Nothing yet — index the corpus.")) + "</div>";
       const scaled = terms.map(t => valueOf(t)).map(v => (v == null ? null : Number(v)))
@@ -1272,11 +1631,11 @@
         const fill = v == null ? ""
           : `<span class="tb-fill" style="width:${Math.max(2, Math.round((v / max) * 100))}%"></span>`;
         return `<div class="tb-row">
-          <button class="tiny danger tb-x" title="exclude this keyword" onclick='excludeKeyword(${esc(JSON.stringify(t.term))})'>✕</button>
+          <button class="tiny danger tb-x" title="${esc(T("exclude this keyword"))}" onclick='excludeKeyword(${esc(JSON.stringify(t.term))})'>✕</button>
           <a class="tb-label" href="#" data-kwstat="${esc(t.term)}"${kwExtra(t)} title="${esc(t.term + " — " + T("open in analysis (trend + worldwide spread)") + kwAcross(t))}"
-             onclick='openAnalysisFor(${esc(JSON.stringify(t.term))});return false'>${esc(t.term)}</a>
+             onclick='openAnalysisFor(${esc(JSON.stringify(t.term))});return false'>${kwLabelHtml(t, {inLink: true})}</a>
           <span class="tb-bar" aria-hidden="true">${fill}</span>
-          <span class="tb-val muted">${esc(labelOf(t))}</span>
+          <span class="tb-val muted">${esc(labelOf(t))}</span>${kwQidHtml(t)}
         </div>`;
       }).join("") + "</div>";
     }
@@ -1316,6 +1675,26 @@
       const title = titleParts.join(" · ");
       return `<span class="basis-chip${est ? " est" : ""}"${title ? ` title="${esc(title)}"` : ""}>${esc(label)}</span>`;
     }
+    // THE TREND VALUE LINES, KEYED (the 2026-09-27 cross-batch finding K-strings). They
+    // were English template literals beside translated rows -- "↑2.1× (9 recent · 3 prior)"
+    // in fr, ar and zh -- and, being composed, no walker could ever match them. One frame
+    // each; the numbers are data. A count of one takes the singular keys that exist (N14).
+    function trendRateText(row, opts) {
+      const TF = (s2, v) => _kwTf(s2, v);
+      if (!row) return "";
+      if (opts && opts.short) return TF("↑{growth}× · {recent} recent", {growth: row.growth, recent: row.recent});
+      if (opts && opts.window && row.window_days != null && row.baseline_days != null) {
+        return TF("↑{growth}× ({recent} recent · {prior} prior, {window} days vs {baseline} days)",
+                  {growth: row.growth, recent: row.recent, prior: row.prior,
+                   window: row.window_days, baseline: row.baseline_days});
+      }
+      return TF("↑{growth}× ({recent} recent · {prior} prior)",
+                {growth: row.growth, recent: row.recent, prior: row.prior});
+    }
+    function mentionsArticlesText(n, m) {
+      const T = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      return `${n} ${n === 1 ? T("mention") : T("mentions")} · ${m} ${m === 1 ? T("article") : T("articles")}`;
+    }
     async function loadTrends() {
       const wd = $("trd-window").value, bd = $("trd-base").value, kind = $("trd-kind").value, cc = $("trd-country").value.trim();
       const qp = (extra) => `kind=${encodeURIComponent(kind)}${cc?"&country="+encodeURIComponent(cc):""}${tgtLangParam()}${extra||""}`;
@@ -1329,10 +1708,12 @@
         // says so in words, rather than drawing a count as the longest bar on the chart.
         $("trd-rising").innerHTML = termBarsHtml(rising.terms,
           t => (growthIsRatio(t) === true ? t.growth : null),
-          t => growthFallback(t) || `↑${t.growth}× (${t.recent} recent · ${t.prior} prior)`);
+          t => growthFallback(t) || trendRateText(t));
         $("trd-top").innerHTML = termBarsHtml(top.terms, t => t.mentions,
-          t => `${t.mentions} mentions · ${t.articles} articles`);
-        $("trd-method").textContent = rising.method ? "Rising = " + rising.method : "";
+          t => mentionsArticlesText(t.mentions, t.articles));
+        // The method is a FIXED server sentence, so it is keyed like every other one.
+        const T = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+        $("trd-method").textContent = rising.method ? _kwTf("Rising = {method}", {method: T(rising.method)}) : "";
         const bc = $("trd-basis"); if (bc) bc.innerHTML = basisChip(top.counts, top.basis || rising.basis);
       } catch (e) { toast(_failMsg("Trends failed: {error}", e), "err"); }
       loadTrendWindows();
@@ -1375,19 +1756,19 @@
             const axis = w.series_window
               ? {t0: w.series_window.start, t1: w.series_window.end} : {};
             return `<div style="padding:6px 0;border-bottom:1px solid var(--border)">
-              <div style="display:flex;align-items:baseline;gap:6px">
-                <a href="#" onclick='pickTerm(${esc(JSON.stringify(x.term))});return false'>${esc(x.term)}</a>
-                <span class="muted" style="font-size:12px">${esc(growthFallback(x) || `↑${x.growth}× · ${x.recent} recent`)}</span>
+              <div class="kw-row" style="display:flex;align-items:baseline;gap:6px">
+                <a href="#" onclick='pickTerm(${esc(JSON.stringify(x.term))});return false'>${kwLabelHtml(x, {inLink: true})}</a>${kwQidHtml(x)}
+                <span class="muted" style="font-size:12px">${esc(growthFallback(x) || trendRateText(x, {short: true}))}</span>
                 <button class="ghost tiny" style="margin-inline-start:auto" onclick="enlargeTrend(${wi},${ti})" title="${esc(t("Enlarge the chart"))}" aria-label="${esc(t("Enlarge the chart"))}">⛶</button>
               </div>${dashChartSvg(pts, "", axis)}</div>`;
           }).join("");
           const rest = terms.filter(x => !Array.isArray(x.series));
           const restList = rest.length
-            ? termListHtml(rest, t2 => growthFallback(t2) || `↑${t2.growth}× · ${t2.recent} recent`)
+            ? termListHtml(rest, t2 => growthFallback(t2) || trendRateText(t2, {short: true}))
             : "";
           return `<div style="flex:1;min-width:240px">${head}${spark}${restList}</div>`;
         }).join("") || `<div class="muted">${esc(t("No rising keywords in this window yet."))}</div>`;
-        const note = $("trd-windows-note"); if (note) note.textContent = d.caveat || "";
+        const note = $("trd-windows-note"); if (note) note.textContent = d.caveat ? t(d.caveat) : "";
         // If a non-default lens (slope / small multiples) is active, re-render it with
         // the fresh payload (visibility was already set by setTrendLens).
         if (_trdLens === "slope") renderTrendSlope();
@@ -1408,7 +1789,7 @@
       const LABELS = {"24h": t("Past 24h"), "7d": t("Past week"), "30d": t("Past month")};
       const title = x.term + " — " + (LABELS[w.label] || w.label);
       const points = x.series.map(p => ({t: p.date, v: p.count}));
-      chartEnlarge(title, [{label: x.term, unit: t("mentions"), points}], d.caveat || "");
+      chartEnlarge(title, [{label: x.term, unit: t("mentions"), points}], d.caveat ? t(d.caveat) : "");
     }
 
     // -- ooViz honest lenses over the trending-windows payload (batch F item 2) ---- //

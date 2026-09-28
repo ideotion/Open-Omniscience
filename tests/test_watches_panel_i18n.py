@@ -60,7 +60,9 @@ _KEYS = [
     "Watch: {name}",
 ]
 
-_FUNCS = ("loadWatches", "createWatch", "toggleWatch", "editWatch",
+# `_renderWatches` draws the list `loadWatches` fetched, so a language switch can redraw
+# it without a request (N5); the panel's strings live in both.
+_FUNCS = ("loadWatches", "_renderWatches", "createWatch", "toggleWatch", "editWatch",
           "deleteWatch", "evaluateWatches")
 
 

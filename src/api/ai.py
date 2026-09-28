@@ -159,6 +159,8 @@ def extract_keywords(
     _tok = _bgtasks.register(
         "analytics", f"Extracting AI keywords · {len(work)} article(s)",
         detail=f"model {model}", total=len(work),
+        label_i18n="Extracting AI keywords · {n} article(s)", label_vars={"n": len(work)},
+        detail_i18n="model {model}", detail_vars={"model": model},
     )
 
     def _stream():
@@ -279,9 +281,10 @@ def translate_keywords_ep(
     """Tentative LLM translations for the keywords a verified ring does NOT cover.
 
     Verified ring terms are skipped (the verified tier wins). Loopback-only (no
-    network-consent popup, like the other Ollama paths); when Ollama is unavailable —
-    including airplane mode (the kill switch) — returns ``available: false`` with no
-    translations and WITHOUT attempting a model call."""
+    network-consent popup, like the other Ollama paths), and loopback inference is
+    allowed in airplane mode: the kill switch refuses only a non-loopback Ollama address
+    (``OllamaClient._check_kill_switch``). When Ollama is not running, returns
+    ``available: false`` with no translations and WITHOUT attempting a model call."""
     from src.ai_layer.translate import TRANSLATE_PROMPT_VERSION, translate_keywords
 
     tgt = (req.target_lang or "").strip().lower()
@@ -292,7 +295,7 @@ def translate_keywords_ep(
     }
     if not tgt or len(tgt) > 3 or not tgt.isalpha():
         return {**base, "available": True, "translations": {}}
-    if not client.is_available():  # Ollama down or airplane mode -> no socket, no fabrication
+    if not client.is_available():  # Ollama not running -> no model call, no fabrication
         return {**base, "available": False, "translations": {}}
     items = [{"term": it.term, "language": it.language} for it in req.terms]
     translations = translate_keywords(client, items, tgt, model=active_model())
@@ -429,6 +432,8 @@ def run_custom_prompt(
     _tok = _bgtasks.register(
         "analytics", f"AI: {label} · {len(work)} article(s)",
         detail=f"model {model}", total=len(work),
+        label_i18n="AI: {label} · {n} article(s)", label_vars={"label": label, "n": len(work)},
+        detail_i18n="model {model}", detail_vars={"model": model},
     )
 
     def _stream():
@@ -586,7 +591,10 @@ def _langdetect_worker(
     workers = concurrency_for(backend_name)
     try:
         if not client.is_available():
-            tally["reason"] = "the local model is unavailable (Ollama down or airplane mode)"
+            # Not airplane mode: the local model is LOOPBACK, and the kill switch refuses
+            # only a non-loopback address (OllamaClient / VllmClient._check_kill_switch), so
+            # an unavailable model here means the local AI is not running.
+            tally["reason"] = "the local model is unavailable (the local AI is not running)"
             _save_langdetect_state(tally)
             return tally
     except Exception:  # noqa: BLE001
@@ -613,7 +621,10 @@ def _langdetect_worker(
     consecutive_failures = 0
     with session_scope() as session:
         estimate_total = _langdetect_candidate_count(session)
-    ctx.set_progress(done=0, total=estimate_total, detail=f"model {mdl}")
+    from src.jobs.background import Framed
+
+    # The English line, plus its keyed frame for the task managers (click-through B19, Q5).
+    ctx.set_progress(done=0, total=estimate_total, detail=Framed(f"model {mdl}", "model {model}", model=mdl))
 
     while True:
         if ctx.stopping:

@@ -134,3 +134,21 @@ def test_wiki_api_crud_track_and_changes(tmp_path, monkeypatch):
             assert client.get("/api/wiki/status").json()["pages"] == 0
     finally:
         app.dependency_overrides.clear()
+
+
+def test_ores_is_opt_in_in_the_ui_and_on_both_endpoints():
+    """Q717 = a keeps ORES opt-in, and the score's own hover says "off unless you asked for
+    it" -- but the Settings checkbox shipped pre-ticked and both endpoints defaulted to on
+    for a caller that omitted the parameter (2026-09-26 click-through P10)."""
+    import inspect
+    import re
+    from pathlib import Path
+
+    from src.api import wiki as wiki_api
+
+    html = Path("src/static/index.html").read_text(encoding="utf-8")
+    tag = re.search(r'<input[^>]*id="wiki-ores"[^>]*>', html)
+    assert tag, "the ORES checkbox is gone"
+    assert not re.search(r"\bchecked\b", tag.group(0)), tag.group(0)
+    for fn in (wiki_api.track_page, wiki_api.track_now):
+        assert inspect.signature(fn).parameters["ores"].default is False, fn.__name__

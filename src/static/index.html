@@ -126,7 +126,7 @@
         <div class="status-cluster" id="statusCluster">
           <span id="activity" class="activity" hidden role="status" aria-live="polite" title="Activity &amp; vitals — click to open the task manager" tabindex="0" style="cursor:pointer" onclick="openTaskManager()" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openTaskManager();}"><span class="spin" aria-hidden="true"></span><span id="activity-label">Working…</span><span id="activity-host" class="act-host"></span></span>
           <span id="health" title="Backend status"><span class="dot"></span> checking…</span>
-          <span id="llm" class="pill" title="AI status">AI</span>
+          <span id="llm" class="pill" title="AI status" data-i18n-dyn>AI</span>
         </div>
         <button class="icon-btn" id="tm-open" onclick="openTaskManager()" title="Tasks &amp; system" aria-label="Open the task manager (new tab)">
           <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12h4l2-6 4 13 2-7h6"/></svg></button>
@@ -174,6 +174,32 @@
         <button class="icon-btn" id="app-shutdown" onclick="appShutdown()" title="Shut down the app (stops the server — your data is untouched)" aria-label="Shut down the app">
           <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v9"/><path d="M6.4 6.4a8 8 0 1 0 11.2 0"/></svg></button>
       </header>
+      <!-- Airplane-mode onboarding coachmark: invites the user to flip the ONE
+           network switch. Going online still passes the consent popup (ensureOnline)
+           — this only teaches where the switch is.
+           IN THE CHROME, IN FLOW (2026-09-27 re-walk O-1): it was a position:fixed
+           bubble, and "below the whole chrome" is exactly where every tab page
+           begins -- its heading and its visible-by-default caveat (Living sources:
+           92 of 372 sampled points of #living-caveat under it; scrolled, a form
+           input). Here, under the top bar, it pushes the page down instead of
+           covering it, stays in view like the sticky chrome it belongs to, and its
+           arrow still points at the plane (_placeCoach). -->
+      <div id="net-coach" role="status" aria-live="polite">
+        <span class="coach-arrow" aria-hidden="true"></span>
+        <div class="coach-body">You're offline. Switch off airplane mode to go online and start collecting.</div>
+        <div class="coach-sub">You'll confirm before anything connects.</div>
+        <!-- Q1125 = a (S04-13 S4): "Both actions carry equal visual weight; 'Not now'
+             is not quieter than 'Go online'." "Not now" carried .secondary (a flatter
+             panel background, a 1px border and font-weight 500) against an unclassed
+             primary, so the coachmark was nudging an operator toward going online on a
+             surface whose entire subject is a network-consent decision. Staying offline
+             is a first-class answer here and now looks like one. The WORDS are
+             unchanged, and the consent popup this leads to is untouched. -->
+        <div class="coach-actions">
+          <button id="net-coach-dismiss">Not now</button>
+          <button id="net-coach-go">Go online</button>
+        </div>
+      </div>
       <!-- Facet subtabs (Insights · Settings · Markets · Agenda · Analysis …) are
            relocated into this strip at runtime by _relocateSubtabs() in app.js, so they
            render JUST UNDER the status bar. Hidden on tabs that have no facet subtabs.
@@ -289,7 +315,7 @@
       <section class="panel" id="home-trends-panel" hidden>
         <div class="phead"><h2>Trending now</h2><span class="sp"></span>
           <a href="#insights" class="hint" style="margin:0" onclick="showTab('insights');_insSubtabs&&_insSubtabs.select('trends');return false">More in Insights →</a></div>
-        <div id="home-trends"><div class="muted">Loading…</div></div>
+        <div id="home-trends"><div class="muted" data-oo-placeholder>Loading…</div></div>
       </section>
 
       <!-- Home dashboard: "Most recent by tag" — a recency lens onto the corpus
@@ -335,7 +361,7 @@
            blank-and-silent. -->
       <section class="panel" id="home-channels-panel" hidden>
         <div class="phead"><h2>By channel</h2><span class="sp"></span></div>
-        <p class="hint" style="margin:0">An asserted content channel (newsletter, web article, wiki, statistic, law, market, discovery), never a quality score. Click a channel to explore its corpus.</p>
+        <p class="hint" style="margin:0">Each chip is a content channel its sources assert, never a quality score. Click a channel to explore its corpus.</p>
         <div id="home-channels" style="margin-top:6px"><div class="muted">Loading…</div></div>
       </section>
 
@@ -353,7 +379,7 @@
         <p class="hint" style="margin-top:8px"><span>Equal view — every source is counted once; no source is de-amplified in this version.</span>
           <span><b>The app gathers and measures; you judge.</b></span>
           <span>Each Lead is one measured signal with its evidence and caveat, never a verdict.</span></p>
-        <div id="briefing-feed" style="margin-top:6px"><div class="muted">Loading the briefing…</div></div>
+        <div id="briefing-feed" style="margin-top:6px"><div class="muted" data-oo-placeholder>Loading the briefing…</div></div>
       </section>
 
       <section class="panel" id="draft-panel" hidden>
@@ -465,8 +491,12 @@
         <div class="an-sortbar" style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;margin-bottom:6px">
           <label style="display:flex;flex-direction:column;gap:2px"><span class="muted">Sort by</span>
             <select id="an-adv-sort" style="max-width:170px" onchange="_anSortChanged()">
+              <!-- Q508: the list is INTERLEAVED BY DATE by default, so Date is the
+                   selected option. It defaulted to relevance while the view switch below
+                   was drawn pressed on "Interleave by date" (the 2026-09-26 click-through,
+                   N4); relevance stays one click away. -->
               <option value="">Relevance / recency</option>
-              <option value="date">Date</option>
+              <option value="date" selected>Date</option>
               <option value="source">Source</option>
               <option value="title">Title (A–Z)</option>
               <option value="language">Language</option>
@@ -888,13 +918,13 @@
             <option value="eurostat">Eurostat (SDMX-JSON)</option>
           </select></label>
           <label>Indicator / dataset id<br><input id="statfig-series" placeholder="For example: NY.GDP.MKTP.CD" size="22"></label>
-          <label>Country (World Bank)<br><input id="statfig-country" placeholder="FR or all" size="10"></label>
+          <label>Country (World Bank)<br><input id="statfig-country" placeholder="FRA or all" size="10"></label>
           <button class="secondary" id="statfig-fetch" onclick="fetchStatFigure()">Fetch figures</button>
         </div>
         <div id="statfig-msg" class="hint" role="status" aria-live="polite" style="margin-top:8px"></div>
         <div class="row" style="gap:8px;align-items:flex-end;flex-wrap:wrap;margin-top:12px">
           <label>View stored figures — series id<br><input id="statfig-view-series" placeholder="For example: NY.GDP.MKTP.CD" size="22"></label>
-          <label>Area (for the chart)<br><input id="statfig-view-area" placeholder="FR" size="8"></label>
+          <label>Area (for the chart)<br><input id="statfig-view-area" placeholder="FRA" size="8"></label>
           <button class="secondary" onclick="loadStatFigures()">Show stored</button>
           <button class="secondary" onclick="triangulateStatSeries()">Triangulate producers</button>
           <button class="secondary" onclick="renderStatChart()" title="Plot the series over time. A new line segment starts at every unit / base-year / seasonal-adjustment change (never joined); a gap is a break, never interpolated.">Chart over time</button>
@@ -1201,7 +1231,7 @@
 
       <details id="ins-landscape-wrap" open style="margin-top:12px">
         <summary style="cursor:pointer;font-size:13px;font-weight:600">Corpus landscape <span class="muted">— families by kind (zoom out); click one to zoom in</span></summary>
-        <div id="ins-landscape"><div class="muted" style="margin-top:8px">Loading…</div></div>
+        <div id="ins-landscape"><div class="muted" data-oo-placeholder style="margin-top:8px">Loading…</div></div>
       </details>
 
       <div id="ins-trend" style="margin-top:12px"></div>
@@ -1262,7 +1292,7 @@
         <button class="tiny secondary" data-trdlens="slope" onclick="setTrendLens('slope')" aria-pressed="false">Rate slope</button>
         <button class="tiny secondary" data-trdlens="multiples" onclick="setTrendLens('multiples')" aria-pressed="false">Small multiples</button>
       </div>
-      <div class="row" id="trd-windows" style="gap:20px"><div class="muted">Loading…</div></div>
+      <div class="row" id="trd-windows" style="gap:20px"><div class="muted" data-oo-placeholder>Loading…</div></div>
       <div id="trd-windows-note" class="hint" style="margin:4px 0 14px"></div>
       <div id="trd-slope" style="display:none"></div>
       <div id="trd-multiples" style="display:none"></div>
@@ -1311,7 +1341,7 @@
         <span id="fam-status" class="hint"></span>
       </div>
       <p class="hint muted" style="margin:4px 0 0">"all" aggregates every non-term kind (server-side, before any limit). person / org / location kinds await a future NER/gazetteer pass — the extractor does not yet assign them, so they are not offered here rather than shown as a fabricated, always-empty choice.</p>
-      <div id="fam-list" style="margin-top:10px"><div class="muted">Loading…</div></div>
+      <div id="fam-list" style="margin-top:10px"><div class="muted" data-oo-placeholder>Loading…</div></div>
     </section>
 
     <section class="panel ins-view" id="ins-supergroups" style="display:none">
@@ -1321,7 +1351,7 @@
         <button class="secondary" onclick="loadSuperGroups()">Refresh</button>
         <span id="sg-status" class="hint"></span>
       </div>
-      <div id="sg-list" style="margin-top:12px"><div class="muted">Loading…</div></div>
+      <div id="sg-list" style="margin-top:12px"><div class="muted" data-oo-placeholder>Loading…</div></div>
       <div style="margin-top:16px;padding-top:12px;border-top:1px solid var(--border)">
         <h2 style="font-size:13px;margin:0">Cross-country map of a concept</h2>
         <p class="hint" style="margin-top:2px">Pick a cross-language group — one concept counted across every language — to see where its coverage comes from, split by the producing source's country and language. Counts only; a source with an unknown country is shown honestly (never mapped, never guessed).</p>
@@ -1773,8 +1803,10 @@
       <div id="wiki-status" class="hint">Loading…</div>
       <div class="row" style="margin-top:6px">
         <button onclick="trackWikiNow()">Track now</button>
+        <!-- Q717: ORES is opt-in, so this starts unticked (a third party's model, one more
+             host contacted); the endpoints default to off too (src/api/wiki.py). -->
         <label style="display:flex;align-items:center;gap:6px;align-self:center;cursor:pointer">
-          <input type="checkbox" id="wiki-ores" style="width:auto" checked> use ORES scores
+          <input type="checkbox" id="wiki-ores" style="width:auto"> use ORES scores
         </label>
         <span id="wiki-progress" class="hint" style="align-self:center"></span>
       </div>
@@ -1854,12 +1886,12 @@
           <label for="dumpread-wiki">Edition</label>
           <select id="dumpread-wiki" title="Editions with a complete multistream dump + index on disk"><option value="">—</option></select>
         </div>
-        <div style="flex:2">
+        <div style="flex:2 1 220px">
           <label for="dumpread-title">Page title</label>
           <input id="dumpread-title" placeholder="Exact page title (a case-insensitive match is offered and labelled)…"
                  onkeydown="if(event.key==='Enter')dumpReadPage()">
         </div>
-        <div style="flex:0 0 auto;align-self:end"><button class="secondary" onclick="dumpSearchTitles()">Search titles</button> <button class="secondary" onclick="dumpReadPage()">Read locally</button></div>
+        <div style="flex:1 1 auto;align-self:end;display:flex;flex-wrap:wrap;gap:6px"><button class="secondary" onclick="dumpSearchTitles()">Search titles</button> <button class="secondary" onclick="dumpReadPage()">Read locally</button></div>
       </div>
       <div class="hint">Reading happens entirely on this machine: the dump's index is scanned for the title, then one small
         block is decompressed at its byte offset. The text shown is raw wikitext (unrendered) as of the dump date — a snapshot, not the live article.</div>
@@ -1873,14 +1905,16 @@
           <label for="dumpfts-build-wiki">Edition to index</label>
           <select id="dumpfts-build-wiki" title="Editions with a complete multistream dump on disk"><option value="">Loading…</option></select>
         </div>
-        <div style="flex:0 0 auto;align-self:end">
+        <!-- flex:1 1 auto + wrap, not flex:0 0 auto: three buttons side by side are wider
+             than a phone column (29 px of page scroll at 375 px; 2026-09-26 click-through P9). -->
+        <div style="flex:1 1 auto;align-self:end;display:flex;flex-wrap:wrap;gap:6px">
           <button class="secondary" onclick="dumpFtsBuild()">Build index</button>
           <button class="secondary" onclick="dumpFtsCancel()">Cancel build</button>
           <button class="danger" onclick="dumpFtsClear()">Clear index</button>
         </div>
       </div>
       <div class="row" style="gap:6px;align-items:end;flex-wrap:wrap;margin-top:8px">
-        <div style="flex:2">
+        <div style="flex:2 1 220px">
           <label for="dumpfts-q">Full-text query</label>
           <input id="dumpfts-q" placeholder="Words or a Boolean query (AND OR NOT)…"
                  onkeydown="if(event.key==='Enter')dumpFtsSearch()">
@@ -2000,7 +2034,7 @@
       <p class="hint" style="margin-top:0">Point to a folder ON THIS MACHINE and every .eml under it is imported as a pausable background job — for a 20&nbsp;GB+ archive the file picker can't handle. Same anonymise-at-ingest path, zero network. Already-imported messages are skipped, so you can pause and resume safely.</p>
       <div class="row" style="align-items:end;gap:8px;flex-wrap:wrap;margin-top:6px">
         <div style="flex:2"><label for="nl-folder">Folder path (on this machine)</label>
-          <input id="nl-folder" placeholder="For example: /home/you/newsletters" size="30"></div>
+          <input id="nl-folder" dir="ltr" placeholder="For example: /home/you/newsletters" size="30"></div>
         <div style="flex:0 0 auto;align-self:end"><button class="secondary" type="button" onclick="ooFolderPicker('nl-folder', false)">Browse…</button></div>
         <div style="flex:0 0 auto;align-self:end"><button class="secondary" onclick="startFolderImport(this)">Import folder</button></div>
       </div>
@@ -2026,7 +2060,7 @@
       <p class="hint" style="margin-top:0">Point to a folder ON THIS MACHINE and every PDF under it is imported. Same local, zero-network path; already-imported documents are skipped.</p>
       <div class="row" style="align-items:end;gap:8px;flex-wrap:wrap;margin-top:6px">
         <div style="flex:2"><label for="pdf-folder">Folder path (on this machine)</label>
-          <input id="pdf-folder" placeholder="For example: /home/you/pdfs" size="30"></div>
+          <input id="pdf-folder" dir="ltr" placeholder="For example: /home/you/pdfs" size="30"></div>
         <div style="flex:0 0 auto;align-self:end"><button class="secondary" type="button" onclick="ooFolderPicker('pdf-folder', false)">Browse…</button></div>
         <div style="flex:0 0 auto;align-self:end"><button class="secondary" onclick="importPdfFolder(this)">Import folder</button></div>
       </div>
@@ -2496,7 +2530,7 @@
 
     <section class="panel">
       <h2>Manage sources</h2>
-      <div class="row">
+      <div class="row src-filter-row">
         <div style="flex:2"><label for="src-search">Search</label>
           <input id="src-search" placeholder="name or domain" onkeydown="if(event.key==='Enter')applySrcFilters()"></div>
         <!-- Multi-select dropdown filters (#23): each <details> is a native disclosure
@@ -2529,8 +2563,8 @@
         <div><span>Columns:</span> <code>name</code>, <code>domain</code>, <code>rss_url</code>,
         <code>source_type</code>, <code>country</code>, <code>language</code>,
         <code>region</code>, <code>tags</code>, <code>priority</code>,
-        <code>rate_limit_ms</code>, <code>enabled</code>, <code>reliability_score</code>.</div>
-        <div>Name and domain are required. Country is a 2-letter code. Tags are comma-separated, so quote the cell. Priority runs 1–3 and reliability_score runs 1–10.</div>
+        <code>rate_limit_ms</code>, <code>enabled</code>, <code>reliability_score</code>, <code>country_iso3</code>.</div>
+        <div>Name and domain are required. Country takes a 2- or 3-letter code or a country name. The export adds country_iso3; an import falls back to it when country is empty or unreadable, and refuses a row where the two disagree. Tags are comma-separated, so quote the cell. Priority runs 1–3 and reliability_score runs 1–10.</div>
         <div><span title="reliability_score is operator-set provenance metadata you assert per source. The app never computes, defaults, or derives it from article data, and never builds a Lead or score from it.">reliability_score is operator-set, not computed.</span></div>
         <div>Import upserts by domain (new ones created, existing updated); bad rows are reported, not dropped.</div>
       </div>
@@ -2587,7 +2621,7 @@
       </div>
       <p class="hint" style="margin-top:10px">To build the file the app ships, merge exports from other instances with this one. Nothing is written: the merged file is handed back for you to review and commit.</p>
       <div class="row" style="gap:8px;flex-wrap:wrap;align-items:center">
-        <input type="file" id="qual-ov-files" accept=".json,.zip" multiple style="width:auto">
+        <input type="file" id="qual-ov-files" accept=".json,.yml,.yaml,.zip" multiple style="width:auto">
         <button class="secondary" id="qual-ov-merge" onclick="overlayMerge(this)" title="Merges the selected exports (or all-diagnostics bundles) together with this instance's own verdicts. A domain two instances disagree about is reported and left alone, never resolved automatically; an inherited verdict is never counted as a second opinion.">Build a merged file</button>
       </div>
       <div id="qual-ov-merge-out" class="hint" style="margin-top:8px"></div>
@@ -2649,7 +2683,7 @@
         <div style="flex:0 0 auto;align-self:end"><button class="secondary" onclick="loadFamilyCuration()">Refresh</button></div>
         <span id="famc-status" class="hint"></span>
       </div>
-      <div id="famc-list" style="margin-top:10px"><div class="muted">Loading…</div></div>
+      <div id="famc-list" style="margin-top:10px"><div class="muted" data-oo-placeholder>Loading…</div></div>
       <div id="fam-overrides" style="margin-top:14px"></div>
     </section>
     <section class="panel">
@@ -2721,8 +2755,8 @@
       <summary><span class="adv-sec-t">Calendar directory</span> <span class="muted">— the bundled feed catalogue, its check verdicts, and adding your own</span></summary>
     <section class="panel" id="agenda-feeds">
       <h2>Calendar directory</h2>
-      <p class="hint" style="margin-top:0"><span>A bundled directory of ~500 public calendar feeds (country holidays, religions, elections, UN days, space, astronomy). Feeds are checked a few at a time on each collection pass — never at startup, and never while you are offline.</span>
-        <span>When several providers publish the same calendar, they are grouped into one folder — you see the duplicate and can compare every source.</span></p>
+      <p class="hint" style="margin-top:0"><span>A bundled directory of public calendar feeds: country public holidays, UN international days and one open-source events calendar, each from one provider. Feeds are checked a few at a time on each collection pass — never at startup, and never while you are offline.</span>
+        <span>Feeds whose host refuses automated fetching in its robots.txt, or whose robots.txt cannot be read, are left out of this list, as is one moon-phase feed the app's own astronomy already computes. That leaves no feed for the religious, election, rocket-launch and astronomy calendars the bundle also records, so they are not offered.</span></p>
       <div class="row">
         <div><label for="feeddir-kind">Kind</label><select id="feeddir-kind" onchange="renderFeedDir()">
           <option value="">all</option></select></div>
@@ -2855,7 +2889,7 @@
           <label class="small"><span>soak hours</span> <input id="rr-hours" type="number" min="1" max="1440" step="1" value="72" style="width:70px"></label>
           <label class="small"><input id="rr-newsletters" type="checkbox" checked style="width:auto"> <span>include newsletters</span></label>
           <label class="small"><input id="rr-probes" type="checkbox" checked style="width:auto"> <span>online probes (law hosts, scoring endpoint, weights digests)</span></label>
-          <label class="small"><input id="rr-row5" type="checkbox" style="width:auto"> <span>also run 0.3 row 5, LAST — the Tier-A quarantine pass, then a whole-corpus keyword re-index with collection paused: hours on a small corpus, days on a slow machine (deferred by ruling A1; tick only to run it now)</span></label>
+          <label class="small"><input id="rr-row5" type="checkbox" style="width:auto"> <span>also run 0.4 row W (0.3's row 5), LAST — the Tier-A quarantine pass, then a whole-corpus keyword re-index with collection paused: hours on a small corpus, days on a slow machine (required before the v0.4.0 tag; runs only when ticked)</span></label>
         </div>
         <div class="row" style="margin-top:6px">
           <button id="rr-run-btn" onclick="releaseRunStart(this, 'release-scale')" title="Start the 0.4 release run on this instance (the release-scale profile): the P0 trio, the fresh-install restore, then the soak for the hours entered. Goes online now through the one consent popup; the soak clock starts after the restore.">Run on this instance</button>
@@ -3017,7 +3051,7 @@
         honest about their limits — read each note. Everything stays on this machine.</p>
 
       <h3 style="margin-bottom:6px">At-rest encryption</h3>
-      <div id="atrest-state" class="hint">Checking…</div>
+      <div id="atrest-state" class="hint" data-i18n-dyn>Checking…</div>
       <p class="muted" style="margin-top:6px"><span>At-rest encryption protects a seized or copied file.</span>
         <span>It cannot protect a compromised running session.</span></p>
       <details id="atrest-encrypt" style="display:none">
@@ -3092,7 +3126,7 @@
           </label>
         </div>
       </div>
-      <div id="discovery-external-result" class="hint"></div>
+      <div id="discovery-external-result" class="hint" data-i18n-dyn></div>
 
     </details>
 
@@ -3100,45 +3134,13 @@
          The reason is not tidiness: panic wipe must not become hard to reach, because
          the person who needs it may need it in a hurry. A top-level section is one click
          from the Advanced subtab; a subsection inside another fold is two, and the
-         second one is not obvious. Kept LAST so it is never mistaken for an ordinary
-         setting, and marked so it reads as destructive before it is opened. -->
+         second one is not obvious. Kept at the end (only the folded Bulletin, ruled to the
+         very bottom, follows it) so it is never mistaken for an ordinary setting, and
+         marked so it reads as destructive before it is opened. -->
     <details class="adv-sec adv-sec-danger" data-adv="uninstall">
       <summary><span class="adv-sec-t">Uninstall &amp; wipe</span> <span class="muted">— irreversible: destroy the key and remove this install</span></summary>
     <section class="panel" id="uninstall-panel">
-      <div class="phead"><h2>Uninstall &amp; wipe</h2>    <!-- The Bulletin (design record §16): a folded section at the VERY BOTTOM of
-         Advanced, so it can be reached by skipping to the end. Folded by default
-         and discreet — and folded does not mean fetched: its loader fires on
-         EXPAND like every other section here. -->
-    <details class="adv-sec" data-adv="bulletin">
-      <summary><span class="adv-sec-t">Bulletin</span> <span class="muted">— a periodic document built from this corpus</span></summary>
-    <section class="panel" id="bulletin-panel">
-      <h2>Bulletin</h2>
-      <p class="hint" style="margin-top:0"><span>A document covering one closed period — what rose in this corpus, which sources carried it, and everything the period could not see. It is built from exact counts, so it is the record rather than a summary of it.</span>
-        <span>Nothing here touches the network. The document is a draft until you publish it, and publishing only stamps it: you are the byline, not the machine.</span></p>
-      <div id="bulletin-gate" class="hint" style="margin-top:8px">Checking whether this machine can build one…</div>
-      <div id="bulletin-controls" hidden>
-        <div class="row" style="gap:8px;align-items:end;flex-wrap:wrap;margin-top:10px">
-          <div><label for="bul-cadence">Period</label><select id="bul-cadence">
-            <option value="daily">Daily</option>
-            <option value="weekly" selected>Weekly</option>
-            <option value="monthly">Monthly</option>
-            <option value="trimester">Trimester</option>
-            <option value="semester">Semester</option>
-            <option value="yearly">Yearly</option>
-          </select></div>
-          <label id="bul-narrate-label" class="row" style="gap:6px;align-items:center" title="Adds a paragraph per story, written by the local model and kept only where every figure and name in it appears in the articles the model was shown. Off by default; the document is complete without it.">
-            <input id="bul-narrate" type="checkbox"> <span>Add the narration layer</span></label>
-          <div id="bul-narrate-gate" class="hint" hidden></div>
-          <button id="bul-generate" onclick="bulletinGenerate(this)">Build a draft</button>
-          <div id="bulletin-status" class="hint" style="align-self:end"></div>
-        </div>
-        <div id="bulletin-list" style="margin-top:12px"><div class="muted">Loading editions…</div></div>
-        <div id="bulletin-review" style="margin-top:14px"></div>
-      </div>
-    </section>
-    </details>
-
-</div>
+      <div class="phead"><h2>Uninstall &amp; wipe</h2></div>
       <p class="muted" style="margin-top:0">Both actions below are irreversible. Read each note before pressing.</p>
       <h3 style="margin-bottom:6px; color:var(--err)">Panic wipe</h3>
       <p class="muted" style="margin-top:0">Irreversibly destroys the corpus's encryption key (crypto-erase) and removes the data, keys and caches on this machine — the encrypted store becomes permanently unrecoverable at any size, then the app must be restarted. This cannot be undone. You'll be offered an optional full free-space overwrite afterward as defence-in-depth (that pass alone does not guarantee erasure on SSD/flash/copy-on-write disks — the real guarantee is the destroyed key).</p>
@@ -3178,6 +3180,42 @@
         <button class="danger" onclick="uninstallApp()">Uninstall &amp; stop the app</button>
       </div>
       <div id="uninstall-result" class="hint"></div>
+    </section>
+    </details>
+
+    <!-- The Bulletin (design record §16): a folded section at the VERY BOTTOM of Advanced
+         (the design record's placement ruling), so it can be reached by skipping to the
+         end. A TOP-LEVEL fold: it was once spliced into the middle of the uninstall
+         panel's heading, where it was invisible until the destructive section was opened
+         (delegated click-through 2026-09-26, M6). Folded by default and discreet — and
+         folded does not mean fetched: its loader fires on EXPAND like every other section
+         here. -->
+    <details class="adv-sec" data-adv="bulletin">
+      <summary><span class="adv-sec-t">Bulletin</span> <span class="muted">— a periodic document built from this corpus</span></summary>
+    <section class="panel" id="bulletin-panel">
+      <h2>Bulletin</h2>
+      <p class="hint" style="margin-top:0"><span>A document covering one closed period — what rose in this corpus, which sources carried it, and everything the period could not see. It is built from exact counts, so it is the record rather than a summary of it.</span>
+        <span>Nothing here touches the network. The document is a draft until you publish it, and publishing only stamps it: you are the byline, not the machine.</span></p>
+      <div id="bulletin-gate" class="hint" style="margin-top:8px">Checking whether this machine can build one…</div>
+      <div id="bulletin-controls" hidden>
+        <div class="row" style="gap:8px;align-items:end;flex-wrap:wrap;margin-top:10px">
+          <div><label for="bul-cadence">Period</label><select id="bul-cadence">
+            <option value="daily">Daily</option>
+            <option value="weekly" selected>Weekly</option>
+            <option value="monthly">Monthly</option>
+            <option value="trimester">Trimester</option>
+            <option value="semester">Semester</option>
+            <option value="yearly">Yearly</option>
+          </select></div>
+          <label id="bul-narrate-label" class="row" style="gap:6px;align-items:center" title="Adds a paragraph per story, written by the local model and kept only where every figure and name in it appears in the articles the model was shown. Off by default; the document is complete without it.">
+            <input id="bul-narrate" type="checkbox"> <span>Add the narration layer</span></label>
+          <div id="bul-narrate-gate" class="hint" hidden></div>
+          <button id="bul-generate" onclick="bulletinGenerate(this)">Build a draft</button>
+          <div id="bulletin-status" class="hint" style="align-self:end"></div>
+        </div>
+        <div id="bulletin-list" style="margin-top:12px"><div class="muted">Loading editions…</div></div>
+        <div id="bulletin-review" style="margin-top:14px"></div>
+      </div>
     </section>
     </details>
 
@@ -3256,7 +3294,7 @@
       <h3 style="margin:0 0 4px">Import</h3>
       <p class="muted" style="margin-top:0">Point at a folder and we'll find what's importable inside it — a backup to restore, large data (models&nbsp;/&nbsp;maps&nbsp;/&nbsp;dumps), or newsletters. Restore is always additive: nothing you already have is overwritten.</p>
       <div><label for="ux-imp-src">Folder to import from</label>
-        <div class="row" style="gap:6px"><input id="ux-imp-src" type="text" placeholder="/mnt/backup  or  D:\oo-backup" style="flex:2">
+        <div class="row" style="gap:6px"><input id="ux-imp-src" type="text" dir="ltr" placeholder="/mnt/backup  or  D:\oo-backup" style="flex:2 1 12em;min-width:12em">
           <button class="secondary" type="button" onclick="ooFolderPicker('ux-imp-src', false)">Browse…</button>
           <button class="secondary" type="button" onclick="_uxImScan(this)">Scan</button>
           <button class="secondary" type="button" onclick="_uxImVerify(this)" title="Check the backup's manifest signature and every volume + parity checksum without restoring anything — the live corpus is untouched.">Verify</button></div></div>
@@ -3290,8 +3328,11 @@
       <div id="ux-imp-summary" style="margin-top:8px"></div>
       <!-- Q216 = a (K = 3): what the checkpoint costs, stated where the operator
            decides. Filled by _uxImCheckpointNote from the queue's own resolved K, so
-           it can never disagree with the number the run will actually use. -->
-      <p id="ux-imp-checkpoint" class="note" style="margin-top:8px"></p>
+           it can never disagree with the number the run will actually use. A caveat in
+           the dialog's own caveat style, never the toast `.note` box (the 2026-09-26
+           click-through's leftovers, Y2): that box is a floating notification's, with a
+           shadow and a slide-in, and drew an empty framed box when K was unread. -->
+      <p id="ux-imp-checkpoint" class="card-caveat" style="margin-top:8px"></p>
       <!-- The Q701 NOTE's import-time half. Shown only once the scan has found a
            corpus or legacy backup, because a .eml or large-data import carries no
            scraping history and a toggle over nothing is a control that claims a
@@ -3302,7 +3343,7 @@
           <input type="checkbox" id="ux-imp-trust" style="width:auto"
                  title="A backup records what each source last served — the validators that let a server answer &quot;nothing changed&quot; instead of sending the whole feed again. Trusting that record is what stops a restored install re-downloading everything it already has.">
           <span>Trust the backup's scraping history</span></label>
-        <p class="note" id="ux-imp-trust-note" style="margin:4px 0 0">Trusting it skips re-fetching what the history says was already fetched; not trusting it re-fetches everything from scratch.</p>
+        <p class="card-caveat" id="ux-imp-trust-note" style="margin:4px 0 0">Trusting it skips re-fetching what the history says was already fetched; not trusting it re-fetches everything from scratch.</p>
       </div>
       <div class="row" style="margin-top:12px;justify-content:flex-end;gap:8px">
         <button id="ux-imp-stop" class="secondary" style="display:none" onclick="_uxImStop(this)" title="Stops the import now. Before a backup's atomic swap this is a complete abort — your corpus is untouched. After it, that backup has already merged and this stops the remaining work (the re-index resumes later from where it left off); it is not an undo.">Stop</button>
@@ -3316,7 +3357,7 @@
       <p class="muted" id="ux-inv-status" style="margin-top:0">Loading what's available…</p>
       <div id="ux-checklist" style="display:flex;flex-direction:column;gap:6px"></div>
       <div style="margin-top:10px"><label for="ux-dest">Destination folder (on this machine / a mounted drive)</label>
-        <div class="row" style="gap:6px"><input id="ux-dest" type="text" placeholder="/mnt/backup  or  D:\oo-backup" style="flex:2">
+        <div class="row" style="gap:6px"><input id="ux-dest" type="text" dir="ltr" placeholder="/mnt/backup  or  D:\oo-backup" style="flex:2">
           <button class="secondary" type="button" onclick="ooFolderPicker('ux-dest', true)">Browse…</button></div></div>
       <div class="hint" style="margin-top:4px" title="The name is the local date and time this export started, so the folders sort in the order you made them. A second export in the same minute gets _2, _3 and so on; an existing folder is never written into.">Each export makes its own dated folder here, named like 202609121045_OpenOmniscience_Backup.</div>
       <div style="margin-top:6px"><label for="ux-pass">Passphrase — encrypts the corpus (no recovery for a lost passphrase)</label>
@@ -3420,7 +3461,7 @@
       <span class="muted" style="margin-left:auto;font-size:12px">on this machine</span>
     </div>
     <div style="padding:10px 16px">
-      <div id="fp-path" class="muted" style="font-size:12px;word-break:break-all;margin-bottom:6px"></div>
+      <div id="fp-path" class="muted" dir="ltr" style="font-size:12px;word-break:break-all;margin-bottom:6px"></div>
       <div id="fp-list" style="max-height:46vh;overflow:auto;border:1px solid var(--line);border-radius:8px"></div>
       <div id="fp-note" class="hint" style="margin-top:6px"></div>
     </div>
@@ -3548,26 +3589,6 @@
       <button id="ai-egress-ok">Allow the install online</button>
     </div>
   </dialog>
-
-  <!-- Airplane-mode onboarding coachmark: invites the user to flip the ONE
-       network switch. Going online still passes the consent popup (ensureOnline)
-       — this only teaches where the switch is. -->
-  <div id="net-coach" role="status" aria-live="polite">
-    <span class="coach-arrow" aria-hidden="true"></span>
-    <div class="coach-body">You're offline. Switch off airplane mode to go online and start collecting.</div>
-    <div class="coach-sub">You'll confirm before anything connects.</div>
-    <!-- Q1125 = a (S04-13 S4): "Both actions carry equal visual weight; 'Not now'
-         is not quieter than 'Go online'." "Not now" carried .secondary (a flatter
-         panel background, a 1px border and font-weight 500) against an unclassed
-         primary, so the coachmark was nudging an operator toward going online on a
-         surface whose entire subject is a network-consent decision. Staying offline
-         is a first-class answer here and now looks like one. The WORDS are
-         unchanged, and the consent popup this leads to is untouched. -->
-    <div class="coach-actions">
-      <button id="net-coach-dismiss">Not now</button>
-      <button id="net-coach-go">Go online</button>
-    </div>
-  </div>
 
   <!-- First-launch guided setup (maintainer-ruled 2026-06-13): a ONE-TIME,
        stepped GUI that walks a new user to a working app. SLICE 1 = the shell +

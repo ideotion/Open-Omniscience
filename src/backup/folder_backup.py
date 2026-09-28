@@ -980,8 +980,38 @@ def verify_folder_backup(
 # The pausable job (one giant copy at a time, visible in the task manager)
 # --------------------------------------------------------------------------- #
 import threading  # noqa: E402  (kept local to the job section)
+import time  # noqa: E402  (same)
 
 from src.backup import runlog  # noqa: E402  (same, beside the manager it serves)
+
+
+def _write_export_summary(destp: Path) -> None:
+    """Rewrite an export folder's ``BACKUP_SUMMARY.md`` once its large-data copy is done.
+
+    The corpus phase wrote the file already, before this phase started; this rewrite is
+    what adds the copied files to it, so the last writer carries both halves. The corpus
+    half comes from the volume manager's record of THIS folder (``backup_status_for``),
+    not from whatever job it ran last. Only for a dated export folder -- the older folder
+    backup dialog writes wherever the operator points it -- and never raising: see
+    :func:`src.backup.export_summary.write_summary_for_export_job`.
+    """
+    from src.backup.export_folder import is_export_folder_name
+
+    if not is_export_folder_name(destp.name):
+        return
+    try:
+        from src.backup.export_summary import write_summary_for_export_job
+        from src.backup.volume_job import get_volume_manager
+
+        write_summary_for_export_job(
+            destp, volume_status=get_volume_manager().backup_status_for(destp)
+        )
+    except Exception:  # noqa: BLE001 - a summary is never worth failing a finished copy
+        import logging
+
+        logging.getLogger(__name__).warning(
+            "export summary: not rewritten after the copy into %s", destp, exc_info=True
+        )
 
 
 class FolderBackupManager:
@@ -1004,6 +1034,9 @@ class FolderBackupManager:
         self._cancelled = False
         self._targets: dict[str, Path] | None = None
         self._verify: dict | None = None
+        #: Wall-clock start of the current/last job (J1): with the volume manager's own,
+        #: it tells a reopened Export dialog which completed export is the later one.
+        self._started_at: float | None = None
 
     def _alive(self) -> bool:
         return self._thread is not None and self._thread.is_alive()
@@ -1065,6 +1098,7 @@ class FolderBackupManager:
             self._progress = {}
             self._targets = _targets
             self._verify = None
+            self._started_at = time.time()
             target = {
                 "backup": self._run_backup,
                 "restore": self._run_restore,
@@ -1086,6 +1120,10 @@ class FolderBackupManager:
                 res = write_folder_backup(
                     destp, items, progress_cb=self._on_prog, should_stop=self._stop.is_set
                 )
+                if not res["stopped"]:
+                    # BACKUP_SUMMARY.md again, now carrying the copied files too, and
+                    # before "done" is published (J2) -- see _write_export_summary.
+                    _write_export_summary(destp)
                 with self._lock:
                     if res["stopped"]:
                         self._state = "cancelled" if self._cancelled else "paused"
@@ -1193,6 +1231,7 @@ class FolderBackupManager:
                 "progress": dict(self._progress),
                 "error": self._error,
                 "running": self._alive(),
+                "started_at": self._started_at,
             }
             if self._verify is not None:
                 out["verify"] = self._verify  # the last verify verdict (read-only)

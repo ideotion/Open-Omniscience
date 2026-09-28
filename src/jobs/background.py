@@ -37,6 +37,30 @@ from typing import Any, Callable
 _LOG = logging.getLogger("jobs.background")
 
 
+class Framed(str):
+    """An English progress line that also carries its keyed FRAME and values.
+
+    Everywhere a plain ``str`` goes it IS one -- the English sentence, unchanged -- so a
+    caller, a log line or a test double that reads ``detail`` sees exactly what it saw
+    before. ``set_progress`` also publishes the frame (``detail_i18n`` / ``detail_vars``
+    in the status), which the task managers write in the UI language by the ``label_i18n``
+    conventions of src/api/jobs.py: a number is formatted there, a value that is itself
+    ``{"i18n": key, "vars": {...}}`` is written in the UI language too, and any other
+    value is data (click-through B19, Q5/Q12). It rides INSIDE the string on purpose:
+    ``set_progress``'s signature is pinned by the test doubles of a dozen workers, and a
+    new keyword there would make each of them a context that cannot exist.
+    """
+
+    i18n: str
+    vars: dict
+
+    def __new__(cls, text: str, frame: str, **values: Any) -> Framed:
+        s = super().__new__(cls, text)
+        s.i18n = frame
+        s.vars = values
+        return s
+
+
 class JobContext:
     """Handed to the worker: cooperative stop + progress reporting (thread-safe)."""
 
@@ -58,6 +82,12 @@ class JobContext:
                 self._job._total = int(total)
             if detail is not None:
                 self._job._detail = str(detail)
+                # A new line replaces its frame too: a frame left from the previous line
+                # would write the OLD sentence in every language but English.
+                self._job._detail_frame = (
+                    {"i18n": detail.i18n, "vars": dict(detail.vars)}
+                    if isinstance(detail, Framed) else None
+                )
 
     def set_metrics(self, metrics: dict | None) -> None:
         """Publish the worker's own MEASUREMENTS into the live status (2026-09-21, F3).
@@ -108,6 +138,7 @@ class BackgroundJob:
         self._done = 0
         self._total = 0
         self._detail = ""
+        self._detail_frame: dict | None = None
         self._metrics: dict | None = None
         self._started_at: float | None = None
         self._ended_at: float | None = None
@@ -130,6 +161,7 @@ class BackgroundJob:
             self._done = 0
             self._total = 0
             self._detail = ""
+            self._detail_frame = None
             self._metrics = None
             self._started_at = time.time()
             self._ended_at = None
@@ -187,6 +219,10 @@ class BackgroundJob:
                 "done": done,
                 "total": total,
                 "detail": self._detail or None,
+                # ADDITIVE (click-through B19): the detail's keyed frame when the worker
+                # published a Framed line, else None -- `detail` above is unchanged.
+                "detail_i18n": self._detail_frame["i18n"] if (self._detail and self._detail_frame) else None,
+                "detail_vars": dict(self._detail_frame["vars"]) if (self._detail and self._detail_frame) else None,
                 # ADDITIVE (2026-09-21): the worker's own live measurements, or None.
                 # Every key above and below is unchanged, so an existing reader of this
                 # payload sees exactly what it saw before.

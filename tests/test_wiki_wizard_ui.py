@@ -160,7 +160,11 @@ def test_saving_records_that_the_operator_WENT_THROUGH_it():
 def test_the_share_line_is_an_ABSENCE_with_a_reason_when_it_cannot_be_computed():
     body = function_source(_sources(), "_wizShare")
     assert "Pick at least one edition and a budget to see the share." in body
-    assert "toFixed" in body, "and a real division when it can"
+    # A real division when it can, written by the ruled number formatter (fmtNum). The
+    # old check looked for "toFixed", which it found only in a COMMENT explaining why the
+    # code did not use it (click-through B14, Z1).
+    assert "const share = gb / n;" in body, "and a real division when it can"
+    assert "fmtNum(share, digits)" in body and "share.toLocaleString(" not in body
 
 
 def test_the_summary_never_reports_an_unmeasured_lane_as_ZERO_bytes():

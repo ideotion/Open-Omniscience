@@ -16,6 +16,7 @@ Usage:
     python scripts/i18n_report.py --json          # machine-readable
     python scripts/i18n_report.py --min 100       # exit 1 if a 'complete' locale < 100%
     python scripts/i18n_report.py --audit-chrome  # UI strings NOT yet keyed in en.json
+    python scripts/i18n_report.py --glossary      # exit 1 if a locale strays from its one term
 
 ``--audit-chrome`` (maintainer asked 2026-06-10, after a French live test showed
 untranslated Settings text) extracts every constant text node + placeholder/
@@ -319,23 +320,34 @@ def _strip_js_comments(text: str) -> str:
 def _js_chrome(text: str) -> set[str]:
     out: set[str] = set()
     text = _strip_js_comments(text)
-    for rx in _JS_SHAPES:
-        for m in rx.finditer(text):
-            k = re.sub(r"\s+", " ", m.group(1)).strip()
-            if _JS_CONCAT_ARTIFACT.search(k):
-                continue
-            # The DOM walker matches against nodeValue, which is DECODED, so a
-            # source that writes `&amp;` needs the key `&`. Asking for the raw
-            # source form would be asking for a key that can never match -- the
-            # same failure the _js_unescape scar records for JS escapes.
-            k = unescape(k)
-            if len(k) < 3 or "${" in k:
-                continue
-            if re.fullmatch(r"[\W\d_…→↗·—-]+", k):
-                continue
-            if k.startswith(("http", "/api", "data:", "var(", "#")):
-                continue
-            out.add(k)
+    found = [_call_arg(text, m) if rx.pattern.startswith(r"\bt(") else m.group(1)
+             for rx in _JS_SHAPES for m in rx.finditer(text)]
+    # The t() aliases this file binds (B16 V2) -- see _T_BINDING. Their literals are
+    # call arguments, looked up EXACTLY (i18n.js: `map[s]`), so a key that carries its
+    # own edge space (" · one source only") is kept as written rather than trimmed
+    # into a string that has no key.
+    calls = _alias_t_literals(text, 3, 200)
+    found += calls
+    exact = {c for c in calls if c.strip() != c and "\n" not in c}
+    for raw in found:
+        if raw in exact:
+            out.add(_js_unescape(raw))
+            continue
+        k = re.sub(r"\s+", " ", raw).strip()
+        if _JS_CONCAT_ARTIFACT.search(k):
+            continue
+        # The DOM walker matches against nodeValue, which is DECODED, so a
+        # source that writes `&amp;` needs the key `&`. Asking for the raw
+        # source form would be asking for a key that can never match -- the
+        # same failure the _js_unescape scar records for JS escapes.
+        k = unescape(k)
+        if len(k) < 3 or "${" in k:
+            continue
+        if re.fullmatch(r"[\W\d_…→↗·—-]+", k):
+            continue
+        if k.startswith(("http", "/api", "data:", "var(", "#")):
+            continue
+        out.add(k)
     return out
 
 
@@ -387,7 +399,69 @@ _T_CALL = (
 # being structurally invisible to a hand-written `\bt\(`; the same trap is worse here,
 # because modules bind tf under at least `tf`, `TF` and `tfa`, and a new name costs
 # nothing to invent. So the alias set is read out of each file's OWN bindings.
-_TF_BINDING = re.compile(r"\b(\w+)\s*=\s*\(\s*window\.OOI18N\s*&&\s*OOI18N\.tf\s*\)")
+_TF_BINDING = re.compile(r"\b(\w+)\s*=\s*\(\s*window\.OOI18N\s*&&\s*(?:window\.)?OOI18N\.tf\s*\)")
+
+# THE SAME TRAP, ONE SHAPE OVER (2026-09-27, fix batch B16 V2). The binding regex
+# above reads `const X = (window.OOI18N && OOI18N.tf) ? ...` -- and a module that
+# wraps tf in a FUNCTION instead (`function _bulTf(s, vars) { return (window.OOI18N
+# && OOI18N.tf) ? OOI18N.tf(s, vars) : ... }`, the shape _bulTf, _kwTf and _govTf
+# use so the fallback interpolates) was never discovered, so every frame passed
+# through one was invisible to the third gate. t() has the same two shapes
+# (`const T = (window.OOI18N && OOI18N.t) ? ...`, `function _bulT(s) { return
+# (window.OOI18N && OOI18N.t) ? ... }`) and the t() gate had discovered NEITHER:
+# its regex names t, t9 and t9m, and every other alias -- T, tt, tr, _t, _bulT,
+# _gwT, _govT... -- was a structurally invisible call site.
+_T_BINDING = re.compile(r"\b(\w+)\s*=\s*\(\s*window\.OOI18N\s*&&\s*(?:window\.)?OOI18N\.t\s*\)")
+_T_FN_BINDING = re.compile(
+    r"\bfunction\s+(\w+)\s*\(\s*\w+\s*\)\s*\{\s*return\s*\(\s*window\.OOI18N\s*&&\s*"
+    r"(?:window\.)?OOI18N\.t\s*\)")
+_TF_FN_BINDING = re.compile(
+    r"\bfunction\s+(\w+)\s*\([^)]*\)\s*\{\s*return\s*\(\s*window\.OOI18N\s*&&\s*"
+    r"(?:window\.)?OOI18N\.tf\s*\)")
+#: The names _T_CALL already matches by its own pattern; discovering them again would
+#: count every one of their call sites twice.
+_T_CALL_NAMES = frozenset({"t", "t9", "t9m"})
+
+
+def _t_aliases(text: str) -> set[str]:
+    """Every name this file binds to OOI18N.t, beyond the three _T_CALL spells out."""
+    return (set(_T_BINDING.findall(text)) | set(_T_FN_BINDING.findall(text))) - _T_CALL_NAMES
+
+
+def _tf_aliases(text: str) -> set[str]:
+    """Every name this file binds to OOI18N.tf, plus the qualified call itself."""
+    return {"OOI18N.tf"} | set(_TF_BINDING.findall(text)) | set(_TF_FN_BINDING.findall(text))
+
+
+def _alias_t_literals(text: str, lo: int, hi: int) -> list[str]:
+    """The literal first argument of every call to one of this file's t() aliases."""
+    out: list[str] = []
+    for alias in _t_aliases(text):
+        call = rf"(?<![\w.$]){re.escape(alias)}\(\s*"
+        for rx in (re.compile(call + rf'"((?:[^"\\{{`$]|\\.){{{lo},{hi}}})"'),
+                   re.compile(call + rf"'((?:[^'\\{{`$]|\\.){{{lo},{hi}}})'"),
+                   re.compile(call + rf"`((?:[^`\\{{$]|\\.){{{lo},{hi}}})`")):
+            out.extend(_call_arg(text, m) for m in rx.finditer(text))
+    return out
+
+
+_CONCAT_TAIL = re.compile(
+    r"""\s*\+\s*(?:"((?:[^"\\\n]|\\.)*)"|'((?:[^'\\\n]|\\.)*)'|`((?:[^`\\$]|\\.)*)`)""")
+
+
+def _call_arg(text: str, m: re.Match[str]) -> str:
+    """A matched call's literal argument, with every literal CONCATENATED onto it joined.
+
+    ``T("paused, and " + "the fan-out is capped.")`` is ONE key at runtime -- the
+    concatenation happens before the lookup -- so reading only the first literal
+    reports a fragment nobody could ever key, and misses whether the real sentence
+    has one. Only literal-plus-literal INSIDE the call is joined: ``t("Label") + ": "``
+    closes the call first, so its tail is never read as part of the key."""
+    s, pos = m.group(1), m.end()
+    while (c := _CONCAT_TAIL.match(text, pos)) is not None:
+        s += c.group(c.lastindex or 1) or ""
+        pos = c.end()
+    return s
 
 
 def _js_unescape(lit: str) -> str:
@@ -434,8 +508,7 @@ def unkeyed_tf_frames() -> dict:
     unkeyed: dict[str, list[str]] = {}
     for name, text in sources.items():
         text = _strip_js_comments(text)
-        names = {"OOI18N.tf"} | set(_TF_BINDING.findall(text))
-        for alias in names:
+        for alias in _tf_aliases(text):
             esc_alias = re.escape(alias)
             for quote, body in (('"', r'(?:[^"\\]|\\.)*'), ("'", r"(?:[^'\\]|\\.)*"),
                                 ("`", r"(?:[^`\\$]|\\.)*")):
@@ -465,14 +538,18 @@ def unkeyed_t_calls() -> dict:
     sources.update(_aux_inline_js())
     for text in sources.values():
         text = _strip_js_comments(text)
-        for rx in _T_CALL:
-            for m in rx.finditer(text):
-                k = re.sub(r"\s+", " ", m.group(1)).strip()
-                if not k:
-                    continue
-                sites += 1
-                if k not in en_keys:
-                    unkeyed.add(k)
+        found = [_call_arg(text, m) for rx in _T_CALL for m in rx.finditer(text)]
+        # The t() aliases this file binds (B16 V2) -- see _T_BINDING.
+        found += _alias_t_literals(text, 1, 400)
+        for raw in found:
+            k = re.sub(r"\s+", " ", raw).strip()
+            if not k:
+                continue
+            sites += 1
+            # t() is an exact lookup, so the literal AS WRITTEN is the runtime key;
+            # the normalised form is kept too, for the multi-line backtick literals.
+            if k not in en_keys and _js_unescape(raw) not in en_keys:
+                unkeyed.add(k)
     return {"sites": sites, "unkeyed_count": len(unkeyed), "unkeyed": sorted(unkeyed)}
 
 
@@ -531,6 +608,45 @@ def _load(path: Path) -> dict:
 
 def _keys(data: dict) -> set[str]:
     return {k for k in data if k != "_meta"}
+
+
+# ONE term per concept, per locale. Coverage and the ratchets above cannot see this
+# class: every key can be present and translated while two batches pick two words for
+# one idea. French 'lane' read "file" on 26 keys and "voie" on 10 -- the Storage header
+# upper-cased to "FILE", which reads as the English word, beside "une voie" in the
+# Export dialog (2026-09-27 re-walk O-4; "file" is also this locale's word for a queue,
+# "file d'attente"). Each rule: the ENGLISH key pattern that names the concept, the term
+# every such value must use, and the term it must never use.
+GLOSSARY: dict[str, list[dict[str, str]]] = {
+    "fr": [
+        {
+            "concept": "lane",
+            "key": r"\blanes?\b",
+            "use": r"\bvoies?\b",
+            "never": r"\bfiles?\b(?! d['’]attente)",
+        },
+    ],
+}
+
+
+def glossary_violations() -> list[dict[str, str]]:
+    """Every locale value that breaks its GLOSSARY rule, one row per key and rule."""
+    out: list[dict[str, str]] = []
+    for code, rules in GLOSSARY.items():
+        data = _load(_LOCALES / f"{code}.json")
+        for rule in rules:
+            for key, value in data.items():
+                if key == "_meta" or not re.search(rule["key"], key, re.I):
+                    continue
+                text = str(value)
+                why = ""
+                if re.search(rule["never"], text, re.I):
+                    why = "uses the term this locale ruled out"
+                elif not re.search(rule["use"], text, re.I):
+                    why = "lacks the chosen term"
+                if why:
+                    out.append({"locale": code, "concept": rule["concept"], "key": key, "why": why})
+    return out
 
 
 def build_report() -> dict:
@@ -636,7 +752,19 @@ def main(argv: list[str] | None = None) -> int:
             "from a literal, so the app's own interpolation frames are invisible to them."
         ),
     )
+    ap.add_argument(
+        "--glossary",
+        action="store_true",
+        help="fail (exit 1) if a locale value uses a term other than its GLOSSARY term",
+    )
     args = ap.parse_args(argv)
+
+    if args.glossary:
+        bad = glossary_violations()
+        print(f"glossary violations: {len(bad)}", file=sys.stderr)
+        for row in bad[:20]:
+            print(f"    {row['locale']} {row['concept']}: {row['why']} -- {row['key'][:90]}", file=sys.stderr)
+        return 1 if bad else 0
 
     if args.max_unkeyed_t_calls is not None:
         tcalls = unkeyed_t_calls()

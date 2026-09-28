@@ -49,6 +49,23 @@ def test_keyword_label_node_suite() -> None:
     assert "keyword_label_node_test.js: OK" in proc.stdout
 
 
+def test_the_reader_draws_the_same_label_m7() -> None:
+    """M7: the standalone reader's Keywords tab drew the bare stored word, because the page
+    does not load the SPA helper. Its port is driven as real code, and its fetch asks for
+    the reader's language -- without it the port would have nothing to draw."""
+    proc = subprocess.run(
+        ["node", str(_ROOT / "tests" / "reader_label_node_test.js")],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert "reader_label_node_test.js: OK" in proc.stdout
+    reader = (_ROOT / "src" / "static" / "reader.js").read_text(encoding="utf-8")
+    assert '"&target_lang=" + encodeURIComponent(uiLang())' in reader
+    assert "rdLabelHtml(t)" in reader, "renderKeywords no longer draws through the port"
+
+
 def test_every_label_string_is_keyed_in_all_twelve_locales() -> None:
     missing: list[str] = []
     for path in sorted(_LOCALES.glob("*.json")):
@@ -138,7 +155,10 @@ def test_every_surface_that_renders_a_keyword_label_also_repaints_on_a_language_
     # slicing-discipline ratchet exists precisely to stop a thirty-ninth private copy.
     body = function_body(app, "ooKwRepaintOnLangChange")
     renderers = set()
-    for m in re.finditer(r"kwLabelHtml\(", app):
+    # `kwLabelParts` too (M7): the analysis mind map draws the label as SVG text from the
+    # same rules, and a renderer reaching them through the parts is as frozen as one
+    # reaching them through the HTML if nothing re-runs it.
+    for m in re.finditer(r"kwLabel(?:Html|Parts)\(", app):
         before = app[: m.start()]
         fn = None
         for fm in re.finditer(r"\n\s*(?:async\s+)?function\s+(\w+)\s*\(", before):
@@ -146,8 +166,32 @@ def test_every_surface_that_renders_a_keyword_label_also_repaints_on_a_language_
         if fn:
             renderers.add(fn)
     # The helper itself and its own documentation mention the name; they are not surfaces.
-    renderers -= {"kwLabelHtml", "kwQidHtml", "kwHoverText", "kwSensePickerHtml"}
+    renderers -= {"kwLabelHtml", "kwLabelParts", "_kwLabelState", "kwQidHtml", "kwHoverText",
+                  "kwSensePickerHtml", "kwHasTag"}
     assert renderers, "no renderer found at all -- the scan is looking in the wrong place"
+    assert "renderAnMindmap" in renderers, (
+        "the scan no longer sees the mind map's label -- is it reading kwLabelParts?"
+    )
+    # A repaint entry may be a function that RE-FETCHES and then re-draws (the mind map's
+    # `anMindmapRepaint`, whose nodes carry translations into the old language, so drawing
+    # the held payload again would be wrong). What it re-draws is covered through it.
+    repaint_fns = set(re.findall(r'\[\s*(?:"[^"]*"|null)\s*,\s*"(\w+)"', body))
+    # ...and every repainter the `oo:langchange` listeners call DIRECTLY (2026-09-27 re-walk
+    # M-3/M-5): the Bulletin's `_bulRepaint` redraws its Review from the payload it holds,
+    # and the Review's story terms now draw the label. Re-running it is the same guarantee
+    # as a list entry, so a function the listener runs counts as a repaint too; listing it
+    # again in the keyword list would only paint the panel twice.
+    from tests.js_source_helper import event_listener_bodies
+
+    for lb in event_listener_bodies(app, "oo:langchange"):
+        for called in re.findall(r"(?<![\w$.])(\w+)\(", lb):
+            if re.search(rf"\n\s*(?:async\s+)?function\s+{re.escape(called)}\s*\(", app):
+                repaint_fns.add(called)
+    redrawn = {
+        callee
+        for r in repaint_fns
+        for callee in re.findall(r"(?<![\w$.])(\w+)\(", function_body(app, r))
+    }
 
     # A renderer is COVERED when it is named in the repaint set, OR when every function
     # that calls it is. `termListHtml` is the case that forced this: it is a pure HTML
@@ -156,7 +200,7 @@ def test_every_surface_that_renders_a_keyword_label_also_repaints_on_a_language_
     # host that does not exist; ignoring builders by NAME ("anything not called load*")
     # would be a convention, not a property. Following the call is the property.
     def covered(fn: str, seen: set[str]) -> bool:
-        if fn in body:
+        if fn in body or fn in redrawn:
             return True
         if fn in seen:
             return False  # a cycle reaches no repainted surface
@@ -166,7 +210,9 @@ def test_every_surface_that_renders_a_keyword_label_also_repaints_on_a_language_
         # bare name pattern too, and the enclosing-function scan then attributes it to
         # whatever function happens to sit above it in the file -- a caller that does not
         # exist. That misattribution is what this pattern's first draft reported.
-        for cm in re.finditer(rf"(?<![\w$.])(?<!function ){re.escape(fn)}\(", app):
+        # A renderer handed over BY REFERENCE (`.map(sgCard)`) is called by the function
+        # that hands it over, so that function is a caller too (M7: the super-group cards).
+        for cm in re.finditer(rf"(?<![\w$.])(?<!function ){re.escape(fn)}(?:\(|\s*[),])", app):
             head = app[: cm.start()]
             outer = None
             for fm in re.finditer(r"\n\s*(?:async\s+)?function\s+(\w+)\s*\(", head):
@@ -181,3 +227,103 @@ def test_every_surface_that_renders_a_keyword_label_also_repaints_on_a_language_
         "are re-run on oo:langchange, so their labels freeze in whichever locale painted "
         f"them first: {missing}"
     )
+
+
+# --------------------------------------------------------------------------- #
+#  The delegated click-through of 2026-09-26, row M (M2, M3, M4, M8)
+# --------------------------------------------------------------------------- #
+
+
+def test_a_tag_inside_a_keyword_row_keeps_its_own_hover_m2() -> None:
+    """M2: on a ``data-kwstat`` chip the keyword-stats handler took the enclosing chip for
+    every hover and overwrote the bubble ooTipInit had just opened for the tier tag, so
+    Q418's hover (original, language, QID) was unreachable. The handler must stand down
+    when the pointer is on a hover target of its own INSIDE the row, and the chips must
+    carry the tag's hover on the row for a keyboard reader."""
+    from tests.js_source_helper import app_js, function_body, function_source, strip_comments
+
+    app = app_js()
+    boot = function_source(app, "ooKwStatInit")
+    on_hover = strip_comments(function_body(boot, "onHover"))
+    assert 'closest(".oo-tip-target")' in on_hover, "the stats handler no longer looks for an inner hover target"
+    assert "inner !== el && el.contains(inner)" in on_hover and "hovered = null" in on_hover
+    chips = strip_comments(function_body(app, "anRenderKwChips"))
+    assert "kwTipExtraAttr(term)" in chips, "the analysis chips carry no tier hover for the keyboard"
+
+
+def test_the_tag_inside_a_filled_chip_takes_the_chips_text_colour_m3() -> None:
+    """M3: the analysis chips are ``<button class="chip">``, filled with --accent by the
+    global button rule; the tag's own accent/muted colours measured 1.14:1 on that fill.
+    Inside a filled chip the tag inherits the chip's --accent-fg, and that pair clears
+    AA on every theme."""
+    from tests.js_source_helper import css_rule
+    from tests.test_theme_contrast_and_donut_guard import _ratio, _theme_tokens
+
+    css = (_ROOT / "src" / "static" / "app.css").read_text(encoding="utf-8")
+    rule = css_rule(css, "button.chip .kw-tag, button.chip .kw-qid")
+    assert "color: inherit" in rule and "currentColor" in rule, rule
+    tokens = _theme_tokens()
+    assert len(tokens) >= 17
+    weak = []
+    for name, t in sorted(tokens.items()):
+        fg, fill = t.get("accent-fg"), t.get("accent")
+        if fg and fill and _ratio(fg, fill) < 4.5:
+            weak.append(f"{name} {_ratio(fg, fill):.2f}")
+    assert not weak, f"the chip's own text colour fails AA on its fill: {weak}"
+
+
+def test_the_sense_picker_sits_outside_the_chip_and_a_pick_is_read_m4() -> None:
+    """M4: the picker's buttons nested inside the chip's <button> were hoisted out by the
+    parser, and no code read ``data-kwpin``, so a pick changed nothing."""
+    from tests.js_source_helper import app_js, event_listener_bodies, function_body, strip_comments
+
+    app = app_js()
+    chips = strip_comments(function_body(app, "anRenderKwChips"))
+    assert "kwLabelHtml(term, {inButton: true})" in chips
+    assert "</button>${kwSensesAfterHtml(term, pins)}" in chips, "the picker is not drawn after the chip"
+    insights = (_ROOT / "src" / "static" / "app-insights.js").read_text(encoding="utf-8")
+    assert "kwLabelHtml(f, {inButton: true})" in insights and "</button>${kwSensesAfterHtml(f)}" in insights, (
+        "the landscape chip is a <button> too"
+    )
+    clicks = event_listener_bodies(app, "click")
+    assert any("[data-kwpin]" in h and "kwPickSense(" in h and "stopPropagation" in h for h in clicks), (
+        f"no delegated click listener reads the sense picker ({len(clicks)} click listener(s) found)"
+    )
+
+
+def test_a_language_switch_reloads_what_holds_translations_m8() -> None:
+    """M8: the repaint called ``loadLandscape()``, which returns early once loaded, and
+    re-rendered the analysis chips from a payload fetched for the OLD target language."""
+    from tests.js_source_helper import app_js, function_body, strip_comments
+
+    app = app_js()
+    body = strip_comments(function_body(app, "ooKwRepaintOnLangChange"))
+    assert '["ins-landscape", "loadLandscape", true]' in body
+    assert '[null, "anRenderKwChips", {refetch: true}]' in body
+    assert "window[fn](arg)" in body, "the per-surface argument is never passed"
+    chips = strip_comments(function_body(app, "anRenderKwChips"))
+    assert "opts.refetch" in chips and "_anRefetchKw()" in chips
+    refetch = strip_comments(function_body(app, "_anRefetchKw"))
+    assert "tgtLangParam()" in refetch and "corpus-keywords" in refetch
+    landscape = strip_comments(function_body(app, "loadLandscape"))
+    assert "if (_landscapeLoaded && !force) return;" in landscape
+
+
+def test_the_trend_rows_draw_the_label_through_the_one_helper_m7() -> None:
+    """M7 (the row's closing criterion: every keyword surface draws a foreign word with its
+    tier tag). Home's "Trending now" row, the three-window sparkline rows and the Trends
+    bars drew ``esc(x.term)`` -- the bare original, never the translation, never a tag.
+
+    Each is a LINK, so each calls the helper with ``{inLink: true}`` and draws the QID
+    after its closing tag: a nested anchor closes the outer one early and spills the rest
+    of the row out of it. The rendered strings are driven in
+    ``term_bars_hover_node_test.js`` and ``keyword_label_node_test.js``; this pins that
+    the surfaces still call them."""
+    from tests.js_source_helper import app_js, function_body, strip_comments
+
+    app = app_js()
+    for fn in ("_renderOverviewTrends", "loadTrendWindows", "termBarsHtml", "termListHtml"):
+        body = strip_comments(function_body(app, fn))
+        assert re.search(r"kwLabelHtml\((?:x|t), \{inLink: true\}\)", body), f"{fn} draws a bare keyword"
+        assert "kwQidHtml(" in body, f"{fn} drops the QID the label left for it"
+        assert not re.search(r">\$\{esc\((?:x|t)\.term\)\}</a>", body), f"{fn} still draws a bare term"

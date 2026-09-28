@@ -85,6 +85,9 @@
         month: null,
         day: null,
         calendar: e.family, family_name: e.family_name, family_names: e.family_names,
+        // Each family's KEY beside its name, index for index: a user calendar's only
+        // source is its family key, and agRow names it from here.
+        families: e.families || (e.family ? [e.family] : []),
         kind: kind, countries: e.countries || (e.country ? [e.country] : []),
         sources: e.sources || [], source_count: e.source_count, family_count: e.family_count,
         imported: true,
@@ -145,19 +148,8 @@
         // persisted) until the user makes an explicit choice, so a newly-added catalog
         // calendar is auto-included and nothing is ever silently dropped (honors the flag).
         if (_agPrefs && !_agPrefs.configured) _agPrefs.subs = new Set(fac.calendars.map(c => c.key));
-        // Q308 rules PICKERS specifically -- "by localised name, the code as a
-        // secondary column" -- which is why this surface shows BOTH where an
-        // ordinary cell shows the code alone (Q302). An <option> carries no
-        // reliable hover, so the layered form Q302 relies on is not available here
-        // and the more specific ruling is the one that can actually be honoured.
-        // The VALUE stays the stored alpha-2: a picker that silently changed what
-        // it submits would break every filter reading it.
-        $("agenda-country").innerHTML = '<option value="">all</option>' +
-          fac.countries.slice().sort(ooCountryCompare).map(x => {
-            const code = ooCountryCode(x), name = ooCountryName(x, "");
-            const label = name && name !== code ? `${name} (${code})` : code;
-            return `<option value="${esc(x)}">${agFlag(x)} ${esc(label)}</option>`;
-          }).join("");
+        AG.countries = fac.countries || [];
+        _agFillCountryOptions();
         $("agenda-tag").innerHTML = '<option value="">all</option>' + fac.tags.map(x => `<option value="${esc(x)}">${esc(x)}</option>`).join("");
         if (!_agViewTabs) _agViewTabs = ooSubtabs($("agenda-views"), agendaSetView);
         renderAgendaCatChips();
@@ -168,6 +160,28 @@
       // and loads only when that section is expanded. The agenda's own per-event
       // provenance pills do not depend on it: _agFeedById() self-loads the map on
       // first use when _feedDir is still null.
+    }
+
+    // Q308 rules PICKERS specifically -- "by localised name, the code as a
+    // secondary column" -- which is why this surface shows BOTH where an
+    // ordinary cell shows the code alone (Q302). An <option> carries no
+    // reliable hover, so the layered form Q302 relies on is not available here
+    // and the more specific ruling is the one that can actually be honoured.
+    // The VALUE stays the stored alpha-2: a picker that silently changed what
+    // it submits would break every filter reading it.
+    // The names AND their order are the reader's language, so a switch rebuilds the
+    // options from the facet list drawn last -- never a fetch -- keeping the pick
+    // (2026-09-27 re-walk, L-3: they stayed English, in English order, until a reload).
+    function _agFillCountryOptions() {
+      const sel = $("agenda-country"); if (!sel || !AG.countries) return;
+      const cur = sel.value;
+      sel.innerHTML = '<option value="">all</option>' +
+        AG.countries.slice().sort(ooCountryCompare).map(x => {
+          const code = ooCountryCode(x), name = ooCountryName(x, "");
+          const label = name && name !== code ? `${name} (${code})` : code;
+          return `<option value="${esc(x)}">${agFlag(x)} ${esc(label)}</option>`;
+        }).join("");
+      sel.value = cur;
     }
 
     // -- The Bulletin (design record §13/§16) -------------------------------- //
@@ -183,6 +197,10 @@
     // own helper on the _gwT precedent -- a bare t() here passes node --check and
     // throws a ReferenceError in the browser.
     function _bulT(s) { return (window.OOI18N && OOI18N.t) ? OOI18N.t(s) : s; }
+    // The cadence is stored as its CODE ("weekly"); the list shows the same label the
+    // Period picker does, through the same keys (M14).
+    const _BUL_CADENCE_LABEL = {daily: "Daily", weekly: "Weekly", monthly: "Monthly",
+      trimester: "Trimester", semester: "Semester", yearly: "Yearly"};
     // Guarded like _bulT, for the same reason: i18n.js may not have loaded. The
     // template is the key and the count is data, so the frame can be translated
     // later without the number ever going through a translation table.
@@ -193,17 +211,74 @@
     let _bulExcludeSections = new Set();
     let _bulExcludeStories = new Set();
     let _bulFile = null;
+    // WHAT A LANGUAGE SWITCH REPAINTS FROM (K-repaint). Every line this panel writes was
+    // composed in the language on screen at the time, and none of it is a key the DOM
+    // walker could match again, so the Review, the list, the gate and the status lines
+    // all stayed in the old language after a switch. They keep their INPUTS instead --
+    // the payloads they drew and each status line as its key and values -- and
+    // `_bulRepaint` (called from app-boot's one `oo:langchange` listener) redraws from
+    // those. It never fetches.
+    let _bulGate = null, _bulView = null, _bulEditions = null, _bulPrivacyData = null;
+    const _bulMsgs = {};
+    function _bulSay(id, key, vars) {
+      _bulMsgs[id] = {key, vars: vars || null};
+      _bulPaintMsg(id);
+    }
+    function _bulPaintMsg(id) {
+      const el = $(id), m = _bulMsgs[id];
+      if (!el || !m) return;
+      el.textContent = m.vars ? _bulTf(m.key, m.vars) : _bulT(m.key);
+    }
+    // A story's shared terms, each through the ONE keyword label (re-walk M-3/M-5): the
+    // Review listed a Russian story's terms bare in a French UI. The row names the term's
+    // RECORDED language and nothing more -- the review translates nothing, so a foreign
+    // term reads "in Russian", and a term in the reader's own language carries no tag.
+    // Rendered from the payload at paint time, so `_bulRepaint` renames the language
+    // after a switch without a fetch. kwLabelHtml marks each term data-i18n-dyn.
+    function _bulStoryTermsHtml(s) {
+      const rows = (s && s.shared_term_rows && s.shared_term_rows.length)
+        ? s.shared_term_rows
+        : ((s && s.shared_terms) || []).map((term) => ({term: term}));
+      if (!rows.length) return "—";
+      if (typeof kwLabelHtml !== "function") {
+        return `<span data-i18n-dyn>${esc(rows.map((r) => r.term).join(", "))}</span>`;
+      }
+      const ui = String(typeof uiLangCode === "function" ? uiLangCode() : "en").split("-")[0].toLowerCase();
+      return rows.map((r) => {
+        const lang = String(r.language || "").trim().toLowerCase();
+        const row = {term: r.term, normalized: r.normalized || r.term};
+        if (lang && lang !== "?" && lang.split("-")[0] !== ui) {
+          row.translation_source_lang = lang;
+          row.translation_tier = "untranslated";
+        }
+        return kwLabelHtml(row, {inButton: true});
+      }).join(", ");
+    }
+
+    function _bulRepaint() {
+      _bulPaintGate();
+      if (_bulEditions) _bulPaintEditions();
+      if (_bulView && _bulFile) { _bulRender(_bulView); _bulPaintPrivacy(); }
+      for (const id of Object.keys(_bulMsgs)) _bulPaintMsg(id);
+    }
 
     function _bulQuery() {
       const p = new URLSearchParams();
       if (_bulExcludeSections.size) p.set("exclude_sections", [..._bulExcludeSections].join(","));
       if (_bulExcludeStories.size) p.set("exclude_stories", [..._bulExcludeStories].join(","));
-      // The document is written in the language the operator is READING the app in.
-      // Built here, in the one place both the report and the annexes take their query
-      // from, so the two can never come out in different languages.
-      const lang = (window.OOI18N && OOI18N.current) ? OOI18N.current() : "en";
-      if (lang && lang !== "en") p.set("lang", lang);
+      const lang = _bulLang();
+      if (lang) p.set("lang", lang);
       return p;
+    }
+    // The document is written in the language the operator is READING the app in.
+    // ONE helper for every URL that renders an edition -- the report and the annexes
+    // (through _bulQuery) and the editions list's Open -- so no two of them can come
+    // out in different languages: Open built its own URL without it and opened an
+    // English document on a French page (2026-09-27 re-walk, M-12). null = English,
+    // the server's default, so an English reader's URL is unchanged.
+    function _bulLang() {
+      const lang = (window.OOI18N && OOI18N.current) ? OOI18N.current() : "en";
+      return lang && lang !== "en" ? lang : null;
     }
 
     async function loadBulletin() {
@@ -211,7 +286,16 @@
       if (!gate) return;
       let g = null;
       try { g = await api("/api/bulletin/availability"); }
-      catch (e) { gate.textContent = _bulT("Could not check this machine: ") + e.message; return; }
+      catch (e) { _bulSay("bulletin-gate", "Could not check this machine: {error}", {error: e.message}); return; }
+      delete _bulMsgs["bulletin-gate"];
+      _bulGate = g;
+      _bulPaintGate();
+      if (g.available) await loadBulletinEditions();
+    }
+
+    function _bulPaintGate() {
+      const g = _bulGate, gate = $("bulletin-gate"), controls = $("bulletin-controls");
+      if (!g || !gate || !controls) return;
       if (!g.available) {
         // A refusal states its REASON and points at the override, because the
         // gate is never a hard block -- it is a default with a stated basis.
@@ -228,7 +312,6 @@
       // so the model verdict is rendered on its own control -- disabled, unticked,
       // with the hardware reason beside it rather than a failure at build time.
       _bulPaintNarrationGate(g);
-      await loadBulletinEditions();
     }
 
     function _bulPaintNarrationGate(g) {
@@ -243,8 +326,8 @@
       if (ok) { box.textContent = ""; return; }
       // The reason is the gate's own words. Paraphrasing a hardware fact into a
       // second wording is how two surfaces come to disagree about one machine.
-      box.textContent = _bulT("Narration is unavailable on this machine: ")
-        + (g.narration_reason || _bulT("this machine cannot practically run a local model"))
+      box.textContent = _bulTf("Narration is unavailable on this machine: {reason}",
+        {reason: g.narration_reason || _bulT("this machine cannot practically run a local model")})
         + " " + _bulT("The document is complete without it.");
     }
 
@@ -253,8 +336,18 @@
       if (!box) return;
       let d = null;
       try { d = await api("/api/bulletin/editions"); }
-      catch (e) { box.innerHTML = `<div class="muted">${esc(_bulT("Could not list editions: ") + e.message)}</div>`; return; }
-      const rows = d.editions || [];
+      catch (e) {
+        _bulEditions = null;
+        box.innerHTML = `<div class="muted">${esc(_bulTf("Could not list editions: {error}", {error: e.message}))}</div>`;
+        return;
+      }
+      _bulEditions = d.editions || [];
+      _bulPaintEditions();
+    }
+
+    function _bulPaintEditions() {
+      const box = $("bulletin-list"), rows = _bulEditions || [];
+      if (!box) return;
       if (!rows.length) {
         box.innerHTML = `<div class="muted">${esc(_bulT("No editions yet. Build a draft above."))}</div>`;
         return;
@@ -263,7 +356,7 @@
           <th>${esc(_bulT("Covers through"))}</th><th>${esc(_bulT("Period"))}</th><th></th></tr>` +
         rows.map(r => `<tr>
           <td>${esc(r.covers_through || r.filename)}</td>
-          <td>${esc(r.cadence || "—")}</td>
+          <td>${esc(r.cadence ? _bulT(_BUL_CADENCE_LABEL[r.cadence] || r.cadence) : "—")}</td>
           <td class="row" style="gap:6px;justify-content:flex-end">
             <button class="secondary" onclick="bulletinReview(${esc(JSON.stringify(r.filename))})">${esc(_bulT("Review"))}</button>
             <button class="secondary" onclick="bulletinOpenFile(${esc(JSON.stringify(r.filename))})">${esc(_bulT("Open"))}</button>
@@ -272,35 +365,39 @@
     }
 
     async function bulletinGenerate(btn) {
-      const status = $("bulletin-status");
       const cadence = ($("bul-cadence") || {}).value || "weekly";
       const narrate = !!($("bul-narrate") || {}).checked;
       btn.disabled = true;
-      status.textContent = _bulT("Building…");
+      _bulSay("bulletin-status", "Building…");
       try {
         const out = await api(
           `/api/bulletin/generate?cadence=${encodeURIComponent(cadence)}&persist=true&narrate=${narrate}`,
           {method: "POST"});
-        status.textContent = out.persisted
-          ? _bulT("Draft built.")
-          : _bulT("Built, but not saved: ") + (out.persist_error || "");
+        if (out.persisted) _bulSay("bulletin-status", "Draft built.");
+        else _bulSay("bulletin-status", "Built, but not saved: {error}", {error: out.persist_error || ""});
         await loadBulletinEditions();
         if (out.filename) bulletinReview(out.filename);
       } catch (e) {
-        status.textContent = _bulT("Could not build: ") + e.message;
+        _bulSay("bulletin-status", "Could not build: {error}", {error: e.message});
       } finally { btn.disabled = false; }
     }
 
     async function bulletinReview(filename) {
       const box = $("bulletin-review");
       if (!box) return;
+      // A status line belongs to the edition it was about: opening ANOTHER one drops it,
+      // while re-reading the same one (after narration finishes) keeps it on screen.
+      if (filename !== _bulFile) delete _bulMsgs["bul-pub"];
       _bulFile = filename;
+      _bulView = null;
+      _bulPrivacyData = null;
       _bulExcludeSections = new Set();
       _bulExcludeStories = new Set();
       box.innerHTML = `<div class="muted">${esc(_bulT("Loading…"))}</div>`;
       let v = null;
       try { v = await api(`/api/bulletin/editions/${encodeURIComponent(filename)}/review`); }
-      catch (e) { box.innerHTML = `<div class="muted">${esc(_bulT("Could not open this edition: ") + e.message)}</div>`; return; }
+      catch (e) { box.innerHTML = `<div class="muted">${esc(_bulTf("Could not open this edition: {error}", {error: e.message}))}</div>`; return; }
+      _bulView = v;
       _bulRender(v);
       // The §18 enumeration is fetched right after the review renders, so it is on
       // screen before the operator reaches the download button rather than after.
@@ -317,12 +414,16 @@
       ).join("");
       const label = u.narrated
         ? `<div class="warn">${esc(_bulT("AI-derived — unreliable"))}${u.partial ? esc(_bulT("; sentences naming something absent from the sources were removed")) : ""}</div>`
-        : `<div class="muted">${esc(_bulT("No model text: "))}${esc(u.fallback_reason || "")}</div>`;
+        : `<div class="muted">${esc(_bulTf("No model text: {reason}", {reason: u.fallback_reason || ""}))}</div>`;
       return `<div style="margin:8px 0">${label}<div>${esc(u.text || "")}</div>` +
         (sents ? `<ul style="margin:4px 0 0 12px">${sents}</ul>` : "") + `</div>`;
     }
 
     function _bulRender(v) {
+      // One style for the Review's two checkbox rows, sections and stories, so they cannot
+      // come to disagree: the box keeps its natural size beside a label that wraps itself.
+      const _BUL_CHECK_ROW = "gap:8px;align-items:baseline;flex-wrap:nowrap";
+      const _BUL_CHECK_BOX = "width:auto;flex:none;margin:0;padding:0";
       const box = $("bulletin-review");
       const state = v.state === "published"
         ? `<span class="pill">${esc(_bulT("published"))}</span>`
@@ -334,14 +435,26 @@
         // during review rather than discovered afterwards.
         const w = s.window || {};
         const win = (w.days != null && w.matches_period === false)
-          ? ` <span class="warn">${esc(_bulT("window:"))} ${esc(w.days)} ${esc(_bulT("days"))}</span>` : "";
+          ? ` <span class="warn">${esc(_bulTf("window: {days} days", {days: w.days}))}</span>` : "";
+        // A skip reason is a FIXED producer sentence where it can be (keyed x12), and
+        // data where it carries a number; `_bulT` returns the latter unchanged.
         const why = s.error
           ? ` <span class="warn">${esc(_bulT("failed:"))} ${esc(s.error)}</span>`
-          : (s.skipped ? ` <span class="muted">${esc(_bulT("skipped:"))} ${esc(s.skipped)}</span>` : "");
-        return `<label class="row" style="gap:8px;align-items:baseline">
-          <input type="checkbox" ${off ? "" : "checked"} onchange="bulletinToggleSection(${esc(JSON.stringify(s.section))})">
-          <span><strong>${esc(String(s.section).replace(/_/g, " "))}</strong>
-            <span class="muted">${esc(s.rows)} ${esc(_bulT("row(s)"))}</span>${win}${why}</span></label>`;
+          : (s.skipped ? ` <span class="muted">${esc(_bulTf("skipped: {reason}", {reason: s.skipped_i18n
+              // A reason carrying a number is a FRAME plus its values (click-through B16, V5).
+              ? _bulTf(s.skipped_i18n, s.skipped_vars || {}) : _bulT(s.skipped)}))}</span>` : "");
+        // The heading the DOCUMENT prints for this section (render.py `_section_heading`:
+        // the slug humanised and capitalised), through the same keys -- the raw slug
+        // ("rising concepts") was the one English word left in a translated review.
+        const slug = String(s.section).replace(/_/g, " ");
+        const heading = _bulT(slug.charAt(0).toUpperCase() + slug.slice(1));
+        // The checkbox sits INLINE with its label (click-through B16, V6): app.css gives
+        // every input `width:100%`, so inside this wrapping flex row the box took a line of
+        // its own and pushed the section name under it.
+        return `<label class="row" style="${_BUL_CHECK_ROW}">
+          <input type="checkbox" style="${_BUL_CHECK_BOX}" ${off ? "" : "checked"} onchange="bulletinToggleSection(${esc(JSON.stringify(s.section))})">
+          <span style="flex:1;min-width:0"><strong>${esc(heading)}</strong>
+            <span class="muted">${esc(_bulTf("{n} row(s)", {n: s.rows}))}</span>${win}${why}</span></label>`;
       }).join("");
 
       const stories = (v.stories || []).map(s => {
@@ -354,12 +467,19 @@
         ).join("");
         const label = s.narrated
           ? `<div class="warn">${esc(_bulT("AI-derived — unreliable"))}${s.partial ? esc(_bulT("; sentences naming something absent from the sources were removed")) : ""}</div>`
-          : `<div class="muted">${esc(_bulT("No model text: "))}${esc(s.fallback_reason || "")}</div>`;
+          : `<div class="muted">${esc(_bulTf("No model text: {reason}", {reason: s.fallback_reason || ""}))}</div>`;
+        // Each count is ONE keyed frame chosen by the count, the singular key for one (the
+        // app's "{n} article" / "{n} articles" pair): a number welded to a plural noun read
+        // "1 sources" beside "one source only" (click-through B17, T4). A locale whose plural
+        // has more forms than two writes its "many" frame as a label and a count.
+        const nArt = Number(s.articles) || 0, nSrc = Number(s.distinct_sources) || 0;
+        const counts = _bulTf(nArt === 1 ? "{n} article" : "{n} articles", {n: fmtNum(nArt, 0)})
+          + " · " + _bulTf(nSrc === 1 ? "{n} source" : "{n} sources", {n: fmtNum(nSrc, 0)});
         return `<div style="margin:8px 0">
-          <label class="row" style="gap:8px;align-items:baseline">
-            <input type="checkbox" ${off ? "" : "checked"} onchange="bulletinToggleStory('${esc(s.key)}')">
-            <span><strong>${esc((s.shared_terms || []).join(", ") || "—")}</strong>
-              <span class="muted">${esc(s.articles)} ${esc(_bulT("articles"))} · ${esc(s.distinct_sources)} ${esc(_bulT("sources"))}${s.single_source ? esc(_bulT(" · one source only")) : ""}</span></span></label>
+          <label class="row" style="${_BUL_CHECK_ROW}">
+            <input type="checkbox" style="${_BUL_CHECK_BOX}" ${off ? "" : "checked"} onchange="bulletinToggleStory('${esc(s.key)}')">
+            <span style="flex:1;min-width:0"><strong>${_bulStoryTermsHtml(s)}</strong>
+              <span class="muted">${esc(counts)}${s.single_source ? esc(_bulT(" · one source only")) : ""}</span></span></label>
           ${label}${sents ? `<ul style="margin:4px 0 0 26px">${sents}</ul>` : ""}</div>`;
       }).join("");
 
@@ -372,8 +492,8 @@
         : "";
 
       box.innerHTML = `<h3 style="margin:0 0 4px">${esc(_bulT("Review"))} ${state}</h3>
-        <p class="hint" style="margin-top:0">${esc(v.caveat || "")}</p>
-        <p class="hint">${esc(v.method || "")}</p>
+        <p class="hint" style="margin-top:0">${esc(_bulT(v.caveat || ""))}</p>
+        <p class="hint">${esc(_bulT(v.method || ""))}</p>
         ${intro}
         <h4 style="margin:12px 0 4px">${esc(_bulT("Sections"))}</h4>${secs || `<div class="muted">${esc(_bulT("None."))}</div>`}
         ${stories ? `<h4 style="margin:12px 0 4px">${esc(_bulT("Stories"))}</h4>${stories}` : ""}
@@ -387,6 +507,7 @@
         </div>
         <p class="hint">${esc(_bulT("The annexes are one Markdown file per article the report cites, numbered to match, with a contents page. They carry the sources' own text — keep them where you keep the corpus."))}</p>
         <div id="bul-privacy" class="hint" style="margin-top:8px"></div>`;
+      _bulPaintMsg("bul-pub");
     }
 
     // §18: what a READER of the export can see, stated where the operator clicks —
@@ -400,24 +521,35 @@
       const box = $("bul-privacy");
       if (!box || !_bulFile) return;
       const q = _bulQuery(); q.set("kind", "annexes");
-      let d = null;
-      try { d = await api(`/api/bulletin/editions/${encodeURIComponent(_bulFile)}/export-privacy?${q}`); }
-      catch (e) {
+      try {
+        _bulPrivacyData = {d: await api(`/api/bulletin/editions/${encodeURIComponent(_bulFile)}/export-privacy?${q}`)};
+      } catch (e) { _bulPrivacyData = {error: e.message}; }
+      _bulPaintPrivacy();
+    }
+
+    // The enumeration's own sentences are FIXED server strings (privacy.py), keyed x12
+    // like every other caveat: the what, why and caveat are the consent text an operator
+    // reads before a file leaves the machine, and they were the one English block left.
+    function _bulPaintPrivacy() {
+      const box = $("bul-privacy"), p = _bulPrivacyData;
+      if (!box || !p) return;
+      if (p.error != null) {
         // A failed enumeration is an UNANSWERED question, never an all-clear. Saying
         // so is the whole point of the tri-state underneath it.
-        box.textContent = _bulT("What a reader of these files could see could not be listed: ")
-          + e.message + " " + _bulT("That is an unanswered question, not an all-clear.");
+        box.textContent = _bulTf("What a reader of these files could see could not be listed: {error}",
+          {error: p.error}) + " " + _bulT("That is an unanswered question, not an all-clear.");
         return;
       }
+      const d = p.d || {};
       const rows = (d.items || []).map(it => {
         const mark = it.present === true
           ? (it.n != null ? `${_bulT("yes")} (${it.n})` : _bulT("yes"))
           : (it.present === false ? _bulT("no") : _bulT("NOT MEASURED"));
-        return `<li><strong>${esc(it.what)}</strong> — ${esc(mark)}<br>
-          <span class="muted">${esc(it.why_it_matters)}</span></li>`;
+        return `<li><strong>${esc(_bulT(it.what))}</strong> — ${esc(mark)}<br>
+          <span class="muted">${esc(_bulT(it.why_it_matters))}</span></li>`;
       }).join("");
       box.innerHTML = `<strong>${esc(_bulT("What a reader of these files can see"))}</strong>
-        <p class="muted" style="margin:4px 0">${esc(d.caveat || "")}</p>
+        <p class="muted" style="margin:4px 0">${esc(_bulT(d.caveat || ""))}</p>
         <ul style="margin:4px 0 0 18px">${rows}</ul>`;
     }
 
@@ -450,11 +582,10 @@
     // failure mode, which is why the query is built once here.
     async function bulletinDownloadBundle(btn) {
       if (!_bulFile) return;
-      const out = $("bul-pub");
       const q = _bulQuery();
       const base = `/api/bulletin/editions/${encodeURIComponent(_bulFile)}`;
       btn.disabled = true;
-      if (out) out.textContent = _bulT("Building the annexes…");
+      _bulSay("bul-pub", "Building the annexes…");
       try {
         const rq = new URLSearchParams(q); rq.set("fmt", "markdown");
         const report = await fetch(`${base}/render?${rq}`);
@@ -465,13 +596,10 @@
         await _throwIfNotOk(zip);
         const n = zip.headers.get("X-OO-Annex-Articles");
         _saveBlob(await zip.blob(), _filenameOf(zip, "annexes.zip"));
-        if (out) {
-          out.textContent = n && n !== "0"
-            ? _bulTf("Downloaded: the report and {n} annexed article(s).", {n: n})
-            : _bulT("Downloaded the report. This edition names no articles, so the annexes are empty — regenerate it to populate them.");
-        }
+        if (n && n !== "0") _bulSay("bul-pub", "Downloaded: the report and {n} annexed article(s).", {n: n});
+        else _bulSay("bul-pub", "Downloaded the report. This edition names no articles, so the annexes are empty — regenerate it to populate them.");
       } catch (e) {
-        if (out) out.textContent = _bulT("Could not download: ") + e.message;
+        _bulSay("bul-pub", "Could not download: {error}", {error: e.message});
       } finally { btn.disabled = false; }
     }
 
@@ -510,8 +638,12 @@
     // review screen, where you can see what you are excluding -- carrying one
     // silently into a list click would hand you a document you did not choose.
     function bulletinOpenFile(filename) {
+      const p = new URLSearchParams();
+      const lang = _bulLang();
+      if (lang) p.set("lang", lang);
+      p.set("fmt", "html");
       window.open(
-        `/api/bulletin/editions/${encodeURIComponent(filename)}/render?fmt=html`, "_blank", "noopener");
+        `/api/bulletin/editions/${encodeURIComponent(filename)}/render?${p}`, "_blank", "noopener");
     }
 
     // Narration is a BACKGROUND JOB (§14), not a request that returns when the model
@@ -526,15 +658,14 @@
 
     async function bulletinNarrate(btn) {
       if (!_bulFile) return;
-      const out = $("bul-pub");
       btn.disabled = true;
       try {
         await api(`/api/bulletin/editions/${encodeURIComponent(_bulFile)}/narrate?${_bulQuery()}`,
           {method: "POST"});
-        if (out) out.textContent = _bulT("Narrating in the background — watch it in the task manager.");
+        _bulSay("bul-pub", "Narrating in the background — watch it in the task manager.");
         _bulWatchNarration();
       } catch (e) {
-        if (out) out.textContent = _bulT("Could not start narration: ") + e.message;
+        _bulSay("bul-pub", "Could not start narration: {error}", {error: e.message});
         btn.disabled = false;
       }
     }
@@ -548,15 +679,15 @@
         let d = null;
         try { d = await api("/api/bulletin/narration"); }
         catch { clearInterval(_bulNarratePoll); _bulNarratePoll = null; return; }
-        const job = d.job || {}, out = $("bul-pub"), btn = $("bul-narrate-run");
+        const job = d.job || {}, btn = $("bul-narrate-run");
         const n = {done: job.done || 0, total: job.total || 0};
         if (job.running) {
-          if (out) out.textContent = _bulTf("Narrating — units: {done} of {total}", n);
+          _bulSay("bul-pub", "Narrating — units: {done} of {total}", n);
           return;
         }
         clearInterval(_bulNarratePoll); _bulNarratePoll = null;
         if (btn) btn.disabled = false;
-        if (out) {
+        {
           // Three outcomes, three sentences. An ERROR is named rather than folded
           // into "finished" -- a run that lost its model must not read as a run that
           // had nothing to say -- and a CANCEL says how to resume, because the cursor
@@ -568,12 +699,12 @@
           // gets its own keyable frame, and the counts stay label:value so nothing
           // has to conjugate with a number in twelve languages.
           if (job.state === "error") {
-            out.textContent = _bulT("Narration stopped: ") + (job.error || "");
+            _bulSay("bul-pub", "Narration stopped: {error}", {error: job.error || ""});
           } else if (job.state === "cancelled") {
-            out.textContent = _bulTf(
+            _bulSay("bul-pub",
               "Narration stopped — units: {done} of {total}. Start it again to resume.", n);
           } else {
-            out.textContent = _bulTf("Narration finished — units: {done} of {total}", n);
+            _bulSay("bul-pub", "Narration finished — units: {done} of {total}", n);
           }
         }
         if (_bulFile) bulletinReview(_bulFile);
@@ -582,16 +713,15 @@
 
     async function bulletinPublish(btn) {
       if (!_bulFile) return;
-      const out = $("bul-pub");
       btn.disabled = true;
       try {
         const r = await api(
           `/api/bulletin/editions/${encodeURIComponent(_bulFile)}/publish?${_bulQuery()}`,
           {method: "POST"});
-        out.textContent = _bulT("Published — the record itself is unchanged.");
+        _bulSay("bul-pub", "Published — the record itself is unchanged.");
         toast(_bulT("Published. Nothing was sent anywhere; the document is yours to share."));
         if (r) await loadBulletinEditions();
-      } catch (e) { out.textContent = _bulT("Could not publish: ") + e.message; }
+      } catch (e) { _bulSay("bul-pub", "Could not publish: {error}", {error: e.message}); }
       finally { btn.disabled = false; }
     }
 
@@ -599,9 +729,12 @@
       if (!confirm(_bulT("Delete this edition? The corpus is untouched — only the document goes."))) return;
       try {
         await api(`/api/bulletin/editions/${encodeURIComponent(filename)}`, {method: "DELETE"});
-        if (_bulFile === filename) { _bulFile = null; $("bulletin-review").innerHTML = ""; }
+        if (_bulFile === filename) {
+          _bulFile = null; _bulView = null; _bulPrivacyData = null; delete _bulMsgs["bul-pub"];
+          $("bulletin-review").innerHTML = "";
+        }
         await loadBulletinEditions();
-      } catch (e) { toast(_bulT("Could not delete: ") + e.message, "err"); }
+      } catch (e) { toast(_bulTf("Could not delete: {error}", {error: e.message}), "err"); }
     }
 
     // -- Calendar feed directory: candidates -> explicit verify/import ------- //
@@ -613,16 +746,32 @@
       try { _feedDir = await api("/api/events/feeds"); } catch { _feedDir = null; }
       if (!_feedDir) { $("feeddir-list").innerHTML = '<div class="muted">Could not load this document.</div>'; return; }
       const kinds = [...new Set(_feedDir.families.map(f => f.kind))].sort();
+      // The option's VALUE stays the stored kind code; its text is the kind's keyed
+      // English label, so the i18n walker translates the option both ways on a switch.
+      // The codes were printed raw, and only `civic` had a key, so the menu read "tout,
+      // civique, community, holidays" in French (2026-09-27 re-walk, U-3).
       $("feeddir-kind").innerHTML = '<option value="">all</option>' +
-        kinds.map(k => `<option value="${esc(k)}">${esc(k)}</option>`).join("");
+        kinds.map(k => `<option value="${esc(k)}">${esc(_feedKindLabel(k))}</option>`).join("");
       renderFeedDir();
       renderUserCalendars();
     }
+    // A calendar family's KIND is a stored code (configs/calendar_feeds.yml); it shows
+    // through a keyed label and a code with no label shows as stored. Capitalised
+    // labels on purpose: "Science", "Space", "Civic" and "Other" are the World map's
+    // existing keys, and a bare lowercase "science" key would also make the walker
+    // translate a corpus keyword spelled that way (LESSONS 2026-09-16).
+    const _FEED_KIND_LABEL = {
+      holidays: "Public holidays", religion: "Religion", civic: "Civic",
+      community: "Community", science: "Science", space: "Space", other: "Other",
+    };
+    function _feedKindLabel(k) { return _FEED_KIND_LABEL[k] || String(k == null ? "" : k); }
     function _verdictChip(v, feed) {
       if (!v) return '<span class="pill">not checked yet</span>';
       if (v.status === "ok") {
         const stale = v.stale_year ? ' <span class="pill warn">stale year</span>' : "";
-        return `<span class="pill ok">reachable · ${v.events}</span>${stale}`;
+        // "reachable · 12" was one text node no key matches; the word is keyed and
+        // the count stays data (drawn by renderFeedDir, which repaints on a switch).
+        return `<span class="pill ok">${esc(_bulT("reachable"))} · ${esc(fmtNum(v.events || 0, 0))}</span>${stale}`;
       }
       if (v.status === "not_ical") return '<span class="pill warn">not an iCal file</span>';
       return `<span class="pill err" title="${esc(v.error || "")}">unreachable</span>`;
@@ -636,23 +785,49 @@
       }
       return anyOk ? "ok" : (anyChecked ? "error" : "unchecked");
     }
+    // A family's NAME is catalogue text (configs/calendar_feeds.yml), in English. All but
+    // two of the families the directory loads are "<Country> — public holidays", and those
+    // are drawn from their parts: the country's name in the reader's language through the
+    // one ooCountryName, in a keyed frame. The others go through their own keys, and a
+    // name in any other shape (a subdivision, a family a later catalogue adds) shows as
+    // stored. The rows read "Afghanistan — public holidays" in every locale
+    // (2026-09-27 re-walk, U-3).
+    function _feedFamName(f) {
+      const name = String(f.name || f.key || "");
+      if (f.kind === "holidays" && f.country && name.endsWith(" — public holidays")) {
+        const cn = ooCountryName(f.country, "");
+        if (cn && cn !== ooCountryCode(f.country)) return _bulTf("{country} — public holidays", {country: cn});
+      }
+      return _bulT(name);
+    }
+    // Sorted by the name ON SCREEN, in the reader's language, so a French list does not
+    // run in English order (the L-3 lesson of the Agenda's Country picker): every
+    // comparator takes that name order as its third argument.
     const _FEED_SORTS = {
-      name: (a, b) => a.name.localeCompare(b.name),
-      country: (a, b) => (a.country || "￿").localeCompare(b.country || "￿") || a.name.localeCompare(b.name),
-      kind: (a, b) => (a.kind || "").localeCompare(b.kind || "") || a.name.localeCompare(b.name),
+      name: (a, b, byName) => byName(a, b),
+      country: (a, b, byName) => (a.country || "￿").localeCompare(b.country || "￿") || byName(a, b),
+      kind: (a, b, byName) => (a.kind || "").localeCompare(b.kind || "") || byName(a, b),
       // dysfunctional first, so problems surface (the maintainer's "find the broken ones")
-      status: (a, b) => ({ error: 0, unchecked: 1, ok: 2 }[famStatus(a)] - { error: 0, unchecked: 1, ok: 2 }[famStatus(b)]) || a.name.localeCompare(b.name),
-      imported: (a, b) => ((b.imported_events || 0) - (a.imported_events || 0)) || a.name.localeCompare(b.name),
+      status: (a, b, byName) => ({ error: 0, unchecked: 1, ok: 2 }[famStatus(a)] - { error: 0, unchecked: 1, ok: 2 }[famStatus(b)]) || byName(a, b),
+      imported: (a, b, byName) => ((b.imported_events || 0) - (a.imported_events || 0)) || byName(a, b),
     };
     function _feedDirFiltered() {
       if (!_feedDir) return [];
       const kind = $("feeddir-kind").value, q = ($("feeddir-q").value || "").toLowerCase();
       const sf = $("feeddir-status-filter").value, sort = $("feeddir-sort").value || "name";
+      const shown = new Map(_feedDir.families.map(f => [f, _feedFamName(f)]));
+      const lc = (window.OOI18N && OOI18N.current && OOI18N.current()) || "en";
+      const coll = new Intl.Collator(lc);
+      const byName = (a, b) => coll.compare(shown.get(a), shown.get(b));
+      // The search matches the name on screen AND the catalogue's own, so an English
+      // query still finds a row a French reader sees translated.
       const fams = _feedDir.families.filter(f =>
         (!kind || f.kind === kind) &&
         (!sf || famStatus(f) === sf) &&
-        (!q || f.name.toLowerCase().includes(q) || (f.country || "").toLowerCase().includes(q)));
-      fams.sort(_FEED_SORTS[sort] || _FEED_SORTS.name);
+        (!q || shown.get(f).toLowerCase().includes(q) || f.name.toLowerCase().includes(q)
+            || (f.country || "").toLowerCase().includes(q)));
+      const cmp = _FEED_SORTS[sort] || _FEED_SORTS.name;
+      fams.sort((a, b) => cmp(a, b, byName));
       return fams;
     }
     // Bulk exclude/include (reversible). 'dysfunctional' = every broken folder;
@@ -685,10 +860,16 @@
       // instead, with the REAL backlog — so the automation is visible rather than
       // implied (ruling 10/11). Every figure is a count the backend measured.
       const _v = _feedDir.verification || {};
+      // Keyed frames with the counts as data (2026-09-27 re-walk, U-3 / L-8): the line
+      // was one English literal with a t()'d tail welded on, so it read "241 feeds ·
+      // 241 folders · 0 checked · 241 pas encore vérifié". It is composed here, so
+      // app-boot.js's oo:langchange listener redraws it -- the walker cannot.
+      const n = (x) => fmtNum(x || 0, 0);
       $("feeddir-status").innerHTML =
-        esc(`${_feedDir.total_feeds} feeds · ${_feedDir.families.length} folders · ${_feedDir.checked} checked`) +
+        esc(_bulTf("{feeds} feeds · {folders} folders · {checked} checked", {
+          feeds: n(_feedDir.total_feeds), folders: n(_feedDir.families.length), checked: n(_feedDir.checked) })) +
         (_v.unchecked
-          ? ` <span class="muted" title="${esc(_v.method || "")}">· ${_v.unchecked} ${esc(t("not checked yet"))}</span>`
+          ? ` <span class="muted" title="${esc(_v.method ? t(_v.method) : "")}">· ${esc(_bulTf("{n} not checked yet", {n: n(_v.unchecked)}))}</span>`
           : "");
       const bulk = `<div class="row" style="gap:6px;margin-bottom:8px;align-items:center;flex-wrap:wrap">
         <button class="secondary tiny" onclick="agExcludeBulk('dysfunctional')">Exclude dysfunctional</button>
@@ -706,14 +887,22 @@
           <div class="hint" style="word-break:break-all;margin:0 0 4px"><a href="${esc(fd.url)}" target="_blank" rel="noopener noreferrer">${esc(fd.url)}</a></div>`).join("");
         const isExcl = excl.has(f.key);
         return `<details class="cs-row${isExcl ? " excluded" : ""}" style="padding:6px 10px">
-          <summary style="cursor:pointer">${esc(f.name)}
-            ${f.duplicates ? `<span class="pill" title="Several providers publish this calendar — compare them below">${f.feeds.length} sources</span>` : ""}
-            ${f.imported_events ? `<span class="pill ok">${f.imported_events} imported</span>` : ""}
+          <summary style="cursor:pointer">${esc(_feedFamName(f))}
+            ${f.duplicates ? `<span class="pill" title="Several providers publish this calendar — compare them below">${esc(_bulTf("{n} sources", {n: n(f.feeds.length)}))}</span>` : ""}
+            ${f.imported_events ? `<span class="pill ok">${esc(_bulTf("{n} imported", {n: n(f.imported_events)}))}</span>` : ""}
             ${isExcl ? `<span class="pill warn">excluded</span>` : ""}
-            <span class="muted">· ${esc(f.kind)}${f.country ? " · " + ooCountryCell(f.country) : ""}</span>
+            <span class="muted">· ${esc(t(_feedKindLabel(f.kind)))}${f.country ? " · " + ooCountryCell(f.country) : ""}</span>
             <button class="ghost tiny" style="float:inline-end" onclick="event.preventDefault();event.stopPropagation();agToggleExclude(${esc(JSON.stringify(f.key))})">${isExcl ? "Include" : "Exclude"}</button></summary>
           ${feeds}</details>`;
-      }).join("") + (total > 40 ? `<div class="hint">+${total - 40} — type to filter</div>` : "");
+      }).join("") + (total > 40 ? `<div class="hint">${esc(_bulTf("+{n} — type to filter", {n: n(total - 40)}))}</div>` : "");
+    }
+    // A language switch redraws the directory from the payload it holds -- never a
+    // fetch. Guarded on the status line, which only renderFeedDir writes: `_feedDir`
+    // alone is not enough, since the Agenda's provenance pills load it without the
+    // directory ever being opened (2026-09-27 re-walk, U-3).
+    function repaintFeedDirFromCache() {
+      const st = $("feeddir-status");
+      if (_feedDir && st && st.textContent.trim()) renderFeedDir();
     }
     async function feedAction(id, action) {
       try {
@@ -797,7 +986,7 @@
     function agWhen(e) {
       return e.next_occurrence
         ? `<span class="pill ok">${esc(e.next_occurrence)}</span>`
-        : `<span class="pill" title="exact date moves each year">${e.month ? esc(_MONTHS[e.month-1]) : esc(e.cadence||"")}</span>`;
+        : `<span class="pill" title="exact date moves each year">${e.month ? esc(_agMonth(e.month-1)) : esc(e.cadence||"")}</span>`;
     }
     // Election date-confidence tiers (src/civic/elections.py, maintainer ruling
     // 2026-07-14, V1_PATHWAY §4.5): catalog.agenda() annotates every ELECTIONS-calendar
@@ -885,9 +1074,16 @@
     }
     function agRow(e) {
       const T = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      // Every sentence on the row is ONE keyed frame with its values as variables, so a
+      // locale orders and punctuates it itself -- "also in 2" and "from Nager" were built
+      // by gluing an English word to a number or a name (click-through B16, V3).
+      const tfa = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((s2, v) =>
+        String(s2).replace(/\{(\w+)\}/g, (m2, k) => (v && v[k] != null) ? v[k] : m2));
       const conf = agConfPill(e);
       const tags = (e.tags||[]).map(t => `<span class="ag-tag" onclick="$('agenda-tag').value='${esc(t)}';renderAgenda()">${esc(t)}</span>`).join("");
-      const alsoIn = (e.also_in && e.also_in.length) ? ` <span class="pill" title="this event also appears in: ${esc(e.also_in.join(', '))}">also in ${e.also_in.length}</span>` : "";
+      const alsoIn = (e.also_in && e.also_in.length)
+        ? ` <span class="pill" title="${esc(tfa("This event also appears in: {calendars}", {calendars: e.also_in.join(", ")}))}">`
+          + `${esc(tfa("also in {n}", {n: e.also_in.length}))}</span>` : "";
       const imp = (e.imported && e.source_count > 1)
         ? ` <span class="pill" title="${esc((e.family_names || [e.family_name || ""]).filter(Boolean).join(', '))}">${e.source_count}×</span>` : "";
       // Visible provenance on every imported event: WHICH feed(s) delivered it —
@@ -897,15 +1093,25 @@
       let prov = "";
       if (e.imported && Array.isArray(e.sources) && e.sources.length) {
         const fm = _agFeedById();
-        const names = e.sources.map(id => (fm && fm[id] && fm[id].name) || id);
-        const detail = e.sources.map(id => fm && fm[id] ? `${fm[id].name} — ${fm[id].url}` : id).join("\n");
+        // A calendar the user added (.ics upload or URL) is its own family, and its only
+        // "feed" is the family key ("user-harbour-a"), which the bundled directory never
+        // lists -- so the pill read that internal key (click-through B17, T3). The event
+        // carries each family's key beside its name; a source with no directory entry
+        // that IS one of those keys is named by the calendar's own name.
+        const famName = (id) => {
+          const i = Array.isArray(e.families) ? e.families.indexOf(id) : -1;
+          if (i >= 0 && Array.isArray(e.family_names) && e.family_names[i]) return e.family_names[i];
+          return id === e.calendar && e.family_name ? e.family_name : null;
+        };
+        const names = e.sources.map(id => (fm && fm[id] && fm[id].name) || famName(id) || id);
+        const detail = e.sources.map(id => fm && fm[id] ? `${fm[id].name} — ${fm[id].url}` : (famName(id) || id)).join("\n");
         const label = names[0] + (names.length > 1 ? ` +${names.length - 1}` : "");
-        prov = ` <span class="pill" title="${esc(T("Calendar feed(s) this event came from:") + "\n" + detail)}">${esc(T("from"))} ${esc(label)}</span>`;
+        prov = ` <span class="pill" title="${esc(T("Calendar feed(s) this event came from:") + "\n" + detail)}">${esc(tfa("from {feed}", {feed: label}))}</span>`;
       } else if (e.imported && e.family_name) {
-        prov = ` <span class="pill" title="${esc(T("Imported calendar folder"))}">${esc(T("from"))} ${esc(e.family_name)}</span>`;
+        prov = ` <span class="pill" title="${esc(T("Imported calendar folder"))}">${esc(tfa("from {feed}", {feed: e.family_name}))}</span>`;
       }
       const variants = (e.date_variants && e.date_variants.length > 1)
-        ? `<div class="hint" style="color:var(--warn)">date varies by source: ${esc(e.date_variants.join(' · '))}</div>` : "";
+        ? `<div class="hint" style="color:var(--warn)">${esc(tfa("date varies by source: {dates}", {dates: e.date_variants.join(" · ")}))}</div>` : "";
       // agenda-span-display (2026-09-09). `_span_for`, `_span_end_date`,
       // `_in_active_range` and the origin_year/until_year fields shipped with their
       // own test file on 2026-07-31 and REACHED NO SURFACE: app-agenda.js read
@@ -922,8 +1128,6 @@
       // `until_year` is worded about the LISTING rather than the world: the
       // catalogue suppresses occurrences past that year, which is a fact about what
       // this app will show, not a claim that the event will never happen again.
-      const tfa = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((s2, v) =>
-        String(s2).replace(/\{(\w+)\}/g, (m2, k) => (v && v[k] != null) ? v[k] : m2));
       const catalogNote = esc(T("Stated by the event catalog (asserted, not deduced)."));
       let span = "";
       if (e.span && e.span.start && e.span.end) {
@@ -938,7 +1142,7 @@
       ].filter(Boolean).join(" · ");
       const yearNote = years
         ? ` <span class="muted" title="${catalogNote}">· ${esc(years)}</span>` : "";
-      const src = e.official_url ? " · " + extLink(e.official_url, "official source ↗") : "";
+      const src = e.official_url ? " · " + extLink(e.official_url, T("official source ↗")) : "";
       // The event title opens the unified analysis window over this event in your
       // corpus (maintainer 2026-06-16: agenda content "highly visible and clickable").
       // A DEDUCED event opens its EXACT article set (the dates came from those
@@ -1003,6 +1207,15 @@
       return "\u{1F310}";   // globe for INT / non-ISO entities
     }
     function agLocale() { return document.documentElement.lang || "en"; }
+    // A month's short name in the reader's language, through Intl like the grids'
+    // weekday names, rather than the English _MONTHS array: the undated pill and the
+    // "by month" headings read "Aug" on a French page -- the class the 2026-09-27
+    // re-walk measured on the World map (L-6). Both redraw with renderAgenda on a switch.
+    function _agMonth(i) {
+      try {
+        return new Intl.DateTimeFormat(agLocale(), {month: "short", timeZone: "UTC"}).format(Date.UTC(2001, i, 15));
+      } catch (_e) { return _MONTHS[i] || ""; }
+    }
     // The concrete anchor date the views pivot on (picked day, else 1st of the
     // displayed month, else today) — drives the Week window.
     function agAnchorDate() {
@@ -1167,10 +1380,35 @@
     // ONE label map for the four phases, so the two grids (month and week) can
     // never disagree about what a glyph means. A kind with no entry falls back
     // to the kind itself rather than mislabelling it as one of the others.
+    // The four season points, by the server's event id. The hover printed the id itself
+    // ("june_solstice"), which is no key, so it read raw in every locale; the names are
+    // the astronomical ones the server's naming rule prescribes (never "summer").
+    function _seasonLabel(ev, tr) {
+      const L = {march_equinox: "March equinox", june_solstice: "June solstice",
+                 september_equinox: "September equinox", december_solstice: "December solstice"};
+      return L[ev] ? tr(L[ev]) : String(ev || "");
+    }
     function _moonLabel(kind, tr) {
       const L = {new: "New moon", first_quarter: "First quarter moon",
                  full: "Full moon", last_quarter: "Last quarter moon"};
       return L[kind] ? tr(L[kind]) : String(kind || "");
+    }
+    // The method + accuracy half of a moon or season hover. Both are FIXED sentences the
+    // server sends (src/events/astronomy.py, Meeus), so they are keyed and translated
+    // here; appended verbatim they read in English in every locale (the 2026-09-26
+    // click-through, U9). One helper so the month and week grids cannot disagree.
+    //
+    // KEYED FRAMES, not joins (the 2026-09-26 leftovers, Y11): the two halves were
+    // glued with a literal "; " and the hover with " UTC — ", so an Arabic hover read
+    // an ASCII ";" between two Arabic sentences. Each locale now writes its own
+    // separator. A half the server did not send is left out, never an empty slot.
+    function _astroNote(x, tr, tfn) {
+      const m = x.method ? tr(x.method) : "", a = x.acc ? tr(x.acc) : "";
+      return (m && a) ? tfn("{method}; {accuracy}", { method: m, accuracy: a }) : (m || a);
+    }
+    // The whole hover: what, when (UTC, as the server computed it), and how.
+    function _astroTitle(what, x, tr, tfn) {
+      return tfn("{event} {time} UTC — {note}", { event: what, time: x.time, note: _astroNote(x, tr, tfn) });
     }
     async function _ensureAstro(year) {
       if (_astroYear === year) return;
@@ -1189,8 +1427,13 @@
         // Seasons (equinoxes/solstices, Meeus ch.27) — named astronomically
         // (hemisphere-honest); a solstice sun glyph, an equinox star.
         for (const s of (d.seasons || [])) {
+          // The SEASON'S OWN method (Y11): Meeus ch. 27, which the server computes and
+          // now sends as `seasons_method`. The hover used the payload's top-level method,
+          // which is the MOON's (ch. 49) -- a method note naming the wrong computation.
+          // No fallback to it: a season without its own method says only its accuracy.
           _seasonByDate[s.date] = {glyph: /solstice/i.test(s.event) ? "☀" : "✦",
-            name: s.event, time: s.time_utc, method: d.method, acc: d.accuracy};
+            name: s.event, time: s.time_utc,
+            method: d.seasons_method || "", acc: d.seasons_accuracy || d.accuracy};
         }
         _astroYear = year;
       } catch (_e) { _astroByDate = {}; _seasonByDate = {}; _astroYear = null; }
@@ -1239,6 +1482,8 @@
       const t = new Date();
       const inThisMonth = t.getFullYear() === y && t.getMonth() + 1 === m;
       const t9m = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      const tf9m = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
+        : ((x, v) => x.replace(/\{(\w+)\}/g, (mm, k) => (v && v[k] != null) ? String(v[k]) : mm));
       const wd = [...Array(7)].map((_, i) =>
         new Intl.DateTimeFormat(loc, { weekday: "short" }).format(new Date(2024, 0, i + 1))); // 2024-01-01 was a Monday
       let html = `<div class="ag-grid ag-grid-head">` + wd.map(w => `<div class="ag-wd">${esc(w)}</div>`).join("") + `</div>`;
@@ -1249,11 +1494,11 @@
         const iso = `${y}-${String(m).padStart(2, "0")}-${String(c.d).padStart(2, "0")}`;
         const moon = _astroByDate[iso];
         const moonHtml = moon
-          ? `<span class="ag-moon" style="float:inline-end;font-size:11px" title="${esc(_moonLabel(moon.kind, t9m) + " " + moon.time + " UTC — " + moon.method + "; " + moon.acc)}">${moon.glyph}</span>`
+          ? `<span class="ag-moon" style="float:inline-end;font-size:11px" title="${esc(_astroTitle(_moonLabel(moon.kind, t9m), moon, t9m, tf9m))}">${moon.glyph}</span>`
           : "";
         const season = _seasonByDate[iso];
         const seasonHtml = season
-          ? `<span class="ag-season" style="float:inline-end;font-size:11px;margin-inline-end:2px" title="${esc(t9m(season.name) + " " + season.time + " UTC — " + season.method + "; " + season.acc)}">${season.glyph}</span>`
+          ? `<span class="ag-season" style="float:inline-end;font-size:11px;margin-inline-end:2px" title="${esc(_astroTitle(_seasonLabel(season.name, t9m), season, t9m, tf9m))}">${season.glyph}</span>`
           : "";
         const chips = evs.slice(0, 3).map(e =>
           `<span class="ag-chip${agChipCls(e) ? " " + agChipCls(e) : ""}" title="${esc(e.title + agChipTitleSuffix(e, e.confirmed ? "" : " — exact date moves; check the official source"))}">${esc(e.title.length > 22 ? e.title.slice(0, 21) + "…" : e.title)}</span>`).join("");
@@ -1298,6 +1543,8 @@
         new Intl.DateTimeFormat(loc, { month: "short", day: "numeric" }).format(monday) + " – " +
         new Intl.DateTimeFormat(loc, { month: "short", day: "numeric", year: "numeric" }).format(sunday);
       const t9 = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const tf9 = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
+        : ((x, v) => x.replace(/\{(\w+)\}/g, (mm, k) => (v && v[k] != null) ? String(v[k]) : mm));
       const now = new Date();
       const same = (a, b) => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
       const monthsInWeek = new Set(days.map(d => d.getMonth() + 1));
@@ -1308,7 +1555,7 @@
         const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
         const moon = _astroByDate[iso];
         const moonHtml = moon
-          ? `<span class="ag-moon" style="float:inline-end;font-size:11px" title="${esc(_moonLabel(moon.kind, t9) + " " + moon.time + " UTC — " + moon.method + "; " + moon.acc)}">${moon.glyph}</span>`
+          ? `<span class="ag-moon" style="float:inline-end;font-size:11px" title="${esc(_astroTitle(_moonLabel(moon.kind, t9), moon, t9, tf9))}">${moon.glyph}</span>`
           : "";
         const wd = new Intl.DateTimeFormat(loc, { weekday: "short" }).format(d);
         const dn = new Intl.DateTimeFormat(loc, { day: "numeric", month: "short" }).format(d);
@@ -1373,7 +1620,7 @@
       if (!rows.length) { box.innerHTML = `<p class="hint">${esc(AG.caveat)}</p><div class="muted">${esc(tt("No events this month — adjust filters or subscribe to more calendars in Settings."))}</div>`; return; }
       const groups = {};
       for (const e of rows) {
-        const k = groupBy === "month" ? (e.next_occurrence ? _MONTHS[+e.next_occurrence.slice(5,7)-1] : (e.month ? _MONTHS[e.month-1] : "Movable / no fixed date"))
+        const k = groupBy === "month" ? (e.next_occurrence ? _agMonth(+e.next_occurrence.slice(5,7)-1) : (e.month ? _agMonth(e.month-1) : tt("Movable / no fixed date")))
                 : groupBy === "calendar" ? (AG.meta[e.calendar]?.name || e.calendar)
                 // Grouping by COUNTRY keys on the stored value (so two spellings of
                 // one country cannot become two groups) and the heading renders the

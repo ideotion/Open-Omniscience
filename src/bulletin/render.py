@@ -151,6 +151,7 @@ def render_markdown(edition: dict, *, lang: str = "en", tr: Translator | None = 
     how the bulletin-language diagnostic measures a real edition rather than a guess.
     """
     T = tr or Translator(lang)
+    _prime_term_languages(edition, T)
     p = edition.get("period") or {}
     m = edition.get("masthead") or {}
     out: list[str] = [f"# {_title(edition, T)}", ""]
@@ -410,6 +411,72 @@ def _is_ratio(row: dict) -> bool | None:
         return None
 
 
+def _prime_term_languages(edition: dict, T: Translator) -> None:
+    """Record each named keyword's language from the rows that state one (M7).
+
+    Only the rising rows carry ``language``; the across-channels rows are the SAME
+    keywords re-read for their earliest channel and name only the term. Reading the
+    language off the record's own rows keeps one keyword one label across sections,
+    without a second query and without writing anything back to the record.
+    """
+    for section in edition.get("sections") or []:
+        for row in section.get("terms") or []:
+            if not isinstance(row, dict):
+                continue
+            norm = str(row.get("normalized") or "").strip().casefold()
+            lang = str(row.get("language") or "").strip().casefold()
+            if norm and lang and lang != "?":
+                T.term_languages.setdefault(norm, lang)
+
+
+def _term_label(row: dict, T: Translator) -> str:
+    """A keyword as the DOCUMENT names it -- R7's grammar, rendered at read time (M7).
+
+    The record keeps the stored word, and so does the document: a keyword is QUOTED, in
+    its own language, which is what the disclosure line promises ("words quoted from
+    sources ... stay in their own language"). What R7 adds is the reader's side of it:
+    a keyword whose recorded language is not the document's carries what it is -- the
+    VERIFIED ring translation first, as the Q411 card title does, or else "(in X)" --
+    so a French edition no longer prints "избиратель" as though it were French.
+
+    Resolved through the ONE ladder every keyword surface uses, at render time rather
+    than baked into the record, so a re-render in another language is a different
+    reading of the same record and never a second record. Only the verified rung is
+    used: a tentative AI translation belongs to a reader who can see its marker, and a
+    published document is not that reader. The language is its 639-2/T code, the form
+    every other language in this document is printed in (S8).
+    """
+    term = str(row.get("term") or row.get("normalized") or "—")
+    norm = str(row.get("normalized") or term).strip().casefold()
+    src = str(row.get("language") or T.term_languages.get(norm) or "").strip().casefold()
+    if not src or src.split("-")[0] == T.lang:
+        return term
+    from src.analytics.equivalence import TIER_VERIFIED, resolve_translation
+
+    code = language_display_code(src) or src
+    try:
+        res = resolve_translation(src, norm, T.lang)
+    except Exception:  # noqa: BLE001 - a label must never take a document down
+        res = None
+    text = (res.text or "") if res is not None and res.tier == TIER_VERIFIED else ""
+    if text and text.casefold() not in {norm, term.casefold()}:
+        return T.f(
+            "“{translation}” (translated from {language}: {term})",
+            translation=text, language=code, term=term,
+        )
+    return T.f("{term} (in {language})", term=term, language=code)
+
+
+def _story_terms(story: dict, T: Translator) -> str:
+    """A story's shared terms, each named the way the document names a keyword (re-walk
+    M-3/M-5): a Russian story in a French edition printed its terms bare. A record from
+    before the stories carried their terms' languages falls back to the languages the
+    edition's own keyword sections recorded (:func:`_prime_term_languages`)."""
+    from src.bulletin.review import story_term_rows
+
+    return ", ".join(_term_label(r, T) for r in story_term_rows(story)) or "—"
+
+
 def _term_row(row: dict, *, baseline_days: Any = None, T: Translator) -> tuple[str, str]:
     """A ``terms`` row as (term, description), chosen by the row's OWN fields.
 
@@ -420,7 +487,7 @@ def _term_row(row: dict, *, baseline_days: Any = None, T: Translator) -> tuple[s
     "— — mentions (×None vs the prior period)", a line that means nothing. The
     row decides, not the container it arrived in.
     """
-    term = str(row.get("term") or row.get("normalized") or "—")
+    term = _term_label(row, T)
     if "first_seen" in row:
         return term, T.f(
             "first seen {when} in {channel}",
@@ -604,7 +671,9 @@ def _section_groups(section: dict, T: Translator) -> list[tuple[str, list[tuple[
 
     changes = []
     for r in section.get("law_examples") or []:
-        bits = [str(r.get("jurisdiction") or "—")]
+        # The jurisdiction in the alphabet every other surface uses (`FRA`, `GBR` for
+        # the law `uk`, `EUU`), not the stored lowercase value (L6).
+        bits = [country_display_code(r.get("jurisdiction")) or "—"]
         if r.get("observed_at"):
             bits.append(T.f("observed {when}", when=str(r["observed_at"])[:10]))
         delta = r.get("delta_bytes")
@@ -688,7 +757,7 @@ def _coverage_blocks(section: dict, T: Translator) -> list[tuple[str | None, str
         listed = ", ".join(
             T.f(
                 "{term} {mentions} ({articles} art.)",
-                term=t.get("term"),
+                term=_term_label(t, T),
                 mentions=_fmt(t.get("mentions")),
                 articles=_fmt(t.get("articles")),
             )
@@ -753,8 +822,11 @@ def _article_lines(row: dict, T: Translator) -> list[str]:
         stated.append(str(asserted["published_at"])[:16])
     if asserted.get("author"):
         stated.append(T.f("by {author}", author=asserted["author"]))
+    # Q306's display step: the language CODE a reader sees is 639-2/T here as on every
+    # screen (`fra`, not the stored `fr`); a value with no 639-2/3 form prints as stored.
     if asserted.get("language"):
-        stated.append(T.f("lang {code}", code=asserted["language"]))
+        lang = asserted["language"]
+        stated.append(T.f("lang {code}", code=language_display_code(lang) or lang))
 
     read = []
     if deduced.get("word_count"):
@@ -762,7 +834,8 @@ def _article_lines(row: dict, T: Translator) -> list[str]:
     if deduced.get("detected_language") and deduced.get("detected_language") != asserted.get(
         "language"
     ):
-        read.append(T.f("detected {code}", code=deduced["detected_language"]))
+        detected = deduced["detected_language"]
+        read.append(T.f("detected {code}", code=language_display_code(detected) or detected))
     sent = deduced.get("sentiment") or {}
     if sent.get("label"):
         read.append(
@@ -940,6 +1013,21 @@ def _section_heading(section: dict, T: Translator) -> str:
     return T.t(str(section.get("section", "section")).replace("_", " ").capitalize())
 
 
+def _skip_reason(section: dict, T: Translator) -> str:
+    """Why a section is not shown, in the document's language.
+
+    A reason that carries a number arrives as a FRAME plus its values (``skipped_i18n``
+    / ``skipped_vars``, click-through B16, V5): the filled English can match no catalog
+    entry, so it was printed in English in every language. A fixed reason stays one
+    whole sentence keyed on itself, and a record from before the frame existed keeps
+    its English sentence.
+    """
+    frame = section.get("skipped_i18n")
+    if frame:
+        return T.f(str(frame), **(section.get("skipped_vars") or {}))
+    return T.t(str(section["skipped"]))
+
+
 def _md_section(section: dict, T: Translator) -> list[str]:
     out = [f"## {_section_heading(section, T)}", ""]
     if section.get("error"):
@@ -949,7 +1037,7 @@ def _md_section(section: dict, T: Translator) -> list[str]:
         ]
         return out
     if section.get("skipped"):
-        out += [T.f("*Not shown: {reason}.*", reason=T.t(str(section["skipped"]))), ""]
+        out += [T.f("*Not shown: {reason}.*", reason=_skip_reason(section, T)), ""]
         return out
 
     w = section.get("window") or {}
@@ -1009,7 +1097,7 @@ def _md_section(section: dict, T: Translator) -> list[str]:
 
 
 def _md_story(story: dict, T: Translator) -> list[str]:
-    terms = ", ".join(story.get("shared_terms") or []) or "—"
+    terms = _story_terms(story, T)
     voice = f" · **{T.t('one source only')}**" if story.get("single_source") else ""
     out = [
         f"### {terms}",
@@ -1346,6 +1434,7 @@ def render_html(edition: dict, *, lang: str = "en", tr: Translator | None = None
     us guessing at it.
     """
     T = tr or Translator(lang)
+    _prime_term_languages(edition, T)
     p = edition.get("period") or {}
     m = edition.get("masthead") or {}
     body: list[str] = []
@@ -1578,7 +1667,7 @@ def _html_section(section: dict, T: Translator) -> list[str]:
     if section.get("skipped"):
         out.append(
             '<p class="meta">'
-            + _e(T.f("Not shown: {reason}.", reason=T.t(str(section["skipped"]))))
+            + _e(T.f("Not shown: {reason}.", reason=_skip_reason(section, T)))
             + "</p>"
         )
         return out
@@ -1641,7 +1730,7 @@ def _html_section(section: dict, T: Translator) -> list[str]:
 
 
 def _html_story(story: dict, T: Translator) -> list[str]:
-    terms = ", ".join(story.get("shared_terms") or []) or "—"
+    terms = _story_terms(story, T)
     voice = f" · {T.t('one source only')}" if story.get("single_source") else ""
     out = [
         f"<h3>{_e(terms)}</h3>",

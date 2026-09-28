@@ -50,8 +50,11 @@ def test_click_narrows_the_whole_corpus_via_the_source_type_filter():
 def test_descriptive_channel_never_a_quality_score():
     # the visible caveat states it is an asserted channel, never a quality score
     assert "never a quality score" in _HTML  # the panel intro <p>
-    # ... and the same on the chip hover (invariant #17 layering)
-    assert 't("An asserted content channel (newsletter, web article, wiki, statistic, law, market, discovery), never a quality score. Click a channel to explore its corpus.")' in _JS
+    # ... and the same on the chip hover (invariant #17 layering). Since the 2026-09-27
+    # re-walk (U-8) each chip's hover names ITS channel from the same label map as the
+    # chip, instead of a fixed list of channels that matched none of the codes shown.
+    assert ('"{channel}: the channel its sources assert (source type “{code}”), never a '
+            'quality score. Click to explore its articles."') in _JS
 
 
 def test_failsafe_hides_when_no_channels():

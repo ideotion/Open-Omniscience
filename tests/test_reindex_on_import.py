@@ -38,11 +38,11 @@ def db():
     return sessionmaker(bind=engine, future=True)()
 
 
-def _article(db, hash_, text):
+def _article(db, hash_, text, source_id=1):
     a = Article(
         url=f"https://x.test/{hash_}",
         canonical_url=f"https://x.test/{hash_}",
-        source_id=1,
+        source_id=source_id,
         title="Imported",
         content=text,
         hash=hash_,
@@ -54,6 +54,16 @@ def _article(db, hash_, text):
     db.add(a)
     db.commit()
     return a
+
+
+def _live_source(s, name, domain):
+    """The test's own Source row on the live database, created when absent."""
+    row = s.query(Source).filter_by(domain=domain).first()
+    if row is None:
+        row = Source(name=name, domain=domain, country="fr")
+        s.add(row)
+        s.flush()
+    return row
 
 
 def test_reindex_recomputes_core_engine_and_keeps_ai_artifacts_verbatim(db):
@@ -103,11 +113,13 @@ def test_reindex_imported_articles_targets_only_merged_rows():
     merged_id = unmerged_id = batch_id = None
     try:
         with session_scope() as s:
-            if not s.query(Source).filter_by(domain="reimp.test").first():
-                s.add(Source(name="RS", domain="reimp.test", country="fr"))
-                s.flush()
-            merged = _article(s, "reimp-merged", "Sanctions and an energy crisis hit the economy.")
-            unmerged = _article(s, "reimp-local", "A pandemic and a vaccine rollout dominated.")
+            # The articles point at THIS test's own source, never at a hardcoded id 1:
+            # the live database is shared by the whole run and foreign keys are ON
+            # there, so id 1 exists only when some earlier test happened to create it
+            # (B18 R13 -- the order-dependent FOREIGN KEY failure).
+            src = _live_source(s, "RS", "reimp.test")
+            merged = _article(s, "reimp-merged", "Sanctions and an energy crisis hit the economy.", src.id)
+            unmerged = _article(s, "reimp-local", "A pandemic and a vaccine rollout dominated.", src.id)
             merged_id, unmerged_id = merged.id, unmerged.id
             batch = MergeBatch(artifact_kind="oo-backup-2", origin_fingerprint="unsigned", status="merged")
             s.add(batch)
@@ -153,10 +165,8 @@ def test_reindex_imported_articles_threads_batching_and_progress(monkeypatch):
     merged_id = batch_id = None
     try:
         with session_scope() as s:
-            if not s.query(Source).filter_by(domain="reimp2.test").first():
-                s.add(Source(name="RS2", domain="reimp2.test", country="fr"))
-                s.flush()
-            merged = _article(s, "reimp2-merged", "A drought and a market crash dominated headlines.")
+            src = _live_source(s, "RS2", "reimp2.test")   # never id 1; see above
+            merged = _article(s, "reimp2-merged", "A drought and a market crash dominated headlines.", src.id)
             merged_id = merged.id
             batch = MergeBatch(artifact_kind="oo-backup-2", origin_fingerprint="unsigned", status="merged")
             s.add(batch)

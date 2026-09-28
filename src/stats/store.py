@@ -30,7 +30,8 @@ from collections.abc import Iterable
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from src.catalog.countries import to_iso2
+from src.catalog.aggregates import aggregate_name
+from src.catalog.countries import classify_ref_area, to_iso2
 from src.database.models import StatFigure as StatFigureRow
 from src.stats.revision import find_revision_anomalies
 from src.stats.sdmx import StatFigure
@@ -145,13 +146,37 @@ def list_figures(
     return {
         "count": total,
         "shown": len(rows),
-        "figures": [_row_dict(r) for r in rows],
+        # Each figure carries its area's classification (the 2026-09-26 leftovers, Y10),
+        # so the stored-figures table renders WLD as a published aggregate and XKX with
+        # its non-ISO disclosure through the cell every other statistics surface uses,
+        # rather than printing the producer's code bare.
+        "figures": [{**_row_dict(r), **area_classification(r.ref_area)} for r in rows],
         "method": "Stored official-statistics observations; latest vintage per series unless history requested.",
+        # A reader's sentence, keyed x12 and t()'d by the table that prints it: "A None
+        # value" named a Python token the reader never sees -- the gap cell is drawn
+        # as "—" (2026-09-27 re-walk, L-4).
         "caveat": (
             "Each figure is a STANCED producer's published value (never a credibility "
-            "score). A None value is a published gap, not zero. Producers are shown, "
-            "never averaged."
+            "score). A missing value (—) is a published gap, not zero. Producers are "
+            "shown, never averaged."
         ),
+    }
+
+
+def area_classification(ref_area: str | None) -> dict:
+    """``{"area_kind", "area_name"}`` for one statistics ``ref_area``, for a renderer.
+
+    A ``ref_area`` is a country OR a producer's published aggregate (``WLD``, ``HIC``,
+    ``EAS``…), and only this side holds the aggregate table (read off the live API), so
+    the classification travels WITH the code rather than the browser guessing it from
+    the shape of the string. Without it the display layer rendered ``WLD`` as an
+    unreadable country code (2026-09-26 click-through, L9/L13). ``area_name`` is set
+    only for an aggregate: a country's name is the browser's to localise.
+    """
+    kind = classify_ref_area(ref_area)
+    return {
+        "area_kind": kind,
+        "area_name": aggregate_name(ref_area) if kind == "aggregate" else None,
     }
 
 
@@ -178,6 +203,7 @@ def minerals_supply_summary(session: Session, *, limit: int = 4000) -> dict:
         c["measures"].setdefault(measure, []).append(
             {
                 "ref_area": f["ref_area"],
+                **area_classification(f["ref_area"]),
                 "time_period": f["time_period"],
                 "value": f["value"],
                 "unit": f["unit"],
@@ -191,10 +217,12 @@ def minerals_supply_summary(session: Session, *, limit: int = 4000) -> dict:
             "USGS Mineral Commodity Summaries — annual supply statistics, latest vintage "
             "per observation, grouped by commodity and measure."
         ),
+        # Keyed x12 and t()'d by the Minerals-supply board, like the reason below; it
+        # said "A None value", a Python token -- the board draws a gap as "—" (L-4).
         "caveat": (
             "SUPPLY data — production, reserves, net-import-reliance. NOT market prices: "
             "no free rare-earth spot-price source exists and none is fabricated here. A "
-            "None value is a published gap. Producers are shown, never averaged."
+            "missing value (—) is a published gap. Producers are shown, never averaged."
         ),
         "reason": (
             None
@@ -264,12 +292,20 @@ def revision_anomalies(
     if ref_area:
         q = q.where(StatFigureRow.ref_area == ref_area.strip().upper())
     figures = [StatFigure(**_row_dict(r)) for r in session.execute(q).scalars()]
-    return find_revision_anomalies(
+    out = find_revision_anomalies(
         figures,
         min_prior_revisions=min_prior_revisions,
         z_min=z_min,
         max_items=max_items,
     )
+    # Each flagged figure carries its area's classification, as the stored-figures and
+    # triangulation rows do (the 2026-09-26 leftovers, W5): the anomalies table printed
+    # the producer's ``ref_area`` bare, so WLD read as an unknown country code and XKX
+    # lost its non-ISO disclosure. The pure detector stays unaware of the catalogue.
+    out["anomalies"] = [
+        {**a, **area_classification(a.get("ref_area"))} for a in out.get("anomalies") or []
+    ]
+    return out
 
 
 def chart_series(
@@ -361,6 +397,7 @@ def map_figures(
     for r in best.values():
         cell = _row_dict(r)
         cell["iso2"] = to_iso2(r.ref_area)
+        cell.update(area_classification(r.ref_area))
         cells.append(cell)
     cells.sort(key=lambda c: c["ref_area"])
     total = len(cells)
@@ -462,6 +499,7 @@ def triangulate(
         figs.sort(key=lambda f: f["agency"])
         out.append({
             "ref_area": area,
+            **area_classification(area),
             "time_period": period,
             "producers": figs,
             "n_producers": len({f["agency"] for f in figs}),

@@ -327,6 +327,9 @@ def test_a_process_restart_reports_staged_items_as_discarded_never_as_imported(t
 def test_status_reports_committed_and_staged_as_two_different_numbers(tmp_path):
     q, _ = _with_open_group(tmp_path)
     q._items[2]["state"] = "done"
+    # A RUN's K is the one it captured at start; an idle queue reports the setting
+    # (I5, 2026-09-26). This fixture is a run in flight, so it says so.
+    q._state = "running"
     st = q.status()
     assert st["items_staged"] == 2
     assert st["items_committed"] == 1
@@ -341,6 +344,7 @@ def test_status_reports_committed_and_staged_as_two_different_numbers(tmp_path):
 
 def test_at_k_one_the_checkpoint_note_promises_nothing_about_losing_work(tmp_path):
     q = _queue(tmp_path, [{"kind": "corpus"}], k=1)
+    q._state = "running"   # the captured K speaks for a RUN (I5); idle reads the setting
     st = q.status()
     assert st["items_staged"] == 0
     assert st["checkpoint"]["k"] == 1

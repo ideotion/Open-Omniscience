@@ -204,6 +204,90 @@ def test_a_second_run_finds_nothing_to_fold(tmp_path, monkeypatch):
     assert tally.get("mentions_moved", 0) == 0 and tally.get("mentions_merged", 0) == 0
 
 
+#: M10 (the delegated click-through of 2026-09-26): Portuguese forms whose lemma is not
+#: itself a lemma (cooperativas -> cooperativa -> cooperativo), and the noun the seeded
+#: fold filed under a verb (fila, a queue -> filar, to spin).
+_PT_CHAINS = [
+    ("pt1", "pt", None,
+     "As cooperativas agrícolas cresceram. Cada cooperativa local e as cooperativas "
+     "regionais formaram filas longas; a fila durou horas."),
+    ("pt2", "pt-BR", None,
+     "A cooperativa abriu novas filas. Outra cooperativa seguiu as cooperativas."),
+]
+
+
+def test_a_second_run_moves_nothing_even_where_the_lemma_is_not_a_lemma(tmp_path, monkeypatch):
+    """M10: the seeded corpus's second fold ended "Keywords folded: 1 · mentions moved: 27",
+    because the first run filed ``cooperativas`` under ``cooperativa`` and the second then
+    moved ``cooperativa`` on to ``cooperativo``. ``test_a_second_run_finds_nothing_to_fold``
+    stayed green through it: its fixture has no word whose lemma lemmatises again. This one
+    is built from exactly such words, and the first run must already reach the fixed point."""
+    eng = _engine(tmp_path, "pt.db")
+    s = sessionmaker(bind=eng)()
+    s.add(Source(name="Test Source", domain="src.test"))
+    s.commit()
+    monkeypatch.setenv("OO_EXTRACT_LEMMA", "0")
+    ex = get_extractor("baseline")
+    for h, lang, det, body in _PT_CHAINS:
+        a = Article(
+            url=f"https://src.test/{h}", canonical_url=f"https://src.test/{h}", source_id=1,
+            title="", content=body, hash=h, language=lang, detected_language=det,
+            published_at=datetime(2026, 9, 1, tzinfo=UTC), created_at=datetime.now(UTC),
+        )
+        s.add(a)
+        s.flush()
+        index_article(s, a, extractor=ex)
+    monkeypatch.setenv("OO_EXTRACT_LEMMA", "1")
+    before = {t for t, _h, _c, _o in _mentions(s)}
+    # ANTI-VACUITY: the fixture must hold a form whose lemma lemmatises again.
+    assert {"cooperativas", "cooperativa"} <= before
+
+    first = _run_fold(tmp_path, eng, monkeypatch)
+    s.expire_all()
+    once = _mentions(s)
+    keys = {t for t, _h, _c, _o in once}
+    # The plural and its singular end under ONE key -- which one is the installed
+    # dictionary's chain (cooperativo under simplemma 1.2.0, cooperativa under 1.1).
+    coop = {"cooperativas", "cooperativa", "cooperativo"} & keys
+    assert len(coop) == 1, keys
+    assert "filar" not in keys, "the noun 'fila' (a queue) was filed under the verb 'to spin'"
+    assert "fila" in keys and "filas" not in keys, keys
+    assert first.status()["tally"].get("mentions_moved", 0) > 0
+
+    second = _run_fold(tmp_path, eng, monkeypatch)
+    s.expire_all()
+    assert _mentions(s) == once
+    tally = second.status()["tally"]
+    assert tally.get("mentions_moved", 0) == 0 and tally.get("mentions_merged", 0) == 0, tally
+    assert tally.get("keywords_folded", 0) == 0, tally
+
+
+def test_a_term_the_fold_emptied_resolves_to_the_keyword_its_mentions_went_to(tmp_path, monkeypatch):
+    """Row M1 (delegated click-through 2026-09-26): after a fold and BEFORE the prune, every
+    keyword surface still passes the display surface (``elections``), and the exact match
+    used to land on the emptied row: "Resolved to elections · 0 mentions in 0 articles"
+    beside a chip counting them. The read side must prefer the keyword that carries the
+    mentions, and must not change what the fold wrote (the husk is still there)."""
+    from src.analytics import queries as q
+
+    eng, s = _corpus(tmp_path, "c.db", lemma=False, monkeypatch=monkeypatch)
+    _run_fold(tmp_path, eng, monkeypatch)
+    s.expire_all()
+    husk = s.query(Keyword).filter_by(normalized_term="elections").one()
+    assert s.query(KeywordMention).filter_by(keyword_id=husk.id).count() == 0, "fixture: not emptied"
+
+    kw = q.resolve_keyword(s, "elections", exact=True)
+    assert kw is not None and kw.normalized_term == "election"
+    trend = q.trend(s, "elections")
+    assert trend["resolved"]["normalized"] == "election"
+    assert trend["total"] == q.trend(s, "election")["total"] > 0
+    stats = q.keyword_stats(s, "elections")
+    assert stats["mentions"] > 0
+    # A keyword that still carries mentions is never swapped for its lemma.
+    kept = q.resolve_keyword(s, "studies", exact=True)
+    assert kept is not None and kept.normalized_term == "studies"
+
+
 def test_a_paused_run_resumes_to_the_same_result_without_double_counting(tmp_path, monkeypatch):
     """Page size 1, stopped after every page and resumed from the persisted state by a NEW
     manager (a restart): the result must equal an uninterrupted run, counters included."""

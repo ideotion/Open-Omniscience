@@ -135,7 +135,9 @@ _NOT_AN_ENDPOINT: dict[str, str] = {
     "github.com":
         "this repository's own URL: the contact field of the bot User-Agent, the "
         "docs base URL, and citation strings. The UA value is SENT as a header; the "
-        "URL in it is never fetched",
+        "URL in it is never fetched. The HOST is reached, but only on the local-AI "
+        "lane, through the installer's browser_download_url -- a value read from "
+        "GitHub's response, never one of these literals -- and it is enumerated there",
     "astral.sh":
         "named by a docstring explaining what the vLLM installer deliberately does "
         "NOT do (`curl https://astral.sh/uv/install.sh | sh`); uv comes from PyPI",
@@ -241,7 +243,8 @@ _DISPLAY_ONLY_FILES: dict[str, str] = {
     "src/llm/installer.py":
         "ollama.com download-page URLs handed to the UI as a manual-install link, "
         "and the same page named in a refusal message. api.github.com IS fetched "
-        "here and IS enumerated",
+        "here and IS enumerated; ollama.com is enumerated too, because the install "
+        "script this module verifies and runs downloads the Ollama program from it",
     "src/llm/vllm_lifecycle.py":
         "a port probe against the CONFIGURED vLLM URL, which defaults to 127.0.0.1. "
         "Its literals are docstrings recording what was probed and what was blocked; "
@@ -733,7 +736,13 @@ def test_the_hover_translates_its_prose_and_keeps_host_names_verbatim():
     from tests.js_source_helper import strip_comments
 
     src = strip_comments(_hover_source())
-    assert 'lane.hosts.join(" · ")' in src, "the host list must be joined verbatim"
+    # Joined verbatim, each host in a left-to-right isolate (U+2066 ... U+2069): the
+    # bubble is plain text in an RTL document under Arabic, and without the isolates
+    # "*.wikipedia.org" read as "wikipedia.org.*" (delegated click-through, row H).
+    # The isolates are driven for real in net_lane_transport_node_test.js.
+    assert r'lane.hosts.map((h) => "⁦" + h + "⁩").join(" · ")' in src, (
+        "the host list must be joined verbatim, each host isolated left-to-right"
+    )
     assert 't(lane.label)' in src, "the lane name must be translated"
     for prose in ('t("hosts")', 't("Runs on every collection pass:")',
                   't("Only when you ask for it:")', 't("Switched off right now:")',
@@ -913,4 +922,81 @@ def test_every_scheduler_switch_a_lane_names_is_a_real_reachable_field():
             checked.append(key)
     assert "auto_refresh_stat_subscriptions" in checked, (
         "the statistics row no longer names the refresh switch R31 made default-on"
+    )
+
+
+# --------------------------------------------------------------------------- #
+#  The citations and the labels (delegated click-through 2026-09-26, row H).
+#  The guards above pin the HOSTS; nothing pinned the rest of each row, and it
+#  drifted: `runner.py:1250` pointed into the markets lane after the opt-out it
+#  named moved to line 1164, and the Wikipedia row named an "Estimate size"
+#  button that had become "Refresh exact sizes". A reader checking a claim
+#  against the tree was sent to the wrong line or looked for a button that
+#  does not exist -- on the one document that answers "what can this contact".
+# --------------------------------------------------------------------------- #
+#: `path.py:anchor` (or the document's other spelling, `path.py::anchor`) in a code
+#: span, where the anchor is a line number or a symbol.
+_CITATION = re.compile(r"`((?:src|scripts|configs)/[A-Za-z0-9_/.-]+\.(?:py|js))::?([^`\s():]+)`")
+
+
+def _defines(src: str, name: str) -> bool:
+    """A def, a class, or a module/class-level assignment of ``name``."""
+    n = re.escape(name)
+    return bool(re.search(
+        rf"^\s*(?:async\s+def|def|class|function)\s+{n}\b|^\s*(?:const\s+|let\s+|var\s+)?{n}\s*(?::[^=\n]*)?=",
+        src, re.M,
+    ))
+
+
+def test_security_md_cites_symbols_that_exist_never_line_numbers():
+    """A line number is stale the first time someone edits above it; a symbol is
+    renamed only on purpose, and then this guard names it. Each dotted part of a
+    ``Class.method`` anchor must be defined in the cited file."""
+    cites = _CITATION.findall(_DOC.read_text(encoding="utf-8"))
+    assert len(cites) > 30, f"only {len(cites)} citations found -- the pattern stopped matching"
+    problems: list[str] = []
+    for path, anchor in cites:
+        if re.fullmatch(r"[0-9][0-9,-]*", anchor):
+            problems.append(f"`{path}:{anchor}` cites a LINE NUMBER; cite the symbol instead")
+            continue
+        file = _ROOT / path
+        if not file.is_file():
+            problems.append(f"`{path}:{anchor}`: no such file")
+            continue
+        src = file.read_text(encoding="utf-8")
+        for part in anchor.split("."):
+            if not _defines(src, part):
+                problems.append(f"`{path}:{anchor}`: {part!r} is not defined in {path}")
+    assert not problems, "docs/SECURITY.md cites what the tree no longer has:\n  " + "\n  ".join(problems)
+
+
+def test_the_trigger_column_names_controls_the_ui_actually_ships():
+    """A quoted control in the Trigger column is a label the reader will look for. It
+    must be a key in en.json, which every visible label is (the x12 rule). A single
+    lowercase token in quotes is a setting VALUE (the custody row's "opentimestamps"),
+    not a label, and is left alone."""
+    en = json.loads((_LOCALES / "en.json").read_text(encoding="utf-8"))
+    missing: list[str] = []
+    checked = 0
+    for label, row in _doc_rows().items():
+        for phrase in re.findall(r'"([^"]+)"', row["cells"][2]):
+            if " " not in phrase and not phrase[:1].isupper():
+                continue
+            checked += 1
+            if phrase not in en:
+                missing.append(f"{label!r}: {phrase!r}")
+    assert checked >= 4, "the Trigger column no longer quotes any control -- re-anchor this guard"
+    assert not missing, "the SECURITY.md Trigger column names controls the UI does not ship:\n  " + "\n  ".join(missing)
+
+
+def test_every_lane_name_takes_keyboard_focus():
+    """Invariant #17 opens the bubble on hover, KEYBOARD FOCUS or long-press. The hosts
+    live only in the lane's bubble, and a plain span never takes focus: Tab cycled
+    Go online > Stay offline and never reached one of the fifteen lanes (row H)."""
+    from tests.js_source_helper import function_source, strip_comments
+
+    js = (_ROOT / "src" / "static" / "app-core.js").read_text(encoding="utf-8")
+    line = strip_comments(function_source(js, "_laneLine"))
+    assert '<span tabindex="0" title="${esc(_laneHostTitle(lane, kind))}">' in line, (
+        "a lane name in the consent popup no longer takes keyboard focus"
     )

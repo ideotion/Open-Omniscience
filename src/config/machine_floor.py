@@ -55,6 +55,7 @@ That is the honest consequence of the ruling, not a bug in the estimate.
 from __future__ import annotations
 
 import os
+import re
 from typing import Any
 
 from src.config.memory_budget import nominal_ram_mb
@@ -94,6 +95,57 @@ def _override_requested() -> bool:
     return (os.getenv(_OVERRIDE_ENV) or "").strip().lower() in {"1", "true", "yes", "on"}
 
 
+# THE REASON IS A KEYED FRAME, and the English sentence is MADE FROM it (re-walk S-5).
+# The Quality gates panel prints this reason inside a translated refusal, and as English
+# prose it read "(this machine has 3924 MB of RAM …)" in the middle of a French line. So
+# the reason travels as ``reason_i18n`` / ``reason_vars`` too -- the job-line convention of
+# ``src.jobs.background.Framed``: a number is formatted by the client, and a value that is
+# itself ``{"i18n": key, "vars": {...}}`` is a clause written in the UI language. Every
+# frame below is a key in all twelve locales (tests/test_clickthrough_rewalk_b28.py reads
+# them out of this module). ``reason`` is filled from the SAME frame, so the English a log
+# line or a test reads cannot drift from what a translated surface says.
+_REASON_UNMEASURED = (
+    "this machine's memory could not be read (psutil is an optional extra), "
+    "so the floor was not applied — an unmeasured machine is never refused"
+)
+_REASON_MEASURED = "this machine has {ram} with {available} — {verdict}"
+_RAM = "{mb} MB of RAM"
+_RAM_NOMINAL = "{mb} MB of RAM (a nominal {nominal} MB machine)"
+_RAM_UNREADABLE = "an unreadable RAM total"
+_AVAIL = "{mb} MB available"
+_AVAIL_UNREADABLE = "an unreadable available reading"
+_UNDER_TOTAL = "total under the {floor} MB floor"
+_UNDER_AVAIL = "available under the {floor} MB floor"
+_UNDER_BOTH = "total under the {total_floor} MB floor and available under the {available_floor} MB floor"
+_AT_OR_ABOVE = "at or above the {total_floor} MB / {available_floor} MB floor"
+
+#: Every frame the reason can be built from -- the list the ×12 test keys.
+REASON_FRAMES = (
+    _REASON_UNMEASURED, _REASON_MEASURED, _RAM, _RAM_NOMINAL, _RAM_UNREADABLE, _AVAIL,
+    _AVAIL_UNREADABLE, _UNDER_TOTAL, _UNDER_AVAIL, _UNDER_BOTH, _AT_OR_ABOVE,
+)
+
+
+def _clause(frame: str, **values: Any) -> dict[str, Any]:
+    return {"i18n": frame, "vars": values}
+
+
+def _english(frame: str, values: dict[str, Any]) -> str:
+    """Fill a frame the way the English reason has always been written: whole megabytes,
+    no grouping -- except the nominal size, which has always read "a nominal 4,096 MB
+    machine" and is pinned so -- and a nested clause filled by the same rule."""
+
+    def one(m: re.Match[str]) -> str:
+        v = values.get(m.group(1))
+        if isinstance(v, dict) and "i18n" in v:
+            return _english(v["i18n"], v.get("vars") or {})
+        if isinstance(v, (int, float)):
+            return f"{v:,.0f}" if m.group(1) == "nominal" else f"{v:.0f}"
+        return m.group(0) if v is None else str(v)
+
+    return re.sub(r"\{(\w+)\}", one, frame)
+
+
 def machine_floor(
     *,
     override: bool | None = None,
@@ -114,12 +166,10 @@ def machine_floor(
     overridden = _override_requested() if override is None else bool(override)
 
     below: bool | None
+    reason_vars: dict[str, Any]
     if total is None and avail is None:
         below = None
-        reason = (
-            "this machine's memory could not be read (psutil is an optional extra), "
-            "so the floor was not applied — an unmeasured machine is never refused"
-        )
+        reason_frame, reason_vars = _REASON_UNMEASURED, {}
     else:
         # TOTAL is compared on the machine's NOMINAL size, not its raw MemTotal
         # (field diagnostics 2026-09-11, D1): this floor carries the identical 4,096 MiB
@@ -138,30 +188,30 @@ def machine_floor(
         below = bool(low_total or low_avail)
         # The three numbers the reason must carry: what this machine has, what is
         # free on it right now, and the floor it is being judged against.
-        nominal_note = ""
-        if total is not None and nominal_total is not None and abs(nominal_total - total) >= 0.05:
-            nominal_note = f" (a nominal {nominal_total:,.0f} MB machine)"
-        shape = (
-            f"{total:.0f} MB of RAM{nominal_note}"
-            if total is not None
-            else "an unreadable RAM total",
-            f"{avail:.0f} MB available" if avail is not None else "an unreadable available reading",
-        )
-        if below:
-            which = []
-            if low_total:
-                which.append(f"total under the {MIN_TOTAL_MB:.0f} MB floor")
-            if low_avail:
-                which.append(f"available under the {MIN_AVAILABLE_MB:.0f} MB floor")
-            reason = (
-                f"this machine has {shape[0]} with {shape[1]} — "
-                + " and ".join(which)
-            )
+        if total is None:
+            ram = _clause(_RAM_UNREADABLE)
+        elif nominal_total is not None and abs(nominal_total - total) >= 0.05:
+            ram = _clause(_RAM_NOMINAL, mb=total, nominal=nominal_total)
         else:
-            reason = (
-                f"this machine has {shape[0]} with {shape[1]} — at or above the "
-                f"{MIN_TOTAL_MB:.0f} MB / {MIN_AVAILABLE_MB:.0f} MB floor"
+            ram = _clause(_RAM, mb=total)
+        available = (
+            _clause(_AVAIL, mb=avail) if avail is not None else _clause(_AVAIL_UNREADABLE)
+        )
+        if below and low_total and low_avail:
+            verdict = _clause(
+                _UNDER_BOTH, total_floor=MIN_TOTAL_MB, available_floor=MIN_AVAILABLE_MB
             )
+        elif below and low_total:
+            verdict = _clause(_UNDER_TOTAL, floor=MIN_TOTAL_MB)
+        elif below:
+            verdict = _clause(_UNDER_AVAIL, floor=MIN_AVAILABLE_MB)
+        else:
+            verdict = _clause(
+                _AT_OR_ABOVE, total_floor=MIN_TOTAL_MB, available_floor=MIN_AVAILABLE_MB
+            )
+        reason_frame = _REASON_MEASURED
+        reason_vars = {"ram": ram, "available": available, "verdict": verdict}
+    reason = _english(reason_frame, reason_vars)
 
     declines = bool(below) and not overridden
     return {
@@ -173,6 +223,8 @@ def machine_floor(
         "min_total_mb": MIN_TOTAL_MB,
         "min_available_mb": MIN_AVAILABLE_MB,
         "reason": reason,
+        "reason_i18n": reason_frame,
+        "reason_vars": reason_vars,
         "override_env": _OVERRIDE_ENV,
         "method": (
             "psutil virtual_memory(); the floor is applied on EITHER the total or "

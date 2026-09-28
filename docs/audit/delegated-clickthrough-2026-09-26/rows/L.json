@@ -1,0 +1,818 @@
+{
+ "row": "L",
+ "steps_walked": {
+  "row": "L",
+  "title": "Country codes shown as three letters (ISO alpha-3), with the full country name in the hover bubble",
+  "prerequisites": [
+   "BROWSER: a Chromium-based browser (Chrome, Chromium, Edge or Brave). The gate closes on 'a Chromium click-through record', and the country names in the hovers come from the browser's own name data, so another browser may word a few of them differently.",
+   "YOUR REAL INSTALL: the normal encrypted app, unlocked, at http://127.0.0.1:8000, with your real corpus. Steps L10 and L11 need data that only an install that has collected online holds: market series, and World Bank country figures. L11 explains the one online, consented load if the figures are missing.",
+   "A THROWAWAY INSTALL for the steps that change data or need known data (L1, L12; optional for L7 and L8). From the app folder (the one containing install.sh), with a NEW EMPTY folder that is never your real data folder: (1) seed it BEFORE starting any server: OO_DATA_DIR=$HOME/oo-throwaway-alpha3 OO_DB_PLAINTEXT=1 .venv/bin/python scripts/ui_clickthrough_seed.py --mini ; (2) start it on a different port so it cannot collide with the real app: OO_DATA_DIR=$HOME/oo-throwaway-alpha3 OO_DB_PLAINTEXT=1 .venv/bin/python -m uvicorn src.api.main:app --host 127.0.0.1 --port 8010 ; (3) open http://127.0.0.1:8010. Do NOT add the OO_NO_SCHEDULER=1 the sandbox walk used: that flag skips turning airplane mode on at startup. Accept or skip any first-launch screens (language, privacy policy, wizard) and answer 'Not now' to anything that offers to go online. To undo: Ctrl-C the server, then delete $HOME/oo-throwaway-alpha3.",
+   "AIRPLANE MODE ON in both instances: the plane icon in the top bar is FILLED. If it is hollow on your real install, click it once to engage airplane mode. That also stops collection. If the 'Go online?' popup appears in any step other than L11, press 'Stay offline'.",
+   "The interface starts in English: the top-bar language button shows a flag and 'EN'.",
+   "WHERE SUBTABS ARE: section tabs such as Countries · Compare · Groups · Map · Law · Statistics, the Agenda views (Month … List), the Library views, the World map lenses and the Settings sections appear in a row just under the top bar, not inside the page.",
+   "A text editor or spreadsheet program for opening one downloaded CSV file (L4)."
+  ],
+  "steps": [
+   {
+    "id": "L1",
+    "where": "Throwaway (port 8010), or your real install if its law table already has rows: Governments (sidebar) → Law (subtab) → the 'Legal changes' panel and the 'Tracked laws' table below it (#law-changes, #law-docs)",
+    "do": "Throwaway only: press 'Re-seed catalog' once. It is local and makes no network request; it only adds catalogue rows. Wait for the message 'Seeded … sources, … laws.' Then scroll to 'Tracked laws' and hover these codes in the 'Jurisdiction' column: GBR, DEU, EUU, INT. On your real install, skip Re-seed. Do NOT press 'Track changes now' or 'Add & track now', because both fetch from the internet. Do not click the 'stop' / 'resume' links either, because they change what is tracked.",
+    "expect": "Every Jurisdiction cell is exactly three UPPERCASE letters, from this set: GBR, DEU, EUU, INT, CAN, USA, FRA. Lowercase 'uk', 'eu', 'int' or 'de' never appear. Each code has a dotted underline, and hovering it opens the app's styled hover bubble with the full name: GBR → 'United Kingdom' (the catalogue stores this one as 'uk'), DEU → 'Germany', EUU → 'European Union — not an ISO code', INT → 'International — not an ISO code'. The real countries (GBR, DEU, FRA, CAN, USA) carry NO 'not an ISO code' tail. 'Legal changes' will be empty in the throwaway because nothing has been tracked there. On your real install, the bold code at the start of each change follows the same rule.",
+    "flags": [
+     "mutates-data",
+     "needs-seed-data"
+    ],
+    "evidence": "src/static/index.html:713-720, 835-874; src/static/app-gov-law.js:708-709 (Legal changes ooCountryCell), :769-775 (Tracked laws cell), :856-860 (lawSeed toast); src/api/law.py:256-263 (seed is local); configs/legal_sources.yml:102+ (jurisdictions uk/eu/int/de/ca/us/fr); src/static/app-core.js:98-104, 118, 184-212 (GBR for uk, 'not an ISO code'); docs/audit/alpha3-clickthrough-2026-09-16/README.md (Laws row)"
+   },
+   {
+    "id": "L2",
+    "where": "Agenda (sidebar) → 'Country' dropdown (#agenda-country); the view buttons in the row under the top bar → 'List', then 'Group by' = country (#agenda-group); then Settings (sidebar bottom) → Advanced (subtab) → expand 'Calendar directory' (#agenda-feeds)",
+    "do": "Open 'Country' and read the entries. Pick one country and watch the events narrow, then set it back to 'all'. Click 'List', set 'Group by' to 'country', and hover one group heading and the small country pill on one event row. Then go to Settings → Advanced, expand 'Calendar directory' and hover the three-letter code at the end of one row's grey line. Do NOT press 'Verify' or 'Import' in the directory, because they fetch the feed from the internet. Do not press 'Exclude' or 'Include' either, because they change your calendars.",
+    "expect": "The dropdown shows 'all', then entries written as 'flag Name (CODE)' and ordered alphabetically by NAME: '🇦🇷 Argentina (ARG)', '🇦🇺 Australia (AUS)', '🇧🇪 Belgium (BEL)', '🇧🇷 Brazil (BRA)' and so on. Every code is three uppercase letters. Each real country has its own flag and never the globe. 'European Union (EUU)' has the EU flag. Only 'International (INT)' has the 🌐 globe. On Windows a flag may show as two boxed letters such as 'FR'; that is Windows' emoji font, not the app. Picking a country narrows the events. In List view grouped by country, each group heading is a three-letter code with a dotted underline and a hover name (INT → 'International — not an ISO code'), and a 'No country' group may appear. Event rows carry a small code pill (for example EUU or FRA; International events carry none) whose hover gives the name. Pills show a tiny dot in the corner instead of an underline. A Calendar directory row's grey line reads, for example, '· civic · FRA', and the code shows its name on hover. Nothing is saved except which view you last used.",
+    "flags": [],
+    "evidence": "src/static/index.html:1013-1029 (views, Country, Group by), :2721-2723 (Calendar directory fold); src/static/app-shell.js:82-84 (agenda-views moved under the top bar); src/static/app-agenda.js:148-160 (picker 'Name (CODE)', ooCountryCompare), :713 (directory row), :951 (event pill, INT skipped), :992-1001 (agFlag → ooCountryFlag), :1371-1403 (group heading); src/static/app-core.js:223-238 (flag from alpha-2); configs/world_events.yml (countries incl. AR, EU, INT); src/static/app.css:1780-1790 (underline vs corner dot)"
+   },
+   {
+    "id": "L3",
+    "where": "Settings (sidebar bottom) → Advanced (subtab) → expand 'Sources' → 'Manage sources' panel: the table (#src-table) and the 'Country' and 'Language' filters (#src-msel-country, #src-msel-language); then expand 'Statistics producers' (#stat-agencies)",
+    "do": "Hover one code in the table's 'Country' column and one in its 'Lang' column. Open the 'Country' filter and read a few entries, then do the same with 'Language'. Tick exactly ONE country (France), close the filter by clicking its title, and read what the closed filter now says. Do the same with one language (English). Press 'Clear'. Then expand 'Statistics producers' and hover a code in its Country column. Leave these alone, because they change data: the 'Pri' selectors, the 'Enabled' ticks, 'Delete', 'AI check', 'Add source', 'Seed starter sources' and 'Add producers to my sources'.",
+    "expect": "The Country column shows three-letter codes whose hover gives the name (ISR → Israel, FRA → France). The Lang column shows three-letter language codes ('eng', 'fra', 'zho') whose hover gives the language name (English, French, Chinese). A language with no two-letter code, such as 'pcm', shows its code and no invented name. The Country filter lists entries such as 'Argentina (ARG) ·75', in alphabetical order of the name (the number is a source count). The Language filter lists entries such as 'English (eng) ·N'. After ticking France, only FRA rows remain. PASS for the closed filter: it reads 'FRA' or 'France (FRA)'. The code predicts it will read 'fr' (and 'en' for the language), because the closed-filter label prints the stored value. If you see two lowercase letters, record a FINDING. In Statistics producers, national producers show a three-letter code with a hover name and international ones show '—'. 'Clear' restores the unfiltered list; filters change no data.",
+    "flags": [],
+    "evidence": "src/static/index.html:2470, 2500-2525 (Manage sources, filters), 2604-2622 (Statistics producers); src/static/app-sources.js:317-322 (updateMselSummary prints v[0] = stored value), :324-343 (Q308 labels, ooCountryCompare), :410-416 (table cells); src/api/source_management.py:785-823 (facet keys are stored codes); src/static/app-map.js:2079-2104 (producers ooCountryCell); src/static/app-core.js:310-350 (ooLangCode/ooLangCell, pcm has no name)"
+   },
+   {
+    "id": "L4",
+    "where": "Settings → Advanced → 'Sources' → 'Import / export source list (CSV)' panel",
+    "do": "Press 'Export all (CSV)'. A new tab or a download gives 'open-omniscience-sources.csv'. Open it in a text editor or spreadsheet. Also read the grey hint text above the buttons. Do NOT press 'Import CSV'.",
+    "expect": "The header line contains BOTH 'country' and 'country_iso3', with 'country_iso3' as the last column. On a row whose country is 'fr', country_iso3 is 'FRA'; on a 'de' row it is 'DEU'. A row with no country has both cells empty. A row whose stored country is not a recognised code has an empty country_iso3, by design: the export refuses to guess. No row has two filled cells that name different countries. This is the gate's 'the 0.4 exports carry both columns' clause. ALSO judge the hint text: it still says 'Country is a 2-letter code.' and its column list omits country_iso3, although imports now accept two letters, three letters or a name. Record whether that wording is acceptable. The download changes nothing.",
+    "flags": [],
+    "evidence": "src/api/source_io.py:60-80 (_iso3 via country_payload_iso3), :241-250 (export.csv, filename); src/catalog/csv_io.py:38-51 (EXPORT_COLUMNS incl. country_iso3), :170-203 (import accepts both, refuses disagreement); src/catalog/countries.py:1028-1053 (payload fails closed); src/static/index.html:2527-2540 (hint 'Country is a 2-letter code.' at :2533); docs/ledger/RULINGS_INDEX.md Q313"
+   },
+   {
+    "id": "L5",
+    "where": "Library (sidebar) → 'World coverage' (subtab) (#coverage-map, #coverage-table, #coverage-gaps, filter box #cov-filter)",
+    "do": "Hover a few countries on the map. Read the 'Regional balance' line that starts 'Top country:'. Scroll to the table and hover codes in its 'Country' column, including the FIRST row, and hover a few pills in the 'Not covered (N)' list. Type DEU into the box 'filter countries by name, code or topic…' and read the result, then empty the box. Finally, click one code in the table (for example FRA).",
+    "expect": "Hovering a map shape shows a small tooltip with the country NAME and its article count (for example 'France — 12 articles'). In the table, every country cell is a three-letter uppercase code with a dotted underline whose hover gives the full name. The 'Not covered' pills are three-letter codes with hover names. Three predicted FINDINGS to confirm or refute by eye. (1) A row reading '(none)' (sources with no country; the FIRST row in the throwaway) whose hover says 'not a recognised country code'. That labels 'no country' as 'unreadable code', which the helpers are meant to keep apart. (2) 'Top country:' shows a full English name (for example 'United States') and no code. Say whether that meets 'code on screen, name in the hover'. (3) Typing DEU passes if the Germany row stays. If the table says 'No matching countries.', record a FINDING: the box matches only the stored two-letter code and the English name, so 'de' or 'germ' work but the code the screen shows does not. Clicking a code jumps to Settings → Advanced → Sources with the Country filter pre-ticked. Read the closed filter's label and apply the L3 check to it.",
+    "flags": [],
+    "evidence": "src/static/index.html:626-645; src/static/app-sources.js:26-66 (map, names in tooltip), :185-196 ('Top country:' English name), :201-235 (table: ooCountryCell; filter compares c.code = stored alpha-2 and English c.name at :205-206), :572-590 (click → Sources, pre-ticked); src/analytics/source_country_rollup.py:73, 85 ('(none)' code row); src/api/database.py:296-299 (English names); src/static/app-core.js:184-196 (unresolved → 'not a recognised country code')"
+   },
+   {
+    "id": "L6",
+    "where": "Library → World coverage (stay on this panel) + the top-bar language button (#lang-switch → menu #lang-menu)",
+    "do": "With the coverage table visible, open the top-bar language button (a flag plus 'EN') and pick 'Français'. Do not click anything else and do not reload. Hover the same table code as before (for example DEU) and one map shape. Repeat with 'العربية', then '中文', then 'English'.",
+    "expect": "Each time, the hover name appears in the language you just chose, without a reload and without reopening the panel: DEU → 'Allemagne' / 'ألمانيا' / '德国' / 'Germany'. The map tooltips follow too. In العربية the whole layout mirrors to right-to-left while the codes stay Latin ('DEU'). FAIL if any hover still shows the previous language. That is the 'frozen language' defect the sandbox walk found and fixed on 2026-09-16 on this exact panel, and this step re-checks the fix by eye.",
+    "flags": [
+     "locale-check"
+    ],
+    "evidence": "src/static/app-sources.js:20-44, 99-106 (both repaint guards include the UI language via _covUiLang); src/static/app-boot.js:116-118 (language switch re-runs loadCoverage when the table has rows); src/static/app-core.js:558-590 (language menu); docs/audit/alpha3-clickthrough-2026-09-16/README.md finding 2"
+   },
+   {
+    "id": "L7",
+    "where": "World map (sidebar) → 'Coverage' lens, then 'Stories' lens (lens buttons in the row under the top bar; #oo-coverage-map, #oo-coverage-detail)",
+    "do": "On Coverage, hover a few countries. If any small territory is drawn as a dot, hover it too. Click one country and read the panel that opens under the map. Switch to 'Stories', click a dot that belongs to a country, and read the grey line in its panel. The real install is best because it has located articles; the throwaway's 24 seeded articles also give some dots. Do not press 'Official / reference source ↗' or 'Explore sources' (not needed).",
+    "expect": "On Coverage, a shape's tooltip gives the country NAME and its value (for example 'France — 3 sources'). Predicted FINDING: a dot's tooltip shows the three-letter CODE and the value ('… (shown as a point)'), not the name. Confirm whether you see a name or only a code. Clicking a country opens a panel headed by its three-letter code (for example 'FRA') with Sources / Articles counts. On main that heading has no hover of its own, so the name is only in the map tooltip; say whether that meets 'the name in the hover'. On Stories, the grey line reads like '12 Mar 2026 · France (FRA) · 46.23, 2.21 · corpus', and hovering 'FRA' shows the full name.",
+    "flags": [
+     "needs-seed-data"
+    ],
+    "evidence": "src/static/index.html:1523-1541; src/static/app-map.js:669-683 (shape tooltip = name, point tooltip = label), :1249 (point label = ooCountryCode), :1428-1442 (detail heading = code, no title attribute), :1511 (Stories '(ooCountryCell)'); src/api/timemap.py:135-160, src/timemap/collect.py:169-190 (articles placed by source country)"
+   },
+   {
+    "id": "L8",
+    "where": "Insights (sidebar) → 'Map' (subtab) → tables under the headings 'By country' and 'By city' (#map-countries, #map-cities); then Insights → 'Super-groups' → 'Cross-country map of a concept' (#sg-ringmap-detail)",
+    "do": "On Map, set 'Window (days)' to 3650 and press 'Refresh'. Read the first column of the 'By country' table, then the 'By city' table. Then open 'Super-groups', and under 'Cross-country map of a concept' click one concept chip (real install; the throwaway may have none). Read its 'Languages:' and 'By language:' lines and its Country table.",
+    "expect": "PASS: the first column of 'By country' shows three-letter uppercase codes, each with a hover name. On main this column prints the stored value directly, so the code predicts lowercase two-letter codes ('cn', 'de', 'fr', 'us' in the throwaway) with no hover. If you see those, record a FINDING against this row: it is a country surface that the sandbox walk and the surface test both missed. In 'By city', each city name is followed by a grey three-letter code, for example '(FRA)', with the name on hover. The throwaway's seeded sources have no city, so there it shows 'No data — index the corpus (sources need a country/city).' In the concept map, the Country table shows codes with hover names. The 'Languages:' / 'By language:' lines are predicted to print two-letter codes ('en', 'fr') instead of 'eng', 'fra'. Record that as a Q306 display FINDING if you see it.",
+    "flags": [
+     "needs-seed-data"
+    ],
+    "evidence": "src/analytics/queries.py:3193-3197 (countries emitted as {\"code\": <stored alpha-2>}); src/static/app-map.js:1670-1683 (rowsFor prints a.code raw; ooCountryCell only on rows with a.country + a.name = cities); src/static/index.html:1317, 1325-1336, 1339-1360; src/static/app-insights.js:493-501 (raw language codes), :505-507 (concept Country table ooCountryCell); scripts/ui_clickthrough_seed.py:737-765 (mini sources us/fr/de/cn, no city)"
+   },
+   {
+    "id": "L9",
+    "where": "Settings → Wikipedia (subtab) → 'Watch a page' → 'Edition' (#wiki-lang); then Living sources (sidebar) → 'Wikipedia' and 'Law' (subtabs)",
+    "do": "Open the 'Edition' list and scroll through it. Do not press 'Add' or 'Track now'. Then open Living sources and look at the change rows under Wikipedia and Law, if your install has any.",
+    "expect": "'Edition' is a drop-down list and never a text box. It is ONE flat list with no continent headings, and each option leads with the native name, for example 'Français — French (fr)' or 'Deutsch — German (de)'. The two letters in brackets are a Wikipedia EDITION code and correctly stay two letters: an edition is not a country, and S04-05 leaves edition codes alone. In Living sources, a Wikipedia change row carries a three-letter language pill ('eng', 'fra') that shows the language name on hover. A Law change row carries a three-letter jurisdiction pill (GBR, EUU…) that shows the name on hover, as in L1. Pills show a corner dot instead of an underline. Empty lists are fine here.",
+    "flags": [],
+    "evidence": "src/static/index.html:1809-1814, 1475-1511; src/static/app-map.js:1746-1760 (flat list, autonym first, edition code); src/static/app-living.js:205 (ooLangCell pill), :225 (ooCountryCell pill); src/static/app-core.js:271-281 (edition codes deliberately not converted); CLAUDE.md UI invariant #1"
+   },
+   {
+    "id": "L10",
+    "where": "Real install: Indices (sidebar) → 'World stock indices' board (#idx-board, continent subtabs under the top bar); Commodities (sidebar, 'adv' badge) → 'Commodities & rare-earth' → the 'Minerals supply' section (#mkt-minerals-supply); optionally, click the heading 'Configure data sources (feeds & extraction rules)' → 'Official price feeds' (#feed-table)",
+    "do": "Read what the Indices board shows under 'All' and under one continent subtab, including the labels under each graph. On Commodities, scroll to 'Minerals supply (USGS — supply data, not prices)' and read its 'Area' column if it has rows. Optionally open 'Configure data sources' and read the grey line under each feed name. Do NOT press 'Refresh' on either board (it goes online) or 'Import', 'Test', 'Add rule' or 'Import custom feed' (online and/or data-changing). If the boards are empty, come back after L11: going online there also runs the market importers.",
+    "expect": "No code on these two tabs routes a country through the alpha-3 helper on main, so this step records YOUR VERDICT on the gate's 'markets' surface rather than ticking a pass. (1) Indices: the graphs are labelled with index NAMES, for example 'Germany — share prices', 'United Kingdom — share prices', 'S&P 500'. A country appears only as a word inside the index's own name, with no code and no hover. With no stored data the board says 'No data in this window yet.' Record whether names-in-prose are acceptable for this row. (2) Minerals supply: if filled, the Area column prints the code exactly as the USGS file gave it. The code predicts two-letter codes such as 'CN' and 'US' and aggregates such as 'WLD', with no hover. If you see two-letter codes, record a FINDING. If it shows 'No USGS supply figures stored yet.' or another reason, record 'not walkable here'. (3) The feed table's grey lines name producers ('world-bank', 'EIA/FRED'), not countries.",
+    "flags": [],
+    "evidence": "src/static/app-markets.js:38 (_idxView = 'families', no toggle), :76-81 (families branch), :194-198 (_renderIdxViewToggle hides the toggle), :396 (idx-mkt line only in the unreachable cards view), :471-492 (Minerals supply prints r.ref_area raw at :488), :1227-1260 (family members labelled by name; 'No data in this window yet.'), :1324 (_mktView = 'families'); src/stats/usgs.py:126-129, 185 (ref_area = area_code as published: CN, US, WLD); configs/index_feeds.yml:104-127 (index names); configs/commodity_feeds.yml (market: world-bank / EIA/FRED); tests/test_alpha3_display_surfaces.py (no app-markets.js entry)"
+   },
+   {
+    "id": "L11",
+    "where": "Real install: Governments (sidebar) → 'Countries', 'Compare', 'Groups', 'Map', 'Statistics' subtabs (#gov-country, #gov-cmp-a/#gov-cmp-b, #gov-grp-pick, #gov-map-host, #statfig-map)",
+    "do": "Open Countries. If it says 'Country data loads automatically in the background when online — or use “Load standard country data” to fetch it now.', this install has no World Bank figures yet. EITHER stop and record 'not walkable here', OR press 'Load standard country data'. The 'Go online?' popup appears; on main its 'This action needs the network:' line is predicted to be BLANK for this button (a side note, not a row-L result). Press 'Go online'. IMPORTANT: going online starts the app's whole background collection (your sources, market feeds, calendars and the Wikipedia stream), not just the World Bank download, and it keeps running until you engage airplane mode again. Wait about 3 minutes while the button counts progress, then click the plane icon so it is FILLED again. Then check the Countries 'Country' picker; the two Compare pickers ('First country', 'Second country'); Map (choose an 'Indicator', hover a few countries, click one); Groups → 'Computed from members' → pick a 'Group'; and Statistics: type NY.GDP.MKTP.CD in 'View stored figures — series id', tick 'This is a level (count/total)', press 'Map by country'. Do not press 'Fetch figures', 'Refresh due now' or 'Add series to the corpus'.",
+    "expect": "Every country picker reads 'Name (CODE)' in alphabetical order by name ('Afghanistan (AFG)', 'Albania (ALB)', …), with no two-letter codes. Map: hovering a shape shows, for example, 'France — FRA · France: <value>', and clicking a shape switches to Countries with that country selected. Groups: the 'Range across reporting members (n): <min> (XXX) to <max> (YYY)' line, the 'Suspended (n): …' list and the 'missing: …' list use three-letter codes. They have no per-code name hover on main; say whether you want one. Statistics: a note, then a ranked table with an 'Area' column of three-letter codes that show names on hover. Likely also listed at the top: World Bank aggregates such as WLD (World) or HIC, shown as their bare code with the hover 'not a recognised country code'. PASS if no aggregate gets a country name or flag; record whether that hover wording is acceptable for a known producer aggregate. Also note the stale placeholders 'FR or all' and 'FR' in the 'Country (World Bank)' and 'Area (for the chart)' boxes. This step closes the clause 'Governments → Countries/Map walked with real data'.",
+    "flags": [
+     "online",
+     "mutates-data"
+    ],
+    "evidence": "src/static/app-gov-law.js:94-122, 225-228 (_govPickLabel 'Name (CODE)', ooCountryCompare), :445-500 (roster, suspended, spread codes), :576-592 (map valueLabel 'CODE · Name', click → Countries), :599-601 (govLoadStandard calls ensureOnline() with no reason); src/static/index.html:3505-3506 (reason line), :3522-3523 (Stay offline / Go online), :891, 897 ('FR or all', 'FR'); src/api/system.py:228-266 (online ⟺ collector + Wikipedia lane start); src/static/app-map.js:2287-2315 (Map by country: level → ranked 'Area' table of every comparable cell); src/stats/store.py:356-363 (aggregates carry iso2 None); src/api/governments.py:88-102"
+   },
+   {
+    "id": "L12",
+    "where": "Throwaway: Settings → Advanced → expand 'Uninstall & wipe' (the red fold) → the 'Bulletin' fold that sits INSIDE its header (#bulletin-panel)",
+    "do": "CAUTION: on main the Bulletin is nested inside 'Uninstall & wipe'. Do NOT press 'Wipe everything now' or any uninstall button. Expand 'Bulletin'. Set 'Period' to 'Yearly', because the seeded articles are older than a week. Leave 'Add the narration layer' unticked and press 'Build a draft'. Then press 'Open' beside the new edition in the list. Do not press 'Publish'.",
+    "expect": "The document opens in a new tab. Its opening lines include 'Source countries:' followed by three-letter codes with counts (for example 'FRA 3, DEU 2, USA 4, CHN 2') and 'Languages:' followed by three-letter language codes ('eng 5, fra 3, deu …, zho …'). If the document has a 'By country' section, its headings read name and code side by side, for example 'France (FRA) · Europe', because a printed page has no hover. No lowercase two-letter country code appears anywhere. If the panel instead says this machine cannot build a bulletin, record the reason it shows. Undo: press 'Delete' beside the edition.",
+    "flags": [
+     "mutates-data",
+     "needs-seed-data"
+    ],
+    "evidence": "src/static/index.html:3105-3140 (Bulletin nested in the Uninstall & wipe phead); src/static/app-agenda.js:252-292 (Review / Open / Delete, Build), :512-515 (Open → render?fmt=html); src/bulletin/render.py:331-363 ('Languages:' 639-2/T, 'Source countries:' alpha-3), :710-716 ('Name (CODE) · continent'); src/bulletin/gate.py:41 (LAYER_A_REQUIRES_CAPABLE_HARDWARE = False); src/bulletin/period.py:139-176; docs/audit/13_ENCRYPTED_CLICKTHROUGH_2026-09-16.md:117-136"
+   },
+   {
+    "id": "L13",
+    "where": "Top-bar language button → 'Français', then 'العربية' (right-to-left), then '中文'; re-visit the L1, L2 and L3 surfaces (and L11's Map if it has data)",
+    "do": "Switch the language (top-bar language menu) to fr. OPTIONAL quick glance before reloading: hover GBR on Governments → Law. If it still reads 'United Kingdom', note 'Law hovers keep the old language until a reload' (same family as the World coverage defect L6 re-checks). Then RELOAD the page (F5 or Ctrl-R). The language is remembered, and a reload is needed because these panels draw their names once when first opened. Re-check steps L1-L3: hover GBR, DEU, EUU and INT on Governments → Law, open the Agenda 'Country' dropdown, and open the Sources 'Country' and 'Language' filters. Repeat (switch, reload, check) in ar and in zh, then switch back to English.",
+    "expect": "After the reload, in fr: DEU → 'Allemagne', EUU → the EU's French name + ' — pas un code ISO', INT → 'International — pas un code ISO'. The Agenda and Sources country lists are re-sorted by the French names, with 'Afrique du Sud (ZAF)' at or near the top. The Language filter reads 'anglais (eng)', 'français (fra)'. In ar: the layout mirrors to right-to-left, and the codes stay Latin uppercase and unreversed ('FRA', never 'ARF'). Hovers read, for example, CAN → 'كندا', EUU → 'الاتحاد الأوروبي — ليس رمزًا من رموز أيزو', INT → 'دولي — ليس رمزًا من رموز أيزو'. Filter entries such as 'أرمينيا (ARM)' keep the code inside proper parentheses and never show ')ARM('. In zh: DEU → '德国', EUU → '欧盟 — 非 ISO 代码', filter entries like '阿根廷 (ARG)'. In every language the code on screen is identical; only the hover and the sort order change. A hover still in the previous language AFTER the reload is a FAIL. One seen only before the reload is the optional frozen-language note.",
+    "flags": [
+     "locale-check"
+    ],
+    "evidence": "src/static/locales/fr.json, ar.json, zh.json ('not an ISO code', 'International', 'Netherlands Antilles'); src/static/app-core.js:118, 169-214 (names from the browser's CLDR in the UI language; ooCountryCompare with the UI locale); src/static/app-shell.js:138 (tabs load once), :521-527 (Advanced sections load once); src/static/app-boot.js:102-105 (language switch re-runs loadSources(), which fills the Collection dropdown, not #src-table: app-sources.js:246-255); src/static/i18n.js:104-119 (language kept in localStorage); docs/audit/alpha3-clickthrough-2026-09-16/README.md per-surface table"
+   }
+  ],
+  "clause_coverage": [
+   {
+    "clause": "Codes + hovers on every surface that shows a country: MAP (World map, Library world coverage, Governments map, Insights map)",
+    "step_ids": [
+     "L5",
+     "L6",
+     "L7",
+     "L8",
+     "L11"
+    ]
+   },
+   {
+    "clause": "Codes + hovers on every surface that shows a country: AGENDA (picker, list view, calendar directory)",
+    "step_ids": [
+     "L2"
+    ]
+   },
+   {
+    "clause": "Codes + hovers on every surface that shows a country: SOURCES (table, filters, statistics producers, coverage table)",
+    "step_ids": [
+     "L3",
+     "L5"
+    ]
+   },
+   {
+    "clause": "Codes + hovers on every surface that shows a country: MARKETS (verdict: no alpha-3 renderer exists on main)",
+    "step_ids": [
+     "L10"
+    ]
+   },
+   {
+    "clause": "Codes + hovers on every surface that shows a country: LAWS (Governments → Law, Living sources → Law)",
+    "step_ids": [
+     "L1",
+     "L9"
+    ]
+   },
+   {
+    "clause": "Codes + hovers on every surface that shows a country: WIKI (edition picker stays a flat native-name dropdown; language pills)",
+    "step_ids": [
+     "L9"
+    ]
+   },
+   {
+    "clause": "Brief S1 acceptance: the bulletin (server-rendered text) shows alpha-3",
+    "step_ids": [
+     "L12"
+    ]
+   },
+   {
+    "clause": "Q302: the code is displayed and the full name, in the UI language, is in the hover bubble (en, fr, ar RTL, zh)",
+    "step_ids": [
+     "L1",
+     "L3",
+     "L5",
+     "L6",
+     "L13"
+    ]
+   },
+   {
+    "clause": "Q303: EUU / INT / GBR-for-uk, non-ISO ones disclosed in the hover as 'not an ISO code'",
+    "step_ids": [
+     "L1",
+     "L2",
+     "L13"
+    ]
+   },
+   {
+    "clause": "The two silent-failure mechanisms are fixed and browser-checked: Intl.DisplayNames names (hovers) and the flag gate",
+    "step_ids": [
+     "L1",
+     "L2",
+     "L5"
+    ]
+   },
+   {
+    "clause": "Q307: flag emoji derived from alpha-3 (no globe on real countries)",
+    "step_ids": [
+     "L2"
+    ]
+   },
+   {
+    "clause": "Q308: pickers ordered by localised name with the code as a secondary column",
+    "step_ids": [
+     "L2",
+     "L3",
+     "L11",
+     "L13"
+    ]
+   },
+   {
+    "clause": "Q306 (proposed placement): language codes displayed as ISO 639-2/T",
+    "step_ids": [
+     "L3",
+     "L8",
+     "L9",
+     "L12"
+    ]
+   },
+   {
+    "clause": "The 0.4 exports carry both columns (country + country_iso3)",
+    "step_ids": [
+     "L4"
+    ]
+   },
+   {
+    "clause": "Why the row stays OPEN: Governments → Countries/Map and Markets walked with real data",
+    "step_ids": [
+     "L10",
+     "L11"
+    ]
+   },
+   {
+    "clause": "Regression re-check of the frozen-locale coverage-panel finding (fixed in the same PR)",
+    "step_ids": [
+     "L6"
+    ]
+   },
+   {
+    "clause": "The filename-rule test exists (Q309); not clickable, see not_clickable",
+    "step_ids": []
+   },
+   {
+    "clause": "Payloads carry country_iso3 and every parameter accepts both forms; the loader normalises config without rewriting it; P298 cross-check (Q304 0.4 shape, Q305, Q311); not clickable beyond L4, see not_clickable",
+    "step_ids": []
+   },
+   {
+    "clause": "The maintainer's own click-through (Q1128 = a), both halves of the verification bar",
+    "step_ids": [
+     "L1",
+     "L2",
+     "L3",
+     "L4",
+     "L5",
+     "L6",
+     "L7",
+     "L8",
+     "L9",
+     "L10",
+     "L11",
+     "L12",
+     "L13"
+    ]
+   }
+  ],
+  "not_clickable": [
+   "'The filename-rule test exists' (Q309): tests/test_country_filename_rule.py is a repository test, run by CI or by a session running pytest. It shows nothing on screen, and today no data filename carries a country, so there is nothing on disk to look at either.",
+   "The loader reads the ~5,800 'country:' / 'jurisdiction:' config lines in either form WITHOUT rewriting the files, the six two-letter database columns stay unchanged, and the OSM 'ISO3166-1:alpha2' tag is untouched (Q305 step 1, brief §0 prohibitions). All of this is enforced by tests (configs/ is hashed before and after a load), so only CI or a session can check it.",
+   "JSON payloads carrying 'country_iso3' beside 'country', and every API parameter accepting both forms (the 0.4 shape of Q304), are API-level behaviour. Only the CSV export (L4) and the filters are visible to a human. The rest is covered by tests (tests/test_export_country_iso3.py and the payload tests), or a session can query the endpoints.",
+   "The P298 Wikidata cross-check (Q311) runs only inside the ONLINE world-discovery job (src/catalog/discover.py). It reports disagreements in the discovery result, never on screen. Checking it takes an operator going online for a discovery run and then a session reading that result.",
+   "Commodities → 'Minerals supply' (the one markets cell that prints a country code) fills only after an operator runs the USGS MCS fetch. No button in the UI triggers it (src/api/stats.py minerals-supply reason; index.html:1107-1110), so on most installs L10 part (2) will read 'not walkable here'.",
+   "The XKX (Kosovo) and ANT (Netherlands Antilles) disclosures show only if the data holds such a row. The sandbox checked the helper's output for both directly (the table in docs/audit/alpha3-clickthrough-2026-09-16/README.md), and a real corpus may contain neither.",
+   "Brief S04-05 §5 operator step 2 is a DECISION, not a click: the maintainer's word on where localised country names come from for server-rendered text. The bulletin currently prints English names beside the code in every UI language (src/bulletin/coverage.py uses COUNTRY_NAMES).",
+   "Governments figures cannot be produced offline in a throwaway install. They need the consented online World Bank load (L11), an operator action that also starts collection. Market series VALUES likewise need an online collection pass.",
+   "Recording the result: the gate needs the maintainer's pass recorded per surface. After the maintainer reports the verdicts, a session writes them under docs/audit/ and updates row L in docs/product/RELEASE_0.4_GATE.md. Clicking creates no record."
+  ],
+  "surfaces": [
+   "Governments > Law",
+   "Governments > Countries / Compare / Groups / Map / Statistics",
+   "Agenda (Country filter, List view grouped by country)",
+   "Settings > Advanced > Calendar directory",
+   "Settings > Advanced > Sources > Manage sources",
+   "Settings > Advanced > Sources > Import / export source list (CSV)",
+   "Settings > Advanced > Statistics producers",
+   "Library > World coverage",
+   "World map (Coverage and Stories lenses)",
+   "Insights > Map",
+   "Insights > Super-groups (Cross-country map of a concept)",
+   "Settings > Wikipedia > Watch a page (Edition)",
+   "Living sources > Wikipedia / Law",
+   "Indices",
+   "Commodities (incl. Minerals supply)",
+   "Settings > Advanced > Uninstall & wipe > Bulletin",
+   "Top-bar language menu"
+  ],
+  "estimate_minutes": 90,
+  "notes": "WHAT THIS PASS IS: the sandbox Chromium walk (docs/audit/alpha3-clickthrough-2026-09-16/) already covers Laws, Agenda, Library world coverage, the Sources table and filters, and the Wikipedia picker in en/fr/ar/zh. This pass is the human half of Q1128 = a for those surfaces. It also covers the two surfaces the row is still OPEN on, Governments figures (L11) and Markets (L10), plus the bulletin the brief names (L12). Use a Chromium-based browser: the gate closes on 'a Chromium click-through record', and hover names come from the browser's own country-name data.\n\nPATH CORRECTIONS: both the sandbox README AND the gate row's own text call the sources surface 'Settings → Data'. On main the table and its Country/Language filters live under Settings → Advanced → 'Sources' fold → 'Manage sources'; the 'Data & backup' subtab has no sources table. The Bulletin fold is nested inside the red 'Uninstall & wipe' fold (index.html:3105-3140; already recorded as P3-7 and in 13_ENCRYPTED_CLICKTHROUGH_2026-09-16.md:117), so L12 carries a caution.\n\nTHE GATE'S 'MARKETS' SURFACE: no code in app-markets.js routes a country through the alpha-3 helper, and tests/test_alpha3_display_surfaces.py has no app-markets.js entry. Both boards are families-only on main (no Cards toggle), so the catalogue 'market' line ('US · Nasdaq') is never shown. What a human sees is index NAMES ('Germany — share prices') plus the USGS 'Minerals supply' Area column, which prints the published code raw. L10 asks for the maintainer's verdict rather than inventing a pass.\n\nLIKELY FINDINGS FROM READING THE CODE, for the maintainer to confirm by eye; none was verified in a browser here.\n(a) Insights → Map, 'By country' table prints the stored two-letter code ('fr') with no hover: queries.py:3196 emits {\"code\": c} and app-map.js:1676 prints it raw (L8).\n(b) Sources Country/Language filter: with exactly one item ticked, the closed filter shows the stored value ('fr', 'en'), because app-sources.js:321 prints v[0] (L3/L5).\n(c) Library → World coverage filter cannot find a country by the three-letter code on screen: it compares the stored alpha-2 and the English name (app-sources.js:203-206) (L5).\n(d) World map Coverage detail heading shows the code with no hover (app-map.js:1435-1442), although its comment claims the Q302 pair (L7).\n(e) Governments → Groups roster and range codes carry no name hover, by design per app-gov-law.js:231-235 (L11).\n(f) Stale on-screen hints still teach two-letter codes: the CSV panel's 'Country is a 2-letter code.' (index.html:2533), and the Governments → Statistics placeholders 'FR or all' / 'FR' (index.html:891, 897).\n(g) Insights → Super-groups concept map prints raw language codes in 'Languages:' and 'By language:' (app-insights.js:493-501), not 639-2/T (L8).\n(h) Library → World coverage '(none)' row: sources with no country hover as 'not a recognised country code', conflating absent with unreadable (source_country_rollup.py:73, 85) (L5).\n(i) 'Top country:' in World coverage shows an English name and no code (app-sources.js:190-195) (L5).\n(j) World map Coverage: a small territory drawn as a dot hovers with its CODE, not its name (app-map.js:1249) (L7).\n(k) Frozen language on a bare switch for Law, Agenda, the Sources table and filters, and Statistics producers. Those panels render once, and the language-change handler's Sources branch calls loadSources(), which now fills the Collection dropdown rather than the table (app-boot.js:102-105). L13 reloads to avoid false failures and records this separately.\n(l) Commodities → Minerals supply prints USGS codes raw ('CN', 'US', 'WLD') (app-markets.js:488) (L10).\n(m) Governments → Statistics level table likely lists World Bank aggregates (WLD, HIC…) with the hover 'not a recognised country code' (app-map.js:2311-2313) (L11).\nOutside row L but seen on the way: the 'Load standard country data' button opens the consent popup with no action named (app-gov-law.js:601 passes no reason), which invariant #14 requires.\nIf the maintainer confirms any of these, they are findings for a session to fix; the maintainer is not asked to fix anything.\n\nSAFETY: the throwaway boot command deliberately omits the walk's OO_NO_SCHEDULER=1. main.py:336-350 turns airplane mode on and installs the socket guard only when that flag is unset. Port 8010 keeps the throwaway clear of the real install on 8000. Only L11 goes online, and only after the 'Go online?' popup. Crossing online starts the whole background collector: every enabled source, market feeds, calendars and the Wikipedia stream, plus api.worldbank.org for the load (system.py:228-266). It keeps running until the plane icon is FILLED again, and it adds articles and figures to the real corpus. Nothing needs undoing afterwards; it is the app's normal collection. The data-changing presses are Re-seed catalog (L1, throwaway), Build a draft (L12, throwaway, undone with 'Delete'), and the World Bank load plus collection (L11). The Sources table's 'Pri' selectors, 'Enabled' ticks and 'Delete' (L3), the Calendar directory's Verify/Import/Exclude (L2), and every Refresh/Import on the market tabs (L10) must be left alone."
+ },
+ "walk": {
+  "row": "L",
+  "environment": {
+   "encrypted": true,
+   "seed": "scripts/ui_clickthrough_seed.py default (STATE C, 453 articles) into an ENCRYPTED store (OO_DB_PASSPHRASE set, OO_DB_PLAINTEXT unset); then /tmp/claude-0/walk/L/seed_extra.py with the server stopped and the same passphrase: SYNTHETIC World Bank figures (NY.GDP.MKTP.CD, SP.POP.TOTL, SP.DYN.LE00.IN x 44 countries incl. XKX + 6 WB aggregates WLD/HIC/EUU/EAS/LIC/SSF x 2019-2023) through src.stats.sdmx.parse_worldbank + store_figures, 6 USGS MCS supply rows through parse_mcs_csv, 4 index series (CommodityPrice), 3 law documents (fr/uk/eu) with revisions, Wikipedia-lane change rows (adapted from docs/audit/living-sources-clickthrough-2026-09-25/seed.py). Boot autoseed added the 6,418-source catalogue; L1 'Re-seed catalog' added 205 sources / 23 laws.",
+   "ports": [
+    8822
+   ],
+   "scratch_dir": "/tmp/claude-0/walk/L",
+   "notes": "Launched only with the open-omniscience console script (proxy vars unset), booted LOCKED with neither OO_DB_PASSPHRASE nor OO_DB_PLAINTEXT; unlocked in Chromium via #pw/#btn-unlock. Both open_omniscience.db and wiki.db are ciphertext at rest (first bytes are not the SQLite header). Airplane mode stayed on throughout. The only consent popup opened (L11 'Load standard country data') was cancelled with 'Stay offline', after which /api/system/network read online:false. The net-coach was answered 'Not now'. Chromium 1194 headless via the Playwright sync API; main pass 1440x950, phone pass 375x800. Map-shape tooltips are native SVG <title> children: their text was read from the element after a real mouse hover, because headless Chromium does not paint native tooltips. #oo-tip bubble text was read from the live bubble after a real hover. Governments and Markets data are SYNTHETIC values pushed through the app's own parsers, so the renderers were exercised but the gate's 'walked with REAL data' clause is still not met. Server log: one startup WARNING 'could not seed the source catalog at startup' (IntegrityError UNIQUE sources.domain in seed_legal_sources), logged in the same second as the walk's own 'Re-seed catalog' press. This looks like a race between the deferred startup seed and the manual re-seed; it had no visible effect. Only port 8822 was used (8823 unused); server PID 29074 was killed at the end. The two chromium processes still running (PIDs 3379/3383) predate this walk, belong to the other walker, and were left alone. Full report at /tmp/claude-0/walk/L/report.json; 20 key screenshots in the scratch dir, the rest in extra/; raw per-step observations in res-*.json; walk scripts w_*.py; the exported CSV and the bulletin text are saved beside them."
+  },
+  "steps": [
+   {
+    "id": "L1",
+    "result": "pass",
+    "locales": [
+     "en"
+    ],
+    "screenshot": "shots/L/L1-tip-EUU-en.png",
+    "observed": "Governments > Law. Legal changes: the bold codes GBR, EUU and FRA each have a dotted underline and an #oo-tip reading 'United Kingdom' / 'European Union — not an ISO code' / 'France'. 'Re-seed catalog' toast: 'Seeded 205 sources, 23 laws.' Tracked laws has 27 rows. Every Jurisdiction cell is 3 uppercase letters from {CAN, DEU, EUU, FRA, GBR, INT, TLS, USA}, with no lowercase uk/eu/int/de. Hovers: GBR 'United Kingdom' (stored as uk and as gb), DEU 'Germany', EUU 'European Union — not an ISO code', INT 'International — not an ISO code', FRA 'France', CAN 'Canada', USA 'United States'. Real countries carry no 'not an ISO code' tail. TLS (Timor-Leste, from legal_sources_generated.yml) is outside the brief's listed set but is a correct alpha-3 with hover 'Timor-Leste'."
+   },
+   {
+    "id": "L2",
+    "result": "fail",
+    "locales": [
+     "en"
+    ],
+    "screenshot": "shots/L/L2-directory-AX-tip-en.png",
+    "observed": "What passed: the Agenda Country dropdown reads 'all' followed by 32 entries such as '🇦🇷 Argentina (ARG)', '🇦🇺 Australia (AUS)', '🇧🇪 Belgium (BEL)', '🇧🇷 Brazil (BRA)', ordered by name (Intl.Collator check clean). Every code is 3 uppercase letters, EUU shows as '🇪🇺 European Union (EUU)', and only '🌐 International (INT)' has the globe. Picking France gives 'showing 3 of 153' (FRA pills); back to all gives 153 of 153. List view grouped by country: the headings are codes with a dotted underline and a hover (INT 75 → 'International — not an ISO code', CHN 'China', …), plus a 'No country 2' group. Event pills are codes with a 4px corner dot (::after); INT events carry no pill. Calendar directory: '· holidays · AFG' hovers 'Afghanistan'. What failed: the directory also shows real ISO territories as bare two-letter codes 'AX', 'AI', 'BQ', 'BV', 'IO' (e.g. '· holidays · AX'). Their hover reads 'not a recognised country code' (these are Åland, Anguilla, Bonaire, Bouvet and British Indian Ocean Territory)."
+   },
+   {
+    "id": "L3",
+    "result": "fail",
+    "locales": [
+     "en"
+    ],
+    "screenshot": "shots/L/L3-country-filter-closed-en.png",
+    "observed": "Manage sources table: the Country column shows ISR/FRA/UGA… with hovers Israel/France…, and the Lang column shows eng/fra/spa/tel with hovers English/French/Spanish/Telugu. The Country filter has 209 entries such as 'Afghanistan (AFG) ·4', ordered by name (collator clean). Three entries print a lowercase alpha-2 instead: 'Anguilla (ai) ·1', 'Cook Islands (ck) ·1', 'Vatican City (va) ·2'. The Language filter has 79 entries: 'English (eng) ·2954', 'Spanish (spa)', 'French (fra)'…. Ticking France leaves only FRA rows (130 sources). The closed filter then reads 'fr', not 'FRA' or 'France (FRA)'. With English ticked, the closed Language filter reads 'en'. This confirms the predicted finding. 'Clear' restores 6418 sources and 'Any'/'Any'. Statistics producers: international producers show '—', national ones show codes with a hover (RUS 'Russia', FRA, GBR, DEU…). No language without a two-letter code (like 'pcm') exists in this corpus, so that check was not measurable."
+   },
+   {
+    "id": "L4",
+    "result": "pass",
+    "locales": [
+     "en"
+    ],
+    "screenshot": "",
+    "observed": "'Export all (CSV)' produced a browser download named 'open-omniscience-sources.csv' (6,418 rows, saved in the scratch dir). The header contains both 'country' and 'country_iso3', with country_iso3 last. fr→FRA and de→DEU. 1,458 rows have both cells empty, no row has an empty country with a filled iso3, and no stored country maps to two different iso3 values. The rows stored as 'va' (2), 'ck' (1) and 'ai' (1) export an EMPTY country_iso3 although these are real ISO 3166-1 codes (VAT/COK/AIA). That is the table gap listed in the defects, not a refusal to guess an unreadable code. The hint text still says 'Country is a 2-letter code.' and its column list omits country_iso3. Imports accept 2 letters, 3 letters or a name, so the wording is judged stale (P3 finding)."
+   },
+   {
+    "id": "L5",
+    "result": "fail",
+    "locales": [
+     "en"
+    ],
+    "screenshot": "shots/L/L5-first-row-tip-en.png",
+    "observed": "Map: 229 shapes; each tooltip gives the NAME and a count ('France — 56 articles', 'Germany — 56 articles'). The table has 210 country cells, all with a hover. Finding (1) CONFIRMED: the FIRST row, '(none)' (1458 sources with no country), hovers 'not a recognised country code'. Rows 'va', 'ai' and 'ck' are lowercase alpha-2 with the same hover. The 'Not covered (43)' pills mix codes with hovers (ASM 'American Samoa', ABW 'Aruba') with lowercase alpha-2 (aq, ax, bl, bq, bv, cc, cx, eh, fk, gf, gg, gp, gs, hm, io, je, mf, mq, ms, nf, nu, pm, pn, re, …) that all hover 'not a recognised country code'. Finding (2) CONFIRMED: 'Top country: United States — 239 sources, 4.9% of located within the 12% guard …' shows an English name and no code, and the line stays English in fr/ar. Finding (3) CONFIRMED: typing 'DEU' in the filter gives 'No matching countries.'; 'germ' finds DEU, and 'de' only matches tag substrings. Clicking FRA jumps to Settings > Advanced > Sources. The table there shows only FRA rows (130 source(s)), but the Country filter reads 'Any' with NOTHING ticked (re-checked for 8 s; see defects)."
+   },
+   {
+    "id": "L6",
+    "result": "pass",
+    "locales": [
+     "en",
+     "fr",
+     "ar",
+     "zh"
+    ],
+    "screenshot": "shots/L/L6-DEU-tip-ar.png",
+    "observed": "Language switched from the top-bar menu with the coverage table open, without a reload. The DEU hover reads 'Allemagne' / 'ألمانيا' / '德国' / 'Germany' in fr/ar/zh/en. The map tooltips follow ('Allemagne — 56 articles', 'ألمانيا — 56 مقالة', '德国 — 56 篇文章', 'Germany — 56 articles'). In ar the page switches to dir=rtl and the cell still reads Latin 'DEU'. The 2026-09-16 frozen-language fix holds on this panel."
+   },
+   {
+    "id": "L7",
+    "result": "fail",
+    "locales": [
+     "en"
+    ],
+    "screenshot": "shots/L/L7-coverage-detail-DEU-en.png",
+    "observed": "Coverage lens: shape tooltips give the name and the value ('France — 130 sources', 'Germany — 60 sources'). No territory with data is drawn as a point in this corpus, so the dot-tooltip prediction could not be checked. Clicking Germany opens a panel headed 'DEU' (Europe, Sources 60, Articles 56, Keyword mentions 3 598). The heading has NO title or hover, so the name is only in the map tooltip. Judged not to meet 'the name in the hover' (P3). Stories lens: 34 dots. One detail line reads 'Aug 17, 2027 · Jakarta (IDN) · -6.21, 106.85 · agenda', and IDN hovers 'Indonesia' (pass)."
+   },
+   {
+    "id": "L8",
+    "result": "fail",
+    "locales": [
+     "en"
+    ],
+    "screenshot": "shots/L/L8-insights-by-country-en.png",
+    "observed": "Insights > Map with window 3650 and Refresh. Finding (a) CONFIRMED: the first column of 'By country' prints stored lowercase alpha-2 codes ('br, cn, de, eg, es, fr, gb, mx, pt, ru, sa, us') with no hover. 'By city' shows 'No data — index the corpus (sources need a country/city).' because the seeded sources have no city (not measurable). Super-groups > 'Cross-country map of a concept' for 'voting': the Country table shows SAU/FRA/ESP/CHN/BRA/USA/GBR with hovers (SAU 'Saudi Arabia'). Q306 display finding (g) CONFIRMED: 'Languages: ar · en · es · pt · zh', 'By language: es 84 · en 47 · pt 28 · ar 28' and the group chips '(ar/bn/de/en/…)' print ISO 639-1 codes, not 639-2/T."
+   },
+   {
+    "id": "L9",
+    "result": "pass",
+    "locales": [
+     "en"
+    ],
+    "screenshot": "shots/L/L9-living-law-EUU-en.png",
+    "observed": "Settings > Wikipedia > Edition (#wiki-lang) is a <select> with 147 options and 0 optgroups. It is one flat list and each option leads with the native name: '中文 — Chinese (zh)', 'English — English (en)', 'Français — French (fr)', 'Deutsch — German (de)'. Living sources > Wikipedia rows carry the pills 'fra' (hover 'French') and 'eng' (hover 'English'). Living sources > Law rows carry the pills GBR 'United Kingdom', EUU 'European Union — not an ISO code' and FRA 'France'. Pills show the 4px corner dot and no underline."
+   },
+   {
+    "id": "L10",
+    "result": "fail",
+    "locales": [
+     "en"
+    ],
+    "screenshot": "shots/L/L10-minerals-supply-en.png",
+    "observed": "SYNTHETIC data. Indices: under 'All' and under 'Europe' the graphs are labelled by index names only ('France — share prices', 'Germany — share prices', 'United Kingdom — share prices', 'S&P 500'). There is no country code and no country hover anywhere; the only codes are the currencies EUR/GBP/USD. Verdict: a country named inside an index's own name is acceptable, since it is not a country cell. Finding (l) CONFIRMED: the Minerals supply Area column (USGS rows loaded through parse_mcs_csv) prints 'US', 'AU', 'CN', 'US', 'WLD', 'WLD' raw, with no hover. The grey lines in the feed table name producers ('EIA/FRED', 'world-bank'), not countries."
+   },
+   {
+    "id": "L11",
+    "result": "fail",
+    "locales": [
+     "en"
+    ],
+    "screenshot": "shots/L/L11-statistics-level-table-en.png",
+    "observed": "SYNTHETIC World Bank figures loaded through parse_worldbank/store_figures; the online load itself could not be measured. The consent popup for 'Load standard country data' reads 'This action needs the network:' followed by nothing (side note confirmed). It was cancelled with 'Stay offline' and the app stayed offline. The Countries and Compare pickers list 44 entries ('Afghanistan (AFG)', 'Albania (ALB)', …) in name order, with no alpha-2. Map (Population): tooltips read 'France — FRA · France: 72M' and 'Kosovo — XKX · Kosovo: 1.9M'; the Kosovo one lacks the 'not an ISO code' disclosure. Clicking Germany switches to Countries with 'Germany (DEU)' selected. Groups > Computed > Europe: 'Range across reporting members (23): 1.9M (XKX) to 88M (DEU)' uses codes with no per-code hover. The line 'missing: AND, ax, BIH, BGR, BLR, EST, FRO, gg …' mixes alpha-3 with lowercase ax/gg/je. Each strategy's refusal text prints stored alpha-2 codes '(ad, ax, ba, bg, by, ee, fo, gg…)'. Statistics (NY.GDP.MKTP.CD as a level): the ranked 'Area' table lists WLD, HIC, EAS, USA, EUU, CHN…. WLD/HIC/EAS hover 'not a recognised country code', EUU hovers 'European Union — not an ISO code', and countries show their names. No aggregate gets a country name or flag. The placeholders still read 'FR or all' and 'FR'."
+   },
+   {
+    "id": "L12",
+    "result": "fail",
+    "locales": [
+     "en"
+    ],
+    "screenshot": "shots/L/L12-bulletin-doc-en.png",
+    "observed": "Settings > Advanced > Uninstall & wipe > Bulletin (nested inside the red fold, as already recorded). A Yearly draft was built ('Draft built.') and opened in a new tab. It reads 'Source countries: RUS 21, CHN 20, FRA 16, DEU 14, USA 11, SAU 10, BRA 9, MEX 9, EGY 8, PRT 8, GBR 7, ESP 5; 2 from sources with no country recorded.' and 'Languages: eng 23, rus 20, zho 20, ara 18, por 17, fra 15, spa 14, deu 13.' The By country headings read 'Russia (RUS) · Europe', 'France (FRA) · Europe' …. The document also carries the law-change card 'Law changed (fr): Walk Code civil (extract)' and 'Measured: … jurisdiction fr …'. That lowercase two-letter code breaks the step's 'no lowercase two-letter country code anywhere' rule. The edition was deleted afterwards ('No editions yet.')."
+   },
+   {
+    "id": "L13",
+    "result": "pass",
+    "locales": [
+     "fr",
+     "ar",
+     "zh"
+    ],
+    "screenshot": "shots/L/L13-src-country-filter-ar.png",
+    "observed": "Optional glance before the reload: after switching to fr/ar/zh, the Law hovers still read 'United Kingdom' / 'Germany' / 'European Union — not an ISO code' (the frozen-language note). After the RELOAD, fr: GBR 'Royaume-Uni', DEU 'Allemagne', EUU 'Union européenne — pas un code ISO', INT 'International — pas un code ISO'. The Agenda list starts 'tout', '🇿🇦 Afrique du Sud (ZAF)', '🇩🇪 Allemagne (DEU)'. The Sources Country filter starts 'Afghanistan (AFG)', 'Afrique du Sud (ZAF)', and the Language filter reads 'anglais (eng)', 'français (fra)'. ar: dir=rtl; CAN 'كندا', EUU 'الاتحاد الأوروبي — ليس رمزًا من رموز أيزو', INT 'دولي — ليس رمزًا من رموز أيزو'. The filter entry 'أرمينيا (ARM) ·8' renders with proper parentheses (screenshot), and the codes stay Latin and unreversed. zh: DEU '德国', EUU '欧盟 — 非 ISO 代码', INT '国际 — 非 ISO 代码', filter entry '阿根廷 (ARG)'. In every locale the sort order matched Intl.Collator and the on-screen codes were identical. The Governments map titles are localised too ('Allemagne — DEU · Allemagne: 88M', 'ألمانيا — DEU …', '德国 — DEU …'). Two same-root leftovers appear in every locale: 'Anguilla (ai)' in the country filter, and the Home law card 'Law changed (fr): …', which stays in English."
+   },
+   {
+    "id": "L375",
+    "result": "fail",
+    "locales": [
+     "en"
+    ],
+    "screenshot": "shots/L/L375-sources-filters-closed-en.png",
+    "observed": "375x800 in en: document scrollWidth - clientWidth = 0 on Law, the Agenda list, Library coverage, Governments map and countries, and Settings > Advanced > Sources. Wide tables scroll inside their own overflow:auto boxes, and the EUU hover works at 375. The Manage sources filter row, however, collapses. The Search box is 25 px wide, and the Language/Country/Type/Tags controls overlap (x=71/95/118/142, each 90 px wide). Their labels print on top of each other ('LanguCountrTypeTags'). A click on the Country filter is intercepted by the neighbouring control, so the Country filter cannot be opened at phone width."
+   }
+  ],
+  "page_errors": [],
+  "http_errors": [],
+  "junk_text": [
+   "Insights > Super-groups > Cross-country map (method text): '… Unlocated sources are bucketed as null, not dropped. …' — developer wording in user text, not a rendering bug",
+   "Commodities > Minerals supply caveat: 'A None value is a published gap.' — Python 'None' shown in user text",
+   "Governments > Groups > Computed refusal text: 'Re-request with allow_incomplete to compute it anyway' — an API parameter name shown in user text"
+  ],
+  "defects": [
+   {
+    "title": "28 real ISO 3166-1 codes, Vatican City among them, are missing from the alpha-3 table and show as two-letter codes that hover 'not a recognised country code'",
+    "severity": "P2",
+    "step_ids": [
+     "L2",
+     "L3",
+     "L4",
+     "L5",
+     "L11",
+     "L13"
+    ],
+    "repro": "Encrypted seed plus the boot autoseed, then look at: Settings > Advanced > Calendar directory (rows '· holidays · AX'/'AI'/'BQ'/'BV'/'IO'); Settings > Advanced > Sources > Country filter ('Anguilla (ai)', 'Cook Islands (ck)', 'Vatican City (va)'); the Library > World coverage table rows va/ai/ck and the 'Not covered (43)' pills; Governments > Groups > Computed > Europe 'missing: … ax … gg …'; the Export all (CSV) rows for va/ck/ai.",
+    "expected": "Every code on screen is alpha-3 with the localised name in the hover (VAT 'Vatican City', ALA 'Åland Islands', AIA 'Anguilla' …), and the export fills country_iso3 for real ISO codes.",
+    "actual": "Bare codes 'va', 'ai', 'ck', 'aq', 'ax', 'bl', 'bq', 'bv', 'cc', 'cx', 'eh', 'fk', 'gf', 'gg', 'gp', 'gs', 'hm', 'io', 'je', 'mf', 'mq', 'ms', 'nf', 'nu', 'pm', 'pn', 're', … (uppercase in the calendar directory). Their hover reads 'not a recognised country code', and the CSV country_iso3 is empty for va/ck/ai.",
+    "evidence": "L2-directory-AX-tip-en.png, L13-src-country-filter-ar.png, extra/L5-coverage-map-en.png, res-L3.json, res-L5.json. Cause: src/catalog/countries.py:614-640 _ISO3_TO_2_TEXT, mirrored verbatim at src/static/app-core.js:64-81, lists only World Bank economies plus a few territories. The configs store ai ax bl bq bv cc ck cx eh fk gf gg gp hm io je mf mq ms nf pm re sh sj tk va wf yt, and none of them resolve. ooCountryCode (app-core.js:141-154) then returns the raw value, and ooCountryTitle returns the 'not a recognised' line."
+   },
+   {
+    "title": "Insights > Map 'By country' table prints stored lowercase alpha-2 codes with no hover",
+    "severity": "P2",
+    "step_ids": [
+     "L8"
+    ],
+    "repro": "Insights > Map, set Window to 3650, press Refresh, and read the first column of 'By country'.",
+    "expected": "Three-letter uppercase codes (BRA, CHN, DEU…), each with the localised name in the hover.",
+    "actual": "'br', 'cn', 'de', 'eg', 'es', 'fr', 'gb', 'mx', 'pt', 'ru', 'sa', 'us' as plain <strong> text with no title.",
+    "evidence": "L8-insights-by-country-en.png. src/analytics/queries.py:3193-3197 emits {code: stored alpha-2}, and src/static/app-map.js:1676 prints esc(a.code||a.name) raw (ooCountryCell is used only on city rows)."
+   },
+   {
+    "title": "World coverage → Sources jump: the table is filtered to FRA but the Country filter shows 'Any' with nothing ticked",
+    "severity": "P2",
+    "step_ids": [
+     "L5"
+    ],
+    "repro": "On a fresh page, open Library > World coverage and click the FRA code in the table.",
+    "expected": "Settings > Advanced > Sources opens with France pre-ticked in the Country filter, and the filter's label matches the filtered table.",
+    "actual": "The table shows '130 source(s)', FRA rows only, while the Country filter reads 'Any' and no checkbox is ticked (observed for 8 s, and again after opening the filter). The visible filter misstates what is displayed, and ticking another country would silently drop FRA.",
+    "evidence": "L5-click-FRA-sources-state-en.png, res-L5b.json. Likely a race: openSourcesForKeyword (src/static/app-sources.js:579-590) ticks France after its own loadSrcFacets(). showTab('sources') → _openAdvanced('sources') (app-shell.js:109-111, 512-518) then fires the section's toggle loader (app-shell.js:478). That loader runs loadSrcFacets() again, which re-renders the list unticked and resets the summary to 'Any'."
+   },
+   {
+    "title": "The Manage sources filter row collapses at 375 px and the Country filter cannot be opened",
+    "severity": "P2",
+    "step_ids": [
+     "L375"
+    ],
+    "repro": "At a 375x800 viewport, open Settings > Advanced > Sources and try to click the Country filter.",
+    "expected": "The filters wrap onto their own lines, the labels stay readable, and each control is clickable.",
+    "actual": "The Search box is 25 px wide. The Language/Country/Type/Tags controls overlap (x=71/95/118/142, 90 px each), and their labels print on top of each other ('LanguCountrTypeTags'). A click on Country is intercepted by the next control. There is no page-level horizontal scroll.",
+    "evidence": "L375-sources-filters-closed-en.png, res-L375.json; markup at src/static/index.html:2498-2515 (a .row of flex children)."
+   },
+   {
+    "title": "The consent popup for 'Load standard country data' names no action",
+    "severity": "P2",
+    "step_ids": [
+     "L11"
+    ],
+    "repro": "Governments > Countries > press 'Load standard country data', then 'Stay offline'.",
+    "expected": "Invariant #14: the one consent popup names the action ('This action needs the network: <action>').",
+    "actual": "'This action needs the network:' is followed by an empty #net-consent-reason. Consent is still required, so this is not a consent breach, but the disclosure is missing. Outside row L.",
+    "evidence": "L11-consent-load-standard-en.png; src/static/app-gov-law.js:599-601 calls ensureOnline() without a reason."
+   },
+   {
+    "title": "The law-change briefing card prints the stored lowercase jurisdiction, on Home and in the bulletin",
+    "severity": "P3",
+    "step_ids": [
+     "L12",
+     "L13"
+    ],
+    "repro": "With a flagged law revision whose jurisdiction is fr: read the Home briefing card, or build and open a Yearly draft in Settings > Advanced > Bulletin.",
+    "expected": "'Law changed (FRA): …' (code on screen with the name in the hover; name and code side by side in print), and no lowercase two-letter code in the bulletin.",
+    "actual": "'Law changed (fr): Walk Code civil (extract)' and 'Measured: … jurisdiction fr …', still in English in fr/ar/zh.",
+    "evidence": "L13-home-law-card-fr.png, bulletin-doc.txt:254-258; src/briefing/producers.py:1468 builds title=f\"Law changed ({doc.jurisdiction}): …\"."
+   },
+   {
+    "title": "The closed Sources filter label prints the stored value ('fr', 'en')",
+    "severity": "P3",
+    "step_ids": [
+     "L3"
+    ],
+    "repro": "Settings > Advanced > Sources: tick only France and close the Country filter; tick only English and close the Language filter.",
+    "expected": "'FRA' or 'France (FRA)'; 'eng' or 'English (eng)'.",
+    "actual": "'fr' and 'en'.",
+    "evidence": "L3-country-filter-closed-en.png; src/static/app-sources.js:317-322 (updateMselSummary prints v[0])."
+   },
+   {
+    "title": "Governments > Groups computed refusal text lists members as stored lowercase alpha-2",
+    "severity": "P3",
+    "step_ids": [
+     "L11"
+    ],
+    "repro": "Governments > Groups > Computed from members, Group 'Europe', Indicator population.",
+    "expected": "Member codes in alpha-3, like the 'missing:' line and the Range line next to it.",
+    "actual": "Each strategy reads '29 of 52 members did not report this indicator for this period (ad, ax, ba, bg, by, ee, fo, gg…)'. The text is English-only and exposes the parameter name 'allow_incomplete'.",
+    "evidence": "extra/L11-groups-computed-europe-en.png, res-L11b.json; src/stats/aggregate.py:197-205 joins missing_value raw."
+   },
+   {
+    "title": "The Commodities > Minerals supply Area column prints USGS codes raw with no hover",
+    "severity": "P3",
+    "step_ids": [
+     "L10"
+    ],
+    "repro": "With USGS MCS figures stored, open Commodities > Minerals supply.",
+    "expected": "USA/AUS/CHN with name hovers, and WLD disclosed as an aggregate.",
+    "actual": "'US', 'AU', 'CN' and 'WLD' as plain text with no title.",
+    "evidence": "L10-minerals-supply-en.png; src/static/app-markets.js:488 prints esc(r.ref_area)."
+   },
+   {
+    "title": "The concept map and group chips show ISO 639-1 language codes, not 639-2/T",
+    "severity": "P3",
+    "step_ids": [
+     "L8"
+    ],
+    "repro": "Insights > Super-groups > Elections & democracy > voting.",
+    "expected": "Q306 display: 'ara · eng · spa …' with language-name hovers.",
+    "actual": "'Languages: ar · en · es · pt · zh', 'By language: es 84 · en 47 …', and chips reading '(ar/bn/de/en/…)'.",
+    "evidence": "L8-concept-map-en.png; src/static/app-insights.js:385-386, 493-501."
+   },
+   {
+    "title": "World coverage: the '(none)' row hovers 'not a recognised country code', the filter cannot find the code shown on screen, and 'Top country' shows an English name only",
+    "severity": "P3",
+    "step_ids": [
+     "L5"
+    ],
+    "repro": "Library > World coverage: hover the first row, type DEU into the filter, and read 'Top country:' in fr/ar.",
+    "expected": "An absent country is labelled as absent, not as an unreadable code. Typing DEU finds Germany. 'Top country' shows the code, with the localised name in the hover.",
+    "actual": "'(none)' hovers 'not a recognised country code'. DEU gives 'No matching countries.'. 'Top country: United States — 239 sources, 4.9% of located within the 12% guard …' stays in English in every locale.",
+    "evidence": "L5-first-row-tip-en.png, L5-filter-DEU-en.png, L6-DEU-tip-ar.png; src/analytics/source_country_rollup.py:73,85; src/static/app-sources.js:190-195, 203-206."
+   },
+   {
+    "title": "The World map Coverage detail heading shows the code with no hover",
+    "severity": "P3",
+    "step_ids": [
+     "L7"
+    ],
+    "repro": "World map > Coverage, click Germany.",
+    "expected": "Heading 'DEU' with the localised name in the hover (the Q302 pair the code comment claims).",
+    "actual": "<strong>DEU</strong> with no title.",
+    "evidence": "L7-coverage-detail-DEU-en.png; src/static/app-map.js:1435-1442."
+   },
+   {
+    "title": "The non-ISO disclosure is missing or mislabelled on Governments surfaces (XKX, World Bank aggregates)",
+    "severity": "P3",
+    "step_ids": [
+     "L11"
+    ],
+    "repro": "Governments > Map (Population): hover Kosovo. Statistics > Map by country for NY.GDP.MKTP.CD as a level: hover WLD/HIC/EAS.",
+    "expected": "Q303: XKX disclosed as 'not an ISO code', and a producer aggregate described as an aggregate rather than as an unreadable code.",
+    "actual": "'Kosovo — XKX · Kosovo: 1.9M' carries no disclosure, and WLD/HIC/EAS hover 'not a recognised country code'.",
+    "evidence": "L11-statistics-level-table-en.png, res-L11.json; src/static/app-gov-law.js:587 valueLabel uses ooCountryName rather than ooCountryTitle; src/static/app-core.js:188-191."
+   },
+   {
+    "title": "Stale on-screen hints still teach two-letter codes",
+    "severity": "P3",
+    "step_ids": [
+     "L4",
+     "L11"
+    ],
+    "repro": "Settings > Advanced > Sources > 'Import / export source list (CSV)'; the Governments > Statistics input boxes.",
+    "expected": "The hint names country_iso3 and the accepted forms, and the placeholders use alpha-3 or a name.",
+    "actual": "The hint says 'Country is a 2-letter code.' and its column list lacks country_iso3; the placeholders read 'FR or all' and 'FR'.",
+    "evidence": "src/static/index.html:2529-2533, 891, 897."
+   },
+   {
+    "title": "Governments > Law hovers keep the previous language after a language switch without a reload",
+    "severity": "P3",
+    "step_ids": [
+     "L13"
+    ],
+    "repro": "With Governments > Law open in en, switch to fr/ar/zh from the top-bar menu and hover GBR/DEU/EUU without reloading.",
+    "expected": "Hover names in the new language, as World coverage now does.",
+    "actual": "The hovers read 'United Kingdom', 'Germany' and 'European Union — not an ISO code' until a reload.",
+    "evidence": "'bare_switch_law' in res-L13-fr.json, res-L13-ar.json and res-L13-zh.json. Same frozen-locale family as the one the app-boot.js oo:langchange handler documents."
+   },
+   {
+    "title": "The map Worldview picker lists countries by name only, ordered by the alpha-2 key",
+    "severity": "P3",
+    "step_ids": [
+     "L7",
+     "L11"
+    ],
+    "repro": "Open any ooMap (World map, Governments > Map) and read the Worldview <select>.",
+    "expected": "Q308: pickers ordered by localised name, with the code as a secondary column.",
+    "actual": "'Argentina, Bangladesh, Brazil, China, Germany, Egypt, Spain, France, United Kingdom, Greece …' (the AR, BD, BR, CN, DE, EG, ES, FR, GB, GR order), with no codes.",
+    "evidence": "map_controls_text in res-L7.json; src/static/app-map.js:349-355, 788."
+   },
+   {
+    "title": "Untranslated English on row-L surfaces in fr/ar",
+    "severity": "P3",
+    "step_ids": [
+     "L5",
+     "L13"
+    ],
+    "repro": "Switch to ar or fr, then open Library > World coverage and Settings > Advanced > Sources.",
+    "expected": "The surface chrome is translated in all 12 languages.",
+    "actual": "Coverage: 'Top country: … sources, …% of located within the 12% guard …', 'Not covered (43)', 'Antarctica'. Sources: 'NAME', 'PRI', 'source(s) · showing 1–50', 'enabled source(s) in languages we can't analyse yet'. Home: 'Law changed (fr)'.",
+    "evidence": "L6-DEU-tip-ar.png, L13-src-country-filter-ar.png, L13-home-law-card-fr.png."
+   }
+  ],
+  "not_measurable": [
+   "Real World Bank country figures and real market series (the gate's 'walked with real data' clause): this sandbox has no egress. The renderers were exercised with SYNTHETIC values pushed through the app's own parsers (parse_worldbank, parse_mcs_csv).",
+   "Everything after 'Go online' in L11 (the World Bank load and the background collection it starts): the consent popup was screenshotted and cancelled.",
+   "L7 tooltip for a small territory drawn as a dot: no territory with data is drawn as a point in this corpus.",
+   "L8 'By city' table: the seeded sources carry no city.",
+   "L3 language with no two-letter code (e.g. 'pcm'): no source in this corpus uses such a language; all 79 languages had a 639-2/T code.",
+   "ANT (Netherlands Antilles) disclosure: no ANT row exists in the data. XKX was seen on Governments (see defects).",
+   "Native SVG map tooltips are not painted by headless Chromium; their text was read from the hovered element's <title>.",
+   "Q309 filename-rule test, the loader no-rewrite and payload/parameter clauses, and the P298 cross-check: repository and API behaviour, not clickable (per the step list)."
+  ],
+  "summary": "The click-through clause does NOT close. Law, the Agenda picker and list, the Sources table and picker order, Wikipedia and Living sources, the bulletin headings, the CSV export's two columns, and the World coverage hovers (including a language switch without reload in en/fr/ar/zh) all show alpha-3 with the localised name in the hover. Several country surfaces still show two-letter codes: Insights > Map 'By country', Minerals supply, the Sources closed-filter label, the law-change card on Home and in the bulletin, and the Groups refusal text. On top of that, 28 real ISO territories, Vatican City among them, are missing from the alpha-3 table and render as 'va' or 'AX' with the hover 'not a recognised country code'. Governments and Markets were walked only with synthetic data (no egress here), so the gate's 'real data' clause also stays open."
+ },
+ "recheck": {
+  "row": "L",
+  "verdicts": [
+   {
+    "title": "28 real ISO 3166-1 codes, Vatican City among them, are missing from the alpha-3 table and show as two-letter codes that hover 'not a recognised country code'",
+    "verdict": "confirmed",
+    "reason": "Reproduced on my own encrypted instance on port 8824 (default seed plus the walker's seed_extra.py). In Settings > Advanced > Sources the Country filter lists 'Anguilla (ai) ·1', 'Cook Islands (ck) ·1' and 'Vatican City (va) ·2'. With Vatican City ticked, the table cell reads 'va' and its title and #oo-tip read 'not a recognised country code', while the filter right beside it names the same code 'Vatican City'. In the Calendar directory, AI, AX, BQ, BV and IO all hover 'not a recognised country code'. Library > World coverage shows rows va/ai/ck and 31 lowercase 'Not covered' pills (aq, ax, bl … yt), all with the same hover. The app's /api/catalog/export.csv rows for va and ck end with an empty country_iso3. The walker undercounted: the gap is 34 codes, not 28. No ruling or brief exempts these codes. Gate row L says 'every code the user sees is alpha-3 … the full country name … in the hover'. Severity P2: the hover makes a false statement about valid ISO codes, and the export drops iso3 for real rows.",
+    "root_cause": "src/catalog/countries.py:622-640 _ISO3_TO_2_TEXT, and its verbatim mirror at src/static/app-core.js:64-81, list only World Bank economies plus a few territories. 34 members of ISO_3166_1_ALPHA2 have no pair: ai aq ax bl bq bv cc ck cx eh fk gf gg gp gs hm io je mf mq ms nf nu pm pn re sh sj tf tk um va wf yt. For these, ooCountryCode (app-core.js:141-154) falls through to the raw value, ooCountryKind returns 'unresolved', and ooCountryTitle returns 'not a recognised country code'. On the server, country_display_code and country_payload_iso3 fall back the same way, so country_iso3 is empty.",
+    "suggested_fix": "Add the 34 pairs to BOTH texts in the same order: ala:ax aia:ai ata:aq atf:tf blm:bl bes:bq bvt:bv cck:cc cok:ck cxr:cx esh:eh flk:fk guf:gf ggy:gg glp:gp sgs:gs hmd:hm iot:io jey:je maf:mf mtq:mq msr:ms nfk:nf niu:nu spm:pm pcn:pn reu:re shn:sh sjm:sj tkl:tk umi:um vat:va wlf:wf myt:yt. That keeps the test_country_display parity test green. Also add one assertion that every ISO_3166_1_ALPHA2 member has an alpha-3 pair; it would have caught this gap.",
+    "severity": "P2"
+   },
+   {
+    "title": "Insights > Map 'By country' table prints stored lowercase alpha-2 codes with no hover",
+    "verdict": "confirmed",
+    "reason": "Reproduced under Insights > Map with Window 3650 and Refresh. The first column reads br, cn, de, eg, es, fr, gb, mx, pt, ru, sa, us; none of those cells has a title, and hovering gives no #oo-tip. /api/insights/map returns countries as {code: stored alpha-2, top}. City rows DO go through ooCountryCell. This is a map surface inside the row's closing clause, so it blocks closure.",
+    "root_cause": "src/static/app-map.js:1676 renders `<strong>${esc(a.code||a.name)}</strong>`. For a country row, a.code is the stored alpha-2 emitted by src/analytics/queries.py:3193-3197. The grep detectors in tests/test_alpha3_display_surfaces.py miss this site because they only look for .country/.jurisdiction fields, not .code.",
+    "suggested_fix": "At app-map.js:1676, render `<strong>${a.code ? ooCountryCell(a.code) : esc(a.name)}</strong>`, and add this site to the test's _SURFACES table.",
+    "severity": "P2"
+   },
+   {
+    "title": "World coverage → Sources jump: the table is filtered to FRA but the Country filter shows 'Any' with nothing ticked",
+    "verdict": "confirmed",
+    "reason": "Reproduced on the FIRST jump of a page session, while Advanced > Sources is still folded. The Country filter read 'Any' with 0 boxes ticked, while the table showed '130 source(s)', all FRA. The network trace shows TWO /api/sources/facets requests. Two more jumps, with the section already open, were consistent: 'fr' was ticked, with one facets request. Ticking Germany after the bad state gives DEU only, which silently drops FRA. Downgraded to P3: it occurs only once per page load, the table and count are correct, and nothing is lost.",
+    "root_cause": "openSourcesForKeyword (src/static/app-sources.js:580-588) ticks the country in the .then of its own loadSrcFacets(). showTab('sources') → _openAdvanced (src/static/app-shell.js:512-518) sets d.open=true, which fires the section's toggle loader (app-shell.js:478). That loader runs a second loadSrcFacets(), and its later response rebuilds the checklist through innerHTML (app-sources.js:326-343), unticked. updateMselSummary then resets the label to 'Any', after the FRA-filtered table request has already gone out.",
+    "suggested_fix": "Make loadSrcFacets idempotent across re-renders. Before each fill(), capture mselValues(id); after it, re-check those values and call updateMselSummary. (Alternatively, share one in-flight facets promise between the two callers.)",
+    "severity": "P3"
+   },
+   {
+    "title": "The Manage sources filter row collapses at 375 px and the Country filter cannot be opened",
+    "verdict": "confirmed",
+    "reason": "Reproduced at 375x800 in en. Page horizontal scroll is 0, but the filter wrappers resolve to 13 px each: Search box 25 px wide; the Language, Country, Type and Tags controls start at x=71/95/118/142, each 90 px wide, so they overlap. The labels print on top of each other, and the Enabled select covers the rest (screenshot R4). A Playwright click on #src-msel-country > summary times out because it is intercepted, and a scan along its midline finds no point where the summary itself is the hit target. So the Language, Country and Type filters cannot be used at phone width. This is not an alpha-3 issue, but it is a real defect.",
+    "root_cause": "The phone-width override at src/static/app.css:1720 (`.row > div { min-width:0 }`) combines with `.row > div { flex:1 }` (app.css:440, flex-basis 0). Every wrapper therefore fits on one line and flex-wrap never wraps. `.msel > summary { min-width:90px }` (app.css:759-761) then overflows each ~13 px wrapper, and later siblings paint over it.",
+    "suggested_fix": "In the phone media block, give these wrappers a wrapping basis, for example `.row > div:has(> details.msel) { flex:1 1 130px; }`, or `.row > div { flex-basis:140px; }` while keeping min-width:0. The filters then wrap onto their own lines, and the page still never widens.",
+    "severity": "P2"
+   },
+   {
+    "title": "The consent popup for 'Load standard country data' names no action",
+    "verdict": "confirmed",
+    "reason": "Reproduced under Governments > Countries > 'Load standard country data'. The #net-consent-reason markup is '<b></b>', and the dialog reads 'This action needs the network:' followed by nothing (screenshot R5). I cancelled with 'Stay offline', and /api/system/network then read online:false. Consent is still required, so this is not a breach. But invariant #14 requires the ONE consent popup to name the action, and every sibling caller passes a translated reason. Outside row L.",
+    "root_cause": "src/static/app-gov-law.js:601 calls `ensureOnline()` with no argument, and src/static/app-core.js:1307 writes `reason` (undefined) into the <b>, which renders empty.",
+    "suggested_fix": "Change it to `ensureOnline(t(\"Load standard country data from the World Bank (a background job)\"))` and add that key in all 12 locales. Separately, app-map.js:2156 and app-settings.js:1614 pass untranslated literals instead of t(...).",
+    "severity": "P2"
+   },
+   {
+    "title": "The law-change briefing card prints the stored lowercase jurisdiction, on Home and in the bulletin",
+    "verdict": "confirmed",
+    "reason": "/api/briefing returns 'Law changed (fr): Walk Code civil (extract)'. Home shows exactly that in zh after a language switch, and in fr after a reload. A Yearly bulletin I built and opened on my instance (then deleted) contains 'Law changed (fr): Walk Code civil (extract)' and 'Measured: metric delta_bytes · value -640 · jurisdiction fr · category legislation'. Every other country code in that bulletin is alpha-3.",
+    "root_cause": "src/briefing/producers.py:1468 builds title=f\"Law changed ({doc.jurisdiction}): …\" with the raw stored value and no title_i18n. The signal carries 'jurisdiction': doc.jurisdiction raw (line 1477), and src/bulletin/render.py:829-840 prints signal_pairs verbatim.",
+    "suggested_fix": "Use country_display_code(doc.jurisdiction) in the title, and make it translatable with title_i18n=\"Law changed ({jurisdiction}): {title}\" plus title_vars, following the pattern at producers.py:295-299, with keys in all 12 locales. Put the display code (or an added jurisdiction_iso3) in the signal the bulletin prints.",
+    "severity": "P3"
+   },
+   {
+    "title": "The closed Sources filter label prints the stored value ('fr', 'en')",
+    "verdict": "confirmed",
+    "reason": "Ticking France (FRA) and closing the filter leaves the summary reading 'fr'. Ticking English (eng) leaves 'en', and ticking Vatican City leaves 'va'. The open checklist shows 'France (FRA)' and 'English (eng)'. It is cosmetic, but it is a stored alpha-2 code on screen.",
+    "root_cause": "src/static/app-sources.js:317-322: updateMselSummary sets sum.textContent to v[0], the raw checkbox value, when exactly one value is selected.",
+    "suggested_fix": "When one value is selected, print it through the same display helper as the checklist: ooCountryCode(v[0]) for src-msel-country and ooLangCode(v[0]) for src-msel-language. Other filters keep v[0].",
+    "severity": "P3"
+   },
+   {
+    "title": "Governments > Groups computed refusal text lists members as stored lowercase alpha-2",
+    "verdict": "confirmed",
+    "reason": "Under Groups > Computed from members, with Europe and SP.POP.TOTL, the refusal reads '29 of 52 members did not report this indicator for this period (ad, ax, ba, bg, by, ee, fo, gg…)… Re-request with allow_incomplete…'. The client-rendered line next to it reads 'missing: AND, ax, BIH, BGR…'. Its 'ax' and 'gg' come from the table gap in the first finding.",
+    "root_cause": "src/stats/aggregate.py:197-205 joins missing_value (stored alpha-2) raw into server-built English prose.",
+    "suggested_fix": "Join `country_display_code(c) for c in missing_value[:8]`. Also consider replacing the API parameter name 'allow_incomplete' in user-facing text.",
+    "severity": "P3"
+   },
+   {
+    "title": "The Commodities > Minerals supply Area column prints USGS codes raw with no hover",
+    "verdict": "confirmed",
+    "reason": "The Area cells read US, AU, CN, US, WLD, WLD, with no title anywhere. The seeded CSV is the parser's own documented example shape (src/stats/usgs.py:126-130, area_code as published), so real USGS data would render the same. Graded P3 on user impact, but this is on the Markets surface the gate's closing clause names, so it blocks closure of the row.",
+    "root_cause": "src/static/app-markets.js:488 renders `<td>${esc(r.ref_area)}</td>` without the country helper.",
+    "suggested_fix": "Render `<td>${ooCountryCell(r.ref_area)}</td>`, with WLD labelled as an aggregate rather than 'not a recognised country code' (see the Governments aggregate finding).",
+    "severity": "P3"
+   },
+   {
+    "title": "The concept map and group chips show ISO 639-1 language codes, not 639-2/T",
+    "verdict": "confirmed",
+    "reason": "Insights > Super-groups > voting shows 'Languages: ar · en · es · pt · zh' and 'By language: es 84 · en 47 · pt 28 · ar 28', and chips read '(ar/bn/de/en/es/fr/hi/id/ja/pt/ru/zh)'. The same class appears in the bulletin annex: 69 'Source states: … · lang pt' lines use 639-1, while the masthead uses eng/fra. This does NOT block the row. The gate lists the Q306 display step only as a 'proposed placement', and the closing clause names country surfaces only.",
+    "root_cause": "src/static/app-insights.js:385-386 joins r.languages raw into the chip, and app-insights.js:493-501 prints lg and d.languages raw. In the bulletin, src/bulletin/render.py:757 uses T.f(\"lang {code}\", code=asserted[\"language\"]).",
+    "suggested_fix": "Use ooLangCode or ooLangCell for the chip, 'By language' and 'Languages' lines, and language_display_code() in render.py:757 (and in the 'detected {code}' line).",
+    "severity": "P3"
+   },
+   {
+    "title": "World coverage: the '(none)' row hovers 'not a recognised country code', the filter cannot find the code shown on screen, and 'Top country' shows an English name only",
+    "verdict": "confirmed",
+    "reason": "All three parts reproduce. (1) The first row '(none)' hovers 'not a recognised country code'. (2) Typing DEU (or deu) in the filter gives 'No matching countries.', while 'Germ' finds DEU. (3) 'Top country: United States — 239 sources, 4.9% of located within the 12% guard …' has no code and no title, and stays English in both fr and ar while the region table around it is translated.",
+    "root_cause": "(1) src/analytics/source_country_rollup.py:73 emits the sentinel code '(none)', and app-sources.js:212 passes it to ooCountryCell, which classes it 'unresolved'. (2) app-sources.js:204-206 matches the query only against the stored alpha-2 and the server's English name. (3) app-sources.js:185-195 uses the English c.names in a literal English template with no t().",
+    "suggested_fix": "(1) Render the '(none)' row as an explicit 'no country recorded' label, e.g. ooCountryCell(c.code === \"(none)\" ? \"\" : c.code, {empty: t(\"no country recorded\")}). (2) Also match ooCountryCode(c.code).toLowerCase() and the localised ooCountryName(c.code). (3) Render ooCountryCell(tc.code) inside a t()-keyed frame.",
+    "severity": "P3"
+   },
+   {
+    "title": "The World map Coverage detail heading shows the code with no hover",
+    "verdict": "confirmed",
+    "reason": "Clicking Germany in World map > Coverage gives the heading outerHTML '<strong>DEU</strong>': no title, and no #oo-tip on hover. The code comment directly above it claims the title carries the name.",
+    "root_cause": "src/static/app-map.js:1435-1442. `name = ooCountryCode(iso) || …` is inserted with esc() into a bare <strong>, so the Q302 hover the comment promises is never written.",
+    "suggested_fix": "Render `<strong>${ooCountryCell(iso)}</strong>`.",
+    "severity": "P3"
+   },
+   {
+    "title": "The non-ISO disclosure is missing or mislabelled on Governments surfaces (XKX, World Bank aggregates)",
+    "verdict": "confirmed",
+    "reason": "On the Governments map (Population), the Kosovo shape <title> reads 'Kosovo — XKX · Kosovo: 1.9M' with no 'not an ISO code'. Q303 explicitly requires XKX to be 'disclosed in the hover as \"not an ISO code\"'. On Statistics, for NY.GDP.MKTP.CD as a level, the ranked table titles WLD, HIC and EAS as 'not a recognised country code' (EUU correctly reads 'European Union — not an ISO code'). They are known World Bank aggregates, which the server already classifies as such, not unreadable codes.",
+    "root_cause": "src/static/app-gov-law.js:587: valueLabel uses ooCountryName(iso) instead of ooCountryTitle(iso). src/static/app-map.js:2313 passes aggregate ref_areas to ooCountryCell, and the client ooCountryKind (app-core.js) has only three states (iso, non-iso, unresolved), with no 'aggregate', although the server's classify_ref_area has one.",
+    "suggested_fix": "In app-gov-law.js:587 use ooCountryTitle(iso). For aggregates, carry the server's classification in the /api/stats/map cells (or a client aggregate list) and title them 'statistical aggregate — not a country' (a translated key) instead of 'not a recognised country code'.",
+    "severity": "P3"
+   },
+   {
+    "title": "Stale on-screen hints still teach two-letter codes",
+    "verdict": "confirmed",
+    "reason": "#src-csv-hint reads 'Columns: name, … reliability_score.' (no country_iso3) and 'Country is a 2-letter code.'. The export does carry country_iso3, and the import accepts codes, names and alpha-3 through normalize_country; it also reads country_iso3 to refuse a disagreeing row. The Statistics placeholders read 'FR or all' and 'FR'.",
+    "root_cause": "src/static/index.html:2528-2533 (hint text), src/static/index.html:891 and 897 (placeholders). None was updated when src/catalog/csv_io.py gained country_iso3 and alpha-3 input.",
+    "suggested_fix": "Reword the hint to mention the export's country_iso3 column (read on import only as a cross-check) and to say Country accepts a 2- or 3-letter code or a name. Change the placeholders to 'FRA or all' and 'FRA'. Update the locale keys in all 12 languages.",
+    "severity": "P3"
+   },
+   {
+    "title": "Governments > Law hovers keep the previous language after a language switch without a reload",
+    "verdict": "confirmed",
+    "reason": "With Law open in en, a bare switch to fr and then zh left the GBR, DEU and EUU titles, in both the tracked table and the changes feed, as 'United Kingdom', 'Germany' and 'European Union — not an ISO code'. Tabbing away and back re-rendered DEU as '德国'. So the hovers stay stale until the panel is re-rendered, not strictly until a reload (the walker's wording). This is the frozen-locale class app-boot.js documents.",
+    "root_cause": "loadLawChanges and loadLawDocs (src/static/app-gov-law.js:684 and 769; cells at 711 and 778) bake the localised name into title at render time. The single oo:langchange listener at src/static/app-boot.js:41 does not re-run them, unlike World coverage.",
+    "suggested_fix": "In that ONE listener, re-render the law feed and table when they are already rendered, preferably from their cached payloads so a language switch fetches nothing (e.g. `if ($(\"law-docs\") && $(\"law-docs\").querySelector(\"tr\")) { loadLawChanges(); loadLawDocs(); }`).",
+    "severity": "P3"
+   },
+   {
+    "title": "The map Worldview picker lists countries by name only, ordered by the alpha-2 key",
+    "verdict": "confirmed",
+    "reason": "The World map and Governments map Worldview <select> read 'Contested…, ISO / de jure, Natural Earth…, Argentina, Bangladesh, Brazil, China, Germany, Egypt, Spain, France, United Kingdom, Greece…'. That is Natural Earth POV key order (ar, bd, br, cn, de, eg, es, fr, gb, gr), names only, no code. Q308 ('Ordering in pickers and lists: by localised name, the code as a secondary column') covers it. The scope is borderline because these are viewpoints rather than country values, hence P3.",
+    "root_cause": "src/static/app-map.js:785-787 maps disputed.views in file order through _ooWorldviewLabel (app-map.js:349-355), which returns ooRegionName only.",
+    "suggested_fix": "Keep contested/iso/tlc first, then sort the country views with ooCountryCompare on `_OO_POV_REGION[v] || v`, labelled 'Name (CODE)' via ooCountryCode(_OO_POV_REGION[v] || v). Map 'ko' → 'kr' BEFORE deriving the code, or it prints 'ko'.",
+    "severity": "P3"
+   },
+   {
+    "title": "Untranslated English on row-L surfaces in fr/ar",
+    "verdict": "confirmed",
+    "reason": "These strings reproduce in fr and ar. In World coverage: 'Top country: … sources, …% of located … guard …', 'Not covered (43)' and the region 'Antarctica'. In Sources, in ar: headers 'NAME ▲' and 'PRI' beside translated siblings, and '6418 source(s) · showing 1–50'. I did not re-see the walker's 'enabled source(s) in languages we can't analyse yet' string. 'Law changed (fr)' is the law-change card finding above.",
+    "root_cause": "src/static/app-sources.js:190-195 and 222-228 compose English literals without t(). srcTh (app-sources.js:382-385) puts the sort arrow in the same text node, so the walker's existing 'Name' key never matches. 'Pri' and 'Antarctica' have no locale key. The #src-meta line (app-sources.js:393) is composed without t() or tf().",
+    "suggested_fix": "Wrap these frames in t() or tf() with keys in all 12 locales, and add keys for 'Pri' and 'Antarctica'. Render the sort arrow in its own <span> so the header label stays a translatable text node.",
+    "severity": "P3"
+   }
+  ]
+ }
+}

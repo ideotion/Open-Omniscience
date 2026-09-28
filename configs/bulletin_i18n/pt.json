@@ -223,6 +223,7 @@
   "no rising concepts to attribute for this period": "não há conceitos em ascensão a atribuir neste período",
   "the period's concepts resolved to no plain keywords": "os conceitos do período não corresponderam a nenhuma palavra-chave simples",
   "none of the period's concepts resolved to a stored keyword": "nenhum dos conceitos do período correspondeu a uma palavra-chave armazenada",
+  "the period spans {days} days; past {max} the 'same days in earlier years' lens stops being a lens — it becomes the whole of an earlier year, which the corpus already shows elsewhere": "o período abrange {days} dias; acima de {max}, a lente «os mesmos dias em anos anteriores» deixa de ser uma lente — torna-se um ano anterior inteiro, que o corpus já mostra em outro lugar",
 
   "{shown} of {total} sections": "{shown} de {total} secções",
   "{shown} of {total} stories": "{shown} de {total} histórias",
@@ -389,5 +390,8 @@
   "Note": "Nota",
   "Language": "Idioma",
   "Form": "Forma",
-  "Mentions": "Menções"
+  "Mentions": "Menções",
+
+  "“{translation}” (translated from {language}: {term})": "“{translation}” (traduzido de {language}: {term})",
+  "{term} (in {language})": "{term} (em {language})"
 }

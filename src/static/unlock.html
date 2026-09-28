@@ -68,9 +68,15 @@
   .accept-row { display:flex; align-items:flex-start; gap:8px; margin-top:14px; font-size:13px; color:var(--fg); }
   .accept-row input { margin-top:3px; }
   /* A filesystem path is data, not prose: it must WRAP rather than overflow the card
-     (an absolute path on an external drive is long), and it reads as a path. */
+     (an absolute path on an external drive is long), and it reads as a path. It is also
+     LEFT-TO-RIGHT data in every locale: inside the Arabic card its leading slash took the
+     paragraph's direction and was drawn at the far end, "tmp/…/empty_ar/" (the
+     2026-09-27 re-walk, U-4). An isolated LTR run keeps its own order and still sits on
+     the reading side of the sentence around it. Used on inline spans only, so the
+     isolate never flips a whole paragraph's alignment. */
   .path { font-family:ui-monospace, SFMono-Regular, Menlo, monospace; font-size:12.5px;
-    overflow-wrap:anywhere; word-break:break-all; color:var(--fg); }
+    overflow-wrap:anywhere; word-break:break-all; color:var(--fg);
+    direction:ltr; unicode-bidi:isolate; }
   .note.danger { border-color:var(--err); }
   .note.danger p { color:var(--err); }
   input[type=text] { width:100%; padding:10px 12px; border-radius:8px;
@@ -136,7 +142,7 @@
     <label class="accept-row"><input type="radio" name="dl-where" id="dl-custom"><span>Choose another folder</span></label>
     <div id="dl-custom-box" class="hidden">
       <label for="dl-path">Full path to a folder on this machine</label>
-      <input type="text" id="dl-path" autocomplete="off" spellcheck="false" placeholder="For example: /media/drive">
+      <input type="text" id="dl-path" dir="ltr" autocomplete="off" spellcheck="false" placeholder="For example: /media/drive">
       <p class="tm"><span>A folder named &ldquo;OOS data&rdquo; is created inside it.</span></p>
       <button type="button" id="dl-check" class="secondary">Check this folder</button>
       <div class="note hidden" id="dl-report"><p id="dl-report-text"></p></div>
@@ -364,8 +370,12 @@
       h.textContent = t("Your corpus folder is set");
       const p1 = document.createElement("p");
       p1.textContent = t("Open Omniscience will use this folder the next time it starts:");
+      // The path in an inline .path span (U-4): LTR inside the paragraph, while the
+      // paragraph keeps the card's own alignment.
       const p2 = document.createElement("p");
-      p2.className = "path"; p2.textContent = path || "";
+      const p2path = document.createElement("span");
+      p2path.className = "path"; p2path.textContent = path || "";
+      p2.appendChild(p2path);
       const p3 = document.createElement("p");
       p3.textContent = t("Nothing has been created yet. Stop the app and start it again to continue setting it up.");
       const b = document.createElement("button");
@@ -405,12 +415,21 @@
       $("dl-msg").textContent = "";
       try {
         const out = await dlProbe();
-        const lines = [];
-        lines.push(out.usable
-          ? t("This folder can be used. Your corpus will live in:") + " " + (out.path || "")
-          : dlRefusalText(out));
-        (out.warnings || []).forEach((w) => { const s2 = dlWarningText(w); if (s2) lines.push(s2); });
-        txt.textContent = lines.join(" ");
+        // Built as nodes rather than one string, so the path rides in its own LTR .path
+        // span (U-4) instead of being reordered inside the Arabic sentence around it.
+        txt.textContent = "";
+        if (out.usable) {
+          txt.appendChild(document.createTextNode(t("This folder can be used. Your corpus will live in:") + " "));
+          const sp = document.createElement("span");
+          sp.className = "path"; sp.textContent = out.path || "";
+          txt.appendChild(sp);
+        } else {
+          txt.appendChild(document.createTextNode(dlRefusalText(out)));
+        }
+        (out.warnings || []).forEach((w) => {
+          const s2 = dlWarningText(w);
+          if (s2) txt.appendChild(document.createTextNode(" " + s2));
+        });
         box.classList.remove("hidden");
         box.classList.toggle("danger", !out.usable);
       } catch (e) {

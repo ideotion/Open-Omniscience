@@ -39,7 +39,12 @@
       // localised name moved into a hover (Q302). Fixed in the GUARD rather than by
       // adding a third entry to that handler, so the next surface behind this stamp
       // cannot inherit the bug by being written correctly.
-      const stamp = JSON.stringify([d.by_country, d.unlocated, _covUiLang()]);
+      // THE WORLDVIEW TOO, for the same reason: it changes what the map draws (which claim
+      // a contested area is attributed to, and the legend line saying so) without changing
+      // the payload, so a stamp without it kept the old convention here after another map
+      // switched it (row R, R3).
+      const worldview = (typeof ooMapWorldview === "function") ? ooMapWorldview() : "";
+      const stamp = JSON.stringify([d.by_country, d.unlocated, _covUiLang(), worldview]);
       if (stamp === _covMapStamp) return;   // live poll: unchanged, no repaint
       _covMapStamp = stamp;
       const values = {}, names = {}, points = [];
@@ -105,11 +110,15 @@
         const stamp = JSON.stringify([c, d.countries, d.missing, _covUiLang()]);
         if (stamp === _covStamp) return;   // live poll: nothing changed, no repaint
         _covStamp = stamp;
+        const covTf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
+          : ((s, v) => String(s).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? String(v[k]) : m));
         el.innerHTML =
           `<div class="stat"><div class="n">${c.covered}/${c.total_countries}</div><div class="k">countries</div></div>` +
           `<div class="stat"><div class="n">${c.coverage_pct}%</div><div class="k">coverage</div></div>` +
           `<div class="stat"><div class="n">${c.missing_count}</div><div class="k">not covered</div></div>` +
-          `<div class="stat"><div class="n">${(c.thin||[]).length}</div><div class="k">thin (&lt;${c.thin_threshold})</div></div>`;
+          // A keyed frame: interpolated, the label was never a key the walker could match,
+          // so it read "THIN (<3)" in every locale (2026-09-27 re-walk L-9).
+          `<div class="stat"><div class="n">${(c.thin||[]).length}</div><div class="k">${esc(covTf("thin (<{n})", {n: c.thin_threshold}))}</div></div>`;
         renderCoverageRegions(c);
         COV_COUNTRIES = d.countries || [];
         COV_MISSING = (d.missing || []).map(code =>
@@ -117,7 +126,7 @@
         renderCoverageTable();
       } catch (e) {
         _covStamp = "";   // error rendered: force a repaint on the next good poll
-        el.innerHTML = `<div class="note err">Coverage unavailable: ${esc(e.message)}</div>`;
+        el.innerHTML = `<div class="note err">${esc(_failMsg("Coverage unavailable: {error}", e))}</div>`;
       }
     }
 
@@ -154,7 +163,7 @@
         const w = Math.max(0.5, scale(r.sources || 0));
         const floorPct = (r.min_sources != null) ? scale(r.min_sources) : null;
         const marker = floorPct == null ? "" :
-          `<span title="${esc(t("floor"))}: ${esc(String(r.min_sources))}" style="position:absolute;`
+          `<span title="${esc(ooLabelText(t("floor"), r.min_sources))}" style="position:absolute;`
           + `left:${floorPct.toFixed(1)}%;top:-2px;bottom:-2px;width:2px;background:var(--fg);opacity:.55"></span>`;
         return `<div style="display:flex;align-items:center;gap:8px;font-size:12px;line-height:1.8">`
           + `<span style="flex:0 0 30%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.region)}</span>`
@@ -181,29 +190,52 @@
         `<td>${r.countries_covered}/${r.countries_total}${r.min_countries != null ? ` <span class="muted">/ ${r.min_countries}</span>` : ""} ${mark(r.countries_met)}</td></tr>`
       ).join("");
       const tc = reg.top_country || {};
-      const tcName = (c.names || {})[tc.code] || tc.code || "—";
+      // The top country is a country like any other on this panel: its CODE on screen,
+      // the localised name in the hover (it printed the server's English name, in every
+      // locale), and the sentence around it in keyed frames, because the walker cannot
+      // match a line welded around live numbers (L17).
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
+        : ((s, v) => s.replace(/\{(\w+)\}/g, (m, k) => (v[k] == null ? m : v[k])));
       const over = tc.max_share_pct != null && tc.share_pct > tc.max_share_pct;
       const located = reg.located_share_pct != null
-        ? ` · ${reg.located_share_pct}% of sources carry a country` +
-          (reg.min_located_share_pct != null ? ` <span class="muted">(floor ${reg.min_located_share_pct}%)</span>` : "")
+        ? " · " + esc(tf("{pct}% of sources carry a country", {pct: reg.located_share_pct})) +
+          (reg.min_located_share_pct != null ? ` <span class="muted">(${esc(tf("floor {pct}%", {pct: reg.min_located_share_pct}))})</span>` : "")
         : "";
       host.innerHTML =
         `<strong>Regional balance</strong> <span class="muted">(floors are working targets from configs/catalog_targets.yml)</span>` +
         _regionFloorBars(reg.regions) +
         `<div style="overflow:auto;margin-top:6px"><table>` +
         `<tr><th>Region</th><th>Sources / floor</th><th>Countries / floor</th></tr>${rows}</table></div>` +
-        `<div style="margin-top:6px">Top country: <strong>${esc(tcName)}</strong> — ${tc.sources} sources, ` +
-        `${tc.share_pct}% of located${tc.max_share_pct != null ?
-          ` <span class="pill ${over ? "warn" : "ok"}">${over ? "above" : "within"} the ${tc.max_share_pct}% guard</span>` : ""}` +
+        // The reader's own separator (ooLabelHtml): welded, zh read "首位国家： DEU" (re-walk O-5).
+        `<div style="margin-top:6px">${ooLabelHtml(esc(t("Top country")), `<strong>${ooCountryCell(tc.code, {empty: "—"})}</strong>`)} — ` +
+        esc(tf("{n} sources, {pct}% of located", {n: tc.sources, pct: tc.share_pct})) +
+        (tc.max_share_pct != null
+          ? ` <span class="pill ${over ? "warn" : "ok"}">${esc(tf(over ? "above the {pct}% guard" : "within the {pct}% guard", {pct: tc.max_share_pct}))}</span>` : "") +
         `${located}</div>`;
     }
 
     function renderCoverageTable() {
+      const t9 = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
+        : ((s, v) => s.replace(/\{(\w+)\}/g, (m, k) => (v[k] == null ? m : v[k])));
       const q = ($("cov-filter").value || "").trim().toLowerCase();
+      // The filter matches what the reader can SEE, not only what is stored: the
+      // alpha-3 on screen and the localised name in the hover, beside the stored
+      // alpha-2 and the server's English name. Typing the `DEU` the table shows used
+      // to answer "No matching countries." (L11) -- and a map click fills this box
+      // with the LOCALISED name, which matched nothing outside English.
+      const matches = (code, name) => {
+        const cc = String(code || "");
+        if (cc.includes(q)) return true;
+        if ((name || "").toLowerCase().includes(q)) return true;
+        if (cc === "(none)") return false;
+        return ooCountryCode(cc).toLowerCase().includes(q)
+          || ooCountryName(cc, "").toLowerCase().includes(q);
+      };
       const rows = COV_COUNTRIES.filter(c => {
         if (!q) return true;
-        if (c.code.includes(q)) return true;
-        if ((c.name || "").toLowerCase().includes(q)) return true;
+        if (matches(c.code, c.name)) return true;
         return (c.top_tags || []).some(([t]) => t.toLowerCase().includes(q));
       });
       const t = $("coverage-table");
@@ -213,24 +245,31 @@
           // and the NAME rides the hover, where it used to be the other way round.
           // `ooCountryCell` writes that title, and `ooTipInit`'s MutationObserver
           // picks it up as an `.oo-tip-target` with nothing to register here.
-          const label = ooCountryCell(c.code);
+          //
+          // `(none)` is the rollup's sentinel for sources with NO country. It is an
+          // absent value, not an unreadable code, so it renders as that -- through the
+          // helper's `empty` -- instead of hovering "not a recognised country code" (L11).
+          const none = c.code === "(none)";
+          const label = ooCountryCell(none ? "" : c.code, {empty: t9("no country recorded")});
+          const where = ooCountryName(c.code, c.name || c.code);
           const tags = (c.top_tags || []).map(([t, n]) =>
-            `<span class="pill" style="cursor:pointer" title="show ${esc(t)} sources in ${esc(c.name || c.code)}"
+            `<span class="pill" style="cursor:pointer" title="${esc(none ? tf("show {tag} sources", {tag: t})
+              : tf("show {tag} sources in {country}", {tag: t, country: where}))}"
                 onclick="openSourcesForKeyword(${esc(JSON.stringify(c.code))}, ${esc(JSON.stringify(t))})">${esc(t)} ${n}</span>`
           ).join(" ") || '<span class="muted">—</span>';
-          const codeCell = `<strong style="cursor:pointer" title="show sources in ${esc(c.name || c.code)}"
+          const codeCell = `<strong style="cursor:pointer" title="${esc(none ? t9("no country recorded")
+              : tf("show sources in {country}", {country: where}))}"
                 onclick="openSourcesForKeyword(${esc(JSON.stringify(c.code))}, null)">${label}</strong>`;
           return `<tr><td>${codeCell}</td><td class="muted">${esc(c.region || "—")}</td><td>${c.sources}</td>
                   <td class="muted">${c.enabled}</td><td>${tags}</td></tr>`;
         }).join("") : `<tr><td colspan="5" class="muted">No matching countries.</td></tr>`);
       // Not-covered list (same filter, matched on name or code).
-      const miss = COV_MISSING.filter(x =>
-        !q || x.code.includes(q) || x.name.toLowerCase().includes(q));
+      const miss = COV_MISSING.filter(x => !q || matches(x.code, x.name));
       $("coverage-gaps").innerHTML = miss.length
-        ? `<strong>Not covered (${miss.length})</strong>: ` +
+        ? `<strong>${esc(tf("Not covered ({n})", {n: miss.length}))}</strong>: ` +
           miss.slice(0, 120).map(x =>
             ooCountryCell(x.code, {cls: "pill"})).join(" ") +
-          (miss.length > 120 ? ` <span class="muted">…and ${miss.length - 120} more</span>` : "")
+          (miss.length > 120 ? ` <span class="muted">${esc(tf("… and {n} more", {n: miss.length - 120}))}</span>` : "")
         : `<span class="pill ok">every listed country has at least one source</span>`;
     }
 
@@ -261,9 +300,14 @@
       const panel = $("unmanaged-lang-panel"); if (!panel) return;
       let r; try { r = await api("/api/sources/unmanaged-languages"); } catch (e) { panel.style.display = "none"; return; }
       if (!r || !r.enabled_unmanaged) { panel.style.display = "none"; return; }
-      const langs = Object.entries(r.by_language).map(([k, n]) => `${esc(k)} (${n})`).join(", ");
+      // The languages as 639-2/T codes with the name in the hover (Q306's display step),
+      // and the sentence as a keyed frame -- it was English in every locale (L17).
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
+        : ((s, v) => s.replace(/\{(\w+)\}/g, (m, k) => (v[k] == null ? m : v[k])));
+      const langs = Object.entries(r.by_language).map(([k, n]) => `${ooLangCell(k)} (${n})`).join(", ");
       $("unmanaged-lang-summary").innerHTML =
-        `<strong>${r.enabled_unmanaged}</strong> enabled source(s) in languages we can't analyse yet: ${langs}.`;
+        esc(tf("{n} enabled source(s) in languages we can't analyse yet:", {n: r.enabled_unmanaged}))
+        + ` ${langs}.`;
       panel.style.display = "";
     }
 
@@ -319,15 +363,27 @@
       const sum = det.querySelector("summary"); if (!sum) return;
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
       const v = mselValues(id);
-      sum.textContent = v.length === 0 ? t("Any") : (v.length === 1 ? v[0] : v.length + " " + t("selected"));
+      // One value: shown in the SAME form as the checklist beside it -- the alpha-3 /
+      // 639-2/T code, never the stored value the checkbox submits (L7: a closed filter
+      // read `fr` while every row under it read `FRA`).
+      const one = v.length !== 1 ? "" : (id === "src-msel-country" ? ooCountryCode(v[0])
+        : (id === "src-msel-language" ? ooLangCode(v[0]) : v[0]));
+      sum.textContent = v.length === 0 ? t("Any") : (v.length === 1 ? one : v.length + " " + t("selected"));
     }
     async function loadSrcFacets() {
       let f; try { f = await api("/api/sources/facets"); } catch (e) { return; }
+      // A re-fill KEEPS what is ticked. Two callers can have a facets request in flight
+      // at once -- the coverage → sources jump ticks its country after its own load,
+      // while opening the section fires the section loader's load -- and whichever
+      // response lands LAST used to rebuild the list unticked and reset the label to
+      // "Any" over a table already filtered to that country (L3). The capture is taken
+      // after the await, so it sees every tick made while the request was out.
       const fill = (id, rows, labeler) => {
         const det = $(id); if (!det) return;
         const list = det.querySelector(".msel-list"); if (!list) return;
+        const kept = new Set(mselValues(id));
         list.innerHTML = (rows || []).length
-          ? rows.map(x => `<label class="msel-opt"><input type="checkbox" value="${esc(x.key)}" onchange="srcMselChanged('${id}')"> ${esc(labeler ? labeler(x.key) : x.key)} <span class="muted">·${x.n}</span></label>`).join("")
+          ? rows.map(x => `<label class="msel-opt"><input type="checkbox" value="${esc(x.key)}"${kept.has(String(x.key)) ? " checked" : ""} onchange="srcMselChanged('${id}')"> ${esc(labeler ? labeler(x.key) : x.key)} <span class="muted">·${x.n}</span></label>`).join("")
           : `<div class="muted" style="padding:4px">—</div>`;
       };
       // Q308 for a picker: ordered by localised NAME with the code beside it. A
@@ -383,7 +439,9 @@
     }
     function srcTh(label, col) {
       const arrow = SRC.sort === col ? (SRC.order === "asc" ? " ▲" : " ▼") : "";
-      return `<th style="cursor:pointer" onclick="setSrcSort('${col}')">${label}${arrow}</th>`;
+      // The label is its OWN text node: welded to the arrow ("Name ▲") it no longer
+      // matched the "Name" key, so the sorted column stayed English in every locale (L17).
+      return `<th style="cursor:pointer" onclick="setSrcSort('${col}')"><span>${label}</span>${arrow}</th>`;
     }
 
     async function loadManagedSources() {
@@ -392,8 +450,16 @@
         const d = await api("/api/catalog/sources?" + srcQuery().toString());
         const shownFrom = d.total ? SRC.offset + 1 : 0;
         const shownTo = Math.min(SRC.offset + SRC.limit, d.total);
-        $("src-meta").textContent = `${d.total} source(s)` + (d.total ? ` · showing ${shownFrom}–${shownTo}` : "");
-        $("src-page").textContent = `page ${Math.floor(SRC.offset / SRC.limit) + 1} of ${Math.max(1, Math.ceil(d.total / SRC.limit))}`;
+        const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
+          : ((s, v) => s.replace(/\{(\w+)\}/g, (m, k) => (v[k] == null ? m : v[k])));
+        $("src-meta").textContent = d.total
+          ? tf("{total} source(s) · showing {from}–{to}", {total: d.total, from: shownFrom, to: shownTo})
+          : tf("{total} source(s)", {total: d.total});
+        // The pager is the analysis window's keyed frame, not an English literal beside a
+        // translated count line (2026-09-27 re-walk L-8).
+        $("src-page").textContent = tf("Page {n} of {total}", {
+          n: fmtNum(Math.floor(SRC.offset / SRC.limit) + 1, 0),
+          total: fmtNum(Math.max(1, Math.ceil(d.total / SRC.limit)), 0)});
         t.innerHTML = "<tr>" + srcTh("Name","name") + srcTh("Domain","domain") + srcTh("Type","source_type") +
           srcTh("Country","country") + srcTh("Lang","language") + srcTh("Pri","priority") +
           srcTh("Articles","articles") + "<th>Enabled</th><th></th></tr>" +
@@ -440,11 +506,12 @@
           {method: "POST", body: JSON.stringify({source_id: sourceId})});
         // Read against the module's REAL keys (article_count / junk_count /
         // unparseable_count / canary), not an assumed {counts: …} shape.
-        const msg = `${t("AI check")}: ${r.checked != null ? r.checked : "?"} ${t("checked")} — `
-          + `${r.article_count != null ? r.article_count : "?"} ${t("read as articles")}, `
-          + `${r.junk_count != null ? r.junk_count : "?"} ${t("as navigation soup")}, `
-          + `${r.unparseable_count != null ? r.unparseable_count : "?"} ${t("unreadable")}`
-          + ` — ${t("a proposal only; nothing about this source was changed.")}`;
+        // ONE keyed sentence: welded out of "AI check" + ": " + number + noun pieces it
+        // put a Latin colon and commas into every locale's line (2026-09-27 re-walk O-5).
+        const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((s, v) => s.replace(/\{(\w+)\}/g, (_, k) => v[k]));
+        const num = (x) => (x != null ? fmtNum(x, 0) : "?");
+        const msg = tf("AI check: {checked} checked — {articles} read as articles, {junk} as navigation soup, {unreadable} unreadable — a proposal only; nothing about this source was changed.",
+          { checked: num(r.checked), articles: num(r.article_count), junk: num(r.junk_count), unreadable: num(r.unparseable_count) });
         // A failed canary means the run itself is untrustworthy, which matters more
         // than any of its numbers — so it is stated first, not buried.
         const bad = r.canary && r.canary.ok === false;
@@ -507,16 +574,16 @@
           : "");
       const basisAttr = basisTitle ? ` title="${esc(basisTitle)}"` : "";
       let html = `<div><span class="pill ${qsClass}"${basisAttr}>${esc(qsLabel)}${esc(basisSuffix)}</span></div>`;
-      html += `<div style="margin-top:6px"><strong>${esc(t("Discovery"))}:</strong> `
-        + `${esc(prov.channel || "—")} <span class="muted">— ${esc(prov.detail || "")}</span></div>`;
+      html += `<div style="margin-top:6px">${ooLabelHtml(`<strong>${esc(t("Discovery"))}</strong>`,
+        `${esc(prov.channel || "—")} <span class="muted">— ${esc(prov.detail || "")}</span>`)}</div>`;
       if (prov.citing_trail) {
         const ct = prov.citing_trail;
         const citerLink = ct.citing_source_domain
           ? ` (<a href="#" onclick="srcJumpToDomain(${esc(JSON.stringify(ct.citing_source_domain))});return false">${esc(ct.citing_source_name || ct.citing_source_domain)}</a>)`
           : (ct.citing_source_name ? ` (${esc(ct.citing_source_name)})` : "");
-        html += `<div class="muted" style="margin-top:2px">${esc(t("First cited by"))}: `
-          + `<a href="/api/articles/${ct.article_id}/view" target="_blank" rel="noopener">${esc(ct.article_title || ("#" + ct.article_id))}</a>`
-          + citerLink + "</div>";
+        html += `<div class="muted" style="margin-top:2px">${ooLabelHtml(esc(t("First cited by")),
+          `<a href="/api/articles/${ct.article_id}/view" target="_blank" rel="noopener">${esc(ct.article_title || ("#" + ct.article_id))}</a>`
+          + citerLink)}</div>`;
       }
       // Four DRILLABLE classes (qualified/disqualified/pending/never-registered) --
       // each chip's number is exactly the length of the list it expands to (never a
@@ -531,7 +598,7 @@
       ];
       const chips = classes.map(([k, arr]) => {
         const label = k === "never_registered" ? t("never-registered") : t(k);
-        return `<button class="tiny ghost" onclick="_srcTrailToggleClass(${id},'${k}')">${esc(label)}: ${arr.length}</button>`;
+        return `<button class="tiny ghost" onclick="_srcTrailToggleClass(${id},'${k}')">${ooLabelHtml(esc(label), fmtNum(arr.length, 0))}</button>`;
       }).join(" ");
       html += `<div style="margin-top:8px">${chips}</div>`;
       html += `<div id="src-trail-cls-${id}" class="muted" style="display:none;margin:4px 0;font-size:.85em"></div>`;
@@ -1001,10 +1068,18 @@
         : t9("Collection speed: 500 KiB/s target — deliberately gentle. Click for Maximum (full speed).");
       btn.setAttribute("aria-pressed", max ? "true" : "false");
     }
+    // The knob carries `data-i18n-dyn`, so the walker never retranslates its hover: after
+    // one click the title held the language of that click through every later switch
+    // (2026-09-27 re-walk T-1). It is repainted from the state it holds by app-boot.js's
+    // `oo:langchange` listener, and once more when the locale is in, because the boot
+    // paint can land before the locale file and would otherwise stay English.
     async function loadRateMode() {
       try {
         const c = await api("/api/scheduler/config");
         _paintRateMode(c.collect_rate_mode || "maximum");
+        if (window.OOI18N && OOI18N.ready && OOI18N.ready.then) {
+          OOI18N.ready.then(() => { if (_rateMode) _paintRateMode(_rateMode); }).catch(() => {});
+        }
       } catch (_e) { /* chrome stays at the default paint; Settings still works */ }
     }
     async function toggleRateMode() {
@@ -1047,8 +1122,11 @@
     // halted, stopped}; start and resume both ARRIVE at running and differ only in
     // what the lane can promise about continuity (see the field's own comment in
     // src/scheduler/settings.py). A click cycles running -> halted -> running;
-    // the full stop lives on the hover menu, because an accidental click on a
-    // top-bar icon should never be the thing that ends a multi-day stream.
+    // the full stop is Shift+click (index.html's onclick), because an accidental
+    // click on a top-bar icon should never be the thing that ends a multi-day
+    // stream. There is no hover menu: the hover NAMES the gesture while a stop
+    // would change anything, since a gesture nothing on screen mentions is one an
+    // operator cannot find (delegated click-through, row P).
     let _wikiLaneState = null;
     let _wikiLaneActive = false;
     // WHY the lane is not collecting, as the status reported it: `reason` is a token
@@ -1126,7 +1204,9 @@
       // The hover carries the CAVEAT (invariant #17's bubble reads the live title),
       // including what the lane contacts — a hover is a consent surface, so it
       // names the hosts rather than only the state.
-      btn.title = heading + " — " + detail + "\n" + action + "\n"
+      // Named only where Shift+click does something: a stopped lane has nothing to stop.
+      const stopHint = (running || halted) ? t9("Shift+click stops the stream completely.") + "\n" : "";
+      btn.title = heading + " — " + detail + "\n" + action + "\n" + stopHint
         + t9("This lane contacts stream.wikimedia.org, each edition's Action API, and wikimedia.org for daily pageviews.");
       btn.setAttribute("aria-label", action);
       btn.setAttribute("aria-pressed", running ? "true" : "false");
@@ -1179,14 +1259,23 @@
         // transition passes the ONE consent popup, and this is one, because the
         // stream opens a connection to stream.wikimedia.org the moment it starts.
         // The airplane check is the gate; the settings write below is loopback.
-        if (!await ensureOnline(t9("Start the Wikipedia stream"))) return;
+        // `enabling` makes the popup list this lane as it WILL be once the operator
+        // agrees, not under "Switched off right now" (delegated click-through, row P).
+        const why = from === "halted" ? t9("Resume the Wikipedia stream")
+                                      : t9("Start the Wikipedia stream");
+        if (!await ensureOnline(why, {enabling: "wikipedia"})) return;
       }
       try {
         const c = await api("/api/scheduler/config",
           {method: "PUT", body: JSON.stringify({wiki_lane_state: next})});
-        _paintWikiLane((c && c.wiki_lane_state) || next, _wikiLaneActive);
-        toast(next === "running" ? t9("Resume the Wikipedia stream")
-                                 : t9("Pause the Wikipedia stream"));
+        const now = (c && c.wiki_lane_state) || next;
+        _paintWikiLane(now, _wikiLaneActive);
+        // The toast CONFIRMS what happened, in the hover's own heading for the state
+        // the server returned -- the action labels read as orders ("Pause the
+        // Wikipedia stream" after it was paused; row P).
+        toast(now === "running" ? t9("Wikipedia stream: running")
+              : now === "halted" ? t9("Wikipedia stream: paused")
+                                 : t9("Wikipedia stream: stopped"));
         loadWikiLane();  // the reason the last paint carried belongs to the old state
       } catch (e) {
         toast(_failMsg("Update failed: {error}", e), "err");
@@ -1198,8 +1287,11 @@
       try {
         const c = await api("/api/scheduler/config",
           {method: "PUT", body: JSON.stringify({wiki_lane_state: "stopped"})});
-        _paintWikiLane((c && c.wiki_lane_state) || "stopped", _wikiLaneActive);
-        toast(t9("Stop the Wikipedia stream"));
+        const now = (c && c.wiki_lane_state) || "stopped";
+        _paintWikiLane(now, _wikiLaneActive);
+        toast(now === "stopped" ? t9("Wikipedia stream: stopped")
+              : now === "halted" ? t9("Wikipedia stream: paused")
+                                 : t9("Wikipedia stream: running"));
         loadWikiLane();
       } catch (e) {
         toast(_failMsg("Update failed: {error}", e), "err");
@@ -1251,17 +1343,17 @@
         el.textContent = t9("Pick at least one edition and a budget to see the share.");
         return;
       }
-      // Shown to ONE decimal and never rounded to zero: a twelve-way split of a
-      // small budget is a real number the operator is entitled to see. Formatted
-      // through toLocaleString rather than toFixed, because toFixed always emits a
-      // POINT -- which a German or Spanish reader reads as a thousands separator, so
-      // "1.7 GB" would say 1,700 to them.
+      // Shown to ONE decimal (two below 0.1) so a twelve-way split of a small budget
+      // stays a real number the operator can read. Written by fmtNum, the app's ruled
+      // number formatter: a decimal POINT in every locale, as every size and every other
+      // figure in the app now reads (units/precision ruling). The earlier
+      // toLocaleString() took the BROWSER's locale, which the app's language switcher
+      // never changes, so the same line read "1.7" or "1,7" by browser, not by language.
       const share = gb / n;
       const digits = share < 0.1 ? 2 : 1;
       el.textContent = _wizTf(
         "About {share} GB for each of {n} editions — the total divided by the editions you follow.",
-        {share: share.toLocaleString(undefined, {minimumFractionDigits: digits,
-                                                 maximumFractionDigits: digits}), n: n});
+        {share: fmtNum(share, digits), n: n});
     }
 
     function _wizSelectAll(on) {
@@ -1315,9 +1407,26 @@
       } catch (_e) { hosts = []; }
       // An ABSENCE with a reason rather than a blank line: an operator reading a
       // disclosure is entitled to know when it could not be filled in.
+      // Each host sits in a left-to-right ISOLATE (U+2066 … U+2069), exactly as the
+      // consent bubble writes the same table (_laneHostTitle, app-core.js): in the Arabic
+      // dialog the bidi algorithm moved the "*." of "*.wikipedia.org" to the far end of
+      // the line (2026-09-27 re-walk P-3, U-5). The list still flows in the page's order.
       el.textContent = hosts.length
-        ? hosts.join(" · ")
+        ? hosts.map((h) => "⁦" + h + "⁩").join(" · ")
         : ((window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x))("The host list could not be read.");
+    }
+
+    // Is this wizard open, or still to open for the fresh-corpus hand-off (/?wikiwizard=1)?
+    // The one-time guide asks before it opens (checkEmptyCorpus) and waits for this one to
+    // close: both first-run dialogs sat behind their own fetch, so whichever answered first
+    // ended up underneath the other (2026-09-26 click-through U8). One at a time, this first.
+    let _wizShown = false;
+    function wikiWizardPending() {
+      const dlg = $("wiki-wizard");
+      if (!dlg) return false;
+      if (dlg.open) return true;
+      try { return !_wizShown && new URLSearchParams(location.search).get("wikiwizard") === "1"; }
+      catch (_e) { return false; }
     }
 
     async function openWikiWizard() {
@@ -1347,6 +1456,7 @@
         // operator with no way to answer the question at all.
         toast(_failMsg("Update failed: {error}", e), "err");
       }
+      _wizShown = true;
       try { dlg.showModal(); } catch (_e) { dlg.setAttribute("open", "open"); }
     }
 
@@ -1420,6 +1530,12 @@
       btn.textContent = running ? t9("Collection is ON — click to turn off")
                                 : t9("Collection is OFF — click to turn on");
       btn.setAttribute("aria-pressed", running ? "true" : "false");
+      // The state this label was painted FROM, so the `oo:langchange` listener
+      // (app-boot.js) can repaint it without asking the scheduler. The label is t()'d
+      // text, and the DOM walker records first sight as "the English", so a label
+      // painted in French stayed French after every later switch (re-walk T-3). Set
+      // only here: the static markup's aria-pressed="false" is not a reading.
+      btn.setAttribute("data-collect-state", running ? "on" : "off");
     }
     async function collectToggle() {
       let running = false;
@@ -1428,17 +1544,42 @@
       loadScheduler();
     }
 
+    // The targets line is ONE keyed sentence with the pill and the bold figure dropped in
+    // by marker, so each locale orders it itself. It was English literals welded to the
+    // numbers, in every language, and it renders whenever the panel opens -- not only on
+    // "Preview targets" (2026-09-27 re-walk O-2, S-4). The last payload is kept so a
+    // language switch redraws it without asking the server again (app-boot.js).
+    let _schedTargetsLast = null;
+    function _renderSchedTargets() {
+      const el = $("sched-targets"), d = _schedTargetsLast;
+      if (!el || !d) return;
+      const t9 = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
+        : ((s, v) => String(s).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? String(v[k]) : m));
+      const n = Number(d.matched) || 0;
+      const pill = `<span class="pill ${n ? "ok" : "warn"}">${esc(n === 1
+        ? tf("{n} source targeted", {n: fmtNum(n, 0)}) : tf("{n} sources targeted", {n: fmtNum(n, 0)}))}</span>`;
+      const head = esc(tf("{targeted} of {total} enabled · this run will process up to {n}",
+        {targeted: "\u0001", total: fmtNum(Number(d.total_enabled) || 0, 0), n: "\u0002"}))
+        .replace("\u0001", () => pill)
+        .replace("\u0002", () => `<strong>${esc(fmtNum(Number(d.will_process_this_run) || 0, 0))}</strong>`);
+      // The "?" bucket is the server's word for "no value recorded": said, never printed bare.
+      // A language is its code on screen with the name in the hover (Q302), like every table.
+      const pairs = (obj, cell) => Object.entries(obj || {})
+        .map(([k, v]) => `<span style="white-space:nowrap">${cell(k)} ${esc(fmtNum(Number(v) || 0, 0))}</span>`)
+        .join(" · ");
+      const langs = pairs(d.by_language, (k) => (k === "?" ? esc(t9("Unknown language")) : ooLangCell(k)));
+      const types = pairs(d.by_source_type, (k) => esc(k === "?" ? t9("unknown") : k));
+      el.innerHTML = head +
+        `<div class="muted" style="font-size:12px;margin-top:4px">${ooLabelHtml(esc(t9("By language")), langs || "—")}</div>` +
+        `<div class="muted" style="font-size:12px">${ooLabelHtml(esc(t9("By type")), types || "—")}</div>`;
+    }
     async function previewTargets() {
       const el = $("sched-targets");
       try {
-        const t = await api("/api/scheduler/targets");
-        const langs = Object.entries(t.by_language).map(([k,v])=>`${esc(k)}:${v}`).join("  ");
-        const types = Object.entries(t.by_source_type).map(([k,v])=>`${esc(k)}:${v}`).join("  ");
-        el.innerHTML = `<span class="pill ${t.matched?'ok':'warn'}">${t.matched} sources targeted</span> ` +
-          `of ${t.total_enabled} enabled · this run will process up to <strong>${t.will_process_this_run}</strong>` +
-          `<div class="muted" style="font-size:12px;margin-top:4px">by language: ${langs||'—'}</div>` +
-          `<div class="muted" style="font-size:12px">by type: ${types||'—'}</div>`;
-      } catch (e) { el.textContent = _failMsg("Could not preview targets: {error}", e); }
+        _schedTargetsLast = await api("/api/scheduler/targets");
+        _renderSchedTargets();
+      } catch (e) { _schedTargetsLast = null; el.textContent = _failMsg("Could not preview targets: {error}", e); }
     }
 
     async function schedulerStart() {

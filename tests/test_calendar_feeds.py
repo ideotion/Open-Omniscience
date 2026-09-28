@@ -183,3 +183,26 @@ def test_redundant_moons_feed_is_retired_and_its_ghosts_filtered():
     evs = F.load_imports()["astral"]["events"]
     assert "fp1" not in evs, "a solely-retired-sourced ghost must not surface"
     assert evs["fp2"]["sources"] == ["ose-calendar"], "mixed-source keeps the live provider"
+
+
+def test_the_directory_hint_describes_what_the_directory_serves():
+    """2026-09-26 click-through U3: the Settings hint still advertised "~500 public
+    calendar feeds (country holidays, religions, elections, UN days, space, astronomy)"
+    and provider grouping, two months after the load-time filter above cut the served
+    set to single-provider holidays + UN days + one community calendar. The hint now
+    names that set and why the rest is absent; this pins it to the DATA, so the next
+    change to the filter (or the YAML) fails here until the hint is re-read."""
+    from pathlib import Path
+
+    fams = F.load_families()
+    assert {f["kind"] for f in fams} == {"holidays", "civic", "community"}, (
+        "the served kinds changed: update the Calendar-directory hint in index.html"
+    )
+    assert all(len(f["feeds"]) == 1 for f in fams), "the hint says 'each from one provider'"
+
+    html = Path("src/static/index.html").read_text(encoding="utf-8")
+    section = html.split('<section class="panel" id="agenda-feeds">', 1)[1].split("</section>", 1)[0]
+    hint = section.split('<p class="hint"', 1)[1].split("</p>", 1)[0]
+    assert "~500" not in hint
+    assert "religions, elections" not in hint and "grouped into one folder" not in hint
+    assert "each from one provider" in hint and "robots.txt" in hint

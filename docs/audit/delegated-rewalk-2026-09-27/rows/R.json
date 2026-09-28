@@ -1,0 +1,477 @@
+{
+ "row": "R",
+ "walk": {
+  "environment": "Build: read-only worktree /tmp/claude-0/rewalk/tree @ 0deff9c4 (git status clean before and after; never edited). App run from that folder through /tmp/claude-0/rewalk/R/scripts/launch.py, which drops HTTP(S)_PROXY/ALL_PROXY (both cases), OO_DB_PASSPHRASE and OO_DB_PLAINTEXT and then execs `python -c \"from src.api.main import main; main()\"`. Port 127.0.0.1:9100, OO_DATA_DIR=/tmp/claude-0/rewalk/R/data. Server PID 24258, stopped by PID; it shut down cleanly. At rest: ENCRYPTED. The file header is ciphertext (not \"SQLite format 3\") before and after the walk. GET /api/system/lock-state returned {state:\"locked\", locked:true, plaintext_mode:false} at boot. Unlocked through the real #pw / #btn-unlock form, after which it returned \"unlocked-encrypted\". Network: airplane mode the whole time; /api/system/network reported online:false at the start and end of every session. The browser recorded zero non-loopback requests. The server log has no 4xx/5xx and no egress. Browser: Playwright (/home/user/Open-Omniscience/.venv) driving /opt/pw-browsers/chromium (chromium-1194), headless, args --disable-background-networking --disable-component-update --no-proxy-server, proxy variables unset. Passes: en 1440x950 main pass (two sessions); fr, ar (RTL) and zh at 1440x950, switched through the real top-bar #lang-switch; en 375x812 through the #hamburger drawer; plus a 375 touch probe (has_touch, CDP touch events) and a worldview-label truncation probe. Count test: `.venv/bin/python -m pytest -q tests/test_countries_geo.py` gave 13 passed in /home/user/Open-Omniscience (HEAD 60aaf429, which has 0deff9c4 as an ancestor) and 13 passed in the build tree (-p no:cacheprovider, PYTHONDONTWRITEBYTECODE=1). The test file, world_countries.json, world_disputed.json, disputed_geo.py and app-map.js are byte-identical in the two trees. Scratch: scripts in /tmp/claude-0/rewalk/R/scripts/ (lib.py, seed_maps.py, walk_en.py, walk_en_ring.py, walk_locales.py, walk_375.py, probe_375_ring.py, probe_touch.py, probe_wv_trunc.py); results in /tmp/claude-0/rewalk/R/res-*.json; 85 screenshots in /tmp/claude-0/rewalk/R/shots/.",
+  "seed_step": "(1) Standing seed, encrypted: `cd /tmp/claude-0/rewalk/tree && env -u OO_DB_PLAINTEXT OO_DATA_DIR=/tmp/claude-0/rewalk/R/data OO_DB_PASSPHRASE=walk-pass-2026 PYTHONDONTWRITEBYTECODE=1 /home/user/Open-Omniscience/.venv/bin/python scripts/ui_clickthrough_seed.py` (STATE C: 440-article multilingual pool; sources carry countries). (2) My extra seed, run with the app STOPPED, same env, store kept encrypted (opened with the passphrase; no plaintext copy): `cd /tmp/claude-0/rewalk/tree && env -u OO_DB_PLAINTEXT OO_DATA_DIR=/tmp/claude-0/rewalk/R/data OO_DB_PASSPHRASE=walk-pass-2026 PYTHONDONTWRITEBYTECODE=1 /home/user/Open-Omniscience/.venv/bin/python /tmp/claude-0/rewalk/R/scripts/seed_maps.py`. Everything goes through the app's own paths. (a) World Bank API v2-shaped payloads go through src.stats.sdmx.parse_worldbank and src.stats.store.store_figures (agency \"worldbank\", the pair the \"Load standard country data\" job uses). They cover three CURATED indicators (SP.DYN.LE00.IN, NY.GDP.PCAP.CD, SP.POP.TOTL) × every one of the 229 countries in the bundled 50m geometry that src.catalog.countries.to_iso3 names × 2019–2023: 1,145 figures stored per indicator, 0 duplicates. Values are SYNTHETIC and deterministic (seeded by ISO3), so this checks rendering, not data. This feeds Governments → Map (/api/governments/map) and Governments → Statistics (/api/stats/map). (b) Six 'election'-ring articles (en/fr/ru) from new sources located in in, pk, ma, ua, ru and cn, which are claimants of Natural Earth disputes. They go through the real src.analytics.store.index_article(..., country=cc), then ensure_fts(rebuild=\"always\"). After this, /api/insights/ring-countries?ring_id=election returns n_countries=8 (us 10, gb 9, ua, ru, pk, ma, in, cn at 1 each, plus 1 unlocated). The standing seed alone already gave several rings located coverage (transport: 7 countries), so the Supergroups ring map was never data-starved. The Governments map's default indicator (NY.GDP.MKTP.CD) was deliberately NOT seeded. Its honest empty state was recorded, then Life expectancy was picked through the real #gov-map-ind select.",
+  "surfaces": [
+   {
+    "surface": "World map tab (_renderOoMapDim, host #oo-coverage-map)",
+    "verdict": "fail",
+    "locales": "en, fr, ar, zh @1440; en @375",
+    "measured": "Reached with data (en first pass: Sources dimension, 17 of 229 countries filled; later passes 202 once the catalogue auto-registered after unlock). viewBox 0 0 720 350.44; rendered 1116x543.16 = 2.0547 (375: 301x146.5 = 2.0546). 229 country paths; 28 contested areas. 13 meridian polylines, 12 curved (max deviation 146.7 units; the central meridian is straight); sphere outline present. Legend: en 'Equal Earth · equal-area', fr 'Equal Earth · équivalente', ar 'Equal Earth · متساوية المساحة', zh 'Equal Earth · 等面积'. Contested caveat visible (290.6x16.7 px, opacity 1, no hidden ancestor, not in a closed details) in every locale and at 375. Worldview picker has 34 options, default 'contested', 0 attributed. The worldview drives attribution: in 27 attributed / 17 under-fills; cn 28/15; ma 27/17; iso 25/16; tlc 25/16; ru 24/23. Back to contested gives 0 attributed, all 28 still hatched. No horizontal overflow at 1440 or 375; no junk text. FAILS on the cross-surface contested defects: the area name is English in fr/ar/zh, and 3 of 28 areas name a single claimant.",
+    "evidence": "res-en-1440.json surfaces.worldmap and worldview_worldmap; res-locales-1440.json; res-en-375.json. Shots R-en-11-worldmap-host.png, R-en-20-worldview-{in,ma,contested}.png, R-fr-11-worldmap-host.png, R-ar-10-worldmap-view.png (RTL chrome, map not mirrored), R-375-10-worldmap-view.png. Hover under the real pointer: en 'France — 1 source'; 'Kashmir — contested: India / Pakistan · no claimant assigned in this view'; with worldview India, 'Western Sahara — contested: Western Sahara / Morocco · attributed to Morocco' (cursor pointer, drills) vs cursor grab and no data-iso under contested. At 375 the in-map control groups cover 71.9% + 37.1% of the map, so no point of Western Sahara could be hit. That is the pre-existing finding recorded 2026-09-16, not new."
+   },
+   {
+    "surface": "Sources coverage (renderCoverageMap, host #coverage-map, Library → World coverage)",
+    "verdict": "fail",
+    "locales": "en, fr, ar, zh @1440; en @375",
+    "measured": "Reached with data (16 countries, 1–57 articles). viewBox 0 0 720 350.44, aspect 2.0547 (375: 2.0546). 229 countries, 28 contested, 12 curved meridians, sphere present. Equal Earth legend in all 4 locales; contested caveat visible; worldview picker 34 options, default contested. No overflow at 1440 or 375; no junk. FAILS: (1) it does not pick up a worldview chosen on another map. After World map → India, this map still draws 'Contested: 28 · every claim shown, none assigned' with 0 attributed, even after re-opening the subtab. (2) The shared contested defects (English area names, 3 single-claim areas).",
+    "evidence": "res-en-1440.json worldview_cross_surface: sources_on_visit and sources_after_rerender both read contested / 0 while worldmap_after_switch reads 'in' / 27. Shot R-en-11-sources-host.png; hovers 'France — 56 articles' (en), 'فرنسا — 56 مقالة' (ar), '法国 — 56 篇文章' (zh)."
+   },
+   {
+    "surface": "Governments → Map (renderGovMap/_govMapDraw, host #gov-map-host)",
+    "verdict": "fail",
+    "locales": "en, fr, ar, zh @1440; en @375 (+375 touch probe)",
+    "measured": "Default indicator NY.GDP.MKTP.CD (not seeded) shows the honest empty state 'Country data loads automatically in the background when online — the map fills in once it lands.'. After choosing Life expectancy through #gov-map-ind: all 229 countries filled, legend 'Life expectancy at birth (years) 52.56–85.80 years'. viewBox 0 0 720 350.44, aspect 2.0547; 28 contested; 12 curved meridians; Equal Earth legend ×4 locales; caveat visible; picker 34 options, default contested. Switching to ua gives 26 attributed / 26 under-fills; Crimea reads '… · attributed to Ukraine' (fr 'attribuée à Ukraine'); back to contested gives 0. No overflow. FAILS: legend unit 'years' untranslated in fr/ar/zh, plus the shared contested defects.",
+    "evidence": "res-en-1440.json surfaces.govmap (default_indicator_state); res-locales-1440.json *.govmap; shots R-en-11-govmap-host.png, R-fr-12-govmap-worldview-switched.png. Hover 'Brazil — BRA · Brazil: 57.6' / 'Brésil — BRA · Brésil : 57.6' / 'البرازيل — BRA · البرازيل: 57.6' / '巴西 — BRA · 巴西：57.6'."
+   },
+   {
+    "surface": "Governments → Statistics (renderStatMap, host #statfig-map)",
+    "verdict": "fail",
+    "locales": "en, fr, ar, zh @1440; en @375",
+    "measured": "Reached with data: series SP.DYN.LE00.IN, producer worldbank, 'Map by country' clicked in the real UI, so 229 comparable areas are coloured (52.56–85.80). viewBox 0 0 720 350.44, aspect 2.0547 (375: 2.0546). 229 countries, 28 contested, 12 curved meridians, Equal Earth legend, caveat visible, picker 34 options, default contested. After the World map was switched to India it stayed on contested until 'Map by country' was run again, then it followed (27 attributed). No overflow; no junk. Its own method/caveat strings are English in every locale by recorded design (app-map.js:2439, 'English-only'). FAILS: the map does not follow a language switch until it is re-run, plus the shared contested defects.",
+    "evidence": "res-locales-1440.json *.statmap.on_visit_no_retrigger. fr: '52.56 85.80 aucune donnée Equal Earth · équivalente Contested: 28 · every claim shown, none assigned'. In ar the legend was still French; in zh it was still Arabic. After re-run: correct locale. Shot R-en-11-statmap-host.png. Hover 'Brazil — 57.57'."
+   },
+   {
+    "surface": "Insights → Super-groups ring map (showRingMap, host #sg-ringmap)",
+    "verdict": "fail",
+    "locales": "en, fr, ar, zh @1440; en @375",
+    "measured": "Reached with data: Ungrouped concepts → group chip '⦾ election', 8 countries filled (1–10 articles), 1 unlocated. viewBox 0 0 720 350.44, aspect 2.0547 (375: 2.0546). 229 countries, 28 contested, 12 curved meridians, Equal Earth legend ×4, caveat visible, picker 34 options, default contested. Worldview pk gives 27 attributed / 15 under-fills and 'Kashmir — contested: India / Pakistan · attributed to Pakistan'; back to contested gives 0. FAILS: (1) method and caveat are server English in fr/ar/zh, and the caveat shows the literal 'null' ('Unlocated sources are bucketed as null, not dropped.'). (2) The map does not follow a language switch until the group is re-picked. (3) At 375 the page overflows horizontally, 381 vs 375 px, caused by a non-wrapping concept chip beside the map. (4) The shared contested defects.",
+    "evidence": "res-en-1440-ring.json ringmap; res-locales-1440.json *.ringmap; res-en-375.json surfaces.ringmap.overflow {doc_scroll_w:381, doc_client_w:375}; res-en-375-ringprobe.json names the offender (BUTTON.chip.lvl-group, 344 px, right 381, '⦾ election-monitoring (ara/deu/eng/spa/fra/jpn/por/rus/zho)'); before the bucket opens there is no overflow. Shots R-en-14-ringmap-host.png, R-en-15-ringmap-worldview-pk.png, R-zh-10-ringmap-view.png."
+   },
+   {
+    "surface": "Analysis window → When/Where/Who (the Q1150 'ooMap embed on When / Where')",
+    "verdict": "fail",
+    "locales": "en @1440",
+    "measured": "Opened the analysis window for 'election' from the palette (new tab) and clicked the When/Where/Who subtab. #an-www holds 0 svg elements and 0 svg#oo-choro, and the whole window has 0 #oo-choro. It shows three chip columns (WHO 'Party (organization) · 1', WHERE '—', WHEN years). There is no map embed to keep.",
+    "evidence": "res-en-1440-ring.json analysis_www; shot R-en-41-analysis-when-where-who.png. Code: src/static/app-analysis.js:2235-2239 renders chips only, and app-analysis.js has no ooMap call. docs/ledger/shipped.csv (2026-09-10, insights/map) records the embed as 'Scoped, not built'."
+   },
+   {
+    "surface": "Insights → Map (cities map, buildMapSvg, through the same seam; S04-11 §4 names 'Insights When / Where' among its five)",
+    "verdict": "not-measurable-here",
+    "locales": "en @1440",
+    "measured": "Honest empty state only: 'No placed cities yet. Index the corpus (sources need a city), or generate the full gazetteer (scripts/build_city_gazetteer.py).' Not fed: it needs a source city and the city gazetteer (src/static/app-map.js:175-176), neither of which this walk seeded, and it is outside the five hosts this task names.",
+    "evidence": "res-en-1440.json extras.insights_map; shot R-en-40-insights-map-cities.png."
+   }
+  ],
+  "checks": [
+   {
+    "id": "R-at-rest-encrypted-locked",
+    "verdict": "pass",
+    "evidence": "Seeded with OO_DB_PASSPHRASE set and OO_DB_PLAINTEXT unset; the header is ciphertext before and after. Booted with neither variable: lock-state {state:locked, plaintext_mode:false}. Unlocked through #pw / #btn-unlock (shot R-en-00-lock-screen.png), then 'unlocked-encrypted'. The extra seed opened the store with the passphrase; no plaintext copy was written."
+   },
+   {
+    "id": "R-airplane-no-egress",
+    "verdict": "pass",
+    "evidence": "network online:false at the start and end of all 8 browser sessions. The browser saw 0 requests to anything but 127.0.0.1:9100. server.log has no 4xx/5xx and no egress; it shows 'Booted in airplane mode'. 'Go online' was never pressed."
+   },
+   {
+    "id": "R-consent-popups-opened-and-cancelled",
+    "verdict": "pass",
+    "evidence": "Governments → Countries → 'Load standard country data' and Statistics → 'Fetch figures' each opened #net-consent naming the action. After about 4 s the lane list loads (Press collection n=9033 … Chain of custody n=3). It also shows local interfaces (eth0 192.0.2.2) and the airplane-scope sentence. Each was screenshotted (R-en-30/31/32-consent-*.png) and cancelled with 'Stay offline'. The dialog closed and network stayed online:false. The gov popup read '…' for lanes at 0.8 s, which is only loading timing."
+   },
+   {
+    "id": "R-five-surfaces-reached-with-data",
+    "verdict": "pass",
+    "evidence": "All five hosts drew svg#oo-choro with data, every query scoped to its own host: World map (17, later 202 countries), Sources (16), Governments Map (229, after picking Life expectancy), Statistics (229), Supergroups ring map (8). No surface was passed on its empty state."
+   },
+   {
+    "id": "R-equal-earth-projection",
+    "verdict": "pass",
+    "evidence": "On all 5 surfaces: viewBox '0 0 720 350.44'; rendered aspect 2.0547 at 1440 and 2.0546 at 375 (EE_X_MAX/EE_Y_MAX = 2.0546). Sphere outline present. 13 meridian polylines, 12 curved (max deviation 146.7 units), the central meridian straight."
+   },
+   {
+    "id": "R-natural-earth-50m-229",
+    "verdict": "pass",
+    "evidence": "229 country paths (path[data-iso] excluding the disputed layer) on all 5 surfaces in every locale and width."
+   },
+   {
+    "id": "R-legend-equal-earth-named-translated",
+    "verdict": "pass",
+    "evidence": "After render, the legend span reads 'Equal Earth · equal-area' / 'Equal Earth · équivalente' / 'Equal Earth · متساوية المساحة' / 'Equal Earth · 等面积' on all 5. Its hover title carries the equal-area explanation (Savric, Patterson & Jenny 2018; no projection toggle). Exception: Statistics and Supergroups keep the previous language until re-run (see R-maps-follow-language-switch)."
+   },
+   {
+    "id": "R-contested-rendered-28",
+    "verdict": "pass",
+    "evidence": "28 path[data-oomap-disputed] hatched (url(#oomap-contested), dashed caveat stroke) on every surface, in every worldview (in/cn/ma/iso/tlc/ru/ua/pk/contested). A worldview never removes one."
+   },
+   {
+    "id": "R-contested-both-claims",
+    "verdict": "fail",
+    "evidence": "25 of 28 name two or more claims. Three name ONE: 'Abyei — contested: Sudan', 'Tigri Area — contested: Guyana', 'Lawa Headwaters — contested: France' (res-en-1440.json surfaces.worldmap.disputed_titles). Same in fr/ar/zh."
+   },
+   {
+    "id": "R-contested-caveat-visible",
+    "verdict": "pass",
+    "evidence": "The .oomap-legend .card-caveat is visible on all 5 surfaces × en/fr/ar/zh × 1440 and en × 375 (e.g. 290.6x16.7 px, opacity 1, no hidden ancestor, not in a closed details). It is not behind a toggle. Text in each locale: 'Contested: 28 · every claim shown, none assigned' / 'Contestées : 28 · toutes les revendications affichées, aucune attribuée' / 'متنازع عليها: 28 · كل المطالبات معروضة، ولا واحدة منسوبة' / '争议地区：28 · 列出全部主张，不作归属'."
+   },
+   {
+    "id": "R-worldview-picker-present",
+    "verdict": "pass",
+    "evidence": "select[data-oomap-worldview] is on all 5 surfaces with 34 options: Contested (assign nothing), ISO / de jure, Natural Earth (de facto), then 31 country viewpoints sorted by localised name with alpha-3 (en Argentina (ARG) …; fr Allemagne (DEU) …; ar إسبانيا (ESP) …; zh 阿根廷 (ARG) …). aria-label is translated."
+   },
+   {
+    "id": "R-worldview-default-contested",
+    "verdict": "pass",
+    "evidence": "In a fresh context (no localStorage) the default is 'contested' on every surface: 0 areas attributed, 0 under-fills, caveat 'every claim shown, none assigned'. Clicking a contested area does nothing (cursor grab, no data-iso)."
+   },
+   {
+    "id": "R-worldview-switch-and-back",
+    "verdict": "pass",
+    "evidence": "Real select_option on the World map: in 27 attributed / 17 fills; cn 28/15; ma 27/17; iso 25/16; tlc 25/16; then contested 0/0. Per locale: ru on the World map (24/23) and ua on the Gov map (26/26), each back to 0. pk on the ring map (27/15), back to 0. Tooltips follow: Crimea is 'attributed to Russia' under iso/ru and 'attributed to Ukraine' under in/ua/cn."
+   },
+   {
+    "id": "R-worldview-one-convention-across-surfaces",
+    "verdict": "fail",
+    "evidence": "After World map → India: Governments Map follows on visit (in/27), Statistics follows only after 'Map by country' again, and Sources coverage stays 'contested' / 0 even after re-opening the subtab. Two conventions are on screen at once, against app-map.js:1015-1016. After a reload every map follows localStorage oo.map.worldview='in'."
+   },
+   {
+    "id": "R-hover-country",
+    "verdict": "pass",
+    "evidence": "The real mouse was moved onto a point inside the path, and the <title> of the element under the pointer was read. Headless Chromium draws no native tooltip, so the text is what the browser would show. World map 'France — 1 source'; Sources 'France — 56 articles'; Gov 'Brazil — BRA · Brazil: 57.6'; Stat 'Brazil — 57.57'; Ring 'India — 1 articles' ('1 articles' is the known plural gap). The name is localised in fr/ar/zh (Brésil / البرازيل / 巴西)."
+   },
+   {
+    "id": "R-hover-contested-both-claims-translated",
+    "verdict": "fail",
+    "evidence": "Claims and qualifiers are translated: 'contestée : Inde / Pakistan · aucun revendicateur attribué dans cette vision'; 'متنازع عليها: الهند / باكستان · لا مطالب منسوب في هذه الرؤية'; '存在争议：印度 / 巴基斯坦 · 此视角下未归属任何主张方'. But the area's own name stays English in every locale ('Kashmir', 'Crimean Peninsula', 'Western Sahara', 'Abyei'), and three areas name one claim."
+   },
+   {
+    "id": "R-maps-follow-language-switch",
+    "verdict": "fail",
+    "evidence": "World map, Sources and Gov map repaint on the top-bar switch. Statistics and Supergroups ring map do not: en→fr leaves a mixed legend with an English contested caveat; fr→ar leaves it fully French; ar→zh leaves it fully Arabic, until re-run."
+   },
+   {
+    "id": "R-rtl-ar",
+    "verdict": "pass",
+    "evidence": "html lang=ar, dir=rtl. The chrome and sidebar mirror while the map geometry is not mirrored (Americas on the left). Legend, caveat and worldview options are in Arabic. No horizontal overflow at 1440 (R-ar-10-worldmap-view.png)."
+   },
+   {
+    "id": "R-no-horizontal-overflow-375",
+    "verdict": "fail",
+    "evidence": "World map, Sources, Gov Map and Statistics: scrollWidth 375 = clientWidth. Supergroups ring-map surface: 381 > 375, caused by the concept chip '⦾ election-monitoring (…)' in #sg-concept-groups (344 px, right edge 381), not by the map host (host 37–338)."
+   },
+   {
+    "id": "R-junk-undefined-NaN-null-object",
+    "verdict": "fail",
+    "evidence": "No 'undefined', 'NaN' or '[object Object]' in any host text or in any of the 257 <title>s per map. The literal 'null' appears in the Supergroups ring-map caveat: 'Unlocated sources are bucketed as null, not dropped.' It shows in every locale."
+   },
+   {
+    "id": "R-touch-claims-reachable-375",
+    "verdict": "fail",
+    "evidence": "375 px with has_touch, Governments → Map. A CDP touchStart held 900 ms on Western Sahara shows no #oo-tip bubble; a tap does nothing, which is the correct no-drill. The claims live only in SVG <title>, which the #oo-tip convention never marks. A native tooltip on a real mobile browser was not measurable here (headless)."
+   },
+   {
+    "id": "R-Q1150-when-where-ooMap-embed",
+    "verdict": "fail",
+    "evidence": "The analysis window When/Where/Who (#an-www) has no ooMap: 0 svg, only chip columns. There is no ooMap call in src/static/app-analysis.js. shipped.csv (2026-09-10) records the embed as scoped, not built, so the row's 'the ooMap embed on When / Where stays' has nothing to point at."
+   },
+   {
+    "id": "R-count-test-test_countries_geo",
+    "verdict": "pass",
+    "evidence": "`.venv/bin/python -m pytest -q tests/test_countries_geo.py` gave 13 passed in 0.58 s in /home/user/Open-Omniscience (60aaf429) and 13 passed in 0.57 s in the build tree (0deff9c4). Inputs are byte-identical in both trees. Note: test_bundled_disputed_asset_names_every_claim passes while 3 areas carry a single claim (see defect)."
+   },
+   {
+    "id": "R-page-console-http-errors",
+    "verdict": "pass",
+    "evidence": "0 page errors, 0 console errors, 0 HTTP responses >= 400 across all 8 sessions (en-1440, en-1440-ring, locales-1440, en-375, en-375-ringprobe, en-375-touch, wvtrunc-1440, wvtrunc-375), including the analysis popup tab."
+   },
+   {
+    "id": "R-default-not-OSM",
+    "verdict": "pass",
+    "evidence": "The default is 'contested', which assigns nothing. OSM's convention as default is 0.5's (row L, PF06 = a), so it is not expected here and is not reported."
+   }
+  ],
+  "new_defects": [
+   {
+    "title": "Contested areas keep their ENGLISH name in every locale: the tooltip reads OOI18N.lang, which does not exist",
+    "severity": "P2",
+    "repro": "Switch the top-bar language to fr, ar or zh. Open any of the five maps (e.g. World map). Hover a hatched contested area (Kashmir, Western Sahara), or switch Worldview to Russia and hover Crimea.",
+    "expected": "The area's own name in the page language, from the names world_disputed.json already carries ×12: Cachemire / Crimée / Sahara occidental; كشمير / القرم / الصحراء الغربية; 克什米尔 / 克里米亚 / 西撒哈拉.",
+    "actual": "Every contested tooltip on all five surfaces leads with the English name while the rest is translated. fr: 'Kashmir — contestée : Inde / Pakistan · aucun revendicateur attribué dans cette vision'. ar: 'Crimean Peninsula — متنازع عليها: روسيا / أوكرانيا · منسوبة إلى روسيا'. zh: 'Western Sahara — 存在争议：西撒哈拉 / 摩洛哥 · 此视角下未归属任何主张方'.",
+    "evidence": "/tmp/claude-0/rewalk/R/res-locales-1440.json locales.{fr,ar,zh}.{worldmap,sources,govmap,statmap,ringmap}.hover_kashmir / hover_wsahara / wv_switched_hover_crimea (real-pointer hovers); world_disputed.json names for ids 1159320869, 1159321217, 1159321037.",
+    "root_cause_lead": "src/static/app-map.js:388 `const lang = (window.OOI18N && OOI18N.lang) ? OOI18N.lang : \"en\";`. OOI18N exports { setLang, apply, current, init, t, tf, ready, meta } (src/static/i18n.js:172) and has no `lang`, so _ooDisputedName always uses names.en. Every other call site uses OOI18N.current()."
+   },
+   {
+    "title": "Three of 28 contested areas name a SINGLE claimant (Abyei, Tigri Area, Lawa Headwaters), so 'both claims' is not met",
+    "severity": "P2",
+    "repro": "Open any of the five maps with the default worldview. Hover Abyei, Tigri Area (Courantyne Headwaters) or Lawa Headwaters, or read their path[data-oomap-disputed] <title>.",
+    "expected": "Row R / Q826: every disputed area rendered CONTESTED showing both claims, never a silent pick. Abyei: Sudan / South Sudan. Tigri Area: Guyana / Suriname. Lawa Headwaters: France / Suriname.",
+    "actual": "'Abyei — contested: Sudan · no claimant assigned in this view'; 'Tigri Area — contested: Guyana · …'; 'Lawa Headwaters — contested: France · …'. Same in fr ('Abyei — contestée : Soudan'), ar ('متنازع عليها: السودان') and zh ('存在争议：苏丹'). The hatch says 'contested' while the tooltip names one side only.",
+    "evidence": "/tmp/claude-0/rewalk/R/res-en-1440.json surfaces.worldmap.disputed_titles (all 28 titles); world_disputed.json claims for ids 1159321231, 1159320819, 1159320683. Its 'views' list (iso, tlc + 31 national POVs) has no ss or sr.",
+    "root_cause_lead": "Claims are swept only from Natural Earth's per-point-of-view fields (scripts/build_disputed_areas.py → src/timemap/disputed_geo.py claim_index). South Sudan and Suriname have no POV column, so their claims cannot be found this way. tests/test_countries_geo.py:197 asserts only `a[\"claims\"]` non-empty, the `len(claims) >= 1` shape docs/ledger/LESSONS.md (S04-11 breakaway-claim entry) warns passes on exactly this defect."
+   },
+   {
+    "title": "A worldview chosen on one map does not reach the Sources coverage map: two conventions on screen at once",
+    "severity": "P3",
+    "repro": "en 1440. World map tab → in-map Worldview = India (IND). Then Library → World coverage, and re-open that subtab.",
+    "expected": "The worldview is module state, and every map shows the chosen convention (the code's own contract at src/static/app-map.js:1015-1016: 'the app cannot say two different things on two tabs').",
+    "actual": "The World map says 'Contested: 28 · attributed under India (IND)' (27 attributed). The Sources map keeps its picker on 'Contested (assign nothing)' and says 'Contested: 28 · every claim shown, none assigned' (0 attributed), even after the subtab is re-opened. Governments → Map follows on visit. Statistics follows only after 'Map by country' again. After a page reload all maps follow (localStorage oo.map.worldview='in').",
+    "evidence": "/tmp/claude-0/rewalk/R/res-en-1440.json worldview_cross_surface: worldmap_after_switch, sources_on_visit, sources_after_rerender, govmap_on_visit, statmap_on_visit, statmap_after_rerender, worldmap_after_reload.",
+    "root_cause_lead": "src/static/app-sources.js:41-43. The repaint stamp is JSON.stringify([d.by_country, d.unlocated, _covUiLang()]), without the worldview, so renderCoverageMap returns early. The worldview change handler (app-map.js:1017-1027) re-renders only the host whose select changed."
+   },
+   {
+    "title": "The Statistics and Super-groups ring maps do not follow a language switch: legend, caveat and picker stay in the previous language",
+    "severity": "P3",
+    "repro": "en 1440. Render Governments → Statistics (series SP.DYN.LE00.IN, Map by country) and Insights → Super-groups → Ungrouped → ⦾ election. Switch the top-bar language to fr and revisit both without re-running. Then switch to ar, then zh.",
+    "expected": "Like the World map, Sources and Governments maps, which repaint on the switch: the ooMap legend, contested caveat, worldview options and tooltips in the new locale.",
+    "actual": "fr: '52.56 85.80 aucune donnée Equal Earth · équivalente Contested: 28 · every claim shown, none assigned' (half-translated). After fr→ar the whole legend is still French ('Contestées : 28 · toutes les revendications affichées…'). After ar→zh it is still Arabic. It is correct only after re-running the map.",
+    "evidence": "/tmp/claude-0/rewalk/R/res-locales-1440.json locales.{fr,ar,zh}.{statmap,ringmap}.on_visit_no_retrigger vs .measure.",
+    "root_cause_lead": "renderStatMap (src/static/app-map.js:2442) and showRingMap (src/static/app-insights.js:441) are not called from the oo:langchange handler (src/static/app-boot.js:41ff; the World map's repaint is at app-boot.js:129). This is the documented frozen-locale family."
+   },
+   {
+    "title": "The Super-groups ring map's method and caveat are untranslated server English in every locale, and the caveat shows the word 'null'",
+    "severity": "P3",
+    "repro": "Any non-en locale. Insights → Super-groups → Ungrouped concepts → ⦾ election. Read the two lines under the map legend.",
+    "expected": "The method and caveat in the page language (as the Governments map does with t(data.caveat)), with no programming terms shown to the reader.",
+    "actual": "In fr, ar and zh: 'Mentions of every language member of the ring, grouped by the source's country. Keywords with no stored language are excluded (conservative). Counts only.' and 'Coverage by producing-source country, never a credibility ranking or score. Unlocated sources are bucketed as null, not dropped. Co-occurrence in your corpus, never a claim about the country.'",
+    "evidence": "/tmp/claude-0/rewalk/R/res-locales-1440.json *.ringmap.measure.method_text / caveat_text / junk_text; shot R-zh-10-ringmap-view.png. No locale key exists for either sentence (checked fr.json).",
+    "root_cause_lead": "src/static/app-insights.js:489 passes `method: d.method || \"\", caveat: d.caveat || \"\"` raw. The sentence comes from src/analytics/queries.py:1644."
+   },
+   {
+    "title": "The Governments → Map legend unit 'years' is not translated",
+    "severity": "P3",
+    "repro": "fr, ar or zh. Governments → Map → Indicator 'Life expectancy at birth (years)'. Read the legend ramp.",
+    "expected": "The unit in the page language (fr.json already has 'years' → 'ans').",
+    "actual": "fr 'Espérance de vie à la naissance (années) 52.56 85.80 years'; ar '… 52.56 85.80 years'; zh '出生时预期寿命（岁） 52.56 85.80 years'. The indicator label beside it is translated.",
+    "evidence": "/tmp/claude-0/rewalk/R/res-locales-1440.json locales.{fr,ar,zh}.govmap.measure.legend_text.",
+    "root_cause_lead": "src/static/app-gov-law.js:796 passes `unit: meta.unit || \"\"` (the catalogue's English unit) straight to ooMap without t()."
+   },
+   {
+    "title": "The worldview picker cuts off its default label, and the cut part is '(assign nothing)'",
+    "severity": "P3",
+    "repro": "Any ooMap surface at 1440 or 375, in en, fr or ar. Look at the closed Worldview select.",
+    "expected": "The chosen convention readable in full, especially the default's qualifier that it assigns nothing.",
+    "actual": "The select is 148 px (max-width 150px). It shows 'Contested (assign r' in en (text 149 px), 'Contestée (n’attribu' in fr (192 px), and a truncated Arabic label in ar. It fits only in zh ('争议（不作归属）'). The legend caveat beside it states the meaning in full, which limits the harm.",
+    "evidence": "/tmp/claude-0/rewalk/R/scripts/probe_wv_trunc.py output (1440/375 × en/fr/ar/zh); shots R-en-11-govmap-host.png, R-fr-11-worldmap-host.png, R-wvtrunc-*.png.",
+    "root_cause_lead": "src/static/app-map.js:800 `<select class=\"tiny\" data-oomap-worldview … style=\"font-size:11px;max-width:150px\">`."
+   },
+   {
+    "title": "At 375 px the Super-groups ring-map surface scrolls sideways: a concept chip does not wrap",
+    "severity": "P3",
+    "repro": "375x812, en. Hamburger → Insights → Super-groups → 'Ungrouped concepts' → filter 'election' → ⦾ election.",
+    "expected": "No horizontal page scroll at phone width (16 px gutter).",
+    "actual": "document scrollWidth 381 > clientWidth 375. The offender is the chip '⦾ election-monitoring (ara/deu/eng/spa/fra/jpn/por/rus/zho)' in #sg-concept-groups (344 px wide, right edge 381). The map host itself fits (37–338). There is no overflow before the bucket is opened.",
+    "evidence": "/tmp/claude-0/rewalk/R/res-en-375.json surfaces.ringmap.overflow; /tmp/claude-0/rewalk/R/res-en-375-ringprobe.json after_ringmap.wide; shot R-375-13-ringmap-overflow-probe.png.",
+    "root_cause_lead": "The chip template at src/static/app-insights.js:387 puts the ring id plus the full language list on one .chip button that does not wrap. It needs wrapping or a max-width on .chip inside #sg-concept-groups."
+   },
+   {
+    "title": "On touch, a contested area's claims cannot be reached: they live only in an SVG <title> the tooltip bubble never handles",
+    "severity": "P3",
+    "repro": "375x812 with touch (Playwright has_touch/is_mobile). Governments → Map. Long-press (900 ms) on the hatched Western Sahara, then tap it.",
+    "expected": "The claims ('Western Sahara / Morocco · no claimant assigned in this view') can be reached on a phone, as the #oo-tip long-press convention (invariant #17) offers for titled elements.",
+    "actual": "No #oo-tip bubble during or after the long-press. The tap does nothing, which is correct: the default view must not drill. The claims appear nowhere else on the surface. A country long-press releases into a drill to Countries.",
+    "evidence": "/tmp/claude-0/rewalk/R/res-en-375-touch.json (wsahara.during_longpress/after_release/after_tap); shot R-375-touch-longpress-wsahara.png. Whether a real mobile browser shows an SVG <title> natively was not measurable in headless Chromium.",
+    "root_cause_lead": "The contested path carries its text as a child <title> (src/static/app-map.js:420-430). The #oo-tip enhancer marks and long-presses only elements with a title ATTRIBUTE (src/static/app-boot.js:383-386, 431-447)."
+   },
+   {
+    "title": "Row R cites an 'ooMap embed on When / Where' (Q1150) that this build does not have",
+    "severity": "P3",
+    "repro": "Palette → 'Analysis: “election”' (opens the analysis window) → When/Where/Who subtab.",
+    "expected": "Per the row text, an ooMap embed that 'stays'.",
+    "actual": "#an-www has 0 svg and 0 svg#oo-choro; the whole analysis window has no ooMap. It shows three chip columns (WHO / WHERE '—' / WHEN).",
+    "evidence": "/tmp/claude-0/rewalk/R/res-en-1440-ring.json analysis_www; shot R-en-41-analysis-when-where-who.png; src/static/app-analysis.js:2235-2239 (chips only; no ooMap call in the file).",
+    "root_cause_lead": "docs/ledger/shipped.csv (2026-09-10, insights/map) records the embed as 'Scoped, not built'. Q1150 = Keep kept it in scope, but the gate row's 'stays' reads as if it existed. The row text or the build needs reconciling before row R can close on that clause."
+   }
+  ],
+  "page_errors": [],
+  "http_errors": [],
+  "summary": "Row R walked in Chromium against an ENCRYPTED store. It was locked at boot and unlocked through the real #pw form, and stayed in airplane mode with zero egress. Two consent popups were opened, read, screenshotted and cancelled with 'Stay offline'. All five ooMap surfaces were REACHED WITH DATA, every measurement scoped to its own host: World map, Sources coverage, Governments → Map, Governments → Statistics and Super-groups ring map. My extra seed made that possible: synthetic World Bank figures for 229 countries through the app's own parse_worldbank + store_figures, plus six election-ring articles from sources located in dispute-claimant countries through the real index_article.\n\nWhat passes on all five surfaces, in en/fr/ar/zh at 1440 and en at 375:\n- Equal Earth: viewBox 0 0 720 350.44, rendered aspect 2.0547, curved meridians, sphere outline.\n- Natural Earth 50m: 229 country paths.\n- 28 contested areas, hatched in every worldview.\n- 'Equal Earth · equal-area' named and translated in the legend.\n- The contested caveat is visible, not behind a toggle.\n- A 34-option worldview picker, sorted by localised name, defaulting to 'contested' with 0 areas attributed.\n- Switching worldview really re-attributes areas (India 27, China 28, ISO 25, Russia 24, Ukraine 26, Pakistan 27) and returns to 0 on 'contested'. Tooltips follow ('attributed to Morocco / Russia / Ukraine / Pakistan').\n- No page, console or HTTP >= 400 errors.\n- tests/test_countries_geo.py: 13 passed, in both the main repo and the build tree.\n\nThe row still does NOT clear its bar. Two P2 defects:\n1. Every contested tooltip leads with the ENGLISH area name in fr/ar/zh ('Crimean Peninsula — متنازع عليها: روسيا / أوكرانيا'), because app-map.js:388 reads OOI18N.lang, which does not exist. The ×12 names in world_disputed.json are never used.\n2. Three of 28 areas name only ONE claimant: Abyei 'Sudan', Tigri Area 'Guyana', Lawa Headwaters 'France'. South Sudan and Suriname have no Natural Earth point-of-view column, and the count test's non-empty check passes on it.\n\nP3 findings:\n- A worldview chosen on one map does not reach the Sources map, so two conventions are on screen at once. Its stamp guard (app-sources.js:43) ignores the worldview.\n- The Statistics and ring maps keep the previous language after a switch until they are re-run.\n- The ring map's method and caveat are server English, and the caveat shows the word 'null'.\n- The Governments map legend unit 'years' is untranslated.\n- The worldview select truncates 'Contested (assign nothing)' to 'Contested (assign r'.\n- A 6 px horizontal overflow at 375 on the ring-map surface, caused by a non-wrapping concept chip.\n- Contested claims cannot be reached by touch.\n- The Q1150 'ooMap embed on When / Where' does not exist in this build: the analysis window's When/Where/Who is chips only, and the ledger records it as scoped, not built.\n\nKnown items were not re-reported: plural frames ('1 articles'), fmtNum formatting, the duplicate id=\"oo-choro\", the in-map controls covering the World map at phone width (recorded 2026-09-16), and the 'contested' default (OSM's default is 0.5's).\n\nNot measured: Insights → Map (cities), which is on its honest empty state because it needs a source city and the gazetteer, and is outside the task's five hosts; and native SVG tooltips, which headless Chromium does not draw. Hover text was read from the <title> of the element under the real pointer."
+ },
+ "recheck": {
+  "items": [
+   {
+    "ref": "surface:World map tab (_renderOoMapDim, host #oo-coverage-map)",
+    "verdict": "confirmed",
+    "severity": "P2",
+    "evidence": "Own instance (port 9150, own encrypted seed; lock-state 'locked' at boot, unlocked through #pw/#btn-unlock to 'unlocked-encrypted'; online:false start and end; 0 page/console errors, 0 HTTP>=400 in the browser, 0 non-loopback requests). Scoped to #oo-coverage-map: viewBox 0 0 720 350.44, rendered 1116x543.16 = 2.0547 (375: 301x146.5 = 2.0546); 229 country paths; 202 filled (Sources dimension); 28 contested; 13 meridian polylines, 12 curved, max deviation 146.7; sphere present; legend 'Equal Earth · equal-area' / fr 'équivalente' / ar 'متساوية المساحة' / zh '等面积'; caveat visible (290.6x16.7, opacity 1, no hidden ancestor, not in closed details); picker 34 options, default 'contested', 0 attributed. Worldview in -> 27 attributed, 'Contested: 28 · attributed under India (IND)'; W. Sahara hover 'attributed to Morocco', cursor pointer, data-iso=ma; back to contested -> 0 attributed, 28 hatched. No overflow at 1440 or 375; no junk in 257 titles or host text. The FAILS it carries reproduce: area names English in fr/ar/zh ('Kashmir — contestée : Inde / Pakistan …'), and Abyei/Tigri Area/Lawa Headwaters name one claim. Files: /tmp/claude-0/rewalk/R-recheck/res-en-1440.json (worldmap, worldmap_in, worldmap_hover), res-locales-1440.json, res-en-375.json; shots en-01-worldmap.png, en-02-worldmap-wv-in.png, fr-01-worldmap.png, ar-01-worldmap.png, zh-01-worldmap.png.",
+    "root_cause": "The surface itself meets the geometry, legend, caveat and picker bar. Its failures are the shared contested-layer defects: src/static/app-map.js:388 (name locale) and src/timemap/disputed_geo.py:163-170 (claims come only from the 33 viewpoints).",
+    "suggested_fix": "See the two contested-layer items: read the locale with OOI18N.current() at app-map.js:388, and give Abyei, Tigri Area and Lawa Headwaters their second claimant (or say honestly that the source records only one)."
+   },
+   {
+    "ref": "surface:Sources coverage (renderCoverageMap, host #coverage-map, Library → World coverage)",
+    "verdict": "confirmed",
+    "severity": "P3",
+    "evidence": "Scoped to #coverage-map: viewBox 0 0 720 350.44, aspect 2.0547 (375: 2.0546); 229 countries, 17 filled (1–56 articles); 28 contested; 12 curved meridians; sphere; Equal Earth legend in all 4 locales; caveat visible; picker 34 options. Worldview stays stale, reproduced in the opposite order from the walker's. The Sources map was first drawn while World map = India (27 attributed). I then set the World map back to Contested (0 attributed) and revisited Library → World coverage. Sources still read 'Contested: 28 · attributed under India (IND)', picker 'in', 27 attributed, and hover 'Kashmir — contested: India / Pakistan · attributed to India'. The World map said 'no claimant assigned'. Re-opening the subtab changed nothing (x_sources_reopen). The shared contested defects also reproduce here, e.g. fr hover 'Kashmir — contestée : Inde / Pakistan …'. res-en-1440.json y_sources_on_visit_after_back, sources, sources_hover; shots en-03-sources-after-wv-in.png, en-04-sources.png.",
+    "root_cause": "src/static/app-sources.js:42-43: the repaint guard fingerprints [by_country, unlocated, locale] and returns early when that is unchanged. The module-level worldview (_ooMapWorldview, app-map.js:339) is not part of the stamp, so a worldview chosen on another map never repaints an already-drawn Sources map. The change handler at app-map.js:1017-1028 re-renders only its own host.",
+    "suggested_fix": "Add _ooMapWorldview to the stamp at app-sources.js:42. Better for all surfaces: in the worldview change handler (app-map.js:1018), re-render every other drawn ooMap host from its retained host._ooOpts (stored at app-map.js:913), so one choice repaints every map."
+   },
+   {
+    "ref": "surface:Governments → Map (renderGovMap/_govMapDraw, host #gov-map-host)",
+    "verdict": "confirmed",
+    "severity": "P3",
+    "evidence": "On first visit the default indicator is NY.GDP.MKTP.CD, which I did not seed. It shows the honest empty state 'Country data loads automatically in the background when online — the map fills in once it lands.' (no svg). After picking SP.DYN.LE00.IN in #gov-map-ind: 229 of 229 filled; viewBox 0 0 720 350.44; aspect 2.0547 (375: 2.0546); 28 contested; 12 curved meridians; legend 'Life expectancy at birth (years) 50.21 86.13 years no data Equal Earth · equal-area Contested: 28 · every claim shown, none assigned'; caveat visible; picker 34, default contested. Worldview ua gives 26 attributed / 26 under-fills and Crimea 'attributed to Ukraine'; back to contested gives 0/0. It follows a worldview chosen elsewhere on visit (y_govmap_on_visit_after_back = contested/0). The unit is untranslated: fr 'Espérance de vie à la naissance (années) 50.21 86.13 years', ar '… 50.21 86.13 years', zh '出生时预期寿命（岁） 50.21 86.13 years'. Hover 'Brésil — BRA · Brésil : 65.5'. res-en-1440.json govmap, govmap_ua, gov_first_visit; res-locales-1440.json *.govmap; shots en-05-govmap.png, fr-02-govmap.png.",
+    "root_cause": "src/static/app-gov-law.js:796 passes the raw catalogue unit (unit: meta.unit || \"\") to ooMap, which prints it unkeyed at app-map.js:859/862 (esc(opts.unit)). The indicator label is translated through _govIndLabel, but the unit is not. The contested defects are shared.",
+    "suggested_fix": "app-gov-law.js:796: pass unit: meta.unit ? t(meta.unit) : \"\" (fr.json has 'years' -> 'ans', ar 'سنوات', zh '年'). Key the other catalogue units the same way."
+   },
+   {
+    "ref": "surface:Governments → Statistics (renderStatMap, host #statfig-map)",
+    "verdict": "confirmed",
+    "severity": "P3",
+    "evidence": "Series SP.DYN.LE00.IN, producer worldbank, 'Map by country' clicked in the real UI: 229 filled (50.21–86.13); viewBox 0 0 720 350.44; aspect 2.0547 (375: 2.0546); 28 contested; 12 curved; Equal Earth legend; caveat visible; picker 34, default contested. Worldview: after the World map went back to Contested, Statistics still showed 'attributed under India (IND)' with 27 attributed until 'Map by country' was run again. Language: en→fr gives '50.21 86.13 aucune donnée Equal Earth · équivalente Contested: 28 · every claim shown, none assigned' (mixed). In ar the legend stays wholly French ('Contestées : 28 · toutes les revendications affichées, aucune attribuée', 'Vision du monde'). In zh it stays wholly Arabic. After a re-run it is correct in each locale. Its own method and caveat are English in every locale, by the recorded note at app-map.js:2438-2440 ('English-only'). res-locales-1440.json *.statmap_on_visit vs *.statmap_after_rerun; shots fr/ar/zh-03-statmap-on-visit.png.",
+    "root_cause": "renderStatMap (app-map.js:2442) draws only when the button is clicked. It is not registered in app-boot.js's single oo:langchange listener (app-boot.js:41-305, which repaints the World map at :129, coverage at :157 and the Gov map through repaintGovViewsFromCache). Nothing repaints it on a worldview change either, so its ooMap legend, contested caveat and picker keep whatever language and worldview were in force when it was drawn.",
+    "suggested_fix": "Keep the last stat-map payload and redraw from it in the oo:langchange listener, guarded on #statfig-map already holding svg#oo-choro (no fetch, like the other entries there). Cover worldview changes with the shared _ooOpts re-render from the Sources item."
+   },
+   {
+    "ref": "surface:Insights → Super-groups ring map (showRingMap, host #sg-ringmap)",
+    "verdict": "confirmed",
+    "severity": "P3",
+    "evidence": "Ungrouped concepts → '⦾ election' chip (my seed adds ge/az/il/jp/ma election articles; the API gives n=7: us 10, gb 9, ma, jp, il, ge, az 1 each, plus 1 unlocated). 7 countries filled; viewBox 0 0 720 350.44; aspect 2.0547 (375: 2.0546); 229 countries; 28 contested; 12 curved; Equal Earth legend ×4; caveat visible; picker 34, default contested. Worldview pk gives 27 attributed and 'Kashmir — contested: India / Pakistan · attributed to Pakistan'; back gives 0. Reproduced: (1) method and caveat are server English in fr/ar/zh, and the caveat contains 'Unlocated sources are bucketed as null, not dropped.'; (2) no language follow: the fr visit shows 'Contested: 28 · every claim shown…', and the ar and zh visits show the previous locale, until re-picked; (3) at 375 scrollWidth is 381 against clientWidth 375, from the chip '⦾ election-monitoring (ara/deu/eng/spa/fra/jpn/por/rus/zho)' (344 px wide, left 37, right 381); the host is 37–338, and before the bucket opens the width is 375/375. res-en-1440.json ringmap/ringmap_pk; res-locales-1440.json *.ringmap_*; res-en-375.json ringmap, ringmap_wide, chip_css; shots zh-04-ringmap-on-visit.png, 375-06-concept-groups.png.",
+    "root_cause": "app-insights.js:489 passes the server prose raw (method: d.method, caveat: d.caveat), and that prose is written at src/analytics/queries.py:1637-1646. showRingMap (app-insights.js:441) is not in the oo:langchange listener. The chip (app-insights.js:387-389) joins language cells with '/' and has no break opportunity or max-width.",
+    "suggested_fix": "t() the method and caveat (as the Gov map does at app-gov-law.js:799, with keys ×12) and reword 'bucketed as null'. Repaint from the retained payload / _conceptSelectedRing (app-insights.js:333) in the oo:langchange listener. Give #sg-concept-groups .chip overflow-wrap:anywhere and max-width:100%, or join with '/<wbr>'."
+   },
+   {
+    "ref": "surface:Analysis window → When/Where/Who (the Q1150 'ooMap embed on When / Where')",
+    "verdict": "confirmed",
+    "severity": "P3",
+    "evidence": "Palette → 'Run the full Boolean search for “election”' → Search tab 'Analyze →' (the in-SPA analysis window) → the When/Where/Who subtab. #an-www is visible and holds 0 svg and 0 #oo-choro; #tab-analyze holds 0 #oo-choro. Its text: 'Deduced from article text, never confirmed; counts only. … WHO Party (organization) · 1 WHERE — WHEN 2023 · 9 …'. There is no ooMap call in app-analysis.js (grep count 0). res-analysis-1440.json; shot analysis-www.png.",
+    "root_cause": "The embed was never built. app-analysis.js:2235-2239 renders chip columns only. docs/ledger/shipped.csv:915 (2026-09-10) records it 'Scoped, not built'. The register (QUESTIONS_FOR_THE_MAINTAINER.md:1087) framed M3 as HOW to build it ((a) timeless mark kind vs (b) country choropleth). The answer sheet (ROADMAP_ANSWER_SHEET…:2953-2959) re-asked it as Keep/Remove, and 'Keep' was answered. The row text (RELEASE_0.4_GATE.md:748) and the S04-11 brief (:9-10) then read it as an existing embed that 'stays'.",
+    "suggested_fix": "Either build it through the register's recommended option (b), a country choropleth from the lat/lon corpus-www already returns, with the anti-capping line; or correct the row text to 'planned, not built (Q1150 keeps it in scope)', so the row does not cite a surface that does not exist. The maintainer decides which."
+   },
+   {
+    "ref": "check:R-contested-both-claims",
+    "verdict": "confirmed",
+    "severity": "P2",
+    "evidence": "All 28 disputed <title>s read from #oo-coverage-map: 25 name two or more claims. Three name one: 'Abyei — contested: Sudan · no claimant assigned in this view', 'Tigri Area — contested: Guyana · …', 'Lawa Headwaters — contested: France · …'. Identical in fr ('Abyei — contestée : Soudan'), ar ('متنازع عليها: السودان') and zh ('存在争议：苏丹'). The asset agrees: world_disputed.json claims for 1159321231 = [sd], 1159320819 = [gy], 1159320683 = [fr]. Abyei's views are only 'sd' or None; Tigri is 'gy' in all 33 views; Lawa is 'fr' in all 33. res-en-1440.json worldmap.disputed_titles; res-locales-1440.json *.worldmap.disputed_titles.",
+    "root_cause": "src/timemap/disputed_geo.py:163-170 derives claims only from ADM0_A3 plus the 33 ADM0_A3_<POV> viewpoints (POV_KEYS, :40-44). South Sudan and Suriname are not Natural Earth viewpoints, so their claims can never appear. tests/test_countries_geo.py:196 asserts only that claims are non-empty, the same 'len(claims) >= 1 passes on the defect' weakness docs/ledger/LESSONS.md (the breakaway-claim lesson) records.",
+    "suggested_fix": "Recover the missing claimant from another source field or from a reviewed, cited supplement. Otherwise state it honestly in the tooltip ('only one claimant is recorded in the source'). Pin a test that asserts at least 2 claims per area, or an explicit known-gap list. I could not check offline which Natural Earth field carries the counter-claim."
+   },
+   {
+    "ref": "check:R-worldview-one-convention-across-surfaces",
+    "verdict": "confirmed",
+    "severity": "P3",
+    "evidence": "Sequence: World map → India, then Sources, Gov map, Statistics and Ring map drawn (all 27 attributed), then World map → Contested. On revisit: World map contested/0; Gov map follows (contested/0); Sources, Statistics and Ring map stay 'attributed under India (IND)'/27 with their pickers on 'in'. Two conventions are on screen in one session, against the contract at app-map.js:1015-1016. res-en-1440.json worldmap_back, y_*_on_visit_after_back.",
+    "root_cause": "Worldview is module state (app-map.js:339), but a change re-renders only the host whose picker changed (app-map.js:1018-1028). Sources skips its repaint through a stamp without the worldview (app-sources.js:42-43). Statistics and Ring map redraw only on their own action.",
+    "suggested_fix": "On worldview change, re-render every drawn ooMap host from its host._ooOpts (app-map.js:913), or dispatch an event each surface listens for. Add the worldview to the Sources stamp."
+   },
+   {
+    "ref": "check:R-hover-contested-both-claims-translated",
+    "verdict": "confirmed",
+    "severity": "P2",
+    "evidence": "Claims and qualifiers are translated, but the area name stays English on all five surfaces. fr 'Kashmir — contestée : Inde / Pakistan · aucun revendicateur attribué dans cette vision'; ar 'Western Sahara — متنازع عليها: الصحراء الغربية / المغرب · لا مطالب منسوب في هذه الرؤية'; zh 'Abyei — 存在争议：苏丹 · …'. The asset carries names.fr 'Cachemire', ar 'كشمير', zh '克什米尔'. Three areas also name one claim (previous check). res-locales-1440.json *.worldmap.hover, *.sources.hover_kash, *.govmap.hover.wsah, *.statmap_after_rerun.hover_wsah, *.ringmap_after_repick.hover_kash.",
+    "root_cause": "src/static/app-map.js:388 reads OOI18N.lang, but i18n.js:172 exports {setLang, apply, current, init, t, tf, ready, meta}. There is no 'lang' property, so lang is always 'en' and names.en is used.",
+    "suggested_fix": "app-map.js:388: const lang = (window.OOI18N && OOI18N.current) ? OOI18N.current() : \"en\"; (the same idiom as app-map.js:230/255). Add a node or static test that the renderer reads the locale through current()."
+   },
+   {
+    "ref": "check:R-maps-follow-language-switch",
+    "verdict": "confirmed",
+    "severity": "P3",
+    "evidence": "Switched through the real #lang-switch. World map, Sources and Gov map repaint (fr legend 'Contestées : 28 · toutes les revendications affichées, aucune attribuée'). Statistics and Ring map on revisit: fr mixed ('Equal Earth · équivalente Contested: 28 · every claim shown, none assigned'); ar wholly French; zh wholly Arabic ('متنازع عليها: 28 …'); worldview option 0 in the previous locale. Correct after re-run/re-pick. res-locales-1440.json *.statmap_on_visit / *.ringmap_on_visit vs *_after_*; shot ar-03-statmap-on-visit.png.",
+    "root_cause": "renderStatMap (app-map.js:2442) and showRingMap (app-insights.js:441) are not registered in app-boot.js's single oo:langchange listener (app-boot.js:41-305). Their composed ooMap legend strings are the frozen-locale class the listener exists for.",
+    "suggested_fix": "Register both in the listener, redrawing from retained payloads and only when the host already holds svg#oo-choro (no fetch)."
+   },
+   {
+    "ref": "check:R-no-horizontal-overflow-375",
+    "verdict": "confirmed",
+    "severity": "P3",
+    "evidence": "375x812 through #hamburger: World map, Sources, Gov map and Statistics all have scrollWidth 375 = clientWidth 375. The ring-map surface has 381 > 375 once the Ungrouped bucket is open. The only element past the viewport is BUTTON.chip.lvl-group '⦾ election-monitoring (ara/deu/eng/spa/fra/jpn/por/rus/zho)', 344 px, left 37, right 381, white-space normal, overflow-wrap normal. The #sg-ringmap host is 37–338. Before the bucket opens: 375/375. res-en-375.json; shot 375-06-concept-groups.png (the text is cut at '…rus/z').",
+    "root_cause": "src/static/app-insights.js:387-389: the language list is joined with '/' and has no break opportunity, and the chip has no max-width or overflow-wrap, so one unbreakable token is wider than the column.",
+    "suggested_fix": "Give #sg-concept-groups .chip max-width:100% and overflow-wrap:anywhere, or join with '/<wbr>' or ' / '."
+   },
+   {
+    "ref": "check:R-junk-undefined-NaN-null-object",
+    "verdict": "confirmed",
+    "severity": "P3",
+    "evidence": "No 'undefined', 'NaN' or '[object Object]' in any host text or in the 257 <title>s of any of the five maps, in any locale. The literal 'null' appears in the ring-map caveat in every locale: '…Unlocated sources are bucketed as null, not dropped…' (junk_text on #sg-ringmap at 1440 en/fr/ar/zh and at 375). res-en-1440.json ringmap.junk_text; res-locales-1440.json; res-en-375.json.",
+    "root_cause": "src/analytics/queries.py:1644 writes a programming term into user-facing caveat prose, and app-insights.js:489 shows it verbatim.",
+    "suggested_fix": "Reword to match the UI's own label (e.g. 'Articles whose source has no country are counted under “Not mapped”, never dropped.'), key it ×12, and t() it at app-insights.js:489."
+   },
+   {
+    "ref": "check:R-touch-claims-reachable-375",
+    "verdict": "confirmed",
+    "severity": "P3",
+    "evidence": "375x812, has_touch and is_mobile, Governments → Map. A CDP touchStart held 900 ms on hatched Western Sahara (the element under the point is path[data-oomap-disputed=1159321037], whose <title> names both claims) shows no #oo-tip bubble during or after the press. A Playwright tap shows no bubble and does not drill, which is correct: the view stays 'map'. The path has no class and no title attribute. A country long-press (Algeria) also shows no bubble and releases into a drill to Countries. res-touch-375.json; shots touch-wsah-during.png, touch-dz-during.png. Not measurable here: whether a real mobile browser shows a native SVG <title> (headless Chromium).",
+    "root_cause": "The #oo-tip convention marks only elements with a title ATTRIBUTE (app-boot.js:384, querySelectorAll('[title]')) and opens only on .oo-tip-target (app-boot.js:431-449). ooMap puts the claims in an SVG <title> CHILD (app-map.js:429) and has no touch read-out, so on touch the claims are nowhere on the surface.",
+    "suggested_fix": "In _ooDisputedLayer, also set data-oo-tip (plus class oo-tip-target) or a title attribute on each contested path, so the shared long-press bubble opens with the same text. Or let a tap on an undrillable contested area open that bubble."
+   },
+   {
+    "ref": "check:R-Q1150-when-where-ooMap-embed",
+    "verdict": "confirmed",
+    "severity": "P3",
+    "evidence": "#an-www has 0 svg and 0 #oo-choro, and the analysis window has 0 #oo-choro. It shows chip columns only. app-analysis.js has no ooMap reference (grep count 0). res-analysis-1440.json; shot analysis-www.png.",
+    "root_cause": "Never built (docs/ledger/shipped.csv:915, 'Scoped, not built'). Q1150's 'Keep' (answer sheet :2953-2959) was answered on a keep/remove frame for a scoped-only feature. The row (RELEASE_0.4_GATE.md:748) cites it as existing.",
+    "suggested_fix": "Correct the row to say the embed is planned and not built, or build it by the register's option (b). The maintainer's call."
+   },
+   {
+    "ref": "new:Contested areas keep their ENGLISH name in every locale: the tooltip reads OOI18N.lang, which does not exist",
+    "verdict": "confirmed",
+    "severity": "P2",
+    "evidence": "Real-pointer hovers on all five surfaces in fr/ar/zh lead with the English name: fr 'Kashmir — contestée : Inde / Pakistan · …', ar 'Western Sahara — متنازع عليها: …', zh 'Kashmir — 存在争议：印度 / 巴基斯坦 · …', and 'Abyei', 'Tigri Area' likewise. world_disputed.json has names.fr 'Cachemire'/'Sahara occidental'/'Crimée', ar 'كشمير'/'الصحراء الغربية'/'القرم', zh '克什米尔'/'西撒哈拉'/'克里米亚'. tests/test_countries_geo.py:212-235 pins those names ×12 for the renderer. res-locales-1440.json.",
+    "root_cause": "src/static/app-map.js:388: `const lang = (window.OOI18N && OOI18N.lang) ? OOI18N.lang : \"en\";` OOI18N has no 'lang' (i18n.js:172 exports current(), i18n.js:119), so every locale falls back to names.en.",
+    "suggested_fix": "Use OOI18N.current() (as app-map.js:230/255 do). Add a regression guard that _ooDisputedName resolves the active locale."
+   },
+   {
+    "ref": "new:Three of 28 contested areas name a SINGLE claimant (Abyei, Tigri Area, Lawa Headwaters), so 'both claims' is not met",
+    "verdict": "confirmed",
+    "severity": "P2",
+    "evidence": "Default worldview. The <title>s read 'Abyei — contested: Sudan · no claimant assigned in this view', 'Tigri Area — contested: Guyana · …' and 'Lawa Headwaters — contested: France · …', with the same single claim in fr/ar/zh. In the asset, Abyei's views are only sd/None, Tigri is gy in all 33, Lawa is fr in all 33. The views list has no ss or sr. res-en-1440.json worldmap.disputed_titles.",
+    "root_cause": "src/timemap/disputed_geo.py:163-170 reads claims only out of ADM0_A3 plus the 33 Natural Earth viewpoints (POV_KEYS :40-44). A claimant that is not a viewpoint (South Sudan, Suriname) and that no viewpoint assigns the area to is invisible to the sweep. The asset test (tests/test_countries_geo.py:196) accepts one claim.",
+    "suggested_fix": "Add the missing counter-claim from a source field or a reviewed, cited supplement. Otherwise disclose in the tooltip that the source records a single claimant. Tighten the test to at least 2 claims or an explicit known-gap pin."
+   },
+   {
+    "ref": "new:A worldview chosen on one map does not reach the Sources coverage map: two conventions on screen at once",
+    "verdict": "confirmed",
+    "severity": "P3",
+    "evidence": "Reproduced in the reverse order from the walker's. Sources was first drawn under 'in'. World map → Contested (0 attributed). Library → World coverage (and a re-open) still shows picker 'India (IND)', 'Contested: 28 · attributed under India (IND)', 27 attributed, and Kashmir 'attributed to India'. The Gov map followed on visit, and Statistics/Ring map stayed 'in' until re-run. res-en-1440.json worldmap_back, y_sources_on_visit_after_back, sources_hover.kash; shot en-04-sources.png.",
+    "root_cause": "app-sources.js:42-43: the stamp [by_country, unlocated, locale] omits _ooMapWorldview, so the early return skips the repaint. The worldview handler (app-map.js:1018-1028) re-renders only its own host.",
+    "suggested_fix": "Include _ooMapWorldview in the stamp, and have the worldview handler re-render all drawn hosts from host._ooOpts (app-map.js:913)."
+   },
+   {
+    "ref": "new:The Statistics and Super-groups ring maps do not follow a language switch: legend, caveat and picker stay in the previous language",
+    "verdict": "confirmed",
+    "severity": "P3",
+    "evidence": "en→fr: both maps show 'Equal Earth · équivalente Contested: 28 · every claim shown, none assigned'. fr→ar: the whole legend is French ('Contestées : 28 · toutes les revendications affichées, aucune attribuée', 'Vision du monde', 'aucune donnée'). ar→zh: the whole legend is Arabic. Correct after 'Map by country' or a re-pick. The stat panel's own method/caveat staying English is the recorded 'English-only' note (app-map.js:2438-2440), but the ooMap legend, contested caveat and picker are keyed and do translate on a re-run. res-locales-1440.json; shots {fr,ar,zh}-03-statmap-on-visit.png, {fr,ar,zh}-04-ringmap-on-visit.png.",
+    "root_cause": "Neither renderStatMap (app-map.js:2442) nor showRingMap (app-insights.js:441) is in app-boot.js's oo:langchange listener (app-boot.js:41-305).",
+    "suggested_fix": "Register cached-payload redraws for both, guarded on an already-drawn svg#oo-choro in the host."
+   },
+   {
+    "ref": "new:The Super-groups ring map's method and caveat are untranslated server English in every locale, and the caveat shows the word 'null'",
+    "verdict": "confirmed",
+    "severity": "P3",
+    "evidence": "fr/ar/zh (after re-pick): method 'Mentions of every language member of the ring, grouped by the source's country. Keywords with no stored language are excluded (conservative). Counts only.'; caveat 'Coverage by producing-source country, never a credibility ranking or score. Unlocated sources are bucketed as null, not dropped. Co-occurrence in your corpus, never a claim about the country.' fr/ar/zh.json have no key for the method sentence (checked). res-locales-1440.json *.ringmap_after_repick.method/host_caveat.",
+    "root_cause": "src/analytics/queries.py:1637-1646 sends English prose. src/static/app-insights.js:489 passes it raw (method: d.method, caveat: d.caveat), unlike the Gov map's t(data.caveat) at app-gov-law.js:799.",
+    "suggested_fix": "t() both at app-insights.js:489, add the keys ×12, and replace 'bucketed as null' with reader wording."
+   },
+   {
+    "ref": "new:The Governments → Map legend unit 'years' is not translated",
+    "verdict": "confirmed",
+    "severity": "P3",
+    "evidence": "Life expectancy selected: fr 'Espérance de vie à la naissance (années) 50.21 86.13 years', ar 'العمر المتوقع عند الولادة (بالسنوات) 50.21 86.13 years', zh '出生时预期寿命（岁） 50.21 86.13 years'. fr.json 'years'='ans', ar 'سنوات', zh '年'. res-locales-1440.json *.govmap.legend.",
+    "root_cause": "app-gov-law.js:796 passes unit: meta.unit || \"\" (raw), and app-map.js:859/862 prints esc(opts.unit) with no t().",
+    "suggested_fix": "unit: meta.unit ? t(meta.unit) : \"\" at app-gov-law.js:796."
+   },
+   {
+    "ref": "new:The worldview picker cuts off its default label, and the cut part is '(assign nothing)'",
+    "verdict": "confirmed",
+    "severity": "P3",
+    "evidence": "Closed select on the World map at 1440: box 150 px, content width 126 px (11 px padding each side). Label widths at 11px system-ui: en 'Contested (assign nothing)' 149 px, fr 'Contestée (n’attribuer à personne)' 192 px, ar 'متنازع عليها (دون نسبة لأحد)' 131.5 px, zh '争议（不作归属）' 88 px. The element screenshots show en 'Contested (assign r', fr 'Contestée (n’attribu', and ar missing 'لأحد)'. In RTL the stat map shows 'tribuer à personne)'. zh fits. The visible legend caveat beside it states the meaning in full. res-wv-label-1440.json; shots wv-select-{en,fr,ar,zh}-1440.png, 375-wv-select-en.png.",
+    "root_cause": "src/static/app-map.js:800 hard-caps the select at style=\"font-size:11px;max-width:150px\", which is narrower than the default option's label in en, fr and ar.",
+    "suggested_fix": "Raise or remove the cap (size to the selected label), or show a short closed label ('Contested') with the full convention in a title on the select, which the #oo-tip convention would then mark."
+   },
+   {
+    "ref": "new:At 375 px the Super-groups ring-map surface scrolls sideways: a concept chip does not wrap",
+    "verdict": "confirmed",
+    "severity": "P3",
+    "evidence": "375x812 en, hamburger → Insights → Super-groups: 375/375 before the bucket. After Ungrouped → filter 'election' → ⦾ election: document scrollWidth 381 > 375. The offender is BUTTON.chip.lvl-group in #sg-concept-groups, '⦾ election-monitoring (ara/deu/eng/spa/fra/jpn/por/rus/zho)', 344 px wide, right edge 381, white-space normal, overflow-wrap normal, max-width none. The map host is 37–338. res-en-375.json ring_before_bucket, ringmap.overflow, chip_css, ringmap_wide; shot 375-06-concept-groups.png.",
+    "root_cause": "src/static/app-insights.js:387-389 joins language cells with '/' (no break opportunity), and the chip has no max-width or overflow-wrap.",
+    "suggested_fix": "Add max-width:100% and overflow-wrap:anywhere to these chips, or join with '/<wbr>'."
+   },
+   {
+    "ref": "new:On touch, a contested area's claims cannot be reached: they live only in an SVG <title> the tooltip bubble never handles",
+    "verdict": "confirmed",
+    "severity": "P3",
+    "evidence": "375 has_touch/is_mobile, Governments → Map. A 900 ms CDP long-press on Western Sahara gives no #oo-tip during or after; a tap gives no bubble and no drill (correct). The path carries no class and no title attribute; 7 other elements in the host are .oo-tip-target. A country long-press also gives no bubble and drills to Countries on release. A native SVG-title tooltip on a real phone is not measurable in headless Chromium. res-touch-375.json; shots touch-wsah-during.png, touch-dz-during.png.",
+    "root_cause": "app-boot.js:384 marks only [title]-attribute elements, and the long-press handler (app-boot.js:443-449) acts only on .oo-tip-target. ooMap writes the claims into an SVG <title> child (app-map.js:429) and nothing else.",
+    "suggested_fix": "Mark contested paths for the shared bubble (data-oo-tip plus oo-tip-target, or a title attribute), or open the bubble on a tap of an undrillable contested area."
+   },
+   {
+    "ref": "new:Row R cites an 'ooMap embed on When / Where' (Q1150) that this build does not have",
+    "verdict": "confirmed",
+    "severity": "P3",
+    "evidence": "The analysis window (Search → Analyze → When/Where/Who): #an-www has 0 svg and 0 #oo-choro, and the window has 0 #oo-choro. It shows chip columns 'WHO Party (organization) · 1 WHERE — WHEN 2023 · 9 …'. app-analysis.js has 0 ooMap references. res-analysis-1440.json; shot analysis-www.png.",
+    "root_cause": "Never built: shipped.csv:915 records 'Scoped, not built'. The row text (RELEASE_0.4_GATE.md:748) and the S04-11 brief (:9-10) treat it as existing. Q1150's 'Keep' came from a keep/remove re-framing (answer sheet :2953-2959) of register M3, which asked how to build it (QUESTIONS_FOR_THE_MAINTAINER.md:1087).",
+    "suggested_fix": "Correct the gate text to 'planned, not built (kept in scope by Q1150)', or build it via the register's recommended option (b). The maintainer decides."
+   }
+  ],
+  "summary": "I re-checked row R on my own instance and all 23 items are confirmed: nothing was a harness artifact, nothing was by design, and nothing failed to reproduce. Only the native-tooltip half of the touch item could not be measured here.\n\n**Setup.** App on port 9150 from the read-only tree at 0deff9c4 (git status clean before and after). Data dir `/tmp/claude-0/rewalk/R-recheck/data`, seeded with the standing encrypted seed plus my own seed, `/tmp/claude-0/rewalk/R-recheck/scripts/seed_recheck.py`, run with the app stopped and the store kept encrypted. It adds World Bank-shaped figures (through `parse_worldbank` and `store_figures`) for SP.DYN.LE00.IN and NY.GDP.MKTP.KD.ZG, 229 countries × 2020–2022, and five 'election'-ring articles located in ge, az, il, jp and ma (through `index_article` and `ensure_fts`).\n- **At rest:** the file header is ciphertext before and after. lock-state read 'locked' at boot and 'unlocked-encrypted' after the real #pw / #btn-unlock form.\n- **Network:** airplane mode throughout. No consent popup opened in my paths. The browser made 0 non-loopback requests and saw no page errors, console errors or HTTP responses >= 400. The only 503 in the server log is my own curl to /api/system/network while the store was still locked.\n- **Server:** stopped by PID 3463 only; it shut down cleanly.\n\n**All five surfaces reached with data** (en 1440, fr/ar/zh through #lang-switch, en 375 through #hamburger, plus a touch probe). Scoped to each host:\n- viewBox 0 0 720 350.44; aspect 2.0547 at 1440 and 2.0546 at 375.\n- 229 country paths, 28 contested areas, 12 of 13 meridians curved, sphere outline present.\n- Legend 'Equal Earth · equal-area' in all four locales; the contested caveat is visible.\n- Worldview picker has 34 options, default 'contested' with 0 areas attributed.\n- Switching changes attribution and switching back restores it: in → 27, ua → 26, pk → 27.\n\n**Governments → Map** shows its honest empty state first because NY.GDP.MKTP.CD was not seeded; with Life expectancy all 229 countries fill. **Count test:** `tests/test_countries_geo.py` gives 13 passed both in /home/user/Open-Omniscience (60aaf429) and in the build tree.\n\n**Main root causes:**\n1. `app-map.js:388` reads `OOI18N.lang`, which does not exist (i18n.js exports `current()`), so contested-area names are English in every locale.\n2. `src/timemap/disputed_geo.py:163-170` builds claims only from Natural Earth's 33 viewpoints. South Sudan and Suriname are not among them, so Abyei, Tigri Area and Lawa Headwaters each name one claimant.\n3. `app-sources.js:42` leaves the worldview out of the Sources map's repaint fingerprint. I reproduced it in the opposite order from the walker: Sources stayed on India after the World map went back to Contested.\n4. `renderStatMap` and `showRingMap` are not in the `oo:langchange` listener (`app-boot.js:41-305`), so those two maps keep the previous locale; I saw a French legend in ar and an Arabic one in zh.\n5. `app-insights.js:489` shows the ring map's server English method and caveat, including the word 'null' from `queries.py:1644`.\n6. `app-gov-law.js:796` passes the unit 'years' untranslated.\n7. `app-map.js:800` caps the worldview select at 150px, so the default label is cut off, including '(assign nothing)'.\n8. At 375 px, a concept chip that cannot wrap (`app-insights.js:387-389`) makes the page 381 px wide.\n9. Contested claims live only in an SVG `<title>`, which the #oo-tip long-press convention never marks (`app-boot.js:384`), so on touch they cannot be reached.\n10. The analysis window's When/Where/Who has no ooMap embed. It was never built (shipped.csv:915, 'Scoped, not built'), so the row cites a surface that does not exist.\n\n**Not measurable here:** whether a real mobile browser shows the SVG `<title>` natively; headless Chromium cannot tell.\n\nScripts are in `/tmp/claude-0/rewalk/R-recheck/scripts/` (`rlib.py`, `pass_en.py`, `pass_locales.py`, `pass_375.py`, `pass_touch.py`, `pass_analysis.py`). Results are `/tmp/claude-0/rewalk/R-recheck/res-*.json`, screenshots are in `/tmp/claude-0/rewalk/R-recheck/shots/`, and the server log is `/tmp/claude-0/rewalk/R-recheck/server.log`."
+ }
+}

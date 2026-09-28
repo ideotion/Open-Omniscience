@@ -50,9 +50,11 @@ from __future__ import annotations
 
 import io
 import json
+import re
 import zipfile
 from collections import defaultdict
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
+from typing import Any
 
 import yaml
 
@@ -79,35 +81,136 @@ class MergeInputError(ValueError):
     A DOMAIN error rather than ``SystemExit``: the same refusals have to reach a command
     line as an exit code AND an HTTP caller as a 400, and a core that raises ``SystemExit``
     would tear down a web worker on a bad upload. The CLI converts; nothing is softened.
+
+    RAISED AS A KEYED FRAME (the 2026-09-27 re-walk, S-6). The Quality gates panel shows
+    this refusal under a translated button, and as English prose it read "…: no 'verdicts'
+    list" on a French page. So the error carries its frame (``i18n``, a key in all twelve
+    locales) and its values (``vars``): the file name, the archive member and a parser's
+    own message are DATA slots, never translated, and a number is formatted by the client.
+    ``str(exc)`` is the frame filled in English -- exactly what the command line prints,
+    so the two front doors still say one thing.
     """
+
+    def __init__(self, frame: str, **values: Any) -> None:
+        self.i18n = frame
+        self.vars = values
+        super().__init__(_fill(frame, values))
+
+
+def _fill(frame: str, values: dict[str, Any]) -> str:
+    """The frame in English: every ``{slot}`` replaced by its value as given."""
+    return re.sub(r"\{(\w+)\}",
+                  lambda m: str(values[m.group(1)]) if m.group(1) in values else m.group(0),
+                  frame)
+
+
+def refusal_payload(frame: str, **values: Any) -> dict[str, Any]:
+    """A refusal as an HTTP caller receives it: the English ``detail`` a command line
+    prints, beside the ``detail_i18n`` / ``detail_vars`` a translated surface renders."""
+    return {"detail": _fill(frame, values), "detail_i18n": frame, "detail_vars": values}
+
+
+# Every frame this module refuses with -- the list the ×12 test keys. Kept as constants so
+# the test reads the frames the code raises rather than a re-typed copy of them.
+REFUSE_NO_VERDICTS = "{file}: no 'verdicts' list — is this a source-qualification export?"
+REFUSE_ZIP_AS_EXPORT = (
+    "{file} is a zip archive, not an export JSON. If it is an all-diagnostics bundle, hand "
+    "it over as a bundle (the export rides inside it as {member})."
+)
+REFUSE_NOT_TEXT = "{file}: not valid JSON or YAML ({error})."
+REFUSE_NOT_JSON_OR_YAML = "{file}: not valid JSON ({error}), and not valid YAML either."
+REFUSE_OVERLAY = (
+    "{file} reads as an overlay (a merged or shipped source_qualification.yml), not an "
+    "instance's export: its rows carry no 'basis', so this merge could not tell a "
+    "measurement from an echo of one. Upload what Export produced on each instance, or "
+    "that instance's all-diagnostics bundle."
+)
+REFUSE_MEMBER_FAILED = (
+    "{file}: this bundle's {member} member did not complete on that instance, so the "
+    "archive carries {sidecar} instead ({detail}). There is nothing to merge from it — "
+    "re-run the export on that instance."
+)
+REFUSE_NO_MEMBER = (
+    "{file}: no {member} in this archive ({n} member(s)) — is it an all-diagnostics bundle?"
+)
+REFUSE_MEMBER_TOO_BIG = (
+    "{file}: {member} declares {size} bytes uncompressed, past the {limit} ceiling. "
+    "Refusing to decompress it."
+)
+REFUSE_BAD_ZIP = "{file}: not a readable zip archive ({error})."
+REFUSE_MEMBER_NOT_JSON = "{file}: {member} is not valid JSON ({error})."
+# The three the diagnostics route makes itself, before or around this core: they live
+# here with the rest so every merge refusal is one list, keyed once.
+REFUSE_TOO_MANY = (
+    "{n} files were sent; this run reads at most {limit}. Merge them in batches — each run "
+    "carries the previous overlay through untouched, so batching loses nothing."
+)
+REFUSE_TOO_BIG = "{file}: {size} bytes, past the {limit} ceiling. Refusing to read it."
+REFUSE_NOTHING = (
+    "Nothing to merge: no exports were uploaded and this instance's own verdicts were "
+    "excluded. Writing an overlay from nothing would replace the shipped file with an "
+    "empty one."
+)
+REFUSAL_FRAMES = (
+    REFUSE_NO_VERDICTS, REFUSE_ZIP_AS_EXPORT, REFUSE_NOT_TEXT, REFUSE_NOT_JSON_OR_YAML,
+    REFUSE_OVERLAY, REFUSE_MEMBER_FAILED, REFUSE_NO_MEMBER, REFUSE_MEMBER_TOO_BIG,
+    REFUSE_BAD_ZIP, REFUSE_MEMBER_NOT_JSON, REFUSE_TOO_MANY, REFUSE_TOO_BIG, REFUSE_NOTHING,
+)
 
 
 def rows_from_payload(raw: object, origin: str) -> list[dict]:
     rows = raw.get("verdicts") if isinstance(raw, dict) else None
     if not isinstance(rows, list):
-        raise MergeInputError(
-            f"{origin}: no 'verdicts' list -- is this a source-qualification export?"
-        )
+        raise MergeInputError(REFUSE_NO_VERDICTS, file=origin)
     return rows
 
 
 def rows_from_export_bytes(data: bytes, origin: str) -> list[dict]:
-    """One instance's export JSON -> its verdict rows.
+    """One instance's export -> its verdict rows: the JSON the diagnostics carry, or the
+    YAML the Quality gates panel's Export button saves (``fmt=yaml``). Both hold the same
+    ``verdicts`` rows, ``basis`` included, so the one loop the panel offers -- Export on
+    each instance, then Merge -- has to accept what its own first half produces (the
+    2026-09-26 click-through, S1: it refused it as "not valid JSON").
 
     A zip is refused BY NAME rather than sniffed and treated as a bundle: guessing is
     convenient right up to the archive that is not one.
     """
     if data[:4] == b"PK\x03\x04" or zipfile.is_zipfile(io.BytesIO(data)):
-        raise MergeInputError(
-            f"{origin} is a zip archive, not an export JSON. If it is an all-diagnostics "
-            f"bundle, hand it over as a bundle (the export rides inside it as "
-            f"{BUNDLE_MEMBER})."
-        )
+        raise MergeInputError(REFUSE_ZIP_AS_EXPORT, file=origin, member=BUNDLE_MEMBER)
     try:
-        raw = json.loads(data.decode("utf-8"))
-    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise MergeInputError(f"{origin}: not valid JSON ({exc}).") from exc
+        text = data.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise MergeInputError(REFUSE_NOT_TEXT, file=origin, error=str(exc)) from exc
+    try:
+        raw = json.loads(text)
+    except json.JSONDecodeError as json_exc:
+        return _rows_from_export_yaml(text, origin, json_exc)
     return rows_from_payload(raw, origin)
+
+
+def _rows_from_export_yaml(text: str, origin: str, json_exc: json.JSONDecodeError) -> list[dict]:
+    """The Export button's YAML -> its rows, refusing an OVERLAY that looks like one.
+
+    AN OVERLAY IS NOT AN EXPORT, and the two share a file name. A merged or shipped
+    ``source_qualification.yml`` carries no ``basis`` on its rows, and the merge reads a
+    missing ``basis`` as ``measured`` -- so feeding a previous merge back in would count
+    every verdict it holds as a fresh measurement: the echo the module refuses to count
+    as corroboration. An export writes ``basis`` on every row, so a row without one is
+    refused by name rather than guessed at.
+    """
+    try:
+        raw = yaml.safe_load(text)
+    except yaml.YAMLError as exc:
+        raise MergeInputError(REFUSE_NOT_JSON_OR_YAML, file=origin, error=str(json_exc)) from exc
+    rows = rows_from_payload(raw, origin)
+    if any(isinstance(r, dict) and "basis" not in r for r in rows):
+        raise MergeInputError(REFUSE_OVERLAY, file=origin)
+    for r in rows:
+        # An unquoted timestamp loads as a datetime; the merge compares and re-renders
+        # the date as the string the export wrote, never as an object.
+        if isinstance(r, dict) and isinstance(r.get("qualified_at"), (date, datetime)):
+            r["qualified_at"] = r["qualified_at"].isoformat()
+    return rows
 
 
 def rows_from_bundle_bytes(
@@ -130,30 +233,26 @@ def rows_from_bundle_bytes(
                     if sidecar in names:
                         detail = z.read(sidecar)[:2000].decode("utf-8", "replace").strip()
                         raise MergeInputError(
-                            f"{origin}: this bundle's {BUNDLE_MEMBER} member did not "
-                            f"complete on that instance, so the archive carries "
-                            f"{sidecar} instead:\n  {detail}\n"
-                            "There is nothing to merge from it -- re-run the export on "
-                            "that instance."
+                            REFUSE_MEMBER_FAILED, file=origin, member=BUNDLE_MEMBER,
+                            sidecar=sidecar, detail=detail,
                         )
                 raise MergeInputError(
-                    f"{origin}: no {BUNDLE_MEMBER} in this archive ({len(names)} member(s)) "
-                    "-- is it an all-diagnostics bundle?"
+                    REFUSE_NO_MEMBER, file=origin, member=BUNDLE_MEMBER, n=len(names)
                 )
             declared = z.getinfo(BUNDLE_MEMBER).file_size
             if declared > max_member_bytes:
                 raise MergeInputError(
-                    f"{origin}: {BUNDLE_MEMBER} declares {declared} bytes uncompressed, "
-                    f"past the {max_member_bytes} ceiling. Refusing to decompress it."
+                    REFUSE_MEMBER_TOO_BIG, file=origin, member=BUNDLE_MEMBER,
+                    size=declared, limit=max_member_bytes,
                 )
             raw_bytes = z.read(BUNDLE_MEMBER)
     except zipfile.BadZipFile as exc:
-        raise MergeInputError(f"{origin}: not a readable zip archive ({exc}).") from exc
+        raise MergeInputError(REFUSE_BAD_ZIP, file=origin, error=str(exc)) from exc
     try:
         raw = json.loads(raw_bytes)
     except json.JSONDecodeError as exc:
         raise MergeInputError(
-            f"{origin}: {BUNDLE_MEMBER} is not valid JSON ({exc})."
+            REFUSE_MEMBER_NOT_JSON, file=origin, member=BUNDLE_MEMBER, error=str(exc)
         ) from exc
     return rows_from_payload(raw, f"{origin}::{BUNDLE_MEMBER}")
 
@@ -244,8 +343,9 @@ def render(merged: dict[str, dict]) -> str:
     }
     header = (
         "# Source qualification verdicts, EARNED BY MEASUREMENT on real instances.\n"
-        "# Merged by scripts/merge_source_qualification.py from per-instance exports\n"
-        "# (GET /api/diagnostics/source-qualification-export). Do not hand-edit.\n"
+        "# Merged from per-instance exports (GET /api/diagnostics/source-qualification-export)\n"
+        "# by Settings > Advanced > Quality gates > Build a merged file, or by\n"
+        "# scripts/merge_source_qualification.py -- one merge core. Do not hand-edit.\n"
         "# A domain absent from this file ships unqualified and is judged by the install's\n"
         "# own first qualification pass, exactly as before this file existed.\n"
     )

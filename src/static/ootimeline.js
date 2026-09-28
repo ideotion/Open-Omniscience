@@ -45,16 +45,20 @@
 
   // "3 d 04 h 12 m" — days / hours / minutes; under a minute, seconds. Deterministic
   // and locale-free (the units are SI-style symbols, the caller translates the
-  // sentence around it).
-  function fmtDur(seconds) {
+  // sentence around it). Given a frame writer (`tf`, OOI18N.tf), each unit is instead
+  // its keyed frame -- "{n} d", "{n} h", "{n} min", "{n} s", the task managers' own --
+  // so a locale spells the unit its own way and on its own side of the number
+  // (click-through B19, Q8). Without one the output is the form above, byte for byte.
+  function fmtDur(seconds, tf) {
     if (seconds == null || !isFinite(seconds)) return "—";
+    var u = function (frame, bare, n) { return typeof tf === "function" ? tf(frame, { n: n }) : n + " " + bare; };
     var s = Math.max(0, Math.round(seconds));
-    if (s < 60) return s + " s";
+    if (s < 60) return u("{n} s", "s", s);
     var d = Math.floor(s / 86400), h = Math.floor((s % 86400) / 3600), m = Math.floor((s % 3600) / 60);
     var out = [];
-    if (d) out.push(d + " d");
-    if (d || h) out.push((d && h < 10 ? "0" : "") + h + " h");
-    out.push((out.length && m < 10 ? "0" : "") + m + " m");
+    if (d) out.push(u("{n} d", "d", d));
+    if (d || h) out.push(u("{n} h", "h", (d && h < 10 ? "0" : "") + h));
+    out.push(u("{n} min", "m", (out.length && m < 10 ? "0" : "") + m));
     return out.join(" ");
   }
 

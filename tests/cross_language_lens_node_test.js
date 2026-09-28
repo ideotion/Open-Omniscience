@@ -40,8 +40,11 @@ function extract(name) {
 // supplied them would leave the guard untested -- which is the branch a reader on a
 // slow first paint actually gets.
 const NAMES = ["_anParseLens", "_anApplyLens", "_anLensSeed", "_anApplyLensSeed",
-               "_anWriteLensToUrl", "_anSlug", "_anFormCountsHtml", "_anLangCell",
-               "_anGroupRowsByLanguage", "_crossLangNotice"];
+               "_anWriteLensToUrl", "_anUrlNamesActiveTab", "_anSlug", "_anFormCountsHtml", "_anLangCell",
+               "_anGroupRowsByLanguage", "_crossLangNotice",
+               // app-core's keyed "Label: value" frame, which the notice's per-language
+               // line uses since the 2026-09-27 re-walk (N-5): extracted, never shimmed.
+               "ooLabelHtml"];
 const src = "function esc(s){return String(s==null?'':s).replace(/[&<>\"]/g,"
   + "c=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;'}[c]));}\n"
   + "var window = {};\n"
@@ -55,6 +58,9 @@ const src = "function esc(s){return String(s==null?'':s).replace(/[&<>\"]/g,"
   // the SAME defaults the module declares, because "both on unless the reader said
   // otherwise" is itself one of the rulings under test.
   + "var _anExpand = true, _anCap = true, _anSenses = {};\n"
+  // The tab strip the URL writer consults (N2): empty by default, so every case that
+  // does not set it runs the writer exactly as it ran before the strip was consulted.
+  + "var _anTabs = [], _anActiveId = null;\n"
   + "var location = {search: '', pathname: '/', hash: ''};\n"
   + "var history = {replaceState: function (_s, _t, url) {\n"
   + "  const i = String(url).indexOf('?');\n"
@@ -63,7 +69,8 @@ const src = "function esc(s){return String(s==null?'':s).replace(/[&<>\"]/g,"
   + NAMES.map(extract).join("\n") + "\n"
   + "function _setLens(e, c, s) { _anExpand = e; _anCap = c; _anSenses = s || {}; }\n"
   + "function _getLens() { return {expand: _anExpand, cap: _anCap, senses: _anSenses}; }\n"
-  + "module.exports = {" + NAMES.join(", ") + ", _setLens, _getLens, location};";
+  + "function _setTabs(tabs, active) { _anTabs = tabs; _anActiveId = active; }\n"
+  + "module.exports = {" + NAMES.join(", ") + ", _setLens, _getLens, _setTabs, location};";
 const M = (() => {
   const m = { exports: {} };
   new Function("module", "exports", src)(m, m.exports);
@@ -139,6 +146,45 @@ const { _anParseLens, _anApplyLens, _anLensSeed, _anApplyLensSeed, _anWriteLensT
     "the default lens was written into the URL: " + M.location.search);
   assert.ok(M.location.search.includes("corpus=1"),
     "writing the lens destroyed the rest of the query string");
+}
+
+// 4c. THE URL DESCRIBES ONE TAB (the 2026-09-26 click-through, row N, N2). Measured in
+//     Chromium: a window opened on "?analyze=climate", switched to its "election" tab in
+//     the strip and pinned a sense, read "?analyze=climate&sense=election:public-election"
+//     -- and a reload seeded CLIMATE with election's sense and persisted it there. The
+//     name in the URL now follows the active tab, so the lens beside it is that tab's own.
+{
+  const { _setTabs } = M;
+  const climate = {id: "c", kind: "query", query: "climate"};
+  const election = {id: "e", kind: "query", query: "election"};
+  _setTabs([climate, election], "e");
+  _setLens(true, true, {election: "public-election"});
+  M.location.search = "?analyze=climate";
+  _anWriteLensToUrl();
+  const sp = new URLSearchParams(M.location.search);
+  assert.strictEqual(sp.get("analyze"), "election",
+    "the URL still names the tab the link opened, beside another tab's lens: " + M.location.search);
+  assert.deepStrictEqual(sp.getAll("sense"), ["election:public-election"]);
+  // ...and the deep-linked tab itself keeps its URL exactly as the link spelled it.
+  _setTabs([climate, election], "c");
+  _setLens(true, true, {});
+  M.location.search = "?analyze=climate&tab=keywords";
+  _anWriteLensToUrl();
+  assert.strictEqual(M.location.search, "?analyze=climate&tab=keywords",
+    "the link's own tab had its URL rewritten");
+  // A tab a short link cannot spell (a filtered search, an exact set) drops the stale
+  // name rather than inventing one; a reload then restores the strip's own active tab.
+  _setTabs([climate, {id: "f", kind: "query", query: "election", src: "Le Monde"}], "f");
+  M.location.search = "?analyze=climate&prov=tok";
+  _anWriteLensToUrl();
+  assert.ok(!/analyze=|prov=/.test(M.location.search),
+    "a filtered tab kept another tab's deep link: " + M.location.search);
+  _setTabs([{id: "i", kind: "ids", ids: [3, 1, 2]}], "i");
+  M.location.search = "?corpus=3,1,2&label=Lead";
+  _anWriteLensToUrl();
+  assert.ok(M.location.search.includes("corpus=3%2C1%2C2") || M.location.search.includes("corpus=3,1,2"),
+    "an exact-set tab lost its own deep link: " + M.location.search);
+  _setTabs([], null);
 }
 
 // ---------------------------------------------------------------- the lens, applied
@@ -261,6 +307,16 @@ const { _anParseLens, _anApplyLens, _anLensSeed, _anApplyLensSeed, _anWriteLensT
   const html = _anGroupRowsByLanguage(items, ["<tr id='a'></tr>", "<tr id='b'></tr>"]);
   assert.ok(html.includes("Language not recorded") && html.includes("fr"),
     "the unrecorded article was folded into a real language");
+}
+
+// 11c. A group of ONE takes the singular key (N14: "spa 1 articles"), and a larger group
+//      keeps the plural -- the fix must not make every count singular.
+{
+  const html = _anGroupRowsByLanguage([{language: "es"}, {language: "fr"}, {language: "fr"}],
+    ["<tr id='a'></tr>", "<tr id='b'></tr>", "<tr id='c'></tr>"]);
+  assert.ok(html.includes(">1 article<"), "a group of one reads '1 articles'");
+  assert.ok(!html.includes("1 articles"), "a group of one reads '1 articles'");
+  assert.ok(html.includes(">2 articles<"), "a larger group lost its plural");
 }
 
 // ---------------------------------------------------------------- the per-form counts

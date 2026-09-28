@@ -1,4 +1,4 @@
-# S05-05 — OSM-derived admin-0 / admin-1 artifacts keyed ISO 3166-2 · 0.5, `RELEASE_0.5_GATE.md` row E
+# S05-05 — OSM-derived admin-0 / admin-1 artifacts keyed ISO 3166-2 · 0.5, `RELEASE_0.5_GATE.md` row E (+ row L)
 
 > **Scope:** the OSM preprocessing bridge (`scripts/build_country_polygons.py` lineage, which today builds
 > `src/static/world_countries.json` from Natural Earth 110m), a new admin-0 (alpha-3) + admin-1 (ISO 3166-2)
@@ -7,7 +7,8 @@
 > the vintage stated, contested borders CONTESTED with both claims. Must NOT touch: the projection seam
 > itself (0.4 row R), WebGL (no-WebGL is firm), the OSM lane's ingest (S05-04 — the artifact build reads OSM
 > data on the maintainer's machine, not through the lane), any export member (Q823 ⛔).
-> **Implements:** Q314, Q804 [ASSUMPTION], Q816; via the gate row: Q802 (second half), Q826.
+> **Implements:** Q314, Q804 [ASSUMPTION], Q816; via the gate row: Q802 (second half), Q826; Q803's default (row L,
+> `PF06` = a, 2026-09-27).
 > **Gated on:** 0.4 row R (Equal Earth, NE 50m, the CONTESTED convention, the worldview toggle); 0.4 row L
 > (alpha-3 display); S05-02 (alpha-3 in the store, so choropleth joins key alpha-3).
 > **Sequencing:** after 0.4 row R; the operator's artifact build before the surfaces can render; S05-04's
@@ -19,6 +20,9 @@ Read [`_WORKING_MODE.md`](_WORKING_MODE.md) (which points at the 2026-09-06 base
 named above, then every ruling in §1 as it stands in `docs/ledger/RULINGS_INDEX.md`, then the answer sheet's
 own section for those questions (their verified context and option lists). Grep the tree before building
 anything — the sheet's anchors were verified at `main`@`bebcef4` on 2026-09-12 and may have moved.
+
+**AMENDED 2026-09-27 (`PF06` = a):** this slice also carries Q803's DEFAULT, OSM's border convention as of a
+stated date opening every map, moved from 0.4 row R; its bar is `RELEASE_0.5_GATE.md` row L.
 
 ## 1. The rulings this slice implements — verbatim, by ID
 

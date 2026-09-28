@@ -90,6 +90,9 @@ register's H2 / L2). Grep the tree before building anything — the sheet's anch
   probes `dumps.wikimedia.org` and one control host and records the HTTP status; until it is not `000`, every
   live-verification step in the other briefs reads `not-measurable-here`.
 - **Why (ruling):** Q114 ⛔ = a. **Acceptance:** the probe returns an HTTP status (gate).
+- **AMENDED 2026-09-27 (`RC10` = b, in chat):** `dumps.wikimedia.org` is excluded for now, so the probe goes to
+  a Q114 host that stays on the list, beside the control host (the thread's recommendation: «I recommend changing the closing clause to probe a host that's already allowed, so your (b) answer still stands»), and the acceptance is an HTTP status from it. Measured the same morning from a session: all
+  seventeen Q114 hosts, the excluded one included, answered `000`.
 
 ## 4. Verification
 
@@ -108,8 +111,8 @@ in the PR).
 
 ## 5. Operator steps
 
-1. Add the Q114 hosts to the session environment's allowlist; artifact: a session's probe record
-   (`<host> → <status>`, control host included). `not-measurable-here` until then.
+1. Add the Q114 hosts EXCEPT `dumps.wikimedia.org` (excluded for now, `RC10` ⛔ = b, 2026-09-27) to the session
+   environment's allowlist; artifact: a session's probe record (`<host> → <status>`, control host included). `not-measurable-here` until then.
 2. On tag day (row G first, then the `v0.4.0` exit), follow `RELEASE_0.3_GATE.md` §7.3 from the maintainer's
    machine: CI green at the SHA, the tag pushed alone, the workflow's release verified against its
    `SHA256SUMS`; the notes carry S1–S3.

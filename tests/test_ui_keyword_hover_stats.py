@@ -39,8 +39,9 @@ def test_spa_keyword_surfaces_are_marked():
     assert '<button class="chip" data-kwstat="${esc(term.term)}"' in _JS
     # the Insights Trends bars
     assert '<a class="tb-label" href="#" data-kwstat="${esc(t.term)}"' in _JS
-    # the keyword list rows (given a placeholder title so #oo-tip marks them)
-    assert '<a href="#" data-kwstat="${esc(t.term)}" title="${esc(t.term)}"' in _JS
+    # the keyword list rows (given a placeholder title so #oo-tip marks them); the row also
+    # carries its tier tag's hover on the channel the stats line appends (M2)
+    assert '<a href="#" data-kwstat="${esc(t.term)}"${kwTipExtraAttr(t)} title="${esc(t.term)}"' in _JS
 
 
 def test_spa_stats_are_counts_with_method_caveat_no_score():
@@ -48,8 +49,9 @@ def test_spa_stats_are_counts_with_method_caveat_no_score():
     assert 't("mentions")' in _JS and 't("articles")' in _JS
     assert 't("trend")' in _JS and "tr.growth" in _JS
     assert "d.cooccurrences" in _JS
-    # the endpoint caveat is appended (method/caveat visible)
-    assert 'd.caveat ? " · " + d.caveat : ""' in _JS
+    # the endpoint caveat is appended (method/caveat visible), translated through its
+    # key: it is a fixed server string, so the hover reads in the UI language (N7, M14)
+    assert 'd.caveat ? " · " + t(d.caveat) : ""' in _JS
     # honest empty state for an unknown term
     assert 't("Not in your corpus yet — no stats.")' in _JS
     # the transient "Loading…" placeholder is live-bubble-only (persist=false), never
@@ -67,9 +69,13 @@ def test_reader_marks_and_hover_handler():
     assert "function enrichKwStat(" in _READER
     assert '"/api/insights/keyword-stats?term=" + encodeURIComponent(term)' in _READER
     assert "kwStatLine(d)" in _READER
-    # counts + the caveat, never a score
-    assert '" mentions · "' in _READER
-    assert "d.caveat" in _READER
+    # counts + the caveat, never a score -- through the SAME keys the SPA's bubble uses,
+    # and the caveat through t(): a fixed server sentence appended verbatim read English
+    # inside every translated reader (K-reader, 2026-09-27; the key exists since N7).
+    assert 'T(d.mentions === 1 ? "mention" : "mentions")' in _READER
+    assert 'T(d.caveat)' in _READER
+    assert '" · " + d.caveat' not in _READER, "the reader's caveat is appended untranslated"
+    assert '" mentions · "' not in _READER, "the reader's count line is an English literal"
 
 
 def test_strings_translated_x12():

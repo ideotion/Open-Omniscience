@@ -1,0 +1,662 @@
+{
+ "row": "P",
+ "steps_walked": {
+  "row": "P",
+  "title": "Wikipedia lane: the W toggle in the top bar, the first-run wizard, the lane's separate counts, the map layer and the reader's licence notice",
+  "prerequisites": [
+   "The app updated to current main (462145c or later) on your own machine and started from a terminal, so you can put the settings below in front of the start command. Either stop your normal instance or leave it on port 8000 and use the ports below. Each port keeps its own browser memory (language choice, dismissed welcome guide), so a new port starts in English with the welcome guide showing.",
+   "THROWAWAY FOLDER A, fresh and ENCRYPTED, used for steps P1 to P5. Start it with `OO_DATA_DIR=$HOME/oo-rowP-fresh OO_AUTOSEED=0 OO_PORT=8010 open-omniscience`, then open http://127.0.0.1:8010. Do NOT set OO_DB_PLAINTEXT: the app then starts at the first-launch screens and asks you to create a passphrase. Use a throwaway passphrase and write it down, because P5 restarts the app and asks for it again. OO_AUTOSEED=0 leaves the source catalogue empty, so going online in P5 mostly reaches Wikimedia. Other ride-along lanes (calendars, for example) may still run, and the consent popup lists them. P5 needs an internet connection.",
+   "THROWAWAY FOLDER B, SEEDED and kept OFFLINE, used for steps P6 to P11. The app must NOT be running on this folder while you seed it. From the app folder, run `OO_DATA_DIR=$HOME/oo-rowP-seeded OO_DB_PLAINTEXT=1 .venv/bin/python scripts/ui_clickthrough_seed.py` (a multi-language corpus with located sources and one Wikipedia article, 'Coastal Infrastructure Act'). Then run `OO_DATA_DIR=$HOME/oo-rowP-seeded OO_DB_PLAINTEXT=1 PYTHONPATH=. .venv/bin/python docs/audit/living-sources-clickthrough-2026-09-25/seed.py`. It adds a Wikipedia lane with 2 followed pages, 4 changes on them plus 1 on a page nobody follows, one recorded open gap, two extra tracked pages, two law documents and three map downloads. Start it with `OO_DATA_DIR=$HOME/oo-rowP-seeded OO_DB_PLAINTEXT=1 OO_AUTOSEED=0 OO_PORT=8011 open-omniscience` and open http://127.0.0.1:8011. Do NOT add OO_NO_SCHEDULER=1: it skips the boot-time airplane mode, so the app would start ONLINE and the consent popup in P11 would never appear. It boots in airplane mode (airplane icon filled). NEVER press 'Go online' in folder B: whenever the 'Go online?' popup appears, press 'Stay offline'. Going online would start collection from the seeded sources and the Wikipedia stream. If you do it by mistake, click the airplane icon at once to go back offline. Do P6 to P11 on the SAME DAY you seed, because 'changes today' counts from local midnight. A Claude session can prepare both folders for you.",
+   "Your real install is not needed for any step. Know this before you next go online on it: the W toggle is ON by default, so the next 'Go online' there also starts the Wikipedia stream (twelve editions, up to 20 GB of stored text). If you don't want that yet, click W once while still offline. That pauses it and sends nothing. Un-pausing it while offline raises the 'Go online?' popup first.",
+   "Take one screenshot per step, and per surface per language in P11. Q1128 = a wants the pass recorded surface by surface. Put them beside the sandbox records (e.g. a new docs/audit/ folder), or hand them to a session to file.",
+   "Afterwards, quit both throwaway apps with the power icon at the far right of the top bar, then delete $HOME/oo-rowP-fresh and $HOME/oo-rowP-seeded."
+  ],
+  "steps": [
+   {
+    "id": "P1",
+    "where": "Folder A, http://127.0.0.1:8010. First-launch screens (language → the legal documents → 'Create your corpus passphrase' → 'Preparing your corpus…'), then the app opens with the dialog 'Following Wikipedia as it changes' (#wiki-wizard)",
+    "do": "Pick English. Tick 'I have read and accept these documents.' and press 'Accept and continue'. Type the throwaway passphrase twice and press 'Create'. If the 'Welcome to Open Omniscience' guide also opens, close it with the × at its top right (or Esc). Do NOT click through it to its last page's 'Go online & start collecting', which takes the app online WITHOUT the separate consent popup. If a bubble under the airplane says 'You're offline…', press 'Not now'. When the Wikipedia dialog is in front, read it top to bottom without changing anything, then press 'Not now'.",
+    "expect": "The Wikipedia dialog opens by itself right after the passphrase is created; this is the first-launch hand-off. Above every control are three blocks you can read without hovering. (1) 'What it contacts.' with a monospace line reading exactly '*.wikipedia.org · stream.wikimedia.org · wikimedia.org · ores.wikimedia.org · dumps.wikimedia.org'; the prose above it describes that list and never gives a smaller number of hosts. (2) 'Robots.': documented public API endpoints; the kill switch, the honest bot User-Agent and the single fetch path still apply. (3) 'Licence.': CC BY-SA 4.0, a link to the page history (its editors are its authors), images not stored. Under 'Editions to follow' are twelve boxes, ALL ticked, each showing the language's own name first and then its code (e.g. '中文 (zh)', 'English (en)', 'Français (fr)', 'العربية (ar)'), and the count reads '12 of 12 editions'. 'Storage budget' shows 20 and 'GB in total'. The share line reads 'About 1.7 GB for each of 12 editions — the total divided by the editions you follow.' A sentence says this is a limit on what is STORED, not on how fast it is fetched, with speed staying with the top-bar collection-speed control. The airplane icon in the top bar stays filled throughout. 'Not now' closes the dialog.",
+    "flags": [
+     "mutates-data"
+    ],
+    "evidence": "src/static/unlock.html:104-172 (legal, create), 469-470 (a fresh corpus enters at /?wikiwizard=1); src/static/app-boot.js:527-561 ('Not now' leaves wizard_done alone); src/static/index.html:3444-3494; src/static/app-sources.js:1235-1345; src/static/app-core.js:785-848 (guide; its Go online uses skipDialog); src/static/net-hosts.js:88-97; docs/audit/wiki-lane-clickthrough-2026-09-18/report.json (12 editions, 12 checked, budget 20, five hosts). Creates an encrypted corpus in folder A only."
+   },
+   {
+    "id": "P2",
+    "where": "Settings (bottom of the left sidebar) → Wikipedia subtab (#set-wikipedia) → panel 'The live edit stream' → button 'Editions and storage budget…' (#wiki-wizard-open). Then Settings → Data & backup → panel 'Storage' (#storage-panel). Then back to Settings → Wikipedia, scrolled down to 'Wikipedia offline baselines'",
+    "do": "Do not press 'Track now', 'Refresh exact sizes' or 'Download' on this subtab; those reach the network. Read the summary line under 'The live edit stream'. Open 'Editions and storage budget…' and, in order: untick two editions; press 'Clear'; press 'Use these settings'; press 'Select all'; type 0 in the budget box, then 24; press 'Use these settings'. Reopen the dialog to check it kept your values, then press 'Not now'. Open Settings → Data & backup and read the 'Wikipedia / Wikimedia' row of 'Storage', without using its own 'Save budget' box. Back on Settings → Wikipedia, look at the first panel ('Wikipedia change-tracking'), then scroll down to 'Wikipedia offline baselines'.",
+    "expect": "Before saving, the summary reads '12 editions · 20 GB budget · not yet measured — this lane has not run · using the defaults'. Pressing 'Not now' in P1 did not count as going through the wizard. The 'Robots.' and 'Licence.' blocks show on the panel itself, not only in a hover. In the dialog: with two unticked it shows '10 of 12 editions' and 'About 2.0 GB for each of 10 editions…'. 'Clear' gives '0 of 12 editions', and the share line becomes 'Pick at least one edition and a budget to see the share.', never '0 GB'. Saving with nothing ticked shows a red message, 'Pick at least one edition — a lane with none follows nothing.', and the dialog stays open. A budget of 0 shows the same 'Pick at least one…' sentence. A budget of 24 with all twelve ticked gives 'About 2.0 GB for each of 12 editions…'. Saving closes the dialog with 'Saved. The stream starts when you go online.', and the airplane stays filled. The summary becomes '12 editions · 24 GB budget · not yet measured — this lane has not run', with no 'using the defaults'. The reopened dialog shows 24 and all twelve ticked. In Storage, the 'Wikipedia / Wikimedia' row reads On disk 'Not created yet' and Budget '24 GB' with 'yours; the published default is 20 GB'. 'Wikipedia offline baselines' still offers 'Read a page from a downloaded dump' and 'Search downloaded dumps (full text)', and no button adds a dump to your corpus. RECORD (Q717, 'opt-in'): whether 'use ORES scores' in the first panel is already ticked. On main it is, while the ORES score's own hover says 'Optional, and off unless you asked for it'.",
+    "flags": [
+     "mutates-data"
+    ],
+    "evidence": "src/static/index.html:1769-1812 and 1832-1860; src/static/app-sources.js:1245-1398 (_wizShare, saveWikiWizard, loadWikiLaneSummary); src/api/scheduler.py:230-262 (editions, budget_gb, wizard_done, measured budget); src/scheduler/settings.py:496-515 (1-2000 GB bounds); src/versioned/budget.py:398-414 ('yours' only when it differs from the published 20); src/static/app-settings.js:1672-1785 (row name 'Wikipedia / Wikimedia', 'Not created yet', budget cell); src/static/app-map.js:2731-2739 (ORES hover). Undo in folder A: reopen the dialog, type 20, press 'Use these settings'."
+   },
+   {
+    "id": "P3",
+    "where": "Top bar: the 'W' icon (#wiki-toggle), between the gauge ('Collection speed', #rate-toggle) and the airplane (#net-toggle). The airplane opens the 'Go online?' popup (#net-consent)",
+    "do": "Stay offline for the whole step. Before each click, note where the airplane, language, ? and power icons sit. (1) Hover W and read the bubble. (2) Click the airplane icon. In 'Go online?', find the 'Wikipedia / Wikimedia' line and hover it, then press 'Stay offline'. (3) Click W once, then hover it. (4) Hold Shift, click W, then hover it.",
+    "expect": "(1) Default ON: the W glyph is FILLED in the accent colour, slightly faded, with NO pulsing ring, because nothing streams while airplane mode is on. The bubble reads 'Wikipedia stream: running — Chosen; airplane mode is holding it until you go online.', then 'Pause the Wikipedia stream', then 'This lane contacts stream.wikimedia.org, each edition's Action API, and wikimedia.org for daily pageviews.' (2) The popup lists 'Wikipedia / Wikimedia' under 'Runs on every collection pass:', and its hover names the five Wikimedia hosts plus a 'Transport: …' line. 'Stay offline' closes the popup, and the airplane stays filled. (3) One click turns the glyph OUTLINED in grey with a grey ring (paused) and shows the message 'Pause the Wikipedia stream'. NO popup appears. The bubble reads 'Wikipedia stream: paused — The connection is closed and your place is kept; Resume continues from where it stopped.' then 'Resume the Wikipedia stream'. (4) Shift+click turns the glyph OUTLINED with no ring (stopped) and shows the message 'Stop the Wikipedia stream'. The bubble reads 'Wikipedia stream: stopped — Nothing is connected. Starting again may leave a gap, which this lane records rather than hides.' then 'Start the Wikipedia stream'. Throughout, the fill fades over about a third of a second, the same feel as the gauge needle. W keeps the same size in every state, and the icons to its right never shift. Record your verdict on the animation, and whether anything on screen told you that Shift+click is how to STOP. On main nothing does: the bubble names only Pause, Resume and Start.",
+    "flags": [
+     "mutates-data"
+    ],
+    "evidence": "src/static/index.html:136-162; src/static/app-sources.js:1069-1133 (_paintWikiLane), 1170-1206 (toggleWikiLane, stopWikiLane and their messages); src/static/app.css:856-886 (.35s fill transition, wiki-chosen .72 opacity, wiki-halted muted ring, 2.4s wiki-live breathing); src/static/app-core.js:1144-1253 (the popup's lane lists and host hover); docs/audit/wiki-toggle-clickthrough-2026-09-17/README.md (34 px footprint in every state). Undo: P5 returns W to running."
+   },
+   {
+    "id": "P4",
+    "where": "Top bar W (#wiki-toggle) → the 'Go online?' popup (#net-consent)",
+    "do": "With W stopped (from P3) and airplane mode still on, click W once. Read the popup, hover 'Wikipedia / Wikimedia', then press 'Stay offline'.",
+    "expect": "Restarting the stream asks first. 'Go online?' opens with 'This action needs the network:' and 'Start the Wikipedia stream', the list of local addresses, and both visible caveats (the public-address one, and 'Airplane mode here controls only this app's network…'). Because W is off right now, 'Wikipedia / Wikimedia' sits under 'Switched off right now:'; record whether that reads confusingly while you are being asked to start it. After 'Stay offline', the airplane is still filled, W is still outlined with no ring, its bubble is unchanged, and no message says anything started.",
+    "flags": [],
+    "evidence": "src/static/app-sources.js:1176-1183 (going to running calls ensureOnline first); src/static/app-core.js:1144-1166 (_laneState: settingOn 'running', else off), 1297-1330 (ensureOnline; 'Stay offline' and Esc resolve false)"
+   },
+   {
+    "id": "P5",
+    "where": "Folder A: top-bar W and airplane; Home (sidebar) → the at-a-glance strip at the top (#home-stats); Living sources (sidebar, #tab-living) → Wikipedia subtab",
+    "do": "Click W. The popup opens. Read its lists first: every lane under 'Runs on every collection pass:' will contact its hosts, and Wikipedia joins them as soon as you confirm, even though the popup still lists it as switched off. Press 'Go online'. Wait up to two minutes (or reload). Leave it running 10–15 minutes, visiting Home and Living sources → Wikipedia a few times and reloading each time. Then click W to pause, wait 2 minutes, and click W again to resume. Next, click the airplane icon to go offline and wait a minute. Finally, quit with the power icon, restart folder A with the same command, and unlock it with your passphrase.",
+    "expect": "ONLINE: the airplane unfills. For a few seconds W may still say 'Chosen, but no stream is running in this session.' W re-reads its state once a minute (record whether that lag bothers you). Within about two minutes W shows a filled glyph with a slow breathing ring, about 2.4 s per pulse; the ring stays still if your system asks for reduced motion. The bubble reads 'Wikipedia stream: running — Every edit in the editions you chose arrives as it happens.' If after two minutes and a reload W still says 'Chosen, but no stream is running in this session.', the stream did not start; record it (field machines saw the lane stop itself after three failed drains). HOME: once the lane has written its file, a separate strip item appears, 'Wikipedia: N pages · M changes today', and M grows between reloads. The item's hover says it is counted separately from your article count. Watch the rest of the strip. Folder A has no press sources, so it starts as 'Your library is empty — head to Collect…'. If that turns into an Articles count, Wikipedia pages are being counted in the press headline; record it as a Q714 finding. LIVING SOURCES → Wikipedia: 'Last change recorded' is seconds or minutes old, 'Changes on pages you do not follow' climbs fast, 'Complete through' shows a UTC time ('Not declared yet' is fine in the first minutes), and 'Open gaps' reads 0. 'Pages followed' rises only as edits arrive on pages the lane follows, mostly each edition's most-read list, which is fetched one edition at a time. It may stay low in 15 minutes. PAUSE: no popup; the glyph turns outlined with a grey ring, and 'Last change recorded' stops moving. RESUME: no popup, because you are already online, and the breathing returns within a minute or two. 'Open gaps' should still be 0, since a short pause resumes from where it stopped; if it reads 1, record it. AIRPLANE: within a minute the ring stops and the bubble returns to 'Chosen; airplane mode is holding it until you go online.' AFTER THE RESTART: the app opens in airplane mode with W filled, faded and still, showing the same 'airplane mode is holding it' bubble. The default-on choice did not take the app online by itself.",
+    "flags": [
+     "online",
+     "mutates-data"
+    ],
+    "evidence": "src/api/system.py:203-266 (the lane starts only on the one go-online seam, never at boot); src/wiki/service.py:233-257 and src/wiki/runner.py:338-349 (the stream starts on its own thread, registered a moment later); src/api/scheduler.py:159-228 (state and active reported separately; reasons airplane-mode / not-started / transport-waiting); src/static/app-sources.js:1155-1168 (60 s refresh while running); src/static/app-home.js:52-117 (empty-library line; the lane figure appended, never merged); src/api/wiki_lane.py:64-122 (/status: its own count, local midnight); src/wiki/lane.py:388 and src/wiki/corpus.py:292-340 (stored pages become Articles); src/wiki/tiers.py:69-70; src/wiki/runner.py:420-450 (stops after 3 failed drains); docs/audit/16_FIELD_DIAGNOSTICS_SIX_MACHINES_2026-09-24.md:349-351. Undo: the airplane icon stops every connection at once, and W's pause stops only the stream. Stored text stays in folder A (capped at the 24 GB you set); delete the folder when you're done."
+   },
+   {
+    "id": "P6",
+    "where": "Folder B (http://127.0.0.1:8011) → World map (sidebar, #tab-timemap) → 'Coverage' (the default lens in the strip under the top bar) → the in-map 'Wikipedia' button ([data-oomap-wiki])",
+    "do": "Open World map and wait for the map to draw. Hover the in-map 'Wikipedia' button, click it, look at the legend under the map, then click the button again. This reads only what is stored; nothing goes online.",
+    "expect": "The button's bubble reads 'Wikipedia pages your lane follows that carry a coordinate. A page with no coordinate is absent, never placed at 0,0.' Once clicked, the button gets an accent border and a legend line appears: '● Wikipedia page (linked to Wikidata) · ○ Wikipedia page (not yet linked)'. Folder B's lane has no page with a coordinate, so NO Wikipedia dots appear, and nothing sits at 0°,0° in the Gulf of Guinea. That is the honest empty case: the layer is drawn and states what it would show rather than inventing points. Clicking again removes the legend, and the button returns to its plain look. Take a screenshot: the sandbox's images of this layer are 1,078-byte files and show nothing.",
+    "flags": [
+     "needs-seed-data"
+    ],
+    "evidence": "src/static/app-map.js:797 (button and hover), 888 (legend shown whenever the lane answers, even with no points), 548-565 (same-size points, filled = QID), 1345-1355 (off by default, fetched only when switched on), 1651-1655 (the whole map draws only when some source has a country); src/api/wiki_lane.py:168-262 (/places: no coordinate means no point); docs/audit/living-sources-clickthrough-2026-09-25/seed.py (lane entities carry no coordinates); docs/audit/wiki-lane-clickthrough-2026-09-18/ (map-layer-*.png are 1,078 bytes)"
+   },
+   {
+    "id": "P7",
+    "where": "Folder B → Home (sidebar) → the at-a-glance strip at the top (#home-stats)",
+    "do": "Open Home, find the Wikipedia item at the end of the strip, and hover it.",
+    "expect": "Among the strip's figures is a separate item reading 'Wikipedia: 2 pages · 4 changes today'. Expect 4 if you seeded after 03:00 local time today, 3 if between 00:20 and 03:00, and 0 on a later day. It is never merged into the Articles figure beside it. The hover reads 'Counted by the Wikipedia lane itself, separately from your article count: a page this lane follows is not an article in your corpus unless its text was stored. Today means since local midnight.' No '{pages}' or '{changes}' placeholder shows anywhere.",
+    "flags": [
+     "needs-seed-data"
+    ],
+    "evidence": "src/static/app-home.js:52-117 (renderHomeWikiFigure appended beside the other figures, never merged); src/api/wiki_lane.py:64-122 (entities for pages, changes since local midnight); docs/audit/living-sources-clickthrough-2026-09-25/seed.py (2 entities; changes 2 min, 5 min, 20 min, 3 h and 2 days before seeding)"
+   },
+   {
+    "id": "P8",
+    "where": "Folder B → Living sources (sidebar, #tab-living) → Wikipedia subtab (the default)",
+    "do": "Read the caveat at the top, then the 'Live stream' figures, hovering each one. Read the 'Live changes' list and press 'Show diff' on the Walk Rome edit. Scroll to 'Pages you track' and click the 'en · Walk Tracked Page' button.",
+    "expect": "The caveat is visible without hovering and starts 'Freshness is shown as dates, never judged…'. 'Live stream' shows these figures. Pages followed 2. Changes reported, last 30 days 4. Text stored for '2 of 4'. Changes on pages you do not follow 1. Last change recorded: about 2 minutes before you seeded. Complete through: about 6 hours before you seeded, i.e. the older of the two feeds, not the newer. Open gaps 1: the gap the seed recorded, stated rather than hidden. All times end in 'UTC'. 'Live changes' shows 'Showing 4 of 4 changes', newest first. First, the Walk Rome edit with '+38' and 'Lines added: 2, removed: 1'. 'Show diff' opens the stored diff in place: green '+' lines, a red '-' line, '<b>many</b>' printed as text and not bold, and a note that it is the diff stored when the change arrived, not a live re-diff; the button then reads 'Hide diff'. Next, the Walk Lyon edit, '-120', reading 'Counted only: its text was not stored.' with NO diff button. Then a 'log' pill whose hover says it is the source's own word. Finally, the Walk Rome creation, '+16', reading 'Text stored; there was no earlier stored text to compare it with.' 'Pages you track' shows 3 buttons: the seed's two plus 'Coastal Infrastructure Act' from the corpus seed. Clicking 'en · Walk Tracked Page' fills the 'Tracked changes' section of this same tab with its 2 revisions; no pop-up window opens (Q728). No 'undefined', 'null' or 'NaN' appears anywhere.",
+    "flags": [
+     "needs-seed-data"
+    ],
+    "evidence": "src/static/index.html:1465-1506; src/static/app-living.js:29-37 (UTC times, signed deltas), 78-111 (figures and hovers), 181-212 (timeline wording), 335-353 (in-place diff, 'Hide diff'), 355-370 (tracked page buttons); src/api/living.py:98-165; scripts/ui_clickthrough_seed.py:603-608; docs/audit/living-sources-clickthrough-2026-09-25/README.md (same seed, expected values)"
+   },
+   {
+    "id": "P9",
+    "where": "Folder B → top-bar search (the magnifier at the left of the top bar, or Ctrl+K) → type 'Coastal Infrastructure Act' → 'Articles' group → the article opens in the local reader in a new browser tab (/api/articles/{id}/view)",
+    "do": "In the 'Articles' group pick 'Coastal Infrastructure Act' dated 2025-11-01, not 'Coastal Infrastructure Act (consolidated)', which is the law copy. In the reader tab find the licence block. Click 'page history (the authors) ↗', then press Cancel on the confirmation.",
+    "expect": "A block you can read without expanding or hovering says 'Wikipedia text, reused under a free licence. The authors are the page's editors — credited through its history.' It is followed by three links, 'the article on Wikipedia ↗ · page history (the authors) ↗ · CC BY-SA 4.0 ↗', and the small note 'This licence covers the TEXT. Images on Wikipedia carry their own separate licences and are not stored here.' Clicking a link shows a confirmation before anything leaves the app, and Cancel keeps you on the page. The seeded article is invented, so pressing OK would only open your browser on a missing Wikipedia page, and that traffic would be the browser's, not the app's.",
+    "flags": [
+     "needs-seed-data"
+    ],
+    "evidence": "src/api/main.py:2436-2470 (the licence block; all three links carry class=\"ext\"), 2560-2580 (the reader's own confirm on a.ext); src/api/search_omni.py:115-131 (article results open the local reader); src/static/app-shell.js:668-672; scripts/ui_clickthrough_seed.py:560-601 (the law copy and the en.wikipedia.org article); docs/audit/wiki-lane-clickthrough-2026-09-18/report.json (reader: three ext links, history link present)"
+   },
+   {
+    "id": "P10",
+    "where": "Folder B → Settings → Data & backup → panel 'Export / Backup' → button 'Export / Back up…' (opens the 'Export / Backup' dialog, #ux-export)",
+    "do": "Open the dialog and wait until its status line reads 'What do you want to back up?'. Hover the 'Living sources' row, then press 'Close'. Do NOT press 'Back up'.",
+    "expect": "A 'Living sources' row is present, greyed out and unticked, with its real size in brackets, e.g. '(1 · 120 KB)'. It is never 0 while the lane file exists. Its hover gives the reason: 'a lane is a live encrypted database; its backup format is not settled yet'. The 'Corpus' row is separate and ticked, because pages whose text the lane stored ride the corpus backup like any article. 'Close' writes nothing.",
+    "flags": [
+     "needs-seed-data"
+    ],
+    "evidence": "src/backup/inventory.py:73-117 (_lane_member: sized from the file, exportable False with a stated reason); src/static/app-backup.js:239-301 (a member the export cannot write is disabled, reason in the hover; 'What do you want to back up?'); src/static/index.html:1938-1946 and 3314-3340"
+   },
+   {
+    "id": "P11",
+    "where": "Folder B → the top-bar language button (flag and two-letter code, right of the airplane, #lang-switch) → العربية, then 中文, then Français",
+    "do": "Switch to العربية (ar) and quickly redo these checks. P3's bubbles: hover W; click to pause; Shift+click to stop; click once more to bring up the popup, then press its 'Stay offline' button (the left one). The wizard: Settings → Wikipedia → 'Editions and storage budget…', read it, then 'Not now'. P7: the Home item. P8: Living sources → Wikipedia, opening the diff. P9: reload the reader tab. Repeat in 中文 (zh) and in Français (fr).",
+    "expect": "In each language, every sentence on these surfaces is translated and has its numbers filled in: the W bubble and its messages, the popup, the wizard's title, blocks and buttons, the Settings panel, the Home item, the Living sources labels and hovers, and the reader's licence sentence and link labels. Host names stay in Latin letters exactly as written (stream.wikimedia.org, *.wikipedia.org, wikimedia.org…); a translated host name would be an unreachable address. In Arabic the whole layout runs right to left, yet each diff line still starts with its '+' or '-', and '-120' keeps its minus in front. On the wizard's share line, the unit is translated (French 'Go', Arabic 'غيغابايت'). The decimal mark ('1.7' or '1,7') follows the BROWSER's language, not the app's, so a French screen may still show '1.7'; record what you see. Take one screenshot per surface per language.",
+    "flags": [
+     "locale-check",
+     "needs-seed-data",
+     "mutates-data"
+    ],
+    "evidence": "src/static/app-core.js:558-572 (language button = flag + code; native names Français, 中文, العربية); src/static/app-boot.js:40-62 and 86-95 (repaint on language switch for the wizard share line, Home item, lane summary and W bubble); src/static/app-sources.js:1255-1262 (toLocaleString(undefined, …) uses the browser's locale); src/static/locales/fr.json, ar.json, zh.json (e.g. 'Flux Wikipédia : en pause', 'تدفق ويكيبيديا: يعمل', '维基百科：{pages} 个页面 · 今天 {changes} 项变更', fr 'Environ {share} Go…'); docs/audit/living-sources-clickthrough-2026-09-25/README.md (the Arabic diff-direction fix); docs/audit/wiki-lane-clickthrough-2026-09-18/report.json. W's state change stays in throwaway folder B."
+   }
+  ],
+  "clause_coverage": [
+   {
+    "clause": "Toggle click-through (Q1128 = a): a dedicated top-bar Wikipedia toggle, DEFAULT ON, that stops / starts / halts / resumes the stream (Q702's NOTE)",
+    "step_ids": [
+     "P3",
+     "P4",
+     "P5"
+    ]
+   },
+   {
+    "clause": "The one online consent still gates the first egress (invariant #14); default ON is never a reason to go online, and boot stays in airplane mode",
+    "step_ids": [
+     "P3",
+     "P4",
+     "P5"
+    ]
+   },
+   {
+    "clause": "Constant footprint (invariant #3) and a 'nice and consistent animation'",
+    "step_ids": [
+     "P3",
+     "P5"
+    ]
+   },
+   {
+    "clause": "Wizard click-through (Q725): edition choice (default all twelve) + storage budget + a plain statement of what the lane contacts, reachable from the first-launch hand-off AND from Settings → Wikipedia",
+    "step_ids": [
+     "P1",
+     "P2"
+    ]
+   },
+   {
+    "clause": "Q707: a published default budget of 20 GB set in the wizard; a limit on what is stored, not a second speed control",
+    "step_ids": [
+     "P1",
+     "P2"
+    ]
+   },
+   {
+    "clause": "Q707: when the budget is spent, the lane keeps recording what changed and stops storing text ('Budget reached')",
+    "step_ids": []
+   },
+   {
+    "clause": "Q726 disclosures: the robots exemption stated on the Wikipedia surface; the reader shows CC BY-SA 4.0 with a link to the page history",
+    "step_ids": [
+     "P1",
+     "P2",
+     "P9"
+    ]
+   },
+   {
+    "clause": "Q714: separate lane counts; the Home strip shows 'Wikipedia: N pages · M changes today' as its own figure; the articles headline stays press",
+    "step_ids": [
+     "P5",
+     "P7"
+    ]
+   },
+   {
+    "clause": "Q727: a gap is recorded honestly rather than inferred away",
+    "step_ids": [
+     "P5",
+     "P8"
+    ]
+   },
+   {
+    "clause": "Q711: the diff against the previously stored version (the stored diff visible; the section-aware split has no screen)",
+    "step_ids": [
+     "P8"
+    ]
+   },
+   {
+    "clause": "Q728: the modal becomes the Living sources view; the dump machinery stays as an opt-in offline reader",
+    "step_ids": [
+     "P2",
+     "P8"
+    ]
+   },
+   {
+    "clause": "Q819 step 1: Wikipedia page coordinates become a map layer (button, hover, legend and honest empty case; real dots not clickable here)",
+    "step_ids": [
+     "P6"
+    ]
+   },
+   {
+    "clause": "Q721: lane backups are opt-in members with their size shown",
+    "step_ids": [
+     "P10"
+    ]
+   },
+   {
+    "clause": "Q717: ORES / Lift Wing opt-in, ≈-labelled (the opt-in state is observed; the live verification and the ≈ label are not clickable here)",
+    "step_ids": [
+     "P2"
+    ]
+   },
+   {
+    "clause": "Strings ×12 (the hover, wizard, strip, attribution, Living sources facet), seen in en, ar (right-to-left), zh and fr",
+    "step_ids": [
+     "P11"
+    ]
+   },
+   {
+    "clause": "Brief S04-09 operator step 2: click-through of the toggle, wizard, strip and attribution, recorded per surface",
+    "step_ids": [
+     "P1",
+     "P2",
+     "P3",
+     "P4",
+     "P5",
+     "P7",
+     "P9",
+     "P11"
+    ]
+   },
+   {
+    "clause": "Brief S04-09 §4: the Living sources Wikipedia facet in en / fr / ar",
+    "step_ids": [
+     "P8",
+     "P11"
+    ]
+   },
+   {
+    "clause": "Closes when: the lane has run ≥ 72 h on the reference VM inside its budget with all twelve editions",
+    "step_ids": []
+   },
+   {
+    "clause": "Closes when: the run's own counters (rows/day, bytes/day, gap history) are read from one artifact, replacing the FROM-MEMORY figures",
+    "step_ids": []
+   },
+   {
+    "clause": "Closes when: the toggle and wizard are Chromium-verified (sandbox half)",
+    "step_ids": []
+   },
+   {
+    "clause": "Closes when: the fixture pipeline of row O carries the stream",
+    "step_ids": []
+   },
+   {
+    "clause": "Q717 live verification: Wikimedia's scoring endpoint (ORES → Lift Wing) and EventStreams retention confirmed",
+    "step_ids": []
+   },
+   {
+    "clause": "Q712: analytics 1–3",
+    "step_ids": []
+   }
+  ],
+  "not_clickable": [
+   "The ≥ 72 h run on the reference VM (2 cores / 3.5 GB) with all twelve editions inside the 20 GB budget is an operator run, not a click. Steps are in docs/product/WIKI_LANE_SOAK_RUNBOOK.md. WHO: the operator or maintainer, on a networked reference VM.",
+   "The run's own counters from ONE artifact (rows/day, bytes/day, the gap history with each gap's window and reason, pages by admission reason) have no screen. They exist only at GET /api/wiki/lane/counters and in the soak bundle (GET /api/diagnostics/soak-window → wiki_lane), and they only mean something after the 72 h run. WHO: the operator reads them; a session then replaces the answer sheet's FROM-MEMORY figures (250–300 k rows/day, the retention) in the ledger.",
+   "Q717's live half (which Wikimedia scoring endpoint answers today, ORES or Lift Wing) and confirming EventStreams' retention need a networked machine. Every Wikimedia host answers 000 from the build sandbox, and ORES_AS_OF is the day the client was written. The ≈ label on an ORES score (Settings → Wikipedia → 'Flagged changes', ORES column) shows only once a networked 'Track now' has fetched scores; the seeded folder has none. WHO: the operator (brief operator step 3).",
+   "Q707's spent-budget behaviour ('Budget reached: new page text is not stored until you raise it.' in Settings → Data & backup → Storage, with changes still counted) needs the lane to hold at least the 1 GB minimum budget, which no click-through can produce in reasonable time. It is proven by a fixture (brief S4 acceptance). WHO: tests; the 72 h run may reach it.",
+   "Real dots on the Wikipedia map layer (filled = has a Wikidata id, hollow = not; hover names the page and edition). They need BOTH a lane that has stored the text of pages with coordinates AND press sources with a country, because the map draws nothing until some source has one. Folder A can have the first (after P5) but never the second; folder B has the second but its lane holds no coordinates. The 2026-09-18 sandbox walk counted 6 markers (5 filled) in the DOM, from a seed that is not in the tree. WHO: the maintainer can optionally look on their real install after its lane has run there; or a session writes a seed that stores a 'coordinates' fact, and P6 is repeated.",
+   "'Toggle and wizard Chromium-verified' is already recorded as the sandbox half of Q1128 = a: docs/audit/wiki-toggle-clickthrough-2026-09-17/ (en/ar/zh/de/fr × three states, 0 findings) and docs/audit/wiki-lane-clickthrough-2026-09-18/ (wizard, reader licence, Home figure, map layer). Neither could photograph the LIVE breathing state, because Wikimedia is unreachable from the sandbox; P5 is the first look at it.",
+   "'The fixture pipeline of row O carries the stream' is proven by tests (tests/test_wiki_lane_end_to_end.py) and the recorded fixture run (docs/audit/wiki-lane-fixture-run-2026-09-18/). There is nothing to click.",
+   "Analytics 1–3 (Q712: edit velocity, edit concentration with size reversals, newly created pages) and the section-aware diff (Q711) have NO screen on main, only GET /api/wiki/lane/analytics and /api/wiki/lane/sections. Opening those URLs shows raw JSON, which is not a UI click-through. A surface for them would need a slice or a ruling.",
+   "Storage-shape rules are internals pinned by tests (tests/test_wiki_*.py): Q703 namespace 0 without redirects, Q704 wikitext plus derived plain text, Q705 metadata as rows (absent, never 0), Q708/Q709 every edit kept raw, Q710 retention, Q713 deletion marks, Q715 identity by (wiki, pageid), Q706's once-a-day most-read fetch. The 72 h run's counters show them only indirectly.",
+   "Q718 (Wikimedia Enterprise excluded) and the full per-host disclosure are stated in docs/SECURITY.md (lines 79 and 93-95). That is a document read, not a click; a guard test ties it to the consent hover's host table (net-hosts.js).",
+   "Q728's endpoint half, the retired dump→corpus POST, never had a UI. Its absence, and the offline reader that stays, are pinned by tests/test_wiki_dump_endpoint_retired.py.",
+   "Q819 step 2 (OSM objects tagged wikidata/wikipedia resolving to the same Place) completes with the Place entity in 0.5; nothing to click in 0.4.",
+   "Transport never downgraded (Q722 = b, Q1014): the stream waiting behind a refused proxy ('Waiting for a connection: …', never going direct) was walked for row O in docs/audit/lane-transport-clickthrough-2026-09-25/. Reproducing it needs protected mode with a refusing proxy, so it is left out of this pass."
+  ],
+  "surfaces": [
+   "Top bar > Wikipedia stream toggle (W, #wiki-toggle)",
+   "Top bar > Airplane mode > 'Go online?' consent popup (#net-consent)",
+   "First launch (unlock page) > 'Following Wikipedia as it changes' wizard (#wiki-wizard)",
+   "Settings > Wikipedia > The live edit stream (#set-wikipedia)",
+   "Settings > Wikipedia > Wikipedia offline baselines",
+   "Settings > Data & backup > Storage (#storage-panel)",
+   "Settings > Data & backup > Export / Back up… (#ux-export)",
+   "Home > at-a-glance strip (#home-stats, #home-wiki-figure)",
+   "Living sources > Wikipedia (#tab-living)",
+   "Article reader > Wikipedia licence notice (/api/articles/{id}/view)",
+   "World map > Coverage > Wikipedia layer ([data-oomap-wiki])",
+   "Top bar > language button (#lang-switch)"
+  ],
+  "estimate_minutes": 90,
+  "notes": "Things this read of main turned up that the maintainer may want to judge or record during the pass. None were fixed; this was a read-only pass.\n\n(1) STOP CANNOT BE FOUND FROM THE SCREEN. Stopping (as opposed to pausing) is Shift+click only (src/static/index.html:151-157). The bubble names only Pause, Resume and Start; USER_MANUAL.md does not document the toggle, and only WIKI_LANE_SOAK_RUNBOOK.md:48 says so. The JS comment at app-sources.js:1049-1051 says 'the full stop lives on the hover menu', but no such menu exists.\n\n(2) W DOES NOT REPAINT WHEN AIRPLANE MODE CHANGES. It re-reads its state once a minute, and only while its state is 'running' (app-sources.js:1155-1168), so going online or offline does not repaint it at once.\n\n(3) THE CONSENT POPUP REFLECTS THE CURRENT STATE, NOT THE REQUEST. When you start or resume from stopped or paused while offline, it lists 'Wikipedia / Wikimedia' under 'Switched off right now:' while asking you to start it.\n\n(4) CONFIRMATION MESSAGES REUSE THE BUTTON TEXT and read as orders. After a Start from 'stopped' the message says 'Resume the Wikipedia stream' (app-sources.js:1188-1189).\n\n(5) Q714 TENSION. The Home 'Articles' figure is COUNT(*) over the whole articles table (src/api/database.py:98-130). Pages whose text the lane stores become Articles (src/wiki/lane.py:388 → corpus.py:292-340, source 'Wikipedia (xx)'), so they raise a figure Q714 says stays press. P5 on the empty folder A is where this shows.\n\n(6) Q727: THE GAP IS COUNTED, NOT DESCRIBED. The UI shows 'Open gaps N' and 'Complete through', never a 'no change data between … and …' sentence. Each gap's window and reason live only in /api/wiki/lane/counters.\n\n(7) Q717 TENSION. Settings → Wikipedia's older watched-page panel has 'use ORES scores' TICKED by default (index.html:1777). It applies to 'Track now' and per-page tracking, not to the stream. The ORES score's own hover says 'Optional, and off unless you asked for it' (app-map.js:2737), which a pre-ticked box contradicts. RULINGS_INDEX records Q717 as 'opt-in unchanged'.\n\n(8) THE WIZARD'S SHARE LINE USES THE BROWSER'S LOCALE: toLocaleString(undefined, …), not the app's language. The 2026-09-18 record still shows '1.7 GB' for German although its README calls that fixed (the sandbox browser was en).\n\n(9) ONE EXPORT HOVER IS ENGLISH IN EVERY LANGUAGE. The 'Living sources' row's reason ('a lane is a live encrypted database…') is not in any locale file, so t() returns it untranslated.\n\n(10) FIELD FINDING. A lane that stops itself after 3 failed drains (src/wiki/runner.py:438-448; field report §4) stays stopped until restart. W then shows filled with no ring and 'Chosen, but no stream is running in this session.', gives no reason and offers no restart.\n\n(11) THE SANDBOX RECORDS HAVE HOLES. The 2026-09-18 walk used a seeded lane (6 located pages, a 'Rome' article) whose seed script is not in the tree, so folder B combines the corpus seed with row O's Living-sources seed. That combination has no located lane pages, so P6 can show only the empty layer. The map screenshots in that record are 1,078 bytes each and prove nothing visually.\n\n(12) THE LIVE STEP IS PARTLY UNPREDICTABLE. How many pages the lane follows in P5, and whether any stored text appears within 15 minutes, depends on live Wikimedia traffic and on each edition's most-read list being fetched (one edition per drain). The expected results are written as conditions. To make stored text arrive sooner, the maintainer can pin a busy page while online (Settings → Wikipedia → Watch a page → Add, which pins it to HOT per src/api/wiki.py:158-240); its text is stored the first time the stream sees an edit to it.\n\n(13) THE MAP LAYER IS UNREACHABLE ON A WIKIPEDIA-ONLY INSTALL. World map draws nothing, not even the in-map 'Wikipedia' button, until some press source carries a country (app-map.js:1651-1655). The lane's own 'Wikipedia (xx)' sources carry none (wiki/corpus.py:238-245). An operator who follows only Wikipedia sees 'No located sources yet…' and can never open the layer Q819 gives them. Folder A after P5 demonstrates it: open World map there and record it.\n\n(14) WHY FOLDER B IS NOT STARTED WITH OO_NO_SCHEDULER=1, the flag the 2026-09-18 walk used. That flag also skips the boot-time airplane engage and the socket guard (src/api/main.py:344-372, src/api/unlock.py:349-355), so the app boots ONLINE. W's bubble and the popup then differ from what a real install shows, which is worth knowing when reading that sandbox record."
+ },
+ "walk": {
+  "row": "P",
+  "environment": {
+   "encrypted": true,
+   "seed": "Folder A (port 8838): fresh, OO_AUTOSEED=0, made ENCRYPTED through the real first-launch screens (language, legal, passphrase). Folder B (port 8839): default scripts/ui_clickthrough_seed.py (453 articles, multilingual) plus docs/audit/living-sources-clickthrough-2026-09-25/seed.py (copied to seed_living.py). Both seeds ran with OO_DB_PASSPHRASE='walk-pass-2026' and OO_DB_PLAINTEXT unset. The first bytes of open_omniscience.db and wiki.db are ciphertext. Folder B booted LOCKED and was unlocked through #pw. Seeded 2026-09-26 19:24 by the machine clock (local timezone = UTC, after 03:00, so the expected 'changes today' is 4).",
+   "ports": [
+    8838,
+    8839
+   ],
+   "scratch_dir": "/tmp/claude-0/walk/P/",
+   "notes": "Repo at 462145c (origin/main, detached). Every server was launched with the console script, proxies and OO_DB_* unset. Each log says 'Booted in airplane mode (offline)'. No consent 'Go online' was ever pressed; network stayed online:false throughout. Server PIDs 11302 (A, stopped by the app's own power icon), 12936 (A after restart) and 11301 (B) are all killed. Chromium ran with --disable-background-networking after one early run in which the BROWSER (not the app) tried android.clients.google.com and www.google.com; the sandbox proxy refused them. The 404s on /api/stats in b_*.json are my own harness fetch, not the app, and are excluded below. The ERR_CONNECTION_REFUSED console lines after the power-icon shutdown are expected. Raw per-step data: report.json plus a_*.json, b_*.json, repro_tip.json, tip_modal.json, reader_locales.json, extra_fr.json and narrow_dbg.json. Walk scripts: walk_a.py, walk_b.py, restart_a.py, repro_tip.py, tip_modal.py, reader_locales.py, extra_fr.py and narrow_dbg.py. Screenshots are P-<step>-<surface>-<lang>.png and N375-*.png (62 files, more than the 8-15 asked, kept as per-surface-per-language evidence for Q1128 = a). The harness's own clock string (17:23Z) and the machine clock (19:24Z) differ; all times above are the machine clock."
+  },
+  "steps": [
+   {
+    "id": "P1",
+    "result": "pass",
+    "locales": [
+     "en"
+    ],
+    "observed": "Fresh encrypted folder A. Language -> legal ('I have read and accept these documents.' / 'Accept and continue') -> 'Create your corpus passphrase' -> Create. The app landed on /?wikiwizard=1#home with #wiki-wizard open by itself (the first-launch hand-off). The 'Welcome to Open Omniscience' guide opened ON TOP of it (two stacked modals); I closed it with ×. Read without hovering, the three blocks are 'What it contacts.' (the host line reads exactly '*.wikipedia.org · stream.wikimedia.org · wikimedia.org · ores.wikimedia.org · dumps.wikimedia.org'; the prose describes categories and never gives a smaller host number), 'Robots.' and 'Licence.' (CC BY-SA 4.0, page history = authors, images not stored). There are 12 editions, all ticked, native name first ('中文 (zh)', 'English (en)', 'Français (fr)', 'العربية (ar)'…). The count reads '12 of 12 editions', the budget 20 with 'GB in total', and the share line is exactly 'About 1.7 GB for each of 12 editions — the total divided by the editions you follow.' The STORED-not-speed sentence is present. The airplane stayed filled. 'Not now' closed the dialog; config afterwards: wizard_done=false, state running, budget 20, 12 editions. /api/system/lock-state = unlocked-encrypted. The first-launch flow logged 503 on /api/system/data-location (defect below).",
+    "screenshot": "shots/P/P-P1-wizard-top-en.png"
+   },
+   {
+    "id": "P2",
+    "result": "pass",
+    "locales": [
+     "en"
+    ],
+    "observed": "Summary before saving: exactly '12 editions · 20 GB budget · not yet measured — this lane has not run · using the defaults'. Robots./Licence. are visible on the panel. In the dialog: 2 unticked (en, de) -> '10 of 12 editions' and 'About 2.0 GB for each of 10 editions…'. Clear -> '0 of 12 editions' and 'Pick at least one edition and a budget to see the share.' Save with none -> red toast 'Pick at least one edition — a lane with none follows nothing.', dialog stays open. Select all + budget 0 -> the same 'Pick at least one…' line. Budget 24 -> 'About 2.0 GB for each of 12 editions…'. Save -> 'Saved. The stream starts when you go online.', dialog closed, airplane filled. The summary became '12 editions · 24 GB budget · not yet measured — this lane has not run' (no 'using the defaults'). Reopened: 24 and 12 ticked. Storage: 'Wikipedia / Wikimedia | Not created yet | 24 GB yours; the published default is 20 GB'. Offline baselines still offers 'Read a page from a downloaded dump' and 'Search downloaded dumps (full text)', and no button adds a dump to the corpus. Q717 RECORD: 'use ORES scores' (#wiki-ori… #wiki-ores) is ALREADY TICKED on a fresh corpus (listed as a defect).",
+    "screenshot": "shots/P/P-P2-after-save-en.png"
+   },
+   {
+    "id": "P3",
+    "result": "fail",
+    "locales": [
+     "en",
+     "ar",
+     "zh",
+     "fr"
+    ],
+    "observed": "(1) Default ON: W filled in the accent colour, opacity .72 (faded), box-shadow none (no ring); the bubble reads exactly 'Wikipedia stream: running — Chosen; airplane mode is holding it until you go online.' / 'Pause the Wikipedia stream' / 'This lane contacts stream.wikimedia.org, each edition's Action API, and wikimedia.org for daily pageviews.' (2) Airplane -> 'Go online?' lists 'Wikipedia / Wikimedia n=5' under 'Runs on every collection pass:'. Its title holds the five hosts + 'Transport: direct — protected mode is off, so these hosts see your address.', but the hover bubble is INVISIBLE: it renders under the modal dialog (defect). 'Stay offline' closed it and the airplane stayed filled. (3) Click: glyph outlined, grey (rgb 92,101,115), grey 3px ring; toast 'Pause the Wikipedia stream'; no popup. BUT on re-hover the bubble still read 'Wikipedia stream: running — Chosen; airplane mode is holding it…' / 'Pause the Wikipedia stream', although the button's fresh title had the paused text: STALE BUBBLE (defect). (4) Shift+click: outlined, no ring, default colour; toast 'Stop the Wikipedia stream'; the bubble was again the stale 'running' text. Footprint: W 34×34 in every state; x of gauge/W/airplane/language/?/power constant (1128/1174/1220/1266/1342/1388). Fill transition 'fill 0.35s' (same as the gauge needle's .35s). Animation verdict: the three static states read clearly and consistently; the live breathing ring cannot be seen here (needs egress). Nothing anywhere on screen mentions Shift (text + every title scanned): STOP is undiscoverable. After a reload the bubbles are correct for each state in en/ar/zh/fr.",
+    "screenshot": "shots/P/P-P11-W-paused-stale-bubble-ar.png"
+   },
+   {
+    "id": "P4",
+    "result": "pass",
+    "locales": [
+     "en"
+    ],
+    "observed": "W stopped + airplane on. One click opened 'Go online?' with 'This action needs the network:' / 'Start the Wikipedia stream', the local addresses ('eth0: 192.0.2.2') and both visible caveats (the public-address one and 'Airplane mode here controls only this app's network…'). 'Wikipedia / Wikimedia n=5' sits under 'Switched off right now:' while the popup asks to start it: it reads contradictory (recorded as a defect). After 'Stay offline': airplane filled; W outlined, no ring; config still 'stopped'; no toast. The bubble was 'unchanged', but it was already the stale 'running' text from the P3 defect.",
+    "screenshot": "shots/P/P-P4-consent-start-W-en.png"
+   },
+   {
+    "id": "P5",
+    "result": "not-measurable-here",
+    "locales": [
+     "en"
+    ],
+    "observed": "Everything after consent needs egress to Wikimedia, which this sandbox does not have. I never pressed 'Go online'. What I did: clicked W (stopped) -> popup 'Start the Wikipedia stream'; 'Runs on every collection pass:' lists Press collection n=9033, Source discovery, Law n=260, Official statistics, Markets, Calendars n=14 and Hazard feeds, with Wikipedia under 'Switched off right now:'. Pressed 'Stay offline'. Offline checks in folder A: Home shows 'Your library is empty — head to Collect…' and NO Wikipedia item (lane-never-run renders nothing, not a zero). Living sources -> Wikipedia shows State 'Not run yet' and 'The live stream has not run yet… Turn it on with the W button in the top bar.' World map: no in-map Wikipedia button at all, only 'No located sources yet — add sources with a country…' (gate note 13 confirmed). Restart: power icon -> confirm 'Shut down the app?…' -> the process exited -> relaunched with the same command -> /unlock -> #pw -> the app opened in airplane mode (network online:false, plane filled). W showed its persisted 'stopped' state (the online resume could not run here). The default-on boot was checked on folder B's first boot instead: W filled, opacity .72, no ring, bubble 'Chosen; airplane mode is holding it until you go online.', scheduler reason 'airplane-mode', app offline. The default-on choice did not take the app online by itself. Not measured here: breathing ring, 60 s repaint lag, Home counter growth, Q714 inflation, pause/resume gap behaviour.",
+    "screenshot": "shots/P/P-P5-consent-en.png"
+   },
+   {
+    "id": "P6",
+    "result": "pass",
+    "locales": [
+     "en",
+     "fr"
+    ],
+    "observed": "Folder B, World map, lens 'Coverage' active. The in-map 'Wikipedia' bubble (visible, not in a modal) reads exactly 'Wikipedia pages your lane follows that carry a coordinate. A page with no coordinate is absent, never placed at 0,0.' Clicked: aria-pressed=true, style 'border-color:var(--accent);color:var(--accent)'. The legend line reads '● Wikipedia page (linked to Wikidata) · ○ Wikipedia page (not yet linked)'. 0 Wikipedia markers; /api/wiki/lane/places measured:true, 0 points; nothing at 0°,0° in the screenshot. Clicked again: legend gone, aria-pressed=false, plain style. French: button 'Wikipédia', hover and legend translated.",
+    "screenshot": "shots/P/P-P6-map-wiki-on-en.png"
+   },
+   {
+    "id": "P7",
+    "result": "pass",
+    "locales": [
+     "en",
+     "ar",
+     "zh",
+     "fr"
+    ],
+    "observed": "The strip ends with its own item, 'Wikipedia: 2 pages · 4 changes today' (seeded after 03:00 local, so 4 is expected), separate from '453 Articles'. Its hover is exactly 'Counted by the Wikipedia lane itself, separately from your article count: … Today means since local midnight.' No {pages}/{changes} placeholder. ar: 'ويكيبيديا: 2 صفحة · 4 تغيير اليوم'; zh: '维基百科：2 个页面 · 今天 4 项变更'; fr: 'Wikipédia : 2 pages · 4 modifications aujourd'hui'; each hover translated. The same strip's 'SOURCES QUALIFIED / SOURCES PENDING / SOURCES CANDIDATES' labels stay English in ar/zh/fr (defect).",
+    "screenshot": "shots/P/P-P7-home-strip-en.png"
+   },
+   {
+    "id": "P8",
+    "result": "pass",
+    "locales": [
+     "en",
+     "ar",
+     "zh",
+     "fr"
+    ],
+    "observed": "The caveat is visible and starts 'Freshness is shown as dates, never judged…'. Live stream: Pages followed 2; Changes reported 4; Text stored for '2 of 4'; not followed 1; Last change 19:22 UTC (2 min before seeding); Complete through 13:24 UTC (6 h before seeding, the older feed); Open gaps 1. All times end in UTC. The 7 hovers were read by a real hover and match the code. 'Showing 4 of 4 changes, newest first.' Rows: Walk Rome edit +38 'Lines added: 2, removed: 1' [Show diff] -> in-place diff, green '+' lines, red '-' line, '<b>many</b>' printed as text (no bold node), note 'The diff stored when this change arrived… not a live re-diff…', button 'Hide diff'. Walk Lyon edit -120 'Counted only: its text was not stored.' with no button. 'log' pill hover 'The source's own word for this change, shown as it was sent.' Walk Rome create +16 'Text stored; there was no earlier stored text to compare it with.' Pages you track: 3 buttons (Coastal Infrastructure Act, Walk Tracked Page 2, Walk Page jamais vérifiée). Clicking 'en · Walk Tracked Page' filled Tracked changes in-tab ('Showing 2 / 2 tracked revisions'); no new window, no dialog. No undefined/null/NaN.",
+    "screenshot": "shots/P/P-P8-living-diff-en.png"
+   },
+   {
+    "id": "P9",
+    "result": "pass",
+    "locales": [
+     "en",
+     "ar",
+     "zh",
+     "fr"
+    ],
+    "observed": "Top-bar search: typed 'Coastal Infrastructure Act'. The Articles group lists 'Coastal Infrastructure Act 2025-11-01' and '… (consolidated) 2026-01-15'. Picking the first opened /api/articles/448/view in a new tab. The licence block is visible without expanding: 'Wikipedia text, reused under a free licence. The authors are the page's editors — credited through its history.' plus 'the article on Wikipedia ↗ · page history (the authors) ↗ · CC BY-SA 4.0 ↗' (all class=ext) and 'This licence covers the TEXT. Images on Wikipedia carry their own separate licences and are not stored here.' Clicking the history link raised a confirm naming the history URL; Cancel kept the reader on the page and opened nothing. The block is translated in ar (rtl), zh and fr, but the confirm is English in all three (defect).",
+    "screenshot": "shots/P/P-P9-reader-licence-en.png"
+   },
+   {
+    "id": "P10",
+    "result": "fail",
+    "locales": [
+     "en",
+     "fr"
+    ],
+    "observed": "The status reads 'What do you want to back up?'. Rows: 'Corpus (453 articles · … · 13.9 MB)' ticked and separate. 'Living sources (1 · 480.0 KB)' is disabled and unticked, never 0; the inventory says exportable:false, 491520 bytes. Close wrote nothing. The row's reason ('a lane is a live encrypted database; its backup format is not settled yet') is only in its title. The #oo-tip bubble reported show=true, but it renders beneath the modal dialog and does not appear in the screenshot; since the bubble strips the native title, a person hovering sees no reason at all. The reason is also English in fr.",
+    "screenshot": "shots/P/P-P10-export-en.png"
+   },
+   {
+    "id": "P11",
+    "result": "fail",
+    "locales": [
+     "ar",
+     "zh",
+     "fr"
+    ],
+    "observed": "Translated with numbers filled, in all three: the W bubble in running, paused and stopped states (e.g. 'Flux Wikipédia : en pause — …', 'تدفق ويكيبيديا: يعمل', '维基百科流：已停止'); the pause/stop toasts; the popup (ar dir=rtl); the wizard title, blocks and buttons (share line fr 'Environ 1.7 Go…', ar '…1.7 غيغابايت…'); the Settings panel; the Home item; the Living labels and hovers; the reader licence sentence and link labels. Host names stay Latin everywhere. In Arabic the page is RTL, each diff line still starts with '+'/'-' (unicode-bidi:plaintext), and '-120' keeps its minus (FSI/PDI isolates). The decimal mark follows the browser locale (en-US): '1.7' on the French and Arabic screens. FAILS on these surfaces: (a) the reader's external-link confirm is English in ar/zh/fr; (b) the Home strip's three sources_* labels are English; (c) byte units are not localized ('occupe 480.0 KB' beside 'budget de 20 Go'; storage/export rows 'KB/MB/B'); (d) the stale W bubble reproduces in ar. Also 'Wikipedia / Wikimedia' stays untranslated in the fr popup and fr Storage row while fr says 'Wikipédia' elsewhere (a proper-noun choice, noted only).",
+    "screenshot": "shots/P/P-P11-wizard-ar.png"
+   },
+   {
+    "id": "N375",
+    "result": "fail",
+    "locales": [
+     "en"
+    ],
+    "observed": "375 px wide, en: Home scrollWidth-clientWidth = 0 and Living sources = 0. Settings -> Wikipedia = 29 px of horizontal page scroll: the 'Build index · Cancel build · Clear index' row (367 px wide, right edge 404) in 'Search downloaded dumps (full text)'. The wizard (339 px wide) and the consent popup fit, with their bottom buttons visible. W/airplane/language/?/power wrap to a second row. No clipped text seen on these surfaces.",
+    "screenshot": "/tmp/claude-0/walk/P/N375-settings-wikipedia-en.png"
+   }
+  ],
+  "page_errors": [],
+  "http_errors": [
+   "503 GET http://127.0.0.1:8838/api/system/data-location (first-launch flow on fresh encrypted folder A; unlock.html asks it before the passphrase step)"
+  ],
+  "junk_text": [],
+  "defects": [
+   {
+    "title": "Hover bubbles inside modal dialogs render under the dialog: the consent popup's per-lane host + transport disclosure and the export row's reason cannot be seen",
+    "severity": "P1",
+    "step_ids": [
+     "P3",
+     "P10"
+    ],
+    "repro": "Folder B, 1440x950. Click the airplane icon; 'Go online?' opens (showModal). Hover 'Wikipedia / Wikimedia'. Or: Settings -> Data & backup -> 'Export / Back up…' and hover 'Living sources'.",
+    "expected": "The #oo-tip bubble shows the five Wikimedia hosts and 'Transport: direct — … these hosts see your address.' (and the export row's reason), readable before deciding (invariant #17 layering; Q1002 hosts in the consent hover).",
+    "actual": "#oo-tip reports class 'show' at opacity 1, positioned at [541,349]-[871,457], entirely inside the dialog rect [500,131]-[940,819]. Nothing is visible in the screenshot. show() also removes the element's title, so there is no native tooltip fallback: a person hovering sees nothing. The same bubble IS visible outside dialogs (World map button, W).",
+    "evidence": "/tmp/claude-0/walk/P/P-P3-consent-hover-hidden-en.png, /tmp/claude-0/walk/P/P-P10-export-en.png, /tmp/claude-0/walk/P/tip_modal.json. Cause: src/static/app-boot.js:259-266 appends #oo-tip to <body> (position:fixed, z-index 400, src/static/app.css:1793), while <dialog>.showModal() puts the dialog in the top layer above any z-index; app-boot.js:279-283 strips the title on show."
+   },
+   {
+    "title": "The W hover bubble (and every repainted top-bar control) goes stale after a mouse click: it names the previous state and action",
+    "severity": "P2",
+    "step_ids": [
+     "P3",
+     "P4",
+     "P11"
+    ],
+    "repro": "Any folder, W running + airplane on. Hover W (bubble shows), click it once (paused), move the pointer off W and back onto it. Same with Shift+click (stopped). Same with the gauge #rate-toggle.",
+    "expected": "'Wikipedia stream: paused — The connection is closed and your place is kept…' / 'Resume the Wikipedia stream' (then the 'stopped' text after Shift+click).",
+    "actual": "The bubble still reads 'Wikipedia stream: running — Chosen; airplane mode is holding it until you go online.' / 'Pause the Wikipedia stream' while the glyph is outlined grey (paused) or outlined (stopped). Fresh title right after the click, still hovered, had the correct paused text. The title attribute is then overwritten by the stale one when the pointer leaves. Reproduced in en and ar, and on the gauge (after switching to the 500 KiB/s target, the bubble still says 'Maximum … Click for the considerate 500 KiB/s target'). Correct again only after a reload or language switch.",
+    "evidence": "/tmp/claude-0/walk/P/P-P11-W-paused-stale-bubble-ar.png (grey outlined W + Arabic 'running' bubble + Arabic 'Pause' toast); a_p3_p4_p5.json P3.paused/stopped (title_attr fresh vs ooTip stale); repro_tip.json (gauge). Cause: src/static/app-boot.js:278-291, show() stores the title in dataset.ooTip and removes it; hide() unconditionally writes dataset.ooTip back with setAttribute('title', …), overwriting the title _paintWikiLane (src/static/app-sources.js:1127-1128) set meanwhile."
+   },
+   {
+    "title": "Reader's external-link confirmation is English in every language (consent string not x12)",
+    "severity": "P2",
+    "step_ids": [
+     "P9",
+     "P11"
+    ],
+    "repro": "Folder B, switch the app to ar/zh/fr, open 'Coastal Infrastructure Act' (2025-11-01) in the reader, click 'page history (the authors) ↗' in the licence block.",
+    "expected": "The confirmation before anything leaves the app is in the UI language, like the licence block around it (every consent/caveat string ships x12).",
+    "actual": "The confirm always reads 'Open an EXTERNAL site on the public web?\\n\\n<url>\\n\\nThis leaves your local copy and makes a live request from your machine — the site may see your visit. Continue?' in ar, zh and fr, while the licence sentence and link labels are translated.",
+    "evidence": "/tmp/claude-0/walk/P/reader_locales.json; hardcoded string at src/api/main.py:2570-2580 (inline <script>, no t()); no locale key contains it."
+   },
+   {
+    "title": "First-launch data-location step unreachable on an encrypted fresh install: /api/system/data-location answers 503 while the state is 'fresh' (outside Row P)",
+    "severity": "P2",
+    "step_ids": [
+     "P1"
+    ],
+    "repro": "Fresh data folder, boot with no OO_DB_PLAINTEXT, choose a language, accept the legal documents.",
+    "expected": "unlock.html's legalToDataLocation() gets {offerable:true,…} and can offer 'Where should your corpus live?' when appropriate.",
+    "actual": "The request returned 503 {'detail':'the database is locked: unlock it first'}. unlock.html reads that as not offerable and skips silently to the passphrase. On this walk OO_DATA_DIR was set, so the visible flow matches the intended skip, but the 503 happens on every encrypted fresh start.",
+    "evidence": "http 503 GET /api/system/data-location in a_p1p2.json; src/api/unlock.py:77-94 (ALLOWED_WHILE_LOCKED lacks /api/system/data-location), src/api/main.py:751-763 (lock gate), src/static/unlock.html:341-347."
+   },
+   {
+    "title": "Stopping the Wikipedia stream is undiscoverable (Shift+click only; nothing on screen says so)",
+    "severity": "P3",
+    "step_ids": [
+     "P3"
+    ],
+    "repro": "Hover W in any state; look anywhere on the page, including every title.",
+    "expected": "Some visible or hover affordance names the full stop (the code comment says 'the full stop lives on the hover menu').",
+    "actual": "The bubble names only Pause/Resume/Start; no text or title on the page mentions Shift; no hover menu exists.",
+    "evidence": "a_p3_p4_p5.json P3.shift_hint_anywhere=false; src/static/index.html:151-157; src/static/app-sources.js:1049-1051 (comment refers to a non-existent hover menu)."
+   },
+   {
+    "title": "Consent popup lists Wikipedia under 'Switched off right now:' while asking to start it; confirmation toasts read as orders",
+    "severity": "P3",
+    "step_ids": [
+     "P4",
+     "P5",
+     "P3"
+    ],
+    "repro": "W stopped + airplane on, click W. Separately, click W from running (pause) or Shift+click (stop).",
+    "expected": "The popup reflects the lane that will start; toasts confirm what happened (e.g. 'Wikipedia stream paused').",
+    "actual": "'Start the Wikipedia stream' heads a popup that lists 'Wikipedia / Wikimedia n=5' under 'Switched off right now:'. Toasts are the button labels: 'Pause the Wikipedia stream', 'Stop the Wikipedia stream' (and 'Resume…' after a start, per code).",
+    "evidence": "/tmp/claude-0/walk/P/P-P4-consent-start-W-en.png; src/static/app-core.js:1144-1166 (_laneState reads the current setting); src/static/app-sources.js:1188-1203."
+   },
+   {
+    "title": "Home strip labels 'SOURCES QUALIFIED / SOURCES PENDING / SOURCES CANDIDATES' untranslated in ar, zh, fr",
+    "severity": "P3",
+    "step_ids": [
+     "P7",
+     "P11"
+    ],
+    "repro": "Folder B, switch to ar/zh/fr, open Home and read #home-stats.",
+    "expected": "Every label on the strip translated, like 'Articles'/'Sources' and the Wikipedia item beside them.",
+    "actual": "The three sources_* figures show English labels in all three languages.",
+    "evidence": "b_locales.json P11.per_lang.*.home.strip; /tmp/claude-0/walk/P/P-P7-home-strip-ar.png; src/static/app-home.js:21-28 (HOME_STAT_LABELS lacks the three keys, and the fallback k.replace(/_/g,' ') has no locale entry)."
+   },
+   {
+    "title": "Export 'Living sources' reason is untranslated; byte units unlocalized beside translated GB units",
+    "severity": "P3",
+    "step_ids": [
+     "P10",
+     "P11"
+    ],
+    "repro": "Folder B, fr: Settings -> Data & backup -> Export / Back up… (hover Living sources); Settings -> Wikipedia summary; Storage rows.",
+    "expected": "The reason in French; sizes in the locale's units and decimal mark (the wizard already says 'Go' / 'غيغابايت').",
+    "actual": "The title stays 'a lane is a live encrypted database; its backup format is not settled yet'. The fr summary reads '12 éditions · budget de 20 Go · occupe 480.0 KB · …'. Rows read '13.9 MB' and '0 B' in fr/ar.",
+    "evidence": "/tmp/claude-0/walk/P/extra_fr.json, b_locales.json (wizard.summary); src/backup/inventory.py:118 (reason, no locale key); src/static/app-settings.js:198-203 (humanBytes: fixed English units, toFixed)."
+   },
+   {
+    "title": "375 px: Settings -> Wikipedia scrolls horizontally by 29 px",
+    "severity": "P3",
+    "step_ids": [
+     "N375",
+     "P2"
+    ],
+    "repro": "Viewport 375x800, en, Settings -> Wikipedia.",
+    "expected": "document.documentElement.scrollWidth - clientWidth = 0.",
+    "actual": "29. The offender is the 'Build index · Cancel build · Clear index' button group (flex:0 0 auto, 367 px wide, right edge 404) under 'Search downloaded dumps (full text)'.",
+    "evidence": "/tmp/claude-0/walk/P/narrow_dbg.json, /tmp/claude-0/walk/P/N375-settings-wikipedia-en.png; src/static/index.html:1876-1880."
+   },
+   {
+    "title": "'use ORES scores' is pre-ticked on a fresh corpus although ORES is ruled opt-in (Q717)",
+    "severity": "P3",
+    "step_ids": [
+     "P2"
+    ],
+    "repro": "Fresh folder A, Settings -> Wikipedia, first panel 'Wikipedia change-tracking'.",
+    "expected": "Opt-in: unticked until the operator asks (the ORES score's own hover says 'Optional, and off unless you asked for it').",
+    "actual": "#wiki-ores is checked by default.",
+    "evidence": "a_p1p2.json P2.ores_checked=true; src/static/index.html:1777 (checked attribute); src/static/app-map.js:2737."
+   }
+  ],
+  "not_measurable": [
+   "P5 after consent: the live stream, breathing ring (2.4 s), the 60 s repaint lag after going online, Home 'Wikipedia: N pages · M changes today' growing, Living sources live figures, pause/resume gap behaviour, going offline mid-stream, the Q714 check (Wikipedia pages entering the Articles headline). All need egress to Wikimedia, which this sandbox lacks; 'Go online' was never pressed.",
+   "The ≥72 h reference-VM soak, the counters artifact (/api/wiki/lane/counters), Q717 live ORES/Lift Wing verification and the ≈ label, Q707 spent-budget behaviour, real map dots, analytics 1-3 / section-aware diff, the fixture pipeline: all out of scope per the row's not_clickable list; none were attempted.",
+   "The live animation verdict: only the three static states could be seen (fill transition .35s, same as the gauge needle; the chosen state fades to opacity .72; paused adds a grey ring). The breathing state needs a running stream.",
+   "W's 'after restart' state with the stream chosen running: folder A persisted 'stopped' because the online resume could not happen; the default-on boot view was taken on folder B's first boot instead."
+  ],
+  "summary": "The click-through clause does not close on this walk. All the offline parts behave as the gate describes: the first-run wizard, the Settings panel and Storage, the consent gate on W, boot in airplane mode, the map layer's empty case, the Home figure, Living sources with its diff, the reader licence and the export row, in en/ar/zh/fr. Two defects break steps. After any mouse click, W's hover bubble keeps the previous state's text (P3/P4/P11). Hover bubbles inside modal dialogs are invisible, so the consent popup's host and transport disclosure and the export row's reason cannot be read (P3/P10). The reader's external-link confirm is English in every language, and there is a 29 px horizontal scroll at 375 px on Settings -> Wikipedia. P5 (the live stream) is not measurable without egress and remains the maintainer's to walk."
+ },
+ "recheck": {
+  "row": "P",
+  "verdicts": [
+   {
+    "title": "Hover bubbles inside modal dialogs render under the dialog: the consent popup's per-lane host and transport disclosure, and the export row's reason, cannot be seen",
+    "verdict": "confirmed",
+    "reason": "Reproduced on my own instance (encrypted seed, port 8840, 1440x950). Setup: W stopped, then a click on W opened #net-consent, which is :modal. I hovered 'Wikipedia / Wikimedia'. #oo-tip had class show, opacity 1, and the right text ('*.wikipedia.org · stream.wikimedia.org · … — Transport: direct — protected mode is off, so these hosts see your address.') at rect [539,596,869,705], inside the dialog rect [500,131,940,819]. To hit-test it I set pointer-events to auto for one moment, because #oo-tip is pointer-events:none. The topmost element at the bubble's centre is then a DIV inside dialog#net-consent, not #oo-tip, and nothing shows in the screenshot. While the span is hovered its title attribute is null (show() removed it), so there is no native tooltip either. I got the same result on the Export / Backup dialog's 'Living sources' row, in en and fr: the topmost element is #ux-export. Control case: on a non-modal element (#net-toggle, #rate-toggle) the same bubble IS the topmost element. Every modal in the app has this problem, not only row P's. It breaks invariant #17's layering on the ONE consent popup, where Q1002 puts each lane's hosts and transport. Evidence: /tmp/claude-0/walk/P-recheck/P-D1-consent-hover-en.png, P-D1-export-hover-en.png, P-D1-export-hover-fr.png, b_en.json (D6_consent.tip_in_modal, D1_export_en.tip, D1_control_outside_modal).",
+    "root_cause": "src/static/app-boot.js:259-266 appends #oo-tip to document.body (position:fixed; z-index:400 at src/static/app.css:1793). <dialog>.showModal() puts the dialog in the browser's top layer, which paints above any z-index in the document, so the bubble sits underneath it. show() at app-boot.js:278-280 also removes the element's title, so no native tooltip appears in its place.",
+    "suggested_fix": "In show(), attach the bubble to the open modal that contains the target before positioning it: `const host = (el.closest && el.closest('dialog[open]')) || document.body; if (tip.parentNode !== host) host.appendChild(tip);`. This works because position:fixed resolves against the viewport, as dialogs here have no transform. Alternative: give #oo-tip popover=\"manual\" and call showPopover()/hidePopover() so it enters the top layer above the modal, overriding the UA popover inset/margin/border. Pin it with a Chromium test that hovers a lane in #net-consent and asserts the bubble is topmost at its centre.",
+    "severity": "P1"
+   },
+   {
+    "title": "The W hover bubble (and every top-bar control repainted under the pointer) goes stale after a mouse click and names the previous state and action",
+    "verdict": "confirmed",
+    "reason": "Reproduced in en. W running + airplane mode. I hovered W, then made a real mouse click on it. The toast read 'Pause the Wikipedia stream', the glyph became outlined and the class wiki-halted. Straight after the click the title attribute held the fresh 'paused' text, but dataset.ooTip still held the 'running' text, and the open bubble still showed 'running … Pause'. When the pointer left, title_attr was overwritten with the stale 'Wikipedia stream: running — Chosen; airplane mode is holding it… / Pause the Wikipedia stream', and hovering again showed that text. The same happens after Shift+click: config is 'stopped' but the bubble says 'running'. It also happens on #rate-toggle: after the click the title correctly said '500 KiB/s target'; once the pointer left it went back to 'Maximum … Click for the considerate 500 KiB/s target'. A reload fixes it. By code reading, the dangerous direction also exists: when already online, a click from halted to running (ensureOnline returns at once, with no modal to force an early hide) would leave the bubble saying 'paused — The connection is closed' while the stream runs. I could not measure that here because it needs egress. The glyph fill and aria-label stay correct, so the primary signal is truthful; the hover is the layer that lies. Evidence: b_en.json (D2_W_en, D2_W_shift_en, D2_gauge, D2_after_reload), P-D2-W-paused-rehover-en-full.png.",
+    "root_cause": "src/static/app-boot.js:285-289. hide() runs `cur.setAttribute(\"title\", cur.dataset.ooTip)` unconditionally, so it writes the text captured at show() time (app-boot.js:280) over the fresh title that _paintWikiLane set in the meantime (src/static/app-sources.js:1127-1128), and _paintRateMode does the same for the gauge. The bubble also never re-reads a title that changes while it is open.",
+    "suggested_fix": "In hide(), restore only a title that is still absent: `if (cur && cur.dataset.ooTip != null && !cur.hasAttribute(\"title\")) cur.setAttribute(\"title\", cur.dataset.ooTip);`. show() already prefers the live title, so the next hover shows the fresh text. Optionally, when a repaint sets a title on the element that is currently shown (`cur`), refresh tip.textContent and dataset.ooTip at once, e.g. with a MutationObserver on attributeFilter:['title'] for cur.",
+    "severity": "P2"
+   },
+   {
+    "title": "Reader's external-link confirmation is English in every language (a consent string not shipped x12)",
+    "verdict": "confirmed",
+    "reason": "Reproduced in fr, zh and ar. I switched the UI language with the top-bar switcher, opened 'Coastal Infrastructure Act' (2025-11-01) from the palette in a new reader tab, and clicked the translated 'page history (the authors) ↗' link. In all three languages window.confirm read 'Open an EXTERNAL site on the public web?\\n\\n<url>\\n\\nThis leaves your local copy and makes a live request from your machine — the site may see your visit. Continue?'. The licence block around it was translated. OOI18N is loaded on the reader page. OOI18N.t() already translates the second sentence in all three languages (the key exists), yet the inline handler never calls t(). Cancel opened nothing (pages_opened 0). The gate itself still works; only the language is wrong. This breaks the non-negotiable 'every consent/caveat string ships x12'. Evidence: b_fr_zh_ar_en2_narrow.json (D3_reader_fr/zh/ar), P-D3-reader-licence-{fr,zh,ar}.png.",
+    "root_cause": "src/api/main.py:2570-2580: the reader page's inline <script> builds the confirm from hardcoded English literals with no OOI18N.t(). The sibling law reader does it right at src/api/law.py:1031-1036. The first sentence has no locale key in any of the 12 files.",
+    "suggested_fix": "Mirror src/api/law.py:1034-1036 in main.py's inline script: `var t = (window.OOI18N && OOI18N.t) ? OOI18N.t : function(x){ return x; };` then `window.confirm(t(\"Open an EXTERNAL site on the public web?\") + \"\\\\n\\\\n\" + a.href + \"\\\\n\\\\n\" + t(\"This leaves your local copy and makes a live request from your machine — the site may see your visit. Continue?\"))`. Add the first key to all 12 locale files; the second already exists.",
+    "severity": "P2"
+   },
+   {
+    "title": "First-launch data-location step can never be offered: /api/system/data-location answers 503 in the only state ('fresh') where it could be offerable (outside row P)",
+    "verdict": "confirmed",
+    "reason": "Reproduced on a fresh folder (port 8841, OO_AUTOSEED=0, no OO_DB_*). /api/system/lock-state = 'fresh'. curl and the browser both got GET /api/system/data-location -> 503 {'detail':'the database is locked: unlock it first','locked':true}, and it fired twice during the language -> legal -> accept flow. #view-datadir never became visible and the flow went straight to #view-create. After the corpus was created the endpoint answered 200, but with offerable:false (state unlocked-encrypted). The endpoint returns offerable:true only when the state is 'fresh', and 'fresh' is exactly the state app_is_locked() blocks. So the chooser (ratified as C7, shipped 'browser-unverified per fork-3') is unreachable on every install, not only when OO_DATA_DIR is set. tests/test_data_location.py calls the router function directly with a monkeypatched state, which skips the lock middleware; that is why CI never saw it. Evidence: /tmp/claude-0/walk/P-recheck/a.json, P-D4-after-legal-en.png.",
+    "root_cause": "src/api/unlock.py:77-94: ALLOWED_WHILE_LOCKED does not include /api/system/data-location. The lock middleware at src/api/main.py:751-763 therefore answers 503 to it while the state is fresh/locked. src/static/unlock.html:341-347 reads the failed JSON as 'not offerable' and silently skips the step.",
+    "suggested_fix": "Add \"/api/system/data-location\" to ALLOWED_WHILE_LOCKED in src/api/unlock.py. The prefix also covers /data-location/check. Both write paths already refuse with 409 unless the state is fresh, so they stay safe. Add a TestClient test that goes through the real middleware on a fresh store and asserts 200 with offerable:true.",
+    "severity": "P2"
+   },
+   {
+    "title": "Stopping the Wikipedia stream is undiscoverable (Shift+click only; nothing on screen says so)",
+    "verdict": "confirmed",
+    "reason": "On Home, before and after the Shift+click, I scanned every title, aria-label and data-oo-tip attribute and all body text for /shift|⇧/i. It found 0 hits. The W bubble names only Pause, Resume or Start. Shift+click does work: config becomes 'stopped' and the toast says 'Stop the Wikipedia stream'. Putting stop behind a modifier is a deliberate design choice (the markup comment at src/static/index.html:151-154, and the brief S04-09 §6 leaves 'the stop/halt semantics' to the PR and the maintainer). Only the discoverability is a defect. Q702's note asks that users can stop/start/halt/resume, and the only place that documents Shift+click is the operator soak runbook (docs/product/WIKI_LANE_SOAK_RUNBOOK.md:48), not the USER_MANUAL or the UI. The JS comment at app-sources.js:1049-1051 says 'the full stop lives on the hover menu', but no hover menu exists. Evidence: b_en.json (D5_shift_scan_home, D5_shift_scan_after, D2_W_shift_en).",
+    "root_cause": "src/static/index.html:157 wires the stop to event.shiftKey only. _paintWikiLane (src/static/app-sources.js:1116-1125) never mentions it in the title. The comment at app-sources.js:1049-1051 describes a hover menu that was never built.",
+    "suggested_fix": "Add one translated line to the W title in _paintWikiLane when the state is running or halted, e.g. t9(\"Shift+click stops it completely.\"), with the key added to all 12 locales. Correct the stale 'hover menu' comment. Optionally mention it in the USER_MANUAL.",
+    "severity": "P3"
+   },
+   {
+    "title": "Consent popup lists Wikipedia under 'Switched off right now:' while asking to start it; confirmation toasts read as orders",
+    "verdict": "confirmed",
+    "reason": "Reproduced in en with W stopped and airplane mode on. One click on W opened the modal popup: reason 'Start the Wikipedia stream', and under it 'Switched off right now: Wikipedia / Wikimedia n=5' next to 'Discover by topic' and 'Chain of custody'. The code comment says the body exists to tell the operator 'what that decision reaches', and this decision turns the Wikipedia lane on, so the list under-states what the consent reaches. The bold action line just above names the lane, which keeps this minor. After 'Stay offline', config was still 'stopped' and the airplane stayed filled, so the gate itself is correct. The toasts are the imperative button labels: 'Pause the Wikipedia stream' after a pause and 'Stop the Wikipedia stream' after a stop. Evidence: P-D6-consent-start-W-en.png, b_en.json (D6_consent.lanes_text, D2_W_en.toasts_after_click, D2_W_shift_en.toasts_after_shift_click).",
+    "root_cause": "src/static/app-core.js:1144-1166: _laneState reads the stored wiki_lane_state (settingOn 'running', src/static/net-hosts.js:93-95) before the action writes it, and ensureOnline(reason) has no way to say which lane the action is turning on. The toasts at src/static/app-sources.js:1188-1189 and 1202 reuse the action labels.",
+    "suggested_fix": "Have toggleWikiLane call ensureOnline(t9(\"Start the Wikipedia stream\"), {enabling: \"wikipedia\"}), and have _renderNetLanes treat the lane with that id as on, or list it under a 'Turned on by this action:' heading. For the toasts, use the existing state headings (t9(\"Wikipedia stream: paused\"), '…: stopped', '…: running'), which are already translated.",
+    "severity": "P3"
+   },
+   {
+    "title": "Home strip labels 'SOURCES QUALIFIED / SOURCES PENDING / SOURCES CANDIDATES' untranslated in ar, zh, fr",
+    "verdict": "confirmed",
+    "reason": "Reproduced by switching language with the top-bar switcher. In fr the strip reads '6,411 SOURCES QUALIFIED', '0 SOURCES PENDING' and '7 SOURCES CANDIDATES' beside 'MOTS-CLÉS' and 'Wikipédia : 2 pages · 4 modifications aujourd'hui'. zh and ar are the same (English next to '文章' and 'المقالات'). The keys come from src/api/database.py:152-166. homeStatLabel's fallback replaces '_' with ' ' and passes the result to t(), which has no key for it. The Library's own labels for the same three keys ('Sources (collecting)', 'Sources awaiting qualification (enabled)', 'Discovered candidates', src/static/app-library.js:29-33) have no locale entries either, so the Library shows the same gap. Evidence: b_fr_zh_ar_en2_narrow.json (D7_home_fr/zh/ar), P-D7-home-strip-{fr,zh,ar}.png.",
+    "root_cause": "src/static/app-home.js:21-28: HOME_STAT_LABELS lacks sources_qualified, sources_pending and sources_candidates. The fallback key built with k.replace(/_/g,' ') exists in no locale file.",
+    "suggested_fix": "Add the three keys to HOME_STAT_LABELS with the Library's plain-language labels, and add those three strings to all 12 locale files, which also fixes app-library.js's DB_STAT_LABELS.",
+    "severity": "P3"
+   },
+   {
+    "title": "Export 'Living sources' reason is untranslated; byte units unlocalized beside translated GB units",
+    "verdict": "confirmed",
+    "reason": "Reproduced in fr. The export dialog row reads 'Sources vivantes (1 · 480.0 KB)' with the title 'a lane is a live encrypted database; its backup format is not settled yet', in English. Settings -> Wikipedia reads '12 éditions · budget de 20 Go · occupe 480.0 KB · avec les paramètres par défaut'. Storage rows read 'Corpus 23.0 MB' and 'Wikipedia / Wikimedia 480.0 KB 20 Go …', and the export rows read '0 B'. app-backup.js already passes the reason through t(), but that string has a locale entry in none of the 12 files. The unit part is the app-wide humanBytes formatter (fixed English units, toFixed with a '.' decimal mark). It is cosmetic, but it sits beside strings that already say 'Go'. Evidence: b_fr_zh_ar_en2_narrow.json (D8_fr, D1_export_fr).",
+    "root_cause": "src/backup/inventory.py:118 (not_exportable_reason) has no locale key; it is consumed via t() at src/static/app-backup.js:265. src/static/app-settings.js:198-203: humanBytes hardcodes [\"B\",\"KB\",\"MB\",\"GB\",\"TB\"] and n.toFixed().",
+    "suggested_fix": "Add the reason string to all 12 locale files. For units, route humanBytes' unit labels through t() (the 'GB'->'Go' pattern already exists in the wizard) and format the number with toLocaleString(OOI18N lang, {maximumFractionDigits: 1}).",
+    "severity": "P3"
+   },
+   {
+    "title": "375 px: Settings -> Wikipedia scrolls horizontally by 29 px",
+    "verdict": "confirmed",
+    "reason": "Reproduced in a fresh 375x800 en context: Settings -> Wikipedia gives documentElement.scrollWidth - clientWidth = 29. I counted only offenders with no clipping or scrolling ancestor. They are the div style='flex:0 0 auto;align-self:end' holding 'Build index · Cancel build · Clear index' (width 367, right edge 404) and its 'Clear index' button, which is cut off at the viewport edge in the screenshot. The wide #wiki-pages table sits inside a scroll container and is not the cause. NEW, same section, found by this recheck: the next row (index.html:1882-1887, div style='flex:2' with the #dumpfts-q input) collapses to a few pixels at 375 px, so the 'Full-text query' label wraps onto three lines and overlaps the 'Edition' label, and the query input is barely usable. Evidence: b_narrow.json (D9_narrow), P-D9-narrow-settings-wikipedia-en.png.",
+    "root_cause": "src/static/index.html:1876-1880: the button group has flex:0 0 auto inside a flex-wrap row. Its max-content width (three buttons, which do not wrap inside the div) is wider than the 375 px column. At index.html:1883 'flex:2' has a 0 basis, so the row never wraps and the query field shrinks to almost nothing.",
+    "suggested_fix": "Make the button group wrap: style='flex:1 1 auto;display:flex;flex-wrap:wrap;gap:6px;align-self:end'. For the query field use flex:2 1 220px (a real basis) so the row wraps before the input collapses.",
+    "severity": "P3"
+   },
+   {
+    "title": "'use ORES scores' is pre-ticked on a fresh corpus although ORES is ruled opt-in (Q717)",
+    "verdict": "confirmed",
+    "reason": "Reproduced on a brand-new corpus created through the real first-launch screens (port 8841): Settings -> Wikipedia shows #wiki-ores checked. It is also checked on the seeded folder. The checkbox is never loaded from any saved setting (the only reader is _ores() at app-map.js:2711), so it is ticked on every page load, and the backend defaults are ores=True too (src/api/wiki.py:254, 274). RULINGS_INDEX Q717 reads '(a) Verify … keep it opt-in', and the gate records 'opt-in unchanged'. The app's own ORES hover (_oresCell, app-map.js:2738) tells the user it is 'Optional, and off unless you asked for it', which is false by default. The egress only happens on a manual Track/Track now click while online, and goes to ores.wikimedia.org, a host already listed in the lane's disclosure. That limits the impact, but it contradicts an explicit ruling and makes a caveat string false. I re-graded it P3 -> P2. Evidence: a.json (D10_ores_checked_fresh), P-D10-ores-fresh-en.png, b_en.json (D10_ores).",
+    "root_cause": "src/static/index.html:1777: `<input type=\"checkbox\" id=\"wiki-ores\" style=\"width:auto\" checked>` hardcodes the default to on. src/api/wiki.py:254 and 274 default `ores: bool = True` for callers that omit the parameter.",
+    "suggested_fix": "Remove the `checked` attribute at index.html:1777, and change the default of the two endpoints to `ores: bool = False` so a caller that omits the parameter is also opt-in. Optionally persist the choice as a setting.",
+    "severity": "P2"
+   }
+  ]
+ }
+}

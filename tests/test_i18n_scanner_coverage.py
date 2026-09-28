@@ -443,7 +443,7 @@ def test_every_tf_frame_slot_is_actually_supplied_at_its_call_site():
         if not path.exists():
             continue
         text = path.read_text(encoding="utf-8")
-        for alias in {"OOI18N.tf"} | set(mod._TF_BINDING.findall(text)):
+        for alias in mod._tf_aliases(text):
             for m in re.finditer(rf"(?<![\w.]){re.escape(alias)}\(", text):
                 open_at = m.end() - 1
                 depth, close_at = 0, None
@@ -625,3 +625,75 @@ def test_a_div_wrapping_other_markup_is_not_captured_whole():
     assert not any("Title here" in s and "Body here." in s for s in found), (
         f"a wrapper div swallowed its children into one pseudo-key: {found}"
     )
+
+
+# --------------------------------------------------------------------------- #
+# (7) t() AND tf() UNDER ANOTHER NAME -- the sixth blind spot (2026-09-27, fix
+# batch B16 V2). The t() gate's pattern spells out t, t9 and t9m; the tf() gate
+# discovered `const X = (window.OOI18N && OOI18N.tf)` bindings and nothing else.
+# So every call through `T`, `tt`, `tr`, `_t`, `_bulT`, `_gwT`, `_govT` -- and
+# every frame through a FUNCTION-wrapped tf like `_bulTf` or `_kwTf` -- was never
+# visited. Measured when this landed: +118 t() call sites and +39 tf() frame
+# sites, carrying 8 unkeyed strings, 3 of them the agenda's provenance pill.
+# --------------------------------------------------------------------------- #
+
+_ALIAS_SAMPLE = """
+    function _zzqT(s) { return (window.OOI18N && OOI18N.t) ? OOI18N.t(s) : s; }
+    function _zzqTf(s, vars) {
+      return (window.OOI18N && OOI18N.tf) ? OOI18N.tf(s, vars)
+        : String(s).replace(/\\{(\\w+)\\}/g, (m, k) => vars[k]);
+    }
+    function row() {
+      const T = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      el.textContent = T("A sentence under a capital alias") + _zzqT("One under a wrapper");
+      el.title = _zzqTf("A frame under a wrapper {n}", {n: 3});
+      el.dataset.x = T("Paused, and " + "the fan-out is capped.");
+      el.dataset.y = _zzqT(" · with its own edge space");
+    }
+"""
+
+
+def test_the_t_gate_discovers_a_const_bound_and_a_function_wrapped_alias():
+    mod = _module()
+    assert mod._t_aliases(_ALIAS_SAMPLE) == {"T", "_zzqT"}
+    lits = mod._alias_t_literals(_ALIAS_SAMPLE, 1, 400)
+    assert "A sentence under a capital alias" in lits
+    assert "One under a wrapper" in lits
+    found = mod._js_chrome(_ALIAS_SAMPLE)
+    assert "A sentence under a capital alias" in found and "One under a wrapper" in found
+
+
+def test_the_tf_gate_discovers_a_function_wrapped_alias():
+    mod = _module()
+    assert "_zzqTf" in mod._tf_aliases(_ALIAS_SAMPLE)
+    # ...and the names _T_CALL already spells out are never counted twice.
+    plain = "const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : s => s;"
+    assert not ({"t", "t9", "t9m"} & mod._t_aliases(plain))
+
+
+def test_a_literal_concatenated_inside_the_call_is_read_as_the_one_key_it_is():
+    """`T("a, " + "b")` concatenates BEFORE the lookup, so the key is the joined
+    sentence. Reading only the first literal reports a fragment nobody could key."""
+    lits = _module()._alias_t_literals(_ALIAS_SAMPLE, 1, 400)
+    assert "Paused, and the fan-out is capped." in lits
+    assert "Paused, and " not in lits
+
+
+def test_a_literal_with_its_own_edge_space_is_compared_exactly():
+    """t() is `map[s]`: the literal AS WRITTEN is the key, so trimming it into a
+    string with no key would cry wolf over a string that translates fine."""
+    found = _module()._js_chrome(_ALIAS_SAMPLE)
+    assert " · with its own edge space" in found
+    assert "· with its own edge space" not in found
+
+
+def test_the_real_alias_call_sites_are_counted():
+    """On the shipped tree, not a sample: the Bulletin's own `_bulT`/`_bulTf` and the
+    reader's function-wrapped `T` are visited by the gates."""
+    mod = _module()
+    static = mod._static_dir()
+    agenda = (static / "app-agenda.js").read_text(encoding="utf-8")
+    reader = (static / "reader.js").read_text(encoding="utf-8")
+    assert "_bulT" in mod._t_aliases(agenda) and "T" in mod._t_aliases(reader)
+    assert "_bulTf" in mod._tf_aliases(agenda)
+    assert mod._alias_t_literals(agenda, 1, 400), "no _bulT/T call site read in app-agenda.js"

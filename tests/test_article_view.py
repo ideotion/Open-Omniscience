@@ -591,3 +591,29 @@ def test_reader_falls_back_to_live_dates_when_no_stored_rows(tmp_path, monkeypat
             assert calls["dates"] >= 1  # fallback ran
     finally:
         app.dependency_overrides.clear()
+
+
+def test_the_readers_external_link_confirm_goes_through_the_i18n_engine():
+    """2026-09-26 click-through P3: the reader's own external-link confirm was two bare JS
+    literals, so it read English in all twelve UI languages while the licence block around
+    the link was translated. It is a consent string (invariant #7 names OOI18N.t), so both
+    sentences go through the engine -- as the law reader's already did -- and each has a
+    real translation in every locale."""
+    import json
+    from pathlib import Path
+
+    src = Path("src/api/main.py").read_text(encoding="utf-8")
+    q = "Open an EXTERNAL site on the public web?"
+    c = ("This leaves your local copy and makes a live request from your machine — the site "
+         "may see your visit. Continue?")
+    assert "OOI18N.t" in src
+    assert f't("{q}")' in src and f't("{c}")' in src
+    assert f'"{q}\\\\n\\\\n"' not in src, "the old bare literal must be gone"
+    for f in sorted(Path("src/static/locales").glob("*.json")):
+        if f.stem == "_meta":
+            continue
+        cat = json.loads(f.read_text(encoding="utf-8"))
+        for key in (q, c):
+            assert key in cat, (f.stem, key)
+            if f.stem != "en":
+                assert cat[key] != key, f"{f.stem}: {key!r} is untranslated"

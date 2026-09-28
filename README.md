@@ -5,7 +5,7 @@
 ---
 
 **Author:** [Ideotion](https://github.com/ideotion)
-**Version:** 0.3.0 (alpha — the measured-and-verified cycle; latest tagged release: `v0.2.0`)
+**Version:** 0.3.0 (alpha — the measured-and-verified cycle; latest tagged release: `v0.3.0`, a pre-release)
 **License:** [GNU GPLv3](LICENSE)
 
 ---

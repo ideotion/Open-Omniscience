@@ -91,6 +91,46 @@ def test_uninstall_and_wipe_is_its_own_section_not_nested_in_safety() -> None:
     assert HTML.index('id="panic-result"') > uninstall_at
 
 
+def _details_parents() -> dict[str, list[str]]:
+    """``{data-adv section: [the data-adv sections it sits inside, outermost first]}``,
+    read from the real nesting of ``<details>`` tags rather than from source order."""
+    stack: list[str] = []
+    out: dict[str, list[str]] = {}
+    # Comments out first: one of them names a `<details>` in prose, which is no tag.
+    for m in re.finditer(r"<details\b([^>]*)>|</details>", re.sub(r"<!--.*?-->", "", HTML, flags=re.S)):
+        if m.group(0).startswith("</"):
+            stack.pop()
+            continue
+        adv = re.search(r'data-adv="([a-z]+)"', m.group(1))
+        name = adv.group(1) if adv else "?"
+        if adv:
+            out[name] = [x for x in stack if x != "?"]
+        stack.append(name)
+    return out
+
+
+def test_the_bulletin_is_a_top_level_fold_after_uninstall_not_inside_it() -> None:
+    """Delegated click-through 2026-09-26 (M6): the Bulletin block had been spliced into
+    the middle of the uninstall panel's heading, so it was invisible until the destructive
+    "Uninstall & wipe" fold was opened. Source ORDER could not see it (the Bulletin's
+    marker still came last, as its placement ruling asks), so this reads the real nesting:
+    both are top-level folds, the Bulletin at the very bottom (the design record's §16,
+    pinned in test_ui_invariants) and Uninstall just above it."""
+    parents = _details_parents()
+    assert parents.get("bulletin") == [], f"the Bulletin fold sits inside {parents.get('bulletin')}"
+    assert parents.get("uninstall") == [], parents.get("uninstall")
+    order = re.findall(r'data-adv="([a-z]+)"', HTML)
+    assert order[-2:] == ["uninstall", "bulletin"], order[-3:]
+    # The uninstall panel's heading is a heading again, and the bulletin ids travelled whole
+    # to AFTER the uninstall panel closed.
+    assert '<div class="phead"><h2>Uninstall &amp; wipe</h2></div>' in HTML
+    uninstall_end = HTML.index('id="uninstall-result"')
+    for el in ("bulletin-panel", "bulletin-gate", "bulletin-controls", "bul-cadence",
+               "bul-generate", "bulletin-list", "bulletin-review", "bulletin-status"):
+        assert HTML.count(f'id="{el}"') == 1, el
+        assert HTML.index(f'id="{el}"') > uninstall_end, f"{el} is still inside Uninstall & wipe"
+
+
 def test_the_destructive_section_says_so_before_it_is_opened() -> None:
     """Its summary must warn in WORDS, not only in colour: a colour-only warning is
     invisible in greyscale and to a reader with a colour-vision difference."""

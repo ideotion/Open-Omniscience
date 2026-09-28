@@ -611,7 +611,10 @@ def qualify_sources_bulk_status(request: Request, db: Session = Depends(get_db))
     return {
         **_BULK_QUALIFICATION_JOB.status(),
         "backlog": initial_backlog_estimate(db),
+        # `reason_i18n` / `reason_vars` carry the reason as its keyed frame, so the panel
+        # writes it in the UI language instead of an English parenthesis (re-walk S-5).
         "floor": {k: floor.get(k) for k in ("declines", "below", "overridden", "reason",
+                                             "reason_i18n", "reason_vars",
                                              "available_mb", "total_mb", "override_env")},
     }
 
@@ -1860,6 +1863,40 @@ def search_sources(
 # --------------------------------------------------------------------------- #
 #  The qualification engine's own configuration surface
 # --------------------------------------------------------------------------- #
+#: A reader's name for each ``source_audit.CRITERIA`` id. Kept beside the payload that
+#: declares them rather than in the audit module, whose ids are the engine's own; a
+#: criterion added there without a name here fails loudly at the payload (KeyError) and
+#: in tests/test_clickthrough_b14_fixes.py, never silently as a raw id on screen.
+_CRITERION_LABELS: dict[str, str] = {
+    "outlier_rate": "Keyword-statistics outliers",
+    "pathology_rate": "Repeated page furniture",
+    "link_density_rate": "Link-dense articles",
+    "furniture_share": "Cross-source furniture keywords",
+    "language_mismatch_rate": "Language mismatch",
+    "short_article_rate": "Short articles",
+}
+
+#: Why a criterion that has no absolute floor has none. One sentence, one key.
+_NO_FLOOR_NOTE = (
+    "No absolute floor: nobody has measured what fraction of a source's "
+    "articles being link-dense amounts to a broken scrape, so this "
+    "criterion fires only from its own cohort's tail. Copying the other "
+    "criterion's number here would be a threshold nobody measured."
+)
+
+
+def _floor_note_parts(criterion: dict, floor_status: dict) -> list[str]:
+    """The floor note of one criterion as whole sentences, each a translation key.
+
+    Empty for a criterion that cannot disqualify (it has no floor to explain).
+    """
+    if not criterion["extraction_failure"]:
+        return []
+    if criterion.get("abs_floor") is not None:
+        return [floor_status["measured"], floor_status["kept_because"]]
+    return [_NO_FLOOR_NOTE]
+
+
 @router.get("/qualification/config")
 def qualification_config(db: Session = Depends(get_db)) -> dict:
     """Everything the Advanced -> Qualification panel needs, declared by the BACKEND.
@@ -1980,6 +2017,10 @@ def qualification_config(db: Session = Depends(get_db)) -> dict:
         "criteria": [
             {
                 "name": c["name"],
+                # The criterion's NAME for a reader, beside its id. The panel printed the
+                # id (`outlier_rate`) as the heading in every language (click-through B14,
+                # Z5); each label is a key in all twelve locales.
+                "label": _CRITERION_LABELS[c["name"]],
                 "bad_direction": c["bad"],
                 "can_disqualify": bool(c["extraction_failure"]),
                 "desc": c["desc"],
@@ -1987,15 +2028,12 @@ def qualification_config(db: Session = Depends(get_db)) -> dict:
                 # absolute floor because none has been measured for it.
                 "absolute_floor": c.get("abs_floor"),
                 "absolute_floor_note": (
-                    None if not c["extraction_failure"] else (
-                        FLOOR_STATUS["measured"] + " " + FLOOR_STATUS["kept_because"]
-                        if c.get("abs_floor") is not None else
-                        "No absolute floor: nobody has measured what fraction of a source's "
-                        "articles being link-dense amounts to a broken scrape, so this "
-                        "criterion fires only from its own cohort's tail. Copying the other "
-                        "criterion's number here would be a threshold nobody measured."
-                    )
+                    " ".join(_floor_note_parts(c, FLOOR_STATUS)) or None
                 ),
+                # The same note as its SENTENCES, so the page translates each one: the
+                # joined string is not a key and never could be, since it is two keys
+                # welded together.
+                "absolute_floor_note_parts": _floor_note_parts(c, FLOOR_STATUS),
             }
             for c in CRITERIA
         ],

@@ -64,6 +64,30 @@ def persist_import_report(kind: str, report: dict[str, Any], *, run_id: str | No
     return dest
 
 
+def annotate_import_report(path: Path, fields: dict[str, Any]) -> None:
+    """Add ``fields`` to a report already on disk, atomically (the same temp file +
+    ``os.replace`` as :func:`persist_import_report`), so a crash mid-write leaves the
+    original report rather than half of one.
+
+    ADDITIVE ONLY: an existing key is never overwritten. The import queue uses it to
+    name the backup and the run a restore's own report came from (2026-09-26, I7) --
+    facts the restore does not know -- and nothing it adds may change a number the
+    restore measured."""
+    data = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(data, dict):
+        return
+    added = {k: v for k, v in fields.items() if k not in data}
+    if not added:
+        return
+    data.update(added)
+    tmp = path.with_name(path.name + ".tmp")
+    try:
+        tmp.write_text(json.dumps(data, indent=2, default=str), encoding="utf-8")
+        os.replace(tmp, path)
+    finally:
+        tmp.unlink(missing_ok=True)
+
+
 def _fmt_count(n: Any) -> str:
     try:
         return f"{int(n):,}"
@@ -83,6 +107,28 @@ def render_import_report_markdown(report: dict[str, Any]) -> str:
     kind = report.get("kind") or report.get("artifact_kind") or "import"
     lines.append(f"# Import report ({kind})")
     lines.append("")
+    # WHICH BACKUP this is (2026-09-26, I7). Every report of a multi-backup run was
+    # headed by the format alone, so two reports of one import read identically and
+    # neither named the folder it came from.
+    run = report.get("import_run")
+    if isinstance(run, dict) and (run.get("label") or run.get("path")):
+        src_line = f"Source: `{run.get('label') or run.get('path')}`"
+        if run.get("path") and run.get("path") != run.get("label"):
+            src_line += f" (`{run['path']}`)"
+        lines.append(src_line)
+        if run.get("position") and (run.get("items_total") or 0) > 1:
+            lines.append(
+                f"Item {run['position']} of the {run['items_total']} in one import; "
+                "each backup's own report is listed in the import history."
+            )
+        lines.append("")
+    cp = report.get("committed_at_checkpoint")
+    if isinstance(cp, dict):
+        lines.append(
+            "Merged into the import's working copy and written to your corpus at the "
+            f"checkpoint that saved `{cp.get('by_item') or 'the next backup'}`."
+        )
+        lines.append("")
 
     # OUTCOME FIRST. A run that aborted or was killed still carries a `plan`
     # (it is computed before the commit point), so headlining the plan's article
@@ -346,6 +392,15 @@ def _report_facts(p: Path, size_bytes: int) -> dict[str, Any]:
         return {"outcome": "unknown"}
     outcome = str(data.get("outcome") or "ok")
     out: dict[str, Any] = {"outcome": outcome}
+    # WHICH IMPORT RUN, and which backup of it (2026-09-26, I7): one run of several
+    # backups leaves one report per backup, and the "Last import" line sums a run's
+    # reports rather than quoting whichever backup happened to finish last.
+    run = data.get("import_run")
+    if isinstance(run, dict):
+        if isinstance(run.get("id"), str) and run["id"]:
+            out["run_id"] = run["id"]
+        if run.get("label"):
+            out["label"] = str(run["label"])
     committed = str(data.get("outcome") or "").lower() in _COMMITTED_OUTCOMES
     raw_plan = data.get("plan")
     plan: dict[str, Any] = raw_plan if isinstance(raw_plan, dict) else {}

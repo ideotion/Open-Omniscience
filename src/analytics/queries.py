@@ -165,16 +165,71 @@ def _resolve_by_lemma(session, norm: str) -> Keyword | None:
     answer is genuinely ambiguous (two languages' words sharing one lemma), and this
     returns None rather than ranking them by mention count: that ranking is precisely the
     recorded homograph defect that made "Dy" resolve to "already".
+
+    THE CHAIN IS FOLLOWED, as the fold follows it (M1, the 2026-09-27 re-walk). The fold
+    keys a word by :func:`src.analytics.extract.lemma_key`, which walks the lemmatiser to
+    a fixed point: fr ``nouvelles`` -> ``nouvelle`` -> ``nouveau``. One step here reached
+    only ``nouvelle``, itself a row the fold had emptied, so the chip counting 109 still
+    opened "0 mentions". Every form a chain passes through is a candidate, at its hop
+    distance. A row nothing points at any more is not a meaning the corpus holds, so where
+    several rows are reached the ones with mentions are preferred, and among those the
+    NEAREST hop: one live row there is the answer, two are the ambiguity refused above.
     """
+    from src.analytics.extract import _LEMMA_CHAIN_MAX
     from src.analytics.lemma import LEMMA_LANGS, lemmatize
 
-    candidates = {lemmatize(norm, lg) for lg in LEMMA_LANGS}
-    candidates.discard(norm)
-    candidates = {c for c in candidates if c}
-    if not candidates:
+    hop: dict[str, int] = {}
+    for lg in LEMMA_LANGS:
+        key, seen = norm, {norm}
+        for step in range(1, _LEMMA_CHAIN_MAX + 1):
+            lem = lemmatize(key, lg)
+            if not lem or lem in seen:
+                break
+            seen.add(lem)
+            hop[lem] = min(hop.get(lem, step), step)
+            key = lem
+    if not hop:
         return None
-    rows = session.query(Keyword).filter(Keyword.normalized_term.in_(sorted(candidates))).all()
-    return rows[0] if len(rows) == 1 else None
+    rows = session.query(Keyword).filter(Keyword.normalized_term.in_(sorted(hop))).all()
+    if len(rows) <= 1:
+        return rows[0] if rows else None
+    pool = [r for r in rows if _has_mentions(session, int(r.id))] or rows
+    nearest = min(hop[r.normalized_term] for r in pool)
+    at = [r for r in pool if hop[r.normalized_term] == nearest]
+    return at[0] if len(at) == 1 else None
+
+
+def _has_mentions(session, keyword_id: int) -> bool:
+    """Whether any mention row still points at this keyword -- the same authoritative
+    test ``prune_orphan_keywords`` uses, one ``(keyword_id, article_id)`` index seek."""
+    return (
+        session.query(KeywordMention.id)
+        .filter(KeywordMention.keyword_id == keyword_id)
+        .first()
+        is not None
+    )
+
+
+def _prefer_surviving(session, norm: str, kw: Keyword) -> Keyword:
+    """An exact hit that the FOLD EMPTIED gives way to the keyword its mentions went to.
+
+    The fold job (:mod:`src.analytics.keyword_fold`) moves ``nouvelle``'s mentions to the
+    ``nouveau`` key and leaves the emptied ``nouvelle`` row for the regular prune, by
+    design (``OPEN_QUEUE.md``: "LEFT OUT: deleting the keywords a fold empties"). Every
+    keyword surface still passes the DISPLAY term, which is the inflected surface, so
+    until the prune runs the exact match lands on the husk and reports "0 mentions in 0
+    articles" beside a chip counting 109. This is the read side only: nothing the fold
+    writes changes. The lemma rung is the same EXACT, ambiguity-refusing try
+    :func:`_resolve_by_lemma` already is, and the emptied row stays the answer when that
+    finds nothing with mentions -- a keyword with no mentions is still the honest answer
+    to a term nothing else carries.
+    """
+    if _has_mentions(session, int(kw.id)):
+        return kw
+    alt = _resolve_by_lemma(session, norm)
+    if alt is not None and int(alt.id) != int(kw.id) and _has_mentions(session, int(alt.id)):
+        return alt
+    return kw
 
 
 def resolve_keyword(session, term: str, *, exact: bool = False) -> Keyword | None:
@@ -219,7 +274,7 @@ def resolve_keyword(session, term: str, *, exact: bool = False) -> Keyword | Non
         return None
     kw = session.query(Keyword).filter_by(normalized_term=norm).first()
     if kw:
-        return kw
+        return _prefer_surviving(session, norm, kw)
     kw = _resolve_by_lemma(session, norm)
     if kw:
         return kw
@@ -382,6 +437,11 @@ def resolve_concept_keywords(
         chunk = wanted[i : i + _IN_CHUNK]
         for kw in session.query(Keyword).filter(Keyword.normalized_term.in_(chunk)).all():
             found.setdefault(str(kw.normalized_term), kw)
+    # A form whose own row the fold EMPTIED resolves to the keyword its mentions went to,
+    # exactly as ``resolve_keyword`` does (``_prefer_surviving``), so a ring form never
+    # counts the husk and misses the keyword that carries its mentions.
+    for n in list(found):
+        found[n] = _prefer_surviving(session, n, found[n])
     # THE LEMMA RUNG, and why it belongs here (found by reading this against S04-06 after
     # it merged, not by a test). Extraction lemmatises, so the corpus stores `sanction`
     # where the articles said "sanctions" -- and a RING member is a surface form from
@@ -730,6 +790,144 @@ def _annotate_translations(terms, target_lang, stored_lang=None, tentative=None)
     return terms
 
 
+def annotate_label_languages(
+    session,
+    terms: list[dict],
+    target_lang: str | None,
+    *,
+    start: date | None = None,
+    end: date | None = None,
+    days: int | None = None,
+    country: str | None = None,
+) -> list[dict]:
+    """The MENTION languages behind a displayed keyword's label (M11) and the ring members
+    behind its translation (M12), read for the rows a surface displays and no others.
+
+    Runs after :func:`_annotate_translations`, which names ONE source language per row:
+    ``Keyword.language``, the majority of the keyword's mentions (Q414). Keys are
+    language-agnostic (Q416 keys a term by its lemma alone), so one key can hold English
+    ``errors`` and Spanish ``errores`` at once, and a Spanish majority then tagged the
+    English word "in Spanish" in the English UI. So for every row whose label draws a
+    language (a translation, or a foreign-word tag) the recorded languages of its OWN
+    mentions are counted, and when they are several, or one other than the tag's, the row
+    carries them as ``mention_languages`` ({language: mentions}) for the label to name.
+    Making the key itself language-aware is a change to stored keys and is not done here.
+
+    A row the ladder resolved to a verified ring (a SOLO row -- a merged ring row already
+    carries its breakdown) gains that ring's members present in the corpus, with their
+    per-language mention counts, as ``language_breakdown``: the shape
+    :func:`trending` emits on a ring row, so the hover's existing branch renders it (Q418).
+
+    THE SCOPE IS THE ROW'S OWN. Pass ``start``/``end`` (``end`` EXCLUSIVE) and ``days`` when
+    the row's own number is windowed, as on the trend surfaces; leave them out and the
+    counts are the whole corpus. Every row given counts says which (``language_counts_scope``
+    = ``"window"`` with ``language_counts_days``, ``"corpus"``, or ``"country"`` when a
+    country filter narrows a whole-corpus read), so the hover can say what they cover.
+
+    Counts only. A mention written before its language was recorded (Q414's column has no
+    backfill) counts under ``"?"`` -- never guessed from the keyword's majority, which is
+    the very figure this corrects -- and it never makes a split on its own.
+    """
+    tl = (target_lang or "").strip().casefold()
+    if not tl or session is None or not terms:
+        return terms
+    from src.analytics import equivalence
+
+    windowed = start is not None or end is not None
+    scope = "window" if windowed else ("country" if country else "corpus")
+
+    def _scoped(r: dict) -> None:
+        r["language_counts_scope"] = scope
+        if scope == "window" and days:
+            r["language_counts_days"] = int(days)
+
+    own: dict[str, list[dict]] = {}  # casefolded key -> the rows whose label names a language
+    ringed: list[tuple[dict, str]] = []  # (solo row, the ring its translation came from)
+    for r in terms:
+        if r.get("ring_id"):
+            # A merged ring row's breakdown was summed over this same scope by its caller.
+            if r.get("language_breakdown") and not r.get("language_counts_scope"):
+                _scoped(r)
+            continue
+        norm = (r.get("normalized") or "").strip()
+        src = (r.get("translation_source_lang") or "").casefold()
+        tier = r.get("translation_tier")
+        if not norm or not src or src == tl or tier not in (
+            equivalence.TIER_VERIFIED, equivalence.TIER_TENTATIVE, equivalence.TIER_UNTRANSLATED
+        ):
+            continue
+        own.setdefault(equivalence._norm(norm), []).append(r)
+        if tier == equivalence.TIER_VERIFIED and not r.get("language_breakdown"):
+            rid = equivalence.resolve_translation(src, norm, tl).ring_id
+            if rid:
+                ringed.append((r, rid))
+    if not own:
+        return terms
+
+    wanted: set[str] = set(own)
+    members_of: dict[str, tuple[tuple[str, str], ...]] = {}
+    for _r, rid in ringed:
+        meta = equivalence.ring_meta(rid)
+        members_of[rid] = tuple(meta.members) if meta else ()
+        wanted.update(t for _lg, t in members_of[rid])
+    # An entity key keeps its acronym's case (``USA``) while ring members are written
+    # casefolded, so both spellings are asked for and the answer is folded back.
+    ask = sorted(wanted | {w.upper() for w in wanted})
+    counts: dict[str, dict[str, int]] = {}
+    for i in range(0, len(ask), _IN_CHUNK):
+        chunk = ask[i : i + _IN_CHUNK]
+        q = (
+            session.query(Keyword.normalized_term, KeywordMention.language, func.sum(KeywordMention.count))
+            .join(KeywordMention, KeywordMention.keyword_id == Keyword.id)
+            .filter(Keyword.normalized_term.in_(chunk))
+        )
+        if start is not None:
+            q = q.filter(KeywordMention.observed_on >= start)
+        if end is not None:
+            q = q.filter(KeywordMention.observed_on < end)
+        if country:
+            q = q.filter(KeywordMention.country == country.lower())
+        for norm, lang, n in q.group_by(Keyword.normalized_term, KeywordMention.language):
+            key = equivalence._norm(norm or "")
+            lg = (lang or "").strip().casefold() or "?"
+            per = counts.setdefault(key, {})
+            per[lg] = per.get(lg, 0) + int(n or 0)
+
+    for key, rows in own.items():
+        per = counts.get(key) or {}
+        known = {lg: n for lg, n in per.items() if lg != "?" and n > 0}
+        if not known:
+            continue
+        for r in rows:
+            src = (r.get("translation_source_lang") or "").casefold()
+            if len(known) > 1 or src not in known:
+                r["mention_languages"] = dict(sorted(known.items(), key=lambda kv: (-kv[1], kv[0])))
+                _scoped(r)
+    for r, rid in ringed:
+        breakdown: dict[str, int] = {}
+        members: list[dict] = []
+        unrecorded: set[str] = set()
+        for lg, term in members_of.get(rid, ()):
+            per = counts.get(equivalence._norm(term)) or {}
+            n = per.get(lg.casefold(), 0)
+            if n > 0:
+                breakdown[lg] = breakdown.get(lg, 0) + n
+                members.append({"term": term, "language": lg, "mentions": n})
+            if per.get("?"):
+                unrecorded.add(equivalence._norm(term))
+        missing = sum((counts.get(t) or {}).get("?", 0) for t in unrecorded)
+        if missing:
+            breakdown["?"] = missing
+        if breakdown:
+            r["language_breakdown"] = dict(sorted(breakdown.items(), key=lambda kv: (-kv[1], kv[0])))
+            # Not ``members``: a family row already carries its forms under that name.
+            r["translation_ring_members"] = sorted(
+                members, key=lambda m: (-m["mentions"], m["language"])
+            )
+            _scoped(r)
+    return terms
+
+
 def _bucket_key(d: date, bucket: str) -> str:
     if bucket == "day":
         return d.isoformat()
@@ -843,6 +1041,7 @@ def trend(
                     "term": primary.term,
                     "normalized": primary.normalized_term,
                     "kind": kind_of(primary),
+                    "language": primary.language,
                 }
                 if primary is not None
                 else None
@@ -882,7 +1081,12 @@ def trend(
     return {
         "term": term,
         "bucket": bucket,
-        "resolved": {"term": kw.term, "normalized": kw.normalized_term, "kind": kind_of(kw)},
+        "resolved": {
+            "term": kw.term,
+            "normalized": kw.normalized_term,
+            "kind": kind_of(kw),
+            "language": kw.language,
+        },
         "points": points,
         "total": sum(p["count"] for p in points),
         "articles": int(articles),
@@ -1167,6 +1371,15 @@ def top_terms(
     _annotate_translations(
         terms, target_lang, stored_lang, _tentative_for(session, terms, target_lang)
     )
+    # The row's own scope (M12): the window the counts above were summed over, or the
+    # whole corpus. `end=None` keeps the legacy inclusive-of-today lower bound.
+    if days:
+        _lo = (end - timedelta(days=days)) if end is not None else (date.today() - timedelta(days=days))
+        annotate_label_languages(
+            session, terms, target_lang, start=_lo, end=end, days=days, country=country
+        )
+    else:
+        annotate_label_languages(session, terms, target_lang, country=country)
     out: dict[str, Any] = {
         "count": len(terms),
         "days": days,
@@ -1245,6 +1458,7 @@ def corpus_keywords(
     _annotate_translations(
         terms, target_lang, None, _tentative_for(session, terms, target_lang)
     )
+    annotate_label_languages(session, terms, target_lang)
     out = {"count": len(terms), "n_articles": len(article_ids), "terms": terms}
     note = unsegmented_note(session, article_ids)
     if note:
@@ -1252,7 +1466,21 @@ def corpus_keywords(
     return out
 
 
-def article_graph(session, *, article_ids: list[int], limit_nodes: int = 24) -> dict:
+#: The fields a keyword LABEL is drawn from (the translation ladder's output plus the
+#: mention languages behind it), copied onto a graph node so the mind map draws the
+#: same label every keyword list does (M7). The node's ``id``/``label`` stay the
+#: original term: edges and the reader's "open this keyword" click key on it.
+_LABEL_FIELDS = (
+    "normalized", "translation", "translation_tier", "translation_source_lang",
+    "translation_source", "translation_qid", "translation_declined", "translation_model",
+    "senses", "mention_languages", "language_breakdown", "translation_ring_members",
+    "language_counts_scope", "language_counts_days",
+)
+
+
+def article_graph(
+    session, *, article_ids: list[int], limit_nodes: int = 24, target_lang: str | None = None
+) -> dict:
     """A radial keyword mind-map over a GIVEN article set (the reader / analysis
     "corpus of 1+").
 
@@ -1262,8 +1490,15 @@ def article_graph(session, *, article_ids: list[int], limit_nodes: int = 24) -> 
     its keywords; for several it is the set's dominant terms around the lead term.
     Reuses :func:`corpus_keywords` (same hidden-word policy + spread ordering),
     counts only — NO score.
+
+    ``target_lang`` (M7) gives each node the label fields :func:`corpus_keywords`
+    computes for that language, so the map shows a foreign keyword the way every
+    keyword list does -- translated where a verified ring allows, tagged otherwise --
+    instead of as a bare foreign word.
     """
-    kw = corpus_keywords(session, article_ids=article_ids, limit=max(1, limit_nodes))
+    kw = corpus_keywords(
+        session, article_ids=article_ids, limit=max(1, limit_nodes), target_lang=target_lang
+    )
     terms = kw.get("terms", [])
     n_articles = kw.get("n_articles", 0)
     method = (
@@ -1282,11 +1517,15 @@ def article_graph(session, *, article_ids: list[int], limit_nodes: int = 24) -> 
             empty["unsegmented"] = kw["unsegmented"]
             empty["caveat"] = kw["unsegmented"]["note"]
         return empty
+    def _label(tdat: dict) -> dict:
+        return {k: tdat[k] for k in _LABEL_FIELDS if tdat.get(k) not in (None, "", [], {})}
+
     center = terms[0]
     nodes = [{
         "id": center["term"], "label": center["term"], "kind": "keyword",
         "center": True, "size": 13,
         "mentions": center["mentions"], "articles": center["articles"],
+        **_label(center),
     }]
     edges, seen = [], {center["term"]}
     for tdat in terms[1:]:
@@ -1297,6 +1536,7 @@ def article_graph(session, *, article_ids: list[int], limit_nodes: int = 24) -> 
             "id": tdat["term"], "label": tdat["term"], "kind": "keyword",
             "size": tdat["mentions"],
             "mentions": tdat["mentions"], "articles": tdat["articles"],
+            **_label(tdat),
         })
         edges.append({"a": center["term"], "b": tdat["term"], "weight": tdat["mentions"]})
     graph = {
@@ -1421,10 +1661,14 @@ def ring_country_split(session, *, ring_id: str, days: int | None = None, limit:
             "country. Keywords with no stored language are excluded (conservative). "
             "Counts only."
         ),
+        # Both sentences are keyed x12 and t()'d by the ring map (row R, R5), so a reword
+        # here must be re-keyed in src/static/locales/*.json. The unlocated bucket is named
+        # by the UI's own label for it, never by the storage word ("null") it once used.
         "caveat": (
             "Coverage by producing-source country, never a credibility ranking or score. "
-            "Unlocated sources are bucketed as null, not dropped. Co-occurrence in your "
-            "corpus, never a claim about the country."
+            "Articles whose source has no country are counted under 'Not mapped (source "
+            "country unknown)', never dropped. Co-occurrence in your corpus, never a claim "
+            "about the country."
         ),
     }
 
@@ -2363,6 +2607,10 @@ def trending(
     out = out[:limit]
     _annotate_translations(
         out, target_lang, stored_lang, _tentative_for(session, out, target_lang)
+    )
+    # Counted over the SAME recent window the row's own number is (M12).
+    annotate_label_languages(
+        session, out, target_lang, start=w_start, end=w_end, days=window_days, country=country
     )
     res: dict[str, Any] = {
         "count": len(out),
@@ -3496,6 +3744,64 @@ GRAPH_HOP2_PARENTS = _graph_int_env("OO_GRAPH_HOP2_PARENTS", 4)
 GRAPH_MAX_EDGES = _graph_int_env("OO_GRAPH_MAX_EDGES", 160)
 
 
+def _label_fields(row: dict) -> dict:
+    """The keyword-label fields of ``row`` that carry something (:data:`_LABEL_FIELDS`)."""
+    return {k: row[k] for k in _LABEL_FIELDS if row.get(k) not in (None, "", [], {})}
+
+
+def _label_graph_nodes(session, nodes: list[dict], rows: dict[str, dict], target_lang: str | None) -> None:
+    """Stamp the keyword LABEL fields onto a keyword-level graph's nodes (re-walk M-3/M-5).
+
+    The Explore mind map drew every node as its bare stored term, so a French reader saw
+    ``избирателей`` with no "in Russian" beside it while every keyword list around it said
+    so. ``rows`` maps a node id to the association row it came from; each goes through the
+    same ladder and mention-language count a keyword list uses (:func:`corpus_keywords`),
+    and the answer is copied onto the node. The node's ``id``/``label`` stay the original
+    term: the edges and the reader's click key on them. A merged RING row keeps no
+    ``language_breakdown`` here: the one it carries counts co-occurrences with the seed, and
+    the hover would present it as mentions.
+    """
+    tl = (target_lang or "").strip().casefold()
+    if not tl or not nodes:
+        return
+    labelled: list[tuple[dict, dict]] = []
+    for n in nodes:
+        src = rows.get(n["id"])
+        if src is None:
+            continue
+        row = {
+            "term": src.get("term") or n["id"],
+            "normalized": src.get("normalized") or _normalize(n["id"]),
+            "kind": src.get("kind"),
+        }
+        if src.get("ring_id"):
+            row["ring_id"] = src["ring_id"]
+        labelled.append((n, row))
+    solo = sorted({row["normalized"] for _n, row in labelled if not row.get("ring_id")})
+    stored_lang: dict[str, str | None] = {}
+    for i in range(0, len(solo), _IN_CHUNK):
+        chunk = solo[i : i + _IN_CHUNK]
+        stored_lang.update(
+            session.query(Keyword.normalized_term, Keyword.language)
+            .filter(Keyword.normalized_term.in_(chunk))
+            .all()
+        )
+    rs = [row for _n, row in labelled]
+    _annotate_translations(rs, tl, stored_lang, _tentative_for(session, rs, tl))
+    annotate_label_languages(session, rs, tl)
+    for n, row in labelled:
+        n.update(_label_fields(row))
+
+
+#: The keyed halves of the keyword graph's caveat (re-walk M-10): the constant sentence is
+#: its own locale key, and the bounded view's disclosure is a frame with its three caps, so
+#: the Explore hint renders both in the reader's language rather than as one English line.
+_GRAPH_BOUNDED_FRAME = (
+    "Bounded view for responsiveness: up to {nodes} nodes, {branches} hop-2 branches, "
+    "≤{articles} articles sampled per term. Narrow the term or the time window for a finer view."
+)
+
+
 def layered_graph(
     session,
     *,
@@ -3510,6 +3816,7 @@ def layered_graph(
     article_cap: int | None = None,
     max_edges: int | None = None,
     time_budget_s: float | None = None,
+    target_lang: str | None = None,
 ) -> dict:
     """One zoom level of the keyword graph: keyword (≤2 hops) / family / supergroup.
 
@@ -3520,7 +3827,11 @@ def layered_graph(
     ``max_edges``; an optional ``time_budget_s`` stops expanding to hop-2 once the wall
     clock exceeds it, returning the hop-1 graph already built. Any cap that truncates the
     result sets ``bounded`` and appends a visible disclosure to ``caveat`` — never a silent
-    cut. ``None`` for a cap means "use the module default"."""
+    cut. ``None`` for a cap means "use the module default".
+
+    ``target_lang`` (re-walk M-3/M-5) gives the keyword and family nodes the label fields
+    a keyword list carries, so the map draws a foreign word tagged ("in Russian") or
+    translated, the way every other keyword surface does."""
     hop2_parents = GRAPH_HOP2_PARENTS if hop2_parents is None else hop2_parents
     article_cap = GRAPH_ARTICLE_CAP if article_cap is None else article_cap
     max_edges = GRAPH_MAX_EDGES if max_edges is None else max_edges
@@ -3547,6 +3858,8 @@ def layered_graph(
         bounded = bounded or bool(base.get("articles_bounded"))
         center = (base.get("resolved") or {}).get("term", term)
         nodes = [{"id": center, "label": center, "kind": "keyword", "center": True, "size": 13}]
+        # node id -> the row it was drawn from, for the label fields (M-3/M-5)
+        label_rows: dict[str, dict] = {center: base.get("resolved") or {"term": center}}
         edges, seen = [], {center}
         for p in base.get("pairs", []):
             if len(nodes) >= limit_nodes:
@@ -3555,6 +3868,7 @@ def layered_graph(
             if p["term"] in seen:
                 continue
             seen.add(p["term"])
+            label_rows[p["term"]] = p
             nodes.append(
                 {
                     "id": p["term"],
@@ -3587,6 +3901,7 @@ def layered_graph(
                         break
                     if p2["term"] not in seen:
                         seen.add(p2["term"])
+                        label_rows[p2["term"]] = p2
                         nodes.append(
                             {
                                 "id": p2["term"],
@@ -3604,6 +3919,7 @@ def layered_graph(
             # Keep the strongest edges by co-occurrence (deterministic); disclose the cut.
             edges = sorted(edges, key=lambda e: -(e.get("weight") or 0))[:max_edges]
             bounded = True
+        _label_graph_nodes(session, nodes, label_rows, target_lang)
         caveat = "Association is not causation; PMI on small samples is noisy."
         out = {
             "level": level,
@@ -3612,20 +3928,20 @@ def layered_graph(
             "edges": edges,
             "method": "PMI/co-occurrence association, two hops (relatives, and their relatives)",
             "caveat": caveat,
+            "caveat_i18n": caveat,
         }
         if bounded:
             out["bounded"] = True
-            out["disclosure"] = (
-                f"Bounded view for responsiveness: up to {limit_nodes} nodes, "
-                f"{hop2_parents} hop-2 branches, ≤{article_cap} articles sampled per term. "
-                "Narrow the term or the time window for a finer view."
-            )
+            dvars = {"nodes": limit_nodes, "branches": hop2_parents, "articles": article_cap}
+            out["disclosure"] = _GRAPH_BOUNDED_FRAME.format(**dvars)
+            out["disclosure_i18n"] = _GRAPH_BOUNDED_FRAME
+            out["disclosure_vars"] = dvars
             # Surface it in the field the frontend already renders (visible-by-default).
             out["caveat"] = caveat + " " + out["disclosure"]
         return out
 
     if level == "family":
-        top = top_terms(session, limit=limit_nodes, group=True, days=days)
+        top = top_terms(session, limit=limit_nodes, group=True, days=days, target_lang=target_lang)
         fams = top.get("terms", [])[:limit_nodes]
         nodes, sets = [], {}
         for f in fams:
@@ -3640,6 +3956,7 @@ def layered_graph(
                     "kind": "family",
                     "size": f.get("mentions", 1),
                     "members": [m.get("term") for m in f.get("members", [])][:8],
+                    **_label_fields(f),
                 }
             )
             sets[fid] = _article_set(session, members[:3])
@@ -3671,12 +3988,15 @@ def layered_graph(
             sets[sid] = _article_set(session, members)
         # Context: the top unassigned families, so super-groups sit in the landscape.
         assigned = {m for n in nodes for m in n["members"]}
-        for f in top_terms(session, limit=10, group=True).get("terms", []):
+        for f in top_terms(session, limit=10, group=True, target_lang=target_lang).get("terms", []):
             fid = f.get("normalized") or f.get("term")
             if fid in assigned or any(n["id"] == fid for n in nodes):
                 continue
             nodes.append(
-                {"id": fid, "label": f.get("term"), "kind": "family", "size": f.get("mentions", 1)}
+                {
+                    "id": fid, "label": f.get("term"), "kind": "family", "size": f.get("mentions", 1),
+                    **_label_fields(f),
+                }
             )
             sets[fid] = _article_set(session, [fid])
         return {

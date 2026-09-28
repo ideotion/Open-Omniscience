@@ -291,6 +291,10 @@ class ImportQueueManager:
         # whether it succeeded or not (`_tuned` reports which). Skipped after a Stop, so a
         # stopped run correctly never reaches its own end.
         self._tuning_done = False
+        # THIS RUN's identity, stamped on every import report the run leaves behind so a
+        # multi-backup import can be read back as ONE import (the "Last import" line
+        # sums its reports). Random, never derived from anything the run imported.
+        self._run_id: str | None = None
         # Live progress of the sub-job currently in flight (mirrored, never authored).
         self._live: dict[str, Any] | None = None
         # THE CHECKPOINT GROUP (K > 1). None whenever no working copy is being
@@ -318,6 +322,12 @@ class ImportQueueManager:
                 "cursor": self._cursor,
                 "started_at": self._started_at,
                 "ended_at": self._ended_at,
+                # Stage 3's outcome travels with the rest of the run (2026-09-26, I10):
+                # memory-only, a restart turned a search-index merge that had RUN into
+                # "not started". Optional keys: a file written before them still loads.
+                "tuning_done": self._tuning_done,
+                "tuned": self._tuned,
+                "run_id": self._run_id,
             }
             p = self._path()
             p.parent.mkdir(parents=True, exist_ok=True)
@@ -341,8 +351,35 @@ class ImportQueueManager:
         self._cursor = int(raw.get("cursor", -1) or -1)
         self._started_at = raw.get("started_at")
         self._ended_at = raw.get("ended_at")
+        run_id = raw.get("run_id")
+        self._run_id = run_id if isinstance(run_id, str) else None
+        tuned = raw.get("tuned")
+        self._tuned = (
+            {str(k): bool(v) for k, v in tuned.items()} if isinstance(tuned, dict) else None
+        )
+        raw_tuning_done = raw.get("tuning_done")
         state = str(raw.get("state") or "idle")
-        if state == "running":
+        # EVERY ITEM HAD RECORDED ITS OWN OUTCOME (2026-09-26, I4). Each item's final
+        # state is saved in its own ``finally`` before the next one starts, and stage 3
+        # (``_tune_after_run``) runs only after the last of them -- so a file still
+        # saying "running" with no item running, queued or staged is a run that died in
+        # its TAIL: the search-index merge, or the one save after it. Everything it
+        # imported is already in the corpus, and "Safe to close" had said so. Reading it
+        # back as "interrupted -- start it again" asked the operator to redo an import
+        # that had landed, and contradicted the statement they had acted on.
+        unfinished = any(
+            it.get("state") in ("running", "queued", "staged")
+            for it in self._items
+            if isinstance(it, dict)
+        )
+        if state == "running" and self._items and not unfinished:
+            # The verdict the run's own last save would have written (``_drive``'s
+            # tail), from the same item states. Stage 3 did not finish, and the payload
+            # says so rather than calling it done.
+            any_error = any(isinstance(it, dict) and it.get("state") == "error" for it in self._items)
+            self._state = "error" if any_error else "done"
+            self._tuning_done = False
+        elif state == "running":
             # The process died mid-run (or was restarted). Say so: the passphrase
             # was never stored, so this cannot be resumed -- reporting it as still
             # "running" would be a bar that never moves again.
@@ -352,6 +389,15 @@ class ImportQueueManager:
                     it["state"] = "interrupted"
         else:
             self._state = state
+            # A file written before ``tuning_done`` was persisted: a run recorded as
+            # "done" or "error" reached its tail (the flag is set in
+            # ``_tune_after_run``'s ``finally``, before that save), and a stopped one
+            # skipped it. Anything else is a run that never got there.
+            self._tuning_done = (
+                raw_tuning_done
+                if isinstance(raw_tuning_done, bool)
+                else state in ("done", "error")
+            )
         # A STAGED item is one whose merge landed in a working copy that was never
         # recorded as swapped in. Leaving it "staged" would show it as work in flight
         # forever, and calling it "done" would claim an import that may never have
@@ -443,6 +489,8 @@ class ImportQueueManager:
             self._stop.clear()
             self._items = queued
             self._tuning_done = False
+            self._tuned = None
+            self._run_id = secrets.token_hex(6)
             self._cursor = -1
             self._passphrase = passphrase or ""
             self._started_at = time.time()
@@ -819,7 +867,7 @@ class ImportQueueManager:
                     it["discarded_reason"] = reason
             self._save()
 
-    def _commit_group(self) -> None:
+    def _commit_group(self, committed_by: dict | None = None) -> None:
         """The checkpoint landed: the swap MOVED the working copy onto the live
         corpus, so every item that had been staged into it is now imported."""
         group = self._release_group()
@@ -828,11 +876,83 @@ class ImportQueueManager:
         shutil.rmtree(group.dir, ignore_errors=True)
         if not group.item_ids:
             return
+        landed: list[dict] = []
         with self._lock:
             for it in self._items:
                 if it.get("id") in group.item_ids and it.get("state") == "staged":
                     it["state"] = "done"
+                    landed.append(it)
             self._save()
+        # AFTER the states above are recorded, never before: the report is a record of
+        # what happened, and a report that cannot be written must not be able to change
+        # what the run says it imported.
+        for it in landed:
+            self._persist_held_report(it, committed_by)
+
+    # -- the persisted record (2026-09-26, I7) -------------------------------- #
+    def _run_stamp(self, item: dict) -> dict:
+        """Which run, and which backup of it, a persisted report belongs to."""
+        position = next((i + 1 for i, it in enumerate(self._items) if it is item), None)
+        return {
+            "id": self._run_id,
+            "item_id": item.get("id"),
+            "label": item.get("label"),
+            "path": item.get("path"),
+            "kind": item.get("kind"),
+            "position": position,
+            "items_total": len(self._items),
+        }
+
+    def _persist_held_report(self, item: dict, committed_by: dict | None) -> None:
+        """A HELD backup's own import report, written once its checkpoint has landed.
+
+        ``run_restore`` persists a report only on its commit path, so a held item --
+        whose merge landed in the carried working copy and reached the corpus through a
+        LATER item's swap -- left none, and the history of a four-backup import at K = 3
+        read as the two backups that happened to swap. Written from the report the
+        item's own merge produced: its plan counts exactly what THIS backup added,
+        measured against the working copy the earlier items had already merged into, so
+        the reports of one run never count an article twice. Best-effort."""
+        try:
+            summary = item.get("summary") or {}
+            rep = summary.get("report") if isinstance(summary, dict) else None
+            if not isinstance(rep, dict) or not rep.get("held"):
+                return
+            from src.backup.import_reports import persist_import_report
+
+            by = (committed_by or {}).get("label") or (committed_by or {}).get("id")
+            out = dict(rep)
+            out.pop("working_copy", None)  # consumed by the swap; the path no longer exists
+            out["committed"] = True
+            out["committed_at_checkpoint"] = {"by_item": by}
+            out["held_note"] = (
+                "merged into the import's working copy and verified, then written to your "
+                f"corpus by the checkpoint that saved {by or 'the next backup'}"
+            )
+            out["import_run"] = self._run_stamp(item)
+            persist_import_report(
+                "restore", out, run_id=str(rep.get("batch_id") or item.get("id") or "")
+            )
+        except Exception:  # noqa: BLE001 - a record must never cost the import it records
+            _LOG.warning(
+                "could not persist the import report of held item %s", item.get("id"),
+                exc_info=True,
+            )
+
+    def _stamp_persisted_report(self, item: dict, report: dict) -> None:
+        """Name the backup a report the restore already persisted came from: its folder,
+        its path and its run. Every report of a run said only ``(oo-backup-3)``."""
+        try:
+            path = report.get("persisted_report_path") if isinstance(report, dict) else None
+            if not path:
+                return
+            from src.backup.import_reports import annotate_import_report
+
+            annotate_import_report(Path(str(path)), {"import_run": self._run_stamp(item)})
+        except Exception:  # noqa: BLE001 - a record must never cost the import it records
+            _LOG.warning(
+                "could not name the source on the report of %s", item.get("id"), exc_info=True
+            )
 
     def _after_item(self, item: dict, summary: dict) -> None:
         """Fold one finished item into the group's bookkeeping."""
@@ -844,11 +964,17 @@ class ImportQueueManager:
                     if summary.get("source_digest"):
                         group.digests.add(str(summary["source_digest"]))
             return
+        if item.get("kind") == "legacy":
+            # The legacy path returns run_restore's report itself.
+            self._stamp_persisted_report(item, summary)
         if item.get("kind") != "corpus":
             return
         report = summary.get("report") or {}
         if report.get("committed"):
-            self._commit_group()
+            self._commit_group(committed_by=item)
+            # After the held reports, so the committing backup's report stays the newest
+            # file of its group -- the history lists them in the order they landed.
+            self._stamp_persisted_report(item, report)
         elif report.get("refused"):
             # The merge landed and the verification refused it, so the copy carries
             # rows nothing has vouched for. Same answer as a raised failure.
@@ -975,6 +1101,10 @@ class ImportQueueManager:
             out["skipped"] = "already-merged"
             out["merged_as_batch"] = summary.get("merged_as_batch")
             out["merged_at"] = summary.get("merged_at")
+            # Which of the two answers it was: already in the corpus (a batch and a
+            # date), or already in THIS run's unsaved working copy (neither). The
+            # restore sets it; dropping it here left the row unable to say which.
+            out["in_open_checkpoint_group"] = bool(summary.get("in_open_checkpoint_group"))
         return out
 
     def _run_legacy(self, item: dict) -> dict:
@@ -1139,10 +1269,20 @@ class ImportQueueManager:
                 # One pass for the whole run, so "done" is a fact and there is
                 # nothing inside it to count: SQLite reports no progress for an FTS5
                 # 'optimize', and a bar drawn over it would be invented.
+                #
+                # A run that ENDED as done/error/interrupted without this stage having
+                # finished did not skip it and is not waiting for it: the process died
+                # before or during the merge (the tail restored by _load_persisted, or a
+                # kill mid-item). "pending" there says "not yet" about a run that is
+                # over -- the same claim the rows above stopped making.
                 "state": (
                     "running"
                     if live_stage == STAGE_SEARCH_INDEX
-                    else ("done" if tuning_done else "pending")
+                    else (
+                        "done"
+                        if tuning_done
+                        else ("interrupted" if run_state in ("done", "error", "interrupted") else "pending")
+                    )
                 ),
                 "done": 1 if tuning_done else 0,
                 "total": 1,
@@ -1202,6 +1342,14 @@ class ImportQueueManager:
             tuning_done = self._tuning_done
             k = self._checkpoint_k
             open_group = len(self._group.item_ids) if self._group is not None else 0
+        if state != "running":
+            # THE K THE NEXT RUN WILL USE, whenever no run is in flight (2026-09-26, I5).
+            # `_checkpoint_k` is captured at a run's START so an operator changing the
+            # setting mid-run cannot split a group -- but between runs that captured
+            # value is the LAST run's, and the dialog's checkpoint sentence read it: an
+            # operator who set 1 was still told "once every 3 backups". Resolved the
+            # same way `_drive` resolves it, so the sentence and the run cannot differ.
+            k = import_checkpoint_k()
         now = time.time()
         for it in items:
             s, e = it.get("started_at"), it.get("ended_at")

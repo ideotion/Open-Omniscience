@@ -46,6 +46,13 @@
  *              "scheduler" | "safety" | "custody"
  *   settingOn  the exact value that means ON, when the key is not a boolean or a
  *              per-pass budget (the custody anchoring mode is the only one)
+ *   whenOn     "ask" when the switch only PERMITS a request the operator then makes
+ *              by hand, so the lane switched on is listed under "only when you ask
+ *              for it", never under "runs on every collection pass". Discover by
+ *              topic is the one: its switch unlocks a button, and docs/SECURITY.md
+ *              says it is never part of the scheduler (recorded 2026-09-26). The
+ *              custody lane has no such field, because once switched on it anchors
+ *              every ingested article without a click
  *   noOptOut   true when the code reads a toggle that does not exist as a field,
  *              so the lane cannot be switched off today (recorded 2026-09-16)
  *   settingUnreachable
@@ -61,6 +68,13 @@
  *              check reaches api.github.com through it while the downloads do not. The
  *              hover's transport line then says "mostly direct" rather than claiming
  *              no part of the lane uses the proxy (S04-08's S5, 2026-09-25)
+ *   spawned    true when part of the lane's reach belongs to a PROGRAM this app starts
+ *              rather than to a request it makes: the AI lane runs pip, the Hugging Face
+ *              downloader and Ollama's own install.sh, whose download of the Ollama
+ *              program from ollama.com is a step of the lane, not a fetch of ours. The
+ *              hover then says so, and that the app cannot limit where those programs
+ *              connect: the hosts listed are what they reach, not a bound this app
+ *              enforces (click-through B12)
  */
 (function (root) {
   "use strict";
@@ -176,16 +190,18 @@
       "trigger": "opt-in",
       "setting": "discovery_external_enabled",
       "settingFrom": "safety",
+      "whenOn": "ask",
       "fetcher": true
     },
     {
       "id": "ai",
       "label": "Local AI install & weights",
-      "hosts": ["api.github.com", "objects.githubusercontent.com", "huggingface.co", "pypi.org"],
+      "hosts": ["api.github.com", "github.com", "release-assets.githubusercontent.com", "objects.githubusercontent.com", "ollama.com", "huggingface.co", "pypi.org"],
       "trigger": "click",
       "setting": null,
       "fetcher": false,
-      "mixed": true
+      "mixed": true,
+      "spawned": true
     },
     {
       "id": "mail",

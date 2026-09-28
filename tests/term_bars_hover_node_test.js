@@ -57,9 +57,25 @@ const excludeKeyword = () => {};
 // i18n.js has not finished loading.
 global.window = {};
 
+// The label itself goes through THE one helper (M7), so its whole family is loaded as
+// real source too: a stub would let this suite pass over a label production never draws.
 const SRC = [
+  extract("_kwTf"),
   extract("kwLangName"),
+  extract("kwTier"),
   extract("kwLangBreakdownText"),
+  extract("uiLangCode"),
+  extract("_kwLangCells"),
+  extract("_kwScopeTail"),
+  extract("kwMentionLangs"),
+  extract("kwLangListName"),
+  extract("_kwLabelState"),
+  extract("kwLabelParts"),
+  extract("kwHoverText"),
+  extract("kwQidHtml"),
+  extract("kwHasTag"),
+  extract("kwSensePickerHtml"),
+  extract("kwLabelHtml"),
   extract("termBarsHtml"),
 ].join("\n");
 // eslint-disable-next-line no-eval
@@ -202,6 +218,33 @@ check("the breakdown rides the channel the stats handler appends, not the one it
   // ...and the negative space holds here too.
   assert.strictEqual(extraOf(html, "transfer window"), null,
     "an ordinary term carries a per-language addendum into the stats bubble");
+});
+
+// --- the LABEL is the one helper's, tag and all (M7) -------------------------------- //
+
+check("a foreign word on a trend bar carries its tier tag, and its QID stays out of the link", () => {
+  // The gate's closing criterion: every keyword surface draws a foreign word with its
+  // tier tag. The bars drew `esc(t.term)` -- the bare original, no translation, no tag.
+  const VERIFIED = {term: "software", normalized: "software", mentions: 45, translation: "logiciel",
+    translation_tier: "verified", translation_source_lang: "fr", translation_qid: "Q7397"};
+  const FOREIGN = {term: "semana", mentions: 5, translation_tier: "untranslated", translation_source_lang: "de"};
+  const html = bars([VERIFIED, FOREIGN]);
+  const label = (term) => {
+    const m = new RegExp('<a class="tb-label"[^>]*? data-kwstat="' + esq(term) + '"[^>]*>([\\s\\S]*?)</a>').exec(html);
+    assert.ok(m, "no label link for " + term + ": " + html);
+    return m[1];
+  };
+  assert.ok(/>logiciel</.test(label("software")), "the translation is not the visible term: " + html);
+  assert.ok(/translated from French/.test(label("software")), "the verified row has no tier tag: " + html);
+  assert.ok(/in German/.test(label("semana")), "the untranslated row has no language tag: " + html);
+  // A nested anchor would close the label link early and push the bar out of line, so
+  // the QID sits after the value, outside the link.
+  assert.ok(!/<a\b/.test(label("software")), "the QID is nested inside the label link: " + html);
+  assert.ok(/tb-val[^>]*>[^<]*<\/span> <a href="#" class="kw-qid"/.test(html),
+    "the QID is not drawn after the row's value: " + html);
+  // ...and the tag's own hover reaches the bubble the stats handler keeps.
+  assert.ok(/Original: software/.test(extraOf(html, "software") || ""),
+    "the tagged row's hover never reaches the stats bubble: " + html);
 });
 
 console.log("term-bars hover: all assertions passed (" + passed + " checks)");

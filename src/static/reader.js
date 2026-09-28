@@ -24,7 +24,129 @@
     d.textContent = s == null ? "" : String(s);
     return d.innerHTML;
   }
-  function num(n) { return (n == null ? 0 : n).toLocaleString(); }
+  // THE SPA'S NUMBER WRITER, PORTED (click-through B16, V16). toLocaleString() reads the
+  // BROWSER's locale, which the app's language switcher never changes, so this page wrote
+  // "6,402" beside an SPA that writes "6 402" (U+202F grouping, a decimal point, Latin
+  // digits in every locale -- the ruled formatter, fmtNum in app-markets.js). This page
+  // cannot load the SPA bundle, so the function is copied, not imported; KEEP THE TWO IN
+  // STEP -- tests/clickthrough_b16_node_test.js runs both over the same values.
+  function fmtNum(v, maxDec) {
+    if (v == null || !isFinite(v)) return "—";
+    var a = Math.abs(v);
+    var dec = maxDec != null ? maxDec : (a >= 1000 ? 1 : a >= 100 ? 1 : a >= 1 ? 2 : 3);
+    var s = v.toFixed(dec).replace(/\.?0+$/, function (m) { return m.indexOf(".") !== -1 ? "" : m; });
+    var parts = s.split(".");
+    var grouped = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, " ");
+    return parts[1] ? grouped + "." + parts[1] : grouped;
+  }
+  // Every caller passes a COUNT, which the SPA writes with fmtNum(n, 0).
+  function num(n) { return fmtNum(n == null ? 0 : n, 0); }
+
+  // The page loads i18n.js (deferred, ahead of this file), so its t()/tf() are the SPA's
+  // own. Each is guarded: a reader must still read if the engine did not load.
+  function T(s) { return (window.OOI18N && window.OOI18N.t) ? window.OOI18N.t(s) : s; }
+  function TF(s, v) {
+    if (window.OOI18N && window.OOI18N.tf) return window.OOI18N.tf(s, v);
+    return String(s).replace(/\{(\w+)\}/g, function (m, k) { return (v && v[k] != null) ? String(v[k]) : m; });
+  }
+  // "Label: value" through the ONE keyed frame the SPA's ooLabelText uses, so each locale
+  // states its own separator (French puts a space before the colon) instead of an English
+  // ": " welded on (click-through B19, Q9). Markers, so a value holding "{x}" is never
+  // read as a slot.
+  function rdLabelText(label, value) {
+    return TF("{prefix}: {text}", { prefix: "\u0001", text: "\u0002" })
+      .replace("\u0001", function () { return String(label); })
+      .replace("\u0002", function () { return String(value == null ? "" : value); });
+  }
+  function uiLang() {
+    try {
+      return (window.OOI18N && window.OOI18N.current && window.OOI18N.current())
+        || localStorage.getItem("oo.lang") || "en";
+    } catch (e) { return "en"; }
+  }
+
+  // --- THE KEYWORD LABEL, PORTED (M7) --------------------------------------------
+  // The SPA draws every keyword through ONE helper, `kwLabelParts` in app-corpus.js: the
+  // translation where a verified ring allows, a small "translated from French" / "in
+  // French" tag otherwise, the original and the languages in the hover. This page does
+  // not load the SPA bundle, so the Keywords tab showed the bare stored word -- a French
+  // keyword stayed French in the English reader while the analysis window beside it
+  // translated it. This is the smallest FAITHFUL port of those rules, not a new grammar:
+  // same tiers, same fields, same keyed frames, the language names from CLDR through the
+  // browser (the SPA's `ooLangName` reads the same source). Keep the two in step.
+  // THE SECOND OWNER of the Intl language-name constructor (test_alpha3_display_surfaces):
+  // this page cannot load app-map.js's `ooLangName`. Same derivation, small: the bare base
+  // (`en-US` -> `en`, the house key rule), and a CLDR answer that merely ECHOES the code is
+  // not a name -- it prints the code as the SPA's last resort does, never passes as one.
+  var _langDN = {};
+  function langName(code) {
+    var src = String(code == null ? "" : code).trim();
+    var base = src.toLowerCase().replace(/_/g, "-").split("-")[0];
+    if (!base) return src;
+    var ui = uiLang();
+    try {
+      if (!_langDN[ui]) _langDN[ui] = new Intl.DisplayNames([ui], { type: "language" });
+      var name = _langDN[ui].of(base);
+      return (name && name.toLowerCase() !== base) ? name : base;
+    } catch (e) { return base; }
+  }
+  function langList(codes) {
+    var names = (codes || []).map(langName).filter(Boolean);
+    if (names.length < 2) return names[0] || "";
+    try { return new Intl.ListFormat(uiLang(), { type: "conjunction" }).format(names); }
+    catch (e) { return names.join(", "); }
+  }
+  function countsLine(counts) {
+    if (!counts || typeof counts !== "object") return "";
+    return Object.keys(counts).map(function (k) { return [k, +counts[k] || 0]; })
+      .filter(function (x) { return x[1] > 0; })
+      .sort(function (a, b) { return b[1] - a[1] || String(a[0]).localeCompare(String(b[0])); })
+      .map(function (x) { return (x[0] === "?" ? T("Language not recorded") : langName(x[0])) + " " + x[1]; })
+      .join(" · ");
+  }
+  function rdLabel(row) {
+    var original = row.term || row.normalized || "";
+    var tier = row.translation_tier || (row.translation ? "verified" : "untranslated");
+    var ml = row.mention_languages;
+    var langs = (ml && typeof ml === "object")
+      ? Object.keys(ml).filter(function (k) { return k !== "?" && (+ml[k] || 0) > 0; })
+        .sort(function (a, b) { return (+ml[b] || 0) - (+ml[a] || 0) || a.localeCompare(b); })
+      : [];
+    if (!langs.length && row.translation_source_lang) langs = [row.translation_source_lang];
+    var ui = String(uiLang()).split("-")[0].toLowerCase();
+    var inUi = !!ml && langs.some(function (c) { return String(c).split("-")[0].toLowerCase() === ui; });
+    if (inUi && (tier === "verified" || tier === "tentative")) tier = "untranslated";
+    var names = langList(langs);
+    var shown = (tier === "verified" || tier === "tentative") && row.translation ? row.translation : original;
+    var tag = "", cls = "";
+    if (tier === "verified" && names) tag = TF("translated from {language}", { language: names });
+    else if (tier === "tentative" && names) { tag = "≈ " + TF("translated from {language}", { language: names }); cls = " r-kw-tentative"; }
+    else if (tier === "untranslated" && !inUi && row.translation_declined === "several-senses") tag = T("Several senses");
+    else if (tier === "untranslated" && names && !(inUi && langs.length === 1)) tag = TF("in {language}", { language: names });
+    var hover = [];
+    if (tier === "verified") hover.push(T("Verified translation (cross-language concept)."));
+    else if (tier === "tentative") hover.push(T("AI-generated tentative translation — unreliable, not verified."));
+    else if (tier === "untranslated") hover.push(T("Not translated — shown in its own language."));
+    if (shown !== original && original) hover.push(rdLabelText(T("Original"), original));
+    var split = countsLine(ml);
+    if (split) hover.push(T("Mentions by language:") + " " + split);
+    else if (names) hover.push(rdLabelText(T("Language"), names));
+    var across = countsLine(row.language_breakdown);
+    if (across) hover.push(T("Across languages:") + " " + across);
+    if (row.translation_qid) hover.push(rdLabelText("Wikidata", row.translation_qid));
+    return { shown: shown, tag: tag, cls: cls, hover: hover.join(" — ") };
+  }
+  // `data-i18n-dyn`: the walker must never translate a keyword (a corpus holding the
+  // word "sources" is one collision away from a fabricated term).
+  function rdLabelHtml(row) {
+    var p = rdLabel(row);
+    var html = '<span class="r-kw-term" data-i18n-dyn>' + esc(p.shown) + "</span>";
+    if (p.tag) {
+      html += ' <span class="r-kw-tag' + p.cls + '" data-i18n-dyn title="' + esc(p.hover) + '">'
+        + esc(p.tag) + "</span>";
+    }
+    return html;
+  }
 
   // Clicking any keyword opens its analysis in a NEW SPA tab, landing on the
   // Keywords subtab seeded with the term (the SPA boot hydrates ?analyze=&tab=).
@@ -132,27 +254,45 @@
   // guarded — a failure leaves the existing "Analyse …" title untouched. The standalone
   // reader has no #oo-tip bubble, so it uses the native title (its existing hover).
   var _kwStatCache = {};
+  // The same line the SPA's keyword bubble composes (app-boot.js ooKwStatInit), through
+  // the same keys -- and the CAVEAT through t(), which it was not: a fixed server sentence
+  // appended verbatim read English inside every translated reader (K-reader; keyed since N7).
   function kwStatLine(d) {
-    if (!d || !d.resolved) return "Not in your corpus yet — no stats.";
-    var bits = [num(d.mentions) + " mentions · " + num(d.articles) + " articles"];
+    if (!d || !d.resolved) return T("Not in your corpus yet — no stats.");
+    var bits = [num(d.mentions) + " " + T(d.mentions === 1 ? "mention" : "mentions")
+      + " · " + num(d.articles) + " " + T(d.articles === 1 ? "article" : "articles")];
     var tr = d.trend || {};
-    if (tr.recent || tr.prior) bits.push("trend " + tr.growth + "× (" + tr.window_days + "d vs " + tr.baseline_days + "d)");
+    if (tr.recent || tr.prior) {
+      // One frame for the whole measurement, the day spans as the keyed unit frame: the
+      // welded "30d vs 90d" kept an English unit in every locale (B19, Q9).
+      bits.push(rdLabelText(T("trend"), TF("{growth}× ({window} vs {baseline})", {
+        growth: fmtNum(tr.growth == null ? null : Number(tr.growth)),
+        window: TF("{n} d", { n: num(tr.window_days) }),
+        baseline: TF("{n} d", { n: num(tr.baseline_days) }) })));
+    }
     var co = (d.cooccurrences || []).slice(0, 4).map(function (c) { return c.term; }).filter(Boolean);
-    if (co.length) bits.push("with: " + co.join(", "));
-    return bits.join(" · ") + (d.caveat ? " · " + d.caveat : "");
+    if (co.length) bits.push(rdLabelText(T("with"), co.join(", ")));
+    return bits.join(" · ") + (d.caveat ? " · " + T(d.caveat) : "");
   }
+  // THE CACHE HOLDS THE PAYLOAD, NOT THE SENTENCE (K-cache/K-reader). It used to hold the
+  // formatted line and PREPEND it to the title once per element, so after a language
+  // switch every keyword already hovered kept the old language's line for the life of
+  // the page. The title is now rebuilt on each hover from the payload and the one static
+  // sentence both link kinds carry, in the language on screen at that moment -- which
+  // also means a second hover never stacks a second line on the first.
+  var _KW_TITLE = "Analyse this keyword across your corpus ↗";
+  function _kwStatTitle(el, d) { el.title = kwStatLine(d) + "\n" + T(_KW_TITLE); }
   function enrichKwStat(el) {
     var term = el.getAttribute("data-kwstat");
-    if (!term || el.getAttribute("data-kwstat-done")) return;
-    el.setAttribute("data-kwstat-done", "1");   // one shot per element
-    if (_kwStatCache[term] !== undefined) {
-      if (_kwStatCache[term]) el.title = _kwStatCache[term] + "\n" + el.title;
-      return;
-    }
+    if (!term) return;
+    var d = _kwStatCache[term];
+    if (d) { _kwStatTitle(el, d); return; }
+    if (d === null) return;                      // in flight: one request per term
+    _kwStatCache[term] = null;
     fetch("/api/insights/keyword-stats?term=" + encodeURIComponent(term), { headers: { Accept: "application/json" } })
       .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
-      .then(function (d) { var line = kwStatLine(d); _kwStatCache[term] = line; el.title = line + "\n" + el.title; })
-      .catch(function () { el.removeAttribute("data-kwstat-done"); });   // allow a later retry
+      .then(function (d) { _kwStatCache[term] = d || {}; _kwStatTitle(el, _kwStatCache[term]); })
+      .catch(function () { delete _kwStatCache[term]; });   // allow a later retry
   }
   document.addEventListener("mouseover", function (e) {
     var el = e.target && e.target.closest ? e.target.closest("[data-kwstat]") : null;
@@ -223,7 +363,10 @@
   var _kwPromise = null;
   function primeKeywords() {
     if (!aid) return;
-    _kwPromise = fetch("/api/insights/corpus-keywords?limit=60&article_ids=" + encodeURIComponent(aid),
+    // In the reader's language, so the Keywords tab can draw each label the way the SPA
+    // does (M7); the terms the body marking reads are the stored words either way.
+    _kwPromise = fetch("/api/insights/corpus-keywords?limit=60&article_ids=" + encodeURIComponent(aid)
+      + "&target_lang=" + encodeURIComponent(uiLang()),
       { headers: { Accept: "application/json" } })
       .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); });
     _kwPromise.then(function (d) {
@@ -241,15 +384,18 @@
     var rows = terms.map(function (t) {
       var m = t.mentions || 0;
       // Each keyword is CLICKABLE — it opens its full analysis in a new tab.
-      return "<li>" + kwLink(t.term, esc(t.term), "r-kw")
-        + '<span class="r-kn">' + num(m) + " mention" + (m === 1 ? "" : "s") + "</span></li>";
+      return "<li>" + kwLink(t.term, rdLabelHtml(t), "r-kw")
+        + '<span class="r-kn">' + num(m) + " " + esc(T(m === 1 ? "mention" : "mentions")) + "</span></li>";
     }).join("");
     pane.innerHTML =
       '<h2 class="r-h2">Keywords in this article</h2>'
       + '<p class="r-muted">Click any keyword to analyse it across your corpus ↗</p>'
       + '<ol class="r-kwlist">' + rows + "</ol>"
-      + '<p class="r-method">' + esc(d.method || "") + "</p>"
-      + '<p class="r-caveat">' + esc(d.caveat || "") + "</p>"
+      // Both are FIXED server sentences, keyed like the SPA's: the caveat carries a count,
+      // so the server also sends it as a frame + vars (M14) and the English stays the
+      // fallback for an older payload (K-reader).
+      + '<p class="r-method">' + esc(T(d.method || "")) + "</p>"
+      + '<p class="r-caveat">' + esc(d.caveat_i18n ? TF(d.caveat_i18n, d.caveat_vars || {}) : (d.caveat || "")) + "</p>"
       + '<div id="r-ailens"></div>';
     loadAiLens();
   }
@@ -373,8 +519,11 @@
   // fabricated 0. Conservative render: a term list + density, NOT an inline highlight over the body
   // (char-offset spans over rendered HTML drift; a highlight surface is a later browser-verified slice).
   function renderSubjectivity(pane, d) {
-    var method = '<p class="r-method">' + esc((d && d.method) || "") + "</p>";
-    var caveat = '<p class="r-caveat">' + esc((d && d.caveat) || "") + "</p>";
+    // The method and the caveat are FIXED sentences (src/analytics/subjectivity.py), keyed
+    // x12: piped through as sent, the caveat -- an informed-consent surface -- read English
+    // in every translated reader (click-through B19, Q9).
+    var method = '<p class="r-method">' + esc(T((d && d.method) || "")) + "</p>";
+    var caveat = '<p class="r-caveat">' + esc(T((d && d.caveat) || "")) + "</p>";
     if (!d || d.available === false) {
       var reason = (d && d.reason) || "not available";
       pane.innerHTML = '<h2 class="r-h2">Loaded language</h2>'
@@ -384,11 +533,21 @@
     }
     var terms = d.terms || [];
     var chips = terms.map(function (t) { return '<span class="r-chip">' + esc(t) + "</span>"; }).join(" ");
+    // The score through the ONE "label: value" frame, and the count as ONE keyed frame
+    // chosen by the number it counts (click-through B17, T9): "Loaded-term density:" and
+    // "(3 of 120 words)" were English words around numbers, so no key could match them
+    // and they stayed English in every locale while the heading above them translated.
+    var nTok = Number(d.n_tokens) || 0;
+    var score = esc(TF("{prefix}: {text}", {prefix: "\u0001", text: "\u0002"}))
+      .replace("\u0001", function () { return esc(T("Loaded-term density")); })
+      .replace("\u0002", function () { return "<b>" + esc(d.density) + "</b>"; });
+    var ofWords = TF(nTok === 1 ? "({n} of {m} word)" : "({n} of {m} words)",
+      {n: num(d.n_loaded || 0), m: num(nTok)});
     pane.innerHTML =
       '<h2 class="r-h2">Loaded language</h2>'
       + '<p class="r-muted">Deduced from the text (rule-based, never AI) — a prompt to read closely, never a verdict.</p>'
-      + '<p class="r-score">Loaded-term density: <b>' + esc(d.density) + "</b> "
-      + '<span class="r-muted">(' + num(d.n_loaded || 0) + " of " + num(d.n_tokens || 0) + " words)</span></p>"
+      + '<p class="r-score">' + score + " "
+      + '<span class="r-muted">' + esc(ofWords) + "</span></p>"
       + (chips
           ? '<p class="r-muted">Loaded terms found:</p><p>' + chips + "</p>"
           : '<p class="r-muted">No loaded terms found — a real measurement, not a gap.</p>')
@@ -438,7 +597,10 @@
 
     var svg = '<svg class="r-mm" viewBox="0 0 ' + W + " " + H + '" role="img" aria-label="Keyword mindmap for this article">'
       + edges + circles + labels + "</svg>";
-    var moreNote = more ? '<p class="r-muted">+ ' + num(more) + " more keyword" + (more === 1 ? "" : "s") + " not shown.</p>" : "";
+    // One keyed frame per count, the singular for one (click-through B17, T9).
+    var moreNote = more ? '<p class="r-muted">'
+      + esc(TF(more === 1 ? "+ {n} more keyword not shown." : "+ {n} more keywords not shown.", {n: num(more)}))
+      + "</p>" : "";
     pane.innerHTML = '<h2 class="r-h2">Mindmap</h2>' + svg + moreNote + method + caveat;
   }
 
@@ -581,4 +743,40 @@
   // Mark the article's real indexed keywords inline in the Read body + prime the
   // Keywords tab (one loopback fetch serves both).
   primeKeywords();
+
+  // The footer's "Original source: <url>" through the ONE "label: value" frame the SPA
+  // uses (ooLabelHtml's "{prefix}: {text}"), so each locale writes its own separator
+  // (click-through B16, V4). The server's anchor NODE is moved, never re-serialised, so
+  // its href and its visible text -- the full URL, invariant #6 -- stay exactly the
+  // server's. A frame missing either marker keeps the server's English rather than
+  // dropping the link.
+  function paintOrigSource() {
+    var box = document.querySelector(".src-orig");
+    var a = box && box.querySelector("a.src-link");
+    if (!box || !a) return;
+    var frame = TF("{prefix}: {text}", {prefix: "\u0001", text: "\u0002"});
+    if (frame.indexOf("\u0001") < 0 || frame.indexOf("\u0002") < 0) return;
+    var frag = document.createDocumentFragment();
+    frame.split(/(\u0001|\u0002)/).forEach(function (part) {
+      if (part === "\u0001") frag.appendChild(document.createTextNode(T("Original source")));
+      else if (part === "\u0002") frag.appendChild(a);
+      else if (part) frag.appendChild(document.createTextNode(part));
+    });
+    box.textContent = "";
+    box.appendChild(frag);
+  }
+  if (window.OOI18N && window.OOI18N.ready) window.OOI18N.ready.then(paintOrigSource);
+  else paintOrigSource();
+
+  // A language switch re-asks for the keywords in the new language and redraws the tab
+  // if it was open: the labels carry translations INTO the old one. (This page has no
+  // switcher of its own; the listener costs nothing and keeps the port's contract.)
+  document.addEventListener("oo:langchange", function () {
+    paintOrigSource();
+    primeKeywords();
+    var pane = document.getElementById("rp-keywords");
+    if (loaded.keywords && pane && _kwPromise) {
+      _kwPromise.then(function (d) { renderKeywords(pane, d); }).catch(function () {});
+    }
+  });
 })();

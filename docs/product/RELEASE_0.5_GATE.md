@@ -23,7 +23,7 @@ one ruled for 0.4 (Q1128 = a): Chromium in the sandbox plus the maintainer's cli
 best-effort. A row that cannot be measured in the sandbox says `not-measurable-here` and names the operator
 step.
 
-**Entry.** `v0.4.0` tagged (`RELEASE_0.4_GATE.md` rows A–E, G–V closed). Two 0.4 rows are hard preconditions
+**Entry.** `v0.4.0` tagged (`RELEASE_0.4_GATE.md` rows A–E, G–W closed; row W was added 2026-09-27 by `RC01` = a). Two 0.4 rows are hard preconditions
 here by ruling: row K (the backup-format bump, exercised on a real restore) precedes row B below (Q301 = c),
 and row O (the substrate) precedes rows D and F.
 
@@ -44,8 +44,9 @@ and row O (the substrate) precedes rows D and F.
 | I | The UI shell: "rings, not gates", the first-run default, the inline-handler retirement + CSP, the theme cull | session | ruled (Q1120, Q1121, Q1123, Q1127) · `S05-09` | **OPEN** |
 | J | A source is keyed on its FEED — the migration and its data-safety review | session + operator (a real restore) | ruled (Q1102 ⛔ = b); *proposed placement* 0.5 · `S05-10` | **OPEN** |
 | K | The approved desk: the claim workspace A1, the Conjunction Lens across verticals, the onboarding tour, signed-evidence export polish | session | carried from the V1 train (ruled 2026-09-07), kept by Q105 = a · `S05-11` | **OPEN** |
+| L | Q803's default: OSM's border convention as of a stated date opens every map (moved from 0.4 row R) | session + operator (row E's artifact build) | ruled (Q803 and its note, Q826); placement `PF06` = a, 2026-09-27 · `S05-05` | **OPEN** — waits on row E's OSM-derived artifacts |
 
-**The exit.** `v0.5.0` is tagged when rows A–K are CLOSED on named artifacts, the three i18n gates and the
+**The exit.** `v0.5.0` is tagged when rows A–L are CLOSED on named artifacts, the three i18n gates and the
 whole-tree guards are green on the tagged tree, and the release notes carry the no-telemetry re-check (Q111).
 Row D closes with OSM rows INSIDE the machine only: until Q823 ⛔ is ruled, no OSM-derived row enters an export,
 a bulletin or an evidence ZIP (today's state, not a decision). Row F closes at the budgeted depth the store
@@ -288,6 +289,19 @@ carries none of them; corrected 2026-09-15 from brief `S05-11`'s grep), not re-a
 **Closes when** each ships with its own tests and click-through record; the dossier's 1.0 bar (V1 §8 item 4:
 ≥ 6 rails) is not owed here — 0.8 row A owes it. Brief `S05-11`.
 
+### Row L — OSM's border convention as the default · ruled (Q803 and its note, Q826; placement `PF06` = a, 2026-09-27) · OPEN
+
+**What it must demonstrate.** Q803's ruled DEFAULT, moved off 0.4 row R by `PF06` = (a) («Row R: OK to move that
+to 0.5»): every map opens on OSM's border convention as of a stated `<date>`, named in the legend, while every
+disputed area is still rendered CONTESTED showing both claims (Q826) and the worldview toggles still let the
+user see the difference between conventions (Q803's note); 0.4 row R shipped those last two. It waits on row E,
+because Natural Earth's de-facto policy is not OSM's, and calling it OSM's would be the silent pick the same
+ruling forbids; until then the default is `contested` (it assigns nothing). The `<date>` and the SOURCE of
+OSM's claims are named in the PR, and the maintainer may move either (brief `S04-11` §6). **Closes when** a
+Chromium click-through record shows the five surfaces opening on OSM's convention with its date in the
+legend, one disputed area with both claims, and the toggle switching to another convention, and a test pins
+the default. Brief `S05-05`, with `S04-11` S3's toggle.
+
 ---
 
 ## 3. Amendment log
@@ -297,6 +311,7 @@ carries none of them; corrected 2026-09-15 from brief `S05-11`'s grep), not re-a
 | 2026-09-15 | Board created from the answered roadmap sheet (Q112 = a, Q1204 = a): rows A–K, each citing its question IDs; the entry precondition (0.4 row K before row B) recorded from Q301 = c | maintainer (answer sheet) · rows written by the session |
 | 2026-09-15 | **The 2026-09-06 register's 65 answers (rulings artifact, 15:02–16:00Z) — effects on this board, nothing resolved by the session:** row H — D8 «wait for the app wide one model ruling … before version 0.8» CONFLICTS with Q1142 = a (run the bench in 0.5; `RC04`) and D9 `default` (drop the live ollama.com browse) CONFLICTS with Q1143 = a (`RC09`); D10 consistent; row I — H4's method (one module per slice, `app-boot.js` first) recorded; H3 (remove `#ins-term` behind the absorption test) proposed here (`RC08.5`); row J — L9 `default` (remove the lean scale) CONFLICTS with Q1129 = a (`RC16`); row B — C5 (the DB-10 migrate-op as a Settings → Advanced action) proposed here (`RC08.1`); row F — C4 came back `default` (yes / OOENC2 / yes / yes) at 15:12Z where Q1009 was blank that morning: ⛔, `RC03` asks for the four values; the seam stays. A `bulletin-defaults` slice (D2 + D4) is proposed beside row H (`RC08.2`). | maintainer (the register, 2026-09-15) · reconciled by the session |
 | 2026-09-15 | **The RC confirmation round came back UNANSWERED — 0 of 22 `ANSWER` lines carry a letter — processed per its own §0; nothing resolved by the session.** Effects on this board, all reversible by writing a letter: row B — `RC08.1` ASSUMPTION (a), C5's DB-10 migrate-op placed here; row F — `RC03` ⛔ PENDING, the four storage round-2 values still unwritten so the Phase-C seam stays shut; row H — `RC04` ASSUMPTION (a) the bench is NOT run in 0.5 (the decision moves to 0.8 row C), `RC09` ASSUMPTION (a) the live ollama.com browse dropped, `RC08.2` ASSUMPTION (a) D2 + D4 placed as a small `bulletin-defaults` slice beside this row; row I — `RC08.5` ASSUMPTION (a), H3 placed here behind its absorption test; row J — `RC16` ASSUMPTION (a), the `lean-*` scale leaves the offerable vocabulary. A NEW 0.5 slice is also assumed by `RC07` (article revision tracking on the finished 0.4 row O substrate, B7's note) — recorded as a placement, not opened as a board row. Four of these sit on CONFLICT questions and follow the later channel exactly as §0 directs; BOTH answers stay recorded on their `A1`–`L10` and `Qnnn` rows. **No row changed status.** | maintainer (the round, left blank) · §0's blank rules applied by the session |
+| 2026-09-27 | **Row L added: Q803's default moved here from 0.4 row R** (`PF06` = a, «Row R: OK to move that to 0.5»), beside row E's OSM artifacts it waits on. The entry clause now names 0.4 rows G–W (row W, `RC01` = a), and the exit clause A–L. | maintainer (chat, 2026-09-27) · recorded by the session, PR #1191 |
 
 ---
 

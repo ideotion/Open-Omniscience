@@ -83,8 +83,11 @@ def test_recency_by_collection_time_and_reader_link_invariant6():
     # honest: ordering is collection time (created_at), never the publisher's date
     assert "collection time (never the publisher's claimed date)" in _HTML
     assert "a.created_at" in _JS
-    # every title opens the offline stored copy (invariant #6)
-    assert '/api/articles/" + a.id + "/view' in _JS
+    # every title opens the offline stored copy (invariant #6). This once passed on a
+    # substring while the href was `a.url || reader`, so the title opened the external
+    # original under an "offline stored copy" hover; pin the reader AS the href.
+    assert 'href="/api/articles/${encodeURIComponent(a.id)}/view"' in _JS
+    assert "esc(a.url ||" not in _JS
     assert 't("offline stored copy")' in _JS
 
 

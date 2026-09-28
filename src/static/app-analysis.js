@@ -106,6 +106,7 @@
     let _anActiveId = null;
     let _anTabSeq = 1;
     let _anHydrated = false;    // restored tabs load lazily the first time Analysis is opened
+    let _anRunSeq = 0;          // loadAnalysis generation: a superseded run never writes (see loadAnalysis)
     const _AN_TABS_KEY = "oo.an.tabs.v1";
     const _AN_TAB_CAP = 10;    // soft cap (a multi-document workspace, not unbounded)
 
@@ -153,8 +154,10 @@
         // widget. `aria-current` marks the active entry in place of aria-selected.
         // (This is NOT one of invariant #18's ooSubtabs surfaces: the window's own
         // subtabs are #an-subtabs and keep the tablist grammar unchanged.)
+        // The label is the reader's own query (or a Lead's name), so it opts out of the
+        // i18n walker: a search for "Climate" must not be drawn as "Climat" (N6's class).
         return `<span class="an-tab${on ? " active" : ""}" role="listitem">`
-          + `<button class="an-tab-label"${on ? ' aria-current="true"' : ""} onclick="_anActivate(${esc(JSON.stringify(tb.id))})" title="${esc(tb.label || tb.query || "")}">${esc(lbl)}</button>`
+          + `<button class="an-tab-label" data-i18n-dyn${on ? ' aria-current="true"' : ""} onclick="_anActivate(${esc(JSON.stringify(tb.id))})" title="${esc(tb.label || tb.query || "")}">${esc(lbl)}</button>`
           + `<button class="an-tab-x" onclick="_anCloseTab(${esc(JSON.stringify(tb.id))})" title="Close this analysis tab" aria-label="Close">✕</button></span>`;
       }).join("");
     }
@@ -208,7 +211,10 @@
       if (prov.producer) {
         // The producer identity, shown as the card TYPE the reader already saw on the
         // card's own chip -- same vocabulary on both surfaces.
-        bits.push(`<span class="chip">${esc(String(prov.producer).replace(/_/g, " "))}</span>`);
+        // Through Home's keyed type labels (re-walk L-2), so the chip reads in the UI language.
+        const typeLabel = (typeof cardTypeLabel === "function")
+          ? cardTypeLabel(prov.producer) : String(prov.producer).replace(/_/g, " ");
+        bits.push(`<span class="chip">${esc(typeLabel)}</span>`);
       }
       // The trigger's plain sentence is ONE constant per card type (keyable), and each
       // math row is a constant label + a language-neutral value -- so both translate.
@@ -223,10 +229,12 @@
       // never behind the details toggle (invariant #23).
       const caveat = prov.caveat ? `<p class="card-caveat">${esc(t(prov.caveat))}</p>` : "";
       const method = prov.method
-        ? `<div class="mc"><b>${esc(t("Method"))}:</b> ${esc(t(prov.method))}</div>` : "";
+        ? `<div class="mc">${ooLabelHtml(`<b>${esc(t("Method"))}</b>`, esc(t(prov.method)))}</div>` : "";
+      // The reader's own separator after each label, through the ONE keyed frame
+      // (`ooLabelHtml`; the 2026-09-27 re-walk, N-5) -- never a ": " welded after t().
       host.innerHTML = `<div class="an-prov-top">`
-        + `<span class="an-prov-from">${esc(t("From this Lead"))}:</span> `
-        + `<b class="an-prov-card">${esc(prov.card || "")}</b> ${bits.join(" ")}</div>`
+        + ooLabelHtml(`<span class="an-prov-from">${esc(t("From this Lead"))}</span>`,
+                      `<b class="an-prov-card">${esc(prov.card || "")}</b>`) + ` ${bits.join(" ")}</div>`
         + caveat + method
         + ((why || math) ? `<div class="why-mathlabel">${esc(t("Why am I seeing this?"))}</div>` : "")
         + why + math;
@@ -322,12 +330,15 @@
     function _anFilterSummary() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const parts = [];
-      const src = ($("an-adv-source").value || "").trim(); if (src) parts.push(t("source") + ": " + src);
-      const lang = ($("an-adv-lang").value || "").trim(); if (lang) parts.push(t("language") + ": " + lang);
+      const src = ($("an-adv-source").value || "").trim(); if (src) parts.push(ooLabelText(t("source"), src));
+      const lang = ($("an-adv-lang").value || "").trim(); if (lang) parts.push(ooLabelText(t("language"), lang));
       const from = $("an-adv-from").value, to = $("an-adv-to").value;
       if (from || to) parts.push((from || "…") + " → " + (to || "…"));
       const sb = $("an-adv-sort") && $("an-adv-sort").value;
-      if (sb) parts.push(t("sorted") + ": " + sb + " " + (($("an-adv-dir") && $("an-adv-dir").value) === "asc" ? "↑" : "↓"));
+      const asc = ($("an-adv-dir") && $("an-adv-dir").value) === "asc";
+      // Newest-first by date is the DEFAULT order (Q508, N4), not a refinement the reader
+      // made, so it is not listed under "Filtered".
+      if (sb && !(sb === "date" && !asc)) parts.push(ooLabelText(t("sorted"), sb + " " + (asc ? "↑" : "↓")));
       return parts;
     }
     function anRunAdvanced() {
@@ -397,6 +408,19 @@
         grab("/api/insights/corpus-sources"), grab("/api/insights/corpus-sentiment"),
       ]);
       clearTimeout(slow);
+      // A newer Overview (another corpus) owns the panel; this reply is dropped.
+      if (_anOverviewKey !== key) return;
+      _anOverviewLast = { key, kw, www, src, sent };
+      host.innerHTML = _anOverviewHtml(_anOverviewLast);
+      host.dataset.done = "1";
+    }
+    // The payloads the Overview was last drawn from, kept beside its own cache key so a
+    // LANGUAGE SWITCH redraws its tiles with no request (the 2026-09-27 re-walk, N-4): a
+    // tile's sub-line and its "Open" are t() text composed here, beyond the i18n walker.
+    let _anOverviewLast = null;
+    function _anOverviewHtml(o) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const { kw, www, src, sent } = o;
       const topKw = kw && kw.terms && kw.terms.length ? kw.terms[0] : null;
       const topPlace = www && www.where && www.where.length ? www.where[0] : null;
       const topWho = www && www.who && www.who.length ? www.who[0] : null;
@@ -417,9 +441,8 @@
       tiles.push(tile("links", t("Links"), t("Shared outbound origins")));
       tiles.push(tile("related", t("Related"), t("Near-duplicate clusters")));
       tiles.push(tile("articles", t("Articles"), t("The matched articles")));
-      host.innerHTML = `<div class="hint" style="margin-bottom:8px">${esc(t("A headline from each lens — counts only, never a verdict. Open any to dig in."))}</div>`
+      return `<div class="hint" style="margin-bottom:8px">${esc(t("A headline from each lens — counts only, never a verdict. Open any to dig in."))}</div>`
         + `<div class="an-ov-grid">${tiles.join("")}</div>`;
-      host.dataset.done = "1";
     }
 
     // --- Commodity price × coverage overlay (Markets item, Group G) --------- //
@@ -458,12 +481,33 @@
         const prices = (pd && pd.prices) || [];
         const vol = (td && td.resolved) ? (td.points || []) : [];
         const unit = c.unit || (prices[0] ? `${prices[0].currency}/${prices[0].unit}` : "");
-        const head = `<div class="hint"><b>${esc(t("Price × coverage"))}</b> — ${esc(c.name || c.symbol)}</div>`;
-        const note = vol.length
-          ? `<div class="hint muted" style="font-size:11px;margin-top:4px">${esc(t("Articles"))}: ${td.total} · ${vol.length}×</div>`
-          : `<div class="muted" style="font-size:12px;margin:6px 0">${esc(t("No corpus coverage to overlay yet."))}</div>`;
-        el.innerHTML = head + commodityOverlaySvg(prices, vol, unit) + note;
-      } catch (e) { el.innerHTML = `<div class="note err">${esc(e.message)}</div>`; }
+        _anPriceLast = {symbol: c.symbol, name: c.name || c.symbol, prices, vol, unit,
+                        total: td ? td.total : null};
+        _anPriceHtml(el, _anPriceLast);
+      } catch (e) { _anPriceLast = null; el.innerHTML = `<div class="note err">${esc(e.message)}</div>`; }
+    }
+    // The last price overlay drawn, so a LANGUAGE SWITCH can redraw it with no request:
+    // its axis label ("Price USD/kg") is text drawn INTO the SVG from t(), which the i18n
+    // walker cannot reach, and it stayed "Price" in fr/ar/zh until the panel was reopened
+    // (the 2026-09-26 click-through, U9).
+    let _anPriceLast = null;
+    function _anPriceHtml(el, d) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const head = `<div class="hint"><b>${esc(t("Price × coverage"))}</b> — ${esc(d.name)}</div>`;
+      // MENTIONS, not articles: `total` is the trend endpoint's sum of mention counts,
+      // the same figure the Trend tab mislabelled (the 2026-09-27 re-walk, N-3).
+      const note = d.vol.length
+        ? `<div class="hint muted" style="font-size:11px;margin-top:4px">${ooLabelHtml(esc(t("Mentions")), esc(fmtNum(d.total, 0)))} · ${d.vol.length}×</div>`
+        : `<div class="muted" style="font-size:12px;margin:6px 0">${esc(t("No corpus coverage to overlay yet."))}</div>`;
+      el.innerHTML = head + commodityOverlaySvg(d.prices, d.vol, d.unit) + note;
+    }
+    // Registered in app-boot's ONE `oo:langchange` listener. Only while the panel still
+    // shows the commodity it was drawn for; never fetches.
+    function _anRepaintPrice() {
+      const el = $("an-price");
+      if (!el || !_anPriceLast || !_anCommodity || _anCommodity.symbol !== _anPriceLast.symbol) return;
+      if (!el.querySelector("svg")) return;
+      _anPriceHtml(el, _anPriceLast);
     }
     // A self-contained, deterministic dual-axis SVG (does NOT touch ooChart). The
     // PRICE reads its OWN left axis (line + real sample dots so the true n is
@@ -533,16 +577,31 @@
         `<text x="${(W - padR + 5).toFixed(1)}" y="${(Yv(v) + 3).toFixed(1)}" text-anchor="start" font-size="8.5" fill="var(--muted)">${fmt(v)}</text>`).join("") : "";
       const dts = [tMin, (tMin + tMax) / 2, tMax].map((ms, i) =>
         `<text x="${X(ms).toFixed(1)}" y="${(H - 6).toFixed(1)}" text-anchor="${i === 0 ? "start" : i === 2 ? "end" : "middle"}" font-size="8.5" fill="var(--muted)">${new Date(ms).toISOString().slice(0, 7)}</text>`).join("");
-      const aria = `${t9("Price × coverage")}: ${P.length} price, ${V.length} coverage`;
-      return `<svg viewBox="0 0 ${W} ${H}" width="100%" style="max-width:${W}px;background:var(--panel2);border:1px solid var(--border);border-radius:8px" role="img" aria-label="${esc(aria)}">`
-        + (P.length ? `<text x="${padL}" y="11" font-size="8.5" fill="var(--accent)">${esc(t9("Price"))} ${esc(priceUnit || "")}</text>` : "")
-        + (V.length ? `<text x="${W - padR}" y="11" text-anchor="end" font-size="8.5" fill="var(--muted)">${esc(t9("Articles"))}</text>` : "")
+      // THE PLOT IS DRAWN LEFT TO RIGHT IN EVERY LANGUAGE (the 2026-09-27 re-walk, U-6).
+      // Its time axis runs left to right, so the svg is `direction:ltr`: an svg inherits
+      // the page's direction, and under Arabic's rtl every `text-anchor` above flipped
+      // its meaning -- "end" became the text's LEFT edge, so the price ticks grew
+      // rightward over the first bar. The two axis TITLES are words, so each keeps the
+      // reader's own direction and takes the mirrored anchor, which puts it in the same
+      // place it sits in English while an Arabic title still reads right to left.
+      const rtl = typeof document !== "undefined" && document.documentElement
+        && document.documentElement.dir === "rtl";
+      const words = rtl ? ' direction="rtl"' : "";
+      const tf9 = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
+        : ((s, v) => String(s).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? String(v[k]) : m));
+      const aria = tf9("Price × coverage: {prices} price points, {coverage} coverage points",
+        {prices: P.length, coverage: V.length});
+      // The coverage bars are the trend endpoint's MENTION counts, so their axis says so
+      // (the 2026-09-27 re-walk, N-3: "Articles" here was the same wrong unit).
+      return `<svg viewBox="0 0 ${W} ${H}" width="100%" style="direction:ltr;max-width:${W}px;background:var(--panel2);border:1px solid var(--border);border-radius:8px" role="img" aria-label="${esc(aria)}">`
+        + (P.length ? `<text x="${padL}" y="11"${words} text-anchor="${rtl ? "end" : "start"}" font-size="8.5" fill="var(--accent)">${esc(t9("Price"))} ${esc(priceUnit || "")}</text>` : "")
+        + (V.length ? `<text x="${W - padR}" y="11"${words} text-anchor="${rtl ? "start" : "end"}" font-size="8.5" fill="var(--muted)">${esc(t9("Mentions"))}</text>` : "")
         + bars + pbarsSvg + line + dots + leftAxis + rightAxis + dts + `</svg>`;
     }
 
     // --- Combined time-aligned TREND overlay (Analysis window; maintainer-ruled
-    // 2026-06-17). ONE chart for a keyword + its related keywords/tags (all article
-    // COUNTS = a shared unit, so an honest shared axis), with an INDEXED mode (each
+    // 2026-06-17). ONE chart for a keyword + its related keywords/tags (all MENTION
+    // counts = a shared unit, so an honest shared axis), with an INDEXED mode (each
     // series rebased to 100 at the window start) that ALSO overlays commodity PRICE
     // series of a DIFFERENT unit WITHOUT conflating magnitudes — plus the precise
     // dual-axis price×coverage panel. The shared axis is TIME. Counts only / no
@@ -599,8 +658,17 @@
           api("/api/insights/associations?term=" + encodeURIComponent(term) + "&limit=8" + lens).catch(() => null),
         ]);
         const series = [];
+        // THE UNIT IS MENTIONS (the 2026-09-27 re-walk, N-3, P1). Every point's `count`
+        // is SUM(KeywordMention.count) -- `_mention_series` and the single-keyword path
+        // in queries.py -- so a word used three times in one article adds three. Labelled
+        // "articles", the hover said "22 articles" for a week holding 7, beside the
+        // Insights hover reading "22 mentions · 7 articles" for the same term, and the
+        // By-language view of the SAME sums already said "mentions".
+        // The unit is kept as its KEY and translated where the chart is drawn: put in as
+        // t() text here it froze in the fetch language, so after a live switch the legend,
+        // the hover and the data table still said "mentions" under a Chinese caption.
         if (main && main.resolved && (main.points || []).length)
-          series.push({ label: term, unit: t("articles"), color: "var(--accent)", points: main.points.map(pt => ({ t: pt.date, v: pt.count })) });
+          series.push({ label: term, unitKey: "mentions", color: "var(--accent)", points: main.points.map(pt => ({ t: pt.date, v: pt.count })) });
         // Related keywords are corpora too: overlay each one's own coverage series.
         const rel = ((assoc && assoc.nodes) || []).map(n => n.label || n.id)
           .filter(x => x && x.toLowerCase() !== term.toLowerCase()).slice(0, 4);
@@ -609,7 +677,7 @@
           api("/api/insights/trend?bucket=week&term=" + encodeURIComponent(rt) + lens).catch(() => null)));
         relTrends.forEach((rd, i) => {
           if (rd && rd.resolved && (rd.points || []).length)
-            series.push({ label: rel[i], unit: t("articles"), color: palette[i % palette.length], points: rd.points.map(pt => ({ t: pt.date, v: pt.count })) });
+            series.push({ label: rel[i], unitKey: "mentions", color: palette[i % palette.length], points: rd.points.map(pt => ({ t: pt.date, v: pt.count })) });
         });
         _anTrend.counts = series;
         // Q502/Q417: the per-language halves the aggregate already publishes. Captured
@@ -637,6 +705,14 @@
       if (_anTrend.mode === "counts") _anTrend.mode = "indexed";   // a price cannot share the counts axis
       drawAnTrend();
     }
+    // A control row's leading label ("View:", "Show:", "source:") in the READER's own
+    // separator: the ONE keyed '{prefix}: {text}' frame with nothing after it, so fr reads
+    // "Affichage :" and zh "视图：" (the 2026-09-27 re-walk, N-5, where every one of these
+    // welded an English ": " after its t() label). No wrap inside the label itself.
+    function _anCtlLabel(label, size) {
+      return `<span class="muted" style="font-size:${size || "11px"};white-space:nowrap">`
+        + `${esc(ooLabelText(label, "").trim())}</span>`;
+    }
     function drawAnTrend() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const host = $("an-trend"); if (!host) return;
@@ -645,7 +721,9 @@
       const picks = Object.keys(_anTrend.picked);
       const indexed = _anTrend.mode === "indexed";
       // Counts always; commodity PRICE series only in indexed mode (different unit).
-      const list = counts.slice();
+      // Each count series' unit is translated HERE, from the key it was kept under, so a
+      // redraw after a language switch names it in the new language (N-4).
+      const list = counts.map((s) => (s.unitKey ? Object.assign({}, s, { unit: t(s.unitKey) }) : s));
       if (indexed) for (const sym of picks) {
         const c = _anTrend.picked[sym];
         const pts = (c.prices || []).map(p => ({ t: p.observed_on, v: +p.price })).filter(p => isFinite(p.v));
@@ -664,12 +742,12 @@
       // carrying one language -- but a control row that lights nothing reads as broken.
       if (_anTrend.mode === "bylang" && !byLangOffered) _anTrend.mode = "counts";
       const modeRow = `<div class="row" style="gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:6px">`
-        + `<span class="muted" style="font-size:11px">${esc(t("View"))}:</span>` + seg("counts", t("Counts")) + seg("indexed", t("Indexed"))
+        + _anCtlLabel(t("View")) + seg("counts", t("Counts")) + seg("indexed", t("Indexed"))
         + (byLangOffered ? seg("bylang", t("By language")) : "") + `</div>`;
       const chip = (sym) => `<button class="chip${_anTrend.picked[sym] ? " on" : ""}" onclick="anTrendPick('${sym}')"`
         + `${_anTrend.picked[sym] ? ' style="border-color:var(--accent)"' : ''}>${esc(sym)}</button>`;
       const suggRow = `<div class="row" style="gap:5px;align-items:center;flex-wrap:wrap;margin-bottom:6px">`
-        + `<span class="muted" style="font-size:11px">${esc(t("Overlay a commodity"))}:</span>`
+        + _anCtlLabel(t("Overlay a commodity"))
         + _anTrend.suggested.map(chip).join(" ")
         + ` <select onchange="anTrendPick(this.value);this.value=''" style="width:auto;font-size:12px">`
         + `<option value="">${esc(t("more…"))}</option>`
@@ -677,7 +755,7 @@
         + `</select></div>`;
       const caveat = indexed
         ? t("Indexed to 100 at the window start — relative movement, not absolute levels. Hover shows the real value.")
-        : t("Article counts on a shared time axis.");
+        : t("Mention counts on a shared time axis.");
       if (_anTrend.mode === "bylang" && byLangOffered) return _drawAnTrendByLang(host, modeRow, langKeys);
       host.innerHTML = modeRow + suggRow + `<div id="an-trend-chart"></div>`
         + `<p class="card-caveat" style="margin-top:6px">${esc(caveat)}</p>`
@@ -800,54 +878,69 @@
           api("/api/insights/corpus-coordination?" + qs).catch(() => null),
           api("/api/links/corpus?" + qs).catch(() => null),
         ]);
+        // A NEWER RUN OWNS THE PANEL: `loadAnalysis` nulls the key, so a reply that comes
+        // back after it is dropped rather than painted -- and kept -- over the new corpus.
+        if (_anRelated.key !== key) return;
         _anRelatedClusters = (cd && cd.clusters) || [];
         _anRelatedLinks = (ld && ld.items) || [];
-        let html = `<div class="row" style="gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap">`
-          + `<button class="secondary tiny" onclick="branchSelectedRelated()">${esc(t("Branch selected into a new corpus →"))}</button>`
-          + ` <span id="an-rel-selcount" class="muted" style="font-size:11px"></span></div>`
-          + `<div class="hint"><b>${_anRelatedClusters.length}</b> ${esc(t("Near-identical clusters"))}`
-          + ` <span class="muted">· ${esc((cd && cd.method) || "")}</span></div>`;
-        if (!_anRelatedClusters.length) {
-          html += `<div class="muted" style="margin:6px 0 2px">`
-            + `${esc(t("No near-identical clusters detected in this corpus — not proof there is no coordination, only that none was found at this threshold."))}</div>`;
-        } else {
-          html += _anRelatedClusters.map((c, i) => {
-            const voice = c.single_source
-              ? t("{n} near-identical copies from one source = one voice").replace("{n}", c.size)
-              : t("{n} near-identical copies across {m} sources = effectively one voice").replace("{n}", c.size).replace("{m}", c.distinct_sources);
-            const ex = (c.members || []).slice(0, 6).map((m) =>
-              `<li><a href="/api/articles/${m.id}/view" target="_blank" rel="noopener">${esc(m.title || t("(untitled)"))}</a>`
-              + ` <span class="muted">· ${esc(m.source || "")}</span></li>`).join("");
-            const more = c.size > 6 ? `<li class="muted">+${c.size - 6} ${esc(t("more"))}</li>` : "";
-            return `<div class="card" style="padding:10px;margin-top:8px">`
-              + `<div class="row" style="justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">`
-              + `<span style="display:flex;align-items:center;gap:6px"><input type="checkbox" class="an-rel-pick" data-kind="c" data-idx="${i}" onchange="anRelUpdateSel()" aria-label="${esc(t("Select for branching"))}"><b>${esc(voice)}</b></span>`
-              + `<button class="secondary tiny" onclick="branchFromRelated(${i})" title="${esc(t("Open these articles as a new analysis corpus"))}">${esc(t("Branch into a new corpus →"))}</button></div>`
-              + `<details style="margin-top:6px"><summary class="muted" style="cursor:pointer">${esc(t("Show all"))}</summary>`
-              + `<ul style="margin:6px 0 0">${ex}${more}</ul></details></div>`;
-          }).join("") + `<p class="card-caveat" style="margin-top:8px">${esc((cd && cd.caveat) || "")}</p>`;
-        }
-        // --- Shared origins: articles citing the SAME outbound page (one origin,
-        // not independent confirmation — the anti-false-triangulation lens). ---
-        html += `<div class="hint" style="margin-top:16px"><b>${_anRelatedLinks.length}</b> ${esc(t("Shared origins"))}`
-          + ` <span class="muted">· ${esc(t("articles in this corpus citing the same outbound page"))}</span></div>`;
-        if (!_anRelatedLinks.length) {
-          html += `<div class="muted" style="margin:6px 0 2px">${esc(t("No outbound page is cited by 2+ articles in this corpus yet."))}</div>`;
-        } else {
-          html += _anRelatedLinks.map((it, i) => {
-            const label = it.domain || it.link_text || it.normalized_url;
-            return `<div class="card" style="padding:10px;margin-top:8px">`
-              + `<div class="row" style="justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">`
-              + `<span style="display:flex;align-items:center;gap:6px"><input type="checkbox" class="an-rel-pick" data-kind="o" data-idx="${i}" onchange="anRelUpdateSel()" aria-label="${esc(t("Select for branching"))}">`
-              + `<span>${extLink(it.sample_url || it.normalized_url, esc(label), "", "")} `
-              + `<span class="muted">· ${it.citations}× ${esc(t("cited"))}</span></span></span>`
-              + `<button class="secondary tiny" onclick="branchFromOrigin(${i})" title="${esc(t("Open every article citing this origin as a new corpus"))}">${esc(t("Branch into a new corpus →"))}</button></div></div>`;
-          }).join("")
-            + `<p class="card-caveat" style="margin-top:8px">${esc((ld && ld.caveat) || t("Several articles citing the same page are not independent confirmation — one origin, several echoes."))}</p>`;
-        }
-        host.innerHTML = html;
+        _anPanelsLast.related = { cd, ld };
+        host.innerHTML = _anRelatedHtml(cd, ld);
         host.dataset.done = "1";
       } catch (e) { host.innerHTML = `<div class="note err">${esc(e.message)}</div>`; }
+    }
+    // The Related tab from its two payloads, so a LANGUAGE SWITCH redraws it with no
+    // request (the 2026-09-27 re-walk, N-4): its counts, method line and caveats are t()
+    // text composed here, which the i18n walker cannot reach. The row indices are the
+    // payloads' own, so the branch buttons and a kept selection still point at the same rows.
+    function _anRelatedHtml(cd, ld) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const clusters = (cd && cd.clusters) || [], links = (ld && ld.items) || [];
+      let html = `<div class="row" style="gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap">`
+        + `<button class="secondary tiny" onclick="branchSelectedRelated()">${esc(t("Branch selected into a new corpus →"))}</button>`
+        + ` <span id="an-rel-selcount" class="muted" style="font-size:11px"></span></div>`
+        + `<div class="hint"><b>${clusters.length}</b> ${esc(t("Near-identical clusters"))}`
+        // The method and the caveat below are fixed server sentences, keyed x12 (N-2).
+        + ` <span class="muted">· ${esc((cd && cd.method) ? t(cd.method) : "")}</span></div>`;
+      if (!clusters.length) {
+        html += `<div class="muted" style="margin:6px 0 2px">`
+          + `${esc(t("No near-identical clusters detected in this corpus — not proof there is no coordination, only that none was found at this threshold."))}</div>`;
+      } else {
+        html += clusters.map((c, i) => {
+          const voice = c.single_source
+            ? t("{n} near-identical copies from one source = one voice").replace("{n}", c.size)
+            : t("{n} near-identical copies across {m} sources = effectively one voice").replace("{n}", c.size).replace("{m}", c.distinct_sources);
+          const ex = (c.members || []).slice(0, 6).map((m) =>
+            `<li><a href="/api/articles/${m.id}/view" target="_blank" rel="noopener">${esc(m.title || t("(untitled)"))}</a>`
+            + ` <span class="muted">· ${esc(m.source || "")}</span></li>`).join("");
+          const more = c.size > 6 ? `<li class="muted">+${c.size - 6} ${esc(t("more"))}</li>` : "";
+          return `<div class="card" style="padding:10px;margin-top:8px">`
+            + `<div class="row" style="justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">`
+            + `<span style="display:flex;align-items:center;gap:6px"><input type="checkbox" class="an-rel-pick" data-kind="c" data-idx="${i}" onchange="anRelUpdateSel()" aria-label="${esc(t("Select for branching"))}"><b>${esc(voice)}</b></span>`
+            + `<button class="secondary tiny" onclick="branchFromRelated(${i})" title="${esc(t("Open these articles as a new analysis corpus"))}">${esc(t("Branch into a new corpus →"))}</button></div>`
+            + `<details style="margin-top:6px"><summary class="muted" style="cursor:pointer">${esc(t("Show all"))}</summary>`
+            + `<ul style="margin:6px 0 0">${ex}${more}</ul></details></div>`;
+        }).join("") + `<p class="card-caveat" style="margin-top:8px">${esc((cd && cd.caveat) ? t(cd.caveat) : "")}</p>`;
+      }
+      // --- Shared origins: articles citing the SAME outbound page (one origin,
+      // not independent confirmation — the anti-false-triangulation lens). ---
+      html += `<div class="hint" style="margin-top:16px"><b>${links.length}</b> ${esc(t("Shared origins"))}`
+        + ` <span class="muted">· ${esc(t("articles in this corpus citing the same outbound page"))}</span></div>`;
+      if (!links.length) {
+        html += `<div class="muted" style="margin:6px 0 2px">${esc(t("No outbound page is cited by 2+ articles in this corpus yet."))}</div>`;
+      } else {
+        html += links.map((it, i) => {
+          const label = it.domain || it.link_text || it.normalized_url;
+          return `<div class="card" style="padding:10px;margin-top:8px">`
+            + `<div class="row" style="justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">`
+            + `<span style="display:flex;align-items:center;gap:6px"><input type="checkbox" class="an-rel-pick" data-kind="o" data-idx="${i}" onchange="anRelUpdateSel()" aria-label="${esc(t("Select for branching"))}">`
+            + `<span>${extLink(it.sample_url || it.normalized_url, esc(label), "", "")} `
+            + `<span class="muted">· ${it.citations}× ${esc(t("cited"))}</span></span></span>`
+            + `<button class="secondary tiny" onclick="branchFromOrigin(${i})" title="${esc(t("Open every article citing this origin as a new corpus"))}">${esc(t("Branch into a new corpus →"))}</button></div></div>`;
+        }).join("")
+          // The SAME /api/links/corpus sentence the Links tab draws, keyed x12 (N-2).
+          + `<p class="card-caveat" style="margin-top:8px">${esc((ld && ld.caveat) ? t(ld.caveat) : t("Several articles citing the same page are not independent confirmation — one origin, several echoes."))}</p>`;
+      }
+      return html;
     }
     function branchFromRelated(i) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
@@ -930,7 +1023,8 @@
     // {a,b,weight}, plus level/method/caveat. Font size scales with node size.
     // In-map controls (mind-map rules): a Cloud SECOND view, a text-size control and
     // ⛶ Enlarge. State is kept so the controls re-render from the same graph.
-    const _anMM = { graph: null, cloud: false, concept: false, arms: null, scale: 100, big: false };
+    const _anMM = { graph: null, gp: null, cloud: false, concept: false, arms: null, scale: 100, big: false,
+                   ro: null };   // `ro`: a hidden map waiting for a width to centre in (N-7)
     function anMMset(patch) { Object.assign(_anMM, patch); if (_anMM.graph) renderAnMindmap(_anMM.graph); }
     // Q512: THE RING AT THE CENTRE, ONE ARM PER LANGUAGE, ASSOCIATIONS OFF THE ARMS.
     // A third view beside Map and Cloud rather than a replacement for Map: they answer
@@ -1005,8 +1099,8 @@
       const g = _anMM.graph || {};
       const all = (g.nodes || []);
       const controls = `<div class="row" style="gap:8px;align-items:center;margin-bottom:6px;flex-wrap:wrap">`
-        + `<button class="ghost tiny${(!_anMM.cloud && !_anMM.concept) ? " on" : ""}" onclick="anMMset({cloud:false,concept:false})">Map</button>`
-        + `<button class="ghost tiny${_anMM.cloud ? " on" : ""}" onclick="anMMset({cloud:true,concept:false})">Cloud</button>`
+        + `<button class="ghost tiny${(!_anMM.cloud && !_anMM.concept) ? " on" : ""}" onclick="anMMset({cloud:false,concept:false})">${esc(t("Map"))}</button>`
+        + `<button class="ghost tiny${_anMM.cloud ? " on" : ""}" onclick="anMMset({cloud:true,concept:false})">${esc(t("Cloud"))}</button>`
         // Offered only when the term IS in a ring the corpus carries more than one form
         // of: a Concept view over a single language is a straight line drawn as though
         // it were a structure.
@@ -1016,7 +1110,10 @@
             : "")
         + `<label class="hint" style="display:flex;align-items:center;gap:4px">${esc(t("Text size"))}`
         + ` <input type="range" min="60" max="180" value="${_anMM.scale}" oninput="anMMset({scale:+this.value})" style="width:90px"></label>`
-        + `<button class="ghost tiny" onclick="anMMset({big:!_anMM.big})" title="${esc(t("Enlarge the mindmap"))}">⛶</button></div>`;
+        // The hover names what a click does NOW, and the pressed state says which view
+        // this is (the 2026-09-27 re-walk, N-6: it offered "Enlarge" over an enlarged map).
+        + `<button class="ghost tiny${_anMM.big ? " on" : ""}" onclick="anMMset({big:!_anMM.big})" aria-pressed="${_anMM.big ? "true" : "false"}"`
+        + ` title="${esc(_anMM.big ? t("Shrink the mindmap") : t("Enlarge the mindmap"))}">⛶</button></div>`;
       // The Concept view reads a DIFFERENT payload, so it must not be gated on the
       // association graph having content: a corpus can carry a concept in six languages
       // and still have no keyword co-occurring often enough to draw an association map.
@@ -1032,6 +1129,47 @@
         .sort((a, b) => (b.size || 1) - (a.size || 1)).slice(0, 24);
       const scale = (_anMM.scale || 100) / 100, big = _anMM.big;
       const W = big ? 1100 : 680, H = big ? 720 : 460, cx = W / 2, cy = H / 2;
+      // ⛶ ENLARGES THE PICTURE, NOT THE COORDINATE SPACE (the 2026-09-26 click-through,
+      // N8). The bigger viewBox gives the layout more room, but drawn at width 100% it was
+      // squeezed back into the same box, so every label SHRANK (33 px to 24 px at 1440 px).
+      // The enlarged SVG is drawn W/680 times as wide as the host, so its scale -- and every
+      // label's size -- is exactly the normal view's. It scrolls in its OWN box, opened on
+      // its centre, so the controls (⛶ among them) stay in reach and the reader starts at
+      // the seed, not at the picture's empty top-left corner.
+      const svgW = big ? `${(100 * W / 680).toFixed(1)}%` : "100%";
+      // NEVER DRAWN BELOW ITS OWN SCALE (the 2026-09-27 re-walk, N-7). The label sizes are
+      // viewBox units, so on a 375 px phone the 680-wide map was drawn into a ~300 px column
+      // at 0.44 -- labels of 5 to 7 px -- and ⛶ kept that same scale by the rule above. The
+      // svg's floor is now its own width in px (680, or 1100 enlarged): a column narrower
+      // than that scrolls the picture sideways in its OWN box, opened on the centre, rather
+      // than shrinking the words below reading size. A wider column changes nothing.
+      const svgMin = `min-width:${W}px;`;
+      const boxOpen = `<div class="an-mm-box${big ? " an-mm-big" : ""}"`
+        + ` style="overflow:auto;max-width:100%${big ? ";max-height:80vh" : ""}">`;
+      const boxClose = "</div>";
+      // A MAP DRAWN WHILE ITS SUBTAB IS HIDDEN has no width to centre in: `loadAnalysis`
+      // draws it behind whichever tab is open, so on a phone the Map view opened at its
+      // start edge with the seed out of view (the 2026-09-27 re-walk, N-7). It is centred
+      // the first time its box HAS a width instead -- once, so a reader's own scroll is
+      // never undone (the browser keeps it across a hide and a show).
+      const centreBox = () => {
+        if (_anMM.ro) { _anMM.ro.disconnect(); _anMM.ro = null; }   // a previous draw's wait
+        const sc = host.querySelector(".an-mm-box");
+        if (!sc) return;
+        const centre = () => {
+          const rtl = getComputedStyle(sc).direction === "rtl";   // RTL scrollLeft runs negative
+          sc.scrollLeft = (rtl ? -1 : 1) * (sc.scrollWidth - sc.clientWidth) / 2;
+          sc.scrollTop = (sc.scrollHeight - sc.clientHeight) / 2;
+        };
+        if (sc.clientWidth || typeof ResizeObserver !== "function") { centre(); return; }
+        const ro = new ResizeObserver(() => {
+          if (!sc.clientWidth) return;
+          ro.disconnect(); if (_anMM.ro === ro) _anMM.ro = null;
+          centre();
+        });
+        _anMM.ro = ro;
+        ro.observe(sc);
+      };
       const R = Math.min(W, H) * 0.36;
       const maxSize = Math.max(center.size || 1, ...neighbours.map((n) => n.size || 1), 1);
       const fsOf = (n) => ((n.id === center.id ? 17 : 9 + 9 * Math.sqrt((n.size || 1) / maxSize)) * scale);
@@ -1047,18 +1185,29 @@
         // `ooLangCell` already escapes, which is why the forms beside it are escaped
         // here and the whole string is not escaped again around it.
         const missing = (d.not_observed || []).map((n) =>
-          `${ooLangCell(n.language)}: ${esc((n.forms || []).join(", "))}`);
+          ooLabelHtml(ooLangCell(n.language), esc((n.forms || []).join(", "))));
         const omitted = missing.length
           ? `<div class="hint muted" style="margin-top:4px">`
             + `${esc(t("Not observed in this corpus:"))} ${missing.join(" · ")}</div>`
           : "";
-        host.innerHTML = controls
-          + `<svg viewBox="0 0 ${W} ${H}" width="100%" style="background:var(--panel2);`
-          + `border:1px solid var(--border);border-radius:8px">${tree}</svg>`
+        // THE VIEW SAYS WHEN IT DOES NOT FOLLOW THE LITERAL TOGGLE (the 2026-09-26
+        // click-through, N12). The ring IS this picture (Q512), so it cannot narrow to the
+        // typed word -- and with "only the words I typed" on, every other tab has. Saying
+        // so, with the one click back, keeps the reader from reading the ring as the
+        // corpus the rest of the window describes.
+        const literal = _anExpand ? ""
+          : `<div class="hint" style="margin-bottom:4px">`
+            + `${esc(t("This view always shows the concept in every language; the other tabs are showing only the words you typed."))} `
+            + `<button type="button" class="linkish" onclick="_anSetExpand(true)">`
+            + `${esc(t("Search the concept in every language"))}</button></div>`;
+        host.innerHTML = controls + literal + boxOpen
+          + `<svg viewBox="0 0 ${W} ${H}" width="${svgW}" style="background:var(--panel2);max-width:none;${svgMin}`
+          + `border:1px solid var(--border);border-radius:8px">${tree}</svg>` + boxClose
           + omitted
           + `<div class="hint muted" style="margin-top:6px">`
           + `${esc(t("The concept at the centre, one arm per language, associations off the arms."))} `
           + `${esc(d.method ? t(d.method) : "")} <b>${esc(d.caveat ? t(d.caveat) : "")}</b></div>`;
+        centreBox();
         return;
       }
       if (_anMM.cloud) {
@@ -1078,23 +1227,54 @@
           `<line stroke="var(--border)" stroke-width="1.4" x1="${cx}" y1="${cy}"`
           + ` x2="${n._x.toFixed(1)}" y2="${n._y.toFixed(1)}"></line>`).join("");
       }
+      // THE SAME LABEL EVERY KEYWORD LIST DRAWS (M7), through the ONE rule set
+      // (`kwLabelParts`): the translation where a verified ring allows, the word itself
+      // otherwise, and the small tag saying which -- a second line here, since an SVG
+      // `<text>` cannot hold the HTML span. The hover (`<title>`) carries the rest.
+      // `data-i18n-dyn`: the walker must never translate a keyword.
       const drawNode = (n) => {
         const col = n.id === center.id ? "var(--ok)" : "var(--accent)";
+        const lp = (typeof kwLabelParts === "function")
+          ? kwLabelParts(Object.assign({term: n.label || n.id}, n)) : {shown: n.label || n.id, tag: "", hover: ""};
         const fam = (n.members || []).length > 1;
-        const title = fam ? `<title>${esc((n.members || []).join(", "))}</title>` : "";
-        return `<g transform="translate(${n._x.toFixed(1)},${n._y.toFixed(1)})">${title}`
-          + `<text text-anchor="middle" dominant-baseline="central" font-size="${fsOf(n).toFixed(1)}"`
-          + ` font-weight="${n.id === center.id ? 700 : 500}" fill="${col}">${esc(n.label || n.id)}</text></g>`;
+        const tip = [lp.tag ? lp.tag + " — " + lp.hover : "", fam ? (n.members || []).join(", ") : ""]
+          .filter(Boolean).join(" — ");
+        const title = tip ? `<title>${esc(tip)}</title>` : "";
+        const fs = fsOf(n);
+        const tag = lp.tag
+          ? `<text text-anchor="middle" dominant-baseline="central" y="${(fs * 0.95).toFixed(1)}"`
+            + ` font-size="${Math.max(8, fs * 0.5).toFixed(1)}" fill="var(--muted)">${esc(lp.tag)}</text>`
+          : "";
+        return `<g transform="translate(${n._x.toFixed(1)},${n._y.toFixed(1)})" data-i18n-dyn>${title}`
+          + `<text text-anchor="middle" dominant-baseline="central" font-size="${fs.toFixed(1)}"`
+          + ` font-weight="${n.id === center.id ? 700 : 500}" fill="${col}">${esc(lp.shown || n.label || n.id)}</text>`
+          + `${tag}</g>`;
       };
       const nodesSvg = drawNode(center) + neighbours.map(drawNode).join("");
       const desc = _anMM.cloud
         ? t("Word cloud: keywords sized by shared-article volume; no links.")
         : t("Radial map: the seed keyword at the centre, its strongest relatives outward.");
-      host.innerHTML = controls
-        + `<svg viewBox="0 0 ${W} ${H}" width="100%" style="background:var(--panel2);`
-        + `border:1px solid var(--border);border-radius:8px">${edges}${nodesSvg}</svg>`
+      host.innerHTML = controls + boxOpen
+        + `<svg viewBox="0 0 ${W} ${H}" width="${svgW}" style="background:var(--panel2);max-width:none;${svgMin}`
+        + `border:1px solid var(--border);border-radius:8px">${edges}${nodesSvg}</svg>` + boxClose
         + `<div class="hint muted" style="margin-top:6px">${esc(desc)} `
-        + `<b>${esc(t("Font size = shared-article volume."))}</b> ${esc(g.method || "")} ${esc(g.caveat || "")}</div>`;
+        + `<b>${esc(t("Font size = shared-article volume."))}</b> ${esc(g.method ? t(g.method) : "")} ${esc(g.caveat ? t(g.caveat) : "")}</div>`;
+      centreBox();
+    }
+    // A LANGUAGE SWITCH RE-FETCHES THE MAP (M7). Its nodes carry translations INTO the
+    // language they were fetched for, so re-drawing the payload it holds would paint the
+    // old language's words under the new language's tags; the controls' own words are
+    // re-keyed by the same render. Nothing loaded (or no scope kept) -> nothing fetched.
+    async function anMindmapRepaint() {
+      if (!_anMM.graph || !_anMM.gp) return;
+      const host = $("an-mindmap");
+      if (!host || !host.children.length) return;
+      const gp = new URLSearchParams(_anMM.gp);
+      gp.set("target_lang", uiLangCode());
+      try {
+        const g = await api("/api/insights/graph?" + gp.toString());
+        renderAnMindmap(g, host);
+      } catch (_e) { renderAnMindmap(null, host); }
     }
     // Inline near-dup annotation (maintainer-ruled: "1 voice" inline in lists, PR 3):
     // badge article-row links that are near-identical COPIES (= effectively one voice,
@@ -1105,7 +1285,6 @@
     // host whose article links are /api/articles/{id}/view.
     async function annotateArticleDups(params, host) {
       if (!host) return;
-      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const key = params ? params.toString() : "";
       try {
         let clusters;
@@ -1118,6 +1297,20 @@
         if (!clusters.length) return;
         const sizeById = {};
         for (const c of clusters) for (const id of (c.article_ids || [])) sizeById[id] = c.size;
+        _anDupSizes.set(host, { key, sizeById });
+        _anApplyDupBadges(host, sizeById);
+      } catch (e) { /* annotation is best-effort, never breaks the list */ }
+    }
+    // Per HOST and per CORPUS: the Search tab annotates its own table with the same
+    // helper, and a corpus with no clusters stores nothing, so a redraw can only ever put
+    // back the sizes measured for the very list it is redrawing.
+    const _anDupSizes = new WeakMap();
+    // The DOM half of the annotation, split out so a LANGUAGE SWITCH that redraws the
+    // Articles list from its payload (`_anRepaintArticles`) can put the badges back from
+    // the sizes it already holds -- no second corpus-coordination request.
+    function _anApplyDupBadges(host, sizeById) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      try {
         let flagged = 0;
         const badges = [];
         host.querySelectorAll("a[href]").forEach((a) => {
@@ -1147,7 +1340,7 @@
         // CAVEAT stays in the boot language even though every locale already carries a
         // translation for it. Measured in the Chromium walk (S04-14 session 2): in `ar`
         // it kept reading "21 of these are near-identical copies …" in English.
-        _anDupBadges = { note, flagged, badges };
+        _anDupBadges = { note, flagged, badges, host, sizeById };
       } catch (e) { /* annotation is best-effort, never breaks the list */ }
     }
     // The Articles subtab is PAGINATED (maintainer 2026-06-20): a 1000-result search is
@@ -1211,7 +1404,7 @@
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       let out = _toneChip(a);
       if (a && a.detected_language && !a.language) {
-        out += ` <span class="muted" style="font-size:.85em" title="${esc(t("Language deduced offline — the source did not tag it."))}">${esc(t("deduced"))}: ${ooLangCell(a.detected_language)}</span>`;
+        out += ` <span class="muted" style="font-size:.85em" title="${esc(t("Language deduced offline — the source did not tag it."))}">${ooLabelHtml(esc(t("deduced")), ooLangCell(a.detected_language))}</span>`;
       }
       return out;
     }
@@ -1232,7 +1425,12 @@
     function _anSetProvenance(v) {
       _anProvenance = v || "";
       // Wikipedia view orders by keyword count when a count is available (the ruling).
-      if (_anProvenance === "wikipedia" && _anKwForCount) _anKwSort = true;
+      if (_anProvenance === "wikipedia" && _anKwForCount) {
+        _anKwSort = true;
+        // ONE visible sort at a time, as in _anToggleKwSort: with Date now the select's
+        // default (Q508, N4) it would otherwise read "Date" over a count-ordered list.
+        const sb = $("an-adv-sort"); if (sb) sb.value = "";
+      }
       if (_anArtParams) _anLoadArticles(_anArtParams, 0);
     }
     function _anToggleKwSort() {
@@ -1269,7 +1467,7 @@
       const buckets = [["", t("All")], ["wikipedia", "Wikipedia"], ["web", t("Web articles")],
         ["newsletter", t("Newsletters")], ["statistics", t("Statistics")], ["cited", t("Cited sources")]];
       let h = '<div class="an-prov" style="display:flex;gap:4px;flex-wrap:wrap;align-items:center;margin:2px 0 6px">'
-        + `<span class="muted" style="font-size:.85em">${esc(t("Show"))}:</span>`;
+        + _anCtlLabel(t("Show"), ".85em");
       for (const [v, lbl] of buckets) {
         const on = (_anProvenance || "") === v;
         h += `<button class="tiny${on ? "" : " ghost"}" aria-pressed="${on}" onclick="_anSetProvenance('${v}')">${esc(lbl)}</button>`;
@@ -1286,9 +1484,10 @@
     // of what the corpus actually contains (2026-07-20 ruling, item 3), never free
     // text. Fetched once per fresh corpus (from loadAnalysis); chip selection alone
     // never refetches or re-filters -- only "Apply filter" commits it.
-    async function _anLoadArtFacets(p) {
+    async function _anLoadArtFacets(p, run) {
       try {
         const d = await api("/api/insights/corpus-source-language-facets?" + p.toString());
+        if (run != null && run !== _anRunSeq) return;   // superseded by a newer loadAnalysis
         _anArtFacetData = { sources: d.sources || [], languages: d.languages || [] };
       } catch (e) { _anArtFacetData = { sources: [], languages: [] }; }
       _anRenderArtFacetChips();
@@ -1317,8 +1516,8 @@
       }).join(" ");
       if (!srcChips && !langChips) { host.innerHTML = ""; return; }
       host.innerHTML = `<div style="margin:4px 0 8px">`
-        + (srcChips ? `<div style="margin-bottom:4px"><span class="muted" style="font-size:.85em">${esc(t("source"))}:</span> ${srcChips}</div>` : "")
-        + (langChips ? `<div><span class="muted" style="font-size:.85em">${esc(t("language"))}:</span> ${langChips}</div>` : "")
+        + (srcChips ? `<div style="margin-bottom:4px">${_anCtlLabel(t("source"), ".85em")} ${srcChips}</div>` : "")
+        + (langChips ? `<div>${_anCtlLabel(t("language"), ".85em")} ${langChips}</div>` : "")
         + `<button class="tiny" style="margin-top:4px" onclick="anApplyArticlesFilter()">${esc(t("Apply filter"))}</button>`
         + `</div>`;
     }
@@ -1439,6 +1638,7 @@
       tmp.innerHTML = html;
       const next = tmp.firstElementChild;
       if (next) host.replaceWith(next);
+      _anRefillFormSlots();   // the new rail's slots are empty; put the counts back
     }
 
     // ONE lens, applied to EVERY request the analysis window makes -- the Articles list
@@ -1496,6 +1696,7 @@
     function _anWriteLensToUrl() {
       try {
         const sp = new URLSearchParams(location.search);
+        _anUrlNamesActiveTab(sp);
         if (_anExpand) sp.delete("expand"); else sp.set("expand", "0");
         if (_anCap) sp.delete("cap"); else sp.set("cap", "0");
         sp.delete("sense");
@@ -1509,6 +1710,32 @@
         const qs = sp.toString();
         history.replaceState(null, "", (qs ? "?" + qs : location.pathname) + location.hash);
       } catch (_e) { /* a hostile history state must never break a toggle */ }
+    }
+    // THE URL DESCRIBES ONE TAB (the 2026-09-26 delegated click-through, row N, N2). A
+    // deep link names the tab it opened (?analyze= or ?corpus=), and the lens above is
+    // written BESIDE that name. Once the reader switches to another tab in the strip the
+    // name is stale: a sense pinned on "election" was written as
+    // "?analyze=climate&sense=election:…", and the next reload seeded CLIMATE with it and
+    // saved it into that tab's persisted lens. So the name follows the active tab. A
+    // plain query tab is named by its query; any other tab (an exact article set, a
+    // filtered search, a commodity, a Lead) cannot be spelled in a short link, so the
+    // stale name is dropped and a reload restores the strip's own active tab instead.
+    // A URL that names no tab is left alone: there is nothing in it to go stale.
+    function _anUrlNamesActiveTab(sp) {
+      if (!sp.has("analyze") && !sp.has("corpus")) return;
+      const tb = _anTabs.find((x) => x.id === _anActiveId);
+      if (!tb) return;
+      const ids = (s) => String(s || "").split(",").map(Number)
+        .filter((n) => Number.isFinite(n) && n > 0).slice(0, 5000).join(",");
+      const named = sp.has("analyze") ? "q:" + (sp.get("analyze") || "").trim()
+        : "ids:" + ids(sp.get("corpus"));
+      const mine = tb.kind === "ids" ? "ids:" + ids((tb.ids || []).join(","))
+        : "q:" + (tb.query || "");
+      if (named === mine) return;
+      ["analyze", "corpus", "label", "prov", "tab"].forEach((k) => sp.delete(k));
+      const plain = tb.kind !== "ids" && tb.query && !tb.src && !tb.lang && !tb.from
+        && !tb.to && !tb.commodity && !tb.prov;
+      if (plain) sp.set("analyze", tb.query);
     }
     // The other direction, and PURE (a query string -> a lens seed, or null when the URL
     // carries no lens at all). It deliberately does NOT assign the globals: a deep link's
@@ -1565,7 +1792,7 @@
       const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((s2, v) =>
         String(s2).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? v[k] : m));
       const langsOf = (term) => Object.entries(term.by_language || {})
-        .map(([lg, words]) => `${esc(lg)}: ${esc((words || []).join(", "))}`)
+        .map(([lg, words]) => ooLabelHtml(esc(lg), esc((words || []).join(", "))))
         .join(" · ");
       // A pin that named a ring the term does not belong to. The search still ran, so the
       // only dishonest thing available is silence: the reader would be looking at results
@@ -1595,8 +1822,11 @@
             `<button type="button" class="linkish"`
             + ` onclick="_anPickSense(${esc(JSON.stringify(term.normalized))}, ${esc(JSON.stringify(s2.ring_id))})">`
             + `“${esc(s2.concept)}”</button>`).join(" · ");
-          parts.push(`<div>${esc(tf("{term} denotes several concepts, so it was not expanded",
-            { term: term.term }))}. <span class="muted">${esc(t("Search one of them:"))}</span> ${picks}`
+          // The full stop is INSIDE the keyed frame, so each locale ends the sentence
+          // with its own punctuation ("。" in zh and ja). A literal ". " after the frame
+          // drew "因此未做扩展. 搜索其中之一" (the 2026-09-26 click-through, N14).
+          parts.push(`<div>${esc(tf("{term} denotes several concepts, so it was not expanded.",
+            { term: term.term }))} <span class="muted">${esc(t("Search one of them:"))}</span> ${picks}`
             + missNote(term) + `</div>`);
         } else if (term.pinned_ring) {
           // No expansion and no refusal, but a pin was sent: the term touches no ring at
@@ -1616,7 +1846,17 @@
       // off there is nothing for the server to report. The two are never both drawn.
       let cap = "";
       if (cross.capped) {
-        cap = `<div class="muted">${esc(cross.cap_caveat ? t(cross.cap_caveat) : "")} `
+        // Q503 words the disclosure with its NUMBERS ("expanded to 40 of 63 forms"), and
+        // the payload carries them on every capped term; they used to reach the reader
+        // only after a click on "Count each form" (N13). A frame per term, the counts
+        // interpolated after translation.
+        const n = (x) => (typeof fmtNum === "function" ? fmtNum(x, 0) : String(x));
+        const nums = (cross.terms || []).filter((x) => x.capped
+            && x.searched_forms != null && x.total_forms != null)
+          .map((x) => tf("{term}: expanded to {searched} of {total} forms.",
+            { term: x.term, searched: n(x.searched_forms), total: n(x.total_forms) }));
+        cap = `<div class="muted">${nums.length ? esc(nums.join(" ")) + " " : ""}`
+          + `${esc(cross.cap_caveat ? t(cross.cap_caveat) : "")} `
           + `<button type="button" class="linkish" onclick="_anSetCap(false)">`
           + `${esc(t("Search every form"))}</button></div>`;
       } else if (capOff) {
@@ -1637,10 +1877,15 @@
       // The caveat is SERVER prose, so it goes through `t()` exactly as the Lead's own
       // caveat does in `_anRenderProvenance`. Without it the rail reads in English on a
       // page whose every other string is translated -- measured in ar/zh/ja/hi.
-      const cav = cross.caveat ? t(cross.caveat) : "";
-      return `<div class="hint" id="an-xlang" title="${esc(cav)}">`
+      //
+      // Only when the search WAS widened (N13): the sentence says "this search matched
+      // the concept in every language", and under a term that was declined ("so it was
+      // not expanded") it stated the opposite of the line right above it. The server
+      // sends it whenever the block exists, so the payload's own `expanded` decides.
+      const cav = (cross.caveat && cross.expanded) ? t(cross.caveat) : "";
+      return `<div class="hint" id="an-xlang"${cav ? ` title="${esc(cav)}"` : ""}>`
         + parts.join("") + counts + cap
-        + `<div class="muted">${esc(cav)}${back}</div></div>`;
+        + ((cav || back) ? `<div class="muted">${esc(cav)}${back}</div>` : "") + `</div>`;
     }
     // A DOM-id-safe slug for a term that may be Arabic, Japanese or hyphenated. Not a
     // hash: the id has to be reproducible from the same term on the next render, and
@@ -1693,16 +1938,43 @@
       // The counts must describe the SAME resolution the list ran, so the sense pins ride
       // along: without them a pinned term would be counted across every sense it has.
       Object.keys(_anSenses).forEach((k) => q.append("sense", k + ":" + _anSenses[k]));
-      const slot = $("an-xforms-" + _anSlug(key == null ? term : key));
+      const id = "an-xforms-" + _anSlug(key == null ? term : key);
+      const slot = $(id);
       if (slot) slot.innerHTML = ` <span class="muted">${esc(t("Counting…"))}</span>`;
+      // The slot is looked up AGAIN when the answer lands: a redraw of the rail in the
+      // meantime (a page turn, a language switch) replaced the one above. An answer that
+      // lands after a NEW run (a lens change) describes the old lens and is dropped.
+      const run = _anRunSeq;
       try {
         const d = await api("/api/insights/concept-forms?" + q.toString());
-        if (slot) slot.innerHTML = _anFormCountsHtml(d);
+        if (run !== _anRunSeq) return;
+        _anFormCountsLast[id] = d;
+        if ($(id)) $(id).innerHTML = _anFormCountsHtml(d);
       } catch (_e) {
         // A failed count says so. Blanking the trigger would read as "there is nothing
         // to count", which is a different answer from "it could not be counted".
-        if (slot) slot.innerHTML = ` <span class="muted">${esc(t("The forms could not be counted."))}</span>`;
+        if (run !== _anRunSeq) return;
+        _anFormCountsLast[id] = null;
+        if ($(id)) $(id).innerHTML = _anFormCountsFailedHtml();
       }
+    }
+    function _anFormCountsFailedHtml() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      return ` <span class="muted">${esc(t("The forms could not be counted."))}</span>`;
+    }
+    // The per-form readouts already fetched, by slot id (null = the count failed). The
+    // rail is redrawn whole on a page turn and on a LANGUAGE SWITCH, and each redraw made
+    // the slot anew and EMPTY, so the numbers the reader had asked for vanished (the
+    // 2026-09-27 re-walk, N-4). They describe the term under this run's lens, not the
+    // page, so they survive a page turn and are dropped only by a new run (`loadAnalysis`).
+    let _anFormCountsLast = {};
+    function _anRefillFormSlots() {
+      Object.keys(_anFormCountsLast).forEach((id) => {
+        const slot = $(id);
+        if (!slot || slot.innerHTML) return;
+        const d = _anFormCountsLast[id];
+        slot.innerHTML = d ? _anFormCountsHtml(d) : _anFormCountsFailedHtml();
+      });
     }
     // THE LENS NOW RE-RUNS THE WHOLE WINDOW, and the comment above `_anExpand` used to
     // say the opposite for a good reason that has since expired: the flag was a lens on
@@ -1795,9 +2067,16 @@
         + ` aria-pressed="${on ? "true" : "false"}" onclick="_anSetGroupByLang(${mode})"`
         + ` title="${esc(t("Groups the articles already listed. It runs no new search and changes no count."))}">`
         + `${esc(label)}</button>`;
+      // The ungrouped label names the order the list is REALLY in (the 2026-09-26
+      // leftovers, Y8, after N4). "Interleave by date" is the ruled default and true only
+      // while the list is sorted by date; with "Relevance / recency", a column sort or the
+      // keyword-count sort picked, the same pressed button claimed a date order the list
+      // did not have. It still only (un)groups -- the order stays the Sort by control's.
+      const sb = $("an-adv-sort");
+      const byDate = !_anKwSort && !!sb && sb.value === "date";
       return `<div class="row" style="gap:6px;align-items:center;margin-top:6px">`
-        + `<span class="muted" style="font-size:11px">${esc(t("View"))}:</span>`
-        + seg(!_anGroupByLang, "false", t("Interleave by date"))
+        + _anCtlLabel(t("View"))
+        + seg(!_anGroupByLang, "false", byDate ? t("Interleave by date") : t("Interleave languages"))
         + seg(_anGroupByLang, "true", t("Group by language"))
         + `</div>`;
     }
@@ -1822,13 +2101,16 @@
       return order.map((k) => {
         const n = buckets.get(k).length;
         const label = k ? ooLangCell(k) : `<span class="muted">${esc(t("Language not recorded"))}</span>`;
+        // A group of ONE read "spa 1 articles" (N14): a count of one takes the singular
+        // key, the one form every locale has (there are no CLDR plural rules here).
+        const count = (n === 1 ? t("{n} article") : t("{n} articles")).replace("{n}", n);
         return `<tr class="an-lang-group"><td colspan="5"><b>${label}</b>`
-          + ` <span class="muted">${esc(t("{n} articles").replace("{n}", n))}</span></td></tr>`
+          + ` <span class="muted">${esc(count)}</span></td></tr>`
           + buckets.get(k).join("");
       }).join("");
     }
 
-    async function _anLoadArticles(p, page) {
+    async function _anLoadArticles(p, page, run) {
       // The list renders into an-art-list, INSIDE an-articles -- the sort bar above it
       // is static markup and must survive a re-render (it is what triggered this one).
       const arts = $("an-art-list") || $("an-articles"); if (!arts) return;
@@ -1848,50 +2130,11 @@
         else { q.delete("sort_by"); q.delete("sort_dir"); }
         if (_anKwSort) { q.set("sort_by", "keyword_count"); q.set("sort_dir", "desc"); }
         const d = await api("/api/articles?" + q.toString());
+        if (run != null && run !== _anRunSeq) return;   // superseded by a newer loadAnalysis
         _anKwForCount = d.keyword_for_count || "";
         if (!_anKwForCount) _anKwSort = false;   // no keyword resolved -> no count sort
-        const kwc = _anKwForCount;
         const total = d.total || 0, pages = Math.max(1, Math.ceil(total / _AN_ART_PAGE));
         if (_anArtPage > pages - 1) return _anLoadArticles(p, pages - 1);   // clamp after a narrower filter
-        const rowHtml = (d.results || []).map((a) => {
-          // Small, discrete per-article keyword count beside the title (counts only).
-          const badge = (kwc && a.keyword_count != null)
-            ? ` <span class="muted" style="font-size:.82em" title="${esc(t("Mentions of") + " “" + kwc + "” " + t("in this article"))}">×${a.keyword_count}</span>`
-            : "";
-          // The article's OWN top keyword (ruling 23/38/39), precomputed at index time.
-          // A tie is SHOWN as a tie: several keywords share that count and the one named
-          // is the lowest-id among them, so calling it "the" top keyword would assert a
-          // ranking the count never made. An article the re-index has not reached yet has
-          // no value at all -- rendered as an em dash, never as a 0, which would read as
-          // "measured, and it has no keywords".
-          let top = '<span class="muted">—</span>';
-          if (a.top_keyword) {
-            const tied = (a.top_keyword_tied_n || 1) > 1;
-            const tip = tied
-              ? t("{n} keywords are tied at this count in this article — this is one of them, not a winner.").replace("{n}", a.top_keyword_tied_n)
-              : t("This article's most-mentioned keyword, counted when it was indexed.");
-            top = `<span title="${esc(tip)}">${esc(a.top_keyword)}`
-              + ` <span class="muted">×${a.top_keyword_count}</span>`
-              + (tied ? ` <span class="muted">${esc(t("tied"))}</span>` : "")
-              + `</span>`;
-          }
-          return `<tr data-aid="${a.id}"><td><a href="/api/articles/${a.id}/view" target="_blank" rel="noopener">`
-          + `${esc(a.title) || '<span class="muted">(untitled)</span>'}</a>${badge}</td>`
-          // `_toneChip`, not `_anToneChip`: the Language column below now carries the
-          // deduced-language half, and the split exists precisely so a surface that
-          // already shows the language renders the tone without repeating it.
-          + `<td>${esc(a.source || "")}${_toneChip(a)}</td>`
-          + `<td>${_anLangCell(a)}</td>`
-          + `<td class="muted">${esc((a.published_at || "").slice(0, 10))}</td>`
-          + `<td>${top}</td></tr>`;
-        });
-        const rows = _anGroupByLang ? _anGroupRowsByLanguage(d.results || [], rowHtml) : rowHtml.join("");
-        const pager = _anArtPager(total, pages);
-        // RULING 22: the "source ↗" column and the per-row Summarize / Translate buttons
-        // are gone -- the reader carries both (its "Original source:" line shows the FULL
-        // url, and its Summary / Translation tabs run the same local model on the same
-        // article), so this is an absorption, not a removal. Nothing was lost: the bulk
-        // Summarize all / Translate all actions are untouched in the export bar below.
         // Retained so a LANGUAGE SWITCH can redraw the rail without re-running the
         // search: the rail's text is derived at render time (a tf() frame plus server
         // prose through t()), so the i18n DOM walker cannot reach it and it would
@@ -1900,30 +2143,97 @@
         _anLastCross = {cross: d.cross_language || null,
                         narrowed: !_anExpand && !!q.get("query"),
                         capOff: !_anCap && !!q.get("query")};
-        arts.innerHTML = _anArtControls(d)
-          + _crossLangNotice(d.cross_language, !_anExpand && !!q.get("query"), !_anCap && !!q.get("query"))
-          + `<div id="an-art-facets"></div>`
-          // `an-art-total` is the ONE number a reader takes away from this list, and it
-          // had no anchor: a walk trying to read it had to guess which `.hint` on the
-          // surface it was, and the expansion rail above carries that class too.
-          + `<div class="hint" id="an-art-total"><b>${total.toLocaleString()}</b> ${esc(t("Articles"))} <span class="muted">· ${esc(t("Open an article to read it, see its original source, and summarize or translate it."))}</span></div>`
-          + pager
-          + _anGroupByLangControl()
-          + `<table style="margin-top:6px"><tr>`
-          + _anTh("title", t("Title")) + _anTh("source", t("Source"))
-          + _anTh("language", t("Language"))
-          + _anTh("date", t("Published")) + _anTh("top_keyword", t("Top keyword"))
-          + `</tr>${rows}</table>`
-          + pager;
+        _anArtLast = { d, total, pages };
+        _anDrawArticles(arts, _anArtLast);
         annotateArticleDups(p, arts);   // inline "1 voice" near-dup badges (non-blocking, PR 3)
-        _anRenderArtFacetChips();   // redraw from already-fetched facet data (sync, no network)
       } catch (e) {
         // Same honest, rate-limit-aware message as the Search tab (search-lockout
         // fix) -- this subtab hits the SAME /api/articles endpoint, including from a
         // boot-time deep link (?corpus=/?analyze=, app-boot.js._hydrateCardCorpus),
         // so a refusal here deserves the same disclosure, not a bare exception string.
+        _anArtLast = null;
         arts.innerHTML = `<div class="note err">${esc(_articleFailureMessage(e))}</div>`;
       }
+    }
+    // The last /api/articles page the list drew -- see `_anRepaintArticles`.
+    let _anArtLast = null;
+    // THE LIST, DRAWN FROM A PAYLOAD. Split out of `_anLoadArticles` so a LANGUAGE SWITCH
+    // redraws it with no request (the 2026-09-27 re-walk, N-4): every label, the tone
+    // chips, the language cells' hovers, the pager and the column headers are t()/tf()
+    // text composed at render time, so the i18n DOM walker could not reach them and the
+    // whole list kept its first language until a reload.
+    function _anDrawArticles(arts, st) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const { d, total, pages } = st;
+      const kwc = _anKwForCount;
+      const cross = _anLastCross || {};
+      const rowHtml = (d.results || []).map((a) => {
+        // Small, discrete per-article keyword count beside the title (counts only).
+        const badge = (kwc && a.keyword_count != null)
+          ? ` <span class="muted" style="font-size:.82em" title="${esc(t("Mentions of") + " “" + kwc + "” " + t("in this article"))}">×${a.keyword_count}</span>`
+          : "";
+        // The article's OWN top keyword (ruling 23/38/39), precomputed at index time.
+        // A tie is SHOWN as a tie: several keywords share that count and the one named
+        // is the lowest-id among them, so calling it "the" top keyword would assert a
+        // ranking the count never made. An article the re-index has not reached yet has
+        // no value at all -- rendered as an em dash, never as a 0, which would read as
+        // "measured, and it has no keywords".
+        let top = '<span class="muted">—</span>';
+        if (a.top_keyword) {
+          const tied = (a.top_keyword_tied_n || 1) > 1;
+          const tip = tied
+            ? t("{n} keywords are tied at this count in this article — this is one of them, not a winner.").replace("{n}", a.top_keyword_tied_n)
+            : t("This article's most-mentioned keyword, counted when it was indexed.");
+          top = `<span title="${esc(tip)}">${esc(a.top_keyword)}`
+            + ` <span class="muted">×${a.top_keyword_count}</span>`
+            + (tied ? ` <span class="muted">${esc(t("tied"))}</span>` : "")
+            + `</span>`;
+        }
+        return `<tr data-aid="${a.id}"><td><a href="/api/articles/${a.id}/view" target="_blank" rel="noopener">`
+        + `${esc(a.title) || '<span class="muted">(untitled)</span>'}</a>${badge}</td>`
+        // `_toneChip`, not `_anToneChip`: the Language column below now carries the
+        // deduced-language half, and the split exists precisely so a surface that
+        // already shows the language renders the tone without repeating it.
+        + `<td>${esc(a.source || "")}${_toneChip(a)}</td>`
+        + `<td>${_anLangCell(a)}</td>`
+        + `<td class="muted">${esc((a.published_at || "").slice(0, 10))}</td>`
+        + `<td>${top}</td></tr>`;
+      });
+      const rows = _anGroupByLang ? _anGroupRowsByLanguage(d.results || [], rowHtml) : rowHtml.join("");
+      const pager = _anArtPager(total, pages);
+      // RULING 22: the "source ↗" column and the per-row Summarize / Translate buttons
+      // are gone -- the reader carries both (its "Original source:" line shows the FULL
+      // url, and its Summary / Translation tabs run the same local model on the same
+      // article), so this is an absorption, not a removal. Nothing was lost: the bulk
+      // Summarize all / Translate all actions are untouched in the export bar below.
+      arts.innerHTML = _anArtControls(d)
+        + _crossLangNotice(d.cross_language, cross.narrowed, cross.capOff)
+        + `<div id="an-art-facets"></div>`
+        // `an-art-total` is the ONE number a reader takes away from this list, and it
+        // had no anchor: a walk trying to read it had to guess which `.hint` on the
+        // surface it was, and the expansion rail above carries that class too.
+        + `<div class="hint" id="an-art-total"><b>${fmtNum(total, 0)}</b> ${esc(t("Articles"))} <span class="muted">· ${esc(t("Open an article to read it, see its original source, and summarize or translate it."))}</span></div>`
+        + pager
+        + _anGroupByLangControl()
+        + `<table style="margin-top:6px"><tr>`
+        + _anTh("title", t("Title")) + _anTh("source", t("Source"))
+        + _anTh("language", t("Language"))
+        + _anTh("date", t("Published")) + _anTh("top_keyword", t("Top keyword"))
+        + `</tr>${rows}</table>`
+        + pager;
+      _anRefillFormSlots();   // the per-form counts already fetched for this lens
+      _anRenderArtFacetChips();   // redraw from already-fetched facet data (sync, no network)
+    }
+    // Registered in app-boot's ONE `oo:langchange` listener. Only a list that is on screen
+    // (its total line is drawn -- not "Loading…", not a failure) and only from the page it
+    // was drawn from; the near-duplicate badges go back from the sizes already measured
+    // for this corpus. Never fetches.
+    function _anRepaintArticles() {
+      const arts = $("an-art-list") || $("an-articles");
+      if (!arts || !_anArtLast || !arts.querySelector("#an-art-total")) return;
+      _anDrawArticles(arts, _anArtLast);
+      const dup = _anDupSizes.get(arts);
+      if (dup && _anArtParams && dup.key === _anArtParams.toString()) _anApplyDupBadges(arts, dup.sizeById);
     }
     // The catalogue cell of the analysis window's Sources table, as a PURE function of
     // one row -- extracted so it can be executed in a test rather than only grepped.
@@ -1959,6 +2269,12 @@
         + (tags ? `<div style="margin-top:3px">${tags}</div>` : "");
     }
     async function loadAnalysis(p) {
+      // A SUPERSEDED RUN NEVER WRITES. Two runs can overlap (a deep-linked tab spawned
+      // while the restored one was loading, or a quick tab switch), and every panel below
+      // is shared DOM, so whichever finished last used to paint its corpus under the other
+      // tab's label (the 2026-09-26 delegated click-through, row N, P1). Each await is
+      // followed by a check that this is still the newest run.
+      const run = ++_anRunSeq, stale = () => run !== _anRunSeq;
       // ...and the lazy subtabs hold until this run has params of its own (see
       // `anSelectTab`). Nulled BEFORE the await below, so the window in which a click
       // could reach the previous corpus' params does not exist.
@@ -1979,6 +2295,7 @@
       // other four locales issued it once: the reader's first chart described a
       // resolution computed without their language, and a repaint quietly replaced it.
       try { if (window.OOI18N && OOI18N.ready) await OOI18N.ready; } catch (_e) { /* never block a render */ }
+      if (stale()) return;
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       // Q501/Q516: apply the lens ONCE, here, to the params EVERY tab below reads -- the
       // keywords chips, the mind map's graph, When/Where/Who, Links, Sentiment, Sources
@@ -1993,12 +2310,14 @@
       _anProvenance = ""; _anKwSort = false; _anKwForCount = "";   // fresh corpus -> reset the Articles-list lenses
       _anArtFacetSel = { source: "", language: "" };   // fresh corpus -> reset the staged facet selection too
       _anLastParams = p; _anTrend.key = null; _anRelated.key = null; _anCompetitive.key = null;   // a new analysis run -> the lazy subtabs refetch on next show
+      _anFormCountsLast = {}; _anPanelsLast = {};   // a new run's panels repaint only from its own payloads
       if ($("an-trend") && $("an-trend").style.display !== "none") setTimeout(() => renderAnTrend(p), 0);
       if ($("an-related") && $("an-related").style.display !== "none") setTimeout(() => renderAnRelated(p), 0);
       if ($("an-competitive") && $("an-competitive").style.display !== "none") setTimeout(() => renderAnCompetitive(p), 0);
       _toggleAnPrice();   // commodity overlay: show + render the Price subtab, or hide it
       try {
         const d = await api("/api/insights/corpus-keywords?" + p.toString() + tgtLangParam());
+        if (stale()) return;
         _anKwData = d; _anKwHost = kw;   // stash for the tentative-fill action
         anRenderKwChips();
         loadAnContext(p);   // S4.4: term-in-context concordance under the chips (progressive)
@@ -2011,6 +2330,7 @@
       mm.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
       try {
         const dk = await api("/api/insights/corpus-keywords?" + p.toString());
+        if (stale()) return;
         const top = (dk.terms && dk.terms.length) ? dk.terms[0].term : null;
         if (!top) {
           mm.innerHTML = `<div class="muted">${esc(t("No strong associations yet."))}</div>`;
@@ -2021,6 +2341,10 @@
           // corpus-wide keyword graph for every seeded/searched analysis.
           const gp = new URLSearchParams(p);
           gp.set("level", "keyword"); gp.set("term", top); gp.set("hops", "2");
+          // Kept WITHOUT the label language, so a language switch re-asks for the same
+          // scope in the new one (`anMindmapRepaint`).
+          _anMM.gp = gp.toString();
+          gp.set("target_lang", uiLangCode());
           // Q512: the Concept view's own payload, fetched beside the graph and keyed on
           // the TYPED term rather than on the corpus's top keyword -- "the ring" means
           // the ring of the word the reader searched, not of whatever happens to be
@@ -2036,97 +2360,37 @@
             api("/api/insights/graph?" + gp.toString()),
             api("/api/insights/concept-map?" + cq.toString()).catch(() => null),
           ]);
+          if (stale()) return;
           _anMM.arms = cm;
           renderAnMindmap(g, mm);
         }
       } catch (e) { mm.innerHTML = `<div class="note err">${esc(e.message)}</div>`; }
-      _anLoadArticles(p, 0);   // paginated Articles list — Prev/Next + "Page X of Y", above + below
-      _anLoadArtFacets(p);   // sources/languages present in this corpus, with counts (item 3 facet controls)
+      _anLoadArticles(p, 0, run);   // paginated Articles list — Prev/Next + "Page X of Y", above + below
+      _anLoadArtFacets(p, run);   // sources/languages present in this corpus, with counts (item 3 facet controls)
       // When/Where/Who deduced across the matched articles, as CLICKABLE FACETS:
       // clicking a value narrows the corpus to the articles that mention it (the drill
       // that makes a facet co-equal with the text query). Counts only, never confirmed.
       try {
         const d = await api("/api/insights/corpus-www?" + p.toString());
-        _anFacets = {
-          who: ((d.who && d.who.entities) || []).map((e) => ({
-            facet: "entity", value: e.name, label: e.name,
-            sub: e.class || "", n: e.articles})),
-          where: ((d.where && d.where.places) || []).map((pl) => ({
-            facet: "place", value: pl.name, label: pl.name,
-            sub: pl.country ? ooCountryCode(pl.country) : "", n: pl.articles})),
-          when: ((d.when && d.when.years) || []).map((yr) => ({
-            facet: "when", value: String(yr.year), label: String(yr.year),
-            sub: "", n: yr.articles})),
-        };
-        const chips = (group) => {
-          const items = _anFacets[group];
-          if (!items.length) return `<span class="muted">—</span>`;
-          return items.map((it, i) =>
-            `<button type="button" class="chip an-facet" onclick="branchByFacet('${group}',${i})" `
-            + `title="${esc(t("Narrow the corpus to articles that mention this") + " — " + it.value)}">`
-            + `${esc(it.label)}${it.sub ? ` <span class="muted">(${esc(it.sub)})</span>` : ""}`
-            + ` <span class="muted">· ${it.n}</span></button>`).join(" ");
-        };
-        const col = (title, group) =>
-          `<div style="min-width:200px;flex:1"><div class="vsect">${esc(title)}</div>`
-          + `<div class="an-facet-row" style="display:flex;flex-wrap:wrap;gap:6px;margin:4px 0">`
-          + `${chips(group)}</div></div>`;
-        $("an-www").innerHTML =
-          `<div class="hint muted">${esc(d.caveat || "")} `
-          + `${esc(t("Click a value to narrow the corpus to articles that mention it."))}</div>`
-          + `<div style="display:flex;gap:28px;flex-wrap:wrap;margin-top:8px">`
-          + col(t("Who"), "who") + col(t("Where"), "where") + col(t("When"), "when") + `</div>`;
+        if (stale()) return;
+        _anPanelsLast.www = d;
+        $("an-www").innerHTML = _anWwwHtml(d);
       } catch (e) { $("an-www").innerHTML = `<div class="note err">${esc(e.message)}</div>`; }
       // Links: outbound URLs SHARED by 2+ of the matched articles (shared-origin
       // structure; convergence is corroboration only when paths are independent).
       try {
         const d = await api("/api/links/corpus?" + p.toString());
-        // THE INDEPENDENCE READOUT, per row. The retired #corpus-win modal showed a
-        // distinct-SOURCE count beside the distinct-ARTICLE count and said, for each
-        // link, which of the two situations it was in; this view showed the article
-        // count alone under one blanket caveat, which reads the same for five articles
-        // from one outlet as for five from five. That is the difference between echo
-        // and corroboration, so it is stated per link, in the reader's language, from
-        // the endpoint's machine-readable verdict rather than from server prose.
-        const indep = (it) => it.independence === "distinct_sources"
-          ? `<span class="pill" title="${esc(t("Every citing article comes from a different outlet, so the citations are as many paths as they appear to be. They may still share an upstream origin this view cannot see."))}">${esc(t("distinct outlets"))}</span>`
-          : `<span class="pill warn" title="${esc(t("The citing articles do not come from as many outlets as there are citations — one outlet cites this page more than once, or only one outlet does. Their agreement is one path, not independent confirmation."))}">${esc(t("one path"))}</span>`;
-        const rows = (d.items || []).map((it) =>
-          `<tr><td>${extLink(it.sample_url || it.normalized_url, esc(it.domain || it.link_text || it.normalized_url), "", "")}</td>`
-          + `<td style="text-align:right;font-variant-numeric:tabular-nums">${it.citations}</td>`
-          + `<td style="text-align:right;font-variant-numeric:tabular-nums">${it.citing_sources}</td>`
-          + `<td>${indep(it)}</td></tr>`).join("");
-        $("an-links").innerHTML = `<div class="hint muted">${esc(d.caveat || "")}</div>`
-          + (rows
-            ? `<table class="data" style="margin-top:8px"><thead><tr><th>${esc(t("Link"))}</th>`
-              + `<th style="text-align:right" title="${esc(t("How many distinct matched articles cite this link — an exact count, never a score."))}">${esc(t("Cited by"))}</th>`
-              + `<th style="text-align:right" title="${esc(t("How many distinct sources those citing articles come from. This is the ceiling on how many independent paths the citations could represent."))}">${esc(t("Citing sources"))}</th>`
-              + `<th title="${esc(t("Whether the citations come from as many outlets as there are citations. Structure only — never a credibility judgement."))}">${esc(t("Independence"))}</th></tr></thead><tbody>${rows}</tbody></table>`
-            : `<div class="muted" style="margin-top:8px">${esc(t("No links shared by 2+ matched articles."))}</div>`);
+        if (stale()) return;
+        _anPanelsLast.links = d;
+        $("an-links").innerHTML = _anLinksHtml(d);
       } catch (e) { $("an-links").innerHTML = `<div class="note err">${esc(e.message)}</div>`; }
       // Sentiment: distribution of the STORED per-article VADER tone over the set,
       // with the English-lexicon limitation disclosed (non-English scores unreliable).
       try {
         const d = await api("/api/insights/corpus-sentiment?" + p.toString());
-        const cav = `<div class="hint muted">${esc(d.caveat || "")}</div>`;
-        if (!d.n_scored) {
-          $("an-sentiment").innerHTML = cav
-            + `<div class="muted" style="margin-top:8px">${esc(t("No tone scores in this set."))}</div>`;
-        } else {
-          const lab = d.labels || {};
-          const LK = { positive: "Positive", neutral: "Neutral", negative: "Negative" };
-          const keys = ["positive", "neutral", "negative"].filter((k) => k in lab)
-            .concat(Object.keys(lab).filter((k) => !(k in LK)));
-          const rows = keys.map((k) => {
-            const pct = Math.round((100 * lab[k]) / d.n_scored);
-            return `<div style="display:flex;justify-content:space-between;max-width:320px">`
-              + `<span>${esc(LK[k] ? t(LK[k]) : k)}</span><span class="muted">${lab[k]} · ${pct}%</span></div>`;
-          }).join("");
-          const engPct = Math.round((100 * d.english_scored) / d.n_scored);
-          $("an-sentiment").innerHTML = cav + `<div style="margin-top:8px">${rows}</div>`
-            + `<div class="muted" style="margin-top:8px">${esc(t("Mean tone"))}: ${d.mean_score}`
-            + ` · n=${d.n_scored}/${d.n_articles} · ${esc(t("English-scored (reliable)"))}: ${d.english_scored} (${engPct}%)</div>`;
-        }
+        if (stale()) return;
+        _anPanelsLast.sentiment = d;
+        $("an-sentiment").innerHTML = _anSentimentHtml(d);
       } catch (e) { $("an-sentiment").innerHTML = `<div class="note err">${esc(e.message)}</div>`; }
       // Sources: how each source covers the matched set -- volume, mean tone, span,
       // and the catalogue facts the source ASSERTS about itself.
@@ -2146,24 +2410,158 @@
       // nothing for reads as an em dash rather than as an empty claim.
       try {
         const d = await api("/api/insights/corpus-sources?" + p.toString());
-        const rows = (d.sources || []).map((s) => {
-          const span = (s.first && s.last) ? `${String(s.first).slice(0, 10)} – ${String(s.last).slice(0, 10)}` : "—";
-          const tone = (s.mean_tone === null || s.mean_tone === undefined) ? "—" : s.mean_tone;
-          return `<tr><td>${esc(s.name || s.domain || "")}</td>`
-            + `<td style="text-align:right;font-variant-numeric:tabular-nums">${s.articles}</td>`
-            + `<td style="text-align:right;font-variant-numeric:tabular-nums">${tone}</td>`
-            + `<td class="muted">${esc(span)}</td>`
-            + `<td class="muted">${_anSourceCatalogHtml(s)}</td></tr>`;
-        }).join("");
-        $("an-sources").innerHTML = `<div class="hint muted">${esc(d.caveat || "")}</div>`
-          + (rows
-            ? `<table class="data" style="margin-top:8px"><thead><tr><th>${esc(t("Source"))}</th>`
-              + `<th style="text-align:right">${esc(t("Articles"))}</th>`
-              + `<th style="text-align:right">${esc(t("Mean tone"))}</th><th>${esc(t("Span"))}</th>`
-              + `<th title="${esc(t("Stated by the source catalog (asserted, not deduced from text)."))}">${esc(t("Catalog"))}</th></tr></thead>`
-              + `<tbody>${rows}</tbody></table>`
-            : `<div class="muted" style="margin-top:8px">${esc(t("No sources in this set."))}</div>`);
+        if (stale()) return;
+        _anPanelsLast.sources = d;
+        $("an-sources").innerHTML = _anSourcesHtml(d);
       } catch (e) { $("an-sources").innerHTML = `<div class="note err">${esc(e.message)}</div>`; }
+    }
+    // The payloads the Links, Sentiment and Sources panels last drew, so a LANGUAGE
+    // SWITCH redraws them with no request (the 2026-09-27 re-walk, N-4): their labels and
+    // headers are t() text composed at render time, which the i18n DOM walker cannot
+    // reach, so a panel drawn in English stayed English after a switch. Emptied by each
+    // new run, so a panel still loading is never painted over with the previous corpus.
+    let _anPanelsLast = {};
+    // THE THREE CAVEATS ARE FIXED SERVER SENTENCES, so each is keyed x12 and goes through
+    // t() -- appended verbatim they read in English in every locale, beside labels that
+    // were translated (the 2026-09-27 re-walk, N-2). A caveat that holds a translation
+    // and still shows English is the informed-consent non-negotiable failing quietly.
+    // When/Where/Who from its payload: the chips AND the facet list the drill reads, so a
+    // redraw after a language switch (N-4) rebuilds the same indices from the same payload.
+    function _anWwwHtml(d) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      _anFacets = {
+        who: ((d.who && d.who.entities) || []).map((e) => ({
+          facet: "entity", value: e.name, label: e.name,
+          sub: e.class || "", n: e.articles})),
+        where: ((d.where && d.where.places) || []).map((pl) => ({
+          facet: "place", value: pl.name, label: pl.name,
+          sub: pl.country ? ooCountryCode(pl.country) : "", n: pl.articles})),
+        when: ((d.when && d.when.years) || []).map((yr) => ({
+          facet: "when", value: String(yr.year), label: String(yr.year),
+          sub: "", n: yr.articles})),
+      };
+      const chips = (group) => {
+        const items = _anFacets[group];
+        if (!items.length) return `<span class="muted">—</span>`;
+        return items.map((it, i) =>
+          `<button type="button" class="chip an-facet" onclick="branchByFacet('${group}',${i})" `
+          + `title="${esc(t("Narrow the corpus to articles that mention this") + " — " + it.value)}">`
+          + `${esc(it.label)}${it.sub ? ` <span class="muted">(${esc(it.sub)})</span>` : ""}`
+          + ` <span class="muted">· ${it.n}</span></button>`).join(" ");
+      };
+      const col = (title, group) =>
+        `<div style="min-width:200px;flex:1"><div class="vsect">${esc(title)}</div>`
+        + `<div class="an-facet-row" style="display:flex;flex-wrap:wrap;gap:6px;margin:4px 0">`
+        + `${chips(group)}</div></div>`;
+      // A fixed server sentence, keyed x12 like the Links / Sentiment / Sources caveats
+      // below (the 2026-09-27 re-walk, N-2) -- verbatim it read English everywhere.
+      return `<div class="hint muted">${esc(d.caveat ? t(d.caveat) : "")} `
+        + `${esc(t("Click a value to narrow the corpus to articles that mention it."))}</div>`
+        + `<div style="display:flex;gap:28px;flex-wrap:wrap;margin-top:8px">`
+        + col(t("Who"), "who") + col(t("Where"), "where") + col(t("When"), "when") + `</div>`;
+    }
+    function _anLinksHtml(d) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      // THE INDEPENDENCE READOUT, per row. The retired #corpus-win modal showed a
+      // distinct-SOURCE count beside the distinct-ARTICLE count and said, for each
+      // link, which of the two situations it was in; this view showed the article
+      // count alone under one blanket caveat, which reads the same for five articles
+      // from one outlet as for five from five. That is the difference between echo
+      // and corroboration, so it is stated per link, in the reader's language, from
+      // the endpoint's machine-readable verdict rather than from server prose.
+      const indep = (it) => it.independence === "distinct_sources"
+        ? `<span class="pill" title="${esc(t("Every citing article comes from a different outlet, so the citations are as many paths as they appear to be. They may still share an upstream origin this view cannot see."))}">${esc(t("distinct outlets"))}</span>`
+        : `<span class="pill warn" title="${esc(t("The citing articles do not come from as many outlets as there are citations — one outlet cites this page more than once, or only one outlet does. Their agreement is one path, not independent confirmation."))}">${esc(t("one path"))}</span>`;
+      const rows = (d.items || []).map((it) =>
+        `<tr><td>${extLink(it.sample_url || it.normalized_url, esc(it.domain || it.link_text || it.normalized_url), "", "")}</td>`
+        + `<td style="text-align:right;font-variant-numeric:tabular-nums">${it.citations}</td>`
+        + `<td style="text-align:right;font-variant-numeric:tabular-nums">${it.citing_sources}</td>`
+        + `<td>${indep(it)}</td></tr>`).join("");
+      return `<div class="hint muted">${esc(d.caveat ? t(d.caveat) : "")}</div>`
+        + (rows
+          ? `<table class="data" style="margin-top:8px"><thead><tr><th>${esc(t("Link"))}</th>`
+            + `<th style="text-align:right" title="${esc(t("How many distinct matched articles cite this link — an exact count, never a score."))}">${esc(t("Cited by"))}</th>`
+            + `<th style="text-align:right" title="${esc(t("How many distinct sources those citing articles come from. This is the ceiling on how many independent paths the citations could represent."))}">${esc(t("Citing sources"))}</th>`
+            + `<th title="${esc(t("Whether the citations come from as many outlets as there are citations. Structure only — never a credibility judgement."))}">${esc(t("Independence"))}</th></tr></thead><tbody>${rows}</tbody></table>`
+          : `<div class="muted" style="margin-top:8px">${esc(t("No links shared by 2+ matched articles."))}</div>`);
+    }
+    function _anSentimentHtml(d) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const cav = `<div class="hint muted">${esc(d.caveat ? t(d.caveat) : "")}</div>`;
+      if (!d.n_scored) {
+        return cav + `<div class="muted" style="margin-top:8px">${esc(t("No tone scores in this set."))}</div>`;
+      }
+      const lab = d.labels || {};
+      const LK = { positive: "Positive", neutral: "Neutral", negative: "Negative" };
+      const keys = ["positive", "neutral", "negative"].filter((k) => k in lab)
+        .concat(Object.keys(lab).filter((k) => !(k in LK)));
+      const rows = keys.map((k) => {
+        const pct = Math.round((100 * lab[k]) / d.n_scored);
+        return `<div style="display:flex;justify-content:space-between;max-width:320px">`
+          + `<span>${esc(LK[k] ? t(LK[k]) : k)}</span><span class="muted">${lab[k]} · ${pct}%</span></div>`;
+      }).join("");
+      const engPct = Math.round((100 * d.english_scored) / d.n_scored);
+      // The reader's own separator, through the ONE keyed label frame (N-5).
+      return cav + `<div style="margin-top:8px">${rows}</div>`
+        + `<div class="muted" style="margin-top:8px">${ooLabelHtml(esc(t("Mean tone")), esc(String(d.mean_score)))}`
+        + ` · n=${d.n_scored}/${d.n_articles} · `
+        + `${ooLabelHtml(esc(t("English-scored (reliable)")), `${d.english_scored} (${engPct}%)`)}</div>`;
+    }
+    function _anSourcesHtml(d) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const rows = (d.sources || []).map((s) => {
+        const span = (s.first && s.last) ? `${String(s.first).slice(0, 10)} – ${String(s.last).slice(0, 10)}` : "—";
+        const tone = (s.mean_tone === null || s.mean_tone === undefined) ? "—" : s.mean_tone;
+        return `<tr><td>${esc(s.name || s.domain || "")}</td>`
+          + `<td style="text-align:right;font-variant-numeric:tabular-nums">${s.articles}</td>`
+          + `<td style="text-align:right;font-variant-numeric:tabular-nums">${tone}</td>`
+          + `<td class="muted">${esc(span)}</td>`
+          + `<td class="muted">${_anSourceCatalogHtml(s)}</td></tr>`;
+      }).join("");
+      return `<div class="hint muted">${esc(d.caveat ? t(d.caveat) : "")}</div>`
+        + (rows
+          ? `<table class="data" style="margin-top:8px"><thead><tr><th>${esc(t("Source"))}</th>`
+            + `<th style="text-align:right">${esc(t("Articles"))}</th>`
+            + `<th style="text-align:right">${esc(t("Mean tone"))}</th><th>${esc(t("Span"))}</th>`
+            + `<th title="${esc(t("Stated by the source catalog (asserted, not deduced from text)."))}">${esc(t("Catalog"))}</th></tr></thead>`
+            + `<tbody>${rows}</tbody></table>`
+          : `<div class="muted" style="margin-top:8px">${esc(t("No sources in this set."))}</div>`);
+    }
+    // Registered in app-boot's ONE `oo:langchange` listener, beside `_anRepaintXLang`.
+    // Redraws, from what each surface already holds and NEVER with a request, the analysis
+    // panels whose words are composed at render time (the 2026-09-27 re-walk, N-4): the
+    // Articles list, an open Trend chart, the Overview tiles, and the When/Where/Who, Links,
+    // Sentiment, Sources, Related and Competitive panels. Each only when it is actually
+    // drawn -- a panel showing "Loading…" or a failure keeps it, and one never opened
+    // stays empty.
+    function _anRepaintOnLangChange() {
+      _anRepaintArticles();
+      // The Trend chart measures its host, so it is redrawn only while it is SHOWN; a
+      // hidden one redraws itself from the same cache when its subtab is next opened.
+      const tr = $("an-trend");
+      if (tr && tr.offsetParent !== null && $("an-trend-chart") && (_anTrend.counts || []).length) drawAnTrend();
+      [["an-www", "www", _anWwwHtml], ["an-links", "links", _anLinksHtml],
+       ["an-sentiment", "sentiment", _anSentimentHtml], ["an-sources", "sources", _anSourcesHtml],
+       ["an-competitive", "competitive", (d) => _anCompetitiveHtml(d.cs, d.fr, d.query)]].forEach(([id, k, draw]) => {
+        const el = $(id), d = _anPanelsLast[k];
+        if (el && d) el.innerHTML = draw(d);
+      });
+      // The Overview keeps its own cache key, so its payload is matched against that key.
+      const ov = $("an-overview");
+      if (ov && _anOverviewLast && ov.dataset.done === "1" && _anOverviewLast.key === _anOverviewKey)
+        ov.innerHTML = _anOverviewHtml(_anOverviewLast);
+      // Related keeps what the reader ticked and unfolded: its checkboxes feed the Branch
+      // action, so a language switch must not quietly drop a selection.
+      const rel = $("an-related"), rd = _anPanelsLast.related;
+      if (rel && rd && rel.dataset.done === "1") {
+        const ticked = Array.from(rel.querySelectorAll(".an-rel-pick:checked"))
+          .map((cb) => cb.dataset.kind + cb.dataset.idx);
+        const open = Array.from(rel.querySelectorAll("details")).map((d) => d.open);
+        rel.innerHTML = _anRelatedHtml(rd.cd, rd.ld);
+        rel.querySelectorAll(".an-rel-pick").forEach((cb) => { cb.checked = ticked.includes(cb.dataset.kind + cb.dataset.idx); });
+        rel.querySelectorAll("details").forEach((d, i) => { d.open = !!open[i]; });
+        anRelUpdateSel();
+      }
     }
 
     // Source-competitive subtab — ported from the retired #corpus-win modal into the
@@ -2194,11 +2592,22 @@
           query ? api("/api/framing?query=" + encodeURIComponent(query)).catch(() => null) : Promise.resolve(null),
         ]);
       } catch (e) { host.innerHTML = `<div class="note err">${esc(e.message)}</div>`; return; }
+      // A NEWER RUN OVER ANOTHER CORPUS OWNS THE PANEL (its own render is on the way).
+      if (_anLastParams && _anLastParams.toString() !== key) return;
+      _anPanelsLast.competitive = { cs, fr, query };
+      host.innerHTML = _anCompetitiveHtml(cs, fr, query);
+      _anCompetitive.key = key;   // cache AFTER a successful render (retry on error)
+    }
+    // The Competitive tab from its two payloads, so a LANGUAGE SWITCH redraws it with no
+    // request (the 2026-09-27 re-walk, N-4) -- the not-a-ranking line, the headers and
+    // both caveats (the sources one and /api/framing's, keyed x12 for N-2) are t() text.
+    function _anCompetitiveHtml(cs, fr, query) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const rows = (cs && cs.sources) || [];
-      if (!rows.length) { host.innerHTML = `<div class="muted">${esc(t("No sources for this corpus yet."))}</div>`; _anCompetitive.key = key; return; }
-      if (rows.length === 1) { host.innerHTML = `<div class="muted">${esc(t("Only one source in this corpus — nothing to compare."))}</div>`; _anCompetitive.key = key; return; }
+      if (!rows.length) return `<div class="muted">${esc(t("No sources for this corpus yet."))}</div>`;
+      if (rows.length === 1) return `<div class="muted">${esc(t("Only one source in this corpus — nothing to compare."))}</div>`;
       const byName = {}; ((fr && fr.framing) || []).forEach(f => { if (f.source) byName[f.source] = f; });
-      const fmt = (n) => (n || 0).toLocaleString();
+      const fmt = (n) => fmtNum(n || 0, 0);
       const firsts = rows.map(r => r.first).filter(Boolean).sort();
       const lasts = rows.map(r => r.last).filter(Boolean).sort();
       const corpusFirst = firsts[0] || null, corpusLast = lasts[lasts.length - 1] || null;
@@ -2234,8 +2643,7 @@
           <td style="padding:5px 8px">${emphasis}</td>
         </tr>`;
       }).join("");
-      host.innerHTML =
-        `<div class="hint" title="${esc(t("How each source APPROACHES this concept, side by side: volume (exact article count), tone (VADER mean + label), timing (first→last publication span) and the outlet's distinctive emphasised terms. A microscope on divergence, not a verdict — no source is ranked above another, no quality is judged, no composite score is computed."))}">${esc(notRanking)}</div>` +
+      return         `<div class="hint" title="${esc(t("How each source APPROACHES this concept, side by side: volume (exact article count), tone (VADER mean + label), timing (first→last publication span) and the outlet's distinctive emphasised terms. A microscope on divergence, not a verdict — no source is ranked above another, no quality is judged, no composite score is computed."))}">${esc(notRanking)}</div>` +
         `<table style="width:100%;border-collapse:collapse;font-size:13px">
            <thead><tr style="border-bottom:1px solid var(--line)">
              <th style="text-align:start;padding:5px 8px">${esc(t("Source"))}</th>
@@ -2249,8 +2657,7 @@
         `<div class="hint" style="margin-top:6px">${esc(t("n ="))} ${fmt(cs.n_articles)} ${esc(t("articles"))}` +
           `${(corpusFirst && corpusLast) ? ` · ${esc(day(corpusFirst))} → ${esc(day(corpusLast))}` : ""}` +
           `${cs.capped ? ` · ${esc(t("(scoped to the top matched articles)"))}` : ""}. ` +
-          `${esc(cs.caveat || "")} ${esc((fr && fr.caveat) || "")}</div>`;
-      _anCompetitive.key = key;   // cache AFTER a successful render (retry on error)
+          `${esc(cs.caveat ? t(cs.caveat) : "")} ${esc((fr && fr.caveat) ? t(fr.caveat) : "")}</div>`;
     }
 
     // === Search-lockout fix (audit P0 finding 3) ============================= //
@@ -2311,8 +2718,13 @@
       const p = _articleQuery(searchParams()); p.set("limit", String(DEFAULT_LIMIT));
       try {
         const data = await api("/api/articles?" + p.toString());
-        $("search-meta").textContent = `${data.total} result(s)` + (data.total > data.results.length ?
-          ` (showing ${data.results.length})` : "");
+        // Keyed frames with the counts interpolated after translation -- the line was a
+        // hard-coded English template on a page read in eleven other languages (N11).
+        const stf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
+          : ((s, v) => s.replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null ? String(v[k]) : m)));
+        $("search-meta").textContent = (data.total > data.results.length)
+          ? stf("{n} result(s) (showing {shown})", {n: data.total, shown: data.results.length})
+          : stf("{n} result(s)", {n: data.total});
         const t = $("results");
         t.innerHTML = "<tr><th>Title</th><th>Source</th><th>Published</th><th>Lang</th><th></th></tr>" +
           (data.results.length ? data.results.map(a =>
@@ -2415,7 +2827,7 @@
       $("synth-win-body").innerHTML = `
         <div class="hint" style="margin-bottom:10px">${esc(t("A synthesis reads a bounded set of articles with a local model and writes what they agree on, where they disagree, and what they leave open — citing each source by number. It is reading assistance, never a verdict."))}</div>
         <div class="card" style="margin-bottom:12px">
-          <div>${esc(t("Matched"))}: <b>${c.total}</b>${c.total > rows.length ? ` <span class="muted">(${esc(TF("showing the top {n} by search relevance", {n: rows.length}))})</span>` : ""}</div>
+          <div>${ooLabelHtml(esc(t("Matched")), `<b>${c.total}</b>`)}${c.total > rows.length ? ` <span class="muted">(${esc(TF("showing the top {n} by search relevance", {n: rows.length}))})</span>` : ""}</div>
           <div class="muted" style="font-size:12px;margin-top:4px">${esc(TF("Pick up to {n} articles. The most relevant are pre-selected — refine your search to change the pool. (A small local model can only synthesize a bounded set well.)", {n: _SYNTH_MAX}))}</div>
         </div>
         <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap">
@@ -2438,7 +2850,7 @@
     function _synthCount() {
       const t = _synthT();
       const n = document.querySelectorAll("#synth-win-body .synth-cb:checked").length;
-      const el = $("synth-count"); if (el) el.textContent = `${t("Selected")}: ${n} / ${_SYNTH_MAX}`;
+      const el = $("synth-count"); if (el) el.textContent = ooLabelText(t("Selected"), `${n} / ${_SYNTH_MAX}`);
       const btn = $("synth-run-btn");
       if (btn) { btn.disabled = (n < 1 || n > _SYNTH_MAX); btn.title = n > _SYNTH_MAX ? t("Too many — uncheck some.") : ""; }
     }
@@ -2490,10 +2902,15 @@
         <div style="margin-top:12px"><button class="secondary tiny" onclick="_synthRenderSelect()">${esc(t("← Change selection"))}</button></div>`;
     }
 
+    // "12 articles" as ONE keyed frame, the singular taking its own key -- not a count
+    // welded to a translated plural noun (the same class as the label colons, N-5).
+    function _synthCountLabel(t, n) {
+      return t(n === 1 ? "{n} article" : "{n} articles").replace("{n}", n);
+    }
     function _synthAsMarkdown() {
       const t = _synthT(); const r = _synthData; if (!r) return "";
       const out = [`# ${t("Synthesis")}`, "",
-        `*${t("Local model")}: ${r.model || "?"} · ${r.member_count} ${t("articles")} · ${new Date().toISOString().slice(0, 10)}*`,
+        `*${ooLabelText(t("Local model"), r.model || "?")} · ${_synthCountLabel(t, r.member_count)} · ${new Date().toISOString().slice(0, 10)}*`,
         "", (r.result || ""), "", `> ${r.caveat || ""}`, "", `## ${t("Synthesized corpus")}`];
       for (const m of (r.members || []))
         out.push(`${m.n}. ${m.title || "(untitled)"} — ${m.source || ""}${m.published_at ? " (" + m.published_at.slice(0, 10) + ")" : ""}${m.language ? " [" + ooLangCode(m.language) + "]" : ""}${m.url ? " " + m.url : ""}`);
@@ -2508,7 +2925,7 @@
         + `.meta{color:#666;font-size:13px}blockquote{color:#555;border-left:3px solid #ddd;padding-left:12px}`
         + `pre{white-space:pre-wrap;font:inherit}ul{padding-left:18px}li{margin:6px 0}</style></head><body>`
         + `<h1>${esc(t("Synthesis"))}</h1>`
-        + `<p class="meta">${esc(t("Local model"))}: ${esc(r.model || "?")} · ${r.member_count} ${esc(t("articles"))} · ${new Date().toISOString().slice(0, 10)}</p>`
+        + `<p class="meta">${ooLabelHtml(esc(t("Local model")), esc(r.model || "?"))} · ${esc(_synthCountLabel(t, r.member_count))} · ${new Date().toISOString().slice(0, 10)}</p>`
         + `<pre>${esc(r.result || "")}</pre>`
         + `<blockquote>${esc(r.caveat || "")}</blockquote>`
         + `<h2>${esc(t("Synthesized corpus"))}</h2><ul>${rows}</ul></body></html>`;

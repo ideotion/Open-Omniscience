@@ -282,10 +282,18 @@
         return;
       }
       _fpState.current = d.path;
-      $("fp-path").textContent = d.path;
+      // A path and a folder name are LEFT-TO-RIGHT data (the 2026-09-27 re-walk, J-2):
+      // inside the Arabic dialog the path's leading slash was drawn at the far end, and
+      // "202609271124_OpenOmniscience_Backup_2" read "OpenOmniscience_Backup_2_2026…" --
+      // a dated export that does not exist on disk, on the screen that lists earlier
+      // exports. Each rides an LTR <bdi>, so it keeps its own order while the line keeps
+      // the dialog's alignment. overflow-wrap:anywhere on the rows (J-4): an
+      // underscore-joined name has no break opportunity, so at 375 px it ran into the
+      // list's sideways scroll and two same-minute exports read identically.
+      $("fp-path").innerHTML = `<bdi dir="ltr">${esc(d.path)}</bdi>`;
       const rows = [];
       if (d.parent) rows.push(`<div class="fp-row" data-path="${esc(d.parent)}" style="padding:6px 10px;cursor:pointer;border-bottom:1px solid var(--line)">⬆ ${esc(t("Parent folder"))}</div>`);
-      for (const e of (d.entries || [])) rows.push(`<div class="fp-row" data-path="${esc(e.path)}" style="padding:6px 10px;cursor:pointer;border-bottom:1px solid var(--line)">📁 ${esc(e.name)}</div>`);
+      for (const e of (d.entries || [])) rows.push(`<div class="fp-row" data-path="${esc(e.path)}" style="padding:6px 10px;cursor:pointer;border-bottom:1px solid var(--line);overflow-wrap:anywhere">📁 <bdi dir="ltr">${esc(e.name)}</bdi></div>`);
       if (!(d.entries || []).length) rows.push(`<div class="muted" style="padding:10px">${esc(t("No sub-folders here."))}</div>`);
       $("fp-list").innerHTML = rows.join("");
       $("fp-list").querySelectorAll(".fp-row").forEach(el => el.addEventListener("click", () => _fpNav(el.dataset.path)));
@@ -346,12 +354,26 @@
     // region KR. Everything else is already a valid CLDR region code, so the label
     // comes from the browser's own data rather than a translation table we maintain.
     const _OO_POV_REGION = { ko: "kr" };
+    // Q308 for an <option>, which has no usable hover: the localised NAME with the
+    // alpha-3 beside it, "Name (CODE)", like every other country picker. The code is
+    // derived AFTER the KO -> KR mapping, or Korea's viewpoint would print `ko`.
     function _ooWorldviewLabel(code) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : (x => x);
       if (code === "contested") return t("Contested (assign nothing)");
       if (code === "iso") return t("ISO / de jure");
       if (code === "tlc") return t("Natural Earth (de facto)");
-      return ooRegionName(_OO_POV_REGION[code] || code);
+      const region = _OO_POV_REGION[code] || code;
+      const cc = ooCountryCode(region), name = ooCountryName(region, "");
+      return name && name !== cc ? `${name} (${cc})` : (cc || ooRegionName(region));
+    }
+    // The picker's order: the three conventions first, in the data's own order, then
+    // the country viewpoints by LOCALISED NAME (Q308) -- the file lists them by their
+    // two-letter key, which read as "Germany, Egypt, Spain" in English (L16).
+    function _ooWorldviewOrder(views) {
+      const fixed = (views || []).filter(v => v === "iso" || v === "tlc");
+      const countries = (views || []).filter(v => v !== "iso" && v !== "tlc")
+        .sort((a, b) => ooCountryCompare(_OO_POV_REGION[a] || a, _OO_POV_REGION[b] || b));
+      return ["contested", ...fixed, ...countries];
     }
 
     // What a single area's worldview cell means, as a translated sentence. The three
@@ -370,8 +392,11 @@
     // An area's name in the reader's locale, from Natural Earth's own NAME_<lang>
     // field -- DATA the source supplies, never a translation this app invented. Falls
     // back to the English name when the source carries no field for that locale.
+    // THE LOCALE COMES FROM `current()`, the one reader i18n.js exports (as ooRegionName
+    // does). This read `OOI18N.lang`, which i18n.js never defined, so every area kept its
+    // English name in fr/ar/zh while the claimants beside it translated (row R, R1).
     function _ooDisputedName(area) {
-      const lang = (window.OOI18N && OOI18N.lang) ? OOI18N.lang : "en";
+      const lang = (window.OOI18N && OOI18N.current && OOI18N.current()) || "en";
       return (area.names && area.names[lang]) || area.name || "";
     }
 
@@ -403,16 +428,20 @@
         const under = (typeof v === "number" && isFinite(v))
           ? `<path d="${d}" fill="${fillFor(v)}" stroke="none"/>` : "";
         const claims = _ooDisputedClaims(a);
-        const ti = `${_ooDisputedName(a)} — ${t("contested")}: ${claims} · ${_ooDisputedViewNote(a, view)}`;
+        const ti = `${_ooDisputedName(a)} — ${ooLabelText(t("contested"), claims)} · ${_ooDisputedViewNote(a, view)}`;
         // The CLICK follows the visible attribution and nothing else. Under a named
         // worldview the area drills into the country that view attributes it to, which
         // is what the reader is looking at. Under the default it carries no `data-iso`
         // at all, so a click does NOT quietly drill into one claimant -- that silent
         // pick is the thing Q826 forbids, and it would be invisible in a screenshot.
         const drill = (who && who !== "self") ? ` data-iso="${esc(who)}" style="cursor:pointer"` : "";
+        // The claims ride a TITLE ATTRIBUTE, not an SVG <title> child (row R, R9): the
+        // #oo-tip convention (#17) marks [title] elements and opens its bubble on hover,
+        // focus AND long-press, while a <title> child only ever reached a mouse. One
+        // carrier, so a desktop hover shows one bubble, never the native one beside it.
         return under + `<path d="${d}" fill="url(#oomap-contested)" stroke="var(--caveat)" `
           + `stroke-width="0.6" stroke-dasharray="2.4 1.6" vector-effect="non-scaling-stroke" `
-          + `data-oomap-disputed="${esc(a.id)}"${drill}><title>${esc(ti)}</title></path>`;
+          + `data-oomap-disputed="${esc(a.id)}"${drill} title="${esc(ti)}"></path>`;
       }).join("");
       return { markup, shown };
     }
@@ -779,12 +808,15 @@
       // convention). It changes which convention the contested areas are ATTRIBUTED
       // under; it never changes whether a dispute is drawn. Present whenever the
       // contested layer is, independently of whether this map offers granularity.
+      // NO FIXED WIDTH CAP (row R, R7): a 150 px cap cut the default label mid-word, and
+      // the part it cut was "(assign nothing)", the one clause that says what the default
+      // does. The select sizes to its longest option; at phone width the row wraps.
       const worldviewHtml = _disp.shown ? `
-          <label class="oomap-worldview" style="display:inline-flex;align-items:center;gap:4px"
+          <label class="oomap-worldview" style="display:inline-flex;flex-wrap:wrap;align-items:center;gap:4px;max-width:100%"
                  title="${esc(t("Disputed areas are always drawn as contested with every claim named. A worldview decides only which claim the area is ATTRIBUTED to here — it is a way to SEE the difference between conventions, never this app's verdict."))}">
             <span class="muted oomap-wv-label" style="font-size:11px">${esc(t("Worldview"))}</span>
-            <select class="tiny" data-oomap-worldview aria-label="${esc(t("Worldview"))}" style="font-size:11px;max-width:150px">
-              ${["contested", ...(disputed.views || [])].map(v =>
+            <select class="tiny" data-oomap-worldview aria-label="${esc(t("Worldview"))}" style="font-size:11px;max-width:100%;min-width:0">
+              ${_ooWorldviewOrder(disputed.views).map(v =>
                 `<option value="${esc(v)}"${v === _ooMapWorldview ? " selected" : ""}>${esc(_ooWorldviewLabel(v))}</option>`).join("")}
             </select>
           </label>` : "";
@@ -880,7 +912,7 @@
         ${_disp.shown ? `<span style="display:inline-flex;align-items:center;gap:5px"
           title="${esc(t("Every disputed area is drawn hatched with all of its claims named in the tooltip, in every worldview. A worldview changes only which claim the area is attributed to here, so you can see how the conventions differ — it is never this app's verdict on who is right. Source: Natural Earth's breakaway/disputed layer, which records an assignment per point of view.")) + " " + esc(t("The country outlines underneath come from Natural Earth's own de-facto assignment — a boundary has to be drawn somewhere, and that choice is itself one of the conventions this control lets you compare."))}">
           <span style="width:14px;height:10px;border:1px solid var(--caveat);background:repeating-linear-gradient(-45deg,transparent,transparent 2px,var(--caveat) 2px,var(--caveat) 3px)"></span>
-          <span class="card-caveat">${esc(t("Contested"))}: ${_disp.shown} · ${esc(_ooMapWorldview === "contested"
+          <span class="card-caveat">${ooLabelHtml(esc(t("Contested")), esc(fmtNum(_disp.shown, 0)))} · ${esc(_ooMapWorldview === "contested"
             ? t("every claim shown, none assigned")
             : t("attributed under") + " " + _ooWorldviewLabel(_ooMapWorldview))}</span></span>` : ""}
         ${pointRows.length ? `<span class="muted">○ ${esc(t("small areas shown as points"))}</span>` : ""}
@@ -891,7 +923,7 @@
         ${opts.serverOn ? `<span class="muted">${esc(t("IP Geolocation by DB-IP"))} · <a href="https://db-ip.com" target="_blank" rel="noopener">db-ip.com</a> · CC BY 4.0</span>` : ""}
         ${opts.signalsOn ? `<span data-oomap-sigkinds>${_ooSigKindsHtml(sigKinds)}</span>` : ""}
         ${opts.signalsOn ? `<span class="muted" style="display:inline-flex;align-items:center;gap:6px" title="${esc(t("Shape = certainty; colour = kind."))}">● ${esc(t("confirmed"))} · ▲ ${esc(t("scheduled"))} · ◆ ${esc(t("deduced"))}</span>` : ""}
-        ${osm ? `<span class="muted" title="${esc(t("Bounded preview from a downloaded .osm.pbf — not the full region; no network."))}">${esc(t("offline OSM"))}: ${(osm.points || []).length} ${esc(t("nodes"))} · ${(osm.lines || []).length} ${esc(t("ways"))}${osm.truncated ? " · " + esc(t("preview")) : ""}${osm.areaCount ? " · " + osm.areaCount + " " + esc(t("country boundaries")) : ""}</span>` : ""}
+        ${osm ? `<span class="muted" title="${esc(t("Bounded preview from a downloaded .osm.pbf — not the full region; no network."))}">${ooLabelHtml(esc(t("offline OSM")), esc(_ooOsmCounts(osm)))}</span>` : ""}
       </div>
       ${opts.method ? `<div class="hint" style="margin-top:4px">${esc(opts.method)}</div>` : ""}
       ${opts.caveat ? `<div class="card-caveat" style="margin-top:4px">${esc(opts.caveat)}</div>` : ""}`;
@@ -900,6 +932,20 @@
       host._ooLabels = labelCands;                 // for the dynamic-label declutter (re-laid-out on zoom)
       _wireOoMap(host, opts);
       _ooMapLayoutLabels(host, { x: 0, y: 0, w: W, h: H });   // initial layout (world view)
+    }
+    // The worldview in force, for a caller outside this file that keys a repaint on it
+    // (app-sources.js's coverage stamp): a function, so it hoists across the module order.
+    function ooMapWorldview() { return _ooMapWorldview; }
+    // Re-render every ooMap host other than `except` that is still in the document and
+    // already holds a drawn map, from the options it was last drawn with -- never a fetch
+    // (the geometry and the contested asset are cached by then). A host that holds a
+    // "Loading…" line or an empty state has no svg and is left for its own loader.
+    function _ooMapRedrawOthers(except) {
+      document.querySelectorAll("svg#oo-choro").forEach((svg) => {
+        const wrap = svg.closest(".oomap-wrap"), host = wrap && wrap.parentElement;
+        if (!host || host === except || !host._ooOpts || !host.isConnected) return;
+        void ooMap(host, host._ooOpts);
+      });
     }
     // Greedy non-overlapping label declutter (THEME-2), re-run on every viewBox
     // change so labels stay constant-size on screen, never overlap, and reveal more
@@ -1011,6 +1057,10 @@
         // deliberate click, not a drag frame, so the cost is not the concern the
         // focus-slider fast path exists for.
         void ooMap(host, host._ooOpts || opts);
+        // ...and EVERY OTHER map already drawn, for the reason stated above the change
+        // handler: one convention across surfaces. Re-rendering only this host left the
+        // Sources map on "contested" after the World map was set to India (row R, R3).
+        _ooMapRedrawOthers(host);
       });
       if (opts && opts.onFocus) { const fs = host.querySelector("[data-oomap-focus]"); if (fs) fs.addEventListener("input", () => opts.onFocus(+fs.value)); }
       if (opts && opts.onTimeScale) host.querySelectorAll("[data-oomap-tscale]").forEach(b =>
@@ -1171,12 +1221,12 @@
             + `${_ooMapHazType === k ? ' style="border-color:var(--accent);color:var(--accent)"' : ""}>`
             + `${esc(hazardTypeLabel(k))} <span class="muted">${esc(fmtNum(types[k]))}</span></button>`));
         hazRow = `<div style="display:flex;flex-wrap:wrap;gap:5px;align-items:center;margin-top:5px">
-            <span class="muted" style="font-size:12px">${esc(t("Hazards"))}:</span>${majorChip}${typeChips.join("")}
+            <span class="muted" style="font-size:12px">${ooLabelHtml(esc(t("Hazards")), "")}</span>${majorChip}${typeChips.join("")}
           </div>
           <div class="card-caveat" style="margin-top:4px">${esc(t("“Major only” is a default lens, not an exclusion: it shows provider orange/red alerts and magnitude M6+ first. Click it off to see every hazard the snapshot holds. A magnitude is the provider's measurement of size, never a statement about consequences."))}</div>`;
       }
       bar.innerHTML = `<div style="display:flex;flex-wrap:wrap;gap:5px;align-items:center">
-          <span class="muted" style="font-size:12px">${esc(t("Story types"))}:</span>${chips.join("")}
+          <span class="muted" style="font-size:12px">${ooLabelHtml(esc(t("Story types")), "")}</span>${chips.join("")}
         </div>
         <div class="card-caveat" style="margin-top:5px">${esc(t("Story types are deduced from your corpus by event kind — counts only, never a verdict or ranking."))}</div>${hazRow}`;
       bar.querySelectorAll("[data-story-kind]").forEach(b => b.addEventListener("click", () => {
@@ -1217,6 +1267,50 @@
       });
       return out;
     }
+    // tf for this file: an interpolating fallback, and a FUNCTION the i18n gate reads as
+    // a tf alias (i18n_report._TF_FN_BINDING), so every frame passed through it is
+    // checked for its key like any other.
+    function _mapTf(str, vars) {
+      return (window.OOI18N && OOI18N.tf) ? OOI18N.tf(str, vars)
+        : String(str).replace(/\{(\w+)\}/g, (m, k) => (vars && vars[k] != null) ? String(vars[k]) : m);
+    }
+    // A map count with its noun, ONE keyed frame per number (R14): the unit used to be
+    // welded after the figure ("12 sources"), which agrees with nothing in most locales.
+    function _ooMapCount(id, v) {
+      const one = Number(v) === 1, n = fmtNum(v);
+      if (id === "sources") return one ? _mapTf("{n} source", { n }) : _mapTf("{n} sources", { n });
+      if (id === "articles") return one ? _mapTf("{n} article", { n }) : _mapTf("{n} articles", { n });
+      if (id === "keywords") return one ? _mapTf("{n} mention", { n }) : _mapTf("{n} mentions", { n });
+      return n;
+    }
+    // The offline-OSM preview's three counts, each its own one/many frame (R14).
+    function _ooOsmCounts(osm) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : (x => x);
+      const nP = (osm.points || []).length, nL = (osm.lines || []).length, nA = osm.areaCount || 0;
+      const parts = [
+        nP === 1 ? _mapTf("{n} node", { n: fmtNum(1, 0) }) : _mapTf("{n} nodes", { n: fmtNum(nP, 0) }),
+        nL === 1 ? _mapTf("{n} way", { n: fmtNum(1, 0) }) : _mapTf("{n} ways", { n: fmtNum(nL, 0) }),
+      ];
+      if (osm.truncated) parts.push(t("preview"));
+      if (nA) parts.push(nA === 1 ? _mapTf("{n} country boundary", { n: fmtNum(1, 0) }) : _mapTf("{n} country boundaries", { n: fmtNum(nA, 0) }));
+      return parts.join(" · ");
+    }
+    // The dump reader's scan figures (R14): a count of index lines as a one/many frame,
+    // and the seconds through the shared "{n} s" frame, ISOLATED -- "0.4s" read "s 0.4"
+    // on an Arabic page.
+    function _dumpScanned(n) {
+      const v = Number(n) || 0;
+      return v === 1 ? _mapTf("{n} index line scanned", { n: fmtNum(1, 0) })
+        : _mapTf("{n} index lines scanned", { n: fmtNum(v, 0) });
+    }
+    function _dumpSecs(s) {
+      const v = Number(s);
+      return "\u2068" + _mapTf("{n} s", { n: isFinite(v) ? fmtNum(v, 2) : "?" }).replace(/ /g, "\u00a0") + "\u2069";
+    }
+    function _dumpPages(n) {
+      const v = Number(n) || 0;
+      return v === 1 ? _mapTf("{n} page", { n: fmtNum(1, 0) }) : _mapTf("{n} pages", { n: fmtNum(v, 0) });
+    }
     function _ooMapDims() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : (x => x);
       return [
@@ -1252,11 +1346,14 @@
       const nWith = Object.keys(values).length;
       // 'unlocated' is data from sources WITH NO country (only the count dims).
       const unloc = dim.id === "sentiment" ? 0 : ((_ooMapPayload.unlocated && _ooMapPayload.unlocated[dim.id]) || 0);
+      // Counts as keyed one/many frames with grouped numbers (R14): "12 countries with
+      // data" and "5 sources with no country" welded raw counts to English words.
       const aria = continentMode
         ? `${dim.label} — ${t("by continent")}.`
-        : `${dim.label} — ${nWith} ${t("countries with data")}.`;
+        : `${dim.label} — ${nWith === 1 ? _mapTf("{n} country with data", { n: fmtNum(1, 0) })
+          : _mapTf("{n} countries with data", { n: fmtNum(nWith, 0) })}.`;
       let caveat = dim.caveat
-        + (unloc ? `  ${unloc} ${dim.unit} ${t("with no country — counted, not mapped.")}` : "");
+        + (unloc ? `  ${_mapTf("{count} with no country — counted, not mapped.", { count: _ooMapCount(dim.id, unloc) })}` : "");
       if (_ooMapPlacesOn) caveat += `  ${t("Mentioned places: deduced from text, never confirmed.")}`;
       // Server-IP layer (slice 6c): offline-geolocated captured server IPs, distinct
       // from the editorial source-country choropleth; the endpoint's own caveat travels.
@@ -1270,11 +1367,16 @@
         const nClusters = (_ooMapServerLoc.clusters || []).length;
         const tor = (_ooMapServerLoc.unavailable || {}).tor_or_proxy || 0;
         const bits = [];
-        if (nClusters) bits.push(`${nClusters} ${t("shared-host clusters")}`);
-        if (tor) bits.push(`${fmtNum(tor)} ${t("unavailable (Tor/proxy)")}`);
+        if (nClusters) {
+          bits.push(nClusters === 1 ? _mapTf("{n} shared-host cluster", { n: fmtNum(1, 0) })
+            : _mapTf("{n} shared-host clusters", { n: fmtNum(nClusters, 0) }));
+        }
+        if (tor) bits.push(ooLabelText(t("unavailable (Tor/proxy)"), fmtNum(tor)));
         serverMeta = bits.join(" · ");
       }
-      const fmtCount = v => dim.id === "sentiment" ? (v >= 0 ? "+" : "") + fmtNum(v, 2) : `${fmtNum(v)} ${dim.unit}`;
+      // A signed tone is ISOLATED (W9): a leading "+"/"-" is a weak bidi character and
+      // was drawn after the number on an Arabic page.
+      const fmtCount = v => dim.id === "sentiment" ? _ltrIsolate((v >= 0 ? "+" : "") + fmtNum(v, 2)) : _ooMapCount(dim.id, v);
       const fmtV = (iso, v) => continentMode
         ? `${t((rowBy[iso] || {}).continent || "")} — ${fmtCount(v)}`
         : (dim.id === "sentiment"
@@ -1337,7 +1439,10 @@
       await ooMap(host, {
         values, names, points, aria, srRows,
         scale: dim.scale, label: dim.label, unit: dim.unit,
-        method: _ooMapPayload.method || "", caveat,
+        // The server's method sentence is a fixed string, looked up as a key (R12): it
+        // rode through in English under every locale. This render is re-run on a
+        // language switch (app-boot's oo:langchange), so it follows the switch too.
+        method: _ooMapPayload.method ? t(_ooMapPayload.method) : "", caveat,
         dimensions: dims.map(d => ({ id: d.id, label: d.label })), activeDim: dim.id,
         onDimension: id => { _ooMapDim = id; _renderOoMapDim(); },
         granularity: _ooMapGran,
@@ -1425,21 +1530,41 @@
     // straight from the map-coverage row (counts only, no score). The mean-tone line
     // carries the VADER English-only caveat + its n. A button opens the Sources tab
     // so the user can explore that country's sources.
+    // What the detail panel under the map last showed -- a country's breakdown or one
+    // signal -- so a language switch redraws it from the same objects, with no fetch
+    // and no scroll. The heading's hover (DEU -> "Germany") is localised at render, so
+    // without this it kept the old language beside a translated panel (2026-09-27
+    // re-walk, L-3); the signal detail's dates and pills are the same class (L-6).
+    // `_ooMapDetailRepaint` is true only while this redraw runs, so the redraw does not
+    // scroll the page the way a click on the map does.
+    let _ooMapDetailLast = null, _ooMapDetailRepaint = false;
+    function repaintOoMapDetailFromCache() {
+      const host = $("oo-coverage-detail"), last = _ooMapDetailLast;
+      if (!last || !host || !host.firstElementChild) return;
+      _ooMapDetailRepaint = true;
+      try {
+        if (last.kind === "country") _ooMapCountryDetail(last.row, last.dim);
+        else if (last.kind === "signal") _ooMapSignalDetail(last.s, last.visible, last.win);
+      } finally { _ooMapDetailRepaint = false; }
+    }
     function _ooMapCountryDetail(row, dim) {
       const host = $("oo-coverage-detail"); if (!host) return;
+      _ooMapDetailLast = { kind: "country", row, dim };
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : (x => x);
       if (!row) { host.innerHTML = `<div class="panel" style="padding:10px 12px;background:var(--panel2)"><span class="muted">${esc(t("No coverage recorded for this country yet."))}</span></div>`; return; }
       const iso = (row.country || "").toLowerCase();
       // The heading of a panel the reader OPENED: the code identifies it and the
-      // title carries the name, which is the ordinary Q302 pair.
-      const name = ooCountryCode(iso) || ooRegionName(iso, row.name || row.country);
+      // title carries the name, which is the ordinary Q302 pair -- written through
+      // the one cell, because the earlier `esc(ooCountryCode(iso))` printed the code
+      // and never wrote the title this comment promised (L12).
+      const heading = ooCountryCell(iso) || esc(ooRegionName(iso, row.name || row.country));
       const line = (label, v, extra) => (v != null && isFinite(v))
         ? `<div style="display:flex;justify-content:space-between;gap:12px"><span class="muted">${esc(label)}</span><span>${esc(fmtNum(v))}${extra ? " " + esc(extra) : ""}</span></div>` : "";
       const tone = (row.sentiment != null && isFinite(row.sentiment))
-        ? `<div style="display:flex;justify-content:space-between;gap:12px"><span class="muted">${esc(t("Mean tone"))}</span><span>${row.sentiment >= 0 ? "+" : ""}${esc(fmtNum(row.sentiment, 2))} · ${esc(t("n="))}${row.sentiment_n || 0}</span></div>` : "";
+        ? `<div style="display:flex;justify-content:space-between;gap:12px"><span class="muted">${esc(t("Mean tone"))}</span><span>${esc(_ltrIsolate((row.sentiment >= 0 ? "+" : "") + fmtNum(row.sentiment, 2)))} · ${esc(t("n="))}${row.sentiment_n || 0}</span></div>` : "";
       host.innerHTML = `<div class="panel" style="padding:10px 12px;background:var(--panel2)">
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-          <strong>${esc(name)}</strong>${row.continent ? ` <span class="pill">${esc(t(row.continent))}</span>` : ""}
+          <strong>${heading}</strong>${row.continent ? ` <span class="pill">${esc(t(row.continent))}</span>` : ""}
         </div>
         <div style="margin-top:6px;font-size:13px;display:flex;flex-direction:column;gap:2px">
           ${line(t("Sources"), row.sources)}
@@ -1452,14 +1577,14 @@
           <button class="tiny secondary" onclick="showTab('sources')">${esc(t("Explore sources"))}</button>
         </div>
       </div>`;
-      host.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      if (!_ooMapDetailRepaint) host.scrollIntoView({ behavior: "smooth", block: "nearest" });
     }
     // Signal click-to-detail (slice 5a.2 — ported faithfully from the temporal map's
     // showTmapDetail so retiring #oo-tmap loses nothing): the event's kind/title,
     // confirmed/geocode honesty, date·place·country·coords·source, note, reference
     // link, "find coverage in your corpus", and the co-occurrence "near in space &
-    // time" seed (the same honest never-a-cause framing). English to match the
-    // retired panel (no regression); keyable later.
+    // time" seed (the same honest never-a-cause framing). The chrome is keyed and the
+    // dates localised (2026-09-27 re-walk, L-6); it repaints on a language switch.
     let _ooMapSigSet = [], _ooMapSigWin = 25;
     // "Near in space & time" co-occurrence is a TIGHT, FIXED window (field test
     // 2026-06-19 #14: it used the slider's focus window — ~span/12, i.e. ~166 years on
@@ -1483,6 +1608,7 @@
       const host = $("oo-coverage-detail"); if (!host || !s) return;
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : (x => x);
       _ooMapSigSet = visible || []; _ooMapSigWin = win || 25;
+      _ooMapDetailLast = { kind: "signal", s, visible, win };
       const url = s.url ? safeUrl(s.url) : null;
       // Item 2 (field-feedback A6, ruled): for a hazard, the composed search
       // combines TYPE + PLACE (two real, provider-asserted facts) rather than the
@@ -1491,8 +1617,10 @@
       const cov = (s.kind === "hazard")
         ? [s.hazard_type, s.place].filter(Boolean).join(" ").trim()
         : (s.place || s.title || "").replace(/\s*\([^)]*\)\s*$/, "").trim();
-      const geo = s.geocode === "country" ? `<span class="pill warn" title="country-level stand-in point, not the exact spot">≈ country</span>`
-                : s.geocode === "city" ? `<span class="pill" title="placed at a known city">city</span>` : "";
+      // The precision pill's WORD is keyed, like its hover already was (L-6: "≈ country"
+      // read in English beside a translated hover); the panel repaints on a switch.
+      const geo = s.geocode === "country" ? `<span class="pill warn" title="country-level stand-in point, not the exact spot">${esc(t("≈ country"))}</span>`
+                : s.geocode === "city" ? `<span class="pill" title="placed at a known city">${esc(t("city"))}</span>` : "";
       const conf = s.source === "corpus-mention" ? `<span class="pill warn" title="a date extracted from article text">mentioned · extracted</span>`
                  : s.confirmed ? `<span class="pill ok">confirmed</span>` : `<span class="pill warn">unconfirmed / scheduled</span>`;
       // Item 2: the INTERNAL article/reader link, once the hazard has been
@@ -1514,7 +1642,7 @@
         </div>
         ${s.note ? `<div class="hint" style="margin-top:5px">${esc(s.note)}</div>` : ""}
         <div class="row" style="margin-top:7px;gap:8px">
-          ${url ? extLink(url, "Official / reference source ↗", "tiny secondary", "align-self:center") : ""}
+          ${url ? extLink(url, t("Official / reference source ↗"), "tiny secondary", "align-self:center") : ""}
           ${localLink}
           ${cov ? `<button class="tiny secondary" onclick="tmapFindCoverage(${esc(JSON.stringify(cov))})">Find coverage in your corpus</button>` : ""}
         </div>
@@ -1527,11 +1655,11 @@
             ${esc((n.o.title || "").slice(0, 38))} <span class="muted">${n.o.year != null ? esc(String(n.o.year)) : ""}</span></button>`).join("");
           return `<div style="margin-top:8px;border-top:1px solid var(--border);padding-top:6px">
             <div style="font-size:12px"><strong>Near in space &amp; time</strong>
-              <span class="warn" title="These signals are merely close in place and time within your current window.">— co-occurrence, not a connection or cause. You judge.</span></div>
+              <span class="warn" title="These signals are merely close in place and time within your current window.">${esc(t("— co-occurrence, not a connection or cause. You judge."))}</span></div>
             <div style="margin-top:4px">${items}</div></div>`;
         })()}
       </div>`;
-      host.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      if (!_ooMapDetailRepaint) host.scrollIntoView({ behavior: "smooth", block: "nearest" });
     }
     // Item 3 (field-feedback A6, ruled): deep-link from the Home Alerts strip to
     // the World map, "centred on the event" -- switches to the map, selects the
@@ -1667,21 +1795,36 @@
       }
     }
 
+    // What the two Insights map tables last drew. Their country hovers are localised at
+    // render, so a language switch redraws them from this -- never a refetch -- or BRA
+    // kept hovering "Brazil" on a French page until a reload (2026-09-27 re-walk, L-3).
+    let _insMapLast = null;
     async function loadMap() {
       const days = $("map-days").value, kind = $("map-kind").value;
       try {
         const d = await api(`/api/insights/map?days=${days}&kind=${encodeURIComponent(kind)}`);
-        const rowsFor = (areas, label) => areas.length
-          ? "<tr><th>" + label + "</th><th>Top keywords</th></tr>" + areas.map(a =>
-              `<tr><td><strong>${esc(a.code||a.name)}</strong>${a.country&&a.name?` <span class="muted">${ooCountryCell(a.country)}</span>`:""}</td><td>` +
-              a.top.map(t => `<span class="pill" style="cursor:pointer" onclick='pickTerm(${esc(JSON.stringify(t.term))})'>${esc(t.term)} ${t.mentions}</span>`).join(" ") +
-              `</td></tr>`).join("")
-          : `<tr><td class="muted">No data — index the corpus (sources need a country/city).</td></tr>`;
+        _insMapLast = d;
         $("map-svg").innerHTML = buildMapSvg(d.cities || []);
         MAP_VB = {x: 0, y: 0, w: MAP_W, h: MAP_H}; wireMapDrag();
-        $("map-countries").innerHTML = rowsFor(d.countries, "Country");
-        $("map-cities").innerHTML = rowsFor(d.cities, "City");
+        _insMapTables(d);
       } catch (e) { toast(_failMsg("Map failed: {error}", e), "err"); }
+    }
+    function _insMapTables(d) {
+      // A COUNTRY row carries `code` (the stored alpha-2 the index keys on) and a CITY
+      // row carries `name` + `country`, so `code` must go through the country cell --
+      // printing it raw put `br`/`de` in the first column with no hover (L2).
+      const rowsFor = (areas, label) => areas.length
+        ? "<tr><th>" + label + "</th><th>Top keywords</th></tr>" + areas.map(a =>
+            `<tr><td><strong>${a.code ? ooCountryCell(a.code) : esc(a.name)}</strong>${a.country&&a.name?` <span class="muted">${ooCountryCell(a.country)}</span>`:""}</td><td>` +
+            a.top.map(t => `<span class="pill" style="cursor:pointer" onclick='pickTerm(${esc(JSON.stringify(t.term))})'>${esc(t.term)} ${t.mentions}</span>`).join(" ") +
+            `</td></tr>`).join("")
+        : `<tr><td class="muted">No data — index the corpus (sources need a country/city).</td></tr>`;
+      $("map-countries").innerHTML = rowsFor(d.countries || [], "Country");
+      $("map-cities").innerHTML = rowsFor(d.cities || [], "City");
+    }
+    function repaintInsMapFromCache() {
+      const box = $("map-countries");
+      if (_insMapLast && box && box.querySelector("tr")) _insMapTables(_insMapLast);
     }
 
     // -- World map (ooMap): choropleth + space-time signals + a time slider -- //
@@ -1707,16 +1850,38 @@
 
     const MON = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 
-    function fmtYear(t) {                          // fractional year -> "Sep 2001"
+    // Month names and date order in the APP language (Intl, as fmtDateTime does), not
+    // the English MON array: the Stories detail, the dot hovers and the slider read
+    // "Aug 17, 2027" on a French, Arabic or Chinese page (2026-09-27 re-walk, L-6).
+    // setUTCFullYear, never Date.UTC alone, which maps a year below 100 to 19xx -- AD 79
+    // would print as 1979. A year below 1 keeps the signed number the slider always
+    // showed, with only the month localised: an era suffix would silently renumber it
+    // (astronomical -3000 is 3001 BC). MON stays as the fallback if Intl throws.
+    function _tmapFmt(y, mon, day) {
+      const lc = (window.OOI18N && OOI18N.current && OOI18N.current()) || "en";
+      const at = (yy) => { const d = new Date(Date.UTC(2000, 0, 1)); d.setUTCFullYear(yy, mon, day || 1); return d; };
+      try {
+        if (y < 1) {
+          const mn = new Intl.DateTimeFormat(lc, { month: "short", timeZone: "UTC" }).format(at(2001));
+          return day ? `${mn} ${day}, ${y}` : `${mn} ${y}`;
+        }
+        const o = { year: "numeric", month: "short", timeZone: "UTC" };
+        if (day) o.day = "numeric";
+        return new Intl.DateTimeFormat(lc, o).format(at(y));
+      } catch (_e) {
+        return day ? `${MON[mon]} ${day}, ${y}` : `${MON[mon]} ${y}`;
+      }
+    }
+    function fmtYear(t) {                          // fractional year -> "Sep 2001" (localised)
       if (t == null) return "—";
       const y = Math.floor(t), doy = Math.round((t - y) * 365);
       const d = new Date(2001, 0, 1); d.setDate(doy + 1);
-      return `${MON[d.getMonth()]} ${y < 0 ? "" : ""}${y}`;
+      return _tmapFmt(y, d.getMonth(), 0);
     }
-    function fmtDate(s) {                          // a signal's ISO date -> "Oct 24, 79"
+    function fmtDate(s) {                          // a signal's ISO date -> "Oct 24, 79" (localised)
       const m = /^(\-?\d+)-(\d{2})-(\d{2})/.exec(s.date || "");
       if (!m) return s.date || "";
-      return `${MON[+m[2]-1]} ${+m[3]}, ${+m[1]}`;
+      return _tmapFmt(+m[1], +m[2]-1, +m[3]);
     }
 
     // The honest seed of "convergence": other signals close in BOTH place and time.
@@ -1852,18 +2017,18 @@
         // in it cannot conjugate, and every locale is correct by construction
         // when the label carries the meaning and the data sits beside it.
         const parts = [];
-        if (ok.length) parts.push(t("Read from the dump host") + ": " + ok.join(" · "));
-        if (bad.length) parts.push(t("Could not be read") + ": " + bad.join(" · "));
-        if (over.length) parts.push(t("Not attempted (batch limit)") + ": " + over.join(", "));
+        if (ok.length) parts.push(ooLabelText(t("Read from the dump host"), ok.join(" · ")));
+        if (bad.length) parts.push(ooLabelText(t("Could not be read"), bad.join(" · ")));
+        if (over.length) parts.push(ooLabelText(t("Not attempted (batch limit)"), over.join(", ")));
         if (out) out.textContent = parts.join(" — ") || t("No size could be read.");
         renderWikiLanguages();   // repaint the picker with the exact figures
       } catch (e) {
-        if (out) out.textContent = t("Could not read the sizes") + ": " + e.message;
+        if (out) out.textContent = ooLabelText(t("Could not read the sizes"), e.message);
       }
     }
 
     // Audit finding 2026-07-17 (L5): a shared, clear-before-set poll timer -- mirrors
-    // the established _llmPullStartPoll/_volStartPoll/_fbStartPoll pattern. Without
+    // the established _llmPullStartPoll/_volStartPoll pattern. Without
     // this, starting several dump downloads in quick succession (the multi-edition
     // picker loop just below calls startDump once per edition, sequentially awaited
     // but each spawning its OWN fire-and-forget poller) stacked one independent 3s
@@ -1987,7 +2152,7 @@
     }
 
     // Audit finding 2026-07-17 (L5): a shared, clear-before-set poll timer -- mirrors
-    // the established _llmPullStartPoll/_volStartPoll/_fbStartPoll pattern. Without
+    // the established _llmPullStartPoll/_volStartPoll pattern. Without
     // this, clicking Download on several regions in quick succession (a real user
     // action the merged region-list UI invites -- each click calls startOsmDownload,
     // which calls _osmPoll) stacked one independent 3s poller per click -- a
@@ -2076,40 +2241,56 @@
     //    Descriptive only: NO figures, NO score, NO verdict label (ruling #50 —   //
     //    a producer is a STANCED source, stated as a caveat; the user judges).    //
     //    home URLs open the LOCAL link-preview first (extLink, invariant #6/#6e). //
+    // The directory's last payload: its country hovers are localised at render, so a
+    // language switch redraws it from this -- never a refetch -- or RUS kept hovering
+    // "Russia" on a French page until a reload (2026-09-27 re-walk, L-3).
+    let _statAgenciesLast = null;
+    function repaintStatAgenciesFromCache() {
+      const box = $("stat-agencies");
+      if (_statAgenciesLast && box && box.querySelector("table")) _renderStatAgencies(_statAgenciesLast);
+    }
     async function loadStatAgencies() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const box = $("stat-agencies"); if (!box) return;
       box.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
       try {
-        const d = await api("/api/stats/agencies");
-        const ags = d.agencies || [];
-        const cov = $("stat-coverage");
-        if (cov) {
-          // Honest coverage line: how many continents have at least one national producer.
-          const n = (d.continents_covered || []).length;
-          cov.textContent = t("Continents covered: {n}").replace("{n}", n)
-            + " · " + (ags.length) + " " + t("producers");
-        }
-        if (!ags.length) { box.innerHTML = `<div class="muted">${esc(t("No producers listed."))}</div>`; return; }
-        // The API already orders international-first, then by region, then name —
-        // render in that order (no client re-sort needed). Scope is labelled, not raw.
-        const scope = (s) => s === "international" ? t("International")
-          : s === "national" ? t("National") : (s || "");
-        const rows = ags.map(a => `<tr>
-            <td><strong>${esc(a.name)}</strong>${a.acronym ? ` <span class="muted">(${esc(a.acronym)})</span>` : ""}</td>
-            <td>${esc(scope(a.scope))}</td>
-            <td>${a.country ? ooCountryCell(a.country) : "<span class=\"muted\">—</span>"}</td>
-            <td>${esc(a.region || "")}</td>
-            <td>${a.home_url ? extLink(a.home_url, a.home_url) : ""}</td>
-          </tr>`).join("");
-        box.innerHTML = `<table>
-          <tr><th>${esc(t("Name"))}</th><th>${esc(t("Scope"))}</th><th>${esc(t("Country"))}</th>`
-          + `<th>${esc(t("Region"))}</th><th>${esc(t("Official site"))}</th></tr>${rows}</table>`;
-        // The API caveat travels with the data, visible by default (informed consent).
-        if (d.caveat) box.innerHTML += `<div class="hint" style="margin-top:8px">${esc(d.caveat)}</div>`;
+        _statAgenciesLast = await api("/api/stats/agencies");
+        _renderStatAgencies(_statAgenciesLast);
       } catch (e) {
         box.innerHTML = `<div class="muted">${esc(t("Could not load the statistics directory."))}</div>`;
       }
+    }
+    function _renderStatAgencies(d) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const box = $("stat-agencies"); if (!box) return;
+      const ags = d.agencies || [];
+      const cov = $("stat-coverage");
+      if (cov) {
+        // Honest coverage line: how many continents have at least one national producer.
+        const n = (d.continents_covered || []).length;
+        // Keyed frames with grouped numbers (R14): "12 producers" welded a raw count
+        // to an English noun.
+        cov.textContent = _mapTf("Continents covered: {n}", { n: fmtNum(n, 0) })
+          + " · " + (ags.length === 1 ? _mapTf("{n} producer", { n: fmtNum(1, 0) })
+            : _mapTf("{n} producers", { n: fmtNum(ags.length, 0) }));
+      }
+      if (!ags.length) { box.innerHTML = `<div class="muted">${esc(t("No producers listed."))}</div>`; return; }
+      // The API already orders international-first, then by region, then name —
+      // render in that order (no client re-sort needed). Scope is labelled, not raw.
+      const scope = (s) => s === "international" ? t("International")
+        : s === "national" ? t("National") : (s || "");
+      const rows = ags.map(a => `<tr>
+          <td><strong>${esc(a.name)}</strong>${a.acronym ? ` <span class="muted">(${esc(a.acronym)})</span>` : ""}</td>
+          <td>${esc(scope(a.scope))}</td>
+          <td>${a.country ? ooCountryCell(a.country) : "<span class=\"muted\">—</span>"}</td>
+          <td>${esc(a.region || "")}</td>
+          <td>${a.home_url ? extLink(a.home_url, a.home_url) : ""}</td>
+        </tr>`).join("");
+      box.innerHTML = `<table>
+        <tr><th>${esc(t("Name"))}</th><th>${esc(t("Scope"))}</th><th>${esc(t("Country"))}</th>`
+        + `<th>${esc(t("Region"))}</th><th>${esc(t("Official site"))}</th></tr>${rows}</table>`;
+      // The API caveat travels with the data, visible by default (informed consent).
+      if (d.caveat) box.innerHTML += `<div class="hint" style="margin-top:8px">${esc(d.caveat)}</div>`;
     }
     async function ingestStatSources() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
@@ -2121,22 +2302,28 @@
         // LOCAL DB write — the endpoint opens ZERO external sockets, so this works in
         // airplane mode and never needs the network-consent gate (no ensureOnline).
         const d = await api("/api/stats/sources/ingest", { method: "POST" });
-        const n = (x) => (x || 0).toLocaleString();
+        const n = (x) => fmtNum(x || 0, 0);
         if (msg) {
           // The enabled / awaiting split is the point of the news_url field: it says
           // exactly how many producers still need a researched news section before
           // they can be collected. Shown whenever anything was created.
+          // label: value through the shared frame (R14), the house style this file
+          // states beside the dump sizes: "12 created" welded a count to an English
+          // participle that agrees with nothing in most of the twelve locales.
           const split = d.created
-            ? ` · ${n(d.enabled)} ${esc(t("enabled"))} · ${n(d.awaiting_news_url)} ${esc(t("awaiting a news section URL"))}`
+            ? ` · ${ooLabelHtml(esc(t("enabled")), esc(n(d.enabled)))} · ${ooLabelHtml(esc(t("awaiting a news section URL")), esc(n(d.awaiting_news_url)))}`
             : "";
-          msg.innerHTML = `<b>${n(d.created)}</b> ${esc(t("created"))} · ${n(d.skipped_existing)} ${esc(t("already present"))}`
+          msg.innerHTML = ooLabelHtml(esc(t("created")), `<b>${esc(n(d.created))}</b>`)
+            + ` · ${ooLabelHtml(esc(t("already present")), esc(n(d.skipped_existing)))}`
             + split
-            + (d.skipped_no_domain ? ` · ${n(d.skipped_no_domain)} ${esc(t("skipped (no domain)"))}` : "")
+            + (d.skipped_no_domain ? ` · ${ooLabelHtml(esc(t("skipped (no domain)")), esc(n(d.skipped_no_domain)))}` : "")
             + (d.caveat ? `<div class="muted" style="margin-top:5px">${esc(d.caveat)}</div>` : "");
         }
         toast(t("Statistics producers registered."), "ok");
       } catch (e) {
-        if (msg) msg.innerHTML = `<span class="note err">${esc(t("Could not register the producers."))}: ${esc(e.message)}</span>`;
+        // In the error colour, not the floating .note toast box (R3), and through the
+        // shared label frame (R2) -- it read "producers.: <error>".
+        if (msg) msg.innerHTML = `<span style="color:var(--err)">${ooLabelHtml(esc(t("Could not register the producers")), esc(e.message))}</span>`;
         else toast(t("Could not register the producers."), "err");
       } finally { if (btn) btn.disabled = false; }
     }
@@ -2144,53 +2331,109 @@
     // -- Official figures (Group N): consented fetch · vintaged store · triangulation.
     // English-only strings here (matching the keyword-explorer / diagnostics Settings
     // sub-features) so i18n stays 100% with zero new keys; the BACKEND enforces the
-    // honesty contract (no score, gaps as null, side-by-side never averaged).
-    function _statfigFmt(v) { return v === null || v === undefined ? "—" : Number(v).toLocaleString(); }
+    // honesty contract (no score, gaps as null, side-by-side never averaged). The ONE
+    // exception is the consent popup's reason: that popup is the informed-consent
+    // instrument, and every consent string ships in all twelve locales. The fetch
+    // line's own messages and tally are keyed too (the 2026-09-27 leftovers, W4):
+    // they answer the button beside them, in the language the rest of the tab is in.
+    // A figure keeps the three fraction digits it always showed (a revision of
+    // 101.234 -> 101.236 must not round into "101.2 -> 101.2"), through fmtNum,
+    // not the browser's locale (W18).
+    function _statfigFmt(v) { return v === null || v === undefined ? "—" : fmtNum(Number(v), 3); }
+    // A published aggregate's name ("European Union") arrives in English from the
+    // server; the shared area cell shows it in the hover as given, so it is put
+    // through t() here, the one place these tables read it (W8).
+    function _statAreaLocal(rows) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      return (rows || []).map((r) => (r && r.area_name ? { ...r, area_name: t(r.area_name) } : r));
+    }
     async function fetchStatFigure() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
       const src = $("statfig-source").value;
       const series = ($("statfig-series").value || "").trim();
       const country = ($("statfig-country").value || "").trim() || "all";
       const msg = $("statfig-msg"), btn = $("statfig-fetch");
-      if (!series) { if (msg) msg.textContent = "Enter an indicator or dataset id first."; return; }
+      if (!series) { if (msg) msg.textContent = t("Enter an indicator or dataset id first."); return; }
       // The fetch egresses over the configured transport -> the ONE consent popup.
-      if (typeof ensureOnline === "function" && !await ensureOnline("Fetch official statistics figures")) return;
+      if (typeof ensureOnline === "function" && !await ensureOnline(t("Fetch official statistics figures"))) return;
       const body = src === "worldbank"
         ? { source: "worldbank", indicator: series, country }
         : { source: "eurostat", dataset: series };
       if (btn) btn.disabled = true;
-      if (msg) msg.textContent = "Fetching…";
+      if (msg) msg.textContent = t("Fetching…");
       try {
         const d = await api("/api/stats/figures/fetch", { method: "POST", body: JSON.stringify(body) });
-        if (msg) msg.innerHTML = `<b>${(d.fetched || 0).toLocaleString()}</b> fetched · `
-          + `${(d.stored || 0).toLocaleString()} stored · ${(d.duplicate || 0).toLocaleString()} already had this vintage · `
-          + `${(d.gaps || 0).toLocaleString()} published gaps`
-          + (d.caveat ? `<div class="muted" style="margin-top:5px">${esc(d.caveat)}</div>` : "");
+        // _govTf, the file's own interpolating helper (see runSeriesCorpus), never a
+        // local binding: an identity fallback would print "{fetched}" to the reader.
+        const tally = _govTf("{fetched} fetched · {stored} stored · {duplicate} already had this vintage · {gaps} published gaps", {
+          fetched: "\u0001", stored: fmtNum(d.stored || 0, 0),
+          duplicate: fmtNum(d.duplicate || 0, 0), gaps: fmtNum(d.gaps || 0, 0),
+        });
+        if (msg) msg.innerHTML = esc(tally).replace("\u0001", () => `<b>${fmtNum(d.fetched || 0, 0)}</b>`)
+          // The fetch's caveat is the endpoint's fixed sentence, a key (W4).
+          + (d.caveat ? `<div class="muted" style="margin-top:5px">${esc(t(d.caveat))}</div>` : "");
         $("statfig-view-series").value = series;
         loadStatFigures();
       } catch (e) {
         // Honest verdicts: 409 = airplane mode refusal, 502 = transport/endpoint failure.
-        if (msg) msg.innerHTML = `<span class="note err">Fetch failed: ${esc(e.message)}</span>`;
+        // In the error colour, not the floating .note toast box (the B13 import-dialog fix).
+        if (msg) msg.innerHTML = `<span style="color:var(--err)">${esc(_failMsg("Fetch failed: {error}", e))}</span>`;
       } finally { if (btn) btn.disabled = false; }
     }
-    async function loadStatFigures() {
+    // The figures and anomalies tables are drawn in the reader's language (R7, R8), so
+    // each keeps the payload it last drew: a language switch redraws it from there
+    // (repaintStatTablesFromCache -> loadX(true), called from app-boot's one
+    // oo:langchange listener) rather than leaving the numbers-bearing lines in the
+    // language they were drawn in, and without a second request.
+    let _statFigLast = null, _statRevLast = null;
+    // A number inside a sentence, isolated so an RTL page cannot reorder it (R7).
+    function _statIso(x) { return "\u2068" + String(x) + "\u2069"; }
+    async function loadStatFigures(fromCache) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
       const box = $("statfig-table"); if (!box) return;
-      const series = ($("statfig-view-series").value || "").trim();
-      box.innerHTML = `<div class="muted">Loading…</div>`;
-      try {
-        const qs = series ? "?series_id=" + encodeURIComponent(series) : "";
-        const d = await api("/api/stats/figures" + qs);
-        const figs = d.figures || [];
-        if (!figs.length) { box.innerHTML = `<div class="muted">No stored figures yet — fetch some above.</div>`; return; }
-        const rows = figs.map(f => `<tr>
-            <td>${esc(f.agency)}</td><td>${esc(f.series_id)}</td><td>${esc(f.ref_area)}</td>
-            <td>${esc(f.time_period)}</td><td style="text-align:right">${_statfigFmt(f.value)}</td>
-            <td>${esc(f.unit || "")}</td><td>${esc(f.adjustment || "")}</td><td>${esc(f.base_year || "")}</td>
-          </tr>`).join("");
-        box.innerHTML = `<div class="hint">${(d.shown||figs.length)} of ${(d.count||figs.length).toLocaleString()} shown · latest vintage</div>
-          <table><tr><th>Agency</th><th>Series</th><th>Area</th><th>Period</th><th style="text-align:right">Value</th>`
-          + `<th>Unit</th><th>SA/NSA</th><th>Base yr</th></tr>${rows}</table>`
-          + (d.caveat ? `<div class="hint" style="margin-top:8px">${esc(d.caveat)}</div>` : "");
-      } catch (e) { box.innerHTML = `<div class="muted">Could not load figures: ${esc(e.message)}</div>`; }
+      if (!(fromCache === true && _statFigLast)) {
+        const series = ($("statfig-view-series").value || "").trim();
+        box.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
+        try {
+          const qs = series ? "?series_id=" + encodeURIComponent(series) : "";
+          _statFigLast = { d: await api("/api/stats/figures" + qs) };
+        } catch (e) {
+          _statFigLast = { error: e.message };
+        }
+      }
+      if (_statFigLast.error != null) {
+        box.innerHTML = `<div class="muted">${esc(_mapTf("Could not load figures: {error}", { error: _statFigLast.error }))}</div>`;
+        return;
+      }
+      const d = _statFigLast.d || {};
+      const figs = _statAreaLocal(d.figures);
+      if (!figs.length) { box.innerHTML = `<div class="muted">${esc(t("No stored figures yet — fetch some above."))}</div>`; return; }
+      // The AREA through the shared statistics cell (the 2026-09-26 leftovers, Y10): the
+      // alpha-3 on screen, the localised name or "published aggregate" in the hover, the
+      // non-ISO disclosure for XKX -- from the classification the server sends beside
+      // each code. It printed the producer's code bare, with no hover at all.
+      const rows = figs.map(f => `<tr>
+          <td>${esc(f.agency)}</td><td>${esc(f.series_id)}</td><td>${ooAreaCell(f.ref_area, f.area_kind, f.area_name)}</td>
+          <td>${esc(f.time_period)}</td><td style="text-align:right">${_statfigFmt(f.value)}</td>
+          <td>${esc(f.unit || "")}</td><td>${esc(f.adjustment || "")}</td><td>${esc(f.base_year || "")}</td>
+        </tr>`).join("");
+      // ONE keyed frame, its numbers grouped and isolated (R7): the English hint had its
+      // two numbers reordered around "of" on an Arabic page.
+      const hint = _mapTf("Showing {shown} of {total} · latest vintage", {
+        shown: _statIso(fmtNum(d.shown || figs.length, 0)), total: _statIso(fmtNum(d.count || figs.length, 0)) });
+      const th = (k, right) => `<th${right ? ' style="text-align:right"' : ""}>${esc(t(k))}</th>`;
+      box.innerHTML = `<div class="hint">${esc(hint)}</div>
+        <table><tr>${th("Agency")}${th("Series")}${th("Area")}${th("Period")}${th("Value", true)}`
+        + `${th("Unit")}${th("SA/NSA")}${th("Base yr")}</tr>${rows}</table>`
+        // The store's fixed caveat, keyed x12 like the headers above (L-4's class: it
+        // said "A None value" and stayed English under translated headers).
+        + (d.caveat ? `<div class="hint" style="margin-top:8px">${esc(t(d.caveat))}</div>` : "");
+    }
+    // Redraw the two statistics tables from what they last drew, in the language now
+    // current. Only what is on screen: a table never loaded stays unloaded.
+    function repaintStatTablesFromCache() {
+      if (_statFigLast) loadStatFigures(true);
+      if (_statRevLast) loadRevisionAnomalies(true);
     }
     async function triangulateStatSeries() {
       const box = $("statfig-tri"); if (!box) return;
@@ -2199,7 +2442,7 @@
       box.innerHTML = `<div class="muted">Loading…</div>`;
       try {
         const d = await api("/api/stats/triangulate?series_id=" + encodeURIComponent(series));
-        const cells = d.cells || [];
+        const cells = _statAreaLocal(d.cells);
         if (!cells.length) { box.innerHTML = `<div class="muted">No producers stored for "${esc(series)}" yet.</div>`; return; }
         const cellHtml = cells.map(c => {
           const cols = c.producers.map(p => `${esc(p.agency)}: <b>${_statfigFmt(p.value)}</b>${p.unit ? " " + esc(p.unit) : ""}`).join(" &nbsp;·&nbsp; ");
@@ -2207,43 +2450,61 @@
           const flag = cmp.comparable
             ? `<span class="pill ok">comparable</span>`
             : `<span class="pill warn">not comparable — differs on ${esc((cmp.differs_on||[]).join(", "))}</span>`;
-          return `<tr><td>${esc(c.ref_area)}</td><td>${esc(c.time_period)}</td><td>${c.n_producers}</td><td>${cols}</td><td>${flag}</td></tr>`;
+          return `<tr><td>${ooAreaCell(c.ref_area, c.area_kind, c.area_name)}</td><td>${esc(c.time_period)}</td><td>${c.n_producers}</td><td>${cols}</td><td>${flag}</td></tr>`;
         }).join("");
         box.innerHTML = `<table><tr><th>Area</th><th>Period</th><th>#</th><th>Producers (side by side)</th><th>Comparability</th></tr>${cellHtml}</table>`
           + (d.caveat ? `<div class="hint" style="margin-top:8px">${esc(d.caveat)}</div>` : "");
       } catch (e) { box.innerHTML = `<div class="muted">Could not triangulate: ${esc(e.message)}</div>`; }
     }
     // -- Revision anomalies (the reliable-memory check): History must not be silently
-    //    rewritten. Retrospective, names the shape not the intent, no score. English-only.
-    async function loadRevisionAnomalies() {
+    //    rewritten. Retrospective, names the shape not the intent, no score. Keyed x12 (R8).
+    async function loadRevisionAnomalies(fromCache) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
       const box = $("statfig-revisions"); if (!box) return;
-      const series = ($("statfig-view-series").value || "").trim();
-      box.innerHTML = `<div class="muted">Loading…</div>`;
-      try {
-        const qs = series ? "?series_id=" + encodeURIComponent(series) : "";
-        const d = await api("/api/stats/revision-anomalies" + qs);
-        const items = d.anomalies || [];
-        if (!items.length) {
-          box.innerHTML = `<div class="muted">No revision anomalies. A figure needs several prior revisions before an outlier can be judged, and only a recent revision unusually large for its own history is flagged.</div>`;
-          return;
+      if (!(fromCache === true && _statRevLast)) {
+        const series = ($("statfig-view-series").value || "").trim();
+        box.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
+        try {
+          const qs = series ? "?series_id=" + encodeURIComponent(series) : "";
+          _statRevLast = { d: await api("/api/stats/revision-anomalies" + qs) };
+        } catch (e) {
+          _statRevLast = { error: e.message };
         }
-        const rows = items.map(a => {
-          const rel = (a.rel_change != null) ? ` <span class="muted">(${(a.rel_change * 100).toFixed(1)}%)</span>` : "";
-          return `<tr>
-            <td>${esc(a.agency)}</td><td>${esc(a.series_id)}</td><td>${esc(a.ref_area)}</td><td>${esc(a.time_period)}</td>
-            <td style="text-align:right">${_statfigFmt(a.from_value)} → ${_statfigFmt(a.to_value)}</td>
-            <td style="text-align:right">${_statfigFmt(a.abs_change)}${rel}</td>
-            <td style="text-align:right">${(a.robust_z).toFixed(1)}</td>
-            <td style="text-align:right">${a.n_prior_revisions}</td>
-            <td>${esc(a.revised_at)}</td></tr>`;
-        }).join("");
-        box.innerHTML = `<div class="hint">${items.length} flagged · robust z ≥ ${esc(String(d.z_min))} · ≥ ${esc(String(d.min_prior_revisions))} prior revisions</div>`
-          + `<table><tr><th>Agency</th><th>Series</th><th>Area</th><th>Period</th>`
-          + `<th style="text-align:right">From → to</th><th style="text-align:right">Change</th>`
-          + `<th style="text-align:right">Robust z</th><th style="text-align:right">Priors</th><th>Revised at</th></tr>${rows}</table>`
-          + (d.method ? `<div class="hint" style="margin-top:8px">${esc(d.method)}</div>` : "")
-          + (d.caveat ? `<div class="hint" style="margin-top:6px">${esc(d.caveat)}</div>` : "");
-      } catch (e) { box.innerHTML = `<div class="muted">Could not check revision anomalies: ${esc(e.message)}</div>`; }
+      }
+      if (_statRevLast.error != null) {
+        box.innerHTML = `<div class="muted">${esc(_mapTf("Could not check revision anomalies: {error}", { error: _statRevLast.error }))}</div>`;
+        return;
+      }
+      const d = _statRevLast.d || {};
+      // The area through the same shared cell the figures table uses (W5): the server
+      // now sends area_kind/area_name beside each ref_area, as B13 did for figures.
+      const items = _statAreaLocal(d.anomalies);
+      if (!items.length) {
+        box.innerHTML = `<div class="muted">${esc(t("No revision anomalies. A figure needs several prior revisions before an outlier can be judged, and only a recent revision unusually large for its own history is flagged."))}</div>`;
+        return;
+      }
+      const rows = items.map(a => {
+        const rel = (a.rel_change != null) ? ` <span class="muted">(${(a.rel_change * 100).toFixed(1)}%)</span>` : "";
+        return `<tr>
+          <td>${esc(a.agency)}</td><td>${esc(a.series_id)}</td><td>${ooAreaCell(a.ref_area, a.area_kind, a.area_name)}</td><td>${esc(a.time_period)}</td>
+          <td style="text-align:right">${_statfigFmt(a.from_value)} → ${_statfigFmt(a.to_value)}</td>
+          <td style="text-align:right">${_statfigFmt(a.abs_change)}${rel}</td>
+          <td style="text-align:right">${(a.robust_z).toFixed(1)}</td>
+          <td style="text-align:right">${a.n_prior_revisions}</td>
+          <td>${esc(a.revised_at)}</td></tr>`;
+      }).join("");
+      // ONE keyed frame, label: value in form so no count has to agree with a word (R8).
+      const hint = _mapTf("Flagged: {n} · robust z ≥ {z} · prior revisions ≥ {k}", {
+        n: _statIso(fmtNum(items.length, 0)), z: _statIso(String(d.z_min)), k: _statIso(String(d.min_prior_revisions)) });
+      // The column is the SIZE of the revision, a noun -- "Change" is keyed as the verb
+      // (Modifier, 更改) for the buttons that use it, so the header has its own key (R8).
+      const th = (k, right) => `<th${right ? ' style="text-align:right"' : ""}>${esc(t(k))}</th>`;
+      box.innerHTML = `<div class="hint">${esc(hint)}</div>`
+        + `<table><tr>${th("Agency")}${th("Series")}${th("Area")}${th("Period")}`
+        + `${th("From → to", true)}${th("Change in value", true)}`
+        + `${th("Robust z", true)}${th("Priors", true)}${th("Revised at")}</tr>${rows}</table>`
+        + (d.method ? `<div class="hint" style="margin-top:8px">${esc(d.method)}</div>` : "")
+        + (d.caveat ? `<div class="hint" style="margin-top:6px">${esc(d.caveat)}</div>` : "");
     }
     // -- Honest stat chart: draws /api/stats/figures/series via ooViz.statChartGeometry.
     //    A comparability segment (unit/base-year/SA-NSA change) is its OWN path — never
@@ -2253,7 +2514,7 @@
       const box = $("statfig-chart"); if (!box) return;
       const series = ($("statfig-view-series").value || "").trim();
       const area = ($("statfig-view-area").value || "").trim();
-      if (!series || !area) { box.innerHTML = `<div class="muted">Enter a series id and an area (e.g. FR) to chart it over time.</div>`; return; }
+      if (!series || !area) { box.innerHTML = `<div class="muted">Enter a series id and an area (e.g. FRA) to chart it over time.</div>`; return; }
       if (typeof ooViz === "undefined") { box.innerHTML = `<div class="muted">Chart toolkit unavailable.</div>`; return; }
       box.innerHTML = `<div class="muted">Loading…</div>`;
       try {
@@ -2284,6 +2545,11 @@
     // ONE ooMap component + the node-tested ooViz.choroplethData honesty gate. English-only
     // (matches the chart panel). The cells carry iso2 (backend bridge), so no frontend ISO
     // map is needed. Browser-unverified per fork-3.
+    // What the map last drew and the controls it was drawn for, so a language switch can
+    // redraw ooMap's own legend, contested line and worldview picker (t()'d at render)
+    // from the payload it holds -- never a fetch (row R, R4). This panel's own method and
+    // caveat stay English by the design recorded above; the map chrome is ooMap's.
+    let _statMapLast = null;
     async function renderStatMap() {
       const host = $("statfig-map"); if (!host) return;
       const meta = $("statfig-map-meta");
@@ -2296,46 +2562,63 @@
       try {
         const q = "/api/stats/map?series_id=" + encodeURIComponent(series) + (agency ? "&agency=" + encodeURIComponent(agency) : "");
         const d = await api(q);
-        const cells = d.cells || [];
-        if (!cells.length) { host.innerHTML = `<div class="muted">No stored figures for "${esc(series)}". Fetch some above first.</div>`; if (meta) meta.textContent = ""; return; }
-        const iso2By = {}; cells.forEach(c => { iso2By[c.ref_area] = c.iso2; });
-        // The node-tested comparability gate: only areas on the modal basis are colour-eligible.
-        const cd = ooViz.choroplethData(cells.map(c => ({
-          ref_area: c.ref_area, value: c.value, unit: c.unit, base_year: c.base_year,
-          adjustment: c.adjustment, time_period: c.time_period,
-        })), { kind: isLevel ? "level" : "normalized" });
-        const multi = d.multi_producer ? "  Several producers report this series — pin a producer above; the map never averages them." : "";
-        if (cd.mode === "symbols") {
-          // A LEVEL: we do NOT fake a level choropleth (a big country would look like 'more'
-          // just for being big). Honest refusal + the comparable values as a ranked list.
-          const ranked = cd.cells.filter(c => c.comparable && typeof c.value === "number")
-            .sort((a, b) => b.value - a.value).slice(0, 30)
-            .map(c => `<tr><td>${ooCountryCell(iso2By[c.area] || c.area)}</td><td style="text-align:right">${esc(fmtNum(c.value))}</td></tr>`).join("");
-          host.innerHTML = `<div class="note">${esc(cd.refusalReason || "")}</div>`
-            + (ranked ? `<table style="margin-top:6px"><tr><th>Area</th><th style="text-align:right">Value</th></tr>${ranked}</table>` : "");
-          if (meta) meta.textContent = cd.caveat + multi;
-          return;
-        }
-        const values = {}, names = {};
-        cd.cells.forEach(c => {
-          if (!c.comparable) return;            // incomparable basis / no value → no-data hatch
-          const iso2 = iso2By[c.area];
-          if (!iso2) return;                    // a non-country aggregate (WLD/EUU) → dropped honestly
-          values[iso2] = c.value;
-          names[iso2] = (typeof ooRegionName === "function") ? ooRegionName(iso2) : iso2;
-        });
-        const unit = (cd.basis && cd.basis.unit) || "";
-        const nMapped = Object.keys(values).length;
-        if (!nMapped) { host.innerHTML = `<div class="muted">No comparable, mappable figures for this series. ${esc(cd.caveat)}</div>`; if (meta) meta.textContent = ""; return; }
-        await ooMap(host, {
-          values, names, unit,
-          valueLabel: (iso, v) => `${fmtNum(v)}${unit ? " " + unit : ""}`,
-          aria: `${series} — ${nMapped} countries with comparable data`,
-          method: d.method || "",
-          caveat: cd.caveat + multi,
-        });
-        if (meta) meta.textContent = `${cd.comparableCount} comparable · ${cd.incomparableCount} on a different basis (no-data) · ${cd.noValueCount} no value`;
+        _statMapLast = { d, series, isLevel };
+        await _statMapDraw(host, meta, d, series, isLevel);
       } catch (e) { host.innerHTML = `<div class="muted">Could not map: ${esc(e && e.message || e)}</div>`; }
+    }
+    function repaintStatMapFromCache() {
+      const host = $("statfig-map");
+      // The LEVEL map draws a ranked table, not the choropleth svg, and its refusal
+      // line, caveat and aggregate hovers are translated when drawn (B30, L-5): it is a
+      // drawn map too. A "Loading…" or "Could not map" host holds neither.
+      if (!_statMapLast || !host || !host.querySelector("svg#oo-choro, table")) return;
+      const { d, series, isLevel } = _statMapLast;
+      _statMapDraw(host, $("statfig-map-meta"), d, series, isLevel)
+        .catch((e) => { host.innerHTML = `<div class="muted">Could not map: ${esc(e && e.message || e)}</div>`; });
+    }
+    async function _statMapDraw(host, meta, d, series, isLevel) {
+      const cells = d.cells || [];
+      if (!cells.length) { host.innerHTML = `<div class="muted">No stored figures for "${esc(series)}". Fetch some above first.</div>`; if (meta) meta.textContent = ""; return; }
+      const iso2By = {}, areaBy = {};
+      cells.forEach(c => { iso2By[c.ref_area] = c.iso2; areaBy[c.ref_area] = c; });
+      // The node-tested comparability gate: only areas on the modal basis are colour-eligible.
+      const cd = ooViz.choroplethData(cells.map(c => ({
+        ref_area: c.ref_area, value: c.value, unit: c.unit, base_year: c.base_year,
+        adjustment: c.adjustment, time_period: c.time_period,
+      })), { kind: isLevel ? "level" : "normalized" });
+      const multi = d.multi_producer ? "  Several producers report this series — pin a producer above; the map never averages them." : "";
+      if (cd.mode === "symbols") {
+        // A LEVEL: we do NOT fake a level choropleth (a big country would look like 'more'
+        // just for being big). Honest refusal + the comparable values as a ranked list.
+        const ranked = cd.cells.filter(c => c.comparable && typeof c.value === "number")
+          .sort((a, b) => b.value - a.value).slice(0, 30)
+          // A published aggregate (WLD/HIC/EAS) is disclosed as one through the
+          // server's classification; a country keeps the ordinary code + name (L13).
+          .map(c => `<tr><td>${ooAreaCell(iso2By[c.area] || c.area, (areaBy[c.area] || {}).area_kind, (areaBy[c.area] || {}).area_name)}</td><td style="text-align:right">${esc(fmtNum(c.value))}</td></tr>`).join("");
+        host.innerHTML = `<div class="muted">${esc(cd.refusalReason || "")}</div>`
+          + (ranked ? `<table style="margin-top:6px"><tr><th>Area</th><th style="text-align:right">Value</th></tr>${ranked}</table>` : "");
+        if (meta) meta.textContent = cd.caveat + multi;
+        return;
+      }
+      const values = {}, names = {};
+      cd.cells.forEach(c => {
+        if (!c.comparable) return;            // incomparable basis / no value → no-data hatch
+        const iso2 = iso2By[c.area];
+        if (!iso2) return;                    // a non-country aggregate (WLD/EUU) → dropped honestly
+        values[iso2] = c.value;
+        names[iso2] = (typeof ooRegionName === "function") ? ooRegionName(iso2) : iso2;
+      });
+      const unit = (cd.basis && cd.basis.unit) || "";
+      const nMapped = Object.keys(values).length;
+      if (!nMapped) { host.innerHTML = `<div class="muted">No comparable, mappable figures for this series. ${esc(cd.caveat)}</div>`; if (meta) meta.textContent = ""; return; }
+      await ooMap(host, {
+        values, names, unit,
+        valueLabel: (iso, v) => `${fmtNum(v)}${unit ? " " + unit : ""}`,
+        aria: `${series} — ${nMapped} countries with comparable data`,
+        method: d.method || "",
+        caveat: cd.caveat + multi,
+      });
+      if (meta) meta.textContent = `${cd.comparableCount} comparable · ${cd.incomparableCount} on a different basis (no-data) · ${cd.noValueCount} no value`;
     }
     // -- Tracked figures (ruling #12): scheduled vintage auto-refresh. English-only.
     async function loadStatSubs() {
@@ -2461,47 +2744,49 @@
       const wiki = $("dumpread-wiki").value.trim();
       const q = $("dumpread-title").value.trim();
       const out = $("dumpread-out");
-      if (!wiki) { out.innerHTML = `<div class="note err">${esc(t("No readable dump yet — download a multistream dump above; its index rides along automatically."))}</div>`; return; }
-      if (!q) { out.innerHTML = `<div class="note err">${esc(t("Enter a page title."))}</div>`; return; }
+      // Errors in the error colour and plain lines otherwise (R3): `.note` is the
+      // floating toast box, with its shadow and slide-in, and these are not toasts.
+      if (!wiki) { out.innerHTML = `<div style="color:var(--err)">${esc(t("No readable dump yet — download a multistream dump above; its index rides along automatically."))}</div>`; return; }
+      if (!q) { out.innerHTML = `<div style="color:var(--err)">${esc(t("Enter a page title."))}</div>`; return; }
       out.textContent = t("Loading…");
       try {
         const d = await api(`/api/wiki/dumps/search?wiki=${encodeURIComponent(wiki)}&q=${encodeURIComponent(q)}`);
         const items = d.items || [];
         if (!items.length) {
-          out.innerHTML = `<div class="note">${esc(t("No matching titles in this dump's index."))} <span class="muted">(${d.scanned} ${t("index lines scanned")}${d.capped ? ", " + esc(t("scan capped")) : ""})</span></div>`;
+          out.innerHTML = `<div>${esc(t("No matching titles in this dump's index."))} <span class="muted">(${esc(_dumpScanned(d.scanned))}${d.capped ? ", " + esc(t("scan capped")) : ""})</span></div>`;
           return;
         }
         const rows = items.map(it =>
           `<li><a href="#" onclick="$('dumpread-title').value=${esc(JSON.stringify(it.title))};dumpReadPage();return false">${esc(it.title)}</a></li>`).join("");
-        out.innerHTML = `<div class="card"><div class="muted small">${esc(t("Title matches in your downloaded dump — click one to read its wikitext. Bodies are not full-text-searched."))} <span class="muted">(${d.scanned} ${t("index lines scanned")}${d.capped ? ", " + esc(t("scan capped")) : ""})</span></div><ul>${rows}</ul></div>`;
-      } catch (e) { out.innerHTML = `<div class="note err">${esc(e.message)}</div>`; }
+        out.innerHTML = `<div class="card"><div class="muted small">${esc(t("Title matches in your downloaded dump — click one to read its wikitext. Bodies are not full-text-searched."))} <span class="muted">(${esc(_dumpScanned(d.scanned))}${d.capped ? ", " + esc(t("scan capped")) : ""})</span></div><ul>${rows}</ul></div>`;
+      } catch (e) { out.innerHTML = `<div style="color:var(--err)">${esc(e.message)}</div>`; }
     }
     async function dumpReadPage() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
       const wiki = $("dumpread-wiki").value.trim();
       const title = $("dumpread-title").value.trim();
       const out = $("dumpread-out");
-      if (!wiki) { out.innerHTML = `<div class="note err">${esc(t("No readable dump yet — download a multistream dump above; its index rides along automatically."))}</div>`; return; }
-      if (!title) { out.innerHTML = `<div class="note err">${esc(t("Enter a page title."))}</div>`; return; }
+      if (!wiki) { out.innerHTML = `<div style="color:var(--err)">${esc(t("No readable dump yet — download a multistream dump above; its index rides along automatically."))}</div>`; return; }
+      if (!title) { out.innerHTML = `<div style="color:var(--err)">${esc(t("Enter a page title."))}</div>`; return; }
       out.textContent = t("Loading…");
       try {
         const d = await api(`/api/wiki/dumps/page?wiki=${encodeURIComponent(wiki)}&title=${encodeURIComponent(title)}`);
         if (!d.found) {
           let msg;
           if (d.reason === "title-not-in-index") {
-            msg = `${t("This title is not in the dump's index.")} <span class="muted">(${d.index_lines_scanned} ${t("index lines scanned")}, ${d.scan_seconds}s)</span>`;
+            msg = `${esc(t("This title is not in the dump's index."))} <span class="muted">(${esc(_dumpScanned(d.index_lines_scanned))}, ${esc(_dumpSecs(d.scan_seconds))})</span>`;
           } else if (d.reason === "no-multistream-dump" || d.reason === "no-index") {
             msg = esc(t("No readable dump for this edition: the multistream file or its index is missing."))
               + (d.legacy_file_present ? " " + esc(t("An older single-stream file exists but cannot be random-accessed — re-download to enable reading.")) : "");
           } else {
             msg = esc(d.reason || "unreadable");
           }
-          out.innerHTML = `<div class="note err">${msg}</div>`;
+          out.innerHTML = `<div style="color:var(--err)">${msg}</div>`;
           return;
         }
         _dumpPage = d;
         _renderDumpPage();
-      } catch (e) { out.innerHTML = `<div class="note err">${esc(e.message)}</div>`; }
+      } catch (e) { out.innerHTML = `<div style="color:var(--err)">${esc(e.message)}</div>`; }
     }
     // The last page read, so the view toggle re-renders without a second index scan
     // (a scan is seconds of local I/O -- re-paying it to change a view would be the
@@ -2523,7 +2808,7 @@
       const meta = [
         d.match === "case-insensitive" ? t("Found via case-insensitive match.") : "",
         d.rev_timestamp ? `${t("dump revision of")} ${esc(d.rev_timestamp.slice(0,10))}` : "",
-        `${d.index_lines_scanned} ${t("index lines scanned")} · ${d.scan_seconds}s`
+        esc(`${_dumpScanned(d.index_lines_scanned)} · ${_dumpSecs(d.scan_seconds)}`)
       ].filter(Boolean).join(" · ");
       // The readable view is offered only when the strip actually produced text: a page
       // that is nothing but templates and tables reduces to almost nothing, and an empty
@@ -2594,11 +2879,11 @@
       }
       const b = d.build || {};
       let buildLine = "";
-      if (b.state === "running") buildLine = `<span class="pill">${esc(t("indexing"))} ${esc(b.wiki || "")} · ${esc(String(b.pages || 0))} ${esc(t("pages"))}</span>`;
+      if (b.state === "running") buildLine = `<span class="pill">${esc(t("indexing"))} ${esc(b.wiki || "")} · ${esc(_dumpPages(b.pages || 0))}</span>`;
       else if (b.state === "error") buildLine = `<span class="pill err">${esc(t("index build failed"))}${b.error ? ": " + esc(b.error) : ""}</span>`;
       else if (b.state === "cancelled") buildLine = `<span class="pill warn">${esc(t("index build cancelled"))}</span>`;
       const coverage = eds.length
-        ? eds.map(e => `${esc(e.wiki)} (${esc(String(e.pages))} ${esc(t("pages"))})`).join(" · ")
+        ? eds.map(e => `${esc(e.wiki)} (${esc(_dumpPages(e.pages || 0))})`).join(" · ")
         : esc(t("No editions indexed yet — pick one above and Build index."));
       box.innerHTML = `${buildLine ? buildLine + " " : ""}<span>${coverage}</span>`;
     }
@@ -2632,7 +2917,7 @@
       const q = (($("dumpfts-q") || {}).value || "").trim();
       const wiki = (($("dumpfts-wiki") || {}).value || "").trim();
       const out = $("dumpfts-out"); if (!out) return;
-      if (!q) { out.innerHTML = `<div class="note err">${esc(t("Enter a full-text query."))}</div>`; return; }
+      if (!q) { out.innerHTML = `<div style="color:var(--err)">${esc(t("Enter a full-text query."))}</div>`; return; }
       out.textContent = t("Loading…");
       try {
         const url = "/api/wiki/dumps/fts-search?q=" + encodeURIComponent(q)
@@ -2645,7 +2930,7 @@
             : d.reason === "search-error"
               ? t("The query could not be parsed — try plain words or AND/OR/NOT.")
               : t("No matches in your indexed dump bodies.");
-          out.innerHTML = `<div class="note">${esc(msg)}</div>`;
+          out.innerHTML = `<div>${esc(msg)}</div>`;
           return;
         }
         const rows = items.map(it => {
@@ -2654,7 +2939,7 @@
           return `<li>${link} <span class="muted">(${esc(it.wiki)})</span>${snip}</li>`;
         }).join("");
         out.innerHTML = `<div class="card"><div class="muted small">${esc(d.note || "")}</div><ul>${rows}</ul></div>`;
-      } catch (e) { out.innerHTML = `<div class="note err">${esc(e.message)}</div>`; }
+      } catch (e) { out.innerHTML = `<div style="color:var(--err)">${esc(e.message)}</div>`; }
     }
     // Open a full-text hit in the LOCAL dump reader above (invariant #6: local first) —
     // set the reader's edition + title and render its wikitext inline, then scroll to it.
@@ -2793,9 +3078,16 @@
       // A tab opened for the first time starts on _livingView; one already open is
       // moved with select(). Doing both would load the panel twice.
       const opened = typeof _livingSubtabs !== "undefined" && !!_livingSubtabs;
+      // Already ON the Wikipedia panel (a click on a tracked page under "Pages you track"):
+      // nothing to switch, so nothing is reloaded. select() re-reads the whole panel, and
+      // that rebuilt the stream and collapsed the diff the reader had open beside it
+      // (2026-09-27 re-walk O-6). Opening one view does not reset another.
+      const tabEl = $("tab-living");
+      const showing = opened && typeof _livingView !== "undefined" && _livingView === "wiki"
+        && !!tabEl && tabEl.classList.contains("active");
       if (typeof _livingView !== "undefined") _livingView = "wiki";
-      showTab("living");
-      if (opened) _livingSubtabs.select("wiki");
+      if (!showing) showTab("living");
+      if (opened && !showing) _livingSubtabs.select("wiki");
       const ttl = $("wiki-tc-title");
       if (ttl) ttl.textContent = (_wikiTc.wiki ? _wikiTc.wiki + " · " : "") + _wikiTc.title;
       const fo = $("wiki-tc-flagged"); if (fo) fo.checked = false;
@@ -2846,7 +3138,9 @@
       const flagged = (flaggedEl && flaggedEl.checked) ? "true" : "false";
       body.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
       if (meth) meth.textContent = "";
+      _wikiTcLast = null;
       try {
+        const id = _wikiTc.id;
         const d = await api(`/api/wiki/pages/${_wikiTc.id}/revisions?limit=50&flagged_only=${flagged}&include_diff=true`);
         // A caller that knew the page named it; the ?wikitc= deep link from the
         // article reader knows only the id, so the header is filled from the
@@ -2856,23 +3150,39 @@
           const ttl2 = $("wiki-tc-title");
           if (ttl2) ttl2.textContent = (_wikiTc.wiki ? _wikiTc.wiki + " · " : "") + _wikiTc.title;
         }
-        const revs = d.revisions || [];
-        if (!revs.length) {
-          // Honest empty state (flagged-aware), never a blank pane.
-          body.innerHTML = `<div class="muted">${esc(t(flagged === "true"
-            ? "No flagged tracked revisions stored for this page yet."
-            : "No tracked revisions stored for this page yet."))}</div>`;
-        } else {
-          // Honest window: showing `count` of `total` — the endpoint discloses it is a slice.
-          const cap = `<div class="muted" style="margin-bottom:8px">${esc(t("Showing"))} ${d.count} / ${d.total} ${esc(t("tracked revisions"))}</div>`;
-          body.innerHTML = cap + revs.map(r => _wikiRevRow(r, t)).join("");
-        }
-        // VISIBLE caveat (keyed ×12) mirroring the endpoint's method — never hidden.
-        if (meth) meth.textContent = t("The tracked slice of edits stored on this machine, newest first — not necessarily every historical revision. Each diff is the compact added / removed summary captured when the edit was tracked (truncated per side), not a live re-diff. Counts only, no score.");
+        _wikiTcLast = { id, flagged, d };
+        _renderWikiTC(d, flagged);
       } catch (e) {
         // Additive surface — degrade quietly, never throw.
-        body.innerHTML = `<div class="muted">${esc(t("Could not load") + ": " + e.message)}</div>`;
+        body.innerHTML = `<div class="muted">${esc(ooLabelText(t("Could not load"), e.message))}</div>`;
       }
+    }
+
+    // The last tracked-history payload, so a language switch redraws the page's history
+    // from what it holds rather than asking again (2026-09-27 re-walk O-3).
+    let _wikiTcLast = null;   // {id, flagged, d}
+    function repaintWikiTCFromCache() {
+      if (_wikiTcLast && _wikiTcLast.id === _wikiTc.id) _renderWikiTC(_wikiTcLast.d, _wikiTcLast.flagged);
+    }
+    function _renderWikiTC(d, flagged) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const body = $("wiki-tc-body"), meth = $("wiki-tc-method");
+      if (!body) return;
+      const revs = d.revisions || [];
+      if (!revs.length) {
+        // Honest empty state (flagged-aware), never a blank pane.
+        body.innerHTML = `<div class="muted">${esc(t(flagged === "true"
+          ? "No flagged tracked revisions stored for this page yet."
+          : "No tracked revisions stored for this page yet."))}</div>`;
+      } else {
+        // Honest window: showing `count` of `total` — the endpoint discloses it is a slice.
+        // ONE keyed frame with grouped numbers (R14), not "Showing" + a bare fraction +
+        // an English noun.
+        const cap = `<div class="muted" style="margin-bottom:8px">${esc(_mapTf("Showing {n} of {total} tracked revisions", { n: fmtNum(d.count || 0, 0), total: fmtNum(d.total || 0, 0) }))}</div>`;
+        body.innerHTML = cap + revs.map(r => _wikiRevRow(r, t)).join("");
+      }
+      // VISIBLE caveat (keyed ×12) mirroring the endpoint's method — never hidden.
+      if (meth) meth.textContent = t("The tracked slice of edits stored on this machine, newest first — not necessarily every historical revision. Each diff is the compact added / removed summary captured when the edit was tracked (truncated per side), not a live re-diff. Counts only, no score.");
     }
 
     // --- Search-tab time-range control (ooTimeScope reuse) ----------------- //

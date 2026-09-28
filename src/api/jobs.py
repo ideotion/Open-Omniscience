@@ -16,6 +16,10 @@ stop the other — never a silent pile-up.
 
 from __future__ import annotations
 
+import functools
+import json
+from pathlib import Path
+
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
@@ -58,6 +62,56 @@ def _dump_label(wiki: str, kind: str) -> str:
     return f"{edition} Wikipedia — {_DUMP_KIND_LABELS.get(kind, kind)}"
 
 
+# A LABEL THAT CARRIES A VALUE, KEYED (click-through B17, T11). "Importing {x}",
+# "Downloading model {m}", a dump's edition: the English `label` has the value welded in,
+# so no key can ever match it and every locale showed English. Such a job also carries
+# `label_i18n` -- the frame, which is the UI locale key -- and `label_vars`, the values,
+# and the task managers (app-core.js `_jobLabel`, taskmanager.html `jobLabel`) write the
+# frame in the UI language. The conventions they share: a number is formatted there; a
+# var named `language` is a language CODE, written as its name in the UI language; a var
+# that is itself ``{"i18n": key, "vars": {...}}`` is a keyed phrase, written in the UI
+# language by the same rules (click-through B19: "Large data", a backup phase, "3 volumes");
+# any other value is data and shown as given. `label` itself is unchanged: it is the API's
+# answer, the arbitration line (`busy_with`) and what an older page prints. A job's
+# `detail` line travels the same way (`detail_i18n` / `detail_vars`).
+_DUMP_KIND_FRAMES = {
+    "articles dump": "{language} Wikipedia — articles dump",
+    "articles dump index": "{language} Wikipedia — articles dump index",
+}
+
+
+def _label_frame(frame: str, **values) -> dict:
+    """The ``label_i18n`` / ``label_vars`` pair for a label carrying values."""
+    return {"label_i18n": frame, "label_vars": values}
+
+
+def _keyed(key: str, **values) -> dict:
+    """A frame VALUE that is itself a keyed phrase (see the conventions above)."""
+    return {"i18n": key, "vars": values} if values else {"i18n": key}
+
+
+def _count_phrase(n: int, one: str, many: str) -> dict:
+    """A count and its noun as ONE keyed phrase, the frame chosen by the count."""
+    return _keyed(one if n == 1 else many, n=n)
+
+
+def _detail_frame(src: dict) -> dict:
+    """The ``detail_i18n`` / ``detail_vars`` pair a producer published, passed on as is."""
+    if not src.get("detail_i18n"):
+        return {}
+    return {"detail_i18n": src["detail_i18n"], "detail_vars": dict(src.get("detail_vars") or {})}
+
+
+def _dump_label_frame(wiki: str, kind: str) -> dict:
+    """The keyed twin of `_dump_label`: the edition goes as its CODE, so each page names
+    the language in its own UI language (the English name is what `label` says)."""
+    human = _DUMP_KIND_LABELS.get(kind, kind)
+    frame = _DUMP_KIND_FRAMES.get(human)
+    if frame is None:   # a kind this table does not know: the frame carries it as data
+        return _label_frame("{language} Wikipedia — {kind}", language=wiki or "?", kind=human)
+    return _label_frame(frame, language=wiki or "?")
+
+
 def _dump_jobs() -> list[dict]:
     from src.wiki.dumps import get_manager
 
@@ -77,6 +131,7 @@ def _dump_jobs() -> list[dict]:
                 "id": f"dump:{e['key']}",
                 "kind": "wiki-dump",
                 "label": _dump_label(e["wiki"], e["kind"]),
+                **_dump_label_frame(e["wiki"], e["kind"]),
                 "state": state,
                 "queue_position": (order.index(e["key"]) + 1) if e["key"] in order else None,
                 "progress": {
@@ -219,13 +274,21 @@ def _task_jobs() -> list[dict]:
         if t.get("total"):
             done = int(t.get("done") or 0)
             total = int(t["total"])
-            prog = {"done": done, "total": total, "percent": round(100 * done / total) if total else 0}
+            # A COUNT, and it says so: with no unit the in-app window read the progress as
+            # bytes (the shipped default for a unit-less row), so "Summarizing 12
+            # article(s)" drew "3 B / 12 B" (click-through B17, T5).
+            prog = {"done": done, "total": total, "unit": "items",
+                    "percent": round(100 * done / total) if total else 0}
+        # A task that registered its label as a frame (src.monitoring.tasks) passes it on.
+        frame = _label_frame(t["label_i18n"], **(t.get("label_vars") or {})) if t.get("label_i18n") else {}
         out.append(
             {
                 "id": f"task:{t['token']}",
                 "kind": t.get("kind") or "task",
                 "label": t.get("label") or "background task",
+                **frame,
                 "detail": t.get("detail"),
+                **_detail_frame(t),
                 "state": "running",
                 "elapsed_s": t.get("elapsed_s"),
                 "progress": prog,
@@ -257,11 +320,18 @@ def _folder_backup_jobs() -> list[dict]:
         actions = ["pause", "cancel"]
     elif state in ("paused", "failed"):
         actions = ["resume", "cancel"]
+    dest = s.get("dest")
+    # With no destination the label is a fixed sentence, and fixed sentences are keys.
+    frame = (
+        _label_frame("Restoring to {dest}" if s.get("mode") == "restore" else "Backing up to {dest}", dest=dest)
+        if dest else {}
+    )
     return [
         {
             "id": "folder-backup",
             "kind": "folder-backup",
-            "label": f"{verb} to {s.get('dest') or 'a folder'}",
+            "label": f"{verb} to {dest or 'a folder'}",
+            **frame,
             "state": state,
             "progress": prog,
             "error": s.get("error"),
@@ -290,12 +360,78 @@ def _volume_backup_jobs() -> list[dict]:
             "id": "volume-backup",
             "kind": "volume-backup",
             "label": f"{verb} — {detail}" if detail else verb,
+            **_volume_label_frame(verb, s.get("mode"), phase, vols),
             "state": state,
             "progress": None,
             "error": s.get("error"),
             "actions": [],
         }
     ]
+
+
+# The volume engine's phase CODES, named as the backup dialog names them (app-backup.js
+# `_uxVolPhase`, whose keys these are): the English label prints the code ("parity"), which
+# no locale can match (click-through B19, Q2). A phase the dialog does not name either --
+# the sub-second post-commit housekeeping stages -- is left out of the keyed label rather
+# than shown as a code; the English `label` still carries it.
+_VOLUME_BACKUP_PHASES = {
+    "starting": "Preparing…", "building": "Building encrypted volumes…",
+    "volumes": "Writing encrypted volumes…", "parity": "Writing parity…",
+    "verifying": "Verifying volumes…", "done": "Done.",
+}
+_VOLUME_RESTORE_PHASES = {
+    "verifying": "Verifying volumes…", "reassembling": "Reassembling the archive…",
+    "merging": "Merging (additive)…", "reindexing": "Re-indexing merged articles…",
+    "done": "Done.", "verify": "Verifying the merge…",
+    "snapshot_working_copy": "Snapshotting your corpus…",
+    "pre_restore_snapshot": "Snapshotting your corpus…", "swap": "Committing…",
+}
+
+
+def _volume_label_frame(verb: str, mode, phase: str, vols) -> dict:
+    """The keyed twin of the volume job's label: the verb and the phase as keyed phrases,
+    the volume count as a count with its noun."""
+    table = _VOLUME_BACKUP_PHASES if mode == "backup" else _VOLUME_RESTORE_PHASES
+    named = table.get(phase)
+    values: dict = {"verb": _keyed(verb)}
+    if named:
+        values["phase"] = _keyed(named)
+    if vols:
+        values["volumes"] = _count_phrase(int(vols), "{n} volume", "{n} volumes")
+    shape = tuple(k for k in ("phase", "volumes") if k in values)
+    if not shape:   # the verb alone is a fixed sentence: its own key
+        return _label_frame(verb)
+    frame = {
+        ("phase", "volumes"): "{verb} — {phase}, {volumes}",
+        ("phase",): "{verb} — {phase}",
+        ("volumes",): "{verb} — {volumes}",
+    }[shape]
+    return _label_frame(frame, **values)
+
+
+# The words the Import dialog sends as the label of an item that has no file name of its
+# own (app-backup.js: t("Large data"), t("Newsletters"), t("Corpus backup")). The page
+# sends them in ITS language at the moment of the click, so the queue holds "Données
+# volumineuses" or "Large data" alike, and "Importing {label}" printed that word in
+# whichever language it was queued in (click-through B19, Q1). Recognised here in any of
+# the twelve, it goes out as the KEY and each page writes it in its own; any other label
+# (a file name, an API caller's own words) is data and stays as given.
+_IMPORT_ITEM_WORDS = ("Large data", "Newsletters", "Corpus backup")
+
+
+@functools.lru_cache(maxsize=1)
+def _import_item_word_index() -> dict[str, str]:
+    idx = {k: k for k in _IMPORT_ITEM_WORDS}
+    for f in sorted((Path(__file__).resolve().parents[1] / "static" / "locales").glob("*.json")):
+        try:
+            data = json.loads(f.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        for k in _IMPORT_ITEM_WORDS:
+            v = data.get(k)
+            if isinstance(v, str) and v.strip():
+                idx.setdefault(v, k)
+    return idx
 
 
 def _import_queue_jobs() -> list[dict]:
@@ -330,6 +466,10 @@ def _import_queue_jobs() -> list[dict]:
     s_done = int(s.get("stages_done") or 0)
     s_total = int(s.get("stages_total") or 0)
     tail = str(((s.get("live") or {}).get("progress") or s.get("live") or {}).get("phase") or "")
+    # The item's own label comes from the import queue (src/backup/import_queue.py) and is
+    # data here: the frame carries it as a value.
+    word = _import_item_word_index().get(label)
+    frame = _label_frame("Importing {label}", label=_keyed(word) if word else label) if label else {}
     if label:
         job_label = f"Importing {label}"
     elif tail:
@@ -341,6 +481,7 @@ def _import_queue_jobs() -> list[dict]:
             "id": "import-queue",
             "kind": "import",
             "label": job_label,
+            **frame,
             "state": "running",
             # STAGES, not items: the run's last stage is the search-index merge, and with
             # every item done the item count reads 100% while that stage is still holding
@@ -386,13 +527,24 @@ def _import_jobs() -> list[dict]:
     # Same reading as the re-index row below, worded for a row that is ITSELF an import:
     # "paused for an import" would read as a contradiction here, and the thing it is
     # waiting for is specifically a corpus import (a restore/merge holding the window).
-    if s.get("parked_for_exclusive"):
+    parked = bool(s.get("parked_for_exclusive"))
+    if parked:
         label = "Paused for a corpus import — " + label[0].lower() + label[1:]
+    # With no folder the label is a fixed sentence, and fixed sentences are keys.
+    frame = (
+        _label_frame(
+            "Paused for a corpus import — importing newsletters from {folder}" if parked
+            else "Importing newsletters from {folder}",
+            folder=s["folder"],
+        )
+        if s.get("folder") else {}
+    )
     return [
         {
             "id": "newsletter-import",
             "kind": "import",
             "label": label,
+            **frame,
             "state": state,
             "progress": prog,
             "eta_seconds": s.get("eta_seconds"),
@@ -567,6 +719,7 @@ def _model_pull_jobs() -> list[dict]:
                 "id": f"model-pull:{a['model']}",
                 "kind": "model-pull",
                 "label": f"Downloading model {a['model']}",
+                **_label_frame("Downloading model {model}", model=a["model"]),
                 "state": "running",
                 "detail": a.get("status"),
                 "progress": (
@@ -583,6 +736,7 @@ def _model_pull_jobs() -> list[dict]:
                 "id": f"model-pull:{m}",
                 "kind": "model-pull",
                 "label": f"Model {m}",
+                **_label_frame("Model {model}", model=m),
                 "state": "queued",
                 "queue_position": i + 1,
                 "actions": ["cancel"],
@@ -627,6 +781,7 @@ def _background_jobs() -> list[dict]:
                 "state": state,
                 "progress": s.get("progress"),
                 "detail": s.get("detail"),
+                **_detail_frame(s),
                 "error": s.get("error"),
                 "actions": actions,
             }
@@ -781,11 +936,21 @@ def cancel_job(job_id: str) -> dict:
         get_quarantine_manager().pause()
         return {"cancelled": job_id, "detail": "quarantine job paused (resumable; it survives a restart)"}
     if job_id == "keyword-fold":
-        # Task-manager "cancel"/"pause" PAUSE the fold (resumable from its persisted cursor;
-        # every committed page stays committed, and a re-run finds nothing left to move).
+        # Task-manager "cancel"/"pause" PAUSE a RUNNING fold (resumable from its persisted
+        # cursor; every committed page stays committed, and a re-run finds nothing left to
+        # move). On a fold that is already stopped, pausing again would do nothing while the
+        # row offers "cancel", so there it CANCELS: the saved cursor is dropped and the row
+        # leaves the task manager. Nothing already folded is undone.
         from src.analytics.keyword_fold import get_fold_manager
 
-        get_fold_manager().pause()
+        fmgr = get_fold_manager()
+        if fmgr.status().get("state") in ("paused", "error"):
+            fmgr.cancel()
+            return {
+                "cancelled": job_id,
+                "detail": "keyword fold cancelled (what it already folded stays folded; folding again starts a new pass)",
+            }
+        fmgr.pause()
         return {"cancelled": job_id, "detail": "keyword fold paused (resumable; it survives a restart)"}
     if job_id == "search-reindex":
         # Task-manager "cancel"/"pause" PAUSE the search re-index (resumable from its

@@ -1,0 +1,599 @@
+{
+ "row": "U",
+ "steps_walked": {
+  "row": "U",
+  "title": "Row U: the finished translations in 12 languages, the Patterns-lens gate panel, the encrypted unlock path, newsletter filing with its announcement and undo, sparse commodity price bars, and the religious calendars left in place",
+  "prerequisites": [
+   "A checkout of main at or after 462145c with its .venv installed. That build includes PR #1137 (diagnostics package split), #1139 (FUTURE_DEVELOPMENTS reality check), #1140 (encrypted click-through variant), #1141 (newsletter attach and undo), and #1160 and #1161 (translations, Patterns gate, sparse overlay bars). Run every command from the app folder, the one that contains .venv.",
+   "Two new, empty THROWAWAY folders OUTSIDE any real data folder, for example ~/oo-rowU-empty (U1) and ~/oo-rowU-seeded (U2, U3, U5, U6, U7, U9). On Windows PowerShell set the variables like this: $env:OO_DATA_DIR=\"$HOME\\oo-rowU-empty\"; $env:OO_PORT=\"8011\"; .venv\\Scripts\\open-omniscience.",
+   "The seeder in U2 writes straight into the database file. Run it only while NO app is running against ~/oo-rowU-seeded. After U2, keep that app (port 8010) running through U9.",
+   "Airplane mode ON throughout: the plane icon in the top bar stays FILLED. Every throwaway boot starts offline, and nothing in row U needs the network.",
+   "For U7: 3 to 6 newsletter .eml files, each with a short text or HTML body. Real ones from a mail client work. For a delegated run, the session can write three minimal synthetic files into a scratch folder outside the repo instead: (1) From: newsletters@email.bbc.com, which should be filed under a publisher already tracked, since the catalogue is registered after the first unlock; (2) From: news@some-unknown-press.org, which should create a new, disabled source; (3) From: hello@substack.com with no List-Id, a bare platform address that the ladder should refuse and leave in the import bucket.",
+   "For a delegated (agent) run: Chromium plus Playwright. This sandbox has /opt/pw-browsers/chromium, as used by docs/audit/i18n-remainder-clickthrough-2026-09-18/walk.py.",
+   "U4 and U8 are OPTIONAL and need the maintainer's own machine: their real encrypted install, updated to the same main, and its passphrase. A cloud-sandbox session cannot reach them. Before U8, make a fresh backup of the real install (Settings → Data & backup → 'Export / Back up…').",
+   "Cleanup: stop each throwaway app with Ctrl+C, then delete ~/oo-rowU-empty and ~/oo-rowU-seeded. Everything U1 to U7 and U9 created lives inside them."
+  ],
+  "steps": [
+   {
+    "id": "U1",
+    "where": "Terminal → browser at http://127.0.0.1:8011 → first-launch screens 'Choose your language' (#view-language) → 'Legal documents' (#view-legal) → 'Where should your corpus live?' (#view-datadir) → 'Create your corpus passphrase' (#view-create) → 'Preparing your corpus…' → Home; then the top-bar language button (#lang-switch, a flag plus 'EN', hover 'Change language')",
+    "do": "Run: OO_DATA_DIR=$HOME/oo-rowU-empty OO_PORT=8011 .venv/bin/open-omniscience and open http://127.0.0.1:8011. Pick 'English'. On 'Legal documents' tick 'I have read and accept these documents.' and press 'Accept and continue'. Never use 'Decline': it opens an uninstall confirmation, and completing it by typing UNINSTALL deletes the whole app install, not just this folder. On 'Where should your corpus live?' keep 'Use the app's own data folder' (the path shown should be inside ~/oo-rowU-empty) and press 'Continue'. Do NOT choose 'Choose another folder'. Type a passphrase of several words in both boxes and press 'Create'. When the dialog 'Following Wikipedia as it changes' opens, press 'Not now'. If the coachmark 'You're offline. Switch off airplane mode…' appears, press 'Not now'. Wait for Home to settle. Then open the top-bar language button and pick 'Français', look at Home, then 'العربية', then '中文'.",
+    "expect": "Home is never blank. After any short progress bar it shows one card headed 'No Leads yet — that's expected on a young corpus'. Under the heading is a paragraph with seven bold names (Rising now, Overtold/Undertold, framing splits, promises due, edit-war bursts, regions gone quiet, source candidates), then the grey line 'Collection and Leads update automatically in the background while you're online — there's nothing to start by hand.' After each switch the heading, the whole paragraph, all seven bold names and the grey line are in the new language, with no English word left. In fr the heading reads 'Aucune piste pour l'instant — c'est normal pour un jeune corpus'; in zh it reads '尚无线索——这在早期语料库中很正常'. In العربية the whole page is right-to-left: the sidebar sits on the right and text is right-aligned. The plane icon stays filled throughout.",
+    "flags": [
+     "mutates-data",
+     "locale-check"
+    ],
+    "evidence": "src/static/unlock.html:94-190 (views), 340-349 (data-location step shown when offerable), 443-450 (boot: fresh → language step); src/api/unlock.py:226 (offerable = state == 'fresh', OO_DATA_DIR ignored); src/legal/documents.py:41-56; src/static/app-home.js:966-994 (the one tf() frame with seven slots + grey line); src/static/app-boot.js:119-127 (Home re-renders on a language switch) and 555-558 (wizard on /?wikiwizard=1); src/static/index.html:3444-3492, 3555-3568; src/static/app-core.js:558-572; locales fr/ar/zh carry every key (checked); docs/ledger/shipped.csv 2026-09-18 (PR #1161)"
+   },
+   {
+    "id": "U2",
+    "where": "Terminal (seed, then boot locked) → browser at http://127.0.0.1:8010 → 'Unlock your corpus' (#view-unlock) → 'Preparing your corpus…' → Home → Settings (bottom of the sidebar) → Advanced → fold 'Safety & at-risk use — at-rest encryption, integrity, fetch mode; …' → 'At-rest encryption' (#atrest-state)",
+    "do": "Stop the U1 app with Ctrl+C. Seed an ENCRYPTED throwaway corpus while nothing is running on that folder: OO_DATA_DIR=$HOME/oo-rowU-seeded OO_DB_PASSPHRASE='row u throwaway walk phrase' .venv/bin/python scripts/ui_clickthrough_seed.py. Boot it with NEITHER OO_DB_PASSPHRASE nor OO_DB_PLAINTEXT set, so it starts locked: OO_DATA_DIR=$HOME/oo-rowU-seeded OO_PORT=8010 .venv/bin/open-omniscience. Open http://127.0.0.1:8010. Type a wrong passphrase and press 'Unlock'. Then type the right one and press 'Unlock'. On Home, go to Settings → Advanced, open 'Safety & at-risk use' and read 'At-rest encryption'. Leave this app running.",
+    "expect": "The seeder ends with 'ui_clickthrough_seed: STATE C seeded.' followed by a list of counts. The browser goes STRAIGHT to 'Unlock your corpus' ('This database is encrypted at rest (SQLCipher 4). Enter THE passphrase to open it.'), with no language, legal or create-passphrase screen. The wrong passphrase briefly shows 'Preparing your corpus…', then returns to the form with the red line 'the passphrase does not open … (or the file is damaged)'. The form stays usable and the page is never blank. The right passphrase shows 'Preparing your corpus…' with an 'Elapsed 00:0x' clock, then Home with seeded material. 'At-rest encryption' reads 'Corpus: Encrypted (SQLCipher 4)' followed by a cipher version (for example '4.12.0 community'), then 'Custody log: not created yet'. This is the Q1149 path a person can see: a corpus stored encrypted and entered through the real unlock screen.",
+    "flags": [
+     "mutates-data",
+     "needs-seed-data"
+    ],
+    "evidence": "scripts/ui_clickthrough_seed.py:21-40 (encrypted variant usage) and 790 (the printed line); src/static/unlock.html:148-156, 443-450, 522-545 (error path re-shows the form); src/api/unlock.py:476-479 + src/database/connect.py:331-333 (error text); src/static/app-backup.js:2542-2555; src/static/index.html:3002-3020; docs/audit/13_ENCRYPTED_CLICKTHROUGH_2026-09-16.md §1-2"
+   },
+   {
+    "id": "U3",
+    "where": "Seeded throwaway (8010) → Settings → Advanced → fold 'Diagnostics — logs and reports about this install, generated only when you click' → near the bottom of the fold, the greyed checkbox 'Patterns lens' (#patterns-lens) and the small 'Check now' button directly beside it (#patterns-gate-state, #patterns-gate); then 'Session forensics' at the top of the same fold",
+    "do": "Open the Diagnostics fold and look at the Patterns-lens row before pressing anything. Press the small 'Check now' directly beside 'Patterns lens'. Do NOT use the 'Check now' in the '0.4 release run' block higher up. Without pressing it again, open the top-bar language menu and pick each of the 12 languages in turn (English, Français, Español, Deutsch, 中文, हिन्दी, العربية, বাংলা, Русский, Português, Bahasa Indonesia, 日本語), looking at the panel each time. Back in English, press 'Session forensics'. Press nothing else in this fold: 'Start unattended run' and 'Run on this instance' go online.",
+    "expect": "Before the press, the area under the checkbox is empty, because opening Advanced fetches nothing. After the press there are three lines: (1) 'Corpus size: <the seeded count> / 100 000' with an amber 'not met' pill; (2) 'False-positive rate:', then an amber 'unmeasured' pill, then grey 'needs a labelled sample judged by a person'. It must say unmeasured, never 0 or 0.0 %. (3) An amber caveat: 'The Patterns lens stays off until BOTH numbers are measured and met. An unmeasured false-positive rate is shown as unmeasured, never as zero.' Beside the button: 'off — the gate is not met'. The 'Patterns lens' checkbox is unticked and greyed, and clicking it does nothing. On all 12 switches the whole panel changes language by itself, including the 'Corpus size' label, which was the freeze bug fixed in PR #1160 (fr 'Taille du corpus', ar 'حجم المتن', zh '语料库规模'). The bar always reads '100 000' with a thin space, never '100,000'. In العربية the panel is right-to-left. 'Session forensics' prints its report (the previous session's verdict, last unlock timings, data-folder inventory) with no red error. RECORD AS AN OBSERVATION, not pass/fail: while the rate is unmeasured, the ≤ 5 % bar does not appear anywhere on the panel; only '100 000' does (see not_clickable).",
+    "flags": [
+     "needs-seed-data",
+     "locale-check"
+    ],
+    "evidence": "src/static/index.html:2761-2762, 2771-2776, 2786, 2861-2864 (the OTHER 'Check now'), 2937-2958; src/static/app-diagnostics.js:371-416 (fp line 385-387 prints the 5 % bar only when a rate exists); src/api/signals.py:369-420; src/static/app-boot.js:67-72 (repaint from cache on language change); src/static/app-markets.js:581-589 (fmtNum groups with U+202F); src/static/app-diagnostics.js:536-550; docs/audit/i18n-remainder-clickthrough-2026-09-18/README.md"
+   },
+   {
+    "id": "U4",
+    "where": "OPTIONAL, the maintainer's REAL encrypted install (usual address, by default http://127.0.0.1:8000) → 'Unlock your corpus' → Home → Settings → Advanced → 'Safety & at-risk use' → 'At-rest encryption'; then 'Diagnostics' → the small 'Check now' beside 'Patterns lens'",
+    "do": "Needs the maintainer's own machine. Start the real install the usual way and unlock it. Read 'At-rest encryption'. Then press the 'Check now' beside 'Patterns lens'. It only counts articles, is read-only and uses no network, but on a very large corpus it can take a minute, so wait for it.",
+    "expect": "'At-rest encryption' reads 'Corpus: Encrypted (SQLCipher 4)'. The Patterns panel shows the REAL article count against 100 000. With 100 000 articles or more, the pill reads 'met', but 'False-positive rate' still shows the 'unmeasured' pill, the state still reads 'off — the gate is not met', and the checkbox stays greyed: size alone never turns the lens on. Below 100 000 it reads like U3.",
+    "flags": [],
+    "evidence": "src/api/signals.py:397-420 (can_flip is always False; blocked_by always names false_positive_rate); src/static/app-diagnostics.js:392-394; src/static/app-backup.js:2542-2555"
+   },
+   {
+    "id": "U5",
+    "where": "Seeded throwaway (8010), six places, English first: (a) Settings → Advanced → fold 'Collection — schedule, lanes, manual and batch ingest': its bold first hint, then open the inner fold 'Advanced (legacy) — collection is automatic; these are rarely needed' for the readout beside 'Collection speed (download-rate target)' (#sch-speed-val); (b) Settings → Advanced → fold 'Sources — discovery candidates, qualification, manage and import/export' → panel 'Import / export source list (CSV)' (#src-csv-hint); (c) Settings → Advanced → fold 'Keywords — explore, curate, filter' → the line 'See the built-in stoplist of automatically filtered words (…)' (#kf-builtin-view); (d) Governments (sidebar) → 'Law' subtab → panel 'World law — change tracking' (#gov-law); (e) top-bar '?' button (hover 'Help & documentation') → the grey line under the 'Help & documentation' heading; (f) Home → 'By channel', a subtab in Home's strip when Home shows Leads, otherwise a panel under the Home card (#home-channels-panel)",
+    "do": "Read the six places in English. Then switch the top-bar language to 'Français', then 'العربية', then '中文', and re-read each place. On (f), stay on 'By channel' while you switch, so the line changes in front of you without a reload. Press no buttons on these panels: 'Collection', 'Start', 'Scrape now' and 'Load from Wikidata' would try to go online.",
+    "expect": "In fr, ar and zh each place is fully translated. (a) The hint 'Scraping, source aggregation and crawling run continuously and automatically…' is translated, and the speed readout reads 'Maximum'. fr genuinely uses the same word 'Maximum'; ar reads 'الحد الأقصى' and zh '最大'. (b) 'Columns: …': the column names (name, domain, rss_url, …) stay as code words by design, and the sentences after them are translated. (c) The stoplist line's count is grouped with a thin space in every language (2 555 at the checked commit), never '2,555'. (d) 'Aggregate the law — statutes, gazettes, IP records — …' and the bold 'A research mirror, never the authoritative source and not legal advice:'. (e) 'Everything you need to operate the tool — rendered here, offline…'. (f) The grey line 'N articles across K channels' changes language immediately on each switch; this was the second freeze bug, fixed in PR #1161. In العربية everything is right-to-left with no sideways scroll bar. Accepted, not a failure: the server-rendered article Reader still has about 22 English strings (recorded; PF09 pending).",
+    "flags": [
+     "needs-seed-data",
+     "locale-check"
+    ],
+    "evidence": "src/static/index.html:2319-2340 (the inner adv-collect fold at 2329 holds #sch-speed-val), 2469-2470, 2526-2535, 2691-2692, 714-720 + 828-834, 172 + 3196-3201, 328-339; src/static/app-sources.js:896-910; src/static/app-settings.js:1077-1092; src/static/app-home.js:529-560, 1026, 1227-1238, 1267-1290; src/static/app-boot.js:73-79; docs/audit/i18n-remainder-clickthrough-2026-09-18/walk.py:21-30 and README.md (en/fr/ar/zh/hi tables)"
+   },
+   {
+    "id": "U6",
+    "where": "Seeded throwaway (8010) → Commodities (sidebar, 'adv' badge) → the graph headed 'Custom · 3 series' (there are no category tabs, because only one category exists) → the member chips 'Nd', 'Dy', 'Pr' under it, each with ⊞ and 📈 → the ⊞ beside 'Dy' (hover 'Open this in the analysis window — its corpus coverage') → the analysis window → its 'Price' subtab (#an-price-tab); then the same for 'Nd'",
+    "do": "Press the ⊞ beside Dy. In the analysis window that opens, click the 'Price' subtab if it is not already selected. Return to Commodities in the sidebar and do the same for Nd. Use ⊞, not 📈: 📈 opens a different chart that this row did not change.",
+    "expect": "'Price × coverage — Dy' draws Dy's 7 monthly prices (fewer than 10) as 7 separate narrow accent-coloured BARS, each topped by a solid 2-px cap, with NO line joining them. The bars rise from the lowest price, which the left axis labels, never from zero, so the lowest month shows only its cap on the floor. For Nd (70 daily prices) the same chart draws one continuous accent line with small dots and no bars. The line 'No corpus coverage to overlay yet.' under each chart is expected on this synthetic corpus. The Commodities graph itself shows only 4 Dy points because its default window is the last year of data; the Price subtab reads the whole series, hence 7. Both are correct.",
+    "flags": [
+     "needs-seed-data"
+    ],
+    "evidence": "scripts/ui_clickthrough_seed.py:507-545 (Nd 70 daily, Dy 7 monthly, Pr gapped); src/api/markets.py:354-390 (uncatalogued → 'custom'); src/static/app-markets.js:558-575 (default one-year window), 1311-1322, 1346-1375, 1408-1422 (⊞ member action), 1225-1262 (chips only for series with points in the window), 1495-1499 (no tabs for one category), 601 (_SPARSE_BAR_MAX = 10); src/static/app-analysis.js:433-468 (Price subtab reads the full series), 473-535 (priceBars, cap rect, dots only in line mode); tests/commodity_overlay_node_test.js"
+   },
+   {
+    "id": "U7",
+    "where": "Seeded throwaway (8010) → Settings → 'Data & backup' → panel 'Import newsletters (.eml)': file chooser (#nl-files), 'Import .eml files' (#nl-import-btn), result line (#nl-result), announcement block (#nl-attach) with 'Undo the automatic filing' (#nl-attach-undo)",
+    "do": "Choose the 3 to 6 .eml files and press 'Import .eml files'. Read the result line and the block under it. Hover the amber caveat, then hover a count in the per-source list. Switch the language to 'العربية' and re-read the block. Narrow the window to about 375 px (or use the browser's device toolbar) and scroll the panel. Switch back to English, press 'Undo the automatic filing', and press OK in the confirmation.",
+    "expect": "Result line: 'N imported · N duplicates skipped · N empty', then a grey 'Anonymisation: …' line. Below it, provided at least one newsletter was filed, an amber caveat is VISIBLE without hovering: 'this is a PLACEMENT, not a judgement about the publisher: …'. Hovering the caveat shows how filing is decided ('the ruled publisher ladder run at import time: …'). Next comes a line saying what this import did, using one or more of: 'filed under a publisher you already track', 'filed under a new, DISABLED source for the sender's domain', 'left in the import bucket (the sender could not be resolved without guessing)'. Then 'Automatically filed newsletters: N', with one row per destination source; a source the import created is marked 'disabled'. Hovering a row's count shows 'How this was decided: attach-exact', 'attach-alias' or 'new-email-source', plus the basis. In العربية the whole block (caveat, this-import line, per-source rows) re-renders in Arabic and right-to-left, and at 375 px nothing scrolls sideways. The one-line result above the block stays in the language it was written in; the code keeps the announcement in the block for exactly that reason, so this is not a failure. The Undo confirmation says newsletters you filed yourself are not touched and that re-importing the same files runs the filing again. After OK: 'N newsletters moved back to the import bucket.', plus 'Removed the now-empty sources this filing had created: …' when the import had created any, and the announcement block disappears.",
+    "flags": [
+     "mutates-data",
+     "needs-seed-data",
+     "locale-check",
+     "narrow-window"
+    ],
+    "evidence": "src/static/index.html:1977-1998; src/static/app-settings.js:1341-1451 (importNewsletters, the #nl-result frozen-by-design comment at 1367-1370, _attachTallyHtml, loadNewsletterAttach hides at attached = 0, undoNewsletterAttach); src/api/ingestion.py:231-340 (summary, undo) and 367-378 (method, caveat); src/ingest/newsletter_source.py:1-80 (ladder, platform refusal); src/static/app-boot.js:184-194 (only #nl-attach repaints); locales fr/ar/zh carry every attach key (checked); docs/ledger/shipped.csv 2026-09-16 newsletters/publisher-attach (PR #1141; no committed walk record)"
+   },
+   {
+    "id": "U8",
+    "where": "OPTIONAL, the maintainer's REAL install → Settings → 'Data & backup' → 'Import newsletters (.eml)'",
+    "do": "This is brief §5 operator step 2 and needs the maintainer's own machine and mailbox. First make a backup (Settings → Data & backup → 'Export / Back up…'). Import 2 or 3 real newsletters you would keep in the corpus anyway, and read the block as in U7. Then decide whether to press 'Undo the automatic filing'. It moves EVERY newsletter the app has ever filed automatically, meaning every import since this feature shipped, back to the import bucket, not only today's.",
+    "expect": "The same block as U7, naming where each real newsletter went among your own sources. No source you created yourself is renamed, deleted or refiled. After an undo, only automatic placements move back, and a source the filing created is deleted only if it is empty afterwards. What undo does NOT do is remove the newsletters: they stay in the corpus like any import. No per-import removal exists. 'Remove imported newsletters' deletes EVERY imported newsletter, and restoring a backup never removes anything because restore is additive. So import only newsletters you are happy to keep.",
+    "flags": [
+     "mutates-data",
+     "needs-backup-file"
+    ],
+    "evidence": "docs/plans/2026-09-12-beta-pathway/S04-14_ui-i18n-and-small-rulings.md §5 step 2; src/api/ingestion.py:283-340 (exact undo; a pre-existing source is never deleted); src/static/index.html:2053-2062 ('Restoring a backup is additive…'; 'Remove imported newsletters' removes all)"
+   },
+   {
+    "id": "U9",
+    "where": "Seeded throwaway (8010) → Agenda (sidebar) → 'Month' view (#agenda-views, #agenda-month); then Settings → Advanced → fold 'Calendar directory — the bundled feed catalogue, its check verdicts, and adding your own' (#agenda-feeds) → the 'Kind' filter (#feeddir-kind)",
+    "do": "In the Agenda month grid, hover one of the small moon glyphs in the corner of a day. In the Calendar directory set 'Kind' to 'religion' and read the list, then set it to 'science'. Do not press 'Add from URL' or any per-feed verify or import button, which go online, and do not use 'Import calendar', which changes data.",
+    "expect": "Nothing was removed while Q1135 = b and RC13 = (b) still conflict. The month grid shows moon-phase glyphs (🌑 🌓 🌕 🌗) on some days, and the hover reads, for example, 'Full moon HH:MM UTC — <method>; <accuracy>'. They are computed locally with no network. Kind = religion lists 8 families: Christianity, Orthodox Christianity, Judaism, Islam, Hinduism, Sikhism, Multi-faith observances, Pagan / Wicca, each named '… — religious calendar' and tagged 'religion'. Kind = science includes 'Astronomy — eclipses, moons, solstices, meteor showers'.",
+    "flags": [],
+    "evidence": "src/static/app-agenda.js:1157-1181 (local Meeus layer), 1250-1252 (hover text), 608-617 (Kind options from data), 677-713 (family name + kind); src/static/index.html:1015-1022, 2720-2748; configs/calendar_feeds.yml:3135-3230 (8 kind: religion) and 3287-3289 (astronomy, kind: science); docs/product/RELEASE_0.4_GATE.md row U RC paragraph; docs/ledger/RULINGS_INDEX.md Q1135 'NOT ACTED ON'"
+   }
+  ],
+  "clause_coverage": [
+   {
+    "clause": "Q1152: the i18n remainder keyed ×12 (the screen half; the three gate numbers are CI, see not_clickable)",
+    "step_ids": [
+     "U1",
+     "U3",
+     "U5",
+     "U6",
+     "U7"
+    ]
+   },
+   {
+    "clause": "Brief §4: a 12-locale sweep of the surfaces the i18n slice touched, with Arabic right-to-left checked (U3 covers all 12; U1, U5 and U7 cover fr, ar and zh)",
+    "step_ids": [
+     "U3",
+     "U1",
+     "U5",
+     "U7"
+    ]
+   },
+   {
+    "clause": "Q1124: the Patterns lens flips on only at ≥ 100 000 articles AND a measured false-positive rate ≤ 5 %, both numbers on the toggle; no flip in 0.4; an unmeasured rate shown as unmeasured, never 0; toggle text verified (the missing ≤ 5 % bar is in not_clickable)",
+    "step_ids": [
+     "U3",
+     "U4"
+    ]
+   },
+   {
+    "clause": "Q1149: the click-through corpus gains an ENCRYPTED variant, seeded encrypted at rest and entered through the real unlock screen (the human side; the scripted runner is not_clickable)",
+    "step_ids": [
+     "U2",
+     "U4"
+    ]
+   },
+   {
+    "clause": "Q1151: newsletter attach built as three halves (the automatic filing, the import UI that announces it with its caveat visible, and the undo), plus brief §5.2's real-mailbox trial",
+    "step_ids": [
+     "U7",
+     "U8"
+    ]
+   },
+   {
+    "clause": "RC08.6 = (a) / L5: _SPARSE_BAR_MAX (fewer than 10 points → bars) extended to the commodity price × coverage overlay only; invariant #16 unchanged",
+    "step_ids": [
+     "U6"
+    ]
+   },
+   {
+    "clause": "Q1135 = b (drop religious calendars + eclipse canon) versus RC13 = (b) (keep them, via a networked session): nothing removed while the conflict stands. 'The removal PR names what went' is not_clickable",
+    "step_ids": [
+     "U9"
+    ]
+   },
+   {
+    "clause": "Q1139: diagnostics.py split into a package, routes unchanged, proven by a route-equality test (the click is only a smoke check that diagnostics still answer)",
+    "step_ids": [
+     "U3"
+    ]
+   },
+   {
+    "clause": "Q1141: full FUTURE_DEVELOPMENTS.md reality check; the PR lists every corrected claim",
+    "step_ids": []
+   },
+   {
+    "clause": "Q1130 / RC17: only the via:* (and, under RC17, the coverage-state) prefixes filtered from topical displays",
+    "step_ids": []
+   },
+   {
+    "clause": "Q1128 = a: the maintainer's own click-through of the surfaces named in brief §4 (the agenda, the newsletter import UI and undo, the lens toggle, the locale sweep). Whether a DELEGATED agent run counts is itself a ruling; see not_clickable",
+    "step_ids": [
+     "U1",
+     "U2",
+     "U3",
+     "U4",
+     "U5",
+     "U6",
+     "U7",
+     "U9"
+    ]
+   }
+  ],
+  "not_clickable": [
+   "DELEGATION VERSUS Q1128 = a (a ruling, not a click). Q1128 = a reads 'Chromium in the sandbox + YOUR click-through = verified'. On 2026-09-26 the maintainer asked to delegate the click-through to Claude, to a Claude Code session or to a workflow. A delegated run of U1-U3, U5-U7 and U9 is a fresh, fuller instance of the FIRST half. Whether it also satisfies the second half amends Q1128 for this row. That amendment must be recorded (docs/ledger/OPEN_QUEUE.md + RULINGS_INDEX.md) by the session that owns the ledger before any gate row closes on an agent-run walk. This checker records nothing.",
+   "U4 and U8 need the maintainer's REAL install and mailbox. A cloud-sandbox session cannot reach them. Only a Claude session running on the maintainer's own device, or the maintainer, can do them. Both are optional: U3 covers the toggle text and U7 covers the attach and undo.",
+   "The ≤ 5 % bar is missing from the Patterns panel while the rate is unmeasured (app-diagnostics.js:385-387 prints '5%' only once a rate exists). The gate row says 'both numbers on the toggle' and brief S6 says the surface shows 'the false-positive rate against ≤ 5 % as unmeasured'. What is on screen is '100 000' plus 'unmeasured', with no '5 %'. Resolving that needs either a maintainer ruling that it suffices or a small panel change. A click cannot close it.",
+   "The three i18n gate NUMBERS (untranslatable 0, unkeyed t() 0, unkeyed tf() frames 0, coverage --min 100) are CI facts (.github/workflows/ci.yml:225, 264, 292, 310). A delegated session can also run them locally and record each exit code: python scripts/i18n_report.py --min 100; --max-untranslatable 0; --max-unkeyed-t-calls 0; --max-unkeyed-tf-frames 0. That is a command, not a click.",
+   "'The removal PR names what went' (Q1135 = b) cannot close and must not be forced. The religious calendars were deliberately NOT removed because the blank RC round assumed RC13 = (b), a networked research session. The CONFLICT stays recorded, and the eclipse canon is UNSTATED. It needs the maintainer's letters on D10 (eclipse canon; recommended '− eclipses') and D20 (drop versus G8's networked session) in docs/design/DECISIONS_2026-09-22_BETA_PATHWAY.md, both blank. If G8 stands, the separate networked session briefed in RELEASE_0.4_GATE.md §3 (the 2026-09-18 RC13 entry) must run, with egress to the calendar authorities; that ties to row V's allowlist.",
+   "Q1139's closing proof is a test, not a screen: tests/test_diagnostics_package_split.py compares the router-defined route table with tests/data/diagnostics_routes_at_split.json (131 routes, order included). The 'Session forensics' press in U3 is only a smoke check.",
+   "Q1141's closing artifact is PR #1139's body, which lists the 14 corrected claims. The dated 'Reality check 2026-09-16' notes are in docs/FUTURE_DEVELOPMENTS.md. That document is not in the in-app Help list (src/api/main.py _DOCS), so it is read on GitHub, not clicked in the app.",
+   "Q1130 / RC17 changes only the tag vocabulary OFFERED to the local model by the source-tag sweep (src/ai_layer/source_tags.py topical_vocabulary, called only at line 136 for the prompt). No on-screen list changed, and tests/test_source_tags.py enforces it. Optional hands-on check, which needs a local model: Settings → Advanced → 'AI — …' → 'Source-tag assignment -- progressive sweep' → 'Start sweep', then read the downloaded .jsonl header. D16 in the 2026-09-22 decisions file asks the maintainer to confirm L10, which is already built.",
+   "The Patterns lens FLIP needs an operator-labelled sample: a person judging which flagged pairs were wrong, on a corpus of 100 000+ articles (brief §5 operator step 1). 0.4 does not produce one, so the lens stays off by design.",
+   "The scripted encrypted runner (OO_UIWALK_ENCRYPTED_PASS=… scripts/ui_clickthrough_run.py --require-encrypted) is row V's per-release ritual, not a click. A delegated session CAN run it, as the 2026-09-16 sandbox walk did. U2 is its human-visible counterpart.",
+   "Known, recorded i18n gaps that are NOT failures here: about 22 English strings on the server-rendered Reader page; 8 concatenation-built strings (reader.js, guis/gallery.js); about 60 counts formatted by the BROWSER locale via bare .toLocaleString(), including the newsletter counts, which only show a separator at 1 000 or more; and the newsletter result line #nl-result staying in its original language after a switch (by design; the announcement lives in #nl-attach). All are in docs/ledger/OPEN_QUEUE.md (~15126-15200) or in code comments. PF09 (a reader.js i18n binding) awaits an answer in the 2026-09-22 decisions file."
+  ],
+  "surfaces": [
+   "First-launch screens (Choose your language, Legal documents, Where should your corpus live?, Create your corpus passphrase, Preparing your corpus)",
+   "Wikipedia wizard 'Following Wikipedia as it changes' (dismissed) and the airplane coachmark (dismissed)",
+   "Unlock your corpus screen",
+   "Home (No Leads yet empty state; By channel)",
+   "Top-bar language menu (12 languages, Arabic right-to-left)",
+   "Settings > Advanced > Diagnostics (Patterns lens gate panel, Session forensics)",
+   "Settings > Advanced > Safety & at-risk use (At-rest encryption)",
+   "Settings > Advanced > Collection (inner fold Advanced (legacy): speed readout)",
+   "Settings > Advanced > Sources (Import / export source list (CSV))",
+   "Settings > Advanced > Keywords (built-in stoplist line)",
+   "Settings > Advanced > Calendar directory (Kind filter)",
+   "Settings > Data & backup > Import newsletters (.eml) (announcement + undo)",
+   "Governments > Law",
+   "Help & documentation",
+   "Commodities > Custom family > analysis window > Price subtab",
+   "Agenda > Month view"
+  ],
+  "estimate_minutes": 85,
+  "notes": "HOW TO RUN THIS AS A DELEGATED SESSION (the maintainer's 2026-09-26 request). U1-U3, U5-U7 and U9 run entirely on throwaway folders on loopback, offline, so a Claude session in this sandbox can do them. Follow the pattern of docs/audit/i18n-remainder-clickthrough-2026-09-18/walk.py: Playwright on /opt/pw-browsers/chromium; change language by CLICKING #lang-switch and the row in #lang-menu, never OOI18N.setLang; press the real buttons, including the Patterns 'Check now' and the newsletter Undo; for each expect, record textContent WITH visibility measured (innerText is empty inside a closed <details>); take a screenshot per locale; capture page and console errors; and treat the dialog confirm() in U7 as OK. Each 'expect' is the pass criterion to report against. U4 and U8 need the maintainer's own machine. Where row U stands: the board line reads 'SESSION WORK COMPLETE 2026-09-18 (PR #1160), awaiting the maintainer's click-through and ONE separate session'. The rest of the row is CI tests, PR bodies or pending rulings (not_clickable).\n\nFound while checking, relevant to a runner:\n(1) The data-location screen shows on every fresh first launch even with OO_DATA_DIR set. unlock.html:336-339 says it is skipped for 'an operator who already set OO_DATA_DIR', but src/api/unlock.py:226 makes offerable = (state == 'fresh') only. If someone picks 'Choose another folder' there, the recorded choice is silently overridden by OO_DATA_DIR at the next start (src/paths.py: OO_DATA_DIR 'explicit override, always wins'). U1 keeps the default, so it is unaffected. This small code-versus-comment defect is worth recording; it is outside row U.\n(2) The Bulletin section is still nested INSIDE 'Uninstall & wipe' (src/static/index.html:3105-3140). It is recorded in docs/audit/13_ENCRYPTED_CLICKTHROUGH_2026-09-16.md §4 and in the shipped.csv 2026-09-16 clickthrough/encrypted-variant row, but not in OPEN_QUEUE. The Bulletin hint is deliberately left out of U5, so nobody opens the wipe fold.\n(3) The 2026-09-16 walk logged 'startLive is not defined' on Home. The call at app-shell.js:154 is unguarded, and the function is defined later, in app-library.js. If a tab click after an unlock seems to do nothing, reload and record it; it is not a row U regression.\n(4) The ≤ 5 % bar is not on screen while the rate is unmeasured (U3; not_clickable).\n(5) Neither the newsletter attach (PR #1141) nor the sparse-bar overlay (RC08.6) has a committed browser walk record; PR #1141's Chromium check exists only in its PR body, and the overlay has only tests/commodity_overlay_node_test.js. U6 and U7 would be their first durable records.\n(6) Outside row U: the overlay's price polyline (app-analysis.js:514-515) draws straight across Pr's 10-month hole, whereas ooChart breaks the line at a gap ('a gap is not a zero'). Note it if seen on Pr; RC08.6 covered only the sparse rule.\n(7) docs/audit/trust-history-clickthrough-2026-09-16 belongs to row K, not row U. Row U's walk evidence is docs/audit/i18n-remainder-clickthrough-2026-09-18/ (en, fr, ar, zh, hi) plus docs/audit/13_ENCRYPTED_CLICKTHROUGH_2026-09-16.md and encrypted-clickthrough-2026-09-16/.\n\nSafety: no step goes online. Stay in airplane mode, and never press the buttons each step names as online-bound. Never complete the legal-screen Decline. U1, U2 and U7 change only throwaway folders; delete them afterwards. U8 is the only step that touches real data: make a backup first, and remember that neither restore nor undo removes imported newsletters."
+ },
+ "walk": {
+  "row": "U",
+  "environment": {
+   "encrypted": true,
+   "seed": "scripts/ui_clickthrough_seed.py default STATE C (440-article multilingual pool, 3 commodity series Nd/Dy/Pr), seeded with OO_DB_PASSPHRASE set and OO_DB_PLAINTEXT unset into /tmp/claude-0/walk/U/seeded. The first bytes of the .db are ciphertext. It was booted with neither variable set, so it started LOCKED. U1 used a separate fresh, empty data dir, /tmp/claude-0/walk/U/empty. U7 used four synthetic .eml files in /tmp/claude-0/walk/U/eml: one from newsletters@email.bbc.com, two from news@some-unknown-press.org (one with an HTML body), and one from hello@substack.com with no List-Id.",
+   "ports": [
+    8850,
+    8851
+   ],
+   "scratch_dir": "/tmp/claude-0/walk/U/",
+   "notes": "Built from main at 462145c. Both instances were launched only with the .venv/bin/open-omniscience console script: 8850 = seeded encrypted (PID 19889); 8851 = fresh first launch (final PID 21350, after two resets of the throwaway folder to re-walk the one-shot first launch). Chromium /opt/pw-browsers/chromium through Playwright sync: a 1440x950 main pass and a 375x812 en pass. The language was changed only by clicking #lang-switch and then the row in #lang-menu. Airplane mode stayed engaged throughout: net-plane fill=currentColor at every check, and /api/system/network returned online:false at the end of every run. No consent popup was needed and 'Go online' was never clicked. The airplane coachmark was dismissed with 'Not now' whenever it appeared. One regex hit for junk text ('niemals als null' in the German Patterns caveat) is ordinary German for 'never as zero', so it is not reported. The four i18n gate commands were also run locally: scripts/i18n_report.py with --min 100, --max-untranslatable 0, --max-unkeyed-t-calls 0 and --max-unkeyed-tf-frames 0. All four exited 0. Both servers were killed at the end. The repo was not changed: git status is clean. Evidence is in /tmp/claude-0/walk/U: report.json, per-run JSON files (u1, u2, main_U3/U5/U6/U7/U9, extra, w375, probe375fresh, probe_strip*), the scripts walk_u1.py, walk_u2.py, walk_main.py, walk_extra.py and walk_375.py, and screenshots in shots/."
+  },
+  "steps": [
+   {
+    "id": "U1",
+    "result": "pass",
+    "locales": [
+     "en",
+     "fr",
+     "ar",
+     "zh"
+    ],
+    "screenshot": "shots/U/U-U1-home-ar.png",
+    "observed": "Fresh folder on 8851. The flow went: /unlock → 'Choose your language' (12 buttons) → English → 'Legal documents' ('Accept and continue' stays disabled until the box is ticked, then enables) → [the data-location screen was NOT shown; see U1-datadir] → 'Create your corpus passphrase' → 'Preparing your corpus…' → /?wikiwizard=1#home. Home settled on ONE card headed 'No Leads yet — that's expected on a young corpus', with the paragraph carrying the seven bold names and the grey line 'Collection and Leads update automatically in the background while you're online — there's nothing to start by hand.' After each switch in the top bar: fr heading reads exactly 'Aucune piste pour l'instant — c'est normal pour un jeune corpus', with all 7 bold names and the grey line in French. zh heading reads exactly '尚无线索——这在早期语料库中很正常', with all 7 names and the grey line in Chinese. In ar the card is fully Arabic, html dir=rtl, the sidebar moved to the right edge (x 1190-1440) and the paragraph runs right-to-left. No English was left in the card in any language. The plane icon stayed filled and horizontal scroll was 0 throughout. Outside the card, on the same Home, the at-a-glance strip above it was still English in ar; see the Home-strip defect."
+   },
+   {
+    "id": "U1-datadir",
+    "result": "fail",
+    "locales": [
+     "en"
+    ],
+    "screenshot": "shots/U/U-U1-entry-dialogs-en.png",
+    "observed": "Expected: after 'Accept and continue', the screen 'Where should your corpus live?' with 'Use the app's own data folder' selected. Actual, on two independent fresh first launches: the screen never appeared, and Legal went straight to 'Create your corpus passphrase'. At that moment the server log shows 'GET /api/system/data-location 503 Service Unavailable'. The lock gate returns 503 because that path is not in ALLOWED_WHILE_LOCKED; unlock.html reads the 503 body as 'not offerable' and skips the step. Once the corpus exists, the same endpoint returns 200 with offerable:false."
+   },
+   {
+    "id": "U1-first-run-dialogs",
+    "result": "fail",
+    "locales": [
+     "en"
+    ],
+    "screenshot": "shots/U/U-U1-entry-dialogs-en.png",
+    "observed": "Expected: the dialog 'Following Wikipedia as it changes' opens, and 'Not now' dismisses it. Actual: on landing at /?wikiwizard=1, #wiki-wizard and the first-run guide #guide-wizard ('Welcome to Open Omniscience', step 1/2) were BOTH open, stacked. Which one was on top varied: in the first run the guide was on top and its X had to be pressed before 'Not now' could be reached; in the second run the wiki wizard was on top. Once the top dialog is closed, 'Not now' and the guide's X both work and nothing else stays open. No coachmark appeared. This does not block the Home criteria."
+   },
+   {
+    "id": "U2",
+    "result": "pass",
+    "locales": [
+     "en"
+    ],
+    "screenshot": "shots/U/U-U2-wrong-passphrase-en.png",
+    "observed": "The seeder printed 'ui_clickthrough_seed: STATE C seeded.' followed by the counts (articles_lang_pool 440, commodity_series 3, …). lock-state before the walk was locked. The browser went STRAIGHT to #view-unlock (the only visible view), reading 'Unlock your corpus / This database is encrypted at rest (SQLCipher 4). Enter THE passphrase to open it.' No language, legal or create screen appeared. Wrong passphrase: the preparing view showed 'Elapsed 00:00' then '00:01', then the form came back with the red line 'the passphrase does not open open_omniscience.db (or the file is damaged)'. The field stayed editable, Unlock stayed enabled and the page was never blank. Right passphrase: 'Preparing your corpus…', then 'opening the database' with 'Elapsed 00:00', then /#home with the seeded material (453 Articles, 2,242 Keywords, 117 Commodity prices). Settings → Advanced → 'Safety & at-risk use' → At-rest encryption reads 'Corpus: Encrypted (SQLCipher 4) 4.12.0 community', then 'Custody log: not created yet'. lock-state afterwards is unlocked-encrypted."
+   },
+   {
+    "id": "U3",
+    "result": "pass",
+    "locales": [
+     "en",
+     "fr",
+     "es",
+     "de",
+     "zh",
+     "hi",
+     "ar",
+     "bn",
+     "ru",
+     "pt",
+     "id",
+     "ja"
+    ],
+    "screenshot": "shots/U/U-U3-patterns-gate-ar.png",
+    "observed": "Before the press, #patterns-gate and #patterns-gate-state were empty, and the checkbox was unticked and disabled. The fold has two 'Check now' buttons; only the one beside 'Patterns lens' was pressed. After the press the panel showed three lines. Line 1: 'Corpus size: 453 / 100 000' with an amber 'not met' pill. Line 2: 'False-positive rate:', an amber 'unmeasured' pill and grey 'needs a labelled sample judged by a person'; no 0 or 0.0 % appears. Line 3: the amber caveat 'The Patterns lens stays off until BOTH numbers are measured and met. An unmeasured false-positive rate is shown as unmeasured, never as zero.' Beside the button: 'off — the gate is not met'. The API agrees: can_flip false, blocked_by corpus and false_positive_rate, and no rate field at all. The checkbox stayed unticked and disabled after a forced click. All 12 language switches repainted the whole panel without another press, including the label: fr 'Taille du corpus', de 'Korpusgröße', zh '语料库规模', ar 'حجم المتن', ja 'コーパスの規模', and so on. The bar read '100 000' with a thin space (U+202F) in all 12, never '100,000'. The ar panel runs right-to-left. Session forensics printed the previous-session verdict, the last unlock's timings (0.5 s) and the data-folder inventory, with no error. OBSERVATION: while the rate is unmeasured, '5 %' appears nowhere on the panel in any of the 12 languages; only '100 000' does."
+   },
+   {
+    "id": "U4",
+    "result": "not-measurable-here",
+    "observed": "Needs the maintainer's real encrypted install and its passphrase, which this sandbox cannot reach. U2 and U3 cover the same screens on a throwaway encrypted corpus."
+   },
+   {
+    "id": "U5",
+    "result": "pass",
+    "locales": [
+     "en",
+     "fr",
+     "ar",
+     "zh"
+    ],
+    "screenshot": "shots/U/U-U5f-channels-ar.png",
+    "observed": "Each place was read in en, then re-read after each switch to fr, ar and zh. (a) The bold hint is translated; the speed readout reads 'Maximum' in en and fr, 'الحد الأقصى' in ar and '最大' in zh. (b) The CSV column names stay code words and the sentences after them are translated. (c) The stoplist count reads '2 555' with a thin space in all four languages. (d) The law hint is translated, including its bold sentence. (e) The Help grey line is translated. (f) Staying on Home's 'By channel' subtab, the line changed in front of the reader on each switch, without a reload: '453 articles across 5 channels', then '453 articles répartis sur 5 canaux', then '453 مقالة موزعة على 5 قناة', then '453 篇文章，分布于 5 个渠道'. ar is right-to-left, and horizontal scroll was 0 on all six places in all four languages. No junk text."
+   },
+   {
+    "id": "U6",
+    "result": "pass",
+    "locales": [
+     "en",
+     "fr",
+     "ar",
+     "zh"
+    ],
+    "screenshot": "shots/U/U-U6-price-Dy-en.png",
+    "observed": "The graph is headed 'Custom · 3 series', with no category tabs, and has the member chips Dy, Nd and Pr, each with ⊞ and 📈. The ⊞ beside Dy opened 'Price × coverage — Dy', which draws 7 accent-coloured bars, each with a 2-px cap. There is no line and there are no dots. Every bar rises from the plot floor. The left axis reads 274.4 / 281.7 / 289 (the lowest price in the API is 274.35), and the lowest month has a zero-height bar, so only its cap shows. 'No corpus coverage to overlay yet.' is shown under the chart. Nd (70 daily prices) draws 1 continuous line with 70 dots and no bars. The heading and the note are translated in fr, ar and zh. The chart's own axis label 'Price USD/kg' stays English after a switch until the window is opened again; see the defects."
+   },
+   {
+    "id": "U7",
+    "result": "pass",
+    "locales": [
+     "en",
+     "ar"
+    ],
+    "screenshot": "shots/U/U-U7-attach-en.png",
+    "observed": "Result line: '4 imported · 0 duplicates skipped · 0 empty', followed by the grey 'Anonymisation: …' line. The amber caveat 'this is a PLACEMENT, not a judgement about the publisher: …' is visible without hovering. The this-import line reads '1 filed under a publisher you already track · 2 filed under a new, DISABLED source for the sender's domain · 1 left in the import bucket (the sender could not be resolved without guessing)'. The bare substack.com address was the one refused. Then 'Automatically filed newsletters: 3', with a row for some-unknown-press.org marked 'disabled' (2) and a row for BBC News (1). Hovering a count shows 'How this was decided: new-email-source · etld1' or 'attach-exact · etld1'. In العربية, the caveat, the this-import line and the rows re-render in Arabic, right-to-left; the result line above stays English, which is by design. At 375 px in ar, nothing scrolls sideways. Undo, back in English: the confirmation reads 'Move every automatically filed newsletter back to the import bucket? Newsletters you filed yourself are not touched, and re-importing the same .eml files runs the filing again.' After OK: '3 newsletters moved back to the import bucket.' and 'Removed the now-empty sources this filing had created: some-unknown-press.org'. The announcement block disappears, the API reports attached 0, and the BBC News source is untouched."
+   },
+   {
+    "id": "U7-caveat-hover",
+    "result": "fail",
+    "locales": [
+     "en",
+     "ar"
+    ],
+    "screenshot": "shots/U/U-U7-attach-ar.png",
+    "observed": "Expected: hovering the caveat opens the app's one hover bubble with 'the ruled publisher ladder run at import time: …'. Actual: the caveat's title attribute holds that text, translated in ar, but the element never got the .oo-tip-target class. So it has no hover mark and the #oo-tip bubble did not open. A real browser would show only its plain native tooltip, which headless Chromium cannot display."
+   },
+   {
+    "id": "U8",
+    "result": "not-measurable-here",
+    "observed": "Needs the maintainer's real install and mailbox (brief §5, operator step 2). U7 covers the filing and the undo on a throwaway corpus."
+   },
+   {
+    "id": "U9",
+    "result": "fail",
+    "locales": [
+     "en",
+     "fr",
+     "ar",
+     "zh"
+    ],
+    "screenshot": "shots/U/U-U9-directory-kinds-en.png",
+    "observed": "The moon part PASSES. The Month grid shows 🌗 🌑 🌓 🌕 in day corners, and the hover reads 'Last quarter moon 07:52 UTC — Meeus, Astronomical Algorithms (2nd ed.) ch. 49: …; computed locally, no data files; typically within ~2 minutes'. The directory part FAILS. Kind offers only all, civic, community and holidays: there is no 'religion' and no 'science'. The directory says '241 feeds · 241 folders', and filtering by 'Christian', 'Islam', 'religio' or 'Astronomy' finds nothing. The cause, read in the code: src/events/feeds.py:58-60 and :96 drop every feed hosted on calendar.google.com, www.webcal.guru, cantonbecker.com or space.floern.com, and :99-102 drop any family left with no feed. That empties all 8 religion families and the astronomy family, so none of them reach /api/events/feeds. The YAML file still carries all nine. The Agenda category filter offers no religion category either."
+   },
+   {
+    "id": "U-locale-extra",
+    "result": "pass",
+    "locales": [
+     "fr",
+     "ar",
+     "zh"
+    ],
+    "screenshot": "shots/U/U-U6-price-Dy-ar.png",
+    "observed": "Beyond U1, U3, U5 and U7, the Price subtab was re-checked in fr, ar and zh. Its tab label, heading ('Prix × couverture', 'السعر × التغطية', '价格 × 报道量') and note are translated, and Arabic runs right-to-left. The chart's axis label and the Agenda moon hovers keep the previous language until they are drawn again, and the Meeus method sentence in the moon hover is English in every language. Recorded as one P3 defect."
+   },
+   {
+    "id": "U-375-en",
+    "result": "fail",
+    "locales": [
+     "en"
+    ],
+    "screenshot": "shots/U/U-375-fresh-help-en.png",
+    "observed": "At 375x812 in en, horizontal scroll was 0 on Home, Diagnostics (Patterns panel), Data & backup (newsletters), Commodities when the page is loaded at that width, the Price subtab, the Agenda month view and Governments → Law. The Help page scrolls sideways by 406 px: a <code> line in the User Manual reaches x=829, and text is cut at the right edge. Separately, narrowing an already-drawn window from 1440 to 375 without reloading left Commodities scrolling sideways by 562 px."
+   },
+   {
+    "id": "U-i18n-gates",
+    "result": "pass",
+    "locales": [],
+    "observed": "A command, not a click: scripts/i18n_report.py with --min 100 (4655/4655 strings in each language), --max-untranslatable 0, --max-unkeyed-t-calls 0 (0 of 2693 calls) and --max-unkeyed-tf-frames 0 (0 of 188 frames). All four exited 0."
+   }
+  ],
+  "page_errors": [],
+  "http_errors": [
+   "503 GET http://127.0.0.1:8851/api/system/data-location: U1 fresh first launch, right after 'Accept and continue'. This is the cause of U1-datadir.",
+   "403 POST http://127.0.0.1:8850/api/system/unlock: U2 wrong passphrase. This is the expected refusal."
+  ],
+  "junk_text": [],
+  "defects": [
+   {
+    "title": "The first-launch 'Where should your corpus live?' screen never appears, because the lock gate blocks its endpoint",
+    "severity": "P2",
+    "step_ids": [
+     "U1-datadir"
+    ],
+    "repro": "Point OO_DATA_DIR at an empty folder and boot with the console script (no passphrase variable). Open the app, pick English, tick the box and press 'Accept and continue'.",
+    "expected": "The screen 'Where should your corpus live?' (#view-datadir), with 'Use the app's own data folder' selected, then 'Create your corpus passphrase'.",
+    "actual": "Two independent fresh launches went straight to 'Create your corpus passphrase'. While the state is 'fresh', GET /api/system/data-location returns 503 {'detail':'the database is locked: unlock it first'}; unlock.html reads that as offerable=false and silently skips the step. The choice of data folder is therefore unreachable at the only moment it is offered.",
+    "evidence": "/tmp/claude-0/walk/U/empty.log has 'GET /api/system/data-location HTTP/1.1 503'. src/api/unlock.py:77-93: ALLOWED_WHILE_LOCKED does not list /api/system/data-location or /data-location/check. src/api/unlock.py:70-71: app_is_locked() is True for 'fresh'. src/api/main.py:753-763: the lock gate. src/static/unlock.html:340-345: the silent skip. tests/test_data_location.py:283-292 mounts the router without the middleware, so the tests cannot see this. The checker's note (1) assumed the opposite (that the screen shows on every fresh launch)."
+   },
+   {
+    "title": "The Calendar directory hides every religion and astronomy family, while its hint still advertises them. This contradicts the gate's 'nothing removed' claim (Q1135 / RC13).",
+    "severity": "P3",
+    "step_ids": [
+     "U9"
+    ],
+    "repro": "On the unlocked seeded instance: Settings → Advanced → 'Calendar directory'. Open the Kind menu, or type 'Christian' or 'Astronomy' in Filter.",
+    "expected": "Kind = religion lists 8 families; Kind = science includes 'Astronomy — eclipses, moons, solstices, meteor showers'.",
+    "actual": "Kind offers only all, civic, community and holidays, across 241 feeds; no religion or astronomy family matches any filter. The hint still reads 'A bundled directory of ~500 public calendar feeds (country holidays, religions, elections, UN days, space, astronomy)'. The families are in the YAML, but on screen they are already gone.",
+    "evidence": "src/events/feeds.py:58-60 (_DEAD_DEFAULT_HOSTS), :96 (the feed filter), :99-102 (a family with no feed left drops out). configs/calendar_feeds.yml:3135-3230: every religion feed is on calendar.google.com or www.webcal.guru; 3285-3297: the astronomy feeds are on dead or retired hosts. src/static/index.html:2724: the hint text. /api/events/feeds lists only holidays (239), civic (1) and community (1). Screenshot U-U9-directory-kinds-en.png. The filtering may be deliberate; what disagrees with it is the gate text and the hint."
+   },
+   {
+    "title": "The Help page scrolls sideways by 406 px at 375 px width",
+    "severity": "P3",
+    "step_ids": [
+     "U-375-en",
+     "U5"
+    ],
+    "repro": "Load the app at 375x812 and press the top-bar '?' button.",
+    "expected": "No sideways scroll (scrollWidth - clientWidth = 0), as on the other row U surfaces.",
+    "actual": "scrollWidth - clientWidth = 406. The User Manual's install <code> line reaches x=829, the document-list buttons are 744 px wide, and body text is cut at the right edge.",
+    "evidence": "Screenshot U-375-fresh-help-en.png; probe375fresh.json. src/static/app.css:1675 sets '.doc-layout { grid-template-columns:1fr; }', and a 1fr column still widens to fit the unbroken <pre> line."
+   },
+   {
+    "title": "Home's at-a-glance strip stays in the previous language after a switch, and three of its counters are never translated",
+    "severity": "P3",
+    "step_ids": [
+     "U1"
+    ],
+    "repro": "On Home in English, switch the top bar to Français or العربية and read the strip above the briefing.",
+    "expected": "The strip changes to the new language at once, like the card below it.",
+    "actual": "It stays English until the next background refresh, about 20 s in fr. In the ar screenshot of U1, 'Your library is empty — head to Collect…' and 'Automatic collection: stopped · Your corpus stays on this machine…' are English. After a reload in fr, the strip was still English 5 s later. Even after the refresh, 'sources qualified', 'sources pending' and 'sources candidates' stay English, and 'as of 08:11 PM' keeps the English time format.",
+    "evidence": "probe_strip.json, probe_strip2.json; screenshots U-U1-home-ar.png and U-U1-home-strip-fr-seeded.png. src/static/app-home.js:21-29: these labels fall back to t(k.replace(/_/g,' ')), a key no language file has and the i18n check cannot see. src/static/app-home.js:57-62: the strip is inside [data-i18n-dyn]. src/static/app-boot.js:55-135: the language-switch repaint list does not include the strip."
+   },
+   {
+    "title": "The newsletter caveat has no hover mark and does not open the shared hover bubble",
+    "severity": "P3",
+    "step_ids": [
+     "U7-caveat-hover"
+    ],
+    "repro": "Settings → Data & backup → import .eml files so that at least one is filed → hover the amber caveat.",
+    "expected": "Per invariant #17, the caveat is marked (dotted underline) and hovering it opens #oo-tip with the explanation of how filing is decided.",
+    "actual": "#nl-attach-caveat has only the class card-caveat, and #oo-tip stays hidden; the counts beside it do open the bubble. Only the browser's plain native tooltip would appear.",
+    "evidence": "main_U7.json: u7.hover_caveat has tip.vis false with the title present; u7.hover_count has tip.vis true. At page load the element has no title. src/static/app-settings.js:1424 sets .title later, on an element that already exists. src/static/app-boot.js:268-275 marks only elements that have a title at boot or are added later; it does not watch attribute changes."
+   },
+   {
+    "title": "In the newsletter source rows the count runs into the name ('BBC News1', 'some-unknown-press.org disabled2')",
+    "severity": "P3",
+    "step_ids": [
+     "U7"
+    ],
+    "repro": "After an import that files newsletters, read the rows under 'Automatically filed newsletters: N'.",
+    "expected": "The source name and its count shown apart, name on the left and count on the right.",
+    "actual": "The name, the 'disabled' tag and the count run together: 'BBC News1', 'some-unknown-press.org disabled2'. Same in ar: 'معطّل2'.",
+    "evidence": "Screenshots U-U7-attach-en.png and U-U7-attach-ar-375.png. src/static/app-settings.js:1415-1419 builds rows as a .vr div with no separator between name and count. src/static/app.css:835 styles .vr only inside .vitals-pop."
+   },
+   {
+    "title": "Two first-run dialogs open on top of each other on a fresh install, in an unpredictable order",
+    "severity": "P3",
+    "step_ids": [
+     "U1-first-run-dialogs"
+    ],
+    "repro": "Fresh folder → language → legal → create passphrase → the app opens at /?wikiwizard=1.",
+    "expected": "One first-run dialog at a time.",
+    "actual": "#wiki-wizard and #guide-wizard are both open. The one underneath cannot be clicked until the top one is closed, and which one was on top differed between the two runs.",
+    "evidence": "u1.json: dialogs_after_entry {wiki: true, guide: true} and dismiss_order; screenshot U-U1-entry-dialogs-en.png. src/static/app-boot.js:555-558 opens the Wikipedia dialog and src/static/app-backup.js:2708 opens the guide; nothing stops both opening at once."
+   },
+   {
+    "title": "The Price chart's axis label and the Agenda moon hovers keep the previous language after a switch; the moon method sentence is English in every language",
+    "severity": "P3",
+    "step_ids": [
+     "U6",
+     "U9",
+     "U-locale-extra"
+    ],
+    "repro": "Open Dy's Price subtab (or the Agenda month view) in English, then switch to fr, ar or zh without reopening it.",
+    "expected": "Text drawn into the chart and the hover follows the switch, like the heading next to it.",
+    "actual": "The label stays 'Price USD/kg' in fr, ar and zh, even after selecting the Price subtab again; opening it fresh in fr gives 'Prix USD/kg'. Moon hovers stay 'Last quarter moon …' after the switch, while a fresh fr render gives 'Dernier quartier …'. The Meeus method and accuracy text after the dash is English in every language.",
+    "evidence": "extra.json and w375.json (the probes). src/static/app-analysis.js:538 bakes t9('Price') into the chart when it is drawn. src/static/app-agenda.js:1252 and 1311 build the hover text when the grid is drawn, from the server's method text. Neither is redrawn on a language switch."
+   },
+   {
+    "title": "The Commodities chart is not redrawn when the window gets narrower",
+    "severity": "P3",
+    "step_ids": [
+     "U-375-en"
+    ],
+    "repro": "Open Commodities at 1440 px, narrow the window to 375 px without reloading, and go back to Commodities.",
+    "expected": "The chart refits and nothing scrolls sideways.",
+    "actual": "A 937-px canvas remains and the page scrolls sideways by 562 px. Loading the page directly at 375 px is fine.",
+    "evidence": "w375.json: w375.commodities has hscroll 562 and a 937-px CANVAS as the widest element. probe375fresh.json: markets.hscroll 0."
+   }
+  ],
+  "not_measurable": [
+   "U4 and U8 need the maintainer's real encrypted install, its passphrase and a real mailbox, which this sandbox cannot reach. Both steps are optional.",
+   "Q1128 = a: whether this delegated agent walk counts as the maintainer's own click-through is a ruling. The session that owns the ledger has to record it in OPEN_QUEUE.md and RULINGS_INDEX.md; this walk recorded nothing.",
+   "The ≤ 5 % bar does not appear on the Patterns panel while the false-positive rate is unmeasured (checked in all 12 languages). Closing 'both numbers on the toggle' needs a ruling or a small panel change, not a click.",
+   "Q1135 = b ('the removal PR names what went') cannot close by clicking. See the U9 defect: the religious calendars are already hidden from the directory by the dead-host filter.",
+   "Q1139 (a route-equality test), Q1141 (the list of corrected claims in PR #1139's body) and Q1130/RC17 (the tag list offered to the local model) are not visible on screen. Session forensics answered, which is only a smoke check.",
+   "Headless Chromium cannot show or screenshot a native browser tooltip. The U7 caveat hover was therefore judged by the app's own bubble and by the title text.",
+   "Turning the Patterns lens on needs a sample of flagged pairs judged by a person on a corpus of 100 000+ articles, which cannot be produced here.",
+   "No step in row U needed the network, so no consent popup was opened. The after-consent part of an online step does not apply here; it was not skipped."
+  ],
+  "summary": "On an encrypted corpus entered through the real unlock screen, the click-through passes for U2, U3 (all 12 languages), U5, U6 and the main part of U7: the filing is announced with its caveat visible, the Arabic re-render works, and Undo works. The row still does not fully close. On a fresh first launch the 'Where should your corpus live?' screen never appears, because /api/system/data-location answers 503 while locked (P2). The Calendar directory shows no religion or astronomy families, so U9 fails. At 375 px the Help page scrolls sideways, and several small translation and hover gaps remain (P3). U4 and U8 need the maintainer's own machine, and whether a delegated walk counts under Q1128 = a is still a ruling to record."
+ },
+ "recheck": {
+  "row": "U",
+  "verdicts": [
+   {
+    "title": "The first-launch 'Where should your corpus live?' screen never appears, because the lock gate blocks its endpoint",
+    "verdict": "confirmed",
+    "reason": "Reproduced on my own fresh instance (port 8853, empty OO_DATA_DIR, booted with the console script, no passphrase variable). Path: language → legal → tick → 'Accept and continue'. The only /api/system/data-location response was 503 {\"detail\":\"the database is locked: unlock it first\",\"locked\":true}. #view-datadir stayed hidden and #view-create showed. Control, same page and same flow: I fulfilled only that one request with the JSON the handler itself returns for this state. That JSON came from calling src.api.unlock.data_location() with OO_DATA_DIR pointed at a fresh folder: offerable:true, state:fresh. With it, 'Where should your corpus live? … Use the app's own data folder [selected] … Choose another folder … Continue' renders. So the lock middleware is the only thing blocking the step. The step is maintainer-asked (src/safety/data_location.py docstring, THE ASK 2026-07-14). No other path reaches it: a plaintext store never has a 'fresh' state. The default folder still works, so nothing is lost; the feature is simply dead on every install, silently. P2 stands. Evidence: /tmp/claude-0/walk/U-recheck/fresh.json, shots/U-D1-after-accept-real-en.png, shots/U-D1-control-200-datadir-en.png.",
+    "root_cause": "src/api/unlock.py:75-93: ALLOWED_WHILE_LOCKED does not list /api/system/data-location. unlock.py:70-71: app_is_locked() is True for 'fresh'. src/api/main.py:751-763: the _lock_gate middleware answers 503 for every other path. src/static/unlock.html:340-345: legalToDataLocation() parses the 503 body, where info.offerable is undefined, and silently calls legalToPassphrase(). tests/test_data_location.py:283-292 mounts the router on a bare FastAPI() without the middleware, so no test can see this.",
+    "suggested_fix": "Add \"/api/system/data-location\" to ALLOWED_WHILE_LOCKED. The prefix match covers GET, POST /check and POST, and both POSTs already refuse with 409 unless the state is 'fresh', so nothing opens after a store exists. Add a test through the real src.api.main app, which runs the middleware, at state 'fresh', asserting 200 and offerable:true. Optionally make unlock.html treat a non-2xx answer as an error rather than as 'not offerable'. Also decide on unlock.html:336-339: its comment says an explicit OO_DATA_DIR skips the step, but the handler's offerable ignores explicit_override, and the existing test pins offerable to 'fresh' only.",
+    "severity": "P2"
+   },
+   {
+    "title": "Calendar directory: the religion and astronomy families are hidden (the U9 'directory part FAIL')",
+    "verdict": "by-design",
+    "reason": "The families are hidden by a deliberate filter shipped 2026-07-10, long before Q1135/RC13, not by anything in row U. shipped.csv row 2026-07-10 'B7: robots-dead default calendar feeds filtered from the loaded directory (honest single-provider set)'. The src/events/feeds.py:45-57 comment reads: 'calendar.google.com's robots.txt DISALLOWS its /calendar/ical/ paths … www.webcal.guru likewise disallows its download endpoints; cantonbecker.com + space.floern.com are robots-undetermined (fail-closed refuses them; the local Meeus astronomy already covers moons/eclipses). These are now filtered OUT of the loaded directory entirely … The bundled YAML keeps the full dated record'. Every one of the 8 religion families and the astronomy family sits only on those hosts, so none of them could ever produce an event. The gate does not ask for them to be shown. RC13 → (b) (RELEASE_0.4_GATE.md row U, and the 2026-09-18 amendment) sends the religious dates to a SEPARATE networked research session that is 'BRIEFED HERE AND NOT BUILT'. The same entry's 'nothing was removed from the agenda meanwhile' is true: the removal predates it. Re-measured: load_families() gives 241 families, kinds holidays 239 / civic 1 / community 1. The YAML carries religion 8, science 1 and space 1. The walker's expectation 'Kind = religion lists 8 families' was a misread. The stale hint that advertises these families is a real defect, reported separately below.",
+    "root_cause": "Intended: src/events/feeds.py:58-60 (_DEAD_DEFAULT_HOSTS), :90-102 (feed filter and empty-family drop), per the 2026-07-10 B7 ruling.",
+    "suggested_fix": "None for the filtering. The religious dates belong to the RC13 = (b) networked session already briefed in the gate's §3 amendment log.",
+    "severity": "P3"
+   },
+   {
+    "title": "Calendar directory hint advertises ~500 multi-provider feeds including religions, elections, space and astronomy that the directory does not serve",
+    "verdict": "confirmed",
+    "reason": "This is the half of the walker's U9 defect that survives. Measured on my encrypted seeded instance (8852), in Settings → Advanced → Calendar directory. The hint reads: 'A bundled directory of ~500 public calendar feeds (country holidays, religions, elections, UN days, space, astronomy)… When several providers publish the same calendar, they are grouped into one folder — you see the duplicate and can compare every source.' On the same screen the status reads '241 feeds · 241 folders', and the Kind select offers only all / civic / community / holidays. /api/events/feeds returns 241 families: holidays 239, civic 1 (UN days), community 1. Since B7 there is one provider per family, so the duplicate-folder sentence is false too. It is stale copy that describes features the reader cannot find, on the app's own honesty surface. Cosmetic in effect: P3. Evidence: /tmp/claude-0/walk/U-recheck/seeded_strip_price_moon_calendar.json (cal.*), shots/U-D2-calendar-hint-en.png.",
+    "root_cause": "src/static/index.html:2724-2725: static hint text was not updated when the 2026-07-10 B7 load-time filter (src/events/feeds.py:58-102) cut the directory to 241 single-provider families.",
+    "suggested_fix": "Rewrite the hint to describe what load_families() actually serves: about 240 country-holiday feeds plus UN days and one community calendar, one provider each. Add one line saying that feeds whose hosts' robots.txt refuses them are withheld. Alternatively, render the counts from /api/events/feeds. Key the new strings ×12.",
+    "severity": "P3"
+   },
+   {
+    "title": "The Help page scrolls sideways by 406 px at 375 px width",
+    "verdict": "confirmed",
+    "reason": "Reproduced by loading the app at 375x812 in en and pressing the top-bar '?'. Home measured scrollWidth - clientWidth = 0, Help measured 406. The widest element is a CODE inside a PRE (the User Manual's 'curl -fsSL https://raw.githubusercontent.com/…' install line), 815 px wide, with its right edge at 829. The .doc-layout grid is 301 px wide, but its single track resolves to 744.375px. The first <pre> is 744 px wide with scrollWidth 841. So the pre's own overflow-x:auto never engages: the grid track has already grown to the pre's min-content. Evidence: seeded_newsletter_narrow_help.json (help.*), shots/U-D3-help-375-en.png.",
+    "root_cause": "src/static/app.css:1622 (grid-template-columns:230px 1fr) and :1675 (grid-template-columns:1fr at ≤600px). A 1fr track has an 'auto' minimum, so it grows to the grid item's min-content, which includes the unbreakable <pre> line. The pre's overflow-x:auto (app.css:1648) does not lower the min-content contribution of its non-scrolling grid-item ancestor.",
+    "suggested_fix": "Use minmax(0,1fr) in both rules (230px minmax(0,1fr) at desktop, minmax(0,1fr) at ≤600px), or add .doc-layout > * { min-width:0 }. The existing .prose pre { overflow-x:auto } then scrolls inside the box.",
+    "severity": "P3"
+   },
+   {
+    "title": "Home's at-a-glance strip stays in the previous language after a switch, and three of its counters are never translated",
+    "verdict": "confirmed",
+    "reason": "Reproduced on 8852 (encrypted, unlocked), switching with #lang-switch. In fr, 1 s and 5 s after the switch, the strip still read ARTICLES/SOURCES/KEYWORDS/COMMODITY PRICES… and 'Automatic collection: stopped · Your corpus stays on this machine…'. In ar right after the switch, the strip and status line were entirely English on an rtl page (shots/U-D4-strip-ar-after-switch.png). After the next live poll (within 45 s), fr showed MOTS-CLÉS, PRIX DES MATIÈRES PREMIÈRES and 'Collecte automatique: arrêté', but 'SOURCES QUALIFIED', 'SOURCES PENDING' and 'SOURCES CANDIDATES' stayed English, and the age note read 'à 09:31 PM (serveur occupé)' with an English 12-hour time (shots/U-D4-strip-fr-after-poll.png). /api/database/stats returns exactly those nine keys. fr.json has no 'sources qualified', 'sources pending' or 'sources candidates' key, and the i18n gates cannot see them because the string is built by k.replace(/_/g,' '). Not counted here: the '6,418' English grouping in fr is the recorded deliberate omission for bare toLocaleString() (60 sites, OPEN_QUEUE). Evidence: seeded_strip_price_moon_calendar.json (strip.*), extra.json.",
+    "root_cause": "src/static/app-home.js:21-29: HOME_STAT_LABELS lacks sources_qualified/sources_pending/sources_candidates, and the fallback t(k.replace(/_/g,' ')) has no key in any locale. app-home.js:46: toLocaleTimeString([], …) uses the browser locale, not the UI language. index.html:247: the strip sits inside [data-i18n-dyn], so the i18n walker skips it (i18n.js:58). app-boot.js:41-135: the one oo:langchange listener repaints the strip's Wikipedia figure and failure line, but never calls renderHomeStats or renderHomeStatus. So the strip waits for refreshHomeLive (app-home.js:844).",
+    "suggested_fix": "Keep the last /api/database/stats payload and scheduler running flag. In the oo:langchange listener, call renderHomeStats(cached.counts, cached) and renderHomeStatus(cachedRunning), without a fetch. Add the three labels to HOME_STAT_LABELS and key them ×12. Pass the UI locale (uiLangCode()) to toLocaleTimeString.",
+    "severity": "P3"
+   },
+   {
+    "title": "The newsletter caveat has no hover mark and does not open the shared hover bubble",
+    "verdict": "confirmed",
+    "reason": "Reproduced on 8852 by importing the walker's four .eml files through Settings → Data & backup. #nl-attach-caveat carries its title ('the ruled publisher ladder run at import time: a Public Suffix List eTLD+1 …'), but its className stays 'card-caveat', and hovering never shows #oo-tip. That holds on two hovers after a 3 s wait and again after a full page reload. The count <b> beside it, created through innerHTML, has class oo-tip-target and opens the bubble with 'How this was decided: new-email-source · etld1'. So invariant #17 ('a MutationObserver marks future surfaces, so the convention cannot be forgotten') has a gap: a title added to an element that already exists is never marked. The caveat itself is visible, so informed consent holds; only the layered method misses the app's bubble. A real browser would still show the native tooltip. P3. Evidence: seeded_newsletter_narrow_help.json (nl.caveat_hover*, nl.count_hover).",
+    "root_cause": "src/static/app-boot.js:268-275: ooTipInit marks [title] elements once at boot and afterwards only for childList addedNodes. It never observes attribute changes. src/static/app-settings.js:1424 sets .title on the static #nl-attach-caveat (index.html:1991, which has no title at load). The textContent write at :1423 adds only a text node, which the observer skips because of the nodeType===1 check.",
+    "suggested_fix": "Generic fix: observe attributes as well, with {childList:true, subtree:true, attributes:true, attributeFilter:['title']}, and mark m.target on attribute mutations. That closes the gap for every surface that sets .title later. The show()/hide() title swaps only re-add a class that is already there. Local fix: add classList.add('oo-tip-target') in loadNewsletterAttach.",
+    "severity": "P3"
+   },
+   {
+    "title": "In the newsletter source rows the count runs into the name ('BBC News1', 'some-unknown-press.org disabled2')",
+    "verdict": "confirmed",
+    "reason": "Reproduced on 8852 after the import. The #nl-attach-body .vr rows have innerText 'some-unknown-press.org disabled2' and 'BBC News1'. Each row computes display:block, and the name span's right edge (x 493 / 348) equals the count <b>'s left edge, so nothing separates the two. 'disabled2' can read as one word. It is a readability problem, not a data one: P3. Evidence: seeded_newsletter_narrow_help.json (nl.rows_innerText, nl.row_layout), shots/U-D6-rows-en.png.",
+    "root_cause": "src/static/app-settings.js:1413-1417 builds each row as <div class=\"vr\"><span>name…</span><b>count</b></div> with no separator. The only .vr rules are scoped to .vitals-pop (src/static/app.css:835-839), so outside the task-manager popover the row is an unstyled block.",
+    "suggested_fix": "Add a scoped rule such as #nl-attach-body .vr { display:flex; justify-content:space-between; gap:10px; }, which mirrors the .vitals-pop .vr rule. Alternatively, put a ' · ' between the span and the <b>.",
+    "severity": "P3"
+   },
+   {
+    "title": "Two first-run dialogs open on top of each other on a fresh install, in an unpredictable order",
+    "verdict": "confirmed",
+    "reason": "Reproduced on my fresh 8853 by completing language → legal → create passphrase, which lands at /?wikiwizard=1#home. Five seconds later both #wiki-wizard.open and #guide-wizard.open were true. A read-only showModal hook recorded the order ['wiki-wizard@2849', 'guide-wizard@3407']: the guide went on top, and elementFromPoint at the wizard's own centre hits guide-wizard. The walker saw the other order in one of two runs, which fits two independent async chains racing. Nothing is blocked (close the top one, then the other), so P3. Evidence: fresh.json (C.dialogs_after_entry), shots/U-D7-stacked-dialogs-en.png.",
+    "root_cause": "src/static/app-boot.js:555-558 calls openWikiWizard() when ?wikiwizard=1 is present. That function is async: it awaits /api/wiki/languages and /api/scheduler/config, then calls showModal (src/static/app-sources.js:1323-1350). Independently, app-boot.js:213 calls checkEmptyCorpus(), which awaits /api/database/stats and then calls openGuide() (src/static/app-backup.js:2705-2709 → app-core.js:785-789 showModal). Neither checks whether the other is open or pending, so the order depends on which fetch resolves first.",
+    "suggested_fix": "Sequence the two. In checkEmptyCorpus, when ?wikiwizard=1 is present or #wiki-wizard is open, defer openGuide() to the wiki wizard's 'close' event (dlg.addEventListener('close', openGuide, {once:true})), so exactly one first-run dialog is open at a time and the order is deterministic.",
+    "severity": "P3"
+   },
+   {
+    "title": "The Price chart's axis label and the Agenda moon hovers keep the previous language after a switch; the moon method sentence is English in every language",
+    "verdict": "confirmed",
+    "reason": "Reproduced on 8852. Dy Price subtab: the svg reads 'Price USD/kg' in en. After switching to fr, the tab label becomes 'Prix' but the svg still reads 'Price USD/kg'. Selecting another subtab and then Price again leaves it unchanged. Opening the window fresh in fr gives 'Prix USD/kg'. Agenda month view: the moon title is 'Last quarter moon 07:52 UTC — …' in en and is unchanged after the switch to fr. Leaving the tab and coming back gives 'Dernier quartier 07:52 UTC — Meeus, Astronomical Algorithms (2nd ed.) ch. 49: mean lunar phase + periodic and planetary corrections; computed locally, … typically within ~2 minutes; …', so the method and accuracy tail is English even on a fresh fr render. Newly found in the same class: the month grid's weekday headings stay 'Mon Tue … Sun' after the switch and only become 'lun. mar. …' after navigating away and back. All of these are the frozen-locale class and one untranslated server string on a hover: P3. Evidence: seeded_strip_price_moon_calendar.json (price.*, moon.*), extra.json (agenda.*), shots/U-D8-price-fr-after-switch.png, shots/U-D8-moon-fr.png.",
+    "root_cause": "src/static/app-analysis.js:538 bakes t9('Price') into the overlay SVG when it is drawn. src/static/app-agenda.js:1252 (month) and :1311 (week) build the title and weekday names once, at render time. They concatenate the server's moon.method and moon.acc, English constants _METHOD/_ACCURACY in src/events/astronomy.py, without t(). None of these renderers is registered in the oo:langchange listener (src/static/app-boot.js:41-135). The i18n gates cannot see server-sent strings.",
+    "suggested_fix": "Register the agenda grid re-render and the price-overlay redraw in the one oo:langchange listener, redrawing from retained payloads with no fetch, as _anRepaintXLang and _renderPatternsGate already do. Pass moon.method, moon.acc, season.method and season.acc through t(). Key the few fixed Meeus method and accuracy strings ×12, the same way loadNewsletterAttach already does t(d.caveat).",
+    "severity": "P3"
+   },
+   {
+    "title": "The Commodities chart is not redrawn when the window gets narrower",
+    "verdict": "confirmed",
+    "reason": "Reproduced on 8852. At 1440x950 on Commodities, the canvas style width is 900px and horizontal scroll is 0. After set_viewport_size(375x812) with no reload and a 2.5 s wait, horizontal scroll is 562, and the widest element is a CANVAS 900 px wide with its right edge at 937. As the walker found, loading the page directly at 375 px is fine. A real user narrowing a desktop window or rotating a tablet hits this. P3. Evidence: seeded_newsletter_narrow_help.json (narrow.*), shots/U-D9-commodities-narrowed-375.png.",
+    "root_cause": "src/static/app-markets.js:1756-1775: ooChart measures el.clientWidth once and sizes the canvas in fixed px (W = min(avail, 900)). The only ResizeObserver (:1758-1766) handles the not-yet-laid-out zero-width case and disconnects after the first render, so nothing refits the chart when its host narrows.",
+    "suggested_fix": "Keep one ResizeObserver per chart host and re-run ooChart(el, seriesList, opts) when el.clientWidth differs from the drawn W by more than a few px, with a debounce and without refetching. Alternatively, give the canvas max-width:100% and map pointer events through getBoundingClientRect.",
+    "severity": "P3"
+   }
+  ]
+ }
+}

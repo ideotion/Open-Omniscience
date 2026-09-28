@@ -66,7 +66,10 @@ def _code_without_docstring(src: str, name: str) -> str:
 def test_the_notice_is_rendered_into_the_article_list() -> None:
     """A disclosure that exists and is never drawn is the dead-end shape this feature is
     most exposed to -- the rings themselves were correct and unread for a year."""
-    body = strip_comments(function_body(_analysis(), "_anLoadArticles"))
+    # The list is fetched by _anLoadArticles and DRAWN by _anDrawArticles, split so a
+    # language switch redraws it with no request (the 2026-09-27 re-walk, N-4).
+    body = strip_comments(function_body(_analysis(), "_anLoadArticles")
+                          + function_body(_analysis(), "_anDrawArticles"))
     assert "_crossLangNotice(d.cross_language" in body, (
         "the notice is not rendered from the /api/articles payload"
     )
@@ -399,7 +402,9 @@ def test_grouping_by_language_is_a_view_and_says_so() -> None:
 
 def test_every_article_row_carries_its_language() -> None:
     """Q508's own half: the language is ON the row, not only in a grouping."""
-    body = strip_comments(function_body(_analysis(), "_anLoadArticles"))
+    # The rows are drawn by _anDrawArticles since the fetch/draw split (N-4, 2026-09-27).
+    body = strip_comments(function_body(_analysis(), "_anLoadArticles")
+                          + function_body(_analysis(), "_anDrawArticles"))
     assert "_anLangCell(a)" in body, "the article rows carry no language"
     assert '_anTh("language"' in body, (
         "the Language column is not sortable, although /api/articles has sorted by "
@@ -425,6 +430,8 @@ def test_every_string_the_lens_renders_is_keyed_in_all_twelve_locales() -> None:
         for name in (
             "_crossLangNotice", "_anFormCountsHtml", "_anLangCell",
             "_anGroupByLangControl", "_anGroupRowsByLanguage", "_anFormCounts",
+            # the failure line, shared with the language-switch refill (N-4, 2026-09-27)
+            "_anFormCountsFailedHtml",
         )
     )
     keys = [
@@ -442,6 +449,8 @@ def test_every_string_the_lens_renders_is_keyed_in_all_twelve_locales() -> None:
         "The forms could not be counted.",
         "Group by language",
         "Interleave by date",
+        # the ungrouped label when the list is NOT sorted by date (2026-09-26 leftovers, Y8)
+        "Interleave languages",
         "Groups the articles already listed. It runs no new search and changes no count.",
         "Language not recorded",
     ]

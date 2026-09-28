@@ -12429,6 +12429,45 @@ index's own vocabulary is empty afterwards. **Before re-computing anything at de
 time, ask who owns the function: re-run your own code only if its meaning is versioned; keep the
 output of anyone else's.**
 
+### "IS VISIBLE" IS NOT "CAN BE SEEN": A HOVER UNDER A MODAL'S TOP LAYER PASSES EVERY VISIBILITY CHECK (2026-09-26, the delegated click-through)
+
+The 2026-09-16 sandbox walk of the consent popup recorded the per-lane host bubble as shown, with
+Playwright's `locator.is_visible()`. That call reports an element that has a box, is not
+`display:none` or `visibility:hidden`, and has non-zero size. It does not report whether anything
+covers it. The bubble (`#oo-tip`, appended to `<body>`) was drawn beneath the `showModal()` popup,
+because a modal dialog lives in the browser's TOP LAYER, which paints above every `z-index` in the
+document. So for ten days the one disclosure Q1002 added to the consent popup could not be read,
+behind a green record. The delegated walk caught it by measuring what a person sees:
+`document.elementFromPoint()` at the bubble's centre, and a pixel diff (0 changed pixels in
+en/fr/zh). **A check that stands in for a human's eyes must ask what is TOPMOST at that point, not
+whether the element exists and has a size. Any floating UI a modal can cover (tooltips, toasts,
+menus) needs that check, or it must itself enter the top layer (a popover, or a child of the open
+dialog).**
+
+### A TEST THAT PINS A THIRD-PARTY LIBRARY'S ANSWER IS A TEST OF THAT VERSION, AND CI RUNS TWO (2026-09-27, the click-through fixes)
+
+The keyword fix batch pinned the Portuguese lemma chain as the lock file's simplemma 1.2.0 answers
+it («cooperativas» → «cooperativa» → «cooperativo»). CI's core-only job installs simplemma 1.1.x,
+whose dictionary stops one step earlier, so three tests went red there and green everywhere else,
+including on the machine that wrote them. The property the fix exists for is version-free: ONE
+pass of `lemma_key` reaches a fixed point, so a second pass moves nothing. The tests now compute the
+chain's end from the installed library and assert that property, and were run under both versions
+before the push. **When a test's expected value comes from someone else's data (a dictionary, a
+segmenter, a model), assert the property your code guarantees about that data, not the value one
+release of it happens to give; and when CI installs more than one set of versions, run the test
+under each before calling it green.**
+
+### A FIX THAT "LOCALISES" A NUMBER CAN BREAK THE ONE RULED NUMBER FORMAT (2026-09-27, the click-through fixes)
+
+The byte-unit batch made sizes follow the UI language by formatting the number with
+`Intl.NumberFormat(lang)`, so French read «35,6 Mo». The app's ruled number writer, `fmtNum`, writes
+a decimal POINT in every locale (Latin digits, SI style), and the same panel showed «1.2 s» beside
+it: two conventions for one quantity on one screen, introduced by a fix for a translation defect.
+Only the unit's written form translates (Mo, МБ, the Arabic unit words); the number keeps `fmtNum`'s
+convention (c2bc6f3b). **Before a translation fix touches how a number is written, find the app's
+ruled formatter and write through it: a locale's decimal mark is a number-format decision, and this
+one was already made.**
+
 ### AN EMPTY KERNEL LOG AFTER A MEMORY DEATH IS NOT A CLEAN BILL, AND ONLY A PARENT SEES A SIGKILL (2026-09-26, the daily field crashes)
 
 Two instances died within a minute of running out of memory and the boot's kernel-log read found

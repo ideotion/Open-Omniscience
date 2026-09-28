@@ -126,9 +126,69 @@
       const host = $("gov-country-data"); if (!host || !iso) return;
       host.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
       let d; try { d = await api("/api/governments/country/" + encodeURIComponent(iso)); }
-      catch (e) { host.innerHTML = `<div class="muted">${esc(t("Could not load this country."))}</div>`; return; }
-      host.innerHTML = _govIndicatorGrid(d)
-        + `<div class="card-caveat" style="margin-top:10px">${esc(d.caveat || "")}</div>`;
+      catch (e) { _govCountryLast = null; host.innerHTML = `<div class="muted">${esc(t("Could not load this country."))}</div>`; return; }
+      _govCountryLast = {d, iso};
+      host.innerHTML = _govCountryHtml(d, iso);
+    }
+    function _govCountryHtml(d, iso) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      return _govIndicatorGrid(d)
+        + `<div class="card-caveat" style="margin-top:10px">${esc(d.caveat ? t(d.caveat) : "")}</div>`
+        + _govNonIsoNote([iso]);
+    }
+
+    // THE LAST PAYLOAD OF EVERY GOVERNMENTS VIEW, for a language switch (the 2026-09-27
+    // leftovers, W8/W15/W16). Each caveat, note and aggregate name is t()'d at render, so
+    // one drawn in French is no longer an English key the DOM walker can find, and a
+    // switch left it French: measured booting in fr and switching to ar. Redrawn from
+    // these -- never refetched -- by app-boot.js's ONE oo:langchange listener, next to
+    // repaintGovGroupFromCache (which owns the computed-lens cards).
+    let _govCountryLast = null, _govCmpLast = null, _govAggLast = null, _govMapLast = null;
+    function repaintGovViewsFromCache() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const country = $("gov-country-data");
+      if (country && _govCountryLast && country.querySelector(".card-caveat")) {
+        country.innerHTML = _govCountryHtml(_govCountryLast.d, _govCountryLast.iso);
+      }
+      const cmp = $("gov-cmp-body");
+      if (cmp && _govCmpLast && cmp.querySelector(".gov-cmp")) {
+        cmp.innerHTML = _govCompareHtml(_govCmpLast);
+      }
+      if (_govAggs) {
+        _govPaintAggNote();
+        _govPaintAggregateOptions();
+      }
+      const agg = $("gov-agg-body");
+      if (agg && _govAggLast && agg.querySelector(".gov-agg-head")) agg.innerHTML = _govAggHtml(_govAggLast);
+      if (_govGroups) {
+        _govPaintGroupNote();
+        _govPaintGroupOptions();
+      }
+      // The two indicator pickers and the map's legend carry the catalogue's names (R5).
+      _govPaintIndOptions($("gov-grp-ind"));
+      _govPaintIndOptions($("gov-map-ind"));
+      _govRepaintCountryPickers();
+      if (_govMapLast) {
+        const host = $("gov-map-host");
+        if (host && host.innerHTML) _govMapDraw(host, _govMapLast.meta, _govMapLast.data);
+        const cav = $("gov-map-caveat");
+        if (cav) cav.textContent = _govMapCaveatText(_govMapLast.meta, _govMapLast.data, t);
+      }
+    }
+
+    // Q303's disclosure for the PICKERS (the 2026-09-26 leftovers, Y10). The country
+    // pickers read "Kosovo (XKX)", and an <option> carries no hover, so the "not an ISO
+    // code" every other surface puts in its hover had nowhere to go. It rides beside the
+    // picked country's other caveats instead: one line per non-ISO code picked, the code
+    // and the same `ooCountryTitle` sentence the hovers use, so the two cannot differ.
+    function _govNonIsoNote(codes) {
+      const seen = new Set();
+      return (codes || []).filter((c) => {
+        const k = ooCountryCode(c);
+        if (!k || seen.has(k) || ooCountryKind(c) !== "non-iso") return false;
+        seen.add(k);
+        return true;
+      }).map((c) => `<div class="card-caveat">${esc(ooCountryCode(c))} · ${esc(ooCountryTitle(c))}</div>`).join("");
     }
 
     // ONE indicator card, reused by the Countries, Compare and Aggregates surfaces.
@@ -156,7 +216,7 @@
         : "";
       // A definition where the number reads as an error and is not one. Rides the
       // #oo-tip hover convention (invariant #17), which marks the element for free.
-      const note = ind.note ? ` title="${esc(ind.note)}"` : "";
+      const note = ind.note ? ` title="${esc(_govIndLabel(ind.note))}"` : "";
       // The display bound, stated only where it BIT. `series_stored` is what the store
       // holds; the series is what this response carried. Silence here is what makes a
       // 30-year sparkline indistinguishable from a producer that started reporting in
@@ -168,7 +228,7 @@
             {shown: (ind.series || []).length, stored: stored}))}</div>`
         : "";
       return `<div class="gov-ind">
-        <div class="gov-ind-label"${note}>${esc(ind.label)}</div>
+        <div class="gov-ind-label"${note}>${esc(_govIndLabel(ind.label))}</div>
         <div class="gov-ind-val">${esc(val)}${yr}</div>
         <div class="gov-ind-spark">${spark}</div>${cut}</div>`;
     }
@@ -178,8 +238,37 @@
       const cats = {};
       (d.indicators || []).forEach(i => { (cats[i.category] = cats[i.category] || []).push(i); });
       return Object.keys(cats).map(c =>
-        `<h3 style="font-size:13px;margin:14px 0 6px;text-transform:capitalize">${esc(c)}</h3>
+        `<h3 style="font-size:13px;margin:14px 0 6px">${esc(_govCatLabel(c))}</h3>
          <div class="gov-ind-grid">${cats[c].map(_govIndCard).join("")}</div>`).join("");
+    }
+
+    // THE CATALOGUE'S WORDS (R5). The 36 indicator names, their two definitional notes
+    // and the eleven category names are fixed English strings from
+    // src/stats/indicators.py, so each is looked up as a key, like the caveats beside
+    // them: a French page read "GDP (current US$)" under a French heading. Currency and
+    // unit codes inside a name stay as the producer writes them. tests/
+    // test_clickthrough_b18_fixes.py pins every one of them as a key in all 12 locales,
+    // because the i18n gate cannot see a string that only arrives over the wire.
+    function _govIndLabel(s) { return s ? _govT(s) : ""; }
+    // The categories arrive as lowercase ids ("energy & environment") and were
+    // capitalised by CSS, which capitalises every word and cannot translate any.
+    const _GOV_CAT_LABEL = {
+      economy: "Economy", prices: "Prices", demography: "Demography", health: "Health",
+      labour: "Labour", education: "Education", "energy & environment": "Energy & environment",
+      connectivity: "Connectivity", military: "Military", "public finance": "Public finance",
+      inequality: "Inequality",
+    };
+    function _govCatLabel(c) { return _govT(_GOV_CAT_LABEL[c] || c); }
+    // Relabel an indicator <select> in place, keeping what the reader picked: the
+    // option TEXT is drawn in the UI language, so a switch must redraw it (R5).
+    function _govPaintIndOptions(sel) {
+      if (!sel || !_govInds || !sel.options.length) return;
+      const byId = {};
+      _govInds.forEach((i) => { byId[i.id] = i; });
+      Array.from(sel.options).forEach((o) => {
+        const i = byId[o.value];
+        if (i) o.textContent = _govIndLabel(i.label);
+      });
     }
 
     // Guarded composite lookup: the TEMPLATE is the key and the numbers are data, so
@@ -226,6 +315,21 @@
       const c = ooCountryCode(code), name = ooCountryName(code, "");
       return name && name !== c ? `${name} (${c})` : c;
     }
+    // The three country pickers (Countries, and Compare's two) are filled once, with
+    // names AND order in the reader's language (Q308), so a switch left them reading
+    // "Albania (ALB), Algeria (DZA)" on a French page (2026-09-27 re-walk, L-3). Each is
+    // rebuilt from the codes it already holds -- its own option values, no fetch -- and
+    // keeps its pick; a picker never filled has no options and is left alone.
+    function _govRepaintCountryPickers() {
+      ["gov-country", "gov-cmp-a", "gov-cmp-b"].forEach((id) => {
+        const sel = $(id);
+        if (!sel || !sel.options || !sel.options.length) return;
+        const cur = sel.value;
+        const codes = Array.from(sel.options, (o) => o.value).sort(ooCountryCompare);
+        sel.innerHTML = _govCountryOptions(codes, cur);
+        sel.value = cur;
+      });
+    }
 
     function _govNames(codes, head) {
       // A ROSTER of member codes -- an aggregate's membership, the suspended list,
@@ -269,7 +373,13 @@
           api("/api/governments/country/" + encodeURIComponent(a)),
           api("/api/governments/country/" + encodeURIComponent(b)),
         ]);
-      } catch (e) { host.innerHTML = `<div class="muted">${esc(t("Could not load these countries."))}</div>`; return; }
+      } catch (e) { _govCmpLast = null; host.innerHTML = `<div class="muted">${esc(t("Could not load these countries."))}</div>`; return; }
+      _govCmpLast = {da, dbb, a, b};
+      host.innerHTML = _govCompareHtml(_govCmpLast);
+    }
+    function _govCompareHtml(cm) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const {da, dbb, a, b} = cm;
       const byId = (d) => { const m = {}; (d.indicators || []).forEach(i => { m[i.id] = i; }); return m; };
       const ma = byId(da), mb = byId(dbb);
       // A <th> carries no reliable hover either, so the compare headers take the
@@ -285,23 +395,23 @@
           + ` <span class="muted">(${esc(ind.latest.year)})</span></td>`;
       };
       const rows = Object.keys(cats).map(c =>
-        `<tr class="gov-cmp-cat"><th colspan="3">${esc(c)}</th></tr>`
+        `<tr class="gov-cmp-cat"><th colspan="3">${esc(_govCatLabel(c))}</th></tr>`
         + cats[c].map(ind => {
-            const note = ind.note ? ` title="${esc(ind.note)}"` : "";
+            const note = ind.note ? ` title="${esc(_govIndLabel(ind.note))}"` : "";
             const ia = ma[ind.id], ib = mb[ind.id];
             // A row where NEITHER side has a figure is still shown: an indicator both
             // countries lack is a real, readable fact about coverage, and dropping it
             // would quietly shorten the comparison to whatever happens to be held.
-            return `<tr><th scope="row"${note}>${esc(ind.label)}</th>${cell(ia)}${cell(ib)}</tr>`;
+            return `<tr><th scope="row"${note}>${esc(_govIndLabel(ind.label))}</th>${cell(ia)}${cell(ib)}</tr>`;
           }).join("")
       ).join("");
-      host.innerHTML =
-        `<div style="overflow-x:auto"><table class="gov-cmp">
+      return `<div style="overflow-x:auto"><table class="gov-cmp">
            <thead><tr><th scope="col">${esc(t("Indicator"))}</th>
              <th scope="col">${esc(nameA)}</th><th scope="col">${esc(nameB)}</th></tr></thead>
            <tbody>${rows}</tbody></table></div>`
         + `<div class="card-caveat" style="margin-top:10px">${esc(t("Each side carries its own most recent year: the two producers do not publish on the same calendar, so a difference between two years is not a difference between two countries. A dash is a published gap, never a zero."))}</div>`
-        + `<div class="card-caveat">${esc(da.caveat || "")}</div>`;
+        + `<div class="card-caveat">${esc(da.caveat ? t(da.caveat) : "")}</div>`
+        + _govNonIsoNote([a, b]);
     }
 
     // ---- Groups subtab: two lenses (rulings 32, 43, 44, 45, 47) ---- //
@@ -330,12 +440,17 @@
       if (!_govAggs) {
         try { _govAggs = await api("/api/governments/aggregates"); }
         catch (e) { _govAggs = null; }
-        const note = $("gov-agg-note");
-        if (note) note.textContent = (_govAggs && _govAggs.caveat) || "";
+        _govPaintAggNote();
       }
       if (!_govAggs) { const h = $("gov-agg-body"); if (h) h.innerHTML = _govEmptyStore(t); return; }
       _govPaintAggregateOptions();
       if (sel.value) loadGovAggregate(sel.value);
+    }
+    // The lens's caveat is the endpoint's fixed sentence, each a key (W15/W16): it was set
+    // as the server's English into a hint no walker pass could reach once drawn.
+    function _govPaintAggNote() {
+      const note = $("gov-agg-note");
+      if (note) note.textContent = (_govAggs && _govAggs.caveat) ? _govT(_govAggs.caveat) : "";
     }
     function _govPaintAggregateOptions() {
       const sel = $("gov-agg-pick"); if (!sel || !_govAggs) return;
@@ -345,7 +460,9 @@
       // same payload so "Show all" cannot fail on its own.
       const rows = _govAggAll ? all : all.filter(a => a.shortlist);
       const held = rows.filter(a => a.has_data), empty = rows.filter(a => !a.has_data);
-      const opt = (a) => `<option value="${esc(a.code)}">${esc(a.name)}</option>`;
+      // A producer's aggregate NAME is a fixed vocabulary (the World Bank registry), each a
+      // key in the twelve locales (W8), so "European Union" reads in the UI language.
+      const opt = (a) => `<option value="${esc(a.code)}">${esc(_govT(a.name))}</option>`;
       // An aggregate this install holds nothing for is OFFERED but grouped apart and
       // labelled: "the World Bank publishes no figure" and "this install has not fetched
       // it" are different facts, and an empty row cannot tell them apart on its own.
@@ -373,16 +490,26 @@
       host.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
       let d;
       try { d = await api("/api/governments/aggregate/" + encodeURIComponent(code)); }
-      catch (e) { host.innerHTML = `<div class="muted">${esc(t("Could not load this aggregate."))}</div>`; return; }
+      catch (e) { _govAggLast = null; host.innerHTML = `<div class="muted">${esc(t("Could not load this aggregate."))}</div>`; return; }
+      _govAggLast = d;
+      host.innerHTML = _govAggHtml(d);
+    }
+    function _govAggHtml(d) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const any = (d.indicators || []).some(i => i.latest);
-      host.innerHTML =
-        `<div class="gov-agg-head"><strong>${esc(d.name || d.code)}</strong>`
+      // The caveat arrives as its PARTS (W15): the joined `caveat` is two fixed sentences
+      // glued into a string no locale holds, so it rendered English in every language.
+      // Each part is a key; the joined text stays the fallback for an older server.
+      const caveats = Array.isArray(d.caveats) && d.caveats.length
+        ? d.caveats.map((c) => t(c)).join(" ")
+        : (d.caveat || "");
+      return `<div class="gov-agg-head"><strong>${esc(d.name ? t(d.name) : d.code)}</strong>`
         + ` <span class="pill">${esc(t("published aggregate"))}</span>`
         + ` <span class="muted">${esc(_govTf("registry as of {as_of}", {as_of: d.as_of || "—"}))}</span></div>`
         + (any
             ? _govIndicatorGrid(d)
             : `<div class="muted" style="margin-top:10px">${esc(t("No figure for this aggregate is held here yet — it fills in as the background load reaches it."))}</div>`)
-        + `<div class="card-caveat" style="margin-top:10px">${esc(d.caveat || "")}</div>`;
+        + `<div class="card-caveat" style="margin-top:10px">${esc(caveats)}</div>`;
     }
 
     // --- lens 2: computed from members (rulings 43/44/45/47) --- //
@@ -394,32 +521,43 @@
       if (!_govGroups) {
         try { _govGroups = await api("/api/governments/groups"); }
         catch (e) { _govGroups = null; }
-        const note = $("gov-grp-note");
-        if (note) note.textContent = (_govGroups && _govGroups.caveat) || "";
+        _govPaintGroupNote();
       }
       if (!_govGroups) { const h = $("gov-grp-body"); if (h) h.innerHTML = _govEmptyStore(t); return; }
-      if (!gsel.options.length) {
-        const gs = _govGroups.groups || [];
-        const kind = (k, label) => {
-          const rows = gs.filter(g => g.kind === k);
-          if (!rows.length) return "";
-          return `<optgroup label="${esc(label)}">` + rows.map(g =>
-            // An UNPOPULATED group is offered, not hidden: "BRICS exists and its
-            // membership dates are not sourced yet" is a more useful answer than
-            // "no such group", and the refusal it produces says exactly that.
-            `<option value="${esc(g.key)}">${esc(g.label)}${g.populated ? "" : " — " + t("membership not held")}</option>`
-          ).join("") + `</optgroup>`;
-        };
-        gsel.innerHTML = kind("continent", t("Continents (ours)"))
-          + kind("wb_region", t("World Bank regions (the producer's member lists)"))
-          + kind("bloc", t("Political blocs"));
-      }
+      if (!gsel.options.length) _govPaintGroupOptions();
       if (!isel.options.length) {
         await loadGovIndicators();
         isel.innerHTML = (_govInds || []).map(i =>
-          `<option value="${esc(i.id)}">${esc(i.label)}</option>`).join("");
+          `<option value="${esc(i.id)}">${esc(_govIndLabel(i.label))}</option>`).join("");
       }
       renderGovGroup();
+    }
+
+    // The lens hint and the picker's group names, each a key (W16): the hint is the
+    // endpoint's fixed sentence and the names a fixed registry (continents, the World
+    // Bank's regions, the blocs), so both read in the UI language and repaint on a switch.
+    function _govPaintGroupNote() {
+      const note = $("gov-grp-note");
+      if (note) note.textContent = (_govGroups && _govGroups.caveat) ? _govT(_govGroups.caveat) : "";
+    }
+    function _govPaintGroupOptions() {
+      const gsel = $("gov-grp-pick"); if (!gsel || !_govGroups) return;
+      const prev = gsel.value;
+      const gs = _govGroups.groups || [];
+      const kind = (k, label) => {
+        const rows = gs.filter(g => g.kind === k);
+        if (!rows.length) return "";
+        return `<optgroup label="${esc(label)}">` + rows.map(g =>
+          // An UNPOPULATED group is offered, not hidden: "BRICS exists and its
+          // membership dates are not sourced yet" is a more useful answer than
+          // "no such group", and the refusal it produces says exactly that.
+          `<option value="${esc(g.key)}">${esc(_govT(g.label))}${g.populated ? "" : " — " + _govT("membership not held")}</option>`
+        ).join("") + `</optgroup>`;
+      };
+      gsel.innerHTML = kind("continent", _govT("Continents (ours)"))
+        + kind("wb_region", _govT("World Bank regions (the producer's member lists)"))
+        + kind("bloc", _govT("Political blocs"));
+      if (prev) gsel.value = prev;
     }
 
     async function renderGovGroup(allowIncomplete) {
@@ -436,8 +574,20 @@
         + (yr ? "&year=" + encodeURIComponent(yr) : "")
         + (allowIncomplete ? "&allow_incomplete=true" : "");
       try { d = await api(q); }
-      catch (e) { host.innerHTML = `<div class="muted">${esc(t("Could not compute this group."))}</div>`; return; }
+      catch (e) { _govGrpLast = null; host.innerHTML = `<div class="muted">${esc(t("Could not compute this group."))}</div>`; return; }
+      _govGrpLast = {d, allowIncomplete};
       host.innerHTML = _govGroupHtml(d, allowIncomplete);
+    }
+    // The last group payload. Every sentence on the cards is drawn in the reader's
+    // language at render (labels, methods, refusals, caveats), so a language switch left
+    // them in the old one: measured in Chromium, fr -> ar kept the French cards
+    // (click-through B14, Z4). Redrawn from this -- never refetched -- by app-boot.js's
+    // ONE `oo:langchange` listener, and only while the card set it drew is on screen.
+    let _govGrpLast = null;
+    function repaintGovGroupFromCache() {
+      const host = $("gov-grp-body");
+      if (!host || !_govGrpLast || !host.querySelector(".gov-strat-grid")) return;
+      host.innerHTML = _govGroupHtml(_govGrpLast.d, _govGrpLast.allowIncomplete);
     }
 
     // Pure renderer over a /group-aggregate payload, so it is testable without a DOM.
@@ -464,8 +614,10 @@
         + `</div>`;
 
       if (!agg) {
-        // A known group with no sourced roster. Named, with the reason, never hidden.
-        return vintage + `<div class="card-caveat">${esc(d.reason || roster.reason || "")}</div>`;
+        // A known group with no sourced roster. Named, with the reason, never hidden. The
+        // reason is the registry's fixed sentence, a key (W16).
+        const why = d.reason || roster.reason || "";
+        return vintage + `<div class="card-caveat">${esc(why ? t(why) : "")}</div>`;
       }
 
       const cov = agg.coverage || {}, spread = agg.spread || {};
@@ -473,20 +625,87 @@
       // Presentation order is the engine's own STRATEGIES order — never a ranking. The
       // default is a starting VIEW and is marked as that word, not as a winner.
       const order = ["sum", "mean", "median", "population_weighted", "gdp_weighted", "labour_force_weighted"];
+
+      // THE ENGINE'S VOCABULARY IN THE READER'S LANGUAGE (click-through B14, Z4). Each
+      // result carries its English sentence AND a code (`refused_code`, or `method_code`
+      // plus the weight it used), and the sentence is redrawn here as a keyed frame from
+      // the code and the payload's own numbers. A result without a code (an older server,
+      // or a refusal the engine has not coded) keeps the engine's sentence verbatim, so a
+      // card is never blank. The helpers live inside this pure renderer on purpose: the
+      // node suites extract it by name and must get all of it.
+      const weightName = (w) => (w === "population" ? t("population")
+        : w === "gdp" ? t("GDP") : w === "labour_force" ? t("labour force")
+        : String(w || "").replace(/_/g, " "));
+      const methodText = (r) => {
+        const w = weightName(r.weight);
+        let s;
+        if (r.method_code === "sum") s = t("The members' reported values, added.");
+        else if (r.method_code === "members") s = t("Each member counts once, whatever its size — a statement about COUNTRIES, not about people.");
+        else if (r.method_code === "median") s = t("The middle member value; unlike the mean it is not moved by one extreme member.");
+        else if (r.method_code === "weighted_exact") {
+          s = _govTf("Sum of (value x {weight}) divided by the summed {weight}. This indicator is measured PER {weight}, so the reconstructed numerator is the real one and this is the group's true figure, not an estimate.", {weight: w});
+        } else if (r.method_code === "weighted_approx") {
+          s = r.denominator
+            ? _govTf("Sum of (value x {weight}) divided by the summed {weight}. APPROXIMATE: this indicator is measured per {denominator}, not per {weight}, so the reconstructed numerator is not the real one.", {weight: w, denominator: weightName(r.denominator)})
+            : _govTf("Sum of (value x {weight}) divided by the summed {weight}. APPROXIMATE: this indicator is not measured per a quantity this app holds a series for, so the reconstructed numerator is not the real one.", {weight: w});
+        } else return r.method || "";
+        if (cov.complete === false) {
+          s += " " + _govTf("PARTIAL: computed over {reported} of {members} members; {missing} did not report.", {
+            reported: cov.reported || 0, members: cov.members || 0, missing: (cov.missing || []).length});
+        }
+        return s;
+      };
+      const refusalText = (r) => {
+        // The partial-roster refusal is drawn from the coverage it describes, naming the
+        // button below by its own label: the server's sentence is English and named the
+        // request parameter instead (row L).
+        if (r.refused_code === "incomplete") {
+          return _govTf("{missing} of {members} members did not report this indicator for this period ({who}). A figure over the members that happen to have reported is not the group's figure, and nothing downstream could tell the difference. Choose “{action}” to compute it anyway — the missing members travel with the result.", {
+            missing: (cov.missing || []).length, members: cov.members || 0,
+            who: _govNames(cov.missing || []).short,
+            action: t("Compute over the members that did report"),
+          });
+        }
+        const w = weightName(r.weight);
+        switch (r.refused_code) {
+          case "no_data": return t("No member reported a value for this indicator and period, so there is nothing to aggregate. This is a published gap, not a zero.");
+          // The catalog's own sentence for an indicator no aggregate can honestly produce
+          // (the Gini index): a fixed sentence, so it is its own key.
+          case "no_aggregate": return t(r.refused);
+          case "intensive": return t("This indicator is intensive — a rate, share, index or per-capita value — so its members' values do not add up to anything. A summed percentage is not a large percentage; it is not a statistic at all.");
+          case "no_weight_series": return _govTf("The {weight} series is not held for this group and period, so this weighting cannot be computed. It is not falling back to an unweighted mean, which would answer a different question under the same label.", {weight: w});
+          case "missing_weight": return _govTf("{n} member(s) reported a value but have no {weight} weight ({who}). Dropping them would compute over a different membership than the label claims, and weighting them as unweighted would silently mix two methods.", {
+            n: (r.missing_weight || []).length, weight: w, who: _govNames(r.missing_weight || []).short});
+          case "zero_weight": return _govTf("The {weight} weights sum to zero for this group, so a weighted mean is undefined.", {weight: w});
+          default: return r.refused;
+        }
+      };
+      // A refusal of the WHOLE series -- a partial roster, no member reporting, an
+      // indicator no aggregate can produce -- is one sentence for every strategy, and it
+      // printed six times, once per card (Z4). It is said ONCE, above the cards; each
+      // card keeps its label and says only that it was not computed.
+      const present = order.filter(k => strategies[k]).map(k => strategies[k]);
+      const whole = new Set(["incomplete", "no_data", "no_aggregate"]);
+      const shared = (present.length && present.every(r => r.refused && whole.has(r.refused_code)
+          && r.refused_code === present[0].refused_code)) ? present[0] : null;
+      const sharedLine = shared
+        ? `<div class="card-caveat gov-grp-refusal">${esc(refusalText(shared))}</div>` : "";
       const cards = order.filter(k => strategies[k]).map(k => {
         const r = strategies[k];
         const isDefault = agg.default_strategy === k;
+        // The six labels are a fixed vocabulary (aggregate.STRATEGIES), each a key.
+        const label = r.label ? t(r.label) : k;
         if (r.refused) {
           return `<div class="gov-strat gov-strat-refused">
-            <div class="gov-strat-label">${esc(r.label || k)}</div>
-            <div class="gov-strat-why">${esc(r.refused)}</div></div>`;
+            <div class="gov-strat-label">${esc(label)}</div>
+            <div class="gov-strat-why">${esc(shared ? t("Not computed: the reason is stated above the cards.") : refusalText(r))}</div></div>`;
         }
         return `<div class="gov-strat${isDefault ? " gov-strat-default" : ""}">
-          <div class="gov-strat-label">${esc(r.label || k)}${isDefault
+          <div class="gov-strat-label">${esc(label)}${isDefault
             ? ` <span class="pill" title="${esc(t("A starting view, not a winner: the strategies answer different questions and are never ranked or blended."))}">${esc(t("opens here"))}</span>` : ""}</div>
           <div class="gov-strat-val">${esc(_govFmt(r.value, agg.unit))}</div>
           <div class="gov-strat-basis">${esc(r.basis === "exact" ? t("exact") : t("approximate"))}</div>
-          <div class="gov-strat-why">${esc(r.method || "")}</div></div>`;
+          <div class="gov-strat-why">${esc(methodText(r))}</div></div>`;
       }).join("");
 
       // Ruling 47's corollary: the SPREAD rides beside every central figure, because a
@@ -520,16 +739,19 @@
         : "";
 
       const period = d.aggregate && d.aggregate.period;
-      const head = `<div class="gov-grp-head"><strong>${esc(roster.label || roster.group || "")}</strong>`
-        + ` — ${esc(agg.label || agg.indicator || "")}`
+      const head = `<div class="gov-grp-head"><strong>${esc(roster.label ? t(roster.label) : (roster.group || ""))}</strong>`
+        + ` — ${esc(agg.label ? t(agg.label) : (agg.indicator || ""))}`
         + (period ? ` <span class="muted">(${esc(period)})</span>` : "")
         + ` <span class="pill">${esc(t("computed here"))}</span></div>`;
 
-      return head + vintage + coverageLine + spreadLine + override + partial
+      // The two caveats are the engine's and the endpoint's fixed sentences, each a key
+      // (the informed-consent non-negotiable: a caveat ships in all twelve languages).
+      return head + vintage + coverageLine + spreadLine + sharedLine + override + partial
         + `<div class="gov-strat-grid">${cards}</div>`
-        + (roster.notes ? `<div class="card-caveat">${esc(roster.notes)}</div>` : "")
-        + `<div class="card-caveat">${esc(agg.caveat || "")}</div>`
-        + `<div class="card-caveat">${esc(d.caveat || "")}</div>`;
+        // The roster's notes are the registry's fixed sentences too, each a key (W16).
+        + (roster.notes ? `<div class="card-caveat">${esc(t(roster.notes))}</div>` : "")
+        + `<div class="card-caveat">${esc(agg.caveat ? t(agg.caveat) : "")}</div>`
+        + `<div class="card-caveat">${esc(d.caveat ? t(d.caveat) : "")}</div>`;
     }
 
     // ---- Map subtab ---- //
@@ -539,7 +761,7 @@
       if (!_govMapInit) {
         _govMapInit = true;
         await loadGovIndicators();
-        sel.innerHTML = (_govInds || []).map(i => `<option value="${esc(i.id)}">${esc(i.label)}</option>`).join("");
+        sel.innerHTML = (_govInds || []).map(i => `<option value="${esc(i.id)}">${esc(_govIndLabel(i.label))}</option>`).join("");
       }
       const indicator = sel.value || (_govInds && _govInds[0] && _govInds[0].id);
       if (!indicator) return;
@@ -569,10 +791,17 @@
       }
       if (!data || !(data.by_country || []).length) {
         host.innerHTML = `<div class="muted">${esc(t("Country data loads automatically in the background when online — the map fills in once it lands."))}</div>`;
+        _govMapLast = null;
         $("gov-map-caveat").textContent = "";
         return;
       }
-      const meta = data.indicator || {};
+      await _govMapDraw(host, data.indicator || {}, data);
+    }
+    // The map itself, from one payload -- shared by renderGovMap and by the language
+    // switch (repaintGovViewsFromCache), which redraws the last one without a request so
+    // the legend's indicator name follows the switch (R5).
+    async function _govMapDraw(host, meta, data) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const values = {}, names = {};
       (data.by_country || []).forEach(r => {
         if (r.value != null) values[r.country] = r.value;
@@ -580,25 +809,38 @@
       });
       await ooMap(host, {
         values, names,
-        scale: "sequential", label: meta.label || "", unit: meta.unit || "",
+        // The legend prints the unit after its max: the catalogue's unit WORD is keyed
+        // (years, people, per 1,000, index …) and a symbol or code (%, USD, intl$) falls
+        // through t() unchanged, so only the word translates (row R, R6).
+        scale: "sequential", label: _govIndLabel(meta.label), unit: meta.unit ? t(meta.unit) : "",
         // A map tooltip IS the hover Q302 puts the name in, and it is also what a
         // screen reader is handed -- so the NAME stays here deliberately, with the
-        // code beside it so the two readings agree.
-        valueLabel: (iso, v) => `${ooCountryCode(iso)} · ${ooCountryName(iso, iso)}: ${_govFmt(v, meta.unit)}`,
-        caveat: data.caveat || "",
+        // code beside it so the two readings agree. `ooCountryTitle`, not the bare
+        // name: it is the name PLUS Q303's disclosure, and a map tooltip that says
+        // "Kosovo" beside `XKX` with no "not an ISO code" is the one place the
+        // disclosure went missing (2026-09-26 click-through, L13).
+        valueLabel: (iso, v) => ooLabelText(`${ooCountryCode(iso)} · ${ooCountryTitle(iso) || iso}`, _govFmt(v, meta.unit)),
+        // The producer caveat is the endpoint's fixed sentence, a key (W8).
+        caveat: data.caveat ? t(data.caveat) : "",
         onCountry: (iso) => {   // click a country -> its detail in the Countries subtab
           if (_govSubtabs) _govSubtabs.select("countries");
           const cs = $("gov-country");
           if (cs) { cs.value = iso; if (cs.value === iso) loadGovCountry(iso); }
         },
       });
-      $("gov-map-caveat").textContent = (meta.label ? meta.label + " · " : "")
-        + (data.year ? data.year + " · " : t("Latest available") + " · ") + (data.caveat || "");
+      _govMapLast = {meta, data};
+      $("gov-map-caveat").textContent = _govMapCaveatText(meta, data, t);
+    }
+    function _govMapCaveatText(meta, data, t) {
+      return (meta.label ? _govIndLabel(meta.label) + " · " : "")
+        + (data.year ? data.year + " · " : t("Latest available") + " · ") + (data.caveat ? t(data.caveat) : "");
     }
 
     async function govLoadStandard(btn) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      if (typeof ensureOnline === "function" && !(await ensureOnline())) return;  // the ONE consent
+      // The ONE consent, naming the action like every other gated button (invariant #14):
+      // called bare, the popup read "This action needs the network:" and then nothing.
+      if (typeof ensureOnline === "function" && !(await ensureOnline(t("Load standard country data")))) return;
       const old = btn && btn.textContent;
       if (btn) { btn.disabled = true; btn.textContent = t("Loading…"); }
       try {
@@ -609,7 +851,11 @@
         toast(t("Loading country data in the background…"), "ok",
           (typeof openTaskManager === "function") ? openTaskManager : null);
         const st = await pollJobStatus("/api/governments/load-standard/status", {
-          onProgress: (s) => { if (btn && s.total) btn.textContent = t("Loading…") + " " + (s.done || 0) + "/" + s.total; },
+          onProgress: (s) => {
+            if (btn && s.total) {
+              btn.textContent = _govTf("Loading… {done} of {total}", { done: fmtNum(s.done || 0, 0), total: fmtNum(s.total, 0) });
+            }
+          },
         });
         if (st.state === "error") {
           toast((st.error) || t("Could not load country data."), "err");
@@ -620,7 +866,10 @@
             (typeof openTaskManager === "function") ? openTaskManager : null);
         } else {
           const res = st.result || {};
-          let msg = t("Loaded country data:") + " " + (res.stored || 0) + " " + t("figures.");
+          // ONE keyed frame per number (R14), not a label, a bare count and "figures."
+          const nFig = res.stored || 0;
+          let msg = nFig === 1 ? _govTf("Loaded country data: {n} figure.", { n: fmtNum(1, 0) })
+            : _govTf("Loaded country data: {n} figures.", { n: fmtNum(nFig, 0) });
           if (res.complete === false) msg += " " + t("(stopped early — partial)");
           toast(msg, "ok");
         }
@@ -681,6 +930,31 @@
       }).join("") + more + `</div>`;
     }
 
+    // The byte delta of a revision: "{delta} bytes" is the keyed frame, the number is
+    // fmtNum's with its sign ("+120", "-640") isolated left-to-right.
+    function _lawBytes(n) {
+      const v = Number(n) || 0;
+      const num = (v > 0 ? "+" : "") + fmtNum(v, 0);
+      return _govTf("{delta} bytes", { delta: (v && typeof _ltrIsolate === "function") ? _ltrIsolate(num) : num });
+    }
+    // A flag REASON and a document CATEGORY are stored CODES. Each shows through a keyed
+    // label with the code itself in the hover; a code with no label shows as stored.
+    // Law revisions are flagged on size alone (src/law/track.py -> flag_revision with a
+    // byte delta), so these two are the reasons it can write; a hyphenated spelling of
+    // either reads the same. `data-i18n-dyn`: the label is already translated and the
+    // hover is the stored code, so the walker must not "translate" either of them.
+    // The category labels are capitalised on purpose: the walker translates ANY text
+    // node equal to a key, and a bare "legislation" key would also translate a corpus
+    // keyword spelled that way on a surface that does not opt out (LESSONS 2026-09-16).
+    const _LAW_FLAG_LABEL = { large_removal: "large removal", large_addition: "large addition" };
+    const _LAW_CATEGORY_LABEL = { legislation: "Legislation", ip: "Intellectual property" };
+    function _lawCodeLabel(map, code) {
+      const tr = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const raw = String(code == null ? "" : code);
+      const label = map[raw.replace(/-/g, "_")];
+      return label ? `<span data-i18n-dyn title="${esc(raw)}">${esc(tr(label))}</span>` : esc(raw);
+    }
+    function _lawFlagReason(code) { return _lawCodeLabel(_LAW_FLAG_LABEL, code); }
     async function loadLawChanges() {
       const box = $("law-changes");
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
@@ -706,14 +980,18 @@
           }
           return;
         }
-        box.innerHTML = `<p class="hint">${esc(d.caveat)}</p>` + d.changes.map(ch =>
+        // Every word on a change is keyed and the codes go through labels (2026-09-27
+        // re-walk, L-7): the pill read "+120 bytes" and the links "open reader" in every
+        // locale. The byte count is data -- fmtNum, its sign isolated so an Arabic page
+        // cannot move it after the number (W9) -- and only the unit word translates.
+        box.innerHTML = `<p class="hint">${esc(d.caveat ? t(d.caveat) : "")}</p>` + d.changes.map(ch =>
           `<div class="panel" style="background:var(--panel2); margin-top:8px">
             <b>${ooCountryCell(ch.jurisdiction)}</b> · ${esc(ch.title)}
-            <span class="pill ${ch.flagged?'warn':''}">${ch.delta_bytes>0?'+':''}${ch.delta_bytes} bytes</span>
-            ${(ch.flag_reasons||[]).length?'<span class="hint">'+ch.flag_reasons.map(esc).join(', ')+'</span>':''}
+            <span class="pill ${ch.flagged?'warn':''}">${esc(_lawBytes(ch.delta_bytes))}</span>
+            ${(ch.flag_reasons||[]).length?'<span class="hint">'+ch.flag_reasons.map(_lawFlagReason).join(', ')+'</span>':''}
             <div class="hint" style="margin-top:4px">${ch.observed_at?fmtDateTime(ch.observed_at):''} ·
-              <a href="/api/law/documents/${ch.document_id}/view" target="_blank" rel="noopener" title="offline stored copy + history">open reader</a> ·
-              ${extLink(ch.official_url, "official source ↗", "muted")}</div>
+              <a href="/api/law/documents/${ch.document_id}/view" target="_blank" rel="noopener" title="offline stored copy + history">${esc(t("open reader"))}</a> ·
+              ${extLink(ch.official_url, t("official source ↗"), "muted")}</div>
             ${renderDiff(ch.diff)}
             <div class="law-ai-summary" data-rev="${ch.id}">${lawAiSummaryHtml(ch.id, ch.ai_summary)}</div>
           </div>`).join("");
@@ -773,13 +1051,18 @@
         const tbl = $("law-docs");
         _lawDocsById = {};
         d.documents.forEach(x => { _lawDocsById[x.id] = x; });
-        tbl.innerHTML = "<thead><tr><th>Jurisdiction</th><th>Title</th><th>Category</th><th>Status</th><th>Changes</th><th></th></tr></thead><tbody>" +
+        // The row's words are keyed and its category is a label over the stored code
+        // (2026-09-27 re-walk, L-7 / U-9): "legislation … 2 (1 flagged) reader ·
+        // official ↗" read in English in every locale. The listener re-runs this on a
+        // switch, so the headers are t()'d here rather than left to the walker.
+        const th = (k) => `<th>${esc(tr(k))}</th>`;
+        tbl.innerHTML = `<thead><tr>${th("Jurisdiction")}${th("Title")}${th("Category")}${th("Status")}${th("Changes")}<th></th></tr></thead><tbody>` +
           d.documents.map(x =>
-            `<tr${x.watched?'':' style="opacity:.55"'}><td>${ooCountryCell(x.jurisdiction)}</td><td>${esc(x.title)}</td><td>${esc(x.category)}</td>
+            `<tr${x.watched?'':' style="opacity:.55"'}><td>${ooCountryCell(x.jurisdiction)}</td><td>${esc(x.title)}</td><td>${_lawCodeLabel(_LAW_CATEGORY_LABEL, x.category)}</td>
               <td>${lawVerdictBadge(x)}${x.watched?'':' <span class="pill">'+esc(tr("not tracked"))+'</span>'}</td>
-              <td>${x.revisions}${x.flagged?` (${x.flagged} flagged)`:''}</td>
-              <td><a href="/api/law/documents/${x.id}/view" target="_blank" rel="noopener" title="offline stored copy + history">reader</a>
-                · ${extLink(x.official_url||x.url, "official ↗", "muted")}
+              <td>${esc(fmtNum(x.revisions || 0, 0))}${x.flagged?` ${esc(_govTf("({n} flagged)", {n: fmtNum(x.flagged, 0)}))}`:''}</td>
+              <td><a href="/api/law/documents/${x.id}/view" target="_blank" rel="noopener" title="offline stored copy + history">${esc(tr("reader"))}</a>
+                · ${extLink(x.official_url||x.url, tr("official ↗"), "muted")}
                 · <a href="#" onclick="lawSetWatched(${x.id}, ${!x.watched}); return false" title="${x.watched?esc(tr('Stop tracking this document (its history stays).')):esc(tr('Resume tracking this document.'))}">${x.watched?esc(tr('stop')):esc(tr('resume'))}</a></td></tr>`).join("") +
           "</tbody>";
       } catch (e) { /* table optional */ }

@@ -44,10 +44,11 @@ one that matches what you need.
   performance & scale (P0/P1), known bugs, and the feature backlog, each with a status.
 - **[product/SCALE_ROADMAP.md](product/SCALE_ROADMAP.md)** — the deep scale/stability roadmap
   (the 0.2 cycle's P0/P1 acceptance detail).
-- **[product/RELEASE_0.3_GATE.md](product/RELEASE_0.3_GATE.md)** — the tickable board for
-  closing the current cycle: eight rows, per-row status against named artifacts, and an
-  amendment log. **[product/RELEASE_0.4_GATE.md](product/RELEASE_0.4_GATE.md)** is the next
-  cycle's board, standing already because `0.3` moved three required rows onto it by ruling —
+- **[product/RELEASE_0.3_GATE.md](product/RELEASE_0.3_GATE.md)** — the board that closed
+  the `0.3` cycle (on the `v0.3.0` pre-release, `RC01` = a, 2026-09-27): eight rows, per-row status against
+  named artifacts, and an amendment log. **[product/RELEASE_0.4_GATE.md](product/RELEASE_0.4_GATE.md)** is the
+  current cycle's board, which `0.3` moved four required rows onto by ruling (rows 4 and 7b, the ~1M
+  diagnostics bar, and row 5 as row W) —
   its carried rows are ruled, its proposed rows are marked as proposals.
   **[product/RELEASE_0.2_GATE.md](product/RELEASE_0.2_GATE.md)** is the equivalent record for
   the tagged `v0.2.0`, reconstructed after the fact and marked as such.

@@ -65,6 +65,51 @@ def test_an_existing_folder_is_not_removed_by_the_probe(tmp_path) -> None:
     assert (keep / "theirs.txt").exists()
 
 
+def test_the_preflight_removes_the_parent_folders_it_created_too(tmp_path) -> None:
+    """A typed path whose parents do not exist yet is created with ``parents=True``, and
+    the cleanup used to remove only the ``OOS data`` leaf -- so asking about
+    ``<drive>/new/place`` left an empty ``new/place`` behind (click-through B14, Z9)."""
+    typed = tmp_path / "new" / "place"
+    out = dl.preflight(str(typed))
+    assert out["usable"] is True, out
+    assert not (tmp_path / "new").exists(), sorted(p.name for p in tmp_path.rglob("*"))
+    assert tmp_path.exists(), "the folder that existed before the question must stay"
+
+
+def test_the_preflight_never_removes_a_parent_that_already_existed(tmp_path) -> None:
+    """Only what the probe made goes: an existing, EMPTY parent is the operator's."""
+    theirs = tmp_path / "theirs"
+    theirs.mkdir()
+    dl.preflight(str(theirs / "fresh" / "deeper"))
+    assert theirs.is_dir(), "an empty folder the operator already had was removed"
+    assert list(theirs.iterdir()) == [], "the probe left its own folders behind"
+
+
+def test_a_created_parent_that_filled_meanwhile_is_kept(tmp_path, monkeypatch) -> None:
+    """rmdir only ever removes an EMPTY folder, and the walk stops at the first one that
+    is not, so nothing written into a folder during the probe can be lost."""
+    typed = tmp_path / "a" / "b"
+    real_fs = dl._filesystem_type
+
+    def _write_meanwhile(path):
+        (typed / "someone-elses.txt").write_text("x", encoding="utf-8")
+        return real_fs(path)
+
+    monkeypatch.setattr(dl, "_filesystem_type", _write_meanwhile)
+    assert dl.preflight(str(typed))["usable"] is True
+    assert (typed / "someone-elses.txt").exists()
+    assert not (typed / dl.DATA_SUBDIR).exists(), "the empty leaf is still the probe's to remove"
+
+
+def test_a_refused_path_leaves_no_parent_folders_either(tmp_path, monkeypatch) -> None:
+    """The refusal paths clean up the same way: a "no" is not a reason to leave folders."""
+    typed = tmp_path / "x" / "y"
+    monkeypatch.setattr(dl.os, "access", lambda *_a, **_k: False)
+    out = dl.preflight(str(typed))
+    assert out["usable"] is False and out["reason_code"] == "not_writable"
+    assert not (tmp_path / "x").exists()
+
+
 def test_a_relative_path_is_refused(tmp_path) -> None:
     out = dl.preflight("some/where")
     assert out["usable"] is False
@@ -377,6 +422,93 @@ def test_an_unusable_folder_is_a_400_and_changes_nothing(monkeypatch, tmp_path):
     r = _client().post("/api/system/data-location", json={"path": "relative/path"})
     assert r.status_code == 400
     assert env.read_text(encoding="utf-8") == 'export OO_DATA_DIR="/previous/choice"\n'
+
+
+# --------------------------------------------------------------------------- #
+# The lock gate: the step's endpoints THROUGH the real app's middleware
+# --------------------------------------------------------------------------- #
+# Every test above mounts the router on a bare FastAPI(), so none of them could see that
+# the real app's lock gate answered 503 for these paths at `fresh` -- the only state they
+# are for -- and the first-launch step was skipped on every install (2026-09-26
+# click-through, I15/P4/U1). These go through `src.api.main.app`, which runs the gate, and
+# pin both directions: open at `fresh`, and exactly as closed as before against a LOCKED
+# store (which must not even say where its data folder is).
+_STEP_CALLS = (
+    ("get", "/api/system/data-location", None),
+    ("post", "/api/system/data-location/check", "path"),
+    ("post", "/api/system/data-location", "path"),
+)
+
+
+def _gated_client():
+    from fastapi.testclient import TestClient
+
+    from src.api.main import app
+
+    return TestClient(app)  # no `with`: the gate is middleware, the lifespan is not needed
+
+
+def test_at_fresh_the_real_app_serves_the_step(monkeypatch, tmp_path, env_file):
+    import src.api.unlock as unlock_mod
+
+    monkeypatch.setattr(unlock_mod, "app_lock_state", lambda: "fresh")
+    c = _gated_client()
+    got = c.get("/api/system/data-location")
+    assert got.status_code == 200, got.text
+    assert got.json()["offerable"] is True
+
+    drive = tmp_path / "drive"
+    drive.mkdir()
+    probe = c.post("/api/system/data-location/check", json={"path": str(drive)})
+    assert probe.status_code == 200 and probe.json()["usable"] is True
+    saved = c.post("/api/system/data-location", json={"path": str(drive)})
+    assert saved.status_code == 200 and saved.json()["saved"] is True
+    assert DATA_SUBDIR in env_file.read_text(encoding="utf-8")
+
+
+def test_a_locked_store_still_refuses_every_step_call_at_the_gate(monkeypatch, tmp_path, env_file):
+    """The GET would disclose the data folder's path; the POSTs would probe and record a
+    folder. Against an existing locked store all three stay the gate's 503 -- the handlers'
+    own 409 is never reached, so nothing about the store is said beyond "locked"."""
+    import src.api.unlock as unlock_mod
+
+    monkeypatch.setattr(unlock_mod, "app_lock_state", lambda: "locked")
+    c = _gated_client()
+    target = str(tmp_path / "elsewhere")
+    for method, path, body_key in _STEP_CALLS:
+        kw = {"json": {body_key: target}} if body_key else {}
+        r = getattr(c, method)(path, **kw)
+        assert r.status_code == 503, (method, path, r.status_code, r.text)
+        assert r.json() == {"detail": "the database is locked: unlock it first", "locked": True}
+    assert not (tmp_path / "elsewhere").exists()
+    assert not env_file.exists()
+
+
+def test_fresh_opens_those_two_paths_and_nothing_else(monkeypatch):
+    """Exact paths, not a prefix, and only at `fresh`: the rest of the API stays shut."""
+    import src.api.unlock as unlock_mod
+    from src.api.unlock import ALLOWED_ONLY_WHILE_FRESH, allowed_while_locked
+
+    assert ALLOWED_ONLY_WHILE_FRESH == (
+        "/api/system/data-location",
+        "/api/system/data-location/check",
+    )
+    for p in ALLOWED_ONLY_WHILE_FRESH:
+        assert allowed_while_locked(p, "fresh")
+        assert not allowed_while_locked(p, "locked"), f"{p} must stay shut on a locked store"
+    for p in (
+        "/api/system/data-location/",
+        "/api/system/data-location-x",
+        "/api/system/data-location/check/x",
+        "/api/system/doctor",
+        "/api/sources",
+    ):
+        assert not allowed_while_locked(p, "fresh"), p
+
+    monkeypatch.setattr(unlock_mod, "app_lock_state", lambda: "fresh")
+    c = _gated_client()
+    assert c.get("/api/system/doctor").status_code == 503
+    assert c.get("/api/sources").status_code == 503
 
 
 # --------------------------------------------------------------------------- #

@@ -663,6 +663,29 @@ artifacts:
     freshness: {policy: rarely}
     last_verified: "2026-09-16"
 
+  - id: natural-earth-disputed-areas
+    title: Natural Earth breakaway / disputed areas (the ooMap CONTESTED layer)
+    kind: vendored-data
+    description: >
+      world_disputed.json (50m admin-0 breakaway/disputed areas, rulings Q803 and Q826):
+      the 28 areas every ooMap draws hatched with every claim named, and each viewpoint's
+      attribution for the worldview picker. Claims are read from the source's own fields
+      (ADM0_A3, the 33 ADM0_A3_<POV> viewpoints, FCLASS_<POV>, and NOTE_BRK's "Claimed by"
+      names resolved against the same release's admin-0 countries) -- nothing
+      hand-curated. Registered 2026-09-27 when the NOTE_BRK rule was added: the upstream
+      master mirror first reproduced the previous asset byte for byte, and the rebuild
+      then changed only Abyei (+ South Sudan), Courantyne Headwaters and Lawa Headwaters
+      (+ Suriname) and the asset's own "method" line.
+    upstream: https://www.naturalearthdata.com (public domain)
+    fetched_from: https://raw.githubusercontent.com/nvkelso/natural-earth-vector (the
+      project's own git mirror; it and the countries layer must come from one release)
+    check_upstream: "Natural Earth changes rarely; refresh only on a data correction"
+    license: public domain
+    pin: {path: src/static/world_disputed.json, sha256: "00c2157fa2982ce93fa4800f5084edbd1076dd3f5b1d435cb89eef110f582cda"}
+    refresh: "python scripts/build_disputed_areas.py"
+    freshness: {policy: rarely}
+    last_verified: "2026-09-27"
+
   - id: offline-bundle-python-runtime
     title: Self-contained CPython for the air-gapped installer (OPERATOR-SUPPLIED)
     kind: vendored-binary

@@ -5367,16 +5367,54 @@ def artifact_source_digest(src: str | os.PathLike[str]) -> str | None:
     Returns None rather than raising for every reason a digest might be absent (no
     manifest, a legacy container, an unreadable folder). None means "cannot tell",
     which callers MUST treat as "do the work" -- never as "already done".
+
+    TWO MANIFEST SHAPES (the 2026-09-26 click-through's leftovers, W12). The whole-
+    archive ``plaintext_sha256`` is written only by the oo-volumes-1 writer. The
+    streaming writer every export has used since 2026-07-09 (oo-volumes-2) records a
+    ``plaintext_sha256`` per MEMBER instead and none at the top -- so this returned
+    None for every current backup, and the skip below it never fired: re-importing a
+    folder already merged ran the whole restore again (0 new / 1,200 deduplicated)
+    and filed another empty report. For that shape the identity is the members
+    themselves: every member's name and plaintext digest, sorted, hashed once. Two
+    folders get the same identity only when every member holds the same bytes, and a
+    member without a well-formed digest makes the whole answer None, never a guess.
     """
     try:
         from src.backup.volumes import load_manifest
 
-        digest = load_manifest(src).get("plaintext_sha256")
+        manifest = load_manifest(src)
     except Exception:  # noqa: BLE001 - an unreadable manifest is an unknown, not an error
         return None
+    digest = manifest.get("plaintext_sha256")
+    if digest is None and "members" in manifest:
+        return _members_digest(manifest.get("members"))
     if not isinstance(digest, str) or len(digest) != 64:
         return None
     return digest
+
+
+def _members_digest(members: object) -> str | None:
+    """The oo-volumes-2 identity: a sha256 over each member's ``name`` and
+    ``plaintext_sha256``, in name order. None when there is no member, or when any
+    member lacks a name or a 64-hex digest -- a partial list is not an identity."""
+    import hashlib
+
+    if not isinstance(members, list) or not members:
+        return None
+    pairs: list[tuple[str, str]] = []
+    for m in members:
+        if not isinstance(m, dict):
+            return None
+        name, sha = m.get("name"), m.get("plaintext_sha256")
+        if not isinstance(name, str) or not name:
+            return None
+        if not isinstance(sha, str) or not re.fullmatch(r"[0-9a-f]{64}", sha):
+            return None
+        pairs.append((name, sha))
+    h = hashlib.sha256(b"oo-volumes-2 members\n")
+    for name, sha in sorted(pairs):
+        h.update(name.encode("utf-8") + b"\0" + sha.encode("ascii") + b"\n")
+    return h.hexdigest()
 
 
 def find_completed_import(digest: str | None) -> dict | None:

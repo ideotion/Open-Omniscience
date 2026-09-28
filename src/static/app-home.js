@@ -18,24 +18,120 @@
    not, and the failure is a TDZ error at load rather than anything a reader would
    spot in review. Add new code inside the module it belongs to.
 */
+    // ONE label map for the /api/database/stats counts, shared by the Home strip and
+    // Library -> Database & storage (loadDbStats), so the two surfaces cannot drift apart
+    // again. They had: the Library carried its own map for the three source keys only and
+    // printed `commodity_prices` raw, while Home had every key but those three and fell
+    // back to `k.replace(/_/g, " ")` -- a string no locale file holds. The i18n gates never
+    // saw either gap, because a label reached t() through a variable rather than as a
+    // literal; tests/test_clickthrough_b8_fixes.py now checks every value here against the
+    // twelve locale files (2026-09-26 click-through H8, P7, S4, S6, U5).
     const HOME_STAT_LABELS = {
       articles: "Articles", sources: "Sources",
       keywords: "Keywords", commodity_prices: "Commodity prices",
       article_links: "Article links", mentioned_dates: "Mentioned dates",
+      // Q1114 = a: the three-way split of the sources table, each labelled by what it
+      // counts. The first is THE headline source figure (enabled AND qualified, what
+      // select_sources admits); the three sum to the flat total by construction.
+      sources_qualified: "Sources collecting",
+      sources_pending: "Enabled, not qualified",
+      // Labelled by its PREDICATE (`enabled IS FALSE`), not by the largest population
+      // inside it -- the old label, Discovered candidates, also counted a qualified source
+      // the operator had switched off and one whose admission was undone (re-walk S-10,
+      // Q1114).
+      sources_candidates: "Not enabled",
     };
+    // The long form of each split figure, for the #oo-tip hover (invariant #17): what it
+    // counts, and that it is one part of the total. The visible surface keeps the
+    // predicate; the total and the "collection does not reach them" live here.
+    const HOME_SOURCE_SPLIT_HOVER = {
+      sources_qualified: "{n} of your {total} sources: enabled AND qualified — what collection actually reaches. This is the headline source count.",
+      sources_pending: "{n} of your {total} sources: enabled but not qualified — awaiting a verdict, or judged and refused. Collection does not reach them.",
+      sources_candidates: "{n} of your {total} sources: not enabled — discovered candidates awaiting review, and any source switched off or whose admission was undone. Collection does not reach them.",
+    };
+    const HOME_SOURCE_SPLIT_KEYS = ["sources_qualified", "sources_pending", "sources_candidates"];
     function homeStatLabel(k) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       return t(HOME_STAT_LABELS[k] || k.replace(/_/g, " "));
+    }
+    // The hover for one split figure, or "" for any other key. `total` is the flat
+    // COUNT(*) when the payload has it, else the sum -- the same number, since the three
+    // partition the table.
+    function homeSourceSplitHover(k, counts) {
+      const frame = HOME_SOURCE_SPLIT_HOVER[k];
+      if (!frame) return "";
+      const c = counts || {};
+      const total = (typeof c.sources === "number") ? c.sources
+        : HOME_SOURCE_SPLIT_KEYS.reduce((a, sk) => a + (c[sk] || 0), 0);
+      const F = (window.OOI18N && OOI18N.tf)
+        ? OOI18N.tf
+        : ((s, v) => String(s).replace(/\{(\w+)\}/g, (m, x) => (v && v[x] != null ? String(v[x]) : m)));
+      // fmtNum, never toLocaleString(): that reads the BROWSER's locale, which the app's
+      // language switcher never changes, so a French strip read "6,402" (click-through
+      // B14). Guarded, because node suites extract this function without the formatter.
+      const N = (x) => (typeof fmtNum === "function") ? fmtNum(x || 0, 0) : String(x || 0);
+      return F(frame, {n: N(c[k]), total: N(total)});
+    }
+    // The strip's entries, in the server's order, except that the flat "sources" figure
+    // is REPLACED IN PLACE by its three-way split (S4). Q1114 = a: the flat COUNT(*) blends
+    // what collection reaches with discovered candidates and enabled-but-unqualified rows,
+    // so beside the split it read as a fourth, bare number describing the corpus -- the
+    // Library already hid it for exactly that reason. Without the split (a payload that
+    // predates it) the flat figure stays, labelled plainly as before.
+    function homeStatEntries(counts) {
+      const c = counts || {};
+      const split = HOME_SOURCE_SPLIT_KEYS.every(k => typeof c[k] === "number");
+      if (!split) return Object.entries(c);
+      const entries = Object.entries(c).filter(([k]) => !HOME_SOURCE_SPLIT_KEYS.includes(k));
+      const parts = HOME_SOURCE_SPLIT_KEYS.map(k => [k, c[k]]);
+      const at = entries.findIndex(([k]) => k === "sources");
+      if (at >= 0) entries.splice(at, 1, ...parts); else entries.push(...parts);
+      return entries;
+    }
+    // THE LAST READING, so a LANGUAGE SWITCH repaints the strip from it instead of
+    // spending a request. The whole strip sits inside [data-i18n-dyn], so the DOM walker
+    // never revisits it, and the oo:langchange listener (app-boot.js) used to repaint only
+    // its Wikipedia figure and its read-failure line -- every other label stayed in the
+    // previous language until the next 15 s poll (click-through U5). Null until the first
+    // paint; a failed read never overwrites them.
+    let _homeStatsLast = null;     // {counts, payload} of the last stats painted
+    let _homeRunningLast = null;   // the last collection state painted (true / false)
+    let _homeGlanceAwaitingI18n = false;
+    function repaintHomeGlance() {
+      if (_homeStatsLast && !_homeStatsFailed) {
+        renderHomeStats(_homeStatsLast.counts, _homeStatsLast.payload, true);
+      }
+      if (_homeRunningLast !== null) renderHomeStatus(_homeRunningLast);
+    }
+    // THE BOOT RACE, the same one renderHomeStatsFailure() handles below: boot
+    // dispatches no oo:langchange, so a strip painted before the locale map loaded stays
+    // English (measured: still English 5 s after a reload in fr). Repaint once from the
+    // cache when OOI18N.ready resolves -- a promise, so a late asker still gets an answer.
+    function _homeGlanceWhenReady() {
+      if (_homeGlanceAwaitingI18n) return;
+      if (!(window.OOI18N && OOI18N.ready && OOI18N.ready.then)) return;
+      _homeGlanceAwaitingI18n = true;
+      OOI18N.ready.then(() => repaintHomeGlance()).catch(() => {});
     }
     // S3.4 (d): a served-stale payload states its REAL age. The counts now come
     // from a background-refreshed cache (S3.2), so on a busy server they can be a
     // minute or two old -- and a number that is quietly old is worse than one that
     // says how old it is. Below the threshold nothing is added: stamping every
     // render with an age would turn a normal reading into a warning.
+    //
+    // AN OLD VALUE IS NOT A STALE ONE. `cache_age_s` counts from the value's BUILD, and
+    // an idle app never rebuilds (nothing was written), so the age grew without bound
+    // and every idle install read "(server busy)" beside "Automatic collection: stopped"
+    // (2026-09-27 re-walk H-1, P-5, T-4, U-1). The server now says what it knows
+    // (served_cache._decorate): a value it VERIFIED unchanged gets no note at all, and
+    // "server busy" is said only when a recount has been running for at least the
+    // cache's own interval -- measured, never inferred from age. Anything else behind a
+    // write says only that a recount is pending.
     const _STALE_NOTE_S = 90;
     function homeStatsAgeNote(payload, t) {
       const age = payload && payload.cache_age_s;
       if (!(typeof age === "number" && age >= _STALE_NOTE_S)) return "";
+      if (payload.verified_current === true) return "";
       // The time comes from the payload's own as_of, never from the browser clock
       // minus an age -- two clocks would disagree and the payload's is the one
       // that describes the measurement.
@@ -43,21 +139,41 @@
       try {
         const d = new Date(payload.as_of);
         if (!isNaN(d.getTime())) {
-          stamp = d.toLocaleTimeString([], {hour: "2-digit", minute: "2-digit"});
+          // In the APP language, not the browser's: "as of 08:11 PM" stayed English in fr
+          // (click-through U5). The same rule fmtDateTime (app-shell.js) follows.
+          const opts = {hour: "2-digit", minute: "2-digit"};
+          const loc = (window.OOI18N && OOI18N.current && OOI18N.current()) || undefined;
+          try { stamp = d.toLocaleTimeString(loc, opts); }
+          catch (_e) { stamp = d.toLocaleTimeString([], opts); }
         }
       } catch (e) { stamp = ""; }
       if (!stamp) return "";
-      return t("as of {time} (server busy)").replace("{time}", stamp);
+      const run = payload.recount_running_s, ttl = payload.cache_ttl_s;
+      const busy = typeof run === "number" && typeof ttl === "number" && run >= ttl;
+      const frame = busy ? t("as of {time} (server busy)") : t("as of {time} (recount pending)");
+      return frame.replace("{time}", stamp);
     }
-    function renderHomeStats(counts, payload) {
+    function renderHomeStats(counts, payload, fromCache) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const el = $("home-stats"); if (!el) return;
-      const entries = Object.entries(counts || {});
+      // Real stats are what the strip shows now, whichever path painted them. A poll
+      // that succeeds after a failed first read used to leave the failure flag set, so a
+      // language switch would have repainted the failure line over real numbers.
+      _homeStatsLast = {counts, payload};
+      _homeStatsFailed = false;
+      const entries = homeStatEntries(counts);
       const allZero = entries.length > 0 && entries.every(([, v]) => !v);
       const note = homeStatsAgeNote(payload, t);
+      // A split figure carries its own hover, so it owns that attribute: data-i18n-dyn
+      // keeps the walker from caching the already-translated title as "the English".
+      const item = ([k, v]) => {
+        const hover = homeSourceSplitHover(k, counts);
+        const attrs = hover ? ` title="${esc(hover)}" data-i18n-dyn` : "";
+        const n = (typeof fmtNum === "function") ? fmtNum(v || 0, 0) : String(v || 0);
+        return `<span class="s"${attrs}><b>${n}</b> <span>${esc(homeStatLabel(k))}</span></span>`;
+      };
       el.innerHTML = (entries.length && !allZero)
-        ? entries.map(([k, v]) =>
-            `<span class="s"><b>${(v || 0).toLocaleString()}</b> <span>${esc(homeStatLabel(k))}</span></span>`).join("")
+        ? entries.map(item).join("")
           + (note ? `<span class="s muted">${esc(note)}</span>` : "")
         : `<div class="muted">${esc(t("Your library is empty — head to Collect to gather your first material."))}</div>`;
       // Q714 = a: the Wikipedia lane gets "its own figure" on the strip, appended
@@ -65,7 +181,13 @@
       // article in the press corpus unless its text was stored -- adding it to the
       // articles headline would inflate a number the ruling says "stays press unless
       // a lane filter is chosen".
-      renderHomeWikiFigure();
+      // A repaint from the cache re-appends the figure from ITS cache and never asks
+      // the lane again; with no cached figure there is nothing to put back (a lane that
+      // has not measured renders nothing, and a first read still in flight appends
+      // itself when it lands).
+      if (!fromCache) renderHomeWikiFigure();
+      else if (_homeWikiLane) renderHomeWikiFigure(true);
+      _homeGlanceWhenReady();
     }
 
     // Q714's own figure: "Wikipedia: N pages · M changes today".
@@ -96,9 +218,10 @@
       const span = document.createElement("span");
       span.className = "s";
       span.id = "home-wiki-figure";
+      const N = (x) => (typeof fmtNum === "function") ? fmtNum(x || 0, 0) : String(x || 0);
       span.textContent = F("Wikipedia: {pages} pages · {changes} changes today", {
-        pages: (lane.pages || 0).toLocaleString(),
-        changes: (lane.changes_today || 0).toLocaleString(),
+        pages: N(lane.pages),
+        changes: N(lane.changes_today),
       });
       // The method and the SEPARATENESS in the hover (invariant #17's layering); the
       // figure itself stays whole on the visible surface.
@@ -116,9 +239,27 @@
     function renderHomeStatus(running) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const el = $("home-status"); if (!el) return;
+      _homeRunningLast = !!running;
+      _homeGlanceWhenReady();
       const priv = t("Your corpus stays on this machine — no cloud, no telemetry; fetching follows your Network mode.");
-      el.innerHTML =
-        `${esc(t("Automatic collection"))}: <span class="pill ${running ? "ok" : ""}">${esc(t(running ? "running" : "stopped"))}</span> ` +
+      // ONE keyed frame around the state pill, never a label with a colon welded on after
+      // t(): the colon is the locale's to write (French puts a space before it, Chinese and
+      // Japanese use a full-width one). The frame is translated with a placeholder the
+      // pill's markup then replaces, so the pill stays markup and the words stay a key.
+      //
+      // The state WORD is inside the frame too, one whole sentence per state, with the
+      // pill's edges as two markers the translator places: the generic "stopped" key is
+      // shared with the scheduler pill, and its French 'arrêté' could not agree with the
+      // feminine 'collecte' (re-walk U-10, 'Collecte automatique : arrêté').
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
+        : ((s, v) => String(s).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? String(v[k]) : m));
+      const line = running
+        ? tf("Automatic collection: {pill}running{endpill}", {pill: "\u0001", endpill: "\u0002"})
+        : tf("Automatic collection: {pill}stopped{endpill}", {pill: "\u0001", endpill: "\u0002"});
+      const [pre, rest] = line.split("\u0001");
+      const [word, post] = String(rest || "").split("\u0002");
+      const pill = `<span class="pill ${running ? "ok" : ""}">${esc(word || "")}</span>`;
+      el.innerHTML = esc(pre) + pill + esc(post || "") + " " +
         `· <span class="muted">${esc(priv)}</span>`;
     }
     // ======================= FEED (rulings 8-13, 40-41) =======================
@@ -135,6 +276,14 @@
     const _FEED_MARK_KEY = "oo.feed.mark";     // the cursor reached, per order
     const _FEED_ORDER_KEY = "oo.feed.order";
     let _feedBusy = false, _feedDone = false, _feedHeld = null;
+    // What the walk has DRAWN, so a language switch repaints the Feed without a request:
+    // every row appended so far, the last page (its method + caveat), and the last
+    // failure's message (null when the last page landed). The controls, the held-back
+    // line, "Load more" and each card's chrome are written with t() in the reader's
+    // language, and the DOM walker records a node's FIRST-SEEN text as "the English", so
+    // after a switch that started in French they stayed French in ar, zh and en (re-walk
+    // T-3, found again on this tab by the batch review). See _repaintFeed.
+    let _feedRows = [], _feedLast = null, _feedErr = null;
     // Bumped by every restart (reshuffle, start-from-the-top, order switch). A page
     // that was already in flight when one of those happened belongs to the ORDER the
     // reader just left, so it is discarded on arrival rather than appended.
@@ -185,6 +334,7 @@
       // flight without the two of them racing to append.
       _feedGen++; _feedBusy = false;
       _feedDone = false; _feedHeld = null;
+      _feedRows = []; _feedLast = null; _feedErr = null;
       const list = $("feed-list"); if (list) list.innerHTML = "";
       loadFeed(true);
     }
@@ -198,7 +348,7 @@
         + `onclick="_feedSetOrder('${v}')" title="${esc(tip)}">${esc(label)}</button>`;
       host.innerHTML =
         `<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:6px">`
-        + `<span class="muted" style="font-size:.85em">${esc(t("Order"))}:</span>`
+        + `<span class="muted" style="font-size:.85em">${ooLabelHtml(esc(t("Order")), "").trimEnd()}</span>`
         + btn("shuffled", t("Shuffled"), t("A fixed order chosen by a seed — it uses each article's id and that seed and nothing else."))
         + btn("recent", t("Newest first"), t("By publication date, newest first."))
         + `<button class="tiny ghost" style="margin-inline-start:8px" onclick="feedReshuffle()" `
@@ -222,7 +372,7 @@
       const more = (a.excerpt_full || "").length > (a.excerpt || "").length;
       return `<article class="feed-card" data-aid="${a.id}">`
         + `<h3 class="feed-t"><a href="${esc(a.reader_url)}" target="_blank" rel="noopener">`
-        + `${esc(a.title) || '<span class="muted">(untitled)</span>'}</a></h3>`
+        + `${esc(a.title) || `<span class="muted">${esc(t("(untitled)"))}</span>`}</a></h3>`
         + `<div class="feed-meta muted">${esc(a.source || "")}`
         + (when ? ` · ${esc(when)}` : "")
         + (lang ? ` · ${ooLangCell(lang)}` : "")
@@ -276,25 +426,64 @@
         // make impossible, so this page is dropped instead.
         if (gen !== _feedGen) return;
         if (d.held_back) _feedHeld = d.held_back;
-        list.insertAdjacentHTML("beforeend", (d.results || []).map(_feedCard).join(""));
+        const rows = d.results || [];
+        list.insertAdjacentHTML("beforeend", rows.map(_feedCard).join(""));
+        for (const a of rows) _feedRows.push(a);
+        _feedLast = d; _feedErr = null;
         _feedSetMark(order, d.next_cursor || "");
         _feedDone = !d.has_more || !d.next_cursor;
         _feedNote(d);
-        if (more) {
-          more.innerHTML = _feedDone
-            ? `<div class="muted" style="margin:10px 0">${esc(t("That is the end of this pass."))}</div>`
-            : `<button class="tiny" onclick="loadFeed(false)">${esc(t("Load more"))}</button>`;
-        }
+        if (more) more.innerHTML = _feedMoreHtml();
       } catch (e) {
         // Same reason as the discard above: a page the reader has already navigated away
         // from must not report ITS failure over the walk that replaced it.
-        if (gen === _feedGen && more) {
-          more.innerHTML = `<div class="note err">${esc((e && e.message) || t("The feed could not load."))}</div>`;
+        if (gen === _feedGen) {
+          _feedErr = (e && e.message) || "";
+          if (more) more.innerHTML = _feedMoreHtml();
         }
       } finally {
         // Only the CURRENT walk may release the flag: a discarded page returning late
         // would otherwise clear the busy flag of the walk that replaced it.
         if (gen === _feedGen) _feedBusy = false;
+      }
+    }
+    // The line under the list, from what the walk last reached: the end of the pass, more
+    // to load, or the last failure (the server's own words, or the keyed fallback).
+    function _feedMoreHtml() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      if (_feedErr != null) return `<div class="note err">${esc(_feedErr || t("The feed could not load."))}</div>`;
+      return _feedDone
+        ? `<div class="muted" style="margin:10px 0">${esc(t("That is the end of this pass."))}</div>`
+        : `<button class="tiny" onclick="loadFeed(false)">${esc(t("Load more"))}</button>`;
+    }
+    // THE REPAINT, called from app-boot.js's ONE `oo:langchange` listener. Redraws the
+    // controls, the cards, the note and the line under the list from what the walk already
+    // holds -- NEVER a fetch, and nothing at all for a Feed that was never opened. A card
+    // the reader had expanded stays expanded: it is the same text, in a new frame.
+    function _repaintFeed() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const ctl = $("feed-controls"), list = $("feed-list"), more = $("feed-more");
+      if (!ctl || !ctl.children.length) return;
+      _feedControls();
+      if (list && _feedLast) {
+        const open = new Set();
+        list.querySelectorAll('.feed-x[data-open="1"]').forEach((p) => {
+          const c = p.closest(".feed-card"); if (c) open.add(c.getAttribute("data-aid"));
+        });
+        list.innerHTML = _feedRows.map(_feedCard).join("");
+        if (open.size) {
+          list.querySelectorAll(".feed-card").forEach((c) => {
+            if (!open.has(c.getAttribute("data-aid"))) return;
+            const b = c.querySelector('button[onclick^="_feedExpand"]');
+            if (b) _feedExpand(b);
+          });
+        }
+        _feedNote(_feedLast);
+      }
+      if (more) {
+        // A page in flight writes its own line when it lands, in the new language.
+        if (_feedBusy) more.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
+        else if (_feedLast || _feedErr != null) more.innerHTML = _feedMoreHtml();
       }
     }
 
@@ -311,13 +500,14 @@
       const held = _feedHeld;
       if (held && (held.quarantined || held.source_not_qualified)) {
         const bits = [];
+        const N = (x) => (typeof fmtNum === "function") ? fmtNum(x, 0) : String(x);
         if (held.source_not_qualified) {
           bits.push(t("{n} held back: their source has not been qualified yet")
-            .replace("{n}", held.source_not_qualified.toLocaleString()));
+            .replace("{n}", N(held.source_not_qualified)));
         }
         if (held.quarantined) {
           bits.push(t("{n} held back as quarantined")
-            .replace("{n}", held.quarantined.toLocaleString()));
+            .replace("{n}", N(held.quarantined)));
         }
         h += `<div class="card-caveat">${esc(bits.join(" · "))}</div>`;
       }
@@ -426,6 +616,7 @@
     // Hidden until the corpus has recent articles so Home is never blank-and-silent (the
     // Briefing still renders); when it HAS articles but none pass the gates it shows the
     // panel with an honest "loosen the gates" message so the controls stay reachable.
+    let _homeLatestPayload = null;   // the last payload read; see _renderHomeLatest
     async function loadHomeLatest() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const panel = $("home-latest-panel"), box = $("home-latest");
@@ -436,6 +627,9 @@
       const tg = (($("latest-tag") || {}).value || "").trim();
       const collapse = ($("latest-collapse") ? $("latest-collapse").checked : true) ? "1" : "0";
       box.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
+      // Dropped first, so a failed read leaves nothing a language switch could redraw
+      // over the hidden panel.
+      _homeLatestPayload = null;
       try {
         const p = new URLSearchParams({
           limit: "12", min_words: String(mw), min_sources: String(ms),
@@ -443,7 +637,21 @@
         });
         if (ct) p.set("content_type", ct);
         if (tg) p.set("tag", tg);
-        const d = await api("/api/insights/latest?" + p.toString());
+        _homeLatestPayload = await api("/api/insights/latest?" + p.toString());
+        _renderHomeLatest();
+      } catch (e) { panel.hidden = true; box.innerHTML = ""; }
+    }
+    // THE LAST PAYLOAD and ITS RENDER HALF, split for the same reason as the channel
+    // chips below: the rows carry their channel's NAME, "words" and "cited sources"
+    // translated at render time, and the facet options likewise, so after a live switch
+    // they stayed in the old language (the frozen-locale class, re-walk T-3 / U-8).
+    // `oo:langchange` redraws from the payload, never a fetch.
+    function _renderHomeLatest() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const panel = $("home-latest-panel"), box = $("home-latest");
+      const d = _homeLatestPayload;
+      if (!panel || !box || !d) return;
+      {
         const arts = d.articles || [];
         const types = d.available_content_types || {};
         const tags = d.available_tags || [];
@@ -454,7 +662,7 @@
         }
         panel.hidden = false;
         _fillLatestFacet($("latest-channel"), t("All channels"),
-          Object.keys(types).map(k => ({v: k, label: k, n: types[k]})));
+          Object.keys(types).map(k => ({v: k, label: homeChannelLabel(k), n: types[k]})));
         _fillLatestFacet($("latest-tag"), t("All tags"),
           tags.map(x => ({v: x.tag, label: x.tag, n: x.articles})));
         if (!arts.length) {
@@ -468,9 +676,9 @@
           // REAL substance figures (counts, never a score): word count (flagged when the
           // language is unsegmented, where word_count is meaningless) + cited sources.
           const wc = (a.word_count != null && !a.unsegmented)
-            ? `${esc(String(a.word_count))} ${esc(t("words"))}` : "";
-          const cs = `${esc(String(a.cited_sources || 0))} ${esc(t("cited sources"))}`;
-          const chan = src.source_type ? `<span class="pill">${esc(src.source_type)}</span>` : "";
+            ? `${esc(fmtNum(a.word_count))} ${esc(t("words"))}` : "";
+          const cs = `${esc(fmtNum(a.cited_sources || 0))} ${esc(t("cited sources"))}`;
+          const chan = src.source_type ? `<span class="pill">${esc(homeChannelLabel(src.source_type))}</span>` : "";
           const facts = [wc, cs].filter(Boolean).join(" · ");
           // Spread honesty (anti-false-triangulation): count DISTINCT OTHER outlets that
           // ran the same story (the backend's deduped `also_reported_by`, which excludes
@@ -479,12 +687,14 @@
           const others = (a.also_reported_by || []).length;
           const also = others > 0
             ? ` <span class="muted">— ${esc(t("also reported by {n} more").replace("{n}", String(others)))}</span>` : "";
-          return `<div class="home-recent-row"><a href="${esc(a.url || ("/api/articles/" + a.id + "/view"))}" target="_blank" rel="noopener" title="${esc(t("offline stored copy"))}">${esc(a.title || t("(untitled)"))}</a>`
+          // The LOCAL reader first (invariant #6), as the Recent panel does: the row used
+          // to open the external original while its hover said "offline stored copy".
+          return `<div class="home-recent-row"><a href="/api/articles/${encodeURIComponent(a.id)}/view" target="_blank" rel="noopener" title="${esc(t("offline stored copy"))}">${esc(a.title || t("(untitled)"))}</a>`
             + (meta ? ` <span class="muted">— ${meta}</span>` : "")
             + `<div class="muted small" style="margin-top:2px">${chan} ${facts}${also}</div></div>`;
         }).join("")
           + `<div class="hint muted" style="font-size:11px;margin-top:6px">${esc(d.caveat || "")}</div>`;
-      } catch (e) { panel.hidden = true; box.innerHTML = ""; }
+      }
     }
     // Populate a Latest facet <select> once (preserving the current selection), an "all"
     // default first then each option with its article count. Idempotent: repopulates so a
@@ -516,6 +726,34 @@
     // listener, and split this way so that repaint costs no request -- the switch must
     // never ask the backend anything behind the reader.
     let _homeChannelsPayload = null;
+    // A channel's NAME for the reader, keyed x12; the raw `source_type` stays the value
+    // every filter and click uses. The chips printed the raw codes ('news', 'hazard',
+    // 'legal') in every locale while the hint above them named the channels in the
+    // reader's language, so one panel spoke two vocabularies (re-walk U-8). The keys are
+    // the types the app's own ingest paths assign plus the catalog's; a type this map
+    // does not know is shown as the code itself -- data, never a guessed name.
+    const HOME_CHANNEL_LABELS = {
+      news: "News", newsletter: "Newsletters", legal: "Legal", law: "Law",
+      hazard: "Hazards", wiki: "Wiki", wikipedia: "Wikipedia", statistics: "Statistics",
+      document: "Documents", cited: "Cited sources", unknown: "Unknown type", untyped: "Untyped",
+      broadcaster: "Broadcasters", "scientific-journal": "Scientific journals",
+      magazine: "Magazines", gazette: "Gazettes", stock_exchange: "Stock exchanges",
+      "wire-agency": "Wire agencies", investigative: "Investigative outlets",
+      commodity: "Commodities", "government-primary": "Government (primary)",
+      financial: "Financial", "academic-research": "Academic research",
+      scientific: "Scientific", ip: "Intellectual property", "fact-checker": "Fact-checkers",
+      geopolitical: "Geopolitical", technology: "Technology", "think-tank": "Think tanks",
+      case_law: "Case law", blog: "Blogs", religious: "Religious", institution: "Institutions",
+      igo: "Intergovernmental organisations", "ngo-civil-society": "NGOs and civil society",
+      "data-portal": "Data portals", "financial-data": "Financial data",
+    };
+    function homeChannelLabel(code) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const k = String(code == null ? "" : code);
+      const name = Object.prototype.hasOwnProperty.call(HOME_CHANNEL_LABELS, k.toLowerCase())
+        ? HOME_CHANNEL_LABELS[k.toLowerCase()] : null;
+      return name ? t(name) : k;
+    }
     async function loadHomeChannels() {
       const panel = $("home-channels-panel"), box = $("home-channels");
       if (!panel || !box) return;
@@ -558,9 +796,15 @@
         const totalLine = (window.OOI18N && OOI18N.tf)
           ? OOI18N.tf("{n} articles across {k} channels", {n: fmtNum(total), k: facets.length})
           : `${fmtNum(total)} articles across ${facets.length} channels`;
+        // Each chip's hover names ITS channel and the raw type it filters on, from the
+        // same map as its label, so the two cannot drift apart again (U-8).
+        const tfr = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
+          : ((s, v) => String(s).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? String(v[k]) : m));
+        const hover = (f) => tfr("{channel}: the channel its sources assert (source type “{code}”), never a quality score. Click to explore its articles.",
+          {channel: homeChannelLabel(f.source_type), code: f.source_type});
         box.innerHTML = `<div class="hint muted" style="margin-bottom:4px">${esc(totalLine)}</div>`
           + `<div style="display:flex;gap:6px;flex-wrap:wrap">` + facets.map(f =>
-          `<button class="chip" onclick="openChannelCorpus(${esc(JSON.stringify(f.source_type))})" title="${esc(t("An asserted content channel (newsletter, web article, wiki, statistic, law, market, discovery), never a quality score. Click a channel to explore its corpus."))}">${esc(f.source_type)} <span class="muted">${esc(String(f.articles))} · ${esc(share(f.articles))}</span></button>`).join("")
+          `<button class="chip" onclick="openChannelCorpus(${esc(JSON.stringify(f.source_type))})" title="${esc(hover(f))}" data-i18n-dyn>${esc(homeChannelLabel(f.source_type))} <span class="muted">${esc(fmtNum(f.articles))} · ${esc(share(f.articles))}</span></button>`).join("")
           + `</div>`;
       }
     }
@@ -574,7 +818,7 @@
         const d = await api("/api/articles?source_type=" + encodeURIComponent(st) + "&limit=1000");
         const ids = (d.results || []).map(a => a.id).filter(Boolean);
         if (!ids.length) { toast(t("No articles for this channel yet.")); return; }
-        openAnalysisForIds(ids, t("Channel: {c}").replace("{c}", st));
+        openAnalysisForIds(ids, t("Channel: {c}").replace("{c}", homeChannelLabel(st)));
       } catch (e) { toast((e && e.message) || String(e), "err"); }
     }
     // Home "Most recent by tag" (item #36 / Home helicopter view): a recency LENS onto the
@@ -596,6 +840,13 @@
         await loadHomeRecentList(sel.value);
       } catch (e) { panel.hidden = true; }
     }
+    // THE LAST ROWS READ, so a LANGUAGE SWITCH repaints the list without a request. Its
+    // empty-state line and link hovers are written with t() in the reader's language,
+    // and the DOM walker records a node's FIRST-SEEN text as "the English": a line
+    // painted in French was then looked up as a key in every later language and stayed
+    // French in ar, zh and en (re-walk T-3). Null until a read lands, and after a failed
+    // one, whose message is the server's own words and has nothing to repaint.
+    let _homeRecentLast = null;
     async function loadHomeRecentList(tag) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const panel = $("home-recent-panel"), box = $("home-recent");
@@ -605,15 +856,10 @@
       try {
         const q = "/api/articles?tags=" + encodeURIComponent(tag) + "&sort_by=date&sort_dir=desc&limit=8";
         const d = await api(q);
-        const rows = d.results || [];
-        if (!rows.length) { box.innerHTML = `<div class="muted">${esc(t("No articles for this tag yet."))}</div>`; panel.hidden = false; return; }
-        box.innerHTML = rows.map(a => {
-          const meta = [esc(a.source || ""), esc(String(a.published_at || "").slice(0, 10))].filter(Boolean).join(" · ");
-          return `<div class="home-recent-row"><a href="/api/articles/${a.id}/view" target="_blank" rel="noopener" title="${esc(t("offline stored copy"))}">${esc(a.title || t("(untitled)"))}</a>`
-            + (meta ? ` <span class="muted">— ${meta}</span>` : "") + `</div>`;
-        }).join("");
-        panel.hidden = false;
+        _homeRecentLast = {rows: d.results || []};
+        _renderHomeRecent();
       } catch (e) {
+        _homeRecentLast = null;
         // home-recent-panel-hidden-on-error (P1): both SUCCESS paths above clear
         // `hidden`, but this catch branch set an honest error message into the
         // panel's own box while leaving the panel itself hidden -- the message was
@@ -622,6 +868,21 @@
         box.innerHTML = `<div class="muted">${esc(e && e.message || e)}</div>`;
         panel.hidden = false;
       }
+    }
+    // THE RENDER HALF: reads only the cached rows, so `oo:langchange` (app-boot.js) can
+    // call it freely. Returns quietly when nothing has been read yet.
+    function _renderHomeRecent() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const panel = $("home-recent-panel"), box = $("home-recent");
+      const rows = _homeRecentLast && _homeRecentLast.rows;
+      if (!panel || !box || !rows) return;
+      if (!rows.length) { box.innerHTML = `<div class="muted">${esc(t("No articles for this tag yet."))}</div>`; panel.hidden = false; return; }
+      box.innerHTML = rows.map(a => {
+        const meta = [esc(a.source || ""), esc(String(a.published_at || "").slice(0, 10))].filter(Boolean).join(" · ");
+        return `<div class="home-recent-row"><a href="/api/articles/${a.id}/view" target="_blank" rel="noopener" title="${esc(t("offline stored copy"))}">${esc(a.title || t("(untitled)"))}</a>`
+          + (meta ? ` <span class="muted">— ${meta}</span>` : "") + `</div>`;
+      }).join("");
+      panel.hidden = false;
     }
     // Home "Trending now" glance (UI rethink, Home → helicopter view). Compact +
     // REDUNDANT by design: the past-week RISING keywords (the disclosed window-vs-
@@ -632,11 +893,15 @@
     // "More in Insights →" deep-links to the canonical Trends view. Reuses
     // /api/insights/trending-windows + dashChartSvg; no new backend, no new poll.
     let _homeTrendTerms = [], _homeTrendCaveat = "";   // stash for enlargeHomeTrend(i)
+    // The UI language the stash was TRANSLATED for (its rows carry that language's
+    // translations), so a re-render never paints it under another language's tags.
+    let _homeTrendLang = "";
     async function loadHomeTrends() {
       const panel = $("home-trends-panel"), box = $("home-trends");
       if (!box) return;
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       try {
+        const lang = uiLangCode();
         const d = await api("/api/insights/trending-windows?limit=4&series_top=4" + tgtLangParam());
         const wk = (d.windows || []).find(w => w.label === "7d") || (d.windows || [])[0];
         const terms = (wk && wk.terms) || [];
@@ -645,6 +910,7 @@
         const _hw = wk && wk.series_window;   // the axis the server sliced these against
         _homeTrendTerms = terms;              // stash so enlargeHomeTrend(i) needs no refetch
         _homeTrendCaveat = d.caveat || "";
+        _homeTrendLang = lang;
         const cards = terms.map((x, i) => {
           // PRH-31: the axis is the window the server sliced the series against,
           // never the points' own span — a series that omits its zero days would
@@ -660,7 +926,7 @@
             : "";
           return `<div style="flex:1;min-width:180px;padding:6px;border:1px solid var(--border);border-radius:8px">
             <div style="display:flex;align-items:baseline;gap:6px">
-              <a href="#" onclick='openAnalysisFor(${esc(JSON.stringify(x.term))});return false' title="${esc(t("Open this keyword's own analysis window"))}">${kwLabelHtml(x)}</a>
+              <a href="#" onclick='openAnalysisFor(${esc(JSON.stringify(x.term))});return false' title="${esc(t("Open this keyword's own analysis window"))}">${kwLabelHtml(x, {inLink: true})}</a>${kwQidHtml(x)}
               <span class="muted" style="font-size:12px">${esc(growthFallback(x) || `↑${x.growth}× · ${x.recent}`)}</span>${enlarge}
             </div>${spark}</div>`;
         }).join("");
@@ -824,7 +1090,7 @@
       if (d.hazards_available) {
         const age = (d.hazards_age_hours != null) ? " (" + esc(t("{h}h old").replace("{h}", Math.round(d.hazards_age_hours))) + ")" : "";
         const asof = d.hazards_as_of ? esc(String(d.hazards_as_of).slice(0, 16).replace("T", " ")) : "—";
-        stale = `<span class="hint">${esc(t("Hazard snapshot"))}: ${asof}${age}${d.hazards_stale ? " · " + esc(t("stale")) : ""}</span>`;
+        stale = `<span class="hint">${ooLabelHtml(esc(t("Hazard snapshot")), asof + age)}${d.hazards_stale ? " · " + esc(t("stale")) : ""}</span>`;
       } else {
         stale = `<span class="hint">${esc(t("No local hazard snapshot — silence is not safety."))}</span>`;
       }
@@ -909,8 +1175,9 @@
       const el = $("home-tier"); if (!el) return;
       if (!ct || !ct.tier) { el.hidden = true; el.innerHTML = ""; el.removeAttribute("title"); return; }
       const tier = ct.tier;
-      const arts = (ct.articles || 0).toLocaleString();
-      const days = (ct.age_days || 0).toLocaleString();
+      const N = (x) => (typeof fmtNum === "function") ? fmtNum(x || 0, 0) : String(x || 0);
+      const arts = N(ct.articles);
+      const days = N(ct.age_days);
       const th = ct.thresholds || {};
       // The stage word (one of three constant labels — each keyed ×12).
       const stageLabel = t(tier === "early" ? "Early corpus"
@@ -1078,8 +1345,11 @@
         if (!c) return "";
         // The card renders exactly as it does in its family (same component, same
         // actions), plus the disclosed reason it leads its family.
-        const why = c.order_explain
-          ? `<div class="ov-why" title="${esc(c.order_explain)}">${esc(c.order_explain)}</div>` : "";
+        // The ranking line as keyed frames (N-8): an older stored card has only the English.
+        const whyText = (Array.isArray(c.order_explain_i18n) && c.order_explain_i18n.length)
+          ? cardFrames(c.order_explain_i18n) : (c.order_explain || "");
+        const why = whyText
+          ? `<div class="ov-why" title="${esc(whyText)}">${esc(whyText)}</div>` : "";
         return `<div class="ov-item" style="--fam:${famHue(b.bucket)}">`
           // h3, not h4 (axe heading-order, 2026-09-09). Two things were wrong and
           // one change fixes both: Home's only other visible heading is the h2
@@ -1156,11 +1426,11 @@
         ? `openCardCorpus(${esc(JSON.stringify(aIds))}, ${esc(JSON.stringify(aq))}, null, ${esc(JSON.stringify(cardProvenance(c)))})`
         : `openCardCorpusQuery(${esc(JSON.stringify(aq))}, null, ${esc(JSON.stringify(cardProvenance(c)))})`;
       // the CAVEAT rides EVERY rotated face — a timed rotation never hides it (#23 + the brief).
-      const caveat = c.caveat ? `<p class="card-caveat">${esc(c.caveat)}</p>` : "";
+      const caveat = c.caveat ? `<p class="card-caveat">${esc(cardText(c, "caveat"))}</p>` : "";
       face.innerHTML =
         `<div class="carousel-card bk-${esc(c.bucket)}" role="group" aria-label="${esc(t("Lead"))} ${_carIdx + 1} / ${n}">`
-        + `<h4>${esc(cardTitle(c))}</h4>`
-        + (c.summary ? `<p class="sum">${esc(c.summary)}</p>` : "")
+        + `<h4${cardTitleTip(c)}>${esc(cardTitle(c))}</h4>`
+        + (c.summary ? `<p class="sum">${esc(cardText(c, "summary"))}</p>` : "")
         + caveat
         + `<div><button class="tiny" onclick="${action}">${esc(t("Open corpus"))} ↗</button></div>`
         + `</div>`;
@@ -1293,14 +1563,23 @@
     function _renderOverviewTrends() {
       const host = $("ov-trending");
       if (!host) return;
+      // A stash fetched for ANOTHER UI language would paint its translated words under
+      // this language's tags (M8's defect, here). Leave the row as it is: the
+      // `loadHomeTrends` a language switch runs is re-fetching, and paints it when done.
+      if (_homeTrendLang && _homeTrendLang !== uiLangCode()) return;
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const terms = _homeTrendTerms || [];
       if (!terms.length) { host.innerHTML = ""; return; }
+      // The label through the ONE helper (M7): a foreign word carries its tier tag here
+      // as on every other keyword surface; the QID goes after the chip, since a nested
+      // anchor would close this one early.
       const chips = terms.slice(0, 6).map(x =>
         `<a class="chip tiny" href="#" onclick='openAnalysisFor(${esc(JSON.stringify(x.term))});return false'`
-        + ` title="${esc(t("Open this keyword's own analysis window"))}">${esc(x.term)}`
-        + ` <span class="muted">${esc(growthFallback(x) || `↑${x.growth}× · ${x.recent}`)}</span></a>`).join("");
-      host.innerHTML = `<div class="ov-trend"><span class="muted">${esc(t("Trending now"))}:</span>${chips}`
+        + ` title="${esc(t("Open this keyword's own analysis window"))}">${kwLabelHtml(x, {inLink: true})}`
+        + ` <span class="muted">${esc(growthFallback(x) || `↑${x.growth}× · ${x.recent}`)}</span></a>${kwQidHtml(x)}`).join("");
+      // The label takes the locale's own separator ("Tendances :", "热门："), not a welded
+      // English colon (click-through B16, V13); the chips are the value that follows it.
+      host.innerHTML = `<div class="ov-trend"><span class="muted">${ooLabelHtml(esc(t("Trending now")), "").trimEnd()}</span>${chips}`
         + `<a class="ov-more" href="#" onclick="showTab('insights');return false">${esc(t("More in Insights"))} →</a></div>`
         + (_homeTrendCaveat ? `<div class="hint muted" style="font-size:11px">${esc(_homeTrendCaveat)}</div>` : "");
     }
@@ -1325,8 +1604,89 @@
     // stays data. Otherwise the English `title` (additive fallback; cards without a
     // template, or a browser without tf, are byte-identical to before).
     function cardTitle(c) {
-      if (c && c.title_i18n && window.OOI18N && OOI18N.tf) return OOI18N.tf(c.title_i18n, c.title_vars || {});
+      if (c && c.title_i18n && window.OOI18N && OOI18N.tf) return OOI18N.tf(c.title_i18n, _cardFrameVars({v: c.title_vars}));
+      if (c && c.i18n && Array.isArray(c.i18n.title) && c.i18n.title.length && window.OOI18N && OOI18N.tf) return cardFrames(c.i18n.title);
       return (c && c.title) || "";
+    }
+    // THE REST OF A LEAD IN THE UI LANGUAGE (re-walk L-1/L-2/N-8, 2026-09-27). Only five
+    // producers' titles had a keyed frame; every summary, method, caveat and ranking line
+    // was English prose with its data welded in, so no key could match it. A card now
+    // carries keyed FRAMES (`c.i18n[field]` = [{t, v, tr, md}], src/briefing/card.py):
+    // each template translates ×12 and its data stays data -- a number through fmtNum,
+    // a `tr` var through t() (a tone word, a tier), an `md` var as this language's month
+    // and day. A card stored before frames existed has none, and its field goes through
+    // t(): a constant caveat or method keyed verbatim translates, a sentence carrying data
+    // stays in its English. Never a half-filled frame.
+    function _cardMonthDay(md) {
+      const m = /^(\d{1,2})-(\d{1,2})$/.exec(String(md));
+      if (!m) return String(md);
+      try {
+        return new Intl.DateTimeFormat(document.documentElement.lang || "en",
+          {month: "long", day: "numeric", timeZone: "UTC"}).format(new Date(Date.UTC(2000, +m[1] - 1, +m[2])));
+      } catch (_e) { return String(md); }
+    }
+    function _cardFrameVars(fr) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const tr = (fr && fr.tr) || [], md = (fr && fr.md) || [], v = (fr && fr.v) || {}, out = {};
+      Object.keys(v).forEach(k => {
+        if (v[k] == null) return;
+        if (tr.indexOf(k) !== -1) out[k] = t(String(v[k]));
+        else if (md.indexOf(k) !== -1) out[k] = _cardMonthDay(v[k]);
+        else if (typeof v[k] === "number" && typeof fmtNum === "function") out[k] = fmtNum(v[k]);
+        else out[k] = String(v[k]);
+      });
+      return out;
+    }
+    function cardFrames(frames) {
+      // Without the i18n engine, fill the English template (never show a bare "{n}").
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
+        : ((s, vars) => String(s).replace(/\{(\w+)\}/g, (m, k) => (vars[k] == null ? m : String(vars[k]))));
+      // Sentences join with a space, except after a full-width stop (zh/ja "。"), where
+      // that script puts none.
+      return (frames || []).filter(fr => fr && fr.t)
+        .map(fr => tf(fr.t, _cardFrameVars(fr))).filter(Boolean)
+        .reduce((out, s) => (!out ? s : out + (/[　-〿＀-￯]$/.test(out) ? "" : " ") + s), "");
+    }
+    function cardText(c, field) {
+      const fr = c && c.i18n && c.i18n[field];
+      if (Array.isArray(fr) && fr.length && window.OOI18N && OOI18N.tf) return cardFrames(fr);
+      const s = (c && c[field]) || "";
+      return (s && window.OOI18N && OOI18N.t) ? OOI18N.t(s) : s;
+    }
+    // The type chip: a keyed label per card type, never the raw id with its underscores
+    // swapped (it read "SOURCE LAUNDERING" in every language). A type added later and not
+    // yet listed still shows its id, as before.
+    const _CARD_TYPE_LABELS = {
+      rising: "Rising", framing_split: "Framing split", record_reshaped: "Record reshaped",
+      price_narrative: "Price vs coverage", stale_data: "Stale data", diet_self_audit: "Reading diet",
+      echo_chamber: "Echo chamber", lonely_signal: "Lonely signal",
+      capacity_implausible: "Implausible capacity", emotion_profile: "Emotion profile",
+      ip_litigation_pulse: "Litigation pulse", ownership_change: "Ownership change",
+      law_change: "Law change", model_legislation: "Model legislation", story_lineage: "Story lineage",
+      coverage_advisor: "Coverage advisor", weather_corroboration: "Weather check",
+      space_time_convergence: "Space-time convergence", watch_match: "Watch matched",
+      source_laundering: "Source laundering", recycled_claim: "Recycled claim",
+      headline_body_mismatch: "Headline vs body", manufactured_emergence: "Sudden emergence",
+      flooded_topic: "Flooded topic", copypasta: "Copied wording", buried_topic: "Buried topic",
+      severity_alert: "Alert", disputed_chronology: "Disputed chronology",
+      story_propagation: "Story propagation", supply_chain_ripple: "Supply-chain ripple",
+      supergroup_rising: "Theme rising", on_the_horizon: "On the horizon", through_time: "Through time",
+      recipe_promise: "Promise due", recipe_edit_war: "Edit burst", recipe_quiet_region: "Quiet region",
+      recipe_source_candidates: "Source candidates",
+    };
+    function cardTypeLabel(type) {
+      const label = _CARD_TYPE_LABELS[type];
+      if (!label) return String(type || "").replace(/_/g, " ");
+      return (window.OOI18N && OOI18N.t) ? OOI18N.t(label) : label;
+    }
+    // A law-change title carries its jurisdiction as a CODE ("Law changed (FRA): …");
+    // Q302 puts the localised name in the hover, so the heading gets that title. Only
+    // a card whose signal names ONE jurisdiction qualifies (L6).
+    function cardTitleTip(c) {
+      const j = c && c.signal && c.signal.jurisdiction;
+      if (!j || j === "—") return "";
+      const tip = ooCountryTitle(j);
+      return tip ? ` title="${esc(tip)}"` : "";
     }
     // Click a Lead card to FLIP it (front <-> back). Inner controls (buttons/links/
     // inputs) are not flip triggers. Keyboard: Enter/Space flips when focused.
@@ -1392,8 +1752,10 @@
         family: (c.bucket && _famLabels[c.bucket]) || "",
         producer: c.type || "",
         trigger: c.trigger || null,
-        method: c.method || "",
-        caveat: c.caveat || "",
+        // In the reader's language at the moment of the click, like `card` above: the
+        // analysis window's own t() leaves an already-translated sentence as it is.
+        method: cardText(c, "method"),
+        caveat: cardText(c, "caveat"),
       };
     }
     function _anProvSweep() {
@@ -1514,19 +1876,22 @@
       // Flip cards (maintainer 2026-06-23): the front is the lead at a glance; the
       // BACK carries the method + the exact math + the caveat + evidence + the action
       // row. The verbose "why"/math is no longer behind a per-card "?" — the flip IS
-      // the detail layer (the back has room). Labels are i18n-translated; math values
+      // the detail layer (the back has room). The plain sentence is ONE constant per
+      // card type and each math label a constant, so both go through t() here, exactly
+      // as the analysis window's provenance block does (re-walk L-2: the "Why am I
+      // seeing this?" sentence stayed English under a translated method); math values
       // are numbers/symbols (language-neutral).
       const _whyRows = (c.trigger && c.trigger.math || []).map(r =>
-        `<tr><td>${esc(r.label)}</td><td class="why-val">${esc(r.value)}</td></tr>`).join("");
-      const _whyPlain = (c.trigger && c.trigger.plain) ? `<p class="why-plain">${esc(c.trigger.plain)}</p>` : "";
-      const methodBlock = c.method ? `<div class="mc"><b>${esc(t("Method"))}:</b> ${esc(c.method)}</div>` : "";
+        `<tr><td>${esc(t(r.label))}</td><td class="why-val">${esc(r.value)}</td></tr>`).join("");
+      const _whyPlain = (c.trigger && c.trigger.plain) ? `<p class="why-plain">${esc(t(c.trigger.plain))}</p>` : "";
+      const methodBlock = c.method ? `<div class="mc">${ooLabelHtml(`<b>${esc(t("Method"))}</b>`, esc(cardText(c, "method")))}</div>` : "";
       const mathBlock = _whyRows
         ? `<details class="card-info"><summary>${esc(t("The exact math"))}</summary>
              <table class="why-math">${_whyRows}</table></details>` : "";
       // The CAVEAT is VISIBLE on the BACK — an equal side of the card, revealed by ONE
       // flip (never a hidden toggle), right beside the action that opens its corpus
       // (#23 amended 2026-06-23 / informed-consent preserved by LAYERING, not hiding).
-      const caveatLine = c.caveat ? `<p class="card-caveat">${esc(c.caveat)}</p>` : "";
+      const caveatLine = c.caveat ? `<p class="card-caveat">${esc(cardText(c, "caveat"))}</p>` : "";
       // The standardized, family-themed "open corpus" button — opens the card's corpus
       // IN A NEW WINDOW (exact set when the card carries article_ids, else the seed query).
       const _aq = cardAnalyzeQuery(c);
@@ -1540,7 +1905,7 @@
       const openBtn = _aq
         ? `<button class="lead-open" onclick="${_openCorpus}" title="${esc(t("Open this Lead's corpus in a new window"))}">${esc(t("Open corpus"))} ↗</button>`
         : "";
-      const chip = `<span class="chip">${esc(c.type.replace(/_/g, " "))}</span>`;
+      const chip = `<span class="chip">${esc(cardTypeLabel(c.type))}</span>`;
       const _title = cardTitle(c);
       // lead-card-nested-interactive (P1, axe): role="button" tabindex="0" on this
       // OUTER container, while it ALSO hosted genuinely interactive descendants
@@ -1561,8 +1926,8 @@
           <div class="card-face card-front" tabindex="0" role="button" aria-label="${esc(_title)}"
                onclick="leadFlip(this.closest('.card'),event)" onkeydown="leadFlipKey(this.closest('.card'),event)">
             ${chip}
-            <h4>${esc(_title)}</h4>
-            <p class="sum">${esc(c.summary)}</p>
+            <h4${cardTitleTip(c)}>${esc(_title)}</h4>
+            <p class="sum">${esc(cardText(c, "summary"))}</p>
             ${sigLine}
             <span class="lead-flip-hint">${esc(t("Details & corpus"))} ⟲</span>
           </div>
@@ -1820,8 +2185,8 @@
           const c = it.card;
           return `<div class="draft-item" data-id="${c.id}">
             <div class="di-body">
-              <div class="di-title">${esc(c.title)}</div>
-              <div class="hint" style="margin-top:2px">${esc(c.summary || "")}</div>
+              <div class="di-title">${esc(cardTitle(c))}</div>
+              <div class="hint" style="margin-top:2px">${esc(cardText(c, "summary"))}</div>
               <textarea placeholder="Your note (ships in the export)…" onchange="saveDraftItemNote('${c.id}', this.value)">${esc(it.note||"")}</textarea>
             </div>
             <button class="ghost tiny" onclick="removeDraftItem('${c.id}')">Remove</button>

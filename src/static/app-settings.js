@@ -63,7 +63,22 @@
       catch (e) { prose.innerHTML = '<div class="muted">Could not load this document.</div>'; }
       const f = $("doc-find"); if (f && f.value) highlightProse(f.value);
     }
+    // DEBOUNCED, so the scroll to the first match runs OUTSIDE the input event
+    // (2026-09-27 re-walk H-3). Called straight from `oninput`, highlightProse's
+    // scrollIntoView ran inside the keystroke; Chromium then revealed the focused
+    // input's caret, which cancelled the page-level half of the scroll. A match in
+    // prose survived (one page scroll, already under way), a match inside the wide
+    // Security endpoint table did not (table first, then page: only the table step
+    // landed), so a TYPED phrase lit a mark 1,800 px below the viewport while the
+    // same phrase PASTED jumped to it. The pause also stops re-rendering the whole
+    // Help body on every key.
+    let _docFindTimer = null;
     function filterDoc() {
+      clearTimeout(_docFindTimer);
+      _docFindTimer = setTimeout(_filterDocNow, 150);
+    }
+    function _filterDocNow() {
+      _docFindTimer = null;
       if (!_docRaw) return;
       $("doc-prose").innerHTML = mdToHtml(_docRaw);
       highlightProse($("doc-find").value);
@@ -150,7 +165,9 @@
       let para = [];
       while (i < lines.length) {
         const ln = lines[i];
-        const fence = ln.match(/^ F(\d+) $/);
+        // A fence inside a list item is indented, so its placeholder line is too;
+        // matching only the unindented form dropped that code as a stray "F0".
+        const fence = ln.match(/^\s*F(\d+) $/);
         if (fence) { flushPara(para); para = []; out.push(fences[+fence[1]]); i++; continue; }
         if (/^\s*$/.test(ln)) { flushPara(para); para = []; i++; continue; }
         let m;
@@ -184,8 +201,21 @@
           out.push("<blockquote>" + inline(q.join("\u0000")).replace(/\u0000/g, "<br>") + "</blockquote>"); continue; }
         if (/^\s*([-*+]|\d+\.)\s+/.test(ln)) { flushPara(para); para = [];
           const ordered = /^\s*\d+\.\s+/.test(ln); let items = [];
+          const indentOf = (s) => s.match(/^\s*/)[0].length;
           while (i < lines.length && /^\s*([-*+]|\d+\.)\s+/.test(lines[i])) {
-            items.push("<li>" + inline(lines[i].replace(/^\s*([-*+]|\d+\.)\s+/, "")) + "</li>"); i++;
+            // A wrapped item continues on the following lines that are MORE indented
+            // than its own marker and are not a new marker (2026-09-26 click-through
+            // J8: the manual's "never scheduled" bullet broke mid-sentence into a
+            // stray paragraph). They join the item BEFORE inline(), for the same
+            // cross-line reason as flushPara; a blank line, a new marker or a line
+            // back at the marker's indent ends it.
+            const markerIndent = indentOf(lines[i]);
+            const buf = [lines[i].replace(/^\s*([-*+]|\d+\.)\s+/, "")]; i++;
+            while (i < lines.length && !/^\s*$/.test(lines[i]) && !/^\s*F\d+ $/.test(lines[i])
+                   && !/^\s*([-*+]|\d+\.)\s+/.test(lines[i]) && indentOf(lines[i]) > markerIndent) {
+              buf.push(lines[i].trim()); i++;
+            }
+            items.push("<li>" + inline(buf.join(" ")) + "</li>");
           }
           const tag = ordered ? "ol" : "ul";
           out.push(`<${tag}>` + items.join("") + `</${tag}>`); continue; }
@@ -196,10 +226,9 @@
     }
 
     function humanBytes(n) {
-      if (n == null) return "—";
-      const u = ["B","KB","MB","GB","TB"]; let i = 0;
-      while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
-      return n.toFixed(i ? 1 : 0) + " " + u[i];
+      // One decimal above bytes. The unit's written form, the number's decimal mark and
+      // the bidi isolate are _sizeText's (app-core.js), shared with _fmtBytes (P8).
+      return _sizeText(n, (i) => (i ? 1 : 0));
     }
 
     // Boot: fetch the version once. The PILL is no longer painted from here --
@@ -220,6 +249,19 @@
     // Real on-disk DB size (main+wal+shm), refreshed by loadSettings from
     // /api/database/stats; feeds vacuumNow's honest size-gate estimate (DB-10 §1.4).
     let _dbFileBytes = null;
+    // The Reclaimable-space figure is written once, by loadSettings at boot -- which can
+    // run before the locale map has loaded (the race i18n.js's `ready` documents), and a
+    // language switch repaints nothing of it. Measured in Chromium (P8): after a full
+    // reload in French it still read "0 B". So the figure is kept, and re-drawn when the
+    // map is ready and on every switch. `undefined` = not read yet (the "—" stays).
+    let _dbReclaimBytes;
+    function _paintReclaim() {
+      const el = $("vacuum-reclaim");
+      if (!el || _dbReclaimBytes === undefined) return;
+      el.textContent = _dbReclaimBytes == null ? "—" : _fmtBytes(_dbReclaimBytes);
+    }
+    document.addEventListener("oo:langchange", _paintReclaim);
+    if (window.OOI18N && OOI18N.ready && OOI18N.ready.then) OOI18N.ready.then(_paintReclaim).catch(() => {});
 
     // --- Ollama BINARY installer (Settings → AI) ------------------------------ //
     // The missing half of model management (maintainer 2026-06-20: "can't find the
@@ -266,7 +308,7 @@
       if (detail) detail.textContent = t("Downloading and verifying…");
       let d;
       try { d = await api("/api/llm/install/prepare", {method: "POST"}); }
-      catch (e) { if (detail) detail.textContent = t("Could not prepare the installer:") + " " + e.message; if (btn) btn.disabled = false; return; }
+      catch (e) { if (detail) detail.textContent = ooLabelText(t("Could not prepare the installer"), e.message); if (btn) btn.disabled = false; return; }
       if (btn) btn.style.display = "none";
       // Show the verified version + checksum + how to run it. The checksum is the
       // publisher's own attestation we verified the bytes against — show it so the
@@ -312,13 +354,13 @@
             if (!line.trim()) continue;
             let o; try { o = JSON.parse(line); } catch (_e) { continue; }
             if (o.event === "line") { log.textContent += o.text + "\n"; log.scrollTop = log.scrollHeight; }
-            else if (o.event === "error") { log.textContent += "\n" + t("Error:") + " " + o.error + "\n"; }
+            else if (o.event === "error") { log.textContent += "\n" + ooLabelText(t("Error"), o.error) + "\n"; }
             else if (o.event === "done") { exitCode = o.exit_code; }
           }
         }
         log.textContent += "\n" + (exitCode === 0 ? t("Installation finished.") : t("Installer exited with code") + " " + exitCode) + "\n";
       } catch (e) {
-        log.textContent += "\n" + t("Error:") + " " + e.message + "\n";
+        log.textContent += "\n" + ooLabelText(t("Error"), e.message) + "\n";
       } finally {
         _ollamaInstalling = false;
         recheckOllama();
@@ -363,7 +405,7 @@
       let p = null;
       try { p = await api("/api/llm/default-model"); }
       catch (e) {
-        host.innerHTML = `<p class="muted">${esc(t("Could not determine the default model:"))} ${esc(e.message || e)}</p>`;
+        host.innerHTML = `<p class="muted">${ooLabelHtml(esc(t("Could not determine the default model")), esc(e.message || e))}</p>`;
         return;
       }
       const already = p.installed === true;
@@ -426,11 +468,11 @@
             clearTimeout(_dlModelPoll);
             _dlModelPoll = setTimeout(_paintDefaultModel, 3000);
           } else if (j.error) {
-            lines.push(`<p class="card-caveat">${esc(t("Download failed:"))} ${esc(j.error)}</p>`);
+            lines.push(`<p class="card-caveat">${ooLabelHtml(esc(t("Download failed")), esc(j.error))}</p>`);
           }
         } catch (e) { /* the block still renders without the live line */ }
       }
-      lines.push(`<p class="card-caveat">${esc(t("Licence:"))} ${esc(p.license || "")}. ${esc((p.caveats || []).join(" "))}</p>`);
+      lines.push(`<p class="card-caveat">${ooLabelHtml(esc(t("Licence")), esc(p.license || ""))}. ${esc((p.caveats || []).join(" "))}</p>`);
       host.innerHTML = lines.join("");
     }
 
@@ -447,7 +489,7 @@
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       let p = null;
       try { p = await api("/api/llm/default-model"); }
-      catch (e) { toast(t("Could not determine the default model:") + " " + (e.message || e), "err"); return; }
+      catch (e) { toast(ooLabelText(t("Could not determine the default model"), e.message || e), "err"); return; }
       // Consent BEFORE the bytes: this is multi-gigabyte clearnet traffic (the model
       // registry / Hugging Face), and it does NOT go through Tor. Stated with the real
       // artifact and size rather than a generic "download?".
@@ -474,7 +516,7 @@
         _aiPillSettle();
         _paintDefaultModel();
       } catch (e) {
-        toast(t("Download failed:") + " " + (e.message || e), "err");
+        toast(ooLabelText(t("Download failed"), e.message || e), "err");
       } finally {
         if (btn) { btn.disabled = false; btn.textContent = was; }
       }
@@ -486,7 +528,7 @@
       if (!box) return;
       let d;
       try { d = await api("/api/llm/models"); }
-      catch (e) { box.innerHTML = `<p class="muted">${esc(t("Model info unavailable:"))} ${esc(e.message)}</p>`; return; }
+      catch (e) { box.innerHTML = `<p class="muted">${ooLabelHtml(esc(t("Model info unavailable")), esc(e.message))}</p>`; return; }
       if (!d.available) {
         // Ollama is not answering. This used to return HERE, which hid the Launch
         // control and the one-click model install in the EXACT state where they are
@@ -505,7 +547,13 @@
         _paintDefaultModel();
         return;
       }
-      const ram = d.total_ram_gb ? `${d.total_ram_gb} GB RAM detected` : t("RAM unknown");
+      // A keyed frame with the size written by the one localised writer (Y9): this was
+      // "15.5 GB RAM detected" in English in every locale. `total_ram_gb` is psutil's
+      // total / 1024**3, the binary step `_sizeText` divides by, so the figure is unchanged.
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((x, v) => x.replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? String(v[k]) : m));
+      const ram = d.total_ram_gb
+        ? tf("{size} RAM detected", { size: _sizeText(d.total_ram_gb * 1073741824, (i, v) => (v % 1 ? 1 : 0)) })
+        : t("RAM unknown");
       const active = d.active || d.default;   // the stored UI choice (Q10), else the default
       const installed = (d.installed || []).length
         ? `<table><tr><th>${esc(t("Installed model"))}</th><th>${esc(t("Size"))}</th><th>${esc(t("Updated"))}</th><th></th></tr>` +
@@ -514,7 +562,7 @@
             const badge = isActive ? ` <span class="pill ok">${esc(t("active"))}</span>` : "";
             const setBtn = isActive ? "" : `<button class="tiny secondary" onclick="setActiveModel(${esc(JSON.stringify(m.tag))})">${esc(t("Set active"))}</button> `;
             return `<tr><td><code>${esc(m.tag)}</code>${badge}</td>` +
-              `<td>${m.size_gb != null ? m.size_gb + " GB" : ""}</td><td>${esc((m.modified || "").slice(0,10))}</td>` +
+              `<td>${m.size_gb != null ? esc(_sizeText(m.size_gb * 1073741824, (i, v) => (v % 1 ? 1 : 0))) : ""}</td><td>${esc((m.modified || "").slice(0,10))}</td>` +
               `<td style="white-space:nowrap">${setBtn}<button class="tiny danger" onclick="removeModel(${esc(JSON.stringify(m.tag))})">${esc(t("Remove"))}</button></td></tr>`;
           }).join("") + "</table>"
         : `<p class="muted">${esc(t("No models installed yet — pull one below."))}</p>`;
@@ -538,8 +586,8 @@
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       try {
         await api("/api/settings", {method: "PUT", body: JSON.stringify({llm_model: tag})});
-        toast(t("Active model set:") + " " + tag); loadLlmModels();
-      } catch (e) { toast(t("Could not set the active model:") + " " + e.message, "err"); }
+        toast(ooLabelText(t("Active model set"), tag)); loadLlmModels();
+      } catch (e) { toast(ooLabelText(t("Could not set the active model"), e.message), "err"); }
     }
     async function removeModel(tag) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
@@ -547,7 +595,7 @@
       try {
         await api("/api/llm/remove", {method: "POST", body: JSON.stringify({model: tag})});
         toast(t("Removed") + " " + tag); loadLlmModels();
-      } catch (e) { toast(t("Remove failed:") + " " + e.message, "err"); }
+      } catch (e) { toast(ooLabelText(t("Remove failed"), e.message), "err"); }
     }
     function pullModelFromBox() {
       const el = $("llm-pull-tag"); if (!el) return;
@@ -653,7 +701,7 @@
         } else {
           _llmPullStartPoll();
         }
-      } catch (e) { if (prog) prog.textContent = t("Download failed:") + " " + e.message; }
+      } catch (e) { if (prog) prog.textContent = ooLabelText(t("Download failed"), e.message); }
     }
     async function cancelPull(model) {
       try { await api("/api/llm/pull/cancel", {method: "POST", body: JSON.stringify({model})}); _llmPullRefresh(); }
@@ -797,6 +845,7 @@
       if (_langDetectPolling) return;
       _langDetectPolling = true;
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((s, v) => s.replace(/\{(\w+)\}/g, (_, k) => v[k]));
       const el = $("langdetect-status");
       let fails = 0;
       try {
@@ -817,17 +866,24 @@
           }
           _paintLangDetectButton(false);
           if (st === "done") {
-            if (res.ran === false) el.textContent = t("The local model is unavailable (Ollama down or airplane mode).");
-            else el.textContent = `${t("Done.")} ${res.stored || 0} ${t("labelled")} · ${res.none || 0} ${t("unclear")} · ${res.total || 0} ${t("scanned")}`;
+            // Loopback, so airplane mode never stops it (the kill switch refuses only a
+            // non-loopback model address): unavailable means not running, and saying
+            // "or airplane mode" sent the reader online to fix a local problem.
+            if (res.ran === false) el.textContent = t("The local model is unavailable: the local AI is not running.");
+            // ONE keyed sentence, so each locale joins "Done." to its tally its own way:
+            // welded with a Latin space it read "完成。 3 已标注" (2026-09-27 re-walk O-5).
+            else el.textContent = tf("Done. {stored} labelled · {none} unclear · {total} scanned",
+              { stored: fmtNum(res.stored || 0, 0), none: fmtNum(res.none || 0, 0), total: fmtNum(res.total || 0, 0) });
           } else if (st === "cancelled") el.textContent = t("Cancelled.");
-          else if (st === "error") el.textContent = t("Failed:") + " " + esc(s.error || "");
+          else if (st === "error") el.textContent = ooLabelText(t("Failed"), s.error || "");
           else if (s.last_run) {
             // Idle in THIS process, but a previous process's run left an honest trace
             // (§1 item 3 — the status line must stay honest about what happened after a
             // restart, not read as blank/never-run).
             const lr = s.last_run;
-            if (lr.state === "error") el.textContent = t("Last run failed:") + " " + esc(lr.error || "");
-            else el.textContent = `${t("Last run:")} ${lr.stored || 0} ${t("labelled")} · ${lr.none || 0} ${t("unclear")} · ${lr.total || 0} ${t("scanned")}`;
+            if (lr.state === "error") el.textContent = ooLabelText(t("Last run failed"), lr.error || "");
+            else el.textContent = tf("Last run: {stored} labelled · {none} unclear · {total} scanned",
+              { stored: fmtNum(lr.stored || 0, 0), none: fmtNum(lr.none || 0, 0), total: fmtNum(lr.total || 0, 0) });
           } else el.textContent = "";
           break;
         }
@@ -865,7 +921,7 @@
       if (btn && btn.dataset.running === "1") {
         // Currently running -> this click means STOP.
         try { await api("/api/ai/detect-language/cancel", { method: "POST" }); }
-        catch (e) { if (el) el.textContent = t("Failed:") + " " + esc(e.message || e); }
+        catch (e) { if (el) el.textContent = ooLabelText(t("Failed"), e.message || e); }
         pollLangDetect(); // in case no poll loop is live yet (e.g. a fresh tab), pick up the cancel
         return;
       }
@@ -876,7 +932,7 @@
         // model outages and keeps going until the backlog is drained or cancelled).
         await api("/api/ai/detect-language", { method: "POST", body: JSON.stringify({ continuous: true }) });
         _paintLangDetectButton(true);
-      } catch (e) { if (el) el.textContent = t("Failed:") + " " + esc(e.message || e); }
+      } catch (e) { if (el) el.textContent = ooLabelText(t("Failed"), e.message || e); }
       if (btn) btn.disabled = false;
       pollLangDetect();
     }
@@ -991,8 +1047,8 @@
       // Backup support is backend-dependent; reflect reality, never assume.
       try {
         const st = await api("/api/database/stats");
-        $("vacuum-reclaim").textContent =
-          (st.reclaimable_bytes == null) ? "—" : _fmtBytes(st.reclaimable_bytes);
+        _dbReclaimBytes = st.reclaimable_bytes == null ? null : st.reclaimable_bytes;
+        _paintReclaim();
         _dbFileBytes = (st.file && st.file.bytes != null) ? st.file.bytes : null;
       } catch (e) { /* the reclaim readout stays at its placeholder — no panel to report into */ }
       loadDumpLanguages();
@@ -1303,11 +1359,13 @@
       try {
         const r = await api("/api/database/vacuum", {method: "POST"});
         const freed = (r.bytes_reclaimed == null) ? "—" : _fmtBytes(r.bytes_reclaimed);
-        out.textContent = t("Compacted.") + " " + t("Space freed:") + " " + freed +
-          " · " + ((r.duration_ms / 1000).toFixed(1)) + " s";
-        $("vacuum-reclaim").textContent = _fmtBytes(0);
+        // One keyed sentence: welded, zh read "压缩完成。 已释放空间： 1.2 GB" (re-walk O-5).
+        const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((s, v) => s.replace(/\{(\w+)\}/g, (_, k) => v[k]));
+        out.textContent = tf("Compacted. Space freed: {freed} · {secs} s",
+          { freed, secs: (r.duration_ms / 1000).toFixed(1) });
+        _dbReclaimBytes = 0; _paintReclaim();
       } catch (e) {
-        out.textContent = t("Compaction failed:") + " " + e.message;
+        out.textContent = ooLabelText(t("Compaction failed"), e.message);
       } finally { btn.disabled = false; }
     }
 
@@ -1321,16 +1379,18 @@
       try {
         const r = await api("/api/integrity/fixity");
         const bad = (r.mismatched || 0) + (r.missing_hash || 0);
+        // fmtNum, never toLocaleString(): the browser's locale is not the app's language.
+        const n = (x) => fmtNum(x || 0, 0);
         $("fixity-summary").innerHTML =
-          `<b>${(r.checked || 0).toLocaleString()}</b> ${esc(t("checked"))} · ` +
-          `<span class="pill ok">${(r.ok || 0).toLocaleString()} ${esc(t("intact"))}</span>` +
-          (bad ? ` · <span class="pill err">${bad.toLocaleString()} ${esc(t("diverged"))}</span>` : "");
+          `<b>${n(r.checked)}</b> ${esc(t("checked"))} · ` +
+          `<span class="pill ok">${n(r.ok)} ${esc(t("intact"))}</span>` +
+          (bad ? ` · <span class="pill err">${n(bad)} ${esc(t("diverged"))}</span>` : "");
         if (bad) {
           const rows = (r.mismatches || []).slice(0, 200).map(m =>
             `<div class="vr"><span>#${m.id} ${esc(m.title || m.url || "")}</span>` +
             `<b class="muted" title="${esc(m.reason || "")}">${esc((m.stored_hash || "—").slice(0, 12))} ≠ ${esc((m.computed_hash || "").slice(0, 12))}</b></div>`).join("");
           $("fixity-result").innerHTML =
-            `<div class="note err">${esc(bad.toLocaleString())} ${esc(t("articles diverge from their capture-time hash — evidence of tampering or bit-rot. Nothing was changed."))}</div>` + rows;
+            `<div class="note err">${esc(n(bad))} ${esc(t("articles diverge from their capture-time hash — evidence of tampering or bit-rot. Nothing was changed."))}</div>` + rows;
         } else {
           $("fixity-result").innerHTML = `<div class="note ok">${esc(t("All articles match their capture-time hash."))}</div>`;
         }
@@ -1339,6 +1399,16 @@
     }
 
     // ---- Local .eml newsletter import (zero network; anonymised at ingest) ---- //
+    // The anonymisation tally of a newsletter import or a mailbox pull: ONE keyed sentence,
+    // so each locale writes its own colon and commas. Welded out of "Anonymisation:" and
+    // "…redacted," pieces it read "匿名化： 3 处收件人痕迹已隐去， 2 …" in Chinese -- a
+    // Latin space after each full-width mark (2026-09-27 re-walk O-5).
+    function _nlAnonLine(tl) {
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((s, v) => s.replace(/\{(\w+)\}/g, (_, k) => v[k]));
+      const n = (x) => fmtNum(x || 0, 0);
+      return tf("Anonymisation: {redacted} recipient echoes redacted, {stripped} tracker tokens stripped, {flagged} tracker wrappers flagged.",
+        { redacted: n(tl.recipient_redactions), stripped: n(tl.tracker_params_stripped), flagged: n(tl.trackers_flagged) });
+    }
     async function importNewsletters(btn) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const input = $("nl-files");
@@ -1355,15 +1425,12 @@
         const r = await fetch("/api/newsletters/import", { method: "POST", body: fd });
         if (!r.ok) throw new Error("HTTP " + r.status);
         const d = await r.json(), tl = d.tally || {};
-        const n = (x) => (x || 0).toLocaleString();
+        const n = (x) => fmtNum(x || 0, 0);
         $("nl-result").innerHTML =
           `<b>${n(tl.stored)}</b> ${esc(t("imported"))} · ${n(tl.duplicate)} ${esc(t("duplicates skipped"))} · ` +
           `${n(tl.empty)} ${esc(t("empty"))}` +
           (tl.skipped_non_eml ? ` · ${n(tl.skipped_non_eml)} ${esc(t("not .eml"))}` : "") +
-          `<div class="muted" style="margin-top:5px">${esc(t("Anonymisation"))}: ` +
-          `${n(tl.recipient_redactions)} ${esc(t("recipient echoes redacted"))}, ` +
-          `${n(tl.tracker_params_stripped)} ${esc(t("tracker tokens stripped"))}, ` +
-          `${n(tl.trackers_flagged)} ${esc(t("tracker wrappers flagged"))}.</div>`;
+          `<div class="muted" style="margin-top:5px">${esc(_nlAnonLine(tl))}</div>`;
         input.value = "";
         toast(t("Newsletters imported."), "ok");
         // Q1151: say where the articles WENT, immediately and on this same screen -- but in
@@ -1373,7 +1440,7 @@
         _nlLastRun = tl;
         loadNewsletterAttach();
       } catch (e) {
-        $("nl-result").innerHTML = `<span class="note err">${esc(t("Import failed"))}: ${esc(e.message)}</span>`;
+        $("nl-result").innerHTML = `<span class="note err">${ooLabelHtml(esc(t("Import failed")), esc(e.message))}</span>`;
       } finally { btn.disabled = false; }
     }
 
@@ -1391,7 +1458,7 @@
     function _attachTallyHtml(tl) {
       if (!tl) return "";
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      const n = (x) => (x || 0).toLocaleString();
+      const n = (x) => fmtNum(x || 0, 0);
       const existing = tl.attached_existing || 0, fresh = tl.attached_new_source || 0;
       const refused = tl.attach_refused || 0;
       if (!existing && !fresh && !refused) return "";
@@ -1411,11 +1478,11 @@
       // Loopback, read-only, zero network -- never ensureOnline-gated.
       try { d = await api("/api/newsletters/attach/summary"); } catch (e) { host.style.display = "none"; return; }
       if (!d || !d.attached) { host.style.display = "none"; return; }
-      const n = (x) => (x || 0).toLocaleString();
+      const n = (x) => fmtNum(x || 0, 0);
       const rows = (d.groups || []).map((g) =>
         `<div class="vr"><span>${esc(g.source_name || g.source_domain || "—")}` +
         `${g.source_enabled === false ? ` <span class="muted">${esc(t("disabled"))}</span>` : ""}</span>` +
-        `<b title="${esc(t("How this was decided"))}: ${esc(g.action || "")}${g.basis ? " · " + esc(g.basis) : ""}">${n(g.articles)}</b></div>`
+        `<b title="${esc(ooLabelText(t("How this was decided"), (g.action || "") + (g.basis ? " · " + g.basis : "")))}">${n(g.articles)}</b></div>`
       ).join("");
       // The server sends these in English; the UI renders them through the i18n engine so a
       // caveat is never the one line on the screen the reader cannot read. (Informed consent
@@ -1425,7 +1492,7 @@
       const lastRun = _attachTallyHtml(_nlLastRun);
       $("nl-attach-body").innerHTML =
         (lastRun ? `<div style="margin-bottom:6px">${lastRun}</div>` : "") +
-        `<div>${esc(t("Automatically filed newsletters"))}: <b>${n(d.attached)}</b></div>${rows}`;
+        `<div>${ooLabelHtml(esc(t("Automatically filed newsletters")), `<b>${n(d.attached)}</b>`)}</div>${rows}`;
       host.style.display = "";
     }
 
@@ -1436,24 +1503,24 @@
       try {
         // Loopback POST, zero network.
         const d = await api("/api/newsletters/attach/undo", { method: "POST" });
-        const n = (x) => (x || 0).toLocaleString();
+        const n = (x) => fmtNum(x || 0, 0);
         toast(`${n(d.restored)} ${t("newsletters moved back to the import bucket.")}`, "ok");
         $("nl-result").innerHTML =
           `<b>${n(d.restored)}</b> ${esc(t("newsletters moved back to the import bucket."))}` +
           ((d.sources_deleted || []).length
-            ? `<div class="muted" style="margin-top:5px">${esc(t("Removed the now-empty sources this filing had created"))}: ${esc(d.sources_deleted.join(", "))}</div>`
+            ? `<div class="muted" style="margin-top:5px">${esc(ooLabelText(t("Removed the now-empty sources this filing had created"), d.sources_deleted.join(", ")))}</div>`
             : "");
         _nlLastRun = null;  // the run it described has just been reversed
         await loadNewsletterAttach();
       } catch (e) {
-        $("nl-result").innerHTML = `<span class="note err">${esc(t("Undo failed"))}: ${esc(e.message)}</span>`;
+        $("nl-result").innerHTML = `<span class="note err">${esc(ooLabelText(t("Undo failed"), e.message))}</span>`;
       } finally { btn.disabled = false; }
     }
 
     // -- Local PDF-document import (mirrors the .eml importer; zero network) ----- //
     function _pdfTallyHtml(tl) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      const n = (x) => (x || 0).toLocaleString();
+      const n = (x) => fmtNum(x || 0, 0);
       let html = `<b>${n(tl.imported)}</b> ${esc(t("imported"))} · ${n(tl.duplicate)} ${esc(t("duplicates skipped"))} · ` +
         `${n(tl.skipped)} ${esc(t("skipped"))}`;
       if (tl.skipped_non_pdf) html += ` · ${n(tl.skipped_non_pdf)} ${esc(t("not PDF"))}`;
@@ -1487,7 +1554,7 @@
         input.value = "";
         toast(t("PDFs imported."), "ok");
       } catch (e) {
-        $("pdf-result").innerHTML = `<span class="note err">${esc(t("Import failed"))}: ${esc(e.message)}</span>`;
+        $("pdf-result").innerHTML = `<span class="note err">${ooLabelHtml(esc(t("Import failed")), esc(e.message))}</span>`;
       } finally { btn.disabled = false; }
     }
     async function importPdfFolder(btn) {
@@ -1501,7 +1568,7 @@
         $("pdf-folder-result").innerHTML = _pdfTallyHtml(d.tally || {});
         toast(t("PDFs imported."), "ok");
       } catch (e) {
-        $("pdf-folder-result").innerHTML = `<span class="note err">${esc(t("Import failed"))}: ${esc(e.message)}</span>`;
+        $("pdf-folder-result").innerHTML = `<span class="note err">${ooLabelHtml(esc(t("Import failed")), esc(e.message))}</span>`;
       } finally { btn.disabled = false; }
     }
 
@@ -1570,7 +1637,8 @@
         const d = await api("/api/newsletters/imported-count");
         const n = d.count || 0;
         panel.style.display = n > 0 ? "" : "none";
-        if (lab) lab.textContent = n > 0 ? `${n.toLocaleString()} ${t("imported newsletters in your corpus")}` : "";
+        const N = (x) => fmtNum(x || 0, 0);
+        if (lab) lab.textContent = n > 0 ? `${N(n)} ${t("imported newsletters in your corpus")}` : "";
       } catch (e) { panel.style.display = "none"; }
     }
     function downloadBackupFirst(btn) {
@@ -1585,23 +1653,28 @@
       let n = 0;
       try { n = (await api("/api/newsletters/imported-count")).count || 0; } catch (e) {}
       if (!n) { toast(t("No imported newsletters to remove."), "warn"); loadNewsletterRemoveCount(); return; }
-      if (!confirm(t("Remove") + ` ${n.toLocaleString()} ` +
+      const N = (x) => fmtNum(x || 0, 0);
+      if (!confirm(t("Remove") + ` ${N(n)} ` +
           t("imported newsletters from your corpus? This cannot be undone except from a backup."))) return;
       btn.disabled = true;
       $("nl-remove-result").textContent = t("Removing…");
       try {
         const d = await api("/api/newsletters/remove-imported",
           {method: "POST", body: JSON.stringify({confirm: true})});
+        // One keyed sentence pair with the count dropped in, so each locale joins its
+        // own two sentences: welded, zh read "…简报。 重新导入…" (re-walk O-5).
+        const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((s, v) => s.replace(/\{(\w+)\}/g, (_, k) => v[k]));
         $("nl-remove-result").innerHTML =
-          `<b>${(d.removed_articles || 0).toLocaleString()}</b> ${esc(t("imported newsletters removed."))} ` +
-          esc(t("Re-import the cleaned files to replace them."));
+          esc(tf("{n} imported newsletters removed. Re-import the cleaned files to replace them.", {n: "\u0001"}))
+            .replace("\u0001", () => `<b>${N(d.removed_articles)}</b>`);
         toast(t("Imported newsletters removed."), "ok");
         loadNewsletterRemoveCount();
       } catch (e) {
-        $("nl-remove-result").innerHTML = `<span class="note err">${esc(t("Removal failed"))}: ${esc(e.message)}</span>`;
+        $("nl-remove-result").innerHTML = `<span class="note err">${esc(ooLabelText(t("Removal failed"), e.message))}</span>`;
       } finally { btn.disabled = false; }
     }
-    // -- Pull from a mailbox (IMAP/POP3) — ruling #11. English-only; the anonymise +
+    // -- Pull from a mailbox (IMAP/POP3) — ruling #11. English-only, except the consent
+    // popup's reason, which is keyed x12 like every consent string; the anonymise +
     // kill-switch guarantees live in the (tested) backend.
     async function pullMailbox() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
@@ -1611,7 +1684,7 @@
       const password = $("mbox-pass").value || "";
       if (!host || !user) { if (out) out.textContent = t("Enter at least a host and user."); return; }
       // A network action -> the ONE consent popup (invariant #14).
-      if (typeof ensureOnline === "function" && !await ensureOnline("Pull newsletters from your mailbox")) return;
+      if (typeof ensureOnline === "function" && !await ensureOnline(t("Pull newsletters from your mailbox"))) return;
       const body = {
         protocol: $("mbox-proto").value, host, user, password,
         port: parseInt($("mbox-port").value || "0", 10) || 0,
@@ -1632,7 +1705,7 @@
           onProgress: (s) => { if (out && s && s.detail) out.textContent = esc(s.detail); },
         });
         if (st && st.state === "error") {
-          if (out) out.innerHTML = `<span class="note err">${esc(t("Pull failed:"))} ${esc(st.error || "")}</span>`;
+          if (out) out.innerHTML = `<span class="note err">${ooLabelHtml(esc(t("Pull failed")), esc(st.error || ""))}</span>`;
           return;
         }
         if (_jobStillRunning(st)) {
@@ -1642,15 +1715,14 @@
           return;
         }
         const res = (st && st.result) || {};
-        const tl = res.tally || {}, n = (x) => (x || 0).toLocaleString();
+        const tl = res.tally || {}, n = (x) => fmtNum(x || 0, 0);
         if (out) out.innerHTML = `<b>${n(tl.stored)}</b> ${esc(t("imported"))} · ${n(tl.duplicate)} ${esc(t("duplicates skipped"))}`
-          + `<div class="muted" style="margin-top:5px">${esc(t("Anonymisation:"))} ${n(tl.recipient_redactions)} ${esc(t("recipient echoes redacted,"))} `
-          + `${n(tl.tracker_params_stripped)} ${esc(t("tracker tokens stripped,"))} ${n(tl.trackers_flagged)} ${esc(t("tracker wrappers flagged."))}</div>`
+          + `<div class="muted" style="margin-top:5px">${esc(_nlAnonLine(tl))}</div>`
           + (res.disclosure ? `<div class="muted" style="margin-top:4px">${esc(res.disclosure)}</div>` : "");
       } catch (e) {
         // 409 = airplane refusal (named as the kill switch), 422 = a network-free
         // validation refusal. Both still answer synchronously, before any socket.
-        if (out) out.innerHTML = `<span class="note err">${esc(t("Pull failed:"))} ${esc(e.message)}</span>`;
+        if (out) out.innerHTML = `<span class="note err">${ooLabelHtml(esc(t("Pull failed")), esc(e.message))}</span>`;
       } finally { if (btn) btn.disabled = false; }
     }
 
@@ -1687,8 +1759,10 @@
     }
     function _storageSignedBytes(n) {
       // A U+2212 minus, and the sign always shown: "+1.2 GB" and "−300 MB" are the two
-      // facts a growth column states, and a bare "1.2 GB" would not say which.
-      return (n > 0 ? "+" : n < 0 ? "−" : "") + humanBytes(Math.abs(n));
+      // facts a growth column states, and a bare "1.2 GB" would not say which. The sign
+      // goes INSIDE the size's isolate, with the digits: outside it, an Arabic line put
+      // the sign on the far side of the unit.
+      return _sizeText(Math.abs(n), (i) => (i ? 1 : 0), n > 0 ? "+" : n < 0 ? "−" : "");
     }
     function _storagePct(share) {
       const pct = share * 100;
@@ -1704,17 +1778,18 @@
       // must fall through to the words, not to a figure.
       if (g.measured === true && typeof g.delta_bytes === "number" && typeof g.span_days === "number") {
         const days = Math.max(1, Math.round(g.span_days));
-        // The dates and the signed figures go through _ltrIsolate (app-library.js): in the
-        // Arabic page "+6.0 MB" otherwise renders as "MB 6.0+" and an ISO date with its
-        // year at the wrong end -- a misread, not only an ugly one.
+        // The dates go through _ltrIsolate (app-library.js) and the signed figures carry
+        // their own isolate (_sizeText): in the Arabic page "+6.0 MB" otherwise renders
+        // as "MB 6.0+" and an ISO date with its year at the wrong end -- a misread, not
+        // only an ugly one.
         const how = tf("Measured from {n} readings of this lane’s own size, {from} to {to}. A rate, not a forecast.",
           { n: g.samples, from: _ltrIsolate(String(g.from || "").slice(0, 10)), to: _ltrIsolate(String(g.to || "").slice(0, 10)) });
         if (g.delta_bytes === 0) {
           return `<span title="${esc(how)}">${esc(tf("No change in {days} days", { days }))}</span>`;
         }
-        const head = tf("{delta} in {days} days", { delta: _ltrIsolate(_storageSignedBytes(g.delta_bytes)), days });
+        const head = tf("{delta} in {days} days", { delta: _storageSignedBytes(g.delta_bytes), days });
         const rate = typeof g.per_30_days_bytes === "number"
-          ? `<div class="muted">${esc(tf("≈ {rate} per 30 days at that rate", { rate: _ltrIsolate(_storageSignedBytes(g.per_30_days_bytes)) }))}</div>`
+          ? `<div class="muted">${esc(tf("≈ {rate} per 30 days at that rate", { rate: _storageSignedBytes(g.per_30_days_bytes) }))}</div>`
           : "";
         return `<span title="${esc(how)}">${esc(head)}</span>${rate}`;
       }
@@ -1807,9 +1882,12 @@
         typeof r.disk_free_bytes === "number"
           ? tf("{size} of free disk", { size: humanBytes(r.disk_free_bytes) }) : t("free disk could not be read"),
       ];
-      const lead = r.when === "boot" ? t("This machine, read at boot:") : t("This machine, read just now:");
+      // The lead carries no colon of its own: the separator is the reader's (ooLabelHtml),
+      // since a welded ": " drew "本机（启动时读取）： 4 个…" -- a Latin space after a
+      // full-width colon (2026-09-27 re-walk O-5).
+      const lead = r.when === "boot" ? t("This machine, read at boot") : t("This machine, read just now");
       const how = t("Read on this machine with no network: logical CPU cores, total RAM, and the free space on the drive that holds your data folder.");
-      let html = `<div title="${esc(how)}">${esc(lead)} ${esc(bits.join(" · "))}</div>`;
+      let html = `<div title="${esc(how)}">${ooLabelHtml(esc(lead), esc(bits.join(" · ")))}</div>`;
       // The reading beside the reference, and NO verdict between them: the reference's
       // "3.5 GB" is what its machine class reports, so a strict "below" would call the
       // reference machine smaller than itself (see src/config/hardware_reading.py).
@@ -1839,24 +1917,47 @@
         // arithmetic about the present and never a forecast of when anything fills.
         // The server's three-state `budgets_fit` decides the tone, and only a `false`
         // warns -- an unknown is not drawn as a fit, and not as a failure either.
-        const line = tf("Your budgets can still take {room}; the drive has {free} free.",
-          { room: humanBytes(rep.claimable_bytes), free: humanBytes(d.free_bytes) });
+        // The warning is ONE keyed sentence pair, so each locale joins its own two
+        // sentences: welded with a Latin space, zh read "…可用。 这超过了…" (re-walk O-5).
+        const room = humanBytes(rep.claimable_bytes), free = humanBytes(d.free_bytes);
         html += rep.budgets_fit === false
-          ? `<div class="card-caveat">${esc(line)} ${esc(t("That is more than the drive has free."))}</div>`
-          : `<div class="muted">${esc(line)}</div>`;
+          ? `<div class="card-caveat">${esc(tf("Your budgets can still take {room}; the drive has {free} free. That is more than the drive has free.", { room, free }))}</div>`
+          : `<div class="muted">${esc(tf("Your budgets can still take {room}; the drive has {free} free.", { room, free }))}</div>`;
       }
       return html;
+    }
+    // The last /api/storage/lanes payload, so a language switch redraws the panel in the
+    // new locale without asking the server again. Every size in it is written by
+    // _sizeText, whose unit is translated ("35.6 MB" / "35.6 Mo"), and every line is a
+    // tf() frame welded to a measured number, so the DOM walker can repaint none of it:
+    // the panel kept the old locale for as long as it stayed open (click-through B14, Z2).
+    let _laneStorageLast = null;
+    function _paintLaneStorage(rep) {
+      if ($("storage-reading")) $("storage-reading").innerHTML = _storageReadingHtml(rep);
+      if ($("storage-lanes")) $("storage-lanes").innerHTML = _storageTableHtml(rep);
+      if ($("storage-disk")) $("storage-disk").innerHTML = _storageDiskHtml(rep);
+    }
+    // Registered in app-boot.js's ONE `oo:langchange` listener. Never fetches, and does
+    // nothing until the panel was first drawn. A budget the operator is typing survives
+    // the redraw: a language switch is not a reason to lose input.
+    function repaintLaneStorageFromCache() {
+      if (!_laneStorageLast) return;
+      const kept = {};
+      document.querySelectorAll('#storage-lanes input[id^="storage-budget-"]').forEach((el) => {
+        kept[el.id] = el.value;
+      });
+      _paintLaneStorage(_laneStorageLast);
+      Object.keys(kept).forEach((id) => { const el = $(id); if (el) el.value = kept[id]; });
     }
     async function loadLaneStorage() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       try {
         const rep = await api("/api/storage/lanes");
-        if ($("storage-reading")) $("storage-reading").innerHTML = _storageReadingHtml(rep);
-        if ($("storage-lanes")) $("storage-lanes").innerHTML = _storageTableHtml(rep);
-        if ($("storage-disk")) $("storage-disk").innerHTML = _storageDiskHtml(rep);
+        _laneStorageLast = rep;
+        _paintLaneStorage(rep);
       } catch (e) {
         if ($("storage-lanes")) {
-          $("storage-lanes").innerHTML = `<span class="note err">${esc(t("Storage could not be read:"))} ${esc(e.message)}</span>`;
+          $("storage-lanes").innerHTML = `<span class="note err">${ooLabelHtml(esc(t("Storage could not be read")), esc(e.message))}</span>`;
         }
       }
     }
@@ -1882,7 +1983,7 @@
         const fresh = $("storage-budget-msg-" + kind);
         if (fresh) fresh.textContent = t("Saved.");
       } catch (e) {
-        if (msg) msg.textContent = t("Not saved:") + " " + e.message;
+        if (msg) msg.textContent = ooLabelText(t("Not saved"), e.message);
       } finally { if (btn) btn.disabled = false; }
     }
 

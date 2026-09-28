@@ -1,0 +1,129 @@
+{
+ "row": "T",
+ "walk": {
+  "row": "T",
+  "environment": "Build: the read-only worktree /tmp/claude-0/rewalk2/tree at 9eb10528. git status was clean before and after, and nothing in it was edited. I ran the app from that folder with /tmp/claude-0/rewalk2/out/T/launch.py, which drops HTTP(S)_PROXY, ALL_PROXY, OO_DB_PASSPHRASE, OO_DB_PLAINTEXT and OO_NO_SCHEDULER, sets PYTHONDONTWRITEBYTECODE=1, and runs `python -c \"from src.api.main import main; main()\"` with cwd set to the tree. Port 9627.\n\nData: a FRESH seed, not a copy. I ran `scripts/ui_clickthrough_seed.py --mini` (24 synthetic articles) from the tree into /tmp/claude-0/rewalk2/out/T/data with OO_DB_PASSPHRASE='walk-pass-2026' and OO_DB_PLAINTEXT unset. The database header is ciphertext (first bytes 225 002 273 ]), not 'SQLite format 3'. Because the folder is new, its briefing_cache.json was written by this build, so no refresh or removal was needed.\n\nBoot 1 (PID 24133): a normal boot with neither variable set. /api/system/lock-state read {state:'locked'} at boot and 'unlocked-encrypted' after the real #pw / #btn-unlock form. The boot engaged airplane mode by itself (/api/system/network online:false; no POST was needed). It served T1-T7, T9, T10, the 375 px pass, and the probes for T-1 to T-9. The only 4xx/5xx in its log is my own curl of /api/system/network while it was locked (503, expected).\n\nBoot 2 (PID 895): OO_NO_SCHEDULER=1, which is what step T8 prescribes. It started online with the scheduler not running and the wiki lane active:false (reason not-started). It was unlocked through the same form, and after about 33 s of T8 measurements the /tasks plane click took it offline. I then stopped it by PID (SIGTERM from the script) to watch the /tasks health dot turn red (T-6). Boot 1 was also stopped by PID. I used no pkill or killall.\n\nAirplane and egress: an lsof monitor sampled each server PID's internet sockets once a second for the whole life of both boots. egress-boot1.log and egress-boot2.log show 0 non-loopback peers. It samples, so a sub-second connection could slip through. The one consent popup (T4) was opened, read, screenshotted and cancelled with 'Stay offline'. 'Go online' was never pressed.\n\nBrowser: Playwright sync with Chromium /opt/pw-browsers/chromium, headless, args --disable-background-networking --disable-component-update --no-proxy-server, proxy variables removed. Viewports 1440x950 (en, with fr/ar/zh through the real top-bar #lang-switch, live and cold) and 375x812 (en and ar; /tasks also in zh). A fresh context's default theme is 'system', which renders as light.\n\nEverything is in /tmp/claude-0/rewalk2/out/T/:\n- Scripts: walk1.py (T1-T7, T9, T10), walk2.py (T8, plus the T-6 red dot), walk375.py, probe_i18n.py (T-1, T-2, T-3, T-7), probe_tasks.py (T-5, T-6, T-8, T-9), probe_busy.py (T-4).\n- Output: a matching .json for each script, screenshots in shots/, and server-boot1/2.log.",
+  "steps": [
+   {
+    "id": "T1",
+    "verdict": "pass",
+    "locales": "en",
+    "evidence": "lock-state 'locked' at boot. /unlock showed the passphrase view with no legal view (shots/T-T1-unlock-en.png), and the unlock landed on /#home. After 8 s with no clicks:\n- no guide wizard and no open dialog;\n- plane fill=currentColor with class off, body.net-offline;\n- top bar box-shadow 'rgb(192,57,43) 0 -2px 0 0 inset' (the red bottom edge);\n- /api/system/network online:false;\n- the coach is showing (shots/T-T1-home-en.png).\n\nFeed lists 20 synthetic articles (shots/T-T1-feed-en.png). walk1.json steps.T1."
+   },
+   {
+    "id": "T2",
+    "verdict": "pass",
+    "locales": "en",
+    "evidence": "The coach text is exact: 'You're offline. Switch off airplane mode to go online and start collecting.' / 'You'll confirm before anything connects.'. It is now an in-flow strip under the top bar. 'Not now' is on the left (x=1237) and 'Go online' on the right (x=1323), and both buttons are unclassed.\n\nIn Ink, Paper, Solar and Mint the computed-style diff between the two buttons is EMPTY:\n- the same background (Ink rgb(91,157,217), Paper rgb(154,106,47), Solar rgb(181,137,0), Mint rgb(46,125,91));\n- the same text colour;\n- weight 600, 12px, height 28;\n- border 0 on all sides, no outline, opacity 1.\n\nOnly the widths differ (Ink 78.08 vs 85.97 px). The walk finished on Ink ((root ink)). shots/T-T2-coach-{ink,paper,solar,mint}.png, walk1.json T2."
+   },
+   {
+    "id": "T3",
+    "verdict": "pass",
+    "locales": "fr, ar, zh, en",
+    "evidence": "Paper theme, live switches through #lang-switch:\n- fr 'Plus tard' / 'Passer en ligne';\n- ar 'ليس الآن' / 'الاتصال';\n- zh '暂不' / '联网'.\n\nBoth sentences match the locale files exactly in all three (expected_ok all true), and the button style diff is [] in every language. In ar dir=rtl and the page mirrors. The coach re-anchors on the live switch: in ar the plane is at x 186-220 and the arrow at 203; in zh and en the plane is at 1220-1254 and the arrow at 1237. The arrow is 21 px from the plane, and no top-bar, sidebar or subtab control is covered (covered=[]). shots/T-T3-coach-{fr,ar,zh,en-back}.png."
+   },
+   {
+    "id": "T4",
+    "verdict": "pass",
+    "locales": "en",
+    "evidence": "The coach's 'Go online' opened #net-consent once (open counter 1): title 'Go online?', reason 'Allow network requests again', ifaces 'eth0: 192.0.2.2'. /api/system/network stayed online:false while it was open. The popup's own buttons stay unequal as intended: 'Stay offline' has class secondary and weight 500, 'Go online' is unclassed with weight 600.\n\nAfter 'Stay offline':\n- the coach is gone and oo_net_coach_v1 = {seen:1, dismissed:true};\n- the plane is still filled and the red top-bar edge is still there;\n- there is no toast;\n- network online:false.\n\nshots/T-T4-consent-en.png, shots/T-T4-after-stay-offline-en.png."
+   },
+   {
+    "id": "T5",
+    "verdict": "pass",
+    "locales": "en, fr, ar, zh",
+    "evidence": "Opened with #tm-open while offline; /api/scheduler/activity has online:false. The /tasks plane is filled, colour rgb(217,108,108) (= --err #d96c6c). Its title is exactly 'Offline (airplane mode) — click to go online in the app; you'll be asked to confirm first.', the summary reads 'Airplane mode' and health 'healthy'. Schedule shows 'paused — airplane mode' (shots/T-T5-tasks-offline-en.png, T-T5-tasks-schedule-en.png).\n\nLive switches without a reload give the exact fr, ar and zh titles, 'Mode avion' / 'وضع الطيران' / '飞行模式', and translated tab titles (all expected_*_ok true). ar mirrors (dir=rtl). The first 100 ms sample after <html lang> changes already shows the new language for the title, the state, the health and the tab title (walk1.json T5 samples). The same values held after a reload and a 7 s wait."
+   },
+   {
+    "id": "T6",
+    "verdict": "pass",
+    "locales": "en (fr/ar/zh hovers and toasts also checked)",
+    "evidence": "Start state: maximum, class rate-max, needle rotate(48), accent colour. The hover is exact.\n\nClick 1:\n- needle rotate(-48), accent gone;\n- toast 'Collection speed set to the 500 KiB/s target — applies from the next pass.';\n- /api/scheduler/config target/500;\n- Settings > Advanced > Collection > Advanced (legacy) shows '500 kbps' with the slider at value 2 (3rd of 7);\n- the bubble under the pointer shows the new state at once.\n\nClick 2:\n- toast 'Collection speed set to Maximum — applies from the next pass.';\n- Settings 'Maximum' with the slider at 6;\n- config maximum.\n\nThe #net-consent open counter stayed at 0, and the app stayed offline. Settings > Wikipedia and > OpenStreetMap have no range or number input and no speed or bandwidth text. The fr, ar and zh hovers and both toasts equal the locale values. KiB/s vs kbps is the known item. shots/T-T6-*.png, walk1.json T6."
+   },
+   {
+    "id": "T7",
+    "verdict": "pass",
+    "locales": "en",
+    "evidence": "150 sequential fetch('/api/articles?limit=1') calls from the app page: ok 150, refused 0, no other status, 1.6 s (walk1.json T7)."
+   },
+   {
+    "id": "T8",
+    "verdict": "pass",
+    "locales": "en, fr, ar, zh",
+    "evidence": "OO_NO_SCHEDULER=1 boot: /api/system/network online:true, scheduler running=false, wiki_lane active=false (not-started).\n\nOnline state:\n- The app plane is hollow (fill none, not off), and its styled bubble reads exactly 'Online — click to go offline (airplane mode); every new network request will be refused.'\n- The /tasks plane is hollow with the same title, summary 'Idle', health 'healthy'.\n- Live fr, ar and zh titles, 'Idle' and health are exact (expected_title_ok, idle_ok and health_ok all true), and no title says 'stops all collection'. They flip about 100 ms after the lang change.\n\nONE click on the /tasks plane:\n- after about 200 ms the plane is filled and red (rgb(192,57,43)), the title is the offline text, the summary reads 'Airplane mode', and #tm-conn reads 'Offline — every new network request is refused. One in-flight request may finish.';\n- it stayed that way for all 12 s (60 samples);\n- /api/system/network online:false;\n- the app tab repainted to filled/offline with no consent popup.\n\nThe egress monitor saw 0 non-loopback peers. shots/T-T8-*.png, walk2.json."
+   },
+   {
+    "id": "T9",
+    "verdict": "not-measurable-here",
+    "locales": "en",
+    "evidence": "No collection pass can run without egress: /api/scheduler/activity has collect_perf null, so there is no process_budget. toggleVitals() opens the in-app window, whose System subtab has no 'COLLECTION SPEED' block, which is the correct no-pass state (shots/T-T9-vitals-system-en.png)."
+   },
+   {
+    "id": "T10",
+    "verdict": "not-measurable-here",
+    "locales": "en",
+    "evidence": "/api/jobs/history?limit=100 has 0 runs and no crawl_delay_deferred, and there is no host_schedule.json in the data folder. Not observed on this corpus."
+   },
+   {
+    "id": "375px",
+    "verdict": "pass",
+    "locales": "en, ar (+ /tasks zh)",
+    "evidence": "Home at 375x812:\n- overflow 0 in en and ar;\n- #home-tier spans 37-338 px and is 43 px tall, and its caveat 'thin evidence — read with care' is fully visible;\n- every row-T top-bar control is in view and clickable;\n- the coach sits inside the viewport under the chrome with equal, unclipped buttons, and covers nothing (covered=[]), including palette rows.\n\n/tasks at 375: overflow 0 in en, ar and zh. #tm-tabs scrolls in its own 335 px box (overflow-x:auto), and the last tab 'Sessions' can be clicked. shots/T-375-*.png, walk375.json."
+   }
+  ],
+  "items": [
+   {
+    "id": "T-1",
+    "verdict": "fixed",
+    "evidence": "probe_i18n.json.\n\nLive repro (phase A2): en, then switch live to fr and click #rate-toggle twice. The config went maximum, then target, then maximum. Then live switches to ar, zh and en: the #oo-tip over the gauge equals each language's own 'Collection speed: Maximum — …' string exactly (tip_ok true), e.g. ar 'سرعة الجمع: الحد الأقصى — يستخدم اتصالك بالكامل …'. No French appears.\n\nCold repro (phase B): fr, reload, two clicks (target, then maximum), then ar, zh and en: the same exact matches.\n\nshots/A2-rate-hover-ar-after-fr-live-clicks.png and B-rate-hover-ar-after-fr-clicks.png show an Arabic bubble on the Arabic bar; zh and en shots likewise. walk1.json T6 agrees: after the fr clicks, the ar and zh hovers are correct."
+   },
+   {
+    "id": "T-2",
+    "verdict": "fixed",
+    "evidence": "probe_i18n.json. The expected hover is the composite of the four keyed fragments (stage label, meaning, rule, thresholds 200/14/1000/90).\n\nPhase A (en, then live switches to fr, ar, zh and back to en): the #oo-tip equals that composite exactly in each language, and #home-tier's title read outside hover equals it too.\n\nPhase B (cold fr, then live ar, zh, en): the same exact matches.\n\nA MutationObserver on the title records the new language's text after each switch, and it is never reverted to the first-seen language. The only other writes are the tip's own strip and restore of the title during a hover, which restores the same language.\n\nshots/A-tier-hover-fr-live-from-en.png (a French bubble under the French badge) and B-home-tier-hover-{ar,zh,en}-after-fr-cold.png."
+   },
+   {
+    "id": "T-3",
+    "verdict": "fixed",
+    "evidence": "probe_i18n.json phase B: cold fr; Settings > Advanced > Collection opened, then Home. The painted fr values were 'La collecte est DÉSACTIVÉE — cliquez pour l'activer' and 'Aucun article pour cette étiquette pour l'instant.' (tag via:curated). After live switches both surfaces equal the locale values, before and after reopening Settings and revisiting Home:\n- #collect-toggle reads ar 'الجمع مُتوقف — انقر للتفعيل', zh '采集已关闭 — 点击开启', en 'Collection is OFF — click to turn on';\n- #home-recent reads ar 'لا توجد بعد مقالات لهذا الوسم.', zh '该标签暂无文章。', en 'No articles for this tag yet.'.\n\nshots/B-collect-toggle-ar.png (an Arabic button) and B-home-recent-zh.png (a Chinese line)."
+   },
+   {
+    "id": "T-4",
+    "verdict": "fixed",
+    "evidence": "probe_busy.json. The server was idle throughout: /api/scheduler/status running:false, and /api/scheduler/activity running:false, active:false, phase null, online:false. /api/database/stats kept as_of '2026-09-27T21:05:20+00:00' while cache_age_s grew from 241 to 368 over 150 s (375 after a reload), with verified_current:true and recount_running_s null.\n\nThe strip carries NO 'as of' stamp and no '(server busy)' in en live, en after the reload, fr, ar or zh. It reads e.g. '… 10 MENTIONED DATES EARLY CORPUS … Automatic collection: stopped …'.\n\nshots/T4-busy-home-en-reload.png and T4-busy-home-{fr,ar,zh}.png."
+   },
+   {
+    "id": "T-5",
+    "verdict": "fixed",
+    "evidence": "probe_tasks.json. /tasks opened through #tm-open. The Schedule rows are exactly State, Current pass, Cadence, Next pass and Last run, with no 'Mode' row. The same 5 rows appear in fr ('État … Dernière exécution'), ar ('الحالة … آخر تشغيل'), zh ('状态 … 上次运行') and at 375 px.\n\n/api/scheduler/activity has no mode key, and settings has no mode. The in-app window's Schedule subtab has no Mode row either.\n\nshots/tasks-schedule-en.png, tasks-schedule-ar.png, inapp-schedule-en.png."
+   },
+   {
+    "id": "T-6",
+    "verdict": "fixed",
+    "evidence": "Healthy server (probe_tasks.json): the app's #health .dot is 'dot ok' rgb(46,139,87), and the /tasks #health .dot is also 'dot ok' rgb(46,139,87) with its green halo, beside 'healthy' / 'sain' / 'سليم' / '正常'.\n\nServer not responding (walk2.json T6_red): /tasks open, then the server stopped by PID. On the next 15 s poll (12 s later) the dot became 'dot err' rgb(192,57,43) beside 'offline'.\n\nshots/tasks-en-topbar.png, tasks-app-topbar-en.png, T6-tasks-dot-before-stop.png, T6-tasks-dot-after-stop.png."
+   },
+   {
+    "id": "T-7",
+    "verdict": "fixed",
+    "evidence": "/api/llm/health: no_backend:true, backend_reason still the English server sentence. The #llm hover is the keyed composite in the UI language, matching the locale values exactly (tip_ok true):\n- fr: 'Aucun moteur d'IA n'est joignable pour le moment — ni Ollama ni vLLM ne répond. — L'IA est hors ligne — cliquez pour la démarrer…';\n- ar: 'لا توجد واجهة خلفية للذكاء الاصطناعي يمكن الوصول إليها الآن — لا Ollama ولا vLLM يستجيب. — الذكاء الاصطناعي غير متصل — …';\n- zh: '目前没有可用的 AI 后端 — Ollama 和 vLLM 都没有响应。 — AI 离线 — …'.\n\nThis holds after live switches from en and after a cold fr load. No English server text appears in any locale. probe_i18n.json; shots/A-llm-hover-fr-live.png, T7-llm-hover-ar-full.png, B-llm-hover-zh-after-fr-cold.png."
+   },
+   {
+    "id": "T-8",
+    "verdict": "fixed",
+    "evidence": "probe_tasks.json. /tasks is opened through #tm-open after each app theme change, and the data-theme and body background match every time:\n- default System: app 'light' rgb(238,241,245), /tasks 'light' rgb(238,241,245);\n- Paper: paper / rgb(242,238,228) on both;\n- Solar: solar / rgb(0,43,54);\n- Mint: mint / rgb(237,243,238);\n- Ink: no attribute / rgb(12,14,19).\n\nLive follow: with /tasks already open on Ink, switching the app to Paper moved /tasks to 'paper' rgb(242,238,228) with no reload.\n\nshots/T8-app-paper.png vs T8-tasks-with-app-paper.png, and the other theme pairs."
+   },
+   {
+    "id": "T-9",
+    "verdict": "fixed",
+    "evidence": "probe_tasks.json at 1440x950, #home-recent-panel h2:\n- en 'Most recent': 115x26 px, 1 line;\n- fr 'Les plus récents': 156x26 px, 1 line;\n- zh '最新': 34x26 px, 1 line.\n\nThe tag select is now 236 px wide in a 1116 px row, and there is no overflow. shots/T9-home-recent-{en,fr,zh}.png (and T-T1-home-en.png)."
+   }
+  ],
+  "incidental": [
+   "At 375 px, Home > Most recent: the tag select clips its value, so 'via:curated (5353)' loses the closing parenthesis under the chevron (shots/zoom-375-select.png, from T-375-home-en.png). Lead: src/static/app.css:438, where `.phead > select { max-width:60% }` caps it."
+  ],
+  "page_errors": [],
+  "http_errors": [],
+  "summary": "Row T passes on build 9eb10528 for everything a sandbox can reach, and all 9 of its re-walk items (T-1 to T-9) are fixed.\n\nThe setup was a fresh encrypted --mini seed, locked at boot and unlocked through the real form. The app stayed in airplane mode except for T8's prescribed OO_NO_SCHEDULER=1 boot, which went offline through its own /tasks click after about 33 s. Both boots showed zero non-loopback sockets.\n\nSteps:\n- T1-T8 pass in en, fr, ar and zh:\n  - the coach buttons are identical in Ink, Paper, Solar and Mint, and the coach re-anchors on RTL;\n  - the consent popup opened only through the coach and was cancelled;\n  - the /tasks airplane titles and states are exact and flip about 100 ms after a live switch;\n  - the gauge and the Settings slider are one control, with no consent popup;\n  - the loopback rate limit gave 150 of 150 ok;\n  - both states were seen on the /tasks plane.\n- The 375 px pass passes.\n- T9 and T10 are not measurable here: no pass runs without egress, and there is no crawl history.\n\nItems:\n- T-1: the gauge hover is correct in ar, zh and en after fr clicks, both live and cold.\n- T-2: the corpus-tier hover follows every switch, and the MutationObserver shows no revert.\n- T-3: the Collection toggle and the 'Most recent' empty line repaint after a switch from cold fr.\n- T-4: no '(server busy)' stamp on an idle server, with verified_current:true at cache ages of 241-375 s.\n- T-5: no Mode row in either Schedule renderer.\n- T-6: the /tasks dot is green when healthy and red after the server was stopped.\n- T-7: the AI pill hover is keyed and fully in the UI language.\n- T-8: /tasks follows the app theme, including a live change.\n- T-9: the heading is one line at 1440 px in en, fr and zh.\n\nNo JS page errors, no HTTP responses of 400 or more from the pages, and no undefined/NaN/null text. The only console errors are 10 net::ERR_CONNECTION_REFUSED on the app tab after I deliberately stopped the server for the T-6 red-dot check. One incidental item: at 375 px the Most recent tag select clips its closing parenthesis."
+ },
+ "recheck": null
+}

@@ -19,7 +19,7 @@ from pathlib import Path
 
 import pytest
 
-from tests.js_source_helper import app_js, function_body, read_static
+from tests.js_source_helper import app_js, function_body, read_static, strip_comments
 
 _ROOT = Path(__file__).resolve().parents[1]
 _APP = app_js()
@@ -45,7 +45,9 @@ def test_the_dated_folder_is_allocated_once_and_reaches_both_phases():
     # both phase starts are given. A phase computing its own name would give two folders
     # whenever an export crosses a minute boundary.
     assert 'const parent = (document.getElementById("ux-dest").value || "").trim();' in run
-    assert "JSON.stringify({ parent })" in run
+    # The allocation also carries what the export was asked for (the re-walk's J-1), so
+    # the server records it in the folder beside the backup.
+    assert "parent, corpus: wantCorpus, categories: blobs, inside }" in run
     assert run.count("/api/backup/export-folder") == 1, "the folder is allocated more than once"
     assert "{ dest, passphrase: pass" in run, "the volumes phase does not get the folder"
     assert "JSON.stringify({ dest, categories: blobs })" in run, (
@@ -89,16 +91,23 @@ def test_the_summary_is_written_last_and_a_failure_is_not_a_failed_backup():
     run = function_body(_APP, "_uxRun")
     i_corpus = run.index("/api/backup/v2/volumes/start")
     i_folder = run.index("/api/backup/folder/start")
-    i_summary = run.index("/api/backup/export-summary")
+    # The completion (and the summary POST inside it) is ONE helper since W1, shared with
+    # a resumed large-data copy, which used to end without writing the file at all.
+    i_summary = run.index("_uxFinishExport(")
     assert i_corpus < i_folder < i_summary, (
         "BACKUP_SUMMARY.md must be written after BOTH phases, so it can carry the "
         "verify verdict instead of promising one"
     )
+    assert "_uxFinishExport(" in function_body(_APP, "_uxResume"), (
+        "a resumed large-data copy must end on the same completion as a straight run"
+    )
+    finish = function_body(_APP, "_uxFinishExport")
     # The summary POST has its OWN try/catch: the bytes are on the drive and verified by
     # then, so a failure here degrades to a named note beside a completion line that
     # stands — never to "Backup failed".
-    tail = run[i_summary - 400 :]
+    tail = finish[finish.index("/api/backup/export-summary") - 400 :]
     assert "The backup is written, but its summary file could not be:" in tail
+    assert "Backup failed" not in strip_comments(finish)
 
 
 def test_the_panel_renders_the_SERVER_S_facts_and_computes_no_figure_of_its_own():
@@ -132,7 +141,10 @@ def test_the_panel_owns_its_own_translation_because_it_carries_DATA():
 
 def test_member_sizes_come_from_the_inventory_and_the_categories_from_the_member():
     """Q219: the size shown before the export starts is the size the export writes."""
-    inv = function_body(_APP, "_uxLoadInventory")
+    # The checklist is drawn by _uxPaintInventory since B18 (R10), so a language switch
+    # can redraw its counts; _uxLoadInventory fetches and hands the payload to it.
+    assert "_uxPaintInventory(inv, t, false)" in function_body(_APP, "_uxLoadInventory")
+    inv = function_body(_APP, "_uxPaintInventory")
     assert "inv.members" in inv, "the dialog no longer reads the server's member list"
     assert 'data-cats="' in inv, "a member must carry the categories its tick exports"
     run = function_body(_APP, "_uxRun")
@@ -142,3 +154,59 @@ def test_member_sizes_come_from_the_inventory_and_the_categories_from_the_member
             "a second copy of the member→category mapping is how the size shown beside "
             "the models tick came to count only one of its two stores"
         )
+
+
+# --------------------------------------------------------------------------- #
+#  The 2026-09-26 delegated click-through, row J (J3 and J9)
+# --------------------------------------------------------------------------- #
+def _locale(lang: str) -> dict:
+    import json
+
+    return json.loads(read_static(f"locales/{lang}.json"))
+
+
+def test_paths_keep_their_own_direction_in_the_arabic_dialog():
+    """J3: in the RTL dialog a path's leading slash was drawn at its far end, and the
+    example folder name in the hint read with its date AFTER the name -- the opposite of
+    the folder the export actually makes."""
+    import re
+
+    tag = re.search(r'<input id="ux-dest"[^>]*>', _HTML)
+    assert tag and 'dir="ltr"' in tag.group(0), "the destination input inherits the page direction"
+    # Every "Backup complete →" path: the one completion helper (a straight run and a resumed
+    # copy both end there since W1) and the reopened dialog.
+    for fn in ("_uxFinishExport", "_uxShowLastCompletedExportSummary"):
+        body = function_body(_APP, fn)
+        i = body.index('t("Backup complete →")')
+        assert '<span dir="ltr"' in body[i : i + 200], f"{fn} draws the path without an LTR isolate"
+    # The hint is translated as ONE string (a split would force the example to the end
+    # of the sentence in every SOV language), so the isolate lives in the Arabic value.
+    hint = "Each export makes its own dated folder here, named like 202609121045_OpenOmniscience_Backup."
+    assert "⁨202609121045_OpenOmniscience_Backup⁩" in _locale("ar")[hint]
+
+
+def test_the_progress_prefix_takes_the_locale_s_own_separator():
+    """J9: "Corpus: Préparation…" -- French puts a space before the colon, and the
+    prefix and ": " were glued together in code, out of the locale's reach."""
+    poll = function_body(_APP, "_uxPoll")
+    assert 'tf("{prefix}: {text}"' in poll
+    assert '${esc(ui.prefix)}: `' not in poll, "the separator is hardcoded again"
+    assert _locale("fr")["{prefix}: {text}"] == "{prefix} : {text}"
+    assert _locale("zh")["{prefix}: {text}"] == "{prefix}：{text}"
+
+
+def test_the_export_surface_wording_the_click_through_flagged():
+    """J9: French agreement and case, and one Arabic word for the corpus."""
+    fr = _locale("fr")
+    assert fr["no files"] == "aucun fichier", "'Files copied' needs the masculine"
+    assert fr["none"] == "aucune", "the shared 'none' (parity) is feminine and must stay so"
+    assert fr["LLM models"][0].isupper(), fr["LLM models"]
+    panel = function_body(_APP, "_uxRenderExportPanel")
+    assert 'row(t("Files copied"), esc(t("no files")))' in panel
+    ar = _locale("ar")
+    assert ar["corpus"] == ar["Corpus"], "the checklist and the Elapsed row name the corpus differently"
+    parity = (
+        "The corpus is written as encrypted volumes plus parity. Parity (corruption recovery) "
+        "requires the analysis extra (numpy); otherwise the backup is volumes only."
+    )
+    assert ar["Corpus"] in ar[parity] and "المتن" not in ar[parity]

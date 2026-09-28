@@ -366,20 +366,21 @@ def test_the_folder_restore_refusal_node_suite() -> None:
 def test_both_folder_restore_consumers_render_the_refusal() -> None:
     """The wiring the node suite cannot see: that the helper is actually CALLED.
 
-    Two surfaces read a folder restore's result -- the live panel's own progress line
-    and the unified-import summary rendered afterwards -- and a refusal that reaches
-    neither is a discard the operator never learns about. Asserted as calls in the
-    parsed source of each consumer, not as the identifier appearing somewhere in the
-    file, so deleting the render cannot pass because the name survives in a comment.
+    A folder restore's result is read by the unified-import summary rendered
+    afterwards, and a refusal that does not reach it is a discard the operator never
+    learns about. Asserted as calls in the parsed source of the consumer, not as the
+    identifier appearing somewhere in the file, so deleting the render cannot pass
+    because the name survives in a comment.
+
+    There used to be a second consumer, the old large-data folder panel's own progress
+    line (`_fbRefresh`). It drew into `#fb-*` elements that no page carried and nothing
+    reached it, so it was removed as dead code (2026-09-27 fix batch B18, R1); the
+    guard below keeps its absence honest rather than pinning a renderer nobody sees.
     """
     src = strip_comments(read_static("app-backup.js"))
 
-    live = function_body(src, "_fbRefresh")
-    assert "_fbRefusalLines(p)" in live, (
-        "the live folder panel prints Done. without asking what was refused"
-    )
-    assert "card-caveat" in live, (
-        "a refusal is not a muted footnote -- invariant #23 puts caveats in the visible line"
+    assert "function _fbRefresh(" not in src, (
+        "the dead folder panel's poller is back -- it draws into ids no page carries"
     )
 
     # RE-ANCHORED 2026-09-16 (R1, Q201 = a). The post-hoc surface used to be the

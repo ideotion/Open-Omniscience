@@ -101,9 +101,11 @@ def test_tracked_changes_consumes_the_real_endpoint_with_honesty():
     tc = app[app.index("async function loadWikiTC("):]
     tc = tc[: tc.index("// --- Search-tab time-range control")]
     # Honest window: showing count / total tracked revisions (the endpoint discloses a slice).
-    assert 'd.count} / ${d.total}' in tc and 't("tracked revisions")' in tc, (
+    # ONE keyed frame since B18 (R14), the two numbers grouped, never "N / M" + a noun.
+    assert '_mapTf("Showing {n} of {total} tracked revisions"' in tc, (
         "must show an honest 'showing N of M' window"
     )
+    assert "n: fmtNum(d.count || 0, 0), total: fmtNum(d.total || 0, 0)" in tc
     # VISIBLE caveat mirroring the endpoint method — never behind a toggle.
     assert 'meth.textContent = t("The tracked slice of edits stored on this machine' in tc, (
         "the caveat/method must be rendered VISIBLE by default"

@@ -70,7 +70,10 @@
       const status = $("sky-status");
       if (status) status.textContent = t("Loading…");
       try {
-        _obs.payload = await api("/api/insights/observatory");
+        // In the reader's language: the payload then carries the label fields of the
+        // member keywords the readout names (M7). The sky itself is language-free.
+        _obs.payload = await api("/api/insights/observatory?target_lang="
+          + encodeURIComponent(typeof uiLangCode === "function" ? uiLangCode() : "en"));
         _obs.err = null;
       } catch (e) {
         _obs.err = e && e.message ? e.message : String(e);
@@ -538,6 +541,35 @@
       _obsReadout();
     }
 
+    /**
+     * A MEMBER keyword as the readout names it (M7): through the one label rule set
+     * (`kwLabelParts`), so "voting" reads "vote" in French and a foreign family member
+     * carries its "in X" tag, exactly as on the keyword lists. A galaxy NAME is a curated
+     * group label, not a keyword, and is left as it is. Plain text: the readout is escaped.
+     */
+    function _obsMember(key) {
+      const labels = (_obs.payload && _obs.payload.member_labels) || {};
+      const lab = labels[key];
+      if (!lab || typeof kwLabelParts !== "function") return String(key);
+      const p = kwLabelParts(Object.assign({term: key}, lab));
+      return p.tag ? `${p.shown} (${p.tag})` : (p.shown || String(key));
+    }
+
+    /**
+     * A language switch re-asks for the member labels (they are translations INTO the
+     * old language) and redraws. Registered in `ooKwRepaintOnLangChange`; nothing is
+     * fetched for a tab that was never opened.
+     */
+    async function _obsRelabel() {
+      if (!_obs.payload) return;
+      try {
+        const d = await api("/api/insights/observatory?target_lang=" + encodeURIComponent(uiLangCode()));
+        if (d) _obs.payload = d;
+      } catch (_e) { /* keep the sky it has; the labels stay as they were */ }
+      _obsRender();
+      _obsReadout();
+    }
+
     /** The hover/focus readout — one region serving both pointer and keyboard. */
     function _obsReadout() {
       const host = $("sky-readout");
@@ -569,11 +601,11 @@
       // one member's, and that is disclosed here rather than only in the payload.
       if (g.dominance && g.dominance.member) {
         parts.push(esc(tf("Dominated by one member: {member} holds {pct}% of the mentions.",
-          {member: g.dominance.member, pct: fmtNum((g.dominance.share || 0) * 100, 1)})));
+          {member: _obsMember(g.dominance.member), pct: fmtNum((g.dominance.share || 0) * 100, 1)})));
       }
       const edges = (_obs.layout.edges || []).filter((e) => e.a === g || e.b === g);
       if (edges.length) {
-        const shared = edges.map((e) => (e.a === g ? e.b.name : e.a.name) + " (" + e.shared.join(", ") + ")");
+        const shared = edges.map((e) => (e.a === g ? e.b.name : e.a.name) + " (" + e.shared.map(_obsMember).join(", ") + ")");
         parts.push(esc(tf("Shares a member keyword with: {names}", {names: shared.join("; ")})));
       }
       host.innerHTML = parts.join(" · ");

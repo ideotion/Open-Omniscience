@@ -75,12 +75,15 @@
     function _qualTunableHtml(row) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
       // The hover carries the long form (impact + why the bound is where it is); the
-      // visible surface keeps the value, the unit and the range present.
-      const why = [row.impact, row.floor_reason].filter(Boolean).join(" — ");
+      // visible surface keeps the value, the unit and the range present. Every sentence
+      // the backend declares here is a key in all twelve locales: the panel renders the
+      // engine's own vocabulary so it cannot drift, and t() is what stops it rendering
+      // that vocabulary in English under every language (click-through, batch B12).
+      const why = [row.impact, row.floor_reason].filter(Boolean).map((x) => t(x)).join(" — ");
       return `<div class="row" style="gap:8px;align-items:baseline;flex-wrap:wrap;margin:4px 0">
-        <span title="${esc(why)}"><b>${esc(row.label)}</b></span>
+        <span title="${esc(why)}"><b>${esc(t(row.label))}</b></span>
         <span>${esc(_qualShare(row))}</span>
-        <span class="muted">${esc(row.unit || "")}</span>
+        <span class="muted">${esc(row.unit ? t(row.unit) : "")}</span>
         <span class="hint" title="${esc(t("The safe range. Outside it the value is corrected AND reported — never silently."))}">${t("safe range")} ${row.lo}–${row.hi}</span>
       </div>`;
     }
@@ -102,11 +105,17 @@
         // contradiction -- the gap is ordinary since judging began enabling sources.
         // "How many could the current floor actually disqualify" is worth more than any
         // control on the page: on the field corpus that number is zero.
+        //
+        // Keyed FRAMES, label before count: "4 qualifié" read as a singular after a plural
+        // count in French, and an adjective after a number cannot agree with it in a
+        // language that inflects when the app has no plural rules. A label ("qualifiées :
+        // 4") names the category and needs none -- the house label:value shape. The
+        // colons are the locale's own, inside the frame.
         const _n = (k) => `<b title="${esc(t(cl[k] || ""))}">${c[k] || 0}</b>`;
-        state.innerHTML = `${t("Collecting now")}: ${_n("collecting")}`
-          + ` · ${t("Judged so far")}: ${_n("qualified")} ${t("qualified")}`
-          + ` · ${_n("disqualified")} ${t("disqualified")}`
-          + ` · ${_n("unqualified")} ${t("not yet judged")}`;
+        state.innerHTML = _qualTfHtml("Collecting now: {n}", {n: _n("collecting")})
+          + " · " + _qualTfHtml(
+            "Judged so far — qualified: {qualified} · disqualified: {disqualified} · not yet judged: {unqualified}",
+            {qualified: _n("qualified"), disqualified: _n("disqualified"), unqualified: _n("unqualified")});
 
         const en = $("qual-enabled");
         const perPass = (cfg.gates || []).flatMap(g => g.tunables || [])
@@ -123,12 +132,20 @@
         // OWN absolute floor -- and one of them has none. So the floor is rendered PER
         // CRITERION rather than as a single number beside the list, and a criterion with no
         // floor says why instead of showing a blank where the other shows 0.5.
+        //
+        // Every sentence here is the engine's vocabulary and a key in all twelve locales
+        // (click-through B14, Z5): the criterion's NAME (its id stays in the hover, where
+        // a log line can be matched to it), its description, and the floor note sentence
+        // by sentence. The floor's colon is the locale's (ooLabelText): "seuil absolu:
+        // 0.5" lacked the French space.
         const floorBits = (x) => {
           if (!x.can_disqualify) return "";
           const val = (x.absolute_floor === null || x.absolute_floor === undefined)
             ? t("no absolute floor")
-            : `${t("absolute floor")}: ${x.absolute_floor}`;
-          return ` <span class="muted" title="${esc(t(x.absolute_floor_note || ""))}">· ${esc(val)}</span>`;
+            : ooLabelText(t("absolute floor"), x.absolute_floor);
+          const note = (x.absolute_floor_note_parts || (x.absolute_floor_note ? [x.absolute_floor_note] : []))
+            .map((s) => t(s)).join(" ");
+          return ` <span class="muted" title="${esc(note)}">· ${esc(val)}</span>`;
         };
         const floor = cfg.pathology_floor_status || {};
         // Q1107 = a: the floor is kept AND said to be unreachable, VISIBLY -- a number an
@@ -140,15 +157,15 @@
           : "";
         crit.innerHTML = `<h3 style="margin:0 0 6px">${t("What the source gate looks at")}</h3>` +
           (cfg.criteria || []).map(x => `<div style="margin:6px 0">
-            <span title="${esc(x.desc)}"><b>${esc(x.name)}</b></span>
+            <span title="${esc(ooLabelText(x.name, t(x.desc || "")))}"><b>${esc(x.label ? t(x.label) : x.name)}</b></span>
             ${x.can_disqualify
               ? `<span class="warn" title="${esc(t("A criterion that can disqualify a source — it is an extraction-failure signature, not a judgement about what the source publishes. The others are style-ambiguous, so they can never exceed a watch flag; that cap is deliberate and is not adjustable."))}">${t("can disqualify")}</span>`
               : `<span class="muted">${t("watch only")}</span>`}${floorBits(x)}
           </div>`).join("") + floorLine;
 
         host.innerHTML = (cfg.gates || []).map(g => `<div class="panel" style="margin:10px 0">
-          <h3 style="margin:0">${esc(g.question)}</h3>
-          <p class="hint" style="margin:4px 0">${esc(g.note)} <span class="muted">${t("Verdict")}: ${esc(g.verdict)}</span></p>
+          <h3 style="margin:0">${esc(t(g.question))}</h3>
+          <p class="hint" style="margin:4px 0">${esc(t(g.note))} <span class="muted">${esc(_qualTf("Verdict: {verdict}", {verdict: t(g.verdict)}))}</span></p>
           ${(g.tunables || []).map(_qualTunableHtml).join("")}
         </div>`).join("");
 
@@ -229,6 +246,19 @@
         : String(str).replace(/\{(\w+)\}/g, (m, k) => (vars && vars[k] != null) ? String(vars[k]) : m);
     }
 
+    // `_qualTf` for a frame whose slots are MARKUP (a count carrying its own hover): the
+    // frame is translated with a private-use marker in each slot, escaped as text, and
+    // only then are the markers replaced by the markup -- so the words stay one key the
+    // locale can reorder, and nothing a translation holds is ever read as HTML.
+    function _qualTfHtml(str, html) {
+      const keys = Object.keys(html || {});
+      const marks = {};
+      keys.forEach((k, i) => { marks[k] = "\uE000" + i + "\uE001"; });
+      let out = esc(_qualTf(str, marks));
+      keys.forEach((k, i) => { out = out.split("\uE000" + i + "\uE001").join(html[k]); });
+      return out;
+    }
+
     // THE ADMISSION AUDIT (ruling Q1101). Judging now enables a source by itself, so this
     // is the surface that makes each such decision visible and reversible. Loopback only
     // -- it reads this machine's own record and writes two columns of it, so there is no
@@ -240,7 +270,16 @@
       const was = (e.prior_enabled === null || e.prior_enabled === undefined)
         ? t("never set")
         : (e.prior_enabled ? t("on") : t("off"));
-      const when = e.occurred_at ? `<span dir="ltr">⁨${esc(e.occurred_at)}⁩</span>` : "";
+      // Both stamps go through the app's shared date formatter (app language, the
+      // reader's zone, one precision on every row) and are kept whole: printed raw, an
+      // undo showed microseconds beside rows read to the second, and the ISO token broke
+      // after its hyphen at 1440 px (click-through S8). The exact UTC stamp the server
+      // sent stays in the hover. Raw only where the formatter is absent.
+      const stamp = (iso) => {
+        const shown = (typeof fmtDateTime === "function" && fmtDateTime(iso)) || String(iso);
+        return `<span class="qual-when" style="white-space:nowrap" title="${esc(iso)}">⁨${esc(shown)}⁩</span>`;
+      };
+      const when = e.occurred_at ? stamp(e.occurred_at) : "";
       // A CONTROL THAT RENDERS CLAIMS ITS CAPABILITY. The endpoint refuses an undo whose
       // admission is no longer the decision in effect -- a later admission, or a later
       // verdict that replaced this one -- so drawing the button there would be the surface
@@ -255,7 +294,7 @@
       };
       const undone = e.undone
         ? `<span class="muted">${t("Undone")}${e.undone_at
-            ? ` ⁨${esc(e.undone_at)}⁩` : ""}</span>`
+            ? ` ${stamp(e.undone_at)}` : ""}</span>`
         : (e.reversible === false
           ? `<span class="muted">${esc(blocked[e.blocked_by] || t("Cannot be undone"))}</span>`
           : `<button class="secondary" data-undo="${esc(String(e.id))}">${t("Undo")}</button>`);
@@ -266,14 +305,32 @@
       // i18n gate can see (the value sits inside a composed node the DOM walker cannot
       // match). The DOMAIN beside it is data and stays untranslated, deliberately.
       const wasStatus = e.prior_status ? t(e.prior_status) : t("never judged");
+      // TWO COLUMNS THAT WRAP, never one crushed column (click-through re-walk S-1/S-2).
+      // The info column has a real BASIS, so when the action does not fit beside it the
+      // row wraps and the action drops onto its own line. The S8 form (`flex:0 0 auto` on
+      // the action, basis 0 on the info) could never wrap: at 375 px it squeezed the info
+      // column to 46 px, printed the domain one word per line and pushed the nowrap stamp
+      // 154 px out of its own column. The action may shrink, so "Undone" and its stamp can
+      // break apart on a narrow screen; only the stamp itself stays whole.
+      // THE FLOOR IS THE STAMP ITSELF, not a guessed width. A basis alone was a guess: 16em
+      // (192 px at this 12 px size) is narrower than the stamp in en/es/pt/id, and 18em is
+      // still narrower than it in JetBrains Mono (223 px in pt/es) -- the Terminal theme's
+      // own face -- so between ~470 and ~640 px, where the row does not wrap and the info
+      // column sits at its basis, the stamp spilled out of it (review of the fix). So
+      // `min-width:auto` restores the flex item's own minimum (its min-content, which the
+      // nowrap stamp sets) over `.row > div`'s 140px (0 on a phone), and the row wraps
+      // before the stamp can leave its column in any language or face. The DOMAIN may
+      // break anywhere, so a long one never becomes that minimum instead and pushes the
+      // column past a phone's row; the 18em basis gives an ordinary domain room to stay
+      // on one line.
       return `<div class="row" style="gap:10px;align-items:center;justify-content:space-between;padding:4px 0">
-        <div>
-          <strong>${esc(e.domain || e.name || "")}</strong>
-          <span class="muted"> · ${t("Collection was")}: ${was}`
-        + ` · ${t("Status was")}: ${esc(wasStatus)}`
+        <div style="flex:1 1 18em;min-width:auto">
+          <strong style="overflow-wrap:anywhere">${esc(e.domain || e.name || "")}</strong>
+          <span class="muted"> · ${ooLabelHtml(esc(t("Collection was")), esc(was))}`
+        + ` · ${ooLabelHtml(esc(t("Status was")), esc(wasStatus))}`
         + ` · ${when}</span>
         </div>
-        <div>${undone}</div>
+        <div style="flex:0 1 auto">${undone}</div>
       </div>`;
     }
 
@@ -299,11 +356,16 @@
         // The GAP, published as a gap: sources collection reaches that this audit has no
         // record of admitting (the shipped catalogue, an inherited stamp, a restore).
         // Drawn only when there IS one -- a caveat may claim only what the data exhibits.
+        // The count is a SENTENCE, full stop inside the frame (the locale's own), because
+        // the note follows it on the same line: without one the two read as one run-on
+        // clause in every language (re-walk S-9). A full-width stop is its own spacing, so
+        // no Latin space follows it (zh / ja read "。 此处" as a typo).
+        const gapLine = tf("{n} of {total} collecting sources are not accounted for here.",
+                           {n: d.unaccounted, total: d.collecting});
         const gap = (d.unaccounted > 0)
           ? `<div class="card-caveat" style="margin-top:8px">`
-            + esc(tf("{n} of {total} collecting sources are not accounted for here",
-                     {n: d.unaccounted, total: d.collecting}))
-            + ` ${esc(t(d.coverage_note || ""))}</div>`
+            + esc(gapLine) + (/[。！？]$/.test(gapLine) ? "" : " ")
+            + `${esc(t(d.coverage_note || ""))}</div>`
           : "";
         host.innerHTML = `<div class="muted" style="margin-bottom:6px">${esc(shown)}${esc(undoneNote)}</div>`
           + evs.map(_admissionRow).join("")
@@ -323,12 +385,29 @@
       try {
         const r = await api(`/api/sources/admission/${encodeURIComponent(id)}/undo`, {method: "POST"});
         toast(t("Admission undone."), "ok");
-        loadAdmissionAudit();
-        _qualScopeCount();
+        // The WHOLE panel, not the audit and the scope line alone: an undo changes the
+        // "Collecting now" headline and the verdict tallies too, and refreshing only two
+        // of the three left the headline contradicting the scope sentence right under
+        // it until a reload (click-through S2). loadQualificationGates repaints the
+        // headline and re-runs the scope count, the audit and the overlay editor --
+        // the same refresh adopt and revert already use -- and _qualRefresh adds the
+        // backlog line, which has its own loader (re-walk S-3).
+        _qualRefresh();
       } catch (e) {
         toast(_apiErrorMessage(e), "err");
         if (btn) btn.disabled = false;
       }
+    }
+
+    // EVERY WRITE ON THIS PANEL REFRESHES BOTH OF ITS LOADERS. loadQualificationGates
+    // repaints the headline, the scope line, the audit and the overlay editor; the
+    // "Catch up the backlog" line has a loader of its own, and an undo, an adopt or a
+    // revert that ran only the first left "5 candidates awaiting qualification" under a
+    // headline that already said 6 until a reload (re-walk S-3, the class of F1). The
+    // section opener and the language switch already call both; the writes call this.
+    function _qualRefresh() {
+      loadQualificationGates();
+      if (typeof loadQualifyBulk === "function") loadQualifyBulk();
     }
 
     // THE SHIPPED-OVERLAY EDITOR (ruling Q1106 = a): adopt / export / revert over the
@@ -352,33 +431,40 @@
           return;
         }
         const since = f.generated_at
-          ? ` · ${t("Measured up to")}: <span dir="ltr">⁨${esc(String(f.generated_at))}⁩</span>` : "";
+          ? ` · ` + ooLabelHtml(esc(t("Measured up to")), `<span dir="ltr">⁨${esc(String(f.generated_at))}⁩</span>`) : "";
         // The counts the operator needs BEFORE pressing anything, each answering one
         // question: what the file holds, what this install already took from it, and what
         // adopting now would change. Kept apart -- a single total answers none of them.
+        // Each shipped count is ONE keyed frame chosen by the count, as the bulk run's
+        // own tally writes it: "{n} qualified" read "1 qualifiées" in French, a plural
+        // adjective on a single verdict (click-through B19, Q11).
+        const pair = (x, one, many) => {
+          const n = Number(x) || 0;
+          return tf(n === 1 ? one : many, {n: fmtNum(n, 0)});
+        };
         const head = `<div>${esc(tf("{n} verdicts ship with this install", {n: d.in_overlay}))}`
-          + ` (${esc(tf("{n} qualified", {n: d.shipped_qualified}))}`
-          + `, ${esc(tf("{n} disqualified", {n: d.shipped_disqualified}))})${since}</div>`
+          + ` (${esc(pair(d.shipped_qualified, "{n} source qualified", "{n} sources qualified"))}`
+          + `, ${esc(pair(d.shipped_disqualified, "{n} source disqualified", "{n} sources disqualified"))})${since}</div>`
           + `<div>${esc(tf("{n} of them are in force here", {n: d.adopted_here}))}`
           + ` · ${esc(tf("{n} can be put back", {n: d.revertible}))}</div>`;
         const dec = d.declined || {};
         // A refusal with its reason, never a silent skip. Drawn only when there IS one.
         const declined = (dec.judged_here_since || dec.was_curated_before)
-          ? `<div>${esc(t("Left alone by a revert"))}: `
-            + (dec.judged_here_since
+          ? `<div>` + ooLabelHtml(esc(t("Left alone by a revert")),
+              (dec.judged_here_since
                 ? esc(tf("{n} judged here since", {n: dec.judged_here_since})) + " " : "")
-            + (dec.was_curated_before
-                ? esc(tf("{n} that carried the catalogue's own stamp", {n: dec.was_curated_before})) : "")
+              + (dec.was_curated_before
+                ? esc(tf("{n} that carried the catalogue's own stamp", {n: dec.was_curated_before})) : ""))
             + `</div>`
           : "";
         // THE PREVIEW. Adopting is a write, so both directions are on the screen first --
         // including the one a reader would not think to ask about, where a shipped
         // `disqualified` verdict takes a source OUT of collection.
         const preview = d.would_adopt
-          ? `<div>${esc(t("Adopting now would"))}: `
-            + esc(tf("stamp {n} sources", {n: d.would_adopt}))
-            + (d.would_admit ? `, ${esc(tf("start collecting {n}", {n: d.would_admit}))}` : "")
-            + (d.would_withdraw ? `, ${esc(tf("stop collecting {n}", {n: d.would_withdraw}))}` : "")
+          ? `<div>` + ooLabelHtml(esc(t("Adopting now would")),
+              esc(tf("stamp {n} sources", {n: d.would_adopt}))
+              + (d.would_admit ? `, ${esc(tf("start collecting {n}", {n: d.would_admit}))}` : "")
+              + (d.would_withdraw ? `, ${esc(tf("stop collecting {n}", {n: d.would_withdraw}))}` : ""))
             + `</div>`
           : `<div class="muted">${esc(t("Adopting now would change nothing: every shipped verdict is either already in force here or overruled by one this install reached itself."))}</div>`;
         const startup = d.adopting_at_startup
@@ -405,13 +491,23 @@
       if (btn) btn.disabled = true;
       try {
         const r = await api("/api/sources/overlay/adopt", {method: "POST"});
-        toast(tf("Adopted {n} verdicts; {admitted} sources started being collected.",
-                 {n: r.adopted || 0, admitted: r.admitted || 0}), "ok");
+        // ONE WHOLE SENTENCE PER ONE/MANY COMBINATION, chosen by the counts -- the pair()
+        // idiom of loadOverlayEditor with two counts in the sentence. A single plural frame
+        // toasted "1 sources started being collected" in English itself (re-walk S-11),
+        // and fragments welded with "; " would fix English by taking the punctuation and
+        // the word order away from every other locale.
+        const n = Number(r.adopted) || 0, admitted = Number(r.admitted) || 0;
+        const frame = (n === 1)
+          ? (admitted === 1 ? "Adopted {n} verdict; {admitted} source started being collected."
+            : "Adopted {n} verdict; {admitted} sources started being collected.")
+          : (admitted === 1 ? "Adopted {n} verdicts; {admitted} source started being collected."
+            : "Adopted {n} verdicts; {admitted} sources started being collected.");
+        toast(tf(frame, {n: fmtNum(n, 0), admitted: fmtNum(admitted, 0)}), "ok");
         if (r.preference_held === false) {
           // Half an operation is worse than none if nobody is told which half.
           toast(t("The verdicts were adopted, but the startup preference could not be saved."), "err");
         }
-        loadQualificationGates();
+        _qualRefresh();
       } catch (e) { toast(_apiErrorMessage(e), "err"); }
       finally { if (btn) btn.disabled = false; }
     }
@@ -423,12 +519,18 @@
       if (btn) btn.disabled = true;
       try {
         const r = await api("/api/sources/overlay/revert", {method: "POST"});
-        toast(tf("Put back {n} sources; {undone} admissions undone.",
-                 {n: r.reverted || 0, undone: r.admissions_undone || 0}), "ok");
+        // One whole sentence per one/many combination, as the adopt toast (re-walk S-11).
+        const n = Number(r.reverted) || 0, undone = Number(r.admissions_undone) || 0;
+        const frame = (n === 1)
+          ? (undone === 1 ? "Put back {n} source; {undone} admission undone."
+            : "Put back {n} source; {undone} admissions undone.")
+          : (undone === 1 ? "Put back {n} sources; {undone} admission undone."
+            : "Put back {n} sources; {undone} admissions undone.");
+        toast(tf(frame, {n: fmtNum(n, 0), undone: fmtNum(undone, 0)}), "ok");
         if (r.preference_held === false) {
           toast(t("The sources were put back, but the startup preference could not be saved, so the next start will adopt them again."), "err");
         }
-        loadQualificationGates();
+        _qualRefresh();
       } catch (e) { toast(_apiErrorMessage(e), "err"); }
       finally { if (btn) btn.disabled = false; }
     }
@@ -438,7 +540,7 @@
       if (btn) btn.disabled = true;
       try {
         const res = await fetch("/api/diagnostics/source-qualification-export?fmt=yaml");
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        if (!res.ok) throw new Error(_apiErrorMessage(await res.json().catch(() => null), res));
         _overlaySaveAs(await res.text(), "source_qualification.yml");
         toast(t("Exported what this install measured."), "ok");
       } catch (e) { toast(_apiErrorMessage(e), "err"); }
@@ -455,7 +557,6 @@
 
     async function overlayMerge(btn) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
-      const tf = _qualTf;
       const out = $("qual-ov-merge-out");
       const picker = $("qual-ov-files");
       const body = new FormData();
@@ -465,36 +566,75 @@
       // result the record would drop what this machine measured.
       body.append("include_this_instance", "true");
       if (btn) btn.disabled = true;
+      _qualMergeLast = null;
+      _qualMergeRefusal = null;
       if (out) out.textContent = t("Merging…");
       try {
         const res = await fetch("/api/diagnostics/source-qualification-merge",
                                 {method: "POST", body});
-        const d = await res.json();
-        if (!res.ok) throw new Error(d && d.detail ? d.detail : `HTTP ${res.status}`);
-        const rep = d.report || {};
-        const conflicts = (rep.conflicts || []).length;
-        const lines = [
-          `<div>${esc(tf("{n} verdicts in the merged file", {n: d.merged_verdicts || 0}))}`
-          + ` · ${esc(tf("{n} added", {n: rep.added || 0}))}`
-          + ` · ${esc(tf("{n} updated", {n: rep.updated || 0}))}`
-          + ` · ${esc(tf("{n} carried through untouched", {n: rep.carried_through_untouched || 0}))}</div>`,
-          `<div class="muted">${(rep.inputs || []).map((i) =>
-            `${esc(i.name)} (${esc(String(i.verdicts))})`).join(" · ")}</div>`,
-        ];
-        if (conflicts) {
-          // A disagreement between instances is a FINDING. Named, listed, and left at
-          // whatever the existing file said -- never resolved on the operator's behalf.
-          lines.push(`<div class="card-caveat">${esc(tf("{n} domains disagree across instances and were left unchanged", {n: conflicts}))}`
-            + ` ${esc(t(d.conflicts_note || ""))}</div>`);
-          lines.push(`<div class="muted" dir="ltr">${(rep.conflicts || []).slice(0, 20)
-            .map((c) => esc(`${c.domain}: ${(c.verdicts || []).join(" / ")}`)).join("<br>")}</div>`);
+        // The server's refusal is the answer the operator needs ("…: not valid JSON",
+        // "no 'verdicts' list"), so it is read through the shared helper WITH the
+        // response -- a plain-text error body parses to null and still says its status.
+        // A refusal that carries its keyed frame (`detail_i18n` / `detail_vars`: the
+        // core's sentence with the file name as a data slot) is written in the UI
+        // language and KEPT, so a language switch redraws it as it does a report; the
+        // English `detail` stays the command line's words (re-walk S-6).
+        const d = await res.json().catch(() => null);
+        if (!res.ok) {
+          if (d && d.detail_i18n) _qualMergeRefusal = d;
+          throw new Error((d && d.detail_i18n)
+            ? _framedText(d.detail, d.detail_i18n, d.detail_vars, t) : _apiErrorMessage(d, res));
         }
-        lines.push(`<div class="card-caveat">${esc(t(d.note || ""))}</div>`);
-        if (out) out.innerHTML = lines.join("");
+        _qualMergeLast = d;
+        _renderOverlayMerge();
         _overlaySaveAs(d.overlay_yaml || "", "source_qualification.yml");
       } catch (e) {
+        _qualMergeLast = null;
         if (out) out.textContent = _apiErrorMessage(e);
       } finally { if (btn) btn.disabled = false; }
+    }
+
+    // The last merge's report, KEPT so a language switch can repaint it from what it
+    // already holds (the frozen-locale class, click-through S3): its lines are tf()
+    // frames welded to the report's counts, which the i18n walker cannot re-derive.
+    let _qualMergeLast = null;
+    // The last KEYED refusal, kept for the same reason: a switch after a refused merge
+    // must redraw the refusal in the new language, never leave the old one or paint an
+    // earlier report over it. A refusal with no frame is data and is left as shown.
+    let _qualMergeRefusal = null;
+    function _renderOverlayMerge() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      const tf = _qualTf;
+      const out = $("qual-ov-merge-out");
+      const d = _qualMergeLast;
+      if (out && !d && _qualMergeRefusal) {
+        const r = _qualMergeRefusal;
+        out.textContent = _framedText(r.detail, r.detail_i18n, r.detail_vars, t);
+        return;
+      }
+      if (!out || !d) return;
+      const rep = d.report || {};
+      const conflicts = (rep.conflicts || []).length;
+      const lines = [
+        `<div>${esc(tf("{n} verdicts in the merged file", {n: d.merged_verdicts || 0}))}`
+        + ` · ${esc(tf("{n} added", {n: rep.added || 0}))}`
+        + ` · ${esc(tf("{n} updated", {n: rep.updated || 0}))}`
+        + ` · ${esc(tf("{n} carried through untouched", {n: rep.carried_through_untouched || 0}))}</div>`,
+        // The server names its own verdicts "this instance" (route "measured here"): that
+        // one is a label, so it is keyed; an uploaded file's name is data and stays as is.
+        `<div class="muted">${(rep.inputs || []).map((i) =>
+          `${esc(i.route === "measured here" ? t("this instance") : i.name)} (${esc(String(i.verdicts))})`).join(" · ")}</div>`,
+      ];
+      if (conflicts) {
+        // A disagreement between instances is a FINDING. Named, listed, and left at
+        // whatever the existing file said -- never resolved on the operator's behalf.
+        lines.push(`<div class="card-caveat">${esc(tf("{n} domains disagree across instances and were left unchanged", {n: conflicts}))}`
+          + ` ${esc(t(d.conflicts_note || ""))}</div>`);
+        lines.push(`<div class="muted" dir="ltr">${(rep.conflicts || []).slice(0, 20)
+          .map((c) => esc(`${c.domain}: ${(c.verdicts || []).join(" / ")}`)).join("<br>")}</div>`);
+      }
+      lines.push(`<div class="card-caveat">${esc(t(d.note || ""))}</div>`);
+      out.innerHTML = lines.join("");
     }
 
     async function _qualPut(body) {
@@ -504,15 +644,26 @@
       try {
         await api("/api/scheduler/config", {method: "PUT", body: JSON.stringify(body)});
         toast(t("Saved."), "ok");
-        loadQualificationGates();
+        _qualRefresh();
       } catch (e) { toast(_apiErrorMessage(e), "err"); }
     }
 
-    function _qualDeclinedText(reason, env) {
+    // The memory floor's refusal, in the UI language. Its REASON -- what this machine
+    // measured, against which half of the floor -- arrives as a keyed frame beside the
+    // English sentence (`reason_i18n` / `reason_vars`, src/config/machine_floor.py), and is
+    // written by the job-line rules: the megabytes are formatted numbers, each clause is a
+    // key. Printed raw it was an English parenthesis inside a French refusal (re-walk S-5).
+    // A payload with no frame (an older server, a test double) still shows the English as
+    // data, never nothing.
+    function _qualDeclinedText(reason, env, frame, vars) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      return t("Qualification is declined on this machine: it is below the memory floor, so no candidate is judged.")
-        + (reason ? " (" + reason + ")" : "")
-        + " " + _qualTf("To run it anyway, restart the app with {env}=1.", { env: env || "OO_ALLOW_BIG_SCANS" });
+      const why = reason ? _framedText(reason, frame, vars, t) : "";
+      const lead = t("Qualification is declined on this machine: it is below the memory floor, so no candidate is judged.");
+      // A full-width stop carries its own spacing; a Latin space after it reads as a typo.
+      const sep = /[。！？]$/.test(lead) ? "" : " ";
+      return lead
+        + (why ? sep + "(" + why + ")" + " " : sep)
+        + _qualTf("To run it anyway, restart the app with {env}=1.", { env: env || "OO_ALLOW_BIG_SCANS" });
     }
 
     async function loadQualifyBulk() {
@@ -525,19 +676,48 @@
         const backlog = (bl.unqualified || 0) + (bl.due_disqualified || 0);
         const cancelBtn = $("qualify-bulk-cancel-btn");
         if (st.running) {
-          out.textContent = (st.detail || t("Working…"))
-            + (st.progress ? ` (${st.done}/${st.total})` : "");
+          // The job's line with its keyed frame, as the run's own progress writes it --
+          // a panel opened mid-run showed the English detail on a translated page.
+          out.textContent = (st.detail ? _framedText(st.detail, st.detail_i18n, st.detail_vars, t) : t("Working…"))
+            + (st.progress ? ` (${fmtNum(st.done, 0)}/${fmtNum(st.total, 0)})` : "");
           if (cancelBtn) cancelBtn.style.display = "";
         } else {
+          // A SENTENCE, one keyed frame per count with its full stop inside: the decline
+          // below follows on the same line, and "6 candidates awaiting qualification
+          // Qualification is declined…" read as one run-on clause (re-walk S-12). The
+          // singular frame also stops "1 candidates" in English.
           out.textContent = backlog
-            ? `${fmtNum(backlog)} ${esc(t("candidates awaiting qualification"))}`
+            ? _qualTf(backlog === 1 ? "{n} candidate awaiting qualification." : "{n} candidates awaiting qualification.",
+                      {n: fmtNum(backlog, 0)})
             : t("No candidates awaiting qualification.");
           // FD03 = a (2026-09-24): below the memory floor every qualification pass
           // declines. Said here, with the switch that lifts it, rather than left for
           // the operator to infer from a backlog that never moves.
           const fl = st.floor || {};
           if (fl.declines) {
-            out.textContent += " " + _qualDeclinedText(fl.reason, fl.override_env);
+            out.textContent += (/[。！？]$/.test(out.textContent) ? "" : " ")
+              + _qualDeclinedText(fl.reason, fl.override_env, fl.reason_i18n, fl.reason_vars);
+          }
+          // A CONTROL THAT RENDERS CLAIMS ITS CAPABILITY (re-walk S-7): below the floor the
+          // job declines, so the button that starts it is disabled and DESCRIBED BY the
+          // line above it, which names the refusal and its override -- it used to open the
+          // network-consent popup and offer to take the whole app online for a job that
+          // then did nothing. Not a `title`: the i18n walker keeps a static element's
+          // first-seen attribute as its English original and re-applies it on every pass,
+          // so a title set here froze in the language it was first written in (measured:
+          // English on the fr and ar pages). Only a state THIS loader set is lifted again,
+          // so a run in flight keeps its own.
+          const btn = $("qualify-bulk-btn");
+          if (btn) {
+            if (fl.declines) {
+              btn.disabled = true;
+              btn.dataset.floorDeclined = "1";
+              btn.setAttribute("aria-describedby", "qualify-bulk-status");
+            } else if (btn.dataset.floorDeclined === "1") {
+              btn.disabled = false;
+              delete btn.dataset.floorDeclined;
+              btn.removeAttribute("aria-describedby");
+            }
           }
           if (cancelBtn) cancelBtn.style.display = "none";
         }
@@ -547,6 +727,18 @@
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const out = $("qualify-bulk-status");
       const say = (msg) => { if (out) out.textContent = msg; };
+      // THE REFUSAL COMES BEFORE THE CONSENT POPUP (re-walk S-7). Below the memory floor the
+      // job declines without judging anything, so asking to take the app online for it
+      // would name an action that never egresses. The floor is read over loopback first;
+      // a declining machine gets the named refusal and a disabled button instead. If the
+      // read fails, the job still refuses by name on its own, so nothing is hidden.
+      try {
+        const pre = await api("/api/sources/qualify-bulk/status");
+        if (pre && pre.floor && pre.floor.declines) {
+          if (typeof loadQualifyBulk === "function") loadQualifyBulk();
+          return;
+        }
+      } catch (e) { /* the job's own decline still names itself */ }
       if (typeof ensureOnline === "function"
           && !await ensureOnline(t("Qualify the source backlog — a background job that trial-fetches a few articles from each candidate to judge extraction validity")))
         return;
@@ -563,8 +755,10 @@
           intervalMs: 4000,
           onProgress: (s) => {
             if (!s) return;
-            const p = s.progress ? ` ${s.done}/${s.total}` : "";
-            say((s.detail || t("Working…")) + p);
+            const p = s.progress ? ` ${fmtNum(s.done, 0)}/${fmtNum(s.total, 0)}` : "";
+            // The job's line arrives with its keyed frame (detail_i18n / detail_vars), so
+            // it is written in the UI language, not piped through in English (B19, Q12).
+            say((s.detail ? _framedText(s.detail, s.detail_i18n, s.detail_vars, t) : t("Working…")) + p);
           },
         });
         if (st && st.state === "error") {
@@ -575,12 +769,22 @@
         } else if (st && st.result && st.result.declined) {
           // A named refusal, never "0 qualified" read as a finished run (QUAL-1).
           const d = st.result.declined;
-          say(_qualDeclinedText(d.reason, d.override_env));
+          say(_qualDeclinedText(d.reason, d.override_env, d.reason_i18n, d.reason_vars));
         } else if (st && st.result) {
+          // Each count is ONE keyed frame chosen by the count, the noun inside it
+          // (click-through B17, T12): a number welded to an adjective keyed in the
+          // singular read "3 qualifié" in French, and a locale could not agree the word
+          // with its number. The singular frame is for one, as the app's other pairs.
           const r = st.result;
-          say(`${r.qualified || 0} ${t("qualified")} · ${r.disqualified || 0} ${t("disqualified")} · `
-            + `${r.no_evidence || 0} ${t("no evidence yet")}`
-            + (r.paused_reason ? ` — ${r.paused_reason}` : ""));
+          const tally = (x, one, many) => {
+            const n = Number(x) || 0;
+            return _qualTf(n === 1 ? one : many, {n: fmtNum(n, 0)});
+          };
+          say(tally(r.qualified, "{n} source qualified", "{n} sources qualified") + " · "
+            + tally(r.disqualified, "{n} source disqualified", "{n} sources disqualified") + " · "
+            + tally(r.no_evidence, "{n} source with no evidence yet", "{n} sources with no evidence yet")
+            + (r.paused_reason
+              ? " — " + _framedText(r.paused_reason, r.paused_reason_i18n, r.paused_reason_vars, t) : ""));
         }
       } catch (e) {
         say(t("Qualification failed — see console"));
@@ -822,7 +1026,10 @@
       if (!el) return;
       el.style.cursor = "pointer";
       el.onclick = aiPillClick;
-      el.textContent = "AI";      // constant footprint, never a count
+      // Constant footprint, never a count. The pill carries `data-i18n-dyn` (its hover is
+      // state-driven, and the walker reverted it to the markup's "AI status"), so it
+      // writes its own word through t() (click-through B19, Q7).
+      el.textContent = t("AI");
 
       // STARTING outranks the last health reading on purpose: we know we just asked
       // for a start, which makes any earlier "offline" reading stale by definition.
@@ -837,8 +1044,13 @@
       if (h && h.available) {
         if (_aiBusy()) {
           el.className = "pill ok ai-busy";
-          el.title = (_aiBusyLabel ? _aiBusyLabel + " — " : "")
-            + t("AI is working right now");
+          // The label is written HERE, at paint time, from the keyed twin the server
+          // sends beside it (the task-manager rows' own label_i18n / label_vars), so a
+          // language switch rewrites it with no request. A model name is data.
+          const busy = !_aiBusyLabel ? ""
+            : (_aiBusyLabel.data != null ? _aiBusyLabel.data
+              : (typeof _jobLabel === "function" ? _jobLabel(_aiBusyLabel, t) : t(_aiBusyLabel.label)));
+          el.title = (busy ? busy + " — " : "") + t("AI is working right now");
         } else {
           el.className = "pill ok";
           el.title = t("AI — click to open AI settings");
@@ -866,10 +1078,21 @@
       }
       // V4 (2026-07-29): the red pill must name the REAL situation. `no_backend`
       // means NOTHING is reachable (not merely that the selected backend is down),
-      // so lead with the server's own resolution sentence (`backend_reason` —
-      // English server text, the same class as `h.detail`) instead of a generic
-      // "offline".
-      const why = h.no_backend ? (h.backend_reason || h.detail || "") : (h.detail || "");
+      // so it leads with that fact instead of a generic "offline".
+      //
+      // In the UI language (2026-09-27 re-walk T-7). The lead used to be the server's
+      // own resolution sentence, `backend_reason`, which is English composed at run
+      // time ("no GPU detected (or vLLM unavailable), and Ollama is NOT reachable
+      // either -- …"), so a French, Arabic or Chinese hover opened in English. What
+      // `no_backend` asserts is fixed -- the server sets it exactly when neither Ollama
+      // nor vLLM answers (src/llm/backend.py _result) -- so that fact is one keyed
+      // sentence here. The server's full reason, with which hardware and which backend
+      // it chose, stays one click away: the pill opens Settings -> AI, whose "Active
+      // backend" line prints it. `h.detail` below is still the client's English
+      // exception text; it has no keyed twin on the server yet.
+      const why = h.no_backend
+        ? t("No AI backend is reachable right now — neither Ollama nor vLLM answers.")
+        : (h.detail || "");
       el.title = (why ? why + " — " : "")
         + t("AI is offline — click to start it, or open AI settings to install one");
     }
@@ -911,7 +1134,9 @@
           // MODEL is still a real fact worth putting in the title, and the counter
           // alone carries no words. Both come from the same payload — this composes
           // what is there, it does not invent a label when there is none.
-          _aiBusyLabel = (a && (a.label || (a.models || [])[0])) || null;
+          _aiBusyLabel = (a && a.label)
+            ? { label: a.label, label_i18n: a.label_i18n || null, label_vars: a.label_vars || null }
+            : ((a && (a.models || [])[0]) ? { data: String(a.models[0]) } : null);
           if (was !== _aiBusyServer) _paintAiPill();
           else if (_aiBusyServer) _paintAiPill();   // the label may have moved on
         } catch (e) { /* transient -- keep the last known state, never invent one */ }
@@ -925,6 +1150,9 @@
       if (!el) return;
       try { _aiHealth = await api("/api/llm/health"); }
       catch (e) { _aiHealth = null; }    // null = the probe failed, never a fake "fine"
+      // The pill writes its own words now (data-i18n-dyn): at boot this read can beat the
+      // locale fetch, so it paints once the locale is in (OOI18N.ready), never in English.
+      try { await (window.OOI18N && OOI18N.ready); } catch (e) { /* English fallback */ }
       _paintAiPill();
       _ensureAiActivityPoll();           // only polls while a backend is actually up
     }
@@ -1166,23 +1394,32 @@
     }
 
     function _hwChips(gpu, cap) {
+      // The label, the fallback value and every hover are keyed x12 (click-through B16,
+      // V8): "Cores" and the two GPU sentences were the English left on a French card.
+      // GPU / VRAM / RAM stay as written -- they are the same abbreviations in every locale.
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const chip = (label, value, title) =>
         `<span class="pill" title="${esc(title || "")}"><span class="muted">${esc(label)}</span> ${esc(value)}</span>`;
       const out = [];
       if (gpu && gpu.available) {
-        out.push(chip("GPU", gpu.name || "detected", "A dedicated GPU was detected, so vLLM can serve here."));
-        if (gpu.vram_mb) out.push(chip("VRAM", Math.round(gpu.vram_mb / 1024) + " GB", ""));
+        out.push(chip("GPU", gpu.name || t("detected"), t("A dedicated GPU was detected, so vLLM can serve here.")));
+        // Sizes through the one localised writer (Y9), from bytes: the probe reports
+        // MiB (nvidia-smi) and the RAM figure GiB (psutil / 1024**3), the same binary
+        // steps `_sizeText` divides by, so the number is unchanged and only the unit's
+        // written form follows the UI language. Whole GB for VRAM, as before.
+        if (gpu.vram_mb) out.push(chip("VRAM", _sizeText(gpu.vram_mb * 1048576, () => 0), ""));
       } else {
-        out.push(chip("GPU", (window.OOI18N && OOI18N.t ? OOI18N.t("none detected") : "none detected"),
-          "No dedicated GPU was found. vLLM needs one; Ollama runs on the CPU."));
+        out.push(chip("GPU", t("none detected"),
+          t("No dedicated GPU was found. vLLM needs one; Ollama runs on the CPU.")));
       }
       // Field names read from inference_capability()'s real payload, not assumed:
       // total_ram_gb / cpu_cores / unified_ram_gb. A missing one is omitted rather
       // than rendered as a blank chip.
       if (cap) {
         const ram = cap.total_ram_gb || cap.unified_ram_gb;
-        if (ram) out.push(chip("RAM", ram + " GB", cap.method || ""));
-        if (cap.cpu_cores) out.push(chip("Cores", String(cap.cpu_cores), ""));
+        // The method is a FIXED server sentence (backend.py _CAPABILITY_METHOD), keyed.
+        if (ram) out.push(chip("RAM", _sizeText(ram * 1073741824, (i, v) => (v % 1 ? 1 : 0)), cap.method ? t(cap.method) : ""));
+        if (cap.cpu_cores) out.push(chip(t("Cores"), String(cap.cpu_cores), ""));
       }
       return `<div class="row" style="gap:6px;flex-wrap:wrap;margin-top:6px">${out.join("")}</div>`;
     }
@@ -1289,21 +1526,28 @@
       if (!box) return;
       let r = null;
       try { r = await api("/api/llm/model-store"); } catch (e) { box.textContent = ""; return; }
-      const gb = (n) => (n === null || n === undefined) ? "" : ` <span class="muted">(${(n / 1e9).toFixed(1)} GB)</span>`;
+      // Sizes through the app's ONE size writer (click-through B17, T8): this helper wrote
+      // "GB" by hand, so the unit stayed English in every locale and "0.0 GB" was all a
+      // few-megabyte store could say. _fmtBytes keys the unit and picks it by magnitude.
+      const gb = (n) => (n === null || n === undefined) ? "" : ` <span class="muted">(${esc(_fmtBytes(n))})</span>`;
       let html = `<div>${esc(t("Models are stored in"))} <code>${esc(r.root)}</code></div>`;
       // The path IN USE leads when it is not the app's: printing the configured one
       // (near-empty) beside a size reads as "you have no models" to an operator whose
       // real store holds twenty GB, which is how "the app downloaded them into
       // ~/.ollama" gets discovered by opening a file manager instead of this panel.
+      // Each "label: path" through the locale's own separator ("dossier de l'app, inutilisé :"),
+      // never an English colon welded after the label (click-through B16, V14).
       if (r.ollama.in_app_folder === false) {
-        html += `<div style="margin-top:2px">Ollama: <code>${esc(r.ollama.detected)}</code>` +
+        html += `<div style="margin-top:2px">` + ooLabelHtml("Ollama", `<code>${esc(r.ollama.detected)}</code>`) +
                 `${gb(r.ollama.detected_bytes)} <span class="muted">${esc(t("in use"))}</span></div>` +
-                `<div class="muted">${esc(t("app folder, not in use"))}: ` +
-                `<code>${esc(r.ollama.configured)}</code>${gb(r.ollama.bytes)}</div>`;
+                `<div class="muted">` + ooLabelHtml(esc(t("app folder, not in use")),
+                  `<code>${esc(r.ollama.configured)}</code>`) + `${gb(r.ollama.bytes)}</div>`;
       } else {
-        html += `<div style="margin-top:2px">Ollama: <code>${esc(r.ollama.configured)}</code>${gb(r.ollama.bytes)}</div>`;
+        html += `<div style="margin-top:2px">` + ooLabelHtml("Ollama", `<code>${esc(r.ollama.configured)}</code>`) +
+                `${gb(r.ollama.bytes)}</div>`;
       }
-      html += `<div>Hugging Face: <code>${esc(r.huggingface.configured)}</code>${gb(r.huggingface.bytes)}</div>`;
+      html += `<div>` + ooLabelHtml("Hugging Face", `<code>${esc(r.huggingface.configured)}</code>`) +
+              `${gb(r.huggingface.bytes)}</div>`;
       // A SPLIT is its own state, and it is the one the operator actually reported
       // ("models did download into ~/.ollama, yet there is another folder containing
       // ollama models in .../data/models/ollama"). It is NOT covered by the note above:
@@ -1753,7 +1997,7 @@
         const lg = s.server_log || {};
         const gap = lg.elided_bytes > 0
           ? `<p class="muted">${esc(OOI18N && OOI18N.tf
-              ? OOI18N.tf("… {n} bytes not shown …", {n: lg.elided_bytes.toLocaleString()})
+              ? OOI18N.tf("… {n} bytes not shown …", {n: fmtNum(lg.elided_bytes, 0)})
               : `… ${lg.elided_bytes} bytes not shown …`)}</p>`
           : "";
         const pre = (txt) => `<pre style="max-height:16em;overflow:auto;white-space:pre-wrap">${esc(txt)}</pre>`;
@@ -1990,12 +2234,19 @@
           const tone = (f.avg_tone != null)
             ? `<span class="pill ${cls}">${esc(f.tone_label || '')} ${f.avg_tone.toFixed(2)}</span>`
             : `<span class="muted" title="${esc(tLoc('VADER is an English lexicon: tone is measured only for English coverage. No tone here means unmeasured — not neutral.'))}">—</span>`;
-          return `<tr><td>${esc(f.source)}</td>
+          // The outlet and its emphasised terms are DATA: data-i18n-dyn keeps the DOM walker
+          // from translating a word that happens to equal an interface key (re-walk M-15).
+          return `<tr><td data-i18n-dyn>${esc(f.source)}</td>
                <td>${tone}</td>
                <td class="muted">${f.article_count}</td>
-               <td class="muted" style="font-size:12px">${(f.top_terms||[]).slice(0,6).map(esc).join(", ")}</td></tr>`;
+               <td class="muted" style="font-size:12px" data-i18n-dyn>${(f.top_terms||[]).slice(0,6).map(esc).join(", ")}</td></tr>`;
         }).join("");
-        el.innerHTML = `<table><tr><th>Outlet</th><th>Tone (VADER)</th><th>#</th><th>Emphasised terms</th></tr>${rows}</table>
+        // The caveat is the server's fixed English sentence, and a locale KEY (re-walk M-10):
+        // left as its own text node so the DOM walker translates it and re-translates it
+        // on a language switch, like the headers beside it. The table scrolls in its own box:
+        // four columns of translated headers do not fit a 375 px phone in de or ru, and it
+        // pushed the whole page sideways instead (the re-walk review of M-8).
+        el.innerHTML = `<div style="overflow-x:auto"><table><tr><th>Outlet</th><th>Tone (VADER)</th><th>#</th><th>Emphasised terms</th></tr>${rows}</table></div>
           <div class="hint">${esc(d.caveat||"")}</div>`;
       } catch (e) {
         el.innerHTML = "<span class='muted'>Framing unavailable (needs the [analysis] extra installed).</span>";

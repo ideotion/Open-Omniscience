@@ -43,6 +43,39 @@ def story_key(story: dict[str, Any]) -> StoryKey:
     return ",".join(str(int(i)) for i in (story.get("article_ids") or []))
 
 
+def _term_languages(edition: dict[str, Any]) -> dict[str, str]:
+    """{normalized term: recorded language} from the edition's own keyword sections."""
+    out: dict[str, str] = {}
+    for section in edition.get("sections") or []:
+        for row in section.get("terms") or []:
+            if not isinstance(row, dict):
+                continue
+            norm = str(row.get("normalized") or "").strip().casefold()
+            lang = str(row.get("language") or "").strip().casefold()
+            if norm and lang and lang != "?":
+                out.setdefault(norm, lang)
+    return out
+
+
+def story_term_rows(story: dict[str, Any], langs: dict[str, str] | None = None) -> list[dict]:
+    """A story's shared terms as keyword ROWS -- term, key, recorded language (re-walk M-3/M-5).
+
+    A story built since the stories carried ``shared_term_rows`` answers with those. An
+    older record has only the names, so each is looked up in the edition's own keyword
+    sections (``langs``) and otherwise travels with no language -- untagged rather than
+    tagged with a guess.
+    """
+    rows = story.get("shared_term_rows")
+    if isinstance(rows, list) and rows:
+        return [dict(r) for r in rows if isinstance(r, dict) and r.get("term")]
+    langs = langs or {}
+    out = []
+    for t in story.get("shared_terms") or []:
+        norm = str(t).strip().casefold()
+        out.append({"term": t, "normalized": norm, "language": langs.get(norm)})
+    return out
+
+
 def review_view(edition: dict[str, Any]) -> dict[str, Any]:
     """The edition as a set of decisions, with the evidence for each one.
 
@@ -71,6 +104,11 @@ def review_view(edition: dict[str, Any]) -> dict[str, Any]:
             row["error"] = s["error"]
         if s.get("skipped"):
             row["skipped"] = s["skipped"]
+            # A reason that carries numbers travels as its frame and values too, so the
+            # review panel translates the frame and fills it (click-through B16, V5).
+            if s.get("skipped_i18n"):
+                row["skipped_i18n"] = s["skipped_i18n"]
+                row["skipped_vars"] = s.get("skipped_vars") or {}
         sections.append(row)
 
     by_key = {}
@@ -78,6 +116,7 @@ def review_view(edition: dict[str, Any]) -> dict[str, Any]:
         by_key[",".join(str(int(i)) for i in (para.get("article_ids") or []))] = para
 
     stories = []
+    langs = _term_languages(edition)
     for st in (edition.get("stories") or {}).get("stories") or []:
         k = story_key(st)
         para = by_key.get(k) or {}
@@ -89,6 +128,7 @@ def review_view(edition: dict[str, Any]) -> dict[str, Any]:
                 "distinct_sources": st.get("distinct_sources"),
                 "single_source": st.get("single_source", False),
                 "shared_terms": st.get("shared_terms") or [],
+                "shared_term_rows": story_term_rows(st, langs),
                 "narrated": bool(nar.get("narrated")),
                 "partial": bool(nar.get("partial")),
                 "fallback_reason": nar.get("fallback_reason"),

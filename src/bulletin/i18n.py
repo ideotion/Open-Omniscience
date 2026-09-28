@@ -161,6 +161,11 @@ class Translator:
         # document owes no line) and a falsy check would recompose forever.
         self._disclosed: str | None = None
         self._composed = False
+        # The recorded language of each keyword the record names, keyed by its
+        # normalized form (M7). Filled by the renderer from the rows that carry one,
+        # so a row that does not (the across-channels rows name only the term) is
+        # still labelled by the SAME fact the rising row beside it states.
+        self.term_languages: dict[str, str] = {}
 
     # -- resolution ------------------------------------------------------- #
 

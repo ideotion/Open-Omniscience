@@ -1,0 +1,513 @@
+{
+ "row": "J",
+ "steps_walked": {
+  "row": "J",
+  "title": "The export: each backup gets its own dated folder, a checksum re-read, a completion panel, and a BACKUP_SUMMARY.md file",
+  "prerequisites": [
+   "TWO SETUPS. J1-J6 use a THROWAWAY data folder, so nothing you rely on is touched. J7-J8 use YOUR OWN encrypted install, unlocked; those are the steps that close the row.",
+   "Throwaway: in a terminal, go to the app folder (the one that contains .venv). Seed it: OO_DATA_DIR=$HOME/oo-throwaway OO_DB_PLAINTEXT=1 .venv/bin/python scripts/ui_clickthrough_seed.py (the full synthetic corpus, not --mini; it includes one tracked Wikipedia page and one tracked legal document, which is what makes two licence lines appear). Start it: OO_DATA_DIR=$HOME/oo-throwaway OO_DB_PLAINTEXT=1 OO_NO_SCHEDULER=1 .venv/bin/python -m uvicorn src.api.main:app --host 127.0.0.1 --port 8010 (the recipe the sandbox walks used). Open http://127.0.0.1:8010. If a first-run screen appears (language, terms, guide), pick English, accept, and close the guide. Undo when finished: Ctrl+C in that terminal, then delete ~/oo-throwaway and ~/oo-export-test.",
+   "A scratch parent folder for the throwaway exports, e.g. /home/<you>/oo-export-test. The export creates it if it is missing, but you must TYPE IT AS A FULL PATH starting with '/'. The app does not expand '~': '~/oo-export-test' would create a folder literally named '~' inside the app folder.",
+   "Network: nothing in this row uses it and no consent popup should appear. The throwaway is started with OO_NO_SCHEDULER=1, which never collects but also does not switch airplane mode on, so its plane icon may look unfilled; leave it alone. On your own install, keep airplane mode ON (filled plane) during J7-J8 so no collection changes the article count mid-check. If a network-consent popup ever appears during this row, cancel it and report it: that would be a finding.",
+   "For J7: a removable drive (USB stick or external disk), mounted, with free space of at least 1.5× the Corpus size the dialog shows, plus the size of any large-data rows you plan to tick. The app checks this before writing and refuses with a named message if the drive is too small.",
+   "For J7: keep the browser tab open, don't reload, and keep the computer awake until the completion panel appears. BACKUP_SUMMARY.md is written by the page at the very end, so a reload or closed tab mid-export leaves the folder without it (see notes).",
+   "For J3/J8: a terminal in the app folder. The check command only reads volumes.json and lists the folder; it writes nothing. A file manager and a text editor are enough for the rest."
+  ],
+  "steps": [
+   {
+    "id": "J1",
+    "where": "Throwaway app → Settings (gear button at the bottom of the left sidebar) → Data & backup (subtab in the strip under the top bar; #set-subtabs data-tab=data, view #set-data) → panel 'Export / Backup' → button 'Export / Back up…' → dialog 'Export / Backup' (#ux-export). Then: top-bar '?' (Help & documentation) → User Manual → 'Find on this page…' box (#doc-find)",
+    "do": "Open the dialog and read it top to bottom before typing anything. Hover three things: the hint 'Each export makes its own dated folder here…', the switch 'Re-read every volume after writing and check it (verify)', and the greyed 'Living sources' row. Then click Close and click the '?' in the top bar; the User Manual opens by itself. Type 'never scheduled' in its 'Find on this page…' box.",
+    "expect": "(a) The line under the title reads 'What do you want to back up?', and every row shows a count and a size before anything runs. 'Corpus (N articles · N sources · N dates · N keywords · size)' is ticked. 'LLM models', 'Offline maps' and 'Wikipedia dumps' each show '(n · size)': ticked if they hold anything (everything is the default), greyed if empty. LLM models also reads this computer's own Ollama store (e.g. ~/.ollama/models), so it can show real gigabytes even here. 'Living sources (n · size)' is always greyed, and its hover reads 'a lane is a live encrypted database; its backup format is not settled yet'. The last row, 'Carry them inside the encrypted backup', is unticked and greyed whenever none of the three large-data rows is ticked. (b) The hint reads 'Each export makes its own dated folder here, named like 202609121045_OpenOmniscience_Backup.', with OpenOmniscience spelled out and never OOS. Its hover says the name is the LOCAL date and time the export started, that a second export in the same minute gets _2, _3, and that an existing folder is never written into. (c) The verify switch is TICKED. Its hover says it reads every byte a second time, roughly doubling the time on a slow drive, and that it is the only thing that catches a drive that accepted the write and stored something else. (d) This hint is visible: 'Every export writes a full new backup — nothing is reused from an earlier one, so it costs the time and the space of everything you selected.' (e) There is no schedule, repeat, timer, daily or automatic option anywhere in the dialog. The manual highlights 'Exports are never scheduled. There is no automatic or timed export and none is planned — an export is a deliberate act'.",
+    "flags": [
+     "needs-seed-data"
+    ],
+    "evidence": "src/static/index.html:102 (Settings button), 1558 (Data & backup subtab), 1942-1947 (panel + button), 3314-3340 (#ux-export: dated-folder hint + hover 3321, #ux-verify checked + hover 3324, full-new-backup hint 3326, #ux-summary 3336); src/static/app-backup.js:240-306 (_uxLoadInventory: sizes, present = checked, Living sources disabled with reason, 'Carry them inside' row 297), 319-329 (_uxSyncInside); src/backup/inventory.py:64-152; src/static/app-settings.js:28-35 (Help opens user-manual); docs/USER_MANUAL.md:1326-1328; docs/audit/export-folder-clickthrough-2026-09-16/coverage.csv (export_dialog_* rows)"
+   },
+   {
+    "id": "J2",
+    "where": "Throwaway app → Settings → Data & backup → Export / Back up… (#ux-export) → 'Destination folder (on this machine / a mounted drive)' (#ux-dest) → 'Passphrase — encrypts the corpus (no recovery for a lost passphrase)' (#ux-pass) → 'Back up' (#ux-run); the result appears in the progress line (#ux-progress) and the panel under it (#ux-summary)",
+    "do": "Untick LLM models, Offline maps and Wikipedia dumps if any is ticked; copying them makes this test slow and large. Leave 'Carry them inside the encrypted backup' unticked. In 'Destination folder' type the FULL path of the scratch parent, e.g. /home/<you>/oo-export-test, never '~/…'. Alternatively use Browse… → 'Pick a folder' → 'Use this folder', which only works for a folder that already exists. Type any throwaway passphrase and leave verify ticked. Note the clock, then click 'Back up'; on the seeded corpus it takes seconds. Hover the first line of the panel when it appears. Undo: delete the new folder.",
+    "expect": "While it runs, the progress line flashes 'Preparing the export folder…', then 'Corpus: Preparing…', 'Corpus: Backing up… · N volumes · size', and 'Corpus: Writing parity…' if parity is available. The re-read also reads 'Corpus: Backing up…' (known gap, see notes). On this tiny corpus you may glimpse only one or two of these. It ends with 'Backup complete → /home/<you>/oo-export-test/YYYYMMDDHHMM_OpenOmniscience_Backup' and 'Included: Corpus'. The stamp is today's date plus the hour and minute you clicked, in LOCAL time. PANEL: the first line is NOT red and reads 'Verified — all N volumes were re-read and matched their checksums.' Its hover names the method: every volume re-read and its SHA-256 compared against the signed manifest, with no decryption. The rows follow in this order: 'Encrypted volumes': 'N · X on the drive · Y of content'. 'Parity (corruption recovery)': 'written', or 'none' if this .venv lacks the analysis extra (numpy). 'Rows per table': pills for the tables that hold rows, with `articles` FIRST even though `sources` and others are bigger, then 'N more tables are empty in this backup.'. 'Files copied': 'none'. 'Elapsed': e.g. '0.6 s corpus'. 'Destination': the full path ending in the dated folder. 'Encryption': 'corpus stored unencrypted in this backup' (expected on this plaintext throwaway, see notes). 'Schema version': 'oo-backup-3 · oo-volumes-2 · database <code>'. 'App version': 0.3.0, the same version shown under the brand name in the sidebar. 'Licences': exactly two lines, 'Wikipedia text — CC BY-SA 4.0 …' and 'Tracked legal documents — this corpus records NO licence metadata …'. Their hovers read 'applies because: table:wiki_pages' and 'applies because: table:law_documents'. NO line mentions OpenStreetMap or ODbL. Below the rows comes the caveat 'Every export writes a new dated folder and every volume in it: nothing is reused from an earlier backup, so this folder's bytes were all written by this one pass.' The last line is 'A summary of these facts was written beside the backup: …/BACKUP_SUMMARY.md'.",
+    "flags": [
+     "needs-seed-data"
+    ],
+    "evidence": "src/static/app-backup.js:555-689 (_uxRun: POST /api/backup/export-folder, volumes phase with verify_after_write, POST /api/backup/export-summary last at 673), 113-206 (_uxRenderExportPanel row order), 219-230 (verdict sentences), 355-384 (_uxVolPhase: backup map has only starting/building/volumes/parity/done, so 'verifying' and the stream phases fall to 'Backing up…'); src/backup/stream_backup.py:979-1149 (phases actually emitted); src/backup/volume_job.py:287-345 (verify, method string); src/backup/export_folder.py:60-130 (local time); src/backup/export_summary.py:160-246; src/backup/attribution.py:112-248; scripts/ui_clickthrough_seed.py:547-608 (one LawDocument, one WikiPage); pyproject.toml:15 (0.3.0); src/backup/artifact.py:62 (oo-backup-3); docs/audit/export-folder-clickthrough-2026-09-16/export_panel_en.png"
+   },
+   {
+    "id": "J3",
+    "where": "File manager → /home/<you>/oo-export-test/<the J2 dated folder>; a text editor; a terminal in the app folder",
+    "do": "Open the dated folder and open BACKUP_SUMMARY.md in a text editor. In a terminal in the app folder (the one with .venv), run the command below with the real folder path in place of <folder>. It only reads; it writes nothing. This rehearses the check that closes the row in J8.   .venv/bin/python -c \"import json,sys,pathlib; from src.backup.folder_backup import human_bytes as h; d=pathlib.Path(sys.argv[1]); m=json.loads((d/'volumes.json').read_text()); v=m['volumes']; p=(m.get('parity') or {}).get('volumes') or []; print('Encrypted volumes:', len(v), '·', h(sum(int(x['bytes']) for x in v+p)), 'on the drive ·', h(int(m['plaintext_bytes'])), 'of content'); print('container', m['kind']); print('.ooenc files in the folder:', len(list(d.glob('*.ooenc'))))\" '<folder>'",
+    "expect": "FOLDER: volumes.json and BACKUP_SUMMARY.md side by side, plus vol-….ooenc files and, if parity was written, one or more par-NNNNN.oopar files. Nothing else. BACKUP_SUMMARY.md contains: the heading '# Open Omniscience — backup summary'. 'Folder:' is the dated name. 'Written:' is a local time with your UTC offset (e.g. +02:00), the same day and the same or a slightly later minute than the folder's stamp. If your computer's clock is set to UTC, the two cannot be told apart; a unit test covers that case. The first 'Integrity' bullet reads 'Verified — all N volumes were re-read and matched their checksums.' 'Encryption' reads 'Corpus at rest in this backup: no' (this throwaway). 'Versions' reads 'App version: 0.3.0', 'Backup schema: oo-backup-3 · container oo-volumes-2' and an alembic code. A table whose FIRST row is `articles` lists every table, zeros included. 'Attribution' carries the same two lines, each with 'applies because'. It ends with a paragraph starting '**This file is not encrypted.**'. Every figure equals the J2 panel: the volume count, 'X on the drive', 'Y of content' and the article count. The command's first line is IDENTICAL, character for character, to the summary's 'Encrypted volumes:' line. The second line reads 'container oo-volumes-2'. The third line's number equals N.",
+    "flags": [
+     "needs-seed-data"
+    ],
+    "evidence": "src/backup/export_summary.py:83-90 (_local_now_iso with offset), 249-270 (_volume_bytes read from volumes.json, parity included), 311-418 (render_summary_markdown), 431-442 (atomic write); src/backup/folder_backup.py:79-85 (human_bytes, the formatter the command reuses); src/backup/stream_backup.py:1118-1131 (volumes.json kind + plaintext_bytes); tests/test_export_folder.py:320-350 (the shared figures), :58 (local not UTC); docs/audit/export-folder-clickthrough-2026-09-16/BACKUP_SUMMARY.sample.md (predates oo-backup-3 and the not-encrypted paragraph)"
+   },
+   {
+    "id": "J4",
+    "where": "Throwaway app → Settings → Data & backup → Export / Back up… → 'Back up' (twice in a row); then the file manager on /home/<you>/oo-export-test",
+    "do": "Change nothing and click 'Back up'. As soon as it finishes (a few seconds), click 'Back up' again so that two exports land in the same minute. If the second landed in a new minute, click once more straight away. Then look at the scratch folder and compare the vol-… file names in the first folder with those in one of the new ones. Undo: delete the extra folders.",
+    "expect": "Every export made a NEW folder BESIDE the earlier ones. The second export within one minute is named '…_OpenOmniscience_Backup_2' (a third would be '_3'), and a new minute gets a new stamp with no suffix. The first folder is untouched: its BACKUP_SUMMARY.md still names the first folder, and its files' modified times did not change. Nothing was reused: each folder's volume files end in their own random run code (the characters just before '.ooenc'), which differs from the first folder's. Each new panel again reads 'Verified — …' with the same volume count and sizes equal or within a few KB.",
+    "flags": [
+     "needs-seed-data"
+    ],
+    "evidence": "src/backup/export_folder.py:93-130 (exclusive mkdir, _2.._N, never enters an existing folder); src/backup/stream_backup.py:269-276 (_vol_name ends in run_token), 965 (run_token = secrets.token_hex(3) per run); tests/test_export_folder.py:77-120; docs/audit/export-folder-clickthrough-2026-09-16/coverage.csv (drive,one-dated-folder-per-export)"
+   },
+   {
+    "id": "J5",
+    "where": "Throwaway app → reload the page → Settings → Data & backup → Export / Back up…; the top-bar language button (flag plus a two-letter code such as 'EN', hover 'Change language'; #lang-switch)",
+    "do": "(1) Reload the page (F5) and reopen the dialog without exporting. (2) Click Close, pick Français in the language menu, reopen the dialog, and hover the verify switch. Then do ONE real export in French: after the reload the destination and passphrase are empty and any large-data row with content is ticked again, so retype the full destination path and a passphrase, untick those rows, and click 'Sauvegarder'. (3) Close, switch to العربية (ar), reopen. (4) Close, switch to 中文 (zh), reopen. (5) Switch back to English. The top bar cannot be clicked while the dialog is open, so close it before each switch. Undo: delete the French export's folder.",
+    "expect": "(1) The dialog shows 'Backup complete → <the latest J4 folder> (last completed export)' and the same panel rows and numbers as that export. The app rebuilt them from the server, not from the page's memory. The one missing line is 'A summary of these facts was written beside the backup: …': a reopened panel never shows it (see notes). (2) French: the dialog reads 'Que voulez-vous sauvegarder ?', 'Chaque export crée ici son propre dossier daté…' and 'Relire chaque volume après l'écriture et le vérifier', and the switch's hover is the French version of the cost sentence. The recovered panel verdict reads 'Vérifiée — les N volumes ont tous été relus et correspondent à leurs sommes de contrôle.' The rows read Volumes chiffrés, Lignes par table, Fichiers copiés, Écoulé, Destination, Chiffrement, Version du schéma, Version de l'application, Licences. The French export ends with 'Sauvegarde terminée → …', 'Inclus : Corpus', and last 'Un résumé de ces informations a été écrit à côté de la sauvegarde : …/BACKUP_SUMMARY.md'; the file itself stays in English. (3) Arabic: the whole dialog reads right-to-left with text aligned right. The verdict starts 'تم التحقق —', and the rows include الوحدات المشفّرة / الصفوف لكل جدول / الوجهة / التراخيص. (4) Chinese: the verdict reads '已校验——全部 N 个卷均已重新读取并与其校验和一致。', and the rows include 加密卷 / 每个表的行数 / 目标位置 / 许可. In every language the table names in the pills stay raw identifiers (`articles`, `sources` …) because they are data, and the folder name stays 'OpenOmniscience_Backup'. The only visible English left is the licence line texts. The hovers that stay English are the verdict's technical detail (by design) and three known gaps: the Encryption row's note, the Elapsed row's reason, and the greyed Living sources reason.",
+    "flags": [
+     "needs-seed-data",
+     "locale-check"
+    ],
+    "evidence": "src/static/app-backup.js:30-37 (oo:langchange re-render), 40-51 (openUnifiedExport resets nothing but the panel), 62-107 (_uxShowLastCompletedExportSummary: GET /api/backup/export-summary, no summary_path); src/api/backup_v2.py:651-658 (GET returns facts only); src/static/app-core.js:558-590 (flag + code button, native names); src/static/index.html:3336 (#ux-summary data-i18n-dyn); src/static/locales/fr.json, ar.json, zh.json (all panel and dialog keys present; 'a lane is a live encrypted database…' absent from all 12); docs/audit/export-folder-clickthrough-2026-09-16/export_panel_fr.png, export_panel_ar.png"
+   },
+   {
+    "id": "J6",
+    "where": "Throwaway app → Settings → Data & backup → Export / Back up… → untick 'Re-read every volume after writing and check it (verify)' → 'Back up'",
+    "do": "Retype the full destination path and a passphrase if the fields are empty, and untick any large-data row. Untick the verify switch and click 'Back up'. When it finishes, open the NEW folder's BACKUP_SUMMARY.md. Then reload the page and reopen the dialog. Undo: delete that folder.",
+    "expect": "The panel's first line is RED and reads 'Not verified — verify-after-write was turned off for this export.' 'Verified' never appears as the verdict. The file's first Integrity bullet reads 'NOT verified — verify-after-write was turned off for this export.' After the reload, the recovered panel shows the same red line, and the verify switch is ticked again (the default).",
+    "flags": [
+     "needs-seed-data"
+    ],
+    "evidence": "src/static/app-backup.js:200 (red unless state=verified), 219-230, 594-596 (verify read from the box on every start); src/backup/volume_job.py:287-345 (off/stopped/unavailable/verified/failed kept apart); src/backup/export_summary.py:291-308 (verify_sentence); tests/test_export_folder.py:283-316"
+   },
+   {
+    "id": "J7",
+    "where": "YOUR OWN install (unlocked, airplane mode ON) → Settings → Data & backup → Export / Back up… (#ux-export) → Destination via Browse… → 'Pick a folder' → the removable drive → 'Use this folder' → 'Back up'",
+    "do": "Mount the drive. Before clicking anything, write down the count and size each row shows, the Corpus row's article count in particular. Keep Corpus ticked. Tick LLM models, Wikipedia dumps or Offline maps only if you want them on this drive. That is what makes 'Files copied' appear, but it costs their full size and copy time. If you do, leave 'Carry them inside the encrypted backup' UNTICKED, because ticked it puts them inside the encrypted volumes and 'Files copied' then reads none. For Destination use Browse…; on Linux the drive is usually under /media/<you>/, reached with '⬆ Parent folder'. Use a passphrase you will not lose, because there is no recovery. Your usual corpus passphrase is simplest: a restore tries it first, so it then needs only one secret. Leave verify ticked, note the clock time, and click 'Back up'. Keep the tab open and the computer awake, and don't reload. Note the clock time when the progress line changes from 'Corpus: …' to 'Large data: …' (if you ticked large data) and when the panel appears. This writes one new folder on the drive and does not change your corpus, apart from a small run journal the app keeps in its own data folder. Undo: delete that folder.",
+    "expect": "Before the run, every row shows a real count and size from your install. At the end: 'Backup complete → <drive>/YYYYMMDDHHMM_OpenOmniscience_Backup', stamped with the local minute you clicked. The panel's first line is not red: 'Verified — all N volumes were re-read and matched their checksums.' Encryption reads 'corpus encrypted at rest inside the backup', plus '· copied files are not encrypted' if large data was copied. Files copied shows one pill per category that actually had files (models, hf_models, wiki_dumps, osm_regions) as 'count · size', or 'none'. With files, Elapsed reads '… corpus · not recorded files': the copy has no timing of its own, and it is never shown as 0. Rows per table starts with `articles`, and its number equals the article count you wrote down. Licences match the table pills in the same panel. The Wikipedia line appears if and only if wiki_pages or wiki_revisions shows rows, and the law line if and only if law_documents or law_revisions does. Otherwise it reads 'no attribution line applies to what this backup holds'. It never shows an OpenStreetMap or ODbL line, even with Offline maps ticked. App version is the one under the brand name in the sidebar. The last line names …/BACKUP_SUMMARY.md on the drive. If that last line is missing (a reload happened), the folder has no summary: delete it and export again. Re-read cost on this drive: take the time from your click to the moment 'Corpus:' ended (the start of 'Large data:', or the panel for a corpus-only export) and subtract 'Elapsed … corpus'. The remainder, minus a few seconds of setup, is roughly the re-read. That is the figure the sandbox could not measure.",
+    "flags": [],
+    "evidence": "docs/product/RELEASE_0.4_GATE.md:56 (Remaining: the operator's removable-drive export) and 441-453; docs/plans/2026-09-12-beta-pathway/S04-03_export-folder-and-completion-panel.md §5 step 1; src/static/app-backup.js:585-652 ('inside' skips the folder phase), 555-689; src/backup/export_summary.py:123-146 (only non-empty categories), 204-213 (files_s None with reason); src/backup/attribution.py:128-150, 203-248; src/backup/inventory.py:179-196 (Corpus article count = count of articles); src/backup/stream_backup.py:1187-1197 (wall_s excludes the verify), 1200-1220 (free-space preflight); src/backup/volume_job.py:386-393 (verify runs after the timed write); src/api/backup_v2.py:473-477 (restore tries the live key, then the backup passphrase)"
+   },
+   {
+    "id": "J8",
+    "where": "File manager and a terminal in the app folder → <drive>/<the J7 dated folder>",
+    "do": "Take a listing of the dated folder on the drive: ls -la '<folder>' in a terminal, or a file-manager screenshot in list view with sizes. Open BACKUP_SUMMARY.md. Run the J3 command on this folder. Hand the listing, the summary file and the command's output to the session that closes row J. Before they go into a public PR, redact what you don't want published: the summary is plain text and shows your drive path and how many articles, sources and documents you hold. Then decide whether to keep BACKUP_SUMMARY.md on the drive; the file explains the trade-off itself.",
+    "expect": "The listing shows the dated folder name holding volumes.json and BACKUP_SUMMARY.md side by side, N vol-….ooenc files, and par-….oopar files if parity was written. If large data was copied, it also holds oo-folder-backup.json and one subfolder per copied category. The summary's first Integrity bullet reads 'Verified — all N volumes were re-read and matched their checksums.' Encryption reads 'Corpus at rest in this backup: yes'. With large data, it also shows 'Files copied, per category', 'Copied large-data files: no' and 'Copied-files manifest schema'. The command's first line is identical to the summary's 'Encrypted volumes:' line, its second reads 'container oo-volumes-2', and its third equals N. Together these are the gate's closing evidence: the folder name, a summary whose figures equal volumes.json's, and a panel that read 'Verified'.",
+    "flags": [],
+    "evidence": "docs/product/RELEASE_0.4_GATE.md:452-453 (Closes when … the artifact is the folder listing + the summary file quoted in the PR); tests/test_export_folder.py:320-350; src/backup/export_summary.py:249-270, 349-374 (Files/Encryption/Versions lines), 405-416 (the not-encrypted paragraph); src/backup/folder_backup.py:46 (oo-folder-backup.json)"
+   }
+  ],
+  "clause_coverage": [
+   {
+    "clause": "Folder YYYYMMDDHHMM_OpenOmniscience_Backup, token spelled out (Q212 = c), local time (Q210)",
+    "step_ids": [
+     "J1",
+     "J2",
+     "J3",
+     "J7"
+    ]
+   },
+   {
+    "clause": "_2, _3 … on collision; an existing folder is never entered (Q211)",
+    "step_ids": [
+     "J1",
+     "J4"
+    ]
+   },
+   {
+    "clause": "Always a full new backup, no reuse, and the cost stated in the panel: every export writes every volume (Q213 = c)",
+    "step_ids": [
+     "J1",
+     "J2",
+     "J4"
+    ]
+   },
+   {
+    "clause": "Completion panel: volumes · total bytes · per-table counts articles first · files copied per category · elapsed · destination · encryption state · schema version · app version · licence lines that apply (Q208; Q1008 lines now; no OSM line while Q823 is unanswered)",
+    "step_ids": [
+     "J2",
+     "J7"
+    ]
+   },
+   {
+    "clause": "No licence line for an absent member; no OSM/ODbL line at all (brief §4 negative space)",
+    "step_ids": [
+     "J2",
+     "J7"
+    ]
+   },
+   {
+    "clause": "BACKUP_SUMMARY.md beside volumes.json with the same facts (Q209)",
+    "step_ids": [
+     "J3",
+     "J8"
+    ]
+   },
+   {
+    "clause": "Re-read every volume after writing, default ON, panel says 'verified'; off reads as off (Q218)",
+    "step_ids": [
+     "J1",
+     "J2",
+     "J6",
+     "J7"
+    ]
+   },
+   {
+    "clause": "The removable-drive cost of verify stated, and translated (brief S2)",
+    "step_ids": [
+     "J1",
+     "J5",
+     "J7"
+    ]
+   },
+   {
+    "clause": "Never a scheduled export (Q220 = c)",
+    "step_ids": [
+     "J1"
+    ]
+   },
+   {
+    "clause": "Opt-in members with their sizes shown before the export starts: the member hook (Q219)",
+    "step_ids": [
+     "J1",
+     "J7"
+    ]
+   },
+   {
+    "clause": "Panel recovered after a page reload (the sandbox walk's reopen check)",
+    "step_ids": [
+     "J5",
+     "J6"
+    ]
+   },
+   {
+    "clause": "Locales en, fr, ar (brief S04-03 §4), plus zh",
+    "step_ids": [
+     "J5"
+    ]
+   },
+   {
+    "clause": "CLOSES WHEN: an export on the reference VM shows the folder name, a BACKUP_SUMMARY.md whose figures equal volumes.json's, and a panel reading 'verified'; the artifact is the folder listing plus the summary",
+    "step_ids": [
+     "J7",
+     "J8"
+    ]
+   },
+   {
+    "clause": "The maintainer's own click-through (Q1128 = a)",
+    "step_ids": [
+     "J1",
+     "J2",
+     "J3",
+     "J4",
+     "J5",
+     "J6",
+     "J7",
+     "J8"
+    ]
+   }
+  ],
+  "not_clickable": [
+   "WHETHER YOUR MACHINE IS 'THE REFERENCE VM'. The closing clause says the export must be produced 'on the reference VM'. Brief S04-03 §5 step 3 asks for the maintainer's word on whether the sandbox or your own machine is that VM. That is a ruling, not a click; only the maintainer can give it.",
+   "QUOTING THE ARTIFACT AND RECORDING THE WALK. The folder listing and BACKUP_SUMMARY.md must be quoted in a PR, the maintainer's click-through recorded under docs/audit/ (brief §5 step 2), and the row's status flipped in the gate's §3 amendment log and in shipped.csv. A session does all of that once the maintainer hands over the J8 files and the J1-J7 observations.",
+   "THE 'FAILED', 'STOPPED' AND 'UNAVAILABLE' VERIFY VERDICTS. The re-read starts the moment the last volume lands, and nothing on screen marks it. Corrupting a volume or pressing Pause inside that window is not a realistic human action. These are covered by tests/test_export_folder.py::test_a_truncated_volume_is_named_and_the_panel_does_not_read_verified, ::test_a_single_flipped_BIT_is_caught, ::test_a_cancelled_verification_leaves_the_COMPLETE_backup_on_the_drive and ::test_an_unreadable_set_is_unavailable_not_verified_and_not_failed. Only 'off' can be clicked (J6).",
+   "LOCAL TIME vs UTC ON A UTC MACHINE. If the maintainer's clock is set to UTC, the folder stamp cannot show that it is local time. Covered by tests/test_export_folder.py::test_the_timestamp_is_the_operators_LOCAL_clock_not_utc.",
+   "OSM LICENCE LINES AND THE SHARE-ALIKE NOTE wait on Q823 ⛔, a maintainer-only ruling. The refusal that fires when OSM-derived tables appear cannot be triggered, because no osm_* corpus table exists until the 0.5 OSM lane. Copied Geofabrik extracts (the 'Offline maps' tick) deliberately emit no line; removing that capability would answer Q823 = b by default (src/backup/attribution.py docstring; docs/ledger/OPEN_QUEUE.md 2026-09-16 entry, point 2). The maintainer should rule.",
+   "LANE MEMBERS (Q219 'members as the lanes land'). 'Living sources' is ONE row summing every lane database that exists (Wikipedia, law, maps; src/backup/inventory.py:73-122). It shows its size but stays greyed ('backup format is not settled yet'). The Wikipedia lane has now landed (S04-09), yet it cannot be ticked. Whether that holds row J open or belongs to a later row is the maintainer's call, not a click.",
+   "'FILES COPIED PER CATEGORY (… NEWSLETTERS)'. There is no newsletters tick or category: newsletters ride inside the encrypted corpus volumes, so the panel can only show the dumps, maps and models categories. The brief (§2) says so, but the gate's wording and docs/USER_MANUAL.md:1289-1291 ('tick what to include (corpus, imported newsletters, …)') still promise a tick that does not exist.",
+   "Q1008 FOR THE BULLETIN AND THE EVIDENCE ZIP is outside row J's closing clause and is covered by tests/test_export_attribution.py.",
+   "OPEN DETAILS ONLY THE MAINTAINER CAN DECIDE (brief §6), none built on: (1) whether the bulletin and evidence-ZIP names (_OOS_ / -OOS-) follow the spelled-out token, which would be a migration because store.py parses them back; (2) the wording of 'press lines' for scraped press content, which does not exist today; (3) the Encryption-row wording when the corpus is plaintext inside encrypted volumes, or when copied files sit beside them."
+  ],
+  "surfaces": [
+   "Settings > Data & backup > Export / Backup panel",
+   "Export / Backup dialog (#ux-export): member checklist with sizes, 'Carry them inside the encrypted backup', destination field, passphrase, verify switch",
+   "Pick a folder dialog (#folder-picker, 'Use this folder')",
+   "Export progress line (#ux-progress) and completion panel (#ux-summary)",
+   "Top-bar language menu (#lang-switch)",
+   "Help & documentation > User Manual ('Find on this page…')",
+   "Destination on disk: YYYYMMDDHHMM_OpenOmniscience_Backup holding volumes.json, vol-*.ooenc, par-*.oopar and BACKUP_SUMMARY.md"
+  ],
+  "estimate_minutes": 70,
+  "notes": "The 70 minutes covers the throwaway seed plus J1-J6 (about 40 minutes) and J8. It does NOT include how long J7's real export runs, which depends on corpus size and drive speed; verify roughly doubles the read time on a slow drive. FINDINGS FROM READING THE CODE ON MAIN. None of these were walked; they are things to watch for, not confirmed bugs. (1) The page, not the server job, writes the summary file. Only _uxRun sends POST /api/backup/export-summary, at its very end (src/static/app-backup.js:673). It is therefore never written when the tab was reloaded or closed while an export ran, or when an export paused during the large-data copy was then resumed (_uxResume's large-data branch, 709-735, never sends it). Q209 says 'every export', so this is the main risk for J7 and deserves a test before the row closes. (2) A reopened panel cannot tell you whether the file was written. GET /api/backup/export-summary returns no summary_path (src/api/backup_v2.py:651), so the line 'A summary of these facts was written beside the backup' is missing after any reopen, whether or not the file exists. (3) The progress line never names the re-read. _uxVolPhase's backup map (app-backup.js:355-384) knows only starting/building/volumes/parity/done, while the streaming engine reports collecting/members/corpus (writes paused)/finalizing/parity/verifying. Everything but 'Preparing…' and 'Writing parity…' reads 'Backing up…', so the costly re-read is invisible. (4) '~' in the destination is not expanded (src/backup/export_folder.py, Path(parent) with no expanduser). '~/x' creates a folder literally named '~' under the directory the app was started from; relative paths do the same. (5) Hovers that stay English in all 12 languages: the greyed Living sources reason (no locale key), the Encryption row's note and the Elapsed row's reason (backend text passed raw as title). The informed-consent rule expects caveats in all 12. The licence line texts are backend English by design, but the law line is an explanatory caveat; whether it must be translated is the maintainer's call. (6) On a plaintext throwaway, the Encryption row says 'corpus stored unencrypted in this backup' while its hover says 'The corpus and every member of the artifact are encrypted'. The volumes are always encrypted with the export passphrase; the row means the database inside was not also SQLCipher-encrypted. Brief §6 leaves this wording open. (7) On reopen, _uxShowLastCompletedExportSummary (app-backup.js:62-107) prefers the large-data job's last finished status. Suppose an earlier export in the same app session copied large data and a later one did not: reopening could then name the EARLIER folder and show 'Encrypted volumes: none — no corpus was selected for this export'. Unverified. (8) An unticked verify switch stays unticked across close and reopen until the page reloads, because openUnifiedExport does not reset #ux-verify; J6 checks the reload default. (9) The sandbox record docs/audit/export-folder-clickthrough-2026-09-16/report.json says its four exports 'produced _2, _3 and _4', but its own drive listing shows 1718_…Backup, 1718_…Backup_2, 1719_…Backup and 1719_…Backup_2. Its sample BACKUP_SUMMARY also predates the 'This file is not encrypted' paragraph and the oo-backup-3 bump (row K). (10) The 0.4 release run in Settings → Advanced (under 'Diagnostics log') also writes a dated OpenOmniscience_Backup folder, but by design writes no BACKUP_SUMMARY.md (src/monitoring/release_run.py:1626-1631). The export that closes this row must come from this dialog. (11) docs/USER_MANUAL.md:1289-1291 promises a 'imported newsletters' tick that the dialog does not have. Nothing in these steps goes online, and nothing changes the app's data: every export only adds a folder you can delete."
+ },
+ "walk": {
+  "row": "J",
+  "environment": {
+   "encrypted": true,
+   "seed": "scripts/ui_clickthrough_seed.py (default, full corpus) into /tmp/claude-0/walk/J/data-enc with OO_DB_PASSPHRASE=walk-pass-2026: 453 articles, 1 wiki_pages row, 24 law_documents rows. Booted with neither OO_DB_PASSPHRASE nor OO_DB_PLAINTEXT, so it started LOCKED; unlocked through #pw/#btn-unlock. A second, plaintext seed (OO_DB_PLAINTEXT=1, same script) in /tmp/claude-0/walk/J/data-plain on port 8819 was used ONLY to measure the plaintext Encryption wording the gate steps J2/J3 expect.",
+   "ports": [
+    8818,
+    8819
+   ],
+   "scratch_dir": "/tmp/claude-0/walk/J/",
+   "notes": "origin/main 462145c, app launched with the open-omniscience console script from the repo root; Chromium via Playwright (executable /opt/pw-browsers/chromium), 1440x950, plus a 375px pass. Airplane mode stayed ON the whole run (plane filled); no consent popup ever appeared and none was clicked. The machine clock is UTC, so for the J7-equivalent the 8818 server was RESTARTED with TZ=Europe/Paris (local = UTC+2) to make local time measurable, and with HF_HOME=/tmp/claude-0/walk/J/fake-hf holding a synthetic 3-file Hugging Face model (2.9 MB) so the 'LLM models' member had content and the 'Files copied' path could run. There is no removable drive in this sandbox: the J7/J8 'drive' is the directory /tmp/claude-0/walk/J/drive, reached through Browse... -> Pick a folder -> Use this folder. '~' in the destination (code-reading note 4) was NOT tested, because the app's cwd is the repo and that would write a '~' folder into it. Export passphrase used = walk-pass-2026. Evidence: /tmp/claude-0/walk/J/report.json, results/*.json (per stage), shots/*.png, J3-listing.txt, J3-command.txt, J8-listing.txt, J8-command.txt, J4-first-folder-before/after.txt, exports/, exports-plain/, exports-reload/, drive/, walk.py. All server PIDs (23254, 26149, 26897, 27516) were mine and are stopped; git status of the repo is clean."
+  },
+  "steps": [
+   {
+    "id": "J1",
+    "result": "pass",
+    "locales": [
+     "en"
+    ],
+    "screenshot": "shots/J/J-J1-dialog-en.png",
+    "observed": "Dialog opened from Settings -> Data & backup -> 'Export / Back up...'. Line under the title: 'What do you want to back up?'. Rows before anything ran: 'Corpus (453 articles · 6418 sources · 129 dates · 2242 keywords · 22.9 MB)' ticked; 'LLM models (0 · 0 B)', 'Offline maps (0 · 0 B)', 'Wikipedia dumps (0 · 0 B)' greyed (empty here: no Ollama store on this machine, so the real-gigabytes clause could not be seen; with a synthetic HF store in the J7 run the row read 'LLM models (3 · 2.9 MB)', was TICKED by default and 'Carry them inside' became enabled); 'Living sources (0 · 0 B)' greyed, hover 'a lane is a live encrypted database; its backup format is not settled yet'; 'Carry them inside the encrypted backup' unticked and greyed. Hint verbatim 'Each export makes its own dated folder here, named like 202609121045_OpenOmniscience_Backup.' (never OOS); its hover names local date and time, _2/_3 in the same minute, 'an existing folder is never written into'. Verify switch TICKED; hover: reads every byte a second time, 'roughly doubles the time an export takes on a slow drive', 'the only thing that catches a drive that accepted the write and stored something else'. Full-new-backup hint visible verbatim. No schedule/repeat/timer/daily/automatic word in the dialog; its only inputs are 6 checkboxes, #ux-dest, #ux-pass, #ux-verify. Top-bar '?' opened the User Manual by itself; typing 'never scheduled' in 'Find on this page...' highlighted 'Exports are never scheduled. There is no automatic or timed export and none is' - the rest of the sentence ('planned — an export is a deliberate act') is present but renders as a SEPARATE paragraph under the bullet (Help renderer defect; J-J1-manual-en.png)."
+   },
+   {
+    "id": "J2",
+    "result": "pass",
+    "locales": [
+     "en"
+    ],
+    "screenshot": "shots/J/J-J2-dialog-panel-en.png",
+    "observed": "Destination typed as the full path /tmp/claude-0/walk/J/exports, passphrase typed, verify left ticked, large-data rows already greyed. Progress line (sampled every 60 ms): 'Preparing the export folder…' -> 'Corpus: Preparing…' -> 'Corpus: Writing parity… · 3 volumes · 17.8 MB' -> 'Backup complete → /tmp/claude-0/walk/J/exports/202609261803_OpenOmniscience_Backup' + 'Included: Corpus' (2.5 s). 'Corpus: Backing up… · 3 volumes · 17.8 MB' was glimpsed on a later run (J4). Stamp 202609261803 = the local minute of the click (clock is UTC here). PANEL: first line NOT red, 'Verified — all 3 volumes were re-read and matched their checksums.', hover 'every volume re-read from the destination and its SHA-256 compared against the signed manifest (no decryption)'. Rows in order: Encrypted volumes '3 · 35.6 MB on the drive · 17.8 MB of content'; Parity 'written'; Rows per table pills with `articles 453` FIRST (before keyword_mentions 31590, sources 6418…), then '32 more tables are empty in this backup.'; Files copied 'none'; Elapsed '1.5 s corpus'; Destination full path to the dated folder; Encryption 'corpus encrypted at rest inside the backup' (this install is ENCRYPTED; the plaintext wording the step expects, 'corpus stored unencrypted in this backup', was measured separately on the plaintext instance, port 8819); Schema version 'oo-backup-3 · oo-volumes-2 · database c7015865aba2'; App version '0.3.0' = sidebar 'v0.3.0'; Licences exactly two lines, 'Wikipedia text — CC BY-SA 4.0 …' (hover 'applies because: table:wiki_pages') and 'Tracked legal documents — this corpus records NO licence metadata …' (hover 'applies because: table:law_documents'); no OpenStreetMap/ODbL line. Caveat 'Every export writes a new dated folder and every volume in it: …' and last line 'A summary of these facts was written beside the backup: …/202609261803_OpenOmniscience_Backup/BACKUP_SUMMARY.md'. No page/console/HTTP error."
+   },
+   {
+    "id": "J3",
+    "result": "pass",
+    "locales": [
+     "en"
+    ],
+    "observed": "Folder 202609261803_OpenOmniscience_Backup holds exactly BACKUP_SUMMARY.md, volumes.json, par-00001.oopar and 3 vol-…-d14338.ooenc - nothing else (J3-listing.txt). BACKUP_SUMMARY.md: '# Open Omniscience — backup summary', Folder = the dated name, 'Written: 2026-09-26T18:03:58+00:00' (same minute; machine is UTC so local vs UTC is indistinguishable HERE - but in the J7 run under TZ=Europe/Paris the folder was 202609262011 and Written read 2026-09-26T20:12:03+02:00, so local time with offset IS measured), first Integrity bullet 'Verified — all 3 volumes were re-read and matched their checksums.', Encryption 'Corpus at rest in this backup: yes' (encrypted install; the plaintext instance's file reads 'no'), Versions 'App version: 0.3.0', 'Backup schema: oo-backup-3 · container oo-volumes-2', alembic c7015865aba2, a table starting with `articles` 453 listing every table including zeros, the same two Attribution lines each with 'applies because', ending with '**This file is not encrypted.** …'. Figures equal the panel (3 volumes, 35.6 MB, 17.8 MB, 453 articles). The read-only command printed 'Encrypted volumes: 3 · 35.6 MB on the drive · 17.8 MB of content' (identical to the summary line, character for character), 'container oo-volumes-2', '.ooenc files in the folder: 3' (J3-command.txt)."
+   },
+   {
+    "id": "J4",
+    "result": "pass",
+    "locales": [
+     "en"
+    ],
+    "screenshot": "shots/J/J-J4-dialog-after-3-en.png",
+    "observed": "Three back-to-back 'Back up' clicks inside 18:04 made 202609261804_OpenOmniscience_Backup, …_Backup_2 and …_Backup_3 BESIDE the 1803 folder. The 1803 folder was untouched: stat mtimes/sizes and the sha256 of its BACKUP_SUMMARY.md identical before and after (J4-first-folder-before.txt / -after.txt), and its summary still names 202609261803_OpenOmniscience_Backup. Run codes before '.ooenc' all differ: d14338 (1803), 0facf2, 882e9b, 57495d. Each new panel read 'Verified — all 4 volumes …' with '4 · 35.6 MB on the drive · 17.8 MB of content'. Volume COUNT is 4 in every later export vs 3 in the first one: the extra member is keys/evidence_ed25519.pem, which the first export itself created mid-run (key mtime 18:03:57.338, inside that export's window) after members had been collected, so the first backup omits it (P3 defect). Sizes equal."
+   },
+   {
+    "id": "J5",
+    "result": "pass",
+    "locales": [
+     "en",
+     "fr",
+     "ar",
+     "zh"
+    ],
+    "screenshot": "shots/J/J-J5-dialog-ar.png",
+    "observed": "(1) After a reload the dialog showed 'Backup complete → …/202609261804_OpenOmniscience_Backup_3 (last completed export)' and the same rows and numbers; the summary-file line is absent (as the notes predict). (2) fr: 'Que voulez-vous sauvegarder ?', 'Chaque export crée ici son propre dossier daté, nommé par exemple 202609121045_OpenOmniscience_Backup.', 'Relire chaque volume après l'écriture et le vérifier', verify hover in French ('… double à peu près la durée d'un export sur un lecteur lent …'); recovered verdict 'Vérifiée — les 4 volumes ont tous été relus et correspondent à leurs sommes de contrôle.'; rows Volumes chiffrés, Parité, Lignes par table, Fichiers copiés, Écoulé, Destination, Chiffrement, Version du schéma, Version de l'application, Licences. The French export ended 'Sauvegarde terminée → …/202609261805_OpenOmniscience_Backup', 'Inclus : Corpus', last line 'Un résumé de ces informations a été écrit à côté de la sauvegarde : …/BACKUP_SUMMARY.md'; the file stayed English. (3) ar: <html dir=rtl>, dialog direction rtl, text right-aligned; verdict 'تم التحقق — أُعيدت قراءة الوحدات الـ4 جميعها وطابقت بصماتها.'; rows الوحدات المشفّرة / الصفوف لكل جدول / الوجهة / التراخيص. BUT paths and the example folder name are bidi-mangled (hint shows 'OpenOmniscience_Backup_202609121045.', paths show 'tmp/…/exports/') - P3 defect. (4) zh: verdict '已校验——全部 4 个卷均已重新读取并与其校验和一致。', rows 加密卷 / 每个表的行数 / 目标位置 / 许可. Table names stayed raw identifiers in every language; the folder name stayed OpenOmniscience_Backup. Visible English left: the licence line texts only (by design). Hovers left English in fr/ar/zh: verdict detail (by design) plus the three known gaps, all confirmed: Elapsed reason 'no large-data files were copied', Encryption note, Living sources reason. Minor fr wording: 'Fichiers copiés : aucune', 'modèles LLM'. Switched back to English at the end."
+   },
+   {
+    "id": "J6",
+    "result": "pass",
+    "locales": [
+     "en"
+    ],
+    "screenshot": "shots/J/J-J6-noverify-en.png",
+    "observed": "Verify unticked -> export 202609261808_OpenOmniscience_Backup. Panel first line has the red (err) left border and reads 'Not verified — verify-after-write was turned off for this export.'; 'Verified' never appears. BACKUP_SUMMARY.md first Integrity bullet: 'NOT verified — verify-after-write was turned off for this export.'. Closing and reopening WITHOUT a reload kept the switch UNTICKED (code-reading note 8 confirmed). After a page reload the recovered panel showed the same red line and the verify switch was ticked again (J-J6-reload-en.png)."
+   },
+   {
+    "id": "J7",
+    "result": "not-measurable-here",
+    "locales": [
+     "en"
+    ],
+    "screenshot": "shots/J/J-J7-panel-top-en.png",
+    "observed": "Needs the operator's own install and a removable drive; neither exists here. SANDBOX EQUIVALENT (encrypted, unlocked, airplane ON, TZ=Europe/Paris): before the run the rows read 'Corpus (453 articles … 18.3 MB)' and 'LLM models (3 · 2.9 MB)' (synthetic HF store), both ticked; 'Carry them inside' left unticked. Browse… opened 'Pick a folder' at /root; '⬆ Parent folder' -> / -> tmp -> claude-0 -> walk -> J -> drive -> 'Use this folder' filled #ux-dest. Progress: 'Corpus: Preparing…' (0.05 s) -> 'Corpus: Writing parity… · 4 volumes · 17.8 MB' (1.24 s) -> 'Large data: 0 copied, 0 skipped' (2.50 s) -> 'Backup complete → /tmp/claude-0/walk/J/drive/202609262011_OpenOmniscience_Backup' + 'Included: Corpus · LLM models' (3.70 s); 202609262011 = the local Paris minute of the click (18:11 UTC). Panel: 'Verified — all 4 volumes …'; Files copied 'hf_models 3 · 2.9 MB'; Elapsed '1.2 s corpus · not recorded files' (hover 'the large-data copy records no timing of its own'); Encryption 'corpus encrypted at rest inside the backup · copied files are not encrypted'; Rows per table starts `articles 453` = the dialog's article count; Licences = the two lines matching the wiki_pages/law_documents pills, no OSM/ODbL line; App version 0.3.0 = sidebar; last line names …/BACKUP_SUMMARY.md. Re-read estimate on LOCAL disk: 2.50 s (click -> 'Large data:') - 1.2 s corpus ≈ 1.3 s including setup - not a removable-drive figure. Two P2 defects surfaced around this step: a later corpus-only export makes the reopened panel misreport this folder, and a reload mid-export leaves no BACKUP_SUMMARY.md."
+   },
+   {
+    "id": "J8",
+    "result": "not-measurable-here",
+    "locales": [
+     "en"
+    ],
+    "screenshot": "shots/J/J-J7-panel-bottom-en.png",
+    "observed": "The operator's drive listing cannot be produced here. SANDBOX EQUIVALENT on /tmp/claude-0/walk/J/drive/202609262011_OpenOmniscience_Backup (J8-listing.txt): volumes.json and BACKUP_SUMMARY.md side by side, 4 vol-…-b640a1.ooenc, par-00001.oopar, oo-folder-backup.json and one hf_models/ subfolder (hub/models--walk--tiny-model/…). Summary: first Integrity bullet 'Verified — all 4 volumes were re-read and matched their checksums.', 'Corpus at rest in this backup: yes', 'Files copied, per category: hf_models: 3 files · 2.9 MB', 'Copied large-data files: no', 'Copied-files manifest schema: oo-folder-backup-1', Written 2026-09-26T20:12:03+02:00. Command (J8-command.txt): 'Encrypted volumes: 4 · 35.6 MB on the drive · 17.8 MB of content' (identical to the summary line), 'container oo-volumes-2', '.ooenc files in the folder: 4' = N. Whether this sandbox counts as 'the reference VM' is the maintainer's ruling."
+   }
+  ],
+  "page_errors": [],
+  "http_errors": [],
+  "junk_text": [],
+  "defects": [
+   {
+    "title": "Reopened export panel names an OLDER export and reports that verified corpus backup as 'Not verified' with 'no corpus'",
+    "severity": "P2",
+    "step_ids": [
+     "J5",
+     "J7"
+    ],
+    "repro": "Encrypted install with a large-data member present (here a 3-file HF model store). 1) Export with Corpus + LLM models ticked -> folder A (202609262011_…), panel 'Verified — all 4 volumes…', Files copied hf_models. 2) Untick LLM models, export again (corpus only) -> folder B (202609262012_…), 'Verified'. 3) Reload the page, Settings -> Data & backup -> Export / Back up….",
+    "expected": "The reopened dialog shows the LAST completed export (folder B) with its own facts, or at least, for whichever folder it names, the same facts that folder's BACKUP_SUMMARY.md holds (backup_v2.py's own docstring: 'a reopened dialog and the file on the drive cannot disagree').",
+    "actual": "It shows 'Backup complete → …/202609262011_OpenOmniscience_Backup (last completed export)' (folder A, the older one) with a RED 'Not verified — this export recorded no verify result.', 'Encrypted volumes: none — no corpus was selected for this export', 'Elapsed: — corpus', 'Encryption: — · copied files are not encrypted', 'Schema version: — · — · database —', 'App version: —', 'Licences: no attribution line applies…'. Folder A's BACKUP_SUMMARY.md says Verified, 4 volumes, corpus encrypted, two licence lines. GET /api/backup/export-summary?dir=<A> returns corpus_included=false, verify.state=unknown.",
+    "evidence": "/tmp/claude-0/walk/J/shots/J-J7-reopen-after-corpus-only-en.png; /tmp/claude-0/walk/J/results/j7.json (reopen_panel_after_two; job_status: volumes job dest=B, folder job dest=A). Cause: src/static/app-backup.js:66-80 lets the folder job's done state override the volume job's unconditionally ('the more recent state'), which is false when a later export had no large-data phase; src/backup/export_summary.py:175-179 then drops every corpus fact because the in-memory volume status belongs to a different folder."
+   },
+   {
+    "title": "A page reload during an export leaves the folder with no BACKUP_SUMMARY.md, and the reopened panel still reads 'Verified' with nothing saying the file is missing",
+    "severity": "P2",
+    "step_ids": [
+     "J3",
+     "J5",
+     "J7"
+    ],
+    "repro": "Encrypted install. Export / Back up… -> destination /tmp/claude-0/walk/J/exports-reload, passphrase, click 'Back up'; as soon as the progress line reads 'Corpus: Preparing…', reload the page. Wait, reopen the dialog, list the folder.",
+    "expected": "Q209: BACKUP_SUMMARY.md beside volumes.json for every export (written by the job, or at least recoverable / flagged as missing on reopen).",
+    "actual": "202609261816_OpenOmniscience_Backup holds volumes.json, par-00001.oopar and 4 .ooenc but NO BACKUP_SUMMARY.md. The reopened dialog shows 'Backup complete → …202609261816_OpenOmniscience_Backup (last completed export)' and a clean 'Verified — all 4 volumes…' panel; no line says the summary was never written, and nothing on the page writes it afterwards.",
+    "evidence": "/tmp/claude-0/walk/J/exports-reload/202609261816_OpenOmniscience_Backup/ (listing); /tmp/claude-0/walk/J/results/reloadmid.json; /tmp/claude-0/walk/J/shots/J-reloadmid-reopen-en.png. Cause: only the page's _uxRun sends POST /api/backup/export-summary, at its very end (src/static/app-backup.js:673); the reopen path (62-107) only GETs facts, and the GET response carries no summary_path (src/api/backup_v2.py:651-658)."
+   },
+   {
+    "title": "Arabic (RTL): paths and the example folder name are bidi-reordered in the export dialog and panel",
+    "severity": "P3",
+    "step_ids": [
+     "J5"
+    ],
+    "repro": "Switch to العربية, open Settings -> Data & backup -> Export / Back up…, type /tmp/claude-0/walk/J/exports as destination, run an export (or reopen after one).",
+    "expected": "LTR data (a filesystem path, the folder name 202609121045_OpenOmniscience_Backup) keeps its own order inside the RTL dialog.",
+    "actual": "The hint's example reads 'OpenOmniscience_Backup_202609121045.' (date moved after the name - the opposite of the real folder name); the destination input shows 'tmp/claude-0/walk/J/exports/' with the leading slash moved to the end; the 'Backup complete →' path and the Destination <code> row show the same displaced slash; the English licence lines show their trailing periods at the wrong end ('.alike').",
+    "evidence": "/tmp/claude-0/walk/J/shots/J-J5-ar-bidi-zoom.png, J-J5-dialog-ar.png, J-J5-panel-bottom-ar.png; computed direction of #ux-dest and #ux-summary code = rtl (/tmp/claude-0/walk/J/results/j5b.json). No dir='ltr'/dir='auto'/<bdi>/unicode-bidi isolation at src/static/index.html:3319 (#ux-dest), :3321 (hint), src/static/app-backup.js:98 and :664 (completion path span), :175 (Destination code)."
+   },
+   {
+    "title": "First export on an install without an evidence key omits the signing key it creates mid-run (3 volumes; later exports 4)",
+    "severity": "P3",
+    "step_ids": [
+     "J4"
+    ],
+    "repro": "Fresh encrypted seed (no data/keys/). Export once, then export again; compare the two volumes.json member lists.",
+    "expected": "Every export carries the same members for the same corpus; the key that signs a backup is inside that backup (encrypted artifacts carry keys/…).",
+    "actual": "The first export (202609261803_…) has 3 volumes: logs/app_errors.jsonl, corpus.db.sqlcipher, manifest.json. data/keys/evidence_ed25519.pem was created at 18:03:57.338, during that export (folder allocated 18:03:56.5, summary written 18:03:58.97), after members were collected. Every later export has 4 volumes, the 4th being keys/evidence_ed25519.pem. A restore of that first backup onto a new machine would not carry the identity that signed it.",
+    "evidence": "/tmp/claude-0/walk/J/exports/202609261803_OpenOmniscience_Backup/volumes.json vs /tmp/claude-0/walk/J/exports/202609261804_OpenOmniscience_Backup/volumes.json; ls --full-time /tmp/claude-0/walk/J/data-enc/keys. Members are collected in src/backup/artifact.py:420-470 (keys only if the dir already exists, 463-468) while load_or_create_signing_key() runs later (src/backup/artifact.py:483-490; src/backup/stream_backup.py:310-317)."
+   },
+   {
+    "title": "Plaintext corpus: Encryption row and summary contradict themselves ('stored unencrypted' beside 'The corpus … are encrypted')",
+    "severity": "P3",
+    "step_ids": [
+     "J2",
+     "J3"
+    ],
+    "repro": "Plaintext install (OO_DB_PLAINTEXT=1, port 8819), export the corpus, hover the Encryption row label, open the folder's BACKUP_SUMMARY.md.",
+    "expected": "One consistent statement: the volumes are encrypted with the export passphrase; the database inside is not SQLCipher-encrypted (brief §6 leaves the exact wording to the maintainer).",
+    "actual": "Panel row 'corpus stored unencrypted in this backup' with hover 'The corpus and every member of the artifact are encrypted. …'; the file's Encryption section reads 'Corpus at rest in this backup: no' immediately followed by 'The corpus and every member of the artifact are encrypted. …'.",
+    "evidence": "/tmp/claude-0/walk/J/results/plain.json (encryption_row); /tmp/claude-0/walk/J/exports-plain/202609261814_OpenOmniscience_Backup/BACKUP_SUMMARY.md; src/static/app-backup.js:176-181; src/backup/export_summary.py:349-374."
+   },
+   {
+    "title": "Progress line never names the verify-after-write re-read",
+    "severity": "P3",
+    "step_ids": [
+     "J2",
+     "J7"
+    ],
+    "repro": "Run any export with verify on and sample #ux-progress every 40-60 ms.",
+    "expected": "The costly re-read is visible as its own phase (it can roughly double the export time on a slow drive).",
+    "actual": "Across the 9 sampled exports the only labels seen were 'Preparing the export folder…', 'Corpus: Preparing…', 'Corpus: Backing up… · N volumes · size', 'Corpus: Writing parity… · N volumes · size', 'Large data: …' and the completion line; the ~1.2 s between parity and completion (which includes the re-read) kept reading 'Writing parity…'. No 'Verifying' label ever appeared.",
+    "evidence": "/tmp/claude-0/walk/J/results/j2.json, j4.json, j7.json (progress_seen). src/static/app-backup.js:355-384 (_uxVolPhase backup map has no 'verifying'; unknown phases fall to 'Backing up…')."
+   },
+   {
+    "title": "Export hovers left in English on fr/ar/zh pages (caveat surface)",
+    "severity": "P3",
+    "step_ids": [
+     "J5"
+    ],
+    "repro": "Switch to Français, العربية or 中文, open the export dialog after an export, hover the greyed Living sources row, the Elapsed label and the Encryption label.",
+    "expected": "Caveat strings ship ×12 (informed-consent non-negotiable); only the verdict's technical detail is English by design.",
+    "actual": "'a lane is a live encrypted database; its backup format is not settled yet', 'no large-data files were copied' / 'the large-data copy records no timing of its own', and 'The corpus and every member of the artifact are encrypted. Copied large-data files … NOT encrypted …' stay English in all three locales (the three known gaps, confirmed).",
+    "evidence": "/tmp/claude-0/walk/J/results/j5.json (row_label_titles per lang), /tmp/claude-0/walk/J/results/j5b.json (living_hover per lang). src/static/app-backup.js:258 (t(d.not_exportable_reason), no locale key), 167-170 (el.files_s_reason raw), 176-181 (enc.note raw)."
+   },
+   {
+    "title": "Help renderer splits a wrapped list item: the manual's 'never scheduled' bullet breaks mid-sentence into a separate paragraph",
+    "severity": "P3",
+    "step_ids": [
+     "J1"
+    ],
+    "repro": "Top-bar '?' -> User Manual -> type 'never scheduled' in 'Find on this page…'.",
+    "expected": "One bullet: 'Exports are never scheduled. There is no automatic or timed export and none is planned — an export is a deliberate act, …'.",
+    "actual": "The bullet ends at '… and none is'; 'planned — an export is a deliberate act, because it writes your corpus …' renders as a separate paragraph outside the list (same for every wrapped bullet around it, e.g. the BACKUP_SUMMARY.md and Import reports bullets).",
+    "evidence": "/tmp/claude-0/walk/J/shots/J-J1-manual-en.png; docs/USER_MANUAL.md:1326-1328 (indented continuation lines); src/static/app-settings.js:185-188 (the list branch only consumes lines that start with a list marker)."
+   },
+   {
+    "title": "French/Arabic wording nits on the export surface",
+    "severity": "P3",
+    "step_ids": [
+     "J5"
+    ],
+    "repro": "Open the export dialog and completion panel in Français and العربية.",
+    "expected": "Correct agreement and consistent terms.",
+    "actual": "fr: 'Fichiers copiés : aucune' (the shared 'none' key is feminine, src/static/locales/fr.json:2753; 'fichiers' needs 'aucun'); 'modèles LLM' starts lowercase in the checklist (fr.json:1907); the progress prefix 'Corpus: Préparation…' lacks the French space before the colon (prefix + ': ' hardcoded in _uxPoll). ar: the corpus is 'المجموعة' in the checklist but 'المتن' in Elapsed and the parity hint.",
+    "evidence": "/tmp/claude-0/walk/J/shots/J-J5-export-fr.png, J-J5-panel-bottom-ar.png; /tmp/claude-0/walk/J/results/j5.json."
+   }
+  ],
+  "not_measurable": [
+   "J7/J8 on the operator's own install and a real removable drive (none in this sandbox): the export, listing and summary were produced on a local directory instead; the removable-drive re-read cost could not be measured (local-disk estimate about 1.3 s including setup).",
+   "Whether this sandbox counts as 'the reference VM' named in the closing clause (maintainer ruling, brief S04-03 §5 step 3).",
+   "'LLM models' reading a real Ollama store with real gigabytes: no Ollama store here; the member was exercised with a synthetic 3-file Hugging Face store (HF_HOME).",
+   "Offline maps / Wikipedia dumps copy categories (no downloads possible offline); only hf_models was copied.",
+   "'~' in the destination (code-reading note 4): not tested, because the app runs from the repo root and it would write a '~' folder into the repo.",
+   "The 'failed', 'stopped' and 'unavailable' verify verdicts (not clickable; unit-tested).",
+   "Q823 OSM licence lines (maintainer ruling pending); verified only that no OSM/ODbL line ever appears.",
+   "Newsletters as a 'files copied' category: no such tick exists (newsletters ride inside the corpus volumes)."
+  ],
+  "summary": "The row's click-through clause closes in this sandbox for everything the sandbox can reach. On an encrypted install that started locked and was unlocked, each export made its own YYYYMMDDHHMM_OpenOmniscience_Backup folder: local time was proven under TZ=Europe/Paris, a second export in the same minute got _2 and _3, earlier folders stayed untouched, and nothing was reused. The panel read 'Verified' with every ruled field in order, and BACKUP_SUMMARY.md matched volumes.json character for character; this held in en, fr, ar and zh and at 375px. It does NOT fully close, for two reasons. First, J7/J8 need the operator's removable drive and the maintainer's ruling on whether this sandbox is the reference VM. Second, two P2 defects undercut the panel and the summary file: after a later corpus-only export, the reopened panel names an older folder and calls its verified backup 'Not verified — no corpus'; and a reload mid-export leaves a folder with no BACKUP_SUMMARY.md while the panel still reads 'Verified'. There are also seven P3s: Arabic bidi on paths and the folder-name example, the first export missing its signing key, contradictory plaintext encryption wording, the re-read never named in the progress line, English hovers, Help list rendering, and fr/ar wording."
+ },
+ "recheck": {
+  "row": "J",
+  "verdicts": [
+   {
+    "title": "Reopened export panel names an OLDER export and reports that verified corpus backup as 'Not verified' with 'no corpus'",
+    "verdict": "confirmed",
+    "reason": "Reproduced on my own encrypted instance (8820, locked, unlocked via #pw, HF_HOME holding a synthetic 3-file model store). First export: Corpus + LLM models went to exports/202609262023_OpenOmniscience_Backup, panel 'Verified — all 3 volumes'. Second export, corpus only, went to 202609262024_… and was Verified. After a reload and reopen, the dialog read 'Backup complete → …/202609262023_OpenOmniscience_Backup (last completed export)', which is the OLDER folder. Its panel had a red 'Not verified — this export recorded no verify result.', 'Encrypted volumes: none — no corpus was selected for this export', 'Schema version — · — · database —', 'App version —' and 'no attribution line applies'. That folder's own BACKUP_SUMMARY.md says Verified, 3 volumes, corpus encrypted, two licence lines. Status APIs at the time: volumes job done with dest=…2024; folder job done with dest=…2023. GET /api/backup/export-summary?dir=<2023> returned corpus_included=false and verify.state=unknown, yet volumes.bytes=35130923 (read off volumes.json), so the facts contradict themselves. Evidence: /tmp/claude-0/walk/J-recheck/results/s1.json, shots/J-D1-reopen-after-corpus-only-en.png, shots/J-D1-exportA-panel-en.png. The same stale folder-job state also masked the D2 reload folder on this instance (results/s2-8820.json). This is not by design: backup_v2.py:655-657 promises 'a reopened dialog and the file on the drive cannot disagree', and here they disagree about whether the backup is verified. Severity stays P2: a verified backup is shown as unverified and corpus-less on the data-safety surface. It is not data loss, and the error runs in the safe direction.",
+    "root_cause": "src/static/app-backup.js:66-80 (_uxShowLastCompletedExportSummary): a done folder-job status overwrites a done volumes-job status unconditionally (line 76, 'the more recent state to show'). That is false when a later export had no large-data phase, because the folder manager keeps an older dest. Then src/backup/export_summary.py:177-179 discards the volume summary because its dest differs, and line 202 turns 'summary not in memory for this folder' into corpus_included=false. The panel (app-backup.js:141-146, 196) and the verify sentence render that as 'no corpus was selected' plus a red 'Not verified'.",
+    "suggested_fix": "(1) Client: in _uxShowLastCompletedExportSummary, let the folder status win only if its dest equals the volumes dest (the same export) or the volume job holds no completed backup. Otherwise the two are different exports and the later one must win, which needs a finished_at timestamp in both managers' status() and a pick-the-latest rule. (2) export_facts: stop equating 'no in-memory summary for this folder' with 'no corpus selected'. Base corpus_included on volumes.json existing in the folder. When the in-memory facts belong to another export, return an explicit 'facts no longer in memory; see BACKUP_SUMMARY.md' state rather than verify 'unknown' plus 'none — no corpus was selected'.",
+    "severity": "P2"
+   },
+   {
+    "title": "A page reload during an export leaves the folder with no BACKUP_SUMMARY.md, and the reopened panel still reads 'Verified' with nothing saying the file is missing",
+    "verdict": "confirmed",
+    "reason": "Reproduced twice. On 8820 (encrypted) I clicked Back up, reloaded as soon as #ux-progress read 'Corpus: Preparing…', and let the job finish server-side (state done). exports-reload/202609262025_OpenOmniscience_Backup then held volumes.json, par-00001.oopar and 4 .ooenc but NO BACKUP_SUMMARY.md, still absent 5 s later. On 8821, whose folder job was idle, the walker's exact variant appeared: the reopened dialog read 'Backup complete → …/202609262029_OpenOmniscience_Backup (last completed export)' with a clean 'Verified — all 4 volumes…' panel. There was no summary-file line and no note that the file was never written. The GET response carries no summary_path or existence flag, and no reopen path writes it. Evidence: results/s2-8820.json, results/s2-8821.json, shots/J-D2-reopen-8821-en.png, shots/J-D2-reopen-after-reload-8820-en.png. This is not by design. Q209 = a asks for the file beside volumes.json for the export, and brief S04-03 S3 says it is 'written LAST'. The code itself says a long export's tab 'is very likely closed/reloaded before it finishes' (app-backup.js:54-63), and that is exactly the case that loses the file. The OPEN_QUEUE note (line ~587) exempts only the release-run button, not the dialog. Severity stays P2: a ruled artifact and the gate's closes-when evidence silently go missing in the realistic long-export case. The corpus bytes are intact.",
+    "root_cause": "BACKUP_SUMMARY.md is written only by the page: the POST /api/backup/export-summary at the tail of _uxRun (src/static/app-backup.js:673), inside the closure that a reload destroys. The reopen path (app-backup.js:94-104) only GETs facts. export_summary_read (src/api/backup_v2.py:651-658) returns no summary_path or exists flag, so the panel cannot say the file is missing.",
+    "suggested_fix": "Write the summary server-side at the end of each backup job. In VolumeJobManager._run_backup, write it right after kept['verify'] is set (src/backup/volume_job.py:393), from export_facts(destp, volume_status=self.status()). In the folder backup job, rewrite it when the copy completes, so the last writer carries both halves. Keep the page's POST as an idempotent rewrite. Minimum fallback: have GET /export-summary report whether BACKUP_SUMMARY.md exists, and have _uxShowLastCompletedExportSummary POST it when absent, or name the absence in the panel if the write fails.",
+    "severity": "P2"
+   },
+   {
+    "title": "Arabic (RTL): paths and the example folder name are bidi-reordered in the export dialog and panel",
+    "verdict": "confirmed",
+    "reason": "Reproduced in ar (html dir=rtl) on 8820. The hint example rendered as 'OpenOmniscience_Backup_202609121045.', with the date visually after the name, the reverse of the real folder name. The #ux-dest input (computed direction rtl, no dir attribute) showed 'tmp/claude-0/walk/J-recheck/exports/' with the leading slash moved to the end. The 'Backup complete →' path wrapped as 'tmp/claude-0/walk/J/- recheck/…', and the Destination <code> showed '…_Backup/' with a displaced slash. Evidence: shots/J-D3-hint-ar.png, J-D3-dest-input-ar.png, J-D3-dialog-ar.png, results/s3.json (dest_direction 'rtl', summary_code_direction rtl). fr and zh are unaffected. The app already isolates LTR data elsewhere (app-ai-tools.js:243 'dir=\"ltr\"' with FSI/PDI; app-map.js:2817 'unicode-bidi:isolate'), but row J's surface does not. Cosmetic, but it misleads about the folder-name order, so P3.",
+    "root_cause": "There is no bidi isolation on the LTR data. #ux-dest has no dir attribute (src/static/index.html:3319). The hint's example folder name is not wrapped (index.html:3321). The completion-path spans (src/static/app-backup.js:98 and :664) and the Destination <code> (app-backup.js:175) inherit direction:rtl.",
+    "suggested_fix": "Add dir=\"ltr\" (or unicode-bidi:plaintext) to #ux-dest. Wrap the example folder name in the hint and the dest in the two 'Backup complete →' spans in <bdi dir=\"ltr\"> (or the FSI/PDI span pattern already used in app-ai-tools.js:243). Add dir=\"ltr\" to the Destination <code> and the summary-path <code>.",
+    "severity": "P3"
+   },
+   {
+    "title": "First export on an install without an evidence key omits the signing key it creates mid-run (3 volumes; later exports 4)",
+    "verdict": "confirmed",
+    "reason": "Reproduced on a fresh encrypted seed. data-enc/keys was absent before the first export and held evidence_ed25519.pem after it. The first export's volumes.json lists members ['logs/app_errors.jsonl', 'corpus.db.sqlcipher', 'manifest.json'] (3 volumes). The second lists ['logs/app_errors.jsonl', 'keys/evidence_ed25519.pem', 'corpus.db.sqlcipher', 'manifest.json'] (4). Both sets pass verify_stream_backup with the passphrase. Evidence: results/s1.json (keys_dir_before/after_first_export, export_A_members, export_B_members). On a real install the key is otherwise created only by an evidence-bundle request (src/api/reporting.py:50/127), so an operator who never made one hits this on their first export. The zip path already fixes the same ordering deliberately (src/backup/artifact.py:488-490: 'Materialise the signing key BEFORE collecting members: a first-ever encrypted backup must carry the very key that signs its manifest'). The volume path does not. Its signed envelope also hardcodes 'keys_included': True (stream_backup.py:1250), which is false for that first set. The practical impact is small: that key has signed nothing but this backup, and the next export carries it. So P3.",
+    "root_cause": "src/backup/stream_backup.py:981 collects side members (keys only if data/keys exists, lines 612-616) before _build_envelope (line 1108) calls load_or_create_signing_key() (line 1243), which creates the key after collection. The envelope then asserts keys_included: True (line 1250).",
+    "suggested_fix": "In write_stream_backup, call load_or_create_signing_key() before _collect_side_members (just before stream_backup.py:981), mirroring artifact.py:488-490. Optionally derive keys_included from whether a keys/ member was actually collected instead of hardcoding True.",
+    "severity": "P3"
+   },
+   {
+    "title": "Plaintext corpus: Encryption row and summary contradict themselves ('stored unencrypted' beside 'The corpus … are encrypted')",
+    "verdict": "confirmed",
+    "reason": "Reproduced on a plaintext instance (OO_DB_PLAINTEXT=1, port 8821; plaintext is needed only for this defect). The panel's Encryption row read 'corpus stored unencrypted in this backup', and its hover opens 'The corpus and every member of the artifact are encrypted.' BACKUP_SUMMARY.md's Encryption section reads 'Corpus at rest in this backup: no', immediately followed by the same 'The corpus and every member of the artifact are encrypted' line, and its footer says the corpus is 'unreadable without the passphrase'. The truth: volumes.json has corpus_member 'corpus.db' inside passphrase-encrypted .ooenc volumes. The corpus is encrypted by the backup; it is just not SQLCipher-encrypted inside it, so the visible row under-states the protection. Evidence: results/s5.json, shots/J-D5-plain-panel-en.png, exports-plain/202609262028_OpenOmniscience_Backup/BACKUP_SUMMARY.md. This is not covered by brief S04-03 §6, which leaves open only the wording for copied category files beside encrypted volumes. The exact words are the maintainer's, but the contradiction is a defect. P3: under-claiming protection breaches nothing.",
+    "root_cause": "corpus_encrypted is the SQLCipher flag of the corpus member (src/backup/stream_backup.py:1124/1183/1253, src.encrypted). The UI and the file render it as whether the corpus is encrypted in the backup: src/static/app-backup.js:179 ('corpus stored unencrypted in this backup') and src/backup/export_summary.py:359-360 ('Corpus at rest in this backup: no'). Both sit beside the unconditional note at export_summary.py:226-231.",
+    "suggested_fix": "Reword the false branch so it states what the flag measures, in both carriers, e.g. panel: 'corpus database not separately encrypted (the backup's volumes are)'; file: 'Corpus database SQLCipher-encrypted inside the volumes: no'. Keep the note, which is then consistent. The exact wording goes to the maintainer.",
+    "severity": "P3"
+   },
+   {
+    "title": "Progress line never names the verify-after-write re-read",
+    "verdict": "confirmed",
+    "reason": "Confirmed, but the root cause differs from the walker's. The backend DOES report the re-read: my in-page read-only status probe (25 ms) caught {state: running, phase: 'verifying', volumes_verified: 1, volumes_total: 3} during the first export while #ux-progress still read 'Corpus: Writing parity… · 3 volumes · 16.8 MB' (results/s1.json export_A_phases). On this 17 MB set the re-read lasts about 100 ms, shorter than the UI's 1.2 s poll, and that is the only reason the walker saw 'Writing parity…' persist. When a poll does land in the re-read, as it will on a slow removable drive where it can take minutes, the UI's own mapping renders it as 'Backing up…' with no counts. _uxProgressView('volumes', {mode:'backup', progress:{phase:'verifying', volumes_verified:1, volumes_total:3}}) returned 'Backing up…'. The key 'Verifying volumes…' already exists ×12 (used for restore mode) (results/d6_mapping.json). verify_volume_set's docstring (volumes.py:173-176) says this progress exists so the pass does not 'read as a hang'. Cosmetic or misleading only, so P3.",
+    "root_cause": "src/static/app-backup.js:356-357: the backup-mode phase map has no 'verifying' entry, so line 384 falls back to the mode default 'Backing up…'. volumes_verified and volumes_total are never rendered (the extras at :415-418 read only volumes_written and bytes_written).",
+    "suggested_fix": "Add verifying: t(\"Verifying volumes…\") to the `back` map in _uxVolPhase (app-backup.js:356). In _uxProgressView, append ' · {volumes_verified}/{volumes_total}' when those fields are present.",
+    "severity": "P3"
+   },
+   {
+    "title": "Export hovers left in English on fr/ar/zh pages (caveat surface)",
+    "verdict": "confirmed",
+    "reason": "Reproduced in ar, fr and zh (results/s3.json). The Living sources row's title stays 'a lane is a live encrypted database; its backup format is not settled yet'. The Elapsed label's title stays 'the large-data copy records no timing of its own' (or 'no large-data files were copied'). The Encryption label's title stays 'The corpus and every member of the artifact are encrypted. Copied large-data files … are NOT encrypted …'. grep shows none of the three strings exists in any src/static/locales/*.json. The verdict sentence's English hover ('this export recorded no verify result') is by design (app-backup.js:186-193 keeps the backend wording as technical detail beside a translated sentence), so it is excluded. The other three have no such comment. The encryption note is the long form of a caveat, which the informed-consent non-negotiable says ships ×12 in the translated hover bubble. The visible short caveat ('copied files are not encrypted') IS translated, so the caveat is not hidden. P3.",
+    "root_cause": "The strings are backend English with no locale keys: src/backup/inventory.py:118 (rendered via t() at app-backup.js:265, but no key exists), and src/backup/export_summary.py:216-219 and :226-231, rendered raw as titles at app-backup.js:170 and :181.",
+    "suggested_fix": "Key the three hovers client-side, as _uxVerifySentence does: map the reasons to en.json keys plus the 11 translations and pass them through t() at app-backup.js:170, :181 and :265. Keep the backend string only as a fallback.",
+    "severity": "P3"
+   },
+   {
+    "title": "Help renderer splits a wrapped list item: the manual's 'never scheduled' bullet breaks mid-sentence into a separate paragraph",
+    "verdict": "confirmed",
+    "reason": "Reproduced via top-bar '?' → User Manual → find 'never scheduled'. The <li> text is exactly 'Exports are never scheduled. There is no automatic or timed export and none is', and the list's next sibling is a <p> starting 'planned — an export is a deliberate act, …' (results/s4.json, shots/J-D8-manual-en.png). The screenshot shows the same break for the BACKUP_SUMMARY.md and Import reports bullets. The source is a normal indented continuation (docs/USER_MANUAL.md:1326-1328). This is a manual-wide renderer defect, not specific to row J; the content is still all there, so P3.",
+    "root_cause": "src/static/app-settings.js:185-189: the list branch consumes only lines that match a list marker. An indented continuation line breaks the loop and becomes a paragraph (line 191 para.push).",
+    "suggested_fix": "In the list loop, append each following non-blank line that has no list marker and is indented (or any lazy continuation) to the current item's text, joined with a space, before calling inline(). Close the item only on a blank line, a new marker or a dedent.",
+    "severity": "P3"
+   },
+   {
+    "title": "French/Arabic wording nits on the export surface",
+    "verdict": "confirmed",
+    "reason": "All four confirmed in the locale files and the live dialog. fr 'none' = 'aucune' (fr.json:2753), shared with 'Parity … none', so after 'Fichiers copiés' it disagrees in gender. fr 'LLM models' = 'modèles LLM' (fr.json:1907) renders lowercase among capitalised rows ('Cartes hors ligne', 'Dumps Wikipédia'; results/s3.json lang_fr checklist). The progress prefix separator is hardcoded ': ' (app-backup.js:458), so French lacks the space before the colon that other keys carry ('Inclus :'). ar uses 'Corpus' = 'المجموعة' in the checklist but 'corpus' = 'المتن' in Elapsed (seen in lang_ar panel: '— المتن'). Cosmetic, P3.",
+    "root_cause": "One context-free 'none' key serves nouns of both genders (src/static/locales/fr.json:2753). There is a lowercase value at fr.json:1907. The prefix and ': ' are concatenated in code at src/static/app-backup.js:458 rather than put through a translatable template. Two different Arabic terms are used for the same concept across the 'Corpus' and 'corpus' keys in ar.json.",
+    "suggested_fix": "Give 'Files copied' its own 'none' key (fr 'aucun'). Capitalise 'Modèles LLM'. Build the progress prefix with tf('{prefix}: {text}') so fr can render '{prefix} : {text}'. Align the ar 'corpus' value with 'المجموعة', or pick one term for both keys.",
+    "severity": "P3"
+   }
+  ]
+ }
+}

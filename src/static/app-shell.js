@@ -55,7 +55,10 @@
     // already use; the twelve bare references here were the only construct in the file
     // that reached forward across the module split (measured: 12 forward refs, all here,
     // and zero TDZ references anywhere -- docs/design/APPJS_DECOMPOSITION_2026-08-20.md).
-    const TAB_LOADERS = {
+    // A Map, not a plain object: showTab looks a loader up by the URL hash, and a
+    // Map.get cannot resolve a name such as "constructor" through Object's prototype
+    // (CodeQL js/unvalidated-dynamic-method-call, flagged on PR #1191).
+    const TAB_LOADERS = new Map(Object.entries({
       home: () => loadHome(),
       feed: () => { _wireFeed(); },   // rulings 13/40: the corpus as a reading surface
       search: () => buildSearchTimeScope(),   // mount the ooTimeScope date-range control once
@@ -72,7 +75,7 @@
       integrity: () => loadIntegrity(),
       settings: () => loadSettings(),
       help: () => loadDocs(),
-    };
+    }));
     const _loaded = new Set();
 
     // Facet subtabs live JUST UNDER the status bar (maintainer 2026-06-20): each tab's
@@ -135,9 +138,10 @@
       // interval is untouched, so live data is never delayed by more than the
       // loader it would have duplicated.
       let justLoaded = false;
-      if (TAB_LOADERS[name] && !_loaded.has(name)) {
+      const loader = TAB_LOADERS.get(name);
+      if (typeof loader === "function" && !_loaded.has(name)) {
         _loaded.add(name);
-        TAB_LOADERS[name]();
+        loader();
         justLoaded = true;
       }
       // THEME-3: opening Analysis hydrates the restored active tab the first time (the
@@ -699,9 +703,15 @@
         } else if (g.kind === "wiki") {
           const grp = head(t("Wikipedia"), g);
           // A content hit carries a reader url (open the LOCAL article); a watched-page
-          // title hit (no url) jumps to the Wikipedia settings/tracker.
-          items.forEach(it => out.push({grp, label: it.title, sub: it.wiki || "",
-            run: it.url ? (() => window.open(it.url, "_blank")) : (() => showTab("wiki"))}));
+          // title hit (no url) opens that page's tracked changes, which live in Living
+          // sources since R32. A page whose text is also in the corpus answers BOTH ways,
+          // so each row says what it opens: two rows with one label that did different
+          // things (the second landed on Settings) was the 2026-09-27 re-walk's P-6.
+          items.forEach(it => out.push({grp, label: it.title,
+            sub: [it.wiki || "", it.url ? t("Local copy") : t("Tracked changes")].filter(Boolean).join(" · "),
+            run: it.url ? (() => window.open(it.url, "_blank"))
+              : (() => (typeof openWikiTC === "function" && it.page_id != null
+                ? openWikiTC(it.page_id, it.title || "", it.wiki || "") : showTab("wiki")))}));
         } else if (g.kind === "law") {
           const grp = head(t("World law"), g);
           items.forEach(it => out.push({grp, label: it.title,
@@ -770,7 +780,9 @@
         // window, but hoisting it above a matching command would mean typing "Settings"
         // and getting an analysis OF the word Settings. This change makes the surface
         // honest about today's behaviour without deciding that.
-        live.unshift({grp: t("Search"), label: `${t("Analysis")}: “${raw}”`,
+        // The reader's own separator through the ONE keyed label frame -- "Analyse : “…”"
+        // in fr, "分析：“…”" in zh (the 2026-09-27 re-walk, N-5), never a welded ": ".
+        live.unshift({grp: t("Search"), label: ooLabelText(t("Analysis"), `“${raw}”`),
           sub: statics.length ? "↗" : "↵ ↗", run: () => openAnalysisInNewTab(raw)});
       }
       _palFiltered = [...statics, ...live];

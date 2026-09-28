@@ -137,9 +137,15 @@
           const chips = items.map(f => {
             const scale = 0.82 + 0.5 * (f.mentions / max);     // size by prominence
             const fam = f.variants > 1;
-            return `<button class="ls-chip" style="font-size:${(11.5*scale).toFixed(1)}px"
-              title="${fam ? `family of ${f.variants}: ${esc((f.members||[]).map(m=>m.term).join(', '))} · ` : ""}${f.mentions} mentions — click to zoom in"
-              onclick="pickTerm(${esc(JSON.stringify(f.term))})">${kwLabelHtml(f)}${fam ? `<span class="muted"> ·${f.variants}</span>` : ""}</button>`;
+            // The hover is keyed frames with formatted numbers (re-walk M-11); the button
+            // opts out of the walker because its title is already in the reader's language,
+            // and the langchange repaint (forced for the landscape) redraws it.
+            const tip = (fam ? _kwTf("family of {n}: {members}", {n: fmtNum(f.variants),
+                members: (f.members || []).map(m => m.term).join(", ")}) + " · " : "")
+              + _kwTf("{n} mentions — click to zoom in", {n: fmtNum(f.mentions)});
+            return `<button class="ls-chip" data-i18n-dyn style="font-size:${(11.5*scale).toFixed(1)}px"
+              title="${esc(tip)}"
+              onclick="pickTerm(${esc(JSON.stringify(f.term))})">${kwLabelHtml(f, {inButton: true})}${fam ? `<span class="muted"> ·${f.variants}</span>` : ""}</button>${kwSensesAfterHtml(f)}`;
           }).join("");
           return `<div class="ls-col"><div class="ls-h">${esc(t(g.label))} <span class="muted">${items.length}</span></div><div class="ls-chips">${chips}</div></div>`;
         }).join("");
@@ -168,10 +174,10 @@
         const top = await api(`/api/insights/top?group=true&limit=80&kind=${encodeURIComponent(kind)}` + tgtLangParam());
         const fams = top.terms || [];
         list.innerHTML = fams.length ? fams.map(f => `<div class="fam-row">
-            <div class="fam-body"><div><b>${kwLabelHtml(f)}</b> <span class="pill">${esc(f.kind)}</span>
+            <div class="fam-body"><div><b>${kwLabelHtml(f)}</b> <span class="pill">${esc(kwKindLabel(f.kind))}</span>
               ${f.manual ? '<span class="pill ok">manual</span>' : ""}
               ${f.ring_id ? `<button class="pill lvl-group" title="${esc(lvlTitle("group"))}" onclick="openConceptMap(${esc(JSON.stringify(f.ring_id))})">group</button>` : ""}
-              <span class="muted">· ${f.mentions} mentions</span></div>
+              <span class="muted">· ${esc(_kwTf("{n} mentions", {n: fmtNum(f.mentions)}))}</span></div>
               <div class="fam-chips muted">${_famMemberList(f)}</div></div></div>`
           ).join("") : '<div class="muted">No entity families yet — index the corpus first.</div>';
       } catch (e) { list.innerHTML = `<div class="muted">Could not load families: ${esc(e.message)}</div>`; }
@@ -211,11 +217,11 @@
             : "";
           return `<div class="fam-row">
             <input type="checkbox" class="fam-pick" data-norms="${esc(norms)}" data-kind="${esc(f.kind)}" data-label="${esc(f.term)}" aria-label="${esc(f.term)}">
-            <div class="fam-body"><div><b>${kwLabelHtml(f)}</b> <span class="pill">${esc(f.kind)}</span>
+            <div class="fam-body"><div><b>${kwLabelHtml(f)}</b> <span class="pill">${esc(kwKindLabel(f.kind))}</span>
               ${f.manual ? '<span class="pill ok">manual</span>' : ""}
               ${f.ring_id ? `<button class="pill lvl-group" title="${esc(lvlTitle("group"))}" onclick="openConceptMap(${esc(JSON.stringify(f.ring_id))})">group</button>` : ""}
               ${lemmaTag}
-              <span class="muted">· ${f.mentions} mentions</span></div>
+              <span class="muted">· ${esc(_kwTf("{n} mentions", {n: fmtNum(f.mentions)}))}</span></div>
               <div class="fam-chips">${chips}</div></div></div>`;
         }).join("") : '<div class="muted">No families with a decision to review — grouping is fully automatic so far.</div>';
         renderFamOverrides(ov);
@@ -384,9 +390,13 @@
       }
       groupsHost.innerHTML = members.length
         ? members.filter((r) => _conceptMatches(r.id) || _conceptMatches((r.languages || []).join("/")))
+            // A break opportunity after each "/" and a chip no wider than its row: a ring
+            // in many languages joined "(ara/deu/eng/…)" into one unbreakable word, and at
+            // 375 px that chip pushed the page 6 px sideways (row R, R8).
             .map((r) => `<button class="chip lvl-group${_conceptActiveBucket && r.id === _conceptSelectedRing ? " active" : ""}"
+               style="max-width:100%;overflow-wrap:anywhere"
                onclick="selectConceptGroup(${esc(JSON.stringify(r.id))})" title="${esc(lvlTitle("group"))}">⦾ ${esc(r.id)}
-               <span class="muted">(${esc((r.languages || []).join("/"))})</span></button>`).join(" ")
+               <span class="muted">(${(r.languages || []).map((l) => ooLangCell(l)).join("/<wbr>")})</span></button>`).join(" ")
         : (_conceptActiveBucket ? `<div class="muted">${esc(t("No groups in this bucket."))}</div>` : "");
 
       // The clickable path breadcrumb (reuses the shared component from §B).
@@ -435,10 +445,20 @@
       const el = $("sg-ringmap"); if (el && el.scrollIntoView) el.scrollIntoView({ behavior: "smooth", block: "center" });
     }
 
+    // What the ring map last drew, so a language switch redraws its legend, caveat and
+    // worldview picker (t()'d at render, out of the walker's reach) from the payload it
+    // already holds -- never a fetch (row R, R4).
+    let _ringMapLast = null;
+    function repaintRingMapFromCache() {
+      const host = $("sg-ringmap");
+      if (!_ringMapLast || !host || !host.querySelector("svg#oo-choro")) return;
+      showRingMap(_ringMapLast.ringId, _ringMapLast.d);
+    }
     // Item #4: render a cross-language ring's coverage on the ooMap component — where the
     // concept is covered (by the producing source's country) + its per-language split.
     // Counts only, no score; unknown country is shown honestly, never mapped or guessed.
-    async function showRingMap(ringId) {
+    // `cached` is a payload this map already drew (the language-switch redraw): no fetch.
+    async function showRingMap(ringId, cached) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       // A template, so the FRAME translates and the two numbers stay data. Guarded on
       // tf EXISTING rather than falling back to identity: an identity fallback would
@@ -446,12 +466,15 @@
       const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : null;
       const host = $("sg-ringmap"), detail = $("sg-ringmap-detail");
       if (!host) return;
-      if (!ringId) { host.innerHTML = ""; if (detail) detail.innerHTML = ""; return; }
-      host.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
-      if (detail) detail.innerHTML = "";
+      if (!ringId) { host.innerHTML = ""; if (detail) detail.innerHTML = ""; _ringMapLast = null; return; }
+      if (!cached) {
+        host.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
+        if (detail) detail.innerHTML = "";
+      }
       try {
-        const d = await api("/api/insights/ring-countries?ring_id=" + encodeURIComponent(ringId));
+        const d = cached || await api("/api/insights/ring-countries?ring_id=" + encodeURIComponent(ringId));
         if (!d.found) { host.innerHTML = `<div class="muted">${esc(t("No cross-country coverage for this concept yet."))}</div>`; return; }
+        _ringMapLast = { ringId, d };
         const values = {}, names = {}; let unloc = null;
         (d.countries || []).forEach(c => {
           if (!c.country) { unloc = c; return; }            // unlocated bucket — never mapped
@@ -486,25 +509,30 @@
             values, names, unit: t("articles"),
             valueLabel: (iso, v) => `${v} ${t("articles")}`,
             aria: ariaLabel,
-            method: d.method || "", caveat: d.caveat || "",
+            // The endpoint's method and caveat are fixed sentences, keyed x12 (row R, R5):
+            // passed raw they read in English under every locale.
+            method: d.method ? t(d.method) : "", caveat: d.caveat ? t(d.caveat) : "",
             onCountry: (iso) => _conceptDrillCountry(ringId, iso),
           });
         }
         // Detail: the per-language mention split (from /top?group=true) + unlocated + a table.
         const lb = _ringLangIndex[ringId];
         const langBd = (lb && Object.keys(lb).length)
-          ? `<div class="hint" style="margin-top:4px"><b>${esc(t("By language"))}:</b> `
-            + Object.entries(lb).sort((a, b) => b[1] - a[1]).map(([lg, n]) =>
-                `${esc(lg === "?" ? t("unknown") : lg)} <span class="muted">${n}</span>`).join(" · ")
+          ? `<div class="hint" style="margin-top:4px">` + ooLabelHtml(`<b>${esc(t("By language"))}</b>`,
+            // Q306's display step: every language CODE on screen is 639-2/T with the
+            // name in the hover -- these two lines and the group chips printed the
+            // stored 639-1 (`es 84 · en 47`), the one place the sweep missed (L10).
+              Object.entries(lb).sort((a, b) => b[1] - a[1]).map(([lg, n]) =>
+                `${lg === "?" ? esc(t("unknown")) : ooLangCell(lg)} <span class="muted">${n}</span>`).join(" · "))
             + ` <span class="muted">— ${esc(t("mentions per language"))}</span></div>`
           : "";
         const langs = (d.languages || []).length
-          ? `<div class="hint"><b>${esc(t("Languages"))}:</b> ${esc((d.languages || []).join(" · "))}</div>` : "";
+          ? `<div class="hint">${ooLabelHtml(`<b>${esc(t("Languages"))}</b>`, (d.languages || []).map((l) => ooLangCell(l)).join(" · "))}</div>` : "";
         // §D: the "not mapped" bucket is CLICKABLE too -- often the largest bucket,
         // and it must be investigable, never a dead end.
         const unlocNote = unloc
           ? `<button class="secondary" style="display:block;width:100%;text-align:left;margin-top:6px" onclick="_conceptDrillCountry('${esc(ringId)}', null)">`
-            + `${esc(t("Not mapped (source country unknown)"))}: ${unloc.articles} ${esc(t("articles"))} · ${unloc.mentions} ${esc(t("mentions"))}</button>` : "";
+            + ooLabelHtml(esc(t("Not mapped (source country unknown)")), `${unloc.articles} ${esc(t("articles"))} · ${unloc.mentions} ${esc(t("mentions"))}`) + `</button>` : "";
         const rows = (d.countries || []).filter(c => c.country)
           .map(c => `<tr style="cursor:pointer" onclick="_conceptDrillCountry('${esc(ringId)}','${esc(c.country)}')">`
             + `<td>${ooCountryCell(c.country)}</td><td style="text-align:right">${c.articles}</td><td style="text-align:right">${c.mentions}</td></tr>`).join("");
@@ -539,8 +567,9 @@
       } catch (e) { toast(t("Drill failed: ") + (e && e.message || e), "err"); }
     }
     async function loadSuperGroups() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const box = $("sg-list");
-      box.innerHTML = '<div class="muted">Loading…</div>';
+      box.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
       try {
         // series_top: only the top-mentioned groups get a windowed rate + sparkline
         // (S1.5, bounded — never all ~77 groups on every load).
@@ -563,9 +592,9 @@
         _conceptRings = rings.rings || [];
         renderConceptBrowse();
         box.innerHTML = sgs.supergroups.length ? sgs.supergroups.map(sgCard).join("")
-          : '<div class="muted">No super-groups yet. Create one above, then add families or groups to it.</div>';
+          : `<div class="muted">${esc(t("No super-groups yet. Create one above, then add families or groups to it."))}</div>`;
         const bc = $("sg-basis"); if (bc) bc.innerHTML = basisChip(sgs.counts);
-      } catch (e) { box.innerHTML = `<div class="muted">Could not load: ${esc(e.message)}</div>`; }
+      } catch (e) { box.innerHTML = `<div class="muted">${esc(t("Could not load") + ": " + e.message)}</div>`; }
       _sgScrollToTarget();  // S3: land on the deep-linked group after it renders
       _conceptApplyPending();  // §D: land on the deep-linked concept-map ring, if any
     }
@@ -600,13 +629,18 @@
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const chips = shown.length ? shown.map(m => {
         const isRing = !!m.ring_id;
+        // THE ONE LABEL (M7): a family member is a keyword like any other, translated or
+        // tagged by the same rules; a ring member is the concept, named in the reader's
+        // language with its id in the hover (the ring has no single source language, so
+        // it draws no "translated from" tag -- the same rule a merged ring row follows).
+        const label = kwLabelHtml(Object.assign({}, m, {term: isRing ? m.ring_id : m.normalized}), {inButton: true});
         const inner = isRing
-          ? `⊕ ${esc(m.ring_id)}${kwTransHtml(m)} <span class="muted">group·${(m.ring_members || []).length}</span>`
-          : esc(m.normalized);
+          ? `⊕ ${label} <span class="muted">${esc(_kwTf("group · {n}", {n: (m.ring_members || []).length}))}</span>`
+          : label;
         // Row 2 (cross-group overlap): a member also counted in other groups gets
         // that stated in its hover, never silently summed as if exclusive.
         const alsoIn = (m.also_in && m.also_in.length)
-          ? ` — also in: ${m.also_in.join(", ")}` : "";
+          ? " — " + _kwTf("also in: {groups}", {groups: m.also_in.join(", ")}) : "";
         // §B circle grammar: a ring/group member gets the box-shadow ring + the
         // translated level hover appended (colour reinforces, the hover carries it).
         const levelTip = isRing ? " — " + lvlTitle("group") : "";
@@ -619,23 +653,32 @@
           ? ` <button class="ghost tiny" title="${esc(t("Open on the cross-country concept map"))}"
                onclick="openConceptMap(${esc(JSON.stringify(m.ring_id))})">🗺</button>` : "";
         return `<button class="chip${isRing ? " lvl-group" : ""}" onclick="openCorpus(${esc(JSON.stringify(m.normalized))})"
-           title="${tip}">${inner} <span class="muted">${m.mentions}</span>${alsoIn ? " *" : ""}</button>${mapLink}`;
+           title="${tip}">${inner} <span class="muted">${m.mentions}</span>${alsoIn ? " *" : ""}</button>${kwSensesAfterHtml(m)}${mapLink}`;
       }).join("")
         : '<span class="muted">No members yet.</span>';
+      const tf = (s2, v) => (window.OOI18N && OOI18N.tf) ? OOI18N.tf(s2, v)
+        : String(s2).replace(/\{(\w+)\}/g, (m0, k) => (v && v[k] != null) ? String(v[k]) : m0);
       const zeroChip = zeroCount > 0
-        ? `<span class="muted" title="${esc(g.members.filter(m => m.mentions === 0).map(m => m.normalized).join(", "))}">+${zeroCount} with no mentions yet</span>`
+        ? `<span class="muted" title="${esc(g.members.filter(m => m.mentions === 0).map(m => m.normalized).join(", "))}">${esc(tf("+{n} with no mentions yet", {n: zeroCount}))}</span>`
         : "";
       // Row 1 (dominance): the mandatory "which member accounts for the total"
-      // disclosure — a group total without it misleads by construction.
+      // disclosure — a group total without it misleads by construction. Keyed as one
+      // frame (M14): the member is data, the sentence around it translates.
+      // The member is named as its chip names it (M7): "voting" read "voting" in the French
+      // line directly above a chip reading "vote".
+      const domM = g.dominance ? g.members.find(m => m.normalized === g.dominance.member) : null;
+      const domName = (domM && typeof kwLabelParts === "function")
+        ? (kwLabelParts(Object.assign({}, domM, {term: domM.ring_id || domM.normalized})).shown || g.dominance.member)
+        : (g.dominance && g.dominance.member);
       const domLine = g.dominance
-        ? `<div class="hint muted" style="margin-top:2px">Dominated by <b>${esc(g.dominance.member)}</b> (${Math.round(g.dominance.share * 100)}% of this total)</div>`
+        ? `<div class="hint muted" style="margin-top:2px">${esc(tf("Dominated by “{member}” ({share}% of this total)", {member: domName, share: Math.round(g.dominance.share * 100)}))}</div>`
         : "";
       // S1.5: a windowed rate + sparkline, present only on the top series_top groups
       // (bounded — never all groups); both summed over the SAME deduped id set the
       // headline total uses, so the chart can never disagree with the number beside it.
       const rateLine = g.rate
         ? `<div class="hint muted" style="margin-top:2px">${esc(growthFallback(g.rate, {window: true})
-            || `↑${g.rate.growth}× (${g.rate.recent} recent · ${g.rate.prior} prior, ${g.rate.window_days}d vs ${g.rate.baseline_days}d)`)}</div>`
+            || trendRateText(g.rate, {window: true}))}</div>`
         : "";
       // PRH-31: drawn on the SERVER'S window, not on the points. The series omits
       // its zero days, so an index-placed chart renders day 1 and day 5 adjacent —
@@ -651,7 +694,7 @@
         : "";
       return `<div class="sg-card" id="sg-card-${g.id}">
         <div class="sg-head"><b class="lvl-super" title="${esc(lvlTitle("super"))}">${esc(g.name)}</b>
-          <span class="muted">· ${g.count} member${g.count === 1 ? "" : "s"} · ${g.mentions} mentions</span></div>
+          <span class="muted">· ${esc(tf(g.count === 1 ? "{n} member · {m} mentions" : "{n} members · {m} mentions", {n: g.count, m: g.mentions}))}</span></div>
         ${domLine}${rateLine}${spark}
         <div class="fam-chips" style="margin-top:6px">${chips}${zeroChip ? " " + zeroChip : ""}</div></div>`;
     }
@@ -1136,7 +1179,7 @@
         }
       } catch (e) {
         // Additive panel — degrade quietly, never throw.
-        box.innerHTML = `<div class="muted">${esc(t("Could not load") + ": " + e.message)}</div>`;
+        box.innerHTML = `<div class="muted">${esc(t("Could not load:") + " " + e.message)}</div>`;
       }
     }
 
@@ -1193,7 +1236,7 @@
         box.innerHTML = summary + noneNote + `<div style="overflow:auto"><table>${header}${rows}</table></div>`;
       } catch (e) {
         // Additive panel — degrade quietly, never throw.
-        box.innerHTML = `<div class="muted">${esc(t("Could not load") + ": " + e.message)}</div>`;
+        box.innerHTML = `<div class="muted">${esc(t("Could not load:") + " " + e.message)}</div>`;
       }
     }
 
@@ -1242,7 +1285,7 @@
           + (d.preregistration ? `<div class="card-caveat" style="margin-top:4px">${esc(d.preregistration)}</div>` : "")
           + `<div class="card-caveat" style="margin-top:4px">${esc(t("A single test, not corrected for multiple comparisons — screen many keywords for an honest, FDR-corrected result."))}</div>`;
       } catch (e) {
-        out.innerHTML = `<div class="muted">${esc(t("Could not load") + ": " + e.message)}</div>`;
+        out.innerHTML = `<div class="muted">${esc(t("Could not load:") + " " + e.message)}</div>`;
       }
     }
 
@@ -1281,54 +1324,72 @@
         + `${esc(t("This watch covers"))} ${bits} `
         + `<span class="muted">${esc(t("in every language its ring carries."))}</span></div>`;
     }
+    // The last /api/watches payload drawn, so a LANGUAGE SWITCH can redraw the list
+    // without a request (the 2026-09-26 click-through, N5): every row is built from tf()
+    // frames plus the watch's own numbers, so the i18n DOM walker cannot reach it and the
+    // list stayed in the language it was first drawn in until a reload.
+    let _wtLast = null;
     async function loadWatches() {
       const box = $("wt-list"); if (!box) return;
       const t = _wt(), tf = _wtf();
       box.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
       try {
-        const d = await api("/api/watches");
-        const ws = d.watches || [];
-        if (!ws.length) {
-          box.innerHTML = `<div class="muted">${esc(t("No watches yet — add one above. The engine runs after every collection pass."))}</div>`;
-          return;
-        }
-        box.innerHTML = ws.map(w => {
-          const last = w.last_matched_at ? fmtDateTime(w.last_matched_at) : t("never");
-          const hist = (w.history || []).map(h =>
-            `<li>${esc(fmtDateTime(h.matched_at))}: ${esc(tf("{n} articles ({new} new)", {n: h.n_articles, new: h.new_articles}))}`
-            + (h.article_ids && h.article_ids.length
-                ? ` · <a href="#" onclick="openAnalysisForIds(${JSON.stringify(h.article_ids)}, ${JSON.stringify(tf("Watch: {name}", {name: w.name}))});return false">${esc(t("open set ↗"))}</a>`
-                : "")
-            + `</li>`).join("");
-          return `<div class="card" style="padding:10px;margin-bottom:8px">
-            <div class="row" style="align-items:center;justify-content:space-between;gap:8px">
-              <div><b>${esc(w.name)}</b> <span class="muted">— “${esc(w.query)}”</span>
-                <span class="pill ${w.enabled ? 'ok' : ''}">${esc(w.enabled ? t('on') : t('off'))}</span></div>
-              <div style="flex:0 0 auto">
-                <button class="secondary" onclick="toggleWatch(${w.id}, ${!w.enabled})">${esc(w.enabled ? t('Disable') : t('Enable'))}</button>
-                <button class="secondary" onclick="editWatch(${w.id})">${esc(t('Edit'))}</button>
-                <button class="secondary" onclick="deleteWatch(${w.id})">${esc(t('Delete'))}</button>
-              </div>
-            </div>
-            <div class="hint" style="margin-top:4px">${esc(tf("≥ {n} articles within {d} day(s) · last fired: {when}",
-                {n: w.threshold, d: w.window_days, when: last}))}</div>
-            ${_watchRingNote(w.cross_language)}
-            ${hist ? `<ul class="hint" style="margin:6px 0 0 16px">${hist}</ul>` : ""}
-          </div>`;
-        }).join("")
-          // Server prose, so it goes through t() -- the same defect class the analysis
-          // rail carried until a Chromium walk read it back in Arabic.
-          + (d.caveat ? `<div class="hint" style="margin-top:8px">${esc(t(d.caveat))}</div>` : "")
-          // The ring caveat ONCE for the panel, not once per row: it is the same sentence
-          // for every watch, and repeating it is how a caveat stops being read.
-          + (ws.some((w) => w.cross_language && w.cross_language.caveat)
-              ? `<div class="hint muted" style="margin-top:4px">`
-                + `${esc(t(ws.find((w) => w.cross_language && w.cross_language.caveat)
-                    .cross_language.caveat))}</div>`
-              : "");
+        _wtLast = await api("/api/watches");
+        _renderWatches();
       } catch (e) {
+        _wtLast = null;
         box.innerHTML = `<div class="muted">${esc(tf("Could not load watches: {error}", {error: e.message}))}</div>`;
       }
+    }
+    // Registered in app-boot's ONE `oo:langchange` listener. Redraws from the retained
+    // payload only -- it never fetches, so a switch cannot ask the backend anything.
+    function _renderWatches() {
+      const box = $("wt-list"); if (!box || !_wtLast) return;
+      const t = _wt(), tf = _wtf();
+      const d = _wtLast;
+      const ws = d.watches || [];
+      if (!ws.length) {
+        box.innerHTML = `<div class="muted">${esc(t("No watches yet — add one above. The engine runs after every collection pass."))}</div>`;
+        return;
+      }
+      box.innerHTML = ws.map(w => {
+        const last = w.last_matched_at ? fmtDateTime(w.last_matched_at) : t("never");
+        const hist = (w.history || []).map(h =>
+          `<li>${esc(fmtDateTime(h.matched_at))}: ${esc(tf("{n} articles ({new} new)", {n: h.n_articles, new: h.new_articles}))}`
+          + (h.article_ids && h.article_ids.length
+              ? ` · <a href="#" onclick="openAnalysisForIds(${JSON.stringify(h.article_ids)}, ${JSON.stringify(tf("Watch: {name}", {name: w.name}))});return false">${esc(t("open set ↗"))}</a>`
+              : "")
+          + `</li>`).join("");
+        // The watch's NAME and QUERY are the reader's own words, never chrome, so both
+        // opt out of the i18n walker (`data-i18n-dyn`). The walker translates any text
+        // node that equals a locale key, and a watch named "Climate" was drawn as
+        // "مناخ" / "Climat" / "气候" (the 2026-09-26 click-through, N6).
+        return `<div class="card" style="padding:10px;margin-bottom:8px">
+          <div class="row" style="align-items:center;justify-content:space-between;gap:8px">
+            <div><b data-i18n-dyn>${esc(w.name)}</b> <span class="muted" data-i18n-dyn>— “${esc(w.query)}”</span>
+              <span class="pill ${w.enabled ? 'ok' : ''}">${esc(w.enabled ? t('on') : t('off'))}</span></div>
+            <div style="flex:0 0 auto">
+              <button class="secondary" onclick="toggleWatch(${w.id}, ${!w.enabled})">${esc(w.enabled ? t('Disable') : t('Enable'))}</button>
+              <button class="secondary" onclick="editWatch(${w.id})">${esc(t('Edit'))}</button>
+              <button class="secondary" onclick="deleteWatch(${w.id})">${esc(t('Delete'))}</button>
+            </div>
+          </div>
+          <div class="hint" style="margin-top:4px">${esc(tf("≥ {n} articles within {d} day(s) · last fired: {when}",
+              {n: w.threshold, d: w.window_days, when: last}))}</div>
+          ${_watchRingNote(w.cross_language)}
+          ${hist ? `<ul class="hint" style="margin:6px 0 0 16px">${hist}</ul>` : ""}
+        </div>`;
+      }).join("")
+        // Server prose, so it goes through t() -- the same defect class the analysis
+        // rail carried until a Chromium walk read it back in Arabic.
+        + (d.caveat ? `<div class="hint" style="margin-top:8px">${esc(t(d.caveat))}</div>` : "")
+        // The ring caveat ONCE for the panel, not once per row: it is the same sentence
+        // for every watch, and repeating it is how a caveat stops being read.
+        + (ws.some((w) => w.cross_language && w.cross_language.caveat)
+            ? `<div class="hint muted" style="margin-top:4px">`
+              + `${esc(t(ws.find((w) => w.cross_language && w.cross_language.caveat)
+                  .cross_language.caveat))}</div>`
+            : "");
     }
     async function createWatch() {
       const t = _wt(), tf = _wtf();
@@ -1389,27 +1450,66 @@
       }
     }
 
-    let _insStatusBuilt = false;
+    // The header's words are KEYED FRAMES around the animated counters (W17): the English
+    // text nodes between the spans were not keys, so "keywords", "entities" and "to index"
+    // stayed English in every locale while "mentions" alone happened to match one. Each
+    // counter is a marker substituted after escaping, so the spans the tween writes into
+    // survive translation; data-i18n-dyn keeps the DOM walker from caching the translated
+    // frame as an "original", and repaintInsightsStatusFromCache redraws it on a switch.
+    let _insStatusBuilt = false, _insStatusLast = null;
+    function _insStatusFrame(s) {
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
+        : ((x, v) => x.replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null ? String(v[k]) : m)));
+      const n = (id, key) => {
+        const v = Math.round((s && s[key]) || 0);
+        return `<span id="${id}" data-v="${v}">${fmtNum(v, 0)}</span>`;
+      };
+      const fill = (frame, spans) => {
+        const marks = {}; Object.keys(spans).forEach((k, i) => { marks[k] = String.fromCharCode(1 + i); });
+        let html = esc(tf(frame, marks));
+        Object.keys(spans).forEach((k) => { html = html.replace(marks[k], () => spans[k]); });
+        return html;
+      };
+      const pill = fill("{indexed}/{total} articles indexed",
+        { indexed: n("ins-n-indexed", "indexed_articles"), total: n("ins-n-total", "total_articles") });
+      const kw = fill("{keywords} keywords ({entities} entities)",
+        { keywords: n("ins-n-keywords", "keywords"), entities: n("ins-n-entities", "entities") });
+      const men = fill("{mentions} mentions", { mentions: n("ins-n-mentions", "mentions") });
+      return `<span data-i18n-dyn><span class="pill" id="ins-pill">${pill}</span> · ${kw} · ${men} ` +
+        `<span id="ins-remaining" class="muted"></span></span>`;
+    }
+    function _insRemainingHtml(s) {
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
+        : ((x, v) => x.replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null ? String(v[k]) : m)));
+      if (!s || !s.remaining) return "";
+      return "· " + esc(tf("{n} to index", { n: "\u0001" }))
+        .replace("\u0001", () => `<strong>${fmtNum(s.remaining, 0)}</strong>`);
+    }
+    function _paintInsStatus(s) {
+      animateCount($("ins-n-indexed"), s.indexed_articles);
+      animateCount($("ins-n-total"), s.total_articles);
+      animateCount($("ins-n-keywords"), s.keywords);
+      animateCount($("ins-n-entities"), s.entities);
+      animateCount($("ins-n-mentions"), s.mentions);
+      $("ins-pill").className = "pill " + (s.remaining === 0 ? "ok" : "warn");
+      $("ins-remaining").innerHTML = _insRemainingHtml(s);
+    }
+    // A language switch redraws the frame from the last status, at its current values:
+    // no fetch, and no tween back up from zero.
+    function repaintInsightsStatusFromCache() {
+      if (!_insStatusBuilt || !_insStatusLast || !$("ins-status")) return;
+      $("ins-status").innerHTML = _insStatusFrame(_insStatusLast);
+      _paintInsStatus(_insStatusLast);
+    }
     async function loadInsights() {
       try {
         const s = await api("/api/insights/status");
+        _insStatusLast = s;
         if (!_insStatusBuilt) {
           _insStatusBuilt = true;
-          $("ins-status").innerHTML =
-            `<span class="pill" id="ins-pill"><span id="ins-n-indexed" data-v="0">0</span>/` +
-            `<span id="ins-n-total" data-v="0">0</span> articles indexed</span> · ` +
-            `<span id="ins-n-keywords" data-v="0">0</span> keywords ` +
-            `(<span id="ins-n-entities" data-v="0">0</span> entities) · ` +
-            `<span id="ins-n-mentions" data-v="0">0</span> mentions ` +
-            `<span id="ins-remaining" class="muted"></span>`;
+          $("ins-status").innerHTML = _insStatusFrame(null);
         }
-        animateCount($("ins-n-indexed"), s.indexed_articles);
-        animateCount($("ins-n-total"), s.total_articles);
-        animateCount($("ins-n-keywords"), s.keywords);
-        animateCount($("ins-n-entities"), s.entities);
-        animateCount($("ins-n-mentions"), s.mentions);
-        $("ins-pill").className = "pill " + (s.remaining === 0 ? "ok" : "warn");
-        $("ins-remaining").innerHTML = s.remaining ? `· <strong>${s.remaining.toLocaleString()}</strong> to index` : "";
+        _paintInsStatus(s);
         if (s.remaining > 0 && !_indexing) autoIndexInsights();  // background top-up; no button (§6)
       } catch (e) { if (!_insStatusBuilt) $("ins-status").textContent = _failMsg("Status unavailable: {error}", e); }
       loadLandscape();

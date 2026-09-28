@@ -139,4 +139,35 @@ assert.strictEqual(_laneState(lane("press"), sched(null)), S.ON);
 assert.strictEqual(_laneState(lane("osm"), sched(null)), S.ASK);
 assert.strictEqual(_laneState(lane("law"), sched({})), S.ON); // noOptOut ride-along
 
+// --- Discover by topic: switched on, it is still only "when you ask" -------- //
+// (delegated click-through 2026-09-26, row H). Its switch unlocks a button; nothing
+// schedules it, and docs/SECURITY.md says so. Listing it under "Runs on every
+// collection pass" told the operator the scheduler would query DuckDuckGo.
+{
+  const topic = lane("topic-discovery");
+  assert.strictEqual(topic.whenOn, "ask", "the topic-discovery lane lost whenOn: 'ask'");
+  const safety = (v) => ({ scheduler: {}, safety: v, custody: {} });
+  assert.strictEqual(_laneState(topic, safety({ discovery_external_enabled: true })), S.ASK,
+    "an enabled topic discovery was listed as running on every pass");
+  assert.strictEqual(_laneState(topic, safety({ discovery_external_enabled: false })), S.OFF);
+  assert.strictEqual(_laneState(topic, safety(null)), S.UNKNOWN);
+  // The custody lane shares the "opt-in" trigger and must NOT follow: once on, it
+  // anchors every ingested article with no click of its own.
+  assert.strictEqual(custody.whenOn, undefined, "the custody lane is not a when-you-ask lane");
+}
+
+// --- the lane an action turns ON is listed as it WILL be (row P) ------------ //
+// Start/Resume on the Wikipedia toggle passes {enabling: "wikipedia"}: the popup that
+// asks to start the stream used to list it under "Switched off right now".
+{
+  const stopped = sched({ wiki_lane_state: "stopped" });
+  assert.strictEqual(_laneState(wiki, stopped), S.OFF, "sanity: a stopped lane reads off");
+  assert.strictEqual(_laneState(wiki, stopped, "wikipedia"), S.ON,
+    "the lane this action turns on was listed as switched off");
+  assert.strictEqual(_laneState(wiki, sched({ wiki_lane_state: "halted" }), "wikipedia"), S.ON);
+  // Only the named lane moves; every other lane still reports its own switch.
+  assert.strictEqual(_laneState(discovery, sched({ world_discovery_per_pass: 0 }), "wikipedia"), S.OFF);
+  assert.strictEqual(_laneState(lane("osm"), sched(null), "wikipedia"), S.ASK);
+}
+
 console.log("net lane state: all assertions passed");

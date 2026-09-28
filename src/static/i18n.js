@@ -67,7 +67,15 @@
     // (e.g. the airplane button's title flips with online/offline state). Without
     // this, the first-seen-English cache below would revert the dynamic value on the
     // next pass (field test 2026-06-19 #5).
-    if (el.hasAttribute && el.hasAttribute("data-i18n-dyn")) return;
+    //
+    // An ANCESTOR's marker counts too, exactly as doText above honours one. Checking
+    // only the element itself let a node inside a dyn container (Home's #home-tier in
+    // .home-glance) have its self-translated title cached as "the English" on first
+    // sight and put back on every later pass, so the hover stayed in the language that
+    // painted it first (2026-09-27 re-walk T-2). `closest` includes the element itself.
+    // Audited when this changed: no static title, placeholder or aria-label sits inside
+    // a dyn container; everything inside one is written through t() by its renderer.
+    if (el.closest ? el.closest("[data-i18n-dyn]") : (el.hasAttribute && el.hasAttribute("data-i18n-dyn"))) return;
     let store = origAttr.get(el);
     for (const a of ATTRS) {
       if (!el.hasAttribute(a)) continue;
@@ -143,6 +151,17 @@
     if ("MutationObserver" in window) observer = new MutationObserver(schedule);
     apply();  // also connects the observer
     _markReady(c);   // the locale map is loaded and applied; render-once surfaces may repaint
+    // THE SAME EVENT A SWITCH SENDS, ONCE, FOR THE BOOT LOCALE (2026-09-27 re-walk, M2/M9).
+    // `ready` repairs only the surfaces that remembered to await it; the keyword labels,
+    // the Home trending row and the Lead cards did not, so a reload whose data beat the
+    // locale file kept "in russe" and "Trending now:" until the next switch. Every such
+    // surface is already registered with the `oo:langchange` handler, each guarded on
+    // having been drawn, so one dispatch here repairs whichever of them lost the race
+    // and costs nothing for the ones not drawn yet. English has no map to wait for.
+    if (c && c !== "en") {
+      try { document.dispatchEvent(new CustomEvent("oo:langchange", { detail: { lang: c, boot: true } })); }
+      catch (_e) { /* CustomEvent unsupported -> a reload still renders in the saved locale */ }
+    }
   }
 
   // t(): string-level lookup for JS-built text (confirm dialogs, toasts) that

@@ -157,7 +157,9 @@ def test_a_changed_document_is_named_not_only_counted():
     }
     text = render(_edition([section]), "markdown")
     assert "Data Protection Act 2018" in text
-    assert "uk" in text
+    # The jurisdiction in the alphabet every surface uses: the law catalogue's `uk` is
+    # Q303's named case and reads GBR (2026-09-26 click-through, L6).
+    assert "GBR" in text
     assert "412 bytes changed" in text
     assert "flagged as large" in text
     # the counts stay too — an example list is not a replacement for the total

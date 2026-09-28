@@ -2124,7 +2124,9 @@ families:
   - key: holidays-no
     name: 'Norway — public holidays'
     kind: holidays
-    country: NO
+    # Quoted: YAML 1.1 reads a bare NO as the boolean false (the "Norway problem"),
+    # which left this one family with no country at all.
+    country: 'NO'
     feeds:
       - id: google-hol-no
         provider: 'Google Calendar'

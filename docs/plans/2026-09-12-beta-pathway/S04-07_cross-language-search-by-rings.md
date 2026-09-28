@@ -170,12 +170,16 @@ ledger files. This slice adds no fetch. The real-corpus re-index is an operator 
 1. The S1 comparison and the S8 re-index on the maintainer's real corpus (counts before / after; the timing
    published as a measurement). Artifact: the numbers in the PR.
 2. The click-through of every control in §4 (Q1128 = a). Artifact: the record under `docs/audit/`.
-3. The maintainer's word on `sudachipy` versus `janome` (§6).
+3. The maintainer's word on `sudachipy` versus `janome` (§6). **ANSWERED 2026-09-27 (`PF12`): keep `sudachipy` on
+   the search path. Retiring `janome` from the keyword path was not asked and is NOT decided; the status quo
+   stays until the maintainer's word.**
 
 ## 6. What this slice may not decide
 
 - Q506 = b names `sudachipy` for ja; the tree's `[segmentation]` extra already carries `janome` for ja and
   `pythainlp` for th on the keyword path — whether they stay, move or go is not ruled; nothing is substituted.
+  **2026-09-27 (`PF12`, «Row N: keep sudachipy»):** `sudachipy` stays on the search path, as built; the keyword
+  path's `janome` is untouched by that answer, and its fate stays undecided.
 - Each segmenter's placement (core vs optional extra) follows Q1015 = a once the compiled-or-not fact is
   confirmed; the Arabic folding mechanism (a custom tokenizer vs a pre-fold at both ends) is the session's,
   with its measurement.

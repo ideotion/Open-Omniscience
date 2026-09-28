@@ -11,11 +11,11 @@ nineteen hours, a merge that silently dropped columns, an AI backend that could 
 analytics calibrated at 2k articles and inverted at 500k. Almost every entry below began as
 a field report rather than a plan.
 
-**Not yet tagged.** The gate is [`docs/product/RELEASE_0.3_GATE.md`](product/RELEASE_0.3_GATE.md)
-— four rows closed against named artifacts, two moved to `0.4`, three remaining. Those three
-all come off one sitting on the release-scale instance: a clean restart and the P0 button
-(the cold-boot unlock), then the one diagnostics button, whose bundle also carries the
-article clean-up's input. A row closes on evidence a later reader can re-open, never on
+**Tagged `v0.3.0`** (a GitHub pre-release of 2026-08-23, a lightweight tag at `917e8095`), taken as
+the `0.3` close by the maintainer on 2026-09-27 (`RC01` = a). The gate is
+[`docs/product/RELEASE_0.3_GATE.md`](product/RELEASE_0.3_GATE.md): six rows closed against named
+artifacts and three moved to `0.4` (rows 4 and 7b, and row 5, the article clean-up, as
+`RELEASE_0.4_GATE.md` row W). A row closes on evidence a later reader can re-open, never on
 "it was built".
 
 ### The AI stack

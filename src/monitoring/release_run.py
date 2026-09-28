@@ -44,9 +44,10 @@ HONESTY (the whole point, same rules as the P0 kit):
     because a run that vanishes leaves the operator with nothing after three days.
 
 WHAT IT MAY NOT DO. It never tags, never flips the version, never decides a ⛔ or an
-RC item, never touches ``configs/``. The 0.3 row-5 quarantine pass is a DEFERRED
-operator step (register ruling A1), so it runs only behind an explicit per-run opt-in
-that defaults OFF -- ticking it is the maintainer's decision, not this module's.
+RC item, never touches ``configs/``. The Tier-A quarantine pass (0.3's row 5, carried
+as 0.4 board row W by ruling RC01 = (a), and required before the v0.4.0 tag) is an
+operator step, so it runs only behind an explicit per-run opt-in that defaults OFF --
+ticking it is the maintainer's decision, not this module's.
 
 THE FIELD ROUND (2026-09-24, six machines; ``docs/audit/16_…``, fixes RR-1 to RR-8).
 Row 5 runs LAST, after the bundle, with collection paused (ruling FD01): it is a
@@ -689,7 +690,7 @@ def _preflight(run: _Run) -> dict[str, Any]:
 
 
 # --------------------------------------------------------------------------- #
-#  Phase 1 -- 0.3 row 5, the Tier-A quarantine pass (OPT-IN, deferred by ruling A1)
+#  Phase 1 -- 0.4 row W (0.3's row 5), the Tier-A quarantine pass (OPT-IN; required before v0.4.0)
 # --------------------------------------------------------------------------- #
 
 
@@ -1602,24 +1603,28 @@ def board_rows(run: _Run) -> list[dict[str, Any]]:  # noqa: C901 - one branch pe
         "two readings on purpose: the restored install answers row A's clause, the live corpus answers the drain's",
     ))
 
-    # G -- 0.3 row 5 (opt-in)
+    # W -- 0.4 row W, 0.3's row 5 carried forward by ruling RC01 = (a): required before
+    # the v0.4.0 tag, and still run only when the operator ticks it.
     if p.run_row5_quarantine:
         r5 = row5.get("result") or {}
         rf = r5.get("reindex_final") or {}
         rows.append(_row(
-            "G", "0.3 row 5: the Tier-A quarantine pass (8 articles expected under nav-soup-v2 on the release-scale instance), the re-index, the composition",
+            "W", "0.4 row W (0.3's row 5): the Tier-A quarantine pass (8 articles expected under nav-soup-v2 on the release-scale instance), the re-index, the composition",
             row5.get("status") or "skipped",
             {"mode_ok": r5.get("mode_ok"), "quarantine_final": r5.get("quarantine_final"),
              "reindex_final": rf.get("state"), "reindex_stalled": rf.get("stalled"),
              "reindex_skipped": r5.get("reindex_skipped"), "composition": r5.get("composition"),
              "wall_s": row5.get("wall_s"), "retries": r5.get("retries"),
              "collection_paused": r5.get("collection_paused"), "collection_resumed": r5.get("collection_resumed")},
-            "run because the operator ticked it; ruling A1 had deferred it. It runs AFTER the soak, the collect and "
-            "the bundle, with collection paused (FD01): a whole-corpus re-index takes hours to days. The v0.3.0 tag "
-            "and the version flip are still not this run's",
+            "run because the operator ticked it; 0.4 row W is required before the v0.4.0 tag (ruling RC01). It runs "
+            "AFTER the soak, the collect and the bundle, with collection paused (FD01): a whole-corpus re-index takes "
+            "hours to days",
         ))
     else:
-        rows.append(_row("G", "0.3 row 5 (deferred by ruling A1)", "skipped", {}, "not ticked -- nothing was quarantined"))
+        rows.append(_row(
+            "W", "0.4 row W (0.3's row 5): the Tier-A quarantine pass, required before the v0.4.0 tag", "skipped", {},
+            "not run -- row W stays open; it runs only when the operator ticks it, and nothing was quarantined",
+        ))
 
     # I / J / K -- the backup side
     checks = p0.get("checks") or {}
@@ -2126,7 +2131,7 @@ def run_release_run(ctx: Any, **kwargs: Any) -> dict:  # noqa: C901 - the sequen
         _run_phase(run, ctx, "bundle", lambda: _bundle(ctx))
     step("bundle")
 
-    # 6 -- 0.3 row 5 (opt-in only), LAST (FD01): the soak's evidence is written first, and
+    # 6 -- 0.4 row W, 0.3's row 5 (opt-in only), LAST (FD01): the soak's evidence is written first, and
     # a whole-corpus re-index that takes days runs on its own time, collection paused.
     if _kept("row5_quarantine"):
         pass
@@ -2139,7 +2144,7 @@ def run_release_run(ctx: Any, **kwargs: Any) -> dict:  # noqa: C901 - the sequen
         run.end("skipped", "the run was cancelled before row 5 started")
     else:
         run.begin("row5_quarantine")
-        run.end("skipped", "not requested (deferred by ruling A1; the operator did not tick it)")
+        run.end("skipped", "not requested: the operator did not tick it, so 0.4 row W (required before the v0.4.0 tag) stays open")
     step("row 5")
 
     run.outcome = "cancelled" if ctx.stopping else "done"

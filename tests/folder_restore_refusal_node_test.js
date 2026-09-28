@@ -39,7 +39,11 @@ function extract(name) {
 
 // OOI18N is absent, which is also the boot-time state, so this exercises the English
 // fallback path -- the one a reader actually sees if i18n has not loaded yet.
+// The label frame and the number formatter it writes through (R2) come from the same
+// shipped modules, extracted the same way.
 const src = "var window = {};\n"
+  + extract("fmtNum") + "\n"
+  + extract("ooLabelText") + "\n"
   + extract("_fbRefusalLines") + "\n"
   + "module.exports = { _fbRefusalLines };";
 const { _fbRefusalLines } = (() => {

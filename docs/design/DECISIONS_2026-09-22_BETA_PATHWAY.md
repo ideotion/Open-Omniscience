@@ -84,6 +84,9 @@ Until ruled, 0.4 row V's closing probe stays `not-measurable-here` and two PROMP
 operator-side indefinitely. → **Recommendation: yes, add it.** It is the same class of host as the
 others already added, and the app already fetches from it under the invariant-#14 gate.
 `ANSWER D06:`
+**ANSWERED 2026-09-27 through `RC10` = (b), in chat («RC10: go with your recommendation»)**, read as the
+later recommendation the message answered (the 2026-09-25 sheet's (b) and the thread's 2026-09-26 message),
+NOT this item's (a): `dumps.wikimedia.org` is excluded for now, and row V's probe moves to a host that stays.
 
 ## §A2 — The protocol itself is failing its own test
 
@@ -159,12 +162,12 @@ thirteen, so you can answer them as a block:
 | **PF03** | soak length | **b** — 96 h, a day's margin over the bar |
 | **PF04** | how the run's artifacts reach the next session | **a** — commit to a branch |
 | **PF05** | a pre-migration backup for row K's real-restore proof | **b** — none exists |
-| **PF06** | does 0.4 row R close now | **a** — close it |
+| **PF06** | does 0.4 row R close now | **a** — close it · *answered (a) 2026-09-27, `RULINGS_INDEX.md`* |
 | **PF07** | the three broken ride-along opt-outs (settings that silently don't take) | **a** — fix before the 0.4 tag; a control that lies is worse than a missing one |
 | **PF08** | the speed-unit error: four strings + invariant #4 say `KiB/s`, the code means `kbit/s` — an **8.192× overstatement** | **b** — change the arithmetic to real KiB/s. (a) fixes the label and leaves the knob meaning something else than every other byte figure in the app |
 | **PF09** | bind i18n to `reader.js` (22 permanently-English strings) | **a** — yes; "every string ×12" is a non-negotiable and 22 is not an exception |
 | **PF10** | in-map controls covering 79–112% of the map at phone width | **a** — collapse to one button |
-| **PF12** | Japanese segmenter | **a** — `sudachipy`, per the locked `Q506` |
+| **PF12** | Japanese segmenter | **a** — `sudachipy`, per the locked `Q506` · *answered 2026-09-27: keep `sudachipy`; `janome`'s retirement not asked* |
 | **PF13** | the twelve owed click-throughs | **b** — name a sample; twelve full walks is days of your time against a Chromium record that already exists |
 | **PF14** | the `guarded_session` SSRF gap: press now or fix first | **b** — **fix first.** This is the one PF where I differ from the sheet's own default: the gap is in the fetch path, and the release run's whole point is to produce evidence about that path |
 

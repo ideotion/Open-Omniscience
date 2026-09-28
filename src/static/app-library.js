@@ -26,11 +26,12 @@
     // two split keys the backend now sends (database.py's counts["sources_qualified"] /
     // counts["sources_candidates"]) in plain language.
     const DB_STAT_HIDDEN_KEYS = new Set(["sources"]);
-    const DB_STAT_LABELS = {
-      sources_qualified: "Sources (collecting)",
-      sources_pending: "Sources awaiting qualification (enabled)",
-      sources_candidates: "Discovered candidates",
-    };
+    // The tile LABELS are Home's map (HOME_STAT_LABELS / homeStatLabel in app-home.js),
+    // read at render time. This file used to carry its own map for the three source
+    // keys only, so every other tile printed its raw key (`commodity_prices`) and the
+    // three it did label were keyed in no locale file (2026-09-26 click-through S6).
+    // The last payload, so a language switch relabels the tiles without a fetch.
+    let _dbStatsLast = null;
 
     // B14: the COMPLETE on-disk footprint (A12b backend, GET /api/diagnostics/storage-footprint)
     // shown wherever storage size shows — the Library dashboard + the task-manager System tab.
@@ -88,8 +89,10 @@
         // Honest label (no fabricated security): the private sum includes -shm + backup
         // staging, which are NOT necessarily encrypted — so it is "Private (local)", with the
         // corpus's at-rest encryption noted, not a blanket "encrypted" claim over every byte.
-        + `${esc(t("Private (local; corpus encrypted at rest)"))}: <b>${esc(_fmtBytes(priv))}</b> · `
-        + `${esc(t("Re-downloadable (dumps / maps / models)"))}: <b>${esc(_fmtBytes(pub))}</b></div>`
+        // Label and value through the locale's own separator (ooLabelHtml): a ": " welded
+        // after t() read "Privé (local ; …): 12 Go" in French (click-through B14, Z3).
+        + ooLabelHtml(esc(t("Private (local; corpus encrypted at rest)")), `<b>${esc(_fmtBytes(priv))}</b>`) + ` · `
+        + ooLabelHtml(esc(t("Re-downloadable (dumps / maps / models)")), `<b>${esc(_fmtBytes(pub))}</b>`) + `</div>`
         + rows;
     }
 
@@ -214,6 +217,23 @@
     // fetched", the Advanced-tab precedent). Each view loads once per session.
     let _libViewTabs = null, _libView = "overview";
     const _libViewLoaded = new Set();
+    // The two GRAPH views read their payloads through `_libGet`, whose cache lives as long
+    // as the view stays open: a repaint (the language switch in app-boot.js) redraws the
+    // tiles from what they were drawn from, and REOPENING the view -- selecting it again
+    // after another one -- drops that view's payloads and fetches fresh ones, the one
+    // exception to "loads once per session" above. Before, the repaint re-ran every tile's
+    // request behind a "Loading…" flash, while a reopen showed the first numbers for the
+    // rest of the session (click-through B16, V11).
+    const _LIB_REFRESH_ON_REOPEN = new Set(["activity", "tracked"]);
+    const _libFetched = new Map();   // request URL -> payload, for as long as its view is open
+    function _libViewOfUrl(url) { return /[?&]metric=(wiki|law)_/.test(url) ? "tracked" : "activity"; }
+    function _libGet(url) {
+      if (_libFetched.has(url)) return Promise.resolve(_libFetched.get(url));
+      return api(url).then((d) => { _libFetched.set(url, d); return d; });
+    }
+    function _libForgetView(view) {
+      for (const url of [..._libFetched.keys()]) if (_libViewOfUrl(url) === view) _libFetched.delete(url);
+    }
     const _LIB_VIEW_LOADERS = {
       overview: () => { renderLibraryOverview(); },
       activity: () => { renderLibraryActivityGraphs(); },
@@ -224,12 +244,14 @@
     };
     function selectLibraryView(key) {
       if (!_LIB_VIEW_LOADERS[key]) key = "overview";
+      const reopened = key !== _libView && _libViewLoaded.has(key) && _LIB_REFRESH_ON_REOPEN.has(key);
       _libView = key;
       document.querySelectorAll("#tab-library .lib-view").forEach(el => {
         el.style.display = (el.id === "lib-view-" + key) ? "" : "none";
       });
-      if (!_libViewLoaded.has(key)) {
+      if (!_libViewLoaded.has(key) || reopened) {
         _libViewLoaded.add(key);
+        _libForgetView(key);
         try { _LIB_VIEW_LOADERS[key](); }
         catch (e) { _libViewLoaded.delete(key); }   // a failed load must be retryable
       }
@@ -243,7 +265,6 @@
     async function renderLibraryOverview() {
       const host = $("library-overview");
       if (!host) return;
-      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : (x => x);
       let d, fig;
       try {
         // Figures endpoint is 60 s-cached server-side, so polling it here is cheap.
@@ -255,6 +276,26 @@
       const stamp = JSON.stringify([d.downloaded, d.derived, fig]);
       if (stamp === _libOvStamp) return;   // live poll: unchanged, no repaint
       _libOvStamp = stamp;
+      _libOvLast = {d, fig};
+      _paintLibraryOverview(host, d, fig);
+    }
+    // The last overview payload. The live poll repaints only on a DATA change, so a
+    // language switch changed nothing here: the tiles' sizes ("3 · 35.6 MB", the unit
+    // translated at render) and every interpolated label stayed in the old locale while
+    // the view stayed open (click-through B14, Z2). Redrawn from this, never refetched.
+    let _libOvLast = null;
+    // Registered in app-boot.js's ONE `oo:langchange` listener.
+    function repaintLibraryOverviewFromCache() {
+      const host = $("library-overview");
+      if (!host || !_libOvLast) return;
+      const dl = host.querySelector("details.adv-collect");
+      const open = !!(dl && dl.open);
+      _paintLibraryOverview(host, _libOvLast.d, _libOvLast.fig);
+      const again = host.querySelector("details.adv-collect");
+      if (again && open) again.open = true;   // a disclosure the reader opened stays open
+    }
+    function _paintLibraryOverview(host, d, fig) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : (x => x);
       const num = v => (v == null ? "—" : fmtNum(v));
       const sz = v => (v == null || !v) ? "—" : _fmtBytes(v);
       const tile = (n, k) => `<div class="stat"><div class="n">${esc(n)}</div><div class="k">${esc(k)}</div></div>`;
@@ -347,7 +388,11 @@
     // unbounded) history cap.
     const LIB_WINDOWS = [[7, "7d"], [30, "30d"], [90, "90d"], [3650, "All"]];
     const LIB_DEFAULT_DAYS = 30;
-    let _libTileDays = {};    // metric (or "__qual") -> the window currently shown
+    // metric (or "__qual" / "__lang") -> the window the tile shows. A tile's CHOSEN window
+    // wins over the default its renderer passes: the Activity view redraws every tile on a
+    // language switch and on a reopen, and both passed LIB_DEFAULT_DAYS, so a tile switched
+    // to 7d snapped back to 30d (click-through B17, T1). Kept for the life of the page.
+    let _libTileDays = {};
     let _libGraphData = {};   // metric -> last-fetched /api/library/history payload
     function _libAllZero(nums) {
       // "zero/no-data" (ruled): every point is 0, or there simply are no points —
@@ -364,12 +409,12 @@
     }
     async function _libGraphTile(metric, days) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      const cur = days || _libTileDays[metric] || LIB_DEFAULT_DAYS;
+      const cur = _libTileDays[metric] || days || LIB_DEFAULT_DAYS;
       _libTileDays[metric] = cur;
       const label = t(LIB_METRIC_LABEL_KEYS[metric] || metric);
       let d;
       try {
-        d = await api(`/api/library/history?metric=${encodeURIComponent(metric)}&days=${cur}`);
+        d = await _libGet(`/api/library/history?metric=${encodeURIComponent(metric)}&days=${cur}`);
       } catch (e) {
         return `<div id="lib-tile-${esc(metric)}" style="flex:1;min-width:180px;padding:6px;border:1px solid var(--border);border-radius:8px">
           <b style="font-size:12.5px">${esc(label)}</b>
@@ -469,14 +514,14 @@
     }
     async function _libQualificationTile(days) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      const cur = days || _libTileDays.__qual || LIB_DEFAULT_DAYS;
+      const cur = _libTileDays.__qual || days || LIB_DEFAULT_DAYS;
       _libTileDays.__qual = cur;
       const label = t("Source qualification");
       let payloads, splitPayload = null;
       try {
         const all = await Promise.all(
           LIB_QUAL_METRICS.concat([LIB_QUAL_SPLIT_METRIC]).map(m =>
-            api(`/api/library/history?metric=${encodeURIComponent(m)}&days=${cur}`)));
+            _libGet(`/api/library/history?metric=${encodeURIComponent(m)}&days=${cur}`)));
         payloads = all.slice(0, LIB_QUAL_METRICS.length);
         splitPayload = all[all.length - 1];
       } catch (e) {
@@ -613,12 +658,12 @@
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const tf = (window.OOI18N && OOI18N.tf)
         ? OOI18N.tf : ((tpl, v) => String(tpl).replace(/\{(\w+)\}/g, (m, k) => (k in v ? v[k] : m)));
-      const cur = days || _libTileDays.__lang || LIB_DEFAULT_DAYS;
+      const cur = _libTileDays.__lang || days || LIB_DEFAULT_DAYS;
       _libTileDays.__lang = cur;
       const label = t("Growth by language");
       let d;
       try {
-        d = await api(`/api/library/languages?days=${cur}&top_n=${LIB_LANG_TOP_N}`);
+        d = await _libGet(`/api/library/languages?days=${cur}&top_n=${LIB_LANG_TOP_N}`);
       } catch (e) {
         return `<div id="lib-tile-__lang" style="flex:1 1 100%;padding:6px;border:1px solid var(--border);border-radius:8px">
           <b style="font-size:12.5px">${esc(label)}</b>
@@ -647,11 +692,14 @@
 
     // Re-render exactly ONE tile in place when its window chip is clicked —
     // never the whole panel (a switch on one metric must not disturb the
-    // others' state or cause a visible flash across the row).
+    // others' state or cause a visible flash across the row). The chip is the one
+    // place a window is CHOSEN, so it is recorded here, where every later redraw of the
+    // tile reads it first.
     async function _libSetWindow(key, days) {
       const el = $(key === "__qual" ? "lib-tile-__qual"
         : key === "__lang" ? "lib-tile-__lang" : "lib-tile-" + key);
       if (!el) return;
+      _libTileDays[key] = days;
       const html = key === "__qual" ? await _libQualificationTile(days)
         : key === "__lang" ? await _libLanguageTile(days)
         : await _libGraphTile(key, days);
@@ -892,8 +940,8 @@
               : `${d.excluded_quarantined} quarantined articles excluded`)}</div>`
           : "") +
         ((ex.languages || []).length
-          ? `<div class="hint muted">${esc(t("Excluded languages"))}: ` +
-            (ex.languages || []).map(l => esc(ooLangName(l))).join(", ") + `</div>`
+          ? `<div class="hint muted">` + ooLabelHtml(esc(t("Excluded languages")),
+              (ex.languages || []).map(l => esc(ooLangName(l))).join(", ")) + `</div>`
           : "") +
         figMeta(d);
     }
@@ -948,36 +996,87 @@
         points: d.series.map(p => ({t: p.t, v: p.n}))}], caveat);
     }
 
+    // The tile labels and the split tiles' hovers, painted from the last payload -- on
+    // every poll and on a language switch (app-boot.js). The tiles carry data-i18n-dyn:
+    // they own their text, so the DOM walker never caches a label painted in French as
+    // "the English" and freezes it there on the next switch. Only a changed value is
+    // written, so a poll does not churn the hover observer.
+    function _paintDbStatLabels() {
+      const s = _dbStatsLast;
+      if (!s) return;
+      const counts = s.counts || {};
+      for (const k of Object.keys(counts)) {
+        const tile = document.getElementById("db-t-" + k);
+        if (!tile) continue;
+        const lbl = tile.querySelector(".k");
+        const text = homeStatLabel(k);
+        if (lbl && lbl.textContent !== text) lbl.textContent = text;
+        const hover = homeSourceSplitHover(k, counts);
+        if (hover && tile.title !== hover) tile.title = hover;
+        else if (!hover && tile.hasAttribute("title")) tile.removeAttribute("title");
+      }
+    }
+
+    // The #db-file line, painted from the last payload -- on every poll and on a language
+    // switch (repaintDbStorageFromCache below), never with a fetch of its own. It used to be
+    // built inline in loadDbStats with "Backend" and "on disk" as bare English, and a switch
+    // left it in the old language until the next poll (click-through, batch B12).
+    function _paintDbFile() {
+      const s = _dbStatsLast, host = $("db-file");
+      if (!s || !host) return;
+      const _t = (window.OOI18N && OOI18N.t) ? OOI18N.t : (x => x);
+      // The DB file is ONE component of the whole footprint; once the Storage-footprint
+      // panel has measured it, show the all-stores total here too so the number is honest
+      // about being only the database (never implying it is the app's whole disk use).
+      const gt = _sfCache && (_sfCache.totals || {}).grand_total_bytes;
+      const foot = gt ? ` <span class="muted">· ${esc(_t("all stores"))} <strong>${esc(_fmtBytes(gt))}</strong> (${esc(_t("see Storage footprint below"))})</span>` : "";
+      host.innerHTML = s.file
+        ? `${esc(_t("Backend"))} <span class="pill">${esc(s.backend)}</span> · ${esc(_t("on disk"))} ` +
+          `<strong>${humanBytes(s.file.bytes)}</strong> ` +
+          `<span class="muted">(${esc(s.file.path)})</span>` + foot
+        : `${esc(_t("Backend"))} <span class="pill">${esc(s.backend)}</span> · ${esc(s.url_summary)}`;
+    }
+
+    // A language switch (app-boot.js's oo:langchange): the #db-file line and every Storage
+    // footprint panel already drawn are repainted from what they last showed. Both are
+    // built with t() at paint time, so the DOM walker cannot re-translate them, and the
+    // footprint is a disk walk that is never re-run for a relabel. A panel still measuring
+    // is left alone: its own fetch paints it when it lands.
+    function repaintDbStorageFromCache() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : (x => x);
+      _paintDbFile();
+      // The empty grid is drawn only when the key list changes, so it is redrawn here.
+      const grid = $("db-stats");
+      if (DB_KEYS === "" && grid) grid.innerHTML = `<div class="muted">${esc(t("No tables yet."))}</div>`;
+      if (!_sfCache || _sfPending) return;
+      for (const id of ["library-storage", "vitals-storage"]) {
+        const host = document.getElementById(id);
+        if (host && host.querySelector(".sf-row, button")) _sfPaint(host, _sfCache, t);
+      }
+    }
+
     async function loadDbStats() {
       const el = $("db-stats");
+      const _t = (window.OOI18N && OOI18N.t) ? OOI18N.t : (x => x);
       try {
         const s = await api("/api/database/stats", {polled: true});
-        const t9 = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
         const entries = Object.entries(s.counts || {}).filter(([k]) => !DB_STAT_HIDDEN_KEYS.has(k));
         const keys = entries.map(([k]) => k).join(",");
         if (DB_KEYS !== keys) {                       // (re)build grid with stable number nodes
           DB_KEYS = keys;
           el.innerHTML = entries.length
             ? entries.map(([k]) =>
-                `<div class="stat"><div class="n" id="db-n-${k}" data-v="0">0</div><div class="k">${esc(t9(DB_STAT_LABELS[k] || k))}</div></div>`).join("")
-            : '<div class="muted">No tables yet.</div>';
+                `<div class="stat" id="db-t-${k}" data-i18n-dyn><div class="n" id="db-n-${k}" data-v="0">0</div><div class="k"></div></div>`).join("")
+            : `<div class="muted">${esc(_t("No tables yet."))}</div>`;
         }
+        _dbStatsLast = s;
+        _paintDbStatLabels();
         for (const [k, v] of entries) {
           const n = document.getElementById("db-n-" + k);
           if (n) animateCount(n, v);
         }
-        // The DB file is ONE component of the whole footprint; once the Storage-footprint
-        // panel has measured it, show the all-stores total here too so the number is honest
-        // about being only the database (never implying it is the app's whole disk use).
-        const _t = (window.OOI18N && OOI18N.t) ? OOI18N.t : (x => x);
-        const gt = _sfCache && (_sfCache.totals || {}).grand_total_bytes;
-        const foot = gt ? ` <span class="muted">· ${esc(_t("all stores"))} <strong>${esc(_fmtBytes(gt))}</strong> (${esc(_t("see Storage footprint below"))})</span>` : "";
-        $("db-file").innerHTML = s.file
-          ? `Backend <span class="pill">${esc(s.backend)}</span> · on disk ` +
-            `<strong>${humanBytes(s.file.bytes)}</strong> ` +
-            `<span class="muted">(${esc(s.file.path)})</span>` + foot
-          : `Backend <span class="pill">${esc(s.backend)}</span> · ${esc(s.url_summary)}`;
-      } catch (e) { el.innerHTML = `<div class="note err">Could not load stats: ${esc(e.message)}</div>`; DB_KEYS = null; }
+        _paintDbFile();
+      } catch (e) { el.innerHTML = `<div class="note err">${esc(_t("Could not load stats:"))} ${esc(e.message)}</div>`; DB_KEYS = null; }
     }
 
     // Live polling manager: each tab can register a refresh fn + interval; only

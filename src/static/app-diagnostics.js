@@ -40,7 +40,8 @@
           const r = await api("/api/insights/reindex?limit=300", {method: "POST"});
           backlog = r.never_attempted ?? r.remaining;
           const rem = $("ins-remaining");
-          if (rem) rem.innerHTML = r.remaining ? `· <strong>${r.remaining.toLocaleString()}</strong> to index` : "";
+          // The same keyed "{n} to index" the Insights header draws (W17), not English.
+          if (rem) rem.innerHTML = _insRemainingHtml(r);
           // Bound each pass to 40 batches (~12k articles): plenty to drain a normal
           // corpus in one go, but never the old 500-batch (150k) blast.
           // A backlog that did not shrink means the queue is not rotating — the wedge
@@ -76,7 +77,7 @@
         const r = await api(`/api/insights/reindex-all?limit=300&after_id=${after}`, { method: "POST" });
         total += r.reindexed || 0;
         after = r.last_id || after;
-        if (st) st.textContent = `${total} ${t("re-indexed")}${r.remaining ? ` · ${r.remaining.toLocaleString()} ${t("to go")}` : ""}`;
+        if (st) st.textContent = `${fmtNum(total, 0)} ${t("re-indexed")}${r.remaining ? ` · ${fmtNum(r.remaining, 0)} ${t("to go")}` : ""}`;
         if (r.done || ++guard > 5000) break;
       }
       return total;
@@ -103,28 +104,129 @@
         await api(`/api/insights/reindex-job?${q}`, { method: "POST" });
       } catch (_e) { /* 409 = one already running; fall through and poll it */ }
     }
-    async function _pollReindexJob(st, t) {
-      for (;;) {
-        let s;
-        try { s = await api("/api/insights/reindex-job/status"); }
-        catch { break; }
-        if (st) {
-          const tal = s.tally || {};
-          const bits = [`${(tal.reindexed || 0).toLocaleString()} ${t("re-indexed")}`];
-          if (s.articles_total) bits.push(`${s.percent || 0}%`);
-          // Speed, so a long run can be estimated rather than guessed at. Both rates
-          // are measurements over THIS run and are absent until real -- never a 0/h.
-          if (s.keywords_per_hour) bits.push(`${Math.round(s.keywords_per_hour).toLocaleString()} ${t("keywords/h")}`);
-          if (s.articles_per_hour) bits.push(`${Math.round(s.articles_per_hour).toLocaleString()} ${t("articles/h")}`);
-          if (tal.pruned != null) bits.push(`${(tal.pruned || 0).toLocaleString()} ${t("unused keywords removed")}`);
-          if (s.state === "done") bits.push(t("done"));
-          else if (s.state === "paused") bits.push(t("paused"));
-          else if (s.state === "error") bits.push(esc(s.error || t("error")));
-          st.textContent = bits.join(" · ");
-        }
-        if (s.state !== "running" || !s.running) break;
-        await new Promise((r) => setTimeout(r, 1500));
+    function _reindexStatusText(s, _report, t) {
+      const tal = s.tally || {};
+      const bits = [`${fmtNum(tal.reindexed || 0, 0)} ${t("re-indexed")}`];
+      if (s.articles_total) bits.push(`${s.percent || 0}%`);
+      // Speed, so a long run can be estimated rather than guessed at. Both rates
+      // are measurements over THIS run and are absent until real -- never a 0/h.
+      if (s.keywords_per_hour) bits.push(`${fmtNum(Math.round(s.keywords_per_hour), 0)} ${t("keywords/h")}`);
+      if (s.articles_per_hour) bits.push(`${fmtNum(Math.round(s.articles_per_hour), 0)} ${t("articles/h")}`);
+      if (tal.pruned != null) bits.push(`${fmtNum(tal.pruned || 0, 0)} ${t("unused keywords removed")}`);
+      if (s.state === "done") bits.push(t("done"));
+      else if (s.state === "paused") bits.push(t("paused"));
+      else if (s.state === "error") bits.push(esc(s.error || t("error")));
+      return bits.join(" · ");
+    }
+    function _pollReindexJob(st, t) {
+      return _watchJobLine("reindex", "/api/insights/reindex-job/status", null, _reindexStatusText, st, t).settled;
+    }
+
+    // THE STATUS LINE FOLLOWS THE JOB, WHEREVER THE JOB IS DRIVEN FROM (the 2026-09-27
+    // re-walk, M-7). Each of the three lines below used to be written by ONE loop, started
+    // by its own button and ended the moment the job stopped running -- so a Pause and a
+    // Resume from the task manager left "paused" on screen through the whole rest of the
+    // run and past its end, and a Diagnostics section opened on a paused or running job
+    // (after a reload or a restart) showed nothing at all. Now one watcher per line reads
+    // the status when the section opens and whenever an action starts; it keeps reading
+    // every 2 s while the job runs and, while the section is open, every 8 s while it is
+    // paused or parked, so a resume from anywhere is picked up and the final line replaces
+    // "paused". A second start KICKS the running watcher instead of starting another loop.
+    //
+    // Returns the watch: `done` ends with the watch itself, `settled` as soon as a read finds
+    // the job NOT running. A button waits on `settled`, so it comes back at a pause exactly
+    // as it did when the loop ended there -- the button is how a paused run is continued
+    // from here -- while the watch goes on following the job.
+    const _jobWatch = {};
+    // The reading each job line last drew, so a live language switch can redraw it without
+    // a fetch (re-walk N-4): the watch loop ends once its job is done, and nothing else
+    // would draw the line again until the fold is reopened.
+    const _jobLast = {};
+    function _diagSectionOpen() {
+      const d = document.querySelector('#set-advanced details.adv-sec[data-adv="diagnostics"]');
+      return !!(d && d.open);
+    }
+    // A fresh `settled` for a new waiter; an earlier waiter's promise resolves with it. The
+    // generation stops a read that was already in flight when the waiter arrived (taken
+    // before its start reached the server) from releasing it.
+    function _armJobSettle(me) {
+      const prev = me._settle;
+      me.gen = (me.gen || 0) + 1;
+      me.settled = new Promise((r) => { me._settle = () => { r(); if (prev) prev(); }; });
+    }
+    function _settleJob(me) {
+      const f = me._settle;
+      me._settle = null;
+      if (f) f();
+    }
+    function _watchJobLine(key, statusUrl, reportUrl, render, st, t, quietIdle) {
+      const w = _jobWatch[key];
+      if (w) {
+        if (!quietIdle) { w.quietIdle = false; _armJobSettle(w); }
+        if (w.kick) w.kick();
+        return w;
       }
+      const me = {quietIdle: !!quietIdle, kick: null, done: null, settled: null, _settle: null, gen: 0};
+      _armJobSettle(me);
+      _jobWatch[key] = me;
+      me.done = (async () => {
+        try {
+          for (;;) {
+            const gen = me.gen;
+            let s;
+            try { s = await api(statusUrl); }
+            catch { break; }
+            let report = null;
+            if (s.state === "done" && reportUrl) {
+              try { report = await api(reportUrl); }
+              catch (_e) { /* no report yet: the line says "done" and nothing it cannot show */ }
+            }
+            // Opening the section on a job that never ran says nothing: the line is for a
+            // job, and there is none. A refusal is still named, as the button would.
+            const idle = !s.state || s.state === "idle" || s.state === "cancelled";
+            if (st && !(me.quietIdle && idle && !s.refusal)) {
+              st.textContent = render(s, report, t);
+              _jobLast[key] = {s, report, render, st, drawn: st.textContent};
+            }
+            const running = s.state === "running" && !!s.running;
+            // A start came in while this read was in flight: read again before deciding.
+            if (gen !== me.gen) continue;
+            if (!running) _settleJob(me);
+            const waiting = !running && (s.state === "paused" || s.state === "running" || !!s.parked_for_exclusive);
+            if (!running && !(waiting && _diagSectionOpen())) break;
+            await new Promise((r) => { me.kick = r; setTimeout(r, running ? 2000 : 8000); });
+            me.kick = null;
+          }
+        } finally {
+          _settleJob(me);
+          if (_jobWatch[key] === me) delete _jobWatch[key];
+        }
+      })();
+      return me;
+    }
+    // A live language switch (the one oo:langchange listener in app-boot.js): redraw each
+    // job line from the reading it last drew, in the new language. Never a fetch. A line
+    // that is gone, or that something else has written since (an error, a refusal, a new
+    // start), is left alone: the retained reading is no longer what it shows.
+    function repaintDiagnosticsJobsFromCache() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      for (const key of Object.keys(_jobLast)) {
+        const L = _jobLast[key];
+        if (!L.st || !L.st.isConnected || L.st.textContent !== L.drawn) continue;
+        L.st.textContent = L.render(L.s, L.report, t);
+        L.drawn = L.st.textContent;
+      }
+    }
+    // Called when Settings → Advanced → Diagnostics opens (app-boot.js): one status read per
+    // job line, which keeps watching only if that job is running or paused.
+    function watchDiagnosticsJobs() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      _watchJobLine("reindex", "/api/insights/reindex-job/status", null, _reindexStatusText,
+        $("reindex-all-status"), t, true);
+      _watchJobLine("fold", "/api/insights/keyword-fold-job/status", "/api/insights/keyword-fold-job/report",
+        _foldStatusText, $("kw-fold-status"), t, true);
+      _watchJobLine("fts", "/api/search/index-job/status", "/api/search/index-job/report",
+        _searchReindexStatusText, $("fts-reindex-status"), t, true);
     }
 
 
@@ -144,8 +246,8 @@
       } catch (_e) { /* status is a courtesy here; never block the action on it */ }
       const ask = paused
         ? t("Resume the keyword cleanup? It continues from where it stopped — {done} of {total} articles ({percent}%) are already re-indexed.")
-            .replace("{done}", (paused.articles_done || 0).toLocaleString())
-            .replace("{total}", (paused.articles_total || 0).toLocaleString())
+            .replace("{done}", fmtNum(paused.articles_done || 0, 0))
+            .replace("{total}", fmtNum(paused.articles_total || 0, 0))
             .replace("{percent}", String(paused.percent || 0))
         : t("Clean up keywords now? This re-indexes every article with the current engine, then removes the keywords left with no mentions. Heavy on a large corpus; keywords still in use and anything you curated are kept.");
       if (!confirm(ask)) return;
@@ -168,7 +270,7 @@
     // reads "Label: n" so no language has to agree a number with a noun.
     function _foldStatusText(s, report, t) {
       if (!s) return "";
-      const n = (v) => Number(v || 0).toLocaleString();
+      const n = (v) => fmtNum(Number(v || 0), 0);
       if (s.refusal === "lemmatisation-off") {
         return t("Lemmatisation is off in this install (OO_EXTRACT_LEMMA=0), so there is no base form to fold into.");
       }
@@ -203,20 +305,9 @@
       else if (s.state === "paused") bits.push(t("paused"));
       return bits.join(" · ");
     }
-    async function _pollFoldJob(st, t) {
-      for (;;) {
-        let s;
-        try { s = await api("/api/insights/keyword-fold-job/status"); }
-        catch { break; }
-        let report = null;
-        if (s.state === "done") {
-          try { report = await api("/api/insights/keyword-fold-job/report"); }
-          catch (_e) { /* no report yet: the line says "done" and nothing it cannot show */ }
-        }
-        if (st) st.textContent = _foldStatusText(s, report, t);
-        if (s.state !== "running" || !s.running) break;
-        await new Promise((r) => setTimeout(r, 2000));
-      }
+    function _pollFoldJob(st, t) {
+      return _watchJobLine("fold", "/api/insights/keyword-fold-job/status",
+        "/api/insights/keyword-fold-job/report", _foldStatusText, st, t).settled;
     }
     async function foldKeywords(btn) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
@@ -229,8 +320,8 @@
       const paused = s0 && (s0.state === "paused" || s0.state === "error");
       const ask = paused
         ? t("Continue folding keyword forms? It resumes where it stopped. Keywords already checked: {done} of {total}.")
-            .replace("{done}", Number(s0.keywords_done || 0).toLocaleString())
-            .replace("{total}", Number(s0.keywords_total || 0).toLocaleString())
+            .replace("{done}", fmtNum(Number(s0.keywords_done || 0), 0))
+            .replace("{total}", fmtNum(Number(s0.keywords_total || 0), 0))
         : t("Fold keyword forms now? Older keywords are filed under the base form new articles already use, so “studies” and “study” become one keyword. Phrases, names and keywords your families or groups use are left as they are. It runs in the background and can be paused from the task manager. A fold cannot be undone.");
       if (!confirm(ask)) return;
       if (btn) btn.disabled = true;
@@ -248,7 +339,7 @@
     // with a noun, and an error is named by its CODE, never by exception text.
     function _searchReindexStatusText(s, report, t) {
       if (!s) return "";
-      const n = (v) => Number(v || 0).toLocaleString();
+      const n = (v) => fmtNum(Number(v || 0), 0);
       if (s.state === "error" && s.error === "index-not-upgraded") {
         return t("This store's search index has not been upgraded yet. Restart the app once, then run this again.");
       }
@@ -283,20 +374,9 @@
       else if (s.state === "paused") bits.push(t("paused"));
       return bits.join(" · ");
     }
-    async function _pollSearchReindex(st, t) {
-      for (;;) {
-        let s;
-        try { s = await api("/api/search/index-job/status"); }
-        catch { break; }
-        let report = null;
-        if (s.state === "done") {
-          try { report = await api("/api/search/index-job/report"); }
-          catch (_e) { /* no report yet: the line says "done" and nothing it cannot show */ }
-        }
-        if (st) st.textContent = _searchReindexStatusText(s, report, t);
-        if (s.state !== "running" || !s.running) break;
-        await new Promise((r) => setTimeout(r, 2000));
-      }
+    function _pollSearchReindex(st, t) {
+      return _watchJobLine("fts", "/api/search/index-job/status", "/api/search/index-job/report",
+        _searchReindexStatusText, st, t).settled;
     }
     async function reindexSearch(btn) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
@@ -378,13 +458,18 @@
       // label welded to its value ("Corpus size: 24 / 100000") is not a key and can
       // never be translated -- measured in the Chromium walk, where this line stayed
       // English in fr while the pills beside it translated.
-      const corpus = `<span>${esc(t("Corpus size"))}</span>: <b>${num(g.corpus_articles)}</b> / ${num(g.corpus_bar)}`
+      // The separator is the READER's, through the one keyed "{prefix}: {text}" frame
+      // (re-walk U-7): a hard-coded ": " printed "Taille du corpus: 453" in fr and
+      // "语料库规模: 453" in zh, where the At-rest panel beside it wrote "Corpus : …".
+      const corpus = ooLabelHtml(`<span>${esc(t("Corpus size"))}</span>`,
+        `<b>${num(g.corpus_articles)}</b> / ${num(g.corpus_bar)}`)
         + ` <span class="pill ${g.corpus_met ? "ok" : "warn"}">${esc(g.corpus_met ? t("met") : t("not met"))}</span>`;
       // ABSENT, never zero -- `!= null`, because 0.0 is a legal rate and a much
       // stronger claim than "we have not measured it".
+      const fpLabel = `<span>${esc(t("False-positive rate"))}</span>`;
       const fp = g.false_positive_rate != null
-        ? `<span>${esc(t("False-positive rate"))}</span>: <b>${(100 * g.false_positive_rate).toFixed(1)}%</b> / ${(100 * g.false_positive_bar).toFixed(0)}%`
-        : `<span>${esc(t("False-positive rate"))}</span>: <span class="pill warn">${esc(t("unmeasured"))}</span>`
+        ? ooLabelHtml(fpLabel, `<b>${(100 * g.false_positive_rate).toFixed(1)}%</b> / ${(100 * g.false_positive_bar).toFixed(0)}%`)
+        : ooLabelHtml(fpLabel, `<span class="pill warn">${esc(t("unmeasured"))}</span>`)
           + ` <span class="muted">${esc(t("needs a labelled sample judged by a person"))}</span>`;
       box.innerHTML = `<div>${corpus}</div><div>${fp}</div>`
         + `<div class="card-caveat">${esc(t(g.caveat || ""))}</div>`;
@@ -480,10 +565,16 @@
         ph += '<div class="muted">' + esc(t("Started")) + " " + esc(_fmtTs(prev.started_at)) +
               " · " + esc(t("Ended")) + " " + esc(_fmtTs(prev.ended_at)) + "</div>";
       const smp = prev.last_collector_sample;
+      // Sizes through the one localised writer (Y9), from bytes: the collector samples
+      // MiB (psutil / 1024**2), the binary step `_sizeText` divides by. "RSS" is the
+      // measure's own name (resident set size) and stays as it is; the "available" half is
+      // a keyed frame, so a locale decides where its word goes.
+      const _mib = (v) => _fmtBytes(Number(v) * 1048576);
+      const _tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((x, v) => x.replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? String(v[k]) : m));
       if (smp)
-        ph += '<div class="muted">' + esc(t("Last recorded memory")) + ": " +
-              (smp.rss_mb != null ? esc(smp.rss_mb) + " MB RSS" : "—") +
-              (smp.mem_avail_mb != null ? " · " + esc(smp.mem_avail_mb) + " MB " + esc(t("available")) : "") + "</div>";
+        ph += '<div class="muted">' + ooLabelHtml(esc(t("Last recorded memory")),
+              (smp.rss_mb != null ? esc(_mib(smp.rss_mb)) + " RSS" : "—") +
+              (smp.mem_avail_mb != null ? " · " + esc(_tf("{size} available", { size: _mib(smp.mem_avail_mb) })) : "")) + "</div>";
       if (prev.method) ph += '<div class="card-caveat">' + esc(prev.method) + "</div>";  // verbatim inference
       if (prev.note) ph += '<div class="muted">' + esc(prev.note) + "</div>";
       parts.push('<div style="margin-top:6px">' + ph + "</div>");
@@ -492,13 +583,15 @@
       const u = d.last_unlock || prev.last_unlock;
       if (u) {
         let uh = "<div><b>" + esc(t("Last unlock")) + "</b> ";
-        if (u.synchronous_total_ms != null) uh += esc((u.synchronous_total_ms / 1000).toFixed(1)) + " s";
+        // The seconds through the shared "{n} s" frame, isolated (R14): "1.2 s" read
+        // "s 1.2" on an Arabic page.
+        if (u.synchronous_total_ms != null) uh += esc(_diagIso(_tf("{n} s", { n: fmtNum(u.synchronous_total_ms / 1000, 1) })));
         uh += "</div>";
         if (u.wal_bytes_before_open != null)
-          uh += '<div class="muted">' + esc(t("WAL before first open")) + ": " + esc(humanBytes(u.wal_bytes_before_open)) + "</div>";
+          uh += '<div class="muted">' + ooLabelHtml(esc(t("WAL before first open")), esc(humanBytes(u.wal_bytes_before_open))) + "</div>";
         if (Array.isArray(u.phases) && u.phases.length)
-          uh += '<div class="muted">' + esc(t("phases")) + ": " +
-                u.phases.map((p) => esc(p.phase) + " (" + esc(Math.round(p.ms)) + " ms)").join(" · ") + "</div>";
+          uh += '<div class="muted">' + ooLabelHtml(esc(t("phases")),
+                u.phases.map((p) => esc(p.phase) + " (" + esc(_diagIso(_tf("{n} ms", { n: fmtNum(Math.round(p.ms), 0) }))) + ")").join(" · ")) + "</div>";
         if (u.method) uh += '<div class="card-caveat">' + esc(u.method) + "</div>";  // verbatim method
         parts.push('<div style="margin-top:8px">' + uh + "</div>");
       }
@@ -507,10 +600,10 @@
       const inv = d.inventory || {};
       const tot = inv.totals || {};
       let ih = "<div><b>" + esc(t("Data folder")) + '</b> <span class="muted">' + esc(inv.data_dir || "") + "</span></div>";
-      ih += '<div class="muted">' + esc(t("Total on disk")) + ": " + esc(humanBytes(tot.total_bytes || 0)) +
+      ih += '<div class="muted">' + ooLabelHtml(esc(t("Total on disk")), esc(humanBytes(tot.total_bytes || 0)) +
             " (" + esc(t("database")) + " " + esc(humanBytes(tot.db_bytes || 0)) +
             " · WAL " + esc(humanBytes(tot.wal_bytes || 0)) +
-            " · " + esc(t("other")) + " " + esc(humanBytes(tot.other_bytes || 0)) + ")</div>";
+            " · " + esc(t("other")) + " " + esc(humanBytes(tot.other_bytes || 0)) + ")") + "</div>";
       const stg = inv.suspect_staging || [];
       if (stg.length) {
         let sh = '<div class="note warn" style="margin-top:6px"><b>' + esc(t("Orphaned staging detected")) + "</b> " +
@@ -526,7 +619,8 @@
       if (ent.length)
         ih += '<div class="muted" style="margin-top:4px">' +
               ent.map((e) => esc(e.name) + ' <span class="pill">' + esc(e.kind) + "</span> " + esc(humanBytes(e.bytes || 0)) +
-                (e.files ? " · " + esc(e.files) + " " + esc(t("files")) : "")).join("<br>") + "</div>";
+                (e.files ? " · " + esc(e.files === 1 ? _tf("{n} file", { n: fmtNum(1, 0) })
+                  : _tf("{n} files", { n: fmtNum(e.files, 0) })) : "")).join("<br>") + "</div>";
       if (inv.method) ih += '<div class="card-caveat">' + esc(inv.method) + "</div>";  // verbatim method
       if (inv.note) ih += '<div class="muted">' + esc(inv.note) + "</div>";
       parts.push('<div style="margin-top:8px">' + ih + "</div>");
@@ -712,11 +806,14 @@
         if (note) { note.textContent = d.caveat || ""; note.style.display = d.caveat ? "" : "none"; }
         const body = $("chart-enlarge-body"); if (!body) return;
         const tot = d.totals || {}, heaps = d.heaps || {}, rate = d.minting_rate_per_1000_words || {};
-        const head = `${esc(t("Keywords"))}: <b>${(tot.keywords || 0).toLocaleString()}</b> · `
-          + `${esc(t("words"))}: <b>${(tot.tokens || 0).toLocaleString()}</b>`
+        // Each "Label: n" through the ONE keyed separator frame (W18; B14's Z3), and each
+        // count through fmtNum, not the browser's locale.
+        const head = ooLabelHtml(esc(t("Keywords")), `<b>${fmtNum(tot.keywords || 0, 0)}</b>`) + " · "
+          + ooLabelHtml(esc(t("words")), `<b>${fmtNum(tot.tokens || 0, 0)}</b>`)
           + (heaps.beta != null ? ` · Heaps β = <b>${esc(String(heaps.beta))}</b>` : "")
           + (rate.start != null && rate.end != null
-              ? ` · ${esc(t("new keywords / 1,000 words"))}: <b>${esc(String(rate.start))} → ${esc(String(rate.end))}</b>` : "");
+              ? " · " + ooLabelHtml(esc(t("new keywords / 1,000 words")),
+                `<b>${esc(String(rate.start))} → ${esc(String(rate.end))}</b>`) : "");
         body.innerHTML = `<div class="hint" style="margin-bottom:6px">${head}</div>` + _growthSvg(d.series, t);
         if (typeof dlg.showModal === "function" && !dlg.open) dlg.showModal();
       } catch (e) {
@@ -2382,12 +2479,17 @@
     // rather than disabling, so a multi-minute run never leaves a dead control.
     let _aiCheckPolling = false;
 
+    // A number-and-unit inside a line, isolated so an RTL page keeps "1.2 s" in its
+    // own order (R14) -- and its space made unbreakable, so the unit never wraps away.
+    function _diagIso(txt) { return "\u2068" + String(txt).replace(/ /g, "\u00a0") + "\u2069"; }
     function _aiCheckLine(label, body) {
       return `<div><b>${esc(label)}</b> — ${body}</div>`;
     }
 
     function _renderAiCheck(res) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
+        : ((x, v) => x.replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? String(v[k]) : m));
       const out = $("aicheck-result");
       if (!out) return;
       if (!res) { out.innerHTML = ""; return; }
@@ -2404,9 +2506,10 @@
       if (th) {
         rows.push(_aiCheckLine(
           t("Throughput"),
-          `${esc(String(th.best_calls_per_hour))} ${esc(t("per hour"))} `
-          + `${esc(t("at concurrency"))} ${esc(String(th.best_measured_concurrency))} `
-          + `(${esc(t("configured"))} ${esc(String(th.configured_concurrency))})`
+          // ONE keyed frame with grouped numbers (R14), not four welded fragments.
+          esc(tf("{n} per hour at concurrency {c} (configured {k})", {
+            n: fmtNum(th.best_calls_per_hour, 0), c: fmtNum(th.best_measured_concurrency, 0),
+            k: fmtNum(th.configured_concurrency, 0) }))
           + `<div class="hint">${esc(th.action || "")}</div>`,
         ));
       }
@@ -2418,20 +2521,22 @@
       // distinction dying at this boundary instead of the one above it.
       const g = r.extraction_gate;
       if (g && !g.error) {
-        let body = `${esc(t("cleared"))}: ${esc((g.cleared || []).join(", ") || t("none"))}`
-          + ((g.refused || []).length ? ` · ${esc(t("refused"))}: ${esc(g.refused.join(", "))}` : "")
-          + ((g.unmeasured || []).length ? ` · ${esc(t("unmeasured"))}: ${esc(g.unmeasured.join(", "))}` : "");
+        // label: value through the shared frame (R2), and the per-field counts in the
+        // same form (R14) -- "3 cleared" asked a count to agree with an English participle.
+        let body = ooLabelHtml(esc(t("cleared")), esc((g.cleared || []).join(", ") || t("none")))
+          + ((g.refused || []).length ? ` · ${ooLabelHtml(esc(t("refused")), esc(g.refused.join(", ")))}` : "")
+          + ((g.unmeasured || []).length ? ` · ${ooLabelHtml(esc(t("unmeasured")), esc(g.unmeasured.join(", ")))}` : "");
         const byField = g.by_field || {};
         const fieldNames = Object.keys(byField);
         if (fieldNames.length) {
           const parts = fieldNames.map((f) => {
             const v = byField[f] || {};
-            const bits = [`${(v.cleared || []).length} ${t("cleared")}`];
-            if ((v.refused || []).length) bits.push(`${v.refused.length} ${t("refused")}`);
-            if ((v.unmeasured || []).length) bits.push(`${v.unmeasured.length} ${t("unmeasured")}`);
+            const bits = [ooLabelText(t("cleared"), fmtNum((v.cleared || []).length, 0))];
+            if ((v.refused || []).length) bits.push(ooLabelText(t("refused"), fmtNum(v.refused.length, 0)));
+            if ((v.unmeasured || []).length) bits.push(ooLabelText(t("unmeasured"), fmtNum(v.unmeasured.length, 0)));
             return `${esc(f)} ${esc(bits.join(" · "))}`;
           });
-          body += `<div class="hint">${esc(t("By field"))}: ${parts.join(" — ")}</div>`;
+          body += `<div class="hint">${ooLabelHtml(esc(t("By field")), parts.join(" — "))}</div>`;
         }
         // Named, not counted: the reason says WHICH floor it hit, and that is the
         // difference between a model that invents and one that stays silent.
@@ -2459,7 +2564,7 @@
           const shape = Object.keys(perField)
             .map((f) => `${esc(f)} ×${perField[f]}`).join(" · ");
           body += `<details class="gate-refused"><summary class="card-caveat">`
-            + `${esc(t("Refused fields"))}: ${refusals.length} — ${shape}</summary>`
+            + `${ooLabelHtml(esc(t("Refused fields")), `${esc(fmtNum(refusals.length, 0))} — ${shape}`)}</summary>`
             + refusals.map((rf) =>
               `<div class="card-caveat">${ooLangCell(rf.language)} · ${esc(rf.field)} — `
               + `${esc(rf.reason || "")}</div>`).join("")
@@ -2469,7 +2574,7 @@
         const partly = (g.partly_cleared || [])
           .map((p) => `${ooLangCell(p.language)} (${esc((p.not_cleared || []).join(", "))})`);
         if (partly.length) {
-          body += `<div class="hint">${esc(t("Cleared for some fields only"))}: ${partly.join(", ")}</div>`;
+          body += `<div class="hint">${ooLabelHtml(esc(t("Cleared for some fields only")), partly.join(", "))}</div>`;
         }
         if (g.no_field_verdicts) {
           body += `<div class="hint">${esc(g.no_field_verdicts.reason || "")}</div>`;
@@ -2487,10 +2592,11 @@
           .map(([why, who]) => `${esc(why)} (${who.length})`).join(" · ");
         rows.push(_aiCheckLine(
           t("Models measured"),
-          `${esc(String(ran))} ${esc(t("model/backend pairs"))}`
-          + (both.length ? ` · ${esc(String(both.length))} ${esc(t("on both backends"))}` : "")
-          + (skipped ? `<div class="hint">${esc(t("skipped"))}: ${skipped}</div>` : "")
-          + `<div class="hint">${esc(t("Anchor accuracy"))}: ${esc(m.anchor_accuracy || "")}</div>`,
+          esc(ran === 1 ? tf("{n} model/backend pair", { n: fmtNum(1, 0) })
+            : tf("{n} model/backend pairs", { n: fmtNum(ran, 0) }))
+          + (both.length ? ` · ${esc(tf("{n} on both backends", { n: fmtNum(both.length, 0) }))}` : "")
+          + (skipped ? `<div class="hint">${ooLabelHtml(esc(t("skipped")), skipped)}</div>` : "")
+          + `<div class="hint">${ooLabelHtml(esc(t("Anchor accuracy")), esc(m.anchor_accuracy || ""))}</div>`,
         ));
       } else if (m && m.refused) {
         rows.push(_aiCheckLine(t("Models measured"), `<span class="warn">${esc(m.refused)}</span>`));
@@ -2498,13 +2604,13 @@
       // Every step, with its own time — including the ones that failed, because a
       // report from a half-broken machine is most useful when it says which half.
       const steps = (res.steps || []).map((s) =>
-        `${esc(s.step)} ${s.ok ? "✓" : "✗"} ${esc(String(s.seconds))}s`
+        `${esc(s.step)} ${s.ok ? "✓" : "✗"} ${esc(_diagIso(tf("{n} s", { n: fmtNum(Number(s.seconds) || 0, 2) })))}`
         + (s.ok ? "" : ` <span class="warn">${esc((s.error || "").slice(0, 120))}</span>`),
       ).join(" · ");
       rows.push(`<div class="hint" style="margin-top:4px">${steps}</div>`);
       const sep = (res.not_run_here || []).map((n) =>
         `${esc(n.name)} — ${esc(n.why)} (${esc(n.where)})`).join("<br>");
-      if (sep) rows.push(`<div class="hint muted" style="margin-top:4px">${t("Not part of this check")}: ${sep}</div>`);
+      if (sep) rows.push(`<div class="hint muted" style="margin-top:4px">${ooLabelHtml(esc(t("Not part of this check")), sep)}</div>`);
       if (res.caveat) rows.push(`<div class="card-caveat" style="margin-top:4px">${esc(res.caveat)}</div>`);
       out.innerHTML = rows.join("");
     }
