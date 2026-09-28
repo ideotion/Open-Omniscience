@@ -42,26 +42,10 @@ HANDLER = re.compile(r"(?<![\w.$-])on(?:" + EVENTS + r")\s*=\s*\\?[\"']", re.I)
 # An inline <script> block: a <script> tag with no src attribute.
 INLINE_SCRIPT = re.compile(r"<script\b(?![^>]*\bsrc\s*=)[^>]*>", re.I)
 
-# Measured on main @ 00af1d9 (2026-09-28) with HANDLER above; lowered as files convert.
+# Measured on main @ 00af1d9 (2026-09-28) with HANDLER above: 656 -- index.html 353, the
+# nineteen app-*.js modules 291, taskmanager.html 11, unlock.html 1. The SPA (index.html +
+# app-*.js, 644) converted to data-on-* in the same PR; what is left is pinned here.
 HANDLER_PINS: dict[str, int] = {
-    "src/static/app-agenda.js": 27,
-    "src/static/app-ai-tools.js": 13,
-    "src/static/app-analysis.js": 51,
-    "src/static/app-backup.js": 4,
-    "src/static/app-core.js": 16,
-    "src/static/app-corpus.js": 19,
-    "src/static/app-diagnostics.js": 5,
-    "src/static/app-gov-law.js": 3,
-    "src/static/app-home.js": 38,
-    "src/static/app-insights.js": 31,
-    "src/static/app-library.js": 4,
-    "src/static/app-living.js": 2,
-    "src/static/app-map.js": 25,
-    "src/static/app-markets.js": 17,
-    "src/static/app-settings.js": 14,
-    "src/static/app-shell.js": 7,
-    "src/static/app-sources.js": 15,
-    "src/static/index.html": 353,
     "src/static/taskmanager.html": 11,
     "src/static/unlock.html": 1,
 }
@@ -151,3 +135,98 @@ def test_no_served_page_gains_an_inline_script():
         if n != pin:
             bad.append(f"{_rel(p)}: {n} inline <script> blocks, pinned at {pin}")
     assert not bad, "\n  ".join(bad)
+
+
+# --------------------------------------------------------------------------- #
+# The replacement: data-on-<event> bindings, run by src/static/oo-on.js
+# --------------------------------------------------------------------------- #
+
+import subprocess  # noqa: E402
+
+STATIC = ROOT / "src" / "static"
+_HELPERS = {"ooPrevent", "ooStop", "ooPreventStop", "ooCloseDialog", "ooClickId", "ooSetValue",
+            "ooClearValue", "ooBodyClass", "ooOpenUrl"}
+
+
+def _binding_bodies(text: str):
+    """Every data-on-* value, with each JS ``${...}`` interpolation replaced by ``0``."""
+    for m in re.finditer(r"data-on-(\w+)=(\\?[\"'])", text):
+        q, i, body = m.group(2), m.end(), []
+        while i < len(text):
+            if text.startswith("${", i):
+                depth, j = 1, i + 2
+                while depth:
+                    depth += {"{": 1, "}": -1}.get(text[j], 0)
+                    j += 1
+                body.append(" 0 ")
+                i = j
+                continue
+            if text.startswith(q, i):
+                break
+            body.append(text[i])
+            i += 1
+        yield m.group(1), "".join(body)
+
+
+def _called_names(body: str) -> set[str]:
+    body = re.sub(r"'(?:[^'\\]|\\.)*'|\"(?:[^\"\\]|\\.)*\"", "0", body)
+    return set(re.findall(r"([A-Za-z_$][\w$]*)\s*\(", body))
+
+
+def _allowlist() -> list[str]:
+    js = (STATIC / "oo-on.js").read_text(encoding="utf-8")
+    m = re.search(r"const OO_ACTIONS = \[(.*?)\];", js, re.S)
+    assert m, "oo-on.js's OO_ACTIONS list must parse"
+    return re.findall(r'"([\w$]+)"', m.group(1))
+
+
+def _spa_files() -> list[Path]:
+    return [STATIC / "index.html", *sorted(STATIC.glob("app-*.js"))]
+
+
+# Names a binding reaches only through a JS interpolation (``data-on-click="${action}"``),
+# so no scan of the markup can see them. Each is listed with where it is built.
+_INTERPOLATED = {
+    "openCardCorpus": "app-home.js, the Lead card's and the carousel's Open corpus",
+    "openCardCorpusQuery": "app-home.js, the same two, when the Lead carries no article ids",
+}
+
+
+def test_every_bound_name_is_allowlisted_and_every_allowlisted_name_is_bound():
+    used: set[str] = set()
+    for p in _spa_files():
+        for _, body in _binding_bodies(p.read_text(encoding="utf-8")):
+            used |= _called_names(body)
+    used |= set(_INTERPOLATED)
+    listed = set(_allowlist())
+    assert _allowlist() == sorted(listed), "keep OO_ACTIONS sorted and free of repeats"
+    missing = sorted(used - listed - _HELPERS)
+    assert not missing, f"bound in markup but not in oo-on.js OO_ACTIONS (the binding is refused): {missing}"
+    dead = sorted(listed - used)
+    assert not dead, f"in OO_ACTIONS but bound nowhere (a dead entry widens the surface): {dead}"
+
+
+def test_every_allowlisted_name_is_a_global_function_declaration():
+    """oo-on.js resolves a name on window at call time. A ``function`` declaration at a
+    classic script's top level is a window property; a ``const``/``let`` arrow is NOT, so a
+    binding to one would silently do nothing."""
+    js = "\n".join(p.read_text(encoding="utf-8") for p in sorted(STATIC.glob("*.js")))
+    for name in _allowlist():
+        assert re.search(r"^ {4}(?:async\s+)?function\s+" + re.escape(name) + r"\s*\(", js, re.M), (
+            f"{name} is bound from markup but is not a top-level function declaration"
+        )
+
+
+def test_the_dispatcher_loads_before_the_app_and_is_cached_offline():
+    html = (STATIC / "index.html").read_text(encoding="utf-8")
+    assert html.index('src="/static/oo-on.js"') < html.index('src="/static/app-core.js"')
+    assert '"/static/oo-on.js"' in (STATIC / "sw.js").read_text(encoding="utf-8")
+
+
+def test_the_dispatcher_runs_as_real_code():
+    proc = subprocess.run(
+        ["node", str(ROOT / "tests" / "oo_on_node_test.js")],
+        capture_output=True, text=True, timeout=60, check=False,
+    )
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert "oo_on_node_test.js: OK" in proc.stdout

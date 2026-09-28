@@ -2056,7 +2056,7 @@
           bits.push(`<span class="muted">${esc(_uxVolPhase(sRow.phase, "restore", t))}</span>`);
         }
         const link = key === "reindex"
-          ? ` <a href="#" onclick="event.preventDefault();openTaskManager()">${esc(t("open the task manager"))}</a>`
+          ? ` <a href="#" data-on-click="ooPrevent(event);openTaskManager()">${esc(t("open the task manager"))}</a>`
           : "";
         const html = `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${dot};margin-inline-end:6px"></span>`
           + `<b>${sRow.n}. ${title}</b> <span class="muted">— ${bits.filter(Boolean).join(" · ")}</span>${link}`;
@@ -3385,9 +3385,9 @@
           `<span class="muted">${esc(r.limit)}</span>` +
           `<div class="hint" style="margin-top:8px">${esc(rec)}` +
           `<div class="row" style="gap:6px;margin-top:6px">` +
-          `<button class="danger" onclick="secureErase(1)">${esc(t("Single pass"))}</button>` +
-          `<button class="danger" onclick="secureErase(3)">${esc(t("Triple pass"))}</button>` +
-          `<button class="danger" onclick="secureErase(8)">${esc(t("Octuple pass"))}</button>` +
+          `<button class="danger" data-on-click="secureErase(1)">${esc(t("Single pass"))}</button>` +
+          `<button class="danger" data-on-click="secureErase(3)">${esc(t("Triple pass"))}</button>` +
+          `<button class="danger" data-on-click="secureErase(8)">${esc(t("Octuple pass"))}</button>` +
           `</div><div class="muted" style="margin-top:4px">${esc(t("This may take several minutes on a large disk. Restart the app when you are done."))}</div></div>`;
         toast(t("Local data crypto-erased. Restart the app."), "warn");
       } catch (e) { toast(_failMsg("Panic wipe failed: {error}", e), "err"); }

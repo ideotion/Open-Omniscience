@@ -1574,7 +1574,7 @@
         </div>
         ${tone ? `<div class="card-caveat" style="margin-top:5px">${esc(t("Mean tone uses the English-only VADER lexicon; non-English articles are not scored."))}</div>` : ""}
         <div class="row" style="margin-top:7px;gap:8px">
-          <button class="tiny secondary" onclick="showTab('sources')">${esc(t("Explore sources"))}</button>
+          <button class="tiny secondary" data-on-click="showTab('sources')">${esc(t("Explore sources"))}</button>
         </div>
       </div>`;
       if (!_ooMapDetailRepaint) host.scrollIntoView({ behavior: "smooth", block: "nearest" });
@@ -1644,13 +1644,13 @@
         <div class="row" style="margin-top:7px;gap:8px">
           ${url ? extLink(url, t("Official / reference source ↗"), "tiny secondary", "align-self:center") : ""}
           ${localLink}
-          ${cov ? `<button class="tiny secondary" onclick="tmapFindCoverage(${esc(JSON.stringify(cov))})">Find coverage in your corpus</button>` : ""}
+          ${cov ? `<button class="tiny secondary" data-on-click="tmapFindCoverage(${esc(JSON.stringify(cov))})">Find coverage in your corpus</button>` : ""}
         </div>
         ${(() => {
           const near = _ooMapNearby(s, _ooMapSigSet, _ooMapSigWin);
           if (!near.length) return "";
           const items = near.map(n => `<button class="tiny secondary" style="margin:2px 3px 0 0"
-            onclick="_ooMapSignalAt(${n.idx})" title="${esc(fmtDate(n.o))}${n.o.place ? " · " + esc(n.o.place) : ""}">
+            data-on-click="_ooMapSignalAt(${n.idx})" title="${esc(fmtDate(n.o))}${n.o.place ? " · " + esc(n.o.place) : ""}">
             <span style="width:8px;height:8px;border-radius:50%;background:${kindColor(n.o.kind)};display:inline-block;margin-right:4px"></span>
             ${esc((n.o.title || "").slice(0, 38))} <span class="muted">${n.o.year != null ? esc(String(n.o.year)) : ""}</span></button>`).join("");
           return `<div style="margin-top:8px;border-top:1px solid var(--border);padding-top:6px">
@@ -1816,7 +1816,7 @@
       const rowsFor = (areas, label) => areas.length
         ? "<tr><th>" + label + "</th><th>Top keywords</th></tr>" + areas.map(a =>
             `<tr><td><strong>${a.code ? ooCountryCell(a.code) : esc(a.name)}</strong>${a.country&&a.name?` <span class="muted">${ooCountryCell(a.country)}</span>`:""}</td><td>` +
-            a.top.map(t => `<span class="pill" style="cursor:pointer" onclick='pickTerm(${esc(JSON.stringify(t.term))})'>${esc(t.term)} ${t.mentions}</span>`).join(" ") +
+            a.top.map(t => `<span class="pill" style="cursor:pointer" data-on-click='pickTerm(${esc(JSON.stringify(t.term))})'>${esc(t.term)} ${t.mentions}</span>`).join(" ") +
             `</td></tr>`).join("")
         : `<tr><td class="muted">No data — index the corpus (sources need a country/city).</td></tr>`;
       $("map-countries").innerHTML = rowsFor(d.countries || [], "Country");
@@ -1951,9 +1951,9 @@
             <td>${humanBytes(e.downloaded_bytes)}${e.total_bytes?` / ${humanBytes(e.total_bytes)} (${e.percent}%)`:""}</td>
             <td><span class="pill ${e.status==='done'?'ok':e.status==='error'?'err':e.status==='downloading'?'':'warn'}">${esc(e.status)}</span>${e.error?` <span class="muted">${esc(e.error)}</span>`:""}</td>
             <td style="white-space:nowrap">
-              ${e.status==='downloading'?`<button class="tiny secondary" onclick="pauseDump(${esc(JSON.stringify(e.key))})">Pause</button>`:
-                (e.status!=='done'?`<button class="tiny secondary" onclick="startDump(${esc(JSON.stringify(e.wiki))})">Resume</button>`:"")}
-              <button class="tiny danger" onclick="deleteDump(${esc(JSON.stringify(e.key))})">Delete</button>
+              ${e.status==='downloading'?`<button class="tiny secondary" data-on-click="pauseDump(${esc(JSON.stringify(e.key))})">Pause</button>`:
+                (e.status!=='done'?`<button class="tiny secondary" data-on-click="startDump(${esc(JSON.stringify(e.wiki))})">Resume</button>`:"")}
+              <button class="tiny danger" data-on-click="deleteDump(${esc(JSON.stringify(e.key))})">Delete</button>
             </td></tr>`).join("");
       } catch (e) { /* dumps optional */ }
     }
@@ -2116,32 +2116,32 @@
           if (!missing.length) stateHtml = `<span class="pill ok">${esc(t("All continents downloaded"))} ✓</span>`;
           else {
             stateHtml = `<span class="muted">${doneCodes.size}/${continents.length} ${esc(t("continents"))}</span>`;
-            actions = `<button class="tiny danger" onclick="startPlanetDownload(this)">${esc(t("Download missing continents"))}</button>`;
+            actions = `<button class="tiny danger" data-on-click="startPlanetDownload(this)">${esc(t("Download missing continents"))}</button>`;
           }
         } else if (!d) {
-          actions = `<button class="tiny danger" onclick="startOsmDownload(${esc(JSON.stringify(r.code))}, this)">${esc(t("Download"))}</button>`;
+          actions = `<button class="tiny danger" data-on-click="startOsmDownload(${esc(JSON.stringify(r.code))}, this)">${esc(t("Download"))}</button>`;
         } else if (d.status === "downloading") {
           const pct = (d.percent != null) ? d.percent : (d.total_bytes ? Math.floor(100 * d.downloaded_bytes / d.total_bytes) : 0);
           stateHtml = `<span class="pill">${esc(t("Downloading"))} ${pct}%</span>`
             + `<progress max="100" value="${pct}" style="width:110px;vertical-align:middle"></progress>`
             + `<span class="muted" style="font-size:12px">${humanBytes(d.downloaded_bytes)}${d.total_bytes ? ` / ${humanBytes(d.total_bytes)}` : ""}</span>`;
-          actions = `<button class="tiny secondary" onclick="pauseOsm(${esc(JSON.stringify(d.key))})">${esc(t("Pause"))}</button>`;
+          actions = `<button class="tiny secondary" data-on-click="pauseOsm(${esc(JSON.stringify(d.key))})">${esc(t("Pause"))}</button>`;
         } else if (d.status === "queued") {
           const qpos = d.queue_position;
           const queued = _osmDownloads.filter((x) => x.status === "queued" && x.queue_position != null)
             .sort((a, b) => a.queue_position - b.queue_position).map((x) => x.key);
           const qi = queued.indexOf(d.key);
           stateHtml = `<span class="pill warn">${esc(t("Queued"))}${qpos ? ` #${qpos}` : ""}</span>`;
-          if (qi > 0) actions += `<button class="tiny secondary" onclick="osmMove(${esc(JSON.stringify(d.key))}, -1)" title="${esc(t("Move earlier in the queue"))}">↑</button> `;
-          if (qi >= 0 && qi < queued.length - 1) actions += `<button class="tiny secondary" onclick="osmMove(${esc(JSON.stringify(d.key))}, 1)" title="${esc(t("Move later in the queue"))}">↓</button> `;
-          actions += `<button class="tiny secondary" onclick="deleteOsm(${esc(JSON.stringify(d.key))})">${esc(t("Cancel"))}</button>`;
+          if (qi > 0) actions += `<button class="tiny secondary" data-on-click="osmMove(${esc(JSON.stringify(d.key))}, -1)" title="${esc(t("Move earlier in the queue"))}">↑</button> `;
+          if (qi >= 0 && qi < queued.length - 1) actions += `<button class="tiny secondary" data-on-click="osmMove(${esc(JSON.stringify(d.key))}, 1)" title="${esc(t("Move later in the queue"))}">↓</button> `;
+          actions += `<button class="tiny secondary" data-on-click="deleteOsm(${esc(JSON.stringify(d.key))})">${esc(t("Cancel"))}</button>`;
         } else if (d.status === "done") {
           stateHtml = `<span class="pill ok">${esc(t("Downloaded"))} ✓ <span class="muted">${humanBytes(d.downloaded_bytes || d.total_bytes || r.size_estimate_bytes)}</span></span>`;
-          actions = `<button class="tiny danger" onclick="deleteOsm(${esc(JSON.stringify(d.key))})">${esc(t("Delete"))}</button>`;
+          actions = `<button class="tiny danger" data-on-click="deleteOsm(${esc(JSON.stringify(d.key))})">${esc(t("Delete"))}</button>`;
         } else {   // paused | error
           stateHtml = `<span class="pill ${d.status === "error" ? "err" : "warn"}">${esc(t(d.status))}</span>${d.error ? ` <span class="muted">${esc(d.error)}</span>` : ""}`;
-          actions = `<button class="tiny secondary" onclick="resumeOsm(${esc(JSON.stringify(d.code))}, this)">${esc(t("Resume"))}</button>`
-            + ` <button class="tiny danger" onclick="deleteOsm(${esc(JSON.stringify(d.key))})">${esc(t("Delete"))}</button>`;
+          actions = `<button class="tiny secondary" data-on-click="resumeOsm(${esc(JSON.stringify(d.code))}, this)">${esc(t("Resume"))}</button>`
+            + ` <button class="tiny danger" data-on-click="deleteOsm(${esc(JSON.stringify(d.key))})">${esc(t("Delete"))}</button>`;
         }
         return `<div class="osm-region-row">
           <span class="osm-region-name"><strong>${esc(r.name)}</strong> ${meta}${isPlanet ? ` <span class="muted">— ${esc(t("downloads each continent you don't have yet"))}</span>` : ""}</span>
@@ -2636,8 +2636,8 @@
             <td>every ${s.interval_days}d</td>
             <td><span class="pill ${s.enabled ? 'ok' : ''}">${s.enabled ? 'on' : 'off'}</span></td>
             <td>${esc(last)}${s.last_status ? ` <span class="muted">(${esc(s.last_status)})</span>` : ""}</td>
-            <td><button class="secondary" onclick="toggleStatSub(${s.id}, ${!s.enabled})">${s.enabled ? 'Disable' : 'Enable'}</button>
-                <button class="secondary" onclick="deleteStatSub(${s.id})">Remove</button></td>
+            <td><button class="secondary" data-on-click="toggleStatSub(${s.id}, ${!s.enabled})">${s.enabled ? 'Disable' : 'Enable'}</button>
+                <button class="secondary" data-on-click="deleteStatSub(${s.id})">Remove</button></td>
           </tr>`;
         }).join("");
         box.innerHTML = `<table><tr><th>Source</th><th>Series</th><th>Interval</th><th>State</th><th>Last refresh</th><th></th></tr>${rows}</table>`
@@ -2757,7 +2757,7 @@
           return;
         }
         const rows = items.map(it =>
-          `<li><a href="#" onclick="$('dumpread-title').value=${esc(JSON.stringify(it.title))};dumpReadPage();return false">${esc(it.title)}</a></li>`).join("");
+          `<li><a href="#" data-on-click="ooSetValue('dumpread-title', ${esc(JSON.stringify(it.title))});dumpReadPage();return false">${esc(it.title)}</a></li>`).join("");
         out.innerHTML = `<div class="card"><div class="muted small">${esc(t("Title matches in your downloaded dump — click one to read its wikitext. Bodies are not full-text-searched."))} <span class="muted">(${esc(_dumpScanned(d.scanned))}${d.capped ? ", " + esc(t("scan capped")) : ""})</span></div><ul>${rows}</ul></div>`;
       } catch (e) { out.innerHTML = `<div style="color:var(--err)">${esc(e.message)}</div>`; }
     }
@@ -2817,7 +2817,7 @@
       const canPlain = plain.length > 0;
       const view = canPlain ? _dumpPageView : "raw";
       const seg = (m, lbl) => `<button class="ghost tiny${view === m ? " on" : ""}" `
-        + `onclick="dumpReadView('${m}')">${esc(lbl)}</button>`;
+        + `data-on-click="dumpReadView('${m}')">${esc(lbl)}</button>`;
       const toggle = canPlain
         ? `<div class="row" style="gap:6px;margin-top:6px">${seg("plain", t("Readable text"))}${seg("raw", t("Raw wikitext"))}</div>`
         : `<div class="muted small" style="margin-top:6px">${esc(t("Nothing readable survives the strip — this page is templates and tables. Showing the raw wikitext."))}</div>`;
@@ -2934,7 +2934,7 @@
           return;
         }
         const rows = items.map(it => {
-          const link = `<a href="#" onclick="dumpFtsOpen(${esc(JSON.stringify(it.wiki))},${esc(JSON.stringify(it.title))});return false">${esc(it.title)}</a>`;
+          const link = `<a href="#" data-on-click="dumpFtsOpen(${esc(JSON.stringify(it.wiki))},${esc(JSON.stringify(it.title))});return false">${esc(it.title)}</a>`;
           const snip = it.snippet ? `<div class="muted small">${esc(it.snippet)}</div>` : "";
           return `<li>${link} <span class="muted">(${esc(it.wiki)})</span>${snip}</li>`;
         }).join("");
@@ -2969,9 +2969,9 @@
             <td class="muted" style="font-size:12px">${p.last_checked_at?esc(p.last_checked_at.slice(0,16).replace("T"," ")):"never"}</td>
             <td>${p.revisions}</td><td class="muted">${p.flagged}</td>
             <td style="white-space:nowrap">
-              <button class="tiny secondary" onclick="openWikiTC(${p.id}, ${esc(JSON.stringify(p.title))}, ${esc(JSON.stringify(p.wiki))})" title="See this page's tracked revision history — the stored edits, newest first, with each diff.">Tracked changes</button>
-              <button class="tiny secondary" onclick="trackWikiPage(${p.id})">Track</button>
-              <button class="tiny danger" onclick="deleteWikiPage(${p.id}, ${esc(JSON.stringify(p.title))})">Delete</button>
+              <button class="tiny secondary" data-on-click="openWikiTC(${p.id}, ${esc(JSON.stringify(p.title))}, ${esc(JSON.stringify(p.wiki))})" title="See this page's tracked revision history — the stored edits, newest first, with each diff.">Tracked changes</button>
+              <button class="tiny secondary" data-on-click="trackWikiPage(${p.id})">Track</button>
+              <button class="tiny danger" data-on-click="deleteWikiPage(${p.id}, ${esc(JSON.stringify(p.title))})">Delete</button>
             </td></tr>`).join("")
             : `<tr><td colspan="7" class="muted">No watched pages yet. Add one above.</td></tr>`);
       } catch (e) { toast(_failMsg("Wiki pages: {error}", e), "err"); }
@@ -3039,7 +3039,7 @@
             <td>${(c.flag_reasons||[]).map(r=>`<span class="pill warn">${esc(r)}</span>`).join(" ")}</td>
             <td class="muted">${c.ores_damaging!=null?_oresCell(c.ores_damaging):'—'}</td>
             <td style="white-space:nowrap">
-              <button class="tiny secondary" onclick="viewWikiDiff(${c.id})">Diff</button>
+              <button class="tiny secondary" data-on-click="viewWikiDiff(${c.id})">Diff</button>
               <a class="tiny" href="${esc(c.diff_url)}" target="_blank" rel="noopener">live</a></td></tr>`).join("")
             : `<tr><td colspan="7" class="muted">No changes yet. Add pages and press “Track now”.</td></tr>`);
       } catch (e) { toast(_failMsg("Wiki changes: {error}", e), "err"); }

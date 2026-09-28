@@ -184,6 +184,8 @@
          fix, same reason: re-derived via color-mix toward --fg. */
       --muted:color-mix(in srgb, var(--fg) 20%, #5f7466 80%);
       --accent-text:color-mix(in srgb, var(--fg) 20%, var(--accent) 80%); }
+    /* The language menu's row hover (was an inline onmouseover/onmouseout pair; Q1127). */
+    #lang-menu [role="menuitem"]:hover, #lang-menu [role="menuitem"]:focus-visible { background:var(--line); }
     html[data-density="compact"]{ --space:13px; --pad:12px; --radius:9px; --sidebar-w:228px; }
 
     * { box-sizing: border-box; }

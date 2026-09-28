@@ -659,8 +659,8 @@ def test_the_box_lives_in_the_diagnostics_section_with_its_controls():
                "rr-run-btn", "rr-run-million-btn", "rr-status", "rr-result"):
         assert f'id="{el}"' in sec, el
     assert "releaseRunStart(this, 'release-scale')" in sec and "releaseRunStart(this, 'million')" in sec
-    assert 'onclick="releaseRunCollect(this)"' in sec and 'onclick="releaseRunCancel()"' in sec
-    assert 'onclick="releaseRunStatus(this)"' in sec
+    assert 'data-on-click="releaseRunCollect(this)"' in sec and 'data-on-click="releaseRunCancel()"' in sec
+    assert 'data-on-click="releaseRunStatus(this)"' in sec
     # The row-W opt-in (0.3's row 5) defaults OFF: ticking it is the operator's act, never the button's.
     m = re.search(r'<input id="rr-row5"[^>]*>', sec)
     assert m and "checked" not in m.group(0), m.group(0)
@@ -872,7 +872,7 @@ def test_the_chronology_box_sits_above_the_run_box_with_its_controls_and_the_mod
     box = html.index('id="chronology-box"')
     assert box < html.index('id="release-run-box"'), "the chronology reads first: it is what a returning operator opens"
     assert html.index('data-adv="diagnostics"') < box
-    for needle in ('onclick="loadChronology(this)"', 'id="chrono-anchor"', '<option value="run">', '<option value="install">',
+    for needle in ('data-on-click="loadChronology(this)"', 'id="chrono-anchor"', '<option value="run">', '<option value="install">',
                    'id="chrono-summary"', 'id="chrono-timeline"', 'id="chrono-legend"', 'id="chrono-status"'):
         assert needle in html, needle
     assert '<script src="/static/ootimeline.js"></script>' in html, "the layout module must be loaded"
@@ -880,7 +880,7 @@ def test_the_chronology_box_sits_above_the_run_box_with_its_controls_and_the_mod
     # the resume button: hidden until a status says the run is resumable
     seg = html[html.index('id="rr-resume-btn"'):]
     seg = seg[:seg.index(">")]
-    assert 'onclick="releaseRunResume(this)"' in seg and 'display:none' in seg
+    assert 'data-on-click="releaseRunResume(this)"' in seg and 'display:none' in seg
 
 
 def test_the_resume_handler_gates_on_consent_and_asks_for_the_passphrase_only_when_owed():

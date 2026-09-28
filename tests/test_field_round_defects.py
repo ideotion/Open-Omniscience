@@ -835,8 +835,8 @@ def test_the_custody_tab_shows_the_late_entries_and_the_gap_check():
     html = (_ROOT / "src" / "static" / "index.html").read_text(encoding="utf-8")
     tab = html[html.index('id="tab-custody"'):]
     tab = tab[:tab.index("</section>")]
-    assert 'id="cust-late"' in tab and 'onclick="custodyGapCheck(this)"' in tab
-    assert 'id="cust-gap-record"' in tab and 'onclick="custodyGapRecord(this)"' in tab
+    assert 'id="cust-late"' in tab and 'data-on-click="custodyGapCheck(this)"' in tab
+    assert 'id="cust-gap-record"' in tab and 'data-on-click="custodyGapRecord(this)"' in tab
     js = read_static("app-ai-tools.js")
     assert "_renderCustodyLate(s.late)" in function_source(js, "loadCustody")
     assert '{ scan: true }' in function_source(js, "custodyGapCheck")

@@ -1144,8 +1144,8 @@ def test_triage_and_source_tags_are_progressive_toggles_not_numeric_one_shots():
     assert 'id="kt-toggle-btn"' in html and 'id="st-toggle-btn"' in html, (
         "one ON/OFF toggle button must replace the old separate run/cancel buttons"
     )
-    assert 'onclick="runKeywordTriage(this)"' not in html
-    assert 'onclick="runSourceTags(this)"' not in html
+    assert 'data-on-click="runKeywordTriage(this)"' not in html
+    assert 'data-on-click="runSourceTags(this)"' not in html
 
     app = app_js()
     assert "async function toggleKeywordTriage(" in app and "async function toggleSourceTags(" in app
@@ -1545,8 +1545,8 @@ def test_remove_imported_newsletters_live_action():
     assert "backfill_keyword_counters" in email, "counters reconciled after the bulk delete"
     assert "with write_lock():" in email, "the bulk delete takes the single-writer gate"
     # UI: the panel (shown only when there's something to remove) + the two buttons
-    assert 'id="nl-remove-panel"' in html and 'onclick="removeImportedNewsletters(' in html
-    assert 'onclick="downloadBackupFirst(' in html  # the back-up-first nudge
+    assert 'id="nl-remove-panel"' in html and 'data-on-click="removeImportedNewsletters(' in html
+    assert 'data-on-click="downloadBackupFirst(' in html  # the back-up-first nudge
     assert "function removeImportedNewsletters(" in app and "function loadNewsletterRemoveCount(" in app
     assert "/api/newsletters/remove-imported" in app
 
@@ -1641,7 +1641,7 @@ def test_newsletter_folder_import_job():
     # /api/jobs surfaces it as a DB-WRITER (kind="import" -> arbitration with collect)
     assert "def _import_jobs(" in jobs and '"kind": "import"' in jobs and '"newsletter-import"' in jobs
     # UI
-    assert 'id="nl-folder"' in html and 'onclick="startFolderImport(' in html
+    assert 'id="nl-folder"' in html and 'data-on-click="startFolderImport(' in html
     assert "function startFolderImport(" in app and "/api/newsletters/import-folder" in app
 
 
@@ -1806,7 +1806,7 @@ def test_gui_shutdown_button_and_endpoint():
     html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
     app = app_js()
     sysapi = (_SRC / "api" / "system.py").read_text(encoding="utf-8")
-    assert 'id="app-shutdown"' in html and 'onclick="appShutdown()"' in html
+    assert 'id="app-shutdown"' in html and 'data-on-click="appShutdown()"' in html
     assert "async function appShutdown(" in app and "/api/system/shutdown" in app
     # Scoped to appShutdown's own body. Whole-file, `"confirm(" in app` matched ~30
     # unrelated call sites, so the confirmation could be deleted from the shutdown
@@ -2172,8 +2172,8 @@ def test_custom_extractor_run_from_analysis_window_is_wired():
     and the search toolbar (ctx-aware). Browser-unverified — this pins the wiring."""
     src = _ui_source()
     # the ctx-aware run control is reachable from both surfaces
-    assert "onclick=\"aiRunPrompt('an')\"" in src, "analysis window needs a 'Run extractor' action"
-    assert "onclick=\"aiRunPrompt('search')\"" in src, "search toolbar needs a 'Run extractor' action"
+    assert "data-on-click=\"aiRunPrompt('an')\"" in src, "analysis window needs a 'Run extractor' action"
+    assert "data-on-click=\"aiRunPrompt('search')\"" in src, "search toolbar needs a 'Run extractor' action"
     assert "async function aiRunPrompt(" in src and "async function aiRunPromptStart(" in src
     # mirrors the bulk-LLM streaming run (same ctx-keyed selection + abort), POSTs to the endpoint
     assert "_bulkParams(ctx)" in src
@@ -2667,7 +2667,7 @@ def test_ui_invariants():
     assert 'id="home-trends-panel" hidden' in home, (
         "the Home trends panel must default hidden (Home never blank-and-silent, Item 4b)"
     )
-    assert "_insSubtabs&&_insSubtabs.select('trends')" in home, (
+    assert 'data-on-click="openInsightsTrends();return false"' in home, (
         "the Home 'More in Insights' link must deep-link to the Trends subtab (Item 4b)"
     )
     # 20. Task-manager window (ruled ×3): the vitals BUBBLE graduates to a
@@ -2922,7 +2922,7 @@ def test_ui_invariants():
     # specifically, resolving the ancestor .card via closest() -- see
     # test_lead_card_flip_trigger_is_not_nested_inside_an_interactive_role for the
     # full structural regression coverage of this restructuring.
-    assert "function leadFlip(" in html and "leadFlip(this.closest('.card'),event)" in card_html, (
+    assert "function leadFlip(" in html and "leadFlipFrom(this, event)" in card_html, (
         "clicking a Lead card's front face must flip it (maintainer 2026-06-23)"
     )
     # corpus-open-dblclick-duplicate-tabs (P1): the direct window.open() moved into the
@@ -3153,16 +3153,16 @@ def test_diagnostics_panel_button_consolidation():
         "/api/diagnostics/source-audit?download=1",
         "/api/diagnostics/source-audit-selftest?download=1",
         "/api/diagnostics/home-cards?download=1",
-        "/api/diagnostics/dates',",
-        "/api/diagnostics/network',",
-        "/api/diagnostics/performance',",
-        "/api/diagnostics/benchmark',",
-        "/api/diagnostics/debug-bundle',",
-        "/api/diagnostics/request-latency',",
-        "/api/diagnostics/slow-queries',",
-        "/api/diagnostics/schema-drift',",
-        "/api/diagnostics/integrity',",
-        "/api/diagnostics/frontend-errors',",
+        "/api/diagnostics/dates')",
+        "/api/diagnostics/network')",
+        "/api/diagnostics/performance')",
+        "/api/diagnostics/benchmark')",
+        "/api/diagnostics/debug-bundle')",
+        "/api/diagnostics/request-latency')",
+        "/api/diagnostics/slow-queries')",
+        "/api/diagnostics/schema-drift')",
+        "/api/diagnostics/integrity')",
+        "/api/diagnostics/frontend-errors')",
     )
     for url in removed_download_urls:
         assert url not in html, f"a covered per-report download button survived: {url}"
@@ -3171,20 +3171,20 @@ def test_diagnostics_panel_button_consolidation():
     #   - the full keyword-corpus dump (both size variants): the manifest's own
     #     'excluded' block says the bundle carries only the bounded DIGEST, so these
     #     buttons are each report's ONLY full-dump access, not a redundant download.
-    assert "window.open('/api/diagnostics/keywords?format=zip','_blank')" in html
+    assert "ooOpenUrl('/api/diagnostics/keywords?format=zip')" in html
     assert "per_lang=1000000" in html and "All keywords (.zip)" in html
     #   - source-quality + rollup-benchmark: explicitly named as surviving ACTIONS in
     #     the AMENDED ruling despite living in the same button row.
-    assert "window.open('/api/diagnostics/source-quality?download=1','_blank')" in html
-    assert "window.open('/api/diagnostics/rollup-benchmark','_blank')" in html
+    assert "ooOpenUrl('/api/diagnostics/source-quality?download=1')" in html
+    assert "ooOpenUrl('/api/diagnostics/rollup-benchmark')" in html
     #   - the 4 statistical-signal reports: on DIFFERENT routers (signals.py/insights.py),
     #     never scanned by the diagnostics-router ratchet and not bundle members --
     #     removing them would strand that data behind no UI at all.
     for url in (
         "/api/signals/fdr-selftest?download=1",
-        "/api/signals/flood',",
-        "/api/signals/bury',",
-        "/api/insights/lunar-correlation',",
+        "/api/signals/flood')",
+        "/api/signals/bury')",
+        "/api/insights/lunar-correlation')",
     ):
         assert url in html, f"a cross-router signal report (outside the ratchet) must stay: {url}"
 
@@ -4153,8 +4153,8 @@ def test_analysis_mindmap_controls():
     assert "anMMset({cloud:false,concept:true})" in flat, (
         "Q512's Concept view (the ring at the centre, one arm per language) is missing"
     )
-    assert "anMMset({big:!_anMM.big})" in flat, "⛶ enlarge"
-    assert "anMMset({scale:+this.value})" in flat, "text-size control"
+    assert "anMMtoggleBig()" in flat, "⛶ enlarge"
+    assert "anMMsetScale(this.value)" in flat, "text-size control"
     import json
     en = json.loads((_SRC / "static" / "locales" / "en.json").read_text(encoding="utf-8"))
     for k in ("Map", "Cloud", "Concept", "Enlarge the mindmap"):
@@ -4566,7 +4566,7 @@ def test_commodity_card_opens_analysis():
     )
     assert "openAnalysisFor(" in html, "the title must open the analysis window"
     # must not hijack the card's own (chartSymbol) click
-    assert "event.stopPropagation(); openAnalysisFor(" in html, (
+    assert "ooStop(event);openAnalysisFor(" in html, (
         "the title click must stopPropagation so the card's chartSymbol stays"
     )
     # the "co-occurrence … never causation" GRAPH caveat was REMOVED from charts
@@ -4680,7 +4680,7 @@ def test_temporal_map_retired_into_ooMap():
     for gone in (
         'id="tmap-slider"', 'id="tmap-svg"', 'id="tmap-wrap"', 'id="tmap-legend"',
         'id="tmap-mentions-toggle"', "Temporal map <span",
-        'onclick="toggleTmapPlay()"', 'onclick="toggleTmapMentions()"', 'oninput="onTmapSlide()"',
+        'data-on-click="toggleTmapPlay()"', 'data-on-click="toggleTmapMentions()"', 'data-on-input="onTmapSlide()"',
     ):
         assert gone not in html, f"the retired temporal-map panel must not ship: {gone}"
 
@@ -4952,7 +4952,7 @@ def test_oochart_enlarge_indices():
     # it pulls the FULL series from the prices endpoint, not the truncated spark
     assert "/api/commodities/${encodeURIComponent(symbol)}/prices" in html
     # index cards open the detail (the click path is wired, with data only)
-    assert "onclick=\"indexDetail(" in html, "index cards must open the ooChart detail"
+    assert "data-on-click=\"indexDetail(" in html, "index cards must open the ooChart detail"
     assert 'id="idx-chart"' in html, "the indices detail mount container must exist"
     # the commodity board detail still uses ooChart too — now via the ONE shared
     # fullscreen overlay (P2-10: chartSymbol → chartEnlarge → ooChart), not a forked
@@ -4989,13 +4989,13 @@ def test_commodity_corpus_entry():
     # price-detail click (stopPropagation), seeds the curated family query, AND
     # carries the commodity identity (Item 3) so the Price overlay subtab can show
     # the price curve x corpus coverage.
-    assert "event.stopPropagation(); openAnalysisFor(${esc(JSON.stringify(q))}, ${cOpts})" in html, (
+    assert "ooStop(event);openAnalysisFor(${esc(JSON.stringify(q))}, ${cOpts})" in html, (
         "the commodity graph 'Analyse' must open the window on the family query + commodity opts"
     )
     # the PRICE-DETAIL + correlation path is NOT removed (the Desk lesson)
     assert "function chartSymbol(" in html, "the commodity price-detail handler must stay"
     assert "function correlateSymbol(" in html, "the price-vs-news correlation must stay"
-    assert 'onclick="chartSymbol(' in html, "the commodity card body must still open price detail"
+    assert 'data-on-click="chartSymbol(' in html, "the commodity card body must still open price detail"
     assert "function indexDetail(" in html, "the index price-detail handler must stay"
     # honest term: the curated family seed, else the real name — never fabricated
     assert "COMMODITY_QUERY[s.symbol] || s.name" in html, (
@@ -5388,7 +5388,7 @@ def test_family_curation_relocated_to_settings_and_single_member_guarded():
     set_j = src.index("</details>", set_i)  # the whole Advanced → Keywords section
     set_section = src[set_i:set_j]
     assert 'id="famc-list"' in set_section, "the relocated curation list must exist in Settings"
-    assert 'onclick="familyMerge()"' in set_section
+    assert 'data-on-click="familyMerge()"' in set_section
     assert 'id="fam-overrides"' in set_section, "the overrides list rides along (nothing lost)"
 
     app = app_js()
@@ -5463,7 +5463,7 @@ def test_supergroup_curation_relocated_to_settings():
     ONLY the read-only data view (stats/dominance/trend/members-with-provenance),
     per the Desk rule -- nothing lost, just relocated."""
     src = _ui_source()
-    assert 'id="sgc-name"' in src and 'onclick="createSuperGroup()"' in src, (
+    assert 'id="sgc-name"' in src and 'data-on-click="createSuperGroup()"' in src, (
         "the create-group input must live in the Settings curation panel"
     )
     assert "function loadSupergroupCuration(" in src and "function sgCurationCard(" in src
@@ -5756,8 +5756,8 @@ def test_concept_map_two_tier_browse_and_clickable_countries():
     # Clickable countries: the ooMap polygon drill, the table-row drill, and the
     # "not mapped" bucket drill all resolve through the SAME shared function.
     assert "onCountry: (iso) => _conceptDrillCountry(ringId, iso)" in js
-    assert '<tr style="cursor:pointer" onclick="_conceptDrillCountry(' in js
-    assert 'onclick="_conceptDrillCountry(\'${esc(ringId)}\', null)"' in js, (
+    assert '<tr style="cursor:pointer" data-on-click="_conceptDrillCountry(' in js
+    assert 'data-on-click="_conceptDrillCountry(\'${esc(ringId)}\', null)"' in js, (
         "the not-mapped/unlocated bucket must be a clickable drill, never a dead-end div"
     )
     assert "/api/insights/ring-country-articles" in js
@@ -5766,8 +5766,8 @@ def test_concept_map_two_tier_browse_and_clickable_countries():
     # Every ⦾ group chip in the app deep-links to the map (openConceptMap), at
     # each identified render site: the family-panel pill, the sgCard chip's map
     # link, and the sgCurationCard chip's map link.
-    assert 'onclick="openConceptMap(${esc(JSON.stringify(f.ring_id))})"' in js
-    assert js.count('onclick="openConceptMap(${esc(JSON.stringify(m.ring_id))})"') >= 2, (
+    assert 'data-on-click="openConceptMap(${esc(JSON.stringify(f.ring_id))})"' in js
+    assert js.count('data-on-click="openConceptMap(${esc(JSON.stringify(m.ring_id))})"') >= 2, (
         "both sgCard and sgCurationCard ring-member chips must offer the map deep-link"
     )
 
@@ -5796,7 +5796,7 @@ def test_task_manager_opens_in_a_standalone_tab():
     over the EXISTING job/scheduler/system APIs. It may ENGAGE airplane (the safe
     direction) but never goes ONLINE itself (P2-12: consent lives in the app)."""
     html = _ui_source()  # index.html + app.js + app.css
-    assert 'onclick="openTaskManager()"' in html, "#tm-open must open the standalone task tab"
+    assert 'data-on-click="openTaskManager()"' in html, "#tm-open must open the standalone task tab"
     assert "function openTaskManager(" in html and 'window.open("/tasks"' in html, (
         "openTaskManager must window.open the /tasks page (a named target stays in place)"
     )
@@ -6557,7 +6557,7 @@ def test_home_card_click_diagnostics_and_download_all_wired():
     # window.open('/api/diagnostics/all') froze the single-worker server for ~36 min on a
     # large corpus, so the button POSTs /all-job (backend below), polls status, downloads
     # when ready.
-    assert 'onclick="runAllDiagnostics(this)"' in html and 'id="all-diag-status"' in html
+    assert 'data-on-click="runAllDiagnostics(this)"' in html and 'id="all-diag-status"' in html
     assert '@router.post("/all-job")' in diag  # the non-blocking background-job endpoint
     assert ">All diagnostics (.zip)<" in html
     assert ">Keyword log (.zip)<" in html  # kept -- the FULL dump, exempt from the bundle
@@ -6756,7 +6756,7 @@ def test_all_diagnostics_runs_as_a_background_job():
     assert 'id="all-diag-status"' in ui, "a live-progress status element must exist"
     assert "Connection hiccup" in ui, "a dropped poll must degrade honestly, not say 'failed'"
     # The old synchronous window.open('/api/diagnostics/all') blocking click is gone.
-    assert "window.open('/api/diagnostics/all','_blank')" not in ui, "the synchronous /all click must be replaced"
+    assert "ooOpenUrl('/api/diagnostics/all')" not in ui, "the synchronous /all click must be replaced"
 
 
 def test_llm_langdetect_is_optin_labelled_and_never_touches_trusted_channels():
@@ -7869,15 +7869,15 @@ def test_lead_card_flip_trigger_is_not_nested_inside_an_interactive_role():
         'class="card-face card-front" tabindex="0" role="button" aria-label="${esc(_title)}"'
     ) in card_html, "the FRONT face must carry the flip-trigger role/tabindex"
     assert (
-        "onclick=\"leadFlip(this.closest('.card'),event)\" "
-        "onkeydown=\"leadFlipKey(this.closest('.card'),event)\""
+        "data-on-click=\"leadFlipFrom(this, event)\" "
+        "data-on-keydown=\"leadFlipKeyFrom(this, event)\""
     ) in card_html, "the front face's handlers must resolve to the ancestor .card via closest()"
 
     # The back's flip-back hint is now a real, explicitly-scoped <button> (not a
     # bare <span> that relied on an interactive-role ancestor it shared with other
     # buttons on the same face).
     assert (
-        '<button class="lead-flip-hint back" onclick="leadFlip(this.closest(\'.card\'))">'
+        '<button class="lead-flip-hint back" data-on-click="leadFlipFrom(this)">'
     ) in card_html, "the back's flip-back hint must be its own dedicated <button>"
 
     # Regression proof for the guard-defeats-itself trap: leadFlip's own
@@ -7889,8 +7889,8 @@ def test_lead_card_flip_trigger_is_not_nested_inside_an_interactive_role():
     lead_flip_fn = js.split("function leadFlip(card, ev) {", 1)[1].split("\n    }\n", 1)[0]
     assert 'ev.target.closest("button,a,input,label,details,summary")' in lead_flip_fn, \
         "sanity: leadFlip's interactive-descendant guard must still exist"
-    assert "leadFlip(this.closest('.card'))" in card_html and \
-        "leadFlip(this.closest('.card'),event)" in card_html, (
+    assert 'data-on-click="leadFlipFrom(this)"' in card_html and \
+        "leadFlipFrom(this, event)" in card_html, (
         "the Back button must call leadFlip WITHOUT an event arg (bypassing its own "
         "guard, which would otherwise match the button being clicked); the front "
         "face must still pass the event (so its OWN interactive-descendant guard "
@@ -8515,7 +8515,7 @@ def test_library_qualification_tile_window_switcher_hide_flat_auto_log():
     assert "const LIB_WINDOWS = [[7," in app
     assert '"7d"' in app and '"30d"' in app and '"90d"' in app
     assert "function _libSetWindow" in app
-    assert "onclick=\"_libSetWindow(" in app
+    assert "data-on-click=\"_libSetWindow(" in app
     assert "const LIB_DEFAULT_DAYS = 30" in app
     # every render call site starts on the SAME default window (never a per-tile
     # divergent starting point) — articles_per_hour used to hardcode 7d.

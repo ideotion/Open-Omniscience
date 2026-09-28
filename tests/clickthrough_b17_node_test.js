@@ -122,7 +122,7 @@ async function run() {
       (id) => (id === "lib-tile-__lang" ? el : null), document, () => {});
     return box;
   }
-  const onChip = (html, days) => new RegExp('class="chip tiny on" onclick="_libSetWindow\\(\'__lang\', ' + days + '\\)"').test(html);
+  const onChip = (html, days) => new RegExp('class="chip tiny on" data-on-click="_libSetWindow\\(\'__lang\', ' + days + '\\)"').test(html);
 
   await test("T1: a tile switched to 7d stays 7d when the view redraws it (a switch, a reopen)", async () => {
     const box = langTile();

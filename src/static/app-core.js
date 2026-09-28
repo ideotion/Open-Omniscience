@@ -21,7 +21,7 @@
    spot in review. Add new code inside the module it belongs to.
 */
     const $ = (id) => document.getElementById(id);
-    // Escapes ' too: data reaches single-quoted attributes (onclick='…'), where
+    // Escapes ' too: data reaches single-quoted attributes (data-on-click='…'), where
     // an apostrophe in scraped content would otherwise break out (audit 0.0.9).
     const esc = (s) => (s == null ? "" : String(s).replace(/[&<>"']/g,
       c => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c])));
@@ -655,8 +655,7 @@
       menu.innerHTML = LANGS_12.map(([code, flag, native]) =>
         `<div role="menuitem" tabindex="0" data-lang="${code}"
               style="display:flex;align-items:center;gap:9px;padding:7px 12px;border-radius:7px;cursor:pointer${code === cur ? ";font-weight:700" : ""}"
-              onmouseover="this.style.background='var(--line)'" onmouseout="this.style.background=''"
-              onclick="pickLang('${code}')" onkeydown="if(event.key==='Enter'){pickLang('${code}')}">
+              data-on-click="pickLang('${code}')" data-on-key="Enter" data-on-keydown="pickLang('${code}')">
            <span aria-hidden="true">${flag}</span><span>${esc(native)}</span>
            ${code === cur ? '<span style="margin-inline-start:auto">\u2713</span>' : ""}</div>`).join("");
       const r = ev.currentTarget.getBoundingClientRect();
@@ -2229,18 +2228,18 @@
                  `<div class="muted" style="font-size:11px">${amount}${_rateNote(j, t)} · ${pct}%</div>`;
         }
         const acts = [];
-        if (j.id === "collect:current") acts.push(`<button class="tiny danger" title="${esc(t("Stopping collection engages the network kill switch — the app goes offline."))}" onclick="jobCancel(${esc(JSON.stringify(j.id))})">${esc(t("Stop"))}</button>`);
-        if (_isDownloadKind(j.kind) && j.state === "running") acts.push(`<button class="tiny secondary" onclick="jobCancel(${esc(JSON.stringify(j.id))})">${esc(t("Pause"))}</button>`);
+        if (j.id === "collect:current") acts.push(`<button class="tiny danger" title="${esc(t("Stopping collection engages the network kill switch — the app goes offline."))}" data-on-click="jobCancel(${esc(JSON.stringify(j.id))})">${esc(t("Stop"))}</button>`);
+        if (_isDownloadKind(j.kind) && j.state === "running") acts.push(`<button class="tiny secondary" data-on-click="jobCancel(${esc(JSON.stringify(j.id))})">${esc(t("Pause"))}</button>`);
         if (_isDownloadKind(j.kind) && j.state === "queued") {
           const k = _dlKey(j), keys = queuedKeysByKind[j.kind] || [], idx = keys.indexOf(k);
-          if (idx > 0) acts.push(`<button class="tiny secondary" onclick="jobMove('${esc(k)}', -1, '${esc(j.kind)}')" title="${esc(t("Move earlier in the queue"))}">\u2191</button>`);
-          if (idx >= 0 && idx < keys.length - 1) acts.push(`<button class="tiny secondary" onclick="jobMove('${esc(k)}', 1, '${esc(j.kind)}')" title="${esc(t("Move later in the queue"))}">\u2193</button>`);
-          acts.push(`<button class="tiny secondary" onclick="jobCancel(${esc(JSON.stringify(j.id))})">${esc(t("Cancel"))}</button>`);
+          if (idx > 0) acts.push(`<button class="tiny secondary" data-on-click="jobMove('${esc(k)}', -1, '${esc(j.kind)}')" title="${esc(t("Move earlier in the queue"))}">\u2191</button>`);
+          if (idx >= 0 && idx < keys.length - 1) acts.push(`<button class="tiny secondary" data-on-click="jobMove('${esc(k)}', 1, '${esc(j.kind)}')" title="${esc(t("Move later in the queue"))}">\u2193</button>`);
+          acts.push(`<button class="tiny secondary" data-on-click="jobCancel(${esc(JSON.stringify(j.id))})">${esc(t("Cancel"))}</button>`);
         }
         // Paused/failed downloads gain a Resume control (start() continues the
         // partial file). It routes through the ONE network-consent popup.
         if (_isDownloadKind(j.kind) && (j.state === "paused" || j.state === "failed"))
-          acts.push(`<button class="tiny secondary" onclick="jobResume(${esc(JSON.stringify(j.id))})">${esc(t("Resume"))}</button>`);
+          acts.push(`<button class="tiny secondary" data-on-click="jobResume(${esc(JSON.stringify(j.id))})">${esc(t("Resume"))}</button>`);
         // The local DB-writer jobs (the whole-corpus re-index, the keyword fold, the search
         // re-index) draw the controls the server lists in `actions` for their state: pause
         // (running) stops between batches; resume continues from the persisted cursor, so
@@ -2250,11 +2249,11 @@
         if (_LOCAL_JOB_KINDS.has(j.kind)) {
           const a = Array.isArray(j.actions) ? j.actions : [];
           if (a.includes("pause"))
-            acts.push(`<button class="tiny secondary" onclick="jobCancel(${esc(JSON.stringify(j.id))})">${esc(t("Pause"))}</button>`);
+            acts.push(`<button class="tiny secondary" data-on-click="jobCancel(${esc(JSON.stringify(j.id))})">${esc(t("Pause"))}</button>`);
           if (a.includes("resume"))
-            acts.push(`<button class="tiny secondary" onclick="jobResume(${esc(JSON.stringify(j.id))}, true)">${esc(t("Resume"))}</button>`);
+            acts.push(`<button class="tiny secondary" data-on-click="jobResume(${esc(JSON.stringify(j.id))}, true)">${esc(t("Resume"))}</button>`);
           if (a.includes("cancel") && !a.includes("pause") && j.kind === "keyword-fold")
-            acts.push(`<button class="tiny secondary" onclick="jobCancel(${esc(JSON.stringify(j.id))})">${esc(t("Cancel"))}</button>`);
+            acts.push(`<button class="tiny secondary" data-on-click="jobCancel(${esc(JSON.stringify(j.id))})">${esc(t("Cancel"))}</button>`);
         }
         const qpos = j.queue_position ? ` <span class="muted">#${j.queue_position} ${esc(t("in queue"))}</span>` : "";
         // A fixed job label is keyed ×12; one carrying a value arrives as a frame (_jobLabel).
@@ -2641,7 +2640,7 @@
       if (!d) {
         el.innerHTML = `<div class="muted" style="font-size:12px;padding:2px 0 6px">` +
           `${esc(t("Coverage is unavailable right now."))} ` +
-          `<button class="lnk" onclick="loadTagCoverage(true)">${esc(t("Retry"))}</button></div>`;
+          `<button class="lnk" data-on-click="loadTagCoverage(true)">${esc(t("Retry"))}</button></div>`;
         return;
       }
       const tot = d.totals || {};
@@ -2670,7 +2669,7 @@
       }).join("");
       el.innerHTML = head + _renderEquilibrium(t) + sect(t("By tag")) + (rows || `<div class="muted">${esc(t("No tagged sources yet."))}</div>`) +
         `<div class="vnote">${esc(d.method || "")} ${esc(d.caveat || "")} ` +
-        `<button class="lnk" onclick="loadTagCoverage(true)">${esc(t("Refresh"))}</button></div>`;
+        `<button class="lnk" data-on-click="loadTagCoverage(true)">${esc(t("Refresh"))}</button></div>`;
     }
 
     // The arbitration ASK (ruled): a new heavy task while one runs is offered

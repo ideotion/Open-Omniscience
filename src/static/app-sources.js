@@ -255,11 +255,11 @@
           const tags = (c.top_tags || []).map(([t, n]) =>
             `<span class="pill" style="cursor:pointer" title="${esc(none ? tf("show {tag} sources", {tag: t})
               : tf("show {tag} sources in {country}", {tag: t, country: where}))}"
-                onclick="openSourcesForKeyword(${esc(JSON.stringify(c.code))}, ${esc(JSON.stringify(t))})">${esc(t)} ${n}</span>`
+                data-on-click="openSourcesForKeyword(${esc(JSON.stringify(c.code))}, ${esc(JSON.stringify(t))})">${esc(t)} ${n}</span>`
           ).join(" ") || '<span class="muted">—</span>';
           const codeCell = `<strong style="cursor:pointer" title="${esc(none ? t9("no country recorded")
               : tf("show sources in {country}", {country: where}))}"
-                onclick="openSourcesForKeyword(${esc(JSON.stringify(c.code))}, null)">${label}</strong>`;
+                data-on-click="openSourcesForKeyword(${esc(JSON.stringify(c.code))}, null)">${label}</strong>`;
           return `<tr><td>${codeCell}</td><td class="muted">${esc(c.region || "—")}</td><td>${c.sources}</td>
                   <td class="muted">${c.enabled}</td><td>${tags}</td></tr>`;
         }).join("") : `<tr><td colspan="5" class="muted">No matching countries.</td></tr>`);
@@ -383,7 +383,7 @@
         const list = det.querySelector(".msel-list"); if (!list) return;
         const kept = new Set(mselValues(id));
         list.innerHTML = (rows || []).length
-          ? rows.map(x => `<label class="msel-opt"><input type="checkbox" value="${esc(x.key)}"${kept.has(String(x.key)) ? " checked" : ""} onchange="srcMselChanged('${id}')"> ${esc(labeler ? labeler(x.key) : x.key)} <span class="muted">·${x.n}</span></label>`).join("")
+          ? rows.map(x => `<label class="msel-opt"><input type="checkbox" value="${esc(x.key)}"${kept.has(String(x.key)) ? " checked" : ""} data-on-change="srcMselChanged('${id}')"> ${esc(labeler ? labeler(x.key) : x.key)} <span class="muted">·${x.n}</span></label>`).join("")
           : `<div class="muted" style="padding:4px">—</div>`;
       };
       // Q308 for a picker: ordered by localised NAME with the code beside it. A
@@ -441,7 +441,7 @@
       const arrow = SRC.sort === col ? (SRC.order === "asc" ? " ▲" : " ▼") : "";
       // The label is its OWN text node: welded to the arrow ("Name ▲") it no longer
       // matched the "Name" key, so the sorted column stayed English in every locale (L17).
-      return `<th style="cursor:pointer" onclick="setSrcSort('${col}')"><span>${label}</span>${arrow}</th>`;
+      return `<th style="cursor:pointer" data-on-click="setSrcSort('${col}')"><span>${label}</span>${arrow}</th>`;
     }
 
     async function loadManagedSources() {
@@ -470,7 +470,7 @@
 
     function sourceRow(s) {
       const tags = (s.tags || []).map(x =>
-        `<span class="pill" style="cursor:pointer" title="filter by this tag" onclick="srcFilterTag(${esc(JSON.stringify(x))})">${esc(x)}</span>`).join(" ");
+        `<span class="pill" style="cursor:pointer" title="filter by this tag" data-on-click="srcFilterTag(${esc(JSON.stringify(x))})">${esc(x)}</span>`).join(" ");
       const prio = [1,2,3].map(p =>
         `<option value="${p}" ${s.priority===p?"selected":""}>${p}</option>`).join("");
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
@@ -481,13 +481,13 @@
         <td class="muted">${s.country ? ooCountryCell(s.country) : "—"}</td>
         <td class="muted">${s.language ? ooLangCell(s.language) : "—"}</td>
         <td><select class="tiny" style="width:auto;padding:3px"
-              onchange="updateSource(${s.id},{priority:Number(this.value)})">${prio}</select></td>
+              data-on-change="updateSourcePriority(${s.id}, this.value)">${prio}</select></td>
         <td class="muted">${s.article_count!=null?s.article_count:'—'}</td>
         <td><input type="checkbox" style="width:auto" ${s.enabled?"checked":""}
-              onchange="updateSource(${s.id},{enabled:this.checked})"></td>
-        <td><button class="tiny ghost" onclick="toggleSourceTrail(${s.id})" title="${esc(t("Discovery"))}">${esc(t("Trail"))}</button>
-        <button class="tiny ghost" onclick="qualifyAssist(${s.id}, this)" title="${esc(t("Ask the local model whether this source's stored articles read as articles or as navigation soup. A PROPOSAL to review beside the auditor's own evidence — it never changes this source's status or tags."))}">${esc(t("AI check"))}</button>
-        <button class="tiny danger" onclick="deleteSource(${s.id}, ${esc(JSON.stringify(s.name))})">Delete</button></td>
+              data-on-change="updateSourceEnabled(${s.id}, this.checked)"></td>
+        <td><button class="tiny ghost" data-on-click="toggleSourceTrail(${s.id})" title="${esc(t("Discovery"))}">${esc(t("Trail"))}</button>
+        <button class="tiny ghost" data-on-click="qualifyAssist(${s.id}, this)" title="${esc(t("Ask the local model whether this source's stored articles read as articles or as navigation soup. A PROPOSAL to review beside the auditor's own evidence — it never changes this source's status or tags."))}">${esc(t("AI check"))}</button>
+        <button class="tiny danger" data-on-click="deleteSource(${s.id}, ${esc(JSON.stringify(s.name))})">Delete</button></td>
       </tr>
       <tr id="src-trail-${s.id}" style="display:none"><td colspan="9"></td></tr>`;
     }
@@ -579,7 +579,7 @@
       if (prov.citing_trail) {
         const ct = prov.citing_trail;
         const citerLink = ct.citing_source_domain
-          ? ` (<a href="#" onclick="srcJumpToDomain(${esc(JSON.stringify(ct.citing_source_domain))});return false">${esc(ct.citing_source_name || ct.citing_source_domain)}</a>)`
+          ? ` (<a href="#" data-on-click="srcJumpToDomain(${esc(JSON.stringify(ct.citing_source_domain))});return false">${esc(ct.citing_source_name || ct.citing_source_domain)}</a>)`
           : (ct.citing_source_name ? ` (${esc(ct.citing_source_name)})` : "");
         html += `<div class="muted" style="margin-top:2px">${ooLabelHtml(esc(t("First cited by")),
           `<a href="/api/articles/${ct.article_id}/view" target="_blank" rel="noopener">${esc(ct.article_title || ("#" + ct.article_id))}</a>`
@@ -598,7 +598,7 @@
       ];
       const chips = classes.map(([k, arr]) => {
         const label = k === "never_registered" ? t("never-registered") : t(k);
-        return `<button class="tiny ghost" onclick="_srcTrailToggleClass(${id},'${k}')">${ooLabelHtml(esc(label), fmtNum(arr.length, 0))}</button>`;
+        return `<button class="tiny ghost" data-on-click="_srcTrailToggleClass(${id},'${k}')">${ooLabelHtml(esc(label), fmtNum(arr.length, 0))}</button>`;
       }).join(" ");
       html += `<div style="margin-top:8px">${chips}</div>`;
       html += `<div id="src-trail-cls-${id}" class="muted" style="display:none;margin:4px 0;font-size:.85em"></div>`;
@@ -615,12 +615,12 @@
       host.style.display = "";
       host.innerHTML = arr.length
         ? arr.map(d => {
-            const jump = `<a href="#" onclick="srcJumpToDomain(${esc(JSON.stringify(d.domain))});return false">${esc(d.domain)}</a>`;
+            const jump = `<a href="#" data-on-click="srcJumpToDomain(${esc(JSON.stringify(d.domain))});return false">${esc(d.domain)}</a>`;
             // "the sources' sources" grammar: also link to THIS source's own
             // citing articles for that domain, not just the domain's own row.
             const ids = d.sample_article_ids || [];
             const artsLink = ids.length
-              ? ` <a href="#" onclick="openAnalysisForIds(${esc(JSON.stringify(ids))}, ${esc(JSON.stringify(d.domain))});return false" title="Open the articles that cite this domain">↗</a>`
+              ? ` <a href="#" data-on-click="openAnalysisForIds(${esc(JSON.stringify(ids))}, ${esc(JSON.stringify(d.domain))});return false" title="Open the articles that cite this domain">↗</a>`
               : "";
             return jump + artsLink;
           }).join(", ")
@@ -656,6 +656,9 @@
       });
     }
 
+    // The sources table's priority select and enabled box (bindings carry data only).
+    function updateSourcePriority(id, v) { return updateSource(id, {priority: Number(v)}); }
+    function updateSourceEnabled(id, on) { return updateSource(id, {enabled: !!on}); }
     async function updateSource(id, body) {
       try { await api("/api/sources/" + id, {method: "PUT", body: JSON.stringify(body)});
         toast("Source updated."); }
@@ -816,7 +819,7 @@
                         s.source_type].filter(Boolean).map(esc).join(" · ");
           return `<label class="bi-row${feed ? "" : " bi-nofeed"}" title="${feed ? esc(s.rss_url) : "no RSS feed — cannot batch-fetch"}">
             <input type="checkbox" ${feed ? "" : "disabled"} ${BI.selected.has(s.id) ? "checked" : ""}
-              onchange="batchToggle(${s.id}, this.checked)">
+              data-on-change="batchToggle(${s.id}, this.checked)">
             <span class="bi-name">${esc(s.name)}</span>
             <span class="bi-meta muted">${meta}${feed ? "" : " · no feed"}${s.enabled ? "" : " · disabled"}</span></label>`;
         }).join("");
@@ -1247,6 +1250,8 @@
       }
     }
 
+    // The Wikipedia lane button: Shift-click stops the lane, a plain click toggles it.
+    function wikiLaneClick(ev) { if (ev && ev.shiftKey) stopWikiLane(); else toggleWikiLane(); }
     async function toggleWikiLane() {
       const t9 = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       // Resolve the truth before acting rather than trusting the paint: a click

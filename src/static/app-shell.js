@@ -331,6 +331,9 @@
     // Appearance now lives in Settings → Appearance (the old drawer is gone).
     // openDrawer() is kept as the single "take me to appearance" entry point so the
     // command palette and any deep link still work; closeDrawer() is a safe no-op.
+    // Deep links used by data-on-click bindings (they were inline handler statements).
+    function openInsightsTrends() { showTab("insights"); if (_insSubtabs) _insSubtabs.select("trends"); }
+    function openSettingsAgenda() { showTab("settings"); (_setSubtabs || {select: showSetCat}).select("agenda"); }
     function openDrawer()  { showTab("settings"); (_setSubtabs || {select: showSetCat}).select("graphics"); }
     function closeDrawer() { /* drawer removed — appearance is a Settings section */ }
 
@@ -410,7 +413,7 @@
       ].map(([lbl, k]) => `<tr><td>${esc(lbl)}</td><td><span class="kb-chip">${esc(k)}</span></td><td class="muted">${esc(t("Fixed"))}</td></tr>`).join("");
       host.innerHTML =
         `<table><thead><tr><th>${esc(t("Action"))}</th><th>${esc(t("Shortcut"))}</th><th></th></tr></thead><tbody>${rows}</tbody></table>
-         <div style="margin:8px 0"><button class="secondary tiny" onclick="kbReset()">${esc(t("Reset to defaults"))}</button></div>
+         <div style="margin:8px 0"><button class="secondary tiny" data-on-click="kbReset()">${esc(t("Reset to defaults"))}</button></div>
          <h3 style="margin-top:14px;font-size:14px">${esc(t("Fixed shortcuts"))}</h3>
          <p class="hint muted">${esc(t("These contextual keys are always available and are not rebindable."))}</p>
          <table><tbody>${ref}</tbody></table>`;
@@ -574,18 +577,18 @@
     function buildDrawer() {
       const ui = getUi();
       $("dr-themes").innerHTML = THEMES.map(t =>
-        `<button class="theme-card ${t.id === ui.theme ? "sel" : ""}" onclick="setTheme('${t.id}')">
+        `<button class="theme-card ${t.id === ui.theme ? "sel" : ""}" data-on-click="setTheme('${t.id}')">
            <span class="tdot" style="background:${t.c}"></span>${esc(t.name)}</button>`).join("");
       $("dr-accents").innerHTML = ACCENTS.map(a =>
         `<button class="sw ${a === ui.accent ? "sel" : ""}" title="${a || "Theme default"}"
-           onclick="setAccent('${a}')" style="background:${a || "linear-gradient(135deg,var(--muted),var(--accent))"}"></button>`).join("");
+           data-on-click="setAccent('${a}')" style="background:${a || "linear-gradient(135deg,var(--muted),var(--accent))"}"></button>`).join("");
       $("dr-density").innerHTML = ["comfortable", "compact"].map(d =>
-        `<button class="${d === ui.density ? "sel" : ""}" onclick="setDensity('${d}')">${d[0].toUpperCase() + d.slice(1)}</button>`).join("");
+        `<button class="${d === ui.density ? "sel" : ""}" data-on-click="setDensity('${d}')">${d[0].toUpperCase() + d.slice(1)}</button>`).join("");
       $("dr-faces").innerHTML = FACES.map(f =>
-        `<button class="${f.id === (ui.face || "") ? "sel" : ""}" onclick="setFace('${f.id}')"
+        `<button class="${f.id === (ui.face || "") ? "sel" : ""}" data-on-click="setFace('${f.id}')"
            style="${f.ff ? "font-family:" + esc(f.ff) : ""}">${esc(f.name)}</button>`).join("");
       $("dr-sidebar").innerHTML = [["expanded", "Expanded"], ["collapsed", "Collapsed"]].map(([v, l]) =>
-        `<button class="${v === ui.sidebar ? "sel" : ""}" onclick="setSidebar('${v}')">${l}</button>`).join("");
+        `<button class="${v === ui.sidebar ? "sel" : ""}" data-on-click="setSidebar('${v}')">${l}</button>`).join("");
       // (The "Tools shown in the sidebar" checklist was removed — #17, 2026-06-22.)
     }
 
@@ -824,7 +827,7 @@
       let html = "", lastGrp = null;
       _palFiltered.forEach((it, i) => {
         if (it.grp !== lastGrp) { html += `<div class="pal-group">${esc(it.grp)}</div>`; lastGrp = it.grp; }
-        html += `<div class="pal-item ${i === 0 ? "sel" : ""}" data-i="${i}" onclick="palRun(${i})">
+        html += `<div class="pal-item ${i === 0 ? "sel" : ""}" data-i="${i}" data-on-click="palRun(${i})">
           ${esc(it.label)}<span class="pal-sub">${esc(it.sub || "")}</span></div>`;
       });
       $("pal-list").innerHTML = html || `<div class="pal-group">No matches</div>`;

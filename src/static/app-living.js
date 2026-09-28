@@ -199,7 +199,7 @@
           what = `<span title="${esc(t("Under a budget the stream stores the text of some changes and counts the rest. A counted change has no diff."))}">${esc(t("Counted only: its text was not stored."))}</span>`;
         } else if (c.diff_method === "unified") {
           what = esc(tf("Lines added: {added}, removed: {removed}", { added: c.diff_added, removed: c.diff_removed }))
-            + ` <button class="tiny secondary" data-diff-rev="${Number(c.revision_id)}" onclick="livingShowDiff(${Number(c.revision_id)}, this)">${esc(t("Show diff"))}</button>`;
+            + ` <button class="tiny secondary" data-diff-rev="${Number(c.revision_id)}" data-on-click="livingShowDiff(${Number(c.revision_id)}, this)">${esc(t("Show diff"))}</button>`;
         } else if (c.diff_method === "no-previous-text") {
           what = esc(t("Text stored; there was no earlier stored text to compare it with."));
         } else if (c.diff_method === "too-large") {
@@ -417,7 +417,7 @@
       if (!box || !d) return;
       const pages = (d.pages || []).filter((p) => p.watched !== false);
       box.innerHTML = pages.length
-        ? pages.map((p) => `<button class="tiny secondary living-page" onclick="openWikiTC(${Number(p.id)}, ${esc(JSON.stringify(String(p.title || "")))}, ${esc(JSON.stringify(String(p.wiki || "")))})"`
+        ? pages.map((p) => `<button class="tiny secondary living-page" data-on-click="openWikiTC(${Number(p.id)}, ${esc(JSON.stringify(String(p.title || "")))}, ${esc(JSON.stringify(String(p.wiki || "")))})"`
             + ` title="${esc(t("See this page's tracked revision history — the stored edits, newest first, with each diff."))}">`
             + `${esc(p.wiki ? p.wiki + " · " : "")}${esc(p.title || "?")} <span class="muted">${esc(String(p.revisions || 0))}</span></button>`).join(" ")
         : `<div class="muted">${esc(t("No pages tracked yet. Add them in Settings → Wikipedia."))}</div>`;

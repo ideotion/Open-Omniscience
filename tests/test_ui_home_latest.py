@@ -40,7 +40,7 @@ def test_user_settable_and_visible_gate_controls():
     for cid in ("latest-minwords", "latest-minsources", "latest-channel",
                 "latest-tag", "latest-collapse"):
         assert f'id="{cid}"' in _HTML, f"missing control {cid}"
-    assert _HTML.count("onchange=\"loadHomeLatest()\"") >= 5, "each control re-runs the fetch"
+    assert _HTML.count("data-on-change=\"loadHomeLatest()\"") >= 5, "each control re-runs the fetch"
 
 
 def test_wired_into_loadHome_and_functions_defined():

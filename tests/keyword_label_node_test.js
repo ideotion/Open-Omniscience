@@ -19,6 +19,7 @@
 // while the real renderer was broken.
 
 const assert = require("assert");
+const { runBinding } = require("./oo_on_harness.js");
 const APP = require("./app_source.js").appJs();
 
 function extract(name) {
@@ -213,14 +214,14 @@ const K = (() => {
 // the local preview opened AND the chip's own action ran behind it.
 {
   const out = K.kwQidHtml({ translation_qid: "Q7590" });
-  const m = out.match(/onclick='([^']*)'/);
+  const m = out.match(/data-on-click='([^']*)'/);
   assert.ok(m, "the QID lost its handler: " + out);
-  let stopped = 0, previewed = null;
-  const handler = new Function("event", "openLinkPreview", m[1].replace(/&quot;/g, '"'));
-  const ret = handler({ stopPropagation: () => { stopped++; } }, (u) => { previewed = u; });
-  assert.strictEqual(stopped, 1, "the QID click still bubbles to the enclosing chip (M9)");
+  let previewed = null;
+  const r = runBinding(m[1].replace(/&quot;/g, '"'), { openLinkPreview: (u) => { previewed = u; } });
+  assert.strictEqual(r.threw, null, "the binding did not run: " + r.threw);
+  assert.ok(r.stopped, "the QID click still bubbles to the enclosing chip (M9)");
   assert.strictEqual(previewed, "https://www.wikidata.org/wiki/Q7590", "the local preview did not open");
-  assert.strictEqual(ret, false, "the default (href='#') is not prevented");
+  assert.ok(r.prevented, "the default (href='#') is not prevented");
 }
 
 // --- A LABEL DRAWN INSIDE A BUTTON NESTS NO BUTTON (M4) ---------------------- //

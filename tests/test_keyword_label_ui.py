@@ -263,7 +263,7 @@ def test_the_tag_inside_a_filled_chip_takes_the_chips_text_colour_m3() -> None:
     rule = css_rule(css, "button.chip .kw-tag, button.chip .kw-qid")
     assert "color: inherit" in rule and "currentColor" in rule, rule
     tokens = _theme_tokens()
-    assert len(tokens) >= 17
+    assert len(tokens) >= 14  # 17 until the 0.5 theme cull (Q1123 = b)
     weak = []
     for name, t in sorted(tokens.items()):
         fg, fill = t.get("accent-fg"), t.get("accent")
