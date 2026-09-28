@@ -648,3 +648,37 @@ def test_the_routes_serve_the_same_payloads(corpus, act):
         assert "ooversions.js" in reader and 'data-ov-base="/api/law/documents/' in reader
     finally:
         app.dependency_overrides.pop(get_db, None)
+
+
+def test_every_line_the_payloads_send_to_the_screen_is_keyed_in_all_twelve_locales(corpus, act):
+    """The component translates ``method``, ``caveat`` and ``parts_reason`` with t() on a
+    VARIABLE, which no i18n gate can see: a reworded payload line silently shows in
+    English in eleven languages. So the lines the server sends are checked here."""
+    import json
+
+    from src.law import versions as law_versions
+    from src.law.analytics import amendment_map, changed_this_week, topic_by_jurisdiction
+    from src.law.pit_search import search
+    from src.wiki.versions import reader_payload as wiki_payload
+
+    with corpus() as s:
+        doc = s.get(LawDocument, act["doc"])
+        payloads = [
+            law_versions.reader_payload(s, doc),
+            wiki_payload(s, s.get(WikiPage, _wiki(s))),
+            search(s, _2019_WORDS),
+            topic_by_jurisdiction(s, _2019_WORDS),
+            amendment_map(s, days=30),
+            changed_this_week(s, days=7),
+        ]
+    lines = {p[k] for p in payloads for k in ("method", "caveat") if p.get(k)}
+    lines.add(
+        "No provisions were parsed for one of these versions (its text did not arrive "
+        "in a structured format), so it can only be compared as a whole."
+    )
+    assert "No provisions were parsed" in Path(law_versions.__file__).read_text(encoding="utf-8")
+    locales = Path(__file__).resolve().parent.parent / "src" / "static" / "locales"
+    for path in sorted(locales.glob("*.json")):
+        data = json.loads(path.read_text(encoding="utf-8"))
+        missing = sorted(line[:60] for line in lines if not data.get(line))
+        assert not missing, f"{path.name} lacks {missing}"

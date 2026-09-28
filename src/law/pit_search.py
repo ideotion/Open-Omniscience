@@ -36,7 +36,7 @@ from __future__ import annotations
 import logging
 import re
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from sqlalchemy import text as sql
 
@@ -44,6 +44,7 @@ from src.database.models import LawDocument, LawRevision
 from src.law.versions import effective_versions, in_force_on
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
+    from sqlalchemy.engine import CursorResult
     from sqlalchemy.orm import Session
 
 _LOG = logging.getLogger(__name__)
@@ -126,9 +127,13 @@ def sync_index(db: Session, lane: Session, *, batch: int = SYNC_BATCH) -> dict:
         if rev is None or rev.full_text is None:
             continue
         doc = db.get(LawDocument, rev.document_id)
-        row = lane.execute(
-            sql("INSERT OR IGNORE INTO law_version_index(revision_key, indexed_at) VALUES (:k, :t)"),
-            {"k": key, "t": now},
+        # An INSERT answers with a CursorResult; the cast only tells the checker so.
+        row = cast(
+            "CursorResult",
+            lane.execute(
+                sql("INSERT OR IGNORE INTO law_version_index(revision_key, indexed_at) VALUES (:k, :t)"),
+                {"k": key, "t": now},
+            ),
         )
         if not row.rowcount:
             continue  # another pass indexed it between our read and this write

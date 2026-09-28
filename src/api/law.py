@@ -886,6 +886,8 @@ def view_law_document(
     )
 
     shown, text, shown_note = _selected_version(doc, revs, version)
+    # _selected_version is untyped (a revision or None); the id is read once, here.
+    shown_id: int | None = getattr(shown, "id", None)
     paras = (
         "".join(f"<p>{_html.escape(line)}</p>" for line in (text or "").split("\n") if line.strip())
         or f"<p class='muted'>{_html.escape(shown_note or 'No text captured yet — track this document to store a snapshot.')}</p>"
@@ -906,7 +908,7 @@ def view_law_document(
     compare_html = (
         f'<section class="versions compare"><h2>Compare versions</h2>'
         f'<div data-ov-base="/api/law/documents/{doc.id}"'
-        + (f' data-ov-to="{shown.id}"' if shown is not None else "")
+        + (f' data-ov-to="{shown_id}"' if shown_id is not None else "")
         + '></div></section><script src="/static/ooversions.js" defer></script>'
     )
     rev_items = []
@@ -1100,7 +1102,7 @@ def view_law_document(
                 "<code>"
                 + _html.escape(
                     f"/api/law/documents/{doc.id}/view"
-                    + (f"?version={shown.id}" if shown is not None else "")
+                    + (f"?version={shown_id}" if shown_id is not None else "")
                 )
                 + "</code>",
             ),

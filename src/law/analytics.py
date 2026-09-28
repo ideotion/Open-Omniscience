@@ -375,7 +375,10 @@ def changed_this_week(session: Session, *, days: int = 7, now: datetime | None =
     )
     per: dict[int, dict] = {}
     for doc, rev in rows:
-        stamp = rev.observed_at if rev.observed_at.tzinfo else rev.observed_at.replace(tzinfo=UTC)
+        observed = rev.observed_at
+        if observed is None:  # filtered out by the query; this narrows the type
+            continue
+        stamp = observed if observed.tzinfo else observed.replace(tzinfo=UTC)
         if not (start <= stamp <= end) or rev.diff_basis == "first":
             continue
         item = per.setdefault(
