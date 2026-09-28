@@ -10215,7 +10215,7 @@ compound of 478 and the label of 16. That is recorded as a deliberate omission i
 `OPEN_QUEUE.md`, dated by this PR. Lessons: `LESSONS.md`, the two entries dated by this PR
 after the counter ones.
 
-## 2026-09-28 — A restore's custody import no longer loads whole chains into memory (PR pending)
+## 2026-09-28 — A restore's custody import no longer loads whole chains into memory (PR #1193)
 
 Found from the user's diagnostics bundle of 2026-09-28 04:01 UTC (Qubes VM, 7.2 GB RAM, 1 GB
 swap). Two imports of about one million articles each ended the same way: hours of merging
