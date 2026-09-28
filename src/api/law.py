@@ -755,6 +755,93 @@ def law_amendment_velocity(
     return amendment_velocity(db, period=period)
 
 
+def _document_or_404(db: Session, document_id: int) -> LawDocument:
+    doc = db.query(LawDocument).filter_by(id=document_id).first()
+    if doc is None:
+        raise HTTPException(status_code=404, detail="Document not found.")
+    return doc
+
+
+@router.get("/documents/{document_id}/versions")
+def law_document_versions(document_id: int, db: Session = Depends(get_db)) -> dict:
+    """The shared version reader's payload for one law (Q918 + its note; Q905; Q908).
+
+    The same keys ``/api/wiki/pages/{id}/versions`` returns, so ``ooversions.js`` draws
+    one set of controls and disclosures for both. Read-only and local.
+    """
+    from src.law.versions import reader_payload
+
+    return reader_payload(db, _document_or_404(db, document_id))
+
+
+@router.get("/documents/{document_id}/compare")
+def law_document_compare(
+    document_id: int,
+    a: Annotated[int, Query(alias="from", description="The older version (a LawRevision id).")],
+    b: Annotated[int, Query(alias="to", description="The newer version (a LawRevision id).")],
+    part: Annotated[str | None, Query(max_length=512, description="A provision address to scope to.")] = None,
+    db: Session = Depends(get_db),
+) -> dict:
+    """Two versions side by side, computed here from their stored texts, with the
+    provision navigation between them. A version whose text was never stored refuses by
+    name (``method: text-not-held``) rather than being compared as its neighbour."""
+    from src.law.versions import compare_payload
+
+    doc = _document_or_404(db, document_id)
+    try:
+        return compare_payload(db, doc, a, b, part=part)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.get("/versions/search")
+def law_versions_search(
+    q: Annotated[str, Query(min_length=1, max_length=300)],
+    on: Annotated[str | None, Query(pattern=r"^\d{4}-\d{2}-\d{2}$", description="In force on this day.")] = None,
+    lang: Annotated[str | None, Query(max_length=16)] = None,
+    limit: Annotated[int, Query(ge=1, le=100)] = 50,
+    db: Session = Depends(get_db),
+) -> dict:
+    """Point-in-time search (Q916 = a): the versions containing the words that were in
+    force on ``on`` among the versions this instance holds. No Article per version."""
+    from src.law.pit_search import search
+
+    return search(db, q, on=on, language=lang, limit=limit)
+
+
+@router.get("/topics")
+def law_topics(
+    q: Annotated[str, Query(min_length=1, max_length=300)],
+    db: Session = Depends(get_db),
+) -> dict:
+    """Analytic 3 (Q914): a topic's reach across jurisdictions — counts, never a ratio."""
+    from src.law.analytics import topic_by_jurisdiction
+
+    return topic_by_jurisdiction(db, q)
+
+
+@router.get("/amendment-map")
+def law_amendment_map(
+    days: Annotated[int, Query(ge=1, le=3660)] = 365,
+    db: Session = Depends(get_db),
+) -> dict:
+    """Analytic 4 (Q914): captured amendments per country over a window, with its vintage."""
+    from src.law.analytics import amendment_map
+
+    return amendment_map(db, days=days)
+
+
+@router.get("/this-week")
+def law_this_week(
+    days: Annotated[int, Query(ge=1, le=90)] = 7,
+    db: Session = Depends(get_db),
+) -> dict:
+    """Analytic 5 (Q914): what changed in the laws I follow over the last ``days``."""
+    from src.law.analytics import changed_this_week
+
+    return changed_this_week(db, days=days)
+
+
 @router.get("/documents/{document_id}/view", response_class=HTMLResponse)
 def view_law_document(
     document_id: int,
@@ -799,6 +886,8 @@ def view_law_document(
     )
 
     shown, text, shown_note = _selected_version(doc, revs, version)
+    # _selected_version is untyped (a revision or None); the id is read once, here.
+    shown_id: int | None = getattr(shown, "id", None)
     paras = (
         "".join(f"<p>{_html.escape(line)}</p>" for line in (text or "").split("\n") if line.strip())
         or f"<p class='muted'>{_html.escape(shown_note or 'No text captured yet — track this document to store a snapshot.')}</p>"
@@ -809,6 +898,19 @@ def view_law_document(
     # model is shaped to avoid.
     lane = _lane_meta(doc)
     version_picker = _version_picker(doc, revs, shown, _html.escape)
+    from src.law.versions import AI_LABEL, _lane_facts, _latest_summaries
+
+    summaries = _latest_summaries(db, [r.id for r in revs])
+    facts = _lane_facts(db, doc)
+    # S05-07 S1: the ONE version reader, the same component the Wikipedia panel mounts
+    # (Q918's note). It mounts itself from these attributes -- no inline script -- and
+    # the no-script selector above stays, so the page still works with script blocked.
+    compare_html = (
+        f'<section class="versions compare"><h2>Compare versions</h2>'
+        f'<div data-ov-base="/api/law/documents/{doc.id}"'
+        + (f' data-ov-to="{shown_id}"' if shown_id is not None else "")
+        + '></div></section><script src="/static/ooversions.js" defer></script>'
+    )
     rev_items = []
     for r in revs:
         when = r.observed_at.strftime("%Y-%m-%d %H:%M") if r.observed_at else "—"
@@ -833,9 +935,20 @@ def view_law_document(
         # mixes baseline-anchored rows (recorded before Q917) with previous-anchored ones
         # is showing two quantities under one heading, so every row says which it is.
         basis = _BASIS_WORDS.get(r.diff_basis or "", _BASIS_UNRECORDED)
+        # Q920 = a: a summary is AI-derived, labelled so beside it, and ABSENT when there
+        # is none -- never an empty labelled box. The label and the words are separate
+        # elements so the walker translates the label and leaves the model's text alone.
+        summary = summaries.get(r.id)
+        ai_html = (
+            f"<div class='ai'><span class='ai-label'>{_html.escape(AI_LABEL)}</span> "
+            f"<span class='ai-text'>“{_html.escape(summary.summary)}”</span> "
+            f"<span class='muted'>— {_html.escape(summary.model)}</span></div>"
+            if summary is not None
+            else ""
+        )
         rev_items.append(
             f"<details class='rev'><summary>{when} · {delta}{flags}</summary>"
-            f"<div class='basis'>{_html.escape(basis)}</div>"
+            f"<div class='basis'>{_html.escape(basis)}</div>{ai_html}"
             f"<div class='diff'>{_diff_to_html(r.diff, _html.escape)}</div></details>"
         )
     # Q908 = a: one document identity, N language versions "aligned by identity". This is
@@ -846,7 +959,35 @@ def view_law_document(
     # because the walker translates a text node only when it matches a key exactly, and a
     # line reading "fr · Loi … · official translation" matches nothing in any locale.
     siblings_html = ""
-    if lane is not None and lane.siblings:
+    others = [x for x in facts["languages"] if not x["current"]]
+    if others:
+        # Q908 = a: the reader's language SWITCH (0.5). Each other language version this
+        # instance tracks opens in THIS reader; one it does not track is listed and says
+        # so, rather than sending the reader to a live page as though it were a copy.
+        items = "".join(
+            f"<li><span class='lang'>{_html.escape(x['language'])}</span> "
+            + (
+                f"<a href='/api/law/documents/{int(x['id'])}/view'>{_html.escape(x['title'] or x['language'])}</a>"
+                if x["id"] is not None
+                else f"<span>{_html.escape(x['title'] or '')}</span> "
+                "<span class='muted'>not tracked on this machine</span>"
+            )
+            + "</li>"
+            for x in others
+        )
+        current = next((x for x in facts["languages"] if x["current"]), None)
+        siblings_html = (
+            "<section class='versions langs'><h2>Other language versions</h2>"
+            + (
+                f"<p class='muted'><span>Reading</span> <span class='lang'>{_html.escape(current['language'])}</span></p>"
+                if current
+                else ""
+            )
+            + f"<ul>{items}</ul>"
+            "<p class='muted'>Each language version is tracked as its own document, with "
+            "its own history. They are the same law, aligned by identity.</p></section>"
+        )
+    elif lane is not None and lane.siblings:
         items = "".join(
             f"<li><span class='lang'>{_html.escape(language)}</span> "
             + (
@@ -944,6 +1085,27 @@ def view_law_document(
                 else None,
             ),
             _row("Identity", _html.escape(lane.identity) if (lane and lane.identity) else None),
+            # Q918: the ELI / CELEX permalink, built from the identifier by rule (never
+            # looked up, never a model's), and this instance's own permalink for the
+            # version on screen.
+            _row(
+                "ELI / CELEX permalink",
+                (
+                    f"<a class='ext' href='{_html.escape(facts['identifier']['url'])}' "
+                    f"rel='noopener noreferrer'>{_html.escape(facts['identifier']['url'])}</a>"
+                )
+                if (facts["identifier"] and facts["identifier"]["url"])
+                else None,
+            ),
+            _row(
+                "Permalink",
+                "<code>"
+                + _html.escape(
+                    f"/api/law/documents/{doc.id}/view"
+                    + (f"?version={shown_id}" if shown_id is not None else "")
+                )
+                + "</code>",
+            ),
         ]
     )
     # The footer used to read "Captured snapshot — it does not change if the official text
@@ -1006,6 +1168,9 @@ def view_law_document(
     font:13px/1.6 system-ui,sans-serif; color:var(--mut); }}
   .src-link {{ display:inline-block; margin-top:6px; font-weight:600; }}
   .vp {{ }} .vd {{ color:var(--mut); font-variant-numeric:tabular-nums; }}
+  .ai {{ font:13px/1.5 system-ui,sans-serif; border-inline-start:3px solid var(--warn); padding:4px 12px; margin:0 12px 6px; }}
+  .ai-label {{ font-weight:600; color:var(--warn); }}
+  .compare {{ font-size:13px; }}
 </style>
 <!-- The i18n engine, as the ARTICLE reader already loads it. This page is served
      standalone (its own browser tab, not the SPA), and until 2026-09-18 it loaded
@@ -1020,6 +1185,7 @@ def view_law_document(
   <div class="crumb">Open Omniscience · World law · offline stored copy — a research mirror, not legal advice</div>
   <article><h1>{title}</h1><div class="meta">{meta_rows}</div>{paras}</article>
   {version_picker}
+  {compare_html}
   {siblings_html}
   {revs_html}
   <footer>
