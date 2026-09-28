@@ -1,0 +1,53 @@
+"""The OSM lane's HTTP face: what the lane holds and analytic 1 (S05-04).
+
+Open Omniscience - Global Intelligence Platform for Investigative Journalism
+Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
+
+EVERY ROUTE HERE READS A LOCAL FILE AND MAKES NO REQUEST. The extract is downloaded by
+``/api/geo/downloads`` under the one online consent; the lane reads what is already on disk.
+
+Q823 (ODbL) is unanswered, so nothing here returns a file, an export or a bundle: the answers
+are JSON read by this machine's own UI over loopback, which is the machine.
+"""
+
+from __future__ import annotations
+
+from fastapi import APIRouter, HTTPException
+
+router = APIRouter(prefix="/api/osm", tags=["osm"])
+
+
+@router.get("/lane")
+def lane_status() -> dict:
+    """Is the ``[geo]`` extra installed, what can be read without it, and what the lane holds.
+
+    ``lane_bytes`` is ``None`` when ``osm.db`` does not exist -- absent, never zero.
+    """
+    from src.osm import completeness
+    from src.osm.pbf import SMALL_PATH_MAX_BYTES
+    from src.osm.reader import pyosmium_version
+    from src.osm.tags import NOT_KEPT
+    from src.versioned.store import lane_file_bytes
+
+    version = pyosmium_version()
+    return {
+        "extra": {"installed": version is not None, "pyosmium": version},
+        "small_path_max_bytes": SMALL_PATH_MAX_BYTES,
+        "lane_bytes": lane_file_bytes("osm"),
+        "countries": completeness.countries(),
+        "kept": NOT_KEPT,
+        "exports": "held: Q823 (ODbL) is unanswered, so no OSM-derived row leaves this machine",
+    }
+
+
+@router.get("/countries/{code}/completeness")
+def country_completeness(code: str) -> dict:
+    """Analytic 1 for one ingested country (alpha-2 or alpha-3)."""
+    from src.osm.completeness import tag_completeness
+    from src.osm.ingest import country_codes
+
+    try:
+        _a2, a3 = country_codes(code)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
+    return tag_completeness(a3)

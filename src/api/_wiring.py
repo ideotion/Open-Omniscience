@@ -61,6 +61,7 @@ def wire(app) -> None:
     from src.api.llm import router as llm_router
     from src.api.markets import router as markets_router
     from src.api.monitoring import router as monitoring_router
+    from src.api.osm_lane import router as osm_lane_router
     from src.api.personality import router as personality_router
     from src.api.quarantine import router as quarantine_router
     from src.api.reporting import router as reporting_router
@@ -134,6 +135,7 @@ def wire(app) -> None:
         living_router,
         entities_router,
         claims_router,
+        osm_lane_router,
     )
     for router in spine:
         app.include_router(router)

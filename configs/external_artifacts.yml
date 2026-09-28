@@ -448,6 +448,27 @@ artifacts:
       - "0.7 renamed Dictionary.create() to tokenizer(); fts_norm calls whichever exists, so 0.6.8+ works"
     last_verified: "2026-09-25"
 
+  - id: pyosmium-extract-reader
+    title: pyosmium (the osmium package), the OSM lane's extract reader ([geo] extra)
+    kind: runtime-coupling
+    description: >
+      Q808 = a puts pyosmium behind a [geo] extra for the OSM lane's extract pass (0.5 row D,
+      src/osm/reader.py). It is COMPILED (libosmium in C++), so an optional extra per Q1015 = a;
+      without it the lane reads extracts up to src/osm/pbf.py's SMALL_PATH_MAX_BYTES in pure
+      Python and refuses a larger file by name. The coupling is to its Python API: FileProcessor
+      (with_filter, IdFilter, EmptyTagFilter), osmium.index.create_map ("sparse_mem_array",
+      "sparse_file_array,PATH") and IdSet, io.Reader().header(), all verified on 4.3.1.
+      tests/test_osm_ingest.py runs both readers on the fixture and compares their rows.
+    upstream: https://pypi.org/project/osmium/ (https://github.com/osmcode/pyosmium)
+    check_upstream: "pypi.org/pypi/osmium/json - compare info.version; 4.3.1 was the newest on 2026-09-28"
+    license: BSD-2-Clause
+    pin: {floor: "4.0", verified: "4.3.1"}
+    refresh: "bump the [geo] floor, run tests/test_osm_ingest.py with the extra installed (both readers must write identical rows), and the operator's ingest on the reference VM"
+    freshness: {max_age_months: 12}
+    couplings:
+      - "the pure-Python decoder (src/osm/pbf.py) must keep reading what pyosmium reads: test_both_readers_write_identical_rows"
+    last_verified: "2026-09-28"
+
   - id: vader-linear-reproduction
     title: vaderSentiment 3.3.2 internals, reproduced in linear time
     kind: runtime-coupling

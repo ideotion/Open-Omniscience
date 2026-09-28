@@ -25,13 +25,17 @@ const ab = (b) => b.buffer.slice(b.byteOffset, b.byteOffset + b.length);
 const OPTS = { withTags: true, withRelations: true };
 
 function check(r, label) {
-  assert.deepStrictEqual(r.nodes, [
+  // The border comes first; the OSM lane's objects (0.5 row D) follow it in the same block,
+  // and this reader must read past them without mistaking any of them for the country.
+  assert.deepStrictEqual(r.nodes.slice(0, 4), [
     { id: 1, lat: 0.1, lon: 0.1 }, { id: 2, lat: 0.1, lon: 0.2 },
     { id: 3, lat: 0.2, lon: 0.2 }, { id: 4, lat: 0.2, lon: 0.1 },
   ], label + ": the four corners");
-  assert.deepStrictEqual(r.ways.map((w) => [w.id, w.refs]), [[10, [1, 2, 3]], [11, [3, 4, 1]]],
+  assert.strictEqual(r.nodes.length, 15, label + ": the corners plus the lane's eleven nodes");
+  assert.deepStrictEqual(r.ways.slice(0, 2).map((w) => [w.id, w.refs]), [[10, [1, 2, 3]], [11, [3, 4, 1]]],
     label + ": the two open border ways");
-  assert.strictEqual(r.relations.length, 1, label);
+  assert.strictEqual(r.ways.length, 5, label + ": the border's two ways plus the lane's three");
+  assert.strictEqual(r.relations.length, 2, label + ": the country and the lane's site relation");
   const rel = r.relations[0];
   assert.strictEqual(rel.tags["ISO3166-1:alpha2"], "ZZ", label + ": the private-use code");
   assert.deepStrictEqual(rel.members, [

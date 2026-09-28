@@ -82,7 +82,7 @@ jobs:
       - name: Install the tesseract OCR binary (for the [ocr] real round-trip)
         run: sudo apt-get update -qq && sudo apt-get install -y -qq tesseract-ocr
 
-      - name: Install (core + analysis + dev + segmentation + pdf + ocr)
+      - name: Install (core + analysis + dev + segmentation + pdf + ocr + geo)
         run: |
           python -m pip install --upgrade pip
           # [segmentation] adds the offline ja/th word segmenters (janome/pythainlp)
@@ -106,7 +106,10 @@ jobs:
           # (tests/test_law_coverage.py, tests/test_pdf_extract.py), which is the stronger
           # shape anyway: it runs in every lane rather than in the one nobody reads.
           # The extra is still named here because it still exists as an alias.
-          python -m pip install -e ".[analysis,dev,segmentation,pdf,ocr]"
+          # [geo] adds pyosmium (0.5 row D, Q808) so the OSM lane's ingest runs through
+          # BOTH readers here and their rows are compared; the Core-only job has no [geo],
+          # so the pure-Python small-country path is the one it proves.
+          python -m pip install -e ".[analysis,dev,segmentation,pdf,ocr,geo]"
 
       # PySocks, CI-ONLY (audit 10, P2-03): the three
       # tests/test_airplane_socket_guard.py SOCKS-proxy regression tests

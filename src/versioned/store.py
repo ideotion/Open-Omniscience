@@ -58,8 +58,9 @@ import threading
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
+from typing import cast
 
-from sqlalchemy import Engine, create_engine, event
+from sqlalchemy import Engine, Table, create_engine, event
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from src.versioned.lanes import LaneSpec, lane
@@ -314,6 +315,11 @@ def _lane_specific_models(kind: str) -> tuple[type[DeclarativeBase], ...]:
         from src.wiki.lane_models import WIKI_LANE_MODELS
 
         return WIKI_LANE_MODELS
+    if kind == "osm":
+        # One country's objects, the cuts that made them, and the change MODEL (S05-04).
+        from src.osm.lane_models import OSM_LANE_MODELS
+
+        return OSM_LANE_MODELS
     return ()
 
 
@@ -436,8 +442,10 @@ def create_schema(kind: str, engine: Engine | None = None) -> None:
     # this kind's tables (which is what keeps three empty law tables out of every
     # operator's wiki.db) leaves the column pass nothing to do for the tables this lane
     # does not own, rather than pointing it at tables that were never created.
+    # ``__table__`` rather than ``__tablename__``: the OSM lane's ``osm_objects`` is built
+    # from a ``Table`` (its curated columns are generated), so it has no ``__tablename__``.
     wanted = [
-        LaneBase.metadata.tables[m.__tablename__]
+        cast("Table", m.__table__)
         for m in (*LANE_MODELS, *_lane_specific_models(kind))
     ]
     LaneBase.metadata.create_all(eng, tables=wanted)

@@ -65,6 +65,54 @@ RELATION = (
     },
     [(10, "outer"), (11, "outer")],
 )
+
+# --- the OSM lane's objects (0.5 row D, S05-04) ------------------------------ #
+# Added AFTER the border, with ids that sort after it, so the border block above is
+# byte-for-byte the part the offline-map reader was first pinned against. Each object
+# is here to exercise one clause of the lane: a POI with every completeness tag, one
+# whose e-mail sits in the ``contact:*`` twin, one whose ``opening_hours`` is EMPTY (a
+# gap, never a present value), a notable place, a POI OUTSIDE the country (the cut must
+# drop it), a road, a building carrying an address (the local geocoder's input), an
+# untagged way (never stored), and a relation with no geometry of its own.
+#: Tagged or vertex nodes: (id, lat, lon, tags). Untagged ones are way vertices.
+LANE_NODES = [
+    (5, 0.15, 0.15, {
+        "amenity": "cafe", "name": "Fixture Cafe", "name:fr": "Cafe du Test",
+        "opening_hours": "Mo-Fr 08:00-18:00", "website": "https://cafe.invalid",
+        "email": "cafe@example.invalid", "phone": "+000 0000 0001",
+        "cuisine": "coffee_shop", "wheelchair": "yes", "payment:cash": "yes",
+        "outdoor_seating": "yes",
+    }),
+    (6, 0.12, 0.18, {
+        "shop": "bakery", "name": "Fixture Bakery", "phone": "+000 0000 0002",
+        "contact:email": "bakery@example.invalid",
+    }),
+    (7, 0.18, 0.12, {"amenity": "pharmacy", "name": "Fixture Pharmacy", "opening_hours": ""}),
+    (8, 0.14, 0.16, {"place": "village", "name": "Fixtureville", "name:ar": "قرية الاختبار"}),
+    (9, 0.3, 0.3, {"amenity": "cafe", "name": "Outside Cafe", "opening_hours": "24/7"}),
+    (20, 0.13, 0.11, {}),
+    (21, 0.13, 0.19, {}),
+    (22, 0.16, 0.16, {}),
+    (23, 0.16, 0.17, {}),
+    (24, 0.17, 0.17, {}),
+    (25, 0.17, 0.16, {}),
+]
+LANE_WAYS = [
+    (12, [20, 21], {"highway": "residential", "name": "Fixture Road", "surface": "asphalt", "maxspeed": "30"}),
+    (13, [22, 23, 24, 25, 22], {
+        "building": "yes", "building:levels": "2", "addr:street": "Fixture Road",
+        "addr:housenumber": "1", "addr:postcode": "00000", "addr:city": "Fixtureville",
+    }),
+    (14, [20, 22], {}),
+]
+LANE_RELATIONS = [
+    (101, {"type": "site", "tourism": "attraction", "name": "Fixture Estate"}, [(13, "outer")]),
+]
+#: Every object carries a version and a timestamp, as a Geofabrik extract keeps them
+#: (user, uid and changeset are stripped from public extracts since 2018-05-03, so
+#: they are written as zero). A literal, never a clock: 2025-01-01T00:00:00Z.
+VERSION = 3
+TIMESTAMP = 1735689600
 GRANULARITY = 100  # nanodegrees per unit: the format's default, 1e-7 degrees
 
 
@@ -133,30 +181,53 @@ def _primitive_block() -> bytes:
     def units(deg: float) -> int:
         return round(deg * 1e9 / GRANULARITY)
 
+    all_nodes = [(nid, lat, lon, {}) for nid, lat, lon in NODES] + LANE_NODES
+    keys_vals: list[int] = []
+    for _nid, _lat, _lon, tags in all_nodes:
+        for k, v in tags.items():
+            keys_vals += [sid(k), sid(v)]
+        keys_vals.append(0)
+    n = len(all_nodes)
+    # DenseInfo{ 1: version (packed, NOT delta), 2: timestamp, 3: changeset, 4: uid,
+    # 5: user_sid (all delta-coded) }. Same version and time for every node, so every
+    # delta after the first is zero.
+    dense_info = (
+        _packed(1, [VERSION] * n, signed=False)
+        + _packed(2, _deltas([TIMESTAMP] * n), signed=True)
+        + _packed(3, [0] * n, signed=True)
+        + _packed(4, [0] * n, signed=True)
+        + _packed(5, [0] * n, signed=True)
+    )
     dense = (
-        _packed(1, _deltas([n[0] for n in NODES]), signed=True)
-        + _packed(8, _deltas([units(n[1]) for n in NODES]), signed=True)
-        + _packed(9, _deltas([units(n[2]) for n in NODES]), signed=True)
+        _packed(1, _deltas([nd[0] for nd in all_nodes]), signed=True)
+        + _len(5, dense_info)
+        + _packed(8, _deltas([units(nd[1]) for nd in all_nodes]), signed=True)
+        + _packed(9, _deltas([units(nd[2]) for nd in all_nodes]), signed=True)
+        + _packed(10, keys_vals, signed=False)
     )
+    # Info{ 1: version, 2: timestamp } for a way or relation; the rest stripped.
+    info = _len(4, _uint(1, VERSION) + _uint(2, TIMESTAMP))
     ways = b""
-    for wid, refs, tags in WAYS:
-        ways += _len(
-            3,
-            _uint(1, wid)
-            + _packed(2, [sid(k) for k in tags], signed=False)
+    for wid, refs, tags in WAYS + LANE_WAYS:
+        # An untagged way writes NO key/value fields: an empty packed field is legal
+        # but a real writer omits it, and the reader must cope with its absence.
+        kv = (
+            _packed(2, [sid(k) for k in tags], signed=False)
             + _packed(3, [sid(v) for v in tags.values()], signed=False)
-            + _packed(8, _deltas(refs), signed=True),
+        ) if tags else b""
+        ways += _len(3, _uint(1, wid) + kv + info + _packed(8, _deltas(refs), signed=True))
+    relation = b""
+    for rid, rtags, members in [RELATION, *LANE_RELATIONS]:
+        relation += _len(
+            4,
+            _uint(1, rid)
+            + _packed(2, [sid(k) for k in rtags], signed=False)
+            + _packed(3, [sid(v) for v in rtags.values()], signed=False)
+            + info
+            + _packed(8, [sid(role) for _ref, role in members], signed=False)
+            + _packed(9, _deltas([ref for ref, _role in members]), signed=True)
+            + _packed(10, [1 for _ in members], signed=False),  # 1 = way
         )
-    rid, rtags, members = RELATION
-    relation = _len(
-        4,
-        _uint(1, rid)
-        + _packed(2, [sid(k) for k in rtags], signed=False)
-        + _packed(3, [sid(v) for v in rtags.values()], signed=False)
-        + _packed(8, [sid(role) for _ref, role in members], signed=False)
-        + _packed(9, _deltas([ref for ref, _role in members]), signed=True)
-        + _packed(10, [1 for _ in members], signed=False),  # 1 = way
-    )
     # One PrimitiveGroup per kind, as a real writer emits them.
     groups = _len(2, _len(2, dense)) + _len(2, ways) + _len(2, relation)
     table = _len(1, b"".join(_len(1, s.encode("utf-8")) for s in strings))
