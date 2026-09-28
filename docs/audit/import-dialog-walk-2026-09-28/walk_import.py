@@ -121,6 +121,8 @@ def scan(pg):
 def run(pg, passphrase):
     pg.fill("#ux-imp-pass", passphrase)
     pg.click("#ux-imp-run")
+    # What the dialog shows the instant the click lands, before any request returns.
+    snap(pg, "clicked", force=True)
 
 T0 = time.time()
 with sync_playwright() as p:

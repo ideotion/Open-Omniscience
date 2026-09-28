@@ -1454,23 +1454,30 @@
       if (f.newsletters && cb("ux-i-eml")) items.push({ kind: "newsletters", path: src, label: t("Newsletters") });
       if (!items.length) { toast(t("Nothing selected to import."), "err"); return; }
 
-      // ASK before piling onto a running DB writer (2026-08-11). The Collect button
-      // has always asked; the import never did, so a re-index quietly parked with no
-      // word to the operator about why its counter stopped. The reassurance is the
-      // point of asking here: the honest answer is "yes, and nothing is lost".
-      if (!await arbitrate(t("Import"), t("A running re-index pauses while the import runs and resumes afterwards — nothing is lost."))) return;
-      btn.disabled = true;
       // A NEW RUN STARTS ON A BLANK RUN VIEW (2026-09-28 walk). Only a reopen reset these
       // surfaces, so an import started in the SAME opening as a failed one drew its first
       // rows under the failed run's: "2 failed · Failed", both backups red with their
       // error, "Analytics are complete" -- until the first tick replaced them, which is as
-      // long as the start request takes on a big backup. The chain is stopped too, or a
-      // stage-4 watch left by the last run repaints that run's rows from its own status.
-      // The start line in #ux-imp-progress is the only thing shown until the run reports.
+      // long as the busy-writer check and the start request take. Cleared at the click,
+      // before either: the button is disabled while a run is in flight, so what goes here
+      // is always a run that has ended. The chain is stopped too, or a stage-4 watch left
+      // by the last run repaints that run's rows from its own status. The start line in
+      // #ux-imp-progress is the only thing shown until the run reports.
       _uxImStopChain();
       _uxImResetRunView();
       const progEl = document.getElementById("ux-imp-progress");
       if (progEl) progEl.textContent = t("Starting…");
+      btn.disabled = true;
+
+      // ASK before piling onto a running DB writer (2026-08-11). The Collect button
+      // has always asked; the import never did, so a re-index quietly parked with no
+      // word to the operator about why its counter stopped. The reassurance is the
+      // point of asking here: the honest answer is "yes, and nothing is lost".
+      if (!await arbitrate(t("Import"), t("A running re-index pauses while the import runs and resumes afterwards — nothing is lost."))) {
+        btn.disabled = false;
+        if (progEl) progEl.textContent = "";
+        return;
+      }
       const bgBtn = document.getElementById("ux-imp-bg");
       if (bgBtn) bgBtn.style.display = "";
       try {
