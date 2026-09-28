@@ -176,6 +176,14 @@
       "fetcher": true
     },
     {
+      "id": "entity-items",
+      "label": "Places and people",
+      "hosts": ["www.wikidata.org"],
+      "trigger": "click",
+      "setting": null,
+      "fetcher": true
+    },
+    {
       "id": "weather",
       "label": "Weather",
       "hosts": ["archive-api.open-meteo.com"],

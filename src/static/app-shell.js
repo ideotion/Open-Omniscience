@@ -536,7 +536,8 @@
       stats:    () => { loadStatAgencies(); },
       // loadKeywordFilter moved off loadSettings with its panel, so it loads here too.
       keywords: () => { loadKeywordExplorer(); loadFamilyCuration(); loadSupergroupCuration();
-                        loadKeywordFilter(); loadRingGaps(); },
+                        loadKeywordFilter(); loadRingGaps();
+                        if (typeof loadEntitySpine === "function") loadEntitySpine(); },
       // The ~500-feed calendar catalogue: plumbing, so it moved out of the Agenda
       // subtab (invariant #8). It no longer loads with the agenda — only on expand.
       calendars: () => { loadFeedDir(); },   // loadFeedDir renders the user calendars too
@@ -760,6 +761,13 @@
           // marked as Wikipedia. A row opens THAT version, where «Add to corpus» adds it.
           const laneGrp = head(t("Wikipedia texts held on this machine"), g.lane || {});
           laneRows.forEach(r => out.push({grp: laneGrp, label: r.label, sub: r.sub, run: r.run}));
+        } else if (g.kind === "places") {
+          // S05-03 (Q818): the Places this machine holds, matched in every language a
+          // source names them; a row opens the Place card.
+          const grp = head(t("Places"), g);
+          items.forEach(it => out.push({grp, label: it.name,
+            sub: [it.kind || "", it.country || "", it.qid || ""].filter(Boolean).join(" · "),
+            run: () => (typeof openPlaceCard === "function" ? openPlaceCard(it.id) : null)}));
         } else if (g.kind === "law") {
           const grp = head(t("World law"), g);
           items.forEach(it => out.push({grp, label: it.title,

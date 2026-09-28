@@ -1828,6 +1828,19 @@ _MERGE_NOT_CARRIED: dict[str, str] = {
     # keyword vocabulary by its own job; a carried copy would point at another corpus'
     # keyword ids. The next build after a restore covers the merged vocabulary.
     "spell_deletes": "the did-you-mean table, derived from the keywords and rebuilt by its job",
+    # S05-03 (row C of the 0.5 gate). Places are OSM-derived and Q823 ⛔ (the ODbL question)
+    # is open, so no Place row leaves this machine by any route -- a restore included. They
+    # are rebuilt from the gazetteer by the local "resolve places" job, which makes no request.
+    "places": (
+        "OSM-derived (Q823 open); rebuilt from the gazetteer by the local resolve-places job"
+    ),
+    # A cache of a public CC0 source. Whether it rides a backup is one of the questions
+    # S05-03 §6 leaves to the maintainer; until then it is re-read at R8's rate, and the
+    # restore report counts what was left behind rather than dropping it silently.
+    "wikidata_items": (
+        "a local cache of Wikidata (CC0), re-read at one request per 10 seconds; whether it "
+        "rides a backup is not ruled yet (S05-03 §6)"
+    ),
     # `feed_fetch_state` LEFT THIS LIST on 2026-09-16 (the Q701 note, gate row K). The
     # reading above -- per-machine, self-healing, re-learned next pass -- was correct
     # about the mechanism and was overturned as a POLICY: re-learning it costs a full

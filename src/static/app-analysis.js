@@ -2489,11 +2489,22 @@
     function _anWwwHtml(d) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       _anFacets = {
+        // S05-03 (Q415): a person or organisation on the ladder shows the item's label in
+        // the reader's language, and the hover says it is a translation of which name and
+        // which Wikidata item; the drill still sends the name the text used.
         who: ((d.who && d.who.entities) || []).map((e) => ({
-          facet: "entity", value: e.name, label: e.name,
+          facet: "entity", value: e.name,
+          label: (e.translation_tier === "verified" && e.translation) ? e.translation : e.name,
+          hover: entityLadderHoverText(e),
           sub: e.class || "", n: e.articles})),
+        // S05-03: a place the gazetteer resolves into a Place shows its name in the
+        // reader's language (Q827: OSM first, Wikidata second) -- the DRILL still sends the
+        // mention's own name, so the facet narrows exactly as before.
         where: ((d.where && d.where.places) || []).map((pl) => ({
-          facet: "place", value: pl.name, label: pl.name,
+          facet: "place", value: pl.name, label: pl.place_name || pl.name,
+          nameSource: pl.place_name_source || "", placeId: pl.place_id || "",
+          hover: (!pl.place_id && pl.place_reason) ? placeUnresolvedText(pl.place_reason) : "",
+          mention: {name: pl.name, country: pl.country || null, kind: pl.kind || null},
           sub: pl.country ? ooCountryCode(pl.country) : "", n: pl.articles})),
         when: ((d.when && d.when.years) || []).map((yr) => ({
           facet: "when", value: String(yr.year), label: String(yr.year),
@@ -2502,11 +2513,21 @@
       const chips = (group) => {
         const items = _anFacets[group];
         if (!items.length) return `<span class="muted">—</span>`;
-        return items.map((it, i) =>
-          `<button type="button" class="chip an-facet" data-on-click="branchByFacet('${group}',${i})" `
-          + `title="${esc(t("Narrow the corpus to articles that mention this") + " — " + it.value)}">`
-          + `${esc(it.label)}${it.sub ? ` <span class="muted">(${esc(it.sub)})</span>` : ""}`
-          + ` <span class="muted">· ${it.n}</span></button>`).join(" ");
+        return items.map((it, i) => {
+          // The name's SOURCE rides the hover (Q827), layered, never hidden: which source
+          // spoke, or that neither did and the local name is shown.
+          const src = (it.nameSource ? " · " + placeNameSourceText(it.nameSource) : "")
+            + (it.hover ? " · " + it.hover : "");
+          const chip = `<button type="button" class="chip an-facet" data-on-click="branchByFacet('${group}',${i})" `
+            + `title="${esc(t("Narrow the corpus to articles that mention this") + " — " + it.value + src)}">`
+            + `<span data-i18n-dyn dir="auto">${esc(it.label)}</span>${it.sub ? ` <span class="muted">(${esc(it.sub)})</span>` : ""}`
+            + ` <span class="muted">· ${it.n}</span></button>`;
+          // A place the gazetteer resolves gets its card; one it cannot resolve gets none,
+          // rather than a card about a place nobody identified.
+          if (group !== "where" || !it.placeId) return chip;
+          return chip + `<button type="button" class="chip an-place-card" data-place-i="${i}" `
+            + `aria-label="${esc(t("Open the place card"))}" title="${esc(t("Open the place card"))}">&#9678;</button>`;
+        }).join(" ");
       };
       const col = (title, group) =>
         `<div style="min-width:200px;flex:1"><div class="vsect">${esc(title)}</div>`
@@ -4087,3 +4108,180 @@
         try { localStorage.setItem("oo.an.artview", v); } catch (_e) { /* private mode */ }
       }
     }
+
+    // ===== S05-03: the Place card and the entity ladder's hover (Q415, Q818, Q827) ===== //
+    //
+    // ONE card, opened from the Where facet's ◎ button and from a Places hit in the command
+    // palette. Everything it shows is read from THIS machine (the Place row, the Wikidata item
+    // cache, the Wikipedia lane): no request leaves it, so it is not gated by the network
+    // consent, and it says so nowhere because there is nothing to disclose. Its lines are t()
+    // text composed at render time, so a language switch redraws them from the payload it
+    // holds (repaintPlaceCardFromCache, called from app-boot.js's one langchange listener) --
+    // and a switch also re-reads the card, because the NAME shown depends on the language.
+    // No inline handlers (the CSP since #1199): _placeCardWire binds once.
+    let _placeCardLast = null;
+    let _placeCardSeq = 0;
+    let _placeCardWired = false;
+
+    // Where a place's name came from, in words (Q827: "the source shown in the hover").
+    function placeNameSourceText(src) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      if (src === "osm") return t("Name from OpenStreetMap");
+      if (src === "wikidata") return t("Name from Wikidata");
+      if (src === "local") return t("No name in your language from OpenStreetMap or Wikidata: this is the local name");
+      return "";
+    }
+
+    // The ladder's hover for a person or organisation: which item, and which name it was.
+    function entityLadderHoverText(e) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
+        : ((str, v) => String(str).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? String(v[k]) : m));
+      if (!e) return "";
+      if (e.translation_declined === "several-items") {
+        return t("This name matches several Wikidata items, so none was chosen");
+      }
+      const parts = [];
+      if (e.qid) parts.push(tf("Wikidata item {qid}", {qid: e.qid}));
+      if (e.translation_tier === "verified" && e.translation) {
+        parts.push(tf("translated from “{name}”", {name: e.name}));
+      }
+      return parts.join(" · ");
+    }
+
+    function _placeCardWire() {
+      if (_placeCardWired) return;
+      const dlg = $("place-card");
+      if (!dlg) return;
+      _placeCardWired = true;
+      $("pc-close").addEventListener("click", () => dlg.close());
+      // The ◎ buttons are drawn into #an-www by _anWwwHtml; ONE delegated listener serves
+      // every redraw, rather than one per button per render.
+      const www = $("an-www");
+      if (www) {
+        www.addEventListener("click", (ev) => {
+          const b = ev.target && ev.target.closest ? ev.target.closest(".an-place-card") : null;
+          if (!b) return;
+          const it = _anFacets && _anFacets.where && _anFacets.where[+b.getAttribute("data-place-i")];
+          if (it) openPlaceCardForMention(it.mention);
+        });
+      }
+    }
+
+    // A mention's Place: resolved (and written from the local gazetteer) on the click, then
+    // the card. The resolve is a LOCAL write -- the gazetteer is a file on this machine.
+    async function openPlaceCardForMention(m) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      try {
+        const r = await api("/api/entities/places/resolve", {method: "POST", body: JSON.stringify(m || {})});
+        if (!r.place_id) {
+          if (typeof toast === "function") toast(placeUnresolvedText(r.reason));
+          return;
+        }
+        openPlaceCard(r.place_id);
+      } catch (e) {
+        if (typeof toast === "function") toast(t("Could not open the place card:") + " " + e.message, "err");
+      }
+    }
+
+    function placeUnresolvedText(reason) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      if (reason === "country-level") return t("A country has no place card yet: country boundaries arrive with the OpenStreetMap lane.");
+      if (reason === "no-osm-object") return t("The gazetteer knows this place but names no OpenStreetMap object for it, so it has no place card.");
+      return t("The gazetteer does not know this place, so it has no place card.");
+    }
+
+    async function openPlaceCard(placeId) {
+      const dlg = $("place-card");
+      if (!dlg || !placeId) return;
+      _placeCardWire();
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const seq = ++_placeCardSeq;
+      $("pc-title").textContent = "";
+      $("pc-body").innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
+      if (!dlg.open) dlg.showModal();
+      const lang = (typeof uiLangCode === "function") ? String(uiLangCode()).split("-")[0].toLowerCase() : "en";
+      try {
+        const d = await api("/api/entities/places/card?" + new URLSearchParams({id: placeId, lang}).toString());
+        if (seq !== _placeCardSeq) return;
+        _placeCardLast = d;
+        renderPlaceCard();
+      } catch (e) {
+        if (seq !== _placeCardSeq) return;
+        $("pc-body").innerHTML = `<div class="note err">${esc(t("Could not open the place card:") + " " + e.message)}</div>`;
+      }
+    }
+
+    function repaintPlaceCardFromCache() {
+      const dlg = $("place-card");
+      if (!dlg || !dlg.open || !_placeCardLast) return;
+      // The shown NAME depends on the language, so the card is re-read, not only redrawn.
+      openPlaceCard(_placeCardLast.id);
+    }
+
+    function renderPlaceCard() {
+      const d = _placeCardLast;
+      if (!d) return;
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
+        : ((str, v) => String(str).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? String(v[k]) : m));
+      const langName = (c) => (typeof ooLangName === "function" ? ooLangName(c, c) : c);
+      const title = $("pc-title");
+      title.textContent = (d.title && d.title.name) || d.local_name || d.id;
+      title.title = placeNameSourceText(d.title && d.title.source);
+      const row = (k, v) => v == null || v === "" ? ""
+        : `<tr><th style="text-align:start;font-weight:500;padding-inline-end:10px">${esc(k)}</th><td dir="auto">${v}</td></tr>`;
+      const body = d.body || {};
+      const meta = {};
+      (body.metadata || []).forEach((m) => { meta[m.key] = m.value; });
+      const coord = meta.coordinates ? `${(+meta.coordinates.lat).toFixed(4)}, ${(+meta.coordinates.lon).toFixed(4)}` : "";
+      const pop = meta.population != null ? Number(meta.population).toLocaleString(String(typeof uiLangCode === "function" ? uiLangCode() : "en")) : "";
+      const inception = meta.inception && meta.inception.time ? String(meta.inception.time).replace(/^\+/, "").slice(0, meta.inception.precision >= 11 ? 10 : 4) : "";
+      let html = "";
+      // The description is prose a source wrote, so it is quoted as that source's, with its
+      // language named when it is not the reader's. With none, the card says so.
+      if (body.description) {
+        html += `<p style="margin:0 0 8px" dir="auto">${esc(body.description)}`
+          + ` <span class="muted small">— ${esc(t("Wikidata"))}${body.description_lang && body.description_lang !== (d.title || {}).lang ? " · " + esc(langName(body.description_lang)) : ""}</span></p>`;
+      } else {
+        html += `<p class="muted" style="margin:0 0 8px">${esc(d.item && d.item.status === "missing" ? t("Wikidata has no item with this id.") : t("No description on this machine yet: fetch the Wikidata items in Settings → Advanced."))}</p>`;
+      }
+      html += `<div class="vsect">${esc(t("Metadata"))}</div><table class="data" style="margin:4px 0 10px"><tbody>`
+        + row(t("Kind"), meta.kind ? esc(meta.kind) : "")
+        + row(t("Country"), meta.country ? esc(meta.country) : "")
+        + row(t("Population"), pop ? esc(pop) : "")
+        + row(t("Coordinates"), coord ? esc(coord) : "")
+        + row(t("Inception"), inception ? esc(inception) : "")
+        + row(t("OpenStreetMap object"), esc(d.id))
+        + row(t("Wikidata item"), d.qid ? esc(d.qid) : esc(t("none known")))
+        + `</tbody></table>`;
+      // Names ×12, each with its source; a language neither source names says so.
+      html += `<div class="vsect">${esc(t("Names"))}</div><table class="data" style="margin:4px 0 10px"><tbody>`
+        + (d.names || []).map((n) => `<tr><th style="text-align:start;font-weight:500;padding-inline-end:10px">${esc(langName(n.lang))}</th>`
+          + (n.name ? `<td dir="auto" title="${esc(placeNameSourceText(n.source))}">${esc(n.name)}</td>`
+            : `<td class="muted">${esc(t("no name in this language"))}</td>`) + `</tr>`).join("")
+        + `</tbody></table>`;
+      if ((d.keywords || []).length) {
+        html += `<div class="vsect">${esc(t("Keywords from the description"))}</div><div style="display:flex;flex-wrap:wrap;gap:4px;margin:4px 0 10px">`
+          + d.keywords.map((k) => `<span class="pill" dir="auto">${esc(k.term)} · ${k.count}</span>`).join("") + `</div>`;
+      }
+      // Q819 step 2: the Wikipedia pages carrying the same QID -- the same Place.
+      const w = d.wiki || {};
+      html += `<div class="vsect">${esc(t("Wikipedia pages about this place"))}</div>`;
+      if (!w.available) {
+        html += `<div class="muted" style="margin:4px 0 10px">${esc(t("The Wikipedia lane has not run on this machine."))}</div>`;
+      } else if (!(w.pages || []).length) {
+        html += `<div class="muted" style="margin:4px 0 10px">${esc(d.qid ? t("No page the lane holds carries this place's Wikidata item.") : t("This place has no Wikidata item, so no page can be matched to it."))}</div>`;
+      } else {
+        html += `<ul style="margin:4px 0 10px;padding-inline-start:18px">` + w.pages.map((p) =>
+          `<li dir="auto">${esc(p.title || p.external_id)} <span class="muted small">${esc(p.edition || "")}${p.followed ? "" : " · " + esc(t("listed by the walk"))}</span></li>`).join("") + `</ul>`;
+      }
+      html += `<div class="muted small">${esc(tf("Mentioned in {n} articles", {n: d.articles || 0}))}`
+        + ` · ${esc(d.gazetteer_vintage ? tf("gazetteer of {date}", {date: d.gazetteer_vintage}) : t("gazetteer without a vintage"))}`
+        + (d.item && d.item.as_of ? ` · ${esc(tf("Wikidata item read {date}", {date: String(d.item.as_of).slice(0, 10)}))}` : "")
+        + `</div>`;
+      // The caveat is VISIBLE, never behind the hover (the informed-consent rule).
+      html += `<p class="card-caveat" style="margin-top:8px">${esc(t(d.caveat || ""))}</p>`;
+      $("pc-body").innerHTML = html;
+    }
+    _placeCardWire();
