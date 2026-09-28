@@ -252,6 +252,84 @@ def read_translation_coverage() -> dict | None:
     return rec if isinstance(rec, dict) and rec.get("schema") == _COVERAGE_SCHEMA else None
 
 
+# The TRANSLATION SWEEP's own coverage (S05-08 S1, gate row H of 0.5). A second persisted
+# file rather than a field in the one above, because the two are written by different
+# instruments at different times, and one file per writer is what lets each keep its own
+# date. K6 shows both, each alone -- never summed, because "a ring covers it" and "a model
+# guessed it" are different claims about a translation.
+_SWEEP_FILE = "translation-sweep-coverage.json"
+_SWEEP_SCHEMA = "oo-translation-sweep-coverage-1"
+
+
+def _sweep_path():
+    return _coverage_path().with_name(_SWEEP_FILE)
+
+
+def record_sweep_coverage(measurement: dict) -> dict | None:
+    """Persist what the translation sweep measured about the keyword head. Called by the
+    sweep where it MEASURES, never by the KPI GET. Returns the record, or None."""
+    if not isinstance(measurement, dict) or "head_n" not in measurement:
+        return None
+    record = {"schema": _SWEEP_SCHEMA, "measured_at": _now(), **measurement}
+    try:
+        path = _sweep_path()
+        part = path.with_suffix(path.suffix + ".part")
+        part.write_text(json.dumps(record, ensure_ascii=False, indent=2), encoding="utf-8")
+        os.replace(part, path)
+    except Exception:  # noqa: BLE001 - a side-record never breaks the sweep
+        return None
+    return record
+
+
+def read_sweep_coverage() -> dict | None:
+    """The last recorded sweep measurement, or None when no sweep ever wrote one."""
+    try:
+        path = _sweep_path()
+        if not path.exists():
+            return None
+        rec = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001
+        return None
+    return rec if isinstance(rec, dict) and rec.get("schema") == _SWEEP_SCHEMA else None
+
+
+def _k6_sweep_block() -> dict:
+    """The sweep's half of K6: its own figures, date and age, or an honest absence."""
+    rec = read_sweep_coverage()
+    if rec is None:
+        return {
+            "verdict": _NM,
+            "value": None,
+            "as_of": None,
+            "method": (
+                "no translation sweep has recorded a measurement on this machine -- turn "
+                "on background AI with keyword translation included; the sweep writes its "
+                "coverage at the end of every pass"
+            ),
+        }
+    head_n = rec.get("head_n")
+    age = _age_days(rec.get("measured_at"))
+    return {
+        "verdict": _NO_BAR,
+        "value": rec.get("tentative"),
+        "n": head_n,
+        "as_of": rec.get("measured_at"),
+        "target_lang": rec.get("target_lang"),
+        "counts": {k: rec.get(k) for k in
+                   ("verified", "tentative", "untranslated", "same_language", "no_language")},
+        "model": rec.get("model"),
+        "pass_complete": rec.get("pass_complete"),
+        "method": (
+            f"Of the {head_n} most-spread keywords, {rec.get('tentative')} carry a TENTATIVE "
+            f"(≈, local-model) translation into {rec.get('target_lang')}, beside "
+            f"{rec.get('verified')} a verified ring translates and {rec.get('untranslated')} "
+            "nothing translates yet. Recorded by the translation sweep"
+            + (f", {age} day(s) ago" if age is not None else "")
+            + "; counts only, never re-run here, never summed with the ring figure."
+        ),
+    }
+
+
 def _age_days(iso: str | None) -> float | None:
     if not iso:
         return None
@@ -265,6 +343,13 @@ def _age_days(iso: str | None) -> float | None:
 
 
 def _k6_coverage(spec: dict) -> dict:
+    """K6, with the translation sweep's own persisted figure riding beside it."""
+    entry = _k6_ring_coverage(spec)
+    entry["sweep"] = _k6_sweep_block()
+    return entry
+
+
+def _k6_ring_coverage(spec: dict) -> dict:
     """K6: the share of the most-mentioned keywords that belong to a cross-language ring.
 
     Read from the last recorded run, and reported WITH its date and its age: the value is
