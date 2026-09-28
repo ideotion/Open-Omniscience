@@ -267,7 +267,11 @@ def test_the_export_and_the_screen_agree_about_one_row() -> None:
 #: The brief forbids widening these. Storage stays alpha-2 for this slice; S05-02
 #: owns the column change, and doing it here would put a migration inside a display
 #: PR — the one place a reviewer is not looking for one.
-_NARROW_COUNTRY_COLUMNS = 6
+_NARROW_COUNTRY_COLUMNS = 7
+# The SEVENTH is ``places.country`` (0.5 row C, S05-03, 2026-09-28): a Place stores its
+# country the way every other column does today, alpha-2, so row B's migration (S05-02)
+# widens it with the six others. Recorded for row B in OPEN_QUEUE.md «ROW C'S PROPOSED
+# DEFAULTS» (8).
 
 
 def test_no_country_column_was_widened() -> None:

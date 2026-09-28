@@ -178,6 +178,7 @@ def invalidate_ring_caches() -> None:
     load_rings.cache_clear()
     _index.cache_clear()
     _multi_index.cache_clear()
+    _member_languages.cache_clear()
 
 
 @lru_cache(maxsize=1)
@@ -459,6 +460,38 @@ def _multi_index() -> dict[tuple[str, str], tuple[str, ...]]:
             if ring.id not in bucket:
                 bucket.append(ring.id)
     return {k: tuple(v) for k, v in out.items()}
+
+
+@lru_cache(maxsize=1)
+def _member_languages() -> tuple[str, ...]:
+    """Every language any ring has a member in, sorted -- read once, not per lookup."""
+    return tuple(sorted({lang for lang, _t in _multi_index()}))
+
+
+def ring_ids_for(normalized: str, languages: Iterable[str] | None = None) -> tuple[str, ...]:
+    """Every ring id holding ``normalized`` under any of ``languages`` (default: all).
+
+    The DICT-LOOKUP twin of :func:`ring_matches`, for a caller that needs only the ids and
+    asks thousands of times (the entity spine reads one per mentioned person or
+    organisation): ``ring_matches`` walks the whole index per call, which is right for one
+    typed search term and quadratic for a batch. Collision-preserving like it, and in the
+    same deterministic order.
+    """
+    norm = _norm(normalized)
+    if not norm:
+        return ()
+    index = _multi_index()
+    langs = (
+        sorted({str(x).casefold() for x in languages if x})
+        if languages is not None
+        else _member_languages()
+    )
+    out: list[str] = []
+    for lang in langs:
+        for rid in index.get((lang, norm), ()):
+            if rid not in out:
+                out.append(rid)
+    return tuple(sorted(out))
 
 
 @dataclass(frozen=True)

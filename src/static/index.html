@@ -2941,6 +2941,25 @@
       </div>
       <div id="ring-gaps" class="hint" style="margin-top:10px"><div class="muted">Loading…</div></div>
     </section>
+
+    <!-- S05-03 (Q724, Q818, R8): places and people on the entity spine. TWO buttons, TWO
+         postures, and the difference is egress: "Resolve places" reads the gazetteer file on
+         this machine and makes no request; "Fetch from Wikidata" egresses, so it passes the ONE
+         network consent (invariant #14) and the endpoint refuses on its own as well. The
+         caveat is VISIBLE. No inline handlers: _entitySpineWire binds the buttons. -->
+    <section class="panel" id="entity-spine">
+      <h2 style="margin-top:0;font-size:13px">Places and people <span class="muted">&mdash; Wikidata items</span></h2>
+      <p class="hint" style="margin-top:0">The places your articles mention are matched to places in the gazetteer, and each one that names an OpenStreetMap object gets a place card. Wikidata then gives each place, and each person or organisation a keyword translation already identifies, its names in your languages and a short description. Only the items your corpus mentions are asked for.</p>
+      <p class="card-caveat" style="margin-top:6px">Place names and descriptions come from OpenStreetMap and Wikidata and nobody reviews them here. They stay on this machine: place cards are not part of a backup or an export.</p>
+      <div class="row" style="margin-top:8px;align-items:end">
+        <div style="flex:0 0 auto"><button class="secondary" type="button" id="es-resolve"
+          title="Reads the gazetteer on this machine. No request leaves it.">Resolve places</button></div>
+        <div style="flex:0 0 auto"><button type="button" id="es-fetch"
+          title="Sends one request every 10 seconds to www.wikidata.org, up to 50 items each. Refused while airplane mode is on.">Fetch from Wikidata</button></div>
+        <span id="es-status" class="hint" aria-live="polite"></span>
+      </div>
+      <div id="es-pending" class="hint" style="margin-top:10px"><div class="muted">Loading…</div></div>
+    </section>
     </details>
 
         <details class="adv-sec" data-adv="calendars">
@@ -3662,6 +3681,19 @@
     <div style="margin-top:12px;display:flex;gap:8px;justify-content:flex-end">
       <button class="secondary" type="button" id="lv-close">Close</button>
       <button type="button" id="lv-add">Add to corpus</button>
+    </div>
+  </dialog>
+
+  <!-- S05-03 (Q818, Q827, Q819 step 2): one Place, as this machine knows it. Opened from the
+       Where facet's ◎ button and from a Places hit in the command palette. Its lines are
+       composed with t()/tf() at render time (data-i18n-dyn) and re-read on a language switch
+       (repaintPlaceCardFromCache), because the NAME it shows depends on the language. No
+       inline handlers: _placeCardWire binds the close button once. -->
+  <dialog id="place-card" style="width:min(620px,94vw);max-height:90vh;padding:18px">
+    <h3 id="pc-title" dir="auto" data-i18n-dyn style="margin:0 0 8px"></h3>
+    <div id="pc-body" data-i18n-dyn style="max-height:70vh;overflow:auto"></div>
+    <div style="margin-top:12px;display:flex;justify-content:flex-end">
+      <button class="secondary" type="button" id="pc-close">Close</button>
     </div>
   </dialog>
 
