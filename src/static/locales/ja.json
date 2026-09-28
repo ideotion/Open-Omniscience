@@ -5845,5 +5845,6 @@
   "({n} flagged)": "（{n} 件にフラグ）",
   "{country} — public holidays": "{country} — 祝日",
   "UN International Days & Weeks": "国連の国際デー・国際週間",
-  "Open-source conferences & meetups": "オープンソースのカンファレンスとミートアップ"
+  "Open-source conferences & meetups": "オープンソースのカンファレンスとミートアップ",
+  "The {old} theme was retired as a near-duplicate of {new}, so you are now on {new} with its accent kept.": "{old} テーマは {new} とほぼ同じため廃止されました。現在は {new} を使用しており、アクセント色はそのままです。"
 }

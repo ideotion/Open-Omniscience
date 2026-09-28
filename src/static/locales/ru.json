@@ -5845,5 +5845,6 @@
   "({n} flagged)": "(отмечено: {n})",
   "{country} — public holidays": "{country} — праздничные дни",
   "UN International Days & Weeks": "Международные дни и недели ООН",
-  "Open-source conferences & meetups": "Конференции и встречи по открытому ПО"
+  "Open-source conferences & meetups": "Конференции и встречи по открытому ПО",
+  "The {old} theme was retired as a near-duplicate of {new}, so you are now on {new} with its accent kept.": "Тема {old} удалена как почти дубликат темы {new}; теперь у вас {new}, акцентный цвет сохранён."
 }

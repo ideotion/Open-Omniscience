@@ -2303,8 +2303,12 @@ def test_ui_invariants():
     assert ".drawer .seg" not in html, "the drawer is retired; .seg styles must be unscoped"
     # 12. the Typeface picker exists and the theme catalog never shrinks.
     assert 'id="dr-faces"' in html, "the Typeface picker must exist (CLAUDE.md)"
-    # 16 CSS blocks: 17 named themes, Ink lives in :root (System is JS-only).
-    assert html.count('html[data-theme="') >= 16, "the theme catalog must not shrink"
+    # AMENDED 2026-09-15 (Q1123 = b): the catalogue MAY be culled to a floor of 10 named
+    # themes, and this pin moves IN THE SAME PR as the cull (0.5 row I, S05-09 S3). The cull
+    # retired slate, arctic and mist (measured near-duplicates, tests/test_theme_cull.py):
+    # 13 CSS blocks = 14 named themes, Ink lives in :root (System is JS-only). The pin sits
+    # at the real count, so a further shrink needs its own PR lowering it -- never below 10.
+    assert html.count('html[data-theme="') >= 13, "the theme catalog must not shrink"
     # 13. the agenda shows DATA, never plumbing (maintainer principle 2026-06-11):
     #     the feed directory lives in Settings → Agenda, and the month grid is
     #     the tab's default view.
@@ -5653,7 +5657,7 @@ def test_circle_grammar_level_marking_is_wired_and_contrast_verified():
         assert d.get(key_group), f"{loc}: missing translation for the group-level hover"
         assert d.get(key_super), f"{loc}: missing translation for the super-group-level hover"
 
-    # Contrast math (mirrors the #23 caveat-colour precedent): all 17 themes' own
+    # Contrast math (mirrors the #23 caveat-colour precedent): all 14 themes' own
     # --accent/--fg mixed the SAME way the CSS declares, checked against every
     # theme's --panel/--panel2/--panel3. Decorative box-shadow rings are governed
     # by WCAG 1.4.11 (non-text UI components, >=3:1) since the level information
@@ -5661,24 +5665,21 @@ def test_circle_grammar_level_marking_is_wired_and_contrast_verified():
     # alone (WCAG 1.4.1) -- so 3:1 is the applicable bar, verified with margin.
     themes = {
         "ink": ("#14181f", "#1b212b", "#232b38", "#e8ebf0", "#5b9dd9"),
-        "slate": ("#161b23", "#1e2531", "#28323f", "#e8ebf0", "#7aa2f7"),
         "midnight": ("#10142e", "#171c3c", "#1f2650", "#e8eaff", "#8b7dff"),
         "terminal": ("#0a1013", "#0e1619", "#13211d", "#c8f7d4", "#36d97a"),
         "sepia": ("#262019", "#2f2820", "#3a3127", "#efe5d6", "#d8a657"),
         "contrast": ("#0a0a0a", "#161616", "#222222", "#ffffff", "#ffd400"),
         "light": ("#ffffff", "#f3f5f9", "#e7ecf3", "#1b1f27", "#2f6fb3"),
         "paper": ("#fbf8f1", "#f1ebdc", "#e6ddc8", "#2b271f", "#9a6a2f"),
-        "arctic": ("#171c22", "#1e242c", "#262e38", "#e5e9f0", "#88c0d0"),
         "solar": ("#073642", "#0a4150", "#11505f", "#eee8d5", "#b58900"),
         "forest": ("#131a14", "#19231a", "#223024", "#e3ece2", "#6fbf73"),
         "aubergine": ("#1a1424", "#231b30", "#2e2440", "#ece6f4", "#c084fc"),
         "garnet": ("#1f1419", "#291a20", "#35222a", "#f0e6ea", "#d96c7f"),
         "cyber": ("#0d1120", "#131830", "#1a2140", "#dbe6ff", "#22d3ee"),
-        "mist": ("#f9fafc", "#eff2f6", "#e3e8ef", "#222831", "#5e81ac"),
         "dawn": ("#fffaf3", "#f2e9e1", "#e9dfd5", "#575279", "#b4637a"),
         "mint": ("#f8fbf8", "#ecf2ed", "#dfe9e1", "#1f2a23", "#2e7d5b"),
     }
-    assert len(themes) == 17
+    assert len(themes) == 14  # 17 until the 0.5 theme cull (Q1123 = b)
 
     def hx(h):
         h = h.lstrip("#")
@@ -7689,28 +7690,25 @@ def test_severe_contrast_findings_fixed_across_all_17_themes():
     assert ".nav-item.adv .badge { color:var(--warn-fg)" in css, \
         ".nav-item.adv .badge must render its text via --warn-fg, not --warn"
 
-    # 17 themes: (accent, accent_fg [FINAL resolved value: root default or the
+    # 14 themes (17 before the Q1123 cull): (accent, accent_fg [FINAL resolved value: root default or the
     # theme's own explicit override], panel2, bg2, warn_fg [FINAL resolved value]).
     themes = {
         "ink":       ("#5b9dd9", "#0a0f16", "#1b212b", "#0f1218", "#d9a441"),
-        "slate":     ("#7aa2f7", "#0a0f16", "#1e2531", "#11151c", "#d9a441"),
         "midnight":  ("#8b7dff", "#0a0f16", "#171c3c", "#0b0e22", "#d9a441"),
         "terminal":  ("#36d97a", "#04140b", "#0e1619", "#06090c", "#d9a441"),
         "sepia":     ("#d8a657", "#241a0c", "#2f2820", "#201911", "#d9a441"),
         "contrast":  ("#ffd400", "#000000", "#161616", "#000000", "#ffd400"),
         "light":     ("#2f6fb3", "#ffffff", "#f3f5f9", "#e6eaf0", "#7a4308"),
         "paper":     ("#9a6a2f", "#ffffff", "#f1ebdc", "#ebe5d6", "#7a4308"),
-        "arctic":    ("#88c0d0", "#0b1216", "#1e242c", "#12161b", "#d9a441"),
         "solar":     ("#b58900", "#002b36", "#0a4150", "#00313d", "#d9a441"),
         "forest":    ("#6fbf73", "#0a140b", "#19231a", "#0f150f", "#d9a441"),
         "aubergine": ("#c084fc", "#160e20", "#231b30", "#150f1d", "#d9a441"),
         "garnet":    ("#d96c7f", "#1c0d12", "#291a20", "#191014", "#d9a441"),
         "cyber":     ("#22d3ee", "#04121a", "#131830", "#090c15", "#d9a441"),
-        "mist":      ("#5e81ac", "#0a0f16", "#eff2f6", "#e4e8ee", "#7a4308"),
         "dawn":      ("#b4637a", "#000000", "#f2e9e1", "#f4ece2", "#7a4308"),
         "mint":      ("#2e7d5b", "#ffffff", "#ecf2ed", "#e4ece6", "#7a4308"),
     }
-    assert len(themes) == 17
+    assert len(themes) == 14  # 17 until the 0.5 theme cull (Q1123 = b)
 
     # Every hex value above must actually appear in the CSS as the resolved value
     # for that theme (catches a copy-paste slip in this test's own fixture data,

@@ -77,9 +77,12 @@
 // the chosen theme's light/dark family + the custom accent carry over here.
 try {
   const ui = JSON.parse(localStorage.getItem("oo.ui") || "{}");
-  const lightish = ["light", "paper", "mist", "dawn", "mint"];
-  if (ui.theme && ui.theme !== "system")
-    document.documentElement.dataset.mode = lightish.includes(ui.theme) ? "light" : "dark";
+  const lightish = ["light", "paper", "dawn", "mint"];
+  // The theme cull (Q1123 = b): app-shell.js's retired -> survivor map.
+  const RETIRED_THEMES = { slate: "ink", arctic: "ink", mist: "light" };
+  const theme = RETIRED_THEMES[ui.theme] || ui.theme;
+  if (theme && theme !== "system")
+    document.documentElement.dataset.mode = lightish.includes(theme) ? "light" : "dark";
   if (ui.accent) document.documentElement.style.setProperty("--accent", ui.accent);
 } catch { /* default to the OS preference */ }
 const Q = new URLSearchParams(location.search);

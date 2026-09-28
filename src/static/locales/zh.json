@@ -5845,5 +5845,6 @@
   "({n} flagged)": "（{n} 个已标记）",
   "{country} — public holidays": "{country} — 公共假日",
   "UN International Days & Weeks": "联合国国际日和国际周",
-  "Open-source conferences & meetups": "开源会议与聚会"
+  "Open-source conferences & meetups": "开源会议与聚会",
+  "The {old} theme was retired as a near-duplicate of {new}, so you are now on {new} with its accent kept.": "{old} 主题因与 {new} 几乎相同而被移除，您现在使用 {new}，强调色保持不变。"
 }

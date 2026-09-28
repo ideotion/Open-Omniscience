@@ -5845,5 +5845,6 @@
   "({n} flagged)": "({n}টি চিহ্নিত)",
   "{country} — public holidays": "{country} — সরকারি ছুটি",
   "UN International Days & Weeks": "জাতিসংঘের আন্তর্জাতিক দিবস ও সপ্তাহ",
-  "Open-source conferences & meetups": "ওপেন-সোর্স সম্মেলন ও মিটআপ"
+  "Open-source conferences & meetups": "ওপেন-সোর্স সম্মেলন ও মিটআপ",
+  "The {old} theme was retired as a near-duplicate of {new}, so you are now on {new} with its accent kept.": "{old} থিমটি {new}-এর প্রায় অনুরূপ হওয়ায় সরানো হয়েছে; এখন আপনি {new}-এ আছেন, অ্যাকসেন্ট রং একই রাখা হয়েছে।"
 }

@@ -5845,5 +5845,6 @@
   "({n} flagged)": "({n} ditandai)",
   "{country} — public holidays": "{country} — hari libur nasional",
   "UN International Days & Weeks": "Hari dan Pekan Internasional PBB",
-  "Open-source conferences & meetups": "Konferensi dan pertemuan sumber terbuka"
+  "Open-source conferences & meetups": "Konferensi dan pertemuan sumber terbuka",
+  "The {old} theme was retired as a near-duplicate of {new}, so you are now on {new} with its accent kept.": "Tema {old} dihapus karena hampir sama dengan {new}; kini Anda memakai {new} dengan aksennya tetap."
 }

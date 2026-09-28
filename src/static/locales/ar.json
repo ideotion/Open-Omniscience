@@ -5845,5 +5845,6 @@
   "({n} flagged)": "(الموسومة: {n})",
   "{country} — public holidays": "{country} — العطلات الرسمية",
   "UN International Days & Weeks": "الأيام والأسابيع الدولية للأمم المتحدة",
-  "Open-source conferences & meetups": "مؤتمرات ولقاءات البرمجيات مفتوحة المصدر"
+  "Open-source conferences & meetups": "مؤتمرات ولقاءات البرمجيات مفتوحة المصدر",
+  "The {old} theme was retired as a near-duplicate of {new}, so you are now on {new} with its accent kept.": "أُزيلت سمة {old} لأنها شبه مطابقة لسمة {new}، فأنت الآن على {new} مع الإبقاء على لون التمييز."
 }

@@ -5845,5 +5845,6 @@
   "({n} flagged)": "(signalées : {n})",
   "{country} — public holidays": "{country} — jours fériés",
   "UN International Days & Weeks": "Journées et semaines internationales de l'ONU",
-  "Open-source conferences & meetups": "Conférences et rencontres open source"
+  "Open-source conferences & meetups": "Conférences et rencontres open source",
+  "The {old} theme was retired as a near-duplicate of {new}, so you are now on {new} with its accent kept.": "Le thème {old} a été retiré car presque identique à {new} : vous êtes maintenant sur {new}, avec son accent conservé."
 }

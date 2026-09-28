@@ -5845,5 +5845,6 @@
   "({n} flagged)": "({n} flagged)",
   "{country} — public holidays": "{country} — public holidays",
   "UN International Days & Weeks": "UN International Days & Weeks",
-  "Open-source conferences & meetups": "Open-source conferences & meetups"
+  "Open-source conferences & meetups": "Open-source conferences & meetups",
+  "The {old} theme was retired as a near-duplicate of {new}, so you are now on {new} with its accent kept.": "The {old} theme was retired as a near-duplicate of {new}, so you are now on {new} with its accent kept."
 }

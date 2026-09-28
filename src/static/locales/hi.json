@@ -5845,5 +5845,6 @@
   "({n} flagged)": "({n} चिह्नित)",
   "{country} — public holidays": "{country} — सार्वजनिक अवकाश",
   "UN International Days & Weeks": "संयुक्त राष्ट्र के अंतरराष्ट्रीय दिवस और सप्ताह",
-  "Open-source conferences & meetups": "ओपन-सोर्स सम्मेलन और मीटअप"
+  "Open-source conferences & meetups": "ओपन-सोर्स सम्मेलन और मीटअप",
+  "The {old} theme was retired as a near-duplicate of {new}, so you are now on {new} with its accent kept.": "{old} थीम को {new} की लगभग प्रतिलिपि होने के कारण हटा दिया गया; अब आप {new} पर हैं और उसका एक्सेंट रंग बना रहा।"
 }

@@ -212,7 +212,8 @@ def test_base_link_and_active_subtab_use_accent_text_not_accent():
 
 def test_four_failing_themes_override_muted_and_accent_text():
     css = _css()
-    for theme in ("solar", "paper", "mist", "dawn"):
+    # mist was the fourth; it was culled as a near-duplicate of light (Q1123 = b).
+    for theme in ("solar", "paper", "dawn"):
         block = _theme_block(css, theme)
         assert "--muted:color-mix(in srgb, var(--fg)" in block, (
             f"{theme}'s --muted must be re-derived via color-mix toward its own "
@@ -251,10 +252,8 @@ def test_other_twelve_themes_do_not_override_muted():
     # already passed must not be touched (the --caveat/--chip-off lesson:
     # change only where measurement says to).
     css = _css()
-    untouched = (
-        "slate",
+    untouched = (  # slate and arctic were culled (Q1123 = b)
         "midnight",
-        "arctic",
         "cyber",
         "forest",
         "aubergine",

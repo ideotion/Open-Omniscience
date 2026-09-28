@@ -227,13 +227,12 @@
     const UI_KEY = "oo.ui";
     const UI_DEFAULTS = {theme:"ink", accent:"", density:"comfortable", face:"", sidebar:"expanded"};
     const THEMES = [
-      {id:"ink",name:"Ink",c:"#5b9dd9"}, {id:"slate",name:"Slate",c:"#7aa2f7"},
-      {id:"midnight",name:"Midnight",c:"#8b7dff"}, {id:"arctic",name:"Arctic",c:"#88c0d0"},
+      {id:"ink",name:"Ink",c:"#5b9dd9"}, {id:"midnight",name:"Midnight",c:"#8b7dff"},
       {id:"cyber",name:"Cyber",c:"#22d3ee"}, {id:"forest",name:"Forest",c:"#6fbf73"},
       {id:"aubergine",name:"Aubergine",c:"#c084fc"}, {id:"garnet",name:"Garnet",c:"#d96c7f"},
       {id:"solar",name:"Solar",c:"#b58900"}, {id:"sepia",name:"Sepia",c:"#d8a657"},
       {id:"terminal",name:"Terminal",c:"#36d97a"}, {id:"contrast",name:"Contrast",c:"#ffd400"},
-      {id:"light",name:"Light",c:"#2f6fb3"}, {id:"mist",name:"Mist",c:"#5e81ac"},
+      {id:"light",name:"Light",c:"#2f6fb3"},
       {id:"dawn",name:"Dawn",c:"#b4637a"}, {id:"mint",name:"Mint",c:"#2e7d5b"},
       {id:"paper",name:"Paper",c:"#9a6a2f"}, {id:"system",name:"System",c:"#8c95a6"},
     ];
@@ -251,8 +250,43 @@
       {id:"mono", name:"JetBrains Mono", ff:'"JetBrains Mono", ui-monospace, monospace'},
     ];
 
-    function getUi() { try { return {...UI_DEFAULTS, ...JSON.parse(localStorage.getItem(UI_KEY) || "{}")}; }
-      catch { return {...UI_DEFAULTS}; } }
+    // THE THEME CULL (Q1123 = b, 0.5 row I, invariant #12 amended 2026-09-15). Three themes
+    // measured as near-duplicates of a survivor -- a mean surface ΔE76 under 2 over bg, bg2,
+    // panel, panel2, panel3 and border, where the next closest pair is 3.9 -- were retired.
+    // A stored pick of one is mapped to its survivor, never silently to the default, and
+    // carries the retired theme's own accent (and Arctic's Inter face) so the look barely
+    // moves; an accent or face the operator chose themselves is never overwritten. The
+    // same map lives in taskmanager.js, pinned equal by tests/test_theme_cull.py.
+    const RETIRED_THEMES = {
+      slate:  {theme:"ink",   accent:"#7aa2f7"},
+      arctic: {theme:"ink",   accent:"#88c0d0", face:"inter"},
+      mist:   {theme:"light"},
+    };
+    let _retiredThemeNote = null;   // {from, to} once per load, announced by app-boot.js
+    function getUi() {
+      let ui;
+      try { ui = {...UI_DEFAULTS, ...JSON.parse(localStorage.getItem(UI_KEY) || "{}")}; }
+      catch { return {...UI_DEFAULTS}; }
+      const r = RETIRED_THEMES[ui.theme];
+      if (r) {
+        _retiredThemeNote = {from: ui.theme, to: r.theme};
+        ui.theme = r.theme;
+        if (!ui.accent && r.accent) ui.accent = r.accent;
+        if (!ui.face && r.face) ui.face = r.face;
+        try { saveUi(ui); } catch { /* storage refused: mapped again next load */ }
+      }
+      return ui;
+    }
+    function announceRetiredTheme() {
+      const n = _retiredThemeNote;
+      if (!n) return;
+      _retiredThemeNote = null;
+      const name = (id) => (THEMES.find(x => x.id === id) || {name: id[0].toUpperCase() + id.slice(1)}).name;
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
+        : ((x, v) => x.replace(/\{(\w+)\}/g, (m, k) => (v[k] != null ? v[k] : m)));
+      toast(tf("The {old} theme was retired as a near-duplicate of {new}, so you are now on {new} with its accent kept.",
+        {old: name(n.from), new: name(n.to)}), "warn");
+    }
     function saveUi(ui) { localStorage.setItem(UI_KEY, JSON.stringify(ui)); }
 
     function applyThemeAttr(theme) {
@@ -289,7 +323,7 @@
     // from "the user actually picked a different bucket here" (honor it).
     let _lastSyncedThemeBucket = null;
     function syncThemeSelect() { const t = getUi().theme; const sel = $("set-theme");
-      const lightish = ["light", "paper", "mist", "dawn", "mint"];
+      const lightish = ["light", "paper", "dawn", "mint"];
       const bucket = (t === "system" ? "system" : lightish.includes(t) ? "light" : "dark");
       if (sel) sel.value = bucket;
       _lastSyncedThemeBucket = bucket; }

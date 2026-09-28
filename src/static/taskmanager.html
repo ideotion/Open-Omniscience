@@ -222,6 +222,10 @@
     var ui = {};
     try { ui = JSON.parse(localStorage.getItem("oo.ui") || "{}") || {}; } catch (e) { ui = {}; }
     var theme = ui.theme || "ink";
+    // The theme cull (Q1123 = b): the same retired -> survivor map as app-shell.js's
+    // RETIRED_THEMES, so a pick the app has not re-saved yet still lands on its survivor.
+    var RETIRED_THEMES = { slate: "ink", arctic: "ink", mist: "light" };
+    if (RETIRED_THEMES[theme]) theme = RETIRED_THEMES[theme];
     var eff = theme === "system" ? (_lightQuery && _lightQuery.matches ? "light" : "")
       : theme === "ink" ? "" : theme;
     var r = document.documentElement;
