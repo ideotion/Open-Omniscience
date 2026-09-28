@@ -36,15 +36,15 @@ and the two hard preconditions above stand unchanged.
 | # | Row | Owner | Origin | Status |
 |---|---|---|---|---|
 | A | The advanced search — one UI for every search need | session | ruled (R11; Q505, Q601–Q618) · brief `S05-01` | **BUILT 2026-09-28 (PR #1198)** — Chromium-verified (remote sandbox) in en and ar · awaiting human UX pass |
-| B | ISO 3166-1 alpha-3, step 2: the store, the configs, the payload flip | session + operator (a real restore) | ruled (Q301 ⛔ = c step 2, Q304, Q305, Q313; Q306 storage step *proposed placement*) · `S05-02` | **OPEN** — needs 0.4 row K exercised |
+| B | ISO 3166-1 alpha-3, step 2: the store, the configs, the payload flip | session + operator (a real restore) | ruled (Q301 ⛔ = c step 2, Q304, Q305, Q313; `R38` first of B/J, `R39` the hi/bn rebuild; Q306 storage step *proposed placement*) · `S05-02` | **OPEN** — needs 0.4 row K exercised |
 | C | The entity spine: QIDs, Wikidata items, the Place entity, the gazetteer artifacts | session + operator (artifact build) | ruled (Q415, Q724, Q805, Q818, Q827) · `S05-03` | **OPEN** |
 | D | The OSM lane seeded: the first country's places, roads and buildings; the tag-completeness view | session + operator (extract + planet history download) | ruled (R16; Q106, Q806–Q811, Q813, Q814, Q815 · 1, Q817, Q819 · 3, Q820, Q822, Q824, Q825, Q828, Q1008) · `S05-04` | **OPEN** — ODbL (Q823 ⛔) PENDING |
 | E | OSM-derived admin-0 / admin-1 artifacts keyed ISO 3166-2, on all five surfaces | session + operator (artifact build) | ruled (Q314, Q816, Q802 second half); Q804 an ASSUMPTION at its default · `S05-05` | **OPEN** |
-| F | Wikipedia: the WARM tier and the `allpages` tail walk under budget | session + operator (the run) | ruled (R12; Q701 ⛔ = c, Q707, Q712 · 4–5, Q722 = b, Q727) · `S05-06` | **OPEN** — the Phase-C store (Q1009 ⛔) PENDING |
+| F | Wikipedia: the WARM tier and the `allpages` tail walk under budget | session + operator (the run) | ruled (R12; Q701 ⛔ = c, Q707, Q712 · 4–5, Q722 = b, Q727; `R40` built first) · `S05-06` | **OPEN** — the Phase-C store (Q1009 ⛔) PENDING |
 | G | Laws: the evolution surface — versions, the reader, point-in-time search, analytics 3–5 | session | ruled (R14; Q107, Q905, Q908, Q914 · 3–5, Q916, Q918, Q920) · `S05-07` | **OPEN** |
 | H | The AI-coordinator translation sweep; titles, summaries and on-demand full text; the model bench | session | ruled (Q405, Q513 = b + c, Q1142, Q1143, Q1144) · `S05-08` | **OPEN** |
 | I | The UI shell: "rings, not gates", the first-run default, the inline-handler retirement + CSP, the theme cull | session | ruled (Q1120, Q1121, Q1123, Q1127) · `S05-09` | **OPEN** |
-| J | A source is keyed on its FEED — the migration and its data-safety review | session + operator (a real restore) | ruled (Q1102 ⛔ = b); *proposed placement* 0.5 · `S05-10` | **OPEN** |
+| J | A source is keyed on its FEED — the migration and its data-safety review | session + operator (a real restore) | ruled (Q1102 ⛔ = b; `R38` after row B); *proposed placement* 0.5 · `S05-10` | **OPEN** |
 | K | The approved desk: the claim workspace A1, the Conjunction Lens across verticals, the onboarding tour, signed-evidence export polish | session | carried from the V1 train (ruled 2026-09-07), kept by Q105 = a · `S05-11` | **OPEN** |
 | L | Q803's default: OSM's border convention as of a stated date opens every map (moved from 0.4 row R) | session + operator (row E's artifact build) | ruled (Q803 and its note, Q826); placement `PF06` = a, 2026-09-27 · `S05-05` | **OPEN** — waits on row E's OSM-derived artifacts |
 
@@ -102,6 +102,13 @@ with the same both-forms acceptance and a test over the twelve locale codes. **C
 before/after row counts per table are recorded, the config test is green, the real-restore scan reports 0
 duplicates (operator; `not-measurable-here` in the sandbox), and the P0 data-safety trio is green on the
 migrated store. Brief `S05-02`.
+
+**2026-09-28 — the order and the re-index (`R38`, `R39`, «D2: a · D3: a» in chat).** Row B goes before row J,
+never beside it. The same app-stopped window also recreates `article_fts` with the tokenizer option that
+keeps Devanagari and Bengali vowel signs inside a word (`OPEN_QUEUE.md`, «FINDING OUTSIDE Q507») and rebuilds
+it in full, so the operator stops the app once. **This row now also closes on** the rebuild's measured time
+recorded beside the migration's row counts, and a fixture proving that a search for सरक no longer matches
+सरकार on the migrated store.
 
 **RC round 2026-09-15 — BLANK, so the round's §0 rule applies and nothing here is resolved.** `RC08.1` asked where register ruling **C5** (the DB-10
 migrate-op: rebuild the store at the ruled pragmas, as a Settings → Advanced action carrying the honest cost
@@ -187,6 +194,34 @@ reached. **Closes when** the walk has run for a stated period on the reference V
 own coverage counters (pages seen / edition total per edition) read from one artifact, the budget surface
 (Q1006) shows the lane's growth, and analytics 4–5 render from real rows. `not-measurable-here` for the run;
 **operator:** the run and the transport choice. Brief `S05-06`.
+
+**2026-09-28 — built first (`R40`).** The maintainer asked whether the long walk should be built early and
+left running while the other rows are built; it is. This moves the build order and nothing else: the walk
+(S2 + S3) ships first, in its own table so it never makes a page followed, and WARM (S1) right after it; the
+⛔ above still caps its depth, and the run is still the operator's. After any
+restart the app boots offline, so the walk resumes from its per-edition cursor only once the operator goes
+online again.
+
+**2026-09-28 — the walk is built (S2 + S3, PR #1197), off by default.** `src/wiki/walk.py` asks each of the lane's
+editions' `allpages` for 50 articles a request (the main namespace, no redirects), serially and round-robin
+across the editions, in the lane's own idle time and on the lane's own client (one kill switch, one proxy, one
+user agent, one second between requests). Its pages go to `wiki_walk_pages` in `wiki.db` and never to the
+pages the lane follows, so no walked page is fetched or indexed as HOT. Each edition keeps the source's own
+continuation verbatim, so a restart resumes and re-asks for nothing. A spent budget, airplane mode and a
+protected mode with no usable proxy stop it by name, and it never goes direct (Q722 = b); a refusal from one
+edition backs off that edition alone, 60 s doubling to an hour. Coverage per edition — pages seen of the
+edition's own article count, read from `siteinfo` — and the measured rate per transport ride the lane
+counters artifact as its `walk` block; Living sources' Wikipedia panel shows a «Page walk» group, and the task
+manager shows the walk while it walks, pauses or waits, with counts and no ETA. The switch is Settings →
+Wikipedia, «Also walk every article title», **off** until the operator turns it on for the instance
+that should carry the run (`R51`, «Switch, off»). Chromium-verified (remote sandbox) in `en` and `ar` · awaiting human UX
+pass. **Seams, stated:** (1) S2's fetch-history round trip waits on the lane riding a backup (Q721; the
+inventory keeps it non-exportable until S04-04 owns the lane format); the walk's rows are that history, and
+`lane_models.py` names the one table the toggle will gate. (2) S3 names `tor_throughput.py`, which is the
+scheduler's kind ladder and records nothing, so the walk writes its own per-transport samples per hour.
+(3) Only the first pass is built; when to walk an edition again is not ruled. (4) Round-robin is the
+proposed per-edition order (the brief's §6 leaves it unruled). (5) Q1009 ⛔ still caps the depth. **Still
+owed in this row:** WARM (S1), COLD text, analytics 4–5 (S4) and the operator's run (S5).
 
 **RC round 2026-09-15 — BLANK, so the round's §0 rule applies and nothing here is resolved.** `RC03` ⛔ (C4 = Q1009, the storage round-2 rows
 3–6 — blob-store dedup · OOENC2 for pack AEAD · keyed-HMAC blob addressing with opaque pack names · the
@@ -280,6 +315,9 @@ existed: the code already classifies `lean-*` as non-topical and declines to fil
 assignments, so this assumption changes what may be PROPOSED, not what is displayed. The CONFLICT with Q1129
 stays recorded on both rows. This row's own ruling (Q1102 ⛔ = b, the feed key) is untouched.
 
+**2026-09-28 — after row B (`R38`, «D2: a» in chat).** The order the brief left unruled is settled: row B's
+migration lands and is restored for real first, then this one; never both at once.
+
 ### Row K — The approved desk · carried from the V1 train, kept by Q105 = a · OPEN
 
 **What it must demonstrate.** The V1 §3 contents of 0.5 the sheet did not touch: the claim workspace A1 with
@@ -314,6 +352,9 @@ the default. Brief `S05-05`, with `S04-11` S3's toggle.
 | 2026-09-15 | **The 2026-09-06 register's 65 answers (rulings artifact, 15:02–16:00Z) — effects on this board, nothing resolved by the session:** row H — D8 «wait for the app wide one model ruling … before version 0.8» CONFLICTS with Q1142 = a (run the bench in 0.5; `RC04`) and D9 `default` (drop the live ollama.com browse) CONFLICTS with Q1143 = a (`RC09`); D10 consistent; row I — H4's method (one module per slice, `app-boot.js` first) recorded; H3 (remove `#ins-term` behind the absorption test) proposed here (`RC08.5`); row J — L9 `default` (remove the lean scale) CONFLICTS with Q1129 = a (`RC16`); row B — C5 (the DB-10 migrate-op as a Settings → Advanced action) proposed here (`RC08.1`); row F — C4 came back `default` (yes / OOENC2 / yes / yes) at 15:12Z where Q1009 was blank that morning: ⛔, `RC03` asks for the four values; the seam stays. A `bulletin-defaults` slice (D2 + D4) is proposed beside row H (`RC08.2`). | maintainer (the register, 2026-09-15) · reconciled by the session |
 | 2026-09-15 | **The RC confirmation round came back UNANSWERED — 0 of 22 `ANSWER` lines carry a letter — processed per its own §0; nothing resolved by the session.** Effects on this board, all reversible by writing a letter: row B — `RC08.1` ASSUMPTION (a), C5's DB-10 migrate-op placed here; row F — `RC03` ⛔ PENDING, the four storage round-2 values still unwritten so the Phase-C seam stays shut; row H — `RC04` ASSUMPTION (a) the bench is NOT run in 0.5 (the decision moves to 0.8 row C), `RC09` ASSUMPTION (a) the live ollama.com browse dropped, `RC08.2` ASSUMPTION (a) D2 + D4 placed as a small `bulletin-defaults` slice beside this row; row I — `RC08.5` ASSUMPTION (a), H3 placed here behind its absorption test; row J — `RC16` ASSUMPTION (a), the `lean-*` scale leaves the offerable vocabulary. A NEW 0.5 slice is also assumed by `RC07` (article revision tracking on the finished 0.4 row O substrate, B7's note) — recorded as a placement, not opened as a board row. Four of these sit on CONFLICT questions and follow the later channel exactly as §0 directs; BOTH answers stay recorded on their `A1`–`L10` and `Qnnn` rows. **No row changed status.** | maintainer (the round, left blank) · §0's blank rules applied by the session |
 | 2026-09-27 | **Row L added: Q803's default moved here from 0.4 row R** (`PF06` = a, «Row R: OK to move that to 0.5»), beside row E's OSM artifacts it waits on. The entry clause now names 0.4 rows G–W (row W, `RC01` = a), and the exit clause A–L. | maintainer (chat, 2026-09-27) · recorded by the session, PR #1191 |
+| 2026-09-28 | **The 0.5 start, answered in chat** («D1: Yes, start. … D2: a D3: a», with a question about the Wikipedia walk): `R38` — row B before row J, never concurrently; `R39` — the hi/bn tokenizer rebuild is paid inside row B's window, and row B now also closes on its measured rebuild time and a hi fixture; `R40` — row F is built first so its operator run overlaps the build (order only; no gate moved). Wave 1 starts with rows A and I in their own threads. **No row changed status.** | maintainer (chat, 2026-09-28 11:07 UTC) · recorded by the session |
+| 2026-09-28 | **Row F: the walk built (S2 + S3), off by default.** The `allpages` walk, its per-edition bookmark, its coverage and per-transport counters in the lane counters artifact, a Living sources group and a task-manager row; the switch that decides where it runs is asked on a card and built at the recommended «off» meanwhile (`OPEN_QUEUE.md` «THE WALK'S SWITCH»). Five seams stated in the row, the fetch-history round trip first. **No row changed status.** | session, PR #1197 |
+| 2026-09-28 | **`R51`: the walk runs only where it is switched on, off by default** («Switch, off» on the decision card, the recommended option). Row F's text now names the ruling where it named the open question; the default was already built this way, so only a test pinning it was added. **No row changed status.** | decision card in the project thread «Plan v0.5», 2026-09-28 12:41 UTC |
 | 2026-09-28 | **Row A built (S05-01, PR #1198).** All nineteen rulings implemented; Chromium-verified in the remote sandbox in English and Arabic (the builder, the timescale, list and table views, did-you-mean, save and re-open, the permalink, history, the omnibar's Enter, the first-launch history step); the did-you-mean table on the 200 MB reference corpus: 873,889 rows, 4.9 s, 12.6 MB. Status stays short of CLOSED until a human UX pass. | session |
 
 ---

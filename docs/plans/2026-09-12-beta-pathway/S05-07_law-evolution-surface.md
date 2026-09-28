@@ -126,7 +126,8 @@ half of S2 is `not-measurable-here` (the portals are egress-blocked).
 - Q903 (CONFLICT — subnational post-beta vs from 0.7): nothing subnational here; the 0.7 gate ships around it.
 - The shared component's name and API; whether the map of amendment activity is per country only or admin-1
   (Q914 · 4 names a map with a vintage, not the level; S05-05's artifacts would allow admin-1).
-- The Living sources view's placement (main tab or Home family — 0.4 row O's open detail, Q1016).
+- ~~The Living sources view's placement~~ — **SETTLED 2026-09-25 (`R32`, invariant #32): a MAIN TAB**, with a
+  Law panel (this line predated the ruling).
 
 ## 7. Closeout
 

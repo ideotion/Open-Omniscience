@@ -263,6 +263,12 @@ class SchedulerSettings:
     # saw the screen has not, and the two would be indistinguishable if this were
     # inferred from the values.
     wiki_lane_wizard_done: bool = False
+    # THE ``allpages`` WALK'S OWN SWITCH (Q701 = c; S05-06's S2). OFF by default: the walk
+    # is a multi-day crawl of every article title in the chosen editions (about 480,000
+    # requests for all twelve), and an update must not start that on every machine that
+    # happens to have the lane on. It runs only while the lane itself runs, through the
+    # lane's own client, so it adds no host and no consent path of its own.
+    wiki_walk_enabled: bool = False
 
     # COUNTRY-DATA ride-along (2026-07-24 field-feedback Session A §2, ruled: Governments-
     # tab figures should load automatically, not only via the manual "Load standard
@@ -720,6 +726,7 @@ def load_settings() -> SchedulerSettings:
         wiki_lane_wizard_done=_coerce_bool(
             raw.get("wiki_lane_wizard_done"), d.wiki_lane_wizard_done
         ),
+        wiki_walk_enabled=_coerce_bool(raw.get("wiki_walk_enabled"), d.wiki_walk_enabled),
         country_data_per_pass=_coerce_int(
             raw.get("country_data_per_pass"), d.country_data_per_pass, 0, 100
         ),
@@ -798,6 +805,10 @@ def save_settings(updates: dict) -> SchedulerSettings:
     if "wiki_lane_wizard_done" in updates and updates["wiki_lane_wizard_done"] is not None:
         current.wiki_lane_wizard_done = _coerce_bool(
             updates["wiki_lane_wizard_done"], current.wiki_lane_wizard_done
+        )
+    if "wiki_walk_enabled" in updates and updates["wiki_walk_enabled"] is not None:
+        current.wiki_walk_enabled = _coerce_bool(
+            updates["wiki_walk_enabled"], current.wiki_walk_enabled
         )
     if "crawl_supplement" in updates and updates["crawl_supplement"] is not None:
         current.crawl_supplement = _coerce_bool(

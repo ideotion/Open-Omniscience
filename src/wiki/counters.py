@@ -276,12 +276,19 @@ def lane_counters(
     window's blocks do, and this function composes them without a verdict. What the
     numbers MEAN is the maintainer's call; a composite would be a score.
     """
+    from src.wiki.walk import walk_coverage
+
     at = now or _utcnow()
     blocks = {
         "rows_per_day": changes_per_day(lane, window_days=window_days, now=at),
         "bytes_per_day": bytes_per_day(lane, window_days=window_days, now=at),
         "gaps": gap_history(lane, window_days=window_days, now=at),
         "entities": entity_counts(lane),
+        # Q701 = c's walk: pages seen of each edition's own article count, and the
+        # measured throughput per transport (S05-06's S2 + S3). The SAME artifact the
+        # soak bundle and the release run already collect, so the walk's coverage rides
+        # them without a second reader.
+        "walk": walk_coverage(lane, window_days=window_days, now=at),
     }
     unmeasured = sorted(k for k, v in blocks.items() if not v.get("measured"))
     return {

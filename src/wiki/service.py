@@ -96,6 +96,53 @@ def wiki_lane_session() -> Iterator[Any]:
         yield lane
 
 
+#: The lane path whose schema THIS process has already ensured for the walk. Keyed on the
+#: path, not a bare flag, for the reason ``store._engines`` is: a data folder that moves
+#: (or a test that re-points ``OO_DATA_DIR``) is a different lane file.
+_WALK_SCHEMA_READY: str | None = None
+
+
+@contextmanager
+def walk_lane_session() -> Iterator[Any]:
+    """A session on the wiki lane for the walk: the schema ensured ONCE, then a plain session.
+
+    ``wiki_lane_session`` runs ``create_lane`` on every open, which is right for a drain
+    every thirty seconds and wasteful for a walk step every second or two -- it re-inspects
+    every table each time. A lane file a 0.4 build wrote has no walk tables until this
+    build's ``create_schema`` runs, so the first open still goes through it.
+    """
+    global _WALK_SCHEMA_READY
+    from src.versioned.store import create_lane, lane_path, lane_session
+
+    here = str(lane_path("wiki"))
+    if _WALK_SCHEMA_READY != here:
+        create_lane("wiki")
+        _WALK_SCHEMA_READY = here
+    with lane_session("wiki") as lane:
+        yield lane
+
+
+def _walk_enabled() -> bool:
+    """The operator's walk switch, re-read every window so a change needs no restart."""
+    return bool(getattr(_settings(), "wiki_walk_enabled", False))
+
+
+def session_transport(session: Any) -> str:
+    """How THIS session leaves the machine, in ``transport_summary``'s own tokens.
+
+    Read from the session the walk actually uses rather than from the settings file: the
+    session's transport was fixed when it was built, and a sample recorded under the
+    setting as it reads NOW would misname every request made before a change.
+    """
+    if getattr(session, "transport_refusal", None):
+        return "refused"
+    if getattr(session, "proxy_pool", ()):
+        return "pool"
+    if getattr(session, "transport_proxy", None):
+        return "proxy"
+    return "direct"
+
+
 def _hot_sets():
     """Rebuilt each drain from the operator's own corpus and lane. No network."""
     from src.config.kv_store import kv_get_json
@@ -206,6 +253,7 @@ def _build():
     from src.wiki.lane import WikiStreamAdapter
     from src.wiki.runner import WikiLaneRunner
     from src.wiki.stream import WikiEventStream
+    from src.wiki.walk import WikiWalker
 
     editions = _editions()
     if not editions:
@@ -217,6 +265,17 @@ def _build():
     # the honest User-Agent have to be wired, and the one that was forgotten is the
     # one that egresses. The non-negotiable is a SINGLE fetch path.
     stream = WikiEventStream(session=client.session, editions=editions)
+    # THE WALK SHARES THE CLIENT TOO (Q701 = c, Q722 = b): the same session, so the same
+    # transport and kill switch, and the same one-second interval between requests, so the
+    # walk and the drain's text fetches are one polite client rather than two.
+    walker = WikiWalker(
+        client=client,
+        editions=editions,
+        lane_session=walk_lane_session,
+        budget=_budget,
+        enabled=_walk_enabled,
+        transport=lambda: session_transport(client.session),
+    )
     return WikiLaneRunner(
         adapter=adapter,
         stream=stream,
@@ -227,6 +286,7 @@ def _build():
         budget=_budget,
         resume_from=_resume_from,
         pageviews=lambda: _refresh_one_pageview_top(client),
+        walker=walker,
     )
 
 
@@ -288,7 +348,7 @@ def lane_service_status() -> dict:
         drain_alive = bool(_DRAIN_THREAD is not None and _DRAIN_THREAD.is_alive())
     if runner is None:
         return {"streaming": False, "draining": False, "drains": 0, "last_drain": None,
-                "stream": None}
+                "stream": None, "walk": None}
     return {
         "streaming": bool(runner.streaming),
         "draining": drain_alive,
@@ -298,4 +358,8 @@ def lane_service_status() -> dict:
         # failure, idle seconds): what the lane's status reads to say it is WAITING
         # and on what, rather than "running" while every connection fails.
         "stream": runner.stream_counters(),
+        # The walk's in-process state (walking, paused and why, waiting). Its COUNTS are
+        # rows in the lane, read by ``src.wiki.walk.walk_coverage``; this is only what no
+        # row holds. ``None`` for a runner built without a walker.
+        "walk": runner.walk_status(),
     }
