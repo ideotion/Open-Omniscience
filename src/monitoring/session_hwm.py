@@ -14,18 +14,20 @@ So this module keeps a tiny sidecar that is scoped to ONE session: peak RSS, min
 available memory, peak swap used, the last phase seen, and when -- and, since
 2026-09-26, what the memory was MADE OF at the peak (``at_peak``: anonymous vs
 file-backed RSS, how much was swapped out, glibc's heap in use vs free-but-held,
-CPython's allocated blocks, the thread count). Two field instances died at 2.8 GB on
-4 GB machines, and "how big" alone could not say whether that was Python objects, C
-memory in use, or memory freed and never returned. The same day added the question
-after that one: WHO. The fatal stretch on one of them was a burst -- +15 M Python
-blocks and +930 MB in 45 s, on top of a slow climb -- and nothing recorded which code
-was running. So once available memory falls below a line, a second sidecar
+CPython's allocated blocks, the thread count; and ``heap_at_peak``, the newest peak that
+read glibc's heap, because a peak taken with memory already short skips that walk and
+the last one before an out-of-memory death usually is such a peak). Two field instances
+died at 2.8 GB on 4 GB machines, and "how big" alone could not say whether that was
+Python objects, C memory in use, or memory freed and never returned. The same day added
+the question after that one: WHO. The fatal stretch on one of them was a burst -- +15 M
+Python blocks and +930 MB in 45 s, on top of a slow climb -- and nothing recorded which
+code was running. So once available memory falls below a line, a second sidecar
 (``session_pressure.json``) keeps what EVERY THREAD was doing, by name, with its CPU
-time: at the crossing and at each new low below it, and at a burst of Python
-allocation (another instance built and freed millions of objects every 40 s with
-memory flat), written through at once, the newest few kept. At boot both files are read as the PREVIOUS session's record and
-then reset — so the previous session's own peaks travel into the next boot's report,
-and nothing the current session does can overwrite them.
+time: at the crossing and at each new low below it, and at a burst of Python allocation
+(another instance built and freed millions of objects every 40 s with memory flat),
+written through at once, the newest few kept. At boot both files are read as the
+PREVIOUS session's record and then reset — so the previous session's own peaks travel
+into the next boot's report, and nothing the current session does can overwrite them.
 
 HONESTY RULES BAKED IN
 - A field that cannot be measured is OMITTED, never written as 0. ``rss_max_mb: 0``
@@ -103,14 +105,19 @@ _APP_SRC = os.path.dirname(os.path.dirname(os.path.abspath(__file__))).replace("
 
 _LOCK = threading.Lock()
 _MARKS: dict[str, Any] = {}
-_LAST_WRITE = 0.0
-_LAST_COMPOSITION = 0.0
-_LAST_PRESSURE = 0.0
+# "Never", for the monotonic times of the last write, composition, snapshot and burst.
+# Not 0.0: time.monotonic() counts from the MACHINE's boot, so 0.0 reads as "a moment
+# ago" for an app started with its machine, and the first burst of its first five
+# minutes was never snapshotted (found 2026-09-27 as two tests failing on a 284 s host).
+_NEVER = float("-inf")
+_LAST_WRITE = _NEVER
+_LAST_COMPOSITION = _NEVER
+_LAST_PRESSURE = _NEVER
 _PRESSURE: list[dict[str, Any]] = []
 _PRESSURE_TAKEN = 0
 _EPISODE_LOW: float | None = None  # lowest available at a snapshot; None = no episode
 _LAST_BLOCKS: tuple[float, int] | None = None  # (monotonic, blocks) at the last liveness read
-_LAST_BURST = 0.0
+_LAST_BURST = _NEVER
 _PREV: dict[str, Any] | None = None
 _PREV_LOADED = False
 
@@ -470,8 +477,8 @@ def _pressure_snapshot(readings: dict[str, float], why: str) -> dict[str, Any]:
 def _reset_snapshots() -> None:
     """This session's snapshot state, emptied. Caller holds ``_LOCK``."""
     global _PRESSURE, _PRESSURE_TAKEN, _EPISODE_LOW, _LAST_PRESSURE, _LAST_BLOCKS, _LAST_BURST
-    _PRESSURE, _PRESSURE_TAKEN, _EPISODE_LOW, _LAST_PRESSURE = [], 0, None, 0.0
-    _LAST_BLOCKS, _LAST_BURST = None, 0.0
+    _PRESSURE, _PRESSURE_TAKEN, _EPISODE_LOW, _LAST_PRESSURE = [], 0, None, _NEVER
+    _LAST_BLOCKS, _LAST_BURST = None, _NEVER
 
 
 def capture_previous() -> dict[str, Any] | None:
@@ -485,7 +492,7 @@ def capture_previous() -> dict[str, Any] | None:
             _PREV = _read_record()
             _PREV_LOADED = True
         _MARKS = {"pid": os.getpid(), "started_at": _now()}
-        _LAST_WRITE = 0.0
+        _LAST_WRITE = _NEVER
         _reset_snapshots()
         _write(dict(_MARKS))
         try:
@@ -537,7 +544,16 @@ def observe(phase: str | None = None, *, may_snapshot_threads: bool = False) -> 
                 peak_so_far = _MARKS.get("rss_max_mb")
             if peak_so_far is None or rss > peak_so_far:
                 _LAST_COMPOSITION = now
-                at_peak = composition(walk_heap=_heap_walk_is_safe(readings))
+                walk = _heap_walk_is_safe(readings)
+                at_peak = composition(walk_heap=walk)
+                if not walk:
+                    at_peak["heap_skipped"] = (
+                        "memory was already short"
+                        if readings.get("avail_mb") is not None and readings.get("total_mb")
+                        else "available memory could not be read"
+                    )
+                elif at_peak.get("heap_in_use_mb") is None:
+                    at_peak["heap_skipped"] = "no glibc 2.33+ heap report on this system"
                 at_peak["rss_mb"] = rss
                 at_peak["at"] = _now()
         with _LOCK:
@@ -545,6 +561,13 @@ def observe(phase: str | None = None, *, may_snapshot_threads: bool = False) -> 
                 _MARKS.update({"pid": os.getpid(), "started_at": _now()})
             if at_peak is not None:
                 _MARKS["at_peak"] = at_peak
+                # A peak taken with memory already short skips the heap walk, and the
+                # last peak before an out-of-memory death usually is one of those. So the
+                # newest peak that DID read the heap is kept beside it, or no crash
+                # export could say what glibc held (2026-09-28: a 1M-article import died
+                # at 5.6 GB and its export read "C heap not read").
+                if at_peak.get("heap_in_use_mb") is not None:
+                    _MARKS["heap_at_peak"] = at_peak
             pressure_doc: dict[str, Any] = {}
             if pressure is not None:
                 _PRESSURE.append(pressure)
@@ -621,6 +644,6 @@ def reset_for_tests() -> None:
         _PREV = None
         _PREV_LOADED = False
         _MARKS = {}
-        _LAST_WRITE = 0.0
-        _LAST_COMPOSITION = 0.0
+        _LAST_WRITE = _NEVER
+        _LAST_COMPOSITION = _NEVER
         _reset_snapshots()

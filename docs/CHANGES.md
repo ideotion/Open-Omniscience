@@ -89,8 +89,9 @@ this section were still open.
 - Slowness at 1.3M articles: the drain runs like the import, the collector can no longer hold
   every connection, and Insights stops reading 1.1M rows (#1164 to #1170).
 - Out-of-memory crashes: the next crash records how it ended, heavy reads stop at the memory
-  guard's floor, and the keyword clean-up and Home card reads are bounded (#1190); collection
-  workers read their source through their own session (#1184).
+  guard's floor, and the keyword clean-up and Home card reads are bounded (#1190); a crash report
+  keeps the last C-heap reading taken before the final peak (#1194); collection workers read
+  their source through their own session (#1184).
 
 ### Interface and translations
 

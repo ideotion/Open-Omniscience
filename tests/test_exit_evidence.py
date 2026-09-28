@@ -25,6 +25,7 @@ import sys
 import textwrap
 import threading
 import time
+import types
 from pathlib import Path
 
 import pytest
@@ -664,7 +665,7 @@ def test_a_new_peak_records_what_the_memory_was_made_of(hwm, monkeypatch):
         assert {"rss_anon_mb", "rss_file_mb", "threads"} <= set(peak)
     assert isinstance(peak["py_alloc_blocks"], int)
     # not a new peak: the composition stays the one taken AT the peak
-    session_hwm._LAST_COMPOSITION = 0.0
+    session_hwm._LAST_COMPOSITION = session_hwm._NEVER
     session_hwm.observe("collecting")
     assert session_hwm.current()["at_peak"]["rss_mb"] == 1000.0
 
@@ -678,6 +679,88 @@ def test_the_export_says_what_the_peak_was_made_of():
     assert "made of, at 2800.0 MB (2026-09-26T15:53:20+00:00): anonymous 2650.0 MB" in txt
     assert "swapped out 700.0 MB" in txt and "threads 41" in txt
     assert "C heap not read" in txt, "an unread heap is named, never shown as zero"
+    # a record written before the reason was kept still reads, with the old wording
+    assert "C heap not read (memory was already short, or not glibc)" in txt
+
+
+def test_a_peak_too_short_to_read_the_heap_keeps_the_last_heap_reading(hwm, monkeypatch):
+    """MUTATION TARGET. The last peak before an out-of-memory death is usually taken with
+    memory already short, which skips the heap walk. Had that peak replaced the earlier
+    reading, no crash export could say whether glibc held freed memory (2026-09-28: a
+    1M-article import died at 5.6 GB and its export read "C heap not read")."""
+    readings = iter([
+        {"rss_mb": 1500.0, "avail_mb": 5000.0, "total_mb": 8000.0},
+        {"rss_mb": 2800.0, "avail_mb": 600.0, "total_mb": 8000.0},
+        {"rss_mb": 3000.0, "avail_mb": 2000.0, "total_mb": 8000.0},
+    ])
+    monkeypatch.setattr(session_hwm, "_readings", lambda: next(readings))
+    heap = iter([700.0, 950.0])
+    monkeypatch.setattr(session_hwm, "_glibc_heap", lambda: {
+        "heap_in_use_mb": next(heap), "heap_free_held_mb": 900.0, "heap_mmapped_mb": 50.0})
+    session_hwm.observe("collecting")
+    marks = session_hwm.current()
+    assert marks["heap_at_peak"] == marks["at_peak"], "a peak that read the heap is its own"
+    session_hwm._LAST_COMPOSITION = session_hwm._NEVER
+    session_hwm.observe("collecting")
+    marks = session_hwm.current()
+    assert marks["at_peak"]["rss_mb"] == 2800.0 and "heap_in_use_mb" not in marks["at_peak"]
+    assert marks["at_peak"]["heap_skipped"] == "memory was already short"
+    kept = marks["heap_at_peak"]
+    assert (kept["rss_mb"], kept["heap_in_use_mb"], kept["heap_free_held_mb"]) == (1500.0, 700.0, 900.0)
+    # it travels to the next boot's report with the rest of the marks
+    session_hwm.flush()
+    assert session_hwm._read_record()["heap_at_peak"]["rss_mb"] == 1500.0
+    # and the kept reading is the NEWEST one, not the first
+    session_hwm._LAST_COMPOSITION = session_hwm._NEVER
+    session_hwm.observe("collecting")
+    kept = session_hwm.current()["heap_at_peak"]
+    assert (kept["rss_mb"], kept["heap_in_use_mb"]) == (3000.0, 950.0)
+
+
+def test_a_skipped_heap_walk_says_why(hwm, monkeypatch):
+    """"C heap not read" alone could mean a short machine, an unreadable one, or a system
+    with no glibc report at all, and only the first says anything about the crash."""
+    readings = iter([
+        {"rss_mb": 1000.0},
+        {"rss_mb": 1100.0, "avail_mb": 3000.0, "total_mb": 4000.0},
+    ])
+    monkeypatch.setattr(session_hwm, "_readings", lambda: next(readings))
+    monkeypatch.setattr(session_hwm, "_glibc_heap", lambda: None)
+    session_hwm.observe()
+    assert session_hwm.current()["at_peak"]["heap_skipped"] == "available memory could not be read"
+    session_hwm._LAST_COMPOSITION = session_hwm._NEVER
+    session_hwm.observe()
+    marks = session_hwm.current()
+    assert marks["at_peak"]["rss_mb"] == 1100.0
+    assert marks["at_peak"]["heap_skipped"] == "no glibc 2.33+ heap report on this system"
+    assert "heap_at_peak" not in marks, "no heap reading is never kept as one"
+
+
+def test_the_export_shows_the_last_heap_reading_on_its_own_line():
+    """MUTATION TARGET. The two readings describe different moments, so each keeps its
+    own size and time, and they are never merged into one line."""
+    heap_peak = {
+        "rss_mb": 1500.0, "at": "2026-09-28T03:41:02+00:00", "rss_anon_mb": 1400.0,
+        "heap_in_use_mb": 700.0, "heap_free_held_mb": 900.0,
+    }
+    peaks = {"available": True, "rss_max_mb": 2800.0, "heap_at_peak": heap_peak, "at_peak": {
+        "rss_mb": 2800.0, "at": "2026-09-28T03:58:10+00:00", "rss_anon_mb": 2650.0,
+        "heap_skipped": "memory was already short",
+    }}
+    txt = forensics.render_text({"previous_session": {"previous_session_peaks": peaks}})
+    assert (
+        "made of, at 2800.0 MB (2026-09-28T03:58:10+00:00): anonymous 2650.0 MB, "
+        "C heap not read (memory was already short)\n"
+    ) in txt
+    assert (
+        "C heap last read at an earlier peak, 1500.0 MB (2026-09-28T03:41:02+00:00): "
+        "anonymous 1400.0 MB, C heap in use 700.0 MB, C heap freed but held 900.0 MB\n"
+    ) in txt
+    # a peak that read the heap itself needs no second line
+    peaks["at_peak"] = heap_peak
+    txt = forensics.render_text({"previous_session": {"previous_session_peaks": peaks}})
+    assert "C heap last read" not in txt and "C heap not read" not in txt
+    assert "made of, at 1500.0 MB (2026-09-28T03:41:02+00:00): anonymous 1400.0 MB" in txt
 
 
 def _parked_in_app_code(ev):
@@ -850,7 +933,7 @@ def test_the_newest_snapshots_are_kept_and_all_are_counted(hwm, monkeypatch, dd)
     session_hwm.capture_previous()
     keep = session_hwm._PRESSURE_KEEP
     for _ in range(keep + 3):
-        session_hwm._LAST_PRESSURE = 0.0
+        session_hwm._LAST_PRESSURE = session_hwm._NEVER
         avail[0] -= 40.0
         session_hwm.observe(may_snapshot_threads=True)
     doc = json.loads((dd / "session_pressure.json").read_text(encoding="utf-8"))
@@ -885,7 +968,7 @@ def test_a_burst_of_python_allocation_is_snapshotted_with_memory_to_spare(hwm, m
     blocks[0] += 3_000_000
     session_hwm.observe(may_snapshot_threads=True)
     assert len(session_hwm.current()["pressure"]) == 1, "the same burst, recurring: once"
-    session_hwm._LAST_BURST = 0.0
+    session_hwm._LAST_BURST = session_hwm._NEVER
     blocks[0] += session_hwm._BURST_BLOCKS - 1
     session_hwm.observe(may_snapshot_threads=True)
     assert len(session_hwm.current()["pressure"]) == 1, "below the burst size"
@@ -905,6 +988,31 @@ def test_a_burst_while_memory_is_short_is_one_snapshot_with_both(hwm, monkeypatc
     session_hwm.observe(may_snapshot_threads=True)
     [snap] = session_hwm.current()["pressure"]
     assert snap["why"] == "memory short" and snap["blocks_gained"] == 2_000_000
+
+
+def test_the_first_seconds_after_the_machines_boot_are_recorded(hwm, monkeypatch, dd):
+    """MUTATION TARGET. time.monotonic() counts from the MACHINE's boot, so a "last
+    taken" time starting at 0.0 read as "a moment ago" for an app started with its
+    machine: its first peak, write, memory-short snapshot and burst were skipped, the
+    burst for five whole minutes (two burst tests failed on a 284 s host, 2026-09-27)."""
+    clock, blocks = [1.0], [5_000_000]
+    avail = [3000.0]
+    monkeypatch.setattr(session_hwm, "time", types.SimpleNamespace(monotonic=lambda: clock[0]))
+    monkeypatch.setattr(sys, "getallocatedblocks", lambda: blocks[0])
+    monkeypatch.setattr(session_hwm, "_readings",
+                        lambda: {"avail_mb": avail[0], "total_mb": 4000.0, "rss_mb": 900.0})
+    monkeypatch.setattr(session_hwm, "thread_snapshot", lambda: [])
+    session_hwm.capture_previous()
+    session_hwm.observe(may_snapshot_threads=True)
+    marks = json.loads((dd / "session_hwm.json").read_text(encoding="utf-8"))
+    assert marks["at_peak"]["rss_mb"] == 900.0, "the first peak is taken, and written at once"
+    clock[0], avail[0] = 2.0, 300.0
+    session_hwm.observe(may_snapshot_threads=True)
+    clock[0], blocks[0] = 7.0, 8_000_000
+    session_hwm.observe(may_snapshot_threads=True)
+    first, second = session_hwm.current()["pressure"]
+    assert first["why"] == "memory short"
+    assert second["why"] == "allocation burst" and second["blocks_gained"] == 3_000_000
 
 
 def test_a_pressure_file_from_another_session_is_never_this_ones(hwm, dd):
@@ -945,26 +1053,31 @@ def test_the_busiest_thread_is_the_one_that_worked_between_snapshots():
 def test_memory_is_read_between_the_liveness_ticks(monkeypatch):
     """The field burst went from 1 GB available to none in 45 s; a once-a-minute read
     could miss it entirely. The liveness thread reads memory every MEMORY_WATCH_S and
-    still ticks the ledger only once per TICK_S."""
+    still ticks the ledger only once per TICK_S.
+
+    The loop runs on a fake clock, its one wait advancing the clock instead of sleeping.
+    Counting reads over a real 0.45 s sleep failed on a slow macOS runner (3 reads where
+    4 were due, 2026-09-28), because how many fit depends on the machine's speed."""
     from src.monitoring import session_history as sh
 
+    now = [1000.0]
     ticks, reads = [], []
-    monkeypatch.setattr(sh, "TICK_S", 0.3)
-    monkeypatch.setattr(sh, "MEMORY_WATCH_S", 0.02)
-    monkeypatch.setattr(sh, "tick_once", lambda: ticks.append(1))
-    monkeypatch.setattr(session_hwm, "observe", lambda *a, **k: reads.append(k))
-    sh._STOP.clear()
-    t = threading.Thread(target=sh._loop, daemon=True)
-    t.start()
-    try:
-        time.sleep(0.45)
-    finally:
-        sh._STOP.set()
-        t.join(5)
-        sh._STOP.clear()
-    assert 1 <= len(ticks) <= 2
-    assert len(reads) >= 4 * len(ticks), (ticks, reads)
-    assert all(k == {"may_snapshot_threads": True} for k in reads), "the one snapshotting thread"
+
+    class _Stop:
+        def wait(self, timeout):
+            now[0] += timeout
+            return now[0] >= 1150.0  # two and a half ticks
+
+    monkeypatch.setattr(sh, "TICK_S", 60.0)
+    monkeypatch.setattr(sh, "MEMORY_WATCH_S", 5.0)
+    monkeypatch.setattr(sh, "_STOP", _Stop())
+    monkeypatch.setattr(sh, "time", types.SimpleNamespace(monotonic=lambda: now[0]))
+    monkeypatch.setattr(sh, "tick_once", lambda: ticks.append(now[0]))
+    monkeypatch.setattr(session_hwm, "observe", lambda *a, **k: reads.append((now[0], k)))
+    sh._loop()
+    assert ticks == [1060.0, 1120.0], "once per TICK_S, however often memory is read"
+    assert [at for at, _ in reads] == [1000.0 + 5.0 * i for i in range(1, 30)], "every MEMORY_WATCH_S"
+    assert all(k == {"may_snapshot_threads": True} for _, k in reads), "the one snapshotting thread"
 
 
 def test_no_snapshot_above_the_line(hwm, monkeypatch, dd):

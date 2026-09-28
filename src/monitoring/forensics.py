@@ -637,7 +637,9 @@ def _previous_peaks() -> dict[str, Any] | None:
         "peak RSS / minimum available memory / peak swap-used sampled by the previous "
         "session itself and snapshotted at this boot, with what the memory was made of "
         "at the RSS peak (at_peak: /proc/self/status, glibc mallinfo2, CPython's block "
-        "count) and, when available memory ran short, what every thread was doing "
+        "count), the newest peak that read glibc's heap when the last one could not "
+        "(heap_at_peak: a peak taken with memory already short skips that walk) and, "
+        "when available memory ran short, what every thread was doing "
         "(pressure: name, CPU time and stack, the newest snapshots kept). A field that "
         "could not be measured is ABSENT rather than zero."
     )
@@ -1008,13 +1010,31 @@ _AT_PEAK_FIELDS = (
 )
 
 
-def _render_at_peak(comp: Any) -> list[str]:
+def _render_at_peak(comp: Any, heap_peak: Any = None) -> list[str]:
+    """The composition at the RSS peak and, when that peak could not read the C heap,
+    the newest earlier peak that did, on its own line with its own size and time: the
+    two readings are never merged into one, because they describe different moments."""
     if not isinstance(comp, dict):
         return []
-    parts = [f"{label} {comp[key]}{unit}" for key, label, unit in _AT_PEAK_FIELDS if comp.get(key) is not None]
+
+    def _parts(c: dict) -> list[str]:
+        return [f"{label} {c[key]}{unit}" for key, label, unit in _AT_PEAK_FIELDS if c.get(key) is not None]
+
+    parts = _parts(comp)
     if comp.get("heap_in_use_mb") is None:
-        parts.append("C heap not read (memory was already short, or not glibc)")
-    return [f"  - made of, at {comp.get('rss_mb')} MB ({comp.get('at')}): {', '.join(parts)}"]
+        why = comp.get("heap_skipped") or "memory was already short, or not glibc"
+        parts.append(f"C heap not read ({why})")
+    lines = [f"  - made of, at {comp.get('rss_mb')} MB ({comp.get('at')}): {', '.join(parts)}"]
+    if (
+        comp.get("heap_in_use_mb") is None
+        and isinstance(heap_peak, dict)
+        and heap_peak.get("heap_in_use_mb") is not None
+    ):
+        lines.append(
+            f"  - C heap last read at an earlier peak, {heap_peak.get('rss_mb')} MB "
+            f"({heap_peak.get('at')}): {', '.join(_parts(heap_peak))}"
+        )
+    return lines
 
 
 # The threads that were WORKING when memory ran short are listed; the waiting ones (the
@@ -1237,7 +1257,7 @@ def render_text(d: dict[str, Any] | None = None) -> str:
                 lines.append(f"  - last phase seen: {peaks['phase']}")
             if peaks.get("last_ts"):
                 lines.append(f"  - last recorded at: {peaks['last_ts']}")
-            lines += _render_at_peak(peaks.get("at_peak"))
+            lines += _render_at_peak(peaks.get("at_peak"), peaks.get("heap_at_peak"))
             lines += _render_pressure(peaks.get("pressure"), peaks.get("pressure_taken"))
     sample = prev.get("last_collector_sample") or {}
     if sample:
