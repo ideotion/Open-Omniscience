@@ -612,6 +612,7 @@
       _palItems = palCommands();
       _omniLive = null;
       _palLastRaw = null; _palSel = 0;   // a fresh palette starts on row 0 (Q608)
+      _palWireList();
       _palPrevFocus = document.activeElement;  // a11y: restore focus on close (OO-D13-001)
       $("palOverlay").classList.add("open"); $("palette").classList.add("open");
       const i = $("pal-input"); i.value = ""; renderPalette(); setTimeout(() => i.focus(), 30);
@@ -795,7 +796,7 @@
       let html = "", lastGrp = null;
       _palFiltered.forEach((it, i) => {
         if (it.grp !== lastGrp) { html += `<div class="pal-group">${esc(it.grp)}</div>`; lastGrp = it.grp; }
-        html += `<div class="pal-item ${i === _palSel ? "sel" : ""}" data-i="${i}" onclick="palRun(${i})">
+        html += `<div class="pal-item ${i === _palSel ? "sel" : ""}" data-i="${i}">
           ${esc(it.label)}<span class="pal-sub">${esc(it.sub || "")}</span></div>`;
       });
       $("pal-list").innerHTML = html || `<div class="pal-group">No matches</div>`;
@@ -813,6 +814,19 @@
       document.querySelectorAll(".pal-item").forEach(el =>
         el.classList.toggle("sel", +el.dataset.i === _palSel));
       const cur = document.querySelector(".pal-item.sel"); if (cur) cur.scrollIntoView({block:"nearest"});
+    }
+    // One delegated click listener on the list, wired once, instead of an inline
+    // onclick per row: the rows are re-rendered on every keystroke, and the CSP no
+    // longer allows inline handlers (S05-09).
+    let _palListWired = false;
+    function _palWireList() {
+      const list = $("pal-list");
+      if (_palListWired || !list) return;
+      _palListWired = true;
+      list.addEventListener("click", (e) => {
+        const row = e.target.closest ? e.target.closest(".pal-item") : null;
+        if (row && list.contains(row)) palRun(+row.dataset.i);
+      });
     }
     function palRun(i) { const it = _palFiltered[i]; if (it) { closePalette(); it.run(); } }
     function palKey(e) {
