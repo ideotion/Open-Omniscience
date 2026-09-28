@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import pytest
 from sqlalchemy import create_engine, event
@@ -119,7 +120,9 @@ def test_one_request_carries_a_batch_and_never_more_than_the_api_allows():
     bs = batches(qids)
     assert [len(b) for b in bs] == [50, 50, 20]
     url = entities_url(bs[0])
-    assert "action=wbgetentities" in url and "www.wikidata.org" in url
+    parts = urlsplit(url)
+    assert parts.scheme == "https" and parts.hostname == "www.wikidata.org"
+    assert "action=wbgetentities" in parts.query
     assert "props=labels%7Cdescriptions%7Cclaims" in url
     with pytest.raises(ValueError):
         entities_url([f"Q{i}" for i in range(1, BATCH_MAX + 2)])
