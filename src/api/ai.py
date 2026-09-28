@@ -302,6 +302,39 @@ def translate_keywords_ep(
     return {**base, "available": True, "translations": translations}
 
 
+class InterfaceLangIn(BaseModel):
+    lang: str
+
+
+@router.post("/interface-language")
+def report_interface_language(req: InterfaceLangIn) -> dict:
+    """The SPA reports its interface language (boot + every switch), so the background
+    translation sweeps (S05-08) know which language to fill. Loopback, stores one small
+    ``app_state`` row, never a model call. An invalid code is refused, never stored."""
+    from src.ai_layer.translation_sweep import record_interface_lang
+
+    stored = record_interface_lang(req.lang)
+    if stored is None:
+        raise HTTPException(status_code=400, detail="Not a language code.")
+    return {"lang": stored}
+
+
+@router.get("/translation-sweep")
+def translation_sweep_status() -> dict:
+    """Both translation sweeps' persisted state and the keyword head's last recorded
+    coverage (what KPI K6 shows). Read-only; nothing is measured on this GET."""
+    from src.ai_layer.translation_sweep import interface_lang, sweep_state, titles_shown
+    from src.monitoring.kpi import read_sweep_coverage
+
+    return {
+        "interface_lang": interface_lang(),
+        "keyword": sweep_state("keyword"),
+        "titles": sweep_state("title"),
+        "titles_shown": titles_shown(),
+        "coverage": read_sweep_coverage(),
+    }
+
+
 # --------------------------------------------------------------------------- #
 #  User-defined AI extractors (maintainer ask 2026-06-18) — a managed list of
 #  custom prompts, each an EXTENSION of the built-in who/where/when extractors:

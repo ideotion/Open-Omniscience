@@ -613,6 +613,19 @@
   // (Ollama is loopback) — but airplane mode refuses it, surfaced loudly.
   var TARGETS = ["English", "French", "Spanish", "German", "Portuguese", "Italian",
     "Dutch", "Arabic", "Russian", "Chinese", "Japanese", "Hindi", "Bengali", "Indonesian"];
+  // S05-08 S3 (Q513 = c): the translation is offered INTO THE INTERFACE LANGUAGE by
+  // default -- the reader asked for this page in that language -- and the other targets
+  // stay one pick away. The prompt still takes the English name, as it always has.
+  var UI_TARGET = { en: "English", fr: "French", es: "Spanish", de: "German",
+    pt: "Portuguese", ar: "Arabic", ru: "Russian", zh: "Chinese", ja: "Japanese",
+    hi: "Hindi", bn: "Bengali", id: "Indonesian" };
+  function defaultTarget() { return UI_TARGET[String(uiLang()).split("-")[0]] || "English"; }
+  // The original, as the Read pane shows it, so the ≈ translation always sits BESIDE the
+  // text it claims to render and a reader can check one against the other.
+  function originalText() {
+    var body = document.querySelector("#rp-read article");
+    return body ? (body.innerText || body.textContent || "") : "";
+  }
 
   function loadAnalyses(key, pane) {
     pane.innerHTML = '<p class="r-muted">Loading…</p>';
@@ -625,18 +638,32 @@
       });
   }
 
-  function itemHtml(an, key) {
-    var when = (an.created_at || "").slice(0, 16).replace("T", " ");
-    var tgt = (key === "translation" && an.target_language) ? " → " + esc(an.target_language) : "";
-    // The exact prompt used is recorded with each result (provenance) — folded away.
-    var prompt = an.prompt_text
+  function promptHtml(an) {
+    return an.prompt_text
       ? '<details class="r-an-prompt"><summary>prompt used'
         + (an.prompt_version ? " (" + esc(an.prompt_version) + ")" : "")
         + '</summary><div class="r-an-promptbody">' + esc(an.prompt_text) + "</div></details>"
       : "";
+  }
+
+  function itemHtml(an, key) {
+    var when = (an.created_at || "").slice(0, 16).replace("T", " ");
+    var tgt = (key === "translation" && an.target_language) ? " → " + esc(an.target_language) : "";
+    if (key === "translation") {
+      // ≈ first, always: a machine translation is a reading of the article, never the
+      // article. The provenance (model, prompt version, date) is in the hover as well.
+      var prov = TF("≈ Tentative translation by your local model {model} (prompt {version}), {when}. Never stored as the article; the original is beside it.",
+        { model: an.model || "?", version: an.prompt_version || "?", when: when || "?" });
+      var badge = '<span class="r-approx" title="' + esc(prov) + '">≈ ' + esc(T("tentative translation")) + "</span> ";
+      return '<div class="r-an-meta">' + badge + esc(an.model || "(model unknown)") + tgt
+        + (when ? " · " + esc(when) : "") + "</div>"
+        + '<div class="r-an-body" dir="auto">' + esc(an.result) + "</div>" + promptHtml(an);
+    }
+    // The exact prompt used is recorded with each result (provenance) — folded away.
+    var prompt = promptHtml(an);
     return '<div class="r-an-meta">' + esc(an.model || "(model unknown)") + tgt
       + (when ? " · " + esc(when) : "") + "</div>"
-      + '<div class="r-an-body">' + esc(an.result) + "</div>" + prompt;
+      + '<div class="r-an-body" dir="auto">' + esc(an.result) + "</div>" + prompt;
   }
 
   function controlHtml(key) {
@@ -646,7 +673,8 @@
         return '<option value="' + esc(l) + '">' + esc(l) + "</option>";
       }).join("");
       return '<div class="r-gen"><label class="r-muted" for="r-tgt">Into</label>'
-        + ' <select id="r-tgt" class="r-sel">' + opts + "</select>"
+        + ' <select id="r-tgt" class="r-sel">' + opts.replace('value="' + esc(defaultTarget()) + '"',
+          'value="' + esc(defaultTarget()) + '" selected') + "</select>"
         + ' <button type="button" class="r-genbtn">Translate now</button> ' + status + "</div>";
     }
     return '<div class="r-gen"><button type="button" class="r-genbtn">Summarize now</button> '
@@ -661,7 +689,14 @@
     if (!list.length) {
       html += '<p class="r-muted">No ' + word + " stored yet — generate one with your local model above.</p>";
     } else {
-      html += '<div class="r-an latest">' + itemHtml(list[0], key) + "</div>";
+      if (key === "translation") {
+        // Side by side: the original on one side, the ≈ reading on the other (S3).
+        html += '<div class="r-tr-grid"><div class="r-tr-orig"><h3 class="r-h3">' + esc(T("Original"))
+          + '</h3><div class="r-an-body" dir="auto">' + esc(originalText()) + '</div></div>'
+          + '<div class="r-an latest r-tr-approx">' + itemHtml(list[0], key) + "</div></div>";
+      } else {
+        html += '<div class="r-an latest">' + itemHtml(list[0], key) + "</div>";
+      }
       if (list.length > 1) {
         var prev = list.slice(1).map(function (an) {
           return '<div class="r-an">' + itemHtml(an, key) + "</div>";
@@ -685,7 +720,18 @@
   function runGenerate(key, target, pane, btn) {
     var status = pane.querySelector(".r-gen-status");
     btn.disabled = true;
-    if (status) { status.className = "r-gen-status r-muted"; status.textContent = "Working locally…"; }
+    // A visible job, never a frozen tab (S3): the tab stays usable, the line counts the
+    // seconds, and the same work is listed in the app's task manager while it runs.
+    var t0 = Date.now();
+    var tick = function () {
+      if (status) {
+        status.className = "r-gen-status r-muted";
+        status.textContent = TF("Working locally… {s} s — also listed in the task manager.",
+          { s: Math.round((Date.now() - t0) / 1000) });
+      }
+    };
+    tick();
+    var ticker = setInterval(tick, 1000);
     var url = "/api/llm/articles/" + encodeURIComponent(aid)
       + (key === "summary" ? "/summarize" : "/translate");
     // The UI language code, read the same way i18n.js does (the reader loads it,
@@ -699,7 +745,7 @@
         || localStorage.getItem("oo.lang") || "en";
     } catch (e) { /* a storage-denied browser still gets the English default */ }
     var body = key === "summary" ? { ui_lang: uiLang }
-                                 : { target_language: target || "English", ui_lang: uiLang };
+                                 : { target_language: target || defaultTarget(), ui_lang: uiLang };
     fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json", Accept: "application/json" },
@@ -707,6 +753,7 @@
     })
       .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, status: r.status, j: j }; }); })
       .then(function (res) {
+        clearInterval(ticker);
         if (!res.ok) {
           var detail = (res.j && res.j.detail) ? res.j.detail : ("HTTP " + res.status);
           if (status) { status.className = "r-gen-status r-warn"; status.textContent = detail; }
@@ -717,6 +764,7 @@
         loadAnalyses(key, pane);
       })
       .catch(function (e) {
+        clearInterval(ticker);
         if (status) { status.className = "r-gen-status r-warn"; status.textContent = e.message; }
         btn.disabled = false;
       });

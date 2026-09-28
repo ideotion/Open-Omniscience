@@ -1036,6 +1036,9 @@
     .ag-chip { font-size:10.5px; line-height:1.25; padding:1px 5px; border-radius:5px;
       background:color-mix(in srgb, var(--accent) 16%, transparent); color:var(--fg);
       white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    /* S05-08 S2: a ≈ title under the original, never instead of it. */
+    .approx-title { font-size:13px; color:var(--muted); margin-top:2px; }
+    .approx-mark { font-weight:700; color:var(--caveat); margin-inline-end:2px; }
     .ag-chip.approx { background:color-mix(in srgb, var(--warn, orange) 14%, transparent); }
     /* Election date-confidence tiers on the small grid chips (Year/Month-card/Month-grid/
        Week) — "window" keeps the pill's own accent hue; "leadpassed" (a projected date

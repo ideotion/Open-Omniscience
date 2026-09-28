@@ -380,6 +380,34 @@ def stored_activity(session, *, recent: int = DEFAULT_RECENT, hours: int = 24) -
 # --------------------------------------------------------------------------- #
 #  the whole picture
 # --------------------------------------------------------------------------- #
+def _translation_activity(directory: Path, *, key: str, label: str, unit: str,
+                          state_name: str) -> dict:
+    """The two translation sweeps (S05-08) keep a state file, not a per-batch log, so --
+    like language detection -- their rate is said to be unmeasurable here rather than
+    derived from the one batch the state remembers."""
+    state = _state_file(directory, state_name)
+    return {
+        "key": key,
+        "label": label,
+        "unit": unit,
+        "state": state,
+        "note": (
+            f"into {state.get('target_lang')}, {state.get('position', 0)} {unit} walked this pass"
+            if state else "this sweep has not run on this machine"
+        ),
+        "running_log": None,
+        "rates": {
+            "measurable": False,
+            "reason": "this sweep keeps its position and totals, not a per-batch log",
+        },
+        "latest": [],
+        "latest_note": (
+            "Its answers are stored as tentative (≈) translations, never in the keyword "
+            "index; the keyword and search surfaces show them where they apply."
+        ),
+    }
+
+
 def recent_activity(
     *,
     session=None,
@@ -400,6 +428,12 @@ def recent_activity(
         _source_tags_activity(directory, tail_bytes=tail_bytes, recent=recent),
         _perception_activity(directory, tail_bytes=tail_bytes, recent=recent),
         _langdetect_activity(directory),
+        _translation_activity(directory, key="keyword_translation",
+                              label="Keyword translation (≈)", unit="keywords",
+                              state_name="translation_sweep_progress_state.json"),
+        _translation_activity(directory, key="article_titles",
+                              label="≈ Titles in search results", unit="articles",
+                              state_name="title_sweep_progress_state.json"),
     ]
 
     stored: dict[str, Any]
