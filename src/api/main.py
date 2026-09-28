@@ -1768,6 +1768,18 @@ def search_articles(  # plain def -> Starlette threadpool (S2.5): the synchronou
     }
     if not adv.is_default:
         payload["advanced"] = adv.to_dict()
+    # Q605 = b: "did you mean", OFFERED beside the literal results -- the query above ran
+    # exactly as typed, and this block only names a query the reader may click. Absent
+    # when every word is a known keyword or the table has never been built.
+    if query:
+        try:
+            from src.analytics.spell_index import did_you_mean
+
+            dym = did_you_mean(db, query)
+        except Exception:  # noqa: BLE001 - a suggestion must never fail the search it sits beside
+            dym = None
+        if dym is not None:
+            payload["did_you_mean"] = dym
     # R1 honesty rail: expansion changed WHICH articles matched, so it is stated here and
     # rendered by default. Absent when no query term touched a ring -- an ordinary search
     # carries no extra weight.

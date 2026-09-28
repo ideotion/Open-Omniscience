@@ -2964,6 +2964,30 @@ class DerivedMeta(Base):
         return f"<DerivedMeta({self.key}={self.value})>"
 
 
+class SpellDelete(Base):
+    """The "did you mean" table (Q605 = b): a SymSpell-shaped deletion neighbourhood.
+
+    One row per (delete, keyword): every string reachable from a keyword's first
+    ``PREFIX_LEN`` characters by deleting at most two characters, pointing back at the
+    keyword. A misspelt query word finds its candidates by generating ITS deletes and
+    looking them up here -- an indexed probe per delete, never a scan of the keyword table
+    (the promise ``search_omni.py`` makes, "never scan-on-type"). Candidates are then
+    checked by true edit distance on the whole word.
+
+    DERIVED and rebuilt whole by a task-manager job (``src/analytics/spell_index.py``),
+    never merged by a restore: a keyword collected after the last build is invisible to
+    the suggester until the next one, and the suggestion says so. ``WITHOUT ROWID``: the
+    composite key IS the index, so the table carries no second copy of either column.
+    """
+
+    __tablename__ = "spell_deletes"
+
+    term_delete: Mapped[str] = mapped_column(String(64), primary_key=True)
+    keyword_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+
+    __table_args__ = ({"sqlite_with_rowid": False},)
+
+
 class AppState(Base):
     """The durable ``key -> value`` home for small config/UI state (DB-reliability D1).
 

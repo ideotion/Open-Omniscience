@@ -1824,6 +1824,10 @@ _MERGE_NOT_CARRIED: dict[str, str] = {
     # to the re-index only while it carries no human decision.
     # (b) PER-MACHINE or self-healing: losing them costs nothing durable.
     "derived_meta": "corpus epoch + derived bookkeeping, rebuilt on demand",
+    # S05-01 S6 (Q605 = b): the did-you-mean deletion table is derived WHOLE from the
+    # keyword vocabulary by its own job; a carried copy would point at another corpus'
+    # keyword ids. The next build after a restore covers the merged vocabulary.
+    "spell_deletes": "the did-you-mean table, derived from the keywords and rebuilt by its job",
     # `feed_fetch_state` LEFT THIS LIST on 2026-09-16 (the Q701 note, gate row K). The
     # reading above -- per-machine, self-healing, re-learned next pass -- was correct
     # about the mechanism and was overturned as a POLICY: re-learning it costs a full
