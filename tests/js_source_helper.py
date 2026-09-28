@@ -606,3 +606,19 @@ def assert_present(haystack: str, needle: str, *, why: str = "") -> None:
         f"{needle!r} must appear in the code (a comment mentioning it is not the "
         f"implementation)" + (f" -- {why}" if why else "")
     )
+
+
+def page_source(name: str) -> str:
+    """A standalone page's markup followed by the page's own script.
+
+    ``taskmanager.html``, ``unlock.html`` and ``investigate.html`` each carried ONE
+    inline ``<script>`` until 0.5 row I (Q1127 = a) moved it to a same-named ``.js``
+    beside the page, so the CSP could drop ``script-src 'unsafe-inline'``. A test that
+    asserted on the page meant markup AND behaviour; this returns both, and asserts
+    the page still loads that script, so a renamed file fails here rather than
+    leaving a suite reading only the markup.
+    """
+    html = (_STATIC / name).read_text(encoding="utf-8")
+    js = name.rsplit(".", 1)[0] + ".js"
+    assert f'<script src="/static/{js}"' in html, f"{name} no longer loads /static/{js}"
+    return html + "\n" + (_STATIC / js).read_text(encoding="utf-8")

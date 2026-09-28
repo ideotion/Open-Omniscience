@@ -335,7 +335,7 @@ ethical-fetch path and the evidence-verification guarantees above.
 > | S-003 | CSRF on no-body POSTs | **Closed.** A middleware refuses any state-changing method whose `Origin`/`Referer` is not loopback (403). A separate `Host`-header guard refuses a DNS-rebinding host with 421. | `src/api/main.py::csrf_and_security_headers` |
 > | S-004 | CSV formula injection | **Closed.** Exported cells beginning `= + - @` or a control char are prefixed with `'`. | `src/utils/security.py::csv_safe_cell`, `tests/test_security_hardening.py` |
 > | S-005 | `javascript:` URI in an `href` | **Closed.** A strict http(s) scheme allowlist runs on every ingested URL rendered as a link, server-side and in the reader. | `src/utils/security.py::safe_href` (call sites: `src/api/main.py`, `src/api/law.py`, `src/services/duckduckgo.py`) |
-> | S-006 | No CSP / security headers | **Closed except one clause.** `nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer` and a `default-src 'self'` CSP with `frame-ancestors 'none'` ship on every non-Swagger response. **Residual, tracked as NET-04:** `script-src` still carries `'unsafe-inline'`, because the UI still has roughly 590 inline `on*=` handlers; landing a nonce-based CSP before they are retired would break the app. | `src/api/main.py::_CSP` |
+> | S-006 | No CSP / security headers | **Closed, including the residual (2026-09-28).** `nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer` and a `default-src 'self'` CSP with `frame-ancestors 'none'` ship on every non-Swagger response. The residual (NET-04) was `script-src 'unsafe-inline'`, held there by 656 inline `on*=` handlers and six inline `<script>` blocks. 0.5 row I (Q1127 = a) retired all of them: handlers became `data-on-*` bindings that `/static/oo-on.js` parses against an allowlist and never evaluates, and each inline block became a file. `script-src` is now `'self'` alone, so no nonce was needed. `style-src` keeps `'unsafe-inline'`, which was not ruled. | `src/api/main.py::_CSP`, `tests/test_inline_handler_ratchet.py`, `tests/test_security_hardening.py::test_script_src_allows_no_inline_script` |
 > | S-007 | CORS `allow_credentials=True` | **Closed.** The app passes `allow_credentials=False`. (`src/config/settings.py` still declares a `cors_allow_credentials` default of `True`; nothing reads it — recorded here rather than changed, because removing a config field is a surface change, not a security fix.) | `src/api/main.py` CORS middleware |
 > | S-008 | XXE (residual) | **Posture asserted.** Both untrusted-XML readers parse through `defusedxml`. | `src/wiki/dumpread.py`, `src/ingest/sitemap.py` |
 > | S-011 | At-rest file permissions | **Closed at the level that bounds access.** The whole data dir is `chmod 0700` on creation, which is what stops another local user reading the corpus, keys and custody log; individual files keep their umask mode inside it. Best-effort and POSIX-only by design — full at-rest encryption remains the host's job (Qubes/LUKS), as the report itself says. | `src/paths.py::_ensure` |
@@ -343,8 +343,8 @@ ethical-fetch path and the evidence-verification guarantees above.
 > | S-010 | No eval/exec/pickle sinks | **Still true, and now guarded.** | `tests/test_repo_invariants.py::test_no_dangerous_eval_or_deserialization_sinks` |
 > | S-012 | Indirect prompt injection — bounded | **Unchanged posture** (local model, no tools, output escaped and labelled as AI-derived). | — |
 >
-> The remediation roadmap in §5 is therefore **spent**: items 1–8 are done, apart from the
-> `script-src 'unsafe-inline'` clause of item 5.
+> The remediation roadmap in §5 is therefore **spent**: items 1–8 are done, including the
+> `script-src 'unsafe-inline'` clause of item 5 (closed 2026-09-28).
 
 The defensive security review of the ingest→store→process→present data path, its findings, and the hardening applied.
 

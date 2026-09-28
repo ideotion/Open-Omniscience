@@ -44,7 +44,7 @@ def test_unlocated_sources_are_never_mapped_but_disclosed():
     assert 't("Not mapped (source country unknown)")' in _JS
     # §D: the unlocated note is now a CLICKABLE drill (often the largest bucket,
     # never a dead end), not a static caveat div.
-    assert "onclick=\"_conceptDrillCountry('${esc(ringId)}', null)\"" in _JS
+    assert "data-on-click=\"_conceptDrillCountry('${esc(ringId)}', null)\"" in _JS
 
 
 def test_language_breakdown_surfaced_from_grouped_top():

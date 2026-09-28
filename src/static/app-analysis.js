@@ -164,8 +164,8 @@
         // The label is the reader's own query (or a Lead's name), so it opts out of the
         // i18n walker: a search for "Climate" must not be drawn as "Climat" (N6's class).
         return `<span class="an-tab${on ? " active" : ""}" role="listitem">`
-          + `<button class="an-tab-label" data-i18n-dyn${on ? ' aria-current="true"' : ""} onclick="_anActivate(${esc(JSON.stringify(tb.id))})" title="${esc(tb.label || tb.query || "")}">${esc(lbl)}</button>`
-          + `<button class="an-tab-x" onclick="_anCloseTab(${esc(JSON.stringify(tb.id))})" title="Close this analysis tab" aria-label="Close">✕</button></span>`;
+          + `<button class="an-tab-label" data-i18n-dyn${on ? ' aria-current="true"' : ""} data-on-click="_anActivate(${esc(JSON.stringify(tb.id))})" title="${esc(tb.label || tb.query || "")}">${esc(lbl)}</button>`
+          + `<button class="an-tab-x" data-on-click="_anCloseTab(${esc(JSON.stringify(tb.id))})" title="Close this analysis tab" aria-label="Close">✕</button></span>`;
       }).join("");
     }
     function _anApplySeed(tb) {
@@ -374,6 +374,8 @@
         : tt("Analysis updated — see the other tabs.");
       loadAnalysis(anParams());
     }
+    // A lens chip's binding (it was "_anSubtabs && _anSubtabs.select(…)" inline).
+    function anSelectLens(key) { if (_anSubtabs) _anSubtabs.select(key); }
     function anSelectTab(key) {
       document.querySelectorAll("#tab-analyze .an-panel").forEach(el =>
         el.style.display = (el.id === "an-" + key) ? "" : "none");
@@ -439,7 +441,7 @@
       const topSrc = src && src.sources && src.sources.length ? src.sources[0] : null;
       const tone = sent && (sent.summary || sent.mean != null) ? sent : null;
       const tile = (lens, headline, sub) =>
-        `<button class="an-ov-tile" onclick="_anSubtabs && _anSubtabs.select(${esc(JSON.stringify(lens))})">`
+        `<button class="an-ov-tile" data-on-click="anSelectLens(${esc(JSON.stringify(lens))})">`
         + `<div class="an-ov-h">${esc(headline)}</div>`
         + (sub ? `<div class="an-ov-s muted">${esc(sub)}</div>` : "")
         + `<div class="an-ov-go muted">${esc(t("Open"))} →</div></button>`;
@@ -741,7 +743,7 @@
         const pts = (c.prices || []).map(p => ({ t: p.observed_on, v: +p.price })).filter(p => isFinite(p.v));
         if (pts.length) list.push({ label: sym, unit: c.unit || t("price"), color: "var(--err)", points: pts });
       }
-      const seg = (m, lbl) => `<button class="ghost tiny${_anTrend.mode === m ? " on" : ""}" onclick="anTrendSetMode('${m}')">${esc(lbl)}</button>`;
+      const seg = (m, lbl) => `<button class="ghost tiny${_anTrend.mode === m ? " on" : ""}" data-on-click="anTrendSetMode('${m}')">${esc(lbl)}</button>`;
       // Q502's view, offered only when the concept is actually carried in more than one
       // language: a one-band stack is an area chart wearing a stack's clothes and asks
       // the reader to look for parts that are not there.
@@ -756,12 +758,12 @@
       const modeRow = `<div class="row" style="gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:6px">`
         + _anCtlLabel(t("View")) + seg("counts", t("Counts")) + seg("indexed", t("Indexed"))
         + (byLangOffered ? seg("bylang", t("By language")) : "") + `</div>`;
-      const chip = (sym) => `<button class="chip${_anTrend.picked[sym] ? " on" : ""}" onclick="anTrendPick('${sym}')"`
+      const chip = (sym) => `<button class="chip${_anTrend.picked[sym] ? " on" : ""}" data-on-click="anTrendPick('${sym}')"`
         + `${_anTrend.picked[sym] ? ' style="border-color:var(--accent)"' : ''}>${esc(sym)}</button>`;
       const suggRow = `<div class="row" style="gap:5px;align-items:center;flex-wrap:wrap;margin-bottom:6px">`
         + _anCtlLabel(t("Overlay a commodity"))
         + _anTrend.suggested.map(chip).join(" ")
-        + ` <select onchange="anTrendPick(this.value);this.value=''" style="width:auto;font-size:12px">`
+        + ` <select data-on-change="anTrendPick(this.value);ooClearValue(this)" style="width:auto;font-size:12px">`
         + `<option value="">${esc(t("more…"))}</option>`
         + Object.keys(COMMODITY_QUERY).map(s => `<option value="${esc(s)}">${esc(s)}</option>`).join("")
         + `</select></div>`;
@@ -908,7 +910,7 @@
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const clusters = (cd && cd.clusters) || [], links = (ld && ld.items) || [];
       let html = `<div class="row" style="gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap">`
-        + `<button class="secondary tiny" onclick="branchSelectedRelated()">${esc(t("Branch selected into a new corpus →"))}</button>`
+        + `<button class="secondary tiny" data-on-click="branchSelectedRelated()">${esc(t("Branch selected into a new corpus →"))}</button>`
         + ` <span id="an-rel-selcount" class="muted" style="font-size:11px"></span></div>`
         + `<div class="hint"><b>${clusters.length}</b> ${esc(t("Near-identical clusters"))}`
         // The method and the caveat below are fixed server sentences, keyed x12 (N-2).
@@ -927,8 +929,8 @@
           const more = c.size > 6 ? `<li class="muted">+${c.size - 6} ${esc(t("more"))}</li>` : "";
           return `<div class="card" style="padding:10px;margin-top:8px">`
             + `<div class="row" style="justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">`
-            + `<span style="display:flex;align-items:center;gap:6px"><input type="checkbox" class="an-rel-pick" data-kind="c" data-idx="${i}" onchange="anRelUpdateSel()" aria-label="${esc(t("Select for branching"))}"><b>${esc(voice)}</b></span>`
-            + `<button class="secondary tiny" onclick="branchFromRelated(${i})" title="${esc(t("Open these articles as a new analysis corpus"))}">${esc(t("Branch into a new corpus →"))}</button></div>`
+            + `<span style="display:flex;align-items:center;gap:6px"><input type="checkbox" class="an-rel-pick" data-kind="c" data-idx="${i}" data-on-change="anRelUpdateSel()" aria-label="${esc(t("Select for branching"))}"><b>${esc(voice)}</b></span>`
+            + `<button class="secondary tiny" data-on-click="branchFromRelated(${i})" title="${esc(t("Open these articles as a new analysis corpus"))}">${esc(t("Branch into a new corpus →"))}</button></div>`
             + `<details style="margin-top:6px"><summary class="muted" style="cursor:pointer">${esc(t("Show all"))}</summary>`
             + `<ul style="margin:6px 0 0">${ex}${more}</ul></details></div>`;
         }).join("") + `<p class="card-caveat" style="margin-top:8px">${esc((cd && cd.caveat) ? t(cd.caveat) : "")}</p>`;
@@ -944,10 +946,10 @@
           const label = it.domain || it.link_text || it.normalized_url;
           return `<div class="card" style="padding:10px;margin-top:8px">`
             + `<div class="row" style="justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">`
-            + `<span style="display:flex;align-items:center;gap:6px"><input type="checkbox" class="an-rel-pick" data-kind="o" data-idx="${i}" onchange="anRelUpdateSel()" aria-label="${esc(t("Select for branching"))}">`
+            + `<span style="display:flex;align-items:center;gap:6px"><input type="checkbox" class="an-rel-pick" data-kind="o" data-idx="${i}" data-on-change="anRelUpdateSel()" aria-label="${esc(t("Select for branching"))}">`
             + `<span>${extLink(it.sample_url || it.normalized_url, esc(label), "", "")} `
             + `<span class="muted">· ${it.citations}× ${esc(t("cited"))}</span></span></span>`
-            + `<button class="secondary tiny" onclick="branchFromOrigin(${i})" title="${esc(t("Open every article citing this origin as a new corpus"))}">${esc(t("Branch into a new corpus →"))}</button></div></div>`;
+            + `<button class="secondary tiny" data-on-click="branchFromOrigin(${i})" title="${esc(t("Open every article citing this origin as a new corpus"))}">${esc(t("Branch into a new corpus →"))}</button></div></div>`;
         }).join("")
           // The SAME /api/links/corpus sentence the Links tab draws, keyed x12 (N-2).
           + `<p class="card-caveat" style="margin-top:8px">${esc((ld && ld.caveat) ? t(ld.caveat) : t("Several articles citing the same page are not independent confirmation — one origin, several echoes."))}</p>`;
@@ -1037,6 +1039,9 @@
     // ⛶ Enlarge. State is kept so the controls re-render from the same graph.
     const _anMM = { graph: null, gp: null, cloud: false, concept: false, arms: null, scale: 100, big: false,
                    ro: null };   // `ro`: a hidden map waiting for a width to centre in (N-7)
+    // data-on-* bindings carry data, not expressions, so the two computed patches get names.
+    function anMMsetScale(v) { anMMset({scale: +v}); }
+    function anMMtoggleBig() { anMMset({big: !_anMM.big}); }
     function anMMset(patch) { Object.assign(_anMM, patch); if (_anMM.graph) renderAnMindmap(_anMM.graph); }
     // Q512: THE RING AT THE CENTRE, ONE ARM PER LANGUAGE, ASSOCIATIONS OFF THE ARMS.
     // A third view beside Map and Cloud rather than a replacement for Map: they answer
@@ -1111,20 +1116,20 @@
       const g = _anMM.graph || {};
       const all = (g.nodes || []);
       const controls = `<div class="row" style="gap:8px;align-items:center;margin-bottom:6px;flex-wrap:wrap">`
-        + `<button class="ghost tiny${(!_anMM.cloud && !_anMM.concept) ? " on" : ""}" onclick="anMMset({cloud:false,concept:false})">${esc(t("Map"))}</button>`
-        + `<button class="ghost tiny${_anMM.cloud ? " on" : ""}" onclick="anMMset({cloud:true,concept:false})">${esc(t("Cloud"))}</button>`
+        + `<button class="ghost tiny${(!_anMM.cloud && !_anMM.concept) ? " on" : ""}" data-on-click="anMMset({cloud:false,concept:false})">${esc(t("Map"))}</button>`
+        + `<button class="ghost tiny${_anMM.cloud ? " on" : ""}" data-on-click="anMMset({cloud:true,concept:false})">${esc(t("Cloud"))}</button>`
         // Offered only when the term IS in a ring the corpus carries more than one form
         // of: a Concept view over a single language is a straight line drawn as though
         // it were a structure.
         + ((_anMM.arms && _anMM.arms.expanded)
-            ? `<button class="ghost tiny${_anMM.concept ? " on" : ""}" onclick="anMMset({cloud:false,concept:true})">`
+            ? `<button class="ghost tiny${_anMM.concept ? " on" : ""}" data-on-click="anMMset({cloud:false,concept:true})">`
               + `${esc(t("Concept"))}</button>`
             : "")
         + `<label class="hint" style="display:flex;align-items:center;gap:4px">${esc(t("Text size"))}`
-        + ` <input type="range" min="60" max="180" value="${_anMM.scale}" oninput="anMMset({scale:+this.value})" style="width:90px"></label>`
+        + ` <input type="range" min="60" max="180" value="${_anMM.scale}" data-on-input="anMMsetScale(this.value)" style="width:90px"></label>`
         // The hover names what a click does NOW, and the pressed state says which view
         // this is (the 2026-09-27 re-walk, N-6: it offered "Enlarge" over an enlarged map).
-        + `<button class="ghost tiny${_anMM.big ? " on" : ""}" onclick="anMMset({big:!_anMM.big})" aria-pressed="${_anMM.big ? "true" : "false"}"`
+        + `<button class="ghost tiny${_anMM.big ? " on" : ""}" data-on-click="anMMtoggleBig()" aria-pressed="${_anMM.big ? "true" : "false"}"`
         + ` title="${esc(_anMM.big ? t("Shrink the mindmap") : t("Enlarge the mindmap"))}">⛶</button></div>`;
       // The Concept view reads a DIFFERENT payload, so it must not be gated on the
       // association graph having content: a corpus can carry a concept in six languages
@@ -1210,7 +1215,7 @@
         const literal = _anExpand ? ""
           : `<div class="hint" style="margin-bottom:4px">`
             + `${esc(t("This view always shows the concept in every language; the other tabs are showing only the words you typed."))} `
-            + `<button type="button" class="linkish" onclick="_anSetExpand(true)">`
+            + `<button type="button" class="linkish" data-on-click="_anSetExpand(true)">`
             + `${esc(t("Search the concept in every language"))}</button></div>`;
         host.innerHTML = controls + literal + boxOpen
           + `<svg viewBox="0 0 ${W} ${H}" width="${svgW}" style="background:var(--panel2);max-width:none;${svgMin}`
@@ -1381,9 +1386,9 @@
       const lbl = esc(TF("Page {n} of {total}", {n: cur + 1, total: pages}))
         + ' <span class="muted">(' + esc(TF("{n} Articles", {n: _anNum(total)})) + ")</span>";
       return '<div class="an-pager" style="display:flex;align-items:center;gap:10px;margin:8px 0;flex-wrap:wrap">'
-        + '<button class="tiny ghost" ' + (cur <= 0 ? "disabled" : "") + ' onclick="_anArtGo(' + (cur - 1) + ')">' + esc(t("← Previous")) + "</button>"
+        + '<button class="tiny ghost" ' + (cur <= 0 ? "disabled" : "") + ' data-on-click="_anArtGo(' + (cur - 1) + ')">' + esc(t("← Previous")) + "</button>"
         + "<span>" + lbl + "</span>"
-        + '<button class="tiny ghost" ' + (cur >= pages - 1 ? "disabled" : "") + ' onclick="_anArtGo(' + (cur + 1) + ')">' + esc(t("Next →")) + "</button></div>";
+        + '<button class="tiny ghost" ' + (cur >= pages - 1 ? "disabled" : "") + ' data-on-click="_anArtGo(' + (cur + 1) + ')">' + esc(t("Next →")) + "</button></div>";
     }
     function _anArtGo(page) {
       if (!_anArtParams) return;
@@ -1482,12 +1487,12 @@
         + _anCtlLabel(t("Show"), ".85em");
       for (const [v, lbl] of buckets) {
         const on = (_anProvenance || "") === v;
-        h += `<button class="tiny${on ? "" : " ghost"}" aria-pressed="${on}" onclick="_anSetProvenance('${v}')">${esc(lbl)}</button>`;
+        h += `<button class="tiny${on ? "" : " ghost"}" aria-pressed="${on}" data-on-click="_anSetProvenance('${v}')">${esc(lbl)}</button>`;
       }
       if (d && d.keyword_for_count) {
         const on = _anKwSort;
         h += `<button class="tiny${on ? "" : " ghost"}" style="margin-inline-start:8px" aria-pressed="${on}" `
-          + `onclick="_anToggleKwSort()" title="${esc(t("Order articles by how often the searched keyword appears in each."))}">`
+          + `data-on-click="_anToggleKwSort()" title="${esc(t("Order articles by how often the searched keyword appears in each."))}">`
           + `↕ “${esc(d.keyword_for_count)}” ${esc(t("count"))}</button>`;
       }
       return h + "</div>";
@@ -1517,20 +1522,20 @@
         // only the id disambiguates them (2026-07-20 ruling review fix).
         const on = _anArtFacetSel.source === String(s.source_id);
         return `<button type="button" class="an-facet" aria-pressed="${on}" `
-          + `onclick="_anToggleArtFacetChip('source', ${esc(JSON.stringify(String(s.source_id)))})">${esc(s.name)} `
+          + `data-on-click="_anToggleArtFacetChip('source', ${esc(JSON.stringify(String(s.source_id)))})">${esc(s.name)} `
           + `<span class="muted">${s.n}</span></button>`;
       }).join(" ");
       const langChips = (_anArtFacetData.languages || []).slice(0, 20).map(l => {
         const on = _anArtFacetSel.language === l.language;
         return `<button type="button" class="an-facet" aria-pressed="${on}" `
-          + `onclick="_anToggleArtFacetChip('language', ${esc(JSON.stringify(l.language))})">${ooLangCell(l.language)} `
+          + `data-on-click="_anToggleArtFacetChip('language', ${esc(JSON.stringify(l.language))})">${ooLangCell(l.language)} `
           + `<span class="muted">${l.n}</span></button>`;
       }).join(" ");
       if (!srcChips && !langChips) { host.innerHTML = ""; return; }
       host.innerHTML = `<div style="margin:4px 0 8px">`
         + (srcChips ? `<div style="margin-bottom:4px">${_anCtlLabel(t("source"), ".85em")} ${srcChips}</div>` : "")
         + (langChips ? `<div>${_anCtlLabel(t("language"), ".85em")} ${langChips}</div>` : "")
-        + `<button class="tiny" style="margin-top:4px" onclick="anApplyArticlesFilter()">${esc(t("Apply filter"))}</button>`
+        + `<button class="tiny" style="margin-top:4px" data-on-click="anApplyArticlesFilter()">${esc(t("Apply filter"))}</button>`
         + `</div>`;
     }
     // The drill -- ids ∩ facet -> the narrowed set, in corpus order (never a clear).
@@ -1797,7 +1802,7 @@
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       if (narrowed) {
         return `<div class="hint" id="an-xlang">${esc(t("Showing only the words you typed."))} `
-          + `<button type="button" class="linkish" onclick="_anSetExpand(true)">`
+          + `<button type="button" class="linkish" data-on-click="_anSetExpand(true)">`
           + `${esc(t("Search the concept in every language"))}</button></div>`;
       }
       if (!cross) {
@@ -1807,7 +1812,7 @@
         // the default, with nothing on screen to say the lens was still on.
         if (capOff) {
           return `<div class="hint" id="an-xlang">${esc(t("Searching every form of the concept."))} `
-            + `<button type="button" class="linkish" onclick="_anSetCap(true)">`
+            + `<button type="button" class="linkish" data-on-click="_anSetCap(true)">`
             + `${esc(t("Limit the search to the most-mentioned forms"))}</button></div>`;
         }
         return "";
@@ -1833,7 +1838,7 @@
           // than "also matched", which would read as something the app decided.
           parts.push(`<div>${esc(tf("{term}: searching the concept “{concept}”, which you chose",
             { term: term.term, concept: term.concept }))} — <span class="muted">${langsOf(term)}</span>`
-            + ` <button type="button" class="linkish" onclick="_anClearSense(${esc(JSON.stringify(term.normalized))})">`
+            + ` <button type="button" class="linkish" data-on-click="_anClearSense(${esc(JSON.stringify(term.normalized))})">`
             + `${esc(t("Show all senses"))}</button></div>`);
         } else if (term.expanded) {
           parts.push(`<div>${esc(tf("{term} also matched as the concept “{concept}”",
@@ -1846,7 +1851,7 @@
           // interpolated, never keyed; only the frame around it translates.
           const picks = (term.senses || []).map((s2) =>
             `<button type="button" class="linkish"`
-            + ` onclick="_anPickSense(${esc(JSON.stringify(term.normalized))}, ${esc(JSON.stringify(s2.ring_id))})">`
+            + ` data-on-click="_anPickSense(${esc(JSON.stringify(term.normalized))}, ${esc(JSON.stringify(s2.ring_id))})">`
             + `“${esc(s2.concept)}”</button>`).join(" · ");
           // The full stop is INSIDE the keyed frame, so each locale ends the sentence
           // with its own punctuation ("。" in zh and ja). A literal ". " after the frame
@@ -1863,7 +1868,7 @@
       }
       if (!parts.length && !capOff) return "";
       const back = cross.expanded
-        ? ` <button type="button" class="linkish" onclick="_anSetExpand(false)">`
+        ? ` <button type="button" class="linkish" data-on-click="_anSetExpand(false)">`
           + `${esc(t("Show only the words I typed"))}</button>`
         : "";
       // Q503's NOTE, both ways round. The payload says `capped` only when a cap actually
@@ -1883,11 +1888,11 @@
             { term: x.term, searched: n(x.searched_forms), total: n(x.total_forms) }));
         cap = `<div class="muted">${nums.length ? esc(nums.join(" ")) + " " : ""}`
           + `${esc(cross.cap_caveat ? t(cross.cap_caveat) : "")} `
-          + `<button type="button" class="linkish" onclick="_anSetCap(false)">`
+          + `<button type="button" class="linkish" data-on-click="_anSetCap(false)">`
           + `${esc(t("Search every form"))}</button></div>`;
       } else if (capOff) {
         cap = `<div class="muted">${esc(t("Searching every form of the concept."))} `
-          + `<button type="button" class="linkish" onclick="_anSetCap(true)">`
+          + `<button type="button" class="linkish" data-on-click="_anSetCap(true)">`
           + `${esc(t("Limit the search to the most-mentioned forms"))}</button></div>`;
       }
       // Q509: how many articles each FORM matches. LAZY -- it is N counts over the corpus,
@@ -1896,7 +1901,7 @@
       const counts = (cross.terms || []).filter((x) => x.expanded).map((x) =>
         `<div class="muted" style="margin-top:4px">`
         + `<button type="button" class="linkish"`
-        + ` onclick="_anFormCounts(${esc(JSON.stringify(x.term))}, ${esc(JSON.stringify(x.normalized || x.term))})"`
+        + ` data-on-click="_anFormCounts(${esc(JSON.stringify(x.term))}, ${esc(JSON.stringify(x.normalized || x.term))})"`
         + ` title="${esc(t("Counts the articles each form of the concept matches. It runs no new search on this list."))}">`
         + `${esc(t("Count each form"))}</button>`
         + `<span id="an-xforms-${esc(_anSlug(x.normalized || x.term))}"></span></div>`).join("");
@@ -2055,7 +2060,7 @@
       const arrow = on ? ((dr && dr.value === "asc") ? " ↑" : " ↓") : "";
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       return `<th><button type="button" class="an-th" aria-pressed="${!!on}" `
-        + `onclick="_anSortBy('${field}')" title="${esc(t("Sort by this column"))}">`
+        + `data-on-click="_anSortBy('${field}')" title="${esc(t("Sort by this column"))}">`
         + `${esc(label)}${arrow}</button></th>`;
     }
     // Q508: a language chip on EVERY row. PURE (article -> html) so it can be driven in
@@ -2090,7 +2095,7 @@
       // reader is not in. Two labelled options, each pressed or not, say the same thing
       // to both readers.
       const seg = (on, mode, label) => `<button type="button" class="ghost tiny${on ? " on" : ""}"`
-        + ` aria-pressed="${on ? "true" : "false"}" onclick="_anSetGroupByLang(${mode})"`
+        + ` aria-pressed="${on ? "true" : "false"}" data-on-click="_anSetGroupByLang(${mode})"`
         + ` title="${esc(t("Groups the articles already listed. It runs no new search and changes no count."))}">`
         + `${esc(label)}</button>`;
       // The ungrouped label names the order the list is REALLY in (the 2026-09-26
@@ -2498,7 +2503,7 @@
         const items = _anFacets[group];
         if (!items.length) return `<span class="muted">—</span>`;
         return items.map((it, i) =>
-          `<button type="button" class="chip an-facet" onclick="branchByFacet('${group}',${i})" `
+          `<button type="button" class="chip an-facet" data-on-click="branchByFacet('${group}',${i})" `
           + `title="${esc(t("Narrow the corpus to articles that mention this") + " — " + it.value)}">`
           + `${esc(it.label)}${it.sub ? ` <span class="muted">(${esc(it.sub)})</span>` : ""}`
           + ` <span class="muted">· ${it.n}</span></button>`).join(" ");
@@ -2796,9 +2801,9 @@
              <td><a href="/api/articles/${a.id}/view" target="_blank" rel="noopener" title="offline stored copy">open</a>
                  ${a.url ? `· ${extLink(a.url, "source ↗", "muted")}` : ""}
                  <button class="secondary tiny" style="margin-top:4px"
-                   onclick="summarize(${a.id}, this)">Summarize</button>
+                   data-on-click="summarize(${a.id}, this)">Summarize</button>
                  <button class="secondary tiny" style="margin-top:4px"
-                   onclick="translateArticle(${a.id}, this)">Translate</button>
+                   data-on-click="translateArticle(${a.id}, this)">Translate</button>
                  <div class="summary muted" style="font-size:12px;margin-top:4px"></div></td></tr>`
           ).join("") : `<tr><td colspan="5" class="muted">No matches.</td></tr>`);
         annotateArticleDups(p, t);   // inline "1 voice" near-dup badges (non-blocking, reuses the helper)
@@ -2878,7 +2883,7 @@
       const preset = Math.min(_SYNTH_MAX, rows.length);
       const list = rows.map((a, i) => `
         <label style="display:flex;gap:8px;padding:6px 0;border-bottom:1px solid var(--line);align-items:flex-start">
-          <input type="checkbox" class="synth-cb" value="${a.id}" ${i < preset ? "checked" : ""} onchange="_synthCount()">
+          <input type="checkbox" class="synth-cb" value="${a.id}" ${i < preset ? "checked" : ""} data-on-change="_synthCount()">
           <span style="flex:1">
             <span style="font-weight:600">${esc(a.title) || '<span class="muted">(untitled)</span>'}</span>
             <span class="muted" style="display:block;font-size:12px">${esc(a.source || "")} · ${esc((a.published_at || "").slice(0, 10)) || t("undated")} · ${a.language ? ooLangCell(a.language) : "?"}
@@ -2893,10 +2898,10 @@
         </div>
         <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap">
           <span id="synth-count" class="chip"></span>
-          <button class="ghost tiny" onclick="_synthSelectAll(true)">${esc(TF("Select first {n}", {n: _SYNTH_MAX}))}</button>
-          <button class="ghost tiny" onclick="_synthSelectAll(false)">${esc(t("Clear"))}</button>
+          <button class="ghost tiny" data-on-click="_synthSelectAll(true)">${esc(TF("Select first {n}", {n: _SYNTH_MAX}))}</button>
+          <button class="ghost tiny" data-on-click="_synthSelectAll(false)">${esc(t("Clear"))}</button>
           <span style="margin-inline-start:auto"></span>
-          <button class="primary" id="synth-run-btn" onclick="_synthRun()">${esc(t("Run synthesis"))}</button>
+          <button class="primary" id="synth-run-btn" data-on-click="_synthRun()">${esc(t("Run synthesis"))}</button>
         </div>
         <div>${list}</div>`;
       _synthCount();
@@ -2941,9 +2946,9 @@
       const t = _synthT();
       const r = _synthData; if (!r) return;
       $("synth-win-actions").innerHTML = `
-        <button class="ghost tiny" onclick="_synthCopy()" title="${esc(t("Copy the synthesis text"))}">${esc(t("Copy"))}</button>
-        <button class="ghost tiny" onclick="_synthExport('md')">${esc(t("Export .md"))}</button>
-        <button class="ghost tiny" onclick="_synthExport('html')">${esc(t("Open as a page ↗"))}</button>`;
+        <button class="ghost tiny" data-on-click="_synthCopy()" title="${esc(t("Copy the synthesis text"))}">${esc(t("Copy"))}</button>
+        <button class="ghost tiny" data-on-click="_synthExport('md')">${esc(t("Export .md"))}</button>
+        <button class="ghost tiny" data-on-click="_synthExport('html')">${esc(t("Open as a page ↗"))}</button>`;
       const members = (r.members || []).map((m) => `
         <li style="padding:6px 0;border-bottom:1px solid var(--line)">
           <span style="font-weight:600">[${m.n}] ${esc(m.title) || '<span class="muted">(untitled)</span>'}</span>
@@ -2960,7 +2965,7 @@
         <div class="card-caveat" style="margin-top:10px">${esc(r.caveat || "")}</div>
         <h3 style="margin:16px 0 6px;font-size:14px">${esc(t("Synthesized corpus"))} (${(r.members || []).length})</h3>
         <ul style="list-style:none;padding:0;margin:0">${members}</ul>
-        <div style="margin-top:12px"><button class="secondary tiny" onclick="_synthRenderSelect()">${esc(t("← Change selection"))}</button></div>`;
+        <div style="margin-top:12px"><button class="secondary tiny" data-on-click="_synthRenderSelect()">${esc(t("← Change selection"))}</button></div>`;
     }
 
     // "12 articles" as ONE keyed frame, the singular taking its own key -- not a count
@@ -3077,8 +3082,8 @@
         <div class="row" style="gap:12px;align-items:center;flex-wrap:wrap">
           ${tgt}
           <label style="display:flex;align-items:center;gap:5px"><input type="checkbox" id="bulk-skip-${ctx}" checked> ${esc(t("Skip articles already done"))}</label>
-          <button class="primary" id="bulk-start-${ctx}" onclick="bulkLlmRun('${op}','${ctx}')">${esc(t("Add to queue"))}</button>
-          <button class="ghost tiny" onclick="bulkPanelHide('${ctx}')">${esc(t("Hide"))}</button>
+          <button class="primary" id="bulk-start-${ctx}" data-on-click="bulkLlmRun('${op}','${ctx}')">${esc(t("Add to queue"))}</button>
+          <button class="ghost tiny" data-on-click="bulkPanelHide('${ctx}')">${esc(t("Hide"))}</button>
         </div>
       </div>`;
       _bulkRenderQueue();
@@ -3219,7 +3224,7 @@
       else if (job.status === "cancelled") state = `<span class="muted">${esc(t("Cancelled."))}</span>`;
       else if (job.status === "error") state = `<span class="note err">${esc(t("Stopped:"))} ${esc(job.err)}</span> <span class="muted">${esc(tally)}</span>`;
       const cancel = (job.status === "queued" || job.status === "running")
-        ? `<button class="ghost tiny" onclick="bulkJobCancel(${job.id})" style="margin-inline-start:auto">${esc(t("Cancel"))}</button>` : "";
+        ? `<button class="ghost tiny" data-on-click="bulkJobCancel(${job.id})" style="margin-inline-start:auto">${esc(t("Cancel"))}</button>` : "";
       return `<div class="row" style="gap:8px;align-items:center;padding:4px 0;border-bottom:1px solid var(--line);flex-wrap:wrap">
         <span style="font-weight:600">${esc(job.label)}</span> ${state} ${cancel}</div>`;
     }
@@ -3232,7 +3237,7 @@
         const anyDone = _bulkQueue.some((j) => j.status === "done" || j.status === "cancelled" || j.status === "error");
         html = `<div class="card"><div style="font-weight:600;margin-bottom:4px">${esc(t("Translation & summary queue"))}</div>`
           + _bulkQueue.map(_bulkJobLine).join("")
-          + (anyDone ? `<div style="margin-top:6px"><button class="ghost tiny" onclick="bulkJobClearDone()">${esc(t("Clear finished"))}</button></div>` : "")
+          + (anyDone ? `<div style="margin-top:6px"><button class="ghost tiny" data-on-click="bulkJobClearDone()">${esc(t("Clear finished"))}</button></div>` : "")
           + `</div>`;
       }
       conts.forEach((c) => { c.innerHTML = html; });
@@ -3271,8 +3276,8 @@
         <div class="row" style="gap:12px;align-items:center;flex-wrap:wrap">
           <select id="ai-run-pick-${ctx}">${opts}</select>
           <label style="display:flex;align-items:center;gap:5px"><input type="checkbox" id="ai-run-skip-${ctx}" checked> ${esc(t("Skip articles already done"))}</label>
-          <button class="primary" id="ai-run-start-${ctx}" onclick="aiRunPromptStart('${ctx}')">${esc(t("Start"))}</button>
-          <button class="ghost tiny" onclick="bulkLlmStop('${ctx}')">${esc(t("Cancel"))}</button>
+          <button class="primary" id="ai-run-start-${ctx}" data-on-click="aiRunPromptStart('${ctx}')">${esc(t("Start"))}</button>
+          <button class="ghost tiny" data-on-click="bulkLlmStop('${ctx}')">${esc(t("Cancel"))}</button>
         </div>
         <div id="ai-run-prog-${ctx}" class="hint" style="margin-top:8px"></div>
       </div>`;

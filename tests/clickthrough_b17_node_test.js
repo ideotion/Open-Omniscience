@@ -34,7 +34,7 @@ const CORPUS = read("app-corpus.js");
 const MARKETS = read("app-markets.js");
 const MAP = read("app-map.js");
 const READER = read("reader.js");
-const TM = read("taskmanager.html");
+const TM = require("./app_source.js").pageSource("taskmanager.html");
 const LOCALE = (code) => JSON.parse(fs.readFileSync(path.join(STATIC, "locales", code + ".json"), "utf-8"));
 
 let passed = 0;
@@ -122,7 +122,7 @@ async function run() {
       (id) => (id === "lib-tile-__lang" ? el : null), document, () => {});
     return box;
   }
-  const onChip = (html, days) => new RegExp('class="chip tiny on" onclick="_libSetWindow\\(\'__lang\', ' + days + '\\)"').test(html);
+  const onChip = (html, days) => new RegExp('class="chip tiny on" data-on-click="_libSetWindow\\(\'__lang\', ' + days + '\\)"').test(html);
 
   await test("T1: a tile switched to 7d stays 7d when the view redraws it (a switch, a reopen)", async () => {
     const box = langTile();

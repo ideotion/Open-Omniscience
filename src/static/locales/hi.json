@@ -6016,5 +6016,15 @@
   "Suggestion table built {when}.": "सुझाव तालिका {when} बनी।",
   "{n} words": "{n} शब्द",
   "Could not load the filter lists: {error}": "फ़िल्टर सूचियाँ लोड नहीं हो सकीं: {error}",
-  "OR": "या"
+  "OR": "या",
+  "The {old} theme was retired as a near-duplicate of {new}, so you are now on {new} with its accent kept.": "{old} थीम को {new} की लगभग प्रतिलिपि होने के कारण हटा दिया गया; अब आप {new} पर हैं और उसका एक्सेंट रंग बना रहा।",
+  "Comment": "टिप्पणी",
+  "Flags": "फ़्लैग",
+  "Coverage summary unavailable.": "कवरेज सारांश उपलब्ध नहीं है।",
+  "Extracting…": "निकाला जा रहा है…",
+  "No date tags found.": "कोई तारीख टैग नहीं मिला।",
+  "No flagged tracked edits stored for this wiki.": "इस विकी के लिए कोई फ़्लैग किया गया ट्रैक संपादन संग्रहीत नहीं है।",
+  "No stored coverage on these terms since the promised date.": "वादा की गई तारीख से इन शब्दों पर कोई संग्रहीत कवरेज नहीं है।",
+  "Snippet (provenance)": "अंश (स्रोत)",
+  "Unknown investigation view": "अज्ञात जाँच दृश्य"
 }

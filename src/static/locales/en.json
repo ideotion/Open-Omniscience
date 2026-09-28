@@ -6016,5 +6016,15 @@
   "Suggestion table built {when}.": "Suggestion table built {when}.",
   "{n} words": "{n} words",
   "Could not load the filter lists: {error}": "Could not load the filter lists: {error}",
-  "OR": "OR"
+  "OR": "OR",
+  "The {old} theme was retired as a near-duplicate of {new}, so you are now on {new} with its accent kept.": "The {old} theme was retired as a near-duplicate of {new}, so you are now on {new} with its accent kept.",
+  "Comment": "Comment",
+  "Flags": "Flags",
+  "Coverage summary unavailable.": "Coverage summary unavailable.",
+  "Extracting…": "Extracting…",
+  "No date tags found.": "No date tags found.",
+  "No flagged tracked edits stored for this wiki.": "No flagged tracked edits stored for this wiki.",
+  "No stored coverage on these terms since the promised date.": "No stored coverage on these terms since the promised date.",
+  "Snippet (provenance)": "Snippet (provenance)",
+  "Unknown investigation view": "Unknown investigation view"
 }

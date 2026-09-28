@@ -68,7 +68,7 @@ _KNOWN_NOISE_SUBSTRINGS = ("429 (Too Many Requests)",)
 # 2026-08-13 -- see ui_walk.py's module docstring for the full story). Settings opens via a
 # dedicated gear button in the sidebar footer; the analysis window has no static click target
 # at all and is reached only by spawning a search.
-_SETTINGS_OPEN_SELECTOR = 'button[onclick="showTab(\'settings\')"]'
+_SETTINGS_OPEN_SELECTOR = 'button[data-on-click="showTab(\'settings\')"]'
 
 
 class PlaywrightUiWalkDriver:

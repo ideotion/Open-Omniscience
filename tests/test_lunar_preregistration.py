@@ -157,7 +157,7 @@ def test_the_test_button_is_disabled_until_a_direction_is_declared():
     assert 'id="lunar-direction"' in html
     assert 'id="lunar-test-btn"' in html and "disabled" in html.split('id="lunar-test-btn"')[1][:200]
     assert 'value="positive"' in html and 'value="negative"' in html
-    assert 'onchange="lunarSyncDirection()"' in html
+    assert 'data-on-change="lunarSyncDirection()"' in html
 
     sync = function_source(app_js(), "lunarSyncDirection")
     assert_present(sync, "btn.disabled = !sel.value", why="the button follows the declaration")

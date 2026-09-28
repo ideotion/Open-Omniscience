@@ -31,7 +31,7 @@ const path = require("path");
 const STATIC = path.join(__dirname, "..", "src", "static");
 const APP = require("./app_source.js").appJs();
 const I18N = fs.readFileSync(path.join(STATIC, "i18n.js"), "utf-8");
-const TM = fs.readFileSync(path.join(STATIC, "taskmanager.html"), "utf-8");
+const TM = require("./app_source.js").pageSource("taskmanager.html");
 const loc = (c) => JSON.parse(fs.readFileSync(path.join(STATIC, "locales", c + ".json"), "utf-8"));
 const FR = loc("fr"), AR = loc("ar");
 

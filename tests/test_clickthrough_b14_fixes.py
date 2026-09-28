@@ -29,6 +29,7 @@ from tests.js_source_helper import (
     assert_present,
     event_listener_bodies,
     function_body,
+    page_source,
     read_static,
     strip_comments,
 )
@@ -127,7 +128,7 @@ def test_the_size_panels_repaint_on_a_language_switch_without_a_fetch():
 #: Surfaces the click-through walked (Home, Library, Settings, the task manager,
 #: Insights, the Quality gates panel), where a ": " was welded after a t() label.
 _Z3_FILES = ("app-home.js", "app-library.js", "app-settings.js", "app-insights.js",
-             "app-ai-tools.js", "app-core.js", "taskmanager.html",
+             "app-ai-tools.js", "app-core.js", "taskmanager.html", "taskmanager.js",
              # B18 (R2): the three data-surface files B15 found still welding.
              "app-backup.js", "app-map.js", "app-diagnostics.js")
 #: Left, each in a region another batch owned while this one ran.
@@ -397,7 +398,7 @@ def test_the_main_app_follows_a_language_picked_in_another_tab():
 def test_the_task_manager_page_carries_no_dead_header_rule():
     """The header is the app's own sticky strip now (a comment on the page says so); three
     `.tm-head` rules styled an element nothing renders."""
-    tm = read_static("taskmanager.html")
+    tm = page_source("taskmanager.html")
     assert not re.search(r"\.tm-head\b[^{}\n]*\{", tm), "a .tm-head rule is back"
     assert "tm-head" not in "".join(re.findall(r'class="([^"]*)"', tm)), (
         "an element carries .tm-head again -- then the rule is not dead; restore it")

@@ -40,7 +40,7 @@ from pathlib import Path
 
 import pytest
 
-from tests.js_source_helper import function_source
+from tests.js_source_helper import function_source, page_source
 
 _ROOT = Path(__file__).resolve().parent.parent
 _STATIC = _ROOT / "src" / "static"
@@ -476,14 +476,14 @@ def test_intl_displaynames_is_reached_only_through_the_two_owning_helpers() -> N
     # (/api/articles/{id}/view), which loads only i18n.js and itself, so it cannot reach
     # ooLangName; its ONE construction must stay inside its own `langName`, which
     # base-normalises the code and refuses to pass a CLDR echo off as a name.
-    # taskmanager.html (/tasks) is in the same position for a job label's `language`
+    # taskmanager.js (the /tasks page) is in the same position for a job label's `language`
     # value: one construction, inside its own `langName`, refusing an echo.
     owners = {
         "app-map.js": "ooRegionName / ooLangName",
         "reader.js": "langName -- the reader page does not load app-map.js",
-        "taskmanager.html": "langName -- the /tasks page loads neither app-map.js nor reader.js",
+        "taskmanager.js": "langName -- the /tasks page loads neither app-map.js nor reader.js",
     }
-    tm = (_STATIC / "taskmanager.html").read_text(encoding="utf-8")
+    tm = page_source("taskmanager.html")
     tm_body = function_source(tm, "langName")
     assert tm.count("new Intl.DisplayNames") == 1 and "new Intl.DisplayNames" in tm_body, (
         "taskmanager.html constructs Intl.DisplayNames outside its one langName helper"

@@ -21,7 +21,7 @@ import re
 import subprocess
 from pathlib import Path
 
-from tests.js_source_helper import app_js, function_body, read_static
+from tests.js_source_helper import app_js, function_body, page_source
 
 _ROOT = Path(__file__).resolve().parent.parent
 _LOCALES = _ROOT / "src" / "static" / "locales"
@@ -97,10 +97,10 @@ def test_every_byte_formatter_goes_through_one_localised_writer():
         assert f'TF("{frame}"' in body, f"{frame!r} is not written through the keyed frame"
     # The task-manager page cannot load app-core.js, so it carries its own copy; it must
     # write through the same frames.
-    tm = function_body(read_static("taskmanager.html"), "fmtBytes")
+    tm = function_body(page_source("taskmanager.html"), "fmtBytes")
     for frame in _UNIT_FRAMES:
         assert f'TF("{frame}"' in tm, f"taskmanager.html: {frame!r} is not written through the keyed frame"
-    assert 'TF("{rate}/s"' in function_body(read_static("taskmanager.html"), "fmtRate")
+    assert 'TF("{rate}/s"' in function_body(page_source("taskmanager.html"), "fmtRate")
 
 
 def test_the_reclaimable_space_figure_is_redrawn_once_the_locale_is_there():

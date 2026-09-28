@@ -62,7 +62,7 @@ _NAV_FIXTURE_HTML = """
 <html><body>
 <nav>
   <button class="nav-item" data-tab="home" onclick="showTab('home')">Home</button>
-  <button class="nav-item" data-tab="settings" onclick="showTab('settings')">Settings</button>
+  <button class="nav-item" data-tab="settings" data-on-click="showTab('settings')" onclick="showTab('settings')">Settings</button>
 </nav>
 <div id="subtab-strip"></div>
 <nav id="set-subtabs" style="display:none">
@@ -189,7 +189,7 @@ _NO_NAV_ITEM_FIXTURE_HTML = """
   <!-- deliberately NO .nav-item for settings or analyze -- matches the real app. -->
 </nav>
 <div class="sb-foot">
-  <button onclick="showTab('settings')" title="Open Settings">gear</button>
+  <button data-on-click="showTab('settings')" onclick="showTab('settings')" title="Open Settings">gear</button>
 </div>
 <div class="tab-page" id="tab-home">Home content</div>
 <div class="tab-page" id="tab-settings" style="display:none">settings panel</div>

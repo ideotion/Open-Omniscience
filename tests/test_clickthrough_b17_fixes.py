@@ -28,7 +28,13 @@ from pathlib import Path
 
 import pytest
 
-from tests.js_source_helper import event_listener_bodies, function_body, read_static, strip_comments
+from tests.js_source_helper import (
+    event_listener_bodies,
+    function_body,
+    page_source,
+    read_static,
+    strip_comments,
+)
 
 _ROOT = Path(__file__).resolve().parent.parent
 _LOCALES = _ROOT / "src" / "static" / "locales"
@@ -180,7 +186,7 @@ def test_a_translation_task_names_its_target_by_code_or_not_at_all():
 def test_both_task_managers_draw_the_frame():
     core = function_body(read_static("app-core.js"), "_jobRow")
     assert "_jobLabel(j, t)" in core and "esc(t(j.label))" not in core
-    tm = read_static("taskmanager.html")
+    tm = page_source("taskmanager.html")
     assert "esc(jobLabel(j))" in tm and "esc(t(j.label))" not in tm
 
 

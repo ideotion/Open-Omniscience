@@ -94,7 +94,7 @@ const PINNED = {
     "the per-language members are not shown -- the reader cannot see what was added");
   assert.ok(html.includes("fr:") && html.includes("de:"),
     "the breakdown does not say WHICH language each added word came from");
-  assert.ok(/onclick="_anSetExpand\(false\)"/.test(html),
+  assert.ok(/data-on-click="_anSetExpand\(false\)"/.test(html),
     "no way back to the literal term -- the ruling requires one click");
 }
 
@@ -105,7 +105,7 @@ const PINNED = {
   assert.ok(html.includes("strom"), "the declined term is not named");
   assert.ok(html.includes("electricity") && html.includes("river"),
     "the senses are not offered -- a decline with no choice attached is just silence");
-  assert.ok(!/onclick="_anSetExpand\(false\)"/.test(html),
+  assert.ok(!/data-on-click="_anSetExpand\(false\)"/.test(html),
     "nothing was expanded, so there is nothing to narrow back from");
 }
 
@@ -114,7 +114,7 @@ const PINNED = {
 {
   const html = _crossLangNotice(null, true);
   assert.ok(html.length > 0, "narrowing is a state the reader chose -- say so");
-  assert.ok(/onclick="_anSetExpand\(true\)"/.test(html), "no way back to the concept");
+  assert.ok(/data-on-click="_anSetExpand\(true\)"/.test(html), "no way back to the concept");
 }
 
 // 4. NEGATIVE SPACE: an ordinary search renders NOTHING. A notice on every search would
@@ -130,9 +130,9 @@ const PINNED = {
 //     dead-end shape this project has a recorded lesson about.
 {
   const html = _crossLangNotice(DECLINED, false);
-  assert.ok(/onclick="_anPickSense\(&quot;strom&quot;, &quot;electricity&quot;\)"/.test(html),
+  assert.ok(/data-on-click="_anPickSense\(&quot;strom&quot;, &quot;electricity&quot;\)"/.test(html),
     "the electricity sense is not pickable -- the refusal is still a dead end");
-  assert.ok(/onclick="_anPickSense\(&quot;strom&quot;, &quot;river&quot;\)"/.test(html),
+  assert.ok(/data-on-click="_anPickSense\(&quot;strom&quot;, &quot;river&quot;\)"/.test(html),
     "the river sense is not pickable");
 }
 
@@ -144,7 +144,7 @@ const PINNED = {
     "a chosen sense is rendered as if the app picked it");
   assert.ok(html.includes("strommen") || html.includes("elektrizitaet"),
     "the chosen concept's members are not shown");
-  assert.ok(/onclick="_anClearSense\(&quot;strom&quot;\)"/.test(html),
+  assert.ok(/data-on-click="_anClearSense\(&quot;strom&quot;\)"/.test(html),
     "no way back to the full list of senses");
 }
 
@@ -209,7 +209,7 @@ const PINNED = {
   const html = _crossLangNotice(capped, false);
   assert.ok(html.includes("climate: expanded to 40 of 63 forms."),
     "the capped disclosure does not say how many forms were searched out of how many");
-  assert.ok(/onclick="_anSetCap\(false\)"/.test(html), "the way to lift the cap is gone");
+  assert.ok(/data-on-click="_anSetCap\(false\)"/.test(html), "the way to lift the cap is gone");
 }
 
 // 8. N14: the full stop is INSIDE the keyed frame, so a locale can end the sentence

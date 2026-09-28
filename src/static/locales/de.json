@@ -6016,5 +6016,15 @@
   "Suggestion table built {when}.": "Vorschlagstabelle aufgebaut {when}.",
   "{n} words": "{n} Wörter",
   "Could not load the filter lists: {error}": "Die Filterlisten konnten nicht geladen werden: {error}",
-  "OR": "ODER"
+  "OR": "ODER",
+  "The {old} theme was retired as a near-duplicate of {new}, so you are now on {new} with its accent kept.": "Das Design {old} wurde als nahezu identisch mit {new} entfernt; Sie nutzen jetzt {new}, der Akzent bleibt erhalten.",
+  "Comment": "Kommentar",
+  "Flags": "Markierungen",
+  "Coverage summary unavailable.": "Abdeckungsübersicht nicht verfügbar.",
+  "Extracting…": "Wird extrahiert…",
+  "No date tags found.": "Keine Datumsmarkierungen gefunden.",
+  "No flagged tracked edits stored for this wiki.": "Für dieses Wiki sind keine markierten verfolgten Bearbeitungen gespeichert.",
+  "No stored coverage on these terms since the promised date.": "Seit dem zugesagten Datum keine gespeicherte Berichterstattung zu diesen Begriffen.",
+  "Snippet (provenance)": "Auszug (Herkunft)",
+  "Unknown investigation view": "Unbekannte Recherche-Ansicht"
 }

@@ -16,7 +16,7 @@ import re
 import subprocess
 from pathlib import Path
 
-from tests.js_source_helper import app_js, function_source, read_static
+from tests.js_source_helper import app_js, function_source, page_source, read_static
 
 _ROOT = Path(__file__).resolve().parents[1]
 _HTML = read_static("index.html")
@@ -28,7 +28,8 @@ def _block(html: str, start_marker: str, end_marker: str) -> str:
 
 
 _ADVANCED = _block(_HTML, 'id="an-advanced"', '<div class="an-export"')
-_UNLOCK = read_static("unlock.html")
+# The page and its own script (unlock.js since 0.5 row I, Q1127 = a).
+_UNLOCK = page_source("unlock.html")
 _HISTORY_VIEW = _block(_UNLOCK, 'id="view-history"', "</div>\n\n")
 
 

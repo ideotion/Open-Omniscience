@@ -41,19 +41,19 @@ def test_the_resolver_behaviour_is_executed():
 
 def test_the_analysis_window_passes_the_corpus_not_just_its_query():
     """``anQuery()`` cannot carry an id set; ``anParams()`` is the one that can."""
-    assert 'onclick="exportMethods(anParams())"' in _HTML
-    assert 'onclick="exportEvidence(anParams())"' in _HTML
-    assert 'onclick="exportMethods(anQuery())"' not in _HTML, (
+    assert 'data-on-click="exportMethods(anParams())"' in _HTML
+    assert 'data-on-click="exportEvidence(anParams())"' in _HTML
+    assert 'data-on-click="exportMethods(anQuery())"' not in _HTML, (
         "anQuery() is empty for a Lead / facet / card corpus, which is precisely when "
         "a Methods appendix is worth exporting"
     )
-    assert 'onclick="exportEvidence(anQuery())"' not in _HTML
+    assert 'data-on-click="exportEvidence(anQuery())"' not in _HTML
 
 
 def test_the_search_tab_call_shape_is_untouched():
     """The Search tab passes nothing and still reads its own input."""
-    assert 'onclick="exportMethods()"' in _HTML
-    assert 'onclick="exportEvidence()"' in _HTML
+    assert 'data-on-click="exportMethods()"' in _HTML
+    assert 'data-on-click="exportEvidence()"' in _HTML
 
 
 def test_neither_exporter_builds_its_own_body_any_more():

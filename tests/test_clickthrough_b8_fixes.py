@@ -27,6 +27,7 @@ from tests.js_source_helper import (
     event_listener_bodies,
     function_body,
     object_literal,
+    page_source,
     read_static,
 )
 
@@ -132,7 +133,7 @@ def test_the_corpus_tier_wraps_between_its_parts_and_keeps_its_caveat_on_screen(
 
 
 def test_the_task_manager_tab_row_scrolls_inside_its_own_box():
-    tm = read_static("taskmanager.html")
+    tm = page_source("taskmanager.html")
     tabs = css_rule(tm, ".tm-tabs").replace(" ", "")
     assert "overflow-x:auto" in tabs, tabs
     button = css_rule(tm, ".tm-tabs button").replace(" ", "")
@@ -140,13 +141,13 @@ def test_the_task_manager_tab_row_scrolls_inside_its_own_box():
 
 
 def test_the_task_manager_awaits_the_locale_before_walking_the_document():
-    body = function_body(read_static("taskmanager.html"), "applyLang")
+    body = function_body(page_source("taskmanager.html"), "applyLang")
     assert_present(body, "Promise.resolve(lang && I.setLang ? I.setLang(lang) : null)")
     assert_present(body, ".then(function () { if (I.apply) I.apply(document); })")
 
 
 def test_the_task_manager_langchange_listener_retitles_and_repaints_from_cache():
-    tm = read_static("taskmanager.html")
+    tm = page_source("taskmanager.html")
     handlers = event_listener_bodies(tm, "oo:langchange")
     assert any("OOI18N.apply(document.head)" in h for h in handlers), (
         "setLang's own apply() starts at document.body, so the <title> needs its own walk"

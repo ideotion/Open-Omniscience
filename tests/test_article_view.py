@@ -7,6 +7,7 @@ Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 
 from __future__ import annotations
 
+import pathlib
 from datetime import UTC, datetime
 
 from fastapi.testclient import TestClient
@@ -73,8 +74,12 @@ def test_article_offline_view(tmp_path):
             assert "https://ex.test/story" in body  # original source link present
             assert "offline stored copy" in body  # provenance crumb
             assert "Captured" in body  # ingest-date metadata row
-            # Leaving the corpus is an explicit, confirmed action.
-            assert "EXTERNAL site on the public web" in body
+            # Leaving the corpus is an explicit, confirmed action: the page loads the
+            # shared confirm (an inline <script> until 0.5 row I, Q1127) and names its question.
+            assert '<script src="/static/ext-confirm.js" defer></script>' in body
+            assert 'data-ext-confirm="article"' in body
+            confirm_js = pathlib.Path("src/static/ext-confirm.js").read_text(encoding="utf-8")
+            assert "EXTERNAL site on the public web" in confirm_js
             # Missing article -> 404.
             assert client.get("/api/articles/999/view").status_code == 404
     finally:
@@ -602,7 +607,9 @@ def test_the_readers_external_link_confirm_goes_through_the_i18n_engine():
     import json
     from pathlib import Path
 
-    src = Path("src/api/main.py").read_text(encoding="utf-8")
+    # The confirm moved from main.py's inline <script> to ext-confirm.js (0.5 row I, Q1127).
+    assert "/static/ext-confirm.js" in Path("src/api/main.py").read_text(encoding="utf-8")
+    src = Path("src/static/ext-confirm.js").read_text(encoding="utf-8")
     q = "Open an EXTERNAL site on the public web?"
     c = ("This leaves your local copy and makes a live request from your machine — the site "
          "may see your visit. Continue?")

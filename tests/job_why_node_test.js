@@ -18,7 +18,7 @@ const assert = require("assert");
 const fs = require("fs");
 const path = require("path");
 const APP = require("./app_source.js").appJs();
-const TM = fs.readFileSync(path.join(__dirname, "..", "src", "static", "taskmanager.html"), "utf8");
+const TM = require("./app_source.js").pageSource("taskmanager.html");
 
 function extract(SRC, name) {
   const at = SRC.indexOf("function " + name + "(");

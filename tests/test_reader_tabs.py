@@ -97,7 +97,8 @@ def test_reader_renders_tabs_and_references_assets(tmp_path):
             assert "A Big Story" in body
             assert "First paragraph here." in body and "Second paragraph here." in body
             assert "Example News" in body and "J. Doe" in body
-            assert "EXTERNAL site on the public web" in body  # external-link guard intact
+            # external-link guard intact (a file since 0.5 row I, Q1127 = a)
+            assert '<script src="/static/ext-confirm.js" defer></script>' in body
     finally:
         app.dependency_overrides.clear()
 

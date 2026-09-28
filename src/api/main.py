@@ -634,7 +634,10 @@ _STATE_CHANGING = {"POST", "PUT", "PATCH", "DELETE"}
 _LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1", "[::1]"}
 _CSP = (
     "default-src 'self'; "
-    "script-src 'self' 'unsafe-inline'; "  # UI is inline-heavy; nonce-based CSP is future work
+    # No 'unsafe-inline' for script (0.5 row I, Q1127 = a): every inline handler became a
+    # data-on-* binding run by /static/oo-on.js and every inline script block a file, both held at
+    # zero by tests/test_inline_handler_ratchet.py. style-src keeps it: that was not ruled.
+    "script-src 'self'; "
     "style-src 'self' 'unsafe-inline'; "
     "img-src 'self' data:; font-src 'self'; connect-src 'self'; "
     "object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
@@ -2418,18 +2421,9 @@ def view_article(request: Request, article_id: int, db: Session = Depends(get_db
         "style='font:12px system-ui,sans-serif;padding:3px 11px;cursor:pointer'>"
         "Extract dates from this article</button></div></section>"
     )
-    dates_script = (
-        "<script>(function(){var aid=" + str(a.id) + ";"
-        "function reload(){location.reload();}"
-        "document.addEventListener('click',function(e){"
-        "var b=e.target.closest&&e.target.closest('.amd-act');"
-        "if(b){e.preventDefault();fetch('/api/article-dates/'+b.dataset.id+'/'+b.dataset.act,"
-        "{method:'POST'}).then(reload).catch(function(){});return;}"
-        "var x=e.target.closest&&e.target.closest('#amd-extract');"
-        "if(x){e.preventDefault();x.disabled=true;x.textContent='Extracting…';"
-        "fetch('/api/article-dates/article/'+aid,{method:'POST'}).then(reload).catch(function(){});}"
-        "});})();</script>"
-    )
+    # The confirm / reject / extract clicks are wired by reader.js (it reads the article id
+    # off .wrap[data-article-id]); this was an inline script block, moved so the CSP can drop
+    # script-src 'unsafe-inline' (Q1127 = a).
 
     # Related in your corpus: other articles sharing the most keywords with this
     # one (maintainer feedback: read locally, then branch out by similarity --
@@ -2668,7 +2662,8 @@ def view_article(request: Request, article_id: int, db: Session = Depends(get_db
      SPA); auto-translates every keyed string + the dynamic reader.js panes. -->
 <script src="/static/i18n.js" defer></script>
 <script src="/static/reader.js" defer></script>
-</head><body>
+<script src="/static/ext-confirm.js" defer></script>
+</head><body data-ext-confirm="article">
 <div class="wrap" data-article-id="{a.id}">
   <div class="crumb"><span class="dot"></span> Open Omniscience · offline stored copy</div>
   <h1>{title}</h1>
@@ -2706,21 +2701,6 @@ def view_article(request: Request, article_id: int, db: Session = Depends(get_db
     <div class="ext-note">Opening the source makes a live request from your machine; the site may see your visit. You'll be asked to confirm.</div>
   </footer>
 </div>
-<script>
-  // Any link that leaves the corpus is confirmed first — honest about the exposure.
-  // A consent string, so it goes through the i18n engine (x12), as the law reader's does.
-  document.addEventListener('click', function(e){{
-    var a = e.target.closest && e.target.closest('a.ext');
-    if(!a) return;
-    e.preventDefault();
-    var t = (window.OOI18N && OOI18N.t) ? OOI18N.t : function(x){{ return x; }};
-    var ok = window.confirm(
-      t("Open an EXTERNAL site on the public web?") + "\\n\\n" + a.href + "\\n\\n" +
-      t("This leaves your local copy and makes a live request from your machine — the site may see your visit. Continue?"));
-    if(ok) window.open(a.href, '_blank', 'noopener');
-  }});
-</script>
-{dates_script}
 </body></html>"""
     return HTMLResponse(content=doc)
 

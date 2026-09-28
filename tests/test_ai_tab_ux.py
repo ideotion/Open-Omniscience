@@ -35,7 +35,7 @@ HTML = read_static("index.html")
 # --------------------------------------------------------------------------- #
 def test_the_catalogue_offers_one_button_per_model_not_tickboxes():
     body = function_body(APP, "loadModelCatalog")
-    assert 'onclick="installOneModel(' in body, "each row needs its own download action"
+    assert 'data-on-click="installOneModel(' in body, "each row needs its own download action"
     # The tick-box + shared "Download selected" gesture is what this replaced. Comments
     # are stripped first: the comment EXPLAINING the removal necessarily quotes it, and
     # a guard that trips on its own explanation gets reworded rather than fixed.
@@ -82,7 +82,7 @@ def test_installOneModel_asks_consent_and_repaints():
 def test_the_default_model_block_is_a_picker_over_downloaded_models():
     body = function_body(APP, "_paintDefaultModel")
     assert 'id="llm-model-pick"' in body
-    assert 'onchange="setActiveModel(' in body
+    assert 'data-on-change="setActiveModel(' in body
     # ONLY downloaded ones — the whole point of the ask.
     assert "m.installed === true" in body, "the options are filtered to what is on disk"
     assert "/api/llm/models/catalog" in body, (
@@ -208,7 +208,7 @@ def test_the_activity_feed_sits_beside_the_toggle_it_describes():
 
 def test_one_button_runs_every_ai_check():
     assert _view_of('id="aicheck-btn"') == "set-advanced"
-    assert 'onclick="runAiCheck(this)"' in HTML
+    assert 'data-on-click="runAiCheck(this)"' in HTML
     body = function_body(APP, "runAiCheck")
     assert "/api/diagnostics/ai-check/run" in body
     assert "/api/diagnostics/ai-check/cancel" in body, "a multi-minute run needs a stop"

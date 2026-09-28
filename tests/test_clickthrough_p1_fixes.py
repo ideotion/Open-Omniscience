@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import re
 
-from tests.js_source_helper import function_body, read_static
+from tests.js_source_helper import function_body, page_source, read_static
 
 
 def test_the_hover_bubble_is_hosted_in_the_open_dialog_that_holds_its_element():
@@ -40,7 +40,7 @@ def test_a_title_repainted_while_its_bubble_is_open_is_never_overwritten():
 
 
 def test_the_task_manager_counts_healthy_as_healthy():
-    assert 'h.status === "healthy"' in read_static("taskmanager.html")
+    assert 'h.status === "healthy"' in page_source("taskmanager.html")
 
 
 def test_a_deep_linked_analysis_tab_does_not_also_load_the_restored_one():

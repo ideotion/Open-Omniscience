@@ -25,6 +25,9 @@
 
     // Apply the saved look immediately (before any network) so there is no flash.
     applyUi(getUi()); buildDrawer();
+    // A stored pick of a culled theme was just mapped to its survivor: say so once, in
+    // the UI language (hence after the locale is ready), never silently.
+    ((window.OOI18N && OOI18N.ready) || Promise.resolve()).then(announceRetiredTheme, announceRetiredTheme);
 
     // Re-check the local LLM when the tab regains focus — covers starting/stopping
     // Ollama in another window without a constant poll (event-driven, cheap loopback).

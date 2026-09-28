@@ -6016,5 +6016,15 @@
   "Suggestion table built {when}.": "بُني جدول الاقتراحات {when}.",
   "{n} words": "{n} كلمات",
   "Could not load the filter lists: {error}": "تعذّر تحميل قوائم المرشحات: {error}",
-  "OR": "أو"
+  "OR": "أو",
+  "The {old} theme was retired as a near-duplicate of {new}, so you are now on {new} with its accent kept.": "أُزيلت سمة {old} لأنها شبه مطابقة لسمة {new}، فأنت الآن على {new} مع الإبقاء على لون التمييز.",
+  "Comment": "تعليق",
+  "Flags": "العلامات",
+  "Coverage summary unavailable.": "ملخص التغطية غير متاح.",
+  "Extracting…": "جارٍ الاستخراج…",
+  "No date tags found.": "لم يُعثر على وسوم تاريخ.",
+  "No flagged tracked edits stored for this wiki.": "لا توجد تعديلات متتبَّعة معلَّمة مخزَّنة لهذه الويكي.",
+  "No stored coverage on these terms since the promised date.": "لا توجد تغطية مخزَّنة لهذه المصطلحات منذ التاريخ الموعود.",
+  "Snippet (provenance)": "مقتطف (المصدر)",
+  "Unknown investigation view": "عرض تحقيق غير معروف"
 }

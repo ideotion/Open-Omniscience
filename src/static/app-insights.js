@@ -145,7 +145,7 @@
               + _kwTf("{n} mentions — click to zoom in", {n: fmtNum(f.mentions)});
             return `<button class="ls-chip" data-i18n-dyn style="font-size:${(11.5*scale).toFixed(1)}px"
               title="${esc(tip)}"
-              onclick="pickTerm(${esc(JSON.stringify(f.term))})">${kwLabelHtml(f, {inButton: true})}${fam ? `<span class="muted"> ·${f.variants}</span>` : ""}</button>${kwSensesAfterHtml(f)}`;
+              data-on-click="pickTerm(${esc(JSON.stringify(f.term))})">${kwLabelHtml(f, {inButton: true})}${fam ? `<span class="muted"> ·${f.variants}</span>` : ""}</button>${kwSensesAfterHtml(f)}`;
           }).join("");
           return `<div class="ls-col"><div class="ls-h">${esc(t(g.label))} <span class="muted">${items.length}</span></div><div class="ls-chips">${chips}</div></div>`;
         }).join("");
@@ -176,7 +176,7 @@
         list.innerHTML = fams.length ? fams.map(f => `<div class="fam-row">
             <div class="fam-body"><div><b>${kwLabelHtml(f)}</b> <span class="pill">${esc(kwKindLabel(f.kind))}</span>
               ${f.manual ? '<span class="pill ok">manual</span>' : ""}
-              ${f.ring_id ? `<button class="pill lvl-group" title="${esc(lvlTitle("group"))}" onclick="openConceptMap(${esc(JSON.stringify(f.ring_id))})">group</button>` : ""}
+              ${f.ring_id ? `<button class="pill lvl-group" title="${esc(lvlTitle("group"))}" data-on-click="openConceptMap(${esc(JSON.stringify(f.ring_id))})">group</button>` : ""}
               <span class="muted">· ${esc(_kwTf("{n} mentions", {n: fmtNum(f.mentions)}))}</span></div>
               <div class="fam-chips muted">${_famMemberList(f)}</div></div></div>`
           ).join("") : '<div class="muted">No entity families yet — index the corpus first.</div>';
@@ -206,7 +206,7 @@
           const chips = (f.members || []).map(m =>
             `<button class="fam-chip" data-norm="${esc(m.normalized)}" data-kind="${esc(f.kind)}"
                data-single="${single ? "1" : "0"}"
-               onclick="familySplit(this)"
+               data-on-click="familySplit(this)"
                title="${single ? "nothing to split -- this family has only one member" : "split this form out"}"
                >${esc(m.term)}${single ? "" : " ✕"}</button>`).join("");
           // S3 (2026-07-18 default-on brief, conservative + browser-unverified per fork-3/Q6a):
@@ -219,7 +219,7 @@
             <input type="checkbox" class="fam-pick" data-norms="${esc(norms)}" data-kind="${esc(f.kind)}" data-label="${esc(f.term)}" aria-label="${esc(f.term)}">
             <div class="fam-body"><div><b>${kwLabelHtml(f)}</b> <span class="pill">${esc(kwKindLabel(f.kind))}</span>
               ${f.manual ? '<span class="pill ok">manual</span>' : ""}
-              ${f.ring_id ? `<button class="pill lvl-group" title="${esc(lvlTitle("group"))}" onclick="openConceptMap(${esc(JSON.stringify(f.ring_id))})">group</button>` : ""}
+              ${f.ring_id ? `<button class="pill lvl-group" title="${esc(lvlTitle("group"))}" data-on-click="openConceptMap(${esc(JSON.stringify(f.ring_id))})">group</button>` : ""}
               ${lemmaTag}
               <span class="muted">· ${esc(_kwTf("{n} mentions", {n: fmtNum(f.mentions)}))}</span></div>
               <div class="fam-chips">${chips}</div></div></div>`;
@@ -236,7 +236,7 @@
         ov.families.map(f => `<div class="fam-ov">
           <span>${f.split ? "split" : "merge"}: <b>${esc(f.label || f.family_key)}</b>
             <span class="muted">${esc((f.members || []).join(", "))}</span></span>
-          <button class="ghost tiny" data-members="${esc(JSON.stringify(f.members || []))}" onclick="familyResetGroup(this)">reset</button>
+          <button class="ghost tiny" data-members="${esc(JSON.stringify(f.members || []))}" data-on-click="familyResetGroup(this)">reset</button>
         </div>`).join("");
     }
 
@@ -313,7 +313,7 @@
         const cc = esc(ooCountryCode(r.country) || String(r.country || "").toUpperCase());
         const nm = esc((names && names[r.country]) || ooCountryName(r.country, "") || cc);
         const clickable = ringId
-          ? ` style="cursor:pointer" onclick="_conceptDrillCountry('${esc(ringId)}','${esc(r.country)}')"` : "";
+          ? ` style="cursor:pointer" data-on-click="_conceptDrillCountry('${esc(ringId)}','${esc(r.country)}')"` : "";
         return `<g${clickable}><title>${nm}</title>`
           + `<text x="${padL - 6}" y="${(+cy + 3).toFixed(1)}" text-anchor="end" font-size="10" fill="var(--fg)">${cc}</text>`
           + `<line x1="${lo}" y1="${cy}" x2="${hi}" y2="${cy}" stroke="var(--muted)" stroke-width="2" opacity="0.5"/>`
@@ -370,11 +370,11 @@
       const superChips = _conceptSupergroups
         .filter((sg) => _conceptMatches(sg.name))
         .map((sg) => `<button class="chip lvl-super${_conceptActiveBucket === sg.id ? " active" : ""}"
-           onclick="selectConceptBucket(${sg.id})" title="${esc(lvlTitle("super"))}">⦾⦾ ${esc(sg.name)}</button>`)
+           data-on-click="selectConceptBucket(${sg.id})" title="${esc(lvlTitle("super"))}">⦾⦾ ${esc(sg.name)}</button>`)
         .join(" ");
       const ungroupedChip = ungrouped.length && _conceptMatches(t("Ungrouped concepts"))
         ? `<button class="chip${_conceptActiveBucket === "_ungrouped_" ? " active" : ""}"
-             onclick="selectConceptBucket('_ungrouped_')">${esc(t("Ungrouped concepts"))} <span class="muted">${ungrouped.length}</span></button>`
+             data-on-click="selectConceptBucket('_ungrouped_')">${esc(t("Ungrouped concepts"))} <span class="muted">${ungrouped.length}</span></button>`
         : "";
       supersHost.innerHTML = (superChips || ungroupedChip)
         ? superChips + (ungroupedChip ? " " + ungroupedChip : "")
@@ -395,7 +395,7 @@
             // 375 px that chip pushed the page 6 px sideways (row R, R8).
             .map((r) => `<button class="chip lvl-group${_conceptActiveBucket && r.id === _conceptSelectedRing ? " active" : ""}"
                style="max-width:100%;overflow-wrap:anywhere"
-               onclick="selectConceptGroup(${esc(JSON.stringify(r.id))})" title="${esc(lvlTitle("group"))}">⦾ ${esc(r.id)}
+               data-on-click="selectConceptGroup(${esc(JSON.stringify(r.id))})" title="${esc(lvlTitle("group"))}">⦾ ${esc(r.id)}
                <span class="muted">(${(r.languages || []).map((l) => ooLangCell(l)).join("/<wbr>")})</span></button>`).join(" ")
         : (_conceptActiveBucket ? `<div class="muted">${esc(t("No groups in this bucket."))}</div>` : "");
 
@@ -531,10 +531,10 @@
         // §D: the "not mapped" bucket is CLICKABLE too -- often the largest bucket,
         // and it must be investigable, never a dead end.
         const unlocNote = unloc
-          ? `<button class="secondary" style="display:block;width:100%;text-align:left;margin-top:6px" onclick="_conceptDrillCountry('${esc(ringId)}', null)">`
+          ? `<button class="secondary" style="display:block;width:100%;text-align:left;margin-top:6px" data-on-click="_conceptDrillCountry('${esc(ringId)}', null)">`
             + ooLabelHtml(esc(t("Not mapped (source country unknown)")), `${unloc.articles} ${esc(t("articles"))} · ${unloc.mentions} ${esc(t("mentions"))}`) + `</button>` : "";
         const rows = (d.countries || []).filter(c => c.country)
-          .map(c => `<tr style="cursor:pointer" onclick="_conceptDrillCountry('${esc(ringId)}','${esc(c.country)}')">`
+          .map(c => `<tr style="cursor:pointer" data-on-click="_conceptDrillCountry('${esc(ringId)}','${esc(c.country)}')">`
             + `<td>${ooCountryCell(c.country)}</td><td style="text-align:right">${c.articles}</td><td style="text-align:right">${c.mentions}</td></tr>`).join("");
         const tbl = rows
           ? `<table style="margin-top:8px"><thead><tr><th>${esc(t("Country"))}</th><th style="text-align:right">${esc(t("Articles"))}</th><th style="text-align:right">${esc(t("Mentions"))}</th></tr></thead><tbody>${rows}</tbody></table>` : "";
@@ -651,8 +651,8 @@
         // action) -- "every ⦾ group chip in the app deep-links to this map".
         const mapLink = isRing
           ? ` <button class="ghost tiny" title="${esc(t("Open on the cross-country concept map"))}"
-               onclick="openConceptMap(${esc(JSON.stringify(m.ring_id))})">🗺</button>` : "";
-        return `<button class="chip${isRing ? " lvl-group" : ""}" onclick="openCorpus(${esc(JSON.stringify(m.normalized))})"
+               data-on-click="openConceptMap(${esc(JSON.stringify(m.ring_id))})">🗺</button>` : "";
+        return `<button class="chip${isRing ? " lvl-group" : ""}" data-on-click="openCorpus(${esc(JSON.stringify(m.normalized))})"
            title="${tip}">${inner} <span class="muted">${m.mentions}</span>${alsoIn ? " *" : ""}</button>${kwSensesAfterHtml(m)}${mapLink}`;
       }).join("")
         : '<span class="muted">No members yet.</span>';
@@ -746,8 +746,8 @@
         // action) -- "every ⦾ group chip in the app deep-links to this map".
         const mapLink = isRing
           ? ` <button class="ghost tiny" title="Open on the cross-country concept map"
-               onclick="openConceptMap(${esc(JSON.stringify(m.ring_id))})">🗺</button>` : "";
-        return `<button class="fam-chip${isRing ? " lvl-group" : ""}" data-sg="${g.id}" data-norm="${esc(m.normalized)}" onclick="sgRemoveMember(this)"
+               data-on-click="openConceptMap(${esc(JSON.stringify(m.ring_id))})">🗺</button>` : "";
+        return `<button class="fam-chip${isRing ? " lvl-group" : ""}" data-sg="${g.id}" data-norm="${esc(m.normalized)}" data-on-click="sgRemoveMember(this)"
            title="${tip}">${inner} <span class="muted">${m.mentions}</span> ✕</button>${mapLink}`;
       }).join("")
         : '<span class="muted">No members yet — add a family or a group below.</span>';
@@ -755,20 +755,23 @@
         <div class="sg-head"><b class="lvl-super" title="${esc(lvlTitle("super"))}">${esc(g.name)}</b>
           <span class="muted">· ${g.count} member${g.count === 1 ? "" : "s"}</span>
           <button class="ghost tiny" style="margin-left:auto" data-sg="${g.id}" data-name="${esc(g.name)}"
-            onclick="deleteSuperGroup(this)">delete</button></div>
+            data-on-click="deleteSuperGroup(this)">delete</button></div>
         <div class="fam-chips" style="margin-top:6px">${chips}</div>
         <div class="row" style="margin-top:8px">
           <div style="flex:2"><input class="sg-fam-in" list="sg-family-options" placeholder="add a family…"
-            data-sg="${g.id}" onkeydown="if(event.key==='Enter')sgAddMember(this)"></div>
+            data-sg="${g.id}" data-on-key="Enter" data-on-keydown="sgAddMember(this)"></div>
           <div style="flex:0 0 auto;align-self:end"><button class="secondary"
-            onclick="sgAddMember(this.closest('.row').querySelector('.sg-fam-in'))">Add family</button></div>
+            data-on-click="sgAddMemberFrom(this)">Add family</button></div>
           <div style="flex:2"><input class="sg-ring-in" list="sg-ring-options" placeholder="add a group (one concept, many languages)…"
-            data-sg="${g.id}" onkeydown="if(event.key==='Enter')sgAddRing(this)"></div>
+            data-sg="${g.id}" data-on-key="Enter" data-on-keydown="sgAddRing(this)"></div>
           <div style="flex:0 0 auto;align-self:end"><button class="secondary"
-            onclick="sgAddRing(this.closest('.row').querySelector('.sg-ring-in'))">Add group</button></div>
+            data-on-click="sgAddRingFrom(this)">Add group</button></div>
         </div></div>`;
     }
 
+    // The row's Add buttons pass themselves; the input is the row's own field.
+    function sgAddMemberFrom(btn) { return sgAddMember(btn.closest(".row").querySelector(".sg-fam-in")); }
+    function sgAddRingFrom(btn) { return sgAddRing(btn.closest(".row").querySelector(".sg-ring-in")); }
     async function sgAddMember(input) {
       const sg = input.dataset.sg, norm = input.value.trim();
       if (!norm) return;
@@ -836,7 +839,7 @@
         box.innerHTML = (f.axes || ["type", "topic"]).map(ax => {
           const tags = (f.facets && f.facets[ax]) || [];
           const chips = tags.length ? tags.map(t =>
-            `<button class="fam-chip" data-ax="${esc(ax)}" data-tag="${esc(t.tag)}" onclick="kxShowTag(this)">${esc(t.tag)} <span class="muted">${t.keywords}</span></button>`).join("")
+            `<button class="fam-chip" data-ax="${esc(ax)}" data-tag="${esc(t.tag)}" data-on-click="kxShowTag(this)">${esc(t.tag)} <span class="muted">${t.keywords}</span></button>`).join("")
             : '<span class="muted">none yet — click “Apply baseline tags” above</span>';
           return `<div style="margin-bottom:8px"><b>${esc(ax)}</b><div class="fam-chips" style="margin-top:4px">${chips}</div></div>`;
         }).join("");
@@ -855,9 +858,9 @@
             `<div style="padding:3px 0;border-bottom:1px solid var(--line)">
                <div style="display:flex;gap:8px;align-items:center">
                  <span style="flex:1">${esc(k.term)} <span class="muted">${k.language ? ooLangCell(k.language) : "?"} · ${k.articles}a/${k.mentions}m · ${esc(k.source)}</span></span>
-                 <button class="ghost tiny" data-norm="${esc(k.normalized)}" onclick="kxToggleTags(this)"
+                 <button class="ghost tiny" data-norm="${esc(k.normalized)}" data-on-click="kxToggleTags(this)"
                    title="${esc(t("Show this keyword's tags, and add or remove your own. A tag is a LABEL you assert, never a score."))}">${esc(t("Tags"))}</button>
-                 <button class="ghost tiny" data-norm="${esc(k.normalized)}" onclick="kxHide(this)">Hide</button>
+                 <button class="ghost tiny" data-norm="${esc(k.normalized)}" data-on-click="kxHide(this)">Hide</button>
                </div>
                <div class="kx-tagbox" data-norm="${esc(k.normalized)}" hidden style="margin:4px 0 6px 2px"></div>
              </div>`).join("");
@@ -897,7 +900,7 @@
             chips.push(`<span class="pill" style="margin:0 4px 4px 0">${esc(ax)}=${esc(tg)}`
               + ` <span class="muted">· ${esc(who)}</span>`
               + ` <button class="ghost tiny" style="padding:0 4px" data-norm="${esc(norm)}"`
-              + ` data-ax="${esc(ax)}" data-tag="${esc(tg)}" onclick="kxRemoveTag(this)"`
+              + ` data-ax="${esc(ax)}" data-tag="${esc(tg)}" data-on-click="kxRemoveTag(this)"`
               + ` title="${esc(t("Remove this tag. Reversible — re-add it any time; a removed baseline tag is not re-applied."))}"`
               + ` aria-label="${esc(t("Remove"))}">×</button></span>`);
           }
@@ -909,7 +912,7 @@
                <select class="kx-tag-ax" style="width:auto">${axisOpts}</select>
                <input class="kx-tag-val" type="text" maxlength="64" style="width:12em"
                  placeholder="${esc(t("new tag"))}">
-               <button class="ghost tiny" data-norm="${esc(norm)}" onclick="kxAddTag(this)">${esc(t("Add"))}</button>
+               <button class="ghost tiny" data-norm="${esc(norm)}" data-on-click="kxAddTag(this)">${esc(t("Add"))}</button>
              </div>`;
       } catch (e) {
         boxEl.innerHTML = `<span class="muted">${esc(t("Could not load:"))} ${esc(e.message)}</span>`;
@@ -1065,7 +1068,7 @@
           const label = by === "domain" ? it.domain : (it.link_text || it.domain || it.sample_url || it.normalized_url);
           const key = by === "domain" ? `domain=${encodeURIComponent(it.domain)}` : `url=${encodeURIComponent(it.normalized_url)}`;
           const sub = by === "domain" ? "" : `<div class="cs-url muted">${esc(it.sample_url || it.normalized_url)}</div>`;
-          return `<div class="cs-row"><div class="cs-head" data-key="${esc(key)}" onclick="expandCitedSource(this)">
+          return `<div class="cs-row"><div class="cs-head" data-key="${esc(key)}" data-on-click="expandCitedSource(this)">
             <div class="cs-bar" style="width:${(it.citations/max*100).toFixed(1)}%"></div>
             <div class="cs-main"><span class="cs-label">${esc(label || "—")}</span>${sub}</div>
             <span class="cs-count">${it.citations}</span></div>
@@ -1150,7 +1153,7 @@
           const srcShown = srcNames.length > 160 ? srcNames.slice(0, 160) + "…" : srcNames;
           // Title is clickable -> the exact converging article set (function exists).
           const head = `<div class="cs-main"><span class="cs-label" style="cursor:pointer;text-decoration:underline"
-              onclick="openAnalysisForIds(${esc(JSON.stringify(c.article_ids || []))}, ${esc(JSON.stringify(c.place || ""))})">${place}</span>
+              data-on-click="openAnalysisForIds(${esc(JSON.stringify(c.article_ids || []))}, ${esc(JSON.stringify(c.place || ""))})">${place}</span>
             <div class="cs-url muted">${win}</div></div>`;
           const counts = `<span class="muted">${c.n_articles} ${esc(t("articles"))} · ${c.distinct_sources} ${esc(t("sources"))}</span>`;
           const srcLine = srcShown ? `<div class="muted" style="font-size:11px;margin-top:2px">${srcShown}</div>` : "";
@@ -1371,7 +1374,7 @@
         const hist = (w.history || []).map(h =>
           `<li>${esc(fmtDateTime(h.matched_at))}: ${esc(tf("{n} articles ({new} new)", {n: h.n_articles, new: h.new_articles}))}`
           + (h.article_ids && h.article_ids.length
-              ? ` · <a href="#" onclick="openAnalysisForIds(${JSON.stringify(h.article_ids)}, ${JSON.stringify(tf("Watch: {name}", {name: w.name}))});return false">${esc(t("open set ↗"))}</a>`
+              ? ` · <a href="#" data-on-click="openAnalysisForIds(${esc(JSON.stringify(h.article_ids))}, ${esc(JSON.stringify(tf("Watch: {name}", {name: w.name})))});return false">${esc(t("open set ↗"))}</a>`
               : "")
           + `</li>`).join("");
         // The watch's NAME and QUERY are the reader's own words, never chrome, so both
@@ -1384,9 +1387,9 @@
               <span class="pill ${w.enabled ? 'ok' : ''}">${esc(w.enabled ? t('on') : t('off'))}</span></div>
             <div style="flex:0 0 auto">
               <button type="button" class="secondary" data-wt-open="${w.id}" title="${esc(t("Open this search in the analysis window, with its filters."))}">${esc(t("Open"))}</button>
-              <button class="secondary" onclick="toggleWatch(${w.id}, ${!w.enabled})">${esc(w.enabled ? t('Disable') : t('Enable'))}</button>
-              <button class="secondary" onclick="editWatch(${w.id})">${esc(t('Edit'))}</button>
-              <button class="secondary" onclick="deleteWatch(${w.id})">${esc(t('Delete'))}</button>
+              <button class="secondary" data-on-click="toggleWatch(${w.id}, ${!w.enabled})">${esc(w.enabled ? t('Disable') : t('Enable'))}</button>
+              <button class="secondary" data-on-click="editWatch(${w.id})">${esc(t('Edit'))}</button>
+              <button class="secondary" data-on-click="deleteWatch(${w.id})">${esc(t('Delete'))}</button>
             </div>
           </div>
           ${w.saved_search

@@ -6016,5 +6016,15 @@
   "Suggestion table built {when}.": "পরামর্শ সারণি তৈরি হয়েছে {when}।",
   "{n} words": "{n}টি শব্দ",
   "Could not load the filter lists: {error}": "ফিল্টার তালিকা লোড করা যায়নি: {error}",
-  "OR": "অথবা"
+  "OR": "অথবা",
+  "The {old} theme was retired as a near-duplicate of {new}, so you are now on {new} with its accent kept.": "{old} থিমটি {new}-এর প্রায় অনুরূপ হওয়ায় সরানো হয়েছে; এখন আপনি {new}-এ আছেন, অ্যাকসেন্ট রং একই রাখা হয়েছে।",
+  "Comment": "মন্তব্য",
+  "Flags": "ফ্ল্যাগ",
+  "Coverage summary unavailable.": "কভারেজ সারাংশ উপলব্ধ নয়।",
+  "Extracting…": "বের করা হচ্ছে…",
+  "No date tags found.": "কোনো তারিখ ট্যাগ পাওয়া যায়নি।",
+  "No flagged tracked edits stored for this wiki.": "এই উইকির জন্য কোনো ফ্ল্যাগ করা ট্র্যাক সম্পাদনা সংরক্ষিত নেই।",
+  "No stored coverage on these terms since the promised date.": "প্রতিশ্রুত তারিখ থেকে এই শব্দগুলির কোনো সংরক্ষিত কভারেজ নেই।",
+  "Snippet (provenance)": "অংশ (উৎস)",
+  "Unknown investigation view": "অজানা অনুসন্ধান দৃশ্য"
 }

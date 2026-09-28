@@ -677,8 +677,12 @@ def _law_source_joined() -> str:
     import re
     from pathlib import Path
 
-    src = Path(__file__).resolve().parent.parent / "src" / "api" / "law.py"
-    return re.sub(r'"\s*\n\s*f?"', "", src.read_text(encoding="utf-8"))
+    root = Path(__file__).resolve().parent.parent
+    src = re.sub(r'"\s*\n\s*f?"', "", (root / "src" / "api" / "law.py").read_text(encoding="utf-8"))
+    # The page's external-link confirm moved to the shared ext-confirm.js (0.5 row I,
+    # Q1127 = a); the page still emits it, by a <script src> the page must carry.
+    assert "/static/ext-confirm.js" in src and 'data-ext-confirm="law"' in src
+    return src + "\n" + (root / "src" / "static" / "ext-confirm.js").read_text(encoding="utf-8")
 
 
 @pytest.mark.parametrize("phrase", _READER_CHROME)

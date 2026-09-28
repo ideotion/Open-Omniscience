@@ -6016,5 +6016,15 @@
   "Suggestion table built {when}.": "建议表构建于 {when}。",
   "{n} words": "{n} 个词",
   "Could not load the filter lists: {error}": "无法加载筛选列表：{error}",
-  "OR": "或"
+  "OR": "或",
+  "The {old} theme was retired as a near-duplicate of {new}, so you are now on {new} with its accent kept.": "{old} 主题因与 {new} 几乎相同而被移除，您现在使用 {new}，强调色保持不变。",
+  "Comment": "评论",
+  "Flags": "标记",
+  "Coverage summary unavailable.": "覆盖摘要不可用。",
+  "Extracting…": "正在提取…",
+  "No date tags found.": "未找到日期标签。",
+  "No flagged tracked edits stored for this wiki.": "此维基没有已存储的带标记的跟踪编辑。",
+  "No stored coverage on these terms since the promised date.": "自承诺日期以来，没有关于这些词的已存储报道。",
+  "Snippet (provenance)": "片段（出处）",
+  "Unknown investigation view": "未知的调查视图"
 }

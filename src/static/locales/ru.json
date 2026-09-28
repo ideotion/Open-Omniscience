@@ -6016,5 +6016,15 @@
   "Suggestion table built {when}.": "Таблица подсказок построена {when}.",
   "{n} words": "{n} слов",
   "Could not load the filter lists: {error}": "Не удалось загрузить списки фильтров: {error}",
-  "OR": "ИЛИ"
+  "OR": "ИЛИ",
+  "The {old} theme was retired as a near-duplicate of {new}, so you are now on {new} with its accent kept.": "Тема {old} удалена как почти дубликат темы {new}; теперь у вас {new}, акцентный цвет сохранён.",
+  "Comment": "Комментарий",
+  "Flags": "Отметки",
+  "Coverage summary unavailable.": "Сводка по охвату недоступна.",
+  "Extracting…": "Извлечение…",
+  "No date tags found.": "Метки дат не найдены.",
+  "No flagged tracked edits stored for this wiki.": "Для этой вики не сохранено отмеченных отслеживаемых правок.",
+  "No stored coverage on these terms since the promised date.": "С обещанной даты нет сохранённых материалов по этим терминам.",
+  "Snippet (provenance)": "Фрагмент (происхождение)",
+  "Unknown investigation view": "Неизвестный вид расследования"
 }
