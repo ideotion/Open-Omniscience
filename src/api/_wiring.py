@@ -80,6 +80,7 @@ def wire(app) -> None:
     from src.api.weather import router as weather_router
     from src.api.wiki import router as wiki_router
     from src.api.wiki_lane import router as wiki_lane_router
+    from src.api.wiki_lane_search import router as wiki_lane_search_router
 
     # Ordered exactly as main.py included them (path-based routing makes order
     # immaterial for dispatch, but the route set + order stay identical).
@@ -105,6 +106,7 @@ def wire(app) -> None:
         link_preview_router,
         wiki_router,
         wiki_lane_router,
+        wiki_lane_search_router,
         llm_router,
         ingestion_router,
         system_router,

@@ -262,6 +262,7 @@ class WikiLaneRunner:
         pageviews: Callable[[], str | None] | None = None,
         walker: Any | None = None,
         warm: Any | None = None,
+        indexer: Any | None = None,
         max_connections: int | None = None,
         drain_interval_s: float = DRAIN_INTERVAL_S,
         sleep: Callable[[float], None] = time.sleep,
@@ -291,6 +292,13 @@ class WikiLaneRunner:
         #: ``None`` disables it, which is what every test not about WARM passes.
         self._warm = warm
         self.last_warm: dict | None = None
+        #: The lane's own search index (``R52``, ``src/wiki/lane_search.py``), run FIRST in
+        #: the idle time and for at most ``INDEX_SHARE`` of it: indexing is local and costs
+        #: no request, and a text fetched but not yet findable is the one thing WARM's
+        #: requests are for. ``None`` disables it, which is what every test not about the
+        #: index passes.
+        self._indexer = indexer
+        self.last_index: dict | None = None
         #: A ceiling on how many times the stream may (re)connect in one run. ``None``
         #: — the production value — means "as long as the setting says running", which
         #: is what a stream held open for days needs. A number is for a caller that
@@ -427,7 +435,7 @@ class WikiLaneRunner:
             return None
 
     def idle(self, seconds: float) -> None:
-        """The time between two drains: WARM's window, the walk's, then sleep for what is left.
+        """The time between two drains: the index's, WARM's and the walk's windows, then sleep.
 
         THE TIERS TAKE THE IDLE TIME, NEVER THE DRAIN'S. The drain stores what the stream
         already handed over (and HOT's text with it); WARM fetches the other changed pages
@@ -435,6 +443,10 @@ class WikiLaneRunner:
         COLD, so WARM goes first and the walk has whatever time WARM leaves, and a tier
         with nothing to do (caught up, switched off, paused, waiting, finished) leaves its
         time to the next, and the last to the sleep, exactly as before either existed.
+
+        THE SEARCH INDEX GOES FIRST (``R52``), for at most ``INDEX_SHARE`` of the window: it
+        makes the texts already fetched findable, costs no request, and a backlog of it (a
+        0.4 lane's every older version, on its first open) must not starve the tiers.
 
         A TIER'S FAILURE NEVER ENDS THE LANE. Refusals are named inside each tier; what
         reaches here is a fault in the tier itself, and it is logged and left for the next
@@ -445,6 +457,17 @@ class WikiLaneRunner:
         def left() -> float:
             return seconds - (self._monotonic() - start)
 
+        if self._indexer is not None and not self._should_stop():
+            from src.wiki.lane_search import INDEX_SHARE
+
+            try:
+                index_report = self._indexer.index_for(
+                    max(0.0, min(left(), seconds * INDEX_SHARE)), should_stop=self._should_stop
+                )
+                self.last_index = index_report.as_dict()
+            except Exception as exc:  # noqa: BLE001 - the index must not end the lane
+                _LOG.warning("the Wikipedia lane search index window failed: %s", exc, exc_info=True)
+                self.last_index = {"error": f"{type(exc).__name__}"}
         if self._warm is not None and not self._should_stop():
             try:
                 warm_report = self._warm.warm_for(max(0.0, left()), should_stop=self._should_stop)
@@ -471,6 +494,16 @@ class WikiLaneRunner:
             return {**self._walker.status(), "last_window": self.last_walk}
         except Exception:  # noqa: BLE001 - a status read must not fail the status surface
             _LOG.debug("could not read the walk status", exc_info=True)
+            return None
+
+    def index_status(self) -> dict | None:
+        """The search indexer's in-process status, or ``None`` for a runner built without it."""
+        if self._indexer is None:
+            return None
+        try:
+            return {**self._indexer.status(), "last_window": self.last_index}
+        except Exception:  # noqa: BLE001 - a status read must not fail the status surface
+            _LOG.debug("could not read the search index status", exc_info=True)
             return None
 
     def warm_status(self) -> dict | None:

@@ -10310,3 +10310,26 @@ into one path by same source, near-identical text, a shared outbound page or the
 "no shared origin found", never independent. Chromium-walked in `en` and `ar`. The walk found two sentences
 keyed in no locale that every i18n gate had passed: the `t()` gate skips a literal with a `{placeholder}` and
 the `tf()` gate does not see a frame called through a parameter (lesson copied to `LESSONS.md`).
+
+## 2026-09-28 — The Wikipedia lane's own search index, its hits in the search box, and «Add to corpus» (PR #1202)
+
+`R52` («In the lane») keeps WARM's texts in `wiki.db` with a search index of their own, and the
+maintainer's stated intent makes two conditions part of the ruling: the one search box also searches
+the lane's texts, and each hit can be added to the corpus as THAT version. This PR builds both, in the
+command palette and the Search tab. `src/wiki/lane_search.py`: a contentless FTS5 table in the lane file with `R39`'s tokenizer
+from its first day; a changed page's latest text indexed in full, and every older held version (a
+changed page's previous text, each version of a followed page but the newest) by the lines the next
+held version no longer has, measured to spare about the text's own size per version; triggers queue
+each text in the transaction that writes it; the indexer runs first in the runner's idle time for at
+most half of it, one transaction per batch; a text that cannot be read is set aside and retried once
+per lane start. `src/api/wiki_lane_search.py`: `GET /api/wiki/lane/search` (exact total, the caveat,
+what the search covered), `GET /version` (one held version back as plain text) and `POST
+/add-to-corpus` (one version, keyed on its `oldid` address, dated when the wiki made it, never a
+second copy of the same words). The palette lists the first lane hits under «Wikipedia texts held on
+this machine», beside the corpus's groups, and each opens `#lane-version`: the version's text, where it
+is kept, its full address, and «Add to corpus». The Search tab lists the same hits below the corpus's
+results, each with its passage and its own «Add to corpus», after saying what was searched (the
+texts the lane holds on this machine, per edition, never Wikipedia itself, what still waits for the
+index, WARM's switch when off). A query reads with advanced search's grammar in both lists; the filters that describe
+articles are named as not applied, never widened. Lessons: `LESSONS.md`, the four entries dated by
+this PR.

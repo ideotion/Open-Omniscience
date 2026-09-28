@@ -256,6 +256,7 @@ def _build():
     from src.database.session import SessionLocal
     from src.wiki.client import WikiClient
     from src.wiki.lane import WikiStreamAdapter
+    from src.wiki.lane_search import LaneIndexer
     from src.wiki.runner import WikiLaneRunner
     from src.wiki.stream import WikiEventStream
     from src.wiki.walk import WikiWalker
@@ -291,6 +292,9 @@ def _build():
         budget=_budget,
         enabled=_warm_enabled,
     )
+    # THE SEARCH INDEX (R52) reads what the drain and WARM stored and requests nothing, so
+    # it needs no client; it pays for its entries from the same budget as the texts.
+    indexer = LaneIndexer(lane_session=walk_lane_session, budget=_budget)
     return WikiLaneRunner(
         adapter=adapter,
         stream=stream,
@@ -303,6 +307,7 @@ def _build():
         pageviews=lambda: _refresh_one_pageview_top(client),
         walker=walker,
         warm=warm,
+        indexer=indexer,
     )
 
 
@@ -364,7 +369,7 @@ def lane_service_status() -> dict:
         drain_alive = bool(_DRAIN_THREAD is not None and _DRAIN_THREAD.is_alive())
     if runner is None:
         return {"streaming": False, "draining": False, "drains": 0, "last_drain": None,
-                "stream": None, "walk": None, "warm": None}
+                "stream": None, "walk": None, "warm": None, "index": None}
     return {
         "streaming": bool(runner.streaming),
         "draining": drain_alive,
@@ -381,4 +386,7 @@ def lane_service_status() -> dict:
         # WARM's in-process state, likewise; its counts are rows read by
         # ``src.wiki.warm.warm_coverage``.
         "warm": runner.warm_status(),
+        # The search indexer's in-process state; its counts are rows read by
+        # ``src.wiki.lane_search.index_status``.
+        "index": runner.index_status(),
     }
