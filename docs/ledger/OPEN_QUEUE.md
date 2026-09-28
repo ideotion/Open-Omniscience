@@ -50,11 +50,41 @@
   offers «Add to corpus», which adds THAT version as an article, one hit at a time. B was not chosen because it
   would break Q719 🔒 (a lane never bloats the corpus), flood the press counts, searches and the Home briefing, and
   still find only each page's latest text. **Where it stands:** the WARM fetch keeps its texts in `wiki_warm_pages`
-  (`src/wiki/warm.py`), which is what the ruling asks of storage; the lane search index, the search group and
-  «Add to corpus» are NOT built yet — they are the next change in this thread, and the Wikipedia hits land on
-  advanced search's version of the search surfaces (row A, PR #1198) once it merges. **OWED with it:** say in the
-  Search tab which texts the Wikipedia hits come from (which instance's lane, which editions, how many pages hold a
-  text), so a search with no Wikipedia hit is never read as «Wikipedia does not say this».
+  (`src/wiki/warm.py`), which is what the ruling asks of storage. The lane's own search index and «Add to corpus»
+  are built (PR #1202), and both conditions are met: the command palette lists the lane's hits under
+  «Wikipedia texts held on this machine» beside the corpus's groups, and the Search tab lists them in a section
+  below the corpus's results that first says what was searched (the texts the lane holds on this machine, per
+  edition, never Wikipedia itself; what still waits for the index; WARM's switch when off) — the line this entry
+  owed. Each hit opens THAT version, and «Add to corpus» adds it, one version per click, from the row or the window.
+  **OWED with it, and met by PR #1202:** say in the Search tab which texts the Wikipedia hits come from (which
+  instance's lane, which editions, how many pages hold a text), so a search with no Wikipedia hit is never read as
+  «Wikipedia does not say this».
+- **THE LANE SEARCH INDEX — WHAT IT DELIBERATELY DOES NOT DO (stated 2026-09-28 with it, not asked; `R52`'s
+  index, `src/wiki/lane_search.py`).** Eight choices a later session must not undo as oversights: (1) an OLDER
+  version is indexed by the lines the next held version no longer has, not in full — the rest of it is in the
+  newer version, already found, and a full copy per version would cost about the text's own size again (an
+  FTS5 index of 1.94 MB of prose measured 1.03 MB); the price is the caveat every hit list carries, that a query
+  whose words sit partly in kept lines and partly in removed ones finds neither version; (2) the index is built
+  ONLY in the lane runner's idle time -- by the lane's one writer, never at boot, never by a search and never by a
+  second thread -- so it runs only while the operator is online with the lane running, which is also the only
+  time new texts arrive; offline, the index stays as the last session left it, and each search says how many
+  texts still wait (`pending`); (3) «Add to corpus» takes ONE version
+  per request, never a set, as `R52` says; (4) the lane's hits are a labelled list BESIDE the corpus's, never
+  ranked into it — two BM25 scores from two indexes are not one scale; (5) a query reads with the corpus search's
+  grammar (S05-01: prefix, `NEAR` at the reader's own distance, `title:`), but its SQL field filters
+  (`source:`, `author:`, `url:`, `tag:`, `title:=`) and the Search tab's Source, Language and Time boxes describe
+  ARTICLES: they are dropped for these texts, named (`fields_not_applied`) and said on screen, never widened into
+  a search of every held text and never approximated (an edition is not an article language); (6) the
+  cross-language lens (R1) does not widen the lane search, which reads the words as typed; (7) exports, the
+  analysis window, synthesis and the bulk actions work on corpus articles only — «Add to corpus» is the bridge;
+  (8) the index holds the LANE's texts only: downloaded dumps keep their own index (the search box's Wikipedia
+  group reads it), and the revisions the old tracker stores for watched pages (`wiki_revisions.full_text` in the
+  corpus file, written by «Track now» in Settings → Wikipedia, `src/wiki/track.py`) are searched nowhere yet.
+  So the Search tab's line names the lane, never «every Wikipedia text on this machine». Bringing the tracked
+  revisions in needs a decision this index cannot make for itself: where their index lives (the corpus file,
+  or the lane, which since Q1020 = a is what holds watched pages' new versions), UNRULED.
+  A text that cannot be read is set aside (`failed_at`), counted from the queue's own rows and retried once per
+  lane start and on the page's next change, never silently dropped.
 - **WARM'S SWITCH: WHERE WARM RUNS — PENDING (asked 2026-09-28 13:22 UTC on a decision card in the project thread
   «Plan v0.5»; built at the recommended option meanwhile).** The question, as put: «Fetch other changed pages'
   texts (WARM) on every instance, or only where you switch it on?», options «Switch, off» (recommended: an update

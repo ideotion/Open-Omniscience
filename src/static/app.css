@@ -2156,3 +2156,12 @@
 .living-diff-l { white-space: pre-wrap; overflow-wrap: anywhere; unicode-bidi: plaintext; }
 .living-pages { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
 .living-tc { border-top: 1px solid var(--line); margin-top: 8px; padding-top: 10px; }
+/* The Search tab's Wikipedia section (R52): set apart from the corpus's results by a rule
+   and its own heading, so its hits never read as ranked among them. */
+.lane-search { border-top: 1px solid var(--line); margin-top: 14px; padding-top: 10px; }
+.lane-search h3 { margin: 0 0 4px; font-size: 15px; }
+.lane-cov { margin: 2px 0 6px; padding-inline-start: 18px; }
+.lane-hits { list-style: none; margin: 6px 0; padding: 0; }
+.lane-add { margin-inline-start: auto; }
+.lane-snip { margin-top: 3px; overflow-wrap: anywhere; }
+.lane-snip mark { background: color-mix(in srgb, var(--accent) 28%, transparent); color: inherit; border-radius: 3px; padding: 0 1px; }

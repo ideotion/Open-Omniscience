@@ -424,8 +424,9 @@ other, and lets you scroll.
 **The omnibar (Ctrl/⌘-K), from anywhere:** the command palette is also a
 federated search over your data. From two typed characters it shows the first
 three hits per group — **articles** (full Boolean FTS), **keywords** (each opens
-its corpus window), **sources**, **watched Wikipedia pages** and **tracked law
-documents** — with the *true total* behind each group stated in its header.
+its corpus window), **sources**, **watched Wikipedia pages**, **Wikipedia texts
+held on this machine** (older versions and changed pages' texts the Wikipedia lane keeps,
+see 3.7) and **tracked law documents** — with the *true total* behind each group stated in its header.
 Everything is index-backed and searched on this machine only; a half-typed
 query is never an error. Choosing *"Run the full Boolean search"* lands you in
 this tab with the query prefilled, so every capability above stays one step
@@ -1016,13 +1017,49 @@ Wikipedia, beside the walk's box) fetches the newest text of those other pages t
 50 pages a request, the page that has waited longest first. A page edited ten times
 while it waited costs one fetch, of where it stands now. The app keeps each page's
 **latest and previous** text, and a page deleted later keeps the text it had. These
-texts **stay in the lane's own file, not in your corpus**, and search does not read
-them yet. They stop when the lane file holds **90% of its storage budget**, so the
+texts **stay in the lane's own file, not in your corpus**; the search box finds them
+(see *Searching what the lane holds*, below). They stop when the lane file holds **90% of its storage budget**, so the
 rest stays for the pages the stream follows; that share is a proposed default, not a
 ruling, and Living sources shows it. It runs only while the live stream runs, on the
 same connection and with the same waits as the walk: airplane mode, or protected
 mode with no usable proxy, makes it wait (it never goes direct), and a wiki that asks
 it to slow down is asked again after a pause that doubles up to an hour.
+
+**Searching what the lane holds:** the lane keeps a search index of the texts it
+holds, in the same file and inside the same storage budget. A changed page's
+**latest** text is indexed in full, title included. Every **older version** (a
+changed page's previous text, and each version of a page the stream follows except
+the newest, which is already your corpus article) is indexed by the **lines a later
+edit removed**: the rest of it is in the newer version, where it is already found.
+So a search whose words sit partly in kept lines and partly in removed ones finds
+neither version, and every list of these hits says so. The index is built while the
+live stream runs, before the fetches and for at most half of their idle time, and
+a search says how many texts are still waiting for it; a text that cannot be read
+is set aside and tried again when the lane next starts. Chinese, Japanese and
+Arabic are split and folded exactly as in your corpus's own index, and Hindi and
+Bengali words stay whole. In the search box (Ctrl/⌘-K) these hits are listed under
+**Wikipedia texts held on this machine**, beside your corpus's hits and never ranked
+into them, each naming its edition, which text it is (a changed page's latest or
+previous text, or an earlier version of a page the stream follows) and its date.
+Opening one shows that version's text, where it is kept and its full address on
+Wikipedia; **Add to corpus** adds that exact version as its own article, dated when
+the wiki made it, and says so when your corpus already holds it or the same words
+instead of storing them twice. Nothing from the lane reaches your corpus otherwise.
+The **Search tab** lists the same hits in a section of their own below your
+corpus's results, each with the passage that matched and its own **Add to corpus**
+button. Above them it says what was searched: only the texts the Wikipedia lane
+holds on this machine, never Wikipedia itself, with the pages and editions they come
+from, how many texts are still waiting for the index, and whether fetching other
+changed pages is off. So an empty list means the lane's texts do not contain your
+words, not that Wikipedia does not. Two other kinds of Wikipedia text on this
+machine are not in this search: downloaded dumps, whose text the search box finds
+in its Wikipedia group, and the revisions **Track now** (Settings → Wikipedia)
+stores for watched pages. A query reads the same way in both lists (`salt*`,
+`NEAR(salt works, 5)`, `title:salt`), but the filters that describe articles (the
+Source, Language and Time boxes, and `source:`, `author:`, `url:`, `tag:` and
+`title:=`) do not reach these texts, and the section says so whenever one is set.
+Exports, the analysis window and the bulk actions work on your corpus; a Wikipedia
+text joins them once you add it.
 
 Heavy **offline full-text baselines** (whole-edition dumps) are *separate* and live
 in **Settings → Wikipedia** — you don't need them for change-tracking. See

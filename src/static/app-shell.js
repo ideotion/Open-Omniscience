@@ -708,7 +708,10 @@
       const out = [];
       (_omniLive.groups || []).forEach(g => {
         const items = g.items || [];
-        if (!items.length) return;
+        // The Wikipedia group also carries the lane's held texts (R52), which can match
+        // where no watched page's title or local copy does.
+        const laneRows = (g.kind === "wiki" && typeof laneOmniRows === "function") ? laneOmniRows(g.lane, t) : [];
+        if (!items.length && !laneRows.length) return;
         if (g.kind === "articles") {
           const grp = head(t("Articles"), g) + crossNote;
           items.forEach(it => out.push({grp, label: it.title || ("#" + it.article_id),
@@ -752,6 +755,11 @@
             run: it.url ? (() => window.open(it.url, "_blank"))
               : (() => (typeof openWikiTC === "function" && it.page_id != null
                 ? openWikiTC(it.page_id, it.title || "", it.wiki || "") : showTab("wiki")))}));
+          // R52: the texts the Wikipedia lane holds -- a changed page's latest or previous
+          // text, or an earlier version of a followed page -- beside the corpus hits and
+          // marked as Wikipedia. A row opens THAT version, where «Add to corpus» adds it.
+          const laneGrp = head(t("Wikipedia texts held on this machine"), g.lane || {});
+          laneRows.forEach(r => out.push({grp: laneGrp, label: r.label, sub: r.sub, run: r.run}));
         } else if (g.kind === "law") {
           const grp = head(t("World law"), g);
           items.forEach(it => out.push({grp, label: it.title,

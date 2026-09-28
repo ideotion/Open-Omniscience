@@ -287,6 +287,26 @@ def _dump_hits(q: str) -> tuple[list[dict], bool, bool]:
     return items, True, more
 
 
+def _lane_hits(q: str) -> dict:
+    """``R52``: the Wikipedia LANE's own held texts -- changed pages' latest texts and older
+    versions of pages -- beside the corpus's Wikipedia articles, each hit naming its version.
+
+    A labelled sub-list, like ``dump_items``, because these are not corpus articles until the
+    operator adds one; the exact total and the index's one caveat travel with it. First hits
+    only, without snippets or the queue's counts: the omnibar runs per keystroke, and the
+    Search tab has them, with what the search covered.
+    """
+    from src.api.wiki_lane_search import search_lane
+
+    try:
+        out = search_lane(q, limit=_PER_GROUP, snippets=False, queue=False)
+    except Exception:  # noqa: BLE001 - the lane must never blank the omnibar
+        _LOG.warning("omni lane search failed for %r", q, exc_info=True)
+        return {"available": False, "reason": "lane-unreadable", "items": [], "total": None}
+    keep = ("available", "reason", "items", "total", "caveat", "error")
+    return {k: out[k] for k in keep if k in out}
+
+
 def _wiki_group(
     db: Session, q: str, hits: tuple[list[int], str, bool] | None = None
 ) -> dict:
@@ -368,6 +388,7 @@ def _wiki_group(
             "dump_items": dump_items,
             "dump_available": dump_available,
             "dump_more": dump_more,
+            "lane": _lane_hits(q),
             "note": "FTS5 content match over your Wikipedia corpus"
             + (" (within the top results)" if capped else "")
             + (" + watched-page titles" if title_items else "")
@@ -382,6 +403,7 @@ def _wiki_group(
         "dump_items": dump_items,
         "dump_available": dump_available,
         "dump_more": dump_more,
+        "lane": _lane_hits(q),
         "note": "title match over your watched-pages list (no indexed Wikipedia content matched)"
         + dump_note,
     }
