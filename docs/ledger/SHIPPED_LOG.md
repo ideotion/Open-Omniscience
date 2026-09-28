@@ -10325,3 +10325,15 @@ texts the lane holds on this machine, per edition, never Wikipedia itself, what 
 index, WARM's switch when off). A query reads with advanced search's grammar in both lists; the filters that describe
 articles are named as not applied, never widened. Lessons: `LESSONS.md`, the four entries dated by
 this PR.
+
+
+## 2026-09-28 — «Add to corpus» in the version reader, for any listed Wikipedia version (PR #1207)
+
+`R52`'s «Add to corpus» existed only for the lane search's hits, and the version reader row G built lists a
+page's versions from both stores, the tracker's `wiki_revisions` included, which no search reads yet. So the
+reader now offers the add at each end of a comparison: `POST /api/wiki/pages/{id}/versions/{vid}/add-to-corpus`
+resolves the id among the versions the reader lists (never a neighbour) and adds through the lane route's own
+`add_wiki_version_article`. The payload's top-level `corpus_add` names the listed versions the corpus already
+holds, so the reader says so instead of offering the add, and the component draws the button only where that
+key exists, so the law reader, which mounts the same component, offers none. Lessons: `LESSONS.md`, the two
+entries dated by this PR.

@@ -12722,3 +12722,17 @@ default: on one Search tab, `salt*` would have been a prefix in the corpus's lis
 surface shown beside the corpus's passes `grammar=True`, and decides out loud what its own index
 cannot answer**: the lane drops the SQL field filters, names them and says so on screen, and
 never widens them into a search of everything (`fields_not_applied`, `test_one_query_means_in_these_texts_what_it_means_in_the_corpus`).
+
+### THE HOVER BUBBLE TAKES THE `title` OF THE ELEMENT UNDER THE POINTER (PR #1207)
+
+Invariant #17's bubble moves a hovered element's `title` into `data-oo-tip` (`app-boot.js`) so the browser's
+own tooltip does not double it. A Chromium check that clicks a button and then reads its `title` therefore
+reads `null` for exactly that button, while its neighbours read fine: it looks like a missing title and is
+not one. **Read `data-oo-tip` as well, or move the pointer away before reading `title`.**
+
+### A COMPONENT LOADED WHOLE INTO A NODE `vm` CONTEXT BUILDS ITS OBJECTS IN ANOTHER REALM (PR #1207)
+
+`tests/version_reader_add_node_test.js` runs the whole shipped `ooversions.js` in `vm.createContext` so the
+test drives the real delegated listener, not an extracted copy. The `{ method: "POST" }` the component
+hands to `api()` then has the context's `Object.prototype`, and `assert.deepStrictEqual` compares
+prototypes, so it failed against an identical literal. **Compare such values as JSON, or field by field.**

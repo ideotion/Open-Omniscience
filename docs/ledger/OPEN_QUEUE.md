@@ -83,6 +83,8 @@
   So the Search tab's line names the lane, never «every Wikipedia text on this machine». Bringing the tracked
   revisions in needs a decision this index cannot make for itself: where their index lives (the corpus file,
   or the lane, which since Q1020 = a is what holds watched pages' new versions), UNRULED.
+  Meanwhile, since PR #1207, each of them can be added to the corpus one version at a time from its page's
+  version reader (Living sources → Wikipedia), the same add as a hit's.
   A text that cannot be read is set aside (`failed_at`), counted from the queue's own rows and retried once per
   lane start and on the page's next change, never silently dropped.
 - **WARM'S SWITCH: WHERE WARM RUNS — PENDING (asked 2026-09-28 13:22 UTC on a decision card in the project thread
