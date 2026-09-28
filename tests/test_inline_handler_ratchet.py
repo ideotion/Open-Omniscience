@@ -1,0 +1,153 @@
+"""The inline-handler ratchet (Q1127 = a, 0.5 gate row I, brief S05-09 S1 + S2).
+
+Open Omniscience - Global Intelligence Platform for Investigative Journalism
+Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
+
+The ruling: retire the inline event handlers, with a ratchet that fails on any NEW one, and
+drop ``'unsafe-inline'`` from the CSP's ``script-src`` when the count reaches zero. An inline
+handler is script the browser runs from an attribute, so ``script-src 'unsafe-inline'`` has
+to stay while one exists; the same is true of an inline ``<script>`` block, so this file
+ratchets both.
+
+ONE PUBLISHED PATTERN. ``on<event>`` for an event in ``EVENTS``, optional whitespace, ``=``,
+then a quote -- plain, or backslash-escaped inside a JS string. It is scanned over every
+served surface: ``src/static`` (HTML and JS, the vendored Alpine aside) and the Python modules
+under ``src/api`` that render HTML. Two brief-era counts used two different patterns (613 and
+602) and neither matches the other, which is why the pattern lives HERE with its own mutation
+check and the pins are its own counts: a pin measured with another pattern pins nothing.
+
+ZERO SLACK. Each file's count must EQUAL its pin: a new handler reddens by file name, and a
+conversion that removes one reddens too until the pin is lowered in the same change, so the
+ratchet can never quietly hold room for a regression.
+"""
+
+from __future__ import annotations
+
+import re
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+
+# The event list is the pattern: widening it is a change to what is measured.
+EVENTS = (
+    "click|dblclick|contextmenu|change|input|submit|reset|search|invalid|select|"
+    "keydown|keyup|keypress|focus|blur|focusin|focusout|"
+    "mouseover|mouseout|mouseenter|mouseleave|mousedown|mouseup|mousemove|wheel|scroll|"
+    "load|error|abort|toggle|close|cancel|resize|beforeunload|unload|"
+    "dragstart|drag|dragover|dragenter|dragleave|drop|dragend|"
+    "touchstart|touchend|touchmove|pointerdown|pointerup|pointermove|pointerenter|pointerleave|"
+    "animationend|transitionend|paste|copy|cut"
+)
+HANDLER = re.compile(r"(?<![\w.$-])on(?:" + EVENTS + r")\s*=\s*\\?[\"']", re.I)
+# An inline <script> block: a <script> tag with no src attribute.
+INLINE_SCRIPT = re.compile(r"<script\b(?![^>]*\bsrc\s*=)[^>]*>", re.I)
+
+# Measured on main @ 00af1d9 (2026-09-28) with HANDLER above; lowered as files convert.
+HANDLER_PINS: dict[str, int] = {
+    "src/static/app-agenda.js": 27,
+    "src/static/app-ai-tools.js": 13,
+    "src/static/app-analysis.js": 51,
+    "src/static/app-backup.js": 4,
+    "src/static/app-core.js": 16,
+    "src/static/app-corpus.js": 19,
+    "src/static/app-diagnostics.js": 5,
+    "src/static/app-gov-law.js": 3,
+    "src/static/app-home.js": 38,
+    "src/static/app-insights.js": 31,
+    "src/static/app-library.js": 4,
+    "src/static/app-living.js": 2,
+    "src/static/app-map.js": 25,
+    "src/static/app-markets.js": 17,
+    "src/static/app-settings.js": 14,
+    "src/static/app-shell.js": 7,
+    "src/static/app-sources.js": 15,
+    "src/static/index.html": 353,
+    "src/static/taskmanager.html": 11,
+    "src/static/unlock.html": 1,
+}
+
+# Inline <script> blocks on served pages (the reader and law reader are rendered in Python).
+INLINE_SCRIPT_PINS: dict[str, int] = {
+    "src/api/law.py": 1,
+    "src/api/main.py": 2,
+    "src/static/investigate.html": 1,
+    "src/static/taskmanager.html": 1,
+    "src/static/unlock.html": 1,
+}
+
+
+def _served_files() -> list[Path]:
+    static = ROOT / "src" / "static"
+    files = [p for p in static.rglob("*") if p.suffix in (".html", ".js") and "vendor" not in p.parts]
+    files += sorted((ROOT / "src" / "api").rglob("*.py"))
+    return sorted(files)
+
+
+def _rel(p: Path) -> str:
+    return p.relative_to(ROOT).as_posix()
+
+
+def count_handlers(text: str) -> int:
+    return len(HANDLER.findall(text))
+
+
+def count_inline_scripts(text: str) -> int:
+    return len(INLINE_SCRIPT.findall(text))
+
+
+def test_the_pattern_catches_every_spelling_and_nothing_else():
+    """The mutation check: the lesson of the ``onclick="cap"`` grep (LESSONS 2026-09-09)."""
+    caught = [
+        '<button onclick="go()">',
+        "<button onclick='go()'>",
+        '<input onChange = "go()">',
+        '`<a onclick="${fn}(1)">`',
+        "'<b onclick=\\\"go()\\\">'",
+        '<img onerror="x()">',
+        '<div onkeydown="if(event.key===1)go()">',
+    ]
+    for src in caught:
+        assert count_handlers(src) == 1, f"the pattern missed {src!r}"
+    missed = [
+        '<button data-on-click="go">',
+        "el.onclick = go;",
+        'el.addEventListener("click", go)',
+        "const oncloseHandler = 1;",
+        '<p>click on="that"</p>',
+        "reason=\"x\" button='y'",
+    ]
+    for src in missed:
+        assert count_handlers(src) == 0, f"the pattern over-matched {src!r}"
+    assert count_inline_scripts("<script>1</script><script src='/a.js'></script>") == 1
+    assert count_inline_scripts('<script type="module" src="/a.js"></script>') == 0
+
+
+def test_no_served_file_gains_an_inline_handler():
+    over, under = [], []
+    for p in _served_files():
+        n = count_handlers(p.read_text(encoding="utf-8"))
+        pin = HANDLER_PINS.get(_rel(p), 0)
+        if n > pin:
+            over.append(f"{_rel(p)}: {n} inline handlers, pinned at {pin}")
+        elif n < pin:
+            under.append(f"{_rel(p)}: {n} inline handlers, pin still {pin} -- lower it")
+    assert not over, (
+        "NEW inline event handlers (Q1127 = a: the CSP cannot drop 'unsafe-inline' while one "
+        "exists). Bind with data-on-<event> (src/static/oo-on.js) or addEventListener:\n  "
+        + "\n  ".join(over)
+    )
+    assert not under, "a conversion lowered a count; lower its pin in the same change:\n  " + "\n  ".join(under)
+    for rel in HANDLER_PINS:
+        assert (ROOT / rel).exists(), f"{rel} is pinned but no longer exists: drop its pin"
+
+
+def test_no_served_page_gains_an_inline_script():
+    bad = []
+    for p in _served_files():
+        if p.suffix == ".js":
+            continue
+        n = count_inline_scripts(p.read_text(encoding="utf-8"))
+        pin = INLINE_SCRIPT_PINS.get(_rel(p), 0)
+        if n != pin:
+            bad.append(f"{_rel(p)}: {n} inline <script> blocks, pinned at {pin}")
+    assert not bad, "\n  ".join(bad)
