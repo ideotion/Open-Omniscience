@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import json
 import threading
+from collections.abc import Iterable
 from dataclasses import dataclass
 from enum import Enum
 
@@ -369,43 +370,61 @@ class CustodyLog:
 
 
 def verify_entries(
-    entries: list[CustodyEntry],
+    entries: Iterable[CustodyEntry],
     *,
     pinned: PublicIdentity | None = None,
+    max_issues: int | None = None,
 ) -> tuple[bool, list[str]]:
-    """Re-validate a list of custody entries: hashes, chain links, and signatures.
+    """Re-validate custody entries: hashes, chain links, and signatures.
 
     Returns ``(ok, issues)``. ``issues`` is empty iff every check passes. Pass
     ``pinned`` to additionally require that every entry was signed by that exact
     public identity (proving provenance, not merely internal consistency).
+
+    ``entries`` may be any iterable and is walked once, so a caller holding a chain of
+    millions of entries can stream it instead of building the list (a restore's custody
+    import did, and ran a 7 GB machine out of memory, 2026-09-27). ``max_issues`` keeps
+    the first N issues and ends the list with a count of the rest, so a chain broken
+    near its start cannot grow a list as long as itself; ``ok`` still counts every one.
     """
     issues: list[str] = []
+    dropped = 0
+
+    def _issue(msg: str) -> None:
+        nonlocal dropped
+        if max_issues is not None and len(issues) >= max_issues:
+            dropped += 1
+        else:
+            issues.append(msg)
+
     expected_prev = GENESIS_PREV
     expected_seq = 1
     for e in entries:
         if e.seq != expected_seq:
-            issues.append(f"seq gap/reorder at entry {e.seq} (expected {expected_seq})")
+            _issue(f"seq gap/reorder at entry {e.seq} (expected {expected_seq})")
         if e.prev_entry_hash != expected_prev:
-            issues.append(
+            _issue(
                 f"broken chain at seq {e.seq}: prev_entry_hash does not match the "
                 "previous entry (an entry was altered, inserted, or removed)"
             )
         recomputed = _entry_digest(e.signable_core())
         if recomputed != e.entry_hash:
-            issues.append(f"entry_hash mismatch at seq {e.seq} (entry contents altered)")
+            _issue(f"entry_hash mismatch at seq {e.seq} (entry contents altered)")
         # Signature covers the full core (including the entry's timestamp proof).
         ok, reason = signing.verify(
             e.signature, canonical_bytes({**e.signable_core()}), pinned=pinned
         )
         if not ok:
-            issues.append(f"signature invalid at seq {e.seq}: {reason}")
+            _issue(f"signature invalid at seq {e.seq}: {reason}")
         # The timestamp proof must be over this entry's pre-timestamp digest.
         if e.timestamp.get("digest"):
             partial = {k: v for k, v in e.signable_core().items() if k != "timestamp"}
             if e.timestamp["digest"] != sha256(canonical_bytes(partial)).hex():
-                issues.append(f"timestamp digest does not match entry at seq {e.seq}")
+                _issue(f"timestamp digest does not match entry at seq {e.seq}")
         expected_prev = e.entry_hash
         expected_seq += 1
+    if dropped:
+        issues.append(f"... and {dropped} more issue(s) not listed")
     return (not issues), issues
 
 

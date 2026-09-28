@@ -42,10 +42,11 @@ import re
 import sqlite3
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterable, Iterator
 from contextlib import contextmanager, suppress
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
+from itertools import islice
 from pathlib import Path
 
 from src.backup.artifact import StagedArtifact
@@ -5028,18 +5029,41 @@ _CUSTODY_COLS = (
 )
 
 
-def _verify_chain_rows(rows: list) -> tuple[bool, list[str]]:
+#: Rows read from the staged custody file per fetch. Both passes over a chain walk it in
+#: slices of this size, so the import holds one slice rather than the chain.
+_CUSTODY_FETCH_ROWS = 5000
+#: Issues kept per chain; the rest are counted (see ``verify_entries``' ``max_issues``).
+_CUSTODY_MAX_ISSUES = 50
+
+
+def _custody_rows(src: sqlite3.Connection, sql: str, params: tuple) -> Iterator[tuple]:
+    """Yield a chain's rows one fetch-slice at a time, never the whole chain."""
+    cur = src.execute(sql, params)
+    while True:
+        batch = cur.fetchmany(_CUSTODY_FETCH_ROWS)
+        if not batch:
+            return
+        yield from batch
+
+
+def _verify_chain_rows(rows: Iterable[tuple]) -> tuple[bool, list[str], int]:
+    """Verify a chain from its rows, walked once. Returns ``(ok, issues, entries)``."""
     from src.custody.log import CustodyEntry, verify_entries
 
-    entries = [
-        CustodyEntry(
-            seq=r[0], item_id=r[1], item_hash=r[2], action=r[3], actor=r[4],
-            metadata=json.loads(r[5] or "{}"), prev_entry_hash=r[6], entry_hash=r[7],
-            signature=json.loads(r[8] or "{}"), timestamp=json.loads(r[9] or "{}"),
-        )
-        for r in rows
-    ]
-    return verify_entries(entries)
+    n = 0
+
+    def _entries() -> Iterator[CustodyEntry]:
+        nonlocal n
+        for r in rows:
+            n += 1
+            yield CustodyEntry(
+                seq=r[0], item_id=r[1], item_hash=r[2], action=r[3], actor=r[4],
+                metadata=json.loads(r[5] or "{}"), prev_entry_hash=r[6], entry_hash=r[7],
+                signature=json.loads(r[8] or "{}"), timestamp=json.loads(r[9] or "{}"),
+            )
+
+    ok, problems = verify_entries(_entries(), max_issues=_CUSTODY_MAX_ISSUES)
+    return ok, problems, n
 
 
 def merge_custody(staged_custody: Path, origin_fingerprint: str) -> dict:
@@ -5051,93 +5075,114 @@ def merge_custody(staged_custody: Path, origin_fingerprint: str) -> dict:
 
     Chains the foreign corpus had itself imported (its custody_imported_entries)
     propagate TRANSITIVELY under their original chain ids: an heir corpus keeps
-    the whole evidence lineage, each chain standing on its own signatures."""
+    the whole evidence lineage, each chain standing on its own signatures.
+
+    STREAMED, in two passes per chain (field 2026-09-27): each chain is read in slices
+    of ``_CUSTODY_FETCH_ROWS`` once to verify it and once to insert it, because the
+    verdict is stored on every row and so must be known before the first insert. This
+    used to ``fetchall()`` every chain and then build a second list of parsed entries
+    beside it. Custody grows by one entry per ingested article and every heir carries
+    its ancestors' chains, so on a 1-million-article backup that was gigabytes: two
+    imports on a 7 GB machine were killed in this stage at 5.6 and 6.0 GB, after hours
+    of merging, before the swap."""
     src = sqlite3.connect(f"file:{staged_custody}?mode=ro", uri=True)
     try:
         src_tables = {
             r[0] for r in src.execute("SELECT name FROM sqlite_master WHERE type='table'")
         }
-        chains: list[tuple[str, list]] = []
+        # (chain id, the query that walks it in seq order, its parameters)
+        sources: list[tuple[str, str, tuple]] = []
         if "custody_entries" in src_tables:
-            rows = src.execute(
-                f"SELECT {_CUSTODY_COLS} FROM custody_entries ORDER BY seq ASC"  # noqa: S608  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
-            ).fetchall()
-            if rows:
-                their_chain = (
-                    origin_fingerprint if origin_fingerprint != "unsigned" else "unknown-origin"
-                )
-                chains.append((their_chain, rows))
+            their_chain = (
+                origin_fingerprint if origin_fingerprint != "unsigned" else "unknown-origin"
+            )
+            sources.append((
+                their_chain,
+                f"SELECT {_CUSTODY_COLS} FROM custody_entries ORDER BY seq ASC",  # noqa: S608  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
+                (),
+            ))
         if "custody_imported_entries" in src_tables:
             for (cid,) in src.execute(
                 "SELECT DISTINCT chain_id FROM custody_imported_entries"
             ).fetchall():
-                rows = src.execute(
+                sources.append((
+                    cid,
                     f"SELECT {_CUSTODY_COLS} FROM custody_imported_entries"  # noqa: S608  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
                     " WHERE chain_id = ? ORDER BY seq ASC",
                     (cid,),
-                ).fetchall()
-                if rows:
-                    chains.append((cid, rows))
+                ))
+
+        # Pass 1: verify every chain, holding only its verdict. An empty chain is
+        # skipped, as it always was.
+        chains: list[tuple[str, str, tuple, bool, list[str], int]] = []
+        for chain_id, sql, params in sources:
+            ok, problems, n = _verify_chain_rows(_custody_rows(src, sql, params))
+            if n:
+                chains.append((chain_id, sql, params, ok, problems, n))
+        if not chains:
+            return {"entries": 0, "imported": 0, "duplicate": 0, "chains": []}
+
+        from src.database.connect import connect as db_connect
+
+        dest = db_connect(data_dir() / "custody_log.db", check_same_thread=False)
+        try:
+            dest.execute(
+                """
+                CREATE TABLE IF NOT EXISTS custody_imported_entries (
+                    chain_id TEXT NOT NULL,
+                    seq INTEGER NOT NULL,
+                    item_id TEXT NOT NULL,
+                    item_hash TEXT NOT NULL,
+                    action TEXT NOT NULL,
+                    actor TEXT,
+                    metadata_json TEXT NOT NULL,
+                    prev_entry_hash TEXT NOT NULL,
+                    entry_hash TEXT NOT NULL,
+                    signature_json TEXT NOT NULL,
+                    timestamp_json TEXT NOT NULL,
+                    verified INTEGER NOT NULL,
+                    verify_note TEXT,
+                    imported_at TEXT NOT NULL,
+                    PRIMARY KEY (chain_id, seq)
+                )
+                """
+            )
+            now = datetime.now(UTC).isoformat(timespec="seconds")
+            total = imported = 0
+            chain_reports = []
+            all_ok = True
+            problems_acc: list[str] = []
+            insert = (
+                "INSERT OR IGNORE INTO custody_imported_entries"
+                " (chain_id, seq, item_id, item_hash, action, actor, metadata_json,"
+                "  prev_entry_hash, entry_hash, signature_json, timestamp_json,"
+                "  verified, verify_note, imported_at)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            )
+            # Pass 2: insert each chain slice by slice, with the verdict pass 1 found.
+            for chain_id, sql, params, ok, problems, n in chains:
+                all_ok = all_ok and ok
+                problems_acc.extend(problems[:3])
+                note = None if ok else "; ".join(problems)[:500]
+                verified = 1 if ok else 0
+                before = dest.total_changes
+                rows = _custody_rows(src, sql, params)
+                while batch := list(islice(rows, _CUSTODY_FETCH_ROWS)):
+                    dest.executemany(
+                        insert, [(chain_id, *r, verified, note, now) for r in batch]
+                    )
+                chain_new = dest.total_changes - before
+                total += n
+                imported += chain_new
+                chain_reports.append(
+                    {"chain_id": chain_id[:16], "entries": n, "new": chain_new,
+                     "verified": ok}
+                )
+            dest.commit()
+        finally:
+            dest.close()
     finally:
         src.close()
-    if not chains:
-        return {"entries": 0, "imported": 0, "duplicate": 0, "chains": []}
-
-    from src.database.connect import connect as db_connect
-
-    dest = db_connect(data_dir() / "custody_log.db", check_same_thread=False)
-    try:
-        dest.execute(
-            """
-            CREATE TABLE IF NOT EXISTS custody_imported_entries (
-                chain_id TEXT NOT NULL,
-                seq INTEGER NOT NULL,
-                item_id TEXT NOT NULL,
-                item_hash TEXT NOT NULL,
-                action TEXT NOT NULL,
-                actor TEXT,
-                metadata_json TEXT NOT NULL,
-                prev_entry_hash TEXT NOT NULL,
-                entry_hash TEXT NOT NULL,
-                signature_json TEXT NOT NULL,
-                timestamp_json TEXT NOT NULL,
-                verified INTEGER NOT NULL,
-                verify_note TEXT,
-                imported_at TEXT NOT NULL,
-                PRIMARY KEY (chain_id, seq)
-            )
-            """
-        )
-        now = datetime.now(UTC).isoformat(timespec="seconds")
-        total = imported = 0
-        chain_reports = []
-        all_ok = True
-        problems_acc: list[str] = []
-        for chain_id, rows in chains:
-            ok, problems = _verify_chain_rows(rows)
-            all_ok = all_ok and ok
-            problems_acc.extend(problems[:3])
-            note = None if ok else "; ".join(problems)[:500]
-            chain_new = 0
-            for r in rows:
-                cur = dest.execute(
-                    "INSERT OR IGNORE INTO custody_imported_entries"
-                    " (chain_id, seq, item_id, item_hash, action, actor, metadata_json,"
-                    "  prev_entry_hash, entry_hash, signature_json, timestamp_json,"
-                    "  verified, verify_note, imported_at)"
-                    " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                    (chain_id, *r, 1 if ok else 0, note, now),
-                )
-                chain_new += cur.rowcount or 0
-            total += len(rows)
-            imported += chain_new
-            chain_reports.append(
-                {"chain_id": chain_id[:16], "entries": len(rows), "new": chain_new,
-                 "verified": ok}
-            )
-        dest.commit()
-    finally:
-        dest.close()
     return {
         "entries": total,
         "imported": imported,
