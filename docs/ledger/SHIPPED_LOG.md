@@ -10302,6 +10302,14 @@ maintainer's step, spelled out in row G. CI then caught a date bomb the flip set
 User-Agent, which carries the package version; it now asserts that the UA names the installed
 version. Lessons: `LESSONS.md`, the two entries dated by this PR.
 
+## 2026-09-28 — The Claim Workspace, slice 1 (0.5 row K, S05-11 S1)
+
+Steps ① ② ③ ⑤ of design A-2 over the local corpus, one read (`GET /api/claims/workspace`), composed from the
+index, near-duplicate, wire-attribution and shared-link primitives; ④ and ⑥ drawn as not built. Articles join
+into one path by same source, near-identical text, a shared outbound page or the same wire; a path of one is
+"no shared origin found", never independent. Chromium-walked in `en` and `ar`. The walk found two sentences
+keyed in no locale that every i18n gate had passed: the `t()` gate skips a literal with a `{placeholder}` and
+the `tf()` gate does not see a frame called through a parameter (lesson copied to `LESSONS.md`).
 
 ## 2026-09-28 — The Wikipedia lane's own search index, its hits in the search box, and «Add to corpus» (PR #1202)
 
@@ -10326,6 +10334,23 @@ index, WARM's switch when off). A query reads with advanced search's grammar in 
 articles are named as not applied, never widened. Lessons: `LESSONS.md`, the four entries dated by
 this PR.
 
+### 2026-09-28 · backup/import-dialog-walk · PR #1205
+
+Asked in the claim-workspace thread: «did you check the import window and how it reacts to an active
+import? I heard there was some overlapping texts during import or during an import that followed a
+failed import», then «I'm thinking about the language, the translation, and the overall aesthetics of
+the UI and the overall user experience». Walked in Chromium against two encrypted backups (60,000 and
+40,000 articles) imported into a 3,000-article install: a wrong passphrase first, then the right one,
+in en, fr, de, ar and ja and in ar at 375 px, plus a stopped import followed by a new one. Every change
+of the dialog's text was recorded with a geometric overlap check. No text box overlapped another. What
+was wrong, and is fixed: the failed run's rows under the next run (run view reset on start and on a new
+scan); stage 3 "done", stage 4 "complete" and "Analytics are complete" on a run that imported nothing,
+beside "keep the files until this import is saved" for a save that would never come (an ended run now
+says what it left); the wrong-passphrase error in English in every locale (`ooServerText`); a folder
+name wrapped to four lines of ten characters in the 560 px dialog (the per-backup rows are a grid with
+the name on its own line); "from 0 new sources spanning 0 new languages" (the frame names only what
+grew); fr/es/pt "importé" beside a plural. Record: `docs/audit/import-dialog-walk-2026-09-28/`.
+Lessons: `LESSONS.md`, the two entries dated by this PR.
 
 ## 2026-09-28 — «Add to corpus» in the version reader, for any listed Wikipedia version (PR #1207)
 

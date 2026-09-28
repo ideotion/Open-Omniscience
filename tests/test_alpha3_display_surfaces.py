@@ -135,6 +135,11 @@ _SURFACES: tuple[tuple[str, str, str], ...] = (
     # --- Living sources (S04-08 S6) ----------------------------------------- #
     ("app-living.js", "ooLangCell(c.language, ", "a live-stream change's language pill"),
     ("app-living.js", "ooCountryCell(c.jurisdiction, ", "a law change's jurisdiction pill"),
+    # --- Claim workspace (S05-11 S1) ---------------------------------------- #
+    ("app-claim.js", "ooLangCell(a.language, ", "a related article's language pill"),
+    ("app-claim.js", "ooCountryCell(r.country, ", "a timeline row's source country"),
+    ("app-claim.js", "ooCountryCell(k)", "a country silent in the trail"),
+    ("app-claim.js", "ooLangCell(k)", "a language silent in the trail"),
     # --- Home --------------------------------------------------------------- #
     ("app-home.js", "ooCountryCell(tr.country)", "the transparency card dimension"),
     ("app-home.js", "ooLangCell(lang)", "a briefing card's language"),
