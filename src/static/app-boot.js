@@ -310,6 +310,13 @@
           if (typeof repaintWikiTCFromCache === "function") repaintWikiTCFromCache();
         }
       } catch (_e) {}
+      // The Claim Workspace builds every step with t()/tf() at render time too: redraw it
+      // from the trail it already holds, never a fetch, and only if it was ever walked.
+      try {
+        if (typeof _claimLast !== "undefined" && _claimLast && typeof repaintClaimFromCache === "function") {
+          repaintClaimFromCache();
+        }
+      } catch (_e) {}
       // The held Wikipedia version (R52) opens from the palette whether or not Living
       // sources was ever opened, so it redraws on its own test: the dialog is open. The
       // Search tab's Wikipedia section is composed the same way and redraws beside it.
@@ -879,4 +886,21 @@
         if (e.target.closest(".nav-item, button, a, input, label, select, textarea")) return;
         toggleSidebar();
       });
+    })();
+    // S05-08: the background translation sweeps fill the INTERFACE language, which only
+    // this page knows. Reported once the locale is ready and again on every switch --
+    // a loopback write of one code, never a model call and never an egress. A locked
+    // store or an older server simply refuses; nothing here may disturb the page.
+    (function _wireInterfaceLangReport() {
+      const report = () => {
+        const code = (window.OOI18N && OOI18N.current) ? OOI18N.current() : "";
+        if (!code) return;
+        fetch("/api/ai/interface-language", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ lang: code }),
+        }).catch(() => {});
+      };
+      Promise.resolve(window.OOI18N && OOI18N.ready).then(report, report);
+      document.addEventListener("oo:langchange", report);
     })();

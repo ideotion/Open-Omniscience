@@ -13,7 +13,7 @@ Both are empty until their jobs run, which is exactly what they mean.
 GUARDED like the head migration: the boot path's ``create_all`` may have built them first.
 
 Revision ID: d4e6f8a0b2c4
-Revises: b3d7f1a9c5e2
+Revises: c8e2a4f6b1d3
 Create Date: 2026-09-28
 
 Open Omniscience - Global Intelligence Platform for Investigative Journalism
@@ -26,7 +26,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "d4e6f8a0b2c4"
-down_revision: str | None = "b3d7f1a9c5e2"
+down_revision: str | None = "c8e2a4f6b1d3"
 branch_labels: str | None = None
 depends_on: str | None = None
 

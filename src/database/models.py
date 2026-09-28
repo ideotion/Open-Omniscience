@@ -1990,6 +1990,58 @@ class KeywordTranslation(Base):
         )
 
 
+class ArticleTitleTranslation(Base):
+    """A TENTATIVE ``≈`` title (and one-line summary) for ONE article, from a local model.
+
+    Q513 = b (2026-09-15, brief ``S05-08`` S2): article titles and summaries translated by
+    the local LLM, ``≈``-marked, shown on hover and in lists when the AI coordinator is on,
+    **never stored as the article**, opt-in. This table is that "never": the article row is
+    never written, the keyword indexer never reads here, and a reader that renders a row
+    owes the ``≈`` label and the model that wrote it.
+
+    **THE SUMMARY IS OF THE OPENING, AND SAYS SO.** The model is shown the title and the
+    first ``OPENING_CHARS`` characters of the article, not the whole text, so ``summary`` is
+    a one-sentence gist of the article's opening. Every surface that shows it names that,
+    because "a summary" read as "a summary of the whole article" would claim a reading the
+    model never did.
+
+    **IDENTITY:** ``(article_id, target_lang, model, prompt_version)`` -- the
+    ``keyword_translations`` vintage shape for the same reason: a different model or
+    prompt is a different measurement, and the reader picks the newest, at the read.
+    ``model`` and ``prompt_version`` are NOT NULL here (the sweep always knows both), so
+    the plain UNIQUE constraint is enough and no NULL-safe twin index is needed.
+
+    **NOT CARRIED BY A RESTORE** (``_MERGE_NOT_CARRIED``): Q513 is silent on backups and the
+    brief leaves it open, so the proposed default is the cheap, reversible one -- a
+    derived, regenerable table the sweep re-fills, rather than a new backup member.
+    """
+
+    __tablename__ = "article_title_translations"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    article_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("articles.id", ondelete="CASCADE"), nullable=False
+    )
+    source_lang: Mapped[str] = mapped_column(String(16), nullable=False)
+    target_lang: Mapped[str] = mapped_column(String(16), nullable=False)
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    summary: Mapped[str | None] = mapped_column(Text)
+    model: Mapped[str] = mapped_column(String(120), nullable=False)
+    prompt_version: Mapped[str] = mapped_column(String(40), nullable=False)
+    created_at: Mapped[datetime | None] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+
+    __table_args__ = (
+        UniqueConstraint(
+            "article_id", "target_lang", "model", "prompt_version",
+            name="uq_article_title_translation",
+        ),
+        Index("ix_article_title_translations_lookup", "target_lang", "article_id"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<ArticleTitleTranslation(article={self.article_id} ->{self.target_lang})>"
+
+
 class ArticleMentionedPlace(Base):
     """A place DEDUCED from an article's text at ingest (T12, When×Where×Who).
 

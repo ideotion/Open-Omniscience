@@ -415,6 +415,8 @@
         <button data-on-click="doSearch()">Search</button>
         <button class="secondary" data-on-click="openAnalysis()"
           title="Open the analysis window: keywords and matches across the articles this search returns.">Analyze →</button>
+        <button class="secondary" type="button" id="claim-from-search"
+          title="Open the claim workspace on the text in the search box: the related articles, how they group by independence, who said what when, and what is missing. A trail, never a verdict.">Check as a claim</button>
         <button class="secondary" data-on-click="exportResults('csv')">Export CSV</button>
         <button class="secondary" data-on-click="exportResults('json')">Export JSON</button>
         <button class="secondary" data-on-click="exportMethods()"
@@ -437,6 +439,30 @@
            What was searched is said with every answer. Composed with t() in app-living.js,
            so the walker leaves it alone and a language switch redraws it from cache. -->
       <div id="search-lane" class="lane-search" data-i18n-dyn hidden></div>
+    </section>
+    </div>
+
+    <!-- ========================== CLAIM WORKSPACE =========================== -->
+    <!-- The Claim Workspace, slice 1 (gate row K, brief S05-11 S1; design A1 / A-2). A claim
+         walked through the local corpus in visible steps, each with its method sentence on
+         the page: a trail, never a verdict. Kept off the sidebar like the analysis window;
+         opened from the omnibar's "Check as a claim" row, the Search tab's button and the
+         palette's page list. Rendered by app-claim.js. -->
+    <div class="tab-page" id="tab-claim">
+    <section class="panel">
+      <div class="phead"><h2>Claim workspace</h2></div>
+      <p class="hint" style="margin-top:0">Paste a claim and the app walks it through your corpus, one step at a time.</p>
+      <div class="card-caveat" id="claim-caveat">A trail, never a verdict: this shows what your corpus holds about a claim and how those articles connect, not whether the claim is true. Nothing is scored, no model writes any of it, and nothing leaves your machine.</div>
+      <label for="claim-text" class="claim-label">The claim</label>
+      <textarea id="claim-text" rows="3" maxlength="1000" placeholder="For example: glacier melt in the Alps has doubled since 2000"></textarea>
+      <label for="claim-query" class="claim-label">Words to search for <span class="muted">(optional)</span></label>
+      <input id="claim-query" type="text" maxlength="2000" placeholder="Blank: the claim's own words"
+        title="The Search tab's grammar: AND, OR, NOT, &quot;phrases&quot; and brackets. Blank takes the claim's content words and joins them with OR.">
+      <div class="claim-actions">
+        <button type="button" id="claim-run">Walk the trail</button>
+        <span id="claim-status" class="hint" role="status"></span>
+      </div>
+      <div id="claim-body"></div>
     </section>
     </div>
 
@@ -1643,6 +1669,9 @@
           </div>
           <div id="wiki-tc-body"><div class="muted">Pick a page above to read its tracked revisions.</div></div>
           <div id="wiki-tc-method" class="card-caveat"></div>
+          <!-- S05-07 S1: the ONE version reader (ooversions.js), the same component the
+               law reader mounts -- same controls, same disclosures (Q918's note). -->
+          <div id="wiki-tc-versions" class="living-versions"></div>
         </section>
       </div>
 
@@ -1651,6 +1680,36 @@
         <h3 class="lib-sub">Recent changes</h3>
         <p class="hint">Changes the law tracker observed in the documents it follows, newest first, each with its stored diff.</p>
         <div id="living-law-changes"></div>
+        <!-- 0.5 row G (S05-07): the law evolution surface. Every block below reads the
+             law tracker's stored versions on this machine; nothing here fetches. -->
+        <h3 class="lib-sub">What changed this week in the laws you follow</h3>
+        <div id="living-law-week"></div>
+        <h3 class="lib-sub">Search the laws as they stood on a day</h3>
+        <p class="hint">Finds the words in the version of each tracked law that was in force on the day you pick, among the versions this machine holds.</p>
+        <form id="law-pit-form" class="row living-law-form">
+          <input id="law-pit-q" type="search" autocomplete="off" aria-label="Words to find" placeholder="words or &quot;a phrase&quot;">
+          <input id="law-pit-on" type="date" aria-label="In force on">
+          <button type="submit">Search</button>
+        </form>
+        <div id="law-pit-results"></div>
+        <h3 class="lib-sub">Documents you track</h3>
+        <div id="living-law-docs" class="living-pages"></div>
+        <section id="law-tc" class="living-tc">
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+            <b id="law-tc-title" class="muted" style="font-size:13px;font-weight:500"></b>
+          </div>
+          <div id="law-tc-versions" class="living-versions"><div class="muted">Pick a document above to compare its versions.</div></div>
+        </section>
+        <h3 class="lib-sub">A topic across jurisdictions</h3>
+        <form id="law-topic-form" class="row living-law-form">
+          <input id="law-topic-q" type="search" autocomplete="off" aria-label="Topic" placeholder="a topic, in the language of the texts">
+          <button type="submit">Compare</button>
+        </form>
+        <div id="law-topic-results"></div>
+        <h3 class="lib-sub">Amendment activity on the map</h3>
+        <div id="law-amend-vintage" class="hint"></div>
+        <div id="law-amend-map"></div>
+        <div id="law-amend-off"></div>
       </div>
 
       <div id="living-osm" style="display:none">
@@ -1868,6 +1927,8 @@
           <label class="small"><input type="checkbox" id="aic-m-source_tags" data-on-change="saveAiSweepMembership()"> Source topic tags</label>
           <label class="small"><input type="checkbox" id="aic-m-keyword_triage" data-on-change="saveAiSweepMembership()"> Keyword triage</label>
           <label class="small"><input type="checkbox" id="aic-m-langdetect" data-on-change="saveAiSweepMembership()"> Unknown languages <span id="langdetect-status" class="muted"></span></label>
+          <label class="small" title="Translates your most-used keywords into your interface language where no verified translation exists. Each answer is tentative, marked ≈, kept with the model that wrote it, and never enters the keyword index."><input type="checkbox" id="aic-m-keyword_translation" data-on-change="saveAiSweepMembership()"> Keyword translation (≈)</label>
+          <label class="small" title="Opt-in. Writes a tentative ≈ title, and a one-sentence summary of the article's opening, for recent articles in other languages. Shown under the original title in search results, never instead of it, and never stored as the article."><input type="checkbox" id="aic-m-article_titles" data-on-change="saveAiSweepMembership()"> ≈ Titles in search results (opt-in)</label>
         </div>
         <div id="aic-hw" class="hint" style="margin-top:6px"></div>
       </div>
@@ -3882,6 +3943,7 @@
   <script src="/static/ooviz.js"></script>
   <script src="/static/oosky.js"></script>
   <script src="/static/ootimeline.js"></script>
+  <script src="/static/ooversions.js"></script>
   <script src="/static/oo-on.js"></script>
   <script src="/static/app-core.js"></script>
   <script src="/static/app-shell.js"></script>
@@ -3900,6 +3962,7 @@
   <script src="/static/app-corpus.js"></script>
   <script src="/static/app-map.js"></script>
   <script src="/static/app-analysis.js"></script>
+  <script src="/static/app-claim.js"></script>
   <script src="/static/app-ai-tools.js"></script>
   <script src="/static/app-boot.js"></script>
   <!-- Settings -> GUIs gallery renderer (loads after app.js; called by showSetCat). -->

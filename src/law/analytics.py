@@ -30,6 +30,7 @@ do the division for it.
 from __future__ import annotations
 
 from collections import Counter, defaultdict
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
 from sqlalchemy.orm import Session
@@ -209,5 +210,210 @@ def amendment_velocity(
             "version. `tracked_documents` is given per jurisdiction as the denominator a "
             "reader needs; no rate is computed here, because dividing would produce a "
             "figure that reads as a legislative rate and is a statement about a watch list."
+        ),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Analytics 3–5 (Q914 = a, placed in 0.5 by the gate row; brief S05-07 S5)
+# ---------------------------------------------------------------------------
+
+
+def _place(jurisdiction: str | None) -> str | None:
+    """The ISO 3166-1 alpha-2 a map can draw for one jurisdiction, or ``None``.
+
+    ``None`` for the EU, an international instrument, the synthetic ``ZZZ`` and anything
+    unreadable: those are not countries, and drawing the EU's activity over its member
+    states would put one body's amendments on twenty-seven countries' fills.
+    """
+    from src.catalog.countries import ISO_3166_1_ALPHA2, normalize_country
+
+    code = normalize_country(jurisdiction or "")
+    return code if code in ISO_3166_1_ALPHA2 else None
+
+
+def topic_by_jurisdiction(session: Session, query: str) -> dict:
+    """Analytic 3: which jurisdictions' tracked laws mention a topic — counts per jurisdiction.
+
+    Three counts and the denominator, never a ratio: the versions containing the words,
+    the documents with any such version, and the documents whose NEWEST held version
+    contains them (a topic a later amendment removed is counted in the first two and not
+    the third, which is the comparison worth making). Read through the point-in-time
+    index, so it searches every held version and nothing else.
+    """
+    from src.law.pit_search import search
+
+    found = search(session, query, limit=10**6)
+    tracked = Counter(
+        (j or "").lower() or "unknown" for (j,) in session.query(LawDocument.jurisdiction).all()
+    )
+    per: dict[str, dict] = {}
+    for hit in found.get("hits", []):
+        j = (hit["jurisdiction"] or "").lower() or "unknown"
+        row = per.setdefault(j, {"versions": 0, "documents": set(), "current": set()})
+        row["versions"] += 1
+        row["documents"].add(hit["document_id"])
+        if hit["current"]:
+            row["current"].add(hit["document_id"])
+    rows = [
+        {
+            "jurisdiction": j,
+            "versions_matching": v["versions"],
+            "documents_matching": len(v["documents"]),
+            "documents_current_matching": len(v["current"]),
+            "tracked_documents": tracked.get(j, 0),
+        }
+        for j, v in sorted(per.items())
+    ]
+    return {
+        "query": query,
+        "status": found.get("status"),
+        "reason": found.get("reason"),
+        "rows": rows,
+        "n": len(rows),
+        "coverage": found.get("coverage"),
+        "method": (
+            "For each jurisdiction: the stored versions containing every word, the "
+            "documents with at least one such version, and the documents whose newest "
+            "held version contains them — beside how many documents this instance tracks "
+            "there. Counts only; no ratio is computed."
+        ),
+        "caveat": (
+            "A comparison of what this install tracks, not of the jurisdictions' law: a "
+            "jurisdiction with few tracked documents will show few matches. Words are "
+            "matched in the language each document is written in; a topic phrased in "
+            "English does not find a French text."
+        ),
+    }
+
+
+def amendment_map(session: Session, *, days: int = 365, now: datetime | None = None) -> dict:
+    """Analytic 4: captured amendments per country over a window, for an equal-area map.
+
+    The same count as analytic 2 (a stored version that is not the first capture), summed
+    over one window. The VINTAGE is part of the payload — the window's two ends and the
+    newest capture the counts include — because a map without a date reads as the
+    present, and this one is only ever as recent as the last poll.
+    """
+    end = now or datetime.now(UTC)
+    start = end - timedelta(days=max(1, int(days)))
+    rows = (
+        session.query(LawDocument.jurisdiction, LawRevision.observed_at, LawRevision.diff_basis)
+        .join(LawRevision, LawRevision.document_id == LawDocument.id)
+        .filter(LawRevision.observed_at.isnot(None))
+        .all()
+    )
+    placed: Counter = Counter()
+    unplaced: Counter = Counter()
+    newest: datetime | None = None
+    excluded = 0
+    for jurisdiction, observed, basis in rows:
+        if observed is None:
+            continue
+        stamp = observed if observed.tzinfo else observed.replace(tzinfo=UTC)
+        if not (start <= stamp <= end):
+            continue
+        if basis == "first":
+            excluded += 1
+            continue
+        newest = stamp if newest is None or stamp > newest else newest
+        iso2 = _place(jurisdiction)
+        if iso2:
+            placed[iso2] += 1
+        else:
+            unplaced[(jurisdiction or "").lower() or "unknown"] += 1
+    tracked: Counter = Counter()
+    tracked_unplaced: Counter = Counter()
+    for (j,) in session.query(LawDocument.jurisdiction).all():
+        iso2 = _place(j)
+        if iso2:
+            tracked[iso2] += 1
+        else:
+            tracked_unplaced[(j or "").lower() or "unknown"] += 1
+    return {
+        "values": dict(sorted(placed.items())),
+        "tracked_documents": dict(sorted(tracked.items())),
+        "not_on_the_map": [
+            {"jurisdiction": j, "amendments": unplaced.get(j, 0), "tracked_documents": n}
+            for j, n in sorted(tracked_unplaced.items())
+        ],
+        "window_days": max(1, int(days)),
+        "window_from": start.date().isoformat(),
+        "window_to": end.date().isoformat(),
+        "newest_capture": newest.isoformat() if newest else None,
+        "excluded_first_captures": excluded,
+        "n": sum(placed.values()),
+        "method": (
+            "One count per stored version that is not a document's first capture, "
+            "captured inside the window, by the jurisdiction of its document. Drawn on an "
+            "equal-area projection."
+        ),
+        "caveat": (
+            "What this install captured, not what the legislatures did: it depends on "
+            "which documents are tracked and how often they are polled. The EU and "
+            "international instruments are not countries and are listed beside the map, "
+            "never spread over their members."
+        ),
+    }
+
+
+def changed_this_week(session: Session, *, days: int = 7, now: datetime | None = None) -> dict:
+    """Analytic 5: what changed in the laws I follow, over the last ``days``.
+
+    "The laws I follow" is the watch list — the documents whose ``watched`` flag is set —
+    and "changed" is a stored version captured in the window that is not a first capture.
+    Listed per document, newest first, with the count and the reader link; the words of
+    the change are the reader's, never summarised here.
+    """
+    end = now or datetime.now(UTC)
+    start = end - timedelta(days=max(1, int(days)))
+    rows = (
+        session.query(LawDocument, LawRevision)
+        .join(LawRevision, LawRevision.document_id == LawDocument.id)
+        .filter(LawDocument.watched.is_(True), LawRevision.observed_at.isnot(None))
+        .all()
+    )
+    per: dict[int, dict] = {}
+    for doc, rev in rows:
+        observed = rev.observed_at
+        if observed is None:  # filtered out by the query; this narrows the type
+            continue
+        stamp = observed if observed.tzinfo else observed.replace(tzinfo=UTC)
+        if not (start <= stamp <= end) or rev.diff_basis == "first":
+            continue
+        item = per.setdefault(
+            doc.id,
+            {
+                "document_id": doc.id,
+                "title": doc.title,
+                "jurisdiction": doc.jurisdiction,
+                "language": doc.language,
+                "changes": 0,
+                "newest": None,
+                "newest_version": None,
+                "reader_url": f"/api/law/documents/{doc.id}/view",
+            },
+        )
+        item["changes"] += 1
+        if item["newest"] is None or stamp.isoformat() > item["newest"]:
+            item["newest"] = stamp.isoformat()
+            item["newest_version"] = rev.id
+    followed = session.query(LawDocument.id).filter(LawDocument.watched.is_(True)).count()
+    items = sorted(per.values(), key=lambda x: x["newest"] or "", reverse=True)
+    return {
+        "items": items,
+        "n": len(items),
+        "followed_documents": followed,
+        "window_days": max(1, int(days)),
+        "window_from": start.date().isoformat(),
+        "window_to": end.date().isoformat(),
+        "method": (
+            "The documents you track whose text this instance saw change inside the "
+            "window, with how many new versions were captured; a document's first "
+            "capture is not a change."
+        ),
+        "caveat": (
+            "A change is seen only when a poll finds it: a law amended this week and not "
+            "polled since is not listed, and two amendments between polls arrive as one."
         ),
     }

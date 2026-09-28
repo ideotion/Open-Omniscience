@@ -2790,6 +2790,22 @@
       }
       return tf(t("Search failed: {error}"), { error: (e && e.message) || String(e) });
     }
+    // S05-08 S2 (Q513 = b): the ≈ title a local model wrote, UNDER the original and never
+    // instead of it. The hover carries who wrote it and the one-sentence gist of the
+    // article's opening -- named as the opening, because the model never read the rest.
+    function _approxTitleHtml(a) {
+      const tt = a && a.title_translation;
+      if (!tt || !tt.title) return "";
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
+        : ((s, v) => s.replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null ? String(v[k]) : m)));
+      const lines = [tf("≈ Tentative translation from {lang}, written by your local model {model}. It may be wrong; the original title is above.",
+        { lang: (typeof ooLangName === "function" && tt.source_lang) ? ooLangName(tt.source_lang) : (tt.source_lang || "?"),
+          model: tt.model || "?" })];
+      if (tt.summary) lines.push(tf("≈ What the opening says: {gist}", { gist: tt.summary }));
+      return `<div class="approx-title" lang="${esc(window.OOI18N && OOI18N.current ? OOI18N.current() : "")}" title="${esc(lines.join("\n"))}">`
+        + `<span class="approx-mark" aria-label="${esc(t("tentative translation"))}">≈</span> ${esc(tt.title)}</div>`;
+    }
     async function doSearch() {
       // Through _articleQuery like every other /api/articles caller. The Search tab never
       // carries an id-seeded corpus, so this is a no-op here -- but making the rule
@@ -2802,6 +2818,10 @@
         searchLaneHits(p.get("query") || "",
           ["source", "language", "start_date", "end_date"].some((k) => p.get(k)));
       }
+      // The reader's language rides every search, query or not, so the list can carry a
+      // ≈ title where the opt-in title sweep wrote one (S05-08 S2). It only ever ADDS a
+      // line under the original title; the server attaches nothing when the sweep is off.
+      if (!p.get("ui_lang") && window.OOI18N && OOI18N.current) p.set("ui_lang", OOI18N.current());
       try {
         const data = await api("/api/articles?" + p.toString());
         // Keyed frames with the counts interpolated after translation -- the line was a
@@ -2821,7 +2841,7 @@
         const t = $("results");
         t.innerHTML = "<tr><th>Title</th><th>Source</th><th>Published</th><th>Lang</th><th></th></tr>" +
           (data.results.length ? data.results.map(a =>
-            `<tr><td><div>${esc(a.title) || '<span class="muted">(untitled)</span>'}</div>
+            `<tr><td><div>${esc(a.title) || '<span class="muted">(untitled)</span>'}</div>${_approxTitleHtml(a)}
                  <div class="muted" style="font-size:12px">${esc((a.content||"").slice(0,160))}…</div></td>
              <td>${esc(a.source)}${_anToneChip(a)}</td><td class="muted">${esc((a.published_at||"").slice(0,10))}</td>
              <td>${ooLangCell(a.language)}</td>
