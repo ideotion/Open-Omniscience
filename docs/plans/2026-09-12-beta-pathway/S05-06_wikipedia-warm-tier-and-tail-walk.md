@@ -15,6 +15,9 @@
 > **Sequencing:** after 0.4 rows K, O and P; the walk starts once WARM exists; the run closes the row.
 > **Built FIRST in 0.5 (`R40`, 2026-09-28)**, beside wave 1, so the run overlaps the other rows' build;
 > K, O and P are all built on `main` (K and P still owe their operator runs, which this run can share).
+> The walk (S2 + S3) ships BEFORE WARM (S1). The line above put WARM first so that a walked page could
+> never become a followed page fetched and indexed as HOT; the walk meets that by keeping its pages in
+> its own table and never creating a followed page, and WARM follows it directly.
 
 ## 0. Working mode
 

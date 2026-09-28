@@ -196,8 +196,9 @@ own coverage counters (pages seen / edition total per edition) read from one art
 **operator:** the run and the transport choice. Brief `S05-06`.
 
 **2026-09-28 — built first (`R40`).** The maintainer asked whether the long walk should be built early and
-left running while the other rows are built; it is. This moves the build order and nothing else: WARM
-still precedes the walk, the ⛔ above still caps its depth, and the run is still the operator's. After any
+left running while the other rows are built; it is. This moves the build order and nothing else: the walk
+(S2 + S3) ships first, in its own table so it never makes a page followed, and WARM (S1) right after it; the
+⛔ above still caps its depth, and the run is still the operator's. After any
 restart the app boots offline, so the walk resumes from its per-edition cursor only once the operator goes
 online again.
 
