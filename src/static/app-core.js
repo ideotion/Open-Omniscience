@@ -1447,6 +1447,11 @@
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const dlg = document.getElementById("net-consent");
       dlg.querySelector("#net-consent-reason b").textContent = reason;
+      // A7: what this one request reveals to the host it asks (the metadata shadow),
+      // when the caller knows it. Cleared on every opening so a shadow never outlives
+      // the action it described.
+      const shadowEl = document.getElementById("net-consent-shadow");
+      if (shadowEl) { shadowEl.textContent = opts.shadow || ""; shadowEl.hidden = !opts.shadow; }
       const lanesBox = document.getElementById("net-consent-lanes");
       if (lanesBox) lanesBox.textContent = "…";
       // "Go online" stays disabled until the disclosure is COMPLETE -- the lanes and the

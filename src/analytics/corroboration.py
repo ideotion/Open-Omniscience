@@ -74,11 +74,12 @@ def _chunks(seq: list, size: int = _IN_CHUNK):
 def find_weather_opportunities(
     session,
     *,
-    lookback_days: int = 90,
+    lookback_days: int | None = 90,
     min_articles: int = 3,
     pad_days: int = 3,
     limit: int = 6,
     today: date | None = None,
+    article_ids: list[int] | None = None,
 ) -> dict:
     """Scan the local substrate for (climate term × place × window) clusters.
 
@@ -89,9 +90,21 @@ def find_weather_opportunities(
     "Allemagne"/"Deutschland" never split into two clusters; a suspected homepage/
     section capture is excluded from a cluster's article members (S1.4), disclosed via
     ``excluded_non_articles`` (both the per-opportunity and the corpus-wide total).
+
+    ``article_ids`` narrows the scan to those articles (the Claim Workspace's step ④ scans
+    one trail, not the corpus); ``lookback_days=None`` drops the date cutoff, because a
+    trail's articles are as old as the claim. A window longer than the archive's
+    ``MAX_WINDOW_DAYS`` is narrowed to the latest dates and the offer says so
+    (``window_narrowed``, ``n_in_window``): the fetch endpoint refuses a longer one.
     """
+    from src.weather.openmeteo import MAX_WINDOW_DAYS
+
     today = today or date.today()
-    cutoff = today - timedelta(days=lookback_days)
+    cutoff = today - timedelta(days=lookback_days) if lookback_days is not None else None
+    if article_ids is not None and not article_ids:
+        return {"opportunities": [], "clusters_total": 0, "skipped_no_coords": 0,
+                "excluded_non_articles": 0, "rules_as_of": load_rules()["as_of"],
+                "provenance": load_rules()["provenance"]}
     cfg = load_rules()
     rules = {r["id"]: r for r in cfg["rules"]}
     terms = _term_index(cfg["rules"])
@@ -114,16 +127,19 @@ def find_weather_opportunities(
     kw_meta = {kid: (terms[norm][0], norm, terms[norm][1]) for kid, norm in kw_rows}
 
     # 2) Recent mentions of those keywords (covering-index friendly).
-    mention_rows = (
-        session.query(KeywordMention.keyword_id, KeywordMention.article_id,
-                      KeywordMention.observed_on)
-        .filter(
-            KeywordMention.keyword_id.in_(list(kw_meta.keys())),
-            KeywordMention.observed_on.isnot(None),
-            KeywordMention.observed_on >= cutoff,
-        )
-        .all()
+    mq = session.query(KeywordMention.keyword_id, KeywordMention.article_id,
+                       KeywordMention.observed_on).filter(
+        KeywordMention.keyword_id.in_(list(kw_meta.keys())),
+        KeywordMention.observed_on.isnot(None),
     )
+    if cutoff is not None:
+        mq = mq.filter(KeywordMention.observed_on >= cutoff)
+    if article_ids is not None:
+        mention_rows = []
+        for chunk in _chunks(sorted({int(a) for a in article_ids})):
+            mention_rows.extend(mq.filter(KeywordMention.article_id.in_(chunk)).all())
+    else:
+        mention_rows = mq.all()
     if not mention_rows:
         return {"opportunities": [], "clusters_total": 0, "skipped_no_coords": 0,
                 "excluded_non_articles": 0,
@@ -207,8 +223,14 @@ def find_weather_opportunities(
                 skipped_no_coords += 1
                 continue
             lat, lon, precision = hit["lat"], hit["lon"], hit["geocode"]
+            coords_from = "catalog_cities"
+        else:
+            coords_from = "article_mentioned_places"
         start = min(c["dates"]) - timedelta(days=pad_days)
         end = min(max(c["dates"]) + timedelta(days=pad_days), today)
+        narrowed = (end - start).days > MAX_WINDOW_DAYS
+        if narrowed:
+            start = end - timedelta(days=MAX_WINDOW_DAYS)
         rule = rules[rule_id]
         opportunities.append({
             "rule": rule_id,
@@ -219,8 +241,14 @@ def find_weather_opportunities(
             "lat": round(float(lat), 4),
             "lon": round(float(lon), 4),
             "geocode": precision,
+            "coords_from": coords_from,
             "window_start": start.isoformat(),
             "window_end": end.isoformat(),
+            "window_narrowed": narrowed,
+            "n_in_window": sum(
+                1 for aid in member_ids
+                if any(start <= d <= end for d in art_dates.get(aid, ()))
+            ),
             "article_ids": member_ids,
             "n_articles": len(member_ids),
             "excluded_non_articles": n_excluded,

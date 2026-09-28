@@ -82,8 +82,9 @@ def _seed(TS):
                 "indep": indep.id, "stat": stat.id}
 
 
-@pytest.fixture()
-def corpus(tmp_path):
+def make_corpus(tmp_path):
+    """The seeded wire-echo corpus, as ``(sessionmaker, ids)``. Shared with the slice-2
+    tests (tests/test_claim_trail_bundle.py) so both slices walk the same fixture."""
     from src.database.fts import ensure_fts
     from src.database.fts_norm import install_pool_hook
 
@@ -97,21 +98,39 @@ def corpus(tmp_path):
     return TS, ids
 
 
+def serve(TS):
+    """A test client over the corpus ``TS``, as a context manager."""
+    from contextlib import contextmanager
+
+    @contextmanager
+    def _cm():
+        def _db():
+            db = TS()
+            try:
+                yield db
+            finally:
+                db.close()
+
+        app.dependency_overrides[get_db] = _db
+        try:
+            with TestClient(app) as c:
+                yield c
+        finally:
+            app.dependency_overrides.clear()
+
+    return _cm()
+
+
+@pytest.fixture()
+def corpus(tmp_path):
+    return make_corpus(tmp_path)
+
+
 @pytest.fixture()
 def client(corpus):
     TS, ids = corpus
-
-    def _db():
-        db = TS()
-        try:
-            yield db
-        finally:
-            db.close()
-
-    app.dependency_overrides[get_db] = _db
-    with TestClient(app) as c:
+    with serve(TS) as c:
         yield c, ids
-    app.dependency_overrides.clear()
 
 
 CLAIM = "Glacier melt in the Alps has doubled since 2000"
@@ -284,7 +303,7 @@ def test_the_route_answers_and_refuses_what_it_cannot_run(client):
     r = c.get("/api/claims/workspace", params={"claim": CLAIM})
     assert r.status_code == 200, r.text
     body = r.json()
-    assert body["steps_built"] == [1, 2, 3, 5] and body["steps_not_built"] == [4, 6]
+    assert body["steps_built"] == [1, 2, 3, 4, 5, 6] and body["steps_not_built"] == []
     assert c.get("/api/claims/workspace", params={"claim": ""}).status_code == 422
     assert c.get("/api/claims/workspace", params={"claim": "x" * 1001}).status_code == 422
     bad = c.get("/api/claims/workspace", params={"claim": CLAIM, "query": "(glacier OR"})
@@ -344,6 +363,13 @@ def test_every_string_the_workspace_draws_is_keyed_in_all_twelve_locales():
     js = (_ROOT / "src/static/app-claim.js").read_text(encoding="utf-8")
     lits = {m.replace('\\"', '"') for m in re.findall(r'\btf?\("((?:[^"\\]|\\.)*)"', js)}
     assert len(lits) > 40
+    # The weather variables' names, which the shared renderer passes through t() from a map.
+    home = (_ROOT / "src/static/app-home.js").read_text(encoding="utf-8")
+    table = home[home.index("const _WX_VAR_LABELS = {"):]
+    table = table[: table.index("};")]
+    labels = set(re.findall(r':\s*"([^"]+)"', table))
+    assert len(labels) == 7
+    lits |= labels
     for code in ("en", "fr", "es", "de", "pt", "ru", "ar", "hi", "bn", "zh", "ja", "id"):
         loc = json.loads((_ROOT / f"src/static/locales/{code}.json").read_text(encoding="utf-8"))
         missing = sorted(x for x in lits if x not in loc)

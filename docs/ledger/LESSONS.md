@@ -12752,3 +12752,13 @@ hidden`) and returns rectangles for text nobody can see. **Filter with `el.check
 contentVisibilityAuto: true, visibilityProperty: true, opacityProperty: true })` and drop text inside
 `details:not([open])` outside its `<summary>`**; with that, the same frames measured zero overlaps
 (`docs/audit/import-dialog-walk-2026-09-28/walk_import.py`).
+
+### THE SAME OVERLAP PROBE MUST ALSO SKIP SCREEN-READER-ONLY TEXT: A CHART'S DATA TABLE IS CLIPPED, NOT ABSENT (S05-11 S2, claim trail walk)
+
+The overlap probe of the entry above, run over a step that draws `ooChart` charts, flagged the chart's
+"Chart data" table against the chart's own labels. That table is `.sr-only`: one pixel, clipped by
+`overflow: hidden`, and `checkVisibility()` still says true, so its text nodes report real boxes stacked
+on top of whatever sits at that point. **Skip text whose ancestor is `.sr-only`, or any ancestor of at
+most one pixel in either dimension with `overflow` other than `visible`**; with that, the same frames
+measured zero (`docs/audit/claim-trail-export-2026-09-28/walk.py`, `OVERLAP_JS`). A walk that reports
+every chart as an overlap teaches its reader to ignore the probe.

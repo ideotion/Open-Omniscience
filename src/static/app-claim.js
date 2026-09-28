@@ -3,8 +3,9 @@
    The reader pastes a CLAIM and the app walks it through the local corpus in visible
    steps (the design of record: FUTURE_DEVELOPMENTS.md A1, the action plan's A-2):
      ① related articles, ② grouped by independence, ③ who said what, when,
-     ④ consented corroboration (slice 2, shown as not built), ⑤ what's missing,
-     ⑥ the signed export (slice 2, shown as not built).
+     ④ corroboration offers (each naming its host and what the request reveals, fetched
+     only behind the one online consent), ⑤ what's missing, ⑥ the trail exported as a
+     ZIP signed with the custody key, and a bundle someone sent checked.
 
    A TRAIL, NEVER A VERDICT. Every step prints its method sentence on the page, not in a
    hover: the method IS the lesson. A path with nothing joining it is "no shared origin
@@ -17,7 +18,8 @@
    the sidebar, like the analysis window.
 
    The renderers are pure (payload, t, tf) -> HTML so tests/claim_workspace_node_test.js
-   drives them in node; only claimRun/_claimWire touch the DOM or the (loopback) network.
+   drives them in node; only claimRun, claimWeather, claimExport, claimVerify and
+   _claimWire touch the DOM or the network (loopback, except ④'s consented fetch).
 */
     let _claimLast = null;      // the last payload, so a language switch redraws without a fetch
     let _claimWired = false;
@@ -204,28 +206,261 @@
       return _claimStep("⑤", t("What's missing"), method, body);
     }
 
-    function claimNotBuiltHtml(num, title, what, t) {
-      return _claimStep(num, title, null,
-        `<p class="hint">${esc(t("Not built yet."))} ${esc(what)}</p>`, "claim-later");
+    // ④ -- what the request would tell the host (A7, the metadata shadow). One sentence,
+    // shown on the offer AND in the consent popup, so it is read before the click.
+    function claimShadowText(op, tf) {
+      // The coordinates, not only the place name: they are what the host is sent, and for a
+      // country they are its stand-in city, which "near France" would hide.
+      return tf("Asking {host} tells it this machine's IP address, the point {lat}, {lon} (for {place}) and the dates {start} to {end}: together, which place and period you are looking into.",
+        {host: op.host, lat: op.lat, lon: op.lon, place: op.place || "?", start: op.window_start, end: op.window_end});
     }
 
-    // The whole trail, in step order. ④ and ⑥ are shown where they belong and say they
-    // are not built, so the pipeline reads as the design draws it and nothing is implied.
+    function claimCorroborationHtml(ws, t, tf) {
+      const co = ws.corroboration || {};
+      const offers = co.offers || [];
+      const method = t("Independent data the trail's articles could be checked against. Today that is weather: when an article of the trail names a weather event such as a drought or a flood together with a place, the app offers the reanalysis for that place and those dates. Nothing is fetched until you ask, and each offer names the host it would ask and what the request tells it.");
+      let body = "";
+      if (!offers.length) {
+        body += `<p class="hint">${esc(((ws.related || {}).shown)
+          ? t("No offer: no article of this trail names a weather event together with a place.")
+          : t("No related article, so there is nothing to check."))}</p>`;
+      } else {
+        const posOf = {};
+        ((ws.related || {}).articles || []).forEach((a) => { posOf[a.id] = a.position; });
+        offers.forEach((op, i) => {
+          const refs = (op.article_ids || []).map((id) => claimRef(posOf[id] != null ? posOf[id] : "?")).join(" ");
+          body += `<div class="claim-offer">`
+            + `<div class="claim-path-head"><b>${esc(t(op.rule_label || op.rule))}</b> · ${esc(op.place || "?")}`
+            + (op.place_country ? " " + ooCountryCell(op.place_country, {cls: "claim-pill"}) : "")
+            + ` <span class="muted">${esc(tf("{start} to {end}", {start: op.window_start, end: op.window_end}))}</span>`
+            + ` <span class="claim-refs">${esc(refs)}</span></div>`;
+          const notes = [];
+          if (op.window_narrowed) {
+            notes.push(tf("The dates span more than the archive answers in one request, so the window is the latest 366 days. It covers {n} of the {total} articles.", {n: op.n_in_window, total: op.n_articles}));
+          }
+          if (op.geocode === "country") {
+            notes.push(t("The article names no point for this place, so the point stands in for the country: its largest city in the gazetteer."));
+          }
+          notes.forEach((n) => { body += `<p class="hint">${esc(n)}</p>`; });
+          body += `<p class="claim-shadow">${esc(claimShadowText(op, tf))}</p>`
+            + `<p class="claim-request"><span class="muted">${esc(t("The exact request:"))}</span> <code>${esc(op.request_url)}</code></p>`
+            + `<div class="claim-actions"><button type="button" class="secondary" data-claim-wx="${i}">`
+            + esc(op.cached ? t("Show the slice held on this machine") : tf("Ask {host}", {host: op.host}))
+            + `</button></div><div class="claim-wx" id="claim-wx-${i}"></div></div>`;
+        });
+        if (co.total > offers.length) {
+          body += `<p class="hint">${esc(tf("{shown} of {total} offers are listed.", {shown: offers.length, total: co.total}))}</p>`;
+        }
+      }
+      if (co.skipped_no_coords) {
+        body += `<p class="hint">${esc(tf("Weather events named at a place with no known point: {n}. They get no offer.", {n: co.skipped_no_coords}))}</p>`;
+      }
+      body += `<p class="card-caveat">${esc(t("Weather is the only independent data wired so far: official statistics and climate reports are not checked here. A reanalysis is a model estimate for a grid cell, and a match is corroboration, never proof."))}</p>`;
+      return _claimStep("④", t("Corroboration offers"), method, body);
+    }
+
+    function claimExportHtml(ws, t, tf) {
+      const method = t("The trail is written as one ZIP: the trail as drawn here, each article with the SHA-256 of its text, the sources, the licence lines that apply, and what a reader of the file can learn from it. A signature by this install's custody key covers all of it, so anyone can check that nothing was changed.");
+      const n = (ws.related || {}).shown || 0;
+      if (!n) {
+        return _claimStep("⑥", t("Export the trail, signed"), method,
+          `<p class="hint">${esc(t("No related article, so there is no trail to export."))}</p>`);
+      }
+      const held = ((ws.corroboration || {}).offers || []).filter((o) => o.cached).length;
+      const members = [
+        ["README.md", t("what this is and how to verify it")],
+        ["trail.json", t("the trail as drawn here")],
+        ["articles/", n === 1 ? tf("{n} file", {n}) : tf("{n} files, one per article", {n})],
+        ["sources.json", t("the sources those articles came from")],
+      ];
+      if (held) members.push(["corroboration/", held === 1 ? t("1 weather slice already held on this machine")
+        : tf("{n} weather slices already held on this machine", {n: held})]);
+      members.push(["ATTRIBUTION.md", t("the licence lines that apply")],
+        ["WHAT-A-READER-CAN-SEE.md", t("what someone holding the file can learn")],
+        ["manifest.json", t("every file's SHA-256")], ["SIGNATURE.json", t("the signature and the key that made it")]);
+      const body = `<p class="card-caveat">${esc(t("Plaintext: the bundle is not encrypted. Anyone who has the file can read the claim, the trail and the articles' text."))}</p>`
+        + `<p class="card-caveat">${esc(t("It is signed with this install's custody key. That proves this install made it, and the same key on every bundle you send links all of them to this install."))}</p>`
+        + `<h4>${esc(t("What the file holds"))}</h4><ul class="claim-members">`
+        + members.map((m) => `<li><code>${esc(m[0])}</code> <span class="muted">${esc(m[1])}</span></li>`).join("") + `</ul>`
+        + `<label class="claim-check"><input type="checkbox" id="claim-export-text" checked> ${esc(t("Include each article's full text"))}</label>`
+        + `<p class="hint">${esc(t("Left out, each article carries its metadata and the SHA-256 of its text, not the text."))}</p>`
+        + `<p class="hint">${esc(t("The trail is walked again when you export, so an article collected since this page was drawn is included."))}</p>`
+        + `<div class="claim-actions"><button type="button" id="claim-export">${esc(t("Export the signed trail"))}</button>`
+        + ` <span id="claim-export-status" class="hint" role="status"></span></div>`
+        + `<div id="claim-export-out"></div>`
+        + `<h4>${esc(t("Check a bundle"))}</h4>`
+        + `<label class="claim-check">${esc(t("A trail bundle someone sent you:"))} <input type="file" id="claim-verify-file" accept=".zip,application/zip"></label>`
+        + `<div id="claim-verify-out"></div>`;
+      return _claimStep("⑥", t("Export the trail, signed"), method, body);
+    }
+
+    // The completion message lists what the file holds (R4's shape), with the key that
+    // signed it, so the reader can hand the key over separately.
+    function claimExportDoneHtml(rep, t, tf) {
+      const names = rep.members || [];
+      const nArt = names.filter((m) => m.startsWith("articles/")).length;
+      const nWx = names.filter((m) => m.startsWith("corroboration/")).length;
+      const lines = [];
+      let artDone = false, wxDone = false;
+      names.forEach((m) => {
+        if (m.startsWith("articles/")) {
+          if (!artDone) lines.push(`<li><code>articles/</code> <span class="muted">${esc(_claimFiles(nArt, tf))}</span></li>`);
+          artDone = true;
+        } else if (m.startsWith("corroboration/")) {
+          if (!wxDone) lines.push(`<li><code>corroboration/</code> <span class="muted">${esc(_claimFiles(nWx, tf))}</span></li>`);
+          wxDone = true;
+        } else {
+          lines.push(`<li><code>${esc(m)}</code></li>`);
+        }
+      });
+      const pub = ((rep.identity || {}).ed25519_pub) || "";
+      return `<p>${esc(tf("Saved {file}: {n} articles, {size}.", {file: "\u2068" + rep.filename + "\u2069", n: rep.articles, size: _fmtBytes(rep.bytes)}))}</p>`
+        + `<ul class="claim-members">${lines.join("")}</ul>`
+        + `<p class="hint">${esc(rep.full_text ? t("Each article's full text is in the file.") : t("The articles' text is left out; each carries the SHA-256 of its text."))}</p>`
+        + `<p>${esc(t("Signing key (Ed25519), to give the recipient some other way:"))} <code class="claim-key">${esc(pub)}</code></p>`
+        + `<p class="hint">${esc(t("Anyone can check the file with scripts/verify_claim_trail.py, or with Check a bundle here."))}</p>`;
+    }
+
+    // "1 files" otherwise: the app has no plural framework, so the singular is its own key.
+    function _claimFiles(n, tf) { return n === 1 ? tf("{n} file", {n}) : tf("{n} files", {n}); }
+
+    function claimVerifyHtml(res, t, tf) {
+      if (res.verified) {
+        const pub = ((res.identity || {}).ed25519_pub) || "";
+        return `<p class="note ok">${esc(tf("Verified: all {n} files match the manifest, and the signature is valid.", {n: res.members}))}</p>`
+          + `<p>${esc(t("Signed by the key:"))} <code class="claim-key">${esc(pub)}</code></p>`
+          + `<p class="hint">${esc(t("This proves the file was not changed since that key signed it. It proves who signed it only if that key matches the one the sender gave you some other way."))}</p>`;
+      }
+      const probs = res.problems || (res.issues || []).map((i) => ({code: "", detail: i}));
+      return `<p class="note err">${esc(t("Not verified. The problems found:"))}</p>`
+        + `<ul>${probs.map((pr) => `<li>${esc(_claimProblemText(pr, t, tf))}</li>`).join("")}</ul>`;
+    }
+
+    // The checker's findings, worded here: the server sends a code and the file it names.
+    const _CLAIM_PROBLEMS = {
+      not_zip: (t, tf, p) => t("This is not a ZIP file."),
+      no_manifest: (t, tf, p) => t("The manifest or the signature file is missing."),
+      unreadable_manifest: (t, tf, p) => t("The manifest or the signature file cannot be read."),
+      unknown_schema: (t, tf, p) => tf("Unknown bundle format: {detail}", {detail: p.detail}),
+      member_missing: (t, tf, p) => tf("Missing file: {member}", {member: p.member}),
+      member_altered: (t, tf, p) => tf("Changed since it was signed: {member}", {member: p.member}),
+      member_extra: (t, tf, p) => tf("A file the manifest does not list: {member}", {member: p.member}),
+      merkle_mismatch: (t, tf, p) => t("The Merkle root does not match the files listed."),
+      signature: (t, tf, p) => tf("The signature does not verify: {detail}", {detail: p.detail}),
+    };
+
+    function _claimProblemText(pr, t, tf) {
+      const f = _CLAIM_PROBLEMS[pr.code];
+      return f ? f(t, tf, pr) : String(pr.detail || pr.code || "");
+    }
+
+    // The whole trail, in step order, as the design draws it.
     function claimWorkspaceHtml(ws, t, tf) {
       return claimRelatedHtml(ws, t, tf)
         + claimIndependenceHtml(ws, t, tf)
         + claimTimelineHtml(ws, t, tf)
-        + claimNotBuiltHtml("④", t("Corroboration offers"),
-          t("Each offer will ask your consent before anything leaves your machine, and name the host it would ask."), t)
+        + claimCorroborationHtml(ws, t, tf)
         + claimMissingHtml(ws, t, tf)
-        + claimNotBuiltHtml("⑥", t("Export the trail, signed"),
-          t("The trail will be exportable as a signed evidence bundle."), t);
+        + claimExportHtml(ws, t, tf);
     }
+
+    // What the reader did on the drawn trail (a weather slice shown, a bundle saved or
+    // checked), kept so a language switch redraws it rather than dropping it.
+    let _claimWx = {};
+    let _claimExportRep = null;
+    let _claimVerifyRes = null;
+    let _claimParams = null;    // the claim and words the drawn trail was walked with
 
     function repaintClaimFromCache() {
       const box = $("claim-body");
       if (!box || !_claimLast) return;
-      box.innerHTML = claimWorkspaceHtml(_claimLast, _claimT(), _claimTf());
+      const t = _claimT(), tf = _claimTf();
+      box.innerHTML = claimWorkspaceHtml(_claimLast, t, tf);
+      const offers = ((_claimLast.corroboration || {}).offers) || [];
+      Object.keys(_claimWx).forEach((i) => {
+        const el = $("claim-wx-" + i);
+        if (el && offers[i]) renderWeatherContext(el, _claimWx[i], _claimWxSig(offers[i]));
+      });
+      if (_claimExportRep && $("claim-export-out")) $("claim-export-out").innerHTML = claimExportDoneHtml(_claimExportRep, t, tf);
+      if (_claimVerifyRes && $("claim-verify-out")) $("claim-verify-out").innerHTML = claimVerifyHtml(_claimVerifyRes, t, tf);
+    }
+
+    // The offer as the shared weather renderer reads it, minus the precision code: the
+    // offer already says in words when its point stands in for a country.
+    function _claimWxSig(op) { return Object.assign({}, op, {geocode: null}); }
+
+    // ④ One offer's slice. A slice already held is served from this machine and asks
+    // nothing; otherwise the ONE online consent comes first, with the offer's shadow line.
+    async function claimWeather(i) {
+      const t = _claimT(), tf = _claimTf();
+      const op = (((_claimLast || {}).corroboration || {}).offers || [])[i];
+      const box = $("claim-wx-" + i);
+      if (!op || !box) return;
+      if (!op.cached && !await ensureOnline(
+        t("Fetch weather context for one place and time window (Open-Meteo)"),
+        {shadow: claimShadowText(op, tf)})) return;
+      box.textContent = t("Loading…");
+      try {
+        const d = await api("/api/weather/context", {method: "POST", body: JSON.stringify({
+          lat: op.lat, lon: op.lon, start_date: op.window_start, end_date: op.window_end,
+          variables: op.variables, label: op.rule_label,
+        })});
+        if (d && d.ok) { _claimWx[i] = d; op.cached = true; }
+        renderWeatherContext(box, d, _claimWxSig(op));
+      } catch (e) {
+        box.innerHTML = `<div class="note err">${esc((e && e.message) || String(e))}</div>`;
+      }
+    }
+
+    // ⑥ The server walks the SAME claim again and signs what it computed; the page only
+    // saves the file it is handed.
+    async function claimExport() {
+      const t = _claimT(), tf = _claimTf();
+      const status = $("claim-export-status"), out = $("claim-export-out"), btn = $("claim-export");
+      if (!_claimParams || !status) return;
+      const body = {claim: _claimParams.claim, full_text: !!($("claim-export-text") || {}).checked};
+      if (_claimParams.query) body.query = _claimParams.query;
+      try { body.ui_lang = OOI18N.current(); } catch (_e) { /* no engine: no narrowing */ }
+      status.textContent = t("Writing and signing the bundle…");
+      if (btn) btn.disabled = true;
+      try {
+        const rep = await api("/api/claims/trail-bundle", {method: "POST", body: JSON.stringify(body)});
+        const bin = atob(rep.zip_base64);
+        const bytes = new Uint8Array(bin.length);
+        for (let k = 0; k < bin.length; k++) bytes[k] = bin.charCodeAt(k);
+        const url = URL.createObjectURL(new Blob([bytes], {type: "application/zip"}));
+        const a = document.createElement("a");
+        a.href = url; a.download = rep.filename;
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(url), 10000);
+        delete rep.zip_base64;
+        _claimExportRep = rep;
+        status.textContent = "";
+        if (out) out.innerHTML = claimExportDoneHtml(rep, t, tf);
+      } catch (e) {
+        const msg = (e && e.message) || String(e);
+        status.textContent = /Q823/.test(msg)
+          ? t("This trail carries map data whose licence line waits on a decision (Q823), so it is not exported.")
+          : t("The bundle could not be written:") + " " + msg;
+      } finally {
+        if (btn) btn.disabled = false;
+      }
+    }
+
+    async function claimVerify(file) {
+      const t = _claimT(), tf = _claimTf();
+      const out = $("claim-verify-out");
+      if (!file || !out) return;
+      out.textContent = t("Checking…");
+      try {
+        const res = await api("/api/claims/trail-bundle/verify", {
+          method: "POST", body: file, headers: {"Content-Type": "application/zip"},
+        });
+        _claimVerifyRes = res;
+        out.innerHTML = claimVerifyHtml(res, t, tf);
+      } catch (e) {
+        out.innerHTML = `<div class="note err">${esc((e && e.message) || String(e))}</div>`;
+      }
     }
 
     async function claimRun() {
@@ -243,6 +478,8 @@
         const ws = await api("/api/claims/workspace?" + p.toString());
         if (seq !== _claimSeq) return;   // a newer run superseded this one
         _claimLast = ws;
+        _claimParams = {claim, query};
+        _claimWx = {}; _claimExportRep = null; _claimVerifyRes = null;
         status.textContent = "";
         repaintClaimFromCache();
       } catch (e) {
@@ -263,6 +500,21 @@
       });
       const q = $("claim-query");
       if (q) q.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); claimRun(); } });
+      // Steps ④ and ⑥ are redrawn with the trail, so their controls are reached by
+      // delegation on the one container that stays.
+      const body = $("claim-body");
+      if (body) {
+        body.addEventListener("click", (e) => {
+          const wx = e.target.closest && e.target.closest("[data-claim-wx]");
+          if (wx) { claimWeather(Number(wx.getAttribute("data-claim-wx"))); return; }
+          if (e.target.closest && e.target.closest("#claim-export")) claimExport();
+        });
+        body.addEventListener("change", (e) => {
+          if (e.target && e.target.id === "claim-verify-file" && e.target.files && e.target.files[0]) {
+            claimVerify(e.target.files[0]);
+          }
+        });
+      }
     }
 
     // Open the workspace on a claim (the omnibar row, the Search tab's button). An empty
