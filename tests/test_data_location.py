@@ -537,8 +537,12 @@ def test_the_step_sits_between_the_legal_accept_and_the_passphrase() -> None:
     # (asserted) rather than a guessed delimiter.
     assert 'if (id === "lg-decline")' in js
     accept = js.split('if (id === "lg-accept")', 1)[1].split('if (id === "lg-decline")', 1)[0]
-    assert "legalToDataLocation()" in accept
+    # S05-01 (Q614's note) put the search-history opt-in right after the legal step; it
+    # hands on to this step, so the order legal -> history -> data location -> passphrase
+    # keeps this step before anything is written.
+    assert "legalToHistory()" in accept
     assert "legalToPassphrase()" not in accept, "the accept must no longer jump the step"
+    assert "legalToDataLocation();" in function_body(js, "historyToDataLocation")
 
     step = function_body(js, "legalToDataLocation")
     assert '$("view-legal").classList.add("hidden")' in step

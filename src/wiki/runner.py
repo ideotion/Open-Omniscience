@@ -260,6 +260,7 @@ class WikiLaneRunner:
         corpus_session: Callable[[], Any] | None = None,
         resume_from: Callable[[], str | None] | None = None,
         pageviews: Callable[[], str | None] | None = None,
+        walker: Any | None = None,
         max_connections: int | None = None,
         drain_interval_s: float = DRAIN_INTERVAL_S,
         sleep: Callable[[float], None] = time.sleep,
@@ -277,6 +278,13 @@ class WikiLaneRunner:
         #: fetch of its own. ``None`` disables it entirely, which is what every test
         #: that is not about the cadence passes.
         self._pageviews = pageviews
+        #: Q701 = c's ``allpages`` walk (``src/wiki/walk.py``), run in the time between two
+        #: drains on THIS thread, so it shares the drain's client and never overlaps a
+        #: drain's writes. ``None`` disables it, which is what every test that is not about
+        #: the walk passes.
+        self._walker = walker
+        #: The last walk window's report, for a status surface. ``None`` before the first.
+        self.last_walk: dict | None = None
         #: A ceiling on how many times the stream may (re)connect in one run. ``None``
         #: — the production value — means "as long as the setting says running", which
         #: is what a stream held open for days needs. A number is for a caller that
@@ -412,6 +420,41 @@ class WikiLaneRunner:
             _LOG.warning("the daily pageview top-up failed: %s", exc, exc_info=True)
             return None
 
+    def idle(self, seconds: float) -> None:
+        """The time between two drains: the walk's window, then sleep for whatever is left.
+
+        THE WALK TAKES THE IDLE TIME, NEVER THE DRAIN'S. The drain stores what the stream
+        already handed over; the walk reaches pages nothing is waiting for. So the drain
+        runs on its own cadence and the walk fills the gap up to the next one, and a walk
+        with nothing to do (switched off, paused, waiting, finished) leaves the whole
+        interval to the sleep, exactly as before it existed.
+
+        A WALK FAILURE NEVER ENDS THE LANE. Its refusals are named inside the walker; what
+        reaches here is a fault in the walk itself, and it is logged and left for the next
+        window rather than allowed to stop the drain loop.
+        """
+        start = self._monotonic()
+        if self._walker is not None and not self._should_stop():
+            try:
+                report = self._walker.walk_for(seconds, should_stop=self._should_stop)
+                self.last_walk = report.as_dict()
+            except Exception as exc:  # noqa: BLE001 - the walk must not end the lane
+                _LOG.warning("the Wikipedia walk window failed: %s", exc, exc_info=True)
+                self.last_walk = {"error": f"{type(exc).__name__}"}
+        remaining = seconds - (self._monotonic() - start)
+        if remaining > 0 and not self._should_stop():
+            self._sleep(remaining)
+
+    def walk_status(self) -> dict | None:
+        """The walker's own status, or ``None`` for a runner built without one."""
+        if self._walker is None:
+            return None
+        try:
+            return {**self._walker.status(), "last_window": self.last_walk}
+        except Exception:  # noqa: BLE001 - a status read must not fail the status surface
+            _LOG.debug("could not read the walk status", exc_info=True)
+            return None
+
     def run_until_stopped(self, *, max_drains: int | None = None) -> int:
         """Drain every ``drain_interval_s`` until the setting stops saying ``running``.
 
@@ -459,5 +502,5 @@ class WikiLaneRunner:
                 break
             if max_drains is not None and done >= max_drains:
                 break
-            self._sleep(self._interval)
+            self.idle(self._interval)
         return done

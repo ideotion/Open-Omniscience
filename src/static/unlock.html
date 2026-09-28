@@ -127,6 +127,20 @@
     </div>
   </div>
 
+  <!-- First-launch SEARCH HISTORY opt-in (S05-01, Q614 = a + its note: "add the option
+       during the installation process, after the legal screen, to activate local search
+       history"). OFF unless chosen. The corpus does not exist yet at this point, so the
+       choice is kept in this browser and applied by the app on its first load
+       (_advApplyFirstRunHistoryChoice), then forgotten. Nothing is sent from here. -->
+  <div id="view-history" class="hidden">
+    <h1>Keep a history of your searches?</h1>
+    <p>The app can remember the searches you run, so you can open one again from the advanced search. It is off unless you turn it on, and you can change it or clear it at any time.</p>
+    <div class="note"><p>Stored only on this machine, inside your encrypted corpus. Never exported, never in a diagnostics bundle.</p></div>
+    <label class="accept-row"><input type="radio" name="hs-choice" id="hs-off" checked><span>No, keep no search history</span></label>
+    <label class="accept-row"><input type="radio" name="hs-choice" id="hs-on"><span>Yes, keep a local search history</span></label>
+    <button id="hs-continue">Continue</button>
+  </div>
+
   <!-- First-launch DATA LOCATION (maintainer 2026-07-14): after the language and legal
        steps and BEFORE the passphrase, because that is the only moment at which the
        choice is safe. src/paths.data_dir() re-reads the environment on every call while

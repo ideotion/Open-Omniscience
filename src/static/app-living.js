@@ -76,6 +76,85 @@
       return { title: t("Storage"), facts };
     }
 
+    // The allpages walk (Q701 = c; S05-06): what it is doing, and each edition's pages seen
+    // of the edition's OWN article count. "N of M", never a bar or a percentage: the edition
+    // counts a slightly different set than the walk lists (redirects, pages without links),
+    // so the ratio can pass 100% and a bar would draw that as a finished job that is not.
+    const _LIVING_WALK_STATE = {
+      off: "Off", walking: "Walking", paused: "Paused", waiting: "Waiting",
+      complete: "Complete", not_started: "Not started yet", not_running: "Not running now",
+    };
+    const _LIVING_WALK_WHY = {
+      network_off: "Airplane mode is on.",
+      transport_unavailable: "Protected mode has no usable proxy, and the walk never goes direct.",
+      storage_budget_spent: "The lane's storage budget is spent.",
+      connection_failed: "The connection or the proxy did not answer.",
+      service_busy: "The wiki asked clients to slow down.",
+      request_refused: "The wiki refused the request.",
+      malformed_response: "The answer could not be read.",
+    };
+    const _LIVING_TRANSPORT = {
+      direct: "direct connection", proxy: "your proxy", pool: "your proxy pool",
+    };
+
+    function _livingCount(n) {
+      return typeof fmtNum === "function" ? fmtNum(Number(n) || 0, 0) : String(Number(n) || 0);
+    }
+
+    function livingWalkGroup(src, t, tf) {
+      const w = src.walk || {};
+      const stateKey = w.enabled === false ? "off" : (w.state || "not_running");
+      const word = _LIVING_WALK_STATE[stateKey] ? t(_LIVING_WALK_STATE[stateKey]) : String(stateKey);
+      // The reader's own separator (ooLabelText): a welded ": " reads wrong in a locale
+      // whose colon is full-width (2026-09-27 re-walk O-5).
+      const value = w.reason && _LIVING_WALK_WHY[w.reason]
+        ? ooLabelText(word, t(_LIVING_WALK_WHY[w.reason])) : word;
+      // "State", never the group's own title again (the repeated-title defect the
+      // 2026-09-25 Chromium walk found on "Pages you track").
+      const facts = [{
+        label: t("State"), value,
+        hover: w.enabled === false
+          ? t("The walk lists every article title in the editions you follow, 50 per request, one request at a time. It is off: switch it on in Settings → Wikipedia.")
+          : t("The walk lists every article title in the editions you follow, 50 per request, one request at a time, and stores titles, sizes and Wikidata ids, never text. It runs only while the live stream runs."),
+      }];
+      if (w.measured !== true) return { title: t("Page walk"), facts };
+      facts.push(
+        { label: t("Pages seen"), value: _livingCount(w.pages_seen),
+          hover: t("Distinct article pages the walk has listed in its current pass, across every edition.") },
+        { label: t("Requests answered"), value: _livingCount(w.requests),
+          hover: t("Answers the walk read in full, across every edition. A refused request is not counted here: it is recorded on its edition, with its reason.") },
+        { label: t("Answers weighed"), value: humanBytes(w.response_bytes || 0),
+          hover: t("The size of the JSON the wiki sent back, as it was read.") },
+      );
+      for (const e of (w.editions || [])) {
+        // Q302 / Q306: the 639-2/T code is what shows, the name in the UI language is the
+        // hover -- the same rule the stream's own rows follow through ooLangCell.
+        const code = (typeof ooLangCode === "function" ? ooLangCode(e.edition) : "") || String(e.edition);
+        const name = typeof ooLangName === "function" ? ooLangName(e.edition, "") : "";
+        let value = typeof e.edition_articles === "number"
+          ? tf("{n} of {m}", { n: _livingCount(e.pages_seen), m: _livingCount(e.edition_articles) })
+          : tf("{n} of an unknown total", { n: _livingCount(e.pages_seen) });
+        if (e.completed_at) value += " · " + t("pass complete");
+        else if (e.consecutive_failures > 0) value += " · " + t("waiting");
+        const refusal = e.consecutive_failures > 0 && _LIVING_WALK_WHY[e.last_error]
+          ? " " + t(_LIVING_WALK_WHY[e.last_error]) + " " + t("It is asked again after a pause that doubles each time, up to an hour.")
+          : "";
+        const explain = t("Pages the walk listed in this edition, of the edition's own article count. The edition counts its articles its own way, so the first number can pass the second.");
+        facts.push({ label: code, value,
+          hover: (name && name !== code ? ooLabelText(name, explain) : explain) + refusal });
+      }
+      const rates = (w.throughput && w.throughput.by_transport) || {};
+      for (const k of Object.keys(rates)) {
+        const r = rates[k] || {};
+        if (!r.hours) continue;
+        const via = _LIVING_TRANSPORT[k] ? t(_LIVING_TRANSPORT[k]) : String(k);
+        facts.push({ label: tf("Measured rate, {transport}", { transport: via }),
+          value: tf("{n} pages an hour", { n: _livingCount(Math.round(r.pages / r.hours)) }),
+          hover: t("Pages listed per hour, over the hours in the last 7 days with at least one walk request on this transport. An hour the walk ran for only part of counts whole, so this reads low, never high.") });
+      }
+      return { title: t("Page walk"), facts };
+    }
+
     function livingWikiGroups(src, t, tf) {
       const s = src.stream || {};
       const stream = s.measured !== true ? _livingUnmeasured(s, t) : [
@@ -109,6 +188,7 @@
       ];
       return [
         { title: t("Live stream"), facts: stream },
+        livingWalkGroup(src, t, tf),
         { title: t("Pages you track"), facts: tracked },
         livingStorageGroup(src.storage, t),
       ];

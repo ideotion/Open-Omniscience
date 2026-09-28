@@ -147,6 +147,21 @@
     // deliberately -- whenever the backend says the choice is not offerable: an
     // operator who already set OO_DATA_DIR themselves, or any state but `fresh`.
     // Showing a control that cannot be honoured would be worse than not showing one.
+    // The search-history choice sits right after the legal step (Q614's note), before
+    // the data location and the passphrase. It writes nothing but a browser key: the app
+    // applies it on its first load, when there is a corpus to hold the setting.
+    function legalToHistory() {
+      const card = document.querySelector(".card"); if (card) card.classList.remove("wide");
+      $("view-legal").classList.add("hidden");
+      $("view-history").classList.remove("hidden");
+      const c = $("hs-continue"); if (c) c.focus();
+    }
+    function historyToDataLocation() {
+      try { localStorage.setItem("oo.search.history.firstrun", $("hs-on").checked ? "on" : "off"); }
+      catch (e) { /* a private window: the default (off) simply stands */ }
+      $("view-history").classList.add("hidden");
+      legalToDataLocation();
+    }
     async function legalToDataLocation() {
       const card = document.querySelector(".card"); if (card) card.classList.remove("wide");
       $("view-legal").classList.add("hidden");
@@ -376,6 +391,7 @@
       // --- data-location step ---
       if (id === "dl-default" || id === "dl-custom")
         $("dl-custom-box").classList.toggle("hidden", !$("dl-custom").checked);
+      if (id === "hs-continue") historyToDataLocation();
       if (id === "dl-check") dlCheck();
       if (id === "dl-continue") dlContinue(ev.target);
       if (id === "dl-stop")
@@ -387,7 +403,7 @@
       if (id === "lg-accept") {
         const b = ev.target; b.disabled = true; $("lg-msg").textContent = "";
         post("/api/legal/consent", { version: _legalVersion })
-          .then(() => legalToDataLocation())
+          .then(() => legalToHistory())
           .catch((e) => { $("lg-msg").textContent = e.message; b.disabled = false; });
       }
       if (id === "lg-decline") { $("lg-decline-panel").classList.remove("hidden"); $("lg-decline-input").focus(); }

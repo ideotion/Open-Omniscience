@@ -121,7 +121,8 @@ The real restore is `not-measurable-here`.
 
 ## 6. What this slice may not decide
 
-- The order between rows B and J inside 0.5 — not ruled; only concurrency is forbidden.
+- ~~The order between rows B and J inside 0.5~~ — **RULED 2026-09-28 (`R38`): row B first, then this row**;
+  only concurrency was forbidden before.
 - What keys a source that has no feed (`rss_url` NULL) — the ruling says "its FEED"; the design in S1
   proposes and asks.
 - Whether `is_disqualified_domain` stays domain-level (one bad feed disqualifies its siblings) or becomes

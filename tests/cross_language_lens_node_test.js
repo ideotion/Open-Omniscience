@@ -44,7 +44,17 @@ const NAMES = ["_anParseLens", "_anApplyLens", "_anLensSeed", "_anApplyLensSeed"
                "_anGroupRowsByLanguage", "_crossLangNotice",
                // app-core's keyed "Label: value" frame, which the notice's per-language
                // line uses since the 2026-09-27 re-walk (N-5): extracted, never shimmed.
-               "ooLabelHtml"];
+               "ooLabelHtml",
+               // S05-01: the URL writer names a tab by its query AND its filters, through
+               // the advanced search's own pure helpers -- extracted, never shimmed.
+               "_advClean", "_advLegacy", "_advTabKey", "_advToParams", "_advPick"];
+// Top-level constants those helpers read, taken from the module the same way.
+function constDecl(name) {
+  const at = APP.indexOf("const " + name + " =");
+  assert.ok(at !== -1, "const " + name + " not found");
+  return APP.slice(at, APP.indexOf(";\n", at) + 1);
+}
+const CONSTS = ["ADV_KEYS", "ADV_UI_KEYS", "ADV_URL_KEYS", "_AN_TABLE_COLS"].map(constDecl).join("\n");
 const src = "function esc(s){return String(s==null?'':s).replace(/[&<>\"]/g,"
   + "c=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;'}[c]));}\n"
   + "var window = {};\n"
@@ -66,6 +76,7 @@ const src = "function esc(s){return String(s==null?'':s).replace(/[&<>\"]/g,"
   + "  const i = String(url).indexOf('?');\n"
   + "  location.search = i < 0 ? '' : String(url).slice(i);\n"
   + "}};\n"
+  + CONSTS + "\n"
   + NAMES.map(extract).join("\n") + "\n"
   + "function _setLens(e, c, s) { _anExpand = e; _anCap = c; _anSenses = s || {}; }\n"
   + "function _getLens() { return {expand: _anExpand, cap: _anCap, senses: _anSenses}; }\n"
@@ -172,13 +183,22 @@ const { _anParseLens, _anApplyLens, _anLensSeed, _anApplyLensSeed, _anWriteLensT
   _anWriteLensToUrl();
   assert.strictEqual(M.location.search, "?analyze=climate&tab=keywords",
     "the link's own tab had its URL rewritten");
-  // A tab a short link cannot spell (a filtered search, an exact set) drops the stale
-  // name rather than inventing one; a reload then restores the strip's own active tab.
+  // A FILTERED search is spelled in full since S05-01 (Q616: "the full query + every
+  // filter is URL-addressable"): the stale name and its provenance token go, and the
+  // link names this tab's query and each of its filters -- nothing of the other tab's.
   _setTabs([climate, {id: "f", kind: "query", query: "election", src: "Le Monde"}], "f");
   M.location.search = "?analyze=climate&prov=tok";
   _anWriteLensToUrl();
+  const fsp = new URLSearchParams(M.location.search);
+  assert.strictEqual(fsp.get("analyze"), "election", "a filtered tab kept another tab's name: " + M.location.search);
+  assert.strictEqual(fsp.get("source"), "Le Monde", "the filter is part of the link");
+  assert.ok(!fsp.has("prov"), "another tab's provenance token survived: " + M.location.search);
+  // A tab a short link cannot spell (a Lead's provenance) still drops the stale name.
+  _setTabs([climate, {id: "p", kind: "query", query: "election", prov: {card: "x"}}], "p");
+  M.location.search = "?analyze=climate&prov=tok";
+  _anWriteLensToUrl();
   assert.ok(!/analyze=|prov=/.test(M.location.search),
-    "a filtered tab kept another tab's deep link: " + M.location.search);
+    "a Lead-seeded tab kept another tab's deep link: " + M.location.search);
   _setTabs([{id: "i", kind: "ids", ids: [3, 1, 2]}], "i");
   M.location.search = "?corpus=3,1,2&label=Lead";
   _anWriteLensToUrl();

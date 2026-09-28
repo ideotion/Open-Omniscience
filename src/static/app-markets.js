@@ -2638,6 +2638,34 @@
       ["5Y", d => { const x = new Date(d * _TS_DAY); x.setUTCFullYear(x.getUTCFullYear() - 5); return Math.round(x.getTime() / _TS_DAY); }],
       ["All", () => null],   // sentinel: clamp to min
     ];
+    // The timescale choices' visible names -- keyed words, so the select reads x12.
+    const _TS_SCALE_LABEL = {day: "Days", week: "Weeks", month: "Months", year: "Years"};
+    // THE TIMESCALE (Q609 = a): the scale a range is read in -- day, week, month or year.
+    // It SNAPS the two bounds to whole periods (a "month" range runs from the 1st to the
+    // last day), and it is exposed on get()/onChange so a consumer can say which scale the
+    // reader chose. It never touches the data: the series inside the window stays at full
+    // resolution (invariant #16) -- a scale is how the WINDOW is read, not a binning.
+    // Weeks are ISO weeks (Monday first). Pure functions over integer days since the epoch.
+    const TS_SCALES = ["day", "week", "month", "year"];
+    function _tsSnap(v, scale, edge) {
+      if (v == null || !scale || scale === "day") return v;
+      if (scale === "week") {
+        const dow = ((v + 3) % 7 + 7) % 7;   // 1970-01-01 was a Thursday: Monday = 0
+        return edge === "end" ? v - dow + 6 : v - dow;
+      }
+      const d = new Date(v * _TS_DAY);
+      const y = d.getUTCFullYear(), m = d.getUTCMonth();
+      const start = scale === "year" ? Date.UTC(y, 0, 1) : Date.UTC(y, m, 1);
+      const next = scale === "year" ? Date.UTC(y + 1, 0, 1) : Date.UTC(y, m + 1, 1);
+      return Math.round((edge === "end" ? next - _TS_DAY : start) / _TS_DAY);
+    }
+    // One step of the scale from `v`: the next (dir > 0) or previous period's matching edge.
+    function _tsStep(v, scale, dir, edge) {
+      if (!scale || scale === "day") return v + dir;
+      const cur = _tsSnap(v, scale, dir > 0 ? "end" : "start");
+      return _tsSnap(cur + dir, scale, edge);
+    }
+
     function ooTimeScope(container, opts) {
       if (!container) return null;
       opts = opts || {};
@@ -2646,11 +2674,13 @@
       // Degrade loudly if the span is unusable (no/identical bounds).
       if (min == null || max == null || max <= min) {
         container.innerHTML = `<span class="hint muted">${esc(t("not enough data for a time range"))}</span>`;
-        return { set: () => {}, get: () => ({from: opts.from || null, to: opts.to || null}) };
+        return { set: () => {}, get: () => ({from: opts.from || null, to: opts.to || null, scale: "day"}),
+                 bounds: () => ({min: null, max: null}) };
       }
       let from = _tsParse(opts.from); let to = _tsParse(opts.to);
       if (from == null) from = min; if (to == null) to = max;
       const clamp = v => Math.max(min, Math.min(max, v));
+      let scale = TS_SCALES.includes(opts.scale) ? opts.scale : "day";
       from = clamp(from); to = clamp(to);
       if (from > to) { const s = from; from = to; to = s; }
 
@@ -2670,7 +2700,12 @@
          <div class="ts-presets">` +
         _TS_PRESETS.map(([k]) =>
           `<button type="button" data-preset="${esc(k)}">${esc(t(k))}</button>`).join("") +
-        `</div>`;
+        `</div>
+         <label class="ts-scale-l" title="${esc(t("Reads the range in whole days, weeks, months or years: each bound snaps to the start or end of its period. The data inside the range is never thinned."))}">${esc(t("Timescale"))}
+           <select class="ts-scale">` +
+        TS_SCALES.map((k) => `<option value="${k}"${k === scale ? " selected" : ""}>${esc(t(_TS_SCALE_LABEL[k]))}</option>`).join("") +
+        `</select></label>`;
+      const inScale = container.querySelector(".ts-scale");
 
       const inFrom = container.querySelector(".ts-from");
       const inTo   = container.querySelector(".ts-to");
@@ -2705,11 +2740,11 @@
         });
       }
       function fire() {
-        if (typeof opts.onChange === "function") opts.onChange({from: _tsIso(from), to: _tsIso(to)});
+        if (typeof opts.onChange === "function") opts.onChange({from: _tsIso(from), to: _tsIso(to), scale});
       }
       function setRange(a, b, notify) {
-        a = clamp(a); b = clamp(b);
         if (a > b) { const s = a; a = b; b = s; }
+        a = clamp(_tsSnap(a, scale, "start")); b = clamp(_tsSnap(b, scale, "end"));
         const changed = a !== from || b !== to;
         from = a; to = b; paint();
         if (notify && changed) fire();
@@ -2757,7 +2792,16 @@
         else if (e.key === "End") { which === "from" ? setRange(to, to, true) : setRange(from, max, true); e.preventDefault(); return; }
         else return;
         e.preventDefault();
-        if (which === "from") setRange(from + step, to, true); else setRange(from, to + step, true);
+        // A step is one DAY at the day scale and one whole PERIOD otherwise (PageUp/Down
+        // move a month of days, or ten periods), so the handle never lands mid-period.
+        const n = scale === "day" ? step : (Math.abs(step) >= 30 ? 10 : 1) * Math.sign(step);
+        if (scale === "day") {
+          if (which === "from") setRange(from + step, to, true); else setRange(from, to + step, true);
+          return;
+        }
+        let v = which === "from" ? from : to;
+        for (let i = 0; i < Math.abs(n); i++) v = _tsStep(v, scale, Math.sign(n), which === "from" ? "start" : "end");
+        if (which === "from") setRange(v, to, true); else setRange(from, v, true);
       }
       hFrom.addEventListener("keydown", e => onKey("from", e));
       hTo.addEventListener("keydown", e => onKey("to", e));
@@ -2777,10 +2821,25 @@
         setRange(start == null ? min : start, max, true);
       });
 
+      inScale.addEventListener("change", () => {
+        scale = TS_SCALES.includes(inScale.value) ? inScale.value : "day";
+        setRange(from, to, false);
+        // The scale itself is part of what a consumer reads, so a change is reported
+        // even when the snapped bounds happen not to move.
+        fire();
+      });
+
+      // An initial non-day scale snaps the starting bounds too.
+      setRange(from, to, false);
       paint();
       return {
-        set: (a, b) => setRange(_tsParse(a) ?? from, _tsParse(b) ?? to, false),
-        get: () => ({from: _tsIso(from), to: _tsIso(to)}),
+        set: (a, b, sc) => {
+          if (sc && TS_SCALES.includes(sc)) { scale = sc; inScale.value = sc; }
+          setRange(_tsParse(a) ?? from, _tsParse(b) ?? to, false);
+        },
+        get: () => ({from: _tsIso(from), to: _tsIso(to), scale}),
+        // The absolute bounds, so a consumer can tell "narrowed" from "the whole span".
+        bounds: () => ({min: minIso, max: maxIso}),
       };
     }
 

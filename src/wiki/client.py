@@ -57,6 +57,13 @@ class WikiClient:
                 self._sleep(self.min_interval_s - elapsed)
 
     def _get(self, wiki: str, params: dict) -> dict:
+        return self._get_measured(wiki, params)[0]
+
+    def _get_measured(self, wiki: str, params: dict) -> tuple[dict, int | None]:
+        """``_get``, plus the answer's size in bytes -- the body as it was READ, after any
+        transfer decompression: what the JSON weighed, not what crossed the wire. The walk
+        records it per transport (S05-06's S3). ``None`` when the response carries no body
+        to measure (a test double), which is an absence, never a size of 0."""
         self._respect_rate_limit()
         try:
             resp = self.session.get(
@@ -65,7 +72,9 @@ class WikiClient:
                 timeout=self.timeout,
             )
             resp.raise_for_status()
-            return resp.json()
+            body = getattr(resp, "content", None)
+            size = len(body) if isinstance(body, (bytes, bytearray)) else None
+            return resp.json(), size
         finally:
             self._last = self._now()
 
@@ -129,6 +138,26 @@ class WikiClient:
         if page is None or page.get("missing"):
             return {"missing": True, "pageid": pageid}
         return page
+
+    def fetch_walk_batch(
+        self, wiki: str, *, continue_params: dict | None = None, limit: int = mw.MAX_PAGES_PER_REQUEST
+    ) -> dict:
+        """ONE batch of the ``allpages`` walk: up to 50 article pages and the next bookmark.
+
+        Returns :func:`src.wiki.mediawiki.parse_walk_batch`'s shape plus
+        ``response_bytes``. An HTTP refusal RAISES (``requests.HTTPError``, with the
+        status on its response), exactly as every other method here does; an API
+        refusal carried in a 200 -- ``maxlag`` above all -- comes back as ``error``, so
+        the walker names both and advances neither.
+        """
+        payload, size = self._get_measured(
+            wiki, mw.build_walk_params(continue_params, limit=limit)
+        )
+        return {**mw.parse_walk_batch(payload), "response_bytes": size}
+
+    def fetch_edition_statistics(self, wiki: str) -> dict:
+        """The edition's own ``articles`` / ``pages`` counts: the walk's denominator."""
+        return mw.parse_statistics(self._get(wiki, mw.build_statistics_params()))
 
     def fetch_categories(self, wiki: str, title: str) -> list[str]:
         return mw.parse_categories(self._get(wiki, mw.build_categories_params(title)))

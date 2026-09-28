@@ -1332,8 +1332,22 @@
     // frames plus the watch's own numbers, so the i18n DOM walker cannot reach it and the
     // list stayed in the language it was first drawn in until a reload.
     let _wtLast = null;
+    // "Open" on a watch or a saved search (S05-01, Q606): the query AND its stored
+    // filters, as a new analysis tab -- the same compiled search the engine evaluates.
+    // One delegated listener on the list's stable host (no inline handler).
+    let _wtOpenWired = false;
+    function _wtWireOpen() {
+      const box = $("wt-list"); if (!box || _wtOpenWired) return;
+      _wtOpenWired = true;
+      box.addEventListener("click", (e) => {
+        const b = e.target.closest("[data-wt-open]"); if (!b) return;
+        const w = ((_wtLast && _wtLast.watches) || []).find((x) => String(x.id) === b.dataset.wtOpen);
+        if (w) openAnalysisFor(w.query || "", {adv: _advFromWatchFilters(w.filters || {})});
+      });
+    }
     async function loadWatches() {
       const box = $("wt-list"); if (!box) return;
+      _wtWireOpen();
       const t = _wt(), tf = _wtf();
       box.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
       try {
@@ -1372,13 +1386,22 @@
             <div><b data-i18n-dyn>${esc(w.name)}</b> <span class="muted" data-i18n-dyn>— “${esc(w.query)}”</span>
               <span class="pill ${w.enabled ? 'ok' : ''}">${esc(w.enabled ? t('on') : t('off'))}</span></div>
             <div style="flex:0 0 auto">
+              <button type="button" class="secondary" data-wt-open="${w.id}" title="${esc(t("Open this search in the analysis window, with its filters."))}">${esc(t("Open"))}</button>
               <button class="secondary" data-on-click="toggleWatch(${w.id}, ${!w.enabled})">${esc(w.enabled ? t('Disable') : t('Enable'))}</button>
               <button class="secondary" data-on-click="editWatch(${w.id})">${esc(t('Edit'))}</button>
               <button class="secondary" data-on-click="deleteWatch(${w.id})">${esc(t('Delete'))}</button>
             </div>
           </div>
-          <div class="hint" style="margin-top:4px">${esc(tf("≥ {n} articles within {d} day(s) · last fired: {when}",
-              {n: w.threshold, d: w.window_days, when: last}))}</div>
+          ${w.saved_search
+            // A SAVED SEARCH (Q606: a watch with threshold zero) is never evaluated, so it
+            // has no firing line to show: it says what it is and offers to run it again.
+            ? `<div class="hint" style="margin-top:4px"><span class="pill">${esc(t("Saved search"))}</span> `
+              + `${esc(t("Never fires a Lead. Open it to run it again, with every filter it was saved with."))}`
+              + ((typeof _advSummary === "function" && w.filters && Object.keys(w.filters).length)
+                ? ` <span class="muted">${esc(_advSummary(_advFromWatchFilters(w.filters)).join(" · "))}</span>` : "")
+              + `</div>`
+            : `<div class="hint" style="margin-top:4px">${esc(tf("≥ {n} articles within {d} day(s) · last fired: {when}",
+              {n: w.threshold, d: w.window_days, when: last}))}</div>`}
           ${_watchRingNote(w.cross_language)}
           ${hist ? `<ul class="hint" style="margin:6px 0 0 16px">${hist}</ul>` : ""}
         </div>`;

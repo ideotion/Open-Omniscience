@@ -240,6 +240,18 @@ def investigate_state_a(pw, report: Report, shots: Path) -> None:
             )
             if accept_enabled:
                 page.click("#lg-accept")
+                # The search-history opt-in (S05-01, Q614's note) follows the legal step;
+                # its default (off) is kept, so the walk measures the unchanged path.
+                with contextlib.suppress(Exception):
+                    page.wait_for_selector("#view-history:visible", timeout=3000)
+                history_step_visible = _safe_visible(page, "#view-history")
+                report.add_coverage(
+                    surface="state_a_first_launch", axis="history-step-shown",
+                    result="verified" if history_step_visible else "partial",
+                    note=f"#view-history visible={history_step_visible}",
+                )
+                if history_step_visible:
+                    page.click("#hs-continue")
                 with contextlib.suppress(Exception):
                     page.wait_for_selector("#view-create:visible", timeout=3000)
                 page.wait_for_timeout(150)

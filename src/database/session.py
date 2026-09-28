@@ -306,6 +306,7 @@ def init_db() -> None:
         ensure_source_last_crawled_column,
         ensure_source_qualification_columns,
         ensure_supergroup_ring_column,
+        ensure_watch_filters_column,
         ensure_wiki_text_columns,
     )
 
@@ -380,6 +381,7 @@ def init_db() -> None:
     # member marker (f4a5b6c7d8e9). Without these, a 0.0.8/early-0.09 store
     # opened by 0.1 code raises "no such column" on the first ORM query.
     ensure_keyword_extractor_column(engine)
+    ensure_watch_filters_column(engine)
     ensure_wiki_text_columns(engine)
     ensure_supergroup_ring_column(engine)
 

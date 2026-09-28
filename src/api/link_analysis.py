@@ -25,6 +25,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import desc, func
 from sqlalchemy.orm import Session
 
+from src.api.search_filters import AdvancedSearch, advanced_search_params
 from src.catalog.normalize import registrable_domain
 from src.database.models import Article, ArticleLink, Source
 from src.database.session import get_db
@@ -147,6 +148,7 @@ def corpus_links(
     min_citations: int = Query(2, ge=1, le=100),
     limit: int = Query(40, ge=1, le=200),
     cap: int = Query(1000, ge=1, le=5000),
+    adv: AdvancedSearch = Depends(advanced_search_params),
     db: Session = Depends(get_db),
 ) -> dict:
     """Outbound links SHARED across the analysis corpus (an explicit article-id set or
@@ -159,8 +161,7 @@ def corpus_links(
 
     ids, total = _resolve_corpus(
         db, article_ids, query=query, source=source, start_date=start_date,
-        end_date=end_date, language=language, tags=tags, cap=cap,
-    )
+        end_date=end_date, language=language, tags=tags, cap=cap, adv=adv)
     items: list[dict] = []
     if ids:
         cit = func.count(func.distinct(ArticleLink.article_id))

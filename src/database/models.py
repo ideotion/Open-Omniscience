@@ -2856,6 +2856,11 @@ class Watch(Base):
     last_evaluated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     last_matched_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     last_seen_ids: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON list of last firing ids
+    # The advanced search's filter set (S05-01, Q606 = a): the stored form of
+    # ``src.api.search_filters.AdvancedSearch`` as JSON, NULL = none. A watch whose
+    # ``threshold`` is 0 is a SAVED SEARCH: it re-runs this query + these filters on
+    # demand and never fires, so it never interrupts the reader with a Lead card.
+    filters: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     matches = relationship("WatchMatch", back_populates="watch", cascade="all, delete-orphan")
 
@@ -2957,6 +2962,30 @@ class DerivedMeta(Base):
 
     def __repr__(self) -> str:
         return f"<DerivedMeta({self.key}={self.value})>"
+
+
+class SpellDelete(Base):
+    """The "did you mean" table (Q605 = b): a SymSpell-shaped deletion neighbourhood.
+
+    One row per (delete, keyword): every string reachable from a keyword's first
+    ``PREFIX_LEN`` characters by deleting at most two characters, pointing back at the
+    keyword. A misspelt query word finds its candidates by generating ITS deletes and
+    looking them up here -- an indexed probe per delete, never a scan of the keyword table
+    (the promise ``search_omni.py`` makes, "never scan-on-type"). Candidates are then
+    checked by true edit distance on the whole word.
+
+    DERIVED and rebuilt whole by a task-manager job (``src/analytics/spell_index.py``),
+    never merged by a restore: a keyword collected after the last build is invisible to
+    the suggester until the next one, and the suggestion says so. ``WITHOUT ROWID``: the
+    composite key IS the index, so the table carries no second copy of either column.
+    """
+
+    __tablename__ = "spell_deletes"
+
+    term_delete: Mapped[str] = mapped_column(String(64), primary_key=True)
+    keyword_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+
+    __table_args__ = ({"sqlite_with_rowid": False},)
 
 
 class AppState(Base):

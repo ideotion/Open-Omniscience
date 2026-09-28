@@ -22,6 +22,29 @@
 
 ## Open queue (when maintainer says proceed)
 
+- **THE WALK'S SWITCH: WHERE THE WIKIPEDIA WALK RUNS — RULED 2026-09-28, «Switch, off» (`R51`; answered on
+  the decision card in the project thread «Plan v0.5» at 12:41 UTC, the recommended option).** The question,
+  as put: «Run the Wikipedia walk only where you switch it on, or on every instance?» — over «Switch, on» (every
+  instance whose stream runs also walks) and «No switch» (the walk runs wherever the stream runs). **What it
+  means:** one chosen instance carries the multi-day run while the others keep collecting as they do today,
+  and nothing starts a week of requests on an instance nobody chose. It was already BUILT this way (0.5 row F,
+  PR #1197), so no code changed: `wiki_walk_enabled = False` in `src/scheduler/settings.py`, the checkbox
+  `#wiki-walk-enabled` («Also walk every article title») in Settings → Wikipedia, stored through
+  `PUT /api/scheduler/config` and re-read by `src/wiki/service.py:_walk_enabled` every window, so turning it
+  on needs no restart. What the ruling ADDED is the pin: `tests/test_wiki_walk.py` now fails if the default
+  flips, or if a settings file written before the switch existed loads it as on. Whatever the switch says,
+  the walk still never runs offline, never without the stream and never past the budget.
+- **THE 0.5 START, ANSWERED IN CHAT (2026-09-28 11:07 UTC; recorded the same turn).** The maintainer,
+  verbatim, in the project thread «Plan v0.5»: «D1: Yes, start. v0.4.0 release is done. D2: a D3: a One
+  question, I'm wondering about the long wikipedia walk, wouldn't it be better to do something and let it
+  run while we address other parts of the work?» Each answers a question that thread put the same morning
+  with its ordered plan for 0.5 (a project file, not in the repository): D1 = start wave 1, rows A and I
+  first in their own threads (a go, not a ruling); D2 = `R38` (row B before row J); D3 = `R39` (the hi/bn
+  tokenizer rebuild inside row B's window); the question = `R40` (row F built first, so its run overlaps
+  the build). One line each in [`RULINGS_INDEX.md`](RULINGS_INDEX.md); the gate edits are in
+  `RELEASE_0.5_GATE.md` (rows B, F and J and §3) and the briefs `S05-02`, `S05-06`, `S05-10` and
+  `00_INDEX.md`. **Nothing here is pending.** The entry stays until row B ships the rebuild, because it is
+  the one place the hi/bn finding's decision is joined to the row that must carry it.
 - **THE FOUR 0.4 BLOCKING DECISIONS, ANSWERED IN CHAT (2026-09-27 08:56 UTC; recorded the same turn in
   PR #1191).** The maintainer, verbatim: «FYI, the blocking decisions: OK for RC01, I'll do the versino switching after all current draft PRs are merged. RC10: go with your recommendation. Row R: OK to move that to 0.5. Row N: keep sudachipy».
   Each answers a question the «What's left for v0.4» thread named on 2026-09-26 as blocking the tag, with
@@ -78,6 +101,8 @@
     full rebuild (981–1,645 s on the field's 130 GB corpus, per `ensure_fts`'s own record) —
     a migration of its own, not a side effect of S8. hi and bn are UI languages; this wants a
     ruling on when to pay that rebuild.
+    **DECIDED 2026-09-28 (`R39`, «D3: a»): the rebuild is paid inside row B's storage-migration
+    window (`S05-02` S6), in the same app-stopped operation, not before and not as its own migration.**
   - **KNOWN LIMIT, BY DESIGN:** a connection without the three `oo_fts_*` functions cannot write
     `articles` (the trigger fails, loudly, and the write is refused). Every connection the app
     opens registers them (a SQLAlchemy pool hook plus `connect()`); an external tool such as the
@@ -13137,6 +13162,13 @@ default: leave the ordering as it is.** A palette that runs the command you name
 more than a uniform Enter, and the honest badge already removes the misdirection that made
 the current ordering feel like a bug. Not taken unilaterally: it changes an interaction the
 maintainer uses.
+**ANSWERED 2026-09-15 by Q608 = a** («Enter always opens the analysis window on the typed
+query; static commands need an explicit selection»), against the recommended default above.
+**BUILT 2026-09-28 by S05-01 (PR #1198):** `_palOrder` puts the live rows first, the Analysis
+row is row 0 with an unconditional `↵ ↗`, a static command is one arrow-key away, and an
+explicit selection survives the live results redrawing the list. Driven by
+`tests/palette_enter_node_test.js`; Chromium-verified in en and ar (typing `settings` and
+pressing Enter opens an analysis of the word).
 
 **SO THE SEARCH-TAB GATE'S REMAINING BLOCKER IS SMALLER STILL THAN THIS ENTRY SAID.** The
 capabilities are absorbed (as re-measured above) and the entrance exists. What is genuinely

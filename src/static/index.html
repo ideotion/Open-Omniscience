@@ -500,6 +500,8 @@
               <option value="source">Source</option>
               <option value="title">Title (A–Z)</option>
               <option value="language">Language</option>
+              <option value="words">Word count</option>
+              <option value="sentiment">Tone</option>
               <option value="top_keyword">Top keyword count</option>
             </select></label>
           <label style="display:flex;flex-direction:column;gap:2px"><span class="muted">Order</span>
@@ -518,21 +520,126 @@
       <div class="an-panel" id="an-competitive" style="display:none;margin-top:10px;overflow:auto"></div>
       <div class="an-panel" id="an-price" style="display:none;margin-top:10px;overflow:auto"></div>
       <div class="an-panel" id="an-advanced" style="display:none;margin-top:10px">
+        <!-- THE ADVANCED SEARCH (S05-01, rulings Q601-Q618). ONE builder, ONE filter set:
+             every control below becomes a parameter of /api/articles, of every analysis
+             endpoint and of the export alike, so the view, its subtabs and the file it
+             writes describe the same articles. No inline handlers: _advInit wires them. -->
         <div class="hint muted">Refine which articles this window analyzes.</div>
-        <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;margin-top:8px">
-          <label style="display:flex;flex-direction:column;gap:2px;flex:1;min-width:180px"><span class="muted">Search terms</span>
-            <input id="an-adv-query" placeholder="Search terms" data-on-key="Enter" data-on-keydown="anRunAdvanced()"></label>
-          <label style="display:flex;flex-direction:column;gap:2px"><span class="muted">Source</span>
-            <input id="an-adv-source" style="max-width:150px"></label>
-          <label style="display:flex;flex-direction:column;gap:2px"><span class="muted">Language</span>
-            <select id="an-adv-lang" style="max-width:170px"></select></label>
-          <label style="display:flex;flex-direction:column;gap:2px"><span class="muted">From</span>
-            <input id="an-adv-from" type="date"></label>
-          <label style="display:flex;flex-direction:column;gap:2px"><span class="muted">To</span>
-            <input id="an-adv-to" type="date"></label>
-          <button class="primary" data-on-click="anRunAdvanced()">Run analysis</button>
+        <div class="adv-f adv-wide" style="margin-top:8px">
+          <label for="an-adv-query" class="muted">Search terms</label>
+          <div id="adv-chips" class="adv-chips" aria-live="polite"></div>
+          <input id="an-adv-query" placeholder="Search terms" autocomplete="off" spellcheck="false" dir="auto">
+          <div class="adv-ops" style="margin-top:4px">
+            <span class="muted">Add</span>
+            <button type="button" class="ghost tiny" id="adv-op-and" data-op="AND" title="Both sides must appear. Typed as AND in the query box, whatever the interface language.">AND</button>
+            <button type="button" class="ghost tiny" id="adv-op-or" data-op="OR" title="Either side may appear. Typed as OR in the query box, whatever the interface language.">OR</button>
+            <button type="button" class="ghost tiny" id="adv-op-not" data-op="NOT" title="Leaves out the articles where the next term appears. Typed as NOT in the query box, whatever the interface language.">NOT</button>
+            <button type="button" class="ghost tiny" id="adv-add-near" title="Two or more words within a number of words of each other, in any order. The number is the most words allowed between them.">NEAR</button>
+            <button type="button" class="ghost tiny" id="adv-add-prefix" title="A word followed by * finds every word starting with it: climat* finds climate and climatic. At least two letters before the *.">word*</button>
+          </div>
+          <div class="adv-ops" style="margin-top:4px">
+            <label class="muted" for="adv-nf-field">Field</label>
+            <select id="adv-nf-field">
+              <option value="title">Title</option>
+              <option value="author">Author</option>
+              <option value="source">Source</option>
+              <option value="url">Address (URL)</option>
+              <option value="tag">Source tag</option>
+            </select>
+            <select id="adv-nf-mode" aria-label="Match mode" title="How the value is compared. Contains: anywhere in the field. Starts with: the field begins with it. Is exactly: the whole field, and nothing else.">
+              <option value="contains">contains</option>
+              <option value="prefix">starts with</option>
+              <option value="exact">is exactly</option>
+            </select>
+            <input id="adv-nf-value" placeholder="value" aria-label="Field value" style="max-width:14em" dir="auto">
+            <label class="muted"><input type="checkbox" id="adv-nf-neg"> <span>leave out</span></label>
+            <button type="button" class="tiny" id="adv-nf-add">Add field</button>
+          </div>
+          <div id="adv-nf-cost" class="hint muted"></div>
         </div>
-        <div id="an-adv-note" class="muted" style="margin-top:8px"></div>
+        <div class="adv-grid">
+          <div class="adv-f">
+            <label class="muted" title="Off (the default): accents and letter case are ignored, so é finds e and Paris finds paris. On: the words must match exactly as typed, and the search stays in the language you typed.">
+              <input type="checkbox" id="an-adv-exact"> <span>Match accents and case exactly</span></label>
+            <label class="muted" for="adv-near-default">NEAR distance when none is given</label>
+            <div class="adv-ops">
+              <input type="number" id="adv-near-default" min="0" max="1000" step="1" style="width:7ch">
+              <button type="button" class="ghost tiny" id="adv-near-save" title="Keeps this number as your default for every future search. A NEAR row with its own number keeps that number.">Make it my default</button>
+            </div>
+          </div>
+          <div class="adv-f">
+            <label class="muted" for="an-adv-lang">Languages</label>
+            <select id="an-adv-lang" multiple size="6"></select>
+            <select id="adv-lang-basis" aria-label="Which language" title="An article can carry the language its source declared (asserted) and the language the app deduced from its text (detected, used only where the source declared none).">
+              <option value="any">asserted, else detected</option>
+              <option value="asserted">asserted by the source only</option>
+              <option value="detected">detected by the app only</option>
+            </select>
+          </div>
+          <div class="adv-f">
+            <label class="muted" for="adv-sources">Sources</label>
+            <input id="adv-src-filter" placeholder="Filter the list" aria-label="Filter the sources list" dir="auto">
+            <select id="adv-sources" multiple size="6"></select>
+            <div id="adv-legacy-src"></div>
+          </div>
+          <div class="adv-f">
+            <label class="muted" for="adv-countries">Source countries</label>
+            <select id="adv-countries" multiple size="4"></select>
+            <label class="muted" for="adv-regions">Source regions</label>
+            <select id="adv-regions" multiple size="3"></select>
+          </div>
+          <div class="adv-f adv-wide">
+            <span class="muted">Published between</span>
+            <div id="adv-published"></div>
+          </div>
+          <div class="adv-f adv-wide">
+            <span class="muted" title="When this app collected the article, by its own clock. Never mixed with the publication date.">Collected between</span>
+            <div id="adv-collected"></div>
+          </div>
+          <div class="adv-f">
+            <span class="muted">Length in words</span>
+            <div class="adv-ops">
+              <input type="number" id="adv-words-min" min="0" placeholder="at least" aria-label="At least this many words" style="width:9ch">
+              <input type="number" id="adv-words-max" min="0" placeholder="at most" aria-label="At most this many words" style="width:9ch">
+            </div>
+            <div class="adv-caveat" id="adv-cav-words"></div>
+          </div>
+          <div class="adv-f">
+            <span class="muted">Tone</span>
+            <div class="adv-ops">
+              <label><input type="checkbox" class="adv-sent" value="positive"> <span>positive</span></label>
+              <label><input type="checkbox" class="adv-sent" value="neutral"> <span>neutral</span></label>
+              <label><input type="checkbox" class="adv-sent" value="negative"> <span>negative</span></label>
+            </div>
+            <div class="adv-caveat" id="adv-cav-sentiment"></div>
+          </div>
+          <div class="adv-f">
+            <span class="muted">Mentions a date between</span>
+            <div class="adv-ops">
+              <input type="date" id="adv-mentions-from" aria-label="Mentions a date on or after">
+              <input type="date" id="adv-mentions-to" aria-label="Mentions a date on or before">
+            </div>
+            <div class="adv-caveat" id="adv-cav-mentions"></div>
+          </div>
+          <div class="adv-f">
+            <label class="muted"><input type="checkbox" id="adv-quarantined"> <span>Include quarantined items</span></label>
+            <div class="adv-caveat" id="adv-cav-quarantine"></div>
+          </div>
+        </div>
+        <div class="adv-ops" style="margin-top:10px">
+          <button type="button" class="primary" id="adv-run">Run analysis</button>
+          <button type="button" class="ghost" id="adv-reset">Clear the filters</button>
+          <button type="button" class="secondary" id="adv-save" title="Keeps this search, with every filter, in Insights → Watches. A saved search never fires a Lead; open it from there to run it again.">Save this search</button>
+          <button type="button" class="secondary" id="adv-link" title="Copies a link to this search, with every filter. It opens on this machine only: the link carries the search, never the articles.">Copy link</button>
+        </div>
+        <div id="an-adv-note" class="muted" role="status" style="margin-top:8px"></div>
+        <details id="adv-hist" style="margin-top:10px">
+          <summary>Search history</summary>
+          <label class="muted"><input type="checkbox" id="adv-hist-on"> <span>Keep a history of my searches</span></label>
+          <p class="hint adv-caveat">Stored only on this machine, inside your encrypted corpus. Never exported, never in a diagnostics bundle. Off unless you turn it on; clearing it deletes every entry.</p>
+          <ul id="adv-hist-list" class="adv-hist-list"></ul>
+          <button type="button" class="ghost tiny" id="adv-hist-clear">Clear the history</button>
+        </details>
       </div>
       <div class="an-export" style="margin-top:12px;padding-top:10px;border-top:1px solid var(--border,#3334);display:flex;gap:8px;flex-wrap:wrap;align-items:center">
         <span class="muted">Export this analysis:</span>
@@ -1827,6 +1934,16 @@
       <div class="row" style="margin-top:8px;gap:8px">
         <button id="wiki-wizard-open" type="button">Editions and storage budget…</button>
       </div>
+      <!-- Q701 = c's allpages walk (S05-06). OFF unless switched on HERE, per machine: an
+           update must not start a multi-day crawl on every instance with the lane on. The
+           cost is stated VISIBLY, not only in the hover (the informed-consent rule). It
+           adds no host: the walk uses the edition's own API, already in the list above. -->
+      <label class="row" style="margin-top:10px;gap:8px;align-items:flex-start;flex-wrap:nowrap;cursor:pointer"
+             title="The walk reaches the pages the live stream never mentions because nobody edits them. Its progress, and why it waits when it waits, are in Living sources and the task manager.">
+        <input type="checkbox" id="wiki-walk-enabled" style="width:auto;flex:none;margin-top:3px">
+        <span style="flex:1;min-width:0"><b>Also walk every article title.</b>
+          <span>Slow and long: 50 titles a request, one request at a time, for several days across the editions above. It keeps titles, sizes and Wikidata ids, never text, inside the same storage budget, and runs only while the stream runs.</span></span>
+      </label>
       <div class="hint" style="margin-top:8px" title="The same reasoning this app applies to the World Bank and SDMX statistics endpoints: robots.txt governs crawling, not documented public APIs, and blanket-applying it would wrongly block legitimate API use.">
         <b>Robots.</b>
         <span>These are documented public API endpoints and follow their own service etiquette rather than generic crawl robots — blanket-applying robots.txt would wrongly block legitimate API use. The kill switch, the honest bot User-Agent and the single fetch path still apply to every request.</span>
