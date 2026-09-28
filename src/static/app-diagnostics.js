@@ -1942,7 +1942,8 @@
     // its checkbox to a non-existent ai_sweep_langdetect would have produced a control
     // that saves nothing and reads back unchecked forever, which is worse than not
     // offering it.
-    const AI_SWEEP_KEYS = ["keyword_triage", "source_tags", "perception_extract"];
+    const AI_SWEEP_KEYS = ["keyword_triage", "source_tags", "perception_extract",
+      "keyword_translation", "article_titles"];
     async function saveAiSweepMembership() {
       const body = {};
       AI_SWEEP_KEYS.forEach(k => {

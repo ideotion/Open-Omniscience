@@ -162,6 +162,16 @@ def _member_specs() -> list[Member]:
             ctx, model=model, max_batches=BATCHES_PER_TURN, max_workers=max_workers
         )
 
+    def _kw_translation(ctx, model: str) -> dict:
+        from src.ai_layer.translation_sweep import run_keyword_translation_sweep
+
+        return run_keyword_translation_sweep(ctx, model=model, max_batches=BATCHES_PER_TURN)
+
+    def _titles(ctx, model: str) -> dict:
+        from src.ai_layer.translation_sweep import run_title_translation_sweep
+
+        return run_title_translation_sweep(ctx, model=model, max_batches=BATCHES_PER_TURN)
+
     return [
         Member("keyword_triage", "Keyword triage", "ai_sweep_keyword_triage", _triage),
         Member("source_tags", "Source tags", "ai_sweep_source_tags", _source_tags),
@@ -172,6 +182,14 @@ def _member_specs() -> list[Member]:
             _perception,
             per_item_concurrency=True,
         ),
+        # S05-08: the two translation sweeps. Keyword translation is on under the master
+        # like the three above (Q405); the title sweep is opt-in (Q513 = b) and its flag
+        # starts False, so the master alone never runs it.
+        Member(
+            "keyword_translation", "Keyword translation (≈)",
+            "ai_sweep_keyword_translation", _kw_translation,
+        ),
+        Member("article_titles", "Article titles (≈)", "ai_sweep_article_titles", _titles),
     ]
 
 

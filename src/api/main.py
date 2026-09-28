@@ -1229,6 +1229,29 @@ def _article_row(
     }
 
 
+def _attach_title_translations(db, results: list[dict], ui_lang: str | None) -> list[dict]:
+    """S05-08 S2 (Q513 = b): add a ``title_translation`` beside each row that has one.
+
+    ADDITIVE and read-only: ``title`` is never touched, so the original stays what the
+    list shows first-hand, and a row with no ``≈`` title simply has no key (never an
+    empty string, which would read as "the model translated it to nothing"). Nothing is
+    attached unless the reader named a language AND both switches are on -- the
+    coordinator's master and the title sweep's own opt-in."""
+    if not ui_lang or not results:
+        return results
+    try:
+        from src.ai_layer.translation_sweep import title_translations_for
+
+        found = title_translations_for(db, [r["id"] for r in results], ui_lang)
+    except Exception:  # noqa: BLE001 - a missing table on a pre-migration store
+        return results
+    for r in results:
+        tt = found.get(r["id"])
+        if tt and (r.get("language") or "").split("-")[0].lower() != ui_lang.split("-")[0].lower():
+            r["title_translation"] = tt
+    return results
+
+
 def _python_sort_key(sort_by: str):
     """Key for sorting fetched Article rows (the FTS path) by a metadata field."""
     if sort_by == "top_keyword":
@@ -1715,6 +1738,7 @@ def search_articles(  # plain def -> Starlette threadpool (S2.5): the synchronou
         results = [
             _article_row(a, keyword_count=cmap.get(a.id), top_terms=tmap) for a in ordered
         ]
+        _attach_title_translations(db, results, ui_lang)
         return {
             "total": len(ordered),
             "limit": limit,
@@ -1760,6 +1784,7 @@ def search_articles(  # plain def -> Starlette threadpool (S2.5): the synchronou
     results = [
         _article_row(a, keyword_count=cmap.get(a.id), top_terms=tmap) for a in articles
     ]
+    _attach_title_translations(db, results, ui_lang)
 
     payload = {
         "total": total,

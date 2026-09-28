@@ -122,6 +122,12 @@ class AppSettings:
     ai_sweep_keyword_triage: bool = True
     ai_sweep_source_tags: bool = True
     ai_sweep_perception_extract: bool = True
+    # THE TRANSLATION SWEEPS (S05-08). Keyword translation is a member like the three
+    # above, on by default under the master (Q405: "shown by default once persisted ...
+    # when the AI coordinator is on"). The article-title sweep is OPT-IN (Q513 = b says
+    # so in as many words), so it starts False and the master never turns it on.
+    ai_sweep_keyword_translation: bool = True
+    ai_sweep_article_titles: bool = False
     # THE IMPORT CHECKPOINT INTERVAL K (2026-09-07; the 2026-08-08 queue entry's
     # item (b)). How many corpus backups of a multi-backup import share ONE
     # verify + working-copy snapshot + atomic swap. 1 = today's behaviour, every
@@ -314,6 +320,8 @@ def load_settings() -> AppSettings:
         "ai_sweep_keyword_triage",
         "ai_sweep_source_tags",
         "ai_sweep_perception_extract",
+        "ai_sweep_keyword_translation",
+        "ai_sweep_article_titles",
         "trust_backup_fetch_history",
         "adopt_shipped_verdicts",
         "search_history_enabled",
@@ -478,6 +486,8 @@ def save_settings(updates: dict) -> AppSettings:
         "ai_sweep_keyword_triage",
         "ai_sweep_source_tags",
         "ai_sweep_perception_extract",
+        "ai_sweep_keyword_translation",
+        "ai_sweep_article_titles",
         # The Q701-note trust toggle joins them: a truthy STRING must not be able to
         # make a restore adopt somebody else's fetch history, which is a decision about
         # what this machine will and will not go and download.
