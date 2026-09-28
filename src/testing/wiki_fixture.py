@@ -340,6 +340,51 @@ class FixtureWikiClient:
         size = len(json.dumps(payload).encode("utf-8"))
         return {**parse_walk_batch(payload), "response_bytes": size}
 
+    def fetch_warm_texts(self, wiki: str, pageids: list[int]) -> dict:
+        """WARM's batched read over the fixture edition, through the REAL parser.
+
+        The payload is built in the API's formatversion=2 shape -- a deleted page as
+        ``missing``, the rest with their newest visible revision -- and handed to
+        :func:`src.wiki.mediawiki.parse_warm_texts`, so a parser bug shows here too. It
+        refuses an over-cap batch exactly as the real params builder does.
+        """
+        self._note("fetch_warm_texts")
+        self._check(wiki)
+        from src.wiki.mediawiki import build_warm_texts_params, parse_warm_texts
+
+        build_warm_texts_params(pageids)  # the same refusals as the real request
+        wanted = {int(p) for p in pageids}
+        by_id = {page["pageid"]: (title, page) for title, page in self._pages().items()}
+        out_pages: list[dict[str, Any]] = []
+        for pid in sorted(wanted):
+            found = by_id.get(pid)
+            if found is None or self._deleted(found[1]):
+                out_pages.append({"pageid": pid, "missing": True})
+                continue
+            title, page = found
+            visible = [r for r in page["revisions"] if self._visible(r)]
+            if not visible:
+                out_pages.append({"pageid": pid, "missing": True})
+                continue
+            rev = visible[-1]
+            out_pages.append(
+                {
+                    "pageid": pid,
+                    "ns": 0,
+                    "title": title,
+                    "revisions": [
+                        {
+                            "revid": rev["revid"],
+                            "timestamp": rev["timestamp"],
+                            "slots": {"main": {"content": rev["text"]}},
+                        }
+                    ],
+                }
+            )
+        payload: dict[str, Any] = {"batchcomplete": True, "query": {"pages": out_pages}}
+        size = len(json.dumps(payload).encode("utf-8"))
+        return {**parse_warm_texts(payload), "response_bytes": size}
+
     def fetch_edition_statistics(self, wiki: str) -> dict:
         """The fixture edition's own article count: the pages ``allpages`` would list."""
         self._note("fetch_edition_statistics")

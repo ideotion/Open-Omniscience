@@ -14,6 +14,7 @@ Editions are per-language: ``api_endpoint("en")`` -> the English Wikipedia API.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import datetime
 
 from bs4 import BeautifulSoup
@@ -525,6 +526,128 @@ def parse_walk_batch(payload) -> dict:
                 "last_revid": revid if isinstance(revid, int) and not isinstance(revid, bool) else None,
             }
         )
+    return out
+
+
+# --------------------------------------------------------------------------- #
+# Q707's WARM tier (S05-06's S1): the latest text of up to 50 changed pages, by id.
+# --------------------------------------------------------------------------- #
+#: WARM's ``prop`` set. ``revisions`` carries the text; ``info`` carries ``redirect``, so a
+#: page that became a redirect is recognised as outside Q703's scope instead of being
+#: stored as an article. Nothing else: WARM is every other changed page, and Q705's
+#: metadata is HOT's -- every extra prop is bytes over somebody else's bandwidth.
+_WARM_PROPS = "revisions|info"
+
+
+def build_warm_texts_params(pageids: Sequence[int]) -> dict:
+    """Params for the LATEST text of up to 50 pages, by page id, in ONE request.
+
+    By id for the reason :func:`build_hot_pages_params` gives (a title may have moved since
+    the change arrived). ``rvprop`` without ``rvlimit`` over several pages answers each
+    page's NEWEST revision, which is exactly WARM's question: whatever edits landed since
+    the change was reported collapse into one fetch of where the page is now.
+
+    Refuses an empty batch and one over 50, rather than sending a request that asks for
+    nothing or clamping one that asks for too much.
+    """
+    ids = [int(p) for p in pageids]
+    if not ids:
+        raise ValueError("a WARM batch needs at least one page id")
+    if len(ids) > MAX_PAGES_PER_REQUEST:
+        raise ValueError(
+            f"{len(ids)} pages asked for in one request; the Action API serves "
+            f"{MAX_PAGES_PER_REQUEST} to an anonymous client. Chunk before calling."
+        )
+    return {
+        "action": "query",
+        "prop": _WARM_PROPS,
+        "pageids": "|".join(str(p) for p in ids),
+        "rvprop": "ids|timestamp|content",
+        "rvslots": "main",
+        "format": "json",
+        "formatversion": 2,
+    }
+
+
+def parse_warm_texts(payload) -> dict:
+    """Parse one WARM answer -> ``{"pages", "partial", "error", "malformed"}``.
+
+    ``pages`` maps each page the answer SETTLED to what it said:
+
+    * ``{"missing": True}`` -- the wiki has no such page now (deleted since the change);
+    * ``{"not_an_article": True, "title"}`` -- it exists but left Q703's scope: another
+      namespace, or a redirect now;
+    * ``{"text_hidden": True, "title", "revid"}`` -- the wiki suppressed the text;
+    * ``{"title", "revid", "timestamp", "text"}`` -- the latest wikitext, as given.
+
+    A page the answer names WITHOUT a readable revision is NOT settled and is left out:
+    MediaWiki answers a batch whose texts outgrow its result limit with a ``continue`` and
+    leaves the rest of the pages bare, and reading a bare page as "no text" would drop a
+    page the wiki simply had not got to. ``partial`` says a continuation came back; WARM
+    never follows it -- the pages left out are asked again. In a COMPLETE answer a page
+    left out is one the wiki answered in a shape this parser cannot read (``textmissing``,
+    a revision without an id), and the caller records it as such rather than asking again.
+    """
+    out: dict = {"pages": {}, "partial": False, "error": None, "malformed": None}
+    if not isinstance(payload, dict):
+        out["malformed"] = "not-an-object"
+        return out
+    error = payload.get("error")
+    if error is not None:
+        code = error.get("code") if isinstance(error, dict) else None
+        out["error"] = str(code) if code else "unnamed-error"
+        return out
+    query = payload.get("query", {})
+    if not isinstance(query, dict):
+        out["malformed"] = "query-not-an-object"
+        return out
+    pages = query.get("pages", [])
+    if not isinstance(pages, list):
+        # formatversion=1's map keyed by page id; see parse_walk_batch.
+        out["malformed"] = "pages-not-a-list"
+        return out
+    if "continue" in payload:
+        out["partial"] = True
+    elif not payload.get("batchcomplete"):
+        out["malformed"] = "neither-continue-nor-batchcomplete"
+        return out
+    for page in pages:
+        if not isinstance(page, dict):
+            continue
+        pid = page.get("pageid")
+        if isinstance(pid, bool) or not isinstance(pid, int) or pid <= 0:
+            # An id the API could not resolve comes back without one (``invalid``); there
+            # is nothing to key it on, and it stays in the queue until the stream says more.
+            continue
+        if page.get("missing"):
+            out["pages"][pid] = {"missing": True}
+            continue
+        title = page.get("title") if isinstance(page.get("title"), str) else None
+        if page.get("ns", 0) != 0 or page.get("redirect"):
+            out["pages"][pid] = {"not_an_article": True, "title": title}
+            continue
+        revisions = page.get("revisions")
+        if not isinstance(revisions, list) or not revisions or not isinstance(revisions[0], dict):
+            continue  # not answered in this batch; see the docstring
+        newest = revisions[0]
+        revid = newest.get("revid")
+        revid = revid if isinstance(revid, int) and not isinstance(revid, bool) and revid > 0 else None
+        slots = newest.get("slots")
+        main = slots.get("main") if isinstance(slots, dict) else None
+        # Suppressed text is flagged on the slot when ``rvslots`` is sent, and on the
+        # revision itself by a server answering without slots; either is the same fact.
+        if newest.get("texthidden") or (isinstance(main, dict) and main.get("texthidden")):
+            out["pages"][pid] = {"text_hidden": True, "title": title, "revid": revid}
+            continue
+        content = main.get("content") if isinstance(main, dict) else None
+        if not isinstance(content, str) or revid is None:
+            continue  # an answer this parser cannot read as a text stays in the queue
+        out["pages"][pid] = {
+            "title": title,
+            "revid": revid,
+            "timestamp": _parse_ts(newest.get("timestamp")),
+            "text": content,
+        }
     return out
 
 

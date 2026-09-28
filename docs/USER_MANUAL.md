@@ -946,7 +946,12 @@ is read from this machine; nothing is fetched to draw it.
   is doing (walking; paused, and why; or waiting out a refusal from the wiki) and,
   per edition, the pages it has listed **of the edition's own article count**
   ("1 234 000 of 2 700 000"). That is two counts, never a percentage: each edition
-  counts its articles its own way, so the first number can pass the second.
+  counts its articles its own way, so the first number can pass the second. When
+  fetching the **other changed pages** is on (below), an *Other changed pages* group
+  (above the walk's) counts the pages holding a text, the changed pages still waiting
+  for theirs, the texts fetched and the pages that have since become pages the stream
+  follows, per edition too, and says when it stops: at a stated share of the storage
+  budget, a proposed default the app shows rather than a ruling.
 - **Law:** the documents the law tracker follows, the newest and oldest check, and
   each real change (a re-check that changed nothing is not counted) with its
   stored diff and a link to your local copy.
@@ -1003,6 +1008,21 @@ protected mode with no usable proxy, makes it **wait** (it never goes direct), a
 wiki that asks it to slow down is asked again after a pause that doubles up to an
 hour. A restart resumes each edition where it stopped. Its progress is in **Living
 sources** and in the task manager.
+
+**The other changed pages (off unless you switch it on):** the live stream stores
+the text of the pages it follows and only counts the changes it reports on every
+other page. Ticking **Also fetch the text of other changed pages** (Settings →
+Wikipedia, beside the walk's box) fetches the newest text of those other pages too,
+50 pages a request, the page that has waited longest first. A page edited ten times
+while it waited costs one fetch, of where it stands now. The app keeps each page's
+**latest and previous** text, and a page deleted later keeps the text it had. These
+texts **stay in the lane's own file, not in your corpus**, and search does not read
+them yet. They stop when the lane file holds **90% of its storage budget**, so the
+rest stays for the pages the stream follows; that share is a proposed default, not a
+ruling, and Living sources shows it. It runs only while the live stream runs, on the
+same connection and with the same waits as the walk: airplane mode, or protected
+mode with no usable proxy, makes it wait (it never goes direct), and a wiki that asks
+it to slow down is asked again after a pause that doubles up to an hour.
 
 Heavy **offline full-text baselines** (whole-edition dumps) are *separate* and live
 in **Settings → Wikipedia** — you don't need them for change-tracking. See
