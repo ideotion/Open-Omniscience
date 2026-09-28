@@ -687,14 +687,20 @@
       return _LANE_WHICH[which] ? t(_LANE_WHICH[which]) : String(which || "");
     }
 
+    // A held version as "edition · which text · date": the one line a palette row and a
+    // Search tab row both carry, so the two cannot describe one hit two ways.
+    function laneHitSub(it, t) {
+      return [it.edition || "", laneWhichText(it.which, t), (it.revised_at || "").slice(0, 10)]
+        .filter(Boolean).join(" · ");
+    }
+
     // The command palette's rows for the lane's hits: beside the corpus hits, marked as
     // Wikipedia, each opening THAT version. `run` only opens the dialog below.
     function laneOmniRows(lane, t) {
       const items = (lane && lane.available && Array.isArray(lane.items)) ? lane.items : [];
       return items.map((it) => ({
         label: it.title || ("#" + it.page_id),
-        sub: [it.edition || "", laneWhichText(it.which, t), (it.revised_at || "").slice(0, 10)]
-          .filter(Boolean).join(" · "),
+        sub: laneHitSub(it, t),
         run: () => openLaneVersion(it.source, it.owner_id, it.revid),
       }));
     }
@@ -811,6 +817,7 @@
       try {
         s.added = await api("/api/wiki/lane/add-to-corpus", {method: "POST",
           body: JSON.stringify({source: s.d.source, owner_id: s.d.owner_id, revid: s.d.revid})});
+        _laneSearchNoteAdded(s.d, s.added);
       } catch (e) {
         s.failed = e;
       } finally {
@@ -824,4 +831,192 @@
     function repaintLaneVersionFromCache() {
       const dlg = $("lane-version");
       if (dlg && dlg.open && _laneVersionLast) renderLaneVersion();
+    }
+
+    // --- The Search tab's Wikipedia section (R52) -------------------------------------
+    // The one search box's other half. The Search tab searches the lane's held texts with
+    // the same words and lists them BESIDE the corpus's results, marked as Wikipedia and
+    // never ranked into them: two BM25 scores from two indexes are not one scale. What was
+    // searched is said with every answer, above its hits, so an empty list never reads as
+    // «Wikipedia does not say this» (R52's owed line). The corpus's filters -- the source,
+    // language and time boxes, and the query's source:, author:, url:, tag: and title:= --
+    // describe ARTICLES and never reach these texts; whenever one is set the section says
+    // so rather than letting a filtered corpus list sit beside an unfiltered one unmarked.
+    // Pure renderers first, driven in node like the ones above.
+
+    // A snippet arrives as PARTS (lane_search.snippet), each carrying its own text, so no
+    // offset is counted by a browser that counts characters differently from the server.
+    function laneSnippetHtml(parts) {
+      if (!Array.isArray(parts)) return "";
+      return parts.map((p) => ((p && p.hit) ? `<mark>${esc(p.text)}</mark>` : esc((p && p.text) || ""))).join("");
+    }
+
+    // "en 10, fr 2": each edition with its pages, in the reader's own list punctuation.
+    function _laneEditionsText(rows) {
+      return ooListJoin((rows || []).map((r) => _ltrIsolate(r.edition) + " " + r.pages));
+    }
+
+    // What the search looked through: the texts THIS machine holds, per edition, and what
+    // it could not look at yet. Counted from the route's `coverage`, never from the hits.
+    function laneCoverageHtml(c, t) {
+      if (!c) return "";
+      const changed = c.changed_pages || {}, stream = c.stream_pages || {};
+      const lines = [];
+      if (changed.pages) {
+        lines.push(ooLabelText(t("Other changed pages, by their latest and previous texts"),
+          `${changed.pages} (${_laneEditionsText(changed.editions)})`));
+      }
+      if (stream.pages) {
+        lines.push(ooLabelText(t("Pages the stream has followed, by their older versions"),
+          `${stream.pages} (${_laneEditionsText(stream.editions)})`));
+      }
+      if (!lines.length) lines.push(t("The Wikipedia lane holds no text yet."));
+      if (c.pending) lines.push(ooLabelText(t("Texts waiting to be indexed, not searched yet"), c.pending));
+      if (c.failed) lines.push(ooLabelText(t("Texts set aside because they could not be read"), c.failed));
+      if (c.warm_enabled === false) lines.push(t("Fetching other changed pages is off. Texts already fetched are kept."));
+      return `<div class="hint">${esc(t("Searched only the Wikipedia texts this machine holds, not Wikipedia itself:"))}</div>`
+        + `<ul class="hint lane-cov">${lines.map((l) => `<li>${esc(l)}</li>`).join("")}</ul>`;
+    }
+
+    function _laneKey(it) { return `${it.source}:${it.owner_id}:${it.revid}`; }
+
+    // One hit. Its title opens THAT version to read first; «Add to corpus» adds it, one
+    // version per click. `st` is the section's state: what was added, failed, is in flight.
+    function laneHitHtml(it, st, t) {
+      const key = _laneKey(it);
+      const added = (st && st.added) ? st.added[key] : null;
+      const failed = (st && st.failed) ? st.failed[key] : null;
+      const busy = Boolean(st && st.busy && st.busy[key]);
+      const at = `data-source="${esc(it.source)}" data-owner="${esc(it.owner_id)}" data-revid="${esc(it.revid)}"`;
+      const snip = laneSnippetHtml(it.snippet);
+      const out = added ? laneAddedHtml(added, t)
+        : (failed ? `<div class="note err">${esc(laneFailText(failed, t))}</div>` : "");
+      return `<li class="living-row">`
+        + `<div class="living-row-head"><button type="button" class="linkish" data-lane-open ${at}`
+        + ` title="${esc(t("Read this version before adding it"))}">${esc(it.title || ("#" + it.page_id))}</button>`
+        + `<span class="muted small">${esc(laneHitSub(it, t))}</span>`
+        + `<button type="button" class="secondary tiny lane-add" data-lane-add ${at}${(added || busy) ? " disabled" : ""}>`
+        + `${esc(t("Add to corpus"))}</button></div>`
+        + (snip ? `<div class="small lane-snip" dir="auto">${snip}</div>` : "")
+        + out + `</li>`;
+    }
+
+    // The whole section from its state. "" hides it: no words to search for, or the app
+    // is locked and the corpus's search already says so.
+    function laneSearchHtml(st, t, tf) {
+      if (!st) return "";
+      const head = `<h3>${esc(t("Wikipedia texts held on this machine"))}</h3>`;
+      if (st.loading) return head + `<div class="hint">${esc(t("Loading…"))}</div>`;
+      if (st.error) return head + `<div class="note err">${esc(laneFailText(st.error, t))}</div>`;
+      const d = st.d;
+      if (!d) return "";
+      if (!d.available) {
+        if (d.reason === "locked") return "";
+        const said = {
+          sqlite_too_old: "This system's SQLite is too old for the search index of these texts: it needs version 3.43 or newer.",
+          index_not_built: "The search index of these texts is built the next time the Wikipedia lane runs.",
+        }[d.reason];
+        return head + `<div class="hint">${esc(said ? t(said) : laneFailText({detail: d.reason, message: d.reason}, t))}</div>`;
+      }
+      if (d.error === "query_invalid") {
+        return head + `<div class="hint">${esc(t("These texts were not searched: their index could not read this query."))}</div>`;
+      }
+      if (d.total == null) return "";
+      const items = Array.isArray(d.items) ? d.items : [];
+      const count = d.total > items.length
+        ? tf("{n} result(s) (showing {shown})", {n: d.total, shown: items.length})
+        : tf("{n} result(s)", {n: d.total});
+      const filtered = st.filtered || (Array.isArray(d.fields_not_applied) && d.fields_not_applied.length);
+      const list = items.length
+        ? `<ul class="lane-hits">${items.map((it) => laneHitHtml(it, st, t)).join("")}</ul>`
+        : `<div class="muted">${esc(t("None of the Wikipedia texts this machine holds contains these words."))}</div>`;
+      return head
+        + `<div class="hint">${esc(count)}</div>`
+        + laneCoverageHtml(d.coverage, t)
+        + (filtered ? `<div class="hint">${esc(t("Your filters apply to the corpus only: these Wikipedia texts were searched by the words alone."))}</div>` : "")
+        + list
+        + `<div class="card-caveat">${esc(t("Older versions are found by the lines a later edit removed. A search whose words sit partly in kept lines and partly in removed ones finds neither version."))}</div>`;
+    }
+
+    let _laneSearchLast = null;   // what the section shows: {q, d, filtered, added, failed, busy}
+    let _laneSearchSeq = 0;       // a later search supersedes an earlier one still loading
+    let _laneSearchWired = false;
+    function _laneSearchWire() {
+      const host = $("search-lane");
+      if (_laneSearchWired || !host) return;
+      _laneSearchWired = true;
+      // ONE delegated listener: the rows are redrawn on every answer and language switch.
+      host.addEventListener("click", (ev) => {
+        const b = ev.target.closest("button[data-source]");
+        if (!b || !host.contains(b) || b.disabled) return;
+        const source = b.dataset.source, ownerId = Number(b.dataset.owner), revid = Number(b.dataset.revid);
+        if (b.hasAttribute("data-lane-add")) laneSearchAdd(source, ownerId, revid);
+        else openLaneVersion(source, ownerId, revid);
+      });
+    }
+
+    function renderLaneSearch() {
+      const host = $("search-lane");
+      if (!host) return;
+      const html = laneSearchHtml(_laneSearchLast, _livingT(), _livingTf());
+      host.innerHTML = html;
+      host.hidden = !html;
+    }
+
+    // doSearch hands over the Search tab's words and whether a corpus-only filter is set,
+    // and never awaits this: the corpus's list never waits for the lane's.
+    async function searchLaneHits(q, filtered) {
+      if (!$("search-lane")) return;
+      _laneSearchWire();
+      const seq = ++_laneSearchSeq;
+      const words = String(q || "").trim();
+      _laneSearchLast = words ? {q: words, loading: true, filtered: Boolean(filtered)} : null;
+      renderLaneSearch();
+      if (!words) return;
+      let st;
+      try {
+        const d = await api("/api/wiki/lane/search?" + new URLSearchParams({q: words}).toString());
+        st = {q: words, d, filtered: Boolean(filtered), added: {}, failed: {}, busy: {}};
+      } catch (e) {
+        st = {q: words, error: e, filtered: Boolean(filtered)};
+      }
+      if (seq !== _laneSearchSeq) return;
+      _laneSearchLast = st;
+      renderLaneSearch();
+    }
+
+    // ONE version per click, named by the row's own attributes: the version that row shows.
+    async function laneSearchAdd(source, ownerId, revid) {
+      const s = _laneSearchLast;
+      if (!s || !s.added) return;
+      const key = `${source}:${ownerId}:${revid}`;
+      if (s.added[key] || s.busy[key]) return;
+      s.busy[key] = true;
+      delete s.failed[key];
+      renderLaneSearch();
+      try {
+        s.added[key] = await api("/api/wiki/lane/add-to-corpus", {method: "POST",
+          body: JSON.stringify({source, owner_id: ownerId, revid})});
+      } catch (e) {
+        s.failed[key] = e;
+      } finally {
+        delete s.busy[key];
+        if (_laneSearchLast === s) renderLaneSearch();
+      }
+    }
+
+    // An add made in the version window shows on that version's row here too.
+    function _laneSearchNoteAdded(d, r) {
+      const s = _laneSearchLast;
+      if (!s || !s.added || !d || !r) return;
+      const key = _laneKey(d);
+      if (((s.d && s.d.items) || []).some((it) => _laneKey(it) === key)) {
+        s.added[key] = r;
+        renderLaneSearch();
+      }
+    }
+
+    // A language switch (app-boot.js) redraws the section from what it holds, never a fetch.
+    function repaintLaneSearchFromCache() {
+      if (_laneSearchLast) renderLaneSearch();
     }

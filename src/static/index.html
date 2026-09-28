@@ -432,6 +432,11 @@
       <div id="bulk-llm-search" class="bulk-llm" style="display:none;margin-top:10px"></div>
       <div id="bulk-queue-search" class="bulk-queue" style="margin-top:8px"></div>
       <div style="overflow:auto; margin-top:10px;"><table id="results"></table></div>
+      <!-- R52 («In the lane», 2026-09-28): the Wikipedia texts THIS machine holds, found by
+           the same words and listed BESIDE the corpus's results, never ranked into them.
+           What was searched is said with every answer. Composed with t() in app-living.js,
+           so the walker leaves it alone and a language switch redraws it from cache. -->
+      <div id="search-lane" class="lane-search" data-i18n-dyn hidden></div>
     </section>
     </div>
 

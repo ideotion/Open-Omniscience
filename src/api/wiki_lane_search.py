@@ -74,7 +74,11 @@ def search_lane(
     queue: bool = True,
     coverage: bool = False,
 ) -> dict[str, Any]:
-    """The lane search, or a named absence. Shared by the route and the omnibar's group."""
+    """The lane search, or a named absence. Shared by the route and the omnibar's group.
+
+    The reader's own NEAR distance is read here, as the article search reads it
+    (``src/api/search_filters.py``), so ``NEAR(a b)`` means one thing in both lists."""
+    from src.api.search_filters import _near_preference
     from src.database.connect import DatabaseLockedError
     from src.wiki.lane_search import search, search_coverage
 
@@ -82,7 +86,10 @@ def search_lane(
         return _absent(_NEVER_RUN, q)
     try:
         with lane_session("wiki") as lane:
-            out = search(lane, q, limit=limit, offset=offset, snippets=snippets, queue=queue)
+            out = search(
+                lane, q, limit=limit, offset=offset, snippets=snippets, queue=queue,
+                near_default=_near_preference(),
+            )
             if coverage and out.get("available"):
                 out["coverage"] = search_coverage(lane)
             return out

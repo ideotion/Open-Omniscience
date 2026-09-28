@@ -385,6 +385,37 @@ def test_a_snippet_finds_the_word_through_case_accents_and_arabic_folding():
     parts = S.snippet(arabic, ["المدرسة"])
     assert any(p["hit"] and p["text"] == "المَدرسة" for p in parts)
     assert S.snippet_literals('grain AND "red wheat" NOT barley') == ["grain", "red wheat"]
+    # The grammar's forms mark their words; a SQL field filter and a NOT mark nothing.
+    assert S.snippet_literals("salt* NEAR(red wheat, 5) title:mill source:bbc NOT rye") == [
+        "salt", "red", "wheat", "mill",
+    ]
+    assert S.snippet_literals("(unbalanced") == [], "a query that does not parse marks nothing"
+
+
+def test_one_query_means_in_these_texts_what_it_means_in_the_corpus(lane):
+    """The corpus search's grammar (S05-01): a prefix, NEAR and a title filter search these
+    texts as they search the corpus. The SQL field filters describe corpus ARTICLES, so they
+    are named as not applied -- and never widened into a search of every held text."""
+    _warm(title="Salt works", latest=(1101, "The saltpan kept its gates shut for a decade.", T0))
+    _warm(title="Harbour", latest=(1102, "Gates of the harbour. Much later, far away, a saltpan.", T0))
+    _index()
+
+    def revids(q, **kw):
+        return sorted(i["revid"] for i in _search(q, snippets=False, **kw)["items"])
+
+    assert revids("saltp*") == [1101, 1102], "a prefix was read as a whole word"
+    assert revids("saltp") == [], "without the star it is a whole word, as in the corpus"
+    assert revids("NEAR(saltpan gates, 3)") == [1101], "NEAR was read as two plain words"
+    assert revids("NEAR(saltpan gates)", near_default=5) == [1101]
+    assert revids("NEAR(saltpan gates)", near_default=10) == [1101, 1102], "the reader's NEAR default was ignored"
+    assert revids("title:salt") == [1101] and revids("title:harb*") == [1102]
+    mixed = _search("source:reuters gates", snippets=False)
+    assert mixed["fields_not_applied"] == ["source"] and mixed["total"] == 2
+    alone = _search("source:reuters", snippets=False)
+    assert alone["total"] is None and alone["items"] == [], "a field filter alone searched every text"
+    assert _search("title:=Harbour gates", snippets=False)["fields_not_applied"] == ["title="]
+    assert "fields_not_applied" not in _search("gates", snippets=False)
+    assert _search("author:x OR gates")["error"] == "query_invalid", "the corpus's own refusal"
 
 
 def test_a_hindi_word_is_one_word_so_a_vowel_sign_never_splits_it(lane):

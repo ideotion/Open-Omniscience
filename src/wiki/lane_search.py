@@ -68,7 +68,14 @@ from typing import Any
 from sqlalchemy import delete, func, select, text, update
 from sqlalchemy.exc import SQLAlchemyError
 
-from src.database.fts import SearchQueryError, _bm25_weights, build_match
+from src.database import fts
+from src.database.fts import (
+    NEAR_DEFAULT,
+    SearchQueryError,
+    _bm25_weights,
+    build_match,
+    parse_query,
+)
 from src.database.fts_norm import (
     SEGMENTERS,
     available_mask,
@@ -1023,24 +1030,39 @@ _SPACES = re.compile(r"\s+")
 
 
 def snippet_literals(query: str | None) -> list[str]:
-    """The words and phrases a snippet should mark: the query's terms, less operators and
-    the term after a NOT. Only for marking -- which entries match is FTS5's answer."""
+    """The words and phrases a snippet should mark: the query's POSITIVE terms, read by the
+    corpus search's own parser (so ``salt*``, ``NEAR(salt works)`` and ``title:salt`` mark
+    ``salt``), less anything after a NOT and the SQL field filters, which never search these
+    texts. Only for marking -- which entries match is FTS5's answer -- so a query that does
+    not parse marks nothing rather than fail the search."""
+    try:
+        parsed = parse_query(query, grammar=True)
+    except SearchQueryError:
+        return []
     out: list[str] = []
-    negate = False
-    for tok in _QUERY_TOKEN.findall(query or ""):
-        upper = tok.upper()
-        if tok in ("(", ")") or upper in ("AND", "OR"):
-            negate = False
-            continue
-        if upper == "NOT":
-            negate = True
-            continue
-        value = tok[1:-1].strip() if len(tok) >= 2 and tok[0] == tok[-1] == '"' else tok
-        if negate:
-            negate = False
-            continue
-        if re.search(r"\w", value) and value not in out:
-            out.append(value)
+
+    def add(value: str) -> None:
+        v = _SPACES.sub(" ", value).strip()
+        if re.search(r"\w", v) and v not in out:
+            out.append(v)
+
+    def walk(node: Any) -> None:
+        if isinstance(node, fts._Term | fts._Prefix):
+            add(node.value)
+        elif isinstance(node, fts._Near):
+            for item in node.items:
+                add(item)
+        elif isinstance(node, fts.FieldFilter):
+            if node.in_index and not node.negated:
+                add(node.value)
+        elif isinstance(node, fts._Or):
+            for child in node.children:
+                walk(child)
+        elif isinstance(node, fts._AndGroup):
+            for child in node.includes:
+                walk(child)
+
+    walk(parsed.ast)
     return out
 
 
@@ -1258,6 +1280,7 @@ def search(
     offset: int = 0,
     snippets: bool = True,
     queue: bool = True,
+    near_default: int = NEAR_DEFAULT,
     snippet_budget_s: float = SNIPPET_BUDGET_S,
     monotonic: Callable[[], float] = time.monotonic,
 ) -> dict[str, Any]:
@@ -1265,6 +1288,13 @@ def search(
 
     ``queue`` adds how many texts wait for the index and how many were set aside -- a count
     over the queue, which a long first backlog makes worth skipping per keystroke.
+
+    THE CORPUS SEARCH'S GRAMMAR (S05-01), so one query means one thing in both lists:
+    ``salt*``, ``NEAR(salt works, 5)`` and ``title:salt`` search these texts as they search
+    the corpus (``near_default`` is the reader's own NEAR distance). Its SQL field filters
+    (``source:``, ``author:``, ``url:``, ``tag:`` and ``title:=``) describe corpus ARTICLES:
+    they are never widened into a word search here, only dropped and NAMED in
+    ``fields_not_applied``, so the Search tab can say they did not reach these texts.
 
     ``total`` is ``count(*)`` over the same MATCH the ranked rows come from, so the number
     and the list describe one set, and a limit never becomes a count (the 2026-07-18
@@ -1283,9 +1313,14 @@ def search(
     if queue:
         base["pending"], base["failed"] = queue_counts(lane)
     try:
-        match = build_match(q, variants=query_variants)
+        parsed = parse_query(q, grammar=True)
+        match = build_match(q, variants=query_variants, grammar=True, near_default=near_default)
     except SearchQueryError as exc:
         return {**base, "total": None, "items": [], "error": "query_invalid", "detail": str(exc)}
+    if parsed.fields:
+        base["fields_not_applied"] = sorted(
+            {f.field + ("=" if f.mode == "exact" else "") for f in parsed.fields}
+        )
     if match is None:
         return {**base, "total": None, "items": []}
     total = int(

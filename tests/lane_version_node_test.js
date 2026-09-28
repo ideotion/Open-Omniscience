@@ -17,7 +17,13 @@
 //   * the outbound link's visible text is the full address (invariant #6), and a scheme
 //     that is not http(s) is never made clickable;
 //   * every «Add to corpus» outcome that names an article links to it in the LOCAL reader,
-//     and one that names none draws no link.
+//     and one that names none draws no link;
+//   * the Search tab's section says WHAT WAS SEARCHED before its hits -- only this
+//     machine's texts, per edition, never Wikipedia itself -- so an empty list never reads
+//     as «Wikipedia does not say this», and it says when the corpus's filters did not
+//     reach these texts;
+//   * a locked app hides the section (the corpus's search already says so) and every
+//     other absence is named, never an empty box.
 //
 // EXTRACTED from the shipped modules rather than re-typed: a re-typed copy would pass
 // while the real renderer was broken.
@@ -62,8 +68,9 @@ function extractBlockConst(name) {
 }
 
 const LANE = [
-  "laneWhichText", "laneOmniRows", "laneVersionMetaHtml", "laneVersionNotesHtml",
-  "laneVersionOutHtml", "laneAddedHtml", "laneFailText",
+  "laneWhichText", "laneHitSub", "laneOmniRows", "laneVersionMetaHtml", "laneVersionNotesHtml",
+  "laneVersionOutHtml", "laneAddedHtml", "laneFailText", "laneSnippetHtml", "_laneEditionsText",
+  "laneCoverageHtml", "_laneKey", "laneHitHtml", "laneSearchHtml",
 ];
 const opened = [];
 const src =
@@ -72,6 +79,8 @@ const src =
   extractConst("_LTR_ISOLATE") + "\n" +
   extract("_ltrIsolate") + "\n" +
   extract("livingWhen") + "\n" +
+  extract("ooListJoin") + "\n" +
+  extract("ooLabelText") + "\n" +
   extractBlockConst("_LANE_WHICH") + "\n" +
   "var window = {};\n" +
   // The dialog is the one impure edge a row reaches: stubbed to record what it was asked.
@@ -189,5 +198,95 @@ assert.strictEqual(R.laneFailText({ detail: "lane-unreadable" }, t), "T(The Wiki
 assert.strictEqual(R.laneFailText({ detail: "lane-never-run" }, t), "T(The Wikipedia lane has not run on this machine yet.)");
 assert.strictEqual(R.laneFailText({ detail: "locked", message: "The app is locked" }, t), "The app is locked",
   "a refusal this surface does not name lost the server's own message");
+
+// --- 6. the Search tab's section: what was searched, then the hits ------------------- //
+const noHandler = (html, what) => assert.ok(!/\son[a-z]+=/i.test(html), `${what} carries an inline handler: ${html}`);
+assert.strictEqual(R.laneSnippetHtml([{ text: "a <b> ", hit: false }, { text: "salt", hit: true }]),
+  "a &lt;b&gt; <mark>salt</mark>");
+assert.strictEqual(R.laneSnippetHtml(null), "", "no snippet drew something");
+{
+  const cov = { changed_pages: { pages: 3, editions: [{ edition: "en", pages: 2 }, { edition: "fr", pages: 1 }] },
+    stream_pages: { pages: 5, editions: [{ edition: "en", pages: 5 }] }, pending: 0, failed: 0, warm_enabled: true };
+  const text = visible(R.laneCoverageHtml(cov, t));
+  assert.ok(text.startsWith("T(Searched only the Wikipedia texts this machine holds, not Wikipedia itself:)"), text);
+  assert.ok(text.includes("T(Other changed pages, by their latest and previous texts): 3 (en 2, fr 1)"), text);
+  assert.ok(text.includes("T(Pages the stream has followed, by their older versions): 5 (en 5)"), text);
+  assert.ok(!text.includes("waiting") && !text.includes("set aside") && !text.includes("is off"),
+    "a zero queue or WARM switched on drew a line: " + text);
+  const busy = visible(R.laneCoverageHtml({ ...cov, pending: 7, failed: 2, warm_enabled: false }, t));
+  assert.ok(busy.includes("T(Texts waiting to be indexed, not searched yet): 7"), busy);
+  assert.ok(busy.includes("T(Texts set aside because they could not be read): 2"), busy);
+  assert.ok(busy.includes("T(Fetching other changed pages is off. Texts already fetched are kept.)"), busy);
+  assert.ok(!visible(R.laneCoverageHtml({ ...cov, warm_enabled: null }, t)).includes("is off"),
+    "an unreadable switch was reported as off");
+  const empty = visible(R.laneCoverageHtml({ changed_pages: { pages: 0, editions: [] }, stream_pages: { pages: 0, editions: [] } }, t));
+  assert.ok(empty.includes("T(The Wikipedia lane holds no text yet.)"), empty);
+  assert.strictEqual(R.laneCoverageHtml(null, t), "");
+  noJunk(R.laneCoverageHtml({}, t), "a coverage block with nothing in it");
+}
+const HIT = { source: "warm", owner_id: 7, revid: 2201, title: "Salt <works>", page_id: 11, edition: "fr",
+  which: "previous", revised_at: "2025-02-03T04:05:06+00:00",
+  snippet: [{ text: "…the ", hit: false }, { text: "salt", hit: true }, { text: " pans…", hit: false }] };
+{
+  const row = R.laneHitHtml(HIT, { added: {}, failed: {}, busy: {} }, t);
+  noHandler(row, "a hit row");
+  for (const b of row.match(/<button[^>]*>/g)) {
+    assert.ok(b.includes('data-source="warm"') && b.includes('data-owner="7"') && b.includes('data-revid="2201"'),
+      "a row's button names another version than the row shows: " + b);
+  }
+  assert.ok(row.includes("data-lane-open") && row.includes("data-lane-add"), row);
+  assert.ok(row.includes("Salt &lt;works&gt;") && !row.includes("<works>"), "a title was not escaped");
+  assert.ok(visible(row).includes("fr · T(previous text held) · 2025-02-03"), visible(row));
+  assert.ok(row.includes('dir="auto"') && row.includes("<mark>salt</mark>"), row);
+  assert.ok(!/data-lane-add[^>]*disabled/.test(row), "a fresh row's add button is off");
+  const key = "warm:7:2201";
+  const added = R.laneHitHtml(HIT, { added: { [key]: { status: "created", article_id: 42 } }, failed: {}, busy: {} }, t);
+  assert.ok(/data-lane-add[^>]*disabled/.test(added), "an added version can be added again");
+  assert.ok(added.includes('href="/api/articles/42/view"'), "the added article is not one click away");
+  assert.ok(/data-lane-add[^>]*disabled/.test(R.laneHitHtml(HIT, { added: {}, failed: {}, busy: { [key]: true } }, t)),
+    "a second click could go out while the first is in flight");
+  const failed = R.laneHitHtml(HIT, { added: {}, failed: { [key]: { detail: "not-held" } }, busy: {} }, t);
+  assert.ok(failed.includes('class="note err"') && visible(failed).includes("T(This version is no longer held on this machine.)"));
+  assert.ok(!R.laneHitHtml({ ...HIT, snippet: null }, {}, t).includes("lane-snip"), "an absent snippet drew an empty line");
+}
+{
+  const d = { available: true, total: 41, items: [HIT], coverage: { changed_pages: { pages: 3, editions: [{ edition: "fr", pages: 3 }] },
+    stream_pages: { pages: 0, editions: [] } } };
+  const st = { d, filtered: false, added: {}, failed: {}, busy: {} };
+  const html = R.laneSearchHtml(st, t, tf);
+  noHandler(html, "the section");
+  noJunk(html, "the section");
+  const text = visible(html);
+  assert.ok(text.startsWith("T(Wikipedia texts held on this machine)"), "the hits are not marked as Wikipedia: " + text);
+  assert.ok(text.includes("TF(41 result(s) (showing 1))"), "the total is not the route's own: " + text);
+  assert.ok(html.indexOf("Searched only") < html.indexOf('<li class="living-row"'),
+    "what was searched comes after the hits instead of before them");
+  assert.ok(/class="card-caveat">T\(Older versions are found by the lines a later edit removed\./.test(html),
+    "the caveat is not visible by default");
+  assert.ok(!text.includes("Your filters"), "the filter note shows with no filter set");
+  assert.ok(visible(R.laneSearchHtml({ ...st, filtered: true }, t, tf)).includes("T(Your filters apply to the corpus only"));
+  assert.ok(visible(R.laneSearchHtml({ ...st, d: { ...d, fields_not_applied: ["source"] } }, t, tf)).includes("T(Your filters apply"),
+    "a source: in the query did not say it missed these texts");
+  const none = visible(R.laneSearchHtml({ ...st, d: { ...d, total: 0, items: [] } }, t, tf));
+  assert.ok(none.includes("T(None of the Wikipedia texts this machine holds contains these words.)"), none);
+  assert.ok(none.includes("T(Searched only the Wikipedia texts this machine holds"), "an empty answer did not say what it searched");
+  assert.ok(visible(R.laneSearchHtml({ ...st, d: { ...d, total: 1 } }, t, tf)).includes("TF(1 result(s))"));
+}
+assert.strictEqual(R.laneSearchHtml(null, t, tf), "", "no search drew a section");
+assert.ok(visible(R.laneSearchHtml({ loading: true }, t, tf)).endsWith("T(Loading…)"));
+assert.ok(R.laneSearchHtml({ error: { detail: "lane-unreadable" } }, t, tf).includes("T(The Wikipedia lane could not be read just now.)"));
+assert.strictEqual(R.laneSearchHtml({ d: { available: false, reason: "locked" } }, t, tf), "",
+  "a locked app drew a second lock message beside the corpus's");
+assert.ok(visible(R.laneSearchHtml({ d: { available: false, reason: "lane-never-run" } }, t, tf))
+  .includes("T(The Wikipedia lane has not run on this machine yet.)"));
+assert.ok(visible(R.laneSearchHtml({ d: { available: false, reason: "sqlite_too_old" } }, t, tf)).includes("3.43"));
+assert.ok(visible(R.laneSearchHtml({ d: { available: false, reason: "index_not_built" } }, t, tf))
+  .includes("T(The search index of these texts is built the next time the Wikipedia lane runs.)"));
+assert.ok(visible(R.laneSearchHtml({ d: { available: false, reason: "mystery" } }, t, tf)).endsWith("mystery"),
+  "an unknown absence was mapped onto a known one");
+assert.ok(visible(R.laneSearchHtml({ d: { available: true, error: "query_invalid", total: null, items: [] } }, t, tf))
+  .includes("T(These texts were not searched: their index could not read this query.)"));
+assert.strictEqual(R.laneSearchHtml({ d: { available: true, total: null, items: [] } }, t, tf), "",
+  "a query with nothing to search for drew a section");
 
 console.log("lane_version_node_test: all checks passed");
