@@ -94,12 +94,21 @@ anything — the sheet's anchors were verified at `main`@`bebcef4` on 2026-09-12
   edition total) read from ONE artifact; a task-manager job with counts, no fabricated ETA.
 - **Acceptance:** the fixture walk with the socket guard armed; the fetch-history round-trip (walk → backup
   → restore, trust ON → no re-fetch; trust OFF → re-fetch); the counters artifact.
+- **BUILT 2026-09-28 (PR #1197), off by default:** `src/wiki/walk.py` + `src/wiki/lane_models.py` (three
+  `wiki.db` tables), the counters artifact's `walk` block, the Living sources «Page walk» group and the
+  task-manager row; `tests/test_wiki_walk.py`. The fetch-history round trip is the one acceptance item NOT
+  met: it waits on the lane riding a backup (Q721), and `lane_models.py` names the table the toggle will
+  gate. Where the walk runs is asked (`OPEN_QUEUE.md` «THE WALK'S SWITCH»).
 
 ### S3 — Transport (Q722 = b, Q1014)
 - **What:** the walk follows the transport setting, Tor included — it WAITS for the transport the user
   chose and never downgrades; the consent hover declares the lane's transport; the measured throughput on
   each transport recorded through the `tor_throughput.py` ladder.
 - **Acceptance:** a fixture proving the walk idles (named reason ×12) rather than switching transport.
+- **BUILT 2026-09-28 (PR #1197):** the walk shares the lane's `WikiClient`, pauses by name ×12 in airplane
+  mode and in a protected mode with no usable proxy, and never goes direct. `tor_throughput.py` turned out
+  to be the scheduler's kind ladder with no recorder, so the measured rate per transport is the walk's own
+  `wiki_walk_samples`, per hour; the consent hover's transport line (Q1014) is the lane's, unchanged.
 
 ### S4 — Analytics 4–5 (Q712)
 - **What:** cross-edition divergence for one QID (size, edit rate, existence across the twelve); attention

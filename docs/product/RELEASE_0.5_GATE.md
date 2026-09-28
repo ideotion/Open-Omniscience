@@ -202,6 +202,27 @@ left running while the other rows are built; it is. This moves the build order a
 restart the app boots offline, so the walk resumes from its per-edition cursor only once the operator goes
 online again.
 
+**2026-09-28 — the walk is built (S2 + S3, PR #1197), off by default.** `src/wiki/walk.py` asks each of the lane's
+editions' `allpages` for 50 articles a request (the main namespace, no redirects), serially and round-robin
+across the editions, in the lane's own idle time and on the lane's own client (one kill switch, one proxy, one
+user agent, one second between requests). Its pages go to `wiki_walk_pages` in `wiki.db` and never to the
+pages the lane follows, so no walked page is fetched or indexed as HOT. Each edition keeps the source's own
+continuation verbatim, so a restart resumes and re-asks for nothing. A spent budget, airplane mode and a
+protected mode with no usable proxy stop it by name, and it never goes direct (Q722 = b); a refusal from one
+edition backs off that edition alone, 60 s doubling to an hour. Coverage per edition — pages seen of the
+edition's own article count, read from `siteinfo` — and the measured rate per transport ride the lane
+counters artifact as its `walk` block; Living sources' Wikipedia panel shows a «Page walk» group, and the task
+manager shows the walk while it walks, pauses or waits, with counts and no ETA. The switch is Settings →
+Wikipedia, «Also walk every article title», **off** until the maintainer answers where it runs
+(`OPEN_QUEUE.md` «THE WALK'S SWITCH»). Chromium-verified (remote sandbox) in `en` and `ar` · awaiting human UX
+pass. **Seams, stated:** (1) S2's fetch-history round trip waits on the lane riding a backup (Q721; the
+inventory keeps it non-exportable until S04-04 owns the lane format); the walk's rows are that history, and
+`lane_models.py` names the one table the toggle will gate. (2) S3 names `tor_throughput.py`, which is the
+scheduler's kind ladder and records nothing, so the walk writes its own per-transport samples per hour.
+(3) Only the first pass is built; when to walk an edition again is not ruled. (4) Round-robin is the
+proposed per-edition order (the brief's §6 leaves it unruled). (5) Q1009 ⛔ still caps the depth. **Still
+owed in this row:** WARM (S1), COLD text, analytics 4–5 (S4) and the operator's run (S5).
+
 **RC round 2026-09-15 — BLANK, so the round's §0 rule applies and nothing here is resolved.** `RC03` ⛔ (C4 = Q1009, the storage round-2 rows
 3–6 — blob-store dedup · OOENC2 for pack AEAD · keyed-HMAC blob addressing with opaque pack names · the
 sqlite3mc benchmark trial) came back blank on a ⛔ question, so it **stays PENDING and is never defaulted**.
@@ -332,6 +353,7 @@ the default. Brief `S05-05`, with `S04-11` S3's toggle.
 | 2026-09-15 | **The RC confirmation round came back UNANSWERED — 0 of 22 `ANSWER` lines carry a letter — processed per its own §0; nothing resolved by the session.** Effects on this board, all reversible by writing a letter: row B — `RC08.1` ASSUMPTION (a), C5's DB-10 migrate-op placed here; row F — `RC03` ⛔ PENDING, the four storage round-2 values still unwritten so the Phase-C seam stays shut; row H — `RC04` ASSUMPTION (a) the bench is NOT run in 0.5 (the decision moves to 0.8 row C), `RC09` ASSUMPTION (a) the live ollama.com browse dropped, `RC08.2` ASSUMPTION (a) D2 + D4 placed as a small `bulletin-defaults` slice beside this row; row I — `RC08.5` ASSUMPTION (a), H3 placed here behind its absorption test; row J — `RC16` ASSUMPTION (a), the `lean-*` scale leaves the offerable vocabulary. A NEW 0.5 slice is also assumed by `RC07` (article revision tracking on the finished 0.4 row O substrate, B7's note) — recorded as a placement, not opened as a board row. Four of these sit on CONFLICT questions and follow the later channel exactly as §0 directs; BOTH answers stay recorded on their `A1`–`L10` and `Qnnn` rows. **No row changed status.** | maintainer (the round, left blank) · §0's blank rules applied by the session |
 | 2026-09-27 | **Row L added: Q803's default moved here from 0.4 row R** (`PF06` = a, «Row R: OK to move that to 0.5»), beside row E's OSM artifacts it waits on. The entry clause now names 0.4 rows G–W (row W, `RC01` = a), and the exit clause A–L. | maintainer (chat, 2026-09-27) · recorded by the session, PR #1191 |
 | 2026-09-28 | **The 0.5 start, answered in chat** («D1: Yes, start. … D2: a D3: a», with a question about the Wikipedia walk): `R38` — row B before row J, never concurrently; `R39` — the hi/bn tokenizer rebuild is paid inside row B's window, and row B now also closes on its measured rebuild time and a hi fixture; `R40` — row F is built first so its operator run overlaps the build (order only; no gate moved). Wave 1 starts with rows A and I in their own threads. **No row changed status.** | maintainer (chat, 2026-09-28 11:07 UTC) · recorded by the session |
+| 2026-09-28 | **Row F: the walk built (S2 + S3), off by default.** The `allpages` walk, its per-edition bookmark, its coverage and per-transport counters in the lane counters artifact, a Living sources group and a task-manager row; the switch that decides where it runs is asked on a card and built at the recommended «off» meanwhile (`OPEN_QUEUE.md` «THE WALK'S SWITCH»). Five seams stated in the row, the fetch-history round trip first. **No row changed status.** | session, PR #1197 |
 
 ---
 
