@@ -12,15 +12,15 @@ downloads, under the online consent); its file sits in the data directory's ``os
 
     OO_DATA_DIR=... python scripts/osm_ingest.py --extract PATH --country FR [--reader pyosmium|python]
 
-An encrypted install asks for the passphrase (or reads ``OO_DB_PASSPHRASE``), because ``osm.db``
-is encrypted with the corpus passphrase (Q825). Run it with the app STOPPED: the lane is a
+An encrypted install needs ``OO_DB_PASSPHRASE`` set for the run, because ``osm.db`` is encrypted
+with the corpus passphrase (Q825); without it the script refuses before opening anything. (It does
+not prompt: the app's one passphrase path is the environment or the unlock screen.) Run it with the app STOPPED: the lane is a
 single-writer database.
 """
 
 from __future__ import annotations
 
 import argparse
-import getpass
 import json
 import sys
 from pathlib import Path
@@ -35,12 +35,7 @@ def main() -> int:
     ap.add_argument("--reader", choices=("pyosmium", "python"), default=None)
     args = ap.parse_args()
 
-    from src.database.connect import (
-        get_passphrase,
-        is_encrypted_file,
-        plaintext_mode,
-        set_passphrase,
-    )
+    from src.database.connect import get_passphrase, is_encrypted_file, plaintext_mode
     from src.osm.ingest import ingest_country
     from src.osm.reader import GeoExtraMissing
     from src.paths import data_dir
@@ -48,7 +43,8 @@ def main() -> int:
 
     corpus = data_dir() / "open_omniscience.db"
     if not get_passphrase() and not plaintext_mode() and is_encrypted_file(corpus) is not False:
-        set_passphrase(getpass.getpass("Passphrase (osm.db shares the corpus passphrase): ") or None)
+        print("refused: the corpus is encrypted (or not created yet); set OO_DB_PASSPHRASE for this run")
+        return 2
     try:
         report = ingest_country(args.extract, args.country, reader=args.reader)
     except GeoExtraMissing as exc:
