@@ -814,6 +814,8 @@
       if (budget) budget.addEventListener("input", () => _wizShare());
       const walk = $("wiki-walk-enabled");
       if (walk) walk.addEventListener("change", () => saveWikiWalk(walk.checked));
+      const warm = $("wiki-warm-enabled");
+      if (warm) warm.addEventListener("change", () => saveWikiWarm(warm.checked));
       try {
         if (new URLSearchParams(location.search).get("wikiwizard") === "1"
             && typeof openWikiWizard === "function") {

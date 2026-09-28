@@ -261,6 +261,7 @@ class WikiLaneRunner:
         resume_from: Callable[[], str | None] | None = None,
         pageviews: Callable[[], str | None] | None = None,
         walker: Any | None = None,
+        warm: Any | None = None,
         max_connections: int | None = None,
         drain_interval_s: float = DRAIN_INTERVAL_S,
         sleep: Callable[[float], None] = time.sleep,
@@ -285,6 +286,11 @@ class WikiLaneRunner:
         self._walker = walker
         #: The last walk window's report, for a status surface. ``None`` before the first.
         self.last_walk: dict | None = None
+        #: Q707's WARM tier (``src/wiki/warm.py``), run in the same idle time BEFORE the
+        #: walk: HOT is the drain's, then WARM, then COLD, which is the ruling's own order.
+        #: ``None`` disables it, which is what every test not about WARM passes.
+        self._warm = warm
+        self.last_warm: dict | None = None
         #: A ceiling on how many times the stream may (re)connect in one run. ``None``
         #: — the production value — means "as long as the setting says running", which
         #: is what a stream held open for days needs. A number is for a caller that
@@ -421,27 +427,39 @@ class WikiLaneRunner:
             return None
 
     def idle(self, seconds: float) -> None:
-        """The time between two drains: the walk's window, then sleep for whatever is left.
+        """The time between two drains: WARM's window, the walk's, then sleep for what is left.
 
-        THE WALK TAKES THE IDLE TIME, NEVER THE DRAIN'S. The drain stores what the stream
-        already handed over; the walk reaches pages nothing is waiting for. So the drain
-        runs on its own cadence and the walk fills the gap up to the next one, and a walk
-        with nothing to do (switched off, paused, waiting, finished) leaves the whole
-        interval to the sleep, exactly as before it existed.
+        THE TIERS TAKE THE IDLE TIME, NEVER THE DRAIN'S. The drain stores what the stream
+        already handed over (and HOT's text with it); WARM fetches the other changed pages
+        lazily; the walk reaches pages nothing is waiting for. Q707's order is HOT, WARM,
+        COLD, so WARM goes first and the walk has whatever time WARM leaves, and a tier
+        with nothing to do (caught up, switched off, paused, waiting, finished) leaves its
+        time to the next, and the last to the sleep, exactly as before either existed.
 
-        A WALK FAILURE NEVER ENDS THE LANE. Its refusals are named inside the walker; what
-        reaches here is a fault in the walk itself, and it is logged and left for the next
+        A TIER'S FAILURE NEVER ENDS THE LANE. Refusals are named inside each tier; what
+        reaches here is a fault in the tier itself, and it is logged and left for the next
         window rather than allowed to stop the drain loop.
         """
         start = self._monotonic()
-        if self._walker is not None and not self._should_stop():
+
+        def left() -> float:
+            return seconds - (self._monotonic() - start)
+
+        if self._warm is not None and not self._should_stop():
             try:
-                report = self._walker.walk_for(seconds, should_stop=self._should_stop)
+                warm_report = self._warm.warm_for(max(0.0, left()), should_stop=self._should_stop)
+                self.last_warm = warm_report.as_dict()
+            except Exception as exc:  # noqa: BLE001 - WARM must not end the lane
+                _LOG.warning("the Wikipedia WARM window failed: %s", exc, exc_info=True)
+                self.last_warm = {"error": f"{type(exc).__name__}"}
+        if self._walker is not None and not self._should_stop() and left() > 0:
+            try:
+                report = self._walker.walk_for(left(), should_stop=self._should_stop)
                 self.last_walk = report.as_dict()
             except Exception as exc:  # noqa: BLE001 - the walk must not end the lane
                 _LOG.warning("the Wikipedia walk window failed: %s", exc, exc_info=True)
                 self.last_walk = {"error": f"{type(exc).__name__}"}
-        remaining = seconds - (self._monotonic() - start)
+        remaining = left()
         if remaining > 0 and not self._should_stop():
             self._sleep(remaining)
 
@@ -453,6 +471,16 @@ class WikiLaneRunner:
             return {**self._walker.status(), "last_window": self.last_walk}
         except Exception:  # noqa: BLE001 - a status read must not fail the status surface
             _LOG.debug("could not read the walk status", exc_info=True)
+            return None
+
+    def warm_status(self) -> dict | None:
+        """WARM's own in-process status, or ``None`` for a runner built without it."""
+        if self._warm is None:
+            return None
+        try:
+            return {**self._warm.status(), "last_window": self.last_warm}
+        except Exception:  # noqa: BLE001 - a status read must not fail the status surface
+            _LOG.debug("could not read the WARM status", exc_info=True)
             return None
 
     def run_until_stopped(self, *, max_drains: int | None = None) -> int:

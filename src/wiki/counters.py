@@ -277,6 +277,7 @@ def lane_counters(
     numbers MEAN is the maintainer's call; a composite would be a score.
     """
     from src.wiki.walk import walk_coverage
+    from src.wiki.warm import warm_coverage
 
     at = now or _utcnow()
     blocks = {
@@ -289,6 +290,9 @@ def lane_counters(
         # soak bundle and the release run already collect, so the walk's coverage rides
         # them without a second reader.
         "walk": walk_coverage(lane, window_days=window_days, now=at),
+        # Q707's WARM tier (S05-06's S1): pages holding text, texts fetched and the queue,
+        # per edition, through the one reader Living sources also uses.
+        "warm": warm_coverage(lane),
     }
     unmeasured = sorted(k for k, v in blocks.items() if not v.get("measured"))
     return {

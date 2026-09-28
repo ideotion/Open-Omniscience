@@ -1509,6 +1509,8 @@
         // save that failed must not leave a ticked box over a walk that is off.
         const walk = $("wiki-walk-enabled");
         if (walk) walk.checked = !!lane.walk_enabled;
+        const warm = $("wiki-warm-enabled");
+        if (warm) warm.checked = !!lane.warm_enabled;
       } catch (_e) {
         el.textContent = t9("The lane's settings could not be read.");
       }
@@ -1526,10 +1528,31 @@
         const stored = !!(cfg && cfg.wiki_walk_enabled);
         const box = $("wiki-walk-enabled");
         if (box) box.checked = stored;
+        if (typeof livingRefreshIfShown === "function") livingRefreshIfShown();
         toast(stored ? t9("The walk is on. It starts with the live stream, when you are online.")
                      : t9("The walk is off. Pages it already listed are kept."));
       } catch (e) {
         const box = $("wiki-walk-enabled");
+        if (box) box.checked = !on;
+        toast(_failMsg("Update failed: {error}", e), "err");
+      }
+    }
+
+    // WARM's switch, beside the walk's and saved the same way: WARM re-reads it every
+    // window, and it runs only while the lane runs, so it needs no consent popup of its own.
+    async function saveWikiWarm(on) {
+      const t9 = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      try {
+        const cfg = await api("/api/scheduler/config",
+          {method: "PUT", body: JSON.stringify({wiki_warm_enabled: !!on})});
+        const stored = !!(cfg && cfg.wiki_warm_enabled);
+        const box = $("wiki-warm-enabled");
+        if (box) box.checked = stored;
+        if (typeof livingRefreshIfShown === "function") livingRefreshIfShown();
+        toast(stored ? t9("Fetching other changed pages is on. It starts with the live stream, when you are online.")
+                     : t9("Fetching other changed pages is off. Texts already fetched are kept."));
+      } catch (e) {
+        const box = $("wiki-warm-enabled");
         if (box) box.checked = !on;
         toast(_failMsg("Update failed: {error}", e), "err");
       }
