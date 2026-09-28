@@ -1056,7 +1056,7 @@ def insights_corpus_www(
             end_date=end_date, language=language, tags=tags, cap=cap,
             expand=expand, ui_lang=ui_lang, sense=sense,
             literal_cap=-1 if literal_cap else None, adv=adv)
-        return {
+        out = {
             "who": q.corpus_who(db, article_ids=ids, limit=limit),
             "where": q.corpus_where(db, article_ids=ids, limit=limit),
             "when": q.corpus_when(db, article_ids=ids, limit=limit),
@@ -1065,6 +1065,15 @@ def insights_corpus_www(
             "capped": total > len(ids),
             "caveat": "Deduced from article text, never confirmed; counts only.",
         }
+        # S05-03: people and places on the entity spine (Q415, Q818, Q827) -- additive
+        # keys only, and a failure here must never blank the facet it annotates.
+        try:
+            from src.entities.spine import annotate_www
+
+            annotate_www(db, out, ui_lang)
+        except Exception:  # noqa: BLE001 - the facets stand without the spine
+            _LOG.warning("entity spine annotation failed", exc_info=True)
+        return out
 
     return _deadlined(db, key, _compute)
 

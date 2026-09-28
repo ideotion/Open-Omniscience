@@ -1,0 +1,18 @@
+# SYNTHETIC place gazetteer for tests/test_entity_spine.py -- the S4 artifact's SHAPE.
+# Open Omniscience - Global Intelligence Platform for Investigative Journalism
+# Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
+#
+# Wholly invented, like tests/fixtures/osm/: country ZZ (ISO 3166-1 private use, never
+# assigned), coordinates in the same open water in the Gulf of Guinea, OSM ids in the
+# 9-billion range and QIDs in the Q9999990xx range. No byte is derived from OpenStreetMap
+# or Wikidata, so no ODbL obligation attaches. A row that leaked into a real map would be
+# identifiable on sight.
+as_of: "2026-09-28"
+cities:
+  - {name: Zedport, country: zz, lat: 0.15, lon: 0.15, population: 120000,
+     osm: node/9000000001, qid: Q999999001, kind: town,
+     names: {en: Zedport, fr: Zedport-sur-Mer, ar: زدبورت}}
+  - {name: Quorra, country: zz, lat: 0.12, lon: 0.18, population: 4000,
+     kind: village}
+  - {name: Nullhaven, country: zz, lat: 0.18, lon: 0.11, population: 900,
+     osm: node/9000000003, kind: hamlet}

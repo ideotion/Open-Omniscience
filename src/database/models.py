@@ -2101,6 +2101,117 @@ class ArticleEntity(Base):
     )
 
 
+class WikidataItem(Base):
+    """ONE Wikidata item, as this machine last read it (Q724 = a, row C of the 0.5 gate).
+
+    «Labels, descriptions and a claims subset (P31, P17, P625, P571…) per QID the corpus
+    mentions, fetched at etiquette pace, cached locally.» This is the cache. It is written
+    ONLY by ``src/entities/items.py``'s consented, rate-gated fetch (R8: <= 1 request per
+    10 seconds) and read by everything that needs a name or a description for a QID -- the
+    entity ladder (Q415), the Place card (Q818) and the name fallback (Q827).
+
+    **THE CLAIMS ARE A SUBSET, AND THE SUBSET IS NAMED.** Only P31 (instance of), P17
+    (country), P625 (coordinate location) and P571 (inception) are kept, the four the
+    ruling names; the brief leaves every other claim to a later ruling, so the parser drops
+    the rest at the door rather than storing what nobody decided to keep.
+
+    **A MISSING ITEM IS A ROW, NOT AN ABSENCE.** Wikidata answers a deleted or merged-away
+    id with ``missing``; that answer is recorded (``status="missing"``) so the fetch does
+    not ask again on every pass, and so a surface can say "Wikidata has no such item"
+    instead of the weaker "not fetched yet". A merged item's redirect is followed by the
+    API, and the row keeps the id the corpus ASKED for, with ``resolved_qid`` naming the
+    item that answered.
+
+    JSON as TEXT, the house shape (``event_imports.sources``), so the table carries no
+    dialect-specific type. Not carried by a backup restore (see ``_MERGE_NOT_CARRIED``):
+    it is a cache of a public CC0 source, re-read at R8's rate.
+    """
+
+    __tablename__ = "wikidata_items"
+
+    qid: Mapped[str] = mapped_column(String(16), primary_key=True)
+    #: ``ok`` or ``missing`` -- Wikidata's own answer, never inferred.
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="ok")
+    #: The item that answered, when Wikidata followed a merge redirect. NULL otherwise.
+    resolved_qid: Mapped[str | None] = mapped_column(String(16))
+    labels_json: Mapped[str | None] = mapped_column(Text)  # {lang: label}, the 12 UI languages
+    descriptions_json: Mapped[str | None] = mapped_column(Text)  # {lang: description}
+    claims_json: Mapped[str | None] = mapped_column(Text)  # {"P31": [...], "P17": [...], ...}
+    lastrevid: Mapped[int | None] = mapped_column(Integer)
+    #: When THIS machine read it -- the item's ``as_of`` on every surface that shows it.
+    fetched_at: Mapped[datetime | None] = mapped_column(
+        DateTime, default=lambda: datetime.now(UTC)
+    )
+
+    def __repr__(self) -> str:  # pragma: no cover - debugging aid
+        return f"<WikidataItem({self.qid} {self.status})>"
+
+
+class Place(Base):
+    """A place, keyed on its OpenStreetMap object (Q818 = a, row C of the 0.5 gate).
+
+    «``Place(id = OSM type+id, qid, kind, admin path, names ×12, geometry ref, as_of)``
+    with ``article_mentioned_places`` resolving into it.» The id is the OSM object as OSM
+    writes it (``node/240109189``), so a Place exists only where the gazetteer knows its
+    OSM object: a mentioned place the gazetteer cannot name an object for stays an
+    unresolved mention, never a Place under an invented id.
+
+    WHAT EACH COLUMN IS, AND WHAT IS NOT DECIDED HERE (S05-03 §6 leaves three things to the
+    maintainer; each is a PROPOSED default, recorded in ``OPEN_QUEUE.md``):
+
+    * ``kind`` is the OSM ``place=*`` value VERBATIM (``city``, ``town``, ``village`` …).
+      No vocabulary is invented on top of OSM's own.
+    * ``admin_path_json`` is a JSON list of Place ids, outermost first. Empty until the
+      admin boundaries arrive (row D / S05-05); an empty path says "not known yet".
+    * ``geometry_ref`` names where the geometry lives (``osm.db:node/…``) and is NULL until
+      the OSM lane holds it (row D). ``lat``/``lon`` are the gazetteer's point.
+    * This table lives in the CORPUS database, because the rows it resolves
+      (``article_mentioned_places``) and its body Article live there.
+
+    **NAMES ×12 (Q827 = a).** ``names_json`` holds ONLY OSM's ``name:xx`` tags; the Wikidata
+    label is the fallback and is read from :class:`WikidataItem` at display time, so the
+    two sources are never blended into one column that could not say which one spoke.
+
+    **Q823 ⛔ (ODbL) IS OPEN, SO NOTHING HERE LEAVES THE MACHINE:** no backup member, no
+    export, no bulletin line. ``_MERGE_NOT_CARRIED`` says so, and the rows are rebuilt from
+    the gazetteer after a restore.
+    """
+
+    __tablename__ = "places"
+
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)  # "node/123" | "way/…" | "relation/…"
+    qid: Mapped[str | None] = mapped_column(String(16))
+    kind: Mapped[str | None] = mapped_column(String(32))
+    name: Mapped[str] = mapped_column(String(200), nullable=False)  # OSM `name`, the local name
+    names_json: Mapped[str | None] = mapped_column(Text)  # {lang: name}, OSM name:xx ONLY
+    #: The gazetteer's own country code (ISO 3166-1 alpha-2, lowercase) -- the key the
+    #: mention rows carry, so a resolution compares like with like.
+    country: Mapped[str | None] = mapped_column(String(2))
+    #: ISO 3166-1 alpha-3, from birth (Q312 = a), for display and the alpha-3 surfaces.
+    country_alpha3: Mapped[str | None] = mapped_column(String(3))
+    admin_path_json: Mapped[str | None] = mapped_column(Text)
+    geometry_ref: Mapped[str | None] = mapped_column(String(64))
+    lat: Mapped[float | None] = mapped_column(Float)
+    lon: Mapped[float | None] = mapped_column(Float)
+    population: Mapped[int | None] = mapped_column(Integer)
+    #: The gazetteer artifact's vintage, shown wherever the gazetteer resolved a place (Q805).
+    gazetteer_vintage: Mapped[str | None] = mapped_column(String(32))
+    #: The body Article (Q818: «its body = the Wikidata/Wikipedia description + its OSM
+    #: metadata rendered as metadata»), indexed through the one ``index_article`` hook.
+    article_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("articles.id", ondelete="SET NULL")
+    )
+    as_of: Mapped[datetime | None] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+
+    __table_args__ = (
+        Index("ix_places_qid", "qid"),
+        Index("ix_places_name_country", "name", "country"),
+    )
+
+    def __repr__(self) -> str:  # pragma: no cover - debugging aid
+        return f"<Place({self.id} {self.name!r} qid={self.qid})>"
+
+
 class ArticleIndexStamp(Base):
     """WHICH ENGINE, ON WHICH INPUTS, produced an article's derived rows (R24, 2026-09-24).
 
