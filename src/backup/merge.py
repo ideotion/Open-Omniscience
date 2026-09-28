@@ -839,12 +839,32 @@ def _fts_insert_suspended(con: sqlite3.Connection):
         yield False
         return
     con.execute(f"DROP TRIGGER {_FTS_INSERT_TRIGGER}")
+    finished = False
     try:
         yield True
+        finished = True
     finally:
         # NOT sufficient on its own when the merge fails -- see
         # _restore_fts_insert_trigger, which merge_corpus calls AFTER its rollback.
-        con.execute(ddl)
+        #
+        # CREATE ONLY WHAT IS MISSING, AND NEVER OUTRANK THE FAILURE IN FLIGHT (2026-09-28
+        # import walk). A Stop pressed while a small backup merged rolled the open
+        # transaction back INSIDE this block, and SQLite's transactional DDL undid the DROP
+        # with it -- so the trigger was back when this CREATE ran, which raised "trigger
+        # article_fts_ai already exists" and REPLACED the stop's own RestoreAborted. The
+        # backup then read "Failed" with a raw database error instead of "stopped --
+        # nothing was written to your corpus". On success a failed restore still raises:
+        # verify_copy would refuse the copy anyway, and it should be named here.
+        if finished:
+            if not _fts_insert_trigger_ddl(con):
+                con.execute(ddl)
+        else:
+            try:
+                if not _fts_insert_trigger_ddl(con):
+                    con.execute(ddl)
+            except Exception:  # noqa: BLE001 - the exception already in flight is the one to report
+                _LOG.warning("could not restore the FTS insert trigger while a merge was failing",
+                             exc_info=True)
 
 
 def _fts_insert_trigger_ddl(con) -> str | None:
