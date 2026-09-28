@@ -874,7 +874,7 @@
       if (c.pending) lines.push(ooLabelText(t("Texts waiting to be indexed, not searched yet"), c.pending));
       if (c.failed) lines.push(ooLabelText(t("Texts set aside because they could not be read"), c.failed));
       if (c.warm_enabled === false) lines.push(t("Fetching other changed pages is off. Texts already fetched are kept."));
-      return `<div class="hint">${esc(t("Searched only the Wikipedia texts this machine holds, not Wikipedia itself:"))}</div>`
+      return `<div class="hint">${esc(t("Searched only the texts the Wikipedia lane holds on this machine, not Wikipedia itself:"))}</div>`
         + `<ul class="hint lane-cov">${lines.map((l) => `<li>${esc(l)}</li>`).join("")}</ul>`;
     }
 
@@ -929,7 +929,7 @@
       const filtered = st.filtered || (Array.isArray(d.fields_not_applied) && d.fields_not_applied.length);
       const list = items.length
         ? `<ul class="lane-hits">${items.map((it) => laneHitHtml(it, st, t)).join("")}</ul>`
-        : `<div class="muted">${esc(t("None of the Wikipedia texts this machine holds contains these words."))}</div>`;
+        : `<div class="muted">${esc(t("None of the texts the Wikipedia lane holds contains these words."))}</div>`;
       return head
         + `<div class="hint">${esc(count)}</div>`
         + laneCoverageHtml(d.coverage, t)

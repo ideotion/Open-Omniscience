@@ -3,7 +3,7 @@
 // Open Omniscience - Global Intelligence Platform for Investigative Journalism
 // Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 //
-// R52's promise is that a term found in a Wikipedia text this machine holds -- a changed
+// R52's promise is that a term found in a text the Wikipedia lane holds -- a changed
 // page's latest or previous text, or an earlier version of a followed page -- can be added
 // to the corpus AS THAT VERSION. So what these renderers must not do is mostly how that
 // could quietly go wrong:
@@ -208,7 +208,7 @@ assert.strictEqual(R.laneSnippetHtml(null), "", "no snippet drew something");
   const cov = { changed_pages: { pages: 3, editions: [{ edition: "en", pages: 2 }, { edition: "fr", pages: 1 }] },
     stream_pages: { pages: 5, editions: [{ edition: "en", pages: 5 }] }, pending: 0, failed: 0, warm_enabled: true };
   const text = visible(R.laneCoverageHtml(cov, t));
-  assert.ok(text.startsWith("T(Searched only the Wikipedia texts this machine holds, not Wikipedia itself:)"), text);
+  assert.ok(text.startsWith("T(Searched only the texts the Wikipedia lane holds on this machine, not Wikipedia itself:)"), text);
   assert.ok(text.includes("T(Other changed pages, by their latest and previous texts): 3 (en 2, fr 1)"), text);
   assert.ok(text.includes("T(Pages the stream has followed, by their older versions): 5 (en 5)"), text);
   assert.ok(!text.includes("waiting") && !text.includes("set aside") && !text.includes("is off"),
@@ -268,8 +268,8 @@ const HIT = { source: "warm", owner_id: 7, revid: 2201, title: "Salt <works>", p
   assert.ok(visible(R.laneSearchHtml({ ...st, d: { ...d, fields_not_applied: ["source"] } }, t, tf)).includes("T(Your filters apply"),
     "a source: in the query did not say it missed these texts");
   const none = visible(R.laneSearchHtml({ ...st, d: { ...d, total: 0, items: [] } }, t, tf));
-  assert.ok(none.includes("T(None of the Wikipedia texts this machine holds contains these words.)"), none);
-  assert.ok(none.includes("T(Searched only the Wikipedia texts this machine holds"), "an empty answer did not say what it searched");
+  assert.ok(none.includes("T(None of the texts the Wikipedia lane holds contains these words.)"), none);
+  assert.ok(none.includes("T(Searched only the texts the Wikipedia lane holds"), "an empty answer did not say what it searched");
   assert.ok(visible(R.laneSearchHtml({ ...st, d: { ...d, total: 1 } }, t, tf)).includes("TF(1 result(s))"));
 }
 assert.strictEqual(R.laneSearchHtml(null, t, tf), "", "no search drew a section");

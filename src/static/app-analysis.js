@@ -2775,7 +2775,7 @@
       // uniform means there is no exception to remember, which is what let the analysis
       // tab drift in the first place.
       const p = _articleQuery(searchParams()); p.set("limit", String(DEFAULT_LIMIT));
-      // R52: the Wikipedia texts this machine holds, searched with the same words and
+      // R52: the texts the Wikipedia lane holds, searched with the same words and
       // listed beside these results (app-living.js). Not awaited: this list never waits.
       if (typeof searchLaneHits === "function") {
         searchLaneHits(p.get("query") || "",

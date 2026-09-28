@@ -112,7 +112,7 @@ def lane_search(
 
     ``total`` is exact; ``pending`` is how many held texts still wait to be indexed, and
     ``coverage`` which editions and how many pages the lane holds a text for, and whether
-    WARM is switched on -- so a search with no hit reads as "not in what this machine holds",
+    WARM is switched on -- so a search with no hit reads as "not in what the lane holds",
     never as "Wikipedia does not say this" (``R52``).
     """
     out = search_lane(q, limit=limit, offset=offset, coverage=True)

@@ -10320,8 +10320,8 @@ what the search covered), `GET /version` (one held version back as plain text) a
 second copy of the same words). The palette lists the first lane hits under «Wikipedia texts held on
 this machine», beside the corpus's groups, and each opens `#lane-version`: the version's text, where it
 is kept, its full address, and «Add to corpus». The Search tab lists the same hits below the corpus's
-results, each with its passage and its own «Add to corpus», after saying what was searched (this
-machine's texts per edition, never Wikipedia itself, what still waits for the index, WARM's switch
-when off). A query reads with advanced search's grammar in both lists; the filters that describe
+results, each with its passage and its own «Add to corpus», after saying what was searched (the
+texts the lane holds on this machine, per edition, never Wikipedia itself, what still waits for the
+index, WARM's switch when off). A query reads with advanced search's grammar in both lists; the filters that describe
 articles are named as not applied, never widened. Lessons: `LESSONS.md`, the four entries dated by
 this PR.

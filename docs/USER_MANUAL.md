@@ -1047,11 +1047,14 @@ the wiki made it, and says so when your corpus already holds it or the same word
 instead of storing them twice. Nothing from the lane reaches your corpus otherwise.
 The **Search tab** lists the same hits in a section of their own below your
 corpus's results, each with the passage that matched and its own **Add to corpus**
-button. Above them it says what was searched: only the texts this machine holds,
-never Wikipedia itself, with the pages and editions they come from, how many texts
-are still waiting for the index, and whether fetching other changed pages is off.
-So an empty list means the texts held here do not contain your words, not that
-Wikipedia does not. A query reads the same way in both lists (`salt*`,
+button. Above them it says what was searched: only the texts the Wikipedia lane
+holds on this machine, never Wikipedia itself, with the pages and editions they come
+from, how many texts are still waiting for the index, and whether fetching other
+changed pages is off. So an empty list means the lane's texts do not contain your
+words, not that Wikipedia does not. Two other kinds of Wikipedia text on this
+machine are not in this search: downloaded dumps, whose text the search box finds
+in its Wikipedia group, and the revisions **Track now** (Settings → Wikipedia)
+stores for watched pages. A query reads the same way in both lists (`salt*`,
 `NEAR(salt works, 5)`, `title:salt`), but the filters that describe articles (the
 Source, Language and Time boxes, and `source:`, `author:`, `url:`, `tag:` and
 `title:=`) do not reach these texts, and the section says so whenever one is set.

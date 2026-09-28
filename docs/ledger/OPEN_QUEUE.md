@@ -53,13 +53,14 @@
   (`src/wiki/warm.py`), which is what the ruling asks of storage. The lane's own search index and «Add to corpus»
   are built (PR #1202), and both conditions are met: the command palette lists the lane's hits under
   «Wikipedia texts held on this machine» beside the corpus's groups, and the Search tab lists them in a section
-  below the corpus's results that first says what was searched (this machine's texts, per edition, never
-  Wikipedia itself; what still waits for the index; WARM's switch when off) — the line this entry owed. Each hit
-  opens THAT version, and «Add to corpus» adds it, one version per click, from the row or the window. **OWED with it:** say in the
-  Search tab which texts the Wikipedia hits come from (which instance's lane, which editions, how many pages hold a
-  text), so a search with no Wikipedia hit is never read as «Wikipedia does not say this».
+  below the corpus's results that first says what was searched (the texts the lane holds on this machine, per
+  edition, never Wikipedia itself; what still waits for the index; WARM's switch when off) — the line this entry
+  owed. Each hit opens THAT version, and «Add to corpus» adds it, one version per click, from the row or the window.
+  **OWED with it, and met by PR #1202:** say in the Search tab which texts the Wikipedia hits come from (which
+  instance's lane, which editions, how many pages hold a text), so a search with no Wikipedia hit is never read as
+  «Wikipedia does not say this».
 - **THE LANE SEARCH INDEX — WHAT IT DELIBERATELY DOES NOT DO (stated 2026-09-28 with it, not asked; `R52`'s
-  index, `src/wiki/lane_search.py`).** Seven choices a later session must not undo as oversights: (1) an OLDER
+  index, `src/wiki/lane_search.py`).** Eight choices a later session must not undo as oversights: (1) an OLDER
   version is indexed by the lines the next held version no longer has, not in full — the rest of it is in the
   newer version, already found, and a full copy per version would cost about the text's own size again (an
   FTS5 index of 1.94 MB of prose measured 1.03 MB); the price is the caveat every hit list carries, that a query
@@ -75,7 +76,13 @@
   ARTICLES: they are dropped for these texts, named (`fields_not_applied`) and said on screen, never widened into
   a search of every held text and never approximated (an edition is not an article language); (6) the
   cross-language lens (R1) does not widen the lane search, which reads the words as typed; (7) exports, the
-  analysis window, synthesis and the bulk actions work on corpus articles only — «Add to corpus» is the bridge.
+  analysis window, synthesis and the bulk actions work on corpus articles only — «Add to corpus» is the bridge;
+  (8) the index holds the LANE's texts only: downloaded dumps keep their own index (the search box's Wikipedia
+  group reads it), and the revisions the old tracker stores for watched pages (`wiki_revisions.full_text` in the
+  corpus file, written by «Track now» in Settings → Wikipedia, `src/wiki/track.py`) are searched nowhere yet.
+  So the Search tab's line names the lane, never «every Wikipedia text on this machine». Bringing the tracked
+  revisions in needs a decision this index cannot make for itself: where their index lives (the corpus file,
+  or the lane, which since Q1020 = a is what holds watched pages' new versions), UNRULED.
   A text that cannot be read is set aside (`failed_at`), counted from the queue's own rows and retried once per
   lane start and on the page's next change, never silently dropped.
 - **WARM'S SWITCH: WHERE WARM RUNS — PENDING (asked 2026-09-28 13:22 UTC on a decision card in the project thread
