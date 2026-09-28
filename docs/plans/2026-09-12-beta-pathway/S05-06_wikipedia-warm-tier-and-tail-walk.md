@@ -84,7 +84,7 @@ anything — the sheet's anchors were verified at `main`@`bebcef4` on 2026-09-12
   wizard set; per-tier counts on the Living sources view; the budget surface's growth line computed from
   MEASURED bytes ("at your current rate this lane grows ~N GB/month"), never a projection without a rate.
 - **Acceptance:** the fixture edition of 0.4 row O ingests WARM pages up to the budget and stops, saying so.
-- **BUILT 2026-09-28 (PR pending), off by default:** `src/wiki/warm.py` + three `wiki.db` tables in
+- **BUILT 2026-09-28 (PR #1200), off by default:** `src/wiki/warm.py` + three `wiki.db` tables in
   `src/wiki/lane_models.py`, fed from the drain's own change log rather than a second listener; latest +
   previous per page (Q710); the counters artifact's `warm` block and the Living sources «Other changed pages»
   group; `tests/test_wiki_warm.py` (the fixture edition warmed with zero name resolutions; the stop at the

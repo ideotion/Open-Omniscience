@@ -222,7 +222,7 @@ scheduler's kind ladder and records nothing, so the walk writes its own per-tran
 (3) Only the first pass is built; when to walk an edition again is not ruled. (4) Round-robin is the
 proposed per-edition order (the brief's §6 leaves it unruled). (5) Q1009 ⛔ still caps the depth.
 
-**2026-09-28 — WARM is built (S1, PR pending), off by default.** `src/wiki/warm.py` reads the stream's own
+**2026-09-28 — WARM is built (S1, PR #1200), off by default.** `src/wiki/warm.py` reads the stream's own
 change log (`versioned_changes`, Q708 = b) forward from its bookmark and queues each changed page the lane does
 not follow in `wiki_warm_pages`, so there is one record of what the wiki reported and WARM reads it. In the
 lane's idle time, after the drain and before the walk (Q707's HOT, then WARM, then COLD), it asks for the pages
