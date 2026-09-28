@@ -366,6 +366,38 @@ def page_revisions(
     }
 
 
+@router.get("/pages/{page_id}/versions")
+def page_versions(page_id: int, db: Session = Depends(get_db)) -> dict:
+    """The shared version reader's payload for one watched page (Q918's note: the law
+    reader and this one draw the same controls and the same disclosures)."""
+    from src.wiki.versions import reader_payload
+
+    page = db.query(WikiPage).filter_by(id=page_id).first()
+    if page is None:
+        raise HTTPException(status_code=404, detail=f"Watched page {page_id} not found.")
+    return reader_payload(db, page)
+
+
+@router.get("/pages/{page_id}/compare")
+def page_compare(
+    page_id: int,
+    a: int = Query(..., alias="from"),
+    b: int = Query(..., alias="to"),
+    part: str | None = Query(None, max_length=512),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Two stored revisions side by side, with the section navigation between them."""
+    from src.wiki.versions import compare_payload
+
+    page = db.query(WikiPage).filter_by(id=page_id).first()
+    if page is None:
+        raise HTTPException(status_code=404, detail=f"Watched page {page_id} not found.")
+    try:
+        return compare_payload(db, page, a, b, part=part)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
 # ----------------------------- offline dumps -------------------------------- #
 # Separate, optional, heavy: per-language baseline downloads (resumable).
 

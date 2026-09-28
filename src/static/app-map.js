@@ -3094,6 +3094,8 @@
       const sec = $("wiki-tc");
       if (sec && typeof sec.scrollIntoView === "function") sec.scrollIntoView({ block: "start" });
       loadWikiTC();
+      // The ONE version reader beside the history (S05-07 S1, Q918's note).
+      if (typeof livingMountWikiVersions === "function") livingMountWikiVersions(id);
     }
 
     function _wikiRevRow(r, t) {

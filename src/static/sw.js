@@ -46,6 +46,7 @@ const SHELL = [
   "/static/ooviz.js",
   "/static/oosky.js",
   "/static/ootimeline.js",
+  "/static/ooversions.js",
   "/static/osmpbf.js",
   "/static/guis/boot.js",
   "/static/guis/gallery.js",
