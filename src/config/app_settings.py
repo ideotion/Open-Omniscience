@@ -40,6 +40,9 @@ _MAX_PROMPT_CHARS = 4000
 # stack in for one integer. A test pins the two against each other, so the copy
 # cannot drift.
 _CHECKPOINT_K_MAX = 24
+# Mirrors src.database.fts.NEAR_MIN / NEAR_MAX, as a literal for the reason the
+# checkpoint bound above gives (this module is on the boot path); a test pins the two.
+_NEAR_MIN, _NEAR_MAX = 0, 1000
 
 
 class AppSettingsError(ValueError):
@@ -161,6 +164,13 @@ class AppSettings:
     # this off and says so; Adopt turns it back on. The overlay FILE is untouched either
     # way: this is about what this install does with it, not about what ships.
     adopt_shipped_verdicts: bool = True
+    # LOCAL SEARCH HISTORY (Q614 = a): OFF unless the reader turns it on -- offered once
+    # after the legal screen at first launch (the Q614 note) and in the advanced search.
+    search_history_enabled: bool = False
+    # THE NEAR DEFAULT (Q612 = a + note): the distance a NEAR without one takes. Ruled
+    # 10; "the user should be able to change the default number", so it is a stored
+    # preference, edited beside the builder's own NEAR stepper.
+    search_near_default: int = 10
 
     def __post_init__(self) -> None:
         if self.recipes_disabled is None:
@@ -306,6 +316,7 @@ def load_settings() -> AppSettings:
         "ai_sweep_perception_extract",
         "trust_backup_fetch_history",
         "adopt_shipped_verdicts",
+        "search_history_enabled",
     ):
         _val = raw.get(_name, getattr(defaults, _name))
         if not isinstance(_val, bool):
@@ -335,7 +346,17 @@ def load_settings() -> AppSettings:
         _LOG.warning("ignoring out-of-range stored import_checkpoint_k %r", checkpoint_k)
         checkpoint_k = defaults.import_checkpoint_k
 
+    # The NEAR default: out of range or unreadable falls back to the ruled 10 (Q612).
+    near_default = raw.get("search_near_default", defaults.search_near_default)
+    try:
+        near_default = int(near_default)
+    except (TypeError, ValueError):
+        near_default = defaults.search_near_default
+    if not (_NEAR_MIN <= near_default <= _NEAR_MAX):
+        near_default = defaults.search_near_default
+
     return AppSettings(
+        search_near_default=near_default,
         import_checkpoint_k=checkpoint_k,
         theme=theme,
         default_result_limit=limit,
@@ -464,12 +485,24 @@ def save_settings(updates: dict) -> AppSettings:
         # And the overlay-adoption preference, for the same reason: a truthy string must
         # not be able to re-admit sources an operator reverted.
         "adopt_shipped_verdicts",
+        # Search history is a privacy decision: a truthy string must not switch it on.
+        "search_history_enabled",
     ):
         if _name in updates and updates[_name] is not None:
             _val = updates[_name]
             if not isinstance(_val, bool):
                 raise AppSettingsError(f"{_name} must be a boolean")
             setattr(current, _name, _val)
+    if "search_near_default" in updates and updates["search_near_default"] is not None:
+        try:
+            nd = int(updates["search_near_default"])
+        except (TypeError, ValueError) as exc:
+            raise AppSettingsError("search_near_default must be a whole number") from exc
+        if not (_NEAR_MIN <= nd <= _NEAR_MAX):
+            raise AppSettingsError(
+                f"search_near_default must be between {_NEAR_MIN} and {_NEAR_MAX}"
+            )
+        current.search_near_default = nd
     if "llm_backend" in updates and updates["llm_backend"] is not None:
         val = updates["llm_backend"]
         if val not in ("auto", "ollama", "vllm"):

@@ -3954,13 +3954,14 @@ def test_omnibar_enter_opens_analysis_window():
     html = _ui_source()
     assert "function openAnalysisFor" in html, "seeded analysis-window opener required"
     assert "function openAnalysisInNewTab" in html, "the new-browser-tab opener (remark 9) required"
-    assert "run: () => openAnalysisInNewTab(raw)" in html, "the default omnibar item opens a new tab"
+    # Q608 (S05-01): the row also records the search in the opt-in local history first.
+    assert "openAnalysisInNewTab(raw);" in html, "the default omnibar item opens a new tab"
     # The new-tab opener uses the proven ?analyze= deep-link + boot hydration.
     assert '"analyze"' in html and "_hydrateCardCorpus" in html, "?analyze= deep-link + hydration required"
     # the Analysis item is unshifted LAST so it sits at index 0 (the Enter default),
     # while the Boolean search item remains reachable.
     i_search_item = html.index('showTab("search"); setTimeout(() => { $("q").value = raw; doSearch()')
-    i_analysis_item = html.index("run: () => openAnalysisInNewTab(raw)")
+    i_analysis_item = html.index("openAnalysisInNewTab(raw);")
     assert i_search_item < i_analysis_item, "Analysis must be unshifted after Search (=> index 0, default Enter)"
 
 

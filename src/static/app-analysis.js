@@ -62,11 +62,14 @@
     // Populate the Advanced-search language <select> once: "Any language" + the 12 UI
     // languages as flag + native name (maintainer 2026-06-20). Built in JS so the autonym
     // labels stay native (invariant #15) and out of the static-HTML dropdown i18n gate.
+    // A MULTI-select since the advanced search (Q601: "languages, multi-select"): no
+    // selection means any language, so the old "Any language" row would be a selectable
+    // option that meant the same as selecting nothing. The corpus' own languages beyond
+    // the twelve, with their counts, are appended by `_advFillFacets` once they are known.
     function _anFillLangSelect() {
       const sel = $("an-adv-lang");
       if (!sel || sel.tagName !== "SELECT" || sel.options.length) return;   // once
-      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      const opts = ['<option value="">' + esc(t("Any language")) + "</option>"];
+      const opts = [];
       for (const [code, flag, name] of LANGS_12)
         opts.push('<option value="' + code + '">' + flag + " " + esc(name) + "</option>");
       sel.innerHTML = opts.join("");
@@ -86,10 +89,11 @@
       const p = new URLSearchParams();
       if (_anIds && _anIds.length) { p.set("article_ids", _anIds.join(",")); return p; }
       const q = anQuery(); if (q) p.set("query", q);
-      const src = $("an-adv-source").value.trim(); if (src) p.set("source", src);
-      const lang = $("an-adv-lang").value.trim(); if (lang) p.set("language", lang);
-      if ($("an-adv-from").value) p.set("start_date", $("an-adv-from").value);
-      if ($("an-adv-to").value) p.set("end_date", $("an-adv-to").value);
+      // The advanced filters come from the ACTIVE TAB'S SEED, not from the builder's
+      // controls: the builder fills asynchronously (its lists wait for the facets), and
+      // a request built from half-filled controls would describe a different set than
+      // the tab says it holds. The builder writes the seed on "Run analysis".
+      _advToParams(_advActive(), p);
       // Metadata sort (brief §2.D) — honest ordering, never a score. Only the
       // Articles list (/api/articles) reads these; insights endpoints ignore them.
       const sb = $("an-adv-sort") && $("an-adv-sort").value;
@@ -118,6 +122,9 @@
           ids: tb.kind === "ids" ? (tb.ids || []).slice(0, 5000) : null,
           commodity: tb.commodity || null, src: tb.src || "", lang: tb.lang || "",
           from: tb.from || "", to: tb.to || "",
+          // The advanced search's filters (S05-01): the whole builder state, as the API
+          // parameters it sends, so a restart re-opens the same search (Q616).
+          adv: (tb.adv && Object.keys(tb.adv).length) ? tb.adv : null,
           // Ruling 16: the Lead's provenance is part of the seed, so a reload does not
           // silently drop the header and leave the analysis looking self-originated.
           prov: tb.prov || null,
@@ -170,11 +177,11 @@
       _anApplyLensSeed(tb.lens);
       _anWriteLensToUrl();
       _anFillLangSelect();   // ensure the language <select> is built before seeding it
+      // A tab saved before the advanced search keeps its filters, now in the one form.
+      tb.adv = _advLegacy(tb); tb.src = ""; tb.lang = ""; tb.from = ""; tb.to = "";
       $("an-adv-query").value = tb.query || "";
-      $("an-adv-source").value = tb.src || "";
-      $("an-adv-lang").value = tb.lang || "";
-      $("an-adv-from").value = tb.from || "";
-      $("an-adv-to").value = tb.to || "";
+      _advWrite(tb.adv);
+      _advRenderChips();
       $("an-query").textContent = tb.label ? `“${tb.label}”` : (tb.query ? `“${tb.query}”` : t("(the selected article set)"));
       $("an-adv-note").textContent = (tb.kind === "ids") ? t("Showing the exact article set behind this Lead.") : "";
       _anRenderProvenance(tb.prov || null);
@@ -273,7 +280,7 @@
     function _anSpawn(seed) {
       const key = seed.kind === "ids"
         ? ("ids:" + (seed.label || (seed.ids || []).slice(0, 4).join(",")))
-        : ("q:" + (seed.query || "").toLowerCase() + "|" + (seed.src || "") + "|" + (seed.lang || ""));
+        : _advTabKey(seed.query, _advLegacy(seed));
       let tb = _anTabs.find(x => x.key === key);
       if (!tb) {
         tb = Object.assign({id: "t" + (_anTabSeq++) + Date.now().toString(36), key}, seed);
@@ -295,8 +302,10 @@
     // A commodity click carries {commodity:{symbol,name,unit}} for the Price subtab.
     function openAnalysisFor(query, opts) {
       const q = (query || "").trim();
-      _anSpawn({kind: "query", query: q, label: q, commodity: (opts && opts.commodity) || null,
-                prov: (opts && opts.prov) || null, lens: (opts && opts.lens) || null});
+      const adv = (opts && opts.adv && typeof opts.adv === "object") ? _advClean(opts.adv) : null;
+      _anSpawn({kind: "query", query: q, label: q || (adv ? "(filtered)" : ""),
+                commodity: (opts && opts.commodity) || null,
+                prov: (opts && opts.prov) || null, lens: (opts && opts.lens) || null, adv});
     }
     // Retired #corpus-win modal -> a keyword now spawns its own analysis tab (one
     // surface). All openCorpus call sites get the spawn behaviour for free.
@@ -315,12 +324,14 @@
       // The search "Analyze" path -> spawn a tab seeded from the current search.
       const qtxt = $("q").value.trim();
       const _ts = _searchTimeScope && _searchTimeScope.get();
-      _anSpawn({
-        kind: "query", query: qtxt, label: qtxt || "(filtered)",
-        src: ($("f-source").value || "").trim(), lang: ($("f-lang").value || "").trim(),
-        from: (_ts && _ts.from && _ts.from > _searchTsBounds.min) ? _ts.from : "",
-        to: (_ts && _ts.to && _ts.to < _searchTsBounds.max) ? _ts.to : "",
+      // The Search tab's three filters travel as the SAME parameters the tab sends, so
+      // the analysis opens on exactly the set the Search tab listed.
+      const adv = _advClean({
+        source: ($("f-source").value || "").trim(), language: ($("f-lang").value || "").trim(),
+        start_date: (_ts && _ts.from && _ts.from > _searchTsBounds.min) ? _ts.from : "",
+        end_date: (_ts && _ts.to && _ts.to < _searchTsBounds.max) ? _ts.to : "",
       });
+      _anSpawn({kind: "query", query: qtxt, label: qtxt || "(filtered)", adv});
     }
     // Advanced tab: refine the ACTIVE tab in-place (updates its seed, never spawns a
     // new tab). loadAnalysis re-runs EVERY subtab from the params.
@@ -329,11 +340,7 @@
     // for the indicator is here, not a misleading app-wide chip).
     function _anFilterSummary() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      const parts = [];
-      const src = ($("an-adv-source").value || "").trim(); if (src) parts.push(ooLabelText(t("source"), src));
-      const lang = ($("an-adv-lang").value || "").trim(); if (lang) parts.push(ooLabelText(t("language"), lang));
-      const from = $("an-adv-from").value, to = $("an-adv-to").value;
-      if (from || to) parts.push((from || "…") + " → " + (to || "…"));
+      const parts = _advSummary(_advActive());
       const sb = $("an-adv-sort") && $("an-adv-sort").value;
       const asc = ($("an-adv-dir") && $("an-adv-dir").value) === "asc";
       // Newest-first by date is the DEFAULT order (Q508, N4), not a refinement the reader
@@ -346,15 +353,20 @@
       _anCommodity = null;   // a refined search is no longer the commodity overlay
       const tt = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const q = $("an-adv-query").value.trim();
-      const src = $("an-adv-source").value.trim(), lang = $("an-adv-lang").value.trim();
-      const from = $("an-adv-from").value, to = $("an-adv-to").value;
-      const tb = _anTabs.find(x => x.id === _anActiveId);
-      if (tb) {
-        Object.assign(tb, {kind: "query", query: q, label: q || "(filtered)", ids: null,
-          commodity: null, src, lang, from, to,
-          key: "q:" + q.toLowerCase() + "|" + src + "|" + lang});
-        _anRenderStrip(); _anSaveTabs();
+      const adv = _advRead();
+      let tb = _anTabs.find(x => x.id === _anActiveId);
+      if (!tb) {
+        // No tab open yet (the empty launcher): Run opens one, rather than analysing
+        // into a window with no tab to remember the search by.
+        _anSpawn({kind: "query", query: q, label: q || "(filtered)", adv});
+        _advHistRecord(q, adv);
+        return;
       }
+      Object.assign(tb, {kind: "query", query: q, label: q || "(filtered)", ids: null,
+        commodity: null, src: "", lang: "", from: "", to: "", adv,
+        key: _advTabKey(q, adv)});
+      _anRenderStrip(); _anSaveTabs(); _anWriteLensToUrl();
+      _advHistRecord(q, adv);
       $("an-query").textContent = q ? `“${q}”` : "(all articles matching your filters)";
       const fs = _anFilterSummary();
       $("an-adv-note").innerHTML = fs.length
@@ -1546,11 +1558,6 @@
       // unchanged), so mirror the chip's matching source NAME into it, not the id.
       // Each field is only touched when its own facet was actually selected -- never
       // blank the other dimension's pre-existing Advanced value.
-      if (selSrc) {
-        const srcRow = (_anArtFacetData.sources || []).find(r => String(r.source_id) === selSrc);
-        $("an-adv-source").value = srcRow ? srcRow.name : "";
-      }
-      if (selLang) $("an-adv-lang").value = selLang;
       if (_anIds && _anIds.length) {
         let ids = _anIds.slice();
         if (selSrc) ids = await _anFacetDrillIds(ids, "source", selSrc);
@@ -1565,7 +1572,21 @@
           : "";
         loadAnalysis(anParams());
       } else {
-        anRunAdvanced();   // a query-seeded corpus already refines correctly
+        // A query-seeded corpus: the chips narrow the tab's own filter set, by source ID
+        // (the drill key) and language, then re-run -- the builder shows the same state.
+        const tb = _anTabs.find(x => x.id === _anActiveId);
+        if (!tb) return;
+        const adv = Object.assign({}, _advLegacy(tb));
+        if (selSrc) { adv.sources = selSrc; delete adv.source; }
+        if (selLang) { adv.langs = selLang; delete adv.language; delete adv.lang_basis; }
+        tb.adv = _advClean(adv); tb.key = _advTabKey(tb.query, tb.adv);
+        _anRenderStrip(); _anSaveTabs(); _anWriteLensToUrl();
+        _advWrite(tb.adv);
+        const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+        const fs = _anFilterSummary();
+        $("an-adv-note").innerHTML = fs.length
+          ? `<span class="pill">${esc(t("Filtered"))}</span> ${fs.map(esc).join(" · ")}` : "";
+        loadAnalysis(anParams());
       }
     }
     // /api/articles names an explicit id set `ids`; the analysis params name it
@@ -1727,15 +1748,20 @@
       if (!tb) return;
       const ids = (s) => String(s || "").split(",").map(Number)
         .filter((n) => Number.isFinite(n) && n > 0).slice(0, 5000).join(",");
-      const named = sp.has("analyze") ? "q:" + (sp.get("analyze") || "").trim()
+      // S05-01 (Q616): a search's filters are part of its name, so the URL spells the
+      // whole search -- the query AND every filter -- and a reload or a shared link opens
+      // that search, not the bare query.
+      const named = sp.has("analyze")
+        ? _advTabKey((sp.get("analyze") || "").trim(), _advPick(sp))
         : "ids:" + ids(sp.get("corpus"));
       const mine = tb.kind === "ids" ? "ids:" + ids((tb.ids || []).join(","))
-        : "q:" + (tb.query || "");
+        : _advTabKey(tb.query || "", _advLegacy(tb));
       if (named === mine) return;
-      ["analyze", "corpus", "label", "prov", "tab"].forEach((k) => sp.delete(k));
-      const plain = tb.kind !== "ids" && tb.query && !tb.src && !tb.lang && !tb.from
-        && !tb.to && !tb.commodity && !tb.prov;
-      if (plain) sp.set("analyze", tb.query);
+      ["analyze", "corpus", "label", "prov", "tab"].concat(ADV_URL_KEYS).forEach((k) => sp.delete(k));
+      const adv = tb.kind !== "ids" ? _advLegacy(tb) : {};
+      const linkable = tb.kind !== "ids" && (tb.query || Object.keys(adv).length)
+        && !tb.commodity && !tb.prov;
+      if (linkable) { sp.set("analyze", tb.query || ""); _advToParams(adv, sp, true); }
     }
     // The other direction, and PURE (a query string -> a lens seed, or null when the URL
     // carries no lens at all). It deliberately does NOT assign the globals: a deep link's
@@ -2083,7 +2109,7 @@
     // Groups the rendered rows under one heading per language, in DESCENDING row count so
     // the reader meets the languages this corpus actually carries first, with ties broken
     // alphabetically so two runs over one corpus produce the same order.
-    function _anGroupRowsByLanguage(items, rowHtml) {
+    function _anGroupRowsByLanguage(items, rowHtml, cards) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const buckets = new Map();
       items.forEach((a, i) => {
@@ -2104,7 +2130,12 @@
         // A group of ONE read "spa 1 articles" (N14): a count of one takes the singular
         // key, the one form every locale has (there are no CLDR plural rules here).
         const count = (n === 1 ? t("{n} article") : t("{n} articles")).replace("{n}", n);
-        return `<tr class="an-lang-group"><td colspan="5"><b>${label}</b>`
+        // The list view's cards are not table rows, so its heading is not one either.
+        if (cards) {
+          return `<div class="an-lang-group"><b>${label}</b> <span class="muted">${esc(count)}</span></div>`
+            + buckets.get(k).join("");
+        }
+        return `<tr class="an-lang-group"><td colspan="${_AN_TABLE_COLS}"><b>${label}</b>`
           + ` <span class="muted">${esc(count)}</span></td></tr>`
           + buckets.get(k).join("");
       }).join("");
@@ -2164,6 +2195,8 @@
     // whole list kept its first language until a reload.
     function _anDrawArticles(arts, st) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const TFW = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
+        : ((tpl, v) => tpl.replace(/\{(\w+)\}/g, (_m, k) => v[k]));
       const { d, total, pages } = st;
       const kwc = _anKwForCount;
       const cross = _anLastCross || {};
@@ -2189,17 +2222,30 @@
             + (tied ? ` <span class="muted">${esc(t("tied"))}</span>` : "")
             + `</span>`;
         }
+        // Q617: a quarantined row (only ever listed when the reader asked for them)
+        // carries the reason the app set it aside, on the row itself.
+        const qr = _anQuarantineNote(a);
+        const words = (a.word_count != null) ? fmtNum(a.word_count, 0) : "—";
+        if (_anArtView === "list") {
+          return `<div class="an-card" data-aid="${a.id}"><a href="/api/articles/${a.id}/view" target="_blank" rel="noopener">`
+            + `${esc(a.title) || '<span class="muted">(untitled)</span>'}</a>${badge}`
+            + `<div class="an-card-meta">${esc(a.source || "")} · ${_anLangCell(a)} · `
+            + `${esc((a.published_at || "").slice(0, 10))} · ${esc(TFW("{n} words", {n: words}))}${_toneChip(a)}</div>`
+            + qr + `</div>`;
+        }
         return `<tr data-aid="${a.id}"><td><a href="/api/articles/${a.id}/view" target="_blank" rel="noopener">`
-        + `${esc(a.title) || '<span class="muted">(untitled)</span>'}</a>${badge}</td>`
-        // `_toneChip`, not `_anToneChip`: the Language column below now carries the
-        // deduced-language half, and the split exists precisely so a surface that
-        // already shows the language renders the tone without repeating it.
-        + `<td>${esc(a.source || "")}${_toneChip(a)}</td>`
+        + `${esc(a.title) || '<span class="muted">(untitled)</span>'}</a>${badge}${qr}</td>`
+        + `<td>${esc(a.source || "")}</td>`
         + `<td>${_anLangCell(a)}</td>`
         + `<td class="muted">${esc((a.published_at || "").slice(0, 10))}</td>`
+        // Q615: words and tone are columns of their own, each sortable. The tone keeps
+        // its caveat on hover (`_toneChip`), and an unscored article is an em dash.
+        + `<td class="muted">${esc(words)}</td>`
+        + `<td>${_toneChip(a) || '<span class="muted">—</span>'}</td>`
         + `<td>${top}</td></tr>`;
       });
-      const rows = _anGroupByLang ? _anGroupRowsByLanguage(d.results || [], rowHtml) : rowHtml.join("");
+      const rows = _anGroupByLang
+        ? _anGroupRowsByLanguage(d.results || [], rowHtml, _anArtView === "list") : rowHtml.join("");
       const pager = _anArtPager(total, pages);
       // RULING 22: the "source ↗" column and the per-row Summarize / Translate buttons
       // are gone -- the reader carries both (its "Original source:" line shows the FULL
@@ -2213,13 +2259,21 @@
         // had no anchor: a walk trying to read it had to guess which `.hint` on the
         // surface it was, and the expansion rail above carries that class too.
         + `<div class="hint" id="an-art-total"><b>${fmtNum(total, 0)}</b> ${esc(t("Articles"))} <span class="muted">· ${esc(t("Open an article to read it, see its original source, and summarize or translate it."))}</span></div>`
+        // Q618: the ORDER the list is in, stated on the list itself -- a ranked list is
+        // not a sample of the corpus, and the reader should not have to infer which it is.
+        + _anOrderingHtml(d.ordering)
+        + _advDymHtml(d.did_you_mean)
         + pager
-        + _anGroupByLangControl()
-        + `<table style="margin-top:6px"><tr>`
-        + _anTh("title", t("Title")) + _anTh("source", t("Source"))
-        + _anTh("language", t("Language"))
-        + _anTh("date", t("Published")) + _anTh("top_keyword", t("Top keyword"))
-        + `</tr>${rows}</table>`
+        + `<div class="row" style="gap:12px;align-items:center;flex-wrap:wrap">`
+        + _anGroupByLangControl() + _anViewControl() + `</div>`
+        + (_anArtView === "list"
+          ? `<div class="an-cards">${rows}</div>`
+          : `<table style="margin-top:6px"><tr>`
+            + _anTh("title", t("Title")) + _anTh("source", t("Source"))
+            + _anTh("language", t("Language"))
+            + _anTh("date", t("Published")) + _anTh("words", t("Words"))
+            + _anTh("sentiment", t("Tone")) + _anTh("top_keyword", t("Top keyword"))
+            + `</tr>${rows}</table>`)
         + pager;
       _anRefillFormSlots();   // the per-form counts already fetched for this lens
       _anRenderArtFacetChips();   // redraw from already-fetched facet data (sync, no network)
@@ -2722,9 +2776,16 @@
         // hard-coded English template on a page read in eleven other languages (N11).
         const stf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
           : ((s, v) => s.replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null ? String(v[k]) : m)));
-        $("search-meta").textContent = (data.total > data.results.length)
+        $("search-meta").innerHTML = esc((data.total > data.results.length)
           ? stf("{n} result(s) (showing {shown})", {n: data.total, shown: data.results.length})
-          : stf("{n} result(s)", {n: data.total});
+          : stf("{n} result(s)", {n: data.total}))
+          // Q618: relevance is the default order for a query, and a ranked list is not a
+          // sample -- so the order is stated here too, not only in the analysis window.
+          + _anOrderingHtml(data.ordering) + _advDymHtml(data.did_you_mean);
+        _advHistRecord(($("q").value || "").trim(), _advClean({
+          source: ($("f-source").value || "").trim(), language: ($("f-lang").value || "").trim(),
+          start_date: p.get("start_date") || "", end_date: p.get("end_date") || "",
+        }));
         const t = $("results");
         t.innerHTML = "<tr><th>Title</th><th>Source</th><th>Published</th><th>Lang</th><th></th></tr>" +
           (data.results.length ? data.results.map(a =>
@@ -3287,3 +3348,731 @@
       }
     }
 
+
+    // ======================================================================== //
+    // THE ADVANCED SEARCH BUILDER (S05-01, rulings Q601-Q618)
+    //
+    // ONE filter set, in ONE form: the API parameters `/api/articles` takes. The
+    // builder reads its controls into that dict (`_advRead`), the tab keeps it as its
+    // seed (`tb.adv`), every request adds it (`_advToParams`), the permalink spells it
+    // (Q616) and the saved search stores it (`_advToWatchFilters`, Q606). Nothing here
+    // keeps a second opinion about what a filter means -- that lives server-side in
+    // `AdvancedSearch`, and the export reproduces the view because it is fed the same
+    // parameters (Q607).
+    //
+    // No inline handlers (the S05-09 ratchet): the controls are wired once, by
+    // `_advInit`, and everything drawn later (the chips, the history, the "did you
+    // mean" and view buttons) is answered by delegated listeners reading data-*.
+    // ======================================================================== //
+
+    // The API parameters the builder emits, which are also the permalink's keys. The
+    // last two are the Search tab's own filters (a source NAME, one asserted language),
+    // carried when an analysis is opened from there.
+    const ADV_KEYS = ["langs", "lang_basis", "sources", "countries", "regions",
+      "start_date", "end_date", "collected_from", "collected_to", "words_min", "words_max",
+      "sentiment", "mentions_from", "mentions_to", "include_quarantined", "exact", "near",
+      "source", "language"];
+    // State the URL carries that is not a filter: the scale each range is read in.
+    const ADV_UI_KEYS = ["published_scale", "collected_scale"];
+    const ADV_URL_KEYS = ADV_KEYS.concat(ADV_UI_KEYS, ["sort_by", "sort_dir", "view"]);
+    // The server's NEAR default when a request names none (fts.NEAR_DEFAULT).
+    const ADV_NEAR_SERVER_DEFAULT = 10;
+
+    // -- pure helpers (driven in node by tests/advanced_search_node_test.js) ----- //
+
+    // A filter dict with the empty values dropped and every value a string, so two
+    // dicts that mean the same search compare equal.
+    function _advClean(adv) {
+      const out = {};
+      if (!adv || typeof adv !== "object") return out;
+      for (const k of ADV_KEYS.concat(ADV_UI_KEYS)) {
+        let v = adv[k];
+        if (v == null || v === false) continue;
+        if (Array.isArray(v)) v = v.join(",");
+        v = String(v).trim();
+        if (!v) continue;
+        if (k === "lang_basis" && v === "any") continue;
+        if ((k === "published_scale" || k === "collected_scale") && v === "day") continue;
+        out[k] = v;
+      }
+      if (!out.langs) delete out.lang_basis;   // a basis alone restricts nothing
+      return out;
+    }
+    // A tab written before the advanced search named its filters src/lang/from/to.
+    function _advLegacy(tb) {
+      if (!tb) return {};
+      if (tb.adv && typeof tb.adv === "object") return _advClean(tb.adv);
+      return _advClean({source: tb.src, language: tb.lang, start_date: tb.from, end_date: tb.to});
+    }
+    // The search's identity: the tab strip's dedupe key and the URL's "which tab".
+    function _advTabKey(query, adv) {
+      const a = _advClean(adv);
+      const ks = Object.keys(a).sort();
+      return "q:" + String(query || "").trim().toLowerCase()
+        + (ks.length ? "|" + ks.map((k) => k + "=" + a[k]).join("&") : "");
+    }
+    // Adds the filters to a URLSearchParams. `withUi` also writes the UI-only keys (the
+    // permalink wants them; a request does not).
+    function _advToParams(adv, p, withUi) {
+      const a = _advClean(adv);
+      for (const k of ADV_KEYS) if (a[k] != null) p.set(k, a[k]);
+      if (withUi) for (const k of ADV_UI_KEYS) if (a[k] != null) p.set(k, a[k]);
+      return p;
+    }
+    // The other direction: the filters a query string names.
+    function _advPick(sp) {
+      const o = {};
+      for (const k of ADV_KEYS.concat(ADV_UI_KEYS)) { const v = sp.get(k); if (v != null) o[k] = v; }
+      return _advClean(o);
+    }
+    // The whole search as a local link (Q616): query, every filter, the order, the view.
+    function _advPermalink(query, adv, extra) {
+      const sp = new URLSearchParams();
+      sp.set("analyze", query || "");
+      _advToParams(adv, sp, true);
+      const x = extra || {};
+      if (x.sort_by) { sp.set("sort_by", x.sort_by); sp.set("sort_dir", x.sort_dir || "desc"); }
+      if (x.view && x.view !== "table") sp.set("view", x.view);
+      return sp.toString();
+    }
+    // API form -> the stored form of a saved search (`AdvancedSearch`'s own field
+    // names). The Search tab's source NAME has no stored form: the caller resolves it
+    // to ids first and refuses when it cannot.
+    function _advToWatchFilters(adv) {
+      const a = _advClean(adv), f = {};
+      const list = (v) => String(v || "").split(",").map((x) => x.trim()).filter(Boolean);
+      const langs = a.langs ? list(a.langs) : (a.language ? [a.language] : []);
+      if (langs.length) f.langs = langs;
+      if (a.language && !a.langs) f.lang_basis = "asserted";
+      else if (a.lang_basis) f.lang_basis = a.lang_basis;
+      if (a.sources) f.source_ids = list(a.sources).map(Number).filter((n) => Number.isFinite(n));
+      if (a.countries) f.countries = list(a.countries);
+      if (a.regions) f.regions = list(a.regions);
+      if (a.start_date) f.published_from = a.start_date;
+      if (a.end_date) f.published_to = a.end_date;
+      for (const k of ["collected_from", "collected_to", "mentions_from", "mentions_to"]) if (a[k]) f[k] = a[k];
+      for (const k of ["words_min", "words_max", "near"]) if (a[k] != null) f[k] = Number(a[k]);
+      if (a.sentiment) f.sentiments = list(a.sentiment);
+      if (a.include_quarantined === "true") f.include_quarantined = true;
+      if (a.exact === "true") f.exact = true;
+      return f;
+    }
+    function _advFromWatchFilters(f) {
+      f = f || {};
+      const j = (v) => Array.isArray(v) ? v.join(",") : v;
+      return _advClean({
+        langs: j(f.langs), lang_basis: f.lang_basis, sources: j(f.source_ids),
+        countries: j(f.countries), regions: j(f.regions),
+        start_date: f.published_from, end_date: f.published_to,
+        collected_from: f.collected_from, collected_to: f.collected_to,
+        words_min: f.words_min, words_max: f.words_max, sentiment: j(f.sentiments),
+        mentions_from: f.mentions_from, mentions_to: f.mentions_to,
+        include_quarantined: f.include_quarantined ? "true" : "",
+        exact: f.exact ? "true" : "", near: f.near,
+      });
+    }
+
+    // The query grammar's token class, mirrored from `fts._GRAMMAR_TOKEN_RE` so the
+    // chips split the box exactly where the server will. Positions are kept, because a
+    // chip edits its own span of the box and nothing else (Q602: two-way).
+    const _ADV_TOKEN_RE = /NEAR\([^()]*\)|(?:title|author|source|url|tag):=?(?:"[^"]*"\**|[^\s()"]+)|"[^"]*"\**|\(|\)|[^\s()"]+/gi;
+    function _advTokens(q) {
+      const out = [], re = new RegExp(_ADV_TOKEN_RE.source, "gi");
+      let m;
+      while ((m = re.exec(String(q || ""))) !== null) out.push({text: m[0], start: m.index, end: m.index + m[0].length});
+      return out;
+    }
+    // The chips a query holds: field filters and NEAR groups, each with the span of the
+    // box it came from (a NOT just before it included, as that NOT belongs to it).
+    function _advParse(q) {
+      const toks = _advTokens(q), chips = [];
+      for (let i = 0; i < toks.length; i++) {
+        const tk = toks[i];
+        const neg = i > 0 && toks[i - 1].text === "NOT";
+        const start = neg ? toks[i - 1].start : tk.start;
+        // Sliced, not matched: the token regex only yields NEAR( ... ) here (the server's
+        // twin of a `NEAR\((.*)\)` pattern was a polynomial-backtracking finding).
+        const isNear = tk.text.slice(0, 5).toUpperCase() === "NEAR(" && tk.text.endsWith(")");
+        if (isNear) {
+          let inner = tk.text.slice(5, -1), dist = null;
+          // After the LAST comma, when that is a bare integer (split, not one lazy regex
+          // over the body: the server's twin was a polynomial-backtracking finding).
+          const cut = inner.lastIndexOf(",");
+          const tail = cut >= 0 ? /^\s*(-?\d+)\s*$/.exec(inner.slice(cut + 1)) : null;
+          if (tail) { dist = parseInt(tail[1], 10); inner = inner.slice(0, cut); }
+          const items = (inner.match(/"[^"]*"|[^\s",]+/g) || []).map((x) => x.replace(/^"|"$/g, ""));
+          chips.push({kind: "near", items, dist, neg, start, end: tk.end});
+          continue;
+        }
+        const m = /^(title|author|source|url|tag):(=?)([\s\S]*)$/i.exec(tk.text);
+        if (m) {
+          let raw = m[3], mode = m[2] ? "exact" : "contains";
+          if (!m[2] && raw.endsWith("*")) { mode = "prefix"; raw = raw.replace(/\*+$/, ""); }
+          if (raw.length >= 2 && raw[0] === '"' && raw.endsWith('"')) raw = raw.slice(1, -1);
+          chips.push({kind: "field", field: m[1].toLowerCase(), mode, value: raw.trim(), neg, start, end: tk.end});
+        }
+      }
+      return chips;
+    }
+    function _advQuoteVal(v, guardStar) {
+      v = String(v == null ? "" : v).replace(/"/g, "");
+      return (!v || /[\s()]/.test(v) || (guardStar && /\*$/.test(v))) ? '"' + v + '"' : v;
+    }
+    function _advFieldToken(c) {
+      return (c.neg ? "NOT " : "") + c.field + ":" + (c.mode === "exact" ? "=" : "")
+        + _advQuoteVal(c.value, true) + (c.mode === "prefix" ? "*" : "");
+    }
+    function _advNearToken(c) {
+      const items = (c.items || []).map((x) => String(x).replace(/[",]/g, "").trim()).filter(Boolean)
+        .map((x) => (/[\s()]/.test(x) ? '"' + x + '"' : x));
+      return (c.neg ? "NOT " : "") + "NEAR(" + items.join(" ")
+        + (c.dist != null && c.dist !== "" ? ", " + c.dist : "") + ")";
+    }
+    // Replaces [start, end) of the box with `text`. Removing a chip also drops an AND /
+    // OR it leaves dangling at the seam, so a removal never leaves a query that fails.
+    function _advSplice(q, start, end, text) {
+      let a = String(q || "").slice(0, start).replace(/\s+$/, "");
+      let b = String(q || "").slice(end).replace(/^\s+/, "");
+      if (!text) {
+        const aOp = /(?:^|\s)(AND|OR)$/.test(a), bOp = /^(AND|OR)(?:\s|$)/.test(b);
+        if (aOp && (!b || bOp)) a = a.replace(/(?:^|\s)(AND|OR)$/, "");
+        else if (!a && bOp) b = b.replace(/^(AND|OR)(?:\s+|$)/, "");
+      }
+      return [a.trim(), text, b.trim()].filter(Boolean).join(" ");
+    }
+    function _advAppend(q, token) {
+      q = String(q || "").trim();
+      return q ? q + " " + token : token;
+    }
+
+    // -- the ordering statement and "did you mean" (shared by both lists) -------- //
+
+    function _anOrderingHtml(o) {
+      if (!o || !o.statement) return "";
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const dir = o.direction ? " " + t(o.direction === "asc" ? "Ascending" : "Descending") : "";
+      return `<div class="an-order muted" data-order-by="${esc(o.by || "")}">${esc(t(o.statement))}`
+        + (dir ? ` <span>(${esc(dir.trim())})</span>` : "") + `</div>`;
+    }
+    // Q605 = b: OFFERED, never run. The suggested query is a button the reader may
+    // press; the results beside it are the query exactly as typed. The caveat (the
+    // table's freshness) and the method are visible, not behind a toggle.
+    function _advDymHtml(d) {
+      if (!d || !d.query) return "";
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
+        : ((tpl, v) => tpl.replace(/\{(\w+)\}/g, (_m, k) => v[k]));
+      const lim = d.limits || {};
+      const method = (lim.max_distance != null)
+        ? tf("Words within {d} edits (1 for words of {n} letters or fewer) among your keywords seen in at least {m} articles. Nearest first, then the one in more articles.",
+          {d: lim.max_distance, n: lim.short_word, m: lim.min_articles})
+        : "";
+      const built = d.built_at ? tf("Suggestion table built {when}.", {when: String(d.built_at).slice(0, 16).replace("T", " ")}) : "";
+      return `<div class="adv-dym note">${esc(t("Did you mean"))} `
+        + `<button type="button" class="tiny" data-adv-dym="${esc(d.query)}" data-i18n-dyn>${esc(d.query)}</button>`
+        + `<div class="adv-caveat">${esc(t(d.caveat || ""))} ${esc(built)}</div>`
+        + (method ? `<div class="hint muted">${esc(method)}</div>` : "") + `</div>`;
+    }
+    function _anQuarantineNote(a) {
+      if (!a || !a.quarantined) return "";
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      return `<div class="an-q-reason">${ooLabelHtml(esc(t("Quarantined")), esc(a.quarantine_reason || t("no reason recorded")))}</div>`;
+    }
+    // Q615: list (cards) or table. A VIEW over the same page of rows: it issues no
+    // request and changes no count. Remembered per viewer, and carried by the link.
+    let _anArtView = (() => { try { return localStorage.getItem("oo.an.artview") === "list" ? "list" : "table"; } catch (_e) { return "table"; } })();
+    const _AN_TABLE_COLS = 7;
+    function _anViewControl() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const seg = (v, label) => `<button type="button" class="ghost tiny${_anArtView === v ? " on" : ""}"`
+        + ` aria-pressed="${_anArtView === v}" data-an-view="${v}">${esc(label)}</button>`;
+      return `<div class="row" style="gap:6px;align-items:center;margin-top:6px">`
+        + _anCtlLabel(t("Show as")) + seg("table", t("Table")) + seg("list", t("List")) + `</div>`;
+    }
+    function _anSetView(v) {
+      _anArtView = v === "list" ? "list" : "table";
+      try { localStorage.setItem("oo.an.artview", _anArtView); } catch (_e) { /* private mode */ }
+      const arts = $("an-art-list") || $("an-articles");
+      if (arts && _anArtLast) _anDrawArticles(arts, _anArtLast);
+    }
+
+    // -- the builder's controls ------------------------------------------------ //
+
+    let _advFacets = null, _advFacetsP = null, _advPending = null;
+    let _advPubTs = null, _advColTs = null, _advLegacySrc = "", _advWired = false;
+    function _advActive() {
+      const tb = _anTabs.find((x) => x.id === _anActiveId);
+      return tb ? _advLegacy(tb) : {};
+    }
+    function _advMulti(id) {
+      const el = $(id); if (!el) return [];
+      return Array.from(el.selectedOptions || []).map((o) => o.value).filter(Boolean);
+    }
+    function _advSetMulti(id, csv) {
+      const el = $(id); if (!el) return;
+      const want = new Set(String(csv || "").split(",").map((x) => x.trim()).filter(Boolean));
+      // A value the list does not hold yet (a language the corpus has since lost, a
+      // source id from a shared link) is ADDED as an option rather than dropped, so a
+      // filter is never silently widened because its value is not in today's facets.
+      for (const v of want) {
+        if (!Array.from(el.options).some((o) => o.value === v)) {
+          const o = document.createElement("option"); o.value = v; o.textContent = v; el.appendChild(o);
+        }
+      }
+      Array.from(el.options).forEach((o) => { o.selected = want.has(o.value); });
+    }
+    function _advTsRead(ts, fromKey, toKey, scaleKey, out) {
+      if (!ts || !ts.get) return;
+      const g = ts.get(), b = ts.bounds ? ts.bounds() : {};
+      // A bound is sent only when narrowed off the span's own edge, so a plain search
+      // never silently excludes an article the span did not know about yet.
+      if (g.from && b.min && g.from > b.min) out[fromKey] = g.from;
+      if (g.to && b.max && g.to < b.max) out[toKey] = g.to;
+      if (g.scale && g.scale !== "day") out[scaleKey] = g.scale;
+    }
+    function _advRead() {
+      const a = {};
+      const langs = _advMulti("an-adv-lang");
+      if (langs.length) { a.langs = langs.join(","); a.lang_basis = ($("adv-lang-basis") || {}).value || "any"; }
+      for (const [id, key] of [["adv-sources", "sources"], ["adv-countries", "countries"], ["adv-regions", "regions"]]) {
+        const v = _advMulti(id); if (v.length) a[key] = v.join(",");
+      }
+      if (_advLegacySrc) a.source = _advLegacySrc;
+      _advTsRead(_advPubTs, "start_date", "end_date", "published_scale", a);
+      _advTsRead(_advColTs, "collected_from", "collected_to", "collected_scale", a);
+      for (const [id, key] of [["adv-words-min", "words_min"], ["adv-words-max", "words_max"],
+        ["adv-mentions-from", "mentions_from"], ["adv-mentions-to", "mentions_to"]]) {
+        const el = $(id); if (el && el.value !== "") a[key] = el.value;
+      }
+      const sent = Array.from(document.querySelectorAll("#an-advanced .adv-sent:checked")).map((x) => x.value);
+      if (sent.length) a.sentiment = sent.join(",");
+      if ($("adv-quarantined") && $("adv-quarantined").checked) a.include_quarantined = "true";
+      if ($("an-adv-exact") && $("an-adv-exact").checked) a.exact = "true";
+      // NEAR's distance is sent only as a per-search OVERRIDE of the reader's saved
+      // default: the server applies that default itself to every search that names none.
+      const nd = $("adv-near-default");
+      const pref = (_advFacets && _advFacets.near) ? String(_advFacets.near.default) : null;
+      if (nd && nd.value !== "" && nd.value !== pref) a.near = nd.value;
+      return _advClean(a);
+    }
+    function _advWrite(adv) {
+      const a = _advClean(adv);
+      const set = (id, v) => { const el = $(id); if (el) el.value = v == null ? "" : v; };
+      set("adv-lang-basis", a.lang_basis || (a.language && !a.langs ? "asserted" : "any"));
+      set("adv-words-min", a.words_min); set("adv-words-max", a.words_max);
+      set("adv-mentions-from", a.mentions_from); set("adv-mentions-to", a.mentions_to);
+      const sent = new Set(String(a.sentiment || "").split(","));
+      document.querySelectorAll("#an-advanced .adv-sent").forEach((x) => { x.checked = sent.has(x.value); });
+      if ($("adv-quarantined")) $("adv-quarantined").checked = a.include_quarantined === "true";
+      if ($("an-adv-exact")) $("an-adv-exact").checked = a.exact === "true";
+      if (a.near != null) set("adv-near-default", a.near);
+      else if (_advFacets && _advFacets.near) set("adv-near-default", _advFacets.near.default);
+      _advLegacySrc = a.source || "";
+      _advRenderLegacySrc();
+      // The lists and the two time ranges need the facets (their options, the spans).
+      _advPending = a;
+      if (_advFacets) _advApplyPending();
+      else _advLoadFacets();
+    }
+    function _advApplyPending() {
+      const a = _advPending; if (!a) return;
+      _advPending = null;
+      _anFillLangSelect();
+      _advSetMulti("an-adv-lang", a.langs || a.language || "");
+      _advSetMulti("adv-sources", a.sources || "");
+      _advSetMulti("adv-countries", a.countries || "");
+      _advSetMulti("adv-regions", a.regions || "");
+      if (_advPubTs && _advPubTs.set) {
+        const b = _advPubTs.bounds();
+        _advPubTs.set(a.start_date || b.min, a.end_date || b.max, a.published_scale || "day");
+      }
+      if (_advColTs && _advColTs.set) {
+        const b = _advColTs.bounds();
+        _advColTs.set(a.collected_from || b.min, a.collected_to || b.max, a.collected_scale || "day");
+      }
+    }
+    function _advRenderLegacySrc() {
+      const host = $("adv-legacy-src"); if (!host) return;
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      host.innerHTML = _advLegacySrc
+        ? `<span class="pill">${ooLabelHtml(esc(t("Source name")), `<span data-i18n-dyn>${esc(_advLegacySrc)}</span>`)}`
+          + ` <button type="button" class="adv-x ghost tiny" data-adv-legacy-x title="${esc(t("Remove"))}" aria-label="${esc(t("Remove"))}">✕</button></span>`
+        : "";
+    }
+    // The facets: the lists' options (with counts), the caveats, the NEAR default and
+    // the two spans. One request, cached for the page; a failure leaves the lists as
+    // they were and says so, never a silently empty filter.
+    function _advLoadFacets() {
+      if (_advFacetsP) return _advFacetsP;
+      _advFacetsP = api("/api/search/facets").then((d) => {
+        _advFacets = d; _advFillFacets(d); _advApplyPending(); return d;
+      }).catch((e) => {
+        _advFacetsP = null;
+        const n = $("an-adv-note");
+        if (n) n.textContent = _failMsg("Could not load the filter lists: {error}", e);
+        return null;
+      });
+      return _advFacetsP;
+    }
+    function _advFillFacets(d) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const n = (v) => (typeof fmtNum === "function") ? fmtNum(v, 0) : String(v);
+      // Languages: the twelve first (flag + native name, invariant #15), then every
+      // other language the corpus holds; each with the corpus' own count.
+      _anFillLangSelect();
+      const ls = $("an-adv-lang");
+      if (ls) {
+        const counts = {};
+        (d.languages || []).forEach((l) => { counts[l.code] = (l.asserted || 0) + (l.detected || 0); });
+        Array.from(ls.options).forEach((o) => {
+          if (o.dataset.base == null) o.dataset.base = o.textContent;
+          o.textContent = o.dataset.base + (counts[o.value] ? " · " + n(counts[o.value]) : "");
+        });
+        const have = new Set(Array.from(ls.options).map((o) => o.value));
+        (d.languages || []).forEach((l) => {
+          if (have.has(l.code)) return;
+          const o = document.createElement("option");
+          o.value = l.code; o.dataset.base = l.code;
+          o.textContent = l.code + " · " + n((l.asserted || 0) + (l.detected || 0));
+          ls.appendChild(o);
+        });
+      }
+      const fill = (id, rows, val, label) => {
+        const el = $(id); if (!el) return;
+        const keep = new Set(_advMulti(id));
+        el.innerHTML = rows.map((r) => `<option value="${esc(String(val(r)))}"${keep.has(String(val(r))) ? " selected" : ""}>${esc(label(r))}</option>`).join("");
+      };
+      fill("adv-sources", d.sources || [], (r) => r.id,
+        (r) => (r.name || r.domain || ("#" + r.id)) + (r.domain && r.name !== r.domain ? " (" + r.domain + ")" : "") + " · " + n(r.articles || 0));
+      fill("adv-countries", d.countries || [], (r) => r.code,
+        (r) => (r.display || r.code) + " " + (r.name || "") + " · " + n(r.sources || 0));
+      fill("adv-regions", d.regions || [], (r) => r.region, (r) => r.region + " · " + n(r.sources || 0));
+      const cav = d.caveats || {};
+      for (const k of ["words", "sentiment", "mentions", "quarantine"]) {
+        const el = $("adv-cav-" + k); if (el) el.textContent = cav[k] ? t(cav[k]) : "";
+      }
+      const nd = $("adv-near-default");
+      if (nd && d.near) { nd.min = d.near.min; nd.max = d.near.max; if (nd.value === "") nd.value = d.near.default; }
+      const spans = d.spans || {};
+      const mk = (id, sp) => ooTimeScope($(id), sp && sp.min && sp.max
+        ? {min: sp.min, max: sp.max, from: sp.min, to: sp.max} : {});
+      _advPubTs = mk("adv-published", spans.published);
+      _advColTs = mk("adv-collected", spans.collected);
+    }
+    // Language switch: the caveats are the server's sentences through t(), drawn by
+    // JS, so the DOM walker cannot reach them. Redrawn from the cached facets.
+    function _advRepaintCaveats() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const cav = (_advFacets && _advFacets.caveats) || {};
+      for (const k of ["words", "sentiment", "mentions", "quarantine"]) {
+        const el = $("adv-cav-" + k); if (el && cav[k]) el.textContent = t(cav[k]);
+      }
+      _advRenderChips(); _advRenderLegacySrc(); _advNewFieldCost();
+    }
+
+    // -- the chips (Q602): the box's field filters and NEAR groups, editable ------ //
+
+    const _ADV_FIELD_LABEL = {title: "Title", author: "Author", source: "Source", url: "Address (URL)", tag: "Source tag"};
+    const _ADV_MODE_LABEL = {contains: "contains", prefix: "starts with", exact: "is exactly"};
+    // Each mode's meaning AND its cost (Q611's note, S2): the title's contains and
+    // starts-with are answered by the search index; everything else compares the
+    // stored field of every candidate article, which is not an index operation.
+    function _advModeTip(field, mode) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const what = mode === "exact" ? t("The whole field must equal the value, and nothing else.")
+        : mode === "prefix" ? t("The field must begin with the value.")
+        : t("The value may appear anywhere in the field.");
+      const cost = (field === "title" && mode !== "exact")
+        ? t("Answered by the search index: fast on any corpus.")
+        : t("Not an index operation: the field of every candidate article is compared, so it is slower on a large corpus.");
+      return what + " " + cost;
+    }
+    function _advNewFieldCost() {
+      const el = $("adv-nf-cost"); if (!el) return;
+      el.textContent = _advModeTip(($("adv-nf-field") || {}).value || "title", ($("adv-nf-mode") || {}).value || "contains");
+      const m = $("adv-nf-mode"); if (m) m.title = el.textContent;
+    }
+    function _advRenderChips() {
+      const host = $("adv-chips"), box = $("an-adv-query"); if (!host || !box) return;
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const chips = _advParse(box.value);
+      host.innerHTML = chips.map((c, i) => {
+        const x = `<button type="button" class="adv-x" data-adv-chip-x="${i}" title="${esc(t("Remove"))}" aria-label="${esc(t("Remove"))}">✕</button>`;
+        const neg = `<label title="${esc(t("Leaves out the articles this matches."))}"><input type="checkbox" data-adv-chip="${i}" data-k="neg"${c.neg ? " checked" : ""}> ${esc(t("leave out"))}</label>`;
+        if (c.kind === "near") {
+          return `<span class="adv-chip${c.neg ? " neg" : ""}" role="group" aria-label="NEAR">`
+            + `<b title="${esc(t("Two or more words within a number of words of each other, in any order. The number is the most words allowed between them."))}">NEAR</b>`
+            + `<input class="adv-v" data-adv-chip="${i}" data-k="items" value="${esc((c.items || []).join(" "))}" aria-label="${esc(t("Words"))}" dir="auto" data-i18n-dyn>`
+            + `<span class="muted">${esc(t("within"))}</span>`
+            + `<input type="number" class="adv-near-n" data-adv-chip="${i}" data-k="dist" min="0" max="1000" step="1" `
+            + `value="${c.dist != null ? c.dist : ""}" placeholder="${esc(String(($("adv-near-default") || {}).value || ADV_NEAR_SERVER_DEFAULT))}" aria-label="${esc(t("Distance in words"))}">`
+            + neg + x + `</span>`;
+        }
+        const fsel = Object.keys(_ADV_FIELD_LABEL).map((f) => `<option value="${f}"${f === c.field ? " selected" : ""}>${esc(t(_ADV_FIELD_LABEL[f]))}</option>`).join("");
+        const msel = Object.keys(_ADV_MODE_LABEL).map((m) => `<option value="${m}"${m === c.mode ? " selected" : ""}>${esc(t(_ADV_MODE_LABEL[m]))}</option>`).join("");
+        return `<span class="adv-chip${c.neg ? " neg" : ""}" role="group" aria-label="${esc(t(_ADV_FIELD_LABEL[c.field] || c.field))}">`
+          + `<select data-adv-chip="${i}" data-k="field" aria-label="${esc(t("Field"))}">${fsel}</select>`
+          + `<select data-adv-chip="${i}" data-k="mode" aria-label="${esc(t("Match mode"))}" title="${esc(_advModeTip(c.field, c.mode))}">${msel}</select>`
+          + `<input class="adv-v" data-adv-chip="${i}" data-k="value" value="${esc(c.value)}" aria-label="${esc(t("Field value"))}" dir="auto" data-i18n-dyn>`
+          + neg + x + `</span>`;
+      }).join("");
+    }
+    function _advChipEdit(i, key, value) {
+      const box = $("an-adv-query"); if (!box) return;
+      const chips = _advParse(box.value), c = chips[i]; if (!c) return;
+      if (key === "neg") c.neg = !!value;
+      else if (key === "items") c.items = String(value || "").split(/\s+/).filter(Boolean);
+      else if (key === "dist") c.dist = (value === "" || value == null) ? null : Math.max(0, Math.min(1000, parseInt(value, 10) || 0));
+      else c[key] = value;
+      box.value = _advSplice(box.value, c.start, c.end, c.kind === "near" ? _advNearToken(c) : _advFieldToken(c));
+      _advRenderChips();
+    }
+    function _advChipRemove(i) {
+      const box = $("an-adv-query"); if (!box) return;
+      const c = _advParse(box.value)[i]; if (!c) return;
+      box.value = _advSplice(box.value, c.start, c.end, "");
+      _advRenderChips();
+    }
+    function _advInsertAtCaret(text) {
+      const box = $("an-adv-query"); if (!box) return;
+      const s0 = box.selectionStart != null ? box.selectionStart : box.value.length;
+      const s1 = box.selectionEnd != null ? box.selectionEnd : s0;
+      const before = box.value.slice(0, s0).replace(/\s+$/, ""), after = box.value.slice(s1).replace(/^\s+/, "");
+      box.value = [before, text, after].filter(Boolean).join(" ");
+      const at = (before ? before.length + 1 : 0) + text.length;
+      try { box.focus(); box.setSelectionRange(at, at); } catch (_e) { /* not focusable yet */ }
+      _advRenderChips();
+    }
+
+    // -- the saved search, the link, the NEAR default ----------------------------- //
+
+    async function _advSave() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((tpl, v) => tpl.replace(/\{(\w+)\}/g, (_m, k) => v[k]));
+      const note = $("an-adv-note");
+      const q = ($("an-adv-query").value || "").trim();
+      const adv = _advRead();
+      // The Search tab's source NAME has no stored form: resolve it to the source ids
+      // that carry that name, or refuse -- a saved search that quietly lost a filter
+      // would re-run wider than the search it claims to be.
+      if (adv.source) {
+        const ids = ((_advFacets && _advFacets.sources) || []).filter((s) => s.name === adv.source).map((s) => s.id);
+        if (!ids.length) { if (note) note.textContent = t("Pick the source from the Sources list first: a saved search keeps sources by their identity, not by name."); return; }
+        adv.sources = ids.join(","); delete adv.source;
+      }
+      const filters = _advToWatchFilters(adv);
+      if (!q && !Object.keys(filters).length) { if (note) note.textContent = t("Type a search or pick a filter first."); return; }
+      const name = prompt(t("Name this saved search:"), q || t("Filtered search"));
+      if (name == null) return;
+      try {
+        await api("/api/watches", {method: "POST", body: JSON.stringify({
+          name: name.trim() || q || t("Filtered search"), query: q, threshold: 0, window_days: 7, filters})});
+        if (note) note.textContent = t("Saved. Find it in Insights → Watches; it never fires a Lead.");
+        if (typeof loadWatches === "function" && $("wt-list")) loadWatches();
+      } catch (e) {
+        if (note) note.textContent = tf("Could not save: {error}", {error: e.message});
+      }
+    }
+    async function _advCopyLink() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const q = ($("an-adv-query").value || "").trim();
+      const sb = $("an-adv-sort"), dr = $("an-adv-dir");
+      const url = location.origin + "/?" + _advPermalink(q, _advRead(),
+        {sort_by: sb && sb.value, sort_dir: dr && dr.value, view: _anArtView});
+      const note = $("an-adv-note");
+      try { await navigator.clipboard.writeText(url); if (note) note.textContent = t("Link copied. It opens this search on this machine."); }
+      catch (_e) { prompt(t("Copy this link:"), url); }
+    }
+    async function _advSaveNearDefault() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((tpl, v) => tpl.replace(/\{(\w+)\}/g, (_m, k) => v[k]));
+      const v = parseInt(($("adv-near-default") || {}).value, 10);
+      const note = $("an-adv-note");
+      try {
+        await api("/api/settings", {method: "PUT", body: JSON.stringify({search_near_default: v})});
+        if (_advFacets && _advFacets.near) _advFacets.near.default = v;
+        if (note) note.textContent = tf("Saved: a NEAR without its own number now means {n} words.", {n: v});
+      } catch (e) { if (note) note.textContent = tf("Could not save: {error}", {error: e.message}); }
+    }
+
+    // -- the local history (Q614 = a + its note) ---------------------------------- //
+
+    let _advHist = null;   // {enabled, entries, caveat} once read
+    async function _advHistLoad() {
+      try { _advHist = await api("/api/search/history"); }
+      catch (_e) { _advHist = null; }
+      _advHistRender();
+      return _advHist;
+    }
+    function _advHistRender() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const on = $("adv-hist-on"), list = $("adv-hist-list"); if (!list) return;
+      if (on) on.checked = !!(_advHist && _advHist.enabled);
+      const es = (_advHist && _advHist.enabled && _advHist.entries) || [];
+      list.innerHTML = es.length ? es.map((e, i) => {
+        const bits = _advSummary(e.params || {});
+        return `<li><button type="button" class="ghost tiny" data-adv-hist="${i}">`
+          + `<span data-i18n-dyn>${esc(e.query || t("(filtered)"))}</span></button>`
+          + (bits.length ? ` <span class="muted">${esc(bits.join(" · "))}</span>` : "")
+          + ` <span class="muted">${esc(String(e.at || "").slice(0, 16).replace("T", " "))}</span></li>`;
+      }).join("") : `<li class="muted">${esc(_advHist && _advHist.enabled ? t("No searches kept yet.") : t("History is off."))}</li>`;
+    }
+    // Records a search the reader RAN -- only when they turned history on. Best effort:
+    // a history write must never fail the search it describes.
+    function _advHistRecord(query, adv) {
+      // Not read yet (the Search tab used before the analysis window): read it first,
+      // then record -- the on/off state is the server's, never assumed.
+      if (_advHist === null) { _advHistLoad().then((h) => { if (h) _advHistRecord(query, adv); }); return; }
+      if (!_advHist || !_advHist.enabled) return;
+      const params = _advClean(adv);
+      if (!String(query || "").trim() && !Object.keys(params).length) return;
+      api("/api/search/history", {method: "POST", body: JSON.stringify({query: query || "", params})})
+        .then(() => { if ($("adv-hist") && $("adv-hist").open) _advHistLoad(); })
+        .catch(() => { /* off in another window, or the store is busy: nothing to do */ });
+    }
+    async function _advHistToggle(on) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((tpl, v) => tpl.replace(/\{(\w+)\}/g, (_m, k) => v[k]));
+      try {
+        await api("/api/settings", {method: "PUT", body: JSON.stringify({search_history_enabled: !!on})});
+      } catch (e) {
+        const n = $("an-adv-note"); if (n) n.textContent = tf("Could not save: {error}", {error: e.message});
+      }
+      await _advHistLoad();
+      const n = $("an-adv-note");
+      if (n) n.textContent = on ? t("Search history is on. It stays on this machine.") : t("Search history is off. Nothing new is kept.");
+    }
+    async function _advHistClear() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      if (!confirm(t("Delete every entry of your search history?"))) return;
+      try { await api("/api/search/history", {method: "DELETE"}); } catch (_e) { /* reported by the reload */ }
+      await _advHistLoad();
+    }
+    // Q614's note: the choice offered at first launch (unlock.html, after the legal
+    // step) is made BEFORE the corpus exists, so the page keeps it in this browser and
+    // the app applies it on its first load, once, then forgets it.
+    const ADV_HIST_FIRSTRUN_KEY = "oo.search.history.firstrun";
+    async function _advApplyFirstRunHistoryChoice() {
+      let v = null;
+      try { v = localStorage.getItem(ADV_HIST_FIRSTRUN_KEY); } catch (_e) { return; }
+      if (v !== "on" && v !== "off") return;
+      try {
+        if (v === "on") await api("/api/settings", {method: "PUT", body: JSON.stringify({search_history_enabled: true})});
+        localStorage.removeItem(ADV_HIST_FIRSTRUN_KEY);
+      } catch (_e) { /* kept for the next load: the choice is not lost to a busy store */ }
+    }
+
+    // A one-line summary of a filter set, for the tab's "Filtered" note and history.
+    function _advSummary(adv) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const a = _advClean(adv), parts = [];
+      const names = (csv, rows, key, label) => String(csv).split(",").map((v) => {
+        const r = (rows || []).find((x) => String(x[key]) === v); return r ? label(r) : v;
+      }).join(", ");
+      if (a.langs) parts.push(ooLabelText(t("language"), a.langs));
+      if (a.language) parts.push(ooLabelText(t("language"), a.language));
+      if (a.sources) parts.push(ooLabelText(t("source"), names(a.sources, _advFacets && _advFacets.sources, "id", (r) => r.name || r.domain)));
+      if (a.source) parts.push(ooLabelText(t("source"), a.source));
+      if (a.countries) parts.push(ooLabelText(t("country"), a.countries.toUpperCase()));
+      if (a.regions) parts.push(ooLabelText(t("region"), a.regions));
+      if (a.start_date || a.end_date) parts.push(ooLabelText(t("published"), (a.start_date || "…") + " → " + (a.end_date || "…")));
+      if (a.collected_from || a.collected_to) parts.push(ooLabelText(t("collected"), (a.collected_from || "…") + " → " + (a.collected_to || "…")));
+      if (a.words_min || a.words_max) parts.push(ooLabelText(t("words"), (a.words_min || "0") + "–" + (a.words_max || "∞")));
+      if (a.sentiment) parts.push(ooLabelText(t("tone"), a.sentiment.split(",").map((x) => t(x)).join(", ")));
+      if (a.mentions_from || a.mentions_to) parts.push(ooLabelText(t("mentions a date"), (a.mentions_from || "…") + " → " + (a.mentions_to || "…")));
+      if (a.include_quarantined) parts.push(t("quarantined included"));
+      if (a.exact) parts.push(t("exact accents and case"));
+      if (a.near) parts.push(ooLabelText("NEAR", a.near));
+      return parts;
+    }
+
+    // -- wiring: once, with delegated listeners (no inline handlers) -------------- //
+
+    function _advInit() {
+      if (_advWired || !$("an-advanced")) return;
+      _advWired = true;
+      const panel = $("an-advanced");
+      const box = $("an-adv-query");
+      box.addEventListener("input", _advRenderChips);
+      box.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); anRunAdvanced(); } });
+      panel.addEventListener("click", (e) => {
+        const b = e.target.closest("button"); if (!b || !panel.contains(b)) return;
+        if (b.dataset.op) _advInsertAtCaret(b.dataset.op);
+        else if (b.id === "adv-add-near") {
+          const d = ($("adv-near-default") || {}).value || ADV_NEAR_SERVER_DEFAULT;
+          box.value = _advAppend(box.value, "NEAR(, " + d + ")"); _advRenderChips();
+          const inp = panel.querySelector('#adv-chips .adv-chip:last-child input.adv-v'); if (inp) inp.focus();
+        }
+        else if (b.id === "adv-add-prefix") _advInsertAtCaret("*");
+        else if (b.id === "adv-nf-add") {
+          const v = ($("adv-nf-value").value || "").trim(); if (!v) { $("adv-nf-value").focus(); return; }
+          box.value = _advAppend(box.value, _advFieldToken({field: $("adv-nf-field").value,
+            mode: $("adv-nf-mode").value, value: v, neg: $("adv-nf-neg").checked}));
+          $("adv-nf-value").value = ""; $("adv-nf-neg").checked = false; _advRenderChips();
+        }
+        else if (b.dataset.advChipX != null) _advChipRemove(parseInt(b.dataset.advChipX, 10));
+        else if (b.dataset.advLegacyX != null) { _advLegacySrc = ""; _advRenderLegacySrc(); }
+        else if (b.id === "adv-run") anRunAdvanced();
+        else if (b.id === "adv-reset") { _advWrite({}); _advRenderChips(); }
+        else if (b.id === "adv-save") _advSave();
+        else if (b.id === "adv-link") _advCopyLink();
+        else if (b.id === "adv-near-save") _advSaveNearDefault();
+        else if (b.id === "adv-hist-clear") _advHistClear();
+        else if (b.dataset.advHist != null) {
+          const en = ((_advHist && _advHist.entries) || [])[parseInt(b.dataset.advHist, 10)];
+          if (en) { box.value = en.query || ""; _advWrite(en.params || {}); _advRenderChips(); anRunAdvanced(); }
+        }
+      });
+      panel.addEventListener("change", (e) => {
+        const el = e.target;
+        if (el.dataset && el.dataset.advChip != null) {
+          _advChipEdit(parseInt(el.dataset.advChip, 10), el.dataset.k, el.type === "checkbox" ? el.checked : el.value);
+        } else if (el.id === "adv-nf-field" || el.id === "adv-nf-mode") _advNewFieldCost();
+        else if (el.id === "adv-hist-on") _advHistToggle(el.checked);
+      });
+      $("adv-src-filter").addEventListener("input", (e) => {
+        const f = (e.target.value || "").trim().toLowerCase();
+        Array.from(($("adv-sources") || {}).options || []).forEach((o) => {
+          o.hidden = !!f && !o.textContent.toLowerCase().includes(f) && !o.selected;
+        });
+      });
+      $("adv-hist").addEventListener("toggle", () => { if ($("adv-hist").open) _advHistLoad(); });
+      _advNewFieldCost();
+      _advHistLoad();
+      _advLoadFacets();
+    }
+    // The list/table switch and "did you mean" live in the two lists, which redraw: one
+    // listener on each list's stable host answers every button they ever draw. Wired at
+    // boot (it makes no request), because the Search tab can be used before Analysis.
+    let _advListsWired = false;
+    function _advWireLists() {
+      if (_advListsWired) return;
+      _advListsWired = true;
+      const lists = [$("an-articles"), $("search-meta")].filter(Boolean);
+      lists.forEach((host) => host.addEventListener("click", (e) => {
+        const b = e.target.closest("button"); if (!b) return;
+        if (b.dataset.anView) _anSetView(b.dataset.anView);
+        else if (b.dataset.advDym != null) {
+          // The suggestion runs only now, on the reader's press, as a NEW search tab.
+          const tb = _anTabs.find((x) => x.id === _anActiveId);
+          if (host.id === "search-meta") { $("q").value = b.dataset.advDym; doSearch(); }
+          else openAnalysisFor(b.dataset.advDym, {adv: tb ? _advLegacy(tb) : null});
+        }
+      }));
+    }
+
+    // A permalink's list state: the sort and the view. Only values the controls offer
+    // are applied -- a hand-edited link cannot put the select into a state it lacks.
+    function _anApplyUrlListState(sp) {
+      const sb = $("an-adv-sort"), dr = $("an-adv-dir");
+      const by = sp.get("sort_by");
+      if (sb && by != null && Array.from(sb.options).some((o) => o.value === by)) {
+        sb.value = by;
+        if (dr) dr.value = sp.get("sort_dir") === "asc" ? "asc" : "desc";
+      }
+      const v = sp.get("view");
+      if (v === "list" || v === "table") {
+        _anArtView = v;
+        try { localStorage.setItem("oo.an.artview", v); } catch (_e) { /* private mode */ }
+      }
+    }

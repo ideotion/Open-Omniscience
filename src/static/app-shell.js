@@ -147,6 +147,7 @@
       // THEME-3: opening Analysis hydrates the restored active tab the first time (the
       // strip is restored at boot; the active tab's data loads lazily here), or shows
       // the launcher empty state when there are no tabs.
+      if (name === "analyze") _advInit();   // the advanced-search builder, wired once (S05-01)
       if (name === "analyze" && !_anHydrated) {
         _anHydrated = true;
         _anFillLangSelect();   // populate the Advanced language <select> (flags + names)
@@ -610,6 +611,8 @@
     function openPalette() {
       _palItems = palCommands();
       _omniLive = null;
+      _palLastRaw = null; _palSel = 0;   // a fresh palette starts on row 0 (Q608)
+      _palWireList();
       _palPrevFocus = document.activeElement;  // a11y: restore focus on close (OO-D13-001)
       $("palOverlay").classList.add("open"); $("palette").classList.add("open");
       const i = $("pal-input"); i.value = ""; renderPalette(); setTimeout(() => i.focus(), 30);
@@ -762,38 +765,48 @@
       if (raw.length >= 2) {
         live = _omniItems(raw);
         if (!_omniLive || _omniLive.q !== raw) _omniFetch(raw);
-        // Ruled: Enter -> the corpus/analysis window (default), now opening in a NEW
-        // BROWSER TAB (field remark 9). The in-SPA spawn (openAnalysisFor) stays the
-        // default for clicking a specific result + every card/commodity entry; the
-        // Boolean Search tab is still one item away (nothing lost).
         live.unshift({grp: t("Search"), label: `${t("Run the full Boolean search for")} “${raw}”`,
           sub: "", run: () => { showTab("search"); setTimeout(() => { $("q").value = raw; doSearch(); }, 60); }});
-        // THE ↵ BADGE ONLY WHEN ↵ ACTUALLY RUNS THIS ROW. `_palFiltered` is
-        // [...statics, ...live] and `_palSel` starts at 0, so Enter runs the first
-        // STATIC match whenever the typed text matches a page or command -- "collect",
-        // "open", "data" and "search" itself all do. The badge was unconditional, so on
-        // exactly those queries it advertised a key that would run a different row.
-        // A row that says ↵ and does not answer to it is the palette misdescribing
-        // itself; the arrow ↗ (opens in a new browser tab) is true either way.
-        // WHICH ROW ENTER *SHOULD* RUN IS A PRODUCT QUESTION, recorded in the docket
-        // rather than answered here: the ruling says Enter defaults to the analysis
-        // window, but hoisting it above a matching command would mean typing "Settings"
-        // and getting an analysis OF the word Settings. This change makes the surface
-        // honest about today's behaviour without deciding that.
-        // The reader's own separator through the ONE keyed label frame -- "Analyse : “…”"
-        // in fr, "分析：“…”" in zh (the 2026-09-27 re-walk, N-5), never a welded ": ".
-        live.unshift({grp: t("Search"), label: ooLabelText(t("Analysis"), `“${raw}”`),
-          sub: statics.length ? "↗" : "↵ ↗", run: () => openAnalysisInNewTab(raw)});
       }
-      _palFiltered = [...statics, ...live];
+      // Q608 = a: ENTER ALWAYS OPENS THE ANALYSIS WINDOW ON THE TYPED QUERY; a static
+      // command needs an explicit selection. So the Analysis row is FIRST whenever
+      // anything is typed -- "settings" typed and Enter pressed analyses the word, and
+      // the Settings page is one arrow key away. That settles the question the
+      // conditional badge used to hedge (docs/ledger/OPEN_QUEUE.md): the ↵ now always
+      // sits on the row Enter runs. It opens in a new browser tab (field remark 9).
+      // The reader's own separator through the ONE keyed label frame (N-5).
+      if (raw) {
+        live.unshift({grp: t("Search"), label: ooLabelText(t("Analysis"), `“${raw}”`),
+          sub: "↵ ↗", run: () => {
+            if (typeof _advHistRecord === "function") _advHistRecord(raw, {});
+            openAnalysisInNewTab(raw);
+          }});
+      }
+      // An EXPLICIT selection survives the live results arriving: the omnibar redraws
+      // when its fetch lands, and resetting to row 0 then would turn "I arrowed to
+      // Settings" into an analysis of the word on the next Enter.
+      const prev = (_palLastRaw === raw && _palSel > 0) ? _palFiltered[_palSel] : null;
+      _palFiltered = _palOrder(statics, live, raw);
       _palSel = 0;
+      if (prev) {
+        const keep = _palFiltered.findIndex((it) => it.grp === prev.grp && it.label === prev.label);
+        if (keep > 0) _palSel = keep;
+      }
+      _palLastRaw = raw;
       let html = "", lastGrp = null;
       _palFiltered.forEach((it, i) => {
         if (it.grp !== lastGrp) { html += `<div class="pal-group">${esc(it.grp)}</div>`; lastGrp = it.grp; }
-        html += `<div class="pal-item ${i === 0 ? "sel" : ""}" data-i="${i}" onclick="palRun(${i})">
+        html += `<div class="pal-item ${i === _palSel ? "sel" : ""}" data-i="${i}">
           ${esc(it.label)}<span class="pal-sub">${esc(it.sub || "")}</span></div>`;
       });
       $("pal-list").innerHTML = html || `<div class="pal-group">No matches</div>`;
+    }
+    // The palette's row order, PURE so the Enter rule is driven in node
+    // (tests/palette_enter_node_test.js): typed text puts the search rows -- the
+    // Analysis row first -- above every static match, and Enter runs row 0.
+    let _palLastRaw = null;
+    function _palOrder(statics, live, raw) {
+      return raw ? [...live, ...statics] : statics.slice();
     }
     function palMove(d) {
       if (!_palFiltered.length) return;
@@ -801,6 +814,19 @@
       document.querySelectorAll(".pal-item").forEach(el =>
         el.classList.toggle("sel", +el.dataset.i === _palSel));
       const cur = document.querySelector(".pal-item.sel"); if (cur) cur.scrollIntoView({block:"nearest"});
+    }
+    // One delegated click listener on the list, wired once, instead of an inline
+    // onclick per row: the rows are re-rendered on every keystroke, and the CSP no
+    // longer allows inline handlers (S05-09).
+    let _palListWired = false;
+    function _palWireList() {
+      const list = $("pal-list");
+      if (_palListWired || !list) return;
+      _palListWired = true;
+      list.addEventListener("click", (e) => {
+        const row = e.target.closest ? e.target.closest(".pal-item") : null;
+        if (row && list.contains(row)) palRun(+row.dataset.i);
+      });
     }
     function palRun(i) { const it = _palFiltered[i]; if (it) { closePalette(); it.run(); } }
     function palKey(e) {

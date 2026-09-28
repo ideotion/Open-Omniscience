@@ -13195,6 +13195,13 @@ default: leave the ordering as it is.** A palette that runs the command you name
 more than a uniform Enter, and the honest badge already removes the misdirection that made
 the current ordering feel like a bug. Not taken unilaterally: it changes an interaction the
 maintainer uses.
+**ANSWERED 2026-09-15 by Q608 = a** («Enter always opens the analysis window on the typed
+query; static commands need an explicit selection»), against the recommended default above.
+**BUILT 2026-09-28 by S05-01 (PR #1198):** `_palOrder` puts the live rows first, the Analysis
+row is row 0 with an unconditional `↵ ↗`, a static command is one arrow-key away, and an
+explicit selection survives the live results redrawing the list. Driven by
+`tests/palette_enter_node_test.js`; Chromium-verified in en and ar (typing `settings` and
+pressing Enter opens an analysis of the word).
 
 **SO THE SEARCH-TAB GATE'S REMAINING BLOCKER IS SMALLER STILL THAN THIS ENTRY SAID.** The
 capabilities are absorbed (as re-measured above) and the entrance exists. What is genuinely
