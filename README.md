@@ -5,7 +5,7 @@
 ---
 
 **Author:** [Ideotion](https://github.com/ideotion)
-**Version:** 0.3.0 (alpha — the measured-and-verified cycle; latest tagged release: `v0.3.0`, a pre-release)
+**Version:** 0.4.0 (alpha — the living-sources cycle; latest tagged release: `v0.4.0`, a pre-release)
 **License:** [GNU GPLv3](LICENSE)
 
 ---
@@ -17,22 +17,34 @@
 > `0.2` cycle delivered **data safety at scale** — "the version that survives a 100 GB
 > field run" (streaming, bounded-RAM backup/restore, the collector out-of-memory fix,
 > unlock-at-scale) — validated on the maintainer's live corpus and **tagged `v0.2.0`**.
-> The project now opens the **`0.3`** cycle: **measured & verified** — the recursive
-> improvement loop, scale-recalibrated analytics, and the browser-verification burn-down.
-> `0.3.0` is honest about every limit, not finished; beta and `1.0` still have to be
+> The `0.3` cycle, **measured & verified** — the recursive improvement loop,
+> scale-recalibrated analytics, and the browser-verification burn-down — was **tagged
+> `v0.3.0`**, and the `0.4` cycle, **living sources**, was **tagged `v0.4.0`**.
+> `0.4.0` is honest about every limit, not finished; beta and `1.0` still have to be
 > earned. Development cycles were historically named after the version they produce
 > (branch `0.06 → … → 0.09 → 0.1 → 0.2` ⇒ `0.0.6 → … → 0.0.9 → 0.1.0 → 0.2.0`); since
 > 2026-07-15 the default branch is permanently **`main`** and the branch name and version
 > are independent. See [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md).
 
-## Status — v0.3.0: measured & verified
+## Status — v0.4.0: living sources
 
-> **`0.3.0` is the current version.** The `0.3` cycle turns the instruments built so far
-> into a standing improvement loop: the recursive SENSE→VERIFY cycle with its KPI board
+> **`0.4.0` is the current version** (tagged `v0.4.0`, a pre-release, 2026-09-28). The `0.4`
+> cycle made sources that change over time first-class: one versioned-source substrate
+> with an encrypted file per collection lane, collection lanes in place of the single
+> scheduler mode, the Wikipedia lane, the law metadata model and its first adapters, and a
+> **Living sources** tab for what changed. Around it: keywords and search that cross
+> languages, Equal Earth maps with contested borders, a rebuilt import and export, and the
+> interface's remaining strings translated into all twelve languages. The release gate,
+> [`docs/product/RELEASE_0.4_GATE.md`](docs/product/RELEASE_0.4_GATE.md), lists the operator
+> runs that were still open when it was tagged.
+
+> **`v0.3.0` — measured & verified, tagged 2026-08-23.** The `0.3` cycle turned the
+> instruments built so far into a standing improvement loop: the recursive SENSE→VERIFY
+> cycle with its KPI board
 > ([`docs/design/V1_PATHWAY_2026-07-14.md`](docs/design/V1_PATHWAY_2026-07-14.md)),
-> recalibrating the analytics surfaces (Leads, families, groups, convergence) against the
-> realities of a ~500k-article live corpus, growing the law vertical onto its world-wide
-> source catalog, and burning down the browser-unverified frontend backlog.
+> recalibrated the analytics surfaces (Leads, families, groups, convergence) against the
+> realities of a ~500k-article live corpus, grew the law vertical onto its world-wide
+> source catalog, and burned down the browser-unverified frontend backlog.
 
 > **`v0.2.0` — data safety at scale, tagged after the live-corpus P0 validation.** The
 > `0.2` cycle hardened the app for **large corpora** — a live multi-day run reached

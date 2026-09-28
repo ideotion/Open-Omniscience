@@ -107,13 +107,19 @@ else derives from it:
 **To bump the version, change `pyproject.toml` only**, update the README header to match
 (the guard enforces this), then `pip install -e .` so the metadata refreshes.
 
+**Tag `vX.Y.Z` only on a commit whose `pyproject.toml` already reads `X.Y.Z`.** The release
+workflow (`.github/workflows/release.yml`) refuses any other tag before it builds anything, so
+a tag cut ahead of its version bump publishes a release with no wheel, sdist or checksums. The
+first `v0.4.0` was cut that way on 2026-09-28; the version was set afterwards and the tag moved
+onto it (`docs/product/RELEASE_0.4_GATE.md` row G).
+
 ### The maturity ladder (where we are, where we're going)
 
 The software is young and still being proven, so it stays **below `1.0`**:
 
 ```
 0.0.x  pre-alpha    the first, un-public pre-alpha iterations (0.0.4 .. 0.0.9).
-0.x    alpha        ← we are here (0.3.0). Public, working, honestly-labelled — open
+0.x    alpha        ← we are here (0.4.0). Public, working, honestly-labelled — open
                      to feedback, but not yet consolidated (each cycle is still an
                      "honest about every limit, not finished" release, per the README
                      header — see it for the current cycle's exact status).
@@ -141,7 +147,7 @@ leading zeros elided for brevity:
 | `0.09` | `0.0.9` |
 | `0.1`  | `0.1.0` |  (the `0.09` cycle branch was renamed `0.09 → 0.1` at the alpha flip)
 | `0.2`  | `0.2.0` |  (the `0.1` cycle branch was renamed `0.1 → 0.2` at the 0.2 flip)
-| `main` | `0.2.0` → `0.3.0` |  (the `0.2` cycle branch was renamed `0.2 → main` on 2026-07-15 — the default branch is now permanently `main` and the branch name and version are independent; `v0.2.0` was tagged after the live-corpus scale validation, and `main` now carries the `0.3.0` measured-and-verified cycle)
+| `main` | `0.2.0` → `0.3.0` → `0.4.0` |  (the `0.2` cycle branch was renamed `0.2 → main` on 2026-07-15 — the default branch is now permanently `main` and the branch name and version are independent; `v0.2.0` was tagged after the live-corpus scale validation, `v0.3.0` closed the measured-and-verified cycle, and `main` now reads `0.4.0`, the living-sources release, tagged `v0.4.0`)
 
 So "the `0.06` intelligence layer" means "the work that ships in `0.0.6`". When you read a
 cycle shorthand like `0.05` in the docs, read it as `0.0.5`. PRs land on `main`, the current

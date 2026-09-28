@@ -1,6 +1,111 @@
 # Changelog
 
-> The repository’s **default branch is `main`** (permanently, since 2026-07-15 — the branch name and the version number are independent). Historically each cycle branch `0.0N` produced release `0.0.N`, the consolidated `0.09` cycle produced **`0.1.0`, the first alpha**, the `0.1` cycle produced **`0.2.0`, data safety at scale** (tagged `v0.2.0` after the live-corpus P0 validation), and the current cycle is **`0.3.0`, measured & verified** (see the README's version note).
+> The repository’s **default branch is `main`** (permanently, since 2026-07-15 — the branch name and the version number are independent). Historically each cycle branch `0.0N` produced release `0.0.N`, the consolidated `0.09` cycle produced **`0.1.0`, the first alpha**, the `0.1` cycle produced **`0.2.0`, data safety at scale** (tagged `v0.2.0` after the live-corpus P0 validation), the `0.2` cycle produced **`0.3.0`, measured & verified** (tagged `v0.3.0`), and the `0.3` cycle produced **`0.4.0`, living sources** (tagged `v0.4.0`; see the README's version note).
+
+## 0.4.0 — living sources (the `0.3` cycle, version set 2026-09-28)
+
+The `0.4` cycle is about **sources that change over time**. A news article is fetched once; a
+Wikipedia page, a law or a map is revised, and what matters is the revision. `0.4` gave those
+sources one substrate and the first lanes that collect them, and rebuilt what a large,
+multilingual corpus had outgrown: the import, the export, and keyword search across languages.
+Much of the rest began, again, as field reports from instances past a million articles.
+
+**Tagged `v0.4.0`** (a GitHub pre-release of 2026-09-28) by the maintainer. The first cut sat on a
+commit whose `pyproject.toml` still read `0.3.0`, and the release workflow refuses a tag that
+disagrees with the package version, so the version was set to `0.4.0` afterwards, for the tag to
+move onto. The gate is [`docs/product/RELEASE_0.4_GATE.md`](product/RELEASE_0.4_GATE.md): at the
+tag, row F was closed and row G closes with the version; the click-through clauses of rows H to U
+had passed a delegated walk on an encrypted install; and the operator runs listed at the end of
+this section were still open.
+
+### Living sources
+
+- **One substrate for versioned sources**, with one encrypted database file per collection lane
+  beside the corpus (#1154).
+- **Lanes replace the scheduler mode.** Press collection and every other kind run side by side
+  as lanes (#1178); each lane names the route it leaves by in the consent popup (#1183), and
+  Settings → Storage shows each lane's size, its published budget and its measured growth
+  (#1182).
+- **The Wikipedia lane**: metadata for every edit in twelve editions from Wikimedia's
+  EventStreams, full text for the pages the corpus mentions or tracks, a top-bar toggle, a setup
+  wizard, the diff and a map layer (#1155, #1156), on a version anchor with one consented size
+  read (#1038).
+- **The law vertical**: the three L0 defects fixed, a metadata model, an adapter framework, the
+  first analytics, gazettes as streams with real coverage denominators, and a 44-row vetting
+  board for the maintainer (#1023, #1157).
+- **A Living sources tab**: one view of what changed in Wikipedia, law and maps (#1185).
+
+### Keywords and search across languages
+
+- **Keywords in the reader's language**: a label grammar, a three-tier translation ladder,
+  lemmatisation at extraction, the language of each mention, and a consented Wikidata load of
+  concept rings (#1148); older keyword forms fold to their base form (#1186).
+- **One cross-language concept behind every search path**, with a cap switch, per-form counts,
+  watches that follow the ring, a bulletin that uses rings, and stacked charts (#1149 to #1153).
+- **Chinese and Japanese split into words, Arabic spellings folded** (#1187); Chinese is now a
+  managed keyword language on default installs.
+
+### Import, export and backup
+
+- **The import lifecycle**: a fresh page, four visible stages, one poll chain (#1144); imports
+  adding more than 20,000 articles no longer fail at the search index (#1192).
+- **The export**: a dated `OpenOmniscience_Backup` folder, verified after it is written, with a
+  completion panel and a `BACKUP_SUMMARY.md` (#1145).
+- **One backup-format bump** carrying five new payloads, with every older format still readable
+  (#1146); same-engine backups carry their derived rows (#1171).
+
+### Maps and places
+
+- **Equal Earth** on every map through one projection seam, Natural Earth 50m, and contested
+  borders drawn for both claims with a worldview toggle (#1143).
+- **ISO 3166-1 alpha-3, step 1**: display and boundary, a normalising loader and the filename
+  rule (#1147).
+
+### Sources and collection
+
+- **Qualification is the admission gate**, with an editor for shipped verdicts and a splice
+  report (#1158, #1159); 80,000 candidates were measured and triaged into 2,151 new sources,
+  taking the catalogue from 3,429 to 5,580 (#1108).
+- **The collector was CPU-bound, not download-bound**: its per-article CPU cost fell about 2.2×,
+  from ~160 ms to ~73 ms (#1110).
+- **Network budgets**: a per-process bandwidth budget, Crawl-delay deferral and a loopback rate
+  limit (#1142); statistics refresh is on by default (#1179).
+
+### Consent and safety
+
+- `docs/SECURITY.md` enumerates every host the tree can reach, by lane, and the consent popup
+  lists them per lane (#1135, #1136).
+- The SSRF guard checks at connect time (#1031); OpenTimestamps anchoring asks for consent on
+  every path (#1047); protected mode carries the operator's proxy on every request or refuses
+  by name (#1180); a stored XSS, a zip-slip check and a mass-assignment hole were closed (#1045,
+  #1087, #1061).
+
+### Field reliability past a million articles
+
+- The stall cascade's root cause, a write gate that spanned a whole-corpus scan, is gone
+  (#1126), with the rest of the 2026-09-11 field-diagnostics batch (#1115 to #1130).
+- Slowness at 1.3M articles: the drain runs like the import, the collector can no longer hold
+  every connection, and Insights stops reading 1.1M rows (#1164 to #1170).
+- Out-of-memory crashes: the next crash records how it ended, heavy reads stop at the memory
+  guard's floor, and the keyword clean-up and Home card reads are bounded (#1190); collection
+  workers read their source through their own session (#1184).
+
+### Interface and translations
+
+- The remaining 470 interface strings keyed and translated into all twelve languages, with a
+  third i18n gate (#1160, #1161); the Observatory tab ships (#1033).
+- Two delegated click-through walks on an encrypted install found 234 defects; all were fixed,
+  and a third walk that checked the fixes passed (#1191).
+
+### Still on the board, not in this release
+
+The gate's operator runs were open at the tag. Rows **A** and **B** (the committed full import
+that re-checks every source, and the ≥ 72 h soak) ran in the release run of 2026-09-26 and close
+once the maintainer has read its report. Row **C** (diagnostics on the ~1M-article instance), row
+**W** (the Tier-A quarantine run) and the operator halves of rows **H** to **V** (the maintainer's
+own click-through, the real restores, the removable-drive export, the keyword and search reports,
+the encrypted-install upgrade, the law vetting board, the source shortlist run and the session
+allowlist) are listed in the gate with what each must show.
 
 ## 0.3.0 — measured & verified (the `0.2` cycle, version set 2026-07-18)
 

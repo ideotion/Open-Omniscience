@@ -12617,3 +12617,16 @@ the comment was wrong. A test for it could only have exercised the check outside
 a state production never reaches. **When a mutant survives, first ask whether it can differ on
 any reachable state; if it cannot, correct the reasoning and the comments that carried it, and
 leave the suite alone.**
+
+### TAG `vX` ONLY WHERE THE VERSION ALREADY READS `X` -- A DEFERRED FLIP MOVES THE MISMATCH TO THE NEXT TAG (PR #NNNN)
+
+The project's sequence is pass → tag → flip: tag `vX` while `pyproject.toml` reads `X`, then flip to
+the next number, so a whole cycle runs under the version it will be released as. The flip after
+`v0.3.0` was deferred for the whole `0.4` cycle (it waited on `RC01`), so `main` still read `0.3.0`
+when the maintainer tagged `v0.4.0`. `release.yml` compares the tag with the package version before
+it builds anything: it passed its 30-minute full-suite job, then refused. The published pre-release
+had GitHub's own changelog and no wheel, sdist, checksums or generated notes, and the tagged tree
+called itself `0.3.0` in the sidebar, in diagnostics and in backups. Nothing warned the person
+tagging, because the check runs in the workflow, after the tag exists. **When a flip is deferred,
+the next tag waits for it, and whoever records the deferral says so where the tagger will read it:
+the gate's version paragraph and `docs/CONTRIBUTING.md`.**
