@@ -22,6 +22,17 @@
 
 ## Open queue (when maintainer says proceed)
 
+- **THE 0.5 START, ANSWERED IN CHAT (2026-09-28 11:07 UTC; recorded the same turn).** The maintainer,
+  verbatim, in the project thread «Plan v0.5»: «D1: Yes, start. v0.4.0 release is done. D2: a D3: a One
+  question, I'm wondering about the long wikipedia walk, wouldn't it be better to do something and let it
+  run while we address other parts of the work?» Each answers a question that thread put the same morning
+  with its ordered plan for 0.5 (a project file, not in the repository): D1 = start wave 1, rows A and I
+  first in their own threads (a go, not a ruling); D2 = `R38` (row B before row J); D3 = `R39` (the hi/bn
+  tokenizer rebuild inside row B's window); the question = `R40` (row F built first, so its run overlaps
+  the build). One line each in [`RULINGS_INDEX.md`](RULINGS_INDEX.md); the gate edits are in
+  `RELEASE_0.5_GATE.md` (rows B, F and J and §3) and the briefs `S05-02`, `S05-06`, `S05-10` and
+  `00_INDEX.md`. **Nothing here is pending.** The entry stays until row B ships the rebuild, because it is
+  the one place the hi/bn finding's decision is joined to the row that must carry it.
 - **THE FOUR 0.4 BLOCKING DECISIONS, ANSWERED IN CHAT (2026-09-27 08:56 UTC; recorded the same turn in
   PR #1191).** The maintainer, verbatim: «FYI, the blocking decisions: OK for RC01, I'll do the versino switching after all current draft PRs are merged. RC10: go with your recommendation. Row R: OK to move that to 0.5. Row N: keep sudachipy».
   Each answers a question the «What's left for v0.4» thread named on 2026-09-26 as blocking the tag, with
@@ -78,6 +89,8 @@
     full rebuild (981–1,645 s on the field's 130 GB corpus, per `ensure_fts`'s own record) —
     a migration of its own, not a side effect of S8. hi and bn are UI languages; this wants a
     ruling on when to pay that rebuild.
+    **DECIDED 2026-09-28 (`R39`, «D3: a»): the rebuild is paid inside row B's storage-migration
+    window (`S05-02` S6), in the same app-stopped operation, not before and not as its own migration.**
   - **KNOWN LIMIT, BY DESIGN:** a connection without the three `oo_fts_*` functions cannot write
     `articles` (the trigger fails, loudly, and the write is refused). Every connection the app
     opens registers them (a SQLAlchemy pool hook plus `connect()`); an external tool such as the
