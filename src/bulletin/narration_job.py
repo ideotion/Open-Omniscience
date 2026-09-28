@@ -186,7 +186,7 @@ def run_bulletin_narration_job(
     language: str | None = None,
     story_budget_chars: int | None = None,
     max_stories: int | None = None,
-    introduction: bool = True,
+    introduction: bool = False,
     restart: bool = False,
     max_units: int | None = None,
     session_factory=None,
@@ -196,10 +196,14 @@ def run_bulletin_narration_job(
 ) -> dict:
     """``BackgroundJob`` worker: narrate one persisted edition, resumably.
 
-    Each unit is one story, and the last unit is the introduction (§20 Q2, ruled
-    narrated 2026-09-07). After every unit the paragraph is written back into the
-    edition record and the cursor is saved, so the record on disk is always a
-    consistent, readable document — a half-narrated edition is a real edition with
+    Each unit is one story, and — only when ``introduction`` is asked for — the last
+    unit is the introduction. §20 Q2 ruled it narrated on 2026-09-07; register ruling
+    D2 (placed by RC08.2 = a) then made the deterministic opening the default and the
+    narrated one opt-in, so ``introduction`` defaults to False and the endpoint reads
+    the operator's ``bulletin_narrate_introduction`` setting.
+
+    After every unit the paragraph is written back into the edition record and the
+    cursor is saved, so the record on disk is always a consistent, readable document — a half-narrated edition is a real edition with
     fewer paragraphs, never a broken one.
 
     Returns a summary. Raises ``NarrationScopeMismatch`` when a paused run is for a

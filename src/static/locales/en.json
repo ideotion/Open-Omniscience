@@ -6175,5 +6175,12 @@
   "the newest held version": "the newest held version",
   "the source states only part of this date": "the source states only part of this date",
   "words or \"a phrase\"": "words or \"a phrase\"",
-  "Searched {searched} of {total} stored versions; {missing} cannot be searched (no stored text, or no version key); {pending} are still being indexed.": "Searched {searched} of {total} stored versions; {missing} cannot be searched (no stored text, or no version key); {pending} are still being indexed."
+  "Searched {searched} of {total} stored versions; {missing} cannot be searched (no stored text, or no version key); {pending} are still being indexed.": "Searched {searched} of {total} stored versions; {missing} cannot be searched (no stored text, or no version key); {pending} are still being indexed.",
+  "Every edition opens on a fixed paragraph built from its own counts. Tick this to let the local model write that opening instead, when you narrate an edition. Each of its sentences is kept only if every figure in it is one of the edition's own, and it is marked AI-derived. Off by default.": "Every edition opens on a fixed paragraph built from its own counts. Tick this to let the local model write that opening instead, when you narrate an edition. Each of its sentences is kept only if every figure in it is one of the edition's own, and it is marked AI-derived. Off by default.",
+  "Let the model write the opening too": "Let the model write the opening too",
+  "Extract in these languages:": "Extract in these languages:",
+  "refused: never measured": "refused: never measured",
+  "refused: the harness failed this language": "refused: the harness failed this language",
+  "n = {n} case(s)": "n = {n} case(s)",
+  "Fixed text from the edition's own counts; no model wrote it.": "Fixed text from the edition's own counts; no model wrote it."
 }

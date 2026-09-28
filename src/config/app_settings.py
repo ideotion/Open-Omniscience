@@ -29,6 +29,8 @@ _MIN_LIMIT, _MAX_LIMIT = 1, 1000
 # Ollama model tag grammar (registry/name:tag) — validated so a stored model name
 # can never inject into the LLM request path (mirrors src.api.llm._MODEL_RE).
 _MODEL_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$")
+#: A bare language code as the perception gate keys it (``fr``, ``pt``, ``zh``).
+_LANG_CODE_RE = re.compile(r"^[a-z]{2,3}$")
 # Ollama keep_alive grammar: a Go duration ("30m", "1h", "300ms", "10s"), a plain
 # number of seconds, "0" (unload immediately) or "-1" (keep loaded indefinitely).
 _KEEP_ALIVE_RE = re.compile(r"^(-1|\d+(\.\d+)?(ms|s|m|h)?)$")
@@ -64,6 +66,11 @@ class AppSettings:
     # The loader seeds this from recipes_disabled, so an existing settings file keeps
     # working and recipes_disabled stays readable for one cycle.
     cards_disabled: list = None  # type: ignore[assignment]
+    # PERCEPTION LANGUAGES SWITCHED OFF BY THE OPERATOR (Q1144 = a, S05-08 S6). The
+    # measured gate decides where extraction MAY run; this list only takes a cleared
+    # language back out. It can never turn a failed or unmeasured one on -- there is
+    # no "on" list to put it in, which is the negation the brief asks for.
+    perception_languages_off: list = None  # type: ignore[assignment]
     # Per-producer tunables: {producer_name: {tunable_key: value}}. Only keys the
     # catalog declares survive, always clamped to the declared safe range -- see
     # src/briefing/catalog.py, which owns the ranges and the reasons for them.
@@ -128,6 +135,11 @@ class AppSettings:
     # so in as many words), so it starts False and the master never turns it on.
     ai_sweep_keyword_translation: bool = True
     ai_sweep_article_titles: bool = False
+    # THE BULLETIN'S OPENING (register ruling D2, placed beside row H by RC08.2 = a):
+    # an edition opens on the DETERMINISTIC introduction, and the model-written one is
+    # opt-in. This is the opt-in; the narration job reads it when a caller does not
+    # say, so the default path never asks a model to write the first paragraph.
+    bulletin_narrate_introduction: bool = False
     # THE IMPORT CHECKPOINT INTERVAL K (2026-09-07; the 2026-08-08 queue entry's
     # item (b)). How many corpus backups of a multi-backup import share ONE
     # verify + working-copy snapshot + atomic swap. 1 = today's behaviour, every
@@ -187,6 +199,8 @@ class AppSettings:
             self.cards_disabled = list(self.recipes_disabled)
         if self.card_settings is None:
             self.card_settings = {}
+        if self.perception_languages_off is None:
+            self.perception_languages_off = []
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -285,6 +299,12 @@ def load_settings() -> AppSettings:
     cards_disabled = (
         [str(x) for x in raw_cards] if isinstance(raw_cards, list) else list(recipes_disabled)
     )
+    raw_pe_off = raw.get("perception_languages_off")
+    perception_languages_off = (
+        sorted({str(x) for x in raw_pe_off if _LANG_CODE_RE.match(str(x))})
+        if isinstance(raw_pe_off, list)
+        else []
+    )
     raw_card_settings = raw.get("card_settings")
     card_settings = raw_card_settings if isinstance(raw_card_settings, dict) else {}
     llm_model = raw.get("llm_model")
@@ -322,6 +342,7 @@ def load_settings() -> AppSettings:
         "ai_sweep_perception_extract",
         "ai_sweep_keyword_translation",
         "ai_sweep_article_titles",
+        "bulletin_narrate_introduction",
         "trust_backup_fetch_history",
         "adopt_shipped_verdicts",
         "search_history_enabled",
@@ -370,6 +391,7 @@ def load_settings() -> AppSettings:
         default_result_limit=limit,
         recipes_disabled=recipes_disabled,
         cards_disabled=cards_disabled,
+        perception_languages_off=perception_languages_off,
         card_settings=card_settings,
         llm_model=str(llm_model) if llm_model else None,
         llm_keep_alive=keep_alive,
@@ -416,6 +438,18 @@ def save_settings(updates: dict) -> AppSettings:
         if not isinstance(names, list) or not all(isinstance(x, str) for x in names):
             raise AppSettingsError("cards_disabled must be a list of producer names")
         current.cards_disabled = sorted(set(names))
+    if (
+        "perception_languages_off" in updates
+        and updates["perception_languages_off"] is not None
+    ):
+        codes = updates["perception_languages_off"]
+        if not isinstance(codes, list) or not all(
+            isinstance(x, str) and _LANG_CODE_RE.match(x) for x in codes
+        ):
+            raise AppSettingsError(
+                "perception_languages_off must be a list of language codes"
+            )
+        current.perception_languages_off = sorted(set(codes))
     if "card_settings" in updates and updates["card_settings"] is not None:
         raw = updates["card_settings"]
         if not isinstance(raw, dict):
@@ -488,6 +522,7 @@ def save_settings(updates: dict) -> AppSettings:
         "ai_sweep_perception_extract",
         "ai_sweep_keyword_translation",
         "ai_sweep_article_titles",
+        "bulletin_narrate_introduction",
         # The Q701-note trust toggle joins them: a truthy STRING must not be able to
         # make a restore adopt somebody else's fetch history, which is a decision about
         # what this machine will and will not go and download.

@@ -6175,5 +6175,12 @@
   "the newest held version": "la version détenue la plus récente",
   "the source states only part of this date": "la source n'indique qu'une partie de cette date",
   "words or \"a phrase\"": "des mots ou \"une expression\"",
-  "Searched {searched} of {total} stored versions; {missing} cannot be searched (no stored text, or no version key); {pending} are still being indexed.": "{searched} versions conservées sur {total} ont été recherchées ; {missing} ne peuvent pas l'être (texte non conservé, ou sans clé de version) ; {pending} sont encore en cours d'indexation."
+  "Searched {searched} of {total} stored versions; {missing} cannot be searched (no stored text, or no version key); {pending} are still being indexed.": "{searched} versions conservées sur {total} ont été recherchées ; {missing} ne peuvent pas l'être (texte non conservé, ou sans clé de version) ; {pending} sont encore en cours d'indexation.",
+  "Every edition opens on a fixed paragraph built from its own counts. Tick this to let the local model write that opening instead, when you narrate an edition. Each of its sentences is kept only if every figure in it is one of the edition's own, and it is marked AI-derived. Off by default.": "Chaque édition s’ouvre sur un paragraphe fixe construit à partir de ses propres chiffres. Cochez ceci pour laisser le modèle local écrire cette ouverture à la place, lorsque vous narrez une édition. Chacune de ses phrases n’est conservée que si chaque chiffre qu’elle contient appartient à l’édition, et elle est marquée comme dérivée de l’IA. Désactivé par défaut.",
+  "Let the model write the opening too": "Laisser aussi le modèle écrire l’ouverture",
+  "Extract in these languages:": "Extraire dans ces langues :",
+  "refused: never measured": "refusée : jamais mesurée",
+  "refused: the harness failed this language": "refusée : le banc d’essai a échoué pour cette langue",
+  "n = {n} case(s)": "n = {n} cas",
+  "Fixed text from the edition's own counts; no model wrote it.": "Texte fixe tiré des chiffres de l’édition ; aucun modèle ne l’a écrit."
 }

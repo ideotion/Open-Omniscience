@@ -6175,5 +6175,12 @@
   "the newest held version": "सबसे नया उपलब्ध संस्करण",
   "the source states only part of this date": "स्रोत इस तारीख का केवल एक हिस्सा बताता है",
   "words or \"a phrase\"": "शब्द या \"एक वाक्यांश\"",
-  "Searched {searched} of {total} stored versions; {missing} cannot be searched (no stored text, or no version key); {pending} are still being indexed.": "{total} संग्रहीत संस्करणों में से {searched} खोजे गए; {missing} खोजे नहीं जा सकते (कोई संग्रहीत पाठ नहीं, या कोई संस्करण कुंजी नहीं); {pending} अभी अनुक्रमित हो रहे हैं।"
+  "Searched {searched} of {total} stored versions; {missing} cannot be searched (no stored text, or no version key); {pending} are still being indexed.": "{total} संग्रहीत संस्करणों में से {searched} खोजे गए; {missing} खोजे नहीं जा सकते (कोई संग्रहीत पाठ नहीं, या कोई संस्करण कुंजी नहीं); {pending} अभी अनुक्रमित हो रहे हैं।",
+  "Every edition opens on a fixed paragraph built from its own counts. Tick this to let the local model write that opening instead, when you narrate an edition. Each of its sentences is kept only if every figure in it is one of the edition's own, and it is marked AI-derived. Off by default.": "हर संस्करण उसकी अपनी गिनतियों से बने एक निश्चित अनुच्छेद से शुरू होता है। इसे चुनें ताकि संस्करण का वर्णन करते समय वह शुरुआत स्थानीय मॉडल लिखे। उसका हर वाक्य तभी रखा जाता है जब उसकी हर संख्या संस्करण की अपनी हो, और उसे AI-व्युत्पन्न चिह्नित किया जाता है। डिफ़ॉल्ट रूप से बंद।",
+  "Let the model write the opening too": "शुरुआत भी मॉडल को लिखने दें",
+  "Extract in these languages:": "इन भाषाओं में निकालें:",
+  "refused: never measured": "अस्वीकृत: कभी मापा नहीं गया",
+  "refused: the harness failed this language": "अस्वीकृत: इस भाषा के लिए परीक्षण विफल रहा",
+  "n = {n} case(s)": "n = {n} मामले",
+  "Fixed text from the edition's own counts; no model wrote it.": "संस्करण की अपनी गिनतियों से बना निश्चित पाठ; इसे किसी मॉडल ने नहीं लिखा।"
 }

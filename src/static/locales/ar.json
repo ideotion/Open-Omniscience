@@ -6175,5 +6175,12 @@
   "the newest held version": "أحدث إصدار محفوظ",
   "the source states only part of this date": "لا يذكر المصدر سوى جزء من هذا التاريخ",
   "words or \"a phrase\"": "كلمات أو «عبارة»",
-  "Searched {searched} of {total} stored versions; {missing} cannot be searched (no stored text, or no version key); {pending} are still being indexed.": "جرى البحث في {searched} من أصل {total} إصدارًا مخزَّنًا؛ لا يمكن البحث في {missing} (لا نص مخزَّن أو لا مفتاح إصدار)؛ ولا يزال {pending} قيد الفهرسة."
+  "Searched {searched} of {total} stored versions; {missing} cannot be searched (no stored text, or no version key); {pending} are still being indexed.": "جرى البحث في {searched} من أصل {total} إصدارًا مخزَّنًا؛ لا يمكن البحث في {missing} (لا نص مخزَّن أو لا مفتاح إصدار)؛ ولا يزال {pending} قيد الفهرسة.",
+  "Every edition opens on a fixed paragraph built from its own counts. Tick this to let the local model write that opening instead, when you narrate an edition. Each of its sentences is kept only if every figure in it is one of the edition's own, and it is marked AI-derived. Off by default.": "تبدأ كل نسخة بفقرة ثابتة مبنية من أرقامها الخاصة. حدّد هذا ليكتب النموذج المحلي تلك الافتتاحية بدلاً منها، عندما تسرد نسخة. لا تُحفظ أي جملة منها إلا إذا كان كل رقم فيها من أرقام النسخة نفسها، وتُوسم بأنها مشتقة من الذكاء الاصطناعي. معطّل افتراضياً.",
+  "Let the model write the opening too": "دع النموذج يكتب الافتتاحية أيضاً",
+  "Extract in these languages:": "الاستخراج بهذه اللغات:",
+  "refused: never measured": "مرفوض: لم يُقَس قط",
+  "refused: the harness failed this language": "مرفوض: فشل الاختبار لهذه اللغة",
+  "n = {n} case(s)": "n = {n} حالة",
+  "Fixed text from the edition's own counts; no model wrote it.": "نص ثابت من أرقام النسخة نفسها؛ لم يكتبه أي نموذج."
 }

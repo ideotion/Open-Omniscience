@@ -6175,5 +6175,12 @@
   "the newest held version": "সবচেয়ে নতুন সংরক্ষিত সংস্করণ",
   "the source states only part of this date": "উৎস এই তারিখের কেবল একটি অংশ উল্লেখ করে",
   "words or \"a phrase\"": "শব্দ বা \"একটি বাক্যাংশ\"",
-  "Searched {searched} of {total} stored versions; {missing} cannot be searched (no stored text, or no version key); {pending} are still being indexed.": "{total}টি সংরক্ষিত সংস্করণের মধ্যে {searched}টি খোঁজা হয়েছে; {missing}টি খোঁজা যায় না (সংরক্ষিত পাঠ্য নেই, বা সংস্করণ কী নেই); {pending}টি এখনও সূচিবদ্ধ হচ্ছে।"
+  "Searched {searched} of {total} stored versions; {missing} cannot be searched (no stored text, or no version key); {pending} are still being indexed.": "{total}টি সংরক্ষিত সংস্করণের মধ্যে {searched}টি খোঁজা হয়েছে; {missing}টি খোঁজা যায় না (সংরক্ষিত পাঠ্য নেই, বা সংস্করণ কী নেই); {pending}টি এখনও সূচিবদ্ধ হচ্ছে।",
+  "Every edition opens on a fixed paragraph built from its own counts. Tick this to let the local model write that opening instead, when you narrate an edition. Each of its sentences is kept only if every figure in it is one of the edition's own, and it is marked AI-derived. Off by default.": "প্রতিটি সংস্করণ তার নিজের গণনা থেকে তৈরি একটি নির্দিষ্ট অনুচ্ছেদ দিয়ে শুরু হয়। কোনো সংস্করণ বর্ণনা করার সময় সেই সূচনা স্থানীয় মডেলকে দিয়ে লেখাতে এটি চিহ্নিত করুন। এর প্রতিটি বাক্য তখনই রাখা হয় যখন তার প্রতিটি সংখ্যা সংস্করণের নিজস্ব, এবং তা AI-উদ্ভূত হিসেবে চিহ্নিত হয়। ডিফল্টভাবে বন্ধ।",
+  "Let the model write the opening too": "সূচনাটিও মডেলকে লিখতে দিন",
+  "Extract in these languages:": "এই ভাষাগুলোতে নিষ্কাশন করুন:",
+  "refused: never measured": "প্রত্যাখ্যাত: কখনো মাপা হয়নি",
+  "refused: the harness failed this language": "প্রত্যাখ্যাত: এই ভাষার জন্য পরীক্ষা ব্যর্থ হয়েছে",
+  "n = {n} case(s)": "n = {n}টি ক্ষেত্র",
+  "Fixed text from the edition's own counts; no model wrote it.": "সংস্করণের নিজের গণনা থেকে তৈরি নির্দিষ্ট লেখা; কোনো মডেল এটি লেখেনি।"
 }
