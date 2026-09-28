@@ -12617,3 +12617,14 @@ the comment was wrong. A test for it could only have exercised the check outside
 a state production never reaches. **When a mutant survives, first ask whether it can differ on
 any reachable state; if it cannot, correct the reasoning and the comments that carried it, and
 leave the suite alone.**
+
+### AN INSTRUMENT THAT SKIPS A READING UNDER THE CONDITION IT EXPLAINS MUST KEEP THE LAST GOOD ONE (PR #1194)
+
+The memory breakdown taken at each RSS peak skips glibc's heap walk once less than 15% of RAM is
+available, on purpose: on a swapping machine the walk would page free memory back in. It kept ONE
+breakdown, the latest, so the last peak before an out-of-memory death, which is usually taken under
+exactly that condition, replaced the last reading that had the heap. The 2026-09-28 import export
+shows it: a 5,638 MB peak, "C heap not read", and nothing earlier to fall back on. **When an
+instrument degrades on purpose near the event it records, a single "latest" slot guarantees that
+the degraded reading is the one that survives. Keep the last good reading beside the latest, each
+with its own time, and never merge the two.**

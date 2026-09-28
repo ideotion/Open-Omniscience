@@ -15467,6 +15467,15 @@ nobody reads it as a general memory cap:
 - **Which read made the 2026-09-26 burst is not known.** When the next crash's thread snapshots
   (PR #1190) name it, check whether it runs inside a deadline; if not, that read needs its own
   bound, and this entry should say which.
+- **Whether glibc holds freed memory is not known either, and an allocator setting waits on it
+  (a contingency, PR #1194).** The crashes read before PR #1190 predate the peak breakdown. The
+  first read after it (the 2026-09-28 import, peak 5,638 MB) has a breakdown without the heap,
+  because a peak taken with memory short skips that read and, until PR #1194, replaced the last
+  one that had it. From PR #1194 the report keeps that earlier reading ("C heap last read at an
+  earlier peak"). If one shows glibc's freed-but-held memory large beside its in-use memory, a
+  `MALLOC_ARENA_MAX=2` trial on ONE instance is worth PROPOSING to the maintainer, who wants
+  proposals before any setting changes; a session never applies it. If it is small, the growth
+  is live memory, and bounded reads like this entry's are the lever.
 
 ---
 
