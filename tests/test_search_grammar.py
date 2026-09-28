@@ -21,6 +21,8 @@ import sqlite3
 
 import pytest
 from fastapi.testclient import TestClient
+
+from src.api.ratelimit import limiter
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
@@ -247,9 +249,11 @@ def client(tmp_path):
             db.close()
 
     app.dependency_overrides[get_db] = _db
+    limiter.reset()  # /api/articles is 100/hour for the test client; isolate this file's hits
     with TestClient(app) as c:
         yield c
     app.dependency_overrides.clear()
+    limiter.reset()
 
 
 def _titles(client, **params) -> list[str]:

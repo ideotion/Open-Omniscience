@@ -229,13 +229,12 @@ def _run_init_sequence(engine: Any) -> dict[str, Any]:
         ensure_article_detected_language_column,
         ensure_article_identity_columns,
         ensure_article_ip_columns,
-        ensure_article_quarantine_columns,
+        ensure_article_keyword_indexed_column,
         ensure_article_newsletter_attach_column,
         ensure_article_newsletter_list_id_column,
-        ensure_source_catalog_baseline_column,
+        ensure_article_quarantine_columns,
         ensure_article_source_revision_column,
         ensure_article_top_keyword_columns,
-        ensure_article_keyword_indexed_column,
         ensure_external_source_discovery_columns,
         ensure_feed_backoff_columns,
         ensure_hot_indexes,
@@ -248,10 +247,12 @@ def _run_init_sequence(engine: Any) -> dict[str, Any]:
         ensure_law_source_type,
         ensure_law_text_columns,
         ensure_merge_batch_source_digest,
+        ensure_source_catalog_baseline_column,
         ensure_source_counter_columns,
         ensure_source_last_crawled_column,
         ensure_source_qualification_columns,
         ensure_supergroup_ring_column,
+        ensure_watch_filters_column,
         ensure_wiki_text_columns,
         optimize_at_boot,
     )
@@ -278,6 +279,7 @@ def _run_init_sequence(engine: Any) -> dict[str, Any]:
     ensure_feed_backoff_columns(engine)
     ensure_article_analysis_columns(engine)
     ensure_keyword_extractor_column(engine)
+    ensure_watch_filters_column(engine)
     ensure_wiki_text_columns(engine)
     ensure_supergroup_ring_column(engine)
     ensure_external_source_discovery_columns(engine)

@@ -18,6 +18,8 @@ from datetime import datetime, timedelta
 
 import pytest
 from fastapi.testclient import TestClient
+
+from src.api.ratelimit import limiter
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
@@ -79,9 +81,11 @@ def small(tmp_path):
                                            mentioned_on=datetime.fromisoformat(mention).date(),
                                            status="candidate"))
         s.commit()
+    limiter.reset()  # /api/articles is 100/hour for the test client; isolate this file's hits
     with TestClient(app) as c:
         yield c
     app.dependency_overrides.clear()
+    limiter.reset()
 
 
 def _t(client, **params) -> list[str]:
@@ -177,6 +181,7 @@ def reference(tmp_path_factory):
 ])
 def test_export_reproduces_the_filtered_view_row_for_row(reference, params) -> None:
     _client_for(reference)
+    limiter.reset()
     try:
         with TestClient(app) as c:
             view = c.get("/api/articles", params={**params, "limit": 1000})
@@ -195,17 +200,20 @@ def test_export_reproduces_the_filtered_view_row_for_row(reference, params) -> N
             assert k.headers["X-OO-Ordering"].startswith(view["ordering"]["by"])
     finally:
         app.dependency_overrides.clear()
+    limiter.reset()
 
 
 def test_non_latin1_query_exports(reference) -> None:
     """The CSV provenance header used to fail the whole export on a CJK query."""
     _client_for(reference)
+    limiter.reset()
     try:
         with TestClient(app) as c:
             r = c.get("/api/articles/export", params={"query": "北京", "format": "csv"})
             assert r.status_code == 200
     finally:
         app.dependency_overrides.clear()
+    limiter.reset()
 
 
 # --------------------------------------------------------------------------- #

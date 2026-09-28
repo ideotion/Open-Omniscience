@@ -604,6 +604,34 @@ def ensure_article_detected_language_column(engine: Engine) -> list[str]:
     return added
 
 
+# S05-01 (Q606 = a): a saved search keeps its full filter set as JSON beside its query.
+# Additive, NO backfill -- an existing watch has no filters, which is what NULL says.
+_WATCH_FILTERS_COLUMN: dict[str, str] = {
+    "filters": "ALTER TABLE watches ADD COLUMN filters TEXT",
+}
+
+
+def ensure_watch_filters_column(engine: Engine) -> list[str]:
+    """Self-heal the ``watches.filters`` column (idempotent, additive)."""
+    if engine.url.get_backend_name() != "sqlite":
+        return []
+    added: list[str] = []
+    with engine.begin() as conn:
+        has_table = conn.execute(
+            text("SELECT name FROM sqlite_master WHERE type='table' AND name='watches'")
+        ).fetchone()
+        if not has_table:
+            return []
+        existing = {r[1] for r in conn.execute(text("PRAGMA table_info(watches)")).fetchall()}
+        for name, ddl in _WATCH_FILTERS_COLUMN.items():
+            if name not in existing:
+                conn.execute(text(ddl))
+                added.append(name)
+    if added:
+        _LOG.info(f"added watches column(s): {', '.join(added)}")
+    return added
+
+
 # Q4a: the discovery funnel's resolution-table provenance. Additive, NO backfill -- it populates
 # forward as discovery resolves a domain (a pre-existing row stays NULL until re-resolved).
 _EXTERNAL_SOURCE_DISCOVERY_COLUMNS: dict[str, str] = {
@@ -1551,6 +1579,7 @@ SELF_HEALED_COLUMNS: dict[str, frozenset[str]] = {
     "wiki_pages": frozenset(_WIKI_PAGE_COLUMNS),
     "wiki_revisions": frozenset(_WIKI_REVISION_COLUMNS),
     "keyword_supergroup_members": frozenset(_SUPERGROUP_MEMBER_COLUMNS),
+    "watches": frozenset(_WATCH_FILTERS_COLUMN),
     "external_sources": frozenset(_EXTERNAL_SOURCE_DISCOVERY_COLUMNS),
     "law_documents": (
         frozenset(_LAW_DOCUMENT_TEXT_COLUMNS)

@@ -3857,9 +3857,9 @@ def _merge_watches(con, batch_id, results) -> None:
     w.new = _insert_tracked(
         con, batch_id, "watches",
         "INSERT INTO watches (name, query, threshold, window_days, enabled, created_at,"
-        " last_evaluated_at, last_matched_at, last_seen_ids)"
+        " last_evaluated_at, last_matched_at, last_seen_ids, filters)"
         " SELECT i.name, i.query, i.threshold, i.window_days, i.enabled, i.created_at,"
-        " i.last_evaluated_at, i.last_matched_at, i.last_seen_ids"
+        " i.last_evaluated_at, i.last_matched_at, i.last_seen_ids, i.filters"
         " FROM inc.watches i"
         " WHERE NOT EXISTS (SELECT 1 FROM watches m WHERE m.name = i.name)",
     )
