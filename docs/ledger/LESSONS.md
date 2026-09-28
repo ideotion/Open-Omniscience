@@ -12669,3 +12669,14 @@ called itself `0.3.0` in the sidebar, in diagnostics and in backups. Nothing war
 tagging, because the check runs in the workflow, after the tag exists. **When a flip is deferred,
 the next tag waits for it, and whoever records the deferral says so where the tagger will read it:
 the gate's version paragraph and `docs/CONTRIBUTING.md`.**
+
+### AN ABSENCE CHECK ON A VERSION-BEARING STRING IS A DATE BOMB SET FOR THAT VERSION (PR #1195)
+
+`test_default_user_agent_is_the_honest_versioned_one` (2026-06-13) made sure the stale hardcoded
+`OpenOmniscienceBot/0.4` User-Agent did not come back by asserting that `"0.4"` never appears in
+the UA. The UA it guarded is built from the package version, so the assertion held for every
+version from its writing to `0.3.0`, and failed in CI on the flip to `0.4.0`. **Pin what the value
+must be (here, the UA names the installed package version), never a string it must not contain:
+an absence check on a string that carries a version fails the day the version reaches it.** The
+five map and catalogue build scripts under `scripts/` still hardcode `OpenOmniscienceBot/0.4`; they
+read true again only by coincidence.

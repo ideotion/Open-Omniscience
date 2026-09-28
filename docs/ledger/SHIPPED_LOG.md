@@ -10297,4 +10297,7 @@ status, a `0.4.0` section in `docs/CHANGES.md`, the version lines in `docs/CONTR
 rule that a tag goes only where the version already matches), `docs/ROADMAP.md` and `CLAUDE.md` (the
 same line count, so its ratchet is unchanged), `RELEASE_0.4_GATE.md` (row G closed, the tag recorded
 with the rows open at it) and a note on `RELEASE_0.5_GATE.md`'s entry. Moving the tag is the
-maintainer's step, spelled out in row G. Lesson: `LESSONS.md`, the entry dated by this PR.
+maintainer's step, spelled out in row G. CI then caught a date bomb the flip set off:
+`test_default_user_agent_is_the_honest_versioned_one` asserted that `"0.4"` never appears in the
+User-Agent, which carries the package version; it now asserts that the UA names the installed
+version. Lessons: `LESSONS.md`, the two entries dated by this PR.

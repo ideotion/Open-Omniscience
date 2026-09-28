@@ -22,9 +22,15 @@ from src.safety.fetcher import GuardedSession, NetworkBlocked, guarded_session
 
 
 def test_default_user_agent_is_the_honest_versioned_one():
+    from importlib.metadata import version as _pkg_version
+
     s = guarded_session()
     assert s.headers["User-Agent"] == DEFAULT_USER_AGENT
-    assert "0.4" not in s.headers["User-Agent"]  # the old hardcoded stale UA is gone
+    # The old hardcoded stale UA (OpenOmniscienceBot/0.4) is gone: the UA names the INSTALLED
+    # package version. This line used to assert that "0.4" never appears in the UA, which held
+    # only until the package itself became 0.4.0 (PR #1195).
+    installed = _pkg_version("open-omniscience")
+    assert s.headers["User-Agent"].startswith(f"OpenOmniscienceBot/{installed} ")
 
 
 def test_explicit_user_agent_is_used():
