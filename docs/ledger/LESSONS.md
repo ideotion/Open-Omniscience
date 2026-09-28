@@ -12626,3 +12626,33 @@ per ingested article, and parsed every row into a second list. Because it runs a
 merging and before the swap, its out-of-memory kill threw all of that work away, twice. **Any
 table that grows with the corpus is corpus-scale, whatever stage reads it: stream it, and look
 hardest at the stages between an expensive step and its commit.**
+
+### AN INSTRUMENT THAT SKIPS A READING UNDER THE CONDITION IT EXPLAINS MUST KEEP THE LAST GOOD ONE (PR #1194)
+
+The memory breakdown taken at each RSS peak skips glibc's heap walk once less than 15% of RAM is
+available, on purpose: on a swapping machine the walk would page free memory back in. It kept ONE
+breakdown, the latest, so the last peak before an out-of-memory death, which is usually taken under
+exactly that condition, replaced the last reading that had the heap. The 2026-09-28 import export
+shows it: a 5,638 MB peak, "C heap not read", and nothing earlier to fall back on. **When an
+instrument degrades on purpose near the event it records, a single "latest" slot guarantees that
+the degraded reading is the one that survives. Keep the last good reading beside the latest, each
+with its own time, and never merge the two.**
+
+### `0.0` IS NOT "NEVER" ON A MONOTONIC CLOCK, AND THE LESSON THAT SAID SO DID NOT STOP IT RECURRING (PR #1194)
+
+The `_recovery_last_at = 0.0` entry above (2026-08-04) already records that `time.monotonic()`
+starts small on a fresh boot, so a "last done at" of `0.0` reads as "a moment ago". A month later
+`session_hwm.py` started its write throttle at `0.0` (2026-09-03), and PR #1190 copied that shape
+three more times, so an app started with its machine lost its first burst snapshot for five
+minutes. A lesson in this file did not prevent it, because nothing in the code points at it. The fix names the value instead: `_NEVER = float("-inf")`, with the reason beside it, so the
+next "last" sentinel in that module is written next to a comment explaining why 0.0 is wrong.
+**Start a "last time" at minus infinity, never at zero, and test it on a fake clock at one second
+after boot, where every interval check fails at once.**
+
+### A TEST THAT COUNTS EVENTS OVER A REAL SLEEP MEASURES THE RUNNER (PR #1194)
+
+`test_memory_is_read_between_the_liveness_ticks` slept 0.45 s and required at least four memory
+reads per tick. A macOS runner fit three. Any count of iterations over a wall-clock sleep is a bet
+on the machine's speed, the same bet as the absolute time bar recorded above. When the code under
+test takes its waits from one object (here the stop event), hand it a fake whose `wait` advances a
+fake clock, and assert the exact schedule: the test becomes exact and runs in milliseconds.

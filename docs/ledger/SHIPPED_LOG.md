@@ -10241,3 +10241,47 @@ rows: 67 MB peak before, under 8 MB after (the test's bound).
 **Not changed:** the per-entry signature verification is still CPU-heavy (the 19:35 UTC import
 spent about 45 minutes in this stage); `CustodyLog.verify()` on the LOCAL chain still loads it
 whole via `all_entries()`. Neither is what killed these imports.
+
+## 2026-09-28 — A crash report keeps the last C-heap reading (PR #1194)
+
+PR #1190 made the report say what the memory was made of at the session's RSS peak, including
+glibc's heap in use and freed-but-held: the figure that tells live objects apart from memory freed
+and never given back. But each new peak REPLACED the breakdown kept for the previous one, and a
+peak taken with under 15% of RAM available skips the heap walk on purpose (the walk touches free
+chunks all over the heap, which a swapping machine would page back in). The last peak before an
+out-of-memory death is usually such a peak, so the one record written to explain the death was the
+one that could not carry the heap. The 2026-09-28 import export shows it: the previous session
+peaked at 5,638 MB, and its breakdown, taken at 5,013 MB, reads "C heap not read".
+
+The newest peak that DID read the heap is now kept as `heap_at_peak`, and the report prints it on
+its own line with its own size and time: the two readings describe different moments and are never
+merged. A peak whose heap was not read records why (`heap_skipped`: memory already short, available
+memory unreadable, or no glibc 2.33+ report), because the three read differently and only the first
+says anything about the death. A record written before this change still reads, with the old
+wording.
+
+**THE LESSON (copied to `LESSONS.md`).** An instrument that skips a reading on purpose under the
+condition it exists to explain must not keep its readings in one "latest" slot: the last write
+before the event is then the degraded one, and it erases the good reading before it.
+
+**Tests.** Three in `tests/test_exit_evidence.py`: the kept reading survives a short peak, reaches
+the next boot's record and is the newest rather than the first; each skip reason is named; the
+report prints the two readings on separate lines, and one line when the peak read the heap itself.
+Eight deliberate breakages of the new code were each caught.
+
+**ALSO FIXED, IN THE SAME INSTRUMENT: THE FIRST MINUTES AFTER A MACHINE BOOT.** The times of the
+last write, peak composition, memory-short snapshot and burst snapshot started at `0.0`, and
+`time.monotonic()` counts from the machine's boot. For an app started with its machine, `0.0` read
+as "a moment ago": its first burst went unrecorded for five minutes, the others for 4 to 30 s. The
+open queue had recorded the burst case on 2026-09-27 (two tests failing on a host up 284 s), and it
+recurred on this session's sandbox at 202 s. All four now start at `_NEVER` (`float("-inf")`). The
+new test runs on a fake clock one second after boot; each of the four reverted to `0.0` fails it.
+This is a recurrence of a recorded lesson (the `_recovery_last_at = 0.0` entry in `LESSONS.md`).
+
+**AND A TIMING TEST FROM PR #1190 NOW RUNS ON A FAKE CLOCK.**
+`test_memory_is_read_between_the_liveness_ticks` counted memory reads over a real 0.45 s sleep and
+failed on a slow macOS runner in PR #1193's portability job: 3 reads where 4 were due. Reproduced
+by making each loop iteration take 130 ms, which gives the same `assert 3 >= (4 * 1)`. The test
+now drives the liveness loop with a stop event whose wait advances a fake clock, at the real
+cadence (a read every 5 s, a tick every 60 s), and asserts the exact read and tick times. It
+passes with each read slowed to 130 ms, and five breakages of the loop are each caught.
