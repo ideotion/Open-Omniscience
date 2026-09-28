@@ -47,10 +47,10 @@ COLUMN_CEILING = 19
 #: ``osm_objects`` is the ONE lane table whose width is a RULING rather than a shape: Q810 = a
 #: asks for curated tag columns and its note asks for the list to be EXTENDED to shrink the
 #: blob, so it is pinned on its own, zero-slack, and kept out of the ceiling above (0.5 row D,
-#: 2026-09-28). 132 = 15 structural + 4 family columns + 112 curated tags + the blob; the
+#: 2026-09-28). 131 = 15 structural + 4 family columns + 111 curated tags + the blob; the
 #: ceilings it answers to (SQLite 2,000 measured, PostgreSQL 1,600 from memory, a 400 guard)
 #: are in ``tests/test_osm_tags.py``.
-OSM_OBJECTS_WIDTH = 132
+OSM_OBJECTS_WIDTH = 131
 
 #: A column name containing any of these would be this project forming an opinion.
 FORBIDDEN_NAME_PARTS = ("score", "rating", "ranking", "grade", "confidence", "trust")

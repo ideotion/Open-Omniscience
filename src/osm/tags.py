@@ -137,7 +137,6 @@ EXTENDED_KEYS: tuple[str, ...] = (
     "is_in",
     "ISO3166-1",
     "ISO3166-1:alpha2",
-    "ISO3166-1:alpha3",
     "ISO3166-2",
     "border_type",
     "type",
