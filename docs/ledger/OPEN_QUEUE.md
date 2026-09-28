@@ -15623,3 +15623,23 @@ no-telemetry re-check never reaches them and no warning says so. The `v0.4.0` in
 by deleting the release before the tag moves. A lasting fix would append the generated notes' re-check
 section when an existing body lacks it; `S03-01` forbade touching `release.yml` in the flip, so it waits
 for a ruling or its own PR.
+
+## 2026-09-28 — Row I's Essentials depth amends invariant #2: PENDING the maintainer's word (PR #1208)
+
+The Ring dial (S05-09 S4, Q1120 = a, Q1121 = a) is built with all three depths. Essentials pins Home and Feed
+and lists the other tabs behind a permanent, labelled "Show more (N)" row, which touches invariant #2 ("the
+left sidebar lists all tabs"). The brief (§6) forbids merging that ring before the maintainer's word; a
+decision card is posted in the row I thread and the amendment text is in PR #1208's body. **On "Yes":** add
+the amendment to CLAUDE.md invariant #2, extend `test_ui_invariants`, record it as R46. **On "No":** remove
+Essentials from the dial (Standard and Full need no amendment and stay).
+
+## 2026-09-28 — The Ledger's grammar found an automated DELETE in a reserved category: unruled (PR #1208)
+
+The offline source discovery pass (`src/discovery/channels.py`, `prune_noise_candidates`) deletes still-PENDING
+source candidates that its noise filters (commerce, social, infrastructure domains) now reject, on every pass,
+without asking. Under the plan's §5 item 6 that is a decision in the `source-admission` category. The Ledger
+does not hide it: the entry's sentence ends in "staged" (true of what the pass adds) and its `touched` field
+says the candidates were deleted, with the count. **Unruled:** whether the prune should become a flag the
+operator clears (the grammar's intent) or stay a delete (it only removes rows no human has touched, and a
+remembered dismissal or a promoted source is never swept). Nothing was changed; this is the maintainer's call.
+
