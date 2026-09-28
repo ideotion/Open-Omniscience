@@ -32,6 +32,7 @@ from sqlalchemy.orm import sessionmaker
 
 from src.database.models import Base
 from src.versioned.store import create_lane, dispose_all, lane_session
+from tests.js_source_helper import object_literal
 
 _ROOT = Path(__file__).resolve().parent.parent
 _STATIC = _ROOT / "src" / "static"
@@ -394,9 +395,7 @@ def test_the_add_is_wired_through_the_one_delegated_listener():
 def _table_words(name: str) -> list[str]:
     """The English words a lookup table hands to ``t()``: the literal ``t("...")`` gate
     cannot see them, so they are checked here."""
-    at = _COMPONENT.index(f"const {name} = {{")
-    body = _COMPONENT[at : _COMPONENT.index("};", at)]
-    return re.findall(r':\s*"([^"]+)"', body)
+    return re.findall(r':\s*"([^"]+)"', object_literal(_COMPONENT, name))
 
 
 def test_every_word_the_add_draws_is_keyed_in_all_twelve_locales():
