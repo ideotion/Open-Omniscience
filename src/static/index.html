@@ -93,6 +93,15 @@
              Source integrity was dissolved the same way earlier (content-first): coordination
              surfaces automatically (Leads + the analysis Related view + inline badges); the
              manual desk lives in Settings → Safety too. Nothing is lost. -->
+        <!-- THE RING DIAL (S05-09 S4; Q1120 = a, Q1121 = a). Each depth PINS a ring:
+             Ring 0 (Home, Feed; RING0_TABS in app-shell.js) at every depth, Ring 1 (every
+             other tab, a new one included) at Standard and Full. At Essentials the Ring-1 tabs sit behind this row, which always
+             carries TEXT -- in the icon rail too -- so nothing becomes unreachable behind
+             an unlabelled icon. The palette, Search and every deep link still reach every
+             tab; a Ring-1 tab that is OPEN stays in the list. Hidden at Standard and Full. -->
+        <button type="button" class="nav-more" id="nav-more" aria-expanded="false" aria-controls="navGroups">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+          <span class="nav-more-long" data-i18n-dyn></span><span class="nav-more-short" data-i18n-dyn aria-hidden="true"></span></button>
         <!-- The crypto-UI simplification (#20 "make it foolproof") is the remaining half. -->
         <!-- System nav-group removed (maintainer-ruled 2026-06-15): Help & docs left the
              sidebar — the top-bar "?" icon (showTab('help')) is the single entry. -->
@@ -1822,6 +1831,18 @@
         </div>
       </div>
 
+
+      <!-- THE RING DIAL (S05-09 S4; Q1120 = a, Q1121 = a). A depth changes what is PINNED,
+           never what is REACHABLE. Applied at once and kept in this browser, beside the
+           theme (oo.ui). An install that never chose is at Full, so an upgrade un-pins
+           nothing; the first-run guide asks, and a skipped question gives Standard. -->
+      <h3 style="margin-bottom:6px" id="set-depth-h">Interface depth</h3>
+      <p class="muted" style="margin-top:0">How much the sidebar and the settings show at once. It changes what is pinned, never what is reachable: the command palette, Search and the “Show more” row reach every surface at every depth.</p>
+      <div id="set-depth" role="radiogroup" aria-labelledby="set-depth-h" class="depth-pick">
+        <label class="depth-opt"><input type="radio" name="set-depth" value="essentials"><span class="depth-t"><b>Essentials</b><span class="depth-d">Home and Feed pinned; the other tabs one click away under “Show more”.</span></span></label>
+        <label class="depth-opt"><input type="radio" name="set-depth" value="standard"><span class="depth-t"><b>Standard</b><span class="depth-d">Every tab pinned; the fine-tuning of each Lead folded away until you open it.</span></span></label>
+        <label class="depth-opt"><input type="radio" name="set-depth" value="full"><span class="depth-t"><b>Full</b><span class="depth-d">Everything pinned and open.</span></span></label>
+      </div>
 
       <h3 style="margin-bottom:6px">Feed scrolling history</h3>
       <p class="muted" style="margin-top:0">The Feed remembers two things and nothing else: which order it drew, and how far down it you have scrolled. It keeps no record of which articles you read — there is no reading history in your corpus, in a backup, or anywhere else. Both are stored on this device only.</p>
@@ -3864,6 +3885,18 @@
            title="Pick the language for the whole interface. The native name is the real identifier — flags are only a visual cue.">
           The whole interface switches as you pick. You can change this anytime in Settings.</p>
         <div id="gw-langs" class="gw-langs" role="listbox" aria-label="Choose your language"></div>
+      </section>
+      <!-- Step: Interface depth (S05-09 S4; Q1121 = a). Standard is pre-selected, so a
+           guide closed or skipped here leaves Standard; Essentials only by a real choice.
+           Local only (oo.ui); nothing is sent. -->
+      <section class="gw-step" data-step="depth" hidden>
+        <h3 style="margin:0 0 6px">How much should the app show at once?</h3>
+        <p class="muted" style="margin-top:0">This changes what is pinned, never what you can reach. You can change it anytime in Settings → General.</p>
+        <div role="radiogroup" aria-label="Interface depth" class="depth-pick">
+          <label class="depth-opt"><input type="radio" name="gw-depth" value="essentials"><span class="depth-t"><b>Essentials</b><span class="depth-d">Home and Feed pinned; the other tabs one click away under “Show more”.</span></span></label>
+          <label class="depth-opt"><input type="radio" name="gw-depth" value="standard" checked><span class="depth-t"><b>Standard</b><span class="depth-d">Every tab pinned; the fine-tuning of each Lead folded away until you open it.</span></span></label>
+          <label class="depth-opt"><input type="radio" name="gw-depth" value="full"><span class="depth-t"><b>Full</b><span class="depth-d">Everything pinned and open.</span></span></label>
+        </div>
       </section>
       <!-- Step: Sources by theme + language emphasis (S4.7). LOOPBACK reads/writes only
            (the app's own /api/scheduler/coverage + /config) — NEVER external egress; the

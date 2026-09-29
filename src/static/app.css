@@ -255,6 +255,27 @@
     .nav-item.adv .badge { color:var(--warn-fg); border-color:color-mix(in srgb,var(--warn) 50%,var(--border)); }
     .sb-foot { padding:10px; border-top:1px solid var(--border); display:flex; gap:6px; }
     .sb-foot button { flex:1; margin:0; }
+    /* THE RING DIAL (S05-09 S4). At Essentials the Ring-1 tabs sit behind #nav-more
+       unless it is open; the tab that is OPEN always stays listed. The row is shown
+       only at Essentials and always carries text: the long label in the full sidebar,
+       a short one under its icon in the rail (never an icon alone). */
+    .nav-more { display:none; align-items:center; gap:11px; width:100%; text-align:left;
+      background:transparent; color:var(--muted); border:1px dashed var(--border); border-radius:9px;
+      margin:6px 0 1px; padding:8px 10px; font:inherit; font-size:13px; cursor:pointer; }
+    .nav-more svg { width:18px; height:18px; flex:0 0 18px; transition:transform .15s ease; }
+    .nav-more:hover { background:var(--panel); color:var(--fg); }
+    .nav-more[aria-expanded="true"] svg { transform:rotate(180deg); }
+    .nav-more .nav-more-short { display:none; }
+    html[data-depth="essentials"] .nav-more { display:flex; }
+    html[data-depth="essentials"] #navGroups:not(.more-open) .nav-item[data-ring="1"]:not(.active) { display:none; }
+    html[data-sidebar="collapsed"] .nav-more { flex-direction:column; gap:2px; padding:6px 0; text-align:center; }
+    html[data-sidebar="collapsed"] .nav-more .nav-more-long { position:absolute; width:1px; height:1px;
+      padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
+    html[data-sidebar="collapsed"] .nav-more .nav-more-short { display:block; font-size:10px; line-height:1.2; }
+    .depth-pick { display:flex; flex-direction:column; gap:6px; margin:6px 0 14px; }
+    .depth-opt { display:flex; align-items:flex-start; gap:8px; cursor:pointer; }
+    .depth-opt input { margin-top:3px; }
+    .depth-opt .depth-d { display:block; color:var(--muted); font-size:12.5px; }
     /* Collapsed sidebar → icon rail */
     html[data-sidebar="collapsed"] .sidebar { --sidebar-w:66px; }
     /* a11y-rail-labels (measured 2026-09-09; axe-core CRITICAL). These labels used to
@@ -996,6 +1017,8 @@
     .card-tune { display:grid; grid-template-columns:minmax(140px,auto) 92px 1fr auto;
       gap:8px; align-items:center; margin:8px 0 0 26px; }
     .card-tune-in { width:88px; }
+    .card-finetune { margin:4px 0 2px; }
+    .card-finetune > summary { cursor:pointer; font-size:12.5px; color:var(--fg-soft); }
     .card-tune-range { font-size:11px; white-space:nowrap; }
     .card-tune-impact { grid-column:1 / -1; margin:0; }
     /* The reason a floor exists is shown WITH the control, never hidden behind a
@@ -1811,6 +1834,11 @@
         position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden;
         clip:rect(0,0,0,0); white-space:nowrap; border:0; }
       .nav-item { justify-content:center; padding:10px 0; position:relative; }
+      /* The Show-more row in the automatic rail: the same as the collapsed one above. */
+      .nav-more { flex-direction:column; gap:2px; padding:6px 0; text-align:center; }
+      .nav-more .nav-more-long { position:absolute; width:1px; height:1px; padding:0; margin:-1px;
+        overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
+      .nav-more .nav-more-short { display:block; font-size:10px; line-height:1.2; }
     }
     @media (max-width:600px) {
       .sidebar { position:fixed; left:0; top:0; transform:translateX(-100%); transition:transform .2s ease; }

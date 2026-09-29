@@ -226,6 +226,12 @@ finding things, or it finds so much that every answer is the same answer).
    `"groups" not in data`).
 2. **Left sidebar lists all tabs and stays visible** — it may collapse to an
    icon rail, but must never disappear off-canvas above 600 px width.
+   **AMENDED 2026-09-28 (R46, the maintainer's «Yes, amend #2» on the row I card; Q1120 = a,
+   Q1121 = a; PR #1208):** at the ESSENTIALS depth the sidebar pins Ring 0 (Home, Feed) and lists
+   every other tab behind a permanent, labelled "Show more (N)" row that never collapses to an
+   icon without text; the OPEN tab always stays listed; the palette and Search reach every tab at
+   every depth. Standard and Full list all tabs, and an install that never chose is at Full.
+   Enforced in test_ui_invariants (#2b) + tests/test_ring_dial.py.
 3. **Top bar elements have constant footprints**: `.act-host` keeps its 160 px
    slot even when empty; `#llm` and `#health` have fixed min-widths; nothing on
    the right may shift as fetch hosts/labels change.

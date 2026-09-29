@@ -47,6 +47,21 @@ def _ledger_collection(running: bool, **fields: object) -> None:
         _LOG.debug("session ledger: collection event failed", exc_info=True)
 
 
+def _activity(action: str, result: object = None, settings: object = None) -> None:
+    """One entry on the Activity Ledger (S05-09 S5): what the app just did on its own.
+    Best-effort and silent, like the session ledger above: it explains the loop, it
+    must never be able to stop it. A step that is switched off (``enabled: False``)
+    did not act, so it writes nothing."""
+    if isinstance(result, dict) and result.get("enabled") is False:
+        return
+    try:
+        from src.monitoring import activity_ledger
+
+        activity_ledger.record(action, result, settings)
+    except Exception:  # noqa: BLE001 - an instrument never breaks the thing it measures
+        _LOG.debug("activity ledger: %s not recorded", action, exc_info=True)
+
+
 def _tail_phase(name: str, *, pass_id: str | None = None):
     """Record one pass-tail step in the phase journal (S0.5), or do nothing.
 
@@ -1501,9 +1516,11 @@ def run_housekeeping_lane(session, fetcher, settings: SchedulerSettings) -> dict
             continue  # a reserved-but-not-yet-runnable kind (e.g. "crawl" pre-C3)
         try:
             out[kind] = step(session, fetcher, settings)
+            _activity(f"lane:{kind}", out[kind], settings)
         except Exception:  # noqa: BLE001 - one kind's failure must not skip the rest
             _LOG.warning("housekeeping lane: %s failed", kind, exc_info=True)
             out[kind] = {"error": True}
+            _activity(f"lane:{kind}", out[kind], settings)
             # Every step shares this ONE session -- a failure that left it
             # mid-transaction (an uncaught OperationalError, not just an
             # IntegrityError a step already handles itself) would otherwise
@@ -1896,6 +1913,7 @@ class BackgroundScheduler:
             result = run_idle_maintenance(should_stop=self._stop.is_set)
             with self._state_lock:
                 self._last_maintenance = result
+            _activity("idle-maintenance", result)
         except Exception:  # noqa: BLE001 - never let maintenance break the loop
             _LOG.warning("off-peak maintenance failed", exc_info=True)
         finally:
@@ -1943,7 +1961,7 @@ class BackgroundScheduler:
                     return
                 try:
                     with session_scope() as session:
-                        refresh_briefing(session)
+                        _activity("briefing", refresh_briefing(session))
                 finally:
                     self._heavy_tail_lock.release()
             except Exception:  # noqa: BLE001 - a background refresh must never crash the thread
@@ -2076,6 +2094,7 @@ class BackgroundScheduler:
             # collecting ran 3-5x slower because the pause could not actually reach
             # an in-flight pass).
             result = run_scrape_once(session, fetcher, settings, should_stop=self._stop.is_set)
+            _activity("collection-pass", result, settings)
             # Opt-in drop-folder export (WP3/RM-06): write the new-articles
             # delta into the operator's local folder. Best-effort; off when
             # export_dir is empty (the default).
@@ -2116,6 +2135,7 @@ class BackgroundScheduler:
 
                 started_pf = preflight_job.kick(fetcher)
                 if started_pf is not None:
+                    _activity("first-run-preflight")
                     _LOG.info("first-run preflight: started as job %s", preflight_job.JOB_KIND)
             # S-B (2026-07-24 throughput brief, C1): calendar auto-import, market
             # auto-load, and law auto-track (+ its AI change-summary follow-up) —
@@ -2163,6 +2183,7 @@ class BackgroundScheduler:
                         result["discovery"] = run_discovery(
                             _disc_session, per_run=settings.discovery_per_run
                         )
+                _activity("discovery", result["discovery"], settings)
             except Exception:  # noqa: BLE001 - never fail the scrape on discovery
                 _LOG.warning("offline source discovery failed", exc_info=True)
             # S-B (2026-07-24 throughput brief, C1): world-discovery, qualification,
@@ -2191,6 +2212,7 @@ class BackgroundScheduler:
                 _auto = run_auto_on_ingest(session)
                 if _auto.get("ran"):
                     result["ai_auto"] = _auto
+                    _activity("ai-auto", _auto, settings)
             except Exception:  # noqa: BLE001 - never let AI extraction break a scrape
                 _LOG.warning("auto-on-ingest extraction failed", exc_info=True)
             # AUTO-START language detection (2026-07-24 field-feedback Session A §1, ruled
@@ -2206,6 +2228,8 @@ class BackgroundScheduler:
                 _ld = advance_langdetect_auto_start(session)
                 if _ld.get("enabled"):
                     result["langdetect_auto"] = _ld
+                    if not _ld.get("skipped"):  # it started the job; a skip did nothing
+                        _activity("langdetect-auto", _ld, settings)
             except Exception:  # noqa: BLE001 - never fail the scrape on the AI-layer watchdog
                 _LOG.warning("language-detection auto-start ride-along failed", exc_info=True)
             # Auto source-metadata enrichment (local, zero-network): deduce each
@@ -2222,6 +2246,8 @@ class BackgroundScheduler:
                     with _tail_phase("source-enrichment", pass_id=_pass_id):
                         with session_scope() as _enr_session:
                             _enr = run_auto_source_enrichment(_enr_session)
+                    if _enr.get("ran"):
+                        _activity("source-enrichment", _enr, settings)
                     if _enr.get("ran") and _enr.get("sources_updated"):
                         result["source_enrich"] = _enr
                         _LOG.info("source auto-enrichment: %s", _enr)

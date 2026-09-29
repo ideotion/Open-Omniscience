@@ -342,6 +342,8 @@ async function run() {
       function renderQueue() { calls.panels.push("queue"); }
       function renderSchedule() { calls.panels.push("schedule"); }
       function renderPerformance() { calls.panels.push("performance"); }
+      function renderLedger() { calls.panels.push("ledger"); }
+      var _panel = "processes";
       var _tmOnline = null, _jobs = { jobs: [] };
       var _lastVitals = { process: { cpu_percent: 2, rss_bytes: 1048576 } }, _lastRates = { netRate: 0 };
       var _painted = true, _healthState = "healthy";
