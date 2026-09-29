@@ -38,7 +38,9 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from datetime import UTC, datetime
+from typing import Any
 
 from src.entities.items import cached_item, item_payload
 
@@ -157,7 +159,9 @@ def resolve_mentioned(session, *, should_stop=None) -> dict:
         if i % 500 == 499:
             session.commit()
     session.commit()
+    notable = _notable_pass(session, should_stop) if not stopped else None
     return {
+        "osm_notable": notable,
         "distinct_mentions": len(rows),
         "resolved": resolved_mentions,
         "places": len(place_ids),
@@ -170,6 +174,109 @@ def resolve_mentioned(session, *, should_stop=None) -> dict:
             "entry names an OpenStreetMap object. No network call. Counts only."
         ),
     }
+
+
+#: The caveat of a Place read from an OSM country's notable objects rather than from a mention.
+OSM_NOTABLE_CAVEAT = (
+    "Read from the OpenStreetMap data of a country you read: a notable place (a settlement, an "
+    "administrative area, or an object linked to Wikidata or Wikipedia). Names come from "
+    "OpenStreetMap first, then Wikidata; a language with neither shows no name."
+)
+
+
+def materialise_notable(session, *, should_stop=None) -> dict:
+    """Q817 = a: every NOTABLE object of every complete OSM country becomes a Place. Local only.
+
+    Notable is the lane's own flag (``src/osm/tags.py:classify``): administrative areas, every
+    ``place=*`` and any object carrying ``wikidata``/``wikipedia``. Two refinements, both
+    stated: an administrative area is its RELATION (the ways of its border carry the same tags
+    and are not places), and an object with no ``name`` is counted, never made a Place called
+    nothing. A Place the gazetteer already resolved keeps its gazetteer facts; this adds where
+    its geometry lives. Q823: the body stays composed on read, never an Article.
+    """
+    from sqlalchemy import select
+
+    from src.database.models import Place
+    from src.osm.lane_models import OsmCountry, osm_objects_table
+    from src.osm.tags import column_name
+    from src.versioned import store
+
+    out: dict[str, Any] = {"places": 0, "created": 0, "unnamed": 0, "border_ways": 0, "countries": [], "stopped": False}
+    if not store.lane_exists("osm"):
+        return out
+    t = osm_objects_table
+    col = lambda k: t.c[column_name(k)]  # noqa: E731 - one-line column lookup
+    with store.lane_session("osm") as ls:
+        countries = [c.alpha3 for c in ls.query(OsmCountry).filter_by(status="complete").order_by(OsmCountry.alpha3)]
+        rows = ls.execute(
+            select(t.c.osm_type, t.c.osm_id, t.c.kind, t.c.primary_key, t.c.primary_value, t.c.country_alpha3,
+                   t.c.lat, t.c.lon, t.c.names, col("name"), col("wikidata"), col("population"))
+            .where(t.c.notable.is_(True), t.c.country_alpha3.in_(countries))
+            .order_by(t.c.country_alpha3, t.c.osm_type, t.c.osm_id)
+        ).all()
+    out["countries"] = countries
+    from src.osm.places import TYPE_WORDS
+
+    for i, (otype, oid, kind, pkey, pval, a3, lat, lon, names_json, name, qid, pop) in enumerate(rows):
+        if should_stop is not None and should_stop():
+            out["stopped"] = True
+            break
+        if kind == "admin" and otype != "r":
+            out["border_ways"] += 1
+            continue
+        if not (name or "").strip():
+            out["unnamed"] += 1
+            continue
+        pid = f"{TYPE_WORDS[otype]}/{oid}"
+        row = session.get(Place, pid)
+        if row is None:
+            row = Place(id=pid, name=name[:200])
+            out["created"] += 1
+        names = json.loads(names_json) if names_json else {}
+        if row.gazetteer_vintage is None:
+            # Not resolved from a mention: every fact here is the lane's. The columns' widths
+            # (200, 32) are the table's; OSM's own values rarely approach them.
+            row.name = name[:200]
+            row.kind = (pval if pkey == "place" else (f"{pkey}={pval}" if pkey else None) or "")[:32] or None
+            row.names_json = json.dumps({k: v for k, v in names.items() if k in LANGS}, ensure_ascii=False, sort_keys=True)
+            row.country_alpha3 = a3
+            try:
+                from src.osm.ingest import country_codes
+
+                row.country = country_codes(a3)[0].lower()
+            except ValueError:  # a code the lane stored but the catalogue does not know
+                row.country = None
+            row.lat, row.lon = lat, lon
+            try:
+                row.population = int(str(pop).replace(" ", "").replace(",", "")) if pop else None
+            except ValueError:
+                row.population = None      # a free-text population is not a number
+        row.qid = row.qid or (qid if qid and re.fullmatch(r"Q\d+", qid) else None)
+        if row.admin_path_json is None:
+            row.admin_path_json = "[]"
+        row.geometry_ref = f"osm.db:{pid}"
+        row.as_of = datetime.now(UTC)
+        session.add(row)
+        out["places"] += 1
+        if i % 1000 == 999:
+            session.commit()
+    session.commit()
+    return out
+
+
+def _notable_pass(session, should_stop) -> dict:
+    """The OSM lane's part of the Places job: the name/address indexes, then the notable Places.
+
+    Degrades to a named error rather than costing the mention pass its result."""
+    try:
+        from src.osm.places import refresh_indexes
+
+        indexed = refresh_indexes()
+        got = materialise_notable(session, should_stop=should_stop)
+        return {**got, "indexed": sorted(indexed)}
+    except Exception as exc:  # noqa: BLE001 - reported in the job's result, never silent
+        _LOG.warning("places: the OSM lane's pass failed", exc_info=True)
+        return {"error": f"{type(exc).__name__}: {exc}"}
 
 
 def _names(place) -> dict[str, str]:
@@ -411,12 +518,30 @@ def place_card(session, place_id: str, lang: str = "en") -> dict | None:
         "keywords": body_keywords(place, item),
         "articles": mention_count(session, place),
         "wiki": wiki_pages_for_qid(place.qid),
+        "origin": "gazetteer" if place.gazetteer_vintage else ("osm-lane" if place.geometry_ref else "gazetteer"),
+        "osm": _osm_facts(place),
         "caveat": (
             "Resolved from the place names found in article text through the gazetteer: a "
             "name match, never a confirmed event site. Names come from OpenStreetMap first, "
             "then Wikidata; a language with neither shows no name."
-        ),
+        ) if place.gazetteer_vintage or not place.geometry_ref else OSM_NOTABLE_CAVEAT,
     }
+
+
+def _osm_facts(place) -> dict | None:
+    """The OSM lane's row for this Place, when the lane holds it: its tag and the data's date."""
+    if not (place.geometry_ref or "").startswith("osm.db:"):
+        return None
+    try:
+        from src.osm.places import object_card
+
+        card = object_card(place.geometry_ref.split(":", 1)[1])
+    except Exception:  # noqa: BLE001 - a locked or missing lane: the card still opens
+        _LOG.debug("place card: the OSM lane could not be read", exc_info=True)
+        return {"held": None}
+    if card is None:
+        return {"held": False}
+    return {"held": True, "tag": card["tag"], "vintage": card["vintage"], "country_name": card["country_name"]}
 
 
 def search_places(session, q: str, limit: int = 8) -> dict:

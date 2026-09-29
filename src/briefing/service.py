@@ -270,7 +270,8 @@ def refresh_briefing(session, on_progress=None) -> dict:
         evaluate_watches(session)
     except Exception:  # noqa: BLE001 - the watch pass is additive, never fatal to the feed
         _LOG.warning("watch evaluation failed; briefing continues", exc_info=True)
-    produced, stats = run_all_bounded(session, on_progress=on_progress)
+    # Home is the one place the lane-only cards are made for (Q823: no bulletin carries them).
+    produced, stats = run_all_bounded(session, on_progress=on_progress, lanes=True)
     cards = [c.to_dict() for c in produced]
 
     # S2.3: a truncated run must not REPLACE a good feed with what it managed to

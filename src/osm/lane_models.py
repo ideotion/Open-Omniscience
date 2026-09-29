@@ -10,7 +10,8 @@ ONLY through ``src.versioned.store.create_schema`` (``_lane_specific_models("osm
 opens the file through the ONE keyed factory. A lane file gets its own tables and no other
 lane's.
 
-FIVE TABLES (the last two S05-04 S4's).
+NINE TABLES (the fourth and fifth S05-04 S4's, the sixth and seventh S5's, the last two S6's), two
+full-text indexes and one R*Tree (``src/osm/view.py``).
 
 * ``osm_objects`` -- one row per kept object of an ingested country: identity (type + id),
   the source's ``version`` and ``timestamp``, what it is (``kind``, the primary tag), where it
@@ -31,6 +32,13 @@ FIVE TABLES (the last two S05-04 S4's).
   tracks, and one table read two ways is how the two come to be blended.
 * ``osm_history_cuts`` -- one row per country cut from the history file, with what was
   measured: the file, its size and vintage, the reader, the seconds, the counts, the gap.
+* ``osm_admin1_splits`` -- analytic 1 per admin-1 region (Q815 · 1), one row per country: the
+  counts per region of row E's published outlines, and the two things they were computed FROM
+  (the country's ingest and the outline file's vintage), so a split that no longer matches
+  either reads as stale instead of as current.
+* ``osm_search_indexes`` -- one row per country whose names and addresses are in the two
+  full-text indexes (``osm_names``, ``osm_addresses``; ``src/osm/places.py`` creates them,
+  because a virtual table is not a mapped model), with what was indexed and from which ingest.
 
 WHY ``osm_objects`` IS BUILT FROM A ``Table`` AND NOT CLASS ATTRIBUTES. Its curated columns are
 generated from ``tags.SCALAR_KEYS`` -- one list, read by the splitter, the joiner and the
@@ -226,12 +234,94 @@ class OsmHistoryCut(LaneBase):
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
+class OsmAdmin1Split(LaneBase):
+    """Analytic 1 per admin-1 region for one country, and what it was computed from."""
+
+    __tablename__ = "osm_admin1_splits"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    alpha3: Mapped[str] = mapped_column(String(3), nullable=False, unique=True)
+    #: ``counting`` while it runs, then ``complete`` or ``failed``.
+    status: Mapped[str] = mapped_column(String(12), nullable=False, default="counting")
+    #: The country's ``finished_at`` the split was counted from: a re-ingest makes it stale.
+    basis_ingest: Mapped[str | None] = mapped_column(Text, nullable=True)
+    #: The outline file's vintage and source: a rebuilt file makes it stale too.
+    outline_vintage: Mapped[str | None] = mapped_column(Text, nullable=True)
+    outline_source: Mapped[str | None] = mapped_column(Text, nullable=True)
+    started_at: Mapped[datetime] = mapped_column(LaneUTCDateTime(), nullable=False, default=_utcnow)
+    finished_at: Mapped[datetime | None] = mapped_column(LaneUTCDateTime(), nullable=True)
+    seconds: Mapped[float | None] = mapped_column(Float, nullable=True)
+    #: ``{region_key: {"n": int, "present": {key: int}}}``.
+    regions_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    #: Places inside the country's border but inside no published region outline.
+    outside: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    #: Places with no point of their own (a relation): counted, never placed.
+    no_point: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class OsmSearchIndex(LaneBase):
+    """One country's rows in the name and address indexes, and the ingest they were built from."""
+
+    __tablename__ = "osm_search_indexes"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    alpha3: Mapped[str] = mapped_column(String(3), nullable=False, unique=True)
+    basis_ingest: Mapped[str | None] = mapped_column(Text, nullable=True)
+    names: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    addresses: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    #: Addresses on an object with no point of its own (a relation): counted, never located.
+    addresses_no_point: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    built_at: Mapped[datetime] = mapped_column(LaneUTCDateTime(), nullable=False, default=_utcnow)
+    seconds: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+
+class OsmViewIndex(LaneBase):
+    """One country's rows in the map's R*Tree (``src/osm/view.py``), and the ingest they came from."""
+
+    __tablename__ = "osm_view_indexes"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    alpha3: Mapped[str] = mapped_column(String(3), nullable=False, unique=True)
+    basis_ingest: Mapped[str | None] = mapped_column(Text, nullable=True)
+    rows: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    #: Objects with neither a shape nor a point (a relation): counted, never drawn.
+    no_box: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    built_at: Mapped[datetime] = mapped_column(LaneUTCDateTime(), nullable=False, default=_utcnow)
+    seconds: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+
+class OsmViewCell(LaneBase):
+    """The map's cluster pyramid (``src/osm/view.py``): objects per grid cell, per zoom level.
+
+    Level ``L`` cuts the globe into cells ``360 / 2**L`` degrees on a side; ``cx`` counts from
+    180 degrees west and ``cy`` from the south pole. ``slat`` / ``slon`` are sums, so a cluster
+    is drawn at the mean of what it counts, never at the cell's centre.
+    """
+
+    __tablename__ = "osm_view_cells"
+    __table_args__ = (Index("ix_osm_view_cells_lookup", "level", "cy", "cx"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    alpha3: Mapped[str] = mapped_column(String(3), nullable=False, index=True)
+    level: Mapped[int] = mapped_column(Integer, nullable=False)
+    cx: Mapped[int] = mapped_column(Integer, nullable=False)
+    cy: Mapped[int] = mapped_column(Integer, nullable=False)
+    n: Mapped[int] = mapped_column(Integer, nullable=False)
+    slat: Mapped[float] = mapped_column(Float, nullable=False)
+    slon: Mapped[float] = mapped_column(Float, nullable=False)
+
+
 OSM_LANE_MODELS: tuple[type[LaneBase], ...] = (
     OsmObject,
     OsmCountry,
     OsmTagChange,
     OsmHistoryChange,
     OsmHistoryCut,
+    OsmAdmin1Split,
+    OsmSearchIndex,
+    OsmViewIndex,
+    OsmViewCell,
 )
 
 
