@@ -831,6 +831,12 @@
           items.forEach(it => out.push({grp, label: it.name,
             sub: [it.kind || "", it.country || "", it.qid || ""].filter(Boolean).join(" · "),
             run: () => (typeof openPlaceCard === "function" ? openPlaceCard(it.id) : null)}));
+          // S05-04 S5 (Q817): every other named place of the OSM countries read, a row of the
+          // lane behind the same facet; a row opens its object card.
+          const osmGrp = head(t("Places in the OpenStreetMap countries you read"), g.osm || {});
+          ((g.osm || {}).items || []).forEach(it => out.push({grp: osmGrp, label: it.name || it.object,
+            sub: [it.tag || "", it.country || ""].filter(Boolean).join(" · "),
+            run: () => (typeof openOsmObjectCard === "function" ? openOsmObjectCard(it.object) : null)}));
         } else if (g.kind === "law") {
           const grp = head(t("World law"), g);
           items.forEach(it => out.push({grp, label: it.title,

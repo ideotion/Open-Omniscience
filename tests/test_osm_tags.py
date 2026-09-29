@@ -84,9 +84,21 @@ def test_the_table_stays_far_below_both_databases_column_ceilings():
         ({"boundary": "administrative", "admin_level": "4"}, False, "admin"),
         ({"natural": "tree"}, False, None),
         ({"natural": "peak", "wikidata": "Q1"}, False, "poi"),
+        # R78 (answer 16 = c): land use, water and power lines are kept too.
+        ({"power": "line"}, True, "power"),
+        ({"power": "substation"}, False, "power"),
+        ({"power": "tower"}, False, None),
+        ({"power": "generator", "generator:source": "solar"}, True, None),
+        ({"waterway": "river", "name": "X"}, True, "water"),
+        ({"natural": "water", "water": "lake"}, True, "water"),
+        ({"natural": "wetland"}, True, "water"),
+        ({"natural": "coastline"}, True, None),
+        ({"landuse": "farmland"}, True, "landuse"),
+        ({"landuse": "reservoir", "water": "reservoir"}, True, "water"),
+        ({"building": "yes", "landuse": "residential"}, True, "building"),
     ],
 )
-def test_classify_keeps_the_five_kinds_and_nothing_else(tags, is_way, expected):
+def test_classify_keeps_the_eight_kinds_and_nothing_else(tags, is_way, expected):
     assert T.classify(tags, is_way=is_way)[0] == expected
 
 

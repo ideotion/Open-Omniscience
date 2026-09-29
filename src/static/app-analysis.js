@@ -4348,7 +4348,59 @@
       const dlg = $("place-card");
       if (!dlg || !dlg.open || !_placeCardLast) return;
       // The shown NAME depends on the language, so the card is re-read, not only redrawn.
+      if (_placeCardLast._osmObject) { renderOsmObjectCard(); return; }
       openPlaceCard(_placeCardLast.id);
+    }
+
+    // S05-04 S5 (Q817): a place of an OSM country that is NOT a notable Place stays a row of
+    // the lane, and this card shows that row -- every tag as metadata, the data's date, the
+    // caveat visible. A notable object says where its Place card is. Same dialog, no network.
+    async function openOsmObjectCard(ref) {
+      const dlg = $("place-card");
+      if (!dlg || !ref) return;
+      _placeCardWire();
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const seq = ++_placeCardSeq;
+      $("pc-title").textContent = "";
+      $("pc-body").innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
+      if (!dlg.open) dlg.showModal();
+      try {
+        const d = await api("/api/osm/objects/" + String(ref).split("/").map(encodeURIComponent).join("/"));
+        if (seq !== _placeCardSeq) return;
+        _placeCardLast = Object.assign({ _osmObject: true, id: ref }, d);
+        renderOsmObjectCard();
+      } catch (e) {
+        if (seq !== _placeCardSeq) return;
+        $("pc-body").innerHTML = `<div class="note err">${esc(t("Could not open the place card:") + " " + e.message)}</div>`;
+      }
+    }
+
+    function renderOsmObjectCard() {
+      const d = _placeCardLast;
+      if (!d || !d._osmObject) return;
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
+        : ((str, v) => String(str).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? String(v[k]) : m));
+      $("pc-title").textContent = d.name || d.object;
+      const row = (k, v) => v == null || v === "" ? ""
+        : `<tr><th style="text-align:start;font-weight:500;padding-inline-end:10px">${esc(k)}</th><td dir="auto">${v}</td></tr>`;
+      const coord = d.point ? `${(+d.point.lat).toFixed(5)}, ${(+d.point.lon).toFixed(5)}` : "";
+      let html = `<div class="vsect">${esc(t("Metadata"))}</div><table class="data" style="margin:4px 0 10px"><tbody>`
+        + row(t("Kind"), d.tag ? esc(d.tag) : "")
+        + row(t("Country"), d.country ? esc(d.country_name ? `${d.country_name} (${d.country})` : d.country) : "")
+        + row(t("Coordinates"), coord ? esc(coord) : esc(t("no point of its own")))
+        + row(t("OpenStreetMap object"), esc(d.object))
+        + row(t("Version"), d.version != null ? esc(String(d.version)) : "")
+        + `</tbody></table>`;
+      html += `<div class="vsect">${esc(t("Tags"))}</div><table class="data" style="margin:4px 0 10px"><tbody>`
+        + (d.tags || []).map((x) => `<tr><th style="text-align:start;font-weight:500;padding-inline-end:10px" dir="ltr">${esc(x.key)}</th><td dir="auto">${esc(x.value)}</td></tr>`).join("")
+        + `</tbody></table>`;
+      if (d.place_id) {
+        html += `<p><button type="button" class="tiny secondary" data-on-click="openPlaceCard('${esc(d.place_id)}')">${esc(t("Open the place card"))}</button></p>`;
+      }
+      html += `<div class="muted small">${esc(d.vintage ? tf("OpenStreetMap data of {date}", {date: d.vintage.slice(0, 10)}) : t("The extract states no date"))}</div>`;
+      html += `<p class="card-caveat" style="margin-top:8px">${esc(t(d.caveat || ""))}</p>`;
+      $("pc-body").innerHTML = html;
     }
 
     function renderPlaceCard() {
@@ -4408,8 +4460,13 @@
         html += `<ul style="margin:4px 0 10px;padding-inline-start:18px">` + w.pages.map((p) =>
           `<li dir="auto">${esc(p.title || p.external_id)} <span class="muted small">${esc(p.edition || "")}${p.followed ? "" : " · " + esc(t("listed by the walk"))}</span></li>`).join("") + `</ul>`;
       }
+      // Where the Place came from: a mention the gazetteer resolved, or a notable object of an
+      // OSM country read into this machine (Q817) -- each states its own date.
+      const origin = d.origin === "osm-lane"
+        ? (d.osm && d.osm.vintage ? tf("OpenStreetMap data of {date}", {date: String(d.osm.vintage).slice(0, 10)}) : t("The extract states no date"))
+        : (d.gazetteer_vintage ? tf("gazetteer of {date}", {date: d.gazetteer_vintage}) : t("gazetteer without a vintage"));
       html += `<div class="muted small">${esc(tf("Mentioned in {n} articles", {n: d.articles || 0}))}`
-        + ` · ${esc(d.gazetteer_vintage ? tf("gazetteer of {date}", {date: d.gazetteer_vintage}) : t("gazetteer without a vintage"))}`
+        + ` · ${esc(origin)}`
         + (d.item && d.item.as_of ? ` · ${esc(tf("Wikidata item read {date}", {date: String(d.item.as_of).slice(0, 10)}))}` : "")
         + `</div>`;
       if (d.articles) {
