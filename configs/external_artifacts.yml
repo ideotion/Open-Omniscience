@@ -329,6 +329,21 @@ artifacts:
     freshness: {max_age_months: 12}
     last_verified: "2026-06-16"
 
+  - id: osm-daily-diff-estimate
+    title: OSM daily change-file size estimate (the country picker's cost column)
+    kind: dated-data
+    description: >-
+      The planet's daily change file (PLANET_DAILY_DIFF_BYTES, rounded, FROM MEMORY) that the
+      OSM lane's country picker scales by each extract's share of the planet to show a daily
+      change cost before a country is chosen (Q824). Shown as an estimate with its method.
+    upstream: https://planet.openstreetmap.org/replication/day/ and https://download.geofabrik.de
+    check_upstream: "read the size of a recent planet day diff; the first 0.6 apply measures an extract's"
+    license: ODbL (sizes are facts)
+    pin: {file: src/osm/picker.py, const: OSM_DIFF_ESTIMATE_AS_OF}
+    refresh: "re-read a recent planet daily diff size; update PLANET_DAILY_DIFF_BYTES and OSM_DIFF_ESTIMATE_AS_OF"
+    freshness: {max_age_months: 12}
+    last_verified: "2026-09-29 (from memory, NOT measured -- see the module docstring)"
+
   - id: keyword-baseline
     title: Keyword positive baseline (type/topic tags)
     kind: dated-data

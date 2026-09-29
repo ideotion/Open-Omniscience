@@ -1742,6 +1742,9 @@
         <button type="button" data-tab="servers">Server IPs</button>
       </nav>
       <p class="muted" id="oomap-lens-desc" style="margin-top:6px"></p>
+      <!-- Q828: the World map names the vintage of the OpenStreetMap data it can draw on, and
+           links to where it is chosen (Settings → OpenStreetMap). Filled by loadOsmVintage(). -->
+      <p class="hint" id="oomap-osm-vintage" style="margin-top:4px"></p>
       <!-- B2 (F1): the rollup-serve staleness disclosure (basis), rendered only when the
            map-coverage payload was served from the columnar rollup — never fabricated. -->
       <div id="oo-coverage-basis" style="margin-top:6px"></div>
@@ -2146,6 +2149,24 @@
 
 
     <div class="set-view" id="set-offlinemap" style="display:none">
+    <!-- THE OSM LANE'S COUNTRY PICKER (S05-04 S3; Q807 = a, Q806 = b, Q824 = a, Q828 = a). Off
+         until a country is chosen; suggestions come from the interface language, never from the
+         IP address; each country shows its continent extract's size and its daily change cost
+         BEFORE it is chosen. Choosing writes one local setting; the download is the region job
+         below, behind the one online consent. Filled by loadOsmPicker() in app-map.js. -->
+    <section class="panel" id="osm-lane-picker">
+      <h2>Countries for the map data</h2>
+      <p class="muted" style="margin-top:0">Choose the countries whose places, roads and buildings this app reads from OpenStreetMap into its own local database. Extracts are published per continent, so a country is read from its continent's download: the size shown is that download's.</p>
+      <div id="osm-pick-state"><div class="muted">Loading…</div></div>
+      <div id="osm-pick-suggest" style="margin-top:8px"></div>
+      <div style="display:flex;gap:8px;align-items:end;flex-wrap:wrap;margin-top:8px">
+        <div><label for="osm-pick-add">Add a country</label>
+          <select id="osm-pick-add"><option value="">Choose a country…</option></select></div>
+        <button class="secondary" data-on-click="osmPickAdd()">Add</button>
+      </div>
+      <div class="hint" id="osm-pick-cadence"></div>
+      <div class="hint">OpenStreetMap data stays on this machine: it is kept out of exports, bulletins and evidence files while the question of its licence (ODbL) is open.</div>
+    </section>
     <section class="panel">
       <h2>OpenStreetMap regions</h2>
       <p class="muted" style="margin-top:0">Download OpenStreetMap region extracts for offline use — managed like the Wikipedia dumps (resumable, with pause/resume, and a download queue). Regions are listed largest first; the size shown is a dated estimate from a bundled catalogue (no network) — the exact size is read from the mirror when the download starts. Continents come from Geofabrik; the whole planet from the OpenStreetMap planet mirror. These can be very large (a continent is several GB; the planet is tens of GB).</p>

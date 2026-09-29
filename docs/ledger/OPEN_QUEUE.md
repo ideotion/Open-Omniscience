@@ -34,6 +34,14 @@
   analytic 1:** the tag or its `contact:*` twin, non-empty; an empty value is absent. (5) **What is kept:** five
   kinds (admin, place, POI by a named key list or a `wikidata`/`wikipedia` tag, building, road = a WAY with
   `highway`); land use, water, power lines and untagged objects are not.
+  **Added with S3 (2026-09-29):** (6) **The daily change cost** is an ESTIMATE, not a catalogue figure: the
+  planet's daily change file (~150 MB, from memory) scaled by the extract's share of the planet's size, labelled
+  so with its method and caveat, dated `OSM_DIFF_ESTIMATE_AS_OF` in the registry; the first 0.6 apply measures it.
+  (7) **Russia** has no catalogued extract (Geofabrik publishes it on its own) and says so rather than being mapped
+  to Europe or Asia; the Central America / Caribbean, Cyprus, Georgia and Turkey placements are from memory.
+  (8) **"Settings → Data sources → Maps" (Q828) is the existing Settings → OpenStreetMap subtab**, since Settings is
+  fixed at nine subtabs; (9) **"the wizard" of Q807 is read as the picker's suggestion row**, not a new step in
+  the first-run welcome window — a first-run step would add a question every new install must answer.
 - **THE SWARM QUESTION — SHARING FETCHES BETWEEN USERS TO SPARE THE NEWSROOMS' SERVERS, THE ARTICLE LEDGER,
   AND WHAT THE APP OWES THE MEDIA IT READS (maintainer concern 2026-09-28; question round `PS01`–`PS16` in
   [`docs/design/SHARED_FETCH_ETHICS_AND_ARTICLE_LEDGER_2026-09-28.md`](../design/SHARED_FETCH_ETHICS_AND_ARTICLE_LEDGER_2026-09-28.md)

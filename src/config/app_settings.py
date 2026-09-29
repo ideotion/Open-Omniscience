@@ -31,6 +31,8 @@ _MIN_LIMIT, _MAX_LIMIT = 1, 1000
 _MODEL_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$")
 #: A bare language code as the perception gate keys it (``fr``, ``pt``, ``zh``).
 _LANG_CODE_RE = re.compile(r"^[a-z]{2,3}$")
+#: A lowercase ISO 3166-1 alpha-2 code, as the OSM lane's country list stores it.
+_CC_RE = re.compile(r"^[a-z]{2}$")
 # Ollama keep_alive grammar: a Go duration ("30m", "1h", "300ms", "10s"), a plain
 # number of seconds, "0" (unload immediately) or "-1" (keep loaded indefinitely).
 _KEEP_ALIVE_RE = re.compile(r"^(-1|\d+(\.\d+)?(ms|s|m|h)?)$")
@@ -71,6 +73,9 @@ class AppSettings:
     # language back out. It can never turn a failed or unmeasured one on -- there is
     # no "on" list to put it in, which is the negation the brief asks for.
     perception_languages_off: list = None  # type: ignore[assignment]
+    # THE OSM LANE'S COUNTRIES (Q807 = a, S05-04 S3): lowercase ISO 3166-1 alpha-2, in the
+    # order chosen. Empty = the lane is off; nothing is downloaded or read for it.
+    osm_countries: list = None  # type: ignore[assignment]
     # Per-producer tunables: {producer_name: {tunable_key: value}}. Only keys the
     # catalog declares survive, always clamped to the declared safe range -- see
     # src/briefing/catalog.py, which owns the ranges and the reasons for them.
@@ -201,6 +206,8 @@ class AppSettings:
             self.card_settings = {}
         if self.perception_languages_off is None:
             self.perception_languages_off = []
+        if self.osm_countries is None:
+            self.osm_countries = []
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -305,6 +312,12 @@ def load_settings() -> AppSettings:
         if isinstance(raw_pe_off, list)
         else []
     )
+    raw_osm = raw.get("osm_countries")
+    osm_countries = (
+        list(dict.fromkeys(str(x) for x in raw_osm if _CC_RE.match(str(x))))
+        if isinstance(raw_osm, list)
+        else []
+    )
     raw_card_settings = raw.get("card_settings")
     card_settings = raw_card_settings if isinstance(raw_card_settings, dict) else {}
     llm_model = raw.get("llm_model")
@@ -392,6 +405,7 @@ def load_settings() -> AppSettings:
         recipes_disabled=recipes_disabled,
         cards_disabled=cards_disabled,
         perception_languages_off=perception_languages_off,
+        osm_countries=osm_countries,
         card_settings=card_settings,
         llm_model=str(llm_model) if llm_model else None,
         llm_keep_alive=keep_alive,
@@ -450,6 +464,13 @@ def save_settings(updates: dict) -> AppSettings:
                 "perception_languages_off must be a list of language codes"
             )
         current.perception_languages_off = sorted(set(codes))
+    if "osm_countries" in updates and updates["osm_countries"] is not None:
+        codes = updates["osm_countries"]
+        if not isinstance(codes, list) or not all(
+            isinstance(x, str) and _CC_RE.match(x) for x in codes
+        ):
+            raise AppSettingsError("osm_countries must be a list of alpha-2 country codes")
+        current.osm_countries = list(dict.fromkeys(codes))
     if "card_settings" in updates and updates["card_settings"] is not None:
         raw = updates["card_settings"]
         if not isinstance(raw, dict):
