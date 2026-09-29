@@ -2495,7 +2495,7 @@
         who: ((d.who && d.who.entities) || []).map((e) => ({
           facet: "entity", value: e.name,
           label: (e.translation_tier === "verified" && e.translation) ? e.translation : e.name,
-          hover: entityLadderHoverText(e),
+          hover: entityLadderHoverText(e), qid: e.qid || "",
           sub: e.class || "", n: e.articles})),
         // S05-03: a place the gazetteer resolves into a Place shows its name in the
         // reader's language (Q827: OSM first, Wikidata second) -- the DRILL still sends the
@@ -2522,6 +2522,12 @@
             + `title="${esc(t("Narrow the corpus to articles that mention this") + " — " + it.value + src)}">`
             + `<span data-i18n-dyn dir="auto">${esc(it.label)}</span>${it.sub ? ` <span class="muted">(${esc(it.sub)})</span>` : ""}`
             + ` <span class="muted">· ${it.n}</span></button>`;
+          // S05-11 S4: a person or organisation whose name resolves to ONE Wikidata item
+          // opens that item's dossier; a name several items share gets none.
+          if (group === "who" && it.qid) {
+            return chip + `<button type="button" class="chip an-dossier" data-who-i="${i}" `
+              + `aria-label="${esc(t("Open the dossier"))}" title="${esc(t("Open the dossier") + " — " + it.qid)}">&#9636;</button>`;
+          }
           // A place the gazetteer resolves gets its card; one it cannot resolve gets none,
           // rather than a card about a place nobody identified.
           if (group !== "where" || !it.placeId) return chip;
@@ -4177,6 +4183,12 @@
       $("pc-close").addEventListener("click", () => dlg.close());
       // S05-11 S3: the Conjunction Lens over the articles naming this place.
       $("pc-body").addEventListener("click", (ev) => {
+        const dz = ev.target && ev.target.closest ? ev.target.closest(".pc-dossier") : null;
+        if (dz && _placeCardLast && _placeCardLast.qid && typeof openDossier === "function") {
+          dlg.close();
+          openDossier(_placeCardLast.qid);
+          return;
+        }
         const b = ev.target && ev.target.closest ? ev.target.closest(".pc-conj") : null;
         const d = _placeCardLast;
         if (!b || !d) return;
@@ -4188,6 +4200,12 @@
       const www = $("an-www");
       if (www) {
         www.addEventListener("click", (ev) => {
+          const dz = ev.target && ev.target.closest ? ev.target.closest(".an-dossier") : null;
+          if (dz) {
+            const who = _anFacets && _anFacets.who && _anFacets.who[+dz.getAttribute("data-who-i")];
+            if (who && who.qid && typeof openDossier === "function") openDossier(who.qid);
+            return;
+          }
           const b = ev.target && ev.target.closest ? ev.target.closest(".an-place-card") : null;
           if (!b) return;
           const it = _anFacets && _anFacets.where && _anFacets.where[+b.getAttribute("data-place-i")];
@@ -4308,8 +4326,11 @@
         + ` · ${esc(d.gazetteer_vintage ? tf("gazetteer of {date}", {date: d.gazetteer_vintage}) : t("gazetteer without a vintage"))}`
         + (d.item && d.item.as_of ? ` · ${esc(tf("Wikidata item read {date}", {date: String(d.item.as_of).slice(0, 10)}))}` : "")
         + `</div>`;
-      if (d.articles) {
-        html += `<div style="margin-top:8px"><button type="button" class="secondary pc-conj">${esc(t("Combine keywords in these articles"))}</button></div>`;
+      if (d.articles || d.qid) {
+        html += `<div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">`
+          + (d.articles ? `<button type="button" class="secondary pc-conj">${esc(t("Combine keywords in these articles"))}</button>` : "")
+          + (d.qid ? `<button type="button" class="secondary pc-dossier">${esc(t("Open the dossier"))}</button>` : "")
+          + `</div>`;
       }
       // The caveat is VISIBLE, never behind the hover (the informed-consent rule).
       html += `<p class="card-caveat" style="margin-top:8px">${esc(t(d.caveat || ""))}</p>`;
