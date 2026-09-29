@@ -5,7 +5,8 @@ Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 
 Pins what the build may never do: key a region silently, overwrite one code with
 another, pick a claim, exceed a published vertex cap, or write a border with no date.
-The geometry fixture (``tests/fixtures/osm/admin_boundaries.osm``) holds one country
+The geometry fixture (``tests/fixtures/osm/admin_boundaries.osm.pbf``, from the readable
+``admin_boundaries.osm`` beside it) holds one country
 with two admin-1 regions (one tagged ISO 3166-2, one untagged), one contested area
 with two claims and one claim naming a single party.
 """
@@ -25,7 +26,7 @@ from src.timemap import admin_geo as G
 from tests.js_source_helper import function_body, function_source
 
 _ROOT = Path(__file__).resolve().parents[1]
-_FIXTURE = _ROOT / "tests" / "fixtures" / "osm" / "admin_boundaries.osm"
+_FIXTURE = _ROOT / "tests" / "fixtures" / "osm" / "admin_boundaries.osm.pbf"
 _STATIC = _ROOT / "src" / "static"
 _MAP_JS = (_STATIC / "app-map.js").read_text(encoding="utf-8")
 
@@ -171,18 +172,36 @@ def test_the_build_is_deterministic_and_states_its_vintage_and_attribution():
 # --------------------------------------------------- the reader (pyosmium, [geo])
 
 
-def test_the_script_reads_the_fixture_through_pyosmium(tmp_path):
-    pytest.importorskip("osmium")
+def _script():
     import importlib.util
 
     spec = importlib.util.spec_from_file_location("bab", _ROOT / "scripts" / "build_admin_boundaries.py")
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
-    recs = mod.read_boundaries(str(_FIXTURE))
+    return mod
+
+
+@pytest.mark.parametrize("reader", ["python", "pyosmium"])
+def test_the_script_reads_the_fixture_through_the_lanes_one_reader(reader):
+    """ONE reader for the OSM lane: the build goes through ``src.osm.reader.open_extract``
+    and the lane's own ``stitch``, and both backends must produce the same artifacts."""
+    if reader == "pyosmium":
+        pytest.importorskip("osmium")
+    mod = _script()
+    assert mod.header_vintage(str(_FIXTURE)) == "2026-09-01"     # read from the file's own header
+    recs, unclosed = mod.read_boundaries(str(_FIXTURE), reader=reader)
+    assert unclosed == 0
     assert sorted(r.osm_id for r in recs) == [1001, 1002, 1003, 1004, 1005]   # admin_level=8 skipped
     a0, a1 = G.build_artifacts(recs, vintage="2026-09-01", source=_FIXTURE.name)
     assert set(a1["regions"]) == {"FR-IDF", "r1003"}
     assert {c["id"] for c in a0["contested"]} == {"r1004", "r1005"}
+    assert a1["regions"]["FR-IDF"]["rings"] == [[[1.0, 41.0], [4.0, 41.0], [4.0, 44.0], [1.0, 44.0]]]
+
+
+def test_the_build_script_opens_no_osm_reader_of_its_own():
+    src = (_ROOT / "scripts" / "build_admin_boundaries.py").read_text(encoding="utf-8")
+    assert "from src.osm.reader import open_extract" in src and "from src.osm.geometry import stitch" in src
+    assert "import osmium" not in src and "SimpleHandler" not in src
 
 
 # ------------------------------------------------------- registry + freshness

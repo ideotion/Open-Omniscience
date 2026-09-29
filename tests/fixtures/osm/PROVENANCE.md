@@ -57,3 +57,16 @@ counts name resolutions, and hands the file it wrote to the in-browser reader
 (`src/static/osmpbf.js`) under node. The versioned OSM adapter is an interface in 0.4;
 0.5 consumes this fixture for it (S04-08's S5): `tests/test_osm_pbf.py`, `test_osm_ingest.py`
 and `test_osm_completeness.py` run the lane's whole pipeline on it, through both readers.
+
+## `admin_boundaries.osm` and `admin_boundaries.osm.pbf` (0.5 row E)
+
+**Also wholly synthetic**: six invented squares written as literals, no byte from OpenStreetMap. Unlike
+`synthetic.osm.pbf` it uses REAL codes (`FR`, `DE`, `FR-IDF`), because the boundary build keys
+countries through the app's own ISO converter, which refuses a private-use code by design; the squares
+are what make a leaked row identifiable on sight (a square "France" from 0°–10° E, 40°–50° N). It holds
+one country, one region tagged `ISO3166-2`, one untagged region, one `boundary=disputed` area claimed by
+two parties, one `boundary=claim` naming one, and one `admin_level=8` relation the build must skip.
+
+The `.osm` XML is the readable source; the `.osm.pbf` is that file written by pyosmium with a header
+`osmosis_replication_timestamp` of `2026-09-01T00:00:00Z` (the vintage the tests read back), so both of the
+lane's reader backends can read it. Not digest-pinned: libosmium's zlib output is not byte-stable across builds.

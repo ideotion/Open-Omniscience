@@ -13,8 +13,9 @@ its rules live in ``src/timemap/admin_geo.py``.
 
 RUN ON THE MAINTAINER'S MACHINE, from a file you downloaded yourself. This script opens
 no network connection: it reads a local OpenStreetMap ``.osm.pbf`` (the planet file or
-an extract) with pyosmium (``pip install osmium``, the ``[geo]`` extra). For the planet,
-filter it first so the boundaries fit in memory (osmium-tool):
+an extract) through the OSM lane's reader (``src/osm/reader.py``: pyosmium with the
+``[geo]`` extra, pure Python for a small file). For the planet, filter it first so the
+boundaries are a small file (osmium-tool):
 
   osmium tags-filter planet.osm.pbf \\
       r/boundary=administrative r/boundary=disputed r/boundary=claim \\
@@ -42,6 +43,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from src.osm.geometry import stitch  # noqa: E402
+from src.osm.reader import open_extract  # noqa: E402
 from src.timemap.admin_geo import (  # noqa: E402
     ADMIN0_VERTEX_CAP,
     ADMIN1_VERTEX_CAP,
@@ -59,43 +62,40 @@ OUT_ADMIN1 = "osm_admin1.json"
 
 
 def header_vintage(path: str) -> str | None:
-    """The data date from the file header, as ``YYYY-MM-DD``, or None."""
-    import osmium  # the [geo] extra; imported here so the pure module never needs it
-
-    reader = osmium.io.Reader(path, osmium.osm.osm_entity_bits.NOTHING)
-    try:
-        h = reader.header()
-        for key in ("osmosis_replication_timestamp", "timestamp"):
-            v = (h.get(key) or "").strip()
-            if len(v) >= 10 and valid_vintage(v[:10]):
-                return v[:10]
-    finally:
-        reader.close()
-    return None
+    """The data date from the file header (its replication timestamp), as ``YYYY-MM-DD``."""
+    stamp = open_extract(path).header().replication_timestamp
+    v = stamp.date().isoformat() if stamp else None
+    return v if valid_vintage(v) else None
 
 
-def read_boundaries(path: str) -> list[BoundaryRecord]:
-    """Every boundary relation the transform uses, assembled into rings by libosmium."""
-    import osmium
+def read_boundaries(path: str, *, reader: str | None = None) -> tuple[list[BoundaryRecord], int]:
+    """Every boundary relation the transform uses, with its rings, and the unclosed-segment count.
 
+    Read through the OSM lane's ONE reader seam (``src.osm.reader.open_extract``: pyosmium
+    with the ``[geo]`` extra, pure Python under its cap), and the rings joined by the lane's
+    own ``stitch`` -- so the lane has one reader and one ring builder, not two. A segment
+    that closes into no ring is COUNTED and reported, never bridged with a straight line.
+    """
+    ext = open_extract(path, reader=reader)
+    wanted = [r for r in ext.relations() if kind_of(r.tags) is not None]
+    way_ids = {m.ref for r in wanted for m in r.members if m.type == "w"}
+    ways = {w.id: w.refs for w in ext.ways_by_id(way_ids)}
+    node_ids = {n for refs in ways.values() for n in refs}
+    locs = {n.id: [n.lon, n.lat] for n in ext.nodes_by_id(node_ids)}
     records: list[BoundaryRecord] = []
-
-    class _Areas(osmium.SimpleHandler):
-        def area(self, a):  # noqa: ANN001 (pyosmium callback)
-            if a.from_way():
-                return
-            tags = {t.k: t.v for t in a.tags}
-            if kind_of(tags) is None:
-                return
-            outers, inners = [], []
-            for outer in a.outer_rings():
-                outers.append([[n.lon, n.lat] for n in outer if n.location.valid()])
-                for inner in a.inner_rings(outer):
-                    inners.append([[n.lon, n.lat] for n in inner if n.location.valid()])
-            records.append(BoundaryRecord(osm_id=a.orig_id(), tags=tags, outers=outers, inners=inners))
-
-    _Areas().apply_file(path, locations=True, idx="flex_mem")
-    return records
+    unclosed = 0
+    for rel in wanted:
+        segs: dict[str, list[tuple[int, ...]]] = {"outer": [], "inner": []}
+        for m in rel.members:
+            if m.type == "w" and m.ref in ways:
+                segs["inner" if m.role == "inner" else "outer"].append(ways[m.ref])
+        rings: dict[str, list[list[list[float]]]] = {}
+        for role, parts in segs.items():
+            id_rings, dropped = stitch(parts)
+            unclosed += dropped
+            rings[role] = [[locs[n] for n in ring if n in locs] for ring in id_rings]
+        records.append(BoundaryRecord(osm_id=rel.id, tags=dict(rel.tags), outers=rings["outer"], inners=rings["inner"]))
+    return records, unclosed
 
 
 def _write(doc: dict, path: Path) -> str:
@@ -108,6 +108,8 @@ def _write(doc: dict, path: Path) -> str:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("pbf", help="a local OpenStreetMap .osm.pbf (planet or extract), boundaries filtered")
+    ap.add_argument("--reader", choices=("pyosmium", "python"), default=None,
+                    help="force the lane's reader backend (default: pyosmium when installed)")
     ap.add_argument("--vintage", default=None, help="date of the OSM data, YYYY-MM-DD (else the file header)")
     ap.add_argument("--precision", type=int, default=DEFAULT_PRECISION, help="decimal places kept")
     ap.add_argument("--admin0-cap", type=int, default=ADMIN0_VERTEX_CAP, help="vertices per country")
@@ -122,7 +124,7 @@ def main() -> int:
         print("REFUSED: the file header carries no data date; pass --vintage YYYY-MM-DD.", file=sys.stderr)
         return 2
     print(f"Reading {args.pbf} (vintage {vintage}) …", file=sys.stderr)
-    records = read_boundaries(args.pbf)
+    records, unclosed = read_boundaries(args.pbf, reader=args.reader)
     admin0, admin1 = build_artifacts(
         records,
         vintage=str(vintage),
@@ -138,6 +140,7 @@ def main() -> int:
     report = {
         "vintage": vintage,
         "relations_read": len(records),
+        "unclosed_segments": unclosed,
         "admin0": {**c0, "bytes": size0},
         "admin1": {**c1, "bytes": size1},
         "unkeyed_countries": admin0["unkeyed"],

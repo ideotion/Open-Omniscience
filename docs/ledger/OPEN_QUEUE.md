@@ -152,7 +152,8 @@
   and `disputed_by`, one naming a single party kept and marked incomplete), **but the map's contested layer stays
   Natural Earth's** with its worldview picker until row L, which is exactly the change of convention and needs its
   own date and source (brief `S04-11` §6). (5) **The input is a local file the operator downloaded** (planet or
-  extract, filtered with `osmium tags-filter`); the build opens no connection, so no new host. OPEN, asked in the
+  extract, filtered with `osmium tags-filter`), read through the OSM lane's ONE reader seam and ring builder
+  (`src/osm/reader.py`, `src/osm/geometry.py`, row D); the build opens no connection, so no new host. OPEN, asked in the
   PR: **which countries' admin-1 ship in 0.5** (every country, or the ingested ones — the ruling says "shipped
   artifacts", not the coverage), and **whether Q823 ⛔ reaches a repo-shipped OSM-derived artifact** (ODbL
   share-alike on a derived database; recorded, never decided here — the registry licence line carries the
