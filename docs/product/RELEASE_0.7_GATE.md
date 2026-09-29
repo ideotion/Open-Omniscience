@@ -1,5 +1,9 @@
 # Release gate — v0.7.0 · Medical + patents, and the widening
 
+> **PROVISIONAL ON THE V1 ROUND (`RC11` = b, 2026-09-29).** The maintainer re-opened all nine V1 rulings of
+> 2026-09-07 (V1-1..V1-9): every row of this gate that cites a V1 ruling is provisional until the detailed V1 round
+> is written and answered. V1-4 is already answered: PubMed BULK over the API («pubmed bulk prefered over API»).
+
 **Status: OPEN — written 2026-09-15 from the answered roadmap sheet.** The checkable inventory for closing the
 `0.7` cycle (Q112 = a, Q1204 = a; the sheet is
 [`docs/design/ROADMAP_ANSWER_SHEET_2026-09-12_BETA_PATHWAY.md`](../design/ROADMAP_ANSWER_SHEET_2026-09-12_BETA_PATHWAY.md),
@@ -96,6 +100,7 @@ licence line. **Operator:** live verification per source. Brief `S07-03`.
 | 2026-09-15 | Board created from the answered roadmap sheet (Q112 = a); the V1 verticals carried with amendment 3; row C placed at 0.7 with the Q903 CONFLICT recorded for confirmation | maintainer (answer sheet) · rows written by the session |
 | 2026-09-15 | **The 2026-09-06 register's 65 answers — effects on this board:** the exit clause gains «before 0.8 opens: the app-wide one-model decision (register D8: «Mark that we need the decision to be made before version 0.8»)», recorded as 0.8 row C; if `RC02` confirms C1's «a, but wait for version 0.7», a row «retire the legacy single-file restore» enters this board (not added by the session — a ⛔ contradiction with Q215 = a). | maintainer (the register, 2026-09-15) · reconciled by the session |
 | 2026-09-15 | **The RC confirmation round came back UNANSWERED — 0 of 22 `ANSWER` lines carry a letter — processed per its own §0.** Effects: the exit clause records `RC04` ASSUMPTION (a) — no 0.5 bench, the one-model decision arrives here before 0.8 opens, confirming the marker rather than changing it; and `RC02` ⛔ stays PENDING, so the conditional «retire the legacy single-file restore» row named in the row above is **NOT added** and the restore half stays. **No row changed status; no row added.** | maintainer (the round, left blank) · §0's blank rules applied by the session |
+| 2026-09-29 | **`RC11` = b: the V1 round re-opens all nine rulings**, so the rows here that cite V1-1..V1-9 are provisional (the banner above); V1-4 answered, PubMed bulk. | maintainer (project chat, 2026-09-29 19:55 UTC) · recorded by the session |
 
 ---
 

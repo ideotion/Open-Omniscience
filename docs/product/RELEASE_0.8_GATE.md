@@ -1,5 +1,9 @@
 # Release gate — v0.8.0 · Conflict + the 360° dossier, and lane completion
 
+> **PROVISIONAL ON THE V1 ROUND (`RC11` = b, 2026-09-29).** The maintainer re-opened all nine V1 rulings of
+> 2026-09-07 (V1-1..V1-9): every row of this gate that cites a V1 ruling is provisional until the detailed V1 round
+> is written and answered. V1-4 is already answered: PubMed BULK over the API («pubmed bulk prefered over API»).
+
 **Status: OPEN — written 2026-09-15 from the answered roadmap sheet.** The checkable inventory for closing the
 `0.8` cycle, the last alpha before the beta (Q101 = a: alphas are 0.4–0.8; Q112 = a, Q1204 = a; the sheet is
 [`docs/design/ROADMAP_ANSWER_SHEET_2026-09-12_BETA_PATHWAY.md`](../design/ROADMAP_ANSWER_SHEET_2026-09-12_BETA_PATHWAY.md),
@@ -99,6 +103,7 @@ bench in 0.5 as a measurement only and hand this row numbers; writing `c` would 
 | 2026-09-15 | **Premise correction from the brief-writing pass (row B):** `grep -rn kpi src/static/` finds nothing — the KPI board is `src/monitoring/kpi.py`'s snapshot served at `/api/diagnostics/kpi` and the diagnostics bundle member; the row's "shows each lane's bar … on hover" presupposes a rendering surface that does not exist at `bebcef4`. The row now says so; the surface's placement is listed in `S08-02` §6 as a NOTE the maintainer owes, never decided by the session. No ruling changed. | session (`S08-02` §2, hand-verified) |
 | 2026-09-15 | **Row C ADDED — the app-wide one-model decision, owner: the maintainer** (register D8, 2026-09-15 15:17Z: «wait for the app wide one model ruling, new models might come up and change what's best for the user. Wait. Mark that we need the decision to be made before version 0.8 r»). A decision, not work; the 0.7 exit clause names it. Its CONFLICT with Q1142 = a (the bench in 0.5) is `RC04`'s. | maintainer (the register, 2026-09-15) |
 | 2026-09-15 | **The RC confirmation round came back UNANSWERED — 0 of 22 `ANSWER` lines carry a letter — processed per its own §0.** Effect on this board: row C — `RC04` ASSUMPTION (a), the decision is taken without a 0.5 bench behind it; owner, timing and status unchanged (the maintainer's, PENDING before 0.8 opens). The CONFLICT with Q1142 = a stays recorded on both rows. **No row changed status.** | maintainer (the round, left blank) · §0's blank rules applied by the session |
+| 2026-09-29 | **`RC12` = c: raw poll data (questions verbatim, results readable directly, leading questions flagged) is placed in 0.8**, with the maintainer's note: «this needs a careful approach, as most polls data are, unless I'm mistaken, private or confidential». No row is opened yet; `docs/FUTURE_DEVELOPMENTS.md` §Poll analysis's rewrite is owed first. **`RC11` = b:** the provisional banner above. | maintainer (project chat, 2026-09-29 19:55 UTC) · recorded by the session |
 
 ---
 
