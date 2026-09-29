@@ -334,7 +334,8 @@ _ESTIMATE_PROBES = 400
 _ROW_CLIFF_BYTES = 16300
 
 _ESTIMATE_METHOD = (
-    "Sampled, not measured: up to {n} articles picked at evenly spaced ids between the "
+    "Sampled, not measured (a store of {n} articles or fewer is read in full, and says "
+    "'exact'): up to {n} articles picked at evenly spaced ids between the "
     "smallest and largest id (one index seek each), their text measured in BYTES "
     "(length(CAST(content AS BLOB)) plus length(compressed_content)), and the mean "
     "multiplied by the article count (probes that land on an id already sampled are dropped, so 'sampled' can be below the probe count). The share is that product over the file size. "
@@ -369,30 +370,46 @@ def content_share_estimate(session: Session, db_bytes: int | None) -> dict[str, 
                 return {"articles": 0, "method": _ESTIMATE_METHOD.format(n=_ESTIMATE_PROBES)}
             n_articles = int(_scalar(session, "SELECT count(*) FROM articles") or 0)
             lo, hi = int(lo), int(hi)
-            k = min(_ESTIMATE_PROBES, max(1, n_articles))
-            step = (hi - lo) / (k - 1) if k > 1 else 0
-            seen: set[int] = set()
+            exact = n_articles <= _ESTIMATE_PROBES
             payloads: list[int] = []
             both = 0
             compressed_only = 0
-            for i in range(k):
-                row = session.execute(
-                    text(
-                        "SELECT id, coalesce(length(CAST(content AS BLOB)), 0), "
-                        "length(compressed_content) "
-                        "FROM articles WHERE id >= :p ORDER BY id LIMIT 1"
-                    ),
-                    {"p": lo + round(i * step)},
-                ).fetchone()
-                if row is None or int(row[0]) in seen:
-                    continue
-                seen.add(int(row[0]))
-                raw, comp = int(row[1] or 0), row[2]
+
+            def _take(row_id: int, raw_len, comp_len) -> None:
+                nonlocal both, compressed_only
+                raw, comp = int(raw_len or 0), comp_len
                 payloads.append(raw + int(comp or 0))
                 if comp is not None and raw > 0:
                     both += 1
                 elif comp is not None:
                     compressed_only += 1
+
+            if exact:
+                # Every row: exact, and no dearer than the probes it replaces.
+                for row in session.execute(
+                    text(
+                        "SELECT id, length(CAST(content AS BLOB)), length(compressed_content) "
+                        "FROM articles"
+                    )
+                ):
+                    _take(int(row[0]), row[1], row[2])
+            else:
+                k = _ESTIMATE_PROBES
+                step = (hi - lo) / (k - 1)
+                seen: set[int] = set()
+                for i in range(k):
+                    probe = session.execute(
+                        text(
+                            "SELECT id, length(CAST(content AS BLOB)), "
+                            "length(compressed_content) "
+                            "FROM articles WHERE id >= :p ORDER BY id LIMIT 1"
+                        ),
+                        {"p": lo + round(i * step)},
+                    ).fetchone()
+                    if probe is None or int(probe[0]) in seen:
+                        continue
+                    seen.add(int(probe[0]))
+                    _take(int(probe[0]), probe[1], probe[2])
             present = {
                 str(r[0])
                 for r in _rows(session, "SELECT name FROM sqlite_master WHERE type='table'")
@@ -407,7 +424,11 @@ def content_share_estimate(session: Session, db_bytes: int | None) -> dict[str, 
                 if table in present:  # module-constant names, never user input
                     derived[table] = _scalar(session, f"SELECT max(rowid) FROM {table}")
     except StatementTimeout as exc:
-        return {"aborted": True, "reason": f"aborted by the statement deadline ({exc})"}
+        return {
+            "aborted": True,
+            "reason": f"stopped before the sample finished, by the statement deadline or the memory guard ({exc})",
+            "method": _ESTIMATE_METHOD.format(n=_ESTIMATE_PROBES),
+        }
     except Exception as exc:  # noqa: BLE001 - a diagnostic degrades, never raises
         _LOG.debug("content share estimate unavailable: %s", exc)
         return None
@@ -416,6 +437,7 @@ def content_share_estimate(session: Session, db_bytes: int | None) -> dict[str, 
     out: dict[str, Any] = {
         "articles": n_articles,
         "sampled": sampled,
+        "exact": exact,
         "method": _ESTIMATE_METHOD.format(n=_ESTIMATE_PROBES),
         "caveat": _ESTIMATE_CAVEAT,
     }
@@ -426,14 +448,25 @@ def content_share_estimate(session: Session, db_bytes: int | None) -> dict[str, 
     out["mean_text_bytes_per_article"] = int(mean)
     out["article_text_bytes"] = text_bytes
     if db_bytes:
-        out["article_text_share"] = round(min(1.0, text_bytes / db_bytes), 3)
-        out["remainder_bytes"] = max(0, int(db_bytes) - text_bytes)
+        out["article_text_share"] = round(text_bytes / db_bytes, 3)
+        if text_bytes > db_bytes:
+            out["exceeds_file"] = (
+                "the extrapolated text is larger than the file: the sample over-represents "
+                "large articles, or the file holds compressed pages. Read the share as an "
+                "upper bound, not a measurement."
+            )
+        else:
+            out["remainder_bytes"] = int(db_bytes) - text_bytes
     over = sum(1 for p in payloads if p > _ROW_CLIFF_BYTES)
     out["row_cliff"] = {
         "cliff_bytes": _ROW_CLIFF_BYTES,
         "sampled_over": over,
         "share_over": round(over / sampled, 3),
-        "note": "D45: an UPDATE of a row above the cliff writes several WAL pages instead of one.",
+        "note": (
+            "D45: an UPDATE of a row above the cliff writes several WAL pages instead of one. "
+            "A LOWER BOUND: only the text columns are counted, so a row whose text plus its "
+            "url, title and other columns crosses the cliff is counted below it."
+        ),
     }
     out["text_stored_twice"] = {
         "sampled_raw_and_compressed": both,

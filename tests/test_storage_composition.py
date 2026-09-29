@@ -288,3 +288,34 @@ def test_the_estimate_reports_a_deadline_abort(db, monkeypatch):
     monkeypatch.setattr(storage_mod, "_scalar", boom)
     est = storage_mod.content_share_estimate(db, 10**6)
     assert est["aborted"] is True and "deadline" in est["reason"]
+
+
+def test_a_gapped_small_store_is_read_in_full_not_sampled(tmp_path):
+    """49 rows at ids 1..49 plus one at id 1,000,000: id-spread probes would all land on the
+    far row. A store at or under the probe count is read in full and says so."""
+    engine = create_engine(f"sqlite:///{tmp_path / 'gap.db'}", future=True)
+    Base.metadata.create_all(engine)
+    s = sessionmaker(bind=engine, future=True)()
+    s.add(Source(name="S", domain="x.test", country="fr"))
+    s.flush()
+    ids = list(range(1, 50)) + [1_000_000]
+    for i in ids:
+        s.add(
+            Article(
+                id=i, url=f"https://x.test/{i}", canonical_url=f"https://x.test/{i}",
+                source_id=1, title="T", content="a" * (100 if i != 1_000_000 else 5100),
+                hash=f"g{i}", language="en", created_at=datetime.now(UTC),
+            )
+        )
+    s.commit()
+    est = storage_mod.content_share_estimate(s, 10**6)
+    s.close()
+    assert est["exact"] is True and est["sampled"] == 50
+    assert est["article_text_bytes"] == 49 * 100 + 5100
+    assert "LOWER BOUND" in est["row_cliff"]["note"]
+
+
+def test_an_overshooting_share_is_flagged_never_clamped(db):
+    est = storage_mod.content_share_estimate(db, 1000)  # file smaller than the text
+    assert est["article_text_share"] > 1
+    assert "exceeds_file" in est and "remainder_bytes" not in est
