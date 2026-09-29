@@ -961,6 +961,30 @@
   machines** are counted by the new button and recorded only when the operator presses it,
   because the app cannot tell a failed write from a period when auto-log was off; (3) **FD03's
   option (b)**, a qualification pass that fits below the floor, stays a planned slice, unbuilt.
+  **BUILT 2026-09-29 (R93)** — see the SOURCE QUALIFICATION ON THE FLEET entry below.
+- **SOURCE QUALIFICATION ON THE FLEET, AND WHAT IS STILL SLOW (2026-09-29, R93 + R94; the
+  maintainer's answer to item 24 of the 2026-09-29 list).** The report: «after 72 hours of
+  scrapping on 8 different instances, not a single source has been added despite seeing >80000
+  candidates». The cause, measured in the bundles already in the project folder: every field VM
+  reads 3,924 MiB, under the 4 GiB floor (S1.3), so `run_qualification_pass` declined on every
+  pass of every one of them; the 2026-09-26 bundle's `qualification-integrity.json` reads
+  `with_judging_attempt: 0` over 33,767 sources. This is the QUAL-1 finding of 2026-09-24, whose
+  FD03 was taken at its default (a) as an ASSUMPTION. **BUILT (R93): FD03 option (b)**, a pass
+  that judges against a bounded sample of the newest 20,000 articles below the floor; **and
+  (R94)** the queue. **STILL OPEN, recorded rather than built:** (1) **throughput** — the
+  ride-along judges at most `qualification_per_pass` = 5 new candidates per housekeeping-lane
+  run, and the lane runs once per collection pass (1 to 3 hours apart on the field machines)
+  and was skipped 11 times in ~32 hours on one of them for waiting 900 s on the briefing
+  refresh (`housekeeping lane gave up after 900s`). At that rate an 80,000 backlog takes years;
+  the «Qualify the backlog» job (batches of 20, back to back) is the drain, and now runs on
+  these machines. Whether it should start on its own, or `qualification_per_pass` rise, is the
+  maintainer's call (proposed in the thread, not changed); (2) **the quarterly cycle's budget**
+  — 6,200+ qualified sources every 3 months is ~70 re-checks a day, and 2 per pass at the
+  field's pass rate is ~30 to 40; the queue view shows the due count, so a shortfall is
+  visible rather than silent; raising `qualification_recheck_per_pass` is the lever, not
+  changed here; (3) **RC06** (how far back a re-check looks) waits on this work and is not
+  answered by it; (4) a sampled verdict is judged against a baseline of the newest 20,000
+  articles, labelled `+sample`; nothing re-judges it when the machine later has the memory.
 - **THE PRE-FLIGHT QUESTION ROUND (2026-09-18, `docs/design/PREFLIGHT_QUESTIONS_2026-09-18_RELEASE_RUN.md`,
   PF01–PF14) — UNANSWERED at recording; nothing here is resolved.** Asked in the same PR as the 0.4
   release-run button, because the maintainer said *"If you have any questions, ask them now before I launch

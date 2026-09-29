@@ -604,13 +604,20 @@ def qualify_sources_bulk_status(request: Request, db: Session = Depends(get_db))
     2026-09-24: the floor stays, and the Sources surface SAYS it declines, with the
     switch that lifts it -- 82,805 candidates waited on one field machine with
     nothing on screen saying why)."""
+    from src.catalog.qualification import cohort_plan
     from src.catalog.qualify_job import initial_backlog_estimate
     from src.config.machine_floor import machine_floor
 
     floor = machine_floor()
+    plan = cohort_plan(db)
     return {
         **_BULK_QUALIFICATION_JOB.status(),
         "backlog": initial_backlog_estimate(db),
+        # FD03 b (2026-09-29): what a pass will judge against HERE. The floor below still
+        # reports the machine; `cohort.mode` is what decides whether anything is judged --
+        # `sample` below the floor, `declined` only when even the sample does not fit.
+        "cohort": {k: plan.get(k) for k in ("mode", "sample_articles", "sample_need_mb",
+                                            "available_mb")},
         # `reason_i18n` / `reason_vars` carry the reason as its keyed frame, so the panel
         # writes it in the UI language instead of an English parenthesis (re-walk S-5).
         "floor": {k: floor.get(k) for k in ("declines", "below", "overridden", "reason",
@@ -1895,6 +1902,21 @@ def _floor_note_parts(criterion: dict, floor_status: dict) -> list[str]:
     if criterion.get("abs_floor") is not None:
         return [floor_status["measured"], floor_status["kept_because"]]
     return [_NO_FLOOR_NOTE]
+
+
+@router.get("/qualification/queue")
+def qualification_queue_view(db: Session = Depends(get_db)) -> dict:
+    """The qualification QUEUE (R94, 2026-09-29): new candidates first, then due re-checks,
+    in the order the pass takes them. Read-only; counts and domains, never a score."""
+    from src.catalog.qualification import qualification_queue
+    from src.scheduler.settings import load_settings
+
+    settings = load_settings()
+    return {
+        **qualification_queue(db),
+        "per_pass": {"new": settings.qualification_per_pass,
+                     "rechecks": settings.qualification_recheck_per_pass},
+    }
 
 
 @router.get("/qualification/config")
