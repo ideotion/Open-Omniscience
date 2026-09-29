@@ -340,6 +340,99 @@
       return _ooMapDisputed;
     }
 
+    // ===================== OSM-DERIVED BOUNDARIES (0.5 row E) ===================== //
+    // RULINGS Q802 (second half), Q314, Q804 [an ASSUMPTION at the sheet's default] and
+    // Q816's "the vintage stated": countries and admin-1 regions cut from OpenStreetMap
+    // by scripts/build_admin_boundaries.py, on the maintainer's machine. Both files are
+    // OPERATOR-BUILT, so an install can hold neither: absent -> Natural Earth stays the
+    // map, and the legend says which source drew the borders. Never a mixture presented
+    // as one source -- the legend names both when OSM covers only some countries.
+    let _ooMapOsmAdmin = null;                       // {admin0, admin1}, each a doc or false
+    async function _ooMapOsmAdminLoad() {
+      if (_ooMapOsmAdmin !== null) return _ooMapOsmAdmin;
+      const get = async (name) => {
+        try { const r = await fetch("/static/" + name); return r.ok ? await r.json() : false; }
+        catch { return false; }                      // absent -> Natural Earth, never an error
+      };
+      const [admin0, admin1] = await Promise.all([get("osm_admin0.json"), get("osm_admin1.json")]);
+      _ooMapOsmAdmin = { admin0, admin1 };
+      return _ooMapOsmAdmin;
+    }
+
+    // THE PUBLISHED DISPLAY CAP for the region layer (Q822: "published level-of-detail
+    // caps ... degrading, never to a frozen tab"). The build already fits every region
+    // to its own vertex cap; this bounds what ONE map draws in total. Above it, every
+    // ring is strided evenly (never a region dropped) and the legend says so.
+    const OOMAP_ADMIN1_VERTEX_CAP = 120000;
+
+    // Regions shown or hidden: MODULE state, like the worldview, so every map agrees.
+    let _ooMapRegionsOn = true;
+    try { if (localStorage.getItem("oo.map.regions") === "off") _ooMapRegionsOn = false; }
+    catch { /* private mode: the default stands */ }
+
+    // A region's name in the reader's locale, from the data's own name:<lang> tag,
+    // else the name OSM carries locally -- never a translation this app invented.
+    function _ooAdmin1Name(r) {
+      const lang = (window.OOI18N && OOI18N.current && OOI18N.current()) || "en";
+      return (r.names && r.names[lang]) || r.name || "";
+    }
+
+    // The admin-1 LAYER: one outline per region, drawn over the country fills and under
+    // the contested hatch. A region carries its COUNTRY's data-iso, so a click still
+    // drills into the country (no admin-1 data is claimed here -- that is the region
+    // choropleth's job), and its hover names the region, its code and how it was keyed.
+    function _ooAdmin1Layer(admin1, countryTitle) {
+      if (!admin1 || !admin1.regions || !_ooMapRegionsOn) return { markup: "", shown: 0, strided: false };
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : (x => x);
+      const regs = Object.entries(admin1.regions);
+      const total = regs.reduce((n, [, r]) => n + (r.rings || []).reduce((m, ring) => m + ring.length, 0), 0);
+      const step = total > OOMAP_ADMIN1_VERTEX_CAP ? Math.ceil(total / OOMAP_ADMIN1_VERTEX_CAP) : 1;
+      let shown = 0;
+      const markup = regs.map(([code, r]) => {
+        const rings = step > 1
+          ? (r.rings || []).map(ring => ring.length > 3 * step ? ring.filter((_, i) => i % step === 0) : ring)
+          : r.rings;
+        const d = _ooMapPath(rings);
+        if (!d) return "";
+        shown++;
+        const cc = (r.a2 || "").toLowerCase();
+        const keyed = r.key === "iso3166-2" ? code
+          : ooLabelText(t("OSM relation"), String(r.osm)) + " · " + t("no ISO 3166-2 code in OpenStreetMap");
+        const ti = `${_ooAdmin1Name(r)} (${keyed})${cc ? " · " + countryTitle(cc) : ""}`;
+        return `<path d="${d}" fill="transparent" fill-rule="evenodd" stroke="var(--border)" stroke-width="0.35" `
+          + `stroke-opacity="0.9" vector-effect="non-scaling-stroke" data-oomap-region="${esc(code)}"`
+          + `${cc ? ` data-iso="${esc(cc)}"` : ""} title="${esc(ti)}"></path>`;
+      }).join("");
+      return { markup, shown, strided: step > 1 };
+    }
+
+    // Which source drew the borders, for the legend: a label and a hover that says
+    // exactly how much of the map each source drew. The vintage is the OSM data's date.
+    function _ooBoundarySource(admin0, admin1, osmCountries, regionsShown, strided, neKept) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : (x => x);
+      const tfb = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
+        : ((s, v) => String(s).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? String(v[k]) : m));
+      const doc = osmCountries ? admin0 : (regionsShown ? admin1 : null);
+      if (!doc) {
+        return { label: t("Borders: Natural Earth 50m"),
+          title: t("Country borders from Natural Earth 50m (public domain). OpenStreetMap-derived borders replace them once their files have been built.") };
+      }
+      // A PARTIAL cover is said on the surface, not only in the hover: most of a map
+      // drawn by one source must never read as drawn by the other.
+      const label = tfb("Borders: OpenStreetMap, as of {date}", { date: doc.vintage || "?" })
+        + (neKept ? " · " + t("Natural Earth 50m elsewhere") : "");
+      const parts = [
+        t("Borders drawn from OpenStreetMap data of the date shown, © OpenStreetMap contributors (ODbL 1.0)."),
+        tfb("{n} countries from OpenStreetMap; every other country keeps its Natural Earth border.", { n: fmtNum(osmCountries, 0) }),
+      ];
+      if (admin1 && admin1.counts) {
+        parts.push(tfb("{n} regions: {tagged} keyed by their ISO 3166-2 code, {fallback} by their OpenStreetMap relation id because OpenStreetMap carries no code for them.", {
+          n: fmtNum(admin1.counts.regions || 0, 0), tagged: fmtNum(admin1.counts.tagged || 0, 0), fallback: fmtNum(admin1.counts.fallback || 0, 0) }));
+      }
+      if (strided) parts.push(t("Region outlines are simplified further for display on this map."));
+      return { label, title: parts.join(" ") };
+    }
+
     // The worldview in force. "contested" is the DEFAULT and assigns NOTHING: every
     // disputed area is drawn as contested and no claimant is preferred. See the
     // _ooWorldviewLabel note on why this, and not a national convention, is the default.
@@ -659,6 +752,7 @@
       // Absent -> no contested layer and no worldview control. The map still draws; it
       // simply makes no claim about disputed areas, which is the honest degrade.
       const disputed = await _ooMapDisputedLoad();
+      const osmAdmin = await _ooMapOsmAdminLoad();
       const values = opts.values || {}, names = opts.names || {};
       const nums = Object.values(values).filter(v => typeof v === "number" && isFinite(v));
       const maxV = nums.length ? Math.max(...nums) : 0, minV = nums.length ? Math.min(...nums) : 0;
@@ -679,9 +773,22 @@
       // so a data-bearing microstate renders a true polygon instead of a centroid
       // point. Honest: only closed OSM rings reach here; everything else is unchanged.
       const osmAreas = opts.osmAreas || null;
-      let eff = geo.countries, osmUsed = 0;
-      if (osmAreas) {
+      let eff = geo.countries, osmUsed = 0, osmCountries = 0;
+      // The SHIPPED OSM countries (0.5 row E) replace Natural Earth's polygon country by
+      // country, keyed by the alpha-2 the artifact carries beside its alpha-3 key. The
+      // user's own downloaded regions (#51, below) still win over both.
+      const admin0 = osmAdmin && osmAdmin.admin0 && osmAdmin.admin0.countries ? osmAdmin.admin0 : null;
+      if (admin0) {
         eff = Object.assign({}, geo.countries);
+        for (const a3 in admin0.countries) {
+          const c = admin0.countries[a3], a2 = (c && c.a2 || "").toLowerCase();
+          if (!a2 || !c.rings || !c.rings.length) continue;
+          eff[a2] = { name: (geo.countries[a2] && geo.countries[a2].name) || c.name || a3, rings: c.rings, osmAdmin: true };
+          osmCountries++;
+        }
+      }
+      if (osmAreas) {
+        eff = Object.assign({}, eff);
         for (const iso in osmAreas) {
           const a = osmAreas[iso];
           if (!a || !a.rings || !a.rings.length) continue;
@@ -697,7 +804,7 @@
         const d = _ooMapPath(c.rings); if (!d) continue;
         const fill = has ? fillFor(v) : "url(#oomap-nodata)";
         const title = `${ooRegionName(code, c.name)} — ${has ? vlabel(code, v) : t("no data")}${c.osm ? " · " + t("boundary from OSM") : ""}`;
-        paths += `<path d="${d}" fill="${fill}" stroke="${c.osm ? "var(--accent)" : "var(--border)"}" stroke-width="${c.osm ? "0.5" : "0.3"}" data-iso="${esc(code)}"`
+        paths += `<path d="${d}" fill="${fill}" fill-rule="evenodd" stroke="${c.osm ? "var(--accent)" : "var(--border)"}" stroke-width="${c.osm ? "0.5" : "0.3"}" data-iso="${esc(code)}"`
           + `${opts.onCountry ? ' style="cursor:pointer"' : ""}><title>${esc(title)}</title></path>`;
       }
       // Centroid POINT fallback: areas WITH data but NO polygon (microstates).
@@ -749,6 +856,15 @@
       // = a hollow/dashed ring (the temporal map's honest convention).
       // ABOVE the choropleth: a contested area must never be hidden by a country fill.
       const _disp = _ooDisputedLayer(disputed, _ooMapWorldview, fillFor, values);
+      // The admin-1 outlines sit between the fills and the contested hatch. Each hover
+      // repeats its country's line, so pointing at a region never hides the country value.
+      const _adm1 = _ooAdmin1Layer(osmAdmin && osmAdmin.admin1, (cc) => {
+        const v = values[cc], has = typeof v === "number" && isFinite(v);
+        return `${ooRegionName(cc, (eff[cc] && eff[cc].name) || cc)} — ${has ? vlabel(cc, v) : t("no data")}`;
+      });
+      const neKept = Object.values(eff).filter(c => !c.osmAdmin && !c.osm).length;
+      const _bsrc = _ooBoundarySource(admin0, osmAdmin && osmAdmin.admin1, osmCountries, _adm1.shown, _adm1.strided, neKept);
+      const hasAdmin1 = !!(osmAdmin && osmAdmin.admin1 && osmAdmin.admin1.regions);
 
       const _sig = _ooSignalLayer(opts);
       const signalPts = opts.signalsOn ? `<g data-oomap-siglayer>${_sig.markup}</g>` : "";
@@ -820,7 +936,7 @@
                 `<option value="${esc(v)}"${v === _ooMapWorldview ? " selected" : ""}>${esc(_ooWorldviewLabel(v))}</option>`).join("")}
             </select>
           </label>` : "";
-      const granHtml = (opts.onGranularity || _disp.shown) ? `
+      const granHtml = (opts.onGranularity || _disp.shown || hasAdmin1) ? `
         <div class="oomap-gran" role="group" aria-label="${esc(t("Granularity"))}"
              style="position:absolute;bottom:8px;left:8px;display:flex;flex-wrap:wrap;gap:4px;align-items:center;z-index:5">
           ${opts.onGranularity ? `<button class="tiny secondary" data-oomap-gran="country" aria-pressed="${opts.granularity !== "continent"}"${opts.granularity !== "continent" ? ' style="border-color:var(--accent);color:var(--accent)"' : ""}>${esc(t("Country"))}</button>
@@ -831,6 +947,7 @@
           ${opts.onServer ? `<button class="tiny secondary" data-oomap-server aria-pressed="${opts.serverOn ? "true" : "false"}"${opts.serverOn ? ' style="border-color:var(--accent);color:var(--accent)"' : ""} title="${esc(t("Server IP locations — offline geo; a CDN edge / anycast host, not the publisher's origin"))}">${esc(t("Server IPs"))}</button>` : ""}
           ${opts.onLabels ? `<button class="tiny secondary" data-oomap-labels aria-pressed="${opts.labelsOn ? "true" : "false"}"${opts.labelsOn ? ' style="border-color:var(--accent);color:var(--accent)"' : ""}>${esc(t("Labels"))}</button>` : ""}
           ${opts.onOsm ? `<button class="tiny secondary" data-oomap-osm aria-pressed="${opts.osmOn ? "true" : "false"}"${opts.osmOn ? ' style="border-color:var(--accent);color:var(--accent)"' : ""} title="${esc(t("Overlay a downloaded offline-map region (preview)"))}">${esc(t("OSM"))}</button>` : ""}
+          ${hasAdmin1 ? `<button class="tiny secondary" data-oomap-regions aria-pressed="${_ooMapRegionsOn ? "true" : "false"}"${_ooMapRegionsOn ? ' style="border-color:var(--accent);color:var(--accent)"' : ""} title="${esc(t("Show or hide the first-level regions (states, provinces, regions) OpenStreetMap draws inside each country."))}">${esc(t("Regions"))}</button>` : ""}
           ${worldviewHtml}
         </div>` : "";
       // In-map TIME slider (slice 5a) — appears above the bottom-left controls when
@@ -890,7 +1007,7 @@
                  mistaken for one another. -->
             <pattern id="oomap-contested" width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(-45)">
               <line x1="0" y1="0" x2="0" y2="5" stroke="var(--caveat)" stroke-width="1.1" opacity="0.75"/></pattern></defs>
-          ${_mapSphere()}${grid}${paths}${_disp.markup}${pts}${overlayPts}${serverPts}${signalPts}${wikiPts}${osmHtml}
+          ${_mapSphere()}${grid}${paths}${_adm1.markup}${_disp.markup}${pts}${overlayPts}${serverPts}${signalPts}${wikiPts}${osmHtml}
           <g id="oomap-labels"></g>
         </svg>
         <div class="oomap-controls" style="position:absolute;top:8px;right:8px;display:flex;flex-direction:column;gap:4px;z-index:5">
@@ -909,6 +1026,7 @@
           <span style="width:14px;height:10px;border:1px solid var(--border);background:repeating-linear-gradient(45deg,var(--panel2),var(--panel2) 2px,var(--border) 2px,var(--border) 3px)"></span>
           ${esc(t("no data"))}</span>
         <span class="muted" title="${esc(t("Equal-area: every country is drawn at its true relative size, so the size of a fill is never more evidence than the data gave. Savric, Patterson & Jenny (2018). One projection on every map in this app; there is no projection toggle."))}">${esc(t("Equal Earth · equal-area"))}</span>
+        <span class="muted" data-oomap-borders title="${esc(_bsrc.title)}">${esc(_bsrc.label)}</span>
         ${_disp.shown ? `<span style="display:inline-flex;align-items:center;gap:5px"
           title="${esc(t("Every disputed area is drawn hatched with all of its claims named in the tooltip, in every worldview. A worldview changes only which claim the area is attributed to here, so you can see how the conventions differ — it is never this app's verdict on who is right. Source: Natural Earth's breakaway/disputed layer, which records an assignment per point of view.")) + " " + esc(t("The country outlines underneath come from Natural Earth's own de-facto assignment — a boundary has to be drawn somewhere, and that choice is itself one of the conventions this control lets you compare."))}">
           <span style="width:14px;height:10px;border:1px solid var(--caveat);background:repeating-linear-gradient(-45deg,transparent,transparent 2px,var(--caveat) 2px,var(--caveat) 3px)"></span>
@@ -1046,6 +1164,14 @@
       if (opts && opts.onOsm) { const ob = host.querySelector("[data-oomap-osm]"); if (ob) ob.addEventListener("click", () => opts.onOsm()); }
       // The worldview is MODULE state, not a per-caller option: every map surface shows
       // the same convention, so the app cannot say two different things on two tabs.
+      const rgBtn = host.querySelector("[data-oomap-regions]");
+      if (rgBtn) rgBtn.addEventListener("click", () => {
+        _ooMapRegionsOn = !_ooMapRegionsOn;
+        try { localStorage.setItem("oo.map.regions", _ooMapRegionsOn ? "on" : "off"); }
+        catch { /* private mode: the choice simply does not persist */ }
+        void ooMap(host, host._ooOpts || opts);
+        _ooMapRedrawOthers(host);                    // one answer across every map, as the worldview
+      });
       const wvSel = host.querySelector("[data-oomap-worldview]");
       if (wvSel) wvSel.addEventListener("change", () => {
         _ooMapWorldview = wvSel.value;

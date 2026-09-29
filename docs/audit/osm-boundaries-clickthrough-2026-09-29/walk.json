@@ -1,0 +1,818 @@
+[
+ {
+  "host": "oo-coverage-map",
+  "present": true,
+  "svg": true,
+  "countries": 229,
+  "regions": 2,
+  "contested": 28,
+  "regionTitles": [
+   "Ile-de-France (FR-IDF) · France — 130 sources",
+   "Région sans code (OSM relation: 1003 · no ISO 3166-2 code in OpenStreetMap) · France — 130 sources"
+  ],
+  "order": {
+   "lastF": 250,
+   "firstR": 251,
+   "lastR": 252,
+   "firstC": 253
+  },
+  "legend": "Borders: OpenStreetMap, as of 2026-09-01 · Natural Earth 50m elsewhere",
+  "legendTitle": "Borders drawn from OpenStreetMap data of the date shown, © OpenStreetMap contributors (ODbL 1.0). 1 countries from OpenStreetMap; every other country keeps its Natural Earth border. 2 regions: 1 keyed by their ISO 3166-2 code, 1 by their OpenStreetMap relation id because OpenStreetMap carries no code for them.",
+  "regionsBtn": true,
+  "overflow": false,
+  "surface": "World map",
+  "lang": "en",
+  "w": 1440
+ },
+ {
+  "host": "coverage-map",
+  "present": true,
+  "svg": true,
+  "countries": 229,
+  "regions": 2,
+  "contested": 28,
+  "regionTitles": [
+   "Ile-de-France (FR-IDF) · France — 6 articles",
+   "Région sans code (OSM relation: 1003 · no ISO 3166-2 code in OpenStreetMap) · France — 6 articles"
+  ],
+  "order": {
+   "lastF": 250,
+   "firstR": 251,
+   "lastR": 252,
+   "firstC": 253
+  },
+  "legend": "Borders: OpenStreetMap, as of 2026-09-01 · Natural Earth 50m elsewhere",
+  "legendTitle": "Borders drawn from OpenStreetMap data of the date shown, © OpenStreetMap contributors (ODbL 1.0). 1 countries from OpenStreetMap; every other country keeps its Natural Earth border. 2 regions: 1 keyed by their ISO 3166-2 code, 1 by their OpenStreetMap relation id because OpenStreetMap carries no code for them.",
+  "regionsBtn": true,
+  "overflow": false,
+  "surface": "Sources coverage",
+  "lang": "en",
+  "w": 1440
+ },
+ {
+  "host": "gov-map-host",
+  "present": true,
+  "svg": true,
+  "countries": 229,
+  "regions": 2,
+  "contested": 28,
+  "regionTitles": [
+   "Ile-de-France (FR-IDF) · France — 3",
+   "Région sans code (OSM relation: 1003 · no ISO 3166-2 code in OpenStreetMap) · France — 3"
+  ],
+  "order": {
+   "lastF": 250,
+   "firstR": 251,
+   "lastR": 252,
+   "firstC": 253
+  },
+  "legend": "Borders: OpenStreetMap, as of 2026-09-01 · Natural Earth 50m elsewhere",
+  "legendTitle": "Borders drawn from OpenStreetMap data of the date shown, © OpenStreetMap contributors (ODbL 1.0). 1 countries from OpenStreetMap; every other country keeps its Natural Earth border. 2 regions: 1 keyed by their ISO 3166-2 code, 1 by their OpenStreetMap relation id because OpenStreetMap carries no code for them.",
+  "regionsBtn": true,
+  "overflow": false,
+  "surface": "governments (direct ooMap render)",
+  "lang": "en",
+  "w": 1440,
+  "rendered": true
+ },
+ {
+  "host": "statfig-map",
+  "present": true,
+  "svg": true,
+  "countries": 229,
+  "regions": 2,
+  "contested": 28,
+  "regionTitles": [
+   "Ile-de-France (FR-IDF) · France — 3",
+   "Région sans code (OSM relation: 1003 · no ISO 3166-2 code in OpenStreetMap) · France — 3"
+  ],
+  "order": {
+   "lastF": 250,
+   "firstR": 251,
+   "lastR": 252,
+   "firstC": 253
+  },
+  "legend": "Borders: OpenStreetMap, as of 2026-09-01 · Natural Earth 50m elsewhere",
+  "legendTitle": "Borders drawn from OpenStreetMap data of the date shown, © OpenStreetMap contributors (ODbL 1.0). 1 countries from OpenStreetMap; every other country keeps its Natural Earth border. 2 regions: 1 keyed by their ISO 3166-2 code, 1 by their OpenStreetMap relation id because OpenStreetMap carries no code for them.",
+  "regionsBtn": true,
+  "overflow": false,
+  "surface": "statistics (direct ooMap render)",
+  "lang": "en",
+  "w": 1440,
+  "rendered": true
+ },
+ {
+  "host": "sg-ringmap",
+  "present": true,
+  "svg": true,
+  "countries": 229,
+  "regions": 2,
+  "contested": 28,
+  "regionTitles": [
+   "Ile-de-France (FR-IDF) · France — 3",
+   "Région sans code (OSM relation: 1003 · no ISO 3166-2 code in OpenStreetMap) · France — 3"
+  ],
+  "order": {
+   "lastF": 250,
+   "firstR": 251,
+   "lastR": 252,
+   "firstC": 253
+  },
+  "legend": "Borders: OpenStreetMap, as of 2026-09-01 · Natural Earth 50m elsewhere",
+  "legendTitle": "Borders drawn from OpenStreetMap data of the date shown, © OpenStreetMap contributors (ODbL 1.0). 1 countries from OpenStreetMap; every other country keeps its Natural Earth border. 2 regions: 1 keyed by their ISO 3166-2 code, 1 by their OpenStreetMap relation id because OpenStreetMap carries no code for them.",
+  "regionsBtn": true,
+  "overflow": false,
+  "surface": "insights (direct ooMap render)",
+  "lang": "en",
+  "w": 1440,
+  "rendered": true
+ },
+ {
+  "surface": "Regions toggle",
+  "lang": "en",
+  "w": 1440,
+  "off": 0,
+  "on": 2,
+  "errors": []
+ },
+ {
+  "host": "oo-coverage-map",
+  "present": true,
+  "svg": true,
+  "countries": 229,
+  "regions": 2,
+  "contested": 28,
+  "regionTitles": [
+   "Ile-de-France (FR-IDF) · France — 130 sources",
+   "Région sans code (OSM relation: 1003 · no ISO 3166-2 code in OpenStreetMap) · France — 130 sources"
+  ],
+  "order": {
+   "lastF": 250,
+   "firstR": 251,
+   "lastR": 252,
+   "firstC": 253
+  },
+  "legend": "Borders: OpenStreetMap, as of 2026-09-01 · Natural Earth 50m elsewhere",
+  "legendTitle": "Borders drawn from OpenStreetMap data of the date shown, © OpenStreetMap contributors (ODbL 1.0). 1 countries from OpenStreetMap; every other country keeps its Natural Earth border. 2 regions: 1 keyed by their ISO 3166-2 code, 1 by their OpenStreetMap relation id because OpenStreetMap carries no code for them.",
+  "regionsBtn": true,
+  "overflow": false,
+  "surface": "World map",
+  "lang": "en",
+  "w": 768
+ },
+ {
+  "host": "coverage-map",
+  "present": true,
+  "svg": true,
+  "countries": 229,
+  "regions": 2,
+  "contested": 28,
+  "regionTitles": [
+   "Ile-de-France (FR-IDF) · France — 6 articles",
+   "Région sans code (OSM relation: 1003 · no ISO 3166-2 code in OpenStreetMap) · France — 6 articles"
+  ],
+  "order": {
+   "lastF": 250,
+   "firstR": 251,
+   "lastR": 252,
+   "firstC": 253
+  },
+  "legend": "Borders: OpenStreetMap, as of 2026-09-01 · Natural Earth 50m elsewhere",
+  "legendTitle": "Borders drawn from OpenStreetMap data of the date shown, © OpenStreetMap contributors (ODbL 1.0). 1 countries from OpenStreetMap; every other country keeps its Natural Earth border. 2 regions: 1 keyed by their ISO 3166-2 code, 1 by their OpenStreetMap relation id because OpenStreetMap carries no code for them.",
+  "regionsBtn": true,
+  "overflow": false,
+  "surface": "Sources coverage",
+  "lang": "en",
+  "w": 768
+ },
+ {
+  "host": "gov-map-host",
+  "present": true,
+  "svg": true,
+  "countries": 229,
+  "regions": 2,
+  "contested": 28,
+  "regionTitles": [
+   "Ile-de-France (FR-IDF) · France — 3",
+   "Région sans code (OSM relation: 1003 · no ISO 3166-2 code in OpenStreetMap) · France — 3"
+  ],
+  "order": {
+   "lastF": 250,
+   "firstR": 251,
+   "lastR": 252,
+   "firstC": 253
+  },
+  "legend": "Borders: OpenStreetMap, as of 2026-09-01 · Natural Earth 50m elsewhere",
+  "legendTitle": "Borders drawn from OpenStreetMap data of the date shown, © OpenStreetMap contributors (ODbL 1.0). 1 countries from OpenStreetMap; every other country keeps its Natural Earth border. 2 regions: 1 keyed by their ISO 3166-2 code, 1 by their OpenStreetMap relation id because OpenStreetMap carries no code for them.",
+  "regionsBtn": true,
+  "overflow": false,
+  "surface": "governments (direct ooMap render)",
+  "lang": "en",
+  "w": 768,
+  "rendered": true
+ },
+ {
+  "host": "statfig-map",
+  "present": true,
+  "svg": true,
+  "countries": 229,
+  "regions": 2,
+  "contested": 28,
+  "regionTitles": [
+   "Ile-de-France (FR-IDF) · France — 3",
+   "Région sans code (OSM relation: 1003 · no ISO 3166-2 code in OpenStreetMap) · France — 3"
+  ],
+  "order": {
+   "lastF": 250,
+   "firstR": 251,
+   "lastR": 252,
+   "firstC": 253
+  },
+  "legend": "Borders: OpenStreetMap, as of 2026-09-01 · Natural Earth 50m elsewhere",
+  "legendTitle": "Borders drawn from OpenStreetMap data of the date shown, © OpenStreetMap contributors (ODbL 1.0). 1 countries from OpenStreetMap; every other country keeps its Natural Earth border. 2 regions: 1 keyed by their ISO 3166-2 code, 1 by their OpenStreetMap relation id because OpenStreetMap carries no code for them.",
+  "regionsBtn": true,
+  "overflow": false,
+  "surface": "statistics (direct ooMap render)",
+  "lang": "en",
+  "w": 768,
+  "rendered": true
+ },
+ {
+  "host": "sg-ringmap",
+  "present": true,
+  "svg": true,
+  "countries": 229,
+  "regions": 2,
+  "contested": 28,
+  "regionTitles": [
+   "Ile-de-France (FR-IDF) · France — 3",
+   "Région sans code (OSM relation: 1003 · no ISO 3166-2 code in OpenStreetMap) · France — 3"
+  ],
+  "order": {
+   "lastF": 250,
+   "firstR": 251,
+   "lastR": 252,
+   "firstC": 253
+  },
+  "legend": "Borders: OpenStreetMap, as of 2026-09-01 · Natural Earth 50m elsewhere",
+  "legendTitle": "Borders drawn from OpenStreetMap data of the date shown, © OpenStreetMap contributors (ODbL 1.0). 1 countries from OpenStreetMap; every other country keeps its Natural Earth border. 2 regions: 1 keyed by their ISO 3166-2 code, 1 by their OpenStreetMap relation id because OpenStreetMap carries no code for them.",
+  "regionsBtn": true,
+  "overflow": false,
+  "surface": "insights (direct ooMap render)",
+  "lang": "en",
+  "w": 768,
+  "rendered": true
+ },
+ {
+  "surface": "Regions toggle",
+  "lang": "en",
+  "w": 768,
+  "off": 0,
+  "on": 2,
+  "errors": []
+ },
+ {
+  "host": "oo-coverage-map",
+  "present": true,
+  "svg": true,
+  "countries": 229,
+  "regions": 2,
+  "contested": 28,
+  "regionTitles": [
+   "Ile-de-France (FR-IDF) · France — 130 sources",
+   "Région sans code (OSM relation: 1003 · no ISO 3166-2 code in OpenStreetMap) · France — 130 sources"
+  ],
+  "order": {
+   "lastF": 250,
+   "firstR": 251,
+   "lastR": 252,
+   "firstC": 253
+  },
+  "legend": "Borders: OpenStreetMap, as of 2026-09-01 · Natural Earth 50m elsewhere",
+  "legendTitle": "Borders drawn from OpenStreetMap data of the date shown, © OpenStreetMap contributors (ODbL 1.0). 1 countries from OpenStreetMap; every other country keeps its Natural Earth border. 2 regions: 1 keyed by their ISO 3166-2 code, 1 by their OpenStreetMap relation id because OpenStreetMap carries no code for them.",
+  "regionsBtn": true,
+  "overflow": false,
+  "surface": "World map",
+  "lang": "en",
+  "w": 390
+ },
+ {
+  "host": "coverage-map",
+  "present": true,
+  "svg": true,
+  "countries": 229,
+  "regions": 2,
+  "contested": 28,
+  "regionTitles": [
+   "Ile-de-France (FR-IDF) · France — 6 articles",
+   "Région sans code (OSM relation: 1003 · no ISO 3166-2 code in OpenStreetMap) · France — 6 articles"
+  ],
+  "order": {
+   "lastF": 250,
+   "firstR": 251,
+   "lastR": 252,
+   "firstC": 253
+  },
+  "legend": "Borders: OpenStreetMap, as of 2026-09-01 · Natural Earth 50m elsewhere",
+  "legendTitle": "Borders drawn from OpenStreetMap data of the date shown, © OpenStreetMap contributors (ODbL 1.0). 1 countries from OpenStreetMap; every other country keeps its Natural Earth border. 2 regions: 1 keyed by their ISO 3166-2 code, 1 by their OpenStreetMap relation id because OpenStreetMap carries no code for them.",
+  "regionsBtn": true,
+  "overflow": false,
+  "surface": "Sources coverage",
+  "lang": "en",
+  "w": 390
+ },
+ {
+  "host": "gov-map-host",
+  "present": true,
+  "svg": true,
+  "countries": 229,
+  "regions": 2,
+  "contested": 28,
+  "regionTitles": [
+   "Ile-de-France (FR-IDF) · France — 3",
+   "Région sans code (OSM relation: 1003 · no ISO 3166-2 code in OpenStreetMap) · France — 3"
+  ],
+  "order": {
+   "lastF": 250,
+   "firstR": 251,
+   "lastR": 252,
+   "firstC": 253
+  },
+  "legend": "Borders: OpenStreetMap, as of 2026-09-01 · Natural Earth 50m elsewhere",
+  "legendTitle": "Borders drawn from OpenStreetMap data of the date shown, © OpenStreetMap contributors (ODbL 1.0). 1 countries from OpenStreetMap; every other country keeps its Natural Earth border. 2 regions: 1 keyed by their ISO 3166-2 code, 1 by their OpenStreetMap relation id because OpenStreetMap carries no code for them.",
+  "regionsBtn": true,
+  "overflow": false,
+  "surface": "governments (direct ooMap render)",
+  "lang": "en",
+  "w": 390,
+  "rendered": true
+ },
+ {
+  "host": "statfig-map",
+  "present": true,
+  "svg": true,
+  "countries": 229,
+  "regions": 2,
+  "contested": 28,
+  "regionTitles": [
+   "Ile-de-France (FR-IDF) · France — 3",
+   "Région sans code (OSM relation: 1003 · no ISO 3166-2 code in OpenStreetMap) · France — 3"
+  ],
+  "order": {
+   "lastF": 250,
+   "firstR": 251,
+   "lastR": 252,
+   "firstC": 253
+  },
+  "legend": "Borders: OpenStreetMap, as of 2026-09-01 · Natural Earth 50m elsewhere",
+  "legendTitle": "Borders drawn from OpenStreetMap data of the date shown, © OpenStreetMap contributors (ODbL 1.0). 1 countries from OpenStreetMap; every other country keeps its Natural Earth border. 2 regions: 1 keyed by their ISO 3166-2 code, 1 by their OpenStreetMap relation id because OpenStreetMap carries no code for them.",
+  "regionsBtn": true,
+  "overflow": false,
+  "surface": "statistics (direct ooMap render)",
+  "lang": "en",
+  "w": 390,
+  "rendered": true
+ },
+ {
+  "host": "sg-ringmap",
+  "present": true,
+  "svg": true,
+  "countries": 229,
+  "regions": 2,
+  "contested": 28,
+  "regionTitles": [
+   "Ile-de-France (FR-IDF) · France — 3",
+   "Région sans code (OSM relation: 1003 · no ISO 3166-2 code in OpenStreetMap) · France — 3"
+  ],
+  "order": {
+   "lastF": 250,
+   "firstR": 251,
+   "lastR": 252,
+   "firstC": 253
+  },
+  "legend": "Borders: OpenStreetMap, as of 2026-09-01 · Natural Earth 50m elsewhere",
+  "legendTitle": "Borders drawn from OpenStreetMap data of the date shown, © OpenStreetMap contributors (ODbL 1.0). 1 countries from OpenStreetMap; every other country keeps its Natural Earth border. 2 regions: 1 keyed by their ISO 3166-2 code, 1 by their OpenStreetMap relation id because OpenStreetMap carries no code for them.",
+  "regionsBtn": true,
+  "overflow": false,
+  "surface": "insights (direct ooMap render)",
+  "lang": "en",
+  "w": 390,
+  "rendered": true
+ },
+ {
+  "surface": "Regions toggle",
+  "lang": "en",
+  "w": 390,
+  "off": 0,
+  "on": 2,
+  "errors": []
+ },
+ {
+  "host": "oo-coverage-map",
+  "present": true,
+  "svg": true,
+  "countries": 229,
+  "regions": 2,
+  "contested": 28,
+  "regionTitles": [
+   "Île-de-France (FR-IDF) · فرنسا — مصادر: 130",
+   "Région sans code (علاقة OSM: 1003 · لا يوجد رمز ISO 3166-2 في OpenStreetMap) · فرنسا — مصادر: 130"
+  ],
+  "order": {
+   "lastF": 250,
+   "firstR": 251,
+   "lastR": 252,
+   "firstC": 253
+  },
+  "legend": "الحدود: OpenStreetMap، بتاريخ 2026-09-01 · Natural Earth 50m في غير ذلك",
+  "legendTitle": "حدود مرسومة من بيانات OpenStreetMap بالتاريخ المبيَّن، © المساهمون في OpenStreetMap (ODbL 1.0). 1 دولة من OpenStreetMap؛ وتحتفظ كل دولة أخرى بحدودها من Natural Earth. 2 منطقة: 1 معرَّفة برمز ISO 3166-2، و1 بمعرّف علاقة OpenStreetMap لأن OpenStreetMap لا يحمل رمزًا لها.",
+  "regionsBtn": true,
+  "overflow": false,
+  "surface": "World map",
+  "lang": "ar",
+  "w": 1440
+ },
+ {
+  "host": "coverage-map",
+  "present": true,
+  "svg": true,
+  "countries": 229,
+  "regions": 2,
+  "contested": 28,
+  "regionTitles": [
+   "Île-de-France (FR-IDF) · فرنسا — 6 مقالة",
+   "Région sans code (علاقة OSM: 1003 · لا يوجد رمز ISO 3166-2 في OpenStreetMap) · فرنسا — 6 مقالة"
+  ],
+  "order": {
+   "lastF": 250,
+   "firstR": 251,
+   "lastR": 252,
+   "firstC": 253
+  },
+  "legend": "الحدود: OpenStreetMap، بتاريخ 2026-09-01 · Natural Earth 50m في غير ذلك",
+  "legendTitle": "حدود مرسومة من بيانات OpenStreetMap بالتاريخ المبيَّن، © المساهمون في OpenStreetMap (ODbL 1.0). 1 دولة من OpenStreetMap؛ وتحتفظ كل دولة أخرى بحدودها من Natural Earth. 2 منطقة: 1 معرَّفة برمز ISO 3166-2، و1 بمعرّف علاقة OpenStreetMap لأن OpenStreetMap لا يحمل رمزًا لها.",
+  "regionsBtn": true,
+  "overflow": false,
+  "surface": "Sources coverage",
+  "lang": "ar",
+  "w": 1440
+ },
+ {
+  "host": "gov-map-host",
+  "present": true,
+  "svg": true,
+  "countries": 229,
+  "regions": 2,
+  "contested": 28,
+  "regionTitles": [
+   "Île-de-France (FR-IDF) · فرنسا — 3",
+   "Région sans code (علاقة OSM: 1003 · لا يوجد رمز ISO 3166-2 في OpenStreetMap) · فرنسا — 3"
+  ],
+  "order": {
+   "lastF": 250,
+   "firstR": 251,
+   "lastR": 252,
+   "firstC": 253
+  },
+  "legend": "الحدود: OpenStreetMap، بتاريخ 2026-09-01 · Natural Earth 50m في غير ذلك",
+  "legendTitle": "حدود مرسومة من بيانات OpenStreetMap بالتاريخ المبيَّن، © المساهمون في OpenStreetMap (ODbL 1.0). 1 دولة من OpenStreetMap؛ وتحتفظ كل دولة أخرى بحدودها من Natural Earth. 2 منطقة: 1 معرَّفة برمز ISO 3166-2، و1 بمعرّف علاقة OpenStreetMap لأن OpenStreetMap لا يحمل رمزًا لها.",
+  "regionsBtn": true,
+  "overflow": false,
+  "surface": "governments (direct ooMap render)",
+  "lang": "ar",
+  "w": 1440,
+  "rendered": true
+ },
+ {
+  "host": "statfig-map",
+  "present": true,
+  "svg": true,
+  "countries": 229,
+  "regions": 2,
+  "contested": 28,
+  "regionTitles": [
+   "Île-de-France (FR-IDF) · فرنسا — 3",
+   "Région sans code (علاقة OSM: 1003 · لا يوجد رمز ISO 3166-2 في OpenStreetMap) · فرنسا — 3"
+  ],
+  "order": {
+   "lastF": 250,
+   "firstR": 251,
+   "lastR": 252,
+   "firstC": 253
+  },
+  "legend": "الحدود: OpenStreetMap، بتاريخ 2026-09-01 · Natural Earth 50m في غير ذلك",
+  "legendTitle": "حدود مرسومة من بيانات OpenStreetMap بالتاريخ المبيَّن، © المساهمون في OpenStreetMap (ODbL 1.0). 1 دولة من OpenStreetMap؛ وتحتفظ كل دولة أخرى بحدودها من Natural Earth. 2 منطقة: 1 معرَّفة برمز ISO 3166-2، و1 بمعرّف علاقة OpenStreetMap لأن OpenStreetMap لا يحمل رمزًا لها.",
+  "regionsBtn": true,
+  "overflow": false,
+  "surface": "statistics (direct ooMap render)",
+  "lang": "ar",
+  "w": 1440,
+  "rendered": true
+ },
+ {
+  "host": "sg-ringmap",
+  "present": true,
+  "svg": true,
+  "countries": 229,
+  "regions": 2,
+  "contested": 28,
+  "regionTitles": [
+   "Île-de-France (FR-IDF) · فرنسا — 3",
+   "Région sans code (علاقة OSM: 1003 · لا يوجد رمز ISO 3166-2 في OpenStreetMap) · فرنسا — 3"
+  ],
+  "order": {
+   "lastF": 250,
+   "firstR": 251,
+   "lastR": 252,
+   "firstC": 253
+  },
+  "legend": "الحدود: OpenStreetMap، بتاريخ 2026-09-01 · Natural Earth 50m في غير ذلك",
+  "legendTitle": "حدود مرسومة من بيانات OpenStreetMap بالتاريخ المبيَّن، © المساهمون في OpenStreetMap (ODbL 1.0). 1 دولة من OpenStreetMap؛ وتحتفظ كل دولة أخرى بحدودها من Natural Earth. 2 منطقة: 1 معرَّفة برمز ISO 3166-2، و1 بمعرّف علاقة OpenStreetMap لأن OpenStreetMap لا يحمل رمزًا لها.",
+  "regionsBtn": true,
+  "overflow": false,
+  "surface": "insights (direct ooMap render)",
+  "lang": "ar",
+  "w": 1440,
+  "rendered": true
+ },
+ {
+  "surface": "Regions toggle",
+  "lang": "ar",
+  "w": 1440,
+  "off": 0,
+  "on": 2,
+  "errors": []
+ },
+ {
+  "host": "oo-coverage-map",
+  "present": true,
+  "svg": true,
+  "countries": 229,
+  "regions": 2,
+  "contested": 28,
+  "regionTitles": [
+   "Île-de-France (FR-IDF) · فرنسا — مصادر: 130",
+   "Région sans code (علاقة OSM: 1003 · لا يوجد رمز ISO 3166-2 في OpenStreetMap) · فرنسا — مصادر: 130"
+  ],
+  "order": {
+   "lastF": 250,
+   "firstR": 251,
+   "lastR": 252,
+   "firstC": 253
+  },
+  "legend": "الحدود: OpenStreetMap، بتاريخ 2026-09-01 · Natural Earth 50m في غير ذلك",
+  "legendTitle": "حدود مرسومة من بيانات OpenStreetMap بالتاريخ المبيَّن، © المساهمون في OpenStreetMap (ODbL 1.0). 1 دولة من OpenStreetMap؛ وتحتفظ كل دولة أخرى بحدودها من Natural Earth. 2 منطقة: 1 معرَّفة برمز ISO 3166-2، و1 بمعرّف علاقة OpenStreetMap لأن OpenStreetMap لا يحمل رمزًا لها.",
+  "regionsBtn": true,
+  "overflow": false,
+  "surface": "World map",
+  "lang": "ar",
+  "w": 768
+ },
+ {
+  "host": "coverage-map",
+  "present": true,
+  "svg": true,
+  "countries": 229,
+  "regions": 2,
+  "contested": 28,
+  "regionTitles": [
+   "Île-de-France (FR-IDF) · فرنسا — 6 مقالة",
+   "Région sans code (علاقة OSM: 1003 · لا يوجد رمز ISO 3166-2 في OpenStreetMap) · فرنسا — 6 مقالة"
+  ],
+  "order": {
+   "lastF": 250,
+   "firstR": 251,
+   "lastR": 252,
+   "firstC": 253
+  },
+  "legend": "الحدود: OpenStreetMap، بتاريخ 2026-09-01 · Natural Earth 50m في غير ذلك",
+  "legendTitle": "حدود مرسومة من بيانات OpenStreetMap بالتاريخ المبيَّن، © المساهمون في OpenStreetMap (ODbL 1.0). 1 دولة من OpenStreetMap؛ وتحتفظ كل دولة أخرى بحدودها من Natural Earth. 2 منطقة: 1 معرَّفة برمز ISO 3166-2، و1 بمعرّف علاقة OpenStreetMap لأن OpenStreetMap لا يحمل رمزًا لها.",
+  "regionsBtn": true,
+  "overflow": false,
+  "surface": "Sources coverage",
+  "lang": "ar",
+  "w": 768
+ },
+ {
+  "host": "gov-map-host",
+  "present": true,
+  "svg": true,
+  "countries": 229,
+  "regions": 2,
+  "contested": 28,
+  "regionTitles": [
+   "Île-de-France (FR-IDF) · فرنسا — 3",
+   "Région sans code (علاقة OSM: 1003 · لا يوجد رمز ISO 3166-2 في OpenStreetMap) · فرنسا — 3"
+  ],
+  "order": {
+   "lastF": 250,
+   "firstR": 251,
+   "lastR": 252,
+   "firstC": 253
+  },
+  "legend": "الحدود: OpenStreetMap، بتاريخ 2026-09-01 · Natural Earth 50m في غير ذلك",
+  "legendTitle": "حدود مرسومة من بيانات OpenStreetMap بالتاريخ المبيَّن، © المساهمون في OpenStreetMap (ODbL 1.0). 1 دولة من OpenStreetMap؛ وتحتفظ كل دولة أخرى بحدودها من Natural Earth. 2 منطقة: 1 معرَّفة برمز ISO 3166-2، و1 بمعرّف علاقة OpenStreetMap لأن OpenStreetMap لا يحمل رمزًا لها.",
+  "regionsBtn": true,
+  "overflow": false,
+  "surface": "governments (direct ooMap render)",
+  "lang": "ar",
+  "w": 768,
+  "rendered": true
+ },
+ {
+  "host": "statfig-map",
+  "present": true,
+  "svg": true,
+  "countries": 229,
+  "regions": 2,
+  "contested": 28,
+  "regionTitles": [
+   "Île-de-France (FR-IDF) · فرنسا — 3",
+   "Région sans code (علاقة OSM: 1003 · لا يوجد رمز ISO 3166-2 في OpenStreetMap) · فرنسا — 3"
+  ],
+  "order": {
+   "lastF": 250,
+   "firstR": 251,
+   "lastR": 252,
+   "firstC": 253
+  },
+  "legend": "الحدود: OpenStreetMap، بتاريخ 2026-09-01 · Natural Earth 50m في غير ذلك",
+  "legendTitle": "حدود مرسومة من بيانات OpenStreetMap بالتاريخ المبيَّن، © المساهمون في OpenStreetMap (ODbL 1.0). 1 دولة من OpenStreetMap؛ وتحتفظ كل دولة أخرى بحدودها من Natural Earth. 2 منطقة: 1 معرَّفة برمز ISO 3166-2، و1 بمعرّف علاقة OpenStreetMap لأن OpenStreetMap لا يحمل رمزًا لها.",
+  "regionsBtn": true,
+  "overflow": false,
+  "surface": "statistics (direct ooMap render)",
+  "lang": "ar",
+  "w": 768,
+  "rendered": true
+ },
+ {
+  "host": "sg-ringmap",
+  "present": true,
+  "svg": true,
+  "countries": 229,
+  "regions": 2,
+  "contested": 28,
+  "regionTitles": [
+   "Île-de-France (FR-IDF) · فرنسا — 3",
+   "Région sans code (علاقة OSM: 1003 · لا يوجد رمز ISO 3166-2 في OpenStreetMap) · فرنسا — 3"
+  ],
+  "order": {
+   "lastF": 250,
+   "firstR": 251,
+   "lastR": 252,
+   "firstC": 253
+  },
+  "legend": "الحدود: OpenStreetMap، بتاريخ 2026-09-01 · Natural Earth 50m في غير ذلك",
+  "legendTitle": "حدود مرسومة من بيانات OpenStreetMap بالتاريخ المبيَّن، © المساهمون في OpenStreetMap (ODbL 1.0). 1 دولة من OpenStreetMap؛ وتحتفظ كل دولة أخرى بحدودها من Natural Earth. 2 منطقة: 1 معرَّفة برمز ISO 3166-2، و1 بمعرّف علاقة OpenStreetMap لأن OpenStreetMap لا يحمل رمزًا لها.",
+  "regionsBtn": true,
+  "overflow": false,
+  "surface": "insights (direct ooMap render)",
+  "lang": "ar",
+  "w": 768,
+  "rendered": true
+ },
+ {
+  "surface": "Regions toggle",
+  "lang": "ar",
+  "w": 768,
+  "off": 0,
+  "on": 2,
+  "errors": []
+ },
+ {
+  "host": "oo-coverage-map",
+  "present": true,
+  "svg": true,
+  "countries": 229,
+  "regions": 2,
+  "contested": 28,
+  "regionTitles": [
+   "Île-de-France (FR-IDF) · فرنسا — مصادر: 130",
+   "Région sans code (علاقة OSM: 1003 · لا يوجد رمز ISO 3166-2 في OpenStreetMap) · فرنسا — مصادر: 130"
+  ],
+  "order": {
+   "lastF": 250,
+   "firstR": 251,
+   "lastR": 252,
+   "firstC": 253
+  },
+  "legend": "الحدود: OpenStreetMap، بتاريخ 2026-09-01 · Natural Earth 50m في غير ذلك",
+  "legendTitle": "حدود مرسومة من بيانات OpenStreetMap بالتاريخ المبيَّن، © المساهمون في OpenStreetMap (ODbL 1.0). 1 دولة من OpenStreetMap؛ وتحتفظ كل دولة أخرى بحدودها من Natural Earth. 2 منطقة: 1 معرَّفة برمز ISO 3166-2، و1 بمعرّف علاقة OpenStreetMap لأن OpenStreetMap لا يحمل رمزًا لها.",
+  "regionsBtn": true,
+  "overflow": false,
+  "surface": "World map",
+  "lang": "ar",
+  "w": 390
+ },
+ {
+  "host": "coverage-map",
+  "present": true,
+  "svg": true,
+  "countries": 229,
+  "regions": 2,
+  "contested": 28,
+  "regionTitles": [
+   "Île-de-France (FR-IDF) · فرنسا — 6 مقالة",
+   "Région sans code (علاقة OSM: 1003 · لا يوجد رمز ISO 3166-2 في OpenStreetMap) · فرنسا — 6 مقالة"
+  ],
+  "order": {
+   "lastF": 250,
+   "firstR": 251,
+   "lastR": 252,
+   "firstC": 253
+  },
+  "legend": "الحدود: OpenStreetMap، بتاريخ 2026-09-01 · Natural Earth 50m في غير ذلك",
+  "legendTitle": "حدود مرسومة من بيانات OpenStreetMap بالتاريخ المبيَّن، © المساهمون في OpenStreetMap (ODbL 1.0). 1 دولة من OpenStreetMap؛ وتحتفظ كل دولة أخرى بحدودها من Natural Earth. 2 منطقة: 1 معرَّفة برمز ISO 3166-2، و1 بمعرّف علاقة OpenStreetMap لأن OpenStreetMap لا يحمل رمزًا لها.",
+  "regionsBtn": true,
+  "overflow": false,
+  "surface": "Sources coverage",
+  "lang": "ar",
+  "w": 390
+ },
+ {
+  "host": "gov-map-host",
+  "present": true,
+  "svg": true,
+  "countries": 229,
+  "regions": 2,
+  "contested": 28,
+  "regionTitles": [
+   "Île-de-France (FR-IDF) · فرنسا — 3",
+   "Région sans code (علاقة OSM: 1003 · لا يوجد رمز ISO 3166-2 في OpenStreetMap) · فرنسا — 3"
+  ],
+  "order": {
+   "lastF": 250,
+   "firstR": 251,
+   "lastR": 252,
+   "firstC": 253
+  },
+  "legend": "الحدود: OpenStreetMap، بتاريخ 2026-09-01 · Natural Earth 50m في غير ذلك",
+  "legendTitle": "حدود مرسومة من بيانات OpenStreetMap بالتاريخ المبيَّن، © المساهمون في OpenStreetMap (ODbL 1.0). 1 دولة من OpenStreetMap؛ وتحتفظ كل دولة أخرى بحدودها من Natural Earth. 2 منطقة: 1 معرَّفة برمز ISO 3166-2، و1 بمعرّف علاقة OpenStreetMap لأن OpenStreetMap لا يحمل رمزًا لها.",
+  "regionsBtn": true,
+  "overflow": false,
+  "surface": "governments (direct ooMap render)",
+  "lang": "ar",
+  "w": 390,
+  "rendered": true
+ },
+ {
+  "host": "statfig-map",
+  "present": true,
+  "svg": true,
+  "countries": 229,
+  "regions": 2,
+  "contested": 28,
+  "regionTitles": [
+   "Île-de-France (FR-IDF) · فرنسا — 3",
+   "Région sans code (علاقة OSM: 1003 · لا يوجد رمز ISO 3166-2 في OpenStreetMap) · فرنسا — 3"
+  ],
+  "order": {
+   "lastF": 250,
+   "firstR": 251,
+   "lastR": 252,
+   "firstC": 253
+  },
+  "legend": "الحدود: OpenStreetMap، بتاريخ 2026-09-01 · Natural Earth 50m في غير ذلك",
+  "legendTitle": "حدود مرسومة من بيانات OpenStreetMap بالتاريخ المبيَّن، © المساهمون في OpenStreetMap (ODbL 1.0). 1 دولة من OpenStreetMap؛ وتحتفظ كل دولة أخرى بحدودها من Natural Earth. 2 منطقة: 1 معرَّفة برمز ISO 3166-2، و1 بمعرّف علاقة OpenStreetMap لأن OpenStreetMap لا يحمل رمزًا لها.",
+  "regionsBtn": true,
+  "overflow": false,
+  "surface": "statistics (direct ooMap render)",
+  "lang": "ar",
+  "w": 390,
+  "rendered": true
+ },
+ {
+  "host": "sg-ringmap",
+  "present": true,
+  "svg": true,
+  "countries": 229,
+  "regions": 2,
+  "contested": 28,
+  "regionTitles": [
+   "Île-de-France (FR-IDF) · فرنسا — 3",
+   "Région sans code (علاقة OSM: 1003 · لا يوجد رمز ISO 3166-2 في OpenStreetMap) · فرنسا — 3"
+  ],
+  "order": {
+   "lastF": 250,
+   "firstR": 251,
+   "lastR": 252,
+   "firstC": 253
+  },
+  "legend": "الحدود: OpenStreetMap، بتاريخ 2026-09-01 · Natural Earth 50m في غير ذلك",
+  "legendTitle": "حدود مرسومة من بيانات OpenStreetMap بالتاريخ المبيَّن، © المساهمون في OpenStreetMap (ODbL 1.0). 1 دولة من OpenStreetMap؛ وتحتفظ كل دولة أخرى بحدودها من Natural Earth. 2 منطقة: 1 معرَّفة برمز ISO 3166-2، و1 بمعرّف علاقة OpenStreetMap لأن OpenStreetMap لا يحمل رمزًا لها.",
+  "regionsBtn": true,
+  "overflow": false,
+  "surface": "insights (direct ooMap render)",
+  "lang": "ar",
+  "w": 390,
+  "rendered": true
+ },
+ {
+  "surface": "Regions toggle",
+  "lang": "ar",
+  "w": 390,
+  "off": 0,
+  "on": 2,
+  "errors": []
+ }
+]
