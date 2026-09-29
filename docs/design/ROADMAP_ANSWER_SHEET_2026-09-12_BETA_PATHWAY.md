@@ -1942,7 +1942,7 @@ Wikipedia text already ingested, and inside the V1-3 line.
 
 Default if blank: none (⛔).
 
-ANSWER Q823:
+ANSWER Q823: a — answered in the project chat 2026-09-29 19:55 UTC (the 37-question list) and copied here by the recording session (item 1): OSM data may leave the machine with OSM's credit and the ODbL line, and OSM-built files (border files, gazetteer) may ship in the repository
 
 #### Q824 · Cadence and budget
 - (a) ★ **Daily diff apply per selected extract inside the online consent; re-baseline when a diff gap
@@ -2283,7 +2283,7 @@ ANSWER Q924: a
 
 Default if blank: none (⛔).
 
-ANSWER Q925: 
+ANSWER Q925: a — answered in the project chat 2026-09-29 19:55 UTC (the 37-question list) and copied here by the recording session (item 35)
 
 #### Q926 · The law lane's database file and encryption
 - (a) ★ **Same answers as the Wikipedia lane (Q719, Q720).**
@@ -2421,7 +2421,7 @@ ANSWER Q1008: a
 
 Default if blank: none (⛔).
 
-ANSWER Q1009:
+ANSWER Q1009: y, OOENC2, y, y — answered in the project chat 2026-09-29 19:55 UTC (the 37-question list) and copied here by the recording session (item 2, «2=a»)
 
 #### Q1010 · The reference-VM policy
 - (a) ★ **Every budget is published and sized for the 2-core / 3.5 GB VM by default; power users raise
@@ -2646,7 +2646,7 @@ copy on restricted government namespaces. We found it; we are not the affected p
 
 Default if blank: none (⛔).
 
-ANSWER Q1113:
+ANSWER Q1113: a — answered in the project chat 2026-09-29 19:55 UTC (the 37-question list) and copied here by the recording session (item 36)
 
 #### Q1114 · Which "source count" is THE number (institutions C3)
 - (a) ★ **`enabled AND qualified` everywhere a headline count is shown; the other predicates are labelled
