@@ -29,6 +29,7 @@ from sqlalchemy.orm import Session
 from src.analytics.baseline import baseline_tags
 from src.analytics.extract import ExtractedTerm
 from src.analytics.managed import normalize_lang
+from src.database.derived_views import KeywordMentionRead
 from src.database.models import Article, Keyword, KeywordMention, KeywordTag, Source
 
 _LOG = logging.getLogger(__name__)
@@ -1529,8 +1530,8 @@ def prune_orphan_keywords(session: Session, *, chunk: int = 500, budget_s: float
         # counter, which could be momentarily stale).
         mentioned = {
             kid
-            for (kid,) in session.query(KeywordMention.keyword_id)
-            .filter(KeywordMention.keyword_id > lo, KeywordMention.keyword_id <= hi)
+            for (kid,) in session.query(KeywordMentionRead.keyword_id)
+            .filter(KeywordMentionRead.keyword_id > lo, KeywordMentionRead.keyword_id <= hi)
             .distinct()
         }
         candidates = [kid for kid in ids if kid not in mentioned]

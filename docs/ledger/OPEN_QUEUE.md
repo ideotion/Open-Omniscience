@@ -461,8 +461,8 @@
     (see `LESSONS.md`); and a macOS-only race in
     `tests/test_import_lifecycle_stages.py`'s boot-drain test, which watched for a transient
     "running" state a fast drain can pass between two polls.
-  - **`D47` ⛔ PENDING — adopt the segmented derived index as 0.5's plan for the derived-row
-    write path.** Recommendation **a**: build step 0 (every reader through a view over today's
+  - **`D47` ⛔ ANSWERED 2026-09-29 (a) = `R96` — adopted; step 0 is being built by the thread «Keyword working session».** (Was: PENDING — adopt the segmented derived index as 0.5's plan for the derived-row
+    write path.) Recommendation **a**: build step 0 (every reader through a view over today's
     tables — behaviour-neutral) now, and steps 1–4 in 0.5 gated on the design's §8
     measurements. It is also the design in which `D46` stops being a question. Touches, when
     built: `src/analytics/store.py`, `src/backup/merge.py`, `src/analytics/bulk_build.py`,

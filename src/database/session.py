@@ -282,6 +282,13 @@ def init_db() -> None:
     from src.database.fts import ensure_fts
 
     _fts_action = ensure_fts(engine)
+
+    # The read seam over the derived keyword rows (segmented-index step 0, R96): create the
+    # view for a database made before it existed, or re-create it if the table's columns
+    # moved. Boot makes no network call and this reads one sqlite_master row when current.
+    from src.database.derived_views import ensure_derived_views
+
+    ensure_derived_views(engine)
     if _fts_action == "rebuilt":
         _LOG.info(
             "FTS index rebuilt from the base table (one-time: fresh table with existing "
