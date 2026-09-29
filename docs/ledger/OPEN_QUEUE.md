@@ -15789,3 +15789,15 @@ maintainer's word or a measurement on the reference VM:
   wherever one exists, and rows only exist once a sweep or the manual button wrote them. Gating the
   display on the master too would hide stored answers whenever the lane is paused; left as built in 0.4
   unless ruled otherwise. The ≈ TITLES are gated on both switches, as Q513 = b reads.
+
+## 2026-09-28 — THE CLAIM TRAIL'S SIGNING KEY — PENDING (0.5 row K, brief `S05-11` S2; ruling id R67 held for the answer)
+
+Step ⑥ signs the exported trail. **Built with the install's CUSTODY key**, the one `custody` already uses
+for its log and anchors: a recipient can tie the bundle to that install's custody record, and the same
+key on every bundle links all of them to one install. That trade-off is stated beside the export button
+and in the bundle's own `WHAT-A-READER-CAN-SEE.md`. The alternatives: a separate, stable SHARING key per
+install (as `src/annotations/bundle.py` does for annotation bundles: bundles still link to each other,
+not to the custody log), or a FRESH key per bundle (no two bundles linkable, and a signature that then
+proves only that the file did not change, never who made it). `claim_bundle.build_trail_bundle` takes
+the signer as a parameter, so either is a small change. Asked on a decision card in the row K thread;
+record the answer as R67 in `RULINGS_INDEX.md`, here and in the gate's §3.

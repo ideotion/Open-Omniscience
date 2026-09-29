@@ -3810,7 +3810,10 @@
          own scrolling #gw-body: the decision controls stay reachable at any height. -->
     <div id="net-consent-body" style="padding:0 18px;max-height:58vh;overflow:auto">
       <div style="margin-bottom:8px"><span class="muted">This action needs the network:</span>
-        <div id="net-consent-reason" style="margin-top:4px"><b></b></div></div>
+        <div id="net-consent-reason" style="margin-top:4px"><b></b></div>
+        <!-- A7, the metadata shadow: what THIS action's request tells the host it asks,
+             set by the caller (ensureOnline's opts.shadow) and hidden when none is given. -->
+        <div id="net-consent-shadow" class="hint" style="margin-top:4px" hidden></div></div>
       <!-- Q1002: the body names the lanes that are ON; each line's hover lists the
            hosts that lane will contact, read from the ONE table in net-hosts.js that
            docs/SECURITY.md's own guard also reads. The hover is the LAYER (invariant

@@ -65,10 +65,29 @@ def build_archive_url(lat: float, lon: float, start: date, end: date,
     )
 
 
+def cache_file(url: str) -> Path:
+    """Where the slice for ``url`` is cached. Pure: creates nothing (a reader asking
+    whether a slice is held must not write a directory to find out)."""
+    return data_dir() / "weather_context" / (hashlib.sha256(url.encode()).hexdigest()[:24] + ".json")
+
+
 def cache_path(url: str) -> Path:
-    d = data_dir() / "weather_context"
-    d.mkdir(parents=True, exist_ok=True)
-    return d / (hashlib.sha256(url.encode()).hexdigest()[:24] + ".json")
+    p = cache_file(url)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    return p
+
+
+def read_cached_slice(url: str) -> dict | None:
+    """The cached slice for ``url``, or None when none is held or it is unreadable.
+    Local only: this never fetches."""
+    p = cache_file(url)
+    if not p.is_file():
+        return None
+    try:
+        payload = json.loads(p.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return payload if isinstance(payload, dict) and payload.get("ok") else None
 
 
 def fetch_daily_slice(

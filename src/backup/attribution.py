@@ -165,7 +165,12 @@ def _db_ip_because(signals: set[str]) -> str | None:
 
 
 def _open_meteo_because(signals: set[str]) -> str | None:
-    hits = sorted(s for s in signals if s == table_signal("weather_observations"))
+    # ``files:weather_context``: cached reanalysis slices carried as members (the Claim
+    # Workspace's trail bundle carries the ones this machine already held).
+    hits = sorted(
+        s for s in signals
+        if s in (table_signal("weather_observations"), files_signal("weather_context"))
+    )
     return ", ".join(hits) if hits else None
 
 

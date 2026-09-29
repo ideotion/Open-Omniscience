@@ -10362,3 +10362,9 @@ resolves the id among the versions the reader lists (never a neighbour) and adds
 holds, so the reader says so instead of offering the add, and the component draws the button only where that
 key exists, so the law reader, which mounts the same component, offers none. Lessons: `LESSONS.md`, the two
 entries dated by this PR.
+
+- **2026-09-28 · desk/claim-trail-export (0.5 row K, S05-11 S2).** The Claim Workspace's steps ④ and ⑥:
+weather corroboration offers for the trail's own articles, behind the one consent popup with a new
+metadata-shadow line, and the whole trail as one custody-signed ZIP with the §18 enumeration and Q1008's
+attribution lines, refused before any write when a row is OSM-derived (Q823). Record:
+`docs/audit/claim-trail-export-2026-09-28/`. Lesson: `LESSONS.md`, the screen-reader-only overlap entry.

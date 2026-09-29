@@ -12766,3 +12766,13 @@ not one. **Read `data-oo-tip` as well, or move the pointer away before reading `
 test drives the real delegated listener, not an extracted copy. The `{ method: "POST" }` the component
 hands to `api()` then has the context's `Object.prototype`, and `assert.deepStrictEqual` compares
 prototypes, so it failed against an identical literal. **Compare such values as JSON, or field by field.**
+
+### THE SAME OVERLAP PROBE MUST ALSO SKIP SCREEN-READER-ONLY TEXT: A CHART'S DATA TABLE IS CLIPPED, NOT ABSENT (S05-11 S2, claim trail walk)
+
+The overlap probe of the entry above, run over a step that draws `ooChart` charts, flagged the chart's
+"Chart data" table against the chart's own labels. That table is `.sr-only`: one pixel, clipped by
+`overflow: hidden`, and `checkVisibility()` still says true, so its text nodes report real boxes stacked
+on top of whatever sits at that point. **Skip text whose ancestor is `.sr-only`, or any ancestor of at
+most one pixel in either dimension with `overflow` other than `visible`**; with that, the same frames
+measured zero (`docs/audit/claim-trail-export-2026-09-28/walk.py`, `OVERLAP_JS`). A walk that reports
+every chart as an overlap teaches its reader to ignore the probe.
