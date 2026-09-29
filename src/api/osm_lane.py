@@ -28,15 +28,21 @@ def lane_status() -> dict:
     ``lane_bytes`` is ``None`` when ``osm.db`` does not exist -- absent, never zero.
     """
     from src.osm import completeness
-    from src.osm.pbf import SMALL_PATH_MAX_BYTES
-    from src.osm.reader import pyosmium_version
+    from src.osm.reader import DICT_BYTES_PER_NODE, MEMORY_SHARE, available_memory_bytes, pyosmium_version
     from src.osm.tags import NOT_KEPT
     from src.versioned.store import lane_file_bytes
 
     version = pyosmium_version()
     return {
         "extra": {"installed": version is not None, "pyosmium": version},
-        "small_path_max_bytes": SMALL_PATH_MAX_BYTES,
+        # R77: no file-size cap on either reader. Without the extra, node locations stay in
+        # memory up to a share of what is available now, then move to a work file.
+        "python_reader": {
+            "file_size_cap": None,
+            "memory_available_bytes": available_memory_bytes(),
+            "memory_share": MEMORY_SHARE,
+            "bytes_per_node_in_memory": DICT_BYTES_PER_NODE,
+        },
         "lane_bytes": lane_file_bytes("osm"),
         "countries": completeness.countries(),
         "kept": NOT_KEPT,

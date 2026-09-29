@@ -1,4 +1,4 @@
-"""The reader seam: ``pyosmium`` with the ``[geo]`` extra, pure Python under its cap, else a refusal.
+"""The reader seam: ``pyosmium`` with the ``[geo]`` extra, else pure Python, at any size.
 
 Open Omniscience - Global Intelligence Platform for Investigative Journalism
 Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
@@ -10,10 +10,18 @@ stay pure Python; without the extra the lane says so and offers the small-countr
 country row):
 
 * the ``[geo]`` extra importable -> :class:`PyosmiumExtract`, any size;
-* not importable, file within ``pbf.SMALL_PATH_MAX_BYTES`` -> :class:`PythonExtract`;
-* not importable, file larger -> :class:`GeoExtraMissing`, whose message names what is missing,
-  what it would cost to read the file without it, and the one command that fixes it. The UI
-  shows it through the i18n key :data:`EXTRA_MISSING_KEY` (x12), never this English.
+* not importable -> :class:`PythonExtract`, ALSO any size (R77, the maintainer's answer 15 of
+  2026-09-29: «have the limit be adjusted based on the user hardware and available resources.
+  But I'd rather not put limits on anything»). The fixed 256 MiB cap is gone. What bounded
+  that path was memory, not the file: every node location inside the country's box is held
+  while the ways are assembled, at :data:`DICT_BYTES_PER_NODE` in a Python dict. So the
+  locations stay in memory while they fit :data:`MEMORY_SHARE` of what the system reports
+  available when the ingest starts, and move to a work file past that
+  (:class:`_AdaptiveLocations`). Time is the cost that remains: pure Python is one to two
+  orders of magnitude slower than pyosmium (FROM MEMORY; the country row records the real
+  seconds), which is why the lane still recommends the add-on for anything large.
+
+:class:`GeoExtraMissing` is raised only when pyosmium is ASKED for and not installed.
 
 BOTH BACKENDS ANSWER THE SAME FIVE QUESTIONS, and ``tests/test_osm_ingest.py`` runs the whole
 ingest through each on the fixture and compares the rows, so the two paths cannot quietly
@@ -33,12 +41,8 @@ from typing import Any, Protocol
 from src.osm import pbf
 from src.osm.pbf import Header, Member, Node, Relation, Way
 
-#: The i18n key the UI renders for :class:`GeoExtraMissing` (x12, ``src/static/i18n``).
-EXTRA_MISSING_KEY = "The [geo] extra (pyosmium) is not installed, so this extract is too large to read. Install it with: pip install \"open-omniscience[geo]\"; or use an extract under {cap}."
-
-
 class GeoExtraMissing(RuntimeError):
-    """The file is too large for the pure-Python path and ``pyosmium`` is not installed."""
+    """``pyosmium`` was asked for (``reader="pyosmium"`` or ``OO_OSM_READER``) and is not installed."""
 
 
 def pyosmium_version() -> str | None:
@@ -76,18 +80,131 @@ class Extract(Protocol):
 
 
 # --- pure Python ------------------------------------------------------------ #
-class _DictLocations:
-    def __init__(self) -> None:
-        self._d: dict[int, tuple[float, float]] = {}
+#: What one node location costs in a Python dict (int key -> (lat, lon) tuple), measured with
+#: ``tracemalloc`` on a million random entries under CPython 3.13 (182 bytes, 2026-09-29),
+#: rounded up. ``tests/test_osm_reader_memory.py`` re-measures it.
+DICT_BYTES_PER_NODE = 190
+
+#: The share of the memory the system reports AVAILABLE that the pure-Python path may fill
+#: before it moves the node locations to a file (R77: the limit follows the machine).
+MEMORY_SHARE = 0.5
+
+
+def available_memory_bytes() -> int | None:
+    """The memory the system reports available, or None when it cannot be read.
+
+    psutil when installed (an optional extra), else Linux's ``/proc/meminfo``. None is a
+    state, not a zero: the reader then keeps the locations in a file from the start.
+    """
+    try:
+        import psutil
+
+        return int(psutil.virtual_memory().available)
+    except Exception:  # noqa: BLE001 - psutil is an optional extra; unreadable is a state
+        pass
+    try:
+        with open("/proc/meminfo", encoding="ascii") as fh:
+            for line in fh:
+                if line.startswith("MemAvailable:"):
+                    return int(line.split()[1]) * 1024
+    except (OSError, ValueError, IndexError):
+        return None
+    return None
+
+
+def memory_budget_bytes() -> int | None:
+    """How much the pure-Python path may hold in memory: a share of what is available now."""
+    avail = available_memory_bytes()
+    return None if avail is None else int(avail * MEMORY_SHARE)
+
+
+class _SqliteLocations:
+    """Node locations in a work file: no memory ceiling, slower than the dict.
+
+    Like pyosmium's file index it sits in the lane's work directory and is deleted when the
+    ingest ends, success or failure (which box was cut says which country was chosen).
+    """
+
+    _BATCH = 50_000
+
+    def __init__(self, workdir: Path) -> None:
+        import sqlite3
+
+        workdir.mkdir(parents=True, exist_ok=True)
+        self._file = workdir / "osm-locations.sqlite"
+        self._file.unlink(missing_ok=True)
+        self._con = sqlite3.connect(self._file)
+        self._con.execute("PRAGMA journal_mode=OFF")
+        self._con.execute("PRAGMA synchronous=OFF")
+        self._con.execute("CREATE TABLE loc (id INTEGER PRIMARY KEY, lat REAL, lon REAL)")
+        self._pending: list[tuple[int, float, float]] = []
 
     def set(self, node_id: int, lat: float, lon: float) -> None:
-        self._d[node_id] = (lat, lon)
+        self._pending.append((node_id, lat, lon))
+        if len(self._pending) >= self._BATCH:
+            self._flush()
+
+    def set_many(self, items) -> None:
+        self._con.executemany("INSERT OR REPLACE INTO loc VALUES (?, ?, ?)", items)
+
+    def _flush(self) -> None:
+        if self._pending:
+            self.set_many(self._pending)
+            self._pending = []
 
     def get(self, node_id: int) -> tuple[float, float] | None:
-        return self._d.get(node_id)
+        self._flush()
+        row = self._con.execute("SELECT lat, lon FROM loc WHERE id = ?", (node_id,)).fetchone()
+        return (row[0], row[1]) if row else None
 
     def close(self) -> None:
-        self._d.clear()
+        try:
+            self._con.close()
+        finally:
+            self._file.unlink(missing_ok=True)
+
+
+class _AdaptiveLocations:
+    """A dict while it fits the memory budget, then a work file (R77: no fixed file-size cap).
+
+    The budget is read once, when the ingest starts. ``spilled`` says which one held the
+    locations, so the ingest can report it; ``budget`` is None when the memory could not be
+    read, and the file is then used from the first node.
+    """
+
+    def __init__(self, workdir: Path, budget: int | None) -> None:
+        self._workdir = workdir
+        self.budget = budget
+        self._max = None if budget is None else budget // DICT_BYTES_PER_NODE
+        self._d: dict[int, tuple[float, float]] | None = {} if budget is not None else None
+        self._disk: _SqliteLocations | None = None if budget is not None else _SqliteLocations(workdir)
+
+    @property
+    def spilled(self) -> bool:
+        return self._disk is not None
+
+    def set(self, node_id: int, lat: float, lon: float) -> None:
+        if self._d is not None:
+            self._d[node_id] = (lat, lon)
+            if self._max is not None and len(self._d) > self._max:
+                self._disk = _SqliteLocations(self._workdir)
+                self._disk.set_many((k, v[0], v[1]) for k, v in self._d.items())
+                self._d = None
+            return
+        assert self._disk is not None
+        self._disk.set(node_id, lat, lon)
+
+    def get(self, node_id: int) -> tuple[float, float] | None:
+        if self._d is not None:
+            return self._d.get(node_id)
+        assert self._disk is not None
+        return self._disk.get(node_id)
+
+    def close(self) -> None:
+        if self._d is not None:
+            self._d.clear()
+        if self._disk is not None:
+            self._disk.close()
 
 
 class PythonExtract:
@@ -126,7 +243,7 @@ class PythonExtract:
                 yield el
 
     def location_store(self, workdir: Path) -> LocationStore:
-        return _DictLocations()
+        return _AdaptiveLocations(workdir, memory_budget_bytes())
 
 
 # --- pyosmium --------------------------------------------------------------- #
@@ -313,13 +430,5 @@ def open_extract(path: str | Path, *, reader: str | None = None) -> Extract:
         if not have_osmium:
             raise GeoExtraMissing("the pyosmium reader was requested but the [geo] extra is not installed")
         return PyosmiumExtract(p)
-    size = p.stat().st_size
-    if size > pbf.SMALL_PATH_MAX_BYTES:
-        cap = pbf.SMALL_PATH_MAX_BYTES // (1024 * 1024)
-        raise GeoExtraMissing(
-            f"{p.name} is {size / 1024**3:.1f} GiB; without the [geo] extra (pyosmium) the lane "
-            f"reads extracts up to {cap} MiB in pure Python. Install it with: "
-            'pip install "open-omniscience[geo]"'
-        )
     return PythonExtract(p)
 

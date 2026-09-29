@@ -2624,18 +2624,29 @@
         }
       }
       if (sug) {
-        // Two rows, neither ranked: every country of the interface language, and every country
-        // whose laws World law watches -- each in the reader's alphabetical order, so no
-        // country is put first.
+        // R76: the country the interface language comes from is offered first, and while no
+        // country is chosen, as the default first import (one button; nothing downloads until
+        // it is clicked and the download itself passes the one consent). Then every other
+        // country of the language and every country whose laws World law watches, each in the
+        // reader's alphabetical order.
         const chip = (r, extra) => {
           const cost = r.extract ? `${t(r.extract.name)} ~${humanBytes(r.extract.size_estimate_bytes)}` : t(r.extract_reason || "");
           const title = extra ? `${cost} · ${extra}` : cost;
           return `<button class="tiny secondary" data-on-click="osmPickAddCode(${esc(JSON.stringify(r.cc))})" title="${esc(title)}">${esc(_osmPickLabel(r.cc, r.name))}${r.extract ? ` <span class="muted">· ~${humanBytes(r.extract.size_estimate_bytes)}</span>` : ""}</button>`;
         };
         const byName = (a, b) => ooCountryCompare(a.cc, b.cc);
-        const open = (p.suggested || []).filter((r) => !chosen.has(r.cc)).sort(byName);
+        const open = (p.suggested || []).filter((r) => !chosen.has(r.cc))
+          .sort((a, b) => (b.origin ? 1 : 0) - (a.origin ? 1 : 0) || byName(a, b));
         const law = (p.law_suggested || []).filter((r) => !chosen.has(r.cc)).sort(byName);
-        let html = open.length
+        let html = "";
+        if (p.first && !chosen.has(p.first.cc)) {
+          const f = p.first;
+          const cost = f.extract ? ` <span class="muted">· ${esc(t(f.extract.name))} ~${humanBytes(f.extract.size_estimate_bytes)}</span>` : "";
+          html += `<div class="osm-pick-first" style="margin-bottom:10px"><div class="hint" style="margin-bottom:4px">${esc(t(p.first_basis || ""))}</div>`
+            + `<button class="tiny" data-on-click="osmPickAddCode(${esc(JSON.stringify(f.cc))})">${esc(osmTf("Start with {country}", { country: _osmPickLabel(f.cc, f.name) }))}</button>${cost}`
+            + (f.extract ? "" : ` <span class="hint">${esc(t(f.extract_reason || ""))}</span>`) + `</div>`;
+        }
+        html += open.length
           ? `<div class="hint" style="margin-bottom:4px">${esc(t(p.suggestion_basis || ""))}</div>` + open.map((r) => chip(r)).join(" ")
           : "";
         if (law.length) {

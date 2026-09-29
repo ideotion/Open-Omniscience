@@ -6648,5 +6648,7 @@
   "Read from the OpenStreetMap data of a country you read: a notable place (a settlement, an administrative area, or an object linked to Wikidata or Wikipedia). Names come from OpenStreetMap first, then Wikidata; a language with neither shows no name.": "Leído de los datos de OpenStreetMap de un país que ha leído: un lugar notable (una localidad, un área administrativa o un objeto vinculado a Wikidata o Wikipedia). Los nombres vienen primero de OpenStreetMap y después de Wikidata; un idioma sin ninguno no muestra nombre.",
   "The OpenStreetMap part could not be read.": "No se pudo leer la parte de OpenStreetMap.",
   "{n} notable places from OpenStreetMap": "{n} lugares notables de OpenStreetMap",
-  "Reads the gazetteer and the OpenStreetMap data on this machine. No request leaves it.": "Lee el nomenclátor y los datos de OpenStreetMap en este equipo. Ninguna solicitud sale de él."
+  "Reads the gazetteer and the OpenStreetMap data on this machine. No request leaves it.": "Lee el nomenclátor y los datos de OpenStreetMap en este equipo. Ninguna solicitud sale de él.",
+  "Suggested first: the country your interface language comes from. Nothing is downloaded until you choose it.": "Sugerido primero: el país de origen del idioma de la interfaz. No se descarga nada hasta que lo elija.",
+  "Start with {country}": "Empezar por {country}"
 }

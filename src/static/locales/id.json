@@ -6648,5 +6648,7 @@
   "Read from the OpenStreetMap data of a country you read: a notable place (a settlement, an administrative area, or an object linked to Wikidata or Wikipedia). Names come from OpenStreetMap first, then Wikidata; a language with neither shows no name.": "Dibaca dari data OpenStreetMap sebuah negara yang telah Anda baca: tempat penting (permukiman, wilayah administratif, atau objek yang terhubung ke Wikidata atau Wikipedia). Nama berasal dari OpenStreetMap terlebih dahulu, lalu dari Wikidata; bahasa yang tidak punya keduanya tidak menampilkan nama.",
   "The OpenStreetMap part could not be read.": "Bagian OpenStreetMap tidak dapat dibaca.",
   "{n} notable places from OpenStreetMap": "{n} tempat penting dari OpenStreetMap",
-  "Reads the gazetteer and the OpenStreetMap data on this machine. No request leaves it.": "Membaca gazetir dan data OpenStreetMap di mesin ini. Tidak ada permintaan yang keluar."
+  "Reads the gazetteer and the OpenStreetMap data on this machine. No request leaves it.": "Membaca gazetir dan data OpenStreetMap di mesin ini. Tidak ada permintaan yang keluar.",
+  "Suggested first: the country your interface language comes from. Nothing is downloaded until you choose it.": "Disarankan pertama: negara asal bahasa antarmuka. Tidak ada yang diunduh sampai Anda memilihnya.",
+  "Start with {country}": "Mulai dengan {country}"
 }

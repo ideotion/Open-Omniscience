@@ -6648,5 +6648,7 @@
   "Read from the OpenStreetMap data of a country you read: a notable place (a settlement, an administrative area, or an object linked to Wikidata or Wikipedia). Names come from OpenStreetMap first, then Wikidata; a language with neither shows no name.": "Прочитано из данных OpenStreetMap прочитанной вами страны: значимое место (населённый пункт, административная единица или объект, связанный с Викиданными или Википедией). Названия берутся сначала из OpenStreetMap, затем из Викиданных; для языка без того и другого название не показывается.",
   "The OpenStreetMap part could not be read.": "Не удалось прочитать часть OpenStreetMap.",
   "{n} notable places from OpenStreetMap": "{n} значимых мест из OpenStreetMap",
-  "Reads the gazetteer and the OpenStreetMap data on this machine. No request leaves it.": "Читает справочник мест и данные OpenStreetMap на этом компьютере. Ни один запрос не покидает его."
+  "Reads the gazetteer and the OpenStreetMap data on this machine. No request leaves it.": "Читает справочник мест и данные OpenStreetMap на этом компьютере. Ни один запрос не покидает его.",
+  "Suggested first: the country your interface language comes from. Nothing is downloaded until you choose it.": "Предлагается первой: страна, откуда происходит язык интерфейса. Ничего не загружается, пока вы её не выберете.",
+  "Start with {country}": "Начать с: {country}"
 }

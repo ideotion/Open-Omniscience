@@ -6648,5 +6648,7 @@
   "Read from the OpenStreetMap data of a country you read: a notable place (a settlement, an administrative area, or an object linked to Wikidata or Wikipedia). Names come from OpenStreetMap first, then Wikidata; a language with neither shows no name.": "आपके पढ़े गए देश के OpenStreetMap डेटा से: एक उल्लेखनीय स्थान (कोई बस्ती, प्रशासनिक क्षेत्र, या विकिडेटा या विकिपीडिया से जुड़ी वस्तु)। नाम पहले OpenStreetMap से, फिर विकिडेटा से आते हैं; जिस भाषा में दोनों में से कोई नहीं, उसमें कोई नाम नहीं दिखता।",
   "The OpenStreetMap part could not be read.": "OpenStreetMap वाला हिस्सा पढ़ा नहीं जा सका।",
   "{n} notable places from OpenStreetMap": "OpenStreetMap से {n} उल्लेखनीय स्थान",
-  "Reads the gazetteer and the OpenStreetMap data on this machine. No request leaves it.": "इस मशीन पर गैज़ेटियर और OpenStreetMap डेटा पढ़ता है। कोई अनुरोध बाहर नहीं जाता।"
+  "Reads the gazetteer and the OpenStreetMap data on this machine. No request leaves it.": "इस मशीन पर गैज़ेटियर और OpenStreetMap डेटा पढ़ता है। कोई अनुरोध बाहर नहीं जाता।",
+  "Suggested first: the country your interface language comes from. Nothing is downloaded until you choose it.": "सबसे पहले सुझाया गया: वह देश जहाँ से इंटरफ़ेस की भाषा आती है। जब तक आप इसे नहीं चुनते, कुछ भी डाउनलोड नहीं होता।",
+  "Start with {country}": "{country} से शुरू करें"
 }

@@ -6648,5 +6648,7 @@
   "Read from the OpenStreetMap data of a country you read: a notable place (a settlement, an administrative area, or an object linked to Wikidata or Wikipedia). Names come from OpenStreetMap first, then Wikidata; a language with neither shows no name.": "読み込んだ国の OpenStreetMap データから：主要な場所（集落、行政区域、または Wikidata や Wikipedia にリンクされたオブジェクト）。名前はまず OpenStreetMap から、次に Wikidata から取ります。どちらもない言語では名前を表示しません。",
   "The OpenStreetMap part could not be read.": "OpenStreetMap の部分を読み込めませんでした。",
   "{n} notable places from OpenStreetMap": "OpenStreetMap からの主要な場所 {n} 件",
-  "Reads the gazetteer and the OpenStreetMap data on this machine. No request leaves it.": "このマシン上の地名辞典と OpenStreetMap データを読みます。リクエストは外に出ません。"
+  "Reads the gazetteer and the OpenStreetMap data on this machine. No request leaves it.": "このマシン上の地名辞典と OpenStreetMap データを読みます。リクエストは外に出ません。",
+  "Suggested first: the country your interface language comes from. Nothing is downloaded until you choose it.": "最初の提案：インターフェース言語の発祥国。選択するまで何もダウンロードされません。",
+  "Start with {country}": "{country}から始める"
 }

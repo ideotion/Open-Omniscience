@@ -6648,5 +6648,7 @@
   "Read from the OpenStreetMap data of a country you read: a notable place (a settlement, an administrative area, or an object linked to Wikidata or Wikipedia). Names come from OpenStreetMap first, then Wikidata; a language with neither shows no name.": "读取自您已读取国家的 OpenStreetMap 数据：一个重要地点（居民点、行政区，或与维基数据或维基百科关联的对象）。名称先取自 OpenStreetMap，其次取自维基数据；两者都没有的语言不显示名称。",
   "The OpenStreetMap part could not be read.": "无法读取 OpenStreetMap 部分。",
   "{n} notable places from OpenStreetMap": "来自 OpenStreetMap 的 {n} 个重要地点",
-  "Reads the gazetteer and the OpenStreetMap data on this machine. No request leaves it.": "读取本机上的地名词典和 OpenStreetMap 数据。不会发出任何请求。"
+  "Reads the gazetteer and the OpenStreetMap data on this machine. No request leaves it.": "读取本机上的地名词典和 OpenStreetMap 数据。不会发出任何请求。",
+  "Suggested first: the country your interface language comes from. Nothing is downloaded until you choose it.": "首先建议：界面语言的发源国家。在您选择之前不会下载任何内容。",
+  "Start with {country}": "从{country}开始"
 }

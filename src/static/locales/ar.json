@@ -6648,5 +6648,7 @@
   "Read from the OpenStreetMap data of a country you read: a notable place (a settlement, an administrative area, or an object linked to Wikidata or Wikipedia). Names come from OpenStreetMap first, then Wikidata; a language with neither shows no name.": "مقروء من بيانات OpenStreetMap لبلد قرأته: مكان بارز (تجمّع سكني أو منطقة إدارية أو كائن مرتبط بويكي بيانات أو ويكيبيديا). تأتي الأسماء من OpenStreetMap أولًا ثم من ويكي بيانات؛ واللغة التي ليس لها أي منهما لا يظهر لها اسم.",
   "The OpenStreetMap part could not be read.": "تعذّرت قراءة جزء OpenStreetMap.",
   "{n} notable places from OpenStreetMap": "{n} مكانًا بارزًا من OpenStreetMap",
-  "Reads the gazetteer and the OpenStreetMap data on this machine. No request leaves it.": "يقرأ المعجم الجغرافي وبيانات OpenStreetMap على هذا الجهاز. لا يغادره أي طلب."
+  "Reads the gazetteer and the OpenStreetMap data on this machine. No request leaves it.": "يقرأ المعجم الجغرافي وبيانات OpenStreetMap على هذا الجهاز. لا يغادره أي طلب.",
+  "Suggested first: the country your interface language comes from. Nothing is downloaded until you choose it.": "مقترح أولًا: البلد الذي نشأت فيه لغة الواجهة. لا يُنزَّل شيء حتى تختاره.",
+  "Start with {country}": "ابدأ بـ {country}"
 }

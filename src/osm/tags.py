@@ -3,8 +3,9 @@
 Open Omniscience - Global Intelligence Platform for Investigative Journalism
 Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 
-WHAT IS KEPT (Q809 = b: «Also roads and buildings»). Five kinds, decided from the tags alone,
-first match wins:
+WHAT IS KEPT (Q809 = b: «Also roads and buildings»; R78, the maintainer's answer 16 = c of
+2026-09-29: «Also keep land use, water and power lines»). Eight kinds, decided from the tags
+alone, first match wins:
 
 * ``admin``    -- ``boundary=administrative``;
 * ``place``    -- ``place=*`` (cities, towns, villages...);
@@ -12,12 +13,17 @@ first match wins:
                   ``wikidata`` / ``wikipedia``;
 * ``building`` -- ``building=*``;
 * ``road``     -- a WAY with ``highway=*`` (a ``highway=`` node is a signal or a stop, not a
-                  road; it is kept only when a POI key also says what it is).
+                  road; it is kept only when a POI key also says what it is);
+* ``power``    -- the grid: ``power=`` one of :data:`POWER_VALUES` (lines, cables, substations,
+                  plants). Towers, poles and single generators (every rooftop panel) are not
+                  kept: they are the line's vertices or a house's fitting, millions of them;
+* ``water``    -- ``waterway=*``, ``water=*``, or ``natural=`` one of :data:`WATER_NATURAL`;
+* ``landuse``  -- ``landuse=*``.
 
-Everything else in the extract (land use, water, power lines, untagged vertices...) is not
-kept, and :data:`NOT_KEPT` is the sentence the API returns saying so. ``notable`` marks what
-Q817 says becomes an Article: admin areas, ``place=*``, and anything carrying ``wikidata`` /
-``wikipedia``.
+Everything else in the extract (other natural features, the coastline, untagged vertices...)
+is not kept, and :data:`NOT_KEPT` is the sentence the API returns saying so. ``notable`` marks
+what Q817 says becomes an Article: admin areas, ``place=*``, and anything carrying
+``wikidata`` / ``wikipedia``.
 
 THE COLUMNS (Q810 = a, and its NOTE «yes, but extend the list of columns to minimize the JSON
 blob»). :data:`Q810_KEYS` is the ruling's list verbatim; :data:`EXTENDED_KEYS` is what this
@@ -45,7 +51,13 @@ from __future__ import annotations
 import json
 from typing import Any
 
-KINDS = ("admin", "place", "poi", "building", "road")
+KINDS = ("admin", "place", "poi", "building", "road", "power", "water", "landuse")
+
+#: The ``power=`` values kept (R78): the lines and the grid's named nodes, not its vertices.
+POWER_VALUES: frozenset[str] = frozenset({"line", "minor_line", "cable", "substation", "plant"})
+
+#: The ``natural=`` values that are water (R78).
+WATER_NATURAL: frozenset[str] = frozenset({"water", "wetland", "bay", "spring", "glacier"})
 
 #: The tags that make an object a place with metadata. Order is the ``primary`` tag's priority.
 POI_KEYS: tuple[str, ...] = (
@@ -66,8 +78,9 @@ POI_KEYS: tuple[str, ...] = (
 NOT_KEPT = (
     "Kept: administrative areas, place=*, places with metadata (amenity, shop, tourism, leisure, "
     "office, craft, healthcare, historic, emergency, club, public_transport, aeroway, or any object "
-    "carrying wikidata/wikipedia), buildings, and roads. Not kept: land use, natural features, "
-    "water, power lines and every untagged object."
+    "carrying wikidata/wikipedia), buildings, roads, power lines and substations, water "
+    "(waterways, lakes, wetlands) and land use. Not kept: other natural features, the coastline, "
+    "power towers and poles, single generators and every untagged object."
 )
 
 #: Q810's list, verbatim, with its four families marked by the trailing ``:*``.
@@ -244,6 +257,16 @@ def classify(tags: dict[str, str], *, is_way: bool) -> tuple[str | None, str | N
         return "building", "building", tags["building"], notable
     if is_way and "highway" in tags:
         return "road", "highway", tags["highway"], notable
+    if tags.get("power") in POWER_VALUES:
+        return "power", "power", tags["power"], notable
+    if "waterway" in tags:
+        return "water", "waterway", tags["waterway"], notable
+    if "water" in tags:
+        return "water", "water", tags["water"], notable
+    if tags.get("natural") in WATER_NATURAL:
+        return "water", "natural", tags["natural"], notable
+    if "landuse" in tags:
+        return "landuse", "landuse", tags["landuse"], notable
     if notable:
         return "poi", None, None, True
     return None, None, None, False
