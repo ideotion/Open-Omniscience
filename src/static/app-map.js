@@ -1276,6 +1276,9 @@
       cv.setAttribute("aria-hidden", "true");
       cv.style.cssText = "position:absolute;pointer-events:none";
       wrap.appendChild(cv);
+      // A re-render of the map (regions toggle, worldview) builds a NEW layer; the old one must
+      // stop touching the legend the new one now owns.
+      const gen = host._ooLaneGen = (host._ooLaneGen || 0) + 1;
       let data = null, cur = null, timer = null, seq = 0, readMs = null, drawMs = null;
       const css = getComputedStyle(host);
       const color = (v) => (css.getPropertyValue(v) || "").trim() || "#888";
@@ -1287,6 +1290,7 @@
         return { w: r.width, h: r.height, dpr };
       };
       const draw = () => {
+        if (host._ooLaneGen !== gen) return;
         const t0 = performance.now();
         const sz = place(), ctx = cv.getContext("2d"); if (!ctx || !cur) return;
         ctx.setTransform(sz.dpr, 0, 0, sz.dpr, 0, 0);
@@ -1328,6 +1332,7 @@
         _ooOsmLaneLegend(host, data, readMs, drawMs);
       };
       const fetchView = async () => {
+        if (host._ooLaneGen !== gen) return;
         const my = ++seq, box = _ooOsmLaneBox(cur), t0 = performance.now();
         if (!(box.w < box.e && box.s < box.n)) return;
         try {
@@ -3007,14 +3012,18 @@
     }
     // The last answer is kept so a language switch re-draws it in the new language rather than
     // leaving the old language's sentence under a re-labelled box.
-    let _osmGeoLast = null;
+    let _osmGeoLast = null, _osmGeoSeq = 0;
     async function osmLocate() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const out = $("osm-geo-out"); const q = ($("osm-geo-q") || {}).value || "";
       if (!out || !q.trim()) return;
+      const my = ++_osmGeoSeq;
       out.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
-      try { _osmGeoLast = await api("/api/osm/geocode?" + new URLSearchParams({ q: q.trim() }).toString()); }
-      catch (e) { _osmGeoLast = { failed: true }; }
+      let d;
+      try { d = await api("/api/osm/geocode?" + new URLSearchParams({ q: q.trim() }).toString()); }
+      catch (e) { d = { failed: true }; }
+      if (my !== _osmGeoSeq) return;                 // a newer question was asked meanwhile
+      _osmGeoLast = d;
       _osmGeoRender();
     }
     function _osmGeoRender() {
@@ -3024,6 +3033,10 @@
       if (d.failed) { out.innerHTML = `<div class="note err">${esc(t("The address could not be looked up here."))}</div>`; return; }
       if (d.status === "no-country") {
         out.innerHTML = `<div class="muted">${esc(t("No OpenStreetMap country's addresses are indexed on this machine yet."))}</div>`;
+        return;
+      }
+      if (d.status === "empty") {
+        out.innerHTML = `<div class="hint">${esc(t("Type a house number, street, postcode or town."))}</div>`;
         return;
       }
       if (!d.results.length) {

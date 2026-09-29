@@ -6691,5 +6691,6 @@
   "OpenStreetMap, objects in view: {n}. Drawn one by one.": "OpenStreetMap, объектов в виде: {n}. Нарисованы по одному.",
   "Read in {read} ms, drawn in {draw} ms on this machine.": "Прочитано за {read} мс, нарисовано за {draw} мс на этом компьютере.",
   "Up to {points} objects in a view are drawn one by one; more are drawn as clusters on a {grid} by {grid} grid, each with its exact count. Shapes are thinned to about one screen pixel; above {vertices} vertices in a view every shape is drawn as its point.": "До {points} объектов в виде рисуются по одному; больше рисуются группами на сетке {grid} на {grid}, каждая с точным числом. Фигуры упрощаются примерно до одного пикселя экрана; свыше {vertices} вершин в виде каждая фигура рисуется своей точкой.",
-  "A cluster counts every object in its grid cell, so a cell on the edge of the view also counts the objects just beyond it.": "Группа учитывает все объекты своей ячейки сетки, поэтому ячейка на краю вида учитывает и объекты сразу за ним."
+  "A cluster counts every object in its grid cell, so a cell on the edge of the view also counts the objects just beyond it.": "Группа учитывает все объекты своей ячейки сетки, поэтому ячейка на краю вида учитывает и объекты сразу за ним.",
+  "Type a house number, street, postcode or town.": "Введите номер дома, улицу, почтовый индекс или город."
 }

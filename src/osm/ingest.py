@@ -235,6 +235,7 @@ def ingest_country(
         kept_nodes = _IdSet()
         kept_ways = _IdSet()
         with store.lane_session("osm") as s:
+            _clear_derived(s, alpha3)
             s.execute(delete(osm_objects_table).where(osm_objects_table.c.country_alpha3 == alpha3))
         batch: list[dict] = []
 
@@ -345,6 +346,32 @@ def ingest_country(
         except Exception:  # noqa: BLE001 - the cut is complete; only its view index is missing
             _LOG.warning("the %s view index was not built", alpha3, exc_info=True)
     return report
+
+
+def _clear_derived(session, alpha3: str) -> None:
+    """Drop a country's rows in every index built from ``osm_objects`` before its objects go.
+
+    Row ids are reused by SQLite once a country's objects are deleted, so an index row left over
+    from a failed or interrupted re-ingest would point at whatever object takes that id next:
+    an old address shown at an unrelated point, an old cluster count on the map. A table the
+    lane has not created yet has nothing to drop.
+    """
+    from sqlalchemy import text
+
+    ids = "SELECT id FROM osm_objects WHERE country_alpha3 = :a"
+    for stmt in (
+        "DELETE FROM osm_names WHERE alpha3 = :a",
+        "DELETE FROM osm_addresses WHERE alpha3 = :a",
+        f"DELETE FROM osm_rtree WHERE id IN ({ids})",
+        "DELETE FROM osm_view_cells WHERE alpha3 = :a",
+        "DELETE FROM osm_view_indexes WHERE alpha3 = :a",
+        "DELETE FROM osm_search_indexes WHERE alpha3 = :a",
+    ):
+        try:
+            with session.begin_nested():
+                session.execute(text(stmt), {"a": alpha3})
+        except Exception:  # noqa: BLE001 - that index was never created on this lane
+            continue
 
 
 class _IdSet:

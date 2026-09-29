@@ -23,10 +23,10 @@ a street in a country the lane never read does not answer with the nearest spell
 does not locate it says it did not locate, with the scope beside it: the countries read, and
 the sentence Q820 requires. No request is made; nothing here can make one.
 
-NOTHING HERE WRITES THE CORPUS, AND NOTHING HERE LEAVES THE MACHINE. Q823 (ODbL) is
-unanswered: the notable places become Place rows (``src/entities/places.py``), which no backup,
-export or bulletin carries; their body is composed on read, not stored as an Article
-(``tests/test_osm_lane_seam.py``).
+NOTHING HERE LEAVES THE MACHINE. The notable places become Place rows in the corpus
+(``src/entities/places.py``); Q823 = a (2026-09-29) lets OSM data leave with OSM's credit and the
+ODbL line, which the carriers add (row K's ``src/backup/attribution.py``). Their body is composed
+on read, not stored as an Article (``tests/test_osm_lane_seam.py``).
 """
 
 from __future__ import annotations
@@ -72,6 +72,17 @@ def _ensure(session) -> None:
 
     for ddl in _DDL:
         session.execute(text(ddl))
+
+
+def _scope_sql(alpha3s: list[str]) -> tuple[str, dict[str, str]]:
+    """``alpha3 IN (...)`` over the countries whose index matches their ingest, bound not spliced.
+
+    An index row for any other country is a stale one (SQLite reuses row ids after a re-ingest
+    deletes a country's objects), and joining it to whatever object now holds that id would show
+    an old address at an unrelated point.
+    """
+    names = {f"a{i}": a for i, a in enumerate(alpha3s)}
+    return "alpha3 IN (" + ", ".join(f":{k}" for k in names) + ")", names
 
 
 def _col(name: str):
@@ -240,10 +251,14 @@ def search_names(q: str, limit: int = 8) -> dict:
         if not _indexed(s):
             return empty
         m = _match(tokens, prefix_last=True)
-        total = s.execute(text("SELECT count(*) FROM osm_names WHERE osm_names MATCH :m"), {"m": m}).scalar() or 0
+        live = [c["alpha3"] for c in index_state() if c["indexed"]]
+        if not live:
+            return empty
+        sc, sp = _scope_sql(live)
+        total = s.execute(text(f"SELECT count(*) FROM osm_names WHERE osm_names MATCH :m AND {sc}"), {"m": m, **sp}).scalar() or 0
         ids = [r[0] for r in s.execute(
-            text("SELECT object_id FROM osm_names WHERE osm_names MATCH :m ORDER BY rank LIMIT :n"),
-            {"m": m, "n": int(limit)},
+            text(f"SELECT object_id FROM osm_names WHERE osm_names MATCH :m AND {sc} ORDER BY rank LIMIT :n"),
+            {"m": m, "n": int(limit), **sp},
         )]
         rows = {r.id: r for r in s.execute(
             select(t.c.id, t.c.osm_type, t.c.osm_id, t.c.kind, t.c.notable, t.c.primary_key,
@@ -327,19 +342,20 @@ def geocode(q: str, limit: int = 5) -> dict:
     t = osm_objects_table
     with store.lane_session("osm") as s:
         m = _match(tokens, prefix_last=False)
-        total = s.execute(text("SELECT count(*) FROM osm_addresses WHERE osm_addresses MATCH :m"), {"m": m}).scalar() or 0
+        sc, sp = _scope_sql([c["alpha3"] for c in scope])
+        total = s.execute(text(f"SELECT count(*) FROM osm_addresses WHERE osm_addresses MATCH :m AND {sc}"), {"m": m, **sp}).scalar() or 0
         hits = s.execute(
-            text("SELECT object_id, address FROM osm_addresses WHERE osm_addresses MATCH :m ORDER BY rank LIMIT :n"),
-            {"m": m, "n": int(limit)},
+            text(f"SELECT object_id, address, alpha3 FROM osm_addresses WHERE osm_addresses MATCH :m AND {sc} ORDER BY rank LIMIT :n"),
+            {"m": m, "n": int(limit), **sp},
         ).all()
         rows = {r.id: r for r in s.execute(
             select(t.c.id, t.c.osm_type, t.c.osm_id, t.c.lat, t.c.lon, t.c.country_alpha3, _col("name"))
             .where(t.c.id.in_([h[0] for h in hits]))
         )}
     results = []
-    for oid, address in hits:
+    for oid, address, a3 in hits:
         r = rows.get(oid)
-        if r is None:
+        if r is None or r.country_alpha3 != a3:
             continue
         results.append({"address": address, "lat": r.lat, "lon": r.lon, "object": _object_ref(r.osm_type, r.osm_id),
                         "name": r[-1], "country": r.country_alpha3})

@@ -6691,5 +6691,6 @@
   "OpenStreetMap, objects in view: {n}. Drawn one by one.": "OpenStreetMap，视图中的对象：{n}。逐个绘制。",
   "Read in {read} ms, drawn in {draw} ms on this machine.": "在本机读取用时 {read} 毫秒，绘制用时 {draw} 毫秒。",
   "Up to {points} objects in a view are drawn one by one; more are drawn as clusters on a {grid} by {grid} grid, each with its exact count. Shapes are thinned to about one screen pixel; above {vertices} vertices in a view every shape is drawn as its point.": "一个视图中最多 {points} 个对象会逐个绘制；超过时按 {grid} × {grid} 网格聚类绘制，每个聚类附带精确计数。形状会简化到约一个屏幕像素；一个视图中顶点超过 {vertices} 个时，每个形状以其点绘制。",
-  "A cluster counts every object in its grid cell, so a cell on the edge of the view also counts the objects just beyond it.": "每个聚类统计其网格单元内的所有对象，因此位于视图边缘的单元也会计入紧邻视图之外的对象。"
+  "A cluster counts every object in its grid cell, so a cell on the edge of the view also counts the objects just beyond it.": "每个聚类统计其网格单元内的所有对象，因此位于视图边缘的单元也会计入紧邻视图之外的对象。",
+  "Type a house number, street, postcode or town.": "请输入门牌号、街道、邮政编码或城镇。"
 }

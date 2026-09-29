@@ -6691,5 +6691,6 @@
   "OpenStreetMap, objects in view: {n}. Drawn one by one.": "OpenStreetMap, objets dans la vue : {n}. Dessinés un par un.",
   "Read in {read} ms, drawn in {draw} ms on this machine.": "Lu en {read} ms, dessiné en {draw} ms sur cette machine.",
   "Up to {points} objects in a view are drawn one by one; more are drawn as clusters on a {grid} by {grid} grid, each with its exact count. Shapes are thinned to about one screen pixel; above {vertices} vertices in a view every shape is drawn as its point.": "Jusqu’à {points} objets dans une vue sont dessinés un par un ; au-delà, ils sont dessinés en groupes sur une grille de {grid} sur {grid}, chacun avec son compte exact. Les formes sont simplifiées à environ un pixel d’écran ; au-delà de {vertices} sommets dans une vue, chaque forme est dessinée comme son point.",
-  "A cluster counts every object in its grid cell, so a cell on the edge of the view also counts the objects just beyond it.": "Un groupe compte tous les objets de sa cellule de grille : une cellule au bord de la vue compte donc aussi les objets situés juste au-delà."
+  "A cluster counts every object in its grid cell, so a cell on the edge of the view also counts the objects just beyond it.": "Un groupe compte tous les objets de sa cellule de grille : une cellule au bord de la vue compte donc aussi les objets situés juste au-delà.",
+  "Type a house number, street, postcode or town.": "Saisissez un numéro, une rue, un code postal ou une localité."
 }

@@ -229,7 +229,9 @@ def count_admin1(alpha3: str, *, path: Path | None = None) -> dict:
     t0 = time.monotonic()
     try:
         borders = [(k, b) for k, r in regions.items() if (b := _border(r.get("rings") or [])) is not None]
-        counts: dict[str, dict] = {k: {"n": 0, "present": [0, 0, 0, 0]} for k in regions}
+        # Only a region whose outline could be built is counted: one with no usable outline is
+        # absent from the answer ("not counted", drawn as no data), never a counted zero.
+        counts: dict[str, dict] = {k: {"n": 0, "present": [0, 0, 0, 0]} for k, _b in borders}
         outside = no_point = 0
         t = osm_objects_table
         query = select(t.c.lat, t.c.lon, *(_has(k, tw) for k, tw in KEYS)).where(
@@ -240,7 +242,11 @@ def count_admin1(alpha3: str, *, path: Path | None = None) -> dict:
                 if lat is None or lon is None:
                     no_point += 1
                     continue
-                hit = next((k for k, b in borders if b.contains(lat, lon)), None)
+                hit = next(
+                    (k for k, b in borders
+                     if b.min_lat <= lat <= b.max_lat and b.min_lon <= lon <= b.max_lon and b.contains(lat, lon)),
+                    None,
+                )
                 if hit is None:
                     outside += 1
                     continue

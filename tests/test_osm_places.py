@@ -290,3 +290,46 @@ def test_the_object_card_shows_its_caveat_and_every_tag():
     on = (STATIC / "oo-on.js").read_text(encoding="utf-8")
     for name in ("openOsmObjectCard", "openPlaceCard"):
         assert f'"{name}"' in on, name
+
+
+# --------------------------------------------------------------------------- #
+#  Stale index rows (found by the Opus review of PR 1223)                      #
+# --------------------------------------------------------------------------- #
+
+
+def test_a_stale_index_row_never_joins_an_unrelated_object(osm_lane_dir):
+    """SQLite reuses row ids after a re-ingest deletes a country's objects. An address row left
+    over from an interrupted ingest must not be shown at the point of whatever holds its id."""
+    from sqlalchemy import text
+
+    from src.versioned import store
+
+    ingest.ingest_country(FIXTURE, "ZZ", reader="python")
+    with store.lane_session("osm") as s:
+        oid = s.execute(text("SELECT object_id FROM osm_addresses LIMIT 1")).scalar()
+        s.execute(text("INSERT INTO osm_addresses (address, alpha3, object_id) VALUES ('9 Ghost Lane', 'QQQ', :i)"), {"i": oid})
+    body = P.geocode("9 Ghost Lane")
+    assert body["status"] == "not-located" and body["total"] == 0, "a row of a country never indexed answered"
+
+
+def test_a_reingest_clears_the_countrys_indexes_before_its_objects_go(osm_lane_dir, monkeypatch):
+    from sqlalchemy import text
+
+    from src.osm import reader as R
+    from src.versioned import store
+
+    ingest.ingest_country(FIXTURE, "ZZ", reader="python")
+
+    class Stop(Exception):
+        pass
+
+    def scan_then_stop(self, bbox, locations):
+        raise Stop()
+
+    with monkeypatch.context() as m:
+        m.setattr(R.PythonExtract, "scan", scan_then_stop)
+        with pytest.raises(Stop):
+            ingest.ingest_country(FIXTURE, "ZZ", reader="python")
+    with store.lane_session("osm") as s:
+        for table in ("osm_names", "osm_addresses", "osm_view_cells", "osm_rtree"):
+            assert s.execute(text(f"SELECT count(*) FROM {table}")).scalar() == 0, table

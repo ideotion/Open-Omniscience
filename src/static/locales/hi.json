@@ -6691,5 +6691,6 @@
   "OpenStreetMap, objects in view: {n}. Drawn one by one.": "OpenStreetMap, दृश्य में वस्तुएँ: {n}। एक-एक करके बनाई गईं।",
   "Read in {read} ms, drawn in {draw} ms on this machine.": "इस मशीन पर {read} ms में पढ़ा गया, {draw} ms में बनाया गया।",
   "Up to {points} objects in a view are drawn one by one; more are drawn as clusters on a {grid} by {grid} grid, each with its exact count. Shapes are thinned to about one screen pixel; above {vertices} vertices in a view every shape is drawn as its point.": "एक दृश्य में {points} तक वस्तुएँ एक-एक करके बनाई जाती हैं; इससे अधिक होने पर वे {grid} × {grid} ग्रिड पर समूहों के रूप में बनाई जाती हैं, हर समूह अपनी सटीक गिनती के साथ। आकृतियाँ लगभग एक स्क्रीन पिक्सेल तक सरल की जाती हैं; एक दृश्य में {vertices} शीर्षों से अधिक होने पर हर आकृति अपने बिंदु के रूप में बनाई जाती है।",
-  "A cluster counts every object in its grid cell, so a cell on the edge of the view also counts the objects just beyond it.": "एक समूह अपनी ग्रिड कोशिका की हर वस्तु गिनता है, इसलिए दृश्य के किनारे की कोशिका उसके ठीक बाहर की वस्तुएँ भी गिनती है।"
+  "A cluster counts every object in its grid cell, so a cell on the edge of the view also counts the objects just beyond it.": "एक समूह अपनी ग्रिड कोशिका की हर वस्तु गिनता है, इसलिए दृश्य के किनारे की कोशिका उसके ठीक बाहर की वस्तुएँ भी गिनती है।",
+  "Type a house number, street, postcode or town.": "मकान नंबर, सड़क, पिन कोड या शहर लिखें।"
 }

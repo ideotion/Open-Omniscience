@@ -112,10 +112,39 @@ def available_memory_bytes() -> int | None:
     return None
 
 
+def cgroup_headroom_bytes() -> int | None:
+    """What a container's memory limit leaves free, or None when there is no limit to read.
+
+    psutil and ``/proc/meminfo`` report the HOST's memory; inside a container with a lower limit
+    the kernel kills the process at that limit, so the budget must not exceed it.
+    """
+    for limit_f, used_f in (
+        ("/sys/fs/cgroup/memory.max", "/sys/fs/cgroup/memory.current"),                  # cgroup v2
+        ("/sys/fs/cgroup/memory/memory.limit_in_bytes", "/sys/fs/cgroup/memory/memory.usage_in_bytes"),  # v1
+    ):
+        try:
+            with open(limit_f, encoding="ascii") as fh:
+                raw = fh.read().strip()
+            if not raw.isdigit() or int(raw) >= 1 << 60:   # "max", or v1's "no limit" sentinel
+                continue
+            with open(used_f, encoding="ascii") as fh:
+                used = int(fh.read().strip())
+            return max(0, int(raw) - used)
+        except (OSError, ValueError):
+            continue
+    return None
+
+
 def memory_budget_bytes() -> int | None:
-    """How much the pure-Python path may hold in memory: a share of what is available now."""
+    """How much the pure-Python path may hold in memory: a share of what is available now,
+    never more than a container's own limit leaves."""
     avail = available_memory_bytes()
-    return None if avail is None else int(avail * MEMORY_SHARE)
+    if avail is None:
+        return None
+    room = cgroup_headroom_bytes()
+    if room is not None:
+        avail = min(avail, room)
+    return int(avail * MEMORY_SHARE)
 
 
 class _SqliteLocations:
