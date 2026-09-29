@@ -6544,5 +6544,19 @@
   "Ranked table · 1 area with data": "Tableau classé · 1 zone avec des données",
   "Ranked table · {n} areas with data": "Tableau classé · {n} zones avec des données",
   "The full data behind the map: every area with a value, ranked, none left out. The colours are a picture of this table.": "Les données complètes derrière la carte : chaque zone qui a une valeur, classée, aucune omise. Les couleurs sont une image de ce tableau.",
-  "This measure is by region, but the region boundaries are not built on this install yet: the table below holds every value.": "Cette mesure est par région, mais les limites des régions ne sont pas encore construites sur cette installation : le tableau ci-dessous contient toutes les valeurs."
+  "This measure is by region, but the region boundaries are not built on this install yet: the table below holds every value.": "Cette mesure est par région, mais les limites des régions ne sont pas encore construites sur cette installation : le tableau ci-dessous contient toutes les valeurs.",
+  "Your data drive is not connected": "Votre disque de données n'est pas connecté",
+  "Open Omniscience keeps its data in {path}, and that folder cannot be found. Connect the drive that holds it. This page checks again every few seconds and opens the app as soon as the drive is back.": "Open Omniscience garde ses données dans {path}, et ce dossier est introuvable. Branchez le disque qui le contient. Cette page vérifie à nouveau toutes les quelques secondes et ouvre l'application dès que le disque est de retour.",
+  "The drive at this path is not the one this app set up: its marker file does not match.": "Le disque à cet emplacement n'est pas celui que cette application a configuré : son fichier marqueur ne correspond pas.",
+  "If you deleted this folder on purpose, remove the OO_DATA_DIR and OO_DATA_VOLUME_ID lines from {env} to start with a new, empty corpus.": "Si vous avez supprimé ce dossier volontairement, retirez les lignes OO_DATA_DIR et OO_DATA_VOLUME_ID de {env} pour repartir avec un corpus neuf et vide.",
+  "Quit": "Quitter",
+  "The drive holding your data was disconnected": "Le disque qui contient vos données a été déconnecté",
+  "Reconnect it within {n} s.": "Rebranchez-le dans les {n} s.",
+  "Collection is paused until it is back.": "La collecte est en pause jusqu'à son retour.",
+  "The app will close in {n} s to protect your data.": "L'application se fermera dans {n} s pour protéger vos données.",
+  "Reconnecting the drive now still restarts the app instead.": "Rebrancher le disque maintenant redémarre quand même l'application au lieu de la fermer.",
+  "The drive is back. The app is restarting to reopen your data.": "Le disque est de retour. L'application redémarre pour rouvrir vos données.",
+  "The app is closing. Reconnect the drive, then start the app again.": "L'application se ferme. Rebranchez le disque, puis relancez l'application.",
+  "Anything written in the last moments before the drive was removed may be lost; the database itself stays consistent.": "Ce qui a été écrit dans les derniers instants avant le retrait du disque peut être perdu ; la base de données elle-même reste cohérente.",
+  "The disconnection was recorded for diagnostics.": "La déconnexion a été enregistrée pour les diagnostics."
 }

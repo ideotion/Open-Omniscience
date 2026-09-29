@@ -1662,6 +1662,35 @@ corpus (continuing opens it rather than creating a new one), a RAM-backed
 filesystem (anything written there is lost on restart), or little free space, with
 the number. Only a folder the app genuinely cannot write in is refused.
 
+**If the drive is unplugged.** A folder chosen this way gets a small marker file,
+`.oos-volume`, whose id is also recorded in `oo.env` (`OO_DATA_VOLUME_ID`). The app
+reads it every two seconds while it runs. If the drive goes away:
+
+* The app records the disconnection on the internal disk (under
+  `~/.local/state/open-omniscience/`, since it cannot write to the missing drive).
+  The diagnostics bundle carries that log, and the next start names it when it
+  explains how the previous session ended.
+* Collection pauses and a window asks you to reconnect the drive within 30 seconds.
+  If the same drive comes back, the app restarts to reopen your data (an encrypted
+  corpus asks for its passphrase again). It cannot simply carry on: the database
+  connection is fixed when the app starts.
+* After those 30 seconds, a second countdown closes the app cleanly in 30 more
+  seconds; **Close now** does it at once. Reconnecting during this second countdown
+  still restarts the app instead.
+* Whatever was being written in the last moments before the unplug can be lost. The
+  database itself stays consistent: SQLite rolls back an unfinished write the next
+  time it opens.
+
+If you start the app while the drive is not connected, it does not create an empty
+folder in its place: it shows a "your data drive is not connected" page, checks
+again every few seconds and opens the app as soon as the drive is back. A different
+drive mounted at the same path is recognised as different (its marker does not
+match). If you deleted the folder on purpose, remove the `OO_DATA_DIR` and
+`OO_DATA_VOLUME_ID` lines from `oo.env` to start again with a new, empty corpus.
+The emergency wipe does this for you. If the system mounts the drive at a new path
+after a replug, the app cannot find it there: close it, and point `OO_DATA_DIR` in
+`oo.env` at the new path.
+
 In that directory you'll find: `open_omniscience.db` (the corpus, SQLite/WAL),
 `app_settings.json` (theme, result limit), `custody_settings.json` (custody
 preferences), custody keys, downloaded Wikipedia dumps, any `pre-restore-*.db`

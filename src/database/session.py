@@ -190,6 +190,25 @@ def _sqlite_pragmas(dbapi_connection, _connection_record) -> None:
         cursor.close()
 
 
+#: The SQLite messages a vanished drive produces (R86): the file's device is gone.
+_DISK_GONE = ("disk i/o error", "unable to open database file", "no such device")
+
+
+@event.listens_for(engine, "handle_error")
+def _data_drive_on_disk_error(context) -> None:
+    """A disk error on the corpus asks the data-drive watchdog to look NOW (R86) rather
+    than at its next 2 s tick. Observes only: the error still propagates unchanged."""
+    msg = str(getattr(context, "original_exception", "") or "").lower()
+    if not any(m in msg for m in _DISK_GONE):
+        return
+    try:
+        from src.safety.data_volume import MONITOR
+
+        MONITOR.poke(f"database error: {msg[:120]}")
+    except Exception:  # noqa: BLE001 - an observer never replaces the real error
+        pass
+
+
 @event.listens_for(engine, "reset")
 def _disarm_progress_handler(dbapi_connection, _connection_record, _reset_state) -> None:
     """S2.1: no connection may re-enter the pool carrying a progress handler.

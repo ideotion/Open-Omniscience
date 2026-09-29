@@ -280,6 +280,15 @@ def quick_crypto_erase(confirm: bool = False, *, data_dir: Path | None = None) -
     # 6) Overwrite + unlink everything else still under the data dir, then rmtree. The
     #    encrypted DBs/keys/anchors are already gone; remaining files are small side
     #    files, so a full overwrite here is cheap and complete (no 4 MiB cap — OO-02).
+    # A folder the first-launch step marked on a drive (R86): forget its id first, or the
+    # next start would wait for a drive that was erased on purpose, and the watchdog would
+    # read the folder vanishing below as a disconnection.
+    with contextlib.suppress(Exception):
+        from src.safety.data_volume import configured_folder, forget_volume_id
+
+        chosen = configured_folder()
+        if chosen is not None and chosen.resolve() == base.resolve():
+            forget_volume_id()
     if base.exists():
         for root, _dirs, names in os.walk(base):
             for name in names:

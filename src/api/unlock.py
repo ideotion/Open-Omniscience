@@ -84,6 +84,10 @@ ALLOWED_WHILE_LOCKED = (
     "/api/system/unlock",
     "/api/system/create-db",
     "/api/health",
+    # The data-drive countdown (R86) must reach a LOCKED app too: a drive can be pulled
+    # while the unlock screen is up. It answers a phase and a number of seconds, never
+    # the folder's path, so a locked app still discloses nothing but that it is locked.
+    "/api/system/data-volume",
     # The first-launch legal-consent step runs BEFORE the store exists (between the
     # language and passphrase steps), so its endpoints must answer while fresh/locked:
     # read/accept the documents, download them, or decline (which uninstalls).
@@ -291,6 +295,26 @@ def data_location_set(body: DataLocationBody) -> dict:
         raise HTTPException(status_code=400, detail=out.get("reason", "could not save"))
     _LOG.info("data location recorded: %s", out.get("path"))
     return out
+
+
+@router.get("/data-volume")
+def data_volume_state() -> dict:
+    """The data-drive watchdog's phase (R86): ``ok`` · ``reconnect`` · ``shutdown`` ·
+    ``restarting`` · ``closing``, with the seconds left in a countdown. Needs no database."""
+    from src.safety.data_volume import MONITOR
+
+    return MONITOR.snapshot()
+
+
+@router.post("/data-volume/close-now")
+def data_volume_close_now() -> dict:
+    """The countdown's «Close now». Acts only while a disconnection is being handled, so it
+    is never a second, unconfirmed power button."""
+    from src.safety.data_volume import MONITOR
+
+    if not MONITOR.close_now():
+        raise HTTPException(409, "no data-drive disconnection is being handled")
+    return {"ok": True}
 
 
 @router.get("/lock-state")

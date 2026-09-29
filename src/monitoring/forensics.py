@@ -595,7 +595,7 @@ def previous_session_report() -> dict[str, Any]:
         # launcher's exit status, the user-space memory killers' journal lines and the
         # native crash trace -- beside the kernel's account above, never instead of it.
         out["exit_evidence"] = _exit_evidence_report(prev)
-        out["how_it_ended"] = _how_it_ended(out["kernel_evidence"], out["exit_evidence"])
+        out["how_it_ended"] = _how_it_ended(out["kernel_evidence"], out["exit_evidence"], prev.get("started_at"))
     if out["previous_session"] == "unclean-end":
         # The previous session's OWN peaks (S0.4). ``last_collector_sample`` reads the
         # last line of a file EVERY session appends to, so once this process starts
@@ -753,15 +753,19 @@ def _exit_evidence_report(prev: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
-def _how_it_ended(kernel: dict[str, Any], evidence: dict[str, Any]) -> dict[str, Any]:
+def _how_it_ended(
+    kernel: dict[str, Any], evidence: dict[str, Any], started_at: str | None = None
+) -> dict[str, Any]:
     try:
         from src.monitoring.exit_evidence import how_it_ended
+        from src.safety.data_volume import last_disconnect_since
 
         return how_it_ended(
             launcher=evidence.get("launcher"),
             killers=evidence.get("userspace_killers"),
             kernel=kernel,
             trace=evidence.get("crash_trace"),
+            drive=last_disconnect_since(started_at) if started_at else None,
         )
     except Exception as exc:  # noqa: BLE001
         return {"known": False, "summary": f"could not be assembled ({type(exc).__name__})"}

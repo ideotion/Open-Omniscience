@@ -263,13 +263,24 @@ def persist(raw: str) -> dict[str, Any]:
 
     target = Path(str(pre["path"]))
     target.mkdir(parents=True, exist_ok=True)
+    # The drive marker (R86): the id that tells "the drive is back" from "another drive
+    # at the same path", and what makes a start without the drive wait instead of
+    # creating an empty folder where the mount point is (src/safety/data_volume.py).
+    from src.safety.data_volume import ENV_ID, read_marker_id, write_marker
+
+    try:
+        # A folder chosen again keeps its id: same folder, same drive, same answer.
+        volume_id = read_marker_id(target) or write_marker(target)
+    except OSError as exc:
+        return {"saved": False, "reason": f"could not write the drive marker in {target}: {exc}", **pre}
     env = env_file_path()
     kept = [
         ln
         for ln in (env.read_text(encoding="utf-8").splitlines() if env.exists() else [])
-        if not ln.startswith("export OO_DATA_DIR=")
+        if not ln.startswith(("export OO_DATA_DIR=", f"export {ENV_ID}="))
     ]
     kept.append(f"export OO_DATA_DIR={shlex.quote(str(target))}")
+    kept.append(f"export {ENV_ID}={volume_id}")
     body = "\n".join(kept) + "\n"
 
     fd, tmp_name = tempfile.mkstemp(prefix=".oo-env-", dir=str(env.parent))
