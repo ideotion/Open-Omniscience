@@ -1,0 +1,1214 @@
+[
+ {
+  "host": "oo-coverage-map",
+  "present": true,
+  "svg": true,
+  "selected": "osm",
+  "firstOption": "OpenStreetMap's convention, as of 2026-09-01",
+  "options": 35,
+  "osmAreas": [
+   {
+    "id": "r1004",
+    "iso": null,
+    "title": "Contested Zone — contested: France / Germany · inside no country's border in OpenStreetMap, attributed to none"
+   },
+   {
+    "id": "r1005",
+    "iso": null,
+    "title": "Lone claim — contested: France · OpenStreetMap names only one party · inside no country's border in OpenStreetMap, attributed to none"
+   }
+  ],
+  "neAreas": 0,
+  "caveat": "Contested: 2 · attributed under OpenStreetMap's convention, as of 2026-09-01",
+  "borders": "Borders: OpenStreetMap, as of 2026-09-01 · Natural Earth 50m elsewhere",
+  "overflow": false,
+  "surface": "World map",
+  "lang": "en",
+  "w": 1440,
+  "step": "open"
+ },
+ {
+  "host": "coverage-map",
+  "present": true,
+  "svg": true,
+  "selected": "osm",
+  "firstOption": "OpenStreetMap's convention, as of 2026-09-01",
+  "options": 35,
+  "osmAreas": [
+   {
+    "id": "r1004",
+    "iso": null,
+    "title": "Contested Zone — contested: France / Germany · inside no country's border in OpenStreetMap, attributed to none"
+   },
+   {
+    "id": "r1005",
+    "iso": null,
+    "title": "Lone claim — contested: France · OpenStreetMap names only one party · inside no country's border in OpenStreetMap, attributed to none"
+   }
+  ],
+  "neAreas": 0,
+  "caveat": "Contested: 2 · attributed under OpenStreetMap's convention, as of 2026-09-01",
+  "borders": "Borders: OpenStreetMap, as of 2026-09-01 · Natural Earth 50m elsewhere",
+  "overflow": false,
+  "surface": "Library coverage",
+  "lang": "en",
+  "w": 1440,
+  "step": "open"
+ },
+ {
+  "host": "gov-map-host",
+  "present": true,
+  "svg": true,
+  "selected": "osm",
+  "firstOption": "OpenStreetMap's convention, as of 2026-09-01",
+  "options": 35,
+  "osmAreas": [
+   {
+    "id": "r1004",
+    "iso": null,
+    "title": "Contested Zone — contested: France / Germany · inside no country's border in OpenStreetMap, attributed to none"
+   },
+   {
+    "id": "r1005",
+    "iso": null,
+    "title": "Lone claim — contested: France · OpenStreetMap names only one party · inside no country's border in OpenStreetMap, attributed to none"
+   }
+  ],
+  "neAreas": 0,
+  "caveat": "Contested: 2 · attributed under OpenStreetMap's convention, as of 2026-09-01",
+  "borders": "Borders: OpenStreetMap, as of 2026-09-01 · Natural Earth 50m elsewhere",
+  "overflow": false,
+  "surface": "Governments map",
+  "lang": "en",
+  "w": 1440,
+  "step": "open"
+ },
+ {
+  "host": "statfig-map",
+  "present": true,
+  "svg": true,
+  "selected": "osm",
+  "firstOption": "OpenStreetMap's convention, as of 2026-09-01",
+  "options": 35,
+  "osmAreas": [
+   {
+    "id": "r1004",
+    "iso": null,
+    "title": "Contested Zone — contested: France / Germany · inside no country's border in OpenStreetMap, attributed to none"
+   },
+   {
+    "id": "r1005",
+    "iso": null,
+    "title": "Lone claim — contested: France · OpenStreetMap names only one party · inside no country's border in OpenStreetMap, attributed to none"
+   }
+  ],
+  "neAreas": 0,
+  "caveat": "Contested: 2 · attributed under OpenStreetMap's convention, as of 2026-09-01",
+  "borders": "Borders: OpenStreetMap, as of 2026-09-01 · Natural Earth 50m elsewhere",
+  "overflow": false,
+  "surface": "Statistics map",
+  "lang": "en",
+  "w": 1440,
+  "step": "open"
+ },
+ {
+  "host": "sg-ringmap",
+  "present": true,
+  "svg": true,
+  "selected": "osm",
+  "firstOption": "OpenStreetMap's convention, as of 2026-09-01",
+  "options": 35,
+  "osmAreas": [
+   {
+    "id": "r1004",
+    "iso": null,
+    "title": "Contested Zone — contested: France / Germany · inside no country's border in OpenStreetMap, attributed to none"
+   },
+   {
+    "id": "r1005",
+    "iso": null,
+    "title": "Lone claim — contested: France · OpenStreetMap names only one party · inside no country's border in OpenStreetMap, attributed to none"
+   }
+  ],
+  "neAreas": 0,
+  "caveat": "Contested: 2 · attributed under OpenStreetMap's convention, as of 2026-09-01",
+  "borders": "Borders: OpenStreetMap, as of 2026-09-01 · Natural Earth 50m elsewhere",
+  "overflow": false,
+  "surface": "Supergroups map",
+  "lang": "en",
+  "w": 1440,
+  "step": "open"
+ },
+ {
+  "host": "oo-coverage-map",
+  "present": true,
+  "svg": true,
+  "selected": "tlc",
+  "firstOption": "OpenStreetMap's convention, as of 2026-09-01",
+  "options": 35,
+  "osmAreas": [],
+  "neAreas": 28,
+  "caveat": "Contested: 28 · attributed under Natural Earth (de facto)",
+  "borders": "Borders: OpenStreetMap, as of 2026-09-01 · Natural Earth 50m elsewhere",
+  "overflow": false,
+  "surface": "World map",
+  "lang": "en",
+  "w": 1440,
+  "step": "switched to tlc"
+ },
+ {
+  "host": "coverage-map",
+  "present": true,
+  "svg": true,
+  "selected": "tlc",
+  "firstOption": "OpenStreetMap's convention, as of 2026-09-01",
+  "options": 35,
+  "osmAreas": [],
+  "neAreas": 28,
+  "caveat": "Contested: 28 · attributed under Natural Earth (de facto)",
+  "borders": "Borders: OpenStreetMap, as of 2026-09-01 · Natural Earth 50m elsewhere",
+  "overflow": false,
+  "surface": "Library coverage",
+  "lang": "en",
+  "w": 1440,
+  "step": "after World map switch"
+ },
+ {
+  "host": "oo-coverage-map",
+  "present": true,
+  "svg": true,
+  "selected": "osm",
+  "firstOption": "OpenStreetMap's convention, as of 2026-09-01",
+  "options": 35,
+  "osmAreas": [
+   {
+    "id": "r1004",
+    "iso": null,
+    "title": "Contested Zone — contested: France / Germany · inside no country's border in OpenStreetMap, attributed to none"
+   },
+   {
+    "id": "r1005",
+    "iso": null,
+    "title": "Lone claim — contested: France · OpenStreetMap names only one party · inside no country's border in OpenStreetMap, attributed to none"
+   }
+  ],
+  "neAreas": 0,
+  "caveat": "Contested: 2 · attributed under OpenStreetMap's convention, as of 2026-09-01",
+  "borders": "Borders: OpenStreetMap, as of 2026-09-01 · Natural Earth 50m elsewhere",
+  "overflow": false,
+  "surface": "World map",
+  "lang": "en",
+  "w": 1440,
+  "step": "switched back to osm"
+ },
+ {
+  "host": "oo-coverage-map",
+  "present": true,
+  "svg": true,
+  "selected": "osm",
+  "firstOption": "OpenStreetMap's convention, as of 2026-09-01",
+  "options": 35,
+  "osmAreas": [
+   {
+    "id": "r1004",
+    "iso": null,
+    "title": "Contested Zone — contested: France / Germany · inside no country's border in OpenStreetMap, attributed to none"
+   },
+   {
+    "id": "r1005",
+    "iso": null,
+    "title": "Lone claim — contested: France · OpenStreetMap names only one party · inside no country's border in OpenStreetMap, attributed to none"
+   }
+  ],
+  "neAreas": 0,
+  "caveat": "Contested: 2 · attributed under OpenStreetMap's convention, as of 2026-09-01",
+  "borders": "Borders: OpenStreetMap, as of 2026-09-01 · Natural Earth 50m elsewhere",
+  "overflow": false,
+  "surface": "World map",
+  "lang": "en",
+  "w": 768,
+  "step": "open"
+ },
+ {
+  "host": "coverage-map",
+  "present": true,
+  "svg": true,
+  "selected": "osm",
+  "firstOption": "OpenStreetMap's convention, as of 2026-09-01",
+  "options": 35,
+  "osmAreas": [
+   {
+    "id": "r1004",
+    "iso": null,
+    "title": "Contested Zone — contested: France / Germany · inside no country's border in OpenStreetMap, attributed to none"
+   },
+   {
+    "id": "r1005",
+    "iso": null,
+    "title": "Lone claim — contested: France · OpenStreetMap names only one party · inside no country's border in OpenStreetMap, attributed to none"
+   }
+  ],
+  "neAreas": 0,
+  "caveat": "Contested: 2 · attributed under OpenStreetMap's convention, as of 2026-09-01",
+  "borders": "Borders: OpenStreetMap, as of 2026-09-01 · Natural Earth 50m elsewhere",
+  "overflow": false,
+  "surface": "Library coverage",
+  "lang": "en",
+  "w": 768,
+  "step": "open"
+ },
+ {
+  "host": "gov-map-host",
+  "present": true,
+  "svg": true,
+  "selected": "osm",
+  "firstOption": "OpenStreetMap's convention, as of 2026-09-01",
+  "options": 35,
+  "osmAreas": [
+   {
+    "id": "r1004",
+    "iso": null,
+    "title": "Contested Zone — contested: France / Germany · inside no country's border in OpenStreetMap, attributed to none"
+   },
+   {
+    "id": "r1005",
+    "iso": null,
+    "title": "Lone claim — contested: France · OpenStreetMap names only one party · inside no country's border in OpenStreetMap, attributed to none"
+   }
+  ],
+  "neAreas": 0,
+  "caveat": "Contested: 2 · attributed under OpenStreetMap's convention, as of 2026-09-01",
+  "borders": "Borders: OpenStreetMap, as of 2026-09-01 · Natural Earth 50m elsewhere",
+  "overflow": false,
+  "surface": "Governments map",
+  "lang": "en",
+  "w": 768,
+  "step": "open"
+ },
+ {
+  "host": "statfig-map",
+  "present": true,
+  "svg": true,
+  "selected": "osm",
+  "firstOption": "OpenStreetMap's convention, as of 2026-09-01",
+  "options": 35,
+  "osmAreas": [
+   {
+    "id": "r1004",
+    "iso": null,
+    "title": "Contested Zone — contested: France / Germany · inside no country's border in OpenStreetMap, attributed to none"
+   },
+   {
+    "id": "r1005",
+    "iso": null,
+    "title": "Lone claim — contested: France · OpenStreetMap names only one party · inside no country's border in OpenStreetMap, attributed to none"
+   }
+  ],
+  "neAreas": 0,
+  "caveat": "Contested: 2 · attributed under OpenStreetMap's convention, as of 2026-09-01",
+  "borders": "Borders: OpenStreetMap, as of 2026-09-01 · Natural Earth 50m elsewhere",
+  "overflow": false,
+  "surface": "Statistics map",
+  "lang": "en",
+  "w": 768,
+  "step": "open"
+ },
+ {
+  "host": "sg-ringmap",
+  "present": true,
+  "svg": true,
+  "selected": "osm",
+  "firstOption": "OpenStreetMap's convention, as of 2026-09-01",
+  "options": 35,
+  "osmAreas": [
+   {
+    "id": "r1004",
+    "iso": null,
+    "title": "Contested Zone — contested: France / Germany · inside no country's border in OpenStreetMap, attributed to none"
+   },
+   {
+    "id": "r1005",
+    "iso": null,
+    "title": "Lone claim — contested: France · OpenStreetMap names only one party · inside no country's border in OpenStreetMap, attributed to none"
+   }
+  ],
+  "neAreas": 0,
+  "caveat": "Contested: 2 · attributed under OpenStreetMap's convention, as of 2026-09-01",
+  "borders": "Borders: OpenStreetMap, as of 2026-09-01 · Natural Earth 50m elsewhere",
+  "overflow": false,
+  "surface": "Supergroups map",
+  "lang": "en",
+  "w": 768,
+  "step": "open"
+ },
+ {
+  "host": "oo-coverage-map",
+  "present": true,
+  "svg": true,
+  "selected": "tlc",
+  "firstOption": "OpenStreetMap's convention, as of 2026-09-01",
+  "options": 35,
+  "osmAreas": [],
+  "neAreas": 28,
+  "caveat": "Contested: 28 · attributed under Natural Earth (de facto)",
+  "borders": "Borders: OpenStreetMap, as of 2026-09-01 · Natural Earth 50m elsewhere",
+  "overflow": false,
+  "surface": "World map",
+  "lang": "en",
+  "w": 768,
+  "step": "switched to tlc"
+ },
+ {
+  "host": "coverage-map",
+  "present": true,
+  "svg": true,
+  "selected": "tlc",
+  "firstOption": "OpenStreetMap's convention, as of 2026-09-01",
+  "options": 35,
+  "osmAreas": [],
+  "neAreas": 28,
+  "caveat": "Contested: 28 · attributed under Natural Earth (de facto)",
+  "borders": "Borders: OpenStreetMap, as of 2026-09-01 · Natural Earth 50m elsewhere",
+  "overflow": false,
+  "surface": "Library coverage",
+  "lang": "en",
+  "w": 768,
+  "step": "after World map switch"
+ },
+ {
+  "host": "oo-coverage-map",
+  "present": true,
+  "svg": true,
+  "selected": "osm",
+  "firstOption": "OpenStreetMap's convention, as of 2026-09-01",
+  "options": 35,
+  "osmAreas": [
+   {
+    "id": "r1004",
+    "iso": null,
+    "title": "Contested Zone — contested: France / Germany · inside no country's border in OpenStreetMap, attributed to none"
+   },
+   {
+    "id": "r1005",
+    "iso": null,
+    "title": "Lone claim — contested: France · OpenStreetMap names only one party · inside no country's border in OpenStreetMap, attributed to none"
+   }
+  ],
+  "neAreas": 0,
+  "caveat": "Contested: 2 · attributed under OpenStreetMap's convention, as of 2026-09-01",
+  "borders": "Borders: OpenStreetMap, as of 2026-09-01 · Natural Earth 50m elsewhere",
+  "overflow": false,
+  "surface": "World map",
+  "lang": "en",
+  "w": 768,
+  "step": "switched back to osm"
+ },
+ {
+  "host": "oo-coverage-map",
+  "present": true,
+  "svg": true,
+  "selected": "osm",
+  "firstOption": "OpenStreetMap's convention, as of 2026-09-01",
+  "options": 35,
+  "osmAreas": [
+   {
+    "id": "r1004",
+    "iso": null,
+    "title": "Contested Zone — contested: France / Germany · inside no country's border in OpenStreetMap, attributed to none"
+   },
+   {
+    "id": "r1005",
+    "iso": null,
+    "title": "Lone claim — contested: France · OpenStreetMap names only one party · inside no country's border in OpenStreetMap, attributed to none"
+   }
+  ],
+  "neAreas": 0,
+  "caveat": "Contested: 2 · attributed under OpenStreetMap's convention, as of 2026-09-01",
+  "borders": "Borders: OpenStreetMap, as of 2026-09-01 · Natural Earth 50m elsewhere",
+  "overflow": false,
+  "surface": "World map",
+  "lang": "en",
+  "w": 390,
+  "step": "open"
+ },
+ {
+  "host": "coverage-map",
+  "present": true,
+  "svg": true,
+  "selected": "osm",
+  "firstOption": "OpenStreetMap's convention, as of 2026-09-01",
+  "options": 35,
+  "osmAreas": [
+   {
+    "id": "r1004",
+    "iso": null,
+    "title": "Contested Zone — contested: France / Germany · inside no country's border in OpenStreetMap, attributed to none"
+   },
+   {
+    "id": "r1005",
+    "iso": null,
+    "title": "Lone claim — contested: France · OpenStreetMap names only one party · inside no country's border in OpenStreetMap, attributed to none"
+   }
+  ],
+  "neAreas": 0,
+  "caveat": "Contested: 2 · attributed under OpenStreetMap's convention, as of 2026-09-01",
+  "borders": "Borders: OpenStreetMap, as of 2026-09-01 · Natural Earth 50m elsewhere",
+  "overflow": false,
+  "surface": "Library coverage",
+  "lang": "en",
+  "w": 390,
+  "step": "open"
+ },
+ {
+  "host": "gov-map-host",
+  "present": true,
+  "svg": true,
+  "selected": "osm",
+  "firstOption": "OpenStreetMap's convention, as of 2026-09-01",
+  "options": 35,
+  "osmAreas": [
+   {
+    "id": "r1004",
+    "iso": null,
+    "title": "Contested Zone — contested: France / Germany · inside no country's border in OpenStreetMap, attributed to none"
+   },
+   {
+    "id": "r1005",
+    "iso": null,
+    "title": "Lone claim — contested: France · OpenStreetMap names only one party · inside no country's border in OpenStreetMap, attributed to none"
+   }
+  ],
+  "neAreas": 0,
+  "caveat": "Contested: 2 · attributed under OpenStreetMap's convention, as of 2026-09-01",
+  "borders": "Borders: OpenStreetMap, as of 2026-09-01 · Natural Earth 50m elsewhere",
+  "overflow": false,
+  "surface": "Governments map",
+  "lang": "en",
+  "w": 390,
+  "step": "open"
+ },
+ {
+  "host": "statfig-map",
+  "present": true,
+  "svg": true,
+  "selected": "osm",
+  "firstOption": "OpenStreetMap's convention, as of 2026-09-01",
+  "options": 35,
+  "osmAreas": [
+   {
+    "id": "r1004",
+    "iso": null,
+    "title": "Contested Zone — contested: France / Germany · inside no country's border in OpenStreetMap, attributed to none"
+   },
+   {
+    "id": "r1005",
+    "iso": null,
+    "title": "Lone claim — contested: France · OpenStreetMap names only one party · inside no country's border in OpenStreetMap, attributed to none"
+   }
+  ],
+  "neAreas": 0,
+  "caveat": "Contested: 2 · attributed under OpenStreetMap's convention, as of 2026-09-01",
+  "borders": "Borders: OpenStreetMap, as of 2026-09-01 · Natural Earth 50m elsewhere",
+  "overflow": false,
+  "surface": "Statistics map",
+  "lang": "en",
+  "w": 390,
+  "step": "open"
+ },
+ {
+  "host": "sg-ringmap",
+  "present": true,
+  "svg": true,
+  "selected": "osm",
+  "firstOption": "OpenStreetMap's convention, as of 2026-09-01",
+  "options": 35,
+  "osmAreas": [
+   {
+    "id": "r1004",
+    "iso": null,
+    "title": "Contested Zone — contested: France / Germany · inside no country's border in OpenStreetMap, attributed to none"
+   },
+   {
+    "id": "r1005",
+    "iso": null,
+    "title": "Lone claim — contested: France · OpenStreetMap names only one party · inside no country's border in OpenStreetMap, attributed to none"
+   }
+  ],
+  "neAreas": 0,
+  "caveat": "Contested: 2 · attributed under OpenStreetMap's convention, as of 2026-09-01",
+  "borders": "Borders: OpenStreetMap, as of 2026-09-01 · Natural Earth 50m elsewhere",
+  "overflow": false,
+  "surface": "Supergroups map",
+  "lang": "en",
+  "w": 390,
+  "step": "open"
+ },
+ {
+  "host": "oo-coverage-map",
+  "present": true,
+  "svg": true,
+  "selected": "tlc",
+  "firstOption": "OpenStreetMap's convention, as of 2026-09-01",
+  "options": 35,
+  "osmAreas": [],
+  "neAreas": 28,
+  "caveat": "Contested: 28 · attributed under Natural Earth (de facto)",
+  "borders": "Borders: OpenStreetMap, as of 2026-09-01 · Natural Earth 50m elsewhere",
+  "overflow": false,
+  "surface": "World map",
+  "lang": "en",
+  "w": 390,
+  "step": "switched to tlc"
+ },
+ {
+  "host": "coverage-map",
+  "present": true,
+  "svg": true,
+  "selected": "tlc",
+  "firstOption": "OpenStreetMap's convention, as of 2026-09-01",
+  "options": 35,
+  "osmAreas": [],
+  "neAreas": 28,
+  "caveat": "Contested: 28 · attributed under Natural Earth (de facto)",
+  "borders": "Borders: OpenStreetMap, as of 2026-09-01 · Natural Earth 50m elsewhere",
+  "overflow": false,
+  "surface": "Library coverage",
+  "lang": "en",
+  "w": 390,
+  "step": "after World map switch"
+ },
+ {
+  "host": "oo-coverage-map",
+  "present": true,
+  "svg": true,
+  "selected": "osm",
+  "firstOption": "OpenStreetMap's convention, as of 2026-09-01",
+  "options": 35,
+  "osmAreas": [
+   {
+    "id": "r1004",
+    "iso": null,
+    "title": "Contested Zone — contested: France / Germany · inside no country's border in OpenStreetMap, attributed to none"
+   },
+   {
+    "id": "r1005",
+    "iso": null,
+    "title": "Lone claim — contested: France · OpenStreetMap names only one party · inside no country's border in OpenStreetMap, attributed to none"
+   }
+  ],
+  "neAreas": 0,
+  "caveat": "Contested: 2 · attributed under OpenStreetMap's convention, as of 2026-09-01",
+  "borders": "Borders: OpenStreetMap, as of 2026-09-01 · Natural Earth 50m elsewhere",
+  "overflow": false,
+  "surface": "World map",
+  "lang": "en",
+  "w": 390,
+  "step": "switched back to osm"
+ },
+ {
+  "host": "oo-coverage-map",
+  "present": true,
+  "svg": true,
+  "selected": "osm",
+  "firstOption": "اصطلاح OpenStreetMap، بتاريخ 2026-09-01",
+  "options": 35,
+  "osmAreas": [
+   {
+    "id": "r1004",
+    "iso": null,
+    "title": "Contested Zone — متنازع عليها: فرنسا / ألمانيا · داخل حدود لا دولة في OpenStreetMap، غير منسوبة لأي منها"
+   },
+   {
+    "id": "r1005",
+    "iso": null,
+    "title": "Lone claim — متنازع عليها: فرنسا · لا يسمّي OpenStreetMap إلا طرفًا واحدًا · داخل حدود لا دولة في OpenStreetMap، غير منسوبة لأي منها"
+   }
+  ],
+  "neAreas": 0,
+  "caveat": "متنازع عليها: 2 · منسوبة وفق اصطلاح OpenStreetMap، بتاريخ 2026-09-01",
+  "borders": "الحدود: OpenStreetMap، بتاريخ 2026-09-01 · Natural Earth 50m في غير ذلك",
+  "overflow": false,
+  "surface": "World map",
+  "lang": "ar",
+  "w": 1440,
+  "step": "open"
+ },
+ {
+  "host": "coverage-map",
+  "present": true,
+  "svg": true,
+  "selected": "osm",
+  "firstOption": "اصطلاح OpenStreetMap، بتاريخ 2026-09-01",
+  "options": 35,
+  "osmAreas": [
+   {
+    "id": "r1004",
+    "iso": null,
+    "title": "Contested Zone — متنازع عليها: فرنسا / ألمانيا · داخل حدود لا دولة في OpenStreetMap، غير منسوبة لأي منها"
+   },
+   {
+    "id": "r1005",
+    "iso": null,
+    "title": "Lone claim — متنازع عليها: فرنسا · لا يسمّي OpenStreetMap إلا طرفًا واحدًا · داخل حدود لا دولة في OpenStreetMap، غير منسوبة لأي منها"
+   }
+  ],
+  "neAreas": 0,
+  "caveat": "متنازع عليها: 2 · منسوبة وفق اصطلاح OpenStreetMap، بتاريخ 2026-09-01",
+  "borders": "الحدود: OpenStreetMap، بتاريخ 2026-09-01 · Natural Earth 50m في غير ذلك",
+  "overflow": false,
+  "surface": "Library coverage",
+  "lang": "ar",
+  "w": 1440,
+  "step": "open"
+ },
+ {
+  "host": "gov-map-host",
+  "present": true,
+  "svg": true,
+  "selected": "osm",
+  "firstOption": "اصطلاح OpenStreetMap، بتاريخ 2026-09-01",
+  "options": 35,
+  "osmAreas": [
+   {
+    "id": "r1004",
+    "iso": null,
+    "title": "Contested Zone — متنازع عليها: فرنسا / ألمانيا · داخل حدود لا دولة في OpenStreetMap، غير منسوبة لأي منها"
+   },
+   {
+    "id": "r1005",
+    "iso": null,
+    "title": "Lone claim — متنازع عليها: فرنسا · لا يسمّي OpenStreetMap إلا طرفًا واحدًا · داخل حدود لا دولة في OpenStreetMap، غير منسوبة لأي منها"
+   }
+  ],
+  "neAreas": 0,
+  "caveat": "متنازع عليها: 2 · منسوبة وفق اصطلاح OpenStreetMap، بتاريخ 2026-09-01",
+  "borders": "الحدود: OpenStreetMap، بتاريخ 2026-09-01 · Natural Earth 50m في غير ذلك",
+  "overflow": false,
+  "surface": "Governments map",
+  "lang": "ar",
+  "w": 1440,
+  "step": "open"
+ },
+ {
+  "host": "statfig-map",
+  "present": true,
+  "svg": true,
+  "selected": "osm",
+  "firstOption": "اصطلاح OpenStreetMap، بتاريخ 2026-09-01",
+  "options": 35,
+  "osmAreas": [
+   {
+    "id": "r1004",
+    "iso": null,
+    "title": "Contested Zone — متنازع عليها: فرنسا / ألمانيا · داخل حدود لا دولة في OpenStreetMap، غير منسوبة لأي منها"
+   },
+   {
+    "id": "r1005",
+    "iso": null,
+    "title": "Lone claim — متنازع عليها: فرنسا · لا يسمّي OpenStreetMap إلا طرفًا واحدًا · داخل حدود لا دولة في OpenStreetMap، غير منسوبة لأي منها"
+   }
+  ],
+  "neAreas": 0,
+  "caveat": "متنازع عليها: 2 · منسوبة وفق اصطلاح OpenStreetMap، بتاريخ 2026-09-01",
+  "borders": "الحدود: OpenStreetMap، بتاريخ 2026-09-01 · Natural Earth 50m في غير ذلك",
+  "overflow": false,
+  "surface": "Statistics map",
+  "lang": "ar",
+  "w": 1440,
+  "step": "open"
+ },
+ {
+  "host": "sg-ringmap",
+  "present": true,
+  "svg": true,
+  "selected": "osm",
+  "firstOption": "اصطلاح OpenStreetMap، بتاريخ 2026-09-01",
+  "options": 35,
+  "osmAreas": [
+   {
+    "id": "r1004",
+    "iso": null,
+    "title": "Contested Zone — متنازع عليها: فرنسا / ألمانيا · داخل حدود لا دولة في OpenStreetMap، غير منسوبة لأي منها"
+   },
+   {
+    "id": "r1005",
+    "iso": null,
+    "title": "Lone claim — متنازع عليها: فرنسا · لا يسمّي OpenStreetMap إلا طرفًا واحدًا · داخل حدود لا دولة في OpenStreetMap، غير منسوبة لأي منها"
+   }
+  ],
+  "neAreas": 0,
+  "caveat": "متنازع عليها: 2 · منسوبة وفق اصطلاح OpenStreetMap، بتاريخ 2026-09-01",
+  "borders": "الحدود: OpenStreetMap، بتاريخ 2026-09-01 · Natural Earth 50m في غير ذلك",
+  "overflow": false,
+  "surface": "Supergroups map",
+  "lang": "ar",
+  "w": 1440,
+  "step": "open"
+ },
+ {
+  "host": "oo-coverage-map",
+  "present": true,
+  "svg": true,
+  "selected": "tlc",
+  "firstOption": "اصطلاح OpenStreetMap، بتاريخ 2026-09-01",
+  "options": 35,
+  "osmAreas": [],
+  "neAreas": 28,
+  "caveat": "متنازع عليها: 28 · منسوبة وفق Natural Earth (بحكم الأمر الواقع)",
+  "borders": "الحدود: OpenStreetMap، بتاريخ 2026-09-01 · Natural Earth 50m في غير ذلك",
+  "overflow": false,
+  "surface": "World map",
+  "lang": "ar",
+  "w": 1440,
+  "step": "switched to tlc"
+ },
+ {
+  "host": "coverage-map",
+  "present": true,
+  "svg": true,
+  "selected": "tlc",
+  "firstOption": "اصطلاح OpenStreetMap، بتاريخ 2026-09-01",
+  "options": 35,
+  "osmAreas": [],
+  "neAreas": 28,
+  "caveat": "متنازع عليها: 28 · منسوبة وفق Natural Earth (بحكم الأمر الواقع)",
+  "borders": "الحدود: OpenStreetMap، بتاريخ 2026-09-01 · Natural Earth 50m في غير ذلك",
+  "overflow": false,
+  "surface": "Library coverage",
+  "lang": "ar",
+  "w": 1440,
+  "step": "after World map switch"
+ },
+ {
+  "host": "oo-coverage-map",
+  "present": true,
+  "svg": true,
+  "selected": "osm",
+  "firstOption": "اصطلاح OpenStreetMap، بتاريخ 2026-09-01",
+  "options": 35,
+  "osmAreas": [
+   {
+    "id": "r1004",
+    "iso": null,
+    "title": "Contested Zone — متنازع عليها: فرنسا / ألمانيا · داخل حدود لا دولة في OpenStreetMap، غير منسوبة لأي منها"
+   },
+   {
+    "id": "r1005",
+    "iso": null,
+    "title": "Lone claim — متنازع عليها: فرنسا · لا يسمّي OpenStreetMap إلا طرفًا واحدًا · داخل حدود لا دولة في OpenStreetMap، غير منسوبة لأي منها"
+   }
+  ],
+  "neAreas": 0,
+  "caveat": "متنازع عليها: 2 · منسوبة وفق اصطلاح OpenStreetMap، بتاريخ 2026-09-01",
+  "borders": "الحدود: OpenStreetMap، بتاريخ 2026-09-01 · Natural Earth 50m في غير ذلك",
+  "overflow": false,
+  "surface": "World map",
+  "lang": "ar",
+  "w": 1440,
+  "step": "switched back to osm"
+ },
+ {
+  "host": "oo-coverage-map",
+  "present": true,
+  "svg": true,
+  "selected": "osm",
+  "firstOption": "اصطلاح OpenStreetMap، بتاريخ 2026-09-01",
+  "options": 35,
+  "osmAreas": [
+   {
+    "id": "r1004",
+    "iso": null,
+    "title": "Contested Zone — متنازع عليها: فرنسا / ألمانيا · داخل حدود لا دولة في OpenStreetMap، غير منسوبة لأي منها"
+   },
+   {
+    "id": "r1005",
+    "iso": null,
+    "title": "Lone claim — متنازع عليها: فرنسا · لا يسمّي OpenStreetMap إلا طرفًا واحدًا · داخل حدود لا دولة في OpenStreetMap، غير منسوبة لأي منها"
+   }
+  ],
+  "neAreas": 0,
+  "caveat": "متنازع عليها: 2 · منسوبة وفق اصطلاح OpenStreetMap، بتاريخ 2026-09-01",
+  "borders": "الحدود: OpenStreetMap، بتاريخ 2026-09-01 · Natural Earth 50m في غير ذلك",
+  "overflow": false,
+  "surface": "World map",
+  "lang": "ar",
+  "w": 768,
+  "step": "open"
+ },
+ {
+  "host": "coverage-map",
+  "present": true,
+  "svg": true,
+  "selected": "osm",
+  "firstOption": "اصطلاح OpenStreetMap، بتاريخ 2026-09-01",
+  "options": 35,
+  "osmAreas": [
+   {
+    "id": "r1004",
+    "iso": null,
+    "title": "Contested Zone — متنازع عليها: فرنسا / ألمانيا · داخل حدود لا دولة في OpenStreetMap، غير منسوبة لأي منها"
+   },
+   {
+    "id": "r1005",
+    "iso": null,
+    "title": "Lone claim — متنازع عليها: فرنسا · لا يسمّي OpenStreetMap إلا طرفًا واحدًا · داخل حدود لا دولة في OpenStreetMap، غير منسوبة لأي منها"
+   }
+  ],
+  "neAreas": 0,
+  "caveat": "متنازع عليها: 2 · منسوبة وفق اصطلاح OpenStreetMap، بتاريخ 2026-09-01",
+  "borders": "الحدود: OpenStreetMap، بتاريخ 2026-09-01 · Natural Earth 50m في غير ذلك",
+  "overflow": false,
+  "surface": "Library coverage",
+  "lang": "ar",
+  "w": 768,
+  "step": "open"
+ },
+ {
+  "host": "gov-map-host",
+  "present": true,
+  "svg": true,
+  "selected": "osm",
+  "firstOption": "اصطلاح OpenStreetMap، بتاريخ 2026-09-01",
+  "options": 35,
+  "osmAreas": [
+   {
+    "id": "r1004",
+    "iso": null,
+    "title": "Contested Zone — متنازع عليها: فرنسا / ألمانيا · داخل حدود لا دولة في OpenStreetMap، غير منسوبة لأي منها"
+   },
+   {
+    "id": "r1005",
+    "iso": null,
+    "title": "Lone claim — متنازع عليها: فرنسا · لا يسمّي OpenStreetMap إلا طرفًا واحدًا · داخل حدود لا دولة في OpenStreetMap، غير منسوبة لأي منها"
+   }
+  ],
+  "neAreas": 0,
+  "caveat": "متنازع عليها: 2 · منسوبة وفق اصطلاح OpenStreetMap، بتاريخ 2026-09-01",
+  "borders": "الحدود: OpenStreetMap، بتاريخ 2026-09-01 · Natural Earth 50m في غير ذلك",
+  "overflow": false,
+  "surface": "Governments map",
+  "lang": "ar",
+  "w": 768,
+  "step": "open"
+ },
+ {
+  "host": "statfig-map",
+  "present": true,
+  "svg": true,
+  "selected": "osm",
+  "firstOption": "اصطلاح OpenStreetMap، بتاريخ 2026-09-01",
+  "options": 35,
+  "osmAreas": [
+   {
+    "id": "r1004",
+    "iso": null,
+    "title": "Contested Zone — متنازع عليها: فرنسا / ألمانيا · داخل حدود لا دولة في OpenStreetMap، غير منسوبة لأي منها"
+   },
+   {
+    "id": "r1005",
+    "iso": null,
+    "title": "Lone claim — متنازع عليها: فرنسا · لا يسمّي OpenStreetMap إلا طرفًا واحدًا · داخل حدود لا دولة في OpenStreetMap، غير منسوبة لأي منها"
+   }
+  ],
+  "neAreas": 0,
+  "caveat": "متنازع عليها: 2 · منسوبة وفق اصطلاح OpenStreetMap، بتاريخ 2026-09-01",
+  "borders": "الحدود: OpenStreetMap، بتاريخ 2026-09-01 · Natural Earth 50m في غير ذلك",
+  "overflow": false,
+  "surface": "Statistics map",
+  "lang": "ar",
+  "w": 768,
+  "step": "open"
+ },
+ {
+  "host": "sg-ringmap",
+  "present": true,
+  "svg": true,
+  "selected": "osm",
+  "firstOption": "اصطلاح OpenStreetMap، بتاريخ 2026-09-01",
+  "options": 35,
+  "osmAreas": [
+   {
+    "id": "r1004",
+    "iso": null,
+    "title": "Contested Zone — متنازع عليها: فرنسا / ألمانيا · داخل حدود لا دولة في OpenStreetMap، غير منسوبة لأي منها"
+   },
+   {
+    "id": "r1005",
+    "iso": null,
+    "title": "Lone claim — متنازع عليها: فرنسا · لا يسمّي OpenStreetMap إلا طرفًا واحدًا · داخل حدود لا دولة في OpenStreetMap، غير منسوبة لأي منها"
+   }
+  ],
+  "neAreas": 0,
+  "caveat": "متنازع عليها: 2 · منسوبة وفق اصطلاح OpenStreetMap، بتاريخ 2026-09-01",
+  "borders": "الحدود: OpenStreetMap، بتاريخ 2026-09-01 · Natural Earth 50m في غير ذلك",
+  "overflow": false,
+  "surface": "Supergroups map",
+  "lang": "ar",
+  "w": 768,
+  "step": "open"
+ },
+ {
+  "host": "oo-coverage-map",
+  "present": true,
+  "svg": true,
+  "selected": "tlc",
+  "firstOption": "اصطلاح OpenStreetMap، بتاريخ 2026-09-01",
+  "options": 35,
+  "osmAreas": [],
+  "neAreas": 28,
+  "caveat": "متنازع عليها: 28 · منسوبة وفق Natural Earth (بحكم الأمر الواقع)",
+  "borders": "الحدود: OpenStreetMap، بتاريخ 2026-09-01 · Natural Earth 50m في غير ذلك",
+  "overflow": false,
+  "surface": "World map",
+  "lang": "ar",
+  "w": 768,
+  "step": "switched to tlc"
+ },
+ {
+  "host": "coverage-map",
+  "present": true,
+  "svg": true,
+  "selected": "tlc",
+  "firstOption": "اصطلاح OpenStreetMap، بتاريخ 2026-09-01",
+  "options": 35,
+  "osmAreas": [],
+  "neAreas": 28,
+  "caveat": "متنازع عليها: 28 · منسوبة وفق Natural Earth (بحكم الأمر الواقع)",
+  "borders": "الحدود: OpenStreetMap، بتاريخ 2026-09-01 · Natural Earth 50m في غير ذلك",
+  "overflow": false,
+  "surface": "Library coverage",
+  "lang": "ar",
+  "w": 768,
+  "step": "after World map switch"
+ },
+ {
+  "host": "oo-coverage-map",
+  "present": true,
+  "svg": true,
+  "selected": "osm",
+  "firstOption": "اصطلاح OpenStreetMap، بتاريخ 2026-09-01",
+  "options": 35,
+  "osmAreas": [
+   {
+    "id": "r1004",
+    "iso": null,
+    "title": "Contested Zone — متنازع عليها: فرنسا / ألمانيا · داخل حدود لا دولة في OpenStreetMap، غير منسوبة لأي منها"
+   },
+   {
+    "id": "r1005",
+    "iso": null,
+    "title": "Lone claim — متنازع عليها: فرنسا · لا يسمّي OpenStreetMap إلا طرفًا واحدًا · داخل حدود لا دولة في OpenStreetMap، غير منسوبة لأي منها"
+   }
+  ],
+  "neAreas": 0,
+  "caveat": "متنازع عليها: 2 · منسوبة وفق اصطلاح OpenStreetMap، بتاريخ 2026-09-01",
+  "borders": "الحدود: OpenStreetMap، بتاريخ 2026-09-01 · Natural Earth 50m في غير ذلك",
+  "overflow": false,
+  "surface": "World map",
+  "lang": "ar",
+  "w": 768,
+  "step": "switched back to osm"
+ },
+ {
+  "host": "oo-coverage-map",
+  "present": true,
+  "svg": true,
+  "selected": "osm",
+  "firstOption": "اصطلاح OpenStreetMap، بتاريخ 2026-09-01",
+  "options": 35,
+  "osmAreas": [
+   {
+    "id": "r1004",
+    "iso": null,
+    "title": "Contested Zone — متنازع عليها: فرنسا / ألمانيا · داخل حدود لا دولة في OpenStreetMap، غير منسوبة لأي منها"
+   },
+   {
+    "id": "r1005",
+    "iso": null,
+    "title": "Lone claim — متنازع عليها: فرنسا · لا يسمّي OpenStreetMap إلا طرفًا واحدًا · داخل حدود لا دولة في OpenStreetMap، غير منسوبة لأي منها"
+   }
+  ],
+  "neAreas": 0,
+  "caveat": "متنازع عليها: 2 · منسوبة وفق اصطلاح OpenStreetMap، بتاريخ 2026-09-01",
+  "borders": "الحدود: OpenStreetMap، بتاريخ 2026-09-01 · Natural Earth 50m في غير ذلك",
+  "overflow": false,
+  "surface": "World map",
+  "lang": "ar",
+  "w": 390,
+  "step": "open"
+ },
+ {
+  "host": "coverage-map",
+  "present": true,
+  "svg": true,
+  "selected": "osm",
+  "firstOption": "اصطلاح OpenStreetMap، بتاريخ 2026-09-01",
+  "options": 35,
+  "osmAreas": [
+   {
+    "id": "r1004",
+    "iso": null,
+    "title": "Contested Zone — متنازع عليها: فرنسا / ألمانيا · داخل حدود لا دولة في OpenStreetMap، غير منسوبة لأي منها"
+   },
+   {
+    "id": "r1005",
+    "iso": null,
+    "title": "Lone claim — متنازع عليها: فرنسا · لا يسمّي OpenStreetMap إلا طرفًا واحدًا · داخل حدود لا دولة في OpenStreetMap، غير منسوبة لأي منها"
+   }
+  ],
+  "neAreas": 0,
+  "caveat": "متنازع عليها: 2 · منسوبة وفق اصطلاح OpenStreetMap، بتاريخ 2026-09-01",
+  "borders": "الحدود: OpenStreetMap، بتاريخ 2026-09-01 · Natural Earth 50m في غير ذلك",
+  "overflow": false,
+  "surface": "Library coverage",
+  "lang": "ar",
+  "w": 390,
+  "step": "open"
+ },
+ {
+  "host": "gov-map-host",
+  "present": true,
+  "svg": true,
+  "selected": "osm",
+  "firstOption": "اصطلاح OpenStreetMap، بتاريخ 2026-09-01",
+  "options": 35,
+  "osmAreas": [
+   {
+    "id": "r1004",
+    "iso": null,
+    "title": "Contested Zone — متنازع عليها: فرنسا / ألمانيا · داخل حدود لا دولة في OpenStreetMap، غير منسوبة لأي منها"
+   },
+   {
+    "id": "r1005",
+    "iso": null,
+    "title": "Lone claim — متنازع عليها: فرنسا · لا يسمّي OpenStreetMap إلا طرفًا واحدًا · داخل حدود لا دولة في OpenStreetMap، غير منسوبة لأي منها"
+   }
+  ],
+  "neAreas": 0,
+  "caveat": "متنازع عليها: 2 · منسوبة وفق اصطلاح OpenStreetMap، بتاريخ 2026-09-01",
+  "borders": "الحدود: OpenStreetMap، بتاريخ 2026-09-01 · Natural Earth 50m في غير ذلك",
+  "overflow": false,
+  "surface": "Governments map",
+  "lang": "ar",
+  "w": 390,
+  "step": "open"
+ },
+ {
+  "host": "statfig-map",
+  "present": true,
+  "svg": true,
+  "selected": "osm",
+  "firstOption": "اصطلاح OpenStreetMap، بتاريخ 2026-09-01",
+  "options": 35,
+  "osmAreas": [
+   {
+    "id": "r1004",
+    "iso": null,
+    "title": "Contested Zone — متنازع عليها: فرنسا / ألمانيا · داخل حدود لا دولة في OpenStreetMap، غير منسوبة لأي منها"
+   },
+   {
+    "id": "r1005",
+    "iso": null,
+    "title": "Lone claim — متنازع عليها: فرنسا · لا يسمّي OpenStreetMap إلا طرفًا واحدًا · داخل حدود لا دولة في OpenStreetMap، غير منسوبة لأي منها"
+   }
+  ],
+  "neAreas": 0,
+  "caveat": "متنازع عليها: 2 · منسوبة وفق اصطلاح OpenStreetMap، بتاريخ 2026-09-01",
+  "borders": "الحدود: OpenStreetMap، بتاريخ 2026-09-01 · Natural Earth 50m في غير ذلك",
+  "overflow": false,
+  "surface": "Statistics map",
+  "lang": "ar",
+  "w": 390,
+  "step": "open"
+ },
+ {
+  "host": "sg-ringmap",
+  "present": true,
+  "svg": true,
+  "selected": "osm",
+  "firstOption": "اصطلاح OpenStreetMap، بتاريخ 2026-09-01",
+  "options": 35,
+  "osmAreas": [
+   {
+    "id": "r1004",
+    "iso": null,
+    "title": "Contested Zone — متنازع عليها: فرنسا / ألمانيا · داخل حدود لا دولة في OpenStreetMap، غير منسوبة لأي منها"
+   },
+   {
+    "id": "r1005",
+    "iso": null,
+    "title": "Lone claim — متنازع عليها: فرنسا · لا يسمّي OpenStreetMap إلا طرفًا واحدًا · داخل حدود لا دولة في OpenStreetMap، غير منسوبة لأي منها"
+   }
+  ],
+  "neAreas": 0,
+  "caveat": "متنازع عليها: 2 · منسوبة وفق اصطلاح OpenStreetMap، بتاريخ 2026-09-01",
+  "borders": "الحدود: OpenStreetMap، بتاريخ 2026-09-01 · Natural Earth 50m في غير ذلك",
+  "overflow": false,
+  "surface": "Supergroups map",
+  "lang": "ar",
+  "w": 390,
+  "step": "open"
+ },
+ {
+  "host": "oo-coverage-map",
+  "present": true,
+  "svg": true,
+  "selected": "tlc",
+  "firstOption": "اصطلاح OpenStreetMap، بتاريخ 2026-09-01",
+  "options": 35,
+  "osmAreas": [],
+  "neAreas": 28,
+  "caveat": "متنازع عليها: 28 · منسوبة وفق Natural Earth (بحكم الأمر الواقع)",
+  "borders": "الحدود: OpenStreetMap، بتاريخ 2026-09-01 · Natural Earth 50m في غير ذلك",
+  "overflow": false,
+  "surface": "World map",
+  "lang": "ar",
+  "w": 390,
+  "step": "switched to tlc"
+ },
+ {
+  "host": "coverage-map",
+  "present": true,
+  "svg": true,
+  "selected": "tlc",
+  "firstOption": "اصطلاح OpenStreetMap، بتاريخ 2026-09-01",
+  "options": 35,
+  "osmAreas": [],
+  "neAreas": 28,
+  "caveat": "متنازع عليها: 28 · منسوبة وفق Natural Earth (بحكم الأمر الواقع)",
+  "borders": "الحدود: OpenStreetMap، بتاريخ 2026-09-01 · Natural Earth 50m في غير ذلك",
+  "overflow": false,
+  "surface": "Library coverage",
+  "lang": "ar",
+  "w": 390,
+  "step": "after World map switch"
+ },
+ {
+  "host": "oo-coverage-map",
+  "present": true,
+  "svg": true,
+  "selected": "osm",
+  "firstOption": "اصطلاح OpenStreetMap، بتاريخ 2026-09-01",
+  "options": 35,
+  "osmAreas": [
+   {
+    "id": "r1004",
+    "iso": null,
+    "title": "Contested Zone — متنازع عليها: فرنسا / ألمانيا · داخل حدود لا دولة في OpenStreetMap، غير منسوبة لأي منها"
+   },
+   {
+    "id": "r1005",
+    "iso": null,
+    "title": "Lone claim — متنازع عليها: فرنسا · لا يسمّي OpenStreetMap إلا طرفًا واحدًا · داخل حدود لا دولة في OpenStreetMap، غير منسوبة لأي منها"
+   }
+  ],
+  "neAreas": 0,
+  "caveat": "متنازع عليها: 2 · منسوبة وفق اصطلاح OpenStreetMap، بتاريخ 2026-09-01",
+  "borders": "الحدود: OpenStreetMap، بتاريخ 2026-09-01 · Natural Earth 50m في غير ذلك",
+  "overflow": false,
+  "surface": "World map",
+  "lang": "ar",
+  "w": 390,
+  "step": "switched back to osm"
+ }
+]

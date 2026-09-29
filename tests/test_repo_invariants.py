@@ -4776,6 +4776,12 @@ def test_ooMap_choropleth():
         "the default worldview must assign nothing -- a default that picks a side is the "
         "silent pick Q826 forbids"
     )
+    # Q803 (0.5 row L): once the OSM country file exists, the maps open on OSM's
+    # convention AS OF ITS DATE, still drawing every contested area with every claim;
+    # without it the default above stands. The behaviour is pinned in
+    # tests/oomap_osm_convention_node_test.js.
+    assert 'OOMAP_WORLDVIEW_OSM = "osm"' in html, "OSM's convention must be a worldview"
+    assert "function _ooEffectiveWorldview(" in html and "function _ooOsmContestedLayer(" in html
     assert "function _ooDisputedClaims(" in html, "every claim must be named, not just the winner"
 
     # Honest NO-DATA: a hatched pattern fill, distinct from any data colour, NOT zero.

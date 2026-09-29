@@ -6544,5 +6544,12 @@
   "Ranked table · 1 area with data": "جدول مرتّب · منطقة واحدة ذات بيانات",
   "Ranked table · {n} areas with data": "جدول مرتّب · مناطق ذات بيانات: {n}",
   "The full data behind the map: every area with a value, ranked, none left out. The colours are a picture of this table.": "البيانات الكاملة وراء الخريطة: كل منطقة لها قيمة، مرتّبة، دون إغفال أيّ منها. الألوان صورة لهذا الجدول.",
-  "This measure is by region, but the region boundaries are not built on this install yet: the table below holds every value.": "هذا المقياس حسب المنطقة، لكن حدود المناطق لم تُبنَ بعد على هذا التثبيت: الجدول أدناه يضم كل القيم."
+  "This measure is by region, but the region boundaries are not built on this install yet: the table below holds every value.": "هذا المقياس حسب المنطقة، لكن حدود المناطق لم تُبنَ بعد على هذا التثبيت: الجدول أدناه يضم كل القيم.",
+  "OpenStreetMap's convention, as of {date}": "اصطلاح OpenStreetMap، بتاريخ {date}",
+  "inside several countries' borders in OpenStreetMap, attributed to none": "داخل حدود عدة دول في OpenStreetMap، غير منسوبة لأي منها",
+  "inside no country's border in OpenStreetMap, attributed to none": "داخل حدود لا دولة في OpenStreetMap، غير منسوبة لأي منها",
+  "OpenStreetMap names only one party": "لا يسمّي OpenStreetMap إلا طرفًا واحدًا",
+  "no party named": "لا طرف مسمّى",
+  "Every disputed area is drawn hatched with all of its claims named in the tooltip, in every worldview. OpenStreetMap's convention attributes an area to the country whose border, as OpenStreetMap draws it, contains the area (its on-the-ground rule); an area inside no country's border, or inside several, is attributed to none. Source: OpenStreetMap's boundary=disputed and boundary=claim areas and its country borders, of the date shown, © OpenStreetMap contributors (ODbL 1.0). It is never this app's verdict on who is right; the Worldview control shows the other conventions.": "تُرسم كل منطقة متنازع عليها مظلّلة بخطوط مع تسمية كل المطالبات بها في التلميح، في كل رؤية للعالم. ينسب اصطلاح OpenStreetMap المنطقة إلى الدولة التي تحتويها حدودها كما يرسمها OpenStreetMap (قاعدته في الواقع على الأرض)؛ والمنطقة الواقعة داخل حدود لا دولة، أو داخل حدود عدة دول، لا تُنسب لأحد. المصدر: مناطق boundary=disputed وboundary=claim في OpenStreetMap وحدود الدول فيه، بالتاريخ المبيّن، © المساهمون في OpenStreetMap (ODbL 1.0). ليس ذلك أبدًا حكم هذا التطبيق على من هو المحق؛ ويعرض مُحدِّد رؤية العالم الاصطلاحات الأخرى.",
+  "Natural Earth's layer lists {n} disputed areas, drawn under the other worldviews.": "طبقة Natural Earth تضم مناطق متنازعًا عليها عددها {n}، مرسومة في رؤى العالم الأخرى."
 }

@@ -6544,5 +6544,12 @@
   "Ranked table · 1 area with data": "क्रमबद्ध तालिका · डेटा वाला 1 क्षेत्र",
   "Ranked table · {n} areas with data": "क्रमबद्ध तालिका · डेटा वाले {n} क्षेत्र",
   "The full data behind the map: every area with a value, ranked, none left out. The colours are a picture of this table.": "नक्शे के पीछे का पूरा डेटा: मान वाला हर क्षेत्र, क्रम में, कोई छूटा नहीं। रंग इसी तालिका की तस्वीर हैं।",
-  "This measure is by region, but the region boundaries are not built on this install yet: the table below holds every value.": "यह माप क्षेत्र-वार है, लेकिन इस इंस्टॉल पर क्षेत्रों की सीमाएँ अभी बनी नहीं हैं: नीचे की तालिका में हर मान है।"
+  "This measure is by region, but the region boundaries are not built on this install yet: the table below holds every value.": "यह माप क्षेत्र-वार है, लेकिन इस इंस्टॉल पर क्षेत्रों की सीमाएँ अभी बनी नहीं हैं: नीचे की तालिका में हर मान है।",
+  "OpenStreetMap's convention, as of {date}": "OpenStreetMap की परिपाटी, {date} तक",
+  "inside several countries' borders in OpenStreetMap, attributed to none": "OpenStreetMap में कई देशों की सीमाओं के भीतर, किसी को नहीं सौंपा गया",
+  "inside no country's border in OpenStreetMap, attributed to none": "OpenStreetMap में किसी देश की सीमा के भीतर नहीं, किसी को नहीं सौंपा गया",
+  "OpenStreetMap names only one party": "OpenStreetMap केवल एक पक्ष का नाम देता है",
+  "no party named": "कोई पक्ष नामित नहीं",
+  "Every disputed area is drawn hatched with all of its claims named in the tooltip, in every worldview. OpenStreetMap's convention attributes an area to the country whose border, as OpenStreetMap draws it, contains the area (its on-the-ground rule); an area inside no country's border, or inside several, is attributed to none. Source: OpenStreetMap's boundary=disputed and boundary=claim areas and its country borders, of the date shown, © OpenStreetMap contributors (ODbL 1.0). It is never this app's verdict on who is right; the Worldview control shows the other conventions.": "हर विवादित क्षेत्र धारीदार बनाया जाता है और टूलटिप में उसके सभी दावे दिखते हैं, हर विश्वदृष्टि में। OpenStreetMap की परिपाटी किसी क्षेत्र को उस देश को सौंपती है जिसकी सीमा, जैसा OpenStreetMap उसे बनाता है, उस क्षेत्र को समाहित करती है (ज़मीनी स्थिति का उसका नियम); किसी सीमा के भीतर न आने वाला, या कई सीमाओं के भीतर आने वाला क्षेत्र किसी को नहीं सौंपा जाता। स्रोत: OpenStreetMap के boundary=disputed और boundary=claim क्षेत्र और उसकी देश-सीमाएँ, दिखाई गई तारीख़ तक, © OpenStreetMap योगदानकर्ता (ODbL 1.0)। यह कभी इस ऐप का यह निर्णय नहीं कि कौन सही है; विश्वदृष्टि चयनकर्ता अन्य परिपाटियाँ दिखाता है।",
+  "Natural Earth's layer lists {n} disputed areas, drawn under the other worldviews.": "Natural Earth की परत में {n} विवादित क्षेत्र हैं, जो अन्य विश्वदृष्टियों में बनाए जाते हैं।"
 }

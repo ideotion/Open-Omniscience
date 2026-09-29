@@ -487,11 +487,37 @@
     // disputed area is drawn as contested and no claimant is preferred. See the
     // _ooWorldviewLabel note on why this, and not a national convention, is the default.
     const OOMAP_WORLDVIEW_DEFAULT = "contested";
-    let _ooMapWorldview = OOMAP_WORLDVIEW_DEFAULT;
+    // OSM'S CONVENTION (Q803, 0.5 row L): the ruled DEFAULT once this install holds the
+    // OSM-derived country file, and only then -- Natural Earth's de-facto policy is not
+    // OSM's, so without that file the default stays the one that assigns nothing. Every
+    // disputed area is STILL drawn contested with every claim (Q826); the convention
+    // decides only which country the area is attributed to, read off OSM's own borders
+    // at build time (`held_by`), and names its date.
+    const OOMAP_WORLDVIEW_OSM = "osm";
+    // The operator's own choice, or null when they never made one: the default is then
+    // decided per render by what the install holds (_ooEffectiveWorldview).
+    let _ooMapWorldview = null;
     try {
       const saved = localStorage.getItem("oo.map.worldview");
       if (saved) _ooMapWorldview = saved;
     } catch { /* private mode: the default stands */ }
+
+    // OSM's convention as this install can show it: its date and its contested areas, or
+    // null when the country file is absent, undated, or predates `held_by`.
+    function _ooOsmConvention(admin0) {
+      if (!admin0 || !Array.isArray(admin0.contested)) return null;
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(String(admin0.vintage || ""))) return null;
+      if (admin0.contested.some(a => !Array.isArray(a.held_by))) return null;
+      return { vintage: admin0.vintage, areas: admin0.contested };
+    }
+    // The worldview in force: the operator's choice when it can be shown, else OSM's
+    // convention when the install holds it, else the one that assigns nothing. A saved
+    // "osm" on an install without the file falls back rather than drawing nothing.
+    function _ooEffectiveWorldview(saved, osmConv) {
+      if (saved === OOMAP_WORLDVIEW_OSM) return osmConv ? OOMAP_WORLDVIEW_OSM : OOMAP_WORLDVIEW_DEFAULT;
+      if (saved) return saved;
+      return osmConv ? OOMAP_WORLDVIEW_OSM : OOMAP_WORLDVIEW_DEFAULT;
+    }
 
     // Natural Earth keys its viewpoints by country except for Korea, whose "KO" is the
     // region KR. Everything else is already a valid CLDR region code, so the label
@@ -503,6 +529,12 @@
     function _ooWorldviewLabel(code) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : (x => x);
       if (code === "contested") return t("Contested (assign nothing)");
+      if (code === "osm") {
+        const tfv = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
+          : ((s, v) => String(s).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? String(v[k]) : m));
+        const a0 = (typeof _ooMapOsmAdmin !== "undefined" && _ooMapOsmAdmin && _ooMapOsmAdmin.admin0) || {};
+        return tfv("OpenStreetMap's convention, as of {date}", { date: a0.vintage || "?" });
+      }
       if (code === "iso") return t("ISO / de jure");
       if (code === "tlc") return t("Natural Earth (de facto)");
       const region = _OO_POV_REGION[code] || code;
@@ -512,11 +544,12 @@
     // The picker's order: the three conventions first, in the data's own order, then
     // the country viewpoints by LOCALISED NAME (Q308) -- the file lists them by their
     // two-letter key, which read as "Germany, Egypt, Spain" in English (L16).
-    function _ooWorldviewOrder(views) {
+    // OSM's convention leads when the install holds it: it is the default (Q803).
+    function _ooWorldviewOrder(views, withOsm) {
       const fixed = (views || []).filter(v => v === "iso" || v === "tlc");
       const countries = (views || []).filter(v => v !== "iso" && v !== "tlc")
         .sort((a, b) => ooCountryCompare(_OO_POV_REGION[a] || a, _OO_POV_REGION[b] || b));
-      return ["contested", ...fixed, ...countries];
+      return [...(withOsm ? ["osm"] : []), "contested", ...fixed, ...countries];
     }
 
     // What a single area's worldview cell means, as a translated sentence. The three
@@ -585,6 +618,39 @@
         return under + `<path d="${d}" fill="url(#oomap-contested)" stroke="var(--caveat)" `
           + `stroke-width="0.6" stroke-dasharray="2.4 1.6" vector-effect="non-scaling-stroke" `
           + `data-oomap-disputed="${esc(a.id)}"${drill} title="${esc(ti)}"></path>`;
+      }).join("");
+      return { markup, shown };
+    }
+
+    // The contested layer UNDER OSM'S CONVENTION: OSM's own disputed and claimed areas,
+    // hatched like every contested area, each with every party its tags name. The
+    // attribution is `held_by` -- the countries whose border, as OSM draws it, contains
+    // the area. Exactly one: the area takes that country's fill and click, as under a
+    // named worldview. None or several: attributed to no one, and the hover says which,
+    // because choosing between two borders that both contain it would be the silent pick.
+    function _ooOsmContestedLayer(conv, fillFor, values) {
+      if (!conv) return { markup: "", shown: 0 };
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : (x => x);
+      let shown = 0;
+      const markup = conv.areas.map(a => {
+        const d = _ooMapPath(a.rings);
+        if (!d) return "";
+        shown++;
+        const held = (a.held_by || []).map(h => String(h.a2 || "").toLowerCase()).filter(Boolean);
+        const who = held.length === 1 ? held[0] : null;
+        const v = who ? (values || {})[who] : undefined;
+        const under = (typeof v === "number" && isFinite(v)) ? `<path d="${d}" fill="${fillFor(v)}" stroke="none"/>` : "";
+        const claims = (a.claims || []).map(c => c.a2 ? ooRegionName(String(c.a2).toLowerCase()) : c.code).join(" / ");
+        const note = who ? t("attributed to") + " " + ooRegionName(who)
+          : held.length ? ooLabelText(t("inside several countries' borders in OpenStreetMap, attributed to none"), held.map(h => ooRegionName(h)).join(" / "))
+          : t("inside no country's border in OpenStreetMap, attributed to none");
+        const partial = a.complete === false ? " · " + t("OpenStreetMap names only one party") : "";
+        const nm = _ooDisputedName(a) || a.id;
+        const ti = `${nm} — ${ooLabelText(t("contested"), claims || t("no party named"))}${partial} · ${note}`;
+        const drill = who ? ` data-iso="${esc(who)}" style="cursor:pointer"` : "";
+        return under + `<path d="${d}" fill="url(#oomap-contested)" stroke="var(--caveat)" `
+          + `stroke-width="0.6" stroke-dasharray="2.4 1.6" vector-effect="non-scaling-stroke" `
+          + `data-oomap-disputed="${esc(a.id)}" data-oomap-convention="osm"${drill} title="${esc(ti)}"></path>`;
       }).join("");
       return { markup, shown };
     }
@@ -908,7 +974,15 @@
       // in-map slider moves the focus moment. Confirmed = filled, future/unconfirmed
       // = a hollow/dashed ring (the temporal map's honest convention).
       // ABOVE the choropleth: a contested area must never be hidden by a country fill.
-      const _disp = _ooDisputedLayer(disputed, _ooMapWorldview, fillFor, values);
+      const osmConv = _ooOsmConvention(osmAdmin && osmAdmin.admin0);
+      const wv = _ooEffectiveWorldview(_ooMapWorldview, osmConv);
+      const _disp = wv === OOMAP_WORLDVIEW_OSM
+        ? _ooOsmContestedLayer(osmConv, fillFor, values)
+        : _ooDisputedLayer(disputed, wv, fillFor, values);
+      // The picker appears whenever there is more than one convention to compare.
+      const wvViews = _ooWorldviewOrder(disputed ? disputed.views : [], !!osmConv);
+      const tfb2 = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
+        : ((s, v) => String(s).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? String(v[k]) : m));
       // The admin-1 outlines sit between the fills and the contested hatch. Each hover
       // repeats its country's line, so pointing at a region never hides the country value.
       const _adm1 = _ooAdmin1Layer(osmAdmin && osmAdmin.admin1, (cc) => {
@@ -1003,13 +1077,13 @@
       // NO FIXED WIDTH CAP (row R, R7): a 150 px cap cut the default label mid-word, and
       // the part it cut was "(assign nothing)", the one clause that says what the default
       // does. The select sizes to its longest option; at phone width the row wraps.
-      const worldviewHtml = _disp.shown ? `
+      const worldviewHtml = (_disp.shown || (osmConv && disputed)) ? `
           <label class="oomap-worldview" style="display:inline-flex;flex-wrap:wrap;align-items:center;gap:4px;max-width:100%"
                  title="${esc(t("Disputed areas are always drawn as contested with every claim named. A worldview decides only which claim the area is ATTRIBUTED to here — it is a way to SEE the difference between conventions, never this app's verdict."))}">
             <span class="muted oomap-wv-label" style="font-size:11px">${esc(t("Worldview"))}</span>
             <select class="tiny" data-oomap-worldview aria-label="${esc(t("Worldview"))}" style="font-size:11px;max-width:100%;min-width:0">
-              ${_ooWorldviewOrder(disputed.views).map(v =>
-                `<option value="${esc(v)}"${v === _ooMapWorldview ? " selected" : ""}>${esc(_ooWorldviewLabel(v))}</option>`).join("")}
+              ${wvViews.map(v =>
+                `<option value="${esc(v)}"${v === wv ? " selected" : ""}>${esc(_ooWorldviewLabel(v))}</option>`).join("")}
             </select>
           </label>` : "";
       const granHtml = (opts.onGranularity || _disp.shown || hasAdmin1) ? `
@@ -1104,11 +1178,14 @@
         <span class="muted" title="${esc(t("Equal-area: every country is drawn at its true relative size, so the size of a fill is never more evidence than the data gave. Savric, Patterson & Jenny (2018). One projection on every map in this app; there is no projection toggle."))}">${esc(t("Equal Earth · equal-area"))}</span>
         <span class="muted" data-oomap-borders title="${esc(_bsrc.title)}">${esc(_bsrc.label)}</span>
         ${_disp.shown ? `<span style="display:inline-flex;align-items:center;gap:5px"
-          title="${esc(t("Every disputed area is drawn hatched with all of its claims named in the tooltip, in every worldview. A worldview changes only which claim the area is attributed to here, so you can see how the conventions differ — it is never this app's verdict on who is right. Source: Natural Earth's breakaway/disputed layer, which records an assignment per point of view.")) + " " + esc(t("The country outlines underneath come from Natural Earth's own de-facto assignment — a boundary has to be drawn somewhere, and that choice is itself one of the conventions this control lets you compare."))}">
+          title="${wv === OOMAP_WORLDVIEW_OSM
+            ? esc(t("Every disputed area is drawn hatched with all of its claims named in the tooltip, in every worldview. OpenStreetMap's convention attributes an area to the country whose border, as OpenStreetMap draws it, contains the area (its on-the-ground rule); an area inside no country's border, or inside several, is attributed to none. Source: OpenStreetMap's boundary=disputed and boundary=claim areas and its country borders, of the date shown, © OpenStreetMap contributors (ODbL 1.0). It is never this app's verdict on who is right; the Worldview control shows the other conventions."))
+              + (disputed && Array.isArray(disputed.areas) ? " " + esc(tfb2("Natural Earth's layer lists {n} disputed areas, drawn under the other worldviews.", { n: fmtNum(disputed.areas.length, 0) })) : "")
+            : esc(t("Every disputed area is drawn hatched with all of its claims named in the tooltip, in every worldview. A worldview changes only which claim the area is attributed to here, so you can see how the conventions differ — it is never this app's verdict on who is right. Source: Natural Earth's breakaway/disputed layer, which records an assignment per point of view.")) + " " + esc(t("The country outlines underneath come from Natural Earth's own de-facto assignment — a boundary has to be drawn somewhere, and that choice is itself one of the conventions this control lets you compare."))}">
           <span style="width:14px;height:10px;border:1px solid var(--caveat);background:repeating-linear-gradient(-45deg,transparent,transparent 2px,var(--caveat) 2px,var(--caveat) 3px)"></span>
-          <span class="card-caveat">${ooLabelHtml(esc(t("Contested")), esc(fmtNum(_disp.shown, 0)))} · ${esc(_ooMapWorldview === "contested"
+          <span class="card-caveat">${ooLabelHtml(esc(t("Contested")), esc(fmtNum(_disp.shown, 0)))} · ${esc(wv === "contested"
             ? t("every claim shown, none assigned")
-            : t("attributed under") + " " + _ooWorldviewLabel(_ooMapWorldview))}</span></span>` : ""}
+            : t("attributed under") + " " + _ooWorldviewLabel(wv))}</span></span>` : ""}
         ${pointRows.length ? `<span class="muted">○ ${esc(t("small areas shown as points"))}</span>` : ""}
         ${opts.placesOn ? `<span class="muted">○ ${esc(t("mentioned places (deduced)"))}</span>` : ""}
         ${opts.wikiPlaces && opts.wikiPlaces.measured ? `<span class="muted">● ${esc(t("Wikipedia page (linked to Wikidata)"))} · ○ ${esc(t("Wikipedia page (not yet linked)"))}</span>` : ""}
@@ -1131,7 +1208,7 @@
     }
     // The worldview in force, for a caller outside this file that keys a repaint on it
     // (app-sources.js's coverage stamp): a function, so it hoists across the module order.
-    function ooMapWorldview() { return _ooMapWorldview; }
+    function ooMapWorldview() { return _ooEffectiveWorldview(_ooMapWorldview, _ooOsmConvention(_ooMapOsmAdmin && _ooMapOsmAdmin.admin0)); }
     // Re-render every ooMap host other than `except` that is still in the document and
     // already holds a drawn map, from the options it was last drawn with -- never a fetch
     // (the geometry and the contested asset are cached by then). A host that holds a

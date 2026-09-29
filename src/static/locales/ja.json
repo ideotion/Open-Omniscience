@@ -6544,5 +6544,12 @@
   "Ranked table · 1 area with data": "順位表 · データのある地域 1 件",
   "Ranked table · {n} areas with data": "順位表 · データのある地域 {n} 件",
   "The full data behind the map: every area with a value, ranked, none left out. The colours are a picture of this table.": "地図の背後にある全データ：値のあるすべての地域を順位付けし、一つも省略しません。色はこの表を絵にしたものです。",
-  "This measure is by region, but the region boundaries are not built on this install yet: the table below holds every value.": "この指標は地域単位ですが、このインストールでは地域の境界がまだ構築されていません。下の表にすべての値があります。"
+  "This measure is by region, but the region boundaries are not built on this install yet: the table below holds every value.": "この指標は地域単位ですが、このインストールでは地域の境界がまだ構築されていません。下の表にすべての値があります。",
+  "OpenStreetMap's convention, as of {date}": "OpenStreetMap の慣行（{date} 時点）",
+  "inside several countries' borders in OpenStreetMap, attributed to none": "OpenStreetMap では複数の国の国境内にあり、どの国にも帰属させない",
+  "inside no country's border in OpenStreetMap, attributed to none": "OpenStreetMap ではどの国の国境内にもなく、どの国にも帰属させない",
+  "OpenStreetMap names only one party": "OpenStreetMap は当事者を一つしか挙げていません",
+  "no party named": "当事者の記載なし",
+  "Every disputed area is drawn hatched with all of its claims named in the tooltip, in every worldview. OpenStreetMap's convention attributes an area to the country whose border, as OpenStreetMap draws it, contains the area (its on-the-ground rule); an area inside no country's border, or inside several, is attributed to none. Source: OpenStreetMap's boundary=disputed and boundary=claim areas and its country borders, of the date shown, © OpenStreetMap contributors (ODbL 1.0). It is never this app's verdict on who is right; the Worldview control shows the other conventions.": "係争地域はすべて斜線で描かれ、どの世界観でもツールチップにすべての主張が示されます。OpenStreetMap の慣行は、OpenStreetMap が描く国境がその地域を含む国に地域を帰属させます（現地の実態の規則）。どの国境内にもない地域や複数の国境内にある地域は、どの国にも帰属させません。出典：OpenStreetMap の boundary=disputed と boundary=claim の地域および国境（表示の日付時点）、© OpenStreetMap contributors（ODbL 1.0）。これは誰が正しいかについてのこのアプリの判断ではありません。世界観の切り替えで他の慣行を表示できます。",
+  "Natural Earth's layer lists {n} disputed areas, drawn under the other worldviews.": "Natural Earth のレイヤーには係争地域が {n} 件あり、他の世界観で描かれます。"
 }

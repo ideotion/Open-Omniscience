@@ -6544,5 +6544,12 @@
   "Ranked table · 1 area with data": "排名表 · 1 个有数据的区域",
   "Ranked table · {n} areas with data": "排名表 · {n} 个有数据的区域",
   "The full data behind the map: every area with a value, ranked, none left out. The colours are a picture of this table.": "地图背后的完整数据：每个有数值的区域均按排名列出，无一遗漏。颜色只是这张表的图示。",
-  "This measure is by region, but the region boundaries are not built on this install yet: the table below holds every value.": "此度量按地区计算，但本安装尚未构建地区边界：下表包含所有数值。"
+  "This measure is by region, but the region boundaries are not built on this install yet: the table below holds every value.": "此度量按地区计算，但本安装尚未构建地区边界：下表包含所有数值。",
+  "OpenStreetMap's convention, as of {date}": "OpenStreetMap 的惯例，截至 {date}",
+  "inside several countries' borders in OpenStreetMap, attributed to none": "在 OpenStreetMap 中位于多个国家的边界内，不归属任何一方",
+  "inside no country's border in OpenStreetMap, attributed to none": "在 OpenStreetMap 中不在任何国家的边界内，不归属任何一方",
+  "OpenStreetMap names only one party": "OpenStreetMap 只列出一方",
+  "no party named": "未列出任何一方",
+  "Every disputed area is drawn hatched with all of its claims named in the tooltip, in every worldview. OpenStreetMap's convention attributes an area to the country whose border, as OpenStreetMap draws it, contains the area (its on-the-ground rule); an area inside no country's border, or inside several, is attributed to none. Source: OpenStreetMap's boundary=disputed and boundary=claim areas and its country borders, of the date shown, © OpenStreetMap contributors (ODbL 1.0). It is never this app's verdict on who is right; the Worldview control shows the other conventions.": "每个争议地区都以斜线绘制，并在提示中列出其所有主张，在每种世界观下都是如此。OpenStreetMap 的惯例将一个地区归属于其边界（按 OpenStreetMap 所绘）包含该地区的国家（其实际控制规则）；不在任何边界内或在多个边界内的地区不归属任何一方。来源：OpenStreetMap 的 boundary=disputed 和 boundary=claim 区域及其国家边界，日期如所示，© OpenStreetMap 贡献者（ODbL 1.0）。这绝不是本应用对谁对谁错的裁决；世界观选择器可显示其他惯例。",
+  "Natural Earth's layer lists {n} disputed areas, drawn under the other worldviews.": "Natural Earth 图层列出 {n} 个争议地区，在其他世界观下绘制。"
 }

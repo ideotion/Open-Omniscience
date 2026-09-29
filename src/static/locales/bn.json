@@ -6544,5 +6544,12 @@
   "Ranked table · 1 area with data": "ক্রমানুসারী সারণি · ডেটাসহ 1টি এলাকা",
   "Ranked table · {n} areas with data": "ক্রমানুসারী সারণি · ডেটাসহ {n}টি এলাকা",
   "The full data behind the map: every area with a value, ranked, none left out. The colours are a picture of this table.": "মানচিত্রের পেছনের পূর্ণ ডেটা: মান আছে এমন প্রতিটি এলাকা, ক্রমানুসারে, কোনোটি বাদ নেই। রংগুলো এই সারণিরই ছবি।",
-  "This measure is by region, but the region boundaries are not built on this install yet: the table below holds every value.": "এই পরিমাপ অঞ্চলভিত্তিক, কিন্তু এই ইনস্টলে অঞ্চলের সীমানা এখনো তৈরি হয়নি: নিচের সারণিতে প্রতিটি মান আছে।"
+  "This measure is by region, but the region boundaries are not built on this install yet: the table below holds every value.": "এই পরিমাপ অঞ্চলভিত্তিক, কিন্তু এই ইনস্টলে অঞ্চলের সীমানা এখনো তৈরি হয়নি: নিচের সারণিতে প্রতিটি মান আছে।",
+  "OpenStreetMap's convention, as of {date}": "OpenStreetMap-এর রীতি, {date} অনুযায়ী",
+  "inside several countries' borders in OpenStreetMap, attributed to none": "OpenStreetMap-এ একাধিক দেশের সীমানার ভেতরে, কাউকে আরোপ করা হয়নি",
+  "inside no country's border in OpenStreetMap, attributed to none": "OpenStreetMap-এ কোনো দেশের সীমানার ভেতরে নয়, কাউকে আরোপ করা হয়নি",
+  "OpenStreetMap names only one party": "OpenStreetMap কেবল একটি পক্ষের নাম দেয়",
+  "no party named": "কোনো পক্ষের নাম নেই",
+  "Every disputed area is drawn hatched with all of its claims named in the tooltip, in every worldview. OpenStreetMap's convention attributes an area to the country whose border, as OpenStreetMap draws it, contains the area (its on-the-ground rule); an area inside no country's border, or inside several, is attributed to none. Source: OpenStreetMap's boundary=disputed and boundary=claim areas and its country borders, of the date shown, © OpenStreetMap contributors (ODbL 1.0). It is never this app's verdict on who is right; the Worldview control shows the other conventions.": "প্রতিটি বিতর্কিত এলাকা ডোরাকাটা আঁকা হয়, টুলটিপে তার সব দাবির নামসহ, প্রতিটি বিশ্বদৃষ্টিতে। OpenStreetMap-এর রীতি একটি এলাকাকে সেই দেশে আরোপ করে যার সীমানা, OpenStreetMap যেভাবে আঁকে, এলাকাটিকে ধারণ করে (মাঠের বাস্তবতার নিয়ম); কোনো সীমানার ভেতরে নেই বা একাধিক সীমানার ভেতরে থাকা এলাকা কাউকে আরোপ করা হয় না। উৎস: OpenStreetMap-এর boundary=disputed ও boundary=claim এলাকা এবং এর দেশের সীমানা, দেখানো তারিখ অনুযায়ী, © OpenStreetMap অবদানকারীরা (ODbL 1.0)। এটি কখনোই কে ঠিক সে বিষয়ে এই অ্যাপের রায় নয়; বিশ্বদৃষ্টি নির্বাচক অন্য রীতিগুলো দেখায়।",
+  "Natural Earth's layer lists {n} disputed areas, drawn under the other worldviews.": "Natural Earth-এর স্তরে {n}টি বিতর্কিত এলাকা আছে, অন্য বিশ্বদৃষ্টিতে আঁকা হয়।"
 }
