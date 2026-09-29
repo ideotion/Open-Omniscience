@@ -6306,5 +6306,7 @@
   "Resolve places": "解析地点",
   "Fetch from Wikidata": "从 Wikidata 获取",
   "Reads the gazetteer on this machine. No request leaves it.": "读取本机上的地名词典。不会发出任何请求。",
-  "Sends one request every 10 seconds to www.wikidata.org, up to 50 items each. Refused while airplane mode is on.": "每 10 秒向 www.wikidata.org 发送一次请求，每次最多 50 个条目。飞行模式开启时会被拒绝。"
+  "Sends one request every 10 seconds to www.wikidata.org, up to 50 items each. Refused while airplane mode is on.": "每 10 秒向 www.wikidata.org 发送一次请求，每次最多 50 个条目。飞行模式开启时会被拒绝。",
+  "Adds this exact version to your corpus as its own article.": "将这个确切版本作为一篇独立条目加入你的语料库。",
+  "This version's text was not stored on this machine, so it cannot be added.": "此版本的文本未存储在本机，因此无法加入。"
 }

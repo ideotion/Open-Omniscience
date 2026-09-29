@@ -6306,5 +6306,7 @@
   "Resolve places": "طابِق الأماكن",
   "Fetch from Wikidata": "اجلب من ويكي بيانات",
   "Reads the gazetteer on this machine. No request leaves it.": "يقرأ المعجم الجغرافي على هذا الجهاز. لا يغادره أي طلب.",
-  "Sends one request every 10 seconds to www.wikidata.org, up to 50 items each. Refused while airplane mode is on.": "يرسل طلبًا واحدًا كل 10 ثوانٍ إلى www.wikidata.org، حتى 50 عنصرًا في كل طلب. يُرفض ما دام وضع الطيران مُفعَّلًا."
+  "Sends one request every 10 seconds to www.wikidata.org, up to 50 items each. Refused while airplane mode is on.": "يرسل طلبًا واحدًا كل 10 ثوانٍ إلى www.wikidata.org، حتى 50 عنصرًا في كل طلب. يُرفض ما دام وضع الطيران مُفعَّلًا.",
+  "Adds this exact version to your corpus as its own article.": "يضيف هذه النسخة بالتحديد إلى مجموعتك كمقالة مستقلة.",
+  "This version's text was not stored on this machine, so it cannot be added.": "لم يُخزَّن نص هذا الإصدار على هذا الجهاز، لذا لا يمكن إضافته."
 }

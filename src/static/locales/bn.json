@@ -6306,5 +6306,7 @@
   "Resolve places": "স্থান মেলান",
   "Fetch from Wikidata": "Wikidata থেকে আনুন",
   "Reads the gazetteer on this machine. No request leaves it.": "এই যন্ত্রের গেজেটিয়ার পড়ে। কোনো অনুরোধ বাইরে যায় না।",
-  "Sends one request every 10 seconds to www.wikidata.org, up to 50 items each. Refused while airplane mode is on.": "প্রতি ১০ সেকেন্ডে www.wikidata.org-এ একটি অনুরোধ পাঠায়, প্রতিটিতে সর্বোচ্চ ৫০টি আইটেম। বিমান মোড চালু থাকলে প্রত্যাখ্যাত।"
+  "Sends one request every 10 seconds to www.wikidata.org, up to 50 items each. Refused while airplane mode is on.": "প্রতি ১০ সেকেন্ডে www.wikidata.org-এ একটি অনুরোধ পাঠায়, প্রতিটিতে সর্বোচ্চ ৫০টি আইটেম। বিমান মোড চালু থাকলে প্রত্যাখ্যাত।",
+  "Adds this exact version to your corpus as its own article.": "ঠিক এই সংস্করণটিকে একটি আলাদা নিবন্ধ হিসেবে আপনার কর্পাসে যোগ করে।",
+  "This version's text was not stored on this machine, so it cannot be added.": "এই সংস্করণের পাঠ্য এই যন্ত্রে সংরক্ষিত হয়নি, তাই এটি যোগ করা যায় না।"
 }

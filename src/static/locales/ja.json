@@ -6306,5 +6306,7 @@
   "Resolve places": "場所を照合",
   "Fetch from Wikidata": "Wikidata から取得",
   "Reads the gazetteer on this machine. No request leaves it.": "このマシン上の地名辞典を読みます。リクエストは外に出ません。",
-  "Sends one request every 10 seconds to www.wikidata.org, up to 50 items each. Refused while airplane mode is on.": "10 秒ごとに www.wikidata.org へ 1 リクエスト（各最大 50 項目）を送ります。機内モードが有効な間は拒否されます。"
+  "Sends one request every 10 seconds to www.wikidata.org, up to 50 items each. Refused while airplane mode is on.": "10 秒ごとに www.wikidata.org へ 1 リクエスト（各最大 50 項目）を送ります。機内モードが有効な間は拒否されます。",
+  "Adds this exact version to your corpus as its own article.": "この版そのものを独立した記事としてコーパスに追加します。",
+  "This version's text was not stored on this machine, so it cannot be added.": "この版の本文はこのマシンに保存されていないため、追加できません。"
 }

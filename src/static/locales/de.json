@@ -6306,5 +6306,7 @@
   "Resolve places": "Orte zuordnen",
   "Fetch from Wikidata": "Von Wikidata abrufen",
   "Reads the gazetteer on this machine. No request leaves it.": "Liest den Gazetteer auf diesem Rechner. Keine Anfrage verlässt ihn.",
-  "Sends one request every 10 seconds to www.wikidata.org, up to 50 items each. Refused while airplane mode is on.": "Sendet alle 10 Sekunden eine Anfrage an www.wikidata.org, mit bis zu 50 Einträgen je Anfrage. Wird abgelehnt, solange der Flugmodus an ist."
+  "Sends one request every 10 seconds to www.wikidata.org, up to 50 items each. Refused while airplane mode is on.": "Sendet alle 10 Sekunden eine Anfrage an www.wikidata.org, mit bis zu 50 Einträgen je Anfrage. Wird abgelehnt, solange der Flugmodus an ist.",
+  "Adds this exact version to your corpus as its own article.": "Fügt genau diese Version Ihrem Korpus als eigenen Artikel hinzu.",
+  "This version's text was not stored on this machine, so it cannot be added.": "Der Text dieser Version wurde auf diesem Rechner nicht gespeichert, daher kann sie nicht hinzugefügt werden."
 }

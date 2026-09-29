@@ -6306,5 +6306,7 @@
   "Resolve places": "Сопоставить места",
   "Fetch from Wikidata": "Загрузить из Викиданных",
   "Reads the gazetteer on this machine. No request leaves it.": "Читает справочник мест на этом компьютере. Ни один запрос не покидает его.",
-  "Sends one request every 10 seconds to www.wikidata.org, up to 50 items each. Refused while airplane mode is on.": "Отправляет один запрос каждые 10 секунд на www.wikidata.org, до 50 элементов в каждом. Отклоняется, пока включён режим полёта."
+  "Sends one request every 10 seconds to www.wikidata.org, up to 50 items each. Refused while airplane mode is on.": "Отправляет один запрос каждые 10 секунд на www.wikidata.org, до 50 элементов в каждом. Отклоняется, пока включён режим полёта.",
+  "Adds this exact version to your corpus as its own article.": "Добавляет именно эту версию в ваш корпус как отдельную статью.",
+  "This version's text was not stored on this machine, so it cannot be added.": "Текст этой версии не был сохранён на этой машине, поэтому её нельзя добавить."
 }

@@ -6306,5 +6306,7 @@
   "Resolve places": "स्थानों का मिलान करें",
   "Fetch from Wikidata": "Wikidata से लाएँ",
   "Reads the gazetteer on this machine. No request leaves it.": "इस मशीन का गैज़ेटियर पढ़ता है। कोई अनुरोध बाहर नहीं जाता।",
-  "Sends one request every 10 seconds to www.wikidata.org, up to 50 items each. Refused while airplane mode is on.": "हर 10 सेकंड में www.wikidata.org को एक अनुरोध भेजता है, हर एक में अधिकतम 50 आइटम। एयरप्लेन मोड चालू रहने तक अस्वीकृत।"
+  "Sends one request every 10 seconds to www.wikidata.org, up to 50 items each. Refused while airplane mode is on.": "हर 10 सेकंड में www.wikidata.org को एक अनुरोध भेजता है, हर एक में अधिकतम 50 आइटम। एयरप्लेन मोड चालू रहने तक अस्वीकृत।",
+  "Adds this exact version to your corpus as its own article.": "ठीक इसी संस्करण को एक अलग लेख के रूप में आपके कॉर्पस में जोड़ता है।",
+  "This version's text was not stored on this machine, so it cannot be added.": "इस संस्करण का पाठ इस मशीन पर संग्रहीत नहीं किया गया, इसलिए इसे जोड़ा नहीं जा सकता।"
 }

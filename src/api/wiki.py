@@ -15,7 +15,7 @@ import logging
 import re
 from urllib.parse import unquote
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Path, Query
 from pydantic import BaseModel
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -399,6 +399,33 @@ def page_compare(
         return compare_payload(db, page, a, b, part=part)
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.post("/pages/{page_id}/versions/{version_id}/add-to-corpus")
+def page_version_add_to_corpus(
+    page_id: int,
+    version_id: str = Path(..., pattern=r"^[tbl]\d{1,12}$"),
+    db: Session = Depends(get_db),
+) -> dict:
+    """The reader's «Add to corpus» (R52): ONE listed version, from either store, as its
+    own article. Never a second copy.
+
+    Answers like the lane search's own route (``/api/wiki/lane/add-to-corpus``):
+    ``created``, ``exists`` or ``same_text``, naming the article. 404 when the page or
+    that version is not held, 409 when there is nothing to add (``text-not-held``: the
+    version's text was never stored; ``no-revision``: no revision number to key it on).
+    """
+    from src.wiki.versions import NothingToAdd, add_version_to_corpus
+
+    page = db.query(WikiPage).filter_by(id=page_id).first()
+    if page is None:
+        raise HTTPException(status_code=404, detail=f"Watched page {page_id} not found.")
+    try:
+        return add_version_to_corpus(db, page, version_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail="not-held") from exc
+    except NothingToAdd as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 # ----------------------------- offline dumps -------------------------------- #

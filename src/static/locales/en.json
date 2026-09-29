@@ -6306,5 +6306,7 @@
   "Resolve places": "Resolve places",
   "Fetch from Wikidata": "Fetch from Wikidata",
   "Reads the gazetteer on this machine. No request leaves it.": "Reads the gazetteer on this machine. No request leaves it.",
-  "Sends one request every 10 seconds to www.wikidata.org, up to 50 items each. Refused while airplane mode is on.": "Sends one request every 10 seconds to www.wikidata.org, up to 50 items each. Refused while airplane mode is on."
+  "Sends one request every 10 seconds to www.wikidata.org, up to 50 items each. Refused while airplane mode is on.": "Sends one request every 10 seconds to www.wikidata.org, up to 50 items each. Refused while airplane mode is on.",
+  "Adds this exact version to your corpus as its own article.": "Adds this exact version to your corpus as its own article.",
+  "This version's text was not stored on this machine, so it cannot be added.": "This version's text was not stored on this machine, so it cannot be added."
 }
