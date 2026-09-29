@@ -327,6 +327,21 @@ def test_the_queue_view_reads_new_first_then_due_rechecks():
         assert "score" not in key
 
 
+def test_the_queue_view_lists_no_qualified_source_when_rechecks_are_off():
+    """With `recheck_per_pass = 0` the pass takes no qualified source, spill included, so the
+    view must not name a line that never moves."""
+    from datetime import UTC, datetime, timedelta
+
+    now = datetime(2026, 12, 1, tzinfo=UTC)
+    s = _session()
+    _qualified(s, "due.example", now - timedelta(days=100))
+    view = q.qualification_queue(s, now=now, recheck_per_pass=0)
+    assert view["rechecks"]["qualified_rechecks_on"] is False
+    assert view["rechecks"]["qualified_due"] == 0 and view["rechecks"]["next"] == []
+    on = q.qualification_queue(s, now=now, recheck_per_pass=2)
+    assert on["rechecks"]["qualified_due"] == 1 and on["rechecks"]["next"]
+
+
 def test_the_queue_route_and_panel(monkeypatch, tmp_path):
     from fastapi.testclient import TestClient
 

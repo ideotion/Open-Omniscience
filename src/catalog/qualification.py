@@ -487,11 +487,12 @@ def select_due_qualified(
 
 # How far down the due-disqualified pool the queue view counts. Each one costs a ladder read,
 # so a count past this says "at least" rather than walking an unbounded pool on a panel load.
-_QUEUE_COUNT_CAP = 1000
+_QUEUE_COUNT_CAP = 200
 
 
 def qualification_queue(session: Session, *, now: datetime | None = None,
-                        next_limit: int = 10) -> dict:
+                        next_limit: int = 10,
+                        recheck_per_pass: int | None = None) -> dict:
     """THE QUALIFICATION QUEUE, as the pass will take it (R94, 2026-09-29: «managed as a queue,
     not as a calendar ... it's more urgent to qualify a new source than to re-qualify one»).
 
@@ -508,6 +509,10 @@ def qualification_queue(session: Session, *, now: datetime | None = None,
     ``waiting`` counts qualified sources not yet due, with the earliest moment one joins the
     queue -- the one date on this view, and it is when a source ENTERS the line, never when
     it will be judged: that depends on the per-pass budgets and on how long the line is.
+
+    ``recheck_per_pass`` (the setting) is what tells the view whether qualified re-verification
+    is ON: at 0 the pass takes no qualified source, spill included, so the view lists none and
+    says ``qualified_rechecks_on: false`` rather than naming a line that never moves.
     """
     from src.database.models import Source, SourceQualificationAttempt
 
@@ -544,10 +549,18 @@ def qualification_queue(session: Session, *, now: datetime | None = None,
         next_join = next_join.replace(tzinfo=UTC)
 
     nxt = max(0, int(next_limit))
+    ql_on = recheck_per_pass is None or recheck_per_pass > 0
     next_new = [s.domain for s in select_unqualified(session, limit=nxt)]
+    # The "next" list is what a pass with `nxt` re-check slots WOULD take: the pass's own pool
+    # (the oldest-tried few, not the whole due count) and its own split between the two kinds.
+    dq_pool = select_due_disqualified(session, now=now, limit=nxt)
+    ql_pool = select_due_qualified(session, now=now, limit=nxt) if ql_on else []
+    take_dq = min(len(dq_pool), max(1, nxt // 2) if ql_pool else nxt)
+    take_ql = min(len(ql_pool), nxt - take_dq)
+    take_dq = min(len(dq_pool), nxt - take_ql)
     next_rechecks = [
         {"domain": s.domain, "status": s.status}
-        for s in (dq_due[:nxt] + select_due_qualified(session, now=now, limit=nxt))[:nxt]
+        for s in dq_pool[:take_dq] + ql_pool[:take_ql]
     ]
     return {
         "order": ["new", "rechecks"],
@@ -556,7 +569,8 @@ def qualification_queue(session: Session, *, now: datetime | None = None,
         "rechecks": {
             "disqualified_due": len(dq_due),
             "disqualified_due_capped": len(dq_due) >= _QUEUE_COUNT_CAP,
-            "qualified_due": ql_due,
+            "qualified_due": ql_due if ql_on else 0,
+            "qualified_rechecks_on": ql_on,
             "next": next_rechecks,
         },
         "waiting": {

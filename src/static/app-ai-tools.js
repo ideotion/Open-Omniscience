@@ -434,7 +434,9 @@
           (nw.next && nw.next.length)
             ? `<div class="muted">` + ooLabelHtml(esc(t("Next up")), doms(nw.next)) + `</div>` : "",
           `<div>` + ooLabelHtml(esc(t("2. Due to be checked again")),
-            esc(tf("{q} qualified, {d} disqualified", {q: n(rc.qualified_due), d: dqDue})))
+            esc(rc.qualified_rechecks_on === false
+              ? tf("{d} disqualified (re-checks of qualified sources are switched off)", {d: dqDue})
+              : tf("{q} qualified, {d} disqualified", {q: n(rc.qualified_due), d: dqDue})))
             + `</div>`,
           (rc.next && rc.next.length)
             ? `<div class="muted">` + ooLabelHtml(esc(t("Next up")), doms(rc.next.map((r) => r.domain))) + `</div>` : "",

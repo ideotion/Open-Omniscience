@@ -1913,7 +1913,7 @@ def qualification_queue_view(db: Session = Depends(get_db)) -> dict:
 
     settings = load_settings()
     return {
-        **qualification_queue(db),
+        **qualification_queue(db, recheck_per_pass=settings.qualification_recheck_per_pass),
         "per_pass": {"new": settings.qualification_per_pass,
                      "rechecks": settings.qualification_recheck_per_pass},
     }
