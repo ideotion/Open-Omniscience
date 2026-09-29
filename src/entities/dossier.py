@@ -176,10 +176,7 @@ def _keyword_ids(session, terms: dict[str, set[str]], qid: str) -> tuple[list[in
     ):
         norm = _norm(stored)
         code = (lang or "").split("-")[0].lower()
-        if code:
-            ok = norm in terms.get(code, set())
-        else:
-            ok = entity_qid(stored)[0] == qid
+        ok = norm in terms.get(code, set()) if code else entity_qid(stored)[0] == qid
         if ok:
             ids.append(int(kid))
             shown.add(stored)
