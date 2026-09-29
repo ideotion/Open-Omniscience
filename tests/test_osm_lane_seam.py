@@ -1,12 +1,12 @@
-"""Q823 (ODbL) is unanswered: nothing OSM-derived leaves the machine (S05-04 §4, the seam).
+"""The OSM lane seam (S05-04 §4), after Q823 = a (2026-09-29): OSM rows are credited under the ODbL.
 
 Open Omniscience - Global Intelligence Platform for Investigative Journalism
 Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 
-Negative space, checked from the outside: the lane's tables are not corpus tables (so no corpus
-export carries them), the lane file is a backup member marked NOT exportable, the attribution
-block refuses an OSM table rather than rendering a short one, and no export, bulletin, evidence
-or custody module imports the lane at all.
+Checked from the outside: the lane's tables are not corpus tables (so no corpus export carries
+them), the lane file is a backup member marked NOT exportable (the lane row owns that line), the
+attribution block credits an OSM table with OpenStreetMap's line and the ODbL, and no export,
+bulletin, evidence or custody module imports the lane at all.
 """
 
 from __future__ import annotations
