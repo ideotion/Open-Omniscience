@@ -202,7 +202,7 @@
       );
       if (typeof w.share === "number") {
         facts.push({ label: t("Stops at"), value: tf("{pct}% of the budget", { pct: Math.round(w.share * 100) }),
-          hover: t("These texts stop when the lane file holds this share of its storage budget, and the rest is kept for the pages you follow. The share is a proposed default, not a ruling.") });
+          hover: t("These texts stop when the lane file holds this share of its storage budget, and the rest is kept for the pages you follow. The share is a ruled default.") });
       }
       const waiting = w.waiting || {};
       for (const e of (w.editions || [])) {

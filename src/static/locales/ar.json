@@ -4690,7 +4690,7 @@
   "These series could not be stacked, so they are drawn as lines.": "تعذّر تكديس هذه السلاسل، فتُرسم كخطوط.",
   "These signals are merely close in place and time within your current window.": "هذه الإشارات متقاربة فقط في المكان والزمان ضمن نافذتك الحالية.",
   "These texts are too large to compare on this machine; the comparison was not computed rather than approximated.": "هذه النصوص أكبر من أن تُقارَن على هذا الجهاز؛ لم تُحسب المقارنة بدلاً من تقريبها.",
-  "These texts stop when the lane file holds this share of its storage budget, and the rest is kept for the pages you follow. The share is a proposed default, not a ruling.": "تتوقف هذه النصوص حين يبلغ ملف المسار هذه الحصة من ميزانية تخزينه، ويُحفظ الباقي للصفحات التي تتابعها. وهذه الحصة قيمة افتراضية مقترحة، لا قرار محسوم.",
+  "These texts stop when the lane file holds this share of its storage budget, and the rest is kept for the pages you follow. The share is a ruled default.": "تتوقف هذه النصوص عندما يبلغ ملف المسار هذه النسبة من ميزانية التخزين، ويُترك الباقي للصفحات التي تتابعها. هذه النسبة قيمة افتراضية مقرَّرة.",
   "These texts were not searched: their index could not read this query.": "لم يجرِ البحث في هذه النصوص: تعذّر على فهرسها قراءة هذا الاستعلام.",
   "These two cap the crawl supplement, the bounded crawl that runs beside feed collection on every pass.": "تحدّ هاتان القيمتان من ملحق الزحف، وهو الزحف المحدود الذي يعمل إلى جانب جمع الخلاصات في كل تمريرة.",
   "They say which verticals this install runs — hazard feeds, imported mail — which is a fact about the operator's setup, not about the news.": "تكشف أي مجالات يشغّلها هذا التثبيت — موجزات المخاطر، والبريد المستورد — وهي حقيقة عن إعداد المشغّل، لا عن الأخبار.",

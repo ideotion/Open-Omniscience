@@ -4690,7 +4690,7 @@
   "These series could not be stacked, so they are drawn as lines.": "これらの系列は積み上げできなかったため、折れ線として描画されます。",
   "These signals are merely close in place and time within your current window.": "これらのシグナルは、現在のウィンドウ内で場所と時間が近いというだけです。",
   "These texts are too large to compare on this machine; the comparison was not computed rather than approximated.": "これらの本文は大きすぎて、この端末では比較できません。近似するのではなく、比較を行いませんでした。",
-  "These texts stop when the lane file holds this share of its storage budget, and the rest is kept for the pages you follow. The share is a proposed default, not a ruling.": "レーンファイルが保存容量の予算のこの割合に達すると、これらのテキストの取得は止まり、残りはフォロー中のページのために確保されます。この割合は提案中の既定値で、決定事項ではありません。",
+  "These texts stop when the lane file holds this share of its storage budget, and the rest is kept for the pages you follow. The share is a ruled default.": "レーンファイルが保存容量の予算のこの割合に達すると、これらのテキストの取得は止まり、残りはフォロー中のページのために確保されます。この割合は決定済みの既定値です。",
   "These texts were not searched: their index could not read this query.": "これらのテキストは検索されていません。索引がこのクエリを読み取れませんでした。",
   "These two cap the crawl supplement, the bounded crawl that runs beside feed collection on every pass.": "この2つの値は、毎回のパスでフィード収集と並行して動く上限付きクロールである「クロール補完」を制限します。",
   "They say which verticals this install runs — hazard feeds, imported mail — which is a fact about the operator's setup, not about the news.": "このインストールがどの分野を動かしているか（災害フィード、取り込んだメールなど）を示します。これはニュースではなく、運用者の構成についての事実です。",

@@ -4690,7 +4690,7 @@
   "These series could not be stacked, so they are drawn as lines.": "这些序列无法堆叠，因此以折线绘制。",
   "These signals are merely close in place and time within your current window.": "这些信号只是在您当前的时间窗口内于地点和时间上相近而已。",
   "These texts are too large to compare on this machine; the comparison was not computed rather than approximated.": "这些文本太大，无法在本机上比较；未计算比较结果，而不是给出近似值。",
-  "These texts stop when the lane file holds this share of its storage budget, and the rest is kept for the pages you follow. The share is a proposed default, not a ruling.": "当通道文件达到其存储预算的这一比例时，这些文本停止获取，其余部分留给你关注的页面。该比例是建议的默认值，并非已定的决定。",
+  "These texts stop when the lane file holds this share of its storage budget, and the rest is kept for the pages you follow. The share is a ruled default.": "当通道文件达到其存储预算的这一比例时，这些文本就会停止获取，其余部分留给你关注的页面。这一比例是已确定的默认值。",
   "These texts were not searched: their index could not read this query.": "未搜索这些文本：其索引无法读取此查询。",
   "These two cap the crawl supplement, the bounded crawl that runs beside feed collection on every pass.": "这两个值限制爬取补充，即每次运行时在订阅源采集旁边进行的有界爬取。",
   "They say which verticals this install runs — hazard feeds, imported mail — which is a fact about the operator's setup, not about the news.": "它们表明本安装运行了哪些垂直领域——灾害信息源、导入的邮件——这是关于使用者配置的事实，而非关于新闻。",

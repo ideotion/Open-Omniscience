@@ -399,7 +399,7 @@ def living_overview(db: Session = Depends(get_db)) -> dict[str, Any]:
             "stream: the lane file's own rows -- pages followed, changes the stream reported "
             "for them, how many had their text stored, and changes it reported for pages you "
             "do not follow. Complete through: the earliest point every feed was read without "
-            "a break. Other changed pages (WARM) and the page walk: the lane file's own rows, "
+            "a break. Other changed pages and the page walk: the lane file's own rows, "
             "each with its own counts, and this process's state for each. Tracked pages, law: "
             "the main database's rows, with the newest and oldest "
             "check. Maps: the download manager's regions and the bytes on disk. Storage: the "
