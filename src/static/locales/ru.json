@@ -6501,5 +6501,11 @@
   "{n} regions: {tagged} keyed by their ISO 3166-2 code, {fallback} by their OpenStreetMap relation id because OpenStreetMap carries no code for them.": "{n} регионов: {tagged} по коду ISO 3166-2, {fallback} по идентификатору отношения OpenStreetMap, так как OpenStreetMap не указывает для них код.",
   "Region outlines are simplified further for display on this map.": "Контуры регионов дополнительно упрощены для показа на этой карте.",
   "Show or hide the first-level regions (states, provinces, regions) OpenStreetMap draws inside each country.": "Показать или скрыть регионы первого уровня (штаты, провинции, области), которые OpenStreetMap рисует внутри каждой страны.",
-  "Natural Earth 50m elsewhere": "в остальных местах Natural Earth 50m"
+  "Natural Earth 50m elsewhere": "в остальных местах Natural Earth 50m",
+  "1 area with no data: hatched on the map, never counted as zero.": "1 область без данных: заштрихована на карте, никогда не считается нулём.",
+  "{n} areas with no data: hatched on the map, never counted as zero.": "Областей без данных: {n}. Они заштрихованы на карте и никогда не считаются нулём.",
+  "Ranked table · 1 area with data": "Ранжированная таблица · 1 область с данными",
+  "Ranked table · {n} areas with data": "Ранжированная таблица · областей с данными: {n}",
+  "The full data behind the map: every area with a value, ranked, none left out. The colours are a picture of this table.": "Полные данные за картой: каждая область со значением, по рангу, ни одна не пропущена. Цвета — лишь изображение этой таблицы.",
+  "This measure is by region, but the region boundaries are not built on this install yet: the table below holds every value.": "Эта мера задана по регионам, но границы регионов на этой установке ещё не построены: в таблице ниже есть все значения."
 }

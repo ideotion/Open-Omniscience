@@ -6501,5 +6501,11 @@
   "{n} regions: {tagged} keyed by their ISO 3166-2 code, {fallback} by their OpenStreetMap relation id because OpenStreetMap carries no code for them.": "{n}টি অঞ্চল: {tagged}টি তাদের ISO 3166-2 কোড দিয়ে, {fallback}টি তাদের OpenStreetMap সম্পর্ক আইডি দিয়ে চিহ্নিত, কারণ OpenStreetMap তাদের কোনো কোড রাখে না।",
   "Region outlines are simplified further for display on this map.": "এই মানচিত্রে দেখানোর জন্য অঞ্চলের রূপরেখা আরও সরল করা হয়েছে।",
   "Show or hide the first-level regions (states, provinces, regions) OpenStreetMap draws inside each country.": "প্রতিটি দেশের ভেতরে OpenStreetMap-এর আঁকা প্রথম স্তরের অঞ্চল (রাজ্য, প্রদেশ, অঞ্চল) দেখান বা লুকান।",
-  "Natural Earth 50m elsewhere": "অন্যত্র Natural Earth 50m"
+  "Natural Earth 50m elsewhere": "অন্যত্র Natural Earth 50m",
+  "1 area with no data: hatched on the map, never counted as zero.": "ডেটা নেই এমন 1টি এলাকা: মানচিত্রে ডোরাকাটা, কখনো শূন্য গণ্য নয়।",
+  "{n} areas with no data: hatched on the map, never counted as zero.": "ডেটা নেই এমন {n}টি এলাকা: মানচিত্রে ডোরাকাটা, কখনো শূন্য গণ্য নয়।",
+  "Ranked table · 1 area with data": "ক্রমানুসারী সারণি · ডেটাসহ 1টি এলাকা",
+  "Ranked table · {n} areas with data": "ক্রমানুসারী সারণি · ডেটাসহ {n}টি এলাকা",
+  "The full data behind the map: every area with a value, ranked, none left out. The colours are a picture of this table.": "মানচিত্রের পেছনের পূর্ণ ডেটা: মান আছে এমন প্রতিটি এলাকা, ক্রমানুসারে, কোনোটি বাদ নেই। রংগুলো এই সারণিরই ছবি।",
+  "This measure is by region, but the region boundaries are not built on this install yet: the table below holds every value.": "এই পরিমাপ অঞ্চলভিত্তিক, কিন্তু এই ইনস্টলে অঞ্চলের সীমানা এখনো তৈরি হয়নি: নিচের সারণিতে প্রতিটি মান আছে।"
 }

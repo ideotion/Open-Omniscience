@@ -6501,5 +6501,11 @@
   "{n} regions: {tagged} keyed by their ISO 3166-2 code, {fallback} by their OpenStreetMap relation id because OpenStreetMap carries no code for them.": "{n} 地域：{tagged} は ISO 3166-2 コードで、{fallback} は OpenStreetMap がコードを持たないため OpenStreetMap のリレーション ID で識別しています。",
   "Region outlines are simplified further for display on this map.": "この地図での表示のため、地域の輪郭をさらに簡略化しています。",
   "Show or hide the first-level regions (states, provinces, regions) OpenStreetMap draws inside each country.": "OpenStreetMap が各国内に描く第一級の地域（州・県・地方）を表示または非表示にします。",
-  "Natural Earth 50m elsewhere": "その他は Natural Earth 50m"
+  "Natural Earth 50m elsewhere": "その他は Natural Earth 50m",
+  "1 area with no data: hatched on the map, never counted as zero.": "データのない地域 1 件：地図上で斜線表示、ゼロとして数えることはありません。",
+  "{n} areas with no data: hatched on the map, never counted as zero.": "データのない地域 {n} 件：地図上で斜線表示、ゼロとして数えることはありません。",
+  "Ranked table · 1 area with data": "順位表 · データのある地域 1 件",
+  "Ranked table · {n} areas with data": "順位表 · データのある地域 {n} 件",
+  "The full data behind the map: every area with a value, ranked, none left out. The colours are a picture of this table.": "地図の背後にある全データ：値のあるすべての地域を順位付けし、一つも省略しません。色はこの表を絵にしたものです。",
+  "This measure is by region, but the region boundaries are not built on this install yet: the table below holds every value.": "この指標は地域単位ですが、このインストールでは地域の境界がまだ構築されていません。下の表にすべての値があります。"
 }

@@ -6501,5 +6501,11 @@
   "{n} regions: {tagged} keyed by their ISO 3166-2 code, {fallback} by their OpenStreetMap relation id because OpenStreetMap carries no code for them.": "{n} 个地区：{tagged} 个按 ISO 3166-2 代码标识，{fallback} 个按 OpenStreetMap 关系 ID 标识，因为 OpenStreetMap 没有为其提供代码。",
   "Region outlines are simplified further for display on this map.": "为在此地图上显示，地区轮廓已进一步简化。",
   "Show or hide the first-level regions (states, provinces, regions) OpenStreetMap draws inside each country.": "显示或隐藏 OpenStreetMap 在每个国家内绘制的一级地区（州、省、大区）。",
-  "Natural Earth 50m elsewhere": "其余地区为 Natural Earth 50m"
+  "Natural Earth 50m elsewhere": "其余地区为 Natural Earth 50m",
+  "1 area with no data: hatched on the map, never counted as zero.": "1 个区域无数据：在地图上以斜线标出，绝不计为零。",
+  "{n} areas with no data: hatched on the map, never counted as zero.": "{n} 个区域无数据：在地图上以斜线标出，绝不计为零。",
+  "Ranked table · 1 area with data": "排名表 · 1 个有数据的区域",
+  "Ranked table · {n} areas with data": "排名表 · {n} 个有数据的区域",
+  "The full data behind the map: every area with a value, ranked, none left out. The colours are a picture of this table.": "地图背后的完整数据：每个有数值的区域均按排名列出，无一遗漏。颜色只是这张表的图示。",
+  "This measure is by region, but the region boundaries are not built on this install yet: the table below holds every value.": "此度量按地区计算，但本安装尚未构建地区边界：下表包含所有数值。"
 }

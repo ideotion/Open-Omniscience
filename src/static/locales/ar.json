@@ -6501,5 +6501,11 @@
   "{n} regions: {tagged} keyed by their ISO 3166-2 code, {fallback} by their OpenStreetMap relation id because OpenStreetMap carries no code for them.": "{n} منطقة: {tagged} معرَّفة برمز ISO 3166-2، و{fallback} بمعرّف علاقة OpenStreetMap لأن OpenStreetMap لا يحمل رمزًا لها.",
   "Region outlines are simplified further for display on this map.": "تُبسَّط حدود المناطق أكثر لعرضها على هذه الخريطة.",
   "Show or hide the first-level regions (states, provinces, regions) OpenStreetMap draws inside each country.": "إظهار أو إخفاء مناطق المستوى الأول (الولايات، المقاطعات، الأقاليم) التي يرسمها OpenStreetMap داخل كل دولة.",
-  "Natural Earth 50m elsewhere": "Natural Earth 50m في غير ذلك"
+  "Natural Earth 50m elsewhere": "Natural Earth 50m في غير ذلك",
+  "1 area with no data: hatched on the map, never counted as zero.": "منطقة واحدة بلا بيانات: مظلّلة بخطوط على الخريطة، ولا تُحسب صفرًا أبدًا.",
+  "{n} areas with no data: hatched on the map, never counted as zero.": "مناطق بلا بيانات: {n}. مظلّلة بخطوط على الخريطة، ولا تُحسب صفرًا أبدًا.",
+  "Ranked table · 1 area with data": "جدول مرتّب · منطقة واحدة ذات بيانات",
+  "Ranked table · {n} areas with data": "جدول مرتّب · مناطق ذات بيانات: {n}",
+  "The full data behind the map: every area with a value, ranked, none left out. The colours are a picture of this table.": "البيانات الكاملة وراء الخريطة: كل منطقة لها قيمة، مرتّبة، دون إغفال أيّ منها. الألوان صورة لهذا الجدول.",
+  "This measure is by region, but the region boundaries are not built on this install yet: the table below holds every value.": "هذا المقياس حسب المنطقة، لكن حدود المناطق لم تُبنَ بعد على هذا التثبيت: الجدول أدناه يضم كل القيم."
 }

@@ -6501,5 +6501,11 @@
   "{n} regions: {tagged} keyed by their ISO 3166-2 code, {fallback} by their OpenStreetMap relation id because OpenStreetMap carries no code for them.": "{n} wilayah: {tagged} dikenali dengan kode ISO 3166-2, {fallback} dengan id relasi OpenStreetMap karena OpenStreetMap tidak memuat kode untuknya.",
   "Region outlines are simplified further for display on this map.": "Garis wilayah disederhanakan lebih lanjut untuk ditampilkan di peta ini.",
   "Show or hide the first-level regions (states, provinces, regions) OpenStreetMap draws inside each country.": "Tampilkan atau sembunyikan wilayah tingkat pertama (negara bagian, provinsi, wilayah) yang digambar OpenStreetMap di dalam setiap negara.",
-  "Natural Earth 50m elsewhere": "Natural Earth 50m di tempat lain"
+  "Natural Earth 50m elsewhere": "Natural Earth 50m di tempat lain",
+  "1 area with no data: hatched on the map, never counted as zero.": "1 area tanpa data: diarsir di peta, tidak pernah dihitung sebagai nol.",
+  "{n} areas with no data: hatched on the map, never counted as zero.": "{n} area tanpa data: diarsir di peta, tidak pernah dihitung sebagai nol.",
+  "Ranked table · 1 area with data": "Tabel peringkat · 1 area dengan data",
+  "Ranked table · {n} areas with data": "Tabel peringkat · {n} area dengan data",
+  "The full data behind the map: every area with a value, ranked, none left out. The colours are a picture of this table.": "Data lengkap di balik peta: setiap area yang punya nilai, diperingkat, tidak ada yang dihilangkan. Warnanya adalah gambar dari tabel ini.",
+  "This measure is by region, but the region boundaries are not built on this install yet: the table below holds every value.": "Ukuran ini per wilayah, tetapi batas wilayah belum dibangun di instalasi ini: tabel di bawah memuat setiap nilai."
 }

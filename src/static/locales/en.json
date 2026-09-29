@@ -6501,5 +6501,11 @@
   "{n} regions: {tagged} keyed by their ISO 3166-2 code, {fallback} by their OpenStreetMap relation id because OpenStreetMap carries no code for them.": "{n} regions: {tagged} keyed by their ISO 3166-2 code, {fallback} by their OpenStreetMap relation id because OpenStreetMap carries no code for them.",
   "Region outlines are simplified further for display on this map.": "Region outlines are simplified further for display on this map.",
   "Show or hide the first-level regions (states, provinces, regions) OpenStreetMap draws inside each country.": "Show or hide the first-level regions (states, provinces, regions) OpenStreetMap draws inside each country.",
-  "Natural Earth 50m elsewhere": "Natural Earth 50m elsewhere"
+  "Natural Earth 50m elsewhere": "Natural Earth 50m elsewhere",
+  "1 area with no data: hatched on the map, never counted as zero.": "1 area with no data: hatched on the map, never counted as zero.",
+  "{n} areas with no data: hatched on the map, never counted as zero.": "{n} areas with no data: hatched on the map, never counted as zero.",
+  "Ranked table · 1 area with data": "Ranked table · 1 area with data",
+  "Ranked table · {n} areas with data": "Ranked table · {n} areas with data",
+  "The full data behind the map: every area with a value, ranked, none left out. The colours are a picture of this table.": "The full data behind the map: every area with a value, ranked, none left out. The colours are a picture of this table.",
+  "This measure is by region, but the region boundaries are not built on this install yet: the table below holds every value.": "This measure is by region, but the region boundaries are not built on this install yet: the table below holds every value."
 }

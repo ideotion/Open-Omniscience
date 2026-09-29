@@ -6501,5 +6501,11 @@
   "{n} regions: {tagged} keyed by their ISO 3166-2 code, {fallback} by their OpenStreetMap relation id because OpenStreetMap carries no code for them.": "{n} Regionen: {tagged} über ihren ISO-3166-2-Code, {fallback} über ihre OpenStreetMap-Relations-ID, weil OpenStreetMap für sie keinen Code führt.",
   "Region outlines are simplified further for display on this map.": "Die Regionsumrisse werden für die Anzeige auf dieser Karte zusätzlich vereinfacht.",
   "Show or hide the first-level regions (states, provinces, regions) OpenStreetMap draws inside each country.": "Die Regionen der ersten Ebene (Staaten, Provinzen, Regionen), die OpenStreetMap innerhalb jedes Landes zeichnet, ein- oder ausblenden.",
-  "Natural Earth 50m elsewhere": "sonst Natural Earth 50m"
+  "Natural Earth 50m elsewhere": "sonst Natural Earth 50m",
+  "1 area with no data: hatched on the map, never counted as zero.": "1 Gebiet ohne Daten: auf der Karte schraffiert, nie als null gezählt.",
+  "{n} areas with no data: hatched on the map, never counted as zero.": "{n} Gebiete ohne Daten: auf der Karte schraffiert, nie als null gezählt.",
+  "Ranked table · 1 area with data": "Rangtabelle · 1 Gebiet mit Daten",
+  "Ranked table · {n} areas with data": "Rangtabelle · {n} Gebiete mit Daten",
+  "The full data behind the map: every area with a value, ranked, none left out. The colours are a picture of this table.": "Die vollständigen Daten hinter der Karte: jedes Gebiet mit einem Wert, nach Rang, keines ausgelassen. Die Farben sind ein Bild dieser Tabelle.",
+  "This measure is by region, but the region boundaries are not built on this install yet: the table below holds every value.": "Dieses Maß gilt je Region, aber die Regionsgrenzen sind auf dieser Installation noch nicht erstellt: Die Tabelle unten enthält jeden Wert."
 }

@@ -6501,5 +6501,11 @@
   "{n} regions: {tagged} keyed by their ISO 3166-2 code, {fallback} by their OpenStreetMap relation id because OpenStreetMap carries no code for them.": "{n} क्षेत्र: {tagged} अपने ISO 3166-2 कोड से, {fallback} अपनी OpenStreetMap संबंध आईडी से, क्योंकि OpenStreetMap में उनका कोई कोड नहीं है।",
   "Region outlines are simplified further for display on this map.": "इस मानचित्र पर दिखाने के लिए क्षेत्रों की रूपरेखा और सरल की गई है।",
   "Show or hide the first-level regions (states, provinces, regions) OpenStreetMap draws inside each country.": "हर देश के भीतर OpenStreetMap द्वारा खींचे गए प्रथम-स्तरीय क्षेत्र (राज्य, प्रांत, क्षेत्र) दिखाएँ या छिपाएँ।",
-  "Natural Earth 50m elsewhere": "बाकी जगह Natural Earth 50m"
+  "Natural Earth 50m elsewhere": "बाकी जगह Natural Earth 50m",
+  "1 area with no data: hatched on the map, never counted as zero.": "बिना डेटा वाला 1 क्षेत्र: नक्शे पर धारीदार, कभी शून्य नहीं गिना जाता।",
+  "{n} areas with no data: hatched on the map, never counted as zero.": "बिना डेटा वाले {n} क्षेत्र: नक्शे पर धारीदार, कभी शून्य नहीं गिने जाते।",
+  "Ranked table · 1 area with data": "क्रमबद्ध तालिका · डेटा वाला 1 क्षेत्र",
+  "Ranked table · {n} areas with data": "क्रमबद्ध तालिका · डेटा वाले {n} क्षेत्र",
+  "The full data behind the map: every area with a value, ranked, none left out. The colours are a picture of this table.": "नक्शे के पीछे का पूरा डेटा: मान वाला हर क्षेत्र, क्रम में, कोई छूटा नहीं। रंग इसी तालिका की तस्वीर हैं।",
+  "This measure is by region, but the region boundaries are not built on this install yet: the table below holds every value.": "यह माप क्षेत्र-वार है, लेकिन इस इंस्टॉल पर क्षेत्रों की सीमाएँ अभी बनी नहीं हैं: नीचे की तालिका में हर मान है।"
 }
