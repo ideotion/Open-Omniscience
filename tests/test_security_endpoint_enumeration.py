@@ -124,6 +124,16 @@ _NOT_AN_ENDPOINT: dict[str, str] = {
         "reproduced as part of a licence statement, so that a reader who opens the "
         "folder years later can look the terms up. src/backup/attribution.py imports "
         "nothing that can open a socket and dereferences nothing",
+    "www.openstreetmap.org":
+        "OSM's copyright page, written INSIDE the OpenStreetMap attribution line an export, "
+        "a bulletin and an evidence ZIP carry when OSM-derived rows ride them (Q823 = a), "
+        "and the upstream named in the artifact registry. The creativecommons.org shape: "
+        "a licence statement's own reference, never dereferenced; the app's OSM downloads "
+        "go to planet.openstreetmap.org and download.geofabrik.de, which are enumerated",
+    "opendatacommons.org":
+        "the canonical ODbL 1.0 URL in the same OpenStreetMap attribution line (Q823 = a). "
+        "src/backup/attribution.py imports nothing that can open a socket and "
+        "dereferences nothing",
     "www.etalab.gouv.fr":
         "the canonical Licence Ouverte 2.0 URL in src/law/model.py's LICENCES registry "
         "(Q927 = a records a licence per document and shows it in the reader). The same "

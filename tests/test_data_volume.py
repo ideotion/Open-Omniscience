@@ -58,7 +58,7 @@ def _events() -> list[str]:
 
 def test_probe_names_each_state(drive, monkeypatch) -> None:
     assert dv.probe()["state"] == "ok"
-    (drive / dv.MARKER_NAME).write_text(json.dumps({"id": "someone-else"}))
+    (drive / dv.MARKER_NAME).write_text(json.dumps({"id": "someone-else"}), encoding="utf-8")
     assert dv.probe()["state"] == "mismatch"
     (drive / dv.MARKER_NAME).unlink()
     assert dv.probe()["state"] == "missing"
@@ -87,13 +87,13 @@ def test_a_marked_folder_that_is_present_resolves(drive) -> None:
 
 def test_the_chooser_writes_the_marker_and_the_id(tmp_path, monkeypatch) -> None:
     env = tmp_path / "oo.env"
-    env.write_text("export OO_DATA_VOLUME_ID=stale\nexport OTHER=1\n")
+    env.write_text("export OO_DATA_VOLUME_ID=stale\nexport OTHER=1\n", encoding="utf-8")
     monkeypatch.setattr(dl, "env_file_path", lambda: env)
     out = dl.persist(str(tmp_path / "usb"))
     assert out["saved"] is True
     target = Path(out["path"])
     vid = dv.read_marker_id(target)
-    lines = env.read_text().splitlines()
+    lines = env.read_text(encoding="utf-8").splitlines()
     assert f"export {dv.ENV_ID}={vid}" in lines
     assert "export OTHER=1" in lines
     assert sum(ln.startswith(f"export {dv.ENV_ID}=") for ln in lines) == 1
@@ -101,9 +101,9 @@ def test_the_chooser_writes_the_marker_and_the_id(tmp_path, monkeypatch) -> None
 
 def test_forgetting_the_id_after_a_wipe(drive, tmp_path) -> None:
     env = tmp_path / "oo.env"
-    env.write_text(f"export OO_DATA_DIR=x\nexport {dv.ENV_ID}=abc\n")
+    env.write_text(f"export OO_DATA_DIR=x\nexport {dv.ENV_ID}=abc\n", encoding="utf-8")
     dv.forget_volume_id()
-    assert env.read_text() == "export OO_DATA_DIR=x\n"
+    assert env.read_text(encoding="utf-8") == "export OO_DATA_DIR=x\n"
     assert not dv.watched()
 
 
@@ -146,13 +146,13 @@ def test_the_two_countdowns_end_in_a_shutdown(drive) -> None:
 def test_the_same_drive_coming_back_restarts_the_app(drive, wait) -> None:
     clock, calls = _Clock(), []
     m = _monitor(clock, calls)
-    marker = (drive / dv.MARKER_NAME).read_text()
+    marker = (drive / dv.MARKER_NAME).read_text(encoding="utf-8")
     (drive / dv.MARKER_NAME).unlink()
     m.tick()
     m.tick()
     clock.now += wait
     m.tick()
-    (drive / dv.MARKER_NAME).write_text(marker)
+    (drive / dv.MARKER_NAME).write_text(marker, encoding="utf-8")
     m.tick()
     assert m.phase == "restarting" and calls.count("restart") == 1 and "exit" not in calls
 
@@ -163,7 +163,7 @@ def test_a_different_drive_at_the_same_path_is_not_a_reconnect(drive) -> None:
     (drive / dv.MARKER_NAME).unlink()
     m.tick()
     m.tick()
-    (drive / dv.MARKER_NAME).write_text(json.dumps({"id": "another-drive"}))
+    (drive / dv.MARKER_NAME).write_text(json.dumps({"id": "another-drive"}), encoding="utf-8")
     m.tick()
     assert m.phase == "reconnect" and "restart" not in calls
 

@@ -72,17 +72,14 @@ MAX_VERIFY_BYTES = 256 * 1024 * 1024
 def claim_trail_bundle(req: TrailBundleRequest, db: Session = Depends(get_db)) -> dict:
     """Step ⑥: the trail as a signed ZIP (base64 in ``zip_base64``) and what it holds.
 
-    409 when the trail carries a row whose licence line waits on an unanswered ruling
-    (Q823, OSM-derived rows): the bundle is refused whole rather than written short."""
+    An OSM-derived row rides with OpenStreetMap's credit and the ODbL line (Q823 = a);
+    the 409 that refused such a bundle before the ruling is gone."""
     from src.analytics.claim_bundle import build_trail_bundle
-    from src.backup.attribution import PendingRulingError
 
     try:
         ws = build_workspace(db, req.claim, query=req.query, limit=req.limit,
                              expand=req.expand, ui_lang=req.ui_lang)
         data, report = build_trail_bundle(db, ws, full_text=req.full_text)
-    except PendingRulingError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except ValueError as exc:  # an empty claim or trail, or a query the grammar rejects
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {**report, "zip_base64": base64.b64encode(data).decode("ascii")}

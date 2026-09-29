@@ -1,0 +1,163 @@
+{
+  "airplane_before_walk": true,
+  "an_all_text": "drought ∩ hydropower · 3 article(s)\nRead in: The whole corpus · 11 articles\ndrought 6\nhydropower 5\nOpen 3 article(s) as a corpus → Find them within 10 words of each other\nCo-occurrence in your corpus, never causation. Counts only, no score.\nWHERE THE TERMS CLUSTER\n\nThe articles of the set that name the most of the terms, then the most often. A count, never a rank of importance.\n\nDrought in Switzerland Wikipedia (en) · 2026-06-03 · 2 of 2 terms, 5 mentions\nDrought empties the Rhone reservoirs Walk Alpine Review · 2026-07-03 · 2 of 2 terms, 4 mentions\nHydropower output falls in the Valais Walk Valley Post · 2026-08-12 · 2 of 2 terms, 3 mentions\nWHEN IT WAS DISCUSSED\n\nArticles of the set active on each mention date, by week. The date a term was seen, not the publication date.\n\ndrought ∩ hydropower\nn=3 · articles\nChart data — drought ∩ hydropower\nDATE\tVALUE\n2026-06-01\t1\n2026-06-29\t1\n2026-08-10\t1\nCOMPARE WITH ANOTHER COMBINATION\n\nThe words that travel with this combination and not with another you name, in the same scope: each word's article count on each side and the difference.\n\nCompare",
+  "an_all": {
+    "scope_value": "",
+    "scope_options": [
+      "The whole corpus",
+      "Press and the web",
+      "Wikipedia",
+      "Law"
+    ],
+    "chips": [
+      "drought 6",
+      "hydropower 5"
+    ],
+    "cluster_links": [
+      [
+        "Drought in Switzerland",
+        "/api/articles/7/view"
+      ],
+      [
+        "Drought empties the Rhone reservoirs",
+        "/api/articles/1/view"
+      ],
+      [
+        "Hydropower output falls in the Valais",
+        "/api/articles/4/view"
+      ]
+    ],
+    "trend_drawn": true,
+    "near_button": [
+      "Find them within 10 words of each other"
+    ]
+  },
+  "an_law_text": "drought ∩ hydropower · 0 article(s)\nRead in: Law · 2 articles\ndrought 1\nhydropower 1\nEmpty set — no articles match this combination.\nFind them within 10 words of each other\nCo-occurrence in your corpus, never causation. Counts only, no score.",
+  "an_law": {
+    "scope_value": "law",
+    "scope_options": [
+      "The whole corpus",
+      "Press and the web",
+      "Wikipedia",
+      "Law"
+    ],
+    "chips": [
+      "drought 1",
+      "hydropower 1"
+    ],
+    "cluster_links": [],
+    "trend_drawn": false,
+    "near_button": [
+      "Find them within 10 words of each other"
+    ]
+  },
+  "an_contrast": "A = drought (n=6) · B = glacier (n=5)\nKEYWORD\tA\tB\tA − B\ntourism\t0\t2\t-2\nwater permit\t2\t0\t+2\nharvest\t1\t0\t+1\nhydropower\t3\t2\t+1\nreservoir\t2\t1\t+1\nriver\t3\t3\t0\nA count difference with each side's n shown, never a verdict. A word missing on one side is something to look into, not proof it is absent from the world.",
+  "an_trend_drawn": true,
+  "an_overlaps": [],
+  "law_dialog_scope_value": "law",
+  "law_text": "drought ∩ water permit · 1 article(s)\nRead in: Law · 2 articles\ndrought 1\nwater permit 2\nOpen 1 article(s) as a corpus → Find them within 10 words of each other\nCo-occurrence in your corpus, never causation. Counts only, no score.\nWHERE THE TERMS CLUSTER\n\nThe articles of the set that name the most of the terms, then the most often. A count, never a rank of importance.\n\nWater code, article L211-3 (drought restrictions) Walk French law · 2026-07-23 · 2 of 2 terms, 3 mentions\nWHEN IT WAS DISCUSSED\n\nArticles of the set active on each mention date, by week. The date a term was seen, not the publication date.\n\ndrought ∩ water permit\nn=1 · articles\nChart data — drought ∩ water permit\nDATE\tVALUE\n07-20 00:00\t1\nCOMPARE WITH ANOTHER COMBINATION\n\nThe words that travel with this combination and not with another you name, in the same scope: each word's article count on each side and the difference.\n\nCompare",
+  "law": {
+    "scope_value": "law",
+    "scope_options": [
+      "The whole corpus",
+      "Press and the web",
+      "Wikipedia",
+      "Law"
+    ],
+    "chips": [
+      "drought 1",
+      "water permit 2"
+    ],
+    "cluster_links": [
+      [
+        "Water code, article L211-3 (drought restrictions)",
+        "/api/articles/10/view"
+      ]
+    ],
+    "trend_drawn": true,
+    "near_button": [
+      "Find them within 10 words of each other"
+    ]
+  },
+  "law_overlaps": [],
+  "near_dialog_closed": true,
+  "near_search_query": "NEAR(\"drought\" \"water permit\", 10)",
+  "near_on_search_tab": true,
+  "wiki_dialog_scope_value": "wikipedia",
+  "wiki_text": "glacier ∪ river · 3 article(s)\nRead in: Wikipedia · 3 articles\nglacier 3\nriver 2\nOpen 3 article(s) as a corpus → Find them within 10 words of each other\nCo-occurrence in your corpus, never causation. Counts only, no score.\nWHERE THE TERMS CLUSTER\n\nThe articles of the set that name the most of the terms, then the most often. A count, never a rank of importance.\n\nDrought in Switzerland Wikipedia (en) · 2026-06-03 · 2 of 2 terms, 5 mentions\nRhone Glacier Wikipedia (en) · 2026-06-13 · 2 of 2 terms, 3 mentions\nGrande Dixence Dam Wikipedia (en) · 2026-06-23 · 1 of 2 terms, 3 mentions\nWHEN IT WAS DISCUSSED\n\nArticles of the set active on each mention date, by week. The date a term was seen, not the publication date.\n\nglacier ∪ river\nn=3 · articles\nChart data — glacier ∪ river\nDATE\tVALUE\n2026-06-01\t1\n2026-06-08\t1\n2026-06-22\t1\nCOMPARE WITH ANOTHER COMBINATION\n\nThe words that travel with this combination and not with another you name, in the same scope: each word's article count on each side and the difference.\n\nCompare",
+  "wiki": {
+    "scope_value": "wikipedia",
+    "scope_options": [
+      "The whole corpus",
+      "Press and the web",
+      "Wikipedia",
+      "Law"
+    ],
+    "chips": [
+      "glacier 3",
+      "river 2"
+    ],
+    "cluster_links": [
+      [
+        "Drought in Switzerland",
+        "/api/articles/7/view"
+      ],
+      [
+        "Rhone Glacier",
+        "/api/articles/8/view"
+      ],
+      [
+        "Grande Dixence Dam",
+        "/api/articles/9/view"
+      ]
+    ],
+    "trend_drawn": true,
+    "near_button": [
+      "Find them within 10 words of each other"
+    ]
+  },
+  "place_card_closed": true,
+  "place_text": "drought ∩ reservoir · 2 article(s)\nRead in: The articles naming Zermatt · 4 articles\ndrought 3\nreservoir 2\nOpen 2 article(s) as a corpus → Find them within 10 words of each other\nCo-occurrence in your corpus, never causation. Counts only, no score.\nWHERE THE TERMS CLUSTER\n\nThe articles of the set that name the most of the terms, then the most often. A count, never a rank of importance.\n\nHydropower output falls in the Valais Walk Valley Post · 2026-08-12 · 2 of 2 terms, 5 mentions\nDrought empties the Rhone reservoirs Walk Alpine Review · 2026-07-03 · 2 of 2 terms, 3 mentions\nWHEN IT WAS DISCUSSED\n\nArticles of the set active on each mention date, by week. The date a term was seen, not the publication date.\n\ndrought ∩ reservoir\nn=2 · articles\nChart data — drought ∩ reservoir\nDATE\tVALUE\n2026-06-29\t1\n2026-08-10\t1\nCOMPARE WITH ANOTHER COMBINATION\n\nThe words that travel with this combination and not with another you name, in the same scope: each word's article count on each side and the difference.\n\nCompare",
+  "place": {
+    "scope_value": null,
+    "scope_options": null,
+    "chips": [
+      "drought 3",
+      "reservoir 2"
+    ],
+    "cluster_links": [
+      [
+        "Hydropower output falls in the Valais",
+        "/api/articles/4/view"
+      ],
+      [
+        "Drought empties the Rhone reservoirs",
+        "/api/articles/1/view"
+      ]
+    ],
+    "trend_drawn": true,
+    "near_button": [
+      "Find them within 10 words of each other"
+    ]
+  },
+  "place_open_as_corpus_query": "“drought ∩ reservoir”",
+  "ar_dir": "rtl",
+  "ar_place_button": "دمج الكلمات المفتاحية في هذه المقالات",
+  "ar_place_text": "drought ∩ reservoir · 2 مقالة\nمقروء في: المقالات التي تذكر Zermatt · 4 مقالة\ndrought 3\nreservoir 2\nافتح 2 مقالة كمدوّنة ← العثور عليها ضمن 10 كلمات من بعضها\nتزامن الظهور في مدوّنتك، وليس سببية أبدًا. أعداد فقط، بلا درجة.\nأين تتجمّع المصطلحات\n\nمقالات المجموعة التي تذكر أكثر المصطلحات، ثم الأكثر تكرارًا. عدٌّ، وليس ترتيبًا للأهمية أبدًا.\n\nHydropower output falls in the Valais Walk Valley Post · 2026-08-12 · 2 من 2 مصطلحات، 5 إشارة\nDrought empties the Rhone reservoirs Walk Alpine Review · 2026-07-03 · 2 من 2 مصطلحات، 3 إشارة\nمتى نوقش الأمر\n\nمقالات المجموعة النشطة في كل تاريخ إشارة، أسبوعيًا. تاريخ رؤية المصطلح، لا تاريخ النشر.\n\ndrought ∩ reservoir\nn=2 · مقالة\nبيانات الرسم البياني — drought ∩ reservoir\nالتاريخ\tالقيمة\n2026-06-29\t1\n2026-08-10\t1\nالمقارنة مع تركيبة أخرى\n\nالكلمات التي ترافق هذه التركيبة ولا ترافق تركيبة أخرى تسمّيها، في النطاق نفسه: عدد مقالات كل كلمة في كل جانب والفرق.\n\nمقارنة",
+  "ar_latin_left": [],
+  "ar_junk": [],
+  "ar_overlaps": [],
+  "narrow_overflow_px": 0,
+  "narrow_dialog_overflow_px": -18,
+  "narrow_overlaps": [],
+  "errors": [
+    "console.error: Failed to load resource: the server responded with a status of 404 (Not Found)",
+    "console.error: Failed to load resource: the server responded with a status of 404 (Not Found)"
+  ],
+  "bad_responses": [
+    "404 GET http://127.0.0.1:8762/static/osm_admin1.json",
+    "404 GET http://127.0.0.1:8762/static/osm_admin0.json"
+  ],
+  "blocked_non_loopback": [],
+  "airplane_after_walk": true
+}

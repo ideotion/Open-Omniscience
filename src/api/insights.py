@@ -1201,6 +1201,37 @@ def insights_corpus_source_language_facets(
 _ALGEBRA_EXPANSIONS = ("intensity", "trend")
 
 
+def _lens_scope_or_400(db: Session, channel: str | None, place: str | None) -> dict:
+    from src.analytics.conjunction import lens_scope
+
+    try:
+        return lens_scope(db, channel=(channel or "").strip() or None, place_id=(place or "").strip() or None)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+def _intensity_with_titles(db: Session, intensity: dict) -> dict:
+    """Title, source and date beside each densest article, so the panel can name what it lists."""
+    from src.database.models import Article, Source
+
+    ids = [r["article_id"] for r in intensity.get("articles", [])]
+    if not ids:
+        return intensity
+    meta = {
+        int(aid): (title, src, pub)
+        for aid, title, src, pub in db.query(Article.id, Article.title, Source.name, Article.published_at)
+        .outerjoin(Source, Source.id == Article.source_id)
+        .filter(Article.id.in_(ids))
+        .all()
+    }
+    for r in intensity["articles"]:
+        title, src, pub = meta.get(r["article_id"], (None, None, None))
+        r["title"] = title
+        r["source"] = src
+        r["published_at"] = pub.isoformat() if pub else None
+    return intensity
+
+
 @router.get("/corpus-algebra")
 def insights_corpus_algebra(
     terms: str = Query(..., description="comma-separated keywords for the N-keyword set algebra"),
@@ -1210,26 +1241,38 @@ def insights_corpus_algebra(
         None, description="comma-separated extra views over the SAME set: intensity | trend"
     ),
     bucket: str = Query("week", description="trend bucket: day | week | month"),
+    channel: str | None = Query(
+        None, description="read one vertical only: a content-provenance class (web | wikipedia | law | …)"
+    ),
+    place: str | None = Query(None, description="read only the articles naming this Place (its id)"),
     db: Session = Depends(get_db),
 ) -> dict:
     """§1 Conjunction Lens: set algebra over N keywords — the combined article-id set that seeds
     the analysis window. ``intersection`` = articles mentioning ALL terms, ``union`` = ANY,
-    ``difference`` = the first term minus the rest. The set expression IS the transparent corpus
-    label. 400 on an unknown op. Co-occurrence in your corpus, never causation; counts only, no
-    score; per-term set bounded at ``cap`` (disclosed).
+    ``difference`` = the first term minus the rest (``conjunction.ALGEBRA_OPS``). The set
+    expression IS the transparent corpus label. 400 on an unknown op. Co-occurrence in your
+    corpus, never causation; counts only, no score; the candidate scan bounded at ``cap``
+    (disclosed).
 
-    ``expand`` adds views that were already BUILT AND TESTED in ``analytics.conjunction`` and
-    that nothing could reach: ``intensity`` (which articles pack the most of the N terms) and
-    ``trend`` (when the conjunction was discussed). Both read the SAME ``article_ids`` this call
-    already computed, so an expansion can never describe a different set than the one returned
-    beside it. OPT-IN, and the response without it is byte-identical to before — an expansion is
-    extra database work, and a caller that does not ask should not pay for it.
+    ``channel`` / ``place`` (S05-11 S3) read one VERTICAL (press and the web, Wikipedia, law …)
+    or the articles naming one Place; every count, the terms' ``n`` included, is then within
+    that scope, and the response's ``scope`` names it. 400 on an unknown channel or place.
 
-    ``vocabulary_contrast`` is the third such helper and is deliberately NOT exposed here: it
-    contrasts TWO corpora, and which two sides an ``intersection`` of three terms should be split
-    into is a product question, not a wiring one. Answering it by picking a plausible split would
-    publish an invented semantic under a tested function's name."""
-    from src.analytics.conjunction import conditional_trend, corpus_algebra, per_article_intensity
+    ``expand`` adds views over the SAME ``article_ids``: ``intensity`` (which articles pack the
+    most of the N terms, with their titles) and ``trend`` (when the conjunction was discussed).
+    OPT-IN: an expansion is extra database work, and a caller that does not ask does not pay.
+
+    ``near`` (two terms or more) is the full-text query that finds the same words within
+    ``fts.NEAR_DEFAULT`` words of each other, in the Search tab's own grammar: the keyword
+    index says an article NAMES the terms, the text index can say they stand together."""
+    from src.analytics.conjunction import (
+        ALGEBRA_OPS,
+        conditional_trend,
+        corpus_algebra,
+        near_match_expression,
+        per_article_intensity,
+    )
+    from src.database.fts import NEAR_DEFAULT
 
     term_list = [t.strip() for t in terms.split(",") if t.strip()]
     wanted = [w.strip().lower() for w in (expand or "").split(",") if w.strip()]
@@ -1242,16 +1285,56 @@ def insights_corpus_algebra(
             status_code=400,
             detail=f"unknown expand: {unknown} (use {list(_ALGEBRA_EXPANSIONS)})",
         )
-    try:
-        result = corpus_algebra(db, term_list, op=op, cap=cap)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if op not in ALGEBRA_OPS:
+        raise HTTPException(status_code=400, detail=f"unknown op {op!r}; expected one of {ALGEBRA_OPS}")
+    scope = _lens_scope_or_400(db, channel, place)
+    result = corpus_algebra(db, term_list, op=op, cap=cap, scope=scope)
     ids = result["article_ids"]
     if "intensity" in wanted:
-        result["intensity"] = per_article_intensity(db, ids, term_list)
+        result["intensity"] = _intensity_with_titles(db, per_article_intensity(db, ids, term_list))
     if "trend" in wanted:
         result["trend"] = conditional_trend(db, ids, bucket=bucket)
+    near = near_match_expression([t["term"] for t in result["terms"]], distance=NEAR_DEFAULT)
+    result["near"] = {"query": near, "distance": NEAR_DEFAULT} if near else None
     return result
+
+
+@router.get("/corpus-contrast")
+def insights_corpus_contrast(
+    terms: str = Query(..., description="side A: comma-separated keywords"),
+    op: str = Query("intersection", description="side A: intersection | union | difference"),
+    vs_terms: str = Query(..., description="side B: comma-separated keywords"),
+    vs_op: str | None = Query(None, description="side B's operation (default: side A's)"),
+    cap: int = Query(4000, ge=1, le=20000),
+    channel: str | None = Query(None, description="both sides read this vertical only"),
+    place: str | None = Query(None, description="both sides read the articles naming this Place"),
+    db: Session = Depends(get_db),
+) -> dict:
+    """§1 vocabulary contrast between TWO keyword combinations the reader built (S05-11 S3).
+
+    Side A is the combination on screen, side B one more the reader types; both are computed
+    in the SAME scope. The contrast is each keyword's article spread on each side and the
+    difference, with each side's n: which words travel with one combination and not the other.
+    The reader names both sides, so no split is invented for them. The terms that define the
+    two sets are left out (they top their own side by construction). Counts only, no score."""
+    from src.analytics.conjunction import ALGEBRA_OPS, corpus_algebra, public_scope, set_contrast
+
+    a_terms = [t.strip() for t in terms.split(",") if t.strip()]
+    b_terms = [t.strip() for t in vs_terms.split(",") if t.strip()]
+    b_op = vs_op or op
+    for o in (op, b_op):
+        if o not in ALGEBRA_OPS:
+            raise HTTPException(status_code=400, detail=f"unknown op {o!r}; expected one of {ALGEBRA_OPS}")
+    if not a_terms or not b_terms:
+        raise HTTPException(status_code=400, detail="both sides need at least one keyword")
+    scope = _lens_scope_or_400(db, channel, place)
+    a = corpus_algebra(db, a_terms, op=op, cap=cap, scope=scope)
+    b = corpus_algebra(db, b_terms, op=b_op, cap=cap, scope=scope)
+    out = set_contrast(db, a["article_ids"], b["article_ids"], exclude=a_terms + b_terms)
+    out["a"] = {k: a[k] for k in ("op", "terms", "n_combined", "result_bounded")}
+    out["b"] = {k: b[k] for k in ("op", "terms", "n_combined", "result_bounded")}
+    out["scope"] = public_scope(scope)
+    return out
 
 
 @router.get("/leads-view")

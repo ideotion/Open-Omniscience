@@ -2000,7 +2000,9 @@
         const el = it.elapsed_s != null ? ` · ${esc(_uxImDur(it.elapsed_s))}` : "";
         // The item's error as the dialog's inline text (Y2), not the toast `.note` box --
         // a floating notification's padding, shadow and slide-in inside a list of rows.
-        const err = it.error
+        // A backup stopped mid-merge keeps the interruption's text on the item for the
+        // diagnostics, but it is not a failure and is not drawn as one (R68).
+        const err = (it.error && it.state !== "stopped")
           ? `<div class="hint" style="color:var(--err);margin:2px 0 0;margin-inline-start:14px;overflow-wrap:anywhere">${esc(ooServerText(it.error))}</div>`
           : "";
         const live = it.state === "running" ? _uxImLive(st.live, t) : "";
@@ -2621,7 +2623,7 @@
             + seg(r.new, "var(--accent, #4a90d9)") + seg(r.dup, "var(--muted-bg, #888)")
             + seg(r.conf, "var(--err, #d9534f)") + `</div>`
           : `<div class="muted" style="font-size:11px">${esc(
-              r.error ? ooServerText(r.error).slice(0, 120)
+              (r.error && r.state !== "stopped") ? ooServerText(r.error).slice(0, 120)
                       : (!_lostIts && r.merged) ? _uxMergedLine(r.merged, t, tf)
                       : t(_lostIts ? _UX_IM_STATE_LABEL[r.state] : "nothing imported")
             )}</div>`;
@@ -2906,6 +2908,11 @@
         `<div style="text-align:center;min-width:88px"><div style="font-size:22px;font-weight:700;color:${col}">${esc(num(n))}</div>`
         + `<div class="muted" style="font-size:12px">${esc(label)}</div></div>`;
 
+      // The cross-table row-sum stays LABELLED but moves to the hover (R68, 2026-09-29):
+      // beside the per-type counts it read as one more headline figure, the largest on
+      // the line, for a total no reader asks for first. One number per fact on the line;
+      // the catch-all in the #oo-tip bubble of the "Articles" caption it sits under.
+      const catchAll = allNew ? ooLabelText(t("database records, all types"), num(allNew)) : "";
       let headline, bar;
       if (sawPlan) {
         // HEADLINE: articles, in the user's own unit — never a cross-table row-sum.
@@ -2916,7 +2923,7 @@
             + seg(artConf, "var(--err, #d9534f)") + `</div>`
           : "";
         headline =
-          `<div class="muted" style="font-size:12px">${esc(t("Articles"))}</div>`
+          `<div class="muted" style="font-size:12px"${catchAll ? ` title="${esc(catchAll)}"` : ""}>${esc(t("Articles"))}</div>`
           + `<div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:2px">`
           + stat(artNew, t("imported"), "var(--accent, #4a90d9)")
           + stat(artDup, t("deduplicated"), "")
@@ -2940,9 +2947,8 @@
       // block below already states the reason for: an interpolated count cannot agree,
       // and "8 Sources" welded a count to a capitalised English noun.
       const typeLabels = perType.filter((r) => r.n > 0).map((r) => ooLabelText(r.label, num(r.n)));
-      const catchAll = allNew ? [ooLabelText(t("database records, all types"), num(allNew))] : [];
-      const typeBlock = (typeLabels.length || catchAll.length)
-        ? `<div class="muted" style="font-size:12px;margin-top:4px">${typeLabels.concat(catchAll).map(esc).join(" · ")}</div>`
+      const typeBlock = typeLabels.length
+        ? `<div class="muted" style="font-size:12px;margin-top:4px">${esc(typeLabels.join(" · "))}</div>`
         : "";
 
       // Positive-but-honest framing (ruling: "imports should give positive
@@ -2986,10 +2992,12 @@
       // WORK INDUCED: stated honestly, only when there is actually something queued.
       const queueLines = [];
       if (newSources > 0) queueLines.push(ooLabelText(t("New sources"), num(newSources)));
-      // Awaiting indexing (Y4): an in-line re-index's real FAILURES, or -- when the
-      // re-index was deferred -- the backlog the server measured, which already holds any
-      // failure too. Unreadable: no number, and the caveat above says why.
-      const awaiting = deferredNew ? ((_bk && !_bkUnreadable) ? _bk.articles_pending : null) : unindexed;
+      // Awaiting indexing: an in-line re-index's real FAILURES only. A DEFERRED re-index's
+      // backlog is not printed here (R68, 2026-09-29): a summary is drawn once, so its
+      // figure froze at the hand-off while the Indexing row above kept counting down, and
+      // two numbers for one fact read as a contradiction. The caveat below says indexing
+      // continues; the live row carries the count.
+      const awaiting = deferredNew ? null : unindexed;
       if (awaiting != null && awaiting > 0) queueLines.push(ooLabelText(t("Articles awaiting indexing"), num(awaiting)));
       if (discoveryAdded > 0) queueLines.push(ooLabelText(t("Discovery candidates"), num(discoveryAdded)));
       // SOURCE QUALIFICATION carried by this import (field ask 2026-08-10: "display the
@@ -3149,12 +3157,11 @@
         // the backlog the run ended with. An unreadable LAST snapshot says so: an earlier
         // readable one is a stale undercount, and printing it as current would be the same
         // wrong number in the other direction.
-        const unreadable = _bkUnreadable;
-        const pend = unreadable ? 0 : _bk.articles_pending;
-        const body = unreadable
-          ? t("Indexing continues in the background. The number still to index could not be read.")
-          : tf("Indexing continues in the background: {n} article(s) still to index. Until it finishes they carry no keywords and are absent from analytics.",
-               { n: fmtNum(pend, 0) });
+        //
+        // NO NUMBER (R68, 2026-09-29): the summary is drawn once, so any count here froze
+        // at the moment the run ended while the Indexing row above went on counting. The
+        // sentence keeps what being un-indexed costs; the live row keeps the figure.
+        const body = t("Indexing continues in the background. Until it finishes, the articles it has not reached carry no keywords and are absent from analytics.");
         indexingLine =
           `<div class="card-caveat" style="margin-top:6px">${esc(body)}</div>`;
       }
