@@ -36,9 +36,11 @@ def wire(app) -> None:
     from src.api.backup_v2 import router as backup_v2_router
     from src.api.briefing import router as briefing_router
     from src.api.bulletin import router as bulletin_router
+    from src.api.claims import router as claims_router
     from src.api.custody import router as custody_router
     from src.api.database import router as database_router
     from src.api.diagnostics import router as diagnostics_router
+    from src.api.entities import router as entities_router
     from src.api.events import router as events_router
     from src.api.feed import router as feed_router
     from src.api.files import router as files_router
@@ -130,6 +132,8 @@ def wire(app) -> None:
         agenda_state_router,
         lane_storage_router,
         living_router,
+        entities_router,
+        claims_router,
     )
     for router in spine:
         app.include_router(router)

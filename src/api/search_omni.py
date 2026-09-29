@@ -425,6 +425,25 @@ def _law_group(db: Session, q: str) -> dict:
     }
 
 
+def _places_group(db: Session, q: str) -> dict:
+    """S05-03 (Q818: a Place is «searchable and indexed»): the Places this machine holds.
+
+    BOUNDED BY CONSTRUCTION, the rule this surface lives by: a Place row exists only for a
+    place the corpus MENTIONS and the gazetteer resolves (``src/entities/places.py``), so the
+    table grows with the corpus's vocabulary of places, never with its article count. Names in
+    every language either source gives are matched: OSM's own, and Wikidata's labels.
+    """
+    from src.entities.places import search_places
+
+    found = search_places(db, q, limit=_PER_GROUP)
+    return {
+        "kind": "places",
+        "items": found["items"],
+        "total": found["total"],
+        "note": "name contains-match over the places your corpus mentions (OpenStreetMap and Wikidata names)",
+    }
+
+
 # ---- events + Help-document content (the omnibar's last two REMAINING groups) ---- #
 #
 # BOTH ARE BOUNDED BY CONSTRUCTION, and that is why they are allowed on a surface whose
@@ -607,7 +626,7 @@ def omni(
             _LOG.warning("omni fts search failed for %r", q, exc_info=True)
             hits = ([], q, False)
         for fn in (_articles_group, _keywords_group, _sources_group, _wiki_group,
-                   _law_group, _events_group, _docs_group):
+                   _places_group, _law_group, _events_group, _docs_group):
             try:
                 # Only the two FTS-backed groups take the shared hits; the catalog
                 # groups (keywords/sources/law) run their own bounded index queries.

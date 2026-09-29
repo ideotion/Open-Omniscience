@@ -33,6 +33,7 @@
       {id:"ingest",   label:"Collect",            grp:"Collect"},
       {id:"sources",  label:"Sources",            grp:"Collect"},
       {id:"living",   label:"Living sources",     grp:"Investigate"},
+      {id:"claim",    label:"Claim workspace",    grp:"Investigate"},   // off the sidebar, like Search (S05-11 S1)
       {id:"library",  label:"Library",            grp:"Collect"},
       {id:"custody",  label:"Evidence & custody", grp:"Trust"},
       {id:"integrity",label:"Source integrity",   grp:"Trust"},
@@ -69,6 +70,7 @@
       timemap: () => loadOoMapCoverage(),   // slice 5b: the Map tab is now the unified ooMap (the temporal map was folded in + retired)
       law: () => loadGovernments(),   // Governments tab (Countries · Map · Law subtabs)
       agenda: () => loadAgenda(),
+      claim: () => _claimWire(),   // the Claim Workspace (gate row K, S05-11 S1)
       living: () => loadLiving(),   // Living sources: Wikipedia · Law · Maps (Q1016, S04-08 S6)
       library: () => { _wireLibraryViews(); },  // per-view lazy loaders (2026-08-01 ruling 9); stats ride the live poller (startLive)
       custody: () => loadCustody(),
@@ -304,10 +306,66 @@
       if (face && face.ff) r.style.setProperty("--ff", face.ff); else r.style.removeProperty("--ff");
       if (ui.density === "compact") r.setAttribute("data-density", "compact"); else r.removeAttribute("data-density");
       if (ui.sidebar === "collapsed") r.setAttribute("data-sidebar", "collapsed"); else r.removeAttribute("data-sidebar");
+      r.setAttribute("data-depth", uiDepth(ui));
+      paintNavMore();
       // The sidebar-visibility feature was removed (#17, 2026-06-22): the flat nav is
       // always complete (every tab also reachable via the palette), so no nav-item is
       // ever hidden here. A legacy ui.hidden in stored prefs is simply ignored.
     }
+    // THE RING DIAL (S05-09 S4; Q1120 = a, Q1121 = a). Three depths, one rule: a depth
+    // changes what is PINNED, never what is REACHABLE.
+    //   Essentials -- Ring 0 (Home, Feed) pinned; Ring 1 behind the #nav-more row.
+    //   Standard   -- Rings 0 and 1 pinned; Ring 2 (each Lead's fine-tuning in
+    //                 Settings -> Leads) folded until opened.
+    //   Full       -- everything pinned and open. The depth of an install that never
+    //                 chose, so an upgrade un-pins nothing; the first-run guide asks, and
+    //                 a skipped question gives Standard (Q1121). Essentials only by choice.
+    // The top bar (airplane mode, language, task manager, health) and the Settings
+    // button are the same at every depth.
+    const DEPTHS = ["essentials", "standard", "full"];
+    function uiDepth(ui) {
+      const d = (ui || getUi()).depth;
+      return DEPTHS.includes(d) ? d : "full";
+    }
+    function setDepth(d) {
+      if (!DEPTHS.includes(d)) return;
+      const u = getUi(); u.depth = d; saveUi(u); applyUi(u); syncDepthControl();
+      if (typeof renderCardCatalog === "function") { try { renderCardCatalog(); } catch { /* not loaded yet */ } }
+    }
+    function syncDepthControl() {
+      const d = uiDepth();
+      document.querySelectorAll('input[name="set-depth"]').forEach((i) => { i.checked = i.value === d; });
+    }
+    // Ring 0: pinned at every depth. Every other sidebar tab is Ring 1, so a tab added
+    // later is pinned at Standard and Full without anyone remembering to list it.
+    const RING0_TABS = ["home", "feed"];
+    let _navMoreOpen = false;
+    function paintNavMore() {
+      const b = $("nav-more"), nav = $("navGroups");
+      if (!b || !nav) return;
+      nav.querySelectorAll(".nav-item[data-tab]").forEach((it) => {
+        it.setAttribute("data-ring", RING0_TABS.includes(it.getAttribute("data-tab")) ? "0" : "1");
+      });
+      const n = nav.querySelectorAll('.nav-item[data-ring="1"]').length;
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
+        : ((x, v) => x.replace(/\{(\w+)\}/g, (m, k) => (v[k] != null ? v[k] : m)));
+      const count = (typeof fmtNum === "function") ? fmtNum(n, 0) : String(n);
+      nav.classList.toggle("more-open", _navMoreOpen);
+      b.setAttribute("aria-expanded", _navMoreOpen ? "true" : "false");
+      const long = b.querySelector(".nav-more-long"), short = b.querySelector(".nav-more-short");
+      if (long) long.textContent = _navMoreOpen ? tf("Show fewer", {}) : tf("Show more ({n})", {n: count});
+      if (short) short.textContent = _navMoreOpen ? tf("Fewer", {}) : tf("More ({n})", {n: count});
+      b.title = _navMoreOpen ? tf("Hide the tabs this depth does not pin", {})
+        : tf("Show the {n} tabs this depth does not pin", {n: count});
+    }
+    (function _wireDepth() {
+      const b = $("nav-more");
+      if (b) b.addEventListener("click", () => { _navMoreOpen = !_navMoreOpen; paintNavMore(); });
+      document.querySelectorAll('input[name="set-depth"]').forEach((i) =>
+        i.addEventListener("change", () => { if (i.checked) setDepth(i.value); }));
+      syncDepthControl();
+      document.addEventListener("oo:langchange", paintNavMore);
+    })();
     function setTheme(t)   { const u = getUi(); u.theme = t;   saveUi(u); applyUi(u); buildDrawer(); syncThemeSelect(); }
     function setAccent(a)  { const u = getUi(); u.accent = a;  saveUi(u); applyUi(u); buildDrawer(); }
     function setDensity(d) { const u = getUi(); u.density = d; saveUi(u); applyUi(u); buildDrawer(); }
@@ -536,7 +594,8 @@
       stats:    () => { loadStatAgencies(); },
       // loadKeywordFilter moved off loadSettings with its panel, so it loads here too.
       keywords: () => { loadKeywordExplorer(); loadFamilyCuration(); loadSupergroupCuration();
-                        loadKeywordFilter(); loadRingGaps(); },
+                        loadKeywordFilter(); loadRingGaps();
+                        if (typeof loadEntitySpine === "function") loadEntitySpine(); },
       // The ~500-feed calendar catalogue: plumbing, so it moved out of the Agenda
       // subtab (invariant #8). It no longer loads with the agenda — only on expand.
       calendars: () => { loadFeedDir(); },   // loadFeedDir renders the user calendars too
@@ -760,6 +819,13 @@
           // marked as Wikipedia. A row opens THAT version, where «Add to corpus» adds it.
           const laneGrp = head(t("Wikipedia texts held on this machine"), g.lane || {});
           laneRows.forEach(r => out.push({grp: laneGrp, label: r.label, sub: r.sub, run: r.run}));
+        } else if (g.kind === "places") {
+          // S05-03 (Q818): the Places this machine holds, matched in every language a
+          // source names them; a row opens the Place card.
+          const grp = head(t("Places"), g);
+          items.forEach(it => out.push({grp, label: it.name,
+            sub: [it.kind || "", it.country || "", it.qid || ""].filter(Boolean).join(" · "),
+            run: () => (typeof openPlaceCard === "function" ? openPlaceCard(it.id) : null)}));
         } else if (g.kind === "law") {
           const grp = head(t("World law"), g);
           items.forEach(it => out.push({grp, label: it.title,
@@ -826,6 +892,12 @@
             if (typeof _advHistRecord === "function") _advHistRecord(raw, {});
             openAnalysisInNewTab(raw);
           }});
+      }
+      // The Claim Workspace (S05-11 S1): the SECOND row, directly under Analysis, so it is
+      // one arrow key away and never what Enter runs (Q608 = a keeps Enter on Analysis).
+      if (raw) {
+        live.splice(1, 0, {grp: t("Search"), label: ooLabelText(t("Check as a claim"), `“${raw}”`),
+          sub: t("Claim workspace"), run: () => openClaimWorkspace(raw)});
       }
       // An EXPLICIT selection survives the live results arriving: the omnibar redraws
       // when its fetch lands, and resetting to row 0 then would turn "I arrowed to

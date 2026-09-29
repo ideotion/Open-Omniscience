@@ -839,12 +839,32 @@ def _fts_insert_suspended(con: sqlite3.Connection):
         yield False
         return
     con.execute(f"DROP TRIGGER {_FTS_INSERT_TRIGGER}")
+    finished = False
     try:
         yield True
+        finished = True
     finally:
         # NOT sufficient on its own when the merge fails -- see
         # _restore_fts_insert_trigger, which merge_corpus calls AFTER its rollback.
-        con.execute(ddl)
+        #
+        # CREATE ONLY WHAT IS MISSING, AND NEVER OUTRANK THE FAILURE IN FLIGHT (2026-09-28
+        # import walk). A Stop pressed while a small backup merged rolled the open
+        # transaction back INSIDE this block, and SQLite's transactional DDL undid the DROP
+        # with it -- so the trigger was back when this CREATE ran, which raised "trigger
+        # article_fts_ai already exists" and REPLACED the stop's own RestoreAborted. The
+        # backup then read "Failed" with a raw database error instead of "stopped --
+        # nothing was written to your corpus". On success a failed restore still raises:
+        # verify_copy would refuse the copy anyway, and it should be named here.
+        if finished:
+            if not _fts_insert_trigger_ddl(con):
+                con.execute(ddl)
+        else:
+            try:
+                if not _fts_insert_trigger_ddl(con):
+                    con.execute(ddl)
+            except Exception:  # noqa: BLE001 - the exception already in flight is the one to report
+                _LOG.warning("could not restore the FTS insert trigger while a merge was failing",
+                             exc_info=True)
 
 
 def _fts_insert_trigger_ddl(con) -> str | None:
@@ -1828,6 +1848,19 @@ _MERGE_NOT_CARRIED: dict[str, str] = {
     # keyword vocabulary by its own job; a carried copy would point at another corpus'
     # keyword ids. The next build after a restore covers the merged vocabulary.
     "spell_deletes": "the did-you-mean table, derived from the keywords and rebuilt by its job",
+    # S05-03 (row C of the 0.5 gate). Places are OSM-derived and Q823 ⛔ (the ODbL question)
+    # is open, so no Place row leaves this machine by any route -- a restore included. They
+    # are rebuilt from the gazetteer by the local "resolve places" job, which makes no request.
+    "places": (
+        "OSM-derived (Q823 open); rebuilt from the gazetteer by the local resolve-places job"
+    ),
+    # A cache of a public CC0 source. Whether it rides a backup is one of the questions
+    # S05-03 §6 leaves to the maintainer; until then it is re-read at R8's rate, and the
+    # restore report counts what was left behind rather than dropping it silently.
+    "wikidata_items": (
+        "a local cache of Wikidata (CC0), re-read at one request per 10 seconds; whether it "
+        "rides a backup is not ruled yet (S05-03 §6)"
+    ),
     # S05-08 S2 (Q513 = b): the ≈ titles and one-line summaries a local model wrote for
     # list rows. Q513 is silent on backups and the brief leaves it open, so the proposed
     # default is not to carry them: they are derived, never the article, and the title

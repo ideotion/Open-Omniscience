@@ -93,6 +93,15 @@
              Source integrity was dissolved the same way earlier (content-first): coordination
              surfaces automatically (Leads + the analysis Related view + inline badges); the
              manual desk lives in Settings → Safety too. Nothing is lost. -->
+        <!-- THE RING DIAL (S05-09 S4; Q1120 = a, Q1121 = a). Each depth PINS a ring:
+             Ring 0 (Home, Feed; RING0_TABS in app-shell.js) at every depth, Ring 1 (every
+             other tab, a new one included) at Standard and Full. At Essentials the Ring-1 tabs sit behind this row, which always
+             carries TEXT -- in the icon rail too -- so nothing becomes unreachable behind
+             an unlabelled icon. The palette, Search and every deep link still reach every
+             tab; a Ring-1 tab that is OPEN stays in the list. Hidden at Standard and Full. -->
+        <button type="button" class="nav-more" id="nav-more" aria-expanded="false" aria-controls="navGroups">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+          <span class="nav-more-long" data-i18n-dyn></span><span class="nav-more-short" data-i18n-dyn aria-hidden="true"></span></button>
         <!-- The crypto-UI simplification (#20 "make it foolproof") is the remaining half. -->
         <!-- System nav-group removed (maintainer-ruled 2026-06-15): Help & docs left the
              sidebar — the top-bar "?" icon (showTab('help')) is the single entry. -->
@@ -415,6 +424,8 @@
         <button data-on-click="doSearch()">Search</button>
         <button class="secondary" data-on-click="openAnalysis()"
           title="Open the analysis window: keywords and matches across the articles this search returns.">Analyze →</button>
+        <button class="secondary" type="button" id="claim-from-search"
+          title="Open the claim workspace on the text in the search box: the related articles, how they group by independence, who said what when, and what is missing. A trail, never a verdict.">Check as a claim</button>
         <button class="secondary" data-on-click="exportResults('csv')">Export CSV</button>
         <button class="secondary" data-on-click="exportResults('json')">Export JSON</button>
         <button class="secondary" data-on-click="exportMethods()"
@@ -437,6 +448,30 @@
            What was searched is said with every answer. Composed with t() in app-living.js,
            so the walker leaves it alone and a language switch redraws it from cache. -->
       <div id="search-lane" class="lane-search" data-i18n-dyn hidden></div>
+    </section>
+    </div>
+
+    <!-- ========================== CLAIM WORKSPACE =========================== -->
+    <!-- The Claim Workspace, slice 1 (gate row K, brief S05-11 S1; design A1 / A-2). A claim
+         walked through the local corpus in visible steps, each with its method sentence on
+         the page: a trail, never a verdict. Kept off the sidebar like the analysis window;
+         opened from the omnibar's "Check as a claim" row, the Search tab's button and the
+         palette's page list. Rendered by app-claim.js. -->
+    <div class="tab-page" id="tab-claim">
+    <section class="panel">
+      <div class="phead"><h2>Claim workspace</h2></div>
+      <p class="hint" style="margin-top:0">Paste a claim and the app walks it through your corpus, one step at a time.</p>
+      <div class="card-caveat" id="claim-caveat">A trail, never a verdict: this shows what your corpus holds about a claim and how those articles connect, not whether the claim is true. Nothing is scored, no model writes any of it, and nothing leaves your machine.</div>
+      <label for="claim-text" class="claim-label">The claim</label>
+      <textarea id="claim-text" rows="3" maxlength="1000" placeholder="For example: glacier melt in the Alps has doubled since 2000"></textarea>
+      <label for="claim-query" class="claim-label">Words to search for <span class="muted">(optional)</span></label>
+      <input id="claim-query" type="text" maxlength="2000" placeholder="Blank: the claim's own words"
+        title="The Search tab's grammar: AND, OR, NOT, &quot;phrases&quot; and brackets. Blank takes the claim's content words and joins them with OR.">
+      <div class="claim-actions">
+        <button type="button" id="claim-run">Walk the trail</button>
+        <span id="claim-status" class="hint" role="status"></span>
+      </div>
+      <div id="claim-body"></div>
     </section>
     </div>
 
@@ -1797,6 +1832,18 @@
       </div>
 
 
+      <!-- THE RING DIAL (S05-09 S4; Q1120 = a, Q1121 = a). A depth changes what is PINNED,
+           never what is REACHABLE. Applied at once and kept in this browser, beside the
+           theme (oo.ui). An install that never chose is at Full, so an upgrade un-pins
+           nothing; the first-run guide asks, and a skipped question gives Standard. -->
+      <h3 style="margin-bottom:6px" id="set-depth-h">Interface depth</h3>
+      <p class="muted" style="margin-top:0">How much the sidebar and the settings show at once. It changes what is pinned, never what is reachable: the command palette, Search and the “Show more” row reach every surface at every depth.</p>
+      <div id="set-depth" role="radiogroup" aria-labelledby="set-depth-h" class="depth-pick">
+        <label class="depth-opt"><input type="radio" name="set-depth" value="essentials"><span class="depth-t"><b>Essentials</b><span class="depth-d">Home and Feed pinned; the other tabs one click away under “Show more”.</span></span></label>
+        <label class="depth-opt"><input type="radio" name="set-depth" value="standard"><span class="depth-t"><b>Standard</b><span class="depth-d">Every tab pinned; the fine-tuning of each Lead folded away until you open it.</span></span></label>
+        <label class="depth-opt"><input type="radio" name="set-depth" value="full"><span class="depth-t"><b>Full</b><span class="depth-d">Everything pinned and open.</span></span></label>
+      </div>
+
       <h3 style="margin-bottom:6px">Feed scrolling history</h3>
       <p class="muted" style="margin-top:0">The Feed remembers two things and nothing else: which order it drew, and how far down it you have scrolled. It keeps no record of which articles you read — there is no reading history in your corpus, in a backup, or anywhere else. Both are stored on this device only.</p>
       <div class="row">
@@ -2916,6 +2963,25 @@
       </div>
       <div id="ring-gaps" class="hint" style="margin-top:10px"><div class="muted">Loading…</div></div>
     </section>
+
+    <!-- S05-03 (Q724, Q818, R8): places and people on the entity spine. TWO buttons, TWO
+         postures, and the difference is egress: "Resolve places" reads the gazetteer file on
+         this machine and makes no request; "Fetch from Wikidata" egresses, so it passes the ONE
+         network consent (invariant #14) and the endpoint refuses on its own as well. The
+         caveat is VISIBLE. No inline handlers: _entitySpineWire binds the buttons. -->
+    <section class="panel" id="entity-spine">
+      <h2 style="margin-top:0;font-size:13px">Places and people <span class="muted">&mdash; Wikidata items</span></h2>
+      <p class="hint" style="margin-top:0">The places your articles mention are matched to places in the gazetteer, and each one that names an OpenStreetMap object gets a place card. Wikidata then gives each place, and each person or organisation a keyword translation already identifies, its names in your languages and a short description. Only the items your corpus mentions are asked for.</p>
+      <p class="card-caveat" style="margin-top:6px">Place names and descriptions come from OpenStreetMap and Wikidata and nobody reviews them here. They stay on this machine: place cards are not part of a backup or an export.</p>
+      <div class="row" style="margin-top:8px;align-items:end">
+        <div style="flex:0 0 auto"><button class="secondary" type="button" id="es-resolve"
+          title="Reads the gazetteer on this machine. No request leaves it.">Resolve places</button></div>
+        <div style="flex:0 0 auto"><button type="button" id="es-fetch"
+          title="Sends one request every 10 seconds to www.wikidata.org, up to 50 items each. Refused while airplane mode is on.">Fetch from Wikidata</button></div>
+        <span id="es-status" class="hint" aria-live="polite"></span>
+      </div>
+      <div id="es-pending" class="hint" style="margin-top:10px"><div class="muted">Loading…</div></div>
+    </section>
     </details>
 
         <details class="adv-sec" data-adv="calendars">
@@ -3642,6 +3708,19 @@
     </div>
   </dialog>
 
+  <!-- S05-03 (Q818, Q827, Q819 step 2): one Place, as this machine knows it. Opened from the
+       Where facet's ◎ button and from a Places hit in the command palette. Its lines are
+       composed with t()/tf() at render time (data-i18n-dyn) and re-read on a language switch
+       (repaintPlaceCardFromCache), because the NAME it shows depends on the language. No
+       inline handlers: _placeCardWire binds the close button once. -->
+  <dialog id="place-card" style="width:min(620px,94vw);max-height:90vh;padding:18px">
+    <h3 id="pc-title" dir="auto" data-i18n-dyn style="margin:0 0 8px"></h3>
+    <div id="pc-body" data-i18n-dyn style="max-height:70vh;overflow:auto"></div>
+    <div style="margin-top:12px;display:flex;justify-content:flex-end">
+      <button class="secondary" type="button" id="pc-close">Close</button>
+    </div>
+  </dialog>
+
   <dialog id="folder-picker" style="width:min(560px,94vw);padding:0">
     <div style="padding:12px 16px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:8px">
       <strong>Pick a folder</strong>
@@ -3810,6 +3889,18 @@
           The whole interface switches as you pick. You can change this anytime in Settings.</p>
         <div id="gw-langs" class="gw-langs" role="listbox" aria-label="Choose your language"></div>
       </section>
+      <!-- Step: Interface depth (S05-09 S4; Q1121 = a). Standard is pre-selected, so a
+           guide closed or skipped here leaves Standard; Essentials only by a real choice.
+           Local only (oo.ui); nothing is sent. -->
+      <section class="gw-step" data-step="depth" hidden>
+        <h3 style="margin:0 0 6px">How much should the app show at once?</h3>
+        <p class="muted" style="margin-top:0">This changes what is pinned, never what you can reach. You can change it anytime in Settings → General.</p>
+        <div role="radiogroup" aria-label="Interface depth" class="depth-pick">
+          <label class="depth-opt"><input type="radio" name="gw-depth" value="essentials"><span class="depth-t"><b>Essentials</b><span class="depth-d">Home and Feed pinned; the other tabs one click away under “Show more”.</span></span></label>
+          <label class="depth-opt"><input type="radio" name="gw-depth" value="standard" checked><span class="depth-t"><b>Standard</b><span class="depth-d">Every tab pinned; the fine-tuning of each Lead folded away until you open it.</span></span></label>
+          <label class="depth-opt"><input type="radio" name="gw-depth" value="full"><span class="depth-t"><b>Full</b><span class="depth-d">Everything pinned and open.</span></span></label>
+        </div>
+      </section>
       <!-- Step: Sources by theme + language emphasis (S4.7). LOOPBACK reads/writes only
            (the app's own /api/scheduler/coverage + /config) — NEVER external egress; the
            finish step's consented go-online is the ONLY path to the network. Themes DEFAULT
@@ -3907,6 +3998,7 @@
   <script src="/static/app-corpus.js"></script>
   <script src="/static/app-map.js"></script>
   <script src="/static/app-analysis.js"></script>
+  <script src="/static/app-claim.js"></script>
   <script src="/static/app-ai-tools.js"></script>
   <script src="/static/app-boot.js"></script>
   <!-- Settings -> GUIs gallery renderer (loads after app.js; called by showSetCat). -->

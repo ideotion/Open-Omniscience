@@ -310,10 +310,18 @@
           if (typeof repaintWikiTCFromCache === "function") repaintWikiTCFromCache();
         }
       } catch (_e) {}
+      // The Claim Workspace builds every step with t()/tf() at render time too: redraw it
+      // from the trail it already holds, never a fetch, and only if it was ever walked.
+      try {
+        if (typeof _claimLast !== "undefined" && _claimLast && typeof repaintClaimFromCache === "function") {
+          repaintClaimFromCache();
+        }
+      } catch (_e) {}
       // The held Wikipedia version (R52) opens from the palette whether or not Living
       // sources was ever opened, so it redraws on its own test: the dialog is open. The
       // Search tab's Wikipedia section is composed the same way and redraws beside it.
       try { if (typeof repaintLaneVersionFromCache === "function") repaintLaneVersionFromCache(); } catch (_e) {}
+      try { if (typeof repaintPlaceCardFromCache === "function") repaintPlaceCardFromCache(); } catch (_e) {}
       try { if (typeof repaintLaneSearchFromCache === "function") repaintLaneSearchFromCache(); } catch (_e) {}
       // The Activity view is the same class again, and it recurred the moment a new
       // interpolated string was added there: the qualification tile's composition note

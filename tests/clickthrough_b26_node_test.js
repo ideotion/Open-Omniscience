@@ -312,6 +312,9 @@ test("J-3: every bracket on the import checklist is the keyed frame, and the lar
     "function toast(){}\n" +
     "async function _uxImTrustRow(){}\n" +
     "var _uxImFound = null, _uxImSrc = '';\n" +
+    // 2026-09-28 walk: a scan clears a FINISHED run's rows, so it reads the chain's state.
+    "var _uxImSummaryArgs = null, _uxImLastStatus = null, _uxImWatch = null;\n" +
+    "function _uxImStopChain(){} function _uxImResetRunView(){}\n" +
     "var document = { getElementById: function(id){ return DOM[id] || null; } };\n" +
     extract("ooLabelText") + "\n" +
     "async " + extract("_uxImScan") + "\n" +

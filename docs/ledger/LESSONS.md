@@ -12681,6 +12681,15 @@ an absence check on a string that carries a version fails the day the version re
 five map and catalogue build scripts under `scripts/` still hardcode `OpenOmniscienceBot/0.4`; they
 read true again only by coincidence.
 
+### A GREEN i18n GATE PROVES THE STRINGS IT CAN SEE ARE KEYED, NOT THAT THE PAGE IS TRANSLATED (0.5 row K, S05-11 S1)
+
+The Claim Workspace passed `--min 100`, `--max-untranslatable 0`, `--max-unkeyed-t-calls 0` and
+`--max-unkeyed-tf-frames 0`, and still drew two sentences in English on the Arabic page: they were keyed in
+no locale at all. The `t()` gate skips a literal that carries a `{placeholder}`, and the `tf()` gate reads
+`tf("…")` call sites, so a frame handed to a callback as `(tf, v) => tf("…", v)` or looked up through
+`t(frame)` is invisible to both. The Chromium walk in Arabic caught it, by reading the page rather than the
+keys. **After adding strings, walk the page in a second language and read it; and a view with its own
+string table checks its own literals against all twelve locales (`tests/test_claim_workspace.py`).**
 
 ### A RELEASED SAVEPOINT COMMITS WHEN NOTHING WAS WRITTEN BEFORE IT -- ON THE LANE ENGINES, A PER-UNIT SAVEPOINT IS A PER-UNIT COMMIT (PR #1202)
 
@@ -12722,3 +12731,38 @@ default: on one Search tab, `salt*` would have been a prefix in the corpus's lis
 surface shown beside the corpus's passes `grammar=True`, and decides out loud what its own index
 cannot answer**: the lane drops the SQL field filters, names them and says so on screen, and
 never widens them into a search of everything (`fields_not_applied`, `test_one_query_means_in_these_texts_what_it_means_in_the_corpus`).
+
+### A RUN VIEW RESET ONLY WHEN THE DIALOG OPENS SHOWS THE LAST RUN UNDER THE NEXT ONE (PR #1205, import dialog walk)
+
+The Import dialog emptied its run surfaces (header, stage rows, statements, per-backup rows) in
+`openUnifiedImport` and nowhere else. An operator who mistypes the passphrase does not close the
+dialog: they fix it and press Import again, in the same opening, and the new run's first rows were
+drawn under the failed run's "2 failed · Failed" until the first tick replaced them -- as long as
+the start request takes, which grows with the backup. Nothing in a test saw it, because each test
+renders one run into a fresh DOM. **A surface that one action fills is reset when that action
+STARTS, not only when its container opens; walk the second attempt in the same opening, not just
+the first** (`_uxImRun`, `_uxImScan`, and the four `walk:` cases in `tests/import_stages_node_test.js`).
+
+### A GEOMETRIC OVERLAP CHECK MUST SKIP A CLOSED `<details>`: CHROMIUM STILL REPORTS ITS TEXT'S BOXES (PR #1205, import dialog walk)
+
+The walk's overlap probe (every text node's `Range.getClientRects()`, pairwise) flagged 140 overlaps
+on the finished import report, every one inside the collapsed "How long did this take?" and
+"Details by source" blocks: Chromium lays out a closed `<details>`' content (`content-visibility:
+hidden`) and returns rectangles for text nobody can see. **Filter with `el.checkVisibility({
+contentVisibilityAuto: true, visibilityProperty: true, opacityProperty: true })` and drop text inside
+`details:not([open])` outside its `<summary>`**; with that, the same frames measured zero overlaps
+(`docs/audit/import-dialog-walk-2026-09-28/walk_import.py`).
+
+### THE HOVER BUBBLE TAKES THE `title` OF THE ELEMENT UNDER THE POINTER (PR #1207)
+
+Invariant #17's bubble moves a hovered element's `title` into `data-oo-tip` (`app-boot.js`) so the browser's
+own tooltip does not double it. A Chromium check that clicks a button and then reads its `title` therefore
+reads `null` for exactly that button, while its neighbours read fine: it looks like a missing title and is
+not one. **Read `data-oo-tip` as well, or move the pointer away before reading `title`.**
+
+### A COMPONENT LOADED WHOLE INTO A NODE `vm` CONTEXT BUILDS ITS OBJECTS IN ANOTHER REALM (PR #1207)
+
+`tests/version_reader_add_node_test.js` runs the whole shipped `ooversions.js` in `vm.createContext` so the
+test drives the real delegated listener, not an extracted copy. The `{ method: "POST" }` the component
+hands to `api()` then has the context's `Object.prototype`, and `assert.deepStrictEqual` compares
+prototypes, so it failed against an identical literal. **Compare such values as JSON, or field by field.**
