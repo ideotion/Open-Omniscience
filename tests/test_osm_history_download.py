@@ -47,7 +47,11 @@ def test_the_history_file_is_a_download_but_not_a_region():
 def test_the_host_is_named_in_security_md_and_the_consent_hover():
     doc = (ROOT / "docs" / "SECURITY.md").read_text(encoding="utf-8")
     assert "/pbf/full-history/" in doc and "HISTORY_URL" in doc
-    assert "planet.openstreetmap.org" in (STATIC / "net-hosts.js").read_text(encoding="utf-8")
+    import re
+
+    table = (STATIC / "net-hosts.js").read_text(encoding="utf-8")
+    hosts = [h for block in re.findall(r'"hosts":\s*\[([^\]]*)\]', table) for h in re.findall(r'"([^"]+)"', block)]
+    assert hosts.count("planet.openstreetmap.org") >= 1, "the consent hover no longer names the history file's host"
 
 
 def test_the_size_estimate_date_is_registered():
