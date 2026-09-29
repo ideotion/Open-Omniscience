@@ -6650,5 +6650,15 @@
   "{n} notable places from OpenStreetMap": "{n} lugares notáveis do OpenStreetMap",
   "Reads the gazetteer and the OpenStreetMap data on this machine. No request leaves it.": "Lê o gazetteer e os dados do OpenStreetMap desta máquina. Nenhum pedido sai dela.",
   "Suggested first: the country your interface language comes from. Nothing is downloaded until you choose it.": "Sugerido primeiro: o país de origem do idioma da interface. Nada é transferido até que o escolha.",
-  "Start with {country}": "Começar por {country}"
+  "Start with {country}": "Começar por {country}",
+  "OpenStreetMap: reading the view…": "OpenStreetMap: a ler a vista…",
+  "OpenStreetMap contributors": "colaboradores do OpenStreetMap",
+  "OpenStreetMap: the view could not be read.": "OpenStreetMap: não foi possível ler a vista.",
+  "OpenStreetMap: no country's map data is ready here yet.": "OpenStreetMap: ainda não há dados de mapa de nenhum país prontos aqui.",
+  "OpenStreetMap, objects in view: {n}. Drawn as clusters: {c}.": "OpenStreetMap, objetos na vista: {n}. Desenhados como grupos: {c}.",
+  "OpenStreetMap, objects in view: {n}. Shapes drawn as points.": "OpenStreetMap, objetos na vista: {n}. Formas desenhadas como pontos.",
+  "OpenStreetMap, objects in view: {n}. Drawn one by one.": "OpenStreetMap, objetos na vista: {n}. Desenhados um a um.",
+  "Read in {read} ms, drawn in {draw} ms on this machine.": "Lido em {read} ms, desenhado em {draw} ms nesta máquina.",
+  "Up to {points} objects in a view are drawn one by one; more are drawn as clusters on a {grid} by {grid} grid, each with its exact count. Shapes are thinned to about one screen pixel; above {vertices} vertices in a view every shape is drawn as its point.": "Até {points} objetos numa vista são desenhados um a um; acima disso, são desenhados como grupos numa grelha de {grid} por {grid}, cada um com a sua contagem exata. As formas são simplificadas a cerca de um píxel de ecrã; acima de {vertices} vértices numa vista, cada forma é desenhada como o seu ponto.",
+  "A cluster counts every object in its grid cell, so a cell on the edge of the view also counts the objects just beyond it.": "Um grupo conta todos os objetos da sua célula da grelha, por isso uma célula na margem da vista também conta os objetos logo além dela."
 }

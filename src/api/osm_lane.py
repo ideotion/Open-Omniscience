@@ -98,6 +98,19 @@ def geocode(q: str = Query(..., min_length=1, max_length=300)) -> dict:
     return _geocode(" ".join(q.split()))
 
 
+@router.get("/view")
+def osm_view(
+    w: float = Query(...), s: float = Query(...), e: float = Query(...), n: float = Query(...)
+) -> dict:
+    """What the map draws of the lane in one view box, under the published caps (S6, Q822)."""
+    from src.osm.view import ViewError, view
+
+    try:
+        return view(w, s, e, n)
+    except ViewError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @router.get("/objects/{osm_type}/{osm_id}")
 def object_card(osm_type: str, osm_id: int) -> dict:
     """One stored object with every tag, as the object card shows it."""

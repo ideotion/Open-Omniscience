@@ -6650,5 +6650,15 @@
   "{n} notable places from OpenStreetMap": "{n} مكانًا بارزًا من OpenStreetMap",
   "Reads the gazetteer and the OpenStreetMap data on this machine. No request leaves it.": "يقرأ المعجم الجغرافي وبيانات OpenStreetMap على هذا الجهاز. لا يغادره أي طلب.",
   "Suggested first: the country your interface language comes from. Nothing is downloaded until you choose it.": "مقترح أولًا: البلد الذي نشأت فيه لغة الواجهة. لا يُنزَّل شيء حتى تختاره.",
-  "Start with {country}": "ابدأ بـ {country}"
+  "Start with {country}": "ابدأ بـ {country}",
+  "OpenStreetMap: reading the view…": "OpenStreetMap: جارٍ قراءة العرض…",
+  "OpenStreetMap contributors": "المساهمون في OpenStreetMap",
+  "OpenStreetMap: the view could not be read.": "OpenStreetMap: تعذّرت قراءة العرض.",
+  "OpenStreetMap: no country's map data is ready here yet.": "OpenStreetMap: لا توجد هنا بعد بيانات خرائط جاهزة لأي بلد.",
+  "OpenStreetMap, objects in view: {n}. Drawn as clusters: {c}.": "OpenStreetMap، الكائنات في العرض: {n}. رُسمت كمجموعات: {c}.",
+  "OpenStreetMap, objects in view: {n}. Shapes drawn as points.": "OpenStreetMap، الكائنات في العرض: {n}. رُسمت الأشكال كنقاط.",
+  "OpenStreetMap, objects in view: {n}. Drawn one by one.": "OpenStreetMap، الكائنات في العرض: {n}. رُسمت واحدًا واحدًا.",
+  "Read in {read} ms, drawn in {draw} ms on this machine.": "قُرئ في {read} ملّي ثانية، ورُسم في {draw} ملّي ثانية على هذا الجهاز.",
+  "Up to {points} objects in a view are drawn one by one; more are drawn as clusters on a {grid} by {grid} grid, each with its exact count. Shapes are thinned to about one screen pixel; above {vertices} vertices in a view every shape is drawn as its point.": "تُرسم حتى {points} كائنًا في العرض الواحد واحدًا واحدًا؛ وما يزيد يُرسم كمجموعات على شبكة {grid} × {grid}، لكلٍّ منها عددها الدقيق. تُبسَّط الأشكال إلى نحو بكسل واحد على الشاشة؛ وفوق {vertices} رأسًا في العرض يُرسم كل شكل كنقطته.",
+  "A cluster counts every object in its grid cell, so a cell on the edge of the view also counts the objects just beyond it.": "تعدّ المجموعة كل كائن في خليتها من الشبكة، لذا تعدّ الخلية الواقعة على حافة العرض أيضًا الكائنات التي تقع خلفها مباشرة."
 }

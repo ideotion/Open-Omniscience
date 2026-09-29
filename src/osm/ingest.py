@@ -89,6 +89,7 @@ class IngestReport:
     name: str | None = None
     #: What the name and address indexes took from this cut (S5), or None if not built.
     search_index: dict | None = None
+    view_index: dict | None = None
 
     def to_dict(self) -> dict:
         return {
@@ -103,6 +104,7 @@ class IngestReport:
             "error": self.error,
             "name": self.name,
             "search_index": self.search_index,
+            "view_index": self.view_index,
         }
 
 
@@ -335,6 +337,13 @@ def ingest_country(
             report.search_index = build_search_index(alpha3)
         except Exception:  # noqa: BLE001 - the cut is complete; only its index is missing
             _LOG.warning("the %s search index was not built", alpha3, exc_info=True)
+        # The map reads its R*Tree (src/osm/view.py, S6) the same way.
+        try:
+            from src.osm.view import build_view_index
+
+            report.view_index = build_view_index(alpha3)
+        except Exception:  # noqa: BLE001 - the cut is complete; only its view index is missing
+            _LOG.warning("the %s view index was not built", alpha3, exc_info=True)
     return report
 
 

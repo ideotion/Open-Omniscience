@@ -6650,5 +6650,15 @@
   "{n} notable places from OpenStreetMap": "{n} lieux notables issus d’OpenStreetMap",
   "Reads the gazetteer and the OpenStreetMap data on this machine. No request leaves it.": "Lit le répertoire géographique et les données OpenStreetMap de cette machine. Aucune requête n’en sort.",
   "Suggested first: the country your interface language comes from. Nothing is downloaded until you choose it.": "Suggéré en premier : le pays d’origine de la langue de l’interface. Rien n’est téléchargé tant que vous ne l’avez pas choisi.",
-  "Start with {country}": "Commencer par {country}"
+  "Start with {country}": "Commencer par {country}",
+  "OpenStreetMap: reading the view…": "OpenStreetMap : lecture de la vue…",
+  "OpenStreetMap contributors": "contributeurs d’OpenStreetMap",
+  "OpenStreetMap: the view could not be read.": "OpenStreetMap : la vue n’a pas pu être lue.",
+  "OpenStreetMap: no country's map data is ready here yet.": "OpenStreetMap : les données cartographiques d’aucun pays ne sont encore prêtes ici.",
+  "OpenStreetMap, objects in view: {n}. Drawn as clusters: {c}.": "OpenStreetMap, objets dans la vue : {n}. Dessinés en groupes : {c}.",
+  "OpenStreetMap, objects in view: {n}. Shapes drawn as points.": "OpenStreetMap, objets dans la vue : {n}. Formes dessinées comme des points.",
+  "OpenStreetMap, objects in view: {n}. Drawn one by one.": "OpenStreetMap, objets dans la vue : {n}. Dessinés un par un.",
+  "Read in {read} ms, drawn in {draw} ms on this machine.": "Lu en {read} ms, dessiné en {draw} ms sur cette machine.",
+  "Up to {points} objects in a view are drawn one by one; more are drawn as clusters on a {grid} by {grid} grid, each with its exact count. Shapes are thinned to about one screen pixel; above {vertices} vertices in a view every shape is drawn as its point.": "Jusqu’à {points} objets dans une vue sont dessinés un par un ; au-delà, ils sont dessinés en groupes sur une grille de {grid} sur {grid}, chacun avec son compte exact. Les formes sont simplifiées à environ un pixel d’écran ; au-delà de {vertices} sommets dans une vue, chaque forme est dessinée comme son point.",
+  "A cluster counts every object in its grid cell, so a cell on the edge of the view also counts the objects just beyond it.": "Un groupe compte tous les objets de sa cellule de grille : une cellule au bord de la vue compte donc aussi les objets situés juste au-delà."
 }

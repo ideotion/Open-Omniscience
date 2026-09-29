@@ -178,11 +178,18 @@ def index_state() -> list[dict]:
 
 
 def refresh_indexes() -> dict:
-    """Build the index of every complete country whose index does not match its ingest."""
+    """Build the index of every complete country whose index does not match its ingest.
+
+    The map's R*Tree (``src/osm/view.py``) is refreshed on the same call, so the one job that
+    catches up after a failed build catches up both.
+    """
+    from src.osm.view import refresh_view_indexes
+
     built = {}
     for c in index_state():
         if not c["indexed"]:
             built[c["alpha3"]] = build_search_index(c["alpha3"])
+    refresh_view_indexes()
     return built
 
 

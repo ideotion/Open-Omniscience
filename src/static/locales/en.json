@@ -6650,5 +6650,15 @@
   "{n} notable places from OpenStreetMap": "{n} notable places from OpenStreetMap",
   "Reads the gazetteer and the OpenStreetMap data on this machine. No request leaves it.": "Reads the gazetteer and the OpenStreetMap data on this machine. No request leaves it.",
   "Suggested first: the country your interface language comes from. Nothing is downloaded until you choose it.": "Suggested first: the country your interface language comes from. Nothing is downloaded until you choose it.",
-  "Start with {country}": "Start with {country}"
+  "Start with {country}": "Start with {country}",
+  "OpenStreetMap: reading the view…": "OpenStreetMap: reading the view…",
+  "OpenStreetMap contributors": "OpenStreetMap contributors",
+  "OpenStreetMap: the view could not be read.": "OpenStreetMap: the view could not be read.",
+  "OpenStreetMap: no country's map data is ready here yet.": "OpenStreetMap: no country's map data is ready here yet.",
+  "OpenStreetMap, objects in view: {n}. Drawn as clusters: {c}.": "OpenStreetMap, objects in view: {n}. Drawn as clusters: {c}.",
+  "OpenStreetMap, objects in view: {n}. Shapes drawn as points.": "OpenStreetMap, objects in view: {n}. Shapes drawn as points.",
+  "OpenStreetMap, objects in view: {n}. Drawn one by one.": "OpenStreetMap, objects in view: {n}. Drawn one by one.",
+  "Read in {read} ms, drawn in {draw} ms on this machine.": "Read in {read} ms, drawn in {draw} ms on this machine.",
+  "Up to {points} objects in a view are drawn one by one; more are drawn as clusters on a {grid} by {grid} grid, each with its exact count. Shapes are thinned to about one screen pixel; above {vertices} vertices in a view every shape is drawn as its point.": "Up to {points} objects in a view are drawn one by one; more are drawn as clusters on a {grid} by {grid} grid, each with its exact count. Shapes are thinned to about one screen pixel; above {vertices} vertices in a view every shape is drawn as its point.",
+  "A cluster counts every object in its grid cell, so a cell on the edge of the view also counts the objects just beyond it.": "A cluster counts every object in its grid cell, so a cell on the edge of the view also counts the objects just beyond it."
 }

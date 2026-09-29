@@ -10,7 +10,8 @@ ONLY through ``src.versioned.store.create_schema`` (``_lane_specific_models("osm
 opens the file through the ONE keyed factory. A lane file gets its own tables and no other
 lane's.
 
-SEVEN TABLES (the fourth and fifth S05-04 S4's, the last two S5's), and two full-text indexes.
+NINE TABLES (the fourth and fifth S05-04 S4's, the sixth and seventh S5's, the last two S6's), two
+full-text indexes and one R*Tree (``src/osm/view.py``).
 
 * ``osm_objects`` -- one row per kept object of an ingested country: identity (type + id),
   the source's ``version`` and ``timestamp``, what it is (``kind``, the primary tag), where it
@@ -275,6 +276,42 @@ class OsmSearchIndex(LaneBase):
     seconds: Mapped[float | None] = mapped_column(Float, nullable=True)
 
 
+class OsmViewIndex(LaneBase):
+    """One country's rows in the map's R*Tree (``src/osm/view.py``), and the ingest they came from."""
+
+    __tablename__ = "osm_view_indexes"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    alpha3: Mapped[str] = mapped_column(String(3), nullable=False, unique=True)
+    basis_ingest: Mapped[str | None] = mapped_column(Text, nullable=True)
+    rows: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    #: Objects with neither a shape nor a point (a relation): counted, never drawn.
+    no_box: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    built_at: Mapped[datetime] = mapped_column(LaneUTCDateTime(), nullable=False, default=_utcnow)
+    seconds: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+
+class OsmViewCell(LaneBase):
+    """The map's cluster pyramid (``src/osm/view.py``): objects per grid cell, per zoom level.
+
+    Level ``L`` cuts the globe into cells ``360 / 2**L`` degrees on a side; ``cx`` counts from
+    180 degrees west and ``cy`` from the south pole. ``slat`` / ``slon`` are sums, so a cluster
+    is drawn at the mean of what it counts, never at the cell's centre.
+    """
+
+    __tablename__ = "osm_view_cells"
+    __table_args__ = (Index("ix_osm_view_cells_lookup", "level", "cy", "cx"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    alpha3: Mapped[str] = mapped_column(String(3), nullable=False, index=True)
+    level: Mapped[int] = mapped_column(Integer, nullable=False)
+    cx: Mapped[int] = mapped_column(Integer, nullable=False)
+    cy: Mapped[int] = mapped_column(Integer, nullable=False)
+    n: Mapped[int] = mapped_column(Integer, nullable=False)
+    slat: Mapped[float] = mapped_column(Float, nullable=False)
+    slon: Mapped[float] = mapped_column(Float, nullable=False)
+
+
 OSM_LANE_MODELS: tuple[type[LaneBase], ...] = (
     OsmObject,
     OsmCountry,
@@ -283,6 +320,8 @@ OSM_LANE_MODELS: tuple[type[LaneBase], ...] = (
     OsmHistoryCut,
     OsmAdmin1Split,
     OsmSearchIndex,
+    OsmViewIndex,
+    OsmViewCell,
 )
 
 

@@ -6650,5 +6650,15 @@
   "{n} notable places from OpenStreetMap": "OpenStreetMap からの主要な場所 {n} 件",
   "Reads the gazetteer and the OpenStreetMap data on this machine. No request leaves it.": "このマシン上の地名辞典と OpenStreetMap データを読みます。リクエストは外に出ません。",
   "Suggested first: the country your interface language comes from. Nothing is downloaded until you choose it.": "最初の提案：インターフェース言語の発祥国。選択するまで何もダウンロードされません。",
-  "Start with {country}": "{country}から始める"
+  "Start with {country}": "{country}から始める",
+  "OpenStreetMap: reading the view…": "OpenStreetMap：表示範囲を読み込み中…",
+  "OpenStreetMap contributors": "OpenStreetMap 寄稿者",
+  "OpenStreetMap: the view could not be read.": "OpenStreetMap：表示範囲を読み込めませんでした。",
+  "OpenStreetMap: no country's map data is ready here yet.": "OpenStreetMap：ここではまだどの国の地図データも準備できていません。",
+  "OpenStreetMap, objects in view: {n}. Drawn as clusters: {c}.": "OpenStreetMap、表示範囲内のオブジェクト：{n}。クラスターで描画：{c}。",
+  "OpenStreetMap, objects in view: {n}. Shapes drawn as points.": "OpenStreetMap、表示範囲内のオブジェクト：{n}。形状を点で描画。",
+  "OpenStreetMap, objects in view: {n}. Drawn one by one.": "OpenStreetMap、表示範囲内のオブジェクト：{n}。1つずつ描画。",
+  "Read in {read} ms, drawn in {draw} ms on this machine.": "このマシンで読み込み {read} ミリ秒、描画 {draw} ミリ秒。",
+  "Up to {points} objects in a view are drawn one by one; more are drawn as clusters on a {grid} by {grid} grid, each with its exact count. Shapes are thinned to about one screen pixel; above {vertices} vertices in a view every shape is drawn as its point.": "1つの表示範囲に最大 {points} 個のオブジェクトは1つずつ描画されます。それを超えると {grid} × {grid} のグリッド上にクラスターとして描画され、各クラスターに正確な件数が付きます。形状は画面のおよそ1ピクセルまで間引かれます。1つの表示範囲で頂点が {vertices} 個を超えると、各形状はその点として描画されます。",
+  "A cluster counts every object in its grid cell, so a cell on the edge of the view also counts the objects just beyond it.": "クラスターはそのグリッドセル内のすべてのオブジェクトを数えるため、表示範囲の端にあるセルは範囲のすぐ外のオブジェクトも数えます。"
 }

@@ -1096,7 +1096,7 @@
           ${opts.onSignals ? `<button class="tiny secondary" data-oomap-signals aria-pressed="${opts.signalsOn ? "true" : "false"}"${opts.signalsOn ? ' style="border-color:var(--accent);color:var(--accent)"' : ""}>${esc(t("Signals"))}</button>` : ""}
           ${opts.onServer ? `<button class="tiny secondary" data-oomap-server aria-pressed="${opts.serverOn ? "true" : "false"}"${opts.serverOn ? ' style="border-color:var(--accent);color:var(--accent)"' : ""} title="${esc(t("Server IP locations — offline geo; a CDN edge / anycast host, not the publisher's origin"))}">${esc(t("Server IPs"))}</button>` : ""}
           ${opts.onLabels ? `<button class="tiny secondary" data-oomap-labels aria-pressed="${opts.labelsOn ? "true" : "false"}"${opts.labelsOn ? ' style="border-color:var(--accent);color:var(--accent)"' : ""}>${esc(t("Labels"))}</button>` : ""}
-          ${opts.onOsm ? `<button class="tiny secondary" data-oomap-osm aria-pressed="${opts.osmOn ? "true" : "false"}"${opts.osmOn ? ' style="border-color:var(--accent);color:var(--accent)"' : ""} title="${esc(t("Overlay a downloaded offline-map region (preview)"))}">${esc(t("OSM"))}</button>` : ""}
+          ${opts.onOsm ? `<button class="tiny secondary" data-oomap-osm aria-pressed="${opts.osmOn || opts.osmLane ? "true" : "false"}"${opts.osmOn || opts.osmLane ? ' style="border-color:var(--accent);color:var(--accent)"' : ""} title="${esc(t("Overlay a downloaded offline-map region (preview)"))}">${esc(t("OSM"))}</button>` : ""}
           ${hasAdmin1 && !regionVals ? `<button class="tiny secondary" data-oomap-regions aria-pressed="${_ooMapRegionsOn ? "true" : "false"}"${_ooMapRegionsOn ? ' style="border-color:var(--accent);color:var(--accent)"' : ""} title="${esc(t("Show or hide the first-level regions (states, provinces, regions) OpenStreetMap draws inside each country."))}">${esc(t("Regions"))}</button>` : ""}
           ${worldviewHtml}
         </div>` : "";
@@ -1194,6 +1194,7 @@
         ${opts.serverOn ? `<span class="muted">${esc(t("IP Geolocation by DB-IP"))} · <a href="https://db-ip.com" target="_blank" rel="noopener">db-ip.com</a> · CC BY 4.0</span>` : ""}
         ${opts.signalsOn ? `<span data-oomap-sigkinds>${_ooSigKindsHtml(sigKinds)}</span>` : ""}
         ${opts.signalsOn ? `<span class="muted" style="display:inline-flex;align-items:center;gap:6px" title="${esc(t("Shape = certainty; colour = kind."))}">● ${esc(t("confirmed"))} · ▲ ${esc(t("scheduled"))} · ◆ ${esc(t("deduced"))}</span>` : ""}
+        ${opts.osmLane ? `<span class="muted" data-oomap-osmlane data-i18n-dyn>${esc(t("OpenStreetMap: reading the view…"))}</span> <span class="muted">© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">${esc(t("OpenStreetMap contributors"))}</a> · ODbL 1.0</span>` : ""}
         ${osm ? `<span class="muted" title="${esc(t("Bounded preview from a downloaded .osm.pbf — not the full region; no network."))}">${ooLabelHtml(esc(t("offline OSM")), esc(_ooOsmCounts(osm)))}</span>` : ""}
       </div>
       ${regionVals && !hasAdmin1 ? `<div class="card-caveat" style="margin-top:4px">${esc(t("This measure is by region, but the region boundaries are not built on this install yet: the table below holds every value."))}</div>` : ""}
@@ -1244,6 +1245,124 @@
       g.innerHTML = out;
     }
 
+    // -- The OSM lane layer (S05-04 S6, Q822 = a) ------------------------------------------ //
+    // Canvas 2D over the SVG, fed by /api/osm/view for the box in sight. The SERVER applies the
+    // published caps (points per view, vertices per view, the cluster grid) and says which one
+    // shaped the answer; this layer draws exactly what came back and states it in the legend,
+    // with the caps and the two measured times (read, drawn) in the hover. A view that is still
+    // loading keeps the last picture, re-placed; nothing is drawn that the server did not send.
+    const OO_OSM_LANE_MIN_ZOOM = 0.00005;
+    const _OO_OSM_KIND_STYLE = {
+      poi: ["--accent", 0, 1], place: ["--accent", 0, 1], admin: ["--accent", 0, 0.8],
+      road: ["--muted", 0, 0.9], power: ["--caveat", 0, 0.9], building: ["--muted", 0.18, 0.6],
+      landuse: ["--muted", 0.08, 0.35], water: ["--accent", 0.22, 0.7],
+    };
+    function _ooOsmLaneBox(vb) {
+      // Equal Earth has no rectangular lon/lat box, so the view's edges are sampled.
+      let w = 180, e = -180, s = 90, n = -90;
+      for (let i = 0; i <= 8; i++) {
+        for (const [px, py] of [[vb.x + vb.w * i / 8, vb.y], [vb.x + vb.w * i / 8, vb.y + vb.h], [vb.x, vb.y + vb.h * i / 8], [vb.x + vb.w, vb.y + vb.h * i / 8]]) {
+          const q = unproject(Math.max(0, Math.min(MAP_W, px)), Math.max(0, Math.min(MAP_H, py)));
+          if (!isFinite(q.lon) || !isFinite(q.lat)) continue;
+          w = Math.min(w, q.lon); e = Math.max(e, q.lon); s = Math.min(s, q.lat); n = Math.max(n, q.lat);
+        }
+      }
+      return { w: Math.max(-180, w), e: Math.min(180, e), s: Math.max(-90, s), n: Math.min(90, n) };
+    }
+    function _ooOsmLaneLayer(host, svg) {
+      const wrap = svg.parentElement; if (!wrap) return null;
+      if (getComputedStyle(wrap).position === "static") wrap.style.position = "relative";
+      const cv = document.createElement("canvas");
+      cv.setAttribute("aria-hidden", "true");
+      cv.style.cssText = "position:absolute;pointer-events:none";
+      wrap.appendChild(cv);
+      let data = null, cur = null, timer = null, seq = 0, readMs = null, drawMs = null;
+      const css = getComputedStyle(host);
+      const color = (v) => (css.getPropertyValue(v) || "").trim() || "#888";
+      const place = () => {
+        const r = svg.getBoundingClientRect(), pr = wrap.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
+        cv.style.left = `${r.left - pr.left}px`; cv.style.top = `${r.top - pr.top}px`;
+        cv.style.width = `${r.width}px`; cv.style.height = `${r.height}px`;
+        cv.width = Math.round(r.width * dpr); cv.height = Math.round(r.height * dpr);
+        return { w: r.width, h: r.height, dpr };
+      };
+      const draw = () => {
+        const t0 = performance.now();
+        const sz = place(), ctx = cv.getContext("2d"); if (!ctx || !cur) return;
+        ctx.setTransform(sz.dpr, 0, 0, sz.dpr, 0, 0);
+        ctx.clearRect(0, 0, sz.w, sz.h);
+        if (!data) return;
+        const px = (lat, lon) => { const q = project(lon, lat); return [(q.x - cur.x) / cur.w * sz.w, (q.y - cur.y) / cur.h * sz.h]; };
+        if (data.status === "clusters") {
+          // Area ∝ count, against the view's largest cluster or 50, whichever is more, so a view
+          // of small clusters is not drawn as large as a city's.
+          const max = Math.max(50, ...data.clusters.map((c) => c.n));
+          ctx.font = "10px sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+          for (const c of data.clusters) {
+            const [x, y] = px(c.lat, c.lon), r = Math.max(2.5, 18 * Math.sqrt(c.n / max));
+            ctx.beginPath(); ctx.arc(x, y, r, 0, 2 * Math.PI);
+            ctx.globalAlpha = 0.9; ctx.strokeStyle = color("--bg"); ctx.lineWidth = 3; ctx.stroke();   // a halo over any fill
+            ctx.globalAlpha = 0.45; ctx.fillStyle = color("--accent"); ctx.fill();
+            ctx.globalAlpha = 1; ctx.strokeStyle = color("--accent"); ctx.lineWidth = 1; ctx.stroke();
+            if (r >= 9) { ctx.fillStyle = color("--fg"); ctx.fillText(fmtNum(c.n, 0), x, y); }
+          }
+        } else if (data.status === "objects") {
+          for (const f of data.objects) {
+            const st = _OO_OSM_KIND_STYLE[f.k] || ["--muted", 0, 0.8], col = color(st[0]);
+            if (f.c && f.c.length >= 2) {
+              ctx.beginPath();
+              f.c.forEach(([la, lo], i) => { const [x, y] = px(la, lo); if (i) ctx.lineTo(x, y); else ctx.moveTo(x, y); });
+              const closed = f.c.length > 3 && f.c[0][0] === f.c[f.c.length - 1][0] && f.c[0][1] === f.c[f.c.length - 1][1];
+              if (closed && st[1] > 0) { ctx.globalAlpha = st[1]; ctx.fillStyle = col; ctx.fill(); }
+              ctx.globalAlpha = st[2]; ctx.strokeStyle = col; ctx.lineWidth = f.k === "road" ? 1.2 : 0.8; ctx.stroke();
+            } else if (f.p) {
+              const [x, y] = px(f.p[0], f.p[1]);
+              ctx.beginPath(); ctx.arc(x, y, 2.5, 0, 2 * Math.PI);
+              ctx.globalAlpha = 0.9; ctx.strokeStyle = color("--bg"); ctx.lineWidth = 2; ctx.stroke();
+              ctx.globalAlpha = st[2]; ctx.fillStyle = col; ctx.fill();
+            }
+          }
+        }
+        ctx.globalAlpha = 1;
+        drawMs = Math.round(performance.now() - t0);
+        _ooOsmLaneLegend(host, data, readMs, drawMs);
+      };
+      const fetchView = async () => {
+        const my = ++seq, box = _ooOsmLaneBox(cur), t0 = performance.now();
+        if (!(box.w < box.e && box.s < box.n)) return;
+        try {
+          const d = await api("/api/osm/view?" + new URLSearchParams({ w: box.w, s: box.s, e: box.e, n: box.n }).toString());
+          if (my !== seq) return;                        // a newer view was asked for meanwhile
+          readMs = Math.round(performance.now() - t0); data = d; draw();
+        } catch (e) {
+          if (my !== seq) return;
+          const el = host.querySelector("[data-oomap-osmlane]");
+          if (el) el.textContent = ((window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x))("OpenStreetMap: the view could not be read.");
+        }
+      };
+      return {
+        view(vb) {
+          cur = { x: vb.x, y: vb.y, w: vb.w, h: vb.h };
+          draw();                                        // the last answer, re-placed at once
+          clearTimeout(timer); timer = setTimeout(fetchView, 180);
+        },
+      };
+    }
+    function _ooOsmLaneLegend(host, d, readMs, drawMs) {
+      const el = host.querySelector("[data-oomap-osmlane]"); if (!el || !d) return;
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      const c = d.caps || {};
+      let line;
+      if (d.status === "no-lane" || d.status === "not-indexed") line = t("OpenStreetMap: no country's map data is ready here yet.");
+      else if (d.status === "clusters") line = _mapTf("OpenStreetMap, objects in view: {n}. Drawn as clusters: {c}.", { n: fmtNum(d.total, 0), c: fmtNum(d.clusters.length, 0) });
+      else if (d.shapes === "points") line = _mapTf("OpenStreetMap, objects in view: {n}. Shapes drawn as points.", { n: fmtNum(d.total, 0) });
+      else line = _mapTf("OpenStreetMap, objects in view: {n}. Drawn one by one.", { n: fmtNum(d.total, 0) });
+      el.textContent = line;
+      el.title = `${_mapTf(c.method || "", { points: fmtNum(c.points_per_view, 0), vertices: fmtNum(c.vertices_per_view, 0), grid: c.cluster_grid })} `
+        + (d.status === "clusters" && c.cluster_edge ? `${t(c.cluster_edge)} ` : "")
+        + _mapTf("Read in {read} ms, drawn in {draw} ms on this machine.", { read: fmtNum(readMs, 0), draw: fmtNum(drawMs, 0) });
+    }
+
     // Instance-local viewBox zoom/pan (the Google-Maps "controls inside the map"
     // convention). State lives in a closure per render -- no module globals, so
     // re-renders cannot accumulate listeners (drag listeners are added on
@@ -1277,15 +1396,21 @@
         });
       }
       let vb = { x: 0, y: 0, w: W, h: H };
+      // The OSM lane layer (S6) is drawn on a canvas over the SVG and follows every view change;
+      // with it on, the zoom goes down to street level (a view about 2 km wide).
+      const lane = opts && opts.osmLane ? _ooOsmLaneLayer(host, svg) : null;
+      const minW = lane ? W * OO_OSM_LANE_MIN_ZOOM : W * 0.04;
       const apply = () => {
         svg.setAttribute("viewBox", `${vb.x} ${vb.y} ${vb.w} ${vb.h}`);
         // Re-declutter labels for the new viewBox (THEME-2: dynamic, constant-size,
         // non-overlapping — more reveal as you zoom). No-op when labels are off.
         if (host._ooLabels && host._ooLabels.length) _ooMapLayoutLabels(host, vb);
+        if (lane) lane.view(vb);
       };
+      if (lane) lane.view(vb);
       const zoom = (f, ax, ay) => {
         const cx = ax != null ? ax : vb.x + vb.w / 2, cy = ay != null ? ay : vb.y + vb.h / 2;
-        const w = Math.min(W, Math.max(W * 0.04, vb.w * f)), sc = w / vb.w;
+        const w = Math.min(W, Math.max(minW, vb.w * f)), sc = w / vb.w;
         vb.x = cx - (cx - vb.x) * sc; vb.y = cy - (cy - vb.y) * sc; vb.w = w; vb.h *= sc; apply();
       };
       host.querySelectorAll("[data-oomap]").forEach(b => b.addEventListener("click", () => {
@@ -1381,6 +1506,10 @@
     // collapsing any two of them would make one of those a silent lie.
     let _ooMapWikiOn = false, _ooMapWikiPlaces = null;
     let _ooMapOsmOn = false, _ooMapOsmGeo = null, _ooMapOsmLoading = false;   // in-browser .pbf overlay (THEME-2)
+    // S05-04 S6: the OSM LANE layer (osm.db, served per view under published caps). Replaces the
+    // bounded preview once any country is read into the lane; the preview stays for installs
+    // that only downloaded a region.
+    let _ooMapOsmLaneOn = false;
     // Signals layer (slice 5a): lazily-fetched space-time events + the focus slider.
     // _ooMapTimeScale = how the slider position maps to a focus YEAR (batch F item 1):
     // "log" (default, unchanged) compresses antiquity so the recent end — where most
@@ -1806,6 +1935,7 @@
         // by ISO code (a microstate the bundled 50m map drops now gets a true shape).
         osmAreas: _ooMapOsmOn && _ooMapOsmGeo ? _ooMapOsmGeo.areas : null,
         onOsm: () => _ooMapToggleOsm(),
+        osmLane: _ooMapOsmLaneOn,
         // Click a country → its coverage breakdown (THEME-2 "click-country → list").
         onCountry: iso => _ooMapCountryDetail(rowBy[(iso || "").toLowerCase()], dim),
         valueLabel: fmtV,
@@ -2004,6 +2134,11 @@
     async function _ooMapToggleOsm() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : (x => x);
       if (_ooMapOsmOn) { _ooMapOsmOn = false; _renderOoMapDim(); return; }
+      if (_ooMapOsmLaneOn) { _ooMapOsmLaneOn = false; _renderOoMapDim(); return; }
+      try {
+        const lane = await api("/api/osm/lane");
+        if ((lane.countries || []).some((c) => c.status === "complete")) { _ooMapOsmLaneOn = true; _renderOoMapDim(); return; }
+      } catch (e) { /* no lane readable: fall back to the downloaded-region preview */ }
       if (typeof OOPBF === "undefined" || !OOPBF.parse) { toast(t("The offline-map reader is unavailable."), "err"); return; }
       if (_ooMapOsmGeo) { _ooMapOsmOn = true; _renderOoMapDim(); return; }   // already parsed; just show
       if (_ooMapOsmLoading) return;
