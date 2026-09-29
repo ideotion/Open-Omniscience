@@ -26,7 +26,6 @@ from src.geo.osm_downloads import (
     osm_filename,
 )
 
-
 # ------------------------------- URL builder -------------------------------- #
 
 

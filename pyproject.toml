@@ -235,6 +235,15 @@ segmentation = [
     "sudachidict_core>=20240409",
 ]
 
+# The OpenStreetMap lane's extract pass (0.5 row D, Q808 = a: «A `[geo]` extra with `pyosmium`
+# for the extract pass; `.osc` diffs are XML and stay pure Python; without the extra the lane
+# says so and offers the small-country path»). pyosmium (BSD-2) ships compiled wheels for
+# Linux, macOS and Windows; it reads a continent extract in C++, where src/osm/pbf.py's
+# pure-Python decoder is capped at SMALL_PATH_MAX_BYTES. Offline: it reads files, never a URL.
+geo = [
+    "osmium>=4.0",
+]
+
 # The `crypto` extra (its only member was python-gnupg) was REMOVED 2026-09-08
 # (audit 10, P2-14): ZERO references anywhere in the tree, including in
 # src/custody/signing.py (this project's real, live signing implementation --

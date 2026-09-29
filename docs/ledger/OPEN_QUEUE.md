@@ -22,6 +22,18 @@
 
 ## Open queue (when maintainer says proceed)
 
+- **ROW D'S PROPOSED DEFAULTS — NOT RULINGS (0.5 row D, `S05-04`, 2026-09-28, thread «Build the OSM lane»,
+  PR #1212; ids `R76`–`R80` are held for this row and none is used yet).** The brief's §6 leaves these to the PR;
+  each is BUILT at the default below and reversible. (1) **The first country: France** (FRA), the country Q807's
+  wizard suggests for a French interface, cut from the Europe extract (~28 GB); the plan and the brief name none,
+  and the maintainer is asked on the PR. (2) **How a country is cut:** by the extract's own `admin_level=2`
+  relation tagged `ISO3166-1:alpha2`, not S05-05's admin-0 artifact (row E, not built); three extra passes over
+  the file; a way belongs to the country holding the mean of its vertices. (3) **The small-country path without
+  `[geo]`:** a pure-Python read of any `.osm.pbf` up to 256 MiB (`src/osm/pbf.py`), refused by name above it; no
+  country-level Geofabrik downloads were added, since that would widen Q806. (4) **What counts as present in
+  analytic 1:** the tag or its `contact:*` twin, non-empty; an empty value is absent. (5) **What is kept:** five
+  kinds (admin, place, POI by a named key list or a `wikidata`/`wikipedia` tag, building, road = a WAY with
+  `highway`); land use, water, power lines and untagged objects are not.
 - **THE SWARM QUESTION — SHARING FETCHES BETWEEN USERS TO SPARE THE NEWSROOMS' SERVERS, THE ARTICLE LEDGER,
   AND WHAT THE APP OWES THE MEDIA IT READS (maintainer concern 2026-09-28; question round `PS01`–`PS16` in
   [`docs/design/SHARED_FETCH_ETHICS_AND_ARTICLE_LEDGER_2026-09-28.md`](../design/SHARED_FETCH_ETHICS_AND_ARTICLE_LEDGER_2026-09-28.md)
