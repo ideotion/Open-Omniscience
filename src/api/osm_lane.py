@@ -1,4 +1,4 @@
-"""The OSM lane's HTTP face: what the lane holds and analytic 1 (S05-04).
+"""The OSM lane's HTTP face: what the lane holds and analytic 1, per country and region (S05-04).
 
 Open Omniscience - Global Intelligence Platform for Investigative Journalism
 Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
@@ -12,7 +12,7 @@ are JSON read by this machine's own UI over loopback, which is the machine.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -55,6 +55,55 @@ def country_completeness(code: str) -> dict:
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from None
     return tag_completeness(a3)
+
+
+@router.post("/countries/{code}/admin1")
+def count_admin1(code: str) -> dict:
+    """Count analytic 1 per admin-1 region, on a thread of its own (local work, no request).
+
+    A refusal is answered at once, by name: no outline file, no region of this country in it.
+    """
+    from src.osm.completeness import Admin1Error, start_count
+    from src.osm.ingest import country_codes
+
+    try:
+        _a2, a3 = country_codes(code)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
+    try:
+        return start_count(a3)
+    except Admin1Error as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from None
+
+
+@router.get("/search")
+def search(q: str = Query(..., min_length=2, max_length=200)) -> dict:
+    """The "Places" facet (Q817): named places in the countries read, from the name index."""
+    from src.osm.places import search_names
+
+    return search_names(" ".join(q.split()))
+
+
+@router.get("/geocode")
+def geocode(q: str = Query(..., min_length=1, max_length=300)) -> dict:
+    """The local geocoder (Q820): an address in the countries read, or «not located». No request."""
+    from src.osm.places import geocode as _geocode
+
+    return _geocode(" ".join(q.split()))
+
+
+@router.get("/objects/{osm_type}/{osm_id}")
+def object_card(osm_type: str, osm_id: int) -> dict:
+    """One stored object with every tag, as the object card shows it."""
+    from src.osm.places import object_card as _card
+
+    try:
+        out = _card(f"{osm_type}/{osm_id}")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
+    if out is None:
+        raise HTTPException(status_code=404, detail="the OpenStreetMap lane holds no such object")
+    return out
 
 
 class CountrySelection(BaseModel):

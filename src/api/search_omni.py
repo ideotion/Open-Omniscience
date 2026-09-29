@@ -436,12 +436,30 @@ def _places_group(db: Session, q: str) -> dict:
     from src.entities.places import search_places
 
     found = search_places(db, q, limit=_PER_GROUP)
-    return {
+    out = {
         "kind": "places",
         "items": found["items"],
         "total": found["total"],
-        "note": "name contains-match over the places your corpus mentions (OpenStreetMap and Wikidata names)",
+        "note": "name contains-match over the places your corpus mentions and the notable places of the "
+                "OpenStreetMap countries you read (OpenStreetMap and Wikidata names)",
     }
+    # S05-04 S5 (Q817): every other named place of those countries, as rows behind the same
+    # facet, from the lane's name index (an FTS index: bounded like the rest of the omnibar).
+    # A notable object already listed as a Place is not listed twice.
+    try:
+        from src.osm.places import search_names
+
+        shown = {it["id"] for it in found["items"]}
+        rows = search_names(q, limit=_PER_GROUP)
+        out["osm"] = {
+            "items": [r for r in rows["items"] if r["object"] not in shown],
+            "total": rows["total"],
+            "note": "name match over the places, places with metadata and administrative areas of the "
+                    "OpenStreetMap countries you read",
+        }
+    except Exception:  # noqa: BLE001 - a locked lane leaves the corpus's Places in place
+        _LOG.warning("omni: the OSM name index could not be read", exc_info=True)
+    return out
 
 
 # ---- events + Help-document content (the omnibar's last two REMAINING groups) ---- #

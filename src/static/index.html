@@ -1753,6 +1753,24 @@
       <div id="oo-coverage-detail" style="margin-top:8px"></div>
       <p class="hint" style="margin-top:8px">Each lens presets the map; the in-map controls still fine-tune what’s measured, group by continent, and combine layers. Per-country statistical data (GDP, population, life expectancy…) lives in the Governments tab. Small territories the coarse outline can’t draw appear as points; data with no country is counted but never placed on the map.</p>
     </section>
+    <!-- S05-04 S5 (Q815 · 1): analytic 1 for each OpenStreetMap country read -- counts, n, method
+         and caveat, the four keys side by side and never blended; per admin-1 region over row E's
+         outlines. Hidden until a country has been read. Filled by loadOsmCompleteness(). -->
+    <section class="panel" id="osm-completeness" hidden>
+      <h2>OpenStreetMap tag completeness</h2>
+      <div id="osm-comp-body"></div>
+    </section>
+    <!-- S05-04 S5 (Q820): the LOCAL geocoder over the addresses of the OpenStreetMap countries
+         read. Never an external service; its scope is stated beside the box, always. -->
+    <section class="panel" id="osm-geocoder" hidden>
+      <h2>Locate an address</h2>
+      <p class="hint" id="osm-geo-scope"></p>
+      <form id="osm-geo-form" style="display:flex;gap:6px;flex-wrap:wrap">
+        <input id="osm-geo-q" type="search" maxlength="300" style="flex:1;min-width:220px" placeholder="House number, street, postcode, town" aria-label="Address">
+        <button type="submit" class="secondary">Locate</button>
+      </form>
+      <div id="osm-geo-out" data-i18n-dyn style="margin-top:8px"></div>
+    </section>
     </div>
 
     <!-- ============================ WIKIPEDIA ======================== -->
@@ -3002,7 +3020,7 @@
       <p class="card-caveat" style="margin-top:6px">Place names and descriptions come from OpenStreetMap and Wikidata and nobody reviews them here. They stay on this machine: place cards are not part of a backup or an export.</p>
       <div class="row" style="margin-top:8px;align-items:end">
         <div style="flex:0 0 auto"><button class="secondary" type="button" id="es-resolve"
-          title="Reads the gazetteer on this machine. No request leaves it.">Resolve places</button></div>
+          title="Reads the gazetteer and the OpenStreetMap data on this machine. No request leaves it.">Resolve places</button></div>
         <div style="flex:0 0 auto"><button type="button" id="es-fetch"
           title="Sends one request every 10 seconds to www.wikidata.org, up to 50 items each. Refused while airplane mode is on.">Fetch from Wikidata</button></div>
         <span id="es-status" class="hint" aria-live="polite"></span>

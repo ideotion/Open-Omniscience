@@ -87,6 +87,8 @@ class IngestReport:
     seconds: float | None = None
     error: str | None = None
     name: str | None = None
+    #: What the name and address indexes took from this cut (S5), or None if not built.
+    search_index: dict | None = None
 
     def to_dict(self) -> dict:
         return {
@@ -100,6 +102,7 @@ class IngestReport:
             "seconds": self.seconds,
             "error": self.error,
             "name": self.name,
+            "search_index": self.search_index,
         }
 
 
@@ -322,6 +325,16 @@ def ingest_country(
             row.error = report.error
             if report.name:
                 row.name = report.name
+    if report.status == "complete":
+        # The "Places" facet and the geocoder read an index, never the rows on a keystroke
+        # (src/osm/places.py). Built from what was just written; a failure is logged and the
+        # index then reads as not matching this ingest, which the Places job rebuilds.
+        try:
+            from src.osm.places import build_search_index
+
+            report.search_index = build_search_index(alpha3)
+        except Exception:  # noqa: BLE001 - the cut is complete; only its index is missing
+            _LOG.warning("the %s search index was not built", alpha3, exc_info=True)
     return report
 
 

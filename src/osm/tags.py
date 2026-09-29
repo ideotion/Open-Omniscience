@@ -43,6 +43,7 @@ so widening it past that is an argued change, not a drift.
 from __future__ import annotations
 
 import json
+from typing import Any
 
 KINDS = ("admin", "place", "poi", "building", "road")
 
@@ -277,6 +278,14 @@ def join_tags(scalars: dict[str, str], families: dict[str, dict[str, str]], blob
         for suffix, v in members.items():
             out[prefix + suffix] = v
     return out
+
+
+def tags_of(row: Any) -> dict[str, str]:
+    """Every tag of a stored ``osm_objects`` row (a mapping), the inverse of the ingest's split."""
+    scalars = {k: row[column_name(k)] for k in SCALAR_KEYS if row[column_name(k)] is not None}
+    fams = {col: json.loads(row[col]) for col in FAMILIES.values() if row[col]}
+    blob = json.loads(row["other_tags"]) if row["other_tags"] else {}
+    return join_tags(scalars, fams, blob)
 
 
 def dumps(obj: dict) -> str | None:

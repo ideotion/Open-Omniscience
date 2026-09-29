@@ -3472,6 +3472,75 @@ def through_time(
     ]
 
 
+# --------------------------------------------------------------------------- #
+#  OpenStreetMap tag completeness (0.5 row D, S05-04 S5; Q815 · 1, Q817)       #
+# --------------------------------------------------------------------------- #
+def osm_tag_completeness(session) -> list[Card]:
+    """Analytic 1 as a Home card, one per country the OSM lane holds complete (Q817: «the
+    aggregates surface as cards»). The four keys side by side, never blended into one figure.
+
+    LANE-ONLY (``registry.LANE_ONLY_PRODUCERS``): Q823 (ODbL) is unanswered, so this card is
+    made for Home and for no bulletin, lead report or card audit -- ``run_all_bounded`` skips
+    it unless its caller asks for the lane's cards, and only Home's refresh does.
+    """
+    from src.osm import completeness
+
+    out: list[Card] = []
+    for c in completeness.countries():
+        if c.get("status") != "complete":
+            continue
+        got = completeness.tag_completeness(c["alpha3"])
+        n = got.get("n")
+        if got.get("status") != "complete" or not n:
+            continue
+        present = {k["key"]: k["present"] for k in got["keys"]}
+        name = c.get("name") or c["alpha3"]
+        vintage = (c.get("vintage") or "")[:10] or None
+        math_rows = [("Places with metadata", str(n))] + [
+            (label, str(present[key]))
+            for key, label in (
+                ("opening_hours", "Listing opening hours"),
+                ("website", "Listing a website"),
+                ("email", "Listing an e-mail address"),
+                ("phone", "Listing a phone number"),
+            )
+        ]
+        out.append(
+            Card(
+                type="osm_tag_completeness",
+                trigger=_trigger(
+                    "You read this country's OpenStreetMap data. This card counts how many of its "
+                    "places list four facts a visitor looks for, each on its own.",
+                    math_rows,
+                ),
+                **_fx(
+                    title=[frame("OpenStreetMap tag completeness: {country}", country=name)],
+                    summary=[
+                        frame(
+                            "Of {n} places with metadata, {opening_hours} list opening hours, {website} a "
+                            "website, {email} an e-mail address and {phone} a phone number.",
+                            n=n, **present,
+                        )
+                    ],
+                ),
+                bucket="context",
+                signal={
+                    "metric": "osm_places_with_metadata",
+                    "value": n,
+                    "country": c["alpha3"],
+                    "vintage": vintage,
+                    "present": present,
+                },
+                method=completeness.METHOD,
+                caveat=completeness.CAVEAT,
+                evidence=[{"title": "World map — OpenStreetMap tag completeness", "url": "/#timemap", "source": None}],
+                n=n,
+                key=f"osm-completeness-{c['alpha3']}",
+            )
+        )
+    return out
+
+
 _DEFAULT_PRODUCERS = (
     ("rising_now", rising_now),
     ("framing_split", framing_split),
@@ -3514,6 +3583,9 @@ _DEFAULT_PRODUCERS = (
     # Supergroups brief S2 (registered last, fail-safe): a theme rising against its
     # own baseline. Bucket watch; NEVER promoted into an urgent alert.
     ("supergroup_rising", supergroup_rising),
+    # 0.5 row D (registered last, fail-safe). LANE-ONLY: Home's refresh asks for it and no
+    # other caller does, because Q823 keeps OSM-derived figures out of every bulletin.
+    ("osm_tag_completeness", osm_tag_completeness),
 )
 
 
