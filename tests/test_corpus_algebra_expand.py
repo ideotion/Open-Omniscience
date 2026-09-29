@@ -61,7 +61,7 @@ def _corpus() -> Session:
 
 
 def _call(db, **kw):
-    params = {"terms": "election,france", "op": "intersection", "cap": 4000,
+    params = {"terms": "election,france", "op": "intersection", "cap": 4000, "channel": None, "place": None,
               "expand": None, "bucket": "week", "db": db}
     params.update(kw)
     return insights_corpus_algebra(**params)
@@ -71,10 +71,15 @@ def test_without_expand_the_response_is_unchanged():
     """The back-compat property, asserted as EQUALITY rather than by eyeballing keys: a
     caller that did not opt in must get exactly what it got before, and must not silently
     start paying for two extra aggregations."""
-    from src.analytics.conjunction import corpus_algebra
+    from src.analytics.conjunction import corpus_algebra, lens_scope
 
     db = _corpus()
-    assert _call(db) == corpus_algebra(db, ["election", "france"], op="intersection", cap=4000)
+    # Additive since S05-11 S3: the route names the scope it read (the whole corpus by default)
+    # and hands the near search's query beside the set. Nothing already there changes.
+    got = _call(db)
+    assert got.pop("near")["query"].startswith("NEAR(")
+    assert got == corpus_algebra(db, ["election", "france"], op="intersection", cap=4000,
+                                 scope=lens_scope(db))
     assert "intensity" not in _call(db)
     assert "trend" not in _call(db)
 

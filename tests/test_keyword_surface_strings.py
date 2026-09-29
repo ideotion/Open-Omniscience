@@ -51,12 +51,12 @@ def _keyed(key: str) -> None:
 _CLIENT = [
     ("exploreTerm", 't8("Resolved to")', "Resolved to"),
     ("exploreTerm", 'tf8("{n} mentions in {articles} articles"', "{n} mentions in {articles} articles"),
-    ("anConjunctionHtml",
+    ("conjLensHtml",
      't("set algebra over N keywords. The set expression is the corpus label; counts only, never a score.")',
      "set algebra over N keywords. The set expression is the corpus label; counts only, never a score."),
-    ("anConjunctionHtml", 't("∩ All")', "∩ All"),
-    ("anConjunctionHtml", 't("∪ Any")', "∪ Any"),
-    ("anConjunctionHtml", 't("∖ First-only")', "∖ First-only"),
+    ("conjLensHtml", 't("∩ All")', "∩ All"),
+    ("conjLensHtml", 't("∪ Any")', "∪ Any"),
+    ("conjLensHtml", 't("∖ First-only")', "∖ First-only"),
     ("anCombineHtml", 'tf("Open {n} article(s) as a corpus →"', "Open {n} article(s) as a corpus →"),
     ("anCombineHtml", 'tf("{n} article(s)"', "{n} article(s)"),
     ("anCombineHtml", '"No resolvable keyword given."', "No resolvable keyword given."),
@@ -79,7 +79,7 @@ def test_the_old_bare_english_is_gone() -> None:
     app = app_js()
     explore = strip_comments(function_body(app, "exploreTerm"))
     assert "Resolved to <strong>" not in explore and " mentions in ${tr.articles} articles" not in explore
-    conj = strip_comments(function_body(app, "anConjunctionHtml"))
+    conj = strip_comments(function_body(app, "conjLensHtml"))
     assert ">∩ All</button>" not in conj and "set algebra over N keywords. `" not in conj
     sg = strip_comments(function_body(app, "sgCard"))
     assert "Dominated by <b>" not in sg and 'member${g.count === 1 ? "" : "s"}' not in sg
