@@ -56,6 +56,12 @@ tracked as follow-up work.
 - Schema changes go through Alembic (`alembic revision --autogenerate`); CI runs
   `alembic check` to catch model/migration drift.
 
+## Locale files and merge conflicts
+
+The 12 `src/static/locales/*.json` files are kept **sorted** (`_meta` first, then keys in code-point order), so two PRs that add strings insert at different places and merge cleanly. After adding strings, run `python scripts/locales_merge.py`; it sorts the files and checks them (`--check` only verifies; `tests/test_locales_merge.py` fails on unsorted or duplicated keys).
+
+If `git merge origin/main` leaves conflict markers in locale files, run the same script: it keeps both sides of every hunk, sorts, and stops naming the key if both sides gave one key different text (a real contradiction to decide). `docs/ledger/shipped.csv` is `merge=union` in `.gitattributes`, which a local `git merge` honours but GitHub's web merge and update-branch button do not: merge main locally, then check for duplicate `(date, area, item)` rows.
+
 ## Standards
 
 - Provenance everywhere: stored data carries source + timestamp + hash.
