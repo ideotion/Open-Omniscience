@@ -231,3 +231,91 @@ def test_rides_the_debug_bundle_and_the_all_diagnostics_zip(db):
     # runaway dbstat scan is deadline-interrupted, never stalls the bundle).
     assert '"storage_composition": _member(' in src_text
     assert "lambda: _storage_composition(db)" in src_text
+
+
+def test_without_dbstat_a_sampled_text_share_is_reported(db, monkeypatch):
+    """The encrypted production build never has dbstat, so DB-10 §6's split could never be
+    taken there. The degrade block now carries a SAMPLED estimate of the article-text share,
+    labelled as sampled, with D45's row-cliff and stored-twice counts — and still no
+    fabricated per-table split."""
+    real_rows = storage_mod._rows
+
+    def fake_rows(session, sql):
+        if "dbstat" in sql:
+            raise Exception("no such table: dbstat")  # noqa: TRY002 - mimics OperationalError
+        return real_rows(session, sql)
+
+    monkeypatch.setattr(storage_mod, "_rows", fake_rows)
+    out = storage_composition(db)
+    assert out["available"] is False and "tables" not in out
+    est = out["estimate"]
+    assert est["articles"] == 30 and est["sampled"] == 30
+    # "body " * 500 = 2,500 bytes of text per article, nothing compressed in the fixture.
+    assert est["mean_text_bytes_per_article"] == 2500
+    assert est["article_text_bytes"] == 75000
+    assert 0 < est["article_text_share"] <= 1
+    assert est["remainder_bytes"] == out["db_bytes"] - 75000
+    assert est["row_cliff"]["sampled_over"] == 0
+    assert est["text_stored_twice"]["sampled_raw_and_compressed"] == 0
+    assert est["derived_rows_upper_bound"]["keyword_mentions"] == 30
+    assert "Sampled, not measured" in est["method"] and est["caveat"]
+
+
+def test_the_estimate_counts_rows_above_the_d45_cliff(db, monkeypatch):
+    real_rows = storage_mod._rows
+
+    def fake_rows(session, sql):
+        if "dbstat" in sql:
+            raise Exception("no such table: dbstat")  # noqa: TRY002
+        return real_rows(session, sql)
+
+    a = db.get(Article, 1)
+    a.content = "x" * 20000
+    a.compressed_content = b"z" * 100
+    db.commit()
+    monkeypatch.setattr(storage_mod, "_rows", fake_rows)
+    est = storage_composition(db)["estimate"]
+    assert est["row_cliff"]["sampled_over"] == 1
+    assert est["text_stored_twice"]["sampled_raw_and_compressed"] == 1
+
+
+def test_the_estimate_reports_a_deadline_abort(db, monkeypatch):
+    from src.database.maintenance import StatementTimeout
+
+    def boom(session, sql, params=None):
+        raise StatementTimeout("aborted after 60s")
+
+    monkeypatch.setattr(storage_mod, "_scalar", boom)
+    est = storage_mod.content_share_estimate(db, 10**6)
+    assert est["aborted"] is True and "deadline" in est["reason"]
+
+
+def test_a_gapped_small_store_is_read_in_full_not_sampled(tmp_path):
+    """49 rows at ids 1..49 plus one at id 1,000,000: id-spread probes would all land on the
+    far row. A store at or under the probe count is read in full and says so."""
+    engine = create_engine(f"sqlite:///{tmp_path / 'gap.db'}", future=True)
+    Base.metadata.create_all(engine)
+    s = sessionmaker(bind=engine, future=True)()
+    s.add(Source(name="S", domain="x.test", country="fr"))
+    s.flush()
+    ids = list(range(1, 50)) + [1_000_000]
+    for i in ids:
+        s.add(
+            Article(
+                id=i, url=f"https://x.test/{i}", canonical_url=f"https://x.test/{i}",
+                source_id=1, title="T", content="a" * (100 if i != 1_000_000 else 5100),
+                hash=f"g{i}", language="en", created_at=datetime.now(UTC),
+            )
+        )
+    s.commit()
+    est = storage_mod.content_share_estimate(s, 10**6)
+    s.close()
+    assert est["exact"] is True and est["sampled"] == 50
+    assert est["article_text_bytes"] == 49 * 100 + 5100
+    assert "LOWER BOUND" in est["row_cliff"]["note"]
+
+
+def test_an_overshooting_share_is_flagged_never_clamped(db):
+    est = storage_mod.content_share_estimate(db, 1000)  # file smaller than the text
+    assert est["article_text_share"] > 1
+    assert "exceeds_file" in est and "remainder_bytes" not in est

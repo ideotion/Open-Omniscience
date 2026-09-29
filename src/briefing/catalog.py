@@ -440,6 +440,8 @@ _OTHERS: tuple[ProducerSpec, ...] = (
        "What your corpus holds from this same date in earlier years."),
     _p("source_candidates_waiting", "context", "Sources awaiting review",
        "Discovered sources sitting in the queue for your decision."),
+    _p("osm_tag_completeness", "context", "Map data completeness",
+       "How many OpenStreetMap places in a country you read list opening hours, a website, an e-mail or a phone."),
     # trust
     _p("stale_data", "trust", "Stale data",
        "Part of your corpus has not refreshed when it should have."),

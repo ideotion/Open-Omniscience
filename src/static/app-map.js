@@ -1096,7 +1096,7 @@
           ${opts.onSignals ? `<button class="tiny secondary" data-oomap-signals aria-pressed="${opts.signalsOn ? "true" : "false"}"${opts.signalsOn ? ' style="border-color:var(--accent);color:var(--accent)"' : ""}>${esc(t("Signals"))}</button>` : ""}
           ${opts.onServer ? `<button class="tiny secondary" data-oomap-server aria-pressed="${opts.serverOn ? "true" : "false"}"${opts.serverOn ? ' style="border-color:var(--accent);color:var(--accent)"' : ""} title="${esc(t("Server IP locations — offline geo; a CDN edge / anycast host, not the publisher's origin"))}">${esc(t("Server IPs"))}</button>` : ""}
           ${opts.onLabels ? `<button class="tiny secondary" data-oomap-labels aria-pressed="${opts.labelsOn ? "true" : "false"}"${opts.labelsOn ? ' style="border-color:var(--accent);color:var(--accent)"' : ""}>${esc(t("Labels"))}</button>` : ""}
-          ${opts.onOsm ? `<button class="tiny secondary" data-oomap-osm aria-pressed="${opts.osmOn ? "true" : "false"}"${opts.osmOn ? ' style="border-color:var(--accent);color:var(--accent)"' : ""} title="${esc(t("Overlay a downloaded offline-map region (preview)"))}">${esc(t("OSM"))}</button>` : ""}
+          ${opts.onOsm ? `<button class="tiny secondary" data-oomap-osm aria-pressed="${opts.osmOn || opts.osmLane ? "true" : "false"}"${opts.osmOn || opts.osmLane ? ' style="border-color:var(--accent);color:var(--accent)"' : ""} title="${esc(t("Overlay a downloaded offline-map region (preview)"))}">${esc(t("OSM"))}</button>` : ""}
           ${hasAdmin1 && !regionVals ? `<button class="tiny secondary" data-oomap-regions aria-pressed="${_ooMapRegionsOn ? "true" : "false"}"${_ooMapRegionsOn ? ' style="border-color:var(--accent);color:var(--accent)"' : ""} title="${esc(t("Show or hide the first-level regions (states, provinces, regions) OpenStreetMap draws inside each country."))}">${esc(t("Regions"))}</button>` : ""}
           ${worldviewHtml}
         </div>` : "";
@@ -1194,6 +1194,7 @@
         ${opts.serverOn ? `<span class="muted">${esc(t("IP Geolocation by DB-IP"))} · <a href="https://db-ip.com" target="_blank" rel="noopener">db-ip.com</a> · CC BY 4.0</span>` : ""}
         ${opts.signalsOn ? `<span data-oomap-sigkinds>${_ooSigKindsHtml(sigKinds)}</span>` : ""}
         ${opts.signalsOn ? `<span class="muted" style="display:inline-flex;align-items:center;gap:6px" title="${esc(t("Shape = certainty; colour = kind."))}">● ${esc(t("confirmed"))} · ▲ ${esc(t("scheduled"))} · ◆ ${esc(t("deduced"))}</span>` : ""}
+        ${opts.osmLane ? `<span class="muted" data-oomap-osmlane data-i18n-dyn>${esc(t("OpenStreetMap: reading the view…"))}</span> <span class="muted">© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">${esc(t("OpenStreetMap contributors"))}</a> · ODbL 1.0</span>` : ""}
         ${osm ? `<span class="muted" title="${esc(t("Bounded preview from a downloaded .osm.pbf — not the full region; no network."))}">${ooLabelHtml(esc(t("offline OSM")), esc(_ooOsmCounts(osm)))}</span>` : ""}
       </div>
       ${regionVals && !hasAdmin1 ? `<div class="card-caveat" style="margin-top:4px">${esc(t("This measure is by region, but the region boundaries are not built on this install yet: the table below holds every value."))}</div>` : ""}
@@ -1244,6 +1245,129 @@
       g.innerHTML = out;
     }
 
+    // -- The OSM lane layer (S05-04 S6, Q822 = a) ------------------------------------------ //
+    // Canvas 2D over the SVG, fed by /api/osm/view for the box in sight. The SERVER applies the
+    // published caps (points per view, vertices per view, the cluster grid) and says which one
+    // shaped the answer; this layer draws exactly what came back and states it in the legend,
+    // with the caps and the two measured times (read, drawn) in the hover. A view that is still
+    // loading keeps the last picture, re-placed; nothing is drawn that the server did not send.
+    const OO_OSM_LANE_MIN_ZOOM = 0.00005;
+    const _OO_OSM_KIND_STYLE = {
+      poi: ["--accent", 0, 1], place: ["--accent", 0, 1], admin: ["--accent", 0, 0.8],
+      road: ["--muted", 0, 0.9], power: ["--caveat", 0, 0.9], building: ["--muted", 0.18, 0.6],
+      landuse: ["--muted", 0.08, 0.35], water: ["--accent", 0.22, 0.7],
+    };
+    function _ooOsmLaneBox(vb) {
+      // Equal Earth has no rectangular lon/lat box, so the view's edges are sampled.
+      let w = 180, e = -180, s = 90, n = -90;
+      for (let i = 0; i <= 8; i++) {
+        for (const [px, py] of [[vb.x + vb.w * i / 8, vb.y], [vb.x + vb.w * i / 8, vb.y + vb.h], [vb.x, vb.y + vb.h * i / 8], [vb.x + vb.w, vb.y + vb.h * i / 8]]) {
+          const q = unproject(Math.max(0, Math.min(MAP_W, px)), Math.max(0, Math.min(MAP_H, py)));
+          if (!isFinite(q.lon) || !isFinite(q.lat)) continue;
+          w = Math.min(w, q.lon); e = Math.max(e, q.lon); s = Math.min(s, q.lat); n = Math.max(n, q.lat);
+        }
+      }
+      return { w: Math.max(-180, w), e: Math.min(180, e), s: Math.max(-90, s), n: Math.min(90, n) };
+    }
+    function _ooOsmLaneLayer(host, svg) {
+      const wrap = svg.parentElement; if (!wrap) return null;
+      if (getComputedStyle(wrap).position === "static") wrap.style.position = "relative";
+      const cv = document.createElement("canvas");
+      cv.setAttribute("aria-hidden", "true");
+      cv.style.cssText = "position:absolute;pointer-events:none";
+      wrap.appendChild(cv);
+      // A re-render of the map (regions toggle, worldview) builds a NEW layer; the old one must
+      // stop touching the legend the new one now owns.
+      const gen = host._ooLaneGen = (host._ooLaneGen || 0) + 1;
+      let data = null, cur = null, timer = null, seq = 0, readMs = null, drawMs = null;
+      const css = getComputedStyle(host);
+      const color = (v) => (css.getPropertyValue(v) || "").trim() || "#888";
+      const place = () => {
+        const r = svg.getBoundingClientRect(), pr = wrap.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
+        cv.style.left = `${r.left - pr.left}px`; cv.style.top = `${r.top - pr.top}px`;
+        cv.style.width = `${r.width}px`; cv.style.height = `${r.height}px`;
+        cv.width = Math.round(r.width * dpr); cv.height = Math.round(r.height * dpr);
+        return { w: r.width, h: r.height, dpr };
+      };
+      const draw = () => {
+        if (host._ooLaneGen !== gen) return;
+        const t0 = performance.now();
+        const sz = place(), ctx = cv.getContext("2d"); if (!ctx || !cur) return;
+        ctx.setTransform(sz.dpr, 0, 0, sz.dpr, 0, 0);
+        ctx.clearRect(0, 0, sz.w, sz.h);
+        if (!data) return;
+        const px = (lat, lon) => { const q = project(lon, lat); return [(q.x - cur.x) / cur.w * sz.w, (q.y - cur.y) / cur.h * sz.h]; };
+        if (data.status === "clusters") {
+          // Area ∝ count, against the view's largest cluster or 50, whichever is more, so a view
+          // of small clusters is not drawn as large as a city's.
+          const max = Math.max(50, ...data.clusters.map((c) => c.n));
+          ctx.font = "10px sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+          for (const c of data.clusters) {
+            const [x, y] = px(c.lat, c.lon), r = Math.max(2.5, 18 * Math.sqrt(c.n / max));
+            ctx.beginPath(); ctx.arc(x, y, r, 0, 2 * Math.PI);
+            ctx.globalAlpha = 0.9; ctx.strokeStyle = color("--bg"); ctx.lineWidth = 3; ctx.stroke();   // a halo over any fill
+            ctx.globalAlpha = 0.45; ctx.fillStyle = color("--accent"); ctx.fill();
+            ctx.globalAlpha = 1; ctx.strokeStyle = color("--accent"); ctx.lineWidth = 1; ctx.stroke();
+            if (r >= 9) { ctx.fillStyle = color("--fg"); ctx.fillText(fmtNum(c.n, 0), x, y); }
+          }
+        } else if (data.status === "objects") {
+          for (const f of data.objects) {
+            const st = _OO_OSM_KIND_STYLE[f.k] || ["--muted", 0, 0.8], col = color(st[0]);
+            if (f.c && f.c.length >= 2) {
+              ctx.beginPath();
+              f.c.forEach(([la, lo], i) => { const [x, y] = px(la, lo); if (i) ctx.lineTo(x, y); else ctx.moveTo(x, y); });
+              const closed = f.c.length > 3 && f.c[0][0] === f.c[f.c.length - 1][0] && f.c[0][1] === f.c[f.c.length - 1][1];
+              if (closed && st[1] > 0) { ctx.globalAlpha = st[1]; ctx.fillStyle = col; ctx.fill(); }
+              ctx.globalAlpha = st[2]; ctx.strokeStyle = col; ctx.lineWidth = f.k === "road" ? 1.2 : 0.8; ctx.stroke();
+            } else if (f.p) {
+              const [x, y] = px(f.p[0], f.p[1]);
+              ctx.beginPath(); ctx.arc(x, y, 2.5, 0, 2 * Math.PI);
+              ctx.globalAlpha = 0.9; ctx.strokeStyle = color("--bg"); ctx.lineWidth = 2; ctx.stroke();
+              ctx.globalAlpha = st[2]; ctx.fillStyle = col; ctx.fill();
+            }
+          }
+        }
+        ctx.globalAlpha = 1;
+        drawMs = Math.round(performance.now() - t0);
+        _ooOsmLaneLegend(host, data, readMs, drawMs);
+      };
+      const fetchView = async () => {
+        if (host._ooLaneGen !== gen) return;
+        const my = ++seq, box = _ooOsmLaneBox(cur), t0 = performance.now();
+        if (!(box.w < box.e && box.s < box.n)) return;
+        try {
+          const d = await api("/api/osm/view?" + new URLSearchParams({ w: box.w, s: box.s, e: box.e, n: box.n }).toString());
+          if (my !== seq) return;                        // a newer view was asked for meanwhile
+          readMs = Math.round(performance.now() - t0); data = d; draw();
+        } catch (e) {
+          if (my !== seq) return;
+          const el = host.querySelector("[data-oomap-osmlane]");
+          if (el) el.textContent = ((window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x))("OpenStreetMap: the view could not be read.");
+        }
+      };
+      return {
+        view(vb) {
+          cur = { x: vb.x, y: vb.y, w: vb.w, h: vb.h };
+          draw();                                        // the last answer, re-placed at once
+          clearTimeout(timer); timer = setTimeout(fetchView, 180);
+        },
+      };
+    }
+    function _ooOsmLaneLegend(host, d, readMs, drawMs) {
+      const el = host.querySelector("[data-oomap-osmlane]"); if (!el || !d) return;
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      const c = d.caps || {};
+      let line;
+      if (d.status === "no-lane" || d.status === "not-indexed") line = t("OpenStreetMap: no country's map data is ready here yet.");
+      else if (d.status === "clusters") line = _mapTf("OpenStreetMap, objects in view: {n}. Drawn as clusters: {c}.", { n: fmtNum(d.total, 0), c: fmtNum(d.clusters.length, 0) });
+      else if (d.shapes === "points") line = _mapTf("OpenStreetMap, objects in view: {n}. Shapes drawn as points.", { n: fmtNum(d.total, 0) });
+      else line = _mapTf("OpenStreetMap, objects in view: {n}. Drawn one by one.", { n: fmtNum(d.total, 0) });
+      el.textContent = line;
+      el.title = `${_mapTf(c.method || "", { points: fmtNum(c.points_per_view, 0), vertices: fmtNum(c.vertices_per_view, 0), grid: c.cluster_grid })} `
+        + (d.status === "clusters" && c.cluster_edge ? `${t(c.cluster_edge)} ` : "")
+        + _mapTf("Read in {read} ms, drawn in {draw} ms on this machine.", { read: fmtNum(readMs, 0), draw: fmtNum(drawMs, 0) });
+    }
+
     // Instance-local viewBox zoom/pan (the Google-Maps "controls inside the map"
     // convention). State lives in a closure per render -- no module globals, so
     // re-renders cannot accumulate listeners (drag listeners are added on
@@ -1277,15 +1401,21 @@
         });
       }
       let vb = { x: 0, y: 0, w: W, h: H };
+      // The OSM lane layer (S6) is drawn on a canvas over the SVG and follows every view change;
+      // with it on, the zoom goes down to street level (a view about 2 km wide).
+      const lane = opts && opts.osmLane ? _ooOsmLaneLayer(host, svg) : null;
+      const minW = lane ? W * OO_OSM_LANE_MIN_ZOOM : W * 0.04;
       const apply = () => {
         svg.setAttribute("viewBox", `${vb.x} ${vb.y} ${vb.w} ${vb.h}`);
         // Re-declutter labels for the new viewBox (THEME-2: dynamic, constant-size,
         // non-overlapping — more reveal as you zoom). No-op when labels are off.
         if (host._ooLabels && host._ooLabels.length) _ooMapLayoutLabels(host, vb);
+        if (lane) lane.view(vb);
       };
+      if (lane) lane.view(vb);
       const zoom = (f, ax, ay) => {
         const cx = ax != null ? ax : vb.x + vb.w / 2, cy = ay != null ? ay : vb.y + vb.h / 2;
-        const w = Math.min(W, Math.max(W * 0.04, vb.w * f)), sc = w / vb.w;
+        const w = Math.min(W, Math.max(minW, vb.w * f)), sc = w / vb.w;
         vb.x = cx - (cx - vb.x) * sc; vb.y = cy - (cy - vb.y) * sc; vb.w = w; vb.h *= sc; apply();
       };
       host.querySelectorAll("[data-oomap]").forEach(b => b.addEventListener("click", () => {
@@ -1381,6 +1511,10 @@
     // collapsing any two of them would make one of those a silent lie.
     let _ooMapWikiOn = false, _ooMapWikiPlaces = null;
     let _ooMapOsmOn = false, _ooMapOsmGeo = null, _ooMapOsmLoading = false;   // in-browser .pbf overlay (THEME-2)
+    // S05-04 S6: the OSM LANE layer (osm.db, served per view under published caps). Replaces the
+    // bounded preview once any country is read into the lane; the preview stays for installs
+    // that only downloaded a region.
+    let _ooMapOsmLaneOn = false;
     // Signals layer (slice 5a): lazily-fetched space-time events + the focus slider.
     // _ooMapTimeScale = how the slider position maps to a focus YEAR (batch F item 1):
     // "log" (default, unchanged) compresses antiquity so the recent end — where most
@@ -1806,6 +1940,7 @@
         // by ISO code (a microstate the bundled 50m map drops now gets a true shape).
         osmAreas: _ooMapOsmOn && _ooMapOsmGeo ? _ooMapOsmGeo.areas : null,
         onOsm: () => _ooMapToggleOsm(),
+        osmLane: _ooMapOsmLaneOn,
         // Click a country → its coverage breakdown (THEME-2 "click-country → list").
         onCountry: iso => _ooMapCountryDetail(rowBy[(iso || "").toLowerCase()], dim),
         valueLabel: fmtV,
@@ -2004,6 +2139,11 @@
     async function _ooMapToggleOsm() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : (x => x);
       if (_ooMapOsmOn) { _ooMapOsmOn = false; _renderOoMapDim(); return; }
+      if (_ooMapOsmLaneOn) { _ooMapOsmLaneOn = false; _renderOoMapDim(); return; }
+      try {
+        const lane = await api("/api/osm/lane");
+        if ((lane.countries || []).some((c) => c.status === "complete")) { _ooMapOsmLaneOn = true; _renderOoMapDim(); return; }
+      } catch (e) { /* no lane readable: fall back to the downloaded-region preview */ }
       if (typeof OOPBF === "undefined" || !OOPBF.parse) { toast(t("The offline-map reader is unavailable."), "err"); return; }
       if (_ooMapOsmGeo) { _ooMapOsmOn = true; _renderOoMapDim(); return; }   // already parsed; just show
       if (_ooMapOsmLoading) return;
@@ -2060,6 +2200,7 @@
     async function loadOoMapCoverage() {
       const host = $("oo-coverage-map"); if (!host) return;
       loadOsmVintage();   // Q828: the OSM data's vintage line, read beside the map (not awaited)
+      loadOsmCompleteness();   // S05-04 S5: analytic 1, below the map (not awaited)
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : (x => x);
       host.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
       try {
@@ -2623,18 +2764,29 @@
         }
       }
       if (sug) {
-        // Two rows, neither ranked: every country of the interface language, and every country
-        // whose laws World law watches -- each in the reader's alphabetical order, so no
-        // country is put first.
+        // R76: the country the interface language comes from is offered first, and while no
+        // country is chosen, as the default first import (one button; nothing downloads until
+        // it is clicked and the download itself passes the one consent). Then every other
+        // country of the language and every country whose laws World law watches, each in the
+        // reader's alphabetical order.
         const chip = (r, extra) => {
           const cost = r.extract ? `${t(r.extract.name)} ~${humanBytes(r.extract.size_estimate_bytes)}` : t(r.extract_reason || "");
           const title = extra ? `${cost} · ${extra}` : cost;
           return `<button class="tiny secondary" data-on-click="osmPickAddCode(${esc(JSON.stringify(r.cc))})" title="${esc(title)}">${esc(_osmPickLabel(r.cc, r.name))}${r.extract ? ` <span class="muted">· ~${humanBytes(r.extract.size_estimate_bytes)}</span>` : ""}</button>`;
         };
         const byName = (a, b) => ooCountryCompare(a.cc, b.cc);
-        const open = (p.suggested || []).filter((r) => !chosen.has(r.cc)).sort(byName);
+        const open = (p.suggested || []).filter((r) => !chosen.has(r.cc))
+          .sort((a, b) => (b.origin ? 1 : 0) - (a.origin ? 1 : 0) || byName(a, b));
         const law = (p.law_suggested || []).filter((r) => !chosen.has(r.cc)).sort(byName);
-        let html = open.length
+        let html = "";
+        if (p.first && !chosen.has(p.first.cc)) {
+          const f = p.first;
+          const cost = f.extract ? ` <span class="muted">· ${esc(t(f.extract.name))} ~${humanBytes(f.extract.size_estimate_bytes)}</span>` : "";
+          html += `<div class="osm-pick-first" style="margin-bottom:10px"><div class="hint" style="margin-bottom:4px">${esc(t(p.first_basis || ""))}</div>`
+            + `<button class="tiny" data-on-click="osmPickAddCode(${esc(JSON.stringify(f.cc))})">${esc(osmTf("Start with {country}", { country: _osmPickLabel(f.cc, f.name) }))}</button>${cost}`
+            + (f.extract ? "" : ` <span class="hint">${esc(t(f.extract_reason || ""))}</span>`) + `</div>`;
+        }
+        html += open.length
           ? `<div class="hint" style="margin-bottom:4px">${esc(t(p.suggestion_basis || ""))}</div>` + open.map((r) => chip(r)).join(" ")
           : "";
         if (law.length) {
@@ -2682,6 +2834,9 @@
     document.addEventListener("oo:langchange", () => {
       if (_osmPicker) loadOsmPicker();
       if ($("oomap-osm-vintage") && $("oomap-osm-vintage").textContent) loadOsmVintage();
+      if (_osmComp) _renderOsmCompleteness();
+      _osmGeoScope();
+      _osmGeoRender();
     });
     function openSettingsOsm() { showTab("settings"); (_setSubtabs || {select: showSetCat}).select("offlinemap"); }
     // Q828: the World map states the vintage of the OpenStreetMap data and links to where it
@@ -2700,6 +2855,199 @@
             ? osmTf("{country}, as of {date}", { country: _osmPickLabel(c.alpha3, c.name), date: c.vintage.slice(0, 10) })
             : osmTf("{country}, date not stated in the extract", { country: _osmPickLabel(c.alpha3, c.name) }))).join(" · ")} · ${link}`
         : `${esc(t("No OpenStreetMap country has been read yet."))} ${link}`;
+    }
+
+    // -- Analytic 1: tag completeness (S05-04 S5, Q815 · 1) ------------------------------ //
+    // For each country the lane read: how many of its places with metadata list each of four
+    // tags. COUNTS with their n, side by side, never blended into one figure; a share only
+    // where n is not zero. Per admin-1 region over row E's outlines, counted once on request
+    // (local work, no network) and drawn through the ONE map, whose ranked table lists every
+    // region. The caveat is visible, the method is in the hover (informed consent by layering).
+    const OSM_COMP_KEYS = [
+      ["opening_hours", "Opening hours"], ["website", "Website"], ["email", "E-mail address"], ["phone", "Phone number"],
+    ];
+    let _osmComp = null, _osmCompKey = "opening_hours", _osmCompPoll = null;
+    async function loadOsmCompleteness() {
+      const sec = $("osm-completeness"); if (!sec) return;
+      let lane = null;
+      try { lane = await api("/api/osm/lane"); } catch (e) { sec.hidden = true; return; }
+      const done = ((lane || {}).countries || []).filter((c) => c.status === "complete");
+      if (!done.length) { sec.hidden = true; _osmComp = null; _osmGeoShow([]); return; }
+      const out = [];
+      for (const c of done) {
+        try { out.push(await api(`/api/osm/countries/${encodeURIComponent(c.alpha3)}/completeness`)); }
+        catch (e) { out.push({ country: c.alpha3, name: c.name, status: "unreadable" }); }
+      }
+      _osmComp = out;
+      sec.hidden = false;
+      _renderOsmCompleteness();
+      _osmGeoShow(done);
+    }
+    function _osmCompShare(k) {
+      return k.share == null ? "—" : `${fmtNum(k.share * 100, 1)} %`;
+    }
+    function _osmCompTable(keys, n) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const rows = OSM_COMP_KEYS.map(([key, label]) => {
+        const k = (keys || []).find((x) => x.key === key) || { present: 0, share: null };
+        const tagTip = k.twin ? `${key} · ${k.twin}` : key;
+        return `<tr><th scope="row" style="text-align:start;padding:2px 8px" title="${esc(tagTip)}">${esc(t(label))}</th>`
+          + `<td style="text-align:end;padding:2px 8px">${esc(fmtNum(k.present, 0))}</td>`
+          + `<td style="text-align:end;padding:2px 8px">${esc(_osmCompShare(k))}</td></tr>`;
+      }).join("");
+      return `<table style="margin-top:6px"><thead><tr><th scope="col" style="text-align:start;padding:2px 8px">${esc(t("Tag"))}</th>`
+        + `<th scope="col" style="text-align:end;padding:2px 8px">${esc(t("Places listing it"))}</th>`
+        + `<th scope="col" style="text-align:end;padding:2px 8px">${esc(osmCompTf("Share of {n}", { n: fmtNum(n, 0) }))}</th></tr></thead>`
+        + `<tbody>${rows}</tbody></table>`;
+    }
+    function osmCompTf(s, v) {
+      return (window.OOI18N && OOI18N.tf) ? OOI18N.tf(s, v) : s.replace(/\{(\w+)\}/g, (m, k) => (v[k] == null ? m : v[k]));
+    }
+    function _osmCompAdmin1(c) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const a = c.admin1 || {};
+      const btn = (label) => `<button type="button" class="tiny secondary" data-on-click="osmCountAdmin1('${esc(c.country)}')">${esc(t(label))}</button>`;
+      const say = {
+        "no-admin1-file": "Per region: the region outlines are not built on this install, so no region is counted.",
+        "no-regions": "Per region: the region outlines hold no region of this country.",
+        "not-counted": "Per region: not counted yet. Counting reads every place once, on this machine.",
+        stale: "Per region: counted from an earlier read of the data or of the outlines, so the figures below are not shown.",
+        interrupted: "Per region: the count stopped before it finished (the app was closed).",
+        failed: "Per region: the count failed.",
+        counting: "Per region: counting…",
+        unreadable: "Per region: the count could not be read.",
+      }[a.status];
+      if (a.status !== "complete") {
+        const again = { "not-counted": "Count per region", stale: "Count again", interrupted: "Count again", failed: "Count again" }[a.status];
+        if (a.status === "counting") _osmCompSchedulePoll();
+        return `<div class="hint" style="margin-top:8px">${esc(t(say || "Per region: the count could not be read."))} ${again ? btn(again) : ""}</div>`;
+      }
+      const lang = (window.OOI18N && OOI18N.current && OOI18N.current()) || "en";
+      const keyOpts = OSM_COMP_KEYS.map(([key, label]) => `<option value="${esc(key)}"${key === _osmCompKey ? " selected" : ""}>${esc(t(label))}</option>`).join("");
+      const gaps = osmCompTf("{outside} places lie in no region's outline and {nopoint} have no point of their own: counted, not placed.",
+        { outside: fmtNum(a.outside || 0, 0), nopoint: fmtNum(a.no_point || 0, 0) });
+      return `<div style="margin-top:10px"><label>${esc(t("Map the share of places listing"))} `
+        + `<select data-osm-comp-key="${esc(c.country)}">${keyOpts}</select></label>`
+        + `<div class="hint">${esc(gaps)}</div>`
+        + `<div id="osm-comp-map-${esc(c.country)}" style="margin-top:6px" data-lang="${esc(lang)}"></div></div>`;
+    }
+    function _osmCompDrawMap(c) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const host = $(`osm-comp-map-${c.country}`); const a = c.admin1 || {};
+      if (!host || a.status !== "complete") return;
+      const vals = {}, byKey = {};
+      for (const r of a.regions || []) {
+        const k = (r.keys || []).find((x) => x.key === _osmCompKey);
+        byKey[r.key] = { r, k };
+        if (k && k.share != null) vals[r.key] = k.share * 100;   // n = 0 or not counted: absent, never 0
+      }
+      const label = t((OSM_COMP_KEYS.find(([k]) => k === _osmCompKey) || ["", ""])[1]);
+      ooMap(host, {
+        regionValues: vals, unit: "%", label, aria: label,
+        method: t(a.method || ""), caveat: t(a.caveat || ""),
+        valueLabel: (key, v) => {
+          const e = byKey[key];
+          return e && e.k ? osmCompTf("{share} % ({present} of {n})", { share: fmtNum(v, 1), present: fmtNum(e.k.present, 0), n: fmtNum(e.r.n, 0) }) : `${fmtNum(v, 1)} %`;
+        },
+      });
+    }
+    function _renderOsmCompleteness() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const host = $("osm-comp-body"); if (!host || !_osmComp) return;
+      host.innerHTML = _osmComp.map((c) => {
+        const name = _osmPickLabel(c.country, c.name);
+        const head = c.vintage ? osmCompTf("{country}, as of {date}", { country: name, date: c.vintage.slice(0, 10) }) : name;
+        if (c.status !== "complete") {
+          return `<h3 class="lib-sub">${esc(head)}</h3><div class="muted">${esc(t("This country's figures could not be read."))}</div>`;
+        }
+        if (!c.n) {
+          return `<h3 class="lib-sub">${esc(head)}</h3><div class="muted">${esc(t("No places with metadata were kept for this country, so there is no share to show."))}</div>`;
+        }
+        return `<h3 class="lib-sub">${esc(head)}</h3>`
+          + `<div class="hint" title="${esc(t(c.method || ""))}">${esc(osmCompTf("{n} places with metadata, each tag counted on its own.", { n: fmtNum(c.n, 0) }))}</div>`
+          + _osmCompTable(c.keys, c.n)
+          + `<div class="card-caveat" style="margin-top:4px">${esc(t(c.caveat || ""))}</div>`
+          + _osmCompAdmin1(c);
+      }).join("");
+      host.querySelectorAll("select[data-osm-comp-key]").forEach((sel) => {
+        sel.addEventListener("change", () => { _osmCompKey = sel.value; _renderOsmCompleteness(); });
+      });
+      for (const c of _osmComp) _osmCompDrawMap(c);
+    }
+    function _osmCompSchedulePoll() {
+      if (_osmCompPoll) return;
+      _osmCompPoll = setTimeout(async () => { _osmCompPoll = null; await loadOsmCompleteness(); }, 2000);
+    }
+    async function osmCountAdmin1(alpha3) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      try {
+        await api(`/api/osm/countries/${encodeURIComponent(alpha3)}/admin1`, { method: "POST" });
+      } catch (e) {
+        toast(t("The count per region could not start."));
+      }
+      loadOsmCompleteness();
+    }
+
+    // -- The local geocoder (S05-04 S5, Q820) --------------------------------------------- //
+    // Over the addresses of the OSM countries read, nothing else: every word typed must be in
+    // one address, the house number included, so a near miss is "not located", never the
+    // nearest spelling. The scope sentence Q820 requires is shown beside the box, always.
+    let _osmGeoCountries = [];
+    function _osmGeoShow(done) {
+      const sec = $("osm-geocoder"); if (!sec) return;
+      _osmGeoCountries = done || [];
+      sec.hidden = !_osmGeoCountries.length;
+      _osmGeoScope();
+      const form = $("osm-geo-form");
+      if (form && !form._wired) {
+        form._wired = true;
+        form.addEventListener("submit", (ev) => { ev.preventDefault(); osmLocate(); });
+      }
+    }
+    function _osmGeoScope() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const el = $("osm-geo-scope"); if (!el) return;
+      const names = _osmGeoCountries.map((c) => _osmPickLabel(c.alpha3, c.name)).join(", ");
+      el.textContent = `${osmCompTf("Searched: the addresses OpenStreetMap records in {countries}.", { countries: names })} ${t("Addresses outside your OpenStreetMap countries are not located.")}`;
+    }
+    // The last answer is kept so a language switch re-draws it in the new language rather than
+    // leaving the old language's sentence under a re-labelled box.
+    let _osmGeoLast = null, _osmGeoSeq = 0;
+    async function osmLocate() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const out = $("osm-geo-out"); const q = ($("osm-geo-q") || {}).value || "";
+      if (!out || !q.trim()) return;
+      const my = ++_osmGeoSeq;
+      out.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
+      let d;
+      try { d = await api("/api/osm/geocode?" + new URLSearchParams({ q: q.trim() }).toString()); }
+      catch (e) { d = { failed: true }; }
+      if (my !== _osmGeoSeq) return;                 // a newer question was asked meanwhile
+      _osmGeoLast = d;
+      _osmGeoRender();
+    }
+    function _osmGeoRender() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const out = $("osm-geo-out"), d = _osmGeoLast;
+      if (!out || !d) return;
+      if (d.failed) { out.innerHTML = `<div class="note err">${esc(t("The address could not be looked up here."))}</div>`; return; }
+      if (d.status === "no-country") {
+        out.innerHTML = `<div class="muted">${esc(t("No OpenStreetMap country's addresses are indexed on this machine yet."))}</div>`;
+        return;
+      }
+      if (d.status === "empty") {
+        out.innerHTML = `<div class="hint">${esc(t("Type a house number, street, postcode or town."))}</div>`;
+        return;
+      }
+      if (!d.results.length) {
+        out.innerHTML = `<div class="hint">${esc(t("Not located: no address in your OpenStreetMap countries holds every word typed. Nothing nearby is offered in its place."))}</div>`;
+        return;
+      }
+      const rows = d.results.map((r) => `<tr><td dir="auto">${esc(r.address)}</td>`
+        + `<td style="text-align:end;padding:2px 8px">${esc(`${(+r.lat).toFixed(5)}, ${(+r.lon).toFixed(5)}`)}</td>`
+        + `<td><button type="button" class="tiny secondary" data-on-click="openOsmObjectCard('${esc(r.object)}')">${esc(t("Open"))}</button></td></tr>`).join("");
+      const more = d.total > d.results.length ? `<div class="hint">${esc(osmCompTf("{shown} of {total} addresses shown.", { shown: fmtNum(d.results.length, 0), total: fmtNum(d.total, 0) }))}</div>` : "";
+      out.innerHTML = `<table class="data" title="${esc(t(d.method || ""))}"><tbody>${rows}</tbody></table>${more}`;
     }
 
     // -- The full-history planet (S05-04 S4, Q814 = b) -------------------------------- //
