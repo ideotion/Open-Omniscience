@@ -37,10 +37,11 @@ re-creates it.
 from __future__ import annotations
 
 import logging
+from datetime import date, datetime
 
 from sqlalchemy import DDL, Column, Table, event, text
 from sqlalchemy.engine import Connection, Engine
-from sqlalchemy.orm import DeclarativeBase
+from sqlalchemy.orm import DeclarativeBase, Mapped
 
 from src.database.models import KeywordMention
 
@@ -138,3 +139,18 @@ class KeywordMentionRead(ReadBase):
     nothing else. Never ``add()`` one: SQLite refuses a write to a view."""
 
     __table__ = _mentions_read_table
+
+    # Typed handles for the checker; the columns themselves come from ``__table__`` above and
+    # ``tests/test_derived_read_seam.py`` holds this list equal to ``KeywordMention``'s.
+    id: Mapped[int]
+    keyword_id: Mapped[int]
+    article_id: Mapped[int]
+    count: Mapped[int]
+    first_offset: Mapped[int | None]
+    observed_on: Mapped[date | None]
+    country: Mapped[str | None]
+    city: Mapped[str | None]
+    language: Mapped[str | None]
+    source_id: Mapped[int | None]
+    extractor: Mapped[str | None]
+    created_at: Mapped[datetime | None]

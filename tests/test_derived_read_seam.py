@@ -103,6 +103,13 @@ def test_the_orm_read_model_matches_the_write_model(db):
     }
 
 
+def test_the_typed_handles_cover_every_column():
+    """The annotations on KeywordMentionRead exist for the type checker; a column added to
+    KeywordMention without one would be readable at runtime and invisible to mypy."""
+    annotated = set(KeywordMentionRead.__annotations__)
+    assert annotated == {c.name for c in KeywordMention.__table__.columns}
+
+
 def test_a_keyed_read_through_the_view_still_uses_an_index(db):
     plan = " ".join(
         str(r[3])
