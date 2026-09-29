@@ -1672,7 +1672,7 @@
       story_propagation: "Story propagation", supply_chain_ripple: "Supply-chain ripple",
       supergroup_rising: "Theme rising", on_the_horizon: "On the horizon", through_time: "Through time",
       recipe_promise: "Promise due", recipe_edit_war: "Edit burst", recipe_quiet_region: "Quiet region",
-      recipe_source_candidates: "Source candidates",
+      recipe_source_candidates: "Source candidates", osm_tag_completeness: "Map data completeness",
     };
     function cardTypeLabel(type) {
       const label = _CARD_TYPE_LABELS[type];

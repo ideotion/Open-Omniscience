@@ -1107,7 +1107,12 @@
         if (_jobStillRunning(job)) { if (st) st.textContent = t("Still running in the background — check the task manager for the result."); return; }
         const r = job.result || {};
         if (st) {
-          st.textContent = tf("{places} places from {resolved} of {n} mentioned places", {places: r.places || 0, resolved: r.resolved || 0, n: r.distinct_mentions || 0});
+          const osm = r.osm_notable || null;
+          // S05-04 S5 (Q817): the same job makes the notable places of the OpenStreetMap
+          // countries read into Places; said beside the mentions, and a failure is named.
+          const osmLine = !osm ? "" : (osm.error ? " · " + t("The OpenStreetMap part could not be read.")
+            : (osm.countries || []).length ? " · " + tf("{n} notable places from OpenStreetMap", {n: osm.places || 0}) : "");
+          st.textContent = tf("{places} places from {resolved} of {n} mentioned places", {places: r.places || 0, resolved: r.resolved || 0, n: r.distinct_mentions || 0}) + osmLine;
           st.title = r.method || "";
         }
         loadEntitySpine();
