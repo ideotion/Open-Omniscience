@@ -381,8 +381,14 @@
     // the contested hatch. A region carries its COUNTRY's data-iso, so a click still
     // drills into the country (no admin-1 data is claimed here -- that is the region
     // choropleth's job), and its hover names the region, its code and how it was keyed.
-    function _ooAdmin1Layer(admin1, countryTitle) {
-      if (!admin1 || !admin1.regions || !_ooMapRegionsOn) return { markup: "", shown: 0, strided: false };
+    // REGION MODE (Q816, S3): when the caller measures REGIONS (`rv`, keyed ISO 3166-2 or
+    // r<relation id>), each region is FILLED by its value through the same scale function
+    // the country choropleth uses, and a region the data does not name is drawn with the
+    // "no data" hatch -- a gap, never a zero. The layer is then the data, so it draws
+    // whatever the Regions toggle says.
+    function _ooAdmin1Layer(admin1, countryTitle, rv, fillFor, vlabel) {
+      const regionMode = !!rv;
+      if (!admin1 || !admin1.regions || (!_ooMapRegionsOn && !regionMode)) return { markup: "", shown: 0, strided: false };
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : (x => x);
       const regs = Object.entries(admin1.regions);
       const total = regs.reduce((n, [, r]) => n + (r.rings || []).reduce((m, ring) => m + ring.length, 0), 0);
@@ -398,8 +404,15 @@
         const cc = (r.a2 || "").toLowerCase();
         const keyed = r.key === "iso3166-2" ? code
           : ooLabelText(t("OSM relation"), String(r.osm)) + " · " + t("no ISO 3166-2 code in OpenStreetMap");
-        const ti = `${_ooAdmin1Name(r)} (${keyed})${cc ? " · " + countryTitle(cc) : ""}`;
-        return `<path d="${d}" fill="transparent" fill-rule="evenodd" stroke="var(--border)" stroke-width="0.35" `
+        let ti, fill = "transparent";
+        if (regionMode) {
+          const v = rv[code], has = typeof v === "number" && isFinite(v);
+          fill = has ? fillFor(v) : "url(#oomap-nodata)";
+          ti = `${_ooAdmin1Name(r)} (${keyed}) — ${has ? vlabel(code, v) : t("no data")}`;
+        } else {
+          ti = `${_ooAdmin1Name(r)} (${keyed})${cc ? " · " + countryTitle(cc) : ""}`;
+        }
+        return `<path d="${d}" fill="${fill}" fill-rule="evenodd" stroke="var(--border)" stroke-width="0.35" `
           + `stroke-opacity="0.9" vector-effect="non-scaling-stroke" data-oomap-region="${esc(code)}"`
           + `${cc ? ` data-iso="${esc(cc)}"` : ""} title="${esc(ti)}"></path>`;
       }).join("");
@@ -431,6 +444,43 @@
       }
       if (strided) parts.push(t("Region outlines are simplified further for display on this map."));
       return { label, title: parts.join(" ") };
+    }
+
+    // THE RANKED TABLE (Q816, S3; the Observatory rule, invariant #31(c)): beside EVERY
+    // choropleth, the data itself -- every area with a value, ranked, NEVER capped. The
+    // map's colours are a picture of this table, not the other way round. Rows share a
+    // rank when their values tie. The areas with no value are COUNTED under it (named in
+    // the hover), never listed as zeros. A scroll box bounds its height; every row is in
+    // the document, so find-in-page and a screen reader reach all of them.
+    function _ooRankedTable(rows, noData, opts) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : (x => x);
+      const tfr = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
+        : ((s, v) => String(s).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? String(v[k]) : m));
+      const sorted = rows.slice().sort((a, b) => b.value - a.value || String(a.label).localeCompare(String(b.label)));
+      let rank = 0, prev = null;
+      const body = sorted.map((r, i) => {
+        if (prev === null || r.value !== prev) rank = i + 1;
+        prev = r.value;
+        return `<tr data-oomap-rank-row><td style="text-align:end;padding:2px 8px;color:var(--muted);font-variant-numeric:tabular-nums">${esc(fmtNum(rank, 0))}</td>`
+          + `<td style="padding:2px 8px">${esc(r.label)}</td>`
+          + `<td style="text-align:end;padding:2px 8px;font-variant-numeric:tabular-nums">${esc(r.text)}</td></tr>`;
+      }).join("");
+      const gap = noData.length
+        ? `<div class="hint" style="margin-top:4px" title="${esc(noData.join(", "))}">${esc(noData.length === 1
+            ? t("1 area with no data: hatched on the map, never counted as zero.")
+            : tfr("{n} areas with no data: hatched on the map, never counted as zero.", { n: fmtNum(noData.length, 0) }))}</div>`
+        : "";
+      return `<details class="oomap-rank" open style="margin-top:8px">
+        <summary style="cursor:pointer;font-size:12px" title="${esc(t("The full data behind the map: every area with a value, ranked, none left out. The colours are a picture of this table."))}">${esc(sorted.length === 1 ? t("Ranked table · 1 area with data") : tfr("Ranked table · {n} areas with data", { n: fmtNum(sorted.length, 0) }))}</summary>
+        <div style="max-height:320px;overflow:auto;border:1px solid var(--border);border-radius:6px;margin-top:4px">
+          <table style="width:100%;border-collapse:collapse;font-size:12px">
+            <thead><tr><th scope="col" style="text-align:end;padding:2px 8px">${esc(t("Rank"))}</th>
+              <th scope="col" style="text-align:start;padding:2px 8px">${esc(t("Area"))}</th>
+              <th scope="col" style="text-align:end;padding:2px 8px">${esc(opts.label || t("Value"))}</th></tr></thead>
+            <tbody>${body}</tbody>
+          </table>
+        </div>${gap}
+      </details>`;
     }
 
     // The worldview in force. "contested" is the DEFAULT and assigns NOTHING: every
@@ -754,7 +804,10 @@
       const disputed = await _ooMapDisputedLoad();
       const osmAdmin = await _ooMapOsmAdminLoad();
       const values = opts.values || {}, names = opts.names || {};
-      const nums = Object.values(values).filter(v => typeof v === "number" && isFinite(v));
+      // Region mode (Q816): the caller measures admin-1 regions, so the scale, the table
+      // and the fills are the regions'; countries carry no value of their own here.
+      const regionVals = (opts.regionValues && typeof opts.regionValues === "object") ? opts.regionValues : null;
+      const nums = Object.values(regionVals || values).filter(v => typeof v === "number" && isFinite(v));
       const maxV = nums.length ? Math.max(...nums) : 0, minV = nums.length ? Math.min(...nums) : 0;
       const span = maxV - minV;
       const diverging = opts.scale === "diverging";
@@ -799,7 +852,7 @@
       const geoCodes = new Set(Object.keys(eff).map(s => s.toLowerCase()));
       let paths = "";
       for (const [iso, c] of Object.entries(eff)) {
-        const code = iso.toLowerCase(), v = values[code];
+        const code = iso.toLowerCase(), v = regionVals ? undefined : values[code];
         const has = typeof v === "number" && isFinite(v);
         const d = _ooMapPath(c.rings); if (!d) continue;
         const fill = has ? fillFor(v) : "url(#oomap-nodata)";
@@ -861,7 +914,30 @@
       const _adm1 = _ooAdmin1Layer(osmAdmin && osmAdmin.admin1, (cc) => {
         const v = values[cc], has = typeof v === "number" && isFinite(v);
         return `${ooRegionName(cc, (eff[cc] && eff[cc].name) || cc)} — ${has ? vlabel(cc, v) : t("no data")}`;
-      });
+      }, regionVals, fillFor, vlabel);
+      // The table's rows: the caller's own (a continent view), else every region or
+      // country with a value. The "no data" names are every drawn area without one.
+      const admin1Regs = (osmAdmin && osmAdmin.admin1 && osmAdmin.admin1.regions) || {};
+      let rankRows, rankGap = [];
+      const isNum = v => typeof v === "number" && isFinite(v);
+      if (Array.isArray(opts.tableRows)) {
+        rankRows = opts.tableRows.filter(r => isNum(r.value));
+      } else if (regionVals) {
+        rankRows = Object.keys(regionVals).filter(k => isNum(regionVals[k])).map(k => {
+          const r = admin1Regs[k];
+          const cc = r && (r.a2 || "").toLowerCase();
+          const label = r ? `${_ooAdmin1Name(r)} (${r.key === "iso3166-2" ? k : ooLabelText(t("OSM relation"), String(r.osm))})${cc ? " · " + ooRegionName(cc, cc) : ""}` : k;
+          return { label, value: regionVals[k], text: vlabel(k, regionVals[k]) };
+        });
+        rankGap = Object.keys(admin1Regs).filter(k => !isNum(regionVals[k])).map(k => _ooAdmin1Name(admin1Regs[k]) || k);
+      } else {
+        rankRows = Object.keys(values).filter(k => isNum(values[k])).map(k => {
+          const cc = ooCountryCode(k), nm = ooRegionName(k, names[k] || (eff[k] && eff[k].name) || k);
+          return { label: nm && cc && nm !== cc ? `${nm} (${cc})` : (nm || cc || k), value: values[k], text: vlabel(k, values[k]) };
+        });
+        rankGap = Object.keys(eff).filter(k => !isNum(values[k.toLowerCase()])).map(k => ooRegionName(k.toLowerCase(), eff[k].name || k));
+      }
+      const rankHtml = _ooRankedTable(rankRows, rankGap, opts);
       const neKept = Object.values(eff).filter(c => !c.osmAdmin && !c.osm).length;
       const _bsrc = _ooBoundarySource(admin0, osmAdmin && osmAdmin.admin1, osmCountries, _adm1.shown, _adm1.strided, neKept);
       const hasAdmin1 = !!(osmAdmin && osmAdmin.admin1 && osmAdmin.admin1.regions);
@@ -947,7 +1023,7 @@
           ${opts.onServer ? `<button class="tiny secondary" data-oomap-server aria-pressed="${opts.serverOn ? "true" : "false"}"${opts.serverOn ? ' style="border-color:var(--accent);color:var(--accent)"' : ""} title="${esc(t("Server IP locations — offline geo; a CDN edge / anycast host, not the publisher's origin"))}">${esc(t("Server IPs"))}</button>` : ""}
           ${opts.onLabels ? `<button class="tiny secondary" data-oomap-labels aria-pressed="${opts.labelsOn ? "true" : "false"}"${opts.labelsOn ? ' style="border-color:var(--accent);color:var(--accent)"' : ""}>${esc(t("Labels"))}</button>` : ""}
           ${opts.onOsm ? `<button class="tiny secondary" data-oomap-osm aria-pressed="${opts.osmOn ? "true" : "false"}"${opts.osmOn ? ' style="border-color:var(--accent);color:var(--accent)"' : ""} title="${esc(t("Overlay a downloaded offline-map region (preview)"))}">${esc(t("OSM"))}</button>` : ""}
-          ${hasAdmin1 ? `<button class="tiny secondary" data-oomap-regions aria-pressed="${_ooMapRegionsOn ? "true" : "false"}"${_ooMapRegionsOn ? ' style="border-color:var(--accent);color:var(--accent)"' : ""} title="${esc(t("Show or hide the first-level regions (states, provinces, regions) OpenStreetMap draws inside each country."))}">${esc(t("Regions"))}</button>` : ""}
+          ${hasAdmin1 && !regionVals ? `<button class="tiny secondary" data-oomap-regions aria-pressed="${_ooMapRegionsOn ? "true" : "false"}"${_ooMapRegionsOn ? ' style="border-color:var(--accent);color:var(--accent)"' : ""} title="${esc(t("Show or hide the first-level regions (states, provinces, regions) OpenStreetMap draws inside each country."))}">${esc(t("Regions"))}</button>` : ""}
           ${worldviewHtml}
         </div>` : "";
       // In-map TIME slider (slice 5a) — appears above the bottom-left controls when
@@ -1043,6 +1119,8 @@
         ${opts.signalsOn ? `<span class="muted" style="display:inline-flex;align-items:center;gap:6px" title="${esc(t("Shape = certainty; colour = kind."))}">● ${esc(t("confirmed"))} · ▲ ${esc(t("scheduled"))} · ◆ ${esc(t("deduced"))}</span>` : ""}
         ${osm ? `<span class="muted" title="${esc(t("Bounded preview from a downloaded .osm.pbf — not the full region; no network."))}">${ooLabelHtml(esc(t("offline OSM")), esc(_ooOsmCounts(osm)))}</span>` : ""}
       </div>
+      ${regionVals && !hasAdmin1 ? `<div class="card-caveat" style="margin-top:4px">${esc(t("This measure is by region, but the region boundaries are not built on this install yet: the table below holds every value."))}</div>` : ""}
+      ${rankHtml}
       ${opts.method ? `<div class="hint" style="margin-top:4px">${esc(opts.method)}</div>` : ""}
       ${opts.caveat ? `<div class="card-caveat" style="margin-top:4px">${esc(opts.caveat)}</div>` : ""}`;
       host._ooSigVisible = sigVisible;             // for signal click-to-detail resolution
@@ -1512,6 +1590,11 @@
         ? Object.keys(contAgg).filter(c => contAgg[c]).sort((a, b) => contAgg[b].value - contAgg[a].value)
             .map(c => `${t(c)}: ${fmtCount(contAgg[c].value)}`)
         : undefined;
+      // Q816: in continent mode the ranked table lists each CONTINENT once, with its own
+      // value -- not one repeated row per country painted in that continent's colour.
+      const tableRows = continentMode
+        ? Object.keys(contAgg).filter(c => contAgg[c]).map(c => ({ label: t(c), value: contAgg[c].value, text: fmtCount(contAgg[c].value) }))
+        : undefined;
       const overlayPoints = (_ooMapPlacesOn && _ooMapWhere && Array.isArray(_ooMapWhere.places))
         ? _ooMapWhere.places.map(p => ({ lat: p.lat, lon: p.lon, value: p.articles, label: p.name })) : [];
       // Signals layer: derive the time span from the plottable signals, map the
@@ -1563,7 +1646,7 @@
         }));
       }
       await ooMap(host, {
-        values, names, points, aria, srRows,
+        values, names, points, aria, srRows, tableRows,
         scale: dim.scale, label: dim.label, unit: dim.unit,
         // The server's method sentence is a fixed string, looked up as a key (R12): it
         // rode through in English under every locale. This render is re-run on a

@@ -1,0 +1,1034 @@
+[
+ {
+  "host": "oo-coverage-map",
+  "present": true,
+  "rows": 209,
+  "summary": "Ranked table · 209 areas with data",
+  "gap": "27 areas with no data: hatched on the map, never counted as zero.",
+  "gapTitle": "Northern Mariana Islands, U.S. Virgin Islands, American Samoa, South Georgia & South Sandwich Islands, British Indian Ocean Territory, St. Helena, Pitcairn Islands, Falkland Islands (Islas Malvinas), British Virgin Islands, Turks & Caicos Islands, Montserrat, Jersey, Guernsey, Isle of Man, Niue, Aruba, Western Sahara, Kiribati, St. Pierre & Miquelon, Wallis & Futuna, French Southern Territories, Åland Islands, Greenland, Heard & McDonald Islands, Norfolk Island, Antarctica, Sint Maarten",
+  "firstRows": [
+   "1 United States (USA) 237 sources",
+   "2 Canada (CAN) 233 sources",
+   "3 Spain (ESP) 211 sources",
+   "4 Brazil (BRA) 206 sources"
+  ],
+  "regions": [
+   {
+    "code": "FR-IDF",
+    "fill": "transparent",
+    "title": "Ile-de-France (FR-IDF) · France — 130 sources"
+   },
+   {
+    "code": "r1003",
+    "fill": "transparent",
+    "title": "Région sans code (OSM relation: 1003 · no ISO 3166-2 code in OpenStreetMap) · France — 130 sources"
+   }
+  ],
+  "regionsBtn": true,
+  "overflow": false,
+  "tableW": 1116,
+  "hostW": 1116,
+  "caveats": [
+   "Contested: 28 · every claim shown, none assigned",
+   "Catalogued sources based in each country — counts only, no score.  1 456 sources with no country — counted, not mapped."
+  ],
+  "surface": "World map",
+  "lang": "en",
+  "w": 1440,
+  "mode": "country"
+ },
+ {
+  "host": "oo-coverage-map",
+  "present": true,
+  "rows": 7,
+  "summary": "Ranked table · 7 areas with data",
+  "gap": null,
+  "gapTitle": null,
+  "firstRows": [
+   "1 Europe 2 070 sources",
+   "2 Asia 1 003 sources",
+   "3 North America 725 sources",
+   "4 South America 497 sources"
+  ],
+  "regions": [
+   {
+    "code": "FR-IDF",
+    "fill": "transparent",
+    "title": "Ile-de-France (FR-IDF) · France — Europe — 2 070 sources"
+   },
+   {
+    "code": "r1003",
+    "fill": "transparent",
+    "title": "Région sans code (OSM relation: 1003 · no ISO 3166-2 code in OpenStreetMap) · France — Europe — 2 070 sources"
+   }
+  ],
+  "regionsBtn": true,
+  "overflow": false,
+  "tableW": 1116,
+  "hostW": 1116,
+  "caveats": [
+   "Contested: 28 · every claim shown, none assigned",
+   "Catalogued sources based in each country — counts only, no score.  1 456 sources with no country — counted, not mapped."
+  ],
+  "surface": "World map",
+  "lang": "en",
+  "w": 1440,
+  "mode": "continent"
+ },
+ {
+  "host": "coverage-map",
+  "present": true,
+  "rows": 4,
+  "summary": "Ranked table · 4 areas with data",
+  "gap": "225 areas with no data: hatched on the map, never counted as zero.",
+  "gapTitle": "Zimbabwe, Zambia, Yemen, Vietnam, Venezuela, Vanuatu, Uzbekistan, Uruguay, Micronesia, Marshall Islands, Northern Mariana Islands, U.S. Virgin Islands, Guam, American Samoa, Puerto Rico, South Georgia & South Sandwich Islands, British Indian Ocean Territory, St. Helena, Pitcairn Islands, Anguilla, Falkland Islands (Islas Malvinas), Cayman Islands, Bermuda, British Virgin Islands, Turks & Caicos Islands, Montserrat, Jersey, Guernsey, Isle of Man, United Kingdom, United Arab Emirates, Ukraine, Uganda, Turkmenistan, Türkiye, Tunisia, Trinidad & Tobago, Tonga, Togo, Timor-Leste, Thailand, Tanzania, Tajikistan, Taiwan, Syria, Switzerland, Sweden, Eswatini, Suriname, South Sudan, Sudan, Sri Lanka, Spain, South Korea, South Africa, Somalia, Solomon Islands, Slovakia, Slovenia, Singapore, Sierra Leone, Seychelles, Serbia, Senegal, Saudi Arabia, São Tomé & Príncipe, San Marino, Samoa, St. Vincent & Grenadines, St. Lucia, St. Kitts & Nevis, Rwanda, Russia, Romania, Qatar, Portugal, Poland, Philippines, Peru, Paraguay, Papua New Guinea, Panama, Palau, Pakistan, Oman, Norway, North Korea, Nigeria, Niger, Nicaragua, New Zealand, Niue, Netherlands, Aruba, Curaçao, Nepal, Nauru, Namibia, Mozambique, Morocco, Western Sahara, Montenegro, Mongolia, Moldova, Mexico, Mauritius, Mauritania, Malta, Mali, Malaysia, Malawi, Madagascar, North Macedonia, Luxembourg, Lithuania, Liechtenstein, Libya, Liberia, Lesotho, Lebanon, Latvia, Laos, Kyrgyzstan, Kuwait, Kosovo, Kiribati, Kenya, Kazakhstan, Jordan, Japan, Jamaica, Italy, Israel, Palestine, Ireland, Iraq, Iran, Indonesia, India, Iceland, Hungary, Honduras, Haiti, Guyana, Guinea-Bissau, Guinea, Guatemala, Grenada, Greece, Ghana, Georgia, Gambia, Gabon, St. Pierre & Miquelon, Wallis & Futuna, French Polynesia, New Caledonia, French Southern Territories, Åland Islands, Finland, Fiji, Ethiopia, Estonia, Eritrea, Equatorial Guinea, El Salvador, Egypt, Ecuador, Dominican Republic, Dominica, Djibouti, Greenland, Faroe Islands, Denmark, Czechia, Cyprus, Cuba, Croatia, Côte d’Ivoire, Costa Rica, Congo - Kinshasa, Congo - Brazzaville, Comoros, Colombia, Hong Kong, Chile, Chad, Central African Republic, Cape Verde, Canada, Cameroon, Cambodia, Myanmar (Burma), Burundi, Burkina Faso, Bulgaria, Brunei, Brazil, Botswana, Bosnia & Herzegovina, Bolivia, Bhutan, Benin, Belize, Belgium, Belarus, Barbados, Bangladesh, Bahrain, Bahamas, Azerbaijan, Austria, Australia, Heard & McDonald Islands, Norfolk Island, Armenia, Argentina, Antigua & Barbuda, Angola, Andorra, Algeria, Albania, Afghanistan, Antarctica, Sint Maarten",
+  "firstRows": [
+   "1 China (CHN) 6 articles",
+   "1 France (FRA) 6 articles",
+   "1 Germany (DEU) 6 articles",
+   "1 United States (USA) 6 articles"
+  ],
+  "regions": [
+   {
+    "code": "FR-IDF",
+    "fill": "transparent",
+    "title": "Ile-de-France (FR-IDF) · France — 6 articles"
+   },
+   {
+    "code": "r1003",
+    "fill": "transparent",
+    "title": "Région sans code (OSM relation: 1003 · no ISO 3166-2 code in OpenStreetMap) · France — 6 articles"
+   }
+  ],
+  "regionsBtn": true,
+  "overflow": false,
+  "tableW": 1116,
+  "hostW": 1116,
+  "caveats": [
+   "Contested: 28 · every claim shown, none assigned",
+   "Country is operator/catalogue-asserted; articles whose source has no country are counted but never placed on the map — see the language breakdown below."
+  ],
+  "surface": "Library coverage",
+  "lang": "en",
+  "w": 1440,
+  "mode": "country"
+ },
+ {
+  "host": "oo-coverage-map",
+  "present": true,
+  "rows": 1,
+  "summary": "Ranked table · 1 area with data",
+  "gap": "1 area with no data: hatched on the map, never counted as zero.",
+  "gapTitle": "Région sans code",
+  "firstRows": [
+   "1 Ile-de-France (FR-IDF) · France 5 articles"
+  ],
+  "regions": [
+   {
+    "code": "FR-IDF",
+    "fill": "color-mix(in srgb, var(--accent) 100%, var(--panel2))",
+    "title": "Ile-de-France (FR-IDF) — 5 articles"
+   },
+   {
+    "code": "r1003",
+    "fill": "url(#oomap-nodata)",
+    "title": "Région sans code (OSM relation: 1003 · no ISO 3166-2 code in OpenStreetMap) — no data"
+   }
+  ],
+  "regionsBtn": false,
+  "overflow": false,
+  "tableW": 1116,
+  "hostW": 1116,
+  "caveats": [
+   "Contested: 28 · every claim shown, none assigned"
+  ],
+  "surface": "World map host",
+  "lang": "en",
+  "w": 1440,
+  "mode": "region"
+ },
+ {
+  "host": "oo-coverage-map",
+  "present": true,
+  "rows": 1,
+  "summary": "Ranked table · 1 area with data",
+  "gap": null,
+  "gapTitle": null,
+  "firstRows": [
+   "1 FR-IDF 5"
+  ],
+  "regions": [],
+  "regionsBtn": false,
+  "overflow": false,
+  "tableW": 1116,
+  "hostW": 1116,
+  "caveats": [
+   "Contested: 28 · every claim shown, none assigned",
+   "This measure is by region, but the region boundaries are not built on this install yet: the table below holds every value."
+  ],
+  "surface": "World map host",
+  "lang": "en",
+  "w": 1440,
+  "mode": "region, no artifact"
+ },
+ {
+  "host": "oo-coverage-map",
+  "present": true,
+  "rows": 209,
+  "summary": "Ranked table · 209 areas with data",
+  "gap": "27 areas with no data: hatched on the map, never counted as zero.",
+  "gapTitle": "Northern Mariana Islands, U.S. Virgin Islands, American Samoa, South Georgia & South Sandwich Islands, British Indian Ocean Territory, St. Helena, Pitcairn Islands, Falkland Islands (Islas Malvinas), British Virgin Islands, Turks & Caicos Islands, Montserrat, Jersey, Guernsey, Isle of Man, Niue, Aruba, Western Sahara, Kiribati, St. Pierre & Miquelon, Wallis & Futuna, French Southern Territories, Åland Islands, Greenland, Heard & McDonald Islands, Norfolk Island, Antarctica, Sint Maarten",
+  "firstRows": [
+   "1 United States (USA) 237 sources",
+   "2 Canada (CAN) 233 sources",
+   "3 Spain (ESP) 211 sources",
+   "4 Brazil (BRA) 206 sources"
+  ],
+  "regions": [
+   {
+    "code": "FR-IDF",
+    "fill": "transparent",
+    "title": "Ile-de-France (FR-IDF) · France — 130 sources"
+   },
+   {
+    "code": "r1003",
+    "fill": "transparent",
+    "title": "Région sans code (OSM relation: 1003 · no ISO 3166-2 code in OpenStreetMap) · France — 130 sources"
+   }
+  ],
+  "regionsBtn": true,
+  "overflow": false,
+  "tableW": 628,
+  "hostW": 628,
+  "caveats": [
+   "Contested: 28 · every claim shown, none assigned",
+   "Catalogued sources based in each country — counts only, no score.  1 456 sources with no country — counted, not mapped."
+  ],
+  "surface": "World map",
+  "lang": "en",
+  "w": 768,
+  "mode": "country"
+ },
+ {
+  "host": "oo-coverage-map",
+  "present": true,
+  "rows": 7,
+  "summary": "Ranked table · 7 areas with data",
+  "gap": null,
+  "gapTitle": null,
+  "firstRows": [
+   "1 Europe 2 070 sources",
+   "2 Asia 1 003 sources",
+   "3 North America 725 sources",
+   "4 South America 497 sources"
+  ],
+  "regions": [
+   {
+    "code": "FR-IDF",
+    "fill": "transparent",
+    "title": "Ile-de-France (FR-IDF) · France — Europe — 2 070 sources"
+   },
+   {
+    "code": "r1003",
+    "fill": "transparent",
+    "title": "Région sans code (OSM relation: 1003 · no ISO 3166-2 code in OpenStreetMap) · France — Europe — 2 070 sources"
+   }
+  ],
+  "regionsBtn": true,
+  "overflow": false,
+  "tableW": 628,
+  "hostW": 628,
+  "caveats": [
+   "Contested: 28 · every claim shown, none assigned",
+   "Catalogued sources based in each country — counts only, no score.  1 456 sources with no country — counted, not mapped."
+  ],
+  "surface": "World map",
+  "lang": "en",
+  "w": 768,
+  "mode": "continent"
+ },
+ {
+  "host": "coverage-map",
+  "present": true,
+  "rows": 4,
+  "summary": "Ranked table · 4 areas with data",
+  "gap": "225 areas with no data: hatched on the map, never counted as zero.",
+  "gapTitle": "Zimbabwe, Zambia, Yemen, Vietnam, Venezuela, Vanuatu, Uzbekistan, Uruguay, Micronesia, Marshall Islands, Northern Mariana Islands, U.S. Virgin Islands, Guam, American Samoa, Puerto Rico, South Georgia & South Sandwich Islands, British Indian Ocean Territory, St. Helena, Pitcairn Islands, Anguilla, Falkland Islands (Islas Malvinas), Cayman Islands, Bermuda, British Virgin Islands, Turks & Caicos Islands, Montserrat, Jersey, Guernsey, Isle of Man, United Kingdom, United Arab Emirates, Ukraine, Uganda, Turkmenistan, Türkiye, Tunisia, Trinidad & Tobago, Tonga, Togo, Timor-Leste, Thailand, Tanzania, Tajikistan, Taiwan, Syria, Switzerland, Sweden, Eswatini, Suriname, South Sudan, Sudan, Sri Lanka, Spain, South Korea, South Africa, Somalia, Solomon Islands, Slovakia, Slovenia, Singapore, Sierra Leone, Seychelles, Serbia, Senegal, Saudi Arabia, São Tomé & Príncipe, San Marino, Samoa, St. Vincent & Grenadines, St. Lucia, St. Kitts & Nevis, Rwanda, Russia, Romania, Qatar, Portugal, Poland, Philippines, Peru, Paraguay, Papua New Guinea, Panama, Palau, Pakistan, Oman, Norway, North Korea, Nigeria, Niger, Nicaragua, New Zealand, Niue, Netherlands, Aruba, Curaçao, Nepal, Nauru, Namibia, Mozambique, Morocco, Western Sahara, Montenegro, Mongolia, Moldova, Mexico, Mauritius, Mauritania, Malta, Mali, Malaysia, Malawi, Madagascar, North Macedonia, Luxembourg, Lithuania, Liechtenstein, Libya, Liberia, Lesotho, Lebanon, Latvia, Laos, Kyrgyzstan, Kuwait, Kosovo, Kiribati, Kenya, Kazakhstan, Jordan, Japan, Jamaica, Italy, Israel, Palestine, Ireland, Iraq, Iran, Indonesia, India, Iceland, Hungary, Honduras, Haiti, Guyana, Guinea-Bissau, Guinea, Guatemala, Grenada, Greece, Ghana, Georgia, Gambia, Gabon, St. Pierre & Miquelon, Wallis & Futuna, French Polynesia, New Caledonia, French Southern Territories, Åland Islands, Finland, Fiji, Ethiopia, Estonia, Eritrea, Equatorial Guinea, El Salvador, Egypt, Ecuador, Dominican Republic, Dominica, Djibouti, Greenland, Faroe Islands, Denmark, Czechia, Cyprus, Cuba, Croatia, Côte d’Ivoire, Costa Rica, Congo - Kinshasa, Congo - Brazzaville, Comoros, Colombia, Hong Kong, Chile, Chad, Central African Republic, Cape Verde, Canada, Cameroon, Cambodia, Myanmar (Burma), Burundi, Burkina Faso, Bulgaria, Brunei, Brazil, Botswana, Bosnia & Herzegovina, Bolivia, Bhutan, Benin, Belize, Belgium, Belarus, Barbados, Bangladesh, Bahrain, Bahamas, Azerbaijan, Austria, Australia, Heard & McDonald Islands, Norfolk Island, Armenia, Argentina, Antigua & Barbuda, Angola, Andorra, Algeria, Albania, Afghanistan, Antarctica, Sint Maarten",
+  "firstRows": [
+   "1 China (CHN) 6 articles",
+   "1 France (FRA) 6 articles",
+   "1 Germany (DEU) 6 articles",
+   "1 United States (USA) 6 articles"
+  ],
+  "regions": [
+   {
+    "code": "FR-IDF",
+    "fill": "transparent",
+    "title": "Ile-de-France (FR-IDF) · France — 6 articles"
+   },
+   {
+    "code": "r1003",
+    "fill": "transparent",
+    "title": "Région sans code (OSM relation: 1003 · no ISO 3166-2 code in OpenStreetMap) · France — 6 articles"
+   }
+  ],
+  "regionsBtn": true,
+  "overflow": false,
+  "tableW": 628,
+  "hostW": 628,
+  "caveats": [
+   "Contested: 28 · every claim shown, none assigned",
+   "Country is operator/catalogue-asserted; articles whose source has no country are counted but never placed on the map — see the language breakdown below."
+  ],
+  "surface": "Library coverage",
+  "lang": "en",
+  "w": 768,
+  "mode": "country"
+ },
+ {
+  "host": "oo-coverage-map",
+  "present": true,
+  "rows": 1,
+  "summary": "Ranked table · 1 area with data",
+  "gap": "1 area with no data: hatched on the map, never counted as zero.",
+  "gapTitle": "Région sans code",
+  "firstRows": [
+   "1 Ile-de-France (FR-IDF) · France 5 articles"
+  ],
+  "regions": [
+   {
+    "code": "FR-IDF",
+    "fill": "color-mix(in srgb, var(--accent) 100%, var(--panel2))",
+    "title": "Ile-de-France (FR-IDF) — 5 articles"
+   },
+   {
+    "code": "r1003",
+    "fill": "url(#oomap-nodata)",
+    "title": "Région sans code (OSM relation: 1003 · no ISO 3166-2 code in OpenStreetMap) — no data"
+   }
+  ],
+  "regionsBtn": false,
+  "overflow": false,
+  "tableW": 628,
+  "hostW": 628,
+  "caveats": [
+   "Contested: 28 · every claim shown, none assigned"
+  ],
+  "surface": "World map host",
+  "lang": "en",
+  "w": 768,
+  "mode": "region"
+ },
+ {
+  "host": "oo-coverage-map",
+  "present": true,
+  "rows": 1,
+  "summary": "Ranked table · 1 area with data",
+  "gap": null,
+  "gapTitle": null,
+  "firstRows": [
+   "1 FR-IDF 5"
+  ],
+  "regions": [],
+  "regionsBtn": false,
+  "overflow": false,
+  "tableW": 628,
+  "hostW": 628,
+  "caveats": [
+   "Contested: 28 · every claim shown, none assigned",
+   "This measure is by region, but the region boundaries are not built on this install yet: the table below holds every value."
+  ],
+  "surface": "World map host",
+  "lang": "en",
+  "w": 768,
+  "mode": "region, no artifact"
+ },
+ {
+  "host": "oo-coverage-map",
+  "present": true,
+  "rows": 209,
+  "summary": "Ranked table · 209 areas with data",
+  "gap": "27 areas with no data: hatched on the map, never counted as zero.",
+  "gapTitle": "Northern Mariana Islands, U.S. Virgin Islands, American Samoa, South Georgia & South Sandwich Islands, British Indian Ocean Territory, St. Helena, Pitcairn Islands, Falkland Islands (Islas Malvinas), British Virgin Islands, Turks & Caicos Islands, Montserrat, Jersey, Guernsey, Isle of Man, Niue, Aruba, Western Sahara, Kiribati, St. Pierre & Miquelon, Wallis & Futuna, French Southern Territories, Åland Islands, Greenland, Heard & McDonald Islands, Norfolk Island, Antarctica, Sint Maarten",
+  "firstRows": [
+   "1 United States (USA) 237 sources",
+   "2 Canada (CAN) 233 sources",
+   "3 Spain (ESP) 211 sources",
+   "4 Brazil (BRA) 206 sources"
+  ],
+  "regions": [
+   {
+    "code": "FR-IDF",
+    "fill": "transparent",
+    "title": "Ile-de-France (FR-IDF) · France — 130 sources"
+   },
+   {
+    "code": "r1003",
+    "fill": "transparent",
+    "title": "Région sans code (OSM relation: 1003 · no ISO 3166-2 code in OpenStreetMap) · France — 130 sources"
+   }
+  ],
+  "regionsBtn": true,
+  "overflow": false,
+  "tableW": 316,
+  "hostW": 316,
+  "caveats": [
+   "Contested: 28 · every claim shown, none assigned",
+   "Catalogued sources based in each country — counts only, no score.  1 456 sources with no country — counted, not mapped."
+  ],
+  "surface": "World map",
+  "lang": "en",
+  "w": 390,
+  "mode": "country"
+ },
+ {
+  "host": "oo-coverage-map",
+  "present": true,
+  "rows": 7,
+  "summary": "Ranked table · 7 areas with data",
+  "gap": null,
+  "gapTitle": null,
+  "firstRows": [
+   "1 Europe 2 070 sources",
+   "2 Asia 1 003 sources",
+   "3 North America 725 sources",
+   "4 South America 497 sources"
+  ],
+  "regions": [
+   {
+    "code": "FR-IDF",
+    "fill": "transparent",
+    "title": "Ile-de-France (FR-IDF) · France — Europe — 2 070 sources"
+   },
+   {
+    "code": "r1003",
+    "fill": "transparent",
+    "title": "Région sans code (OSM relation: 1003 · no ISO 3166-2 code in OpenStreetMap) · France — Europe — 2 070 sources"
+   }
+  ],
+  "regionsBtn": true,
+  "overflow": false,
+  "tableW": 316,
+  "hostW": 316,
+  "caveats": [
+   "Contested: 28 · every claim shown, none assigned",
+   "Catalogued sources based in each country — counts only, no score.  1 456 sources with no country — counted, not mapped."
+  ],
+  "surface": "World map",
+  "lang": "en",
+  "w": 390,
+  "mode": "continent"
+ },
+ {
+  "host": "coverage-map",
+  "present": true,
+  "rows": 4,
+  "summary": "Ranked table · 4 areas with data",
+  "gap": "225 areas with no data: hatched on the map, never counted as zero.",
+  "gapTitle": "Zimbabwe, Zambia, Yemen, Vietnam, Venezuela, Vanuatu, Uzbekistan, Uruguay, Micronesia, Marshall Islands, Northern Mariana Islands, U.S. Virgin Islands, Guam, American Samoa, Puerto Rico, South Georgia & South Sandwich Islands, British Indian Ocean Territory, St. Helena, Pitcairn Islands, Anguilla, Falkland Islands (Islas Malvinas), Cayman Islands, Bermuda, British Virgin Islands, Turks & Caicos Islands, Montserrat, Jersey, Guernsey, Isle of Man, United Kingdom, United Arab Emirates, Ukraine, Uganda, Turkmenistan, Türkiye, Tunisia, Trinidad & Tobago, Tonga, Togo, Timor-Leste, Thailand, Tanzania, Tajikistan, Taiwan, Syria, Switzerland, Sweden, Eswatini, Suriname, South Sudan, Sudan, Sri Lanka, Spain, South Korea, South Africa, Somalia, Solomon Islands, Slovakia, Slovenia, Singapore, Sierra Leone, Seychelles, Serbia, Senegal, Saudi Arabia, São Tomé & Príncipe, San Marino, Samoa, St. Vincent & Grenadines, St. Lucia, St. Kitts & Nevis, Rwanda, Russia, Romania, Qatar, Portugal, Poland, Philippines, Peru, Paraguay, Papua New Guinea, Panama, Palau, Pakistan, Oman, Norway, North Korea, Nigeria, Niger, Nicaragua, New Zealand, Niue, Netherlands, Aruba, Curaçao, Nepal, Nauru, Namibia, Mozambique, Morocco, Western Sahara, Montenegro, Mongolia, Moldova, Mexico, Mauritius, Mauritania, Malta, Mali, Malaysia, Malawi, Madagascar, North Macedonia, Luxembourg, Lithuania, Liechtenstein, Libya, Liberia, Lesotho, Lebanon, Latvia, Laos, Kyrgyzstan, Kuwait, Kosovo, Kiribati, Kenya, Kazakhstan, Jordan, Japan, Jamaica, Italy, Israel, Palestine, Ireland, Iraq, Iran, Indonesia, India, Iceland, Hungary, Honduras, Haiti, Guyana, Guinea-Bissau, Guinea, Guatemala, Grenada, Greece, Ghana, Georgia, Gambia, Gabon, St. Pierre & Miquelon, Wallis & Futuna, French Polynesia, New Caledonia, French Southern Territories, Åland Islands, Finland, Fiji, Ethiopia, Estonia, Eritrea, Equatorial Guinea, El Salvador, Egypt, Ecuador, Dominican Republic, Dominica, Djibouti, Greenland, Faroe Islands, Denmark, Czechia, Cyprus, Cuba, Croatia, Côte d’Ivoire, Costa Rica, Congo - Kinshasa, Congo - Brazzaville, Comoros, Colombia, Hong Kong, Chile, Chad, Central African Republic, Cape Verde, Canada, Cameroon, Cambodia, Myanmar (Burma), Burundi, Burkina Faso, Bulgaria, Brunei, Brazil, Botswana, Bosnia & Herzegovina, Bolivia, Bhutan, Benin, Belize, Belgium, Belarus, Barbados, Bangladesh, Bahrain, Bahamas, Azerbaijan, Austria, Australia, Heard & McDonald Islands, Norfolk Island, Armenia, Argentina, Antigua & Barbuda, Angola, Andorra, Algeria, Albania, Afghanistan, Antarctica, Sint Maarten",
+  "firstRows": [
+   "1 China (CHN) 6 articles",
+   "1 France (FRA) 6 articles",
+   "1 Germany (DEU) 6 articles",
+   "1 United States (USA) 6 articles"
+  ],
+  "regions": [
+   {
+    "code": "FR-IDF",
+    "fill": "transparent",
+    "title": "Ile-de-France (FR-IDF) · France — 6 articles"
+   },
+   {
+    "code": "r1003",
+    "fill": "transparent",
+    "title": "Région sans code (OSM relation: 1003 · no ISO 3166-2 code in OpenStreetMap) · France — 6 articles"
+   }
+  ],
+  "regionsBtn": true,
+  "overflow": false,
+  "tableW": 316,
+  "hostW": 316,
+  "caveats": [
+   "Contested: 28 · every claim shown, none assigned",
+   "Country is operator/catalogue-asserted; articles whose source has no country are counted but never placed on the map — see the language breakdown below."
+  ],
+  "surface": "Library coverage",
+  "lang": "en",
+  "w": 390,
+  "mode": "country"
+ },
+ {
+  "host": "oo-coverage-map",
+  "present": true,
+  "rows": 1,
+  "summary": "Ranked table · 1 area with data",
+  "gap": "1 area with no data: hatched on the map, never counted as zero.",
+  "gapTitle": "Région sans code",
+  "firstRows": [
+   "1 Ile-de-France (FR-IDF) · France 5 articles"
+  ],
+  "regions": [
+   {
+    "code": "FR-IDF",
+    "fill": "color-mix(in srgb, var(--accent) 100%, var(--panel2))",
+    "title": "Ile-de-France (FR-IDF) — 5 articles"
+   },
+   {
+    "code": "r1003",
+    "fill": "url(#oomap-nodata)",
+    "title": "Région sans code (OSM relation: 1003 · no ISO 3166-2 code in OpenStreetMap) — no data"
+   }
+  ],
+  "regionsBtn": false,
+  "overflow": false,
+  "tableW": 316,
+  "hostW": 316,
+  "caveats": [
+   "Contested: 28 · every claim shown, none assigned"
+  ],
+  "surface": "World map host",
+  "lang": "en",
+  "w": 390,
+  "mode": "region"
+ },
+ {
+  "host": "oo-coverage-map",
+  "present": true,
+  "rows": 1,
+  "summary": "Ranked table · 1 area with data",
+  "gap": null,
+  "gapTitle": null,
+  "firstRows": [
+   "1 FR-IDF 5"
+  ],
+  "regions": [],
+  "regionsBtn": false,
+  "overflow": false,
+  "tableW": 316,
+  "hostW": 316,
+  "caveats": [
+   "Contested: 28 · every claim shown, none assigned",
+   "This measure is by region, but the region boundaries are not built on this install yet: the table below holds every value."
+  ],
+  "surface": "World map host",
+  "lang": "en",
+  "w": 390,
+  "mode": "region, no artifact"
+ },
+ {
+  "host": "oo-coverage-map",
+  "present": true,
+  "rows": 209,
+  "summary": "جدول مرتّب · مناطق ذات بيانات: 209",
+  "gap": "مناطق بلا بيانات: 27. مظلّلة بخطوط على الخريطة، ولا تُحسب صفرًا أبدًا.",
+  "gapTitle": "جزر ماريانا الشمالية, جزر فيرجن الأمريكية, ساموا الأمريكية, جورجيا الجنوبية وجزر ساندويتش الجنوبية, الإقليم البريطاني في المحيط الهندي, سانت هيلينا, جزر بيتكيرن, جزر فوكلاند - جزر مالفيناس, جزر فيرجن البريطانية, جزر توركس وكايكوس, مونتسرات, جيرسي, غيرنزي, جزيرة مان, نيوي, أروبا, الصحراء الغربية, كيريباتي, سان بيير ومكويلون, جزر والس وفوتونا, الأقاليم الجنوبية الفرنسية, جزر آلاند, غرينلاند, جزيرة هيرد وجزر ماكدونالد, جزيرة نورفولك, أنتاركتيكا, سانت مارتن",
+  "firstRows": [
+   "1 الولايات المتحدة (USA) مصادر: 237",
+   "2 كندا (CAN) مصادر: 233",
+   "3 إسبانيا (ESP) مصادر: 211",
+   "4 البرازيل (BRA) مصادر: 206"
+  ],
+  "regions": [
+   {
+    "code": "FR-IDF",
+    "fill": "transparent",
+    "title": "Île-de-France (FR-IDF) · فرنسا — مصادر: 130"
+   },
+   {
+    "code": "r1003",
+    "fill": "transparent",
+    "title": "Région sans code (علاقة OSM: 1003 · لا يوجد رمز ISO 3166-2 في OpenStreetMap) · فرنسا — مصادر: 130"
+   }
+  ],
+  "regionsBtn": true,
+  "overflow": false,
+  "tableW": 1116,
+  "hostW": 1116,
+  "caveats": [
+   "متنازع عليها: 28 · كل المطالبات معروضة، ولا واحدة منسوبة",
+   "المصادر المفهرسة الموجودة في كل بلد — أعداد فقط، بلا درجة.  مصادر: 1 456 بلا بلد — محسوبة، غير معروضة على الخريطة."
+  ],
+  "surface": "World map",
+  "lang": "ar",
+  "w": 1440,
+  "mode": "country"
+ },
+ {
+  "host": "oo-coverage-map",
+  "present": true,
+  "rows": 7,
+  "summary": "جدول مرتّب · مناطق ذات بيانات: 7",
+  "gap": null,
+  "gapTitle": null,
+  "firstRows": [
+   "1 أوروبا مصادر: 2 070",
+   "2 آسيا مصادر: 1 003",
+   "3 أمريكا الشمالية مصادر: 725",
+   "4 أمريكا الجنوبية مصادر: 497"
+  ],
+  "regions": [
+   {
+    "code": "FR-IDF",
+    "fill": "transparent",
+    "title": "Île-de-France (FR-IDF) · فرنسا — أوروبا — مصادر: 2 070"
+   },
+   {
+    "code": "r1003",
+    "fill": "transparent",
+    "title": "Région sans code (علاقة OSM: 1003 · لا يوجد رمز ISO 3166-2 في OpenStreetMap) · فرنسا — أوروبا — مصادر: 2 070"
+   }
+  ],
+  "regionsBtn": true,
+  "overflow": false,
+  "tableW": 1116,
+  "hostW": 1116,
+  "caveats": [
+   "متنازع عليها: 28 · كل المطالبات معروضة، ولا واحدة منسوبة",
+   "المصادر المفهرسة الموجودة في كل بلد — أعداد فقط، بلا درجة.  مصادر: 1 456 بلا بلد — محسوبة، غير معروضة على الخريطة."
+  ],
+  "surface": "World map",
+  "lang": "ar",
+  "w": 1440,
+  "mode": "continent"
+ },
+ {
+  "host": "coverage-map",
+  "present": true,
+  "rows": 4,
+  "summary": "جدول مرتّب · مناطق ذات بيانات: 4",
+  "gap": "مناطق بلا بيانات: 225. مظلّلة بخطوط على الخريطة، ولا تُحسب صفرًا أبدًا.",
+  "gapTitle": "زيمبابوي, زامبيا, اليمن, فيتنام, فنزويلا, فانواتو, أوزبكستان, أورغواي, ميكرونيزيا, جزر مارشال, جزر ماريانا الشمالية, جزر فيرجن الأمريكية, غوام, ساموا الأمريكية, بورتوريكو, جورجيا الجنوبية وجزر ساندويتش الجنوبية, الإقليم البريطاني في المحيط الهندي, سانت هيلينا, جزر بيتكيرن, أنغويلا, جزر فوكلاند - جزر مالفيناس, جزر كايمان, برمودا, جزر فيرجن البريطانية, جزر توركس وكايكوس, مونتسرات, جيرسي, غيرنزي, جزيرة مان, المملكة المتحدة, الإمارات العربية المتحدة, أوكرانيا, أوغندا, تركمانستان, تركيا, تونس, ترينيداد وتوباغو, تونغا, توغو, تيمور - ليشتي, تايلاند, تنزانيا, طاجيكستان, تايوان, سوريا, سويسرا, السويد, إسواتيني, سورينام, جنوب السودان, السودان, سريلانكا, إسبانيا, كوريا الجنوبية, جنوب أفريقيا, الصومال, جزر سليمان, سلوفاكيا, سلوفينيا, سنغافورة, سيراليون, سيشل, صربيا, السنغال, المملكة العربية السعودية, ساو تومي وبرينسيبي, سان مارينو, ساموا, سانت فنسنت وجزر غرينادين, سانت لوسيا, سانت كيتس ونيفيس, رواندا, روسيا, رومانيا, قطر, البرتغال, بولندا, الفلبين, بيرو, باراغواي, بابوا غينيا الجديدة, بنما, بالاو, باكستان, عُمان, النرويج, كوريا الشمالية, نيجيريا, النيجر, نيكاراغوا, نيوزيلندا, نيوي, هولندا, أروبا, كوراساو, نيبال, ناورو, ناميبيا, موزمبيق, المغرب, الصحراء الغربية, الجبل الأسود, منغوليا, مولدوفا, المكسيك, موريشيوس, موريتانيا, مالطا, مالي, ماليزيا, ملاوي, مدغشقر, مقدونيا الشمالية, لوكسمبورغ, ليتوانيا, ليختنشتاين, ليبيا, ليبيريا, ليسوتو, لبنان, لاتفيا, لاوس, قيرغيزستان, الكويت, كوسوفو, كيريباتي, كينيا, كازاخستان, الأردن, اليابان, جامايكا, إيطاليا, إسرائيل, فلسطين, أيرلندا, العراق, إيران, إندونيسيا, الهند, آيسلندا, هنغاريا, هندوراس, هايتي, غيانا, غينيا بيساو, غينيا, غواتيمالا, غرينادا, اليونان, غانا, جورجيا, غامبيا, الغابون, سان بيير ومكويلون, جزر والس وفوتونا, بولينيزيا الفرنسية, كاليدونيا الجديدة, الأقاليم الجنوبية الفرنسية, جزر آلاند, فنلندا, فيجي, إثيوبيا, إستونيا, إريتريا, غينيا الاستوائية, السلفادور, مصر, الإكوادور, جمهورية الدومينيكان, دومينيكا, جيبوتي, غرينلاند, جزر فارو, الدانمرك, التشيك, قبرص, كوبا, كرواتيا, ساحل العاج, كوستاريكا, الكونغو - كينشاسا, الكونغو - برازافيل, جزر القمر, كولومبيا, هونغ كونغ, تشيلي, تشاد, جمهورية أفريقيا الوسطى, الرأس الأخضر, كندا, الكاميرون, كمبوديا, ميانمار (بورما), بوروندي, بوركينا فاسو, بلغاريا, بروناي, البرازيل, بوتسوانا, البوسنة والهرسك, بوليفيا, بوتان, بنين, بليز, بلجيكا, بيلاروس, بربادوس, بنغلاديش, البحرين, جزر البهاما, أذربيجان, النمسا, أستراليا, جزيرة هيرد وجزر ماكدونالد, جزيرة نورفولك, أرمينيا, الأرجنتين, أنتيغوا وبربودا, أنغولا, أندورا, الجزائر, ألبانيا, أفغانستان, أنتاركتيكا, سانت مارتن",
+  "firstRows": [
+   "1 ألمانيا (DEU) 6 مقالة",
+   "1 الصين (CHN) 6 مقالة",
+   "1 الولايات المتحدة (USA) 6 مقالة",
+   "1 فرنسا (FRA) 6 مقالة"
+  ],
+  "regions": [
+   {
+    "code": "FR-IDF",
+    "fill": "transparent",
+    "title": "Île-de-France (FR-IDF) · فرنسا — 6 مقالة"
+   },
+   {
+    "code": "r1003",
+    "fill": "transparent",
+    "title": "Région sans code (علاقة OSM: 1003 · لا يوجد رمز ISO 3166-2 في OpenStreetMap) · فرنسا — 6 مقالة"
+   }
+  ],
+  "regionsBtn": true,
+  "overflow": false,
+  "tableW": 1116,
+  "hostW": 1116,
+  "caveats": [
+   "متنازع عليها: 28 · كل المطالبات معروضة، ولا واحدة منسوبة",
+   "البلد مُدرج من قِبل المشغّل أو الفهرس؛ المقالات التي لا يحمل مصدرها بلدًا تُحتسب لكنها لا تُوضع على الخريطة أبدًا — انظر التوزيع اللغوي أدناه."
+  ],
+  "surface": "Library coverage",
+  "lang": "ar",
+  "w": 1440,
+  "mode": "country"
+ },
+ {
+  "host": "oo-coverage-map",
+  "present": true,
+  "rows": 1,
+  "summary": "جدول مرتّب · منطقة واحدة ذات بيانات",
+  "gap": "منطقة واحدة بلا بيانات: مظلّلة بخطوط على الخريطة، ولا تُحسب صفرًا أبدًا.",
+  "gapTitle": "Région sans code",
+  "firstRows": [
+   "1 Île-de-France (FR-IDF) · فرنسا 5 articles"
+  ],
+  "regions": [
+   {
+    "code": "FR-IDF",
+    "fill": "color-mix(in srgb, var(--accent) 100%, var(--panel2))",
+    "title": "Île-de-France (FR-IDF) — 5 articles"
+   },
+   {
+    "code": "r1003",
+    "fill": "url(#oomap-nodata)",
+    "title": "Région sans code (علاقة OSM: 1003 · لا يوجد رمز ISO 3166-2 في OpenStreetMap) — لا توجد بيانات"
+   }
+  ],
+  "regionsBtn": false,
+  "overflow": false,
+  "tableW": 1116,
+  "hostW": 1116,
+  "caveats": [
+   "متنازع عليها: 28 · كل المطالبات معروضة، ولا واحدة منسوبة"
+  ],
+  "surface": "World map host",
+  "lang": "ar",
+  "w": 1440,
+  "mode": "region"
+ },
+ {
+  "host": "oo-coverage-map",
+  "present": true,
+  "rows": 1,
+  "summary": "جدول مرتّب · منطقة واحدة ذات بيانات",
+  "gap": null,
+  "gapTitle": null,
+  "firstRows": [
+   "1 FR-IDF 5"
+  ],
+  "regions": [],
+  "regionsBtn": false,
+  "overflow": false,
+  "tableW": 1116,
+  "hostW": 1116,
+  "caveats": [
+   "متنازع عليها: 28 · كل المطالبات معروضة، ولا واحدة منسوبة",
+   "هذا المقياس حسب المنطقة، لكن حدود المناطق لم تُبنَ بعد على هذا التثبيت: الجدول أدناه يضم كل القيم."
+  ],
+  "surface": "World map host",
+  "lang": "ar",
+  "w": 1440,
+  "mode": "region, no artifact"
+ },
+ {
+  "host": "oo-coverage-map",
+  "present": true,
+  "rows": 209,
+  "summary": "جدول مرتّب · مناطق ذات بيانات: 209",
+  "gap": "مناطق بلا بيانات: 27. مظلّلة بخطوط على الخريطة، ولا تُحسب صفرًا أبدًا.",
+  "gapTitle": "جزر ماريانا الشمالية, جزر فيرجن الأمريكية, ساموا الأمريكية, جورجيا الجنوبية وجزر ساندويتش الجنوبية, الإقليم البريطاني في المحيط الهندي, سانت هيلينا, جزر بيتكيرن, جزر فوكلاند - جزر مالفيناس, جزر فيرجن البريطانية, جزر توركس وكايكوس, مونتسرات, جيرسي, غيرنزي, جزيرة مان, نيوي, أروبا, الصحراء الغربية, كيريباتي, سان بيير ومكويلون, جزر والس وفوتونا, الأقاليم الجنوبية الفرنسية, جزر آلاند, غرينلاند, جزيرة هيرد وجزر ماكدونالد, جزيرة نورفولك, أنتاركتيكا, سانت مارتن",
+  "firstRows": [
+   "1 الولايات المتحدة (USA) مصادر: 237",
+   "2 كندا (CAN) مصادر: 233",
+   "3 إسبانيا (ESP) مصادر: 211",
+   "4 البرازيل (BRA) مصادر: 206"
+  ],
+  "regions": [
+   {
+    "code": "FR-IDF",
+    "fill": "transparent",
+    "title": "Île-de-France (FR-IDF) · فرنسا — مصادر: 130"
+   },
+   {
+    "code": "r1003",
+    "fill": "transparent",
+    "title": "Région sans code (علاقة OSM: 1003 · لا يوجد رمز ISO 3166-2 في OpenStreetMap) · فرنسا — مصادر: 130"
+   }
+  ],
+  "regionsBtn": true,
+  "overflow": false,
+  "tableW": 628,
+  "hostW": 628,
+  "caveats": [
+   "متنازع عليها: 28 · كل المطالبات معروضة، ولا واحدة منسوبة",
+   "المصادر المفهرسة الموجودة في كل بلد — أعداد فقط، بلا درجة.  مصادر: 1 456 بلا بلد — محسوبة، غير معروضة على الخريطة."
+  ],
+  "surface": "World map",
+  "lang": "ar",
+  "w": 768,
+  "mode": "country"
+ },
+ {
+  "host": "oo-coverage-map",
+  "present": true,
+  "rows": 7,
+  "summary": "جدول مرتّب · مناطق ذات بيانات: 7",
+  "gap": null,
+  "gapTitle": null,
+  "firstRows": [
+   "1 أوروبا مصادر: 2 070",
+   "2 آسيا مصادر: 1 003",
+   "3 أمريكا الشمالية مصادر: 725",
+   "4 أمريكا الجنوبية مصادر: 497"
+  ],
+  "regions": [
+   {
+    "code": "FR-IDF",
+    "fill": "transparent",
+    "title": "Île-de-France (FR-IDF) · فرنسا — أوروبا — مصادر: 2 070"
+   },
+   {
+    "code": "r1003",
+    "fill": "transparent",
+    "title": "Région sans code (علاقة OSM: 1003 · لا يوجد رمز ISO 3166-2 في OpenStreetMap) · فرنسا — أوروبا — مصادر: 2 070"
+   }
+  ],
+  "regionsBtn": true,
+  "overflow": false,
+  "tableW": 628,
+  "hostW": 628,
+  "caveats": [
+   "متنازع عليها: 28 · كل المطالبات معروضة، ولا واحدة منسوبة",
+   "المصادر المفهرسة الموجودة في كل بلد — أعداد فقط، بلا درجة.  مصادر: 1 456 بلا بلد — محسوبة، غير معروضة على الخريطة."
+  ],
+  "surface": "World map",
+  "lang": "ar",
+  "w": 768,
+  "mode": "continent"
+ },
+ {
+  "host": "coverage-map",
+  "present": true,
+  "rows": 4,
+  "summary": "جدول مرتّب · مناطق ذات بيانات: 4",
+  "gap": "مناطق بلا بيانات: 225. مظلّلة بخطوط على الخريطة، ولا تُحسب صفرًا أبدًا.",
+  "gapTitle": "زيمبابوي, زامبيا, اليمن, فيتنام, فنزويلا, فانواتو, أوزبكستان, أورغواي, ميكرونيزيا, جزر مارشال, جزر ماريانا الشمالية, جزر فيرجن الأمريكية, غوام, ساموا الأمريكية, بورتوريكو, جورجيا الجنوبية وجزر ساندويتش الجنوبية, الإقليم البريطاني في المحيط الهندي, سانت هيلينا, جزر بيتكيرن, أنغويلا, جزر فوكلاند - جزر مالفيناس, جزر كايمان, برمودا, جزر فيرجن البريطانية, جزر توركس وكايكوس, مونتسرات, جيرسي, غيرنزي, جزيرة مان, المملكة المتحدة, الإمارات العربية المتحدة, أوكرانيا, أوغندا, تركمانستان, تركيا, تونس, ترينيداد وتوباغو, تونغا, توغو, تيمور - ليشتي, تايلاند, تنزانيا, طاجيكستان, تايوان, سوريا, سويسرا, السويد, إسواتيني, سورينام, جنوب السودان, السودان, سريلانكا, إسبانيا, كوريا الجنوبية, جنوب أفريقيا, الصومال, جزر سليمان, سلوفاكيا, سلوفينيا, سنغافورة, سيراليون, سيشل, صربيا, السنغال, المملكة العربية السعودية, ساو تومي وبرينسيبي, سان مارينو, ساموا, سانت فنسنت وجزر غرينادين, سانت لوسيا, سانت كيتس ونيفيس, رواندا, روسيا, رومانيا, قطر, البرتغال, بولندا, الفلبين, بيرو, باراغواي, بابوا غينيا الجديدة, بنما, بالاو, باكستان, عُمان, النرويج, كوريا الشمالية, نيجيريا, النيجر, نيكاراغوا, نيوزيلندا, نيوي, هولندا, أروبا, كوراساو, نيبال, ناورو, ناميبيا, موزمبيق, المغرب, الصحراء الغربية, الجبل الأسود, منغوليا, مولدوفا, المكسيك, موريشيوس, موريتانيا, مالطا, مالي, ماليزيا, ملاوي, مدغشقر, مقدونيا الشمالية, لوكسمبورغ, ليتوانيا, ليختنشتاين, ليبيا, ليبيريا, ليسوتو, لبنان, لاتفيا, لاوس, قيرغيزستان, الكويت, كوسوفو, كيريباتي, كينيا, كازاخستان, الأردن, اليابان, جامايكا, إيطاليا, إسرائيل, فلسطين, أيرلندا, العراق, إيران, إندونيسيا, الهند, آيسلندا, هنغاريا, هندوراس, هايتي, غيانا, غينيا بيساو, غينيا, غواتيمالا, غرينادا, اليونان, غانا, جورجيا, غامبيا, الغابون, سان بيير ومكويلون, جزر والس وفوتونا, بولينيزيا الفرنسية, كاليدونيا الجديدة, الأقاليم الجنوبية الفرنسية, جزر آلاند, فنلندا, فيجي, إثيوبيا, إستونيا, إريتريا, غينيا الاستوائية, السلفادور, مصر, الإكوادور, جمهورية الدومينيكان, دومينيكا, جيبوتي, غرينلاند, جزر فارو, الدانمرك, التشيك, قبرص, كوبا, كرواتيا, ساحل العاج, كوستاريكا, الكونغو - كينشاسا, الكونغو - برازافيل, جزر القمر, كولومبيا, هونغ كونغ, تشيلي, تشاد, جمهورية أفريقيا الوسطى, الرأس الأخضر, كندا, الكاميرون, كمبوديا, ميانمار (بورما), بوروندي, بوركينا فاسو, بلغاريا, بروناي, البرازيل, بوتسوانا, البوسنة والهرسك, بوليفيا, بوتان, بنين, بليز, بلجيكا, بيلاروس, بربادوس, بنغلاديش, البحرين, جزر البهاما, أذربيجان, النمسا, أستراليا, جزيرة هيرد وجزر ماكدونالد, جزيرة نورفولك, أرمينيا, الأرجنتين, أنتيغوا وبربودا, أنغولا, أندورا, الجزائر, ألبانيا, أفغانستان, أنتاركتيكا, سانت مارتن",
+  "firstRows": [
+   "1 ألمانيا (DEU) 6 مقالة",
+   "1 الصين (CHN) 6 مقالة",
+   "1 الولايات المتحدة (USA) 6 مقالة",
+   "1 فرنسا (FRA) 6 مقالة"
+  ],
+  "regions": [
+   {
+    "code": "FR-IDF",
+    "fill": "transparent",
+    "title": "Île-de-France (FR-IDF) · فرنسا — 6 مقالة"
+   },
+   {
+    "code": "r1003",
+    "fill": "transparent",
+    "title": "Région sans code (علاقة OSM: 1003 · لا يوجد رمز ISO 3166-2 في OpenStreetMap) · فرنسا — 6 مقالة"
+   }
+  ],
+  "regionsBtn": true,
+  "overflow": false,
+  "tableW": 628,
+  "hostW": 628,
+  "caveats": [
+   "متنازع عليها: 28 · كل المطالبات معروضة، ولا واحدة منسوبة",
+   "البلد مُدرج من قِبل المشغّل أو الفهرس؛ المقالات التي لا يحمل مصدرها بلدًا تُحتسب لكنها لا تُوضع على الخريطة أبدًا — انظر التوزيع اللغوي أدناه."
+  ],
+  "surface": "Library coverage",
+  "lang": "ar",
+  "w": 768,
+  "mode": "country"
+ },
+ {
+  "host": "oo-coverage-map",
+  "present": true,
+  "rows": 1,
+  "summary": "جدول مرتّب · منطقة واحدة ذات بيانات",
+  "gap": "منطقة واحدة بلا بيانات: مظلّلة بخطوط على الخريطة، ولا تُحسب صفرًا أبدًا.",
+  "gapTitle": "Région sans code",
+  "firstRows": [
+   "1 Île-de-France (FR-IDF) · فرنسا 5 articles"
+  ],
+  "regions": [
+   {
+    "code": "FR-IDF",
+    "fill": "color-mix(in srgb, var(--accent) 100%, var(--panel2))",
+    "title": "Île-de-France (FR-IDF) — 5 articles"
+   },
+   {
+    "code": "r1003",
+    "fill": "url(#oomap-nodata)",
+    "title": "Région sans code (علاقة OSM: 1003 · لا يوجد رمز ISO 3166-2 في OpenStreetMap) — لا توجد بيانات"
+   }
+  ],
+  "regionsBtn": false,
+  "overflow": false,
+  "tableW": 628,
+  "hostW": 628,
+  "caveats": [
+   "متنازع عليها: 28 · كل المطالبات معروضة، ولا واحدة منسوبة"
+  ],
+  "surface": "World map host",
+  "lang": "ar",
+  "w": 768,
+  "mode": "region"
+ },
+ {
+  "host": "oo-coverage-map",
+  "present": true,
+  "rows": 1,
+  "summary": "جدول مرتّب · منطقة واحدة ذات بيانات",
+  "gap": null,
+  "gapTitle": null,
+  "firstRows": [
+   "1 FR-IDF 5"
+  ],
+  "regions": [],
+  "regionsBtn": false,
+  "overflow": false,
+  "tableW": 628,
+  "hostW": 628,
+  "caveats": [
+   "متنازع عليها: 28 · كل المطالبات معروضة، ولا واحدة منسوبة",
+   "هذا المقياس حسب المنطقة، لكن حدود المناطق لم تُبنَ بعد على هذا التثبيت: الجدول أدناه يضم كل القيم."
+  ],
+  "surface": "World map host",
+  "lang": "ar",
+  "w": 768,
+  "mode": "region, no artifact"
+ },
+ {
+  "host": "oo-coverage-map",
+  "present": true,
+  "rows": 209,
+  "summary": "جدول مرتّب · مناطق ذات بيانات: 209",
+  "gap": "مناطق بلا بيانات: 27. مظلّلة بخطوط على الخريطة، ولا تُحسب صفرًا أبدًا.",
+  "gapTitle": "جزر ماريانا الشمالية, جزر فيرجن الأمريكية, ساموا الأمريكية, جورجيا الجنوبية وجزر ساندويتش الجنوبية, الإقليم البريطاني في المحيط الهندي, سانت هيلينا, جزر بيتكيرن, جزر فوكلاند - جزر مالفيناس, جزر فيرجن البريطانية, جزر توركس وكايكوس, مونتسرات, جيرسي, غيرنزي, جزيرة مان, نيوي, أروبا, الصحراء الغربية, كيريباتي, سان بيير ومكويلون, جزر والس وفوتونا, الأقاليم الجنوبية الفرنسية, جزر آلاند, غرينلاند, جزيرة هيرد وجزر ماكدونالد, جزيرة نورفولك, أنتاركتيكا, سانت مارتن",
+  "firstRows": [
+   "1 الولايات المتحدة (USA) مصادر: 237",
+   "2 كندا (CAN) مصادر: 233",
+   "3 إسبانيا (ESP) مصادر: 211",
+   "4 البرازيل (BRA) مصادر: 206"
+  ],
+  "regions": [
+   {
+    "code": "FR-IDF",
+    "fill": "transparent",
+    "title": "Île-de-France (FR-IDF) · فرنسا — مصادر: 130"
+   },
+   {
+    "code": "r1003",
+    "fill": "transparent",
+    "title": "Région sans code (علاقة OSM: 1003 · لا يوجد رمز ISO 3166-2 في OpenStreetMap) · فرنسا — مصادر: 130"
+   }
+  ],
+  "regionsBtn": true,
+  "overflow": false,
+  "tableW": 316,
+  "hostW": 316,
+  "caveats": [
+   "متنازع عليها: 28 · كل المطالبات معروضة، ولا واحدة منسوبة",
+   "المصادر المفهرسة الموجودة في كل بلد — أعداد فقط، بلا درجة.  مصادر: 1 456 بلا بلد — محسوبة، غير معروضة على الخريطة."
+  ],
+  "surface": "World map",
+  "lang": "ar",
+  "w": 390,
+  "mode": "country"
+ },
+ {
+  "host": "oo-coverage-map",
+  "present": true,
+  "rows": 7,
+  "summary": "جدول مرتّب · مناطق ذات بيانات: 7",
+  "gap": null,
+  "gapTitle": null,
+  "firstRows": [
+   "1 أوروبا مصادر: 2 070",
+   "2 آسيا مصادر: 1 003",
+   "3 أمريكا الشمالية مصادر: 725",
+   "4 أمريكا الجنوبية مصادر: 497"
+  ],
+  "regions": [
+   {
+    "code": "FR-IDF",
+    "fill": "transparent",
+    "title": "Île-de-France (FR-IDF) · فرنسا — أوروبا — مصادر: 2 070"
+   },
+   {
+    "code": "r1003",
+    "fill": "transparent",
+    "title": "Région sans code (علاقة OSM: 1003 · لا يوجد رمز ISO 3166-2 في OpenStreetMap) · فرنسا — أوروبا — مصادر: 2 070"
+   }
+  ],
+  "regionsBtn": true,
+  "overflow": false,
+  "tableW": 316,
+  "hostW": 316,
+  "caveats": [
+   "متنازع عليها: 28 · كل المطالبات معروضة، ولا واحدة منسوبة",
+   "المصادر المفهرسة الموجودة في كل بلد — أعداد فقط، بلا درجة.  مصادر: 1 456 بلا بلد — محسوبة، غير معروضة على الخريطة."
+  ],
+  "surface": "World map",
+  "lang": "ar",
+  "w": 390,
+  "mode": "continent"
+ },
+ {
+  "host": "coverage-map",
+  "present": true,
+  "rows": 4,
+  "summary": "جدول مرتّب · مناطق ذات بيانات: 4",
+  "gap": "مناطق بلا بيانات: 225. مظلّلة بخطوط على الخريطة، ولا تُحسب صفرًا أبدًا.",
+  "gapTitle": "زيمبابوي, زامبيا, اليمن, فيتنام, فنزويلا, فانواتو, أوزبكستان, أورغواي, ميكرونيزيا, جزر مارشال, جزر ماريانا الشمالية, جزر فيرجن الأمريكية, غوام, ساموا الأمريكية, بورتوريكو, جورجيا الجنوبية وجزر ساندويتش الجنوبية, الإقليم البريطاني في المحيط الهندي, سانت هيلينا, جزر بيتكيرن, أنغويلا, جزر فوكلاند - جزر مالفيناس, جزر كايمان, برمودا, جزر فيرجن البريطانية, جزر توركس وكايكوس, مونتسرات, جيرسي, غيرنزي, جزيرة مان, المملكة المتحدة, الإمارات العربية المتحدة, أوكرانيا, أوغندا, تركمانستان, تركيا, تونس, ترينيداد وتوباغو, تونغا, توغو, تيمور - ليشتي, تايلاند, تنزانيا, طاجيكستان, تايوان, سوريا, سويسرا, السويد, إسواتيني, سورينام, جنوب السودان, السودان, سريلانكا, إسبانيا, كوريا الجنوبية, جنوب أفريقيا, الصومال, جزر سليمان, سلوفاكيا, سلوفينيا, سنغافورة, سيراليون, سيشل, صربيا, السنغال, المملكة العربية السعودية, ساو تومي وبرينسيبي, سان مارينو, ساموا, سانت فنسنت وجزر غرينادين, سانت لوسيا, سانت كيتس ونيفيس, رواندا, روسيا, رومانيا, قطر, البرتغال, بولندا, الفلبين, بيرو, باراغواي, بابوا غينيا الجديدة, بنما, بالاو, باكستان, عُمان, النرويج, كوريا الشمالية, نيجيريا, النيجر, نيكاراغوا, نيوزيلندا, نيوي, هولندا, أروبا, كوراساو, نيبال, ناورو, ناميبيا, موزمبيق, المغرب, الصحراء الغربية, الجبل الأسود, منغوليا, مولدوفا, المكسيك, موريشيوس, موريتانيا, مالطا, مالي, ماليزيا, ملاوي, مدغشقر, مقدونيا الشمالية, لوكسمبورغ, ليتوانيا, ليختنشتاين, ليبيا, ليبيريا, ليسوتو, لبنان, لاتفيا, لاوس, قيرغيزستان, الكويت, كوسوفو, كيريباتي, كينيا, كازاخستان, الأردن, اليابان, جامايكا, إيطاليا, إسرائيل, فلسطين, أيرلندا, العراق, إيران, إندونيسيا, الهند, آيسلندا, هنغاريا, هندوراس, هايتي, غيانا, غينيا بيساو, غينيا, غواتيمالا, غرينادا, اليونان, غانا, جورجيا, غامبيا, الغابون, سان بيير ومكويلون, جزر والس وفوتونا, بولينيزيا الفرنسية, كاليدونيا الجديدة, الأقاليم الجنوبية الفرنسية, جزر آلاند, فنلندا, فيجي, إثيوبيا, إستونيا, إريتريا, غينيا الاستوائية, السلفادور, مصر, الإكوادور, جمهورية الدومينيكان, دومينيكا, جيبوتي, غرينلاند, جزر فارو, الدانمرك, التشيك, قبرص, كوبا, كرواتيا, ساحل العاج, كوستاريكا, الكونغو - كينشاسا, الكونغو - برازافيل, جزر القمر, كولومبيا, هونغ كونغ, تشيلي, تشاد, جمهورية أفريقيا الوسطى, الرأس الأخضر, كندا, الكاميرون, كمبوديا, ميانمار (بورما), بوروندي, بوركينا فاسو, بلغاريا, بروناي, البرازيل, بوتسوانا, البوسنة والهرسك, بوليفيا, بوتان, بنين, بليز, بلجيكا, بيلاروس, بربادوس, بنغلاديش, البحرين, جزر البهاما, أذربيجان, النمسا, أستراليا, جزيرة هيرد وجزر ماكدونالد, جزيرة نورفولك, أرمينيا, الأرجنتين, أنتيغوا وبربودا, أنغولا, أندورا, الجزائر, ألبانيا, أفغانستان, أنتاركتيكا, سانت مارتن",
+  "firstRows": [
+   "1 ألمانيا (DEU) 6 مقالة",
+   "1 الصين (CHN) 6 مقالة",
+   "1 الولايات المتحدة (USA) 6 مقالة",
+   "1 فرنسا (FRA) 6 مقالة"
+  ],
+  "regions": [
+   {
+    "code": "FR-IDF",
+    "fill": "transparent",
+    "title": "Île-de-France (FR-IDF) · فرنسا — 6 مقالة"
+   },
+   {
+    "code": "r1003",
+    "fill": "transparent",
+    "title": "Région sans code (علاقة OSM: 1003 · لا يوجد رمز ISO 3166-2 في OpenStreetMap) · فرنسا — 6 مقالة"
+   }
+  ],
+  "regionsBtn": true,
+  "overflow": false,
+  "tableW": 316,
+  "hostW": 316,
+  "caveats": [
+   "متنازع عليها: 28 · كل المطالبات معروضة، ولا واحدة منسوبة",
+   "البلد مُدرج من قِبل المشغّل أو الفهرس؛ المقالات التي لا يحمل مصدرها بلدًا تُحتسب لكنها لا تُوضع على الخريطة أبدًا — انظر التوزيع اللغوي أدناه."
+  ],
+  "surface": "Library coverage",
+  "lang": "ar",
+  "w": 390,
+  "mode": "country"
+ },
+ {
+  "host": "oo-coverage-map",
+  "present": true,
+  "rows": 1,
+  "summary": "جدول مرتّب · منطقة واحدة ذات بيانات",
+  "gap": "منطقة واحدة بلا بيانات: مظلّلة بخطوط على الخريطة، ولا تُحسب صفرًا أبدًا.",
+  "gapTitle": "Région sans code",
+  "firstRows": [
+   "1 Île-de-France (FR-IDF) · فرنسا 5 articles"
+  ],
+  "regions": [
+   {
+    "code": "FR-IDF",
+    "fill": "color-mix(in srgb, var(--accent) 100%, var(--panel2))",
+    "title": "Île-de-France (FR-IDF) — 5 articles"
+   },
+   {
+    "code": "r1003",
+    "fill": "url(#oomap-nodata)",
+    "title": "Région sans code (علاقة OSM: 1003 · لا يوجد رمز ISO 3166-2 في OpenStreetMap) — لا توجد بيانات"
+   }
+  ],
+  "regionsBtn": false,
+  "overflow": false,
+  "tableW": 316,
+  "hostW": 316,
+  "caveats": [
+   "متنازع عليها: 28 · كل المطالبات معروضة، ولا واحدة منسوبة"
+  ],
+  "surface": "World map host",
+  "lang": "ar",
+  "w": 390,
+  "mode": "region"
+ },
+ {
+  "host": "oo-coverage-map",
+  "present": true,
+  "rows": 1,
+  "summary": "جدول مرتّب · منطقة واحدة ذات بيانات",
+  "gap": null,
+  "gapTitle": null,
+  "firstRows": [
+   "1 FR-IDF 5"
+  ],
+  "regions": [],
+  "regionsBtn": false,
+  "overflow": false,
+  "tableW": 316,
+  "hostW": 316,
+  "caveats": [
+   "متنازع عليها: 28 · كل المطالبات معروضة، ولا واحدة منسوبة",
+   "هذا المقياس حسب المنطقة، لكن حدود المناطق لم تُبنَ بعد على هذا التثبيت: الجدول أدناه يضم كل القيم."
+  ],
+  "surface": "World map host",
+  "lang": "ar",
+  "w": 390,
+  "mode": "region, no artifact"
+ }
+]
