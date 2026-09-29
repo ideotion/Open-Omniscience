@@ -2766,8 +2766,6 @@
   "No series to show yet.": "Пока нет рядов для отображения.",
   "Panels with no data, not shown: {n}": "Панели без данных, не показаны: {n}",
   "All panels share one vertical scale so they are comparable — a line when dense, bars when sparse (n shown), never an interpolated curve; counts only, no score.": "Все панели используют одну вертикальную шкалу, поэтому их можно сравнивать — линия при плотных данных, столбцы при разреженных (n указано), никогда интерполированная кривая; только подсчёты, без оценок.",
-  "Indexing continues in the background. The number still to index could not be read.": "Индексация продолжается в фоновом режиме. Не удалось прочитать количество статей, ожидающих индексации.",
-  "Indexing continues in the background: {n} article(s) still to index. Until it finishes they carry no keywords and are absent from analytics.": "Индексация продолжается в фоновом режиме: осталось проиндексировать {n} статей. До её завершения они не имеют ключевых слов и отсутствуют в аналитике.",
   "Quality gates": "Проверки качества",
   "— what counts as an article, what counts as a working source, and what gets scraped": "— что считается статьёй, что считается работающим источником и что собирается",
   "Diagnostics": "Диагностика",
@@ -6459,7 +6457,6 @@
   "This proves the file was not changed since that key signed it. It proves who signed it only if that key matches the one the sender gave you some other way.": "Это доказывает, что файл не менялся с тех пор, как этот ключ его подписал. Кто его подписал, это доказывает, только если ключ совпадает с тем, что отправитель передал вам другим путём.",
   "Not verified. The problems found:": "Не подтверждено. Найденные проблемы:",
   "Writing and signing the bundle…": "Пакет записывается и подписывается…",
-  "This trail carries map data whose licence line waits on a decision (Q823), so it is not exported.": "Этот след содержит картографические данные, строка лицензии которых ждёт решения (Q823), поэтому он не экспортируется.",
   "The bundle could not be written:": "Не удалось записать пакет:",
   "Asking {host} tells it this machine's IP address, the point {lat}, {lon} (for {place}) and the dates {start} to {end}: together, which place and period you are looking into.": "Запрос к {host} сообщает ему IP-адрес этого компьютера, точку {lat}, {lon} (для {place}) и даты с {start} по {end}: вместе — какое место и какой период вы изучаете.",
   "{start} to {end}": "с {start} по {end}",
@@ -6622,5 +6619,7 @@
   "Combine keywords in law": "Комбинировать ключевые слова в праве",
   "Set algebra over the keywords of the Wikipedia texts in your corpus: counts only, never a score.": "Алгебра множеств над ключевыми словами текстов Википедии в вашем корпусе: только подсчёты, никогда не оценка.",
   "Set algebra over the keywords of the laws in your corpus: counts only, never a score.": "Алгебра множеств над ключевыми словами законов в вашем корпусе: только подсчёты, никогда не оценка.",
-  "A − B": "A − B"
+  "A − B": "A − B",
+  "Indexing continues in the background. Until it finishes, the articles it has not reached carry no keywords and are absent from analytics.": "Индексирование продолжается в фоне. Пока оно не закончится, статьи, до которых оно ещё не дошло, не имеют ключевых слов и отсутствуют в аналитике.",
+  "Map data — © OpenStreetMap contributors (https://www.openstreetmap.org/copyright), available under the Open Database License 1.0 (ODbL, https://opendatacommons.org/licenses/odbl/1-0/). Credit OpenStreetMap, and share any database derived from this data alike, under the ODbL.": "Картографические данные — © участники OpenStreetMap (https://www.openstreetmap.org/copyright), доступны по лицензии Open Database License 1.0 (ODbL, https://opendatacommons.org/licenses/odbl/1-0/). Указывайте OpenStreetMap и распространяйте любую производную от этих данных базу данных на тех же условиях, по ODbL."
 }

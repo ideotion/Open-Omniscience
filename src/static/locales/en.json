@@ -2766,8 +2766,6 @@
   "No series to show yet.": "No series to show yet.",
   "Panels with no data, not shown: {n}": "Panels with no data, not shown: {n}",
   "All panels share one vertical scale so they are comparable — a line when dense, bars when sparse (n shown), never an interpolated curve; counts only, no score.": "All panels share one vertical scale so they are comparable — a line when dense, bars when sparse (n shown), never an interpolated curve; counts only, no score.",
-  "Indexing continues in the background. The number still to index could not be read.": "Indexing continues in the background. The number still to index could not be read.",
-  "Indexing continues in the background: {n} article(s) still to index. Until it finishes they carry no keywords and are absent from analytics.": "Indexing continues in the background: {n} article(s) still to index. Until it finishes they carry no keywords and are absent from analytics.",
   "Quality gates": "Quality gates",
   "— what counts as an article, what counts as a working source, and what gets scraped": "— what counts as an article, what counts as a working source, and what gets scraped",
   "Diagnostics": "Diagnostics",
@@ -6459,7 +6457,6 @@
   "This proves the file was not changed since that key signed it. It proves who signed it only if that key matches the one the sender gave you some other way.": "This proves the file was not changed since that key signed it. It proves who signed it only if that key matches the one the sender gave you some other way.",
   "Not verified. The problems found:": "Not verified. The problems found:",
   "Writing and signing the bundle…": "Writing and signing the bundle…",
-  "This trail carries map data whose licence line waits on a decision (Q823), so it is not exported.": "This trail carries map data whose licence line waits on a decision (Q823), so it is not exported.",
   "The bundle could not be written:": "The bundle could not be written:",
   "Asking {host} tells it this machine's IP address, the point {lat}, {lon} (for {place}) and the dates {start} to {end}: together, which place and period you are looking into.": "Asking {host} tells it this machine's IP address, the point {lat}, {lon} (for {place}) and the dates {start} to {end}: together, which place and period you are looking into.",
   "{start} to {end}": "{start} to {end}",
@@ -6622,5 +6619,7 @@
   "Combine keywords in law": "Combine keywords in law",
   "Set algebra over the keywords of the Wikipedia texts in your corpus: counts only, never a score.": "Set algebra over the keywords of the Wikipedia texts in your corpus: counts only, never a score.",
   "Set algebra over the keywords of the laws in your corpus: counts only, never a score.": "Set algebra over the keywords of the laws in your corpus: counts only, never a score.",
-  "A − B": "A − B"
+  "A − B": "A − B",
+  "Indexing continues in the background. Until it finishes, the articles it has not reached carry no keywords and are absent from analytics.": "Indexing continues in the background. Until it finishes, the articles it has not reached carry no keywords and are absent from analytics.",
+  "Map data — © OpenStreetMap contributors (https://www.openstreetmap.org/copyright), available under the Open Database License 1.0 (ODbL, https://opendatacommons.org/licenses/odbl/1-0/). Credit OpenStreetMap, and share any database derived from this data alike, under the ODbL.": "Map data — © OpenStreetMap contributors (https://www.openstreetmap.org/copyright), available under the Open Database License 1.0 (ODbL, https://opendatacommons.org/licenses/odbl/1-0/). Credit OpenStreetMap, and share any database derived from this data alike, under the ODbL."
 }

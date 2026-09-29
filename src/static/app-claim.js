@@ -439,9 +439,7 @@
         if (out) out.innerHTML = claimExportDoneHtml(rep, t, tf);
       } catch (e) {
         const msg = (e && e.message) || String(e);
-        status.textContent = /Q823/.test(msg)
-          ? t("This trail carries map data whose licence line waits on a decision (Q823), so it is not exported.")
-          : t("The bundle could not be written:") + " " + msg;
+        status.textContent = t("The bundle could not be written:") + " " + msg;
       } finally {
         if (btn) btn.disabled = false;
       }

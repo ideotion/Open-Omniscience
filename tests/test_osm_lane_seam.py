@@ -14,7 +14,6 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -27,11 +26,13 @@ def test_the_lane_tables_are_not_on_the_corpus_metadata():
         assert m.__table__.name not in Base.metadata.tables, m.__table__.name
 
 
-def test_the_attribution_block_refuses_osm_rows_rather_than_rendering_short():
-    from src.backup.attribution import PendingRulingError, attribution_lines
+def test_the_attribution_block_credits_osm_rows_with_the_odbl():
+    # Q823 = a (2026-09-29): the shared seam renders OSM's credit and the ODbL line where it
+    # used to refuse. Whether the LANE's own file leaves the machine is the test below's.
+    from src.backup.attribution import attribution_lines
 
-    with pytest.raises(PendingRulingError, match="Q823"):
-        attribution_lines({"table:osm_objects"})
+    lines = attribution_lines({"table:osm_objects"})
+    assert [ln.key for ln in lines] == ["openstreetmap"] and "ODbL" in lines[0].text
 
 
 def test_the_lane_file_is_a_backup_member_that_is_NOT_exportable():

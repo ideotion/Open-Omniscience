@@ -2766,8 +2766,6 @@
   "No series to show yet.": "Ainda não há nenhuma série para mostrar.",
   "Panels with no data, not shown: {n}": "Painéis sem dados, não mostrados: {n}",
   "All panels share one vertical scale so they are comparable — a line when dense, bars when sparse (n shown), never an interpolated curve; counts only, no score.": "Todos os painéis partilham uma mesma escala vertical para serem comparáveis — uma linha quando os dados são densos, barras quando são escassos (n indicado), nunca uma curva interpolada; apenas contagens, sem pontuação.",
-  "Indexing continues in the background. The number still to index could not be read.": "A indexação continua em segundo plano. Não foi possível ler o número de artigos ainda por indexar.",
-  "Indexing continues in the background: {n} article(s) still to index. Until it finishes they carry no keywords and are absent from analytics.": "A indexação continua em segundo plano: {n} artigo(s) ainda por indexar. Até terminar, não têm palavras-chave e estão ausentes das análises.",
   "Quality gates": "Controlos de qualidade",
   "— what counts as an article, what counts as a working source, and what gets scraped": "— o que conta como artigo, o que conta como fonte funcional e o que é recolhido",
   "Diagnostics": "Diagnóstico",
@@ -6459,7 +6457,6 @@
   "This proves the file was not changed since that key signed it. It proves who signed it only if that key matches the one the sender gave you some other way.": "Isso prova que o arquivo não mudou desde que essa chave o assinou. Só prova quem o assinou se essa chave for a mesma que o remetente lhe deu por outro meio.",
   "Not verified. The problems found:": "Não verificado. Os problemas encontrados:",
   "Writing and signing the bundle…": "Gravando e assinando o pacote…",
-  "This trail carries map data whose licence line waits on a decision (Q823), so it is not exported.": "Este rastro contém dados de mapa cuja linha de licença aguarda uma decisão (Q823), então não é exportado.",
   "The bundle could not be written:": "Não foi possível gravar o pacote:",
   "Asking {host} tells it this machine's IP address, the point {lat}, {lon} (for {place}) and the dates {start} to {end}: together, which place and period you are looking into.": "Consultar {host} revela a ele o endereço IP desta máquina, o ponto {lat}, {lon} (para {place}) e as datas de {start} a {end}: juntos, qual lugar e qual período você está investigando.",
   "{start} to {end}": "de {start} a {end}",
@@ -6622,5 +6619,7 @@
   "Combine keywords in law": "Combinar palavras-chave no direito",
   "Set algebra over the keywords of the Wikipedia texts in your corpus: counts only, never a score.": "Álgebra de conjuntos sobre as palavras-chave dos textos da Wikipédia no seu corpus: apenas contagens, nunca uma pontuação.",
   "Set algebra over the keywords of the laws in your corpus: counts only, never a score.": "Álgebra de conjuntos sobre as palavras-chave das leis no seu corpus: apenas contagens, nunca uma pontuação.",
-  "A − B": "A − B"
+  "A − B": "A − B",
+  "Indexing continues in the background. Until it finishes, the articles it has not reached carry no keywords and are absent from analytics.": "A indexação continua em segundo plano. Até terminar, os artigos que ainda não alcançou não têm palavras-chave e ficam fora das análises.",
+  "Map data — © OpenStreetMap contributors (https://www.openstreetmap.org/copyright), available under the Open Database License 1.0 (ODbL, https://opendatacommons.org/licenses/odbl/1-0/). Credit OpenStreetMap, and share any database derived from this data alike, under the ODbL.": "Dados de mapa — © colaboradores do OpenStreetMap (https://www.openstreetmap.org/copyright), disponíveis sob a Open Database License 1.0 (ODbL, https://opendatacommons.org/licenses/odbl/1-0/). Credite o OpenStreetMap e compartilhe igual, sob a ODbL, qualquer base de dados derivada destes dados."
 }
