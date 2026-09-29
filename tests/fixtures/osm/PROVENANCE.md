@@ -70,3 +70,24 @@ two parties, one `boundary=claim` naming one, and one `admin_level=8` relation t
 The `.osm` XML is the readable source; the `.osm.pbf` is that file written by pyosmium with a header
 `osmosis_replication_timestamp` of `2026-09-01T00:00:00Z` (the vintage the tests read back), so both of the
 lane's reader backends can read it. Not digest-pinned: libosmium's zlib output is not byte-stable across builds.
+
+## `synthetic-history.osm.pbf` (0.5 row D, S05-04 S4)
+
+**Also wholly synthetic**, and the same invented country: `synthetic.osm.pbf`'s objects with their
+PAST, the shape of the full-history planet (Q814 = b) that no CI runner can hold. Written by
+`scripts/make_osm_history_fixture.py`, which imports its twin's literals rather than copying them, so
+the two cannot drift. Raw blobs and literal timestamps (2015-01-01, 2020-01-01, 2025-01-01), so the
+digest is pinned like its twin's:
+
+```
+sha256  bd23cd0a5f3c5989922180d1b74431ee4877bde4daa5408a604dc31fd391b84d
+bytes   1867
+```
+
+What a history file adds, each written by hand: several versions of one id, consecutive; the
+`visible` flag (`Info` / `DenseInfo` field 6), false on a deleted version; the header's
+`HistoricalInformation` feature; and a replication timestamp (2025-01-06), the file's vintage. The
+objects that exist only here: a butcher created then deleted (a closure), a bench whose tags were
+removed, a cafe mapped outside the square then moved in, one always outside, and a service road
+created then deleted (the stated gap: a deleted way is in no current cut). `tests/test_osm_history.py`
+names which clause each one is for.

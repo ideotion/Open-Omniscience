@@ -281,7 +281,7 @@
     "openDraft", "openGuide", "openIdxComparison", "openInsightsTrends", "openLinkPreview",
     "openPalette", "openSettingsAgenda", "openSettingsOsm", "openSourcesForKeyword", "openSupergroup",
     "openTaskManager", "openUnifiedExport", "openUnifiedImport", "openWikiTC", "openWorldMapAt",
-    "openWorldMapHazards", "osmMove", "osmPickAdd", "osmPickAddCode", "osmPickRemove", "overlayAdopt", "overlayExport", "overlayMerge",
+    "openWorldMapHazards", "osmHistoryDownload", "osmHistoryReadSize", "osmMove", "osmPickAdd", "osmPickAddCode", "osmPickRemove", "overlayAdopt", "overlayExport", "overlayMerge",
     "overlayRevert", "palKey", "panicWipe", "pauseDump", "pauseOsm", "pickLang",
     "pickTerm", "prepareOllamaInstall", "previewTargets", "promoteCitedSources", "pullMailbox",
     "pullModelFromBox", "qualSaveScope", "qualSaveToggle", "qualifyAssist", "qualifyBulkCancel",

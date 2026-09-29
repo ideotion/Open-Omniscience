@@ -47,6 +47,17 @@
   language alphabetically in the reader's language (none first), and a second row lists the countries whose
   laws World law watches (`law_documents.watched`, `eu`/`int` left out), each with its document count. A
   failed read of that row is said on the page, never an empty row. Recorded as an ask, not a ruling id.
+  (11) **S4, the full-history planet (Q814 = b), PR #1217 — which objects are a country's is a design point
+  the brief left open.** A NODE counts when any tagged, visible version of it lay inside the country's CURRENT
+  border (rebuilt from the same continent extract); a WAY or RELATION counts when the current cut kept it. So a
+  way or relation deleted before the extract's date is NOT in the prior: finding its country needs its nodes'
+  past locations, and indexing those for the whole planet's history is a cost S4 does not pay. Stated on the page
+  (`src/osm/history.py:GAP`, ×12) and pinned as negative space in `tests/test_osm_history.py`; the border is
+  today's for every date. Revisit if 0.6's closures trend needs deleted roads or buildings. (12) **The history
+  file's size (~150 GiB) is FROM MEMORY** (`OSM_HISTORY_SIZE_AS_OF`, registry `osm-history-size-estimate`); the
+  page reads the mirror's exact size, and the free space where it would land, before a Download button exists.
+  (13) **The prior is its own table** (`osm_history_changes`, beside `osm_history_cuts`), never rows in
+  `osm_tag_changes`, so 0.6 cannot blend the planet's past into the window it tracks (S06-01 S3's "separately").
 - **THE SWARM QUESTION — SHARING FETCHES BETWEEN USERS TO SPARE THE NEWSROOMS' SERVERS, THE ARTICLE LEDGER,
   AND WHAT THE APP OWES THE MEDIA IT READS (maintainer concern 2026-09-28; question round `PS01`–`PS16` in
   [`docs/design/SHARED_FETCH_ETHICS_AND_ARTICLE_LEDGER_2026-09-28.md`](../design/SHARED_FETCH_ETHICS_AND_ARTICLE_LEDGER_2026-09-28.md)

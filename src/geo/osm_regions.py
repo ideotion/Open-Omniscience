@@ -65,7 +65,18 @@ _REGIONS: tuple[OsmRegion, ...] = (
     OsmRegion("antarctica", "Antarctica", "Antarctica", round(30 * _MB)),
 )
 
+#: When the full-history planet's size estimate below was last reviewed (registry-tested).
+OSM_HISTORY_SIZE_AS_OF = "2026-09"
+
+#: The FULL-HISTORY planet (Q814 = b): every version of every object, one planet-wide file on
+#: ``planet.openstreetmap.org``. Not a region and not in :func:`list_regions` -- the region
+#: list offers continents, and its "Whole planet" row downloads the continents -- but a
+#: download the manager runs like any other, reached by :func:`get_region`. The size is FROM
+#: MEMORY, rounded; the Settings panel reads the mirror's exact size before the download starts.
+HISTORY_REGION = OsmRegion("planet-history", "Whole planet, full history", "Planet", round(150 * _GB))
+
 _BY_CODE = {r.code: r for r in _REGIONS}
+_BY_CODE[HISTORY_REGION.code] = HISTORY_REGION
 # Geofabrik region codes are lowercase letters joined by single hyphens — validated
 # so a code can never escape into a path/URL it shouldn't (defense in depth).
 import re as _re  # noqa: E402

@@ -68,6 +68,8 @@ class Node:
     tags: dict[str, str]
     lat: float
     lon: float
+    #: False on a deleted version, which only a full-history file carries (Info field 6).
+    visible: bool = True
 
 
 @dataclass(frozen=True, slots=True)
@@ -77,6 +79,7 @@ class Way:
     timestamp: datetime | None
     tags: dict[str, str]
     refs: tuple[int, ...]
+    visible: bool = True
 
 
 @dataclass(frozen=True, slots=True)
@@ -93,6 +96,7 @@ class Relation:
     timestamp: datetime | None
     tags: dict[str, str]
     members: tuple[Member, ...]
+    visible: bool = True
 
 
 @dataclass(slots=True)
@@ -317,15 +321,18 @@ class _Block:
         return {s[k]: s[v] for k, v in zip(keys, vals, strict=False)}
 
 
-def _info(blk: _Block, buf: bytes) -> tuple[int | None, datetime | None]:
+def _info(blk: _Block, buf: bytes) -> tuple[int | None, datetime | None, bool]:
     version = None
     ts = None
+    visible = True  # absent outside history files, where every version is a live one
     for f, _w, v in _fields(buf):
         if f == 1:
             version = int(v)  # type: ignore[arg-type]
         elif f == 2:
             ts = blk.when(_signed64(int(v)))  # type: ignore[arg-type]
-    return version, ts
+        elif f == 6:
+            visible = bool(v)
+    return version, ts, visible
 
 
 def _dense(blk: _Block, buf: bytes) -> Iterator[Node]:
@@ -335,6 +342,7 @@ def _dense(blk: _Block, buf: bytes) -> Iterator[Node]:
     kv: list[int] = []
     versions: list[int] = []
     stamps: list[int] = []
+    visibles: list[int] = []
     for f, _w, v in _fields(buf):
         if f == 1:
             ids = _delta(_packed_signed(v))  # type: ignore[arg-type]
@@ -344,6 +352,8 @@ def _dense(blk: _Block, buf: bytes) -> Iterator[Node]:
                     versions = _packed(vv)  # type: ignore[arg-type]
                 elif ff == 2:
                     stamps = _delta(_packed_signed(vv))  # type: ignore[arg-type]
+                elif ff == 6:
+                    visibles = _packed(vv)  # type: ignore[arg-type]
         elif f == 8:
             lats = _delta(_packed_signed(v))  # type: ignore[arg-type]
         elif f == 9:
@@ -368,6 +378,7 @@ def _dense(blk: _Block, buf: bytes) -> Iterator[Node]:
             tags=tags,
             lat=blk.lat(lats[i]),
             lon=blk.lon(lons[i]),
+            visible=bool(visibles[i]) if i < len(visibles) else True,
         )
 
 
@@ -378,6 +389,7 @@ def _node(blk: _Block, buf: bytes) -> Node:
     lat = lon = 0
     version = None
     ts = None
+    visible = True
     for f, _w, v in _fields(buf):
         if f == 1:
             nid = _zz(int(v))  # type: ignore[arg-type]
@@ -386,12 +398,12 @@ def _node(blk: _Block, buf: bytes) -> Node:
         elif f == 3:
             vals = _packed(v)  # type: ignore[arg-type]
         elif f == 4:
-            version, ts = _info(blk, v)  # type: ignore[arg-type]
+            version, ts, visible = _info(blk, v)  # type: ignore[arg-type]
         elif f == 8:
             lat = _zz(int(v))  # type: ignore[arg-type]
         elif f == 9:
             lon = _zz(int(v))  # type: ignore[arg-type]
-    return Node(nid, version, ts, blk.tags(keys, vals), blk.lat(lat), blk.lon(lon))
+    return Node(nid, version, ts, blk.tags(keys, vals), blk.lat(lat), blk.lon(lon), visible)
 
 
 def _way(blk: _Block, buf: bytes) -> Way:
@@ -401,6 +413,7 @@ def _way(blk: _Block, buf: bytes) -> Way:
     refs: list[int] = []
     version = None
     ts = None
+    visible = True
     for f, _w, v in _fields(buf):
         if f == 1:
             wid = int(v)  # type: ignore[arg-type]
@@ -409,10 +422,10 @@ def _way(blk: _Block, buf: bytes) -> Way:
         elif f == 3:
             vals = _packed(v)  # type: ignore[arg-type]
         elif f == 4:
-            version, ts = _info(blk, v)  # type: ignore[arg-type]
+            version, ts, visible = _info(blk, v)  # type: ignore[arg-type]
         elif f == 8:
             refs = _delta(_packed_signed(v))  # type: ignore[arg-type]
-    return Way(wid, version, ts, blk.tags(keys, vals), tuple(refs))
+    return Way(wid, version, ts, blk.tags(keys, vals), tuple(refs), visible)
 
 
 _MEMBER_TYPES = {0: "n", 1: "w", 2: "r"}
@@ -427,6 +440,7 @@ def _relation(blk: _Block, buf: bytes) -> Relation:
     types: list[int] = []
     version = None
     ts = None
+    visible = True
     for f, _w, v in _fields(buf):
         if f == 1:
             rid = int(v)  # type: ignore[arg-type]
@@ -435,7 +449,7 @@ def _relation(blk: _Block, buf: bytes) -> Relation:
         elif f == 3:
             vals = _packed(v)  # type: ignore[arg-type]
         elif f == 4:
-            version, ts = _info(blk, v)  # type: ignore[arg-type]
+            version, ts, visible = _info(blk, v)  # type: ignore[arg-type]
         elif f == 8:
             roles = _packed(v)  # type: ignore[arg-type]
         elif f == 9:
@@ -447,7 +461,7 @@ def _relation(blk: _Block, buf: bytes) -> Relation:
         Member(_MEMBER_TYPES.get(t, "?"), m, s[r] if r < len(s) else "")
         for m, t, r in zip(mids, types, roles, strict=False)
     )
-    return Relation(rid, version, ts, blk.tags(keys, vals), members)
+    return Relation(rid, version, ts, blk.tags(keys, vals), members, visible)
 
 
 def iter_elements(

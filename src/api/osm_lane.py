@@ -87,3 +87,26 @@ def set_countries(payload: CountrySelection) -> dict:
     except PickerError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from None
     return {"countries": chosen, "enabled": bool(chosen)}
+
+
+@router.get("/history")
+def history() -> dict:
+    """The full-history planet (Q814 = b): its download's catalogue line and every country's cut.
+
+    Reads the catalogue and ``osm.db``; the exact size is ``/api/geo/downloads/size``, behind
+    the online consent. ``cuts`` is ``None`` when the lane could not be read (a locked store),
+    said on the page, never an empty list that would read as "no country cut yet".
+    """
+    from src.geo.osm_regions import HISTORY_REGION, OSM_HISTORY_SIZE_AS_OF
+    from src.osm.history import GAP, METHOD, history_state
+
+    try:
+        cuts: list[dict] | None = history_state()
+    except Exception:  # noqa: BLE001 - said on the page ("cuts": null), never a silent []
+        cuts = None
+    return {
+        "download": {**HISTORY_REGION.to_dict(), "size_as_of": OSM_HISTORY_SIZE_AS_OF},
+        "cuts": cuts,
+        "method": METHOD,
+        "gap": GAP,
+    }
