@@ -41,27 +41,13 @@ from __future__ import annotations
 import logging
 from datetime import date, datetime
 
-from sqlalchemy import DDL, Column, Table, event, text
+from sqlalchemy import Column, Table, text
 from sqlalchemy.engine import Connection, Engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session
 
-from src.database.models import KeywordMention
+from src.database.models import MENTIONS_VIEW, KeywordMention, mentions_view_sql
 
 _LOG = logging.getLogger(__name__)
-
-MENTIONS_VIEW = "keyword_mentions_all"
-
-
-def _column_names() -> list[str]:
-    return [c.name for c in KeywordMention.__table__.columns]
-
-
-def mentions_view_sql() -> str:
-    """The exact ``CREATE VIEW`` for the current column set (also what a stale view is
-    compared against, whitespace-insensitively)."""
-    cols = ", ".join(_column_names())
-    return f"CREATE VIEW {MENTIONS_VIEW} AS SELECT {cols} FROM {KeywordMention.__tablename__}"
-
 
 def _norm(sql: str | None) -> str:
     return " ".join((sql or "").split()).lower()
@@ -138,18 +124,6 @@ class _NullCtx:
 
     def __exit__(self, *exc: object) -> None:
         return None
-
-
-# A ``create_all`` database (every test, every fresh install) gets the view the moment its
-# table is created; the ``IF NOT EXISTS`` form makes a second listener call harmless. Existing
-# databases are covered by ``ensure_derived_views`` at boot.
-event.listen(
-    KeywordMention.__table__,
-    "after_create",
-    DDL(mentions_view_sql().replace("CREATE VIEW", "CREATE VIEW IF NOT EXISTS", 1)).execute_if(
-        dialect="sqlite"
-    ),
-)
 
 
 class ReadBase(DeclarativeBase):

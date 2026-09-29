@@ -13,6 +13,7 @@ from __future__ import annotations
 from logging.config import fileConfig
 
 from alembic import context
+from alembic.script import ScriptDirectory
 
 # Live models -> autogenerate target. Importing models populates Base.metadata.
 from src.database import models  # noqa: F401  (needed so all tables register)
@@ -64,6 +65,21 @@ def _include_object(obj, name, type_, reflected, compare_to):
     return True
 
 
+def _drop_views_if_migrating(conn) -> None:
+    """Drop the derived-row view only when a migration is really about to run: an upgrade of a
+    database already at head must leave the file byte-identical (a held restore asserts it), and
+    dropping the view unconditionally is a write. Any doubt drops -- the safe side."""
+    try:
+        heads = set(ScriptDirectory.from_config(config).get_heads())
+        current = set(context.get_context().get_current_heads())
+        target = context.get_revision_argument()
+        if current == heads and target in {"head", "heads"} | heads:
+            return
+    except Exception:  # noqa: BLE001 - never let the optimisation stop a migration
+        pass
+    drop_derived_views(conn)
+
+
 def run_migrations_offline() -> None:
     """Emit SQL without a DB connection (`alembic upgrade --sql`)."""
     context.configure(
@@ -92,7 +108,7 @@ def run_migrations_online() -> None:
             include_object=_include_object,
             compare_type=True,
         )
-        drop_derived_views(injected)
+        _drop_views_if_migrating(injected)
         with context.begin_transaction():
             context.run_migrations()
         return
@@ -104,7 +120,7 @@ def run_migrations_online() -> None:
             include_object=_include_object,
             compare_type=True,
         )
-        drop_derived_views(connection)
+        _drop_views_if_migrating(connection)
         with context.begin_transaction():
             context.run_migrations()
 
