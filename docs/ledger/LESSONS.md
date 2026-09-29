@@ -12753,6 +12753,20 @@ contentVisibilityAuto: true, visibilityProperty: true, opacityProperty: true })`
 `details:not([open])` outside its `<summary>`**; with that, the same frames measured zero overlaps
 (`docs/audit/import-dialog-walk-2026-09-28/walk_import.py`).
 
+### THE HOVER BUBBLE TAKES THE `title` OF THE ELEMENT UNDER THE POINTER (PR #1207)
+
+Invariant #17's bubble moves a hovered element's `title` into `data-oo-tip` (`app-boot.js`) so the browser's
+own tooltip does not double it. A Chromium check that clicks a button and then reads its `title` therefore
+reads `null` for exactly that button, while its neighbours read fine: it looks like a missing title and is
+not one. **Read `data-oo-tip` as well, or move the pointer away before reading `title`.**
+
+### A COMPONENT LOADED WHOLE INTO A NODE `vm` CONTEXT BUILDS ITS OBJECTS IN ANOTHER REALM (PR #1207)
+
+`tests/version_reader_add_node_test.js` runs the whole shipped `ooversions.js` in `vm.createContext` so the
+test drives the real delegated listener, not an extracted copy. The `{ method: "POST" }` the component
+hands to `api()` then has the context's `Object.prototype`, and `assert.deepStrictEqual` compares
+prototypes, so it failed against an identical literal. **Compare such values as JSON, or field by field.**
+
 ### THE SAME OVERLAP PROBE MUST ALSO SKIP SCREEN-READER-ONLY TEXT: A CHART'S DATA TABLE IS CLIPPED, NOT ABSENT (S05-11 S2, claim trail walk)
 
 The overlap probe of the entry above, run over a step that draws `ooChart` charts, flagged the chart's

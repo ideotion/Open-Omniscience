@@ -943,7 +943,12 @@ is read from this machine; nothing is fetched to draw it.
   change newest first; **Show diff** opens the diff stored when the change arrived.
   A change that was only counted says so and has no diff. The pages you track by
   hand (Settings → Wikipedia) are listed too: pick one to read its tracked
-  revisions. When the **page walk** is on (below), a *Page walk* group says what it
+  revisions. Each version at either end of the comparison has its own **Add to
+  corpus**: it adds that exact version as its own article, dated when the wiki made
+  it, and says so when your corpus already holds it or the same words. A version
+  whose text was not stored cannot be added, and its button says why. This is how a
+  revision **Track now** stored reaches your corpus, since search does not read them
+  yet. When the **page walk** is on (below), a *Page walk* group says what it
   is doing (walking; paused, and why; or waiting out a refusal from the wiki) and,
   per edition, the pages it has listed **of the edition's own article count**
   ("1 234 000 of 2 700 000"). That is two counts, never a percentage: each edition
@@ -1054,7 +1059,8 @@ changed pages is off. So an empty list means the lane's texts do not contain you
 words, not that Wikipedia does not. Two other kinds of Wikipedia text on this
 machine are not in this search: downloaded dumps, whose text the search box finds
 in its Wikipedia group, and the revisions **Track now** (Settings → Wikipedia)
-stores for watched pages. A query reads the same way in both lists (`salt*`,
+stores for watched pages, which you add from the page's versions in **Living
+sources** instead. A query reads the same way in both lists (`salt*`,
 `NEAR(salt works, 5)`, `title:salt`), but the filters that describe articles (the
 Source, Language and Time boxes, and `source:`, `author:`, `url:`, `tag:` and
 `title:=`) do not reach these texts, and the section says so whenever one is set.

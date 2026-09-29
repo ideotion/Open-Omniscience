@@ -10352,6 +10352,17 @@ the name on its own line); "from 0 new sources spanning 0 new languages" (the fr
 grew); fr/es/pt "importé" beside a plural. Record: `docs/audit/import-dialog-walk-2026-09-28/`.
 Lessons: `LESSONS.md`, the two entries dated by this PR.
 
+## 2026-09-28 — «Add to corpus» in the version reader, for any listed Wikipedia version (PR #1207)
+
+`R52`'s «Add to corpus» existed only for the lane search's hits, and the version reader row G built lists a
+page's versions from both stores, the tracker's `wiki_revisions` included, which no search reads yet. So the
+reader now offers the add at each end of a comparison: `POST /api/wiki/pages/{id}/versions/{vid}/add-to-corpus`
+resolves the id among the versions the reader lists (never a neighbour) and adds through the lane route's own
+`add_wiki_version_article`. The payload's top-level `corpus_add` names the listed versions the corpus already
+holds, so the reader says so instead of offering the add, and the component draws the button only where that
+key exists, so the law reader, which mounts the same component, offers none. Lessons: `LESSONS.md`, the two
+entries dated by this PR.
+
 - **2026-09-28 · desk/claim-trail-export (0.5 row K, S05-11 S2).** The Claim Workspace's steps ④ and ⑥:
 weather corroboration offers for the trail's own articles, behind the one consent popup with a new
 metadata-shadow line, and the whole trail as one custody-signed ZIP with the §18 enumeration and Q1008's

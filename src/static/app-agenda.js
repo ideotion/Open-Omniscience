@@ -290,7 +290,29 @@
       delete _bulMsgs["bulletin-gate"];
       _bulGate = g;
       _bulPaintGate();
+      _bulSyncIntroOptIn();
       if (g.available) await loadBulletinEditions();
+    }
+
+    // THE OPENING'S OPT-IN (register ruling D2, placed by RC08.2 = a). An edition
+    // opens on the fixed paragraph; this setting lets a narration run ALSO hand the
+    // opening to the model. It is the server's setting rather than a page-local
+    // flag, so the narrate endpoint reads the same answer this box shows.
+    async function _bulSyncIntroOptIn() {
+      const cb = $("bul-narrate-intro"); if (!cb) return;
+      try {
+        const s = await api("/api/settings");
+        cb.checked = !!s.bulletin_narrate_introduction;
+      } catch (e) { cb.checked = false; }
+      if (!cb.dataset.wired) {
+        cb.dataset.wired = "1";
+        cb.addEventListener("change", async () => {
+          try {
+            await api("/api/settings", {method: "PUT",
+              body: JSON.stringify({bulletin_narrate_introduction: cb.checked})});
+          } catch (e) { _bulSyncIntroOptIn(); }
+        });
+      }
     }
 
     function _bulPaintGate() {
@@ -321,6 +343,9 @@
       cb.disabled = !ok;
       if (!ok) cb.checked = false;
       if (lbl) lbl.style.opacity = ok ? "" : ".6";
+      const ib = $("bul-narrate-intro"), il = $("bul-narrate-intro-label");
+      if (ib) ib.disabled = !ok;
+      if (il) il.style.opacity = ok ? "" : ".6";
       if (!box) return;
       box.hidden = ok;
       if (ok) { box.textContent = ""; return; }
@@ -414,7 +439,12 @@
       ).join("");
       const label = u.narrated
         ? `<div class="warn">${esc(_bulT("AI-derived — unreliable"))}${u.partial ? esc(_bulT("; sentences naming something absent from the sources were removed")) : ""}</div>`
-        : `<div class="muted">${esc(_bulTf("No model text: {reason}", {reason: u.fallback_reason || ""}))}</div>`;
+        // A non-narrated unit WITHOUT a reason is not a failure: since D2 every edition
+        // opens on the fixed template by default, and "No model text:" followed by
+        // nothing read as a failure nobody explained (caught in the row H walk).
+        : (u.fallback_reason
+          ? `<div class="muted">${esc(_bulTf("No model text: {reason}", {reason: u.fallback_reason}))}</div>`
+          : `<div class="muted">${esc(_bulT("Fixed text from the edition's own counts; no model wrote it."))}</div>`);
       return `<div style="margin:8px 0">${label}<div>${esc(u.text || "")}</div>` +
         (sents ? `<ul style="margin:4px 0 0 12px">${sents}</ul>` : "") + `</div>`;
     }

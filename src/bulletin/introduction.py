@@ -290,3 +290,31 @@ def deterministic_block(edition: dict, reason: str) -> dict:
             "the document does, in a fixed form."
         ),
     }
+
+
+def opening_block(edition: dict) -> dict:
+    """The introduction every edition OPENS on (register ruling D2, RC08.2 = a).
+
+    D2 reversed the order of §20 Q2's two forms: the deterministic template is the
+    default opening and the model-written one is opt-in. So this is not a fallback --
+    ``fallback_reason`` stays None, because nothing failed and nothing was asked of a
+    model -- and the renderers print it without the "No model text" line. When the
+    narration job later writes the model's opening (only if the operator opted in),
+    it replaces this block in the record, same shape, same key.
+    """
+    return {
+        "unit": "introduction",
+        "text": deterministic_introduction(edition),
+        "narrated": False,
+        "fallback_reason": None,
+        "sentences": [],
+        "prompt_version": INTRODUCTION_PROMPT_VERSION,
+        "method": (
+            "the opening is composed from the edition's own counts by a fixed template; "
+            "a model-written opening is opt-in"
+        ),
+        "caveat": (
+            "No model output is present in this paragraph. It states the same figures "
+            "the document does, in a fixed form."
+        ),
+    }
