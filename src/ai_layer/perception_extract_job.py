@@ -172,7 +172,9 @@ def run_progressive_perception_extract_job(
         from src.ai_layer.perception_job import last_perception_eval_live_report
 
         gate_report = last_perception_eval_live_report()
-    gate = PE.gate_languages_from_report(gate_report)
+    gate = PE.apply_operator_off(
+        PE.gate_languages_from_report(gate_report), PE.operator_off_languages()
+    )
 
     # REFUSE TO START WHEN THE GATE CLEARS NOTHING (2026-09-05, field defect 1's
     # second half). The gate is resolved here, before any work; if no language is
@@ -501,7 +503,10 @@ def current_language_gate() -> dict[str, dict]:
     ruling: the toggle UI shows which strata are active and why)."""
     from src.ai_layer.perception_job import last_perception_eval_live_report
 
-    return PE.gate_languages_from_report(last_perception_eval_live_report())
+    return PE.apply_operator_off(
+        PE.gate_languages_from_report(last_perception_eval_live_report()),
+        PE.operator_off_languages(),
+    )
 
 
 __all__ = [

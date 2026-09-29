@@ -159,7 +159,7 @@ def _run(filename, *, ctx=None, client=None, **kw):
 def test_a_full_run_narrates_every_story_and_the_introduction(monkeypatch):
     _evidence(monkeypatch)
     fn = _edition(2)
-    out = _run(fn)
+    out = _run(fn, introduction=True)  # the model-written opening is opt-in (D2)
     assert out["complete"] is True
     assert out["total_units"] == 3, "two stories plus the introduction"
     assert out["cursor"] == 3
@@ -170,6 +170,18 @@ def test_a_full_run_narrates_every_story_and_the_introduction(monkeypatch):
     # ADJACENCY: every story carries its own paragraph, joined on the article ids.
     for story in rec["stories"]["stories"]:
         assert story["narration"]["text"]
+
+
+def test_by_default_only_the_stories_are_narrated_and_the_opening_stays_fixed(monkeypatch):
+    """D2 (register, placed by RC08.2 = a): the narrated opening is OPT-IN, so a run
+    nobody asked to write the introduction never sends it to the model."""
+    _evidence(monkeypatch)
+    fn = _edition(2)
+    client = _Client(["one.", "two.", "never asked."])
+    out = _run(fn, client=client)
+    assert out["complete"] is True and out["total_units"] == 2
+    assert client.calls == 2
+    assert not (read_edition(fn).get("introduction") or {}).get("narrated")
 
 
 def test_the_record_is_readable_after_every_single_unit(monkeypatch):
@@ -204,11 +216,11 @@ def test_the_cursor_is_persisted_per_unit_and_a_resume_does_not_redo_banked_work
     _evidence(monkeypatch)
     fn = _edition(3)
     client = _Client(["one.", "two.", "three.", "four."])
-    _run(fn, client=client, max_units=2)
+    _run(fn, client=client, max_units=2, introduction=True)
     assert NJ.load_progress_state()["cursor"] == 2
     calls_after_first = client.calls
 
-    out = _run(fn, client=client)
+    out = _run(fn, client=client, introduction=True)
     assert out["resumed_from"] == 2, "the second call must CONTINUE, not start over"
     assert out["complete"] is True
     assert client.calls == calls_after_first + 2, (
@@ -290,7 +302,8 @@ def test_a_transient_outage_is_retried_and_the_run_then_completes(monkeypatch):
     monkeypatch.setattr(NJ, "_BACKOFF_BASE_S", 0.0)
     monkeypatch.setattr(NJ, "_BACKOFF_CAP_S", 0.0)
     fn = _edition(1)
-    out = _run(fn, client=_Client(["__raise__", "recovered.", "intro sentence."]))
+    out = _run(fn, client=_Client(["__raise__", "recovered.", "intro sentence."]),
+               introduction=True)
     assert out["complete"] is True
     assert out["totals"]["narrated"] == 2
 

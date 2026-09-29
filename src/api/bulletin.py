@@ -169,6 +169,23 @@ def edition(filename: str) -> dict:
         raise HTTPException(status_code=500, detail=f"edition unreadable: {exc}") from exc
 
 
+def _narrate_introduction(explicit: bool | None) -> bool:
+    """Whether a narration run also writes the opening (D2: opt-in, off by default).
+
+    An explicit query value wins; otherwise the operator's setting decides, and an
+    unreadable settings file means NO -- the default path never asks a model to write
+    the first paragraph.
+    """
+    if explicit is not None:
+        return bool(explicit)
+    try:
+        from src.config.app_settings import load_settings
+
+        return bool(load_settings().bulletin_narrate_introduction)
+    except Exception:  # noqa: BLE001
+        return False
+
+
 @router.post("/editions/{filename}/narrate")
 def narrate_edition(
     filename: str,
@@ -177,7 +194,13 @@ def narrate_edition(
         False,
         description="discard a paused run and start this edition from the first unit",
     ),
-    introduction: bool = Query(True, description="also narrate the opening paragraph"),
+    introduction: bool | None = Query(
+        None,
+        description=(
+            "also let the model write the opening paragraph; omitted = the "
+            "bulletin_narrate_introduction setting (off by default, ruling D2)"
+        ),
+    ),
     max_stories: int = Query(0, ge=0, le=200, description="0 = every story in the record"),
 ) -> dict:
     """Start (or RESUME) the narration of one persisted edition, as a background job.
@@ -222,7 +245,7 @@ def narrate_edition(
             filename=filename,
             language=lang or None,
             restart=bool(restart),
-            introduction=bool(introduction),
+            introduction=_narrate_introduction(introduction),
             max_stories=int(max_stories) or None,
         )
     except NarrationScopeMismatch as exc:  # pragma: no cover - raised inside the worker

@@ -1876,7 +1876,52 @@
             + unmeasured.map(detail).join("; ");
         }
         out.innerHTML = html;
+        _paintPerceptionLangToggles(g);
       } catch (e) { out.textContent = ""; }
+    }
+
+    // ONE SWITCH PER LANGUAGE (Q1144 = a, S05-08 S6). A cleared language can be
+    // switched off; a failed or unmeasured one is shown with its switch DISABLED and
+    // its reason, because the measurement decides where extraction may run and the
+    // switch can only take a language back out. The server enforces the same thing
+    // (apply_operator_off never licenses a language), so this is presentation, never
+    // the guard. The eval's n and the checks it applied sit on each switch.
+    function _paintPerceptionLangToggles(g) {
+      const box = $("pe-lang-toggles"); if (!box) return;
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const langs = Object.keys(g || {}).filter((l) => g[l]).sort();
+      if (!langs.length) { box.innerHTML = ""; return; }
+      const name = (l) => (typeof ooLangName === "function" ? ooLangName(l) : l);
+      const rows = langs.map((l) => {
+        const e = g[l];
+        const measured = ("measured_active" in e) ? e.measured_active : e.active;
+        const cleared = measured === true;
+        const on = cleared && !e.switched_off;
+        const n = (e.n_cases == null) ? "?" : String(e.n_cases);
+        const numbers = t("n = {n} case(s)").replace("{n}", n)
+          + ((e.checks && e.checks.length) ? " · " + e.checks.join("; ") : "");
+        const why = cleared ? "" : " — " + (measured === false
+          ? t("refused: the harness failed this language")
+          : t("refused: never measured"));
+        return '<label class="row" style="gap:6px;align-items:center" title="' + esc(e.reason || "") + '">'
+          + '<input type="checkbox" data-pe-lang="' + esc(l) + '"' + (on ? " checked" : "")
+          + (cleared ? "" : " disabled") + "> <span>" + esc(name(l)) + " <span class=\"muted\">("
+          + esc(numbers) + ")</span>" + esc(why) + "</span></label>";
+      });
+      box.innerHTML = "<b>" + esc(t("Extract in these languages:")) + "</b>" + rows.join("");
+      box.querySelectorAll("input[data-pe-lang]").forEach((cb) => {
+        cb.addEventListener("change", () => _savePerceptionLangs(box));
+      });
+    }
+
+    async function _savePerceptionLangs(box) {
+      // Only CLEARED languages can be in the list: a disabled checkbox is never read.
+      const off = [...box.querySelectorAll("input[data-pe-lang]:not([disabled])")]
+        .filter((cb) => !cb.checked).map((cb) => cb.dataset.peLang);
+      try {
+        await api("/api/settings", {method: "PUT", body: JSON.stringify({perception_languages_off: off})});
+      } catch (e) { /* the next paint re-reads the server's truth */ }
+      loadPerceptionGate();
     }
 
     // ---- THE BACKGROUND-AI MASTER TOGGLE (2026-08-01 ruling 12a) ---------- //
