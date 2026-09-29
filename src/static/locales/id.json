@@ -6538,5 +6538,11 @@
   "No continent extract is known for this code.": "Tidak ada ekstrak benua yang diketahui untuk kode ini.",
   "Countries whose laws you watch in World law.": "Negara yang hukumnya Anda pantau di Hukum dunia.",
   "{n} watched legal documents": "{n} dokumen hukum yang dipantau",
-  "The countries whose laws you watch could not be read.": "Negara yang hukumnya Anda pantau tidak dapat dibaca."
+  "The countries whose laws you watch could not be read.": "Negara yang hukumnya Anda pantau tidak dapat dibaca.",
+  "1 area with no data: hatched on the map, never counted as zero.": "1 area tanpa data: diarsir di peta, tidak pernah dihitung sebagai nol.",
+  "{n} areas with no data: hatched on the map, never counted as zero.": "{n} area tanpa data: diarsir di peta, tidak pernah dihitung sebagai nol.",
+  "Ranked table · 1 area with data": "Tabel peringkat · 1 area dengan data",
+  "Ranked table · {n} areas with data": "Tabel peringkat · {n} area dengan data",
+  "The full data behind the map: every area with a value, ranked, none left out. The colours are a picture of this table.": "Data lengkap di balik peta: setiap area yang punya nilai, diperingkat, tidak ada yang dihilangkan. Warnanya adalah gambar dari tabel ini.",
+  "This measure is by region, but the region boundaries are not built on this install yet: the table below holds every value.": "Ukuran ini per wilayah, tetapi batas wilayah belum dibangun di instalasi ini: tabel di bawah memuat setiap nilai."
 }

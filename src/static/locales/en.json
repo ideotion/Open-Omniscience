@@ -6538,5 +6538,11 @@
   "No continent extract is known for this code.": "No continent extract is known for this code.",
   "Countries whose laws you watch in World law.": "Countries whose laws you watch in World law.",
   "{n} watched legal documents": "{n} watched legal documents",
-  "The countries whose laws you watch could not be read.": "The countries whose laws you watch could not be read."
+  "The countries whose laws you watch could not be read.": "The countries whose laws you watch could not be read.",
+  "1 area with no data: hatched on the map, never counted as zero.": "1 area with no data: hatched on the map, never counted as zero.",
+  "{n} areas with no data: hatched on the map, never counted as zero.": "{n} areas with no data: hatched on the map, never counted as zero.",
+  "Ranked table · 1 area with data": "Ranked table · 1 area with data",
+  "Ranked table · {n} areas with data": "Ranked table · {n} areas with data",
+  "The full data behind the map: every area with a value, ranked, none left out. The colours are a picture of this table.": "The full data behind the map: every area with a value, ranked, none left out. The colours are a picture of this table.",
+  "This measure is by region, but the region boundaries are not built on this install yet: the table below holds every value.": "This measure is by region, but the region boundaries are not built on this install yet: the table below holds every value."
 }

@@ -6538,5 +6538,11 @@
   "No continent extract is known for this code.": "এই কোডের জন্য কোনো মহাদেশ নির্যাস জানা নেই।",
   "Countries whose laws you watch in World law.": "যেসব দেশের আইন আপনি বিশ্ব আইনে অনুসরণ করেন।",
   "{n} watched legal documents": "{n}টি অনুসৃত আইনি নথি",
-  "The countries whose laws you watch could not be read.": "যেসব দেশের আইন আপনি অনুসরণ করেন সেগুলি পড়া যায়নি।"
+  "The countries whose laws you watch could not be read.": "যেসব দেশের আইন আপনি অনুসরণ করেন সেগুলি পড়া যায়নি।",
+  "1 area with no data: hatched on the map, never counted as zero.": "ডেটা নেই এমন 1টি এলাকা: মানচিত্রে ডোরাকাটা, কখনো শূন্য গণ্য নয়।",
+  "{n} areas with no data: hatched on the map, never counted as zero.": "ডেটা নেই এমন {n}টি এলাকা: মানচিত্রে ডোরাকাটা, কখনো শূন্য গণ্য নয়।",
+  "Ranked table · 1 area with data": "ক্রমানুসারী সারণি · ডেটাসহ 1টি এলাকা",
+  "Ranked table · {n} areas with data": "ক্রমানুসারী সারণি · ডেটাসহ {n}টি এলাকা",
+  "The full data behind the map: every area with a value, ranked, none left out. The colours are a picture of this table.": "মানচিত্রের পেছনের পূর্ণ ডেটা: মান আছে এমন প্রতিটি এলাকা, ক্রমানুসারে, কোনোটি বাদ নেই। রংগুলো এই সারণিরই ছবি।",
+  "This measure is by region, but the region boundaries are not built on this install yet: the table below holds every value.": "এই পরিমাপ অঞ্চলভিত্তিক, কিন্তু এই ইনস্টলে অঞ্চলের সীমানা এখনো তৈরি হয়নি: নিচের সারণিতে প্রতিটি মান আছে।"
 }

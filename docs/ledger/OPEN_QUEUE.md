@@ -153,8 +153,11 @@
   widens (`tests/test_alpha3_payload_boundary.py` counts seven).
 - **ROW E'S PROPOSED DEFAULTS AND OPEN QUESTIONS — NOT RULINGS (0.5 row E, `S05-05`, 2026-09-29, thread «Build
   OSM region boundaries»; ids `R81`–`R85` are held for this row and none is used yet).** S1 (the build) and S2 (the
-  five maps read the artifacts) are built; S3 (choropleths by admin-1 and the ranked table in full, Q816) is the
-  next PR. Built at these defaults, each reversible: (1) **The vertex caps** the build fits every feature to:
+  five maps read the artifacts) are built (PR #1213); S3 (choropleths by admin-1 and the ranked table in full,
+  Q816) is built in the PR after it. One more default there: (6) **no caller feeds region values yet** — `ooMap`
+  takes `regionValues` keyed ISO 3166-2 or `r<relation id>`, and the first producer is row D's per-region tag
+  completeness once the gazetteer carries these keys; until then every map ranks its countries (or, on the World
+  map's continent view, its continents once each). Built at these defaults, each reversible: (1) **The vertex caps** the build fits every feature to:
   1,500 per country, 300 per region, 600 per contested area, coordinates kept to 2 decimals (≈ 1.1 km); the map
   draws at most 120,000 region vertices at once and strides every ring evenly above that, saying so in the legend
   hover. The brief says the caps are measured first, then published: the maintainer's first build reports bytes
