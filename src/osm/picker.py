@@ -3,10 +3,13 @@
 Open Omniscience - Global Intelligence Platform for Investigative Journalism
 Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 
-TWO SUGGESTION ROWS, NEITHER RANKED. Every country where the interface language is official or
-major, alphabetically (the maintainer asked for an unbiased list rather than one country first,
-2026-09-29); and the countries whose laws the operator already watches in World law, so the map
-can follow the legal sources. Both are suggestions: nothing is chosen until the operator clicks.
+THE ORIGIN COUNTRY FIRST, THEN TWO ALPHABETICAL ROWS (R76, the maintainer's answer 3 of the
+2026-09-29 round, which replaced that morning's «none first»). The country the interface language
+comes from (:data:`ORIGIN_COUNTRY`: French -> France, English -> the United Kingdom, Spanish ->
+Spain, ...) is offered first and as the default first import; then every other country where the
+language is official or major, alphabetically; and the countries whose laws the operator already
+watches in World law, so the map can follow the legal sources. All are suggestions: nothing is
+chosen until the operator clicks, so the lane stays OFF until then (Q807).
 
 THE RULINGS (Q807 = a, Q806 = b, Q824 = a, Q828 = a). The lane is OFF until the operator picks
 countries. The wizard SUGGESTS the countries of the interface language, read from
@@ -73,6 +76,10 @@ SUGGESTION_BASIS = (
     "Suggested from the interface language (the countries where it is an official or major "
     "language). Never from your IP address."
 )
+FIRST_BASIS = (
+    "Suggested first: the country your interface language comes from. Nothing is downloaded "
+    "until you choose it."
+)
 LAW_BASIS = "Countries whose laws you watch in World law."
 OFF = "Off: no country chosen. Nothing is downloaded or read until you choose one."
 
@@ -98,6 +105,16 @@ _REGION_OVERRIDES: dict[str, str] = {
 #: Countries no catalogued extract holds, with the reason shown in place of a size.
 _NO_EXTRACT: dict[str, str] = {
     "ru": "Russia is published as its own extract, which this catalogue does not list yet.",
+}
+
+#: The interface language -> the country it comes from (R76). The maintainer named three (fr, en,
+#: es); the other nine are this module's picks, stated in the PR: Arabic -> Saudi Arabia (the
+#: Arabian Peninsula, where the language arose), Portuguese -> Portugal, Chinese -> China,
+#: Hindi -> India, Bengali -> Bangladesh (where it is the sole national language) and the rest
+#: their one namesake state.
+ORIGIN_COUNTRY: dict[str, str] = {
+    "ar": "sa", "bn": "bd", "de": "de", "en": "gb", "es": "es", "fr": "fr",
+    "hi": "in", "id": "id", "ja": "jp", "pt": "pt", "ru": "ru", "zh": "cn",
 }
 
 _CC_RE = re.compile(r"^[a-z]{2}$")
@@ -152,17 +169,26 @@ def _row(cc: str, basis: str | None = None) -> dict[str, Any]:
     return row
 
 
-def suggestions(lang: str) -> list[dict[str, Any]]:
-    """EVERY country where the interface language is official or major, in alphabetical order.
+def origin_country(lang: str) -> str | None:
+    """The alpha-2 code of the country the interface language comes from, or None (R76)."""
+    return ORIGIN_COUNTRY.get((lang or "").strip().lower())
 
-    No country is put first: the file's order (which happens to open with the language's
-    namesake) is not a ranking, and the page sorts the names again in the reader's language.
+
+def suggestions(lang: str) -> list[dict[str, Any]]:
+    """The language's origin country first (R76), then every other country of the language.
+
+    The rest are alphabetical in English here; the page sorts them again in the reader's
+    language and keeps the origin country at the head.
     """
     from src.civic.coverage_floor import load_floor
 
     block = (load_floor().get("languages") or {}).get((lang or "").strip().lower()) or {}
     rows = [_row(r["cc"], r.get("basis")) for r in block.get("countries") or []]
-    return sorted(rows, key=lambda r: r["name"].casefold())
+    first = origin_country(lang)
+    rows.sort(key=lambda r: (r["cc"] != first, r["name"].casefold()))
+    for r in rows:
+        r["origin"] = r["cc"] == first
+    return rows
 
 
 def law_countries(session) -> list[dict[str, Any]]:
@@ -215,6 +241,12 @@ def save_selection(codes: list[str]) -> list[str]:
     return list(save_settings({"osm_countries": clean}).osm_countries)
 
 
+def _first(lang: str, chosen: list[str]) -> dict[str, Any] | None:
+    """The default first import: the origin country, while no country is chosen yet (R76)."""
+    cc = origin_country(lang)
+    return _row(cc) if cc and not chosen else None
+
+
 def picker_state(lang: str, law: list[dict[str, Any]] | None = None) -> dict[str, Any]:
     """Everything the Settings picker draws. Reads local files only (``law`` from the corpus)."""
     from src.catalog.countries import ISO_3166_1_ALPHA2
@@ -228,6 +260,8 @@ def picker_state(lang: str, law: list[dict[str, Any]] | None = None) -> dict[str
         "lang": (lang or "").strip().lower(),
         "suggestion_basis": SUGGESTION_BASIS,
         "suggested": suggestions(lang),
+        "first": _first(lang, chosen),
+        "first_basis": FIRST_BASIS,
         "law_basis": LAW_BASIS,
         "law_suggested": law or [],
         "law_unavailable": law is None,

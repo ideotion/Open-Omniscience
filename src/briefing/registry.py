@@ -485,6 +485,13 @@ def _disabled_names() -> frozenset[str]:
         return frozenset()
 
 
+#: Producers whose cards are made from a lane that must not leave the machine (Q823 ⛔, the ODbL
+#: question: no OSM-derived row in an export, a bulletin or an evidence ZIP). They run only when
+#: the caller says ``lanes=True``, which Home's refresh does and a bulletin, a lead report or a
+#: card audit does not -- so a new caller is safe by default rather than by remembering.
+LANE_ONLY_PRODUCERS: frozenset[str] = frozenset({"osm_tag_completeness"})
+
+
 def run_all(session, on_progress: Callable[[int, int, str], None] | None = None) -> list[Card]:
     """Run every registered producer, isolating failures. See :func:`run_all_bounded`,
     of which this is the unbounded form Home uses -- behaviour is unchanged."""
@@ -497,6 +504,7 @@ def run_all_bounded(
     on_progress: Callable[[int, int, str], None] | None = None,
     deadline: float | None = None,
     as_of: "date | None" = None,
+    lanes: bool = False,
 ) -> tuple[list[Card], dict]:
     """Run every registered producer, isolating failures. Returns ``(cards, stats)``
     where ``stats`` is ``{"producers_run", "producers_total", "truncated"}`` plus, when
@@ -520,6 +528,9 @@ def run_all_bounded(
     ``deadline`` is a :func:`time.monotonic` instant after which no FURTHER producer is
     started; None (Home's path) is unbounded, exactly as before.
 
+    ``lanes`` runs :data:`LANE_ONLY_PRODUCERS` too. Off by default: the skipped names travel
+    in ``stats["held_q823"]`` so a document can say which cards it does not carry and why.
+
     WHY THE BOUND IS A ``break`` AND NOT A TIMEOUT (field report 2026-08-09). An
     all-diagnostics run sat 69 minutes inside ``leads-quality.json``, which calls this
     function -- even though that member runs under a 300 s ``statement_deadline``. The
@@ -535,14 +546,16 @@ def run_all_bounded(
     design; a ``break`` in the loop that owns the budget is not.
     """
     cards: list[Card] = []
-    total = len(_REGISTRY)
+    registry = [(n, p) for n, p in _REGISTRY if lanes or n not in LANE_ONLY_PRODUCERS]
+    held = [n for n, _p in _REGISTRY if not lanes and n in LANE_ONLY_PRODUCERS]
+    total = len(registry)
     disabled = _disabled_names()
     ran = 0
     truncated = False
     anchorable = period_anchorable() if as_of is not None else {}
     anchored_names: list[str] = []
     unanchored_names: list[str] = []
-    for i, (name, producer) in enumerate(_REGISTRY):
+    for i, (name, producer) in enumerate(registry):
         if deadline is not None and time.monotonic() >= deadline:
             truncated = True
             _LOG.warning(
@@ -648,6 +661,7 @@ def run_all_bounded(
         "producers_run": ran,
         "producers_total": total,
         "truncated": truncated,
+        "held_q823": held,
     }
     if as_of is not None:
         # Both lists, always, and BY NAME. A count alone would say how many were
