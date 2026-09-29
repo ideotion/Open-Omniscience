@@ -6418,5 +6418,16 @@
   "Why": "Warum",
   "World source discovery: {added} candidate source(s) staged": "Weltweite Quellensuche: {added} Kandidatenquelle(n) vorgemerkt",
   "You set a custom extractor to run on new articles.": "Sie haben einen eigenen Extraktor für neue Artikel eingerichtet.",
-  "{n} changed": "{n} geändert"
+  "{n} changed": "{n} geändert",
+  "OSM relation": "OSM-Relation",
+  "no ISO 3166-2 code in OpenStreetMap": "kein ISO-3166-2-Code in OpenStreetMap",
+  "Borders: Natural Earth 50m": "Grenzen: Natural Earth 50m",
+  "Country borders from Natural Earth 50m (public domain). OpenStreetMap-derived borders replace them once their files have been built.": "Ländergrenzen aus Natural Earth 50m (gemeinfrei). Aus OpenStreetMap abgeleitete Grenzen ersetzen sie, sobald ihre Dateien erstellt sind.",
+  "Borders: OpenStreetMap, as of {date}": "Grenzen: OpenStreetMap, Stand {date}",
+  "Borders drawn from OpenStreetMap data of the date shown, © OpenStreetMap contributors (ODbL 1.0).": "Grenzen aus OpenStreetMap-Daten des angegebenen Datums, © OpenStreetMap-Mitwirkende (ODbL 1.0).",
+  "{n} countries from OpenStreetMap; every other country keeps its Natural Earth border.": "{n} Länder aus OpenStreetMap; alle anderen Länder behalten ihre Natural-Earth-Grenze.",
+  "{n} regions: {tagged} keyed by their ISO 3166-2 code, {fallback} by their OpenStreetMap relation id because OpenStreetMap carries no code for them.": "{n} Regionen: {tagged} über ihren ISO-3166-2-Code, {fallback} über ihre OpenStreetMap-Relations-ID, weil OpenStreetMap für sie keinen Code führt.",
+  "Region outlines are simplified further for display on this map.": "Die Regionsumrisse werden für die Anzeige auf dieser Karte zusätzlich vereinfacht.",
+  "Show or hide the first-level regions (states, provinces, regions) OpenStreetMap draws inside each country.": "Die Regionen der ersten Ebene (Staaten, Provinzen, Regionen), die OpenStreetMap innerhalb jedes Landes zeichnet, ein- oder ausblenden.",
+  "Natural Earth 50m elsewhere": "sonst Natural Earth 50m"
 }

@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<osm version="0.6" generator="open-omniscience test fixture" timestamp="2026-09-01T00:00:00Z">
+  <node id="1" version="1" timestamp="2026-09-01T00:00:00Z" lat="40" lon="0"/>
+  <node id="2" version="1" timestamp="2026-09-01T00:00:00Z" lat="40" lon="10"/>
+  <node id="3" version="1" timestamp="2026-09-01T00:00:00Z" lat="50" lon="10"/>
+  <node id="4" version="1" timestamp="2026-09-01T00:00:00Z" lat="50" lon="0"/>
+  <node id="5" version="1" timestamp="2026-09-01T00:00:00Z" lat="41" lon="1"/>
+  <node id="6" version="1" timestamp="2026-09-01T00:00:00Z" lat="41" lon="4"/>
+  <node id="7" version="1" timestamp="2026-09-01T00:00:00Z" lat="44" lon="4"/>
+  <node id="8" version="1" timestamp="2026-09-01T00:00:00Z" lat="44" lon="1"/>
+  <node id="9" version="1" timestamp="2026-09-01T00:00:00Z" lat="41" lon="5"/>
+  <node id="10" version="1" timestamp="2026-09-01T00:00:00Z" lat="41" lon="9"/>
+  <node id="11" version="1" timestamp="2026-09-01T00:00:00Z" lat="44" lon="9"/>
+  <node id="12" version="1" timestamp="2026-09-01T00:00:00Z" lat="44" lon="5"/>
+  <node id="13" version="1" timestamp="2026-09-01T00:00:00Z" lat="41" lon="11"/>
+  <node id="14" version="1" timestamp="2026-09-01T00:00:00Z" lat="41" lon="13"/>
+  <node id="15" version="1" timestamp="2026-09-01T00:00:00Z" lat="43" lon="13"/>
+  <node id="16" version="1" timestamp="2026-09-01T00:00:00Z" lat="43" lon="11"/>
+  <node id="17" version="1" timestamp="2026-09-01T00:00:00Z" lat="41" lon="14"/>
+  <node id="18" version="1" timestamp="2026-09-01T00:00:00Z" lat="41" lon="15"/>
+  <node id="19" version="1" timestamp="2026-09-01T00:00:00Z" lat="42" lon="15"/>
+  <node id="20" version="1" timestamp="2026-09-01T00:00:00Z" lat="42" lon="14"/>
+  <node id="21" version="1" timestamp="2026-09-01T00:00:00Z" lat="42" lon="2"/>
+  <node id="22" version="1" timestamp="2026-09-01T00:00:00Z" lat="42" lon="3"/>
+  <node id="23" version="1" timestamp="2026-09-01T00:00:00Z" lat="43" lon="3"/>
+  <node id="24" version="1" timestamp="2026-09-01T00:00:00Z" lat="43" lon="2"/>
+  <way id="1" version="1" timestamp="2026-09-01T00:00:00Z"><nd ref="1"/><nd ref="2"/><nd ref="3"/><nd ref="4"/><nd ref="1"/></way>
+  <way id="2" version="1" timestamp="2026-09-01T00:00:00Z"><nd ref="5"/><nd ref="6"/><nd ref="7"/><nd ref="8"/><nd ref="5"/></way>
+  <way id="3" version="1" timestamp="2026-09-01T00:00:00Z"><nd ref="9"/><nd ref="10"/><nd ref="11"/><nd ref="12"/><nd ref="9"/></way>
+  <way id="4" version="1" timestamp="2026-09-01T00:00:00Z"><nd ref="13"/><nd ref="14"/><nd ref="15"/><nd ref="16"/><nd ref="13"/></way>
+  <way id="5" version="1" timestamp="2026-09-01T00:00:00Z"><nd ref="17"/><nd ref="18"/><nd ref="19"/><nd ref="20"/><nd ref="17"/></way>
+  <way id="6" version="1" timestamp="2026-09-01T00:00:00Z"><nd ref="21"/><nd ref="22"/><nd ref="23"/><nd ref="24"/><nd ref="21"/></way>
+  <relation id="1001" version="1" timestamp="2026-09-01T00:00:00Z"><member type="way" ref="1" role="outer"/><tag k="type" v="boundary"/><tag k="boundary" v="administrative"/><tag k="admin_level" v="2"/><tag k="ISO3166-1:alpha2" v="FR"/><tag k="name" v="France"/><tag k="name:en" v="France"/><tag k="name:ar" v="فرنسا"/></relation>
+  <relation id="1002" version="1" timestamp="2026-09-01T00:00:00Z"><member type="way" ref="2" role="outer"/><tag k="type" v="boundary"/><tag k="boundary" v="administrative"/><tag k="admin_level" v="4"/><tag k="ISO3166-2" v="FR-IDF"/><tag k="name" v="Île-de-France"/><tag k="name:en" v="Ile-de-France"/></relation>
+  <relation id="1003" version="1" timestamp="2026-09-01T00:00:00Z"><member type="way" ref="3" role="outer"/><tag k="type" v="boundary"/><tag k="boundary" v="administrative"/><tag k="admin_level" v="4"/><tag k="name" v="Région sans code"/></relation>
+  <relation id="1004" version="1" timestamp="2026-09-01T00:00:00Z"><member type="way" ref="4" role="outer"/><tag k="type" v="boundary"/><tag k="boundary" v="disputed"/><tag k="name" v="Zone contestée"/><tag k="name:en" v="Contested Zone"/><tag k="claimed_by" v="FR;DE"/></relation>
+  <relation id="1005" version="1" timestamp="2026-09-01T00:00:00Z"><member type="way" ref="5" role="outer"/><tag k="type" v="boundary"/><tag k="boundary" v="claim"/><tag k="name" v="Lone claim"/><tag k="claimed_by" v="FR"/></relation>
+  <relation id="1006" version="1" timestamp="2026-09-01T00:00:00Z"><member type="way" ref="6" role="outer"/><tag k="type" v="boundary"/><tag k="boundary" v="administrative"/><tag k="admin_level" v="8"/><tag k="name" v="A commune (not used)"/></relation>
+</osm>

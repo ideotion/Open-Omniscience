@@ -6418,5 +6418,16 @@
   "Why": "Por qué",
   "World source discovery: {added} candidate source(s) staged": "Descubrimiento mundial de fuentes: {added} fuente(s) candidata(s) en espera",
   "You set a custom extractor to run on new articles.": "Configuró un extractor personalizado para que se ejecute en los artículos nuevos.",
-  "{n} changed": "{n} cambiado(s)"
+  "{n} changed": "{n} cambiado(s)",
+  "OSM relation": "relación de OSM",
+  "no ISO 3166-2 code in OpenStreetMap": "sin código ISO 3166-2 en OpenStreetMap",
+  "Borders: Natural Earth 50m": "Fronteras: Natural Earth 50m",
+  "Country borders from Natural Earth 50m (public domain). OpenStreetMap-derived borders replace them once their files have been built.": "Fronteras de países de Natural Earth 50m (dominio público). Las fronteras derivadas de OpenStreetMap las sustituyen cuando sus archivos se han generado.",
+  "Borders: OpenStreetMap, as of {date}": "Fronteras: OpenStreetMap, a fecha de {date}",
+  "Borders drawn from OpenStreetMap data of the date shown, © OpenStreetMap contributors (ODbL 1.0).": "Fronteras trazadas con datos de OpenStreetMap de la fecha indicada, © colaboradores de OpenStreetMap (ODbL 1.0).",
+  "{n} countries from OpenStreetMap; every other country keeps its Natural Earth border.": "{n} países de OpenStreetMap; todos los demás conservan su frontera de Natural Earth.",
+  "{n} regions: {tagged} keyed by their ISO 3166-2 code, {fallback} by their OpenStreetMap relation id because OpenStreetMap carries no code for them.": "{n} regiones: {tagged} identificadas por su código ISO 3166-2, {fallback} por su id de relación de OpenStreetMap porque OpenStreetMap no les asigna código.",
+  "Region outlines are simplified further for display on this map.": "Los contornos de las regiones se simplifican aún más para mostrarlos en este mapa.",
+  "Show or hide the first-level regions (states, provinces, regions) OpenStreetMap draws inside each country.": "Mostrar u ocultar las regiones de primer nivel (estados, provincias, regiones) que OpenStreetMap dibuja dentro de cada país.",
+  "Natural Earth 50m elsewhere": "Natural Earth 50m en el resto"
 }

@@ -75,6 +75,20 @@ def age_months(as_of: str, *, today: date | None = None) -> int | None:
     return (today.year - y) * 12 + (today.month - mo)
 
 
+def read_json_key(path_rel: str, key: str) -> str | None:
+    """A top-level string value of a JSON artifact (e.g. its ``vintage``), or None."""
+    import json
+
+    p = _ROOT / path_rel
+    if not p.exists():
+        return None
+    try:
+        v = json.loads(p.read_text(encoding="utf-8")).get(key)
+    except (ValueError, AttributeError):
+        return None
+    return v if isinstance(v, str) else None
+
+
 def file_sha256(path_rel: str) -> str | None:
     p = _ROOT / path_rel
     if not p.exists():
@@ -125,6 +139,37 @@ def evaluate(today: date | None = None) -> list[dict[str, Any]]:
             else:
                 rec["status"] = "ok"
                 rec["detail"] = f"{age}/{limit} months"
+        # 1b) an OPERATOR-BUILT artifact that dates itself (0.5 row E): the vintage is
+        # read from the JSON file's own key, not from a constant, because the build
+        # writes it there. Absent is honest, not stale, while ``pin.optional`` says the
+        # file waits on an operator run; once it exists it answers to its window and to
+        # its sha256 like any vendored file.
+        elif pin.get("path") and pin.get("vintage_key"):
+            actual = file_sha256(pin["path"])
+            expected = pin.get("sha256") or ""
+            if not actual:
+                rec["status"] = "info" if pin.get("optional") else "stale"
+                rec["detail"] = (
+                    f"not built yet (operator step: {a.get('refresh', '')})"
+                    if pin.get("optional") else "MISSING FILE"
+                )
+            elif expected and expected != actual:
+                rec["status"] = "stale"
+                rec["detail"] = "checksum DRIFTED from the registered sha256"
+            else:
+                vintage = read_json_key(pin["path"], pin["vintage_key"])
+                rec["as_of"] = vintage
+                v_age = age_months(vintage, today=today) if vintage else None
+                v_limit = fresh.get("max_age_months")
+                if vintage is None or v_age is None:
+                    rec["status"] = "unknown"
+                    rec["detail"] = f"{pin['path']} carries no usable {pin['vintage_key']!r}"
+                elif v_limit is not None and v_age > int(v_limit):
+                    rec["status"] = "stale"
+                    rec["detail"] = f"{v_age} months old (limit {v_limit}); refresh: {a.get('refresh', '')}"
+                else:
+                    rec["status"] = "ok" if expected else "info"
+                    rec["detail"] = f"{v_age}/{v_limit} months" if v_limit is not None else "present"
         # 2) the DuckDB version coupling
         elif fresh.get("policy") == "track-duckdb-version":
             floor, verified = pin.get("floor"), pin.get("verified")

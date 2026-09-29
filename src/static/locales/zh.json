@@ -6418,5 +6418,16 @@
   "Why": "原因",
   "World source discovery: {added} candidate source(s) staged": "全球来源发现：暂存了 {added} 个候选来源",
   "You set a custom extractor to run on new articles.": "您设置了一个在新文章上运行的自定义提取器。",
-  "{n} changed": "已更改 {n} 项"
+  "{n} changed": "已更改 {n} 项",
+  "OSM relation": "OSM 关系",
+  "no ISO 3166-2 code in OpenStreetMap": "OpenStreetMap 中没有 ISO 3166-2 代码",
+  "Borders: Natural Earth 50m": "边界：Natural Earth 50m",
+  "Country borders from Natural Earth 50m (public domain). OpenStreetMap-derived borders replace them once their files have been built.": "国家边界来自 Natural Earth 50m（公有领域）。OpenStreetMap 派生边界的文件构建完成后将取而代之。",
+  "Borders: OpenStreetMap, as of {date}": "边界：OpenStreetMap，截至 {date}",
+  "Borders drawn from OpenStreetMap data of the date shown, © OpenStreetMap contributors (ODbL 1.0).": "边界根据所示日期的 OpenStreetMap 数据绘制，© OpenStreetMap 贡献者（ODbL 1.0）。",
+  "{n} countries from OpenStreetMap; every other country keeps its Natural Earth border.": "{n} 个国家来自 OpenStreetMap；其他国家保留 Natural Earth 边界。",
+  "{n} regions: {tagged} keyed by their ISO 3166-2 code, {fallback} by their OpenStreetMap relation id because OpenStreetMap carries no code for them.": "{n} 个地区：{tagged} 个按 ISO 3166-2 代码标识，{fallback} 个按 OpenStreetMap 关系 ID 标识，因为 OpenStreetMap 没有为其提供代码。",
+  "Region outlines are simplified further for display on this map.": "为在此地图上显示，地区轮廓已进一步简化。",
+  "Show or hide the first-level regions (states, provinces, regions) OpenStreetMap draws inside each country.": "显示或隐藏 OpenStreetMap 在每个国家内绘制的一级地区（州、省、大区）。",
+  "Natural Earth 50m elsewhere": "其余地区为 Natural Earth 50m"
 }

@@ -6418,5 +6418,16 @@
   "Why": "لماذا",
   "World source discovery: {added} candidate source(s) staged": "اكتشاف المصادر حول العالم: وُضع {added} مصدر مرشّح في الانتظار",
   "You set a custom extractor to run on new articles.": "لقد ضبطت مستخرِجًا مخصّصًا ليعمل على المقالات الجديدة.",
-  "{n} changed": "تغيّر {n}"
+  "{n} changed": "تغيّر {n}",
+  "OSM relation": "علاقة OSM",
+  "no ISO 3166-2 code in OpenStreetMap": "لا يوجد رمز ISO 3166-2 في OpenStreetMap",
+  "Borders: Natural Earth 50m": "الحدود: Natural Earth 50m",
+  "Country borders from Natural Earth 50m (public domain). OpenStreetMap-derived borders replace them once their files have been built.": "حدود الدول من Natural Earth 50m (ملكية عامة). تحل محلها الحدود المستمدة من OpenStreetMap بعد بناء ملفاتها.",
+  "Borders: OpenStreetMap, as of {date}": "الحدود: OpenStreetMap، بتاريخ {date}",
+  "Borders drawn from OpenStreetMap data of the date shown, © OpenStreetMap contributors (ODbL 1.0).": "حدود مرسومة من بيانات OpenStreetMap بالتاريخ المبيَّن، © المساهمون في OpenStreetMap (ODbL 1.0).",
+  "{n} countries from OpenStreetMap; every other country keeps its Natural Earth border.": "{n} دولة من OpenStreetMap؛ وتحتفظ كل دولة أخرى بحدودها من Natural Earth.",
+  "{n} regions: {tagged} keyed by their ISO 3166-2 code, {fallback} by their OpenStreetMap relation id because OpenStreetMap carries no code for them.": "{n} منطقة: {tagged} معرَّفة برمز ISO 3166-2، و{fallback} بمعرّف علاقة OpenStreetMap لأن OpenStreetMap لا يحمل رمزًا لها.",
+  "Region outlines are simplified further for display on this map.": "تُبسَّط حدود المناطق أكثر لعرضها على هذه الخريطة.",
+  "Show or hide the first-level regions (states, provinces, regions) OpenStreetMap draws inside each country.": "إظهار أو إخفاء مناطق المستوى الأول (الولايات، المقاطعات، الأقاليم) التي يرسمها OpenStreetMap داخل كل دولة.",
+  "Natural Earth 50m elsewhere": "Natural Earth 50m في غير ذلك"
 }

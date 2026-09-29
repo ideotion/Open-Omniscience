@@ -6418,5 +6418,16 @@
   "Why": "क्यों",
   "World source discovery: {added} candidate source(s) staged": "विश्व स्रोत खोज: {added} उम्मीदवार स्रोत प्रतीक्षा में रखे गए",
   "You set a custom extractor to run on new articles.": "आपने नए लेखों पर चलने के लिए एक कस्टम एक्सट्रैक्टर सेट किया है।",
-  "{n} changed": "{n} बदले गए"
+  "{n} changed": "{n} बदले गए",
+  "OSM relation": "OSM संबंध",
+  "no ISO 3166-2 code in OpenStreetMap": "OpenStreetMap में कोई ISO 3166-2 कोड नहीं",
+  "Borders: Natural Earth 50m": "सीमाएँ: Natural Earth 50m",
+  "Country borders from Natural Earth 50m (public domain). OpenStreetMap-derived borders replace them once their files have been built.": "देशों की सीमाएँ Natural Earth 50m (सार्वजनिक डोमेन) से। OpenStreetMap से बनी सीमाओं की फ़ाइलें बन जाने पर वे इनकी जगह लेती हैं।",
+  "Borders: OpenStreetMap, as of {date}": "सीमाएँ: OpenStreetMap, {date} तक",
+  "Borders drawn from OpenStreetMap data of the date shown, © OpenStreetMap contributors (ODbL 1.0).": "दिखाई गई तिथि के OpenStreetMap डेटा से खींची गई सीमाएँ, © OpenStreetMap योगदानकर्ता (ODbL 1.0)।",
+  "{n} countries from OpenStreetMap; every other country keeps its Natural Earth border.": "{n} देश OpenStreetMap से; बाकी हर देश की Natural Earth सीमा बनी रहती है।",
+  "{n} regions: {tagged} keyed by their ISO 3166-2 code, {fallback} by their OpenStreetMap relation id because OpenStreetMap carries no code for them.": "{n} क्षेत्र: {tagged} अपने ISO 3166-2 कोड से, {fallback} अपनी OpenStreetMap संबंध आईडी से, क्योंकि OpenStreetMap में उनका कोई कोड नहीं है।",
+  "Region outlines are simplified further for display on this map.": "इस मानचित्र पर दिखाने के लिए क्षेत्रों की रूपरेखा और सरल की गई है।",
+  "Show or hide the first-level regions (states, provinces, regions) OpenStreetMap draws inside each country.": "हर देश के भीतर OpenStreetMap द्वारा खींचे गए प्रथम-स्तरीय क्षेत्र (राज्य, प्रांत, क्षेत्र) दिखाएँ या छिपाएँ।",
+  "Natural Earth 50m elsewhere": "बाकी जगह Natural Earth 50m"
 }

@@ -6418,5 +6418,16 @@
   "Why": "Pourquoi",
   "World source discovery: {added} candidate source(s) staged": "Découverte mondiale de sources : {added} source(s) candidate(s) mise(s) en attente",
   "You set a custom extractor to run on new articles.": "Vous avez réglé un extracteur personnalisé pour qu’il tourne sur les nouveaux articles.",
-  "{n} changed": "{n} modifié(s)"
+  "{n} changed": "{n} modifié(s)",
+  "OSM relation": "relation OSM",
+  "no ISO 3166-2 code in OpenStreetMap": "aucun code ISO 3166-2 dans OpenStreetMap",
+  "Borders: Natural Earth 50m": "Frontières : Natural Earth 50m",
+  "Country borders from Natural Earth 50m (public domain). OpenStreetMap-derived borders replace them once their files have been built.": "Frontières des pays tirées de Natural Earth 50m (domaine public). Les frontières issues d’OpenStreetMap les remplacent une fois leurs fichiers construits.",
+  "Borders: OpenStreetMap, as of {date}": "Frontières : OpenStreetMap, au {date}",
+  "Borders drawn from OpenStreetMap data of the date shown, © OpenStreetMap contributors (ODbL 1.0).": "Frontières tracées à partir des données OpenStreetMap de la date indiquée, © les contributeurs d’OpenStreetMap (ODbL 1.0).",
+  "{n} countries from OpenStreetMap; every other country keeps its Natural Earth border.": "{n} pays issus d’OpenStreetMap ; tous les autres pays gardent leur frontière Natural Earth.",
+  "{n} regions: {tagged} keyed by their ISO 3166-2 code, {fallback} by their OpenStreetMap relation id because OpenStreetMap carries no code for them.": "{n} régions : {tagged} identifiées par leur code ISO 3166-2, {fallback} par leur identifiant de relation OpenStreetMap, car OpenStreetMap ne leur donne aucun code.",
+  "Region outlines are simplified further for display on this map.": "Les contours des régions sont encore simplifiés pour l’affichage sur cette carte.",
+  "Show or hide the first-level regions (states, provinces, regions) OpenStreetMap draws inside each country.": "Afficher ou masquer les régions de premier niveau (États, provinces, régions) qu’OpenStreetMap trace à l’intérieur de chaque pays.",
+  "Natural Earth 50m elsewhere": "Natural Earth 50m ailleurs"
 }

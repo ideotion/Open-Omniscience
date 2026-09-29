@@ -6418,5 +6418,16 @@
   "Why": "Mengapa",
   "World source discovery: {added} candidate source(s) staged": "Penemuan sumber dunia: {added} sumber kandidat ditahap",
   "You set a custom extractor to run on new articles.": "Anda mengatur ekstraktor kustom untuk berjalan pada artikel baru.",
-  "{n} changed": "{n} diubah"
+  "{n} changed": "{n} diubah",
+  "OSM relation": "relasi OSM",
+  "no ISO 3166-2 code in OpenStreetMap": "tidak ada kode ISO 3166-2 di OpenStreetMap",
+  "Borders: Natural Earth 50m": "Batas: Natural Earth 50m",
+  "Country borders from Natural Earth 50m (public domain). OpenStreetMap-derived borders replace them once their files have been built.": "Batas negara dari Natural Earth 50m (domain publik). Batas turunan OpenStreetMap menggantikannya setelah berkasnya dibuat.",
+  "Borders: OpenStreetMap, as of {date}": "Batas: OpenStreetMap, per {date}",
+  "Borders drawn from OpenStreetMap data of the date shown, © OpenStreetMap contributors (ODbL 1.0).": "Batas digambar dari data OpenStreetMap pada tanggal yang ditampilkan, © kontributor OpenStreetMap (ODbL 1.0).",
+  "{n} countries from OpenStreetMap; every other country keeps its Natural Earth border.": "{n} negara dari OpenStreetMap; setiap negara lain tetap memakai batas Natural Earth.",
+  "{n} regions: {tagged} keyed by their ISO 3166-2 code, {fallback} by their OpenStreetMap relation id because OpenStreetMap carries no code for them.": "{n} wilayah: {tagged} dikenali dengan kode ISO 3166-2, {fallback} dengan id relasi OpenStreetMap karena OpenStreetMap tidak memuat kode untuknya.",
+  "Region outlines are simplified further for display on this map.": "Garis wilayah disederhanakan lebih lanjut untuk ditampilkan di peta ini.",
+  "Show or hide the first-level regions (states, provinces, regions) OpenStreetMap draws inside each country.": "Tampilkan atau sembunyikan wilayah tingkat pertama (negara bagian, provinsi, wilayah) yang digambar OpenStreetMap di dalam setiap negara.",
+  "Natural Earth 50m elsewhere": "Natural Earth 50m di tempat lain"
 }
