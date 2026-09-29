@@ -64,7 +64,7 @@ def test_a_search_analyses_its_own_set_and_only_when_there_is_one():
     assert body.index("annotateArticleDups(p, t);") < body.index("_anSpawn(seed);")
     # The seed is taken when the search is CALLED, so the analysis is of the set listed,
     # and an older answer that lands after a newer search is dropped rather than drawn.
-    assert body.index("const seed = _searchSeed();") < body.index("await api(")
+    assert re.search(r"const seed = _searchSeed\(\);[\s\S]*await api\(", body), "the seed is read before the request goes out"
     assert body.count("if (seq !== _searchSeq) return;") == 2, "both the answer and the failure of a stale search"
     assert "return _anSpawn(_searchSeed());" in function_body(ana, "openAnalysis")
 
