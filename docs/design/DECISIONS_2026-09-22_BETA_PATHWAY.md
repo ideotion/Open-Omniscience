@@ -433,7 +433,7 @@ that scale"*). *Not asked here, because they are measurements rather than prefer
 size, the compaction target, and whether sealed segments later move to immutable files
 (design §3.7 — the backup-incrementality argument). *Shipped state meanwhile:* **nothing of this
 design is built**; `R24`, the other half of item 7, is built in the same PR.
-`ANSWER D47:`
+`ANSWER D47: STILL OPEN (⛔, no letter) — answered in the project chat 2026-09-29 19:55 UTC (the 37-question list) and copied here by the recording session (item 37): «I'm not sure, help me decide. Keywords still need a lot of work, a dedicated keyword working session is necessary.» Handed to the project thread «Keyword working session»`
 
 ## §B2 — The awareness mechanism you asked for
 
