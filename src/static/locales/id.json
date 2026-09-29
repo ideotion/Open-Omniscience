@@ -6576,5 +6576,19 @@
   "OpenStreetMap names only one party": "OpenStreetMap hanya menyebut satu pihak",
   "no party named": "tidak ada pihak yang disebut",
   "Every disputed area is drawn hatched with all of its claims named in the tooltip, in every worldview. OpenStreetMap's convention attributes an area to the country whose border, as OpenStreetMap draws it, contains the area (its on-the-ground rule); an area inside no country's border, or inside several, is attributed to none. Source: OpenStreetMap's boundary=disputed and boundary=claim areas and its country borders, of the date shown, © OpenStreetMap contributors (ODbL 1.0). It is never this app's verdict on who is right; the Worldview control shows the other conventions.": "Setiap wilayah sengketa digambar berarsir dengan semua klaimnya disebut di tooltip, dalam setiap pandangan dunia. Konvensi OpenStreetMap mengaitkan wilayah ke negara yang batasnya, sebagaimana digambar OpenStreetMap, memuat wilayah itu (aturan keadaan di lapangan); wilayah yang tidak berada di dalam batas mana pun, atau di dalam beberapa batas, tidak dikaitkan ke mana pun. Sumber: wilayah boundary=disputed dan boundary=claim OpenStreetMap serta batas negaranya, per tanggal yang ditampilkan, © kontributor OpenStreetMap (ODbL 1.0). Ini bukan putusan aplikasi ini tentang siapa yang benar; pemilih Pandangan dunia menampilkan konvensi lainnya.",
-  "Natural Earth's layer lists {n} disputed areas, drawn under the other worldviews.": "Lapisan Natural Earth memuat {n} wilayah sengketa, digambar dalam pandangan dunia lainnya."
+  "Natural Earth's layer lists {n} disputed areas, drawn under the other worldviews.": "Lapisan Natural Earth memuat {n} wilayah sengketa, digambar dalam pandangan dunia lainnya.",
+  "Your data drive is not connected": "Drive data Anda tidak terhubung",
+  "Open Omniscience keeps its data in {path}, and that folder cannot be found. Connect the drive that holds it. This page checks again every few seconds and opens the app as soon as the drive is back.": "Open Omniscience menyimpan datanya di {path}, dan folder itu tidak ditemukan. Hubungkan drive yang menyimpannya. Halaman ini memeriksa lagi setiap beberapa detik dan membuka aplikasi begitu drive kembali.",
+  "The drive at this path is not the one this app set up: its marker file does not match.": "Drive di jalur ini bukan yang disiapkan aplikasi ini: file penandanya tidak cocok.",
+  "If you deleted this folder on purpose, remove the OO_DATA_DIR and OO_DATA_VOLUME_ID lines from {env} to start with a new, empty corpus.": "Jika Anda sengaja menghapus folder ini, hapus baris OO_DATA_DIR dan OO_DATA_VOLUME_ID dari {env} untuk memulai dengan korpus baru yang kosong.",
+  "Quit": "Keluar",
+  "The drive holding your data was disconnected": "Drive yang menyimpan data Anda terputus",
+  "Reconnect it within {n} s.": "Hubungkan kembali dalam {n} dtk.",
+  "Collection is paused until it is back.": "Pengumpulan dijeda sampai drive kembali.",
+  "The app will close in {n} s to protect your data.": "Aplikasi akan ditutup dalam {n} dtk untuk melindungi data Anda.",
+  "Reconnecting the drive now still restarts the app instead.": "Menghubungkan kembali drive sekarang tetap memulai ulang aplikasi alih-alih menutupnya.",
+  "The drive is back. The app is restarting to reopen your data.": "Drive sudah kembali. Aplikasi dimulai ulang untuk membuka kembali data Anda.",
+  "The app is closing. Reconnect the drive, then start the app again.": "Aplikasi sedang ditutup. Hubungkan kembali drive, lalu jalankan aplikasi lagi.",
+  "Anything written in the last moments before the drive was removed may be lost; the database itself stays consistent.": "Apa pun yang ditulis pada saat-saat terakhir sebelum drive dilepas bisa hilang; basis datanya sendiri tetap konsisten.",
+  "The disconnection was recorded for diagnostics.": "Pemutusan ini dicatat untuk diagnostik."
 }

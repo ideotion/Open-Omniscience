@@ -444,6 +444,17 @@ async def lifespan(app: FastAPI):
     except Exception:  # noqa: BLE001 - a reading must never block startup
         logger.debug("could not take the boot hardware reading", exc_info=True)
 
+    # The data-drive watchdog (R86): started before the lock check, since a drive can be
+    # pulled while the unlock screen is up. A no-op unless the first-launch step marked
+    # a chosen folder.
+    try:
+        from src.safety.data_volume import MONITOR, mark_booted
+
+        mark_booted()
+        MONITOR.start()
+    except Exception:  # noqa: BLE001 - a watchdog must never block startup
+        logger.warning("could not start the data-drive watchdog", exc_info=True)
+
     state = app_lock_state()
     if state.startswith("unlocked"):
         run_deferred_startup()

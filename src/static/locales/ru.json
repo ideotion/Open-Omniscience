@@ -6576,5 +6576,19 @@
   "OpenStreetMap names only one party": "OpenStreetMap называет только одну сторону",
   "no party named": "стороны не названы",
   "Every disputed area is drawn hatched with all of its claims named in the tooltip, in every worldview. OpenStreetMap's convention attributes an area to the country whose border, as OpenStreetMap draws it, contains the area (its on-the-ground rule); an area inside no country's border, or inside several, is attributed to none. Source: OpenStreetMap's boundary=disputed and boundary=claim areas and its country borders, of the date shown, © OpenStreetMap contributors (ODbL 1.0). It is never this app's verdict on who is right; the Worldview control shows the other conventions.": "Каждая спорная территория заштрихована, и все притязания на неё названы в подсказке, при любом мировоззрении. Условность OpenStreetMap относит территорию к стране, чья граница, как её рисует OpenStreetMap, содержит эту территорию (правило фактического положения); территория внутри ни одной границы или внутри нескольких ни к кому не относится. Источник: области boundary=disputed и boundary=claim в OpenStreetMap и его границы стран на указанную дату, © участники OpenStreetMap (ODbL 1.0). Это никогда не вердикт этого приложения о том, кто прав; переключатель «Мировоззрение» показывает другие условности.",
-  "Natural Earth's layer lists {n} disputed areas, drawn under the other worldviews.": "В слое Natural Earth спорных территорий: {n}; они показаны при других мировоззрениях."
+  "Natural Earth's layer lists {n} disputed areas, drawn under the other worldviews.": "В слое Natural Earth спорных территорий: {n}; они показаны при других мировоззрениях.",
+  "Your data drive is not connected": "Диск с данными не подключён",
+  "Open Omniscience keeps its data in {path}, and that folder cannot be found. Connect the drive that holds it. This page checks again every few seconds and opens the app as soon as the drive is back.": "Open Omniscience хранит свои данные в {path}, и эта папка не найдена. Подключите диск, на котором она находится. Эта страница проверяет снова каждые несколько секунд и откроет приложение, как только диск вернётся.",
+  "The drive at this path is not the one this app set up: its marker file does not match.": "Диск по этому пути — не тот, который настроило это приложение: его файл-метка не совпадает.",
+  "If you deleted this folder on purpose, remove the OO_DATA_DIR and OO_DATA_VOLUME_ID lines from {env} to start with a new, empty corpus.": "Если вы удалили эту папку намеренно, уберите строки OO_DATA_DIR и OO_DATA_VOLUME_ID из {env}, чтобы начать с нового, пустого корпуса.",
+  "Quit": "Выйти",
+  "The drive holding your data was disconnected": "Диск с вашими данными был отключён",
+  "Reconnect it within {n} s.": "Подключите его снова в течение {n} с.",
+  "Collection is paused until it is back.": "Сбор приостановлен, пока диск не вернётся.",
+  "The app will close in {n} s to protect your data.": "Приложение закроется через {n} с, чтобы защитить ваши данные.",
+  "Reconnecting the drive now still restarts the app instead.": "Если подключить диск сейчас, приложение вместо этого перезапустится.",
+  "The drive is back. The app is restarting to reopen your data.": "Диск вернулся. Приложение перезапускается, чтобы снова открыть ваши данные.",
+  "The app is closing. Reconnect the drive, then start the app again.": "Приложение закрывается. Подключите диск и затем снова запустите приложение.",
+  "Anything written in the last moments before the drive was removed may be lost; the database itself stays consistent.": "Записанное в последние мгновения перед извлечением диска может быть потеряно; сама база данных остаётся согласованной.",
+  "The disconnection was recorded for diagnostics.": "Отключение записано для диагностики."
 }

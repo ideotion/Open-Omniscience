@@ -6576,5 +6576,19 @@
   "OpenStreetMap names only one party": "OpenStreetMap nennt nur eine Partei",
   "no party named": "keine Partei genannt",
   "Every disputed area is drawn hatched with all of its claims named in the tooltip, in every worldview. OpenStreetMap's convention attributes an area to the country whose border, as OpenStreetMap draws it, contains the area (its on-the-ground rule); an area inside no country's border, or inside several, is attributed to none. Source: OpenStreetMap's boundary=disputed and boundary=claim areas and its country borders, of the date shown, © OpenStreetMap contributors (ODbL 1.0). It is never this app's verdict on who is right; the Worldview control shows the other conventions.": "Jedes umstrittene Gebiet wird schraffiert gezeichnet, mit allen Ansprüchen im Tooltip, in jeder Weltsicht. Die Konvention von OpenStreetMap ordnet ein Gebiet dem Land zu, dessen Grenze, wie OpenStreetMap sie zeichnet, das Gebiet enthält (seine Regel der tatsächlichen Lage); ein Gebiet innerhalb keiner Grenze oder mehrerer wird keinem zugeordnet. Quelle: die boundary=disputed- und boundary=claim-Gebiete von OpenStreetMap und seine Landesgrenzen, zum angegebenen Datum, © OpenStreetMap-Mitwirkende (ODbL 1.0). Es ist nie das Urteil dieser App darüber, wer recht hat; die Weltsicht-Auswahl zeigt die anderen Konventionen.",
-  "Natural Earth's layer lists {n} disputed areas, drawn under the other worldviews.": "Die Ebene von Natural Earth führt {n} umstrittene Gebiete, gezeichnet unter den anderen Weltsichten."
+  "Natural Earth's layer lists {n} disputed areas, drawn under the other worldviews.": "Die Ebene von Natural Earth führt {n} umstrittene Gebiete, gezeichnet unter den anderen Weltsichten.",
+  "Your data drive is not connected": "Ihr Datenlaufwerk ist nicht verbunden",
+  "Open Omniscience keeps its data in {path}, and that folder cannot be found. Connect the drive that holds it. This page checks again every few seconds and opens the app as soon as the drive is back.": "Open Omniscience speichert seine Daten in {path}, und dieser Ordner ist nicht auffindbar. Schließen Sie das Laufwerk an, auf dem er liegt. Diese Seite prüft alle paar Sekunden erneut und öffnet die App, sobald das Laufwerk wieder da ist.",
+  "The drive at this path is not the one this app set up: its marker file does not match.": "Das Laufwerk unter diesem Pfad ist nicht das, das diese App eingerichtet hat: Seine Markierungsdatei stimmt nicht überein.",
+  "If you deleted this folder on purpose, remove the OO_DATA_DIR and OO_DATA_VOLUME_ID lines from {env} to start with a new, empty corpus.": "Wenn Sie diesen Ordner absichtlich gelöscht haben, entfernen Sie die Zeilen OO_DATA_DIR und OO_DATA_VOLUME_ID aus {env}, um mit einem neuen, leeren Korpus zu beginnen.",
+  "Quit": "Beenden",
+  "The drive holding your data was disconnected": "Das Laufwerk mit Ihren Daten wurde getrennt",
+  "Reconnect it within {n} s.": "Verbinden Sie es innerhalb von {n} s wieder.",
+  "Collection is paused until it is back.": "Die Sammlung ist pausiert, bis es wieder da ist.",
+  "The app will close in {n} s to protect your data.": "Die App wird in {n} s geschlossen, um Ihre Daten zu schützen.",
+  "Reconnecting the drive now still restarts the app instead.": "Wenn Sie das Laufwerk jetzt wieder verbinden, startet die App stattdessen neu.",
+  "The drive is back. The app is restarting to reopen your data.": "Das Laufwerk ist wieder da. Die App startet neu, um Ihre Daten wieder zu öffnen.",
+  "The app is closing. Reconnect the drive, then start the app again.": "Die App wird geschlossen. Verbinden Sie das Laufwerk wieder und starten Sie dann die App erneut.",
+  "Anything written in the last moments before the drive was removed may be lost; the database itself stays consistent.": "Was in den letzten Augenblicken vor dem Entfernen des Laufwerks geschrieben wurde, kann verloren sein; die Datenbank selbst bleibt konsistent.",
+  "The disconnection was recorded for diagnostics.": "Die Trennung wurde für die Diagnose aufgezeichnet."
 }

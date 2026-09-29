@@ -6576,5 +6576,19 @@
   "OpenStreetMap names only one party": "OpenStreetMap केवल एक पक्ष का नाम देता है",
   "no party named": "कोई पक्ष नामित नहीं",
   "Every disputed area is drawn hatched with all of its claims named in the tooltip, in every worldview. OpenStreetMap's convention attributes an area to the country whose border, as OpenStreetMap draws it, contains the area (its on-the-ground rule); an area inside no country's border, or inside several, is attributed to none. Source: OpenStreetMap's boundary=disputed and boundary=claim areas and its country borders, of the date shown, © OpenStreetMap contributors (ODbL 1.0). It is never this app's verdict on who is right; the Worldview control shows the other conventions.": "हर विवादित क्षेत्र धारीदार बनाया जाता है और टूलटिप में उसके सभी दावे दिखते हैं, हर विश्वदृष्टि में। OpenStreetMap की परिपाटी किसी क्षेत्र को उस देश को सौंपती है जिसकी सीमा, जैसा OpenStreetMap उसे बनाता है, उस क्षेत्र को समाहित करती है (ज़मीनी स्थिति का उसका नियम); किसी सीमा के भीतर न आने वाला, या कई सीमाओं के भीतर आने वाला क्षेत्र किसी को नहीं सौंपा जाता। स्रोत: OpenStreetMap के boundary=disputed और boundary=claim क्षेत्र और उसकी देश-सीमाएँ, दिखाई गई तारीख़ तक, © OpenStreetMap योगदानकर्ता (ODbL 1.0)। यह कभी इस ऐप का यह निर्णय नहीं कि कौन सही है; विश्वदृष्टि चयनकर्ता अन्य परिपाटियाँ दिखाता है।",
-  "Natural Earth's layer lists {n} disputed areas, drawn under the other worldviews.": "Natural Earth की परत में {n} विवादित क्षेत्र हैं, जो अन्य विश्वदृष्टियों में बनाए जाते हैं।"
+  "Natural Earth's layer lists {n} disputed areas, drawn under the other worldviews.": "Natural Earth की परत में {n} विवादित क्षेत्र हैं, जो अन्य विश्वदृष्टियों में बनाए जाते हैं।",
+  "Your data drive is not connected": "आपकी डेटा ड्राइव जुड़ी नहीं है",
+  "Open Omniscience keeps its data in {path}, and that folder cannot be found. Connect the drive that holds it. This page checks again every few seconds and opens the app as soon as the drive is back.": "Open Omniscience अपना डेटा {path} में रखता है, और वह फ़ोल्डर नहीं मिल रहा। जिस ड्राइव में वह है उसे जोड़ें। यह पेज हर कुछ सेकंड में फिर जाँचता है और ड्राइव लौटते ही ऐप खोल देता है।",
+  "The drive at this path is not the one this app set up: its marker file does not match.": "इस पथ पर मौजूद ड्राइव वह नहीं है जिसे इस ऐप ने सेट किया था: उसकी मार्कर फ़ाइल मेल नहीं खाती।",
+  "If you deleted this folder on purpose, remove the OO_DATA_DIR and OO_DATA_VOLUME_ID lines from {env} to start with a new, empty corpus.": "अगर आपने यह फ़ोल्डर जानबूझकर हटाया है, तो नए, खाली कॉर्पस से शुरू करने के लिए {env} से OO_DATA_DIR और OO_DATA_VOLUME_ID वाली पंक्तियाँ हटा दें।",
+  "Quit": "बंद करें",
+  "The drive holding your data was disconnected": "आपके डेटा वाली ड्राइव डिस्कनेक्ट हो गई",
+  "Reconnect it within {n} s.": "इसे {n} सेकंड के भीतर फिर से जोड़ें।",
+  "Collection is paused until it is back.": "ड्राइव लौटने तक संग्रह रुका हुआ है।",
+  "The app will close in {n} s to protect your data.": "आपके डेटा की सुरक्षा के लिए ऐप {n} सेकंड में बंद हो जाएगा।",
+  "Reconnecting the drive now still restarts the app instead.": "अभी ड्राइव फिर से जोड़ने पर ऐप बंद होने के बजाय फिर से शुरू होगा।",
+  "The drive is back. The app is restarting to reopen your data.": "ड्राइव लौट आई है। आपका डेटा फिर से खोलने के लिए ऐप फिर से शुरू हो रहा है।",
+  "The app is closing. Reconnect the drive, then start the app again.": "ऐप बंद हो रहा है। ड्राइव फिर से जोड़ें, फिर ऐप दोबारा शुरू करें।",
+  "Anything written in the last moments before the drive was removed may be lost; the database itself stays consistent.": "ड्राइव हटाए जाने से ठीक पहले के पलों में लिखा गया डेटा खो सकता है; डेटाबेस स्वयं सुसंगत रहता है।",
+  "The disconnection was recorded for diagnostics.": "डिस्कनेक्शन निदान के लिए दर्ज कर लिया गया है।"
 }

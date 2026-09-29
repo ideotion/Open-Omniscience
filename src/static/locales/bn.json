@@ -6576,5 +6576,19 @@
   "OpenStreetMap names only one party": "OpenStreetMap কেবল একটি পক্ষের নাম দেয়",
   "no party named": "কোনো পক্ষের নাম নেই",
   "Every disputed area is drawn hatched with all of its claims named in the tooltip, in every worldview. OpenStreetMap's convention attributes an area to the country whose border, as OpenStreetMap draws it, contains the area (its on-the-ground rule); an area inside no country's border, or inside several, is attributed to none. Source: OpenStreetMap's boundary=disputed and boundary=claim areas and its country borders, of the date shown, © OpenStreetMap contributors (ODbL 1.0). It is never this app's verdict on who is right; the Worldview control shows the other conventions.": "প্রতিটি বিতর্কিত এলাকা ডোরাকাটা আঁকা হয়, টুলটিপে তার সব দাবির নামসহ, প্রতিটি বিশ্বদৃষ্টিতে। OpenStreetMap-এর রীতি একটি এলাকাকে সেই দেশে আরোপ করে যার সীমানা, OpenStreetMap যেভাবে আঁকে, এলাকাটিকে ধারণ করে (মাঠের বাস্তবতার নিয়ম); কোনো সীমানার ভেতরে নেই বা একাধিক সীমানার ভেতরে থাকা এলাকা কাউকে আরোপ করা হয় না। উৎস: OpenStreetMap-এর boundary=disputed ও boundary=claim এলাকা এবং এর দেশের সীমানা, দেখানো তারিখ অনুযায়ী, © OpenStreetMap অবদানকারীরা (ODbL 1.0)। এটি কখনোই কে ঠিক সে বিষয়ে এই অ্যাপের রায় নয়; বিশ্বদৃষ্টি নির্বাচক অন্য রীতিগুলো দেখায়।",
-  "Natural Earth's layer lists {n} disputed areas, drawn under the other worldviews.": "Natural Earth-এর স্তরে {n}টি বিতর্কিত এলাকা আছে, অন্য বিশ্বদৃষ্টিতে আঁকা হয়।"
+  "Natural Earth's layer lists {n} disputed areas, drawn under the other worldviews.": "Natural Earth-এর স্তরে {n}টি বিতর্কিত এলাকা আছে, অন্য বিশ্বদৃষ্টিতে আঁকা হয়।",
+  "Your data drive is not connected": "আপনার ডেটা ড্রাইভ সংযুক্ত নেই",
+  "Open Omniscience keeps its data in {path}, and that folder cannot be found. Connect the drive that holds it. This page checks again every few seconds and opens the app as soon as the drive is back.": "Open Omniscience তার ডেটা {path}-এ রাখে, আর সেই ফোল্ডারটি পাওয়া যাচ্ছে না। যে ড্রাইভে এটি আছে সেটি সংযুক্ত করুন। এই পাতাটি কয়েক সেকেন্ড পরপর আবার দেখে এবং ড্রাইভ ফিরলেই অ্যাপ খুলে দেয়।",
+  "The drive at this path is not the one this app set up: its marker file does not match.": "এই পথের ড্রাইভটি এই অ্যাপ যেটি সেট করেছিল সেটি নয়: এর মার্কার ফাইল মেলে না।",
+  "If you deleted this folder on purpose, remove the OO_DATA_DIR and OO_DATA_VOLUME_ID lines from {env} to start with a new, empty corpus.": "আপনি ইচ্ছাকৃতভাবে এই ফোল্ডার মুছে থাকলে, নতুন, খালি কর্পাস দিয়ে শুরু করতে {env} থেকে OO_DATA_DIR ও OO_DATA_VOLUME_ID লাইন দুটি সরিয়ে দিন।",
+  "Quit": "বন্ধ করুন",
+  "The drive holding your data was disconnected": "আপনার ডেটা রাখা ড্রাইভটি বিচ্ছিন্ন হয়েছে",
+  "Reconnect it within {n} s.": "{n} সেকেন্ডের মধ্যে এটি আবার সংযুক্ত করুন।",
+  "Collection is paused until it is back.": "ড্রাইভ ফেরা পর্যন্ত সংগ্রহ বিরত আছে।",
+  "The app will close in {n} s to protect your data.": "আপনার ডেটা রক্ষা করতে অ্যাপটি {n} সেকেন্ডে বন্ধ হবে।",
+  "Reconnecting the drive now still restarts the app instead.": "এখন ড্রাইভ আবার সংযুক্ত করলে অ্যাপ বন্ধ না হয়ে আবার চালু হবে।",
+  "The drive is back. The app is restarting to reopen your data.": "ড্রাইভ ফিরে এসেছে। আপনার ডেটা আবার খুলতে অ্যাপটি আবার চালু হচ্ছে।",
+  "The app is closing. Reconnect the drive, then start the app again.": "অ্যাপটি বন্ধ হচ্ছে। ড্রাইভ আবার সংযুক্ত করুন, তারপর অ্যাপটি আবার চালু করুন।",
+  "Anything written in the last moments before the drive was removed may be lost; the database itself stays consistent.": "ড্রাইভ সরানোর ঠিক আগের মুহূর্তে লেখা ডেটা হারিয়ে যেতে পারে; ডেটাবেস নিজে সামঞ্জস্যপূর্ণ থাকে।",
+  "The disconnection was recorded for diagnostics.": "বিচ্ছিন্ন হওয়ার ঘটনাটি ডায়াগনস্টিকসের জন্য লিপিবদ্ধ হয়েছে।"
 }

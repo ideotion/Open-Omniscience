@@ -773,6 +773,9 @@ def _all_diagnostics_members(db: Session) -> list[tuple[str, object]]:
         # it is cheap and the bundle carries it beside the latency log the stalls
         # show up in.
         ("write-gate.json", lambda: write_gate_report()),
+        # The data-drive watchdog's state and incident log (R86). File reads on the
+        # internal disk only, no DB.
+        ("data-volume.json", lambda: _data_volume_report()),
         # Cause attribution for the requests the latency log shows as stalls. Cheap:
         # an in-memory ring read, no DB work, so it needs no deadline of its own.
         ("stall-forensics.json", lambda: stall_forensics_report(limit=200)),
@@ -1386,6 +1389,12 @@ def _release_run_last() -> dict:
     from src.monitoring.release_run import last_release_run_report
 
     return last_release_run_report()
+
+
+def _data_volume_report() -> dict:
+    from src.safety.data_volume import report
+
+    return report()
 
 
 def _country_code_scan(db) -> dict:

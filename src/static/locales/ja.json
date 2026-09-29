@@ -6576,5 +6576,19 @@
   "OpenStreetMap names only one party": "OpenStreetMap は当事者を一つしか挙げていません",
   "no party named": "当事者の記載なし",
   "Every disputed area is drawn hatched with all of its claims named in the tooltip, in every worldview. OpenStreetMap's convention attributes an area to the country whose border, as OpenStreetMap draws it, contains the area (its on-the-ground rule); an area inside no country's border, or inside several, is attributed to none. Source: OpenStreetMap's boundary=disputed and boundary=claim areas and its country borders, of the date shown, © OpenStreetMap contributors (ODbL 1.0). It is never this app's verdict on who is right; the Worldview control shows the other conventions.": "係争地域はすべて斜線で描かれ、どの世界観でもツールチップにすべての主張が示されます。OpenStreetMap の慣行は、OpenStreetMap が描く国境がその地域を含む国に地域を帰属させます（現地の実態の規則）。どの国境内にもない地域や複数の国境内にある地域は、どの国にも帰属させません。出典：OpenStreetMap の boundary=disputed と boundary=claim の地域および国境（表示の日付時点）、© OpenStreetMap contributors（ODbL 1.0）。これは誰が正しいかについてのこのアプリの判断ではありません。世界観の切り替えで他の慣行を表示できます。",
-  "Natural Earth's layer lists {n} disputed areas, drawn under the other worldviews.": "Natural Earth のレイヤーには係争地域が {n} 件あり、他の世界観で描かれます。"
+  "Natural Earth's layer lists {n} disputed areas, drawn under the other worldviews.": "Natural Earth のレイヤーには係争地域が {n} 件あり、他の世界観で描かれます。",
+  "Your data drive is not connected": "データドライブが接続されていません",
+  "Open Omniscience keeps its data in {path}, and that folder cannot be found. Connect the drive that holds it. This page checks again every few seconds and opens the app as soon as the drive is back.": "Open Omniscience はデータを {path} に保存していますが、そのフォルダーが見つかりません。フォルダーのあるドライブを接続してください。このページは数秒ごとに再確認し、ドライブが戻り次第アプリを開きます。",
+  "The drive at this path is not the one this app set up: its marker file does not match.": "このパスのドライブは、このアプリが設定したものではありません。マーカーファイルが一致しません。",
+  "If you deleted this folder on purpose, remove the OO_DATA_DIR and OO_DATA_VOLUME_ID lines from {env} to start with a new, empty corpus.": "このフォルダーを意図的に削除した場合は、{env} から OO_DATA_DIR と OO_DATA_VOLUME_ID の行を削除すると、新しい空のコーパスで始められます。",
+  "Quit": "終了",
+  "The drive holding your data was disconnected": "データを保存しているドライブが切断されました",
+  "Reconnect it within {n} s.": "{n} 秒以内に再接続してください。",
+  "Collection is paused until it is back.": "ドライブが戻るまで収集は一時停止しています。",
+  "The app will close in {n} s to protect your data.": "データを保護するため、アプリは {n} 秒後に終了します。",
+  "Reconnecting the drive now still restarts the app instead.": "今ドライブを再接続すると、アプリは終了せずに再起動します。",
+  "The drive is back. The app is restarting to reopen your data.": "ドライブが戻りました。データを開き直すためにアプリを再起動しています。",
+  "The app is closing. Reconnect the drive, then start the app again.": "アプリを終了しています。ドライブを再接続してから、アプリをもう一度起動してください。",
+  "Anything written in the last moments before the drive was removed may be lost; the database itself stays consistent.": "ドライブが取り外される直前に書き込まれた内容は失われる可能性があります。データベース自体の整合性は保たれます。",
+  "The disconnection was recorded for diagnostics.": "切断は診断用に記録されました。"
 }

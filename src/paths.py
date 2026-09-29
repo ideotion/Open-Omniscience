@@ -38,6 +38,14 @@ APP_DIRNAME = "open-omniscience"
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
+class DataVolumeMissing(OSError):
+    """The chosen data folder (on a drive the first-launch step marked) is not there.
+
+    Raised INSTEAD of creating it: a folder made where an unplugged drive's mount point
+    sits would boot the app as an empty fresh install beside nothing (R86, 2026-09-29;
+    see ``src/safety/data_volume.py``)."""
+
+
 def _ensure(path: Path) -> Path:
     path.mkdir(parents=True, exist_ok=True)
     # Lock the data dir to the owner (S-011): the corpus, signing keys, custody log and
@@ -67,7 +75,13 @@ def data_dir() -> Path:
     """
     override = os.getenv("OO_DATA_DIR")
     if override:
-        return _ensure(Path(override).expanduser())
+        chosen = Path(override).expanduser()
+        if os.getenv("OO_DATA_VOLUME_ID"):
+            # A folder the first-launch step marked: never recreated when it is missing.
+            from src.safety.data_volume import guard_data_dir
+
+            guard_data_dir(chosen)
+        return _ensure(chosen)
 
     if _is_source_checkout():
         return _ensure(_REPO_ROOT / "data")

@@ -422,10 +422,15 @@ def how_it_ended(
     killers: dict[str, Any] | None,
     kernel: dict[str, Any] | None,
     trace: dict[str, Any] | None,
+    drive: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """One sentence on how the previous session ended, built ONLY from the witnesses
     that answered, each named. Never a guess: with no witness it says so."""
     parts: list[str] = []
+    if drive:
+        # The data-drive incident log (R86) lives on the internal disk: the one witness
+        # that can speak when the drive holding the session sentinel was the thing lost.
+        parts.append(f"the data drive was reported disconnected at {drive.get('at')} ({drive.get('detected_by')})")
     kverdict = (kernel or {}).get("verdict")
     uverdict = (killers or {}).get("verdict")
     if kverdict == "oom-kill":

@@ -6576,5 +6576,19 @@
   "OpenStreetMap names only one party": "OpenStreetMap names only one party",
   "no party named": "no party named",
   "Every disputed area is drawn hatched with all of its claims named in the tooltip, in every worldview. OpenStreetMap's convention attributes an area to the country whose border, as OpenStreetMap draws it, contains the area (its on-the-ground rule); an area inside no country's border, or inside several, is attributed to none. Source: OpenStreetMap's boundary=disputed and boundary=claim areas and its country borders, of the date shown, © OpenStreetMap contributors (ODbL 1.0). It is never this app's verdict on who is right; the Worldview control shows the other conventions.": "Every disputed area is drawn hatched with all of its claims named in the tooltip, in every worldview. OpenStreetMap's convention attributes an area to the country whose border, as OpenStreetMap draws it, contains the area (its on-the-ground rule); an area inside no country's border, or inside several, is attributed to none. Source: OpenStreetMap's boundary=disputed and boundary=claim areas and its country borders, of the date shown, © OpenStreetMap contributors (ODbL 1.0). It is never this app's verdict on who is right; the Worldview control shows the other conventions.",
-  "Natural Earth's layer lists {n} disputed areas, drawn under the other worldviews.": "Natural Earth's layer lists {n} disputed areas, drawn under the other worldviews."
+  "Natural Earth's layer lists {n} disputed areas, drawn under the other worldviews.": "Natural Earth's layer lists {n} disputed areas, drawn under the other worldviews.",
+  "Your data drive is not connected": "Your data drive is not connected",
+  "Open Omniscience keeps its data in {path}, and that folder cannot be found. Connect the drive that holds it. This page checks again every few seconds and opens the app as soon as the drive is back.": "Open Omniscience keeps its data in {path}, and that folder cannot be found. Connect the drive that holds it. This page checks again every few seconds and opens the app as soon as the drive is back.",
+  "The drive at this path is not the one this app set up: its marker file does not match.": "The drive at this path is not the one this app set up: its marker file does not match.",
+  "If you deleted this folder on purpose, remove the OO_DATA_DIR and OO_DATA_VOLUME_ID lines from {env} to start with a new, empty corpus.": "If you deleted this folder on purpose, remove the OO_DATA_DIR and OO_DATA_VOLUME_ID lines from {env} to start with a new, empty corpus.",
+  "Quit": "Quit",
+  "The drive holding your data was disconnected": "The drive holding your data was disconnected",
+  "Reconnect it within {n} s.": "Reconnect it within {n} s.",
+  "Collection is paused until it is back.": "Collection is paused until it is back.",
+  "The app will close in {n} s to protect your data.": "The app will close in {n} s to protect your data.",
+  "Reconnecting the drive now still restarts the app instead.": "Reconnecting the drive now still restarts the app instead.",
+  "The drive is back. The app is restarting to reopen your data.": "The drive is back. The app is restarting to reopen your data.",
+  "The app is closing. Reconnect the drive, then start the app again.": "The app is closing. Reconnect the drive, then start the app again.",
+  "Anything written in the last moments before the drive was removed may be lost; the database itself stays consistent.": "Anything written in the last moments before the drive was removed may be lost; the database itself stays consistent.",
+  "The disconnection was recorded for diagnostics.": "The disconnection was recorded for diagnostics."
 }

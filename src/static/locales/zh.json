@@ -6576,5 +6576,19 @@
   "OpenStreetMap names only one party": "OpenStreetMap 只列出一方",
   "no party named": "未列出任何一方",
   "Every disputed area is drawn hatched with all of its claims named in the tooltip, in every worldview. OpenStreetMap's convention attributes an area to the country whose border, as OpenStreetMap draws it, contains the area (its on-the-ground rule); an area inside no country's border, or inside several, is attributed to none. Source: OpenStreetMap's boundary=disputed and boundary=claim areas and its country borders, of the date shown, © OpenStreetMap contributors (ODbL 1.0). It is never this app's verdict on who is right; the Worldview control shows the other conventions.": "每个争议地区都以斜线绘制，并在提示中列出其所有主张，在每种世界观下都是如此。OpenStreetMap 的惯例将一个地区归属于其边界（按 OpenStreetMap 所绘）包含该地区的国家（其实际控制规则）；不在任何边界内或在多个边界内的地区不归属任何一方。来源：OpenStreetMap 的 boundary=disputed 和 boundary=claim 区域及其国家边界，日期如所示，© OpenStreetMap 贡献者（ODbL 1.0）。这绝不是本应用对谁对谁错的裁决；世界观选择器可显示其他惯例。",
-  "Natural Earth's layer lists {n} disputed areas, drawn under the other worldviews.": "Natural Earth 图层列出 {n} 个争议地区，在其他世界观下绘制。"
+  "Natural Earth's layer lists {n} disputed areas, drawn under the other worldviews.": "Natural Earth 图层列出 {n} 个争议地区，在其他世界观下绘制。",
+  "Your data drive is not connected": "您的数据驱动器未连接",
+  "Open Omniscience keeps its data in {path}, and that folder cannot be found. Connect the drive that holds it. This page checks again every few seconds and opens the app as soon as the drive is back.": "Open Omniscience 将数据保存在 {path}，但找不到该文件夹。请连接存放它的驱动器。此页面每隔几秒会再次检查，驱动器一回来就会打开应用。",
+  "The drive at this path is not the one this app set up: its marker file does not match.": "此路径上的驱动器不是本应用设置的那个：其标记文件不匹配。",
+  "If you deleted this folder on purpose, remove the OO_DATA_DIR and OO_DATA_VOLUME_ID lines from {env} to start with a new, empty corpus.": "如果您是有意删除了此文件夹，请从 {env} 中删除 OO_DATA_DIR 和 OO_DATA_VOLUME_ID 两行，以一个全新的空语料库重新开始。",
+  "Quit": "退出",
+  "The drive holding your data was disconnected": "存放您数据的驱动器已断开",
+  "Reconnect it within {n} s.": "请在 {n} 秒内重新连接。",
+  "Collection is paused until it is back.": "采集已暂停，直到驱动器回来。",
+  "The app will close in {n} s to protect your data.": "应用将在 {n} 秒后关闭以保护您的数据。",
+  "Reconnecting the drive now still restarts the app instead.": "现在重新连接驱动器，应用会改为重新启动。",
+  "The drive is back. The app is restarting to reopen your data.": "驱动器已回来。应用正在重新启动以重新打开您的数据。",
+  "The app is closing. Reconnect the drive, then start the app again.": "应用正在关闭。请重新连接驱动器，然后再次启动应用。",
+  "Anything written in the last moments before the drive was removed may be lost; the database itself stays consistent.": "驱动器被移除前最后片刻写入的内容可能会丢失；数据库本身保持一致。",
+  "The disconnection was recorded for diagnostics.": "此次断开已记录，供诊断使用。"
 }
