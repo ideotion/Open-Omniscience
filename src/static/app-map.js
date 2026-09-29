@@ -2220,6 +2220,7 @@
         if (note && asof && rg.size_estimate_as_of) { asof.textContent = rg.size_estimate_as_of; note.hidden = false; }
         _renderOsmList();
         _renderOsmPicker();
+        _renderOsmHistory();
       } catch (e) { list.innerHTML = `<div class="muted">${esc(t("Could not load regions."))}</div>`; }
       const tbl = $("osm-dl-table"); if (tbl) tbl.innerHTML = "";   // merged into the list above
     }
@@ -2383,6 +2384,7 @@
         ]);
         _osmPicker = p; _osmLane = lane;
         _renderOsmPicker();
+        loadOsmHistory();
       } catch (e) { host.innerHTML = `<div class="muted">${esc(t("Could not load the country choice."))}</div>`; }
     }
     // ONE label for a country anywhere in the picker: the name in the reader's language with the
@@ -2538,6 +2540,105 @@
             ? osmTf("{country}, as of {date}", { country: _osmPickLabel(c.alpha3, c.name), date: c.vintage.slice(0, 10) })
             : osmTf("{country}, date not stated in the extract", { country: _osmPickLabel(c.alpha3, c.name) }))).join(" · ")} · ${link}`
         : `${esc(t("No OpenStreetMap country has been read yet."))} ${link}`;
+    }
+
+    // -- The full-history planet (S05-04 S4, Q814 = b) -------------------------------- //
+    // One planet-wide file, far larger than any continent, so its EXACT size is read from the
+    // mirror before the Download button exists (a sized download, shown before it starts). The
+    // size read is itself a network action and passes the one online consent (invariant #14e:
+    // the gate covers what helps you decide); a refusal by the kill switch is named as such.
+    let _osmHistory = null, _osmHistorySize = null;
+    async function loadOsmHistory() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const host = $("osm-hist-body"); if (!host) return;
+      try { _osmHistory = await api("/api/osm/history"); _renderOsmHistory(); }
+      catch (e) { host.innerHTML = `<div class="muted">${esc(t("Could not load the full history's state."))}</div>`; }
+    }
+    function _osmHistSizeLine() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const osmTf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((s, v) => s.replace(/\{(\w+)\}/g, (m, k) => (v[k] == null ? m : v[k])));
+      const r = _osmHistorySize; if (!r) return "";
+      if (r.size_bytes == null) {
+        const why = { airplane: "The size could not be read: airplane mode is on.",
+          unreachable: "The size could not be read: the mirror did not answer.",
+          "no-content-length": "The size could not be read: the mirror did not state it." }[r.reason] || "The size could not be read: the mirror did not answer.";
+        return `<div class="hint">${esc(t(why))}</div>`;
+      }
+      const free = r.free_bytes == null ? t("unknown") : humanBytes(r.free_bytes);
+      let out = `<div class="hint">${esc(osmTf("Exact size on the mirror: {size}. Free space here: {free}.", { size: humanBytes(r.size_bytes), free }))}</div>`;
+      if (r.free_bytes != null && r.free_bytes < r.size_bytes) out += `<div class="hint" style="color:var(--caveat)">${esc(t("Not enough free space here for this file."))}</div>`;
+      return out;
+    }
+    function _osmHistDownloadCell(code) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const osmTf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((s, v) => s.replace(/\{(\w+)\}/g, (m, k) => (v[k] == null ? m : v[k])));
+      const d = _osmDlByCode()[code], c = esc(JSON.stringify(code));
+      if (!d) {
+        const read = `<button class="tiny secondary" data-on-click="osmHistoryReadSize(this)">${esc(t("Read the exact size"))}</button>`;
+        const r = _osmHistorySize;
+        if (!r || r.size_bytes == null) return `${read} <span class="muted">${esc(t("The download starts only once its exact size is shown."))}</span>`;
+        return `${read} <button class="tiny danger" data-on-click="osmHistoryDownload(this)">${esc(osmTf("Download ({size})", { size: humanBytes(r.size_bytes) }))}</button>`;
+      }
+      if (d.status === "done") return `<span class="pill ok">${esc(t("Downloaded"))} ✓ <span class="muted">${humanBytes(d.downloaded_bytes || d.total_bytes || 0)}</span></span> <button class="tiny danger" data-on-click="deleteOsm(${c})">${esc(t("Delete"))}</button>`;
+      if (d.status === "downloading") {
+        const pct = d.percent || 0;
+        return `<span class="pill">${esc(t("Downloading"))} ${pct}%</span> <progress max="100" value="${pct}" style="width:110px;vertical-align:middle"></progress> <span class="muted" style="font-size:12px">${humanBytes(d.downloaded_bytes)}${d.total_bytes ? ` / ${humanBytes(d.total_bytes)}` : ""}</span> <button class="tiny secondary" data-on-click="pauseOsm(${c})">${esc(t("Pause"))}</button>`;
+      }
+      if (d.status === "queued") return `<span class="pill warn">${esc(t("Queued"))}</span> <button class="tiny secondary" data-on-click="deleteOsm(${c})">${esc(t("Cancel"))}</button>`;
+      const resume = `<button class="tiny secondary" data-on-click="resumeOsm(${c}, this)">${esc(t("Resume"))}</button> <button class="tiny danger" data-on-click="deleteOsm(${c})">${esc(t("Delete"))}</button>`;
+      if (d.status === "paused" && d.paused_by === "airplane") return `<span class="pill warn">${esc(t("Paused: airplane mode is on"))}</span> ${resume}`;
+      return `<span class="pill ${d.status === "error" ? "err" : "warn"}" title="${esc(d.error || "")}">${esc(d.status === "error" ? t("Failed") : t("Paused"))}</span> ${resume}`;
+    }
+    function _osmHistCutLine(c) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const osmTf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((s, v) => s.replace(/\{(\w+)\}/g, (m, k) => (v[k] == null ? m : v[k])));
+      const name = esc(_osmPickLabel(c.alpha3, c.alpha3));
+      if (c.status === "ingesting") return `<li>${name} · <span class="pill">${esc(t("Reading…"))}</span></li>`;
+      if (c.status !== "complete") return `<li>${name} · <span class="pill err" title="${esc(c.error || "")}">${esc(t("Reading failed"))}</span></li>`;
+      const k = c.counts || {};
+      const facts = osmTf("{objects} objects, {versions} versions ({created} created, {deleted} deleted), read in {seconds} s", {
+        objects: fmtNum(k.objects_read || 0), versions: fmtNum(k.versions_read || 0),
+        created: fmtNum(k.rows_created || 0), deleted: fmtNum(k.rows_deleted || 0),
+        seconds: fmtNum(Math.round(c.ingest_seconds || 0)) });
+      const asOf = c.history_vintage ? osmTf("history as of {date}", { date: c.history_vintage.slice(0, 10) }) : t("the file states no date");
+      return `<li>${name} · <span class="pill ok">${esc(asOf)}</span> <span class="muted">${esc(facts)}</span></li>`;
+    }
+    function _renderOsmHistory() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const osmTf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((s, v) => s.replace(/\{(\w+)\}/g, (m, k) => (v[k] == null ? m : v[k])));
+      const host = $("osm-hist-body"), h = _osmHistory; if (!host || !h) return;
+      const dl = h.download || {};
+      const hover = osmTf("Estimate from memory, reviewed {date}; read the exact size before downloading.", { date: dl.size_as_of || "" });
+      const cuts = h.cuts == null
+        ? `<div class="muted">${esc(t("The countries' history could not be read (is the database locked?)."))}</div>`
+        : (h.cuts.length ? `<ul class="compact">${h.cuts.map(_osmHistCutLine).join("")}</ul>`
+          : `<div class="muted">${esc(t("No country's history has been read yet."))}</div>`);
+      host.innerHTML = `<div class="osm-region-row">
+          <span class="osm-region-name"><strong>${esc(t(dl.name || "Whole planet, full history"))}</strong> <span class="muted">· ~${humanBytes(dl.size_estimate_bytes || 0)}</span> <span class="muted" title="${esc(hover)}">${esc(t("estimate"))}</span></span>
+          <span style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">${_osmHistDownloadCell(dl.code || "planet-history")}</span>
+        </div>${_osmHistSizeLine()}
+        <h3 style="margin:10px 0 4px">${esc(t("Countries read from it"))}</h3>${cuts}
+        <div class="card-caveat">${esc(t(h.gap || ""))}</div>
+        <div class="hint">${esc(t(h.method || ""))}</div>`;
+    }
+    async function osmHistoryReadSize(btn) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      if (!await ensureOnline(t("Read the size of the full-history planet"))) return;
+      if (btn) { btn.disabled = true; btn.textContent = t("Reading…"); }
+      const code = ((_osmHistory || {}).download || {}).code || "planet-history";
+      try { _osmHistorySize = await api("/api/geo/downloads/size?code=" + encodeURIComponent(code)); }
+      catch (e) { toast(_failMsg("Size check failed: {error}", e), "err"); }
+      _renderOsmHistory();
+    }
+    async function osmHistoryDownload(btn) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      if (btn) { btn.disabled = true; btn.textContent = t("Starting…"); }
+      if (!await ensureOnline(t("Download the full-history planet"))) { _renderOsmHistory(); return; }
+      const code = ((_osmHistory || {}).download || {}).code || "planet-history";
+      try {
+        await api("/api/geo/downloads/start", { method: "POST", body: JSON.stringify({ code }) });
+        toast(t("Download started.")); _osmPoll();
+      } catch (e) { toast(_failMsg("Start failed: {error}", e), "err"); _renderOsmHistory(); }
     }
 
     // -- Official statistics producers (Group N): the curated directory + the --- //

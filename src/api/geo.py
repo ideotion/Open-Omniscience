@@ -83,6 +83,24 @@ def osm_download_start(payload: StartRegion) -> dict:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+@router.get("/downloads/size")
+def osm_download_size(code: str = Query(..., description="a catalogued download code")) -> dict:
+    """Read the mirror's EXACT size for one download before it starts (S05-04 S4, Q814 = b).
+
+    A NETWORK read (one HEAD), so the Settings button that calls it passes the one online
+    consent first (invariant #14e: the gate covers what helps you decide). A plain ``def``: the
+    HEAD blocks, and Starlette runs it in the threadpool. A size that could not be read carries
+    a NAMED reason (``airplane``, ``unreachable``, ``no-content-length``), never a 0.
+    """
+    from src.geo.osm_downloads import get_manager
+    from src.geo.osm_regions import get_region
+
+    region = get_region(code)
+    if region is None:
+        raise HTTPException(status_code=404, detail=f"unknown OSM download {code!r}")
+    return get_manager().size_reading(region.code)
+
+
 @router.post("/downloads/pause")
 def osm_download_pause(key: str = Query(..., description="region code of the download")) -> dict:
     """Pause a running or queued region download (resumable; the partial file stays)."""
