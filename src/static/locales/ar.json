@@ -6512,7 +6512,7 @@
   "Countries on the same continent share one download and one daily change file.": "تتشارك بلدان القارة نفسها تنزيلًا واحدًا وملف تغييرات يوميًا واحدًا.",
   "Change-file estimates reviewed {date}.": "رُوجعت تقديرات ملفات التغييرات في {date}.",
   "Settings → OpenStreetMap": "الإعدادات ← OpenStreetMap",
-  "OpenStreetMap data:": "بيانات OpenStreetMap:",
+  "OpenStreetMap places, roads and buildings:": "أماكن وطرق ومبانٍ من OpenStreetMap:",
   "{country}, as of {date}": "{country}، حتى {date}",
   "{country}, date not stated in the extract": "{country}، التاريخ غير مذكور في المقتطف",
   "No OpenStreetMap country has been read yet.": "لم يُقرأ أي بلد من OpenStreetMap بعد.",

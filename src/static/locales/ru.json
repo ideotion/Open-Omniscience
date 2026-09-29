@@ -6512,7 +6512,7 @@
   "Countries on the same continent share one download and one daily change file.": "Страны одного континента используют одну загрузку и один ежедневный файл изменений.",
   "Change-file estimates reviewed {date}.": "Оценки файлов изменений проверены {date}.",
   "Settings → OpenStreetMap": "Настройки → OpenStreetMap",
-  "OpenStreetMap data:": "Данные OpenStreetMap:",
+  "OpenStreetMap places, roads and buildings:": "Места, дороги и здания OpenStreetMap:",
   "{country}, as of {date}": "{country}, на {date}",
   "{country}, date not stated in the extract": "{country}, дата в выгрузке не указана",
   "No OpenStreetMap country has been read yet.": "Ни одна страна OpenStreetMap ещё не считана.",

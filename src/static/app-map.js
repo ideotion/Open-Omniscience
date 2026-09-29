@@ -2395,7 +2395,7 @@
       const done = ((lane || {}).countries || []).filter((c) => c.status === "complete");
       const link = `<a href="#" data-on-click="openSettingsOsm();return false">${esc(t("Settings → OpenStreetMap"))}</a>`;
       el.innerHTML = done.length
-        ? `${esc(t("OpenStreetMap data:"))} ${done.map((c) => esc(c.vintage
+        ? `${esc(t("OpenStreetMap places, roads and buildings:"))} ${done.map((c) => esc(c.vintage
             ? osmTf("{country}, as of {date}", { country: _osmPickLabel(c.alpha3, c.name), date: c.vintage.slice(0, 10) })
             : osmTf("{country}, date not stated in the extract", { country: _osmPickLabel(c.alpha3, c.name) }))).join(" · ")} · ${link}`
         : `${esc(t("No OpenStreetMap country has been read yet."))} ${link}`;

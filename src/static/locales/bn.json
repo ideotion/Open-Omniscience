@@ -6512,7 +6512,7 @@
   "Countries on the same continent share one download and one daily change file.": "একই মহাদেশের দেশগুলি একটি ডাউনলোড ও একটি দৈনিক পরিবর্তন ফাইল ভাগ করে।",
   "Change-file estimates reviewed {date}.": "পরিবর্তন ফাইলের অনুমান পর্যালোচিত {date}।",
   "Settings → OpenStreetMap": "সেটিংস → OpenStreetMap",
-  "OpenStreetMap data:": "OpenStreetMap-এর তথ্য:",
+  "OpenStreetMap places, roads and buildings:": "OpenStreetMap-এর স্থান, রাস্তা ও ভবন:",
   "{country}, as of {date}": "{country}, {date} অনুযায়ী",
   "{country}, date not stated in the extract": "{country}, নির্যাসে তারিখ উল্লেখ নেই",
   "No OpenStreetMap country has been read yet.": "এখনও কোনো OpenStreetMap দেশ পড়া হয়নি।",

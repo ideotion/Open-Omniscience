@@ -6512,7 +6512,7 @@
   "Countries on the same continent share one download and one daily change file.": "Negara di benua yang sama berbagi satu unduhan dan satu berkas perubahan harian.",
   "Change-file estimates reviewed {date}.": "Perkiraan berkas perubahan ditinjau {date}.",
   "Settings → OpenStreetMap": "Pengaturan → OpenStreetMap",
-  "OpenStreetMap data:": "Data OpenStreetMap:",
+  "OpenStreetMap places, roads and buildings:": "Tempat, jalan, dan bangunan OpenStreetMap:",
   "{country}, as of {date}": "{country}, per {date}",
   "{country}, date not stated in the extract": "{country}, tanggal tidak disebut dalam ekstrak",
   "No OpenStreetMap country has been read yet.": "Belum ada negara OpenStreetMap yang dibaca.",

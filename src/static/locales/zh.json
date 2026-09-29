@@ -6512,7 +6512,7 @@
   "Countries on the same continent share one download and one daily change file.": "同一大洲的国家共用一个下载和一个每日变更文件。",
   "Change-file estimates reviewed {date}.": "变更文件估计审阅于 {date}。",
   "Settings → OpenStreetMap": "设置 → OpenStreetMap",
-  "OpenStreetMap data:": "OpenStreetMap 数据：",
+  "OpenStreetMap places, roads and buildings:": "OpenStreetMap 地点、道路和建筑：",
   "{country}, as of {date}": "{country}，截至 {date}",
   "{country}, date not stated in the extract": "{country}，提取文件未注明日期",
   "No OpenStreetMap country has been read yet.": "尚未读取任何 OpenStreetMap 国家。",

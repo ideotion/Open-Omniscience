@@ -6512,7 +6512,7 @@
   "Countries on the same continent share one download and one daily change file.": "Countries on the same continent share one download and one daily change file.",
   "Change-file estimates reviewed {date}.": "Change-file estimates reviewed {date}.",
   "Settings → OpenStreetMap": "Settings → OpenStreetMap",
-  "OpenStreetMap data:": "OpenStreetMap data:",
+  "OpenStreetMap places, roads and buildings:": "OpenStreetMap places, roads and buildings:",
   "{country}, as of {date}": "{country}, as of {date}",
   "{country}, date not stated in the extract": "{country}, date not stated in the extract",
   "No OpenStreetMap country has been read yet.": "No OpenStreetMap country has been read yet.",

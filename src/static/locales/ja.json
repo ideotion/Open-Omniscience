@@ -6512,7 +6512,7 @@
   "Countries on the same continent share one download and one daily change file.": "同じ大陸の国は、1つのダウンロードと1つの毎日の変更ファイルを共有します。",
   "Change-file estimates reviewed {date}.": "変更ファイルの推定は {date} に確認。",
   "Settings → OpenStreetMap": "設定 → OpenStreetMap",
-  "OpenStreetMap data:": "OpenStreetMap データ：",
+  "OpenStreetMap places, roads and buildings:": "OpenStreetMap の場所・道路・建物：",
   "{country}, as of {date}": "{country}（{date} 時点）",
   "{country}, date not stated in the extract": "{country}（抽出データに日付の記載なし）",
   "No OpenStreetMap country has been read yet.": "OpenStreetMap の国はまだ読み込まれていません。",
