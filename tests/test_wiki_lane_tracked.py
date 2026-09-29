@@ -299,7 +299,11 @@ def test_an_unreadable_text_sets_only_its_page_aside_and_a_locked_tracker_only_w
     queued, out = _pass()
     assert queued == 2 and (out.settled, out.failed) == (2, 1)
     with _session() as db:
-        rows = {ref: failed for ref, failed in db.execute(select(WikiLaneIndexQueue.ref, WikiLaneIndexQueue.failed_at).where(WikiLaneIndexQueue.kind == "tracked"))}
+        rows = dict(
+            db.execute(
+                select(WikiLaneIndexQueue.ref, WikiLaneIndexQueue.failed_at).where(WikiLaneIndexQueue.kind == "tracked")
+            ).all()
+        )
     assert rows == {bad: rows[bad]} and rows[bad] is not None, "only the damaged page stays, set aside"
     assert _search("Readableword")["total"] == 1 and _search("Damagedword")["total"] == 0
     assert _pass()[0] == 0, "a set-aside page is not queued again by every scan"
