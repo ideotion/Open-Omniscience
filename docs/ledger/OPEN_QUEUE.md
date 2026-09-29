@@ -15920,3 +15920,21 @@ the signer as a parameter, so either is a small change. Asked on a decision card
 record the answer as R67 in `RULINGS_INDEX.md`, here and in the gate's §3.
 
 **ANSWERED 2026-09-29 (the 37-question list, head entry):** the install's custody key → `R67` = a, as built.
+
+## 2026-09-29 — THE CONJUNCTION LENS'S COMPARISON AND SCOPES — STATED DEFAULTS (0.5 row K, brief `S05-11` S3; not rulings, each reversible in one place)
+
+Built at these defaults; R68 stays held should the maintainer want any of them put as a card. (Note, 2026-09-29: `R68` went to item 6 of the 37-question list, the Import summary; a card on these takes a new id from the coordinator.)
+
+1. **What the vocabulary contrast compares.** Side A is the combination on screen; side B is a second
+   combination the reader TYPES, read in the same scope. No split is invented for the reader (not
+   "before/after a date", not "press vs Wikipedia" chosen for them). The terms that define the two sides
+   are left out of the table (they top their own side by construction). Candidates are each side's top 30
+   keywords by spread, then every candidate is counted exactly on both sides. Where: `set_contrast` in
+   `src/analytics/conjunction.py`, `GET /api/insights/corpus-contrast`.
+2. **The channels offered.** The scope select offers the whole corpus, press and the web, Wikipedia and
+   law — the verticals the brief names. Newsletters, statistics, citations and hazards are valid channels at
+   the API (`PROVENANCE_CLASSES`) but not in the select. Where: `_CONJ_CHANNELS` in `app-corpus.js`.
+3. **A place scope's cap.** A place named in more than 20,000 articles is read over its first 20,000 (lowest
+   ids) and the result says so ("the first articles only …"). Where: `_SCOPE_ID_CAP`.
+4. **Places (S05-03).** The place card is the entry point; a Place the gazetteer adds later reaches the lens
+   through the same `place` scope, with no new code.
