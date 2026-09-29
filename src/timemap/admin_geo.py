@@ -55,10 +55,10 @@ SCHEMA = 1
 # defaults the build runs with; the maintainer's first run measures what they cost
 # in bytes and the PR that ships the artifacts states that number (brief §6: "the
 # LOD caps' numbers ... are measured first, then published").
-ADMIN0_VERTEX_CAP = 1500      # per country, all rings together
-ADMIN1_VERTEX_CAP = 300       # per region, all rings together
-CONTESTED_VERTEX_CAP = 600    # per contested area
-DEFAULT_PRECISION = 2         # decimal places of a degree kept (2 ~= 1.1 km)
+ADMIN0_VERTEX_CAP = 15000     # per country, all rings together (R82: raised 10x with the precision)
+ADMIN1_VERTEX_CAP = 3000      # per region, all rings together
+CONTESTED_VERTEX_CAP = 6000   # per contested area
+DEFAULT_PRECISION = 3         # decimal places of a degree kept (3 ~= 0.1 km; R82)
 
 ATTRIBUTION = "© OpenStreetMap contributors, ODbL 1.0"
 
