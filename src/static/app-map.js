@@ -2685,6 +2685,7 @@
       if ($("oomap-osm-vintage") && $("oomap-osm-vintage").textContent) loadOsmVintage();
       if (_osmComp) _renderOsmCompleteness();
       _osmGeoScope();
+      _osmGeoRender();
     });
     function openSettingsOsm() { showTab("settings"); (_setSubtabs || {select: showSetCat}).select("offlinemap"); }
     // Q828: the World map states the vintage of the OpenStreetMap data and links to where it
@@ -2858,14 +2859,23 @@
       const names = _osmGeoCountries.map((c) => _osmPickLabel(c.alpha3, c.name)).join(", ");
       el.textContent = `${osmCompTf("Searched: the addresses OpenStreetMap records in {countries}.", { countries: names })} ${t("Addresses outside your OpenStreetMap countries are not located.")}`;
     }
+    // The last answer is kept so a language switch re-draws it in the new language rather than
+    // leaving the old language's sentence under a re-labelled box.
+    let _osmGeoLast = null;
     async function osmLocate() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const out = $("osm-geo-out"); const q = ($("osm-geo-q") || {}).value || "";
       if (!out || !q.trim()) return;
       out.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
-      let d = null;
-      try { d = await api("/api/osm/geocode?" + new URLSearchParams({ q: q.trim() }).toString()); }
-      catch (e) { out.innerHTML = `<div class="note err">${esc(t("The address could not be looked up here."))}</div>`; return; }
+      try { _osmGeoLast = await api("/api/osm/geocode?" + new URLSearchParams({ q: q.trim() }).toString()); }
+      catch (e) { _osmGeoLast = { failed: true }; }
+      _osmGeoRender();
+    }
+    function _osmGeoRender() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const out = $("osm-geo-out"), d = _osmGeoLast;
+      if (!out || !d) return;
+      if (d.failed) { out.innerHTML = `<div class="note err">${esc(t("The address could not be looked up here."))}</div>`; return; }
       if (d.status === "no-country") {
         out.innerHTML = `<div class="muted">${esc(t("No OpenStreetMap country's addresses are indexed on this machine yet."))}</div>`;
         return;
