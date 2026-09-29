@@ -293,8 +293,11 @@ def _build():
         enabled=_warm_enabled,
     )
     # THE SEARCH INDEX (R52) reads what the drain and WARM stored and requests nothing, so
-    # it needs no client; it pays for its entries from the same budget as the texts.
-    indexer = LaneIndexer(lane_session=walk_lane_session, budget=_budget)
+    # it needs no client; it pays for its entries from the same budget as the texts. It also
+    # reads the old page tracker's versions in ``corpus.db`` (R54), and only reads them.
+    indexer = LaneIndexer(
+        lane_session=walk_lane_session, budget=_budget, tracker_session=SessionLocal
+    )
     return WikiLaneRunner(
         adapter=adapter,
         stream=stream,
