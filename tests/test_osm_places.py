@@ -275,7 +275,10 @@ def test_the_geocoder_panel_states_its_scope_always_and_asks_no_consent():
     assert "Addresses outside your OpenStreetMap countries are not located." in scope
     locate = function_source(js, "osmLocate")
     assert "/api/osm/geocode" in locate and "ensureOnline" not in locate, "a local lookup asked for the network"
-    assert "Nothing nearby is offered in its place." in locate
+    render = function_source(js, "_osmGeoRender")
+    assert "Nothing nearby is offered in its place." in render
+    # The answer is re-drawn on a language switch (found in the 2026-09-29 Chromium walk).
+    assert "_osmGeoRender();" in js.partition('document.addEventListener("oo:langchange"')[2].partition("});")[0]
 
 
 def test_the_object_card_shows_its_caveat_and_every_tag():
