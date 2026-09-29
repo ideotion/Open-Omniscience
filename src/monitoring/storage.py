@@ -288,6 +288,12 @@ def storage_composition(session: Session) -> dict[str, Any]:
         )
         out["method"] = _METHOD
         out["caveat"] = _CAVEAT
+        # The bundled sqlcipher3 never has dbstat, so on the operator's store the split
+        # above can never be taken. A SAMPLED estimate of the article-text share is the
+        # one number DB-10 §6 / D47 (b) / D45 need, and it needs no compile flag.
+        est = content_share_estimate(session, out.get("db_bytes"))
+        if est is not None:
+            out["estimate"] = est
         return out
 
     # Group: every index btree under its parent table; shadow/system btrees keep their
@@ -316,4 +322,123 @@ def storage_composition(session: Session) -> dict[str, Any]:
     out["measured_bytes"] = sum(t["total_bytes"] for t in report)
     out["method"] = _METHOD
     out["caveat"] = _CAVEAT
+    return out
+
+
+# --------------------------------------------------------------------------- #
+# The sampled estimate for stores WITHOUT dbstat (the encrypted production build).
+# --------------------------------------------------------------------------- #
+_ESTIMATE_PROBES = 400
+# D45's measured cliff: an articles-row UPDATE costs one 16 KiB WAL page up to ~16.3 KB of
+# stored payload, then several (DECISIONS_2026-09-22 D45).
+_ROW_CLIFF_BYTES = 16300
+
+_ESTIMATE_METHOD = (
+    "Sampled, not measured: up to {n} articles picked at evenly spaced ids between the "
+    "smallest and largest id (one index seek each), their text measured in BYTES "
+    "(length(CAST(content AS BLOB)) plus length(compressed_content)), and the mean "
+    "multiplied by the article count (probes that land on an id already sampled are dropped, so 'sampled' can be below the probe count). The share is that product over the file size. "
+    "Row counts for the derived tables are max(rowid), an UPPER bound (deleted rows "
+    "leave gaps). Counts/bytes only, no score."
+)
+_ESTIMATE_CAVEAT = (
+    "An estimate: it counts the text payload only, not the page slack or the indexes on "
+    "articles, and the sample is spread by id, which follows insertion order. "
+    "'remainder_bytes' is everything else in the file — the full-text index, the keyword "
+    "and other derived rows, and every index — and cannot be split further without dbstat."
+)
+
+
+def _scalar(session: Session, sql: str, params: dict | None = None):
+    row = session.execute(text(sql), params or {}).fetchone()
+    return row[0] if row else None
+
+
+def content_share_estimate(session: Session, db_bytes: int | None) -> dict[str, Any] | None:
+    """How much of the file is article text, sampled — for builds without dbstat.
+
+    Also answers D45's own question (how many article rows sit above the WAL-page cliff,
+    and whether ingest stores the text twice, raw AND compressed). Read-only, bounded by
+    the statement deadline; None when the articles table is unreadable, an honest
+    ``aborted`` block on a deadline."""
+    try:
+        with statement_deadline(session):
+            lo = _scalar(session, "SELECT min(id) FROM articles")
+            hi = _scalar(session, "SELECT max(id) FROM articles")
+            if lo is None or hi is None:
+                return {"articles": 0, "method": _ESTIMATE_METHOD.format(n=_ESTIMATE_PROBES)}
+            n_articles = int(_scalar(session, "SELECT count(*) FROM articles") or 0)
+            lo, hi = int(lo), int(hi)
+            k = min(_ESTIMATE_PROBES, max(1, n_articles))
+            step = (hi - lo) / (k - 1) if k > 1 else 0
+            seen: set[int] = set()
+            payloads: list[int] = []
+            both = 0
+            compressed_only = 0
+            for i in range(k):
+                row = session.execute(
+                    text(
+                        "SELECT id, coalesce(length(CAST(content AS BLOB)), 0), "
+                        "length(compressed_content) "
+                        "FROM articles WHERE id >= :p ORDER BY id LIMIT 1"
+                    ),
+                    {"p": lo + round(i * step)},
+                ).fetchone()
+                if row is None or int(row[0]) in seen:
+                    continue
+                seen.add(int(row[0]))
+                raw, comp = int(row[1] or 0), row[2]
+                payloads.append(raw + int(comp or 0))
+                if comp is not None and raw > 0:
+                    both += 1
+                elif comp is not None:
+                    compressed_only += 1
+            present = {
+                str(r[0])
+                for r in _rows(session, "SELECT name FROM sqlite_master WHERE type='table'")
+            }
+            derived = {}
+            for table in (
+                "keyword_mentions",
+                "keywords",
+                "article_mentioned_places",
+                "article_entities",
+            ):
+                if table in present:  # module-constant names, never user input
+                    derived[table] = _scalar(session, f"SELECT max(rowid) FROM {table}")
+    except StatementTimeout as exc:
+        return {"aborted": True, "reason": f"aborted by the statement deadline ({exc})"}
+    except Exception as exc:  # noqa: BLE001 - a diagnostic degrades, never raises
+        _LOG.debug("content share estimate unavailable: %s", exc)
+        return None
+
+    sampled = len(payloads)
+    out: dict[str, Any] = {
+        "articles": n_articles,
+        "sampled": sampled,
+        "method": _ESTIMATE_METHOD.format(n=_ESTIMATE_PROBES),
+        "caveat": _ESTIMATE_CAVEAT,
+    }
+    if not sampled:
+        return out
+    mean = sum(payloads) / sampled
+    text_bytes = int(mean * n_articles)
+    out["mean_text_bytes_per_article"] = int(mean)
+    out["article_text_bytes"] = text_bytes
+    if db_bytes:
+        out["article_text_share"] = round(min(1.0, text_bytes / db_bytes), 3)
+        out["remainder_bytes"] = max(0, int(db_bytes) - text_bytes)
+    over = sum(1 for p in payloads if p > _ROW_CLIFF_BYTES)
+    out["row_cliff"] = {
+        "cliff_bytes": _ROW_CLIFF_BYTES,
+        "sampled_over": over,
+        "share_over": round(over / sampled, 3),
+        "note": "D45: an UPDATE of a row above the cliff writes several WAL pages instead of one.",
+    }
+    out["text_stored_twice"] = {
+        "sampled_raw_and_compressed": both,
+        "sampled_compressed_only": compressed_only,
+        "note": "D45: rows holding both the plain and the compressed text pay for it twice.",
+    }
+    out["derived_rows_upper_bound"] = derived
     return out
