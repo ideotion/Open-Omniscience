@@ -21,15 +21,15 @@ this writes that trail as ONE ZIP that someone else can check without this app:
   over them; ``SIGNATURE.json`` -- the custody signer's signature over the manifest's
   canonical bytes, with the public identity that made it.
 
-THREE REFUSALS, each load-bearing:
+TWO REFUSALS, each load-bearing, and one line that used to be a third:
 
 * **No verdict travels.** The bundle carries the trail, never a score; the walk of the
   payload's keys that guards the workspace also guards ``trail.json`` (tests).
-* **OSM stops at the Q823 seam.** Every carried row names the table it came from, and the
-  set becomes ``table:<name>`` signals for :func:`src.backup.attribution.attribution_dicts`,
-  which raises :class:`~src.backup.attribution.PendingRulingError` on an OSM-derived one.
-  The bundle is then REFUSED whole -- no bytes are returned -- rather than written with an
-  attribution block that would be silently short (brief ``S05-11`` §6).
+* **OSM carries its credit (Q823 = a).** Every carried row names the table it came from,
+  and the set becomes ``table:<name>`` signals for
+  :func:`src.backup.attribution.attribution_dicts`; an OSM-derived one (a place pinned by
+  the ``osm_*`` lane or the ``places`` gazetteer) adds OpenStreetMap's credit and the ODbL
+  line to ``ATTRIBUTION.md``. Until the ruling that bundle was refused whole.
 * **A bundle that cannot be verified is not a bundle.** The signature covers the manifest,
   the manifest covers every member by hash, and :func:`verify_trail_bundle` checks both
   plus that no member was added or removed. It needs no database and no network, and this
@@ -96,8 +96,8 @@ def carried_tables(ws: dict) -> set[str]:
     """The corpus tables whose rows this trail carries, as named by the rows themselves.
 
     Articles and sources always; the place a weather offer is pinned to names where its
-    coordinate came from (``coords_from``). An offer pinned by an OSM-derived table would
-    add an ``osm_*`` name here, and that is what makes the Q823 refusal fire.
+    coordinate came from (``coords_from``). An offer pinned by an OSM-derived table adds
+    its name here, and that is what puts the OpenStreetMap line in ``ATTRIBUTION.md``.
     """
     tables = {"articles", "sources"}
     for op in (ws.get("corroboration") or {}).get("offers") or []:
@@ -323,9 +323,8 @@ def build_trail_bundle(session, ws: dict, *, full_text: bool = True, signer=None
     """Write the trail ``ws`` as a signed ZIP. Returns ``(zip_bytes, report)``.
 
     Built in memory: a trail is bounded (``MAX_TRAIL`` articles), and a bundle that never
-    touches the disk cannot be left half-written. Raises
-    :class:`~src.backup.attribution.PendingRulingError` when the trail carries an
-    OSM-derived row (Q823), and :class:`TrailBundleError` when there is nothing to carry.
+    touches the disk cannot be left half-written. Raises :class:`TrailBundleError` when
+    there is nothing to carry.
     """
     from src.backup.attribution import attribution_dicts
     from src.bulletin.evidence import _attribution_markdown

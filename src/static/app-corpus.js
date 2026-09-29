@@ -1392,69 +1392,227 @@
     function _anKwNeedsTentative(tm) {
       return !tm.translation && !tm.tentative && (tm.language || "").toLowerCase() !== uiLangCode();
     }
-    let _anConjLast = null;   // S13: the last /corpus-algebra result, for the Open-as-corpus action
-
-    // S13 Conjunction Lens — an N-keyword set-algebra picker hosted in the analysis window's
-    // Keywords subtab. It calls the live /api/insights/corpus-algebra (∩ all / ∪ any / ∖ first-
-    // only), shows the set EXPRESSION as the corpus label + each term's exact n + the combined n,
-    // and opens the exact result set as its own corpus via openAnalysisForIds. Counts only, never
-    // a score; the bounded flag + method/caveat are surfaced. Browser-unverified per fork-3.
-    function anConjunctionHtml() {
-      // Keyed (M14): the hint, the placeholder, the three operators and their hovers were
-      // English literals in every locale.
-      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      return `<div style="margin-bottom:10px;padding:8px;border:1px solid var(--line);border-radius:6px">`
-        + `<div class="hint" style="margin-top:0"><b>${esc(t("Combine keywords"))}</b> — `
-        + `${esc(t("set algebra over N keywords. The set expression is the corpus label; counts only, never a score."))}</div>`
-        + `<div class="row" style="flex-wrap:wrap;gap:6px;align-items:center;margin-top:6px">`
-        + `<input id="an-conj-terms" placeholder="${esc(t("keyword, keyword, keyword…"))}" style="flex:1;min-width:180px" `
-        + `data-on-key="Enter" data-on-keydown="anCombine('intersection')">`
-        + `<button class="secondary" data-on-click="anCombine('intersection')" title="${esc(t("articles mentioning ALL terms"))}">${esc(t("∩ All"))}</button>`
-        + `<button class="secondary" data-on-click="anCombine('union')" title="${esc(t("articles mentioning ANY term"))}">${esc(t("∪ Any"))}</button>`
-        + `<button class="secondary" data-on-click="anCombine('difference')" title="${esc(t("the first term and none of the rest"))}">${esc(t("∖ First-only"))}</button>`
-        + `</div><div id="an-conj-result" style="margin-top:8px"></div></div>`;
-    }
-    function _anConjSep(op) { return op === "difference" ? " ∖ " : (op === "union" ? " ∪ " : " ∩ "); }
-    function anCombineHtml(d) {
+    // S13 + S05-11 S3 — THE CONJUNCTION LENS, one component with several hosts. It calls the
+    // live /api/insights/corpus-algebra (∩ all / ∪ any / ∖ first-only), shows the set EXPRESSION
+    // as the corpus label + each term's exact n + the combined n, and opens the exact result set
+    // as its own corpus via openAnalysisForIds. Under a result, the three views the core always
+    // had and nothing could reach: where the terms cluster (per-article intensity), when the
+    // combination was discussed (conditional trend), and the words that travel with it and not
+    // with a second combination the reader names (vocabulary contrast). The SCOPE is one vertical
+    // (press and the web, Wikipedia, law) or the articles naming one Place, and every count is
+    // within it. Hosts: the analysis window's Keywords subtab ("an"), and the #conj-dialog the
+    // Living sources panels and the place card open ("cd"). Counts only, never a score.
+    const _conj = {};   // host prefix -> {scope, op, last, contrast}
+    const _CONJ_CHANNELS = [["", "The whole corpus"], ["web", "Press and the web"],
+      ["wikipedia", "Wikipedia"], ["law", "Law"]];
+    function _conjI18n() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const tf = (s2, v) => (window.OOI18N && OOI18N.tf) ? OOI18N.tf(s2, v)
         : String(s2).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? String(v[k]) : m);
+      return {t, tf};
+    }
+    function _conjHost(pfx) { return (_conj[pfx] = _conj[pfx] || {scope: {}}); }
+    function conjScopeLabel(sc, t, tf) {
+      if (sc && sc.place_id) return tf("The articles naming {place}", {place: sc.place_label || sc.label || sc.place_id});
+      const row = _CONJ_CHANNELS.find((c) => c[0] === ((sc && sc.channel) || ""));
+      return t(row ? row[1] : "The whole corpus");
+    }
+    function conjLensHtml(pfx, scope) {
+      const t = _conjI18n().t, tf = _conjI18n().tf;
+      const h = _conjHost(pfx);
+      if (scope) h.scope = scope;
+      const sc = h.scope || {};
+      // A place scope is fixed by where the lens was opened; a vertical is the reader's choice.
+      // The options are built apart from the <select> so the static option-label guard reads
+      // them as what they are: the keyed labels of _CONJ_CHANNELS, translated at render.
+      const opts = _CONJ_CHANNELS.map(([v, lab]) =>
+        `<option value="${v}"${(sc.channel || "") === v ? " selected" : ""}>${esc(t(lab))}</option>`).join("");
+      const scopeCtl = sc.place_id
+        ? `<span class="chip" title="${esc(t("Every count is within this scope."))}">${esc(conjScopeLabel(sc, t, tf))}</span>`
+        : `<select id="${pfx}-conj-scope" aria-label="${esc(t("Read in"))}" data-on-change="conjScope('${pfx}')" title="${esc(t("Every count is within this scope."))}">`
+          + opts + `</select>`;
+      return `<div class="conj-lens" style="margin-bottom:10px;padding:8px;border:1px solid var(--line);border-radius:6px">`
+        + `<div class="hint" style="margin-top:0"><b>${esc(t("Combine keywords"))}</b> — `
+        + `${esc(t("set algebra over N keywords. The set expression is the corpus label; counts only, never a score."))}</div>`
+        + `<div style="margin-top:6px"><label class="muted" style="font-size:12px">${esc(t("Read in"))}</label> ${scopeCtl}</div>`
+        + `<div class="row" style="flex-wrap:wrap;gap:6px;align-items:center;margin-top:6px">`
+        + `<input id="${pfx}-conj-terms" placeholder="${esc(t("keyword, keyword, keyword…"))}" style="flex:1;min-width:180px" `
+        + `data-on-key="Enter" data-on-keydown="conjCombine('${pfx}','intersection')">`
+        + `<button class="secondary" data-on-click="conjCombine('${pfx}','intersection')" title="${esc(t("articles mentioning ALL terms"))}">${esc(t("∩ All"))}</button>`
+        + `<button class="secondary" data-on-click="conjCombine('${pfx}','union')" title="${esc(t("articles mentioning ANY term"))}">${esc(t("∪ Any"))}</button>`
+        + `<button class="secondary" data-on-click="conjCombine('${pfx}','difference')" title="${esc(t("the first term and none of the rest"))}">${esc(t("∖ First-only"))}</button>`
+        + `</div><div id="${pfx}-conj-result" style="margin-top:8px"></div></div>`;
+    }
+    // The analysis window's host keeps its old name: two render branches call it.
+    function anConjunctionHtml() { return conjLensHtml("an"); }
+    function _anConjSep(op) { return op === "difference" ? " ∖ " : (op === "union" ? " ∪ " : " ∩ "); }
+    function _conjExpr(d) { return ((d && d.terms) || []).map((x) => x.normalized || x.term).join(_anConjSep(d && d.op)); }
+    function _conjScopeParams(sc) {
+      if (!sc) return "";
+      if (sc.place_id) return "&place=" + encodeURIComponent(sc.place_id);
+      return sc.channel ? "&channel=" + encodeURIComponent(sc.channel) : "";
+    }
+    function conjScope(pfx) {
+      const h = _conjHost(pfx), sel = $(pfx + "-conj-scope");
+      if (!sel) return;
+      h.scope = {channel: sel.value || ""};
+      // A result on screen was counted in the old scope: redo it, never leave it mislabelled.
+      if (h.last) conjCombine(pfx, h.op || "intersection");
+    }
+    function anCombineHtml(d, pfx) {
+      const t = _conjI18n().t, tf = _conjI18n().tf;
+      pfx = pfx || "an";
       const terms = (d && d.terms) || [];
       if (!terms.length) return `<div class="muted">${esc(t((d && d.method) || "No resolvable keyword given."))}</div>`;
       const expr = terms.map((x) => esc(x.normalized || x.term)).join(_anConjSep(d.op));
       const perTerm = terms.map((x) =>
-        `<span class="chip" title="${esc(t("exact corpus-wide article count for this term"))}">${esc(x.term)} <span class="muted">${esc(String(x.n))}</span></span>`).join(" ");
+        `<span class="chip" title="${esc(t("exact article count for this term, within the scope"))}">${esc(x.term)} <span class="muted">${esc(String(x.n))}</span></span>`).join(" ");
       const bounded = d.result_bounded
         ? `<div class="card-caveat" title="${esc(t("the set scan reached its cap"))}">${esc(t("Result bounded — a true SUBSET of the answer (it may miss members), never a fabricated one."))}</div>` : "";
+      const sc = d.scope || {};
+      const scopeLine = `<div class="muted small">${esc(tf("Read in: {scope} · {n} articles", {
+        scope: conjScopeLabel({channel: sc.channel, place_id: sc.place_id, place_label: sc.label}, t, tf),
+        n: sc.n_articles != null ? fmtNum(sc.n_articles) : "?"}))}`
+        + (sc.bounded ? ` · ${esc(t("the first articles only: this place is named in more than the lens reads at once"))}` : "")
+        + `</div>`;
       const open = (d.n_combined > 0)
-        ? `<button class="secondary" data-on-click="anOpenCombined()">${esc(tf("Open {n} article(s) as a corpus →", {n: d.n_combined}))}</button>`
+        ? `<button class="secondary" data-on-click="conjOpenCombined('${pfx}')">${esc(tf("Open {n} article(s) as a corpus →", {n: d.n_combined}))}</button>`
         : `<div class="muted">${esc(t("Empty set — no articles match this combination."))}</div>`;
+      const near = (d.near && d.near.query)
+        ? ` <button class="secondary" data-on-click="conjSearchNear('${pfx}')" title="${esc(t("The keyword index says an article names the words; the text search can say they stand together."))}">${esc(tf("Find them within {n} words of each other", {n: d.near.distance}))}</button>`
+        : "";
       // The server's caveat is a fixed sentence unless the scan was bounded (that variant
       // interpolates the cap, and falls back to the server's English).
       return `<div class="hint" style="margin-top:0"><b>${esc(expr)}</b> · ${esc(tf("{n} article(s)", {n: d.n_combined}))}</div>`
+        + scopeLine
         + `<div style="margin-top:4px;display:flex;flex-wrap:wrap;gap:4px">${perTerm}</div>`
-        + `<div style="margin-top:6px">${open}</div>${bounded}`
-        + `<div class="card-caveat" title="${esc(d.method || "")}">${esc(t(d.caveat || ""))}</div>`;
+        + `<div style="margin-top:6px">${open}${near}</div>${bounded}`
+        + `<div class="card-caveat" title="${esc(d.method || "")}">${esc(t(d.caveat || ""))}</div>`
+        + (d.n_combined > 0 ? conjPanelsHtml(pfx, d, t, tf) : "");
     }
-    async function anCombine(op) {
-      const inp = $("an-conj-terms"), out = $("an-conj-result");
+    // The three views over the SAME set, each with its own method sentence.
+    function conjPanelsHtml(pfx, d, t, tf) {
+      const it = (d.intensity && d.intensity.articles) || [];
+      const nT = (d.terms || []).length;
+      const rows = it.slice(0, 10).map((a) =>
+        `<li><a href="/api/articles/${encodeURIComponent(a.article_id)}/view" target="_blank" rel="noopener" dir="auto">${esc(a.title || t("(untitled)"))}</a>`
+        + ` <span class="muted small">${esc([a.source, a.published_at ? String(a.published_at).slice(0, 10) : ""].filter(Boolean).join(" · "))}</span>`
+        + ` <span class="muted small">· ${esc(tf("{k} of {n} terms, {m} mentions", {k: a.distinct_terms, n: nT, m: a.mentions}))}</span></li>`).join("");
+      const tr = d.trend || {};
+      return `<div class="vsect" style="margin-top:10px">${esc(t("Where the terms cluster"))}</div>`
+        + `<p class="hint" style="margin:2px 0">${esc(t("The articles of the set that name the most of the terms, then the most often. A count, never a rank of importance."))}</p>`
+        + (rows ? `<ol style="margin:4px 0;padding-inline-start:20px">${rows}</ol>` : `<div class="muted">${esc(t("No article to list."))}</div>`)
+        + ((d.n_combined || 0) > Math.min(it.length, 10) ? `<div class="muted small">${esc(tf("{n} more in the corpus it opens", {n: fmtNum(d.n_combined - Math.min(it.length, 10))}))}</div>` : "")
+        + `<div class="vsect" style="margin-top:10px">${esc(t("When it was discussed"))}</div>`
+        + `<p class="hint" style="margin:2px 0">${esc(t("Articles of the set active on each mention date, by week. The date a term was seen, not the publication date."))}</p>`
+        + ((tr.points || []).length ? `<div id="${pfx}-conj-trend"></div>` : `<div class="muted">${esc(t("No dated mention in this set."))}</div>`)
+        + `<div class="vsect" style="margin-top:10px">${esc(t("Compare with another combination"))}</div>`
+        + `<p class="hint" style="margin:2px 0">${esc(t("The words that travel with this combination and not with another you name, in the same scope: each word's article count on each side and the difference."))}</p>`
+        + `<div class="row" style="flex-wrap:wrap;gap:6px;align-items:center">`
+        + `<input id="${pfx}-conj-vs" placeholder="${esc(t("keyword, keyword…"))}" style="flex:1;min-width:160px" data-on-key="Enter" data-on-keydown="conjContrast('${pfx}')">`
+        + `<button class="secondary" data-on-click="conjContrast('${pfx}')">${esc(t("Compare"))}</button></div>`
+        + `<div id="${pfx}-conj-contrast" style="margin-top:6px"></div>`;
+    }
+    function conjContrastHtml(c, t, tf) {
+      const side = (s2) => `${_conjExpr(s2)} (n=${s2 ? s2.n_combined : 0})`;
+      const rows = (c.contrasts || []).slice(0, 15).map((r) =>
+        `<tr><td dir="auto">${esc(r.term)}</td><td>${r.a_articles}</td><td>${r.b_articles}</td><td>${r.delta > 0 ? "+" : ""}${r.delta}</td></tr>`).join("");
+      if (!rows) return `<div class="muted">${esc(t("No keyword to compare: one side is empty or its articles carry no other keyword."))}</div>`;
+      return `<div class="muted small">A = ${esc(side(c.a))} · B = ${esc(side(c.b))}</div>`
+        + `<table class="data" style="margin-top:4px"><thead><tr><th>${esc(t("Keyword"))}</th><th>A</th><th>B</th>`
+        + `<th title="${esc(t("articles on side A minus articles on side B"))}">${esc(t("A − B"))}</th></tr></thead><tbody>${rows}</tbody></table>`
+        + `<div class="card-caveat">${esc(t("A count difference with each side's n shown, never a verdict. A word missing on one side is something to look into, not proof it is absent from the world."))}</div>`;
+    }
+    async function conjCombine(pfx, op) {
+      const inp = $(pfx + "-conj-terms"), out = $(pfx + "-conj-result");
       if (!inp || !out) return;
+      const h = _conjHost(pfx);
       const terms = (inp.value || "").split(",").map((s) => s.trim()).filter(Boolean);
-      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const t = _conjI18n().t;
       if (!terms.length) { out.innerHTML = `<div class="muted">${esc(t("Enter at least one keyword to combine."))}</div>`; return; }
       out.innerHTML = `<div class="muted">${esc(t("Combining…"))}</div>`;
       try {
         const d = await api("/api/insights/corpus-algebra?terms=" + encodeURIComponent(terms.join(","))
-          + "&op=" + encodeURIComponent(op));
-        _anConjLast = d;
-        out.innerHTML = anCombineHtml(d);
+          + "&op=" + encodeURIComponent(op) + "&expand=intensity,trend" + _conjScopeParams(h.scope));
+        h.last = d; h.op = op; h.contrast = null;
+        conjRepaint(pfx);
       } catch (e) { out.innerHTML = `<div class="note err">${esc(e.message)}</div>`; }
     }
-    function anOpenCombined() {
-      const d = _anConjLast;
+    // Draw the held result again (after a combine, or a language switch) without refetching.
+    function conjRepaint(pfx) {
+      const h = _conj[pfx], out = $(pfx + "-conj-result");
+      if (!h || !h.last || !out) return;
+      out.innerHTML = anCombineHtml(h.last, pfx);
+      const host = $(pfx + "-conj-trend"), pts = ((h.last.trend || {}).points) || [];
+      if (host && pts.length && typeof ooChart === "function") {
+        const t = _conjI18n().t;
+        ooChart(host, [{label: _conjExpr(h.last), unit: t("articles"),
+          points: pts.map((p2) => ({t: p2.date, v: p2.count}))}], {height: 180, zeroBase: true});
+      }
+      if (h.contrast) {
+        const t = _conjI18n().t, tf = _conjI18n().tf;
+        const c = $(pfx + "-conj-contrast");
+        if (c) c.innerHTML = conjContrastHtml(h.contrast, t, tf);
+      }
+    }
+    // A host redrawn around the lens (a language switch, a new keyword payload) keeps the
+    // reader's terms and the result it held rather than silently dropping them.
+    function _conjRestore(pfx) {
+      const h = _conj[pfx], inp = $(pfx + "-conj-terms");
+      if (!h || !h.last || !inp) return;
+      inp.value = (h.last.terms || []).map((x) => x.term).join(", ");
+      conjRepaint(pfx);
+    }
+    async function conjContrast(pfx) {
+      const h = _conjHost(pfx), inp = $(pfx + "-conj-vs"), out = $(pfx + "-conj-contrast");
+      if (!h.last || !inp || !out) return;
+      const t = _conjI18n().t, tf = _conjI18n().tf;
+      const vs = (inp.value || "").split(",").map((s) => s.trim()).filter(Boolean);
+      if (!vs.length) { out.innerHTML = `<div class="muted">${esc(t("Name the other combination to compare with."))}</div>`; return; }
+      out.innerHTML = `<div class="muted">${esc(t("Comparing…"))}</div>`;
+      try {
+        const terms = (h.last.terms || []).map((x) => x.term);
+        const c = await api("/api/insights/corpus-contrast?terms=" + encodeURIComponent(terms.join(","))
+          + "&op=" + encodeURIComponent(h.last.op) + "&vs_terms=" + encodeURIComponent(vs.join(","))
+          + _conjScopeParams(h.scope));
+        h.contrast = c;
+        out.innerHTML = conjContrastHtml(c, t, tf);
+      } catch (e) { out.innerHTML = `<div class="note err">${esc(e.message)}</div>`; }
+    }
+    function conjOpenCombined(pfx) {
+      const d = (_conj[pfx] || {}).last;
       if (!d || !d.article_ids || !d.article_ids.length) return;
-      const expr = ((d.terms) || []).map((x) => x.normalized || x.term).join(_anConjSep(d.op));
-      openAnalysisForIds(d.article_ids, expr);   // the exact-set precedent — a fresh corpus tab
+      if (pfx === "cd" && $("conj-dialog")) $("conj-dialog").close();
+      openAnalysisForIds(d.article_ids, _conjExpr(d));   // the exact-set precedent — a fresh corpus tab
+    }
+    // The text index's own NEAR query, in the Search tab's grammar (fts.py renders it).
+    function conjSearchNear(pfx) {
+      const d = (_conj[pfx] || {}).last;
+      if (!d || !d.near || !d.near.query) return;
+      if (pfx === "cd" && $("conj-dialog")) $("conj-dialog").close();
+      showTab("search");
+      setTimeout(() => { $("q").value = d.near.query; doSearch(); }, 60);
+    }
+    // The lens opened from a vertical's own page (Living sources, the place card).
+    function openConjunctionLensChannel(channel) { openConjunctionLens({channel: channel || ""}); }
+    function openConjunctionLens(scope) {
+      const dlg = $("conj-dialog"), body = $("conj-dialog-body");
+      if (!dlg || !body) return;
+      const h = _conjHost("cd");
+      h.last = null; h.contrast = null;
+      body.innerHTML = conjLensHtml("cd", scope || {});
+      if (!dlg.open) dlg.showModal();
+      const inp = $("cd-conj-terms");
+      if (inp) inp.focus();
+    }
+    function repaintConjunctionLens() {
+      const body = $("conj-dialog-body"), dlg = $("conj-dialog");
+      if (!body || !dlg || !dlg.open) return;
+      const h = _conj.cd || {};
+      const v = ($("cd-conj-terms") || {}).value || "";
+      body.innerHTML = conjLensHtml("cd");
+      if ($("cd-conj-terms")) $("cd-conj-terms").value = v;
+      if (h.last) conjRepaint("cd");
     }
     // A LANGUAGE SWITCH RE-FETCHES, it does not only re-render (M8). The translations in
     // `_anKwData` were resolved for the `target_lang` of the fetch that brought them, so
@@ -1484,6 +1642,7 @@
         // when this window's matched set has no indexed keywords.
         kw.innerHTML = anConjunctionHtml()
           + `<div class="muted">${esc(t("No keywords indexed across the matched articles yet."))}</div>`;
+        _conjRestore("an");
         return;
       }
       // S3 (keyword -> super-group navigation): a "part of ⊕ <group>" chip per group
@@ -1522,6 +1681,7 @@
         + ` · <span class="muted">${esc(cav)}</span>${cjkNote}${btn}</div>`
         + `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px">${chips}</div>`
         + anContextHtml();
+      _conjRestore("an");
     }
     // S4.4: term-in-context CONCORDANCE — ported from the retired Insights search bar
     // (exploreTerm's #ins-context) into the #an Keywords subtab, so the omnibar→#an window
