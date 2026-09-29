@@ -1659,6 +1659,7 @@
 
       <div id="living-wiki">
         <div id="living-wiki-facts"></div>
+        <div class="row" style="margin:6px 0"><button type="button" class="secondary" data-on-click="openConjunctionLensChannel('wikipedia')" title="Set algebra over the keywords of the Wikipedia texts in your corpus: counts only, never a score.">Combine keywords in Wikipedia</button></div>
         <h3 class="lib-sub">Live changes</h3>
         <p class="hint">Every change the stream reported for a page it follows, newest first &mdash; with its diff when its text was stored.</p>
         <div id="living-stream-cap" class="hint"></div>
@@ -1686,6 +1687,7 @@
 
       <div id="living-law" style="display:none">
         <div id="living-law-facts"></div>
+        <div class="row" style="margin:6px 0"><button type="button" class="secondary" data-on-click="openConjunctionLensChannel('law')" title="Set algebra over the keywords of the laws in your corpus: counts only, never a score.">Combine keywords in law</button></div>
         <h3 class="lib-sub">Recent changes</h3>
         <p class="hint">Changes the law tracker observed in the documents it follows, newest first, each with its stored diff.</p>
         <div id="living-law-changes"></div>
@@ -3749,6 +3751,17 @@
     <div id="pc-body" data-i18n-dyn style="max-height:70vh;overflow:auto"></div>
     <div style="margin-top:12px;display:flex;justify-content:flex-end">
       <button class="secondary" type="button" id="pc-close">Close</button>
+    </div>
+  </dialog>
+
+  <!-- S05-11 S3: the Conjunction Lens opened from a vertical's own page (Living sources'
+       Wikipedia and Law panels, the place card). The same component the analysis window's
+       Keywords subtab hosts, scoped to that vertical; every count is within the scope. -->
+  <dialog id="conj-dialog" style="width:min(720px,94vw);max-height:90vh;padding:18px">
+    <h3 style="margin:0 0 8px">Combine keywords</h3>
+    <div id="conj-dialog-body" data-i18n-dyn style="max-height:72vh;overflow:auto"></div>
+    <div style="margin-top:12px;display:flex;justify-content:flex-end">
+      <button class="secondary" type="button" data-on-click="ooCloseDialog('conj-dialog')">Close</button>
     </div>
   </dialog>
 

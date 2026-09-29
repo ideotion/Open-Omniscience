@@ -19,9 +19,13 @@ public, tested, honest set-algebra core and adds the derived lenses §1 asks for
   * ``near_match_expression`` — PURE: the FTS5 ``NEAR(...)`` MATCH string emission (the pure half
     of §1's NEAR support; executing it against a real FTS index is operator-gated).
 
+  * ``lens_scope`` — which part of the corpus the lens reads: all of it, one VERTICAL (a
+    content-provenance class: press and the web, Wikipedia, law …) or the articles naming one
+    Place. Every count above is then a count WITHIN that scope (S05-11 S3: the lens reached from
+    every vertical's corpus).
+
 Honesty by construction: co-occurrence in your corpus, never causation; contrast/silence are
-count differences with n, never verdicts; NO composite score. The N-keyword picker UI and
-wiring the result into the analysis window are BROWSER-GATED; perf at 974k-keyword / 5 TB scale
+count differences with n, never verdicts; NO composite score. Perf at 974k-keyword / 5 TB scale
 is OPERATOR-GATED.
 
 Open Omniscience - Global Intelligence Platform for Investigative Journalism
@@ -41,8 +45,89 @@ from src.analytics.queries import (
     _normalize,
 )
 from src.database.fts import _HAS_WORD_CHAR, _quote
+from src.database.models import Article
 
 ALGEBRA_OPS = ("intersection", "union", "difference")
+
+#: The most articles a PLACE scope carries into one ``IN (...)`` filter. A place named in more
+#: articles than this is read over its first ``_SCOPE_ID_CAP`` (lowest ids) and says so.
+_SCOPE_ID_CAP = 20_000
+
+
+def lens_scope(session, *, channel: str | None = None, place_id: str | None = None) -> dict:
+    """Resolve WHICH articles the lens reads. At most one of ``channel`` / ``place_id``.
+
+    * neither → the whole corpus (``kind="all"``);
+    * ``channel`` → one content-provenance class (``src.catalog.provenance``: ``web`` for press
+      and the plain web, ``wikipedia``, ``law``, ``newsletter`` …): the articles whose source
+      belongs to it. The class is a channel FACT known by construction, never a judgement. The
+      smaller side is carried: a class holding most sources is filtered as "not in the others";
+    * ``place_id`` → the articles whose extracted place mentions resolve into that Place (the
+      same rows the place card counts), capped at ``_SCOPE_ID_CAP`` and flagged when it is.
+
+    Raises ``ValueError`` for an unknown channel, an unknown place, or both given (fail loud)."""
+    from sqlalchemy import func as _f
+
+    from src.catalog.provenance import PROVENANCE_CLASSES, provenance_of
+    from src.database.models import Source
+
+    if channel and place_id:
+        raise ValueError("give a channel or a place, not both")
+    if place_id:
+        from src.database.models import Place
+        from src.entities.places import mention_article_ids
+
+        place = session.get(Place, place_id)
+        if place is None:
+            raise ValueError(f"unknown place {place_id!r}")
+        ids, total = mention_article_ids(session, place, cap=_SCOPE_ID_CAP)
+        return {
+            "kind": "place", "channel": None, "place_id": place.id, "label": place.name,
+            "article_ids": ids, "n_articles": total, "bounded": total > len(ids),
+            "source_ids": None, "exclude_source_ids": None,
+        }
+    if channel:
+        if channel not in PROVENANCE_CLASSES:
+            raise ValueError(f"unknown channel {channel!r}; expected one of {PROVENANCE_CLASSES}")
+        inside: list[int] = []
+        outside: list[int] = []
+        for sid, dom, st in session.query(Source.id, Source.domain, Source.source_type).all():
+            (inside if provenance_of(dom, st) == channel else outside).append(int(sid))
+        use_outside = len(outside) < len(inside)
+        scope: dict[str, Any] = {
+            "kind": "channel", "channel": channel, "place_id": None, "label": channel,
+            "article_ids": None, "bounded": False,
+            "source_ids": None if use_outside else inside,
+            "exclude_source_ids": outside if use_outside else None,
+        }
+        q = session.query(_f.count(Article.id))
+        scope["n_articles"] = int(_scope_filter(q, scope).scalar() or 0)
+        return scope
+    return {
+        "kind": "all", "channel": None, "place_id": None, "label": None,
+        "article_ids": None, "n_articles": int(session.query(_f.count(Article.id)).scalar() or 0),
+        "bounded": False, "source_ids": None, "exclude_source_ids": None,
+    }
+
+
+def _scope_filter(q, scope: dict | None, *, article_col=Article.id):
+    """Apply a ``lens_scope`` to a query that already has ``Article`` (or an article-id column)
+    in reach. ``article_col`` names the column holding the article id."""
+    if not scope or scope.get("kind") == "all":
+        return q
+    if scope.get("article_ids") is not None:
+        return q.filter(article_col.in_(scope["article_ids"]))
+    if scope.get("source_ids") is not None:
+        return q.filter(Article.source_id.in_(scope["source_ids"]))
+    excl = scope.get("exclude_source_ids") or []
+    return q.filter(~Article.source_id.in_(excl)) if excl else q
+
+
+def public_scope(scope: dict | None) -> dict | None:
+    """The part of a scope a response carries: what was read and how many, never the id lists."""
+    if not scope:
+        return None
+    return {k: scope.get(k) for k in ("kind", "channel", "place_id", "label", "n_articles", "bounded")}
 
 
 def _dedup_normalized(terms: list[str]) -> list[tuple[str, str]]:
@@ -58,7 +143,8 @@ def _dedup_normalized(terms: list[str]) -> list[tuple[str, str]]:
 
 
 def corpus_algebra(
-    session, terms: list[str], *, op: str = "intersection", cap: int = 4000
+    session, terms: list[str], *, op: str = "intersection", cap: int = 4000,
+    scope: dict | None = None,
 ) -> dict:
     """Set algebra over N keywords → the combined article-id set.
 
@@ -75,7 +161,9 @@ def corpus_algebra(
     members — a bounded intersection can even look empty when the true one is not), NEVER a set
     with a fabricated member. Per-term ``n`` is the EXACT uncapped corpus-wide article count.
 
-    Raises ``ValueError`` on an unknown op (fail loud). Counts only — no score."""
+    ``scope`` (from :func:`lens_scope`) restricts EVERY count to that part of the corpus: the
+    combined set and each term's ``n`` alike, so the expression and its numbers describe one
+    population. Raises ``ValueError`` on an unknown op (fail loud). Counts only — no score."""
     if op not in ALGEBRA_OPS:
         raise ValueError(f"unknown op {op!r}; expected one of {ALGEBRA_OPS}")
     pairs = _dedup_normalized(terms)
@@ -90,6 +178,7 @@ def corpus_algebra(
             "result_bounded": False,
             "method": "No resolvable keyword given.",
             "caveat": "Counts only, never a score.",
+            "scope": public_scope(scope),
         }
     normalized = [n for _raw, n in pairs]
     first = normalized[0]
@@ -100,10 +189,13 @@ def corpus_algebra(
     # only at a NEW-article boundary, every article kept has its full matched set — never partial.
     per_article: dict[int, set[str]] = {}
     bounded = False
-    rows = (
+    scan = (
         session.query(KeywordMention.article_id, Keyword.normalized_term)
         .join(Keyword, Keyword.id == KeywordMention.keyword_id)
         .filter(Keyword.normalized_term.in_(normalized))
+    )
+    rows = (
+        _scoped(scan, scope)
         .distinct()
         .order_by(KeywordMention.article_id)
         .all()
@@ -127,13 +219,12 @@ def corpus_algebra(
     # Exact, UNCAPPED per-term corpus-wide article count (no truncation → not an upper bound).
     per_term_n: dict[str, int] = {}
     for n in normalized:
-        cnt = (
+        cq = (
             session.query(func.count(func.distinct(KeywordMention.article_id)))
             .join(Keyword, Keyword.id == KeywordMention.keyword_id)
             .filter(Keyword.normalized_term == n)
-            .scalar()
         )
-        per_term_n[n] = int(cnt or 0)
+        per_term_n[n] = int(_scoped(cq, scope).scalar() or 0)
 
     caveat = "Co-occurrence in your corpus, never causation. Counts only, no score."
     if bounded:
@@ -155,9 +246,20 @@ def corpus_algebra(
             "matched-term scan: intersection = all N terms present, union = any, difference = the "
             "first term and none of the rest. The set expression is the corpus label; the ids open "
             "the analysis window unchanged."
+            + (" Every count is within the scope named." if scope and scope.get("kind") != "all" else "")
         ),
         "caveat": caveat,
+        "scope": public_scope(scope),
     }
+
+
+def _scoped(q, scope: dict | None):
+    """A KeywordMention query restricted to a lens scope (joins Article only when needed)."""
+    if not scope or scope.get("kind") == "all":
+        return q
+    if scope.get("article_ids") is not None:
+        return q.filter(KeywordMention.article_id.in_(scope["article_ids"]))
+    return _scope_filter(q.join(Article, Article.id == KeywordMention.article_id), scope)
 
 
 def per_article_intensity(
@@ -290,6 +392,51 @@ def vocabulary_contrast(
             "(delta toward zero on one side) is a shape to investigate, not proof of absence."
         ),
     }
+
+
+def set_contrast(
+    session, ids_a: list[int], ids_b: list[int], *, exclude: list[str] | None = None,
+    per_side: int = 30, limit: int = 30,
+) -> dict:
+    """The DB seam of :func:`vocabulary_contrast`: two article sets → the per-term spread on each.
+
+    The candidate terms are each side's top ``per_side`` keywords by spread
+    (``corpus_keywords``, hidden words already dropped); every candidate is then COUNTED on
+    BOTH sides exactly, so a term outside one side's top list is never mistaken for a 0 there.
+    ``exclude`` drops terms by their normalised form (the lens drops the terms that DEFINE the
+    two sets: they sit at the top of their own side by construction and say nothing).
+    Counts only, never a score."""
+    from src.analytics.queries import corpus_keywords
+
+    drop = {_normalize(t) for t in (exclude or []) if _normalize(t)}
+    cand: dict[str, str] = {}
+    for ids in (ids_a, ids_b):
+        if not ids:
+            continue
+        for r in corpus_keywords(session, article_ids=ids, limit=per_side)["terms"]:
+            key = r.get("normalized") or _normalize(r.get("term", ""))
+            if key and key not in drop and key not in cand:
+                cand[key] = r.get("term") or key
+
+    def spread(ids: list[int]) -> list[dict]:
+        if not ids or not cand:
+            return []
+        rows = (
+            session.query(Keyword.normalized_term, func.count(func.distinct(KeywordMention.article_id)))
+            .join(KeywordMention, KeywordMention.keyword_id == Keyword.id)
+            .filter(Keyword.normalized_term.in_(list(cand)), KeywordMention.article_id.in_(ids))
+            .group_by(Keyword.normalized_term)
+            .all()
+        )
+        return [{"normalized": k, "term": cand.get(k, k), "articles": int(n)} for k, n in rows]
+
+    out = vocabulary_contrast(spread(ids_a), spread(ids_b), n_a=len(ids_a), n_b=len(ids_b), limit=limit)
+    out["excluded"] = sorted(drop)
+    out["method"] += (
+        f" Candidates: each side's top {per_side} keywords by spread, then every candidate counted"
+        " exactly on both sides; the terms that define the two sets are left out."
+    )
+    return out
 
 
 def near_match_expression(terms: list[str], *, distance: int = 10) -> str | None:

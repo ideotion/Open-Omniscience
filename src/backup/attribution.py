@@ -21,7 +21,7 @@ The signals are cheap strings the carrier already knows:
     streams; the bulletin gets it from the edition's contributing sources);
   * ``files:<category>`` -- a large-data category copied beside the artifact.
 
-TWO REFUSALS, both deliberate:
+ONE REFUSAL, and one line that used to be a refusal:
 
 1. **A gap is published as a gap.** ``law_documents`` carries no licence column --
    the model has ``official_url`` and nothing about terms. So the law line does not
@@ -30,21 +30,15 @@ TWO REFUSALS, both deliberate:
    metadata and points at the official source. A missing fact reads as a missing
    fact.
 
-2. **OSM stops at the Q823 seam.** Q823 (ODbL: attribution + share-alike wherever
-   data leaves the machine, versus keeping OSM out of exports entirely) is a
-   maintainer-only question and is UNANSWERED. Nothing here emits an ODbL line or a
-   share-alike note -- not a provisional one, not a commented-out one. And because
-   silently omitting a licence line that a ruling might require is exactly the
-   failure that ruling exists to prevent, the moment OSM-DERIVED CORPUS ROWS appear
-   (the ``osm_*`` tables the 0.5 lane will add) this module REFUSES rather than
-   rendering a block that is quietly short: see :func:`osm_seam_blockers` and
-   :class:`PendingRulingError`. Today no such table exists, so nothing refuses.
-
-   The raw Geofabrik extracts an operator may already copy beside a backup
-   (``files:osm_regions``) are NOT touched by that refusal: they are upstream ODbL
-   files carried byte for byte, not a derived database, and removing that
-   long-standing capability would be answering Q823 = b. They are reported to the
-   maintainer as the open detail they are.
+2. **OpenStreetMap carries its credit and the ODbL (Q823 = a, ruled 2026-09-29).** OSM
+   data may leave the machine, and wherever it does it carries OSM's credit and the Open
+   Database License line with its share-alike term, exactly as Wikipedia text carries
+   CC BY-SA. Until that ruling this module REFUSED any carrier holding OSM-derived rows
+   rather than render a block silently short of a line nobody had decided; the line now
+   exists, so the refusal is gone and the line rides on the same measured signals as
+   every other: the ``osm_*`` corpus tables, the ``places`` gazetteer (its ids are OSM
+   ids), and a copied Geofabrik extract (``files:osm_regions``), which is upstream ODbL
+   data leaving the machine as much as a derived row is.
 """
 
 from __future__ import annotations
@@ -52,29 +46,18 @@ from __future__ import annotations
 from collections.abc import Iterable
 from dataclasses import dataclass
 
-#: The ruling this module stops at, quoted where it is raised.
-OSM_PENDING_RULING = "Q823"
-
-#: Corpus tables whose rows are OSM-DERIVED. Empty today by construction -- the
-#: prefix is what the 0.5 OSM lane will populate, and the refusal below is armed for
-#: it now so the seam cannot be crossed by a session that forgot the question.
+#: Corpus tables whose rows are OSM-DERIVED: the lane's ``osm_*`` tables, and ``places``,
+#: the gazetteer whose ids are OSM ids (S05-03).
 OSM_DERIVED_TABLE_PREFIXES = ("osm_",)
-
-#: Recorded so that "no ODbL line" reads as a DECISION rather than an oversight to a
-#: later session grepping for it. Never rendered into a user-facing artifact: telling
-#: an operator we owe them a licence line we have not decided on would be noise, and
-#: the honest handling of the undecided case is the refusal, not a disclaimer.
-HELD_PENDING_RULING = {
-    "openstreetmap": (
-        "ODbL attribution and the share-alike note are HELD: Q823 is a maintainer-only "
-        "question and is unanswered. No line is emitted anywhere, and OSM-derived corpus "
-        "rows make this module refuse rather than render a short block."
-    ),
-}
+OSM_DERIVED_TABLES = ("places",)
 
 
 class PendingRulingError(RuntimeError):
-    """Raised when a carrier's contents need a licence line no ruling has settled."""
+    """Raised when a carrier's contents need a licence line no ruling has settled.
+
+    Nothing raises it today: its one case, OSM-derived rows, was ruled (Q823 = a). The
+    carriers keep catching it, so the day a new source arrives whose line waits on a
+    ruling, refusing is still one ``raise`` away and every carrier already reports it."""
 
 
 @dataclass(frozen=True)
@@ -174,6 +157,18 @@ def _open_meteo_because(signals: set[str]) -> str | None:
     return ", ".join(hits) if hits else None
 
 
+def _openstreetmap_because(signals: set[str]) -> str | None:
+    hits = sorted(
+        s
+        for s in signals
+        if (s.startswith("table:") and (
+            any(s[len("table:"):].startswith(p) for p in OSM_DERIVED_TABLE_PREFIXES)
+            or s[len("table:"):] in OSM_DERIVED_TABLES))
+        or s == files_signal("osm_regions")
+    )
+    return ", ".join(hits) if hits else None
+
+
 def _wikipedia_text() -> str:
     return (
         "Wikipedia text — CC BY-SA 4.0 "
@@ -188,6 +183,17 @@ def _law_text() -> str:
         "Each document's terms are those of the official source it was mirrored from "
         "(the official URL stored with the document); check them before "
         "redistributing. That is a gap in what was recorded, never a grant."
+    )
+
+
+def _openstreetmap_text() -> str:
+    # Q823 = a: OSM's own requested credit ("© OpenStreetMap contributors", with its
+    # copyright page) and the licence line with its share-alike term.
+    return (
+        "Map data — © OpenStreetMap contributors (https://www.openstreetmap.org/copyright), "
+        "available under the Open Database License 1.0 (ODbL, "
+        "https://opendatacommons.org/licenses/odbl/1-0/). Credit OpenStreetMap, and share "
+        "any database derived from this data alike, under the ODbL."
     )
 
 
@@ -208,43 +214,15 @@ def _open_meteo_text() -> str:
 _REGISTRY: tuple[tuple[str, object, object], ...] = (
     ("wikipedia", _wikipedia_text, _wikipedia_because),
     ("law", _law_text, _law_because),
+    ("openstreetmap", _openstreetmap_text, _openstreetmap_because),
     ("db_ip", _db_ip_text, _db_ip_because),
     ("open_meteo", _open_meteo_text, _open_meteo_because),
 )
 
 
-def osm_seam_blockers(signals: Iterable[str]) -> list[str]:
-    """The signals that would need Q823 answered before an attribution block is honest.
-
-    OSM-derived CORPUS rows only. A copied Geofabrik extract (``files:osm_regions``)
-    is upstream ODbL bytes carried as they are, not a derived database, and is
-    deliberately not a blocker -- see the module docstring.
-    """
-    blockers: list[str] = []
-    for s in signals:
-        if not s.startswith("table:"):
-            continue
-        table = s.split(":", 1)[1]
-        if any(table.startswith(p) for p in OSM_DERIVED_TABLE_PREFIXES):
-            blockers.append(s)
-    return sorted(blockers)
-
-
 def attribution_lines(signals: Iterable[str]) -> list[AttributionLine]:
-    """The licence lines that APPLY to a carrier holding ``signals``.
-
-    Raises :class:`PendingRulingError` when the contents include OSM-derived corpus
-    rows, because there is no ruled line for them and a block that silently omits one
-    is worse than no block at all.
-    """
+    """The licence lines that APPLY to a carrier holding ``signals``."""
     sig = set(signals)
-    blockers = osm_seam_blockers(sig)
-    if blockers:
-        raise PendingRulingError(
-            f"{OSM_PENDING_RULING} (ODbL) is unanswered, so no attribution line exists "
-            f"for OSM-derived rows: {', '.join(blockers)}. This carrier is refused "
-            "rather than written with a block that would be silently short."
-        )
     lines: list[AttributionLine] = []
     for key, text_fn, because_fn in _REGISTRY:
         because = because_fn(sig)  # type: ignore[operator]

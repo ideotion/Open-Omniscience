@@ -185,7 +185,8 @@ def _attribution(session, period: Period) -> list[dict]:
     try:
         return attribution_dicts(signals_from_sources(period_source_rows(session, period)))
     except PendingRulingError:
-        # The Q823 seam. Raised rather than swallowed by the module that knows why, and
+        # A licence line waiting on a ruling (none today: Q823's OSM case was ruled "a" and
+        # now renders). Raised rather than swallowed by the module that knows why, and
         # re-raised here: a bulletin whose attribution block would be silently short is
         # not a bulletin this app may write.
         raise
