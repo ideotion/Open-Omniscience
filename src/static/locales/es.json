@@ -6524,5 +6524,8 @@
   "Editing activity is not proportional to file size, so this is an order of magnitude, not a measurement. The first daily update measures the real figure.": "La actividad de edición no es proporcional al tamaño del archivo, así que es un orden de magnitud, no una medición. La primera actualización diaria mide la cifra real.",
   "One change file a day per extract. Applying it arrives in 0.6; until then the extract is read as downloaded. If the changes are not applied for longer than about three months (what the mirror keeps), the extract is downloaded again instead (a re-baseline).": "Un archivo de cambios al día por extracto. Aplicarlo llega en la 0.6; hasta entonces el extracto se lee tal como se descargó. Si los cambios no se aplican durante más de unos tres meses (lo que conserva el espejo), el extracto se vuelve a descargar (una nueva línea base).",
   "Russia is published as its own extract, which this catalogue does not list yet.": "Rusia se publica como un extracto propio, que este catálogo aún no incluye.",
-  "No continent extract is known for this code.": "No se conoce ningún extracto de continente para este código."
+  "No continent extract is known for this code.": "No se conoce ningún extracto de continente para este código.",
+  "Countries whose laws you watch in World law.": "Países cuyas leyes sigue en Derecho mundial.",
+  "{n} watched legal documents": "{n} documentos jurídicos seguidos",
+  "The countries whose laws you watch could not be read.": "No se pudieron leer los países cuyas leyes sigue."
 }

@@ -42,6 +42,11 @@
   (8) **"Settings → Data sources → Maps" (Q828) is the existing Settings → OpenStreetMap subtab**, since Settings is
   fixed at nine subtabs; (9) **"the wizard" of Q807 is read as the picker's suggestion row**, not a new step in
   the first-run welcome window — a first-run step would add a question every new install must answer.
+  (10) **Maintainer's ask, 2026-09-29 (project chat): «suggest all French speaking countries», unbiased, and
+  «could it be linked with the laws».** Built in #1214: the language row lists EVERY country of the interface
+  language alphabetically in the reader's language (none first), and a second row lists the countries whose
+  laws World law watches (`law_documents.watched`, `eu`/`int` left out), each with its document count. A
+  failed read of that row is said on the page, never an empty row. Recorded as an ask, not a ruling id.
 - **THE SWARM QUESTION — SHARING FETCHES BETWEEN USERS TO SPARE THE NEWSROOMS' SERVERS, THE ARTICLE LEDGER,
   AND WHAT THE APP OWES THE MEDIA IT READS (maintainer concern 2026-09-28; question round `PS01`–`PS16` in
   [`docs/design/SHARED_FETCH_ETHICS_AND_ARTICLE_LEDGER_2026-09-28.md`](../design/SHARED_FETCH_ETHICS_AND_ARTICLE_LEDGER_2026-09-28.md)

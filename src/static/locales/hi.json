@@ -6524,5 +6524,8 @@
   "Editing activity is not proportional to file size, so this is an order of magnitude, not a measurement. The first daily update measures the real figure.": "संपादन गतिविधि फ़ाइल के आकार के अनुपात में नहीं होती, इसलिए यह परिमाण का अंदाज़ा है, माप नहीं। पहला दैनिक अपडेट वास्तविक आँकड़ा मापता है।",
   "One change file a day per extract. Applying it arrives in 0.6; until then the extract is read as downloaded. If the changes are not applied for longer than about three months (what the mirror keeps), the extract is downloaded again instead (a re-baseline).": "हर एक्सट्रैक्ट के लिए दिन में एक बदलाव फ़ाइल। इसे लागू करना 0.6 में आएगा; तब तक एक्सट्रैक्ट को डाउनलोड किए गए रूप में पढ़ा जाता है। यदि बदलाव लगभग तीन महीने (जितना मिरर रखता है) से अधिक समय तक लागू न हों, तो एक्सट्रैक्ट फिर से डाउनलोड किया जाता है (नया आधार)।",
   "Russia is published as its own extract, which this catalogue does not list yet.": "रूस अपने अलग एक्सट्रैक्ट के रूप में प्रकाशित होता है, जिसे यह सूची अभी शामिल नहीं करती।",
-  "No continent extract is known for this code.": "इस कोड के लिए कोई महाद्वीप एक्सट्रैक्ट ज्ञात नहीं है।"
+  "No continent extract is known for this code.": "इस कोड के लिए कोई महाद्वीप एक्सट्रैक्ट ज्ञात नहीं है।",
+  "Countries whose laws you watch in World law.": "वे देश जिनके क़ानून आप विश्व क़ानून में देखते हैं।",
+  "{n} watched legal documents": "{n} देखे जा रहे क़ानूनी दस्तावेज़",
+  "The countries whose laws you watch could not be read.": "जिन देशों के क़ानून आप देखते हैं, उन्हें पढ़ा नहीं जा सका।"
 }

@@ -6524,5 +6524,8 @@
   "Editing activity is not proportional to file size, so this is an order of magnitude, not a measurement. The first daily update measures the real figure.": "Aktivitas penyuntingan tidak sebanding dengan ukuran berkas, jadi ini orde besaran, bukan pengukuran. Pembaruan harian pertama mengukur angka sebenarnya.",
   "One change file a day per extract. Applying it arrives in 0.6; until then the extract is read as downloaded. If the changes are not applied for longer than about three months (what the mirror keeps), the extract is downloaded again instead (a re-baseline).": "Satu berkas perubahan per hari per ekstrak. Penerapannya hadir di 0.6; sampai saat itu ekstrak dibaca sebagaimana diunduh. Jika perubahan tidak diterapkan lebih dari sekitar tiga bulan (yang disimpan mirror), ekstrak diunduh ulang (garis dasar baru).",
   "Russia is published as its own extract, which this catalogue does not list yet.": "Rusia diterbitkan sebagai ekstrak tersendiri, yang belum tercantum di katalog ini.",
-  "No continent extract is known for this code.": "Tidak ada ekstrak benua yang diketahui untuk kode ini."
+  "No continent extract is known for this code.": "Tidak ada ekstrak benua yang diketahui untuk kode ini.",
+  "Countries whose laws you watch in World law.": "Negara yang hukumnya Anda pantau di Hukum dunia.",
+  "{n} watched legal documents": "{n} dokumen hukum yang dipantau",
+  "The countries whose laws you watch could not be read.": "Negara yang hukumnya Anda pantau tidak dapat dibaca."
 }

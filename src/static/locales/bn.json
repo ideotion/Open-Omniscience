@@ -6524,5 +6524,8 @@
   "Editing activity is not proportional to file size, so this is an order of magnitude, not a measurement. The first daily update measures the real figure.": "সম্পাদনা কার্যক্রম ফাইলের আকারের সমানুপাতিক নয়, তাই এটি একটি মাত্রার ধারণা, পরিমাপ নয়। প্রথম দৈনিক হালনাগাদ প্রকৃত সংখ্যা মাপে।",
   "One change file a day per extract. Applying it arrives in 0.6; until then the extract is read as downloaded. If the changes are not applied for longer than about three months (what the mirror keeps), the extract is downloaded again instead (a re-baseline).": "প্রতি নির্যাসে দিনে একটি পরিবর্তন ফাইল। এটি প্রয়োগ আসবে 0.6-এ; ততদিন নির্যাসটি ডাউনলোড অবস্থায় পড়া হয়। প্রায় তিন মাসের বেশি (মিরর যতদিন রাখে) পরিবর্তন প্রয়োগ না হলে নির্যাসটি আবার ডাউনলোড করা হয় (নতুন ভিত্তি)।",
   "Russia is published as its own extract, which this catalogue does not list yet.": "রাশিয়া নিজস্ব নির্যাস হিসেবে প্রকাশিত হয়, যা এই ক্যাটালগে এখনও তালিকাভুক্ত নয়।",
-  "No continent extract is known for this code.": "এই কোডের জন্য কোনো মহাদেশ নির্যাস জানা নেই।"
+  "No continent extract is known for this code.": "এই কোডের জন্য কোনো মহাদেশ নির্যাস জানা নেই।",
+  "Countries whose laws you watch in World law.": "যেসব দেশের আইন আপনি বিশ্ব আইনে অনুসরণ করেন।",
+  "{n} watched legal documents": "{n}টি অনুসৃত আইনি নথি",
+  "The countries whose laws you watch could not be read.": "যেসব দেশের আইন আপনি অনুসরণ করেন সেগুলি পড়া যায়নি।"
 }

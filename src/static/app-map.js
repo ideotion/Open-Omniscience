@@ -2335,14 +2335,27 @@
         }
       }
       if (sug) {
-        const open = (p.suggested || []).filter((r) => !chosen.has(r.cc));
-        sug.innerHTML = open.length
-          ? `<div class="hint" style="margin-bottom:4px">${esc(t(p.suggestion_basis || ""))}</div>`
-            + open.map((r) => {
-              const cost = r.extract ? `${t(r.extract.name)} ~${humanBytes(r.extract.size_estimate_bytes)}` : t(r.extract_reason || "");
-              return `<button class="tiny secondary" data-on-click="osmPickAddCode(${esc(JSON.stringify(r.cc))})" title="${esc(cost)}">${esc(_osmPickLabel(r.cc, r.name))}${r.extract ? ` <span class="muted">· ~${humanBytes(r.extract.size_estimate_bytes)}</span>` : ""}</button>`;
-            }).join(" ")
+        // Two rows, neither ranked: every country of the interface language, and every country
+        // whose laws World law watches -- each in the reader's alphabetical order, so no
+        // country is put first.
+        const chip = (r, extra) => {
+          const cost = r.extract ? `${t(r.extract.name)} ~${humanBytes(r.extract.size_estimate_bytes)}` : t(r.extract_reason || "");
+          const title = extra ? `${cost} · ${extra}` : cost;
+          return `<button class="tiny secondary" data-on-click="osmPickAddCode(${esc(JSON.stringify(r.cc))})" title="${esc(title)}">${esc(_osmPickLabel(r.cc, r.name))}${r.extract ? ` <span class="muted">· ~${humanBytes(r.extract.size_estimate_bytes)}</span>` : ""}</button>`;
+        };
+        const byName = (a, b) => ooCountryCompare(a.cc, b.cc);
+        const open = (p.suggested || []).filter((r) => !chosen.has(r.cc)).sort(byName);
+        const law = (p.law_suggested || []).filter((r) => !chosen.has(r.cc)).sort(byName);
+        let html = open.length
+          ? `<div class="hint" style="margin-bottom:4px">${esc(t(p.suggestion_basis || ""))}</div>` + open.map((r) => chip(r)).join(" ")
           : "";
+        if (law.length) {
+          html += `<div class="hint" style="margin:8px 0 4px">${esc(t(p.law_basis || ""))}</div>`
+            + law.map((r) => chip(r, osmTf("{n} watched legal documents", { n: r.law_documents }))).join(" ");
+        } else if (p.law_unavailable) {
+          html += `<div class="hint" style="margin-top:8px">${esc(t("The countries whose laws you watch could not be read."))}</div>`;
+        }
+        sug.innerHTML = html;
       }
       if (sel) {
         const keep = sel.value;

@@ -12,8 +12,11 @@ are JSON read by this machine's own UI over loopback, which is the machine.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
+from sqlalchemy.orm import Session
+
+from src.database.session import get_db
 
 router = APIRouter(prefix="/api/osm", tags=["osm"])
 
@@ -59,15 +62,19 @@ class CountrySelection(BaseModel):
 
 
 @router.get("/picker")
-def picker(lang: str = "en") -> dict:
+def picker(lang: str = "en", db: Session = Depends(get_db)) -> dict:
     """The Settings picker: the choice, the suggestions for ``lang``, each country's costs.
 
     ``lang`` is the interface language the page reports; the suggestions come from it and from
     nothing else (Q807: never from the IP address).
     """
-    from src.osm.picker import picker_state
+    from src.osm.picker import law_countries, picker_state
 
-    return picker_state(lang)
+    try:
+        law = law_countries(db)
+    except Exception:  # noqa: BLE001 - said on the page ("law_unavailable"), never a silent empty row
+        law = None
+    return picker_state(lang, law)
 
 
 @router.put("/countries")

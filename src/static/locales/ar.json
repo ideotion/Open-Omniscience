@@ -6524,5 +6524,8 @@
   "Editing activity is not proportional to file size, so this is an order of magnitude, not a measurement. The first daily update measures the real figure.": "نشاط التحرير لا يتناسب مع حجم الملف، لذا هذا ترتيب مقدار لا قياس. أول تحديث يومي يقيس الرقم الفعلي.",
   "One change file a day per extract. Applying it arrives in 0.6; until then the extract is read as downloaded. If the changes are not applied for longer than about three months (what the mirror keeps), the extract is downloaded again instead (a re-baseline).": "ملف تغييرات واحد يوميًا لكل مقتطف. يصل تطبيقه في الإصدار 0.6؛ وحتى ذلك الحين يُقرأ المقتطف كما نُزِّل. إذا لم تُطبَّق التغييرات لأكثر من نحو ثلاثة أشهر (ما تحتفظ به المرآة)، يُنزَّل المقتطف من جديد (خط أساس جديد).",
   "Russia is published as its own extract, which this catalogue does not list yet.": "تُنشر روسيا كمقتطف مستقل لا يدرجه هذا الفهرس بعد.",
-  "No continent extract is known for this code.": "لا يُعرف مقتطف قارة لهذا الرمز."
+  "No continent extract is known for this code.": "لا يُعرف مقتطف قارة لهذا الرمز.",
+  "Countries whose laws you watch in World law.": "البلدان التي تتابع قوانينها في القانون العالمي.",
+  "{n} watched legal documents": "{n} من الوثائق القانونية المتابَعة",
+  "The countries whose laws you watch could not be read.": "تعذّرت قراءة البلدان التي تتابع قوانينها."
 }

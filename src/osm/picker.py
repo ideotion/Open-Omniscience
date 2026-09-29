@@ -3,6 +3,11 @@
 Open Omniscience - Global Intelligence Platform for Investigative Journalism
 Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 
+TWO SUGGESTION ROWS, NEITHER RANKED. Every country where the interface language is official or
+major, alphabetically (the maintainer asked for an unbiased list rather than one country first,
+2026-09-29); and the countries whose laws the operator already watches in World law, so the map
+can follow the legal sources. Both are suggestions: nothing is chosen until the operator clicks.
+
 THE RULINGS (Q807 = a, Q806 = b, Q824 = a, Q828 = a). The lane is OFF until the operator picks
 countries. The wizard SUGGESTS the countries of the interface language, read from
 ``configs/language_countries.yml`` -- never from the IP address, which this module never sees
@@ -68,6 +73,7 @@ SUGGESTION_BASIS = (
     "Suggested from the interface language (the countries where it is an official or major "
     "language). Never from your IP address."
 )
+LAW_BASIS = "Countries whose laws you watch in World law."
 OFF = "Off: no country chosen. Nothing is downloaded or read until you choose one."
 
 #: Continent (as ``src/catalog/countries.py`` names it) -> the Geofabrik region code.
@@ -147,12 +153,42 @@ def _row(cc: str, basis: str | None = None) -> dict[str, Any]:
 
 
 def suggestions(lang: str) -> list[dict[str, Any]]:
-    """The interface language's countries, in the file's order (official first by construction)."""
+    """EVERY country where the interface language is official or major, in alphabetical order.
+
+    No country is put first: the file's order (which happens to open with the language's
+    namesake) is not a ranking, and the page sorts the names again in the reader's language.
+    """
     from src.civic.coverage_floor import load_floor
 
     block = (load_floor().get("languages") or {}).get((lang or "").strip().lower()) or {}
-    rows = block.get("countries") or []
-    return [_row(r["cc"], r.get("basis")) for r in rows]
+    rows = [_row(r["cc"], r.get("basis")) for r in block.get("countries") or []]
+    return sorted(rows, key=lambda r: r["name"].casefold())
+
+
+def law_countries(session) -> list[dict[str, Any]]:
+    """The countries whose laws the operator watches (World law), with how many documents.
+
+    Read from ``law_documents.watched`` in the corpus. A jurisdiction that is not a country
+    (``eu``, ``int``) is left out, since no extract is cut for it. Nothing is fetched.
+    """
+    from sqlalchemy import func
+
+    from src.catalog.countries import ISO_3166_1_ALPHA2, normalize_country
+    from src.database.models import LawDocument
+
+    counts: dict[str, int] = {}
+    rows = (
+        session.query(LawDocument.jurisdiction, func.count(LawDocument.id))
+        .filter(LawDocument.watched.is_(True))
+        .group_by(LawDocument.jurisdiction)
+        .all()
+    )
+    for jur, n in rows:
+        cc = normalize_country(jur)
+        if cc and cc in ISO_3166_1_ALPHA2:
+            counts[cc] = counts.get(cc, 0) + int(n)
+    out = [{**_row(cc), "law_documents": n} for cc, n in counts.items()]
+    return sorted(out, key=lambda r: r["name"].casefold())
 
 
 def selected() -> list[str]:
@@ -179,8 +215,8 @@ def save_selection(codes: list[str]) -> list[str]:
     return list(save_settings({"osm_countries": clean}).osm_countries)
 
 
-def picker_state(lang: str) -> dict[str, Any]:
-    """Everything the Settings picker draws. Reads local files only."""
+def picker_state(lang: str, law: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+    """Everything the Settings picker draws. Reads local files only (``law`` from the corpus)."""
     from src.catalog.countries import ISO_3166_1_ALPHA2
     from src.geo.osm_regions import OSM_SIZES_AS_OF
 
@@ -192,6 +228,9 @@ def picker_state(lang: str) -> dict[str, Any]:
         "lang": (lang or "").strip().lower(),
         "suggestion_basis": SUGGESTION_BASIS,
         "suggested": suggestions(lang),
+        "law_basis": LAW_BASIS,
+        "law_suggested": law or [],
+        "law_unavailable": law is None,
         "selected": [_row(cc) for cc in chosen],
         "countries": [{"cc": r["cc"], "name": r["name"], "alpha3": r["alpha3"]} for r in everyone],
         "size_as_of": OSM_SIZES_AS_OF,

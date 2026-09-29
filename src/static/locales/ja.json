@@ -6524,5 +6524,8 @@
   "Editing activity is not proportional to file size, so this is an order of magnitude, not a measurement. The first daily update measures the real figure.": "編集活動はファイルサイズに比例しないため、これは桁の目安であり測定値ではありません。最初の毎日の更新で実際の値を測定します。",
   "One change file a day per extract. Applying it arrives in 0.6; until then the extract is read as downloaded. If the changes are not applied for longer than about three months (what the mirror keeps), the extract is downloaded again instead (a re-baseline).": "抽出データごとに1日1つの変更ファイル。適用は 0.6 で導入予定で、それまではダウンロードしたままの抽出データを読み込みます。約3か月（ミラーの保存期間）を超えて変更が適用されない場合は、抽出データを再ダウンロードします（再ベースライン）。",
   "Russia is published as its own extract, which this catalogue does not list yet.": "ロシアは独立した抽出データとして公開されており、このカタログにはまだ載っていません。",
-  "No continent extract is known for this code.": "このコードに対応する大陸の抽出データは不明です。"
+  "No continent extract is known for this code.": "このコードに対応する大陸の抽出データは不明です。",
+  "Countries whose laws you watch in World law.": "世界の法律で法令を監視している国。",
+  "{n} watched legal documents": "監視中の法令文書 {n} 件",
+  "The countries whose laws you watch could not be read.": "法令を監視している国を読み取れませんでした。"
 }

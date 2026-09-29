@@ -90,10 +90,11 @@ def test_the_setting_itself_refuses_anything_but_alpha2(settings_file):
 # --------------------------------------------------------------------------- #
 
 
-def test_french_suggests_france_first_from_the_language_file(settings_file):
+def test_french_suggests_the_francophone_countries_from_the_language_file(settings_file):
     rows = P.suggestions("fr")
-    assert rows[0]["cc"] == "fr" and rows[0]["alpha3"] == "FRA"
-    assert {"be", "ch", "lu"} <= {r["cc"] for r in rows}
+    by_cc = {r["cc"]: r for r in rows}
+    assert by_cc["fr"]["alpha3"] == "FRA"
+    assert {"fr", "be", "ch", "lu"} <= set(by_cc)
     assert all(r["basis"] in ("official", "de-facto", "regional") for r in rows)
 
 
@@ -180,14 +181,28 @@ def test_the_diff_estimate_date_is_registered():
 def test_the_picker_routes(settings_file, no_network):
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import Session
+    from sqlalchemy.pool import StaticPool
 
     from src.api.osm_lane import router
+    from src.database.models import Base, LawDocument
+    from src.database.session import get_db
+
+    eng = create_engine("sqlite://", poolclass=StaticPool, connect_args={"check_same_thread": False})
+    Base.metadata.create_all(eng, tables=[LawDocument.__table__])
+
+    def _db():
+        with Session(eng) as s:
+            yield s
 
     app = FastAPI()
     app.include_router(router)
+    app.dependency_overrides[get_db] = _db
     c = TestClient(app)
     body = c.get("/api/osm/picker", params={"lang": "fr"}).json()
-    assert body["enabled"] is False and body["suggested"][0]["cc"] == "fr"
+    assert body["enabled"] is False and "fr" in {r["cc"] for r in body["suggested"]}
+    assert body["law_suggested"] == [] and body["law_unavailable"] is False
     assert c.put("/api/osm/countries", json={"countries": ["fr"]}).json() == {
         "countries": ["fr"],
         "enabled": True,
@@ -260,3 +275,44 @@ def test_every_picker_string_ships_in_twelve_languages():
         loc = json.loads(path.read_text("utf-8"))
         for s in strings:
             assert s in loc, (path.name, s)
+
+
+# --------------------------------------------------------------------------- #
+#  Unbiased suggestions, and the laws row (the maintainer's ask, 2026-09-29)   #
+# --------------------------------------------------------------------------- #
+
+
+def test_the_language_row_lists_every_country_alphabetically_none_first(settings_file):
+    from src.civic.coverage_floor import load_floor
+
+    rows = P.suggestions("fr")
+    names = [r["name"].casefold() for r in rows]
+    assert names == sorted(names)
+    floor = {r["cc"] for r in load_floor()["languages"]["fr"]["countries"]}
+    assert {r["cc"] for r in rows} == floor
+
+
+def test_the_laws_row_is_the_watched_jurisdictions_that_are_countries():
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import Session
+
+    from src.database.models import Base, LawDocument
+
+    eng = create_engine("sqlite://")
+    Base.metadata.create_all(eng, tables=[LawDocument.__table__])
+    with Session(eng) as s:
+        for i, (jur, watched) in enumerate(
+            [("fr", True), ("fr", True), ("uk", True), ("eu", True), ("int", True), ("de", False)]
+        ):
+            s.add(LawDocument(jurisdiction=jur, url=f"https://example.org/{i}", title=f"t{i}", watched=watched))
+        s.commit()
+        rows = P.law_countries(s)
+    assert [(r["cc"], r["law_documents"]) for r in rows] == [("fr", 2), ("gb", 1)]
+    assert rows[0]["extract"]["code"] == "europe"
+
+
+def test_a_failed_law_read_is_said_not_shown_as_an_empty_row(settings_file):
+    assert P.picker_state("fr", None)["law_unavailable"] is True
+    state = P.picker_state("fr", [])
+    assert state["law_unavailable"] is False and state["law_suggested"] == []
+    assert state["law_basis"] == P.LAW_BASIS
