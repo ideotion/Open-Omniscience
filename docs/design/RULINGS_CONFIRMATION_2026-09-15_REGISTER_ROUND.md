@@ -35,6 +35,11 @@ Everything not listed here is already recorded and needs no restating (`docs/led
 > each blank is still a live question; answering one replaces its assumption and needs no other edit.
 > Index entry: the `OPEN_QUEUE.md` head entry of 2026-09-15; one `RULINGS_INDEX.md` row per `RCnn`.
 >
+> **UPDATE 2026-09-29: nineteen of the twenty-two lines now carry an answer** — the maintainer answered the
+> 37-question list in the project chat (19:55 UTC) and the recording session copied each answer onto its line.
+> STILL OPEN, each with the maintainer's words on its line: `RC05`, `RC06` and `RC16`. The list's letters differed
+> from this file's for `RC07` and `RC13`; the lines give this file's letter.
+>
 > **UPDATE 2026-09-27: two answered in chat, copied onto their lines** — `RC01` = (a) and `RC10` = (b). PENDING
 > is now `RC02` ⛔, `RC03` ⛔ and `RC12`; the other seventeen assumptions stand (the
 > eighteen of 2026-09-15 less `RC01`; `RC10` was PENDING, not an assumption).
@@ -77,7 +82,7 @@ Sheet (morning): Q215 = **(a) keep the restore half forever, as the docstring co
   amended in that PR; a restore path disappears for anyone holding a legacy file — data-safety class._
 - (c) **Other** — write it.
 Default if blank: none (⛔).
-ANSWER RC02:
+ANSWER RC02: a — answered in the project chat 2026-09-29 19:55 UTC (the 37-question list) and copied here by the recording session (item 22)
 
 #### RC03 ⛔ · C4 = Q1009 — the storage round-2 rulings 3–6
 The sheet left Q1009 blank; the artifact recorded `default` for C4 at 15:12Z, which resolves to the four
@@ -89,7 +94,7 @@ question is ⛔ and the two channels differ on the same day, write the four valu
 - (b) **Other** — write the four in order (e.g. `y, age, n, y`).
 - (c) **Still pending.**
 Default if blank: none (⛔).
-ANSWER RC03:
+ANSWER RC03: a — answered in the project chat 2026-09-29 19:55 UTC (the 37-question list) and copied here by the recording session (item 2): `y, OOENC2, y, y`
 
 #### RC04 · D8 vs Q1142 — the multi-model specialisation bench
 Sheet: Q1142 = **(a) run it when the AI-coordinator translation sweep (Q405) lands in 0.5**. Register
@@ -102,7 +107,7 @@ already recorded (0.7 exit clause; 0.8 row C) whatever you answer here.
   _Impact: one session's work in 0.5; the decision has data._
 - (c) **Run it and decide in 0.5 (the sheet).**
 Default if blank: (a).
-ANSWER RC04:
+ANSWER RC04: a — answered in the project chat 2026-09-29 19:55 UTC (the 37-question list) and copied here by the recording session (item 11, which also closes 0.5 row H)
 
 #### RC05 · B4 vs Q1105 — the 64,910 `kind_overrides` proposals
 Sheet: Q1105 = **(a) a worklist for a review surface; never auto-applied**. Register (15:06Z): `default` =
@@ -112,7 +117,7 @@ file in the repo — the figure is a design-doc measurement).
 - (b) **A worklist surface, when the review surface of Q1104 exists (the sheet).** _Impact: a generator run
   writes a reviewable file; one more review queue._
 Default if blank: (a).
-ANSWER RC05:
+ANSWER RC05: STILL OPEN — the maintainer asked «How could Claude handle this?» (answered in the project chat 2026-09-29 19:55 UTC (the 37-question list) and copied here by the recording session, item 23); handed to the project thread «Keyword working session»; the assumption (a) stays meanwhile
 
 #### RC06 · B7 vs Q1108 — the recency window of the source re-check
 Sheet: Q1108 = **(a) the 6-month re-verification reads the last 6 months, not the whole history**. Register
@@ -124,7 +129,7 @@ never replacing it**.
   an old one is forgotten._
 - (c) **Both windows beside the whole history.**
 Default if blank: (a).
-ANSWER RC06:
+ANSWER RC06: STILL OPEN — answered in the project chat 2026-09-29 19:55 UTC (the 37-question list) and copied here by the recording session (item 24), in the maintainer's words: «we should have another approach for this, because I've noticed that after 72 hours of scrapping on 8 different instances, not a single source has been added despite seeing >80000 candidates. Source qualification doesn't seem to work. And the question asked relies on source qualification. So let's resolve source qualification first, and I believe (for now), that source "re-qualification" should be managed as a queue, not as a calendar. All sources should be qualified on a regular basis, such as every quarter, or semester. New sources should be qualified as well. I think it's more urgent to qualify a new source than to re-qualify an existing one.» Waits on the project thread «Fix source qualification»
 
 #### RC07 · B7's note — article revision tracking, where does it land?
 «…I'd like to see track changes in articles too, to allow user to see if, when and how an article was modified
@@ -137,7 +142,7 @@ gain a revision history (re-fetch, diff, timeline), like the versioned lanes. No
 - (c) **0.6 or later** — write the release.
 - (d) **Post-beta backlog.**
 Default if blank: (b) — an ASSUMPTION about placement, not about the feature (ruled).
-ANSWER RC07:
+ANSWER RC07: c — answered in the project chat 2026-09-29 19:55 UTC (the 37-question list) and copied here by the recording session (item 25, whose (b) is this file's (c)); no release was written, so «0.6 or later, release to be named» is recorded as a default
 
 #### RC08 · Six rulings with no release — the placements (answer each line `a`, or write another release)
 Each was ruled by an explicit `default` or note; none names a release. `a` = the proposal in the table; `b` =
@@ -153,12 +158,12 @@ another release (write it after the letter); `c` = never / drop.
 | RC08.6 | L5 — `_SPARSE_BAR_MAX` extended to `commodityOverlaySvg` only | 0.4 row U (`S04-14`) | one renderer; invariant #16 unchanged |
 
 Default if blank: (a) for each part — ASSUMPTIONS about placement.
-ANSWER RC08.1:
-ANSWER RC08.2:
-ANSWER RC08.3:
-ANSWER RC08.4:
-ANSWER RC08.5:
-ANSWER RC08.6:
+ANSWER RC08.1: a — answered in the project chat 2026-09-29 19:55 UTC (the 37-question list) and copied here by the recording session (item 26)
+ANSWER RC08.2: a — as RC08.1
+ANSWER RC08.3: a — as RC08.1
+ANSWER RC08.4: a — as RC08.1
+ANSWER RC08.5: a — as RC08.1
+ANSWER RC08.6: a — as RC08.1
 
 #### RC09 · D9 vs Q1143 — the live ollama.com library browse
 Sheet: Q1143 = **(a) consented, opt-in, egress named**. Register (15:17Z): `default` = **drop it; record the
@@ -167,7 +172,7 @@ reason** (one model is ruled app-wide; the custom-model field stays).
 - (b) **Build it, consented and opt-in (the sheet).** _Impact: one more consented host (ollama.com), a search
   and filter UI, ×12._
 Default if blank: (a).
-ANSWER RC09:
+ANSWER RC09: a — answered in the project chat 2026-09-29 19:55 UTC (the 37-question list) and copied here by the recording session (item 27)
 
 #### RC10 ⛔ · E2 vs F1 — does «add them» include `dumps.wikimedia.org`?
 F1 (15:20Z): **«add them»** for the whole allowlist block, which names `dumps.wikimedia.org (E2)`. E2 (15:19Z):
@@ -191,7 +196,7 @@ owed either way.
 - (b) **The round RE-OPENS all nine; until it is answered the 0.6–0.9 rows that cite them are provisional.**
   _Impact: the gates carry a «provisional on the V1 round» banner._
 Default if blank: (a).
-ANSWER RC11:
+ANSWER RC11: b — answered in the project chat 2026-09-29 19:55 UTC (the 37-question list) and copied here by the recording session (item 28), with the note «however, pubmed bulk prefered over API»
 
 #### RC12 · G6 — the poll idea, re-stated: which version, and does it move poll work before 1.0?
 Your note: raw poll data ingested; the poll's questions verbatim and its results readable directly; users
@@ -205,7 +210,7 @@ post-1.0; this feature is raw-data access, not Tier-2 analysis.
 - (d) **Post-1.0, with V1-8's placement.**
 Write the version you meant after the letter if none fits. Default if blank: none — the note left it blank
 and a second blank keeps it pending.
-ANSWER RC12:
+ANSWER RC12: c — answered in the project chat 2026-09-29 19:55 UTC (the 37-question list) and copied here by the recording session (item 29), with the note «this needs a careful approach, as most polls data are, unless I'm mistaken, private or confidential»
 
 #### RC13 · G8 vs Q1135 — religious calendars (and the eclipse canon)
 Sheet: Q1135 = **(b) drop the feature**. Register (15:27Z): **«I won't provide the dates. Let's create a
@@ -218,7 +223,7 @@ dedicated internet connected session to search for all religious dates and imple
   sheet's ★).** _Impact: computed, not researched; fixed-date and lunar feasts only where an algorithm exists._
 Does (b) or (c) include the eclipse canon? Write `+ eclipses` or `− eclipses` after the letter.
 Default if blank: (b).
-ANSWER RC13:
+ANSWER RC13: b + eclipses — answered in the project chat 2026-09-29 19:55 UTC (the 37-question list) and copied here by the recording session (item 30, whose (a) is this file's (b)); the eclipse half was not stated and «+ eclipses», the recommended pairing, is recorded as a default. Note: «incorporate this into the app so that it has preinstalled calendar data. Make sure not to forget any religions. Be extensive, let users have the choice of showing or hiding information.»
 
 #### RC14 · I3 vs Q1138 — Tor-exit-resolve (SOCKS `RESOLVE 0xF0`)
 Sheet: Q1138 = **(a) parked until 0.9's security review** (one answer for I3 and I4). Register (15:53Z): I3
@@ -228,7 +233,7 @@ Sheet: Q1138 = **(a) parked until 0.9's security review** (one answer for I3 and
   over Tor closes._
 - (b) **Parked until 0.9's security review (the sheet).**
 Default if blank: (a) at 0.9 row E.
-ANSWER RC14:
+ANSWER RC14: a — answered in the project chat 2026-09-29 19:55 UTC (the 37-question list) and copied here by the recording session (item 31): at 0.9 row E
 
 #### RC15 · L4 — which rate did «most ethical» mean?
 «Adapt the rate limit to what's most ethical while keeping the app's efficiency and performance in mind.» L4
@@ -240,7 +245,7 @@ naturally as the per-host EGRESS politeness (Crawl-delay, Q1013 = a), which is a
   per host).** _Impact: collection slows on hosts that ask for it; the governor composes with it._
 - (c) **Both.**
 Default if blank: (a).
-ANSWER RC15:
+ANSWER RC15: c — answered in the project chat 2026-09-29 19:55 UTC (the 37-question list) and copied here by the recording session (item 32); no egress change was written
 
 #### RC16 · L9 vs Q1129 — the political-lean scale in the offerable vocabulary
 Sheet: Q1129 = **(a) keep the stance: reported, never filtered** (the 2026-09-11 check found the code already
@@ -250,7 +255,7 @@ classifies `lean-*` as non-topical and declines to filter it, measured once in 9
   propose a lean; a stated position in `source_tags.py` is changed, with the reason recorded._
 - (b) **Keep the stance (the sheet).** _Impact: none._
 Default if blank: (a).
-ANSWER RC16:
+ANSWER RC16: STILL OPEN — answered in the project chat 2026-09-29 19:55 UTC (the 37-question list) and copied here by the recording session (item 33), kept for a later discussion at the maintainer's request: «let's get deeper into this proposal. How would you achieve this ? How can this handle scientific papers which should not have a political view of things ? This seems to good to be possible, or impossible, knowing the range of data and topics articles cover (I know everything can be linked to political views, but I also know that every political view can be discussed and be subjected to negotiation, all in all, in politics, there is no absolute truth), especially with a small LLM running on less capable hardware. This is not urgent, you can keep that discussion for later.»
 
 #### RC17 · L10 vs Q1130 — the coverage-state prefixes
 Sheet: Q1130 = **(a) filter only the `via:*` provenance prefixes from topical displays; keep the rest
@@ -260,7 +265,7 @@ thin-coverage, fragmented, …); leave the judgement words**.
   displays; the judgement words stay reported._
 - (b) **`via:*` only (the sheet).**
 Default if blank: (a).
-ANSWER RC17:
+ANSWER RC17: a — answered in the project chat 2026-09-29 19:55 UTC (the 37-question list) and copied here by the recording session (item 34)
 
 ---
 
