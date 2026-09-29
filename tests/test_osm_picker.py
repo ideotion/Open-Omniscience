@@ -265,7 +265,7 @@ def test_the_world_map_states_the_vintage_and_links_to_settings():
 def test_every_picker_string_ships_in_twelve_languages():
     import json
 
-    strings = [P.OFF, P.SUGGESTION_BASIS, P.DIFF_METHOD, P.DIFF_CAVEAT, P.CADENCE,
+    strings = [P.OFF, P.SUGGESTION_BASIS, P.FIRST_BASIS, "Start with {country}", P.DIFF_METHOD, P.DIFF_CAVEAT, P.CADENCE,
                P._NO_EXTRACT["ru"], "No continent extract is known for this code.",
                "Paused: airplane mode is on", "Read · data as of {date}",
                "{country}, date not stated in the extract", "Countries for the map data"]
@@ -276,18 +276,45 @@ def test_every_picker_string_ships_in_twelve_languages():
 
 
 # --------------------------------------------------------------------------- #
-#  Unbiased suggestions, and the laws row (the maintainer's ask, 2026-09-29)   #
+#  The origin country first (R76), and the laws row                          #
 # --------------------------------------------------------------------------- #
 
 
-def test_the_language_row_lists_every_country_alphabetically_none_first(settings_file):
+def test_the_language_row_opens_with_its_origin_country_then_alphabetical(settings_file):
+    """R76 (answer 3, 2026-09-29): French -> France first, then the rest alphabetically."""
     from src.civic.coverage_floor import load_floor
 
     rows = P.suggestions("fr")
-    names = [r["name"].casefold() for r in rows]
+    assert rows[0]["cc"] == "fr" and rows[0]["origin"] is True
+    names = [r["name"].casefold() for r in rows[1:]]
     assert names == sorted(names)
+    assert not any(r["origin"] for r in rows[1:])
     floor = {r["cc"] for r in load_floor()["languages"]["fr"]["countries"]}
     assert {r["cc"] for r in rows} == floor
+
+
+def test_every_interface_language_has_an_origin_country_in_its_own_floor():
+    """The origin must be one of the language's own countries, or the row would invent one."""
+    import json
+
+    from src.civic.coverage_floor import load_floor
+
+    floor = load_floor()["languages"]
+    langs = {p.stem for p in (STATIC / "locales").glob("*.json")}
+    assert set(P.ORIGIN_COUNTRY) == langs
+    for lang, cc in P.ORIGIN_COUNTRY.items():
+        assert cc in {r["cc"] for r in floor[lang]["countries"]}, lang
+    assert (P.origin_country("en"), P.origin_country("es"), P.origin_country("fr")) == ("gb", "es", "fr")
+    assert json  # the locales are read by name only
+
+
+def test_the_origin_country_is_the_default_first_import_until_one_is_chosen(settings_file):
+    state = P.picker_state("en", [])
+    assert state["enabled"] is False and state["first"]["cc"] == "gb"
+    assert state["first_basis"] == P.FIRST_BASIS
+    P.save_selection(["de"])
+    state = P.picker_state("en", [])
+    assert state["enabled"] is True and state["first"] is None
 
 
 def test_the_laws_row_is_the_watched_jurisdictions_that_are_countries():

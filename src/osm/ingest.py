@@ -87,6 +87,9 @@ class IngestReport:
     seconds: float | None = None
     error: str | None = None
     name: str | None = None
+    #: What the name and address indexes took from this cut (S5), or None if not built.
+    search_index: dict | None = None
+    view_index: dict | None = None
 
     def to_dict(self) -> dict:
         return {
@@ -100,6 +103,8 @@ class IngestReport:
             "seconds": self.seconds,
             "error": self.error,
             "name": self.name,
+            "search_index": self.search_index,
+            "view_index": self.view_index,
         }
 
 
@@ -230,6 +235,7 @@ def ingest_country(
         kept_nodes = _IdSet()
         kept_ways = _IdSet()
         with store.lane_session("osm") as s:
+            _clear_derived(s, alpha3)
             s.execute(delete(osm_objects_table).where(osm_objects_table.c.country_alpha3 == alpha3))
         batch: list[dict] = []
 
@@ -322,7 +328,50 @@ def ingest_country(
             row.error = report.error
             if report.name:
                 row.name = report.name
+    if report.status == "complete":
+        # The "Places" facet and the geocoder read an index, never the rows on a keystroke
+        # (src/osm/places.py). Built from what was just written; a failure is logged and the
+        # index then reads as not matching this ingest, which the Places job rebuilds.
+        try:
+            from src.osm.places import build_search_index
+
+            report.search_index = build_search_index(alpha3)
+        except Exception:  # noqa: BLE001 - the cut is complete; only its index is missing
+            _LOG.warning("the %s search index was not built", alpha3, exc_info=True)
+        # The map reads its R*Tree (src/osm/view.py, S6) the same way.
+        try:
+            from src.osm.view import build_view_index
+
+            report.view_index = build_view_index(alpha3)
+        except Exception:  # noqa: BLE001 - the cut is complete; only its view index is missing
+            _LOG.warning("the %s view index was not built", alpha3, exc_info=True)
     return report
+
+
+def _clear_derived(session, alpha3: str) -> None:
+    """Drop a country's rows in every index built from ``osm_objects`` before its objects go.
+
+    Row ids are reused by SQLite once a country's objects are deleted, so an index row left over
+    from a failed or interrupted re-ingest would point at whatever object takes that id next:
+    an old address shown at an unrelated point, an old cluster count on the map. A table the
+    lane has not created yet has nothing to drop.
+    """
+    from sqlalchemy import text
+
+    ids = "SELECT id FROM osm_objects WHERE country_alpha3 = :a"
+    for stmt in (
+        "DELETE FROM osm_names WHERE alpha3 = :a",
+        "DELETE FROM osm_addresses WHERE alpha3 = :a",
+        f"DELETE FROM osm_rtree WHERE id IN ({ids})",
+        "DELETE FROM osm_view_cells WHERE alpha3 = :a",
+        "DELETE FROM osm_view_indexes WHERE alpha3 = :a",
+        "DELETE FROM osm_search_indexes WHERE alpha3 = :a",
+    ):
+        try:
+            with session.begin_nested():
+                session.execute(text(stmt), {"a": alpha3})
+        except Exception:  # noqa: BLE001 - that index was never created on this lane
+            continue
 
 
 class _IdSet:

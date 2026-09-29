@@ -139,16 +139,41 @@ def test_an_unknown_country_code_is_refused_before_anything_opens(osm_lane_dir):
     assert not store.lane_exists("osm")
 
 
-def test_without_the_extra_a_large_file_is_refused_by_name(osm_lane_dir, monkeypatch):
-    from src.osm import pbf, reader
+def test_without_the_extra_any_size_is_read_in_pure_python(osm_lane_dir, monkeypatch):
+    """R77: no file-size cap; only an explicit request for pyosmium without it is refused."""
+    from src.osm import reader
 
     monkeypatch.setattr(reader, "pyosmium_version", lambda: None)
-    monkeypatch.setattr(pbf, "SMALL_PATH_MAX_BYTES", 100)
-    with pytest.raises(reader.GeoExtraMissing, match=r"open-omniscience\[geo\]"):
-        reader.open_extract(FIXTURE)
-    # Under the cap the pure-Python path is offered instead.
-    monkeypatch.setattr(pbf, "SMALL_PATH_MAX_BYTES", 10**9)
     assert reader.open_extract(FIXTURE).name == "python"
+    with pytest.raises(reader.GeoExtraMissing, match="not installed"):
+        reader.open_extract(FIXTURE, reader="pyosmium")
+
+
+def test_the_ingest_is_the_same_in_memory_on_a_work_file_and_after_a_spill(osm_lane_dir, monkeypatch, tmp_path):
+    """A budget of None (memory unreadable) uses the file from the start; 1 byte spills at the
+    first node; a large one never spills. All three write the same rows, and no work file stays."""
+    from src.osm import reader
+
+    seen = []
+    for budget in (10**9, None, 1):
+        monkeypatch.setattr(reader, "memory_budget_bytes", lambda b=budget: b)
+        ingest.ingest_country(FIXTURE, "ZZ", reader="python", workdir=tmp_path / "work")
+        seen.append({k: (v["lat"], v["lon"], v["geom"]) for k, v in _rows().items()})
+        assert not list((tmp_path / "work").glob("osm-locations*"))
+    assert seen[0] and seen[0] == seen[1] == seen[2]
+
+
+def test_the_adaptive_store_spills_past_its_budget(tmp_path):
+    from src.osm.reader import DICT_BYTES_PER_NODE, _AdaptiveLocations
+
+    st = _AdaptiveLocations(tmp_path, 3 * DICT_BYTES_PER_NODE)
+    for i in range(3):
+        st.set(i, float(i), -float(i))
+    assert not st.spilled
+    st.set(3, 3.0, -3.0)
+    assert st.spilled and st.get(0) == (0.0, -0.0) and st.get(3) == (3.0, -3.0) and st.get(9) is None
+    st.close()
+    assert not list(tmp_path.glob("osm-locations*"))
 
 
 def test_the_change_model_exists_and_stays_EMPTY_in_0_5(osm_lane_dir):

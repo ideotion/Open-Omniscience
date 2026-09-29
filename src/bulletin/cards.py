@@ -236,6 +236,9 @@ def cards_by_type(
         # Reported, never absorbed: a document built from half the producers must say
         # so, or a short feed reads as a quiet period.
         "truncated": bool(stats.get("truncated")),
+        # The producers a bulletin never runs, BY NAME: their cards are made from a lane
+        # whose rows may not leave the machine while Q823 (ODbL) is unanswered.
+        "held_q823": sorted(stats.get("held_q823") or []),
         "per_type": int(per_type),
         "window": {
             "start": period.start.isoformat(),

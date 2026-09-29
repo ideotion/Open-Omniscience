@@ -8,11 +8,11 @@ stay pure Python; without the extra the lane says so and offers the small-countr
 module IS that path: it decodes the format with the standard library alone (``struct``,
 ``zlib``), so a core install can still ingest an extract small enough to read this way.
 
-WHY IT IS BOUNDED, AND BY WHAT. Pure Python is one to two orders of magnitude slower than
-pyosmium's C++ (FROM MEMORY; no real extract was read in the sandbox, and the operator's run
-records the real figure on the country row). A continent extract (5 to 28 GB) would take this
-decoder a day or more, so :data:`SMALL_PATH_MAX_BYTES` refuses a larger file by name
-(``src/osm/reader.py``) rather than starting a read nobody should wait for.
+IT IS NOT BOUNDED BY FILE SIZE (R77). It used to refuse a file over 256 MiB. The real limit was
+the memory the node locations take, and that now follows the machine (``src/osm/reader.py``,
+:class:`_AdaptiveLocations`). Pure Python stays one to two orders of magnitude slower than
+pyosmium's C++ (FROM MEMORY; the operator's run records the real figure on the country row),
+so a continent read this way takes a long time, and the lane says so rather than refusing.
 
 WHAT IT DECODES. The OSM PBF format as the wiki page on it describes: a sequence of
 ``BlobHeader`` + ``Blob`` records; ``OSMHeader`` blocks (the replication timestamp, which is
@@ -35,12 +35,6 @@ from collections.abc import Iterator
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
-
-#: The small-country path's ceiling. 256 MiB holds every Geofabrik country extract of a
-#: small country (Luxembourg, Malta, Cyprus, the Baltic states, most of the Caribbean and
-#: Oceania, as of 2026 from memory) and no continent. A number the operator can read in
-#: the refusal, never a silent truncation.
-SMALL_PATH_MAX_BYTES = 256 * 1024 * 1024
 
 #: The format caps a BlobHeader at 64 KiB and a Blob at 32 MiB; a larger one means a
 #: corrupt or hostile file, and allocating it would be the failure.
