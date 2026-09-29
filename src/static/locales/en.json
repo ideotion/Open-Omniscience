@@ -6307,6 +6307,8 @@
   "Fetch from Wikidata": "Fetch from Wikidata",
   "Reads the gazetteer on this machine. No request leaves it.": "Reads the gazetteer on this machine. No request leaves it.",
   "Sends one request every 10 seconds to www.wikidata.org, up to 50 items each. Refused while airplane mode is on.": "Sends one request every 10 seconds to www.wikidata.org, up to 50 items each. Refused while airplane mode is on.",
+  "Adds this exact version to your corpus as its own article.": "Adds this exact version to your corpus as its own article.",
+  "This version's text was not stored on this machine, so it cannot be added.": "This version's text was not stored on this machine, so it cannot be added.",
   "A change is a difference in the text. It says nothing about what the change means.": "A change is a difference in the text. It says nothing about what the change means.",
   "A count of what was stored. It says nothing about what the articles claim.": "A count of what was stored. It says nothing about what the articles claim.",
   "A measurement against published criteria, not a judgment of the source. Nothing here enables a source: that stays your choice.": "A measurement against published criteria, not a judgment of the source. Nothing here enables a source: that stays your choice.",

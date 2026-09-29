@@ -6307,6 +6307,8 @@
   "Fetch from Wikidata": "Wikidata থেকে আনুন",
   "Reads the gazetteer on this machine. No request leaves it.": "এই যন্ত্রের গেজেটিয়ার পড়ে। কোনো অনুরোধ বাইরে যায় না।",
   "Sends one request every 10 seconds to www.wikidata.org, up to 50 items each. Refused while airplane mode is on.": "প্রতি ১০ সেকেন্ডে www.wikidata.org-এ একটি অনুরোধ পাঠায়, প্রতিটিতে সর্বোচ্চ ৫০টি আইটেম। বিমান মোড চালু থাকলে প্রত্যাখ্যাত।",
+  "Adds this exact version to your corpus as its own article.": "ঠিক এই সংস্করণটিকে একটি আলাদা নিবন্ধ হিসেবে আপনার কর্পাসে যোগ করে।",
+  "This version's text was not stored on this machine, so it cannot be added.": "এই সংস্করণের পাঠ্য এই যন্ত্রে সংরক্ষিত হয়নি, তাই এটি যোগ করা যায় না।",
   "A change is a difference in the text. It says nothing about what the change means.": "পরিবর্তন হলো পাঠ্যের একটি পার্থক্য। পরিবর্তনটির অর্থ কী, সে বিষয়ে এটি কিছুই বলে না।",
   "A count of what was stored. It says nothing about what the articles claim.": "যা সংরক্ষিত হয়েছে তার গণনা। প্রবন্ধগুলো কী দাবি করে, সে বিষয়ে এটি কিছুই বলে না।",
   "A measurement against published criteria, not a judgment of the source. Nothing here enables a source: that stays your choice.": "প্রকাশিত মানদণ্ড অনুযায়ী একটি পরিমাপ, উৎস সম্পর্কে কোনো রায় নয়। এখানে কিছুই কোনো উৎস চালু করে না: সেই সিদ্ধান্ত আপনারই থাকে।",

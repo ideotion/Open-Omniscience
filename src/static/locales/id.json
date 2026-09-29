@@ -6307,6 +6307,8 @@
   "Fetch from Wikidata": "Ambil dari Wikidata",
   "Reads the gazetteer on this machine. No request leaves it.": "Membaca gazetir di mesin ini. Tidak ada permintaan yang keluar.",
   "Sends one request every 10 seconds to www.wikidata.org, up to 50 items each. Refused while airplane mode is on.": "Mengirim satu permintaan setiap 10 detik ke www.wikidata.org, masing-masing hingga 50 item. Ditolak selama mode pesawat aktif.",
+  "Adds this exact version to your corpus as its own article.": "Menambahkan versi yang persis ini ke korpus Anda sebagai artikel tersendiri.",
+  "This version's text was not stored on this machine, so it cannot be added.": "Teks versi ini tidak disimpan di mesin ini, jadi tidak dapat ditambahkan.",
   "A change is a difference in the text. It says nothing about what the change means.": "Perubahan adalah perbedaan dalam teks. Itu tidak mengatakan apa pun tentang arti perubahan tersebut.",
   "A count of what was stored. It says nothing about what the articles claim.": "Hitungan dari apa yang disimpan. Itu tidak mengatakan apa pun tentang apa yang diklaim artikel.",
   "A measurement against published criteria, not a judgment of the source. Nothing here enables a source: that stays your choice.": "Pengukuran berdasarkan kriteria yang dipublikasikan, bukan penilaian atas sumber. Tidak ada di sini yang mengaktifkan sumber: itu tetap pilihan Anda.",

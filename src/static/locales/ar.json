@@ -6307,6 +6307,8 @@
   "Fetch from Wikidata": "اجلب من ويكي بيانات",
   "Reads the gazetteer on this machine. No request leaves it.": "يقرأ المعجم الجغرافي على هذا الجهاز. لا يغادره أي طلب.",
   "Sends one request every 10 seconds to www.wikidata.org, up to 50 items each. Refused while airplane mode is on.": "يرسل طلبًا واحدًا كل 10 ثوانٍ إلى www.wikidata.org، حتى 50 عنصرًا في كل طلب. يُرفض ما دام وضع الطيران مُفعَّلًا.",
+  "Adds this exact version to your corpus as its own article.": "يضيف هذه النسخة بالتحديد إلى مجموعتك كمقالة مستقلة.",
+  "This version's text was not stored on this machine, so it cannot be added.": "لم يُخزَّن نص هذا الإصدار على هذا الجهاز، لذا لا يمكن إضافته.",
   "A change is a difference in the text. It says nothing about what the change means.": "التغيير فرق في النص. لا يقول شيئًا عمّا يعنيه هذا التغيير.",
   "A count of what was stored. It says nothing about what the articles claim.": "عدٌّ لما حُفظ. لا يقول شيئًا عمّا تدّعيه المقالات.",
   "A measurement against published criteria, not a judgment of the source. Nothing here enables a source: that stays your choice.": "قياس وفق معايير منشورة، لا حكم على المصدر. لا شيء هنا يفعّل مصدرًا: يبقى هذا اختيارك.",

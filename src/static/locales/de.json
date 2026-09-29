@@ -6307,6 +6307,8 @@
   "Fetch from Wikidata": "Von Wikidata abrufen",
   "Reads the gazetteer on this machine. No request leaves it.": "Liest den Gazetteer auf diesem Rechner. Keine Anfrage verlässt ihn.",
   "Sends one request every 10 seconds to www.wikidata.org, up to 50 items each. Refused while airplane mode is on.": "Sendet alle 10 Sekunden eine Anfrage an www.wikidata.org, mit bis zu 50 Einträgen je Anfrage. Wird abgelehnt, solange der Flugmodus an ist.",
+  "Adds this exact version to your corpus as its own article.": "Fügt genau diese Version Ihrem Korpus als eigenen Artikel hinzu.",
+  "This version's text was not stored on this machine, so it cannot be added.": "Der Text dieser Version wurde auf diesem Rechner nicht gespeichert, daher kann sie nicht hinzugefügt werden.",
   "A change is a difference in the text. It says nothing about what the change means.": "Eine Änderung ist ein Unterschied im Text. Sie sagt nichts darüber, was die Änderung bedeutet.",
   "A count of what was stored. It says nothing about what the articles claim.": "Eine Zählung dessen, was gespeichert wurde. Sie sagt nichts darüber, was die Artikel behaupten.",
   "A measurement against published criteria, not a judgment of the source. Nothing here enables a source: that stays your choice.": "Eine Messung anhand veröffentlichter Kriterien, kein Urteil über die Quelle. Nichts hier aktiviert eine Quelle: Das bleibt Ihre Entscheidung.",

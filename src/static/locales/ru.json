@@ -6307,6 +6307,8 @@
   "Fetch from Wikidata": "Загрузить из Викиданных",
   "Reads the gazetteer on this machine. No request leaves it.": "Читает справочник мест на этом компьютере. Ни один запрос не покидает его.",
   "Sends one request every 10 seconds to www.wikidata.org, up to 50 items each. Refused while airplane mode is on.": "Отправляет один запрос каждые 10 секунд на www.wikidata.org, до 50 элементов в каждом. Отклоняется, пока включён режим полёта.",
+  "Adds this exact version to your corpus as its own article.": "Добавляет именно эту версию в ваш корпус как отдельную статью.",
+  "This version's text was not stored on this machine, so it cannot be added.": "Текст этой версии не был сохранён на этой машине, поэтому её нельзя добавить.",
   "A change is a difference in the text. It says nothing about what the change means.": "Изменение — это разница в тексте. Оно ничего не говорит о том, что это изменение означает.",
   "A count of what was stored. It says nothing about what the articles claim.": "Подсчёт сохранённого. Он ничего не говорит о том, что утверждают статьи.",
   "A measurement against published criteria, not a judgment of the source. Nothing here enables a source: that stays your choice.": "Измерение по опубликованным критериям, а не суждение об источнике. Ничто здесь не включает источник: этот выбор остаётся за вами.",

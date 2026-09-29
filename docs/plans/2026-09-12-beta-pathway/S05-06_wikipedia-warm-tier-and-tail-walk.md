@@ -94,8 +94,9 @@ anything — the sheet's anchors were verified at `main`@`bebcef4` on 2026-09-12
   per-lane rate (Q1006), which WARM's bytes feed, and no second one was built; (3) "indexed" is `R52`: the
   texts stay in the lane with a search index of their own: the index, its hits in the command palette
   and the Search tab, and «Add to corpus» per hit are PR #1202 (`src/wiki/lane_search.py`,
-  `src/api/wiki_lane_search.py`, `openLaneVersion`, `searchLaneHits`). Where WARM runs was put on a decision card; it
-  is built at the recommended answer, a switch that is off by default.
+  `src/api/wiki_lane_search.py`, `openLaneVersion`, `searchLaneHits`); the same add per version, from either
+  store, is in row G's version reader since PR #1207 (`src/wiki/versions.py:add_version_to_corpus`). Where WARM
+  runs was put on a decision card; it is built at the recommended answer, a switch that is off by default.
 
 ### S2 — The `allpages` walker (Q701 ⛔ = c, the Q701 note)
 - **What:** per edition, `allpages` batched 50 titles per request (the unit read from the sheet's
