@@ -44,11 +44,18 @@ WIKI_LANE_DEFAULT_EDITIONS: tuple = (
     "en", "fr", "de", "es", "pt", "ru", "ar", "zh", "ja", "hi", "bn", "id",
 )
 
-#: Q707's published default budget, in whole GB, TOTAL for the lane. Duplicated from
+#: The published default budget, in whole GB, TOTAL for the lane: 150 since ``R53``
+#: (2026-09-29), which amended Q707's 20 GB («switch the 20 GB default to 150 GB, while
+#: allowing users to lower the default to 20 GB»). Duplicated from
 #: ``src.wiki.tiers.DEFAULT_TOTAL_BUDGET_GB`` for the same no-imports reason, and
 #: pinned to it by the same test -- and, since S04-08 S4, to the published table's wiki
 #: row (``configs/lane_budgets.yml``) by ``tests/test_lane_budgets.py``.
-WIKI_LANE_DEFAULT_BUDGET_GB: int = 20
+WIKI_LANE_DEFAULT_BUDGET_GB: int = 150
+
+#: The default in force before ``R53``. A settings file written then holds it as the budget
+#: whether or not anyone chose it (a save writes every field), so :func:`load_settings` reads
+#: it as "never chosen" when no ``wiki_lane_default_seen`` marker says otherwise.
+WIKI_LANE_LEGACY_DEFAULT_BUDGET_GB: int = 20
 
 #: What the wizard will accept. Mirrors ``src.wiki.tiers.BUDGET_GB_MIN/MAX``, pinned.
 WIKI_LANE_BUDGET_GB_MIN, WIKI_LANE_BUDGET_GB_MAX = 1, 2000
@@ -257,6 +264,11 @@ class SchedulerSettings:
     # ``src/wiki/tiers.py`` for the arithmetic and for why this is a STORAGE cap and
     # never a second rate authority beside the collection-speed governor (Q1012).
     wiki_lane_budget_gb: int = WIKI_LANE_DEFAULT_BUDGET_GB
+    # The published default that was in force when these settings were last written. A save
+    # writes EVERY field, so a stored budget alone cannot say whether it was chosen or merely
+    # the default of its day; this marker can (``_follow_budget_default``). Written on every
+    # save, never accepted from a caller.
+    wiki_lane_default_seen: int = WIKI_LANE_DEFAULT_BUDGET_GB
     # Whether the operator has been THROUGH the wizard, which is a different fact
     # from whether the values differ from the defaults. An operator who read the
     # three disclosures and pressed "Use the defaults" has consented; one who never
@@ -751,7 +763,38 @@ def load_settings() -> SchedulerSettings:
         retired_mode=_coerce_retired_mode(raw.get("retired_mode")),
     )
     _migrate_retired_mode(raw, settings)
+    settings.wiki_lane_budget_gb = _follow_budget_default(raw, settings)
     return settings
+
+
+def _follow_budget_default(raw: dict, settings: SchedulerSettings) -> int:
+    """The lane budget to use: the stored one, unless it is only an OLD DEFAULT nobody chose.
+
+    ``R53`` moved the published default from 20 to 150 GB. A settings file written before that
+    holds ``20`` whether or not anyone picked it, because a save writes every field, so the
+    code default alone would never reach an existing install. The follow is deliberately
+    narrow, on both counts:
+
+    * only a budget EQUAL to the default that was in force when the file was written
+      (``wiki_lane_default_seen``; a file without the marker predates it, and its default was
+      20) moves to the new one -- a number the operator set, 20 included, stays theirs, since
+      the marker is rewritten with every save;
+    * and only where the operator has NOT been through the wizard. Someone who read the
+      disclosures and kept 20 GB consented to that number, and raising the cap on their disk
+      without their word is the change this app does not make silently.
+    """
+    stored = settings.wiki_lane_budget_gb
+    if settings.wiki_lane_wizard_done:
+        return stored
+    seen = _coerce_int(
+        raw.get("wiki_lane_default_seen"),
+        WIKI_LANE_LEGACY_DEFAULT_BUDGET_GB,
+        WIKI_LANE_BUDGET_GB_MIN,
+        WIKI_LANE_BUDGET_GB_MAX,
+    )
+    if stored == seen and seen != WIKI_LANE_DEFAULT_BUDGET_GB:
+        return WIKI_LANE_DEFAULT_BUDGET_GB
+    return stored
 
 
 def _coerce_retired_mode(value) -> str:

@@ -26,8 +26,8 @@ replaces with measurements.
 
 1. **Set the lane up.** Settings → Wikipedia → *Editions and storage budget…*, or the
    first-run wizard on a fresh corpus. Leave the defaults to reproduce the reference
-   configuration: **all twelve editions, 20 GB total** (Q707's published default).
-2. **Check the disk.** 20 GB for the lane, plus room for the corpus the HOT tier feeds.
+   configuration: **all twelve editions, 150 GB total** (R53's published default, which raised Q707's 20 GB; lower it if the disk is small).
+2. **Check the disk.** Up to 150 GB for the lane at the default (the Storage tab shows the arithmetic against the free disk), plus room for the corpus the HOT tier feeds.
    The lane lives in `wiki.db` beside `corpus.db`, and it is encrypted alike.
 3. **Note the start time.** `GET /api/wiki/lane/counters` reads a 7-day window, so a
    72-hour run sits inside it with room at both ends — but the window is measured from
@@ -82,7 +82,7 @@ multiple of the first; neither is derived from the other, and each carries its m
 ## 4. What to quote back
 
 1. **rows / day**, overall and per edition — against the sheet's 250–300 k/day.
-2. **bytes / day**, and the lane file's size at the end — against the 20 GB budget.
+2. **bytes / day**, and the lane file's size at the end — against the lane's budget (150 GB by default).
 3. **The gap history** — every gap, with its reason. A `retention` gap is the one worth
    arguing about: it means the stream's retention is shorter than your outage.
 4. **Whether the budget was reached**, and what the app did when it was: text stops and

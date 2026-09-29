@@ -68,7 +68,7 @@ def _budget():
     settings = _settings()
     editions = tuple(getattr(settings, "wiki_lane_editions", ()) or ()) or ("en",)
     return budget_state(
-        total_gb=int(getattr(settings, "wiki_lane_budget_gb", 20)),
+        total_gb=int(getattr(settings, "wiki_lane_budget_gb", 150)),
         disk_bytes=lane_file_bytes("wiki"),
         editions=len(editions),
     )
