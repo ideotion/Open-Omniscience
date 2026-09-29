@@ -199,14 +199,21 @@ const viaProducer = (rep, title) =>
   ({ title: title || "backup-a", state: "done", elapsed_s: 118.6,
      plan: rep.plan || {}, ...mod._uxPlanExtras(rep) });
 
-test("a deferred re-index reaches the screen, with its real pending count", () => {
+// R68 (2026-09-29, maintainer = a): the finished summary no longer prints the backlog. It
+// was drawn once, so its figure froze at the hand-off while the Indexing row above went on
+// counting down, and two numbers for one fact read as a contradiction. What stays is the
+// SENTENCE: indexing continues and what being un-indexed costs. The I6 "last snapshot,
+// never a sum" rule now governs whether the sentence shows at all.
+test("a deferred re-index is stated, with no frozen count", () => {
   const html = render([viaProducer(restoreReport({
     deferred: true, articles_pending: 12778, pending_unreadable_reason: null,
     started: true, job: "reindex-resume",
   }))], { state: "done", elapsed_s: 118.6, items_done: 1, items_total: 1 });
 
   assert(html.includes("Indexing continues in the background"), "the deferral must be stated");
-  assert(html.includes("12\u202F778"), "with the REAL backlog, thousands-separated (by fmtNum, W18)");
+  const c0 = html.indexOf(">", html.indexOf("card-caveat")) + 1;
+  const cav = html.slice(c0, html.indexOf("</div>", c0));
+  assert(!/[0-9]/.test(cav), "no frozen backlog figure beside the live row: " + cav);
   assert(html.includes("absent from analytics"), "and with what being un-indexed actually costs");
   assert(html.includes("card-caveat"), "it is a caveat about corpus completeness, styled as one");
 });
@@ -221,37 +228,22 @@ test("an import with nothing deferred grows NO indexing caveat", () => {
   assert(!html.includes("Indexing continues"), "no fabricated incompleteness");
 });
 
-test("an unreadable backlog says so and never renders as zero pending", () => {
+test("an unreadable backlog still states the deferral and never renders a zero", () => {
   const html = render([viaProducer(restoreReport({
     deferred: true, articles_pending: null,
     pending_unreadable_reason: "database is locked", started: false,
   }))], { state: "done", elapsed_s: 90, items_done: 1, items_total: 1 });
-  assert(html.includes("could not be read"), "'could not read' must not look like 'nothing pending'");
+  assert(html.includes("Indexing continues in the background"), html);
   assert(!html.includes("0 article"), "an unreadable count is not a measured zero");
 });
 
-// I6 (2026-09-26) REVERSED what this suite used to pin. Each item's `articles_pending`
-// is the WHOLE corpus backlog when that item committed (volume_job.hand_off_reindex reads
-// reindex_backlog()), so the later snapshot already CONTAINS the earlier one; the test
-// that asserted a sum pinned the double count. The walk: four 1,200-article backups at
-// K=3 read 3,600 then 4,800, and the summary said "8,400 still to index".
-test("several backups' backlogs are the LAST snapshot, never a sum of snapshots", () => {
+test("the last snapshot decides: a measured empty last backlog grows no caveat", () => {
   const html = render([
     viaProducer(restoreReport({ deferred: true, articles_pending: 3600, started: false }), "a"),
-    viaProducer(restoreReport({ deferred: true, articles_pending: 4800, started: true }), "b"),
+    viaProducer(restoreReport({ deferred: true, articles_pending: 0, started: true }), "b"),
   ], { state: "done", elapsed_s: 400, items_done: 2, items_total: 2 });
-  assert(html.includes("4\u202F800"), "the backlog the run ended with is the last snapshot");
-  assert(!html.includes("8\u202F400"), "summing whole-corpus snapshots double-counts: " + html);
-});
-
-test("an unreadable last snapshot says so rather than repeating an older figure", () => {
-  const html = render([
-    viaProducer(restoreReport({ deferred: true, articles_pending: 3600, started: false }), "a"),
-    viaProducer(restoreReport({ deferred: true, articles_pending: null,
-                                pending_unreadable_reason: "database is locked" }), "b"),
-  ], { state: "done", elapsed_s: 400, items_done: 2, items_total: 2 });
-  assert(html.includes("could not be read"), "the current backlog was not read: " + html);
-  assert(!html.includes("3\u202F600"), "an earlier snapshot is not the current backlog");
+  assert(!html.includes("Indexing continues"), "the run ended with nothing to index: " + html);
+  assert(!html.includes("3\u202F600"), "an earlier snapshot is never printed");
 });
 
 test("I13/I12: the per-backup table lets a folder name wrap, and isolates it", () => {
@@ -274,27 +266,45 @@ const deferredReport = (fresh, pending) => ({
     : { deferred: true, articles_pending: pending, started: true, job: "reindex-resume" },
 });
 
-test("Y4: 'Articles awaiting indexing' is the server's backlog, not the plan's new articles", () => {
-  // The walk: a second 2,400-article import while the first one's re-index still owed
-  // 1,900 -- the server measured 4,300 pending, and the line said 2,400.
+test("R68: a deferred re-index prints no 'Articles awaiting indexing' line", () => {
+  // Y4 made this line the server's backlog rather than the plan's new articles; R68 drops
+  // it for a deferred re-index altogether, since the live Indexing row carries the count.
   const html = render([viaProducer(deferredReport(2400, 4300))],
                       { state: "done", elapsed_s: 7, items_done: 1, items_total: 1 });
-  assert(html.includes("Articles awaiting indexing: 4\u202F300"), html);
-  assert(!html.includes("Articles awaiting indexing: 2\u202F400"), "the plan's new count is not the backlog");
-  // ...and the caveat and the queue line are the SAME reading.
-  assert(html.includes("4\u202F300 article(s) still to index"), html);
-});
-
-test("Y4: with no item snapshot, the line takes the re-index job's own read", () => {
-  const html = render([viaProducer(deferredReport(2400))],
+  assert(!html.includes("Articles awaiting indexing"), html);
+  assert(!html.includes("4\u202F300"), html);
+  const live = render([viaProducer(deferredReport(2400))],
                       { state: "done", elapsed_s: 7, items_done: 1, items_total: 1,
                         rx: { backlog: { available: true, articles_pending: 5000 } } });
-  assert(html.includes("Articles awaiting indexing: 5\u202F000"), html);
-  assert(!html.includes("Articles awaiting indexing: 2\u202F400"), html);
-  // Nothing read at all: no figure is invented from the plan.
-  const none = render([viaProducer(deferredReport(2400))],
-                      { state: "done", elapsed_s: 7, items_done: 1, items_total: 1 });
-  assert(!none.includes("Articles awaiting indexing"), none);
+  assert(!live.includes("Articles awaiting indexing"), live);
+  assert(live.includes("Indexing continues in the background"), live);
+});
+
+test("R68: an in-line re-index's real failures are still counted", () => {
+  const html = render([{ title: "a", state: "done", elapsed_s: 5,
+    plan: { articles: { new: 10, duplicate: 0, conflict: 0 } },
+    reindexed: { failed: 3 } }], { state: "done", elapsed_s: 5, items_done: 1, items_total: 1 });
+  assert(html.includes("Articles awaiting indexing: 3"), html);
+});
+
+test("R68: the all-types row-sum is in the hover, still labelled, not on the line", () => {
+  const html = render([{ title: "a", state: "done", elapsed_s: 5,
+    plan: { articles: { new: 10, duplicate: 0, conflict: 0 },
+            keyword_mentions: { new: 400, duplicate: 0, conflict: 0 } } }],
+    { state: "done", elapsed_s: 5, items_done: 1, items_total: 1 });
+  const at = html.indexOf("database records, all types");
+  assert(at !== -1, "still labelled: " + html);
+  assert(html.slice(at - 60, at).includes('title="'), "it lives in a title (the hover): " + html.slice(at - 60, at + 40));
+  assert(html.split("database records, all types").length === 2, "once, and only in the hover: " + html);
+});
+
+test("R68: a backup stopped mid-merge is drawn as stopped, not failed", () => {
+  const html = render([{ title: "a", state: "stopped", elapsed_s: 5,
+    error: "interrupted: stop requested", plan: { articles: {} } }],
+    { state: "stopped", elapsed_s: 5, items_done: 0, items_total: 1 });
+  assert(html.includes("Import stopped"), html);
+  assert(!html.includes("finished with errors"), html);
+  assert(!html.includes("stop requested"), "the interruption text is not drawn as an error: " + html);
 });
 
 test("Y4: a measured empty backlog grows no 'still indexing' caveat", () => {

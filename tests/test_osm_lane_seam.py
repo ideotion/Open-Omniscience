@@ -1,12 +1,12 @@
-"""Q823 (ODbL) is unanswered: nothing OSM-derived leaves the machine (S05-04 §4, the seam).
+"""The OSM lane seam (S05-04 §4), after Q823 = a (2026-09-29): OSM rows are credited under the ODbL.
 
 Open Omniscience - Global Intelligence Platform for Investigative Journalism
 Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 
-Negative space, checked from the outside: the lane's tables are not corpus tables (so no corpus
-export carries them), the lane file is a backup member marked NOT exportable, the attribution
-block refuses an OSM table rather than rendering a short one, and no export, bulletin, evidence
-or custody module imports the lane at all.
+Checked from the outside: the lane's tables are not corpus tables (so no corpus export carries
+them), the lane file is a backup member marked NOT exportable (the lane row owns that line), the
+attribution block credits an OSM table with OpenStreetMap's line and the ODbL, and no export,
+bulletin, evidence or custody module imports the lane at all.
 """
 
 from __future__ import annotations
@@ -14,7 +14,6 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -27,11 +26,13 @@ def test_the_lane_tables_are_not_on_the_corpus_metadata():
         assert m.__table__.name not in Base.metadata.tables, m.__table__.name
 
 
-def test_the_attribution_block_refuses_osm_rows_rather_than_rendering_short():
-    from src.backup.attribution import PendingRulingError, attribution_lines
+def test_the_attribution_block_credits_osm_rows_with_the_odbl():
+    # Q823 = a (2026-09-29): the shared seam renders OSM's credit and the ODbL line where it
+    # used to refuse. Whether the LANE's own file leaves the machine is the test below's.
+    from src.backup.attribution import attribution_lines
 
-    with pytest.raises(PendingRulingError, match="Q823"):
-        attribution_lines({"table:osm_objects"})
+    lines = attribution_lines({"table:osm_objects"})
+    assert [ln.key for ln in lines] == ["openstreetmap"] and "ODbL" in lines[0].text
 
 
 def test_the_lane_file_is_a_backup_member_that_is_NOT_exportable():

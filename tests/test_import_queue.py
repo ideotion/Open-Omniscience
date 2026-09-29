@@ -148,6 +148,41 @@ def test_stop_cancels_the_running_item_and_every_queued_one(queue, monkeypatch):
     assert [i["state"] for i in st["items"][1:]] == ["cancelled", "cancelled"]
 
 
+def test_a_stop_that_interrupts_a_merge_reads_stopped_not_failed(queue, monkeypatch):
+    """R68 (2026-09-29): Stop pressed mid-merge unwinds the item through an exception. That is
+    the operator's own stop, not the backup failing, so the item reads "stopped" (its text is
+    kept for diagnostics) and the run is "stopped", never "error"."""
+    gate = threading.Event()
+
+    def _interrupted(item, *, hold=False):
+        gate.wait(timeout=5)
+        raise RuntimeError("merge interrupted: stop requested")
+
+    monkeypatch.setattr(queue, "_run_corpus", _interrupted)
+    queue.start([{"kind": "corpus", "path": "/b/0"}, {"kind": "corpus", "path": "/b/1"}])
+    for _ in range(200):
+        if queue.status()["cursor"] == 0:
+            break
+        time.sleep(0.01)
+    queue.stop()
+    gate.set()
+    st = _drain(queue)
+    assert st["state"] == "stopped"
+    first = st["items"][0]
+    assert first["state"] == "stopped" and "stop requested" in first["error"]
+    assert st["items"][1]["state"] == "cancelled"
+
+
+def test_an_exception_without_a_stop_is_still_a_failure(queue, monkeypatch):
+    def _boom(item, *, hold=False):
+        raise RuntimeError("disk full")
+
+    monkeypatch.setattr(queue, "_run_corpus", _boom)
+    queue.start([{"kind": "corpus", "path": "/b/0"}])
+    st = _drain(queue)
+    assert st["items"][0]["state"] == "error" and st["state"] == "error"
+
+
 def test_stop_reaches_the_sub_job_through_its_own_cancel(queue, monkeypatch):
     """The queue must not merely stop LOOPING — the item in flight has to be told."""
     seen = {"n": 0}

@@ -21,7 +21,6 @@ import pytest
 
 from src.analytics import claim_bundle as cb
 from src.analytics import claim_workspace as cw
-from src.backup.attribution import PendingRulingError
 from src.custody.signing import HybridSigner, PublicIdentity, canonical_bytes, verify
 from src.database.models import ArticleMentionedPlace, Keyword, KeywordMention
 from tests.test_claim_workspace import CLAIM, make_corpus, serve
@@ -215,20 +214,26 @@ def test_a_bundle_re_signed_by_another_key_fails_when_the_signer_is_pinned(corpu
     assert not pinned["verified"] and pinned["key_checked"] == "pinned"
 
 
-def test_an_osm_derived_row_is_refused_from_the_bundle(corpus, data_dir, no_network, signer):
-    """The negative-space fixture of the brief's acceptance: Q823 is unanswered, so a trail
-    carrying a row pinned by an OSM-derived table writes NOTHING."""
+def test_an_osm_derived_row_rides_with_the_osm_credit_and_the_odbl(corpus, data_dir, no_network, signer):
+    """Q823 = a (2026-09-29): a trail carrying a row pinned by an OSM-derived table is
+    written, and its ATTRIBUTION.md credits OpenStreetMap under the ODbL. Before the ruling
+    this was the brief's negative-space fixture and wrote nothing. The same trail pinned by
+    the place extractor carries no OSM line."""
     TS, ids = corpus
     _drought(TS, [ids["wire"]])
     ws = _ws(TS)
     ws["corroboration"]["offers"][0]["coords_from"] = "osm_places"
-    with TS() as s, pytest.raises(PendingRulingError, match="Q823"):
-        cb.build_trail_bundle(s, ws, signer=signer)
-    # And the same trail with the row pinned by the place extractor is written.
+    with TS() as s:
+        data, report = cb.build_trail_bundle(s, ws, signer=signer)
+    assert cb.verify_trail_bundle(data)["verified"]
+    with zipfile.ZipFile(io.BytesIO(data)) as zf:
+        att = zf.read("ATTRIBUTION.md").decode()
+    assert "© OpenStreetMap contributors" in att and "ODbL" in att
     ws["corroboration"]["offers"][0]["coords_from"] = "article_mentioned_places"
     with TS() as s:
         data, _ = cb.build_trail_bundle(s, ws, signer=signer)
-    assert cb.verify_trail_bundle(data)["verified"]
+    with zipfile.ZipFile(io.BytesIO(data)) as zf:
+        assert "OpenStreetMap" not in zf.read("ATTRIBUTION.md").decode()
 
 
 def test_the_open_meteo_line_rides_only_with_a_carried_slice(corpus, data_dir, no_network, signer):
@@ -330,7 +335,9 @@ def test_the_routes_export_verify_and_refuse(client, data_dir, no_network, monke
 
     monkeypatch.setattr(cw, "corroboration_offers", osm)
     r = c.post("/api/claims/trail-bundle", json={"claim": CLAIM})
-    assert r.status_code == 409 and "Q823" in r.json()["detail"]
+    # Q823 = a: written, crediting OpenStreetMap (it answered 409 before the ruling).
+    assert r.status_code == 200, r.text
+    assert any(ln["key"] == "openstreetmap" for ln in r.json()["attribution"]), r.json().get("attribution")
 
 
 def test_the_custody_identity_signs_by_default(corpus, data_dir, no_network):

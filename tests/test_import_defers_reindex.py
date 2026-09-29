@@ -309,8 +309,8 @@ def test_the_deferral_is_VISIBLE_in_the_import_summary():
 
     Without it, deferring would trade a visible three-hour wait for an INVISIBLE
     incomplete corpus -- the report would be honest and nobody would read it. The
-    summary states it, with the real count, and says an unreadable backlog is
-    unreadable rather than showing 0.
+    summary states it; the count lives on the live Indexing row (R68, 2026-09-29), since a
+    figure drawn once froze beside a row still counting down.
     """
 
     app = app_js()
@@ -319,10 +319,9 @@ def test_the_deferral_is_VISIBLE_in_the_import_summary():
     assert "reindex_deferred" in fn, "the summary must read the report's own deferral block"
     assert "indexingLine" in fn and "+ indexingLine +" in fn, "…and actually render it"
     assert "card-caveat" in fn, "it is a caveat about corpus completeness, styled as one"
-    # The unreadable branch must exist and must NOT fall through to a zero.
-    assert "could not be read" in fn, (
-        "'could not read the backlog' and 'nothing pending' must not look alike"
-    )
+    # An unreadable backlog still states the deferral (the caveat carries no count since
+    # R68, so it cannot fall through to a zero), and a measured zero says nothing.
+    assert "_bkUnreadable || _bk.articles_pending > 0" in fn
 
 
 def test_both_visible_strings_ship_in_every_locale():
@@ -332,9 +331,9 @@ def test_both_visible_strings_ship_in_every_locale():
     from pathlib import Path
 
     needed = [
-        "Indexing continues in the background. The number still to index could not be read.",
-        "Indexing continues in the background: {n} article(s) still to index. Until it "
-        "finishes they carry no keywords and are absent from analytics.",
+        # One sentence, no count (R68, 2026-09-29): the live Indexing row carries the figure.
+        "Indexing continues in the background. Until it finishes, the articles it has not "
+        "reached carry no keywords and are absent from analytics.",
     ]
     files = sorted(Path("src/static/locales").glob("*.json"))
     assert len(files) == 12, f"expected 12 locales, found {len(files)}"
