@@ -217,20 +217,18 @@ def test_the_picker_routes(settings_file, no_network):
 
 
 def _fn(src: str, name: str) -> str:
-    start = src.index(f"function {name}(")
-    nxt = src.find("\n    function ", start + 10)
-    nxt_async = src.find("\n    async function ", start + 10)
-    ends = [x for x in (nxt, nxt_async) if x > 0]
-    return src[start : min(ends) if ends else len(src)]
+    from tests.js_source_helper import function_source
+
+    return function_source(src, name)
 
 
 def test_the_picker_lives_in_settings_openstreetmap_above_the_regions():
     html = (STATIC / "index.html").read_text("utf-8")
-    view = html[html.index('id="set-offlinemap"') :]
+    _before, _sep, view = html.partition('id="set-offlinemap"')
     assert view.index('id="osm-lane-picker"') < view.index('id="osm-region-list"')
     for el in ("osm-pick-state", "osm-pick-suggest", "osm-pick-add", "osm-pick-cadence"):
         assert f'id="{el}"' in view
-    assert "ODbL" in view[: view.index('id="osm-region-list"')]
+    assert "ODbL" in view.partition('id="osm-region-list"')[0]
 
 
 def test_the_download_button_goes_through_the_one_online_consent():
