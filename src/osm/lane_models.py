@@ -10,7 +10,7 @@ ONLY through ``src.versioned.store.create_schema`` (``_lane_specific_models("osm
 opens the file through the ONE keyed factory. A lane file gets its own tables and no other
 lane's.
 
-THREE TABLES.
+FIVE TABLES (the last two S05-04 S4's).
 
 * ``osm_objects`` -- one row per kept object of an ingested country: identity (type + id),
   the source's ``version`` and ``timestamp``, what it is (``kind``, the primary tag), where it
@@ -24,6 +24,13 @@ THREE TABLES.
 * ``osm_tag_changes`` -- Q813 = a's MODEL: key added / removed / modified, with the diff's
   timestamp and the object's ``version``. Defined here and EMPTY in 0.5; the daily apply that
   fills it is 0.6 (S06-01).
+* ``osm_history_changes`` -- the PRIOR (Q814 = b): the same key-level shape, read out of the
+  full-history planet for one country, plus the object-level events (``created``, ``deleted``,
+  ``restored``) whose ``key`` is NULL. A table of its own rather than rows in
+  ``osm_tag_changes``, because S06-01 states the planet's prior SEPARATELY from the window 0.6
+  tracks, and one table read two ways is how the two come to be blended.
+* ``osm_history_cuts`` -- one row per country cut from the history file, with what was
+  measured: the file, its size and vintage, the reader, the seconds, the counts, the gap.
 
 WHY ``osm_objects`` IS BUILT FROM A ``Table`` AND NOT CLASS ATTRIBUTES. Its curated columns are
 generated from ``tags.SCALAR_KEYS`` -- one list, read by the splitter, the joiner and the
@@ -161,7 +168,71 @@ class OsmTagChange(LaneBase):
     recorded_at: Mapped[datetime] = mapped_column(LaneUTCDateTime(), nullable=False, default=_utcnow)
 
 
-OSM_LANE_MODELS: tuple[type[LaneBase], ...] = (OsmObject, OsmCountry, OsmTagChange)
+#: ``osm_history_changes.change``: the key-level three, then the object-level three.
+HISTORY_CHANGES = ("added", "removed", "modified", "created", "deleted", "restored")
+
+
+class OsmHistoryChange(LaneBase):
+    """One change in the full-history planet's past for an object of a cut country (Q814 = b).
+
+    A key-level row (``key`` set) is Q813's shape; an object-level row (``key`` NULL) says the
+    object was created, deleted or restored at that version. ``version_timestamp`` is the
+    VERSION's own time in the file, never the time the cut ran.
+    """
+
+    __tablename__ = "osm_history_changes"
+    __table_args__ = (
+        Index("ix_osm_history_country_key", "country_alpha3", "key"),
+        Index("ix_osm_history_object", "osm_type", "osm_id"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    country_alpha3: Mapped[str] = mapped_column(String(3), nullable=False)
+    osm_type: Mapped[str] = mapped_column(String(1), nullable=False)
+    osm_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    object_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    version_timestamp: Mapped[datetime | None] = mapped_column(LaneUTCDateTime(), nullable=True)
+    #: One of :data:`HISTORY_CHANGES`.
+    change: Mapped[str] = mapped_column(String(8), nullable=False)
+    #: NULL on an object-level row.
+    key: Mapped[str | None] = mapped_column(Text, nullable=True)
+    old_value: Mapped[str | None] = mapped_column(Text, nullable=True)
+    new_value: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class OsmHistoryCut(LaneBase):
+    """One country cut from the full-history planet, and the measurements of that cut."""
+
+    __tablename__ = "osm_history_cuts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    alpha3: Mapped[str] = mapped_column(String(3), nullable=False, unique=True)
+    #: ``ingesting`` | ``complete`` | ``failed``, as ``osm_countries``.
+    status: Mapped[str] = mapped_column(String(12), nullable=False, default="ingesting")
+    #: Basename only, as ``osm_countries.extract_name``.
+    history_name: Mapped[str | None] = mapped_column(Text, nullable=True)
+    history_bytes: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    #: The history file's replication timestamp: how recent its last version is.
+    history_vintage: Mapped[datetime | None] = mapped_column(LaneUTCDateTime(), nullable=True)
+    reader: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    started_at: Mapped[datetime] = mapped_column(LaneUTCDateTime(), nullable=False, default=_utcnow)
+    finished_at: Mapped[datetime | None] = mapped_column(LaneUTCDateTime(), nullable=True)
+    #: Wall-clock seconds of the whole history cut: the row's measurement (S05-04 S4).
+    ingest_seconds: Mapped[float | None] = mapped_column(Float, nullable=True)
+    #: Objects, versions and rows per change, plus each pass's own counts. JSON.
+    counts_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    #: The oldest and newest version timestamp read, ISO. JSON.
+    span_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+OSM_LANE_MODELS: tuple[type[LaneBase], ...] = (
+    OsmObject,
+    OsmCountry,
+    OsmTagChange,
+    OsmHistoryChange,
+    OsmHistoryCut,
+)
 
 
 def table_width() -> int:

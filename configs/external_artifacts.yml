@@ -329,6 +329,21 @@ artifacts:
     freshness: {max_age_months: 12}
     last_verified: "2026-06-16"
 
+  - id: osm-history-size-estimate
+    title: OSM full-history planet size estimate (the history download's row)
+    kind: dated-data
+    description: >-
+      The rounded, FROM-MEMORY size of history-latest.osm.pbf that the Settings history row
+      shows before the operator reads the mirror's exact size (Q814 = b). Labelled an estimate;
+      the exact size is read before the download starts.
+    upstream: https://planet.openstreetmap.org/pbf/full-history/
+    check_upstream: "read the listed size of history-latest.osm.pbf"
+    license: ODbL (sizes are facts)
+    pin: {file: src/geo/osm_regions.py, const: OSM_HISTORY_SIZE_AS_OF}
+    refresh: "re-read the full-history file's size; update HISTORY_REGION + OSM_HISTORY_SIZE_AS_OF"
+    freshness: {max_age_months: 12}
+    last_verified: "2026-09-29 (from memory, NOT measured -- the operator's download measures it)"
+
   - id: osm-daily-diff-estimate
     title: OSM daily change-file size estimate (the country picker's cost column)
     kind: dated-data
