@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 import math
 import re
+import subprocess
 from datetime import date
 from pathlib import Path
 
@@ -292,3 +293,54 @@ def test_new_map_strings_ship_in_all_twelve_locales():
         for k in keys:
             assert d.get(k), (loc.name, k)
             assert "{date}" in d[k] if "{date}" in k else True
+
+
+# ------------------------------------------- the ranked table and region choropleth (S3, Q816)
+
+
+def test_ranked_table_and_region_choropleth_node_suite():
+    """The table is never capped and an unmeasured region is a gap: run as real code in node."""
+    proc = subprocess.run(
+        ["node", str(_ROOT / "tests" / "oomap_ranked_table_node_test.js")],
+        capture_output=True, text=True, check=False,
+    )
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert "all assertions passed" in proc.stdout
+
+
+def test_every_choropleth_renders_the_ranked_table_beside_it():
+    body = function_body(_MAP_JS, "ooMap")
+    assert "const rankHtml = _ooRankedTable(rankRows, rankGap, opts);" in body
+    assert "${rankHtml}" in body
+    # Rows come from the caller, the regions or the countries -- never a sliced list.
+    table = function_source(_MAP_JS, "_ooRankedTable")
+    assert ".slice(0," not in table and "slice(0, " not in table
+    # The World map's continent view lists each continent once.
+    world = function_body(_MAP_JS, "_renderOoMapDim")
+    assert "tableRows" in world and "contAgg[c].value" in world
+
+
+def test_region_mode_scales_by_the_regions_and_leaves_countries_unvalued():
+    body = function_body(_MAP_JS, "ooMap")
+    assert "Object.values(regionVals || values)" in body
+    assert "v = regionVals ? undefined : values[code]" in body
+    assert "regionVals, fillFor, vlabel)" in body
+    # The Regions toggle is not offered where the regions ARE the data.
+    assert "hasAdmin1 && !regionVals ?" in body
+    assert '"This measure is by region, but the region boundaries are not built on this install yet: ' in body
+
+
+def test_s3_strings_ship_in_all_twelve_locales():
+    keys = ["1 area with no data: hatched on the map, never counted as zero.",
+            "{n} areas with no data: hatched on the map, never counted as zero.",
+            "Ranked table · 1 area with data", "Ranked table · {n} areas with data",
+            "The full data behind the map: every area with a value, ranked, none left out. "
+            "The colours are a picture of this table.",
+            "This measure is by region, but the region boundaries are not built on this install yet: "
+            "the table below holds every value.",
+            "Rank", "Area", "Value", "no data"]
+    for loc in sorted((_STATIC / "locales").glob("*.json")):
+        d = json.loads(loc.read_text(encoding="utf-8"))
+        for k in keys:
+            assert d.get(k), (loc.name, k)
+            assert ("{n}" in d[k]) == ("{n}" in k), (loc.name, k)

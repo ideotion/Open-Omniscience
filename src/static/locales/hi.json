@@ -6538,5 +6538,11 @@
   "No continent extract is known for this code.": "इस कोड के लिए कोई महाद्वीप एक्सट्रैक्ट ज्ञात नहीं है।",
   "Countries whose laws you watch in World law.": "वे देश जिनके क़ानून आप विश्व क़ानून में देखते हैं।",
   "{n} watched legal documents": "{n} देखे जा रहे क़ानूनी दस्तावेज़",
-  "The countries whose laws you watch could not be read.": "जिन देशों के क़ानून आप देखते हैं, उन्हें पढ़ा नहीं जा सका।"
+  "The countries whose laws you watch could not be read.": "जिन देशों के क़ानून आप देखते हैं, उन्हें पढ़ा नहीं जा सका।",
+  "1 area with no data: hatched on the map, never counted as zero.": "बिना डेटा वाला 1 क्षेत्र: नक्शे पर धारीदार, कभी शून्य नहीं गिना जाता।",
+  "{n} areas with no data: hatched on the map, never counted as zero.": "बिना डेटा वाले {n} क्षेत्र: नक्शे पर धारीदार, कभी शून्य नहीं गिने जाते।",
+  "Ranked table · 1 area with data": "क्रमबद्ध तालिका · डेटा वाला 1 क्षेत्र",
+  "Ranked table · {n} areas with data": "क्रमबद्ध तालिका · डेटा वाले {n} क्षेत्र",
+  "The full data behind the map: every area with a value, ranked, none left out. The colours are a picture of this table.": "नक्शे के पीछे का पूरा डेटा: मान वाला हर क्षेत्र, क्रम में, कोई छूटा नहीं। रंग इसी तालिका की तस्वीर हैं।",
+  "This measure is by region, but the region boundaries are not built on this install yet: the table below holds every value.": "यह माप क्षेत्र-वार है, लेकिन इस इंस्टॉल पर क्षेत्रों की सीमाएँ अभी बनी नहीं हैं: नीचे की तालिका में हर मान है।"
 }

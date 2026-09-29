@@ -6538,5 +6538,11 @@
   "No continent extract is known for this code.": "Für diesen Code ist kein Kontinentauszug bekannt.",
   "Countries whose laws you watch in World law.": "Länder, deren Gesetze Sie im Weltrecht beobachten.",
   "{n} watched legal documents": "{n} beobachtete Rechtsdokumente",
-  "The countries whose laws you watch could not be read.": "Die Länder, deren Gesetze Sie beobachten, konnten nicht gelesen werden."
+  "The countries whose laws you watch could not be read.": "Die Länder, deren Gesetze Sie beobachten, konnten nicht gelesen werden.",
+  "1 area with no data: hatched on the map, never counted as zero.": "1 Gebiet ohne Daten: auf der Karte schraffiert, nie als null gezählt.",
+  "{n} areas with no data: hatched on the map, never counted as zero.": "{n} Gebiete ohne Daten: auf der Karte schraffiert, nie als null gezählt.",
+  "Ranked table · 1 area with data": "Rangtabelle · 1 Gebiet mit Daten",
+  "Ranked table · {n} areas with data": "Rangtabelle · {n} Gebiete mit Daten",
+  "The full data behind the map: every area with a value, ranked, none left out. The colours are a picture of this table.": "Die vollständigen Daten hinter der Karte: jedes Gebiet mit einem Wert, nach Rang, keines ausgelassen. Die Farben sind ein Bild dieser Tabelle.",
+  "This measure is by region, but the region boundaries are not built on this install yet: the table below holds every value.": "Dieses Maß gilt je Region, aber die Regionsgrenzen sind auf dieser Installation noch nicht erstellt: Die Tabelle unten enthält jeden Wert."
 }
