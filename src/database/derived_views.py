@@ -31,7 +31,7 @@ column drop or rename (row B's country-code migration touches this very table) f
 a view names the column. Listing the columns from the model keeps the view and the table in
 step, and :func:`ensure_derived_views` re-creates it when they part. Because SQLite refuses a
 DROP COLUMN, a RENAME COLUMN and a table re-create while ANY view names the column,
-``migrations/env.py`` calls :func:`drop_derived_views` before every migration and downgrade
+``migrations/env.py`` calls :func:`drop_derived_views` whenever a migration or downgrade is really about to run (never for a no-op upgrade of a database already at head, which must leave the file untouched)
 (so a migration never has to remember) and the next ``init_db`` puts the view back -- which
 is also what covers the staged-copy upgrade of a backup artifact that carries the view.
 """
