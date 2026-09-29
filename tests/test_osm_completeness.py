@@ -78,7 +78,8 @@ def test_the_api_reads_the_lane_and_refuses_a_bad_code(osm_lane_dir):
     lane = c.get("/api/osm/lane").json()
     assert lane["countries"][0]["alpha3"] == "ZZZ"
     assert lane["lane_bytes"] and lane["lane_bytes"] > 0
-    assert "Q823" in lane["exports"]
+    assert "Q823" in lane["exports"] and "held" not in lane["exports"]
+    assert "OpenStreetMap contributors" in lane["credit"] and "ODbL" in lane["credit"]
     r = c.get("/api/osm/countries/ZZ/completeness")
     assert r.status_code == 200 and r.json()["n"] == 4
     assert c.get("/api/osm/countries/XQ/completeness").status_code == 400

@@ -3479,8 +3479,10 @@ def osm_tag_completeness(session) -> list[Card]:
     """Analytic 1 as a Home card, one per country the OSM lane holds complete (Q817: «the
     aggregates surface as cards»). The four keys side by side, never blended into one figure.
 
-    LANE-ONLY (``registry.LANE_ONLY_PRODUCERS``): Q823 (ODbL) is unanswered, so this card is
-    made for Home and for no bulletin, lead report or card audit -- ``run_all_bounded`` skips
+    LANE-ONLY (``registry.LANE_ONLY_PRODUCERS``): Q823 = a (2026-09-29) lets OSM data leave
+    the machine with OSM's credit, but a bulletin card carries no ``table:osm_*`` signal for
+    the credit to key on, so this card stays made for Home and for no bulletin, lead report or
+    card audit until the bulletin carrier adds one (row K's seam) -- ``run_all_bounded`` skips
     it unless its caller asks for the lane's cards, and only Home's refresh does.
     """
     from src.osm import completeness

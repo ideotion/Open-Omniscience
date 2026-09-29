@@ -6,8 +6,10 @@ Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 EVERY ROUTE HERE READS A LOCAL FILE AND MAKES NO REQUEST. The extract is downloaded by
 ``/api/geo/downloads`` under the one online consent; the lane reads what is already on disk.
 
-Q823 (ODbL) is unanswered, so nothing here returns a file, an export or a bundle: the answers
-are JSON read by this machine's own UI over loopback, which is the machine.
+Nothing here returns a file, an export or a bundle: the answers are JSON read by this machine's
+own UI over loopback, which is the machine. Q823 = a (2026-09-29) lets OSM data leave the machine
+with OSM's credit and the ODbL line; the carriers (backup, bulletin, claim bundle) add that line
+through ``src/backup/attribution.py``, which row K owns, so this module states it and holds nothing.
 """
 
 from __future__ import annotations
@@ -46,7 +48,9 @@ def lane_status() -> dict:
         "lane_bytes": lane_file_bytes("osm"),
         "countries": completeness.countries(),
         "kept": NOT_KEPT,
-        "exports": "held: Q823 (ODbL) is unanswered, so no OSM-derived row leaves this machine",
+        # Q823 = a: OSM-derived rows may leave the machine, credited (the carriers add the line).
+        "exports": "allowed with OpenStreetMap's credit and the ODbL 1.0 line (Q823)",
+        "credit": "© OpenStreetMap contributors (https://www.openstreetmap.org/copyright), ODbL 1.0",
     }
 
 
