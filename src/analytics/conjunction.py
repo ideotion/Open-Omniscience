@@ -94,7 +94,7 @@ def lens_scope(session, *, channel: str | None = None, place_id: str | None = No
         for sid, dom, st in session.query(Source.id, Source.domain, Source.source_type).all():
             (inside if provenance_of(dom, st) == channel else outside).append(int(sid))
         use_outside = len(outside) < len(inside)
-        scope = {
+        scope: dict[str, Any] = {
             "kind": "channel", "channel": channel, "place_id": None, "label": channel,
             "article_ids": None, "bounded": False,
             "source_ids": None if use_outside else inside,
