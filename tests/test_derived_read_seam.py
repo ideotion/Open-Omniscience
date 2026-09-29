@@ -319,3 +319,56 @@ def test_the_raw_ceiling_is_not_left_above_the_real_count():
     actual = _actual_raw()
     slack = {f: (c, actual.get(f, 0)) for f, c in _RAW_CEILING.items() if actual.get(f, 0) < c}
     assert not slack, f"lower the raw ceiling to the real count (ceiling, actual): {slack}"
+
+
+# ------------------------------------------------- migrations, ordering, a missing view
+def _alembic(args, data_dir):
+    import os
+    import subprocess
+    import sys
+
+    return subprocess.run(
+        [sys.executable, "-m", "alembic", *args],
+        cwd=_SRC.parent, env={**os.environ, "OO_DATA_DIR": str(data_dir)},
+        capture_output=True, text=True,
+    )
+
+
+def test_a_migration_can_drop_a_mentions_column_while_the_view_exists(tmp_path):
+    """SQLite refuses DROP COLUMN (and a table re-create) while a view names the column. Two
+    existing downgrades drop keyword_mentions columns and a future one (row B's country-code
+    migration) will alter one, so env.py drops the view before ANY migration runs and the
+    next init_db re-creates it. Found by the Opus review of PR #1232."""
+    db = tmp_path / "open_omniscience.db"
+    engine = create_engine(f"sqlite:///{db}", future=True)
+    Base.metadata.create_all(engine)  # has the view
+    with engine.connect() as c:
+        assert c.execute(text("SELECT count(*) FROM sqlite_master WHERE name=:v"),
+                         {"v": MENTIONS_VIEW}).scalar() == 1
+    engine.dispose()
+    assert _alembic(["stamp", "head"], tmp_path).returncode == 0
+    res = _alembic(["downgrade", "d6e7f8a9b0c1-1"], tmp_path)  # drops keyword_mentions.source_id
+    assert res.returncode == 0, res.stdout + res.stderr
+    engine = create_engine(f"sqlite:///{db}", future=True)
+    assert ensure_derived_views(engine) == "created"  # the next boot puts it back
+    engine.dispose()
+
+
+def test_init_db_ensures_the_view_after_the_column_self_heals():
+    """A view naming a column the table does not have yet blocks every ALTER..RENAME until it
+    is repaired, so the ensure runs AFTER ensure_keyword_mention_source_column."""
+    src = (_SRC / "database" / "session.py").read_text(encoding="utf-8")
+    heal = src.index("ensure_keyword_mention_source_column(engine)")
+    seam = src.index("ensure_derived_views(engine)")
+    assert heal < seam
+
+
+def test_a_reader_recreates_a_missing_view_instead_of_failing(db):
+    from src.analytics.store import prune_orphan_keywords
+
+    db.execute(text(f"DROP VIEW {MENTIONS_VIEW}"))
+    db.commit()
+    out = prune_orphan_keywords(db, budget_s=0)
+    assert out["complete"] is True
+    assert db.execute(text("SELECT 1 FROM sqlite_master WHERE name=:v"),
+                      {"v": MENTIONS_VIEW}).fetchone()

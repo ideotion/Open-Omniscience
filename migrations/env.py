@@ -16,6 +16,7 @@ from alembic import context
 
 # Live models -> autogenerate target. Importing models populates Base.metadata.
 from src.database import models  # noqa: F401  (needed so all tables register)
+from src.database.derived_views import drop_derived_views
 from src.database.models import Base
 from src.database.session import DATABASE_URL, engine
 
@@ -91,6 +92,7 @@ def run_migrations_online() -> None:
             include_object=_include_object,
             compare_type=True,
         )
+        drop_derived_views(injected)
         with context.begin_transaction():
             context.run_migrations()
         return
@@ -102,6 +104,7 @@ def run_migrations_online() -> None:
             include_object=_include_object,
             compare_type=True,
         )
+        drop_derived_views(connection)
         with context.begin_transaction():
             context.run_migrations()
 

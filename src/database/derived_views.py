@@ -29,9 +29,11 @@ WHY THE VIEW LISTS ITS COLUMNS. ``SELECT *`` in a view is expanded when the view
 so it would silently hold the old column set after a migration adds one -- and a later
 column drop or rename (row B's country-code migration touches this very table) fails while
 a view names the column. Listing the columns from the model keeps the view and the table in
-step, and :func:`ensure_derived_views` re-creates it when they part. A migration that
-DROPS or RENAMES a ``keyword_mentions`` column must drop the view first; the next boot
-re-creates it.
+step, and :func:`ensure_derived_views` re-creates it when they part. Because SQLite refuses a
+DROP COLUMN, a RENAME COLUMN and a table re-create while ANY view names the column,
+``migrations/env.py`` calls :func:`drop_derived_views` before every migration and downgrade
+(so a migration never has to remember) and the next ``init_db`` puts the view back -- which
+is also what covers the staged-copy upgrade of a backup artifact that carries the view.
 """
 
 from __future__ import annotations
@@ -41,7 +43,7 @@ from datetime import date, datetime
 
 from sqlalchemy import DDL, Column, Table, event, text
 from sqlalchemy.engine import Connection, Engine
-from sqlalchemy.orm import DeclarativeBase, Mapped
+from sqlalchemy.orm import DeclarativeBase, Mapped, Session
 
 from src.database.models import KeywordMention
 
@@ -94,6 +96,35 @@ def ensure_derived_views(bind: Engine | Connection) -> str:
     except Exception:  # noqa: BLE001 - a read seam must never stop the app booting
         _LOG.warning("could not ensure the derived-row views", exc_info=True)
         return "skipped"
+
+
+def drop_derived_views(conn: Connection) -> None:
+    """Drop the view before a migration runs. ``env.py`` calls it, so EVERY migration and
+    downgrade -- current and future -- can DROP or RENAME a ``keyword_mentions`` column
+    (SQLite refuses both while a view names it, and refuses a table-recreate too). The next
+    ``init_db`` re-creates it from the model. A no-op off SQLite or when absent."""
+    if conn.dialect.name == "sqlite":
+        conn.exec_driver_sql(f"DROP VIEW IF EXISTS {MENTIONS_VIEW}")
+
+
+def require_mentions_view(session: Session) -> None:
+    """Make sure the view exists before a reader uses it -- for the case a boot-time
+    ``ensure_derived_views`` failed (say a locked database on the unlock path) and swallowed
+    the error: a missing view would otherwise be a 500 until the next restart. One
+    ``sqlite_master`` read when present; creates it under the write gate when not."""
+    if session.get_bind().dialect.name != "sqlite":
+        return
+    present = session.execute(
+        text("SELECT 1 FROM sqlite_master WHERE type='view' AND name=:v"), {"v": MENTIONS_VIEW}
+    ).fetchone()
+    if present:
+        return
+    from src.database.writer import write_lock
+
+    with write_lock():
+        if ensure_derived_views(session.connection()) == "skipped":
+            raise RuntimeError(f"{MENTIONS_VIEW} could not be created")
+        session.commit()
 
 
 class _NullCtx:

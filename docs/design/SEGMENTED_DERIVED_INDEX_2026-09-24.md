@@ -180,8 +180,16 @@ is a later step for the atomicity reason in §3.1.
    - **It LISTS its columns; `SELECT *` would rot.** A view's `*` is expanded at creation, so it
      silently keeps the old column set after a migration adds one, and a column DROP or RENAME
      fails while a view names the column. **Row B's country-code migration (`S05-02`) touches
-     this very table**: it must `DROP VIEW keyword_mentions_all` first; the next boot re-creates
-     it from the model (`ensure_derived_views`, which also repairs a stale one).
+     this very table**, and two existing downgrades already drop `keyword_mentions` columns: SQLite
+     refuses a DROP COLUMN, a RENAME COLUMN and a table re-create while a view names the column.
+     So `migrations/env.py` drops the view before EVERY migration and downgrade, and the next
+     boot re-creates it from the model (`ensure_derived_views`, which also repairs a stale one),
+     which also covers the staged-copy upgrade of a backup artifact that carries the view. No
+     migration has to remember. (Found by the Opus review of PR #1232.)
+   - **The ensure runs after the column self-heals**, because a view naming a column the table does
+     not have yet blocks every `ALTER … RENAME` until repaired; and a reader that meets a missing
+     view (a boot-time ensure that failed on a locked database) recreates it under the write gate
+     (`require_mentions_view`) rather than 500.
    - **No migration.** The view is created by `init_db` (every install, alembic or not) and by an
      `after_create` listener (every `create_all` database), so it adds no migration head.
    - **A restore swaps the whole file.** A backup made before the view existed has none; the

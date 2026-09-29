@@ -29,7 +29,7 @@ from sqlalchemy.orm import Session
 from src.analytics.baseline import baseline_tags
 from src.analytics.extract import ExtractedTerm
 from src.analytics.managed import normalize_lang
-from src.database.derived_views import KeywordMentionRead
+from src.database.derived_views import KeywordMentionRead, require_mentions_view
 from src.database.models import Article, Keyword, KeywordMention, KeywordTag, Source
 
 _LOG = logging.getLogger(__name__)
@@ -1498,6 +1498,7 @@ def prune_orphan_keywords(session: Session, *, chunk: int = 500, budget_s: float
     scan_chunk = _PRUNE_SCAN_CHUNK  # ids per slice (one mention index range scan each)
     t0 = _time.monotonic()
 
+    require_mentions_view(session)  # the orphan test below reads the view (R96)
     after_id = _cursor_get(session, PRUNE_CURSOR_KEY)
     resumed_from = after_id
     # Protect curated structure (overrides / super-group members reference the term).
