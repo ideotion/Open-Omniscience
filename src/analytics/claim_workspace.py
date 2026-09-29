@@ -16,7 +16,11 @@ app walks a visible pipeline:
   ⑤ what is missing -- the countries, languages and source types the corpus holds that
      are silent in this trail, and the kinds of evidence that WOULD discriminate.
 
-Steps ④ (consented corroboration) and ⑥ (the signed export) are slice 2 and say so.
+  ④ corroboration offers -- the independent data the trail's articles could be checked
+     against (weather today), each naming the host it would ask and what the request
+     reveals; the fetch is the reader's click, behind the one online consent,
+  ⑥ the signed export -- :mod:`src.analytics.claim_bundle` writes the trail as a ZIP signed
+     with the custody key.
 
 THE TWO LINES THIS MODULE HOLDS (the A-2 comment, both risks named there):
 
@@ -367,6 +371,76 @@ def _corpus_source_facets(session) -> dict[str, Counter]:
     return out
 
 
+#: The daily variables a corroboration offer asks for when its rule names none (the weather
+#: endpoint's own default, so the offer's URL is the one the fetch will send).
+_DEFAULT_WX_VARIABLES = ("precipitation_sum", "temperature_2m_max", "temperature_2m_min")
+#: The most offers step ④ lists. The total that qualified is always reported beside it.
+MAX_OFFERS = 6
+
+
+def corroboration_offers(session, article_ids: list[int], *, today=None) -> dict:
+    """Step ④: the independent data this trail's articles could be checked against.
+
+    LOCAL ONLY. It reuses the Home card's scan (:func:`src.analytics.corroboration.
+    find_weather_opportunities`) narrowed to the trail's articles, with no date cutoff and a
+    single article enough to make an offer (the trail is already about one claim; the offer
+    states its article count). Each offer names the HOST it would ask, the exact request,
+    and what that request reveals (the metadata shadow, A7), and says whether its slice is
+    already held locally. Nothing is fetched here: the fetch is the reader's click, behind
+    the one online consent. Weather is the only data source wired today, and the block says
+    so rather than implying the others were checked."""
+    from urllib.parse import urlsplit
+
+    from src.analytics.corroboration import find_weather_opportunities
+    from src.weather.openmeteo import (
+        ARCHIVE_BASE,
+        LICENSE_NOTE,
+        build_archive_url,
+        read_cached_slice,
+    )
+
+    found = find_weather_opportunities(
+        session, lookback_days=None, min_articles=1, limit=10_000, today=today,
+        article_ids=list(article_ids),
+    )
+    host = urlsplit(ARCHIVE_BASE).hostname
+    offers: list[dict] = []
+    in_future = 0
+    for op in found["opportunities"]:
+        if op["window_end"] < op["window_start"]:
+            in_future += 1  # every date is after today: reanalysis has nothing yet
+            continue
+        variables = list(op.get("variables") or _DEFAULT_WX_VARIABLES)
+        url = build_archive_url(op["lat"], op["lon"], datetime.fromisoformat(op["window_start"]).date(),
+                                datetime.fromisoformat(op["window_end"]).date(), variables)
+        offers.append({
+            **{k: op[k] for k in ("rule", "rule_label", "place", "place_country", "lat", "lon",
+                                  "geocode", "coords_from", "window_start", "window_end",
+                                  "window_narrowed", "n_in_window", "article_ids", "n_articles",
+                                  "terms_matched", "languages")},
+            "kind": "weather",
+            "variables": variables,
+            "host": host,
+            "request_url": url,
+            # What the request tells the host: this machine's address, a point and a date
+            # window -- together, which place and period the reader is looking into.
+            "reveals": ["ip_address", "coordinates", "date_window"],
+            "cached": read_cached_slice(url) is not None,
+        })
+    return {
+        "offers": offers[:MAX_OFFERS],
+        "total": len(offers),
+        "in_future": in_future,
+        "skipped_no_coords": found["skipped_no_coords"],
+        "excluded_non_articles": found["excluded_non_articles"],
+        "articles_scanned": len(article_ids),
+        "sources_wired": ["open-meteo"],
+        "license": LICENSE_NOTE,
+        "rules_as_of": found["rules_as_of"],
+        "provenance": found["provenance"],
+    }
+
+
 def build_workspace(session, claim: str, *, query: str | None = None,
                     limit: int = DEFAULT_TRAIL, expand: bool = True,
                     ui_lang: str | None = None) -> dict:
@@ -526,7 +600,8 @@ def build_workspace(session, claim: str, *, query: str | None = None,
         },
         "independence": independence,
         "timeline": timeline_rows,
+        "corroboration": corroboration_offers(session, [a["id"] for a in trail]),
         "missing": missing,
-        "steps_built": [1, 2, 3, 5],
-        "steps_not_built": [4, 6],
+        "steps_built": [1, 2, 3, 4, 5, 6],
+        "steps_not_built": [],
     }

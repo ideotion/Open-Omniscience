@@ -306,10 +306,66 @@
       if (face && face.ff) r.style.setProperty("--ff", face.ff); else r.style.removeProperty("--ff");
       if (ui.density === "compact") r.setAttribute("data-density", "compact"); else r.removeAttribute("data-density");
       if (ui.sidebar === "collapsed") r.setAttribute("data-sidebar", "collapsed"); else r.removeAttribute("data-sidebar");
+      r.setAttribute("data-depth", uiDepth(ui));
+      paintNavMore();
       // The sidebar-visibility feature was removed (#17, 2026-06-22): the flat nav is
       // always complete (every tab also reachable via the palette), so no nav-item is
       // ever hidden here. A legacy ui.hidden in stored prefs is simply ignored.
     }
+    // THE RING DIAL (S05-09 S4; Q1120 = a, Q1121 = a). Three depths, one rule: a depth
+    // changes what is PINNED, never what is REACHABLE.
+    //   Essentials -- Ring 0 (Home, Feed) pinned; Ring 1 behind the #nav-more row.
+    //   Standard   -- Rings 0 and 1 pinned; Ring 2 (each Lead's fine-tuning in
+    //                 Settings -> Leads) folded until opened.
+    //   Full       -- everything pinned and open. The depth of an install that never
+    //                 chose, so an upgrade un-pins nothing; the first-run guide asks, and
+    //                 a skipped question gives Standard (Q1121). Essentials only by choice.
+    // The top bar (airplane mode, language, task manager, health) and the Settings
+    // button are the same at every depth.
+    const DEPTHS = ["essentials", "standard", "full"];
+    function uiDepth(ui) {
+      const d = (ui || getUi()).depth;
+      return DEPTHS.includes(d) ? d : "full";
+    }
+    function setDepth(d) {
+      if (!DEPTHS.includes(d)) return;
+      const u = getUi(); u.depth = d; saveUi(u); applyUi(u); syncDepthControl();
+      if (typeof renderCardCatalog === "function") { try { renderCardCatalog(); } catch { /* not loaded yet */ } }
+    }
+    function syncDepthControl() {
+      const d = uiDepth();
+      document.querySelectorAll('input[name="set-depth"]').forEach((i) => { i.checked = i.value === d; });
+    }
+    // Ring 0: pinned at every depth. Every other sidebar tab is Ring 1, so a tab added
+    // later is pinned at Standard and Full without anyone remembering to list it.
+    const RING0_TABS = ["home", "feed"];
+    let _navMoreOpen = false;
+    function paintNavMore() {
+      const b = $("nav-more"), nav = $("navGroups");
+      if (!b || !nav) return;
+      nav.querySelectorAll(".nav-item[data-tab]").forEach((it) => {
+        it.setAttribute("data-ring", RING0_TABS.includes(it.getAttribute("data-tab")) ? "0" : "1");
+      });
+      const n = nav.querySelectorAll('.nav-item[data-ring="1"]').length;
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
+        : ((x, v) => x.replace(/\{(\w+)\}/g, (m, k) => (v[k] != null ? v[k] : m)));
+      const count = (typeof fmtNum === "function") ? fmtNum(n, 0) : String(n);
+      nav.classList.toggle("more-open", _navMoreOpen);
+      b.setAttribute("aria-expanded", _navMoreOpen ? "true" : "false");
+      const long = b.querySelector(".nav-more-long"), short = b.querySelector(".nav-more-short");
+      if (long) long.textContent = _navMoreOpen ? tf("Show fewer", {}) : tf("Show more ({n})", {n: count});
+      if (short) short.textContent = _navMoreOpen ? tf("Fewer", {}) : tf("More ({n})", {n: count});
+      b.title = _navMoreOpen ? tf("Hide the tabs this depth does not pin", {})
+        : tf("Show the {n} tabs this depth does not pin", {n: count});
+    }
+    (function _wireDepth() {
+      const b = $("nav-more");
+      if (b) b.addEventListener("click", () => { _navMoreOpen = !_navMoreOpen; paintNavMore(); });
+      document.querySelectorAll('input[name="set-depth"]').forEach((i) =>
+        i.addEventListener("change", () => { if (i.checked) setDepth(i.value); }));
+      syncDepthControl();
+      document.addEventListener("oo:langchange", paintNavMore);
+    })();
     function setTheme(t)   { const u = getUi(); u.theme = t;   saveUi(u); applyUi(u); buildDrawer(); syncThemeSelect(); }
     function setAccent(a)  { const u = getUi(); u.accent = a;  saveUi(u); applyUi(u); buildDrawer(); }
     function setDensity(d) { const u = getUi(); u.density = d; saveUi(u); applyUi(u); buildDrawer(); }

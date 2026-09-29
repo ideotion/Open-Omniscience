@@ -1877,6 +1877,14 @@ surprises:
    operators — that would justify a dedicated chain over witness-cosigned
    transparency logs?
 
+> **See also (2026-09-28):** the swarm question — sharing fetches between users to spare the newsrooms'
+> servers — re-opened question 4 and question 8 on their merits and added a candidate FIRST service for
+> the mirror that is three orders of magnitude cheaper than mirroring bytes: a public transparency log of
+> signed article receipts (the *article ledger*), with the maintainer's "blockchain for information data"
+> platform reading examined in its §5.1. Memo and question round (`PS01`–`PS16`, unanswered):
+> [`docs/design/SHARED_FETCH_ETHICS_AND_ARTICLE_LEDGER_2026-09-28.md`](design/SHARED_FETCH_ETHICS_AND_ARTICLE_LEDGER_2026-09-28.md).
+> Nothing above is amended by it; the eight questions stand.
+
 ---
 
 ## User-centric reflections — scenarios, contradictions, deduced features (maintainer-asked 2026-06-12)

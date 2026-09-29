@@ -34,6 +34,93 @@
   analytic 1:** the tag or its `contact:*` twin, non-empty; an empty value is absent. (5) **What is kept:** five
   kinds (admin, place, POI by a named key list or a `wikidata`/`wikipedia` tag, building, road = a WAY with
   `highway`); land use, water, power lines and untagged objects are not.
+- **THE SWARM QUESTION — SHARING FETCHES BETWEEN USERS TO SPARE THE NEWSROOMS' SERVERS, THE ARTICLE LEDGER,
+  AND WHAT THE APP OWES THE MEDIA IT READS (maintainer concern 2026-09-28; question round `PS01`–`PS16` in
+  [`docs/design/SHARED_FETCH_ETHICS_AND_ARTICLE_LEDGER_2026-09-28.md`](../design/SHARED_FETCH_ETHICS_AND_ARTICLE_LEDGER_2026-09-28.md)
+  — UNANSWERED at recording; nothing decided, nothing built).** The maintainer, verbatim, in three messages of
+  the same session: «The app's intention is to help users understand what's going on in the digital world while
+  encouraging them to use a critical approach to "digital facts" and "knowledge" and "data". However, I'd like to
+  think of long term horizon. In the event the app is successful and many people download and use it, all
+  sources will be scrapped individually so many times it could have negative impact on their servers and
+  economical situations, which would deprive a part of society from having journalist, an indispensable pillar
+  to democracy and freedom of thought. mark my words. As a consequence, I'd like to think of a way to create a
+  torrent like approach allowing users to share their downloads / scraping with other users to lighten the
+  burden on journalist's servers, with digital proof and safety. It would both theoretically help users with
+  bandwidth and protect sources from being scrapped all over again. It would help confirm when an article is
+  scraped twice a year from different sources and that it has not changed (or that it did!). […] I am bothered
+  with the ethical aspect of the app and the impact it could have in case of success to media which massively
+  depend on users paying for exclusive content or submitting themselves to commercials while accepting cookies
+  and all others sorts of data scraping that can be sold to data brokers. […] We're just thinking, deciding and
+  planning for now.» — «remember that I initially wanted the app to have a blockchain like approach to
+  articles : marking each of them like a financial transaction in their dedicated blockchain.» — «the idea
+  behind a blockchain approach could be an equivalent of a blockchain for the financial data to information
+  data. Maybe there's a platform need for blockchain based information data.» **«Mark my words» is recorded as
+  the maintainer's stated long-horizon concern, to be weighed at every decision that changes how many
+  instances stand behind the app's fetches — a contingency in the sense of rule (5), never compressed away.**
+  WHAT THE MEMO DOES: separates the two halves of the concern (the COST a successful app imposes on a
+  newsroom's servers, which scales with users and which fetching less or fetching once can reduce; the REVENUE
+  a newsroom never sees from the app's readers, which is zero at one user and at a million and which no
+  fetching arrangement restores); states the fetch discipline as built (robots fail-closed, 1 req/s/host, one
+  connection per host, conditional GET + the 6 h backoff cap, dedup by canonical URL BEFORE the page fetch so a
+  known article costs a newsroom only the feed poll, no re-fetch for change detection at all); gives the burden
+  arithmetic per scale as an order-of-magnitude ESTIMATE with its method (noise at 10⁴ users, material at 10⁵,
+  the size of a newsroom's own audience at 10⁶ — as bot traffic, invisible in protected/Tor mode where the UA is
+  generic); lays out FIVE shapes of "torrent-like" — A receipts only (signed url·hash·time·canon_version, never
+  text) · B the anonymous full-text swarm · C publisher-cooperative sharing under a machine-readable declaration
+  · D archive-mediated · E named accountable nodes (the recorded Open Commons Mirror) — against burden, proof,
+  legal, privacy, safety on the Tor default, poisoning, opt-out/erasure and the constitution; closes B on SEVEN
+  grounds drawn from the app's own rules (opt-out and erasure become impossible against `ETHICS.md`'s promises;
+  every user becomes a distributor and the maker a distributor of a redistribution tool; robots consent was
+  granted to an identified crawler for a fetch, not to a network; the default operator is on Whonix/Tor, where
+  peer-to-peer deanonymises and inbound connections do not exist; a peer's bytes are not the newsroom's bytes
+  and anonymous witnesses cost nothing to invent; it does not touch the revenue half and deepens "one reader
+  pays, everyone reads"); RE-READS THE BLOCKCHAIN INTENTION against the 2026-06-12 criterion («mutually-
+  distrusting anonymous operators … revisit if that changes» — a user swarm IS that scenario, so it was
+  re-opened on its merits): the custody log already is a per-install chain of per-article transactions; two
+  receipts about one URL never conflict, so there is nothing for consensus to order; a chain cannot make an
+  anonymous claim true and Sybil-resistance would cost a token the funding stance calls misaligned; the honest
+  name for the intention is THE ARTICLE LEDGER — a transparency log of receipts with named and pseudonymous
+  witnesses, dissent shown never averaged, checkpoints anchored through OpenTimestamps (built), snapshots
+  mirrorable — and §5.1 takes the PLATFORM reading seriously (a public log of «what did URL U say at time T,
+  according to whom» exists nowhere but the Internet Archive; CT/Rekor/C2PA/OTS/Starling are the prior art,
+  FROM MEMORY; the platform is the sister project's cheapest FIRST service, three orders of magnitude below
+  mirroring bytes, and the one property a permissionless chain keeps over a federated log — no operator to
+  compel — is answered by anchoring + replicated snapshots, «detectable and expensive», never «impossible»);
+  and names the GIVE-BACK layer the revenue half deserves whatever the swarm decision: a footprint meter of the
+  app's own load per host; reading and disclosing the newsroom's machine-readable reservations
+  (`isAccessibleForFree`, the TDM Reservation Protocol, `noarchive`/`noai` — none is read today, grep-verified;
+  only post-fetch paywall STUBS are discarded); a crawler page with an opt-out channel (`docs/BOT.md`, and the
+  plain statement that protected-mode instances cannot be singled out); a cooperative declaration for
+  newsrooms that want to be mirrored. THE QUESTIONS: `PS01` ⛔🔒 may full TEXT ever travel user-to-user through
+  this app (a never — receipts only · b only from consenting/licensed publishers through named nodes · c the
+  swarm) — BUL-3 is the same question in another coat and is to be read with the answer in the same turn ·
+  `PS02` which burden first (requests on small newsrooms · bytes on big CDNs · both) · `PS03` who fetches once
+  (users until the sister project exists then named nodes · users forever · the swarm) · `PS04` 🔒 the
+  receipt's identity (stable pseudonymous install key, catalogue sources only · unlinkable · named witnesses
+  only) · `PS05` 🔒 how receipts move (files like annotation bundles · pull-only consented relay · DHT/inbound)
+  · `PS06` which blockchain PROPERTY is wanted (own-record tamper-evidence HAVE · existence-before-T HAVE when
+  anchored · public integrity + witnesses NEEDS the ledger · one agreed true version CANNOT BE HAD · a
+  dedicated chain regardless) · `PS07` 🔒 the machine-readable reservations (honour as metadata-only · read and
+  disclose first, measure the share · neither) · `PS08` the footprint meter · `PS09` the crawler page · `PS10`
+  an archive as a shared cache (no as a fetch path · consented per-URL verification · default fetch path) —
+  the neighbour of the pending «archive workaround» ruling, not its answer · `PS11` whether the sister
+  project's DESIGN document is written now (default keeps the ruled «once mature» sequence) · `PS12` the scale
+  to plan for · `PS13` the cooperative declaration · `PS14` the operator's own footprint in the consent hover ·
+  `PS15` ⛔ counsel before any text leaves a machine · `PS16` platform or feature (the sister project's first
+  service · feature first, platform if adopted · feature only). A STANDING RULING THE ROUND WOULD AMEND, said
+  so the amendment is deliberate: the 2026-06-19 data-architecture ruling «this app stays single-machine +
+  anchoring-only via OpenTimestamps» — `PS04`/`PS05` = a would add a FILE exchange of receipts (no socket),
+  `PS05` = b a consented pull path. THE WRITER'S LEANING (§7, not a ruling): Phase 0 give back and measure
+  (meter, disclose reservations, crawler page) · Phase 1 the article ledger as signed receipt bundles from the
+  custody seam, the format written as a neutral specification · Phase 2 a consented pull-only exchange from a
+  named relay · Phase 3 text shared only where consent is a fact, by named custodians (the sister project);
+  the anonymous full-text swarm is not on the path unless `PS01` is overridden, and then counsel comes first.
+  POINTED AT, NOT RE-ASKED: BUL-3; the archive-workaround ruling; `PF11` ⛔ (rule (1)'s achievability —
+  `LESSONS.md` measured 1,076,242 bytes today; this session read its headings and, in full, every entry in the
+  egress/consent/robots/publisher/custody/privacy/Tor families, and says so in the memo's §0); the Open
+  Commons Mirror's eight questions; `Q1136`, `Q1001`/`Q1002` for any relay. Processing: the §0 of the memo
+  (the pre-flight round's protocol) — letters parsed mechanically, one `RULINGS_INDEX.md` row per ANSWERED
+  `PSnn`, none for a blank ⛔, contradictions listed never resolved.
 - **ROW C'S PROPOSED DEFAULTS — NOT RULINGS (0.5 row C, `S05-03`, 2026-09-28, thread «Build the entity spine»;
   ids `R71`–`R75` are held for this row and none is used yet).** The brief's §6 leaves these to the maintainer; each
   was BUILT at the default below so the row could move, and each is reversible. (1) **The API:** the Wikidata Action
@@ -112,6 +199,8 @@
   So the Search tab's line names the lane, never «every Wikipedia text on this machine». Bringing the tracked
   revisions in needs a decision this index cannot make for itself: where their index lives (the corpus file,
   or the lane, which since Q1020 = a is what holds watched pages' new versions), UNRULED.
+  Meanwhile, since PR #1207, each of them can be added to the corpus one version at a time from its page's
+  version reader (Living sources → Wikipedia), the same add as a hit's.
   A text that cannot be read is set aside (`failed_at`), counted from the queue's own rows and retried once per
   lane start and on the page's next change, never silently dropped.
 - **WARM'S SWITCH: WHERE WARM RUNS — PENDING (asked 2026-09-28 13:22 UTC on a decision card in the project thread
@@ -15653,6 +15742,27 @@ by deleting the release before the tag moves. A lasting fix would append the gen
 section when an existing body lacks it; `S03-01` forbade touching `release.yml` in the flip, so it waits
 for a ruling or its own PR.
 
+## 2026-09-28 — Row I's Essentials depth amends invariant #2: ANSWERED «Yes, amend #2» 19:33 UTC (R46, PR #1208)
+
+The Ring dial (S05-09 S4, Q1120 = a, Q1121 = a) is built with all three depths. Essentials pins Home and Feed
+and lists the other tabs behind a permanent, labelled "Show more (N)" row, which touches invariant #2 ("the
+left sidebar lists all tabs"). The brief (§6) forbids merging that ring before the maintainer's word; a
+decision card is posted in the row I thread and the amendment text is in PR #1208's body. **On "Yes":** add
+the amendment to CLAUDE.md invariant #2, extend `test_ui_invariants`, record it as R46. **On "No":** remove
+Essentials from the dial (Standard and Full need no amendment and stay). **ANSWERED «Yes, amend #2»
+(2026-09-28 19:33 UTC):** the amendment is in CLAUDE.md invariant #2, enforced by test_ui_invariants
+(#2b), recorded as R46; Essentials ships in PR #1208.
+
+## 2026-09-28 — The Ledger's grammar found an automated DELETE in a reserved category: unruled (PR #1208)
+
+The offline source discovery pass (`src/discovery/channels.py`, `prune_noise_candidates`) deletes still-PENDING
+source candidates that its noise filters (commerce, social, infrastructure domains) now reject, on every pass,
+without asking. Under the plan's §5 item 6 that is a decision in the `source-admission` category. The Ledger
+does not hide it: the entry's sentence ends in "staged" (true of what the pass adds) and its `touched` field
+says the candidates were deleted, with the count. **Unruled:** whether the prune should become a flag the
+operator clears (the grammar's intent) or stay a delete (it only removes rows no human has touched, and a
+remembered dismissal or a promoted source is never swept). Nothing was changed; this is the maintainer's call.
+
 ## 2026-09-28 — THE CLAIM WORKSPACE'S PLACEMENT — PENDING (0.5 row K, brief `S05-11` §6; ruling id R66 held for the answer)
 
 Brief `S05-11` §6 leaves the workspace's placement to the maintainer («a main tab, a palette command, an
@@ -15691,3 +15801,15 @@ maintainer's word or a measurement on the reference VM:
   wherever one exists, and rows only exist once a sweep or the manual button wrote them. Gating the
   display on the master too would hide stored answers whenever the lane is paused; left as built in 0.4
   unless ruled otherwise. The ≈ TITLES are gated on both switches, as Q513 = b reads.
+
+## 2026-09-28 — THE CLAIM TRAIL'S SIGNING KEY — PENDING (0.5 row K, brief `S05-11` S2; ruling id R67 held for the answer)
+
+Step ⑥ signs the exported trail. **Built with the install's CUSTODY key**, the one `custody` already uses
+for its log and anchors: a recipient can tie the bundle to that install's custody record, and the same
+key on every bundle links all of them to one install. That trade-off is stated beside the export button
+and in the bundle's own `WHAT-A-READER-CAN-SEE.md`. The alternatives: a separate, stable SHARING key per
+install (as `src/annotations/bundle.py` does for annotation bundles: bundles still link to each other,
+not to the custody log), or a FRESH key per bundle (no two bundles linkable, and a signature that then
+proves only that the file did not change, never who made it). `claim_bundle.build_trail_bundle` takes
+the signer as a parameter, so either is a small change. Asked on a decision card in the row K thread;
+record the answer as R67 in `RULINGS_INDEX.md`, here and in the gate's §3.

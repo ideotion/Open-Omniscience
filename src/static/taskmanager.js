@@ -513,6 +513,63 @@
     el.innerHTML = '<div class="vsect">' + esc(t("Online sessions")) + ' <span class="count">' + fmtNum(runs.length, 0) + "</span></div>" + rows;
   }
 
+  // ---- Ledger -- what the app did on its own (S05-09 S5) ---- //
+  // One entry per automated action, in the fixed shape the backend enforces
+  // (src/monitoring/activity_ledger.py): what happened, why, what it touched, the
+  // caveat, the budget, and whether there is a one-click undo. The sentences arrive as
+  // keyed frames + counts and are written by jobLabel's rules, so they read in the UI
+  // language. A read of the app's own file: no network, nothing decided here.
+  var LEDGER_CATEGORY = {
+    "collection": "Collection",
+    "source-admission": "Source admission",
+    "keyword-pruning": "Keyword pruning",
+    "coordination": "Coordination",
+    "enrichment": "Enrichment",
+    "surfacing": "Surfacing",
+    "maintenance": "Maintenance"
+  };
+  function ledgerText(e, name) {
+    var frames = e.frames || {};
+    var english = e[name] || "";
+    return frames[name]
+      ? jobLabel({ label: english, label_i18n: frames[name], label_vars: e.vars || {} })
+      : t(english);
+  }
+  async function renderLedger() {
+    var el = $("ledger-body");
+    var d;
+    try { d = await api("/api/jobs/ledger?limit=200"); }
+    catch (e) { el.innerHTML = '<div class="muted">' + esc(t("Could not load the ledger.")) + "</div>"; return; }
+    var entries = (d && d.entries) || [];
+    var head = '<div class="vsect">' + esc(t("What the app did on its own")) +
+               (entries.length ? ' <span class="count">' + fmtNum(entries.length, 0) + "</span>" : "") + "</div>" +
+               '<div class="vnote muted">' + esc(t("One entry for every action the app takes without being asked, newest first. Counts only: no address, title or query is kept.")) + "</div>";
+    if (!entries.length) {
+      el.innerHTML = head + '<div class="muted" style="padding:4px 0">' + esc(t("Nothing yet. Entries appear as soon as the app collects, checks sources or tidies its storage on its own.")) + "</div>";
+      return;
+    }
+    var rows = entries.map(function (e) {
+      var cat = LEDGER_CATEGORY[e.category] || e.category || "";
+      var note = e.note ? " \u2068" + esc(e.note) + "\u2069" : "";
+      var undo = e.reversible && e.undo ? esc(t(e.undo)) : esc(t("No one-click undo"));
+      function row(label, value) { return "<dt>" + esc(t(label)) + "</dt><dd>" + value + "</dd>"; }
+      return '<div class="led" data-category="' + esc(e.category || "") + '">' +
+        '<div class="led-head"><span class="pill' + (e.reserved ? " warn" : "") + '">' + esc(t(cat)) + "</span>" +
+        '<span class="led-what">' + esc(ledgerText(e, "what_happened")) + "</span>" +
+        '<span class="led-when muted" title="' + esc(fmtLocal(e.at)) + '">' + esc(fmtRel(e.at)) + "</span></div>" +
+        "<dl>" +
+          row("Why", esc(t(e.why || "")) + (note ? '<span class="muted">' + note + "</span>" : "")) +
+          row("Touched", esc(ledgerText(e, "touched"))) +
+          row("Budget", esc(ledgerText(e, "budget"))) +
+          row("Caveat", esc(t(e.caveat || ""))) +
+          row("Undo", undo) +
+        "</dl>" +
+        (e.reserved ? '<div class="led-reserved muted">' + esc(t("The judgment stays yours: this records a measurement, never a decision.")) + "</div>" : "") +
+        "</div>";
+    }).join("");
+    el.innerHTML = head + rows;
+  }
+
   // ---- the persistent summary strip ---- //
   function renderSummary(v, act, rates) {
     var p = (v && v.process) || {};
@@ -601,7 +658,7 @@
   });
 
   // ---- tabs ---- //
-  var PANELS = ["processes", "performance", "queue", "schedule", "history"];
+  var PANELS = ["processes", "performance", "queue", "schedule", "history", "ledger"];
   var _panel = "processes";
   function selectPanel(name) {
     _panel = name;
@@ -611,6 +668,7 @@
       b.classList.toggle("active", on); b.setAttribute("aria-selected", on ? "true" : "false");
     });
     if (name === "history") renderHistory();
+    if (name === "ledger") renderLedger();
   }
   Array.prototype.forEach.call($("tm-tabs").children, function (b) {
     b.addEventListener("click", function () { selectPanel(b.getAttribute("data-panel")); });
@@ -633,6 +691,7 @@
     renderPerformance(v, rates);
     renderSummary(v, act, rates);
     if (_panel === "history") renderHistory();
+    if (_panel === "ledger") renderLedger();
     var c = $("tm-conn"); if (c && !/err/.test(c.className)) c.textContent = t("Live");
     _busy = false;
     return live;
@@ -780,6 +839,7 @@
       renderSummary(_lastVitals, act, _lastRates);
       var c = $("tm-conn"); if (c && !/err/.test(c.className)) c.textContent = t("Live");
     }
+    if (_panel === "ledger") renderLedger();
     paintHealth();
   }
   // Same direction-aware flash + toast as the app (maintainer 2026-06-21: the

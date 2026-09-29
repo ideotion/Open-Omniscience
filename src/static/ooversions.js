@@ -25,6 +25,11 @@
    otherwise take a diff line of somebody else's text for a key; a language switch
    (`oo:langchange`) repaints from the payloads held, never a request.
 
+   «Add to corpus» (R52) is drawn only where the payload carries `corpus_add` (a Wikipedia
+   page's versions, src/wiki/versions.py): one button per end of the comparison, POSTing
+   `${base}/versions/{id}/add-to-corpus`, the outcome in words with the article one click
+   away. A law payload has no such key, so nothing is offered there.
+
    No inline handlers: one delegated listener per mount (the CSP ratchet, row I). */
 (function () {
   "use strict";
@@ -36,6 +41,8 @@
 .ov-pick{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin:0 0 8px}
 .ov-pick label{display:flex;flex-direction:column;gap:2px;font-size:12px;color:var(--muted,var(--mut,#888))}
 .ov-pick select{max-width:340px}
+.ov-end{display:flex;gap:6px;flex-wrap:wrap;align-items:flex-end;min-width:0}
+.ov-added{margin:0 0 8px}
 .ov-facts{display:grid;grid-template-columns:max-content 1fr;gap:3px 12px;margin:6px 0 10px;padding:8px 10px;border:1px solid var(--border,var(--line,#8884));border-radius:8px}
 .ov-facts dt{color:var(--muted,var(--mut,#888))}
 .ov-facts dd{margin:0;overflow-wrap:anywhere}
@@ -74,15 +81,26 @@
       ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
   }
   function _safeHref(u) { return /^https?:\/\//i.test(String(u || "")) || /^\/api\//.test(String(u || "")) ? String(u) : ""; }
-  async function _get(url) {
-    if (typeof window.api === "function") return window.api(url);
-    const r = await fetch(url, { headers: { Accept: "application/json" } });
+  // A refusal throws an Error whose `detail` is the server's own (a named refusal such
+  // as "not-held"), the same shape the SPA's api() throws.
+  async function _fetchJson(url, init) {
+    const r = await fetch(url, Object.assign({ headers: { Accept: "application/json" } }, init || {}));
     if (!r.ok) {
       let detail = r.status + "";
       try { const j = await r.json(); if (j && j.detail) detail = String(j.detail); } catch (_) { /* keep the status */ }
-      throw new Error(detail);
+      const err = new Error(detail);
+      err.detail = detail;
+      throw err;
     }
     return r.json();
+  }
+  async function _get(url) {
+    if (typeof window.api === "function") return window.api(url);
+    return _fetchJson(url);
+  }
+  async function _post(url) {
+    if (typeof window.api === "function") return window.api(url, { method: "POST" });
+    return _fetchJson(url, { method: "POST" });
   }
   // "Could not load: <reason>" with the reader's own separator when the SPA provides it
   // (ooLabelText: the zh and ja colon is full-width), a plain one on the standalone page.
@@ -111,6 +129,19 @@
     return out;
   }
 
+  //: What «Add to corpus» answered, in words (src/wiki/corpus.py:add_wiki_version_article).
+  const ADD_SAID = {
+    created: "Added to your corpus as its own article.",
+    exists: "This version is already in your corpus.",
+    same_text: "Your corpus already holds an article with exactly these words.",
+    "skipped-empty-after-strip": "Nothing to add: no text is left once the wiki markup is removed.",
+  };
+  //: The add route's named refusals, in words; any other is the server's own message.
+  const ADD_REFUSED = {
+    "not-held": "This version is no longer held on this machine.",
+    "text-not-held": "This version's text was not stored on this machine, so it cannot be added.",
+  };
+
   function versionOption(v, t, tf) {
     const when = v.valid_from || "—";
     let s = when + " · " + t(v.label || "a revision");
@@ -130,7 +161,8 @@
     if (!host) return null;
     _style();
     opts = opts || {};
-    const st = { base, d: null, cmp: null, from: null, to: null, part: null, err: null, cmpErr: null, seq: 0 };
+    const st = { base, d: null, cmp: null, from: null, to: null, part: null, err: null, cmpErr: null, seq: 0,
+      added: {}, addBusy: {}, addErr: {} };
     host.classList.add("ov");
     host.setAttribute("data-i18n-dyn", "");
 
@@ -212,6 +244,68 @@
       return `<p class="ov-muted">${_esc(tally)}${cut}</p><div class="ov-grid" role="table">${head}${body}</div>`;
     }
 
+    // «Add to corpus» (R52) for ONE version: what the add answered, or what the payload
+    // says the corpus already holds. Keyed by version id, so it survives a new pick and a
+    // language switch (repainted from the result, never re-requested).
+    function addDone(v) {
+      if (!v) return null;
+      if (st.added[v.id]) return st.added[v.id];
+      const known = (st.d.corpus_add && st.d.corpus_add.articles) || {};
+      return known[v.id] != null ? { status: "exists", article_id: known[v.id] } : null;
+    }
+
+    // Off while in flight, once the corpus holds the version, or when its text was never
+    // stored; the hover then says why, as the line under the pickers does.
+    function addButton(v, t) {
+      if (!v || !st.d.corpus_add) return "";
+      const done = addDone(v);
+      const off = !v.has_text || done || st.addBusy[v.id];
+      const why = !v.has_text ? t(ADD_REFUSED["text-not-held"])
+        : (done && ADD_SAID[done.status]) ? t(ADD_SAID[done.status])
+          : t("Adds this exact version to your corpus as its own article.");
+      return `<button type="button" class="secondary tiny" data-ov-add="${_esc(String(v.id))}"${off ? " disabled" : ""} title="${_esc(why)}">${_esc(t("Add to corpus"))}</button>`;
+    }
+
+    // The outcome in words, the article one click away in the local reader (invariant #6).
+    // `ends` pairs a label ("From", "To", or none for a page's only version) with a version.
+    function addOutcomes(ends, t) {
+      if (!st.d.corpus_add) return "";
+      const seen = new Set();
+      return ends.map(([label, v]) => {
+        if (!v || seen.has(v.id)) return "";
+        seen.add(v.id);
+        const done = addDone(v), err = st.addErr[v.id];
+        if (!done && !err) return "";
+        let words;
+        if (done) {
+          words = _esc(ADD_SAID[done.status] ? t(ADD_SAID[done.status]) : String(done.status || ""));
+          if (done.article_id != null) {
+            words += ` <a href="/api/articles/${encodeURIComponent(done.article_id)}/view" target="_blank" rel="noopener">${_esc(t("Open it in the reader"))}</a>`;
+          }
+        } else {
+          words = _esc(ADD_REFUSED[err.detail] ? t(ADD_REFUSED[err.detail]) : String(err.message || err));
+        }
+        return `<p class="ov-added${done ? "" : " ov-muted"}">${label ? `<b>${_esc(t(label))}</b> · ` : ""}${words}</p>`;
+      }).join("");
+    }
+
+    async function addToCorpus(id) {
+      const v = byId(id), base = st.base;
+      if (!v || !v.has_text || addDone(v) || st.addBusy[v.id]) return;
+      st.addBusy[v.id] = true;
+      delete st.addErr[v.id];
+      paint();
+      try {
+        const r = await _post(`${base}/versions/${encodeURIComponent(String(v.id))}/add-to-corpus`);
+        if (base === st.base) st.added[v.id] = r;
+      } catch (e) {
+        if (base === st.base) st.addErr[v.id] = e;
+      }
+      if (base !== st.base) return;  // another page was opened meanwhile
+      delete st.addBusy[v.id];
+      paint();
+    }
+
     function paint() {
       const t = _t(), tf = _tf();
       if (st.err) { host.innerHTML = `<p class="ov-muted">${_esc(_fail(t, st.err))}</p>`; return; }
@@ -220,17 +314,23 @@
       const versions = d.versions || [];
       const head = `<div class="ov-head"><b>${_esc(t("Versions"))}</b><span class="ov-muted">${_esc(tf("{n} of {total} versions listed, newest first", { n: versions.length, total: d.total }))}</span></div>`;
       if (versions.length < 2) {
+        const only = versions[0];
+        const add = addButton(only, t);
         host.innerHTML = head + `<p class="ov-muted">${_esc(t(versions.length
           ? "Only one version is held, so there is nothing to compare yet."
-          : "No version is held yet."))}</p>` + (versions.length ? paintFacts(t, tf) : "")
+          : "No version is held yet."))}</p>`
+          + (add ? `<div class="ov-pick">${add}</div>` + addOutcomes([[null, only]], t) : "")
+          + (versions.length ? paintFacts(t, tf) : "")
           + `<p class="card-caveat ov-caveat">${_esc(t(d.caveat))}</p><p class="ov-muted ov-method">${_esc(t(d.method))}</p>`;
         return;
       }
       const opts2 = (sel) => versions.map((v) => `<option value="${_esc(String(v.id))}"${String(v.id) === String(sel) ? " selected" : ""}>${_esc(versionOption(v, t, tf))}</option>`).join("");
+      const from = byId(st.from), to = byId(st.to);
       host.innerHTML = head
-        + `<div class="ov-pick"><label>${_esc(t("From"))}<select data-ov="from">${opts2(st.from)}</select></label>`
-        + `<label>${_esc(t("To"))}<select data-ov="to">${opts2(st.to)}</select></label>`
+        + `<div class="ov-pick"><div class="ov-end"><label>${_esc(t("From"))}<select data-ov="from">${opts2(st.from)}</select></label>${addButton(from, t)}</div>`
+        + `<div class="ov-end"><label>${_esc(t("To"))}<select data-ov="to">${opts2(st.to)}</select></label>${addButton(to, t)}</div>`
         + `<button type="button" class="secondary tiny" data-ov="swap" title="${_esc(t("Swap the two versions"))}">⇄</button></div>`
+        + addOutcomes([["From", from], ["To", to]], t)
         + paintFacts(t, tf) + paintAi(t) + paintParts(t, tf) + paintGrid(t, tf)
         + `<p class="card-caveat ov-caveat">${_esc(t(d.caveat))}</p><p class="ov-muted ov-method">${_esc(t(d.method))}</p>`;
     }
@@ -253,6 +353,7 @@
 
     async function load(base) {
       if (base) st.base = base;
+      st.added = {}; st.addBusy = {}; st.addErr = {};
       st.d = null; st.err = null; st.cmp = null; st.part = null; paint();
       try {
         st.d = await _get(`${st.base}/versions`);
@@ -286,8 +387,9 @@
       compare();
     });
     host.addEventListener("click", (e) => {
-      const el = e.target && e.target.closest ? e.target.closest("[data-ov],[data-ov-part],[data-ov-lang]") : null;
+      const el = e.target && e.target.closest ? e.target.closest("[data-ov],[data-ov-part],[data-ov-lang],[data-ov-add]") : null;
       if (!el || !host.contains(el)) return;
+      if (el.hasAttribute("data-ov-add")) { addToCorpus(el.getAttribute("data-ov-add")); return; }
       if (el.getAttribute("data-ov") === "swap") {
         const f = st.from; st.from = st.to; st.to = f; st.part = null; compare(); return;
       }

@@ -67,6 +67,15 @@ def build_edition(
     edition = layer_a(session, period, rising_limit=rising_limit, target_lang=target_lang)
     edition["narration_requested"] = bool(narrate)
     edition["attribution"] = _attribution(session, period)
+    # D2 (register, placed by RC08.2 = a): every edition OPENS on the deterministic
+    # introduction. Best-effort like the attribution block: an opening that could not
+    # be composed costs the paragraph, never the record.
+    try:
+        from src.bulletin.introduction import opening_block
+
+        edition["introduction"] = opening_block(edition)
+    except Exception:  # noqa: BLE001 - the record survives a failed opening
+        _LOG.warning("bulletin: could not compose the opening paragraph", exc_info=True)
 
     # The refusal is applied HERE rather than at the call site so exactly one place
     # composes the document's account of its own narration — the recorded defect was

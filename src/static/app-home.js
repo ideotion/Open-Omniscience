@@ -2119,6 +2119,19 @@
       }
     }
 
+    // The daily reanalysis variables the weather endpoint allows (src/weather/openmeteo.py
+    // ALLOWED_DAILY), in words. A key not listed here is shown as it came.
+    const _WX_VAR_LABELS = {
+      temperature_2m_max: "Daily highest temperature",
+      temperature_2m_min: "Daily lowest temperature",
+      precipitation_sum: "Daily precipitation",
+      rain_sum: "Daily rain",
+      snowfall_sum: "Daily snowfall",
+      wind_speed_10m_max: "Daily highest wind speed",
+      wind_gusts_10m_max: "Daily strongest gust",
+    };
+    function _wxVarLabel(k, t) { return _WX_VAR_LABELS[k] ? t(_WX_VAR_LABELS[k]) : k; }
+
     function renderWeatherContext(box, d, sig) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
       if (!d || !d.ok) {
@@ -2130,7 +2143,8 @@
       const vars = Object.keys(d.daily || {}).filter(k => k !== "time");
       let html = "";
       vars.forEach(k => {
-        html += `<div class="muted" style="margin:4px 0 2px">${esc(k)}${d.units && d.units[k] ? " (" + esc(d.units[k]) + ")" : ""}</div><div class="wx-chart" data-var="${esc(k)}"></div>`;
+        // The variable's name in words; the upstream key stays in the hover.
+        html += `<div class="muted" style="margin:4px 0 2px" title="${esc(k)}">${esc(_wxVarLabel(k, t))}${d.units && d.units[k] ? " (" + esc(d.units[k]) + ")" : ""}</div><div class="wx-chart" data-var="${esc(k)}"></div>`;
       });
       const prov = d.provenance || {};
       const facts = [
@@ -2144,7 +2158,7 @@
         const k = el.getAttribute("data-var");
         const pts = days.map((dt, i) => ({t: dt, v: (d.daily[k] || [])[i]})).filter(p => p.v != null);
         if (pts.length) {
-          try { ooChart(el, [{label: k, unit: (d.units && d.units[k]) || "", points: pts}], {height: 120}); }
+          try { ooChart(el, [{label: _wxVarLabel(k, t), unit: (d.units && d.units[k]) || "", points: pts}], {height: 120}); }
           catch (_e) { el.textContent = pts.map(p => `${p.t}: ${p.v}`).join("  "); }
         } else {
           el.innerHTML = `<span class="muted small">${esc(t("No values were returned for this variable and window."))}</span>`;

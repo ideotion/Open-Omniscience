@@ -822,6 +822,22 @@ def jobs_history(limit: int = 20) -> dict:
     return {"runs": runs, "count": len(runs)}
 
 
+@router.get("/ledger")
+def jobs_ledger(limit: int = 200) -> dict:
+    """The Activity Ledger (S05-09 S5): one entry per action the app took on its own,
+    newest first, in the fixed shape (what happened, why, touched, caveat, budget,
+    reversible, undo). Reads the append-only file the scheduler writes; counts only."""
+    from src.monitoring import activity_ledger as al
+
+    entries = al.read_entries(limit=max(1, min(limit, 1000)))
+    return {
+        "entries": entries,
+        "count": len(entries),
+        "categories": list(al.CATEGORIES),
+        "reserved": sorted(al.RESERVED_CATEGORIES),
+    }
+
+
 def _background_jobs() -> list[dict]:
     """The generic background jobs (field test 2026-07-08, Item 8 P1): the heavy button
     actions that used to run synchronously — governments load-standard, enrich-source-types,
