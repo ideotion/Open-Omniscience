@@ -22,6 +22,18 @@
 
 ## Open queue (when maintainer says proceed)
 
+- **ROW D'S PROPOSED DEFAULTS — NOT RULINGS (0.5 row D, `S05-04`, 2026-09-28, thread «Build the OSM lane»,
+  PR #1212; ids `R76`–`R80` are held for this row and none is used yet).** The brief's §6 leaves these to the PR;
+  each is BUILT at the default below and reversible. (1) **The first country: France** (FRA), the country Q807's
+  wizard suggests for a French interface, cut from the Europe extract (~28 GB); the plan and the brief name none,
+  and the maintainer is asked on the PR. (2) **How a country is cut:** by the extract's own `admin_level=2`
+  relation tagged `ISO3166-1:alpha2`, not S05-05's admin-0 artifact (row E, not built); three extra passes over
+  the file; a way belongs to the country holding the mean of its vertices. (3) **The small-country path without
+  `[geo]`:** a pure-Python read of any `.osm.pbf` up to 256 MiB (`src/osm/pbf.py`), refused by name above it; no
+  country-level Geofabrik downloads were added, since that would widen Q806. (4) **What counts as present in
+  analytic 1:** the tag or its `contact:*` twin, non-empty; an empty value is absent. (5) **What is kept:** five
+  kinds (admin, place, POI by a named key list or a `wikidata`/`wikipedia` tag, building, road = a WAY with
+  `highway`); land use, water, power lines and untagged objects are not.
 - **THE SWARM QUESTION — SHARING FETCHES BETWEEN USERS TO SPARE THE NEWSROOMS' SERVERS, THE ARTICLE LEDGER,
   AND WHAT THE APP OWES THE MEDIA IT READS (maintainer concern 2026-09-28; question round `PS01`–`PS16` in
   [`docs/design/SHARED_FETCH_ETHICS_AND_ARTICLE_LEDGER_2026-09-28.md`](../design/SHARED_FETCH_ETHICS_AND_ARTICLE_LEDGER_2026-09-28.md)
@@ -15808,3 +15820,15 @@ maintainer's word or a measurement on the reference VM:
   wherever one exists, and rows only exist once a sweep or the manual button wrote them. Gating the
   display on the master too would hide stored answers whenever the lane is paused; left as built in 0.4
   unless ruled otherwise. The ≈ TITLES are gated on both switches, as Q513 = b reads.
+
+## 2026-09-28 — THE CLAIM TRAIL'S SIGNING KEY — PENDING (0.5 row K, brief `S05-11` S2; ruling id R67 held for the answer)
+
+Step ⑥ signs the exported trail. **Built with the install's CUSTODY key**, the one `custody` already uses
+for its log and anchors: a recipient can tie the bundle to that install's custody record, and the same
+key on every bundle links all of them to one install. That trade-off is stated beside the export button
+and in the bundle's own `WHAT-A-READER-CAN-SEE.md`. The alternatives: a separate, stable SHARING key per
+install (as `src/annotations/bundle.py` does for annotation bundles: bundles still link to each other,
+not to the custody log), or a FRESH key per bundle (no two bundles linkable, and a signature that then
+proves only that the file did not change, never who made it). `claim_bundle.build_trail_bundle` takes
+the signer as a parameter, so either is a small change. Asked on a decision card in the row K thread;
+record the answer as R67 in `RULINGS_INDEX.md`, here and in the gate's §3.

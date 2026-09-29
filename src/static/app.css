@@ -2214,7 +2214,6 @@
 .claim-step h3 { margin: 0 0 4px; font-size: 15px; }
 .claim-num { color: var(--accent); margin-inline-end: 4px; }
 .claim-method { color: var(--muted); font-size: 13px; margin: 0 0 8px; }
-.claim-later { opacity: .75; }
 .claim-query code { overflow-wrap: anywhere; }
 .claim-list { padding-inline-start: 28px; margin: 6px 0; }
 .claim-list li { margin: 3px 0; overflow-wrap: anywhere; }
@@ -2232,6 +2231,14 @@
 .claim-silent { display: inline-block; margin-inline-end: 8px; }
 .claim-disc li { margin: 4px 0; }
 .claim-table-wrap { overflow-x: auto; }
+.claim-offer { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; margin: 8px 0; }
+.claim-shadow { font-size: 13px; margin: 6px 0 2px; }
+.claim-request { font-size: 12px; margin: 2px 0; }
+.claim-request code, .claim-key { overflow-wrap: anywhere; font-family: var(--mono); font-size: 12px; unicode-bidi: isolate; direction: ltr; }
+.claim-wx:empty { display: none; }
+.claim-members { margin: 4px 0 8px; padding-inline-start: 18px; font-size: 13px; }
+.claim-members code { unicode-bidi: isolate; direction: ltr; }
+.claim-check { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 8px 0 2px; }
 /* The Search tab's Wikipedia section (R52): set apart from the corpus's results by a rule
    and its own heading, so its hits never read as ranked among them. */
 .lane-search { border-top: 1px solid var(--line); margin-top: 14px; padding-top: 10px; }

@@ -345,6 +345,55 @@ def field_gate(language: str | None, field: str, gate: dict[str, dict]) -> tuple
     return bool(active), reason
 
 
+def apply_operator_off(gate: dict[str, dict], off) -> dict[str, dict]:
+    """The measured gate with the operator's switched-off languages taken back out.
+
+    Q1144 = a (S05-08 S6): extraction runs per language only where the MEASURED gate
+    passes, and the operator may switch a cleared language off. The overlay goes one
+    way only -- it can refuse a language the harness cleared, and it has no way to
+    license one the harness failed or never measured, because nothing here ever sets
+    ``active`` to True. That is the brief's negation fixture: a failing language stays
+    refused whatever the toggle says.
+
+    Every entry gains ``measured_active`` (the harness's own verdict, untouched) and
+    ``switched_off``, so the toggle can show the measurement beside the choice and a
+    refusal names which of the two it came from. A NEW dict; the input is not mutated.
+    """
+    off_set = {_norm(x) for x in (off or []) if _norm(x)}
+    out: dict[str, dict] = {}
+    for lang, entry in (gate or {}).items():
+        e = dict(entry)
+        e["measured_active"] = entry.get("active")
+        e["switched_off"] = False
+        if lang in off_set and entry.get("active") is True:
+            note = "switched off by you in Settings -> AI; the harness had cleared it"
+            e["active"] = False
+            e["switched_off"] = True
+            e["reason"] = note + ": " + str(entry.get("reason") or "")
+            # Only the CLEARED fields change; a field the harness failed or never
+            # measured keeps its own reason, which is the more specific one.
+            fields = {}
+            for fld, verdict in (entry.get("fields") or {}).items():
+                v = dict(verdict or {})
+                if v.get("active") is True:
+                    v["active"] = False
+                    v["reason"] = note
+                fields[fld] = v
+            e["fields"] = fields
+        out[lang] = e
+    return out
+
+
+def operator_off_languages() -> list[str]:
+    """The operator's switched-off perception languages, [] when settings are unreadable."""
+    try:
+        from src.config.app_settings import load_settings
+
+        return list(load_settings().perception_languages_off or [])
+    except Exception:  # noqa: BLE001 - an unreadable settings file switches nothing off
+        return []
+
+
 def _combined_text(w: "ArticleWork") -> str:
     title = (w.title or "").strip()
     content = (w.content or "").strip()

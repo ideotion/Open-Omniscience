@@ -2513,6 +2513,7 @@
              now; the gate result it produces still belongs HERE, beside the sweep it
              gates, which is why this div stays. -->
       <div id="pe-gate-result" class="small" style="margin-top:6px"></div>
+      <div id="pe-lang-toggles" class="small" style="margin-top:6px"></div>
         <div class="row" style="margin-top:6px">
           <button id="pe-toggle-btn" data-on-click="togglePerceptionExtract(this)" data-running="0" title="Toggle the progressive who/where/when extraction sweep on/off. ON starts (or resumes from the saved cursor) a run across every article whose language cleared the perception-eval harness using the active model; OFF pauses it at the next safe point between batches -- the partial log and cursor are kept, so toggling ON again continues.">Start sweep</button>
           <span id="pe-status" class="small" style="margin-left:6px"></span>
@@ -3442,6 +3443,8 @@
           <label id="bul-narrate-label" class="row" style="gap:6px;align-items:center" title="Adds a paragraph per story, written by the local model and kept only where every figure and name in it appears in the articles the model was shown. Off by default; the document is complete without it.">
             <input id="bul-narrate" type="checkbox"> <span>Add the narration layer</span></label>
           <div id="bul-narrate-gate" class="hint" hidden></div>
+          <label id="bul-narrate-intro-label" class="row" style="gap:6px;align-items:center" title="Every edition opens on a fixed paragraph built from its own counts. Tick this to let the local model write that opening instead, when you narrate an edition. Each of its sentences is kept only if every figure in it is one of the edition's own, and it is marked AI-derived. Off by default.">
+            <input id="bul-narrate-intro" type="checkbox"> <span>Let the model write the opening too</span></label>
           <button id="bul-generate" data-on-click="bulletinGenerate(this)">Build a draft</button>
           <div id="bulletin-status" class="hint" style="align-self:end"></div>
         </div>
@@ -3807,7 +3810,10 @@
          own scrolling #gw-body: the decision controls stay reachable at any height. -->
     <div id="net-consent-body" style="padding:0 18px;max-height:58vh;overflow:auto">
       <div style="margin-bottom:8px"><span class="muted">This action needs the network:</span>
-        <div id="net-consent-reason" style="margin-top:4px"><b></b></div></div>
+        <div id="net-consent-reason" style="margin-top:4px"><b></b></div>
+        <!-- A7, the metadata shadow: what THIS action's request tells the host it asks,
+             set by the caller (ensureOnline's opts.shadow) and hidden when none is given. -->
+        <div id="net-consent-shadow" class="hint" style="margin-top:4px" hidden></div></div>
       <!-- Q1002: the body names the lanes that are ON; each line's hover lists the
            hosts that lane will contact, read from the ONE table in net-hosts.js that
            docs/SECURITY.md's own guard also reads. The hover is the LAYER (invariant

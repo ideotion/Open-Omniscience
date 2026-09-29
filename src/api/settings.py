@@ -62,6 +62,8 @@ class SettingsUpdate(BaseModel):
     ai_sweep_perception_extract: bool | None = None
     ai_sweep_keyword_translation: bool | None = None
     ai_sweep_article_titles: bool | None = None
+    bulletin_narrate_introduction: bool | None = None
+    perception_languages_off: list[str] | None = None
     # THE IMPORT CHECKPOINT INTERVAL K (2026-09-07). How many corpus backups of a
     # multi-backup import share one verify + working-copy snapshot + atomic swap.
     # 1 (the default) is today's behaviour; higher is faster and less durable.

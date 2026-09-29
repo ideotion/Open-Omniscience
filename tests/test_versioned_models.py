@@ -44,6 +44,14 @@ from src.versioned.models import (
 #: PostgreSQL allows 1,600 columns; the limit Q1140 warns about is nowhere near.
 COLUMN_CEILING = 19
 
+#: ``osm_objects`` is the ONE lane table whose width is a RULING rather than a shape: Q810 = a
+#: asks for curated tag columns and its note asks for the list to be EXTENDED to shrink the
+#: blob, so it is pinned on its own, zero-slack, and kept out of the ceiling above (0.5 row D,
+#: 2026-09-28). 131 = 15 structural + 4 family columns + 111 curated tags + the blob; the
+#: ceilings it answers to (SQLite 2,000 measured, PostgreSQL 1,600 from memory, a 400 guard)
+#: are in ``tests/test_osm_tags.py``.
+OSM_OBJECTS_WIDTH = 131
+
 #: A column name containing any of these would be this project forming an opinion.
 FORBIDDEN_NAME_PARTS = ("score", "rating", "ranking", "grade", "confidence", "trust")
 
@@ -55,6 +63,7 @@ def _lane_tables():
     # alone. Importing them here makes every check below cover every lane table, whatever
     # ran first (found 2026-09-28, when the widest table became a wiki one).
     import src.law.lane_models  # noqa: F401
+    import src.osm.lane_models  # noqa: F401
     import src.wiki.lane_models  # noqa: F401
 
     return LaneBase.metadata.tables
@@ -85,6 +94,10 @@ def test_the_widest_lane_table_stays_within_its_measured_ceiling():
     not a measurement; this is.
     """
     widths = {name: len(table.columns) for name, table in _lane_tables().items()}
+    assert widths.pop("osm_objects") == OSM_OBJECTS_WIDTH, (
+        "osm_objects changed width; the curated column list is Q810's, so re-state "
+        "OSM_OBJECTS_WIDTH with the reason"
+    )
     widest = max(widths, key=lambda k: widths[k])
     assert widths[widest] <= COLUMN_CEILING, (
         f"{widest} carries {widths[widest]} columns, past the ceiling of "
