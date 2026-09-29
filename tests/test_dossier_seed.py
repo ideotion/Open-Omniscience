@@ -258,3 +258,28 @@ def test_the_dossier_opens_from_the_place_card_and_the_who_facet():
     an = read_static("app-analysis.js")
     assert "pc-dossier" in an and "openDossier(" in an
     assert "an-dossier" in an
+
+
+def test_an_acronym_stored_upper_case_still_joins(db, rings, lanes, monkeypatch):
+    """Acronym keywords and entities are stored UPPER-case while ring members are lower-case."""
+    rs = (equivalence.Ring(id="usa", qid="Q999999030", members=(("en", "usa"), ("ru", "сша"))),)
+    monkeypatch.setattr(equivalence, "load_rings", lambda: rs)
+    equivalence._index.cache_clear()
+    equivalence._multi_index.cache_clear()
+    equivalence._member_languages.cache_clear()
+    src = _source(db, "acr.example", country="us")
+    a = _article(db, src, "The USA acted.")
+    b = _article(db, src, "США сделали шаг.", lang="ru")
+    kw = Keyword(term="USA", normalized_term="USA", language="en")
+    kw_ru = Keyword(term="США", normalized_term="США", language="ru")
+    db.add_all([kw, kw_ru])
+    db.flush()
+    db.add(ArticleKeyword(article_id=a.id, keyword_id=kw.id))
+    db.add(ArticleKeyword(article_id=b.id, keyword_id=kw_ru.id))
+    c = _article(db, src, "USA again.")
+    db.add(ArticleEntity(article_id=c.id, name="USA", entity_class="organization", mentions=1))
+    db.commit()
+    d = DO.qid_dossier(db, "Q999999030", "en")
+    assert d["routes"]["keywords"]["articles"] == 2
+    assert d["routes"]["entities"]["articles"] == 1
+    assert sorted(d["article_ids"]) == sorted([a.id, b.id, c.id])

@@ -126,8 +126,24 @@ def item_terms(qid: str) -> dict[str, set[str]]:
     return out
 
 
+def _norm(text: str) -> str:
+    """The rings' own normalisation (whitespace collapsed, casefolded)."""
+    return " ".join((text or "").split()).casefold()
+
+
+def _case_variants(terms: set[str]) -> list[str]:
+    """The stored spellings a normalised term can take: as written, UPPER (an acronym is stored
+    upper-case, WHO != who), Title, and Capitalised. SQL ``IN`` is case-sensitive and SQLite's
+    ``lower()`` folds only ASCII, so the candidates are asked for by name and CONFIRMED in Python
+    with the rings' own normalisation."""
+    out: set[str] = set()
+    for t in terms:
+        out.update({t, t.upper(), t.title(), t.capitalize()})
+    return sorted(out)
+
+
 def _entity_names(session, terms: dict[str, set[str]], qid: str) -> list[str]:
-    """The ArticleEntity names (as stored) that resolve to ``qid``. Scans the distinct names."""
+    """The ArticleEntity names (as stored) that resolve to ``qid``."""
     from src.database.models import ArticleEntity
     from src.entities.spine import entity_qid
 
@@ -135,8 +151,10 @@ def _entity_names(session, terms: dict[str, set[str]], qid: str) -> list[str]:
     if not every:
         return []
     names: list[str] = []
-    for (name,) in session.execute(select(ArticleEntity.name).distinct()):
-        if name and " ".join(name.split()).casefold() in every and entity_qid(name)[0] == qid:
+    for (name,) in session.execute(
+        select(ArticleEntity.name).where(ArticleEntity.name.in_(_case_variants(every))).distinct()
+    ):
+        if name and _norm(name) in every and entity_qid(name)[0] == qid:
             names.append(name)
     return sorted(names)
 
@@ -151,19 +169,20 @@ def _keyword_ids(session, terms: dict[str, set[str]], qid: str) -> tuple[list[in
         return [], []
     ids: list[int] = []
     shown: set[str] = set()
-    for kid, norm, lang in session.execute(
+    for kid, stored, lang in session.execute(
         select(Keyword.id, Keyword.normalized_term, Keyword.language).where(
-            Keyword.normalized_term.in_(sorted(every))
+            Keyword.normalized_term.in_(_case_variants(every))
         )
     ):
+        norm = _norm(stored)
         code = (lang or "").split("-")[0].lower()
         if code:
             ok = norm in terms.get(code, set())
         else:
-            ok = entity_qid(norm)[0] == qid
+            ok = entity_qid(stored)[0] == qid
         if ok:
             ids.append(int(kid))
-            shown.add(norm)
+            shown.add(stored)
     return ids, sorted(shown)
 
 
