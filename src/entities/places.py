@@ -462,6 +462,24 @@ def mention_count(session, place) -> int:
     return int(n or 0)
 
 
+def mention_article_ids(session, place, *, cap: int = 20_000) -> tuple[list[int], int]:
+    """The corpus articles naming this place (the rows :func:`mention_count` counts), lowest ids
+    first, at most ``cap`` of them, and how many there are in all."""
+    from sqlalchemy import select
+
+    from src.database.models import ArticleMentionedPlace
+
+    ids = session.execute(
+        select(ArticleMentionedPlace.article_id).where(
+            ArticleMentionedPlace.name.in_({place.name}),
+            ArticleMentionedPlace.country == place.country,
+            ArticleMentionedPlace.kind != "country",
+        ).distinct().order_by(ArticleMentionedPlace.article_id)
+    ).scalars().all()
+    ids = [int(i) for i in ids]
+    return ids[:cap], len(ids)
+
+
 def place_card(session, place_id: str, lang: str = "en") -> dict | None:
     """Everything a Place card shows, or None for an unknown id. No network call."""
     from src.database.models import Place

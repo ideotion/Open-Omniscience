@@ -4175,6 +4175,14 @@
       if (!dlg) return;
       _placeCardWired = true;
       $("pc-close").addEventListener("click", () => dlg.close());
+      // S05-11 S3: the Conjunction Lens over the articles naming this place.
+      $("pc-body").addEventListener("click", (ev) => {
+        const b = ev.target && ev.target.closest ? ev.target.closest(".pc-conj") : null;
+        const d = _placeCardLast;
+        if (!b || !d) return;
+        dlg.close();
+        openConjunctionLens({place_id: d.id, place_label: (d.title && d.title.name) || d.local_name || d.id});
+      });
       // The ◎ buttons are drawn into #an-www by _anWwwHtml; ONE delegated listener serves
       // every redraw, rather than one per button per render.
       const www = $("an-www");
@@ -4357,6 +4365,9 @@
         + ` · ${esc(origin)}`
         + (d.item && d.item.as_of ? ` · ${esc(tf("Wikidata item read {date}", {date: String(d.item.as_of).slice(0, 10)}))}` : "")
         + `</div>`;
+      if (d.articles) {
+        html += `<div style="margin-top:8px"><button type="button" class="secondary pc-conj">${esc(t("Combine keywords in these articles"))}</button></div>`;
+      }
       // The caveat is VISIBLE, never behind the hover (the informed-consent rule).
       html += `<p class="card-caveat" style="margin-top:8px">${esc(t(d.caveat || ""))}</p>`;
       $("pc-body").innerHTML = html;

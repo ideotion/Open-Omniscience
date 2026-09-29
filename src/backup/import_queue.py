@@ -651,9 +651,19 @@ class ImportQueueManager:
                             item.get("id"), exc_info=True,
                         )
                 except Exception as exc:  # noqa: BLE001 - one bad item must not lose the rest
-                    _LOG.exception("import item %s failed", item.get("id"))
+                    # A Stop pressed mid-merge unwinds the item through an exception (the
+                    # merge is interrupted wherever it stood), which is not the backup
+                    # failing: it reads "stopped", as a Stop between items already did
+                    # (R68, 2026-09-29). The exception text is kept on the item, and the
+                    # group is discarded exactly as for a failure -- a half-merged copy
+                    # is unsafe whatever interrupted it.
+                    stopped_here = self._stop.is_set()
+                    if stopped_here:
+                        _LOG.info("import item %s stopped mid-merge: %s", item.get("id"), exc)
+                    else:
+                        _LOG.exception("import item %s failed", item.get("id"))
                     with self._lock:
-                        item["state"] = "error"
+                        item["state"] = "stopped" if stopped_here else "error"
                         item["error"] = str(exc)
                     # A failure ANYWHERE in an item that had an open group taints the
                     # group: windowed merge steps commit mid-merge, so the working
@@ -662,8 +672,9 @@ class ImportQueueManager:
                     # answer, and it costs the group's other merges -- which is the
                     # durability half of the K trade, stated where it is paid.
                     self._discard_group(
-                        f"the import of {item.get('label') or item.get('id')} failed, "
-                        "so the shared working copy could not be trusted"
+                        f"the import of {item.get('label') or item.get('id')} "
+                        + ("was stopped" if stopped_here else "failed")
+                        + ", so the shared working copy could not be trusted"
                     )
                 finally:
                     with self._lock:

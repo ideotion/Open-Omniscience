@@ -1,4 +1,4 @@
-"""The licence lines where data leaves the machine (S04-03 S4; Q1008 = a, Q823 ⛔).
+"""The licence lines where data leaves the machine (S04-03 S4; Q1008 = a, Q823 = a).
 
 Open Omniscience - Global Intelligence Platform for Investigative Journalism
 Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
@@ -8,8 +8,9 @@ negative space is the point, and it has three parts —
 
   * a licence line NEVER appears for content the carrier does not hold (a CC BY-SA
     line on a ZIP with no Wikipedia text is a false statement, not caution);
-  * NO ODbL line and NO share-alike note exists ANYWHERE, because Q823 is a
-    maintainer-only question and is unanswered;
+  * the ODbL line exists in ONE place (the registry) and rides only on OSM-derived
+    content (Q823 = a, 2026-09-29; before that ruling no such line existed anywhere and
+    OSM-derived rows refused the carrier);
   * a licence is never INVENTED for content whose terms this corpus did not record
     (the law rows) — the gap is published as a gap.
 """
@@ -27,13 +28,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from src.backup.attribution import (
-    HELD_PENDING_RULING,
-    OSM_PENDING_RULING,
-    PendingRulingError,
     attribution_dicts,
-    attribution_lines,
-    files_signal,
-    osm_seam_blockers,
     signals_from_sources,
     signals_from_tables,
 )
@@ -110,29 +105,36 @@ def test_the_lines_are_ordered_the_same_way_for_every_carrier():
 # --------------------------------------------------------------------------- #
 #  The Q823 seam
 # --------------------------------------------------------------------------- #
-def test_osm_derived_corpus_rows_REFUSE_rather_than_render_a_short_block():
-    with pytest.raises(PendingRulingError) as exc:
-        attribution_lines({"table:articles", "table:osm_objects"})
-    msg = str(exc.value)
-    assert OSM_PENDING_RULING == "Q823" and "Q823" in msg
-    assert "table:osm_objects" in msg
-    assert osm_seam_blockers({"table:osm_ways", "table:articles"}) == ["table:osm_ways"]
+def test_osm_derived_corpus_rows_carry_the_osm_credit_and_the_odbl():
+    """Q823 = a: wherever OSM data leaves the machine it carries OSM's credit and the ODbL
+    line with its share-alike term. The carrier is no longer refused."""
+    lines = attribution_dicts({"table:articles", "table:osm_objects"})
+    assert [ln["key"] for ln in lines] == ["openstreetmap"]
+    text = lines[0]["text"]
+    assert "© OpenStreetMap contributors" in text and "openstreetmap.org/copyright" in text
+    assert "Open Database License" in text and "odbl" in text.lower() and "alike" in text
+    assert lines[0]["because"] == "table:osm_objects"
 
 
-def test_a_copied_geofabrik_extract_is_not_a_blocker_and_emits_no_line():
-    """Upstream ODbL bytes carried as they are, not a derived database. Refusing them
-    would be answering Q823 = b, which is the maintainer's call and not this slice's."""
-    sig = {files_signal("osm_regions"), "table:articles"}
-    assert osm_seam_blockers(sig) == []
-    assert attribution_dicts(sig) == []
+@pytest.mark.parametrize("sig", ["table:places", "table:osm_history_changes", "files:osm_regions"])
+def test_every_osm_derived_signal_brings_the_line(sig):
+    assert [ln["key"] for ln in attribution_dicts({sig})] == ["openstreetmap"]
 
 
-def test_the_held_ruling_is_recorded_so_the_absence_reads_as_a_decision():
-    assert "openstreetmap" in HELD_PENDING_RULING
-    assert "Q823" in HELD_PENDING_RULING["openstreetmap"]
+def test_nothing_osm_carried_means_no_osm_line():
+    """The negative space, as for every other line: an export with no OSM content says
+    nothing about OSM (a table that merely starts with "osm" in another word is not one)."""
+    for sig in (
+        signals_from_tables({"wiki_pages": 1, "law_documents": 1, "articles": 5}),
+        signals_from_tables({"places": 0, "osm_objects": 0}),
+        {"table:article_mentioned_places"},
+    ):
+        for line in attribution_dicts(sig):
+            assert "openstreetmap" not in line["text"].lower(), sig
+            assert "odbl" not in line["text"].lower(), sig
 
 
-_OSM_LICENCE_WORDS = re.compile(r"ODbL|Open Database License|Open Database Licence|share-alike note", re.I)
+_OSM_LICENCE_WORDS = re.compile(r"Open Database License|Open Database Licence|opendatacommons", re.I)
 _CARRIERS = (
     "src/backup/attribution.py",
     "src/backup/export_summary.py",
@@ -140,44 +142,20 @@ _CARRIERS = (
     "src/bulletin/evidence.py",
     "src/bulletin/render.py",
     "src/bulletin/edition.py",
+    "src/analytics/claim_bundle.py",
     "src/static/app-backup.js",
+    "src/static/app-claim.js",
 )
 
 
-def test_NO_odbl_line_exists_in_any_carrier():
-    """The seam, asserted across every file that can put text into an export, a
-    bulletin or an evidence ZIP. A commented-out line would fail this too, which is
-    intended: a line one edit away from shipping is not a stop at the seam."""
-    for rel in _CARRIERS:
-        lines = (_REPO / rel).read_text(encoding="utf-8").splitlines()
-        for i, line in enumerate(lines):
-            if not _OSM_LICENCE_WORDS.search(line):
-                continue
-            # The ONE legitimate mention is the prose explaining the ruling being waited
-            # on, so the words are allowed only in the NEIGHBOURHOOD of a Q823 reference
-            # (a paragraph wraps, so the mention and the ruling id are rarely on one
-            # line). A line anywhere else — including a commented-out one, which is a
-            # single edit away from shipping — fails.
-            near = "\n".join(lines[max(0, i - 8) : i + 9])
-            # `OSM_PENDING_RULING` IS the ruling id — the refusal message builds its text
-            # from the constant rather than repeating the literal, which is the same
-            # naming and is what keeps the two from drifting apart.
-            assert "Q823" in near or "OSM_PENDING_RULING" in near, f"{rel}:{i + 1}: {line.strip()}"
+def test_the_odbl_line_is_written_in_ONE_place():
+    """Every carrier renders the registry's line; none spells its own. A second copy is
+    how two carriers come to credit OSM differently."""
+    hits = [rel for rel in _CARRIERS
+            if _OSM_LICENCE_WORDS.search((_REPO / rel).read_text(encoding="utf-8"))]
+    assert hits == ["src/backup/attribution.py"], hits
 
 
-def test_no_carrier_emits_an_attribution_line_mentioning_openstreetmap():
-    for sig in (
-        signals_from_tables({"wiki_pages": 1, "law_documents": 1, "articles": 5}),
-        {files_signal("osm_regions")},
-    ):
-        for line in attribution_dicts(sig):
-            assert "openstreetmap" not in line["text"].lower()
-            assert "odbl" not in line["text"].lower()
-
-
-# --------------------------------------------------------------------------- #
-#  S6 — exports are never scheduled (Q220 = c), a stated non-feature
-# --------------------------------------------------------------------------- #
 def test_no_scheduled_export_mechanism_exists():
     """Q220 = c: exports stay a deliberate act. Option (a) — a backlog entry — was NOT
     chosen, so there is nothing to build and nothing to park; what this pins is that
