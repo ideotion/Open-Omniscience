@@ -20,6 +20,7 @@
 */
     let _searchTimeScope = null;
     let _searchTsBounds = {min: null, max: null};
+    let _searchTsTimer = null;
     function buildSearchTimeScope() {
       const box = $("search-timescope");
       if (!box || _searchTimeScope) return;
@@ -32,7 +33,14 @@
       // how the omnibar/other live filters behave — the user sees results update).
       _searchTimeScope = ooTimeScope(box, {
         min, max, from: min, to: max,
-        onChange: () => { if (_loaded.has("explore")) doSearch(); },   // the search's page is Explore (R47)
+        // Debounced: a drag fires this on every step, and on Explore every search that
+        // lands spawns its own analysis tab (R47) -- undebounced, one drag across a few
+        // days opened a tab per day and evicted the reader's other analyses at the cap.
+        onChange: () => {   // the search's page is Explore (R47)
+          if (!_loaded.has("explore")) return;
+          clearTimeout(_searchTsTimer);
+          _searchTsTimer = setTimeout(() => doSearch(), 350);
+        },
       });
     }
 
@@ -317,10 +325,13 @@
     }
     // Spawn (or focus) a tab for a seed; dedupe by key so the SAME query/set reuses
     // its tab while DIFFERENT searches coexist as parallel tabs (the workspace).
-    function _anSpawn(seed) {
-      const key = seed.kind === "ids"
+    function _anSeedKey(seed) {
+      return seed.kind === "ids"
         ? ("ids:" + (seed.label || (seed.ids || []).slice(0, 4).join(",")))
         : _advTabKey(seed.query, _advLegacy(seed));
+    }
+    function _anSpawn(seed) {
+      const key = _anSeedKey(seed);
       let tb = _anTabs.find(x => x.key === key);
       if (!tb) {
         tb = Object.assign({id: "t" + (_anTabSeq++) + Date.now().toString(36), key}, seed);
@@ -363,6 +374,12 @@
     }
     function openAnalysis() {
       // The search "Analyze" path -> spawn a tab seeded from the current search.
+      return _anSpawn(_searchSeed());
+    }
+    // The seed of the search the Search part's boxes hold right now. doSearch takes it
+    // when it is CALLED, so the analysis it spawns is of the set it listed, not of
+    // whatever the box was edited to while the request was in flight.
+    function _searchSeed() {
       const qtxt = $("q").value.trim();
       const _ts = _searchTimeScope && _searchTimeScope.get();
       // The Search tab's three filters travel as the SAME parameters the tab sends, so
@@ -372,7 +389,7 @@
         start_date: (_ts && _ts.from && _ts.from > _searchTsBounds.min) ? _ts.from : "",
         end_date: (_ts && _ts.to && _ts.to < _searchTsBounds.max) ? _ts.to : "",
       });
-      return _anSpawn({kind: "query", query: qtxt, label: qtxt || "(filtered)", adv});
+      return {kind: "query", query: qtxt, label: qtxt || "(filtered)", adv};
     }
     // Advanced tab: refine the ACTIVE tab in-place (updates its seed, never spawns a
     // new tab). loadAnalysis re-runs EVERY subtab from the params.
@@ -407,6 +424,7 @@
         commodity: null, src: "", lang: "", from: "", to: "", adv,
         key: _advTabKey(q, adv)});
       _anRenderStrip(); _anSaveTabs(); _anWriteLensToUrl();
+      _exploreSync();   // the refined tab is a new set: the list above no longer describes it
       _advHistRecord(q, adv);
       $("an-query").textContent = q ? `“${q}”` : "(all articles matching your filters)";
       const fs = _anFilterSummary();
@@ -2853,7 +2871,16 @@
       return `<div class="approx-title" lang="${esc(window.OOI18N && OOI18N.current ? OOI18N.current() : "")}" title="${esc(lines.join("\n"))}">`
         + `<span class="approx-mark" aria-label="${esc(t("tentative translation"))}">≈</span> ${esc(tt.title)}</div>`;
     }
-    async function doSearch() {
+    let _searchSeq = 0;            // the latest doSearch call: an older answer is dropped
+    let _searchSpawnDue = false;   // a reader's own search waits to spawn its analysis
+    // opts.refresh: a background re-list (an ingest finishing, a restore). It redraws the
+    // list and spawns nothing, so it can neither open an analysis nor switch away from
+    // the one the reader is looking at.
+    async function doSearch(opts) {
+      const refresh = !!(opts && opts.refresh);
+      const seq = ++_searchSeq;
+      if (!refresh) _searchSpawnDue = true;
+      const seed = _searchSeed();
       // Through _articleQuery like every other /api/articles caller. The Search tab never
       // carries an id-seeded corpus, so this is a no-op here -- but making the rule
       // uniform means there is no exception to remember, which is what let the analysis
@@ -2871,6 +2898,7 @@
       if (!p.get("ui_lang") && window.OOI18N && OOI18N.current) p.set("ui_lang", OOI18N.current());
       try {
         const data = await api("/api/articles?" + p.toString());
+        if (seq !== _searchSeq) return;   // a newer search owns the list (and its analysis)
         // Keyed frames with the counts interpolated after translation -- the line was a
         // hard-coded English template on a page read in eleven other languages (N11).
         const stf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
@@ -2910,13 +2938,27 @@
         // not ask for nor add an analysis tab behind their back.
         const hasSet = ["query", "source", "language", "start_date", "end_date"].some((k) => p.get(k));
         const onExplore = !!($("tab-explore") && $("tab-explore").classList.contains("active"));
-        if (onExplore && hasSet) {
+        const spawn = _searchSpawnDue; _searchSpawnDue = false;
+        if (spawn && onExplore && hasSet) {
           _exploreFromSearch = true;
-          try { openAnalysis(); } finally { _exploreFromSearch = false; }
-        } else if (onExplore) {
+          try { _anSpawn(seed); } finally { _exploreFromSearch = false; }
+        } else if (spawn && onExplore) {
           _exploreSearchKey = null; _exploreListAll = true; _exploreSync();
+        } else if (!spawn) {
+          // A refresh re-listed the boxes' set. If that is no longer the set the paired
+          // analysis was spawned for (the box was edited since), the pairing is dropped,
+          // so the note says whose analysis is shown instead of the two reading as one.
+          const k = hasSet ? _anSeedKey(seed) : null;
+          if (k === null || k !== _exploreSearchKey) {
+            _exploreSearchKey = null; _exploreListAll = !hasSet; _exploreSync();
+          }
         }
       } catch (e) {
+        if (seq !== _searchSeq) return;   // a newer search owns the list
+        // The reader's own search failed: its failure is shown where its list would be,
+        // even while an outside analysis had set that list aside.
+        if (_searchSpawnDue) { const so = $("search-out"); if (so) so.hidden = false; }
+        _searchSpawnDue = false;
         // PERSISTENT, honest failure state -- rendered into the exact two spots a
         // successful search fills, so it survives exactly as long as a real result
         // would (unlike the toast below, which is a transient echo of the same fact,

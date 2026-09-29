@@ -98,6 +98,7 @@ const src = [
   "function api(u){H.api.push(u); return H.respond(u);}",
   "function ooChart(host, list, opts){H.charts.push({host, list, opts});}",
   "function _anRepaintArticles(){H.articlesRepainted++;}",
+  "function _exploreSync(){}",   // Explore's note (R47), redrawn from state; tested in test_explore_merge.py
   "var _SPARSE_BAR_MAX = 10;",
   "var COMMODITY_QUERY = {WTI: 'crude oil'};",
   "var _anCommodity = null, _anExpand = true;",

@@ -57,11 +57,41 @@ def test_a_search_analyses_its_own_set_and_only_when_there_is_one():
     ana = read_static("app-analysis.js")
     body = function_body(ana, "doSearch")
     assert '["query", "source", "language", "start_date", "end_date"].some((k) => p.get(k))' in body
-    assert "_exploreFromSearch = true;" in body and "openAnalysis();" in body
+    assert "_exploreFromSearch = true;" in body and "_anSpawn(seed);" in body
     assert "finally { _exploreFromSearch = false; }" in body, "the flag cannot stay set after a failure"
     assert "_exploreListAll = true;" in body, "an empty search lists everything and analyses nothing"
     # The analysis is spawned only after the list has rendered, never in place of it.
-    assert body.index("annotateArticleDups(p, t);") < body.index("openAnalysis();")
+    assert body.index("annotateArticleDups(p, t);") < body.index("_anSpawn(seed);")
+    # The seed is taken when the search is CALLED, so the analysis is of the set listed,
+    # and an older answer that lands after a newer search is dropped rather than drawn.
+    assert body.index("const seed = _searchSeed();") < body.index("await api(")
+    assert body.count("if (seq !== _searchSeq) return;") == 2, "both the answer and the failure of a stale search"
+    assert "return _anSpawn(_searchSeed());" in function_body(ana, "openAnalysis")
+
+
+def test_a_background_refresh_never_spawns_or_switches_the_analysis():
+    """doSearch also re-lists in the background (an ingest finishing, a restore). On
+    Explore that must not add a tab or switch away from the analysis being read."""
+    body = function_body(read_static("app-analysis.js"), "doSearch")
+    assert "if (!refresh) _searchSpawnDue = true;" in body
+    assert "if (spawn && onExplore && hasSet)" in body
+    for name, calls in (("app-sources.js", 4), ("app-backup.js", 1)):
+        src = read_static(name)
+        assert src.count("doSearch({refresh: true})") == calls, name
+        assert "doSearch()" not in src, f"{name} re-lists without saying it is a refresh"
+
+
+def test_dragging_the_date_range_does_not_open_a_tab_per_step():
+    ana = read_static("app-analysis.js")
+    build = function_body(ana, "buildSearchTimeScope")
+    assert "clearTimeout(_searchTsTimer);" in build and "setTimeout(() => doSearch(), 350)" in build
+
+
+def test_refining_the_searchs_own_tab_sets_the_list_aside():
+    """Advanced search refines the active tab IN PLACE, changing its key: the list above
+    still describes the old set, so Explore must re-sync."""
+    run = function_body(read_static("app-analysis.js"), "anRunAdvanced")
+    assert run.index("key: _advTabKey(q, adv)") < run.index("_exploreSync();")
 
 
 def test_the_overview_draws_when_an_analysis_opens_onto_it():
@@ -79,7 +109,6 @@ def test_the_page_stays_put_for_its_own_search_and_scrolls_for_an_outside_one():
     act = function_body(ana, "_anActivate")
     assert 'if (!onExplore) showTab("explore");' in act
     assert "if (!onExplore && !_exploreFromSearch)" in act and "scrollIntoView" in act
-    assert "return _anSpawn(" in function_body(ana, "openAnalysis")
 
 
 _SYNC_HARNESS = r"""
