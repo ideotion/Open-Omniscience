@@ -2167,6 +2167,12 @@
       <div class="hint" id="osm-pick-cadence"></div>
       <div class="hint">OpenStreetMap data stays on this machine: it is kept out of exports, bulletins and evidence files while the question of its licence (ODbL) is open.</div>
     </section>
+    <section class="panel" id="osm-history">
+      <h2>Full history</h2>
+      <p class="muted" style="margin-top:0">The whole planet's past, every version of every object, in one file from the OpenStreetMap planet mirror. It is read for the countries already read above, so later trends can state what happened before this app started watching.</p>
+      <div id="osm-hist-body"><div class="muted">Loading…</div></div>
+      <div class="hint">A country's history is read with scripts/osm_history_ingest.py, with the app stopped, once its continent extract has been read.</div>
+    </section>
     <section class="panel">
       <h2>OpenStreetMap regions</h2>
       <p class="muted" style="margin-top:0">Download OpenStreetMap region extracts for offline use — managed like the Wikipedia dumps (resumable, with pause/resume, and a download queue). Regions are listed largest first; the size shown is a dated estimate from a bundled catalogue (no network) — the exact size is read from the mirror when the download starts. Continents come from Geofabrik; the whole planet from the OpenStreetMap planet mirror. These can be very large (a continent is several GB; the planet is tens of GB).</p>

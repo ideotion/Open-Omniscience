@@ -60,6 +60,8 @@ _DEFAULT_OSM_CONCURRENCY = max(1, int(os.getenv("OO_OSM_CONCURRENCY", "2")))
 # whole-planet file is NOT a Geofabrik product, it lives on the OSM planet mirror.
 GEOFABRIK_BASE = "https://download.geofabrik.de"
 PLANET_URL = "https://planet.openstreetmap.org/pbf/planet-latest.osm.pbf"
+#: The full-history planet (Q814 = b): the same host as the planet, another path.
+HISTORY_URL = "https://planet.openstreetmap.org/pbf/full-history/history-latest.osm.pbf"
 
 
 def osm_filename(code: str) -> str:
@@ -80,6 +82,8 @@ def osm_download_url(code: str) -> str:
         raise ValueError(f"invalid OSM region code {code!r}")
     if c == "planet":
         return PLANET_URL
+    if c == "planet-history":
+        return HISTORY_URL
     return f"{GEOFABRIK_BASE}/{c}-latest.osm.pbf"
 
 
@@ -299,6 +303,52 @@ class OsmDownloadManager:
         the guarded factory (kill switch / proxy honoured); the catalog estimate
         is the zero-network default shown without this."""
         return self._probe_url_size(osm_download_url(code))
+
+    def size_reading(self, code: str) -> dict:
+        """The mirror's exact size for ``code`` with a NAMED reason when it could not be read.
+
+        One HEAD, through the guarded factory. ``reason`` is ``airplane`` (the kill switch
+        refused it: nothing left this machine), ``unreachable`` (the request was made and
+        failed) or ``no-content-length`` -- never a 0, because "not read" and "empty" are
+        opposite facts (invariant #14e). ``free_bytes`` is the local disk's free space where
+        the file would land: a local reading, beside the remote one, so the two can be compared
+        before anything is fetched.
+        """
+        import shutil
+
+        from src.safety.fetcher import NetworkBlocked
+
+        url = osm_download_url(code)
+        out: dict = {
+            "code": (code or "").strip().lower(),
+            "url": url,
+            "size_bytes": None,
+            "reason": None,
+            "estimate_bytes": estimate_bytes(code),
+            "free_bytes": None,
+        }
+        probe = self.base_dir
+        while not probe.exists() and probe != probe.parent:
+            probe = probe.parent
+        with contextlib.suppress(OSError):
+            out["free_bytes"] = shutil.disk_usage(probe).free
+        head = self._http_head or _default_head
+        try:
+            resp = head(url)
+            cl = resp.headers.get("Content-Length")
+        except NetworkBlocked:
+            out["reason"] = "airplane"
+            return out
+        except Exception:  # noqa: BLE001 - a transport failure is not a size of 0
+            out["reason"] = "unreachable"
+            return out
+        try:
+            out["size_bytes"] = int(cl) if cl else None
+        except (TypeError, ValueError):
+            out["size_bytes"] = None
+        if out["size_bytes"] is None:
+            out["reason"] = "no-content-length"
+        return out
 
     def _probe_url_size(self, url: str) -> int | None:
         head = self._http_head or _default_head
