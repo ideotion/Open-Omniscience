@@ -60,10 +60,13 @@
              Home, because it is the other thing you do with a corpus -- read it. Home is a
              launchpad of Leads; this is the articles themselves. -->
         <button class="nav-item" data-tab="feed"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h10M4 10h10M4 15h7"/><rect x="16" y="4" width="4" height="4" rx="1"/><rect x="16" y="12" width="4" height="4" rx="1"/></svg><span>Feed</span></button>
-        <!-- Search AND Analysis retired from the sidebar (ruled 2026-06-20): analyses run
-             via search (the omnibar/palette -> a spawned analysis window) or by clicking into
-             the other tabs. #tab-analyze + #tab-search stay registered and reachable via
-             showTab()/openAnalysisFor() + the palette -- nothing is lost. -->
+        <!-- EXPLORE (R47, Q1120 = a's Graft 1; the 2026-09-29 answer 5 = a): Search and the
+             analysis window are ONE sidebar page. The query box sits on top; the analysis
+             subtabs render under the results the moment a search returns, never in a second
+             window. It supersedes the 2026-06-20 retirement of Search and Analysis from the
+             sidebar (invariant #22). #tab-search + #tab-analyze stay as the page's two parts,
+             and showTab("search") / showTab("analyze") land here. -->
+        <button class="nav-item" data-tab="explore"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="10" cy="10" r="6"/><path d="M14.5 14.5L20 20"/><path d="M7 11.5l2-2 1.5 1.5 2.5-3"/></svg><span>Explore</span></button>
         <button class="nav-item" data-tab="insights"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V4M4 20h16"/><path d="M8 16l3-4 3 3 5-7"/></svg><span>Insights</span></button>
         <!-- OBSERVATORY (maintainer-ruled 2026-07-18): a dedicated main tab, whole-corpus
              v1. The invariant-#2 roster grows by one. It shows DATA (#8) and is a
@@ -408,8 +411,11 @@
 
     </div>
 
-    <!-- ============================ SEARCH ============================ -->
-    <div class="tab-page" id="tab-search">
+    <!-- ============================ EXPLORE ============================ -->
+    <!-- One page, two parts (R47): the search on top, and under its results the analysis
+         of the same set. showTab("search") and showTab("analyze") both open this page. -->
+    <div class="tab-page" id="tab-explore">
+    <div class="explore-part" id="tab-search">
     <section class="panel">
       <h2>Search the corpus</h2>
       <label for="q">Boolean query <span class="muted">(AND / OR / NOT, "phrases", parentheses)</span></label>
@@ -422,8 +428,6 @@
       </div>
       <div class="row">
         <button data-on-click="doSearch()">Search</button>
-        <button class="secondary" data-on-click="openAnalysis()"
-          title="Open the analysis window: keywords and matches across the articles this search returns.">Analyze →</button>
         <button class="secondary" type="button" id="claim-from-search"
           title="Open the claim workspace on the text in the search box: the related articles, how they group by independence, who said what when, and what is missing. A trail, never a verdict.">Check as a claim</button>
         <button class="secondary" data-on-click="exportResults('csv')">Export CSV</button>
@@ -439,6 +443,11 @@
         <button class="secondary" data-on-click="aiRunPrompt('search')" title="Run one of your custom AI extractors over these articles — results are stored as AI-derived metadata of that type, labelled unreliable, never the trusted keyword index.">Run extractor</button>
         <button class="secondary" data-on-click="exportEvidence()" title="Signed, tamper-evident bundle">Export signed evidence</button>
       </div>
+      <!-- An analysis opened from elsewhere (a Lead, a keyword, a link) is not this box's
+           search, so the list below would describe a different set. It is set aside and
+           this line says whose analysis is shown (_exploreSyncSearch). -->
+      <div id="explore-note" class="hint" data-i18n-dyn hidden></div>
+      <div id="search-out">
       <div id="search-meta" class="hint"></div>
       <div id="bulk-llm-search" class="bulk-llm" style="display:none;margin-top:10px"></div>
       <div id="bulk-queue-search" class="bulk-queue" style="margin-top:8px"></div>
@@ -448,38 +457,15 @@
            What was searched is said with every answer. Composed with t() in app-living.js,
            so the walker leaves it alone and a language switch redraws it from cache. -->
       <div id="search-lane" class="lane-search" data-i18n-dyn hidden></div>
-    </section>
-    </div>
-
-    <!-- ========================== CLAIM WORKSPACE =========================== -->
-    <!-- The Claim Workspace, slice 1 (gate row K, brief S05-11 S1; design A1 / A-2). A claim
-         walked through the local corpus in visible steps, each with its method sentence on
-         the page: a trail, never a verdict. Kept off the sidebar like the analysis window;
-         opened from the omnibar's "Check as a claim" row, the Search tab's button and the
-         palette's page list. Rendered by app-claim.js. -->
-    <div class="tab-page" id="tab-claim">
-    <section class="panel">
-      <div class="phead"><h2>Claim workspace</h2></div>
-      <p class="hint" style="margin-top:0">Paste a claim and the app walks it through your corpus, one step at a time.</p>
-      <div class="card-caveat" id="claim-caveat">A trail, never a verdict: this shows what your corpus holds about a claim and how those articles connect, not whether the claim is true. Nothing is scored, no model writes any of it, and nothing leaves your machine.</div>
-      <label for="claim-text" class="claim-label">The claim</label>
-      <textarea id="claim-text" rows="3" maxlength="1000" placeholder="For example: glacier melt in the Alps has doubled since 2000"></textarea>
-      <label for="claim-query" class="claim-label">Words to search for <span class="muted">(optional)</span></label>
-      <input id="claim-query" type="text" maxlength="2000" placeholder="Blank: the claim's own words"
-        title="The Search tab's grammar: AND, OR, NOT, &quot;phrases&quot; and brackets. Blank takes the claim's content words and joins them with OR.">
-      <div class="claim-actions">
-        <button type="button" id="claim-run">Walk the trail</button>
-        <span id="claim-status" class="hint" role="status"></span>
       </div>
-      <div id="claim-body"></div>
     </section>
     </div>
 
     <!-- ========================== ANALYSIS =========================== -->
-    <!-- The corpus-of-articles analysis window (Group F): analytics over the
-         articles matched by a search. Opened from the Search tab's "Analyze"
-         button (and the sidebar). Counts only, never a verdict. -->
-    <div class="tab-page" id="tab-analyze">
+    <!-- The analysis of an article set (Group F): analytics over the articles a search
+         matched, or over a Lead's exact set. Explore's second part (R47): it renders under
+         the search results as soon as a search returns. Counts only, never a verdict. -->
+    <div class="explore-part" id="tab-analyze">
     <section class="panel">
       <!-- THEME-3 (2026-06-19): analysis-window-per-query — each search/Lead/keyword
            spawns a NAMED, closeable, persisted tab over this one render area (replaces
@@ -695,6 +681,31 @@
       <div id="an-synth" style="display:none;margin-top:8px"></div>
       <div id="bulk-llm-an" class="bulk-llm" style="display:none;margin-top:8px"></div>
       <div id="bulk-queue-an" class="bulk-queue" style="margin-top:8px"></div>
+    </section>
+    </div>
+    </div>
+
+    <!-- ========================== CLAIM WORKSPACE =========================== -->
+    <!-- The Claim Workspace, slice 1 (gate row K, brief S05-11 S1; design A1 / A-2). A claim
+         walked through the local corpus in visible steps, each with its method sentence on
+         the page: a trail, never a verdict. Kept off the sidebar like the analysis window;
+         opened from the omnibar's "Check as a claim" row, the Search tab's button and the
+         palette's page list. Rendered by app-claim.js. -->
+    <div class="tab-page" id="tab-claim">
+    <section class="panel">
+      <div class="phead"><h2>Claim workspace</h2></div>
+      <p class="hint" style="margin-top:0">Paste a claim and the app walks it through your corpus, one step at a time.</p>
+      <div class="card-caveat" id="claim-caveat">A trail, never a verdict: this shows what your corpus holds about a claim and how those articles connect, not whether the claim is true. Nothing is scored, no model writes any of it, and nothing leaves your machine.</div>
+      <label for="claim-text" class="claim-label">The claim</label>
+      <textarea id="claim-text" rows="3" maxlength="1000" placeholder="For example: glacier melt in the Alps has doubled since 2000"></textarea>
+      <label for="claim-query" class="claim-label">Words to search for <span class="muted">(optional)</span></label>
+      <input id="claim-query" type="text" maxlength="2000" placeholder="Blank: the claim's own words"
+        title="The Search tab's grammar: AND, OR, NOT, &quot;phrases&quot; and brackets. Blank takes the claim's content words and joins them with OR.">
+      <div class="claim-actions">
+        <button type="button" id="claim-run">Walk the trail</button>
+        <span id="claim-status" class="hint" role="status"></span>
+      </div>
+      <div id="claim-body"></div>
     </section>
     </div>
 
@@ -1356,7 +1367,9 @@
         associations (PMI) and context are real aggregates with sample sizes — nothing is invented.</p>
       <div id="ins-status" class="hint">Loading…</div>
       <nav class="tabs" id="ins-subtabs" style="position:static;padding:0;border:0;margin-top:10px">
-        <button class="active" data-tab="explore">Explore</button>
+        <!-- "Keyword explorer", not "Explore": since R47 the sidebar's Explore is Search and
+             the analysis, and two different things under one name cost a wrong turn. -->
+        <button class="active" data-tab="explore">Keyword explorer</button>
         <button data-tab="trends">Trends</button>
         <button data-tab="sources">Sources</button>
         <button data-tab="families">Families</button>

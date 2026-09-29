@@ -21,7 +21,7 @@
     const NAV = [
       {id:"home",     label:"Home",               grp:"Investigate"},
       {id:"feed",     label:"Feed",               grp:"Investigate"},
-      {id:"search",   label:"Search",             grp:"Investigate"},
+      {id:"explore",  label:"Explore",            grp:"Investigate"},   // Search + the analysis, one page (R47)
       {id:"insights", label:"Insights",           grp:"Investigate"},
       {id:"observatory", label:"Observatory",     grp:"Investigate"},
       {id:"timemap",  label:"World map",          grp:"Investigate"},
@@ -33,7 +33,7 @@
       {id:"ingest",   label:"Collect",            grp:"Collect"},
       {id:"sources",  label:"Sources",            grp:"Collect"},
       {id:"living",   label:"Living sources",     grp:"Investigate"},
-      {id:"claim",    label:"Claim workspace",    grp:"Investigate"},   // off the sidebar, like Search (S05-11 S1)
+      {id:"claim",    label:"Claim workspace",    grp:"Investigate"},   // off the sidebar (S05-11 S1; R66)
       {id:"library",  label:"Library",            grp:"Collect"},
       {id:"custody",  label:"Evidence & custody", grp:"Trust"},
       {id:"integrity",label:"Source integrity",   grp:"Trust"},
@@ -62,7 +62,7 @@
     const TAB_LOADERS = new Map(Object.entries({
       home: () => loadHome(),
       feed: () => { _wireFeed(); },   // rulings 13/40: the corpus as a reading surface
-      search: () => buildSearchTimeScope(),   // mount the ooTimeScope date-range control once
+      explore: () => buildSearchTimeScope(),   // mount the search's ooTimeScope date-range control once
       indices: () => loadIndices(),
       markets: () => loadMarkets(),
       insights: () => loadInsights(),
@@ -85,7 +85,7 @@
     // moving the DOM node preserves its listeners + active state — then only the active
     // tab's nav is displayed. Tabs without facet subtabs hide the strip.
     const _SUBTAB_NAV = {
-      analyze: "an-subtabs", insights: "ins-subtabs", settings: "set-subtabs",
+      explore: "an-subtabs", insights: "ins-subtabs", settings: "set-subtabs",
       agenda: "agenda-views", indices: "indices-cats", markets: "commodities-cats",
       law: "gov-subtabs",   // Governments: Countries · Map · Law
       timemap: "oomap-lenses",   // World map: Coverage · Stories · Places · Server IPs (field-test Item 6)
@@ -106,6 +106,10 @@
     }
     function showTab(name, push = true) {
       if (name === "database") name = "library";  // legacy #database deep-links
+      // Search and the analysis are one page, Explore (R47): every older entry point --
+      // the omnibar, the palette, a Lead, a keyword, a #search or #analyze link -- lands
+      // on it. The two ids stay as the page's parts, so the render code is unchanged.
+      if (name === "search" || name === "analyze") name = "explore";
       if (name === "ingest") {  // Collect moved into Settings → Advanced → Collection
         showTab("settings", push);
         _openAdvanced("collect");
@@ -149,8 +153,8 @@
       // THEME-3: opening Analysis hydrates the restored active tab the first time (the
       // strip is restored at boot; the active tab's data loads lazily here), or shows
       // the launcher empty state when there are no tabs.
-      if (name === "analyze") _advInit();   // the advanced-search builder, wired once (S05-01)
-      if (name === "analyze" && !_anHydrated) {
+      if (name === "explore") _advInit();   // the advanced-search builder, wired once (S05-01)
+      if (name === "explore" && !_anHydrated) {
         _anHydrated = true;
         _anFillLangSelect();   // populate the Advanced language <select> (flags + names)
         const tb = _anActiveId ? _anTabs.find(x => x.id === _anActiveId) : null;

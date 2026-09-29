@@ -521,6 +521,14 @@ finding things, or it finds so much that every answer is the same answer).
    overlaying the price curve with the corpus coverage timeline on a shared
    time axis (dual labelled axes; co-occurrence, never causation). Enforced
    in test_ui_invariants (#22 + #22b).
+   **SUPERSEDED 2026-09-29 (R47; Q1120 = a's Graft 1, confirmed by the maintainer's answer 5 = a on
+   the 2026-09-29 question list): EXPLORE.** Search and the analysis are ONE sidebar page
+   (`data-tab="explore"`, `#tab-explore`): the query box on top, and the analysis subtabs render under
+   the results the moment a search returns — never a second window or dialog. `#tab-search` and
+   `#tab-analyze` stay as the page's two parts; `showTab("search")`/`showTab("analyze")` and every
+   `openAnalysis*` entry land there. An analysis opened from elsewhere sets the list aside and says whose
+   analysis is shown. The subtabs, the endpoints and 22b are unchanged. Enforced in test_ui_invariants
+   (#22c) + tests/test_explore_merge.py.
 23. **BRIEFING CAVEATS ARE VISIBLE BY DEFAULT (audit PR A, 2026-06-15 — enforces
    the permanent informed-consent non-negotiable; resolves a REGRESSION):** every
    Home briefing card renders `c.caveat` inline in a visible `.card-caveat` line
