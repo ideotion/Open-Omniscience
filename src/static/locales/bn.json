@@ -6490,5 +6490,16 @@
   "Daily rain": "দিনের বৃষ্টি",
   "Daily snowfall": "দিনের তুষারপাত",
   "Daily highest wind speed": "দিনের সর্বোচ্চ বাতাসের গতি",
-  "Daily strongest gust": "দিনের সবচেয়ে জোরালো দমকা"
+  "Daily strongest gust": "দিনের সবচেয়ে জোরালো দমকা",
+  "OSM relation": "OSM সম্পর্ক",
+  "no ISO 3166-2 code in OpenStreetMap": "OpenStreetMap-এ কোনো ISO 3166-2 কোড নেই",
+  "Borders: Natural Earth 50m": "সীমানা: Natural Earth 50m",
+  "Country borders from Natural Earth 50m (public domain). OpenStreetMap-derived borders replace them once their files have been built.": "দেশের সীমানা Natural Earth 50m (পাবলিক ডোমেইন) থেকে। OpenStreetMap থেকে তৈরি সীমানার ফাইল তৈরি হলে সেগুলো এগুলোর জায়গা নেয়।",
+  "Borders: OpenStreetMap, as of {date}": "সীমানা: OpenStreetMap, {date} অনুযায়ী",
+  "Borders drawn from OpenStreetMap data of the date shown, © OpenStreetMap contributors (ODbL 1.0).": "দেখানো তারিখের OpenStreetMap ডেটা থেকে আঁকা সীমানা, © OpenStreetMap অবদানকারীরা (ODbL 1.0)।",
+  "{n} countries from OpenStreetMap; every other country keeps its Natural Earth border.": "{n}টি দেশ OpenStreetMap থেকে; বাকি প্রতিটি দেশ তার Natural Earth সীমানা রাখে।",
+  "{n} regions: {tagged} keyed by their ISO 3166-2 code, {fallback} by their OpenStreetMap relation id because OpenStreetMap carries no code for them.": "{n}টি অঞ্চল: {tagged}টি তাদের ISO 3166-2 কোড দিয়ে, {fallback}টি তাদের OpenStreetMap সম্পর্ক আইডি দিয়ে চিহ্নিত, কারণ OpenStreetMap তাদের কোনো কোড রাখে না।",
+  "Region outlines are simplified further for display on this map.": "এই মানচিত্রে দেখানোর জন্য অঞ্চলের রূপরেখা আরও সরল করা হয়েছে।",
+  "Show or hide the first-level regions (states, provinces, regions) OpenStreetMap draws inside each country.": "প্রতিটি দেশের ভেতরে OpenStreetMap-এর আঁকা প্রথম স্তরের অঞ্চল (রাজ্য, প্রদেশ, অঞ্চল) দেখান বা লুকান।",
+  "Natural Earth 50m elsewhere": "অন্যত্র Natural Earth 50m"
 }

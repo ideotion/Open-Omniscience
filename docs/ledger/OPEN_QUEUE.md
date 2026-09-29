@@ -138,6 +138,26 @@
   same ⛔ question, and S4 cannot ship its artifact until it is answered. (8) **For row B (S05-02):** `places.country`
   is stored alpha-2 like every other country column today, so it is the SEVENTH narrow column row B's migration
   widens (`tests/test_alpha3_payload_boundary.py` counts seven).
+- **ROW E'S PROPOSED DEFAULTS AND OPEN QUESTIONS — NOT RULINGS (0.5 row E, `S05-05`, 2026-09-29, thread «Build
+  OSM region boundaries»; ids `R81`–`R85` are held for this row and none is used yet).** S1 (the build) and S2 (the
+  five maps read the artifacts) are built; S3 (choropleths by admin-1 and the ranked table in full, Q816) is the
+  next PR. Built at these defaults, each reversible: (1) **The vertex caps** the build fits every feature to:
+  1,500 per country, 300 per region, 600 per contested area, coordinates kept to 2 decimals (≈ 1.1 km); the map
+  draws at most 120,000 region vertices at once and strides every ring evenly above that, saying so in the legend
+  hover. The brief says the caps are measured first, then published: the maintainer's first build reports bytes
+  and counts, and the PR that ships the artifacts states them. (2) **The freshness window** of both registry
+  entries is 24 months on the data's own vintage. (3) **Natural Earth stays the fallback, country by country:** an
+  artifact that covers some countries replaces only those, and the legend says «Natural Earth 50m elsewhere» on the
+  surface, not only in the hover. (4) **OSM's contested areas are IN the artifact with every party** (`claimed_by`
+  and `disputed_by`, one naming a single party kept and marked incomplete), **but the map's contested layer stays
+  Natural Earth's** with its worldview picker until row L, which is exactly the change of convention and needs its
+  own date and source (brief `S04-11` §6). (5) **The input is a local file the operator downloaded** (planet or
+  extract, filtered with `osmium tags-filter`), read through the OSM lane's ONE reader seam and ring builder
+  (`src/osm/reader.py`, `src/osm/geometry.py`, row D); the build opens no connection, so no new host. OPEN, asked in the
+  PR: **which countries' admin-1 ship in 0.5** (every country, or the ingested ones — the ruling says "shipped
+  artifacts", not the coverage), and **whether Q823 ⛔ reaches a repo-shipped OSM-derived artifact** (ODbL
+  share-alike on a derived database; recorded, never decided here — the registry licence line carries the
+  attribution either way). Q804 stays an ASSUMPTION at the sheet's default.
 - **THE WALK'S SWITCH: WHERE THE WIKIPEDIA WALK RUNS — RULED 2026-09-28, «Switch, off» (`R51`; answered on
   the decision card in the project thread «Plan v0.5» at 12:41 UTC, the recommended option).** The question,
   as put: «Run the Wikipedia walk only where you switch it on, or on every instance?» — over «Switch, on» (every

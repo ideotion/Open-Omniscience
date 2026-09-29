@@ -707,6 +707,46 @@ artifacts:
     freshness: {policy: rarely}
     last_verified: "2026-09-27"
 
+  - id: osm-admin0-boundaries
+    title: OpenStreetMap countries + contested areas (ooMap admin-0, 0.5 row E)
+    kind: vendored-data
+    description: >
+      osm_admin0.json: admin_level=2 relations keyed ISO 3166-1 alpha-3 from their own
+      ISO3166-1:alpha2 tag (Q304), and every boundary=disputed / boundary=claim area with
+      all the parties its claimed_by and disputed_by tags name (Q826). Replaces Natural
+      Earth's polygons country by country where it covers them (Q802's second half);
+      Natural Earth stays the fallback. OPERATOR-BUILT: the maintainer's machine runs the
+      build from a local OSM file (brief S05-05 S1); until then the file is absent and
+      this entry reads "not built yet". The vintage is the date of the OSM data, read
+      from the file itself. The 24-month window is a proposed default, not a ruling.
+      Whether Q823 (ODbL, pending) reaches a repo-shipped artifact is an open question
+      recorded in OPEN_QUEUE.md; the licence line below is the attribution either way.
+    upstream: https://www.openstreetmap.org (planet.openstreetmap.org or a regional extract)
+    fetched_from: a local .osm.pbf the operator downloaded; the build opens no connection
+    check_upstream: "OSM borders change continuously; rebuild when the window lapses or a border changes"
+    license: "ODbL 1.0 -- © OpenStreetMap contributors (share-alike; see Q823)"
+    pin: {path: src/static/osm_admin0.json, sha256: "", vintage_key: vintage, optional: true}
+    refresh: "python scripts/build_admin_boundaries.py <boundaries.osm.pbf>"
+    freshness: {max_age_months: 24}
+    last_verified: "2026-09-29"
+
+  - id: osm-admin1-boundaries
+    title: OpenStreetMap admin-1 regions (ooMap regions, 0.5 row E)
+    kind: vendored-data
+    description: >
+      osm_admin1.json: admin_level=4 relations keyed ISO 3166-2 where OSM carries the
+      ISO3166-2 tag and by the relation id (r<id>) otherwise (Q314, Q804 -- an
+      ASSUMPTION at the sheet's default); the tagged / fallback counts travel in the
+      file. Built by the same run as osm-admin0-boundaries and absent until then.
+    upstream: https://www.openstreetmap.org (planet.openstreetmap.org or a regional extract)
+    fetched_from: a local .osm.pbf the operator downloaded; the build opens no connection
+    check_upstream: "rebuilt with osm-admin0-boundaries, never alone"
+    license: "ODbL 1.0 -- © OpenStreetMap contributors (share-alike; see Q823)"
+    pin: {path: src/static/osm_admin1.json, sha256: "", vintage_key: vintage, optional: true}
+    refresh: "python scripts/build_admin_boundaries.py <boundaries.osm.pbf>"
+    freshness: {max_age_months: 24}
+    last_verified: "2026-09-29"
+
   - id: offline-bundle-python-runtime
     title: Self-contained CPython for the air-gapped installer (OPERATOR-SUPPLIED)
     kind: vendored-binary

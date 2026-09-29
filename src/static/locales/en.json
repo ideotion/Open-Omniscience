@@ -6490,5 +6490,16 @@
   "Daily rain": "Daily rain",
   "Daily snowfall": "Daily snowfall",
   "Daily highest wind speed": "Daily highest wind speed",
-  "Daily strongest gust": "Daily strongest gust"
+  "Daily strongest gust": "Daily strongest gust",
+  "OSM relation": "OSM relation",
+  "no ISO 3166-2 code in OpenStreetMap": "no ISO 3166-2 code in OpenStreetMap",
+  "Borders: Natural Earth 50m": "Borders: Natural Earth 50m",
+  "Country borders from Natural Earth 50m (public domain). OpenStreetMap-derived borders replace them once their files have been built.": "Country borders from Natural Earth 50m (public domain). OpenStreetMap-derived borders replace them once their files have been built.",
+  "Borders: OpenStreetMap, as of {date}": "Borders: OpenStreetMap, as of {date}",
+  "Borders drawn from OpenStreetMap data of the date shown, © OpenStreetMap contributors (ODbL 1.0).": "Borders drawn from OpenStreetMap data of the date shown, © OpenStreetMap contributors (ODbL 1.0).",
+  "{n} countries from OpenStreetMap; every other country keeps its Natural Earth border.": "{n} countries from OpenStreetMap; every other country keeps its Natural Earth border.",
+  "{n} regions: {tagged} keyed by their ISO 3166-2 code, {fallback} by their OpenStreetMap relation id because OpenStreetMap carries no code for them.": "{n} regions: {tagged} keyed by their ISO 3166-2 code, {fallback} by their OpenStreetMap relation id because OpenStreetMap carries no code for them.",
+  "Region outlines are simplified further for display on this map.": "Region outlines are simplified further for display on this map.",
+  "Show or hide the first-level regions (states, provinces, regions) OpenStreetMap draws inside each country.": "Show or hide the first-level regions (states, provinces, regions) OpenStreetMap draws inside each country.",
+  "Natural Earth 50m elsewhere": "Natural Earth 50m elsewhere"
 }

@@ -6490,5 +6490,16 @@
   "Daily rain": "Дождь за день",
   "Daily snowfall": "Снегопад за день",
   "Daily highest wind speed": "Максимальная скорость ветра за день",
-  "Daily strongest gust": "Самый сильный порыв за день"
+  "Daily strongest gust": "Самый сильный порыв за день",
+  "OSM relation": "отношение OSM",
+  "no ISO 3166-2 code in OpenStreetMap": "нет кода ISO 3166-2 в OpenStreetMap",
+  "Borders: Natural Earth 50m": "Границы: Natural Earth 50m",
+  "Country borders from Natural Earth 50m (public domain). OpenStreetMap-derived borders replace them once their files have been built.": "Границы стран из Natural Earth 50m (общественное достояние). Границы из OpenStreetMap заменят их, когда будут собраны их файлы.",
+  "Borders: OpenStreetMap, as of {date}": "Границы: OpenStreetMap, на {date}",
+  "Borders drawn from OpenStreetMap data of the date shown, © OpenStreetMap contributors (ODbL 1.0).": "Границы построены по данным OpenStreetMap на указанную дату, © участники OpenStreetMap (ODbL 1.0).",
+  "{n} countries from OpenStreetMap; every other country keeps its Natural Earth border.": "{n} стран из OpenStreetMap; остальные страны сохраняют границу Natural Earth.",
+  "{n} regions: {tagged} keyed by their ISO 3166-2 code, {fallback} by their OpenStreetMap relation id because OpenStreetMap carries no code for them.": "{n} регионов: {tagged} по коду ISO 3166-2, {fallback} по идентификатору отношения OpenStreetMap, так как OpenStreetMap не указывает для них код.",
+  "Region outlines are simplified further for display on this map.": "Контуры регионов дополнительно упрощены для показа на этой карте.",
+  "Show or hide the first-level regions (states, provinces, regions) OpenStreetMap draws inside each country.": "Показать или скрыть регионы первого уровня (штаты, провинции, области), которые OpenStreetMap рисует внутри каждой страны.",
+  "Natural Earth 50m elsewhere": "в остальных местах Natural Earth 50m"
 }
