@@ -47,7 +47,7 @@
   language alphabetically in the reader's language (none first), and a second row lists the countries whose
   laws World law watches (`law_documents.watched`, `eu`/`int` left out), each with its document count. A
   failed read of that row is said on the page, never an empty row. Recorded as an ask, not a ruling id.
-  (11) **S4, the full-history planet (Q814 = b), PR pending — which objects are a country's is a design point
+  (11) **S4, the full-history planet (Q814 = b), PR #1217 — which objects are a country's is a design point
   the brief left open.** A NODE counts when any tagged, visible version of it lay inside the country's CURRENT
   border (rebuilt from the same continent extract); a WAY or RELATION counts when the current cut kept it. So a
   way or relation deleted before the extract's date is NOT in the prior: finding its country needs its nodes'
