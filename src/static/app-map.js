@@ -1899,6 +1899,7 @@
     }
     async function loadOoMapCoverage() {
       const host = $("oo-coverage-map"); if (!host) return;
+      loadOsmVintage();   // Q828: the OSM data's vintage line, read beside the map (not awaited)
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : (x => x);
       host.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
       try {
@@ -2218,6 +2219,7 @@
         const note = $("osm-size-note"), asof = $("osm-size-asof");
         if (note && asof && rg.size_estimate_as_of) { asof.textContent = rg.size_estimate_as_of; note.hidden = false; }
         _renderOsmList();
+        _renderOsmPicker();
       } catch (e) { list.innerHTML = `<div class="muted">${esc(t("Could not load regions."))}</div>`; }
       const tbl = $("osm-dl-table"); if (tbl) tbl.innerHTML = "";   // merged into the list above
     }
@@ -2358,6 +2360,184 @@
       if (!confirm(t("Delete this download and its file?"))) return;
       try { await api("/api/geo/downloads?key=" + encodeURIComponent(key), { method: "DELETE" }); loadOsmMap(); }
       catch (e) { toast(_failMsg("Delete failed: {error}", e), "err"); }
+    }
+
+    // -- The OSM lane's country picker (S05-04 S3; Q807 = a, Q806 = b, Q824 = a, Q828 = a). --- //
+    // OFF until a country is chosen. Suggestions come from the interface language the page
+    // reports, never the IP address. Each country shows its CONTINENT extract (Q806) with the
+    // catalogue's dated size and the estimated daily change file BEFORE it is chosen, both
+    // labelled estimates with the method in the hover. Choosing writes one local setting
+    // (PUT /api/osm/countries); the download is the region job above, started through
+    // startOsmDownload -> ensureOnline (the ONE online consent). A download the kill switch
+    // refused reads "paused: airplane mode is on" -- the refusal by name, never a bare
+    // "paused" pointing at someone else's server.
+    let _osmPicker = null, _osmLane = null;
+    async function loadOsmPicker() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const host = $("osm-pick-state"); if (!host) return;
+      const lang = (window.OOI18N && OOI18N.current) ? OOI18N.current() : "en";
+      try {
+        const [p, lane] = await Promise.all([
+          api("/api/osm/picker?lang=" + encodeURIComponent(lang)),
+          api("/api/osm/lane").catch(() => null),
+        ]);
+        _osmPicker = p; _osmLane = lane;
+        _renderOsmPicker();
+      } catch (e) { host.innerHTML = `<div class="muted">${esc(t("Could not load the country choice."))}</div>`; }
+    }
+    // ONE label for a country anywhere in the picker: the name in the reader's language with the
+    // alpha-3 code beside it (the pickers' convention, Q302/Q308), the server's English name as
+    // the fallback when the browser has no region names.
+    function _osmPickLabel(cc, fallback) {
+      const code = ooCountryCode(cc), name = ooCountryName(cc, fallback || "");
+      return name && name !== code ? `${name} (${code})` : (code || fallback || cc);
+    }
+    function _osmLaneByA3() {
+      const m = {};
+      for (const c of ((_osmLane || {}).countries || [])) m[c.alpha3] = c;
+      return m;
+    }
+    function _osmSizeEstimate(bytes) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const osmTf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((s, v) => s.replace(/\{(\w+)\}/g, (m, k) => (v[k] == null ? m : v[k])));
+      const hover = osmTf("Estimate from a dated catalogue, reviewed {date}; the exact size is read from the mirror when the download starts.", { date: (_osmPicker || {}).size_as_of || "" });
+      return `~${humanBytes(bytes)} <span class="muted" title="${esc(hover)}">${esc(t("estimate"))}</span>`;
+    }
+    function _osmDiffEstimate(bytes) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const d = (_osmPicker || {}).diff || {};
+      if (bytes == null) return `<span class="muted">—</span>`;
+      const hover = `${t(d.method || "")} ${t(d.caveat || "")}`.trim();
+      return `~${humanBytes(bytes)} ${esc(t("a day"))} <span class="muted" title="${esc(hover)}">${esc(t("estimate"))}</span>`;
+    }
+    function _osmPickDownloadCell(r) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      if (!r.extract) return `<span class="muted">${esc(t(r.extract_reason || ""))}</span>`;
+      const code = r.extract.code, d = _osmDlByCode()[code];
+      const btn = (label, fn) => `<button class="tiny secondary" data-on-click="${fn}(${esc(JSON.stringify(code))}, this)">${esc(t(label))}</button>`;
+      if (!d) return btn("Download", "startOsmDownload");
+      if (d.status === "done") return `<span class="pill ok">${esc(t("Downloaded"))} ✓</span>`;
+      if (d.status === "downloading") return `<span class="pill">${esc(t("Downloading"))} ${d.percent || 0}%</span>`;
+      if (d.status === "queued") return `<span class="pill warn">${esc(t("Queued"))}</span>`;
+      if (d.status === "paused" && d.paused_by === "airplane") return `<span class="pill warn">${esc(t("Paused: airplane mode is on"))}</span> ${btn("Resume", "resumeOsm")}`;
+      const label = d.status === "error" ? t("Failed") : t("Paused");
+      return `<span class="pill ${d.status === "error" ? "err" : "warn"}" title="${esc(d.error || "")}">${esc(label)}</span> ${btn("Resume", "resumeOsm")}`;
+    }
+    function _osmPickLaneCell(r) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const osmTf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((s, v) => s.replace(/\{(\w+)\}/g, (m, k) => (v[k] == null ? m : v[k])));
+      const c = _osmLaneByA3()[r.alpha3];
+      if (!c) return `<span class="muted" title="${esc(t("The continent extract is downloaded first, then read into the map data."))}">${esc(t("Not read yet"))}</span>`;
+      if (c.status === "complete") {
+        return `<span class="pill ok">${esc(c.vintage ? osmTf("Read · data as of {date}", { date: c.vintage.slice(0, 10) }) : t("Read · the extract states no date"))}</span>`;
+      }
+      if (c.status === "ingesting") return `<span class="pill">${esc(t("Reading…"))}</span>`;
+      return `<span class="pill err" title="${esc(c.error || "")}">${esc(t("Reading failed"))}</span>`;
+    }
+    function _renderOsmPicker() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const osmTf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((s, v) => s.replace(/\{(\w+)\}/g, (m, k) => (v[k] == null ? m : v[k])));
+      const p = _osmPicker; if (!p) return;
+      const host = $("osm-pick-state"), sug = $("osm-pick-suggest"), sel = $("osm-pick-add"), cad = $("osm-pick-cadence");
+      const chosen = new Set((p.selected || []).map((r) => r.cc));
+      if (host) {
+        if (!p.enabled) {
+          host.innerHTML = `<p style="margin:0"><span class="pill">${esc(t("Off"))}</span> ${esc(t(p.off || ""))}</p>`;
+        } else {
+          const rows = p.selected.map((r) => `<tr>
+              <td><strong>${esc(_osmPickLabel(r.cc, r.name))}</strong></td>
+              <td>${r.extract ? `${esc(t(r.extract.name))} · ${_osmSizeEstimate(r.extract.size_estimate_bytes)}` : `<span class="muted">—</span>`}</td>
+              <td>${_osmDiffEstimate(r.diff_daily_estimate_bytes)}</td>
+              <td>${_osmPickDownloadCell(r)}</td>
+              <td>${_osmPickLaneCell(r)}</td>
+              <td><button class="tiny secondary" data-on-click="osmPickRemove(${esc(JSON.stringify(r.cc))})">${esc(t("Remove"))}</button></td>
+            </tr>`).join("");
+          const shared = new Set(p.selected.filter((r) => r.extract).map((r) => r.extract.code)).size < p.selected.filter((r) => r.extract).length;
+          host.innerHTML = `<div style="overflow:auto"><table class="osm-pick-table">
+              <thead><tr><th>${esc(t("Country"))}</th><th>${esc(t("Continent download"))}</th><th>${esc(t("Daily changes"))}</th>
+                <th>${esc(t("Download"))}</th><th>${esc(t("Map data"))}</th><th></th></tr></thead>
+              <tbody>${rows}</tbody></table></div>`
+            + (shared ? `<div class="hint">${esc(t("Countries on the same continent share one download and one daily change file."))}</div>` : "");
+        }
+      }
+      if (sug) {
+        // Two rows, neither ranked: every country of the interface language, and every country
+        // whose laws World law watches -- each in the reader's alphabetical order, so no
+        // country is put first.
+        const chip = (r, extra) => {
+          const cost = r.extract ? `${t(r.extract.name)} ~${humanBytes(r.extract.size_estimate_bytes)}` : t(r.extract_reason || "");
+          const title = extra ? `${cost} · ${extra}` : cost;
+          return `<button class="tiny secondary" data-on-click="osmPickAddCode(${esc(JSON.stringify(r.cc))})" title="${esc(title)}">${esc(_osmPickLabel(r.cc, r.name))}${r.extract ? ` <span class="muted">· ~${humanBytes(r.extract.size_estimate_bytes)}</span>` : ""}</button>`;
+        };
+        const byName = (a, b) => ooCountryCompare(a.cc, b.cc);
+        const open = (p.suggested || []).filter((r) => !chosen.has(r.cc)).sort(byName);
+        const law = (p.law_suggested || []).filter((r) => !chosen.has(r.cc)).sort(byName);
+        let html = open.length
+          ? `<div class="hint" style="margin-bottom:4px">${esc(t(p.suggestion_basis || ""))}</div>` + open.map((r) => chip(r)).join(" ")
+          : "";
+        if (law.length) {
+          html += `<div class="hint" style="margin:8px 0 4px">${esc(t(p.law_basis || ""))}</div>`
+            + law.map((r) => chip(r, osmTf("{n} watched legal documents", { n: r.law_documents }))).join(" ");
+        } else if (p.law_unavailable) {
+          html += `<div class="hint" style="margin-top:8px">${esc(t("The countries whose laws you watch could not be read."))}</div>`;
+        }
+        sug.innerHTML = html;
+      }
+      if (sel) {
+        const keep = sel.value;
+        sel.innerHTML = `<option value="">${esc(t("Choose a country…"))}</option>`
+          + (p.countries || []).filter((c) => !chosen.has(c.cc))
+            .sort((a, b) => ooCountryCompare(a.cc, b.cc))
+            .map((c) => `<option value="${esc(c.cc)}">${esc(_osmPickLabel(c.cc, c.name))}</option>`).join("");
+        sel.value = keep && !chosen.has(keep) ? keep : "";
+      }
+      if (cad) {
+        const d = p.diff || {};
+        cad.textContent = `${t(d.cadence || "")} ${osmTf("Change-file estimates reviewed {date}.", { date: d.as_of || "" })}`;
+      }
+    }
+    async function _osmPickSave(codes) {
+      try {
+        await api("/api/osm/countries", { method: "PUT", body: JSON.stringify({ countries: codes }) });
+      } catch (e) { toast(_failMsg("Save failed: {error}", e), "err"); }
+      loadOsmPicker();
+    }
+    function osmPickAddCode(cc) {
+      const cur = ((_osmPicker || {}).selected || []).map((r) => r.cc);
+      if (!cc || cur.includes(cc)) return;
+      return _osmPickSave(cur.concat([cc]));
+    }
+    function osmPickAdd() {
+      const sel = $("osm-pick-add");
+      return osmPickAddCode(sel ? sel.value : "");
+    }
+    function osmPickRemove(cc) {
+      const cur = ((_osmPicker || {}).selected || []).map((r) => r.cc);
+      return _osmPickSave(cur.filter((c) => c !== cc));
+    }
+    // The suggestions ARE the interface language's countries, so a language switch re-reads them
+    // (and re-draws every label in the new language) rather than leaving the old language's list.
+    document.addEventListener("oo:langchange", () => {
+      if (_osmPicker) loadOsmPicker();
+      if ($("oomap-osm-vintage") && $("oomap-osm-vintage").textContent) loadOsmVintage();
+    });
+    function openSettingsOsm() { showTab("settings"); (_setSubtabs || {select: showSetCat}).select("offlinemap"); }
+    // Q828: the World map states the vintage of the OpenStreetMap data and links to where it
+    // is chosen. Read from the lane's own record (the extract header's timestamp), never
+    // assumed; a country the extract gave no date for says so.
+    async function loadOsmVintage() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const osmTf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((s, v) => s.replace(/\{(\w+)\}/g, (m, k) => (v[k] == null ? m : v[k])));
+      const el = $("oomap-osm-vintage"); if (!el) return;
+      let lane = null;
+      try { lane = await api("/api/osm/lane"); } catch (e) { el.textContent = ""; return; }
+      const done = ((lane || {}).countries || []).filter((c) => c.status === "complete");
+      const link = `<a href="#" data-on-click="openSettingsOsm();return false">${esc(t("Settings → OpenStreetMap"))}</a>`;
+      el.innerHTML = done.length
+        ? `${esc(t("OpenStreetMap places, roads and buildings:"))} ${done.map((c) => esc(c.vintage
+            ? osmTf("{country}, as of {date}", { country: _osmPickLabel(c.alpha3, c.name), date: c.vintage.slice(0, 10) })
+            : osmTf("{country}, date not stated in the extract", { country: _osmPickLabel(c.alpha3, c.name) }))).join(" · ")} · ${link}`
+        : `${esc(t("No OpenStreetMap country has been read yet."))} ${link}`;
     }
 
     // -- Official statistics producers (Group N): the curated directory + the --- //
