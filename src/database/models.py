@@ -3229,7 +3229,6 @@ class EventImport(Base):
 # ``keyword_mentions_all`` view, whichever module happens to create the tables first.
 import src.database.derived_views  # noqa: E402,F401  (import for its side effect)
 
-
 if __name__ == "__main__":
     # Test database connection and table creation
     init_db()
