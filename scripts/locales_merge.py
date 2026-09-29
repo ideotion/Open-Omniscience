@@ -70,7 +70,9 @@ def _commas(lines: list[str]) -> list[str]:
     return out
 
 
-def _canonical(data: dict) -> str:
+def _canonical(data: dict, sort: bool = True) -> str:
+    if not sort:
+        return json.dumps(data, ensure_ascii=False, indent=2) + "\n"
     meta = {k: v for k, v in data.items() if k == "_meta"}
     rest = {k: data[k] for k in sorted(k for k in data if k != "_meta")}
     return json.dumps({**meta, **rest}, ensure_ascii=False, indent=2) + "\n"
@@ -86,18 +88,18 @@ def _load_unique(text: str, path: Path) -> dict:
     return merged
 
 
-def resolve(path: Path) -> str:
+def resolve(path: Path, sort: bool = True) -> str:
     raw = path.read_text(encoding="utf-8")
     hunks = _split_hunks(raw)
     if hunks is None:
-        return _canonical(_load_unique(raw, path))
+        return _canonical(_load_unique(raw, path), sort)
     ours, theirs = hunks
     a = _load_unique(ours, path)
     b = _load_unique(theirs, path)
     for k in a.keys() & b.keys():
         if a[k] != b[k]:
             raise SystemExit(f"{path.name}: both sides changed key {k!r} differently")
-    return _canonical({**a, **b})
+    return _canonical({**a, **b}, sort)
 
 
 def check() -> list[str]:
@@ -122,6 +124,8 @@ def check() -> list[str]:
 def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--check", action="store_true", help="verify only; write nothing")
+    ap.add_argument("--no-sort", action="store_true",
+                    help="resolve conflicts but keep file order (for branches cut before the locale files were sorted)")
     args = ap.parse_args(argv)
     if args.check:
         problems = check()
@@ -129,10 +133,12 @@ def main(argv: list[str]) -> int:
             print(line)
         return 1 if problems else 0
     for p in sorted(LOCALES.glob("*.json")):
-        text = resolve(p)
+        text = resolve(p, sort=not args.no_sort)
         if text != p.read_text(encoding="utf-8"):
             p.write_text(text, encoding="utf-8")
             print(f"rewrote {p.name}")
+    if args.no_sort:
+        return 0
     problems = check()
     for line in problems:
         print(line)
