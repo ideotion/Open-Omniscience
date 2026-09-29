@@ -262,27 +262,70 @@ def test_a_version_the_tracker_stored_no_text_for_is_counted_and_never_indexed(l
     assert _pass()[0] == 0
 
 
-def test_a_version_the_stream_also_holds_is_not_repeated_from_the_tracker(lane):
+def _stream_holds(page_id, title, versions):
+    """The stream's copy of a page: ``versions`` are ``(revid, text, at)``, the first the baseline."""
     from src.versioned.pipeline import ensure_entity
     from src.versioned.revisions import capture_baseline, record_revision
     from src.wiki.identity import external_id_for
 
+    with _session() as db:
+        entity = ensure_entity(db, external_id_for(EDITION, page_id), title=title)
+        db.flush()
+        for i, (revid, body, at) in enumerate(versions):
+            if i == 0:
+                capture_baseline(db, entity, revision_ref=str(revid), text=body, revised_at=at)
+            else:
+                record_revision(db, entity, revision_ref=str(revid), text=body, revised_at=at)
+    with _session() as db:
+        S.index_batch(db, limit=100, caps=CAPS)
+
+
+def test_the_trackers_entries_do_not_depend_on_what_the_stream_holds(lane):
+    """The tracker's index is a function of the TRACKER and its article alone. An entry that
+    skipped what the stream also holds went stale the moment the stream's own state moved (its
+    newest gets no entry of its own, because the article is that text), and no fingerprint of
+    this store could see it -- so a version could be held twice and found nowhere."""
     page_id = next(_PAGES)
     _track(
         "Both stores",
-        [(3601, "Sharedgone here.\nKept.\n", T0), (3602, "Kept.\nTrackednewest.\n", T0 + timedelta(days=1))],
+        [(3601, "Sharedgone here.\nKept.\n", T0), (3602, "Kept.\nMiddleonly here.\n", T0 + timedelta(days=1)),
+         (3603, "Kept.\nTrackednewest.\n", T0 + timedelta(days=2))],
         pageid=page_id,
     )
-    with _session() as db:
-        entity = ensure_entity(db, external_id_for(EDITION, page_id), title="Both stores")
-        db.flush()
-        capture_baseline(db, entity, revision_ref="3601", text="Sharedgone here.\nKept.\n", revised_at=T0)
-        record_revision(db, entity, revision_ref="3602", text="Kept.\nTrackednewest.\n", revised_at=T0 + timedelta(days=1))
-    with _session() as db:
-        S.index_batch(db, limit=100, caps=CAPS)
+    _stream_holds(page_id, "Both stores", [
+        (3601, "Sharedgone here.\nKept.\n", T0), (3602, "Kept.\nMiddleonly here.\n", T0 + timedelta(days=1)),
+    ])
     _pass()
-    assert [d for d in _docs() if d[0] == "tracked"] == [], "the stream's own entries are the ones found"
-    assert _search("Sharedgone")["total"] == 1
+    assert [d[:3] for d in _docs() if d[0] == "tracked"] == [
+        ("tracked", 3601, "dropped"), ("tracked", 3602, "dropped"), ("tracked", 3603, "full"),
+    ]
+    assert _search("Middleonly")["total"] == 1, "the stream's newest has no entry of its own: the tracker's is the one"
+    assert _search("Sharedgone")["total"] == 2, "a page both followed and tracked lists a version once per store"
+
+
+def test_the_newest_is_indexed_again_when_the_article_moves_and_dropped_when_it_catches_up(lane):
+    from src.wiki.corpus import upsert_wiki_corpus_article
+
+    _track("Moving article", [(3611, "Keptline.\nFirstgone.\n", T0), (3612, "Keptline.\nSecondnewest.\n", T0 + timedelta(days=1))])
+    _pass()
+    assert [d[1:3] for d in _docs()] == [(3611, "dropped"), (3612, "full")]
+    db = _corpus()
+    try:
+        upsert_wiki_corpus_article(db, wiki=EDITION, title="Moving article", plain="Keptline.\nSecondnewest.", revid=3612)
+    finally:
+        db.close()
+    queued, _ = _pass()
+    assert queued == 1, "the article now is the newest text, and nothing in the tracker changed"
+    assert [d[1:3] for d in _docs()] == [(3611, "dropped")], "the corpus search finds it now"
+    db = _corpus()
+    try:
+        upsert_wiki_corpus_article(db, wiki=EDITION, title="Moving article", plain="Keptline.\nThirdtext.", revid=3613)
+    finally:
+        db.close()
+    queued, _ = _pass()
+    assert queued == 1
+    assert [d[1:3] for d in _docs()] == [(3611, "dropped"), (3612, "full")], "the article moved on: 3612 is only found here"
+    assert _search("Secondnewest")["total"] == 1
 
 
 def test_an_unreadable_text_sets_only_its_page_aside_and_a_locked_tracker_only_waits(lane, monkeypatch):
@@ -332,7 +375,47 @@ def test_an_unreadable_text_sets_only_its_page_aside_and_a_locked_tracker_only_w
     assert pending is None, "still pending, not set aside"
     monkeypatch.setattr(S, "_tracked_chain", real_chain)
     _pass()
-    assert _search("Readableword")["total"] >= 1
+    assert _search("Readableword")["total"] == 2, "the deferred page was read once the tracker came back"
+    assert {h["revid"] for h in _search("Readableword")["items"]} == {3701, 3702}
+
+
+def test_a_database_fault_is_translated_and_a_deferral_keeps_the_pages_already_done(lane, monkeypatch):
+    from sqlalchemy.exc import OperationalError
+
+    class Locked:
+        def execute(self, *_a, **_k):
+            raise OperationalError("SELECT 1", {}, Exception("database is locked"))
+
+        def rollback(self):
+            pass
+
+    with pytest.raises(S._TrackerUnavailable):
+        S._TrackerReader(Locked()).all(select(WikiPage.id))
+
+    first = _track("Done first", [(3721, "Firstdoneword.\n", T0)])
+    second = _track("Locked second", [(3731, "Secondlockedword.\n", T0)])
+    real = S._tracked_chain
+
+    def chain(reader, page_id):
+        if page_id == second:
+            raise S._TrackerUnavailable("database is locked")
+        return real(reader, page_id)
+
+    monkeypatch.setattr(S, "_tracked_chain", chain)
+    queued, out = _pass()
+    assert queued == 2 and out.deferred and out.settled == 1
+    assert {d[1] for d in _docs()} == {3721}, "the page before the fault is kept"
+    with _session() as db:
+        left = db.execute(select(WikiLaneIndexQueue.ref, WikiLaneIndexQueue.failed_at).where(WikiLaneIndexQueue.kind == "tracked")).all()
+    assert [tuple(r) for r in left] == [(second, None)], "the page after it waits, not set aside"
+    assert first not in [r[0] for r in left]
+
+    indexer = S.LaneIndexer(lane_session=_session, budget=lambda: object(), tracker_session=_corpus, caps=lambda: CAPS)
+    indexer.index_for(30)
+    assert indexer.state == S.STATE_INDEXING, "a deferred tracker is not «caught up»"
+    monkeypatch.setattr(S, "_tracked_chain", real)
+    indexer.index_for(30)
+    assert indexer.state == S.STATE_CAUGHT_UP and {d[1] for d in _docs()} == {3721, 3731}
 
 
 def test_the_lanes_own_batch_leaves_the_trackers_queue_rows_alone(lane):
@@ -346,16 +429,22 @@ def test_the_lanes_own_batch_leaves_the_trackers_queue_rows_alone(lane):
         assert db.execute(select(WikiLaneIndexQueue.kind)).scalars().all() == ["tracked"]
 
 
-def test_the_indexer_reads_the_tracker_in_its_window_and_says_when_it_is_caught_up(lane):
-    _track("Windowed", [(3901, "Windowword gone.\nKept.\n", T0), (3902, "Kept.\nWindownew.\n", T0 + timedelta(days=1))])
+def test_the_indexer_reads_the_tracker_in_its_window_and_says_when_it_is_caught_up(lane, monkeypatch):
+    windowed = _track("Windowed", [(3901, "Windowword gone.\nKept.\n", T0), (3902, "Kept.\nWindownew.\n", T0 + timedelta(days=1))])
     indexer = S.LaneIndexer(
         lane_session=_session, budget=lambda: object(), tracker_session=_corpus, caps=lambda: CAPS,
     )
     report = indexer.index_for(30)
     assert indexer.state == S.STATE_CAUGHT_UP and report.settled == 1 and report.written == 2
     assert _search("Windowword")["total"] == 1
+    scans = []
+    real_scan = S.scan_tracked
+    monkeypatch.setattr(S, "scan_tracked", lambda *a, **k: scans.append(1) or real_scan(*a, **k))
     again = indexer.index_for(30)
-    assert again.settled == 0, "nothing changed: the probe skips the scan"
+    assert again.settled == 0 and scans == [], "nothing changed: the probe skips the scan"
+    _add_version(windowed, 3903, "Kept.\nWindowthird.\n", T0 + timedelta(days=2))
+    grown = indexer.index_for(30)
+    assert scans == [1] and grown.settled == 1, "the tracker grew: the probe lets the scan run"
     assert S.LaneIndexer(lane_session=_session, budget=lambda: object(), caps=lambda: CAPS).index_for(5).settled == 0, (
         "without a tracker session the older sources behave as before"
     )
@@ -373,12 +462,39 @@ def test_a_new_index_and_a_segmenter_change_make_the_tracker_read_again(lane):
     assert _search("Rebuiltword")["total"] == 1, "replaced, never doubled"
 
 
+def test_a_page_the_tracker_drops_after_the_mirror_was_wiped_is_not_found_forever(lane):
+    pid = _track("Dropped after wipe", [(4011, "Wipedword gone.\nKept.\n", T0), (4012, "Kept.\nWipednew.\n", T0 + timedelta(days=1))])
+    _pass()
+    assert _search("Wipedword")["total"] == 1
+    with _session() as db:
+        S.requeue_all(db)
+    db = _corpus()
+    try:
+        db.query(WikiRevision).filter(WikiRevision.page_id == pid).delete()
+        db.query(WikiPage).filter(WikiPage.id == pid).delete()
+        db.commit()
+    finally:
+        db.close()
+    queued, _ = _pass()
+    assert queued == 1 and _docs() == [], "its entries outlived its mirror rows and its page: still cleared"
+    assert _search("Wipedword")["total"] == 0
+
+
 def test_the_coverage_line_counts_tracked_pages_and_their_editions(lane):
     _track("Covered by tracker", [(4101, "Coverword.\n", T0)])
     _track("Textless tracked", [])
+    _track("Held only", [(4111, "Heldonlyword.\n", T0)])
+    from src.wiki.corpus import upsert_wiki_corpus_article
+
+    db = _corpus()
+    try:
+        upsert_wiki_corpus_article(db, wiki=EDITION, title="Held only", plain="Heldonlyword.", revid=4111)
+    finally:
+        db.close()
     _pass()
     with _session() as db:
         cov = S.search_coverage(db)
+    # «Held only» has one version and the corpus article is it: no entry here, so not counted.
     assert cov["tracked_pages"] == {"pages": 1, "editions": [{"edition": EDITION, "pages": 1}]}
     assert EDITION in cov["editions"]
 

@@ -1070,8 +1070,9 @@ and the lane's index, in its own file, reads them the same way (each older versi
 the lines the next stored version removed, the newest in full unless your corpus
 article already is that version). They are found under the same heading, marked as
 stored by the page tracker, and **Add to corpus** adds that exact version like any
-other; the search says how many tracked pages it read. A version the stream also holds
-is listed once, from the stream. Downloaded dumps are not in this search: their text
+other; the search says how many tracked pages it read. A page you both follow and track can
+list a version once for each store: the two stores are read separately, and neither depends on
+the other. Downloaded dumps are not in this search: their text
 is found in the search box's Wikipedia group. A query reads the same way in both lists (`salt*`,
 `NEAR(salt works, 5)`, `title:salt`), but the filters that describe articles (the
 Source, Language and Time boxes, and `source:`, `author:`, `url:`, `tag:` and
