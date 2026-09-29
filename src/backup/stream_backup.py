@@ -70,7 +70,7 @@ import shutil
 import threading
 import time
 from collections.abc import Callable, Iterable, Iterator
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -368,6 +368,47 @@ def _drain_wal(db_path: Path) -> Path | None:
     return wal if wal.exists() and wal.stat().st_size > 0 else None
 
 
+@contextmanager
+def _collection_paused(notes: list[str]) -> Iterator[None]:
+    """Pause background collection while the corpus is copied, and resume it after.
+
+    The copy holds the single-writer gate for its whole duration, which on a
+    multi-gigabyte corpus going to an external drive is a long time. Every collector
+    worker that reaches its next write meanwhile queues on that gate from inside
+    ``before_flush``, on a session that ALREADY holds a pooled connection -- so on the
+    small tier (6 + 6) the workers plus the indexer filled the pool, and the task
+    manager's own poll (``GET /api/scheduler/activity``) waited out the 30 s pool
+    timeout and returned 500 for the rest of the copy (field terminal extract,
+    2026-09-29, v0.4.0). Restore already pauses collection for the same reason; the
+    export never did.
+
+    Paused BEFORE the gate is taken, so a pass winds down through its normal writes
+    rather than piling up behind the copy. :func:`exclusive_window` is re-entrant and
+    restores what it found, so an export nested in an outer window (a release run, a
+    diagnostics bundle) never resumes collection early. Best-effort, like restore's:
+    a pause that fails is noted and the export continues, because the gate -- not
+    this pause -- is what keeps the snapshot consistent."""
+    with ExitStack() as stack:
+        try:
+            from src.scheduler.runner import exclusive_window
+
+            was_paused = stack.enter_context(exclusive_window())
+        except Exception:  # noqa: BLE001 - the pause is a courtesy, never load-bearing
+            _LOG.warning("backup: pausing background collection failed", exc_info=True)
+            notes.append(
+                "background collection could not be paused for the corpus copy; the "
+                "copy is still consistent (the write gate holds), but the app may be "
+                "slow to answer until it finishes"
+            )
+        else:
+            if was_paused:
+                notes.append(
+                    "background collection was paused while the corpus was copied, "
+                    "and resumed afterwards"
+                )
+        yield
+
+
 def _live_corpus_source(
     tmp_dir: Path, include_newsletters: bool, notes: list[str]
 ) -> CorpusSource:
@@ -396,7 +437,7 @@ def _live_corpus_source(
                     "active this snapshot may be inconsistent; re-enable the gate (or "
                     "stop collection) for a guaranteed-consistent backup."
                 )
-            with write_lock():
+            with _collection_paused(notes), write_lock():
                 yield _drain_wal(live)
 
         return CorpusSource(path=live, member_name=member, encrypted=enc, freeze=freeze)
@@ -408,7 +449,10 @@ def _live_corpus_source(
     from src.database.connect import snapshot_preserving
 
     snap = tmp_dir / member
-    snapshot_preserving(live, snap)
+    # The snapshot holds the gate for its checkpoint + copy too (connect.py), so it
+    # gets the same pause. The filtering below works on the private copy.
+    with _collection_paused(notes):
+        snapshot_preserving(live, snap)
     _drop_newsletters_in_file(snap)
     notes.append(
         "newsletters excluded: the corpus was snapshotted and filtered, so "
