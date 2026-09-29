@@ -67,7 +67,9 @@ def test_the_sources_repaint_stamp_carries_the_worldview():
     stamp = re.search(r"const stamp = JSON\.stringify\(\[([^\]]*)\]\)", body)
     assert stamp and "worldview" in stamp.group(1), stamp and stamp.group(1)
     assert 'typeof ooMapWorldview === "function"' in body
-    assert "function ooMapWorldview() { return _ooMapWorldview; }" in read_static("app-map.js")
+    # Row L (Q803): the function returns the worldview IN FORCE, which is OSM's convention
+    # by default once the OSM country file exists, so the stamp follows that too.
+    assert "function ooMapWorldview() { return _ooEffectiveWorldview(_ooMapWorldview, " in read_static("app-map.js")
 
 
 # --- R4: the two maps that did not follow a language switch ------------------ #

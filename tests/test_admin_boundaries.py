@@ -344,3 +344,46 @@ def test_s3_strings_ship_in_all_twelve_locales():
         for k in keys:
             assert d.get(k), (loc.name, k)
             assert ("{n}" in d[k]) == ("{n}" in k), (loc.name, k)
+
+
+# ------------------------------------------------ OSM's convention (row L, Q803)
+
+
+def test_each_contested_area_records_which_osm_borders_hold_it():
+    recs = [
+        _rec(1, (0, 40, 10, 50), boundary="administrative", admin_level="2", **{"ISO3166-1:alpha2": "FR"}),
+        _rec(2, (5, 45, 15, 55), boundary="administrative", admin_level="2", **{"ISO3166-1:alpha2": "DE"}),
+        _rec(3, (1, 41, 2, 42), boundary="disputed", claimed_by="FR;DE"),
+        _rec(4, (6, 46, 7, 47), boundary="disputed", claimed_by="FR;DE"),
+        _rec(5, (20, 20, 21, 21), boundary="claim", claimed_by="FR"),
+    ]
+    admin0, _ = G.build_artifacts(recs, vintage="2026-09-01", source="t")
+    held = {c["id"]: [h["a3"] for h in c["held_by"]] for c in admin0["contested"]}
+    assert held == {"r3": ["FRA"], "r4": ["DEU", "FRA"], "r5": []}
+    # None and several are KEPT as they are -- never narrowed to one here or on the map.
+    assert admin0["counts"]["contested_held"] == {"by_one": 1, "by_none": 1, "by_several": 1}
+    assert "held_by" in admin0["method"]
+
+
+def test_osm_convention_node_suite():
+    """The default opens on OSM's convention only with the file; nothing is picked."""
+    proc = subprocess.run(
+        ["node", str(_ROOT / "tests" / "oomap_osm_convention_node_test.js")],
+        capture_output=True, text=True, check=False,
+    )
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert "all assertions passed" in proc.stdout
+
+
+def test_row_l_strings_ship_in_all_twelve_locales():
+    keys = ["OpenStreetMap's convention, as of {date}",
+            "inside several countries' borders in OpenStreetMap, attributed to none",
+            "inside no country's border in OpenStreetMap, attributed to none",
+            "OpenStreetMap names only one party", "no party named",
+            "Natural Earth's layer lists {n} disputed areas, drawn under the other worldviews."]
+    for loc in sorted((_STATIC / "locales").glob("*.json")):
+        d = json.loads(loc.read_text(encoding="utf-8"))
+        for k in keys:
+            assert d.get(k), (loc.name, k)
+            for ph in ("{date}", "{n}"):
+                assert (ph in d[k]) == (ph in k), (loc.name, k)

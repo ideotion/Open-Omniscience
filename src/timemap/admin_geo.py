@@ -27,6 +27,11 @@ THE RULES THIS MODULE KEEPS, and the tests pin:
   (``claimed_by`` and ``disputed_by``); one naming fewer than two parties is kept and
   marked ``complete: false`` -- dropping it, or completing it from memory, would be
   the silent pick Q826 forbids.
+* OSM'S CONVENTION IS READ OFF OSM'S OWN BORDERS (0.5 row L, Q803). Each contested area
+  records ``held_by``: every country whose ``admin_level=2`` border, as OSM draws it,
+  contains a point inside the area -- OSM's on-the-ground rule, answered by the data.
+  None, or more than one, is kept as it is; the map then attributes the area to no one
+  rather than choosing between them.
 * EVERY POLYGON FITS ITS PUBLISHED VERTEX CAP. Douglas-Peucker at a growing tolerance,
   then the smallest rings dropped, until the feature fits -- the largest outer ring is
   always kept, so no country or region vanishes from the map.
@@ -323,6 +328,7 @@ def build_artifacts(
     unkeyed0: list[dict] = []
     dup0: list[dict] = []
     contested: list[dict] = []
+    raw_contested: dict[str, list[Ring]] = {}         # full-resolution outers, for held_by
     admin1_recs: list[BoundaryRecord] = []
     simplified = {"admin0": 0, "admin1": 0, "contested": 0}
 
@@ -357,6 +363,7 @@ def build_artifacts(
             if not rings:
                 continue
             simplified["contested"] += int(simp)
+            raw_contested[f"r{rec.osm_id}"] = list(rec.outers)
             who = parties(rec.tags)
             contested.append({
                 "id": f"r{rec.osm_id}",
@@ -368,6 +375,15 @@ def build_artifacts(
                 "complete": len(who) >= 2,
                 "rings": rings,
             })
+
+    # OSM's convention for each contested area: which countries' borders, as OSM draws
+    # them, contain it. Tested against the FULL-resolution rings, at a point inside the
+    # area's largest outer ring.
+    for c in contested:
+        outs = raw_contested.get(c["id"]) or []
+        pt = _interior_point(max(outs, key=_span)) if outs else None
+        held = sorted(a3 for a3, rs in raw_admin0.items() if pt and point_in_rings(pt, rs))
+        c["held_by"] = [{"a2": to_iso2(a3), "a3": a3} for a3 in held]
 
     regions: dict[str, dict] = {}
     n_tagged = n_fallback = n_dup = n_unplaced = 0
@@ -421,7 +437,9 @@ def build_artifacts(
         "method": (
             "OSM boundary=administrative admin_level=2 relations, keyed ISO 3166-1 alpha-3 from their "
             "own ISO3166-1:alpha2 tag; boundary=disputed and boundary=claim areas with every party their "
-            "claimed_by and disputed_by tags name. Douglas-Peucker to the published vertex caps."
+            "claimed_by and disputed_by tags name, and held_by: the countries whose admin_level=2 border "
+            "contains a point inside the area (OSM's on-the-ground convention). Douglas-Peucker to the "
+            "published vertex caps."
         ),
         "counts": {
             "countries": len(countries),
@@ -429,6 +447,11 @@ def build_artifacts(
             "duplicate_codes": len(dup0),
             "contested": len(contested),
             "contested_incomplete": sum(1 for c in contested if not c["complete"]),
+            "contested_held": {
+                "by_one": sum(1 for c in contested if len(c["held_by"]) == 1),
+                "by_none": sum(1 for c in contested if not c["held_by"]),
+                "by_several": sum(1 for c in contested if len(c["held_by"]) > 1),
+            },
             "simplified": {"countries": simplified["admin0"], "contested": simplified["contested"]},
             "vertices": vcount(countries.values()) + vcount(contested),
         },

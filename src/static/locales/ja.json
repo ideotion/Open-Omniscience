@@ -6569,5 +6569,12 @@
   "The size could not be read: the mirror did not answer.": "サイズを読み取れませんでした: ミラーが応答しませんでした。",
   "The size could not be read: the mirror did not state it.": "サイズを読み取れませんでした: ミラーがサイズを示しませんでした。",
   "Read from the full-history planet for the objects of one country: every node with a tagged version inside today's border, and every way and relation the country's current cut kept. Each version is compared with the one before it; the first version adds every key.": "完全履歴付き全球ファイルから一つの国のオブジェクトについて読み込みます。今日の国境内にタグ付きの版を持つすべてのノードと、その国の現在の切り出しが保持したすべてのウェイとリレーションです。各版は直前の版と比較され、最初の版ではすべてのキーが追加されます。",
-  "Ways and relations deleted before the extract's date are not in this history: which country they were in needs their nodes' past locations, which this cut does not index. The border is today's, for every date.": "抽出ファイルの日付より前に削除されたウェイとリレーションはこの履歴に含まれません。それがどの国にあったかを知るにはノードの過去の位置が必要ですが、この切り出しはそれを索引化しません。国境はどの日付についても今日のものです。"
+  "Ways and relations deleted before the extract's date are not in this history: which country they were in needs their nodes' past locations, which this cut does not index. The border is today's, for every date.": "抽出ファイルの日付より前に削除されたウェイとリレーションはこの履歴に含まれません。それがどの国にあったかを知るにはノードの過去の位置が必要ですが、この切り出しはそれを索引化しません。国境はどの日付についても今日のものです。",
+  "OpenStreetMap's convention, as of {date}": "OpenStreetMap の慣行（{date} 時点）",
+  "inside several countries' borders in OpenStreetMap, attributed to none": "OpenStreetMap では複数の国の国境内にあり、どの国にも帰属させない",
+  "inside no country's border in OpenStreetMap, attributed to none": "OpenStreetMap ではどの国の国境内にもなく、どの国にも帰属させない",
+  "OpenStreetMap names only one party": "OpenStreetMap は当事者を一つしか挙げていません",
+  "no party named": "当事者の記載なし",
+  "Every disputed area is drawn hatched with all of its claims named in the tooltip, in every worldview. OpenStreetMap's convention attributes an area to the country whose border, as OpenStreetMap draws it, contains the area (its on-the-ground rule); an area inside no country's border, or inside several, is attributed to none. Source: OpenStreetMap's boundary=disputed and boundary=claim areas and its country borders, of the date shown, © OpenStreetMap contributors (ODbL 1.0). It is never this app's verdict on who is right; the Worldview control shows the other conventions.": "係争地域はすべて斜線で描かれ、どの世界観でもツールチップにすべての主張が示されます。OpenStreetMap の慣行は、OpenStreetMap が描く国境がその地域を含む国に地域を帰属させます（現地の実態の規則）。どの国境内にもない地域や複数の国境内にある地域は、どの国にも帰属させません。出典：OpenStreetMap の boundary=disputed と boundary=claim の地域および国境（表示の日付時点）、© OpenStreetMap contributors（ODbL 1.0）。これは誰が正しいかについてのこのアプリの判断ではありません。世界観の切り替えで他の慣行を表示できます。",
+  "Natural Earth's layer lists {n} disputed areas, drawn under the other worldviews.": "Natural Earth のレイヤーには係争地域が {n} 件あり、他の世界観で描かれます。"
 }
