@@ -14,7 +14,9 @@ OSM artifacts (pulled forward from 0.8) join the approved desk. A row whose orig
 did not date (Q306's storage step, Q1102's migration, Q821's streets), and *design note* marks a build-level
 suggestion — neither binds the maintainer, and declining one belongs in §3 with its reason. The ⛔ questions
 left blank — **Q823 (ODbL)** and **Q1009 (the storage round-2 rows 3–6)** — are named on the rows they touch
-and never assumed. **No target date** (Q110 = c); operator time is unbounded (Q115 = c).
+and never assumed — **both answered 2026-09-29: Q823 = a (OSM data leaves the machine with OSM's credit and the ODbL
+line, and OSM-built files may ship in the repository) and Q1009 = a (`y, OOENC2, y, y`); §3 has what each unblocks.**
+**No target date** (Q110 = c); operator time is unbounded (Q115 = c).
 
 **How a row closes** (inherited from the `0.3` and `0.4` gates, unchanged): only when there is a **named
 artifact** — a report file, a merged PR, a measured number, a recorded click-through — that a later reader can
@@ -27,7 +29,8 @@ step.
 here by ruling: row K (the backup-format bump, exercised on a real restore) precedes row B below (Q301 = c),
 and row O (the substrate) precedes rows D and F. **2026-09-28:** the maintainer tagged `v0.4.0` with 0.4 rows
 still open (`RELEASE_0.4_GATE.md` §3, 2026-09-28); the tag half of this entry is met, the closed-rows half is not,
-and the two hard preconditions above stand unchanged.
+and the two hard preconditions above stand unchanged. **2026-09-29 (`R92`, «21=b»): the 0.4 rows still open
+at the tag moved onto this gate's list** — §1b names them, and 0.5 is not tagged until they are closed.
 
 ---
 
@@ -40,19 +43,34 @@ and the two hard preconditions above stand unchanged.
 | C | The entity spine: QIDs, Wikidata items, the Place entity, the gazetteer artifacts | session + operator (artifact build) | ruled (Q415, Q724, Q805, Q818, Q827) · `S05-03` | **OPEN — BUILT except the artifact (2026-09-28, PR #1206)**: the spine, the item cache and its fetch, the Place and its card, Chromium-verified in en and ar; the gazetteer artifact (S4) waits on row D's OSM ingest and the operator's build |
 | D | The OSM lane seeded: the first country's places, roads and buildings; the tag-completeness view | session + operator (extract + planet history download) | ruled (R16; Q106, Q806–Q811, Q813, Q814, Q815 · 1, Q817, Q819 · 3, Q820, Q822, Q824, Q825, Q828, Q1008) · `S05-04` | **OPEN — S1 + S2 BUILT (2026-09-28, PR #1212); S3 BUILT (2026-09-29, PR #1214); S4 BUILT (2026-09-29, PR #1217)**: the extract readers, `osm.db`, the change model and analytic 1's backend, fixture-verified; the country picker with its costs and the World map's data date, Chromium-checked in `en` and `ar`; the full-history download (exact size read before it starts) and one country's history cut, fixture-verified through both readers; Places and the map caps remain, and the reference-VM ingest with its measured sizes and times · ODbL (Q823 ⛔) PENDING |
 | E | OSM-derived admin-0 / admin-1 artifacts keyed ISO 3166-2, on all five surfaces | session + operator (artifact build) | ruled (Q314, Q816, Q802 second half); Q804 an ASSUMPTION at its default · `S05-05` | **OPEN** |
-| F | Wikipedia: the WARM tier and the `allpages` tail walk under budget | session + operator (the run) | ruled (R12; Q701 ⛔ = c, Q707, Q712 · 4–5, Q722 = b, Q727; `R40` built first) · `S05-06` | **OPEN** — the Phase-C store (Q1009 ⛔) PENDING |
+| F | Wikipedia: the WARM tier and the `allpages` tail walk under budget | session + operator (the run) | ruled (R12; Q701 ⛔ = c, Q707, Q712 · 4–5, Q722 = b, Q727; `R40` built first) · `S05-06` | **OPEN** — the Phase-C store unblocked 2026-09-29 (Q1009 = a, `y, OOENC2, y, y`) |
 | G | Laws: the evolution surface — versions, the reader, point-in-time search, analytics 3–5 | session | ruled (R14; Q107, Q905, Q908, Q914 · 3–5, Q916, Q918, Q920) · `S05-07` | **BUILT 2026-09-28 (PR #1203)** — Chromium-verified (remote sandbox) in en and ar · awaiting human UX pass; the real-source 2019 search is operator |
-| H | The AI-coordinator translation sweep; titles, summaries and on-demand full text; the model bench | session | ruled (Q405, Q513 = b + c, Q1142, Q1143, Q1144) · `S05-08` | **OPEN** |
+| H | The AI-coordinator translation sweep; titles, summaries and on-demand full text; the model bench | session | ruled (Q405, Q513 = b + c, Q1142, Q1143, Q1144) · `S05-08` | **CLOSED 2026-09-29 on its built parts (PRs #1204, #1209)** — the maintainer closed it without the bench («11=a» = `RC04` a: the bench waits for the app-wide one-model decision before 0.8); `R61`'s ≈-title backup carriage is a build item beside the closed row |
 | I | The UI shell: "rings, not gates", the first-run default, the inline-handler retirement + CSP, the theme cull | session | ruled (Q1120, Q1121, Q1123, Q1127) · `S05-09` | **OPEN** |
 | J | A source is keyed on its FEED — the migration and its data-safety review | session + operator (a real restore) | ruled (Q1102 ⛔ = b; `R38` after row B); *proposed placement* 0.5 · `S05-10` | **OPEN** |
 | K | The approved desk: the claim workspace A1, the Conjunction Lens across verticals, the onboarding tour, signed-evidence export polish | session | carried from the V1 train (ruled 2026-09-07), kept by Q105 = a · `S05-11` | **OPEN** |
 | L | Q803's default: OSM's border convention as of a stated date opens every map (moved from 0.4 row R) | session + operator (row E's artifact build) | ruled (Q803 and its note, Q826); placement `PF06` = a, 2026-09-27 · `S05-05` | **OPEN** — waits on row E's OSM-derived artifacts |
 
-**The exit.** `v0.5.0` is tagged when rows A–L are CLOSED on named artifacts, the three i18n gates and the
+**The exit.** `v0.5.0` is tagged when rows A–L are CLOSED on named artifacts, the 0.4 rows of §1b are CLOSED on
+theirs (`R92`), the three i18n gates and the
 whole-tree guards are green on the tagged tree, and the release notes carry the no-telemetry re-check (Q111).
-Row D closes with OSM rows INSIDE the machine only: until Q823 ⛔ is ruled, no OSM-derived row enters an export,
-a bulletin or an evidence ZIP (today's state, not a decision). Row F closes at the budgeted depth the store
-allows; if Q1009 ⛔ is still blank, the walk runs under the existing store and the row says how far it got.
+~~Row D closes with OSM rows INSIDE the machine only: until Q823 ⛔ is ruled, no OSM-derived row enters an export,
+a bulletin or an evidence ZIP (today's state, not a decision).~~ **Q823 = a (2026-09-29):** OSM-derived rows may
+enter exports, bulletins, evidence ZIPs and backups, each carrying OSM's credit and the ODbL share-alike line
+(Q1008), and OSM-built artifacts may ship in the repository; until the owning rows build that, the refusal in the
+tree stays. Row F closes at the budgeted depth the store
+allows; ~~if Q1009 ⛔ is still blank, the walk runs under the existing store and the row says how far it got~~
+(Q1009 = a, 2026-09-29: the store's four values are written out).
+
+## 1b. The 0.4 rows carried onto this list (`R92`, 2026-09-29)
+
+The maintainer answered «21=b»: the 0.4 checks still open at the `v0.4.0` tag move onto the 0.5 list, and 0.5 is
+not tagged until they are done. Each row keeps its text, its bar and its status in
+[`RELEASE_0.4_GATE.md`](RELEASE_0.4_GATE.md) — it is closed THERE, on its named artifact, and this list only makes
+it a condition of this exit. As of 2026-09-29 every 0.4 row is carried except F (closed 2026-09-15) and G (closed
+2026-09-28): **A, B, C, D, E, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W.** Most need only the operator's run or
+the maintainer's word (the 0.4 gate's 2026-09-28 tag entry lists which). Row K here is also the hard precondition of
+row B above, as before.
 
 ---
 
@@ -283,7 +301,7 @@ with its window and newest capture; this week in the laws you watch). Verified o
 (`tests/test_law_evolution_surface.py`, `tests/test_law_evolution_ui.py`) and walked in Chromium in en and ar.
 **Still open:** the 2019 search against one REAL source (operator) and the human UX pass.
 
-### Row H — The AI-coordinator translation sweep and the model bench · ruled (Q405, Q513, Q1142, Q1143, Q1144) · OPEN
+### Row H — The AI-coordinator translation sweep and the model bench · ruled (Q405, Q513, Q1142, Q1143, Q1144) · CLOSED 2026-09-29
 
 **What it must demonstrate.** Tentative translations shown by default once persisted, ≈-marked, when the AI
 coordinator is on, filled by a background sweep over the untranslated head (Q405 — placed in 0.5 by Q1142's own
@@ -308,6 +326,13 @@ bulletin sections and the checkbox review screen ratified as-is) are placed as a
 slice BESIDE this row in 0.5 — one setting plus its copy ×12, no model needed. It is recorded as a placement,
 not opened as a board row: the two rulings already stand, and only where they sit was assumed. Q405, Q513
 and Q1144 (D10) are untouched.
+
+**CLOSED 2026-09-29 by the maintainer («11=a», which answers `RC04` = a).** Every 0.5 part of this row is on
+`main` (PRs #1204 and #1209); the closing clause's «the bench report exists» is struck, since the bench waits for
+the app-wide one-model decision due before 0.8 (0.8 row C). `RC09` = a (the browse stays dropped) and `RC08` = a
+(the `bulletin-defaults` placement) were confirmed in the same list. `R61` («12=b»): the sweep's numbers stay, and
+the ≈ titles are to be carried in backups with their provenance — a build item under the app-wide principle on
+`R61`'s row, not a reopening of this row.
 
 ### Row I — The UI shell · ruled (Q1120, Q1121, Q1123, Q1127) · OPEN
 
@@ -412,6 +437,7 @@ the default. Brief `S05-05`, with `S04-11` S3's toggle.
 | 2026-09-29 | **Row E: the choropleths and the ranked table (S05-05 S3, Q816).** Beside every `ooMap` choropleth, on all five surfaces, the ranked table in FULL: every area with a value, ranked, ties sharing a rank, none left out (a scroll box bounds its height, every row is in the document); the areas without a value are counted under it and named in its hover, never listed as zeros. The World map's continent view lists each continent once. `ooMap` also takes `regionValues` keyed ISO 3166-2 or `r<relation id>`: the regions are then filled by the same scale, a region the data does not name is drawn with the no-data hatch, the countries carry no value of their own, and the Regions toggle is not offered; without the region file the map says so and the table still holds every value. No caller feeds region values yet (the first is row D's per-region completeness). Chromium-verified on the fixture artifact, World map (country and continent), Library → World coverage and a region-mode render × en/ar × 1440/768/390: 30 observations, no page errors, no overflow (`docs/audit/osm-region-choropleth-2026-09-29/`). **No row changed status:** the closing clause needs the operator's build and the maintainer's click-through. | session (thread «Build OSM region boundaries») |
 | 2026-09-29 | **Row D, third PR (S05-04 S4: the full-history planet, Q814 = b).** Settings → OpenStreetMap gains «Full history»: the planet-wide file on `planet.openstreetmap.org/pbf/full-history/` (same host as the planet; `docs/SECURITY.md` and the consent hover name the path), its size a rounded estimate from memory until «Read the exact size» — one HEAD behind the ONE consent, the kill switch refused by name, the free disk space shown beside it — and no Download button until that size is shown. `scripts/osm_history_ingest.py` cuts a country's past into `osm_history_changes` (Q813's key-level shape plus created / deleted / restored, the version's own time) and records `osm_history_cuts` (file, size, vintage, reader, seconds, counts, span) — the row's two operator measurements. The stated gap: ways and relations deleted before the extract's date are not in the prior (OPEN_QUEUE «ROW D'S PROPOSED DEFAULTS» (11)). Fixture `synthetic-history.osm.pbf`, digest-pinned; both readers write identical rows. **No row changed status.** | session |
 | 2026-09-29 | **Row L: the maps open on OSM's border convention (S05-05, Q803).** The build now records, for each OSM disputed or claimed area, `held_by`: the countries whose `admin_level=2` border, as OSM draws it, contains a point inside it (OSM's on-the-ground rule, read off OSM's own borders). When the country file is present, every `ooMap` surface opens on «OpenStreetMap's convention, as of <date>» unless the operator chose otherwise: OSM's contested areas are hatched with every party their tags name, attributed to the one country that holds them, and to no one when none or several do; without the file the default stays `contested`. The worldview picker keeps Natural Earth's conventions one switch away, on every map at once. **The date** is the OSM data's own (the file header, or `--vintage`); **the source** of OSM's claims is OSM's `boundary=disputed`/`boundary=claim` relations, `claimed_by` and `disputed_by`. Chromium-verified on the fixture file (hatched areas, both claims, the switch to Natural Earth and back) on five surfaces × en/ar × 1440/768/390, 48 observations, no page errors, no overflow (`docs/audit/osm-border-convention-2026-09-29/`). **No row changed status:** the close needs the operator's build and the maintainer's click-through. Proposed defaults in `OPEN_QUEUE.md` «ROW L'S PROPOSED DEFAULTS». | session (thread «Build OSM region boundaries») |
+| 2026-09-29 | **The 37-question list, answered in chat (19:55 UTC; recorded without code changes).** Effects on this board: **row H CLOSED** («11=a» = `RC04` a, no bench); **§1b added and the exit widened** (`R92`, «21=b»: the 0.4 rows open at the tag are this gate's conditions); **Q823 = a** (rows C, D, E, K, L: OSM data may leave with OSM's credit and the ODbL line, and the border files and gazetteer may ship in the repository); **Q1009 = a** (row F: the Phase-C store's four values written out); row A none; row C `R71` = b (place kinds translated); row D `R76` (the first country is each interface language's country of origin), `R77` (the 256 MiB cap raised or hardware-derived, never lowered; the `[geo]` add-on question back to the row), `R78` = c (land use, water, power lines kept); row E `R81` = a (every country's regions), `R82` = b (about 0.1 km precision, 12-month freshness); row F `R53` = a with the lane budget default raised to 150 GB (lowerable to 20 GB), `R54` = a (tracked revisions indexed in the lane), `R55` = a with WARM to be renamed in the UI; row H `R61` = b (≈ titles in backups, provenance on every deduced metadatum, local wins, both kept); row I `R47` = a (Explore; invariant #22 amended in that PR), `R48` = a (the discovery prune stays a delete); row K `R66` = a, `R67` = a, `R68` = a (the three import-summary changes); row L `R83` = a. `RC08` = a confirms `RC08.1` (row B) and `RC08.5` (row I). `RC07` = c moves article revision tracking out of 0.5 (release unnamed). Build items go to the owning row threads. | maintainer (project chat, 2026-09-29 19:55 UTC) · recorded by the session |
 
 ---
 
@@ -424,5 +450,7 @@ the default. Brief `S05-05`, with `S04-11` S3's toggle.
 - **Self-rendered vector streets** (Q821 = b) — *proposed placement* 0.7, after the ingested roads exist.
 - **Subnational law** — 0.7 (Q903, a recorded CONFLICT; `RELEASE_0.7_GATE.md` row C).
 - **Help's body ×12** (Q1122 = b) — staged 0.6 → 0.8 (*proposed placement*).
-- **The four ⛔ questions left blank** — Q823, Q925, Q1009, Q1113 — not decided here, not defaulted anywhere.
+- ~~**The four ⛔ questions left blank** — Q823, Q925, Q1009, Q1113 — not decided here, not defaulted anywhere.~~
+  All four answered 2026-09-29 (Q823 = a, Q925 = a, Q1009 = a, Q1113 = a; `RULINGS_INDEX.md`).
+- **Article revision tracking** (`RC07` = c, 2026-09-29) — 0.6 or later, release to be named.
 - **The version flip to `0.5.0`.** It follows the `v0.4.0` tag, mechanically.

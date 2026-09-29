@@ -22,6 +22,48 @@
 
 ## Open queue (when maintainer says proceed)
 
+- **THE 37-QUESTION LIST, ANSWERED IN CHAT (2026-09-29 19:55 UTC; recorded the same turn, rulings `R47`, `R48`,
+  `R53`–`R55`, `R61`, `R66`–`R68`, `R71`, `R76`–`R78`, `R81`–`R83`, `R91`, `R92`).** The coordinator posted the
+  list in three project-chat posts at 15:03 UTC (the same text is the project file
+  `open-questions/2026-09-29-question-list.md`); the maintainer answered it item by item. One line per item below;
+  the full wording of each ruling, with the maintainer's own words where they wrote more than a letter, is its
+  `RULINGS_INDEX.md` row. **Holding back work:** (1) Q823 ⛔ = a — OSM data may leave the machine with OSM's credit
+  and the ODbL line, and OSM-built files (border files, gazetteer) may ship in the repository; (2) Q1009 ⛔ = RC03
+  ⛔ = a, `y, OOENC2, y, y`; (3) `R76` — the first OSM country is the interface language's country of origin
+  («french = France, english = UK, spanish = Spain, etc.»); (4) `R81` = a, every country's regions from one planet
+  run; (5) `R47` = a, Explore (invariant #22 is amended in the PR that builds it); (6) `R68` = a, the three Import
+  summary changes; (7) `R54` = a, the tracked revisions indexed in the lane file. **Built at the recommendation,
+  now confirmed or changed:** (8) `R53` = a, WARM off by default, AND the lane budget default rises from 20 GB to
+  150 GB, still lowerable to 20 GB; (9) `R66` = a; (10) `R67` = a; (11) RC04 = a, so 0.5 row H CLOSES without the
+  bench; (12) `R61` = b plus an app-wide principle: every deduced metadatum (translations included) rides the
+  backup tagged with its provenance, a contradiction on restore keeps both values with the LOCAL one prevailing
+  and the difference visible, and the operator may discard either afterwards; (13) `R55` = a, plus «change WARM
+  into a more explicit name for later and throughout the UI»; (14) `R71` = b, place kinds translated now; (15)
+  `R77` — no letter: do not lower the 256 MiB cap, raise it or derive it from the machine's resources, «I'd
+  rather not put limits on anything», and the maintainer asks why the `[geo]` add-on is not simply used («Is it
+  a license issue ?») — the row D thread answers; (16) `R78` = c, land use, water and power lines kept too; (17)
+  `R82` = b, borders ten times more precise (about 0.1 km) and fresh for 12 months; (18) `R83` = a; (19) `R48` = a,
+  the discovery pass keeps deleting; (20) `R91` = a, the lane names stay (0.4 H9); (21) `R92` = b, the 0.4 checks
+  still open at the tag move onto the 0.5 list. **Older rounds:** (22) RC02 ⛔ = a; (23) RC05 STILL OPEN
+  («How could Claude handle this?»), to the thread «Keyword working session»; (24) RC06 STILL OPEN, waiting on the
+  thread «Fix source qualification» — the maintainer found no source added in 72 hours on eight instances despite
+  more than 80,000 candidates, wants qualification fixed first, and wants re-qualification run as a QUEUE (every
+  source regularly, quarterly or half-yearly; a new source before a re-check); (25) RC07 = c here, «0.6 or later,
+  release to be named» (no release written; recorded as a default); (26) RC08 = a on all six; (27) RC09 = a;
+  (28) RC11 = b, the V1 round re-opens all nine, «pubmed bulk prefered over API»; (29) RC12 = c, poll data in 0.8,
+  «this needs a careful approach, as most polls data are, unless I'm mistaken, private or confidential»; (30)
+  RC13 = b here with eclipses (the eclipse half recorded as the recommended default), plus «incorporate this into
+  the app so that it has preinstalled calendar data. Make sure not to forget any religions. Be extensive, let
+  users have the choice of showing or hiding information.»; (31) RC14 = a; (32) RC15 = c, both knobs — the egress
+  half has no figure, so its change is proposed and asked, never assumed; (33) RC16 STILL OPEN, a later discussion
+  at the maintainer's request (their questions are on its row); (34) RC17 = a; (35) Q925 ⛔ = a; (36) Q1113 ⛔ = a;
+  (37) D47 ⛔ STILL OPEN («I'm not sure, help me decide. Keywords still need a lot of work, a dedicated keyword
+  working session is necessary»), to the thread «Keyword working session». **Recorded only:** no code changed; each
+  build item goes to the thread that owns its row (OSM lane D, OSM boundaries E/L, entity spine C, claim workspace
+  K, UI shell I, the plan thread F, translation sweep H). **Where it landed:** `RULINGS_INDEX.md`; the four sheet
+  `ANSWER` lines (`ROADMAP_ANSWER_SHEET_2026-09-12_BETA_PATHWAY.md`, `RULINGS_CONFIRMATION_2026-09-15_REGISTER_ROUND.md`,
+  `DECISIONS_2026-09-22_BETA_PATHWAY.md`); §3 of the 0.4 and 0.5 gates (and 0.5's new §1b for R92); the V1
+  banner on the 0.6–0.9 gates (RC11 = b); and a closing line on each entry below that one of these answers.
 - **ROW D'S PROPOSED DEFAULTS — NOT RULINGS (0.5 row D, `S05-04`, 2026-09-28, thread «Build the OSM lane»,
   PR #1212; ids `R76`–`R80` are held for this row and none is used yet).** The brief's §6 leaves these to the PR;
   each is BUILT at the default below and reversible. (1) **The first country: France** (FRA), the country Q807's
@@ -58,6 +100,7 @@
   page reads the mirror's exact size, and the free space where it would land, before a Download button exists.
   (13) **The prior is its own table** (`osm_history_changes`, beside `osm_history_cuts`), never rows in
   `osm_tag_changes`, so 0.6 cannot blend the planet's past into the window it tracks (S06-01 S3's "separately").
+  **ANSWERED 2026-09-29 (the 37-question list, head entry):** (1) → `R76`, the interface language's country of origin, not France for everyone; (3) → `R77`, raise or adapt the cap, never lower it, and the maintainer's question about the `[geo]` add-on is for this row's thread; (2), (4)–(9) and (11)–(13) → `R78` = c, kept, and (5) grows by land use, water and power lines.
 - **THE SWARM QUESTION — SHARING FETCHES BETWEEN USERS TO SPARE THE NEWSROOMS' SERVERS, THE ARTICLE LEDGER,
   AND WHAT THE APP OWES THE MEDIA IT READS (maintainer concern 2026-09-28; question round `PS01`–`PS16` in
   [`docs/design/SHARED_FETCH_ETHICS_AND_ARTICLE_LEDGER_2026-09-28.md`](../design/SHARED_FETCH_ETHICS_AND_ARTICLE_LEDGER_2026-09-28.md)
@@ -162,7 +205,9 @@
   same ⛔ question, and S4 cannot ship its artifact until it is answered. (8) **For row B (S05-02):** `places.country`
   is stored alpha-2 like every other country column today, so it is the SEVENTH narrow column row B's migration
   widens (`tests/test_alpha3_payload_boundary.py` counts seven).
+  **ANSWERED 2026-09-29 (the 37-question list, head entry):** (1)–(6) and (8) → `R71` = b, kept except (2): place kinds are translated now. (5)–(7): Q823 = a, so places and the gazetteer may leave the machine and ship in the repository with OSM's credit and the ODbL line; backup carriage follows `R61`.
 - **ROW L'S PROPOSED DEFAULTS — NOT RULINGS (0.5 row L, `S05-05`, 2026-09-29, thread «Build OSM region boundaries»; ids `R81`–`R85` held, none used).** Q803's default is built; the brief leaves the `<date>` and the SOURCE of OSM's claims to the PR, and the maintainer may move either (`S04-11` §6). Built at these defaults, each reversible: (1) **The date** is the OSM data's own vintage, the one the legend already prints. (2) **The source** is OSM itself: its `boundary=disputed` and `boundary=claim` relations with every party in `claimed_by`/`disputed_by`, and **the attribution** is `held_by`, the countries whose `admin_level=2` border contains a point inside the area, computed at build time on full-resolution rings. (3) **None or several holders attribute the area to no one**, and its hover says which; choosing between two borders would be the silent pick. (4) **Under OSM's convention the contested layer is OSM's areas, not Natural Earth's 28**; the hover names Natural Earth's count and the other worldviews draw those. The alternative is to draw Natural Earth's areas and attribute them by OSM's borders; it keeps one set of polygons across conventions but mixes two sources in one view. (5) **The operator's saved choice wins**; a saved «OSM» on an install without the file falls back to `contested`. (6) **An artifact built before `held_by`** is not treated as OSM's convention at all (default stays `contested`) — none has been built yet, so this is theoretical.
+  **ANSWERED 2026-09-29 (the 37-question list, head entry):** all six kept → `R83` = a.
 - **ROW E'S PROPOSED DEFAULTS AND OPEN QUESTIONS — NOT RULINGS (0.5 row E, `S05-05`, 2026-09-29, thread «Build
   OSM region boundaries»; ids `R81`–`R85` are held for this row and none is used yet).** S1 (the build) and S2 (the
   five maps read the artifacts) are built (PR #1213); S3 (choropleths by admin-1 and the ranked table in full,
@@ -186,6 +231,7 @@
   artifacts", not the coverage), and **whether Q823 ⛔ reaches a repo-shipped OSM-derived artifact** (ODbL
   share-alike on a derived database; recorded, never decided here — the registry licence line carries the
   attribution either way). Q804 stays an ASSUMPTION at the sheet's default.
+  **ANSWERED 2026-09-29 (the 37-question list, head entry):** (1)–(6) → `R82` = b: about 0.1 km precision (caps raised to match) and a 12-month freshness window, the rest kept. The two open questions: every country's admin-1 from one planet run (`R81` = a), and Q823 = a lets the artifacts ship in the repository with OSM's credit and the ODbL line.
 - **THE WALK'S SWITCH: WHERE THE WIKIPEDIA WALK RUNS — RULED 2026-09-28, «Switch, off» (`R51`; answered on
   the decision card in the project thread «Plan v0.5» at 12:41 UTC, the recommended option).** The question,
   as put: «Run the Wikipedia walk only where you switch it on, or on every instance?» — over «Switch, on» (every
@@ -251,7 +297,8 @@
   version reader (Living sources → Wikipedia), the same add as a hit's.
   A text that cannot be read is set aside (`failed_at`), counted from the queue's own rows and retried once per
   lane start and on the page's next change, never silently dropped.
-- **WARM'S SWITCH: WHERE WARM RUNS — PENDING (asked 2026-09-28 13:22 UTC on a decision card in the project thread
+  **ANSWERED 2026-09-29 (the 37-question list, head entry):** point (8)'s decision → `R54` = a: the revisions «Track now» stores are indexed in the lane's own file. Until that is built, point (8) still describes the tree.
+- **WARM'S SWITCH: WHERE WARM RUNS — RULED 2026-09-29, «Switch, off» (`R53`) (asked 2026-09-28 13:22 UTC on a decision card in the project thread
   «Plan v0.5»; built at the recommended option meanwhile).** The question, as put: «Fetch other changed pages'
   texts (WARM) on every instance, or only where you switch it on?», options «Switch, off» (recommended: an update
   should not start filling up to 90 % of a lane's budget, about 18 GB at the 20 GB default, on each instance
@@ -259,11 +306,13 @@
   stream runs). **Built meanwhile:** `wiki_warm_enabled`, off by default, Settings → Wikipedia «Also fetch the text
   of other changed pages»; off means no scan, no request and no row, and the scan's bookmark waits. The answer is
   recorded as `R53`; «Switch, on» flips one default, «No switch» removes the box and its field.
-- **WARM'S SHARE OF THE BUDGET — A PROPOSED DEFAULT, NOT A RULING (stated 2026-09-28, not asked).** WARM stops
+  **ANSWERED 2026-09-29 (the 37-question list, head entry):** «Switch, off» → `R53`, with the maintainer's condition: the lane budget default goes from 20 GB to 150 GB, and an operator can still lower it to 20 GB.
+- **WARM'S SHARE OF THE BUDGET — RULED 2026-09-29 (`R55`), WAS A PROPOSED DEFAULT (stated 2026-09-28, not asked).** WARM stops
   when the lane file holds `WARM_BUDGET_SHARE` = 0.9 of its storage budget, so the pages the lane follows (HOT)
   keep the last tenth; without a share, a lower tier would fill the one cap Q707 gives the lane and HOT's texts
   would stop first. S05-06 rules no number. Every surface that shows the pause says the share is a proposed
   default, and the number is one constant in `src/wiki/warm.py`, so a ruling changes one line and its tests.
+  **ANSWERED 2026-09-29 (the 37-question list, head entry):** kept → `R55` = a, now a ruling; and «change WARM into a more explicit name for later and throughout the UI».
 - **THE 0.5 START, ANSWERED IN CHAT (2026-09-28 11:07 UTC; recorded the same turn).** The maintainer,
   verbatim, in the project thread «Plan v0.5»: «D1: Yes, start. v0.4.0 release is done. D2: a D3: a One
   question, I'm wondering about the long wikipedia walk, wouldn't it be better to do something and let it
@@ -1035,6 +1084,7 @@
   untouched by that reading. Writing `b` at `ANSWER RC15` moves the change onto Crawl-delay and the
   per-host floor; `c` reaches both. Recorded so that a later reading is a REVERSAL rather than a
   discovery.
+  **ANSWERED 2026-09-29 (the 37-question list, head entry):** RC15 = c, both: Q1148's figures stand, and the egress politeness is to be adapted too; no figure was written, so that change is proposed and asked.
 
 - **THREE DEFAULT-ON RIDE-ALONGS CANNOT BE SWITCHED OFF, FOR TWO DIFFERENT REASONS — found while
   building the `docs/SECURITY.md` enumeration (row H, Q1001/Q1002), live-reproduced 2026-09-16.
@@ -1126,6 +1176,7 @@
   processing is identical and the deliverable is the labelled assumption set. The trap is the opposite one:
   a session that reads «unanswered» as «nothing to record» leaves eighteen live assumptions unlabelled in the
   plan files, which is exactly the state the protocol's ASSUMPTION rule exists to prevent.
+  **ANSWERED 2026-09-29 (the 37-question list, head entry):** RC02 = a, RC03 = a, RC04 = a, RC07 = c («0.6 or later», release unnamed), RC08 = a, RC09 = a, RC11 = b, RC12 = c, RC13 = b with eclipses (the eclipse half a recorded default), RC14 = a, RC15 = c, RC17 = a. STILL OPEN: RC05 (thread «Keyword working session»), RC06 (thread «Fix source qualification») and RC16 (a later discussion). With RC01 and RC10 of 2026-09-27, 19 of the round's 22 lines now carry an answer.
 - **THE 2026-09-06 REGISTER ANSWERED — 65 OF 65 THROUGH THE RULINGS ARTIFACT (2026-09-15 15:02–16:00Z;
   recorded the same day; NOTHING RESOLVED BY THE SESSION; draft PR #1131).** THE PRIMARY RECORD is the
   register itself, answered in place:
@@ -15811,7 +15862,9 @@ says the candidates were deleted, with the count. **Unruled:** whether the prune
 operator clears (the grammar's intent) or stay a delete (it only removes rows no human has touched, and a
 remembered dismissal or a promoted source is never swept). Nothing was changed; this is the maintainer's call.
 
-## 2026-09-28 — THE CLAIM WORKSPACE'S PLACEMENT — PENDING (0.5 row K, brief `S05-11` §6; ruling id R66 held for the answer)
+**ANSWERED 2026-09-29 (the 37-question list, head entry):** keep the delete → `R48` = a. Nothing changes.
+
+## 2026-09-28 — THE CLAIM WORKSPACE'S PLACEMENT — RULED 2026-09-29, `R66` = a (0.5 row K, brief `S05-11` §6; ruling id R66 held for the answer)
 
 Brief `S05-11` §6 leaves the workspace's placement to the maintainer («a main tab, a palette command, an
 analysis-window subtab … proposed in the PR body, asked»). **Built at the proposed default:** a tab kept OFF
@@ -15825,6 +15878,8 @@ thread; record the answer as R66 in `RULINGS_INDEX.md`, here and in the gate's �
 skips a literal carrying a `{placeholder}`, and its unkeyed-`tf()` gate does not see a frame called through a
 parameter. Two of the workspace's sentences passed all four i18n gates while keyed in no locale. The view's
 own test now checks its literals; widening the shared gates is its own PR (it would measure every module).
+
+**ANSWERED 2026-09-29 (the 37-question list, head entry):** palette and Search → `R66` = a, as built.
 
 ## 2026-09-28 — ROW H'S PROPOSED DEFAULTS (S05-08, not rulings; each reversible in one line)
 
@@ -15850,7 +15905,9 @@ maintainer's word or a measurement on the reference VM:
   display on the master too would hide stored answers whenever the lane is paused; left as built in 0.4
   unless ruled otherwise. The ≈ TITLES are gated on both switches, as Q513 = b reads.
 
-## 2026-09-28 — THE CLAIM TRAIL'S SIGNING KEY — PENDING (0.5 row K, brief `S05-11` S2; ruling id R67 held for the answer)
+**ANSWERED 2026-09-29 (the 37-question list, head entry):** → `R61` = b: the numbers and the placement stay, and the ≈ titles ARE carried by a restore, under an app-wide principle in the maintainer's words (every deduced metadatum rides the backup with its provenance; imported data never prevails over local; both kept and visible; the operator may discard). The merge handler is a build item.
+
+## 2026-09-28 — THE CLAIM TRAIL'S SIGNING KEY — RULED 2026-09-29, `R67` = a (0.5 row K, brief `S05-11` S2; ruling id R67 held for the answer)
 
 Step ⑥ signs the exported trail. **Built with the install's CUSTODY key**, the one `custody` already uses
 for its log and anchors: a recipient can tie the bundle to that install's custody record, and the same
@@ -15861,3 +15918,5 @@ not to the custody log), or a FRESH key per bundle (no two bundles linkable, and
 proves only that the file did not change, never who made it). `claim_bundle.build_trail_bundle` takes
 the signer as a parameter, so either is a small change. Asked on a decision card in the row K thread;
 record the answer as R67 in `RULINGS_INDEX.md`, here and in the gate's §3.
+
+**ANSWERED 2026-09-29 (the 37-question list, head entry):** the install's custody key → `R67` = a, as built.

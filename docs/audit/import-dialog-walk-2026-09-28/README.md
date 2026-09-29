@@ -59,3 +59,7 @@ per-backup row's error cell; `en2` and `stop-en2` ran with everything.
   and the analytics line above it keep counting down: four numbers for one fact.
 - Stage 1 after a Stop reads "1 failed · Stopped": the server counts the cancelled backup as failed.
 - "database records, all types: 194 000" is plumbing beside the article counts.
+
+**Decided 2026-09-29 (`R68`, «6=a» in the project chat):** all three change — the frozen «awaiting indexing»
+lines go (the live counters stay), a stopped backup reads «stopped» rather than «failed», and «database records,
+all types» moves into hover text, still labelled. Built by the claim workspace's thread (0.5 row K), not here.

@@ -29,7 +29,7 @@ release is unbounded — the V1 train's "a few hours" assumption is retired, and
 without apology. **Q116 = a:** three lanes as today (planning, build, verification). A row is *ruled* when its
 origin is a question ID; anything marked *proposed placement* is the planning session's sequencing, not a
 ruling; the ⛔ questions left blank (Q823, Q925, Q1009, Q1113) are named on the rows they touch and are never
-assumed. Row order is dependency order, not priority: K (the format bump) precedes the 0.5 storage half by
+assumed — **all four answered 2026-09-29 (Q823 = a, Q925 = a, Q1009 = a, Q1113 = a; §3).** Row order is dependency order, not priority: K (the format bump) precedes the 0.5 storage half by
 ruling (Q301 = c), O (the substrate) precedes P and Q by construction.
 
 **How a row closes** (inherited from the `0.3` gate, unchanged): only when there is a **named
@@ -754,7 +754,7 @@ artifact (rows / day, bytes / day, gap history — the intake's exit row, now wi
 the FROM-MEMORY ones), the toggle and wizard are Chromium-verified + click-through, and the fixture pipeline of
 row O carries the stream. `not-measurable-here` for the 72 h run; **operator:** that run. Brief `S04-09`.
 
-### Row Q — Laws: the metadata model, the L0 defects, the first bulk adapters · ruled (R14, R15; Q107, Q901, Q902, Q904–Q910, Q914, Q915, Q917, Q919, Q921–Q924, Q927) · OPEN, the adapter order PENDING
+### Row Q — Laws: the metadata model, the L0 defects, the first bulk adapters · ruled (R14, R15; Q107, Q901, Q902, Q904–Q910, Q914, Q915, Q917, Q919, Q921–Q924, Q927) · OPEN, the adapter order ANSWERED 2026-09-29 (Q925 = a)
 
 **What it must demonstrate.** The L0 defects first, before anything else in the section (Q917); the internal
 model — Akoma-Ntoso-lite: document → versions → provisions with stable addresses + a metadata block, one adapter
@@ -828,7 +828,7 @@ country and use the choropleth, recommended), and the answer sheet re-asked it a
 kept the PLAN. It is not one of the five surfaces the row closes on, and no release is named for it; this session's
 default is to build it with `0.5`'s map work (row L's slice `S05-05`) unless the maintainer asks for it in `0.4`.
 
-### Row S — Sources: admission, identity, the institutions docket, the splice · ruled (Q1101 ⛔ = a, Q1105–Q1112, Q1114–Q1119, Q1156) · OPEN, the embassy platforms PENDING
+### Row S — Sources: admission, identity, the institutions docket, the splice · ruled (Q1101 ⛔ = a, Q1105–Q1112, Q1114–Q1119, Q1156) · OPEN, the embassy platforms ANSWERED 2026-09-29 (Q1113 = a)
 
 **What it must demonstrate.** A `qualified` verdict flips `enabled=True` and the `scrape_unqualified` hatch is
 retired (Q1101 ⛔ = a — qualification IS the admission gate; the audit view's undo is the safety valve; the
@@ -986,6 +986,7 @@ The `0.3` gate's own log is the format.
 
 | Date | Change | Source |
 |---|---|---|
+| 2026-09-29 | **The 37-question list, answered in chat (19:55 UTC; recorded without code changes).** **`R92` («21=b», over the recommended «keep them here»): every row still open at the `v0.4.0` tag — A, B, C, D, E and H to W — is now also a condition of the 0.5 exit** (`RELEASE_0.5_GATE.md` §1b); each keeps its text, bar and status HERE and closes here on its named artifact. **`R91` («20=a»): row H's 15 lane names, three headings and the 16th lane «Places and people» are kept** (H9 answered). **Q925 = a** (row Q: legislation.gov.uk → gesetze-im-internet → e-Gov → EUR-Lex → LEGI last); **Q1113 = a** (row S: the embassy platforms stay excluded, nothing published, nobody contacted — the status quo, confirmed). From the RC round: `RC02` = a (row K keeps the legacy single-file restore forever), `RC08` = a (`RC08.3` row C and `RC08.6` row U confirmed), `RC13` = b with eclipses (row U: the religious dates researched by a networked session and shipped PREINSTALLED, every religion covered, each shown or hidden by the user — the maintainer's note; the eclipse half is the recorded default), `RC15` = c (row T: Q1148's loopback figures stand AND the per-host egress politeness is to be adapted — no figure was written, so it is proposed and asked), `RC17` = a (row U, as built). **Still open, with the maintainer's words on their `RULINGS_INDEX.md` rows:** `RC05` and `D47` (to the thread «Keyword working session»), `RC06` (row S's re-check window — waits on the thread «Fix source qualification»: no source was added in 72 hours on eight instances despite more than 80,000 candidates, and re-qualification is to run as a queue), `RC16` (a later discussion). **No row changed status.** | maintainer (project chat, 2026-09-29 19:55 UTC) · recorded by the session |
 | 2026-09-28 | **`v0.4.0` PUBLISHED from the moved tag (row G; no other row changed).** With the GitHub release deleted, the maintainer moved `v0.4.0` onto `00af1d9c`, the PR #1195 merge, from a GitHub Codespace at 10:13 UTC; a website attempt before it had re-published the release on the old tag without a run, since GitHub's website cannot move or delete a tag. `release.yml` run 36408430314 passed its full-suite job and the tag-matches-version step, then created the pre-release with the generated notes (no-telemetry re-check passing), the wheel, the sdist and `SHA256SUMS` at 11:00 UTC. The rows open at the tag are unchanged. | maintainer (Codespace, 10:13 UTC) · `release.yml` run 36408430314 · recorded by the session |
 | 2026-09-28 | **`v0.4.0` TAGGED by the maintainer before the exit clause was met; the version flip followed (row G CLOSED).** The maintainer: «I merged all PRs and bumped the version to v0.4.0». The tag is on `ad0f2062` (the PR #1191 merge), with a GitHub pre-release published 02:06 UTC; that tree read `0.3.0`, so `release.yml` run 36368552522 passed its full-suite job and stopped at its tag-matches-version step, and the release carried no wheel, sdist or `SHA256SUMS`. PR #1195 flips the version at the maintainer's pick; moving the tag onto its merge is the maintainer's step, spelled out in row G. **Rows open at the tag, none changed by this entry:** A and B (the release run of 2026-09-26 covered both, read in the project thread «Release candidate diagnostics», whose two live defects PR #1188 fixed; they close once the maintainer has read its report), D and E (read from that same run), C, W, and the operator halves of rows H to V, K and Q among them (every click-through clause among H to U passed the 2026-09-27 fix-check walk); F closed 2026-09-15. Whether those rows stay on this board after the tag or move to `0.5` is not decided here, and `RELEASE_0.5_GATE.md`'s two hard preconditions (row K before its row B, row O before its rows D and F) stand as written. | maintainer (chat, 2026-09-28 02:41 UTC) · recorded by the session, PR #1195 |
 | 2026-09-27 | **The fix-check walk (R37): the click-through clause of rows H, I, J, L, M, N, O, P, R, S, T and U passes.** One walker per row re-ran that row's steps and reproduced each of its re-walk items on build `9eb10528`, encrypted, locked at boot, in airplane mode, and did not hunt for new defects. 117 of the 119 items were fixed there and every walkable step passed; an independent re-checker confirmed the two left, N-4 (the Diagnostics job lines kept their language after a live switch) and O-5 (the `/tasks` failure line's zh spacing), both P3. Both were fixed in `38965c0e` and re-checked in Chromium with the re-checker's own scripts. What a sandbox cannot walk is listed per row and is the operator's runs (the real install, the removable drive, going online) or the maintainer's word (H9, the lane names). 32 incidental notes are recorded in `incidental.csv` and `OPEN_QUEUE.md`, not fixed, so the loop ends here. The rows' OTHER clauses (the operator runs, row V, row W, the flip) are unchanged. | `docs/audit/delegated-fixcheck-2026-09-27/`; PR #1191 |
@@ -1071,8 +1072,9 @@ Kept explicit so nothing drifts in by assumption:
   walk (Q701 = c), the law evolution surface, the feed-key source identity migration (Q1102, *proposed
   placement* 0.5), the inline-handler retirement + CSP and the theme cull (Q1127, Q1123), the AI
   translation sweep (Q405, Q513).
-- **The four ⛔ questions left blank** — Q823 (ODbL), Q925 (adapter order), Q1009 (storage round-2 rows
-  3–6), Q1113 (the embassy platforms) — are not decided here and not defaulted anywhere.
+- ~~**The four ⛔ questions left blank** — Q823 (ODbL), Q925 (adapter order), Q1009 (storage round-2 rows
+  3–6), Q1113 (the embassy platforms) — are not decided here and not defaulted anywhere.~~ All four answered
+  2026-09-29 (a, a, a, a), recorded in `RULINGS_INDEX.md` and §3.
 - **The stoplist merge** (Q1103 = b vs Q1104 = a, a CONFLICT recorded 2026-09-15) — held until the
   maintainer picks; row M ships without it.
 - **Row 5's Tier B** (the 451 index pages above the word guard). Not proposed for `0.3` and not

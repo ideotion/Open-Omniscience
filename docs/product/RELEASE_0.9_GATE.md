@@ -1,5 +1,9 @@
 # Release gate — v0.9.0 · Beta 1 (the hardening RC)
 
+> **PROVISIONAL ON THE V1 ROUND (`RC11` = b, 2026-09-29).** The maintainer re-opened all nine V1 rulings of
+> 2026-09-07 (V1-1..V1-9): every row of this gate that cites a V1 ruling is provisional until the detailed V1 round
+> is written and answered. V1-4 is already answered: PubMed BULK over the API («pubmed bulk prefered over API»).
+
 **Status: OPEN — written 2026-09-15 from the answered roadmap sheet.** The checkable inventory for closing the
 `0.9` cycle. **0.9.0 = Beta 1, 0.9.x = later betas, 1.0.0 = general availability ("the gift"); alphas are
 0.4–0.8** — ruled **Q101 ⛔ = a** (R18 finalised; the maintainer's original intent, v1 = Beta 1, is retired with
@@ -14,7 +18,7 @@ tags are cut (Q111), where the post-1.0 ambitions are written (Q118), the securi
 (Q1136, Q1138), the lanes in the Windows matrix (Q1019). **No target date** (Q110 = c) — the beta ships when
 this board is green, and 1.0.0 ships when the V1 §8 checklist is green, **and nothing else** (Q104 = b: no
 field bar of N testers × 30 days — the sheet's (a) was not chosen). The one ⛔ still blank that touches this
-board, **Q1009 (the storage round-2 rows 3–6)**, is named on row F and never assumed.
+board, **Q1009 (the storage round-2 rows 3–6)**, is named on row F and never assumed — **answered (a) 2026-09-29, `y, OOENC2, y, y`.**
 
 **How a row closes:** a named artifact; `not-measurable-here` where the sandbox cannot measure; the
 verification bar is Chromium + the maintainer's click-through (Q1128 = a); V1 §8 item 7's "Gecko-verified"
@@ -33,7 +37,7 @@ wording is read under that ruling (Gecko best-effort).
 | C | The exit bar = the V1 §8 acceptance checklist, item by item, with the state of each | shared | ruled (Q104 = b) · `S09-01` | **OPEN** |
 | D | The hardening items of the V1 train: `--audit-chrome` → 0, the a11y pass, scale re-validation on the live corpus, docs / manual completeness, the install-paths decision executed | session + operator | V1 §3 (ruled 2026-09-07) · `S09-01` | **OPEN** |
 | E | The security review: Tor-exit-resolve and `oo-netcut` / Stem (parked here by Q1138); the consented self-update check (Q1136); the no-telemetry re-check stated | session + operator | ruled (Q1136 = a, Q1138 = a) · `S09-01` | **OPEN** |
-| F | The storage rulings executed — BLOCKED on Q1009 ⛔ | maintainer | the intake's 0.9 line; Q1009 ⛔ blank | **PENDING** — nothing assumed |
+| F | The storage rulings executed (Q1009 = a) | maintainer | the intake's 0.9 line; Q1009 ⛔ answered 2026-09-29 | **OPEN — unblocked 2026-09-29** (Q1009 = a, `y, OOENC2, y, y`) |
 | G | The Windows lane BLOCKING, with every lane that landed in the matrix | session | V1-5; ruled (Q1019 = a) · `S09-01` | **OPEN** |
 | H | `docs/product/POST_1.0_BACKLOG.md` created, each item citing its ruling | session | ruled (Q118 = a) · `S09-01` | **OPEN** |
 
@@ -120,7 +124,7 @@ no silent transport downgrade, no evasion of a host's block, transport-aware ver
 clauses (Q1136's consented self-update check, the no-telemetry re-check, and D7's parked pqcrypto 1.0
 migration) are untouched. The CONFLICT with Q1138 stays recorded on both rows.
 
-### Row F — The storage rulings executed · PENDING on Q1009 ⛔
+### Row F — The storage rulings executed · OPEN, Q1009 answered (a) 2026-09-29
 
 **What it must demonstrate.** The intake's 0.9 line — "the storage rulings executed" — depends on the four
 storage round-2 rulings (rows 3–6: blob-store dedup · pack AEAD OOENC2 vs `age` · keyed-HMAC blob addressing +
@@ -164,6 +168,7 @@ resolves to a ruling id in `RULINGS_INDEX.md`. Brief `S09-01`.
 | 2026-09-15 | **Premise corrections from the brief-writing pass:** (row G) the `portability` job (`ci.yml:371–387`) is `continue-on-error: true` with `timeout-minutes: 45` and the PRH-29 note that the Windows leg hangs (3 h 21 m to failure) — the cap does not fix the hang, a bisect against the suite is owed first, so "graduate to blocking" is bisect → green → blocking, in that order; `sqlcipher-smoke` (`ci.yml:411–416`) already runs `windows-latest` blocking. No `pyosmium` and no `[geo]` extra exist in `pyproject.toml` at `bebcef4` (Q1019's wheels stay FROM MEMORY). (row D) the "three widths of the 2026-09-09 sweep" are the 0.4 gate's §3 entry of that date (1440×900, 768×1024, 390×844); no audit DOCUMENT carries that date (the visual audit is `docs/audit/11_VISUAL_UI_AUDIT_2026-09-08.md`). (row B) the session clone is shallow (`git rev-parse --is-shallow-repository` = true), so release notes "from `shipped.csv` since the previous tag" need `git fetch --unshallow` first (CLAUDE.md protocol 5b's trap). No ruling changed. | session (`S09-01` §2, hand-verified) |
 | 2026-09-15 | **The 2026-09-06 register's 65 answers — effects on this board:** row E — I3 `default` (go: Tor-exit-resolve as its own skeptic-matrixed slice) CONFLICTS with Q1138 = a (parked until this review; `RC14`); I4 `default` (park `oo-netcut` / Stem) consistent; G9's mechanics recorded (re-run `install.sh` on a snapshot; checksums stated until a key exists; no anchoring until then); D7 `default`: the pqcrypto 1.0 migration stays parked until a custody-path session with the full skeptic matrix. | maintainer (the register, 2026-09-15) · reconciled by the session |
 | 2026-09-15 | **The RC confirmation round came back UNANSWERED — 0 of 22 `ANSWER` lines carry a letter — processed per its own §0.** Effect on this board: row E — `RC14` ASSUMPTION (a), Tor-exit-resolve becomes a built, skeptic-matrixed slice here rather than a parked item; I4 (`oo-netcut` / Stem) stays parked and every other clause of the row is untouched. Row F is unchanged: `RC03` ⛔ came back blank, so the four storage round-2 values stay unwritten and row F stays PENDING on Q1009 with nothing assumed. The CONFLICT with Q1138 = a stays recorded on both rows. **No row changed status.** | maintainer (the round, left blank) · §0's blank rules applied by the session |
+| 2026-09-29 | **Row F unblocked: Q1009 = a (`y, OOENC2, y, y`, = `RC03` a).** Blob-store dedup ON, OOENC2 for pack AEAD, keyed-HMAC blob addressing with opaque pack names, the sqlite3mc benchmark trial authorised (benchmark only); the row closes on their execution. **`RC14` = a:** Tor-exit-resolve is its own slice at row E, confirmed. **`RC11` = b:** the provisional banner above. | maintainer (project chat, 2026-09-29 19:55 UTC) · recorded by the session |
 
 ---
 
