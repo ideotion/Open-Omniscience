@@ -34,10 +34,10 @@ from datetime import date, datetime, timedelta, timezone
 
 from sqlalchemy import distinct, func
 
+from src.database.derived_views import KeywordMentionRead
 from src.database.models import (
     CommodityPrice,
     Keyword,
-    KeywordMention,
     MarketExtractionRule,
 )
 
@@ -161,17 +161,17 @@ def _daily_series(session, kw_ids: list[int], cutoff: date, hi: date) -> dict[in
         chunk = kw_ids[i : i + _IN_CHUNK]
         for kid, on, cnt in (
             session.query(
-                KeywordMention.keyword_id,
-                KeywordMention.observed_on,
-                func.count(distinct(KeywordMention.article_id)),
+                KeywordMentionRead.keyword_id,
+                KeywordMentionRead.observed_on,
+                func.count(distinct(KeywordMentionRead.article_id)),
             )
             .filter(
-                KeywordMention.keyword_id.in_(chunk),
-                KeywordMention.observed_on >= cutoff,
-                KeywordMention.observed_on < hi,
-                KeywordMention.observed_on.isnot(None),
+                KeywordMentionRead.keyword_id.in_(chunk),
+                KeywordMentionRead.observed_on >= cutoff,
+                KeywordMentionRead.observed_on < hi,
+                KeywordMentionRead.observed_on.isnot(None),
             )
-            .group_by(KeywordMention.keyword_id, KeywordMention.observed_on)
+            .group_by(KeywordMentionRead.keyword_id, KeywordMentionRead.observed_on)
             .all()
         ):
             series[int(kid)][on] = int(cnt or 0)
@@ -189,14 +189,14 @@ def _daily_totals(session, cutoff: date, hi: date) -> dict[date, int]:
     out: dict[date, int] = {}
     for on, cnt in (
         session.query(
-            KeywordMention.observed_on, func.count(distinct(KeywordMention.article_id))
+            KeywordMentionRead.observed_on, func.count(distinct(KeywordMentionRead.article_id))
         )
         .filter(
-            KeywordMention.observed_on >= cutoff,
-            KeywordMention.observed_on < hi,
-            KeywordMention.observed_on.isnot(None),
+            KeywordMentionRead.observed_on >= cutoff,
+            KeywordMentionRead.observed_on < hi,
+            KeywordMentionRead.observed_on.isnot(None),
         )
-        .group_by(KeywordMention.observed_on)
+        .group_by(KeywordMentionRead.observed_on)
         .all()
     ):
         out[on] = int(cnt or 0)
@@ -210,15 +210,15 @@ def _source_counts(session, kw_ids: list[int], cutoff: date, hi: date) -> dict[i
         chunk = kw_ids[i : i + _IN_CHUNK]
         for kid, n in (
             session.query(
-                KeywordMention.keyword_id, func.count(distinct(KeywordMention.source_id))
+                KeywordMentionRead.keyword_id, func.count(distinct(KeywordMentionRead.source_id))
             )
             .filter(
-                KeywordMention.keyword_id.in_(chunk),
-                KeywordMention.observed_on >= cutoff,
-                KeywordMention.observed_on < hi,
-                KeywordMention.source_id.isnot(None),
+                KeywordMentionRead.keyword_id.in_(chunk),
+                KeywordMentionRead.observed_on >= cutoff,
+                KeywordMentionRead.observed_on < hi,
+                KeywordMentionRead.source_id.isnot(None),
             )
-            .group_by(KeywordMention.keyword_id)
+            .group_by(KeywordMentionRead.keyword_id)
             .all()
         ):
             out[int(kid)] = int(n or 0)
@@ -264,16 +264,16 @@ def find_supply_chain_ripples(
     # Frequent candidate topics in the window (denormalised distinct-article counts).
     cand_rows = (
         session.query(
-            KeywordMention.keyword_id,
-            func.count(distinct(KeywordMention.article_id)).label("n"),
+            KeywordMentionRead.keyword_id,
+            func.count(distinct(KeywordMentionRead.article_id)).label("n"),
         )
         .filter(
-            KeywordMention.observed_on >= cutoff,
-            KeywordMention.observed_on < hi,
-            KeywordMention.observed_on.isnot(None),
+            KeywordMentionRead.observed_on >= cutoff,
+            KeywordMentionRead.observed_on < hi,
+            KeywordMentionRead.observed_on.isnot(None),
         )
-        .group_by(KeywordMention.keyword_id)
-        .order_by(func.count(distinct(KeywordMention.article_id)).desc())
+        .group_by(KeywordMentionRead.keyword_id)
+        .order_by(func.count(distinct(KeywordMentionRead.article_id)).desc())
         .limit(max_candidates)
         .all()
     )
@@ -397,11 +397,11 @@ def _pair_article_ids(session, cid: int, kid: int, cutoff, hi, cap: int) -> list
     def _ids(k):
         return {
             int(r[0])
-            for r in session.query(KeywordMention.article_id)
+            for r in session.query(KeywordMentionRead.article_id)
             .filter(
-                KeywordMention.keyword_id == k,
-                KeywordMention.observed_on >= cutoff,
-                KeywordMention.observed_on < hi,
+                KeywordMentionRead.keyword_id == k,
+                KeywordMentionRead.observed_on >= cutoff,
+                KeywordMentionRead.observed_on < hi,
             )
             .distinct()
         }
