@@ -23,6 +23,12 @@ WHAT IS INDEXED, AND WHY NOT EVERYTHING.
   held version in full would cost about that much again per version for text already found.
 * NOT the newest version of a followed page. ``store_version`` hands every version of a
   followed page to the corpus, which keeps the newest, so that one is searched there.
+* A TRACKED page's versions (``R54``, source ``tracked``): the texts the old page tracker
+  stores in ``corpus.db`` (``wiki_revisions.full_text``, a «Track now» press or a page check)
+  are indexed HERE, in the lane's own file, on the same rule: each older version by the lines
+  the next stored version removed, and the newest in full unless the page's corpus article
+  already is it. The texts are not copied: the index holds words, and a hit is read back from
+  the tracker's own row. See :func:`scan_tracked` and :func:`index_tracked_batch`.
 
 THE ONE THING THIS CANNOT FIND, and every hit list says so (``CAVEAT``): an AND query whose
 words sit partly in lines a version kept and partly in lines it lost finds neither version,
@@ -96,6 +102,7 @@ MIN_SQLITE: tuple[int, int, int] = (3, 43, 0)
 
 SOURCE_WARM = "warm"  # ``owner_id`` is a ``wiki_warm_pages`` row
 SOURCE_HOT = "hot"  # ``owner_id`` is a ``versioned_entities`` row, a page the lane follows
+SOURCE_TRACKED = "tracked"  # ``owner_id`` is a ``wiki_pages`` row in ``corpus.db`` (``R54``)
 EXTENT_FULL = "full"
 EXTENT_DROPPED = "dropped"
 STATE_KEY = "index"
@@ -122,6 +129,12 @@ STATE_UNAVAILABLE = "unavailable"
 #: Queue rows settled per transaction. Small, so a search reading the lane never waits long
 #: behind the indexer's write, and a fault rolls back little.
 INDEX_BATCH = 100
+#: Tracker pages one batch derives. Small on purpose: a page is derived whole, and a page with
+#: hundreds of stored versions costs a text read and a reduction for each new one.
+TRACKED_BATCH = 3
+#: Between two looks at the tracker's signatures when nothing about its size changed (a version
+#: removed, a page renamed): a probe that costs an index read decides the rest of the time.
+TRACKED_RESCAN_S = 1800.0
 #: The share of an idle window the indexer may take. The rest is WARM's and the walk's, so a
 #: long backlog (a 0.4 lane's every older version, on its first open) never stops them.
 INDEX_SHARE = 0.5
@@ -183,6 +196,9 @@ _BACKFILL = (
     "INSERT OR IGNORE INTO wiki_lane_index_queue(kind, ref) "
     "SELECT 'warm', id FROM wiki_warm_pages WHERE latest_revid IS NOT NULL",
     "INSERT OR IGNORE INTO wiki_lane_index_queue(kind, ref) SELECT 'hot', id FROM versioned_revisions",
+    # The tracker's pages are not queued from here (their rows live in ``corpus.db``): forgetting
+    # what was read makes the next scan of the tracker queue every page again.
+    "DELETE FROM wiki_lane_tracked",
     _RETRY_FAILED,
 )
 
@@ -371,6 +387,15 @@ class _Plan:
     owner_id: int
     revids: list[int] | None
     entries: list[_Entry] = field(default_factory=list)
+    #: A tracked page's mirror rows (``wiki_lane_tracked``) to write: ``(revid, successor, has_text)``.
+    mirror: list[tuple[int, int | None, int]] = field(default_factory=list)
+    #: Tracked page: the edition and article revision recorded with those rows.
+    edition: str = ""
+    article_rev: int = 0
+    #: Tracked page: mirror rows to forget (versions the tracker no longer holds).
+    forget: list[int] = field(default_factory=list)
+    #: Tracked page: the tracker no longer holds the page at all.
+    purge: bool = False
 
 
 @dataclass(slots=True)
@@ -614,6 +639,8 @@ class BatchResult:
     failed: int = 0
     chars: int = 0
     stopped_early: bool = False
+    #: The tracker's database could not be read, so the batch stopped with its pages still queued.
+    deferred: bool = False
 
 
 def _state(lane: Any, caps: int, now: datetime) -> Any:
@@ -656,7 +683,9 @@ def index_batch(
     only a unit that derived cleanly is written. A text that cannot be read or normalised
     fails its unit with nothing half-written: its rows are set aside with ``failed_at``,
     logged with the cause, and retried when the lane next starts or the page next changes
-    (:func:`retry_failed`, the feeders).
+    (:func:`retry_failed`, the feeders). The tracker's pages (``tracked`` queue rows) are not
+    this function's: they are read from another database and settled by
+    :func:`index_tracked_batch`.
     """
     from src.versioned.models import VersionedRevision
     from src.wiki.lane_models import WikiLaneIndexQueue
@@ -664,7 +693,7 @@ def index_batch(
     result = BatchResult()
     rows = lane.execute(
         select(WikiLaneIndexQueue.kind, WikiLaneIndexQueue.ref)
-        .where(WikiLaneIndexQueue.failed_at.is_(None))
+        .where(WikiLaneIndexQueue.failed_at.is_(None), WikiLaneIndexQueue.kind != SOURCE_TRACKED)
         .order_by(WikiLaneIndexQueue.kind, WikiLaneIndexQueue.ref)
         .limit(max(1, int(limit)))
     ).all()
@@ -749,6 +778,428 @@ def index_batch(
     state.chars = max(0, int(state.chars or 0) + tally.chars)
     state.updated_at = stamp
     result.settled = sum(map(len, done.values())) + sum(map(len, failed.values())) + len(unknown)
+    result.written = tally.written
+    result.removed = tally.removed
+    result.chars = tally.chars
+    return result
+
+
+# --------------------------------------------------------------------------- #
+# The old page tracker's versions (R54)
+# --------------------------------------------------------------------------- #
+class _TrackerUnavailable(SQLAlchemyError):
+    """The tracker's database could not be read now (locked, busy, gone). The unit WAITS: it is
+    not the text that is wrong, so nothing is set aside and nothing is written. (A
+    ``SQLAlchemyError`` so a caller reading one version answers it as it answers a lane fault.)"""
+
+
+class _TrackerReader:
+    """Reads ``corpus.db`` for the indexer, naming a database fault as :class:`_TrackerUnavailable`.
+
+    Only the DATABASE's faults are translated. A stored text that cannot be decompressed
+    raises what the decompressor raises, and that is the unit's own failure, set aside like
+    any unreadable text (:func:`index_tracked_batch`)."""
+
+    def __init__(self, session: Any) -> None:
+        self.session = session
+
+    def _run(self, stmt: Any, how: str) -> Any:
+        try:
+            result = self.session.execute(stmt)
+            return getattr(result, how)()
+        except SQLAlchemyError as exc:
+            raise _TrackerUnavailable(f"{type(exc).__name__}: {exc}") from exc
+
+    def all(self, stmt: Any) -> list[Any]:
+        return self._run(stmt, "all")
+
+    def first(self, stmt: Any) -> Any:
+        return self._run(stmt, "first")
+
+    def scalar(self, stmt: Any) -> Any:
+        return self._run(stmt, "scalar")
+
+    def release(self) -> None:
+        """End the read transaction, so the tracker's writer is never kept waiting on it."""
+        try:
+            self.session.rollback()
+        except SQLAlchemyError:  # pragma: no cover - nothing to release
+            _LOG.debug("lane search: could not release the tracker session", exc_info=True)
+
+
+def _utc(value: datetime | None) -> datetime | None:
+    """The tracker keeps naive UTC datetimes; the lane speaks aware ones."""
+    return value.replace(tzinfo=UTC) if value is not None and value.tzinfo is None else value
+
+
+@dataclass(slots=True)
+class _TrackedVersion:
+    row_id: int
+    revid: int
+    revised_at: datetime | None
+    has_text: bool
+
+
+def _tracked_chain(reader: _TrackerReader, page_id: int) -> list[_TrackedVersion]:
+    """A tracked page's stored versions, oldest first: by the edit's own time (an unknown one
+    first), then by row -- the order the version reader lists them in."""
+    from src.database.models import WikiRevision
+
+    rows = reader.all(
+        select(
+            WikiRevision.id, WikiRevision.revid, WikiRevision.timestamp,
+            WikiRevision.full_text.is_not(None),
+        )
+        .where(WikiRevision.page_id == page_id)
+        .order_by(WikiRevision.timestamp.asc().nullsfirst(), WikiRevision.id.asc())
+    )
+    return [_TrackedVersion(int(r[0]), int(r[1]), _utc(r[2]), bool(r[3])) for r in rows]
+
+
+def _tracked_text(reader: _TrackerReader, version: _TrackedVersion) -> str | None:
+    from src.database.models import WikiRevision
+
+    return reader.scalar(select(WikiRevision.full_text).where(WikiRevision.id == version.row_id))
+
+
+def _article_holds(reader: _TrackerReader, edition: str, title: str) -> int | None:
+    """The revision the page's corpus article was made from, or ``None`` (no article, or one
+    that never recorded it)."""
+    from src.database.models import Article
+    from src.wiki.corpus import wiki_article_url
+
+    rev = reader.scalar(
+        select(Article.source_revision).where(
+            Article.canonical_url == wiki_article_url(edition, title)
+        )
+    )
+    return _as_revid(rev)
+
+
+def _article_revisions(reader: _TrackerReader, pages: list[tuple[int, str, str]]) -> dict[int, int]:
+    """``{page id: revision its corpus article was made from}`` for the pages that have one.
+
+    ``pages`` are ``(id, edition, title)``. One read per few hundred pages; a page without an
+    article, or one whose article never recorded a revision, is absent (the fingerprint reads 0)."""
+    from src.database.models import Article
+    from src.wiki.corpus import wiki_article_url
+
+    by_url = {wiki_article_url(edition, title): pid for pid, edition, title in pages}
+    urls = list(by_url)
+    out: dict[int, int] = {}
+    for i in range(0, len(urls), 400):
+        for url, rev in reader.all(
+            select(Article.canonical_url, Article.source_revision).where(
+                Article.canonical_url.in_(urls[i : i + 400])
+            )
+        ):
+            revid = _as_revid(rev)
+            if revid:
+                out[by_url[url]] = revid
+    return out
+
+
+def _plan_tracked(lane: Any, reader: _TrackerReader, page_id: int, caps: int) -> _Plan:
+    """The entries one tracked page's NEW or CHANGED versions need, and the mirror rows to keep.
+
+    Read once, in this order, before anything is written: the page's row and its versions'
+    metadata (no text), what the mirror already says of them, and only then the texts of the
+    versions that need deriving -- two at a time, so a page with hundreds of versions never
+    holds them all.
+
+    A version is derived when the mirror has never seen it, or saw it with a different
+    successor (the next stored text: an older version is indexed by what THAT one removed), or
+    it is the newest and the corpus article's revision changed. The NEWEST version is indexed
+    in full unless the corpus article of the page already is that revision (then the corpus
+    search finds it, and here it would only be found twice). Nothing else is left out: what the
+    stream also holds is indexed here too, because an entry that depended on the stream's own
+    state would go stale whenever that changed and no fingerprint of THIS store would notice.
+    A page both followed and tracked can therefore list a version once for each store.
+    """
+    from src.database.models import WikiPage
+    from src.wiki.lane_models import WikiLaneDoc, WikiLaneTracked
+
+    plan = _Plan(SOURCE_TRACKED, page_id, None, purge=True)
+    page = reader.first(
+        select(WikiPage.wiki, WikiPage.title, WikiPage.pageid).where(WikiPage.id == page_id)
+    )
+    if page is None:
+        return plan
+    chain = _tracked_chain(reader, page_id)
+    if not chain:
+        return plan
+    edition, title = str(page[0]), str(page[1])
+    holds = _article_holds(reader, edition, title)
+    article_rev = holds or 0
+    mirror = {
+        int(r[0]): (r[1], int(r[2] or 0))
+        for r in lane.execute(
+            select(WikiLaneTracked.revid, WikiLaneTracked.successor_revid, WikiLaneTracked.article_rev)
+            .where(WikiLaneTracked.owner_id == page_id)
+        ).all()
+    }
+    texted = [v for v in chain if v.has_text]
+    successor = {v.revid: (texted[i + 1].revid if i + 1 < len(texted) else None) for i, v in enumerate(texted)}
+    newest = texted[-1].revid if texted else None
+    every = {v.revid for v in chain}
+    todo: list[int] = []
+    for pos, v in enumerate(texted):
+        seen = mirror.get(v.revid)
+        stale = seen is None or seen[0] != successor[v.revid]
+        if v.revid == newest and seen is not None and seen[1] != article_rev:
+            stale = True
+        if stale:
+            todo.append(pos)
+    held_docs = {
+        int(r)
+        for r in lane.execute(
+            select(WikiLaneDoc.revid).where(
+                WikiLaneDoc.source == SOURCE_TRACKED, WikiLaneDoc.owner_id == page_id
+            )
+        ).scalars()
+    }
+    gone = sorted((set(mirror) | held_docs) - every)
+    touched: list[int] = list(gone)
+    plan = _Plan(
+        SOURCE_TRACKED, page_id, touched, edition=edition, article_rev=article_rev,
+        forget=[r for r in gone if r in mirror],
+    )
+    derive = {texted[pos].revid for pos in todo}
+    plan.mirror = [
+        (v.revid, successor.get(v.revid), 1 if v.has_text else 0)
+        for v in chain
+        if (v.revid in derive) or (not v.has_text and v.revid not in mirror)
+    ]
+    if not todo:
+        return plan
+    common: dict[str, Any] = {
+        "source": SOURCE_TRACKED, "owner_id": page_id, "edition": edition,
+        "page_id": int(page[2]) if page[2] else None, "title": title, "caps": caps,
+    }
+    plains: dict[int, str | None] = {}
+
+    def plain_at(pos: int) -> str | None:
+        if pos not in plains:
+            raw = _tracked_text(reader, texted[pos])
+            plains[pos] = plain_text(raw) if raw is not None else None
+            for old in [p for p in plains if p < pos - 1]:
+                plains.pop(old, None)
+        return plains[pos]
+
+    for pos in todo:
+        v = texted[pos]
+        touched.append(v.revid)
+        if pos == len(texted) - 1:
+            if holds == v.revid:
+                continue  # the corpus article is this text
+            body = plain_at(pos)
+            if body is not None and (body.strip() or title.strip()):
+                plan.entries.append(
+                    _entry(**common, revid=v.revid, extent=EXTENT_FULL, successor_revid=None,
+                           revised_at=v.revised_at, index_title=title, body=body)
+                )
+            continue
+        body = plain_at(pos)
+        after = plain_at(pos + 1)
+        if not body or after is None:
+            continue
+        gone_lines = dropped_lines(body, after)
+        if gone_lines:
+            plan.entries.append(
+                _entry(**common, revid=v.revid, extent=EXTENT_DROPPED,
+                       successor_revid=texted[pos + 1].revid, revised_at=v.revised_at,
+                       index_title="", body=gone_lines)
+            )
+    return plan
+
+
+def _apply_tracked(lane: Any, plan: _Plan) -> _Tally:
+    """Write a tracked page's entries (:func:`_apply`), then its mirror rows. Writes only."""
+    tally = _apply(lane, plan)
+    if plan.purge:
+        lane.execute(
+            text("DELETE FROM wiki_lane_tracked WHERE owner_id = :o"), {"o": plan.owner_id}
+        )
+        return tally
+    for revid in plan.forget:
+        lane.execute(
+            text("DELETE FROM wiki_lane_tracked WHERE owner_id = :o AND revid = :r"),
+            {"o": plan.owner_id, "r": revid},
+        )
+    if plan.mirror:
+        lane.execute(
+            text(
+                "INSERT INTO wiki_lane_tracked(owner_id, revid, successor_revid, edition, "
+                "has_text, article_rev) VALUES (:o, :r, :s, :e, :h, :a) "
+                "ON CONFLICT(owner_id, revid) DO UPDATE SET successor_revid = excluded.successor_revid, "
+                "edition = excluded.edition, has_text = excluded.has_text"
+            ),
+            [
+                {"o": plan.owner_id, "r": r, "s": s, "e": plan.edition, "h": h, "a": plan.article_rev}
+                for r, s, h in plan.mirror
+            ],
+        )
+    lane.execute(
+        text("UPDATE wiki_lane_tracked SET article_rev = :a WHERE owner_id = :o"),
+        {"a": plan.article_rev, "o": plan.owner_id},
+    )
+    return tally
+
+
+def tracker_probe(reader: _TrackerReader) -> tuple[int, int, int]:
+    """A cheap fingerprint of the tracker's size: versions held, the newest row, pages tracked.
+
+    Three index reads. It is not a proof that nothing changed (a version removed and another
+    added leaves the count alone), which is why :data:`TRACKED_RESCAN_S` also bounds the wait."""
+    from src.database.models import WikiPage, WikiRevision
+
+    versions, newest = reader.first(select(func.count(WikiRevision.id), func.max(WikiRevision.id)))
+    pages = reader.scalar(select(func.count(WikiPage.id)))
+    return int(versions or 0), int(newest or 0), int(pages or 0)
+
+
+def scan_tracked(lane: Any, reader: _TrackerReader) -> int:
+    """Queue every tracker page whose stored versions differ from what the index has read.
+
+    Compares ONE fingerprint per page -- how many versions, the newest revision, the sum of
+    the revisions and the revision of the page's corpus article -- against the mirror's own, so no
+    text is read to find what changed. That also finds what no counter would: a page the
+    tracker dropped, a version it removed, a restore that replaced its rows. Returns the pages
+    queued. A page already waiting stays as it is, and one set aside stays set aside until the
+    lane next starts (:func:`retry_failed`), or it would be tried again on every scan.
+    """
+    from src.database.models import WikiPage, WikiRevision
+
+    theirs: dict[int, tuple[int, int, int]] = {
+        int(pid): (int(n), int(mx or 0), int(sm or 0))
+        for pid, n, mx, sm in reader.all(
+            select(
+                WikiRevision.page_id, func.count(WikiRevision.id), func.max(WikiRevision.revid),
+                func.sum(WikiRevision.revid),
+            ).group_by(WikiRevision.page_id)
+        )
+    }
+    article_rev = _article_revisions(
+        reader, [(int(r[0]), str(r[1]), str(r[2])) for r in reader.all(
+            select(WikiPage.id, WikiPage.wiki, WikiPage.title)
+        )],
+    )
+    ours: dict[int, tuple[int, int, int, int]] = {
+        int(o): (int(n), int(mx or 0), int(sm or 0), int(art or 0))
+        for o, n, mx, sm, art in lane.execute(
+            text(
+                "SELECT owner_id, COUNT(*), MAX(revid), SUM(revid), MAX(article_rev) "
+                "FROM wiki_lane_tracked GROUP BY owner_id"
+            )
+        ).all()
+    }
+    dirty = [
+        pid
+        for pid, sig in theirs.items()
+        if ours.get(pid) != (*sig, article_rev.get(pid, 0))
+    ]
+    dirty += [pid for pid in ours if pid not in theirs]
+    # A page whose ENTRIES outlived its mirror rows (the mirror is wiped when the index is
+    # remade) and which the tracker has since dropped is in neither list above.
+    dirty += [
+        int(pid)
+        for pid in lane.execute(
+            text("SELECT DISTINCT owner_id FROM wiki_lane_docs WHERE source = 'tracked'")
+        ).scalars()
+        if int(pid) not in theirs and int(pid) not in ours
+    ]
+    queued = 0
+    for pid in dirty:
+        queued += int(
+            lane.execute(
+                text(
+                    "INSERT INTO wiki_lane_index_queue(kind, ref) VALUES ('tracked', :p) "
+                    "ON CONFLICT(kind, ref) DO NOTHING"
+                ),
+                {"p": pid},
+            ).rowcount
+            or 0
+        )
+    return queued
+
+
+def index_tracked_batch(
+    lane: Any,
+    reader: _TrackerReader,
+    *,
+    limit: int = TRACKED_BATCH,
+    caps: int | None = None,
+    deadline: float | None = None,
+    monotonic: Callable[[], float] = time.monotonic,
+    now: Callable[[], datetime] = _utcnow,
+) -> BatchResult:
+    """Derive up to ``limit`` queued tracker pages into ``lane``'s ONE transaction.
+
+    The same contract as :func:`index_batch`: derive a unit whole before writing any of it, a
+    lane fault re-raised so the batch waits, an unreadable TEXT setting only its own page
+    aside (``failed_at``, logged, tried again at the lane's next start). One difference, and it is the point of this function: the texts are in ANOTHER
+    database, so a fault of THAT one (locked, busy) is neither the page's nor the lane's --
+    the unit stays pending, nothing is set aside, and the batch stops with ``deferred`` set.
+    """
+    from src.wiki.lane_models import WikiLaneIndexQueue
+
+    result = BatchResult()
+    refs = [
+        int(ref)
+        for (ref,) in lane.execute(
+            select(WikiLaneIndexQueue.ref)
+            .where(WikiLaneIndexQueue.kind == SOURCE_TRACKED, WikiLaneIndexQueue.failed_at.is_(None))
+            .order_by(WikiLaneIndexQueue.ref)
+            .limit(max(1, int(limit)))
+        ).all()
+    ]
+    if not refs:
+        return result
+    caps = available_mask() if caps is None else caps
+    done: list[int] = []
+    failed: list[int] = []
+    tally = _Tally()
+    for ref in refs:
+        if deadline is not None and monotonic() >= deadline and (done or failed):
+            result.stopped_early = True
+            break
+        try:
+            plan = _plan_tracked(lane, reader, ref, caps)
+        except _TrackerUnavailable as exc:
+            _LOG.info("lane search: the page tracker could not be read now (%s); it waits", exc)
+            result.deferred = True
+            break
+        except (SQLAlchemyError, MemoryError):
+            raise  # the lane or the process, not this text: the whole batch waits
+        except Exception as exc:  # noqa: BLE001 - one unreadable text must not stop the index
+            failed.append(ref)
+            result.failed += 1
+            _LOG.warning(
+                "lane search: could not index tracked page %s (%s: %s); set aside, and tried "
+                "again when the lane next starts",
+                ref, type(exc).__name__, exc,
+            )
+            continue
+        tally.add(_apply_tracked(lane, plan))
+        done.append(ref)
+    if done:
+        lane.execute(
+            delete(WikiLaneIndexQueue).where(
+                WikiLaneIndexQueue.kind == SOURCE_TRACKED, WikiLaneIndexQueue.ref.in_(done)
+            )
+        )
+    stamp = now()
+    if failed:
+        lane.execute(
+            update(WikiLaneIndexQueue)
+            .where(WikiLaneIndexQueue.kind == SOURCE_TRACKED, WikiLaneIndexQueue.ref.in_(failed))
+            .values(failed_at=stamp)
+        )
+    state = _state(lane, caps, stamp)
+    state.docs = max(0, int(state.docs or 0) + tally.docs)
+    state.chars = max(0, int(state.chars or 0) + tally.chars)
+    state.updated_at = stamp
+    result.settled = len(done) + len(failed)
     result.written = tally.written
     result.removed = tally.removed
     result.chars = tally.chars
@@ -866,9 +1317,23 @@ def search_coverage(lane: Any) -> dict[str, Any]:
         if name
     ]
     warm_editions = [r for r in warm_editions if r["pages"]]  # an edition only QUEUED holds none
+    tracked = [
+        {"edition": str(name), "pages": int(n)}
+        for name, n in lane.execute(
+            text(
+                "SELECT edition, COUNT(DISTINCT owner_id) FROM wiki_lane_docs "
+                "WHERE source = 'tracked' GROUP BY edition ORDER BY edition"
+            )
+        ).all()
+        if name
+    ]
     status = index_status(lane)
     return {
-        "editions": sorted({r["edition"] for r in warm_editions} | {r["edition"] for r in stream}),
+        "editions": sorted(
+            {r["edition"] for r in warm_editions}
+            | {r["edition"] for r in stream}
+            | {r["edition"] for r in tracked}
+        ),
         # Changed pages whose latest (and previous) text WARM holds: found by that text.
         "changed_pages": {
             "pages": sum(r["pages"] for r in warm_editions),
@@ -878,13 +1343,17 @@ def search_coverage(lane: Any) -> dict[str, Any]:
         # keeps its versions): their OLDER versions are found here; the newest is the corpus
         # article and is found among the corpus hits.
         "stream_pages": {"pages": sum(r["pages"] for r in stream), "editions": stream},
+        # Pages the old page tracker holds stored versions of («Track now», ``R54``): found
+        # here by their older versions, and by the newest when no corpus article is it.
+        "tracked_pages": {"pages": sum(r["pages"] for r in tracked), "editions": tracked},
         "entries": status.get("entries"),
         "pending": status.get("pending"),
         "failed": status.get("failed"),
         "method": (
             "wiki_warm_editions' counts of pages holding text, versioned_entities grouped by "
-            "edition, and the index's own state row and queue; the lane holds what this "
-            "machine's Wikipedia stream and WARM fetched, nothing wider"
+            "edition, the pages with an entry from the page tracker's versions, and the "
+            "index's own state row and queue; the lane holds what this machine's Wikipedia "
+            "stream, the fetch of other changed pages and the page tracker stored, nothing wider"
         ),
     }
 
@@ -944,6 +1413,7 @@ class LaneIndexer:
         *,
         lane_session: Callable[[], Any],
         budget: Callable[[], Any],
+        tracker_session: Callable[[], Any] | None = None,
         batch: int = INDEX_BATCH,
         caps: Callable[[], int] = available_mask,
         monotonic: Callable[[], float] = time.monotonic,
@@ -953,6 +1423,12 @@ class LaneIndexer:
             raise ValueError("an index batch settles at least one queue row")
         self._lane_session = lane_session
         self._budget = budget
+        #: Opens a session on the page tracker's database (``corpus.db``), for ``R54``. ``None``
+        #: leaves the tracker's versions unindexed, as every test of the older sources does.
+        self._tracker_session = tracker_session
+        self._tracker_probe: tuple[int, int, int] | None = None
+        self._tracker_scanned_at: float | None = None
+        self._tracker_force = False
         self._batch = int(batch)
         self._caps = caps
         self._monotonic = monotonic
@@ -996,20 +1472,85 @@ class LaneIndexer:
                     lane, limit=self._batch, caps=caps, deadline=deadline,
                     monotonic=self._monotonic, now=self._now,
                 )
-            report.batches += 1
-            report.settled += out.settled
-            report.written += out.written
-            report.removed += out.removed
-            report.failed += out.failed
-            report.chars += out.chars
-            self.entries_this_process += out.written
-            if out.settled:
-                self.last_indexed_at = self._now()
+            if report.requeued:
+                self._tracker_force = True
+            self._tally(report, out)
             if out.settled < self._batch and not out.stopped_early:
-                self._set(STATE_CAUGHT_UP, None)
-                return report
+                # The queue of the lane's own texts is empty: the tracker's versions are next.
+                if self._tracker_session is None or self._index_tracker(report, deadline, caps, should_stop):
+                    self._set(STATE_CAUGHT_UP, None)
+                    return report
+                break
         self._set(STATE_INDEXING, None)
         return report
+
+    def _tally(self, report: IndexReport, out: BatchResult) -> None:
+        report.batches += 1
+        report.settled += out.settled
+        report.written += out.written
+        report.removed += out.removed
+        report.failed += out.failed
+        report.chars += out.chars
+        self.entries_this_process += out.written
+        if out.settled:
+            self.last_indexed_at = self._now()
+
+    def _scan_due(self, probe: tuple[int, int, int]) -> bool:
+        """Whether the tracker's signatures are worth reading now: its size changed since the
+        last look, the segmenters made everything stale, or half an hour passed."""
+        return (
+            self._tracker_force
+            or self._tracker_scanned_at is None
+            or probe != self._tracker_probe
+            or self._monotonic() - self._tracker_scanned_at >= TRACKED_RESCAN_S
+        )
+
+    def _index_tracker(
+        self, report: IndexReport, deadline: float, caps: int, should_stop: Callable[[], bool]
+    ) -> bool:
+        """The tracker's turn (``R54``). True when every queued page was settled, False when the
+        window ran out or the tracker's database could not be read now.
+
+        The tracker's session is opened for the window and given back after every batch, so
+        the tracker's own writer (a «Track now» press) never waits on an indexing read."""
+        assert self._tracker_session is not None
+        try:
+            session = self._tracker_session()
+        except Exception:  # noqa: BLE001 - no tracker to read is not a failure of the index
+            _LOG.debug("lane search: no tracker session", exc_info=True)
+            return True
+        reader = _TrackerReader(session)
+        try:
+            try:
+                probe = tracker_probe(reader)
+                if self._scan_due(probe):
+                    with self._lane_session() as lane:
+                        scan_tracked(lane, reader)
+                    reader.release()
+                    # Remembered only once the scan HAS run: a look that failed is made again.
+                    self._tracker_probe = probe
+                    self._tracker_scanned_at = self._monotonic()
+                    self._tracker_force = False
+                while not should_stop() and self._monotonic() < deadline:
+                    with self._lane_session() as lane:
+                        out = index_tracked_batch(
+                            lane, reader, limit=TRACKED_BATCH, caps=caps, deadline=deadline,
+                            monotonic=self._monotonic, now=self._now,
+                        )
+                    reader.release()
+                    self._tally(report, out)
+                    if out.deferred:
+                        return False
+                    if out.settled < TRACKED_BATCH and not out.stopped_early:
+                        return True
+            except _TrackerUnavailable as exc:
+                _LOG.info("lane search: the page tracker could not be read now (%s); it waits", exc)
+            return False
+        finally:
+            try:
+                session.close()
+            except Exception:  # noqa: BLE001 - closing must never fail a window
+                _LOG.debug("lane search: could not close the tracker session", exc_info=True)
 
     def status(self) -> dict[str, Any]:
         """This process's indexer state. No row read; the counts are :func:`index_status`'s."""
@@ -1166,13 +1707,62 @@ class HeldVersion:
     deleted: bool = False
 
 
+def _held_tracked(
+    corpus: Any, owner_id: int, revid: int, *, check_newest: bool
+) -> HeldVersion | None:
+    """One stored version of a TRACKED page (``R54``), read from the tracker's own row.
+
+    ``corpus`` is a session on ``corpus.db``. ``newest_followed`` is true only for the page's
+    newest version WHEN the corpus article is made from that very revision: a newest version
+    the article does not hold was indexed in full, so it is offered like any other."""
+    from src.database.models import WikiPage, WikiRevision
+
+    reader = _TrackerReader(corpus)
+    page = reader.first(
+        select(WikiPage.wiki, WikiPage.title, WikiPage.pageid, WikiPage.missing).where(
+            WikiPage.id == owner_id
+        )
+    )
+    if page is None:
+        return None
+    row = reader.first(
+        select(WikiRevision.id, WikiRevision.timestamp, WikiRevision.full_text).where(
+            WikiRevision.page_id == owner_id, WikiRevision.revid == revid
+        )
+    )
+    if row is None or row[2] is None:
+        return None
+    newest = False
+    which: str | None = None
+    followed = False
+    if check_newest:
+        texted = [v for v in _tracked_chain(reader, owner_id) if v.has_text]
+        newest = bool(texted) and texted[-1].revid == revid
+        which = WHICH_NEWEST if newest else WHICH_EARLIER
+        followed = newest and _article_holds(reader, str(page[0]), str(page[1])) == revid
+    return HeldVersion(
+        source=SOURCE_TRACKED, owner_id=owner_id, edition=str(page[0]),
+        page_id=int(page[2]) if page[2] else None, title=str(page[1]), revid=revid,
+        revised_at=_utc(row[1]), text=row[2], which=which, newest_followed=followed,
+        deleted=bool(page[3]),
+    )
+
+
 def held_version(
-    lane: Any, source: str, owner_id: int, revid: int, *, check_newest: bool = True
+    lane: Any,
+    source: str,
+    owner_id: int,
+    revid: int,
+    *,
+    check_newest: bool = True,
+    corpus: Any = None,
 ) -> HeldVersion | None:
     """The text of ``revid`` of one page, when this lane holds it; ``None`` otherwise.
 
     ``check_newest`` reads the followed page's version list to say whether this is its
-    newest, which the corpus article already is; a snippet needs only the text."""
+    newest, which the corpus article already is; a snippet needs only the text. ``corpus``
+    is a session on the tracker's database, which a ``tracked`` version is read from (``None``
+    holds nothing of that source)."""
     from src.versioned.models import VersionedBaseline, VersionedEntity, VersionedRevision
     from src.wiki.identity import parse_external_id
     from src.wiki.lane_models import WikiWarmPage
@@ -1201,6 +1791,10 @@ def held_version(
             title=head.title, revid=revid, revised_at=warm_at, text=warm_text, which=warm_which,
             deleted=head.deleted_at is not None,
         )
+    if source == SOURCE_TRACKED:
+        if corpus is None:
+            return None
+        return _held_tracked(corpus, owner_id, revid, check_newest=check_newest)
     if source != SOURCE_HOT:
         return None
     entity = lane.get(VersionedEntity, owner_id)
@@ -1249,23 +1843,36 @@ def _hit_which(doc: Any) -> str:
     because its newest is never indexed here (the corpus article is it)."""
     if doc.source == SOURCE_WARM:
         return WHICH_LATEST if doc.successor_revid is None else WHICH_PREVIOUS
+    if doc.source == SOURCE_TRACKED and doc.successor_revid is None:
+        return WHICH_NEWEST  # a tracked page's newest version, indexed because no article is it
     return WHICH_EARLIER
 
 
-def _indexed_body(lane: Any, doc: Any) -> str | None:
+def _indexed_body(lane: Any, doc: Any, corpus: Any = None) -> str | None:
     """The plain text an entry was indexed from, re-derived the way it was derived."""
-    held = held_version(lane, doc.source, doc.owner_id, doc.revid, check_newest=False)
+    held = held_version(
+        lane, doc.source, doc.owner_id, doc.revid, check_newest=False, corpus=corpus
+    )
     if held is None:
         return None
     body = plain_text(held.text)
     if doc.extent != EXTENT_DROPPED or doc.successor_revid is None:
         return body
     after = held_version(
-        lane, doc.source, doc.owner_id, int(doc.successor_revid), check_newest=False
+        lane, doc.source, doc.owner_id, int(doc.successor_revid), check_newest=False,
+        corpus=corpus,
     )
     if after is None:
         return body
     return dropped_lines(body, plain_text(after.text))
+
+
+def _owner_gone(source: str, owner: Any) -> bool:
+    """Whether the page a hit belongs to is gone: a lane row's ``deleted_at`` is set, or the
+    tracker's ``missing`` flag says the wiki no longer has the title."""
+    if not owner:
+        return False
+    return bool(owner[1]) if source == SOURCE_TRACKED else owner[1] is not None
 
 
 def _unavailable(reason: str, query: str) -> dict[str, Any]:
@@ -1283,8 +1890,13 @@ def search(
     near_default: int = NEAR_DEFAULT,
     snippet_budget_s: float = SNIPPET_BUDGET_S,
     monotonic: Callable[[], float] = time.monotonic,
+    corpus: Any = None,
 ) -> dict[str, Any]:
     """The held Wikipedia texts matching ``query``, best first, with an EXACT total.
+
+    ``corpus`` is a session on the tracker's database: a hit of a tracked page is read back
+    from there (its snippet, and whether the page is gone). Without one those hits are still
+    listed, from what the index kept, and carry no snippet.
 
     ``queue`` adds how many texts wait for the index and how many were set aside -- a count
     over the queue, which a long first backlog makes worth skipping per keystroke.
@@ -1343,6 +1955,22 @@ def search(
     docs = {d.id: d for d in lane.execute(select(WikiLaneDoc).where(WikiLaneDoc.id.in_(ids))).scalars()} if ids else {}
     warm_ids = sorted({d.owner_id for d in docs.values() if d.source == SOURCE_WARM})
     hot_ids = sorted({d.owner_id for d in docs.values() if d.source == SOURCE_HOT})
+    tracked_ids = sorted({d.owner_id for d in docs.values() if d.source == SOURCE_TRACKED})
+    tracked_rows: dict[int, tuple[Any, Any]] = {}
+    if tracked_ids and corpus is not None:
+        from src.database.models import WikiPage
+
+        try:
+            tracked_rows = {
+                int(r[0]): (r[1], r[2])
+                for r in _TrackerReader(corpus).all(
+                    select(WikiPage.id, WikiPage.title, WikiPage.missing).where(
+                        WikiPage.id.in_(tracked_ids)
+                    )
+                )
+            }
+        except _TrackerUnavailable:
+            _LOG.debug("lane search: the page tracker could not be read for titles", exc_info=True)
     warm_rows = {
         r[0]: r[1:]
         for r in lane.execute(
@@ -1367,7 +1995,12 @@ def search(
         doc = docs.get(doc_id)
         if doc is None:
             continue
-        owner = warm_rows.get(doc.owner_id) if doc.source == SOURCE_WARM else entities.get(doc.owner_id)
+        if doc.source == SOURCE_WARM:
+            owner = warm_rows.get(doc.owner_id)
+        elif doc.source == SOURCE_TRACKED:
+            owner = tracked_rows.get(doc.owner_id)
+        else:
+            owner = entities.get(doc.owner_id)
         title = (owner[0] if owner and owner[0] else None) or doc.title
         item: dict[str, Any] = {
             "doc_id": doc.id,
@@ -1381,14 +2014,14 @@ def search(
             "which": _hit_which(doc),
             "successor_revid": doc.successor_revid,
             "revised_at": doc.revised_at.isoformat() if doc.revised_at else None,
-            "deleted": bool(owner and owner[1] is not None),
+            "deleted": _owner_gone(doc.source, owner),
             "url": wiki_version_url(doc.edition, title, doc.revid),
             "snippet": None,
         }
         if snippets:
             if monotonic() - started <= snippet_budget_s:
                 try:
-                    body = _indexed_body(lane, doc)
+                    body = _indexed_body(lane, doc, corpus)
                 except MemoryError:
                     raise
                 except Exception:  # noqa: BLE001 - a snippet must never fail the search

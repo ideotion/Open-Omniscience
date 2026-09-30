@@ -202,7 +202,7 @@
       );
       if (typeof w.share === "number") {
         facts.push({ label: t("Stops at"), value: tf("{pct}% of the budget", { pct: Math.round(w.share * 100) }),
-          hover: t("These texts stop when the lane file holds this share of its storage budget, and the rest is kept for the pages you follow. The share is a proposed default, not a ruling.") });
+          hover: t("These texts stop when the lane file holds this share of its storage budget, and the rest is kept for the pages you follow. The share is a ruled default.") });
       }
       const waiting = w.waiting || {};
       for (const e of (w.editions || [])) {
@@ -942,10 +942,17 @@
 
     // Visible by default, never behind a toggle: where this text lives, and what adding it
     // does. The newest version of a followed page is already the corpus article.
+    // A version of a page you track (R54) lives in the tracker's own store, not in the lane's
+    // texts, and its notes say so in the tracker's words.
     function laneVersionNotesHtml(d, t) {
+      const tracked = d.source === "tracked";
       const notes = [d.newest_followed
-        ? t("This is the newest version of a page the stream follows. Your corpus already holds it as an article.")
-        : t("Held on this machine by the Wikipedia lane, not in your corpus. Adding it creates one article for this exact version.")];
+        ? t(tracked
+          ? "This is the newest version of a page you track. Your corpus already holds it as an article."
+          : "This is the newest version of a page the stream follows. Your corpus already holds it as an article.")
+        : t(tracked
+          ? "Stored on this machine by the page tracker (Track now), not in your corpus. Adding it creates one article for this exact version."
+          : "Held on this machine by the Wikipedia lane, not in your corpus. Adding it creates one article for this exact version.")];
       if (d.deleted) notes.push(t("The page has been deleted on Wikipedia since. Its text stays here."));
       return notes.map((n) => `<div class="hint">${esc(n)}</div>`).join("");
     }
@@ -1086,7 +1093,7 @@
     // it could not look at yet. Counted from the route's `coverage`, never from the hits.
     function laneCoverageHtml(c, t) {
       if (!c) return "";
-      const changed = c.changed_pages || {}, stream = c.stream_pages || {};
+      const changed = c.changed_pages || {}, stream = c.stream_pages || {}, tracked = c.tracked_pages || {};
       const lines = [];
       if (changed.pages) {
         lines.push(ooLabelText(t("Other changed pages, by their latest and previous texts"),
@@ -1095,6 +1102,10 @@
       if (stream.pages) {
         lines.push(ooLabelText(t("Pages the stream has followed, by their older versions"),
           `${stream.pages} (${_laneEditionsText(stream.editions)})`));
+      }
+      if (tracked.pages) {
+        lines.push(ooLabelText(t("Pages you track, by their earlier stored versions"),
+          `${tracked.pages} (${_laneEditionsText(tracked.editions)})`));
       }
       if (!lines.length) lines.push(t("The Wikipedia lane holds no text yet."));
       if (c.pending) lines.push(ooLabelText(t("Texts waiting to be indexed, not searched yet"), c.pending));

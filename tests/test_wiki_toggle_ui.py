@@ -379,7 +379,7 @@ def test_the_lane_block_carries_the_operators_own_choices_and_a_MEASURED_budget(
 
     block = _wiki_lane_block()
     assert len(block["editions"]) == 12, "Q725 = a's 'default: all twelve'"
-    assert block["budget_gb"] == 20, "Q707's published default"
+    assert block["budget_gb"] == 150, "R53's published default (Q707's 20, raised)"
     assert block["wizard_done"] is False, "nobody has been through it in a fresh install"
     assert "method" in block["budget"] or "reason" in block["budget"], (
         "every figure carries how it was obtained, or why there is none"

@@ -381,7 +381,7 @@ class WarmFetcher:
         try:
             on = bool(self._enabled())
         except Exception:  # noqa: BLE001 - an unreadable switch is an OFF switch
-            _LOG.warning("could not read WARM's switch; not fetching", exc_info=True)
+            _LOG.warning("could not read the switch for fetching other changed pages; not fetching", exc_info=True)
             on = False
         if not on:
             # OFF MEANS NOTHING: no scan either. The bookmark stays where it is, so turning
@@ -452,7 +452,7 @@ class WarmFetcher:
 
     def _set(self, state: str, reason: str | None) -> None:
         if (state, reason) != (self.state, self.reason):
-            _LOG.info("Wikipedia WARM is %s%s", state, f" ({reason})" if reason else "")
+            _LOG.info("Wikipedia: fetching other changed pages is %s%s", state, f" ({reason})" if reason else "")
         self.state, self.reason = state, reason
 
     def _settle(
@@ -681,7 +681,7 @@ class WarmFetcher:
         self._failures[edition] = failures
         self._not_before[edition] = self._monotonic() + backoff_seconds(failures)
         self.last_refusal[edition] = token
-        _LOG.info("Wikipedia WARM: %s refused (%s, %s); waiting", edition, token, detail)
+        _LOG.info("Wikipedia: fetching other changed pages: %s refused (%s, %s); waiting", edition, token, detail)
         return {"refused": token}
 
     def status(self) -> dict:
@@ -752,8 +752,8 @@ def warm_coverage(lane: Any) -> dict[str, Any]:
             "texts they count"
         ),
         "caveat": (
-            "A page holds at most its latest and previous text (Q710). WARM stops at "
-            f"{int(WARM_BUDGET_SHARE * 100)}% of the lane's budget and leaves the rest to HOT; "
-            "that share is a proposed default, not a ruling."
+            "A page holds at most its latest and previous text (Q710). The fetch of other "
+            f"changed pages stops at {int(WARM_BUDGET_SHARE * 100)}% of the lane's budget and "
+            "leaves the rest to the pages the stream follows; that share is a ruled default (R55)."
         ),
     }

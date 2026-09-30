@@ -18,6 +18,12 @@
 > The walk (S2 + S3) ships BEFORE WARM (S1). The line above put WARM first so that a walked page could
 > never become a followed page fetched and indexed as HOT; the walk meets that by keeping its pages in
 > its own table and never creating a followed page, and WARM follows it directly.
+> **Built after the 2026-09-29 answers (`R53`–`R55`):** the lane's storage budget defaults to 150 GB
+> (still lowerable to 20; `R53`); the versions «Track now» stores are indexed in the lane's own file and
+> searched with the rest (`R54`, `src/wiki/lane_search.py`'s `tracked` source); and «WARM» is no longer a
+> name people read (`R55`): the screens, the payload notes and the manual say **«Other changed pages»**. The
+> identifiers keep `warm` (the `wiki_warm_*` tables, `wiki_warm_enabled`, the queue's `warm` kind) because
+> renaming stored keys would need a migration for no reader's benefit.
 
 ## 0. Working mode
 

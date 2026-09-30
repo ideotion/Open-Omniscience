@@ -1316,7 +1316,7 @@
     // decision, which is exactly backwards.
     //
     // THE DEFAULTS ARE THE RULED ONES AND THE SCREEN SAYS SO: all twelve editions
-    // (Q725 = a) and 20 GB total (Q707 = a, published). An operator who reads the
+    // (Q725 = a) and 150 GB total (Q707 = a set 20; R53 raised it, still lowerable, published). An operator who reads the
     // three disclosures and presses "Use these settings" unchanged has still been
     // through the wizard, and the stored ``wiki_lane_wizard_done`` records that --
     // which is a different fact from "the values differ from the defaults", and the
@@ -1456,7 +1456,7 @@
         _wizEditions = all.filter((l) => supported.has(l.code));
         _wizChosen = new Set(chosen.length ? chosen : defaults);
         const budget = $("wiki-wizard-budget");
-        if (budget) budget.value = (cfg && cfg.wiki_lane_budget_gb) || 20;
+        if (budget) budget.value = (cfg && cfg.wiki_lane_budget_gb) || 150;
         _wizRender();
       } catch (e) {
         // The dialog still opens with the ruled defaults rather than not at all: a

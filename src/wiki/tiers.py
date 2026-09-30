@@ -4,7 +4,7 @@ Open Omniscience - Global Intelligence Platform for Investigative Journalism
 Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 
 Q707 = a, verbatim: "Three tiers under a per-edition daily budget the first-run
-wizard sets (default proposed: 20 GB total, published): HOT = pages the corpus
+wizard sets (default proposed: 20 GB total, published; 150 GB since R53): HOT = pages the corpus
 already mentions, tracked pages, and the pageview top-1,000 (full text +
 ``index_article`` on every change); WARM = every other changed page (full text,
 indexed lazily under the daily budget); COLD = the tail reached by the walk
@@ -73,7 +73,8 @@ HOT_REASONS: Final[tuple[str, ...]] = ("pinned", "tracked", "corpus_mention", "p
 #: NOT "budget" — see the module docstring.
 DEFERRED_UNTIL_WARM_TIER: Final[str] = "warm_and_cold_text_is_not_ingested_in_0_4"
 
-#: Q707's published default, verbatim from the ruling: "20 GB total, published".
+#: The published default: Q707 said "20 GB total, published", and ``R53`` (2026-09-29) amended
+#: it to 150 GB, still lowerable to 20 GB or anything down to the floor below.
 #: TOTAL for the lane, not per edition — the per-edition share is derived below and
 #: the arithmetic is SHOWN rather than folded in.
 #:
@@ -81,10 +82,10 @@ DEFERRED_UNTIL_WARM_TIER: Final[str] = "warm_and_cold_text_is_not_ingested_in_0_
 #: versioned file under ``configs/``) of per-lane budgets sized for the reference VM",
 #: and its brief's §6 says "Q707's 20 GB is S04-09's" — the number is this slice's,
 #: the table is that one's. The table now exists, ``configs/lane_budgets.yml`` (wiki
-#: row, ``ruling: Q707``). This literal STAYS, because the tier arithmetic must not read
+#: row, ``ruling: R53``, which amended Q707's number). This literal STAYS, because the tier arithmetic must not read
 #: a file to know its own default; ``tests/test_lane_budgets.py`` pins it to the table,
 #: so the two cannot drift.
-DEFAULT_TOTAL_BUDGET_GB: Final[int] = 20
+DEFAULT_TOTAL_BUDGET_GB: Final[int] = 150
 
 #: The bounds the wizard offers. The floor is not zero: a lane with a zero budget
 #: stores no text at all, which is a lane the operator should TURN OFF rather than
@@ -334,7 +335,7 @@ class BudgetState:
             # read: every figure this app shows carries how it was obtained.
             "method": (
                 "budget: the operator's total, set in the first-run wizard "
-                "(default 20 GB, published). spend: the lane file on disk including "
+                "(default 150 GB, published). spend: the lane file on disk including "
                 "its -wal/-shm sidecars. rate is the collection-speed governor's, "
                 "not a second budget."
             ),
