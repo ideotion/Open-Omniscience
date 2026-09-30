@@ -621,6 +621,7 @@
   "Boolean operators work here: AND, OR, NOT, “quoted phrases”.": "Les opérateurs booléens fonctionnent ici : AND, OR, NOT, « expressions entre guillemets ».",
   "Boolean query": "Requête booléenne",
   "Boots recorded by the session ledger after its first line; sessions before the ledger existed are unknown.": "Démarrages enregistrés par le registre des sessions après sa première ligne ; les sessions antérieures au registre sont inconnues.",
+  "Borders are drawn thinner than the file while a wide view is in sight; zoom in and they sharpen, up to the file's full detail.": "Les frontières sont dessinées plus grossièrement que le fichier tant qu'une vue large est affichée ; zoomez et elles s'affinent, jusqu'au détail complet du fichier.",
   "Borders drawn from OpenStreetMap data of the date shown, © OpenStreetMap contributors (ODbL 1.0).": "Frontières tracées à partir des données OpenStreetMap de la date indiquée, © les contributeurs d’OpenStreetMap (ODbL 1.0).",
   "Borders: Natural Earth 50m": "Frontières : Natural Earth 50m",
   "Borders: OpenStreetMap, as of {date}": "Frontières : OpenStreetMap, au {date}",

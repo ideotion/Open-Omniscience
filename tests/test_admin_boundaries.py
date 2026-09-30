@@ -308,6 +308,26 @@ def test_ranked_table_and_region_choropleth_node_suite():
     assert "all assertions passed" in proc.stdout
 
 
+def test_borders_follow_the_view_node_suite():
+    """Zooming sharpens the borders up to the file's own detail, and only what is in sight
+    counts against the vertex budget (browser walk 2026-09-30): run as real code in node."""
+    proc = subprocess.run(
+        ["node", str(_ROOT / "tests" / "oomap_lod_node_test.js")],
+        capture_output=True, text=True, check=False,
+    )
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert "all assertions passed" in proc.stdout
+
+
+def test_the_country_outlines_are_budgeted_too_and_the_view_redraws_them():
+    """The admin-0 outlines had no budget at all (1.3M vertices at a realistic size) and every
+    coordinate was rounded to ~5 km whatever the zoom."""
+    body = function_body(_MAP_JS, "ooMap")
+    assert "_ooStrideRings(c.rings, a0Step)" in body
+    assert "_ooLodAttach(host, svg)" in function_body(_MAP_JS, "_wireOoMap")
+    assert "lod.view(vb)" in function_body(_MAP_JS, "_wireOoMap")
+
+
 def test_every_choropleth_renders_the_ranked_table_beside_it():
     body = function_body(_MAP_JS, "ooMap")
     assert "const rankHtml = _ooRankedTable(rankRows, rankGap, opts);" in body

@@ -621,6 +621,7 @@
   "Boolean operators work here: AND, OR, NOT, “quoted phrases”.": "تعمل المعاملات البوليانية هنا: AND وOR وNOT و\"العبارات المقتبسة\".",
   "Boolean query": "استعلام منطقي",
   "Boots recorded by the session ledger after its first line; sessions before the ledger existed are unknown.": "عمليات الإقلاع التي سجّلها سجل الجلسات بعد سطره الأول؛ الجلسات السابقة لوجود السجل غير معروفة.",
+  "Borders are drawn thinner than the file while a wide view is in sight; zoom in and they sharpen, up to the file's full detail.": "تُرسم الحدود بتفصيل أقل من الملف ما دام العرض واسعًا؛ قرّب الخريطة فتزداد دقتها حتى تبلغ التفصيل الكامل للملف.",
   "Borders drawn from OpenStreetMap data of the date shown, © OpenStreetMap contributors (ODbL 1.0).": "حدود مرسومة من بيانات OpenStreetMap بالتاريخ المبيَّن، © المساهمون في OpenStreetMap (ODbL 1.0).",
   "Borders: Natural Earth 50m": "الحدود: Natural Earth 50m",
   "Borders: OpenStreetMap, as of {date}": "الحدود: OpenStreetMap، بتاريخ {date}",

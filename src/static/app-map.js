@@ -363,7 +363,157 @@
     // caps ... degrading, never to a frozen tab"). The build already fits every region
     // to its own vertex cap; this bounds what ONE map draws in total. Above it, every
     // ring is strided evenly (never a region dropped) and the legend says so.
+    // THE BUDGET IS PER VIEW, NOT PER MAP: it bounds the vertices ONE layer draws in what is
+    // in sight (regions and OSM countries each), because what it protects is SVG paint time.
+    // The world view is strided to it; zooming in shrinks what is in sight, so the stride
+    // falls back to 1 and the file's full detail is drawn (_ooLodAttach). Before that, the
+    // stride was fixed for the whole map at load and no zoom ever sharpened it.
     const OOMAP_ADMIN1_VERTEX_CAP = 120000;
+
+    // Every step-th vertex of each ring; a ring too short to stride is kept whole, so no
+    // region and no island vanishes.
+    function _ooStrideRings(rings, step) {
+      return step > 1
+        ? (rings || []).map(ring => ring.length > 3 * step ? ring.filter((_, i) => i % step === 0) : ring)
+        : rings;
+    }
+    function _ooRingsVertices(rings) {
+      let n = 0;
+      for (const r of rings || []) n += r.length;
+      return n;
+    }
+    // The stride that fits `sizes` (vertex counts of what is in sight) into the budget.
+    function _ooLodStep(sizes, budget) {
+      let t = 0;
+      for (const n of sizes) t += n;
+      return t > budget ? Math.ceil(t / budget) : 1;
+    }
+    // Decimals of a map unit worth keeping at a view `w` units wide: enough that 0.1 of a
+    // pixel on a ~1,200 px map survives. The whole map keeps one.
+    function _ooLodDecimals(w) {
+      if (!(w > 0) || w >= MAP_W * 0.999) return 1;
+      return Math.max(1, Math.min(4, Math.ceil(-Math.log10(w / 12000))));
+    }
+    // The longitude/latitude box a view covers, padded, or null for the whole map. Equal
+    // Earth is curved, so the view's rectangle is sampled on a grid and unprojected.
+    function _ooLodViewBox(vb) {
+      if (!vb || !(vb.w > 0) || vb.w >= MAP_W * 0.999) return null;
+      let w = 180, e = -180, so = 90, n = -90;
+      for (let i = 0; i <= 8; i++) for (let j = 0; j <= 8; j++) {
+        const q = unproject(vb.x + vb.w * i / 8, vb.y + vb.h * j / 8);
+        if (!isFinite(q.lon) || !isFinite(q.lat)) continue;
+        w = Math.min(w, q.lon); e = Math.max(e, q.lon); so = Math.min(so, q.lat); n = Math.max(n, q.lat);
+      }
+      if (w > e || so > n) return null;
+      const pad = Math.max(0.5, 0.08 * Math.max(e - w, n - so));
+      return [w - pad, so - pad, e + pad, n + pad];
+    }
+    const _ooLodBoxes = new WeakMap();
+    function _ooLodBoxOf(rings) {
+      let b = _ooLodBoxes.get(rings);
+      if (b) return b;
+      b = [180, 90, -180, -90];
+      for (const ring of rings || []) for (const p of ring) {
+        if (p[0] < b[0]) b[0] = p[0]; if (p[0] > b[2]) b[2] = p[0];
+        if (p[1] < b[1]) b[1] = p[1]; if (p[1] > b[3]) b[3] = p[1];
+      }
+      _ooLodBoxes.set(rings, b);
+      return b;
+    }
+    function _ooLodHit(a, b) { return !(a[2] < b[0] || a[0] > b[2] || a[3] < b[1] || a[1] > b[3]); }
+
+    // DETAIL FOLLOWS THE VIEW. On every view change (debounced) the outlines in sight are
+    // redrawn from the file's own rings at the stride the budget allows for what is in sight
+    // and the decimals the zoom needs; the ones out of sight are left as they are. Returns
+    // {view(vb)}, or null when this map draws no OSM-derived outline.
+    function _ooLodAttach(host, svg) {
+      const src = host._ooLodSrc;
+      if (!src) return null;
+      let feats = null;
+      const collect = () => {
+        const out = [];
+        svg.querySelectorAll("path[data-oomap-region]").forEach(el => {
+          const r = src.regions && src.regions[el.getAttribute("data-oomap-region")];
+          if (r && r.rings) out.push({ layer: "admin1", el, rings: r.rings, n: _ooRingsVertices(r.rings), key: "" });
+        });
+        svg.querySelectorAll("path[data-iso]:not([data-oomap-region]):not([data-oomap-disputed])").forEach(el => {
+          const c = src.countries && src.countries[el.getAttribute("data-iso")];
+          if (c && c.rings) out.push({ layer: "admin0", el, rings: c.rings, n: _ooRingsVertices(c.rings), key: "" });
+        });
+        // The contested areas share their vertices with the borders they sit on, so they are
+        // redrawn on the SAME grid (and their `under` fill, the unlabelled path before them);
+        // left on the world view's, the hatch would slide off a border that has sharpened.
+        svg.querySelectorAll("path[data-oomap-disputed]").forEach(el => {
+          const a = src.disputed && src.disputed[el.getAttribute("data-oomap-disputed")];
+          if (!a || !a.rings) return;
+          const prev = el.previousElementSibling;
+          const under = prev && prev.tagName === "path" && !prev.attributes.getNamedItem("data-iso")
+            && !prev.attributes.getNamedItem("data-oomap-region") && prev.getAttribute("d") === el.getAttribute("d") ? prev : null;
+          out.push({ layer: "disputed", el, under, rings: a.rings, n: _ooRingsVertices(a.rings), key: "" });
+        });
+        // Everything was drawn once at the world view's stride and one decimal; say so, so the
+        // first view change redraws only what it must.
+        for (const layer of ["admin0", "admin1"]) {
+          const fs = out.filter(f => f.layer === layer);
+          const k = _ooLodStep(fs.map(f => f.n), OOMAP_ADMIN1_VERTEX_CAP) + ":1";
+          fs.forEach(f => { f.key = k; });
+        }
+        out.forEach(f => { if (f.layer === "disputed") f.key = "1"; });
+        return out;
+      };
+      const run = (vb) => {
+        if (!feats) feats = collect();
+        const box = _ooLodViewBox(vb), dec = _ooLodDecimals(vb && vb.w);
+        let simplified = false;
+        const dKey = String(dec);
+        for (const f of feats) {
+          if (f.layer !== "disputed" || f.key === dKey) continue;
+          const d = _ooMapPath(f.rings, dec);
+          f.el.setAttribute("d", d);
+          if (f.under) f.under.setAttribute("d", d);
+          f.key = dKey;
+        }
+        for (const layer of ["admin0", "admin1"]) {
+          const fs = feats.filter(f => f.layer === layer);
+          const vis = box ? fs.filter(f => _ooLodHit(_ooLodBoxOf(f.rings), box)) : fs;
+          const step = _ooLodStep(vis.map(f => f.n), OOMAP_ADMIN1_VERTEX_CAP);
+          if (step > 1) simplified = true;
+          const key = step + ":" + dec;
+          for (const f of vis) {
+            if (f.key === key) continue;
+            f.el.setAttribute("d", _ooMapPath(_ooStrideRings(f.rings, step), dec));
+            f.key = key;
+          }
+          // What left the view goes back to the world view's coarse outline: without this an
+          // outline sharpened on the way in keeps every vertex it was given, and a few pans
+          // would grow the DOM towards the whole file.
+          if (box && vis.length < fs.length) {
+            const wStep = _ooLodStep(fs.map(f => f.n), OOMAP_ADMIN1_VERTEX_CAP), wKey = wStep + ":1", inSight = new Set(vis);
+            for (const f of fs) {
+              if (f.key === wKey || inSight.has(f)) continue;
+              f.el.setAttribute("d", _ooMapPath(_ooStrideRings(f.rings, wStep), 1));
+              f.key = wKey;
+            }
+          }
+        }
+        // The legend's hover says so only while something in sight is drawn thinner than the file.
+        const lab = host.querySelector("[data-oomap-borders]");
+        if (lab) {
+          if (lab.dataset.baseTitle == null) lab.dataset.baseTitle = lab.getAttribute("title") || "";
+          const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : (x => x);
+          lab.setAttribute("title", lab.dataset.baseTitle + (simplified
+            ? " " + t("Borders are drawn thinner than the file while a wide view is in sight; zoom in and they sharpen, up to the file's full detail.") : ""));
+        }
+      };
+      // The timer lives on the host, so a re-render (which attaches anew) cancels the old one.
+      clearTimeout(host._ooLodTimer);
+      const lod = { view(vb) {
+        clearTimeout(host._ooLodTimer);
+        const v = { x: vb.x, y: vb.y, w: vb.w, h: vb.h };
+        host._ooLodTimer = setTimeout(() => { if (svg.isConnected !== false) run(v); }, 120);
+      }, now(vb) { clearTimeout(host._ooLodTimer); run({ x: vb.x, y: vb.y, w: vb.w, h: vb.h }); } };
+      return lod;
+    }
 
     // Regions shown or hidden: MODULE state, like the worldview, so every map agrees.
     let _ooMapRegionsOn = true;
@@ -395,9 +545,7 @@
       const step = total > OOMAP_ADMIN1_VERTEX_CAP ? Math.ceil(total / OOMAP_ADMIN1_VERTEX_CAP) : 1;
       let shown = 0;
       const markup = regs.map(([code, r]) => {
-        const rings = step > 1
-          ? (r.rings || []).map(ring => ring.length > 3 * step ? ring.filter((_, i) => i % step === 0) : ring)
-          : r.rings;
+        const rings = _ooStrideRings(r.rings, step);
         const d = _ooMapPath(rings);
         if (!d) return "";
         shown++;
@@ -655,9 +803,14 @@
       return { markup, shown };
     }
 
-    function _ooMapPath(rings) {                      // [[lon,lat]...] rings -> SVG path 'd'
+    // `dec` is the decimals of a map unit kept per coordinate. The world view keeps one (0.1
+    // unit is ~5 km), which is all a 1,100 px world can show and keeps the path strings
+    // short; a zoomed view needs more or the vertices of a 0.1 km border collapse onto the
+    // same grid point however many are drawn (_ooLodDecimals).
+    function _ooMapPath(rings, dec) {                 // [[lon,lat]...] rings -> SVG path 'd'
+      const dp = dec || 1;
       return (rings || []).map(ring => ring.length
-        ? "M" + ring.map(p => { const q = project(p[0], p[1]); return `${q.x.toFixed(1)} ${q.y.toFixed(1)}`; }).join("L") + "Z" : "").join(" ");
+        ? "M" + ring.map(p => { const q = project(p[0], p[1]); return `${q.x.toFixed(dp)} ${q.y.toFixed(dp)}`; }).join("L") + "Z" : "").join(" ");
     }
     // Sequential fill: t in [0,1] -> theme accent over panel2. The MINIMUM data
     // value still reads as >=12% accent so a data area is never mistaken for the
@@ -916,11 +1069,14 @@
         }
       }
       const geoCodes = new Set(Object.keys(eff).map(s => s.toLowerCase()));
+      // The OSM countries are drawn at the stride the budget allows for the world view (the
+      // Natural Earth ones are small and drawn whole); zooming redraws them (_ooLodAttach).
+      const a0Step = _ooLodStep(Object.values(eff).filter(c => c.osmAdmin).map(c => _ooRingsVertices(c.rings)), OOMAP_ADMIN1_VERTEX_CAP);
       let paths = "";
       for (const [iso, c] of Object.entries(eff)) {
         const code = iso.toLowerCase(), v = regionVals ? undefined : values[code];
         const has = typeof v === "number" && isFinite(v);
-        const d = _ooMapPath(c.rings); if (!d) continue;
+        const d = _ooMapPath(c.osmAdmin ? _ooStrideRings(c.rings, a0Step) : c.rings); if (!d) continue;
         const fill = has ? fillFor(v) : "url(#oomap-nodata)";
         const title = `${ooRegionName(code, c.name)} — ${has ? vlabel(code, v) : t("no data")}${c.osm ? " · " + t("boundary from OSM") : ""}`;
         paths += `<path d="${d}" fill="${fill}" fill-rule="evenodd" stroke="${c.osm ? "var(--accent)" : "var(--border)"}" stroke-width="${c.osm ? "0.5" : "0.3"}" data-iso="${esc(code)}"`
@@ -1013,7 +1169,7 @@
       }
       const rankHtml = _ooRankedTable(rankRows, rankGap, opts);
       const neKept = Object.values(eff).filter(c => !c.osmAdmin && !c.osm).length;
-      const _bsrc = _ooBoundarySource(admin0, osmAdmin && osmAdmin.admin1, osmCountries, _adm1.shown, _adm1.strided, neKept);
+      const _bsrc = _ooBoundarySource(admin0, osmAdmin && osmAdmin.admin1, osmCountries, _adm1.shown, false /* the view-following redraw owns the "drawn thinner" sentence (_ooLodAttach) */, neKept);
       const hasAdmin1 = !!(osmAdmin && osmAdmin.admin1 && osmAdmin.admin1.regions);
 
       const _sig = _ooSignalLayer(opts);
@@ -1204,6 +1360,14 @@
       host._ooSigVisible = sigVisible;             // for signal click-to-detail resolution
       host._ooOpts = opts;                         // the cheap focus path reuses these unchanged
       host._ooLabels = labelCands;                 // for the dynamic-label declutter (re-laid-out on zoom)
+      // The rings the shipped OSM outlines were drawn from, so a zoom can redraw them at the
+      // detail the view can use.
+      const lodCountries = {};
+      for (const [iso, c] of Object.entries(eff)) if (c.osmAdmin) lodCountries[iso.toLowerCase()] = c;
+      const lodRegions = osmAdmin && osmAdmin.admin1 && osmAdmin.admin1.regions;
+      host._ooLodSrc = (Object.keys(lodCountries).length || (lodRegions && _adm1.shown))
+        ? { countries: lodCountries, regions: lodRegions || {},
+            disputed: Object.fromEntries((((wv === OOMAP_WORLDVIEW_OSM ? osmConv : disputed) || {}).areas || []).map(a => [a.id, a])) } : null;
       _wireOoMap(host, opts);
       _ooMapLayoutLabels(host, { x: 0, y: 0, w: W, h: H });   // initial layout (world view)
     }
@@ -1404,6 +1568,8 @@
       // The OSM lane layer (S6) is drawn on a canvas over the SVG and follows every view change;
       // with it on, the zoom goes down to street level (a view about 2 km wide).
       const lane = opts && opts.osmLane ? _ooOsmLaneLayer(host, svg) : null;
+      const lod = _ooLodAttach(host, svg);
+      if (lod) lod.now(vb);        // the legend's hover is right at load, not only after a zoom
       const minW = lane ? W * OO_OSM_LANE_MIN_ZOOM : W * 0.04;
       const apply = () => {
         svg.setAttribute("viewBox", `${vb.x} ${vb.y} ${vb.w} ${vb.h}`);
@@ -1411,6 +1577,7 @@
         // non-overlapping — more reveal as you zoom). No-op when labels are off.
         if (host._ooLabels && host._ooLabels.length) _ooMapLayoutLabels(host, vb);
         if (lane) lane.view(vb);
+        if (lod) lod.view(vb);
       };
       if (lane) lane.view(vb);
       const zoom = (f, ax, ay) => {

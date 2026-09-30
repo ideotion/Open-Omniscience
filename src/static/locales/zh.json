@@ -621,6 +621,7 @@
   "Boolean operators work here: AND, OR, NOT, “quoted phrases”.": "此处支持布尔运算符：AND、OR、NOT、“引号短语”。",
   "Boolean query": "布尔查询",
   "Boots recorded by the session ledger after its first line; sessions before the ledger existed are unknown.": "会话账本第一行之后记录的启动；账本建立之前的会话未知。",
+  "Borders are drawn thinner than the file while a wide view is in sight; zoom in and they sharpen, up to the file's full detail.": "视野较宽时，边界的绘制比文件中的更粗略；放大后会变得更精细，直至文件的全部细节。",
   "Borders drawn from OpenStreetMap data of the date shown, © OpenStreetMap contributors (ODbL 1.0).": "边界根据所示日期的 OpenStreetMap 数据绘制，© OpenStreetMap 贡献者（ODbL 1.0）。",
   "Borders: Natural Earth 50m": "边界：Natural Earth 50m",
   "Borders: OpenStreetMap, as of {date}": "边界：OpenStreetMap，截至 {date}",
