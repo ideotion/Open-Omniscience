@@ -1,0 +1,28 @@
+# Platform names that COUNT as keywords (R104, the maintainer's answer 6 = a, 2026-09-30):
+# a named platform is a real subject of news ("Twitter acquired", "TikTok ban"), unlike the page
+# furniture around an article ("comments", "follow", "share"), which goes on the stoplist in
+# reviewed batches. scripts/stopword_batch.py REFUSES to add a word listed here, and says so (R111: batches are curated by us; no user is ever asked).
+#
+# A starting list, extended by review, never a cap. Names that are also ordinary words in some
+# language (signal, threads, x) are left out on purpose: the tool cannot tell the platform from
+# the word, and a wrong refusal only costs one more review decision, not a hidden keyword.
+platform_names:
+  - bluesky
+  - discord
+  - facebook
+  - instagram
+  - linkedin
+  - mastodon
+  - pinterest
+  - reddit
+  - snapchat
+  - telegram
+  - tiktok
+  - tumblr
+  - twitch
+  - twitter
+  - vkontakte
+  - wechat
+  - weibo
+  - whatsapp
+  - youtube
