@@ -365,14 +365,16 @@ def swap(session: Any, alt_id: int) -> dict:
         )
         # A text-keyed table is found by its KEY only (its rowid may have been renumbered, so
         # a row_id match could belong to another row); an integer-keyed one by its id.
-        session.execute(
-            text(
-                "DELETE FROM merged_rows WHERE table_name = :t AND "
-                + ("row_key = :k" if key_col else "row_id = :id")
-            ),
-            {"t": table, "id": local_id, "k": None if key_val is None else str(key_val)}
-            if key_col else {"t": table, "id": local_id},
-        )
+        if key_col:
+            session.execute(
+                text("DELETE FROM merged_rows WHERE table_name = :t AND row_key = :k"),
+                {"t": table, "k": None if key_val is None else str(key_val)},
+            )
+        else:
+            session.execute(
+                text("DELETE FROM merged_rows WHERE table_name = :t AND row_id = :id"),
+                {"t": table, "id": local_id},
+            )
         exists = arrived is not None and session.execute(
             text("SELECT 1 FROM merge_batches WHERE id = :b"), {"b": arrived}
         ).fetchone()
