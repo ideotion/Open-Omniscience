@@ -1,0 +1,2 @@
+date,area,item,status,refs,key_paths,summary
+2026-09-30,tests/main,main's bench unlock sequence and b29 node harness after #1256/#1257,shipped,PR #1267,src/testing/scale_bench.py;tests/rewalk_b29_node_test.js,Main went red in the core-only job twice more: the scale bench's unlock sequence lacked ensure_merged_rows_row_key_column (#1257) and the rewalk b29 node harness lacked repaintWikiCompareFromCache (#1256). The bench now runs the self-heal after ensure_source_last_crawled_column as init_db does; the harness stubs the compare repaint in JS so the slicing budget stays 230.
