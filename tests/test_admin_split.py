@@ -77,27 +77,31 @@ def test_the_world_file_is_the_budget_and_every_feature_is_in_it():
 def test_a_detail_file_is_the_inputs_own_rings():
     a0, a1 = _docs()
     res = S.split_artifacts(a0, a1, budget=6000)
-    assert res["details"], "something was simplified, so there is detail to fetch"
-    for a3, d in res["details"].items():
+    assert res["details"]["admin0"] and res["details"]["admin1"], "something was simplified, so there is detail to fetch"
+    for a3, d in res["details"]["admin0"].items():
         assert re.fullmatch(r"[A-Z]{3}", a3)
         assert d["vintage"] == "2026-09-01" and d["a3"] == a3
-        if d["country"]:
-            assert d["country"]["rings"] == a0["countries"][a3]["rings"], "byte for byte the input"
+        assert "regions" not in d, "a country file carries the country only: a map without regions must not pay for them"
+        assert d["country"]["rings"] == a0["countries"][a3]["rings"], "byte for byte the input"
+    for a3, d in res["details"]["admin1"].items():
+        assert re.fullmatch(r"[A-Z]{3}", a3) and d["vintage"] == "2026-09-01" and d["a3"] == a3
+        assert "country" not in d
         for k, r in d["regions"].items():
             assert r["rings"] == a1["regions"][k]["rings"] and a1["regions"][k]["country"] == a3
     # Every simplified feature has its detail; every feature says how big its detail is.
     for a3, c in res["admin0"]["countries"].items():
         assert c["full_vertices"] == len(a0["countries"][a3]["rings"][0])
         if len(c["rings"][0]) < c["full_vertices"]:
-            assert res["details"][a3]["country"]["rings"]
+            assert res["details"]["admin0"][a3]["country"]["rings"]
     assert res["admin0"]["split"]["detail"] == "osm_borders/detail/{a3}.json"
+    assert res["admin1"]["split"]["detail"] == "osm_borders/detail/{a3}.regions.json"
     assert res["admin0"]["split"]["world_budget"] == 6000
 
 
 def test_a_layer_that_fits_the_budget_is_not_split():
     a0, a1 = _docs(n_countries=2, per_country=50, regions_each=1, per_region=20)
     res = S.split_artifacts(a0, a1, budget=S.WORLD_VERTEX_BUDGET)
-    assert res["details"] == {} and res["admin0"]["split"]["detail"] is None
+    assert res["details"] == {"admin0": {}, "admin1": {}} and res["admin0"]["split"]["detail"] is None
     assert res["admin0"]["countries"]["AAA"]["rings"] == a0["countries"]["AAA"]["rings"]
     assert res["admin0"]["countries"]["AAA"]["full_vertices"] == 50, "one reader code path: the size is always present"
 
@@ -106,14 +110,15 @@ def test_a_region_no_country_claims_stays_whole_in_the_world_file():
     a0, a1 = _docs()
     res = S.split_artifacts(a0, a1, budget=6000)
     assert res["admin1"]["regions"]["r999"]["rings"] == a1["regions"]["r999"]["rings"]
-    assert all("r999" not in d["regions"] for d in res["details"].values())
+    assert all("r999" not in d["regions"] for d in res["details"]["admin1"].values())
 
 
 def test_a_filename_is_only_ever_three_capitals():
     a0, a1 = _docs()
     a0["countries"]["../x"] = {"a2": "xx", "name": "bad", "names": {}, "osm": 7, "rings": [_jag(0, 0, 5, 3000)]}
     res = S.split_artifacts(a0, a1, budget=6000)
-    assert "../x" not in res["details"] and all(re.fullmatch(r"[A-Z]{3}", k) for k in res["details"])
+    every = [k for docs in res["details"].values() for k in docs]
+    assert "../x" not in every and all(re.fullmatch(r"[A-Z]{3}", k) for k in every)
     assert res["admin0"]["countries"]["../x"]["rings"] == a0["countries"]["../x"]["rings"], "unnameable: kept whole"
 
 
@@ -141,7 +146,7 @@ def test_the_script_writes_the_tree_and_a_rebuild_leaves_no_stale_country(tmp_pa
     rep = write_split(a0, a1, tmp_path, budget=6000, precision=2)
     root = tmp_path / "osm_borders"
     assert (root / "admin0.world.json").is_file() and (root / "admin1.world.json").is_file()
-    names = {p.stem for p in (root / "detail").glob("*.json")}
+    names = {p.name.split(".")[0] for p in (root / "detail").glob("*.json")}
     assert names and rep["detail_bytes"] > 0 and rep["world_bytes"] < rep["detail_bytes"] + rep["world_bytes"]
     (root / "detail" / "ZZZ.json").write_text("{}", encoding="utf-8")        # a country of an older build
     write_split(a0, a1, tmp_path, budget=6000, precision=2)
@@ -171,21 +176,44 @@ def test_the_registry_watches_the_split_beside_the_whole_files():
     assert "osm-borders-split" in ids
 
 
-def test_a_simplified_feature_carries_the_box_of_its_full_rings_so_a_lost_island_stays_reachable():
+def test_a_simplified_feature_carries_a_box_per_ring_so_a_lost_island_stays_reachable():
     """The world outline can lose an island (the smallest rings go first); the map decides what is in
-    sight from this box, so an island the world file dropped is still found by a view over it."""
+    sight from these boxes, so an island the world file dropped is still found by a view over it -- and
+    a country whose rings sit far apart is NOT in sight of the empty space between them."""
     a0, a1 = _docs(n_countries=2, per_country=3000)
     far = [[60.0, 60.0], [60.4, 60.0], [60.4, 60.4], [60.0, 60.4]]
     a0["countries"]["AAA"]["rings"].append(far)          # a small far island of the first country
     res = S.split_artifacts(a0, a1, budget=2500)
     c = res["admin0"]["countries"]["AAA"]
     assert len(c["rings"][0]) < 3000, "it was simplified"
-    assert c["full_bbox"] == S.bbox(a0["countries"]["AAA"]["rings"]), "the box is the INPUT's, island included"
-    assert c["full_bbox"][2] >= 60.4
+    boxes = c["full_boxes"]
+    assert len(boxes) == 2, "one box per ring of the INPUT, the island included"
+    assert any(b[0] <= 60.0 and b[2] >= 60.4 and b[1] <= 60.0 and b[3] >= 60.4 for b in boxes)
+    assert not any(b[0] < 30 and b[2] > 55 for b in boxes), "and no box spans the space between the rings"
     for doc, layer, canon in ((res["admin0"], "countries", a0), (res["admin1"], "regions", a1)):
         for k, f in doc[layer].items():
-            if "full_bbox" not in f:
-                assert f["rings"] == canon[layer][k]["rings"], "no box is written where nothing was simplified"
+            if "full_boxes" not in f:
+                assert f["rings"] == canon[layer][k]["rings"], "no box is written where nothing was lost"
+
+
+def test_a_feature_with_a_hundred_rings_keeps_at_most_the_box_cap():
+    rings = [[[i, 0.0], [i + 0.1, 0.0], [i + 0.1, 0.1]] for i in range(100)]
+    boxes = S.ring_boxes(rings)
+    assert len(boxes) == S.MAX_BOXES
+    assert min(b[0] for b in boxes) <= 0 and max(b[2] for b in boxes) >= 99.1, "the merged tail still covers every ring"
+
+
+def test_a_world_layer_over_the_budget_is_reported_not_silently_strided():
+    """Unplaced regions stay whole and each feature keeps a floor; if those alone exceed the budget the
+    map halves every outline, so the build says so."""
+    a0, a1 = _docs(n_countries=2, per_country=500, regions_each=1, per_region=50)
+    for j in range(60):
+        a1["regions"][f"u{j}"] = {"country": None, "a2": None, "placed_by": None, "name": "u", "names": {}, "osm": 5000 + j,
+                                  "key": "osm-relation", "rings": [_jag(0, -70 + j, 0.3, 300)]}
+    res = S.split_artifacts(a0, a1, budget=2000)
+    assert res["stats"]["admin1"]["world"] > 2000 and any("admin1" in w for w in res["stats"]["warnings"])
+    ok = S.split_artifacts(*_docs(), budget=6000)
+    assert ok["stats"]["warnings"] == []
 
 
 def test_floors_and_unplaced_features_do_not_push_a_layer_over_the_budget():
@@ -203,9 +231,11 @@ def test_floors_and_unplaced_features_do_not_push_a_layer_over_the_budget():
     assert caps["s1"] == caps["s2"] == S.MIN_FEATURE_VERTICES and caps["big"] <= 1000 - 500
 
 
-def test_the_detail_template_is_the_one_path_the_map_accepts():
-    m = re.search(r'const OOMAP_DETAIL_TEMPLATE = "([^"]+)";', read_static("app-map.js"))
-    assert m and m.group(1) == S.DETAIL_TEMPLATE
+def test_the_detail_templates_are_the_only_paths_the_map_accepts():
+    js = read_static("app-map.js")
+    for layer in ("admin0", "admin1"):
+        m = re.search(rf'const OOMAP_DETAIL_TEMPLATE_{layer.upper()} = "([^"]+)";', js)
+        assert m and m.group(1) == S.DETAIL_TEMPLATES[layer]
 
 
 def test_a_build_that_dies_half_way_leaves_the_previous_files_whole(tmp_path, monkeypatch):
@@ -244,3 +274,33 @@ def test_skipping_the_split_removes_the_previous_one_it_would_otherwise_outrank(
     assert SB.remove_split(tmp_path) is False
     body = (_ROOT / "scripts" / "build_admin_boundaries.py").read_text(encoding="utf-8")
     assert "remove_split(out)" in body, "--no-split must not leave a world file that outranks the new whole ones"
+
+
+def test_a_failed_split_removes_the_previous_one_rather_than_leave_it_in_charge(tmp_path, monkeypatch):
+    """The build writes the new whole files, then the split. If the split raises, the old osm_borders/
+    would be read first by the map and draw the OLD borders under the new date."""
+    from scripts import build_admin_boundaries as B
+    from scripts import split_admin_boundaries as SB
+
+    a0, a1 = _docs()
+    B.write_outputs(a0, a1, tmp_path)
+    assert (tmp_path / "osm_borders" / "admin0.world.json").is_file()
+    assert (tmp_path / B.OUT_ADMIN0).is_file()
+
+    def boom(*a, **k):
+        raise OSError("rename refused")
+
+    monkeypatch.setattr(SB, "write_split", boom)
+    with pytest.raises(OSError, match="rename refused"):
+        B.write_outputs(a0, a1, tmp_path)
+    assert not (tmp_path / "osm_borders").exists(), "the stale split must not outlive a failed rebuild"
+    assert (tmp_path / B.OUT_ADMIN0).is_file(), "the new whole files stay: the map falls back to them"
+
+
+def test_no_split_flag_removes_the_previous_split(tmp_path):
+    from scripts import build_admin_boundaries as B
+
+    a0, a1 = _docs()
+    B.write_outputs(a0, a1, tmp_path)
+    B.write_outputs(a0, a1, tmp_path, no_split=True)
+    assert not (tmp_path / "osm_borders").exists() and (tmp_path / B.OUT_ADMIN1).is_file()

@@ -337,8 +337,9 @@ def test_the_map_reads_the_small_world_file_first_and_a_country_s_detail_on_dema
     assert '"osm_borders/admin1.world.json", "osm_admin1.json"' in load
     assert "(await get(world)) || get(whole)" in load, "the whole file is the fallback, per layer"
     loader = function_body(_MAP_JS, "_ooLodDetailLoader")
-    assert "template !== OOMAP_DETAIL_TEMPLATE" in loader, "only the one path the split writes is fetched"
-    assert 'const OOMAP_DETAIL_TEMPLATE = "osm_borders/detail/{a3}.json";' in _MAP_JS
+    assert "template !== OOMAP_DETAIL_TEMPLATE_ADMIN0 && template !== OOMAP_DETAIL_TEMPLATE_ADMIN1" in loader, "only the paths the split writes are fetched"
+    assert 'const OOMAP_DETAIL_TEMPLATE_ADMIN0 = "osm_borders/detail/{a3}.json";' in _MAP_JS
+    assert 'const OOMAP_DETAIL_TEMPLATE_ADMIN1 = "osm_borders/detail/{a3}.regions.json";' in _MAP_JS
     assert "doc.vintage === vintage" in loader, "a detail file of another build is refused"
     assert "admin0.vintage !== admin1.vintage" in load, "two layers of different builds are never mixed"
     assert "^[A-Z]{3}$" in loader, "only three capitals ever name a file"

@@ -35,6 +35,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from src.timemap.admin_split import (  # noqa: E402
     DETAIL_DIR,
+    DETAIL_TEMPLATES,
     MIN_FEATURE_VERTICES,
     WORLD_FILES,
     WORLD_PRECISION,
@@ -53,8 +54,9 @@ def write_split(admin0: dict, admin1: dict, out_dir: Path, *, budget: int, preci
     """Split and (unless ``dry_run``) write; returns the report. Pure enough to test on a tmp dir."""
     res = split_artifacts(admin0, admin1, budget=budget, precision=precision)
     blobs = {WORLD_FILES["admin0"]: _blob(res["admin0"]), WORLD_FILES["admin1"]: _blob(res["admin1"])}
-    for a3, doc in sorted(res["details"].items()):
-        blobs[f"{DETAIL_DIR}/detail/{a3}.json"] = _blob(doc)
+    for layer, docs in res["details"].items():
+        for a3, doc in sorted(docs.items()):
+            blobs[DETAIL_TEMPLATES[layer].format(a3=a3)] = _blob(doc)
     sizes = {name: len(b.encode("utf-8")) for name, b in blobs.items()}
     report = {
         **res["stats"],
@@ -71,6 +73,8 @@ def write_split(admin0: dict, admin1: dict, out_dir: Path, *, budget: int, preci
     old = out_dir / f".{DETAIL_DIR}.old"
     for leftover in (tmp, old):
         shutil.rmtree(leftover, ignore_errors=True)
+        if leftover.exists():          # e.g. a file held open on Windows: say so rather than fail later
+            raise OSError(f"cannot clear {leftover}; close whatever holds it open and run again")
     (tmp / "detail").mkdir(parents=True)
     try:
         for name, blob in blobs.items():
@@ -122,6 +126,8 @@ def main() -> int:
         print(f"REFUSED: {exc}", file=sys.stderr)
         return 2
     print(json.dumps(report, indent=2))
+    for w in report.get("warnings", []):
+        print("WARNING:", w, file=sys.stderr)
     if not args.dry_run:
         print(f"Wrote {Path(args.out_dir) / DETAIL_DIR}", file=sys.stderr)
     return 0

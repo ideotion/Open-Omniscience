@@ -783,7 +783,7 @@ artifacts:
     description: >
       osm_borders/admin0.world.json and admin1.world.json: the same documents as the two whole
       files with every outline simplified to about the world view's draw budget, and one
-      osm_borders/detail/<ALPHA3>.json per country holding its unsimplified rings, fetched by the
+      osm_borders/detail/<ALPHA3>.json (country) and <ALPHA3>.regions.json (its regions) holding the unsimplified rings, fetched by the
       map only when the view narrows to where they can be drawn (0.5 rows E and L; the whole files
       stay what the server reads). DERIVED, never edited by hand: written by the same run as the
       whole files, or alone by scripts/split_admin_boundaries.py, and it must carry the SAME

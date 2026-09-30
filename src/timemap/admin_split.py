@@ -14,8 +14,11 @@ paint, at the size a full build reaches). This module cuts the same data in two:
   :data:`WORLD_VERTEX_BUDGET` vertices. Every country and region is present. Each feature adds
   ``full_vertices``, the size of its unsimplified rings, and the document adds ``split``, which
   says where the detail lives;
-* ``osm_borders/detail/<ALPHA3>.json`` -- the unsimplified rings of ONE country and its regions,
-  fetched by the map only when the view narrows to where they can be drawn.
+* ``osm_borders/detail/<ALPHA3>.json`` (the country's own unsimplified rings) and
+  ``osm_borders/detail/<ALPHA3>.regions.json`` (its regions'), fetched by the map only when the
+  view narrows to where they can be drawn. They are separate files because the two layers are
+  drawn and budgeted separately: a view that draws countries only (regions switched off) must
+  not download every region of every country in sight.
 
 THE RULES THIS MODULE KEEPS, and the tests pin:
 
@@ -35,6 +38,7 @@ Pure: no I/O and no network. ``scripts/split_admin_boundaries.py`` reads and wri
 from __future__ import annotations
 
 import copy
+import math
 import re
 from typing import Any
 
@@ -52,7 +56,10 @@ WORLD_PRECISION = 2
 MIN_FEATURE_VERTICES = 12
 
 DETAIL_DIR = "osm_borders"
-DETAIL_TEMPLATE = DETAIL_DIR + "/detail/{a3}.json"
+#: The one path each layer's detail is read from (exact-matched by ``app-map.js``).
+DETAIL_TEMPLATES = {"admin0": DETAIL_DIR + "/detail/{a3}.json", "admin1": DETAIL_DIR + "/detail/{a3}.regions.json"}
+#: Boxes kept per simplified feature: one per ring, the largest rings first; the rest are merged.
+MAX_BOXES = 64
 WORLD_FILES = {"admin0": DETAIL_DIR + "/admin0.world.json", "admin1": DETAIL_DIR + "/admin1.world.json"}
 
 _A3 = re.compile(r"^[A-Z]{3}$")
@@ -88,6 +95,23 @@ def bbox(rings: list[Ring] | None) -> list[float] | None:
     return [min(xs), min(ys), max(xs), max(ys)] if xs else None
 
 
+def ring_boxes(rings: list[Ring] | None, cap: int = MAX_BOXES) -> list[list[float]]:
+    """One box per ring (largest first), the smallest merged past ``cap``; rounded outward.
+
+    One box per FEATURE says a country is in sight whenever any of it is: Russia and the USA cross
+    the antimeridian, so their box spans the whole map and every view would fetch their files. A box
+    per ring keeps the test as tight as the shape while still covering rings the world outline lost.
+    """
+    boxes = [b for b in (bbox([r]) for r in rings or []) if b]
+    boxes.sort(key=lambda b: (b[2] - b[0]) * (b[3] - b[1]), reverse=True)
+    if len(boxes) > cap:
+        rest = boxes[cap - 1:]
+        boxes = boxes[:cap - 1] + [[min(b[0] for b in rest), min(b[1] for b in rest),
+                                    max(b[2] for b in rest), max(b[3] for b in rest)]]
+    return [[math.floor(b[0] * 1000) / 1000, math.floor(b[1] * 1000) / 1000,
+             math.ceil(b[2] * 1000) / 1000, math.ceil(b[3] * 1000) / 1000] for b in boxes]
+
+
 def _caps(sizes: dict[str, int], reserved: int, budget: int) -> dict[str, int]:
     """Per-feature vertex caps that sum to about ``budget`` less what is ``reserved``.
 
@@ -117,10 +141,10 @@ def _simplify_layer(doc: dict[str, Any], layer: str, budget: int, precision: int
     """A copy of ``doc`` whose ``layer`` features are simplified to about ``budget`` vertices.
 
     Returns ``(world_doc, n_simplified)``. The allocation is proportional to each feature's own
-    size, so a coast keeps more than a square (:func:`_caps`). Each feature that is simplified
-    also carries ``full_bbox``, the box of its UNSIMPLIFIED rings: a simplified outline can lose
-    a far island altogether, and the map decides what is in sight from this box, so that island
-    is not written off at every zoom.
+    size, so a coast keeps more than a square (:func:`_caps`). Each feature that lost anything (a
+    vertex or a whole ring) also carries ``full_boxes``, the boxes of its UNSIMPLIFIED rings
+    (:func:`ring_boxes`): a simplified outline can lose a far island altogether, and the map
+    decides what is in sight from these boxes, so that island is not written off at every zoom.
     """
     world = copy.deepcopy(doc)
     feats = _features(world, layer)
@@ -140,10 +164,11 @@ def _simplify_layer(doc: dict[str, Any], layer: str, budget: int, precision: int
         rings, simplified = fit_to_cap(f["rings"], [], cap, precision, refine=True)
         if not rings:                                  # never lose the feature itself
             continue
-        box = bbox(f["rings"])
+        boxes = ring_boxes(f["rings"])
+        lost = vertices(rings) < f["full_vertices"] or len(rings) < len(f["rings"])
         f["rings"] = rings
-        if simplified and box:
-            f["full_bbox"] = box
+        if lost and boxes:                             # rounding alone can drop an islet too
+            f["full_boxes"] = boxes
         n_simplified += int(simplified)
     return world, n_simplified
 
@@ -157,9 +182,10 @@ def split_artifacts(
 ) -> dict[str, Any]:
     """The world documents and the detail documents for a pair of canonical artifacts.
 
-    ``{"admin0": doc, "admin1": doc, "details": {A3: doc}, "stats": {...}}``. ``details`` is empty
-    when neither layer exceeds ``budget`` (nothing to split); the world documents are then the
-    canonical ones, each still carrying ``full_vertices`` so the reader has one code path.
+    ``{"admin0": doc, "admin1": doc, "details": {"admin0": {A3: doc}, "admin1": {A3: doc}},
+    "stats": {...}}``. ``details`` is empty when neither layer exceeds ``budget`` (nothing to
+    split); the world documents are then the canonical ones, each still carrying
+    ``full_vertices`` so the reader has one code path.
     """
     if budget < MIN_FEATURE_VERTICES:
         raise ValueError(f"a world budget below {MIN_FEATURE_VERTICES} vertices cannot draw a country")
@@ -168,35 +194,41 @@ def split_artifacts(
     w0, n0 = _simplify_layer(admin0, "admin0", budget, precision)
     w1, n1 = _simplify_layer(admin1, "admin1", budget, precision)
 
-    details: dict[str, dict] = {}
+    details: dict[str, dict[str, dict]] = {"admin0": {}, "admin1": {}}
     for layer, canon, world in (("admin0", admin0, w0), ("admin1", admin1, w1)):
         for key, f in _features(canon, layer).items():
             a3 = _a3_of(layer, key, f)
             w = _features(world, layer)[key]
             if a3 is None or vertices(w.get("rings")) >= vertices(f.get("rings")):
                 continue                               # the world file already holds all of it
-            d = details.setdefault(a3, {
+            d = details[layer].setdefault(a3, {
                 "schema": canon.get("schema", 1), "vintage": canon.get("vintage"), "a3": a3,
-                "attribution": canon.get("attribution"), "country": None, "regions": {},
+                "attribution": canon.get("attribution"),
+                **({"country": None} if layer == "admin0" else {"regions": {}}),
             })
             if layer == "admin0":
                 d["country"] = {"rings": f["rings"]}
             else:
                 d["regions"][key] = {"rings": f["rings"]}
 
-    split = {
-        "detail": DETAIL_TEMPLATE if details else None,
-        "world_budget": budget,
-        "world_precision": precision,
-    }
-    for w in (w0, w1):
-        w["split"] = dict(split)
-    stats = {
+    for layer, w in (("admin0", w0), ("admin1", w1)):
+        w["split"] = {
+            "detail": DETAIL_TEMPLATES[layer] if details[layer] else None,
+            "world_budget": budget,
+            "world_precision": precision,
+        }
+    stats: dict[str, Any] = {
         "budget": budget,
-        "detail_files": len(details),
+        "detail_files": len(details["admin0"]) + len(details["admin1"]),
         "admin0": {"full": _sum(admin0, "admin0"), "world": _sum(w0, "admin0"), "simplified": n0},
         "admin1": {"full": _sum(admin1, "admin1"), "world": _sum(w1, "admin1"), "simplified": n1},
     }
+    # A layer over the budget is drawn strided by the map (every outline halved): say so.
+    stats["warnings"] = [
+        f"{layer}: the world file holds {stats[layer]['world']} vertices, over the budget of {budget}; "
+        "the map will stride every outline. Unplaced regions and per-feature floors are kept whole."
+        for layer in ("admin0", "admin1") if stats[layer]["world"] > budget
+    ]
     return {"admin0": w0, "admin1": w1, "details": details, "stats": stats}
 
 
