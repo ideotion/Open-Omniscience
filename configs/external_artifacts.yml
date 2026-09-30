@@ -757,7 +757,7 @@ artifacts:
     license: "ODbL 1.0 -- © OpenStreetMap contributors (share-alike; see Q823)"
     pin: {path: src/static/osm_admin0.json, sha256: "", vintage_key: vintage, optional: true}
     refresh: "python scripts/build_admin_boundaries.py <boundaries.osm.pbf>"
-    freshness: {max_age_months: 24}
+    freshness: {max_age_months: 12}
     last_verified: "2026-09-29"
 
   - id: osm-admin1-boundaries
@@ -774,7 +774,7 @@ artifacts:
     license: "ODbL 1.0 -- © OpenStreetMap contributors (share-alike; see Q823)"
     pin: {path: src/static/osm_admin1.json, sha256: "", vintage_key: vintage, optional: true}
     refresh: "python scripts/build_admin_boundaries.py <boundaries.osm.pbf>"
-    freshness: {max_age_months: 24}
+    freshness: {max_age_months: 12}
     last_verified: "2026-09-29"
 
   - id: offline-bundle-python-runtime
