@@ -73,7 +73,7 @@ reviewed document, not a score.
 2. The `keyword_kinds` table (migration, models, backups keep / discard), and a read seam.
 3. The matcher over the consent window (the «Go online?» window names the lane), with the
    coverage diagnostic first: how many of the top N names resolve, refuse or stay unknown.
-4. The sample check and its report; the ambiguity list in the review screen (`R98`'s screen).
+4. The sample check and its report; the ambiguity list as a maintainer-side report in the diagnostics (`R111`: no in-app review screen exists, and users are never asked).
 5. Surfaces show the kind with its source on hover (invariant #17); «unknown» is shown as such.
 
 ## 5. Plan for autonomy and complete independence (the maintainer's condition)
@@ -118,7 +118,7 @@ own kinds; articles and kinds travel only through the operator's own backups.
 
 1. **How far should independence go?** `R106` = a: T0 to T3 now; the offline resolver (T4) stays in
    the plan and is measured before it is promised.
-2. **The operator's own pin:** `R107` = b, **NO.** Kinds come only from sources. The review screen
-   (`R98`) carries no control that sets a kind, and there is no `operator` source row.
+2. **The operator's own pin:** `R107` = b, **NO.** Kinds come only from sources. No screen
+   (`R111` cancelled `R98`'s review screen) carries a control that sets a kind, and there is no `operator` source row.
 3. **Which language edition asks the titles?** `R108` = a: the keyword's own language edition when
    it has one among the twelve, English otherwise.
