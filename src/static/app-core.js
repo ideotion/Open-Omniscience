@@ -2072,10 +2072,9 @@
     //     total is the same fabrication pointing the other way.
     //
     // UNITS: kbit/s (kilobits, decimal) — the unit `collect_target_kbps` is really
-    // in, and the one the Settings speed slider already prints. NOTE for whoever
-    // reads this next: the TOP-BAR knob's hover and two toasts in app-sources.js
-    // call the same value "500 KiB/s", which is wrong by 8.192x. That is a
-    // pre-existing defect recorded in the queue, not one to copy here.
+    // in, and the one the Settings speed slider already prints. The TOP-BAR knob's
+    // hover and two toasts in app-sources.js called the same value 500 kibibytes per second,
+    // wrong by 8.192x, until PF08 = a (2026-09-30) changed the words to kbit/s.
     //
     // The prose is composed HERE from keyed templates, never piped from the
     // server's own `budget_reason`: a backend `reason` field is English, and a

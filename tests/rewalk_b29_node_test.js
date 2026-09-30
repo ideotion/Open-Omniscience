@@ -234,7 +234,7 @@ async function run() {
     I.set("ar");
     // What app-boot.js's oo:langchange listener runs, from the state the knob holds.
     box.paint(box.mode());
-    assert(btn.title === LOCALE("ar")["Collection speed: Maximum — uses your connection fully (politeness per host unchanged). Click for the considerate 500 KiB/s target."],
+    assert(btn.title === LOCALE("ar")["Collection speed: Maximum — uses your connection fully (politeness per host unchanged). Click for the considerate 500 kbit/s target."],
       "the hover kept its old language: " + btn.title);
   });
 
