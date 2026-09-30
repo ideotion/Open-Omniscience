@@ -85,6 +85,18 @@ CRITERIA_VERSION = "oo-source-qualification-3"
 # staleness numbers ride the pass RESULT (baseline_token / baseline_articles /
 # baseline_age_s), because an age belongs in a measurement and not in a version string.
 
+# FD03 option b (built 2026-09-29, R93): a verdict judged against a COHORT SAMPLE rather than
+# the whole corpus carries this label instead, so the history says which baseline judged it.
+# Like the -2 bump above it is a LABEL, never a trigger: nothing re-judges on it.
+CRITERIA_VERSION_SAMPLED = CRITERIA_VERSION + "+sample"
+
+# How many of the most recently stored articles a sampled cohort is built from. Sized from
+# the floor's own measurement (1.2 KB per article, see src.config.machine_floor): 20,000
+# articles need ~188 MB with the page cache and overhead, where the whole corpus of the field
+# VMs that declined (200k-2M articles) needs 400 MB to 2.5 GB. A percentile over 20,000
+# articles is a stable baseline; the whole history was never needed for one.
+QUALIFICATION_SAMPLE_ARTICLES = 20_000
+
 # Exactly the three states the ruling names -- never "candidate"/"trial" (the process,
 # not a persisted state) and never a fourth state.
 STATUS_UNQUALIFIED = "unqualified"
@@ -117,7 +129,7 @@ VERDICT_INHERITED = "inherited"
 # catalogue qualified, and as with any other qualified sources, they should go through the
 # same periodic re-qualification process as any other source"). This AMENDS the 2026-07-20
 # no-grandfathering clause: a hand-vetted catalogue row is admitted at seed instead of waiting
-# its turn behind a discovery backlog of tens of thousands, and the six-month re-verification
+# its turn behind a discovery backlog of tens of thousands, and the re-verification
 # clock is what keeps the stamp honest -- a failed re-check disqualifies it like any other.
 # Like `inherited` and `no_evidence` it is an ATTEMPT-LOG-only verdict, never a Source.status
 # value: it records WHY the row reads qualified (curation, not measurement), it neither
@@ -145,7 +157,7 @@ JUDGING_VERDICTS = (STATUS_QUALIFIED, STATUS_DISQUALIFIED)
 # so counting it either way would be a lie in a different direction. `curated` (2026-09-10)
 # joins for the same reason as `inherited`: the stamp is not a judgement, but it is the moment
 # this instance admitted the source, and "the same periodic re-qualification process as any
-# other source" means the six-month clock starts there.
+# other source" means the re-verification clock starts there.
 CLOCK_VERDICTS = (*JUDGING_VERDICTS, VERDICT_INHERITED, VERDICT_CURATED)
 
 # RE-VERIFICATION OF A QUALIFIED SOURCE (maintainer ruling 2026-09-04). A FLAT interval,
@@ -161,7 +173,15 @@ CLOCK_VERDICTS = (*JUDGING_VERDICTS, VERDICT_INHERITED, VERDICT_CURATED)
 # SOURCE_COHORT_FLOOR and only PATHOLOGY_ABS_FLOOR could fire, is judged against a real
 # cohort baseline for the first time. A recency-windowed re-check is a named follow-up;
 # claiming degradation detection without one would be a fabricated capability.
-QUALIFIED_RECHECK_MONTHS = 6
+#
+# QUARTERLY (R94, the maintainer 2026-09-29: «source "re-qualification" should be managed as a
+# queue, not as a calendar. All sources should be qualified on a regular basis, such as every
+# quarter, or semester ... it's more urgent to qualify a new source than to re-qualify an
+# existing one»). Was 6. The DISQUALIFIED ladder keeps its 1-2-4-6 months: its cap is the
+# semester the same answer names, and the calendar-feed ladder mirrors it by ruling 12. The
+# interval only says when a source JOINS the queue; the queue order is the pass's own (new
+# candidates first, then the longest-unverified re-check), and nothing runs at a set date.
+QUALIFIED_RECHECK_MONTHS = 3
 
 # The re-qualification ladder cap (RE-QUALIFICATION RULED: "1 to 6 months").
 _LADDER_CAP_MONTHS = 6
@@ -463,6 +483,109 @@ def select_due_qualified(
         if qualified_recheck_due_at(clock) <= now:
             due.append(source)
     return due
+
+
+# How far down the due-disqualified pool the queue view counts. Each one costs a ladder read,
+# so a count past this says "at least" rather than walking an unbounded pool on a panel load.
+_QUEUE_COUNT_CAP = 200
+
+
+def qualification_queue(session: Session, *, now: datetime | None = None,
+                        next_limit: int = 10,
+                        recheck_per_pass: int | None = None) -> dict:
+    """THE QUALIFICATION QUEUE, as the pass will take it (R94, 2026-09-29: «managed as a queue,
+    not as a calendar ... it's more urgent to qualify a new source than to re-qualify one»).
+
+    Read-only, counts and domains only, never a score. Built from the SAME selectors the pass
+    calls (``select_unqualified``, ``select_due_disqualified``, ``select_due_qualified``), so
+    the view cannot describe an order the pass does not follow:
+
+    1. ``new`` -- never-judged sources, never-tried first, then the least recently tried (a
+       source whose trial found nothing to judge goes back in line behind the untried ones);
+    2. ``rechecks`` -- sources whose verdict has come due: a disqualified source on its
+       1-2-4-6-month ladder, a qualified one every ``QUALIFIED_RECHECK_MONTHS`` months,
+       the longest-unverified first.
+
+    ``waiting`` counts qualified sources not yet due, with the earliest moment one joins the
+    queue -- the one date on this view, and it is when a source ENTERS the line, never when
+    it will be judged: that depends on the per-pass budgets and on how long the line is.
+
+    ``recheck_per_pass`` (the setting) is what tells the view whether qualified re-verification
+    is ON: at 0 the pass takes no qualified source, spill included, so the view lists none and
+    says ``qualified_rechecks_on: false`` rather than naming a line that never moves.
+    """
+    from src.database.models import Source, SourceQualificationAttempt
+
+    now = now or datetime.now(UTC)
+    attempted = session.query(SourceQualificationAttempt.source_id).distinct().subquery()
+    unq = session.query(Source).filter(Source.status == STATUS_UNQUALIFIED)
+    new_total = int(unq.count())
+    new_untried = int(
+        unq.filter(~Source.id.in_(session.query(attempted.c.source_id))).count()
+    )
+
+    dq_due = select_due_disqualified(session, now=now, limit=_QUEUE_COUNT_CAP)
+    cutoff = now - timedelta(days=_MONTH_DAYS * QUALIFIED_RECHECK_MONTHS)
+    clock = _last_clock_subquery(session)
+    when = func.coalesce(clock.c.last_at, Source.qualified_at)
+    ql = (
+        session.query(func.count())
+        .select_from(Source)
+        .outerjoin(clock, clock.c.source_id == Source.id)
+        .filter(Source.status == STATUS_QUALIFIED)
+    )
+    # A qualified row with no clock at all is DUE (the self-healing direction
+    # `select_due_qualified` takes), so it is counted as due here too.
+    ql_due = int(ql.filter((when.is_(None)) | (when <= cutoff)).scalar() or 0)
+    ql_waiting = int(ql.filter(when > cutoff).scalar() or 0)
+    next_join = (
+        session.query(func.min(when))
+        .select_from(Source)
+        .outerjoin(clock, clock.c.source_id == Source.id)
+        .filter(Source.status == STATUS_QUALIFIED, when > cutoff)
+        .scalar()
+    )
+    if next_join is not None and next_join.tzinfo is None:
+        next_join = next_join.replace(tzinfo=UTC)
+
+    nxt = max(0, int(next_limit))
+    ql_on = recheck_per_pass is None or recheck_per_pass > 0
+    next_new = [s.domain for s in select_unqualified(session, limit=nxt)]
+    # The "next" list is what a pass with `nxt` re-check slots WOULD take: the pass's own pool
+    # (the oldest-tried few, not the whole due count) and its own split between the two kinds.
+    dq_pool = select_due_disqualified(session, now=now, limit=nxt)
+    ql_pool = select_due_qualified(session, now=now, limit=nxt) if ql_on else []
+    take_dq = min(len(dq_pool), max(1, nxt // 2) if ql_pool else nxt)
+    take_ql = min(len(ql_pool), nxt - take_dq)
+    take_dq = min(len(dq_pool), nxt - take_ql)
+    next_rechecks = [
+        {"domain": s.domain, "status": s.status}
+        for s in dq_pool[:take_dq] + ql_pool[:take_ql]
+    ]
+    return {
+        "order": ["new", "rechecks"],
+        "new": {"total": new_total, "untried": new_untried,
+                "tried_without_evidence": new_total - new_untried, "next": next_new},
+        "rechecks": {
+            "disqualified_due": len(dq_due),
+            "disqualified_due_capped": len(dq_due) >= _QUEUE_COUNT_CAP,
+            "qualified_due": ql_due if ql_on else 0,
+            "qualified_rechecks_on": ql_on,
+            "next": next_rechecks,
+        },
+        "waiting": {
+            "qualified": ql_waiting,
+            "next_joins_at": _audit_stamp(next_join + timedelta(
+                days=_MONTH_DAYS * QUALIFIED_RECHECK_MONTHS)) if next_join else None,
+        },
+        "cycle": {"qualified_months": QUALIFIED_RECHECK_MONTHS,
+                  "disqualified_ladder_months": [1, 2, 4, _LADDER_CAP_MONTHS]},
+        "method": (
+            "Read from the selectors the qualification pass itself calls, in the order it "
+            "takes them: new candidates first, then due re-checks, the longest-unverified "
+            "first. Counts and domains only."
+        ),
+    }
 
 
 def log_inherited_stamps(
@@ -1049,6 +1172,45 @@ def _corpus_articles(session: Session) -> int:
         return 0
 
 
+def cohort_plan(session: Session, *, articles: int | None = None) -> dict:
+    """WHICH baseline a qualification pass can afford on this machine right now (FD03 b).
+
+    THE ONE PLACE the question is answered, because three surfaces ask it -- the pass itself,
+    the Sources panel (whether the bulk button can start) and the release run's arm step --
+    and two estimators giving opposite answers is exactly what the 2026-09-24 field round
+    found (QUAL-1: the arm step called the job safe, the pass declined).
+
+    * ``whole``    -- above the memory floor (or overridden): the whole-corpus cohort, as
+      before this existed. Byte-identical for every machine that could already qualify.
+    * ``sample``   -- below the floor, and the bounded sample fits in what is available (or
+      availability cannot be read, which never declines -- the floor's own rule): the cohort
+      is built from the newest ``QUALIFICATION_SAMPLE_ARTICLES`` articles. THE FLOOR STAYS
+      (FD03 = a): the whole-corpus scan is still declined; the gate no longer depends on it.
+    * ``declined`` -- below the floor AND the sample does not fit either: nothing is judged,
+      and the result names both needs, so the refusal is a measurement.
+    """
+    from src.config.machine_floor import scan_need_mb
+
+    n = _corpus_articles(session) if articles is None else int(articles)
+    budget = scan_budget(n)
+    sample = min(QUALIFICATION_SAMPLE_ARTICLES, n) if n else QUALIFICATION_SAMPLE_ARTICLES
+    sample_need = scan_need_mb(sample)
+    avail = budget.get("available_mb")
+    if not budget["declines"]:
+        mode = "whole"
+    elif avail is None or avail >= sample_need:
+        mode = "sample"
+    else:
+        mode = "declined"
+    return {
+        "mode": mode,
+        "budget": budget,
+        "sample_articles": QUALIFICATION_SAMPLE_ARTICLES,
+        "sample_need_mb": sample_need,
+        "available_mb": avail,
+    }
+
+
 def run_qualification_pass(
     session: Session, fetcher: EthicalFetcher | None, *, per_pass: int,
     recheck_per_pass: int = 0,
@@ -1102,14 +1264,25 @@ def run_qualification_pass(
     # lesson keeps costing. And it is gated BEFORE the trial fetches: spending
     # Tor bandwidth on evidence we have already decided not to judge would be
     # the worst of both.
-    budget = scan_budget(_corpus_articles(session))
-    if budget["declines"]:
+    #
+    # FD03 option b (2026-09-29, R93): below the floor the pass no longer declines outright.
+    # Every field VM sits at 3.8 GiB, under the 4 GiB floor, so this return fired on every
+    # pass of every one of them and no source was ever judged -- 80,000 candidates waited on
+    # one machine with a qualified count that never moved. The whole-corpus scan stays
+    # declined; the cohort is built from a bounded sample instead (see ``cohort_plan``), and
+    # the pass declines only when even the sample does not fit.
+    plan = cohort_plan(session)
+    budget = plan["budget"]
+    if plan["mode"] == "declined":
         return {
             "enabled": True,
             "evaluated": 0,
             "skipped": budget["skipped"],
             "available_mb": budget["available_mb"],
             "need_mb": budget["need_mb"],
+            # What the bounded sample would have needed -- the refusal names both, so a
+            # reader can see the pass did not merely decline the scan it could not afford.
+            "sample_need_mb": plan["sample_need_mb"],
             "reason": budget["reason"],
             # The reason's keyed frame, so the refusal is written in the UI language.
             "reason_i18n": budget.get("reason_i18n"),
@@ -1136,14 +1309,12 @@ def run_qualification_pass(
     spill = max(0, per_pass - len(new_candidates))
     reserved = max(0, recheck_per_pass)
 
-    # The two re-check kinds draw on DIFFERENT budgets, and the asymmetry is deliberate:
-    #   * DISQUALIFIED re-checks may use the reserved budget AND unused new-candidate slots
-    #     -- the spill is exactly today's behaviour, kept so a small backlog re-checks no
-    #     more slowly than before this change.
-    #   * QUALIFIED re-checks may use ONLY the reserved budget. Letting them take the spill
-    #     would mean `qualification_recheck_per_pass = 0` still re-verified qualified
-    #     sources, i.e. an explicit "off" that does not turn the thing off -- and a setting
-    #     that does not mean what it says is worse than no setting.
+    # THE QUEUE ORDER (R94, 2026-09-29): new candidates first, then due re-checks, oldest
+    # clock first. Both re-check kinds may use the reserved budget AND the new candidates'
+    # unused slots -- except that with `qualification_recheck_per_pass = 0` qualified
+    # re-verification is OFF and takes nothing, spill included: a setting that does not
+    # mean what it says is worse than no setting. (Until R94 qualified re-checks took only
+    # the reserved budget, so a drained backlog still re-verified at two per pass.)
     total = reserved + spill
     dq_pool: list[Source] = []
     ql_pool: list[Source] = []
@@ -1152,11 +1323,13 @@ def run_qualification_pass(
         # an empty or short pool gives its slots to the other rather than wasting them.
         dq_pool = select_due_disqualified(session, now=now, limit=total)
     if reserved > 0:
-        # `limit=reserved` IS the cap that keeps the spill out of qualified re-checks --
-        # not a later min(), which would be a second place to enforce one rule. Querying
-        # only what may actually be used also means an install with re-verification off
-        # never pays for this query at all.
-        ql_pool = select_due_qualified(session, now=now, limit=reserved)
+        # R94 (2026-09-29, «a queue, not a calendar»): once the new candidates are served,
+        # their unused slots go on down the queue to EITHER kind of re-check, so a drained
+        # backlog re-verifies at the full per-pass rate instead of at the reserved trickle.
+        # `recheck_per_pass = 0` still turns qualified re-verification OFF: the spill reaches
+        # this query only when the operator has it on, so "off" keeps meaning off. Querying
+        # only when it may be used also means an install with it off never pays for it.
+        ql_pool = select_due_qualified(session, now=now, limit=total)
 
     # Disqualified re-checks keep the priority they have today. At a reserved budget of 1
     # with a disqualified source always due, qualified re-verification therefore only runs
@@ -1195,6 +1368,9 @@ def run_qualification_pass(
     try:
         frozen = cohort_provider() if cohort_provider is not None else sa.frozen_cohort(
             session, should_pause=should_pause, min_articles=TRIAL_MIN_ARTICLES,
+            sample_articles=(
+                QUALIFICATION_SAMPLE_ARTICLES if plan["mode"] == "sample" else None
+            ),
         )
     except sq.ScanPaused as exc:
         # The FREEZE is itself a whole-corpus scan, so it can pause too -- and it is the
@@ -1239,8 +1415,14 @@ def run_qualification_pass(
     judged = [s for s in candidates if s.id in per]
     no_evidence = [s for s in candidates if s.id not in per]
 
-    tally = evaluate_and_stamp(session, judged, fails_by_source, now=now)
-    log_no_evidence_attempts(session, no_evidence, now=now)
+    # The label follows the cohort ACTUALLY used, not the plan: a caller's provider (the bulk
+    # job freezes once per run) may have frozen under a different plan than this pass read.
+    sampled = frozen.get("sample_articles") is not None
+    criteria_version = CRITERIA_VERSION_SAMPLED if sampled else CRITERIA_VERSION
+    tally = evaluate_and_stamp(
+        session, judged, fails_by_source, now=now, criteria_version=criteria_version,
+    )
+    log_no_evidence_attempts(session, no_evidence, now=now, criteria_version=criteria_version)
     session.commit()
 
     # C15 (2026-07-24 throughput brief, S-E slice 2): auto-enqueue a BOUNDED
@@ -1274,6 +1456,11 @@ def run_qualification_pass(
         "baseline_articles": frozen.get("articles"),
         "baseline_sources": frozen.get("sources"),
         "baseline_frozen_by_caller": cohort_provider is not None,
+        # FD03 b: which baseline judged this pass. `sample` means the newest
+        # `baseline_sample_articles` articles, because this machine is below the memory floor.
+        "baseline": "sample" if sampled else "whole",
+        "baseline_sample_articles": frozen.get("sample_articles"),
+        "criteria_version": criteria_version,
         **tally,
     }
 

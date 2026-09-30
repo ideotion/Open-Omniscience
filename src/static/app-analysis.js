@@ -4387,7 +4387,7 @@
       const coord = d.point ? `${(+d.point.lat).toFixed(5)}, ${(+d.point.lon).toFixed(5)}` : "";
       let html = `<div class="vsect">${esc(t("Metadata"))}</div><table class="data" style="margin:4px 0 10px"><tbody>`
         + row(t("Kind"), d.tag ? esc(d.tag) : "")
-        + row(t("Country"), d.country ? esc(d.country_name ? `${d.country_name} (${d.country})` : d.country) : "")
+        + row(t("Country"), d.country ? ooCountryCell(d.country) : "")
         + row(t("Coordinates"), coord ? esc(coord) : esc(t("no point of its own")))
         + row(t("OpenStreetMap object"), esc(d.object))
         + row(t("Version"), d.version != null ? esc(String(d.version)) : "")

@@ -9467,7 +9467,7 @@ def test_the_quality_gates_section_shows_both_gates_with_units_and_scope_toggles
     # 1. Its own Advanced section, loading on EXPAND (the standing rule -- this reads
     #    source-scale data, so a subtab-select load would be the expensive click).
     assert 'data-adv="qualification"' in markup, "Quality gates must be an Advanced section"
-    assert "qualification: () => { loadQualificationGates(); loadQualifyBulk(); }" in html, (
+    assert "qualification: () => { loadQualificationGates(); loadQualifyBulk(); loadQualQueue(); }" in html, (
         "the section must load through the expand-driven Advanced loader map"
     )
 

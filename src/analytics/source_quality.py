@@ -213,6 +213,7 @@ def collect_article_stats(
     source_ids: set[int] | None = None,
     should_pause: Callable[[], bool] | None = None,
     since: datetime | None = None,
+    recent_limit: int | None = None,
 ) -> list[ArticleStat]:
     """Whole-corpus, COUNT-ONLY. One pass over the small article columns (word_count, language,
     source_id — the article_length_report pattern; the codec decrypts each page once, the
@@ -255,9 +256,19 @@ def collect_article_stats(
     dropped from a window for having no publication date would shrink the very population
     the window is supposed to measure. ``None`` is the whole history, byte-identical to
     before this parameter existed.
+
+    ``recent_limit`` (FD03 option b, 2026-09-29) bounds the pass to the N most recently
+    STORED articles (highest ids), and takes the scoped path for the mention aggregate, so
+    its memory is set by N and not by the size of the corpus. It exists for the one caller
+    that needs a cohort BASELINE on a machine the floor forbids a whole-corpus scan
+    (``source_audit.frozen_cohort(sample_articles=...)``): a percentile over the newest
+    20,000 articles is a baseline, and the whole history was never needed for one. ``None``
+    is byte-identical to before.
     """
     if source_ids is not None and not source_ids:
         return []  # an empty scope is an empty answer, never the whole corpus
+    if recent_limit is not None and recent_limit <= 0:
+        return []  # a sample of nothing is nothing, never the whole corpus
     scope: list[int] | None = sorted(source_ids) if source_ids else None
 
     seen = 0
@@ -276,7 +287,9 @@ def collect_article_stats(
         art_q = art_q.filter(Article.created_at >= since)
     if scope is not None:
         art_q = art_q.filter(Article.source_id.in_(scope))
-    art_rows = list(art_q) if scope is not None else None
+    if recent_limit is not None:
+        art_q = art_q.order_by(Article.id.desc()).limit(int(recent_limit))
+    art_rows = list(art_q) if (scope is not None or recent_limit is not None) else None
 
     # per-article keyword aggregates (one indexed group-by over keyword_mentions; no content).
     agg: dict[int, tuple[int, int, int]] = {}
@@ -591,6 +604,7 @@ def select_source_fingerprint(
 def link_dense_article_ids(
     session: Session, *, source_ids: set[int] | None = None,
     since: datetime | None = None,
+    article_ids: set[int] | None = None,
 ) -> set[int]:
     """Articles whose OUTBOUND-LINK DENSITY crosses ``_HIGH_LINK_DENSITY`` — the raw signal
     behind the source audit's second extraction-failure criterion (B6, 2026-09-15).
@@ -609,17 +623,62 @@ def link_dense_article_ids(
     article the article gate already condemned must not count toward its SOURCE's verdict.
     An article with no word count, or a word count of zero, yields no ratio and is skipped —
     never counted as dense on a division it cannot do.
+
+    ``article_ids`` (FD03 option b, 2026-09-29) scopes BOTH reads to those articles, in
+    chunks: the link aggregate below otherwise groups every external link in the corpus,
+    which is the whole-corpus read a bounded cohort sample exists to avoid. A SCOPED call
+    (``source_ids``) resolves its sources' article ids first and takes the same path, so a
+    handful of candidates no longer pays for the corpus's link table either. The answer is
+    identical; only what is read changes.
     """
+    if article_ids is None and source_ids is not None:
+        if not source_ids:
+            return set()
+        id_q = session.query(Article.id).filter(Article.source_id.in_(sorted(source_ids)))
+        if since is not None:
+            id_q = id_q.filter(Article.created_at >= since)
+        article_ids = {int(a) for (a,) in id_q}
     counts: dict[int, int] = {}
-    link_q = (
-        session.query(ArticleLink.article_id, func.count())
-        .filter(ArticleLink.link_type == "external")
-        .group_by(ArticleLink.article_id)
-    )
-    for aid, cnt in link_q:
-        counts[int(aid)] = int(cnt)
+    if article_ids is not None:
+        if not article_ids:
+            return set()
+        for chunk in _chunks(sorted(article_ids)):
+            for aid, cnt in (
+                session.query(ArticleLink.article_id, func.count())
+                .filter(ArticleLink.link_type == "external")
+                .filter(ArticleLink.article_id.in_(chunk))
+                .group_by(ArticleLink.article_id)
+            ):
+                counts[int(aid)] = int(cnt)
+    else:
+        link_q = (
+            session.query(ArticleLink.article_id, func.count())
+            .filter(ArticleLink.link_type == "external")
+            .group_by(ArticleLink.article_id)
+        )
+        for aid, cnt in link_q:
+            counts[int(aid)] = int(cnt)
     if not counts:
         return set()
+    if article_ids is not None:
+        # Only the articles that HAVE external links can be dense; reading the word counts
+        # of the rest would be the same unbounded read one table over.
+        dense: set[int] = set()
+        linked = sorted(counts)
+        for chunk in _chunks(linked):
+            for aid, wc, sid in (
+                session.query(Article.id, Article.word_count, Article.source_id)
+                .filter(Article.quarantined.isnot(True))
+                .filter(Article.id.in_(chunk))
+            ):
+                if sid is None:
+                    continue
+                wc_i = int(wc) if wc is not None else None
+                if wc_i is None or wc_i <= 0:
+                    continue
+                if (counts[int(aid)] / wc_i) >= _HIGH_LINK_DENSITY:
+                    dense.add(int(aid))
+        return dense
 
     art_q = session.query(Article.id, Article.word_count, Article.source_id).filter(
         Article.quarantined.isnot(True)
