@@ -613,7 +613,8 @@
       // loadKeywordFilter moved off loadSettings with its panel, so it loads here too.
       keywords: () => { loadKeywordExplorer(); loadFamilyCuration(); loadSupergroupCuration();
                         loadKeywordFilter(); loadRingGaps();
-                        if (typeof loadEntitySpine === "function") loadEntitySpine(); },
+                        if (typeof loadEntitySpine === "function") loadEntitySpine();
+                        if (typeof loadStopwordReview === "function") loadStopwordReview(); },
       // The ~500-feed calendar catalogue: plumbing, so it moved out of the Agenda
       // subtab (invariant #8). It no longer loads with the agenda — only on expand.
       calendars: () => { loadFeedDir(); },   // loadFeedDir renders the user calendars too

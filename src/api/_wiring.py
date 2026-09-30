@@ -149,6 +149,11 @@ def wire(app) -> None:
 
     app.include_router(keyword_management_router)
 
+    # The stopword review screen's endpoints (R98): pure stdlib + yaml, no ML dependency.
+    from src.api.stopword_review import router as stopword_review_router
+
+    app.include_router(stopword_review_router)
+
     # --- analysis-dependent routers (optional [analysis] extra) -------------- #
     # These genuinely require numpy/scipy/scikit-learn (TF-IDF vectors, cosine
     # similarity, statistical analysis). keyword_analysis.py is grouped here —

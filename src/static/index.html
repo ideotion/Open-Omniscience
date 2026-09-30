@@ -3070,6 +3070,26 @@
       </details>
     </section>
 
+    <!-- D11 / R98: the stoplist grows in REVIEWED BATCHES. This panel only records an accept or a
+         reject per proposed word and exports the accepted ones; it never changes a stoplist on this
+         install (a release merges an exported batch) and it has NO control that sets a keyword's
+         kind (R107). The caveat is VISIBLE, never behind the hover (informed consent); no inline
+         handlers -- loadStopwordReview binds the controls once. -->
+    <section class="panel" id="swr-panel">
+      <h2 style="margin-top:0;font-size:13px">Stopword review <span class="muted">&mdash; reviewed batches</span></h2>
+      <p class="hint" style="margin-top:0">The stoplist grows in reviewed batches, one language at a time. Pick a language, accept or reject each proposed word, then export the accepted words; a release merges them after a collision check. Nothing here changes a stoplist on this install, and nothing here sets a keyword&rsquo;s kind.</p>
+      <p class="card-caveat" style="margin-top:6px">A word that looks like page furniture in one language can be content in another. The &ldquo;also a keyword in&rdquo; column is that evidence from your own corpus, and an empty one means none was found here, not that none exists. Platform names such as Facebook and Twitter count as keywords, and so do translated concepts, so neither can be accepted.</p>
+      <div class="row" style="margin-top:8px;align-items:end">
+        <div style="flex:0 0 240px"><label for="swr-lang">Language</label>
+          <select id="swr-lang"></select></div>
+        <div style="flex:0 0 auto"><button class="secondary" type="button" id="swr-export"
+          title="Saves the accepted and rejected words of this language as a file. It is not applied anywhere.">Export reviewed batch</button></div>
+        <span id="swr-status" class="hint" role="status" aria-live="polite"></span>
+      </div>
+      <div id="swr-summary" class="hint" style="margin-top:8px"></div>
+      <div id="swr-list" style="margin-top:8px"><div class="muted" data-oo-placeholder>Loading…</div></div>
+    </section>
+
     <!-- S04-06 S6 (Q406 = b): load cross-language keyword RINGS from Wikidata, without a
          review step. The caveat is VISIBLE, never behind the hover: the informed-consent
          non-negotiable puts a caveat on the surface and lets the hover carry the long

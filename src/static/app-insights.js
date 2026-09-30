@@ -1150,6 +1150,144 @@
       }
     }
 
+    // -- D11 / R98: the stopword review --------------------------------------- //
+    //
+    // Records an accept or a reject per proposed word and exports the accepted ones. It is a
+    // LOOPBACK read and write of this install's own state: no egress, so it is not
+    // ensureOnline-gated. It never changes a stoplist and has no control that sets a kind
+    // (R107). A refusal (a platform name, a translated concept) is the server's 409, shown in
+    // the server's own words beside the word instead of being hidden.
+    let _swrWired = false;
+    function _swrLangLabel(code) {
+      const name = (typeof ooLangName === "function") ? ooLangName(code, "") : "";
+      const shown = (typeof ooLangCode === "function") ? ooLangCode(code) : code;
+      return name && name !== shown ? name + " (" + shown + ")" : shown;
+    }
+    function _swrWire() {
+      if (_swrWired || !$("swr-lang")) return;
+      _swrWired = true;
+      $("swr-lang").addEventListener("change", loadStopwordReviewList);
+      $("swr-export").addEventListener("click", swrExport);
+      $("swr-list").addEventListener("click", (ev) => {
+        const b = ev.target.closest("[data-swr]");
+        if (b) swrDecide(b.dataset.term, b.dataset.swr);
+      });
+    }
+
+    async function loadStopwordReview() {
+      _swrWire();
+      const sel = $("swr-lang");
+      if (!sel) return;
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
+        : ((str, v) => String(str).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? String(v[k]) : m));
+      const keep = sel.value;
+      try {
+        const d = await api("/api/keywords/stopword-review/languages");
+        const langs = d.languages || [];
+        sel.innerHTML = langs.map((l) => '<option value="' + esc(l.language) + '">'
+          + esc(_swrLangLabel(l.language) + " · " + tf("{n} proposed", {n: l.candidates})) + "</option>").join("");
+        if (keep && langs.some((l) => l.language === keep)) sel.value = keep;
+        if (!langs.length) {
+          $("swr-summary").textContent = "";
+          $("swr-list").innerHTML = '<div class="muted">' + esc(t("No proposed words ship with this version yet. They arrive with releases, one language at a time."))
+            + "</div>" + ((d.errors || []).length ? '<div class="card-caveat" style="margin-top:6px">'
+              + esc(tf("{n} batch files could not be read.", {n: d.errors.length})) + "</div>" : "");
+          sel.disabled = true;
+          $("swr-export").disabled = true;
+          return;
+        }
+        sel.disabled = false;
+        $("swr-export").disabled = false;
+        await loadStopwordReviewList();
+      } catch (e) {
+        $("swr-list").innerHTML = '<div class="muted" style="color:var(--err)">' + esc(t("Could not read the review:")) + " " + esc(e.message) + "</div>";
+      }
+    }
+
+    async function loadStopwordReviewList() {
+      const sel = $("swr-lang");
+      const box = $("swr-list");
+      if (!sel || !box || !sel.value) return;
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
+        : ((str, v) => String(str).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? String(v[k]) : m));
+      try {
+        const d = await api("/api/keywords/stopword-review?language=" + encodeURIComponent(sel.value));
+        const c = d.counts || {};
+        $("swr-summary").innerHTML = '<div data-i18n-dyn>' + esc(tf("{n} proposed · {listed} already dropped by this language · {accepted} accepted · {rejected} rejected · {undecided} undecided",
+          {n: c.candidates || 0, listed: c.already_listed || 0, accepted: c.accepted || 0, rejected: c.rejected || 0, undecided: c.undecided || 0})) + "</div>"
+          + (d.batches || []).map((b) => '<div data-i18n-dyn class="muted" title="' + esc(b.method || "") + '">'
+            + esc(tf("Batch {id} · {date} · {source}", {id: b.id, date: b.generated, source: b.source})) + "</div>").join("")
+          + ((d.errors || []).length ? '<div class="card-caveat">' + esc(tf("{n} batch files could not be read.", {n: d.errors.length})) + "</div>" : "");
+        const classes = {function_word: t("Function word"), page_word: t("Page word"), boilerplate: t("Boilerplate"), other: t("Other")};
+        if (!(d.candidates || []).length) {
+          box.innerHTML = '<div class="muted">' + esc(t("Every proposed word is already dropped by this language.")) + "</div>";
+          return;
+        }
+        const why = {
+          platform_name: t("A platform name counts as a keyword, so it cannot be accepted."),
+          ring_member: t("A translated concept is signal, so it cannot be accepted."),
+        };
+        const rows = d.candidates.map((r) => {
+          const also = (r.elsewhere || []).map((u) => ooLangCell(u.language) + "&nbsp;" + esc(String(u.articles))).join(" · ")
+            + (r.elsewhere_total > (r.elsewhere || []).length ? " …" : "");
+          const pressed = (k) => (r.decision === k ? ' aria-pressed="true" class="secondary"' : ' aria-pressed="false" class="secondary"');
+          const acceptBtn = r.blocked
+            ? '<button type="button" disabled class="secondary" title="' + esc(why[r.blocked] || "") + '">' + esc(t("Accept")) + "</button>"
+            : '<button type="button" data-swr="accept" data-term="' + esc(r.term) + '"' + pressed("accept") + ">" + esc(t("Accept")) + "</button>";
+          return "<tr><td dir=\"auto\"><b>" + esc(r.term) + "</b>" + (r.blocked ? '<div class="hint">' + esc(why[r.blocked] || "") + "</div>" : "") + "</td>"
+            + "<td>" + esc(String(r.articles)) + "</td><td>" + esc(String(r.mentions)) + "</td>"
+            + "<td>" + esc(classes[r.class] || r.class) + "</td>"
+            + "<td>" + (also || '<span class="muted">—</span>') + "</td>"
+            + '<td style="white-space:nowrap">' + acceptBtn + " "
+            + '<button type="button" data-swr="reject" data-term="' + esc(r.term) + '"' + pressed("reject") + ">" + esc(t("Reject")) + "</button> "
+            + (r.decision ? '<button type="button" data-swr="clear" data-term="' + esc(r.term) + '" class="ghost">' + esc(t("Clear")) + "</button>" : "")
+            + "</td></tr>";
+        }).join("");
+        box.innerHTML = '<div style="overflow-x:auto"><table class="data"><thead><tr><th>' + esc(t("Word")) + "</th><th>" + esc(t("Articles"))
+          + "</th><th>" + esc(t("Mentions")) + "</th><th>" + esc(t("Type")) + "</th><th>" + esc(t("Also a keyword in"))
+          + "</th><th>" + esc(t("Decision")) + "</th></tr></thead><tbody>" + rows + "</tbody></table></div>";
+      } catch (e) {
+        box.innerHTML = '<div class="muted" style="color:var(--err)">' + esc(t("Could not read the review:")) + " " + esc(e.message) + "</div>";
+      }
+    }
+
+    async function swrDecide(term, decision) {
+      const sel = $("swr-lang");
+      const st = $("swr-status");
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      if (!sel || !term) return;
+      try {
+        await api("/api/keywords/stopword-review/decision", {
+          method: "PUT", body: JSON.stringify({language: sel.value, term, decision}),
+        });
+        if (st) st.textContent = "";
+        await loadStopwordReviewList();
+      } catch (e) {
+        if (st) st.textContent = t("Could not record the decision:") + " " + e.message;
+      }
+    }
+
+    async function swrExport() {
+      const sel = $("swr-lang");
+      const st = $("swr-status");
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
+        : ((str, v) => String(str).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? String(v[k]) : m));
+      if (!sel || !sel.value) return;
+      try {
+        const d = await api("/api/keywords/stopword-review/export?language=" + encodeURIComponent(sel.value));
+        const url = URL.createObjectURL(new Blob([d.yaml], {type: "text/yaml"}));
+        const a = document.createElement("a");
+        a.href = url; a.download = d.filename; document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 10000);
+        if (st) st.textContent = tf("Exported {accepted} accepted and {rejected} rejected words.", {accepted: d.accepted, rejected: d.rejected});
+      } catch (e) {
+        if (st) st.textContent = t("Could not export the batch:") + " " + e.message;
+      }
+    }
+
     // -- Most-cited sources (corpus-wide co-citation) ----------------------- //
     async function loadCitedSources() {
       const box = $("cs-list");

@@ -1378,6 +1378,12 @@ Official **figures** are not here at all — they are data, so they live under
   keywords** list (one per line or comma-separated). Excluding hides a term
   everywhere but is reversible — stored mentions are kept. (You can also click ✕
   beside any keyword in Insights.)
+- **Stopword review (Advanced → Keywords):** the built-in stoplist grows in reviewed batches that
+  arrive with releases. This panel lists the words a batch proposes for a language, with their counts
+  and the other languages in which the same spelling is a keyword on your install; you accept or
+  reject each, then **export** the accepted words as a file. Nothing here changes a stoplist on your
+  install (a release merges the exported batch), platform names such as Facebook and translated
+  concepts cannot be accepted, and nothing here sets a keyword's kind.
 - **Wikipedia offline baselines:** pick a **language edition** from a **flat list**
   (your UI languages first, then the largest editions), each option leading with the
   **native name** (autonym) — editions are language-based, not country-based, so there
