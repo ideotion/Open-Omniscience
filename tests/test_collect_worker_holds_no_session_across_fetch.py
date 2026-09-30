@@ -763,6 +763,9 @@ def test_the_lane_hands_the_wrapped_fetcher_to_every_step():
 
     class _S:
         mode = "rss"
+        # The three opt-outs are real fields now (PF07) and read directly, no longer through
+        # a getattr default a stub could lean on.
+        auto_import_calendars = auto_track_law = auto_track_signals = True
 
     raw = _RecordingFetcher()
     sess = _CountingSession()

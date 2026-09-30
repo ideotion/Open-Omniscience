@@ -52,13 +52,14 @@ def test_the_markets_kind_is_always_pending_now_the_mode_is_retired():
 
 
 def test_toggles_and_zero_budgets_exclude_their_kind():
-    # auto_track_law/auto_import_calendars have no real SchedulerSettings field
-    # today (a pre-existing dead toggle, unchanged by this slice -- both
-    # ride-alongs always read True via getattr's fallback); auto_track_signals,
-    # crawl_supplement, and the per-pass budgets (incl. C15's archive_backfill_
-    # per_pass) ARE real fields.
+    # auto_track_law/auto_import_calendars became real SchedulerSettings fields with
+    # PF07 = a (2026-09-30); before that both always read True through getattr's
+    # fallback. Every toggle here, crawl_supplement and the per-pass budgets (incl.
+    # C15's archive_backfill_per_pass) are real fields.
     s = SchedulerSettings(
         auto_track_signals=False,
+        auto_track_law=False,
+        auto_import_calendars=False,
         world_discovery_per_pass=0,
         # Qualification has TWO budgets since 2026-09-04 -- admitting new candidates and
         # RE-VERIFYING existing verdicts -- so excluding the kind takes both. Zeroing only
@@ -72,7 +73,7 @@ def test_toggles_and_zero_budgets_exclude_their_kind():
         archive_backfill_per_pass=0,
     )
     pending = _lane_pending_kinds(s)
-    assert pending == {"markets", "calendar", "law"}
+    assert pending == {"markets"}  # the one ride-along with no switch
 
 
 def test_re_verification_alone_still_schedules_the_qualification_kind():

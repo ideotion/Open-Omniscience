@@ -220,6 +220,17 @@ class SchedulerSettings:
     # usually no-ops. Set False to leave those stores to the explicit manual endpoints only.
     auto_track_signals: bool = True
 
+    # The other two default-on ride-alongs' opt-outs (PF07 = a, R92; ruled 2026-09-30). The
+    # collector already read both through ``getattr(settings, ..., True)`` while this class
+    # defined neither, so the default always won and the lanes could not be switched off --
+    # a consent control that existed in the source and was a constant at runtime. Now real
+    # fields, both default ON (behaviour unchanged for an install that never touches them).
+    #   auto_import_calendars: the bundled calendar-feed directory is re-imported each pass.
+    #   auto_track_law:        the law documents you watch are polled, and their AI change
+    #                          summaries follow (both gated once, at ``_lane_pending_kinds``).
+    auto_import_calendars: bool = True
+    auto_track_law: bool = True
+
     # THE WIKIPEDIA LANE'S RUN STATE (Q702's NOTE, ruled 2026-09-15). The label of
     # Q702's answer said "default off"; the note that follows it says "make it
     # default on, and add a toggle on the taskbar ... to allow users to stop / start
@@ -719,6 +730,8 @@ def load_settings() -> SchedulerSettings:
         # exactly the shape the priority ladder needs (empty = OFF).
         country_priority=_coerce_target(raw.get("country_priority")),
         auto_track_signals=_coerce_bool(raw.get("auto_track_signals"), d.auto_track_signals),
+        auto_import_calendars=_coerce_bool(raw.get("auto_import_calendars"), d.auto_import_calendars),
+        auto_track_law=_coerce_bool(raw.get("auto_track_law"), d.auto_track_law),
         wiki_lane_state=_coerce_wiki_lane_state(raw.get("wiki_lane_state"), d.wiki_lane_state),
         wiki_lane_editions=_coerce_wiki_lane_editions(
             raw.get("wiki_lane_editions"), d.wiki_lane_editions
@@ -789,7 +802,12 @@ def save_settings(updates: dict) -> SchedulerSettings:
                 "retired_mode can only be cleared (set to an empty string)"
             )
         current.retired_mode = ""
-    for key in ("auto_run_market_rules", "auto_refresh_stat_subscriptions"):
+    for key in (
+        "auto_run_market_rules",
+        "auto_refresh_stat_subscriptions",
+        "auto_import_calendars",
+        "auto_track_law",
+    ):
         if key in updates and updates[key] is not None:
             setattr(current, key, _coerce_bool(updates[key], getattr(current, key)))
     if "autostart" in updates and updates["autostart"] is not None:

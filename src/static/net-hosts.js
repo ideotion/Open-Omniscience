@@ -54,13 +54,17 @@
  *              custody lane has no such field, because once switched on it anchors
  *              every ingested article without a click
  *   noOptOut   true when the code reads a toggle that does not exist as a field,
- *              so the lane cannot be switched off today (recorded 2026-09-16)
+ *              so the lane cannot be switched off today (recorded 2026-09-16). Only
+ *              Markets carries it now: calendars and law gained their fields when
+ *              PF07 = a was built (2026-09-30)
  *   settingUnreachable
  *              true when the field DOES exist and is honoured by save_settings,
  *              but PUT /api/scheduler/config's request model does not declare it,
  *              so Pydantic drops it and the endpoint returns 200 having changed
  *              nothing. A different fact from noOptOut, and a worse one: the
- *              operator is told the opt-out succeeded (recorded 2026-09-16)
+ *              operator is told the opt-out succeeded (recorded 2026-09-16). No lane
+ *              carries it since PF07 = a declared `auto_track_signals`; the flag and
+ *              its hover sentence stay as the disclosure the next such gap needs
  *   fetcher    false when the lane does NOT use the ethical fetcher; the hover
  *              then says what it uses instead
  *   mixed      true on a `fetcher: false` lane where ONE of its hosts does go through
@@ -126,7 +130,6 @@
       "trigger": "ride-along",
       "setting": "auto_track_law",
       "settingFrom": "scheduler",
-      "noOptOut": true,
       "fetcher": true
     },
     {
@@ -154,7 +157,6 @@
       "trigger": "ride-along",
       "setting": "auto_import_calendars",
       "settingFrom": "scheduler",
-      "noOptOut": true,
       "fetcher": true
     },
     {
@@ -164,7 +166,6 @@
       "trigger": "ride-along",
       "setting": "auto_track_signals",
       "settingFrom": "scheduler",
-      "settingUnreachable": true,
       "fetcher": true
     },
     {
