@@ -55,22 +55,22 @@ def _corpus(path: Path):
 
 
 def _place(pid=_PARIS, **kw):
-    base = dict(
-        id=pid, qid="Q90", kind="city", name="Paris", names_json='{"fr": "Paris", "en": "Paris"}',
-        country="fr", country_alpha3="FRA", admin_path_json='["relation/7444"]',
-        geometry_ref=f"osm.db:{pid}", lat=48.8566, lon=2.3522, population=2_100_000,
-        gazetteer_vintage="2026-09", as_of=_T0,
-    )
+    base = {
+        "id": pid, "qid": "Q90", "kind": "city", "name": "Paris", "names_json": '{"fr": "Paris", "en": "Paris"}',
+        "country": "fr", "country_alpha3": "FRA", "admin_path_json": '["relation/7444"]',
+        "geometry_ref": f"osm.db:{pid}", "lat": 48.8566, "lon": 2.3522, "population": 2_100_000,
+        "gazetteer_vintage": "2026-09", "as_of": _T0,
+    }
     base.update(kw)
     return Place(**base)
 
 
 def _item(qid="Q90", **kw):
-    base = dict(
-        qid=qid, status="ok", resolved_qid=None, labels_json='{"en": "Paris"}',
-        descriptions_json='{"en": "capital of France"}', claims_json='{"P17": ["Q142"]}',
-        lastrevid=1234, fetched_at=_T0,
-    )
+    base = {
+        "qid": qid, "status": "ok", "resolved_qid": None, "labels_json": '{"en": "Paris"}',
+        "descriptions_json": '{"en": "capital of France"}', "claims_json": '{"P17": ["Q142"]}',
+        "lastrevid": 1234, "fetched_at": _T0,
+    }
     base.update(kw)
     return WikidataItem(**base)
 
@@ -116,13 +116,13 @@ def test_a_fresh_install_restore_carries_every_column_of_both_tables(tmp_path):
     with _corpus(live)() as s:
         got = s.get(Place, _PARIS)
         want = _place()
-        for col in Place.__table__.columns.keys():
+        for col in [c.name for c in Place.__table__.columns]:
             if col == "article_id":
                 continue  # asserted on its own below
             assert getattr(got, col) == getattr(want, col), f"places.{col} was dropped"
         assert got.article_id is None
         item = s.get(WikidataItem, "Q90")
-        for col in WikidataItem.__table__.columns.keys():
+        for col in [c.name for c in WikidataItem.__table__.columns]:
             assert getattr(item, col) == getattr(_item(), col), f"wikidata_items.{col} was dropped"
         # merged_rows records the arrival by rowid, so the tag can say where the row came from
         rid = s.execute(text("SELECT rowid FROM places WHERE id = :i"), {"i": _PARIS}).scalar()
