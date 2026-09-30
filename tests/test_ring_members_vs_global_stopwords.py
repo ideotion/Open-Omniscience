@@ -54,7 +54,7 @@ from functools import lru_cache
 
 import pytest
 
-from src.analytics.equivalence import load_rings
+from src.analytics.equivalence import shipped_rings
 from src.analytics.extract import (
     BaselineExtractor,
     _global_stopwords_raw,
@@ -73,7 +73,7 @@ _CROSS_LANGUAGE_RING_KILLS = 0
 def _cross_language_kills() -> list[tuple[str, str, str]]:
     """Ring members that are content in THEIR OWN language and grammar in another.
 
-    Read through the real loader (`load_rings`), never a hand-parse of the YAML: the
+    Read through the real loader (`shipped_rings`), never a hand-parse of the YAML: the
     guard must measure what the app resolves, including the curated file's overrides.
     Multi-word members are excluded because the stoplist is a UNIGRAM filter -- it
     cannot remove "contenu CO2" by holding "contenu". A member its OWN language also
@@ -83,7 +83,7 @@ def _cross_language_kills() -> list[tuple[str, str, str]]:
     every = global_stopwords()
     extra = _load_extra_stopwords_by_language()
     out: list[tuple[str, str, str]] = []
-    for ring in load_rings():
+    for ring in shipped_rings():
         for lang, term in ring.members:
             if not term or " " in term:
                 continue
@@ -119,7 +119,7 @@ def test_the_french_advertising_batch_is_refused_and_here_is_the_ring_it_would_b
     Kept as its own test rather than left in prose because the next stoplist pass will
     reach for precisely this change -- the docket even pre-authorises it pending "a
     collision check". This IS the collision check, and it fails."""
-    ring = next((r for r in load_rings() if r.id == "advertising"), None)
+    ring = next((r for r in shipped_rings() if r.id == "advertising"), None)
     assert ring is not None, "the advertising ring is the evidence; it must exist"
     assert ("fr", term) in ring.members, f"fr:{term} is a member of the advertising ring"
     assert term not in global_stopwords(), (
@@ -137,7 +137,7 @@ def test_contenu_is_only_ever_a_multi_word_ring_member_so_the_unigram_case_diffe
     quietly borrowed for the other."""
     hits = [
         (r.id, term)
-        for r in load_rings()
+        for r in shipped_rings()
         for lang, term in r.members
         if lang == "fr" and "contenu" in term.split()
     ]
@@ -154,7 +154,7 @@ def test_the_podcast_ring_is_shown_in_its_own_languages_and_stays_furniture_else
     the ring's own members. Now extraction lifts it exactly in the languages whose ring names
     it; English (its own list) and every language with no such member still hide it."""
     assert "podcast" in _global_stopwords_raw(), "podcast is deliberate platform furniture"
-    ring = next((r for r in load_rings() if r.id == "podcast"), None)
+    ring = next((r for r in shipped_rings() if r.id == "podcast"), None)
     assert ring is not None
     for lang in ("de", "fr", "pt"):
         assert (lang, "podcast") in {(lg, t.lower()) for lg, t in ring.members}
@@ -225,14 +225,14 @@ def test_a_ring_reload_refreshes_the_exemptions(monkeypatch):
     from src.analytics import equivalence, extract
 
     assert "dette" in ring_member_exemptions().get("fr", frozenset())
-    real = equivalence.load_rings
-    monkeypatch.setattr(equivalence, "load_rings", lru_cache(maxsize=1)(lambda: ()))
+    real = equivalence.shipped_rings
+    monkeypatch.setattr(equivalence, "shipped_rings", lru_cache(maxsize=1)(lambda: ()))
     try:
         equivalence.invalidate_ring_caches()
         assert ring_member_exemptions() == {}
         assert "dette" in _stopset("fr")
     finally:
-        monkeypatch.setattr(equivalence, "load_rings", real)
+        monkeypatch.setattr(equivalence, "shipped_rings", real)
         equivalence.invalidate_ring_caches()
     assert "dette" in ring_member_exemptions().get("fr", frozenset())
     assert "dette" not in extract._stopset("fr")

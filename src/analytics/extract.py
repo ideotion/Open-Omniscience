@@ -472,14 +472,16 @@ def _ring_member_exemptions() -> dict[str, frozenset[str]]:
     ``debt`` ring; German "war" hides English "war"). It is NOT exempt when its own language
     stoplists it -- the vendored list or that language's curated ``stopwords_extra`` file --
     because that is a decision about the language itself (French "tout" stays hidden).
-    Ruled 2026-09-30 (R102, D24): a translated concept is signal, not grammar.
+    Ruled 2026-09-30 (R102, D24): a translated concept is signal, not grammar. Only the rings
+    that SHIP are read (:func:`src.analytics.equivalence.shipped_rings`), so an index pass stays a
+    function of files the engine identity hashes, never of one install's local ring file.
     """
-    from src.analytics.equivalence import load_rings
+    from src.analytics.equivalence import shipped_rings
 
     raw = _global_stopwords_raw()
     extra = _load_extra_stopwords_by_language()
     out: dict[str, set[str]] = {}
-    for ring in load_rings():
+    for ring in shipped_rings():
         for lang, term in ring.members:
             term = (term or "").lower()
             if not term or " " in term or term not in raw:

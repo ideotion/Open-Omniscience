@@ -61,6 +61,25 @@ def shipped_rings_paths() -> tuple[Path, ...]:
     return (_GENERATED_PATH, _PATH)
 
 
+@lru_cache(maxsize=1)
+def shipped_rings() -> tuple[Ring, ...]:
+    """The rings that ship with the release (generated, then curated, curation winning), with
+    NO install-local file.
+
+    The stoplist layer reads THIS, not :func:`load_rings` (R102): which ring members a
+    language keeps out of another language's grammar list decides what an index pass writes, so
+    it must be a function of files the engine identity can hash
+    (``src.analytics.engine_identity``) and not of one install's own local ring file.
+    """
+    if not _enabled():
+        return ()
+    by_id: dict[str, Ring] = {}
+    for path in shipped_rings_paths():
+        for ring in _parse_rings(_read_yaml(path)):
+            by_id[ring.id] = ring
+    return tuple(by_id.values())
+
+
 def local_rings_path() -> Path:
     """``<data dir>/rings/keyword_rings_local.yml`` -- the rings THIS install holds.
 
@@ -176,6 +195,7 @@ def invalidate_ring_caches() -> None:
     which is the shape where a term resolves through one surface and not another.
     """
     load_rings.cache_clear()
+    shipped_rings.cache_clear()
     _index.cache_clear()
     _multi_index.cache_clear()
     _member_languages.cache_clear()

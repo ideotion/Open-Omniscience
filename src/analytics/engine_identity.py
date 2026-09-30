@@ -76,6 +76,7 @@ _REPO = Path(__file__).resolve().parents[2]
 #: plus the package ``__init__`` files and the modules in :data:`NOT_OUTPUT_AFFECTING`.
 ENGINE_MODULES: tuple[str, ...] = (
     "src/analytics/__init__.py",
+    "src/analytics/equivalence.py",
     "src/analytics/extract.py",
     "src/analytics/langdetect.py",
     "src/analytics/lemma.py",
@@ -106,6 +107,10 @@ ENGINE_MODULES: tuple[str, ...] = (
 ENGINE_DATA_GLOBS: tuple[str, ...] = (
     "configs/stopwords_extra/*.yml",
     "configs/stopwords_iso/*.txt",
+    # The shipped translation rings: which ring members a language keeps out of another
+    # language's grammar list (R102) is decided from them, so they shape what a pass writes.
+    "configs/keyword_equivalents.yml",
+    "configs/keyword_rings_generated.yml",
     "configs/cities.yml",
     "configs/cities.sample.yml",
 )
