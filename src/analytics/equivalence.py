@@ -71,8 +71,9 @@ def shipped_rings() -> tuple[Ring, ...]:
     it must be a function of files the engine identity can hash
     (``src.analytics.engine_identity``) and not of one install's own local ring file.
     """
-    if not _enabled():
-        return ()
+    # NOT gated on OO_KEYWORD_EQUIV: that switch turns off ring GROUPING at query time, and is not
+    # part of the engine identity's switches, so gating the stoplist on it would let two installs
+    # with the same stamp write different rows.
     by_id: dict[str, Ring] = {}
     for path in shipped_rings_paths():
         for ring in _parse_rings(_read_yaml(path)):
@@ -187,8 +188,8 @@ def load_rings() -> tuple[Ring, ...]:
 def invalidate_ring_caches() -> None:
     """Drop every memoised view of the ring files.
 
-    Three ``lru_cache(maxsize=1)`` loaders sit on top of the files -- ``load_rings``,
-    ``_index`` and ``_multi_index`` -- and none of them has ever had a runtime
+    Several ``lru_cache(maxsize=1)`` loaders sit on top of the files -- ``load_rings``,
+    ``shipped_rings``, ``_index`` and ``_multi_index`` -- and none of them has ever had a runtime
     invalidation, because until now nothing could change a ring file while the app was
     running. A RESTORE can (Q409 = b), so this exists and the restore calls it.
     Clearing ``load_rings`` alone would leave the two indexes serving the old set,

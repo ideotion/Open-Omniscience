@@ -236,3 +236,18 @@ def test_a_ring_reload_refreshes_the_exemptions(monkeypatch):
         equivalence.invalidate_ring_caches()
     assert "dette" in ring_member_exemptions().get("fr", frozenset())
     assert "dette" not in extract._stopset("fr")
+
+
+def test_the_ring_grouping_switch_does_not_change_what_extraction_keeps(monkeypatch):
+    """OO_KEYWORD_EQUIV turns off ring GROUPING; it is not in the engine identity's switches, so
+    the stoplist exemptions must not depend on it (two installs, one stamp, one set of rows)."""
+    from src.analytics import equivalence
+
+    with_rings = {lang: set(w) for lang, w in ring_member_exemptions().items()}
+    monkeypatch.setenv("OO_KEYWORD_EQUIV", "0")
+    equivalence.invalidate_ring_caches()
+    try:
+        assert {lang: set(w) for lang, w in ring_member_exemptions().items()} == with_rings
+    finally:
+        monkeypatch.undo()
+        equivalence.invalidate_ring_caches()
