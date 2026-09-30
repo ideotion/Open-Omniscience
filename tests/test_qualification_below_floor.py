@@ -367,6 +367,11 @@ def test_the_queue_panel_keeps_each_domain_whole_and_uses_the_right_comma():
     src = function_source(read_static("app-ai-tools.js"), "loadQualQueue")
     assert "display:inline-block" in src and "overflow-wrap:anywhere" in src
     assert '"rtl"' in src and "\\u060c" in src
+    # ... and it is redrawn when the language is switched live, or en -> ar keeps the ASCII comma.
+    from tests.js_source_helper import event_listener_bodies
+
+    boot = event_listener_bodies(read_static("app-boot.js"), "oo:langchange")
+    assert any("loadQualQueue" in b for b in boot), "the language switch must redraw the queue panel"
 
 
 # --------------------------------------------------------------------------- #
