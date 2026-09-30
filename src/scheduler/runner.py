@@ -1187,11 +1187,11 @@ def _lane_pending_kinds(settings: SchedulerSettings) -> set[str]:
     # the subscribed statistics -- are checked INSIDE the step, so an operator who turned
     # both off still gets the feeds they never had a switch for.
     pending.add("markets")
-    if getattr(settings, "auto_import_calendars", True):
+    if settings.auto_import_calendars:
         pending.add("calendar")
-    if getattr(settings, "auto_track_law", True):
+    if settings.auto_track_law:
         pending.add("law")
-    if getattr(settings, "auto_track_signals", True):
+    if settings.auto_track_signals:
         pending.add("hazards")
     if getattr(settings, "world_discovery_per_pass", 0) > 0:
         pending.add("world_discovery")

@@ -56,6 +56,12 @@ class SchedulerConfigUpdate(BaseModel):
     # settingUnreachable trap recorded on `wiki_lane_state` below.
     auto_run_market_rules: bool | None = None
     auto_refresh_stat_subscriptions: bool | None = None
+    # The three default-on ride-alongs' opt-outs (PF07 = a, R92). Declared for the same
+    # settingUnreachable reason: undeclared, Pydantic drops the key and the endpoint answers
+    # 200 having changed nothing -- measured on `auto_track_signals` (2026-09-16).
+    auto_import_calendars: bool | None = None
+    auto_track_law: bool | None = None
+    auto_track_signals: bool | None = None
     # Only "" is accepted: the Dismiss button on the retired-mode disclosure.
     retired_mode: str | None = None
     max_sources_per_run: int | None = None

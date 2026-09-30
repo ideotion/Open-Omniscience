@@ -137,7 +137,17 @@ assert.strictEqual(
 // The triggers that never read a setting are untouched.
 assert.strictEqual(_laneState(lane("press"), sched(null)), S.ON);
 assert.strictEqual(_laneState(lane("osm"), sched(null)), S.ASK);
-assert.strictEqual(_laneState(lane("law"), sched({})), S.ON); // noOptOut ride-along
+assert.strictEqual(_laneState(lane("markets"), sched({})), S.ON); // the one noOptOut ride-along left
+
+// PF07 = a (2026-09-30): law, calendars and hazards each read their own real switch. Before
+// it, law and calendars were flagged noOptOut and showed ON whatever the settings said.
+for (const [id, key] of [["law", "auto_track_law"], ["calendar", "auto_import_calendars"],
+                         ["hazards", "auto_track_signals"]]) {
+  assert.strictEqual(lane(id).noOptOut, undefined, id + " must not claim to be always on");
+  assert.strictEqual(_laneState(lane(id), sched({ [key]: true })), S.ON, id + " on");
+  assert.strictEqual(_laneState(lane(id), sched({ [key]: false })), S.OFF, id + " off");
+  assert.strictEqual(_laneState(lane(id), sched({})), S.UNKNOWN, id + " key absent");
+}
 
 // --- Discover by topic: switched on, it is still only "when you ask" -------- //
 // (delegated click-through 2026-09-26, row H). Its switch unlocks a button; nothing

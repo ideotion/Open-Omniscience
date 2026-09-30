@@ -1025,6 +1025,9 @@
       $("sch-interval").value = c.interval_minutes;
       if ($("sch-market-rules")) $("sch-market-rules").checked = !!c.auto_run_market_rules;
       if ($("sch-stat-refresh")) $("sch-stat-refresh").checked = !!c.auto_refresh_stat_subscriptions;
+      if ($("sch-auto-calendars")) $("sch-auto-calendars").checked = !!c.auto_import_calendars;
+      if ($("sch-auto-law")) $("sch-auto-law").checked = !!c.auto_track_law;
+      if ($("sch-auto-signals")) $("sch-auto-signals").checked = !!c.auto_track_signals;
       renderRetiredMode(c);
       $("sch-depth").value = c.crawl_max_depth;
       $("sch-pages").value = c.crawl_max_pages;
@@ -1668,6 +1671,9 @@
         interval_minutes: Number($("sch-interval").value),
         auto_run_market_rules: $("sch-market-rules") ? $("sch-market-rules").checked : undefined,
         auto_refresh_stat_subscriptions: $("sch-stat-refresh") ? $("sch-stat-refresh").checked : undefined,
+        auto_import_calendars: $("sch-auto-calendars") ? $("sch-auto-calendars").checked : undefined,
+        auto_track_law: $("sch-auto-law") ? $("sch-auto-law").checked : undefined,
+        auto_track_signals: $("sch-auto-signals") ? $("sch-auto-signals").checked : undefined,
         crawl_max_depth: Number($("sch-depth").value),
         crawl_max_pages: Number($("sch-pages").value),
         autostart: $("sch-autostart").checked,

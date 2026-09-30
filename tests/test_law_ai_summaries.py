@@ -486,4 +486,4 @@ def test_scheduler_ride_along_wiring():
     # tied to the SAME auto_track_law flag, so collapsing the previous two
     # separate checks (one for auto_track_due, one for the summarize
     # ride-along) into a single gate is behavior-identical, not a regression.
-    assert runner_src.count('getattr(settings, "auto_track_law", True)') >= 1
+    assert runner_src.count("settings.auto_track_law") >= 1  # a real field since PF07

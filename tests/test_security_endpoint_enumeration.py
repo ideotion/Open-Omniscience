@@ -779,29 +779,37 @@ def test_the_hover_reads_only_loopback_endpoints():
 
 
 def test_a_no_opt_out_lane_says_so_in_the_hover():
-    """The finding this slice recorded, kept visible.
+    """The finding of 2026-09-16, kept visible for the one lane it still describes.
 
-    auto_import_calendars and auto_track_law are read through getattr(..., True)
-    against a SchedulerSettings that defines neither, so those lanes cannot be
-    switched off. The hover says that in words rather than showing them as
-    ordinary opt-outs; this pins the sentence to the flag that produces it.
+    Calendars and law were read through getattr(..., True) against a SchedulerSettings
+    that defined neither, so they could not be switched off. PF07 = a (2026-09-30) gave
+    both their fields; Markets is the lane that legitimately has NO switch (its bundled
+    feed import is freshness-gated, docs/SECURITY.md says so). The hover still discloses
+    a no-opt-out lane in words, and this pins the sentence to the flag that produces it
+    -- and pins the flag to the truth, so it can neither linger on a lane that gained a
+    switch nor be missing from one that has none.
     """
+    import dataclasses
+
+    from src.scheduler.settings import SchedulerSettings
     from tests.js_source_helper import strip_comments
 
     src = strip_comments(_hover_source())
-    assert "lane.noOptOut" in src, "the no-opt-out lanes no longer disclose themselves"
+    assert "lane.noOptOut" in src, "the no-opt-out lane no longer discloses itself"
+    fields = {f.name for f in dataclasses.fields(SchedulerSettings)}
     lanes = {lane["id"]: lane for lane in _lanes()}
-    for lane_id in ("law", "calendar"):
-        assert lanes[lane_id].get("noOptOut") is True, (
-            f"lane {lane_id!r} lost its noOptOut flag. If SchedulerSettings gained the "
-            f"field, drop the flag and the SECURITY.md sentence in the same diff"
+    assert lanes["markets"].get("noOptOut") is True, "Markets lost its noOptOut disclosure"
+    for lane_id, key in (("law", "auto_track_law"), ("calendar", "auto_import_calendars")):
+        assert key in fields, f"{key} is no longer a SchedulerSettings field"
+        assert lanes[lane_id].get("setting") == key
+        assert not lanes[lane_id].get("noOptOut"), (
+            f"lane {lane_id!r} has a real switch ({key}); it must not disclose 'always on'"
         )
-    settings = (_ROOT / "src" / "scheduler" / "settings.py").read_text(encoding="utf-8")
-    for key in ("auto_import_calendars", "auto_track_law"):
-        assert f"{key}: bool" not in settings, (
-            f"{key} is now a real SchedulerSettings field -- the lane CAN be switched "
-            f"off, so drop its noOptOut flag and correct docs/SECURITY.md"
-        )
+    for lane_id, lane in lanes.items():
+        if lane.get("noOptOut"):
+            assert not lane.get("setting"), (
+                f"lane {lane_id!r} is flagged noOptOut but names a switch: {lane['setting']!r}"
+            )
 
 
 def test_an_unreachable_opt_out_says_so_until_the_api_can_reach_it():
@@ -809,31 +817,56 @@ def test_an_unreachable_opt_out_says_so_until_the_api_can_reach_it():
 
     `auto_track_signals` IS a SchedulerSettings field and save_settings honours it.
     `SchedulerConfigUpdate` -- the model PUT /api/scheduler/config validates against
-    -- does not declare it, so `model_dump(exclude_unset=True)` returns `{}` and the
-    endpoint answers **200 having changed nothing**. An operator who opts out is told
-    it worked. This pins the disclosure to the cause, so the day someone adds the
-    field the sentence has to come down with it.
+    -- did not declare it, so `model_dump(exclude_unset=True)` returned `{}` and the
+    endpoint answered **200 having changed nothing**. PF07 = a (2026-09-30) declared it.
+    This now pins both directions: a lane may carry `settingUnreachable` only while the
+    key really is undeclared, and the hover keeps the sentence the flag drives.
     """
     from src.api.scheduler import SchedulerConfigUpdate
 
     declared = set(SchedulerConfigUpdate.model_fields)
-    unreachable = {lane["setting"] for lane in _lanes()
-                   if lane.get("settingUnreachable") and lane.get("settingFrom") == "scheduler"}
-    assert unreachable, "no lane declares an unreachable opt-out -- was the flag dropped?"
-    for key in sorted(unreachable):
-        assert key not in declared, (
-            f"{key} is now a SchedulerConfigUpdate field, so PUT /api/scheduler/config "
-            f"CAN set it. Drop the lane's settingUnreachable flag, remove the sentence "
-            f"from docs/SECURITY.md's row, and close the OPEN_QUEUE entry -- in this "
-            f"same diff, so the document never over-states a defect either"
-        )
-    # ...and the hover must actually carry the disclosure, not merely the flag.
+    for lane in _lanes():
+        if lane.get("settingUnreachable") and lane.get("settingFrom") == "scheduler":
+            keys = lane["setting"] if isinstance(lane["setting"], list) else [lane["setting"]]
+            assert any(k not in declared for k in keys), (
+                f"lane {lane['id']!r} is flagged settingUnreachable but every key it names "
+                f"is declared on SchedulerConfigUpdate -- drop the flag and the sentence"
+            )
+    assert "auto_track_signals" in declared, (
+        "auto_track_signals is no longer declared on SchedulerConfigUpdate: PUT "
+        "/api/scheduler/config would answer 200 having changed nothing again"
+    )
     from tests.js_source_helper import strip_comments
 
     src = strip_comments(_hover_source())
     assert "lane.settingUnreachable" in src, (
-        "the unreachable-opt-out lanes no longer disclose themselves in the hover"
+        "the hover no longer carries the unreachable-opt-out disclosure the flag drives"
     )
+
+
+def test_the_three_ride_along_opt_outs_are_reachable_and_take_effect(tmp_path, monkeypatch):
+    """PF07 = a, end to end: PUT changes the stored value, the read-back agrees, and the
+    collector's lane selection follows it (the measured failure was 200 + no change)."""
+    from fastapi.testclient import TestClient
+
+    from src.api.main import app
+    from src.scheduler import settings as sch
+    from src.scheduler.runner import _lane_pending_kinds
+
+    monkeypatch.setattr(sch, "_settings_path", lambda: tmp_path / "scheduler_settings.json")
+    keys = {"auto_import_calendars": "calendar", "auto_track_law": "law",
+            "auto_track_signals": "hazards"}
+    client = TestClient(app)
+    for key, kind in keys.items():
+        assert sch.load_settings().__dict__[key] is True, f"{key} must default ON"
+        assert kind in _lane_pending_kinds(sch.load_settings())
+        r = client.put("/api/scheduler/config", json={key: False})
+        assert r.status_code == 200, r.text
+        assert sch.load_settings().__dict__[key] is False, f"{key}: 200 but nothing changed"
+        assert client.get("/api/scheduler/config").json()[key] is False
+        assert kind not in _lane_pending_kinds(sch.load_settings())
+        client.put("/api/scheduler/config", json={key: True})
+        assert kind in _lane_pending_kinds(sch.load_settings())
 
 
 def test_the_prose_count_of_non_fetcher_rows_matches_the_table():

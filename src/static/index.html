@@ -2684,6 +2684,21 @@
         </label>
       </div>
       <div class="row">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer" title="The bundled calendar-feed directory (public holidays, religious calendars, events) is re-imported from its publishers when a feed is due, and a few feeds per pass are re-verified, never in airplane mode. On by default. Untick it to stop both; a feed you import by hand still works.">
+          <input type="checkbox" id="sch-auto-calendars" style="width:auto"> Import the calendar feeds on every pass
+        </label>
+      </div>
+      <div class="row">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer" title="The law documents you watch are re-checked for new versions when due, at most once a day each, and their AI change summaries follow, never in airplane mode. On by default. Untick it to stop the background check; “Track changes now” in Governments → Law still works.">
+          <input type="checkbox" id="sch-auto-law" style="width:auto"> Re-check the laws I watch on every pass
+        </label>
+      </div>
+      <div class="row">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer" title="The hazard snapshot (USGS earthquakes, GDACS alerts) is refreshed from its publishers when it is due, and the weather signal keywords are re-derived from your corpus (no network), never in airplane mode. On by default. Untick it to stop the background refresh.">
+          <input type="checkbox" id="sch-auto-signals" style="width:auto"> Refresh the hazard feeds on every pass
+        </label>
+      </div>
+      <div class="row">
         <div style="flex:2"><label for="sch-export-dir">Drop-folder export
           <span class="muted">(optional; blank = off)</span></label>
           <input id="sch-export-dir" placeholder="/path/on/this/machine — each run drops the new-articles delta as JSON">

@@ -1167,6 +1167,7 @@
   shape 2 is severe enough to be its own hotfix, since it is the only one that reports success.
   Nothing is assumed here; the enumeration and the hover tell the truth in the meantime.
   **ANSWERED 2026-09-30 (the older-rounds list, head entry):** `PF07` = a: fixed now, in its own small PR, with the per-lane disclosures coming down in the same diff.
+  **SHIPPED 2026-09-30 (PR #1239):** all three opt-outs are real fields, reachable through `PUT /api/scheduler/config` and three Settings checkboxes; the `noOptOut` and `settingUnreachable` flags are off law, calendars and hazards.
 
 - **THE RC CONFIRMATION ROUND CAME BACK UNANSWERED — 0 OF 22 `ANSWER` LINES CARRY A LETTER (processed
   2026-09-15; NOTHING RESOLVED BY THE SESSION; docs-only).** THE PRIMARY RECORD is the round itself, still
