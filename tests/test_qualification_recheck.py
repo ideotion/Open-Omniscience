@@ -263,15 +263,18 @@ def test_a_zero_recheck_budget_really_disables_qualified_re_verification(db):
     assert "bad.example" in picked, "the disqualified spill is today's behaviour, kept"
 
 
-def test_the_reserved_budget_caps_qualified_rechecks_even_with_spare_slots(db):
-    """The cap is the budget, not whatever happens to be free: spare new-candidate slots
-    raise how many DISQUALIFIED re-checks run, never how many qualified ones do."""
+def test_spare_slots_reach_qualified_rechecks_but_zero_still_means_off(db):
+    """R94 (2026-09-29): re-qualification is ONE queue, new sources first, so new-candidate
+    slots a pass cannot fill go to due re-checks of BOTH kinds -- a quarterly cycle cannot
+    keep up on the reserved trickle alone. What the original asymmetry protected still
+    holds: `qualification_recheck_per_pass = 0` re-verifies no qualified source at all."""
     for i in range(5):
         s = _src(db, f"stale{i}.example", status=STATUS_QUALIFIED, qualified_at=LONG_AGO)
         _attempt(db, s, STATUS_QUALIFIED, LONG_AGO)
 
     picked = _selected(db, per_pass=5, recheck_per_pass=1)
-    assert len([d for d in picked if d.startswith("stale")]) == 1
+    assert len([d for d in picked if d.startswith("stale")]) == 5
+    assert not [d for d in _selected(db, per_pass=5, recheck_per_pass=0) if d.startswith("stale")]
 
 
 def test_both_recheck_kinds_share_the_reserved_budget(db):

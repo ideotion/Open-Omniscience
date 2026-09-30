@@ -255,9 +255,9 @@ def search_names(q: str, limit: int = 8) -> dict:
         if not live:
             return empty
         sc, sp = _scope_sql(live)
-        total = s.execute(text(f"SELECT count(*) FROM osm_names WHERE osm_names MATCH :m AND {sc}"), {"m": m, **sp}).scalar() or 0
+        total = s.execute(text(f"SELECT count(*) FROM osm_names WHERE osm_names MATCH :m AND {sc}"), {"m": m, **sp}).scalar() or 0  # nosec B608 - sc is placeholders built by _scope_sql; values are bound
         ids = [r[0] for r in s.execute(
-            text(f"SELECT object_id FROM osm_names WHERE osm_names MATCH :m AND {sc} ORDER BY rank LIMIT :n"),
+            text(f"SELECT object_id FROM osm_names WHERE osm_names MATCH :m AND {sc} ORDER BY rank LIMIT :n"),  # nosec B608 - sc is placeholders built by _scope_sql; values are bound
             {"m": m, "n": int(limit), **sp},
         )]
         rows = {r.id: r for r in s.execute(
@@ -343,9 +343,9 @@ def geocode(q: str, limit: int = 5) -> dict:
     with store.lane_session("osm") as s:
         m = _match(tokens, prefix_last=False)
         sc, sp = _scope_sql([c["alpha3"] for c in scope])
-        total = s.execute(text(f"SELECT count(*) FROM osm_addresses WHERE osm_addresses MATCH :m AND {sc}"), {"m": m, **sp}).scalar() or 0
+        total = s.execute(text(f"SELECT count(*) FROM osm_addresses WHERE osm_addresses MATCH :m AND {sc}"), {"m": m, **sp}).scalar() or 0  # nosec B608 - sc is placeholders built by _scope_sql; values are bound
         hits = s.execute(
-            text(f"SELECT object_id, address, alpha3 FROM osm_addresses WHERE osm_addresses MATCH :m AND {sc} ORDER BY rank LIMIT :n"),
+            text(f"SELECT object_id, address, alpha3 FROM osm_addresses WHERE osm_addresses MATCH :m AND {sc} ORDER BY rank LIMIT :n"),  # nosec B608 - sc is placeholders built by _scope_sql; values are bound
             {"m": m, "n": int(limit), **sp},
         ).all()
         rows = {r.id: r for r in s.execute(
