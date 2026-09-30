@@ -578,6 +578,65 @@ def test_a_newer_local_judgement_that_agrees_does_not_block_healing(tmp_path):
     assert _integrity(working)["verdict"] == "consistent"
 
 
+def test_an_older_disagreeing_local_attempt_under_a_newer_agreeing_one_does_not_block(tmp_path):
+    """Only the local NEWEST judging attempt matters: an older 'qualified' beneath a newer
+    'disqualified' must not keep a curated stamp alive against an incoming 'disqualified'."""
+    staged, working = tmp_path / "inc.db", tmp_path / "live.db"
+    with _corpus(working)() as s:
+        sid = _add_source(s, "psx.com.pk", status="qualified", at=_T0, version=_CURATED)
+        _add_attempt(s, sid, "qualified", _SEEN + timedelta(days=20), version=_MEASURED)
+        _add_attempt(s, sid, "disqualified", _SEEN + timedelta(days=30), version=_MEASURED)
+        s.commit()
+    with _corpus(staged)() as s:
+        sid = _add_source(s, "psx.com.pk", status="disqualified", at=None, version=None)
+        _add_attempt(s, sid, "disqualified", _SEEN, version=_MEASURED)
+        s.commit()
+
+    merge_corpus(staged, working, _BATCH_META)
+    assert _sources(working)["psx.com.pk"].status == "disqualified"
+    assert _integrity(working)["verdict"] == "consistent"
+
+
+def test_a_tie_on_the_attempt_instant_keeps_the_local_verdict(tmp_path):
+    """The attempts merge dedupes on (source_id, attempted_at), so an incoming attempt at the
+    SAME instant as a local disagreeing one is dropped: adopting its stamp would leave the live
+    status contradicting the newest attempt. Reproduced by the re-review."""
+    staged, working = tmp_path / "inc.db", tmp_path / "live.db"
+    with _corpus(working)() as s:
+        sid = _add_source(s, "psx.com.pk", status="qualified", at=_T0, version=_CURATED)
+        _add_attempt(s, sid, "qualified", _SEEN, version=_MEASURED)
+        s.commit()
+    with _corpus(staged)() as s:
+        sid = _add_source(s, "psx.com.pk", status="disqualified", at=None, version=None)
+        _add_attempt(s, sid, "disqualified", _SEEN, version=_MEASURED)
+        s.commit()
+
+    merge_corpus(staged, working, _BATCH_META)
+    assert _sources(working)["psx.com.pk"].status == "qualified"
+    assert _integrity(working)["verdict"] == "consistent"
+
+
+def test_a_tie_inside_the_local_history_is_broken_the_way_the_integrity_check_breaks_it(tmp_path):
+    """Two local judging attempts at the newest instant: the integrity check takes the higher
+    id, so an import agreeing with THAT one heals an already-inverted row."""
+    staged, working = tmp_path / "inc.db", tmp_path / "live.db"
+    tie = _SEEN + timedelta(days=20)
+    with _corpus(working)() as s:
+        sid = _add_source(s, "psx.com.pk", status="qualified", at=_T0, version=_CURATED)
+        _add_attempt(s, sid, "qualified", tie, version=_MEASURED)       # lower id
+        _add_attempt(s, sid, "disqualified", tie, version=_MEASURED)    # higher id: the newest
+        s.commit()
+    assert _integrity(working)["verdict"] == "inversions-found"
+    with _corpus(staged)() as s:
+        sid = _add_source(s, "psx.com.pk", status="disqualified", at=None, version=None)
+        _add_attempt(s, sid, "disqualified", _SEEN, version=_MEASURED)
+        s.commit()
+
+    merge_corpus(staged, working, _BATCH_META)
+    assert _sources(working)["psx.com.pk"].status == "disqualified"
+    assert _integrity(working)["verdict"] == "consistent"
+
+
 def test_an_incoming_stamp_with_no_judging_attempt_loses_to_any_local_judgement(tmp_path):
     """No incoming judging attempt counts as older than any local one."""
     staged, working = tmp_path / "inc.db", tmp_path / "live.db"

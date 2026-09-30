@@ -2492,8 +2492,8 @@ def _merge_sources(con, batch_id, results) -> None:
     # merge copies the incoming attempt history below unchanged, so adopting an incoming stamp
     # over a local history that already holds a NEWER judging attempt would manufacture the
     # opposite inversion ("live disqualified, last judged qualified"). The give-way is blocked
-    # only by a local NEWEST judging attempt that is newer than the incoming evidence AND
-    # disagrees with the incoming stamp: one that agrees leaves the adoption consistent, and is
+    # only by a local NEWEST judging attempt that is at least as new as the incoming evidence
+    # (a tie counts: the attempts merge keeps the local row) AND disagrees with the incoming stamp: one that agrees leaves the adoption consistent, and is
     # exactly how an already-inverted instance heals. No incoming judging attempt at all
     # counts as older than any local one.
     _judging = "'qualified', 'disqualified'"
@@ -2501,10 +2501,13 @@ def _merge_sources(con, batch_id, results) -> None:
         "EXISTS (SELECT 1 FROM source_qualification_attempts la"  # nosec B608 - constant-only text
         f"       WHERE la.source_id = m.id AND la.verdict IN ({_judging})"
         "          AND la.verdict <> i.status"
-        "          AND la.attempted_at = (SELECT MAX(lb.attempted_at)"
-        "                                 FROM source_qualification_attempts lb"
-        f"                                 WHERE lb.source_id = m.id AND lb.verdict IN ({_judging}))"
-        "          AND la.attempted_at > COALESCE("
+        # the local NEWEST judging attempt, ordered exactly as the integrity check orders it
+        "          AND la.id = (SELECT lb.id FROM source_qualification_attempts lb"
+        f"                       WHERE lb.source_id = m.id AND lb.verdict IN ({_judging})"
+        "                       ORDER BY lb.attempted_at DESC, lb.id DESC LIMIT 1)"
+        # `>=`, not `>`: the attempts merge dedupes on (source_id, attempted_at), so an incoming
+        # attempt at the SAME instant is dropped and the local one stays the newest
+        "          AND la.attempted_at >= COALESCE("
         "            (SELECT MAX(ia.attempted_at) FROM inc.source_qualification_attempts ia"
         f"             WHERE ia.source_id = i.id AND ia.verdict IN ({_judging})), ''))"
     )
