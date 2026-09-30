@@ -42,7 +42,7 @@ class SchedulerConfigUpdate(BaseModel):
     continuous: bool | None = None
     # Bandwidth-governed collection (the user-facing control is download rate):
     #   collect_rate_mode  : "target" | "maximum"
-    #   collect_target_kbps: best-effort download-rate goal in KiB/s
+    #   collect_target_kbps: best-effort download-rate goal in kbit/s
     #   collect_parallelism: hard ceiling on concurrent fetches (1 = sequential)
     collect_rate_mode: str | None = None
     collect_target_kbps: int | None = None

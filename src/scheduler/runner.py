@@ -2342,7 +2342,7 @@ class BackgroundScheduler:
             # "ff:<reason>" tally keys; empty when the last pass had no failures.
             "fetch_failed_reasons": fetch_failed_reasons(last),
             "per_host_rates": activity_monitor.per_host_rates(),
-            # The app's OWN measured download rate (KiB/s, wall-clock) + the latest
+            # The app's OWN measured download rate (kbit/s, wall-clock) + the latest
             # bandwidth-governor sample, so the Collect UI can show target vs actual.
             "download_rate_kbps": activity_monitor.download_rate_kbps(),
             "collect_perf": get_latest(),
