@@ -40,7 +40,7 @@ function extract(name) {
   return SRC.slice(at, j);
 }
 
-const FNS = ["evidenceMembersHtml", "evidenceReviewHtml", "evidenceDoneHtml"];
+const FNS = ["_evNum", "evidenceMembersHtml", "evidenceReviewHtml", "evidenceDoneHtml"];
 const src =
   "function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\"/g, '&quot;'); }\n" +
   FNS.map(extract).join("\n") + "\n" +
@@ -61,7 +61,8 @@ const FIELDS = ["id", "url", "canonical_url", "source_id", "title", "published_a
 const PLAN = { bundle_version: "oo-evidence-1", articles: 14, sources: 5, item_fields: FIELDS, text_included: false,
   signer: { exists: true, ed25519_pub: "ab".repeat(32) } };
 
-const review = visible(R.evidenceReviewHtml(PLAN, t, tf));
+const SCOPE_Q = { query: "border AND crossing", case_name: "border AND crossing" };
+const review = visible(R.evidenceReviewHtml(PLAN, t, tf, SCOPE_Q));
 assert.ok(review.includes("Articles: 14") && review.includes("Sources: 5"), review);
 assert.ok(review.includes("Plaintext: the file is not encrypted."), review);
 assert.ok(review.includes("The articles' text is not in it, only its SHA-256."), review);
@@ -69,9 +70,14 @@ assert.ok(review.includes("It is signed with this install's evidence key.") && r
 assert.ok(review.includes("id, url, canonical_url, source_id, title, published_at, stored_hash, content_sha256"), review);
 assert.ok(review.includes("manifest") && review.includes("signature") && review.includes("public_key"), review);
 assert.ok(!review.includes("created on this machine"), "a key that exists is not 'created'");
-// the file carries the reader's query as the case name: the review says so, in the list and in the caveat
+// the case name is shown as the file will carry it, isolated; an analysis with no label carries none
 assert.ok(review.includes("the case name (your search query or the analysis label)"), review);
-assert.ok(review.includes("carries your search query as the case name"), review);
+assert.ok(review.includes("The case name written in the file, readable by anyone who has it: ⁨border AND crossing⁩"), review);
+const noName = visible(R.evidenceReviewHtml(PLAN, t, tf, { article_ids: [1, 2], case_name: null }));
+assert.ok(noName.includes("No case name is written in the file.") && !noName.includes("The case name written"), noName);
+assert.ok(!visible(R.evidenceReviewHtml(PLAN, t, tf)).includes("The case name written"), "no scope: claims no name");
+// the file's fourth member is listed
+assert.ok(review.includes("algorithm the name of the signature scheme, ed25519"), review);
 // the key that WILL sign is shown before saving, so it can be checked
 assert.ok(review.includes("The key that will sign: " + "ab".repeat(32)), review);
 
@@ -80,6 +86,13 @@ const fresh = visible(R.evidenceReviewHtml(Object.assign({}, PLAN, { signer: { e
 assert.ok(fresh.includes("no evidence key yet") && fresh.includes("created on this machine when you save"), fresh);
 assert.ok(!fresh.includes("It is signed with this install's evidence key."), fresh);
 assert.ok(!fresh.includes("The key that will sign"), "no key yet: none is shown");
+// a key file is there but unusable: never promise that one is created
+const bad = visible(R.evidenceReviewHtml(Object.assign({}, PLAN, { signer: { exists: true, state: "unreadable", ed25519_pub: null } }), t, tf, SCOPE_Q));
+assert.ok(bad.includes("cannot be read as an Ed25519 key, so saving will fail"), bad);
+assert.ok(!bad.includes("created on this machine") && !bad.includes("It is signed with") && !bad.includes("The key that will sign"), bad);
+// digit grouping goes through the app formatter when it is there
+const G = (() => { const m = { exports: {} }; new Function("fmtNum", "module", "exports", src)((n) => "#" + n, m, m.exports); return m.exports; })();
+assert.ok(visible(G.evidenceReviewHtml(PLAN, t, tf)).includes("Articles: #14 · Sources: #5"));
 // no fields on the wire: still a well-formed line, never "undefined"
 const bare = visible(R.evidenceReviewHtml({ articles: 1, sources: 1, signer: {} }, t, tf));
 assert.ok(!bare.includes("undefined") && !bare.includes("null"), bare);
@@ -87,20 +100,24 @@ assert.ok(!bare.includes("undefined") && !bare.includes("null"), bare);
 // the JSON keys are code (never translated); the explanation beside them is text
 const members = R.evidenceMembersHtml(PLAN, t, tf);
 assert.ok(members.includes("<code>manifest</code>") && members.includes("<code>manifest.items</code>"), members);
-assert.strictEqual((members.match(/<li>/g) || []).length, 3);
+assert.strictEqual((members.match(/<li>/g) || []).length, 4);
 
 // caveats are on the page as plain paragraphs, not in a title attribute
 const html = R.evidenceReviewHtml(PLAN, t, tf);
-assert.strictEqual((html.match(/class="card-caveat"/g) || []).length, 2);
+assert.strictEqual((html.match(/class="card-caveat"/g) || []).length, 3);
 assert.ok(!/title=/.test(html), "the caveats do not hide in a hover");
 
 // after saving
 const done = visible(R.evidenceDoneHtml(PLAN, { filename: "evidence-bundle-2026-09-30.json", bytes: 5120, count: 14, pub: "cd".repeat(32) },
   t, tf, (n) => "B(" + n + ")"));
-assert.ok(done.includes("Saved ⁨evidence-bundle-2026-09-30.json⁩: 14 articles, B(5120)."), done);
+assert.ok(done.includes("Handed to your browser as ⁨evidence-bundle-2026-09-30.json⁩: 14 articles, B(5120). Your browser chooses where it goes and may rename it."), done);
+assert.ok(!done.includes("Saved"), "the page cannot know the file was saved");
+// a bundle with no item_count falls back to the plan's count, never "undefined"
+const noCount = visible(R.evidenceDoneHtml(PLAN, { filename: "f.json", bytes: 1, count: undefined, pub: "cd" }, t, tf, (n) => n));
+assert.ok(noCount.includes("f.json⁩: 14 articles") && !noCount.includes("undefined"), noCount);
 assert.ok(done.includes("Signing key (Ed25519), to give the recipient some other way:") && done.includes("cd".repeat(32)), done);
 assert.ok(done.includes("scripts/verify_evidence.py") && done.includes("What the file holds"), done);
-assert.ok(done.indexOf("Saved") < done.indexOf("What the file holds") && done.indexOf("What the file holds") < done.indexOf("Signing key"), done);
+assert.ok(done.indexOf("Handed") < done.indexOf("What the file holds") && done.indexOf("What the file holds") < done.indexOf("Signing key"), done);
 
 // the file name is text, never markup
 const hostile = R.evidenceDoneHtml(PLAN, { filename: "<img src=x onerror=1>.json", bytes: 1, count: 1, pub: "<b>k</b>" }, t, tf, (n) => n);

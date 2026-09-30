@@ -92,6 +92,20 @@ def existing_public_key_hex(path: Path | None = None) -> str | None:
     return public_key_hex(key)
 
 
+def signing_key_state(path: Path | None = None) -> tuple[str, str | None]:
+    """``(state, public key hex)`` for the review screen; never writes.
+
+    ``state`` is ``"none"`` (no key file yet: export creates one), ``"ok"`` (a readable
+    Ed25519 key) or ``"unreadable"`` (a file is there but export cannot use it, so the review
+    must not promise a key is created: it is not, and saving fails).
+    """
+    path = path or _default_key_path()
+    if not path.exists():
+        return "none", None
+    pub = existing_public_key_hex(path)
+    return ("ok", pub) if pub is not None else ("unreadable", None)
+
+
 def public_key_hex(key: Ed25519PrivateKey) -> str:
     raw = key.public_key().public_bytes(
         encoding=serialization.Encoding.Raw, format=serialization.PublicFormat.Raw

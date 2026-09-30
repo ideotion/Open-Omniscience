@@ -119,9 +119,7 @@
   "full_changed_nothing": {
     "depth_same": true,
     "ls_ui_same": true,
-    "ls_keys_added_by_the_pressed_tab_button": [
-      "oo_net_coach_v1"
-    ]
+    "ls_keys_added_by_the_pressed_tab_button": []
   },
   "essentials_sidebar": {
     "depth": "essentials",
@@ -214,7 +212,7 @@
     "title": "10 more tabs",
     "body": [
       "Step 4 of 5",
-      "At this depth they wait behind “Show more” in the sidebar. They are all one click away, and the command palette (Ctrl/⌘-K) reaches every one of them.",
+      "At this depth they are grouped under “Show more” in the sidebar; the tab you have open always stays listed. They are all one click away, and the command palette (Ctrl/⌘-K) reaches every one of them.",
       "Show them in the sidebar",
       "The tour changes nothing: it sets no filter, hides no tab and keeps no record."
     ],
@@ -304,10 +302,11 @@
   },
   "review": {
     "title": "Export signed evidence",
-    "text": "The file is one signed JSON document: the articles you selected as provenance entries (where each came from and the SHA-256 of its text), bound together by a Merkle root and signed with this install's evidence key, so anyone can check that nothing was changed.\n\nArticles: 6 · Sources: 3\n\nWhat the file holds\nmanifest the bundle version, when it was made, the case name (your search query or the analysis label), how many articles, and the Merkle root that covers them\nmanifest.items one entry per article, with ⁦id, url, canonical_url, source_id, title, published_at, stored_hash, content_sha256⁩\nsignature, public_key the signature over the manifest and the public key that made it\n\nPlaintext: the file is not encrypted. It lists each article's address, title and date and carries your search query as the case name, and anyone who has the file can read them. The articles' text is not in it, only its SHA-256.\n\nThis install has no evidence key yet. One is created on this machine when you save, and stays here. It proves this install made a bundle, and links every bundle it signs.",
+    "text": "The file is one signed JSON document: the articles you selected as provenance entries (where each came from and the SHA-256 of its text), bound together by a Merkle root and signed with this install's evidence key, so anyone can check that nothing was changed.\n\nArticles: 6 · Sources: 3\n\nWhat the file holds\nmanifest the bundle version, when it was made, the case name (your search query or the analysis label), how many articles, and the Merkle root that covers them\nmanifest.items one entry per article, with ⁦id, url, canonical_url, source_id, title, published_at, stored_hash, content_sha256⁩\nsignature, public_key the signature over the manifest and the public key that made it\nalgorithm the name of the signature scheme, ed25519\n\nPlaintext: the file is not encrypted. It lists each article's address, title and date, and anyone who has the file can read them. The articles' text is not in it, only its SHA-256.\n\nThe case name written in the file, readable by anyone who has it: ⁨glacier⁩\n\nThis install has no evidence key yet. One is created on this machine when you save, and stays here. It proves this install made a bundle, and links every bundle it signs.",
     "save_visible": true,
     "close": "Cancel",
     "caveats_visible": [
+      true,
       true,
       true
     ]
@@ -320,15 +319,15 @@
     "algorithm": "ed25519"
   },
   "done": {
-    "text": "Saved ⁨evidence-bundle-2026-09-30.json⁩: 6 articles, ⁨3.2 KB⁩.\n\nWhat the file holds\nmanifest the bundle version, when it was made, the case name (your search query or the analysis label), how many articles, and the Merkle root that covers them\nmanifest.items one entry per article, with ⁦id, url, canonical_url, source_id, title, published_at, stored_hash, content_sha256⁩\nsignature, public_key the signature over the manifest and the public key that made it\n\nSigning key (Ed25519), to give the recipient some other way: e8c0fe67dce5cdeb893bdc59a273b93c8aee030fc54e776add093566556bbc77\n\nAnyone can check the file offline with scripts/verify_evidence.py, which needs only the file and the key.",
-    "key_shown": "e8c0fe67dce5cdeb893bdc59a273b93c8aee030fc54e776add093566556bbc77",
+    "text": "Handed to your browser as ⁨evidence-bundle-2026-09-30.json⁩: 6 articles, ⁨3.2 KB⁩. Your browser chooses where it goes and may rename it.\n\nWhat the file holds\nmanifest the bundle version, when it was made, the case name (your search query or the analysis label), how many articles, and the Merkle root that covers them\nmanifest.items one entry per article, with ⁦id, url, canonical_url, source_id, title, published_at, stored_hash, content_sha256⁩\nsignature, public_key the signature over the manifest and the public key that made it\nalgorithm the name of the signature scheme, ed25519\n\nSigning key (Ed25519), to give the recipient some other way: 67d570dea7d75be30c6b9cd61fecddb58f67e41b8a2a11110e621823b52b4d82\n\nAnyone can check the file offline with scripts/verify_evidence.py, which needs only the file and the key.",
+    "key_shown": "67d570dea7d75be30c6b9cd61fecddb58f67e41b8a2a11110e621823b52b4d82",
     "save_hidden": true,
     "close": "Close"
   },
   "done_key_matches_bundle": true,
   "key_after_save": true,
   "done_overlaps": [],
-  "review_with_key": "The file is one signed JSON document: the articles you selected as provenance entries (where each came from and the SHA-256 of its text), bound together by a Merkle root and signed with this install's evidence key, so anyone can check that nothing was changed.\n\nArticles: 6 · Sources: 3\n\nWhat the file holds\nmanifest the bundle version, when it was made, the case name (your search query or the analysis label), how many articles, and the Merkle root that covers them\nmanifest.items one entry per article, with ⁦id, url, canonical_url, source_id, title, published_at, stored_hash, content_sha256⁩\nsignature, public_key the signature over the manifest and the public key that made it\n\nPlaintext: the file is not encrypted. It lists each article's address, title and date and carries your search query as the case name, and anyone who has the file can read them. The articles' text is not in it, only its SHA-256.\n\nIt is signed with this install's evidence key. That proves this install made it, and the same key on every bundle you send links all of them to this install.\n\nThe key that will sign: e8c0fe67dce5cdeb893bdc59a273b93c8aee030fc54e776add093566556bbc77",
+  "review_with_key": "The file is one signed JSON document: the articles you selected as provenance entries (where each came from and the SHA-256 of its text), bound together by a Merkle root and signed with this install's evidence key, so anyone can check that nothing was changed.\n\nArticles: 6 · Sources: 3\n\nWhat the file holds\nmanifest the bundle version, when it was made, the case name (your search query or the analysis label), how many articles, and the Merkle root that covers them\nmanifest.items one entry per article, with ⁦id, url, canonical_url, source_id, title, published_at, stored_hash, content_sha256⁩\nsignature, public_key the signature over the manifest and the public key that made it\nalgorithm the name of the signature scheme, ed25519\n\nPlaintext: the file is not encrypted. It lists each article's address, title and date, and anyone who has the file can read them. The articles' text is not in it, only its SHA-256.\n\nThe case name written in the file, readable by anyone who has it: ⁨glacier⁩\n\nIt is signed with this install's evidence key. That proves this install made it, and the same key on every bundle you send links all of them to this install.\n\nThe key that will sign: 67d570dea7d75be30c6b9cd61fecddb58f67e41b8a2a11110e621823b52b4d82",
   "ar_q_value": "glacier",
   "ar_toasts_before_open": [
     "أدخل استعلام بحث لتحديد نطاق حزمة الأدلة.",
@@ -337,7 +336,8 @@
   "ev_ar_dir": "rtl",
   "ev_ar_junk": [],
   "ev_ar_latin_left": [
-    "cdeb",
+    "algorithm",
+    "fecddb",
     "title"
   ],
   "ev_ar_overlaps": [],

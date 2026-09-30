@@ -168,6 +168,9 @@ with sync_playwright() as p:
     # 1. FULL depth: the three entry points.
     pg.evaluate("() => setDepth('full')")
     # the tour itself, walked end to end with NO button pressed: nothing may be stored
+    # the app's own first-run network coachmark records that it was shown, a little after boot;
+    # let it settle so the tour is measured alone (it is not the tour's write)
+    pg.wait_for_timeout(4000)
     pg.evaluate("() => openTour()")
     pg.wait_for_selector("#tour[open]")
     quiet_before = state(pg)

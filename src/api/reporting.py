@@ -19,8 +19,8 @@ from src.reporting.evidence import (
     BUNDLE_VERSION,
     ITEM_FIELDS,
     build_signed_bundle,
-    existing_public_key_hex,
     load_or_create_signing_key,
+    signing_key_state,
     verify_bundle,
 )
 from src.reporting.methods import METHODS_SCHEMA, build_methods_markdown
@@ -55,7 +55,12 @@ def export_evidence(req: EvidenceRequest, db: Session = Depends(get_db)) -> dict
     if not articles:
         raise HTTPException(status_code=404, detail="No matching articles to export.")
 
-    key = load_or_create_signing_key()
+    try:
+        key = load_or_create_signing_key()
+    except (ValueError, OSError) as exc:
+        # a key file that is there but unusable: say so, instead of a bare 500 (the review
+        # screen names this state before the person gets here)
+        raise HTTPException(status_code=409, detail=f"The evidence signing key cannot be used: {exc}") from exc
     return build_signed_bundle(articles, key, case_name=req.case_name)
 
 
@@ -76,14 +81,14 @@ def plan_evidence(req: EvidenceRequest, db: Session = Depends(get_db)) -> dict:
     )
     if not n_articles:
         raise HTTPException(status_code=404, detail="No matching articles to export.")
-    pub = existing_public_key_hex()
+    state, pub = signing_key_state()
     return {
         "bundle_version": BUNDLE_VERSION,
         "articles": int(n_articles),
         "sources": int(n_sources),
         "item_fields": list(ITEM_FIELDS),
         "text_included": False,
-        "signer": {"exists": pub is not None, "ed25519_pub": pub},
+        "signer": {"exists": state != "none", "state": state, "ed25519_pub": pub},
     }
 
 

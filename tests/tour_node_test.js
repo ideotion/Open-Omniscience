@@ -39,7 +39,7 @@ function extract(name) {
   return SRC.slice(at, j);
 }
 
-const FNS = ["tourBlurb", "tourSteps", "tourAction", "tourStepHtml"];
+const FNS = ["_tourNum", "tourBlurb", "tourSteps", "tourAction", "tourStepHtml"];
 const src =
   "function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\"/g, '&quot;'); }\n" +
   FNS.map(extract).join("\n") + "\n" +
@@ -82,6 +82,11 @@ assert.deepStrictEqual(more.list, IDS.slice(2).map(LABEL), "every unpinned tab i
 const named = new Set(ess.filter((s) => s.kind === "tab").map((s) => s.tab).concat(IDS.filter((i) => more.list.includes(LABEL(i)))));
 assert.deepStrictEqual([...named].sort(), [...IDS].sort(), "every tab is a step or in the list");
 assert.ok(more.body.includes("Show more") && more.body.includes("command palette"), more.body);
+assert.ok(more.body.includes("the tab you have open always stays listed"), "the open tab is named as listed, not as hidden: " + more.body);
+// digit grouping goes through the app formatter when there is one, like the sidebar's "Show more (N)"
+const G = (() => { const m = { exports: {} }; new Function("fmtNum", "module", "exports", src)((n) => "#" + n, m, m.exports); return m.exports; })();
+assert.strictEqual(G.tourSteps(tabs("essentials"), "essentials", t, tf).find((s) => s.kind === "more").title, "#10 more tabs");
+assert.ok(visible(G.tourStepHtml(ess[0], 0, ess.length, t, tf)).includes("Step #1 of #5"));
 assert.ok(ess[ess.length - 1].body.includes("Essentials now"), ess[ess.length - 1].body);
 
 // STANDARD and FULL: every tab is its own step and there is no "more"

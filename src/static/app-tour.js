@@ -29,6 +29,10 @@
       return (s, vars) => String(s).replace(/\{(\w+)\}/g, (m, k) => (vars && k in vars ? vars[k] : m));
     }
 
+    // digit grouping like the sidebar's own "Show more (N)" (fmtNum lives in another module;
+    // plain when this file is run alone, as the node test does)
+    function _tourNum(n) { return (typeof fmtNum === "function") ? fmtNum(n, 0) : String(n); }
+
     // One sentence per sidebar tab. Each says what the tab SHOWS, in the words the tab itself
     // uses, and none of them promises a conclusion: the app shows data, counts and methods.
     function tourBlurb(id, t) {
@@ -67,8 +71,8 @@
       if (rest.length) {
         steps.push({
           kind: "more",
-          title: tf("{n} more tabs", {n: rest.length}),
-          body: t("At this depth they wait behind “Show more” in the sidebar. They are all one click away, and the command palette (Ctrl/⌘-K) reaches every one of them."),
+          title: tf("{n} more tabs", {n: _tourNum(rest.length)}),
+          body: t("At this depth they are grouped under “Show more” in the sidebar; the tab you have open always stays listed. They are all one click away, and the command palette (Ctrl/⌘-K) reaches every one of them."),
           list: rest.map((x) => x.label),
         });
       }
@@ -91,7 +95,7 @@
 
     function tourStepHtml(step, i, n, t, tf) {
       const act = tourAction(step, t, tf);
-      return `<p class="hint">${esc(tf("Step {n} of {total}", {n: i + 1, total: n}))}</p>`
+      return `<p class="hint">${esc(tf("Step {n} of {total}", {n: _tourNum(i + 1), total: _tourNum(n)}))}</p>`
         + `<h4 class="tour-title" dir="auto">${esc(step.title)}</h4>`
         + (step.body ? `<p>${esc(step.body)}</p>` : "")
         + (step.list ? `<ul class="tour-list">${step.list.map((x) => `<li dir="auto">${esc(x)}</li>`).join("")}</ul>` : "")
@@ -109,9 +113,9 @@
         out.push({
           id: b.getAttribute("data-tab"),
           label: ((span && span.textContent) || b.getAttribute("data-tab")).trim(),
-          // the OPEN tab stays listed at every depth (invariant #2), so it is on screen, not
-          // behind "Show more", whatever its ring
-          pinned: depth !== "essentials" || b.getAttribute("data-ring") === "0" || b.classList.contains("active"),
+          // what the sidebar's own "Show more (N)" counts: the OPEN tab stays listed at every
+          // depth (invariant #2), and the step says so, so its count is the sidebar's
+          pinned: depth !== "essentials" || b.getAttribute("data-ring") === "0",
         });
       });
       return {tabs: out, depth};

@@ -85,7 +85,7 @@ def test_plan_creates_no_signing_key(key_path):
     assert not key_path.exists()
     with TestClient(app) as client:
         plan = client.post("/api/reports/evidence/plan", json={"article_ids": ids}).json()
-    assert plan["signer"] == {"exists": False, "ed25519_pub": None}
+    assert plan["signer"] == {"exists": False, "state": "none", "ed25519_pub": None}
     assert not key_path.exists(), "the review must not create the key"
     assert not key_path.parent.exists() or not any(key_path.parent.iterdir())
 
@@ -97,6 +97,7 @@ def test_plan_names_the_key_that_will_sign_once_one_exists(key_path):
         plan = client.post("/api/reports/evidence/plan", json={"article_ids": ids}).json()
     assert key_path.exists(), "the export creates the key"
     assert plan["signer"]["exists"] is True
+    assert plan["signer"]["state"] == "ok"
     assert plan["signer"]["ed25519_pub"] == bundle["public_key"]
     assert plan["articles"] == bundle["manifest"]["item_count"]
 
@@ -154,11 +155,31 @@ def test_plan_refuses_an_empty_selection_and_a_missing_scope(key_path):
     assert not key_path.exists()
 
 
-def test_plan_by_query_scopes_like_the_export(key_path):
-    ids = _seed(1, 1)
+def test_plan_by_query_counts_what_the_export_writes(key_path):
+    _seed(2, 2)
+    term = "Review"
     with TestClient(app) as client:
         bad = client.post("/api/reports/evidence/plan", json={"query": '"unterminated'})
-    assert ids and bad.status_code in (400, 404)
+        plan = client.post("/api/reports/evidence/plan", json={"query": term})
+        bundle = client.post("/api/reports/evidence", json={"query": term})
+    assert bad.status_code in (400, 404)
+    assert plan.status_code == 200 and bundle.status_code == 200, (plan.text, bundle.text)
+    assert plan.json()["articles"] == bundle.json()["manifest"]["item_count"] >= 1
+
+
+def test_a_present_but_unusable_key_is_named_by_the_plan_and_refused_by_the_export(key_path):
+    """The review must not promise 'a key is created' when a file is in the way: saving
+    fails on it (a foreign PEM is never replaced), so the plan says 'unreadable' and the
+    export answers with the reason, not a bare 500."""
+    ids = _seed()
+    key_path.parent.mkdir(parents=True)
+    key_path.write_bytes(b"not a pem file")
+    with TestClient(app) as client:
+        plan = client.post("/api/reports/evidence/plan", json={"article_ids": ids}).json()
+        export = client.post("/api/reports/evidence", json={"article_ids": ids})
+    assert plan["signer"] == {"exists": True, "state": "unreadable", "ed25519_pub": None}
+    assert export.status_code == 409 and "signing key" in export.json()["detail"]
+    assert key_path.read_bytes() == b"not a pem file"
 
 
 # ---- the page --------------------------------------------------------------
