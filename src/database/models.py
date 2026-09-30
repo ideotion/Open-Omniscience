@@ -37,6 +37,7 @@ from datetime import UTC, date, datetime
 from typing import Any
 
 from sqlalchemy import (
+    DDL,
     Boolean,
     Column,
     Date,
@@ -3222,6 +3223,30 @@ class EventImport(Base):
     def __repr__(self) -> str:
         return f"<EventImport({self.family_key}:{self.fingerprint})>"
 
+
+# The READ seam over the derived keyword rows (segmented-index step 0, R96): the view a
+# ``create_all`` database gets the moment its table is created. It is defined HERE, beside the
+# model it lists the columns of, and ``src.database.derived_views`` imports it -- the other way
+# round would be a module-level import cycle. Existing databases are covered by
+# ``derived_views.ensure_derived_views`` at boot; the ``IF NOT EXISTS`` form makes a second
+# listener call harmless.
+MENTIONS_VIEW = "keyword_mentions_all"
+
+
+def mentions_view_sql() -> str:
+    """The exact ``CREATE VIEW`` for the current column set (also what a stale view is
+    compared against, whitespace-insensitively)."""
+    cols = ", ".join(c.name for c in KeywordMention.__table__.columns)
+    return f"CREATE VIEW {MENTIONS_VIEW} AS SELECT {cols} FROM {KeywordMention.__tablename__}"
+
+
+event.listen(
+    KeywordMention.__table__,
+    "after_create",
+    DDL(mentions_view_sql().replace("CREATE VIEW", "CREATE VIEW IF NOT EXISTS", 1)).execute_if(
+        dialect="sqlite"
+    ),
+)
 
 # Example usage
 if __name__ == "__main__":
