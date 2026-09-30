@@ -3941,8 +3941,8 @@ def _merge_law(con, batch_id, results) -> None:
         joins=(" JOIN temp.map_law_rev mr ON mr.old = i.revision_id"
                " JOIN law_revisions lr ON lr.id = mr.new"
                " JOIN law_documents ld ON ld.id = lr.document_id"),
-        identity=[("document_url", "ld.url"), ("revision_content_hash", "lr.content_hash"),
-                  ("model", "i.model")],
+        identity=[("jurisdiction", "ld.jurisdiction"), ("document_url", "ld.url"),
+                  ("revision_content_hash", "lr.content_hash"), ("model", "i.model")],
         differs=["summary"], shown=["summary", "prompt_version"],
     )
     summ.duplicate = _count(

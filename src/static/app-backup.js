@@ -2374,8 +2374,8 @@
 
     // ── DIFFERENCES FROM RESTORES (R61, item 12) ─────────────────────────────
     // The other value a restore brought for a deduced item this machine already had. The
-    // machine's own value is what every other surface shows; these buttons are the only way
-    // that changes, and each acts on ONE item (or one restore, after a count confirmation).
+    // machine's own value is what every other surface shows and nothing here changes that; the
+    // buttons keep or discard, each on ONE item (or one restore, after a count confirmation).
     const _ALT_TABLES = {
       keyword_translations: "Translation of a keyword",
       article_title_translations: "Title and summary (≈)",
@@ -2420,6 +2420,29 @@
         + `<div class="hint">${_altProv(prov, t, tf)}</div></div>`;
     }
 
+    // Which item a difference is about, from the identity the restore recorded. Values only,
+    // no labels to translate: a term with its languages, a date, a kind, a law document.
+    function _altAbout(it) {
+      const i = it.identity || {};
+      const arrow = " \u2192 ";   // the language codes around it are Latin runs, so it reads left to right
+      let bits = [];
+      if (it.table === "keyword_translations") {
+        bits = [i.term, [i.source_lang, i.target_lang].filter(Boolean).join(arrow)];
+      } else if (it.table === "article_title_translations") {
+        bits = [i.target_lang];
+      } else if (it.table === "article_analyses") {
+        bits = [i.kind];
+      } else if (it.table === "ai_keyword") {
+        bits = [i.kind, i.term];
+      } else if (it.table === "article_mentioned_dates") {
+        bits = [i.mentioned_on, i.precision];
+      } else if (it.table === "law_revision_summaries") {
+        bits = [i.jurisdiction, i.document_url, i.revision_content_hash ? String(i.revision_content_hash).slice(0, 10) : null];
+      }
+      bits = bits.filter((b) => b != null && b !== "");
+      return bits.length ? `<div class="hint"><bdi style="overflow-wrap:anywhere">${esc(bits.join(" \u00b7 "))}</bdi></div>` : "";
+    }
+
     function _altHtml(rep, t, tf) {
       if (!rep.items.length) return `<span class="muted">${esc(t("No differences to show."))}</span>`;
       const head = rep.batches.map((b) => {
@@ -2432,7 +2455,7 @@
       const cards = rep.items.map((it) => {
         const art = it.article ? `<div class="hint"><bdi>${esc(it.article.title || "")}</bdi></div>` : "";
         return `<div class="card" style="margin-top:8px;padding:8px">`
-          + `<div><b>${esc(t(_ALT_TABLES[it.table] || it.table))}</b></div>${art}`
+          + `<div><b>${esc(t(_ALT_TABLES[it.table] || it.table))}</b></div>${art}${_altAbout(it)}`
           + `<div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:4px">`
           + _altSide("This machine", it.local, it.differing, it.local_provenance, t, tf)
           + _altSide("From the restore", it.imported, it.differing, it.imported_provenance, t, tf)
@@ -2442,26 +2465,43 @@
           + `</div></div>`;
       }).join("");
       const more = rep.total > rep.items.length
-        ? `<p class="hint">${esc(tf("Showing {n} of {total}", { n: rep.items.length, total: rep.total }))}</p>` : "";
+        ? `<p class="hint">${esc(tf("Showing {n} of {total}", { n: rep.items.length, total: rep.total }))}`
+          + ` <button class="secondary tiny" data-on-click="altMore()">${esc(tf("Show more ({n})", { n: rep.total - rep.items.length }))}</button></p>` : "";
       return head + cards + more;
     }
 
-    async function loadAlternates() {
+    // The rows shown so far. A page is read by OFFSET and appended, so "Show more" never re-reads
+    // what is already on screen and has no ceiling of its own.
+    let _altRep = null;
+
+    async function _altFetch(offset) {
+      const sel = document.getElementById("alt-status");
+      return api("/api/backup/alternates?limit=50&offset=" + offset + "&status="
+        + encodeURIComponent(sel ? sel.value : "pending"));
+    }
+
+    async function loadAlternates(more) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const tf = (window.OOI18N && OOI18N.tf)
         ? OOI18N.tf
         : ((s, vars) => s.replace(/\{(\w+)\}/g, (m, k) => (vars && vars[k] != null) ? String(vars[k]) : m));
       const host = document.getElementById("alt-body");
       if (!host) return;
-      const sel = document.getElementById("alt-status");
       try {
-        const rep = await api("/api/backup/alternates?status=" + encodeURIComponent(sel ? sel.value : "pending"));
-        host.innerHTML = _altHtml(rep, t, tf);
+        if (more === true && _altRep) {
+          const page = await _altFetch(_altRep.items.length);
+          _altRep = Object.assign({}, page, { items: _altRep.items.concat(page.items) });
+        } else {
+          _altRep = await _altFetch(0);
+        }
+        host.innerHTML = _altHtml(_altRep, t, tf);
       } catch (e) {
         // A failed read is not "no differences": that would be a claim about the data.
         host.innerHTML = `<span style="color:var(--err)">${esc(t("The differences could not be read."))}</span>`;
       }
     }
+
+    function altMore() { return loadAlternates(true); }
 
     async function altAct(id, verb) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);

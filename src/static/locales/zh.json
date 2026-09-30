@@ -5233,7 +5233,7 @@
   "What's missing": "缺少什么",
   "Wheel = zoom at the cursor · drag = pan · double-click = the whole span · hover a bar for the exact reading. Hatched = suspend; dotted outline = no record; dashed end = the end has no time.": "滚轮 = 以光标为中心缩放 · 拖动 = 平移 · 双击 = 整个范围 · 悬停在条上查看精确读数。斜纹 = 挂起；点线轮廓 = 无记录；虚线端 = 结束时间未知。",
   "When": "何时",
-  "When a restore brings a value that differs from the one this machine already holds — a translation, a date’s status, an AI summary — this machine’s value stays, and the other one is kept here. Nothing from a restore is shown in place of yours unless you choose it.": "当一次恢复带来的值与本机已有的值不同时（例如翻译、日期的状态、AI 摘要），本机的值保持不变，另一个值保存在这里。除非你选择，否则不会用恢复中的内容替换你的内容。",
+  "When a restore brings a value that differs from the one this machine already holds — a translation, a date’s status, an AI summary — this machine’s value stays, and the other one is kept here. Nothing from a restore is ever shown in place of yours.": "当一次恢复带来的值与本机已有的值不同时（例如翻译、日期的状态、AI 摘要），本机的值保持不变，另一个值保存在这里。恢复中的内容绝不会取代你的内容显示。",
   "When it was discussed": "何时被讨论",
   "When it was in the field": "实地调查的时间",
   "When off, candidate sources simply stay unqualified and are never auto-admitted to collection. Nothing is deleted, and no verdict already reached is changed or reconsidered.": "关闭时，候选来源只是保持未判定状态，永远不会被自动纳入采集。不会删除任何东西，已作出的结论也不会被更改或重新考虑。",
