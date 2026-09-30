@@ -598,6 +598,13 @@ yet), then the sources whose re-check is due. A new source is always more urgent
 re-check (ruling R94). The panel also says how many qualified sources are waiting and when
 the next one joins the queue.
 
+**How many sources a pass judges** grows with the machine (ruling R95): the two numbers in
+Settings → Scheduler (*qualification per pass*, *qualification re-checks per pass*) are a
+minimum, and while *qualification budget auto* is on (the default) a machine with the memory
+and cores for it judges up to 60 new sources and 30 re-checks per pass. A 0 still switches a
+lane off; switching auto off pins the numbers exactly. Each candidate is judged on its newest
+2,000 articles, and the pass says how many candidates that cap applied to.
+
 **On a small machine** (less memory than the app's scan floor), a pass judges candidates
 against a **sample of the newest 20,000 articles** instead of the whole corpus, and the
 verdict records that it was sampled (ruling R93). Before this, such machines skipped every

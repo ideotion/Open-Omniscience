@@ -450,6 +450,7 @@
           `<div class="card-caveat" style="margin-top:6px">`
             + esc(tf("Each collection round judges up to {new} new sources and {rechecks} re-checks; new slots left unused go to re-checks. Catching up the backlog above works through the same line faster.",
                      {new: n(pp.new), rechecks: n(pp.rechecks)}))
+            + (pp.auto ? " " + esc(t("Sized to this machine's memory and cores; the scheduler settings are the minimum.")) : "")
             + `</div>`,
         ];
         host.innerHTML = rows.join("");

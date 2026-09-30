@@ -97,6 +97,56 @@ CRITERIA_VERSION_SAMPLED = CRITERIA_VERSION + "+sample"
 # articles is a stable baseline; the whole history was never needed for one.
 QUALIFICATION_SAMPLE_ARTICLES = 20_000
 
+# How many of a CANDIDATE'S OWN newest articles the scoped read takes (2026-09-30, follow-up to
+# R93). Judging N candidates at once used to materialise every candidate's whole history, and
+# the candidates that matter most for re-checks are the long-lived ones (hundreds of thousands
+# of articles each). A source's extraction quality shows in its recent articles -- the same
+# reason the re-check reads a recency window -- so the newest 2,000 are the evidence, and
+# `run_qualification_pass` says how many candidates were capped rather than letting the cap
+# pass for the whole history.
+QUALIFICATION_HISTORY_ARTICLES = 2_000
+
+# The adaptive per-pass budgets (maintainer preference 2026-09-29: no fixed caps, limits
+# follow the hardware, generous defaults). The configured settings are the FLOOR.
+_AUTO_NEW_MIN, _AUTO_NEW_MAX = 5, 60
+_AUTO_RECHECK_MIN, _AUTO_RECHECK_MAX = 2, 30
+_AUTO_MB_PER_SLOT = 100.0   # available memory one candidate slot is allowed to claim
+_AUTO_SLOTS_PER_CORE = 6    # trial fetches wait on the network, so a core carries several
+
+
+def adaptive_pass_budgets(
+    configured_new: int, configured_recheck: int, *,
+    available_mb: float | None = None, cpus: int | None = None,
+) -> dict:
+    """The per-pass qualification budgets this machine can carry, never below what the
+    operator configured. Pure given its inputs; ``available_mb=None`` reads the machine.
+
+    An explicit 0 stays 0 (that is how an operator switches a lane off), and an unreadable
+    machine returns the configured numbers unchanged. The ceiling is memory / cores because
+    that is what a pass actually spends: the scoped read of each candidate (bounded by
+    ``QUALIFICATION_HISTORY_ARTICLES``) and the trial fetches. The memory guard's pause still
+    applies inside the pass, so a generous budget is still given up under pressure.
+    """
+    if available_mb is None:
+        from src.config.machine_floor import _mem_readings
+
+        available_mb = _mem_readings()[1]
+    if cpus is None:
+        import os
+
+        cpus = os.cpu_count() or 1
+    new, rech = int(configured_new), int(configured_recheck)
+    if available_mb is None:
+        return {"new": new, "rechecks": rech, "auto": False, "available_mb": None, "cpus": cpus}
+    slots = int(min(cpus * _AUTO_SLOTS_PER_CORE, available_mb // _AUTO_MB_PER_SLOT))
+    auto_new = max(_AUTO_NEW_MIN, min(_AUTO_NEW_MAX, slots))
+    auto_rech = max(_AUTO_RECHECK_MIN, min(_AUTO_RECHECK_MAX, auto_new // 2))
+    return {
+        "new": max(new, auto_new) if new > 0 else 0,
+        "rechecks": max(rech, auto_rech) if rech > 0 else 0,
+        "auto": True, "available_mb": round(float(available_mb), 1), "cpus": cpus,
+    }
+
 # Exactly the three states the ruling names -- never "candidate"/"trial" (the process,
 # not a persisted state) and never a fourth state.
 STATUS_UNQUALIFIED = "unqualified"
@@ -1394,6 +1444,7 @@ def run_qualification_pass(
     try:
         per = sa.scoped_metrics(
             session, {int(s.id) for s in candidates}, frozen, should_pause=should_pause,
+            per_source_recent=QUALIFICATION_HISTORY_ARTICLES,
         )
     except sq.ScanPaused as exc:
         # S5.2: nothing is stamped from a paused scan. The candidates keep whatever status
@@ -1461,6 +1512,12 @@ def run_qualification_pass(
         "baseline": "sample" if sampled else "whole",
         "baseline_sample_articles": frozen.get("sample_articles"),
         "criteria_version": criteria_version,
+        # Candidates whose stored history reached the read cap: their verdict rests on their
+        # newest `history_cap` articles, not on everything stored.
+        "history_cap": QUALIFICATION_HISTORY_ARTICLES,
+        "history_capped": sum(
+            1 for m in per.values() if int(m.get("article_count") or 0) >= QUALIFICATION_HISTORY_ARTICLES
+        ),
         **tally,
     }
 

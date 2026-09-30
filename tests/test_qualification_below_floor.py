@@ -355,3 +355,87 @@ def test_the_queue_route_and_panel(monkeypatch, tmp_path):
     js = read_static("app-ai-tools.js")
     assert "/api/sources/qualification/queue" in function_source(js, "loadQualQueue")
     assert 'id="qual-queue"' in read_static("index.html")
+
+
+# --------------------------------------------------------------------------- #
+# Adaptive per-pass budgets and the bounded candidate read (2026-09-30 follow-up)
+# --------------------------------------------------------------------------- #
+
+def test_pass_budgets_follow_the_machine_and_never_drop_below_the_setting():
+    small = q.adaptive_pass_budgets(5, 2, available_mb=500.0, cpus=1)
+    assert (small["new"], small["rechecks"]) == (5, 2), "a small box keeps today's numbers"
+    big = q.adaptive_pass_budgets(5, 2, available_mb=16000.0, cpus=8)
+    assert big["new"] == 48 and big["rechecks"] == 24 and big["auto"] is True
+    huge = q.adaptive_pass_budgets(5, 2, available_mb=200000.0, cpus=64)
+    assert (huge["new"], huge["rechecks"]) == (60, 30), "generous, but not unbounded"
+    pinned_up = q.adaptive_pass_budgets(80, 40, available_mb=500.0, cpus=1)
+    assert (pinned_up["new"], pinned_up["rechecks"]) == (80, 40), "the setting is a floor"
+
+
+def test_a_zero_budget_stays_zero_and_an_unreadable_machine_changes_nothing(monkeypatch):
+    assert q.adaptive_pass_budgets(0, 2, available_mb=16000.0, cpus=8)["new"] == 0
+    assert q.adaptive_pass_budgets(5, 0, available_mb=16000.0, cpus=8)["rechecks"] == 0
+    monkeypatch.setattr("src.config.machine_floor._mem_readings", lambda: (None, None))
+    out = q.adaptive_pass_budgets(5, 2, cpus=8)
+    assert (out["new"], out["rechecks"], out["auto"]) == (5, 2, False)
+
+
+def test_the_lane_and_the_queue_view_use_the_same_budgets(monkeypatch):
+    from src.scheduler.settings import SchedulerSettings
+
+    assert SchedulerSettings().qualification_budget_auto is True
+    monkeypatch.setattr(q, "adaptive_pass_budgets", lambda n, r, **k: {
+        "new": 33, "rechecks": 11, "auto": True, "available_mb": 1.0, "cpus": 1})
+    seen = {}
+    import src.catalog.qualification as qmod
+
+    monkeypatch.setattr(qmod, "advance_qualification", lambda session, fetcher, **k: seen.update(k) or {})
+    from src.scheduler.runner import _lane_step_qualification
+
+    _lane_step_qualification(None, None, SchedulerSettings())
+    assert seen == {"per_pass": 33, "recheck_per_pass": 11}
+    seen.clear()
+    _lane_step_qualification(None, None, SchedulerSettings(qualification_budget_auto=False))
+    assert seen == {"per_pass": 5, "recheck_per_pass": 2}, "off pins the configured numbers"
+
+
+def _many_articles(s, source_id, n):
+    from src.database.models import Article
+
+    for i in range(n):
+        s.add(Article(url=f"https://x.example/{source_id}/{i}", canonical_url=f"https://x.example/{source_id}/{i}", hash=f"h{source_id}-{i}", title=f"t{i}", source_id=source_id,
+                      word_count=300, language="en", content="c"))
+    s.commit()
+
+
+def test_a_candidates_read_is_its_newest_articles_and_no_more():
+    s = _session()
+    for d in ("a.example", "b.example"):
+        s.add(Source(name=d, domain=d, language="en", enabled=False, status=q.STATUS_UNQUALIFIED))
+    s.commit()
+    ids = {d: s.query(Source).filter_by(domain=d).one().id for d in ("a.example", "b.example")}
+    _many_articles(s, ids["a.example"], 30)
+    _many_articles(s, ids["b.example"], 3)
+    stats = sq.collect_article_stats(s, source_ids=set(ids.values()), per_source_recent=10)
+    by = {}
+    for st in stats:
+        by.setdefault(st.source_id, []).append(st.article_id)
+    assert len(by[ids["a.example"]]) == 10 and len(by[ids["b.example"]]) == 3
+    everything = {a for (a,) in s.query(__import__("src.database.models", fromlist=["Article"]).Article.id)
+                  .filter_by(source_id=ids["a.example"])}
+    assert set(by[ids["a.example"]]) == set(sorted(everything)[-10:]), "the NEWEST ten"
+    assert sq.collect_article_stats(s, source_ids=set(ids.values()), per_source_recent=0) == []
+    # An unscoped call ignores the per-source bound: there is no candidate read to bound.
+    assert len(sq.collect_article_stats(s, per_source_recent=10)) == 33
+
+
+def test_the_pass_reports_how_many_candidates_hit_the_read_cap(machine, monkeypatch):
+    machine(*BIG_BOX)
+    monkeypatch.setattr(q, "QUALIFICATION_HISTORY_ARTICLES", 25)
+    s = _session()
+    _seed_healthy_en_cohort(s)
+    cand = _add_candidate_with_articles(s, domain="big.example", status=q.STATUS_UNQUALIFIED,
+                                        pathology=False)
+    _many_articles(s, cand.id, 40)
+    out = q.run_qualification_pass(s, fetcher=None, per_pass=5)
+    assert out["history_cap"] == 25 and out["history_capped"] == 1

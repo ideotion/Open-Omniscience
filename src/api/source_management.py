@@ -1908,14 +1908,18 @@ def _floor_note_parts(criterion: dict, floor_status: dict) -> list[str]:
 def qualification_queue_view(db: Session = Depends(get_db)) -> dict:
     """The qualification QUEUE (R94, 2026-09-29): new candidates first, then due re-checks,
     in the order the pass takes them. Read-only; counts and domains, never a score."""
-    from src.catalog.qualification import qualification_queue
+    from src.catalog.qualification import adaptive_pass_budgets, qualification_queue
     from src.scheduler.settings import load_settings
 
     settings = load_settings()
+    per_pass = {"new": settings.qualification_per_pass,
+                "rechecks": settings.qualification_recheck_per_pass, "auto": False}
+    if settings.qualification_budget_auto:
+        b = adaptive_pass_budgets(per_pass["new"], per_pass["rechecks"])
+        per_pass = {"new": b["new"], "rechecks": b["rechecks"], "auto": b["auto"]}
     return {
-        **qualification_queue(db, recheck_per_pass=settings.qualification_recheck_per_pass),
-        "per_pass": {"new": settings.qualification_per_pass,
-                     "rechecks": settings.qualification_recheck_per_pass},
+        **qualification_queue(db, recheck_per_pass=per_pass["rechecks"]),
+        "per_pass": per_pass,
     }
 
 
