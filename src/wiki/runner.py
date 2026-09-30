@@ -47,7 +47,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from src.versioned.adapters.base import ReadBudget
-from src.versioned.pipeline import Admission, PassResult, run_feed_once
+from src.versioned.pipeline import Admission, LaneTransactionLost, PassResult, run_feed_once
 from src.wiki.counters import record_size_sample
 from src.wiki.identity import parse_external_id
 from src.wiki.lane import WikiStreamAdapter, edition_of
@@ -113,8 +113,9 @@ class DrainReport:
     #: Distinct from ``text_withheld``: withheld is a POLICY refusal with a reason, deferred
     #: is "not yet", and the two need opposite responses.
     text_deferred: int = 0
-    #: Pages the catch-up picked up this drain (an earlier drain left their text): the queue's
-    #: length as far as the per-feed cap sees it, so a standing backlog is never a silent 0.
+    #: Pages the catch-up FOUND waiting this drain (an earlier drain left their text), as far as
+    #: the per-feed cap sees: found, not necessarily fetched. 0 while every waiting page is
+    #: cooling off, or once a feed's time is spent.
     text_backlog: int = 0
     gaps_recorded: int = 0
     #: Whether this drain recorded a lane-file size sample. At most one an hour, so
@@ -285,6 +286,10 @@ def drain_once(
                 catch_up=catch_up if text_seconds is not None else 0,
                 attempts=attempts,
             )
+        except LaneTransactionLost:
+            # The lane's transaction is gone: go on and a later feed's commit would hide the
+            # rows an earlier feed lost. Fail the drain, loudly and counted.
+            raise
         except Exception as exc:  # noqa: BLE001 - one edition must not end the drain
             # NAMED, and the drain continues. Eleven editions still collecting while
             # one is broken is the honest outcome; a drain that died on the first

@@ -44,7 +44,7 @@ import logging
 import time
 from collections.abc import Callable, Collection
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -56,6 +56,16 @@ from src.versioned.feed import FeedChange
 from src.versioned.models import VersionedChange, VersionedEntity, _utcnow
 
 _LOG = logging.getLogger("versioned.pipeline")
+
+
+class LaneTransactionLost(RuntimeError):
+    """A savepoint could not be rolled back: the lane's whole transaction is no longer ours.
+
+    SQLite ends the ENTIRE transaction on its own for SQLITE_FULL, IOERR, BUSY and NOMEM, and
+    the savepoint rollback then fails ("no such savepoint"). Carrying on would commit what a
+    later feed writes and silently lose every earlier feed's rows of this drain, so this is
+    raised past the pass and the drain fails loudly (and is counted) instead.
+    """
 
 
 @dataclass(slots=True)
@@ -74,10 +84,10 @@ class PassResult:
     #: Changes recorded whose text this pass did not fetch, because the budget ran
     #: out. NOT a gap — see the module docstring.
     text_deferred: int = 0
-    #: Followed pages whose text an EARLIER pass left unfetched and this pass's catch-up
-    #: picked up (at most ``catch_up``). Not added to ``text_deferred``, which counts a
-    #: page once, on the pass that left it; this says how long the queue still is, so a
-    #: standing backlog never reads as ``text_deferred: 0``.
+    #: Followed pages whose text an EARLIER pass left unfetched and this pass's catch-up FOUND
+    #: waiting (at most ``catch_up``; found, not necessarily fetched: the time bound may have
+    #: run out). Not added to ``text_deferred``, which counts a page once, on the pass that
+    #: left it. 0 while every waiting page is cooling off or once this feed's time is spent.
     text_backlog: int = 0
     #: Entities this pass STARTED following because ``admit`` said to. Its own
     #: counter because "the lane grew" is a fact an operator is owed: a rule that
@@ -457,6 +467,10 @@ def run_feed_once(
         # of heading every pass; a restart forgets it, which costs one more try.
         if attempts is not None:
             attempts[entity.id] = monotonic()
+        # The text is covered only up to when the fetch BEGAN (less a margin for the source's
+        # whole-second times and a little clock skew): an edit that lands while we fetch, store or
+        # index is not in the text we got, and stamping "now" afterwards would call it covered.
+        covered_through = _utcnow() - timedelta(seconds=COVERED_MARGIN_S)
         try:
             version = adapter.fetch_version(external_id)
         except Exception as exc:  # noqa: BLE001 - one entity must not end the pass
@@ -488,11 +502,15 @@ def run_feed_once(
             lane.flush()
         # ONE PAGE'S STORE FAILING must not end the pass, leave the session needing a rollback
         # for the feeds after it, or (with the catch-up) be asked for again at the head of every
-        # pass: its lane writes run in a SAVEPOINT (the corpus index path commits on its own, so it gets none), and a failure is named and moved on from.
+        # pass: its lane writes run in a SAVEPOINT (the corpus index path commits on its own, so
+        # it gets none), and a failure is named and moved on from.
         lane_sp = lane.begin_nested()
         try:
             outcome, article_id = store_version(lane, adapter, entity, version, corpus=corpus)
             _link_ingested(lane, feed, external_id, entity.id)
+            # On EVERY successful path (a revision already held, an unchanged text, a baseline),
+            # so the backlog's "newer than the stored text" is decided in one place.
+            entity.last_checked_at = covered_through
             lane_sp.commit()
         except Exception as exc:  # noqa: BLE001 - one entity must not end the pass
             # UNCONDITIONALLY: a failure raised inside a flush leaves the savepoint INACTIVE,
@@ -500,8 +518,11 @@ def run_feed_once(
             # query (this feed's and the next feeds') raises and the whole drain rolls back.
             try:
                 lane_sp.rollback()
-            except Exception:  # noqa: BLE001 - the original failure is the one to report
-                _LOG.debug("the savepoint could not be rolled back", exc_info=True)
+            except Exception as rollback_exc:
+                raise LaneTransactionLost(
+                    f"{external_id}: {type(exc).__name__}: {exc}; then the savepoint rollback "
+                    f"failed: {type(rollback_exc).__name__}: {rollback_exc}"
+                ) from exc
             if corpus is not None and hasattr(corpus, "rollback"):
                 # The corpus index path commits per article, so nothing already stored is lost
                 # here; what this clears is a session a failed flush left pending-rollback.
@@ -527,8 +548,14 @@ def run_feed_once(
 #: Seconds a followed page is left alone after the catch-up last ATTEMPTED it (this process's
 #: own memory, never stored) before the backlog asks for it again. Its backoff: a page that
 #: keeps failing, or the source answering 429, is not re-asked on every 30 s drain. It binds the
-#: catch-up only: a page in the current batch is fetched whenever it appears in one.
+#: catch-up only: a page in the current batch is not held back by it (though the catch-up's
+#: pages are tried first within the feed's time share).
 BACKLOG_COOLDOWN_S: float = 300.0
+
+#: Seconds taken off the fetch's start time when it is recorded as the time a text is good
+#: through: the source's times are whole seconds and its clock is not ours. The price is one
+#: extra fetch of a page edited within this margin of its own fetch.
+COVERED_MARGIN_S: float = 2.0
 
 
 def _unfetched_entities(
@@ -551,16 +578,24 @@ def _unfetched_entities(
     or it would be asked for again on every pass for ever, and so are the ids in ``exclude``
     (attempted within ``BACKLOG_COOLDOWN_S``).
     """
-    from sqlalchemy import exists, func, literal
+    from sqlalchemy import and_, exists, func, literal, or_
 
     # COALESCE, not ``last_checked_at IS NULL OR ...``: an OR keeps the planner from seeking the
     # range on ``occurred_at`` and it walks every change of every followed page instead.
     epoch = literal(datetime(1970, 1, 1, tzinfo=UTC), type_=VersionedEntity.last_checked_at.type)
-    waiting = exists().where(
+    newer = exists().where(
         VersionedChange.entity_id == VersionedEntity.id,
         VersionedChange.feed == feed,
         VersionedChange.occurred_at > func.coalesce(VersionedEntity.last_checked_at, epoch),
     )
+    # A page never stored whose changes carry NO time is waiting too (NULL compares as nothing).
+    never_stored = and_(
+        VersionedEntity.last_checked_at.is_(None),
+        exists().where(
+            VersionedChange.entity_id == VersionedEntity.id, VersionedChange.feed == feed
+        ),
+    )
+    waiting = or_(newer, never_stored)
     query = select(VersionedEntity.external_id, VersionedEntity.id).where(
         VersionedEntity.watching.is_(True),
         VersionedEntity.deleted_at.is_(None),

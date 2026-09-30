@@ -469,3 +469,103 @@ def test_a_backlog_page_the_BOUND_reaches_too_late_is_not_counted_deferred_again
         )
     assert report.text_backlog == 1 and _stored(report) == 0, "read, but the bound ran out"
     assert report.text_deferred == 0, "a page already counted is not counted again"
+
+
+def test_an_edit_that_lands_DURING_the_fetch_is_not_marked_covered(lane, monkeypatch):
+    """The stored text is good only as far as the fetch BEGAN: stamping the time after the store
+    would call an edit that arrived meanwhile covered, and its page would keep the stale text."""
+    adapter = _deferred_lane()
+    real = adapter.fetch_version
+    holder: dict = {}
+
+    def fetch_then_edit(external_id):
+        version = real(external_id)
+        db = holder["db"]
+        ent = _entity(db)
+        db.add(VersionedChange(
+            entity_id=ent.id, external_id=external_id, change_ref="late-edit",
+            feed=f"stream:{EDITION}", change_kind="edit", occurred_at=_utcnow(),
+        ))
+        db.flush()
+        return version
+
+    monkeypatch.setattr(adapter, "fetch_version", fetch_then_edit)
+    with lane_session("wiki") as db:
+        holder["db"] = db
+        report = drain_once(db, adapter, hot_sets=_hot(), budget=_plenty(), text_seconds=3600.0)
+    assert _stored(report) == 1
+    with lane_session("wiki") as db:
+        assert len(_backlog(db)) == 1, "the late edit is still waiting"
+
+
+def test_a_never_stored_page_whose_changes_carry_NO_TIME_is_still_waiting(lane):
+    _deferred_lane()
+    with lane_session("wiki") as db:
+        db.execute(VersionedChange.__table__.update().values(occurred_at=None))
+    with lane_session("wiki") as db:
+        assert len(_backlog(db)) == 1
+
+
+def test_a_store_that_fails_in_the_LINK_leaves_no_half_stored_page(lane, monkeypatch):
+    from src.versioned.models import VersionedBaseline
+
+    adapter = _deferred_lane()
+
+    def link_fails(*_a, **_k):
+        raise RuntimeError("the link failed")
+
+    monkeypatch.setattr(pipeline_mod, "_link_ingested", link_fails)
+    with lane_session("wiki") as db:
+        report = drain_once(db, adapter, hot_sets=_hot(), budget=_plenty(), text_seconds=3600.0)
+    assert any("link failed" in e for p in report.passes.values() for e in p.get("errors", []))
+    with lane_session("wiki") as db:
+        assert db.execute(select(VersionedBaseline)).scalars().first() is None, (
+            "the baseline the store wrote was rolled back with the failed link"
+        )
+        assert len(_backlog(db)) == 1, "so the page is still waiting"
+
+
+def test_a_failed_store_rolls_the_CORPUS_session_back_too(lane, monkeypatch):
+    adapter = _deferred_lane()
+    rolled: list[bool] = []
+
+    class Corpus:
+        def rollback(self):
+            rolled.append(True)
+
+    def boom(*_a, **_k):
+        raise RuntimeError("the corpus upsert failed")
+
+    monkeypatch.setattr(pipeline_mod, "store_version", boom)
+    with lane_session("wiki") as db:
+        drain_once(
+            db, adapter, hot_sets=_hot(), budget=_plenty(), text_seconds=3600.0, corpus=Corpus()
+        )
+    assert rolled == [True]
+
+
+def test_a_savepoint_that_CANNOT_be_rolled_back_fails_the_drain_loudly(lane, monkeypatch):
+    """SQLite ends the whole transaction on SQLITE_FULL/IOERR/BUSY; carrying on would commit a
+    later feed's rows and silently lose every earlier feed's."""
+    from sqlalchemy.exc import OperationalError
+
+    adapter = _deferred_lane()
+
+    def boom(*_a, **_k):
+        raise RuntimeError("disk full")
+
+    class Savepoint:
+        def __init__(self, real):
+            self._real = real
+
+        def commit(self):
+            self._real.commit()
+
+        def rollback(self):
+            raise OperationalError("ROLLBACK TO SAVEPOINT", {}, Exception("no such savepoint"))
+
+    monkeypatch.setattr(pipeline_mod, "store_version", boom)
+    with pytest.raises(pipeline_mod.LaneTransactionLost), lane_session("wiki") as db:
+        real_begin = db.begin_nested
+        monkeypatch.setattr(db, "begin_nested", lambda: Savepoint(real_begin()))
+        drain_once(db, adapter, hot_sets=_hot(), budget=_plenty(), text_seconds=3600.0)
