@@ -16,12 +16,15 @@ fetching, failing, or not yet started.
 
 from __future__ import annotations
 
+from datetime import timedelta
+
 import pytest
 from sqlalchemy import select
 
 from src.testing.wiki_fixture import FixtureWikiClient
 from src.testing.wiki_stream_fixture import FixtureStreamSession
-from src.versioned.models import VersionedChange
+from src.versioned import pipeline as pipeline_mod
+from src.versioned.models import VersionedChange, VersionedEntity, _utcnow
 from src.versioned.store import create_lane, dispose_all, lane_session
 from src.wiki import runner as runner_mod
 from src.wiki.lane import WikiStreamAdapter
@@ -303,3 +306,95 @@ def test_the_service_status_carries_the_drain_block(lane):
     from src.wiki import service
 
     assert service.lane_service_status()["drain"] is None, "no runner: an absence"
+
+
+def _deferred_lane():
+    """A lane whose one HOT page has its change recorded and its text deferred."""
+    adapter = _filled_adapter()
+    with lane_session("wiki") as db:
+        first = drain_once(db, adapter, hot_sets=_hot(), budget=_plenty(), text_seconds=0.0)
+    assert first.text_deferred >= 1
+    return adapter
+
+
+def _entity(db):
+    return db.execute(select(VersionedEntity)).scalars().one()
+
+
+def test_the_BACKLOG_is_not_counted_as_deferred_again_on_every_drain(lane):
+    adapter = _deferred_lane()
+    with lane_session("wiki") as db:
+        _entity(db).last_checked_at = _utcnow() - timedelta(hours=1)
+    with lane_session("wiki") as db:
+        again = drain_once(db, adapter, hot_sets=_hot(), budget=_plenty(), text_seconds=0.0)
+    assert again.text_deferred == 0, "a page counted on the drain that left it is not counted twice"
+
+
+def test_a_page_the_source_reported_GONE_is_not_asked_for_again(lane):
+    _deferred_lane()
+    with lane_session("wiki") as db:
+        ent = _entity(db)
+        ent.deleted_at = _utcnow()
+        ent.last_checked_at = _utcnow() - timedelta(hours=1)
+    with lane_session("wiki") as db:
+        assert pipeline_mod._unfetched_entities(db, f"stream:{EDITION}", 10) == []
+
+
+def test_an_UNWATCHED_page_is_not_in_the_backlog(lane):
+    _deferred_lane()
+    with lane_session("wiki") as db:
+        ent = _entity(db)
+        ent.watching = False
+        ent.last_checked_at = None
+    with lane_session("wiki") as db:
+        assert pipeline_mod._unfetched_entities(db, f"stream:{EDITION}", 10) == []
+
+
+def test_a_page_checked_a_moment_ago_waits_out_its_COOLDOWN(lane):
+    _deferred_lane()
+    feed = f"stream:{EDITION}"
+    with lane_session("wiki") as db:
+        _entity(db).last_checked_at = _utcnow()
+    with lane_session("wiki") as db:
+        assert pipeline_mod._unfetched_entities(db, feed, 10) == [], "inside the cooldown"
+    with lane_session("wiki") as db:
+        _entity(db).last_checked_at = _utcnow() - timedelta(seconds=pipeline_mod.BACKLOG_COOLDOWN_S + 5)
+    with lane_session("wiki") as db:
+        assert len(pipeline_mod._unfetched_entities(db, feed, 10)) == 1, "and back after it"
+
+
+def test_a_FAILED_fetch_is_stamped_so_it_leaves_the_head_of_the_backlog(lane, monkeypatch):
+    adapter = _deferred_lane()
+    with lane_session("wiki") as db:
+        _entity(db).last_checked_at = _utcnow() - timedelta(hours=1)
+
+    def boom(_external_id):
+        raise RuntimeError("the service said 429")
+
+    monkeypatch.setattr(adapter, "fetch_version", boom)
+    with lane_session("wiki") as db:
+        report = drain_once(db, adapter, hot_sets=_hot(), budget=_plenty(), text_seconds=3600.0)
+    assert any("429" in e for p in report.passes.values() for e in p.get("errors", []))
+    with lane_session("wiki") as db:
+        assert pipeline_mod._unfetched_entities(db, f"stream:{EDITION}", 10) == []
+
+
+def test_a_page_whose_STORE_raises_does_not_end_the_pass_or_poison_the_session(lane, monkeypatch):
+    adapter = _deferred_lane()
+    with lane_session("wiki") as db:
+        _entity(db).last_checked_at = _utcnow() - timedelta(hours=1)
+
+    def boom(*_a, **_k):
+        raise RuntimeError("the corpus upsert failed")
+
+    monkeypatch.setattr(pipeline_mod, "store_version", boom)
+    with lane_session("wiki") as db:
+        report = drain_once(db, adapter, hot_sets=_hot(), budget=_plenty(), text_seconds=3600.0)
+        # the session is still usable for the rest of the drain and its commit
+        assert db.execute(select(VersionedChange)).scalars().first() is not None
+    errors = [e for p in report.passes.values() for e in p.get("errors", [])]
+    assert any("store: RuntimeError" in e for e in errors), errors
+    with lane_session("wiki") as db:
+        assert pipeline_mod._unfetched_entities(db, f"stream:{EDITION}", 10) == [], (
+            "stamped before the attempt, so it does not head the next pass"
+        )

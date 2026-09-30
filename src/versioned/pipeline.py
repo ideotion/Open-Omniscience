@@ -44,6 +44,7 @@ import logging
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from datetime import timedelta
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -376,12 +377,21 @@ def run_feed_once(
     # whose baseline was deferred would have no text until it happened to change again --
     # the outcome ``admit`` exists to prevent. Opt-in (``catch_up`` > 0), so a lane that
     # never bounds its fetching (law, OSM) behaves exactly as before.
-    if catch_up > 0:
+    #
+    # Skipped when this feed's time is already spent (the read is outside the bound, and there
+    # is no time to fetch what it would find). Backlog-only pages are NOT counted as deferred
+    # or withheld below: they were counted on the pass that first left them, and counting them
+    # again every 30 s would report the same page thousands of times.
+    batch_ids = {c.external_id for c in batch.changes}
+    backlog_only: set[str] = set()
+    if catch_up > 0 and not (fetch_deadline is not None and monotonic() >= fetch_deadline):
         for backlog_id, backlog_entity in _unfetched_entities(lane, feed, catch_up):
             if backlog_id not in seen:
                 seen.add(backlog_id)
                 touched.append(backlog_id)
                 entity_ids.setdefault(backlog_id, backlog_entity)
+                if backlog_id not in batch_ids:
+                    backlog_only.add(backlog_id)
     for change in sorted(
         (c for c in batch.changes if c.external_id in entity_ids),
         key=lambda c: (c.occurred_at is None, c.occurred_at),
@@ -393,7 +403,8 @@ def run_feed_once(
     allowance = budget.max_versions if budget.max_versions is not None else len(touched)
     for external_id in touched:
         if allowance <= 0:
-            result.text_deferred += 1
+            if external_id not in backlog_only:
+                result.text_deferred += 1
             continue
         entity = lane.get(VersionedEntity, entity_ids[external_id])
         if entity is None or not entity.watching:
@@ -406,9 +417,10 @@ def run_feed_once(
                 # ``"unstated"`` rather than dropped, because a withheld text with
                 # no reason anywhere is the shape this whole family of counters
                 # exists to prevent.
-                result.text_withheld += 1
-                key = why or "unstated"
-                result.text_withheld_reasons[key] = result.text_withheld_reasons.get(key, 0) + 1
+                if external_id not in backlog_only:
+                    result.text_withheld += 1
+                    key = why or "unstated"
+                    result.text_withheld_reasons[key] = result.text_withheld_reasons.get(key, 0) + 1
                 continue
         # A TIME BOUND ON FETCHING, beside the count bound, checked where a request is about
         # to be made: AFTER the watching and policy refusals, so an unwatched page and a text
@@ -419,15 +431,17 @@ def run_feed_once(
         # an unfetched text is counted under ``text_deferred`` and is picked up by the next
         # pass's backlog (``catch_up``); a fetch already in flight is not interrupted.
         if fetch_deadline is not None and monotonic() >= fetch_deadline:
-            result.text_deferred += 1
+            if external_id not in backlog_only:
+                result.text_deferred += 1
             continue
+        # STAMPED BEFORE THE ATTEMPT, as the time it was made, so a page that fails at ANY
+        # later step (the fetch, the store, the link) goes to the back of the backlog and out
+        # of its cooldown window, instead of holding the head of every later pass.
+        entity.last_checked_at = _utcnow()
         try:
             version = adapter.fetch_version(external_id)
         except Exception as exc:  # noqa: BLE001 - one entity must not end the pass
             result.errors.append(f"{external_id}: {type(exc).__name__}: {exc}")
-            # Checked NOW, so a page whose fetch keeps failing goes to the back of the
-            # backlog rather than holding its head for every later pass.
-            entity.last_checked_at = _utcnow()
             continue
         allowance -= 1
         if version is None:
@@ -453,7 +467,23 @@ def run_feed_once(
             # tracks the SOURCE's current state, not our history of it.
             entity.deleted_at = None
             lane.flush()
-        outcome, article_id = store_version(lane, adapter, entity, version, corpus=corpus)
+        # ONE PAGE'S STORE FAILING must not end the pass, leave the session needing a rollback
+        # for the feeds after it, or (with the catch-up) be asked for again at the head of every
+        # pass: its lane writes run in a SAVEPOINT (the corpus index path commits on its own, so it gets none), and a failure is named and moved on from.
+        lane_sp = lane.begin_nested()
+        try:
+            outcome, article_id = store_version(lane, adapter, entity, version, corpus=corpus)
+            _link_ingested(lane, feed, external_id, entity.id)
+            lane_sp.commit()
+        except Exception as exc:  # noqa: BLE001 - one entity must not end the pass
+            try:
+                if lane_sp.is_active:
+                    lane_sp.rollback()
+            except Exception:  # noqa: BLE001 - the original failure is the one to report
+                _LOG.debug("the savepoint could not be rolled back", exc_info=True)
+            _LOG.warning("storing %s failed", external_id, exc_info=True)
+            result.errors.append(f"{external_id}: store: {type(exc).__name__}: {exc}")
+            continue
         if outcome == "baseline":
             result.baselines_captured += 1
         elif outcome == "revision":
@@ -462,38 +492,44 @@ def run_feed_once(
             result.revisions_unchanged += 1
         if article_id is not None:
             result.articles_indexed += 1
-        _link_ingested(lane, feed, external_id, entity.id)
 
     return result
+
+
+#: Seconds a followed page is left alone after it was last checked (or last attempted) before
+#: the backlog asks for it again. Its own backoff: a page that keeps failing, or the source
+#: answering 429, is not re-asked on every 30 s drain. A deferred page checked a moment ago is
+#: delayed by the same window, which is the price of one mechanism instead of two.
+BACKLOG_COOLDOWN_S: float = 300.0
 
 
 def _unfetched_entities(lane: Session, feed: str, limit: int) -> list[tuple[str, int]]:
     """``(external_id, entity_id)`` of followed entities with a recorded change whose text
     was never stored, the longest-unchecked first.
 
-    Driven from the ENTITIES (the followed set: thousands), never from a scan of the changes
-    table (millions, most of them for pages nobody follows), so it reads each followed
-    entity's own time-ordered changes. A page the source reported GONE (``deleted_at`` set)
-    is excluded, or it would be asked for again on every pass for ever; a page whose fetch
-    failed is ordered by ``last_checked_at`` so it cannot hold the head of the queue.
+    Driven from the ENTITIES (the followed set: thousands) with one indexed ``EXISTS`` per
+    entity (``ix_versioned_change_entity_time``), never from a scan of the feed's changes
+    (millions, most for pages nobody follows). A page the source reported GONE
+    (``deleted_at`` set) is excluded, or it would be asked for again on every pass for ever,
+    and so is one checked or attempted within ``BACKLOG_COOLDOWN_S``.
     """
-    from sqlalchemy import func
+    from sqlalchemy import exists, or_
 
+    cutoff = _utcnow() - timedelta(seconds=BACKLOG_COOLDOWN_S)
+    waiting = exists().where(
+        VersionedChange.entity_id == VersionedEntity.id,
+        VersionedChange.feed == feed,
+        VersionedChange.ingested_revision_id.is_(None),
+    )
     rows = lane.execute(
         select(VersionedEntity.external_id, VersionedEntity.id)
-        .join(VersionedChange, VersionedChange.entity_id == VersionedEntity.id)
         .where(
-            VersionedChange.feed == feed,
-            VersionedChange.ingested_revision_id.is_(None),
             VersionedEntity.watching.is_(True),
             VersionedEntity.deleted_at.is_(None),
+            or_(VersionedEntity.last_checked_at.is_(None), VersionedEntity.last_checked_at < cutoff),
+            waiting,
         )
-        .group_by(VersionedEntity.id, VersionedEntity.external_id, VersionedEntity.last_checked_at)
-        .order_by(
-            VersionedEntity.last_checked_at.asc().nullsfirst(),
-            func.min(VersionedChange.occurred_at).asc().nullslast(),
-            VersionedEntity.id,
-        )
+        .order_by(VersionedEntity.last_checked_at.asc().nullsfirst(), VersionedEntity.id)
         .limit(limit)
     ).all()
     return [(str(r[0]), int(r[1])) for r in rows if r[0]]
