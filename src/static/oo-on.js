@@ -233,7 +233,7 @@
     "_uxImVerify", "_uxPauseResume", "_uxRun", "addAnnotation", "addMarketRule", "addSource",
     "addToDraft", "addWikiPage", "agExcludeBulk", "agExcludeClear", "agNavShift", "agNavToday",
     "agOpenMonth", "agOpenMonthYear", "agOpenYear", "agPickDate", "agSetCat", "agShowDay",
-    "agToggleExclude", "aiRunPrompt", "aiRunPromptStart", "aiStartNow", "altAct", "altDiscardBatch", "anApplyArticlesFilter",
+    "agToggleExclude", "aiRunPrompt", "aiRunPromptStart", "aiStartNow", "altAct", "altDiscardBatch", "altMore", "anApplyArticlesFilter",
     "anFillTentative", "anMMset", "anMMsetScale", "anMMtoggleBig", "anParams", "anRelUpdateSel", "anSelectLens", "anTrendPick", "anTrendSetMode",
     "anchorRoot", "appShutdown", "applySrcFilters", "batchSelectAll", "batchToggle",
     "branchByFacet", "branchFromOrigin", "branchFromRelated", "branchSelectedRelated",

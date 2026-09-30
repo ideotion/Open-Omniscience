@@ -25,7 +25,7 @@ SETTINGS_VERSION = "oo-scheduler-settings-1"
 # supplement; the Wikipedia stream on the online seam). A stored ``mode`` is migrated once
 # by ``_migrate_retired_mode`` below and disclosed; see ``_RETIRED_MODE_SENTENCES``.
 VALID_RATE_MODES = ("target", "maximum")
-# Bounds for the download-rate target (KiB/s): a generous, honest range.
+# Bounds for the download-rate target (kbit/s, decimal kilobits per second): a generous, honest range.
 _MIN_TARGET_KBPS, _MAX_TARGET_KBPS = 50, 50_000
 # Hard ceiling on concurrent fetches (the governor's upper bound).
 _MAX_PARALLELISM = 50
@@ -84,10 +84,10 @@ class SchedulerSettings:
     # writes serialised. Per-host politeness is never traded for speed: one host is
     # fetched by at most one worker at a time.
     #   collect_rate_mode  : "target" (track collect_target_kbps) | "maximum"
-    #   collect_target_kbps: best-effort download-rate goal in KiB/s (target mode)
+    #   collect_target_kbps: best-effort download-rate goal in kbit/s (target mode)
     #   collect_parallelism: the hard CEILING on concurrent fetches (the governor's
     #                        upper bound). 1 = the sequential loop (governor off).
-    # The default is "maximum" (maintainer ruling 2026-07-23: the old 500 KiB/s
+    # The default is "maximum" (maintainer ruling 2026-07-23: the old 500 kbit/s
     # target deliberately parked workers and left real connections under-used —
     # field-observed as "a few kB/s average"); the governor still backs off
     # automatically under CPU/memory/writer contention (logged in

@@ -288,7 +288,7 @@ def test_the_ramp_recovers_within_a_pass_but_only_back_to_the_ceiling():
 def test_target_mode_below_target_also_stops_at_the_learned_ceiling():
     gov = BandwidthGovernor(mode="target", target_kbps=500, w_max=50, seed=2, ramp_ceiling=5)
     for i in range(20):
-        gov.observe(1.0, now=float(i) * 10.0)  # 1 KiB/s: forever below target
+        gov.observe(1.0, now=float(i) * 10.0)  # 1 kbit/s: forever below target
     assert gov.permits == 5
     # ...and says so, rather than "in-band", which would claim the rate is fine.
     assert gov.observe(1.0, now=500.0) == (5, "at-learned-ceiling")

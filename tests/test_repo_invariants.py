@@ -7343,7 +7343,7 @@ def test_agenda_dated_instances_place_in_their_own_year_and_show_provenance():
 
 def test_rate_mode_knob_in_top_bar_and_maximum_default():
     """Maintainer ruling 2026-07-23 (field feedback item 7): the bandwidth governor
-    defaults to "maximum" (the old 500 KiB/s target deliberately parked workers —
+    defaults to "maximum" (the old 500 kbit/s target deliberately parked workers —
     field-observed as a few kB/s on real connections), and the top bar carries a
     pretty gauge KNOB (#rate-toggle) toggling maximum <-> target with one click.
     The knob is a LOOPBACK settings write (PUT /api/scheduler/config, no egress
@@ -7354,7 +7354,7 @@ def test_rate_mode_knob_in_top_bar_and_maximum_default():
     app = app_js()
     settings_src = (_SRC / "scheduler" / "settings.py").read_text(encoding="utf-8")
 
-    # Backend default: maximum (target mode + its 500 KiB/s knob stay available).
+    # Backend default: maximum (target mode + its 500 kbit/s knob stay available).
     assert 'collect_rate_mode: str = "maximum"' in settings_src, (
         "the governor's default rate mode is 'maximum' (2026-07-23 ruling)"
     )

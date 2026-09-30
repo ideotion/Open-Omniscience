@@ -83,8 +83,8 @@ PRODUCER_COLUMNS: dict[str, dict[str, str]] = {
 #: an incoming row CONTRADICTS a local one; ``shown`` is what is stored and displayed;
 #: ``match`` maps each identity field to the column that holds it (how a carried alternate finds
 #: its local row again); ``scope`` says how the identity reaches the row's parent: ``article``
-#: (``article_hash`` -> ``article_id``), ``law`` (``document_url`` + ``revision_content_hash``
-#: -> ``revision_id``) or ``none``. ONE definition, read by the capture in ``merge.py``, by the
+#: (``article_hash`` -> ``article_id``), ``law`` (``jurisdiction`` + ``document_url`` +
+#: ``revision_content_hash`` -> ``revision_id``) or ``none``. ONE definition, read by the capture in ``merge.py``, by the
 #: carry of alternates between machines, and pinned against each other by the tests.
 ALTERNATE_SPECS: dict[str, dict[str, Any]] = {
     "article_analyses": {
@@ -169,7 +169,7 @@ def provenance_tag(session: Any, table: str, row_id: int) -> dict | None:
             f"SELECT {sel} FROM {table} r"  # noqa: S608  # nosec B608 - table is validated as a key of PRODUCER_COLUMNS by producer_tag_sql above, never input
             " LEFT JOIN merged_rows m ON m.table_name = :t AND m.row_id = r.rowid"
             " LEFT JOIN merge_batches b ON b.id = m.batch_id WHERE r.rowid = :id"
-            " ORDER BY b.id LIMIT 1"
+            " ORDER BY b.id DESC LIMIT 1"
         ),
         {"t": table, "id": int(row_id)},
     ).fetchone()

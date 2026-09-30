@@ -54,7 +54,7 @@ def _local_row_id(session: Any, table: str, identity: dict) -> int | None:
     Never by the ``local_row_id`` the restore stored: those tables use plain integer keys that
     SQLite reuses after a delete, so a stored id can point at an unrelated row later. Where the
     corpus holds several rows for one identity (a local pass appends one per run), the newest is
-    the one shown, as the readers do."""
+    the one shown, as the readers do. ``rowid`` (not ``id``) so a table keyed by text works too."""
     spec = ALTERNATE_SPECS.get(table)
     if spec is None or table not in PRODUCER_COLUMNS:
         return None
@@ -71,6 +71,11 @@ def _local_row_id(session: Any, table: str, identity: dict) -> int | None:
             " JOIN law_documents d ON d.id = r.document_id"
         )
         where.append("d.url = :document_url AND r.content_hash = :revision_content_hash")
+        # An alternate recorded before the jurisdiction joined the identity has none: the newest
+        # matching row is then the best available answer, never "gone".
+        if identity.get("jurisdiction"):
+            where.append("d.jurisdiction = :jurisdiction")
+            params["jurisdiction"] = identity["jurisdiction"]
         params["document_url"] = identity.get("document_url")
         params["revision_content_hash"] = identity.get("revision_content_hash")
     for i, (name, column) in enumerate(spec["match"].items()):
@@ -147,7 +152,7 @@ def list_alternates(
     total = q.count()
     rows = (
         q.order_by(MetadataAlternate.batch_id.desc(), MetadataAlternate.id)
-        .offset(max(0, offset)).limit(max(1, min(limit, 200))).all()
+        .offset(max(0, offset)).limit(max(1, min(limit, 1000))).all()
     )
     counts: dict[int, dict[str, int]] = {}
     for bid, st, n in session.execute(
@@ -173,7 +178,7 @@ def list_alternates(
         "items": [_item(session, r) for r in rows],
         "method": (
             "each item is a value a restore brought that differs from the one this machine "
-            "holds; the machine's own value is what the app shows until you choose otherwise"
+            "holds; the machine's own value is what the app shows, and nothing here changes that"
         ),
     }
 

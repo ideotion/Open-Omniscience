@@ -1056,7 +1056,7 @@
     // -- Top-bar collection-speed knob (maintainer ruling 2026-07-23) ------- //
     // One click toggles the bandwidth governor between "maximum" (ramp to the
     // worker ceiling; contention back-off + per-host politeness untouched) and
-    // the considerate 500 KiB/s "target". PUT /api/scheduler/config is a
+    // the considerate 500 kbit/s "target". PUT /api/scheduler/config is a
     // loopback settings write with no egress side effect (verified S4.7), so
     // no consent popup; the governor reads the mode at the next pass.
     let _rateMode = null;
@@ -1070,8 +1070,8 @@
       const needle = document.getElementById("rate-needle");
       if (needle) needle.setAttribute("transform", max ? "rotate(48 12 15.5)" : "rotate(-48 12 15.5)");
       btn.title = max
-        ? t9("Collection speed: Maximum — uses your connection fully (politeness per host unchanged). Click for the considerate 500 KiB/s target.")
-        : t9("Collection speed: 500 KiB/s target — deliberately gentle. Click for Maximum (full speed).");
+        ? t9("Collection speed: Maximum — uses your connection fully (politeness per host unchanged). Click for the considerate 500 kbit/s target.")
+        : t9("Collection speed: 500 kbit/s target — deliberately gentle. Click for Maximum (full speed).");
       btn.setAttribute("aria-pressed", max ? "true" : "false");
     }
     // The knob carries `data-i18n-dyn`, so the walker never retranslates its hover: after
@@ -1099,7 +1099,7 @@
         try { if ($("sch-speed") && c) applySchedConfig(c); } catch (_e) {}
         toast(next === "maximum"
           ? t9("Collection speed set to Maximum — applies from the next pass.")
-          : t9("Collection speed set to the 500 KiB/s target — applies from the next pass."));
+          : t9("Collection speed set to the 500 kbit/s target — applies from the next pass."));
       } catch (e) { toast(_failMsg("Could not change the collection speed: {error}", e), "err"); }
     }
 

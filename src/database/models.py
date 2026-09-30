@@ -2913,8 +2913,8 @@ class MetadataAlternate(Base):
 
     A row here is a RECORD BESIDE the local row, never a second copy of it: the deduced table
     itself is not written, so every reader that shows local data is unchanged and no imported
-    value can appear where a local one is shown. The only way an imported value becomes the
-    shown one is the operator choosing it (the differences panel).
+    value can appear where a local one is shown. The operator can keep or discard an alternate
+    (the differences panel); nothing makes one the shown value.
 
     ``identity`` names the item by its natural key (an article by its content hash), so the
     pointer survives a later restore; ``local_row_id`` is the convenience id of the local row
