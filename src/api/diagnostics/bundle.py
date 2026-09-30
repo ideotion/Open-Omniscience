@@ -25,8 +25,9 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from src.database.derived_views import KeywordMentionRead
 from src.database.maintenance import StatementTimeout, deadline_expired, statement_deadline
-from src.database.models import Article, Keyword, KeywordMention, Source
+from src.database.models import Article, Keyword, Source
 from src.database.read_snapshot import read_only_db
 from src.database.session import get_db
 from src.jobs.background import BackgroundJob, register_job
@@ -1421,7 +1422,7 @@ def _corpus_counters_safe(db) -> dict:
                 "available": True,
                 "articles": int(db.query(func.count(Article.id)).scalar() or 0),
                 "keywords": int(db.query(func.count(Keyword.id)).scalar() or 0),
-                "mentions": int(db.query(func.count(KeywordMention.id)).scalar() or 0),
+                "mentions": int(db.query(func.count(KeywordMentionRead.id)).scalar() or 0),
             }
     except Exception as exc:  # noqa: BLE001
         return {"available": False, "reason": _all_diag_err_str(exc)}

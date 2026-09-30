@@ -1141,15 +1141,15 @@ def _keyword_counts(session, keyword_id: int | None, article_ids) -> dict:
     ids = [a for a in article_ids if a is not None]
     if not ids:
         return {}
-    from src.database.models import KeywordMention
+    from src.database.derived_views import KeywordMentionRead
 
     out: dict = {}
     for i in range(0, len(ids), 900):
         chunk = ids[i : i + 900]
         for aid, cnt in (
-            session.query(KeywordMention.article_id, KeywordMention.count).filter(
-                KeywordMention.keyword_id == keyword_id,
-                KeywordMention.article_id.in_(chunk),
+            session.query(KeywordMentionRead.article_id, KeywordMentionRead.count).filter(
+                KeywordMentionRead.keyword_id == keyword_id,
+                KeywordMentionRead.article_id.in_(chunk),
             )
         ):
             out[aid] = cnt
@@ -2483,7 +2483,7 @@ def view_article(request: Request, article_id: int, db: Session = Depends(get_db
 
     # Related in your corpus: other articles sharing the most keywords with this
     # one (maintainer feedback: read locally, then branch out by similarity --
-    # source-agnostic). Reads KeywordMention (the real per-article extraction
+    # source-agnostic). Reads KeywordMentionRead (the real per-article extraction
     # chokepoint, src/analytics/store.py:index_article) -- NOT the legacy
     # article_keyword_association table, which has zero writers anywhere in the
     # live ingest path and always yields an empty candidate set (P0 fix,
@@ -2493,26 +2493,26 @@ def view_article(request: Request, article_id: int, db: Session = Depends(get_db
     # (limit 8) is resolved to titles.
     related_html = ""
     try:
-        from src.database.models import KeywordMention
+        from src.database.derived_views import KeywordMentionRead
 
         my_kw = [
             r[0]
-            for r in db.query(KeywordMention.keyword_id).filter(
-                KeywordMention.article_id == a.id
+            for r in db.query(KeywordMentionRead.keyword_id).filter(
+                KeywordMentionRead.article_id == a.id
             )
         ]
         if my_kw:
             ranked = (
                 db.query(
-                    KeywordMention.article_id,
-                    func.count(KeywordMention.keyword_id).label("shared"),
+                    KeywordMentionRead.article_id,
+                    func.count(KeywordMentionRead.keyword_id).label("shared"),
                 )
                 .filter(
-                    KeywordMention.keyword_id.in_(my_kw),
-                    KeywordMention.article_id != a.id,
+                    KeywordMentionRead.keyword_id.in_(my_kw),
+                    KeywordMentionRead.article_id != a.id,
                 )
-                .group_by(KeywordMention.article_id)
-                .order_by(func.count(KeywordMention.keyword_id).desc())
+                .group_by(KeywordMentionRead.article_id)
+                .order_by(func.count(KeywordMentionRead.keyword_id).desc())
                 .limit(8)
                 .all()
             )
@@ -2555,7 +2555,7 @@ def view_article(request: Request, article_id: int, db: Session = Depends(get_db
     # never a corpus-wide scan here. The ≈N pill is a number (language-neutral); the
     # caption is a keyed string so i18n.js translates it to the UI language.
     #
-    # Reads KeywordMention, not the legacy (never-written) article_keyword_association
+    # Reads KeywordMentionRead, not the legacy (never-written) article_keyword_association
     # table (P0 fix, reader-dead-legacy-table-related — same root cause as the Related
     # block above). The ranking/candidate step is an id+count-only projection over
     # keyword_mentions (no Article join, so no per-candidate row decrypt just to count
@@ -2568,28 +2568,28 @@ def view_article(request: Request, article_id: int, db: Session = Depends(get_db
     # (reader-dupbadge-n-plus-1-decrypt-risk) without weakening detection.
     dup_badge = ""
     try:
-        from src.database.models import KeywordMention
+        from src.database.derived_views import KeywordMentionRead
         from src.signals.near_dup import near_duplicate_clusters
 
         _mk = [
             r[0]
-            for r in db.query(KeywordMention.keyword_id).filter(
-                KeywordMention.article_id == a.id
+            for r in db.query(KeywordMentionRead.keyword_id).filter(
+                KeywordMentionRead.article_id == a.id
             )
         ]
         _cand = (
             [
                 rid
                 for rid, _shared in db.query(
-                    KeywordMention.article_id,
-                    func.count(KeywordMention.keyword_id).label("shared"),
+                    KeywordMentionRead.article_id,
+                    func.count(KeywordMentionRead.keyword_id).label("shared"),
                 )
                 .filter(
-                    KeywordMention.keyword_id.in_(_mk),
-                    KeywordMention.article_id != a.id,
+                    KeywordMentionRead.keyword_id.in_(_mk),
+                    KeywordMentionRead.article_id != a.id,
                 )
-                .group_by(KeywordMention.article_id)
-                .order_by(func.count(KeywordMention.keyword_id).desc())
+                .group_by(KeywordMentionRead.article_id)
+                .order_by(func.count(KeywordMentionRead.keyword_id).desc())
                 .limit(12)
                 .all()
             ]

@@ -10,7 +10,7 @@ collection interleave (untagged sources pool in the "untagged" bucket), the wiza
 themes, and every tag filter. This module is THE SHAPE of Section 8's LLM-triage
 pattern applied to a different task -- it reuses ``src/ai_layer/triage.py``'s
 conventions WHOLESALE (the ruling's own words): per-source top-N TERMS (post-
-stoplist, via the denormalised ``KeywordMention.source_id`` -- a covering scan, no
+stoplist, via the denormalised ``KeywordMentionRead.source_id`` -- a covering scan, no
 codec join) -> batched to loopback Ollama -> the model picks from the EXISTING
 CLOSED tag vocabulary only (the catalog taxonomy the wizard already reads, resolved
 live from every ``Source.tags`` value currently in the corpus -- closed-set
@@ -614,7 +614,7 @@ def select_source_tag_candidates(
     after_domain: str | None = None,
 ) -> tuple[list[SourceTagItem], list[SkippedSource], str | None]:
     """Per-source top-N post-stoplist TERMS via the denormalised
-    ``KeywordMention.source_id`` (a covering scan -- no join through Article, so no
+    ``KeywordMentionRead.source_id`` (a covering scan -- no join through Article, so no
     codec decrypt). A source below ``min_articles``/``min_mentions`` is SKIPPED with
     an honest reason and NEVER queried for terms or sent to the model (the evidence
     floor). A source whose top terms are entirely stoplisted is also skipped (empty
@@ -636,17 +636,18 @@ def select_source_tag_candidates(
     cursor-is-only-an-efficiency-net convention (mirrors src.catalog.discover_job)."""
     from sqlalchemy import func
 
-    from src.database.models import Keyword, KeywordMention, Source
+    from src.database.derived_views import KeywordMentionRead
+    from src.database.models import Keyword, Source
     from src.services.stopwords import stopwords_manager
 
     agg_rows = (
         session.query(
-            KeywordMention.source_id,
-            func.count(func.distinct(KeywordMention.article_id)),
-            func.sum(KeywordMention.count),
+            KeywordMentionRead.source_id,
+            func.count(func.distinct(KeywordMentionRead.article_id)),
+            func.sum(KeywordMentionRead.count),
         )
-        .filter(KeywordMention.source_id.isnot(None))
-        .group_by(KeywordMention.source_id)
+        .filter(KeywordMentionRead.source_id.isnot(None))
+        .group_by(KeywordMentionRead.source_id)
         .all()
     )
     counters = {
@@ -686,11 +687,11 @@ def select_source_tag_candidates(
             )
             continue
         term_rows = (
-            session.query(Keyword.term, Keyword.language, func.sum(KeywordMention.count).label("m"))
-            .join(KeywordMention, KeywordMention.keyword_id == Keyword.id)
-            .filter(KeywordMention.source_id == sid)
+            session.query(Keyword.term, Keyword.language, func.sum(KeywordMentionRead.count).label("m"))
+            .join(KeywordMentionRead, KeywordMentionRead.keyword_id == Keyword.id)
+            .filter(KeywordMentionRead.source_id == sid)
             .group_by(Keyword.id)
-            .order_by(func.sum(KeywordMention.count).desc())
+            .order_by(func.sum(KeywordMentionRead.count).desc())
             .limit(top_n)
             .all()
         )

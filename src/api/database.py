@@ -211,7 +211,8 @@ def _compute_figures(db: Session, now: datetime) -> dict:
 
     from sqlalchemy import func, select
 
-    from src.database.models import Article, KeywordMention
+    from src.database.derived_views import KeywordMentionRead
+    from src.database.models import Article
 
     n = int(db.execute(select(func.count()).select_from(Article)).scalar() or 0)
     out: dict = {"articles": n}
@@ -219,7 +220,7 @@ def _compute_figures(db: Session, now: datetime) -> dict:
         return out
     avg_wc = db.execute(select(func.avg(Article.word_count))).scalar()  # idx_article_word_count
     out["avg_word_count"] = round(float(avg_wc), 1) if avg_wc is not None else None
-    n_mentions = int(db.execute(select(func.count()).select_from(KeywordMention)).scalar() or 0)
+    n_mentions = int(db.execute(select(func.count()).select_from(KeywordMentionRead)).scalar() or 0)
     out["keyword_mentions"] = n_mentions
     out["avg_keywords_per_article"] = round(n_mentions / n, 1)
     first = db.execute(select(func.min(Article.created_at))).scalar()  # idx_article_created_at

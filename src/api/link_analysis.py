@@ -440,7 +440,8 @@ def shared_links(
     from sqlalchemy import func
 
     from src.analytics import queries as q
-    from src.database.models import Article, ArticleLink, KeywordMention
+    from src.database.derived_views import KeywordMentionRead
+    from src.database.models import Article, ArticleLink
 
     # EXACT resolution -- audit §4.1 (P0), THIRD site, and the one that shows what
     # an incomplete fix costs. `term` here is never typed by a human: it is
@@ -457,7 +458,7 @@ def shared_links(
         return {"resolved": None, "shared": [], "members": 0}
     member_ids = [
         r[0]
-        for r in db.query(KeywordMention.article_id).filter_by(keyword_id=kw.id).all()
+        for r in db.query(KeywordMentionRead.article_id).filter_by(keyword_id=kw.id).all()
     ]
     if not member_ids:
         return {"resolved": {"term": kw.term}, "shared": [], "members": 0}
