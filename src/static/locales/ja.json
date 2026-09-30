@@ -3964,6 +3964,7 @@
   "Save this search": "この検索を保存",
   "Saved search": "保存した検索",
   "Saved synthesis.html": "synthesis.html を保存しました",
+  "Saved {file}: {n} articles, {size}.": "{file} を保存しました：記事 {n} 件、{size}。",
   "Saved.": "保存しました。",
   "Saved. Find it in Insights → Watches; it never fires a Lead.": "保存しました。インサイト → ウォッチにあります。手がかりを発することはありません。",
   "Saved. The stream starts when you go online.": "保存しました。オンラインになるとストリームが始まります。",
