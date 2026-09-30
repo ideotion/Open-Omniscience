@@ -76,7 +76,7 @@
   half has no figure, so its change is proposed and asked, never assumed; (33) RC16 STILL OPEN, a later discussion
   at the maintainer's request (their questions are on its row); (34) RC17 = a; (35) Q925 ⛔ = a; (36) Q1113 ⛔ = a;
   (37) D47 ⛔ STILL OPEN («I'm not sure, help me decide. Keywords still need a lot of work, a dedicated keyword
-  working session is necessary»), to the thread «Keyword working session». **Recorded only:** no code changed; each
+  working session is necessary»), to the thread «Keyword working session» (**later ANSWERED (a) the same day = `R96`**, see the `D47` entry below). **Recorded only:** no code changed; each
   build item goes to the thread that owns its row (OSM lane D, OSM boundaries E/L, entity spine C, claim workspace
   K, UI shell I, the plan thread F, translation sweep H). **Where it landed:** `RULINGS_INDEX.md`; the four sheet
   `ANSWER` lines (`ROADMAP_ANSWER_SHEET_2026-09-12_BETA_PATHWAY.md`, `RULINGS_CONFIRMATION_2026-09-15_REGISTER_ROUND.md`,
@@ -480,8 +480,8 @@
     (see `LESSONS.md`); and a macOS-only race in
     `tests/test_import_lifecycle_stages.py`'s boot-drain test, which watched for a transient
     "running" state a fast drain can pass between two polls.
-  - **`D47` ⛔ PENDING — adopt the segmented derived index as 0.5's plan for the derived-row
-    write path.** Recommendation **a**: build step 0 (every reader through a view over today's
+  - **`D47` ⛔ ANSWERED 2026-09-29 (a) = `R96` — adopted; step 0 is being built by the thread «Keyword working session».** (Was: PENDING — adopt the segmented derived index as 0.5's plan for the derived-row
+    write path.) Recommendation **a**: build step 0 (every reader through a view over today's
     tables — behaviour-neutral) now, and steps 1–4 in 0.5 gated on the design's §8
     measurements. It is also the design in which `D46` stops being a question. Touches, when
     built: `src/analytics/store.py`, `src/backup/merge.py`, `src/analytics/bulk_build.py`,
@@ -15989,3 +15989,23 @@ Built at these defaults; R68 stays held should the maintainer want any of them p
    ids) and the result says so ("the first articles only …"). Where: `_SCOPE_ID_CAP`.
 4. **Places (S05-03).** The place card is the entry point; a Place the gazetteer adds later reaches the lens
    through the same `place` scope, with no new code.
+
+## 2026-09-29 — THE DOSSIER SEED — STATED DEFAULTS (0.5 row K, brief `S05-11` S4; not rulings, each reversible in one place)
+
+Built at these defaults, none of which changes a ruling; any can be put to the maintainer as a card.
+
+1. **How an article joins an item: three routes, no new identity rule.** A person or organisation whose
+   name `entity_qid` resolves to exactly this item; an article keyword that is a ring member of this item
+   IN ITS OWN LANGUAGE and names no other item; a place mention that resolves to a Place carrying this
+   item. A name several items share joins none (Q412's refusal). Where: `src/entities/dossier.py`.
+2. **The rails.** Joined: news and web (every provenance class but Wikipedia and law), Wikipedia (corpus
+   articles plus the Wikipedia lane's pages), law, Places, the map (the OpenStreetMap lane's objects whose
+   `wikidata` tag is the item). Named as NOT joined, with why: markets, the agenda, tracked law texts. That
+   is five joined rails; V1 §8's ≥ 6 is 0.8 row A's. Where: `JOINED_RAILS` / `NOT_JOINED`.
+3. **The page is a dialog**, like the place card, opened from the place card and from a Who chip whose
+   name resolves to one item; no sidebar entry, no omnibar command. Where: `#dossier`, `app-dossier.js`.
+4. **The passport (A-1) is built here first** (`src/analytics/passport.py`) and used only by the dossier;
+   A-1's sweep across Insights, trends, the corpus windows and card headers is not done by this slice.
+5. **No cap on the counts.** The passport and every route count the whole set through a SELECT; only the
+   ids handed to the analysis window are bounded, at that window's own 5,000, and the page says so. The
+   map lane read has no index on the `wikidata` tag, so on a large lane it scans; a lane index is row D's.

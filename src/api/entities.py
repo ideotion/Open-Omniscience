@@ -209,6 +209,28 @@ def item(qid: str, db: Session = Depends(get_db)) -> dict:
     return out
 
 
+# ---- the dossier seed (S05-11 S4) ------------------------------------------------ #
+
+
+@router.get("/dossier")
+def dossier(
+    qid: str = Query(..., min_length=2, max_length=16),
+    lang: str = Query("en", max_length=16),
+    db: Session = Depends(get_db),
+) -> dict:
+    """One Wikidata item and the rails this machine joins to it, with the corpus passport.
+
+    Local reads only (no network call, so no consent gate): the corpus, the item cache, the
+    Wikipedia and OpenStreetMap lanes. The rails it does NOT join are named in the payload.
+    """
+    from src.entities.dossier import qid_dossier
+
+    out = qid_dossier(db, qid.strip().upper(), lang)
+    if out is None:
+        raise HTTPException(status_code=400, detail="not a Wikidata id")
+    return out
+
+
 # ---- the ladder (Q415) ----------------------------------------------------------- #
 
 

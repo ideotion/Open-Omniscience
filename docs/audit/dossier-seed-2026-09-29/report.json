@@ -1,0 +1,107 @@
+{
+  "airplane_before_walk": true,
+  "place_card_button": "Open the dossier",
+  "place_card_closed": true,
+  "en": {
+    "title": "Zermatt",
+    "qid": "Q999999101",
+    "passport": "4 articles · 4 sources · 2 countries · 2 languages · 2026-06-03 – 2026-08-20 (1 without a country · 1 without a language)",
+    "passport_visible": true,
+    "rails": [
+      [
+        "NEWS AND WEB",
+        "2 articles"
+      ],
+      [
+        "WIKIPEDIA",
+        "1 corpus articles\nZermatt fr"
+      ],
+      [
+        "LAW",
+        "1 articles"
+      ],
+      [
+        "PLACES",
+        "Zermatt village · CHE · Mentioned in 2 articles"
+      ],
+      [
+        "MAP (OPENSTREETMAP)",
+        "Zermatt n240037735 · CHE"
+      ]
+    ],
+    "not_joined": [
+      "Markets",
+      "Agenda",
+      "Tracked law texts"
+    ],
+    "caveat_visible": true,
+    "open_button": "Open these 4 articles in the analysis window"
+  },
+  "en_text": "4 articles · 4 sources · 2 countries · 2 languages · 2026-06-03 – 2026-08-20 (1 without a country · 1 without a language)\n\nmunicipality in Valais (walk fixture) — Wikidata\n\nHOW ARTICLES JOIN THIS ITEM\nA person or organisation they mention: 1 articles (Zermatt)\nA keyword that is a name of this item: 1 articles (zermatt)\nA place they mention: 2 articles (Zermatt)\nJOINED ON THIS PAGE\nNEWS AND WEB\t2 articles\nWIKIPEDIA\t1 corpus articles\nZermatt fr\n\nLAW\t1 articles\nPLACES\t\nZermatt village · CHE · Mentioned in 2 articles\n\nMAP (OPENSTREETMAP)\t\nZermatt n240037735 · CHE\nNOT JOINED YET\nMarkets Market series are keyed by ticker symbol, not by a Wikidata item.\nAgenda Calendar events carry no Wikidata item.\nTracked law texts Tracked law texts are keyed by their legal identifier; they join here only through the corpus articles they were ingested as.\nOpen these 4 articles in the analysis window\n\nArticles join this item three ways: a person or organisation they mention whose name resolves to exactly this Wikidata item; an article keyword that is a name of this item in its own language and of no other item; a place they mention that resolves to a Place carrying this item. The rails split those articles by their source's channel, then add what this machine holds under the same item: the Wikipedia lane's pages, the Places and the OpenStreetMap lane's objects. No network call is made.\n\nA seed, not a portrait: it joins the rails listed and names the ones it does not. A name that could mean several items joins none of them, so an article about this item that only uses such a name is missing here.",
+  "en_overlaps": [],
+  "places_chip_opens_card": "Zermatt",
+  "dossier_closed_by_chip": true,
+  "who_chips": [
+    [
+      "Zermatt (organization) · 1",
+      true
+    ],
+    [
+      "Matter (organization) · 1",
+      false
+    ]
+  ],
+  "who_opens": "Q999999101",
+  "open_articles_label": "“Zermatt · Q999999101”",
+  "dossier_closed_by_open": true,
+  "ar_dir": "rtl",
+  "ar_place_card_button": "افتح الملف",
+  "ar": {
+    "title": "تسيرمات",
+    "qid": "Q999999101",
+    "passport": "مقالات: 4 · مصادر: 4 · 2 دولة · 2 لغة · 2026-06-03 – 2026-08-20 (1 بلا دولة · 1 بلا لغة)",
+    "passport_visible": true,
+    "rails": [
+      [
+        "الأخبار والويب",
+        "مقالات: 2"
+      ],
+      [
+        "ويكيبيديا",
+        "1 مقالة من المدوّنة\nZermatt fr"
+      ],
+      [
+        "القانون",
+        "مقالات: 1"
+      ],
+      [
+        "أماكن",
+        "Zermatt village · CHE · مذكور في 2 مقالة"
+      ],
+      [
+        "الخريطة (OPENSTREETMAP)",
+        "Zermatt n240037735 · CHE"
+      ]
+    ],
+    "not_joined": [
+      "الأسواق",
+      "المفكرة",
+      "النصوص القانونية المتابَعة"
+    ],
+    "caveat_visible": true,
+    "open_button": "افتح هذه المقالات الـ4 في نافذة التحليل"
+  },
+  "ar_latin_left": [
+    "OPENSTREETMAP",
+    "village"
+  ],
+  "ar_junk": [],
+  "ar_overlaps": [],
+  "narrow_overflow_px": 0,
+  "narrow_dialog_overflow_px": -18,
+  "narrow_overlaps": [],
+  "errors": [],
+  "bad_responses": [],
+  "blocked_non_loopback": [],
+  "airplane_after_walk": true
+}

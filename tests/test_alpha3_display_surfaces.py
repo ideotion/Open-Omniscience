@@ -179,6 +179,7 @@ _SURFACES: tuple[tuple[str, str, str], ...] = (
     ("app-ai-tools.js", "ooCountryCell(c.evidence.country)", "a catalog suggestion's evidence"),
     ("app-ai-tools.js", "ooLangName(r.target_language)", "a translation job's language pair"),
     # --- The library -------------------------------------------------------- #
+    ("app-dossier.js", "ooCountryCode(p.country)", "the dossier's Places row: a place's country"),
     ("app-library.js", "ooLangName(s.language)", "the per-language shelf label"),
     ("app-library.js", "ooLangName(r.language)", "a row's language"),
     ("app-library.js", "ooLangName(l)", "an export's language list"),

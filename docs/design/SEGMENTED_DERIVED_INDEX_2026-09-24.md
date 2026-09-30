@@ -170,6 +170,44 @@ is a later step for the atomicity reason in §3.1.
 0. **The view over one segment.** Every reader of the derived tables goes through a view that
    today covers exactly the current tables; a repo-invariant test fails on any new direct
    reference. No behaviour change, and it is the step that makes the rest reviewable.
+
+   **STEP 0 IS IN PROGRESS (`R96`, `D47` = a, 2026-09-29) — slice 1 built, what it taught:**
+   - **The seam is a SQL view, not an ORM selectable**, because the readers are not all ORM: raw
+     `text()` SQL, the merge's `INSERT … SELECT` and DuckDB's `sqlite_scan` (`columnar.py`) name
+     the table too, and only a SQL name reaches all of them. `src/database/derived_views.py`
+     owns `keyword_mentions_all` and a read-only ORM mapping of it, `KeywordMentionRead`, on a
+     metadata of its own so `create_all` never mistakes it for a table.
+   - **It LISTS its columns; `SELECT *` would rot.** A view's `*` is expanded at creation, so it
+     silently keeps the old column set after a migration adds one, and a column DROP or RENAME
+     fails while a view names the column. **Row B's country-code migration (`S05-02`) touches
+     this very table**, and two existing downgrades already drop `keyword_mentions` columns: SQLite
+     refuses a DROP COLUMN, a RENAME COLUMN and a table re-create while a view names the column.
+     So `migrations/env.py` drops the view before EVERY migration and downgrade, and the next
+     boot re-creates it from the model (`ensure_derived_views`, which also repairs a stale one),
+     which also covers the staged-copy upgrade of a backup artifact that carries the view. No
+     migration has to remember. (Found by the Opus review of PR #1232.)
+   - **The ensure runs after the column self-heals**, because a view naming a column the table does
+     not have yet blocks every `ALTER … RENAME` until repaired; and a reader that meets a missing
+     view (a boot-time ensure that failed on a locked database) recreates it under the write gate
+     (`require_mentions_view`) rather than 500.
+   - **No migration.** The view is created by `init_db` (every install, alembic or not) and by an
+     `after_create` listener (every `create_all` database), so it adds no migration head.
+   - **A restore swaps the whole file.** A backup made before the view existed has none; the
+     restore's reopen goes through `init_db`, which re-creates it, so a reader of the view never
+     meets a database without it.
+   - **The invariant is a ratchet, not a ban.** `tests/test_derived_read_seam.py` records, per
+     file, the references to `KeywordMention` and the raw-SQL mentions of `keyword_mentions`; the
+     counts only fall, a new file fails, and a ceiling left above the real count fails too. The
+     writers (`index_article`, the merge, the bulk build, the prune's deletes) keep theirs: they
+     write the head. It counts references, not reads, and says so.
+   - **Pilot:** `prune_orphan_keywords`' orphan test reads the view; a differential test holds
+     the view's rows equal to the table's, and a plan test that a keyed read still uses the
+     index.
+   - **Left in step 0:** move the readers over, file by file, hot paths first (`queries.py`,
+     `columnar.py`, `supergroup_stats.py`, `keyword_growth.py`, `source_topics.py`); then the
+     same seam for `article_mentioned_places`, `article_entities` and `article_index_stamps`.
+     `columnar.py`'s DuckDB read of a SQLite view has to be verified on the operator's build
+     before it moves.
 1. **Head + seal**, with the catalog, the per-keyword summaries and the counter fold; sealing
    manual at first.
 2. **Tombstones**, and re-index/delete of an article in a sealed segment.

@@ -1788,6 +1788,9 @@ _MERGE_HANDLED = {
     # `_plan_derived_carry`. The places and entities left _MERGE_NOT_CARRIED for it; the
     # stamps table is never copied, only WRITTEN, for the rows the carry itself wrote.
     "article_mentioned_places", "article_entities", "article_index_stamps",
+    # 2026-09-30, R61 (item 12): the ≈ titles are deduced metadata and ride the backup; they
+    # left _MERGE_NOT_CARRIED for it. See `_merge_ai_layer`.
+    "article_title_translations",
 }
 # Deliberately not merged: the other corpus's OWN import history + schema/FTS internals,
 # plus ``app_state`` — per-machine settings/UI prefs (DB-reliability D1 / T10: local wins
@@ -1811,7 +1814,14 @@ _MERGE_HANDLED = {
 # native UNION-merge is the LARGER D1 follow-up that RETIRES the JSON as the merge target
 # (making the table the source of truth); that is out of this slice's scope. Restore
 # correctness is sacred — honest deferral beats a double-count bug.
-_MERGE_IGNORED = {"merge_batches", "merged_rows", "alembic_version", "app_state", "event_imports"}
+_MERGE_IGNORED = {
+    "merge_batches", "merged_rows", "alembic_version", "app_state", "event_imports",
+    # R61 (item 12): this install's record of what a restore brought that contradicted its own
+    # rows. Written BY the merge (`_capture_alternates`), never copied from the backup in this
+    # slice -- carrying it across machines needs its identities re-attached to local rows and
+    # is the third slice of the item-12 design.
+    "metadata_alternates",
+}
 
 # THE THIRD STATE, made explicit (P0 validation on the 16.5 GB / 794k-article live corpus,
 # 2026-08-03). A table in neither registry above falls through to ``_unmerged_tables``, where
@@ -1860,14 +1870,6 @@ _MERGE_NOT_CARRIED: dict[str, str] = {
     "wikidata_items": (
         "a local cache of Wikidata (CC0), re-read at one request per 10 seconds; whether it "
         "rides a backup is not ruled yet (S05-03 §6)"
-    ),
-    # S05-08 S2 (Q513 = b): the ≈ titles and one-line summaries a local model wrote for
-    # list rows. Q513 is silent on backups and the brief leaves it open, so the proposed
-    # default is not to carry them: they are derived, never the article, and the title
-    # sweep re-fills them for the articles the operator actually reads in lists.
-    "article_title_translations": (
-        "tentative ≈ titles from the local model, never the article; the title sweep "
-        "re-fills them after a restore"
     ),
     # `feed_fetch_state` LEFT THIS LIST on 2026-09-16 (the Q701 note, gate row K). The
     # reading above -- per-machine, self-healing, re-learned next pass -- was correct
@@ -3600,11 +3602,95 @@ def _merge_external_link_graph(con, batch_id, results) -> None:
     results["article_source_relationships"] = rel
 
 
+def _capture_alternates(
+    con: sqlite3.Connection, batch_id: int, table: str, *, joins: str, key: str,
+    identity: list[tuple[str, str]], differs: list[str], shown: list[str],
+) -> int:
+    """Keep the OTHER value when a restore brings a different one for a deduced item (R61).
+
+    Runs BEFORE the table's own INSERT, over the incoming rows whose item this corpus already
+    has (``key``, a condition over the incoming row ``i`` and a local row ``t``) and for which
+    no local row holds the same ``differs`` values. The local rows are left exactly as they
+    are; the imported values go to ``metadata_alternates`` with an ``oo.prov/1`` tag.
+
+    Returns how many incoming rows contradict a local item, recorded now or on an earlier
+    restore of the same backup. The caller reports that as ``conflict`` and takes it out of
+    ``duplicate``, so the two stay disjoint like every other domain's.
+
+    ``identity`` names the item by its natural key so the pointer survives a later restore (an
+    article by its hash, never its local id). ``fields`` stores every ``shown`` field of the
+    imported row; only ``differs`` decides whether a row is a contradiction at all -- two
+    machines that extracted the same date with a different snippet do not contradict, one that
+    confirmed it and one that did not, do. A re-import of the same backup records nothing new."""
+    from src.backup.provenance import producer_tag_sql
+
+    if not _local_has_table(con, "metadata_alternates"):
+        return 0
+    arrived = _q(
+        con, "SELECT origin_fingerprint, imported_at, app_version FROM merge_batches WHERE id = ?",
+        (batch_id,),
+    )
+    origin, at, version = arrived[0] if arrived else ("unsigned", None, None)
+    ident = ", ".join(f"'{n}', {expr}" for n, expr in identity)
+    fields = ", ".join(f"'{n}', i.{n}" for n in shown)
+    tag = producer_tag_sql(
+        table, "i", origin=":origin", batch=":batch", at=":at", app_version=":version"
+    )
+    same = " AND ".join(f"t.{c} IS i.{c}" for c in differs)
+    tbl = _ident(table)
+    # A contradiction is "this corpus has the item, and NONE of its rows says what the backup
+    # says". Some of these tables have no unique constraint and a local pass appends a row on
+    # every run, so "some local row differs" would report the backup's value as foreign when
+    # the corpus already holds it in a sibling row.
+    where = (
+        f" FROM inc.{tbl} i {joins}"  # nosec B608 - joins/key/differs are module literals from this file's own callers and tbl is _ident-quoted; no request, user or file value reaches them
+        f" WHERE EXISTS (SELECT 1 FROM {tbl} t WHERE {key})"
+        f" AND NOT EXISTS (SELECT 1 FROM {tbl} t WHERE {key} AND {same})"
+    )
+    contradicting = int(_q(con, "SELECT COUNT(*)" + where)[0][0])  # nosec B608 - identifiers come from the app's OWN fixed schema maps, never input
+    if not contradicting:
+        return 0
+    # GROUP BY the recorded identity: two incoming rows can collapse onto one local item
+    # (map_articles), and NOT EXISTS below cannot see rows this same statement inserts.
+    con.execute(
+        "INSERT INTO metadata_alternates (batch_id, table_name, identity, local_row_id, fields,"  # nosec B608 - table/column names come from the app's OWN fixed schema maps, never input
+        " provenance, origin, status, created_at)"
+        f" SELECT :batch, :table, json_object({ident}),"
+        f" (SELECT MIN(t.id) FROM {tbl} t WHERE {key}), json_object({fields}), {tag},"
+        " :origin, 'pending', :now"
+        f"{where}"
+        " AND NOT EXISTS (SELECT 1 FROM metadata_alternates x"
+        "  WHERE x.table_name = :table AND x.origin = :origin"
+        f"  AND x.identity = json_object({ident}) AND x.fields = json_object({fields}))"
+        f" GROUP BY json_object({ident}), json_object({fields})",
+        {
+            "batch": batch_id, "table": table, "origin": origin, "at": at, "version": version,
+            "now": datetime.now(UTC).replace(tzinfo=None).isoformat(sep=" ", timespec="microseconds"),
+        },
+    )
+    return contradicting
+
+
+def _local_has_table(con: sqlite3.Connection, name: str) -> bool:
+    return bool(
+        con.execute(
+            "SELECT 1 FROM main.sqlite_master WHERE type = 'table' AND name = ?", (name,)
+        ).fetchone()
+    )
+
+
 def _merge_article_derivations(con, batch_id, results) -> None:
     an = DomainResult()
     an_key = (
         "t.article_id = ma.new AND t.kind = i.kind AND t.model = i.model"
         " AND COALESCE(t.prompt_version,'') = COALESCE(i.prompt_version,'')"
+    )
+    an.conflict = _capture_alternates(
+        con, batch_id, "article_analyses", key=an_key,
+        joins=" JOIN temp.map_articles ma ON ma.old = i.article_id JOIN articles a ON a.id = ma.new",
+        identity=[("article_hash", "a.hash"), ("kind", "i.kind"), ("model", "i.model"),
+                  ("prompt_version", "i.prompt_version")],
+        differs=["result"], shown=["result"],
     )
     an.duplicate = _count(
         con,
@@ -3624,6 +3710,7 @@ def _merge_article_derivations(con, batch_id, results) -> None:
         " FROM inc.article_analyses i JOIN temp.map_articles ma ON ma.old = i.article_id"
         f" WHERE NOT EXISTS (SELECT 1 FROM article_analyses t WHERE {an_key})",
     )
+    an.duplicate = max(0, an.duplicate - an.conflict)
     results["article_analyses"] = an
 
     md = DomainResult()
@@ -3637,6 +3724,13 @@ def _merge_article_derivations(con, batch_id, results) -> None:
     md_key = (
         "t.article_id = ma.new AND t.mentioned_on = i.mentioned_on"
         " AND t.precision = i.precision"
+    )
+    md.conflict = _capture_alternates(
+        con, batch_id, "article_mentioned_dates", key=md_key,
+        joins=" JOIN temp.map_articles ma ON ma.old = i.article_id JOIN articles a ON a.id = ma.new",
+        identity=[("article_hash", "a.hash"), ("mentioned_on", "i.mentioned_on"),
+                  ("precision", "i.precision")],
+        differs=["status"], shown=["status", "confidence", "extractor", "snippet"],
     )
     md.duplicate = _count(
         con,
@@ -3660,6 +3754,7 @@ def _merge_article_derivations(con, batch_id, results) -> None:
         + _WINDOW_MARK,
         src="article_mentioned_dates",
     )
+    md.duplicate = max(0, md.duplicate - md.conflict)
     results["article_mentioned_dates"] = md
 
 
@@ -3841,6 +3936,15 @@ def _merge_law(con, batch_id, results) -> None:
     # small, so keeping both costs nothing. prompt_version is deliberately NOT in the key:
     # re-running the same model under a tuned prompt updates in place instead of doubling.
     summ_key = "t.revision_id = mr.new AND t.model = i.model"
+    summ.conflict = _capture_alternates(
+        con, batch_id, "law_revision_summaries", key=summ_key,
+        joins=(" JOIN temp.map_law_rev mr ON mr.old = i.revision_id"
+               " JOIN law_revisions lr ON lr.id = mr.new"
+               " JOIN law_documents ld ON ld.id = lr.document_id"),
+        identity=[("document_url", "ld.url"), ("revision_content_hash", "lr.content_hash"),
+                  ("model", "i.model")],
+        differs=["summary"], shown=["summary", "prompt_version"],
+    )
     summ.duplicate = _count(
         con,
         "SELECT COUNT(*) FROM inc.law_revision_summaries i"  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
@@ -3856,6 +3960,7 @@ def _merge_law(con, batch_id, results) -> None:
         " JOIN temp.map_law_rev mr ON mr.old = i.revision_id"
         f" WHERE NOT EXISTS (SELECT 1 FROM law_revision_summaries t WHERE {summ_key})",
     )
+    summ.duplicate = max(0, summ.duplicate - summ.conflict)
     results["law_revision_summaries"] = summ
 
 
@@ -3992,6 +4097,13 @@ def _merge_ai_layer(con, batch_id, results) -> None:
     k = DomainResult()
     # COALESCE on language is NOT part of the key -- the key is exactly what was ruled.
     k_key = "t.article_id = ma.new AND t.kind = i.kind AND t.term = i.term AND t.model = i.model"
+    k.conflict = _capture_alternates(
+        con, batch_id, "ai_keyword", key=k_key,
+        joins=" JOIN temp.map_articles ma ON ma.old = i.article_id JOIN articles a ON a.id = ma.new",
+        identity=[("article_hash", "a.hash"), ("kind", "i.kind"), ("term", "i.term"),
+                  ("model", "i.model")],
+        differs=["confirmed"], shown=["confirmed", "evidence", "prompt_version", "language"],
+    )
     k.duplicate = _count(
         con,
         "SELECT COUNT(*) FROM inc.ai_keyword i"  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
@@ -4011,6 +4123,7 @@ def _merge_ai_layer(con, batch_id, results) -> None:
         " FROM inc.ai_keyword i JOIN temp.map_articles ma ON ma.old = i.article_id"
         f" WHERE NOT EXISTS (SELECT 1 FROM ai_keyword t WHERE {k_key})",
     )
+    k.duplicate = max(0, k.duplicate - k.conflict)
     results["ai_keyword"] = k
 
     # The tentative translation tier (Q404). No FK and no id map: the identity is the
@@ -4023,6 +4136,13 @@ def _merge_ai_layer(con, batch_id, results) -> None:
         "t.term = i.term AND t.source_lang = i.source_lang AND t.target_lang = i.target_lang"
         " AND COALESCE(t.model,'') = COALESCE(i.model,'')"
         " AND COALESCE(t.prompt_version,'') = COALESCE(i.prompt_version,'')"
+    )
+    tr.conflict = _capture_alternates(
+        con, batch_id, "keyword_translations", key=tr_key, joins="",
+        identity=[("term", "i.term"), ("source_lang", "i.source_lang"),
+                  ("target_lang", "i.target_lang"), ("model", "i.model"),
+                  ("prompt_version", "i.prompt_version")],
+        differs=["text"], shown=["text"],
     )
     tr.duplicate = _count(
         con,
@@ -4037,7 +4157,42 @@ def _merge_ai_layer(con, batch_id, results) -> None:
         " i.created_at FROM inc.keyword_translations i"
         f" WHERE NOT EXISTS (SELECT 1 FROM keyword_translations t WHERE {tr_key})",
     )
+    tr.duplicate = max(0, tr.duplicate - tr.conflict)
     results["keyword_translations"] = tr
+
+    # The ≈ titles and one-line summaries (R61, item 12: deduced metadata rides the backup).
+    # Identity is the schema's own `uq_article_title_translation`; a different model or prompt
+    # is a different measurement and arrives as its own row. A backup that predates the table
+    # has nothing to carry, and says so by not reporting the domain.
+    if _inc_has_table(con, "article_title_translations"):
+        tt = DomainResult()
+        tt_key = (
+            "t.article_id = ma.new AND t.target_lang = i.target_lang AND t.model = i.model"
+            " AND t.prompt_version = i.prompt_version"
+        )
+        tt_joins = " JOIN temp.map_articles ma ON ma.old = i.article_id"
+        tt.conflict = _capture_alternates(
+            con, batch_id, "article_title_translations", key=tt_key,
+            joins=tt_joins + " JOIN articles a ON a.id = ma.new",
+            identity=[("article_hash", "a.hash"), ("target_lang", "i.target_lang"),
+                      ("model", "i.model"), ("prompt_version", "i.prompt_version")],
+            differs=["title", "summary"], shown=["title", "summary", "source_lang"],
+        )
+        tt.duplicate = _count(
+            con,
+            "SELECT COUNT(*) FROM inc.article_title_translations i"  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
+            f"{tt_joins} WHERE EXISTS (SELECT 1 FROM article_title_translations t WHERE {tt_key})",
+        )
+        tt.new = _insert_tracked(
+            con, batch_id, "article_title_translations",
+            "INSERT OR IGNORE INTO article_title_translations (article_id, source_lang,"  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
+            " target_lang, title, summary, model, prompt_version, created_at)"
+            " SELECT ma.new, i.source_lang, i.target_lang, i.title, i.summary, i.model,"
+            " i.prompt_version, i.created_at FROM inc.article_title_translations i"
+            f"{tt_joins} WHERE NOT EXISTS (SELECT 1 FROM article_title_translations t WHERE {tt_key})",
+        )
+        tt.duplicate = max(0, tt.duplicate - tt.conflict)
+        results["article_title_translations"] = tt
 
 
 def _merge_statistics(con, batch_id, results) -> None:

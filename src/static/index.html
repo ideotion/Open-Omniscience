@@ -3785,6 +3785,19 @@
     </div>
   </dialog>
 
+  <!-- S05-11 S4: the dossier seed. One Wikidata item and the rails this machine joins to it,
+       with the corpus passport (A-1) under the title and the rails it does NOT join named.
+       Opened from the place card and from a Who chip on the spine. Composed by app-dossier.js
+       with t()/tf() at render time and re-read on a language switch. No inline handlers. -->
+  <dialog id="dossier" style="width:min(720px,94vw);max-height:90vh;padding:18px">
+    <h3 style="margin:0 0 4px"><span id="dossier-title" dir="auto" data-i18n-dyn></span>
+      <span id="dossier-qid" class="pill" dir="ltr" data-i18n-dyn></span></h3>
+    <div id="dossier-body" data-i18n-dyn style="max-height:72vh;overflow:auto"></div>
+    <div style="margin-top:12px;display:flex;justify-content:flex-end">
+      <button class="secondary" type="button" id="dossier-close">Close</button>
+    </div>
+  </dialog>
+
   <!-- S05-11 S3: the Conjunction Lens opened from a vertical's own page (Living sources'
        Wikipedia and Law panels, the place card). The same component the analysis window's
        Keywords subtab hosts, scoped to that vertical; every count is within the scope. -->
@@ -4079,6 +4092,7 @@
   <script src="/static/app-map.js"></script>
   <script src="/static/app-analysis.js"></script>
   <script src="/static/app-claim.js"></script>
+  <script src="/static/app-dossier.js"></script>
   <script src="/static/app-ai-tools.js"></script>
   <script src="/static/app-boot.js"></script>
   <!-- Settings -> GUIs gallery renderer (loads after app.js; called by showSetCat). -->
