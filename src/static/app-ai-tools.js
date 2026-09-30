@@ -424,7 +424,10 @@
         const d = await api("/api/sources/qualification/queue");
         const nw = d.new || {}, rc = d.rechecks || {}, wt = d.waiting || {}, pp = d.per_pass || {};
         const n = (x) => fmtNum(Number(x) || 0, 0);
-        const doms = (list) => (list || []).map((x) => `<span dir="ltr">⁨${esc(String(x))}⁩</span>`).join(", ");
+        // Each domain is ONE unit: inline-block keeps a name together where the line wraps (at the
+        // commas, not mid-hostname at a hyphen -- which read as two names in a right-to-left
+        // page, measured in Chromium in Arabic), and only a name wider than the panel breaks.
+        const doms = (list) => (list || []).map((x) => `<span dir="ltr" style="display:inline-block;max-width:100%;overflow-wrap:anywhere">⁨${esc(String(x))}⁩</span>`).join(document.documentElement.dir === "rtl" ? "\u060c " : ", ");
         const dqDue = rc.disqualified_due_capped ? `${n(rc.disqualified_due)}+` : n(rc.disqualified_due);
         const rows = [
           `<div>` + ooLabelHtml(esc(t("1. New sources")),

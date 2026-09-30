@@ -4136,7 +4136,7 @@
   "Size change of this edit (bytes)": "この編集によるサイズ変化（バイト）",
   "Size change of this revision (bytes)": "この版のサイズ変化（バイト）",
   "Size check failed: {error}": "サイズの確認に失敗しました: {error}",
-  "Sized to this machine's memory and cores; the scheduler settings are the minimum.": "Sized to this machine's memory and cores; the scheduler settings are the minimum.",
+  "Sized to this machine's memory and cores; the scheduler settings are the minimum.": "このマシンのメモリとコア数に合わせて決まります。スケジューラーの設定は下限です。",
   "Sizes are estimates — the exact size is read from the mirror on download.": "サイズは推定値です — 正確なサイズはダウンロード時にミラーから読み取られます。",
   "Skip articles already done": "処理済みの記事をスキップ",
   "Skip to main content": "本文へ移動",

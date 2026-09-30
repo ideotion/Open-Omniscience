@@ -357,6 +357,18 @@ def test_the_queue_route_and_panel(monkeypatch, tmp_path):
     assert 'id="qual-queue"' in read_static("index.html")
 
 
+def test_the_queue_panel_keeps_each_domain_whole_and_uses_the_right_comma():
+    """Measured in Chromium in Arabic (2026-09-30): the next-up domains wrapped mid-hostname at a
+    hyphen, which in a right-to-left page read as two different names, and the separator was an
+    ASCII comma. Each domain is one inline-block unit, and the separator follows the page's
+    direction."""
+    from tests.js_source_helper import function_source, read_static
+
+    src = function_source(read_static("app-ai-tools.js"), "loadQualQueue")
+    assert "display:inline-block" in src and "overflow-wrap:anywhere" in src
+    assert '"rtl"' in src and "\\u060c" in src
+
+
 # --------------------------------------------------------------------------- #
 # Adaptive per-pass budgets and the bounded candidate read (2026-09-30 follow-up)
 # --------------------------------------------------------------------------- #
