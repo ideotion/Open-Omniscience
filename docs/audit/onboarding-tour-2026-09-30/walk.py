@@ -174,6 +174,8 @@ with sync_playwright() as p:
     walk_tour(pg)
     quiet_after = state(pg)
     report["quiet_walk_changed_nothing"] = quiet_before == quiet_after
+    if quiet_before != quiet_after:
+        report["quiet_walk_diff"] = {k: [quiet_before[k], quiet_after[k]] for k in quiet_before if quiet_before[k] != quiet_after[k]}
     pg.click("#tour-skip")
     before = state(pg)
     entry = {}
@@ -196,7 +198,7 @@ with sync_playwright() as p:
     pg.wait_for_timeout(300)
     pg.keyboard.type("tour")
     pg.wait_for_timeout(300)
-    pg.click("#palette >> text=Take the tour")
+    pg.locator("#palette .pal-item").filter(has_text=re.compile(r"^\s*Take the tourHelp\s*$")).first.click()
     pg.wait_for_selector("#tour[open]", timeout=5000)
     entry["palette"] = tour_step(pg)["title"]
     report["entry_points"] = entry
