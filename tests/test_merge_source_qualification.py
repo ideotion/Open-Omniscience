@@ -557,6 +557,27 @@ def test_a_curated_row_keeps_its_stamp_when_its_own_history_holds_a_newer_judgem
     assert _integrity(working)["verdict"] == "consistent"
 
 
+def test_a_newer_local_judgement_that_agrees_does_not_block_healing(tmp_path):
+    """The re-review's finding: an instance ALREADY inverted (curated 'qualified' beside a
+    merged-in newer 'disqualified' attempt) must heal when another backup says the same thing,
+    so only a newer local judgement that DISAGREES with the incoming stamp blocks adoption."""
+    staged, working = tmp_path / "inc.db", tmp_path / "live.db"
+    with _corpus(working)() as s:
+        sid = _add_source(s, "psx.com.pk", status="qualified", at=_T0, version=_CURATED)
+        _add_attempt(s, sid, "curated", _T0, version=_CURATED)
+        _add_attempt(s, sid, "disqualified", _SEEN + timedelta(days=20), version=_MEASURED)
+        s.commit()
+    assert _integrity(working)["verdict"] == "inversions-found"
+    with _corpus(staged)() as s:
+        sid = _add_source(s, "psx.com.pk", status="disqualified", at=None, version=None)
+        _add_attempt(s, sid, "disqualified", _SEEN, version=_MEASURED)
+        s.commit()
+
+    merge_corpus(staged, working, _BATCH_META)
+    assert _sources(working)["psx.com.pk"].status == "disqualified"
+    assert _integrity(working)["verdict"] == "consistent"
+
+
 def test_an_incoming_stamp_with_no_judging_attempt_loses_to_any_local_judgement(tmp_path):
     """No incoming judging attempt counts as older than any local one."""
     staged, working = tmp_path / "inc.db", tmp_path / "live.db"

@@ -2491,12 +2491,19 @@ def _merge_sources(con, batch_id, results) -> None:
     # the domain (found by the Opus review of this change, reproduced with merge_corpus): this
     # merge copies the incoming attempt history below unchanged, so adopting an incoming stamp
     # over a local history that already holds a NEWER judging attempt would manufacture the
-    # opposite inversion ("live disqualified, last judged qualified"). No incoming judging
-    # attempt at all counts as older than any local one.
+    # opposite inversion ("live disqualified, last judged qualified"). The give-way is blocked
+    # only by a local NEWEST judging attempt that is newer than the incoming evidence AND
+    # disagrees with the incoming stamp: one that agrees leaves the adoption consistent, and is
+    # exactly how an already-inverted instance heals. No incoming judging attempt at all
+    # counts as older than any local one.
     _judging = "'qualified', 'disqualified'"
     _local_newer_judging = (
         "EXISTS (SELECT 1 FROM source_qualification_attempts la"  # nosec B608 - constant-only text
         f"       WHERE la.source_id = m.id AND la.verdict IN ({_judging})"
+        "          AND la.verdict <> i.status"
+        "          AND la.attempted_at = (SELECT MAX(lb.attempted_at)"
+        "                                 FROM source_qualification_attempts lb"
+        f"                                 WHERE lb.source_id = m.id AND lb.verdict IN ({_judging}))"
         "          AND la.attempted_at > COALESCE("
         "            (SELECT MAX(ia.attempted_at) FROM inc.source_qualification_attempts ia"
         f"             WHERE ia.source_id = i.id AND ia.verdict IN ({_judging})), ''))"
