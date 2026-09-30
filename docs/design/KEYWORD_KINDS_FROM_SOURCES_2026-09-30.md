@@ -47,7 +47,7 @@ absent when there is no answer («unknown» is the absence, never a stored guess
 build time, `as_of` stamped, registered in `configs/external_artifacts.yml` (the repo's own
 rule for anything externally sourced). At run time `kind_from_claims(p31_qids)` is pure: a class
 in exactly one kind gives that kind; classes in two kinds, or none, give «unknown» and the
-disagreement is kept for the maintainer-side ambiguity report in the diagnostics (there is no in-app review list: `R111`). **No network is needed to turn a cached item into a
+disagreement is kept for the maintainer-side ambiguity report in the diagnostics (there is no in-app review list: `R111`; carrying R111 to this list is our application of R111). **No network is needed to turn a cached item into a
 kind.**
 
 **Matcher: exact Wikipedia titles, in batches.** A NAME → QID lookup by search would be one
