@@ -904,6 +904,7 @@ def run_scrape_once(
             from concurrent.futures import ThreadPoolExecutor, as_completed
 
             from src.database.models import Source as _Source
+            from src.database.pool_reserve import collector_role
             from src.database.session import session_scope
             from src.monitoring.collect_perf import CollectionMonitor
             from src.scheduler import capacity as _capacity
@@ -951,7 +952,9 @@ def run_scrape_once(
                 # throttled (parked) worker holds no connection or key in memory.
                 governor.acquire()
                 try:
-                    with session_scope() as worker_session:
+                    # D44 = a: a connection this worker checks out counts against the
+                    # collector's share of the pool, which leaves the API's margin free.
+                    with collector_role(), session_scope() as worker_session:
                         # The worker processes ITS OWN session's copy of the row, found
                         # by an id read on the caller's thread. ``source`` belongs to the
                         # CALLER'S session: the first unloaded relationship a worker
