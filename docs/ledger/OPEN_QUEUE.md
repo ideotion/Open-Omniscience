@@ -1076,6 +1076,8 @@
   `RULINGS_INDEX.md` row. PF12's second half (retiring `janome` from the keyword path) was not asked and
   stays open. The other twelve PF questions and `RC13`'s eclipse suffix stay unanswered.**
   **ANSWERED 2026-09-30 (the older-rounds list, head entry):** `PF07` = a, `PF08` = a, `PF10` = a, `PF11` ⛔ = b with a's ratchet (each on its `RULINGS_INDEX.md` row). PF09 and PF14 were left on their stated defaults as assumptions; PF01–PF05 and PF13 were overtaken by the 0.4 release run.
+  **SHIPPED 2026-09-30 (PR #1255):** `LESSONS.md` is consulted by grep through `python scripts/lessons.py`, rule (1) is amended in CLAUDE.md, and a zero-slack line ratchet guards the file; CLAUDE.md alone stays mandatory in full.
+  **SHIPPED 2026-09-30 (PR #1253):** below 600 px the map's control groups sit behind one labelled in-map button that opens them; desktop is unchanged and every control does what it did.
 - **THE COLLECTION-SPEED KNOB MISSTATES ITS OWN UNIT BY 8.192x, ON FOUR USER-FACING SURFACES —
   found while building the per-process budget (S04-13 S1, Q1012), NOT fixed here.**
   `collect_target_kbps` is **kilobits** per second: `collect_perf._measure_rate` computes

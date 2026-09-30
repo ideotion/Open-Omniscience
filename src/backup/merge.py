@@ -1791,6 +1791,8 @@ _MERGE_HANDLED = {
     # 2026-09-30, R61 (item 12): the ≈ titles are deduced metadata and ride the backup; they
     # left _MERGE_NOT_CARRIED for it. See `_merge_ai_layer`.
     "article_title_translations",
+    # 2026-09-30, R61 slice 3: the differences a backup was carrying travel with it.
+    "metadata_alternates",
 }
 # Deliberately not merged: the other corpus's OWN import history + schema/FTS internals,
 # plus ``app_state`` — per-machine settings/UI prefs (DB-reliability D1 / T10: local wins
@@ -1814,14 +1816,7 @@ _MERGE_HANDLED = {
 # native UNION-merge is the LARGER D1 follow-up that RETIRES the JSON as the merge target
 # (making the table the source of truth); that is out of this slice's scope. Restore
 # correctness is sacred — honest deferral beats a double-count bug.
-_MERGE_IGNORED = {
-    "merge_batches", "merged_rows", "alembic_version", "app_state", "event_imports",
-    # R61 (item 12): this install's record of what a restore brought that contradicted its own
-    # rows. Written BY the merge (`_capture_alternates`), never copied from the backup in this
-    # slice -- carrying it across machines needs its identities re-attached to local rows and
-    # is the third slice of the item-12 design.
-    "metadata_alternates",
-}
+_MERGE_IGNORED = {"merge_batches", "merged_rows", "alembic_version", "app_state", "event_imports"}
 
 # THE THIRD STATE, made explicit (P0 validation on the 16.5 GB / 794k-article live corpus,
 # 2026-08-03). A table in neither registry above falls through to ``_unmerged_tables``, where
@@ -2024,6 +2019,9 @@ def _merge_steps() -> tuple[tuple[str, Callable[..., None]], ...]:
         # adopted nothing because they said not to, and a restore that had nothing to
         # adopt, are different facts, and only a step that runs can report which.
         ("fetch history", _merge_fetch_history),
+        # LAST (R61 slice 3): the alternates a backup carried re-attach to rows every step
+        # above has by now inserted, so an item that arrived in this very restore is found.
+        ("metadata alternates", _merge_metadata_alternates),
     )
 
 
@@ -2078,6 +2076,159 @@ def _merge_option(con, key: str, default: str) -> str:
     except Exception:  # noqa: BLE001 - a missing options table means "nobody set one"
         return default
     return default if row is None else str(row[0])
+
+
+def _merge_metadata_alternates(con, batch_id, results) -> None:
+    """The differences a backup was carrying travel too (R61, item 12, slice 3).
+
+    "Aggregate and accumulate": a value machine A's restore left beside machine B's must not be
+    lost when B's backup is restored on C. Each incoming alternate is re-attached to THIS
+    corpus's own row by its natural identity (never by the exporter's ids), and only when it
+    still contradicts what this corpus holds -- an alternate whose value a local row already
+    has is no difference here. It arrives ``pending``, under this batch. Its ``origin`` column
+    stays the exporter's (the capture's de-duplication keys on it); its tag names this restore
+    as the arrival and keeps the exporter's own tag whole under ``carried``.
+
+    An alternate whose item this corpus lacks, or that is not well-formed, is counted as
+    deferred, never invented a home and never allowed to fail the restore (it happens when the
+    item's own insert was refused, when the exporter deleted the item after capturing the
+    difference, or when the file is damaged); it travels again with the next backup. A discarded alternate
+    returns when an older backup that still carries it is restored, like any other row that
+    restore adds; discarding it again is one click.
+
+    A backup that predates the table has nothing to carry."""
+    from src.backup.provenance import ALTERNATE_SPECS
+
+    r = DomainResult()
+    results["metadata_alternates"] = r
+    if not _inc_has_table(con, "metadata_alternates") or not _local_has_table(
+        con, "metadata_alternates"
+    ):
+        return
+    now = datetime.now(UTC).replace(tzinfo=None).isoformat(sep=" ", timespec="microseconds")
+    here = _q(
+        con, "SELECT origin_fingerprint, imported_at, app_version FROM merge_batches WHERE id = ?",
+        (batch_id,),
+    )
+    here_origin, here_at, here_version = here[0] if here else ("unsigned", None, None)
+    notnull: dict[str, set[str]] = {}
+    incoming = _q(
+        con,
+        "SELECT table_name, identity, fields, provenance, origin FROM inc.metadata_alternates"
+        " ORDER BY id",
+    )
+    for table, identity_json, fields_json, prov_json, origin in incoming:
+        spec = ALTERNATE_SPECS.get(table)
+        identity = _alternate_object(identity_json, scalars=True)
+        fields = _alternate_object(fields_json, scalars=True)
+        prov = _alternate_object(prov_json, scalars=False)
+        if spec is None or identity is None or fields is None or prov is None:
+            # An incoming file is untrusted input: anything that is not a flat JSON object is
+            # counted and left behind, never allowed to fail the whole restore.
+            r.deferred += 1
+            continue
+        if _count(
+            con,
+            "SELECT COUNT(*) FROM metadata_alternates WHERE table_name = ? AND identity = ?"
+            " AND origin = ? AND fields = ?",
+            (table, identity_json, origin, fields_json),
+        ):
+            r.duplicate += 1
+            continue
+        tbl = _ident(table)
+        if table not in notnull:
+            notnull[table] = {
+                c[1] for c in _q(con, f"PRAGMA table_info({tbl})") if c[3]  # nosec B608 - tbl is a key of ALTERNATE_SPECS
+            }
+        where, params = _alternate_local_match(con, spec, identity, notnull[table])
+        if where is None:
+            r.deferred += 1
+            continue
+        rows = _q(con, f"SELECT MIN(rowid) FROM {tbl} WHERE {where}", tuple(params))  # nosec B608 - table is a key of ALTERNATE_SPECS, column names are module literals, values are bound
+        local_id = rows[0][0] if rows else None
+        if local_id is None:
+            r.deferred += 1
+            continue
+        same = " AND ".join(f"{c} IS ?" for c in spec["differs"])
+        if _count(
+            con,
+            f"SELECT COUNT(*) FROM {tbl} WHERE {where} AND {same}",  # nosec B608 - as above
+            tuple(params) + tuple(fields.get(c) for c in spec["differs"]),
+        ):
+            r.duplicate += 1  # this corpus already holds that value: no difference here
+            continue
+        # The tag names THIS restore as the arrival (the design's rule (i): origin is the
+        # immediate backup's fingerprint, and a batch id means a batch of this corpus); what the
+        # exporter recorded rides beside it, untouched, under ``carried``.
+        tag = {
+            **{k: prov.get(k) for k in ("v", "kind", "producer", "version", "prompt_text", "produced_at")},
+            "origin": here_origin,
+            "arrived": {"batch": batch_id, "at": here_at, "app_version": here_version},
+            "carried": prov,
+        }
+        con.execute(
+            "INSERT INTO metadata_alternates (batch_id, table_name, identity, local_row_id,"
+            " fields, provenance, origin, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?)",
+            (batch_id, table, identity_json, local_id, fields_json, json.dumps(tag), origin, now),
+        )
+        r.new += 1
+    r.note = "carried with the backup; re-attached to this corpus's own rows by identity"
+
+
+def _alternate_object(raw, *, scalars: bool) -> dict | None:
+    """``raw`` parsed as a JSON object, or None. ``scalars`` also demands flat values (an
+    identity or a field set is only ever text, numbers, booleans or null)."""
+    try:
+        obj = json.loads(raw)
+    except (TypeError, ValueError):
+        return None
+    if not isinstance(obj, dict):
+        return None
+    if scalars and not all(v is None or isinstance(v, (str, int, float, bool)) for v in obj.values()):
+        return None
+    return obj
+
+
+def _alternate_local_match(
+    con, spec: dict, identity: dict, notnull: Iterable[str] = ()
+) -> tuple[str | None, list]:
+    """The WHERE clause (and bound values) that finds an alternate's item in THIS corpus, or
+    ``(None, [])`` when the item's parent (its article or law revision) is not here.
+
+    ``notnull`` names the table's NOT NULL columns: those are compared plainly so an index can
+    serve the lookup, and only the nullable ones pay for ``COALESCE``."""
+    where: list[str] = []
+    params: list = []
+    scope = spec["scope"]
+    if scope == "article":
+        rows = _q(con, "SELECT id FROM articles WHERE hash = ?", (identity.get("article_hash"),))
+        if not rows:
+            return None, []
+        where.append("article_id = ?")
+        params.append(rows[0][0])
+    elif scope == "law":
+        # An alternate recorded before the jurisdiction joined the identity has none (as the
+        # resolver in alternates.py allows): the first matching revision is then the home.
+        juris = identity.get("jurisdiction")
+        rows = _q(
+            con,
+            "SELECT r.id FROM law_revisions r JOIN law_documents d ON d.id = r.document_id"
+            " WHERE d.url = ? AND r.content_hash = ?" + (" AND d.jurisdiction = ?" if juris else "")
+            + " ORDER BY r.id LIMIT 1",
+            (identity.get("document_url"), identity.get("revision_content_hash"))
+            + ((juris,) if juris else ()),
+        )
+        if not rows:
+            return None, []
+        where.append("revision_id = ?")
+        params.append(rows[0][0])
+    for name, column in spec["match"].items():
+        if column in notnull:
+            where.append(f"{column} = COALESCE(?, '')")
+        else:
+            where.append(f"COALESCE({column}, '') = COALESCE(?, '')")
+        params.append(identity.get(name))
+    return " AND ".join(where), params
 
 
 def _merge_fetch_history(con, batch_id, results) -> None:
@@ -3656,7 +3807,7 @@ def _capture_alternates(
         "INSERT INTO metadata_alternates (batch_id, table_name, identity, local_row_id, fields,"  # nosec B608 - table/column names come from the app's OWN fixed schema maps, never input
         " provenance, origin, status, created_at)"
         f" SELECT :batch, :table, json_object({ident}),"
-        f" (SELECT MIN(t.id) FROM {tbl} t WHERE {key}), json_object({fields}), {tag},"
+        f" (SELECT MIN(t.rowid) FROM {tbl} t WHERE {key}), json_object({fields}), {tag},"
         " :origin, 'pending', :now"
         f"{where}"
         " AND NOT EXISTS (SELECT 1 FROM metadata_alternates x"
@@ -3669,6 +3820,13 @@ def _capture_alternates(
         },
     )
     return contradicting
+
+
+def _alt_fields(table: str) -> dict:
+    from src.backup.provenance import ALTERNATE_SPECS
+
+    spec = ALTERNATE_SPECS[table]
+    return {"differs": spec["differs"], "shown": spec["shown"]}
 
 
 def _local_has_table(con: sqlite3.Connection, name: str) -> bool:
@@ -3690,7 +3848,7 @@ def _merge_article_derivations(con, batch_id, results) -> None:
         joins=" JOIN temp.map_articles ma ON ma.old = i.article_id JOIN articles a ON a.id = ma.new",
         identity=[("article_hash", "a.hash"), ("kind", "i.kind"), ("model", "i.model"),
                   ("prompt_version", "i.prompt_version")],
-        differs=["result"], shown=["result"],
+        **_alt_fields("article_analyses"),
     )
     an.duplicate = _count(
         con,
@@ -3730,7 +3888,7 @@ def _merge_article_derivations(con, batch_id, results) -> None:
         joins=" JOIN temp.map_articles ma ON ma.old = i.article_id JOIN articles a ON a.id = ma.new",
         identity=[("article_hash", "a.hash"), ("mentioned_on", "i.mentioned_on"),
                   ("precision", "i.precision")],
-        differs=["status"], shown=["status", "confidence", "extractor", "snippet"],
+        **_alt_fields("article_mentioned_dates"),
     )
     md.duplicate = _count(
         con,
@@ -3943,7 +4101,7 @@ def _merge_law(con, batch_id, results) -> None:
                " JOIN law_documents ld ON ld.id = lr.document_id"),
         identity=[("jurisdiction", "ld.jurisdiction"), ("document_url", "ld.url"),
                   ("revision_content_hash", "lr.content_hash"), ("model", "i.model")],
-        differs=["summary"], shown=["summary", "prompt_version"],
+        **_alt_fields("law_revision_summaries"),
     )
     summ.duplicate = _count(
         con,
@@ -4102,7 +4260,7 @@ def _merge_ai_layer(con, batch_id, results) -> None:
         joins=" JOIN temp.map_articles ma ON ma.old = i.article_id JOIN articles a ON a.id = ma.new",
         identity=[("article_hash", "a.hash"), ("kind", "i.kind"), ("term", "i.term"),
                   ("model", "i.model")],
-        differs=["confirmed"], shown=["confirmed", "evidence", "prompt_version", "language"],
+        **_alt_fields("ai_keyword"),
     )
     k.duplicate = _count(
         con,
@@ -4142,7 +4300,7 @@ def _merge_ai_layer(con, batch_id, results) -> None:
         identity=[("term", "i.term"), ("source_lang", "i.source_lang"),
                   ("target_lang", "i.target_lang"), ("model", "i.model"),
                   ("prompt_version", "i.prompt_version")],
-        differs=["text"], shown=["text"],
+        **_alt_fields("keyword_translations"),
     )
     tr.duplicate = _count(
         con,
@@ -4176,7 +4334,7 @@ def _merge_ai_layer(con, batch_id, results) -> None:
             joins=tt_joins + " JOIN articles a ON a.id = ma.new",
             identity=[("article_hash", "a.hash"), ("target_lang", "i.target_lang"),
                       ("model", "i.model"), ("prompt_version", "i.prompt_version")],
-            differs=["title", "summary"], shown=["title", "summary", "source_lang"],
+            **_alt_fields("article_title_translations"),
         )
         tt.duplicate = _count(
             con,

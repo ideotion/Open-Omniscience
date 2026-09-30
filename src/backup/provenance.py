@@ -65,37 +65,40 @@ PRODUCER_COLUMNS: dict[str, dict[str, str]] = {
 }
 
 
-#: How an alternate's ``identity`` (written by ``_capture_alternates`` in ``merge.py``) finds
-#: its local row again: ``scope`` says how the identity reaches the row's parent (``article``:
-#: ``article_hash`` -> ``article_id``; ``law``: ``jurisdiction`` + ``document_url`` +
-#: ``revision_content_hash`` -> ``revision_id``; ``none``), and ``match`` maps each remaining
-#: identity field to the column that holds it. ``tests/test_metadata_alternates.py`` pins the
-#: identity keys the capture really writes against this, table by table, so an edit to one side
-#: cannot silently orphan the other.
+#: What a restore compares and keeps for each deduced table (R61). ``differs`` decides whether
+#: an incoming row CONTRADICTS a local one; ``shown`` is what is stored and displayed;
+#: ``match`` maps each identity field to the column that holds it (how a carried alternate finds
+#: its local row again); ``scope`` says how the identity reaches the row's parent: ``article``
+#: (``article_hash`` -> ``article_id``), ``law`` (``jurisdiction`` + ``document_url`` +
+#: ``revision_content_hash`` -> ``revision_id``) or ``none``. ONE definition, read by the capture in ``merge.py``, by the
+#: carry of alternates between machines, and pinned against each other by the tests.
 ALTERNATE_SPECS: dict[str, dict[str, Any]] = {
     "article_analyses": {
-        "scope": "article",
+        "scope": "article", "differs": ["result"], "shown": ["result"],
         "match": {"kind": "kind", "model": "model", "prompt_version": "prompt_version"},
     },
     "article_mentioned_dates": {
-        "scope": "article",
+        "scope": "article", "differs": ["status"],
+        "shown": ["status", "confidence", "extractor", "snippet"],
         "match": {"mentioned_on": "mentioned_on", "precision": "precision"},
     },
     "ai_keyword": {
-        "scope": "article",
+        "scope": "article", "differs": ["confirmed"],
+        "shown": ["confirmed", "evidence", "prompt_version", "language"],
         "match": {"kind": "kind", "term": "term", "model": "model"},
     },
     "keyword_translations": {
-        "scope": "none",
+        "scope": "none", "differs": ["text"], "shown": ["text"],
         "match": {"term": "term", "source_lang": "source_lang", "target_lang": "target_lang",
                   "model": "model", "prompt_version": "prompt_version"},
     },
     "article_title_translations": {
-        "scope": "article",
+        "scope": "article", "differs": ["title", "summary"],
+        "shown": ["title", "summary", "source_lang"],
         "match": {"target_lang": "target_lang", "model": "model", "prompt_version": "prompt_version"},
     },
     "law_revision_summaries": {
-        "scope": "law",
+        "scope": "law", "differs": ["summary"], "shown": ["summary", "prompt_version"],
         "match": {"model": "model"},
     },
 }
@@ -131,9 +134,9 @@ def provenance_tag(session: Any, table: str, row_id: int) -> dict | None:
     row = session.execute(
         text(
             f"SELECT {sel} FROM {table} r"  # noqa: S608  # nosec B608 - table is validated as a key of PRODUCER_COLUMNS by producer_tag_sql above, never input
-            " LEFT JOIN merged_rows m ON m.table_name = :t AND m.row_id = r.id"
-            " LEFT JOIN merge_batches b ON b.id = m.batch_id WHERE r.id = :id"
-            " ORDER BY b.id LIMIT 1"
+            " LEFT JOIN merged_rows m ON m.table_name = :t AND m.row_id = r.rowid"
+            " LEFT JOIN merge_batches b ON b.id = m.batch_id WHERE r.rowid = :id"
+            " ORDER BY b.id DESC LIMIT 1"
         ),
         {"t": table, "id": int(row_id)},
     ).fetchone()
