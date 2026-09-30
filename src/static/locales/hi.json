@@ -4180,7 +4180,7 @@
   "Size change of this edit (bytes)": "इस संपादन में आकार परिवर्तन (बाइट)",
   "Size change of this revision (bytes)": "इस संशोधन में आकार परिवर्तन (बाइट)",
   "Size check failed: {error}": "आकार की जाँच विफल: {error}",
-  "Sized to this machine's memory and cores; the scheduler settings are the minimum.": "Sized to this machine's memory and cores; the scheduler settings are the minimum.",
+  "Sized to this machine's memory and cores; the scheduler settings are the minimum.": "आकार इस मशीन की मेमोरी और कोर के अनुसार तय होता है; शेड्यूलर की सेटिंग न्यूनतम हैं।",
   "Sizes are estimates — the exact size is read from the mirror on download.": "आकार अनुमान हैं — डाउनलोड पर सटीक आकार मिरर से पढ़ा जाता है।",
   "Skip articles already done": "पहले से किए गए लेख छोड़ें",
   "Skip the tour": "दौरा छोड़ें",
