@@ -22,7 +22,7 @@ _SECTIONS = (
     "runtime", "corpus", "scheduler", "network", "imports", "calendar_imports",
     "law_documents", "wiki_pages", "collect_perf", "field_test", "errors", "error_log",
     "request_latency", "slow_queries", "schema_drift", "corpus_integrity",
-    "session_forensics", "storage_composition", "p0_validation", "method",
+    "session_forensics", "storage_composition", "keyword_write_cost", "p0_validation", "method",
 )
 
 
@@ -144,7 +144,7 @@ def test_db_members_run_inline_not_on_a_worker_thread():
     thread ever touches the shared read-only connection concurrently."""
     src = diagnostics_source()
     for db_member in ("corpus", "law_documents", "wiki_pages", "schema_drift",
-                      "slow_queries", "corpus_integrity", "storage_composition"):
+                      "slow_queries", "corpus_integrity", "storage_composition", "keyword_write_cost"):
         # each DB member line carries threaded=False (verified via the _member call block)
         assert f'"{db_member}": _member(' in src, db_member
     assert "threaded=False" in src
