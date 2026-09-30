@@ -284,6 +284,7 @@ def run_feed_once(
     text_policy: Callable[[VersionedEntity], tuple[bool, str | None]] | None = None,
     fetch_deadline: float | None = None,
     monotonic: Callable[[], float] = time.monotonic,
+    catch_up: int = 0,
 ) -> PassResult:
     """One pass: read the feed, record every change, fetch what the budget allows.
 
@@ -369,6 +370,18 @@ def run_feed_once(
     # the source happened to list first.
     touched: list[str] = []
     seen: set[str] = set()
+    # THE BACKLOG FIRST, oldest waiting first. A text that a time bound (or a failed fetch)
+    # left unfetched has its change recorded with ``ingested_revision_id`` still NULL, and
+    # nothing else ever comes back for it: without this, a page admitted on its first edit
+    # whose baseline was deferred would have no text until it happened to change again --
+    # the outcome ``admit`` exists to prevent. Opt-in (``catch_up`` > 0), so a lane that
+    # never bounds its fetching (law, OSM) behaves exactly as before.
+    if catch_up > 0:
+        for backlog_id, backlog_entity in _unfetched_entities(lane, feed, catch_up):
+            if backlog_id not in seen:
+                seen.add(backlog_id)
+                touched.append(backlog_id)
+                entity_ids.setdefault(backlog_id, backlog_entity)
     for change in sorted(
         (c for c in batch.changes if c.external_id in entity_ids),
         key=lambda c: (c.occurred_at is None, c.occurred_at),
@@ -380,15 +393,6 @@ def run_feed_once(
     allowance = budget.max_versions if budget.max_versions is not None else len(touched)
     for external_id in touched:
         if allowance <= 0:
-            result.text_deferred += 1
-            continue
-        # A TIME BOUND ON FETCHING, beside the count bound. A feed that resumes behind a
-        # backlog touches thousands of pages, each one polite request, and without a bound
-        # the pass (and everything the caller runs after it) waits for all of them. Changes
-        # are already recorded above, so an unfetched text loses nothing but its text: it is
-        # counted under ``text_deferred`` (never dropped silently) and arrives with the
-        # page's next change.
-        if fetch_deadline is not None and monotonic() >= fetch_deadline:
             result.text_deferred += 1
             continue
         entity = lane.get(VersionedEntity, entity_ids[external_id])
@@ -406,10 +410,24 @@ def run_feed_once(
                 key = why or "unstated"
                 result.text_withheld_reasons[key] = result.text_withheld_reasons.get(key, 0) + 1
                 continue
+        # A TIME BOUND ON FETCHING, beside the count bound, checked where a request is about
+        # to be made: AFTER the watching and policy refusals, so an unwatched page and a text
+        # the storage budget refused are never relabelled "deferred" (the module docstring
+        # forbids exactly that merge). A feed that resumes behind a backlog touches thousands
+        # of pages, each one polite request, and without a bound the pass -- and everything
+        # the caller runs after it -- waits for all of them. Changes are already recorded, so
+        # an unfetched text is counted under ``text_deferred`` and is picked up by the next
+        # pass's backlog (``catch_up``); a fetch already in flight is not interrupted.
+        if fetch_deadline is not None and monotonic() >= fetch_deadline:
+            result.text_deferred += 1
+            continue
         try:
             version = adapter.fetch_version(external_id)
         except Exception as exc:  # noqa: BLE001 - one entity must not end the pass
             result.errors.append(f"{external_id}: {type(exc).__name__}: {exc}")
+            # Checked NOW, so a page whose fetch keeps failing goes to the back of the
+            # backlog rather than holding its head for every later pass.
+            entity.last_checked_at = _utcnow()
             continue
         allowance -= 1
         if version is None:
@@ -447,6 +465,38 @@ def run_feed_once(
         _link_ingested(lane, feed, external_id, entity.id)
 
     return result
+
+
+def _unfetched_entities(lane: Session, feed: str, limit: int) -> list[tuple[str, int]]:
+    """``(external_id, entity_id)`` of followed entities with a recorded change whose text
+    was never stored, the longest-unchecked first.
+
+    Driven from the ENTITIES (the followed set: thousands), never from a scan of the changes
+    table (millions, most of them for pages nobody follows), so it reads each followed
+    entity's own time-ordered changes. A page the source reported GONE (``deleted_at`` set)
+    is excluded, or it would be asked for again on every pass for ever; a page whose fetch
+    failed is ordered by ``last_checked_at`` so it cannot hold the head of the queue.
+    """
+    from sqlalchemy import func
+
+    rows = lane.execute(
+        select(VersionedEntity.external_id, VersionedEntity.id)
+        .join(VersionedChange, VersionedChange.entity_id == VersionedEntity.id)
+        .where(
+            VersionedChange.feed == feed,
+            VersionedChange.ingested_revision_id.is_(None),
+            VersionedEntity.watching.is_(True),
+            VersionedEntity.deleted_at.is_(None),
+        )
+        .group_by(VersionedEntity.id, VersionedEntity.external_id, VersionedEntity.last_checked_at)
+        .order_by(
+            VersionedEntity.last_checked_at.asc().nullsfirst(),
+            func.min(VersionedChange.occurred_at).asc().nullslast(),
+            VersionedEntity.id,
+        )
+        .limit(limit)
+    ).all()
+    return [(str(r[0]), int(r[1])) for r in rows if r[0]]
 
 
 def _link_ingested(lane: Session, feed: str, external_id: str, entity_id: int) -> None:

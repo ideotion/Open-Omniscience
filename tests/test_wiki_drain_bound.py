@@ -131,6 +131,116 @@ def test_the_feeds_SHARE_the_bound_so_a_busy_first_edition_cannot_spend_it_all(m
     assert seen == [4.0, 4.0, 4.0], seen
 
 
+def _patched_feeds(monkeypatch, names):
+    order: list[tuple[str, int]] = []
+
+    class Feeds:
+        def feeds(self):
+            return list(names)
+
+    def fake_run_feed_once(lane, adapter, feed, **kw):
+        order.append((feed, kw["catch_up"]))
+        from src.versioned.pipeline import PassResult
+
+        return PassResult(feed=feed)
+
+    monkeypatch.setattr(runner_mod, "run_feed_once", fake_run_feed_once)
+    monkeypatch.setattr(runner_mod, "make_admit", lambda *a, **k: None)
+    monkeypatch.setattr(runner_mod, "record_size_sample", lambda *a, **k: False)
+    return Feeds(), order
+
+
+def test_the_starting_feed_ROTATES_so_the_last_one_is_not_always_the_same(monkeypatch):
+    feeds, order = _patched_feeds(monkeypatch, ["stream:a", "stream:b", "stream:c"])
+    for turn in range(4):
+        order.clear()
+        drain_once(object(), feeds, hot_sets={}, budget=_plenty(), rotate=turn)
+        assert sorted(f for f, _ in order) == ["stream:a", "stream:b", "stream:c"], "every feed, once"
+        assert order[0][0] == ["stream:a", "stream:b", "stream:c"][turn % 3]
+
+
+def test_the_backlog_is_read_only_when_the_fetching_is_bounded(monkeypatch):
+    feeds, order = _patched_feeds(monkeypatch, ["stream:a"])
+    drain_once(object(), feeds, hot_sets={}, budget=_plenty(), text_seconds=20.0)
+    drain_once(object(), feeds, hot_sets={}, budget=_plenty(), text_seconds=None)
+    assert order == [("stream:a", runner_mod.CATCH_UP_LIMIT), ("stream:a", 0)]
+
+
+def test_a_text_the_bound_DEFERRED_is_fetched_by_the_NEXT_drain(lane):
+    """The bound costs a page its text for a drain, never for good: nothing else would come
+    back for a page admitted on its first edit, whose baseline the bound deferred."""
+    adapter = _filled_adapter()
+    with lane_session("wiki") as db:
+        first = drain_once(db, adapter, hot_sets=_hot(), budget=_plenty(), text_seconds=0.0)
+    assert _stored(first) == 0 and first.text_deferred >= 1
+    with lane_session("wiki") as db:
+        second = drain_once(db, adapter, hot_sets=_hot(), budget=_plenty(), text_seconds=3600.0)
+    assert second.changes_recorded == 0, "the buffer was already drained"
+    assert _stored(second) >= 1, "the catch-up fetched what the first drain had to leave"
+    with lane_session("wiki") as db:
+        third = drain_once(db, adapter, hot_sets=_hot(), budget=_plenty(), text_seconds=3600.0)
+    assert _stored(third) == 0 and third.text_deferred == 0, "and once fetched it is not asked again"
+
+
+def test_a_text_the_BUDGET_refused_is_withheld_not_relabelled_deferred(lane):
+    adapter = _filled_adapter()
+    spent = budget_state(total_gb=1, disk_bytes=2 * 1024**3, editions=1)
+    assert spent.exhausted
+    with lane_session("wiki") as db:
+        report = drain_once(db, adapter, hot_sets=_hot(), budget=spent, text_seconds=0.0)
+    assert report.text_deferred == 0, "the storage budget's refusal keeps its own name"
+    assert _stored(report) == 0
+
+
+class _Tier:
+    def __init__(self, log, name, on=True):
+        self.log, self.name, self.on = log, name, on
+
+    def is_on(self):
+        return self.on
+
+    def warm_for(self, seconds, **_kw):
+        self.log.append((self.name, round(seconds, 6)))
+        return _Report()
+
+    walk_for = index_for = warm_for
+
+
+class _Report:
+    def as_dict(self):
+        return {}
+
+
+def _idle_runner(log, *, walk_on):
+    clock = {"t": 0.0}
+    runner = WikiLaneRunner(
+        adapter=_filled_adapter(),
+        stream=None,
+        lane_session=lambda: lane_session("wiki"),
+        state_of=lambda: "running",
+        hot_sets=_hot,
+        budget=_plenty,
+        warm=_Tier(log, "warm"),
+        walker=_Tier(log, "walk", on=walk_on),
+        sleep=lambda _s: None,
+        monotonic=lambda: clock["t"],
+    )
+    return runner
+
+
+def test_WARM_leaves_the_walk_its_reserve_while_the_walk_is_on():
+    log: list = []
+    _idle_runner(log, walk_on=True).idle(100.0)
+    assert log[0] == ("warm", 100.0 * (1.0 - runner_mod.WALK_RESERVE))
+    assert log[1][0] == "walk" and log[1][1] > 0
+
+
+def test_WARM_keeps_the_whole_window_when_the_walk_is_off():
+    log: list = []
+    _idle_runner(log, walk_on=False).idle(100.0)
+    assert log[0] == ("warm", 100.0)
+
+
 def test_the_drain_reports_WHERE_it_is_and_clears_when_it_ends(lane):
     state = {"value": "running"}
     stages: list[tuple[str, str | None]] = []

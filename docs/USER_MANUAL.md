@@ -1052,11 +1052,15 @@ sources** and in the task manager.
 a drain every 30 seconds; the search index, the fetch of other changed pages and the walk run
 in the time *after* each drain. A drain fetches the text of the followed pages that changed,
 and behind a backlog (a stream resumed hours back) that is thousands of polite requests, so the
-drain now has a **20-second bound for fetching texts**, shared out between the editions. Every
-change is still recorded; a text not reached in time is counted as *deferred* in the drain's
-report and arrives with that page's next change. The status (`/api/scheduler/status`, the
-`wiki_lane.service.drain` block) says where the drain is: the stage (`hot-sets` or `feeds`),
-the edition, how long it has been in this drain, and how many drains failed in a row and why.
+drain now has a **20-second bound for fetching texts**, shared out between the editions
+(the first edition rotates each drain). Every change is still recorded; a text not reached in
+time is counted as *deferred* and the **next drain fetches it first**, so the bound delays a
+text by a drain or two and never drops it. The bound limits when a fetch may *start*: one
+already under way finishes (up to 30 seconds), so a drain can run somewhat past 20 seconds.
+While the page walk is on, it keeps 30% of the idle time, so the fetch of other changed pages
+cannot use all of it. The status (`/api/scheduler/status`, the `wiki_lane.service.drain`
+block) says where the drain is: the stage (`hot-sets` or `feeds`), the edition, how long it has
+been in this drain, and how many drains failed in a row and why.
 
 **Reading the W in the top bar.** The W is the **stream's** switch, not the walk's: the
 walk is the tick box above, and it runs only while the stream does. The small mark in the
