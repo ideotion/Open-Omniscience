@@ -4181,7 +4181,7 @@
   "Size change of this edit (bytes)": "Изменение размера этой правки (байты)",
   "Size change of this revision (bytes)": "Изменение размера этой версии (байты)",
   "Size check failed: {error}": "Не удалось проверить размер: {error}",
-  "Sized to this machine's memory and cores; the scheduler settings are the minimum.": "Sized to this machine's memory and cores; the scheduler settings are the minimum.",
+  "Sized to this machine's memory and cores; the scheduler settings are the minimum.": "Размер подбирается по памяти и числу ядер этой машины; настройки планировщика задают минимум.",
   "Sizes are estimates — the exact size is read from the mirror on download.": "Размеры приблизительны — точный размер считывается с зеркала при загрузке.",
   "Skip articles already done": "Пропускать уже обработанные статьи",
   "Skip the tour": "Пропустить тур",

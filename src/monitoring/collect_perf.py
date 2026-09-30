@@ -1004,16 +1004,37 @@ class CollectionMonitor:
             if w_max:
                 out["w_max"] = w_max
                 out["page_cache_ceiling_mb"] = worker_cache_ceiling_mb(w_max)
-                # F1/R26: THIS IS THE COMPARISON NOBODY WAS MAKING. The pool bound and
+                # F1/R26/D44: THIS IS THE COMPARISON NOBODY WAS MAKING. The pool bound and
                 # the fan-out were both already in this block, side by side, and nothing
                 # subtracted one from the other -- so a collector that could hold every
-                # connection looked exactly like one that could not. `sufficient` is
-                # false on the medium tier as shipped (50 workers, 24 connections), and
-                # saying so every pass is the point: R26 raised the pool and forbade
-                # lowering the cap, and those two cannot bound 50 workers together.
-                out["api_headroom"] = api_headroom_for(w_max, pool_bound=out["pool_bound"])
+                # connection looked exactly like one that could not. Unreserved,
+                # `sufficient` is false on the medium tier (50 workers, 24 connections);
+                # D44 = a reserves the margin at checkout, so it is true there -- but ONLY
+                # when the engine's pool really is the reserving one, so the verdict is
+                # asked for with `reserved` only in that case and never claims a
+                # guarantee nothing enforces.
+                from src.database.pool_reserve import ReservingQueuePool
+                from src.database.session import engine as _pool_engine
+
+                out["api_headroom"] = api_headroom_for(
+                    w_max,
+                    pool_bound=out["pool_bound"],
+                    reserved=isinstance(_pool_engine.pool, ReservingQueuePool),
+                )
             else:
                 out["page_cache_ceiling_mb_unavailable"] = "no governor w_max"
+            # D44 = a: what the reservation at checkout actually did this process --
+            # how often a collector worker queued for a slot and how often a nested
+            # session leaned on the margin. A reading of the live pool, absent (never
+            # zeroed) when the engine's pool is not the reserving one.
+            try:
+                from src.database.session import engine as _engine
+
+                _res = getattr(_engine.pool, "reservation", None)
+                if callable(_res):
+                    out["collector_reservation"] = _res()
+            except Exception:  # noqa: BLE001 - a report line is never worth a pass
+                pass
             if self._pool_peak is not None:
                 out["pool_checkout_peak"] = self._pool_peak
             else:

@@ -68,10 +68,10 @@ _TIER_TOLERANCE = 0.03
 _LARGE = {"db_pool_size": 8, "db_max_overflow": 64, "sqlite_cache_mb": 64}
 # MEDIUM gains the same four overflow slots (R26 names both tiers). Its floor is
 # likewise untouched at 4 x 16 = 64 MiB; the worst case rises 320 -> 384 MiB. This tier
-# is NOT made safe by the margin alone and the arithmetic says so out loud:
-# `collect_parallelism` ships at 50 and the floor's worker cap applies only BELOW the
-# floor, so 50 workers can still outrun 24 connections. `api_headroom_for` is what makes
-# that visible instead of silent; closing it needs a ruling (see the module docstring).
+# is NOT made safe by the margin alone: `collect_parallelism` ships at 50 and the floor's
+# worker cap applies only BELOW the floor, so 50 workers can still outrun 24 connections.
+# D44 = a (2026-09-30) closed it with a reservation at checkout (`pool_reserve.py`), which
+# `api_headroom_for` now counts; the plain subtraction stays visible as `unreserved_headroom`.
 _MEDIUM = {"db_pool_size": 4, "db_max_overflow": 20, "sqlite_cache_mb": 16}
 # The small tier is shaped for SLOTS, not for the smallest possible floor. S1.0
 # stops a worker holding a connection across its fetch, so a re-acquire the pool
@@ -331,7 +331,11 @@ def resident_pool_cache_mb() -> int:
 
 
 def api_headroom_for(
-    workers: int, *, pool_total: int | None = None, pool_bound: int | None = None
+    workers: int,
+    *,
+    pool_total: int | None = None,
+    pool_bound: int | None = None,
+    reserved: bool = True,
 ) -> dict[str, Any]:
     """How many connections survive ``workers`` collectors, and whether that is enough.
 
@@ -342,31 +346,52 @@ def api_headroom_for(
     this module would re-create that coupling in the other direction; the caller that
     knows the fan-out passes it.
 
-    ``sufficient`` is false when the collector can take every connection down to fewer
-    than the margin -- which on the medium tier it still can, because
-    ``collect_parallelism`` ships at 50 and the floor's cap applies only below the
-    floor. Reporting that is the point: R26 raised the pool and forbade lowering the
-    worker cap, and those two together cannot bound 50 workers on a machine that can
-    afford 24 connections. Nothing here decides it.
+    D44 = a (2026-09-30): THE COLLECTOR NOW HOLDS A RESERVATION, so by default the
+    verdict counts it. ``src/database/pool_reserve.py`` refuses collector-role checkouts
+    beyond ``pool_total - _API_MARGIN``; workers past that wait at checkout instead of
+    holding a connection the app needs, so ``headroom`` is at least the margin whatever
+    the fan-out. ``unreserved_headroom`` keeps the plain subtraction (negative on the
+    medium tier as shipped: 24 connections, 50 workers) so the size of what the
+    reservation absorbs stays visible, and ``waiting_workers`` says how many of the
+    requested workers can be queued at checkout at once. ``reserved=False`` asks the
+    pre-D44 question of a pool with no reservation.
     """
     # `pool_bound` is the pass summary's own name for the same number; accepting both
     # keeps that caller from having to rename a published field to ask this question.
     given = pool_total if pool_total is not None else pool_bound
     total = int(given) if given is not None else int(budget()["pool_total"])
     w = max(0, int(workers))
-    headroom = total - w
+    unreserved = total - w
+    ceiling = max(1, total - _API_MARGIN)
+    if reserved:
+        holding = min(w, ceiling)
+        headroom = total - holding
+        method = (
+            f"pool_total ({total}) - the collector's connections, capped by the "
+            f"reservation at checkout at pool_total - {_API_MARGIN} = {ceiling}; "
+            f"sufficient when at least {_API_MARGIN} connections remain for everything "
+            "that is not the collector. The reservation bounds checkouts, not fetching: "
+            f"{max(0, w - ceiling)} of {w} workers can be queued at checkout at once."
+        )
+    else:
+        headroom = unreserved
+        method = (
+            f"pool_total ({total}) - workers ({w}), with no reservation; sufficient when "
+            f"at least {_API_MARGIN} connections remain for everything that is not the "
+            "collector. A collector thread holds its pooled connection while it queues "
+            "on the single-writer gate, so a slow gate pins one per waiting thread."
+        )
     return {
         "workers": w,
         "pool_total": total,
         "api_margin": _API_MARGIN,
+        "reserved": bool(reserved),
+        "collector_ceiling": ceiling,
+        "waiting_workers": max(0, w - ceiling) if reserved else 0,
         "headroom": headroom,
+        "unreserved_headroom": unreserved,
         "sufficient": headroom >= _API_MARGIN,
-        "method": (
-            f"pool_total ({total}) - workers ({w}); sufficient when at least "
-            f"{_API_MARGIN} connections remain for everything that is not the "
-            "collector. A collector thread holds its pooled connection while it queues "
-            "on the single-writer gate, so a slow gate pins one per waiting thread."
-        ),
+        "method": method,
     }
 
 

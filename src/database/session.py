@@ -48,6 +48,7 @@ from sqlalchemy.orm import sessionmaker
 # Before any engine exists: every pool's new connections get the search index's transform
 # functions, which its sync triggers call (Q506/Q507, src/database/fts_norm.py).
 from src.database import fts_norm as _fts_norm  # noqa: F401
+from src.database.pool_reserve import ReservingQueuePool
 from src.database.writer import _SESSION_FLAG as _WRITE_GATE_SESSION_FLAG
 from src.paths import data_dir, default_sqlite_url
 
@@ -98,6 +99,8 @@ def _build_engine() -> Engine:
             pool_size=int(_b["db_pool_size"]),
             max_overflow=int(_b["db_max_overflow"]),
             pool_timeout=float(os.getenv("OO_DB_POOL_TIMEOUT", "30")),
+            # D44 = a: collector-role checkouts leave the API's margin free.
+            poolclass=ReservingQueuePool,
         )
     # NOT SQLite. Nothing here refuses the URL -- refusing would break an install in
     # the name of documenting it -- but a silent half-working app is the dishonest

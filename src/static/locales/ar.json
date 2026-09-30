@@ -4181,7 +4181,7 @@
   "Size change of this edit (bytes)": "تغيّر حجم هذا التعديل (بايت)",
   "Size change of this revision (bytes)": "تغيّر حجم هذه المراجعة (بايت)",
   "Size check failed: {error}": "فشل التحقق من الحجم: {error}",
-  "Sized to this machine's memory and cores; the scheduler settings are the minimum.": "Sized to this machine's memory and cores; the scheduler settings are the minimum.",
+  "Sized to this machine's memory and cores; the scheduler settings are the minimum.": "يُحدَّد الحجم وفق ذاكرة هذا الجهاز وأنوية المعالج؛ وإعدادات المُجدوِل هي الحدّ الأدنى.",
   "Sizes are estimates — the exact size is read from the mirror on download.": "الأحجام تقديرية — يُقرأ الحجم الدقيق من المرآة عند التنزيل.",
   "Skip articles already done": "تخطّي المقالات المنجزة بالفعل",
   "Skip the tour": "تخطَّ الجولة",
