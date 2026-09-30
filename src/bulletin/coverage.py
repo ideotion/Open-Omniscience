@@ -11,7 +11,7 @@ difference between local coverage and international coverage of each country."
 TWO VANTAGES ON ONE PLACE, and the whole value is in not blending them:
 
 * **Local** — mentions whose SOURCE sits in the country. What outlets there wrote
-  about, in their own languages. ``KeywordMention.country`` is the denormalised
+  about, in their own languages. ``KeywordMentionRead.country`` is the denormalised
   source country, so this is an index scan over mention-sized rows.
 * **International** — mentions in articles that NAME the country, from sources
   that do not sit in it. What everyone else said about the place.
@@ -43,7 +43,8 @@ from sqlalchemy import func, select
 
 from src.bulletin.period import Period
 from src.catalog.countries import COUNTRY_NAMES, continent_of, country_display_code
-from src.database.models import ArticleMentionedPlace, Keyword, KeywordMention
+from src.database.derived_views import KeywordMentionRead
+from src.database.models import ArticleMentionedPlace, Keyword
 
 _LOG = logging.getLogger(__name__)
 
@@ -115,8 +116,8 @@ def _terms(
     from src.analytics.queries import _ring_lang_of
 
     in_window = [
-        KeywordMention.observed_on >= period.start,
-        KeywordMention.observed_on < period.end,
+        KeywordMentionRead.observed_on >= period.start,
+        KeywordMentionRead.observed_on < period.end,
         *where,
     ]
     # Headroom so a ring member below `limit` still merges (the trending rule).
@@ -126,13 +127,13 @@ def _terms(
             Keyword.term,
             Keyword.normalized_term,
             Keyword.language,
-            func.sum(KeywordMention.count),
-            func.count(func.distinct(KeywordMention.article_id)),
+            func.sum(KeywordMentionRead.count),
+            func.count(func.distinct(KeywordMentionRead.article_id)),
         )
-        .join(Keyword, Keyword.id == KeywordMention.keyword_id)
+        .join(Keyword, Keyword.id == KeywordMentionRead.keyword_id)
         .filter(*in_window)
         .group_by(Keyword.id)
-        .order_by(func.sum(KeywordMention.count).desc(), Keyword.normalized_term)
+        .order_by(func.sum(KeywordMentionRead.count).desc(), Keyword.normalized_term)
         .limit(int(limit) * 4)
         .all()
     )
@@ -164,8 +165,8 @@ def _terms(
         # The exact union, never a sum (which double-counts an article carrying two
         # members) and never a max (which is a floor wearing a count's name).
         n_articles = int(
-            session.query(func.count(func.distinct(KeywordMention.article_id)))
-            .filter(KeywordMention.keyword_id.in_(ids), *in_window)
+            session.query(func.count(func.distinct(KeywordMentionRead.article_id)))
+            .filter(KeywordMentionRead.keyword_id.in_(ids), *in_window)
             .scalar()
             or 0
         )
@@ -194,10 +195,10 @@ def _terms(
 def _articles(session, period: Period, *, where: list[Any]) -> int:
     """Distinct articles behind a vantage — the n the maintainer asked to see."""
     return int(
-        session.query(func.count(func.distinct(KeywordMention.article_id)))
+        session.query(func.count(func.distinct(KeywordMentionRead.article_id)))
         .filter(
-            KeywordMention.observed_on >= period.start,
-            KeywordMention.observed_on < period.end,
+            KeywordMentionRead.observed_on >= period.start,
+            KeywordMentionRead.observed_on < period.end,
             *where,
         )
         .scalar()
@@ -219,7 +220,7 @@ def _mentioning(codes: list[str]):
 
 
 def _local_where(codes: list[str]) -> list[Any]:
-    return [KeywordMention.country.in_(codes)]
+    return [KeywordMentionRead.country.in_(codes)]
 
 
 def _international_where(codes: list[str]) -> list[Any]:
@@ -228,8 +229,8 @@ def _international_where(codes: list[str]) -> list[Any]:
     # source with no country recorded is certainly not evidence of local coverage,
     # and dropping those rows would silently shrink the international side.
     return [
-        KeywordMention.article_id.in_(_mentioning(codes)),
-        (KeywordMention.country.notin_(codes)) | (KeywordMention.country.is_(None)),
+        KeywordMentionRead.article_id.in_(_mentioning(codes)),
+        (KeywordMentionRead.country.notin_(codes)) | (KeywordMentionRead.country.is_(None)),
     ]
 
 
@@ -280,14 +281,14 @@ def country_coverage(
     """
     if source_countries is None:
         rows = (
-            session.query(KeywordMention.country, func.count(func.distinct(KeywordMention.article_id)))
+            session.query(KeywordMentionRead.country, func.count(func.distinct(KeywordMentionRead.article_id)))
             .filter(
-                KeywordMention.observed_on >= period.start,
-                KeywordMention.observed_on < period.end,
-                KeywordMention.country.isnot(None),
+                KeywordMentionRead.observed_on >= period.start,
+                KeywordMentionRead.observed_on < period.end,
+                KeywordMentionRead.country.isnot(None),
             )
-            .group_by(KeywordMention.country)
-            .order_by(func.count(func.distinct(KeywordMention.article_id)).desc())
+            .group_by(KeywordMentionRead.country)
+            .order_by(func.count(func.distinct(KeywordMentionRead.article_id)).desc())
             .all()
         )
         source_countries = [{"country": r[0], "articles": int(r[1] or 0)} for r in rows]

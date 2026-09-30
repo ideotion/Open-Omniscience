@@ -181,12 +181,9 @@ _CEILING: dict[str, int] = {
     "src/api/main.py": 25,
     "src/briefing/card_audit.py": 11,
     "src/briefing/producers.py": 14,
-    "src/bulletin/articles.py": 7,
-    "src/bulletin/coverage.py": 24,
-    "src/bulletin/facts.py": 3,
-    "src/bulletin/period.py": 2,
-    "src/bulletin/sections.py": 19,
-    "src/bulletin/stories.py": 6,
+    # A user-facing sentence, keyed by its exact English text in the 11 bulletin catalogs
+    # (configs/bulletin_i18n); renaming the model in it would orphan every translation.
+    "src/bulletin/sections.py": 1,
     "src/database/maintenance.py": 3,
     "src/database/writer.py": 1,
     "src/testing/corpus_gen.py": 2,
