@@ -8274,7 +8274,10 @@ def test_docs_index_covers_live_docs():
 #: normal; the build detail stays in the gate row and the slice's own tests.
 #: RAISED 2026-09-30: 782 -> 785, three lines amending protocol rule (5a): a shipped row is a new
 #: file under docs/ledger/shipped.d/, not a line appended to the shared shipped.csv.
-_CLAUDE_MD_LINE_CEILING = 785
+#: RAISED 2026-09-30 (PF11 = D07 = b): 785 -> 792, seven lines amending protocol rule (1) --
+#: LESSONS.md is consulted by grep through scripts/lessons.py instead of read in full. A protocol
+#: amendment is the growth the clause above calls normal.
+_CLAUDE_MD_LINE_CEILING = 792
 
 
 def _claude_md_lines() -> int:
@@ -8314,6 +8317,39 @@ def test_the_claude_md_ceiling_is_not_left_above_the_real_count():
     assert n == _CLAUDE_MD_LINE_CEILING, (
         f"lower _CLAUDE_MD_LINE_CEILING to {n}"
     )
+
+
+#: Line ceiling for docs/ledger/LESSONS.md (PF11 = D07 = b, ruled 2026-09-30: "a size ratchet like
+#: CLAUDE.md's"). The file is CONSULTED BY GREP now (scripts/lessons.py), not read in full, so the
+#: ratchet is not what keeps it readable -- it is what makes growth a decision that appears in a
+#: diff instead of a side effect: 1,078,082 bytes had accrued a lesson at a time, unseen. Zero
+#: slack, the same as CLAUDE.md's: a ceiling with room is a ceiling that does nothing. A PR that
+#: appends a lesson raises this number in the same diff (rule (5a)(b)); re-measure at the merge
+#: point if another PR appended first, the recorded 2026-09-08 precedent.
+_LESSONS_LINE_CEILING = 12794
+
+
+def _lessons_md_lines() -> int:
+    return (_ROOT / "docs" / "ledger" / "LESSONS.md").read_bytes().count(b"\n")
+
+
+def test_lessons_md_stays_within_its_ratchet():
+    """LESSONS.md may not grow past its recorded ceiling. If this fails because you appended a
+    lesson (rule (5a)(b)), raise _LESSONS_LINE_CEILING to the reported number in the same PR --
+    that IS the intended use. If the growth is not yours, compress per rule (5), never a pending
+    ruling."""
+    n = _lessons_md_lines()
+    assert n <= _LESSONS_LINE_CEILING, (
+        f"LESSONS.md is {n} lines, over its ceiling of {_LESSONS_LINE_CEILING}. Raise "
+        "_LESSONS_LINE_CEILING to the real count in the PR that appended the lesson."
+    )
+
+
+def test_the_lessons_ceiling_is_not_left_above_the_real_count():
+    """The ratchet must ratchet (twin of the CLAUDE.md one): slack is where the next megabyte
+    grows unseen. If this fails, LOWER _LESSONS_LINE_CEILING to the reported number."""
+    n = _lessons_md_lines()
+    assert n == _LESSONS_LINE_CEILING, f"lower _LESSONS_LINE_CEILING to {n}"
 
 
 def test_rulings_index_covers_every_answer_sheet_question():

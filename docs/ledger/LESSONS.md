@@ -8,11 +8,16 @@
 > — nothing was summarised, reworded, reordered or dropped. Entries appended AFTER the split
 > sit below that block, starting with *A DRIVER IS NOT A TOOLKIT*.
 >
-> **This file is MANDATORY READING every session**, together with
-> [`../../CLAUDE.md`](../../CLAUDE.md) (the non-negotiables, the UI invariants and the
-> rituals). Together they are the constitution. Most of what is recorded here was found the
-> expensive way, and several entries are about the exact class of change a session is likely
-> to be asked to make.
+> **This file is CONSULTED BY GREP, no longer read in full** (maintainer ruling PF11 = D07 = b,
+> 2026-09-30; it was mandatory reading until then). [`../../CLAUDE.md`](../../CLAUDE.md) (the
+> non-negotiables, the UI invariants and the rituals) is the constitution and IS read in full.
+> Most of what is recorded here was found the expensive way, and several entries are about the
+> exact class of change a session is likely to be asked to make, so before touching one, look
+> for it: `python scripts/lessons.py <words>` lists the entries that contain every word,
+> `python scripts/lessons.py --index` lists every title, `--show LINE` prints one entry. The
+> index is generated on the spot, never committed. A size ratchet
+> (`tests/test_repo_invariants.py::test_lessons_md_stays_within_its_ratchet`) fails when this
+> file grows past its recorded line ceiling: raise the ceiling in the PR that appends a lesson.
 >
 > **Appending:** a new reusable lesson or empirical fact is appended HERE per `CLAUDE.md`
 > THE PROTOCOL rule (5a)(b), alongside its verbatim entry in
