@@ -601,6 +601,7 @@
     WWW rollback cannot undo a completed keyword pass. That ordering is a data-correctness
     question, not a performance one.
     **ANSWERED 2026-09-30 (the older-rounds list, head entry):** `D45` = d first, then a, conditional on `D47`; the thread «Keyword working session» schedules it.
+    **`D45` (d) BUILT 2026-09-30:** the sentiment is computed where it always was but assigned beside `top_keyword_*`, so the first autoflush no longer writes it and one `UPDATE articles` replaces two (`keyword_indexed_at` is still assigned before `begin_nested()`; nothing between the two places reads the sentiment columns). Pinned by `test_one_apply_updates_the_article_row_once`. STILL OPEN: the row-size query in a diagnostics bundle, which decides (b) or (c).
   - **STILL OPEN from item 4:** the COLD path still flushes once per NEW keyword to assign
     the mention FK id — **80 separate `INSERT INTO keywords`** on a first-sight vocabulary,
     where a two-pass create could make it one executemany. Deliberately omitted: it
@@ -1052,8 +1053,9 @@
   maintainer's call (proposed in the thread, not changed); (2) **the quarterly cycle's budget**
   — 6,200+ qualified sources every 3 months is ~70 re-checks a day, and 2 per pass at the
   field's pass rate is ~30 to 40; the queue view shows the due count, so a shortfall is
-  visible rather than silent; raising `qualification_recheck_per_pass` is the lever, not
-  changed here; (3) **RC06** (how far back a re-check looks) waits on this work and is not
+  visible rather than silent; **BUILT 2026-09-30 (R95): both budgets are now a floor that grows
+  with the machine (memory and cores, no fixed ceiling), and a candidate's read is bounded to a
+  number of its newest articles sized from available memory (at least 2,000)**; (3) **RC06** (how far back a re-check looks) waits on this work and is not
   answered by it; (4) a sampled verdict is judged against a baseline of the newest 20,000
   articles, labelled `+sample`; nothing re-judges it when the machine later has the memory.
 - **THE PRE-FLIGHT QUESTION ROUND (2026-09-18, `docs/design/PREFLIGHT_QUESTIONS_2026-09-18_RELEASE_RUN.md`,
@@ -1166,6 +1168,7 @@
   shape 2 is severe enough to be its own hotfix, since it is the only one that reports success.
   Nothing is assumed here; the enumeration and the hover tell the truth in the meantime.
   **ANSWERED 2026-09-30 (the older-rounds list, head entry):** `PF07` = a: fixed now, in its own small PR, with the per-lane disclosures coming down in the same diff.
+  **SHIPPED 2026-09-30 (PR #1239):** all three opt-outs are real fields, reachable through `PUT /api/scheduler/config` and three Settings checkboxes; the `noOptOut` and `settingUnreachable` flags are off law, calendars and hazards.
 
 - **THE RC CONFIRMATION ROUND CAME BACK UNANSWERED — 0 OF 22 `ANSWER` LINES CARRY A LETTER (processed
   2026-09-15; NOTHING RESOLVED BY THE SESSION; docs-only).** THE PRIMARY RECORD is the round itself, still
@@ -16008,3 +16011,28 @@ Built at these defaults, none of which changes a ruling; any can be put to the m
 5. **No cap on the counts.** The passport and every route count the whole set through a SELECT; only the
    ids handed to the analysis window are bounded, at that window's own 5,000, and the page says so. The
    map lane read has no index on the `wikidata` tag, so on a large lane it scans; a lane index is row D's.
+
+## 2026-09-30 — THE ONBOARDING TOUR AND THE EVIDENCE REVIEW — STATED DEFAULTS (0.5 row K, brief `S05-11` S5; not rulings, each reversible in one place)
+
+The brief (`S05-11` §6) leaves the tour's content and length to the maintainer («no design of record; the
+brief proposes surfaces-at-the-user's-Ring and asks»). Built at these defaults; any can be put to the
+maintainer as a card.
+
+1. **The tour follows the interface depth.** The steps are read from the live sidebar, so the tour at
+   Essentials is five steps (the top bar, Home, Feed, one step naming the ten other tabs, the depth) and at
+   Standard or Full fourteen (the top bar, the twelve tabs, the depth). A tab added to the sidebar is in the
+   tour the day it is in the sidebar. Where: `tourSteps` / `_tourTabs` in `app-tour.js`.
+2. **One sentence per tab, each saying what the tab SHOWS** and none promising a conclusion. The text is
+   AI-drafted like the other locale strings and flagged for the maintainer's read. Where: `tourBlurb`.
+3. **Entry points: Settings → General, Help & docs and the command palette. It never starts by itself**, not
+   on first launch and not after an update; there is no "seen the tour" record, because keeping one would be
+   the only thing the tour stored. Where: `openTour`, `OO_ACTIONS`, `palCommands`.
+4. **Never a narrowing choice.** It asks nothing, sets no filter and hides no tab; a depth that pins fewer
+   tabs gets a step that names every tab it does not pin. Its buttons only navigate (open a tab, open the
+   «Show more» row, open the depth setting). Enforced by `tests/test_onboarding_tour.py`.
+5. **The evidence review is read-only and the file is unchanged.** `POST /api/reports/evidence/plan` counts
+   and lists; it creates no key. The bundle format (`oo-evidence-1`), its signature and `scripts/verify_evidence.py`
+   are untouched. Only the older signed JSON exit gets the review: the claim trail's ZIP (S2) already lists
+   its members and the bulletin evidence ZIP has no button in the UI to put a review on.
+6. **The bulletin carrier (the piece that lifts the `held_q823` hold on the Map data completeness card) is not
+   built here.** It needs the bulletin evidence ZIP to have a place in the UI first; it stays a follow-up.

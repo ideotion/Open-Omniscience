@@ -72,6 +72,40 @@ def load_or_create_signing_key(path: Path | None = None) -> Ed25519PrivateKey:
     return key
 
 
+def existing_public_key_hex(path: Path | None = None) -> str | None:
+    """The public half of the signing key IF one exists already, else None.
+
+    The review screen before an export needs to say which key WILL sign; it must not create
+    one to say so (a review that changes the install is not a review), so this never writes.
+    An unreadable or foreign key file reads as None here and fails loudly at export time, in
+    ``load_or_create_signing_key``, where a person is waiting on the outcome.
+    """
+    path = path or _default_key_path()
+    try:
+        # read and parse only: ``load_or_create_signing_key`` would GENERATE a key if the file
+        # vanished between an exists() check and its read, and a review must never do that
+        key = serialization.load_pem_private_key(path.read_bytes(), password=None)
+    except Exception:  # noqa: BLE001 - missing, unreadable or foreign all read as "no key"
+        return None
+    if not isinstance(key, Ed25519PrivateKey):
+        return None
+    return public_key_hex(key)
+
+
+def signing_key_state(path: Path | None = None) -> tuple[str, str | None]:
+    """``(state, public key hex)`` for the review screen; never writes.
+
+    ``state`` is ``"none"`` (no key file yet: export creates one), ``"ok"`` (a readable
+    Ed25519 key) or ``"unreadable"`` (a file is there but export cannot use it, so the review
+    must not promise a key is created: it is not, and saving fails).
+    """
+    path = path or _default_key_path()
+    if not path.exists():
+        return "none", None
+    pub = existing_public_key_hex(path)
+    return ("ok", pub) if pub is not None else ("unreadable", None)
+
+
 def public_key_hex(key: Ed25519PrivateKey) -> str:
     raw = key.public_key().public_bytes(
         encoding=serialization.Encoding.Raw, format=serialization.PublicFormat.Raw
@@ -82,6 +116,22 @@ def public_key_hex(key: Ed25519PrivateKey) -> str:
 # --------------------------------------------------------------------------- #
 # Bundle construction
 # --------------------------------------------------------------------------- #
+
+
+#: The fields of one evidence item, in the order a reader sees them. The review screen
+#: before an export lists THESE, so what it promises and what ``_article_item`` writes are
+#: one list (tests/test_evidence_review.py asserts they agree). The article's TEXT is not
+#: among them: the item carries the SHA-256 of the text, never the text.
+ITEM_FIELDS = (
+    "id",
+    "url",
+    "canonical_url",
+    "source_id",
+    "title",
+    "published_at",
+    "stored_hash",
+    "content_sha256",
+)
 
 
 def _article_item(article) -> dict:

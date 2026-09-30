@@ -1879,6 +1879,8 @@
         <label class="depth-opt"><input type="radio" name="set-depth" value="standard"><span class="depth-t"><b>Standard</b><span class="depth-d">Every tab pinned; the fine-tuning of each Lead folded away until you open it.</span></span></label>
         <label class="depth-opt"><input type="radio" name="set-depth" value="full"><span class="depth-t"><b>Full</b><span class="depth-d">Everything pinned and open.</span></span></label>
       </div>
+      <p><button class="secondary" type="button" data-on-click="openTour()"
+                 title="A short walk through the sidebar's tabs at this depth. It changes nothing and can be left at any step.">Take the tour</button></p>
 
       <h3 style="margin-bottom:6px">Feed scrolling history</h3>
       <p class="muted" style="margin-top:0">The Feed remembers two things and nothing else: which order it drew, and how far down it you have scrolled. It keeps no record of which articles you read — there is no reading history in your corpus, in a backup, or anywhere else. Both are stored on this device only.</p>
@@ -2277,6 +2279,24 @@
         <p class="hint" style="margin-top:0">Every import this app has recorded, newest first. Open one for its full per-table report.</p>
         <div id="imp-history" style="margin-top:6px"></div>
       </div>
+    </section>
+    <!-- DIFFERENCES FROM RESTORES (R61, item 12; maintainer 2026-09-29: «imported data should never
+         be prevailing to local data, however, both should be kept and accessible ... give users
+         the choice to discard it afterwards»). A panel here rather than a tenth Settings subtab
+         (the nine are pinned by tests/test_settings_nine_subtabs.py). Filled by loadAlternates()
+         (app-backup.js) when this subtab opens; one loopback read, no network. -->
+    <section class="panel" id="alt-panel">
+      <div class="phead"><h2>Differences from restores</h2></div>
+      <p class="muted" style="margin-top:0">When a restore brings a value that differs from the one this machine already holds — a translation, a date&rsquo;s status, an AI summary — this machine&rsquo;s value stays, and the other one is kept here. Nothing from a restore is shown in place of yours unless you choose it.</p>
+      <div class="row" style="align-items:center;gap:8px;flex-wrap:wrap">
+        <label for="alt-status">Show</label>
+        <select id="alt-status" data-on-change="loadAlternates()">
+          <option value="pending">Not yet looked at</option>
+          <option value="kept">Kept</option>
+          <option value="all">All</option>
+        </select>
+      </div>
+      <div id="alt-body" style="margin-top:8px"></div>
     </section>
     <!-- Newsletter / document IMPORT (2026-07-31 Settings review): moved here from its
          own subtab. Importing .eml and PDF files is bringing data IN, which is exactly
@@ -2681,6 +2701,21 @@
       <div class="row">
         <label style="display:flex;align-items:center;gap:8px;cursor:pointer" title="Tracked statistics figures (every figure you fetched, and the standard country indicators loaded in the background) are re-fetched from their publisher when a newer vintage is due — each at most once per its own interval, and never in airplane mode. On by default. Untick it to stop the background refresh; “Refresh due now” in Governments → Statistics still works.">
           <input type="checkbox" id="sch-stat-refresh" style="width:auto"> Refresh the statistics I subscribed to on every pass
+        </label>
+      </div>
+      <div class="row">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer" title="The bundled calendar-feed directory (public holidays, religious calendars, events) is re-imported from its publishers when a feed is due, and a few feeds per pass are re-verified, never in airplane mode. On by default. Untick it to stop both; a feed you import by hand still works.">
+          <input type="checkbox" id="sch-auto-calendars" style="width:auto"> Import the calendar feeds on every pass
+        </label>
+      </div>
+      <div class="row">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer" title="The law documents you watch are re-checked for new versions when due, at most once a day each, and their AI change summaries follow, never in airplane mode. On by default. Untick it to stop the background check; “Track changes now” in Governments → Law still works.">
+          <input type="checkbox" id="sch-auto-law" style="width:auto"> Re-check the laws I watch on every pass
+        </label>
+      </div>
+      <div class="row">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer" title="The hazard snapshot (USGS earthquakes, GDACS alerts) is refreshed from its publishers when it is due, and the weather signal keywords are re-derived from your corpus (no network), never in airplane mode. On by default. Untick it to stop the background refresh.">
+          <input type="checkbox" id="sch-auto-signals" style="width:auto"> Refresh the hazard feeds on every pass
         </label>
       </div>
       <div class="row">
@@ -3537,6 +3572,8 @@
         <p class="hint" style="margin-top:0">Tabs opened from Leads and readers are suffixed “· FOOS” — Free Open OmniScience, the alpha working name.</p>
         <p class="muted" style="margin-top:0"><span>Everything you need to operate the tool — rendered here, offline. The User Manual is the detailed notice; the other guides go deeper on specific subjects.</span>
           <a href="/docs" target="_blank" rel="noopener">For developers: the raw API reference (Swagger) ↗</a></p>
+        <p><button class="secondary" type="button" data-on-click="openTour()"
+                   title="A short walk through the sidebar's tabs at your interface depth. It changes nothing and can be left at any step.">Take the tour</button></p>
         <div class="doc-layout">
           <div class="doc-nav" id="doc-nav"><div class="muted">Loading…</div></div>
           <div id="doc-prose" class="prose"><div class="muted">Pick a document on the left.</div></div>
@@ -3795,6 +3832,36 @@
     <div id="dossier-body" data-i18n-dyn style="max-height:72vh;overflow:auto"></div>
     <div style="margin-top:12px;display:flex;justify-content:flex-end">
       <button class="secondary" type="button" id="dossier-close">Close</button>
+    </div>
+  </dialog>
+
+  <!-- S05-11 S5: the review before a signed evidence bundle is saved, and the message after it
+       (app-evidence.js). Read-only until Save: the plan makes no key, no file and no request
+       beyond loopback. No inline handlers: _evidenceWire binds both buttons once. -->
+  <dialog id="evidence-review" aria-labelledby="evidence-h" style="width:min(620px,94vw);max-height:90vh;padding:18px">
+    <h3 id="evidence-h" style="margin:0 0 8px">Export signed evidence</h3>
+    <div id="evidence-body" data-i18n-dyn style="max-height:66vh;overflow:auto"></div>
+    <div style="margin-top:12px;display:flex;gap:8px;justify-content:flex-end;align-items:center;flex-wrap:wrap">
+      <span id="evidence-status" class="hint" role="status"></span>
+      <button class="secondary" type="button" id="evidence-close" data-i18n-dyn>Cancel</button>
+      <button type="button" id="evidence-save">Save the signed bundle</button>
+    </div>
+  </dialog>
+
+  <!-- S05-11 S5: the onboarding tour. Opened by an explicit command only (Settings -> General,
+       the command palette, Help & docs); never by itself. One step per tab the sidebar pins at
+       the reader's depth, drawn by app-tour.js from the live sidebar. It narrows nothing: no
+       filter, no hidden tab, no stored record. No inline handlers: _tourWire binds every
+       button once. -->
+  <dialog id="tour" aria-labelledby="tour-h" style="width:min(560px,94vw);max-height:90vh;padding:18px">
+    <h3 id="tour-h" style="margin:0 0 8px">A short tour</h3>
+    <div id="tour-body" data-i18n-dyn style="max-height:66vh;overflow:auto"></div>
+    <div style="margin-top:12px;display:flex;gap:8px;justify-content:space-between;flex-wrap:wrap">
+      <button class="ghost" type="button" id="tour-skip">Skip the tour</button>
+      <span style="display:flex;gap:8px">
+        <button class="secondary" type="button" id="tour-back">Back</button>
+        <button type="button" id="tour-next" data-i18n-dyn>Next</button>
+      </span>
     </div>
   </dialog>
 
@@ -4093,6 +4160,8 @@
   <script src="/static/app-analysis.js"></script>
   <script src="/static/app-claim.js"></script>
   <script src="/static/app-dossier.js"></script>
+  <script src="/static/app-evidence.js"></script>
+  <script src="/static/app-tour.js"></script>
   <script src="/static/app-ai-tools.js"></script>
   <script src="/static/app-boot.js"></script>
   <!-- Settings -> GUIs gallery renderer (loads after app.js; called by showSetCat). -->

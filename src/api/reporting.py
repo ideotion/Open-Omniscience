@@ -9,12 +9,20 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from src.database.fts import SearchQueryError, search_ids
 from src.database.models import Article
 from src.database.session import get_db
-from src.reporting.evidence import build_signed_bundle, load_or_create_signing_key, verify_bundle
+from src.reporting.evidence import (
+    BUNDLE_VERSION,
+    ITEM_FIELDS,
+    build_signed_bundle,
+    load_or_create_signing_key,
+    signing_key_state,
+    verify_bundle,
+)
 from src.reporting.methods import METHODS_SCHEMA, build_methods_markdown
 
 router = APIRouter(prefix="/api/reports", tags=["reporting"])
@@ -47,8 +55,41 @@ def export_evidence(req: EvidenceRequest, db: Session = Depends(get_db)) -> dict
     if not articles:
         raise HTTPException(status_code=404, detail="No matching articles to export.")
 
-    key = load_or_create_signing_key()
+    try:
+        key = load_or_create_signing_key()
+    except (ValueError, OSError) as exc:
+        # a key file that is there but unusable: say so, instead of a bare 500 (the review
+        # screen names this state before the person gets here)
+        raise HTTPException(status_code=409, detail=f"The evidence signing key cannot be used: {exc}") from exc
     return build_signed_bundle(articles, key, case_name=req.case_name)
+
+
+@router.post("/evidence/plan")
+def plan_evidence(req: EvidenceRequest, db: Session = Depends(get_db)) -> dict:
+    """What an evidence bundle for this selection would hold, before it is written.
+
+    The review screen's numbers and lists: how many articles, from how many sources, which
+    fields each item carries (the text is NOT one of them: only its SHA-256), and which key
+    will sign. READ-ONLY: it never creates the signing key (that happens at export), makes no
+    network call and writes nothing, so looking costs nothing.
+    """
+    ids = _selected_ids(req, db)
+    n_articles, n_sources = (
+        db.query(func.count(Article.id), func.count(func.distinct(Article.source_id)))
+        .filter(Article.id.in_(ids))
+        .one()
+    )
+    if not n_articles:
+        raise HTTPException(status_code=404, detail="No matching articles to export.")
+    state, pub = signing_key_state()
+    return {
+        "bundle_version": BUNDLE_VERSION,
+        "articles": int(n_articles),
+        "sources": int(n_sources),
+        "item_fields": list(ITEM_FIELDS),
+        "text_included": False,
+        "signer": {"exists": state != "none", "state": state, "ed25519_pub": pub},
+    }
 
 
 class VerifyRequest(BaseModel):
@@ -73,6 +114,18 @@ class MethodsRequest(BaseModel):
     case_name: str | None = None
     notes: str | None = None
     include_bundle: bool = False
+
+
+def _selected_ids(req, db) -> list[int]:
+    """The ids ``_select_articles`` would load, without loading the rows (counts need no text)."""
+    if req.article_ids:
+        return list(req.article_ids)
+    if req.query:
+        try:
+            return list(search_ids(db, req.query) or [])
+        except SearchQueryError as exc:
+            raise HTTPException(status_code=400, detail=f"Invalid query: {exc}") from exc
+    raise HTTPException(status_code=400, detail="Provide article_ids or query.")
 
 
 def _select_articles(req, db) -> list:

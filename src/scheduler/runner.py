@@ -1187,11 +1187,11 @@ def _lane_pending_kinds(settings: SchedulerSettings) -> set[str]:
     # the subscribed statistics -- are checked INSIDE the step, so an operator who turned
     # both off still gets the feeds they never had a switch for.
     pending.add("markets")
-    if getattr(settings, "auto_import_calendars", True):
+    if settings.auto_import_calendars:
         pending.add("calendar")
-    if getattr(settings, "auto_track_law", True):
+    if settings.auto_track_law:
         pending.add("law")
-    if getattr(settings, "auto_track_signals", True):
+    if settings.auto_track_signals:
         pending.add("hazards")
     if getattr(settings, "world_discovery_per_pass", 0) > 0:
         pending.add("world_discovery")
@@ -1358,21 +1358,20 @@ def _lane_step_world_discovery(session, fetcher, settings: SchedulerSettings) ->
 
 
 def _lane_step_qualification(session, fetcher, settings: SchedulerSettings) -> dict:
-    from src.catalog.qualification import advance_qualification
+    from src.catalog.qualification import advance_qualification, effective_qualification_budgets
     from src.monitoring import tasks as _bgtasks
 
-    recheck = getattr(settings, "qualification_recheck_per_pass", 0)
+    new_n, recheck = effective_qualification_budgets(settings)
     tok = _bgtasks.register(
         "qualification", "qualifying candidate sources",
         detail=(
-            f"up to {settings.qualification_per_pass} candidate(s)"
+            f"up to {new_n} candidate(s)"
             + (f" + {recheck} re-check(s)" if recheck else "")
         ),
     )
     try:
         return advance_qualification(
-            session, fetcher, per_pass=settings.qualification_per_pass,
-            recheck_per_pass=recheck,
+            session, fetcher, per_pass=new_n, recheck_per_pass=recheck,
         )
     finally:
         _bgtasks.finish(tok)

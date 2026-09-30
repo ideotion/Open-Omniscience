@@ -65,6 +65,45 @@ PRODUCER_COLUMNS: dict[str, dict[str, str]] = {
 }
 
 
+#: What a restore compares and keeps for each deduced table (R61). ``differs`` decides whether
+#: an incoming row CONTRADICTS a local one; ``shown`` is what is stored and displayed;
+#: ``match`` maps each identity field to the column that holds it (how a carried alternate finds
+#: its local row again); ``scope`` says how the identity reaches the row's parent: ``article``
+#: (``article_hash`` -> ``article_id``), ``law`` (``document_url`` + ``revision_content_hash``
+#: -> ``revision_id``) or ``none``. ONE definition, read by the capture in ``merge.py``, by the
+#: carry of alternates between machines, and pinned against each other by the tests.
+ALTERNATE_SPECS: dict[str, dict[str, Any]] = {
+    "article_analyses": {
+        "scope": "article", "differs": ["result"], "shown": ["result"],
+        "match": {"kind": "kind", "model": "model", "prompt_version": "prompt_version"},
+    },
+    "article_mentioned_dates": {
+        "scope": "article", "differs": ["status"],
+        "shown": ["status", "confidence", "extractor", "snippet"],
+        "match": {"mentioned_on": "mentioned_on", "precision": "precision"},
+    },
+    "ai_keyword": {
+        "scope": "article", "differs": ["confirmed"],
+        "shown": ["confirmed", "evidence", "prompt_version", "language"],
+        "match": {"kind": "kind", "term": "term", "model": "model"},
+    },
+    "keyword_translations": {
+        "scope": "none", "differs": ["text"], "shown": ["text"],
+        "match": {"term": "term", "source_lang": "source_lang", "target_lang": "target_lang",
+                  "model": "model", "prompt_version": "prompt_version"},
+    },
+    "article_title_translations": {
+        "scope": "article", "differs": ["title", "summary"],
+        "shown": ["title", "summary", "source_lang"],
+        "match": {"target_lang": "target_lang", "model": "model", "prompt_version": "prompt_version"},
+    },
+    "law_revision_summaries": {
+        "scope": "law", "differs": ["summary"], "shown": ["summary", "prompt_version"],
+        "match": {"model": "model"},
+    },
+}
+
+
 def producer_tag_sql(table: str, alias: str, *, origin: str, batch: str, at: str, app_version: str) -> str:
     """SQL producing the tag JSON for a row of ``table`` aliased ``alias``.
 

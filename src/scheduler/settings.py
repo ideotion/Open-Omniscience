@@ -188,6 +188,14 @@ class SchedulerSettings:
     # order of magnitude larger than today's. 0 disables re-verification entirely.
     qualification_recheck_per_pass: int = 2
 
+    # The two numbers above are a FLOOR, not a cap (maintainer preference 2026-09-29: no
+    # fixed caps; limits follow the hardware). While this is on, each pass runs
+    # `qualification.adaptive_pass_budgets` -- as many new candidates and re-checks as
+    # the machine's memory and cores carry (no fixed ceiling), and exactly the configured numbers when the
+    # machine cannot be read. An explicit 0 still switches that lane off. Turn it off to pin
+    # the configured numbers exactly.
+    qualification_budget_auto: bool = True
+
     # SCRAPING SCOPE. `scrape_app_provided_only` narrows collection to the sources that
     # SHIPPED with the app, by their seed-time provenance tag. See
     # catalog.provenance_scope.is_app_provided for why this is an exact-set match and not
@@ -226,6 +234,17 @@ class SchedulerSettings:
     # SIGNAL keywords from the corpus (network-free) — both freshness-gated so they are
     # usually no-ops. Set False to leave those stores to the explicit manual endpoints only.
     auto_track_signals: bool = True
+
+    # The other two default-on ride-alongs' opt-outs (PF07 = a, R92; ruled 2026-09-30). The
+    # collector already read both through ``getattr(settings, ..., True)`` while this class
+    # defined neither, so the default always won and the lanes could not be switched off --
+    # a consent control that existed in the source and was a constant at runtime. Now real
+    # fields, both default ON (behaviour unchanged for an install that never touches them).
+    #   auto_import_calendars: the bundled calendar-feed directory is re-imported each pass.
+    #   auto_track_law:        the law documents you watch are polled, and their AI change
+    #                          summaries follow (both gated once, at ``_lane_pending_kinds``).
+    auto_import_calendars: bool = True
+    auto_track_law: bool = True
 
     # THE WIKIPEDIA LANE'S RUN STATE (Q702's NOTE, ruled 2026-09-15). The label of
     # Q702's answer said "default off"; the note that follows it says "make it
@@ -722,6 +741,9 @@ def load_settings() -> SchedulerSettings:
         qualification_recheck_per_pass=_coerce_int(
             raw.get("qualification_recheck_per_pass"), d.qualification_recheck_per_pass, 0, 100
         ),
+        qualification_budget_auto=_coerce_bool(
+            raw.get("qualification_budget_auto"), d.qualification_budget_auto
+        ),
         scrape_app_provided_only=_coerce_bool(
             raw.get("scrape_app_provided_only"), d.scrape_app_provided_only
         ),
@@ -731,6 +753,8 @@ def load_settings() -> SchedulerSettings:
         # exactly the shape the priority ladder needs (empty = OFF).
         country_priority=_coerce_target(raw.get("country_priority")),
         auto_track_signals=_coerce_bool(raw.get("auto_track_signals"), d.auto_track_signals),
+        auto_import_calendars=_coerce_bool(raw.get("auto_import_calendars"), d.auto_import_calendars),
+        auto_track_law=_coerce_bool(raw.get("auto_track_law"), d.auto_track_law),
         wiki_lane_state=_coerce_wiki_lane_state(raw.get("wiki_lane_state"), d.wiki_lane_state),
         wiki_lane_editions=_coerce_wiki_lane_editions(
             raw.get("wiki_lane_editions"), d.wiki_lane_editions
@@ -832,7 +856,12 @@ def save_settings(updates: dict) -> SchedulerSettings:
                 "retired_mode can only be cleared (set to an empty string)"
             )
         current.retired_mode = ""
-    for key in ("auto_run_market_rules", "auto_refresh_stat_subscriptions"):
+    for key in (
+        "auto_run_market_rules",
+        "auto_refresh_stat_subscriptions",
+        "auto_import_calendars",
+        "auto_track_law",
+    ):
         if key in updates and updates[key] is not None:
             setattr(current, key, _coerce_bool(updates[key], getattr(current, key)))
     if "autostart" in updates and updates["autostart"] is not None:
@@ -867,6 +896,10 @@ def save_settings(updates: dict) -> SchedulerSettings:
     if "crawl_supplement" in updates and updates["crawl_supplement"] is not None:
         current.crawl_supplement = _coerce_bool(
             updates["crawl_supplement"], current.crawl_supplement
+        )
+    if "qualification_budget_auto" in updates and updates["qualification_budget_auto"] is not None:
+        current.qualification_budget_auto = _coerce_bool(
+            updates["qualification_budget_auto"], current.qualification_budget_auto
         )
     if "scrape_app_provided_only" in updates and updates["scrape_app_provided_only"] is not None:
         current.scrape_app_provided_only = _coerce_bool(

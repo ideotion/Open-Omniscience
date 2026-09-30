@@ -259,7 +259,9 @@ The core loop is:
    offline.
 
 Pick any tool from the sidebar, or just press **⌘K / Ctrl-K** and type where you
-want to go. The active view refreshes itself live (every few seconds) while it's on
+want to go. For a short walk through the sidebar's tabs at your interface depth,
+choose **Take the tour** (Settings → General, Help & docs, or the command palette).
+It starts only when you ask, changes nothing and keeps no record of having run. The active view refreshes itself live (every few seconds) while it's on
 screen, and actions confirm with small toast notifications in the corner.
 Destructive actions always ask first.
 
@@ -408,8 +410,11 @@ other, and lets you scroll.
   Ollama is available).
 - **Exports:** **Export CSV**, **Export JSON**, and **Export signed evidence** — a
   tamper-evident, signed bundle of exactly the articles matching your query (see
-  [Evidence & custody](#38-evidence--custody)); plus a **Methods appendix** (a
-  reproducible record of the query + method).
+  [Evidence & custody](#38-evidence--custody)). It opens a review first: how many
+  articles and sources, what the file holds, that it is plaintext, and which key signs;
+  saving is one more click, and the message afterwards lists the file's members and the
+  key to give the recipient. Also a **Methods appendix** (a reproducible record of the
+  query + method).
 - **Local-model runs over the whole match:** **Summarize all** / **Translate all** queue
   a background run of your local model across every matched article (stored with model +
   date, and — being AI output — never fed into the trusted keyword index); **Run
@@ -597,6 +602,14 @@ judge, in order: **new sources first** (never judged, or tried without enough ar
 yet), then the sources whose re-check is due. A new source is always more urgent than a
 re-check (ruling R94). The panel also says how many qualified sources are waiting and when
 the next one joins the queue.
+
+**How many sources a pass judges** grows with the machine (ruling R95): the two numbers in
+Settings → Scheduler (*qualification per pass*, *qualification re-checks per pass*) are a
+minimum, and while *qualification budget auto* is on (the default) each pass judges as many
+new sources and re-checks as the machine's memory and cores carry, with no fixed ceiling. A
+setting below the defaults, or 0, is kept as given; switching auto off pins the numbers
+exactly. Each candidate is judged on its newest articles, as many as the memory available can
+hold (at least 2,000), and the pass says how many candidates that bound applied to.
 
 **On a small machine** (less memory than the app's scan floor), a pass judges candidates
 against a **sample of the newest 20,000 articles** instead of the whole corpus, and the

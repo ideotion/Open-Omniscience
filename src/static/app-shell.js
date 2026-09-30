@@ -546,7 +546,7 @@
       // S04-08 S4: the Storage panel (Q1006/Q1010/Q1011) opens the subtab, so it loads
       // with it -- one loopback read, no network.
       if (cat === "data" && typeof loadLaneStorage === "function") loadLaneStorage();
-      if (cat === "data") { loadNewsletterRemoveCount(); loadNewsletterAttach(); _folderImportStartPoll(); loadImportHistory(); }
+      if (cat === "data") { loadNewsletterRemoveCount(); loadNewsletterAttach(); _folderImportStartPoll(); loadImportHistory(); loadAlternates(); }
     }
 
     // ADVANCED subtab (2026-07-31 Settings review): Collection, Sources and Keywords moved
@@ -696,6 +696,7 @@
         {grp:"Actions", label:"Track Wikipedia now", sub:"Wikipedia", run:() => { showTab("wiki"); trackWikiNow(); }},
         {grp:"Actions", label:"Export / Back up…", sub:"Data & backup", run:() => { showTab("settings"); openUnifiedExport(); }},
         {grp:"Actions", label:"Open the User Manual", sub:"Help", run:() => { showTab("help"); openDoc("user-manual"); }},
+        {grp:"Actions", label:"Take the tour", sub:"Help", run:() => openTour()},
         {grp:"Actions", label:"Open Settings", sub:"System", run:() => showTab("settings")},
         {grp:"Actions", label:"Customize appearance", sub:"Theme", run:() => openDrawer()},
         // §4c: the palette knew nothing of the 5 keyboard shortcuts (only Mod+K is
