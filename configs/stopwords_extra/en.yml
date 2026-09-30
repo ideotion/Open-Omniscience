@@ -26,6 +26,7 @@ stopwords:
   - big
   - billion
   - billions
+  - bio
   - came
   - case
   - cases
@@ -168,6 +169,7 @@ stopwords:
   - toward
   - towards
   - two
+  - uno
   - unto
   - upon
   - use

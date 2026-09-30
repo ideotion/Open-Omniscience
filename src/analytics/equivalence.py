@@ -61,6 +61,26 @@ def shipped_rings_paths() -> tuple[Path, ...]:
     return (_GENERATED_PATH, _PATH)
 
 
+@lru_cache(maxsize=1)
+def shipped_rings() -> tuple[Ring, ...]:
+    """The rings that ship with the release (generated, then curated, curation winning), with
+    NO install-local file.
+
+    The stoplist layer reads THIS, not :func:`load_rings` (R102): which ring members a
+    language keeps out of another language's grammar list decides what an index pass writes, so
+    it must be a function of files the engine identity can hash
+    (``src.analytics.engine_identity``) and not of one install's own local ring file.
+    """
+    # NOT gated on OO_KEYWORD_EQUIV: that switch turns off ring GROUPING at query time, and is not
+    # part of the engine identity's switches, so gating the stoplist on it would let two installs
+    # with the same stamp write different rows.
+    by_id: dict[str, Ring] = {}
+    for path in shipped_rings_paths():
+        for ring in _parse_rings(_read_yaml(path)):
+            by_id[ring.id] = ring
+    return tuple(by_id.values())
+
+
 def local_rings_path() -> Path:
     """``<data dir>/rings/keyword_rings_local.yml`` -- the rings THIS install holds.
 
@@ -168,17 +188,27 @@ def load_rings() -> tuple[Ring, ...]:
 def invalidate_ring_caches() -> None:
     """Drop every memoised view of the ring files.
 
-    Three ``lru_cache(maxsize=1)`` loaders sit on top of the files -- ``load_rings``,
-    ``_index`` and ``_multi_index`` -- and none of them has ever had a runtime
+    Several ``lru_cache(maxsize=1)`` loaders sit on top of the files -- ``load_rings``,
+    ``shipped_rings``, ``_index`` and ``_multi_index`` -- and none of them has ever had a runtime
     invalidation, because until now nothing could change a ring file while the app was
     running. A RESTORE can (Q409 = b), so this exists and the restore calls it.
     Clearing ``load_rings`` alone would leave the two indexes serving the old set,
     which is the shape where a term resolves through one surface and not another.
     """
     load_rings.cache_clear()
+    shipped_rings.cache_clear()
     _index.cache_clear()
     _multi_index.cache_clear()
     _member_languages.cache_clear()
+    # The stoplist layer reads the rings too (R102: a ring member a language spells as content
+    # is not hidden by another language's grammar), so its memoised views go with them. Local
+    # import: extract imports this module lazily, and this keeps the dependency one-way.
+    from src.analytics import extract, month_occupancy
+
+    extract._ring_member_exemptions.cache_clear()
+    extract.global_stopwords.cache_clear()
+    month_occupancy.banned_month_tokens.cache_clear()
+    month_occupancy._token_re.cache_clear()
 
 
 @lru_cache(maxsize=1)

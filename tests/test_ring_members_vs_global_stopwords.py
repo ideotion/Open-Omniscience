@@ -21,7 +21,16 @@ everywhere. `fr:dette` (the French member of the `debt` ring) is invisible becau
 `pt:podcast` are removed from the `podcast` ring by the deliberate global
 `PLATFORM_STOPWORDS` entry for "podcast" -- the furniture rule eating its own ring.
 
-WHAT THIS FILE DOES, AND WHAT IT DELIBERATELY DOES NOT. It does not fix the
+**RESOLVED 2026-09-30 (R102, D24, the maintainer's «4 = yes»): the ratchet below reached ZERO.**
+`analytics.extract` now EXEMPTS a ring member from the language-agnostic union when it is a
+single word that only ANOTHER language's list holds: `global_stopwords()` (the query-time
+layer) drops it, and `_stopset(language)` (extraction) lifts it only in the language whose
+ring names it. A member its OWN language stoplists (the vendored list or that language's
+curated `stopwords_extra` file: French "tout", English "work") stays hidden, which is the
+"different, defensible case" the helper below always excluded. The tests at the end pin the
+list, the per-language behaviour and the two refusals.
+
+WHAT THIS FILE DID BEFORE THAT, AND WHAT IT DELIBERATELY DID NOT. It does not fix the
 architecture: making the scoped channel reachable for `en`/`fr` is a stoplist
 ARCHITECTURE change (`get_stopwords`'s branch order is load-bearing and its docstring
 says so), it interacts with the month-occupancy work, and choosing it needs corpus
@@ -41,21 +50,30 @@ test below is what fails there, and it is the one that quotes the ring.
 
 from __future__ import annotations
 
+from functools import lru_cache
+
 import pytest
 
-from src.analytics.equivalence import load_rings
-from src.analytics.extract import global_stopwords
+from src.analytics.equivalence import shipped_rings
+from src.analytics.extract import (
+    BaselineExtractor,
+    _global_stopwords_raw,
+    _load_extra_stopwords_by_language,
+    _stopset,
+    global_stopwords,
+    ring_member_exemptions,
+)
 from src.services.stopwords import stopwords_manager
 
 # Zero slack, per the house ratchet rule: a ratchet with room is a ratchet that does
-# nothing. Lower it when a kill is genuinely resolved; NEVER raise it to make room.
-_CROSS_LANGUAGE_RING_KILLS = 38
+# nothing. It was 38 until R102 exempted the ring members; NEVER raise it to make room.
+_CROSS_LANGUAGE_RING_KILLS = 0
 
 
 def _cross_language_kills() -> list[tuple[str, str, str]]:
     """Ring members that are content in THEIR OWN language and grammar in another.
 
-    Read through the real loader (`load_rings`), never a hand-parse of the YAML: the
+    Read through the real loader (`shipped_rings`), never a hand-parse of the YAML: the
     guard must measure what the app resolves, including the curated file's overrides.
     Multi-word members are excluded because the stoplist is a UNIGRAM filter -- it
     cannot remove "contenu CO2" by holding "contenu". A member its OWN language also
@@ -63,12 +81,14 @@ def _cross_language_kills() -> list[tuple[str, str, str]]:
     counted here.
     """
     every = global_stopwords()
+    extra = _load_extra_stopwords_by_language()
     out: list[tuple[str, str, str]] = []
-    for ring in load_rings():
+    for ring in shipped_rings():
         for lang, term in ring.members:
             if not term or " " in term:
                 continue
-            if term in every and term not in stopwords_manager.get_stopwords(lang):
+            own = stopwords_manager.get_stopwords(lang) | extra.get(lang, frozenset())
+            if term in every and term not in own:
                 out.append((ring.id, lang, term))
     return sorted(out)
 
@@ -99,7 +119,7 @@ def test_the_french_advertising_batch_is_refused_and_here_is_the_ring_it_would_b
     Kept as its own test rather than left in prose because the next stoplist pass will
     reach for precisely this change -- the docket even pre-authorises it pending "a
     collision check". This IS the collision check, and it fails."""
-    ring = next((r for r in load_rings() if r.id == "advertising"), None)
+    ring = next((r for r in shipped_rings() if r.id == "advertising"), None)
     assert ring is not None, "the advertising ring is the evidence; it must exist"
     assert ("fr", term) in ring.members, f"fr:{term} is a member of the advertising ring"
     assert term not in global_stopwords(), (
@@ -117,7 +137,7 @@ def test_contenu_is_only_ever_a_multi_word_ring_member_so_the_unigram_case_diffe
     quietly borrowed for the other."""
     hits = [
         (r.id, term)
-        for r in load_rings()
+        for r in shipped_rings()
         for lang, term in r.members
         if lang == "fr" and "contenu" in term.split()
     ]
@@ -128,13 +148,122 @@ def test_contenu_is_only_ever_a_multi_word_ring_member_so_the_unigram_case_diffe
     )
 
 
-def test_the_podcast_ring_shows_the_mechanism_eating_its_own_furniture_rule():
-    """The self-demonstrating case, pinned so the irony cannot be lost in a refactor:
-    'podcast' is a DELIBERATE global furniture stopword, and the `podcast` ring's own
-    non-English members are exactly what that removes."""
-    every = global_stopwords()
-    assert "podcast" in every, "podcast is deliberate platform furniture (PLATFORM_STOPWORDS)"
-    ring = next((r for r in load_rings() if r.id == "podcast"), None)
+def test_the_podcast_ring_is_shown_in_its_own_languages_and_stays_furniture_elsewhere():
+    """'podcast' is deliberate platform furniture (PLATFORM_STOPWORDS) and ALSO the German,
+    French and Portuguese member of the `podcast` ring. Before R102 the furniture rule ate
+    the ring's own members. Now extraction lifts it exactly in the languages whose ring names
+    it; English (its own list) and every language with no such member still hide it."""
+    assert "podcast" in _global_stopwords_raw(), "podcast is deliberate platform furniture"
+    ring = next((r for r in shipped_rings() if r.id == "podcast"), None)
     assert ring is not None
-    killed = [f"{lang}:{t}" for lang, t in ring.members if t in every]
-    assert killed, "the podcast ring should still show the collision this test describes"
+    for lang in ("de", "fr", "pt"):
+        assert (lang, "podcast") in {(lg, t.lower()) for lg, t in ring.members}
+        assert "podcast" not in _stopset(lang), lang
+    for lang in ("en", "es", "it", "nl"):
+        assert "podcast" in _stopset(lang), lang
+
+
+# The 30 ring members R102 shows again, by language. Explicit on purpose: it is the list the
+# maintainer was promised in the pull request, and a ring or stoplist change that moves it
+# should be read, not absorbed. It was 34 until the maintainer's answer 12 = a kept four of the
+# fourteen proposed words hidden: German "all", Spanish "are", English "bio" and "uno".
+_EXEMPT = {
+    "ar": {"o"},
+    "bn": {"u"},
+    "de": {"bio", "os", "podcast", "re", "un", "uno"},
+    "en": {"os", "u", "un", "war"},
+    "es": {"az", "so"},
+    "fr": {"dette", "jo", "os", "photo", "podcast"},
+    "id": {"so", "u"},
+    "ja": {"o", "os"},
+    "pt": {"al", "am", "lei", "podcast", "so", "solo", "u"},
+}
+
+
+def test_the_exempted_ring_members_are_exactly_the_promised_list():
+    got = {lang: set(words) for lang, words in ring_member_exemptions().items()}
+    assert got == _EXEMPT
+    assert sum(len(w) for w in got.values()) == 30
+
+
+def test_a_word_its_own_language_stoplists_stays_hidden():
+    """The refusal that keeps the exemption honest: French 'tout' and English 'work' are in
+    ring members of `universe` and `occupation`, but their OWN language's curated list holds
+    them, so they were never a cross-language kill and stay hidden."""
+    assert "tout" in _stopset("fr") and "tout" in global_stopwords()
+    assert "work" in _stopset("en") and "work" in global_stopwords()
+
+
+def test_the_four_words_the_maintainer_kept_hidden_stay_hidden():
+    """Answer 12 = a: German "all", Spanish "are", English "bio" and "uno" are hidden, by
+    putting each in its OWN language's curated list (which the exemption rule already
+    respects). German "bio"/"uno" are German content and stay shown."""
+    for lang, word in (("de", "all"), ("es", "are"), ("en", "bio"), ("en", "uno")):
+        assert word in _stopset(lang), (lang, word)
+        assert word not in ring_member_exemptions().get(lang, ()), (lang, word)
+    # The query layer has no language: "bio"/"uno" stay out of it because German still shows
+    # them (a keyword only reaches the store through extraction, which hides them in English).
+    assert "all" in global_stopwords() and "are" in global_stopwords()
+    assert "bio" not in _stopset("de") and "uno" not in _stopset("de")
+
+
+def test_the_same_spelling_is_content_in_one_language_and_grammar_in_another():
+    """The whole point, on real text through the real extractor: French 'dette' (debt) is
+    kept, while the Danish grammar word that hid it still is Danish grammar."""
+    assert "dette" not in _stopset("fr") and "dette" in _stopset("da")
+    b = BaselineExtractor()
+    fr = {t.term for t in b._terms("La dette publique augmente", "fr")}
+    da = {t.term for t in b._terms("dette er en dette", "da")}
+    assert "dette" in fr
+    assert "dette" not in da
+    en = {t.term for t in b._terms("the war and the bio", "en")}
+    # English 'war' was hidden by the German grammar word 'war'; 'bio' is one of the four
+    # kept hidden on purpose (12 = a).
+    assert "war" in en and "bio" not in en
+    de = {t.term for t in b._terms("Er war da", "de")}
+    assert "war" not in de  # German keeps its own grammar word out
+
+
+def test_the_query_time_union_lets_a_stored_member_through_but_extraction_stays_per_language():
+    """global_stopwords() has no language, and a keyword only reaches the store through
+    extraction, so the query layer drops every exempted member; a language WITHOUT the member
+    (Spanish 'podcast') is still filtered at extraction and never stored."""
+    every = global_stopwords()
+    for words in _EXEMPT.values():
+        assert not (set(words) & every)
+    assert "podcast" in _stopset("es")
+
+
+def test_a_ring_reload_refreshes_the_exemptions(monkeypatch):
+    """Review finding: the exemption set is memoised on top of the rings, so a restore or a
+    Wikidata ring load (both call invalidate_ring_caches) must refresh it, or a removed ring
+    keeps exempting and a new one stays hidden until restart."""
+    from src.analytics import equivalence, extract
+
+    assert "dette" in ring_member_exemptions().get("fr", frozenset())
+    real = equivalence.shipped_rings
+    monkeypatch.setattr(equivalence, "shipped_rings", lru_cache(maxsize=1)(lambda: ()))
+    try:
+        equivalence.invalidate_ring_caches()
+        assert ring_member_exemptions() == {}
+        assert "dette" in _stopset("fr")
+    finally:
+        monkeypatch.setattr(equivalence, "shipped_rings", real)
+        equivalence.invalidate_ring_caches()
+    assert "dette" in ring_member_exemptions().get("fr", frozenset())
+    assert "dette" not in extract._stopset("fr")
+
+
+def test_the_ring_grouping_switch_does_not_change_what_extraction_keeps(monkeypatch):
+    """OO_KEYWORD_EQUIV turns off ring GROUPING; it is not in the engine identity's switches, so
+    the stoplist exemptions must not depend on it (two installs, one stamp, one set of rows)."""
+    from src.analytics import equivalence
+
+    with_rings = {lang: set(w) for lang, w in ring_member_exemptions().items()}
+    monkeypatch.setenv("OO_KEYWORD_EQUIV", "0")
+    equivalence.invalidate_ring_caches()
+    try:
+        assert {lang: set(w) for lang, w in ring_member_exemptions().items()} == with_rings
+    finally:
+        monkeypatch.undo()
+        equivalence.invalidate_ring_caches()
