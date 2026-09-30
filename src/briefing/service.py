@@ -271,7 +271,9 @@ def refresh_briefing(session, on_progress=None) -> dict:
     except Exception:  # noqa: BLE001 - the watch pass is additive, never fatal to the feed
         _LOG.warning("watch evaluation failed; briefing continues", exc_info=True)
     # Home is the one place the lane-only cards are made for (Q823: no bulletin carries them).
-    produced, stats = run_all_bounded(session, on_progress=on_progress, lanes=True)
+    produced, stats = run_all_bounded(
+        session, on_progress=on_progress, lanes=True, memory_stop=True
+    )
     cards = [c.to_dict() for c in produced]
 
     # S2.3: a truncated run must not REPLACE a good feed with what it managed to
@@ -306,7 +308,9 @@ def refresh_briefing(session, on_progress=None) -> dict:
                 len(existing["cards"]),
                 len(cards),
             )
-            return existing
+            # Said in the payload, not only in a log: the caller must not record this as a
+            # refresh that surfaced cards (the Activity Ledger would claim one).
+            return {**existing, "kept_reason": "memory_short" if memory_stopped else "deadline"}
 
     payload = {
         "version": CACHE_VERSION,

@@ -2063,7 +2063,11 @@ class BackgroundScheduler:
                     return
                 try:
                     with session_scope() as session:
-                        _activity("briefing", refresh_briefing(session))
+                        refreshed = refresh_briefing(session)
+                        # A refresh that kept the cached feed (memory short) did not act:
+                        # a ledger line saying N cards were surfaced would be false.
+                        if not (isinstance(refreshed, dict) and refreshed.get("kept_reason")):
+                            _activity("briefing", refreshed)
                 finally:
                     self._heavy_tail_lock.release()
             except Exception:  # noqa: BLE001 - a background refresh must never crash the thread

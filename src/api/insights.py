@@ -2461,6 +2461,28 @@ def _safe_rollback(db: Session) -> None:
         _LOG.warning("warm_cache: rollback after a failed step also failed", exc_info=True)
 
 
+def _warm_deadline_seconds() -> float | None:
+    """The time budget of ONE cache warm-up compute; ``None`` = the endpoints' own default.
+
+    A warm-up runs in the background at the pass tail, where a slow machine may legitimately
+    need longer than the 60 s an interactive request is given (a cold whole-corpus trending
+    read is the case: before this, warming was the only thing that ever filled its cache
+    there). So it gets ``OO_WARM_DEADLINE_S``, default FIVE TIMES the endpoint deadline: what
+    the number protects is the pass tail never hanging without limit, and what it leaves
+    alone is the memory stop, which is the same floor at every budget. A disabled endpoint
+    deadline (``OO_STATEMENT_TIMEOUT_S=0``) stays disabled here too.
+    """
+    from src.database.maintenance import _deadline_seconds
+
+    base = _deadline_seconds()
+    if base <= 0:
+        return None
+    try:
+        return float(_os.environ.get("OO_WARM_DEADLINE_S", "")) or base * 5
+    except ValueError:
+        return base * 5
+
+
 def warm_cache(db: Session) -> dict:
     """Pre-compute the common whole-corpus views into the read cache so the Home /
     Insights surfaces never hit a cold heavy query (perf, field report 2026-06-18).
@@ -2587,7 +2609,7 @@ def warm_cache(db: Session) -> dict:
             # process down with it (diagnostics rank 4). A refusal or abort here skips the
             # spec, is logged, and caches nothing -- the endpoint recomputes under its own
             # deadline when somebody asks, which is where a 503 belongs.
-            with statement_deadline(db):
+            with statement_deadline(db, seconds=_warm_deadline_seconds()):
                 out = compute()
             if isinstance(out, dict):
                 out = {**out, "computed_at": datetime.now(UTC).isoformat(timespec="seconds"),

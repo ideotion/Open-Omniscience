@@ -530,6 +530,7 @@ def run_all_bounded(
     deadline: float | None = None,
     as_of: "date | None" = None,
     lanes: bool = False,
+    memory_stop: bool = False,
 ) -> tuple[list[Card], dict]:
     """Run every registered producer, isolating failures. Returns ``(cards, stats)``
     where ``stats`` is ``{"producers_run", "producers_total", "truncated"}`` plus, when
@@ -552,6 +553,12 @@ def run_all_bounded(
 
     ``deadline`` is a :func:`time.monotonic` instant after which no FURTHER producer is
     started; None (Home's path) is unbounded, exactly as before.
+
+    ``memory_stop`` makes the loop stop BETWEEN producers while available memory is at or
+    below the memory guard's floor (``stats["truncated_reason"] == "memory_short"``). Off by
+    default, and only Home's own refresh turns it on: the other callers (a bulletin edition,
+    the leads-quality export, the card audit) print their own words for a short run and know
+    only a spent time budget, so a memory stop there would be reported as the wrong cause.
 
     ``lanes`` runs :data:`LANE_ONLY_PRODUCERS` too. Off by default: the skipped names travel
     in ``stats["held_q823"]`` so a document can say which cards it does not carry and why.
@@ -612,7 +619,7 @@ def run_all_bounded(
         # the part this loop owns; a single producer's own allocation is bounded by the
         # deadlined read it runs under, not here. The producers not run say so in
         # ``stats`` -- the caller keeps what it already had for them.
-        short = _memory_short()
+        short = _memory_short() if memory_stop else None
         if short is not None:
             truncated = True
             truncated_reason = "memory_short"

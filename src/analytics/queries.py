@@ -2455,9 +2455,19 @@ def _rising_in_rank_order(recent, prior, *, min_recent, baseline_days, window_da
             g = round(growth, 2)
             yield (-g, -rc, idx, kid, pc, round(expected, 2), is_ratio)
 
+    # How many keywords are over the floor: a chunk that has grown to a quarter of them is
+    # no cheaper than ranking them all once, and a heap that size is DEARER than the list it
+    # replaces (a tuple and its tiebreaker per entry, rescanned each pass). So when the
+    # filters keep consuming chunks (a rare kind, thousands of hidden words) the last step is
+    # one full sort, which is the old cost and no more.
+    over_floor = sum(1 for rc in recent.values() if int(rc or 0) >= min_recent)
     done = 0
     chunk = max(int(want) * 2, 64)
     while True:
+        if chunk * 4 >= over_floor:
+            for ng, nrc, _idx, kid, pc, expected, is_ratio in sorted(keyed())[done:]:
+                yield kid, -nrc, pc, expected, -ng, is_ratio
+            return
         ranked = heapq.nsmallest(chunk, keyed())
         for ng, nrc, _idx, kid, pc, expected, is_ratio in ranked[done:]:
             yield kid, -nrc, pc, expected, -ng, is_ratio
