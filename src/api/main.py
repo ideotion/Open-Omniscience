@@ -2483,8 +2483,8 @@ def view_article(request: Request, article_id: int, db: Session = Depends(get_db
 
     # Related in your corpus: other articles sharing the most keywords with this
     # one (maintainer feedback: read locally, then branch out by similarity --
-    # source-agnostic). Reads KeywordMentionRead (the real per-article extraction
-    # chokepoint, src/analytics/store.py:index_article) -- NOT the legacy
+    # source-agnostic). Reads KeywordMentionRead (the view over the table the real per-article
+    # extraction chokepoint, src/analytics/store.py:index_article, writes) -- NOT the legacy
     # article_keyword_association table, which has zero writers anywhere in the
     # live ingest path and always yields an empty candidate set (P0 fix,
     # reader-dead-legacy-table-related). The candidate/ranking step below is an
