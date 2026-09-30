@@ -146,7 +146,7 @@ def _per_id_mentions(
     Reads only the denormalised keyword_mentions.count -- no article decrypt."""
     from sqlalchemy import func
 
-    from src.database.models import KeywordMention
+    from src.database.derived_views import KeywordMentionRead
 
     out: dict[int, int] = {}
     ids = sorted(keyword_ids)
@@ -154,19 +154,19 @@ def _per_id_mentions(
         return out
     for chunk in _chunks(ids):
         q = db.query(
-            KeywordMention.keyword_id, func.coalesce(func.sum(KeywordMention.count), 0)
-        ).filter(KeywordMention.keyword_id.in_(chunk))
+            KeywordMentionRead.keyword_id, func.coalesce(func.sum(KeywordMentionRead.count), 0)
+        ).filter(KeywordMentionRead.keyword_id.in_(chunk))
         if lo is not None:
-            q = q.filter(KeywordMention.observed_on >= lo)
+            q = q.filter(KeywordMentionRead.observed_on >= lo)
         if hi is not None:
-            q = q.filter(KeywordMention.observed_on < hi)
-        for kid, total in q.group_by(KeywordMention.keyword_id).all():
+            q = q.filter(KeywordMentionRead.observed_on < hi)
+        for kid, total in q.group_by(KeywordMentionRead.keyword_id).all():
             out[int(kid)] = int(total or 0)
     return out
 
 
 def _distinct_source_count(db, keyword_ids) -> int:
-    from src.database.models import KeywordMention
+    from src.database.derived_views import KeywordMentionRead
 
     ids = sorted(keyword_ids)
     if not ids:
@@ -174,8 +174,8 @@ def _distinct_source_count(db, keyword_ids) -> int:
     seen: set[int] = set()
     for chunk in _chunks(ids):
         for (sid,) in (
-            db.query(KeywordMention.source_id)
-            .filter(KeywordMention.keyword_id.in_(chunk), KeywordMention.source_id.isnot(None))
+            db.query(KeywordMentionRead.source_id)
+            .filter(KeywordMentionRead.keyword_id.in_(chunk), KeywordMentionRead.source_id.isnot(None))
             .distinct()
         ):
             seen.add(int(sid))
@@ -227,7 +227,7 @@ def daily_series(db, keyword_ids, *, days: int, today: date | None = None) -> li
     scan only, bounded by ``days`` and the group's own (typically small) id set."""
     from sqlalchemy import func
 
-    from src.database.models import KeywordMention
+    from src.database.derived_views import KeywordMentionRead
 
     ids = sorted(keyword_ids)
     if not ids:
@@ -238,10 +238,10 @@ def daily_series(db, keyword_ids, *, days: int, today: date | None = None) -> li
     for chunk in _chunks(ids):
         rows = (
             db.query(
-                KeywordMention.observed_on, func.coalesce(func.sum(KeywordMention.count), 0)
+                KeywordMentionRead.observed_on, func.coalesce(func.sum(KeywordMentionRead.count), 0)
             )
-            .filter(KeywordMention.keyword_id.in_(chunk), KeywordMention.observed_on >= lo)
-            .group_by(KeywordMention.observed_on)
+            .filter(KeywordMentionRead.keyword_id.in_(chunk), KeywordMentionRead.observed_on >= lo)
+            .group_by(KeywordMentionRead.observed_on)
             .all()
         )
         for d, c in rows:

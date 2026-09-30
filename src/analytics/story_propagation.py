@@ -32,7 +32,8 @@ from datetime import date, datetime, timezone
 
 from sqlalchemy import distinct, func
 
-from src.database.models import Keyword, KeywordMention, Source
+from src.database.derived_views import KeywordMentionRead
+from src.database.models import Keyword, Source
 
 _LOG = logging.getLogger(__name__)
 
@@ -88,22 +89,22 @@ def find_story_propagation(
     cutoff = today - timedelta(days=lookback_days)
     hi = today + timedelta(days=1)
     win = [
-        KeywordMention.observed_on >= cutoff,
-        KeywordMention.observed_on < hi,
-        KeywordMention.source_id.isnot(None),
-        KeywordMention.observed_on.isnot(None),
+        KeywordMentionRead.observed_on >= cutoff,
+        KeywordMentionRead.observed_on < hi,
+        KeywordMentionRead.source_id.isnot(None),
+        KeywordMentionRead.observed_on.isnot(None),
     ]
 
     # Candidate terms: mentioned across >= min_sources distinct sources in the window.
     cand_rows = (
         session.query(
-            KeywordMention.keyword_id,
-            func.count(distinct(KeywordMention.source_id)).label("n_src"),
+            KeywordMentionRead.keyword_id,
+            func.count(distinct(KeywordMentionRead.source_id)).label("n_src"),
         )
         .filter(*win)
-        .group_by(KeywordMention.keyword_id)
-        .having(func.count(distinct(KeywordMention.source_id)) >= min_sources)
-        .order_by(func.count(distinct(KeywordMention.source_id)).desc())
+        .group_by(KeywordMentionRead.keyword_id)
+        .having(func.count(distinct(KeywordMentionRead.source_id)) >= min_sources)
+        .order_by(func.count(distinct(KeywordMentionRead.source_id)).desc())
         .limit(max_terms)
         .all()
     )
@@ -117,7 +118,7 @@ def find_story_propagation(
     from src.analytics.generic_terms import is_generic_by_df_ubiquity
     from src.analytics.managed import normalize_lang
 
-    active_sids = [r[0] for r in session.query(distinct(KeywordMention.source_id)).filter(*win)]
+    active_sids = [r[0] for r in session.query(distinct(KeywordMentionRead.source_id)).filter(*win)]
     active_by_lang: dict[str, int] = {}
     for chunk in _chunks(active_sids):
         for _sid, lang in session.query(Source.id, Source.language).filter(
@@ -132,13 +133,13 @@ def find_story_propagation(
     for chunk in _chunks(cand_ids):
         for kid, sid, first in (
             session.query(
-                KeywordMention.keyword_id,
-                KeywordMention.source_id,
-                func.min(KeywordMention.observed_on),
+                KeywordMentionRead.keyword_id,
+                KeywordMentionRead.source_id,
+                func.min(KeywordMentionRead.observed_on),
             )
             .filter(*win)
-            .filter(KeywordMention.keyword_id.in_(chunk))
-            .group_by(KeywordMention.keyword_id, KeywordMention.source_id)
+            .filter(KeywordMentionRead.keyword_id.in_(chunk))
+            .group_by(KeywordMentionRead.keyword_id, KeywordMentionRead.source_id)
             .all()
         ):
             if first is not None:
@@ -228,11 +229,11 @@ def find_story_propagation(
 
 def _term_article_ids(session, kid: int, cutoff, hi, cap: int) -> list[int]:
     rows = (
-        session.query(KeywordMention.article_id)
+        session.query(KeywordMentionRead.article_id)
         .filter(
-            KeywordMention.keyword_id == kid,
-            KeywordMention.observed_on >= cutoff,
-            KeywordMention.observed_on < hi,
+            KeywordMentionRead.keyword_id == kid,
+            KeywordMentionRead.observed_on >= cutoff,
+            KeywordMentionRead.observed_on < hi,
         )
         .distinct()
         .limit(cap)
