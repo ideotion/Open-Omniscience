@@ -1113,8 +1113,8 @@ each edition you follow, that edition's page, its **size in bytes of wikitext** 
 when the page walk reached the page), when it was read, and the **changes this machine
 recorded in the last seven days**. An edition with no page says why: the walk has not run
 for it, has not finished it (and how far it got, so the item may be there), or finished it
-and found none. A page the stream does not follow reads "not followed", because its change
-count is unknown, never zero. The bar beside a size is that size over the largest on screen,
+and found none. The change count is what the live stream recorded on this machine; for an edition it has
+recorded nothing for, it reads "unknown", because that is not the same as zero. The bar beside a size is that size over the largest on screen,
 from zero; nothing else is computed, and the editions are separate articles, not
 translations. The page walk is off until you switch it on (Settings → Wikipedia), so on an
 instance that has not walked there is nothing to compare yet and the table says so.
@@ -1125,7 +1125,7 @@ UTC day and in the seven days ending on it. It is **one day, not a series**: the
 overwritten every day and no per-page view history is kept. The counts are your corpus's,
 which is what this machine collected, not the press; a title can be ambiguous or written
 differently in another language; Wikipedia-sourced and quarantined articles are not counted;
-a row the count did not reach in its time limit reads "not counted". The two numbers sit side
+a row the count did not reach in its time limit, or whose title has no words the search index can match (a bare "-"), reads "not counted", with the reason in its hover; the suggestions read only the week's 400 most-changed pages. The two numbers sit side
 by side and are never combined.
 
 Heavy **offline full-text baselines** (whole-edition dumps) are *separate* and live

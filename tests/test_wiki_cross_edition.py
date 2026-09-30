@@ -88,6 +88,21 @@ def _follow(db, edition, page_id, *, changes, days_ago=1):
         )
 
 
+def _record(db, edition, page_id, *, changes, days_ago=1, title=None):
+    """Stream changes with NO followed-page entity, as the stream records them for every page
+    of a followed edition; ``title`` writes the legacy title-keyed form instead of the id."""
+    from src.wiki.identity import legacy_external_id_for
+
+    ext = legacy_external_id_for(edition, title) if title else external_id_for(edition, page_id)
+    for i in range(changes):
+        db.add(
+            VersionedChange(
+                change_ref=f"{ext}-r{i}", feed=f"stream:{edition}", change_kind="edit",
+                external_id=ext, recorded_at=NOW - timedelta(days=days_ago, minutes=i), byte_delta=5,
+            )
+        )
+
+
 # --------------------------------------------------------------------------- #
 # 4. Divergence.
 # --------------------------------------------------------------------------- #
@@ -132,7 +147,7 @@ def test_sizes_are_shown_as_they_are_with_the_extremes_named_and_no_ratio(lane):
     assert [r["length_bytes"] for r in out["editions"]] == [9000, 12000, 300]
 
 
-def test_a_page_the_stream_does_not_follow_has_UNKNOWN_changes_not_zero(lane):
+def test_an_edition_the_stream_recorded_nothing_for_has_UNKNOWN_changes_not_zero(lane):
     with lane_session("wiki") as db:
         _walk(db, "en", 1, "Salt", "Q34", 9000)
         _walk(db, "de", 2, "Salz", "Q34", 12000)
@@ -140,17 +155,30 @@ def test_a_page_the_stream_does_not_follow_has_UNKNOWN_changes_not_zero(lane):
         db.flush()
         out = X.divergence(db, "Q34", editions=["en", "de"], now=NOW)
     by = {r["edition"]: r for r in out["editions"]}
-    assert by["en"]["followed"] is True and by["en"]["changes_in_window"] == 3
-    assert by["de"]["followed"] is False and by["de"]["changes_in_window"] is None
+    assert by["en"]["stream_recorded"] is True and by["en"]["changes_in_window"] == 3
+    assert by["de"]["stream_recorded"] is False and by["de"]["changes_in_window"] is None
 
 
-def test_a_followed_page_with_no_changes_in_the_window_is_a_real_zero(lane):
+def test_changes_the_stream_recorded_without_a_followed_entity_are_counted_by_either_key(lane):
+    """The stream records every change of a followed edition, entity or not, under the id
+    form or (before Q715) the title form; both count, and neither is reported as unknown."""
+    with lane_session("wiki") as db:
+        _walk(db, "en", 1, "Salt", "Q34", 9000)
+        _record(db, "en", 1, changes=6)
+        _record(db, "en", 1, changes=4, title="Salt")
+        db.flush()
+        out = X.divergence(db, "Q34", editions=["en"], now=NOW)
+    row = out["editions"][0]
+    assert row["stream_recorded"] is True and row["changes_in_window"] == 10
+
+
+def test_a_recorded_edition_with_no_changes_in_the_window_is_a_real_zero(lane):
     with lane_session("wiki") as db:
         _walk(db, "en", 1, "Salt", "Q34", 9000)
         _follow(db, "en", 1, changes=2, days_ago=40)
         db.flush()
         out = X.divergence(db, "Q34", editions=["en"], window_days=7, now=NOW)
-    assert out["editions"][0]["followed"] is True and out["editions"][0]["changes_in_window"] == 0
+    assert out["editions"][0]["stream_recorded"] is True and out["editions"][0]["changes_in_window"] == 0
 
 
 def test_an_item_no_walk_found_is_unmeasured_and_says_so(lane):
@@ -186,9 +214,22 @@ def test_candidates_are_the_items_of_the_most_changed_followed_pages(lane):
     ]
 
 
-def test_candidates_are_empty_without_followed_pages(lane):
+def test_candidates_count_title_keyed_rows_and_say_how_many_pages_they_read(lane):
     with lane_session("wiki") as db:
-        assert X.divergence_candidates(db, now=NOW) == {"items": [], "n": 0, "window_days": 7}
+        _walk(db, "en", 1, "Salt", "Q34", 9000)
+        _record(db, "en", 1, changes=6)
+        _record(db, "en", 1, changes=4, title="Salt")  # a row written before Q715
+        db.flush()
+        out = X.divergence_candidates(db, now=NOW)
+    assert [(i["qid"], i["changes_in_window"]) for i in out["items"]] == [("Q34", 10)]
+    assert out["read_top"] == X.CANDIDATE_ROWS_READ
+
+
+def test_candidates_are_empty_without_changes(lane):
+    with lane_session("wiki") as db:
+        assert X.divergence_candidates(db, now=NOW) == {
+            "items": [], "n": 0, "window_days": 7, "read_top": X.CANDIDATE_ROWS_READ,
+        }
 
 
 # --------------------------------------------------------------------------- #
@@ -247,6 +288,25 @@ def test_a_wikipedia_sourced_article_is_not_coverage_of_its_own_page(corpus, mon
     assert out["rows"][0]["press_day"] == 1
 
 
+def test_the_bare_wikipedia_domain_is_excluded_like_its_subdomains(corpus, monkeypatch):
+    _top(monkeypatch, "en", "2026-09-29", [{"title": "Solar eclipse", "rank": 1, "views": 10}])
+    day = datetime(2026, 9, 29, 10, 0)
+    _article(corpus, 1, "Solar eclipse", "Solar eclipse is when the moon passes.", day, domain="wikipedia.org")
+    out = X.attention(corpus, edition="en")
+    assert out["rows"][0]["press_day"] == 0
+
+
+def test_a_title_with_no_searchable_words_is_named_as_such_never_as_a_timeout(corpus, monkeypatch):
+    _top(monkeypatch, "en", "2026-09-29", [
+        {"title": "Main Page", "rank": 1, "views": 9}, {"title": "-", "rank": 2, "views": 8},
+    ])
+    out = X.attention(corpus, edition="en")
+    assert out["skipped"] == 0 and out["unsearchable"] == 1
+    dash = out["rows"][1]
+    assert dash["press_day"] is None and dash["not_counted"] == "unsearchable"
+    assert out["rows"][0]["not_counted"] is None
+
+
 def test_an_undated_article_is_in_neither_window(corpus, monkeypatch):
     _top(monkeypatch, "en", "2026-09-29", [{"title": "Solar eclipse", "rank": 1, "views": 10}])
     _article(corpus, 1, "Undated", "The Solar eclipse.", None)
@@ -263,6 +323,7 @@ def test_rows_not_counted_before_the_deadline_are_reported_as_skipped_never_as_z
     out = X.attention(corpus, edition="en", deadline_s=1.0, monotonic=lambda: next(clock))
     assert out["skipped"] == 1
     assert out["rows"][1]["press_day"] is None and out["rows"][1]["press_7d"] is None
+    assert out["rows"][1]["not_counted"] == "time"
     assert out["rows"][0]["press_day"] == 0
 
 
@@ -283,6 +344,7 @@ def test_the_divergence_route_answers_suggestions_without_an_item_and_the_table_
     from src.api import wiki_lane as R
 
     monkeypatch.setattr(R, "_followed_editions", lambda: ("en", "de"))
+    monkeypatch.setattr(X, "_utcnow", lambda: NOW)  # the route reads the real clock otherwise
     with lane_session("wiki") as db:
         _walk(db, "en", 1, "Salt", "Q34", 9000)
         _follow(db, "en", 1, changes=2, days_ago=0)
@@ -294,6 +356,7 @@ def test_the_divergence_route_answers_suggestions_without_an_item_and_the_table_
     assert bad["reason"] == "qid-invalid"
     ok = R.lane_divergence(qid="q34", window_days=7)
     assert ok["measured"] and ok["qid"] == "Q34" and {r["edition"] for r in ok["editions"]} == {"en", "de"}
+    assert "candidates" not in ok and "candidates" not in bad, "the suggestions scan the window: only asked for with no item"
 
 
 def test_the_divergence_route_is_absent_when_the_lane_never_ran(tmp_path, monkeypatch):

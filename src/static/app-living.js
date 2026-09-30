@@ -1323,9 +1323,9 @@
       const size = typeof r.length_bytes === "number"
         ? `<span title="${esc(tf("{n} bytes of wikitext, read when the walk reached the page.", { n: fmtNum(r.length_bytes, 0) }))}">${esc(humanBytes(r.length_bytes))}</span>${bar}`
         : `<span class="muted">${esc(t("unknown"))}</span>`;
-      const changes = r.followed
+      const changes = r.stream_recorded
         ? esc(_livingCount(r.changes_in_window))
-        : `<span class="muted" title="${esc(t("The stream does not follow this page, so no change was recorded for it: the count is unknown, not zero."))}">${esc(t("not followed"))}</span>`;
+        : `<span class="muted" title="${esc(t("The live stream has recorded nothing for this edition on this machine, so the count is unknown, not zero."))}">${esc(t("unknown"))}</span>`;
       return `<tr><td>${_wikiEdCell(r.edition)}</td><td dir="auto">${esc(r.title || ("#" + r.page_id))}</td>`
         + `<td>${size}</td><td class="muted small">${esc(livingWhen(r.read_at, t))}</td><td>${changes}</td></tr>`;
     }
@@ -1362,14 +1362,18 @@
       }
       if (!d.measured) return _wikiLaneStateHtml(d, t);
       const rows = Array.isArray(d.rows) ? d.rows : [];
-      const cell = (n) => (typeof n === "number"
+      const cell = (n, why) => (typeof n === "number"
         ? esc(_livingCount(n))
-        : `<span class="muted" title="${esc(t("Not counted: the count ran out of time before reaching this row."))}">${esc(t("not counted"))}</span>`);
+        : `<span class="muted" title="${esc(why === "unsearchable"
+          ? t("Not counted: this title has no words the search index can match, for example a bare punctuation mark.")
+          : t("Not counted: the count ran out of time before reaching this row."))}">${esc(t("not counted"))}</span>`);
       const body = rows.map((r) => `<tr><td>${esc(r.rank == null ? "" : _livingCount(r.rank))}</td><td dir="auto">${esc(r.title)}</td>`
-        + `<td>${esc(typeof r.views === "number" ? _livingCount(r.views) : "")}</td><td>${cell(r.press_day)}</td><td>${cell(r.press_7d)}</td></tr>`).join("");
-      const cap = tf("Top {n} of the list for {day}.", { n: _livingCount(d.n), day: d.day });
-      const skipped = d.skipped
-        ? `<div class="hint">${esc(tf("{n} row(s) were not counted: the count ran out of time.", { n: _livingCount(d.skipped) }))}</div>` : "";
+        + `<td>${esc(typeof r.views === "number" ? _livingCount(r.views) : "")}</td><td>${cell(r.press_day, r.not_counted)}</td><td>${cell(r.press_7d, r.not_counted)}</td></tr>`).join("");
+      const cap = tf("Top {n} of the {edition} list for {day}.", { n: _livingCount(d.n), edition: ooLangCode(d.edition) || d.edition, day: d.day });
+      const skipped = (d.skipped
+        ? `<div class="hint">${esc(tf("{n} row(s) were not counted: the count ran out of time.", { n: _livingCount(d.skipped) }))}</div>` : "")
+        + (d.unsearchable
+          ? `<div class="hint">${esc(tf("{n} title(s) have no words the search index can match, so they were not counted.", { n: _livingCount(d.unsearchable) }))}</div>` : "");
       return `<div class="hint">${esc(cap)}</div>`
         + `<div class="wiki-table-wrap"><table class="living-table"><thead><tr><th>${esc(t("Rank"))}</th><th>${esc(t("Page"))}</th><th>${esc(t("Views that day"))}</th>`
         + `<th title="${esc(t("Articles in your corpus that mention the title as a phrase and were published on that UTC day."))}">${esc(t("Articles that day"))}</th>`
@@ -1380,6 +1384,7 @@
     }
 
     let _wikiDivLast = null;   // {q, d}
+    let _wikiDivCands = null;  // the last suggestions the route gave (it answers them only with no item)
     let _wikiAttLast = null;   // {d}
     let _wikiCompareWired = false;
     function _wikiCompareWire() {
@@ -1413,7 +1418,7 @@
     function renderWikiDivergence() {
       const t = _livingT(), tf = _livingTf();
       const cands = $("wiki-div-cands"), out = $("wiki-div-result");
-      if (cands) cands.innerHTML = _wikiDivLast ? wikiDivCandidatesHtml(_wikiDivLast.d, t, tf) : "";
+      if (cands) cands.innerHTML = _wikiDivCands ? wikiDivCandidatesHtml(_wikiDivCands, t, tf) : "";
       if (out) out.innerHTML = _wikiDivLast ? wikiDivergenceHtml(_wikiDivLast.d, t, tf) : "";
     }
 
@@ -1426,6 +1431,7 @@
       try {
         const d = await api("/api/wiki/lane/divergence" + (words ? "?" + new URLSearchParams({ qid: words }).toString() : ""));
         _wikiDivLast = { q: words, d };
+        if (d.candidates || Object.prototype.hasOwnProperty.call(_WIKI_LANE_STATES, d.reason)) _wikiDivCands = d;
         renderWikiDivergence();
       } catch (e) {
         _wikiDivLast = null;

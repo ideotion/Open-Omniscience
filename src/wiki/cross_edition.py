@@ -53,6 +53,8 @@ CANDIDATES_N: int = 20
 #: Rows of the source's top list kept in the key-value store (``service.py``); the most this
 #: analytic can read, stated so a caller never infers the cap from a response's length.
 TOP_ROWS_STORED: int = 50
+#: How many of the window's most-changed pages the suggestions read; the payload says so.
+CANDIDATE_ROWS_READ: int = 400
 
 #: Seconds the attention read may spend counting press coverage before it stops and says
 #: how many rows it skipped. A page whose count was not made is reported as not made.
@@ -79,11 +81,10 @@ def normalise_qid(value: Any) -> str | None:
     return v if _QID.match(v) else None
 
 
-def _edition_of_external_id(external_id: str) -> tuple[str, int | None]:
+def _parse(external_id: str) -> Any:
     from src.wiki.identity import parse_external_id
 
-    ident = parse_external_id(external_id)
-    return ident.wiki, ident.page_id
+    return parse_external_id(external_id)
 
 
 def divergence_candidates(
@@ -92,9 +93,12 @@ def divergence_candidates(
 ) -> dict[str, Any]:
     """Wikidata items worth opening: those of the pages this machine recorded most changes for.
 
-    Reads the most-changed followed pages of the window and keeps the ones the walk linked to
-    an item, with how many editions the walk has found that item in. A suggestion, in the
-    order of the change count the lane made itself; nothing ranks items against each other.
+    Reads the window's ``CANDIDATE_ROWS_READ`` most-changed pages (the payload says so: an item
+    whose pages fall below that line is undercounted or absent) and keeps the ones the walk
+    linked to an item, with how many editions the walk has found that item in. A title-keyed
+    row (before Q715, or an event with no page id) is resolved through the walk's own
+    (edition, title). A suggestion, in the order of the change count the lane made itself;
+    nothing ranks items against each other.
     """
     from src.versioned.models import VersionedChange
     from src.wiki.lane_models import WikiWalkPage
@@ -106,21 +110,35 @@ def divergence_candidates(
         .where(VersionedChange.recorded_at >= start, VersionedChange.external_id.is_not(None))
         .group_by(VersionedChange.external_id)
         .order_by(func.count(VersionedChange.id).desc(), VersionedChange.external_id)
-        .limit(400)
+        .limit(CANDIDATE_ROWS_READ)
     ).all()
     pairs: list[tuple[str, int]] = []
     changes: dict[tuple[str, int], int] = {}
+    legacy: dict[tuple[str, str], int] = {}  # (edition, title) -> changes: rows written before Q715
     for external_id, n in rows:
         try:
-            edition, page_id = _edition_of_external_id(str(external_id))
+            ident = _parse(str(external_id))
         except ValueError:
             continue
-        if page_id is None:
-            continue
-        pairs.append((edition, page_id))
-        changes[(edition, page_id)] = int(n)
+        if ident.page_id is not None:
+            pair = (ident.wiki, int(ident.page_id))
+            pairs.append(pair)
+            changes[pair] = changes.get(pair, 0) + int(n)
+        elif ident.title:
+            legacy[(ident.wiki, ident.title)] = int(n)
+    if legacy:
+        # A title-keyed row names its page only through the walk's own (edition, title).
+        for e, p, t in lane.execute(
+            select(WikiWalkPage.edition, WikiWalkPage.page_id, WikiWalkPage.title).where(
+                tuple_(WikiWalkPage.edition, WikiWalkPage.title).in_(list(legacy))
+            )
+        ).all():
+            pair = (str(e), int(p))
+            if pair not in changes:
+                pairs.append(pair)
+            changes[pair] = changes.get(pair, 0) + legacy[(str(e), str(t))]
     if not pairs:
-        return {"items": [], "n": 0, "window_days": window_days}
+        return {"items": [], "n": 0, "window_days": window_days, "read_top": CANDIDATE_ROWS_READ}
     qids: dict[tuple[str, int], str] = {
         (str(e), int(p)): str(q)
         for e, p, q in lane.execute(
@@ -130,6 +148,7 @@ def divergence_candidates(
             )
         ).all()
     }
+    pairs.sort(key=lambda pr: (-changes[pr], pr))  # most-changed first, deterministic on ties
     order: list[str] = []
     changed: dict[str, int] = {}
     for pair in pairs:  # already most-changed first
@@ -155,6 +174,7 @@ def divergence_candidates(
         ],
         "n": len(order),
         "window_days": window_days,
+        "read_top": CANDIDATE_ROWS_READ,
     }
 
 
@@ -170,11 +190,11 @@ def divergence(
 
     One row per edition the operator follows (and any other edition the walk found the item
     in). Sizes are the editions' own ``info.length`` read by the walk, in bytes of wikitext;
-    changes are the lane's own count for a page the stream follows, ``None`` for one it does
-    not. The spread is shown as the smallest and the largest size with the editions that hold
+    changes are the lane's own count of what the live stream recorded for the page in the
+    window, ``None`` (unknown, not 0) for an edition the stream has recorded nothing for. The spread is shown as the smallest and the largest size with the editions that hold
     them -- never as a ratio.
     """
-    from src.versioned.models import VersionedChange, VersionedEntity
+    from src.versioned.models import VersionedChange
     from src.wiki.identity import external_id_for, legacy_external_id_for
     from src.wiki.lane_models import WikiWalkCursor, WikiWalkPage
 
@@ -191,19 +211,22 @@ def divergence(
     cursors = {str(c.edition): c for c in lane.execute(select(WikiWalkCursor)).scalars()}
     wanted = list(dict.fromkeys([*editions, *sorted(pages)]))
 
-    # Which of the found pages the stream follows, by either identity form (a lane written
-    # before Q715 keyed entities on the title).
+    # The stream records EVERY change it is sent for a followed edition, with or without a
+    # followed-page entity, under the id form (or, before Q715 and for an event with no page
+    # id, the title form). So a page's change count is known whenever the stream has recorded
+    # anything for its edition; a recorded zero is then a real zero.
     ids: dict[str, str] = {}
     legacy: dict[str, str] = {}
     for edition, page in pages.items():
         ids[edition] = external_id_for(edition, int(page.page_id))
         legacy[edition] = legacy_external_id_for(edition, str(page.title))
     names = [*ids.values(), *legacy.values()]
-    followed_ids = (
-        set(lane.execute(select(VersionedEntity.external_id).where(VersionedEntity.external_id.in_(names))).scalars())
-        if names
-        else set()
-    )
+    stream_seen = {
+        str(f).removeprefix("stream:")
+        for f in lane.execute(
+            select(VersionedChange.feed).where(VersionedChange.feed.in_([f"stream:{e}" for e in pages])).distinct()
+        ).scalars()
+    } if pages else set()
     counts = (
         dict(
             lane.execute(
@@ -230,7 +253,7 @@ def divergence(
         )
         page = pages.get(edition)
         if page is not None:
-            keys = [k for k in (ids[edition], legacy[edition]) if k in followed_ids]
+            recorded = edition in stream_seen
             rows.append(
                 {
                     "edition": edition,
@@ -239,8 +262,10 @@ def divergence(
                     "title": str(page.title),
                     "length_bytes": page.length_bytes,
                     "read_at": page.walked_at.isoformat() if page.walked_at else None,
-                    "followed": bool(keys),
-                    "changes_in_window": sum(int(counts.get(k, 0)) for k in keys) if keys else None,
+                    "stream_recorded": recorded,
+                    "changes_in_window": (
+                        int(counts.get(ids[edition], 0)) + int(counts.get(legacy[edition], 0)) if recorded else None
+                    ),
                     "walk": walk,
                 }
             )
@@ -272,14 +297,15 @@ def divergence(
             "The page walk's rows that carry the Wikidata item (each edition's own size in bytes "
             "of wikitext, read when the walk reached the page), the walk's own counters for "
             "every edition without one, and the changes this machine recorded in the window "
-            "for a page the stream follows. Sizes are shown as they are, each beside its own "
+            "for the page. Sizes are shown as they are, each beside its own "
             "edition; nothing is derived from them."
         ),
         "caveat": (
             "A size is read once, when the walk reached the page, so it can be older than the "
             "edit count beside it. A missing edition is a statement about the walk, named in "
-            "each row, before it is a statement about Wikipedia. Recorded changes exist only "
-            "for pages the stream follows; for the others the count is unknown, not zero. "
+            "each row, before it is a statement about Wikipedia. Changes are the ones the live "
+            "stream recorded on this machine; for an edition it has recorded nothing for, the "
+            "count is unknown, not zero. "
             "Editions are separate articles, not translations of one text."
         ),
     }
@@ -297,10 +323,10 @@ def _press_count(corpus: Any, match: str, start: datetime, end: datetime) -> int
         text(
             "SELECT count(*) FROM article_fts f JOIN articles a ON a.id = f.rowid "
             "WHERE article_fts MATCH :q AND a.published_at >= :s AND a.published_at < :e "
-            "AND a.source_id NOT IN (SELECT id FROM sources WHERE domain LIKE '%.wikipedia.org') "
+            "AND a.source_id NOT IN (SELECT id FROM sources WHERE lower(domain) = 'wikipedia.org' OR lower(domain) LIKE '%.wikipedia.org') "
             "AND a.quarantined IS NOT 1"
         ),
-        {"q": match, "s": start, "e": end},
+        {"q": match, "s": start.isoformat(" "), "e": end.isoformat(" ")},
     ).scalar()
     return int(row or 0)
 
@@ -337,18 +363,24 @@ def attention(
     end = day + timedelta(days=1)
     started = monotonic()
     out: list[dict[str, Any]] = []
-    skipped = 0
+    skipped = 0      # the deadline ran out before this row
+    unsearchable = 0  # the title has no words the index can match (a bare "-"): not a timeout
     for r in rows[:top_n]:
         title = str(r["title"]).replace('"', " ").strip()
-        counted: dict[str, Any] = {"press_day": None, "press_7d": None}
+        counted: dict[str, Any] = {"press_day": None, "press_7d": None, "not_counted": None}
         match = build_match(f'"{title}"', variants=query_variants) if title else None
-        if match is not None and monotonic() - started <= deadline_s:
+        if match is None:
+            unsearchable += 1
+            counted["not_counted"] = "unsearchable"
+        elif monotonic() - started > deadline_s:
+            skipped += 1
+            counted["not_counted"] = "time"
+        else:
             counted = {
                 "press_day": _press_count(corpus, match, day, end),
                 "press_7d": _press_count(corpus, match, start7, end),
+                "not_counted": None,
             }
-        else:
-            skipped += 1
         out.append(
             {"rank": r.get("rank"), "title": str(r["title"]), "views": r.get("views"), **counted}
         )
@@ -361,6 +393,7 @@ def attention(
         "n_top_list": blob.get("n"),
         "rows_stored": TOP_ROWS_STORED,
         "skipped": skipped,
+        "unsearchable": unsearchable,
         "method": (
             "The source's own top-viewed list for its latest published UTC day (rank and view "
             "count as the source gave them; only the first fifty rows are stored), and for each "

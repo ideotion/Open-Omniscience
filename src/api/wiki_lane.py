@@ -152,22 +152,21 @@ def lane_divergence(
     """Q712's analytic 4: what each edition holds for ONE Wikidata item.
 
     Without ``qid`` it answers only the suggestions: the items of the pages the stream
-    recorded most changes for that the walk has linked to an item."""
+    recorded most changes for that the walk has linked to an item. With one, only that item."""
     from src.wiki.cross_edition import divergence, divergence_candidates, normalise_qid
 
     if not lane_path("wiki").is_file():
         return _absent()
     try:
         with lane_session("wiki") as lane:
-            candidates = divergence_candidates(lane, window_days=window_days)
             if qid is None or not qid.strip():
+                # The suggestions scan the window's change rows, so they are read only when
+                # no item is chosen; the page keeps the last list it was given.
+                candidates = divergence_candidates(lane, window_days=window_days)
                 return {"measured": False, "reason": "no-item-chosen", "candidates": candidates}
             if normalise_qid(qid) is None:
-                return {"measured": False, "reason": "qid-invalid", "qid": qid[:40], "candidates": candidates}
-            return {
-                **divergence(lane, qid, editions=_followed_editions(), window_days=window_days),
-                "candidates": candidates,
-            }
+                return {"measured": False, "reason": "qid-invalid", "qid": qid[:40]}
+            return divergence(lane, qid, editions=_followed_editions(), window_days=window_days)
     except LaneAbsentError:
         return _absent()
     except SQLAlchemyError:

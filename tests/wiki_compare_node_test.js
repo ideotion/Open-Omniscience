@@ -90,9 +90,9 @@ const DIV = {
   method: "METHOD", caveat: "CAVEAT",
   editions: [
     { edition: "en", state: "found", page_id: 7, title: "Douglas Adams", length_bytes: 5000,
-      read_at: "2026-09-29T10:00:00+00:00", followed: true, changes_in_window: 0, walk: null },
+      read_at: "2026-09-29T10:00:00+00:00", stream_recorded: true, changes_in_window: 0, walk: null },
     { edition: "fr", state: "found", page_id: 8, title: "Douglas Adams", length_bytes: 900,
-      read_at: "2026-09-29T11:00:00+00:00", followed: false, changes_in_window: null, walk: null },
+      read_at: "2026-09-29T11:00:00+00:00", stream_recorded: false, changes_in_window: null, walk: null },
     { edition: "de", state: "walk-never-ran", walk: null },
     { edition: "es", state: "walk-incomplete", walk: { pages_seen: 10, edition_articles: 40, completed_at: null } },
   ],
@@ -108,10 +108,11 @@ const DIV = {
   assert.ok(v.includes("The walk has not run for this edition."));
   assert.ok(v.includes("The walk has not finished this edition (10 of 40 pages), so the item may be there."));
   assert.ok(v.includes("Smallest: L3(fr), 900 B. Largest: L3(en), 5000 B."), v);
-  // An unfollowed page is "not followed" (unknown), a followed one with nothing recorded is 0.
-  assert.ok(/not followed/.test(v));
+  // An edition the stream recorded nothing for is "unknown", one with nothing in the window is 0.
+  assert.ok(/unknown/.test(v));
   assert.ok(/LC\(en\)\s*<?/.test(html) && /<td>0<\/td>/.test(html), "a recorded zero must draw 0");
   assert.ok(hovers(html).includes("unknown, not zero"));
+  assert.ok(!/not followed/i.test(v + hovers(html)), "the page is not the stream's to follow: the stream records an edition");
   // The method and the caveat are PRINTED, not only hovered.
   assert.ok(v.includes("METHOD") && v.includes("CAVEAT"));
   assert.ok(html.includes('class="card-caveat"'));
@@ -147,19 +148,23 @@ assert.ok(visible(R.wikiDivergenceHtml({ ...DIV, editions: [{ edition: "en", sta
 
 // --- 5. the attention table -------------------------------------------------------- //
 {
-  const ATT = { measured: true, edition: "en", day: "2026-09-29", n: 3, skipped: 1, method: "METHOD", caveat: "CAVEAT",
+  const ATT = { measured: true, edition: "en", day: "2026-09-29", n: 4, skipped: 1, method: "METHOD", caveat: "CAVEAT",
     rows: [
       { rank: 1, title: "Main Page", views: 1000000, press_day: 0, press_7d: 2 },
       { rank: 2, title: "Some <b>Title</b>", views: 500, press_day: 3, press_7d: 11 },
-      { rank: 3, title: "Late", views: 10, press_day: null, press_7d: null },
-    ] };
+      { rank: 3, title: "Late", views: 10, press_day: null, press_7d: null, not_counted: "time" },
+      { rank: 4, title: "-", views: 9, press_day: null, press_7d: null, not_counted: "unsearchable" },
+    ], unsearchable: 1 };
   const html = R.wikiAttentionHtml(ATT, t, tf);
   noJunk(html, "attention"); noVerdict(html, "attention");
   const v = visible(html);
-  assert.ok(v.includes("Top 3 of the list for 2026-09-29."));
+  assert.ok(v.includes("Top 4 of the L3(en) list for 2026-09-29."), v);
   assert.ok(html.includes("Some &lt;b&gt;Title&lt;/b&gt;"), "a title is text, never markup");
   assert.ok(/<td>0<\/td><td>2<\/td>/.test(html), "a counted zero must draw 0");
   assert.ok(v.includes("not counted") && v.includes("1 row(s) were not counted"));
+  assert.ok(v.includes("1 title(s) have no words the search index can match"));
+  assert.ok(hovers(html).includes("ran out of time") && hovers(html).includes("no words the search index can match"),
+    "the two reasons are told apart in the cell's own hover");
   assert.ok(v.includes("METHOD") && v.includes("CAVEAT"));
   assert.ok(html.includes('class="card-caveat"'));
   assert.ok(!html.includes("Main Page</td><td>1000000</td><td>0</td><td>2</td><td>"), "no derived column");
