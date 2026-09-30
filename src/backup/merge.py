@@ -1176,8 +1176,15 @@ def _insert_window(
     table: str,
     insert_sql: str,
     params: tuple = (),
+    key_column: str | None = None,
 ) -> int:
     """One INSERT..SELECT + its merged_rows provenance. Returns rows inserted.
+
+    ``key_column`` names the natural key of a table with NO integer key (places, Wikidata items):
+    it is recorded in ``merged_rows.row_key`` beside the ``rowid``, because VACUUM may renumber
+    a rowid and a provenance lookup through it could then name the wrong row. It is written only
+    when this store's ``merged_rows`` has the column, so a working copy that predates it still
+    restores (the arrival is then simply not resolvable for those rows, never mis-resolved).
 
     Uses a rowid watermark: we hold the copy exclusively, so rows with rowid >
     the pre-insert max are exactly the inserted ones.
@@ -1191,11 +1198,23 @@ def _insert_window(
     """
     wm = con.execute(f'SELECT COALESCE(MAX(rowid), 0) FROM "{table}"').fetchone()[0]  # noqa: S608  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
     con.execute(insert_sql, params)
-    cur = con.execute(
-        f'INSERT INTO merged_rows (batch_id, table_name, row_id) '  # noqa: S608  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
-        f'SELECT ?, ?, rowid FROM "{table}" WHERE rowid > ?',
-        (batch_id, table, wm),
+    keyed = key_column is not None and any(
+        c[1] == "row_key" for c in con.execute("PRAGMA main.table_info(merged_rows)")
     )
+    if keyed:
+        if not _SAFE_KEY_NAME.fullmatch(key_column or ""):
+            raise ValueError(f"unsafe key column {key_column!r}")
+        cur = con.execute(
+            'INSERT INTO merged_rows (batch_id, table_name, row_id, row_key) '  # noqa: S608  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
+            f'SELECT ?, ?, rowid, "{key_column}" FROM "{table}" WHERE rowid > ?',
+            (batch_id, table, wm),
+        )
+    else:
+        cur = con.execute(
+            f'INSERT INTO merged_rows (batch_id, table_name, row_id) '  # noqa: S608  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
+            f'SELECT ?, ?, rowid FROM "{table}" WHERE rowid > ?',
+            (batch_id, table, wm),
+        )
     n = cur.rowcount
     if n is None or n < 0:  # a driver that does not report -- pay for the scan
         return _count(con, f'SELECT COUNT(*) FROM "{table}" WHERE rowid > ?', (wm,))  # noqa: S608  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
@@ -1211,8 +1230,11 @@ def _insert_tracked(
     *,
     src: str | None = None,
     src_key: str = "id",
+    key_column: str | None = None,
 ) -> int:
     """Run an INSERT..SELECT and record every new row in merged_rows (provenance).
+
+    ``key_column`` is passed through to ``_insert_window`` (a table with no integer key).
 
     ``src`` opts this call into WINDOWED execution over the incoming table's
     primary key: the statement runs once per slice of ``i.<src_key>``, committing
@@ -1264,7 +1286,7 @@ def _insert_tracked(
     one, materialise it rather than accepting the quadratic.
     """
     if src is None:
-        return _insert_window(con, batch_id, table, insert_sql, params)
+        return _insert_window(con, batch_id, table, insert_sql, params, key_column)
 
     if _WINDOW_MARK not in insert_sql:
         raise ValueError(
@@ -4360,7 +4382,8 @@ def _merge_places(con, batch_id, results) -> None:
     (``node/240109189``) and an item on its QID, and both are the SAME thing in every corpus --
     which is the cross-corpus identity, so no id map is needed. ``merged_rows`` records them by
     SQLite ``rowid`` like every other table (`_insert_window` reads ``rowid``, and a text-keyed
-    table still has one).
+    table still has one) AND by their natural key in ``merged_rows.row_key``: VACUUM may
+    renumber a rowid, so the provenance lookup for these two tables goes through the key.
 
     THE RULING, applied as it was for the ≈ titles: this corpus's own row is never changed. A
     place or item the corpus lacks is ADDED (with the ``oo.prov/1`` tag on its way in, via
@@ -4402,6 +4425,7 @@ def _merge_places(con, batch_id, results) -> None:
             " SELECT i.qid, i.status, i.resolved_qid, i.labels_json, i.descriptions_json,"
             " i.claims_json, i.lastrevid, i.fetched_at FROM inc.wikidata_items i"
             f" WHERE NOT EXISTS (SELECT 1 FROM wikidata_items t WHERE {wd_key})",
+            key_column="qid",
         )
         wd.duplicate = max(0, wd.duplicate - wd.conflict)
         results["wikidata_items"] = wd
@@ -4431,6 +4455,7 @@ def _merge_places(con, batch_id, results) -> None:
             " i.gazetteer_vintage, ma.new, i.as_of FROM inc.places i"
             " LEFT JOIN temp.map_articles ma ON ma.old = i.article_id"
             f" WHERE NOT EXISTS (SELECT 1 FROM places t WHERE {pl_key})",
+            key_column="id",
         )
         pl.duplicate = max(0, pl.duplicate - pl.conflict)
         results["places"] = pl

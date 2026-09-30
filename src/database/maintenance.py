@@ -1546,6 +1546,36 @@ def ensure_source_catalog_baseline_column(engine: Engine) -> list[str]:
     return added
 
 
+def ensure_merged_rows_row_key_column(engine: Engine) -> list[str]:
+    """Self-heal ``merged_rows.row_key`` and its partial index (idempotent, additive, no backfill).
+
+    The natural key of a text-keyed row (places, Wikidata items) a restore added, read by the
+    provenance lookup for those two tables because VACUUM may renumber their rowids (R71 b).
+    NULL for every other table and for every row a restore added before this existed -- such a
+    row's arrival is then honestly unresolved, never guessed. No-op on a fresh DB / non-sqlite /
+    missing table."""
+    if engine.url.get_backend_name() != "sqlite":
+        return []
+    added: list[str] = []
+    with engine.begin() as conn:
+        has_table = conn.execute(
+            text("SELECT name FROM sqlite_master WHERE type='table' AND name='merged_rows'")
+        ).fetchone()
+        if not has_table:
+            return []
+        existing = {r[1] for r in conn.execute(text("PRAGMA table_info(merged_rows)")).fetchall()}
+        if "row_key" not in existing:
+            conn.execute(text("ALTER TABLE merged_rows ADD COLUMN row_key VARCHAR(64)"))
+            added.append("row_key")
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_merged_rows_key ON merged_rows (table_name, row_key)"
+            " WHERE row_key IS NOT NULL"
+        ))
+    if added:
+        _LOG.info(f"added merged_rows column(s): {', '.join(added)}")
+    return added
+
+
 # The complete map of live-DB self-healed columns, table -> column names. This is the
 # machine-readable contract the migration-drift guard test checks every add_column in
 # migrations/versions/ against (tests/test_migration_self_heal_drift.py), so a future
@@ -1571,6 +1601,7 @@ SELF_HEALED_COLUMNS: dict[str, frozenset[str]] = {
         | frozenset(_ARTICLE_NEWSLETTER_LIST_ID_COLUMN)
         | frozenset(_ARTICLE_NEWSLETTER_ATTACH_COLUMN)
     ),
+    "merged_rows": frozenset({"row_key"}),
     "keywords": frozenset(_KEYWORD_COUNTER_COLUMNS) | frozenset(_KEYWORD_EXTRACTOR_COLUMNS),
     # ensure_keyword_mention_source_column (inline DDL): source_id + its index, and
     # `language` (Q414 = a) in the same function -- see the note there on why one

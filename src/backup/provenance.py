@@ -33,6 +33,12 @@ from typing import Any
 
 TAG_VERSION = 1
 
+#: Tables with NO integer key, and the column that is their natural key. ``merged_rows`` records
+#: their arrival by ``row_key`` as well as by ``rowid``, and the lookup here reads ``row_key``:
+#: a rowid is not stable across VACUUM for a table without an explicit INTEGER PRIMARY KEY, so
+#: reading provenance through it could name the wrong row (R71 b).
+KEYED_TABLES: dict[str, str] = {"places": "id", "wikidata_items": "qid"}
+
 #: Per deduced table, the SQL expression (over an alias placeholder ``{a}``) for each producer
 #: field. ``NULL`` where the table does not record it. Table names here are module literals.
 PRODUCER_COLUMNS: dict[str, dict[str, str]] = {
@@ -152,9 +158,9 @@ def producer_tag_sql(table: str, alias: str, *, origin: str, batch: str, at: str
 def provenance_tag(session: Any, table: str, row_id: int) -> dict | None:
     """The tag of ONE local deduced row, or None when the row does not exist.
 
-    ``row_id`` is the row's SQLite ``rowid``, which is what ``merged_rows`` records and which IS
-    the ``id`` for every table with an integer key. Places and Wikidata items are keyed on text,
-    so ``id`` would not do for them; ``rowid`` does for all.
+    ``row_id`` is the row's SQLite ``rowid``: what ``merged_rows`` records, and the ``id`` itself
+    for every table with an integer key. For the two text-keyed tables (``KEYED_TABLES``) the
+    arrival is found through the row's natural KEY instead, because VACUUM may renumber rowids.
 
     A row with no ``merged_rows`` entry was produced here: ``origin`` is ``"local"`` and
     ``arrived`` is null."""
@@ -164,10 +170,12 @@ def provenance_tag(session: Any, table: str, row_id: int) -> dict | None:
         table, "r", origin="COALESCE(b.origin_fingerprint, 'local')",
         batch="b.id", at="b.imported_at", app_version="b.app_version",
     )
+    key = KEYED_TABLES.get(table)
+    on = f"m.row_key = r.{key}" if key else "m.row_id = r.rowid"
     row = session.execute(
         text(
-            f"SELECT {sel} FROM {table} r"  # noqa: S608  # nosec B608 - table is validated as a key of PRODUCER_COLUMNS by producer_tag_sql above, never input
-            " LEFT JOIN merged_rows m ON m.table_name = :t AND m.row_id = r.rowid"
+            f"SELECT {sel} FROM {table} r"  # noqa: S608  # nosec B608 - table is validated as a key of PRODUCER_COLUMNS by producer_tag_sql above, and the key column is a module literal
+            f" LEFT JOIN merged_rows m ON m.table_name = :t AND {on}"
             " LEFT JOIN merge_batches b ON b.id = m.batch_id WHERE r.rowid = :id"
             " ORDER BY b.id DESC LIMIT 1"
         ),

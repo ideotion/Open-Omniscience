@@ -2894,10 +2894,19 @@ class MergedRow(Base):
     )
     table_name: Mapped[str] = mapped_column(String(64), primary_key=True)
     row_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    #: The row's natural key, written ONLY for a table keyed on text (places: ``id``; Wikidata
+    #: items: ``qid``). Such a table has no integer id, so ``row_id`` is its SQLite ``rowid`` --
+    #: which VACUUM is allowed to renumber -- and a provenance lookup through it could name the
+    #: wrong row afterwards. The lookup for those tables goes through this column instead
+    #: (R71 b; ``src/backup/provenance.py`` ``KEYED_TABLES``). NULL for every other table.
+    row_key: Mapped[str | None] = mapped_column(String(64))
 
     batch = relationship("MergeBatch", back_populates="rows")
 
-    __table_args__ = (Index("ix_merged_rows_lookup", "table_name", "row_id"),)
+    __table_args__ = (
+        Index("ix_merged_rows_lookup", "table_name", "row_id"),
+        Index("ix_merged_rows_key", "table_name", "row_key", sqlite_where=sql_text("row_key IS NOT NULL")),
+    )
 
     def __repr__(self) -> str:
         return f"<MergedRow(b{self.batch_id} {self.table_name}#{self.row_id})>"

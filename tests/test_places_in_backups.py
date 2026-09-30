@@ -276,6 +276,56 @@ def test_the_operator_can_keep_or_discard_and_the_local_place_never_moves(tmp_pa
         assert s.query(MetadataAlternate).count() == 0
 
 
+def test_the_arrival_of_a_text_keyed_row_is_found_by_its_key_not_its_rowid(tmp_path):
+    """VACUUM may renumber the rowid of a table with no integer key, so the provenance lookup for
+    places and Wikidata items goes through ``merged_rows.row_key``. Simulated by making the
+    recorded rowids wrong: the tag must still name the right batch for the right row."""
+    def inc(s):
+        s.add(_place())
+        s.add(_place("node/2", name="Lyon", qid="Q456"))
+        s.add(_item())
+
+    def loc(s):
+        s.add(_place("node/3", name="Nice", qid="Q33"))   # a local row: no arrival
+
+    _, batch, live, _ = _two(tmp_path, inc, loc)
+    eng = create_engine(f"sqlite:///{live}", future=True)
+    with eng.begin() as con:
+        keys = {r[0] for r in con.execute(text(
+            "SELECT row_key FROM merged_rows WHERE table_name IN ('places', 'wikidata_items')"))}
+        assert keys == {_PARIS, "node/2", "Q90"}
+        con.execute(text("UPDATE merged_rows SET row_id = row_id + 1000"
+                         " WHERE table_name IN ('places', 'wikidata_items')"))
+    with _corpus(live)() as s:
+        def tag(table, pk, val):
+            rid = s.execute(text(f"SELECT rowid FROM {table} WHERE {pk} = :v"), {"v": val}).scalar()  # noqa: S608
+            return provenance_tag(s, table, rid)
+        assert tag("places", "id", "node/2")["arrived"]["batch"] == batch
+        assert tag("places", "id", _PARIS)["origin"] == "machine-B"
+        assert tag("wikidata_items", "qid", "Q90")["arrived"]["batch"] == batch
+        local = tag("places", "id", "node/3")
+        assert local["origin"] == "local" and local["arrived"] is None
+
+
+def test_an_older_store_gets_the_row_key_column_and_keeps_its_rows(tmp_path):
+    """Not every install runs alembic: the boot self-heal adds ``merged_rows.row_key`` to a store
+    that predates it, changes no row, and is idempotent."""
+    from src.database.maintenance import ensure_merged_rows_row_key_column
+
+    path = tmp_path / "old.db"
+    eng = create_engine(f"sqlite:///{path}", future=True)
+    with eng.begin() as con:
+        con.execute(text(
+            "CREATE TABLE merged_rows (batch_id INTEGER, table_name VARCHAR(64), row_id INTEGER,"
+            " PRIMARY KEY (batch_id, table_name, row_id))"))
+        con.execute(text("INSERT INTO merged_rows VALUES (1, 'articles', 7)"))
+    assert ensure_merged_rows_row_key_column(eng) == ["row_key"]
+    assert ensure_merged_rows_row_key_column(eng) == []
+    with eng.begin() as con:
+        assert con.execute(text("SELECT batch_id, table_name, row_id, row_key FROM merged_rows")).fetchall() == [
+            (1, "articles", 7, None)]
+
+
 @pytest.mark.skipif(
     __import__("subprocess").run(["which", "node"], capture_output=True).returncode != 0,
     reason="node is not installed",

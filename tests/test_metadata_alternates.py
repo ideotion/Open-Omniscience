@@ -37,7 +37,9 @@ from src.database.models import (  # noqa: E402
     LawRevisionSummary,
     MergeBatch,
     MetadataAlternate,
+    Place,
     Source,
+    WikidataItem,
 )
 
 _META = {
@@ -449,9 +451,12 @@ def test_the_routes_exist_and_refuse_an_unknown_id():
 
 
 def _all_six(which):
-    """One article and one law revision holding every kind of deduced item, valued by ``which``."""
+    """One article and one law revision holding every kind of deduced item, valued by ``which``
+    (and, since R71 b, a Place and a Wikidata item, which have no article to hang on)."""
     def f(s):
         a = _article(s)
+        s.add(Place(id="node/1", name=which, kind="city", country="fr", country_alpha3="FRA"))
+        s.add(WikidataItem(qid="Q1", status="ok", labels_json='{"en": "%s"}' % which))
         s.add(KeywordTranslation(term="chat", source_lang="fr", target_lang="en", text=which,
                                  model="m1", prompt_version="v1", created_at=_T0))
         s.add(ArticleTitleTranslation(article_id=a.id, source_lang="fr", target_lang="en",
@@ -673,6 +678,8 @@ def test_every_table_re_attaches_by_its_own_identity_across_two_hops(tmp_path):
     def populate(tag, ident):
         def f(s):
             a = _article(s)
+            s.add(Place(id="node/1", name=f"P-{tag}", kind="city"))
+            s.add(WikidataItem(qid="Q1", status="ok", labels_json=f'{{"en": "W-{tag}"}}'))
             s.add(ArticleAnalysis(article_id=a.id, kind="summary", result=f"R-{tag}", model="m",
                                   prompt_version="v1", created_at=_T0))
             s.add(AiKeyword(article_id=a.id, term="t", kind="entity", model="m",
