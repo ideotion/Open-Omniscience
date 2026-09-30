@@ -408,6 +408,52 @@
     function _qualRefresh() {
       loadQualificationGates();
       if (typeof loadQualifyBulk === "function") loadQualifyBulk();
+      if (typeof loadQualQueue === "function") loadQualQueue();
+    }
+
+    // THE QUALIFICATION QUEUE (R94, 2026-09-29: «a queue, not a calendar»). Rendered from
+    // GET /api/sources/qualification/queue, which reads the SAME selectors the pass calls,
+    // so this cannot describe an order the pass does not follow. Counts and domains only;
+    // the one date is when the next qualified source JOINS the line, never a judging ETA.
+    async function loadQualQueue() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      const tf = _qualTf;
+      const host = $("qual-queue");
+      if (!host) return;
+      try {
+        const d = await api("/api/sources/qualification/queue");
+        const nw = d.new || {}, rc = d.rechecks || {}, wt = d.waiting || {}, pp = d.per_pass || {};
+        const n = (x) => fmtNum(Number(x) || 0, 0);
+        const doms = (list) => (list || []).map((x) => `<span dir="ltr">⁨${esc(String(x))}⁩</span>`).join(", ");
+        const dqDue = rc.disqualified_due_capped ? `${n(rc.disqualified_due)}+` : n(rc.disqualified_due);
+        const rows = [
+          `<div>` + ooLabelHtml(esc(t("1. New sources")),
+            esc(tf("{n} waiting: {untried} never tried, {retried} tried without anything to judge yet",
+                   {n: n(nw.total), untried: n(nw.untried), retried: n(nw.tried_without_evidence)})))
+            + `</div>`,
+          (nw.next && nw.next.length)
+            ? `<div class="muted">` + ooLabelHtml(esc(t("Next up")), doms(nw.next)) + `</div>` : "",
+          `<div>` + ooLabelHtml(esc(t("2. Due to be checked again")),
+            esc(rc.qualified_rechecks_on === false
+              ? tf("{d} disqualified (re-checks of qualified sources are switched off)", {d: dqDue})
+              : tf("{q} qualified, {d} disqualified", {q: n(rc.qualified_due), d: dqDue})))
+            + `</div>`,
+          (rc.next && rc.next.length)
+            ? `<div class="muted">` + ooLabelHtml(esc(t("Next up")), doms(rc.next.map((r) => r.domain))) + `</div>` : "",
+          `<div>` + ooLabelHtml(esc(t("Not due yet")),
+            esc(tf("{n} qualified sources", {n: n(wt.qualified)}))
+            + (wt.next_joins_at
+              ? " · " + esc(tf("the next one rejoins the line on {when}",
+                               {when: (typeof fmtDateTime === "function" && fmtDateTime(wt.next_joins_at)) || wt.next_joins_at}))
+              : ""))
+            + `</div>`,
+          `<div class="card-caveat" style="margin-top:6px">`
+            + esc(tf("Each collection round judges up to {new} new sources and {rechecks} re-checks; new slots left unused go to re-checks. Catching up the backlog above works through the same line faster.",
+                     {new: n(pp.new), rechecks: n(pp.rechecks)}))
+            + `</div>`,
+        ];
+        host.innerHTML = rows.join("");
+      } catch (e) { host.textContent = _apiErrorMessage(e); }
     }
 
     // THE SHIPPED-OVERLAY EDITOR (ruling Q1106 = a): adopt / export / revert over the
@@ -694,9 +740,20 @@
           // declines. Said here, with the switch that lifts it, rather than left for
           // the operator to infer from a backlog that never moves.
           const fl = st.floor || {};
-          if (fl.declines) {
-            out.textContent += (/[。！？]$/.test(out.textContent) ? "" : " ")
+          // FD03 b (2026-09-29): below the floor a pass judges against a bounded sample of
+          // the newest articles, so the floor alone no longer stops anything. Only a
+          // `declined` plan (even the sample does not fit) is a refusal; an older server
+          // with no `cohort` block keeps the floor's own answer.
+          const co = st.cohort || null;
+          const declined = co ? co.mode === "declined" : !!fl.declines;
+          const sep = () => (/[。！？]$/.test(out.textContent) ? "" : " ");
+          if (declined) {
+            out.textContent += sep()
               + _qualDeclinedText(fl.reason, fl.override_env, fl.reason_i18n, fl.reason_vars);
+          } else if (co && co.mode === "sample") {
+            out.textContent += sep()
+              + _qualTf("This machine is below the memory floor, so candidates are judged against the newest {n} articles instead of the whole corpus.",
+                        {n: fmtNum(co.sample_articles || 0, 0)});
           }
           // A CONTROL THAT RENDERS CLAIMS ITS CAPABILITY (re-walk S-7): below the floor the
           // job declines, so the button that starts it is disabled and DESCRIBED BY the
@@ -709,7 +766,7 @@
           // so a run in flight keeps its own.
           const btn = $("qualify-bulk-btn");
           if (btn) {
-            if (fl.declines) {
+            if (declined) {
               btn.disabled = true;
               btn.dataset.floorDeclined = "1";
               btn.setAttribute("aria-describedby", "qualify-bulk-status");
@@ -727,14 +784,12 @@
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const out = $("qualify-bulk-status");
       const say = (msg) => { if (out) out.textContent = msg; };
-      // THE REFUSAL COMES BEFORE THE CONSENT POPUP (re-walk S-7). Below the memory floor the
-      // job declines without judging anything, so asking to take the app online for it
-      // would name an action that never egresses. The floor is read over loopback first;
-      // a declining machine gets the named refusal and a disabled button instead. If the
-      // read fails, the job still refuses by name on its own, so nothing is hidden.
+      // THE REFUSAL COMES BEFORE THE CONSENT POPUP (re-walk S-7): a machine whose passes
+      // decline (FD03 b: even the cohort sample does not fit) gets the named refusal, read
+      // over loopback, never a popup for a job that cannot egress.
       try {
         const pre = await api("/api/sources/qualify-bulk/status");
-        if (pre && pre.floor && pre.floor.declines) {
+        if (pre && (pre.cohort ? pre.cohort.mode === "declined" : (pre.floor && pre.floor.declines))) {
           if (typeof loadQualifyBulk === "function") loadQualifyBulk();
           return;
         }
