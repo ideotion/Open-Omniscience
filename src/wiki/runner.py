@@ -47,7 +47,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from src.versioned.adapters.base import ReadBudget
-from src.versioned.pipeline import Admission, PassResult, run_feed_once
+from src.versioned.pipeline import Admission, LaneTransactionLost, PassResult, run_feed_once
 from src.wiki.counters import record_size_sample
 from src.wiki.identity import parse_external_id
 from src.wiki.lane import WikiStreamAdapter, edition_of
@@ -113,6 +113,10 @@ class DrainReport:
     #: Distinct from ``text_withheld``: withheld is a POLICY refusal with a reason, deferred
     #: is "not yet", and the two need opposite responses.
     text_deferred: int = 0
+    #: Pages the catch-up FOUND waiting this drain (an earlier drain left their text), as far as
+    #: the per-feed cap sees: found, not necessarily fetched. 0 while every waiting page is
+    #: cooling off, or once a feed's time is spent.
+    text_backlog: int = 0
     gaps_recorded: int = 0
     #: Whether this drain recorded a lane-file size sample. At most one an hour, so
     #: ``False`` is the ordinary case and not a failure.
@@ -131,6 +135,7 @@ class DrainReport:
         self.articles_indexed += result.articles_indexed
         self.text_withheld += result.text_withheld
         self.text_deferred += result.text_deferred
+        self.text_backlog += result.text_backlog
         for reason, n in result.text_withheld_reasons.items():
             self.text_withheld_reasons[reason] = self.text_withheld_reasons.get(reason, 0) + n
         if result.gap_recorded:
@@ -146,6 +151,7 @@ class DrainReport:
             "articles_indexed": self.articles_indexed,
             "text_withheld": self.text_withheld,
             "text_deferred": self.text_deferred,
+            "text_backlog": self.text_backlog,
             "text_withheld_reasons": dict(self.text_withheld_reasons),
             "gaps_recorded": self.gaps_recorded,
             "size_sampled": self.size_sampled,
@@ -228,6 +234,7 @@ def drain_once(
     on_feed: Callable[[str], None] | None = None,
     rotate: int = 0,
     catch_up: int = CATCH_UP_LIMIT,
+    attempts: dict[int, float] | None = None,
 ) -> DrainReport:
     """Drain every feed's buffer into the lane once. No network of its own.
 
@@ -277,7 +284,12 @@ def drain_once(
                 fetch_deadline=deadline,
                 monotonic=monotonic,
                 catch_up=catch_up if text_seconds is not None else 0,
+                attempts=attempts,
             )
+        except LaneTransactionLost:
+            # The lane's transaction is gone: go on and a later feed's commit would hide the
+            # rows an earlier feed lost. Fail the drain, loudly and counted.
+            raise
         except Exception as exc:  # noqa: BLE001 - one edition must not end the drain
             # NAMED, and the drain continues. Eleven editions still collecting while
             # one is broken is the honest outcome; a drain that died on the first
@@ -378,6 +390,9 @@ class WikiLaneRunner:
         self.drain_stage: str = "idle"
         self.drain_feed: str | None = None
         self._drain_since: float | None = None
+        #: Entity id -> monotonic time of the catch-up's last attempt at it, this process only
+        #: (the pipeline's backoff; a restart forgets it, which costs one more try).
+        self._attempts: dict[int, float] = {}
         #: When the last drain COMPLETED. A failed drain leaves it alone (it shows in
         #: ``consecutive_failures``), so "since last drain" never counts a failure as one.
         self._last_drain_ended: float | None = None
@@ -485,12 +500,14 @@ class WikiLaneRunner:
                     report = drain_once(
                         lane, self._adapter, hot_sets=hot, budget=budget,
                         monotonic=self._monotonic, on_feed=_note_feed, rotate=self.drains,
+                        attempts=self._attempts,
                     )
                 else:
                     with corpus_cm as corpus:
                         report = drain_once(
                             lane, self._adapter, hot_sets=hot, budget=budget, corpus=corpus,
                             monotonic=self._monotonic, on_feed=_note_feed, rotate=self.drains,
+                            attempts=self._attempts,
                         )
         finally:
             self.drain_stage, self.drain_feed = "idle", None
