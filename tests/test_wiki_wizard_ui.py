@@ -125,7 +125,8 @@ def test_an_unreadable_host_list_says_so_rather_than_rendering_blank():
 # --------------------------------------------------------------------------- #
 def test_the_defaults_in_the_MARKUP_are_the_ruled_ones():
     dialog = _dialog()
-    assert 'value="20"' in dialog, "Q707's published 20 GB"
+    assert 'value="150"' in dialog, "R53's published 150 GB (Q707's 20, raised)"
+    assert "The default is 150 GB." in dialog, "the larger default is said beside the number"
     assert 'min="1"' in dialog and 'max="2000"' in dialog, "the wizard's own bounds"
 
 

@@ -7,7 +7,7 @@ S04-08 slice 4 (Q1006, Q1010, Q1011, ruled 2026-09-15). What this pins, each as 
 test:
 
 * THE TABLE (``configs/lane_budgets.yml``) names every lane, carries ONLY the numbers
-  that were ruled (Q707's 20 GB for Wikipedia) and refuses a malformed edit BY NAME --
+  that were ruled (Wikipedia's 150 GB, R53) and refuses a malformed edit BY NAME --
   a budget surface that fell back to a default would be inventing a number;
 * the two CODE copies of the Wikipedia number (``settings.WIKI_LANE_DEFAULT_BUDGET_GB``,
   ``tiers.DEFAULT_TOTAL_BUDGET_GB``) equal the table's row, so neither side can move
@@ -82,11 +82,12 @@ def test_the_lane_list_is_the_corpus_plus_every_versioned_kind():
 
 
 def test_only_the_ruled_number_is_published():
-    """Q707's 20 GB is the one lane budget any ruling has set. The others stay None until
-    a ruling moves one -- and that ruling changes this test in the same diff."""
+    """Wikipedia's is the one lane budget any ruling has set: Q707's 20 GB, raised to 150 by
+    R53. The others stay None until a ruling moves one -- and that ruling changes this test
+    in the same diff."""
     t = load_table()
     wiki = t.row("wiki")
-    assert (wiki.budget_gb, wiki.ruling, wiki.reason) == (20, "Q707", None)
+    assert (wiki.budget_gb, wiki.ruling, wiki.reason) == (150, "R53", None)
     for kind in ("press", "law", "osm"):
         row = t.row(kind)
         assert (row.budget_gb, row.reason, row.ruling) == (None, "not_ruled", None), kind
@@ -327,7 +328,7 @@ class _Settings:
 
 def test_the_report_on_a_fresh_data_folder(db, tmp_path, monkeypatch):
     monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
-    monkeypatch.setattr("src.scheduler.settings.load_settings", lambda: _Settings(20))
+    monkeypatch.setattr("src.scheduler.settings.load_settings", lambda: _Settings(150))
     rep = storage_report(db)
     assert [e["kind"] for e in rep["lanes"]] == list(ALL_KINDS)
     wiki, law, osm = _lane(rep, "wiki"), _lane(rep, "law"), _lane(rep, "osm")
@@ -335,11 +336,11 @@ def test_the_report_on_a_fresh_data_folder(db, tmp_path, monkeypatch):
         assert e["size_state"] == "absent" and e["bytes"] is None  # never 0
         assert (e["growth"]["measured"], e["growth"]["reason"]) == (False, "absent")
     assert wiki["implemented"] is True and law["implemented"] is False and osm["implemented"] is False
-    assert wiki["budget"]["gb"] == 20 and wiki["budget"]["source"] == "published"
+    assert wiki["budget"]["gb"] == 150 and wiki["budget"]["source"] == "published"
     assert wiki["budget"]["used_share"] is None and wiki["budget"]["exhausted"] is None
     assert law["budget"]["gb"] is None and law["budget"]["reason"] == "not_ruled"
     # An absent Wikipedia lane can still take its whole budget.
-    assert rep["claimable_bytes"] == 20 * GIB
+    assert rep["claimable_bytes"] == 150 * GIB
     assert rep["table"]["reference_machine"] == {"cores": 2, "ram_gb": 3.5, "ram_bytes": int(3.5 * GIB)}
     # The reading is shown beside the reference with NO verdict between them.
     assert not {k for k in rep if "versus" in k}
@@ -353,7 +354,7 @@ def test_a_raised_budget_is_yours_and_the_published_number_stays_beside_it(db, t
         fh.truncate(2 * GIB)
     monkeypatch.setattr("src.scheduler.settings.load_settings", lambda: _Settings(35))
     b = _lane(storage_report(db), "wiki")["budget"]
-    assert (b["gb"], b["published_gb"], b["source"]) == (35, 20, "yours")
+    assert (b["gb"], b["published_gb"], b["source"]) == (35, 150, "yours")
     assert b["used_share"] == 2 / 35 and b["exhausted"] is False
     assert (b["setting"], b["min_gb"], b["max_gb"]) == ("wiki_lane_budget_gb", 1, 2000)
 
@@ -364,14 +365,14 @@ def test_a_small_lane_is_never_rounded_into_an_empty_share(db, tmp_path, monkeyp
     something -- the exact reading the client's "<1" exists to refuse."""
     monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
     (tmp_path / "wiki.db").write_bytes(b"\0" * 122_880)
-    monkeypatch.setattr("src.scheduler.settings.load_settings", lambda: _Settings(20))
+    monkeypatch.setattr("src.scheduler.settings.load_settings", lambda: _Settings(150))
     b = _lane(storage_report(db), "wiki")["budget"]
     assert 0 < b["used_share"] < 0.01
 
 
 def test_a_stored_copy_of_the_default_is_still_the_published_number(db, tmp_path, monkeypatch):
     monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
-    monkeypatch.setattr("src.scheduler.settings.load_settings", lambda: _Settings(20))
+    monkeypatch.setattr("src.scheduler.settings.load_settings", lambda: _Settings(150))
     assert _lane(storage_report(db), "wiki")["budget"]["source"] == "published"
 
 
@@ -389,16 +390,16 @@ def test_a_full_lane_is_exhausted_by_measurement_and_budgets_are_weighed_against
 def test_an_unreadable_disk_makes_the_fit_unknown_never_a_fit(db, tmp_path, monkeypatch):
     """THREE STATES: fits, does not fit, unknown. An unreadable drive must not read as room."""
     monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
-    monkeypatch.setattr("src.scheduler.settings.load_settings", lambda: _Settings(20))
+    monkeypatch.setattr("src.scheduler.settings.load_settings", lambda: _Settings(150))
     monkeypatch.setattr("src.config.hardware_reading.disk_bytes", lambda _p=None: (None, None))
     rep = storage_report(db)
     assert rep["disk"] == {"free_bytes": None, "total_bytes": None}
-    assert rep["claimable_bytes"] == 20 * GIB and rep["budgets_fit"] is None
+    assert rep["claimable_bytes"] == 150 * GIB and rep["budgets_fit"] is None
 
 
 def test_budgets_larger_than_the_free_disk_do_not_fit(db, tmp_path, monkeypatch):
     monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
-    monkeypatch.setattr("src.scheduler.settings.load_settings", lambda: _Settings(20))
+    monkeypatch.setattr("src.scheduler.settings.load_settings", lambda: _Settings(150))
     monkeypatch.setattr("src.config.hardware_reading.disk_bytes", lambda _p=None: (15 * GIB, 64 * GIB))
     rep = storage_report(db)
     assert rep["budgets_fit"] is False

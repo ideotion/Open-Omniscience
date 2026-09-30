@@ -17,10 +17,11 @@ reviewer can diff. This module is its only reader, and it refuses a malformed ta
 NAME rather than falling back to a default: a budget surface that quietly invented a
 number would be the one thing Q1010 forbids.
 
-IT CARRIES THE NUMBERS THAT WERE RULED AND NO OTHERS. One lane budget exists, Q707's
-20 GB for Wikipedia. The S04-08 brief says per-lane numbers beyond the table's shape are
-not the build's to decide, so the other rows hold ``None`` and a reason token, and
-``tests/test_lane_budgets.py`` pins them there until a ruling moves one.
+IT CARRIES THE NUMBERS THAT WERE RULED AND NO OTHERS. One lane budget exists, Wikipedia's:
+Q707's 20 GB, raised to 150 GB by R53 (2026-09-29) and still lowerable. The S04-08 brief
+says per-lane numbers beyond the table's shape are not the build's to decide, so the other
+rows hold ``None`` and a reason token, and ``tests/test_lane_budgets.py`` pins them there
+until a ruling moves one.
 
 THE TWO CODE COPIES OF THE WIKIPEDIA NUMBER STAY, PINNED. ``src.scheduler.settings`` is
 read on the boot path and imports nothing from ``src``; ``src.wiki.tiers`` runs its whole

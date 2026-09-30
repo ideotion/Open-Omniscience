@@ -80,15 +80,18 @@ def search_lane(
     (``src/api/search_filters.py``), so ``NEAR(a b)`` means one thing in both lists."""
     from src.api.search_filters import _near_preference
     from src.database.connect import DatabaseLockedError
+    from src.database.session import SessionLocal
     from src.wiki.lane_search import search, search_coverage
 
     if not lane_path("wiki").is_file():
         return _absent(_NEVER_RUN, q)
     try:
-        with lane_session("wiki") as lane:
+        # The tracker's session (R54) is only opened, never used, unless a hit is of a tracked
+        # page: a session connects on its first statement.
+        with lane_session("wiki") as lane, SessionLocal() as corpus:
             out = search(
                 lane, q, limit=limit, offset=offset, snippets=snippets, queue=queue,
-                near_default=_near_preference(),
+                near_default=_near_preference(), corpus=corpus,
             )
             if coverage and out.get("available"):
                 out["coverage"] = search_coverage(lane)
@@ -122,7 +125,7 @@ def lane_search(
     return out
 
 
-def _held(source: str, owner_id: int, revid: int):
+def _held(source: str, owner_id: int, revid: int, corpus: Session):
     from src.database.connect import DatabaseLockedError
     from src.wiki.lane_search import held_version
 
@@ -130,7 +133,7 @@ def _held(source: str, owner_id: int, revid: int):
         raise HTTPException(status_code=404, detail=_NEVER_RUN)
     try:
         with lane_session("wiki") as lane:
-            return held_version(lane, source, owner_id, revid)
+            return held_version(lane, source, owner_id, revid, corpus=corpus)
     except LaneAbsentError as exc:
         raise HTTPException(status_code=404, detail=_NEVER_RUN) from exc
     except DatabaseLockedError as exc:
@@ -142,15 +145,16 @@ def _held(source: str, owner_id: int, revid: int):
 
 @router.get("/version")
 def lane_version(
-    source: Literal["warm", "hot"],
+    source: Literal["warm", "hot", "tracked"],
     owner_id: int = Query(ge=1),
     revid: int = Query(ge=1),
+    db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     """ONE held version as plain text, for reading before adding it. 404 when not held."""
     from src.wiki.corpus import wiki_version_url
     from src.wiki.lane_search import plain_text
 
-    held = _held(source, owner_id, revid)
+    held = _held(source, owner_id, revid, db)
     if held is None:
         raise HTTPException(status_code=404, detail="not-held")
     body = plain_text(held.text)
@@ -174,7 +178,7 @@ def lane_version(
 class AddVersion(BaseModel):
     """The version a hit named: which lane row, and which revision of it."""
 
-    source: Literal["warm", "hot"]
+    source: Literal["warm", "hot", "tracked"]
     owner_id: int = Field(ge=1)
     revid: int = Field(ge=1)
 
@@ -191,7 +195,7 @@ def add_to_corpus(payload: AddVersion, db: Session = Depends(get_db)) -> dict[st
     from src.wiki.corpus import add_wiki_version_article
     from src.wiki.lane_search import plain_text
 
-    held = _held(payload.source, payload.owner_id, payload.revid)
+    held = _held(payload.source, payload.owner_id, payload.revid, db)
     if held is None:
         raise HTTPException(status_code=404, detail="not-held")
     if not held.title:

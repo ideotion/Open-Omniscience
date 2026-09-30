@@ -13,8 +13,11 @@
 # is shown BESIDE the row here, never merged into it, so a raised budget still says
 # what the published default was.
 #
-# A ROW WITHOUT A NUMBER IS DELIBERATE. One lane budget has been ruled: Q707's 20 GB
-# for Wikipedia. The brief this table was built under says the numbers beyond the
+# A ROW WITHOUT A NUMBER IS DELIBERATE. One lane budget has been ruled: Wikipedia's,
+# which Q707 set at 20 GB and R53 (2026-09-29) raised to 150 GB, still lowerable to 20.
+# Q1010's "sized for the 2-core / 3.5 GB VM" is amended for this one row by R53: the
+# maintainer prefers generous defaults, and the Storage tab shows the arithmetic against
+# the free disk of the machine it runs on. The brief this table was built under says the numbers beyond the
 # table's shape are not the build's to decide, so every other row carries
 # `budget_gb: null` and a reason token, and Settings -> Storage says "no published
 # budget" instead of showing an invented one. Adding a number is a ruling: record it
@@ -40,8 +43,8 @@ lanes:
     budget_gb: null
     reason: not_ruled
   wiki:
-    budget_gb: 20
-    ruling: Q707
+    budget_gb: 150
+    ruling: R53
     setting: wiki_lane_budget_gb
   law:
     budget_gb: null
