@@ -51,7 +51,7 @@ def _local_row_id(session: Any, table: str, identity: dict) -> int | None:
     Never by the ``local_row_id`` the restore stored: those tables use plain integer keys that
     SQLite reuses after a delete, so a stored id can point at an unrelated row later. Where the
     corpus holds several rows for one identity (a local pass appends one per run), the newest is
-    the one shown, as the readers do."""
+    the one shown, as the readers do. ``rowid`` (not ``id``) so a table keyed by text works too."""
     spec = ALTERNATE_SPECS.get(table)
     if spec is None or table not in PRODUCER_COLUMNS:
         return None
@@ -81,7 +81,7 @@ def _local_row_id(session: Any, table: str, identity: dict) -> int | None:
     if not where:
         return None
     row = session.execute(
-        text(f"SELECT t.id FROM {table} t{joins} WHERE " + " AND ".join(where) + " ORDER BY t.id DESC LIMIT 1"),  # noqa: S608  # nosec B608 - table is a key of ALTERNATE_SPECS and PRODUCER_COLUMNS, every column name is a literal from ALTERNATE_SPECS; the identity values are bound
+        text(f"SELECT t.rowid FROM {table} t{joins} WHERE " + " AND ".join(where) + " ORDER BY t.rowid DESC LIMIT 1"),  # noqa: S608  # nosec B608 - table is a key of ALTERNATE_SPECS and PRODUCER_COLUMNS, every column name is a literal from ALTERNATE_SPECS; the identity values are bound
         params,
     ).fetchone()
     return None if row is None else int(row[0])
@@ -94,7 +94,7 @@ def _local_values(session: Any, table: str, row_id: int | None, names: list[str]
     if not cols:
         return None
     row = session.execute(
-        text(f"SELECT {', '.join(cols)} FROM {table} WHERE id = :id"),  # noqa: S608  # nosec B608 - table is validated and the column names are intersected with the table's own columns above
+        text(f"SELECT {', '.join(cols)} FROM {table} WHERE rowid = :id"),  # noqa: S608  # nosec B608 - table is validated and the column names are intersected with the table's own columns above
         {"id": row_id},
     ).fetchone()
     return None if row is None else dict(zip(cols, row, strict=True))
