@@ -144,6 +144,18 @@ ALTERNATE_SPECS: dict[str, dict[str, Any]] = {
 }
 
 
+def producer_extra_columns(table: str) -> dict[str, str]:
+    """Which tag fields a row keeps in a plain column of its own: ``{"prompt_text": col,
+    "produced_at": col}`` for the ones whose mapping is exactly ``{a}.<column>``. A swap writes
+    these from the tag it adopts, so the row and its tag cannot disagree afterwards."""
+    out: dict[str, str] = {}
+    for field in ("prompt_text", "produced_at"):
+        expr = PRODUCER_COLUMNS[table][field]
+        if expr.startswith("{a}.") and expr[4:].isidentifier():
+            out[field] = expr[4:]
+    return out
+
+
 def producer_tag_sql(table: str, alias: str, *, origin: str, batch: str, at: str, app_version: str) -> str:
     """SQL producing the tag JSON for a row of ``table`` aliased ``alias``.
 

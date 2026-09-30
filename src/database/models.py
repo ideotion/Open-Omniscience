@@ -2917,13 +2917,16 @@ class MetadataAlternate(Base):
 
     The maintainer's rule (2026-09-29, item 12): deduced metadata rides backups with its
     provenance; on a contradiction the imported value never prevails over the local one, both
-    are kept and reachable, and the operator may discard afterwards. Before this table the
-    merge kept the local row and DROPPED the incoming value without a trace.
+    are kept and reachable, and the operator may discard afterwards -- or, by an
+    explicit choice, show the alternate instead (``swap`` in ``src/backup/alternates.py``,
+    reversible). Before this table the merge kept the local row and DROPPED the incoming value without a trace.
 
-    A row here is a RECORD BESIDE the local row, never a second copy of it: the deduced table
-    itself is not written, so every reader that shows local data is unchanged and no imported
-    value can appear where a local one is shown. The operator can keep or discard an alternate
-    (the differences panel); nothing makes one the shown value.
+    A row here is a RECORD BESIDE the local row, never a second copy of it: a restore does not
+    write the deduced table, so every reader that shows local data is unchanged and no imported
+    value can appear where a local one is shown. The operator can keep, discard or swap an
+    alternate (the differences panel). A swap trades places: the row takes the alternate's values
+    and the alternate takes the row's, with ``status`` = ``swapped`` marking the record that now
+    holds the value that WAS shown (a batch discard leaves it alone).
 
     ``identity`` names the item by its natural key (an article by its content hash), so the
     pointer survives a later restore; ``local_row_id`` is the convenience id of the local row

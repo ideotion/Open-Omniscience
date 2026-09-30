@@ -254,6 +254,13 @@ def test_nothing_in_the_keyword_index_reads_this_table():
         # reads no row of it at all and renders nothing; the capture in merge.py is the only
         # code that touches the rows, and that file is already admitted above.
         "src/backup/provenance.py",
+        # ADDED 2026-09-30 by R61 (item 12, the reversible swap): the differences panel's
+        # swap names the table as a KEY of `_SIBLINGS` (which columns identify a row's
+        # siblings, so a swap can refuse to let a newer sibling take over what readers
+        # show). It renders nothing and reads no row for any reader: the only rows it
+        # touches are the operator's own, one at a time, when they press "Use the
+        # restore's value instead", and the tentative-tier label is untouched.
+        "src/backup/alternates.py",
     }
     assert hits <= allowed, (
         f"keyword_translations gained a reader outside the backup engine: "
