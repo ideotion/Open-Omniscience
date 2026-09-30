@@ -1022,6 +1022,14 @@ passed off as the rendered article. Everything stays local; the change
 history remains available per page, and the **Living sources** tab shows it
 ([3.6b](#36b-living-sources)).
 
+**The lane's storage budget (150 GB by default, yours to lower):** the Wikipedia lane
+stops storing text at the total you set in the first-run wizard (or in **Settings →
+Storage**, beside the arithmetic against this machine's free disk). The default is
+**150 GB** since the 2026-09-29 ruling, up from 20 GB; lower it to 20 GB, or to anything
+down to 1 GB, if the disk is small. An install that already went through the wizard
+keeps the number it agreed to; one that never saw the wizard follows the new default
+until you set your own.
+
 **The page walk (off unless you switch it on):** the live stream only ever hears
 about pages someone edits, so most of an encyclopedia never reaches it. Ticking
 **Also walk every article title** (Settings → Wikipedia, under *The live edit
@@ -1076,11 +1084,16 @@ button. Above them it says what was searched: only the texts the Wikipedia lane
 holds on this machine, never Wikipedia itself, with the pages and editions they come
 from, how many texts are still waiting for the index, and whether fetching other
 changed pages is off. So an empty list means the lane's texts do not contain your
-words, not that Wikipedia does not. Two other kinds of Wikipedia text on this
-machine are not in this search: downloaded dumps, whose text the search box finds
-in its Wikipedia group, and the revisions **Track now** (Settings → Wikipedia)
-stores for watched pages, which you add from the page's versions in **Living
-sources** instead. A query reads the same way in both lists (`salt*`,
+words, not that Wikipedia does not. The versions **Track now** (Settings → Wikipedia)
+stores for watched pages are in this search too: they stay in your corpus's database,
+and the lane's index, in its own file, reads them the same way (each older version by
+the lines the next stored version removed, the newest in full unless your corpus
+article already is that version). They are found under the same heading, marked as
+stored by the page tracker, and **Add to corpus** adds that exact version like any
+other; the search says how many tracked pages it read. A page you both follow and track can
+list a version once for each store: the two stores are read separately, and neither depends on
+the other. Downloaded dumps are not in this search: their text
+is found in the search box's Wikipedia group. A query reads the same way in both lists (`salt*`,
 `NEAR(salt works, 5)`, `title:salt`), but the filters that describe articles (the
 Source, Language and Time boxes, and `source:`, `author:`, `url:`, `tag:` and
 `title:=`) do not reach these texts, and the section says so whenever one is set.

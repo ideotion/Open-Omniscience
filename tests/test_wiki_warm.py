@@ -904,7 +904,7 @@ def test_the_counters_artifact_carries_WARM_or_an_ABSENCE(lane):
     [row] = after["editions"]
     assert (row["edition"], row["pages_with_text"], row["texts_fetched"], row["due"]) == (EDITION, 2, 2, 1)
     assert (after["requests"], after["due"]) == (1, 1)
-    assert str(int(M.WARM_BUDGET_SHARE * 100)) in after["caveat"] and "proposed" in after["caveat"]
+    assert str(int(M.WARM_BUDGET_SHARE * 100)) in after["caveat"] and "ruled default" in after["caveat"]
     assert after["method"]
 
 
@@ -1074,7 +1074,7 @@ def test_the_overview_carries_WARM_before_the_walk_in_Q707_s_order(lane, monkeyp
     wiki = out["sources"][0]
     assert list(wiki) == ["kind", "stream", "tracked", "warm", "walk", "storage"]
     assert wiki["warm"]["state"] == "not_running" and wiki["warm"]["measured"] is False
-    assert "Other changed pages (WARM)" in out["method"]
+    assert "Other changed pages" in out["method"]
 
 
 _ROOT = Path(__file__).resolve().parent.parent

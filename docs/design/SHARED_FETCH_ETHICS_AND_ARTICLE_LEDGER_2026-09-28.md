@@ -1,6 +1,6 @@
 # Sharing the burden without sharing the text — the swarm question, the article ledger, and what the app owes the newsrooms it reads (2026-09-28)
 
-**Status: THINKING MEMO + QUESTION ROUND (`PS01`–`PS16`) — UNANSWERED. Nothing here is built. Nothing here
+**Status: THINKING MEMO + QUESTION ROUND (`PS01`–`PS16`) — UNANSWERED; on 2026-09-30 the maintainer set it aside for now (`R100`: no data sharing between installs; `PS01` stays open). Nothing here is built. Nothing here
 is decided: the maintainer decides; this file records.** Written on 2026-09-28 at the maintainer's request, in
 the maintainer's words:
 
@@ -430,7 +430,7 @@ in another coat and should be read with this answer in the same turn.
 - **c** — **Yes, any robots-permitted text, peer to peer.** _Impact:_ the swarm; §4.1's seven objections apply
   in full; the legal documents change ×12 before any code; `PS15` comes first.
 Default if blank: **none — ⛔, stays PENDING.**
-ANSWER PS01:
+ANSWER PS01: STILL OPEN (⛔, no letter) — given in the project thread «Record the 37 answers» 2026-09-30 03:35 UTC (the older-rounds list, item 10) and copied here by the recording session: «articles will travel between machines through backups and restores eventually. Let's think of this differently. For now, the app only scraps the web for data, stores and indexes it. no data sharing for now, as I need a clear view before making such big decisions.» Recorded as `R100`: no data sharing between installs for now; nothing here is designed or built until the maintainer reopens the question.
 
 #### PS02 · Which burden is the one to spare first?
 - **a** ★ — **Request count on small self-hosted newsrooms** (feed polling cadence). _Impact:_ coordinated

@@ -39,8 +39,9 @@ def _dialog_html() -> str:
 
 def _search_tab_html() -> str:
     html = read_static("index.html")
-    at = html.index('<div class="tab-page" id="tab-search">')
-    return html[at : html.index('<div class="tab-page"', at + 1)]
+    # The search is Explore's first part since R47; the page's second part is the analysis.
+    at = html.index('<div class="explore-part" id="tab-search">')
+    return html[at : html.index('<div class="explore-part" id="tab-analyze">', at + 1)]
 
 
 def test_the_renderers_behave():

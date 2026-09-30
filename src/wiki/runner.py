@@ -473,7 +473,7 @@ class WikiLaneRunner:
                 warm_report = self._warm.warm_for(max(0.0, left()), should_stop=self._should_stop)
                 self.last_warm = warm_report.as_dict()
             except Exception as exc:  # noqa: BLE001 - WARM must not end the lane
-                _LOG.warning("the Wikipedia WARM window failed: %s", exc, exc_info=True)
+                _LOG.warning("the Wikipedia window for fetching other changed pages failed: %s", exc, exc_info=True)
                 self.last_warm = {"error": f"{type(exc).__name__}"}
         if self._walker is not None and not self._should_stop() and left() > 0:
             try:
@@ -513,7 +513,7 @@ class WikiLaneRunner:
         try:
             return {**self._warm.status(), "last_window": self.last_warm}
         except Exception:  # noqa: BLE001 - a status read must not fail the status surface
-            _LOG.debug("could not read the WARM status", exc_info=True)
+            _LOG.debug("could not read the status of fetching other changed pages", exc_info=True)
             return None
 
     def run_until_stopped(self, *, max_drains: int | None = None) -> int:
