@@ -40,10 +40,10 @@ from sqlalchemy import func
 
 from src.analytics.queries import (
     Keyword,
-    KeywordMention,
     _bucket_key,
     _normalize,
 )
+from src.database.derived_views import KeywordMentionRead
 from src.database.fts import _HAS_WORD_CHAR, _quote
 from src.database.models import Article
 
@@ -190,14 +190,14 @@ def corpus_algebra(
     per_article: dict[int, set[str]] = {}
     bounded = False
     scan = (
-        session.query(KeywordMention.article_id, Keyword.normalized_term)
-        .join(Keyword, Keyword.id == KeywordMention.keyword_id)
+        session.query(KeywordMentionRead.article_id, Keyword.normalized_term)
+        .join(Keyword, Keyword.id == KeywordMentionRead.keyword_id)
         .filter(Keyword.normalized_term.in_(normalized))
     )
     rows = (
         _scoped(scan, scope)
         .distinct()
-        .order_by(KeywordMention.article_id)
+        .order_by(KeywordMentionRead.article_id)
         .all()
     )
     for aid, term in rows:
@@ -220,8 +220,8 @@ def corpus_algebra(
     per_term_n: dict[str, int] = {}
     for n in normalized:
         cq = (
-            session.query(func.count(func.distinct(KeywordMention.article_id)))
-            .join(Keyword, Keyword.id == KeywordMention.keyword_id)
+            session.query(func.count(func.distinct(KeywordMentionRead.article_id)))
+            .join(Keyword, Keyword.id == KeywordMentionRead.keyword_id)
             .filter(Keyword.normalized_term == n)
         )
         per_term_n[n] = int(_scoped(cq, scope).scalar() or 0)
@@ -254,12 +254,12 @@ def corpus_algebra(
 
 
 def _scoped(q, scope: dict | None):
-    """A KeywordMention query restricted to a lens scope (joins Article only when needed)."""
+    """A KeywordMentionRead query restricted to a lens scope (joins Article only when needed)."""
     if not scope or scope.get("kind") == "all":
         return q
     if scope.get("article_ids") is not None:
-        return q.filter(KeywordMention.article_id.in_(scope["article_ids"]))
-    return _scope_filter(q.join(Article, Article.id == KeywordMention.article_id), scope)
+        return q.filter(KeywordMentionRead.article_id.in_(scope["article_ids"]))
+    return _scope_filter(q.join(Article, Article.id == KeywordMentionRead.article_id), scope)
 
 
 def per_article_intensity(
@@ -275,19 +275,19 @@ def per_article_intensity(
         return {"n_terms": len(normalized), "articles": [], "method": "", "caveat": ""}
     rows = (
         session.query(
-            KeywordMention.article_id,
+            KeywordMentionRead.article_id,
             func.count(func.distinct(Keyword.normalized_term)),
-            func.sum(KeywordMention.count),
+            func.sum(KeywordMentionRead.count),
         )
-        .join(Keyword, Keyword.id == KeywordMention.keyword_id)
+        .join(Keyword, Keyword.id == KeywordMentionRead.keyword_id)
         .filter(
             Keyword.normalized_term.in_(normalized),
-            KeywordMention.article_id.in_(article_ids),
+            KeywordMentionRead.article_id.in_(article_ids),
         )
-        .group_by(KeywordMention.article_id)
+        .group_by(KeywordMentionRead.article_id)
         .order_by(
             func.count(func.distinct(Keyword.normalized_term)).desc(),
-            func.sum(KeywordMention.count).desc(),
+            func.sum(KeywordMentionRead.count).desc(),
         )
         .limit(limit)
         .all()
@@ -311,14 +311,14 @@ def conditional_trend(session, article_ids: list[int], *, bucket: str = "week") 
         return {"bucket": bucket, "points": [], "total": 0, "method": "", "caveat": ""}
     rows = (
         session.query(
-            KeywordMention.observed_on,
-            func.count(func.distinct(KeywordMention.article_id)),
+            KeywordMentionRead.observed_on,
+            func.count(func.distinct(KeywordMentionRead.article_id)),
         )
         .filter(
-            KeywordMention.article_id.in_(article_ids),
-            KeywordMention.observed_on.isnot(None),
+            KeywordMentionRead.article_id.in_(article_ids),
+            KeywordMentionRead.observed_on.isnot(None),
         )
-        .group_by(KeywordMention.observed_on)
+        .group_by(KeywordMentionRead.observed_on)
         .all()
     )
     buckets: dict[str, int] = {}
@@ -422,9 +422,9 @@ def set_contrast(
         if not ids or not cand:
             return []
         rows = (
-            session.query(Keyword.normalized_term, func.count(func.distinct(KeywordMention.article_id)))
-            .join(KeywordMention, KeywordMention.keyword_id == Keyword.id)
-            .filter(Keyword.normalized_term.in_(list(cand)), KeywordMention.article_id.in_(ids))
+            session.query(Keyword.normalized_term, func.count(func.distinct(KeywordMentionRead.article_id)))
+            .join(KeywordMentionRead, KeywordMentionRead.keyword_id == Keyword.id)
+            .filter(Keyword.normalized_term.in_(list(cand)), KeywordMentionRead.article_id.in_(ids))
             .group_by(Keyword.normalized_term)
             .all()
         )
