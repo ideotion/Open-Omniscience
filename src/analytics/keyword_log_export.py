@@ -63,20 +63,32 @@ def in_batches(ids: list[int], size: int = 800):
         yield ids[i : i + size]
 
 
-#: The smallest a compressed keyword entry can be, in bytes. What it protects: a byte cap is
-#: enforced by trimming the tail of every language, and a window far larger than the cap
-#: could ever hold (``per_lang=1000000`` against the 9 MB default) must not be BUILT just to
-#: be thrown away -- that was the 4.4 GB run that produced a 9.2 MB file. The window is cut
-#: to what could possibly fit at this size per entry, and the loop below trims from there.
-#: It is a LOWER bound, so it never cuts an entry that would have fitted: the measured floor
-#: is 8-10 bytes for an orphan with a sequential synthetic term (the most compressible
-#: entry there is); real terms cost 40-200.
+#: A deliberately generous floor for what one compressed keyword entry costs, in bytes. What
+#: it protects: a byte cap is enforced by trimming the tail of every language, and a window far
+#: larger than the cap could ever hold (``per_lang=1000000`` against the 9 MB default) must not
+#: be BUILT just to be thrown away -- that was the 4.4 GB run that produced a 9.2 MB file. The
+#: window is cut to what would fit at this size per entry, and the loop below trims from there.
+#: It is NOT a mathematical lower bound: the most compressible entry there is (an orphan with a
+#: sequential synthetic term) measures 8-10 bytes, so an export of data that regular would be
+#: cut a little early, and the manifest says how (``window_clamped_to_fit_cap``). Real terms
+#: cost 18-41 bytes in the field's own logs and 40-200 in general.
 MIN_ENTRY_BYTES = 12
 
 #: Free space the export leaves on the volume it writes to. What it protects: the database's
 #: own write-ahead log, which grows on the same disk (a 30 GB WAL was measured on a machine
 #: with 38 GB free), and the operating system.
 _DISK_RESERVE_FLOOR = 512 * 1024 * 1024
+
+#: The reserve grows with the drive: one percent of the volume (10 GB on a 1 TB disk), because the
+#: write-ahead log of a large database grows in proportion to it. 512 MiB alone is enough only
+#: on a small drive.
+_DISK_RESERVE_SHARE = 0.01
+
+#: Headroom on the space a scratch file or archive is expected to need, before it is refused:
+#: twenty per cent on an estimate that is already conservative (``SPILL_ROW_BYTES`` and
+#: ``ZIP_BYTES_PER_ENTRY`` are both rounded up from a measurement), so that a write which would
+#: end below the reserve is refused up front with the numbers, not halfway through it.
+_DISK_NEED_MARGIN = 1.2
 
 ZIP_TMP_PREFIX = "oo-keyword-log-part-"
 
@@ -119,7 +131,7 @@ def disk_reserve(d: Path) -> int:
         total = shutil.disk_usage(d).total
     except OSError:
         return _DISK_RESERVE_FLOOR
-    return max(_DISK_RESERVE_FLOOR, int(total * 0.01))
+    return max(_DISK_RESERVE_FLOOR, int(total * _DISK_RESERVE_SHARE))
 
 
 def disk_check_for(d: Path | None):
@@ -134,7 +146,7 @@ def disk_check_for(d: Path | None):
         except OSError:
             return  # an unreadable volume is not refused on a guess
         reserve = disk_reserve(d)
-        if free < need * 1.2 + reserve:
+        if free < need * _DISK_NEED_MARGIN + reserve:
             raise ExportRefused(
                 f"the export needs about {need / 2**30:.1f} GiB of scratch space next to "
                 f"your data, and only {free / 2**30:.1f} GiB is free on that drive "
@@ -319,7 +331,11 @@ class ZipJob:
         d = self.out_dir
         if d is None:
             d = Path(tempfile.gettempdir())
-        return d / f"{ZIP_TMP_PREFIX}{os.getpid()}-{int(time.time() * 1000)}.zip"
+        # mkstemp, not pid + clock: two exports in the same millisecond shared a name, and one
+        # deleted the other's archive once it had been sent.
+        fd, name = tempfile.mkstemp(prefix=ZIP_TMP_PREFIX, suffix=".zip", dir=str(d))
+        os.close(fd)
+        return Path(name)
 
     def _build_summary(self, sw: StopwordAcc, ring: RingAcc, fam: list, total_keep: int) -> dict:
         _fam_cap = self.hooks.families_cap()
@@ -397,6 +413,8 @@ class ZipJob:
         # A small archive is compressed as hard as it always was; a large one at zlib's middle
         # level, which is ~3x faster for ~3 % more bytes and is what makes millions of
         # entries finish in minutes rather than hours.
+        # (200,000 entries is the default export -- 5,000 keywords over a few dozen languages --
+        # which keeps the level, and so the bytes, it always had.)
         level = 9 if sum(keep.values()) <= 200_000 else 6
         ok = False
         try:
@@ -525,14 +543,23 @@ def resolve_max_bytes(fmt: str, max_mb: Any, default_bytes: int) -> int | None:
     if isinstance(max_mb, (int, float)) and not isinstance(max_mb, bool):
         if max_mb <= 0:
             return None
+        # 256 bytes: below this a zip's own headers exceed the cap, so every language would be
+        # trimmed to one keyword for nothing. It only forbids a meaningless cap; realistic ones
+        # are megabytes.
         return max(256, int(max_mb * 1024 * 1024))
     return default_bytes
 
 
 #: Trim rounds are bounded only so a pathological size estimate cannot loop forever: each round
-#: shrinks every language by the ratio the last archive missed the cap by (x0.9), so an archive
-#: whose shards are the whole problem is under its cap in two or three rounds.
+#: shrinks every language by the ratio the last archive missed the cap by, times ``_TRIM_AIM``,
+#: so an archive whose shards are the whole problem is under its cap in two or three rounds. 40
+#: rounds at that rate is a window cut to a fraction of a percent, far past anything a cap can
+#: ask of it: beyond that, what is over the cap is the summary, which is never trimmed.
 _MAX_TRIM_ROUNDS = 40
+
+#: Each trim aims ten per cent UNDER the cap: deflate's output is not linear in the entries kept,
+#: so aiming exactly at the cap lands just over it about half the time and costs another rebuild.
+_TRIM_AIM = 0.9
 
 
 def finish_zip(
@@ -563,7 +590,7 @@ def finish_zip(
         size = path.stat().st_size
         if max_bytes is None or size <= max_bytes:
             break
-        ratio = max_bytes / size * 0.9
+        ratio = max_bytes / size * _TRIM_AIM
         trimmed = {lang: new for lang, n in keep.items() if (new := max(1, int(n * ratio))) < n}
         if not trimmed:
             break  # nothing left to drop: what is over the cap is the summary, which is not trimmed

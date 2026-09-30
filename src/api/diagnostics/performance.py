@@ -244,8 +244,11 @@ def performance_report(
                 ),
             )
         else:
+            # A third honest state beside "measured" (ms) and "failed" (error): not run, and
+            # why. Its row says so in words and carries no number it did not measure.
             selftest_rows.append({
                 "probe": "keyword_export_streamed",
+                "run": 0,
                 "skipped": f"not run on this machine: {kw_declined}",
             })
 

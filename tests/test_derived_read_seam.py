@@ -220,10 +220,13 @@ _RAW_CEILING: dict[str, int] = {
     "src/analytics/group_stats.py": 1,
     "src/analytics/keyword_fold.py": 1,
     "src/analytics/keyword_growth.py": 6,
-    # The keyword-log export's ONE scan over the mention rows names the table in exactly one
-    # place (the MENTIONS_TABLE constant), so D22's move onto KeywordMentionRead is a one-line
-    # change there; it is a reader that has not moved yet, owned by the keyword thread.
-    "src/analytics/keyword_log_scan.py": 1,
+    # The keyword-log export reads the mention rows through ONE constant (MENTIONS_TABLE), so
+    # D22's move onto KeywordMentionRead is a one-line change there; it is a reader that has not
+    # moved yet, owned by the keyword thread. The count is the constant's own definition plus
+    # each read written through it: the scan's one ordered pass (keyword_log_scan.py) and the
+    # language-signature probe (keyword_log_export.py).
+    "src/analytics/keyword_log_export.py": 1,
+    "src/analytics/keyword_log_scan.py": 2,
     "src/analytics/latest.py": 2,
     "src/analytics/map_serve.py": 1,
     "src/analytics/queries.py": 8,
@@ -281,7 +284,9 @@ def _actual_raw() -> dict[str, int]:
         rel = f.relative_to(_SRC.parent).as_posix()
         if rel in _SKIP:
             continue
-        n = len(re.findall(r"\bkeyword_mentions\b", f.read_text(encoding="utf-8")))
+        # ``{MENTIONS_TABLE}`` is a read written through the keyword export's constant (the one
+        # place that names the table): a regex for the literal name alone cannot see it.
+        n = len(re.findall(r"\bkeyword_mentions\b|\{MENTIONS_TABLE\}", f.read_text(encoding="utf-8")))
         if n:
             found[rel] = n
     return found

@@ -30,7 +30,8 @@ WHAT THIS MODULE DOES INSTEAD. Nothing here is proportional to the number of key
 * :class:`StopwordAcc`, :class:`RingAcc` and :class:`SuspectBoard` are the streaming forms
   of the three digests the export computes over its survivors. They keep a bounded top list
   and exact counters, and they reproduce the ordering of the one-shot functions they
-  replaced, tie-break included (``tests/test_keyword_log_scan.py`` is the differential).
+  replaced, tie-break included (``tests/test_keyword_export_bounded.py`` pins the ranking and the
+  scan against a plain reference written from the documented rules, in both ranker modes).
 
 WHAT IT DOES NOT DO. It does not change what is counted or how it is ranked: the same
 mention rows (``MENTIONS_TABLE`` is the one place that names the table, so the keyword
@@ -48,7 +49,7 @@ import logging
 import os
 import sqlite3
 import sys
-import time
+import tempfile
 from array import array
 from collections.abc import Callable, Iterator
 from pathlib import Path
@@ -113,11 +114,16 @@ _MARK_LIMIT = 200_000_000
 _DENSE_FLOOR = 2_000_000
 _DENSE_FACTOR = 3
 
-#: Spill rows are written this many at a time.
+#: Spill rows are written this many at a time. What it protects: the commit count (a commit per
+#: row is about a hundred times slower than one per batch) while the buffer stays a couple of
+#: megabytes (20,000 rows x ~120 B of tuples), far below the heap budget it sits beside. It is
+#: also how often the disk watch runs while the ranking spills.
 _SPILL_FLUSH = 20_000
 
 #: Bytes one spilled row costs on disk, table plus rank index, rounded up from a measured
-#: ~85. Used only for the free-space check before a spill begins.
+#: ~85-100. Used only for the free-space check before a spill begins (and it protects the
+#: operator's drive, nothing else); ``test_spill_row_constant_covers_the_measured_file_size``
+#: fails if the file ever costs more per row than this.
 SPILL_ROW_BYTES = 120
 
 SPILL_PREFIX = "oo-keyword-scan-"
@@ -146,7 +152,10 @@ def memory_plan(available_bytes: float | None) -> dict[str, int]:
     else:
         rows = max(MIN_HEAP_ROWS, int(available_bytes * HEAP_SHARE / ROW_BYTES))
         # An entry is about 2 KB once it is a dict and a JSON string; a batch may use ~0.2 % of
-        # what is available. 800 is what every reader of this file used before it was sized.
+        # what is available. 800 is what every reader of this file used before it was sized, and
+        # 8,000 is the ceiling that keeps one ``IN (...)`` list near 80 KB of SQL (ids of up to
+        # nine digits) -- a batch is one query per table, and a larger one saves no round trips
+        # worth a longer statement.
         batch = max(800, min(8000, int(available_bytes * 0.002 / 2048)))
         family_rows = max(MIN_FAMILY_ROWS, int(available_bytes * FAMILY_SHARE / FAMILY_ROW_BYTES))
     return {"heap_rows": rows, "batch": batch, "family_rows": family_rows}
@@ -420,7 +429,8 @@ class RingAcc:
 class SuspectBoard:
     """The boilerplate-suspect list: every qualifying (keyword, source) pair is COUNTED, only
     the strongest ``limit`` are kept (the anti-capping rule: a cap may bound a REPORT, never
-    the crunching). Order: share of source desc, count in source desc, keyword id asc."""
+    the crunching; 200 is a list a person reads). Order: share of source desc, count in source
+    desc, keyword id asc."""
 
     def __init__(self, limit: int = 200) -> None:
         self.limit = limit
@@ -443,6 +453,23 @@ class SuspectBoard:
 # --------------------------------------------------------------------------- ranking
 
 
+@contextlib.contextmanager
+def _refuse_when_the_disk_is_full():
+    """SQLite's own "database or disk is full" is the drive answering, not a fault of ours: say
+    so, as the same refusal (HTTP 507) the free-space checks give."""
+    try:
+        yield
+    except sqlite3.OperationalError as exc:
+        if "full" not in str(exc).lower():
+            raise
+        raise ExportRefused(
+            "the drive holding your data ran out of room while the export was ranking keywords, "
+            "so it stopped and removed its scratch file. Free some space, or ask for a smaller "
+            "window (per_lang=...).",
+            status=507,
+        ) from exc
+
+
 class Ranker:
     """Per-language quota ranking that never holds more than ``heap_rows`` rows in memory.
 
@@ -456,14 +483,27 @@ class Ranker:
     the rows held across all languages would pass ``heap_rows`` the contents move to an
     SQLite file under ``spill_dir`` and every later row goes there too. ``disk_check(bytes)``
     is called first and raises :class:`ExportRefused` when the volume cannot take the file.
+
+    The spill is bounded the way the heaps are: a language never holds more than ``2 * hi``
+    rows on disk. When it reaches that, the rows ranked beyond ``hi`` are deleted and the
+    ``hi``-th row's key becomes that language's floor, so a later row that cannot rank inside
+    the window is never written at all. What this protects is the drive: without it a window
+    of 5,000 over 14.65 M keywords wrote the whole keyword table (1.2-1.7 GB) to disk after the
+    up-front check had sized the file for the rows held at the moment of the switch.
+    ``disk_watch()`` runs after every flush, and a full-disk error from SQLite itself is
+    reported as the same :class:`ExportRefused` (507), never as a server error.
     """
 
     def __init__(self, lo: int, hi: int, *, heap_rows: int, spill_dir: Path | None,
-                 disk_check: Callable[[int], None] | None, expected_rows: int = 0) -> None:
+                 disk_check: Callable[[int], None] | None, expected_rows: int = 0,
+                 disk_watch: Callable[[], None] | None = None) -> None:
         self._lo, self._hi = lo, hi
         self._heap_rows = heap_rows
-        self._spill_dir = spill_dir
+        # No folder named: the OS temp folder, never "nowhere" (a ranker with nowhere to spill
+        # grows to the whole window in memory, which is the defect this class exists to end).
+        self._spill_dir = spill_dir if spill_dir is not None else Path(tempfile.gettempdir())
         self._disk_check = disk_check
+        self._disk_watch = disk_watch
         self._expected = expected_rows
         self._heaps: dict[str, list] = {}
         self._held = 0
@@ -471,6 +511,11 @@ class Ranker:
         self._con: sqlite3.Connection | None = None
         self._path: Path | None = None
         self._buf: list[tuple] = []
+        # Spill mode only: rows per language on disk (or buffered), and the rank key of the
+        # ``hi``-th row after a language's last prune (a row that does not beat it is outside
+        # the window for good, because rank only ever worsens as rows arrive).
+        self._on_disk: dict[str, int] = {}
+        self._floor: dict[str, tuple[int, int, int]] = {}
 
     # -- feeding
 
@@ -479,8 +524,15 @@ class Ranker:
         seen = self._seen
         seen[lang] = seen.get(lang, 0) + 1
         if self._con is not None:
-            self._buf.append((kid, lang, 0 if dom is None else 1, m, a, first, last, dom))
-            if len(self._buf) >= _SPILL_FLUSH:
+            has_m = 0 if dom is None else 1
+            floor = self._floor.get(lang)
+            if floor is not None and (has_m, m, -kid) <= floor:
+                return
+            self._buf.append((kid, lang, has_m, m, a, first, last, dom))
+            n = self._on_disk[lang] = self._on_disk.get(lang, 0) + 1
+            if self._hi > 0 and n >= 2 * self._hi:
+                self._prune(lang)
+            elif len(self._buf) >= _SPILL_FLUSH:
                 self._flush()
             return
         item = (0 if dom is None else 1, m, -kid, a, first, last, dom)
@@ -499,31 +551,46 @@ class Ranker:
             self._to_spill()
 
     def _to_spill(self) -> None:
-        if self._spill_dir is None:
-            # Nowhere to put a file: keep going in memory rather than fail, but say so. The
-            # caller only omits the directory when it has nothing better (a test, a stub).
-            return
-        need = max(self._expected, self._held) * SPILL_ROW_BYTES
+        # The spill cannot hold more than every keyword, nor more than ``2 * hi`` rows for
+        # each language (see the class docstring). Languages still to appear are not known
+        # yet, so the disk watch (after every flush) is the backstop for what this cannot see.
+        bound = max(self._held, self._expected)
+        if self._hi > 0 and len(self._heaps) * 2 * self._hi < bound:
+            bound = max(self._held, len(self._heaps) * 2 * self._hi)
         if self._disk_check is not None:
-            self._disk_check(need)
-        self._path = self._spill_dir / f"{SPILL_PREFIX}{os.getpid()}-{int(time.time() * 1000)}.sqlite"
-        con = sqlite3.connect(str(self._path), isolation_level=None, check_same_thread=False)
-        for pragma in ("journal_mode=OFF", "synchronous=OFF", "locking_mode=EXCLUSIVE",
-                       "cache_size=-32768"):
-            con.execute(f"PRAGMA {pragma}")
-        con.execute(
-            "CREATE TABLE kw (kid INTEGER PRIMARY KEY, lang TEXT NOT NULL, has_m INTEGER NOT NULL,"
-            " m INTEGER NOT NULL, a INTEGER NOT NULL, first TEXT, last TEXT, dom TEXT)"
-        )
-        # Created BEFORE the rows go in: SQLite builds an index after the fact with a sorter
-        # that spills to its temp directory, which on some machines is a RAM disk.
-        con.execute("CREATE INDEX kw_rank ON kw (lang, has_m DESC, m DESC, kid)")
+            self._disk_check(bound * SPILL_ROW_BYTES)
+        # mkstemp: a name no other export can share (two in one millisecond used to), created
+        # before anything else so a failure below has a file to remove.
+        fd, name = tempfile.mkstemp(prefix=SPILL_PREFIX, suffix=".sqlite", dir=str(self._spill_dir))
+        os.close(fd)
+        self._path = Path(name)
+        con: sqlite3.Connection | None = None
+        try:
+            with _refuse_when_the_disk_is_full():
+                con = sqlite3.connect(name, isolation_level=None, check_same_thread=False)
+                for pragma in ("journal_mode=OFF", "synchronous=OFF", "locking_mode=EXCLUSIVE",
+                               "cache_size=-32768"):
+                    con.execute(f"PRAGMA {pragma}")
+                con.execute(
+                    "CREATE TABLE kw (kid INTEGER PRIMARY KEY, lang TEXT NOT NULL, has_m INTEGER NOT NULL,"
+                    " m INTEGER NOT NULL, a INTEGER NOT NULL, first TEXT, last TEXT, dom TEXT)"
+                )
+                # Created BEFORE the rows go in: SQLite builds an index after the fact with a
+                # sorter that spills to its temp directory, which on some machines is a RAM disk.
+                con.execute("CREATE INDEX kw_rank ON kw (lang, has_m DESC, m DESC, kid)")
+        except BaseException:
+            if con is not None:
+                with contextlib.suppress(sqlite3.Error):
+                    con.close()
+            self._remove_spill_files()
+            raise
         self._con = con
         _LOG.info("keyword export: %d rows held, spilling the ranking to %s", self._held, self._path)
         # One language at a time, in flush-sized slices, popping each heap as it is written, so
         # moving the rows to disk never holds a second copy of them.
         for lang in list(self._heaps):
             h = self._heaps.pop(lang)
+            self._on_disk[lang] = len(h)
             for i in range(0, len(h), _SPILL_FLUSH):
                 self._buf = [
                     (-it[2], lang, it[0], it[1], it[3], it[4], it[5], it[6])
@@ -534,10 +601,34 @@ class Ranker:
 
     def _flush(self) -> None:
         if self._buf and self._con is not None:
-            self._con.execute("BEGIN")
-            self._con.executemany("INSERT INTO kw VALUES (?,?,?,?,?,?,?,?)", self._buf)
-            self._con.execute("COMMIT")
+            with _refuse_when_the_disk_is_full():
+                self._con.execute("BEGIN")
+                self._con.executemany("INSERT INTO kw VALUES (?,?,?,?,?,?,?,?)", self._buf)
+                self._con.execute("COMMIT")
             self._buf = []
+            if self._disk_watch is not None:
+                self._disk_watch()
+
+    def _prune(self, lang: str) -> None:
+        """Drop this language's rows ranked beyond ``hi`` and remember where the cut was."""
+        self._flush()
+        con = self._con
+        assert con is not None
+        with _refuse_when_the_disk_is_full():
+            cut = con.execute(
+                "SELECT has_m, m, kid FROM kw WHERE lang=? "
+                "ORDER BY has_m DESC, m DESC, kid ASC LIMIT 1 OFFSET ?",
+                (lang, self._hi - 1),
+            ).fetchone()
+            if cut is None:
+                return
+            has_m, m, kid = cut
+            con.execute(
+                "DELETE FROM kw WHERE lang=? AND (has_m < ? OR (has_m = ? AND (m < ? OR (m = ? AND kid > ?))))",
+                (lang, has_m, has_m, m, m, kid),
+            )
+        self._floor[lang] = (has_m, m, -kid)
+        self._on_disk[lang] = self._hi
 
     # -- reading
 
@@ -573,14 +664,17 @@ class Ranker:
 
     def close(self) -> None:
         con, self._con = self._con, None
-        if con is not None:
-            try:
+        try:
+            if con is not None:
                 con.close()
-            finally:
-                if self._path is not None:
-                    for suffix in ("", "-journal", "-wal", "-shm"):
-                        with contextlib.suppress(OSError):
-                            os.unlink(str(self._path) + suffix)
+        finally:
+            self._remove_spill_files()
+
+    def _remove_spill_files(self) -> None:
+        if self._path is not None:
+            for suffix in ("", "-journal", "-wal", "-shm"):
+                with contextlib.suppress(OSError):
+                    os.unlink(str(self._path) + suffix)
 
     def __enter__(self) -> Ranker:
         return self
@@ -594,14 +688,24 @@ class Ranker:
 
 #: What the single-file / digest form of the export holds per keyword it exports, at its peak:
 #: the survivor row, its metadata and language signature, the digests' items and the families'
-#: grouping (MEASURED on the digest path at 15,000-30,000 exported keywords: 2.2-2.5 KB each;
-#: ``test_export_entry_constant_matches_the_measured_size`` fails if it drifts).
-EXPORT_ENTRY_BYTES = 2500
+#: grouping. The R27 gate multiplies the instance's exportable keywords by it, and the admission
+#: of a 4 GB machine rests on the product. MEASURED at the size that matters (2026-09-30, a
+#: synthetic database of 82 languages x 5,000 exported keywords, the shape of the largest
+#: instance's export): the process's peak resident size rose by 277 / 528 / 1,015 MiB at
+#: 100,000 / 205,000 / 410,000 entries, a slope of 2,495-2,505 bytes per entry (and the same with
+#: multi-language signatures), against 2,100 by tracemalloc at 15,000-30,000 entries (the gap is
+#: the allocator's own overhead). The constant is that slope plus ten per cent, because real
+#: terms are longer than the synthetic ones; the test below fails if it stops covering the
+#: Python-allocation cost, and ``/mnt/project-files/keyword-export/synth_many_languages.py`` +
+#: ``measure_keyword_export.py`` re-measure the resident size.
+EXPORT_ENTRY_BYTES = 2750
 
 #: The rest of the export's rise in resident memory that does not scale with the corpus: the
-#: SQLite page cache, the accumulators, the interpreter's own growth. MEASURED: a digest over
-#: 13 languages x 5,000 keywords rose the process by 190 MB at 2 M keywords and 195 MB at 6 M,
-#: of which the per-keyword part above is ~160 MB.
+#: SQLite page cache, the accumulators, the interpreter's own growth. MEASURED: the intercept of
+#: the fit above is 38 MiB (37.8-38.8 at the three sizes), and a digest over 13 languages x
+#: 5,000 keywords rose the process by 190 MB at 2 M keywords and 195 MB at 6 M. 60 MiB is 1.6x
+#: the measured intercept; ``test_export_fixed_constant_covers_the_measured_intercept`` fails
+#: if the Python-allocation intercept outgrows it.
 EXPORT_FIXED_BYTES = 60 * 2**20
 
 #: Bytes per article while the language/source arrays are dense (an ``I`` and a ``q``), and
@@ -623,6 +727,13 @@ def estimate_export_need(db, *, per_language: int) -> dict[str, Any]:
 
     Four cheap reads (two index scans and two aggregates); ``None`` for a count that cannot be
     read is treated as zero by the caller's fallback, never guessed.
+
+    What it does not see, and which way it errs: the languages are the ARTICLES' (plus one for
+    "?"), because counting the keyword table's own languages would scan the whole table, which has
+    no index on it. A mention-bearing keyword always lands in one of its articles' languages, so
+    only ORPHANS in a language no article carries are missed (a few thousand entries at worst,
+    tens of MiB); an instance with many thin languages is over-counted, since each is priced at a
+    full window. The error is on the side of declining a machine slightly early.
     """
     n_art, min_art, max_art = (int(v or 0) for v in db.execute(
         text("SELECT COUNT(*), COALESCE(MIN(id), 0), COALESCE(MAX(id), 0) FROM articles")

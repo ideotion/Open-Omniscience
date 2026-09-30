@@ -15,8 +15,10 @@ from __future__ import annotations
 
 import json
 import os
+import tempfile
 import time
 from datetime import datetime
+from pathlib import Path
 
 from fastapi import Depends, HTTPException, Query
 from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
@@ -183,6 +185,8 @@ def _ring_candidates(survivors, meta, dom_lang, is_hidden) -> dict:
 # small enough to actually ingest in the maintainer->dev channel (field-test
 # 2026-06-15 Item Z: a full log measured ~60 MB and was unusable in the very
 # channel it exists for). The aggregates ARE the analysis; the long tail is not.
+# 100 bounds the REPORT (the keywords printed as a glance); every keyword is counted in the
+# aggregates beside it.
 _DIGEST_SAMPLE = 100
 
 # Default size cap for the per-language ZIP export (?format=zip). The single-file log
@@ -218,7 +222,8 @@ def _keyword_zip_families_cap() -> int:
     analyze_keyword_log.py (it reassembles keywords from the shards). It was also why the
     byte cap never held: the trim loop shrinks the shards, never summary.json. So only the
     top families (by mentions) are kept for a human glance; the tail is derivable from the
-    shards. Override with OO_KEYWORD_LOG_FAMILIES.
+    shards. Override with OO_KEYWORD_LOG_FAMILIES. The 1,000 bounds the REPORT (families printed in
+    full); every family is built and counted, and the provenance block says how many were left out.
     """
     try:
         return max(0, int(os.environ.get("OO_KEYWORD_LOG_FAMILIES", "1000")))
@@ -343,12 +348,27 @@ def _keyword_zip(
     it has been sent. ``finish_zip`` says what is in it."""
     path = finish_zip(job, keep, omitted)
     fname = f"oo-keyword-log-{datetime.now().strftime('%Y%m%d')}.zip"
-    return FileResponse(
+    return _ScratchFileResponse(
         str(path),
         media_type="application/zip",
         filename=fname,
         background=BackgroundTask(unlink_quietly, path),
     )
+
+
+class _ScratchFileResponse(FileResponse):
+    """A file response that deletes its scratch file however the exchange ends.
+
+    Starlette runs a response's background task only on the paths that send the whole file:
+    a malformed or unsatisfiable ``Range`` header is answered early (416) without it, which
+    left an archive of up to several GB on the drive until the next export's 12-hour sweep.
+    The file goes in a ``finally``, so a dropped connection or an error mid-send cleans up too."""
+
+    async def __call__(self, scope, receive, send) -> None:  # noqa: ANN001
+        try:
+            await super().__call__(scope, receive, send)
+        finally:
+            unlink_quietly(Path(str(self.path)))
 
 
 def _export_deadline_seconds() -> float:
@@ -404,7 +424,10 @@ def keyword_log(
     per_lang: int = Query(
         _MAX_KEYWORDS_PER_LANG,
         ge=1,
-        le=1_000_000,
+        # Not a limit on the export: a language has as many keywords as it has (the "All keywords"
+        # button asks for a billion and gets every one). It only stops a nonsense number from
+        # reaching SQLite's 64-bit LIMIT/OFFSET; it is 1,000x the largest language measured.
+        le=1_000_000_000,
         description=(
             "ZIP only: how many keywords PER dominant language to export (default "
             f"{_MAX_KEYWORDS_PER_LANG}). Raise it to export far more — even the whole "
@@ -462,13 +485,22 @@ def keyword_log(
     def check() -> None:
         raise_if_memory_short(started=started)
 
+    # Checked every this many keywords in the phases that run after the scan. What it protects:
+    # the memory stop reads the machine's available memory (a system call), so it is not read
+    # per keyword, and 2,000 entries are about 5 MB at the measured cost, far inside the
+    # floor's margin.
+    check_every = 2_000
+
     plan = memory_plan(available_bytes_now())
     max_bytes = resolve_max_bytes(fmt, max_mb, _keyword_zip_max_bytes())
     out_dir = export_dir()
+    # Where the ranking spills when it must: the data folder, else the OS temp folder, never
+    # "nowhere" (a ranker with no place to spill used to grow to the whole window in memory).
+    scratch_dir = out_dir if out_dir is not None else Path(tempfile.gettempdir())
     ranker: Ranker | None = None
     try:
         with statement_deadline(db, seconds=_export_deadline_seconds()):
-            check()  # refuse to START when the machine is already at its floor
+            raise_if_memory_short()  # refuse to START when the machine is already at its floor
             # Article -> language and source, ONCE, each via its covering index (verified
             # plan: idx_article_language / the source_id index) — joining mentions to
             # articles in SQL would drag article rows through the SQLCipher codec for every
@@ -492,8 +524,13 @@ def keyword_log(
                 hi = min(hi, lo + max_bytes // MIN_ENTRY_BYTES)
 
             ranker = Ranker(
-                lo, hi, heap_rows=plan["heap_rows"], spill_dir=out_dir,
-                disk_check=disk_check_for(out_dir),
+                lo, hi, heap_rows=plan["heap_rows"], spill_dir=scratch_dir,
+                disk_check=disk_check_for(scratch_dir), disk_watch=disk_watch_for(scratch_dir),
+                # Every keyword there is bounds what the ranking can ever write to disk (its id
+                # range is one primary-key read): the up-front check sizes the file from it.
+                expected_rows=int(
+                    db.execute(text("SELECT COALESCE(MAX(id), 0) FROM keywords")).scalar() or 0
+                ),
             )
             # One ordered pass over the mention rows, then one over the keyword table. The
             # dominant signature language of each keyword, the totals a SECOND full GROUP BY
@@ -540,9 +577,9 @@ def keyword_log(
                         "exported_per_language_max": c,
                         "largest_language_window_before": before,
                         "why": (
-                            f"a {max_bytes:,}-byte archive cannot hold more than "
-                            f"{ceiling:,} entries even at {MIN_ENTRY_BYTES} "
-                            "bytes each, so the window was cut to the largest equal "
+                            f"a {max_bytes:,}-byte archive holds about {ceiling:,} entries at "
+                            f"a generous {MIN_ENTRY_BYTES} bytes each (real keywords cost "
+                            "several times that), so the window was cut to the largest equal "
                             "per-language window that could fit instead of building "
                             "millions of entries to throw them away. Pass max_mb=0 for no cap."
                         ),
@@ -690,33 +727,46 @@ def keyword_log(
     def _entry(s: tuple) -> dict:
         return entry_for(s, meta, lang_sig, is_hidden)
 
-    fam_items = []
-    sw_acc = _new_stopword_acc(is_hidden)
-    ring_acc = _new_ring_acc(is_hidden)
-    for s in survivors:
-        kw = _entry(s)
-        if not kw["hidden"]:
-            fam_items.append(
-                {
-                    "term": kw["term"],
-                    "normalized": kw["normalized"],
-                    "kind": kw["kind"],
-                    "mentions": kw["mentions"],
-                    "articles": kw["articles"],
-                }
-            )
-        okey = order_key(s[0], s[1], s[5] is not None)
-        mt = meta.get(s[0], ("?", "?", None, False, None))
-        sw_acc.feed(okey, s[1], s[2], s[5], mt)
-        ring_acc.feed(okey, s[1], s[2], s[5], mt)
-    families = [f.to_dict() for f in build_families(fam_items, overrides)]
+    # THE PHASE AFTER THE SCAN holds every survivor, its metadata and signature, the families'
+    # grouping and the digests at once (~2.1 KB per survivor, the measured cost): bounded by the
+    # languages, never by the corpus, but the largest instance reaches about a gigabyte here.
+    # The memory stop reads between steps, and a stop answers 503 with the numbers, as it does
+    # inside the scan.
+    try:
+        fam_items = []
+        sw_acc = _new_stopword_acc(is_hidden)
+        ring_acc = _new_ring_acc(is_hidden)
+        for i, s in enumerate(survivors):
+            if i % check_every == 0:
+                check()
+            kw = _entry(s)
+            if not kw["hidden"]:
+                fam_items.append(
+                    {
+                        "term": kw["term"],
+                        "normalized": kw["normalized"],
+                        "kind": kw["kind"],
+                        "mentions": kw["mentions"],
+                        "articles": kw["articles"],
+                    }
+                )
+            okey = order_key(s[0], s[1], s[5] is not None)
+            mt = meta.get(s[0], ("?", "?", None, False, None))
+            sw_acc.feed(okey, s[1], s[2], s[5], mt)
+            ring_acc.feed(okey, s[1], s[2], s[5], mt)
+        check()
+        families = [f.to_dict() for f in build_families(fam_items, overrides)]
+        check()
 
-    # Compact per-language stopword-candidate digest (reuses the survivors already
-    # built — zero extra DB cost) for the recursive "grow the not-a-keyword list" loop.
-    stopword_candidates = _stopword_doc(sw_acc.result())
-    # Compact ring-GAP digest (same survivors — zero extra DB cost) for the
-    # corpus-driven ring expansion + the translation-coverage self-check.
-    ring_candidates = _ring_doc(ring_acc.result())
+        # Compact per-language stopword-candidate digest (reuses the survivors already
+        # built — zero extra DB cost) for the recursive "grow the not-a-keyword list" loop.
+        stopword_candidates = _stopword_doc(sw_acc.result())
+
+        # Compact ring-GAP digest (same survivors — zero extra DB cost) for the
+        # corpus-driven ring expansion + the translation-coverage self-check.
+        ring_candidates = _ring_doc(ring_acc.result())
+    except StatementTimeout as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
     digest_note = (
         f" DIGEST MODE: the per-keyword list is the top {_DIGEST_SAMPLE} keywords by "
@@ -757,6 +807,7 @@ def keyword_log(
         else:
             yield ', "keywords": ['
             for i in range(0, len(survivors), 1000):
+                check()
                 chunk = survivors[i : i + 1000]
                 prefix = "" if i == 0 else ","
                 yield prefix + ",".join(
@@ -839,7 +890,18 @@ def keyword_log(
                 separators=(",", ":"),
             )
         else:
-            yield ', "families": ' + json.dumps(families, separators=(",", ":"))
+            # The same bytes as ``json.dumps(families)``, written a slice at a time: one dumps of
+            # every family built a second copy of them (the string) on the largest instance.
+            # A memory stop raised here ends the stream (the headers are sent already), which
+            # the reader sees as an incomplete download rather than a killed app.
+            yield ', "families": ['
+            for i in range(0, len(families), 1000):
+                check()
+                prefix = "" if i == 0 else ","
+                yield prefix + ",".join(
+                    json.dumps(f, separators=(",", ":")) for f in families[i : i + 1000]
+                )
+            yield "]"
         yield ', "overrides": ' + json.dumps(
             [{"normalized_term": term, **data} for term, data in sorted(overrides.items())],
             separators=(",", ":"),

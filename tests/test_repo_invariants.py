@@ -3193,7 +3193,7 @@ def test_diagnostics_panel_button_consolidation():
     # The "All keywords" button asks for NO size cap (2026-09-30): the archive is streamed to
     # disk a batch at a time, and a button called "All" that silently kept the top 9 MB was the
     # other half of the crash report.
-    assert "per_lang=1000000&amp;max_mb=0" in html
+    assert "per_lang=1000000000&amp;max_mb=0" in html  # a billion: every keyword of any language
     #   - source-quality + rollup-benchmark: explicitly named as surviving ACTIONS in
     #     the AMENDED ruling despite living in the same button row.
     assert "ooOpenUrl('/api/diagnostics/source-quality?download=1')" in html

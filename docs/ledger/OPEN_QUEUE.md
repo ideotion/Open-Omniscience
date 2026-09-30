@@ -52,15 +52,21 @@
   (one reservoir per language fed from `Ranker.add`, about 40 lines); it stays an option if the maintainer's uploads of the
   full file keep failing.
   (3) **`_LIGHT_DECLINED` still skips `keyword-log-digest.json`**, and its reason says why: the bounded export was measured only
-  on a synthetic corpus. **`R27` IS KEPT AND ACKNOWLEDGED (ACK R27, R28):** the gate for this one member is now sized from the
-  instance's own counts (articles, keyword id range, languages) times per-row costs that are each measured and pinned by a
-  tracemalloc test (`EXPORT_ENTRY_BYTES`, `EXPORT_FIXED_BYTES`), and is held against half of total RAM as before AND against the
-  memory available now minus the memory stop's floor; the static 200.0 MiB (was 3,322.8, the unbounded code) is the fallback
-  without a session. The field reason: bundle `091717` (14.65 M keywords) was killed inside the digest while its total read
-  6,773 MiB, above the line the old number implied. The performance report's `keyword_export_streamed` probe passes every
-  argument itself and goes through the same gate (it reports `skipped` with the reason). No bundle member was added. Whether
-  the light profile should run the member again after the operator's own `rss_peak_rise_kb` arrives is the maintainer's call
-  (R28 owns the profile).
+  on synthetic corpora. **`R27`'s TEXT IS KEPT (half of total RAM; ACK R27, R28 in the commit record that the rulings were read
+  before their file was touched, which is not permission), AND ONE DEFAULT IS TAKEN ON TOP OF IT, NOT YET RULED: the gate also
+  declines the digest when the memory available NOW minus the memory stop's floor cannot take the estimated need.** That goes
+  beyond R27's «half the machine's RAM» and sits beside R28 and the 2026-09-02 «the bundle runs every member» ruling; it is one
+  branch in `ram_declined_reason` to remove, and it exists because the field's killed bundle (`091717`) had 6,773 MiB of RAM but
+  2,280 MiB available. The need is sized from the instance's own counts (articles, keyword id range, languages) times per-row costs
+  (`EXPORT_ENTRY_BYTES` 2,750 B = the 2,500 B per exported keyword MEASURED by peak resident size on synthetic databases of 100,000,
+  205,000 and 410,000 entries, the last being the shape of the largest instance's export, plus ten per cent;
+  `EXPORT_FIXED_BYTES` 60 MiB against a measured intercept of 38 MiB; the Python-allocation halves are pinned by tracemalloc tests);
+  the static 200.0 MiB (was 3,322.8, the unbounded code) is the fallback without a session and is a 13-language reading. The
+  field reason: bundle `091717` (14.65 M keywords) was killed inside the digest while its total read 6,773 MiB, above the line
+  the old number implied. The performance report's `keyword_export_streamed` probe passes every argument itself and goes through
+  the same gate (it reports `skipped` with the reason, a third honest state beside measured and failed). No bundle member was
+  added. Whether the light profile should run the member again after the operator's own `rss_peak_rise_kb` arrives is the
+  maintainer's call (R28 owns the profile).
   (4) **The zip's families are grouped over the WHOLE window unless memory says otherwise.** `build_families` was quadratic
   (267 s for 16,000 multi-word entities, which is what had made the export group only the top 5,000); it now finds containment
   through a token index and is linear, compared with the old form on random entity sets (`tests/_families_pairwise_reference.py`).
@@ -70,11 +76,24 @@
   millions of tail entries; the manifest carries `window_clamped_to_fit_cap`.
   (5) **Disk.** The zip refuses, before writing a byte, an archive the drive cannot take (the window's keywords times a
   conservative zipped entry cost, 64 B against 9-15 B measured and 18-41 B in the maintainer's own logs, plus the reserve), with
-  the numbers (HTTP 507); the scratch archive and any spill are removed on every exit path, a 12 h sweep removes a killed
+  the numbers (HTTP 507). The ranking's spill is bounded like its heaps (a language never keeps more than twice its window on disk;
+  what ranks beyond it is deleted and never written again), is sized up front from the keyword table's id range and the
+  languages' windows, is watched after every 20,000 rows, and a full-disk error from SQLite itself is the same 507. Scratch
+  names come from `mkstemp` (two exports in one millisecond used to share one), a spill that fails while being set up removes its
+  file and closes its connection, and the archive response deletes its file however the exchange ends (a malformed or unsatisfiable
+  `Range` request made Starlette skip its background task and left the archive on disk). A 12 h sweep removes a killed
   process's leftovers, and nothing goes through the main database or its log.
   (6) **D22 (quarantined articles leave the counts):** the scan names its mention table in ONE constant
   (`MENTIONS_TABLE`); moving this export onto `KeywordMentionRead` is the keyword thread's one-line change there. The seam ratchet
-  (`tests/test_derived_read_seam.py`) was updated for it: `keyword_log_scan.py` at 1, `keywords.py` from 3 to 1.
+  (`tests/test_derived_read_seam.py`) now also counts a read written through the constant (`{MENTIONS_TABLE}`), which its literal
+  regex could not see: `keyword_log_scan.py` at 2 (the definition and the scan), `keyword_log_export.py` at 1 (the signature
+  probe), `keywords.py` from 3 to 1.
+  (6b) **After the scan the export is under the memory stop too.** The phase that holds every survivor, its metadata, the
+  families' grouping and the digests (about 1.1 GiB on the largest instance: 410,000 entries) reads the stop every 2,000
+  entries and between its steps, and answers 503 with the numbers, so a bundle records the digest as skipped and the route does
+  not get the machine killed; the plain JSON form writes its families a slice at a time (the same bytes as one `json.dumps`,
+  no second copy of them). `per_lang` no longer stops at 1,000,000 (the button sends a billion): a language with more keywords
+  than that came out partial from "All keywords", with only the manifest saying so.
   (7) **What is NOT covered:** the keyword-engine report (a 315 MB rise on the operator's 2026-09-11 bundle) and the
   keyword-growth member are not changed here and are not yet re-measured; the digest's real memory on the operator's own
   instance is unmeasured until their next FULL bundle; a page >= 2 of a capped, clamped window reports `continue_with: null`
@@ -833,7 +852,8 @@
   reading is 200.0 MiB (a synthetic corpus), and the gate for this member is sized from the
   instance's OWN counts times per-row costs that are each MEASURED (`EXPORT_ENTRY_BYTES`,
   `EXPORT_FIXED_BYTES`, pinned by tracemalloc tests), held against half of total RAM as before
-  AND against the memory available now minus the memory stop's floor. The rule above stands
+  AND against the memory available now minus the memory stop's floor (that second branch is a DEFAULT TAKEN, not
+  yet ruled: see the "All keywords" zip entry, item 3). The rule above stands
   for every other member: one that is not measured never declines; an estimator is added only
   to a member whose per-row costs have been measured and pinned.
 
@@ -993,7 +1013,9 @@
   (5) **the indexing session's inputs** (report §3.2 and the paste-ready §5.3): F4's checkout
   dates from the UNLOCK on all six; the slow INSERTs are execution, not lock waits; `R27`'s one
   constant declines the keyword-log digest on every machine under ~6.6 GB although it cost 434
-  to 874 MiB here (~317 B per keyword fits all six); `api_headroom_for` counts only collector
+  to 874 MiB here (~317 B per keyword fits all six) **[AMENDED 2026-09-30, #1277: the gate no
+  longer uses one constant; it is sized from the instance's own counts, see the "All keywords" zip entry
+  above]**; `api_headroom_for` counts only collector
   workers; Asus is a 67 % backlog machine for `D43` and `D46`; Insights reads take 15 to 86 s
   with collection paused. Handed over as evidence, not tasks;
   (6) **the temp directory was full during the bundle on Asus and the NUC** — cause unproven,

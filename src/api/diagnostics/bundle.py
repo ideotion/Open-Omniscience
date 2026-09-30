@@ -644,17 +644,23 @@ def _fixity_bundle_member(db: Session) -> dict:
 #: arrays, bounded heaps and a batch (src/analytics/keyword_log_scan.py), and on a synthetic
 #: corpus with the field's shape the digest's peak RSS RISE was 181 MiB at 2 M keywords and 186
 #: MiB at 6 M keywords (400,000 articles, 10 M mentions; the process idles at 79 MB). 200.0 is
-#: that, rounded up. THIS IS A SYNTHETIC-CORPUS READING: the operator's next FULL bundle records
-#: `rss_peak_rise_kb` for this member on the real corpus, and that number replaces this one.
+#: that, rounded up, for a corpus of 13 languages (65,000 exported entries). THIS IS A
+#: SYNTHETIC-CORPUS READING and the FALLBACK used only when no session is at hand: with one, the
+#: gate uses the estimate from the instance's own counts (82 languages x 5,000 entries measured
+#: 1,015 MiB). The operator's next FULL bundle records `rss_peak_rise_kb` for this member on the
+#: real corpus, and that number replaces these.
 _MEMBER_RSS_NEED_MB: dict[str, float] = {
     "keyword-log-digest.json": 200.0,
 }
 
 #: A member declines when its need exceeds this share of TOTAL RAM.
-#: Half, per R27's own words. It is self-limiting by construction: the one measured
-#: member needs 3,322.8 MiB, so it declines on a 4 GB machine and runs from ~6.6 GB up,
-#: which is the "below the floor" shape the ruling asks for without a second threshold
-#: to keep in step with the first.
+#: Half, per R27's own words. The keyword digest's need is no longer one constant: it is
+#: estimated from the instance's own counts (``_MEMBER_NEED_ESTIMATORS``), about 2.75 KB per
+#: exported keyword (2.5 KB measured at up to 410,000 entries, plus ten per cent). On the largest
+#: instance seen (14.65 M keywords, 1.83 M articles, about 82 languages) that is about 1,170 MiB,
+#: so a 4 GB machine with 2.5 GB free is admitted where the old 3,322.8 MiB (the unbounded
+#: builder, code that no longer exists) declined it. The "below the floor" shape the ruling asks
+#: for is still one threshold: half of total RAM, and then what is available now.
 _MEMBER_RAM_SHARE = 0.5
 
 
@@ -758,9 +764,10 @@ _LIGHT_DECLINED: dict[str, str] = {
         "it re-reads the whole keyword-mention table (37.7 s at 6 M keywords on a 4-core "
         "test machine) and measured a 3,322.8 MB peak RSS rise on the operator's 4 GB "
         "instance (finding F12) before the export was made memory-bounded. The bounded "
-        "export has only been measured on a synthetic corpus (about 190 MB), so the light "
-        "profile keeps skipping it until a FULL bundle on the operator's own machine "
-        "records its real rss_peak_rise_kb"
+        "export has only been measured on synthetic corpora (about 190 MB at 65,000 "
+        "exported keywords, about 1 GB at 410,000), so the light profile keeps skipping it "
+        "until a FULL bundle on the operator's own machine records its real "
+        "rss_peak_rise_kb"
     ),
     "source-audit.json": (
         "measured 297.9 s on the operator's instance, and the ledger already records it as "
@@ -1999,9 +2006,17 @@ def _write_all_diagnostics_zip(
                 outcome = "skipped-deadline"
                 zf.writestr(name + ".skipped-deadline.txt", _all_diag_err_str(exc))
             except Exception as exc:  # noqa: BLE001 - one failing member must not abort the bundle
-                outcome = "error"
-                err = _all_diag_err_str(exc)
-                zf.writestr(name + ".error.txt", err)
+                # A member that calls its route function answers a deadline or a memory stop as
+                # an HTTPException(503) CHAINED to the typed abort: that is the same "skipped"
+                # an in-process member reports (MemoryShort promises it), not an error.
+                cause = exc.__cause__ if isinstance(exc, HTTPException) else None
+                if isinstance(cause, StatementTimeout):
+                    outcome = "skipped-deadline"
+                    zf.writestr(name + ".skipped-deadline.txt", _all_diag_err_str(cause))
+                else:
+                    outcome = "error"
+                    err = _all_diag_err_str(exc)
+                    zf.writestr(name + ".error.txt", err)
 
             wall_s = round(_time.time() - started_t, 3)
             rss_after = _rss.kb()

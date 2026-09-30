@@ -295,6 +295,206 @@ def test_the_spill_starts_only_past_the_budget_and_a_refusing_disk_stops_it_firs
     assert _leftovers(tmp_path) == []  # refused BEFORE a file existed
 
 
+def _window_reference(rows: list[tuple], lo: int, hi: int) -> list[int]:
+    """The documented order (mention-bearing by mentions desc then id asc, orphans by id asc)."""
+    ordered = sorted(rows, key=lambda r: (0 if r[2] is None else 1, r[1], -r[0]), reverse=True)
+    return [r[0] for r in ordered[lo:hi]]
+
+
+def test_the_spill_holds_twice_the_window_per_language_never_the_keyword_table(tmp_path):
+    """A window of 5 over 30 languages wrote EVERY keyword to disk once the ranking had spilled
+    (1.2-1.7 GB at 14.65 M keywords, against a check sized for the rows held at the switch). The
+    rows beyond a language's window are pruned, and a row that cannot rank inside it is never
+    written; what the window reads back is what the heaps would have kept."""
+    rnd = random.Random(3)
+    r = kls.Ranker(0, 5, heap_rows=100, spill_dir=tmp_path, disk_check=None)
+    by_lang: dict[str, list[tuple]] = {}
+    n_lang, per = 30, 2_000
+    for i in range(n_lang * per):
+        lg = f"l{i % n_lang}"
+        kid = i + 1
+        orphan = rnd.random() < 0.4
+        m = 0 if orphan else rnd.choice([1, 1, 2, 3, 50, rnd.randrange(1, 10_000)])
+        row = (kid, m, None if orphan else "en")
+        by_lang.setdefault(lg, []).append(row)
+        r.add(lg, kid, m, 1, None, None, None if orphan else "en")
+    try:
+        assert r.spilled
+        r._flush()
+        assert r._con is not None
+        on_disk = r._con.execute("SELECT COUNT(*) FROM kw").fetchone()[0]
+        assert on_disk <= n_lang * 2 * 5, on_disk  # two windows per language, not 60,000 rows
+        for lg, rows in by_lang.items():
+            assert [row[0] for row in r.rows(lg)] == _window_reference(rows, 0, 5), lg
+            assert r.totals()[lg] == per  # what was SEEN is still counted whole
+    finally:
+        r.close()
+    assert _leftovers(tmp_path) == []
+
+
+def test_a_window_that_starts_past_zero_still_reads_the_same_after_pruning(tmp_path):
+    rnd = random.Random(4)
+    r = kls.Ranker(7, 20, heap_rows=10, spill_dir=tmp_path, disk_check=None)
+    rows = []
+    for kid in range(1, 4_001):
+        m = rnd.randrange(0, 40)  # heavy ties
+        rows.append((kid, m, None if m == 0 else "en"))
+        r.add("en", kid, m, 1, None, None, None if m == 0 else "en")
+    try:
+        assert r.spilled
+        assert [row[0] for row in r.rows("en")] == _window_reference(rows, 7, 20)
+    finally:
+        r.close()
+
+
+def test_the_disk_is_watched_while_the_ranking_spills_not_only_before_it(tmp_path):
+    flushes = {"n": 0}
+
+    def watch() -> None:
+        flushes["n"] += 1
+        if flushes["n"] >= 3:
+            raise kls.ExportRefused("the drive is full", status=507)
+
+    r = kls.Ranker(0, 10**9, heap_rows=10, spill_dir=tmp_path, disk_check=None, disk_watch=watch)
+    with pytest.raises(kls.ExportRefused) as err:
+        for kid in range(1, 200_000):
+            r.add("en", kid, 1, 1, None, None, "en")
+    assert err.value.status == 507 and flushes["n"] == 3
+    r.close()
+    assert _leftovers(tmp_path) == []
+
+
+class _FullDiskConnection:
+    """A connection that writes like a drive with no room left (SQLITE_FULL)."""
+
+    def __init__(self, real: sqlite3.Connection) -> None:
+        self._real = real
+
+    def execute(self, sql, *args):
+        return self._real.execute(sql, *args)
+
+    def executemany(self, *_a):
+        raise sqlite3.OperationalError("database or disk is full")
+
+    def close(self) -> None:
+        self._real.close()
+
+
+def test_a_full_disk_reported_by_sqlite_is_a_507_not_a_server_error(tmp_path):
+    r = kls.Ranker(0, 10**9, heap_rows=3, spill_dir=tmp_path, disk_check=None)
+    for kid in range(1, 5):
+        r.add("en", kid, 1, 1, None, None, "en")
+    assert r.spilled
+    r._con = _FullDiskConnection(r._con)  # type: ignore[assignment]
+    with pytest.raises(kls.ExportRefused) as err:
+        for kid in range(5, 100_000):
+            r.add("en", kid, 1, 1, None, None, "en")
+    assert err.value.status == 507 and "ran out of room" in str(err.value)
+    r.close()
+    assert _leftovers(tmp_path) == []
+
+
+def test_an_error_that_is_not_a_full_disk_is_not_renamed(tmp_path):
+    class Broken(_FullDiskConnection):
+        def executemany(self, *_a):
+            raise sqlite3.OperationalError("no such table: kw")
+
+    r = kls.Ranker(0, 10**9, heap_rows=3, spill_dir=tmp_path, disk_check=None)
+    for kid in range(1, 5):
+        r.add("en", kid, 1, 1, None, None, "en")
+    r._con = Broken(r._con)  # type: ignore[assignment]
+    with pytest.raises(sqlite3.OperationalError, match="no such table"):
+        for kid in range(5, 100_000):
+            r.add("en", kid, 1, 1, None, None, "en")
+    r.close()
+
+
+def test_the_up_front_check_is_sized_from_the_keywords_there_are(tmp_path):
+    """The check at the switch used the rows HELD then (a few MB); it now sizes the file from
+    every keyword the table can hold, and from the languages' two windows when those are fewer."""
+    asked: list[int] = []
+    r = kls.Ranker(0, 10**9, heap_rows=5, spill_dir=tmp_path, disk_check=asked.append,
+                   expected_rows=1_000_000)
+    for kid in range(1, 8):
+        r.add("en", kid, 1, 1, None, None, "en")
+    r.close()
+    assert asked == [1_000_000 * kls.SPILL_ROW_BYTES]
+
+    asked.clear()
+    r = kls.Ranker(0, 5, heap_rows=3, spill_dir=tmp_path, disk_check=asked.append,
+                   expected_rows=1_000_000)
+    for kid in range(1, 8):
+        r.add("en", kid, 1, 1, None, None, "en")
+    r.close()
+    # the switch comes with 4 rows held, one language, a window of 5: two windows = 10 rows
+    assert asked == [10 * kls.SPILL_ROW_BYTES]
+
+
+def test_a_ranker_told_no_folder_spills_to_the_temp_folder_instead_of_growing(tmp_path, monkeypatch):
+    import tempfile
+
+    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
+    r = kls.Ranker(0, 10**9, heap_rows=5, spill_dir=None, disk_check=None)
+    for kid in range(1, 20):
+        r.add("en", kid, 1, 1, None, None, "en")
+    try:
+        assert r.spilled and len(_leftovers(tmp_path)) == 1
+    finally:
+        r.close()
+    assert _leftovers(tmp_path) == []
+
+
+def test_a_failed_spill_setup_leaves_neither_a_file_nor_an_open_connection(tmp_path, monkeypatch):
+    closed: list[int] = []
+
+    class Proxy:
+        def __init__(self, real):
+            self._real = real
+
+        def execute(self, sql, *a):
+            if sql.startswith("CREATE INDEX"):
+                raise sqlite3.OperationalError("database or disk is full")
+            return self._real.execute(sql, *a)
+
+        def close(self):
+            closed.append(1)
+            self._real.close()
+
+    real_connect = sqlite3.connect
+    monkeypatch.setattr(kls.sqlite3, "connect", lambda *a, **k: Proxy(real_connect(*a, **k)))
+    r = kls.Ranker(0, 10**9, heap_rows=2, spill_dir=tmp_path, disk_check=None)
+    with pytest.raises(kls.ExportRefused):
+        for kid in range(1, 10):
+            r.add("en", kid, 1, 1, None, None, "en")
+    assert closed == [1] and _leftovers(tmp_path) == []
+    r.close()
+
+
+def test_scratch_names_cannot_collide_even_in_the_same_millisecond(tmp_path, monkeypatch):
+    """Names used to be pid + millisecond: two exports in one millisecond shared a file (one got
+    "database is locked", or one deleted the other's archive once it had been sent)."""
+    import time
+    from types import SimpleNamespace
+
+    monkeypatch.setattr(time, "time", lambda: 1_700_000_000.0)
+    rankers = [kls.Ranker(0, 10**9, heap_rows=2, spill_dir=tmp_path, disk_check=None) for _ in range(2)]
+    for r in rankers:
+        for kid in range(1, 6):
+            r.add("en", kid, 1, 1, None, None, "en")
+    assert rankers[0]._path != rankers[1]._path and len(_leftovers(tmp_path)) == 2
+    rankers[0].close()
+    assert len(_leftovers(tmp_path)) == 1  # closing one never removes the other's
+    rankers[1].close()
+    assert _leftovers(tmp_path) == []
+
+    fake = SimpleNamespace(out_dir=tmp_path)
+    a, b = kle.ZipJob._path(fake), kle.ZipJob._path(fake)  # type: ignore[arg-type]
+    assert a != b and a.exists() and b.exists()
+    kle.unlink_quietly(a)
+    assert b.exists()
+    kle.unlink_quietly(b)
+
+
 def test_memory_plan_sizes_from_what_is_available_and_never_guesses_when_unread():
     floor = kls.memory_plan(None)
     assert floor["heap_rows"] == kls.MIN_HEAP_ROWS and floor["batch"] == 800
@@ -362,13 +562,12 @@ def test_family_row_budget_constant_matches_the_measured_size():
     assert per_entry + 500 >= kls.FAMILY_ROW_BYTES * 0.4, per_entry
 
 
-def test_export_entry_constant_matches_the_measured_size(tmp_path, monkeypatch):
-    """EXPORT_ENTRY_BYTES turns an instance's keyword count into the memory the digest needs, which
-    the bundle gate compares with the machine (R27). Measured here on the digest path, the one the
-    bundle runs: the constant must cover the peak per exported entry, and must not sit so far above
-    it that the gate refuses machines that could run the export."""
+def _digest_peak(tmp_path, monkeypatch, *, keywords: int, seed: int) -> tuple[int, int]:
+    """(peak Python allocation, entries exported) of the bundle's digest over one corpus."""
     from src.api.diagnostics.keywords import keyword_log
 
+    tmp_path = tmp_path / f"run{keywords}"
+    tmp_path.mkdir(exist_ok=True)
     monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
 
     def digest(db) -> bytes:
@@ -380,8 +579,8 @@ def test_export_entry_constant_matches_the_measured_size(tmp_path, monkeypatch):
     digest(db)  # lazy tables a first export loads are not this export's own memory
     db.close()
 
-    p = tmp_path / "entry.db"
-    _build(p, 9, articles=300, keywords=15_000, with_boilerplate=False)
+    p = tmp_path / f"entry{keywords}.db"
+    _build(p, seed, articles=300, keywords=keywords, with_boilerplate=False)
     db = _session(p)
     try:
         gc.collect()
@@ -394,10 +593,57 @@ def test_export_entry_constant_matches_the_measured_size(tmp_path, monkeypatch):
         exported = json.loads(body)["data"]["corpus"]["keywords_exported"]
     finally:
         db.close()
-    assert exported > 10_000
-    per_entry = peak / exported
-    assert per_entry <= kls.EXPORT_ENTRY_BYTES, per_entry
-    assert per_entry >= kls.EXPORT_ENTRY_BYTES * 0.5, per_entry
+    return peak, exported
+
+
+def test_export_entry_constant_matches_the_measured_size(tmp_path, monkeypatch):
+    """EXPORT_ENTRY_BYTES turns an instance's keyword count into the memory the digest needs, which
+    the bundle gate compares with the machine (R27). Measured here on the digest path, the one the
+    bundle runs, as the SLOPE between two corpus sizes (so the fixed part does not hide in it): the
+    constant must cover the peak per exported entry, and must not sit so far above it that the
+    gate refuses machines that could run the export. (Resident size at 100k-410k entries is
+    measured out of process: see the constant's comment.)"""
+    small_peak, small_n = _digest_peak(tmp_path, monkeypatch, keywords=12_000, seed=9)
+    big_peak, big_n = _digest_peak(tmp_path, monkeypatch, keywords=30_000, seed=10)
+    assert small_n > 8_000 and big_n > small_n * 1.5
+    slope = (big_peak - small_peak) / (big_n - small_n)
+    assert slope <= kls.EXPORT_ENTRY_BYTES, slope
+    assert slope >= kls.EXPORT_ENTRY_BYTES * 0.5, slope
+
+
+def test_export_fixed_constant_covers_the_measured_intercept(tmp_path, monkeypatch):
+    """The part of the export's memory that does not grow with the corpus (EXPORT_FIXED_BYTES) is
+    the intercept of the same two-size fit. On the Python-allocation basis it is about zero (the
+    export's own structures all scale with the entries); the 38 MiB the RESIDENT size shows is the
+    SQLite page cache, the allocator's arenas and the interpreter, which tracemalloc cannot see and
+    which the out-of-process measurement in the constant's comment pins. What this test keeps is
+    the half it can see: no Python structure that grows with the corpus hides in the constant."""
+    small_peak, small_n = _digest_peak(tmp_path, monkeypatch, keywords=12_000, seed=9)
+    big_peak, big_n = _digest_peak(tmp_path, monkeypatch, keywords=30_000, seed=10)
+    slope = (big_peak - small_peak) / (big_n - small_n)
+    intercept = small_peak - slope * small_n
+    assert intercept <= kls.EXPORT_FIXED_BYTES, intercept
+
+
+def test_spill_row_constant_covers_the_measured_file_size(tmp_path):
+    """SPILL_ROW_BYTES sizes the free-space check. Measured as the spill file's size per row with
+    the rank index in place, on rows shaped like mention-bearing keywords with real-looking dates."""
+    import os
+
+    rnd = random.Random(2)
+    dates = [f"2026-0{m}-1{d}" for m in range(1, 10) for d in range(10)]
+    r = kls.Ranker(0, 10**9, heap_rows=10, spill_dir=tmp_path, disk_check=None)
+    n = 60_000
+    for kid in range(1, n + 1):
+        r.add(f"l{kid % 40}", kid, rnd.randrange(1, 5000), rnd.randrange(1, 900),
+              rnd.choice(dates), rnd.choice(dates), "en")
+    try:
+        r._flush()
+        per_row = os.path.getsize(r._path) / n
+    finally:
+        r.close()
+    assert per_row <= kls.SPILL_ROW_BYTES, per_row
+    assert per_row >= kls.SPILL_ROW_BYTES / 3, per_row  # not sized to refuse a drive that has room
 
 
 def _counted(path: Path):
@@ -594,20 +840,65 @@ def test_a_byte_cap_trims_and_every_keyword_is_accounted_for(dbs, data_dir):
     db.close()
 
 
-def test_the_trim_loop_keeps_going_until_the_archive_fits(dbs, data_dir):
-    """Not "at most eight rebuilds": a cap a few rounds away is still reached."""
+def test_the_trim_loop_keeps_going_until_the_archive_fits(tmp_path):
+    """Not "at most eight rebuilds": a cap many rounds away is still reached. A stand-in archive
+    with deflate's real shape (a fixed part the trim cannot touch plus a part per kept keyword)
+    needs ten rounds to get from 1,000 keywords to the 5 that fit under a cap 200 bytes above
+    the fixed part, so a loop of one round, or of the eight the old code allowed, fails here."""
+
+    class Job:
+        max_bytes = 5_200
+
+        def __init__(self) -> None:
+            self.writes: list[tuple[dict, dict]] = []
+
+        def write(self, keep, omitted):
+            self.writes.append((dict(keep), dict(omitted)))
+            path = tmp_path / f"a{len(self.writes)}.zip"
+            path.write_bytes(b"x" * (5_000 + 40 * sum(keep.values())))
+            return path
+
+    job = Job()
+    path = kle.finish_zip(job, {"en": 600, "fr": 400}, {})  # type: ignore[arg-type]
+    assert path.stat().st_size <= Job.max_bytes
+    assert len(job.writes) > 9  # one build plus ten trims: more than the old eight-round guard
+    keep, omitted = job.writes[-1]
+    assert sum(keep.values()) + sum(omitted.values()) == 1_000  # every dropped keyword is counted
+    assert [p.name for p in tmp_path.iterdir()] == [path.name]  # each earlier archive was removed
+
+
+def test_a_cap_several_rounds_away_is_reached_end_to_end(dbs, data_dir, monkeypatch):
+    """The real writer, not a stand-in: a cap at 60 % of the whole archive is reached by trimming
+    every language's tail over several rebuilds, and every dropped keyword is counted. (The
+    summary is computed once over the first round's window and is never trimmed, so a cap below
+    it cannot be met: that case is the next test.)"""
     db = _session(dbs[1])
-    full = _zip(_call(db))
-    whole = sum(len(v) for v in full.values())
-    cap_mb = max(0.0005, whole / 2**20 / 50)
-    resp = _call(db, max_mb=cap_mb)
+    full = _call(db)
+    whole = Path(full.path).stat().st_size
+    kle.unlink_quietly(Path(full.path))
+    # A cap no archive can meet trims every language to one keyword and stops: what is left is the
+    # summary (and manifest) of the window, the part the trim cannot touch. A cap halfway between
+    # that and the whole archive is reachable, and a few rebuilds away.
+    unreachable = _call(db, max_mb=whole * 0.3 / 2**20)
+    floor = Path(unreachable.path).stat().st_size
+    kle.unlink_quietly(Path(unreachable.path))
+    cap = floor + (whole - floor) // 2
+    assert floor < cap < whole
+
+    writes: list[int] = []
+    real_write = kle.ZipJob.write
+
+    def counting(self, keep, omitted):
+        writes.append(sum(keep.values()))
+        return real_write(self, keep, omitted)
+
+    monkeypatch.setattr(kle.ZipJob, "write", counting)
+    resp = _call(db, max_mb=cap / 2**20)
     size = Path(resp.path).stat().st_size
-    cap = max(256, int(cap_mb * 2**20))
-    members = _zip(resp)
-    summary = len(members["summary.json"]) + len(members["manifest.json"])
-    man = json.loads(members["manifest.json"])
-    assert man["keywords_omitted_to_fit"] > 0
-    assert size <= cap or summary > cap * 0.5, (size, cap, summary)
+    man = json.loads(_zip(resp)["manifest.json"])
+    assert size <= man["max_bytes"] <= cap, (size, man["max_bytes"], cap)
+    assert man["keywords_omitted_to_fit"] > 0 and len(writes) >= 3, writes
+    assert writes == sorted(writes, reverse=True) and len(set(writes)) == len(writes)  # each round smaller
     db.close()
 
 
@@ -684,6 +975,107 @@ def test_an_empty_corpus_exports_an_empty_archive_and_empty_streams(tmp_path, da
         assert doc["data"]["corpus"]["keywords_exported"] == 0
     assert _leftovers(data_dir) == []
     db.close()
+
+
+def test_the_json_stream_writes_the_families_exactly_as_one_dumps_would(tmp_path, data_dir):
+    """The families are written a slice at a time (one dumps of all of them built a second copy
+    of them on the largest instance); the bytes are the ones ``json.dumps`` gives."""
+    p = tmp_path / "fam.db"
+    _build(p, 2, articles=200, keywords=3_000)
+    db = _session(p)
+    body = _drain_body(_call(db, fmt="json", digest=False, per_lang=5000, max_mb=None)).decode()
+    doc = json.loads(body)
+    assert len(doc["data"]["families"]) > 1000  # more than one slice, so the joins are exercised
+    assert ', "families": ' + json.dumps(doc["data"]["families"], separators=(",", ":")) in body
+    db.close()
+
+
+def test_the_json_stream_with_no_families_still_writes_an_empty_list(tmp_path, data_dir):
+    path = tmp_path / "nofam.db"
+    eng = create_engine(f"sqlite:///{path}")
+    Base.metadata.create_all(eng)
+    eng.dispose()
+    db = _session(path)
+    body = _drain_body(_call(db, fmt="json", digest=False, per_lang=5000, max_mb=None)).decode()
+    assert ', "families": []' in body and json.loads(body)["data"]["families"] == []
+    db.close()
+
+
+@pytest.mark.parametrize("digest", [False, True])
+def test_memory_running_out_after_the_scan_stops_the_json_and_digest_forms_with_a_503(
+    dbs, data_dir, monkeypatch, digest
+):
+    """The phase that holds every survivor, its metadata and the families at once (about a
+    gigabyte on the largest instance) was outside the memory stop: only the gate guarded it. The
+    stop is read between its steps and answers 503 with the numbers."""
+    import src.api.diagnostics.keywords as kw_mod
+    from src.database.maintenance import MemoryShort
+
+    state = {"after_scan": False, "checks_after": 0}
+    real = kw_mod.build_families
+
+    def families(items, overrides):
+        state["after_scan"] = True
+        return real(items, overrides)
+
+    def stop(*, started=None):
+        if state["after_scan"]:
+            state["checks_after"] += 1
+            raise MemoryShort("only 40 MB of memory is available, the floor is 300 MB")
+
+    monkeypatch.setattr(kw_mod, "build_families", families)
+    monkeypatch.setattr(kw_mod, "raise_if_memory_short", stop)
+    db = _session(dbs[1])
+    with pytest.raises(HTTPException) as err:
+        _call(db, fmt="json", digest=digest, per_lang=5000, max_mb=None)
+    assert err.value.status_code == 503 and "MB" in str(err.value.detail)
+    assert state["checks_after"] == 1 and _leftovers(data_dir) == []
+    db.close()
+
+
+def test_the_survivor_phase_reads_the_memory_stop_as_it_goes_not_only_at_its_ends(
+    tmp_path, data_dir, monkeypatch
+):
+    import src.api.diagnostics.keywords as kw_mod
+
+    p = tmp_path / "many.db"
+    _build(p, 9, articles=200, keywords=9_000, with_boilerplate=False)
+    reads = {"n": 0}
+    monkeypatch.setattr(kw_mod, "raise_if_memory_short", lambda *, started=None: reads.update(n=reads["n"] + 1))
+    db = _session(p)
+    doc = json.loads(_drain_body(_call(db, fmt="json", digest=True, per_lang=5000, max_mb=None)))
+    survivors = doc["data"]["corpus"]["keywords_exported"]
+    assert survivors > 4_000
+    assert reads["n"] >= survivors // 2_000  # at least one read per 2,000 survivors
+    db.close()
+
+
+@pytest.mark.parametrize(
+    "headers",
+    [
+        [(b"range", b"bytes=99999999-")],  # unsatisfiable: Starlette answers 416 and skips its background task
+        [(b"range", b"bytes=abc")],  # malformed: 400
+        [(b"range", b"bytes=0-9")],  # partial: 206
+        [],
+    ],
+)
+def test_the_scratch_archive_is_deleted_whatever_the_request_asked_for(dbs, data_dir, headers):
+    resp = _call(_session(dbs[0]))
+    path = Path(resp.path)
+    assert path.exists()
+    sent: list[dict] = []
+
+    async def _send() -> None:
+        async def receive() -> dict:
+            return {"type": "http.disconnect"}
+
+        async def send(m: dict) -> None:
+            sent.append(m)
+
+        await resp({"type": "http", "method": "GET", "headers": headers}, receive, send)
+
+    asyncio.run(_send())
+    assert not path.exists() and _leftovers(data_dir) == []
 
 
 def test_the_digest_and_the_json_stream_keep_their_shape(dbs, data_dir):
@@ -905,8 +1297,9 @@ def test_what_the_zip_holds_does_not_grow_with_the_window(tmp_path_factory, monk
 
 
 def test_the_old_builders_per_keyword_cost_would_have_failed_that_bound():
-    """Keeps the bound above honest: 24,000 entry dicts of the shape the old builder held for
-    EVERY keyword of the window weigh far more than the bound allows."""
+    """A calibration of the bound above, not a test of the code: 24,000 entry dicts of the shape
+    the old builder held for EVERY keyword of the window weigh far more than the bound allows, so
+    the bound is tight enough to have caught the defect it guards against."""
     def hold() -> None:
         entries = [
             {"term": f"term{i}", "normalized": f"term{i}", "kind": "term", "language": "en",

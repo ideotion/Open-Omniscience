@@ -57,6 +57,7 @@ from ._base import (
 )
 from .keywords import (
     _ZIP_HOOKS,
+    _ScratchFileResponse,
     _DIGEST_SAMPLE,
     _RING_CAND_MIN_ARTICLES,
     _RING_CAND_PER_LANG,
@@ -478,6 +479,7 @@ __all__ = [
     "_profile_block",
     "_write_member_omission",
     "_ZIP_HOOKS",
+    "_ScratchFileResponse",
     "ai_activity",
     "ai_activity_selftest",
     "ai_check_cancel",
