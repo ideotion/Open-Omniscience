@@ -666,9 +666,9 @@ comment is amended in the same change); the 91 collision terms get "several sens
 the `reconcile_keyword_language` pass **runs in this gate** (Q413 — the report is the artifact); language
 stored per mention with the keyword's language derived as the majority (Q414); `simplemma` in core, lemmatise
 at extraction, a migration job re-normalises existing keywords (Q416); the hover bubble contents (Q418).
-**HELD:** the triage-derived stoplist merge — Q1103 = b ("Never; the shipped stoplists are frozen", with a
+**RELEASED 2026-09-30 (R98, D11):** the triage-derived stoplist merge — Q1103 = b ("Never; the shipped stoplists are frozen", with a
 note asking for a stopword diagnostic and per-release growth) against Q1104 = a ("Yes, through the review
-surface, batch by batch") is a recorded CONFLICT; the row ships without any merge until the maintainer picks,
+surface, batch by batch") was a recorded CONFLICT; the maintainer ruled the lists grow in reviewed batches, and the row ships the merge through a Settings review screen,
 and the stopword DIAGNOSTIC the note asks for may ship (it decides nothing). **Closes when** every keyword
 surface renders a tier tag (a Chromium click-through record across the eleven silent surfaces), the reconcile
 report exists, a fixture proves the 10 s spacing and the refusal on the kill switch, and `simplemma` is in
@@ -1076,8 +1076,8 @@ Kept explicit so nothing drifts in by assumption:
 - ~~**The four ⛔ questions left blank** — Q823 (ODbL), Q925 (adapter order), Q1009 (storage round-2 rows
   3–6), Q1113 (the embassy platforms) — are not decided here and not defaulted anywhere.~~ All four answered
   2026-09-29 (a, a, a, a), recorded in `RULINGS_INDEX.md` and §3.
-- **The stoplist merge** (Q1103 = b vs Q1104 = a, a CONFLICT recorded 2026-09-15) — held until the
-  maintainer picks; row M ships without it.
+- **The stoplist merge** (Q1103 = b vs Q1104 = a, a CONFLICT recorded 2026-09-15) — RESOLVED 2026-09-30
+  (R98): reviewed batches through a Settings review screen; row M ships with it.
 - **Row 5's Tier B** (the 451 index pages above the word guard). Not proposed for `0.3` and not
   proposed here: their prose is unmeasured. The `0.3` PR made that measurable
   (`criteria-calibration.json`'s prose arm now advances and can be pointed at that population),
