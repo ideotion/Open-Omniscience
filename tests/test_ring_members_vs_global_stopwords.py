@@ -163,15 +163,16 @@ def test_the_podcast_ring_is_shown_in_its_own_languages_and_stays_furniture_else
         assert "podcast" in _stopset(lang), lang
 
 
-# The 34 ring members R102 shows again, by language. Explicit on purpose: it is the list the
+# The 30 ring members R102 shows again, by language. Explicit on purpose: it is the list the
 # maintainer was promised in the pull request, and a ring or stoplist change that moves it
-# should be read, not absorbed.
+# should be read, not absorbed. It was 34 until the maintainer's answer 12 = a kept four of the
+# fourteen proposed words hidden: German "all", Spanish "are", English "bio" and "uno".
 _EXEMPT = {
     "ar": {"o"},
     "bn": {"u"},
-    "de": {"all", "bio", "os", "podcast", "re", "un", "uno"},
-    "en": {"bio", "os", "u", "un", "uno", "war"},
-    "es": {"are", "az", "so"},
+    "de": {"bio", "os", "podcast", "re", "un", "uno"},
+    "en": {"os", "u", "un", "war"},
+    "es": {"az", "so"},
     "fr": {"dette", "jo", "os", "photo", "podcast"},
     "id": {"so", "u"},
     "ja": {"o", "os"},
@@ -182,7 +183,7 @@ _EXEMPT = {
 def test_the_exempted_ring_members_are_exactly_the_promised_list():
     got = {lang: set(words) for lang, words in ring_member_exemptions().items()}
     assert got == _EXEMPT
-    assert sum(len(w) for w in got.values()) == 34
+    assert sum(len(w) for w in got.values()) == 30
 
 
 def test_a_word_its_own_language_stoplists_stays_hidden():
@@ -192,6 +193,18 @@ def test_a_word_its_own_language_stoplists_stays_hidden():
     assert "tout" in _stopset("fr") and "tout" in global_stopwords()
     assert "work" in _stopset("en") and "work" in global_stopwords()
 
+
+def test_the_four_words_the_maintainer_kept_hidden_stay_hidden():
+    """Answer 12 = a: German "all", Spanish "are", English "bio" and "uno" are hidden, by
+    putting each in its OWN language's curated list (which the exemption rule already
+    respects). German "bio"/"uno" are German content and stay shown."""
+    for lang, word in (("de", "all"), ("es", "are"), ("en", "bio"), ("en", "uno")):
+        assert word in _stopset(lang), (lang, word)
+        assert word not in ring_member_exemptions().get(lang, ()), (lang, word)
+    # The query layer has no language: "bio"/"uno" stay out of it because German still shows
+    # them (a keyword only reaches the store through extraction, which hides them in English).
+    assert "all" in global_stopwords() and "are" in global_stopwords()
+    assert "bio" not in _stopset("de") and "uno" not in _stopset("de")
 
 def test_the_same_spelling_is_content_in_one_language_and_grammar_in_another():
     """The whole point, on real text through the real extractor: French 'dette' (debt) is
@@ -203,7 +216,7 @@ def test_the_same_spelling_is_content_in_one_language_and_grammar_in_another():
     assert "dette" in fr
     assert "dette" not in da
     en = {t.term for t in b._terms("the war and the bio", "en")}
-    assert {"war", "bio"} <= en  # English 'war' was hidden by the German grammar word 'war'
+    assert "war" in en and "bio" not in en  # 'bio' is one of the four kept hidden (12 = a)  # English 'war' was hidden by the German grammar word 'war'
     de = {t.term for t in b._terms("Er war da", "de")}
     assert "war" not in de  # German keeps its own grammar word out
 

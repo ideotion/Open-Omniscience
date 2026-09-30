@@ -8,6 +8,7 @@
 # that justified each addition -- preserved verbatim from the original inline comments.
 stopwords:
   - aber
+  - all
   - alle
   - als
   - am

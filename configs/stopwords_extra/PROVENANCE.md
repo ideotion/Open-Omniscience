@@ -320,3 +320,18 @@ that script, so this class cannot regrow silently. It is honest about its own re
 can say nothing about the Latin-script files, because Polish in `pl.yml` and Polish in
 `en.yml` look identical to a script check. That half of the class stays uncaught, and the
 test says so rather than implying whole coverage.
+
+---
+
+## Four ring members kept hidden (2026-09-30, R102 / D24, the maintainer's answer 12 = a)
+
+D24 exempted 38 ring members from the language-agnostic union, so a word hidden only by
+ANOTHER language's list shows again in the language whose ring names it. The maintainer was
+shown the list and asked to keep four of the proposed words hidden: German `all` (`de.yml`),
+Spanish `are` (`es.yml`) and English `bio` and `uno` (`en.yml`). Putting each in its OWN
+language's file is what keeps it hidden, because the exemption rule already refuses to lift
+a word its own language stoplists. `bio` and `uno` were already in the union through other
+files; `all` and `are` are new to it, which is why
+`tests/test_analytics_extract.py` declares them in `added_since_migration`. German `bio` and
+`uno` stay shown. No corpus evidence backs these four: they are a stated preference, recorded
+as one.

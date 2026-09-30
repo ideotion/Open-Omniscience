@@ -234,6 +234,11 @@ def test_extra_stopwords_migration_is_byte_identical_to_the_pre_migration_blob()
         # left/life/put: configs/stopwords_extra/PROVENANCE.md.
         "added", "best", "down", "end", "every", "find", "hours", "look", "read", "set",
         "went",
+        # R102 / D24, the maintainer's answer 12 = a (2026-09-30): German "all" and Spanish
+        # "are" stay hidden in their own language (they are in the vendored English list but
+        # were not in the extras union); English "bio" and "uno" went into en.yml too but
+        # other files already held them.
+        "all", "are",
     })
     assert added_since_migration <= _EXTRA_STOPWORDS, (
         "a declared post-migration addition is missing from the data files"
