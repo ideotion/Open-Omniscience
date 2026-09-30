@@ -287,6 +287,56 @@ def merge_batches(limit: int = 20) -> dict:
 
 
 # --------------------------------------------------------------------------- #
+# Differences from restores (R61, item 12): the other value a restore brought for a deduced
+# item this corpus already had. Local values are never touched by a restore; these routes are
+# the operator's explicit choices about them. See src/backup/alternates.py.
+# --------------------------------------------------------------------------- #
+def _alt_call(fn, *args, **kwargs) -> dict:
+    from src.backup.alternates import AlternateError
+    from src.database.session import get_session
+
+    s = get_session()
+    try:
+        return fn(s, *args, **kwargs)
+    except AlternateError as exc:
+        raise HTTPException(status_code=exc.status, detail=str(exc)) from exc
+    finally:
+        s.close()
+
+
+@router.get("/alternates")
+def alternates_list(
+    status: str = Query("pending", pattern="^(pending|kept|all)$"),
+    limit: int = 50,
+    offset: int = 0,
+) -> dict:
+    from src.backup.alternates import list_alternates
+
+    return _alt_call(list_alternates, status=status, limit=limit, offset=offset)
+
+
+@router.post("/alternates/batch/{batch_id}/discard")
+def alternates_discard_batch(batch_id: int) -> dict:
+    from src.backup.alternates import discard_batch
+
+    return _alt_call(discard_batch, batch_id)
+
+
+@router.post("/alternates/{alt_id}/keep")
+def alternates_keep(alt_id: int) -> dict:
+    from src.backup.alternates import keep
+
+    return _alt_call(keep, alt_id)
+
+
+@router.post("/alternates/{alt_id}/discard")
+def alternates_discard(alt_id: int) -> dict:
+    from src.backup.alternates import discard
+
+    return _alt_call(discard, alt_id)
+
+
+# --------------------------------------------------------------------------- #
 # Large-data "copy to a folder/drive" backup (brief §2.A) — wiki dumps + OSM
 # maps + Ollama models streamed SERVER-SIDE into a user-chosen directory. These
 # public, re-downloadable blobs are copied as-is (the encrypted corpus stays in
