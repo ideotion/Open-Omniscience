@@ -422,7 +422,7 @@ def content_share_estimate(session: Session, db_bytes: int | None) -> dict[str, 
                 "article_entities",
             ):
                 if table in present:  # module-constant names, never user input
-                    derived[table] = _scalar(session, f"SELECT max(rowid) FROM {table}")
+                    derived[table] = _scalar(session, f"SELECT max(rowid) FROM {table}")  # nosec B608 - table is one of four fixed module-constant names, never input
     except StatementTimeout as exc:
         return {
             "aborted": True,
