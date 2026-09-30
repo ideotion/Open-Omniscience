@@ -74,7 +74,8 @@ def check(csv_path: Path = LEDGER / "shipped.csv") -> list[str]:
     seen: set[tuple[str, str, str]] = set()
     if csv_path.exists():
         for r in list(csv.reader(io.StringIO(csv_path.read_text(encoding="utf-8"), newline="")))[1:]:
-            seen.add((r[0], r[1], r[2]))
+            if len(r) >= 3:
+                seen.add((r[0], r[1], r[2]))
     for p in fragment_files(csv_path):
         try:
             rows = read_fragment(p)
@@ -124,7 +125,9 @@ def fold(csv_path: Path = LEDGER / "shipped.csv") -> int:
     add = buf.getvalue().encode("utf-8")
     if raw and not raw.endswith(b"\n"):
         raw += b"\n"
-    csv_path.write_bytes(raw + add)
+    tmp = csv_path.with_name(csv_path.name + ".tmp")
+    tmp.write_bytes(raw + add)
+    tmp.replace(csv_path)  # atomic: a crash leaves the old file, never a truncated one
     for p in files:
         p.unlink()
     return len(files)
