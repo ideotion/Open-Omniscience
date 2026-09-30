@@ -1055,8 +1055,10 @@ and behind a backlog (a stream resumed hours back) that is thousands of polite r
 drain now has a **20-second bound for fetching texts**, shared out between the editions
 (the first edition rotates each drain). Every change is still recorded; a text not reached in
 time is counted as *deferred* and **a later drain fetches it, the longest-waiting first** (up
-to 200 pages per edition per drain, and a page checked or attempted in the last 5 minutes is
-left alone, so one the service keeps refusing is not asked for every 30 seconds). The client
+to 200 pages per edition per drain; `text_backlog` in the drain's report says how many it
+picked up). A page that failed or was refused is left alone by this catch-up for 5 minutes, so
+one the service keeps refusing is not asked for every 30 seconds; a page that changes again is
+fetched whenever it appears in a drain. The client
 makes one request a second, so a drain fetches about twenty texts: behind thousands of deferred
 texts the catch-up takes hours, not one drain. The bound limits when a fetch may *start*: one
 already under way finishes first (each connect or read waits up to 30 seconds), so a drain can

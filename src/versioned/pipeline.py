@@ -42,9 +42,9 @@ from __future__ import annotations
 
 import logging
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Collection
 from dataclasses import dataclass, field
-from datetime import timedelta
+from datetime import UTC, datetime
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -74,6 +74,11 @@ class PassResult:
     #: Changes recorded whose text this pass did not fetch, because the budget ran
     #: out. NOT a gap — see the module docstring.
     text_deferred: int = 0
+    #: Followed pages whose text an EARLIER pass left unfetched and this pass's catch-up
+    #: picked up (at most ``catch_up``). Not added to ``text_deferred``, which counts a
+    #: page once, on the pass that left it; this says how long the queue still is, so a
+    #: standing backlog never reads as ``text_deferred: 0``.
+    text_backlog: int = 0
     #: Entities this pass STARTED following because ``admit`` said to. Its own
     #: counter because "the lane grew" is a fact an operator is owed: a rule that
     #: admits pages is still the operator's choice, but it is a choice they made
@@ -108,6 +113,7 @@ class PassResult:
             "revisions_unchanged": self.revisions_unchanged,
             "articles_indexed": self.articles_indexed,
             "text_deferred": self.text_deferred,
+            "text_backlog": self.text_backlog,
             "entities_admitted": self.entities_admitted,
             "text_withheld": self.text_withheld,
             "text_withheld_reasons": dict(self.text_withheld_reasons),
@@ -286,6 +292,7 @@ def run_feed_once(
     fetch_deadline: float | None = None,
     monotonic: Callable[[], float] = time.monotonic,
     catch_up: int = 0,
+    attempts: dict[int, float] | None = None,
 ) -> PassResult:
     """One pass: read the feed, record every change, fetch what the budget allows.
 
@@ -385,13 +392,22 @@ def run_feed_once(
     batch_ids = {c.external_id for c in batch.changes}
     backlog_only: set[str] = set()
     if catch_up > 0 and not (fetch_deadline is not None and monotonic() >= fetch_deadline):
-        for backlog_id, backlog_entity in _unfetched_entities(lane, feed, catch_up):
+        now = monotonic()
+        recent: set[int] = set()
+        if attempts is not None:
+            for entity_key, at in list(attempts.items()):
+                if now - at < BACKLOG_COOLDOWN_S:
+                    recent.add(entity_key)
+                else:
+                    del attempts[entity_key]
+        for backlog_id, backlog_entity in _unfetched_entities(lane, feed, catch_up, exclude=recent):
             if backlog_id not in seen:
                 seen.add(backlog_id)
                 touched.append(backlog_id)
                 entity_ids.setdefault(backlog_id, backlog_entity)
                 if backlog_id not in batch_ids:
                     backlog_only.add(backlog_id)
+        result.text_backlog = len(backlog_only)
     for change in sorted(
         (c for c in batch.changes if c.external_id in entity_ids),
         key=lambda c: (c.occurred_at is None, c.occurred_at),
@@ -434,10 +450,13 @@ def run_feed_once(
             if external_id not in backlog_only:
                 result.text_deferred += 1
             continue
-        # STAMPED BEFORE THE ATTEMPT, as the time it was made, so a page that fails at ANY
-        # later step (the fetch, the store, the link) goes to the back of the backlog and out
-        # of its cooldown window, instead of holding the head of every later pass.
-        entity.last_checked_at = _utcnow()
+        # THE ATTEMPT IS REMEMBERED (in this process, by the caller's ``attempts`` map), not
+        # written to ``last_checked_at``: that column means "a text was fetched and stored",
+        # and the backlog is exactly the changes newer than it. A page that fails at ANY later
+        # step (the fetch, the store, the link) is left alone for ``BACKLOG_COOLDOWN_S`` instead
+        # of heading every pass; a restart forgets it, which costs one more try.
+        if attempts is not None:
+            attempts[entity.id] = monotonic()
         try:
             version = adapter.fetch_version(external_id)
         except Exception as exc:  # noqa: BLE001 - one entity must not end the pass
@@ -476,11 +495,20 @@ def run_feed_once(
             _link_ingested(lane, feed, external_id, entity.id)
             lane_sp.commit()
         except Exception as exc:  # noqa: BLE001 - one entity must not end the pass
+            # UNCONDITIONALLY: a failure raised inside a flush leaves the savepoint INACTIVE,
+            # and skipping the rollback then leaves the session needing one, so every later
+            # query (this feed's and the next feeds') raises and the whole drain rolls back.
             try:
-                if lane_sp.is_active:
-                    lane_sp.rollback()
+                lane_sp.rollback()
             except Exception:  # noqa: BLE001 - the original failure is the one to report
                 _LOG.debug("the savepoint could not be rolled back", exc_info=True)
+            if corpus is not None and hasattr(corpus, "rollback"):
+                # The corpus index path commits per article, so nothing already stored is lost
+                # here; what this clears is a session a failed flush left pending-rollback.
+                try:
+                    corpus.rollback()
+                except Exception:  # noqa: BLE001 - the original failure is the one to report
+                    _LOG.debug("the corpus session could not be rolled back", exc_info=True)
             _LOG.warning("storing %s failed", external_id, exc_info=True)
             result.errors.append(f"{external_id}: store: {type(exc).__name__}: {exc}")
             continue
@@ -496,41 +524,54 @@ def run_feed_once(
     return result
 
 
-#: Seconds a followed page is left alone after it was last checked (or last attempted) before
-#: the backlog asks for it again. Its own backoff: a page that keeps failing, or the source
-#: answering 429, is not re-asked on every 30 s drain. A deferred page checked a moment ago is
-#: delayed by the same window, which is the price of one mechanism instead of two.
+#: Seconds a followed page is left alone after the catch-up last ATTEMPTED it (this process's
+#: own memory, never stored) before the backlog asks for it again. Its backoff: a page that
+#: keeps failing, or the source answering 429, is not re-asked on every 30 s drain. It binds the
+#: catch-up only: a page in the current batch is fetched whenever it appears in one.
 BACKLOG_COOLDOWN_S: float = 300.0
 
 
-def _unfetched_entities(lane: Session, feed: str, limit: int) -> list[tuple[str, int]]:
-    """``(external_id, entity_id)`` of followed entities with a recorded change whose text
-    was never stored, the longest-unchecked first.
+def _unfetched_entities(
+    lane: Session, feed: str, limit: int, *, exclude: Collection[int] = ()
+) -> list[tuple[str, int]]:
+    """``(external_id, entity_id)`` of followed entities holding a change NEWER than the last
+    text stored for them, the longest-unchecked first.
 
-    Driven from the ENTITIES (the followed set: thousands) with one indexed ``EXISTS`` per
-    entity (``ix_versioned_change_entity_time``), never from a scan of the feed's changes
-    (millions, most for pages nobody follows). A page the source reported GONE
-    (``deleted_at`` set) is excluded, or it would be asked for again on every pass for ever,
-    and so is one checked or attempted within ``BACKLOG_COOLDOWN_S``.
+    "Newer than the last stored text" is ``VersionedChange.occurred_at > last_checked_at``
+    (or no text stored yet): ``last_checked_at`` is written only when a text was fetched and
+    stored, and a text fetched at T reflects every edit that occurred before T. It is NOT
+    ``ingested_revision_id IS NULL``, which is also NULL for every page that only has a
+    baseline and for every re-fetch that found the text unchanged, so a read on it would
+    hand back every followed page for ever.
+
+    Driven from the ENTITIES (the followed set: thousands) with one ``EXISTS`` per entity,
+    which seeks ``ix_versioned_change_entity_time (entity_id, occurred_at)`` straight past
+    the changes a fetch already covered, never a scan of the feed's changes (millions, most
+    for pages nobody follows). A page the source reported GONE (``deleted_at``) is excluded,
+    or it would be asked for again on every pass for ever, and so are the ids in ``exclude``
+    (attempted within ``BACKLOG_COOLDOWN_S``).
     """
-    from sqlalchemy import exists, or_
+    from sqlalchemy import exists, func, literal
 
-    cutoff = _utcnow() - timedelta(seconds=BACKLOG_COOLDOWN_S)
+    # COALESCE, not ``last_checked_at IS NULL OR ...``: an OR keeps the planner from seeking the
+    # range on ``occurred_at`` and it walks every change of every followed page instead.
+    epoch = literal(datetime(1970, 1, 1, tzinfo=UTC), type_=VersionedEntity.last_checked_at.type)
     waiting = exists().where(
         VersionedChange.entity_id == VersionedEntity.id,
         VersionedChange.feed == feed,
-        VersionedChange.ingested_revision_id.is_(None),
+        VersionedChange.occurred_at > func.coalesce(VersionedEntity.last_checked_at, epoch),
     )
+    query = select(VersionedEntity.external_id, VersionedEntity.id).where(
+        VersionedEntity.watching.is_(True),
+        VersionedEntity.deleted_at.is_(None),
+        waiting,
+    )
+    if exclude:
+        query = query.where(VersionedEntity.id.not_in(list(exclude)))
     rows = lane.execute(
-        select(VersionedEntity.external_id, VersionedEntity.id)
-        .where(
-            VersionedEntity.watching.is_(True),
-            VersionedEntity.deleted_at.is_(None),
-            or_(VersionedEntity.last_checked_at.is_(None), VersionedEntity.last_checked_at < cutoff),
-            waiting,
-        )
-        .order_by(VersionedEntity.last_checked_at.asc().nullsfirst(), VersionedEntity.id)
-        .limit(limit)
+        query.order_by(
+            VersionedEntity.last_checked_at.asc().nullsfirst(), VersionedEntity.id
+        ).limit(limit)
     ).all()
     return [(str(r[0]), int(r[1])) for r in rows if r[0]]
 
