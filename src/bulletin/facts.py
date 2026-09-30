@@ -49,7 +49,8 @@ from typing import Any
 from sqlalchemy import and_, func
 
 from src.bulletin.period import Period, baseline_coverage, top_share
-from src.database.models import Article, KeywordMention, Source
+from src.database.derived_views import KeywordMentionRead
+from src.database.models import Article, Source
 
 _LOG = logging.getLogger(__name__)
 
@@ -299,8 +300,8 @@ def disclosures(session, period: Period) -> dict:
 
     try:
         out["mentions_without_a_date"] = int(
-            session.query(func.count(KeywordMention.id))
-            .filter(KeywordMention.observed_on.is_(None))
+            session.query(func.count(KeywordMentionRead.id))
+            .filter(KeywordMentionRead.observed_on.is_(None))
             .scalar()
             or 0
         )

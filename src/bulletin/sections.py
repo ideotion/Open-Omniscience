@@ -107,7 +107,8 @@ def across_channels(session, period: Period, *, terms: list[dict] | None = None)
     ``ix_mention_keyword_date`` index rather than a whole-period mention scan.
     Without those terms there is nothing to attribute, and the section says so.
     """
-    from src.database.models import Keyword, KeywordMention
+    from src.database.derived_views import KeywordMentionRead
+    from src.database.models import Keyword
 
     rows_in = [t for t in (terms or []) if t.get("normalized")]
     if not rows_in:
@@ -163,16 +164,16 @@ def across_channels(session, period: Period, *, terms: list[dict] | None = None)
     lo, hi = period.start, period.end
     rows = (
         session.query(
-            KeywordMention.keyword_id,
-            KeywordMention.source_id,
-            func.min(KeywordMention.observed_on),
+            KeywordMentionRead.keyword_id,
+            KeywordMentionRead.source_id,
+            func.min(KeywordMentionRead.observed_on),
         )
         .filter(
-            KeywordMention.keyword_id.in_(list(by_id)),
-            KeywordMention.observed_on >= lo,
-            KeywordMention.observed_on < hi,
+            KeywordMentionRead.keyword_id.in_(list(by_id)),
+            KeywordMentionRead.observed_on >= lo,
+            KeywordMentionRead.observed_on < hi,
         )
-        .group_by(KeywordMention.keyword_id, KeywordMention.source_id)
+        .group_by(KeywordMentionRead.keyword_id, KeywordMentionRead.source_id)
         .all()
     )
 
@@ -265,29 +266,30 @@ def by_topic_tag(session, period: Period) -> dict:
     tag at all, so the untagged share is reported — a topic table that quietly
     covers a tenth of the corpus while looking complete is worse than none.
     """
-    from src.database.models import KeywordMention, KeywordTag
+    from src.database.derived_views import KeywordMentionRead
+    from src.database.models import KeywordTag
 
     lo, hi = period.start, period.end
-    in_period = and_(KeywordMention.observed_on >= lo, KeywordMention.observed_on < hi)
+    in_period = and_(KeywordMentionRead.observed_on >= lo, KeywordMentionRead.observed_on < hi)
 
     try:
         rows = (
             session.query(
                 KeywordTag.tag,
-                func.count(func.distinct(KeywordMention.article_id)),
-                func.sum(KeywordMention.count),
+                func.count(func.distinct(KeywordMentionRead.article_id)),
+                func.sum(KeywordMentionRead.count),
             )
-            .join(KeywordTag, KeywordTag.keyword_id == KeywordMention.keyword_id)
+            .join(KeywordTag, KeywordTag.keyword_id == KeywordMentionRead.keyword_id)
             .filter(in_period, KeywordTag.axis == "topic")
             .group_by(KeywordTag.tag)
             .all()
         )
         total_mentions = int(
-            session.query(func.sum(KeywordMention.count)).filter(in_period).scalar() or 0
+            session.query(func.sum(KeywordMentionRead.count)).filter(in_period).scalar() or 0
         )
         tagged_mentions = int(
-            session.query(func.sum(KeywordMention.count))
-            .join(KeywordTag, KeywordTag.keyword_id == KeywordMention.keyword_id)
+            session.query(func.sum(KeywordMentionRead.count))
+            .join(KeywordTag, KeywordTag.keyword_id == KeywordMentionRead.keyword_id)
             .filter(in_period, KeywordTag.axis == "topic")
             .scalar()
             or 0
