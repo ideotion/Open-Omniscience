@@ -22,6 +22,24 @@
 
 ## Open queue (when maintainer says proceed)
 
+- **THE OLDER-ROUNDS LIST, ANSWERED IN THE THREAD (2026-09-30 03:35 UTC; recorded the same turn; `PF07`, `PF08`,
+  `PF10`, `PF11`, `D44`, `D45`, `D46` on their own rows, `R99`, `R100`).** Ten still-live questions from the
+  2026-09-18 pre-flight (PF), 2026-09-22 decisions (D) and 2026-09-28 swarm (PS) rounds, compiled after the
+  37-question list (project file `open-questions/2026-09-29-still-live-older.md`) and answered in the project
+  thread «Record the 37 answers». One line per item; each ruling's full wording is its `RULINGS_INDEX.md` row.
+  (1) `PF07` = a: the three ride-along opt-outs are fixed now, in their own small PR; (2) `PF08` = a («OK»): the
+  knob's words become kbit/s ×12 and invariant #4 is amended in that PR, the arithmetic unchanged; (3) `PF10` = a
+  («OK»): below 600 px the in-map controls collapse into one in-map button; (4) `PF11` ⛔ = `D07` = b with a's
+  ratchet («OK»): `LESSONS.md` is consulted by grep through an index and gets a size ratchet, and rule (1)'s text
+  changes in the PR that builds them; (5) `R99` (`D10`) = a: the calendar data includes eclipses, confirming item
+  30's default; (6) `D12` (`Q903`) NOT ANSWERED: the CONFLICT stays as recorded and subnational law stays at 0.7;
+  (7) `D44` ⛔ = a: a reservation at checkout; (8) `D45` ⛔ = d then a and (9) `D46` ⛔ = b then a, both «go with
+  your recommendation» and both CONDITIONAL on `D47`, which the thread «Keyword working session» holds; (10)
+  `PS01` ⛔ STILL OPEN, in the maintainer's words: «articles will travel between machines through backups and
+  restores eventually. Let's think of this differently. For now, the app only scraps the web for data, stores
+  and indexes it. no data sharing for now, as I need a clear view before making such big decisions.» → `R100`.
+  **Recorded only:** no code changed; the build items (PF07, PF08, PF10, PF11, D44, R99) go to the threads that
+  own their rows, and D45 and D46 to the keyword session.
 - **THE 37-QUESTION LIST, ANSWERED IN CHAT (2026-09-29 19:55 UTC; recorded the same turn, rulings `R47`, `R48`,
   `R53`–`R55`, `R61`, `R66`–`R68`, `R71`, `R76`–`R78`, `R81`–`R83`, `R91`, `R92`).** The coordinator posted the
   list in three project-chat posts at 15:03 UTC (the same text is the project file
@@ -188,6 +206,7 @@
   Commons Mirror's eight questions; `Q1136`, `Q1001`/`Q1002` for any relay. Processing: the §0 of the memo
   (the pre-flight round's protocol) — letters parsed mechanically, one `RULINGS_INDEX.md` row per ANSWERED
   `PSnn`, none for a blank ⛔, contradictions listed never resolved.
+  **ANSWERED 2026-09-30 (the older-rounds list, head entry):** `PS01` ⛔ STILL OPEN; the maintainer set the round aside for now (`R100`): no data sharing between installs, the app scrapes, stores and indexes, and «Let's think of this differently» when it is reopened. `PS02`–`PS16` stay unanswered.
 - **ROW C'S PROPOSED DEFAULTS — NOT RULINGS (0.5 row C, `S05-03`, 2026-09-28, thread «Build the entity spine»;
   ids `R71`–`R75` are held for this row and none is used yet).** The brief's §6 leaves these to the maintainer; each
   was BUILT at the default below so the row could move, and each is reversible. (1) **The API:** the Wikidata Action
@@ -542,6 +561,7 @@
     `ARTICLE_DELETE_INDEX` records the constraint any future caller must respect: a path
     that DELETEs per article MUST keep `ix_mention_article`, or each delete becomes a full
     scan of the mention table.
+  **ANSWERED 2026-09-30 (the older-rounds list, head entry):** `D46` = b now, a once `D43` returns a backlog fraction, conditional on `D47` (whose (a) dissolves it).
 
 
 - **PR 4 OF THE AUDIT'S §9.2 IS BUILT AS TWO OF ITS THREE ITEMS, AND THE THIRD IS DECLINED
@@ -580,6 +600,7 @@
     the comment explaining why `keyword_indexed_at` is assigned BEFORE `begin_nested()` so a
     WWW rollback cannot undo a completed keyword pass. That ordering is a data-correctness
     question, not a performance one.
+    **ANSWERED 2026-09-30 (the older-rounds list, head entry):** `D45` = d first, then a, conditional on `D47`; the thread «Keyword working session» schedules it.
   - **STILL OPEN from item 4:** the COLD path still flushes once per NEW keyword to assign
     the mention FK id — **80 separate `INSERT INTO keywords`** on a first-sight vocabulary,
     where a two-pass create could make it one executemany. Deliberately omitted: it
@@ -722,6 +743,7 @@
   summary's `_db_memory` block now carries `api_headroom.sufficient`, and it reads
   `false` on that tier. `tests/test_pool_api_margin.py::test_the_medium_tier_is_still_exhaustible_and_says_so`
   asserts the honest answer, so a green suite can never imply a fix that is not there.
+  **ANSWERED 2026-09-30 (the older-rounds list, head entry):** `D44` = a, a reservation at checkout; not built.
 
   **(4) `R27` RE-OPENED `R28`'s ROW-C HOLE ONE WEEK AFTER IT WAS CLOSED, and the shape is
   worth keeping.** `complete_profile` was `profile == "full"` — correct while only the
@@ -1050,6 +1072,7 @@
   `PF12` (keep `sudachipy`) were answered in chat, with `RC01` = (a) and `RC10` = (b); each has its
   `RULINGS_INDEX.md` row. PF12's second half (retiring `janome` from the keyword path) was not asked and
   stays open. The other twelve PF questions and `RC13`'s eclipse suffix stay unanswered.**
+  **ANSWERED 2026-09-30 (the older-rounds list, head entry):** `PF07` = a, `PF08` = a, `PF10` = a, `PF11` ⛔ = b with a's ratchet (each on its `RULINGS_INDEX.md` row). PF09 and PF14 were left on their stated defaults as assumptions; PF01–PF05 and PF13 were overtaken by the 0.4 release run.
 - **THE COLLECTION-SPEED KNOB MISSTATES ITS OWN UNIT BY 8.192x, ON FOUR USER-FACING SURFACES —
   found while building the per-process budget (S04-13 S1, Q1012), NOT fixed here.**
   `collect_target_kbps` is **kilobits** per second: `collect_perf._measure_rate` computes
@@ -1067,6 +1090,7 @@
   is a constitution edit and wants the maintainer's own word on the wording.
   **WHAT A FIX COSTS, measured:** three keys x 12 locales, re-keyed (never a new key beside the
   old one, per the recorded orphan rule), plus the invariant text.
+  **ANSWERED 2026-09-30 (the older-rounds list, head entry):** `PF08` = a: the four strings become kbit/s, re-keyed ×12, and invariant #4 is amended in the same PR; the stored setting and the governor stay as they are.
 
 - **THE GOVERNOR REPORTED "in-band" WHILE 160x OVER TARGET AT THE PERMIT FLOOR — pre-existing,
   FIXED here because S04-13 S1 is what makes it reachable (2026-09-16).** `bandwidth.py`'s target
@@ -1141,6 +1165,7 @@
   rulings) is the alternative if only the one-line API fix is wanted now. A third reading is that
   shape 2 is severe enough to be its own hotfix, since it is the only one that reports success.
   Nothing is assumed here; the enumeration and the hover tell the truth in the meantime.
+  **ANSWERED 2026-09-30 (the older-rounds list, head entry):** `PF07` = a: fixed now, in its own small PR, with the per-lane disclosures coming down in the same diff.
 
 - **THE RC CONFIRMATION ROUND CAME BACK UNANSWERED — 0 OF 22 `ANSWER` LINES CARRY A LETTER (processed
   2026-09-15; NOTHING RESOLVED BY THE SESSION; docs-only).** THE PRIMARY RECORD is the round itself, still
@@ -1201,6 +1226,7 @@
   a session that reads «unanswered» as «nothing to record» leaves eighteen live assumptions unlabelled in the
   plan files, which is exactly the state the protocol's ASSUMPTION rule exists to prevent.
   **ANSWERED 2026-09-29 (the 37-question list, head entry):** RC02 = a, RC03 = a, RC04 = a, RC07 = c («0.6 or later», release unnamed), RC08 = a, RC09 = a, RC11 = b, RC12 = c, RC13 = b with eclipses (the eclipse half a recorded default), RC14 = a, RC15 = c, RC17 = a. STILL OPEN: RC05 (thread «Keyword working session»), RC06 (thread «Fix source qualification») and RC16 (a later discussion). With RC01 and RC10 of 2026-09-27, 19 of the round's 22 lines now carry an answer.
+  **ANSWERED 2026-09-30 (the older-rounds list, head entry):** residual point (1) above is settled: `RC13`'s eclipse suffix is «with eclipses» (`R99`).
 - **THE 2026-09-06 REGISTER ANSWERED — 65 OF 65 THROUGH THE RULINGS ARTIFACT (2026-09-15 15:02–16:00Z;
   recorded the same day; NOTHING RESOLVED BY THE SESSION; draft PR #1131).** THE PRIMARY RECORD is the
   register itself, answered in place:

@@ -123,7 +123,7 @@ deliver. The consent hover already says so per lane.
 - **b** — 0.5: recorded on the 0.5 board; 0.4 ships with the disclosure in the consent hover.
 Default if blank: **a** (a consent surface that discards a choice is the informed-consent non-negotiable's own
 subject).
-ANSWER PF07:
+ANSWER PF07: a — given in the project thread «Record the 37 answers» 2026-09-30 03:35 UTC (the older-rounds list, item 1) and copied here by the recording session: «1 = a».
 
 #### PF08 · The collection-speed knob's unit — four strings and invariant #4's wording
 `collect_target_kbps` is kilobits per second (the code and the Settings slider agree: `500 kbps`); the top-bar
@@ -135,7 +135,7 @@ invariant #4 carries the same wrong unit, so the correction is a constitution ed
   one rate authority — the stored `collect_target_kbps` value would mean something else on every install.
 - **c** — leave as is.
 Default if blank: **a**.
-ANSWER PF08:
+ANSWER PF08: a — given in the project thread «Record the 37 answers» 2026-09-30 03:35 UTC (the older-rounds list, item 2) and copied here by the recording session: «2 = OK» to the recommended (a).
 
 #### PF09 · The reader page and the i18n engine
 `reader.js` carries 22 permanently-English strings; the reader page never loaded the engine, by a recorded
@@ -156,7 +156,7 @@ Measured 2026-09-16 at 390×844: the control groups cover 79 % of the world map 
 - **c** — the groups move under the map at narrow widths (the convention gives way at phone width).
 - **d** — leave as is for 0.4 and record it on the 0.5 UI-shell slice `S05-09`.
 Default if blank: **d** (a convention change wants your letter; nothing regresses by waiting).
-ANSWER PF10:
+ANSWER PF10: a — given in the project thread «Record the 37 answers» 2026-09-30 03:35 UTC (the older-rounds list, item 3) and copied here by the recording session: «3 = OK» to the recommended (a).
 
 #### PF11 ⛔ · Protocol rule (1)'s achievability — `LESSONS.md` has outgrown its own amendment
 Rule (1) was amended 2026-09-07 because reading one 1.3 MB file "in full" could only be obeyed by skimming;
@@ -168,7 +168,7 @@ pair measures 1,043,989 (`wc -c`, 2026-09-18) — past 1 MB again, the same fail
   hand) and only CLAUDE.md stays mandatory-in-full.
 - **c** — leave rule (1) as written.
 ⛔ A blank stays PENDING: the sessions keep reading both files in full, and the file keeps growing.
-ANSWER PF11:
+ANSWER PF11: b, with (a)'s ratchet on top — given in the project thread «Record the 37 answers» 2026-09-30 03:35 UTC (the older-rounds list, item 4) and copied here by the recording session: «4 = OK» to the recommended option, which is `D07`'s recommendation (`LESSONS.md` consulted by grep through an index, plus a size ratchet).
 
 #### PF12 · The Japanese segmenter for row N's S8
 Q506 🔒 = (b) names `jieba` (zh) and `sudachipy` (ja); the tree's `[segmentation]` extra carries `janome` (ja)
