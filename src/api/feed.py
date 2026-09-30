@@ -153,17 +153,18 @@ def _top_keywords(session: Session, article_ids: list[int]) -> dict[int, list[di
     """
     if not article_ids:
         return {}
-    from src.database.models import Keyword, KeywordMention
+    from src.database.derived_views import KeywordMentionRead
+    from src.database.models import Keyword
 
     rows = session.execute(
         select(
-            KeywordMention.article_id,
-            KeywordMention.keyword_id,
-            KeywordMention.count,
+            KeywordMentionRead.article_id,
+            KeywordMentionRead.keyword_id,
+            KeywordMentionRead.count,
             Keyword.term,
         )
-        .join(Keyword, Keyword.id == KeywordMention.keyword_id)
-        .where(KeywordMention.article_id.in_(article_ids))
+        .join(Keyword, Keyword.id == KeywordMentionRead.keyword_id)
+        .where(KeywordMentionRead.article_id.in_(article_ids))
     ).all()
     by_article: dict[int, list[tuple[int, int, str]]] = {}
     for aid, kid, count, term in rows:
