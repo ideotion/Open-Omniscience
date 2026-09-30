@@ -48,6 +48,7 @@ past the cohort floor, the SAME call starts honouring cohort-relative soft signa
 from __future__ import annotations
 
 import logging
+import time
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
@@ -105,6 +106,12 @@ QUALIFICATION_SAMPLE_ARTICLES = 20_000
 # per article and by the number of candidates in the pass. The constant below is the fallback
 # for a machine whose memory cannot be read, and the least a candidate is ever given.
 QUALIFICATION_HISTORY_FALLBACK = 2_000
+# What the wall-clock budget below protects: a pass runs INSIDE the housekeeping lane, which is
+# one lock shared with world discovery, country data, crawl and backfill, and its trial fetches
+# are sequential over the polite (often Tor) fetcher -- so cores buy no parallelism there.
+# Without a bound, a budget that grows with the machine would hold that lock for hours. The
+# candidates not reached are not lost: they were never attempted, so they stay first in line.
+_TRIAL_FETCH_BUDGET_S = 600.0
 _HISTORY_MEMORY_SHARE = 0.5  # of the available memory a pass may spend on candidate reads
 
 # The adaptive per-pass budgets (maintainer preference 2026-09-29: no fixed caps, limits
@@ -113,7 +120,7 @@ _HISTORY_MEMORY_SHARE = 0.5  # of the available memory a pass may spend on candi
 _AUTO_NEW_MIN = 5
 _AUTO_RECHECK_MIN = 2
 _AUTO_MB_PER_SLOT = 100.0   # available memory one candidate slot is allowed to claim
-_AUTO_SLOTS_PER_CORE = 6    # trial fetches wait on the network, so a core carries several
+_AUTO_SLOTS_PER_CORE = 6    # the pass's fetch, read and judge work per core; the fetches themselves stay sequential (see _TRIAL_FETCH_BUDGET_S)
 
 
 def candidate_history_cap(n_candidates: int, *, available_mb: float | None = None) -> int:
@@ -1437,8 +1444,19 @@ def run_qualification_pass(
         return {"enabled": True, "evaluated": 0}
 
     trial_errors = 0
+    deferred = 0
     if fetcher is not None:
+        started = time.monotonic()
+        attempted: list[Source] = []
         for source in candidates:
+            # The first candidate is always tried; after that a pass gives up on the rest when
+            # its wall-clock budget is spent or the memory guard says stop.
+            if attempted and (
+                time.monotonic() - started > _TRIAL_FETCH_BUDGET_S
+                or (should_pause is not None and should_pause())
+            ):
+                break
+            attempted.append(source)
             try:
                 trial_fetch(session, source, fetcher)
             except Exception:  # noqa: BLE001 - one bad candidate must not abort the pass
@@ -1447,6 +1465,12 @@ def run_qualification_pass(
                     "qualification trial fetch failed for %r",
                     getattr(source, "domain", "?"), exc_info=True,
                 )
+        deferred = len(candidates) - len(attempted)
+        if deferred:
+            done = {int(x.id) for x in attempted}
+            new_candidates = [x for x in new_candidates if int(x.id) in done]
+            rechecks = [x for x in rechecks if int(x.id) in done]
+            candidates = attempted
 
     # S5.1: the COHORT is frozen (once per run, by the caller that knows what a run is) and
     # only the CANDIDATES' own metrics are read here, scoped in SQL. A caller that passes no
@@ -1536,6 +1560,9 @@ def run_qualification_pass(
 
     return {
         "enabled": True, "evaluated": len(candidates), "trial_fetch_errors": trial_errors,
+        # Candidates picked but not reached because the pass ran out of time or memory; they
+        # were not attempted, so they are first in line next pass.
+        "deferred": deferred,
         "no_evidence": len(no_evidence),
         # Reported apart because they answer different questions: "is the backlog draining"
         # and "is the recurrent verification actually running". One number cannot say both,

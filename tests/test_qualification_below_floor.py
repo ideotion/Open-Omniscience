@@ -506,3 +506,41 @@ def test_the_candidate_read_bound_is_sized_from_available_memory():
     more = q.candidate_history_cap(50, available_mb=64000.0)
     assert more < big, "the read budget is shared by the pass's candidates"
     assert q.candidate_history_cap(5, available_mb=50.0) == q.QUALIFICATION_HISTORY_FALLBACK
+
+
+def test_a_pass_stops_fetching_when_its_time_is_spent_and_defers_the_rest(machine, monkeypatch):
+    """Budgets grow with the machine, but a pass sits inside the shared housekeeping lane: past
+    its wall-clock budget it stops trial-fetching, and what it did not reach stays first in line."""
+    machine(*BIG_BOX)
+    monkeypatch.setattr(q, "_TRIAL_FETCH_BUDGET_S", -1.0)
+    s = _session()
+    _seed_healthy_en_cohort(s)
+    for d in ("a.example", "b.example", "c.example"):
+        _add_candidate_with_articles(s, domain=d, status=q.STATUS_UNQUALIFIED, pathology=False)
+    tried: list[str] = []
+    monkeypatch.setattr(q, "trial_fetch", lambda session, source, fetcher: tried.append(source.domain))
+    out = q.run_qualification_pass(s, fetcher=object(), per_pass=10)
+    assert len(tried) == 1, "the first candidate is always tried"
+    assert out["deferred"] == 2 and out["evaluated"] == 1
+    untouched = [x for x in s.query(Source).filter(Source.domain.like("%.example"))
+                 if x.domain not in tried and x.status == q.STATUS_UNQUALIFIED]
+    assert len(untouched) >= 2
+    assert not [a for a in s.query(SourceQualificationAttempt) if a.source_id in {x.id for x in untouched}]
+
+
+def test_the_memory_guard_also_ends_the_trial_fetching(machine, monkeypatch):
+    machine(*BIG_BOX)
+    s = _session()
+    _seed_healthy_en_cohort(s)
+    for d in ("a.example", "b.example"):
+        _add_candidate_with_articles(s, domain=d, status=q.STATUS_UNQUALIFIED, pathology=False)
+    tried: list[str] = []
+    monkeypatch.setattr(q, "trial_fetch", lambda session, source, fetcher: tried.append(source.domain))
+    calls = {"n": 0}
+
+    def pause():
+        calls["n"] += 1
+        return calls["n"] <= 1  # trips at the second candidate, then lets the read go through
+
+    out = q.run_qualification_pass(s, fetcher=object(), per_pass=10, should_pause=pause)
+    assert len(tried) == 1 and out["deferred"] == 1

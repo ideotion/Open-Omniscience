@@ -304,6 +304,8 @@ def collect_article_stats(
         # is an indexed source_id range read, and none can return more than the cap.
         art_rows = []
         for sid_ in scope:
+            if should_pause is not None and should_pause():
+                raise ScanPaused(f"paused before the read of source {sid_}")
             art_rows.extend(
                 art_q.filter(Article.source_id == sid_)
                 .order_by(Article.id.desc())
