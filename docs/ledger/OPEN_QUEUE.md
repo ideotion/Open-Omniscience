@@ -1094,6 +1094,7 @@
   **WHAT A FIX COSTS, measured:** three keys x 12 locales, re-keyed (never a new key beside the
   old one, per the recorded orphan rule), plus the invariant text.
   **ANSWERED 2026-09-30 (the older-rounds list, head entry):** `PF08` = a: the four strings become kbit/s, re-keyed ×12, and invariant #4 is amended in the same PR; the stored setting and the governor stay as they are.
+  **SHIPPED 2026-09-30 (PR #1249):** the knob's hover, both toasts and the `index.html` comment say kbit/s, re-keyed ×12, invariant #4 amended; the governor and the stored setting are untouched.
 
 - **THE GOVERNOR REPORTED "in-band" WHILE 160x OVER TARGET AT THE PERMIT FLOOR — pre-existing,
   FIXED here because S04-13 S1 is what makes it reachable (2026-09-16).** `bandwidth.py`'s target
