@@ -141,7 +141,7 @@ count confirmation. Every string ships in 12 languages. The reader's ≈ title a
    JSON object, is counted, not invented a home and never allowed to fail the restore. A discarded alternate returns if an older backup still carrying it is restored, like any
    other row a restore adds; discarding it again is one click.
 
-**Status 2026-09-30 (slice 4, the swap, is its own PR after #1257):** slice 1 = #1237 (merged). Slice 2 = #1242 (panel, keep/discard, the local side found by
+**Status 2026-09-30 (slice 4, the swap, is PR #1265, after #1257):** slice 1 = #1237 (merged). Slice 2 = #1242 (panel, keep/discard, the local side found by
 identity: article hash or law jurisdiction + url + revision hash, plus the key columns; newest row). Slice 3 (alternates travel in backups, read by rowid so text-keyed tables work) is PR #1252 below. Known limitation: `merged_rows` is never pruned, so a row that reuses the id of a deleted
 restore-inserted row can be tagged "arrived" (SQLite reuses integer keys); the tag is honest about the row it
 reads, not about a row that no longer exists (when a reused id has several `merged_rows` entries the tag names
