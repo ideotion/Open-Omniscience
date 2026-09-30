@@ -1,0 +1,2 @@
+date,area,item,status,refs,key_paths,summary
+2026-09-30,backup/alternates,"Alternates travel in backups (R61, item 12, slice 3)",shipped (draft PR),PR #0,"src/backup/merge.py,src/backup/provenance.py,src/backup/alternates.py,tests/test_metadata_alternates.py",A restore now carries the operator's kept alternates (the other value beside each shown one) so they survive a backup and restore cycle; local rows are found by rowid so text-keyed tables (row C's places and wikidata_items) work too. Imported data still never prevails.
