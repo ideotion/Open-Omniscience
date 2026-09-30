@@ -299,6 +299,7 @@ def collect_article_stats(
         art_q = art_q.filter(Article.source_id.in_(scope))
     if recent_limit is not None:
         art_q = art_q.order_by(Article.id.desc()).limit(int(recent_limit))
+    art_rows: list[Any] | None
     if scope is not None and per_source_recent is not None:
         # One bounded query per candidate (there are a handful per pass), newest first: each
         # is an indexed source_id range read, and none can return more than the cap.
