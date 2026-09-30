@@ -601,6 +601,7 @@
     WWW rollback cannot undo a completed keyword pass. That ordering is a data-correctness
     question, not a performance one.
     **ANSWERED 2026-09-30 (the older-rounds list, head entry):** `D45` = d first, then a, conditional on `D47`; the thread «Keyword working session» schedules it.
+    **`D45` (d) BUILT 2026-09-30:** the sentiment is computed where it always was but assigned beside `top_keyword_*`, so the first autoflush no longer writes it and one `UPDATE articles` replaces two (`keyword_indexed_at` is still assigned before `begin_nested()`; nothing between the two places reads the sentiment columns). Pinned by `test_one_apply_updates_the_article_row_once`. STILL OPEN: the row-size query in a diagnostics bundle, which decides (b) or (c).
   - **STILL OPEN from item 4:** the COLD path still flushes once per NEW keyword to assign
     the mention FK id — **80 separate `INSERT INTO keywords`** on a first-sight vocabulary,
     where a two-pass create could make it one executemany. Deliberately omitted: it
