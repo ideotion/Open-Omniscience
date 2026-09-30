@@ -12776,3 +12776,14 @@ on top of whatever sits at that point. **Skip text whose ancestor is `.sr-only`,
 most one pixel in either dimension with `overflow` other than `visible`**; with that, the same frames
 measured zero (`docs/audit/claim-trail-export-2026-09-28/walk.py`, `OVERLAP_JS`). A walk that reports
 every chart as an overlap teaches its reader to ignore the probe.
+
+### A MAINTENANCE STEP INHERITS THE LIVENESS OF ITS ONLY CALLER: THE OFFLINE INSTANCE NEVER GOT ITS ORPHAN PRUNE (keyword session, 2026-09-30)
+
+The off-peak window (counter reconcile, orphan-keyword prune, language reconcile, incremental vacuum,
+hourly library snapshot) was called from exactly one place, the scheduler's collection loop. The app boots
+in airplane mode and starts no loop until the operator crosses online, and going offline stops it. So the
+instance that imports backups and re-indexes them offline read `auto_cleanup.last_run: null` **and**
+`auto_incremental_vacuum.last_run: null` with 7.9 M of 9.5 M keyword rows mention-less. Two null markers
+from one window were the tell: **when a health marker is null for several steps that share a caller, look
+for the caller's liveness before the steps' logic.** The fix runs the same window on a slow timer only while
+the loop is stopped, and yields, recording why, to an exclusive window, a re-index drain or a writer job.
