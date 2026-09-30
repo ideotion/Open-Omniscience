@@ -22,9 +22,12 @@ USAGE
     python scripts/lessons.py --show LINE       print the whole entry that starts at LINE
     python scripts/lessons.py --stats           entry count and file size
 
-An ENTRY is a bullet whose text opens with a bold title (``- **TITLE (date):** text``), at
-any indent. Its own text runs to the next entry, so a hit is attributed to the most specific
-entry and never to the enclosing "Lessons harvested" bullet that nests two thirds of them.
+An ENTRY is either a bullet whose text opens with a bold title (``- **TITLE (date):** text``,
+at any indent) or a heading of level 2-6 (``## title`` / ``### title`` -- every lesson written
+after 2026-09-11 uses one). Lines inside a code fence never start an entry. An entry's own text
+runs to the next entry, so a hit is attributed to the most specific entry and never to the
+enclosing "Lessons harvested" bullet that nests two thirds of them. A query with no words is
+refused (it would match everything), and so is an unknown ``--flag``.
 """
 
 from __future__ import annotations
@@ -36,6 +39,8 @@ from pathlib import Path
 
 LESSONS = Path(__file__).resolve().parent.parent / "docs" / "ledger" / "LESSONS.md"
 _ENTRY = re.compile(r"^(\s*)- \*\*(.*)$")
+_HEADING = re.compile(r"^#{2,6}\s+(.*\S)\s*$")
+_FENCE = re.compile(r"^\s*(```|~~~)")
 _TITLE_MAX = 150
 
 
@@ -61,10 +66,23 @@ def _title(lines: list[str], i: int, first: str) -> str:
 def parse(text: str) -> list[Entry]:
     lines = text.split("\n")
     starts: list[tuple[int, str]] = []
+    in_fence = False
     for i, ln in enumerate(lines):
+        if _FENCE.match(ln):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            continue
         m = _ENTRY.match(ln)
         if m:
             starts.append((i, _title(lines, i, m.group(2))))
+            continue
+        h = _HEADING.match(ln)
+        if h:
+            text = " ".join(h.group(1).replace("**", "").split())
+            if len(text) > _TITLE_MAX:
+                text = text[: _TITLE_MAX - 1].rstrip() + "…"
+            starts.append((i, text))
     out: list[Entry] = []
     for k, (i, title) in enumerate(starts):
         nxt = starts[k + 1][0] if k + 1 < len(starts) else len(lines)
@@ -116,6 +134,12 @@ def main(argv: list[str]) -> int:
                 return 0
         print(f"no entry starts at line {at} (see --index)", file=sys.stderr)
         return 1
+    if argv[0].startswith("--"):
+        print(f"unknown option {argv[0]} (see --help)", file=sys.stderr)
+        return 2
+    if not any(w.strip() for w in argv):
+        print("give at least one word to search for (an empty query matches everything)", file=sys.stderr)
+        return 2
     hits = search(lines, entries, argv)
     for e, shown in hits:
         print(f"L{e.line:<6} {e.title}")
