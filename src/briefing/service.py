@@ -285,13 +285,26 @@ def refresh_briefing(session, on_progress=None) -> dict:
     # would freeze a stale Home forever on a corpus that genuinely yields no cards,
     # which is a worse failure than the one being fixed: the feed would stop being
     # about the corpus at all, and nothing would say so.
-    if stats.get("truncated") and not cards:
+    #
+    # MEMORY is the second reason, and there a PARTIAL set is not good enough either
+    # (diagnostics rank 4): the run stopped because the machine was nearly out of memory,
+    # so the producers it never reached are the ones whose cards would silently vanish
+    # from Home -- the feed would look complete and be missing whatever ran last. When a
+    # cached feed exists it is kept whole and the stop is logged; when none exists the
+    # partial set is written (something beats an empty Home), and ``truncated_reason`` in
+    # ``run_all_bounded``'s stats records why.
+    memory_stopped = stats.get("truncated_reason") == "memory_short"
+    if stats.get("truncated") and (memory_stopped or not cards):
         existing = _read_cache()
         if existing and existing.get("cards"):
             _LOG.warning(
-                "briefing refresh truncated by an enclosing deadline and produced no "
-                "cards; keeping the %d cached cards rather than blanking Home",
+                "briefing refresh %s; keeping the %d cached cards rather than "
+                "replacing Home with %d",
+                "stopped because the machine was nearly out of memory"
+                if memory_stopped
+                else "truncated by an enclosing deadline and produced no cards",
                 len(existing["cards"]),
+                len(cards),
             )
             return existing
 
