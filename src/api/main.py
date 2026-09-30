@@ -376,6 +376,15 @@ def _run_startup_upkeep() -> None:
                 )
         except Exception as exc:  # noqa: BLE001 - never block startup
             logger.warning(f"Could not engage airplane mode at boot: {exc}")
+        # The off-peak maintenance window (orphan prune, counter reconcile, vacuum) is
+        # otherwise run only by the collection loop, which an offline instance never
+        # starts. Idempotent across unlocks; local only, zero network.
+        try:
+            from src.scheduler.offline_maintenance import start as _start_offline_maintenance
+
+            _start_offline_maintenance()
+        except Exception:  # noqa: BLE001 - maintenance must never block startup
+            logger.warning("could not start the offline maintenance timer", exc_info=True)
 
     logger.info(f"Open Omniscience API {APP_VERSION} started")
 

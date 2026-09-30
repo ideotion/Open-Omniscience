@@ -10368,3 +10368,10 @@ weather corroboration offers for the trail's own articles, behind the one consen
 metadata-shadow line, and the whole trail as one custody-signed ZIP with the §18 enumeration and Q1008's
 attribution lines, refused before any write when a row is OSM-derived (Q823). Record:
 `docs/audit/claim-trail-export-2026-09-28/`. Lesson: `LESSONS.md`, the screen-reader-only overlap entry.
+
+- **2026-09-30 · scheduler/offline-maintenance (keyword session, D47 follow-up).** The off-peak maintenance
+window now also runs while the collection loop does not (airplane mode), on a 5-minute timer (the loop's own cadence) that yields
+to the loop, an import's exclusive window, a re-index drain and any writer job, and records each yield in
+`maintenance_skips`. Cause: the window had one caller, the loop; both `auto_cleanup` and
+`auto_incremental_vacuum` were null on the big offline instance. Lesson: `LESSONS.md`, the entry dated by
+this PR.

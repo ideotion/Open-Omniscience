@@ -1,0 +1,109 @@
+"""The off-peak maintenance window also runs while the scheduler loop does not.
+
+Field bundle 2026-09-30: ``auto_cleanup.last_run`` and ``auto_incremental_vacuum.last_run``
+were both null on an instance with 7.9 M mention-less keyword rows. The window had exactly
+one caller -- the collection loop -- and an offline instance never starts it.
+"""
+
+from __future__ import annotations
+
+import pathlib
+
+import pytest
+
+from src.scheduler import offline_maintenance as om
+from src.scheduler.runner import BackgroundScheduler
+
+ROOT = pathlib.Path(__file__).resolve().parents[1]
+
+
+@pytest.fixture()
+def sched(monkeypatch):
+    s = BackgroundScheduler()
+    monkeypatch.setattr("src.scheduler.runner.owns_the_machine", lambda: False)
+    monkeypatch.setattr(
+        "src.analytics.reindex_job.get_reindex_manager",
+        lambda: type("M", (), {"status": staticmethod(lambda: {"state": "idle"})})(),
+    )
+    monkeypatch.setattr("src.jobs.background.all_job_statuses", lambda: [])
+    return s
+
+
+def _record_runs(monkeypatch):
+    calls: list[int] = []
+
+    def fake(*, should_stop=None):
+        calls.append(1)
+        return {"cleanup": {"skipped": "fresh"}}
+
+    monkeypatch.setattr("src.scheduler.maintenance.run_idle_maintenance", fake)
+    return calls
+
+
+def test_a_stopped_scheduler_still_gets_its_maintenance_window(sched, monkeypatch):
+    calls = _record_runs(monkeypatch)
+    # The loop was stopped for good: _stop is set, which the loop's own call reads as
+    # "stopping" -- the timer must not inherit that.
+    sched._stop.set()
+    assert om.tick(sched) == "ran"
+    assert calls == [1]
+    assert sched.status()["maintenance_skips"] == {}
+
+
+@pytest.mark.parametrize(
+    ("patch", "reason"),
+    [
+        ("loop", "offline_loop_owns_window"),
+        ("exclusive", "offline_exclusive_operation"),
+        ("reindex", "offline_reindex_running"),
+        ("writer", "offline_writer_job_running"),
+    ],
+)
+def test_it_yields_to_whatever_already_owns_the_machine(sched, monkeypatch, patch, reason):
+    calls = _record_runs(monkeypatch)
+    if patch == "loop":
+        monkeypatch.setattr(sched, "is_running", lambda: True)
+    elif patch == "exclusive":
+        monkeypatch.setattr("src.scheduler.runner.owns_the_machine", lambda: True)
+    elif patch == "reindex":
+        monkeypatch.setattr(
+            "src.analytics.reindex_job.get_reindex_manager",
+            lambda: type("M", (), {"status": staticmethod(lambda: {"state": "running"})})(),
+        )
+    else:
+        monkeypatch.setattr(
+            "src.jobs.background.all_job_statuses",
+            lambda: [{"running": True, "is_writer": True}],
+        )
+    assert om.tick(sched) == reason
+    assert calls == []
+    # Recorded, not silent: the diagnostics read the skip counters.
+    assert sched.status()["maintenance_skips"] == {reason: 1}
+
+
+def test_the_scheduler_loops_own_stop_flag_is_unchanged(sched, monkeypatch):
+    calls = _record_runs(monkeypatch)
+    sched._stop.set()
+    sched._run_off_peak_maintenance()  # no should_stop: the loop's own call
+    assert calls == []
+    assert sched.status()["maintenance_skips"] == {"stopping": 1}
+
+
+def test_declined_by_the_environment(monkeypatch):
+    monkeypatch.setenv("OO_OFFLINE_MAINTENANCE", "0")
+    assert om.start() is False
+
+
+def test_interval_has_a_floor(monkeypatch):
+    monkeypatch.setenv("OO_OFFLINE_MAINT_INTERVAL_S", "1")
+    assert om.interval_s() == 60.0
+    monkeypatch.setenv("OO_OFFLINE_MAINT_INTERVAL_S", "junk")
+    assert om.interval_s() == 300.0
+
+
+def test_boot_upkeep_starts_it_inside_the_no_scheduler_gate():
+    src = (ROOT / "src" / "api" / "main.py").read_text(encoding="utf-8")
+    call = src.index("_start_offline_maintenance()")
+    gate = src.rindex('if os.getenv("OO_NO_SCHEDULER", "0") != "1":', 0, call)
+    # Same block as the airplane engage: tests and headless setups never get a thread.
+    assert "install_airplane_socket_guard()" in src[gate:call]

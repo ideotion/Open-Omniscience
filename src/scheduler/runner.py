@@ -1861,7 +1861,9 @@ class BackgroundScheduler:
         with self._state_lock:
             self._maint_skips[reason] = self._maint_skips.get(reason, 0) + 1
 
-    def _run_off_peak_maintenance(self) -> None:
+    def _run_off_peak_maintenance(
+        self, *, should_stop: Callable[[], bool] | None = None
+    ) -> None:
         """A10: run the budgeted keyword maintenance in the collector-idle window.
 
         Mutually exclusive with any collect pass — takes ``_run_lock`` NON-BLOCKING
@@ -1873,10 +1875,16 @@ class BackgroundScheduler:
         (never idle-while-holding-the-write-gate). The write-gate work is thus never
         concurrent with collection writes — the A10 point. Throttled to
         ``_maint_interval_s`` so it does not fire every 5 s gap, skipped under memory
-        pressure, and interruptible (``_stop``). Best-effort; never raises into the loop."""
+        pressure, and interruptible (``_stop``). Best-effort; never raises into the loop.
+
+        ``should_stop`` is for the ONE caller that is not this scheduler's own loop:
+        :mod:`src.scheduler.offline_maintenance`, which runs the same window while the
+        loop is stopped (airplane mode) and so cannot use ``_stop`` -- a stopped
+        loop's ``_stop`` is set for good, which would read as "stopping" forever."""
         import time as _t
 
-        if self._stop.is_set():
+        stop = should_stop or self._stop.is_set
+        if stop():
             self._note_maint_skip("stopping")
             return
         now = _t.monotonic()
@@ -1909,7 +1917,7 @@ class BackgroundScheduler:
             self._last_maint = now
             from src.scheduler.maintenance import run_idle_maintenance
 
-            result = run_idle_maintenance(should_stop=self._stop.is_set)
+            result = run_idle_maintenance(should_stop=stop)
             with self._state_lock:
                 self._last_maintenance = result
             _activity("idle-maintenance", result)
