@@ -65,7 +65,7 @@ def test_no_deadline_runs_everything(monkeypatch):
     or a perfectly healthy feed starts losing cards on a slow machine."""
     _registry(monkeypatch, [(f"p{i}", lambda _s, n=f"p{i}": [_card(n)]) for i in range(10)])
     cards, stats = R.run_all_bounded(object(), deadline=None)
-    assert stats == {"producers_run": 10, "producers_total": 10, "truncated": False}
+    assert stats == {"producers_run": 10, "producers_total": 10, "truncated": False, "held_q823": []}
     assert len(cards) == 10
 
 

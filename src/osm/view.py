@@ -262,7 +262,7 @@ def view(w: float, s: float, e: float, n: float) -> dict[str, Any]:
             return {**out, "status": "not-indexed", "total": 0, "seconds": 0.0}
         _ensure(ses)
         few: int = ses.execute(
-            text(f"SELECT count(*) FROM (SELECT 1 FROM osm_rtree WHERE {hit} LIMIT :cap)"),
+            text(f"SELECT count(*) FROM (SELECT 1 FROM osm_rtree WHERE {hit} LIMIT :cap)"),  # nosec B608 - hit is a constant clause; values are bound
             {**p, "cap": POINTS_PER_VIEW + 1},
         ).scalar_one()
         if few > POINTS_PER_VIEW:
@@ -286,7 +286,7 @@ def view(w: float, s: float, e: float, n: float) -> dict[str, Any]:
                 cw, ch = (e - w) / CLUSTER_GRID, (n - s) / CLUSTER_GRID
                 live = ses.execute(
                     text(
-                        "SELECT min(:g - 1, max(0, CAST(((min_lon + max_lon) / 2 - :w) / :cw AS INTEGER))) AS cx, "
+                        "SELECT min(:g - 1, max(0, CAST(((min_lon + max_lon) / 2 - :w) / :cw AS INTEGER))) AS cx, "  # nosec B608 - hit is a constant clause; values are bound
                         "min(:g - 1, max(0, CAST(((min_lat + max_lat) / 2 - :s) / :ch AS INTEGER))) AS cy, "
                         "count(*), avg((min_lat + max_lat) / 2), avg((min_lon + max_lon) / 2) "
                         f"FROM osm_rtree WHERE {hit} GROUP BY cx, cy ORDER BY cy, cx"
@@ -300,7 +300,7 @@ def view(w: float, s: float, e: float, n: float) -> dict[str, Any]:
             name = osm_objects_table.c[column_name("name")].name
             rows = ses.execute(
                 text(
-                    f"SELECT o.osm_type, o.osm_id, o.kind, o.lat, o.lon, o.geom, o.{name} "
+                    f"SELECT o.osm_type, o.osm_id, o.kind, o.lat, o.lon, o.geom, o.{name} "  # nosec B608 - name is a column name read from the table definition, never input
                     "FROM osm_rtree r JOIN osm_objects o ON o.id = r.id "
                     "WHERE r.max_lon >= :w AND r.min_lon <= :e AND r.max_lat >= :s AND r.min_lat <= :n "
                     "ORDER BY o.id"
