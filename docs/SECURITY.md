@@ -140,7 +140,7 @@ Open Omniscience targets a **single local user** on a **Qubes OS Debian AppVM**:
   worth stating because "we do not contact it" is a property of a setting here, not of
   the absence of code, and a dependency upgrade can quietly change a default.
 
-  **Every default-on ride-along has a working switch (PF07, fixed 2026-09-30).** Calendars
+  **Every ride-along that has a switch now honours it (PF07, fixed 2026-09-30).** Calendars
   (`auto_import_calendars`), law (`auto_track_law`) and hazard feeds (`auto_track_signals`) were
   once un-switchable for two different reasons: the first two were read through
   `getattr(settings, …, True)` against a `SchedulerSettings` that defined neither, and the third
