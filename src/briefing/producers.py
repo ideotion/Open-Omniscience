@@ -25,10 +25,10 @@ from sqlalchemy import func
 
 from src.analytics.queries import resolve_keyword
 from src.briefing.card import Card, frame, frames_text, numeric_frames
+from src.database.derived_views import KeywordMentionRead
 from src.database.models import (
     Article,
     CommodityPrice,
-    KeywordMention,
     MarketExtractionRule,
     Source,
     WikiPage,
@@ -235,15 +235,15 @@ def _articles_for_term(session, keyword_id: int, *, days: int, limit: int, end=N
     cutoff = anchor - timedelta(days=days)
     q = (
         session.query(Article, Source.name)
-        .join(KeywordMention, KeywordMention.article_id == Article.id)
+        .join(KeywordMentionRead, KeywordMentionRead.article_id == Article.id)
         .outerjoin(Source, Source.id == Article.source_id)
-        .filter(KeywordMention.keyword_id == keyword_id)
-        .filter(KeywordMention.observed_on >= cutoff)
+        .filter(KeywordMentionRead.keyword_id == keyword_id)
+        .filter(KeywordMentionRead.observed_on >= cutoff)
         .filter(Article.quarantined.isnot(True))
     )
     if end is not None:
-        q = q.filter(KeywordMention.observed_on < end)
-    return q.order_by(KeywordMention.observed_on.desc(), Article.id.desc()).limit(limit).all()
+        q = q.filter(KeywordMentionRead.observed_on < end)
+    return q.order_by(KeywordMentionRead.observed_on.desc(), Article.id.desc()).limit(limit).all()
 
 
 def _evidence_from_articles(rows, *, limit: int = 4) -> list[dict]:
@@ -658,8 +658,8 @@ def price_narrative(session) -> list[Card]:
         if kw is None:
             continue
         mentions = (
-            session.query(KeywordMention.article_id, KeywordMention.observed_on)
-            .filter(KeywordMention.keyword_id == kw.id, KeywordMention.observed_on.isnot(None))
+            session.query(KeywordMentionRead.article_id, KeywordMentionRead.observed_on)
+            .filter(KeywordMentionRead.keyword_id == kw.id, KeywordMentionRead.observed_on.isnot(None))
             .all()
         )
         article_dates = [d for _, d in mentions]
@@ -1102,8 +1102,8 @@ def lonely_signal(session) -> list[Card]:
             hit_terms = {
                 n
                 for (n,) in session.query(Keyword.normalized_term)
-                .join(KeywordMention, KeywordMention.keyword_id == Keyword.id)
-                .filter(KeywordMention.article_id == aid)
+                .join(KeywordMentionRead, KeywordMentionRead.keyword_id == Keyword.id)
+                .filter(KeywordMentionRead.article_id == aid)
                 .distinct()
             }
             if not (hit_terms & trending_terms):

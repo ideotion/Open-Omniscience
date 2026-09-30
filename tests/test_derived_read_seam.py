@@ -164,13 +164,8 @@ _CEILING: dict[str, int] = {
     "src/ai_layer/triage.py": 1,
     "src/analytics/article_lang_map.py": 1,
     "src/analytics/columnar.py": 7,
-    "src/analytics/corroboration.py": 8,
-    "src/analytics/emergence.py": 11,
-    "src/analytics/engine_report.py": 9,
     "src/analytics/keyword_fold.py": 17,
     "src/analytics/serve_gate.py": 2,
-    "src/analytics/source_quality.py": 10,
-    "src/analytics/source_topics.py": 4,
     "src/analytics/store.py": 24,
     "src/api/database.py": 2,
     "src/api/diagnostics/bundle.py": 2,
@@ -179,8 +174,6 @@ _CEILING: dict[str, int] = {
     "src/api/link_analysis.py": 2,
     "src/api/link_preview.py": 5,
     "src/api/main.py": 25,
-    "src/briefing/card_audit.py": 11,
-    "src/briefing/producers.py": 14,
     # A user-facing sentence, keyed by its exact English text in the 11 bulletin catalogs
     # (configs/bulletin_i18n); renaming the model in it would orphan every translation.
     "src/bulletin/sections.py": 1,

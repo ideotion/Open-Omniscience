@@ -12792,3 +12792,16 @@ instance that imports backups and re-indexes them offline read `auto_cleanup.las
 from one window were the tell: **when a health marker is null for several steps that share a caller, look
 for the caller's liveness before the steps' logic.** The fix runs the same window on a slow timer only while
 the loop is stopped, and yields, recording why, to an exclusive window, a re-index drain or a writer job.
+
+### A RENAME BY REGEX ALSO REWRITES STRINGS THAT ARE DATA: THE BULLETIN'S METHOD SENTENCE IS THE KEY OF ITS 11 TRANSLATIONS (keyword session, 2026-09-30, PR #1261's review)
+
+Moving the readers onto `KeywordMentionRead` was a word-boundary rename of `KeywordMention`. In
+`src/bulletin/sections.py` that also changed a sentence inside a returned `method` string ("Keyed off the
+denormalised KeywordMention.source_id ..."). The bulletin's catalogs use **the exact English sentence as the
+key** (`src/bulletin/i18n.py`), so the new sentence translated to nothing in all 11 languages and the old key
+was orphaned; no test caught it (583 passed) because the renderers never print that per-section sentence. A
+second, independent reviewer found it by diffing the two versions' outputs side by side against one seeded
+database. **After any mechanical rename, AST-scan the files for STRING constants that are not docstrings and
+contain the new name** (the scan of every migrated file is ten lines and came back empty after the one fix),
+and treat a string that carries an identifier as data until proven prose. The seam ratchet keeps
+`src/bulletin/sections.py` at one occurrence for this reason.
