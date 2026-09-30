@@ -170,7 +170,6 @@ _CEILING: dict[str, int] = {
     "src/analytics/emergence.py": 11,
     "src/analytics/engine_report.py": 9,
     "src/analytics/keyword_fold.py": 17,
-    "src/analytics/queries.py": 134,
     "src/analytics/serve_gate.py": 2,
     "src/analytics/source_quality.py": 10,
     "src/analytics/source_topics.py": 4,

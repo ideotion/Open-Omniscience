@@ -159,9 +159,9 @@ def test_the_verbatim_shape_is_what_the_pattern_catches() -> None:
 
 def test_the_trend_counts_are_labelled_as_what_the_endpoint_sums() -> None:
     """The node group drives the renderer; this pins the PREMISE it rests on, in the
-    server source: every point's ``count`` is a SUM of KeywordMention.count."""
+    server source: every point's ``count`` is a SUM of the mention count."""
     src = (_ROOT / "src" / "analytics" / "queries.py").read_text(encoding="utf-8")
-    assert "func.sum(KeywordMention.count)" in src, (
+    assert "func.sum(KeywordMentionRead.count)" in src, (
         "the trend no longer sums mention counts -- the Counts label must follow it")
     js = read_static("app-analysis.js")
     body = strip_comments(function_body(js, "renderAnTrend"))
