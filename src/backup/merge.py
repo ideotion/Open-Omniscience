@@ -2212,7 +2212,7 @@ def _alternate_local_match(
         juris = identity.get("jurisdiction")
         rows = _q(
             con,
-            "SELECT r.id FROM law_revisions r JOIN law_documents d ON d.id = r.document_id"
+            "SELECT r.id FROM law_revisions r JOIN law_documents d ON d.id = r.document_id"  # nosec B608 - only module-literal fragments are joined, every value is bound
             " WHERE d.url = ? AND r.content_hash = ?" + (" AND d.jurisdiction = ?" if juris else "")
             + " ORDER BY r.id LIMIT 1",
             (identity.get("document_url"), identity.get("revision_content_hash"))
