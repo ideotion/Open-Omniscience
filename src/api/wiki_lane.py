@@ -138,6 +138,62 @@ def lane_analytics(window_days: int = Query(7, ge=1, le=90)) -> dict:
         return _unreadable("analytics")
 
 
+def _followed_editions() -> tuple[str, ...]:
+    from src.scheduler.settings import load_settings
+
+    return tuple(getattr(load_settings(), "wiki_lane_editions", ()) or ())
+
+
+@router.get("/divergence")
+def lane_divergence(
+    qid: str | None = Query(None, max_length=40),
+    window_days: int = Query(7, ge=1, le=90),
+) -> dict:
+    """Q712's analytic 4: what each edition holds for ONE Wikidata item.
+
+    Without ``qid`` it answers only the suggestions: the items of the pages the stream
+    recorded most changes for that the walk has linked to an item. With one, only that item."""
+    from src.wiki.cross_edition import divergence, divergence_candidates, normalise_qid
+
+    if not lane_path("wiki").is_file():
+        return _absent()
+    try:
+        with lane_session("wiki") as lane:
+            if qid is None or not qid.strip():
+                # The suggestions scan the window's change rows, so they are read only when
+                # no item is chosen; the page keeps the last list it was given.
+                candidates = divergence_candidates(lane, window_days=window_days)
+                return {"measured": False, "reason": "no-item-chosen", "candidates": candidates}
+            if normalise_qid(qid) is None:
+                return {"measured": False, "reason": "qid-invalid", "qid": qid[:40]}
+            return divergence(lane, qid, editions=_followed_editions(), window_days=window_days)
+    except LaneAbsentError:
+        return _absent()
+    except SQLAlchemyError:
+        return _unreadable("divergence")
+
+
+@router.get("/attention")
+def lane_attention(edition: str | None = Query(None, max_length=16)) -> dict:
+    """Q712's analytic 5: the source's most-viewed pages of its latest day beside the
+    press corpus's coverage of each title. One day's cross-section; see the payload's caveat."""
+    from src.config.kv_store import kv_get_json
+    from src.database.session import SessionLocal
+    from src.wiki.cross_edition import attention
+    from src.wiki.hotset import pageview_kv_key
+
+    editions = _followed_editions()
+    with_list = [e for e in editions if (kv_get_json(pageview_kv_key(e)) or {}).get("rows")]
+    chosen = edition if edition in editions else (with_list[0] if with_list else None)
+    if chosen is None:
+        return {"measured": False, "reason": "no-top-list-yet", "editions": list(editions), "with_list": []}
+    try:
+        with SessionLocal() as corpus:
+            return {**attention(corpus, edition=chosen), "editions": list(editions), "with_list": with_list}
+    except SQLAlchemyError:
+        return _unreadable("attention")
+
+
 @router.get("/counters")
 def lane_counters_route(window_days: int = Query(7, ge=1, le=90)) -> dict:
     """The operator's ≥ 72 h run, read from the lane's own rows.

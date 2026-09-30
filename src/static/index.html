@@ -1696,6 +1696,20 @@
                law reader mounts -- same controls, same disclosures (Q918's note). -->
           <div id="wiki-tc-versions" class="living-versions"></div>
         </section>
+        <!-- 0.5 row F (S05-06, Q712's analytics 4-5). Reads the walk's rows, the stream's
+             recorded changes and the once-a-day top-viewed list: nothing here fetches. -->
+        <h3 class="lib-sub">One item across editions</h3>
+        <p class="hint">What each edition you follow holds for one Wikidata item: its page, its size and the changes this machine recorded. The sizes come from the page walk.</p>
+        <form id="wiki-div-form" class="row living-law-form">
+          <input id="wiki-div-q" type="search" autocomplete="off" aria-label="Wikidata item" placeholder="Q42">
+          <button type="submit">Compare</button>
+        </form>
+        <div id="wiki-div-cands"></div>
+        <div id="wiki-div-result"></div>
+        <h3 class="lib-sub">Most-viewed pages beside your corpus</h3>
+        <p class="hint">The source's most-viewed pages of its latest day, each beside the number of articles in your corpus that mention the title. One day at a time, not a history.</p>
+        <div id="wiki-att-tools" class="row"></div>
+        <div id="wiki-att-result"></div>
       </div>
 
       <div id="living-law" style="display:none">

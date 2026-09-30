@@ -134,6 +134,10 @@ anything — the sheet's anchors were verified at `main`@`bebcef4` on 2026-09-12
   (pageviews) versus coverage in the press corpus — counts, n, co-occurrence never causation, `ooChart`
   (invariant #16) with the sparse-bar rule.
 - **Acceptance:** both render from real rows of the run (the gate's clause), n shown.
+- **Built 2026-09-30 (PR #1256), on fixtures:** `src/wiki/cross_edition.py`, `GET /api/wiki/lane/divergence` and
+  `/attention`, Living sources → Wikipedia. Attention is a table, not an `ooChart`: the lane keeps no per-page view
+  history, so it is one day's cross-section; a daily history would be a storage decision nobody has made. The
+  acceptance clause still needs real rows from the run.
 
 ### S5 — The run (operator) and the depth statement (Q1009 ⛔)
 - **What:** the walk runs for a stated period on the reference VM inside the budget; with Q1009 blank it
