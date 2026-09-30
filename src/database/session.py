@@ -461,6 +461,13 @@ def init_db() -> None:
     from src.database.migrate import align_stamp_to_head
 
     _stamp = align_stamp_to_head(engine)
+    # THE STAMP ALIGNMENT RUNS ALEMBIC, and env.py drops the derived-row view for any run that
+    # is not already at head (SQLite refuses a column drop or table re-create while a view
+    # names the column). The ensure further up ran BEFORE this, so on the first boot of an
+    # install whose stamp lagged its self-healed schema the view would be gone and every
+    # migrated reader would 500 until the next restart. Re-ensure: one sqlite_master read when
+    # the view is present, so it costs nothing at steady state.
+    ensure_derived_views(engine)
     if _stamp.get("action") == "advanced":
         _LOG.info(
             "alembic stamp aligned to head (%s -> %s) after schema self-heal; the stamp "

@@ -24,10 +24,10 @@ from src.analytics import equivalence
 from src.database.models import (
     Article,
     ArticleEntity,
-    ArticleKeyword,
     ArticleMentionedPlace,
     Base,
     Keyword,
+    KeywordMention,
     Place,
     Source,
     WikidataItem,
@@ -113,7 +113,7 @@ def seeded(db, rings):
     kw = Keyword(term="Zedport-sur-Mer", normalized_term="zedport-sur-mer", language="fr")
     db.add(kw)
     db.flush()
-    db.add(ArticleKeyword(article_id=a2.id, keyword_id=kw.id))
+    db.add(KeywordMention(article_id=a2.id, keyword_id=kw.id, count=1))
     # Route 3: a place mention that resolves to a Place carrying this item.
     db.add(Place(id=ZED_PLACE, qid=ZED, kind="city", name="Zedport", country="zz"))
     a3 = _article(db, law, "Ordinance for the port of Zedport.", lang=None)
@@ -126,7 +126,7 @@ def seeded(db, rings):
     kw_en = Keyword(term="zedport-sur-mer", normalized_term="zedport-sur-mer", language="en")
     db.add(kw_en)
     db.flush()
-    db.add(ArticleKeyword(article_id=a5.id, keyword_id=kw_en.id))
+    db.add(KeywordMention(article_id=a5.id, keyword_id=kw_en.id, count=1))
     db.commit()
     return {"a1": a1.id, "a2": a2.id, "a3": a3.id, "a4": a4.id, "a5": a5.id}
 
@@ -274,8 +274,8 @@ def test_an_acronym_stored_upper_case_still_joins(db, rings, lanes, monkeypatch)
     kw_ru = Keyword(term="США", normalized_term="США", language="ru")
     db.add_all([kw, kw_ru])
     db.flush()
-    db.add(ArticleKeyword(article_id=a.id, keyword_id=kw.id))
-    db.add(ArticleKeyword(article_id=b.id, keyword_id=kw_ru.id))
+    db.add(KeywordMention(article_id=a.id, keyword_id=kw.id, count=1))
+    db.add(KeywordMention(article_id=b.id, keyword_id=kw_ru.id, count=1))
     c = _article(db, src, "USA again.")
     db.add(ArticleEntity(article_id=c.id, name="USA", entity_class="organization", mentions=1))
     db.commit()

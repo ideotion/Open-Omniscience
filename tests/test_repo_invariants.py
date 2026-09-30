@@ -4763,7 +4763,7 @@ def test_ooMap_choropleth():
     # Draws through the ONE projection seam -- no second projection invented. The seam
     # became Equal Earth on 2026-09-16 (ruling Q801); the property this pins is
     # unchanged, and the exclusivity of the seam is guarded in tests/test_map_projection.py.
-    assert "function _ooMapPath(rings)" in html, "the polygon path builder must exist"
+    assert "function _ooMapPath(rings, dec)" in html, "the polygon path builder must exist"
     assert "function project(lon, lat)" in html, "the one projection seam must exist"
     assert "project(p[0], p[1])" in html, (
         "country polygons must draw through the project() seam, never their own maths"

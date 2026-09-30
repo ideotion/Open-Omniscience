@@ -165,12 +165,10 @@ _CEILING: dict[str, int] = {
     "src/analytics/article_lang_map.py": 1,
     "src/analytics/columnar.py": 7,
     "src/analytics/concentration.py": 65,
-    "src/analytics/conjunction.py": 24,
     "src/analytics/corroboration.py": 8,
     "src/analytics/emergence.py": 11,
     "src/analytics/engine_report.py": 9,
     "src/analytics/keyword_fold.py": 17,
-    "src/analytics/queries.py": 134,
     "src/analytics/serve_gate.py": 2,
     "src/analytics/source_quality.py": 10,
     "src/analytics/source_topics.py": 4,
@@ -372,3 +370,46 @@ def test_a_reader_recreates_a_missing_view_instead_of_failing(db):
     assert out["complete"] is True
     assert db.execute(text("SELECT 1 FROM sqlite_master WHERE name=:v"),
                       {"v": MENTIONS_VIEW}).fetchone()
+
+
+def test_the_view_survives_the_stamp_alignment_that_init_db_runs_after_it(tmp_path):
+    """``init_db`` ensures the view, THEN aligns a stamp that lags a self-healed schema; that
+    alignment runs alembic, and env.py drops the view for any run that is not at head. Without
+    a second ensure the first boot of such an install left every migrated reader on
+    "no such table: keyword_mentions_all" until the next restart. Found by the Opus review of
+    the readers slice (PR #1250)."""
+    import os
+    import subprocess
+    import sys
+
+    code = (
+        "from src.database.session import init_db;"
+        "init_db();"
+        "from src.database.session import engine;"
+        "from sqlalchemy import text;"
+        "c = engine.connect();"
+        f"n = c.execute(text(\"SELECT count(*) FROM sqlite_master WHERE type='view' AND name='{MENTIONS_VIEW}'\")).scalar();"
+        "raise SystemExit(0 if n == 1 else 3)"
+    )
+
+    def boot():
+        return subprocess.run(
+            [sys.executable, "-c", code], cwd=_SRC.parent,
+            env={**os.environ, "OO_DATA_DIR": str(tmp_path), "OO_NO_SCHEDULER": "1"},
+            capture_output=True, text=True,
+        )
+
+    first = boot()
+    assert first.returncode == 0, first.stdout + first.stderr
+    # An install whose stamp lags its (already healed) schema: the state align_stamp_to_head advances.
+    from alembic.script import ScriptDirectory
+
+    from src.database.migrate import _alembic_config
+
+    script = ScriptDirectory.from_config(_alembic_config())
+    parent = script.get_revision(script.get_current_head()).down_revision
+    assert isinstance(parent, str)
+    assert _alembic(["stamp", parent], tmp_path).returncode == 0
+    second = boot()
+    assert second.returncode == 0, "view missing after the stamp alignment: " + second.stdout + second.stderr
+

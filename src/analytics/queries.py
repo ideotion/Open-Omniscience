@@ -4,7 +4,8 @@ Read-side analytics over the keyword-mention store.
 Open Omniscience - Global Intelligence Platform for Investigative Journalism
 Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 
-Every figure here is a real aggregate over ``KeywordMention`` — counts, a defined
+Every figure here is a real aggregate over the keyword mentions (read through
+``KeywordMentionRead``, R96) — counts, a defined
 growth ratio for "trending", and PMI for associations — with sample sizes and an
 explicit method/caveat. Nothing is invented. Context snippets are sliced from the
 stored article text around the recorded first-occurrence offset.
@@ -15,12 +16,13 @@ from __future__ import annotations
 import math
 import os
 import time
-from datetime import date, timedelta
 from collections.abc import Callable, Sequence
+from datetime import date, timedelta
 from typing import Any
 
 from sqlalchemy import func
 
+from src.database.derived_views import KeywordMentionRead
 from src.database.models import (
     Article,
     ArticleEntity,
@@ -28,10 +30,8 @@ from src.database.models import (
     ArticleMentionedPlace,
     Keyword,
     KeywordFamilyOverride,
-    KeywordMention,
     Source,
 )
-
 
 # Chunk size for id IN(...) queries -- stay under SQLite's historical ~999
 # bound-variable ceiling, the same repo-wide invariant as latest.py:_SQL_IN_CHUNK
@@ -84,10 +84,10 @@ def _ring_lang_of(session, stored: dict[str, str | None]):
             session.query(
                 Keyword.normalized_term,
                 Article.language,
-                func.count(func.distinct(KeywordMention.article_id)),
+                func.count(func.distinct(KeywordMentionRead.article_id)),
             )
-            .join(KeywordMention, KeywordMention.keyword_id == Keyword.id)
-            .join(Article, Article.id == KeywordMention.article_id)
+            .join(KeywordMentionRead, KeywordMentionRead.keyword_id == Keyword.id)
+            .join(Article, Article.id == KeywordMentionRead.article_id)
             .filter(Keyword.normalized_term.in_(need_sig))
             .group_by(Keyword.normalized_term, Article.language)
             .all()
@@ -203,8 +203,8 @@ def _has_mentions(session, keyword_id: int) -> bool:
     """Whether any mention row still points at this keyword -- the same authoritative
     test ``prune_orphan_keywords`` uses, one ``(keyword_id, article_id)`` index seek."""
     return (
-        session.query(KeywordMention.id)
-        .filter(KeywordMention.keyword_id == keyword_id)
+        session.query(KeywordMentionRead.id)
+        .filter(KeywordMentionRead.keyword_id == keyword_id)
         .first()
         is not None
     )
@@ -281,11 +281,11 @@ def resolve_keyword(session, term: str, *, exact: bool = False) -> Keyword | Non
     if exact:
         return None
     rows = (
-        session.query(Keyword, func.coalesce(func.sum(KeywordMention.count), 0).label("m"))
-        .outerjoin(KeywordMention, KeywordMention.keyword_id == Keyword.id)
+        session.query(Keyword, func.coalesce(func.sum(KeywordMentionRead.count), 0).label("m"))
+        .outerjoin(KeywordMentionRead, KeywordMentionRead.keyword_id == Keyword.id)
         .filter(Keyword.normalized_term.like(f"%{norm}%"))
         .group_by(Keyword.id)
-        .order_by(func.coalesce(func.sum(KeywordMention.count), 0).desc())
+        .order_by(func.coalesce(func.sum(KeywordMentionRead.count), 0).desc())
         .limit(1)
         .all()
     )
@@ -318,9 +318,9 @@ def keyword_frequency(session) -> Callable[[Sequence[str]], dict[str, int]]:
             rows = (
                 session.query(
                     Keyword.normalized_term,
-                    func.coalesce(func.sum(KeywordMention.count), 0),
+                    func.coalesce(func.sum(KeywordMentionRead.count), 0),
                 )
-                .outerjoin(KeywordMention, KeywordMention.keyword_id == Keyword.id)
+                .outerjoin(KeywordMentionRead, KeywordMentionRead.keyword_id == Keyword.id)
                 .filter(Keyword.normalized_term.in_(chunk))
                 .group_by(Keyword.normalized_term)
                 .all()
@@ -542,8 +542,8 @@ def concept_arms(
         art_ids: list[int] = []
         for i in range(0, len(kw_ids), _IN_CHUNK):
             rows = (
-                session.query(KeywordMention.article_id)
-                .filter(KeywordMention.keyword_id.in_(kw_ids[i : i + _IN_CHUNK]))
+                session.query(KeywordMentionRead.article_id)
+                .filter(KeywordMentionRead.keyword_id.in_(kw_ids[i : i + _IN_CHUNK]))
                 .distinct()
                 .all()
             )
@@ -558,9 +558,9 @@ def concept_arms(
         counts: dict[int, int] = {}
         for i in range(0, len(scan), _IN_CHUNK):
             rows = (
-                session.query(KeywordMention.keyword_id, func.count(func.distinct(KeywordMention.article_id)))
-                .filter(KeywordMention.article_id.in_(scan[i : i + _IN_CHUNK]))
-                .group_by(KeywordMention.keyword_id)
+                session.query(KeywordMentionRead.keyword_id, func.count(func.distinct(KeywordMentionRead.article_id)))
+                .filter(KeywordMentionRead.article_id.in_(scan[i : i + _IN_CHUNK]))
+                .group_by(KeywordMentionRead.keyword_id)
                 .all()
             )
             for kid, n in rows:
@@ -877,17 +877,17 @@ def annotate_label_languages(
     for i in range(0, len(ask), _IN_CHUNK):
         chunk = ask[i : i + _IN_CHUNK]
         q = (
-            session.query(Keyword.normalized_term, KeywordMention.language, func.sum(KeywordMention.count))
-            .join(KeywordMention, KeywordMention.keyword_id == Keyword.id)
+            session.query(Keyword.normalized_term, KeywordMentionRead.language, func.sum(KeywordMentionRead.count))
+            .join(KeywordMentionRead, KeywordMentionRead.keyword_id == Keyword.id)
             .filter(Keyword.normalized_term.in_(chunk))
         )
         if start is not None:
-            q = q.filter(KeywordMention.observed_on >= start)
+            q = q.filter(KeywordMentionRead.observed_on >= start)
         if end is not None:
-            q = q.filter(KeywordMention.observed_on < end)
+            q = q.filter(KeywordMentionRead.observed_on < end)
         if country:
-            q = q.filter(KeywordMention.country == country.lower())
-        for norm, lang, n in q.group_by(Keyword.normalized_term, KeywordMention.language):
+            q = q.filter(KeywordMentionRead.country == country.lower())
+        for norm, lang, n in q.group_by(Keyword.normalized_term, KeywordMentionRead.language):
             key = equivalence._norm(norm or "")
             lg = (lang or "").strip().casefold() or "?"
             per = counts.setdefault(key, {})
@@ -968,12 +968,12 @@ def _mention_series(session, ids, *, bucket: str, country: str | None) -> list[d
     buckets: dict[str, int] = {}
     for i in range(0, len(ids), _IN_CHUNK):
         chunk = ids[i : i + _IN_CHUNK]
-        q = session.query(KeywordMention.observed_on, func.sum(KeywordMention.count)).filter(
-            KeywordMention.keyword_id.in_(chunk), KeywordMention.observed_on.isnot(None)
+        q = session.query(KeywordMentionRead.observed_on, func.sum(KeywordMentionRead.count)).filter(
+            KeywordMentionRead.keyword_id.in_(chunk), KeywordMentionRead.observed_on.isnot(None)
         )
         if country:
-            q = q.filter(KeywordMention.country == country.lower())
-        for d, c in q.group_by(KeywordMention.observed_on).all():
+            q = q.filter(KeywordMentionRead.country == country.lower())
+        for d, c in q.group_by(KeywordMentionRead.observed_on).all():
             k = _bucket_key(d, bucket)
             buckets[k] = buckets.get(k, 0) + int(c or 0)
     return [{"date": k, "count": v} for k, v in sorted(buckets.items())]
@@ -992,8 +992,8 @@ def _distinct_articles(session, ids) -> int:
     """
     if len(ids) <= _IN_CHUNK:
         return int(
-            session.query(func.count(func.distinct(KeywordMention.article_id)))
-            .filter(KeywordMention.keyword_id.in_(ids))
+            session.query(func.count(func.distinct(KeywordMentionRead.article_id)))
+            .filter(KeywordMentionRead.keyword_id.in_(ids))
             .scalar()
             or 0
         )
@@ -1001,8 +1001,8 @@ def _distinct_articles(session, ids) -> int:
     for i in range(0, len(ids), _IN_CHUNK):
         chunk = ids[i : i + _IN_CHUNK]
         for (aid,) in (
-            session.query(KeywordMention.article_id)
-            .filter(KeywordMention.keyword_id.in_(chunk))
+            session.query(KeywordMentionRead.article_id)
+            .filter(KeywordMentionRead.keyword_id.in_(chunk))
             .distinct()
             .all()
         ):
@@ -1062,19 +1062,19 @@ def trend(
     kw = resolve_keyword(session, term, exact=True)
     if kw is None:
         return {"term": term, "resolved": None, "points": [], "total": 0, "articles": 0}
-    q = session.query(KeywordMention.observed_on, func.sum(KeywordMention.count)).filter(
-        KeywordMention.keyword_id == kw.id, KeywordMention.observed_on.isnot(None)
+    q = session.query(KeywordMentionRead.observed_on, func.sum(KeywordMentionRead.count)).filter(
+        KeywordMentionRead.keyword_id == kw.id, KeywordMentionRead.observed_on.isnot(None)
     )
     if country:
-        q = q.filter(KeywordMention.country == country.lower())
-    rows = q.group_by(KeywordMention.observed_on).all()
+        q = q.filter(KeywordMentionRead.country == country.lower())
+    rows = q.group_by(KeywordMentionRead.observed_on).all()
     buckets: dict[str, int] = {}
     for d, c in rows:
         buckets[_bucket_key(d, bucket)] = buckets.get(_bucket_key(d, bucket), 0) + int(c or 0)
     points = [{"date": k, "count": v} for k, v in sorted(buckets.items())]
     articles = (
-        session.query(func.count(func.distinct(KeywordMention.article_id)))
-        .filter(KeywordMention.keyword_id == kw.id)
+        session.query(func.count(func.distinct(KeywordMentionRead.article_id)))
+        .filter(KeywordMentionRead.keyword_id == kw.id)
         .scalar()
         or 0
     )
@@ -1112,7 +1112,7 @@ def trend_range_article_ids(
     """The articles behind a brushed span of a keyword trend chart.
 
     WHY THIS RESOLVES ON ``observed_on`` AND NOT ON ``Article.published_at``. The chart's
-    x-axis IS ``KeywordMention.observed_on``, which is
+    x-axis IS ``KeywordMentionRead.observed_on``, which is
     ``(published_at or created_at).date()`` -- a coalesce. The date filter behind Advanced
     search uses ``published_at`` alone, so an article whose publish date could not be
     extracted is plotted on the chart and excluded by that filter. Resolving a brushed
@@ -1123,7 +1123,7 @@ def trend_range_article_ids(
     ``tests/test_chart_time_vs_filter_time.py``.
 
     TWO NUMBERS, BOTH REPORTED, BECAUSE THEY ARE DIFFERENT QUANTITIES. A bar's height is a
-    MENTION total (``trend`` sums ``KeywordMention.count``); the selection is a set of
+    MENTION total (``trend`` sums ``KeywordMentionRead.count``); the selection is a set of
     ARTICLES. One article mentioning a term three times contributes 3 to the bar and 1 to
     the set. Reporting only one of them would let it stand for the other.
 
@@ -1174,16 +1174,16 @@ def trend_range_article_ids(
     start, _ = _bucket_span(start, bucket)
     _, end = _bucket_span(end, bucket)
     in_range = (
-        KeywordMention.keyword_id.in_(_concept_seed_ids(concept, kw)),
-        KeywordMention.observed_on >= start,
-        KeywordMention.observed_on <= end,
+        KeywordMentionRead.keyword_id.in_(_concept_seed_ids(concept, kw)),
+        KeywordMentionRead.observed_on >= start,
+        KeywordMentionRead.observed_on <= end,
     )
     ids = [
         r[0]
-        for r in session.query(KeywordMention.article_id).filter(*in_range).distinct().all()
+        for r in session.query(KeywordMentionRead.article_id).filter(*in_range).distinct().all()
     ]
     mentions = int(
-        session.query(func.sum(KeywordMention.count)).filter(*in_range).scalar() or 0
+        session.query(func.sum(KeywordMentionRead.count)).filter(*in_range).scalar() or 0
     )
 
     # Bounded quarantine removal, chunked under SQLite's variable ceiling via the
@@ -1303,23 +1303,23 @@ def top_terms(
         if _rollup_rows is None:  # not opted in / not built / per-country / end -> live query
             q = session.query(
                 Keyword,
-                func.sum(KeywordMention.count).label("m"),
-                func.count(func.distinct(KeywordMention.article_id)).label("arts"),
-            ).join(KeywordMention, KeywordMention.keyword_id == Keyword.id)
+                func.sum(KeywordMentionRead.count).label("m"),
+                func.count(func.distinct(KeywordMentionRead.article_id)).label("arts"),
+            ).join(KeywordMentionRead, KeywordMentionRead.keyword_id == Keyword.id)
             if days and end is not None:
                 # Exact half-open [end - days, end): a closed, reproducible period.
                 q = q.filter(
-                    KeywordMention.observed_on >= end - timedelta(days=days),
-                    KeywordMention.observed_on < end,
+                    KeywordMentionRead.observed_on >= end - timedelta(days=days),
+                    KeywordMentionRead.observed_on < end,
                 )
             elif days:
-                q = q.filter(KeywordMention.observed_on >= date.today() - timedelta(days=days))
+                q = q.filter(KeywordMentionRead.observed_on >= date.today() - timedelta(days=days))
             if country:
-                q = q.filter(KeywordMention.country == country.lower())
+                q = q.filter(KeywordMentionRead.country == country.lower())
             q = _apply_kind(q, kind)
             rows = (
                 q.group_by(Keyword.id)
-                .order_by(func.sum(KeywordMention.count).desc())
+                .order_by(func.sum(KeywordMentionRead.count).desc())
                 .limit(limit * 4)
                 .all()
             )
@@ -1422,18 +1422,18 @@ def corpus_keywords(
     q = (
         session.query(
             Keyword,
-            func.sum(KeywordMention.count).label("m"),
-            func.count(func.distinct(KeywordMention.article_id)).label("arts"),
+            func.sum(KeywordMentionRead.count).label("m"),
+            func.count(func.distinct(KeywordMentionRead.article_id)).label("arts"),
         )
-        .join(KeywordMention, KeywordMention.keyword_id == Keyword.id)
-        .filter(KeywordMention.article_id.in_(article_ids))
+        .join(KeywordMentionRead, KeywordMentionRead.keyword_id == Keyword.id)
+        .filter(KeywordMentionRead.article_id.in_(article_ids))
     )
     q = _apply_kind(q, kind)
     rows = (
         q.group_by(Keyword.id)
         .order_by(
-            func.count(func.distinct(KeywordMention.article_id)).desc(),
-            func.sum(KeywordMention.count).desc(),
+            func.count(func.distinct(KeywordMentionRead.article_id)).desc(),
+            func.sum(KeywordMentionRead.count).desc(),
         )
         .limit(limit * 4)
         .all()
@@ -1596,17 +1596,17 @@ def ring_country_split(session, *, ring_id: str, days: int | None = None, limit:
     q = (
         session.query(
             Source.country,
-            func.sum(KeywordMention.count).label("m"),
-            func.count(func.distinct(KeywordMention.article_id)).label("arts"),
+            func.sum(KeywordMentionRead.count).label("m"),
+            func.count(func.distinct(KeywordMentionRead.article_id)).label("arts"),
         )
-        .join(Article, Article.id == KeywordMention.article_id)
+        .join(Article, Article.id == KeywordMentionRead.article_id)
         .join(Source, Source.id == Article.source_id)
-        .filter(KeywordMention.keyword_id.in_(kw_ids))
+        .filter(KeywordMentionRead.keyword_id.in_(kw_ids))
     )
     if days and days > 0:
         cutoff = date.today() - timedelta(days=days)
         q = q.filter(Article.published_at >= cutoff)
-    rows = q.group_by(Source.country).order_by(func.count(func.distinct(KeywordMention.article_id)).desc()).all()
+    rows = q.group_by(Source.country).order_by(func.count(func.distinct(KeywordMentionRead.article_id)).desc()).all()
     # The GROUP BY has already materialised every bucket, so both exact totals below
     # are free -- but a bare ``rows[:limit]`` made two silent claims, and the shipped
     # catalog carries 189 distinct source countries, so the default limit of 40 is
@@ -1706,17 +1706,17 @@ def ring_country_article_ids(
     # .distinct() the QUERY method (SELECT DISTINCT), never a bare func.distinct()
     # column wrap — the same pattern corpus_facet_article_ids uses for exact ids.
     q = (
-        session.query(KeywordMention.article_id)
-        .join(Article, Article.id == KeywordMention.article_id)
+        session.query(KeywordMentionRead.article_id)
+        .join(Article, Article.id == KeywordMentionRead.article_id)
         .join(Source, Source.id == Article.source_id)
-        .filter(KeywordMention.keyword_id.in_(list(kw_ids)))
+        .filter(KeywordMentionRead.keyword_id.in_(list(kw_ids)))
         .distinct()
     )
     q = q.filter(Source.country.is_(None)) if country is None else q.filter(Source.country == country)
     if days and days > 0:
         cutoff = date.today() - timedelta(days=days)
         q = q.filter(Article.published_at >= cutoff)
-    rows = q.order_by(KeywordMention.article_id).limit(limit + 1).all()
+    rows = q.order_by(KeywordMentionRead.article_id).limit(limit + 1).all()
     ids = [int(r[0]) for r in rows]
     bounded = len(ids) > limit
     if bounded:
@@ -2091,12 +2091,12 @@ def source_country_counts(session) -> dict:
         .group_by(Source.country)
         .all()
     )
-    # Keyword MENTIONS per source-country -- KeywordMention.country is the
+    # Keyword MENTIONS per source-country -- KeywordMentionRead.country is the
     # denormalised SOURCE country, so this is an index scan (no Article join,
     # avoiding the keyword_mentions->articles row-decrypt cost).
     kw_rows = (
-        session.query(KeywordMention.country, func.count())
-        .group_by(KeywordMention.country)
+        session.query(KeywordMentionRead.country, func.count())
+        .group_by(KeywordMentionRead.country)
         .all()
     )
     arts: dict[str, dict] = {}
@@ -2499,12 +2499,12 @@ def trending(
 
         from src.database.query import grouped_counts
 
-        stmt = select(KeywordMention.keyword_id, func.sum(KeywordMention.count)).where(
-            KeywordMention.observed_on >= lo, KeywordMention.observed_on < hi
+        stmt = select(KeywordMentionRead.keyword_id, func.sum(KeywordMentionRead.count)).where(
+            KeywordMentionRead.observed_on >= lo, KeywordMentionRead.observed_on < hi
         )
         if country:
-            stmt = stmt.where(KeywordMention.country == country.lower())
-        return grouped_counts(session, stmt.group_by(KeywordMention.keyword_id), keep)
+            stmt = stmt.where(KeywordMentionRead.country == country.lower())
+        return grouped_counts(session, stmt.group_by(KeywordMentionRead.keyword_id), keep)
 
     # Opt-in rollup serve: sum the in-memory keyword_daily rollup for the two windows
     # instead of scanning keyword_mentions (the freeze). Time-window only — never per-country
@@ -2866,9 +2866,9 @@ def _ring_merge_pairs(rows: list[dict], lang_of, overrides) -> list[dict]:
 def _window_filter(q, start=None, end=None):
     """Apply an observed_on window (ISO dates / date objects) to a mention query."""
     if start:
-        q = q.filter(KeywordMention.observed_on >= start)
+        q = q.filter(KeywordMentionRead.observed_on >= start)
     if end:
-        q = q.filter(KeywordMention.observed_on <= end)
+        q = q.filter(KeywordMentionRead.observed_on <= end)
     return q
 
 
@@ -2955,7 +2955,7 @@ def associations(
         if corpus_total is not None
         else (
             _window_filter(
-                session.query(func.count(func.distinct(KeywordMention.article_id))), start, end
+                session.query(func.count(func.distinct(KeywordMentionRead.article_id))), start, end
             ).scalar()
             or 0
         )
@@ -2963,8 +2963,8 @@ def associations(
     target_articles = [
         a
         for (a,) in _window_filter(
-            session.query(KeywordMention.article_id).filter(
-                KeywordMention.keyword_id.in_(seed_ids)
+            session.query(KeywordMentionRead.article_id).filter(
+                KeywordMentionRead.keyword_id.in_(seed_ids)
             ),
             start,
             end,
@@ -3009,17 +3009,17 @@ def associations(
     co_rows = (
         _window_filter(
             session.query(
-                KeywordMention.keyword_id, func.count(func.distinct(KeywordMention.article_id))
+                KeywordMentionRead.keyword_id, func.count(func.distinct(KeywordMentionRead.article_id))
             ),
             start,
             end,
         )
         .filter(
-            KeywordMention.article_id.in_(target_articles),
-            KeywordMention.keyword_id.notin_(seed_ids),
+            KeywordMentionRead.article_id.in_(target_articles),
+            KeywordMentionRead.keyword_id.notin_(seed_ids),
         )
-        .group_by(KeywordMention.keyword_id)
-        .having(func.count(func.distinct(KeywordMention.article_id)) >= min_cooccur)
+        .group_by(KeywordMentionRead.keyword_id)
+        .having(func.count(func.distinct(KeywordMentionRead.article_id)) >= min_cooccur)
         .all()
     )
     is_hidden = _hidden_predicate()
@@ -3051,14 +3051,14 @@ def associations(
                     int(kid): int(c)
                     for kid, c in _window_filter(
                         session.query(
-                            KeywordMention.keyword_id,
-                            func.count(func.distinct(KeywordMention.article_id)),
+                            KeywordMentionRead.keyword_id,
+                            func.count(func.distinct(KeywordMentionRead.article_id)),
                         ),
                         start,
                         end,
                     )
-                    .filter(KeywordMention.keyword_id.in_(chunk))
-                    .group_by(KeywordMention.keyword_id)
+                    .filter(KeywordMentionRead.keyword_id.in_(chunk))
+                    .group_by(KeywordMentionRead.keyword_id)
                     .all()
                 }
             )
@@ -3231,10 +3231,10 @@ def keyword_stats(
     stat_ids = _concept_seed_ids(concept, kw)
     row = (
         session.query(
-            func.count(func.distinct(KeywordMention.article_id)),
-            func.coalesce(func.sum(KeywordMention.count), 0),
+            func.count(func.distinct(KeywordMentionRead.article_id)),
+            func.coalesce(func.sum(KeywordMentionRead.count), 0),
         )
-        .filter(KeywordMention.keyword_id.in_(stat_ids))
+        .filter(KeywordMentionRead.keyword_id.in_(stat_ids))
         .one()
     )
     distinct_articles, total_mentions = int(row[0] or 0), int(row[1] or 0)
@@ -3250,11 +3250,11 @@ def keyword_stats(
 
     def _sum(lo, hi) -> int:
         return int(
-            session.query(func.coalesce(func.sum(KeywordMention.count), 0))
+            session.query(func.coalesce(func.sum(KeywordMentionRead.count), 0))
             .filter(
-                KeywordMention.keyword_id.in_(stat_ids),
-                KeywordMention.observed_on >= lo,
-                KeywordMention.observed_on < hi,
+                KeywordMentionRead.keyword_id.in_(stat_ids),
+                KeywordMentionRead.observed_on >= lo,
+                KeywordMentionRead.observed_on < hi,
             )
             .scalar()
             or 0
@@ -3338,10 +3338,10 @@ def context(
     if kw is None:
         return {"term": term, "resolved": None, "mentions": []}
     rows = (
-        session.query(KeywordMention, Article)
-        .join(Article, Article.id == KeywordMention.article_id)
-        .filter(KeywordMention.keyword_id.in_(_concept_seed_ids(concept, kw)))
-        .order_by(KeywordMention.observed_on.desc(), KeywordMention.id.desc())
+        session.query(KeywordMentionRead, Article)
+        .join(Article, Article.id == KeywordMentionRead.article_id)
+        .filter(KeywordMentionRead.keyword_id.in_(_concept_seed_ids(concept, kw)))
+        .order_by(KeywordMentionRead.observed_on.desc(), KeywordMentionRead.id.desc())
         .limit(limit)
         .all()
     )
@@ -3400,16 +3400,16 @@ def map_data(
                 Keyword.normalized_term,
                 Keyword.is_entity,
                 Keyword.entity_type,
-                func.sum(KeywordMention.count).label("m"),
+                func.sum(KeywordMentionRead.count).label("m"),
             )
-            .join(Keyword, Keyword.id == KeywordMention.keyword_id)
+            .join(Keyword, Keyword.id == KeywordMentionRead.keyword_id)
             .filter(area_col.isnot(None))
         )
         if days:
-            q = q.filter(KeywordMention.observed_on >= date.today() - timedelta(days=days))
+            q = q.filter(KeywordMentionRead.observed_on >= date.today() - timedelta(days=days))
         q = _apply_kind(q, kind)
         rows = (
-            q.group_by(area_col, Keyword.id).order_by(func.sum(KeywordMention.count).desc()).all()
+            q.group_by(area_col, Keyword.id).order_by(func.sum(KeywordMentionRead.count).desc()).all()
         )
         areas: dict[str, list] = {}
         for area, term, norm, is_ent, ent_type, m in rows:
@@ -3425,23 +3425,23 @@ def map_data(
     def _agg_cities():
         q = (
             session.query(
-                KeywordMention.city,
-                KeywordMention.country,
+                KeywordMentionRead.city,
+                KeywordMentionRead.country,
                 Keyword.term,
                 Keyword.normalized_term,
                 Keyword.is_entity,
                 Keyword.entity_type,
-                func.sum(KeywordMention.count).label("m"),
+                func.sum(KeywordMentionRead.count).label("m"),
             )
-            .join(Keyword, Keyword.id == KeywordMention.keyword_id)
-            .filter(KeywordMention.city.isnot(None))
+            .join(Keyword, Keyword.id == KeywordMentionRead.keyword_id)
+            .filter(KeywordMentionRead.city.isnot(None))
         )
         if days:
-            q = q.filter(KeywordMention.observed_on >= date.today() - timedelta(days=days))
+            q = q.filter(KeywordMentionRead.observed_on >= date.today() - timedelta(days=days))
         q = _apply_kind(q, kind)
         rows = (
-            q.group_by(KeywordMention.city, KeywordMention.country, Keyword.id)
-            .order_by(func.sum(KeywordMention.count).desc())
+            q.group_by(KeywordMentionRead.city, KeywordMentionRead.country, Keyword.id)
+            .order_by(func.sum(KeywordMentionRead.count).desc())
             .all()
         )
         out: dict[tuple, dict] = {}
@@ -3455,7 +3455,7 @@ def map_data(
                 )
         return list(out.values())
 
-    countries = _agg(KeywordMention.country)
+    countries = _agg(KeywordMentionRead.country)
     return {
         "days": days,
         "kind": kind,
@@ -3479,12 +3479,12 @@ def status(session) -> dict:
     a correctness-gated counter-serve is a possible future optimisation, but only once its
     basis is tied to the corpus epoch, not the reconcile watermark.)"""
     total_articles = session.query(func.count(Article.id)).scalar() or 0
-    indexed = session.query(func.count(func.distinct(KeywordMention.article_id))).scalar() or 0
+    indexed = session.query(func.count(func.distinct(KeywordMentionRead.article_id))).scalar() or 0
     keywords = session.query(func.count(Keyword.id)).scalar() or 0
     entities = (
         session.query(func.count(Keyword.id)).filter(Keyword.is_entity.is_(True)).scalar() or 0
     )
-    mentions = session.query(func.count(KeywordMention.id)).scalar() or 0
+    mentions = session.query(func.count(KeywordMentionRead.id)).scalar() or 0
     return {
         "total_articles": int(total_articles),
         "indexed_articles": int(indexed),
@@ -3689,8 +3689,8 @@ def _article_set(session, normalized_terms: list[str], *, cap: int = 4000) -> se
     if not normalized_terms:
         return set()
     rows = (
-        session.query(KeywordMention.article_id)
-        .join(Keyword, Keyword.id == KeywordMention.keyword_id)
+        session.query(KeywordMentionRead.article_id)
+        .join(Keyword, Keyword.id == KeywordMentionRead.keyword_id)
         .filter(Keyword.normalized_term.in_(normalized_terms))
         .distinct()
         .limit(cap)
@@ -3847,7 +3847,7 @@ def layered_graph(
         # The PMI corpus denominator, computed ONCE (was recomputed inside every call).
         corpus_total = (
             _window_filter(
-                session.query(func.count(func.distinct(KeywordMention.article_id))), start, end
+                session.query(func.count(func.distinct(KeywordMentionRead.article_id))), start, end
             ).scalar()
             or 0
         )

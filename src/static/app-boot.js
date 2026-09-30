@@ -767,6 +767,11 @@
     $("corpus-win").addEventListener("close", _mmKitHome);
     ooSubtabs($("tm-subtabs"), tmSelectTab);  // the task-manager window (Tasks / System)
     _anSubtabs = ooSubtabs($("an-subtabs"), anSelectTab);  // the analysis window subtabs
+    // A click (never a programmatic select) also brings the analysis into view: it sits under
+    // the search list on Explore, which is thousands of pixels tall.
+    $("an-subtabs").addEventListener("click", (e) => {
+      if (e.target.closest("[data-tab]")) _exploreRevealAnalysis();
+    });
     // A ?tab= deep link (in-article keyword click → the Keywords subtab): apply
     // it now that the subtab component exists (it was stashed during hydration).
     if (_anBootTab && document.getElementById("an-" + _anBootTab)) {

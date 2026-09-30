@@ -216,10 +216,35 @@
        select, whose own aria-label and #oo-tip hover carry the name. CLIPPED, never
        display:none: a hidden label is hidden from the screen reader too, and this project
        has paid for that once already. */
+    /* PF10 = a (2026-09-30): the control groups (zoom, dimensions, granularity + layers,
+       the time slider) sit in .oomap-panel. Above 600 px the panel is invisible plumbing
+       (display:contents) and each group keeps its own in-map position. At phone width the
+       panel is hidden behind ONE in-map button and, opened, becomes a block BELOW the map
+       that stacks the groups -- never an overlay, because the map is only ~150 px tall at
+       390 px and a panel laid over it could hold none of them (the measured defect was 79%
+       of the map covered, 112% with the worldview picker). The inline positions on the
+       groups need !important to yield. The button is real text, reachable by keyboard, and
+       its selector is doubled up because the #oo-tip marker class sets position:relative. */
+    .oomap-panel { display:contents; }
+    .oomap-wrap > .oomap-ctl-toggle { display:none; position:absolute; top:8px; right:8px; z-index:8; }
+    @media (max-width: 600px) {
+      .oomap-wrap > .oomap-ctl-toggle { display:inline-flex; align-items:center; gap:4px; }
+      .oomap-wrap:not(.oomap-ctl-open) .oomap-panel { display:none; }
+      .oomap-wrap.oomap-ctl-open .oomap-panel { display:flex; flex-direction:column; gap:8px;
+        margin-top:6px; padding:8px; border:1px solid var(--border); border-radius:8px;
+        background:var(--panel); }
+      .oomap-wrap.oomap-ctl-open .oomap-panel > * { position:static !important; max-width:none !important;
+        inset:auto !important; }
+      .oomap-wrap.oomap-ctl-open .oomap-controls { flex-direction:row !important; }
+    }
     @media (max-width: 600px) {
       .oomap-worldview .oomap-wv-label { position:absolute; width:1px; height:1px; padding:0;
         margin:-1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; border:0; }
       .oomap-worldview select { max-width:132px; font-size:10px; }
+      /* Opened, the panel has room: the worldview label comes back as visible text. */
+      .oomap-wrap.oomap-ctl-open .oomap-worldview .oomap-wv-label { position:static; width:auto;
+        height:auto; margin:0; overflow:visible; clip:auto; white-space:normal; }
+      .oomap-wrap.oomap-ctl-open .oomap-worldview select { max-width:100%; font-size:11px; }
     }
     .sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden;
       clip:rect(0,0,0,0); white-space:nowrap; border:0; }
