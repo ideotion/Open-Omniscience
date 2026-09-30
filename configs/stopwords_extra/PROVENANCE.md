@@ -325,7 +325,8 @@ test says so rather than implying whole coverage.
 
 ## Four ring members kept hidden (2026-09-30, R102 / D24, the maintainer's answer 12 = a)
 
-D24 exempted 38 ring members from the language-agnostic union, so a word hidden only by
+D24 measured 38 ring members hidden by the language-agnostic union and exempted 34 of them
+(the other four were already their own language's words to hide), so a word hidden only by
 ANOTHER language's list shows again in the language whose ring names it. The maintainer was
 shown the list and asked to keep four of the proposed words hidden: German `all` (`de.yml`),
 Spanish `are` (`es.yml`) and English `bio` and `uno` (`en.yml`). Putting each in its OWN

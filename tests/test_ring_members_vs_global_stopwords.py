@@ -206,6 +206,7 @@ def test_the_four_words_the_maintainer_kept_hidden_stay_hidden():
     assert "all" in global_stopwords() and "are" in global_stopwords()
     assert "bio" not in _stopset("de") and "uno" not in _stopset("de")
 
+
 def test_the_same_spelling_is_content_in_one_language_and_grammar_in_another():
     """The whole point, on real text through the real extractor: French 'dette' (debt) is
     kept, while the Danish grammar word that hid it still is Danish grammar."""
@@ -216,7 +217,9 @@ def test_the_same_spelling_is_content_in_one_language_and_grammar_in_another():
     assert "dette" in fr
     assert "dette" not in da
     en = {t.term for t in b._terms("the war and the bio", "en")}
-    assert "war" in en and "bio" not in en  # 'bio' is one of the four kept hidden (12 = a)  # English 'war' was hidden by the German grammar word 'war'
+    # English 'war' was hidden by the German grammar word 'war'; 'bio' is one of the four
+    # kept hidden on purpose (12 = a).
+    assert "war" in en and "bio" not in en
     de = {t.term for t in b._terms("Er war da", "de")}
     assert "war" not in de  # German keeps its own grammar word out
 
