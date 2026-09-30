@@ -810,6 +810,7 @@ def _attach_linked_layers(session, items: list[dict], *, max_linked_rows: int) -
     """
     from sqlalchemy import func
 
+    from src.database.derived_views import KeywordMentionRead
     from src.database.models import (
         AiKeyword,
         ArticleAnalysis,
@@ -819,7 +820,6 @@ def _attach_linked_layers(session, items: list[dict], *, max_linked_rows: int) -
         ArticleMentionedPlace,
         HazardEventDetail,
         Keyword,
-        KeywordMention,
     )
 
     ids = [it["id"] for it in items]
@@ -852,21 +852,21 @@ def _attach_linked_layers(session, items: list[dict], *, max_linked_rows: int) -
 
     _bounded(
         "keyword_mentions",
-        lambda c: session.query(KeywordMention.article_id, func.count())
-        .filter(KeywordMention.article_id.in_(c))
-        .group_by(KeywordMention.article_id)
+        lambda c: session.query(KeywordMentionRead.article_id, func.count())
+        .filter(KeywordMentionRead.article_id.in_(c))
+        .group_by(KeywordMentionRead.article_id)
         .all(),
         lambda c: session.query(
-            KeywordMention.article_id,
+            KeywordMentionRead.article_id,
             Keyword.term,
             Keyword.normalized_term,
             Keyword.language,
-            KeywordMention.count,
-            KeywordMention.extractor,
+            KeywordMentionRead.count,
+            KeywordMentionRead.extractor,
         )
-        .join(Keyword, Keyword.id == KeywordMention.keyword_id)
-        .filter(KeywordMention.article_id.in_(c))
-        .order_by(KeywordMention.article_id, KeywordMention.count.desc())
+        .join(Keyword, Keyword.id == KeywordMentionRead.keyword_id)
+        .filter(KeywordMentionRead.article_id.in_(c))
+        .order_by(KeywordMentionRead.article_id, KeywordMentionRead.count.desc())
         .all(),
         lambda r: {
             "term": r[1],

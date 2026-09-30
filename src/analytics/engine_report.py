@@ -22,11 +22,11 @@ from typing import Any
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from src.database.derived_views import KeywordMentionRead
 from src.database.models import (
     Article,
     Keyword,
     KeywordFamilyOverride,
-    KeywordMention,
     KeywordSuperGroup,
     KeywordTag,
 )
@@ -335,11 +335,11 @@ def lemma_preview_report(session: Session, *, top_n: int = 500) -> dict:
             Keyword.normalized_term,
             Keyword.language,
             Keyword.is_entity,
-            func.coalesce(func.sum(KeywordMention.count), 0).label("m"),
+            func.coalesce(func.sum(KeywordMentionRead.count), 0).label("m"),
         )
-        .outerjoin(KeywordMention, KeywordMention.keyword_id == Keyword.id)
+        .outerjoin(KeywordMentionRead, KeywordMentionRead.keyword_id == Keyword.id)
         .group_by(Keyword.id)
-        .order_by(func.coalesce(func.sum(KeywordMention.count), 0).desc())
+        .order_by(func.coalesce(func.sum(KeywordMentionRead.count), 0).desc())
         .limit(max(1, top_n))
         .all()
     )
@@ -452,11 +452,11 @@ def keyword_engine_report(session: Session, *, top_n: int = 500, sample_articles
             Keyword.normalized_term,
             Keyword.language,
             Keyword.is_entity,
-            func.coalesce(func.sum(KeywordMention.count), 0).label("m"),
+            func.coalesce(func.sum(KeywordMentionRead.count), 0).label("m"),
         )
-        .outerjoin(KeywordMention, KeywordMention.keyword_id == Keyword.id)
+        .outerjoin(KeywordMentionRead, KeywordMentionRead.keyword_id == Keyword.id)
         .group_by(Keyword.id)
-        .order_by(func.coalesce(func.sum(KeywordMention.count), 0).desc())
+        .order_by(func.coalesce(func.sum(KeywordMentionRead.count), 0).desc())
         .limit(top_n)
         .all()
     )

@@ -58,7 +58,8 @@ def find_manufactured_emergence(
     articles cite no datable anchor (no ArticleMentionedDate within ``anchor_lookback_days``
     of the onset). Read-only; counts only; no score.
     """
-    from src.database.models import Article, ArticleMentionedDate, Keyword, KeywordMention
+    from src.database.derived_views import KeywordMentionRead
+    from src.database.models import Article, ArticleMentionedDate, Keyword
 
     today = date.today()
     r_start = today - timedelta(days=recent_days)
@@ -72,9 +73,9 @@ def find_manufactured_emergence(
 
         kept, _groups = grouped_counts(
             session,
-            select(KeywordMention.keyword_id, func.count(distinct(KeywordMention.article_id)))
-            .where(KeywordMention.observed_on >= lo, KeywordMention.observed_on < hi)
-            .group_by(KeywordMention.keyword_id),
+            select(KeywordMentionRead.keyword_id, func.count(distinct(KeywordMentionRead.article_id)))
+            .where(KeywordMentionRead.observed_on >= lo, KeywordMentionRead.observed_on < hi)
+            .group_by(KeywordMentionRead.keyword_id),
             keep,
         )
         return kept
@@ -109,11 +110,11 @@ def find_manufactured_emergence(
         # Born-wide: the distinct sources of this keyword's RECENT articles.
         rows = (
             session.query(Article.id, Article.source_id)
-            .join(KeywordMention, KeywordMention.article_id == Article.id)
+            .join(KeywordMentionRead, KeywordMentionRead.article_id == Article.id)
             .filter(
-                KeywordMention.keyword_id == kid,
-                KeywordMention.observed_on >= r_start,
-                KeywordMention.observed_on < today + timedelta(days=1),
+                KeywordMentionRead.keyword_id == kid,
+                KeywordMentionRead.observed_on >= r_start,
+                KeywordMentionRead.observed_on < today + timedelta(days=1),
             )
             .distinct()
             .all()
