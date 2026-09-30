@@ -1,7 +1,7 @@
 # Prompt 05 — Keyword engine quality: stoplists, quarantine, fingerprints, the review loop
 
 > **Scope:** `src/analytics/` (extraction, store, rollups), `configs/stopwords_*`, the keyword review loop.
-> **Gated on:** B2 (the formal stoplist ruling), B3, B4, PRH-13. Everything else proceeds.
+> **Gated on:** B2 (the formal stoplist ruling), B3, B4, PRH-13 (answered 2026-09-30, `R104`). Everything else proceeds.
 > **Sequencing:** independent. Its S3 shares a data-safety boundary with prompt 07 — do not run both at once.
 
 ## 0. Working mode
@@ -37,7 +37,7 @@ Once ruled, the batches waiting on it:
   patch.
 - **zh/ja/th (611 terms)** wait on the `[segmentation]` extra plus a re-index — the tokens in the log are
   mark fragments and un-segmented run-ons, so an entry made now is pinned to a tokenizer failure mode.
-- **PRH-13:** the platform-name ruling (`facebook`/`twitter`, `comments`/`follow`) — dual-use, never ruled.
+- **PRH-13:** the platform-name ruling (`facebook`/`twitter`, `comments`/`follow`) — dual-use; ANSWERED 2026-09-30 as `R104` (platform names count, page words are stoplisted in reviewed batches).
 - **PRH-11:** record the four deliberately-omitted cross-language collisions (`sea`, `tom`, `fin`, `laut`)
   where a future batch will read them; the refusal is reasoned and currently lives only in a PR body.
 - **PRH-15:** per-source boilerplate flags (the Pluralistic `yrsago` / `permalink` / `ISSN` case) — a
