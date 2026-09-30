@@ -148,8 +148,11 @@ def test_the_estimate_brackets_what_dbstat_measures(make_db):
         for n, b in s.execute(text("SELECT name, SUM(pgsize) FROM dbstat GROUP BY name"))
     }
     real_table = measured["keyword_mentions"]
-    est_table = split["table"]["bytes_low"]
-    assert 0.5 * real_table <= est_table <= 1.6 * real_table, (est_table, real_table)
+    # The stated range contains the measured table (the packed low, the holes-and-reserve high).
+    assert split["table"]["bytes_low"] * 0.95 <= real_table <= split["table"]["bytes_high"]
+    for i in split["indexes"]:
+        if i["estimated"]:
+            assert 0.9 * i["bytes_low"] <= measured[i["name"]] <= i["bytes_high"], i
     real_idx = sum(b for n, b in measured.items() if n.startswith("ix_mention_"))
     est_low = sum(i.get("bytes_low", 0) for i in split["indexes"])
     est_high = sum(i.get("bytes_high", 0) for i in split["indexes"])
@@ -218,3 +221,66 @@ def test_a_second_backend_is_refused_not_guessed(make_db):
     finally:
         s.get_bind = monkey  # type: ignore[method-assign]
     assert out["available"] is False and "SQLite" in out["reason"]
+
+
+def test_the_row_count_is_a_range_and_a_stale_stat1_never_wins(make_db):
+    """Review finding: sqlite_stat1 is approximate and stale, the id span is current."""
+    s = make_db(articles=40, per_article=10, created_at=_NOW)
+    s.execute(text("ANALYZE"))
+    assert _has_stat1(s)
+    # Grow the table 5x after the ANALYZE: stat1 now says 400, the id span says 2000.
+    rows = [
+        {
+            "keyword_id": k, "article_id": a, "count": 1, "first_offset": 0,
+            "observed_on": date(2024, 1, 1), "country": "fr", "language": "en",
+            "source_id": 1, "extractor": "baseline", "created_at": _NOW,
+        }
+        for a in range(41, 201)
+        for k in range(1, 11)
+    ]
+    s.execute(insert(KeywordMention), rows)
+    s.commit()
+    out = keyword_write_cost(s, now=_NOW)["rows"]
+    assert out["rows_high"] == 2000 and out["rows"] == 2000
+    assert out["rows_low"] <= 400 and out["rows_stat1"]["max"] <= 400
+    assert "approximate" in out["rows_stat1"]["note"]
+    split = keyword_write_cost(s, now=_NOW)["estimated_split"]
+    # The sizes carry the range: the low end scales with the stale count, the high with the span.
+    assert split["table"]["bytes_high"] > 4 * split["table"]["bytes_low"]
+
+
+def _has_stat1(s) -> bool:
+    return bool(
+        s.execute(text("SELECT 1 FROM sqlite_master WHERE name='sqlite_stat1'")).fetchone()
+    )
+
+
+def test_the_sample_loop_stops_on_the_deadline_and_the_write_rate_survives(make_db, monkeypatch):
+    """Review finding: one seek is below the progress handler's tick, so the loop asks."""
+    s = make_db(articles=40, per_article=10, created_at=_NOW - timedelta(minutes=30))
+    calls = {"n": 0}
+
+    def _expired(session):
+        calls["n"] += 1
+        return calls["n"] > 5
+
+    monkeypatch.setattr(kwc, "deadline_expired", _expired)
+    out = keyword_write_cost(s, now=_NOW)
+    assert out["available"] is False
+    assert "cut short after 5 rows" in out["reason"]
+    assert out["file"]["bytes"]  # what was already measured stays
+    assert out["write_rate"]["last_1h"]["articles"] == 40  # the rate is independent of the sample
+
+
+def test_a_memory_stop_is_named_as_memory_not_as_a_slow_query(make_db, monkeypatch):
+    s = make_db(articles=5, per_article=3, created_at=_NOW)
+
+    @contextmanager
+    def _short(session, seconds=None):
+        raise kwc.MemoryShort("135 MB available")
+        yield  # pragma: no cover
+
+    monkeypatch.setattr(kwc, "statement_deadline", _short)
+    out = keyword_write_cost(s, now=_NOW)
+    assert "memory guard" in out["reason"] and "statement deadline" not in out["reason"]
+    assert "memory guard" in out["write_rate"]["last_1h"]["reason"]

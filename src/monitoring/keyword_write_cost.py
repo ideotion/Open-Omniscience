@@ -45,7 +45,12 @@ from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
 from src.database.derived_views import KeywordMentionRead
-from src.database.maintenance import StatementTimeout, statement_deadline
+from src.database.maintenance import (
+    MemoryShort,
+    StatementTimeout,
+    deadline_expired,
+    statement_deadline,
+)
 
 _LOG = logging.getLogger(__name__)
 
@@ -68,14 +73,16 @@ _METHOD = (
     "not at all) plus a record header. Index size: rows x (the indexed columns' sampled "
     f"bytes + the row id + an entry header + a {_CELL_POINTER}-byte cell pointer), divided by "
     f"the page fill -- LOW is a packed page (1.0), HIGH the {_RANDOM_FILL:.2f} that random "
-    "inserts settle at. Rows: sqlite_stat1 when ANALYZE has run, else the id span (an UPPER "
-    "bound: deleted rows leave gaps). Write rate: rows whose created_at falls in the window, "
+    "inserts settle at. Rows: a RANGE -- the id span is the upper bound (deleted rows leave "
+    "gaps) and sqlite_stat1, when ANALYZE has run, the lower (the app runs it with a capped "
+    "sample and refreshes it only after a large change, so it can be stale and is never "
+    "trusted alone). Write rate: rows whose created_at falls in the window, "
     "read off the created_at index. Counts and bytes only, no score."
 )
 
 _CAVEAT = (
-    "An estimate: SQLite's page reserve, overflow pages, free space inside a page and the "
-    "sample's spread by id (which follows insertion order) are not modelled, so read each "
+    "An estimate: SQLite's page reserve, overflow pages, interior pages, free space inside a "
+    "page and the sample's spread by id (which follows insertion order) are not modelled, so read each "
     "figure as a range and the split as an order of magnitude, not an audit. What it cannot "
     "divide -- the articles, the full-text index, the other derived tables -- stays in "
     "'rest_of_file_bytes'. A re-index deletes and rewrites an article's rows, so the write "
@@ -121,9 +128,11 @@ def _value_bytes(v: Any) -> int:
     return len(str(v).encode("utf-8"))
 
 
-def _pragma(session: Session, sql: str) -> list:
+def _pragma(session: Session, sql: str, **params: Any) -> list:
     try:
-        return list(session.execute(text(sql)))
+        return list(session.execute(text(sql), params))
+    except StatementTimeout:
+        raise  # a deadline or memory stop is an abort to report, never a quiet fallback
     except Exception:  # noqa: BLE001 - a diagnostic read degrades, never raises
         return []
 
@@ -142,6 +151,10 @@ def _sample_rows(session: Session) -> tuple[list[str], list[tuple], int | None, 
     seen: set[int] = set()
     rows: list[tuple] = []
     for i in range(k):
+        # One seek is far below the progress handler's tick, so the deadline can never
+        # interrupt this loop from inside a statement; it asks instead.
+        if deadline_expired(session):
+            raise StatementTimeout(f"the sample was cut short after {len(rows)} rows")
         r = session.execute(
             select(*cols).where(t.c.id >= lo + round(i * step)).order_by(t.c.id).limit(1)
         ).fetchone()
@@ -153,19 +166,44 @@ def _sample_rows(session: Session) -> tuple[list[str], list[tuple], int | None, 
 
 
 def _row_count(session: Session, lo: int | None, hi: int | None) -> dict[str, Any]:
-    """The row count as far as it is known without a full scan, and which kind it is."""
+    """The row count as a RANGE, and how each end was got.
+
+    The id span is always current but counts the gaps deletions leave (an upper bound).
+    ``sqlite_stat1`` is exact only right after a full ANALYZE: the app's own
+    ``PRAGMA optimize`` runs with a capped sample and refreshes only after a large change,
+    and each index carries its own figure, so alone it can read several times too low.
+    Both are reported; the lower end is the largest stat1 figure, never above the span.
+    """
     out: dict[str, Any] = {}
-    stat = _pragma(session, f"SELECT stat FROM sqlite_stat1 WHERE tbl = '{_TABLE}' LIMIT 1")  # nosec B608 - a module constant, never input
-    if stat:
+    stats = _pragma(session, "SELECT stat FROM sqlite_stat1 WHERE tbl = :t", t=_TABLE)
+    counts: list[int] = []
+    for r in stats:
         try:
-            out["rows"] = int(str(stat[0][0]).split()[0])
-            out["rows_kind"] = "sqlite_stat1 (as of the last ANALYZE)"
-            return out
+            counts.append(int(str(r[0]).split()[0]))
         except (ValueError, IndexError):
-            pass
-    if lo is not None and hi is not None:
-        out["rows"] = hi - lo + 1
+            continue
+    span = (hi - lo + 1) if lo is not None and hi is not None else None
+    if span is not None:
+        out["rows"] = span
         out["rows_kind"] = "id span, an upper bound (deleted rows leave gaps)"
+        out["rows_high"] = span
+    if counts:
+        low = max(counts) if span is None else min(max(counts), span)
+        out["rows_low"] = low
+        out["rows_stat1"] = {
+            "min": min(counts),
+            "max": max(counts),
+            "note": (
+                "approximate: ANALYZE runs with a capped sample and each index carries its "
+                "own figure; it is stale after a large change until the next optimize"
+            ),
+        }
+        if span is None:
+            out["rows"] = low
+            out["rows_kind"] = "sqlite_stat1, approximate (no id span could be read)"
+            out["rows_high"] = max(counts)
+    if "rows_low" not in out and "rows" in out:
+        out["rows_low"] = out["rows"]
     return out
 
 
@@ -186,25 +224,41 @@ def _entry_bytes(col_bytes: list[float], row_id_bytes: int) -> float:
 
 
 def _index_split(
-    session: Session, means: dict[str, float], rows: int, row_id_bytes: int
+    session: Session, means: dict[str, float], rows_low: int, rows_high: int, row_id_bytes: int
 ) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
-    for r in _pragma(session, f"PRAGMA index_list('{_TABLE}')"):
+    for r in _pragma(session, "SELECT * FROM pragma_index_list(:t)", t=_TABLE):
         name = str(r[1])
-        cols = list(_pragma(session, f"PRAGMA index_info('{name}')"))
+        entry: dict[str, Any] = {"name": name}
+        if len(r) > 4 and r[4]:
+            entry["columns"] = []
+            entry["estimated"] = False
+            entry["reason"] = "a partial index: only some rows are in it, so it is not sized"
+            out.append(entry)
+            continue
+        cols = _pragma(session, "SELECT * FROM pragma_index_info(:n)", n=name)
         names = [c[2] for c in cols]
-        entry: dict[str, Any] = {"name": name, "columns": [str(n) for n in names if n]}
-        sized = [means[str(n)] for n in names if n is not None and str(n) in means]
-        if not names or len(sized) != len(names):
+        entry["columns"] = [str(n) for n in names if n]
+        if not names:
+            entry["estimated"] = False
+            entry["reason"] = "its columns could not be read, so it is not sized"
+            out.append(entry)
+            continue
+        if any(n is None for n in names):
             entry["estimated"] = False
             entry["reason"] = "an expression index: its key is not a column, so it is not sized"
             out.append(entry)
             continue
-        per = _entry_bytes(sized, row_id_bytes) + _CELL_POINTER
+        if any(str(n) not in means for n in names):
+            entry["estimated"] = False
+            entry["reason"] = "a column the read model does not carry, so it is not sized"
+            out.append(entry)
+            continue
+        per = _entry_bytes([means[str(n)] for n in names], row_id_bytes) + _CELL_POINTER
         entry["estimated"] = True
         entry["entry_bytes"] = round(per, 1)
-        entry["bytes_low"] = int(rows * per)
-        entry["bytes_high"] = int(rows * per / _RANDOM_FILL)
+        entry["bytes_low"] = int(rows_low * per)
+        entry["bytes_high"] = int(rows_high * per / _RANDOM_FILL)
         out.append(entry)
     out.sort(key=lambda e: -(e.get("bytes_high") or 0))
     return out
@@ -224,7 +278,8 @@ def _write_rate(session: Session, now: datetime) -> dict[str, Any]:
                     )
                 ).one()
         except StatementTimeout as exc:
-            out[key] = {"available": False, "reason": f"stopped by the statement deadline ({exc})"}
+            why = "memory guard" if isinstance(exc, MemoryShort) else "statement deadline"
+            out[key] = {"available": False, "reason": f"stopped by the {why} ({exc})"}
             continue
         except Exception as exc:  # noqa: BLE001
             out[key] = {"available": False, "reason": f"unreadable: {str(exc)[:160]}"}
@@ -257,10 +312,16 @@ def _reindex_job() -> dict[str, Any] | None:
     return {
         "running": True,
         "state": st.get("state"),
+        # The JOB's own run rate; write_rate's figure is the window average, idle time included.
         "articles_per_hour": st.get("articles_per_hour"),
         "keywords_per_hour": st.get("keywords_per_hour"),
         "percent": st.get("percent"),
     }
+
+
+def _cut_reason(exc: StatementTimeout) -> str:
+    why = "memory guard" if isinstance(exc, MemoryShort) else "statement deadline"
+    return f"stopped before the sample finished, by the {why} ({exc})"
 
 
 def keyword_write_cost(session: Session, *, now: datetime | None = None) -> dict[str, Any]:
@@ -271,6 +332,11 @@ def keyword_write_cost(session: Session, *, now: datetime | None = None) -> dict
         out["reason"] = "not a SQLite store"
         return out
     stamp = now or datetime.now(UTC).replace(tzinfo=None)
+    names: list[str] = []
+    rows: list[tuple] = []
+    lo = hi = None
+    counted: dict[str, Any] = {}
+    cut: str | None = None
     try:
         page_size = _first_int(_pragma(session, "PRAGMA page_size"))
         page_count = _first_int(_pragma(session, "PRAGMA page_count"))
@@ -285,21 +351,26 @@ def keyword_write_cost(session: Session, *, now: datetime | None = None) -> dict
             names, rows, lo, hi = _sample_rows(session)
             counted = _row_count(session, lo, hi)
     except StatementTimeout as exc:
-        out["available"] = False
-        out["reason"] = f"stopped before the sample finished, by the statement deadline ({exc})"
-        return out
+        # The write rate does not depend on the sample, and it is the rate the redesign is
+        # judged against: a cut-short sample never takes it down with it.
+        cut = _cut_reason(exc)
     except Exception as exc:  # noqa: BLE001 - a diagnostic degrades, never raises
         _LOG.debug("keyword write cost unavailable: %s", exc)
         out["available"] = False
         out["reason"] = f"unreadable: {str(exc)[:200]}"
         return out
 
-    out["available"] = True
-    out["rows"] = counted
     out["write_rate"] = _write_rate(session, stamp)
     job = _reindex_job()
     if job is not None:
         out["reindex_job"] = job
+    if cut is not None:
+        out["available"] = False
+        out["reason"] = cut
+        return out
+
+    out["available"] = True
+    out["rows"] = counted
     if not rows:
         out["row_size"] = {"sampled": 0}
         return out
@@ -307,24 +378,27 @@ def keyword_write_cost(session: Session, *, now: datetime | None = None) -> dict
     means = _mean_by_column(names, rows)
     # The rowid alias is the key, not part of the record.
     record = 1 + len(names) + sum(v for k, v in means.items() if k != "id")
-    id_bytes = _varint_len(int(hi or 0))
+    id_bytes = _varint_len(int(hi or 0))  # a table cell stores the rowid as a varint
     out["row_size"] = {
         "sampled": len(rows),
         "mean_record_bytes": round(record, 1),
         "mean_cell_bytes": round(record + id_bytes + 1 + _CELL_POINTER, 1),
         "columns": {k: round(v, 1) for k, v in means.items() if k != "id"},
     }
-    total_rows = counted.get("rows")
-    if not total_rows:
+    rows_high = int(counted.get("rows_high") or counted.get("rows") or 0)
+    rows_low = int(counted.get("rows_low") or rows_high)
+    if not rows_high:
         return out
     table_cell = record + id_bytes + 1 + _CELL_POINTER
     table = {
         "name": _TABLE,
-        # A table keyed by an ascending rowid fills its pages in order, so LOW == HIGH.
-        "bytes_low": int(total_rows * table_cell),
-        "bytes_high": int(total_rows * table_cell),
+        # LOW is a packed page. HIGH allows the holes a partial re-index leaves (it deletes
+        # and rewrites an article's rows) and the page header and reserve, by the same fill.
+        "bytes_low": int(rows_low * table_cell),
+        "bytes_high": int(rows_high * table_cell / _RANDOM_FILL),
     }
-    indexes = _index_split(session, means, int(total_rows), id_bytes)
+    # An index entry stores the rowid as a record integer, not a varint.
+    indexes = _index_split(session, means, rows_low, rows_high, _int_bytes(int(hi or 0)))
     low = table["bytes_low"] + sum(i.get("bytes_low", 0) for i in indexes)
     high = table["bytes_high"] + sum(i.get("bytes_high", 0) for i in indexes)
     split: dict[str, Any] = {
