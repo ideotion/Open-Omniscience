@@ -15988,3 +15988,23 @@ Built at these defaults; R68 stays held should the maintainer want any of them p
    ids) and the result says so ("the first articles only …"). Where: `_SCOPE_ID_CAP`.
 4. **Places (S05-03).** The place card is the entry point; a Place the gazetteer adds later reaches the lens
    through the same `place` scope, with no new code.
+
+## 2026-09-29 — THE DOSSIER SEED — STATED DEFAULTS (0.5 row K, brief `S05-11` S4; not rulings, each reversible in one place)
+
+Built at these defaults, none of which changes a ruling; any can be put to the maintainer as a card.
+
+1. **How an article joins an item: three routes, no new identity rule.** A person or organisation whose
+   name `entity_qid` resolves to exactly this item; an article keyword that is a ring member of this item
+   IN ITS OWN LANGUAGE and names no other item; a place mention that resolves to a Place carrying this
+   item. A name several items share joins none (Q412's refusal). Where: `src/entities/dossier.py`.
+2. **The rails.** Joined: news and web (every provenance class but Wikipedia and law), Wikipedia (corpus
+   articles plus the Wikipedia lane's pages), law, Places, the map (the OpenStreetMap lane's objects whose
+   `wikidata` tag is the item). Named as NOT joined, with why: markets, the agenda, tracked law texts. That
+   is five joined rails; V1 §8's ≥ 6 is 0.8 row A's. Where: `JOINED_RAILS` / `NOT_JOINED`.
+3. **The page is a dialog**, like the place card, opened from the place card and from a Who chip whose
+   name resolves to one item; no sidebar entry, no omnibar command. Where: `#dossier`, `app-dossier.js`.
+4. **The passport (A-1) is built here first** (`src/analytics/passport.py`) and used only by the dossier;
+   A-1's sweep across Insights, trends, the corpus windows and card headers is not done by this slice.
+5. **No cap on the counts.** The passport and every route count the whole set through a SELECT; only the
+   ids handed to the analysis window are bounded, at that window's own 5,000, and the page says so. The
+   map lane read has no index on the `wikidata` tag, so on a large lane it scans; a lane index is row D's.

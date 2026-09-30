@@ -2238,6 +2238,16 @@
 .claim-wx:empty { display: none; }
 .claim-members { margin: 4px 0 8px; padding-inline-start: 18px; font-size: 13px; }
 .claim-members code { unicode-bidi: isolate; direction: ltr; }
+/* S05-11 S4: the dossier seed. The passport is one line under the title (A-1), never folded. */
+.dossier-passport { margin: 2px 0 8px; font-variant-numeric: tabular-nums; unicode-bidi: plaintext; }
+.dossier-desc { margin: 0 0 8px; }
+.dossier-list { margin: 4px 0 10px; padding-inline-start: 18px; }
+.dossier-list li { margin: 3px 0; }
+.dossier-rails { margin: 4px 0 10px; width: 100%; }
+.dossier-rails th { text-align: start; font-weight: 500; padding-inline-end: 10px; vertical-align: top; white-space: nowrap; }
+.dossier-rails td { vertical-align: top; text-align: start; }
+.dossier-rails .dossier-list { list-style: none; padding-inline-start: 0; margin: 4px 0 0; }
+.dossier-date { unicode-bidi: isolate; direction: ltr; white-space: nowrap; }
 .claim-check { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 8px 0 2px; }
 /* The Search tab's Wikipedia section (R52): set apart from the corpus's results by a rule
    and its own heading, so its hits never read as ranked among them. */
