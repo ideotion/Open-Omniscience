@@ -668,11 +668,11 @@ stored per mention with the keyword's language derived as the majority (Q414); `
 at extraction, a migration job re-normalises existing keywords (Q416); the hover bubble contents (Q418).
 **RELEASED 2026-09-30 (R98, D11):** the triage-derived stoplist merge — Q1103 = b ("Never; the shipped stoplists are frozen", with a
 note asking for a stopword diagnostic and per-release growth) against Q1104 = a ("Yes, through the review
-surface, batch by batch") was a recorded CONFLICT; the maintainer ruled the lists grow in reviewed batches, and the row ships the merge as curated batches in the release (R111 amends R98: no Settings review screen, users are never asked; we curate from the diagnostics),
-and the stopword DIAGNOSTIC the note asks for may ship (it decides nothing). **Closes when** every keyword
+surface, batch by batch") was a recorded CONFLICT; the maintainer ruled the lists grow in reviewed batches, and the row ships the merge as curated batches with each app update (R111 amends R98: no Settings review screen, users are never asked; we curate from the diagnostics),
+and the stopword DIAGNOSTIC the note asks for already exists (the keyword log's `stopword_candidates` digest, `src/api/diagnostics/keywords.py`) and R111 makes it the feed for those batches (it decides nothing). **Closes when** every keyword
 surface renders a tier tag (a Chromium click-through record across the eleven silent surfaces), the reconcile
-report exists, a fixture proves the 10 s spacing and the refusal on the kill switch, and `simplemma` is in
-`pyproject` core with its registry entry. Brief `S04-06`. *Premise check (brief `S04-06`):* `simplemma` is ALREADY a dependency — `pyproject.toml:147` under the `[analysis]` extra, used display-time only (`OO_FAMILY_LEMMA`, `src/analytics/families.py`), with no registry entry; the delta Q416 asks for is core + at-extraction + the migration, not a new package.
+report exists, a fixture proves the 10 s spacing and the refusal on the kill switch, `simplemma` is in
+`pyproject` core with its registry entry, **and the first curated stoplist batch has shipped in an app update and takes effect on every surface that shows keywords (after the T2 and T3 work in `OPEN_QUEUE.md`; this criterion follows from R111)**. Brief `S04-06`. *Premise check (brief `S04-06`):* `simplemma` is ALREADY a dependency — `pyproject.toml:147` under the `[analysis]` extra, used display-time only (`OO_FAMILY_LEMMA`, `src/analytics/families.py`), with no registry entry; the delta Q416 asks for is core + at-extraction + the migration, not a new package.
 
 ### Row N — Cross-language search through the rings, everywhere · ruled (R10; Q417, Q501–Q504, Q506 🔒 = b, Q507–Q512, Q514–Q516) · OPEN
 
@@ -1077,7 +1077,7 @@ Kept explicit so nothing drifts in by assumption:
   3–6), Q1113 (the embassy platforms) — are not decided here and not defaulted anywhere.~~ All four answered
   2026-09-29 (a, a, a, a), recorded in `RULINGS_INDEX.md` and §3.
 - **The stoplist merge** (Q1103 = b vs Q1104 = a, a CONFLICT recorded 2026-09-15) — RESOLVED 2026-09-30
-  (R98, amended by R111): reviewed batches curated by us and shipped with each release, no Settings screen; row M ships with it.
+  (R98, amended by R111): reviewed batches curated by us and shipped with each app update, no Settings screen; row M closes with the first such batch (after T2 and T3).
 - **Row 5's Tier B** (the 451 index pages above the word guard). Not proposed for `0.3` and not
   proposed here: their prose is unmeasured. The `0.3` PR made that measurable
   (`criteria-calibration.json`'s prose arm now advances and can be pointed at that population),

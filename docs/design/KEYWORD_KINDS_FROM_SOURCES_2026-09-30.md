@@ -47,7 +47,7 @@ absent when there is no answer («unknown» is the absence, never a stored guess
 build time, `as_of` stamped, registered in `configs/external_artifacts.yml` (the repo's own
 rule for anything externally sourced). At run time `kind_from_claims(p31_qids)` is pure: a class
 in exactly one kind gives that kind; classes in two kinds, or none, give «unknown» and the
-disagreement is kept for the review list. **No network is needed to turn a cached item into a
+disagreement is kept for the maintainer-side ambiguity report in the diagnostics (there is no in-app review list: `R111`). **No network is needed to turn a cached item into a
 kind.**
 
 **Matcher: exact Wikipedia titles, in batches.** A NAME → QID lookup by search would be one
@@ -73,7 +73,7 @@ reviewed document, not a score.
 2. The `keyword_kinds` table (migration, models, backups keep / discard), and a read seam.
 3. The matcher over the consent window (the «Go online?» window names the lane), with the
    coverage diagnostic first: how many of the top N names resolve, refuse or stay unknown.
-4. The sample check and its report; the ambiguity list as a maintainer-side report in the diagnostics (`R111`: no in-app review screen exists, and users are never asked).
+4. The sample check and its report; the ambiguity list as a maintainer-side report in the diagnostics (`R111`: no in-app review screen exists, and users are never asked about stopwords; carrying that to the kinds ambiguity list is our application of the ruling's principle, not a separate maintainer ruling).
 5. Surfaces show the kind with its source on hover (invariant #17); «unknown» is shown as such.
 
 ## 5. Plan for autonomy and complete independence (the maintainer's condition)
