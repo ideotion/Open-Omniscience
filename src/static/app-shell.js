@@ -546,7 +546,7 @@
       // S04-08 S4: the Storage panel (Q1006/Q1010/Q1011) opens the subtab, so it loads
       // with it -- one loopback read, no network.
       if (cat === "data" && typeof loadLaneStorage === "function") loadLaneStorage();
-      if (cat === "data") { loadNewsletterRemoveCount(); loadNewsletterAttach(); _folderImportStartPoll(); loadImportHistory(); }
+      if (cat === "data") { loadNewsletterRemoveCount(); loadNewsletterAttach(); _folderImportStartPoll(); loadImportHistory(); loadAlternates(); }
     }
 
     // ADVANCED subtab (2026-07-31 Settings review): Collection, Sources and Keywords moved

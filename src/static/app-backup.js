@@ -2372,6 +2372,119 @@
       }).join("");
     }
 
+    // ── DIFFERENCES FROM RESTORES (R61, item 12) ─────────────────────────────
+    // The other value a restore brought for a deduced item this machine already had. The
+    // machine's own value is what every other surface shows; these buttons are the only way
+    // that changes, and each acts on ONE item (or one restore, after a count confirmation).
+    const _ALT_TABLES = {
+      keyword_translations: "Translation of a keyword",
+      article_title_translations: "Title and summary (≈)",
+      article_analyses: "AI analysis",
+      ai_keyword: "AI keyword",
+      article_mentioned_dates: "Date mentioned in an article",
+      law_revision_summaries: "Law change summary",
+    };
+    const _ALT_FIELDS = {
+      text: "Text", title: "Title", summary: "Summary", result: "Result", status: "Status",
+      confidence: "Confidence", extractor: "Extractor", snippet: "Snippet",
+      confirmed: "Confirmed", evidence: "Evidence", prompt_version: "Prompt version",
+      language: "Language", source_lang: "Source language",
+    };
+
+    function _altProv(p, t, tf) {
+      if (!p) return `<span class="muted">${esc(t("not recorded"))}</span>`;
+      const by = p.kind === "human"
+        ? t("By a person (confirm or reject)")
+        : (p.version ? tf("By {producer}, prompt {version}", { producer: p.producer || "?", version: p.version })
+                      : tf("By {producer}", { producer: p.producer || "?" }));
+      const where = p.arrived
+        ? tf("Arrived from {origin}, restore of {date}", {
+            origin: String(p.origin || "").slice(0, 12), date: fmtDateTime(p.arrived.at) })
+        : t("Made here");
+      return `<span title="${esc("oo.prov/1 " + JSON.stringify(p))}">${esc(by)} \u00b7 <bdi>${esc(where)}</bdi></span>`;
+    }
+
+    function _altSide(label, vals, differing, prov, t, tf) {
+      const rows = vals ? Object.keys(vals).map((k) => {
+        const v = vals[k];
+        const mark = differing.indexOf(k) >= 0 ? " style=\"font-weight:600\"" : "";
+        return `<div${mark}><span class="muted">${esc(t(_ALT_FIELDS[k] || k))}:</span> `
+          + `<bdi style="white-space:pre-wrap;overflow-wrap:anywhere">${v == null ? "\u2014" : esc(String(v))}</bdi></div>`;
+      }).join("") : `<span class="muted">${esc(t("The row this differs from is gone."))}</span>`;
+      return `<div style="flex:1 1 260px;min-width:0"><b>${esc(t(label))}</b>`
+        + `<div style="max-height:9em;overflow:auto;margin:4px 0">${rows}</div>`
+        + `<div class="hint">${_altProv(prov, t, tf)}</div></div>`;
+    }
+
+    function _altHtml(rep, t, tf) {
+      if (!rep.items.length) return `<span class="muted">${esc(t("No differences to show."))}</span>`;
+      const head = rep.batches.map((b) => {
+        const n = b.pending + b.kept;
+        return `<div style="margin-top:8px"><b>${esc(tf("Restore of {date}", { date: fmtDateTime(b.imported_at) }))}</b>`
+          + ` \u00b7 <bdi>${esc(String(b.origin || "").slice(0, 12))}</bdi>`
+          + ` \u00b7 ${esc(tf("{n} not yet looked at", { n: b.pending }))}`
+          + ` <button class="secondary tiny" data-on-click="altDiscardBatch(${Number(b.id)}, ${Number(n)})">${esc(t("Discard all from this restore"))}</button></div>`;
+      }).join("");
+      const cards = rep.items.map((it) => {
+        const art = it.article ? `<div class="hint"><bdi>${esc(it.article.title || "")}</bdi></div>` : "";
+        return `<div class="card" style="margin-top:8px;padding:8px">`
+          + `<div><b>${esc(t(_ALT_TABLES[it.table] || it.table))}</b></div>${art}`
+          + `<div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:4px">`
+          + _altSide("This machine", it.local, it.differing, it.local_provenance, t, tf)
+          + _altSide("From the restore", it.imported, it.differing, it.imported_provenance, t, tf)
+          + `</div><div class="row" style="gap:6px;flex-wrap:wrap;margin-top:6px">`
+          + (it.status === "pending" ? `<button class="secondary tiny" data-on-click="altAct(${Number(it.id)}, 'keep')">${esc(t("Keep both"))}</button>` : "")
+          + `<button class="secondary tiny" data-on-click="altAct(${Number(it.id)}, 'discard')">${esc(t("Discard the restore’s value"))}</button>`
+          + (it.local ? `<button class="secondary tiny" data-on-click="altAct(${Number(it.id)}, 'adopt')">${esc(t("Use the restore’s value instead"))}</button>` : "")
+          + `</div></div>`;
+      }).join("");
+      const more = rep.total > rep.items.length
+        ? `<p class="hint">${esc(tf("Showing {n} of {total}", { n: rep.items.length, total: rep.total }))}</p>` : "";
+      return head + cards + more;
+    }
+
+    async function loadAlternates() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const tf = (window.OOI18N && OOI18N.tf)
+        ? OOI18N.tf
+        : ((s, vars) => s.replace(/\{(\w+)\}/g, (m, k) => (vars && vars[k] != null) ? String(vars[k]) : m));
+      const host = document.getElementById("alt-body");
+      if (!host) return;
+      const sel = document.getElementById("alt-status");
+      try {
+        const rep = await api("/api/backup/alternates?status=" + encodeURIComponent(sel ? sel.value : "pending"));
+        host.innerHTML = _altHtml(rep, t, tf);
+      } catch (e) {
+        // A failed read is not "no differences": that would be a claim about the data.
+        host.innerHTML = `<span style="color:var(--err)">${esc(t("The differences could not be read."))}</span>`;
+      }
+    }
+
+    async function altAct(id, verb) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      if (verb === "adopt" && !confirm(t("Use the restore’s value here? The value this machine holds now is kept as the alternate, so you can switch back."))) return;
+      try {
+        await api("/api/backup/alternates/" + encodeURIComponent(id) + "/" + verb, { method: "POST" });
+      } catch (e) {
+        toast(t("Could not apply that:") + " " + (e.message || e), "err");
+      }
+      loadAlternates();
+    }
+
+    async function altDiscardBatch(batchId, n) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const tf = (window.OOI18N && OOI18N.tf)
+        ? OOI18N.tf
+        : ((s, vars) => s.replace(/\{(\w+)\}/g, (m, k) => (vars && vars[k] != null) ? String(vars[k]) : m));
+      if (!confirm(tf("Discard the {n} differences this restore brought? The values on this machine are not changed.", { n }))) return;
+      try {
+        await api("/api/backup/alternates/batch/" + encodeURIComponent(batchId) + "/discard", { method: "POST" });
+      } catch (e) {
+        toast(t("Could not apply that:") + " " + (e.message || e), "err");
+      }
+      loadAlternates();
+    }
+
     // Stop the run. The two halves are genuinely different, so the confirmation says
     // which one the user is about to get rather than implying an undo that does not
     // exist for an already-swapped backup.

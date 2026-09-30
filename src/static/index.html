@@ -2278,6 +2278,24 @@
         <div id="imp-history" style="margin-top:6px"></div>
       </div>
     </section>
+    <!-- DIFFERENCES FROM RESTORES (R61, item 12; maintainer 2026-09-29: «imported data should never
+         be prevailing to local data, however, both should be kept and accessible ... give users
+         the choice to discard it afterwards»). A panel here rather than a tenth Settings subtab
+         (the nine are pinned by tests/test_settings_nine_subtabs.py). Filled by loadAlternates()
+         (app-backup.js) when this subtab opens; one loopback read, no network. -->
+    <section class="panel" id="alt-panel">
+      <div class="phead"><h2>Differences from restores</h2></div>
+      <p class="muted" style="margin-top:0">When a restore brings a value that differs from the one this machine already holds — a translation, a date&rsquo;s status, an AI summary — this machine&rsquo;s value stays, and the other one is kept here. Nothing from a restore is shown in place of yours unless you choose it.</p>
+      <div class="row" style="align-items:center;gap:8px;flex-wrap:wrap">
+        <label for="alt-status">Show</label>
+        <select id="alt-status" data-on-change="loadAlternates()">
+          <option value="pending">Not yet looked at</option>
+          <option value="kept">Kept</option>
+          <option value="all">All</option>
+        </select>
+      </div>
+      <div id="alt-body" style="margin-top:8px"></div>
+    </section>
     <!-- Newsletter / document IMPORT (2026-07-31 Settings review): moved here from its
          own subtab. Importing .eml and PDF files is bringing data IN, which is exactly
          what this subtab is for; it sat apart only for historical reasons. -->

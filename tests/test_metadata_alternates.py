@@ -326,3 +326,110 @@ def test_two_incoming_rows_that_collapse_onto_one_item_record_one_alternate(tmp_
 
     _, _, live, _ = _two(tmp_path, inc, loc)
     assert len(_alts(live)) == 1
+
+
+# ----- slice 2: the operator's side (list, keep, discard, adopt) ---------------------------
+
+
+def _live_with_a_title_difference(tmp_path):
+    def add(title):
+        def f(s):
+            a = _article(s)
+            s.add(ArticleTitleTranslation(
+                article_id=a.id, source_lang="fr", target_lang="en", title=title, summary="s",
+                model="m1", prompt_version="tt-v1", created_at=_T0))
+        return f
+
+    _, batch, live, _ = _two(tmp_path, add("Theirs"), add("Ours"))
+    return batch, live
+
+
+def test_the_list_shows_both_values_and_both_tags(tmp_path):
+    from src.backup.alternates import list_alternates
+
+    batch, live = _live_with_a_title_difference(tmp_path)
+    with _corpus(live)() as s:
+        out = list_alternates(s)
+    assert out["total"] == 1
+    assert out["batches"][0]["id"] == batch and out["batches"][0]["pending"] == 1
+    [item] = out["items"]
+    assert item["imported"]["title"] == "Theirs" and item["local"]["title"] == "Ours"
+    assert item["differing"] == ["title"], "the summary is equal, so it is not marked as differing"
+    assert item["imported_provenance"]["origin"] == "machine-B"
+    assert item["local_provenance"]["origin"] == "local"
+    assert item["article"]["title"] == "T", "the item names its article"
+
+
+def test_keep_and_discard_never_touch_the_local_row(tmp_path):
+    from src.backup.alternates import discard, keep, list_alternates
+
+    batch, live = _live_with_a_title_difference(tmp_path)
+    with _corpus(live)() as s:
+        alt_id = list_alternates(s)["items"][0]["id"]
+        keep(s, alt_id)
+        assert list_alternates(s)["total"] == 0
+        assert list_alternates(s, status="kept")["total"] == 1
+        discard(s, alt_id)
+        assert list_alternates(s, status="all")["total"] == 0
+        assert s.query(ArticleTitleTranslation).one().title == "Ours"
+
+
+def test_adopt_swaps_the_values_and_records_where_it_came_from(tmp_path):
+    from src.backup.alternates import adopt, list_alternates
+
+    batch, live = _live_with_a_title_difference(tmp_path)
+    with _corpus(live)() as s:
+        alt_id = list_alternates(s)["items"][0]["id"]
+        adopt(s, alt_id)
+        row = s.query(ArticleTitleTranslation).one()
+        assert row.title == "Theirs"
+        [item] = list_alternates(s, status="all")["items"]
+        assert item["imported"]["title"] == "Ours", "the replaced value is kept, not lost"
+        assert item["status"] == "kept"
+        # the row now carries an arrival record for that restore, like one the restore inserted
+        tag = provenance_tag(s, "article_title_translations", row.id)
+        assert tag["origin"] == "machine-B" and tag["arrived"]["batch"] == batch
+        # and adopting again reverses it
+        adopt(s, alt_id)
+        assert s.query(ArticleTitleTranslation).one().title == "Ours"
+
+
+def test_adopt_refuses_when_the_local_row_is_gone(tmp_path):
+    from src.backup.alternates import AlternateError, adopt, list_alternates
+
+    batch, live = _live_with_a_title_difference(tmp_path)
+    with _corpus(live)() as s:
+        alt_id = list_alternates(s)["items"][0]["id"]
+        s.query(ArticleTitleTranslation).delete()
+        s.commit()
+        with pytest.raises(AlternateError) as e:
+            adopt(s, alt_id)
+        assert e.value.status == 409
+        with pytest.raises(AlternateError) as e2:
+            adopt(s, 99999)
+        assert e2.value.status == 404
+
+
+def test_discarding_a_restore_discards_only_that_restores_alternates(tmp_path):
+    from src.backup.alternates import discard_batch, list_alternates
+
+    batch, live = _live_with_a_title_difference(tmp_path)
+    with _corpus(live)() as s:
+        assert discard_batch(s, batch + 1)["discarded"] == 0
+        assert list_alternates(s)["total"] == 1
+        assert discard_batch(s, batch)["discarded"] == 1
+        assert list_alternates(s, status="all")["total"] == 0
+
+
+def test_the_routes_exist_and_refuse_an_unknown_id():
+    from fastapi.testclient import TestClient
+
+    from src.api.main import app
+
+    with TestClient(app) as c:
+        r = c.get("/api/backup/alternates")
+        assert r.status_code == 200 and {"total", "batches", "items"} <= set(r.json())
+        assert c.get("/api/backup/alternates?status=bogus").status_code == 422
+        for verb in ("keep", "discard", "adopt"):
+            assert c.post(f"/api/backup/alternates/999999/{verb}").status_code == 404
+        assert c.post("/api/backup/alternates/batch/999999/discard").json()["discarded"] == 0
