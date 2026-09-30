@@ -215,6 +215,17 @@ def _len(d: Any, key: str) -> int:
     return len(v) if isinstance(v, list | tuple | dict) else _n(d, key)
 
 
+def _qualification_budget(s, which: int):
+    """The budget the qualification lane actually ran with (grown to the machine while
+    auto is on), not the raw setting -- or the raw setting when settings are unreadable."""
+    try:
+        from src.catalog.qualification import effective_qualification_budgets
+
+        return effective_qualification_budgets(s)[which]
+    except Exception:  # noqa: BLE001 - a ledger line must never fail on a settings read
+        return _setting(s, "qualification_per_pass" if which == 0 else "qualification_recheck_per_pass")
+
+
 def _setting(settings: Any, name: str, default: int = 0) -> int:
     try:
         return int(getattr(settings, name, default) or 0)
@@ -318,8 +329,8 @@ ACTIONS: dict[str, Action] = {
         budget="Up to {per_pass} candidate(s) and {rechecks} re-check(s) per pass",
         values=lambda r, s: {"evaluated": _n(r, "evaluated"), "qualified": _n(r, "qualified"),
                              "disqualified": _n(r, "disqualified"),
-                             "per_pass": _setting(s, "qualification_per_pass"),
-                             "rechecks": _setting(s, "qualification_recheck_per_pass")},
+                             "per_pass": _qualification_budget(s, 0),
+                             "rechecks": _qualification_budget(s, 1)},
     ),
     "lane:country_data": Action(
         category="collection",

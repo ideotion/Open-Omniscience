@@ -4133,6 +4133,7 @@
   "Size change of this edit (bytes)": "Cambio de tamaño de esta edición (bytes)",
   "Size change of this revision (bytes)": "Cambio de tamaño de esta revisión (bytes)",
   "Size check failed: {error}": "Falló la comprobación de tamaño: {error}",
+  "Sized to this machine's memory and cores; the scheduler settings are the minimum.": "Sized to this machine's memory and cores; the scheduler settings are the minimum.",
   "Sizes are estimates — the exact size is read from the mirror on download.": "Los tamaños son estimaciones: el tamaño exacto se lee del mirror al descargar.",
   "Skip articles already done": "Omitir los artículos ya hechos",
   "Skip to main content": "Saltar al contenido principal",

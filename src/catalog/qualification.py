@@ -48,6 +48,7 @@ past the cohort floor, the SAME call starts honouring cohort-relative soft signa
 from __future__ import annotations
 
 import logging
+import time
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
@@ -96,6 +97,104 @@ CRITERIA_VERSION_SAMPLED = CRITERIA_VERSION + "+sample"
 # VMs that declined (200k-2M articles) needs 400 MB to 2.5 GB. A percentile over 20,000
 # articles is a stable baseline; the whole history was never needed for one.
 QUALIFICATION_SAMPLE_ARTICLES = 20_000
+
+# A CANDIDATE'S OWN read is bounded to its newest articles (2026-09-30, follow-up to R93):
+# judging N candidates at once used to materialise every candidate's whole history, and the
+# candidates that matter most for re-checks are the long-lived ones (hundreds of thousands of
+# articles each). The bound is SIZED FROM THE MACHINE (`candidate_history_cap`): half of the
+# memory available, less the scan's fixed overhead, divided by the floor's own measured cost
+# per article and by the number of candidates in the pass. The constant below is the fallback
+# for a machine whose memory cannot be read, and the least a candidate is ever given.
+QUALIFICATION_HISTORY_FALLBACK = 2_000
+# What the wall-clock budget below protects: a pass runs INSIDE the housekeeping lane, which is
+# one lock shared with world discovery, country data, crawl and backfill, and its trial fetches
+# are sequential over the polite (often Tor) fetcher -- so cores buy no parallelism there.
+# Without a bound, a budget that grows with the machine would hold that lock for hours. The
+# candidates not reached are not lost: they were never attempted, so they stay first in line.
+_TRIAL_FETCH_BUDGET_S = 600.0
+_HISTORY_MEMORY_SHARE = 0.5  # of the available memory a pass may spend on candidate reads
+
+# The adaptive per-pass budgets (maintainer preference 2026-09-29: no fixed caps, limits
+# follow the hardware, generous defaults). The configured settings are the FLOOR, and the
+# only fixed numbers left are the shipped defaults below, which are that floor.
+_AUTO_NEW_MIN = 5
+_AUTO_RECHECK_MIN = 2
+_AUTO_MB_PER_SLOT = 100.0   # available memory one candidate slot is allowed to claim
+_AUTO_SLOTS_PER_CORE = 6    # the pass's fetch, read and judge work per core; the fetches themselves stay sequential (see _TRIAL_FETCH_BUDGET_S)
+
+
+def candidate_history_cap(n_candidates: int, *, available_mb: float | None = None) -> int:
+    """How many of its newest articles each of ``n_candidates`` may be read from this pass.
+
+    The pass may spend ``_HISTORY_MEMORY_SHARE`` of the memory available, less the scan's
+    fixed overhead, at the floor's measured cost per article; that budget is shared by the
+    candidates. On a large machine this is effectively the whole history, on a small one a
+    few thousand, and it is never below ``QUALIFICATION_HISTORY_FALLBACK`` (a candidate is
+    always given at least the fallback's worth of evidence) -- which is also what an unreadable
+    machine gets. The memory guard's pause still applies inside the read.
+    """
+    if available_mb is None:
+        from src.config.machine_floor import _mem_readings
+
+        available_mb = _mem_readings()[1]
+    if available_mb is None:
+        return QUALIFICATION_HISTORY_FALLBACK
+    from src.config.machine_floor import scan_need_mb
+
+    per_article_mb = (scan_need_mb(1_000_000) - scan_need_mb(0)) / 1_000_000
+    budget_mb = available_mb * _HISTORY_MEMORY_SHARE - scan_need_mb(0)
+    share = int(budget_mb / per_article_mb / max(1, int(n_candidates))) if budget_mb > 0 else 0
+    return max(QUALIFICATION_HISTORY_FALLBACK, share)
+
+
+def effective_qualification_budgets(settings) -> tuple[int, int]:
+    """(new, re-checks) per pass the lane actually runs for ``settings``: the configured
+    numbers, grown to the machine while ``qualification_budget_auto`` is on. ONE definition,
+    so the lane, the queue view, the activity ledger and the Quality gates panel cannot
+    quote different budgets for the same pass."""
+    new = int(getattr(settings, "qualification_per_pass", 0))
+    rech = int(getattr(settings, "qualification_recheck_per_pass", 0))
+    if getattr(settings, "qualification_budget_auto", False):
+        b = adaptive_pass_budgets(new, rech)
+        return b["new"], b["rechecks"]
+    return new, rech
+
+
+def adaptive_pass_budgets(
+    configured_new: int, configured_recheck: int, *,
+    available_mb: float | None = None, cpus: int | None = None,
+) -> dict:
+    """The per-pass qualification budgets this machine can carry, never below what the
+    operator configured. Pure given its inputs; ``available_mb=None`` reads the machine.
+
+    An explicit 0 stays 0 (that is how an operator switches a lane off), and an unreadable
+    machine returns the configured numbers unchanged. The ceiling is memory / cores because
+    that is what a pass actually spends: the scoped read of each candidate (bounded by
+    ``candidate_history_cap``) and the trial fetches. The memory guard's pause still
+    applies inside the pass, so a generous budget is still given up under pressure.
+    """
+    if available_mb is None:
+        from src.config.machine_floor import _mem_readings
+
+        available_mb = _mem_readings()[1]
+    if cpus is None:
+        import os
+
+        cpus = os.cpu_count() or 1
+    new, rech = int(configured_new), int(configured_recheck)
+    if available_mb is None:
+        return {"new": new, "rechecks": rech, "auto": False, "available_mb": None, "cpus": cpus}
+    # A number BELOW the shipped default is a deliberate lowering (the low power profile writes
+    # 2, an operator may write 1) and is kept as given: auto grows a budget, it never overrides
+    # someone who asked for less.
+    slots = int(min(cpus * _AUTO_SLOTS_PER_CORE, available_mb // _AUTO_MB_PER_SLOT))
+    auto_new = max(_AUTO_NEW_MIN, slots)
+    auto_rech = max(_AUTO_RECHECK_MIN, auto_new // 2)
+    return {
+        "new": max(new, auto_new) if new >= _AUTO_NEW_MIN else new,
+        "rechecks": max(rech, auto_rech) if rech >= _AUTO_RECHECK_MIN else rech,
+        "auto": True, "available_mb": round(float(available_mb), 1), "cpus": cpus,
+    }
 
 # Exactly the three states the ruling names -- never "candidate"/"trial" (the process,
 # not a persisted state) and never a fourth state.
@@ -1345,8 +1444,19 @@ def run_qualification_pass(
         return {"enabled": True, "evaluated": 0}
 
     trial_errors = 0
+    deferred = 0
     if fetcher is not None:
+        started = time.monotonic()
+        attempted: list[Source] = []
         for source in candidates:
+            # The first candidate is always tried; after that a pass gives up on the rest when
+            # its wall-clock budget is spent or the memory guard says stop.
+            if attempted and (
+                time.monotonic() - started > _TRIAL_FETCH_BUDGET_S
+                or (should_pause is not None and should_pause())
+            ):
+                break
+            attempted.append(source)
             try:
                 trial_fetch(session, source, fetcher)
             except Exception:  # noqa: BLE001 - one bad candidate must not abort the pass
@@ -1355,6 +1465,12 @@ def run_qualification_pass(
                     "qualification trial fetch failed for %r",
                     getattr(source, "domain", "?"), exc_info=True,
                 )
+        deferred = len(candidates) - len(attempted)
+        if deferred:
+            done = {int(x.id) for x in attempted}
+            new_candidates = [x for x in new_candidates if int(x.id) in done]
+            rechecks = [x for x in rechecks if int(x.id) in done]
+            candidates = attempted
 
     # S5.1: the COHORT is frozen (once per run, by the caller that knows what a run is) and
     # only the CANDIDATES' own metrics are read here, scoped in SQL. A caller that passes no
@@ -1379,7 +1495,7 @@ def run_qualification_pass(
         _LOG.info("qualification pass paused during the cohort freeze: %s", exc)
         return {
             "enabled": True, "evaluated": 0, "paused": "memory", "reason": str(exc),
-            "trial_fetch_errors": trial_errors,
+            "trial_fetch_errors": trial_errors, "deferred": deferred,
         }
     # A cut frozen at another threshold is a DIFFERENT baseline -- it decides which sources
     # form the cohort at all. Refused rather than answered, because the failure is invisible:
@@ -1391,9 +1507,11 @@ def run_qualification_pass(
             f"judges at {TRIAL_MIN_ARTICLES} -- a cut frozen at another threshold is a "
             "different baseline"
         )
+    history_cap = candidate_history_cap(len(candidates))
     try:
         per = sa.scoped_metrics(
             session, {int(s.id) for s in candidates}, frozen, should_pause=should_pause,
+            per_source_recent=history_cap,
         )
     except sq.ScanPaused as exc:
         # S5.2: nothing is stamped from a paused scan. The candidates keep whatever status
@@ -1402,7 +1520,7 @@ def run_qualification_pass(
         _LOG.info("qualification pass paused: %s", exc)
         return {
             "enabled": True, "evaluated": 0, "paused": "memory", "reason": str(exc),
-            "trial_fetch_errors": trial_errors,
+            "trial_fetch_errors": trial_errors, "deferred": deferred,
         }
     fails_by_source = sa.flag_criteria(
         per, min_articles=TRIAL_MIN_ARTICLES, cohort_cut=frozen["cohort_cut"],
@@ -1442,6 +1560,9 @@ def run_qualification_pass(
 
     return {
         "enabled": True, "evaluated": len(candidates), "trial_fetch_errors": trial_errors,
+        # Candidates picked but not reached because the pass ran out of time or memory; they
+        # were not attempted, so they are first in line next pass.
+        "deferred": deferred,
         "no_evidence": len(no_evidence),
         # Reported apart because they answer different questions: "is the backlog draining"
         # and "is the recurrent verification actually running". One number cannot say both,
@@ -1461,6 +1582,12 @@ def run_qualification_pass(
         "baseline": "sample" if sampled else "whole",
         "baseline_sample_articles": frozen.get("sample_articles"),
         "criteria_version": criteria_version,
+        # Candidates whose stored history reached the read cap: their verdict rests on their
+        # newest `history_cap` articles, not on everything stored.
+        "history_cap": history_cap,
+        "history_capped": sum(
+            1 for m in per.values() if int(m.get("article_count") or 0) >= history_cap
+        ),
         **tally,
     }
 

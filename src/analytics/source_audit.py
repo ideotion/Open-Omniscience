@@ -190,6 +190,7 @@ def per_source_metrics(
     should_pause: Callable[[], bool] | None = None,
     since: datetime | None = None,
     article_scope: set[int] | None = None,
+    per_source_recent: int | None = None,
 ) -> dict[int, dict]:
     """Count-only per-source extraction-validity metrics, derived from the shipped source_quality
     collectors (no article-content decrypt). Returns ``{source_id: {metrics..., language, region,
@@ -219,8 +220,12 @@ def per_source_metrics(
     # once here -- which the once-per-run statement count caught immediately: 2, not 1.
     if stats is None:
         stats = sq.collect_article_stats(
-            session, source_ids=source_ids, should_pause=should_pause, since=since
+            session, source_ids=source_ids, should_pause=should_pause, since=since,
+            per_source_recent=per_source_recent,
         )
+        if per_source_recent is not None and source_ids is not None and article_scope is None:
+            # The link read follows the stats: exactly the articles that were kept.
+            article_scope = {s.article_id for s in stats}
     if cohort is None:
         # No frozen cohort -> derive it from THESE stats, which is only meaningful over the
         # whole corpus. A caller that scopes the scan and supplies no cohort would be judging
@@ -433,6 +438,7 @@ def frozen_cohort(
 def scoped_metrics(
     session: Session, source_ids: set[int], frozen: dict, *,
     should_pause: Callable[[], bool] | None = None,
+    per_source_recent: int | None = None,
 ) -> dict[int, dict]:
     """The candidates' OWN metrics, scoped in SQL, judged against ``frozen``'s cohort (S5.1).
 
@@ -440,7 +446,8 @@ def scoped_metrics(
     rule -- and the caller must keep testing MEMBERSHIP rather than reading a missing entry as
     a clean pass."""
     per = per_source_metrics(
-        session, source_ids=source_ids, cohort=frozen["cohort"], should_pause=should_pause
+        session, source_ids=source_ids, cohort=frozen["cohort"], should_pause=should_pause,
+        per_source_recent=per_source_recent,
     )
     if not per:
         return per
@@ -451,6 +458,7 @@ def scoped_metrics(
     else:
         shares = _furniture_share_by_source(
             session, list(per), cross_df=df, n_sources=frozen.get("furniture_n_sources"),
+            per_source_recent=per_source_recent,
         )
         for sid, m in per.items():
             m["furniture_share"] = shares.get(sid, 0.0)
@@ -460,6 +468,7 @@ def scoped_metrics(
 def _furniture_share_by_source(
     session: Session, source_ids: list[int], *,
     cross_df: dict[str, int] | None = None, n_sources: int | None = None,
+    per_source_recent: int | None = None,
 ) -> dict[int, float]:
     """Per-source top-12 furniture share, reusing the source_quality fingerprint + cross-source DF.
     Bounded per-source sample (the FINGERPRINT_SAMPLE_CAP guard) so the IN(...) stays safe.
@@ -472,7 +481,9 @@ def _furniture_share_by_source(
     top-12 is its own metric; the DF is the cohort's."""
     import random
 
-    source_to_articles = sq_source_to_articles(session, source_ids=set(source_ids))
+    source_to_articles = sq_source_to_articles(
+        session, source_ids=set(source_ids), per_source_recent=per_source_recent,
+    )
     per_top: dict[int, list[str]] = {}
     for sid in source_ids:
         ids = source_to_articles.get(sid, [])
@@ -490,7 +501,8 @@ def _furniture_share_by_source(
 
 
 def sq_source_to_articles(
-    session: Session, *, source_ids: set[int] | None = None
+    session: Session, *, source_ids: set[int] | None = None,
+    per_source_recent: int | None = None,
 ) -> dict[int, list[int]]:
     """``{source_id: [article_id, ...]}``. ``source_ids`` scopes it in SQL (S5.1) -- the
     unscoped form walks every article row in the corpus, which is fine once per run and is
@@ -500,6 +512,19 @@ def sq_source_to_articles(
     if source_ids is not None:
         if not source_ids:
             return {}
+        if per_source_recent is not None:
+            # The candidates' bounded read: each source's newest N ids, one indexed query
+            # each, so a long-lived source never materialises its whole history.
+            out_r: dict[int, list[int]] = {}
+            for sid_ in sorted(source_ids):
+                rows = (
+                    session.query(Article.id).filter(Article.source_id == sid_)
+                    .order_by(Article.id.desc()).limit(int(per_source_recent))
+                )
+                # ASCENDING, like the unbounded read: the furniture sample below is seeded and
+                # order-dependent, so a source under the cap must draw the same articles.
+                out_r[int(sid_)] = sorted(int(a) for (a,) in rows)
+            return out_r
         q = q.filter(Article.source_id.in_(sorted(source_ids)))
     out: dict[int, list[int]] = {}
     for aid, sid in q:

@@ -188,6 +188,14 @@ class SchedulerSettings:
     # order of magnitude larger than today's. 0 disables re-verification entirely.
     qualification_recheck_per_pass: int = 2
 
+    # The two numbers above are a FLOOR, not a cap (maintainer preference 2026-09-29: no
+    # fixed caps; limits follow the hardware). While this is on, each pass runs
+    # `qualification.adaptive_pass_budgets` -- as many new candidates and re-checks as
+    # the machine's memory and cores carry (no fixed ceiling), and exactly the configured numbers when the
+    # machine cannot be read. An explicit 0 still switches that lane off. Turn it off to pin
+    # the configured numbers exactly.
+    qualification_budget_auto: bool = True
+
     # SCRAPING SCOPE. `scrape_app_provided_only` narrows collection to the sources that
     # SHIPPED with the app, by their seed-time provenance tag. See
     # catalog.provenance_scope.is_app_provided for why this is an exact-set match and not
@@ -722,6 +730,9 @@ def load_settings() -> SchedulerSettings:
         qualification_recheck_per_pass=_coerce_int(
             raw.get("qualification_recheck_per_pass"), d.qualification_recheck_per_pass, 0, 100
         ),
+        qualification_budget_auto=_coerce_bool(
+            raw.get("qualification_budget_auto"), d.qualification_budget_auto
+        ),
         scrape_app_provided_only=_coerce_bool(
             raw.get("scrape_app_provided_only"), d.scrape_app_provided_only
         ),
@@ -867,6 +878,10 @@ def save_settings(updates: dict) -> SchedulerSettings:
     if "crawl_supplement" in updates and updates["crawl_supplement"] is not None:
         current.crawl_supplement = _coerce_bool(
             updates["crawl_supplement"], current.crawl_supplement
+        )
+    if "qualification_budget_auto" in updates and updates["qualification_budget_auto"] is not None:
+        current.qualification_budget_auto = _coerce_bool(
+            updates["qualification_budget_auto"], current.qualification_budget_auto
         )
     if "scrape_app_provided_only" in updates and updates["scrape_app_provided_only"] is not None:
         current.scrape_app_provided_only = _coerce_bool(

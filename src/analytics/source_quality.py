@@ -214,6 +214,7 @@ def collect_article_stats(
     should_pause: Callable[[], bool] | None = None,
     since: datetime | None = None,
     recent_limit: int | None = None,
+    per_source_recent: int | None = None,
 ) -> list[ArticleStat]:
     """Whole-corpus, COUNT-ONLY. One pass over the small article columns (word_count, language,
     source_id — the article_length_report pattern; the codec decrypts each page once, the
@@ -264,9 +265,18 @@ def collect_article_stats(
     (``source_audit.frozen_cohort(sample_articles=...)``): a percentile over the newest
     20,000 articles is a baseline, and the whole history was never needed for one. ``None``
     is byte-identical to before.
+
+    ``per_source_recent`` (2026-09-30, the adaptive-budget follow-up to R93) bounds a SCOPED
+    pass to each source's N newest stored articles. It exists for the candidates' own read:
+    one long-lived source can hold hundreds of thousands of articles, and a pass that judges
+    many candidates at once would materialise them all. Only meaningful with ``source_ids``
+    (without a scope it is ignored: there is no per-source read to bound). ``None`` is
+    byte-identical to before.
     """
     if source_ids is not None and not source_ids:
         return []  # an empty scope is an empty answer, never the whole corpus
+    if per_source_recent is not None and per_source_recent <= 0:
+        return []  # a history of nothing is nothing, never the whole history
     if recent_limit is not None and recent_limit <= 0:
         return []  # a sample of nothing is nothing, never the whole corpus
     scope: list[int] | None = sorted(source_ids) if source_ids else None
@@ -289,7 +299,21 @@ def collect_article_stats(
         art_q = art_q.filter(Article.source_id.in_(scope))
     if recent_limit is not None:
         art_q = art_q.order_by(Article.id.desc()).limit(int(recent_limit))
-    art_rows = list(art_q) if (scope is not None or recent_limit is not None) else None
+    art_rows: list[Any] | None
+    if scope is not None and per_source_recent is not None:
+        # One bounded query per candidate (there are a handful per pass), newest first: each
+        # is an indexed source_id range read, and none can return more than the cap.
+        art_rows = []
+        for sid_ in scope:
+            if should_pause is not None and should_pause():
+                raise ScanPaused(f"paused before the read of source {sid_}")
+            art_rows.extend(
+                art_q.filter(Article.source_id == sid_)
+                .order_by(Article.id.desc())
+                .limit(int(per_source_recent))
+            )
+    else:
+        art_rows = list(art_q) if (scope is not None or recent_limit is not None) else None
 
     # per-article keyword aggregates (one indexed group-by over keyword_mentions; no content).
     agg: dict[int, tuple[int, int, int]] = {}
