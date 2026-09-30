@@ -1,0 +1,2 @@
+date,area,item,status,refs,key_paths,summary
+2026-09-30,ci/main,Main's bandit B608 after #1252: the law-revision lookup in the alternates match carries a reviewed nosec,shipped,PR #1259,src/backup/merge.py,"bandit -ll on main flagged src/backup/merge.py:_alternate_local_match, whose SQL joins only module-literal fragments with every value bound; a reviewed nosec B608 states why, no behaviour change."

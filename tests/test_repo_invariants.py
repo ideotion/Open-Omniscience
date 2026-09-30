@@ -3654,6 +3654,7 @@ def test_dropdown_option_labels_are_translatable():
     exclude = {
         "oo-lang-select",  # native language names — invariant #15 (stay English)
         "wiki-lang",       # wiki edition data, e.g. "English (en)"
+        "wiki-att-edition",  # wiki edition codes (639-2/T, Q302) built from the lane's own list — data
         "dump-lang",       # dynamic placeholder, replaced by edition data
         "dumpread-wiki",   # dynamic placeholder ("—")
         "osm-region",      # dynamic placeholder, replaced by /api/geo/regions data

@@ -91,9 +91,9 @@ def _spy_windows(monkeypatch) -> list[tuple[str, tuple]]:
     seen: list[tuple[str, tuple]] = []
     real = merge_mod._insert_window
 
-    def spy(con, batch_id, table, sql, params=()):  # noqa: ANN001
+    def spy(con, batch_id, table, sql, params=(), key_column=None):  # noqa: ANN001
         seen.append((table, tuple(params)))
-        return real(con, batch_id, table, sql, params)
+        return real(con, batch_id, table, sql, params, key_column)
 
     monkeypatch.setattr(merge_mod, "_insert_window", spy)
     return seen

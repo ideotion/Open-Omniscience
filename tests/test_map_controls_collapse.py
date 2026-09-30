@@ -14,6 +14,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from tests.js_source_helper import arrow_const_source, function_body
+
 ROOT = Path(__file__).resolve().parents[1]
 JS = (ROOT / "src" / "static" / "app-map.js").read_text(encoding="utf-8")
 CSS = (ROOT / "src" / "static" / "app.css").read_text(encoding="utf-8")
@@ -77,7 +79,10 @@ def test_the_css_hides_the_panel_only_below_600px_and_leaves_desktop_alone():
 def test_only_the_button_writes_the_open_state_and_a_repaint_reads_it():
     """No choice closes the panel: that hid the focused control and raced the repaint (review finding)."""
     assert "host._ooCtlOpen" in JS
-    wiring = JS.split("const setOpen = (on) => {", 1)[1].split("const W = MAP_W", 1)[0]
+    # The whole _wireOoMap body, cut by the shared slicer (not a hand-rolled split): the toggle's
+    # wiring lives in it, and nothing else in it may listen on the panel.
+    wiring = function_body(JS, "_wireOoMap")
+    assert "host._ooCtlOpen = !!on" in arrow_const_source(JS, "setOpen")
     assert 'tog.addEventListener("click"' in wiring
     assert "panel.addEventListener" not in wiring, (
         "a listener on the panel would reset the state against a panel a repaint has replaced"

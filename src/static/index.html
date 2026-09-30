@@ -1696,6 +1696,20 @@
                law reader mounts -- same controls, same disclosures (Q918's note). -->
           <div id="wiki-tc-versions" class="living-versions"></div>
         </section>
+        <!-- 0.5 row F (S05-06, Q712's analytics 4-5). Reads the walk's rows, the stream's
+             recorded changes and the once-a-day top-viewed list: nothing here fetches. -->
+        <h3 class="lib-sub">One item across editions</h3>
+        <p class="hint">What each edition you follow holds for one Wikidata item: its page, its size and the changes this machine recorded. The sizes come from the page walk.</p>
+        <form id="wiki-div-form" class="row living-law-form">
+          <input id="wiki-div-q" type="search" autocomplete="off" aria-label="Wikidata item" placeholder="Q42">
+          <button type="submit">Compare</button>
+        </form>
+        <div id="wiki-div-cands"></div>
+        <div id="wiki-div-result"></div>
+        <h3 class="lib-sub">Most-viewed pages beside your corpus</h3>
+        <p class="hint">The source's most-viewed pages of its latest day, each beside the number of articles in your corpus that mention the title. One day at a time, not a history.</p>
+        <div id="wiki-att-tools" class="row"></div>
+        <div id="wiki-att-result"></div>
       </div>
 
       <div id="living-law" style="display:none">
@@ -2200,7 +2214,7 @@
         <button class="secondary" data-on-click="osmPickAdd()">Add</button>
       </div>
       <div class="hint" id="osm-pick-cadence"></div>
-      <div class="hint">OpenStreetMap data stays on this machine. Where a document you make carries it (a bulletin's map-data card), that document carries © OpenStreetMap contributors and the ODbL 1.0 line, whose share-alike term applies to a database derived from it.</div>
+      <div class="hint">OpenStreetMap extracts stay on this machine; places derived from them travel only in your own backups, credited to OpenStreetMap under the ODbL. Where a document you make carries it (a bulletin's map-data card), that document carries © OpenStreetMap contributors and the ODbL 1.0 line, whose share-alike term applies to a database derived from it.</div>
     </section>
     <section class="panel" id="osm-history">
       <h2>Full history</h2>
@@ -3071,7 +3085,7 @@
     <section class="panel" id="entity-spine">
       <h2 style="margin-top:0;font-size:13px">Places and people <span class="muted">&mdash; Wikidata items</span></h2>
       <p class="hint" style="margin-top:0">The places your articles mention are matched to places in the gazetteer, and each one that names an OpenStreetMap object gets a place card. Wikidata then gives each place, and each person or organisation a keyword translation already identifies, its names in your languages and a short description. Only the items your corpus mentions are asked for.</p>
-      <p class="card-caveat" style="margin-top:6px">Place names and descriptions come from OpenStreetMap and Wikidata and nobody reviews them here. They stay on this machine: place cards are not part of a backup or an export.</p>
+      <p class="card-caveat" style="margin-top:6px">Place names and descriptions come from OpenStreetMap and Wikidata and nobody reviews them here. Places ride your backups, credited to OpenStreetMap under the ODbL; a restore never changes a place you already have, and where a backup disagrees both values are kept for you to choose.</p>
       <div class="row" style="margin-top:8px;align-items:end">
         <div style="flex:0 0 auto"><button class="secondary" type="button" id="es-resolve"
           title="Reads the gazetteer and the OpenStreetMap data on this machine. No request leaves it.">Resolve places</button></div>

@@ -2383,12 +2383,20 @@
       ai_keyword: "AI keyword",
       article_mentioned_dates: "Date mentioned in an article",
       law_revision_summaries: "Law change summary",
+      places: "Place",
+      wikidata_items: "Wikidata item",
     };
     const _ALT_FIELDS = {
       text: "Text", title: "Title", summary: "Summary", result: "Result", status: "Status",
       confidence: "Confidence", extractor: "Extractor", snippet: "Snippet",
       confirmed: "Confirmed", evidence: "Evidence", prompt_version: "Prompt version",
       language: "Language", source_lang: "Source language",
+      // places and Wikidata items (R71 b)
+      name: "Name", kind: "Kind", qid: "Wikidata item", names_json: "Names", population: "Population",
+      country: "Country", country_alpha3: "Country (alpha-3)", lat: "Latitude", lon: "Longitude",
+      gazetteer_vintage: "Gazetteer vintage", as_of: "As of", resolved_qid: "Resolved to",
+      labels_json: "Labels", descriptions_json: "Descriptions", claims_json: "Claims",
+      lastrevid: "Wikidata revision", fetched_at: "Read on",
     };
 
     // Directionality isolates around a name set inside a translated sentence: a model name such
@@ -2399,7 +2407,7 @@
       if (!p) return `<span class="muted">${esc(t("not recorded"))}</span>`;
       const by = p.kind === "human"
         ? t("By a person (confirm or reject)")
-        : (p.version ? tf("By {producer}, prompt {version}", { producer: _altIso(p.producer || "?"), version: _altIso(p.version) })
+        : ((p.version && p.kind === "model") ? tf("By {producer}, prompt {version}", { producer: _altIso(p.producer || "?"), version: _altIso(p.version) })
                       : tf("By {producer}", { producer: _altIso(p.producer || "?") }));
       const where = p.arrived
         ? tf("Arrived from {origin}, restore of {date}", {
@@ -2438,6 +2446,10 @@
         bits = [i.mentioned_on, i.precision];
       } else if (it.table === "law_revision_summaries") {
         bits = [i.jurisdiction, i.document_url, i.revision_content_hash ? String(i.revision_content_hash).slice(0, 10) : null];
+      } else if (it.table === "places") {
+        bits = [i.place_id];
+      } else if (it.table === "wikidata_items") {
+        bits = [i.qid];
       }
       bits = bits.filter((b) => b != null && b !== "");
       return bits.length ? `<div class="hint"><bdi style="overflow-wrap:anywhere">${esc(bits.join(" \u00b7 "))}</bdi></div>` : "";

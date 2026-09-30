@@ -70,6 +70,10 @@ COUNTRY_COLUMNS: dict[str, tuple[str, ...]] = {
     # refused by the converter and left alone (`uk`, `eu`, `int` -- measured), so this
     # entry is a no-op today and live the moment the target flips.
     "law_documents": ("jurisdiction", "country"),
+    # 2026-09-30, R71 (b): a Place's own country column (the gazetteer's alpha-2). The keys
+    # are OSM object ids, so it can never collide two rows, but it must reach the store in the
+    # store's form so a carried place and a locally materialised one compare like with like.
+    "places": ("country",),
 }
 
 #: The country-bearing columns deliberately NOT normalised, each with the reason.
@@ -93,6 +97,11 @@ COUNTRY_COLUMNS_EXEMPT: dict[str, str] = {
         "neither case nor form, so `_merge_statistics`' subscription key compares it "
         "case-insensitively -- the comparison is merge.py's own business and rewrites "
         "nothing the World Bank will ever be sent"
+    ),
+    "places.country_alpha3": (
+        "alpha-3 BY DESIGN (Q312 = a: a Place carries both forms from birth, for the alpha-3 "
+        "display surfaces); normalising it toward the store's alpha-2 would overwrite the very "
+        "form the column exists to hold. It is derived from `country` and never a join key"
     ),
     "article_mentioned_places.country": (
         "purely derived and in _MERGE_NOT_CARRIED -- no handler copies it, so it can "

@@ -33,6 +33,17 @@ from typing import Any
 
 TAG_VERSION = 1
 
+#: Tables with NO integer key, and the column that is their natural key. ``merged_rows`` records
+#: their arrival by ``row_key`` as well as by ``rowid``, and the lookup here reads ``row_key``:
+#: a rowid is not stable across VACUUM for a table without an explicit INTEGER PRIMARY KEY, so
+#: reading provenance through it could name the wrong row (R71 b).
+KEYED_TABLES: dict[str, str] = {"places": "id", "wikidata_items": "qid"}
+
+#: Their "produced at" column. A local job (``materialise``, ``store_items``) rewrites a row in place
+#: by its key and stamps this column afresh, so a stamp LATER than the arrival's batch means the
+#: values are no longer the restore's: the tag then says local, never "arrived from ...".
+KEYED_STAMP: dict[str, str] = {"places": "as_of", "wikidata_items": "fetched_at"}
+
 #: Per deduced table, the SQL expression (over an alias placeholder ``{a}``) for each producer
 #: field. ``NULL`` where the table does not record it. Table names here are module literals.
 PRODUCER_COLUMNS: dict[str, dict[str, str]] = {
@@ -55,6 +66,20 @@ PRODUCER_COLUMNS: dict[str, dict[str, str]] = {
     "law_revision_summaries": {
         "kind": "'model'", "producer": "{a}.model", "version": "{a}.prompt_version",
         "prompt_text": "{a}.prompt_text", "produced_at": "{a}.created_at",
+    },
+    # 2026-09-30, R71 (b): a Place is read from OpenStreetMap's gazetteer and an item from
+    # Wikidata; neither is a model's or a person's output. `producer` names the SOURCE and
+    # the vintage it was read at, `version` stays NULL (there is no prompt), and `prompt_text`
+    # is NULL. `kind` is `extractor` because a program read it, not because a model wrote it.
+    "places": {
+        "kind": "'extractor'",
+        "producer": "'OpenStreetMap gazetteer' || COALESCE(' ' || {a}.gazetteer_vintage, '')",
+        "version": "NULL", "prompt_text": "NULL", "produced_at": "{a}.as_of",
+    },
+    "wikidata_items": {
+        "kind": "'extractor'", "producer": "'Wikidata'",
+        "version": "CAST({a}.lastrevid AS TEXT)", "prompt_text": "NULL",
+        "produced_at": "{a}.fetched_at",
     },
     # A confirm or reject is the operator's own judgement, whatever extractor proposed the date.
     "article_mentioned_dates": {
@@ -101,6 +126,21 @@ ALTERNATE_SPECS: dict[str, dict[str, Any]] = {
         "scope": "law", "differs": ["summary"], "shown": ["summary", "prompt_version"],
         "match": {"model": "model"},
     },
+    # 2026-09-30, R71 (b). Neither table has an integer id: the identity IS the key.
+    "places": {
+        "scope": "none",
+        "differs": ["name", "kind", "qid", "names_json", "population"],
+        "shown": ["name", "kind", "qid", "names_json", "population", "country", "country_alpha3",
+                  "lat", "lon", "gazetteer_vintage", "as_of"],
+        "match": {"place_id": "id"},
+    },
+    "wikidata_items": {
+        "scope": "none",
+        "differs": ["status", "resolved_qid", "labels_json", "descriptions_json", "claims_json"],
+        "shown": ["status", "resolved_qid", "labels_json", "descriptions_json", "claims_json",
+                  "lastrevid", "fetched_at"],
+        "match": {"qid": "qid"},
+    },
 }
 
 
@@ -123,6 +163,10 @@ def producer_tag_sql(table: str, alias: str, *, origin: str, batch: str, at: str
 def provenance_tag(session: Any, table: str, row_id: int) -> dict | None:
     """The tag of ONE local deduced row, or None when the row does not exist.
 
+    ``row_id`` is the row's SQLite ``rowid``: what ``merged_rows`` records, and the ``id`` itself
+    for every table with an integer key. For the two text-keyed tables (``KEYED_TABLES``) the
+    arrival is found through the row's natural KEY instead, because VACUUM may renumber rowids.
+
     A row with no ``merged_rows`` entry was produced here: ``origin`` is ``"local"`` and
     ``arrived`` is null."""
     from sqlalchemy import text
@@ -131,11 +175,17 @@ def provenance_tag(session: Any, table: str, row_id: int) -> dict | None:
         table, "r", origin="COALESCE(b.origin_fingerprint, 'local')",
         batch="b.id", at="b.imported_at", app_version="b.app_version",
     )
+    key = KEYED_TABLES.get(table)
+    on = f"m.row_key = r.{key}" if key else "m.row_id = r.rowid"
+    stamp = KEYED_STAMP.get(table)
+    fresh = (
+        f" AND (r.{stamp} IS NULL OR julianday(b.imported_at) >= julianday(r.{stamp}))" if stamp else ""
+    )
     row = session.execute(
         text(
-            f"SELECT {sel} FROM {table} r"  # noqa: S608  # nosec B608 - table is validated as a key of PRODUCER_COLUMNS by producer_tag_sql above, never input
-            " LEFT JOIN merged_rows m ON m.table_name = :t AND m.row_id = r.rowid"
-            " LEFT JOIN merge_batches b ON b.id = m.batch_id WHERE r.rowid = :id"
+            f"SELECT {sel} FROM {table} r"  # noqa: S608  # nosec B608 - table is validated as a key of PRODUCER_COLUMNS by producer_tag_sql above, and the key and stamp columns are module literals
+            f" LEFT JOIN merged_rows m ON m.table_name = :t AND {on}"
+            f" LEFT JOIN merge_batches b ON b.id = m.batch_id{fresh} WHERE r.rowid = :id"
             " ORDER BY b.id DESC LIMIT 1"
         ),
         {"t": table, "id": int(row_id)},

@@ -60,18 +60,18 @@ def _corpus_volume(db, lo: date, hi: date) -> int:
         return sum(served.values())
     from sqlalchemy import func
 
-    from src.database.models import KeywordMention
+    from src.database.derived_views import KeywordMentionRead
 
     total = (
-        db.query(func.coalesce(func.sum(KeywordMention.count), 0))
-        .filter(KeywordMention.observed_on >= lo, KeywordMention.observed_on < hi)
+        db.query(func.coalesce(func.sum(KeywordMentionRead.count), 0))
+        .filter(KeywordMentionRead.observed_on >= lo, KeywordMentionRead.observed_on < hi)
         .scalar()
     )
     return int(total or 0)
 
 
 def _distinct_sources_windowed(db, keyword_ids, lo: date, hi: date) -> int:
-    from src.database.models import KeywordMention
+    from src.database.derived_views import KeywordMentionRead
 
     ids = sorted(keyword_ids)
     if not ids:
@@ -79,12 +79,12 @@ def _distinct_sources_windowed(db, keyword_ids, lo: date, hi: date) -> int:
     seen: set[int] = set()
     for chunk in _chunks(ids):
         for (sid,) in (
-            db.query(KeywordMention.source_id)
+            db.query(KeywordMentionRead.source_id)
             .filter(
-                KeywordMention.keyword_id.in_(chunk),
-                KeywordMention.observed_on >= lo,
-                KeywordMention.observed_on < hi,
-                KeywordMention.source_id.isnot(None),
+                KeywordMentionRead.keyword_id.in_(chunk),
+                KeywordMentionRead.observed_on >= lo,
+                KeywordMentionRead.observed_on < hi,
+                KeywordMentionRead.source_id.isnot(None),
             )
             .distinct()
         ):
@@ -93,7 +93,7 @@ def _distinct_sources_windowed(db, keyword_ids, lo: date, hi: date) -> int:
 
 
 def _article_ids_windowed(db, keyword_ids, lo: date, hi: date) -> list[int]:
-    from src.database.models import KeywordMention
+    from src.database.derived_views import KeywordMentionRead
 
     ids = sorted(keyword_ids)
     if not ids:
@@ -101,11 +101,11 @@ def _article_ids_windowed(db, keyword_ids, lo: date, hi: date) -> list[int]:
     out: set[int] = set()
     for chunk in _chunks(ids):
         for (aid,) in (
-            db.query(KeywordMention.article_id)
+            db.query(KeywordMentionRead.article_id)
             .filter(
-                KeywordMention.keyword_id.in_(chunk),
-                KeywordMention.observed_on >= lo,
-                KeywordMention.observed_on < hi,
+                KeywordMentionRead.keyword_id.in_(chunk),
+                KeywordMentionRead.observed_on >= lo,
+                KeywordMentionRead.observed_on < hi,
             )
             .distinct()
         ):
@@ -194,18 +194,19 @@ def find_rising_supergroups(
     from sqlalchemy import distinct, func
 
     from src.analytics.managed import normalize_lang
-    from src.database.models import KeywordMention, Source
+    from src.database.derived_views import KeywordMentionRead
+    from src.database.models import Source
 
     # Active same-language source counts over the recent window — the DF-ubiquity
     # gate's denominator, built ONCE (the find_flooded_topics pattern), not per group.
     src_recent = dict(
-        db.query(KeywordMention.source_id, func.count(distinct(KeywordMention.article_id)))
+        db.query(KeywordMentionRead.source_id, func.count(distinct(KeywordMentionRead.article_id)))
         .filter(
-            KeywordMention.observed_on >= w_start,
-            KeywordMention.observed_on < hi,
-            KeywordMention.source_id.isnot(None),
+            KeywordMentionRead.observed_on >= w_start,
+            KeywordMentionRead.observed_on < hi,
+            KeywordMentionRead.source_id.isnot(None),
         )
-        .group_by(KeywordMention.source_id)
+        .group_by(KeywordMentionRead.source_id)
         .all()
     )
     active_by_lang: dict[str, int] = {}
