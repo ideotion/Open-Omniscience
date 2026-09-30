@@ -249,10 +249,32 @@ def read_rows(path: Path) -> list[dict[str, str]]:
     rows = [dict(r) for r in reader]
     if not rows:
         raise ReleaseNotesError(f"{path} holds no rows")
+    rows.extend(_fragment_rows(path, list(rows[0])))
     missing = {"date", "area", "item", "status", "refs"} - set(rows[0])
     if missing:
         raise ReleaseNotesError(f"{path} is missing column(s): {sorted(missing)}")
     return rows
+
+
+def _fragment_rows(path: Path, header: list[str]) -> list[dict[str, str]]:
+    """Rows in ``<ledger dir>/shipped.d/*.csv`` (scripts/ledger_shipped.py): one file per row,
+    so a PR never edits the shared file. Read after the file's own rows, in file-name order."""
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(
+        "ledger_shipped", Path(__file__).resolve().parent / "ledger_shipped.py"
+    )
+    assert spec is not None and spec.loader is not None
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    if mod.fragment_files(path) and header[: len(mod.HEADER)] != mod.HEADER:
+        raise ReleaseNotesError(
+            f"{path} has columns {header}, but the fragments in shipped.d use {mod.HEADER}"
+        )
+    try:
+        return [dict(zip(header, r, strict=False)) for r in mod.fragment_rows(path)]
+    except ValueError as exc:
+        raise ReleaseNotesError(str(exc)) from exc
 
 
 def refs_carry_placeholder(row: dict[str, str]) -> bool:
@@ -727,7 +749,7 @@ def render(
         add(
             f"- Dated AFTER `{sel.tag}`'s commit day and therefore not in this release: "
             f"**{len(sel.after_tag)}**, dated {span}. The count is exact; filter "
-            f"`docs/ledger/shipped.csv` on that range to read them."
+            f"`docs/ledger/shipped.csv` (and `docs/ledger/shipped.d/`) on that range to read them."
         )
     else:
         add(f"- Dated after `{sel.tag}`'s commit day: **0**.")
@@ -741,7 +763,8 @@ def render(
             f"- Truncated for length and marked `…`: **{clipped['item']}** `item` "
             f"field(s) over {_ITEM_CAP} characters and **{clipped['status']}** `status` "
             f"field(s) over {_STATUS_CAP}. The cap bounds what is LISTED, never a count "
-            f"above; the full text is in `docs/ledger/shipped.csv`."
+            f"above; the full text is in `docs/ledger/shipped.csv` "
+            f"or `docs/ledger/shipped.d/`."
         )
     add(
         "- The `summary` column is not carried here; it is the ledger's long form and "
