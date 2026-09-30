@@ -272,6 +272,8 @@ function makeNetSandbox({apiImpl, ensureOnlineImpl} = {}) {
     let _netStateKnown = false;
     let _egressState = null;
     let _coachChecked = false;
+    let _wikiNetSeen = null;
+    function _wikiLaneRefreshSoon() {}
     function _paintActivity() {}
     function dismissNetCoach() {}
     function maybeShowNetCoach() {}
