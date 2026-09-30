@@ -455,13 +455,20 @@ def index_article(
     # a fabricated neutral. Runs on the one per-article hook, so ingest / re-index /
     # backfill all populate the (previously dead) sentiment columns. Skipped in the
     # keyword-only scope (a keyword cleanup leaves sentiment untouched).
+    #
+    # D45 (d): computed HERE but ASSIGNED beside top_keyword_* below. Assigning it at
+    # this point made the first query of the pass autoflush an UPDATE of the article row,
+    # and the top keyword + attempt stamp then issued a second one: two statements (and two
+    # rewrites of the row's index entries) for what is one change. Nothing between the two
+    # places reads the sentiment columns.
+    sentiment_result: tuple[float | None, str | None] | None = None
     if scope != "keywords":
         if precomputed_sentiment is not None:
-            article.sentiment_score, article.sentiment_label = precomputed_sentiment
+            sentiment_result = precomputed_sentiment
         else:
             from src.analytics.sentiment import score_article
 
-            article.sentiment_score, article.sentiment_label = score_article(content, known_lang)
+            sentiment_result = score_article(content, known_lang)
 
     if precomputed_terms is not None:
         terms = precomputed_terms
@@ -584,6 +591,8 @@ def index_article(
     # extractor generation. Set unconditionally (never `or`-guarded): an article whose
     # keywords were all suppressed this pass must go BACK to NULL rather than keep a
     # stale top keyword that no mention row supports any more.
+    if sentiment_result is not None:
+        article.sentiment_score, article.sentiment_label = sentiment_result
     (
         article.top_keyword_id,
         article.top_keyword_count,

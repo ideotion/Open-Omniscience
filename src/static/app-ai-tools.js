@@ -2309,19 +2309,9 @@
       }
     }
 
-    async function exportEvidence(scope) {
-      const sel = _reportScope(scope);
-      if (!sel) { toast("Enter a search query to scope the evidence bundle.", "err"); return; }
-      try {
-        const bundle = await api("/api/reports/evidence",
-          {method: "POST", body: JSON.stringify(sel)});
-        const blob = new Blob([JSON.stringify(bundle, null, 2)], {type: "application/json"});
-        const a = document.createElement("a");
-        a.href = URL.createObjectURL(blob);
-        a.download = "evidence-bundle.json"; a.click();
-        toast(`Signed bundle: ${bundle.manifest.item_count} item(s), verify with scripts/verify_evidence.py`);
-      } catch (e) { toast(_failMsg("Evidence export: {error}", e), "err"); }
-    }
+    // The two "Export signed evidence" buttons open the review first (app-evidence.js): what the
+    // file holds, that it is plaintext, which key signs. Saving is a second click there.
+    function exportEvidence(scope) { return openEvidenceReview(_reportScope(scope)); }
 
     // -- Chain of custody --------------------------------------------------- //
     function renderCustodyStatus(s) {

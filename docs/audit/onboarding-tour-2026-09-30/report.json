@@ -1,0 +1,356 @@
+{
+  "airplane_before_walk": true,
+  "key_before_walk": false,
+  "tour_open_at_boot": false,
+  "quiet_walk_changed_nothing": true,
+  "entry_points": {
+    "settings": "The top bar",
+    "skip_closes": true,
+    "help": "The top bar",
+    "escape_closes": true,
+    "palette": "The top bar"
+  },
+  "full_steps": [
+    [
+      "Step 1 of 14",
+      "The top bar",
+      null
+    ],
+    [
+      "Step 2 of 14",
+      "Home",
+      "Open Home"
+    ],
+    [
+      "Step 3 of 14",
+      "Feed",
+      "Open Feed"
+    ],
+    [
+      "Step 4 of 14",
+      "Explore",
+      "Open Explore"
+    ],
+    [
+      "Step 5 of 14",
+      "Insights",
+      "Open Insights"
+    ],
+    [
+      "Step 6 of 14",
+      "Observatory",
+      "Open Observatory"
+    ],
+    [
+      "Step 7 of 14",
+      "World map",
+      "Open World map"
+    ],
+    [
+      "Step 8 of 14",
+      "Governments",
+      "Open Governments"
+    ],
+    [
+      "Step 9 of 14",
+      "Agenda",
+      "Open Agenda"
+    ],
+    [
+      "Step 10 of 14",
+      "Indices",
+      "Open Indices"
+    ],
+    [
+      "Step 11 of 14",
+      "Commodities",
+      "Open Commodities"
+    ],
+    [
+      "Step 12 of 14",
+      "Living sources",
+      "Open Living sources"
+    ],
+    [
+      "Step 13 of 14",
+      "Library",
+      "Open Library"
+    ],
+    [
+      "Step 14 of 14",
+      "Your interface depth",
+      "Open the depth setting"
+    ]
+  ],
+  "full_first_text": {
+    "counter": "Step 1 of 14",
+    "title": "The top bar",
+    "body": [
+      "Step 1 of 14",
+      "The plane is airplane mode: filled means offline, and nothing leaves this machine until you turn it off and agree to what will be contacted. The language menu switches the whole interface at once. The task manager shows what is running, queued and scheduled.",
+      "The tour changes nothing: it sets no filter, hides no tab and keeps no record."
+    ],
+    "list": [],
+    "button": null,
+    "next": "Next",
+    "back_disabled": true
+  },
+  "full_last": {
+    "counter": "Step 14 of 14",
+    "title": "Your interface depth",
+    "body": [
+      "Step 14 of 14",
+      "The interface depth is Full now. A depth changes what is pinned in the sidebar, never what is reachable. You can change it in Settings, and take this tour again from there or from the command palette.",
+      "Open the depth setting",
+      "The tour changes nothing: it sets no filter, hides no tab and keeps no record."
+    ],
+    "list": [],
+    "button": "Open the depth setting",
+    "next": "Finish",
+    "back_disabled": false
+  },
+  "full_overlaps": [],
+  "open_button": {
+    "step": "Explore",
+    "button": "Open Explore",
+    "tour_closed": true,
+    "tab_active": "explore"
+  },
+  "full_changed_nothing": {
+    "depth_same": true,
+    "ls_ui_same": true,
+    "ls_keys_added_by_the_pressed_tab_button": []
+  },
+  "essentials_sidebar": {
+    "depth": "essentials",
+    "ls_keys": [
+      "oo.ui",
+      "oo_net_coach_v1"
+    ],
+    "ls_ui": "{\"theme\":\"system\",\"accent\":\"\",\"density\":\"comfortable\",\"face\":\"\",\"sidebar\":\"expanded\",\"depth\":\"essentials\"}",
+    "tabs": [
+      [
+        "home",
+        true
+      ],
+      [
+        "feed",
+        true
+      ],
+      [
+        "explore",
+        false
+      ],
+      [
+        "insights",
+        false
+      ],
+      [
+        "observatory",
+        false
+      ],
+      [
+        "timemap",
+        false
+      ],
+      [
+        "law",
+        false
+      ],
+      [
+        "agenda",
+        false
+      ],
+      [
+        "indices",
+        false
+      ],
+      [
+        "markets",
+        false
+      ],
+      [
+        "living",
+        false
+      ],
+      [
+        "library",
+        false
+      ]
+    ],
+    "more_row": "Show more (10)"
+  },
+  "essentials_steps": [
+    [
+      "Step 1 of 5",
+      "The top bar",
+      null
+    ],
+    [
+      "Step 2 of 5",
+      "Home",
+      "Open Home"
+    ],
+    [
+      "Step 3 of 5",
+      "Feed",
+      "Open Feed"
+    ],
+    [
+      "Step 4 of 5",
+      "10 more tabs",
+      "Show them in the sidebar"
+    ],
+    [
+      "Step 5 of 5",
+      "Your interface depth",
+      "Open the depth setting"
+    ]
+  ],
+  "essentials_more": {
+    "counter": "Step 4 of 5",
+    "title": "10 more tabs",
+    "body": [
+      "Step 4 of 5",
+      "At this depth they are grouped under “Show more” in the sidebar; the tab you have open always stays listed. They are all one click away, and the command palette (Ctrl/⌘-K) reaches every one of them.",
+      "Show them in the sidebar",
+      "The tour changes nothing: it sets no filter, hides no tab and keeps no record."
+    ],
+    "list": [
+      "Explore",
+      "Insights",
+      "Observatory",
+      "World map",
+      "Governments",
+      "Agenda",
+      "Indices",
+      "Commodities",
+      "Living sources",
+      "Library"
+    ],
+    "button": "Show them in the sidebar",
+    "next": "Next",
+    "back_disabled": false
+  },
+  "ess_overlaps": [],
+  "more_button": {
+    "tour_closed": true,
+    "visible_tabs": [
+      "home",
+      "feed",
+      "explore",
+      "insights",
+      "observatory",
+      "timemap",
+      "law",
+      "agenda",
+      "indices",
+      "markets",
+      "living",
+      "library"
+    ],
+    "more_row": "Show fewer"
+  },
+  "depth_button": {
+    "step": "Your interface depth",
+    "button": "Open the depth setting",
+    "next": "Finish",
+    "settings_visible": true,
+    "depth_control_visible": true
+  },
+  "essentials_changed_nothing": {
+    "depth_same": true,
+    "ls_keys_same": true
+  },
+  "ar_dir": "rtl",
+  "ar_steps": [
+    [
+      "الخطوة 1 من 5",
+      "الشريط العلوي",
+      null
+    ],
+    [
+      "الخطوة 2 من 5",
+      "الرئيسية",
+      "افتح الرئيسية"
+    ],
+    [
+      "الخطوة 3 من 5",
+      "التدفق",
+      "افتح التدفق"
+    ],
+    [
+      "الخطوة 4 من 5",
+      "10 علامات تبويب أخرى",
+      "أظهرها في الشريط الجانبي"
+    ],
+    [
+      "الخطوة 5 من 5",
+      "عمق واجهتك",
+      "افتح إعداد العمق"
+    ]
+  ],
+  "ar_junk": [],
+  "ar_latin_left": [],
+  "ar_overlaps": [],
+  "ar_375_overflow_px": 0,
+  "ar_375_dialog_overflow_px": -18,
+  "ar_375_overlaps": [],
+  "no_query_refusal": {
+    "dialog_open": false,
+    "toast": "Enter a search query to scope the evidence bundle."
+  },
+  "review": {
+    "title": "Export signed evidence",
+    "text": "The file is one signed JSON document: the articles you selected as provenance entries (where each came from and the SHA-256 of its text), bound together by a Merkle root and signed with this install's evidence key, so anyone can check that nothing was changed.\n\nArticles: 6 · Sources: 3\n\nWhat the file holds\nmanifest the bundle version, when it was made, the case name (your search query or the analysis label), how many articles, and the Merkle root that covers them\nmanifest.items one entry per article, with ⁦id, url, canonical_url, source_id, title, published_at, stored_hash, content_sha256⁩\nsignature, public_key the signature over the manifest and the public key that made it\nalgorithm the name of the signature scheme, ed25519\n\nPlaintext: the file is not encrypted. It lists each article's address, title and date, and anyone who has the file can read them. The articles' text is not in it, only its SHA-256.\n\nThe case name written in the file, readable by anyone who has it: ⁨glacier⁩\n\nThis install has no evidence key yet. One is created on this machine when you save, and stays here. It proves this install made a bundle, and links every bundle it signs.",
+    "save_visible": true,
+    "close": "Cancel",
+    "caveats_visible": [
+      true,
+      true,
+      true
+    ]
+  },
+  "review_overlaps": [],
+  "key_after_review": false,
+  "download": {
+    "name": "evidence-bundle-2026-09-30.json",
+    "items": 6,
+    "algorithm": "ed25519"
+  },
+  "done": {
+    "text": "Handed to your browser as ⁨evidence-bundle-2026-09-30.json⁩: 6 articles, ⁨3.2 KB⁩. Your browser chooses where it goes and may rename it.\n\nWhat the file holds\nmanifest the bundle version, when it was made, the case name (your search query or the analysis label), how many articles, and the Merkle root that covers them\nmanifest.items one entry per article, with ⁦id, url, canonical_url, source_id, title, published_at, stored_hash, content_sha256⁩\nsignature, public_key the signature over the manifest and the public key that made it\nalgorithm the name of the signature scheme, ed25519\n\nSigning key (Ed25519), to give the recipient some other way: 67d570dea7d75be30c6b9cd61fecddb58f67e41b8a2a11110e621823b52b4d82\n\nAnyone can check the file offline with scripts/verify_evidence.py, which needs only the file and the key.",
+    "key_shown": "67d570dea7d75be30c6b9cd61fecddb58f67e41b8a2a11110e621823b52b4d82",
+    "save_hidden": true,
+    "close": "Close"
+  },
+  "done_key_matches_bundle": true,
+  "key_after_save": true,
+  "done_overlaps": [],
+  "review_with_key": "The file is one signed JSON document: the articles you selected as provenance entries (where each came from and the SHA-256 of its text), bound together by a Merkle root and signed with this install's evidence key, so anyone can check that nothing was changed.\n\nArticles: 6 · Sources: 3\n\nWhat the file holds\nmanifest the bundle version, when it was made, the case name (your search query or the analysis label), how many articles, and the Merkle root that covers them\nmanifest.items one entry per article, with ⁦id, url, canonical_url, source_id, title, published_at, stored_hash, content_sha256⁩\nsignature, public_key the signature over the manifest and the public key that made it\nalgorithm the name of the signature scheme, ed25519\n\nPlaintext: the file is not encrypted. It lists each article's address, title and date, and anyone who has the file can read them. The articles' text is not in it, only its SHA-256.\n\nThe case name written in the file, readable by anyone who has it: ⁨glacier⁩\n\nIt is signed with this install's evidence key. That proves this install made it, and the same key on every bundle you send links all of them to this install.\n\nThe key that will sign: 67d570dea7d75be30c6b9cd61fecddb58f67e41b8a2a11110e621823b52b4d82",
+  "ar_q_value": "glacier",
+  "ar_toasts_before_open": [
+    "أدخل استعلام بحث لتحديد نطاق حزمة الأدلة.",
+    "أدخل استعلام بحث لتحديد نطاق حزمة الأدلة."
+  ],
+  "ev_ar_dir": "rtl",
+  "ev_ar_junk": [],
+  "ev_ar_latin_left": [
+    "algorithm",
+    "fecddb",
+    "title"
+  ],
+  "ev_ar_overlaps": [],
+  "ev_375_overflow_px": 0,
+  "ev_375_dialog_overflow_px": -18,
+  "ev_375_overlaps": [],
+  "review_redraws_on_language_change": {
+    "open_still": true,
+    "changed": true,
+    "english_now": true
+  },
+  "errors": [],
+  "bad_responses": [],
+  "blocked_non_loopback": [],
+  "airplane_after_walk": true
+}
