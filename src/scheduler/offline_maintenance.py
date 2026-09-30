@@ -46,6 +46,7 @@ from __future__ import annotations
 import logging
 import os
 import threading
+import time
 
 _LOG = logging.getLogger("scheduler.offline_maintenance")
 
@@ -57,6 +58,13 @@ _FIRST_TICK_DELAY_S = 180.0
 #: duty cycle on the write gate).
 _REST_FRACTION = 0.25
 _MIN_REST_S = 1.0
+
+#: Our own corpus lease. A restore's swap waits for every lease to drop (bounded) before it
+#: replaces the corpus file, so a window that was already writing when the restore began is
+#: waited out rather than left writing to the unlinked file.
+_LEASE = "offline-maintenance"
+
+_clock = time.monotonic
 
 _THREAD: threading.Thread | None = None
 _STOP = threading.Event()
@@ -89,6 +97,18 @@ def yield_reason(sched) -> str | None:
     except Exception:  # noqa: BLE001 - unknown ownership is treated as owned
         return "offline_ownership_unknown"
     try:
+        from src.database.corpus_lease import active_leases
+
+        # Every unit of live-corpus work that registers its presence: re-index batches,
+        # the keyword fold, quarantine, search re-index, a newsletter import. The prune
+        # decides what to delete outside the write gate, so a fold repointing mentions
+        # under it could lose to the delete.
+        held = [n for n in active_leases() if n != _LEASE]
+        if held:
+            return "offline_corpus_lease_held"
+    except Exception:  # noqa: BLE001 - unknown lease state is treated as held
+        return "offline_lease_unreadable"
+    try:
         from src.analytics.reindex_job import get_reindex_manager
 
         if (get_reindex_manager().status() or {}).get("state") == "running":
@@ -117,31 +137,73 @@ def prune_incomplete() -> bool:
         return False
 
 
+def _cleanup_stamp():
+    """When the cleanup last recorded a pass. A pass that could not write its marker leaves
+    this unchanged, and ``prune_incomplete`` would then stay true forever."""
+    try:
+        from src.analytics.store import keyword_cleanup_state
+
+        return (keyword_cleanup_state().get("last_tally") or {}).get("at")
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _stop_predicate(sched, should_stop=None):
+    """When the window must end EARLY: a stop request, the collection loop starting (it
+    owns the window), or an exclusive operation claiming the machine (a restore or import
+    that begins mid-window -- the loop's own ``stop()`` reaches nothing here, so this
+    is the only thing that lets the window notice)."""
+    base = should_stop or _STOP.is_set
+
+    def stop() -> bool:
+        if base() or sched.is_running():
+            return True
+        try:
+            from src.scheduler.runner import owns_the_machine
+
+            return bool(owns_the_machine())
+        except Exception:  # noqa: BLE001 - unknown ownership is treated as owned
+            return True
+
+    return stop
+
+
+def _run_window(sched, stop, *, continuation: bool) -> bool:
+    """One window under our corpus lease. Returns whether it ran."""
+    from src.database.corpus_lease import corpus_lease
+
+    with corpus_lease(_LEASE):
+        return bool(sched._run_off_peak_maintenance(should_stop=stop, continuation=continuation))
+
+
 def _continue_prune(sched, stop) -> int:
     """Back-to-back prune passes while the sweep is unfinished and the machine is free.
 
-    Returns how many ran. Stops at the first yield reason, stop request, failed pass or
-    finished sweep, so it can never outlive the condition that justified it."""
-    import time as _t
-
+    Returns how many ran. Stops at the first yield reason, stop request, failed pass,
+    pass that recorded nothing (a marker that cannot be written would otherwise loop
+    forever) or finished sweep, so it can never outlive the condition that justified it."""
     ran = 0
     while not stop() and prune_incomplete():
         reason = yield_reason(sched)
         if reason:
             sched._note_maint_skip(reason)
             break
-        t0 = _t.monotonic()
-        if not sched._run_off_peak_maintenance(should_stop=stop, continuation=True):
+        before = _cleanup_stamp()
+        t0 = _clock()
+        if not _run_window(sched, stop, continuation=True):
             break
         ran += 1
-        rest = max(_MIN_REST_S, (_t.monotonic() - t0) * _REST_FRACTION)
+        if _cleanup_stamp() == before:
+            sched._note_maint_skip("offline_cleanup_recorded_nothing")
+            break
+        rest = max(_MIN_REST_S, (_clock() - t0) * _REST_FRACTION)
         if _STOP.wait(rest):
             break
     return ran
 
 
 def tick(sched=None, *, should_stop=None) -> str:
-    """One attempt. Returns ``"ran"`` or the reason it yielded. Never raises."""
+    """One attempt. Returns ``"ran"``, ``"yielded"`` or the reason it yielded. Never raises."""
     try:
         if sched is None:
             from src.scheduler.runner import get_scheduler
@@ -151,8 +213,8 @@ def tick(sched=None, *, should_stop=None) -> str:
         if reason:
             sched._note_maint_skip(reason)
             return reason
-        stop = should_stop or _STOP.is_set
-        if not sched._run_off_peak_maintenance(should_stop=stop):
+        stop = _stop_predicate(sched, should_stop)
+        if not _run_window(sched, stop, continuation=False):
             return "yielded"
         _continue_prune(sched, stop)
         return "ran"

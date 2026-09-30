@@ -502,6 +502,12 @@ async def lifespan(app: FastAPI):
         get_scheduler().stop()
     except Exception:  # noqa: BLE001 - best-effort shutdown
         logger.warning("Error stopping scheduler on shutdown", exc_info=True)
+    try:
+        from src.scheduler.offline_maintenance import stop as _stop_offline_maintenance
+
+        _stop_offline_maintenance()
+    except Exception:  # noqa: BLE001 - best-effort shutdown
+        logger.warning("Error stopping offline maintenance on shutdown", exc_info=True)
 
     dispose_engine()
     try:

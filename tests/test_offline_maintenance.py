@@ -20,12 +20,19 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 @pytest.fixture()
 def sched(monkeypatch):
     s = BackgroundScheduler()
+    # Another test's app shutdown calls stop(), which leaves the module's event set.
+    om._STOP.clear()
     monkeypatch.setattr("src.scheduler.runner.owns_the_machine", lambda: False)
     monkeypatch.setattr(
         "src.analytics.reindex_job.get_reindex_manager",
         lambda: type("M", (), {"status": staticmethod(lambda: {"state": "idle"})})(),
     )
     monkeypatch.setattr("src.jobs.background.all_job_statuses", lambda: [])
+    monkeypatch.setattr("src.database.corpus_lease.active_leases", lambda: [])
+    # The scheduler reads the real process memory; a busy CI box must not flip these tests.
+    from src.scheduler import memguard
+
+    monkeypatch.setattr(type(memguard.memory_guard), "engaged", property(lambda self: False))
     return s
 
 
@@ -57,6 +64,7 @@ def test_a_stopped_scheduler_still_gets_its_maintenance_window(sched, monkeypatc
         ("exclusive", "offline_exclusive_operation"),
         ("reindex", "offline_reindex_running"),
         ("writer", "offline_writer_job_running"),
+        ("lease", "offline_corpus_lease_held"),
     ],
 )
 def test_it_yields_to_whatever_already_owns_the_machine(sched, monkeypatch, patch, reason):
@@ -70,6 +78,8 @@ def test_it_yields_to_whatever_already_owns_the_machine(sched, monkeypatch, patc
             "src.analytics.reindex_job.get_reindex_manager",
             lambda: type("M", (), {"status": staticmethod(lambda: {"state": "running"})})(),
         )
+    elif patch == "lease":
+        monkeypatch.setattr("src.database.corpus_lease.active_leases", lambda: ["keyword-fold"])
     else:
         monkeypatch.setattr(
             "src.jobs.background.all_job_statuses",
@@ -113,6 +123,7 @@ def _fake_continuation(monkeypatch, sched, incomplete_for: int):
     """A cleanup whose prune reports ``complete: false`` for the first N passes."""
     state = {"left": incomplete_for, "passes": 0}
     monkeypatch.setattr(om, "prune_incomplete", lambda: state["left"] > 0)
+    monkeypatch.setattr(om, "_cleanup_stamp", lambda: state["passes"])  # every pass records
 
     def fake(*, should_stop=None):
         state["passes"] += 1
@@ -156,10 +167,9 @@ def test_the_rest_between_passes_is_sized_from_the_pass_itself(sched, monkeypatc
     monkeypatch.setattr(om, "_MIN_REST_S", 1.0)
     waits: list[float] = []
     monkeypatch.setattr(om._STOP, "wait", lambda t=None: waits.append(t) or False)
-    # Per pass: the timer's start, the scheduler's own read, the timer's end -- a 40 s pass,
-    # then a 1 s pass. Past the script the clock stays put.
-    script = [0.0, 0.0, 40.0, 40.0, 40.0, 41.0]
-    monkeypatch.setattr("time.monotonic", lambda: script.pop(0) if script else 41.0)
+    # Per pass: the timer's start and end -- a 40 s pass, then a 1 s pass.
+    script = [0.0, 40.0, 40.0, 41.0]
+    monkeypatch.setattr(om, "_clock", lambda: script.pop(0) if script else 41.0)
     assert om._continue_prune(sched, lambda: False) == 2
     assert waits == [pytest.approx(10.0), 1.0]  # 25 % of 40 s; floored at the minimum
 
@@ -186,3 +196,48 @@ def _null_scope():
         yield object()
 
     return _cm()
+
+
+def test_a_pass_that_records_nothing_ends_the_back_to_back_run(sched, monkeypatch):
+    """A cleanup marker that cannot be written leaves the sweep looking unfinished forever."""
+    _record_runs(monkeypatch)
+    state = _fake_continuation(monkeypatch, sched, incomplete_for=50)
+    monkeypatch.setattr(om, "_cleanup_stamp", lambda: "same")  # nothing is ever recorded
+    assert om.tick(sched) == "ran"
+    assert state["passes"] == 1
+    assert sched.status()["maintenance_skips"] == {"offline_cleanup_recorded_nothing": 1}
+
+
+def test_the_window_ends_early_when_an_exclusive_operation_begins_mid_window(sched, monkeypatch):
+    seen: list[bool] = []
+
+    def fake(*, should_stop=None):
+        # A restore claims the machine while the window is already running.
+        monkeypatch.setattr("src.scheduler.runner.owns_the_machine", lambda: True)
+        seen.append(should_stop())
+        return {}
+
+    monkeypatch.setattr("src.scheduler.maintenance.run_idle_maintenance", fake)
+    assert om.tick(sched) == "ran"
+    assert seen == [True]
+
+
+def test_the_window_holds_a_corpus_lease_so_a_restore_swap_waits_for_it(sched, monkeypatch):
+    from src.database import corpus_lease
+
+    monkeypatch.undo()  # the fixture's stubs are irrelevant to this one; use the real lease
+    held: list[list[str]] = []
+
+    class S:
+        def _run_off_peak_maintenance(self, **kw):
+            held.append(corpus_lease.active_leases())
+            return True
+
+    assert om._run_window(S(), lambda: False, continuation=False) is True
+    assert held == [["offline-maintenance"]]
+    assert corpus_lease.active_leases() == []
+
+
+def test_shutdown_stops_the_timer():
+    src = (ROOT / "src" / "api" / "main.py").read_text(encoding="utf-8")
+    assert "_stop_offline_maintenance()" in src
