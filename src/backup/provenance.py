@@ -39,6 +39,11 @@ TAG_VERSION = 1
 #: reading provenance through it could name the wrong row (R71 b).
 KEYED_TABLES: dict[str, str] = {"places": "id", "wikidata_items": "qid"}
 
+#: Their "produced at" column. A local job (``materialise``, ``store_items``) rewrites a row in place
+#: by its key and stamps this column afresh, so a stamp LATER than the arrival's batch means the
+#: values are no longer the restore's: the tag then says local, never "arrived from ...".
+KEYED_STAMP: dict[str, str] = {"places": "as_of", "wikidata_items": "fetched_at"}
+
 #: Per deduced table, the SQL expression (over an alias placeholder ``{a}``) for each producer
 #: field. ``NULL`` where the table does not record it. Table names here are module literals.
 PRODUCER_COLUMNS: dict[str, dict[str, str]] = {
@@ -172,11 +177,15 @@ def provenance_tag(session: Any, table: str, row_id: int) -> dict | None:
     )
     key = KEYED_TABLES.get(table)
     on = f"m.row_key = r.{key}" if key else "m.row_id = r.rowid"
+    stamp = KEYED_STAMP.get(table)
+    fresh = (
+        f" AND (r.{stamp} IS NULL OR julianday(b.imported_at) >= julianday(r.{stamp}))" if stamp else ""
+    )
     row = session.execute(
         text(
-            f"SELECT {sel} FROM {table} r"  # noqa: S608  # nosec B608 - table is validated as a key of PRODUCER_COLUMNS by producer_tag_sql above, and the key column is a module literal
+            f"SELECT {sel} FROM {table} r"  # noqa: S608  # nosec B608 - table is validated as a key of PRODUCER_COLUMNS by producer_tag_sql above, and the key and stamp columns are module literals
             f" LEFT JOIN merged_rows m ON m.table_name = :t AND {on}"
-            " LEFT JOIN merge_batches b ON b.id = m.batch_id WHERE r.rowid = :id"
+            f" LEFT JOIN merge_batches b ON b.id = m.batch_id{fresh} WHERE r.rowid = :id"
             " ORDER BY b.id DESC LIMIT 1"
         ),
         {"t": table, "id": int(row_id)},

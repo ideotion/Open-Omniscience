@@ -3289,7 +3289,7 @@
   "OpenStreetMap": "OpenStreetMap",
   "OpenStreetMap contributors": "OpenStreetMap योगदानकर्ता",
   "OpenStreetMap data of {date}": "{date} का OpenStreetMap डेटा",
-  "OpenStreetMap data stays on this machine. Where a document you make carries it (a bulletin's map-data card), that document carries © OpenStreetMap contributors and the ODbL 1.0 line, whose share-alike term applies to a database derived from it.": "OpenStreetMap का डेटा इसी मशीन पर रहता है। जब आपका बनाया कोई दस्तावेज़ उसे शामिल करता है (बुलेटिन का मानचित्र-डेटा कार्ड), तो उस दस्तावेज़ में © OpenStreetMap contributors और ODbL 1.0 की पंक्ति होती है, जिसकी समान-साझाकरण शर्त उससे बने डेटाबेस पर लागू होती है।",
+  "OpenStreetMap extracts stay on this machine; places derived from them travel only in your own backups, credited to OpenStreetMap under the ODbL. Where a document you make carries it (a bulletin's map-data card), that document carries © OpenStreetMap contributors and the ODbL 1.0 line, whose share-alike term applies to a database derived from it.": "OpenStreetMap के एक्सट्रैक्ट इसी मशीन पर रहते हैं; उनसे बने स्थान केवल आपके अपने बैकअप में जाते हैं, ODbL के तहत OpenStreetMap के श्रेय के साथ। जब आपका बनाया कोई दस्तावेज़ उसे शामिल करता है (बुलेटिन का मानचित्र-डेटा कार्ड), तो उस दस्तावेज़ में © OpenStreetMap contributors और ODbL 1.0 की पंक्ति होती है, जिसकी समान-साझाकरण शर्त उससे बने डेटाबेस पर लागू होती है।",
   "OpenStreetMap names only one party": "OpenStreetMap केवल एक पक्ष का नाम देता है",
   "OpenStreetMap object": "OpenStreetMap वस्तु",
   "OpenStreetMap places, roads and buildings:": "OpenStreetMap के स्थान, सड़कें और इमारतें:",

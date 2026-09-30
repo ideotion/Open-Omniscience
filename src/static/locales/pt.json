@@ -3289,7 +3289,7 @@
   "OpenStreetMap": "OpenStreetMap",
   "OpenStreetMap contributors": "colaboradores do OpenStreetMap",
   "OpenStreetMap data of {date}": "Dados do OpenStreetMap de {date}",
-  "OpenStreetMap data stays on this machine. Where a document you make carries it (a bulletin's map-data card), that document carries © OpenStreetMap contributors and the ODbL 1.0 line, whose share-alike term applies to a database derived from it.": "Os dados do OpenStreetMap ficam nesta máquina. Quando um documento que você cria os inclui (o cartão de dados de mapa de um boletim), esse documento traz © OpenStreetMap contributors e a linha da ODbL 1.0, cuja cláusula de compartilhamento pela mesma licença se aplica a um banco de dados derivado deles.",
+  "OpenStreetMap extracts stay on this machine; places derived from them travel only in your own backups, credited to OpenStreetMap under the ODbL. Where a document you make carries it (a bulletin's map-data card), that document carries © OpenStreetMap contributors and the ODbL 1.0 line, whose share-alike term applies to a database derived from it.": "Os extratos do OpenStreetMap ficam nesta máquina; os lugares derivados deles só viajam nas suas próprias cópias de segurança, com crédito ao OpenStreetMap sob a ODbL. Quando um documento que você cria os inclui (o cartão de dados de mapa de um boletim), esse documento traz © OpenStreetMap contributors e a linha da ODbL 1.0, cuja cláusula de compartilhamento pela mesma licença se aplica a um banco de dados derivado deles.",
   "OpenStreetMap names only one party": "O OpenStreetMap nomeia apenas uma parte",
   "OpenStreetMap object": "Objeto do OpenStreetMap",
   "OpenStreetMap places, roads and buildings:": "Lugares, estradas e edifícios do OpenStreetMap:",

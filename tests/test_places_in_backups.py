@@ -343,3 +343,20 @@ def test_a_places_kind_is_shown_in_the_interface_language():
     sys.stdout.write(proc.stdout)
     sys.stderr.write(proc.stderr)
     assert proc.returncode == 0, proc.stderr or proc.stdout
+
+
+def test_a_row_the_local_job_rewrote_after_the_restore_is_no_longer_tagged_as_arrived(tmp_path):
+    """``materialise`` and ``store_items`` rewrite a row in place by its key and stamp it afresh, so
+    the values are no longer the restore's: the tag must say local, not "arrived from machine-B"."""
+    _, batch, live, _ = _two(tmp_path, lambda s: (s.add(_place()), s.add(_item())), _nothing)
+    with _corpus(live)() as s:
+        def tag(table, pk, val):
+            rid = s.execute(text(f"SELECT rowid FROM {table} WHERE {pk} = :v"), {"v": val}).scalar()  # noqa: S608
+            return provenance_tag(s, table, rid)
+        assert tag("places", "id", _PARIS)["arrived"]["batch"] == batch
+        s.execute(text("UPDATE places SET as_of = '2999-01-01 00:00:00' WHERE id = :i"), {"i": _PARIS})
+        s.execute(text("UPDATE wikidata_items SET fetched_at = '2999-01-01 00:00:00' WHERE qid = 'Q90'"))
+        s.commit()
+        for table, pk, val in (("places", "id", _PARIS), ("wikidata_items", "qid", "Q90")):
+            t = tag(table, pk, val)
+            assert t["origin"] == "local" and t["arrived"] is None

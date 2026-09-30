@@ -1286,7 +1286,11 @@ def _insert_tracked(
     one, materialise it rather than accepting the quadratic.
     """
     if src is None:
+        if key_column is None:
+            return _insert_window(con, batch_id, table, insert_sql, params)
         return _insert_window(con, batch_id, table, insert_sql, params, key_column)
+    if key_column is not None:
+        raise ValueError("a windowed insert cannot record a natural key; key_column is for unwindowed steps")
 
     if _WINDOW_MARK not in insert_sql:
         raise ValueError(
@@ -4409,9 +4413,7 @@ def _merge_places(con, batch_id, results) -> None:
         wd.conflict = _capture_alternates(
             con, batch_id, "wikidata_items", key=wd_key, joins="",
             identity=[("qid", "i.qid")],
-            differs=["status", "resolved_qid", "labels_json", "descriptions_json", "claims_json"],
-            shown=["status", "resolved_qid", "labels_json", "descriptions_json", "claims_json",
-                   "lastrevid", "fetched_at"],
+            **_alt_fields("wikidata_items"),
         )
         wd.duplicate = _count(
             con,
@@ -4436,9 +4438,7 @@ def _merge_places(con, batch_id, results) -> None:
         pl.conflict = _capture_alternates(
             con, batch_id, "places", key=pl_key, joins="",
             identity=[("place_id", "i.id")],
-            differs=["name", "kind", "qid", "names_json", "population"],
-            shown=["name", "kind", "qid", "names_json", "population", "country", "country_alpha3",
-                   "lat", "lon", "gazetteer_vintage", "as_of"],
+            **_alt_fields("places"),
         )
         pl.duplicate = _count(
             con,

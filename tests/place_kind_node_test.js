@@ -64,7 +64,14 @@ for (const lang of LANGS) {
     const r = ooPlaceKind(v);
     assert.ok(r.text, `${lang}: ${v} has no label`);
     assert.ok(r.title.includes(v), `${lang}: the hover for ${v} does not name OSM's word`);
+    // The label must come from the locale file itself: the stub t() falls back to the English
+    // key, so a MISSING translation would pass every assertion above.
+    LANG = "en";
+    const key = ooPlaceKind(v).text;
+    LANG = lang;
+    assert.ok(table(lang)[key] != null, `${lang}: "${key}" is not keyed in the locale file`);
   }
+  assert.ok(table(lang)["OpenStreetMap's word: {kind}"] != null, `${lang}: the hover template is not keyed`);
   if (lang !== "en") {
     assert.notStrictEqual(ooPlaceKind("hamlet").text, "hamlet", `${lang}: hamlet was left in English`);
     assert.notStrictEqual(ooPlaceKind("island").text, "island", `${lang}: island was left in English`);
