@@ -16033,5 +16033,9 @@ maintainer as a card.
    and lists; it creates no key. The bundle format (`oo-evidence-1`), its signature and `scripts/verify_evidence.py`
    are untouched. Only the older signed JSON exit gets the review: the claim trail's ZIP (S2) already lists
    its members and the bulletin evidence ZIP has no button in the UI to put a review on.
-6. **The bulletin carrier (the piece that lifts the `held_q823` hold on the Map data completeness card) is not
-   built here.** It needs the bulletin evidence ZIP to have a place in the UI first; it stays a follow-up.
+6. ~~**The bulletin carrier (the piece that lifts the `held_q823` hold on the Map data completeness card) is not
+   built here.** It needs the bulletin evidence ZIP to have a place in the UI first; it stays a follow-up.~~
+   **BUILT 2026-09-30 (row K, sixth PR).** It did not need the evidence ZIP: that ZIP holds articles only. What
+   the card needed was a signal for the attribution seam, and a bulletin holds cards, so the signal is the card
+   (`card:osm_tag_completeness`, emitted for a lane card the edition SHOWS). Where: `bulletin/cards.py`
+   (`lane_cards_shown`), `bulletin/edition.py` (`_lane_card_signals`), `backup/attribution.py` (`OSM_DERIVED_CARDS`).

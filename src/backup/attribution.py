@@ -19,7 +19,9 @@ The signals are cheap strings the carrier already knows:
   * ``source_type:<t>`` / ``domain:<d>`` -- a Source that actually CONTRIBUTED to
     the carrier (the evidence ZIP already collects exactly this set while it
     streams; the bulletin gets it from the edition's contributing sources);
-  * ``files:<category>`` -- a large-data category copied beside the artifact.
+  * ``files:<category>`` -- a large-data category copied beside the artifact;
+  * ``card:<producer>`` -- a briefing card the document SHOWS whose producer reads a lane
+    that carries a licence (a bulletin holds cards, not tables).
 
 ONE REFUSAL, and one line that used to be a refusal:
 
@@ -51,6 +53,13 @@ from dataclasses import dataclass
 OSM_DERIVED_TABLE_PREFIXES = ("osm_",)
 OSM_DERIVED_TABLES = ("places",)
 
+#: Card producers whose cards are made from the OSM lane. A bulletin holds cards, not
+#: tables, so the lane's tables never appear among its signals: the card itself is the
+#: measured signal (``card:<producer>``), and it is emitted only for a card the document
+#: actually SHOWS. ``registry.LANE_ONLY_PRODUCERS`` must be a subset of this
+#: (tests/test_osm_completeness_view.py), so a lane card cannot be carried without its credit.
+OSM_DERIVED_CARDS = ("osm_tag_completeness",)
+
 
 class PendingRulingError(RuntimeError):
     """Raised when a carrier's contents need a licence line no ruling has settled.
@@ -78,6 +87,10 @@ def table_signal(name: str) -> str:
 
 def source_type_signal(source_type: str) -> str:
     return f"source_type:{source_type}"
+
+
+def card_signal(producer: str) -> str:
+    return f"card:{producer}"
 
 
 def domain_signal(domain: str) -> str:
@@ -165,6 +178,7 @@ def _openstreetmap_because(signals: set[str]) -> str | None:
             any(s[len("table:"):].startswith(p) for p in OSM_DERIVED_TABLE_PREFIXES)
             or s[len("table:"):] in OSM_DERIVED_TABLES))
         or s == files_signal("osm_regions")
+        or s in {card_signal(p) for p in OSM_DERIVED_CARDS}
     )
     return ", ".join(hits) if hits else None
 

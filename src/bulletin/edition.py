@@ -66,7 +66,7 @@ def build_edition(
 
     edition = layer_a(session, period, rising_limit=rising_limit, target_lang=target_lang)
     edition["narration_requested"] = bool(narrate)
-    edition["attribution"] = _attribution(session, period)
+    edition["attribution"] = _attribution(session, period, edition)
     # D2 (register, placed by RC08.2 = a): every edition OPENS on the deterministic
     # introduction. Best-effort like the attribution block: an opening that could not
     # be composed costs the paragraph, never the record.
@@ -162,7 +162,22 @@ def build_edition(
     return edition
 
 
-def _attribution(session, period: Period) -> list[dict]:
+def _lane_card_signals(edition: dict | None) -> set[str]:
+    """``card:<producer>`` for each lane card the edition's cards section SHOWS.
+
+    Read from the record rather than re-derived, so the credit follows what the document
+    holds: a card cut by the per-type limit or the budget carries no OSM row, and a line
+    for it would be the false statement this module exists to avoid."""
+    from src.backup.attribution import card_signal
+
+    out: set[str] = set()
+    for sec in (edition or {}).get("sections") or []:
+        if isinstance(sec, dict) and sec.get("section") == "cards":
+            out |= {card_signal(str(p)) for p in sec.get("lane_cards_shown") or []}
+    return out
+
+
+def _attribution(session, period: Period, edition: dict | None = None) -> list[dict]:
     """The licence lines that apply to THIS edition (Q1008 = a), recorded IN the record.
 
     Measured from the sources that actually contributed to the period, and stored on the
@@ -183,7 +198,9 @@ def _attribution(session, period: Period) -> list[dict]:
     from src.bulletin.evidence import period_source_rows
 
     try:
-        return attribution_dicts(signals_from_sources(period_source_rows(session, period)))
+        return attribution_dicts(
+            signals_from_sources(period_source_rows(session, period)) | _lane_card_signals(edition)
+        )
     except PendingRulingError:
         # A licence line waiting on a ruling (none today: Q823's OSM case was ruled "a" and
         # now renders). Raised rather than swallowed by the module that knows why, and

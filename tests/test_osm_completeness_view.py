@@ -3,9 +3,10 @@
 Open Omniscience - Global Intelligence Platform for Investigative Journalism
 Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 
-The card is made from the OSM lane, and Q823 (ODbL) is unanswered, so it is made for Home and
-for nothing that leaves the machine: a bulletin, a lead report or a card audit never runs its
-producer, and says which producer it held. The view sits in the World map tab (a data tab,
+The card is made from the OSM lane. Q823 = a lets OSM data leave with OpenStreetMap's credit, so
+it is made for Home and for the bulletin, whose edition records which lane cards it shows and
+credits OpenStreetMap against exactly those; a lead report or a card audit (no attribution
+block) never runs its producer, and says which producer it held. The view sits in the World map tab (a data tab,
 invariant #8), with the four keys side by side and the caveat visible.
 """
 
@@ -52,7 +53,7 @@ def test_the_lane_card_is_made_for_home_and_held_from_every_other_caller(osm_lan
     assert registry.run_all(None) == [], "run_all is what the card audit and the lead report call"
 
 
-def test_only_homes_refresh_asks_for_the_lane_cards():
+def test_only_the_carriers_that_credit_the_lane_ask_for_its_cards():
     import ast
 
     callers = []
@@ -61,13 +62,64 @@ def test_only_homes_refresh_asks_for_the_lane_cards():
             if (isinstance(node, ast.Call) and getattr(node.func, "id", getattr(node.func, "attr", "")) == "run_all_bounded"
                     and any(k.arg == "lanes" for k in node.keywords)):
                 callers.append(str(path.relative_to(ROOT)))
-    assert callers == ["src/briefing/service.py"], callers
+    # Home's refresh, and the bulletin (whose edition credits OpenStreetMap against the lane
+    # cards it shows). The lead report and the card audit have no attribution block.
+    assert sorted(callers) == ["src/briefing/service.py", "src/bulletin/cards.py"], callers
 
 
-def test_the_bulletin_names_what_it_held():
+def test_the_bulletin_carries_the_lane_cards_and_says_which_it_shows():
     src = (ROOT / "src" / "bulletin" / "cards.py").read_text(encoding="utf-8")
     assert '"held_q823": sorted(stats.get("held_q823") or [])' in src
-    assert "lanes=" not in src
+    assert "lanes=True" in src and '"lane_cards_shown"' in src
+
+
+def test_an_edition_that_shows_the_lane_card_credits_openstreetmap_and_one_that_does_not_does_not(
+    osm_lane_dir, monkeypatch
+):
+    """The carrier end to end, minus the database: the cards section runs the lane producer,
+    records that it SHOWS it, and the edition's attribution block keys on that record."""
+    from datetime import date
+
+    from src.backup.attribution import attribution_dicts
+    from src.briefing import registry
+    from src.briefing.producers import osm_tag_completeness
+    from src.bulletin.cards import cards_by_type
+    from src.bulletin.edition import _lane_card_signals
+    from src.bulletin.period import Period
+
+    ingest.ingest_country(FIXTURE, "ZZ", reader="python")
+    monkeypatch.setattr(registry, "_REGISTRY", [("osm_tag_completeness", osm_tag_completeness)])
+    monkeypatch.setattr(registry, "_disabled_names", lambda: frozenset())
+    period = Period(cadence="weekly", start=date(2026, 9, 1), end=date(2026, 9, 8), baseline_start=date(2026, 8, 25))
+
+    section = cards_by_type(None, period)
+    assert section["lane_cards_shown"] == ["osm_tag_completeness"]
+    assert section["held_q823"] == [], "the bulletin no longer holds the lane back"
+    assert section["cards_shown_total"] == 1
+
+    signals = _lane_card_signals({"sections": [section]})
+    assert signals == {"card:osm_tag_completeness"}
+    (line,) = attribution_dicts(signals)
+    assert line["key"] == "openstreetmap" and "ODbL" in line["text"] and "OpenStreetMap contributors" in line["text"]
+    assert line["because"] == "card:osm_tag_completeness", "the line says what measured it"
+
+    # no lane card in the document, no OpenStreetMap line: the credit follows the content
+    assert _lane_card_signals({"sections": [dict(section, lane_cards_shown=[])]}) == set()
+    assert _lane_card_signals({"sections": []}) == set() and _lane_card_signals(None) == set()
+
+
+def test_a_lane_producer_cannot_be_carried_without_its_credit():
+    """The seam's reason to exist: every lane-only producer is an OSM-derived card, and the
+    attribution registry credits OpenStreetMap against its signal. A future lane producer
+    with a licence of its own fails here until its line exists."""
+    from src.backup.attribution import OSM_DERIVED_CARDS, attribution_lines, card_signal
+    from src.briefing.registry import LANE_ONLY_PRODUCERS
+
+    assert set(OSM_DERIVED_CARDS) >= LANE_ONLY_PRODUCERS
+    for name in LANE_ONLY_PRODUCERS:
+        (line,) = attribution_lines({card_signal(name)})
+        assert line.key == "openstreetmap" and "ODbL" in line.text and line.because == f"card:{name}"
+    assert attribution_lines({card_signal("rising_now")}) == [], "no credit for a card that holds no OSM row"
 
 
 def test_the_view_is_in_the_world_map_tab_hidden_until_a_country_is_read():
