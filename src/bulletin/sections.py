@@ -234,7 +234,7 @@ def across_channels(session, period: Period, *, terms: list[dict] | None = None)
         "method": (
             "earliest in-period mention date per keyword, attributed to the provenance "
             "class of the source that carried it; ties are reported as ties, never "
-            "broken. Keyed off the denormalised KeywordMentionRead.source_id, so no "
+            "broken. Keyed off the denormalised KeywordMention.source_id, so no "
             "mention-to-article join."
         ),
         "caveat": _CHANNEL_CAVEAT,
