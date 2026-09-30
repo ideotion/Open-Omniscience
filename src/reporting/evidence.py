@@ -81,12 +81,15 @@ def existing_public_key_hex(path: Path | None = None) -> str | None:
     ``load_or_create_signing_key``, where a person is waiting on the outcome.
     """
     path = path or _default_key_path()
-    if not path.exists():
-        return None
     try:
-        return public_key_hex(load_or_create_signing_key(path))
-    except (OSError, ValueError, TypeError):
+        # read and parse only: ``load_or_create_signing_key`` would GENERATE a key if the file
+        # vanished between an exists() check and its read, and a review must never do that
+        key = serialization.load_pem_private_key(path.read_bytes(), password=None)
+    except Exception:  # noqa: BLE001 - missing, unreadable or foreign all read as "no key"
         return None
+    if not isinstance(key, Ed25519PrivateKey):
+        return None
+    return public_key_hex(key)
 
 
 def public_key_hex(key: Ed25519PrivateKey) -> str:

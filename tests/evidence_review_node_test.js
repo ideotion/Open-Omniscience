@@ -69,11 +69,17 @@ assert.ok(review.includes("It is signed with this install's evidence key.") && r
 assert.ok(review.includes("id, url, canonical_url, source_id, title, published_at, stored_hash, content_sha256"), review);
 assert.ok(review.includes("manifest") && review.includes("signature") && review.includes("public_key"), review);
 assert.ok(!review.includes("created on this machine"), "a key that exists is not 'created'");
+// the file carries the reader's query as the case name: the review says so, in the list and in the caveat
+assert.ok(review.includes("the case name (your search query or the analysis label)"), review);
+assert.ok(review.includes("carries your search query as the case name"), review);
+// the key that WILL sign is shown before saving, so it can be checked
+assert.ok(review.includes("The key that will sign: " + "ab".repeat(32)), review);
 
 // no key yet: say one will be made, and that it stays here
 const fresh = visible(R.evidenceReviewHtml(Object.assign({}, PLAN, { signer: { exists: false, ed25519_pub: null } }), t, tf));
 assert.ok(fresh.includes("no evidence key yet") && fresh.includes("created on this machine when you save"), fresh);
 assert.ok(!fresh.includes("It is signed with this install's evidence key."), fresh);
+assert.ok(!fresh.includes("The key that will sign"), "no key yet: none is shown");
 // no fields on the wire: still a well-formed line, never "undefined"
 const bare = visible(R.evidenceReviewHtml({ articles: 1, sources: 1, signer: {} }, t, tf));
 assert.ok(!bare.includes("undefined") && !bare.includes("null"), bare);

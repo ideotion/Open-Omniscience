@@ -109,7 +109,9 @@
         out.push({
           id: b.getAttribute("data-tab"),
           label: ((span && span.textContent) || b.getAttribute("data-tab")).trim(),
-          pinned: depth !== "essentials" || b.getAttribute("data-ring") === "0",
+          // the OPEN tab stays listed at every depth (invariant #2), so it is on screen, not
+          // behind "Show more", whatever its ring
+          pinned: depth !== "essentials" || b.getAttribute("data-ring") === "0" || b.classList.contains("active"),
         });
       });
       return {tabs: out, depth};

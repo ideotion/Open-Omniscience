@@ -112,6 +112,14 @@ def test_it_narrows_nothing_and_keeps_no_record():
     assert "The tour changes nothing" in js, "the promise is on the page, not only in a comment"
 
 
+def test_the_open_tab_counts_as_pinned_because_the_sidebar_keeps_it_listed():
+    """Invariant #2 (R46): the OPEN tab stays listed at Essentials, so a tour opened from it
+    must not tell the reader that tab 'waits behind Show more'."""
+    assert 'classList.contains("active")' in _tour_js()
+    css = (_STATIC / "app.css").read_text(encoding="utf-8")
+    assert '.nav-item[data-ring="1"]:not(.active)' in css, "the rule the tour mirrors"
+
+
 def test_a_depth_that_pins_fewer_tabs_still_names_every_one():
     js = _tour_js()
     assert 'kind: "more"' in js and "list: rest.map" in js, "the unpinned tabs are named"

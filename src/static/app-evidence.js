@@ -33,7 +33,7 @@
       // reorder them around its own punctuation
       const fields = "\u2066" + (plan.item_fields || []).join(", ") + "\u2069";
       return `<ul class="claim-members">`
-        + `<li><code>manifest</code> <span class="muted">${esc(t("the bundle version, when it was made, how many articles, and the Merkle root that covers them"))}</span></li>`
+        + `<li><code>manifest</code> <span class="muted">${esc(t("the bundle version, when it was made, the case name (your search query or the analysis label), how many articles, and the Merkle root that covers them"))}</span></li>`
         + `<li><code>manifest.items</code> <span class="muted">${esc(tf("one entry per article, with {fields}", {fields}))}</span></li>`
         + `<li><code>signature</code>, <code>public_key</code> <span class="muted">${esc(t("the signature over the manifest and the public key that made it"))}</span></li>`
         + `</ul>`;
@@ -45,10 +45,12 @@
       return `<p class="claim-method">${esc(method)}</p>`
         + `<p><b>${esc(tf("Articles: {n}", {n: plan.articles}))}</b> · ${esc(tf("Sources: {n}", {n: plan.sources}))}</p>`
         + `<h4>${esc(t("What the file holds"))}</h4>` + evidenceMembersHtml(plan, t, tf)
-        + `<p class="card-caveat">${esc(t("Plaintext: the file is not encrypted. It lists each article's address, title and date, and anyone who has the file can read them. The articles' text is not in it, only its SHA-256."))}</p>`
+        + `<p class="card-caveat">${esc(t("Plaintext: the file is not encrypted. It lists each article's address, title and date and carries your search query as the case name, and anyone who has the file can read them. The articles' text is not in it, only its SHA-256."))}</p>`
         + `<p class="card-caveat">${esc(signer.exists
           ? t("It is signed with this install's evidence key. That proves this install made it, and the same key on every bundle you send links all of them to this install.")
-          : t("This install has no evidence key yet. One is created on this machine when you save, and stays here. It proves this install made a bundle, and links every bundle it signs."))}</p>`;
+          : t("This install has no evidence key yet. One is created on this machine when you save, and stays here. It proves this install made a bundle, and links every bundle it signs."))}</p>`
+        + (signer.exists && signer.ed25519_pub
+          ? `<p>${esc(t("The key that will sign:"))} <code class="claim-key">${esc(signer.ed25519_pub)}</code></p>` : "");
     }
 
     // The message after saving: what was saved, what the file holds, the key to hand over.
@@ -73,10 +75,15 @@
       const t = _evT(), tf = _evTf();
       const status = $("evidence-status"), save = $("evidence-save");
       if (!_evScope || !_evPlan) return;
+      const mine = _evSeq;   // the open this save belongs to
       if (save) save.disabled = true;
       if (status) status.textContent = t("Writing and signing the bundle…");
       try {
         const bundle = await api("/api/reports/evidence", {method: "POST", body: JSON.stringify(_evScope)});
+        // closed, or reopened on another selection, while the file was being written: the
+        // reader cancelled THIS one, so nothing downloads and nothing claims to be saved
+        const dlg = $("evidence-review");
+        if (mine !== _evSeq || !dlg || !dlg.open) return;
         const blob = new Blob([JSON.stringify(bundle, null, 2)], {type: "application/json"});
         const day = String((bundle.manifest || {}).generated_at || "").slice(0, 10);
         const filename = "evidence-bundle" + (day ? "-" + day : "") + ".json";
@@ -87,6 +94,7 @@
         if (status) status.textContent = "";
         _evPaint();
       } catch (e) {
+        if (mine !== _evSeq) return;
         if (status) status.textContent = t("The bundle could not be written:") + " " + ((e && e.message) || String(e));
       } finally {
         if (save) save.disabled = false;
@@ -99,6 +107,9 @@
       const on = (id, fn) => { const el = $(id); if (el) el.addEventListener("click", fn); };
       on("evidence-save", () => evidenceSave());
       on("evidence-close", () => { const d = $("evidence-review"); if (d && d.open) d.close(); });
+      // however it closes (Cancel, Esc), a save still in flight no longer belongs to anything
+      const dlg = $("evidence-review");
+      if (dlg) dlg.addEventListener("close", () => { _evSeq++; });
       document.addEventListener("oo:langchange", () => { const d = $("evidence-review"); if (d && d.open) _evPaint(); });
     }
 
@@ -113,7 +124,7 @@
       try {
         plan = await api("/api/reports/evidence/plan", {method: "POST", body: JSON.stringify(sel)});
       } catch (e) {
-        toast(_failMsg("Evidence export: {error}", e), "err");
+        if (seq === _evSeq) toast(_failMsg("Evidence export: {error}", e), "err");
         return;
       }
       if (seq !== _evSeq) return;

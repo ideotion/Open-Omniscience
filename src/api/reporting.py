@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from src.database.fts import SearchQueryError, search_ids
@@ -67,14 +68,19 @@ def plan_evidence(req: EvidenceRequest, db: Session = Depends(get_db)) -> dict:
     will sign. READ-ONLY: it never creates the signing key (that happens at export), makes no
     network call and writes nothing, so looking costs nothing.
     """
-    articles = _select_articles(req, db)
-    if not articles:
+    ids = _selected_ids(req, db)
+    n_articles, n_sources = (
+        db.query(func.count(Article.id), func.count(func.distinct(Article.source_id)))
+        .filter(Article.id.in_(ids))
+        .one()
+    )
+    if not n_articles:
         raise HTTPException(status_code=404, detail="No matching articles to export.")
     pub = existing_public_key_hex()
     return {
         "bundle_version": BUNDLE_VERSION,
-        "articles": len(articles),
-        "sources": len({a.source_id for a in articles}),
+        "articles": int(n_articles),
+        "sources": int(n_sources),
         "item_fields": list(ITEM_FIELDS),
         "text_included": False,
         "signer": {"exists": pub is not None, "ed25519_pub": pub},
@@ -103,6 +109,18 @@ class MethodsRequest(BaseModel):
     case_name: str | None = None
     notes: str | None = None
     include_bundle: bool = False
+
+
+def _selected_ids(req, db) -> list[int]:
+    """The ids ``_select_articles`` would load, without loading the rows (counts need no text)."""
+    if req.article_ids:
+        return list(req.article_ids)
+    if req.query:
+        try:
+            return list(search_ids(db, req.query) or [])
+        except SearchQueryError as exc:
+            raise HTTPException(status_code=400, detail=f"Invalid query: {exc}") from exc
+    raise HTTPException(status_code=400, detail="Provide article_ids or query.")
 
 
 def _select_articles(req, db) -> list:

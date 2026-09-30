@@ -108,6 +108,34 @@ def test_a_foreign_or_unreadable_key_file_reads_as_no_key_and_is_left_alone(key_
     assert key_path.read_bytes() == b"not a pem file", "a review never rewrites a key file"
 
 
+def test_a_key_that_vanishes_or_is_odd_is_never_regenerated_by_a_review(key_path, monkeypatch):
+    # missing: no key, and none created
+    assert ev.existing_public_key_hex() is None
+    assert not key_path.exists()
+    # a PEM of another algorithm reads as no key (the export fails loudly, where someone waits)
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric.ed448 import Ed448PrivateKey
+
+    key_path.parent.mkdir(parents=True)
+    key_path.write_bytes(Ed448PrivateKey.generate().private_bytes(
+        serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption()))
+    assert ev.existing_public_key_hex() is None
+    # the helper must not even hold a path to key CREATION
+    import inspect
+
+    assert "load_or_create_signing_key(" not in inspect.getsource(ev.existing_public_key_hex)
+
+
+def test_the_plan_counts_with_a_select_not_by_loading_article_rows():
+    import inspect
+
+    from src.api import reporting
+
+    body = inspect.getsource(reporting.plan_evidence)
+    assert "_select_articles" not in body, "counts need no article text in memory"
+    assert "func.count" in body
+
+
 def test_the_listed_fields_are_the_keys_the_export_writes(key_path):
     ids = _seed(1, 1)
     with TestClient(app) as client:
@@ -157,6 +185,16 @@ def test_the_review_module_is_precached_and_has_no_inline_handlers():
     js = (_STATIC / "app-evidence.js").read_text(encoding="utf-8")
     assert not re.search(r"\bon(click|change|input|submit)\s*=", js), "the CSP has no 'unsafe-inline'"
     assert "innerHTML" in js and "esc(" in js
+
+
+def test_a_save_in_flight_is_dropped_when_its_dialog_closed_or_moved_on():
+    js = (_STATIC / "app-evidence.js").read_text(encoding="utf-8")
+    save = re.search(r"async function evidenceSave\(\) \{(.*?)\n    \}\n", js, re.S).group(1)
+    assert "const mine = _evSeq" in save and "mine !== _evSeq" in save
+    assert "!dlg.open" in save, "a closed dialog downloads nothing"
+    assert 'addEventListener("close"' in js and "_evSeq++" in js, "Esc and Cancel both retire it"
+    # a stale plan's failure does not toast over the newer review
+    assert "if (seq === _evSeq) toast(" in js
 
 
 def test_the_save_button_still_goes_through_the_signed_export_and_names_the_key():
