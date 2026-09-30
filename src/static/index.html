@@ -3859,10 +3859,11 @@
         come to hold, in total. When it is spent the app keeps recording WHAT changed and stops
         storing the text — it says so rather than going quiet.</div>
       <div class="row" style="gap:8px;margin-bottom:6px">
-        <input id="wiki-wizard-budget" type="number" min="1" max="2000" step="1" value="20"
+        <input id="wiki-wizard-budget" type="number" min="1" max="2000" step="1" value="150"
                style="max-width:120px" aria-label="Storage budget in GB">
         <span class="hint" style="align-self:center">GB in total</span>
       </div>
+      <div class="hint" style="margin-bottom:6px">The default is 150 GB. Lower it, to 20 GB or less, if this machine's disk is small: the lane stops storing text at the number you set.</div>
       <div id="wiki-wizard-share" class="hint" style="margin-bottom:8px"
            title="The share is the total divided by the number of editions you follow. It is shown rather than folded in, so adding an edition visibly lowers each one's share."></div>
       <div class="hint" style="margin-bottom:8px">This is a limit on what is STORED, not on how

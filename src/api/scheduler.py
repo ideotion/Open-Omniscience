@@ -245,7 +245,7 @@ def _wiki_lane_settings_block() -> dict:
     editions = tuple(getattr(settings, "wiki_lane_editions", ()) or ())
     out: dict = {
         "editions": list(editions),
-        "budget_gb": int(getattr(settings, "wiki_lane_budget_gb", 20)),
+        "budget_gb": int(getattr(settings, "wiki_lane_budget_gb", 150)),
         "wizard_done": bool(getattr(settings, "wiki_lane_wizard_done", False)),
         "walk_enabled": bool(getattr(settings, "wiki_walk_enabled", False)),
         "warm_enabled": bool(getattr(settings, "wiki_warm_enabled", False)),

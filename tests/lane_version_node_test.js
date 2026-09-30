@@ -159,6 +159,14 @@ const V = { source: "warm", owner_id: 7, edition: "frwiki", page_id: 11, title: 
   assert.ok(newest.includes("Your corpus already holds it as an article."), newest);
   assert.ok(!newest.includes("not in your corpus"),
     "the newest version of a followed page was offered as if the corpus did not hold it");
+  // R54: a version of a page you track lives in the tracker's store, and says so in its words.
+  const trackedHeld = visible(R.laneVersionNotesHtml({ ...V, source: "tracked", which: "earlier" }, t));
+  assert.ok(trackedHeld.includes("T(Stored on this machine by the page tracker (Track now), not in your corpus."), trackedHeld);
+  assert.ok(!trackedHeld.includes("Wikipedia lane"), "a tracker version was said to be held by the lane");
+  const trackedNewest = visible(R.laneVersionNotesHtml({ ...V, source: "tracked", which: "newest", newest_followed: true }, t));
+  assert.ok(trackedNewest.includes("T(This is the newest version of a page you track. Your corpus already holds it as an article.)"), trackedNewest);
+  assert.ok(!trackedNewest.includes("not in your corpus"),
+    "the newest tracked version, which the article is, was offered as if the corpus did not hold it");
   assert.ok(!R.laneVersionNotesHtml(V, t).includes("hidden"), "the note is not visible by default");
 
   const out = R.laneVersionOutHtml(V, t);
@@ -213,6 +221,9 @@ assert.strictEqual(R.laneSnippetHtml(null), "", "no snippet drew something");
   assert.ok(text.includes("T(Pages the stream has followed, by their older versions): 5 (en 5)"), text);
   assert.ok(!text.includes("waiting") && !text.includes("set aside") && !text.includes("is off"),
     "a zero queue or WARM switched on drew a line: " + text);
+  assert.ok(!text.includes("you track"), "a tracker with no page drew a line: " + text);
+  const tracked = visible(R.laneCoverageHtml({ ...cov, tracked_pages: { pages: 4, editions: [{ edition: "en", pages: 3 }, { edition: "de", pages: 1 }] } }, t));
+  assert.ok(tracked.includes("T(Pages you track, by their earlier stored versions): 4 (en 3, de 1)"), tracked);
   const busy = visible(R.laneCoverageHtml({ ...cov, pending: 7, failed: 2, warm_enabled: false }, t));
   assert.ok(busy.includes("T(Texts waiting to be indexed, not searched yet): 7"), busy);
   assert.ok(busy.includes("T(Texts set aside because they could not be read): 2"), busy);
