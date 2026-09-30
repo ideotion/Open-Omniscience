@@ -1862,8 +1862,8 @@ class BackgroundScheduler:
             self._maint_skips[reason] = self._maint_skips.get(reason, 0) + 1
 
     def _run_off_peak_maintenance(
-        self, *, should_stop: Callable[[], bool] | None = None
-    ) -> None:
+        self, *, should_stop: Callable[[], bool] | None = None, continuation: bool = False
+    ) -> bool:
         """A10: run the budgeted keyword maintenance in the collector-idle window.
 
         Mutually exclusive with any collect pass — takes ``_run_lock`` NON-BLOCKING
@@ -1880,23 +1880,34 @@ class BackgroundScheduler:
         ``should_stop`` is for the ONE caller that is not this scheduler's own loop:
         :mod:`src.scheduler.offline_maintenance`, which runs the same window while the
         loop is stopped (airplane mode) and so cannot use ``_stop`` -- a stopped
-        loop's ``_stop`` is set for good, which would read as "stopping" forever."""
+        loop's ``_stop`` is set for good, which would read as "stopping" forever.
+
+        ``continuation`` runs ONLY the keyword cleanup's resume (the orphan prune is
+        budget-bounded and reports ``complete: false`` until its sweep finishes), skipping
+        the interval throttle -- so an offline instance with millions of orphans converges
+        pass after pass instead of one pass per throttle interval. Every other guard
+        (stop, memory pressure, the run lock) is unchanged. Returns whether the window
+        ran."""
         import time as _t
 
         stop = should_stop or self._stop.is_set
         if stop():
             self._note_maint_skip("stopping")
-            return
+            return False
         now = _t.monotonic()
-        if self._last_maint and now - self._last_maint < self._maint_interval_s:
+        if (
+            not continuation
+            and self._last_maint
+            and now - self._last_maint < self._maint_interval_s
+        ):
             self._note_maint_skip("throttled")
-            return  # off-peak throttle: not due yet
+            return False  # off-peak throttle: not due yet
         try:
             from src.scheduler import memguard
 
             if memguard.memory_guard.engaged:  # property, not a call
                 self._note_maint_skip("memory_pressure")
-                return  # under memory pressure — do not add write-gate work now
+                return False  # under memory pressure — do not add write-gate work now
         except Exception:  # noqa: BLE001 - guard read must never block maintenance
             pass
         if not self._run_lock.acquire(blocking=False):
@@ -1904,7 +1915,7 @@ class BackgroundScheduler:
             # holds this lock essentially always, so this window -- and the hourly
             # snapshot riding it -- is yielded over and over with nothing recorded.
             self._note_maint_skip("collect_pass_owns_lock")
-            return  # a run-now pass owns the lock — yield this window
+            return False  # a run-now pass owns the lock — yield this window
         # Mirror _do_run's busy signal: with the lock held but _active False, a
         # concurrent run_now would gate on _active, spawn a pass, fail the lock
         # acquire and silently no-op while replying started:true (skeptic finding).
@@ -1914,15 +1925,22 @@ class BackgroundScheduler:
             self._active = True
         _phase_set("maintenance")
         try:
-            self._last_maint = now
-            from src.scheduler.maintenance import run_idle_maintenance
+            if continuation:
+                from src.scheduler.maintenance import run_cleanup_continuation
 
-            result = run_idle_maintenance(should_stop=stop)
+                result = run_cleanup_continuation(should_stop=stop)
+            else:
+                self._last_maint = now
+                from src.scheduler.maintenance import run_idle_maintenance
+
+                result = run_idle_maintenance(should_stop=stop)
             with self._state_lock:
                 self._last_maintenance = result
             _activity("idle-maintenance", result)
+            return True
         except Exception:  # noqa: BLE001 - never let maintenance break the loop
             _LOG.warning("off-peak maintenance failed", exc_info=True)
+            return False
         finally:
             _phase_set(None)
             with self._state_lock:

@@ -22,6 +22,21 @@ registered writer job. It changes WHEN the existing maintenance runs, never WHAT
 or how honestly it reports; the freshness gates, the deadline budgets and the
 ``complete: false`` disclosure are all the maintenance's own. No network is touched.
 
+WHAT EACH NUMBER PROTECTS (nothing here is a cap on the work, only on how it shares the
+machine):
+
+* the first tick waits :data:`_FIRST_TICK_DELAY_S` -- boot's own upkeep, the cache warm and
+  a re-index auto-resume all start in the first minutes;
+* the interval (300 s) is the collection loop's own cadence for the WHOLE window, whose
+  rollup refreshes, snapshot and vacuum slice are not worth repeating faster;
+* an unfinished orphan-prune sweep is different: while its last pass reported
+  ``complete: false`` and nothing else owns the machine, passes run BACK TO BACK, each
+  followed by a rest of :data:`_REST_FRACTION` of the pass's own duration (so the write gate
+  is free at least ~20 % of the time whatever the machine's speed: a slow disk rests longer,
+  a fast one shorter -- sized from the measured pass, not from a constant). A pass itself is
+  bounded by the prune's soft deadline (``OO_PRUNE_BUDGET_S``, default 30 s), which keeps
+  the single-writer gate held one slice at a time.
+
 ``OO_OFFLINE_MAINTENANCE=0`` declines it for one process;
 ``OO_OFFLINE_MAINT_INTERVAL_S`` sets the cadence (default 300 s, the loop's own cadence, floor 60 s).
 """
@@ -37,6 +52,11 @@ _LOG = logging.getLogger("scheduler.offline_maintenance")
 #: Let boot settle first: the unlock path's upkeep, the cache warm and a boot re-index
 #: resume all start in the first minutes and this must never compete with them.
 _FIRST_TICK_DELAY_S = 180.0
+
+#: After a continuation pass, rest this fraction of the time it took (0.25 -> at most an 80 %
+#: duty cycle on the write gate).
+_REST_FRACTION = 0.25
+_MIN_REST_S = 1.0
 
 _THREAD: threading.Thread | None = None
 _STOP = threading.Event()
@@ -86,6 +106,40 @@ def yield_reason(sched) -> str | None:
     return None
 
 
+def prune_incomplete() -> bool:
+    """Did the last automatic cleanup leave its orphan-prune sweep unfinished?"""
+    try:
+        from src.analytics.store import keyword_cleanup_state
+
+        prune = (keyword_cleanup_state().get("last_tally") or {}).get("prune") or {}
+        return prune.get("complete") is False
+    except Exception:  # noqa: BLE001 - unreadable means "not known to be unfinished"
+        return False
+
+
+def _continue_prune(sched, stop) -> int:
+    """Back-to-back prune passes while the sweep is unfinished and the machine is free.
+
+    Returns how many ran. Stops at the first yield reason, stop request, failed pass or
+    finished sweep, so it can never outlive the condition that justified it."""
+    import time as _t
+
+    ran = 0
+    while not stop() and prune_incomplete():
+        reason = yield_reason(sched)
+        if reason:
+            sched._note_maint_skip(reason)
+            break
+        t0 = _t.monotonic()
+        if not sched._run_off_peak_maintenance(should_stop=stop, continuation=True):
+            break
+        ran += 1
+        rest = max(_MIN_REST_S, (_t.monotonic() - t0) * _REST_FRACTION)
+        if _STOP.wait(rest):
+            break
+    return ran
+
+
 def tick(sched=None, *, should_stop=None) -> str:
     """One attempt. Returns ``"ran"`` or the reason it yielded. Never raises."""
     try:
@@ -97,7 +151,10 @@ def tick(sched=None, *, should_stop=None) -> str:
         if reason:
             sched._note_maint_skip(reason)
             return reason
-        sched._run_off_peak_maintenance(should_stop=should_stop or _STOP.is_set)
+        stop = should_stop or _STOP.is_set
+        if not sched._run_off_peak_maintenance(should_stop=stop):
+            return "yielded"
+        _continue_prune(sched, stop)
         return "ran"
     except Exception:  # noqa: BLE001 - a background safety net must never break the app
         _LOG.warning("offline maintenance tick failed", exc_info=True)

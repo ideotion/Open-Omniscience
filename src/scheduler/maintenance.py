@@ -189,3 +189,25 @@ def run_idle_maintenance(*, should_stop: Callable[[], bool] | None = None) -> di
         _LOG.warning("off-peak maintenance could not open a session", exc_info=True)
         return {"skipped": "error"}
     return out
+
+
+def run_cleanup_continuation(*, should_stop: Callable[[], bool] | None = None) -> dict:
+    """Resume ONLY the keyword cleanup, in its own session, best-effort. Never raises.
+
+    ``maybe_cleanup_keywords`` already resumes just the incomplete orphan prune while its
+    12-hour freshness gate still holds, so calling it alone is the whole continuation.
+    Used by the offline timer (:mod:`src.scheduler.offline_maintenance`) to run passes
+    back to back while a big sweep is unfinished and nothing else is writing."""
+    stop = should_stop or (lambda: False)
+    if stop():
+        return {"skipped": "stopping"}
+    from src.database.session import session_scope
+
+    try:
+        with session_scope() as session:
+            from src.analytics.store import maybe_cleanup_keywords
+
+            return {"cleanup": maybe_cleanup_keywords(session)}
+    except Exception:  # noqa: BLE001 - even opening the session must never break the loop
+        _LOG.warning("keyword cleanup continuation failed", exc_info=True)
+        return {"skipped": "error"}
