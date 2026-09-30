@@ -3630,7 +3630,7 @@
           if (arts > 0 || ++n > 40) {
             clearInterval(poll);
             if (arts > 0) { st.innerHTML = `<span class="pill ok">done</span> ${arts} article(s) ingested.`;
-              setTimeout(() => { const ob = $("onboard"); if (ob) ob.style.display = "none"; }, 2500); doSearch(); loadDbStats && loadDbStats(); }
+              setTimeout(() => { const ob = $("onboard"); if (ob) ob.style.display = "none"; }, 2500); doSearch({refresh: true}); loadDbStats && loadDbStats(); }
             else st.textContent = "No articles yet — check the Sources tab and the scheduler's last run.";
             btn.disabled = false;
           }
