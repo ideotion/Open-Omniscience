@@ -15,17 +15,50 @@ from __future__ import annotations
 
 import json
 import os
+import time
 from datetime import datetime
 
 from fastapi import Depends, HTTPException, Query
-from fastapi.responses import JSONResponse, Response, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from sqlalchemy import func, text
 from sqlalchemy.orm import Session
+from starlette.background import BackgroundTask
 
 from src.analytics import queries as q
 from src.analytics.families import build_families
-from src.database.maintenance import StatementTimeout, statement_deadline
-from src.database.models import Article, KeywordSuperGroup, Source
+from src.analytics.keyword_log_export import (
+    MIN_ENTRY_BYTES,
+    ZipHooks,
+    ZipJob,
+    batched,
+    disk_check_for,
+    disk_watch_for,
+    entry_for,
+    export_dir,
+    fetch_meta,
+    fetch_signatures,
+    finish_zip,
+    fit_window,
+    resolve_max_bytes,
+    unlink_quietly,
+)
+from src.analytics.keyword_log_scan import (
+    ArticleMaps,
+    ExportRefused,
+    Ranker,
+    RingAcc,
+    StopwordAcc,
+    available_bytes_now,
+    memory_plan,
+    order_key,
+    scan_keywords,
+)
+from src.database.maintenance import (
+    StatementTimeout,
+    raise_if_memory_short,
+    statement_deadline,
+)
+from src.database.models import KeywordSuperGroup, Source
 from src.database.read_snapshot import read_only_db
 from src.utils.export_envelope import envelope
 
@@ -58,39 +91,8 @@ from src.analytics.ring_loader import (  # noqa: E402
 )
 
 
-def _stopword_candidates(survivors, meta, dom_lang, is_hidden) -> dict:
-    """Per dominant-language, the highest article-SPREAD short single-token TERMS that
-    are NOT yet stoplisted — the shape of a function word. Ranked by distinct-article
-    spread; no score. Languages with no stoplist (no_stoplist/unsegmented) come first."""
-    from src.analytics.managed import language_status
-
-    by_lang: dict[str, list[dict]] = {}
-    for kid, m, a, _first, _last in survivors:
-        term, norm, lang, is_ent, _ent = meta.get(kid, ("?", "?", None, False, None))
-        if is_ent or not norm or " " in norm:
-            continue  # single-token TERMS only (entities + n-grams aren't function words)
-        if len(norm) > _SW_CAND_MAX_LEN or int(a) < _SW_CAND_MIN_ARTICLES:
-            continue
-        if is_hidden(norm):
-            continue  # already stoplisted / excluded — not a candidate
-        dom = dom_lang.get(kid) or lang or "?"
-        by_lang.setdefault(dom, []).append(
-            {"term": term, "normalized": norm, "mentions": int(m), "articles": int(a), "len": len(norm)}
-        )
-    out: dict[str, dict] = {}
-    for dom, items in by_lang.items():
-        items.sort(key=lambda x: (-x["articles"], -x["mentions"]))
-        out[dom] = {
-            "status": language_status(dom),
-            "total": len(items),
-            "candidates": items[:_SW_CAND_PER_LANG],
-        }
-    priority = sorted(
-        (d for d, v in out.items() if v["status"] in ("no_stoplist", "unsegmented")),
-        key=lambda d: -out[d]["total"],
-    )
-    # Surface unmanaged-language buckets first (the worklist), each densest-first.
-    ordered = dict(sorted(out.items(), key=lambda kv: (kv[1]["status"] not in ("no_stoplist", "unsegmented"), -kv[1]["total"])))
+def _stopword_doc(result: dict) -> dict:
+    """The stopword-candidate block, from a :class:`StopwordAcc` result."""
     return {
         "method": (
             "Per dominant-signature language, short single-token TERMS (<= "
@@ -98,9 +100,56 @@ def _stopword_candidates(survivors, meta, dom_lang, is_hidden) -> dict:
             "yet stoplisted, ranked by article spread — the shape of a function word. "
             "Candidates to REVIEW before adding to a stoplist; no score, no inference."
         ),
-        "priority_languages": priority,
-        "by_language": ordered,
+        "priority_languages": result["priority"],
+        "by_language": result["ordered"],
     }
+
+
+def _new_stopword_acc(is_hidden) -> StopwordAcc:
+    return StopwordAcc(
+        is_hidden, per_lang=_SW_CAND_PER_LANG, max_len=_SW_CAND_MAX_LEN,
+        min_articles=_SW_CAND_MIN_ARTICLES,
+    )
+
+
+def _stopword_candidates(survivors, meta, dom_lang, is_hidden) -> dict:
+    """Per dominant-language, the highest article-SPREAD short single-token TERMS that
+    are NOT yet stoplisted — the shape of a function word. Ranked by distinct-article
+    spread; no score. Languages with no stoplist (no_stoplist/unsegmented) come first.
+
+    The one-shot form over a survivor list; the export itself feeds
+    :class:`~src.analytics.keyword_log_scan.StopwordAcc` batch by batch, so it never holds
+    the survivors at all. Both are the same accumulator, so they cannot disagree."""
+    acc = _new_stopword_acc(is_hidden)
+    for i, (kid, m, a, _first, _last) in enumerate(survivors):
+        acc.feed(i, m, a, dom_lang.get(kid), meta.get(kid, ("?", "?", None, False, None)))
+    return _stopword_doc(acc.result())
+
+
+def _ring_doc(result: dict) -> dict:
+    """The ring-gap block, from a :class:`RingAcc` result."""
+    return {
+        "method": (
+            "Per dominant-signature language, non-entity TERMS with >= "
+            f"{_RING_CAND_MIN_ARTICLES} distinct articles NOT yet in any cross-language "
+            "ring, ranked by article spread — the ring GAP for "
+            "generate_wikidata_rings.py --from-log. translation_coverage = "
+            "ring-covered / gated terms (the self-check metric). Candidates to RESOLVE "
+            "via a Wikidata QID; multi-word concepts kept; no score, no inference."
+        ),
+        "translation_coverage": result["translation_coverage"],
+        "gated_terms": result["gated_terms"],
+        "by_language": result["by_language"],
+    }
+
+
+def _new_ring_acc(is_hidden) -> RingAcc:
+    from src.analytics import equivalence
+
+    return RingAcc(
+        is_hidden, equivalence.ring_of, per_lang=_RING_CAND_PER_LANG,
+        min_articles=_RING_CAND_MIN_ARTICLES,
+    )
 
 
 def _ring_candidates(survivors, meta, dom_lang, is_hidden) -> dict:
@@ -119,59 +168,13 @@ def _ring_candidates(survivors, meta, dom_lang, is_hidden) -> dict:
     Concepts come from non-entity TERMS (acronym entities resolve ambiguously on
     Wikidata — exactly the homograph garbage vetting had to drop). Multi-word terms
     are KEPT (a concept can be "climate change" / "supply chain"), unlike the
-    single-token stopword candidates. No score, no inference."""
-    from src.analytics import equivalence
+    single-token stopword candidates. No score, no inference.
 
-    by_lang: dict[str, list[dict]] = {}
-    gated: dict[str, int] = {}
-    covered: dict[str, int] = {}
-    for kid, m, a, _first, _last in survivors:
-        term, norm, lang, is_ent, _ent = meta.get(kid, ("?", "?", None, False, None))
-        if is_ent or not norm:
-            continue
-        if int(a) < _RING_CAND_MIN_ARTICLES or is_hidden(norm):
-            continue
-        eff = dom_lang.get(kid) or lang or "?"
-        gated[eff] = gated.get(eff, 0) + 1
-        if equivalence.ring_of(eff, norm) is not None:
-            covered[eff] = covered.get(eff, 0) + 1
-            continue  # already a ring member — counts toward coverage, not a gap
-        by_lang.setdefault(eff, []).append(
-            {"term": term, "normalized": norm, "mentions": int(m), "articles": int(a)}
-        )
-    out: dict[str, dict] = {}
-    for lang, items in by_lang.items():
-        items.sort(key=lambda x: (-x["articles"], -x["mentions"]))
-        g = gated.get(lang, 0)
-        c = covered.get(lang, 0)
-        out[lang] = {
-            "gap_total": len(items),
-            "ring_covered": c,
-            "coverage": round(c / g, 4) if g else 0.0,
-            "candidates": items[:_RING_CAND_PER_LANG],
-        }
-    # LOWEST-coverage languages first (where ring-building helps most), then by gap size.
-    ordered = dict(sorted(out.items(), key=lambda kv: (kv[1]["coverage"], -kv[1]["gap_total"])))
-    tot_g = sum(gated.values())
-    tot_c = sum(covered.values())
-    return {
-        "method": (
-            "Per dominant-signature language, non-entity TERMS with >= "
-            f"{_RING_CAND_MIN_ARTICLES} distinct articles NOT yet in any cross-language "
-            "ring, ranked by article spread — the ring GAP for "
-            "generate_wikidata_rings.py --from-log. translation_coverage = "
-            "ring-covered / gated terms (the self-check metric). Candidates to RESOLVE "
-            "via a Wikidata QID; multi-word concepts kept; no score, no inference."
-        ),
-        "translation_coverage": round(tot_c / tot_g, 4) if tot_g else 0.0,
-        "gated_terms": tot_g,
-        "by_language": ordered,
-    }
-
-
-def _in_batches(ids: list[int], size: int = 800):
-    for i in range(0, len(ids), size):
-        yield ids[i : i + size]
+    The one-shot form over a survivor list (see :func:`_stopword_candidates`)."""
+    acc = _new_ring_acc(is_hidden)
+    for i, (kid, m, a, _first, _last) in enumerate(survivors):
+        acc.feed(i, m, a, dom_lang.get(kid), meta.get(kid, ("?", "?", None, False, None)))
+    return _ring_doc(acc.result())
 
 
 # Digest mode keeps the same bounded aggregates but ships only the top-N
@@ -315,160 +318,30 @@ def _safe_lang_filename(lang: str) -> str:
     return safe or "unknown"
 
 
-def _group_entries_by_language(survivors, entry_fn, dom_lang, stored_lang) -> dict:
-    """Group built per-keyword entries by dominant language, preserving the
-    mentions-desc order of ``survivors`` (so a later byte-cap trims the tail)."""
-    by_lang: dict[str, list[dict]] = {}
-    for s in survivors:
-        kid = s[0]
-        dom = dom_lang.get(kid) or stored_lang.get(kid) or "?"
-        by_lang.setdefault(dom, []).append(entry_fn(s))
-    return by_lang
+# What the archive writer borrows from this route (built after the names it lends exist).
+_ZIP_HOOKS = ZipHooks(
+    basis_per_language=_MAX_KEYWORDS_PER_LANG,
+    families_cap=_keyword_zip_families_cap,
+    safe_lang_filename=_safe_lang_filename,
+    new_stopword_acc=_new_stopword_acc,
+    new_ring_acc=_new_ring_acc,
+    stopword_doc=_stopword_doc,
+    ring_doc=_ring_doc,
+)
 
 
 def _keyword_zip(
-    *,
-    corpus: dict,
-    method: str,
-    families: list,
-    overrides: dict,
-    supergroups: list,
-    per_source_concentration: list,
-    suspects_total: int,
-    suspects_capped: bool,
-    entries_by_lang: dict,
-    stopword_candidates: dict,
-    ring_candidates: dict,
-    page_info: dict | None = None,
+    *, job: ZipJob, keep: dict[str, int], omitted: dict[str, int] | None = None
 ) -> Response:
-    """Build the per-language keyword-log ZIP, guaranteed under the byte cap.
-
-    Members: ``summary.json`` (the corpus-wide aggregates — families, super-groups,
-    per-source concentration — the SAME data the single-file log carries minus the
-    keyword list), ``keywords/<lang>.json`` (each language's keywords, same
-    per-keyword fields), and ``manifest.json`` (what's inside + any omissions). The
-    split mirrors the per-language export quota; JSON compresses ~8x so the archive
-    is normally a few MB. If the compressed archive still exceeds the cap (only on a
-    very large corpus) the lowest-mention keywords are dropped PER LANGUAGE
-    (equal-fair) and recorded — never a silent or anglicising cut."""
-    import io
-    import zipfile
-
-    # Cap the families dump (sorted by mentions desc): the full 700k-family tail is
-    # redundant with the shards + unused by the analyzer + the reason the byte cap never
-    # held. Keep the top-N for a human glance; record the omission honestly.
-    _fam_cap = _keyword_zip_families_cap()
-    _families_shown = families[:_fam_cap] if _fam_cap and len(families) > _fam_cap else families
-    summary_payload = {
-        "corpus": corpus,
-        "method": method,
-        "families": _families_shown,
-        "families_provenance": {
-            "shown": len(_families_shown),
-            "total": len(families),
-            "omitted": len(families) - len(_families_shown),
-            "sorted_by": "mentions (desc)",
-            "note": (
-                "Only the top families are embedded here (the full per-keyword family dump "
-                "is large, redundant with keywords/<lang>.json, and unused by "
-                "analyze_keyword_log.py). Set OO_KEYWORD_LOG_FAMILIES=0 to embed all."
-            ),
-        },
-        "overrides": [
-            {"normalized_term": term, **data} for term, data in sorted(overrides.items())
-        ],
-        "supergroups": supergroups,
-        "stopword_candidates": stopword_candidates,
-        "ring_candidates": ring_candidates,
-        "per_source_concentration": {
-            "suspects": per_source_concentration,
-            "suspects_total": suspects_total,
-            "list_capped_at_200": suspects_capped,
-            "thresholds": {
-                "min_articles_with_keyword": 10,
-                "min_source_articles": 10,
-                "min_share_of_keyword": 0.9,
-                "min_share_of_source": 0.25,
-            },
-        },
-    }
-    max_bytes = _keyword_zip_max_bytes()
-
-    def _build(by_lang: dict, omitted: dict) -> bytes:
-        total_kw = sum(len(v) for v in by_lang.values())
-        summary_doc = envelope(
-            kind="keyword-diagnostics",
-            query={"format": "zip"},
-            count=total_kw,
-            payload=summary_payload,
-        )
-        langs_meta = [
-            {"code": lang, "keywords": len(by_lang[lang]), "omitted_to_fit": omitted.get(lang, 0)}
-            for lang in sorted(by_lang)
-        ]
-        manifest = {
-            "export_schema": "oo-export-1",
-            "kind": "keyword-diagnostics-archive",
-            "app_version": summary_doc.get("app_version"),
-            "generated_at": summary_doc.get("generated_at"),
-            "corpus": corpus,
-            "languages": sorted(langs_meta, key=lambda m: -m["keywords"]),
-            "keywords_in_archive": total_kw,
-            "keywords_omitted_to_fit": sum(omitted.values()),
-            "max_bytes": max_bytes,
-            # Paging: per_lang/page/pages_total/has_more let the caller export the
-            # WHOLE corpus across several files when one page would exceed the cap.
-            **(page_info or {}),
-            "note": (
-                "Per-language split of the keyword diagnostics log, zipped to keep the "
-                "shared file under 10 MB (fits a typical attachment limit). Read "
-                "summary.json for the corpus-wide aggregates (top families, super-groups, "
-                "per-source concentration; families_provenance records the family cap) "
-                "and keywords/<lang>.json for each language's "
-                "keywords (same per-keyword fields as the single-file log). "
-                "scripts/analyze_keyword_log.py reads this .zip directly. "
-                "keywords_omitted_to_fit > 0 means the lowest-mention keywords per "
-                "language were dropped to fit max_bytes — never silently; see the "
-                "per-language counts."
-            ),
-        }
-        buf = io.BytesIO()
-        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as z:
-            for lang in sorted(by_lang):
-                ents = by_lang[lang]
-                z.writestr(
-                    f"keywords/{_safe_lang_filename(lang)}.json",
-                    json.dumps(
-                        {"language": lang, "count": len(ents), "keywords": ents},
-                        ensure_ascii=False,
-                        separators=(",", ":"),
-                    ),
-                )
-            z.writestr(
-                "summary.json",
-                json.dumps(summary_doc, ensure_ascii=False, separators=(",", ":")),
-            )
-            z.writestr("manifest.json", json.dumps(manifest, ensure_ascii=False, indent=2))
-        return buf.getvalue()
-
-    omitted: dict[str, int] = {}
-    data = _build(entries_by_lang, omitted)
-    guard = 0
-    while len(data) > max_bytes and guard < 8:
-        guard += 1
-        ratio = max_bytes / len(data) * 0.9
-        for lang, ents in list(entries_by_lang.items()):
-            keep = max(1, int(len(ents) * ratio))
-            if keep < len(ents):
-                omitted[lang] = omitted.get(lang, 0) + (len(ents) - keep)
-                entries_by_lang[lang] = ents[:keep]
-        data = _build(entries_by_lang, omitted)
-
+    """Build the per-language keyword-log ZIP on disk (under the byte cap) and serve it; the
+    scratch file is deleted once it has been sent. See ``finish_zip`` for what is in it."""
+    path = finish_zip(job, keep, omitted)
     fname = f"oo-keyword-log-{datetime.now().strftime('%Y%m%d')}.zip"
-    return Response(
-        content=data,
+    return FileResponse(
+        str(path),
         media_type="application/zip",
-        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+        filename=fname,
+        background=BackgroundTask(unlink_quietly, path),
     )
 
 
@@ -528,9 +401,10 @@ def keyword_log(
         description=(
             "ZIP only: how many keywords PER dominant language to export (default "
             f"{_MAX_KEYWORDS_PER_LANG}). Raise it to export far more — even the whole "
-            "corpus — in one archive (the <10 MB byte cap still applies and, "
-            "if hit, trims the lowest-mention keywords per language and records it). "
-            "Combine with `page` to walk through everything in digestible chunks."
+            "corpus — in one archive (the <10 MB byte cap still applies unless "
+            "`max_mb=0` and, if hit, trims the lowest-mention keywords per language and "
+            "records it). Combine with `page` to walk through everything in digestible "
+            "chunks."
         ),
     ),
     page: int = Query(
@@ -541,6 +415,16 @@ def keyword_log(
             "keywords ranked [(N-1)*per_lang : N*per_lang] by mentions). The manifest "
             "reports pages_total + has_more so the full set can be exported across "
             "several files."
+        ),
+    ),
+    max_mb: float | None = Query(
+        None,
+        ge=0,
+        description=(
+            "ZIP only: the archive's size cap in MB. Left out: OO_KEYWORD_LOG_MAX_MB (9 MB). "
+            "`0` = NO cap: every keyword of the requested window is written, however large "
+            "the file, straight to disk a batch at a time (memory stays bounded; the drive "
+            "needs the room, and the export refuses, with the numbers, when it does not)."
         ),
     ),
 ) -> Response:
@@ -560,232 +444,128 @@ def keyword_log(
     keywords that survive the quota. The body is STREAMED, so memory stays
     bounded and the download starts immediately. Same envelope, same fields,
     same cap semantics as before (contract-tested).
+
+    MEMORY (2026-09-30, the "All keywords" crash): nothing here is proportional to the
+    number of keywords or articles any more. See :mod:`src.analytics.keyword_log_scan` for
+    the scan and the ranking, and ``ZipJob`` (keyword_log_export) for the archive, which is written to disk a
+    batch at a time. The read memory stop now runs on this export whatever its deadline is.
     """
+    started = time.monotonic()
+
+    def check() -> None:
+        raise_if_memory_short(started=started)
+
+    plan = memory_plan(available_bytes_now())
+    max_bytes = resolve_max_bytes(fmt, max_mb, _keyword_zip_max_bytes())
+    out_dir = export_dir()
+    ranker: Ranker | None = None
     try:
         with statement_deadline(db, seconds=_export_deadline_seconds()):
-            # Article -> language, ONCE, via the covering index (verified plan:
-            # idx_article_country_language) — joining mentions to articles in
-            # SQL would drag article rows through the SQLCipher codec for every
-            # batch (measured 26 s of the 32 s encrypted-profile wall time).
-            art_lang: dict[int, str] = {
-                aid: (lang or "?")
-                for aid, lang in db.execute(text("SELECT id, language FROM articles"))
-            }
+            check()  # refuse to START when the machine is already at its floor
+            # Article -> language and source, ONCE, each via its covering index (verified
+            # plan: idx_article_language / the source_id index) — joining mentions to
+            # articles in SQL would drag article rows through the SQLCipher codec for every
+            # batch (measured 26 s of the 32 s encrypted-profile wall time). Held as flat
+            # arrays, not dicts: see ArticleMaps.
+            maps = ArticleMaps(db, check)
+            src_articles: dict[int, int] = dict(
+                db.execute(text("SELECT source_id, COUNT(*) FROM articles GROUP BY source_id")).fetchall()
+            )
 
-            # Article -> source, the same codec-free way (covering index on
-            # source_id), for the per-source concentration diagnostic below.
-            art_src: dict[int, int] = {
-                aid: sid
-                for aid, sid in db.execute(text("SELECT id, source_id FROM articles")).fetchall()
-            }
-            src_articles: dict[int, int] = {
-                sid: n
-                for sid, n in db.execute(
-                    text("SELECT source_id, COUNT(*) FROM articles GROUP BY source_id")
-                ).fetchall()
-            }
-
-            # Dominant signature language per keyword from ONE index-only scan
-            # of (keyword_id, article_id), ordered so each keyword's counts can
-            # be reduced and freed as the scan passes it. Ties: language asc
-            # (matching the previous argmax over language-asc grouped rows).
-            # The SAME pass measures per-source concentration: a keyword whose
-            # articles sit ≥90% in one source, covering ≥25% of that source's
-            # articles (≥10 articles) is a boilerplate/navigation-text suspect
-            # (field report #4: Swedish "alla artiklar" ×118) — FLAGGED with
-            # real counts, never auto-hidden; the operator decides.
-            dom_lang: dict[int, str] = {}
-            suspects: list[dict] = []
-            # S7: the per-keyword totals a SECOND full GROUP BY scan used to recompute now come
-            # from the ONE scan below (byte-identical), keyed kid -> (mentions, articles,
-            # first_seen, last_seen).
-            totals: dict[int, tuple[int, int, str | None, str | None]] = {}
-            _cur_kid: int | None = None
-            _counts: dict[str, int] = {}
-            _srcs: dict[int, int] = {}
-            _m = 0
-            _a = 0
-            _first: str | None = None
-            _last: str | None = None
-
-            def _finalize(kid, counts, srcs, m, a, first, last) -> None:
-                if kid is None or not counts:
-                    return
-                totals[kid] = (m, a, first, last)
-                dom_lang[kid] = min(counts, key=lambda lg: (-counts[lg], lg))
-                n_articles = sum(srcs.values())
-                if n_articles >= 10:
-                    top_src, top_n = max(srcs.items(), key=lambda kv: kv[1])
-                    src_total = src_articles.get(top_src, 0)
-                    if src_total >= 10 and top_n / n_articles >= 0.9 and top_n / src_total >= 0.25:
-                        suspects.append(
-                            {
-                                "keyword_id": kid,
-                                "source_id": top_src,
-                                "articles_with_keyword": n_articles,
-                                "in_this_source": top_n,
-                                "source_article_total": src_total,
-                                "share_of_keyword": round(top_n / n_articles, 3),
-                                "share_of_source": round(top_n / src_total, 3),
-                            }
-                        )
-
-            for kid, aid, cnt, obs in db.execute(
-                text(
-                    "SELECT keyword_id, article_id, count, observed_on"
-                    " FROM keyword_mentions ORDER BY keyword_id"
-                )
-            ):
-                if kid != _cur_kid:
-                    _finalize(_cur_kid, _counts, _srcs, _m, _a, _first, _last)
-                    _cur_kid, _counts, _srcs = kid, {}, {}
-                    _m, _a, _first, _last = 0, 0, None, None
-                lg = art_lang.get(aid, "?")
-                _counts[lg] = _counts.get(lg, 0) + 1
-                sid = art_src.get(aid)
-                if sid is not None:
-                    _srcs[sid] = _srcs.get(sid, 0) + 1
-                # S7: the per-keyword totals (mentions / distinct articles / first-last
-                # observed) accumulate in THIS pass. A row is unique per (keyword, article)
-                # under the covering index, so a per-keyword row count == COUNT(DISTINCT
-                # article_id); MIN/MAX(observed_on) ignore NULL exactly as SQL does.
-                _m += cnt or 0
-                _a += 1
-                if obs is not None:
-                    if _first is None or obs < _first:
-                        _first = obs
-                    if _last is None or obs > _last:
-                        _last = obs
-            _finalize(_cur_kid, _counts, _srcs, _m, _a, _first, _last)
-
-            # The DETECTION is unbounded: every keyword × source pair in the
-            # corpus is evaluated (inside the same full mention scan). Only the
-            # LIST PRINTED in this report is bounded — strongest-first, with
-            # the true total disclosed — so the file stays reviewable while no
-            # magnitude is ever hidden (the maintainer's anti-capping rule:
-            # caps may bound a REPORT, never the data crunching).
-            suspects.sort(key=lambda s: (-s["share_of_source"], -s["in_this_source"]))
-            suspects_total = len(suspects)
-            suspects_capped = suspects_total > 200
-            suspects = suspects[:200]
-
-            # Stored-language fallback for keywords with no mentions (kept from
-            # the previous contract: they export with zero counts, quota applies).
-            stored_lang: dict[int, str | None] = {
-                kid: lang
-                for kid, lang in db.execute(text("SELECT id, language FROM keywords")).fetchall()
-            }
-
-            # Totals, mentions-desc — from the ONE mention scan above (no second
-            # GROUP BY scan); the quota decides survivors ON THE FLY, so the
-            # 228k-keyword aggregation never materialises as ORM objects.
             # Page-aware per-language quota. The JSON path keeps the classic top-
             # _MAX_KEYWORDS_PER_LANG cap (lo=0); the ZIP path can raise per_lang and
             # page through the WHOLE corpus in digestible chunks (maintainer 2026-06-21:
-            # "export more keywords — there were 200k+"). per_lang_seen tracks the total
-            # ranked position per language (for paging + pages_total/has_more).
+            # "export more keywords — there were 200k+").
             eff_per_lang = per_lang if fmt == "zip" else _MAX_KEYWORDS_PER_LANG
             lo = (page - 1) * eff_per_lang if fmt == "zip" else 0
-            hi = lo + eff_per_lang
-            per_lang_seen: dict[str, int] = {}
-            per_lang_taken: dict[str, int] = {}
-            capped_langs: set[str] = set()
-            survivors: list[tuple[int, int, int, str | None, str | None]] = []
-            seen: set[int] = set()
-            # S7: iterate the totals gathered by the ONE scan above, sorted mentions-desc
-            # then keyword_id-asc — byte-identical to the retired
-            # ``GROUP BY keyword_id ORDER BY m DESC, keyword_id ASC`` second full scan.
-            for kid, (m, a, first, last) in sorted(
-                totals.items(), key=lambda kv: (-kv[1][0], kv[0])
-            ):
-                seen.add(kid)
-                dom = dom_lang.get(kid) or stored_lang.get(kid) or "?"
-                idx = per_lang_seen.get(dom, 0)
-                per_lang_seen[dom] = idx + 1
-                if idx < lo:
-                    continue
-                if idx >= hi:
-                    capped_langs.add(dom)
-                    continue
-                per_lang_taken[dom] = per_lang_taken.get(dom, 0) + 1
-                survivors.append((kid, int(m), int(a), first, last))
-            for kid in sorted(set(stored_lang) - seen):  # zero-mention keywords
-                dom = stored_lang.get(kid) or "?"
-                idx = per_lang_seen.get(dom, 0)
-                per_lang_seen[dom] = idx + 1
-                if idx < lo:
-                    continue
-                if idx >= hi:
-                    capped_langs.add(dom)
-                    continue
-                per_lang_taken[dom] = per_lang_taken.get(dom, 0) + 1
-                survivors.append((kid, 0, 0, None, None))
+            hi = asked_hi = lo + eff_per_lang
+            if max_bytes is not None:
+                # A capped archive can never hold more than the cap allows at the smallest
+                # entry there is; do not rank (or build) a window larger than that.
+                hi = min(hi, lo + max_bytes // MIN_ENTRY_BYTES)
 
-            survivor_ids = [s[0] for s in survivors]
-            # Metadata + full language signatures for SURVIVORS only.
-            meta: dict[int, tuple] = {}
-            lang_sig: dict[int, dict[str, int]] = {}
-            for batch in _in_batches(survivor_ids):
-                marks = ",".join(str(int(i)) for i in batch)
-                for kid, term, norm, lang, is_ent, ent_type in db.execute(
-                    text(
-                        "SELECT id, term, normalized_term, language, is_entity,"  # nosec B608 - interpolant is a joined list of int()-cast ids built in this function, never input
-                        f" entity_type FROM keywords WHERE id IN ({marks})"
-                    )
-                ):
-                    meta[kid] = (term, norm, lang, bool(is_ent), ent_type)
-                # Full signatures via index-only probes + the art_lang map —
-                # mention rows are unique per (keyword, article), so each row
-                # contributes exactly one distinct article to its language.
-                for kid, aid in db.execute(
-                    text(
-                        "SELECT keyword_id, article_id FROM keyword_mentions"  # nosec B608 - interpolant is a joined list of int()-cast ids built in this function, never input
-                        f" WHERE keyword_id IN ({marks})"
-                    )
-                ):
-                    sig = lang_sig.setdefault(kid, {})
-                    lg = art_lang.get(aid, "?")
-                    sig[lg] = sig.get(lg, 0) + 1
+            ranker = Ranker(
+                lo, hi, heap_rows=plan["heap_rows"], spill_dir=out_dir,
+                disk_check=disk_check_for(out_dir),
+            )
+            # One ordered pass over the mention rows, then one over the keyword table. The
+            # dominant signature language of each keyword, the totals a SECOND full GROUP BY
+            # used to recompute (S7: byte-identical, one scan), and the per-source
+            # concentration all come out of it; the ranker turns them into the per-language
+            # quota. The DETECTION is unbounded: every keyword × source pair is evaluated.
+            # Only the LIST PRINTED is bounded — strongest-first, with the true total
+            # disclosed (the maintainer's anti-capping rule: caps may bound a REPORT, never
+            # the data crunching).
+            stats = scan_keywords(db, maps, src_articles, ranker, check=check)
+            board = stats.board
+            suspects = board.top()
+            suspects_total = board.total
+            suspects_capped = suspects_total > 200
 
-            # Names for the concentration suspects (small, bounded set) — the
-            # section is readable on its own: terms + source names + counts.
-            suspect_kids = {s["keyword_id"] for s in suspects} - set(meta)
-            for batch in _in_batches(sorted(suspect_kids)):
-                marks = ",".join(str(int(i)) for i in batch)
-                for kid, term, norm, lang, is_ent, ent_type in db.execute(
-                    text(
-                        "SELECT id, term, normalized_term, language, is_entity,"  # nosec B608 - interpolant is a joined list of int()-cast ids built in this function, never input
-                        f" entity_type FROM keywords WHERE id IN ({marks})"
-                    )
-                ):
-                    meta[kid] = (term, norm, lang, bool(is_ent), ent_type)
+            per_lang_seen = ranker.totals()
+            window_note: dict | None = None
+            # Keywords of the asked window left out BEFORE anything was built (the window was
+            # cut to what the byte cap could ever hold): counted in keywords_omitted_to_fit
+            # exactly as the ones the trim loop drops later, because to the reader they are
+            # the same fact -- the window asked for was not delivered whole.
+            clamp_omitted: dict[str, int] = {}
+            if max_bytes is not None:
+                ceiling = max_bytes // MIN_ENTRY_BYTES
+                c = fit_window(
+                    {lg: ranker.taken(lg) for lg in per_lang_seen if ranker.taken(lg) > 0},
+                    ceiling,
+                )
+                if c is None and hi < asked_hi and any(t > hi for t in per_lang_seen.values()):
+                    # The ranker was only ever asked for ``hi`` ranks (see above): that IS the
+                    # window, and the reader is told so like any other cut.
+                    c = hi - lo
+                if c is not None:
+                    before = max(ranker.taken(lg) for lg in per_lang_seen)
+                    hi = lo + c
+                    ranker.clamp(hi)
+                    clamp_omitted = {
+                        lg: asked - ranker.taken(lg)
+                        for lg, seen in per_lang_seen.items()
+                        if (asked := max(0, min(seen, asked_hi) - lo)) > ranker.taken(lg)
+                    }
+                    window_note = {
+                        "asked_per_lang": eff_per_lang,
+                        "exported_per_language_max": c,
+                        "largest_language_window_before": before,
+                        "why": (
+                            f"a {max_bytes:,}-byte archive cannot hold more than "
+                            f"{ceiling:,} entries even at {MIN_ENTRY_BYTES} "
+                            "bytes each, so the window was cut to the largest equal "
+                            "per-language window that could fit instead of building "
+                            "millions of entries to throw them away. Pass max_mb=0 for no cap."
+                        ),
+                        "continue_with": {"per_lang": c, "page": 2} if lo == 0 else None,
+                    }
+                    eff_per_lang = c if lo == 0 else eff_per_lang
+            capped_langs = {lg for lg, t in per_lang_seen.items() if t > hi}
+            languages = [lg for lg in per_lang_seen if ranker.taken(lg) > 0]
+
+            # Names for the concentration suspects (small, bounded set) — the section is
+            # readable on its own: terms + source names + counts.
+            suspect_meta = fetch_meta(db, [s["keyword_id"] for s in suspects])
             src_names: dict[int, str] = {}
             sids = sorted({s["source_id"] for s in suspects})
             if sids:
                 marks = ",".join(str(int(i)) for i in sids)
-                src_names = {
-                    sid: name
-                    for sid, name in db.execute(
+                src_names = dict(
+                    db.execute(
                         text(f"SELECT id, name FROM sources WHERE id IN ({marks})")  # nosec B608 - interpolant is a joined list of int()-cast ids built in this function, never input
                     ).fetchall()
-                }
+                )
             per_source_concentration = [
                 {
-                    "term": meta.get(s["keyword_id"], ("?",))[0],
+                    "term": suspect_meta.get(s["keyword_id"], ("?",))[0],
                     "source": src_names.get(s["source_id"], f"#{s['source_id']}"),
                     **{k: v for k, v in s.items() if k not in ("keyword_id", "source_id")},
                 }
                 for s in suspects
             ]
 
-            corpus = {
-                "articles": int(db.query(func.count(Article.id)).scalar() or 0),
-                "sources": int(db.query(func.count(Source.id)).scalar() or 0),
-                "keywords_total": len(stored_lang),
-                "keywords_exported": len(survivors),
-                "exported_per_language": per_lang_taken,
-                "capped_languages": sorted(capped_langs),
-            }
             overrides = q.load_overrides(db)
             supergroups = [
                 {
@@ -794,35 +574,109 @@ def keyword_log(
                 }
                 for sg in db.query(KeywordSuperGroup).order_by(KeywordSuperGroup.name).all()
             ]
+            n_sources = int(db.query(func.count(Source.id)).scalar() or 0)
+
+            # The stoplist verdict is part of the diagnosis: leaked function words the
+            # operator hid are exactly what grouping fixes need to see — flag, not omit.
+            is_hidden = q._hidden_predicate()
+
+            method = (
+                f"All gathered keywords (top {_MAX_KEYWORDS_PER_LANG} PER dominant signature "
+                "language — a global cap would anglicise the export) with real "
+                "counts; language_signature = distinct articles per ARTICLE language "
+                "(the trans-language disambiguation evidence); language_mismatch flags a "
+                "stored language that disagrees with the signature's dominant one "
+                "(attribution-noise evidence, never a correction); families computed by the "
+                "live grouping logic incl. the user's merge/split overrides; super-groups "
+                "as curated. per_source_concentration lists boilerplate SUSPECTS — a "
+                "keyword whose articles sit ≥90% in one source, covering ≥25% of that "
+                "source's articles (both sides ≥10 articles), strongest first, capped at "
+                "200 — flagged with real counts, never auto-hidden. No scores, no inference."
+            )
+
+            if fmt == "zip":
+                exported = sum(ranker.taken(lg) for lg in languages)
+                # The per-language taken counts, in the order each language FIRST appears in
+                # the global survivor order (what the dict has always looked like).
+                firsts: dict[str, tuple] = {}
+                for lg in languages:
+                    r0 = next(iter(ranker.rows(lg)))
+                    firsts[lg] = order_key(r0[0], r0[1], r0[5] is not None)
+                per_lang_taken = {lg: ranker.taken(lg) for lg in sorted(languages, key=firsts.get)}  # type: ignore[arg-type]
+                corpus = {
+                    "articles": maps.n_articles,
+                    "sources": n_sources,
+                    "keywords_total": stats.keywords_total,
+                    "keywords_exported": exported,
+                    "exported_per_language": per_lang_taken,
+                    "capped_languages": sorted(capped_langs),
+                }
+                # Paging facts so the caller can walk the WHOLE corpus across files.
+                pages_total = max(
+                    (-(-t // eff_per_lang) for t in per_lang_seen.values()), default=1
+                )
+                page_info = {
+                    "page": page,
+                    "per_lang": eff_per_lang,
+                    "pages_total": pages_total,
+                    "has_more": any(t > hi for t in per_lang_seen.values()),
+                    "keywords_total_corpus": sum(per_lang_seen.values()),
+                }
+                job = ZipJob(
+                    hooks=_ZIP_HOOKS,
+                    db=db, maps=maps, ranker=ranker, out_dir=out_dir, is_hidden=is_hidden,
+                    overrides=overrides, supergroups=supergroups, corpus=corpus, method=method,
+                    per_source_concentration=per_source_concentration,
+                    suspects_total=suspects_total, suspects_capped=suspects_capped,
+                    page_info=page_info, max_bytes=max_bytes, batch=plan["batch"], check=check,
+                    disk_watch=disk_watch_for(out_dir), window_note=window_note,
+                )
+                return _keyword_zip(
+                    job=job,
+                    keep={lg: ranker.taken(lg) for lg in languages},
+                    omitted=clamp_omitted,
+                )
+
+            # ---- json / digest: the window is at most _MAX_KEYWORDS_PER_LANG per language,
+            # so the survivors (and what is needed to describe them) are bounded by the
+            # LANGUAGES, never by the corpus.
+            survivors: list[tuple] = []  # (kid, m, a, first, last, dom, stored-or-dominant language)
+            for lg in languages:
+                survivors.extend((*r, lg) for r in ranker.rows(lg))
+            survivors.sort(key=lambda r: order_key(r[0], r[1], r[5] is not None))
+            per_lang_taken = {}
+            for r in survivors:
+                per_lang_taken[r[6]] = per_lang_taken.get(r[6], 0) + 1
+            corpus = {
+                "articles": maps.n_articles,
+                "sources": n_sources,
+                "keywords_total": stats.keywords_total,
+                "keywords_exported": len(survivors),
+                "exported_per_language": per_lang_taken,
+                "capped_languages": sorted(capped_langs),
+            }
+
+            # Metadata + full language signatures for SURVIVORS only.
+            meta: dict[int, tuple] = {}
+            lang_sig: dict[int, dict[str, int]] = {}
+            for batch in batched(iter([s[0] for s in survivors]), 800):
+                check()
+                meta.update(fetch_meta(db, batch))
+                lang_sig.update(fetch_signatures(db, maps, batch))
     except StatementTimeout as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
-
-    # The stoplist verdict is part of the diagnosis: leaked function words the
-    # operator hid are exactly what grouping fixes need to see — flag, not omit.
-    is_hidden = q._hidden_predicate()
+    except ExportRefused as exc:
+        raise HTTPException(status_code=exc.status, detail=str(exc)) from exc
+    finally:
+        if ranker is not None:
+            ranker.close()
 
     def _entry(s: tuple) -> dict:
-        kid, m, a, first, last = s
-        term, norm, lang, is_ent, ent_type = meta.get(kid, ("?", "?", None, False, None))
-        dom = dom_lang.get(kid)
-        return {
-            "term": term,
-            "normalized": norm,
-            "kind": (ent_type or "entity") if is_ent else "term",
-            "language": lang,
-            "mentions": m,
-            "articles": a,
-            "first_seen": str(first) if first else None,
-            "last_seen": str(last) if last else None,
-            "hidden": bool(is_hidden(norm)),
-            "language_signature": lang_sig.get(kid, {}),
-            # Attribution noise flag (field report #4: de-tagged English text):
-            # the stored language disagrees with the signature's dominant one.
-            # Evidence, not a correction — both values stay visible above.
-            "language_mismatch": bool(dom is not None and dom != (lang or "?")),
-        }
+        return entry_for(s, meta, lang_sig, is_hidden)
 
     fam_items = []
+    sw_acc = _new_stopword_acc(is_hidden)
+    ring_acc = _new_ring_acc(is_hidden)
     for s in survivors:
         kw = _entry(s)
         if not kw["hidden"]:
@@ -835,28 +689,18 @@ def keyword_log(
                     "articles": kw["articles"],
                 }
             )
+        okey = order_key(s[0], s[1], s[5] is not None)
+        mt = meta.get(s[0], ("?", "?", None, False, None))
+        sw_acc.feed(okey, s[1], s[2], s[5], mt)
+        ring_acc.feed(okey, s[1], s[2], s[5], mt)
     families = [f.to_dict() for f in build_families(fam_items, overrides)]
 
     # Compact per-language stopword-candidate digest (reuses the survivors already
     # built — zero extra DB cost) for the recursive "grow the not-a-keyword list" loop.
-    stopword_candidates = _stopword_candidates(survivors, meta, dom_lang, is_hidden)
+    stopword_candidates = _stopword_doc(sw_acc.result())
     # Compact ring-GAP digest (same survivors — zero extra DB cost) for the
     # corpus-driven ring expansion + the translation-coverage self-check.
-    ring_candidates = _ring_candidates(survivors, meta, dom_lang, is_hidden)
-
-    method = (
-        f"All gathered keywords (top {_MAX_KEYWORDS_PER_LANG} PER dominant signature "
-        "language — a global cap would anglicise the export) with real "
-        "counts; language_signature = distinct articles per ARTICLE language "
-        "(the trans-language disambiguation evidence); language_mismatch flags a "
-        "stored language that disagrees with the signature's dominant one "
-        "(attribution-noise evidence, never a correction); families computed by the "
-        "live grouping logic incl. the user's merge/split overrides; super-groups "
-        "as curated. per_source_concentration lists boilerplate SUSPECTS — a "
-        "keyword whose articles sit ≥90% in one source, covering ≥25% of that "
-        "source's articles (both sides ≥10 articles), strongest first, capped at "
-        "200 — flagged with real counts, never auto-hidden. No scores, no inference."
-    )
+    ring_candidates = _ring_doc(ring_acc.result())
 
     digest_note = (
         f" DIGEST MODE: the per-keyword list is the top {_DIGEST_SAMPLE} keywords by "
@@ -1006,35 +850,6 @@ def keyword_log(
             separators=(",", ":"),
         )
         yield "}}"
-
-    if fmt == "zip":
-        # Paging facts so the caller can walk the WHOLE corpus across files.
-        pages_total = max(
-            (-(-t // eff_per_lang) for t in per_lang_seen.values()), default=1
-        )
-        page_info = {
-            "page": page,
-            "per_lang": eff_per_lang,
-            "pages_total": pages_total,
-            "has_more": any(t > hi for t in per_lang_seen.values()),
-            "keywords_total_corpus": sum(per_lang_seen.values()),
-        }
-        return _keyword_zip(
-            corpus=corpus,
-            method=method,
-            families=families,
-            overrides=overrides,
-            supergroups=supergroups,
-            per_source_concentration=per_source_concentration,
-            suspects_total=suspects_total,
-            suspects_capped=suspects_capped,
-            entries_by_lang=_group_entries_by_language(
-                survivors, _entry, dom_lang, stored_lang
-            ),
-            stopword_candidates=stopword_candidates,
-            ring_candidates=ring_candidates,
-            page_info=page_info,
-        )
 
     kind_tag = "digest" if digest else "log"
     fname = f"oo-keyword-{kind_tag}-{datetime.now().strftime('%Y%m%d')}.json"

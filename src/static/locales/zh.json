@@ -1669,7 +1669,7 @@
   "Every host this lane can reach is listed in the app's own consent hover and in its security documentation. The lane never contacts anything else.": "这条通道能够连接的每个主机，都列在应用自身的同意悬浮提示和其安全文档中。该通道绝不会连接任何其他内容。",
   "Every import this app has recorded, newest first. Open one for its full per-table report.": "本应用记录的每一次导入，最新的在前。打开任意一条可查看按表分列的完整报告。",
   "Every interface shows the same data and the same caveats: caveats stay visible, the network-consent step is unchanged, and no interface invents a score.": "每个界面都显示相同的数据和相同的提醒：提醒始终可见，网络授权步骤保持不变，任何界面都不会编造评分。",
-  "Every keyword in the corpus (not just the top 5000 per language), in one sizeable archive — the ~20 MB cap still applies; if hit, the manifest says has_more and you grab &page=2.": "语料库中的每个关键词（不仅是每种语言的前 5000 个），合为一个较大的归档——~20 MB 的上限仍然适用；若达到，清单会标明 has_more，你再获取 &page=2。",
+  "Every keyword in the corpus (not just the top 5000 per language), in one archive with no size cap. It is written to disk a batch at a time, so the app's memory stays flat, but a big corpus makes a big file and takes minutes, and the export stops with a clear message if memory or disk runs short.": "语料库中的全部关键词（不只是每种语言前 5000 个），打包成一个不限大小的压缩包。它按批次写入磁盘，因此应用的内存保持平稳，但大型语料库会生成很大的文件并需要数分钟；如果内存或磁盘不足，导出会停止并给出明确提示。",
   "Every number comes straight from the downloaded file — nothing scraped or guessed.": "每个数字都直接来自下载的文件 — 没有抓取或猜测。",
   "Every section and story is included unless excluded here. Excluding one re-renders from the persisted record — it recomputes nothing and edits nothing, so a published number is always a number the record contains.": "除在此处被排除者外，每一节和每个故事都会包含在内。排除其中之一会依据已保存的记录重新生成 — 它不重新计算任何内容，也不编辑任何内容，因此已发布的数字始终是记录中所含的数字。",
   "Every series is hidden. Click a legend entry to show it again.": "所有序列均已隐藏。点击图例中的某一项即可重新显示。",

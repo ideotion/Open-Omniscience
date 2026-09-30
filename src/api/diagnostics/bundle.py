@@ -635,8 +635,17 @@ def _fixity_bundle_member(db: Session) -> dict:
 #: guessing in either direction is worse than running it. This map grows when a run
 #: measures something, never when someone estimates it -- every bundle already records
 #: `rss_peak_rise_kb` per member, so the evidence arrives on its own.
+#:
+#: RE-MEASURED 2026-09-30, because a measured constant is a claim about ONE VERSION of the code
+#: and the code changed. The 3,322.8 MiB above was the unbounded builder (a dict per keyword of
+#: the window, five times the memory for five times the keywords); the export now holds flat
+#: arrays, bounded heaps and a batch (src/analytics/keyword_log_scan.py), and on a synthetic
+#: corpus with the field's shape the digest's peak RSS RISE was 181 MiB at 2 M keywords and 186
+#: MiB at 6 M keywords (400,000 articles, 10 M mentions; the process idles at 79 MB). 200.0 is
+#: that, rounded up. THIS IS A SYNTHETIC-CORPUS READING: the operator's next FULL bundle records
+#: `rss_peak_rise_kb` for this member on the real corpus, and that number replaces this one.
 _MEMBER_RSS_NEED_MB: dict[str, float] = {
-    "keyword-log-digest.json": 3322.8,
+    "keyword-log-digest.json": 200.0,
 }
 
 #: A member declines when its measured need exceeds this share of TOTAL RAM.
@@ -681,9 +690,12 @@ def ram_declined_reason(name: str, *, total_mb: float | None = None) -> str | No
 
 _LIGHT_DECLINED: dict[str, str] = {
     "keyword-log-digest.json": (
-        "measured a 3,322.8 MB peak RSS rise on the operator's 4 GB instance -- the ONLY "
-        "member in that 72-member run with a peak rise above 0.0 MB, so on a small machine "
-        "this one member forces swapping by itself (finding F12)"
+        "it re-reads the whole keyword-mention table (37.7 s at 6 M keywords on a 4-core "
+        "test machine) and measured a 3,322.8 MB peak RSS rise on the operator's 4 GB "
+        "instance (finding F12) before the export was made memory-bounded. The bounded "
+        "export has only been measured on a synthetic corpus (about 190 MB), so the light "
+        "profile keeps skipping it until a FULL bundle on the operator's own machine "
+        "records its real rss_peak_rise_kb"
     ),
     "source-audit.json": (
         "measured 297.9 s on the operator's instance, and the ledger already records it as "
@@ -762,7 +774,8 @@ def _all_diagnostics_members(db: Session) -> list[tuple[str, object]]:
          # per_lang/page are the route's OWN declared defaults, not numbers chosen
          # here: passing anything else would silently change what this member exports.
          lambda: keyword_log(
-             db=db, digest=True, fmt="json", per_lang=_MAX_KEYWORDS_PER_LANG, page=1
+             db=db, digest=True, fmt="json", per_lang=_MAX_KEYWORDS_PER_LANG, page=1,
+             max_mb=None,
          )),
         (
             "date-extraction.json",

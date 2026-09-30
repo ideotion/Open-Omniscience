@@ -245,13 +245,24 @@ def test_every_declined_member_states_a_reason():
 # --------------------------------------------------------------------------- #
 
 
+# A SYNTHETIC heavy member. The real one (the keyword digest: 3,322.8 MiB on the operator's
+# 2026-09-11 run, finding F12) stopped being heavy on 2026-09-30, when the export was made
+# memory-bounded and re-measured (see the comment on ``_MEMBER_RSS_NEED_MB``). The R27 MECHANISM
+# is what these tests pin, so it is exercised through a member the map is told about, both there
+# and in the light profile's set (the overlap R27's own ledger entry warns about), for the
+# length of one test.
+_HEAVY = "synthetic-heavy-member.json"
+_HEAVY_NEED_MB = 3322.8
+
+
 def _ram(monkeypatch, mb_total):
     """Pin the machine's RAM for one test, and clear the big-scan override."""
+    from src.api.diagnostics import bundle
+
     monkeypatch.delenv("OO_ALLOW_BIG_SCANS", raising=False)
     monkeypatch.setattr("src.config.memory_budget.total_ram_mb", lambda: mb_total)
-
-
-_HEAVY = "keyword-log-digest.json"
+    monkeypatch.setitem(bundle._MEMBER_RSS_NEED_MB, _HEAVY, _HEAVY_NEED_MB)
+    monkeypatch.setitem(bundle._LIGHT_DECLINED, _HEAVY, "synthetic: declined in the light profile too")
 
 
 def test_a_measured_member_declines_when_it_needs_more_than_half_the_RAM(monkeypatch):
@@ -265,6 +276,18 @@ def test_a_measured_member_declines_when_it_needs_more_than_half_the_RAM(monkeyp
     reason = ram_declined_reason(_HEAVY)
     assert reason and "3,322.8" in reason and "4,029" in reason
     assert "F12" in reason
+
+
+def test_the_keyword_digest_was_REMEASURED_when_its_code_changed(monkeypatch):
+    """A measured constant is a claim about one version of the code. The digest's 3,322.8 MiB
+    was the unbounded builder; the bounded one was measured at ~186 MiB on a 6 M-keyword
+    synthetic corpus, so the machine F12 was measured on now RUNS it. The 500 is a ceiling on
+    the reading, not the reading: a new number that high means the export grew again."""
+    from src.api.diagnostics.bundle import _MEMBER_RSS_NEED_MB, ram_declined_reason
+
+    _ram(monkeypatch, 4029.0)
+    assert 0 < _MEMBER_RSS_NEED_MB["keyword-log-digest.json"] < 500
+    assert ram_declined_reason("keyword-log-digest.json") is None
 
 
 def test_the_same_member_RUNS_on_a_machine_that_can_hold_it(monkeypatch):
