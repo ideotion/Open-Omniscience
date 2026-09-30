@@ -340,6 +340,16 @@ def freeze_cohort(db, *, should_pause: Callable[[], bool] | None = None) -> dict
     able to count how many times the whole-corpus cohort is computed across a multi-batch
     run without stubbing the pass that consumes it."""
     from src.analytics.source_audit import frozen_cohort
-    from src.catalog.qualification import TRIAL_MIN_ARTICLES
+    from src.catalog.qualification import (
+        QUALIFICATION_SAMPLE_ARTICLES,
+        TRIAL_MIN_ARTICLES,
+        cohort_plan,
+    )
 
-    return frozen_cohort(db, should_pause=should_pause, min_articles=TRIAL_MIN_ARTICLES)
+    # FD03 b: the plan is read at FREEZE time, the moment the scan actually happens, so a
+    # machine below the memory floor freezes the bounded sample rather than the corpus.
+    sampled = cohort_plan(db)["mode"] == "sample"
+    return frozen_cohort(
+        db, should_pause=should_pause, min_articles=TRIAL_MIN_ARTICLES,
+        sample_articles=QUALIFICATION_SAMPLE_ARTICLES if sampled else None,
+    )

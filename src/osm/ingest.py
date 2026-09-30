@@ -362,7 +362,7 @@ def _clear_derived(session, alpha3: str) -> None:
     for stmt in (
         "DELETE FROM osm_names WHERE alpha3 = :a",
         "DELETE FROM osm_addresses WHERE alpha3 = :a",
-        f"DELETE FROM osm_rtree WHERE id IN ({ids})",
+        f"DELETE FROM osm_rtree WHERE id IN ({ids})",  # nosec B608 - ids is a constant subquery bound by :a, no input
         "DELETE FROM osm_view_cells WHERE alpha3 = :a",
         "DELETE FROM osm_view_indexes WHERE alpha3 = :a",
         "DELETE FROM osm_search_indexes WHERE alpha3 = :a",

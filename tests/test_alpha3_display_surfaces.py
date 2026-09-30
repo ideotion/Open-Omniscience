@@ -296,6 +296,14 @@ _NOT_A_RENDERING: dict[tuple[str, str], str] = {
         "app-insights.js",
         "_conceptDrillCountry",
     ): "an onclick attribute built into a local, carrying the stored code as its argument",
+    (
+        "app-map.js",
+        "esc(c.country)",
+    ): "the stored code as the per-region select's data attribute and as a click-handler argument (osmCountAdmin1); the visible country cell beside them goes through ooCountryCell",
+    (
+        "app-map.js",
+        "osmCountAdmin1(",
+    ): "a button built into a local whose click handler carries the stored code; its caption is a translated label, never the code",
 }
 
 

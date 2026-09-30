@@ -189,6 +189,7 @@ def per_source_metrics(
     stats: list | None = None,
     should_pause: Callable[[], bool] | None = None,
     since: datetime | None = None,
+    article_scope: set[int] | None = None,
 ) -> dict[int, dict]:
     """Count-only per-source extraction-validity metrics, derived from the shipped source_quality
     collectors (no article-content decrypt). Returns ``{source_id: {metrics..., language, region,
@@ -241,7 +242,11 @@ def per_source_metrics(
     # each time is the same defect one table over. It is a COUNT query on article_links plus a
     # word-count read -- no content decrypt, which is the property that made this signal worth
     # promoting from a sampling hint to a criterion.
-    link_dense_ids = sq.link_dense_article_ids(session, source_ids=source_ids, since=since)
+    # ``article_scope`` is the bounded-sample case (FD03 b): the stats cover a sample of
+    # articles, so the link read covers exactly those and never the corpus's link table.
+    link_dense_ids = sq.link_dense_article_ids(
+        session, source_ids=source_ids, since=since, article_ids=article_scope,
+    )
 
     # source metadata + regions (scoped with the scan -- the catalog is tens of thousands of
     # rows and reading all of them per batch is the same defect one table over)
@@ -314,6 +319,7 @@ def frozen_cohort(
     session: Session, *, should_pause: Callable[[], bool] | None = None,
     with_furniture: bool = True, min_articles: int = MIN_SOURCE_ARTICLES,
     since: datetime | None = None,
+    sample_articles: int | None = None,
 ) -> dict:
     """Every COHORT statistic a qualification verdict is measured against, computed ONCE over
     the whole corpus so a batch of candidates does not re-read it (S5.1).
@@ -342,14 +348,30 @@ def frozen_cohort(
     the report at ``MIN_SOURCE_ARTICLES`` (20). The parity twin caught this on its first run:
     frozen at 20 against a fixture of 4-article sources, the cut was EMPTY, so three soft
     criteria silently stopped being flaggable.
+
+    ``sample_articles`` (FD03 option b, 2026-09-29) builds the SAME statistics from the N most
+    recently stored articles instead of the whole corpus, for a machine the memory floor
+    forbids a whole-corpus scan (every field VM at 3.8 GiB: no source was ever judged on any
+    of them). Its memory is set by N. The result says so (``sample_articles``), so a verdict
+    reached against it is labelled as such rather than read as a whole-corpus judgement. The
+    furniture layer is SKIPPED in a sample: it runs one keyword query per source in the cut,
+    which is not bounded by N, and its share is a soft criterion that can never disqualify --
+    so it reads 0.0, the honest zero ``with_furniture=False`` already publishes.
     """
     from src.analytics import serve_gate
 
-    stats = sq.collect_article_stats(session, should_pause=should_pause, since=since)
+    sampled = sample_articles is not None
+    stats = sq.collect_article_stats(
+        session, should_pause=should_pause, since=since,
+        recent_limit=int(sample_articles) if sampled else None,
+    )
     cohort = cohort_from_stats(stats)
     per = per_source_metrics(
-        session, cohort=cohort, stats=stats, should_pause=should_pause, since=since
+        session, cohort=cohort, stats=stats, should_pause=should_pause, since=since,
+        article_scope={int(st.article_id) for st in stats} if sampled else None,
     )
+    if sampled:
+        with_furniture = False
     # RC06: when a window is in force, the furniture fingerprints below must be built from
     # the SAME articles as every other criterion. Computing them over the whole history
     # inside a windowed verdict would make one criterion answer a different question from
@@ -400,6 +422,10 @@ def frozen_cohort(
         # Present and NULL on a whole-history cut, so a reader can always tell which of the
         # two a cut is without inferring it from the article count.
         "window_start": since.isoformat() if since is not None else None,
+        # Present and NULL on a whole-corpus cut, for the same reason: a verdict judged
+        # against a bounded sample must be able to say so (qualification labels its
+        # attempt rows with it).
+        "sample_articles": int(sample_articles) if sampled else None,
         "per_source": per,
     }
 
