@@ -58,7 +58,7 @@
   half has no figure, so its change is proposed and asked, never assumed; (33) RC16 STILL OPEN, a later discussion
   at the maintainer's request (their questions are on its row); (34) RC17 = a; (35) Q925 ⛔ = a; (36) Q1113 ⛔ = a;
   (37) D47 ⛔ STILL OPEN («I'm not sure, help me decide. Keywords still need a lot of work, a dedicated keyword
-  working session is necessary»), to the thread «Keyword working session». **Recorded only:** no code changed; each
+  working session is necessary»), to the thread «Keyword working session» (**later ANSWERED (a) the same day = `R96`**, see the `D47` entry below). **Recorded only:** no code changed; each
   build item goes to the thread that owns its row (OSM lane D, OSM boundaries E/L, entity spine C, claim workspace
   K, UI shell I, the plan thread F, translation sweep H). **Where it landed:** `RULINGS_INDEX.md`; the four sheet
   `ANSWER` lines (`ROADMAP_ANSWER_SHEET_2026-09-12_BETA_PATHWAY.md`, `RULINGS_CONFIRMATION_2026-09-15_REGISTER_ROUND.md`,
