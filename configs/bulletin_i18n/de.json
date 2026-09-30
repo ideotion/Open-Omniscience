@@ -393,5 +393,11 @@
   "Mentions": "Nennungen",
 
   "“{translation}” (translated from {language}: {term})": "„{translation}“ (übersetzt aus {language}: {term})",
-  "{term} (in {language})": "{term} (auf {language})"
+  "{term} (in {language})": "{term} (auf {language})",
+
+  "osm tag completeness": "Vollständigkeit der OpenStreetMap-Tags",
+
+  "Among this country's places with metadata (objects kept as 'poi' by the OSM lane), the count carrying each tag. A tag counts when it, or its contact:* twin (contact:website, contact:email, contact:phone), has a non-empty value. The four keys are counted separately and never combined.": "Von den Orten dieses Landes mit Metadaten (Objekte, die die OSM-Spur als „poi“ behält) die Anzahl, die jeweils einen Tag trägt. Ein Tag zählt, wenn er oder sein contact:*-Zwilling (contact:website, contact:email, contact:phone) einen nicht leeren Wert hat. Die vier Schlüssel werden getrennt gezählt und nie zusammengeführt.",
+
+  "A missing tag means OpenStreetMap does not record it, not that the place lacks it. Completeness varies with how actively a region is mapped. The figures describe the extract at its vintage.": "Ein fehlender Tag heißt, dass OpenStreetMap ihn nicht erfasst, nicht dass dem Ort etwas fehlt. Die Vollständigkeit hängt davon ab, wie aktiv eine Region kartiert wird. Die Zahlen beschreiben den Auszug zum Stand seiner Ausgabe."
 }

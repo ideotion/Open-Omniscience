@@ -204,6 +204,27 @@ def _row_count(section: dict[str, Any]) -> int:
     return n
 
 
+def _prune_lane_attribution(edition: dict, kept_sections: list[dict]) -> list[dict]:
+    """The stored attribution lines, minus any credit that rested only on a lane card the
+    selection dropped.
+
+    A line's ``because`` names what measured it; a ``card:<producer>`` token is a lane card
+    the cards section SHOWED. When the operator excludes that section the document no longer
+    holds the card, and crediting OpenStreetMap for it would be a false line. This filters
+    the record's own lines; it recomputes nothing (the record is unchanged on disk)."""
+    from src.backup.attribution import card_signals_from_edition
+
+    shown = card_signals_from_edition({"sections": kept_sections})
+    out: list[dict] = []
+    for line in edition.get("attribution") or []:
+        tokens = [t.strip() for t in str(line.get("because") or "").split(",") if t.strip()]
+        keep = [t for t in tokens if not t.startswith("card:") or t in shown]
+        if tokens and not keep:
+            continue
+        out.append(line if len(keep) == len(tokens) else dict(line, because=", ".join(keep)))
+    return out
+
+
 def apply_selection(
     edition: dict[str, Any],
     *,
@@ -238,6 +259,10 @@ def apply_selection(
     kept_stories = [s for s in all_stories if story_key(s) not in drop_t]
     if stories_block:
         out["stories"] = dict(stories_block, stories=kept_stories)
+
+    out["attribution"] = _prune_lane_attribution(edition, kept_sections)
+    if "attribution" not in edition:
+        del out["attribution"]
 
     out["selection"] = {
         "sections_shown": len(kept_sections),

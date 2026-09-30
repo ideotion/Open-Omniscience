@@ -393,5 +393,11 @@
   "Mentions": "उल्लेख",
 
   "“{translation}” (translated from {language}: {term})": "“{translation}” ({language} से अनूदित: {term})",
-  "{term} (in {language})": "{term} ({language} में)"
+  "{term} (in {language})": "{term} ({language} में)",
+
+  "osm tag completeness": "OpenStreetMap टैग की पूर्णता",
+
+  "Among this country's places with metadata (objects kept as 'poi' by the OSM lane), the count carrying each tag. A tag counts when it, or its contact:* twin (contact:website, contact:email, contact:phone), has a non-empty value. The four keys are counted separately and never combined.": "इस देश के मेटाडेटा वाले स्थानों में (OSM लेन में ‘poi’ के रूप में रखी गई वस्तुएँ), हर टैग वाले स्थानों की संख्या। कोई टैग तब गिना जाता है जब उसका, या उसके contact:* जोड़ीदार (contact:website, contact:email, contact:phone) का मान खाली न हो। चारों कुंजियाँ अलग-अलग गिनी जाती हैं और कभी मिलाई नहीं जातीं।",
+
+  "A missing tag means OpenStreetMap does not record it, not that the place lacks it. Completeness varies with how actively a region is mapped. The figures describe the extract at its vintage.": "किसी टैग का न होना बताता है कि OpenStreetMap उसे दर्ज नहीं करता, यह नहीं कि उस स्थान में वह नहीं है। पूर्णता इस पर निर्भर करती है कि किसी क्षेत्र का मानचित्रण कितनी सक्रियता से हुआ है। आँकड़े एक्सट्रैक्ट को उसके संस्करण की तिथि पर वर्णित करते हैं।"
 }

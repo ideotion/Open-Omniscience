@@ -42,7 +42,11 @@ from typing import Any
 
 from sqlalchemy import and_, func
 
-from src.backup.attribution import attribution_dicts, signals_from_sources
+from src.backup.attribution import (
+    attribution_dicts,
+    card_signals_from_edition,
+    signals_from_sources,
+)
 from src.bulletin.period import Period
 from src.database.models import Article, Source
 
@@ -403,8 +407,12 @@ def build_evidence_archive(
             # block. Written as its own member so the person who opens this file years
             # from now finds the terms beside the articles, not in a panel that is long
             # gone; also carried in the manifest so a tool can read it.
+            # PLUS the lane cards the edition it carries SHOWS: ``edition.json`` holds the whole
+            # edition, cards section included, so a credit computed from sources alone would
+            # sit beside an OpenStreetMap card and say no third-party line applies.
             attribution = attribution_dicts(
                 signals_from_sources(srcs[s] for s in sorted(contributed) if s in srcs)
+                | card_signals_from_edition(edition)
             )
             _add(zf, "ATTRIBUTION.md", _attribution_markdown(attribution))
             # The manifest describes every member EXCEPT itself — a file cannot

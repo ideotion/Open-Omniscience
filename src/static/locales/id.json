@@ -3280,7 +3280,7 @@
   "OpenStreetMap": "OpenStreetMap",
   "OpenStreetMap contributors": "kontributor OpenStreetMap",
   "OpenStreetMap data of {date}": "Data OpenStreetMap per {date}",
-  "OpenStreetMap data stays on this machine: it is kept out of exports, bulletins and evidence files while the question of its licence (ODbL) is open.": "Data OpenStreetMap tetap di mesin ini: data ini tidak dimasukkan ke ekspor, buletin, dan berkas bukti selama pertanyaan lisensinya (ODbL) masih terbuka.",
+  "OpenStreetMap data stays on this machine. Where a document you make carries it (a bulletin's map-data card), that document carries © OpenStreetMap contributors and the ODbL 1.0 line, whose share-alike term applies to a database derived from it.": "Data OpenStreetMap tetap berada di mesin ini. Bila dokumen yang Anda buat memuatnya (kartu data peta dalam sebuah buletin), dokumen itu memuat © OpenStreetMap contributors dan baris ODbL 1.0, yang ketentuan berbagi-serupanya berlaku untuk basis data turunannya.",
   "OpenStreetMap names only one party": "OpenStreetMap hanya menyebut satu pihak",
   "OpenStreetMap object": "Objek OpenStreetMap",
   "OpenStreetMap places, roads and buildings:": "Tempat, jalan, dan bangunan OpenStreetMap:",

@@ -3280,7 +3280,7 @@
   "OpenStreetMap": "OpenStreetMap",
   "OpenStreetMap contributors": "OpenStreetMap 贡献者",
   "OpenStreetMap data of {date}": "{date} 的 OpenStreetMap 数据",
-  "OpenStreetMap data stays on this machine: it is kept out of exports, bulletins and evidence files while the question of its licence (ODbL) is open.": "OpenStreetMap 数据留在本机：在其许可（ODbL）问题悬而未决期间，不会进入导出、简报和证据文件。",
+  "OpenStreetMap data stays on this machine. Where a document you make carries it (a bulletin's map-data card), that document carries © OpenStreetMap contributors and the ODbL 1.0 line, whose share-alike term applies to a database derived from it.": "OpenStreetMap 数据保留在此设备上。您生成的文档若包含它（简报中的地图数据卡片），该文档会附上 © OpenStreetMap contributors 和 ODbL 1.0 的条款行，其“相同方式共享”要求适用于由它派生的数据库。",
   "OpenStreetMap names only one party": "OpenStreetMap 只列出一方",
   "OpenStreetMap object": "OpenStreetMap 对象",
   "OpenStreetMap places, roads and buildings:": "OpenStreetMap 地点、道路和建筑：",

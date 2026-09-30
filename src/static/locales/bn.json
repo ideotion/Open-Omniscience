@@ -3280,7 +3280,7 @@
   "OpenStreetMap": "OpenStreetMap",
   "OpenStreetMap contributors": "OpenStreetMap অবদানকারীরা",
   "OpenStreetMap data of {date}": "{date} তারিখের OpenStreetMap ডেটা",
-  "OpenStreetMap data stays on this machine: it is kept out of exports, bulletins and evidence files while the question of its licence (ODbL) is open.": "OpenStreetMap-এর তথ্য এই যন্ত্রেই থাকে: এর লাইসেন্সের (ODbL) প্রশ্ন খোলা থাকা পর্যন্ত এটি এক্সপোর্ট, বুলেটিন ও প্রমাণ ফাইলের বাইরে রাখা হয়।",
+  "OpenStreetMap data stays on this machine. Where a document you make carries it (a bulletin's map-data card), that document carries © OpenStreetMap contributors and the ODbL 1.0 line, whose share-alike term applies to a database derived from it.": "OpenStreetMap-এর ডেটা এই মেশিনেই থাকে। আপনার তৈরি কোনো নথি তা বহন করলে (বুলেটিনের মানচিত্র-ডেটা কার্ড), সেই নথিতে © OpenStreetMap contributors এবং ODbL 1.0 লাইন থাকে, যার শেয়ার-অ্যালাইক শর্ত তা থেকে তৈরি ডেটাবেসের ক্ষেত্রে প্রযোজ্য।",
   "OpenStreetMap names only one party": "OpenStreetMap কেবল একটি পক্ষের নাম দেয়",
   "OpenStreetMap object": "OpenStreetMap বস্তু",
   "OpenStreetMap places, roads and buildings:": "OpenStreetMap-এর স্থান, রাস্তা ও ভবন:",

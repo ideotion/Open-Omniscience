@@ -142,7 +142,7 @@ def cards_by_type(
     excerpt_chars: int | None = None,
 ) -> dict:
     """Every producer's cards, grouped by card type, each with its own articles."""
-    from src.briefing.registry import run_all_bounded
+    from src.briefing.registry import LANE_ONLY_PRODUCERS, run_all_bounded
 
     deadline = time.monotonic() + float(budget_s)
     try:
@@ -150,7 +150,12 @@ def cards_by_type(
         # edition uses, so a producer that can honour it computes the same window
         # every other section does. One that cannot is called exactly as before, and
         # each card says which happened.
-        cards, stats = run_all_bounded(session, deadline=deadline, as_of=period.end)
+        # ``lanes=True``: the lane's cards (OpenStreetMap tag completeness) are carried here
+        # since row K's bulletin carrier -- the edition records which such cards it SHOWS
+        # (``lane_cards_shown``) and its attribution block credits OpenStreetMap against
+        # exactly those, so the credit and the ODbL line are never absent from a document
+        # that carries one and never present in one that does not.
+        cards, stats = run_all_bounded(session, deadline=deadline, as_of=period.end, lanes=True)
     except Exception as exc:  # noqa: BLE001 - the record survives the card layer
         _LOG.warning("bulletin: the card layer failed", exc_info=True)
         return {
@@ -236,9 +241,15 @@ def cards_by_type(
         # Reported, never absorbed: a document built from half the producers must say
         # so, or a short feed reads as a quiet period.
         "truncated": bool(stats.get("truncated")),
-        # The producers a bulletin never runs, BY NAME: their cards are made from a lane
-        # whose rows may not leave the machine while Q823 (ODbL) is unanswered.
+        # The lane producers this document did NOT run, BY NAME. Empty since the carrier
+        # (Q823 = a lets the lane's cards leave with OpenStreetMap's credit). Kept in the
+        # record only, no renderer prints it: an edition written before the carrier holds
+        # the name, and a caller that holds a lane back would put it here.
         "held_q823": sorted(stats.get("held_q823") or []),
+        # The lane cards this document SHOWS, by producer: what the attribution block keys on.
+        "lane_cards_shown": sorted(
+            {str(r["produced_by"]) for r in shown_cards if r.get("produced_by") in LANE_ONLY_PRODUCERS}
+        ),
         "per_type": int(per_type),
         "window": {
             "start": period.start.isoformat(),
