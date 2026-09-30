@@ -29,34 +29,56 @@
   corpus in memory: `src/analytics/keyword_log_scan.py` (the scan and the per-language ranking, heaps that spill to SQLite
   under a budget taken from the memory available at the start) and `src/analytics/keyword_log_export.py` (the archive,
   streamed to a scratch file next to the data a batch at a time). One function serves all three forms (the JSON stream,
-  the bundle's `keyword-log-digest.json`, the zip), so all three are fixed. Measured on synthetic databases with the
-  field's shape: digest 776 -> 267 MB and +195 MB at 6 M keywords (flat in keywords); "All keywords" 4.4 GB -> 0.5 GB at
-  2 M keywords and +865 MB at 6 M with the ranking in memory (a machine with less free memory spills to disk instead, which
-  measured +207 MB at 2 M with a byte-identical archive). json, digest and zip shards were compared byte for byte against
-  the code this replaces on random databases. **Open, in the order they matter:**
+  the bundle's `keyword-log-digest.json`, the zip), so all three are fixed. Peak RSS on synthetic databases with the field's
+  shape, old code then new (this box had 15 GB free): **digest** 776 MB then 267 MB at 2 M keywords, 2.2 GB then 273 MB at
+  6 M (flat in keywords); **the zip with a 9 MB cap asked for every keyword** 4.4 GB then 1.8 GB at 2 M, 10.6 GB then 2.2 GB at
+  6 M; **the button's uncapped zip** 2.2 GB at 6 M for a 46 MB file; the same uncapped zip with only 700 MB pretended free (the
+  plan spills the ranking to disk and cuts the families' basis to its floor, and says so): 253 MB, an archive of the same size
+  to within a few bytes.
+  The zip figures are large on a big box on purpose: the families' grouping may use up to a tenth of the memory available at
+  the start (see (4)), so a 6-8 GB machine uses a few hundred MB for it, never a fixed number. json, digest and zip shards were
+  compared byte for byte against the code this replaces on random databases. **Open, in the order they matter:**
   (1) **DEFAULT TAKEN, NOT YET RULED: the "All keywords (.zip)" button now asks for NO size cap** (`max_mb=0`), because
   a button named "All" that kept the top 9 MB was the other half of the report and the file is streamed to disk anyway.
   The consequence is a big file on a big corpus (46 MB at 6 M synthetic keywords; the real size is unmeasured) that the
-  maintainer cannot attach to Claude, which is why the "Keyword log (.zip)" button keeps the 9 MB cap. Reverting is one
-  attribute in `index.html` and the assertion in `test_diagnostics_panel_button_consolidation`. **If the maintainer wants the capped
-  behaviour back, it is one word.**
-  (2) **A COMPACT, ATTACHABLE EXPORT is not built** (per language: the top keywords by mentions plus a seeded random sample
-  of the rest, with the sampling fraction disclosed per language). It falls out of the ranker naturally (one reservoir per
-  language fed from `Ranker.add`, about 40 lines, and a `sample` shard), and it is the answer to "send me the keyword log
-  from my largest instance" when a 5 MB upload limit is the constraint. Proposed as the next small PR; not started.
-  (3) **`_LIGHT_DECLINED` still skips `keyword-log-digest.json`** and its reason now says why: the bounded export was measured
-  only on a synthetic corpus. `_MEMBER_RSS_NEED_MB` for it is 200.0 (was 3,322.8, measured on the unbounded code). Both
-  are to be replaced by the operator's own `rss_peak_rise_kb` from the next FULL bundle; whether the light profile should
-  run the member again after that is the maintainer's call (R28 owns the profile).
-  (4) **The zip's summary groups families over the first 5,000 keywords per language** (`families_provenance.basis_*`
-  says so), because `build_families` compares every multi-word entity with every other and the old code paid that over the
-  whole window. A window clamped by a byte cap also feeds the summary's stop-word and ring digests from the clamped window,
-  not from millions of tail entries; the manifest carries `window_clamped_to_fit_cap`.
-  (5) **D22 (quarantined articles leave the counts):** the scan names its mention table in ONE constant
-  (`MENTIONS_TABLE`); moving this export onto `KeywordMentionRead` is the keyword thread's one-line change there.
-  (6) **What is NOT covered:** the keyword-engine report (a 315 MB rise on the operator's 2026-09-11 bundle) and the
-  keyword-growth member are not changed here and are not yet re-measured; a page >= 2 of a capped, clamped window
-  reports `continue_with: null` because there is no single `per_lang` that continues it.
+  maintainer cannot attach to Claude, which is why the "Keyword log (.zip)" button keeps the 9 MB cap. **What the 9 MB
+  protects is the ATTACHMENT CHANNEL** (the common 10 MB limit; `keywords.py`), not memory and not the disk. Reverting is one
+  attribute in `index.html` and the assertion in `test_diagnostics_panel_button_consolidation`. **If the maintainer wants the
+  capped behaviour back, it is one word.** The trim loop now trims until the archive fits or every language is down to one
+  keyword, and says that `summary.json` is never trimmed (it used to stop after nine builds and its docstring called the cap
+  guaranteed).
+  (2) **A COMPACT, ATTACHABLE EXPORT is NOT BUILT, by the coordinator's ruling for this PR** (per language: the top keywords
+  by mentions plus a seeded random sample of the rest, sampling fraction disclosed). It falls out of the ranker naturally
+  (one reservoir per language fed from `Ranker.add`, about 40 lines); it stays an option if the maintainer's uploads of the
+  full file keep failing.
+  (3) **`_LIGHT_DECLINED` still skips `keyword-log-digest.json`**, and its reason says why: the bounded export was measured only
+  on a synthetic corpus. **`R27` IS KEPT AND ACKNOWLEDGED (ACK R27, R28):** the gate for this one member is now sized from the
+  instance's own counts (articles, keyword id range, languages) times per-row costs that are each measured and pinned by a
+  tracemalloc test (`EXPORT_ENTRY_BYTES`, `EXPORT_FIXED_BYTES`), and is held against half of total RAM as before AND against the
+  memory available now minus the memory stop's floor; the static 200.0 MiB (was 3,322.8, the unbounded code) is the fallback
+  without a session. The field reason: bundle `091717` (14.65 M keywords) was killed inside the digest while its total read
+  6,773 MiB, above the line the old number implied. The performance report's `keyword_export_streamed` probe passes every
+  argument itself and goes through the same gate (it reports `skipped` with the reason). No bundle member was added. Whether
+  the light profile should run the member again after the operator's own `rss_peak_rise_kb` arrives is the maintainer's call
+  (R28 owns the profile).
+  (4) **The zip's families are grouped over the WHOLE window unless memory says otherwise.** `build_families` was quadratic
+  (267 s for 16,000 multi-word entities, which is what had made the export group only the top 5,000); it now finds containment
+  through a token index and is linear, compared with the old form on random entity sets (`tests/_families_pairwise_reference.py`).
+  Its limit is memory, about 2 KB per keyword, a tenth of what is available when the export starts (floor 50,000 keywords), and
+  `families_provenance` says how many keywords were grouped, whether that is the whole window, the budget, and what the limit
+  protects. A window clamped by a byte cap feeds the summary's stop-word and ring digests from the clamped window, not from
+  millions of tail entries; the manifest carries `window_clamped_to_fit_cap`.
+  (5) **Disk.** The zip refuses, before writing a byte, an archive the drive cannot take (the window's keywords times a
+  conservative zipped entry cost, 64 B against 9-15 B measured and 18-41 B in the maintainer's own logs, plus the reserve), with
+  the numbers (HTTP 507); the scratch archive and any spill are removed on every exit path, a 12 h sweep removes a killed
+  process's leftovers, and nothing goes through the main database or its log.
+  (6) **D22 (quarantined articles leave the counts):** the scan names its mention table in ONE constant
+  (`MENTIONS_TABLE`); moving this export onto `KeywordMentionRead` is the keyword thread's one-line change there. The seam ratchet
+  (`tests/test_derived_read_seam.py`) was updated for it: `keyword_log_scan.py` at 1, `keywords.py` from 3 to 1.
+  (7) **What is NOT covered:** the keyword-engine report (a 315 MB rise on the operator's 2026-09-11 bundle) and the
+  keyword-growth member are not changed here and are not yet re-measured; the digest's real memory on the operator's own
+  instance is unmeasured until their next FULL bundle; a page >= 2 of a capped, clamped window reports `continue_with: null`
+  because there is no single `per_lang` that continues it.
 
 - **THE OLDER-ROUNDS LIST, ANSWERED IN THE THREAD (2026-09-30 03:35 UTC; recorded the same turn; `PF07`, `PF08`,
   `PF10`, `PF11`, `D44`, `D45`, `D46` on their own rows, `R99`, `R100`).** Ten still-live questions from the
