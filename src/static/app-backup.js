@@ -2462,18 +2462,27 @@
         return `<div style="margin-top:8px"><b>${esc(tf("Restore of {date}", { date: fmtDateTime(b.imported_at) }))}</b>`
           + ` \u00b7 <bdi>${esc(String(b.origin || "").slice(0, 12))}</bdi>`
           + ` \u00b7 ${esc(tf("{n} not yet looked at", { n: b.pending }))}`
+          + (b.swapped ? ` \u00b7 ${esc(tf("{n} swapped", { n: b.swapped }))}` : "")
           + ` <button class="secondary tiny" data-on-click="altDiscardBatch(${Number(b.id)}, ${Number(n)})">${esc(t("Discard all from this restore"))}</button></div>`;
       }).join("");
       const cards = rep.items.map((it) => {
         const art = it.article ? `<div class="hint"><bdi>${esc(it.article.title || "")}</bdi></div>` : "";
+        const id = Number(it.id);
+        const sw = it.swapped === true;
+        // A swapped item shows the RESTORE's value in the app: say which side is which by role.
+        const sides = sw
+          ? _altSide("Shown in the app", it.local, it.differing, it.local_provenance, t, tf)
+            + _altSide("Kept alongside", it.imported, it.differing, it.imported_provenance, t, tf)
+          : _altSide("This machine", it.local, it.differing, it.local_provenance, t, tf)
+            + _altSide("From the restore", it.imported, it.differing, it.imported_provenance, t, tf);
+        const note = sw ? `<div class="hint" style="margin-top:4px">${esc(t("You chose the restore’s value. The value shown before is kept beside it, and switching back restores it."))}</div>` : "";
         return `<div class="card" style="margin-top:8px;padding:8px">`
           + `<div><b>${esc(t(_ALT_TABLES[it.table] || it.table))}</b></div>${art}${_altAbout(it)}`
-          + `<div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:4px">`
-          + _altSide("This machine", it.local, it.differing, it.local_provenance, t, tf)
-          + _altSide("From the restore", it.imported, it.differing, it.imported_provenance, t, tf)
-          + `</div><div class="row" style="gap:6px;flex-wrap:wrap;margin-top:6px">`
-          + (it.status === "pending" ? `<button class="secondary tiny" data-on-click="altAct(${Number(it.id)}, 'keep')">${esc(t("Keep both"))}</button>` : "")
-          + `<button class="secondary tiny" data-on-click="altAct(${Number(it.id)}, 'discard')">${esc(t("Discard the restore’s value"))}</button>`
+          + `<div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:4px">${sides}</div>${note}`
+          + `<div class="row" style="gap:6px;flex-wrap:wrap;margin-top:6px">`
+          + (it.status === "pending" ? `<button class="secondary tiny" data-on-click="altAct(${id}, 'keep')">${esc(t("Keep both"))}</button>` : "")
+          + (it.local ? `<button class="secondary tiny" data-on-click="altAct(${id}, 'swap')" title="${esc(t("Show the restore’s value in the app instead. Your current value is kept beside it, so you can switch back."))}">${esc(sw ? t("Switch back to the previous value") : t("Use the restore’s value instead"))}</button>` : "")
+          + `<button class="secondary tiny" data-on-click="altAct(${id}, 'discard')">${esc(sw ? t("Discard the kept value") : t("Discard the restore’s value"))}</button>`
           + `</div></div>`;
       }).join("");
       const more = rep.total > rep.items.length
@@ -2517,8 +2526,15 @@
 
     async function altAct(id, verb) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const it = _altRep && _altRep.items.find((x) => Number(x.id) === Number(id));
+      let path = "/api/backup/alternates/" + encodeURIComponent(id) + "/" + verb;
+      if (verb === "discard" && it && it.swapped) {
+        // The only copy of the value that was shown before the swap: never on a single click.
+        if (!confirm(t("Discard the value that was shown before the swap? It is the only copy, and this cannot be undone."))) return;
+        path += "?confirm=true";
+      }
       try {
-        await api("/api/backup/alternates/" + encodeURIComponent(id) + "/" + verb, { method: "POST" });
+        await api(path, { method: "POST" });
       } catch (e) {
         toast(t("Could not apply that:") + " " + (e.message || e), "err");
       }

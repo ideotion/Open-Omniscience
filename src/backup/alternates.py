@@ -9,16 +9,18 @@ list the differences with both values and both provenance tags, and let the oper
 Nothing here runs on its own -- every mutation is one explicit call for one alternate (or one
 restore batch), and none touches a row the operator did not point at.
 
-The three actions:
+The four actions:
 
 * ``keep``    -- mark it seen; both values stay.
-* ``discard`` -- delete the alternate; the local value stays (the imported one is gone).
+* ``discard`` -- delete the alternate; the value shown stays (the other one is gone).
 * ``discard_batch`` -- discard every alternate one restore brought.
-
-There is deliberately NO action that makes an imported value the one the app shows (the
-maintainer's rule: imported data never prevails over local data). A "show this one instead"
-swap was built and reviewed and taken out: doing it right needs identity-based resolution of
-the local row plus a provenance rewrite, and it is a separate slice if the operator asks for it.
+* ``swap``    -- the operator's explicit choice to show the restore's value instead. NEVER
+  automatic: a restore itself changes nothing that is shown (the maintainer's rule: imported
+  data does not prevail over local data on its own). It is a swap, not an overwrite -- the row
+  takes the alternate's values and the alternate takes the row's, each with its own provenance
+  tag, so nothing is lost and swapping again puts it back. The record then carries the status
+  ``swapped``: it holds the value that WAS shown, so a batch discard leaves it alone and a
+  single discard asks for an explicit confirmation.
 """
 
 from __future__ import annotations
@@ -28,7 +30,13 @@ from typing import Any
 
 from sqlalchemy import text
 
-from src.backup.provenance import ALTERNATE_SPECS, PRODUCER_COLUMNS, provenance_tag
+from src.backup.provenance import (
+    ALTERNATE_SPECS,
+    KEYED_TABLES,
+    PRODUCER_COLUMNS,
+    producer_extra_columns,
+    provenance_tag,
+)
 
 
 class AlternateError(Exception):
@@ -126,6 +134,7 @@ def _item(session: Any, r: Any) -> dict:
         "identity": identity,
         "article": _article_of(session, identity),
         "status": r.status,
+        "swapped": r.status == "swapped",
         "imported": imported,
         "imported_provenance": json.loads(r.provenance),
         "local": local,
@@ -143,12 +152,16 @@ def list_alternates(
 ) -> dict:
     """The differences, newest restore first, with per-restore counts.
 
-    ``status`` is ``pending`` (not yet looked at), ``kept`` or ``all``. Counts are counts."""
+    ``status`` is ``pending`` (not yet looked at, plus the swapped ones, which the operator
+    must keep seeing: what they show is the restore's value), ``kept`` or ``all``. Counts are
+    counts."""
     from src.database.models import MergeBatch, MetadataAlternate
 
     q = session.query(MetadataAlternate)
-    if status in ("pending", "kept"):
-        q = q.filter(MetadataAlternate.status == status)
+    if status == "pending":
+        q = q.filter(MetadataAlternate.status.in_(("pending", "swapped")))
+    elif status == "kept":
+        q = q.filter(MetadataAlternate.status == "kept")
     total = q.count()
     rows = (
         q.order_by(MetadataAlternate.batch_id.desc(), MetadataAlternate.id)
@@ -170,6 +183,7 @@ def list_alternates(
             "app_version": b.app_version,
             "pending": counts[b.id].get("pending", 0),
             "kept": counts[b.id].get("kept", 0),
+            "swapped": counts[b.id].get("swapped", 0),
         })
     return {
         "status": status,
@@ -194,21 +208,125 @@ def _get(session: Any, alt_id: int) -> Any:
 
 def keep(session: Any, alt_id: int) -> dict:
     alt = _get(session, alt_id)
+    if alt.status == "swapped":
+        raise AlternateError("this one holds the value shown before a swap: swap back or discard it", 409)
     alt.status = "kept"
     session.commit()
     return {"id": alt_id, "status": "kept"}
 
 
-def discard(session: Any, alt_id: int) -> dict:
+def discard(session: Any, alt_id: int, *, confirm: bool = False) -> dict:
     alt = _get(session, alt_id)
+    if alt.status == "swapped" and not confirm:
+        # It is the only copy of the value that was shown before the swap.
+        raise AlternateError(
+            "this holds the value that was shown before a swap; discarding it loses that value", 409
+        )
     session.delete(alt)
     session.commit()
     return {"id": alt_id, "discarded": True}
 
 
 def discard_batch(session: Any, batch_id: int) -> dict:
+    """Discard every alternate one restore brought, except the swapped ones: each of those is the
+    only copy of a value that was shown before a swap, and is discarded one at a time, on purpose."""
     n = session.execute(
-        text("DELETE FROM metadata_alternates WHERE batch_id = :b"), {"b": int(batch_id)}
+        text("DELETE FROM metadata_alternates WHERE batch_id = :b AND status != 'swapped'"),
+        {"b": int(batch_id)},
     ).rowcount
+    left = session.execute(
+        text("SELECT COUNT(*) FROM metadata_alternates WHERE batch_id = :b AND status = 'swapped'"),
+        {"b": int(batch_id)},
+    ).scalar()
     session.commit()
-    return {"batch_id": batch_id, "discarded": int(n or 0)}
+    return {"batch_id": batch_id, "discarded": int(n or 0), "left_swapped": int(left or 0)}
+
+
+def _scalars(values: dict) -> bool:
+    return all(v is None or isinstance(v, (str, int, float, bool)) for v in values.values())
+
+
+def swap(session: Any, alt_id: int) -> dict:
+    """Show the alternate's value and keep the one that was shown as the alternate.
+
+    Everything happens in ONE transaction, or nothing does. The local row is found by the
+    alternate's IDENTITY, at this moment (never by an id stored earlier). Only the columns the
+    table's own ``ALTERNATE_SPECS`` entry names as shown are ever written, whatever the stored
+    JSON says: it came from a backup file. The tag stays true because the row's producer
+    columns (its ``created_at``/``prompt_text``, ``as_of``/``fetched_at`` for the keyed tables)
+    move with the values, and ``merged_rows`` is rewritten so the row's arrival is the batch the
+    adopted value came from (or none, when the adopted value was made here)."""
+    alt = _get(session, alt_id)
+    table = alt.table_name
+    spec = ALTERNATE_SPECS.get(table)
+    if spec is None or table not in PRODUCER_COLUMNS:
+        raise AlternateError(f"unknown table {table!r}", 400)
+    identity, imported, prov = json.loads(alt.identity), json.loads(alt.fields), json.loads(alt.provenance)
+    if not (isinstance(identity, dict) and isinstance(imported, dict) and isinstance(prov, dict)
+            and _scalars(imported)):
+        raise AlternateError("this difference is not well-formed and cannot be swapped", 400)
+    local_id = _local_row_id(session, table, identity)
+    if local_id is None:
+        raise AlternateError("the row this differs from is gone, so there is nothing to swap with", 409)
+    have = _columns(session, table)
+    names = [c for c in spec["shown"] if c in imported and c in have]
+    if not names:
+        raise AlternateError("nothing in this difference can be swapped", 400)
+    # The row's own values, as the SAME SQL a capture uses writes them: byte-identical JSON is
+    # what keeps a later restore of the same backup from recording this difference again.
+    before_json = session.execute(
+        text(
+            "SELECT json_object(" + ", ".join(f"'{c}', {c}" for c in names)  # noqa: S608  # nosec B608 - every name is a shown column of this table's own spec, intersected with its real columns
+            + f") FROM {table} WHERE rowid = :id"
+        ),
+        {"id": local_id},
+    ).scalar()
+    before_tag = provenance_tag(session, table, local_id)
+    if before_json is None or before_tag is None:
+        raise AlternateError("the row this differs from is gone, so there is nothing to swap with", 409)
+    sets = {c: imported[c] for c in names}
+    for field, column in producer_extra_columns(table).items():
+        if column in have and column not in sets and prov.get(field) is not None:
+            sets[column] = prov[field]
+    key_col = KEYED_TABLES.get(table)
+    key_val = (
+        session.execute(text(f"SELECT {key_col} FROM {table} WHERE rowid = :id"), {"id": local_id}).scalar()  # noqa: S608  # nosec B608 - table is a validated key of ALTERNATE_SPECS and key_col a module literal from KEYED_TABLES
+        if key_col else None
+    )
+    arrived = (prov.get("arrived") or {}).get("batch")
+    try:
+        session.execute(
+            text(
+                f"UPDATE {table} SET " + ", ".join(f"{c} = :v{i}" for i, c in enumerate(sets))  # noqa: S608  # nosec B608 - table is a validated key of ALTERNATE_SPECS; every column is a name from that table's own spec or PRODUCER_COLUMNS, intersected with its real columns; values are bound
+                + " WHERE rowid = :id"
+            ),
+            {**{f"v{i}": v for i, v in enumerate(sets.values())}, "id": local_id},
+        )
+        session.execute(
+            text(
+                "DELETE FROM merged_rows WHERE table_name = :t"
+                " AND (row_id = :id OR (row_key IS NOT NULL AND row_key = :k))"
+            ),
+            {"t": table, "id": local_id, "k": key_val},
+        )
+        exists = arrived is not None and session.execute(
+            text("SELECT 1 FROM merge_batches WHERE id = :b"), {"b": int(arrived)}
+        ).fetchone()
+        if exists:
+            session.execute(
+                text("INSERT INTO merged_rows (batch_id, table_name, row_id, row_key) VALUES (:b, :t, :id, :k)"),
+                {"b": int(arrived), "t": table, "id": local_id, "k": None if key_val is None else str(key_val)},
+            )
+        alt.fields = before_json
+        alt.provenance = json.dumps(before_tag)
+        alt.origin = str(before_tag.get("origin") or "local")[:128]
+        alt.local_row_id = local_id
+        alt.status = "pending" if alt.status == "swapped" else "swapped"
+        session.commit()
+    except AlternateError:
+        session.rollback()
+        raise
+    except Exception as exc:  # driver-agnostic: sqlite3 and sqlcipher3 raise different classes
+        session.rollback()
+        raise AlternateError(f"could not apply that swap: {exc}", 409) from exc
+    return {"id": alt_id, "status": alt.status, "shown": "restore" if alt.status == "swapped" else "machine"}

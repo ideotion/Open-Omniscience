@@ -330,10 +330,17 @@ def alternates_keep(alt_id: int) -> dict:
 
 
 @router.post("/alternates/{alt_id}/discard")
-def alternates_discard(alt_id: int) -> dict:
+def alternates_discard(alt_id: int, confirm: bool = False) -> dict:
     from src.backup.alternates import discard
 
-    return _alt_call(discard, alt_id)
+    return _alt_call(discard, alt_id, confirm=confirm)
+
+
+@router.post("/alternates/{alt_id}/swap")
+def alternates_swap(alt_id: int) -> dict:
+    from src.backup.alternates import swap
+
+    return _alt_call(swap, alt_id)
 
 
 # --------------------------------------------------------------------------- #
