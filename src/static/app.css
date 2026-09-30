@@ -248,9 +248,10 @@
     }
     /* The country the reader clicked: outlined in the accent at a constant 2 screen pixels
        (non-scaling, so it does not fatten when the map is zoomed), with its card docked
-       under the map. Stroke only: the fill keeps saying what the data says. */
-    #oo-choro .oomap-sel { stroke:var(--accent); stroke-width:2px; stroke-opacity:1;
-      vector-effect:non-scaling-stroke; }
+       under the map. One stroke-only path above every fill (the fill keeps saying what the
+       data says), and click-through so the shape beneath still takes the next click. */
+    #oo-choro .oomap-sel { fill:none; stroke:var(--accent); stroke-width:2px; stroke-opacity:1;
+      stroke-linejoin:round; vector-effect:non-scaling-stroke; pointer-events:none; }
     .sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden;
       clip:rect(0,0,0,0); white-space:nowrap; border:0; }
     ::-webkit-scrollbar { width:11px; height:11px; }

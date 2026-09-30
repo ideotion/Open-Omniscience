@@ -1852,7 +1852,7 @@
       // and nothing on the screen told a first-time reader so (the journalist walk found
       // them only by trying). It is the line the hover readout already uses, so no layout
       // moves, and it comes back whenever the pointer leaves with nothing pinned.
-      const idleHint = t9("Scroll to zoom \u00b7 drag to pan \u00b7 double-click to reset");
+      const idleHint = t9("Scroll to zoom · drag to pan · double-click to reset");
       readout.textContent = idleHint;
 
       const toMs = (x) => {
@@ -1968,6 +1968,8 @@
       };
       const canBrush = typeof opts.onSelectRange === "function";
       let brushMode = false, bFrom = null, bTo = null;
+      // A plain drag BRUSHES while brush mode is on, so the pan wording would be wrong there.
+      const hintNow = () => (brushMode ? "" : idleHint);
       // The affordance sits INSIDE the chart, the same convention ooMap's zoom and layer
       // controls follow: a reader should not have to know a modifier exists. A <button>
       // with a real listener, never an inline onclick, so this stays off the
@@ -1989,6 +1991,8 @@
           brushBtn.classList.toggle("on", brushMode);
           cv.style.cursor = brushMode ? "ew-resize" : "crosshair";
           if (!brushMode) { bFrom = bTo = null; }
+          // The idle line follows the mode; a hover or pinned readout is the reader's own and stays.
+          if (readout.textContent === idleHint || readout.textContent === "") readout.textContent = hintNow();
           draw();
         });
         bar.appendChild(brushBtn);
@@ -2046,7 +2050,7 @@
       let emptyState = false;   // the readout is naming an empty window / hidden series
       function draw() {
         ctx.clearRect(0, 0, W, H);
-        if (emptyState) { emptyState = false; readout.textContent = idleHint; }
+        if (emptyState) { emptyState = false; readout.textContent = hintNow(); }
         if (opts.indexed) for (const s of all) {        // rebase each series to 100 at its first visible value
           const vis = s.pts.filter(p => p.t >= t0 && p.t <= t1);
           const fnz = vis.find(p => p.v !== 0);
@@ -2473,7 +2477,7 @@
       });
       cv.addEventListener("dblclick", () => { t0 = tMin; t1 = tMax; pinned = null; pinnedS = null; draw(); });
       cv.addEventListener("pointerleave", () => {
-        if (!pinned && dragX == null && !emptyState) readout.textContent = idleHint;
+        if (!pinned && dragX == null && !emptyState && bFrom == null && !brushMode) readout.textContent = idleHint;
       });
       draw();
       _ooChartWatch(el, W);

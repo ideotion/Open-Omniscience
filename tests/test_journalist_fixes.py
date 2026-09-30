@@ -26,14 +26,13 @@ What each fix answers (the walk's own words, ``journalist-review-2026-09-30.md``
 from __future__ import annotations
 
 import json
-import re
 import shutil
 import subprocess
 from pathlib import Path
 
 import pytest
 
-from tests.js_source_helper import app_js, function_body, read_static
+from tests.js_source_helper import app_js, css_rule, function_body, read_static
 
 _ROOT = Path(__file__).resolve().parents[1]
 _LOCALES = _ROOT / "src" / "static" / "locales"
@@ -81,9 +80,12 @@ def test_the_observatory_never_sizes_its_canvas_from_a_hidden_stage() -> None:
     assert "getBoundingClientRect" not in body
     # ...and it repaints when the tab is shown again, which is not a window resize.
     assert "new ResizeObserver" in function_body(js, "_obsWire")
-    css = read_static("app.css")
-    stage = re.search(r"#sky-stage\s*\{[^}]*\}", css)
-    assert stage and "contain:inline-size" in stage.group(0).replace(" ", ""), (
+    # The observer remembers EVERY width it reports, hidden (0) included, so a tab shown again
+    # at the width it had repaints: the paints made while it was hidden were skipped.
+    assert "_obsStageResized(memo" in function_body(js, "_obsWire")
+    resized = function_body(js, "_obsStageResized")
+    assert "memo.w = w;" in resized and "return w > 0;" in resized
+    assert "contain:inline-size" in css_rule(read_static("app.css"), "#sky-stage").replace(" ", ""), (
         "without inline-size containment a px-sized canvas holds its own stage wide, so the "
         "sky could never shrink again"
     )
@@ -91,9 +93,15 @@ def test_the_observatory_never_sizes_its_canvas_from_a_hidden_stage() -> None:
 
 def test_the_chart_says_how_to_zoom_and_the_timescale_says_what_it_does() -> None:
     js = app_js()
-    assert 't9("Scroll to zoom \\u00b7 drag to pan \\u00b7 double-click to reset")' in function_body(
-        js, "ooChart"
-    )
+    # A LITERAL middle dot: the i18n scanner reads a `\\u00b7` escape as those six characters,
+    # finds no such key in en.json and fails the untranslatable ratchet, though the page works.
+    chart = function_body(js, "ooChart")
+    assert 't9("Scroll to zoom \u00b7 drag to pan \u00b7 double-click to reset")' in chart
+    assert "\\u00b7 drag to pan" not in chart
+    # Brush mode brushes on a plain drag, so it never says "drag to pan"; and a finished
+    # brush's readout is not wiped when the pointer leaves the canvas.
+    assert "hintNow = () => (brushMode ? \"\" : idleHint)" in chart
+    assert "bFrom == null && !brushMode) readout.textContent = idleHint" in chart
     scope = function_body(js, "ooTimeScope")
     assert 't("Snap range to")' in scope
     assert 't("Timescale")' not in scope, "the label went back to promising a re-binning it does not do"
@@ -115,9 +123,7 @@ def test_the_overlay_flips_to_indexed_only_for_a_commodity_that_has_prices() -> 
 
 def test_the_theme_select_applies_on_change() -> None:
     shell = read_static("app-shell.js")
-    m = re.search(r"\(function _wireThemeSelect\(\)\s*\{(.*?)\n    \}\)\(\);", shell, re.S)
-    assert m, "the General Theme select is not wired to apply on change"
-    wired = m.group(1)
+    wired = function_body(shell, "_wireThemeSelect")
     assert 'addEventListener("change"' in wired and "setTheme(" in wired
     assert "_lastSyncedThemeBucket" in wired, "it must not re-apply a bucket the theme already sits in"
 
@@ -129,12 +135,21 @@ def test_the_map_card_sits_under_the_map_and_the_click_outlines_the_country() ->
     assert "_ooMapDetailHost()" in detail and "_ooMapDetailHost()" in signal
     assert "_ooMapMarkSelected(isoKey)" in detail
     assert "_ooMapMarkSelected(null)" in signal, "a signal is not a country: no outline may stay"
-    # The block that rewrites the map also wipes a docked card: it is put back afterwards.
-    assert "_ooMapRestoreDetail();" in function_body(js, "_renderOoMapDim")
+    # The block that rewrites the map also wipes a docked card, and THREE paths redraw it
+    # without going through _renderOoMapDim (the Regions toggle, the worldview select, another
+    # map's worldview change), so ooMap itself calls the caller's afterRender from host._ooOpts.
+    assert "afterRender: _ooMapRestoreDetail" in function_body(js, "_renderOoMapDim")
+    assert 'typeof opts.afterRender === "function"' in function_body(js, "ooMap")
     assert "closeBtn" in detail and "ooMapCloseDetail()" in detail
-    css = read_static("app.css")
-    rule = re.search(r"#oo-choro \.oomap-sel\s*\{[^}]*\}", css)
-    assert rule and "vector-effect:non-scaling-stroke" in rule.group(0).replace(" ", "")
+    # Q302: a code is only ever written by the one cell, and nothing falls back to a raw code.
+    assert "ooCountryCell(isoKey) ||" not in detail
+    # The outline is one overlay path in the World map only (every ooMap draws an svg#oo-choro).
+    sync = function_body(js, "_ooMapSyncOutline")
+    assert '$("oo-coverage-map")' in sync and "document.querySelectorAll" not in sync
+    assert "_ooMapSyncOutline();" in function_body(js, "_ooMapMarkSelected")
+    assert "host._ooOnLod()" in function_body(js, "_ooLodAttach"), "a zoom redraw would leave the outline on the old d"
+    rule = css_rule(read_static("app.css"), "#oo-choro .oomap-sel").replace(" ", "")
+    assert "vector-effect:non-scaling-stroke" in rule and "pointer-events:none" in rule and "fill:none" in rule
     # Reduced motion is honoured, the way _exploreRevealAnalysis already does.
     assert "prefers-reduced-motion" in function_body(js, "_ooMapScrollBehavior")
 

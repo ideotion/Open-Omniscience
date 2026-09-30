@@ -788,7 +788,18 @@
     function anTrendSetMode(m) { _anTrend.mode = m; _anTrend.autoIndexed = false; drawAnTrend(); }
     async function anTrendPick(sym) {
       if (!sym) return;
-      if (_anTrend.picked[sym]) { delete _anTrend.picked[sym]; drawAnTrend(); return; }
+      if (_anTrend.picked[sym]) {
+        delete _anTrend.picked[sym];
+        // The switch to Indexed was OURS (a price needed the axis): with the last priced
+        // overlay gone the chart goes back to the Counts the reader left, rather than
+        // staying Indexed with nothing overlaid and a note explaining a switch that has
+        // no reason left. A mode the reader chose is never touched (autoIndexed is false).
+        if (_anTrend.autoIndexed && !Object.keys(_anTrend.picked).some(k => ((_anTrend.picked[k] || {}).prices || []).length)) {
+          _anTrend.mode = "counts"; _anTrend.autoIndexed = false;
+        }
+        drawAnTrend();
+        return;
+      }
       try {
         const pd = await api("/api/commodities/" + encodeURIComponent(sym) + "/prices").catch(() => null);
         const prices = (pd && pd.prices) || [];
@@ -866,7 +877,7 @@
       const priced = picks.filter(hasPrices);
       const noNotes = picks.filter((x) => !hasPrices(x)).map((sym) =>
         `<p class="card-caveat" style="margin-top:6px">${esc(tf("{symbol}: no price rows stored yet, so there is nothing to overlay.", {symbol: sym}))}</p>`).join("");
-      const autoNote = (_anTrend.autoIndexed && indexed)
+      const autoNote = (_anTrend.autoIndexed && indexed && priced.length)
         ? `<p class="hint muted" style="margin:4px 0 0">${esc(t("Switched to Indexed so the commodity price can share the axis with the counts. Choose Counts to go back."))}</p>` : "";
       host.innerHTML = modeRow + suggRow + `<div id="an-trend-chart"></div>` + noNotes
         + `<p class="card-caveat" style="margin-top:6px">${esc(caveat)}</p>` + autoNote

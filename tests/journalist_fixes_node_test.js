@@ -5,7 +5,8 @@
 //
 // What is driven, each function EXTRACTED from the shipped modules by name (a re-typed copy
 // would pass while the real one was broken):
-//   1. the Observatory canvas is never sized from a HIDDEN container (it froze at 320 px);
+//   1. the Observatory canvas is never sized from a HIDDEN container (it froze at 320 px), and
+//      repaints when the tab is shown again at the width it had before;
 //   2. the Timescale's snap is undone when the reader returns to Days;
 //   3. the Explore trend's commodity overlay: a commodity with prices switches to Indexed and
 //      SAYS so, one without prices changes nothing;
@@ -97,6 +98,22 @@ const ok = (name, fn) => {
   });
 }
 
+{
+  const memoFn = new Function(extractFn("_obsStageResized") + "\nreturn _obsStageResized;")();
+  ok("the observer repaints on a first width, ignores a repeat, and skips a hidden (0) report", () => {
+    const memo = { w: 0 };
+    assert.strictEqual(memoFn(memo, 1103), true);
+    assert.strictEqual(memoFn(memo, 1103), false);
+    assert.strictEqual(memoFn(memo, 0), false);
+  });
+  ok("a tab hidden and shown again at the SAME width repaints (the paints made while hidden were skipped)", () => {
+    const memo = { w: 0 };
+    memoFn(memo, 1103);
+    memoFn(memo, 0);                                   // switched to Home: the stage measures 0
+    assert.strictEqual(memoFn(memo, 1103), true, "the shown-again stage kept its stale labels");
+  });
+}
+
 // ---------------------------------------------------------------- 2. the Timescale undo
 {
   class El {
@@ -154,8 +171,8 @@ const ok = (name, fn) => {
     assert.strictEqual(m.ctl.get().to, "2026-09-30");
   });
   ok("the label says what the control does (it snaps a range, it does not re-bin)", () => {
-    assert.ok(/ts-scale-l[\s\S]*Snap range to/.test(APP.slice(APP.indexOf("function ooTimeScope("),
-      APP.indexOf("function ooTimeScope(") + 4000)), "the select's label is not the honest one");
+    assert.ok(/ts-scale-l[\s\S]*Snap range to/.test(extractFn("ooTimeScope")),
+      "the select's label is not the honest one");
   });
 }
 
@@ -190,6 +207,24 @@ const ok = (name, fn) => {
     await b.pick("WTI"); await b.pick("WTI");
     assert.strictEqual(b._anTrend.picked.WTI, undefined);
   });
+  ok("removing the LAST priced overlay puts back the Counts we switched away from", async () => {
+    const b = build([row]);
+    await b.pick("WTI");
+    assert.strictEqual(b._anTrend.mode, "indexed");
+    await b.pick("WTI");                               // chip clicked again
+    assert.strictEqual(b._anTrend.mode, "counts", "the chart stayed Indexed with nothing overlaid");
+    assert.strictEqual(b._anTrend.autoIndexed, false, "the auto-switch note would outlive the overlay");
+  });
+  ok("a mode the reader chose is never reverted, and a second priced overlay keeps the axis", async () => {
+    const chosen = build([row]);
+    chosen._anTrend.mode = "indexed";                  // the reader picked Indexed themselves
+    await chosen.pick("WTI"); await chosen.pick("WTI");
+    assert.strictEqual(chosen._anTrend.mode, "indexed");
+    const two = build([row]);
+    await two.pick("WTI"); await two.pick("BRENT"); await two.pick("WTI");
+    assert.strictEqual(two._anTrend.mode, "indexed", "one overlay is still drawn");
+    assert.strictEqual(two._anTrend.autoIndexed, true);
+  });
 }
 
 // ---------------------------------------------------------------- 4. the Home signal value
@@ -216,42 +251,85 @@ const ok = (name, fn) => {
 
 // ---------------------------------------------------------------- 5. the map selection
 {
-  const mkEl = (iso, extra) => {
-    const cls = new Set();
+  // A minimal SVG: an element list with the attributes the outline code reads, a query that
+  // understands the two selectors it uses, and createElementNS/insertBefore for the overlay.
+  const mkEl = (attrs) => {
+    const a = Object.assign({}, attrs);
     return {
-      _cls: cls, dataset: { iso },
-      classList: { add: (c) => cls.add(c), remove: (c) => cls.delete(c), contains: (c) => cls.has(c) },
-      getAttribute: (k) => (k === "data-iso" ? iso : null),
-      hasAttribute: (k) => !!(extra && extra[k]),
+      tag: a.tag || "path",
+      getAttribute: (k) => (k in a ? a[k] : null),
+      setAttribute: (k, v) => { a[k] = String(v); },
+      hasAttribute: (k) => k in a,
+      remove() { const i = svg.kids.indexOf(this); if (i >= 0) svg.kids.splice(i, 1); },
     };
   };
-  const els = [mkEl("zm"), mkEl("ye"), mkEl("ye", { "data-oomap-disputed": true }), mkEl("zm")];
-  const document = {
-    querySelectorAll: (sel) => {
-      if (sel === "#oo-choro .oomap-sel") return els.filter((e) => e._cls.has("oomap-sel"));
-      if (sel === "#oo-choro [data-iso]") return els;
-      return [];
+  const svg = {
+    kids: [],
+    querySelector(sel) {
+      if (sel === "#oomap-sel-outline") return this.kids.find((e) => e.getAttribute("id") === "oomap-sel-outline") || null;
+      if (sel === "#oomap-labels") return this.kids.find((e) => e.getAttribute("id") === "oomap-labels") || null;
+      return null;
     },
+    querySelectorAll(sel) {
+      assert.strictEqual(sel, "[data-iso]");
+      return this.kids.filter((e) => e.hasAttribute("data-iso"));
+    },
+    insertBefore(n, ref) { this.kids.splice(this.kids.indexOf(ref), 0, n); },
+    appendChild(n) { this.kids.push(n); },
   };
+  const put = (attrs) => { const e = mkEl(attrs); svg.kids.push(e); return e; };
+  put({ "data-iso": "zm", d: "M0 0L10 0L10 10Z" });
+  put({ "data-iso": "ye", d: "M20 20L30 20L30 30Z" });
+  put({ "data-iso": "ye", d: "M99 99Z", "data-oomap-disputed": "x" });   // a contested hatch: never outlined
+  put({ "data-iso": "zm", "data-oomap-region": "zm-1", d: "M40 40L50 40L50 50Z" });
+  put({ "data-iso": "mc", tag: "circle", cx: "7", cy: "8", r: "2.4" });    // a microstate's centroid dot
+  put({ id: "oomap-labels", tag: "g" });
+  const root = { querySelector: (sel) => (sel === "svg#oo-choro" ? svg : null) };
+  const document = { createElementNS: (ns, tag) => mkEl({ tag }) };
   const host = { innerHTML: "x" };
   const src = "let _ooMapSelIso = null, _ooMapDetailLast = { kind: 'country' };\n"
-    + extractFn("_ooMapMarkSelected") + "\n" + extractFn("ooMapCloseDetail")
-    + "\nreturn { mark: _ooMapMarkSelected, close: ooMapCloseDetail, sel: () => _ooMapSelIso, last: () => _ooMapDetailLast };";
-  const M = new Function("document", "$", src)(document, () => host);
-  ok("the clicked country is outlined, and only that one (a contested hatch is left alone)", () => {
+    + extractFn("_ooMapMarkSelected") + "\n" + extractFn("_ooMapOutlineD") + "\n" + extractFn("_ooMapSyncOutline")
+    + "\n" + extractFn("ooMapCloseDetail")
+    + "\nreturn { mark: _ooMapMarkSelected, close: ooMapCloseDetail, sel: () => _ooMapSelIso, last: () => _ooMapDetailLast, sync: _ooMapSyncOutline };";
+  const M = new Function("document", "$", src)(document, (id) => (id === "oo-coverage-map" ? root : host));
+  const outline = () => svg.kids.filter((e) => e.getAttribute("id") === "oomap-sel-outline");
+  ok("the clicked country gets ONE stroke-only overlay path, above the fills and under the labels", () => {
     M.mark("ye");
-    assert.deepStrictEqual(els.map((e) => e._cls.has("oomap-sel")), [false, true, false, false]);
+    assert.strictEqual(outline().length, 1);
+    const o = outline()[0];
+    assert.strictEqual(o.getAttribute("d").trim(), "M20 20L30 20L30 30Z", "a contested hatch was folded into the outline");
+    assert.strictEqual(o.getAttribute("fill"), "none");
+    assert.strictEqual(o.getAttribute("pointer-events"), "none", "the overlay would swallow the next click");
+    assert.strictEqual(o.getAttribute("class"), "oomap-sel");
+    assert.strictEqual(svg.kids.indexOf(o), svg.kids.length - 2, "not directly under the labels layer");
+  });
+  ok("a second click replaces it, and a region carrying the country's code is outlined with it", () => {
     M.mark("zm");
-    assert.deepStrictEqual(els.map((e) => e._cls.has("oomap-sel")), [true, false, false, true],
-      "a region carrying the country's code is outlined with it, and the old one is cleared");
+    assert.strictEqual(outline().length, 1, "the old outline stayed");
+    assert.strictEqual(outline()[0].getAttribute("d").trim(), "M0 0L10 0L10 10Z M40 40L50 40L50 50Z");
+  });
+  ok("a microstate's centroid dot is outlined as a circle", () => {
+    M.mark("mc");
+    assert.ok(/^M4\.6 8a2\.4 2\.4 0 1 0 4\.8 0a2\.4 2\.4 0 1 0 -4\.8 0z/.test(outline()[0].getAttribute("d")),
+      "got " + outline()[0].getAttribute("d"));
+  });
+  ok("re-syncing after a zoom redraw follows the shapes' new `d`", () => {
+    M.mark("ye");
+    svg.kids.find((e) => e.getAttribute("data-iso") === "ye" && !e.hasAttribute("data-oomap-disputed")).setAttribute("d", "M1 1Z");
+    M.sync();
+    assert.strictEqual(outline()[0].getAttribute("d").trim(), "M1 1Z");
   });
   ok("closing the card clears the outline and forgets the card", () => {
     M.mark("zm");
     M.close();
-    assert.strictEqual(els.some((e) => e._cls.has("oomap-sel")), false);
+    assert.strictEqual(outline().length, 0);
     assert.strictEqual(host.innerHTML, "");
     assert.strictEqual(M.last(), null);
     assert.strictEqual(M.sel(), null);
+  });
+  ok("a code with no shape draws no outline (and leaves no stale one)", () => {
+    M.mark("ye"); M.mark("xx");
+    assert.strictEqual(outline().length, 0);
   });
 }
 

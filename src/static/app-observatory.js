@@ -119,12 +119,20 @@
       // Showing the tab again (or any container-only width change, such as the sidebar
       // collapsing) is not a window resize, so the listener above never hears it.
       if (cv && cv.parentElement && typeof ResizeObserver === "function") {
-        let lastW = 0;
+        const memo = { w: 0 };
         new ResizeObserver((entries) => {
-          const w = Math.round(entries[0].contentRect.width);
-          if (w > 0 && w !== lastW) { lastW = w; _obsPaint(); }
+          if (_obsStageResized(memo, Math.round(entries[0].contentRect.width))) _obsPaint();
         }).observe(cv.parentElement);
       }
+    }
+    // Whether a width the stage was just measured at calls for a repaint. `memo.w` follows
+    // EVERY width the observer reports, hidden (0) included: a tab that is hidden and shown
+    // again at the same width must repaint, because the paints made while it was hidden were
+    // skipped (a language switched in between would otherwise stay on the old labels).
+    function _obsStageResized(memo, w) {
+      if (w === memo.w) return false;
+      memo.w = w;
+      return w > 0;
     }
 
     // ----- colour ------------------------------------------------------------ //

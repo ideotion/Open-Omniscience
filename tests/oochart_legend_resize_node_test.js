@@ -110,7 +110,7 @@ const document = {
 
 const NAMES_FN = ["_figStyle", "_figMarkerPath", "_figMarkerCanvas", "_figGlyph",
                   "_chartAria", "_chartSrTable", "_allInteger", "honestTicks", "_msLabel", "_seriesRuns",
-                  "_stackSeries", "_stackPick", "_ooChartWatch", "ooChart"];
+                  "_stackSeries", "_stackPick", "_ooChartWatch", "_figTf", "ooChart"];
 const NAMES_CONST = ["esc", "_SPARSE_BAR_MAX", "_FIG_STYLES", "_FIG_STROKE_MARKERS", "_missing",
                      "_GAP_FACTOR"];
 const src = NAMES_CONST.map(extractConst).join("\n") + "\n"
@@ -232,6 +232,36 @@ const pts = (n, base) => Array.from({length: n}, (_, i) =>
     "leaving replaced the 'every series is hidden' state with the hint: " + readoutOf(el).textContent);
   click(chips(el)[0]);
   assert.strictEqual(readoutOf(el).textContent, HINT, "showing the series again left the empty-state note behind");
+}
+
+// The Opus review of the journalist-walk PR (2026-09-30): the idle hint must not wipe a
+// brush selection's readout, and "drag to pan" is wrong while a drag BRUSHES.
+{
+  const HINT = "Scroll to zoom \u00b7 drag to pan \u00b7 double-click to reset";
+  FakeEl.prototype.setPointerCapture = function () {};
+  const fire = (el, ev, arg) => (canvasOf(el).listeners[ev] || []).forEach((fn) => fn(arg));
+  const el = host(700);
+  ooChart(el, [{label: "eng", points: pts(30, 5)}], {height: 200, onSelectRange: () => {}});
+  const bar = el.children[0].children.find((c) => c.children.some((x) => x.tagName === "BUTTON"));
+  const brushBtn = bar && bar.children.find((x) => x.tagName === "BUTTON");
+  assert.ok(brushBtn, "the period-select button is not drawn");
+  assert.strictEqual(readoutOf(el).textContent, HINT);
+  click(brushBtn);                                     // brush mode ON
+  assert.strictEqual(readoutOf(el).textContent, "",
+    "the pan wording stayed on screen while a drag brushes instead of panning");
+  fire(el, "pointerleave", {});
+  assert.strictEqual(readoutOf(el).textContent, "", "leaving in brush mode wrote the pan hint");
+  // A finished brush keeps its readout when the pointer leaves the canvas afterwards.
+  fire(el, "pointerdown", {clientX: 100, pointerId: 1, shiftKey: false});
+  fire(el, "pointermove", {clientX: 300, pointerId: 1});
+  const sel = readoutOf(el).textContent;
+  assert.ok(/Selected|\u2192/.test(sel), "the brush wrote no readout: " + JSON.stringify(sel));
+  fire(el, "pointerup", {clientX: 300, pointerId: 1});
+  fire(el, "pointerleave", {});
+  assert.strictEqual(readoutOf(el).textContent, sel, "leaving the chart wiped the brush readout");
+  click(brushBtn);                                     // brush mode OFF: the idle line returns
+  fire(el, "pointerleave", {});
+  assert.strictEqual(readoutOf(el).textContent, HINT, "switching brush mode off left the hint blank");
 }
 
 console.log("oochart_legend_resize_node_test: all assertions passed");
