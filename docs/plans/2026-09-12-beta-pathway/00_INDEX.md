@@ -23,7 +23,7 @@ conflict + the 360° dossier, lane completion → **0.9.0 = Beta 1** (Q101 ⛔ =
 
 ## How to run one
 
-Read `CLAUDE.md` and `docs/ledger/LESSONS.md` in full, then `_WORKING_MODE.md`, then the brief, then the gate
+Read `CLAUDE.md` in full and search `docs/ledger/LESSONS.md` with `python scripts/lessons.py <words>` (rule (1), amended 2026-09-30), then `_WORKING_MODE.md`, then the brief, then the gate
 row it names, then its rulings in `RULINGS_INDEX.md`. Grep the tree before building (the staleness guard runs
 both ways, and against a ruling's premise). Open one draft PR per coherent slice onto `main`; the maintainer
 merges. Close out per the brief's §7 — a `shipped.csv` row naming which part shipped, the gate row's status, the

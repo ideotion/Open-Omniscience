@@ -17,7 +17,7 @@ two disagree, this one wins, because it is newer and carries the 2026-09-15 ruli
 2. **The gate row.** Each brief implements one row of one gate file under `docs/product/`
    (`RELEASE_0.4_GATE.md` … `RELEASE_0.9_GATE.md`). The row's "closes when" clause is the acceptance bar; the
    brief's slices exist to produce that named artifact and nothing else.
-3. **The constitution.** `CLAUDE.md` + `docs/ledger/LESSONS.md` in full, every session (protocol rule (1)),
+3. **The constitution.** `CLAUDE.md` in full, every session, plus `docs/ledger/LESSONS.md` consulted by `python scripts/lessons.py <words>` (protocol rule (1), amended 2026-09-30),
    then the `OPEN_QUEUE.md` entries the brief names — the head entry of 2026-09-15 indexes every answer.
 
 ## 2. What no brief may decide

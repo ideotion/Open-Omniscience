@@ -3,12 +3,19 @@
 **THE PROTOCOL (meta-rule, maintainer-mandated):** this file, together with
 [`docs/ledger/LESSONS.md`](docs/ledger/LESSONS.md) and
 [`docs/ledger/OPEN_QUEUE.md`](docs/ledger/OPEN_QUEUE.md), is the single ledger of
-every maintainer ruling. (1) **AMENDED 2026-09-07 (ruled A3(2), proposal §4.2):**
-read THIS file in full before any work, every session, together with
-`docs/ledger/LESSONS.md` — the two are the CONSTITUTION (non-negotiables, UI
-invariants, rituals, lessons) and they are stable. Together they measure
-573,850 bytes (2026-09-07, `wc -c` on the two) against the 1,417,956 this
-file alone had reached, so that "in full" is achievable again. THEN open
+every maintainer ruling. (1) **AMENDED 2026-09-07 (ruled A3(2), proposal §4.2), AGAIN 2026-09-30
+(ruled PF11 = D07 = b, with a size ratchet on top):**
+read THIS file in full before any work, every session — it is the CONSTITUTION
+(non-negotiables, UI invariants, rituals) and it is stable.
+`docs/ledger/LESSONS.md` is **no longer read in full**: at 1.08 MB it had outgrown the rule
+a second time (the pair measured 1,043,989 bytes on 2026-09-18, past the 1 MB that forced
+the first amendment), so it is CONSULTED BY GREP like the queue, through a generated index —
+`python scripts/lessons.py <words>` finds the entries that bear on the work at hand,
+`--index` lists every title and `--show LINE` prints one — and before touching a class of
+change you search it for that class. The index is generated, never committed (rule (7)'s
+reasoning), and a zero-slack size ratchet
+(`tests/test_repo_invariants.py::test_lessons_md_stays_within_its_ratchet`, rule (5c)'s twin)
+stops the file growing unseen. THEN open
 `docs/ledger/OPEN_QUEUE.md` and read the entries relevant to the work at hand —
 the queue is the DOCKET, not the constitution, and is consulted, not memorised.
 Amended because the rule as written ("read it in full", one 1.3 MB file ≈ 364k
@@ -35,9 +42,9 @@ rule and every open PR then conflicts after every merge (amended 2026-09-30; the
 file first and the fragments after it; `ledger_shipped.py fold` merges them at a release). If it carries a reusable LESSON or
 EMPIRICAL FACT, ALSO (a) append the verbatim entry to
 [`docs/ledger/SHIPPED_LOG.md`](docs/ledger/SHIPPED_LOG.md) and (b) copy the
-lesson into [`docs/ledger/LESSONS.md`](docs/ledger/LESSONS.md) (so first-readers
-see it — rule (1) makes that file mandatory reading; location amended 2026-09-07
-per A3(1)).
+lesson into [`docs/ledger/LESSONS.md`](docs/ledger/LESSONS.md) (so a session
+that greps it per rule (1) finds it; location amended 2026-09-07 per A3(1); raise the
+lessons ratchet in the same PR).
 Do NOT grow a "## Shipped batch log" wall in this file again. Pending rulings,
 contingencies, and deliberate-omissions STILL go in `docs/ledger/OPEN_QUEUE.md`
 as prose (rule 5 protects them — never moved to the CSV).
@@ -766,9 +773,9 @@ finding things, or it finds so much that every answer is the same answer).
   CLAUDE.md for conflict markers before trusting it.
 - **Lessons — MOVED to [`docs/ledger/LESSONS.md`](docs/ledger/LESSONS.md)** (ruled
   2026-09-07, A3(1)). The reusable lessons and empirical facts harvested from shipped work
-  moved there VERBATIM. **They remain MANDATORY READING every session, exactly as when they
-  were inline** — only the file changed (rule (1)). New lessons are appended there per
-  rule (5a)(b).
+  moved there VERBATIM. **They were MANDATORY READING until 2026-09-30; they are now
+  CONSULTED BY GREP through `scripts/lessons.py` (rule (1), PF11).** New lessons are appended
+  there per rule (5a)(b).
 
 ## Open queue — MOVED to [`docs/ledger/OPEN_QUEUE.md`](docs/ledger/OPEN_QUEUE.md)
 Every pending maintainer ruling, contingency and deliberate-omission note moved there
@@ -780,6 +787,6 @@ rather than reading all of it (rule (1)). New rulings are recorded THERE, in the
 are given (rule (2)).
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
-Shipped work is tracked in **[`docs/ledger/shipped.csv`](docs/ledger/shipped.csv)** (sortable: date · area · item · status · refs · key_paths · summary) — 990 entries as of 2026-09-12. The full verbatim entries are archived in [`docs/ledger/SHIPPED_LOG.md`](docs/ledger/SHIPPED_LOG.md); deeper detail is in git history + each PR + the named design docs. Load-bearing LESSONS from shipped work live in [`docs/ledger/LESSONS.md`](docs/ledger/LESSONS.md) (read those — mandatory every session, per rule (1)).
+Shipped work is tracked in **[`docs/ledger/shipped.csv`](docs/ledger/shipped.csv)** (sortable: date · area · item · status · refs · key_paths · summary) — 990 entries as of 2026-09-12. The full verbatim entries are archived in [`docs/ledger/SHIPPED_LOG.md`](docs/ledger/SHIPPED_LOG.md); deeper detail is in git history + each PR + the named design docs. Load-bearing LESSONS from shipped work live in [`docs/ledger/LESSONS.md`](docs/ledger/LESSONS.md) (consult them by grep — `python scripts/lessons.py <words>` — per rule (1)).
 
 **APPEND-RULE (replaces the old inline log):** record newly-shipped work as a `shipped.csv` ROW, not a CLAUDE.md bullet. Add a verbatim entry to `SHIPPED_LOG.md` only when it carries a reusable lesson/empirical fact, and copy that lesson into [`docs/ledger/LESSONS.md`](docs/ledger/LESSONS.md). Pending rulings, contingencies, and deliberate-omissions still go in [`docs/ledger/OPEN_QUEUE.md`](docs/ledger/OPEN_QUEUE.md) as prose (never compressed away).

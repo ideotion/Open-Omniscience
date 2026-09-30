@@ -212,7 +212,7 @@ def test_flood_prefilter_uses_batched_queries_not_per_candidate(db):
     assert res["count"] == n_flood, res  # the silent cohort produced no items
 
     km_selects = [
-        s for s in statements if s.startswith("select") and "from keyword_mentions" in s
+        s for s in statements if s.startswith("select") and "from keyword_mentions_all" in s
     ]
     n_candidates = n_silent + n_flood
     assert len(km_selects) < n_candidates, km_selects
@@ -220,6 +220,6 @@ def test_flood_prefilter_uses_batched_queries_not_per_candidate(db):
     # single-source `source_id = ?` scoped query reissued per candidate).
     grouped_pair = [
         s for s in km_selects
-        if "group by keyword_mentions.source_id, keyword_mentions.keyword_id" in s
+        if "group by keyword_mentions_all.source_id, keyword_mentions_all.keyword_id" in s
     ]
     assert len(grouped_pair) == 2, km_selects  # one for the recent window, one for baseline
