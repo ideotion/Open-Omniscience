@@ -2466,6 +2466,30 @@ def _merge_sources(con, batch_id, results) -> None:
     # only knowable BEFORE the statements that change them: "introduced" needs the
     # NOT EXISTS predicate that stops being true the moment the INSERT below runs, and
     # "adopted" needs the local row to still read 'unqualified'.
+    # WHICH LOCAL STAMPS GIVE WAY (2026-09-30, diagnostics rank 14). Local data never gives way
+    # on its own, and a local row that is `unqualified` has no verdict to defend. A local row
+    # stamped by the shipped CURATED catalogue (status 'qualified', criteria version
+    # oo-curated-catalog-1) is the second case: nothing was measured on this instance, the
+    # stamp is the catalogue's default, not the user's own verdict. `qualification_overlay`
+    # already treats it that way (a measured verdict outranks curation, in either direction).
+    # Without the same rule here the merge copied another instance's MEASURED disqualification
+    # into the attempt history below while the live status stayed 'qualified' -- the exact
+    # inversion the integrity check reported on two field instances (psx.com.pk, law.go.kr,
+    # wiadomosci.onet.pl). A local MEASURED verdict still wins in both directions, and an
+    # incoming CURATED stamp never replaces anything (every instance stamps its own catalogue).
+    from src.catalog.qualification import CURATED_CRITERIA_VERSION
+
+    _cur = CURATED_CRITERIA_VERSION.replace("'", "''")
+    _local_curated = (
+        f"(m.status = 'qualified' AND COALESCE(m.qualification_criteria_version, '') = '{_cur}')"
+    )
+    _incoming_measured = (
+        f"(i.status <> 'unqualified' AND COALESCE(i.qualification_criteria_version, '') <> '{_cur}')"
+    )
+    _adopts = (
+        "((m.status = 'unqualified' AND i.status <> 'unqualified')"
+        f" OR ({_local_curated} AND {_incoming_measured}))"
+    )
     con.execute("DROP TABLE IF EXISTS temp.qual_landed")
     con.execute(
         "CREATE TEMP TABLE qual_landed"
@@ -2487,17 +2511,17 @@ def _merge_sources(con, batch_id, results) -> None:
         "INSERT INTO temp.qual_landed (domain, verdict, engine, stamped_at, mode)"
         " SELECT i.domain, i.status, i.qualification_criteria_version, i.qualified_at,"
         " 'adopted' FROM inc.sources i JOIN sources m ON m.domain = i.domain"
-        " WHERE i.status <> 'unqualified' AND m.status = 'unqualified'"
+        f" WHERE {_adopts}"
     )
     _kept = _count(
         con,
         "SELECT COUNT(*) FROM inc.sources i JOIN sources m ON m.domain = i.domain"
-        " WHERE i.status <> 'unqualified' AND m.status <> 'unqualified'",
+        f" WHERE i.status <> 'unqualified' AND m.status <> 'unqualified' AND NOT {_adopts}",
     )
     _disagreed = _count(
         con,
         "SELECT COUNT(*) FROM inc.sources i JOIN sources m ON m.domain = i.domain"
-        " WHERE i.status <> 'unqualified' AND m.status <> 'unqualified'"
+        f" WHERE i.status <> 'unqualified' AND m.status <> 'unqualified' AND NOT {_adopts}"
         "   AND i.status <> m.status",
     )
     r.new = _insert_tracked(
@@ -2552,9 +2576,8 @@ def _merge_sources(con, batch_id, results) -> None:
         "  qualification_criteria_version = (SELECT i.qualification_criteria_version"
         "                                    FROM inc.sources i"
         "                                    WHERE i.domain = sources.domain)"
-        " WHERE sources.status = 'unqualified'"
-        "   AND EXISTS (SELECT 1 FROM inc.sources i"
-        "               WHERE i.domain = sources.domain AND i.status <> 'unqualified')"
+        " WHERE EXISTS (SELECT 1 FROM inc.sources i JOIN sources m ON m.id = sources.id"
+        f"               WHERE i.domain = sources.domain AND {_adopts})"
     )
     results["_source_qualification"] = _qualification_tally(con, kept=_kept, disagreed=_disagreed)
 
