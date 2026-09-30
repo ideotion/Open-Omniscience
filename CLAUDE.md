@@ -249,7 +249,7 @@ finding things, or it finds so much that every answer is the same answer).
    name in the sidebar** (`<span id="version">` unhidden, filled by loadHealth; the
    top BAR still never shows it). SAME ruling added the **top-bar collection-speed
    KNOB** (`#rate-toggle`, gauge icon + needle, accent `.rate-max` state theme-derived
-   via color-mix; toggles the governor "maximum"↔"target 500 KiB/s" through a
+   via color-mix; toggles the governor "maximum"↔"target 500 kbit/s" (AMENDED 2026-09-30, PF08 = a: it said "500 KiB/s", which overstated `collect_target_kbps` 8.192×; only the words moved) through a
    loopback `PUT /api/scheduler/config` — no egress, so NEVER ensureOnline-gated;
    syncs the Settings speed slider via applySchedConfig; applies next pass). Both
    enforced: test_ui_invariants #4 (version-in-brand) +

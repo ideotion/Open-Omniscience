@@ -197,7 +197,7 @@ def test_no_worker_runs_sql_on_the_SELECTION_session():
 def test_collect_parallelism_setting_round_trips(tmp_path, monkeypatch):
     monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
     # The bandwidth-governed collector: the default rate mode is "maximum"
-    # (maintainer ruling 2026-07-23 — the 500 KiB/s target parked workers and
+    # (maintainer ruling 2026-07-23 — the 500 kbit/s target parked workers and
     # left real connections under-used) with a concurrency CEILING of 50
     # (maintainer ruling 2026-06-16, supersedes the old opt-in default of 1).
     # collect_target_kbps keeps its 500 default for anyone who switches back
