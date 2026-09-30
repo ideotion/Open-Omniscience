@@ -696,6 +696,7 @@
         {grp:"Actions", label:"Track Wikipedia now", sub:"Wikipedia", run:() => { showTab("wiki"); trackWikiNow(); }},
         {grp:"Actions", label:"Export / Back up…", sub:"Data & backup", run:() => { showTab("settings"); openUnifiedExport(); }},
         {grp:"Actions", label:"Open the User Manual", sub:"Help", run:() => { showTab("help"); openDoc("user-manual"); }},
+        {grp:"Actions", label:"Take the tour", sub:"Help", run:() => openTour()},
         {grp:"Actions", label:"Open Settings", sub:"System", run:() => showTab("settings")},
         {grp:"Actions", label:"Customize appearance", sub:"Theme", run:() => openDrawer()},
         // §4c: the palette knew nothing of the 5 keyboard shortcuts (only Mod+K is

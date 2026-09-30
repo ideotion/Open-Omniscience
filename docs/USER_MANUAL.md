@@ -259,7 +259,9 @@ The core loop is:
    offline.
 
 Pick any tool from the sidebar, or just press **⌘K / Ctrl-K** and type where you
-want to go. The active view refreshes itself live (every few seconds) while it's on
+want to go. For a short walk through the sidebar's tabs at your interface depth,
+choose **Take the tour** (Settings → General, Help & docs, or the command palette).
+It starts only when you ask, changes nothing and keeps no record of having run. The active view refreshes itself live (every few seconds) while it's on
 screen, and actions confirm with small toast notifications in the corner.
 Destructive actions always ask first.
 
@@ -408,8 +410,11 @@ other, and lets you scroll.
   Ollama is available).
 - **Exports:** **Export CSV**, **Export JSON**, and **Export signed evidence** — a
   tamper-evident, signed bundle of exactly the articles matching your query (see
-  [Evidence & custody](#38-evidence--custody)); plus a **Methods appendix** (a
-  reproducible record of the query + method).
+  [Evidence & custody](#38-evidence--custody)). It opens a review first: how many
+  articles and sources, what the file holds, that it is plaintext, and which key signs;
+  saving is one more click, and the message afterwards lists the file's members and the
+  key to give the recipient. Also a **Methods appendix** (a reproducible record of the
+  query + method).
 - **Local-model runs over the whole match:** **Summarize all** / **Translate all** queue
   a background run of your local model across every matched article (stored with model +
   date, and — being AI output — never fed into the trusted keyword index); **Run

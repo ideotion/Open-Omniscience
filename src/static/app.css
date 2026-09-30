@@ -2258,3 +2258,9 @@
 .lane-add { margin-inline-start: auto; }
 .lane-snip { margin-top: 3px; overflow-wrap: anywhere; }
 .lane-snip mark { background: color-mix(in srgb, var(--accent) 28%, transparent); color: inherit; border-radius: 3px; padding: 0 1px; }
+
+/* S05-11 S5: the onboarding tour dialog (app-tour.js). */
+#tour .tour-title { margin: 4px 0 6px; font-size: 1.05em; }
+#tour .tour-list { margin: 4px 0 8px; padding-inline-start: 1.2em; columns: 2; column-gap: 1.5em; }
+#tour .tour-list li { break-inside: avoid; }
+@media (max-width: 480px) { #tour .tour-list { columns: 1; } }
