@@ -37,6 +37,7 @@ from src.scheduler.storage_guard import (
     is_disk_full,
     wal_high_bytes,
 )
+from tests.js_source_helper import python_function_source
 
 
 class Clock:
@@ -726,10 +727,15 @@ def _src(rel: str) -> str:
 
 
 def test_boot_starts_the_supervisor_inside_the_scheduler_gate():
+    # The functions' own source comes from the parser (the shared helper), so the start
+    # can only be found INSIDE the upkeep that run_deferred_startup calls -- a match
+    # elsewhere in main.py would not satisfy this.
     main = _src("src/api/main.py")
-    i = main.index("from src.scheduler.storage_guard import start")
-    gate = main.rfind('os.getenv("OO_NO_SCHEDULER", "0") != "1"', 0, i)
-    assert gate != -1 and main.index("def run_deferred_startup") < gate < i, (
+    assert "_run_startup_upkeep()" in python_function_source(main, "run_deferred_startup")
+    body = python_function_source(main, "_run_startup_upkeep")
+    i = body.find("from src.scheduler.storage_guard import start")
+    gate = body.rfind('os.getenv("OO_NO_SCHEDULER", "0") != "1"', 0, i)
+    assert i != -1 and gate != -1, (
         "the supervisor must start after unlock (run_deferred_startup) and stay behind "
         "OO_NO_SCHEDULER, like the offline-maintenance timer it sits beside"
     )
