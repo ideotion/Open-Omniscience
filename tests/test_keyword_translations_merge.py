@@ -247,6 +247,11 @@ def test_nothing_in_the_keyword_index_reads_this_table():
         #
         # The guard stays otherwise unchanged, so the NEXT reader still has to argue.
         "src/analytics/translation_store.py",
+        # ADDED 2026-09-30 by R61 (item 12): the backup engine's provenance-tag builder names
+        # the table as a KEY of `PRODUCER_COLUMNS` (which columns say who produced a row). It
+        # reads no row of it at all and renders nothing; the capture in merge.py is the only
+        # code that touches the rows, and that file is already admitted above.
+        "src/backup/provenance.py",
     }
     assert hits <= allowed, (
         f"keyword_translations gained a reader outside the backup engine: "
