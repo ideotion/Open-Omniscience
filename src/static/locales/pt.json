@@ -5283,6 +5283,7 @@
   "What's missing": "O que falta",
   "Wheel = zoom at the cursor · drag = pan · double-click = the whole span · hover a bar for the exact reading. Hatched = suspend; dotted outline = no record; dashed end = the end has no time.": "Roda = zoom no cursor · arrastar = deslocar · duplo clique = todo o intervalo · passe o cursor por uma barra para a leitura exata. Tracejado inclinado = suspensão; contorno pontilhado = sem registo; extremo tracejado = o fim não tem hora.",
   "When": "Quando",
+  "When a restore brings a value that differs from the one this machine already holds — a translation, a date’s status, an AI summary — this machine’s value stays, and the other one is kept here. Nothing from a restore is shown in place of yours unless you choose it.": "Quando uma restauração traz um valor diferente do que este computador já tem — uma tradução, o estado de uma data, um resumo de IA — o valor deste computador permanece e o outro é guardado aqui. Nada de uma restauração é mostrado no lugar do seu, a menos que você escolha.",
   "When it was discussed": "Quando se falou disso",
   "When it was in the field": "Quando decorreu o trabalho de campo",
   "When off, candidate sources simply stay unqualified and are never auto-admitted to collection. Nothing is deleted, and no verdict already reached is changed or reconsidered.": "Desativado, as fontes candidatas ficam simplesmente não qualificadas e nunca são admitidas automaticamente à recolha. Nada é eliminado, e nenhum veredicto já emitido é alterado ou reconsiderado.",
@@ -6919,6 +6920,5 @@
   "＋ zoom": "＋ zoom",
   "－ zoom": "－ zoom",
   "📍 places": "📍 locais",
-  "🛒 Draft (": "🛒 Rascunho (",
-  "When a restore brings a value that differs from the one this machine already holds — a translation, a date’s status, an AI summary — this machine’s value stays, and the other one is kept here. Nothing from a restore is shown in place of yours unless you choose it.": "Quando uma restauração traz um valor diferente do que este computador já tem — uma tradução, o estado de uma data, um resumo de IA — o valor deste computador permanece e o outro é guardado aqui. Nada de uma restauração é mostrado no lugar do seu, a menos que você escolha."
+  "🛒 Draft (": "🛒 Rascunho ("
 }

@@ -293,7 +293,11 @@ def swap(session: Any, alt_id: int) -> dict:
         session.execute(text(f"SELECT {key_col} FROM {table} WHERE rowid = :id"), {"id": local_id}).scalar()  # noqa: S608  # nosec B608 - table is a validated key of ALTERNATE_SPECS and key_col a module literal from KEYED_TABLES
         if key_col else None
     )
-    arrived = (prov.get("arrived") or {}).get("batch")
+    try:
+        arrived_raw = (prov.get("arrived") or {}).get("batch")
+        arrived = None if arrived_raw is None else int(arrived_raw)
+    except (TypeError, ValueError, AttributeError):
+        raise AlternateError("this difference's provenance is not well-formed", 400) from None
     try:
         session.execute(
             text(
@@ -310,12 +314,12 @@ def swap(session: Any, alt_id: int) -> dict:
             {"t": table, "id": local_id, "k": key_val},
         )
         exists = arrived is not None and session.execute(
-            text("SELECT 1 FROM merge_batches WHERE id = :b"), {"b": int(arrived)}
+            text("SELECT 1 FROM merge_batches WHERE id = :b"), {"b": arrived}
         ).fetchone()
         if exists:
             session.execute(
                 text("INSERT INTO merged_rows (batch_id, table_name, row_id, row_key) VALUES (:b, :t, :id, :k)"),
-                {"b": int(arrived), "t": table, "id": local_id, "k": None if key_val is None else str(key_val)},
+                {"b": arrived, "t": table, "id": local_id, "k": None if key_val is None else str(key_val)},
             )
         alt.fields = before_json
         alt.provenance = json.dumps(before_tag)

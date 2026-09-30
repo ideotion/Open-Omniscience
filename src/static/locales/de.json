@@ -5283,6 +5283,7 @@
   "What's missing": "Was fehlt",
   "Wheel = zoom at the cursor · drag = pan · double-click = the whole span · hover a bar for the exact reading. Hatched = suspend; dotted outline = no record; dashed end = the end has no time.": "Rad = Zoom am Zeiger · Ziehen = Verschieben · Doppelklick = die ganze Spanne · über einen Balken fahren = der genaue Wert. Schraffiert = Ruhezustand; gepunkteter Rand = kein Eintrag; gestricheltes Ende = das Ende hat keine Zeit.",
   "When": "Wann",
+  "When a restore brings a value that differs from the one this machine already holds — a translation, a date’s status, an AI summary — this machine’s value stays, and the other one is kept here. Nothing from a restore is shown in place of yours unless you choose it.": "Bringt eine Wiederherstellung einen Wert mit, der vom Wert dieses Rechners abweicht — eine Übersetzung, den Status eines Datums, eine KI-Zusammenfassung —, bleibt der Wert dieses Rechners bestehen, und der andere wird hier aufbewahrt. Nichts aus einer Wiederherstellung wird anstelle Ihres Werts angezeigt, es sei denn, Sie wählen es.",
   "When it was discussed": "Wann darüber gesprochen wurde",
   "When it was in the field": "Wann es im Feld war",
   "When off, candidate sources simply stay unqualified and are never auto-admitted to collection. Nothing is deleted, and no verdict already reached is changed or reconsidered.": "Ausgeschaltet bleiben Kandidatenquellen einfach unqualifiziert und werden nie automatisch zur Sammlung zugelassen. Nichts wird gelöscht, und kein bereits gefälltes Urteil wird geändert oder neu bewertet.",
@@ -6919,6 +6920,5 @@
   "＋ zoom": "＋ Zoom",
   "－ zoom": "－ Zoom",
   "📍 places": "📍 Orte",
-  "🛒 Draft (": "🛒 Entwurf (",
-  "When a restore brings a value that differs from the one this machine already holds — a translation, a date’s status, an AI summary — this machine’s value stays, and the other one is kept here. Nothing from a restore is shown in place of yours unless you choose it.": "Bringt eine Wiederherstellung einen Wert mit, der vom Wert dieses Rechners abweicht — eine Übersetzung, den Status eines Datums, eine KI-Zusammenfassung —, bleibt der Wert dieses Rechners bestehen, und der andere wird hier aufbewahrt. Nichts aus einer Wiederherstellung wird anstelle Ihres Werts angezeigt, es sei denn, Sie wählen es."
+  "🛒 Draft (": "🛒 Entwurf ("
 }
