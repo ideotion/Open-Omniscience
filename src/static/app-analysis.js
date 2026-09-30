@@ -232,9 +232,11 @@
     // analysis is left where they are. Only a click calls this, never a programmatic select,
     // so a search that spawns its analysis does not scroll away from the list it just drew.
     function _exploreRevealAnalysis() {
-      const part = $("tab-analyze"), strip = $("subtab-strip");
+      const part = $("tab-analyze");
       if (!part || !part.offsetParent) return;
-      const edge = (strip && !strip.hidden) ? strip.getBoundingClientRect().bottom : 0;
+      // The sticky block is the whole chrome (top bar, strip and any banner under it), not the strip alone.
+      const chrome = document.querySelector(".chrome");
+      const edge = chrome ? chrome.getBoundingClientRect().bottom : 0;
       const top = part.getBoundingClientRect().top;
       if (top > edge + window.innerHeight * 0.4 || top < edge - 8) {
         const calm = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;

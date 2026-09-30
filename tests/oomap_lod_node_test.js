@@ -53,7 +53,7 @@ const src =
   extract("_ooLodBoxOf") + "\n" +
   extract("_ooLodHit") + "\n" +
   extract("_ooLodAttach") + "\n" +
-  "module.exports = { _ooStrideRings, _ooLodStep, _ooLodDecimals, _ooLodViewBox, _ooLodAttach, _ooRingsVertices };";
+  "module.exports = { _ooMapPath, _ooStrideRings, _ooLodStep, _ooLodDecimals, _ooLodViewBox, _ooLodAttach, _ooRingsVertices };";
 const L = (() => {
   const m = { exports: {} };
   new Function("module", "exports", src)(m, m.exports);
@@ -95,32 +95,64 @@ const L = (() => {
 
 // --- 4. the attached behaviour, on a fake svg ------------------------------ //
 {
-  const mkEl = (attrs) => { const a = Object.assign({}, attrs); return { a, getAttribute: (k) => a[k] ?? null, setAttribute: (k, v) => { a[k] = String(v); } }; };
+  let writes = 0;
+  const mkEl = (attrs) => {
+    const a = Object.assign({}, attrs);
+    return {
+      a, tagName: "path", previousElementSibling: null,
+      attributes: { getNamedItem: (k) => (k in a ? { value: a[k] } : null) },
+      getAttribute: (k) => a[k] ?? null,
+      setAttribute: (k, v) => { a[k] = String(v); if (k === "d") writes++; },
+    };
+  };
   const grid = (lon0, lat0, n) => [Array.from({ length: n }, (_, i) => [lon0 + i * 0.001, lat0 + (i % 2) * 0.001])];
   const near = { rings: grid(10, 10, 900) };     // in sight when the view sits on lon/lat ~ (10, 10)
   const far = { rings: grid(-120, -40, 900) };   // out of sight then
-  const els = { near: mkEl({ "data-oomap-region": "NEAR" }), far: mkEl({ "data-oomap-region": "FAR" }) };
+  const contested = { id: "c1", rings: [[[10.0004, 10.0004], [10.0014, 10.0004], [10.0014, 10.0014]]] };
+  // The world view's own drawing: stride to the budget, one decimal -- what ooMap renders first.
+  const world = (r) => L._ooMapPath(L._ooStrideRings(r.rings, 2), 1);
+  const els = {
+    near: mkEl({ "data-oomap-region": "NEAR", d: world(near) }),
+    far: mkEl({ "data-oomap-region": "FAR", d: world(far) }),
+    disp: mkEl({ "data-oomap-disputed": "c1", d: L._ooMapPath(contested.rings) }),
+    under: mkEl({ d: L._ooMapPath(contested.rings) }),
+  };
+  els.disp.previousElementSibling = els.under;
   const label = { dataset: {}, _t: "base", getAttribute() { return this._t; }, setAttribute(k, v) { this._t = v; } };
-  const svg = { querySelectorAll: (sel) => sel.startsWith("path[data-oomap-region]") ? [els.near, els.far] : [] };
-  const host = { _ooLodSrc: { regions: { NEAR: near, FAR: far }, countries: {} }, querySelector: () => label };
+  const svg = {
+    isConnected: true,
+    querySelectorAll: (sel) => sel.startsWith("path[data-oomap-region]") ? [els.near, els.far]
+      : sel.startsWith("path[data-oomap-disputed]") ? [els.disp] : [],
+  };
+  const host = { _ooLodSrc: { regions: { NEAR: near, FAR: far }, countries: {}, disputed: { c1: contested } }, querySelector: () => label };
   const lod = L._ooLodAttach(host, svg);
   assert.ok(lod, "a map with OSM-drawn outlines gets the behaviour");
   assert.strictEqual(L._ooLodAttach({ querySelector() {} }, svg), null, "a map without them gets none");
   const vertices = (el) => (el.a.d.match(/[ML]/g) || []).length;
-  const run = (vb) => new Promise((res) => { lod.view(vb); setTimeout(res, 200); });
+  const run = (vb) => new Promise((res) => { lod.view(vb); setTimeout(res, 250); });
   (async () => {
-    await run({ x: 0, y: 0, w: 720, h: 350 });
-    assert.ok(vertices(els.near) + vertices(els.far) <= 1000 + 2, "the world view is strided to the budget: " + (vertices(els.near) + vertices(els.far)));
-    assert.ok(label._t.includes("T:Borders are drawn thinner"), "the legend says the outline is thinner than the file");
-    // Zoom to lon/lat ~ (10, 10): x = 190/360*720 = 380, y = 80/180*350 ~ 155.6. Only NEAR is in sight.
+    writes = 0;
+    lod.now({ x: 0, y: 0, w: 720, h: 350 });
+    assert.strictEqual(writes, 0, "the load-time pass redraws nothing: the world view was already drawn");
+    assert.ok(label._t.includes("T:Borders are drawn thinner"), "the legend says so at load, before any zoom");
+    // Zoom to lon/lat ~ (10, 10): only NEAR and the contested area are in sight.
     await run({ x: 375, y: 150, w: 10, h: 5 });
     assert.strictEqual(vertices(els.near), 900, "in sight and under the budget: the file's own rings");
     assert.ok(vertices(els.far) < 900, "out of sight: the coarse outline, not the file: " + vertices(els.far));
     assert.ok(!label._t.includes("thinner"), "nothing in sight is thinner than the file, so the legend does not say so");
     assert.ok(/\.\d{3}/.test(els.near.a.d), "zoomed in keeps three decimals");
-    // Zoom back out: the coarse outline again, and the same key means no needless redraw.
+    assert.strictEqual(els.disp.a.d, els.under.a.d, "the contested hatch and its fill move together");
+    assert.ok(/\.\d{3}/.test(els.disp.a.d), "the contested outline sits on the same grid as the borders it shares");
+    // Zoom back out: the coarse outline again.
     await run({ x: 0, y: 0, w: 720, h: 350 });
     assert.ok(vertices(els.near) < 900, "zoomed out again: strided");
+    assert.ok(!/\.\d{2}/.test(els.disp.a.d), "and the contested outline is back on the world grid");
+    // A re-render attaches anew: a pending redraw of the old map must not run.
+    const before = writes;
+    lod.view({ x: 375, y: 150, w: 10, h: 5 });
+    L._ooLodAttach(host, svg);
+    await new Promise((r) => setTimeout(r, 250));
+    assert.strictEqual(writes, before, "a stale redraw is cancelled by the next attach");
     console.log("oomap_lod_node_test.js: all assertions passed");
   })().catch((e) => { console.error(e); process.exit(1); });
 }

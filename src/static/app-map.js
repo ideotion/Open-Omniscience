@@ -429,7 +429,7 @@
     function _ooLodAttach(host, svg) {
       const src = host._ooLodSrc;
       if (!src) return null;
-      let feats = null, timer = null;
+      let feats = null;
       const collect = () => {
         const out = [];
         svg.querySelectorAll("path[data-oomap-region]").forEach(el => {
@@ -440,12 +440,39 @@
           const c = src.countries && src.countries[el.getAttribute("data-iso")];
           if (c && c.rings) out.push({ layer: "admin0", el, rings: c.rings, n: _ooRingsVertices(c.rings), key: "" });
         });
+        // The contested areas share their vertices with the borders they sit on, so they are
+        // redrawn on the SAME grid (and their `under` fill, the unlabelled path before them);
+        // left on the world view's, the hatch would slide off a border that has sharpened.
+        svg.querySelectorAll("path[data-oomap-disputed]").forEach(el => {
+          const a = src.disputed && src.disputed[el.getAttribute("data-oomap-disputed")];
+          if (!a || !a.rings) return;
+          const prev = el.previousElementSibling;
+          const under = prev && prev.tagName === "path" && !prev.attributes.getNamedItem("data-iso")
+            && !prev.attributes.getNamedItem("data-oomap-region") && prev.getAttribute("d") === el.getAttribute("d") ? prev : null;
+          out.push({ layer: "disputed", el, under, rings: a.rings, n: _ooRingsVertices(a.rings), key: "" });
+        });
+        // Everything was drawn once at the world view's stride and one decimal; say so, so the
+        // first view change redraws only what it must.
+        for (const layer of ["admin0", "admin1"]) {
+          const fs = out.filter(f => f.layer === layer);
+          const k = _ooLodStep(fs.map(f => f.n), OOMAP_ADMIN1_VERTEX_CAP) + ":1";
+          fs.forEach(f => { f.key = k; });
+        }
+        out.forEach(f => { if (f.layer === "disputed") f.key = "1"; });
         return out;
       };
       const run = (vb) => {
         if (!feats) feats = collect();
         const box = _ooLodViewBox(vb), dec = _ooLodDecimals(vb && vb.w);
         let simplified = false;
+        const dKey = String(dec);
+        for (const f of feats) {
+          if (f.layer !== "disputed" || f.key === dKey) continue;
+          const d = _ooMapPath(f.rings, dec);
+          f.el.setAttribute("d", d);
+          if (f.under) f.under.setAttribute("d", d);
+          f.key = dKey;
+        }
         for (const layer of ["admin0", "admin1"]) {
           const fs = feats.filter(f => f.layer === layer);
           const vis = box ? fs.filter(f => _ooLodHit(_ooLodBoxOf(f.rings), box)) : fs;
@@ -478,7 +505,14 @@
             ? " " + t("Borders are drawn thinner than the file while a wide view is in sight; zoom in and they sharpen, up to the file's full detail.") : ""));
         }
       };
-      return { view(vb) { clearTimeout(timer); const v = { x: vb.x, y: vb.y, w: vb.w, h: vb.h }; timer = setTimeout(() => run(v), 120); } };
+      // The timer lives on the host, so a re-render (which attaches anew) cancels the old one.
+      clearTimeout(host._ooLodTimer);
+      const lod = { view(vb) {
+        clearTimeout(host._ooLodTimer);
+        const v = { x: vb.x, y: vb.y, w: vb.w, h: vb.h };
+        host._ooLodTimer = setTimeout(() => { if (svg.isConnected !== false) run(v); }, 120);
+      }, now(vb) { clearTimeout(host._ooLodTimer); run({ x: vb.x, y: vb.y, w: vb.w, h: vb.h }); } };
+      return lod;
     }
 
     // Regions shown or hidden: MODULE state, like the worldview, so every map agrees.
@@ -1135,7 +1169,7 @@
       }
       const rankHtml = _ooRankedTable(rankRows, rankGap, opts);
       const neKept = Object.values(eff).filter(c => !c.osmAdmin && !c.osm).length;
-      const _bsrc = _ooBoundarySource(admin0, osmAdmin && osmAdmin.admin1, osmCountries, _adm1.shown, _adm1.strided, neKept);
+      const _bsrc = _ooBoundarySource(admin0, osmAdmin && osmAdmin.admin1, osmCountries, _adm1.shown, false /* the view-following redraw owns the "drawn thinner" sentence (_ooLodAttach) */, neKept);
       const hasAdmin1 = !!(osmAdmin && osmAdmin.admin1 && osmAdmin.admin1.regions);
 
       const _sig = _ooSignalLayer(opts);
@@ -1332,7 +1366,8 @@
       for (const [iso, c] of Object.entries(eff)) if (c.osmAdmin) lodCountries[iso.toLowerCase()] = c;
       const lodRegions = osmAdmin && osmAdmin.admin1 && osmAdmin.admin1.regions;
       host._ooLodSrc = (Object.keys(lodCountries).length || (lodRegions && _adm1.shown))
-        ? { countries: lodCountries, regions: lodRegions || {} } : null;
+        ? { countries: lodCountries, regions: lodRegions || {},
+            disputed: Object.fromEntries((((wv === OOMAP_WORLDVIEW_OSM ? osmConv : disputed) || {}).areas || []).map(a => [a.id, a])) } : null;
       _wireOoMap(host, opts);
       _ooMapLayoutLabels(host, { x: 0, y: 0, w: W, h: H });   // initial layout (world view)
     }
@@ -1534,6 +1569,7 @@
       // with it on, the zoom goes down to street level (a view about 2 km wide).
       const lane = opts && opts.osmLane ? _ooOsmLaneLayer(host, svg) : null;
       const lod = _ooLodAttach(host, svg);
+      if (lod) lod.now(vb);        // the legend's hover is right at load, not only after a zoom
       const minW = lane ? W * OO_OSM_LANE_MIN_ZOOM : W * 0.04;
       const apply = () => {
         svg.setAttribute("viewBox", `${vb.x} ${vb.y} ${vb.w} ${vb.h}`);
