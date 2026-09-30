@@ -700,7 +700,7 @@
     // score; the design respects co-occurrence ≠ causation, but the on-graph caveat
     // text was removed (maintainer 2026-06-17). Lazy: rendered on tab-show, cached.
     const _anTrend = { key: null, term: null, counts: [], suggested: [], picked: {}, mode: "counts",
-                       byLang: null, concept: null, articles: null };
+                       byLang: null, concept: null, articles: null, autoIndexed: false };
     function commoditiesForTerm(term, related) {
       // Reverse of the COMMODITY_QUERY seed: suggest a commodity when its family
       // word appears in the analyzed term or its related terms (e.g. a "Middle East"
@@ -743,7 +743,7 @@
       if (_anTrend.key === key && _anTrend.counts.length) { drawAnTrend(); return; }
       if (!term) { host.innerHTML = `<div class="muted">${esc(t("Open the analysis from a keyword or a search to see its combined trend."))}</div>`; return; }
       host.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
-      _anTrend.key = key; _anTrend.term = term; _anTrend.counts = []; _anTrend.suggested = []; _anTrend.picked = {}; _anTrend.mode = "counts";
+      _anTrend.key = key; _anTrend.term = term; _anTrend.counts = []; _anTrend.suggested = []; _anTrend.picked = {}; _anTrend.mode = "counts"; _anTrend.autoIndexed = false;
       try {
         const [main, assoc] = await Promise.all([
           api("/api/insights/trend?bucket=week&term=" + encodeURIComponent(term) + lens).catch(() => null),
@@ -785,7 +785,7 @@
       } catch (e) { host.innerHTML = `<div class="note err">${esc(e.message)}</div>`; return; }
       drawAnTrend();
     }
-    function anTrendSetMode(m) { _anTrend.mode = m; drawAnTrend(); }
+    function anTrendSetMode(m) { _anTrend.mode = m; _anTrend.autoIndexed = false; drawAnTrend(); }
     async function anTrendPick(sym) {
       if (!sym) return;
       if (_anTrend.picked[sym]) { delete _anTrend.picked[sym]; drawAnTrend(); return; }
@@ -794,7 +794,14 @@
         const prices = (pd && pd.prices) || [];
         _anTrend.picked[sym] = { prices, unit: prices[0] ? (prices[0].currency + "/" + prices[0].unit) : "" };
       } catch (e) { _anTrend.picked[sym] = { prices: [], unit: "" }; }
-      if (_anTrend.mode === "counts") _anTrend.mode = "indexed";   // a price cannot share the counts axis
+      // A price cannot share the counts axis, so a commodity that HAS prices switches the
+      // chart to Indexed -- and says so, beside the chart, because a reader who screenshots
+      // it would otherwise quote an axis that changed under them. A commodity with no
+      // stored prices overlays nothing, so it changes nothing: the chart stays in Counts
+      // and the note next to it says why (the journalist walk, 2026-09-30, WTI).
+      if (_anTrend.mode === "counts" && (_anTrend.picked[sym].prices || []).length) {
+        _anTrend.mode = "indexed"; _anTrend.autoIndexed = true;
+      }
       drawAnTrend();
     }
     // A control row's leading label ("View:", "Show:", "source:") in the READER's own
@@ -807,6 +814,8 @@
     }
     function drawAnTrend() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((s2, v) =>
+        String(s2).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? v[k] : m));
       const host = $("an-trend"); if (!host) return;
       const counts = _anTrend.counts || [];
       if (!counts.length) { host.innerHTML = `<div class="muted">${esc(t("No coverage to chart for this term yet."))}</div>`; return; }
@@ -838,9 +847,13 @@
         + (byLangOffered ? seg("bylang", t("By language")) : "") + `</div>`;
       const chip = (sym) => `<button class="chip${_anTrend.picked[sym] ? " on" : ""}" data-on-click="anTrendPick('${sym}')"`
         + `${_anTrend.picked[sym] ? ' style="border-color:var(--accent)"' : ''}>${esc(sym)}</button>`;
+      // A commodity chosen from the drop-down leaves the drop-down at "more…" (it is an
+      // adder), so it needs a lit chip of its own: that chip IS the statement of what is
+      // overlaid, and clicking it takes the overlay off again.
+      const chipSyms = _anTrend.suggested.concat(picks.filter((x) => _anTrend.suggested.indexOf(x) < 0));
       const suggRow = `<div class="row" style="gap:5px;align-items:center;flex-wrap:wrap;margin-bottom:6px">`
         + _anCtlLabel(t("Overlay a commodity"))
-        + _anTrend.suggested.map(chip).join(" ")
+        + chipSyms.map(chip).join(" ")
         + ` <select data-on-change="anTrendPick(this.value);ooClearValue(this)" style="width:auto;font-size:12px">`
         + `<option value="">${esc(t("more…"))}</option>`
         + Object.keys(COMMODITY_QUERY).map(s => `<option value="${esc(s)}">${esc(s)}</option>`).join("")
@@ -849,18 +862,26 @@
         ? t("Indexed to 100 at the window start — relative movement, not absolute levels. Hover shows the real value.")
         : t("Mention counts on a shared time axis.");
       if (_anTrend.mode === "bylang" && byLangOffered) return _drawAnTrendByLang(host, modeRow, langKeys);
-      host.innerHTML = modeRow + suggRow + `<div id="an-trend-chart"></div>`
-        + `<p class="card-caveat" style="margin-top:6px">${esc(caveat)}</p>`
-        + (_anTrend.mode === "counts" && picks.length ? `<p class="hint muted" style="margin:4px 0 0">${esc(t("Switch to Indexed to overlay commodity prices honestly (different units)."))}</p>` : "")
+      const hasPrices = (sym) => ((_anTrend.picked[sym] || {}).prices || []).length > 0;
+      const priced = picks.filter(hasPrices);
+      const noNotes = picks.filter((x) => !hasPrices(x)).map((sym) =>
+        `<p class="card-caveat" style="margin-top:6px">${esc(tf("{symbol}: no price rows stored yet, so there is nothing to overlay.", {symbol: sym}))}</p>`).join("");
+      const autoNote = (_anTrend.autoIndexed && indexed)
+        ? `<p class="hint muted" style="margin:4px 0 0">${esc(t("Switched to Indexed so the commodity price can share the axis with the counts. Choose Counts to go back."))}</p>` : "";
+      host.innerHTML = modeRow + suggRow + `<div id="an-trend-chart"></div>` + noNotes
+        + `<p class="card-caveat" style="margin-top:6px">${esc(caveat)}</p>` + autoNote
+        + (_anTrend.mode === "counts" && priced.length ? `<p class="hint muted" style="margin:4px 0 0">${esc(t("Switch to Indexed to overlay commodity prices honestly (different units)."))}</p>` : "")
         + `<div id="an-trend-dual" style="margin-top:10px"></div>`;
       ooChart($("an-trend-chart"), list, { height: 240, indexed: indexed, zeroBase: !indexed });
       // Precise dual-axis (2 series): the first picked commodity's price × this
       // term's coverage, each on its OWN real-unit scale (the shipped overlay).
       const dual = $("an-trend-dual");
-      if (picks.length && counts.length) {
-        const c = _anTrend.picked[picks[0]];
+      // The first picked commodity that HAS prices: a dual axis headed by a commodity with
+      // none claims a comparison it cannot draw (its "no data points yet" is the note above).
+      if (priced.length && counts.length) {
+        const c = _anTrend.picked[priced[0]];
         const cov = (counts[0].points || []).map(p => ({ date: p.t, count: p.v }));
-        dual.innerHTML = `<div class="hint"><b>${esc(t("Dual-axis"))}</b> — ${esc(picks[0])} · ${esc(t("Price × coverage"))} `
+        dual.innerHTML = `<div class="hint"><b>${esc(t("Dual-axis"))}</b> — ${esc(priced[0])} · ${esc(t("Price × coverage"))} `
           + `<span class="muted">${esc(t("each on its own real-unit scale"))}</span></div>` + commodityOverlaySvg(c.prices, cov, c.unit);
       } else dual.innerHTML = "";
     }

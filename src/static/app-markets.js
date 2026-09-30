@@ -875,10 +875,34 @@
     function _allInteger(vals) {
       return vals.length > 0 && vals.every(v => Number.isInteger(v));
     }
+    // A count axis must not label 0, 1, 3, 4: snapping each interior tick to the nearest
+    // integer left the 2 out of a 0-4 axis (the journalist walk, 2026-09-30), so the
+    // labels read as evenly spaced numbers that were not. On a SMALL integer range the
+    // ticks are the real extremes plus an even step that divides the range exactly
+    // (0-4 -> 0, 2, 4; 0-10 -> 0, 5, 10; 0-5 -> every integer); a prime range, or one too
+    // wide for a rounding error to be visible, keeps the snapped ticks below. The helper
+    // is nested because three node tests lift honestTicks out of this file on its own.
     function honestTicks(minV, maxV, want, integerOnly) {
       if (!isFinite(minV) || !isFinite(maxV)) return [];
       if (maxV <= minV) return [minV];              // FLAT: one honest tick, never a fabricated span
       const n = Math.max(2, want | 0);
+      const evenIntTicks = () => {
+        const R = maxV - minV;
+        if (!Number.isInteger(R) || R < 2 || R > 240) return null;
+        for (const cap of [n, n * 2]) {
+          for (let s = Math.max(1, Math.ceil(R / (cap - 1))); s <= R / 2; s++) {
+            if (R % s !== 0) continue;
+            const ticks = [];
+            for (let v = minV; v <= maxV; v += s) ticks.push(v);
+            return ticks;
+          }
+        }
+        return null;
+      };
+      if (integerOnly && Number.isInteger(minV) && Number.isInteger(maxV)) {
+        const even = evenIntTicks();
+        if (even) return even;
+      }
       const eps = (maxV - minV) * 1e-9;
       const out = [];
       for (let g = 0; g < n; g++) {
@@ -1824,6 +1848,12 @@
       const readout = document.createElement("div");
       readout.className = "hint"; readout.style.minHeight = "18px";
       wrap.appendChild(cv); wrap.appendChild(legend); wrap.appendChild(readout); el.appendChild(wrap);
+      // The idle readout SAYS what the chart can do: wheel, drag and double-click all work
+      // and nothing on the screen told a first-time reader so (the journalist walk found
+      // them only by trying). It is the line the hover readout already uses, so no layout
+      // moves, and it comes back whenever the pointer leaves with nothing pinned.
+      const idleHint = t9("Scroll to zoom \u00b7 drag to pan \u00b7 double-click to reset");
+      readout.textContent = idleHint;
 
       const toMs = (x) => {
         if (typeof x === "number") return x;
@@ -2013,8 +2043,10 @@
       function visible() {
         return all.filter(s => !s.hidden).map(s => ({...s, vis: s.pts.filter(p => p.t >= t0 && p.t <= t1)}));
       }
+      let emptyState = false;   // the readout is naming an empty window / hidden series
       function draw() {
         ctx.clearRect(0, 0, W, H);
+        if (emptyState) { emptyState = false; readout.textContent = idleHint; }
         if (opts.indexed) for (const s of all) {        // rebase each series to 100 at its first visible value
           const vis = s.pts.filter(p => p.t >= t0 && p.t <= t1);
           const fnz = vis.find(p => p.v !== 0);
@@ -2048,6 +2080,7 @@
           readout.textContent = vs.length
             ? t9("no points in this window — zoom out (double-click)")
             : t9("Every series is hidden. Click a legend entry to show it again.");
+          emptyState = true;
           return;
         }
         const dataLo = (stacked || (opts.zeroBase && !logOk)) ? Math.min(0, ...ys) : Math.min(...ys);
@@ -2439,6 +2472,9 @@
         dragX = null;
       });
       cv.addEventListener("dblclick", () => { t0 = tMin; t1 = tMax; pinned = null; pinnedS = null; draw(); });
+      cv.addEventListener("pointerleave", () => {
+        if (!pinned && dragX == null && !emptyState) readout.textContent = idleHint;
+      });
       draw();
       _ooChartWatch(el, W);
       return {redraw: draw};
@@ -2701,7 +2737,7 @@
         _TS_PRESETS.map(([k]) =>
           `<button type="button" data-preset="${esc(k)}">${esc(t(k))}</button>`).join("") +
         `</div>
-         <label class="ts-scale-l" title="${esc(t("Reads the range in whole days, weeks, months or years: each bound snaps to the start or end of its period. The data inside the range is never thinned."))}">${esc(t("Timescale"))}
+         <label class="ts-scale-l" title="${esc(t("Reads the range in whole days, weeks, months or years: each bound snaps to the start or end of its period. The data inside the range is never thinned."))}">${esc(t("Snap range to"))}
            <select class="ts-scale">` +
         TS_SCALES.map((k) => `<option value="${k}"${k === scale ? " selected" : ""}>${esc(t(_TS_SCALE_LABEL[k]))}</option>`).join("") +
         `</select></label>`;
@@ -2742,11 +2778,17 @@
       function fire() {
         if (typeof opts.onChange === "function") opts.onChange({from: _tsIso(from), to: _tsIso(to), scale});
       }
+      // The bounds the reader had BEFORE a coarser scale snapped them, so choosing Days
+      // again puts them back: a snap is a reading choice, not an edit, and without this
+      // "Days" could not undo "Months" (the journalist walk, 2026-09-30). Any bound the
+      // reader moves afterwards is theirs, so it drops the memory.
+      let unsnapped = null;
       function setRange(a, b, notify) {
         if (a > b) { const s = a; a = b; b = s; }
         a = clamp(_tsSnap(a, scale, "start")); b = clamp(_tsSnap(b, scale, "end"));
         const changed = a !== from || b !== to;
         from = a; to = b; paint();
+        if (notify) unsnapped = null;
         if (notify && changed) fire();
       }
       // x pixel within the bar -> value in [min,max] (mirrors sliderToT).
@@ -2822,8 +2864,11 @@
       });
 
       inScale.addEventListener("change", () => {
+        const before = {from, to}, wasDay = scale === "day";
         scale = TS_SCALES.includes(inScale.value) ? inScale.value : "day";
         setRange(from, to, false);
+        if (wasDay && scale !== "day") unsnapped = before;
+        else if (scale === "day" && unsnapped) { from = clamp(unsnapped.from); to = clamp(unsnapped.to); unsnapped = null; paint(); }
         // The scale itself is part of what a consumer reads, so a change is reported
         // even when the snapped bounds happen not to move.
         fire();
@@ -2835,6 +2880,7 @@
       return {
         set: (a, b, sc) => {
           if (sc && TS_SCALES.includes(sc)) { scale = sc; inScale.value = sc; }
+          unsnapped = null;
           setRange(_tsParse(a) ?? from, _tsParse(b) ?? to, false);
         },
         get: () => ({from: _tsIso(from), to: _tsIso(to), scale}),

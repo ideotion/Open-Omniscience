@@ -160,6 +160,7 @@ const src = [
   "let _ooMapSigSet = [], _ooMapSigWin = 25;",
   extract("repaintOoMapDetailFromCache"),
   extract("_ooMapCountryDetail"),
+  extract("_ooMapScrollBehavior"),
   extract("_ooMapSignalDetail"),
   "let _insMapLast = null;",
   "async " + extract("loadMap"),

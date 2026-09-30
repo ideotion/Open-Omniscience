@@ -246,6 +246,11 @@
         height:auto; margin:0; overflow:visible; clip:auto; white-space:normal; }
       .oomap-wrap.oomap-ctl-open .oomap-worldview select { max-width:100%; font-size:11px; }
     }
+    /* The country the reader clicked: outlined in the accent at a constant 2 screen pixels
+       (non-scaling, so it does not fatten when the map is zoomed), with its card docked
+       under the map. Stroke only: the fill keeps saying what the data says. */
+    #oo-choro .oomap-sel { stroke:var(--accent); stroke-width:2px; stroke-opacity:1;
+      vector-effect:non-scaling-stroke; }
     .sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden;
       clip:rect(0,0,0,0); white-space:nowrap; border:0; }
     ::-webkit-scrollbar { width:11px; height:11px; }
@@ -2166,8 +2171,11 @@
        composites the whole element over what is behind it, which is how the
        .ag-cal chip failed WCAG AA on 16 of 17 themes while every declared colour
        still looked fine. */
+    /* contain:inline-size — the canvas is sized in px from this box's own width, so its
+       width must not feed back into the box's (a wide canvas held the stage wide, and
+       narrowing the window never shrank the sky). */
     #sky-stage { margin:10px 0 0; background:var(--panel2); border:1px solid var(--border);
-                 border-radius:10px; overflow:hidden; }
+                 border-radius:10px; overflow:hidden; contain:inline-size; }
     #sky-canvas { display:block; width:100%; cursor:grab; }
     #sky-canvas:active { cursor:grabbing; }
     #sky-canvas:focus-visible { outline:2px solid var(--accent); outline-offset:-2px; }

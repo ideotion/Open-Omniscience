@@ -390,6 +390,19 @@
       const bucket = (t === "system" ? "system" : lightish.includes(t) ? "light" : "dark");
       if (sel) sel.value = bucket;
       _lastSyncedThemeBucket = bucket; }
+    // The General Theme select applies AT ONCE, like the Graphics swatches beside it: it
+    // used to change nothing until "Save preferences", so it looked broken (the journalist
+    // walk, 2026-09-30). The local theme is the authoritative one (the server's value is
+    // only the first-run seed), so applying here loses nothing; setTheme() re-syncs the
+    // bucket, which is why the later Save sees "not changed here" and does not apply twice.
+    (function _wireThemeSelect() {
+      const sel = $("set-theme");
+      if (!sel) return;
+      sel.addEventListener("change", () => {
+        if (sel.value === _lastSyncedThemeBucket) return;
+        setTheme({dark: "ink", light: "light", system: "system"}[sel.value] || "ink");
+      });
+    })();
 
     // Appearance now lives in Settings → Appearance (the old drawer is gone).
     // openDrawer() is kept as the single "take me to appearance" entry point so the

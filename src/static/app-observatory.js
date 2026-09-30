@@ -116,6 +116,15 @@
       // first-occurrence needle two existing guards use to find THE listener, which
       // is how the duplicate was caught.)
       window.addEventListener("resize", () => _obsPaint());
+      // Showing the tab again (or any container-only width change, such as the sidebar
+      // collapsing) is not a window resize, so the listener above never hears it.
+      if (cv && cv.parentElement && typeof ResizeObserver === "function") {
+        let lastW = 0;
+        new ResizeObserver((entries) => {
+          const w = Math.round(entries[0].contentRect.width);
+          if (w > 0 && w !== lastW) { lastW = w; _obsPaint(); }
+        }).observe(cv.parentElement);
+      }
     }
 
     // ----- colour ------------------------------------------------------------ //
@@ -248,8 +257,16 @@
     function _obsPaintNow() {
       const cv = $("sky-canvas");
       if (!cv || !_obs.layout || !window.ooViz) return;
-      const box = cv.parentElement ? cv.parentElement.getBoundingClientRect() : null;
-      const w = Math.max(320, Math.round((box ? box.width : 720)));
+      // The stage's INNER width (clientWidth leaves out its 1 px border, which the old
+      // border-box read painted as 2 px too wide). A hidden tab measures ZERO wide, and
+      // the width floor below would then draw (and freeze) a 240 px sky that the next
+      // visit shows as it is: a pointer that rested on the canvas fires `mouseleave`
+      // when the tab hides, a language switch re-renders it, and either one painted at
+      // 0 px. Paint nothing while it is not laid out; the ResizeObserver in _obsWire
+      // repaints the moment it is shown.
+      const stage = cv.parentElement;
+      if (stage && stage.clientWidth < 1) return;
+      const w = Math.max(240, Math.round(stage ? stage.clientWidth : 720));
       const h = Math.max(320, Math.min(640, Math.round(w * 0.62)));
       const ctx = window.ooViz.setupCanvas(cv, w, h);
       _obs.view.w = w;

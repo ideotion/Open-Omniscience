@@ -212,4 +212,26 @@ const pts = (n, base) => Array.from({length: n}, (_, i) =>
     "the pending chart drew a stale series list");
 }
 
+// ------------------------------------------------- the journalist walk (2026-09-30): the hint
+// Wheel, drag and double-click all worked and nothing on the screen said so. The idle
+// readout line now does, and it comes back when the pointer leaves with nothing pinned.
+{
+  const HINT = "Scroll to zoom \u00b7 drag to pan \u00b7 double-click to reset";
+  const leave = (el) => (canvasOf(el).listeners.pointerleave || []).forEach((fn) => fn({}));
+  const el = host(700);
+  ooChart(el, [{label: "eng", points: pts(12, 5)}], {height: 200});
+  assert.strictEqual(readoutOf(el).textContent, HINT, "an idle chart does not say how to zoom");
+  readoutOf(el).textContent = "eng: 7 \u00b7 2026-01-03";      // what a hover writes
+  leave(el);
+  assert.strictEqual(readoutOf(el).textContent, HINT, "leaving the chart left the last hover value on screen");
+  // An empty state is NOT overwritten by the hint on leave, and clearing it restores the hint.
+  click(chips(el)[0]);
+  assert.ok(/hidden/i.test(readoutOf(el).textContent));
+  leave(el);
+  assert.ok(/hidden/i.test(readoutOf(el).textContent),
+    "leaving replaced the 'every series is hidden' state with the hint: " + readoutOf(el).textContent);
+  click(chips(el)[0]);
+  assert.strictEqual(readoutOf(el).textContent, HINT, "showing the series again left the empty-state note behind");
+}
+
 console.log("oochart_legend_resize_node_test: all assertions passed");
