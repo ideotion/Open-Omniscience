@@ -116,6 +116,23 @@
       // first-occurrence needle two existing guards use to find THE listener, which
       // is how the duplicate was caught.)
       window.addEventListener("resize", () => _obsPaint());
+      // Showing the tab again (or any container-only width change, such as the sidebar
+      // collapsing) is not a window resize, so the listener above never hears it.
+      if (cv && cv.parentElement && typeof ResizeObserver === "function") {
+        const memo = { w: 0 };
+        new ResizeObserver((entries) => {
+          if (_obsStageResized(memo, Math.round(entries[0].contentRect.width))) _obsPaint();
+        }).observe(cv.parentElement);
+      }
+    }
+    // Whether a width the stage was just measured at calls for a repaint. `memo.w` follows
+    // EVERY width the observer reports, hidden (0) included: a tab that is hidden and shown
+    // again at the same width must repaint, because the paints made while it was hidden were
+    // skipped (a language switched in between would otherwise stay on the old labels).
+    function _obsStageResized(memo, w) {
+      if (w === memo.w) return false;
+      memo.w = w;
+      return w > 0;
     }
 
     // ----- colour ------------------------------------------------------------ //
@@ -248,8 +265,16 @@
     function _obsPaintNow() {
       const cv = $("sky-canvas");
       if (!cv || !_obs.layout || !window.ooViz) return;
-      const box = cv.parentElement ? cv.parentElement.getBoundingClientRect() : null;
-      const w = Math.max(320, Math.round((box ? box.width : 720)));
+      // The stage's INNER width (clientWidth leaves out its 1 px border, which the old
+      // border-box read painted as 2 px too wide). A hidden tab measures ZERO wide, and
+      // the width floor below would then draw (and freeze) a 240 px sky that the next
+      // visit shows as it is: a pointer that rested on the canvas fires `mouseleave`
+      // when the tab hides, a language switch re-renders it, and either one painted at
+      // 0 px. Paint nothing while it is not laid out; the ResizeObserver in _obsWire
+      // repaints the moment it is shown.
+      const stage = cv.parentElement;
+      if (stage && stage.clientWidth < 1) return;
+      const w = Math.max(240, Math.round(stage ? stage.clientWidth : 720));
       const h = Math.max(320, Math.min(640, Math.round(w * 0.62)));
       const ctx = window.ooViz.setupCanvas(cv, w, h);
       _obs.view.w = w;

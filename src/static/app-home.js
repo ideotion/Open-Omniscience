@@ -1830,11 +1830,22 @@
       space_time_convergence: "www", weather_corroboration: "www",
     };
     function cardSubtab(c) { return (c && _CARD_SUBTAB[c.type]) || "overview"; }
+    // A producer hands over the raw float it computed (0.4090909090909091), and the units
+    // principle is one shared formatter, never raw float tails (the journalist walk,
+    // 2026-09-30). Whole numbers and words stay as they are; a fraction of one keeps three
+    // significant digits (so a small share is not rounded to a false zero), and anything
+    // larger goes through fmtNum, the shared formatter.
+    function _sigValueText(v) {
+      if (typeof v !== "number" || !isFinite(v) || Number.isInteger(v)) return v;
+      if (Math.abs(v) >= 1) return fmtNum(v);
+      const s = Number(v.toPrecision(3));
+      return Math.abs(s) >= 1e-4 ? String(s) : v.toExponential(2);
+    }
     function cardHtml(c) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const sig = c.signal || {};
       const sigLine = (sig.metric != null && sig.value != null)
-        ? `<div class="sig">${esc(sig.metric)} = ${esc(sig.value)}${c.n != null ? " · n=" + c.n : ""}</div>` : "";
+        ? `<div class="sig">${esc(sig.metric)} = ${esc(_sigValueText(sig.value))}${c.n != null ? " · n=" + c.n : ""}</div>` : "";
       const evid = (c.evidence || []).filter(e => e && (e.url || e.title)).slice(0, 3).map(e => {
         const label = esc(e.title || e.url);
         const meta = [e.source, (e.published_at || "").slice(0,10)].filter(Boolean).map(esc).join(" · ");
