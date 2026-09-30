@@ -578,7 +578,7 @@ ruling 2026-09-10). Its rows — the hand-vetted news, spectrum, markets and law
 carry a stamp whose *basis* is the catalogue itself, shown in the source's provenance panel
 as **qualified · by catalogue**, and they join collection on day one instead of waiting
 their turn behind the discovery backlog. The stamp is not a measurement and never reads as
-one: it is re-checked on the **same six-month clock as every qualified source** (below),
+one: it is re-checked on the **same three-month clock as every qualified source** (below),
 a failed re-check disqualifies the source exactly like any other, a verdict this instance
 has already reached is never overwritten by it, and the qualification export counts such
 rows apart and never ships them as earned verdicts. Discovered, cited and hand-added
@@ -591,6 +591,18 @@ many newly-seeded/discovered sources, that trickle can leave a real backlog: **S
 → Sources → "Source qualification"** shows the panel and a **"Qualify the backlog"**
 button that runs the *same* judging in bulk, as a cancellable task-manager job, to
 catch up faster.
+
+**The qualification queue** (Advanced → Quality gates) shows what the next passes will
+judge, in order: **new sources first** (never judged, or tried without enough articles
+yet), then the sources whose re-check is due. A new source is always more urgent than a
+re-check (ruling R94). The panel also says how many qualified sources are waiting and when
+the next one joins the queue.
+
+**On a small machine** (less memory than the app's scan floor), a pass judges candidates
+against a **sample of the newest 20,000 articles** instead of the whole corpus, and the
+verdict records that it was sampled (ruling R93). Before this, such machines skipped every
+pass silently and no source was ever qualified. If even the sample does not fit, the pass
+says so and does not start.
 
 A **disqualified source gets a second chance** — it is never deleted, and the clock
 (never a re-import or a fresh citation) is the only thing that re-triggers a re-check:
@@ -610,7 +622,7 @@ read as if the app were already gathering from all of them.
 #### Re-verification — a stamp does not last forever
 
 A verdict is a measurement, and a measurement ages. **A qualified stamp is re-checked
-about every six months** (Settings → Scheduler, *qualification re-checks per pass*; 0
+about every three months** (ruling R94, 2026-09-29) (Settings → Scheduler, *qualification re-checks per pass*; 0
 turns re-verification off). The re-check is a flat interval, not the disqualified
 ladder's doubling — doubling encodes diminishing hope after repeated failure and means
 nothing after a success.

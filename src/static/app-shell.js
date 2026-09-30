@@ -589,7 +589,7 @@
       uninstall: () => { onUninstallMode(); },
       // Both quality gates + the scope toggles + the bulk catch-up (absorbed from the
       // Sources section, which now points here — never two homes for one control).
-      qualification: () => { loadQualificationGates(); loadQualifyBulk(); },
+      qualification: () => { loadQualificationGates(); loadQualifyBulk(); loadQualQueue(); },
       // The official-statistics producer DIRECTORY is source management, so it lives here;
       // the FIGURES surface moved to Governments → Statistics (2026-07-31).
       stats:    () => { loadStatAgencies(); },

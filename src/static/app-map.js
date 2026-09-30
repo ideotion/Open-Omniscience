@@ -2903,6 +2903,8 @@
     function osmCompTf(s, v) {
       return (window.OOI18N && OOI18N.tf) ? OOI18N.tf(s, v) : s.replace(/\{(\w+)\}/g, (m, k) => (v[k] == null ? m : v[k]));
     }
+    // The element id of a country's per-region map: a stored code as an id, never on a screen.
+    function _osmCompMapId(c) { return "osm-comp-map-" + c.country; }
     function _osmCompAdmin1(c) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const a = c.admin1 || {};
@@ -2929,11 +2931,11 @@
       return `<div style="margin-top:10px"><label>${esc(t("Map the share of places listing"))} `
         + `<select data-osm-comp-key="${esc(c.country)}">${keyOpts}</select></label>`
         + `<div class="hint">${esc(gaps)}</div>`
-        + `<div id="osm-comp-map-${esc(c.country)}" style="margin-top:6px" data-lang="${esc(lang)}"></div></div>`;
+        + `<div id="${esc(_osmCompMapId(c))}" style="margin-top:6px" data-lang="${esc(lang)}"></div></div>`;
     }
     function _osmCompDrawMap(c) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      const host = $(`osm-comp-map-${c.country}`); const a = c.admin1 || {};
+      const host = document.getElementById(_osmCompMapId(c)); const a = c.admin1 || {};
       if (!host || a.status !== "complete") return;
       const vals = {}, byKey = {};
       for (const r of a.regions || []) {
@@ -3030,7 +3032,7 @@
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const out = $("osm-geo-out"), d = _osmGeoLast;
       if (!out || !d) return;
-      if (d.failed) { out.innerHTML = `<div class="note err">${esc(t("The address could not be looked up here."))}</div>`; return; }
+      if (d.failed) { out.innerHTML = `<div style="color:var(--err)">${esc(t("The address could not be looked up here."))}</div>`; return; }
       if (d.status === "no-country") {
         out.innerHTML = `<div class="muted">${esc(t("No OpenStreetMap country's addresses are indexed on this machine yet."))}</div>`;
         return;

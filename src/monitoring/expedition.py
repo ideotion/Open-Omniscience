@@ -451,22 +451,40 @@ def qualification_safety(session) -> dict:
     # answers, and the run armed a job that could only report "done" having judged
     # nothing. The floor's verdict comes first; the estimate below is only asked when
     # the floor lets the pass run at all.
+    #
+    # FD03 b (2026-09-29): below the floor a pass now judges against a bounded cohort
+    # SAMPLE, so the floor alone no longer declines; the question asked here is the pass's
+    # own (`cohort_plan`), and a sampled run is sized by its sample, not by the corpus.
     try:
-        from src.config.machine_floor import scan_budget
+        from src.catalog.qualification import cohort_plan
 
-        floor = scan_budget(int(articles or 0))
+        plan = cohort_plan(session, articles=int(articles or 0))
+        floor = plan["budget"]
     except Exception:  # noqa: BLE001 - an unreadable floor falls through to the estimate
-        floor = {}
-    if floor.get("declines"):
+        plan, floor = {}, {}
+    if plan.get("mode") == "declined":
         env = floor.get("override_env") or "OO_ALLOW_BIG_SCANS"
         return {
             "safe": False, "basis": "memory floor",
             "reason": (
-                "below the memory floor every qualification pass declines its whole-corpus "
-                f"scan ({floor.get('reason')}), so bulk qualification was NOT started; "
+                "below the memory floor, and even the bounded cohort sample "
+                f"(~{plan.get('sample_need_mb')} MB) does not fit in what is available "
+                f"({floor.get('reason')}), so bulk qualification was NOT started; "
                 f"restart the app with {env}=1 to run it anyway"
             ),
             "available_mb": avail, "articles": articles, "override_env": env,
+        }
+    if plan.get("mode") == "sample":
+        return {
+            "safe": True, "basis": "memory floor (sampled cohort)",
+            "reason": (
+                "this machine is below the memory floor, so each qualification batch judges "
+                f"against the newest {plan.get('sample_articles'):,} articles instead of the "
+                f"whole corpus (~{plan.get('sample_need_mb')} MB); the memory guard still "
+                "pauses the job between batches"
+            ),
+            "available_mb": avail, "articles": articles,
+            "estimated_need_mb": plan.get("sample_need_mb"),
         }
 
     if avail is None:

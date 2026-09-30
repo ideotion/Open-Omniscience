@@ -246,18 +246,29 @@ def test_a_declined_pass_is_a_named_refusal_never_complete(db, monkeypatch):
 
 def test_the_arm_step_asks_the_floor_the_pass_asks(monkeypatch):
     """Two estimators, opposite answers: the arm step judged 1,257 MB of 1,621 safe on a
-    machine where every pass declined. The floor's verdict now comes first."""
+    machine where every pass declined. The arm step now asks the pass's OWN question,
+    ``cohort_plan`` -- and since FD03 b (2026-09-29) a machine below the floor judges against
+    a bounded sample, so only a machine where even the sample does not fit is refused."""
     import src.config.machine_floor as mf
+    from src.catalog import qualification as q
     from src.monitoring import expedition
 
     monkeypatch.setattr(expedition, "_memory", lambda: {"available_mb": 8000})
     monkeypatch.setattr(expedition, "latest_recorded_articles", lambda s: 289_000)
-    monkeypatch.setattr(mf, "scan_budget", lambda articles, **k: {"declines": True, "reason": "below the floor",
-                                                                  "override_env": "OO_ALLOW_BIG_SCANS"})
+    monkeypatch.delenv("OO_ALLOW_BIG_SCANS", raising=False)
+
+    def machine(total, avail):
+        monkeypatch.setattr(q, "scan_budget", lambda articles, **k: mf.scan_budget(
+            articles, override=False, total_mb=total, available_mb=avail))
+
+    machine(3924.0, 100.0)  # below the floor, and not even the sample fits
     s = expedition.qualification_safety(None)
     assert s["safe"] is False and s["basis"] == "memory floor"
     assert "OO_ALLOW_BIG_SCANS=1" in s["reason"] and "NOT started" in s["reason"]
-    monkeypatch.setattr(mf, "scan_budget", lambda articles, **k: {"declines": False})
+    machine(3924.0, 900.0)  # below the floor, the sample fits: the field VMs
+    s = expedition.qualification_safety(None)
+    assert s["safe"] is True and s["basis"] == "memory floor (sampled cohort)"
+    machine(8192.0, 4096.0)
     assert expedition.qualification_safety(None)["basis"] == "estimated", "above the floor, the estimate decides as before"
 
 

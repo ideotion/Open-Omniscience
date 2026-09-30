@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import gc
 import random
+import sys
 import tracemalloc
 from datetime import date, timedelta
 
@@ -47,6 +48,15 @@ from src.database import query as query_mod
 from src.database.models import Base
 
 TODAY = date.today()
+
+
+@pytest.fixture(autouse=True)
+def _today_is_now(monkeypatch):
+    """The readers call ``date.today()`` when each test runs; the corpus is dated from
+    ``TODAY``. A module-level constant fixed at import goes a day stale when the suite
+    crosses midnight (a 27-minute CI run did, and three of these tests failed with a
+    reader returning nothing), so it is re-read per test."""
+    monkeypatch.setattr(sys.modules[__name__], "TODAY", date.today())
 
 
 @pytest.fixture()
