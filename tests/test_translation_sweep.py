@@ -273,8 +273,10 @@ def test_the_interface_language_is_validated_before_it_is_stored(monkeypatch):
     assert stored == {}
 
 
-def test_the_title_table_is_not_carried_by_a_restore_and_says_why():
-    from src.backup.merge import _MERGE_NOT_CARRIED
+def test_the_title_table_is_carried_by_a_restore():
+    """R61: the ≈ titles are deduced metadata, so they ride the backup (they were the one
+    deduced table in `_MERGE_NOT_CARRIED`)."""
+    from src.backup.merge import _MERGE_HANDLED, _MERGE_NOT_CARRIED
 
-    assert "article_title_translations" in _MERGE_NOT_CARRIED
-    assert "never the article" in _MERGE_NOT_CARRIED["article_title_translations"]
+    assert "article_title_translations" in _MERGE_HANDLED
+    assert "article_title_translations" not in _MERGE_NOT_CARRIED

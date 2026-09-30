@@ -223,6 +223,7 @@ def _copy_corpus(src: Path, dest_dir: Path) -> Path:
 # startup). Kept in lock-step with init_db by test_scale_bench's drift guard.
 def _run_init_sequence(engine: Any) -> dict[str, Any]:
     """Run the app's unlock upkeep on ``engine`` and report what it did."""
+    from src.database.derived_views import ensure_derived_views
     from src.database.fts import ensure_fts
     from src.database.maintenance import (
         ensure_article_analysis_columns,
@@ -275,6 +276,7 @@ def _run_init_sequence(engine: Any) -> dict[str, Any]:
     ensure_article_top_keyword_columns(engine)
     ensure_article_keyword_indexed_column(engine)
     ensure_keyword_mention_source_column(engine)
+    ensure_derived_views(engine)
     created = ensure_hot_indexes(engine)
     ensure_feed_backoff_columns(engine)
     ensure_article_analysis_columns(engine)

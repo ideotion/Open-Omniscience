@@ -135,8 +135,10 @@ def test_an_incoming_row_NEVER_replaces_a_local_one(tmp_path):
     # ...AND the handler actually looked. Without this the test passes unchanged if the
     # merge step for this table is deleted outright: the pre-existing LOCAL row would
     # still read "LOCAL", so "never overwrote" and "never ran" are the same observation.
-    assert counts["keyword_translations"]["duplicate"] == 1, (
-        "the incoming row was not even RECOGNISED as a duplicate; this test cannot tell "
+    # R61: an item this corpus has whose value DIFFERS is a conflict (kept beside the local
+    # row), no longer also a duplicate -- the two counts are disjoint like every domain's.
+    assert counts["keyword_translations"]["conflict"] == 1, (
+        "the incoming row was not even RECOGNISED as a contradiction; this test cannot tell "
         "'refused to overwrite' from 'did nothing at all'"
     )
 
@@ -247,6 +249,11 @@ def test_nothing_in_the_keyword_index_reads_this_table():
         #
         # The guard stays otherwise unchanged, so the NEXT reader still has to argue.
         "src/analytics/translation_store.py",
+        # ADDED 2026-09-30 by R61 (item 12): the backup engine's provenance-tag builder names
+        # the table as a KEY of `PRODUCER_COLUMNS` (which columns say who produced a row). It
+        # reads no row of it at all and renders nothing; the capture in merge.py is the only
+        # code that touches the rows, and that file is already admitted above.
+        "src/backup/provenance.py",
     }
     assert hits <= allowed, (
         f"keyword_translations gained a reader outside the backup engine: "
