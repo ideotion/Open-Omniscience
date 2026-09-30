@@ -132,7 +132,7 @@ count confirmation. Every string ships in 12 languages. The reader's ≈ title a
    other row a restore adds; discarding it again is one click.
 
 **Status 2026-09-30:** slice 1 = #1237 (merged). Slice 2 = #1242 (panel, keep/discard, the local side found by
-identity: article hash or law jurisdiction + url + revision hash, plus the key columns; newest row). Slice 3 (alternates travel in backups, read by rowid so text-keyed tables work) is PR #… below. Known limitation: `merged_rows` is never pruned, so a row that reuses the id of a deleted
+identity: article hash or law jurisdiction + url + revision hash, plus the key columns; newest row). Slice 3 (alternates travel in backups, read by rowid so text-keyed tables work) is PR #1252 below. Known limitation: `merged_rows` is never pruned, so a row that reuses the id of a deleted
 restore-inserted row can be tagged "arrived" (SQLite reuses integer keys); the tag is honest about the row it
 reads, not about a row that no longer exists.
 
