@@ -668,7 +668,7 @@ stored per mention with the keyword's language derived as the majority (Q414); `
 at extraction, a migration job re-normalises existing keywords (Q416); the hover bubble contents (Q418).
 **RELEASED 2026-09-30 (R98, D11):** the triage-derived stoplist merge — Q1103 = b ("Never; the shipped stoplists are frozen", with a
 note asking for a stopword diagnostic and per-release growth) against Q1104 = a ("Yes, through the review
-surface, batch by batch") was a recorded CONFLICT; the maintainer ruled the lists grow in reviewed batches, and the row ships the merge through a Settings review screen,
+surface, batch by batch") was a recorded CONFLICT; the maintainer ruled the lists grow in reviewed batches, and the row ships the merge as curated batches in the release (R111 amends R98: no Settings review screen, users are never asked; we curate from the diagnostics),
 and the stopword DIAGNOSTIC the note asks for may ship (it decides nothing). **Closes when** every keyword
 surface renders a tier tag (a Chromium click-through record across the eleven silent surfaces), the reconcile
 report exists, a fixture proves the 10 s spacing and the refusal on the kill switch, and `simplemma` is in
@@ -1077,7 +1077,7 @@ Kept explicit so nothing drifts in by assumption:
   3–6), Q1113 (the embassy platforms) — are not decided here and not defaulted anywhere.~~ All four answered
   2026-09-29 (a, a, a, a), recorded in `RULINGS_INDEX.md` and §3.
 - **The stoplist merge** (Q1103 = b vs Q1104 = a, a CONFLICT recorded 2026-09-15) — RESOLVED 2026-09-30
-  (R98): reviewed batches through a Settings review screen; row M ships with it.
+  (R98, amended by R111): reviewed batches curated by us and shipped with each release, no Settings screen; row M ships with it.
 - **Row 5's Tier B** (the 451 index pages above the word guard). Not proposed for `0.3` and not
   proposed here: their prose is unmeasured. The `0.3` PR made that measurable
   (`criteria-calibration.json`'s prose arm now advances and can be pointed at that population),
