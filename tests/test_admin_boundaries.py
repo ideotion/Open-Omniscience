@@ -328,6 +328,39 @@ def test_the_country_outlines_are_budgeted_too_and_the_view_redraws_them():
     assert "lod.view(vb)" in function_body(_MAP_JS, "_wireOoMap")
 
 
+def test_the_map_reads_the_small_world_file_first_and_a_country_s_detail_on_demand():
+    """Reading both whole files took about 20 s and the first paint 26 to 36 s at full-build size
+    (walked 2026-09-30); the split gets the first paint to about 2 s and the detail comes as the
+    view narrows. A build without the split is still read whole."""
+    load = function_body(_MAP_JS, "_ooMapOsmAdminLoad")
+    assert '"osm_borders/admin0.world.json", "osm_admin0.json"' in load
+    assert '"osm_borders/admin1.world.json", "osm_admin1.json"' in load
+    assert "(await get(world)) || get(whole)" in load, "the whole file is the fallback, per layer"
+    loader = function_body(_MAP_JS, "_ooLodDetailLoader")
+    assert "template !== OOMAP_DETAIL_TEMPLATE" in loader, "only the one path the split writes is fetched"
+    assert 'const OOMAP_DETAIL_TEMPLATE = "osm_borders/detail/{a3}.json";' in _MAP_JS
+    assert "doc.vintage === vintage" in loader, "a detail file of another build is refused"
+    assert "admin0.vintage !== admin1.vintage" in load, "two layers of different builds are never mixed"
+    assert "^[A-Z]{3}$" in loader, "only three capitals ever name a file"
+    assert "navigator.deviceMemory" in loader, "the detail cache is sized from the machine"
+
+
+def test_the_legend_owns_its_hover_so_the_translator_cannot_put_the_old_one_back():
+    """i18n.js caches the FIRST title an element shows and restores it on later passes, so a
+    hover rewritten as the view changes was put back to its first value (measured: the
+    "drawn thinner than the file" sentence stayed after every outline was at full detail).
+    An element that renders itself through t() opts out (data-i18n-dyn); maps repaint on a switch."""
+    assert 'data-oomap-borders data-i18n-dyn title=' in _MAP_JS
+
+
+def test_every_map_zooms_as_far_as_the_lane_does_because_a_deep_zoom_is_now_cheap():
+    """The tightest zoom was 1,600 km wide without the lane, where a 0.1 km border is a fraction of a
+    pixel. The redraw draws only what is in sight, within the vertex budget, so a deep zoom
+    costs no more than a wide one (measured: no long task while panning at the deepest zoom)."""
+    assert "const minW = W * OO_OSM_LANE_MIN_ZOOM;" in _MAP_JS
+    assert "W * 0.04" not in _MAP_JS
+
+
 def test_every_choropleth_renders_the_ranked_table_beside_it():
     body = function_body(_MAP_JS, "ooMap")
     assert "const rankHtml = _ooRankedTable(rankRows, rankGap, opts);" in body

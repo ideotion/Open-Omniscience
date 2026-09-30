@@ -28,6 +28,10 @@ THE VINTAGE: the date of the OSM data is read from the file's own header
 neither needs ``--vintage YYYY-MM-DD``; the build refuses to write a border with no
 "as of".
 
+It also writes ``src/static/osm_borders/`` (a small world file plus one detail file per country,
+``scripts/split_admin_boundaries.py``), which is what the map loads; ``--no-split`` skips it and removes the previous one, which would
+describe an older build.
+
 Then record each artifact's sha256 and ``last_verified`` in
 ``configs/external_artifacts.yml`` (entries ``osm-admin0-boundaries`` and
 ``osm-admin1-boundaries``); the report printed here gives the counts the PR states.
@@ -116,6 +120,8 @@ def main() -> int:
     ap.add_argument("--admin1-cap", type=int, default=ADMIN1_VERTEX_CAP, help="vertices per region")
     ap.add_argument("--contested-cap", type=int, default=CONTESTED_VERTEX_CAP, help="vertices per contested area")
     ap.add_argument("--out-dir", default=str(_STATIC), help="where the two JSON files go")
+    ap.add_argument("--no-split", action="store_true",
+                    help="do not write the map's world + per-country detail files (scripts/split_admin_boundaries.py)")
     ap.add_argument("--dry-run", action="store_true", help="report counts and sizes, write nothing")
     args = ap.parse_args()
 
@@ -153,6 +159,19 @@ def main() -> int:
     s1 = _write(admin1, out / OUT_ADMIN1)
     print(f"Wrote {out / OUT_ADMIN0}  sha256 {s0}", file=sys.stderr)
     print(f"Wrote {out / OUT_ADMIN1}  sha256 {s1}", file=sys.stderr)
+    if not args.no_split:
+        # The map loads the split (a small world file, then a country's detail as it zooms in);
+        # the two whole files stay what the server reads. One run keeps all three in step.
+        from scripts.split_admin_boundaries import write_split
+        from src.timemap.admin_split import WORLD_PRECISION, WORLD_VERTEX_BUDGET
+        rep = write_split(admin0, admin1, out, budget=WORLD_VERTEX_BUDGET, precision=WORLD_PRECISION)
+        print(json.dumps({"split": {k: v for k, v in rep.items() if k != "sha256"}}, indent=2))
+    else:
+        # A world file from the PREVIOUS build would be read first by the map and would outrank the
+        # whole files just written, so skipping the split removes it rather than leaving it stale.
+        from scripts.split_admin_boundaries import remove_split
+        if remove_split(out):
+            print(f"Removed the previous {out / 'osm_borders'} (it described the old build).", file=sys.stderr)
     print("Record both sha256 values and last_verified in configs/external_artifacts.yml.", file=sys.stderr)
     return 0
 
