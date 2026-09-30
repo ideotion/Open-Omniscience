@@ -35,6 +35,7 @@ from src.database.models import (  # noqa: E402
     LawDocument,
     LawRevision,
     LawRevisionSummary,
+    MergeBatch,
     MetadataAlternate,
     Source,
 )
@@ -607,7 +608,12 @@ def test_an_alternate_a_backup_carries_reaches_the_next_machine(tmp_path):
     assert set(got) == {"FROM-B", "FROM-A"}, "B's own value AND the one A left beside it"
     assert got["FROM-B"][5] == "machine-B"
     assert got["FROM-A"][5] == "machine-A", "the origin the exporter recorded is kept, not rewritten"
-    assert got["FROM-A"][3]["origin"] == "machine-A"
+    tag = got["FROM-A"][3]
+    assert tag["origin"] == "machine-B", "the immediate backup is the arrival, as for every row"
+    assert tag["carried"]["origin"] == "machine-A", "what the exporter recorded rides beside it"
+    with _corpus(c)() as s:
+        batch = s.get(MergeBatch, tag["arrived"]["batch"])
+        assert batch.origin_fingerprint == "machine-B", "the batch id is one of THIS corpus's"
     assert counts["metadata_alternates"]["new"] == 1
 
 
@@ -651,8 +657,9 @@ def test_an_alternate_with_no_home_here_is_counted_not_invented(tmp_path):
 
 
 def test_the_capture_specs_agree_with_what_is_stored():
-    """One definition drives the capture and the carry: the identity keys a capture stores
-    must be exactly the spec's parent key plus its `match` names."""
+    """One definition drives the capture and the carry: `shown` covers `differs` and the scope is
+    one the carry understands. (The identity keys a capture writes are pinned against the
+    resolver by test_the_identity_the_capture_writes_is_exactly_what_the_resolver_reads.)"""
     from src.backup.provenance import ALTERNATE_SPECS
 
     for table, spec in ALTERNATE_SPECS.items():
@@ -702,3 +709,102 @@ def test_every_table_re_attaches_by_its_own_identity_across_two_hops(tmp_path):
     assert tables == set(ALTERNATE_SPECS), sorted(set(ALTERNATE_SPECS) - tables)
     from_a = {a[0] for a in _alts(paths["C"]) if a[5] == "machine-A"}
     assert from_a == set(ALTERNATE_SPECS), "A's value reached C through B for every table"
+
+
+def _restored_with(tmp_path, alternates):
+    """C restores a backup whose alternates table holds exactly ``alternates`` (each a dict of
+    MetadataAlternate columns); returns the merge counts and C's path."""
+    inc, live = tmp_path / "inc.db", tmp_path / "live.db"
+    with _corpus(inc)() as s:
+        _tr("FROM-B")(s)
+        for a in alternates:
+            s.add(MetadataAlternate(batch_id=1, local_row_id=1, origin="machine-Z",
+                                    status="pending", **a))
+        s.commit()
+    with _corpus(live)() as s:
+        _tr("FROM-C")(s)
+        s.commit()
+    counts, _ = merge_corpus(inc, live, _meta("machine-B"))
+    return counts, live
+
+
+def test_a_malformed_incoming_alternate_is_counted_and_never_fails_the_restore(tmp_path):
+    good_id = json.dumps({"term": "chat", "source_lang": "fr", "target_lang": "en", "model": "m1",
+                          "prompt_version": "v1"})
+    base = {"table_name": "keyword_translations", "identity": good_id,
+            "fields": json.dumps({"text": "X"}), "provenance": json.dumps({"v": 1})}
+    counts, live = _restored_with(tmp_path, [
+        {**base, "identity": "[]"},                                  # not an object
+        {**base, "fields": json.dumps({"text": {"x": 1}})},          # a value that cannot bind
+        {**base, "provenance": "not json"},                          # unreadable tag
+        {**base, "provenance": "[1]"},                               # a tag that is not an object
+        {**base, "table_name": "no_such_table"},                     # an unknown table
+        {**base, "fields": json.dumps({"text": "GOOD"})},            # the one sound row
+    ])
+    r = counts["metadata_alternates"]
+    assert (r["new"], r["deferred"]) == (1, 5)
+    # FROM-B is the restore's own capture (its translation contradicts C's); GOOD is the carry.
+    assert sorted(a[2]["text"] for a in _alts(live)) == ["FROM-B", "GOOD"]
+    from src.backup.alternates import list_alternates
+
+    with _corpus(live)() as s:
+        assert len(list_alternates(s)["items"]) == 2, "the list still renders"
+
+
+def test_a_carried_law_alternate_without_a_jurisdiction_still_finds_its_row(tmp_path):
+    def add(summary):
+        def f(s):
+            doc = LawDocument(jurisdiction="uk", title="Act", url="https://example.uk/act")
+            s.add(doc)
+            s.flush()
+            rev = LawRevision(document_id=doc.id, observed_at=_T0, content_hash="ch1", full_text="T")
+            s.add(rev)
+            s.flush()
+            s.add(LawRevisionSummary(revision_id=rev.id, summary=summary, model="m1",
+                                     prompt_version="v1", created_at=_T0))
+        return f
+
+    a, b, c = tmp_path / "a.db", tmp_path / "b.db", tmp_path / "c.db"
+    for path, text in ((a, "L-A"), (b, "L-B"), (c, "L-C")):
+        with _corpus(path)() as s:
+            add(text)(s)
+            s.commit()
+    merge_corpus(a, b, _meta("machine-A"))
+    with _corpus(b)() as s:
+        alt = s.query(MetadataAlternate).one()
+        ident = json.loads(alt.identity)
+        del ident["jurisdiction"]          # as an alternate recorded before that key existed
+        alt.identity = json.dumps(ident)
+        s.commit()
+    counts, _ = merge_corpus(b, c, _meta("machine-B"))
+    assert counts["metadata_alternates"]["new"] == 1 and counts["metadata_alternates"].get("deferred", 0) == 0
+
+
+def test_an_item_and_its_alternate_arriving_in_one_restore_are_both_kept(tmp_path):
+    """C lacks the item entirely: the row is inserted and the alternate attaches to it, which
+    holds only because the carry runs after every table's rows are in."""
+    a, b, c = tmp_path / "a.db", tmp_path / "b.db", tmp_path / "c.db"
+    for path, text in ((a, "FROM-A"), (b, "FROM-B")):
+        with _corpus(path)() as s:
+            _tr(text)(s)
+            s.commit()
+    with _corpus(c)() as s:
+        s.commit()
+    merge_corpus(a, b, _meta("machine-A"))
+    counts, _ = merge_corpus(b, c, _meta("machine-B"))
+    assert counts["metadata_alternates"]["new"] == 1
+    with _corpus(c)() as s:
+        assert s.query(KeywordTranslation).one().text == "FROM-B"
+
+
+def test_a_kept_alternate_arrives_pending_and_a_discarded_one_returns_on_a_re_restore(tmp_path):
+    _, _, c, b = _chain(tmp_path)
+    with _corpus(b)() as s:
+        s.query(MetadataAlternate).update({"status": "kept"})
+        s.commit()
+    with _corpus(c)() as s:
+        s.query(MetadataAlternate).delete()
+        s.commit()
+    merge_corpus(b, c, _meta("machine-B"))
+    got = _alts(c)
+    assert got and all(a[4] == "pending" for a in got), "what one machine kept is new to the next"

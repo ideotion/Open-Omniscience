@@ -127,14 +127,21 @@ count confirmation. Every string ships in 12 languages. The reader's ≈ title a
    Settings panel, checked by me in Chromium.
 3. Alternates travel in backups: each incoming alternate is re-attached to THIS corpus's row by its natural
    identity (never the exporter's ids), only if it still contradicts what this corpus holds, arriving pending
-   with the origin and tag the exporter recorded. One with no home here (its article is absent) is counted, not
-   invented a home. A discarded alternate returns if an older backup still carrying it is restored, like any
+   under this restore's batch: its `origin` column stays the exporter's (the capture de-duplicates on it), its
+   tag names this restore as the arrival (rule (i): origin is the immediate backup) and keeps the exporter's own
+   tag whole under `carried`. One with no home here (its article is absent), or that is not a well-formed flat
+   JSON object, is counted, not invented a home and never allowed to fail the restore. A discarded alternate returns if an older backup still carrying it is restored, like any
    other row a restore adds; discarding it again is one click.
 
 **Status 2026-09-30:** slice 1 = #1237 (merged). Slice 2 = #1242 (panel, keep/discard, the local side found by
 identity: article hash or law jurisdiction + url + revision hash, plus the key columns; newest row). Slice 3 (alternates travel in backups, read by rowid so text-keyed tables work) is PR #1252 below. Known limitation: `merged_rows` is never pruned, so a row that reuses the id of a deleted
 restore-inserted row can be tagged "arrived" (SQLite reuses integer keys); the tag is honest about the row it
-reads, not about a row that no longer exists.
+reads, not about a row that no longer exists (when a reused id has several `merged_rows` entries the tag names
+the LATEST batch, its current occupant). **For row C:** provenance and alternates key rows by SQLite `rowid`.
+That equals `id` for the six tables here (`INTEGER PRIMARY KEY`), but a text-keyed table (`places.id`,
+`wikidata_items.qid`) has an implicit rowid that `VACUUM` may renumber, so `merged_rows.row_id` and
+`local_row_id` could then point at unrelated rows; before relying on it for those tables, key their provenance
+on the declared key or a natural key, or make maintenance's VACUUM preserve rowids.
 
 ## Choices left to the user (recommendation applied unless you say otherwise)
 

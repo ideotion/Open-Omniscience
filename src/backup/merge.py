@@ -2085,12 +2085,14 @@ def _merge_metadata_alternates(con, batch_id, results) -> None:
     lost when B's backup is restored on C. Each incoming alternate is re-attached to THIS
     corpus's own row by its natural identity (never by the exporter's ids), and only when it
     still contradicts what this corpus holds -- an alternate whose value a local row already
-    has is no difference here. It arrives ``pending``, under this batch, keeping its ORIGIN and
-    provenance tag exactly as the exporter recorded them.
+    has is no difference here. It arrives ``pending``, under this batch. Its ``origin`` column
+    stays the exporter's (the capture's de-duplication keys on it); its tag names this restore
+    as the arrival and keeps the exporter's own tag whole under ``carried``.
 
-    An alternate whose item this corpus lacks is counted as deferred, not invented a home:
-    its item rides the same backup, so that happens only when the item's own insert was
-    refused, and the alternate travels again with the next backup. A discarded alternate
+    An alternate whose item this corpus lacks, or that is not well-formed, is counted as
+    deferred, never invented a home and never allowed to fail the restore (it happens when the
+    item's own insert was refused, when the exporter deleted the item after capturing the
+    difference, or when the file is damaged); it travels again with the next backup. A discarded alternate
     returns when an older backup that still carries it is restored, like any other row that
     restore adds; discarding it again is one click.
 
@@ -2104,6 +2106,12 @@ def _merge_metadata_alternates(con, batch_id, results) -> None:
     ):
         return
     now = datetime.now(UTC).replace(tzinfo=None).isoformat(sep=" ", timespec="microseconds")
+    here = _q(
+        con, "SELECT origin_fingerprint, imported_at, app_version FROM merge_batches WHERE id = ?",
+        (batch_id,),
+    )
+    here_origin, here_at, here_version = here[0] if here else ("unsigned", None, None)
+    notnull: dict[str, set[str]] = {}
     incoming = _q(
         con,
         "SELECT table_name, identity, fields, provenance, origin FROM inc.metadata_alternates"
@@ -2111,12 +2119,12 @@ def _merge_metadata_alternates(con, batch_id, results) -> None:
     )
     for table, identity_json, fields_json, prov_json, origin in incoming:
         spec = ALTERNATE_SPECS.get(table)
-        if spec is None:
-            r.deferred += 1
-            continue
-        try:
-            identity, fields = json.loads(identity_json), json.loads(fields_json)
-        except ValueError:
+        identity = _alternate_object(identity_json, scalars=True)
+        fields = _alternate_object(fields_json, scalars=True)
+        prov = _alternate_object(prov_json, scalars=False)
+        if spec is None or identity is None or fields is None or prov is None:
+            # An incoming file is untrusted input: anything that is not a flat JSON object is
+            # counted and left behind, never allowed to fail the whole restore.
             r.deferred += 1
             continue
         if _count(
@@ -2128,7 +2136,11 @@ def _merge_metadata_alternates(con, batch_id, results) -> None:
             r.duplicate += 1
             continue
         tbl = _ident(table)
-        where, params = _alternate_local_match(con, spec, identity)
+        if table not in notnull:
+            notnull[table] = {
+                c[1] for c in _q(con, f"PRAGMA table_info({tbl})") if c[3]  # nosec B608 - tbl is a key of ALTERNATE_SPECS
+            }
+        where, params = _alternate_local_match(con, spec, identity, notnull[table])
         if where is None:
             r.deferred += 1
             continue
@@ -2145,18 +2157,46 @@ def _merge_metadata_alternates(con, batch_id, results) -> None:
         ):
             r.duplicate += 1  # this corpus already holds that value: no difference here
             continue
+        # The tag names THIS restore as the arrival (the design's rule (i): origin is the
+        # immediate backup's fingerprint, and a batch id means a batch of this corpus); what the
+        # exporter recorded rides beside it, untouched, under ``carried``.
+        tag = {
+            **{k: prov.get(k) for k in ("v", "kind", "producer", "version", "prompt_text", "produced_at")},
+            "origin": here_origin,
+            "arrived": {"batch": batch_id, "at": here_at, "app_version": here_version},
+            "carried": prov,
+        }
         con.execute(
             "INSERT INTO metadata_alternates (batch_id, table_name, identity, local_row_id,"
             " fields, provenance, origin, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?)",
-            (batch_id, table, identity_json, local_id, fields_json, prov_json, origin, now),
+            (batch_id, table, identity_json, local_id, fields_json, json.dumps(tag), origin, now),
         )
         r.new += 1
     r.note = "carried with the backup; re-attached to this corpus's own rows by identity"
 
 
-def _alternate_local_match(con, spec: dict, identity: dict) -> tuple[str | None, list]:
+def _alternate_object(raw, *, scalars: bool) -> dict | None:
+    """``raw`` parsed as a JSON object, or None. ``scalars`` also demands flat values (an
+    identity or a field set is only ever text, numbers, booleans or null)."""
+    try:
+        obj = json.loads(raw)
+    except (TypeError, ValueError):
+        return None
+    if not isinstance(obj, dict):
+        return None
+    if scalars and not all(v is None or isinstance(v, (str, int, float, bool)) for v in obj.values()):
+        return None
+    return obj
+
+
+def _alternate_local_match(
+    con, spec: dict, identity: dict, notnull: Iterable[str] = ()
+) -> tuple[str | None, list]:
     """The WHERE clause (and bound values) that finds an alternate's item in THIS corpus, or
-    ``(None, [])`` when the item's parent (its article or law revision) is not here."""
+    ``(None, [])`` when the item's parent (its article or law revision) is not here.
+
+    ``notnull`` names the table's NOT NULL columns: those are compared plainly so an index can
+    serve the lookup, and only the nullable ones pay for ``COALESCE``."""
     where: list[str] = []
     params: list = []
     scope = spec["scope"]
@@ -2167,19 +2207,26 @@ def _alternate_local_match(con, spec: dict, identity: dict) -> tuple[str | None,
         where.append("article_id = ?")
         params.append(rows[0][0])
     elif scope == "law":
+        # An alternate recorded before the jurisdiction joined the identity has none (as the
+        # resolver in alternates.py allows): the first matching revision is then the home.
+        juris = identity.get("jurisdiction")
         rows = _q(
             con,
             "SELECT r.id FROM law_revisions r JOIN law_documents d ON d.id = r.document_id"
-            " WHERE d.jurisdiction = ? AND d.url = ? AND r.content_hash = ? ORDER BY r.id LIMIT 1",
-            (identity.get("jurisdiction"), identity.get("document_url"),
-             identity.get("revision_content_hash")),
+            " WHERE d.url = ? AND r.content_hash = ?" + (" AND d.jurisdiction = ?" if juris else "")
+            + " ORDER BY r.id LIMIT 1",
+            (identity.get("document_url"), identity.get("revision_content_hash"))
+            + ((juris,) if juris else ()),
         )
         if not rows:
             return None, []
         where.append("revision_id = ?")
         params.append(rows[0][0])
     for name, column in spec["match"].items():
-        where.append(f"COALESCE({column}, '') = COALESCE(?, '')")
+        if column in notnull:
+            where.append(f"{column} = COALESCE(?, '')")
+        else:
+            where.append(f"COALESCE({column}, '') = COALESCE(?, '')")
         params.append(identity.get(name))
     return " AND ".join(where), params
 
