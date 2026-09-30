@@ -215,12 +215,19 @@ def _span(ring: Ring) -> float:
     return max(max(lons) - min(lons), max(lats) - min(lats)) if ring else 0.0
 
 
-def fit_to_cap(outers: list[Ring], inners: list[Ring], cap: int, precision: int) -> tuple[list[Ring], bool]:
+def fit_to_cap(
+    outers: list[Ring], inners: list[Ring], cap: int, precision: int, *, refine: bool = False
+) -> tuple[list[Ring], bool]:
     """Rings (outers first, then holes) that fit ``cap`` vertices in total.
 
     Returns ``(rings, simplified)``. The tolerance starts at one unit of the kept
     precision and doubles; once it stops helping, the smallest rings (holes first,
     then islands) are dropped. The largest outer ring is never dropped.
+
+    ``refine`` then bisects between the last tolerance that did not fit and the first that did,
+    so the result lands near ``cap`` instead of anywhere from half of it to all of it. The
+    published artifacts do not use it (their bytes are unchanged); the world file does, where the
+    cap is a draw budget and a coarser outline than the budget allows is detail thrown away.
     """
     outs = [r for r in (_round_ring(r, precision) for r in outers) if len(r) >= 3]
     ins = [r for r in (_round_ring(r, precision) for r in inners) if len(r) >= 3]
@@ -242,6 +249,17 @@ def fit_to_cap(outers: list[Ring], inners: list[Ring], cap: int, precision: int)
         if not cur_o:                                # never lose the feature itself
             cur_o = [simplify_ring(outs[0], tol)]
         if total(cur_o) + total(cur_i) <= cap:
+            if refine:
+                lo, hi, best = (tol / 2 if _ > 0 else 0.0), tol, (cur_o, cur_i)
+                for _bisect in range(7):
+                    mid = (lo + hi) / 2
+                    o = [x for x in (simplify_ring(r, mid) for r in outs) if len(x) >= 3] or [simplify_ring(outs[0], mid)]
+                    i = [x for x in (simplify_ring(r, mid) for r in ins) if len(x) >= 3]
+                    if total(o) + total(i) <= cap:
+                        hi, best = mid, (o, i)
+                    else:
+                        lo = mid
+                cur_o, cur_i = best
             return cur_o + cur_i, True
         tol *= 2
     # Still over: drop holes smallest-first, then islands smallest-first.

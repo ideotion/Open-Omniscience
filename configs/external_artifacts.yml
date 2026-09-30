@@ -777,6 +777,27 @@ artifacts:
     freshness: {max_age_months: 12}
     last_verified: "2026-09-29"
 
+  - id: osm-borders-split
+    title: The map's world + per-country border files (derived from osm-admin0/1-boundaries)
+    kind: vendored-data
+    description: >
+      osm_borders/admin0.world.json and admin1.world.json: the same documents as the two whole
+      files with every outline simplified to about the world view's draw budget, and one
+      osm_borders/detail/<ALPHA3>.json (country) and <ALPHA3>.regions.json (its regions) holding the unsimplified rings, fetched by the
+      map only when the view narrows to where they can be drawn (0.5 rows E and L; the whole files
+      stay what the server reads). DERIVED, never edited by hand: written by the same run as the
+      whole files, or alone by scripts/split_admin_boundaries.py, and it must carry the SAME
+      vintage as the whole files (tests/test_admin_split.py). Absent until the borders are built;
+      the map then reads the whole files as before.
+    upstream: https://www.openstreetmap.org (through osm-admin0-boundaries)
+    fetched_from: derived locally from src/static/osm_admin0.json and osm_admin1.json; no connection
+    check_upstream: "rebuilt with osm-admin0-boundaries, never alone"
+    license: "ODbL 1.0 -- © OpenStreetMap contributors (share-alike; see Q823)"
+    pin: {path: src/static/osm_borders/admin0.world.json, sha256: "", vintage_key: vintage, optional: true}
+    refresh: "python scripts/split_admin_boundaries.py"
+    freshness: {max_age_months: 12}
+    last_verified: "2026-09-30"
+
   - id: offline-bundle-python-runtime
     title: Self-contained CPython for the air-gapped installer (OPERATOR-SUPPLIED)
     kind: vendored-binary
