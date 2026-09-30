@@ -1,0 +1,2 @@
+date,area,item,status,refs,key_paths,summary
+2026-09-30,tests/main,Main's source-slicing budget after #1253: the map-controls test slices with the shared helper again,shipped,PR #1260,tests/test_map_controls_collapse.py,"test_source_slicing_discipline failed on main (232 hand-rolled slicing sites, budget 230) because #1253's test_map_controls_collapse.py split the source on two code anchors; it now uses function_body and arrow_const_source from tests/js_source_helper, so the budget stays 230 and keeps its meaning. A mutation (a listener on the panel) still fails it."
