@@ -198,3 +198,138 @@ def test_the_real_engine_uses_the_reserving_pool_and_the_collector_wears_the_rol
     from src.database.session import engine
 
     assert isinstance(engine.pool, ReservingQueuePool)
+
+
+# -- the Opus review's findings (2026-09-30) ---------------------------------------
+
+
+def _hold_in_thread(eng, action):
+    """Check a connection out in a collector-role worker thread, run ``action`` on it, and
+    let the thread finish -- the way a collect worker and its executor come and go."""
+    err: list[BaseException] = []
+
+    def run():
+        try:
+            with collector_role():
+                action(eng.raw_connection())
+        except BaseException as exc:  # noqa: BLE001 - reported to the test
+            err.append(exc)
+
+    t = threading.Thread(target=run)
+    t.start()
+    t.join(5)
+    assert not t.is_alive()
+    return err
+
+
+def test_an_invalidated_connection_gives_its_slot_back():
+    """SQLAlchemy clears the record's DBAPI connection BEFORE it fires ``checkin`` on an
+    invalidated connection, so a slot keyed on the DBAPI object was never returned and a
+    ceiling's worth of them starved the collector until restart."""
+    eng = _engine()
+    ceiling = collector_ceiling(POOL + OVERFLOW, _API_MARGIN)
+    for _ in range(ceiling + 2):  # more invalidations than there are slots
+        assert not _hold_in_thread(eng, lambda c: (c.invalidate(), c.close()))
+    assert eng.pool.reservation()["collector_held"] == 0
+    # ...and a fresh collector can still take a connection.
+    assert not _hold_in_thread(eng, lambda c: c.close())
+
+
+def test_a_connection_whose_reset_fails_gives_its_slot_back():
+    """The vanished-drive shape (R86): the rollback on return raises, and the pool
+    invalidates the connection instead of returning it."""
+    eng = _engine()
+
+    class _Boom:
+        def __init__(self, raw):
+            self._raw = raw
+
+        def __getattr__(self, name):
+            if name == "rollback":
+                raise sqlite3.OperationalError("disk I/O error")
+            return getattr(self._raw, name)
+
+    def action(conn):
+        conn.dbapi_connection  # noqa: B018 - the fairy is live
+        conn._connection_record.dbapi_connection = _Boom(conn.dbapi_connection)
+        conn.close()
+
+    ceiling = collector_ceiling(POOL + OVERFLOW, _API_MARGIN)
+    for _ in range(ceiling + 2):
+        _hold_in_thread(eng, action)
+    assert eng.pool.reservation()["collector_held"] == 0
+
+
+def test_the_owner_of_the_write_gate_never_queues_for_a_slot():
+    """``before_flush`` takes the write gate BEFORE the flush checks a connection out. If
+    every slot holder is queued for the gate and the gate owner queues for a slot, the
+    collector stalls for the pool timeout. The gate owner therefore passes, counted."""
+    from src.database.writer import write_gate
+
+    eng = _engine(timeout=5.0)
+    ceiling = collector_ceiling(POOL + OVERFLOW, _API_MARGIN)
+    held = []
+    with collector_role():
+        # Fill every slot from OTHER threads so the next collector thread would wait.
+        for _ in range(ceiling):
+            gate = threading.Event()
+
+            def hold(g=gate):
+                with collector_role():
+                    c = eng.raw_connection()
+                    held.append(c)
+                    g.wait(10)
+
+            threading.Thread(target=hold, daemon=True).start()
+    deadline = time.monotonic() + 3
+    while eng.pool.reservation()["collector_held"] < ceiling and time.monotonic() < deadline:
+        time.sleep(0.01)
+    assert eng.pool.reservation()["collector_held"] == ceiling
+
+    got: list[float] = []
+
+    def owner():
+        with collector_role():
+            assert write_gate.acquire(timeout=2)
+            try:
+                t0 = time.monotonic()
+                c = eng.raw_connection()
+                got.append(time.monotonic() - t0)
+                c.close()
+            finally:
+                write_gate.release()
+
+    t = threading.Thread(target=owner)
+    t.start()
+    t.join(4)
+    assert got and got[0] < 1.0, "the gate owner queued for a slot"
+    assert eng.pool.reservation()["collector_nested"] >= 1
+
+
+def test_the_pass_summary_claims_a_reservation_only_when_the_pool_is_the_reserving_one():
+    from sqlalchemy.pool import QueuePool
+
+    from src.database import session as sess
+    from src.database.pool_reserve import ReservingQueuePool as R
+    from src.monitoring.collect_perf import CollectionMonitor
+
+    class _Gov:
+        w_max = 50
+
+    class _Eng:
+        def __init__(self, pool):
+            self.pool = pool
+
+    def headroom(pool):
+        real = sess.engine
+        sess.engine = _Eng(pool)
+        try:
+            mon = CollectionMonitor(governor=_Gov(), pass_id="t", mode="press")
+            return mon._db_memory()["api_headroom"]
+        finally:
+            sess.engine = real
+
+    plain = headroom(QueuePool(lambda: sqlite3.connect(":memory:"), pool_size=1))
+    assert plain["reserved"] is False
+    reserving = headroom(R(lambda: sqlite3.connect(":memory:"), pool_size=1))
+    assert reserving["reserved"] is True

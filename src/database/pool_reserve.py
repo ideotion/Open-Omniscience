@@ -28,9 +28,21 @@ idempotent, so a connection can never release twice or leak.
 A collector thread that cannot get a slot waits up to the pool's own timeout and then
 raises the pool's own ``TimeoutError``, so every existing handler for "the pool was
 exhausted" keeps working unchanged. A thread that already HOLDS a slot never waits for a
-second (a nested session would otherwise deadlock every holder against every other); that
-checkout is counted as ``collector_nested`` so the pass summary can show how often the
+second (a nested session would otherwise deadlock every holder against every other), and
+neither does a thread that OWNS the single-writer gate: ``before_flush`` takes the gate
+before the flush checks a connection out, so a gate owner queueing for a slot while the
+slot holders queue for the gate would stall the collector for the pool timeout. Those
+checkouts are counted as ``collector_nested`` so the pass summary can show how often the
 margin was leaned on rather than hiding it.
+
+THE SLOT IS KEYED ON THE POOL'S CONNECTION RECORD, never on ``id(dbapi_connection)``.
+SQLAlchemy clears ``record.dbapi_connection`` BEFORE it fires ``checkin`` when a connection
+is invalidated (a failed rollback on return, ``invalidate()``, a disconnect -- the vanished
+external drive of R86 is exactly this), so a key on the DBAPI object misses, the slot is
+never returned, and a leaked ceiling's worth of them starves the collector until restart
+(found by the Opus review of the first draft and reproduced against SQLAlchemy 2.1.1). The
+record is the same object for the checkout's whole life and is what both ``checkin`` and
+``detach`` are handed.
 """
 
 from __future__ import annotations
@@ -94,6 +106,10 @@ class _Slots:
             self._held[key] = threading.current_thread()
             return True
 
+    def note_nested(self) -> None:
+        with self._cond:
+            self.nested += 1
+
     def holds(self, thread: threading.Thread) -> bool:
         """Whether this thread already holds a slot.
 
@@ -118,6 +134,13 @@ class _Slots:
             return len(self._held)
 
 
+def _owns_write_gate() -> bool:
+    """Whether this thread holds the single-writer gate (imported lazily: no cycle)."""
+    from src.database.writer import write_gate
+
+    return write_gate.held_by_current_thread()
+
+
 def collector_ceiling(pool_total: int, api_margin: int) -> int:
     """How many pooled connections the collector may hold: all but the API's margin.
 
@@ -140,7 +163,7 @@ class ReservingQueuePool(QueuePool):
         self._reserve = _Slots(
             collector_ceiling(self.size() + self._max_overflow, self._api_margin)
         )
-        self._slot_key: dict[int, int] = {}  # id(dbapi connection) -> slot key
+        self._slot_key: dict[int, int] = {}  # id(connection record) -> slot key
         self._slot_lock = threading.Lock()
         event.listen(self, "checkin", self._on_return)
         event.listen(self, "detach", self._on_return)
@@ -149,8 +172,8 @@ class ReservingQueuePool(QueuePool):
     def connect(self):  # type: ignore[override]
         if not in_collector_role():
             return super().connect()
-        if self._reserve.holds(threading.current_thread()):
-            self._reserve.nested += 1
+        if self._reserve.holds(threading.current_thread()) or _owns_write_gate():
+            self._reserve.note_nested()
             return super().connect()
         key = next(_KEYS)
         if not self._reserve.acquire(key, float(self._timeout)):
@@ -165,13 +188,21 @@ class ReservingQueuePool(QueuePool):
         except BaseException:
             self._reserve.release(key)
             raise
+        record = getattr(fairy, "_connection_record", None)
+        if record is None:
+            # Cannot be tracked, so it cannot be returned by the events: give the slot
+            # back NOW. An unreserved connection is a smaller failure than a leaked slot.
+            self._reserve.release(key)
+            return fairy
         with self._slot_lock:
-            self._slot_key[id(fairy.dbapi_connection)] = key
+            self._slot_key[id(record)] = key
         return fairy
 
-    def _on_return(self, dbapi_connection, _record=None) -> None:
+    def _on_return(self, _dbapi_connection, record=None) -> None:
+        if record is None:
+            return
         with self._slot_lock:
-            key = self._slot_key.pop(id(dbapi_connection), None)
+            key = self._slot_key.pop(id(record), None)
         if key is not None:
             self._reserve.release(key)
 
