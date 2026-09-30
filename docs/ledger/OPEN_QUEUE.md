@@ -16052,3 +16052,17 @@ maintainer as a card.
    (`lane_cards_shown`), `bulletin/edition.py` (`_attribution`), `backup/attribution.py` (`OSM_DERIVED_CARDS`,
    `card_signals_from_edition`), read by the edition, the evidence ZIP (whose `edition.json` carries the cards
    section) and `review.apply_selection`; `render_html` now prints the block the Markdown always had.
+- **RC06 — THE "QUALIFIED SET FROZEN AT 6,400" FINDING, TRACED (2026-09-30, diagnostics rank 14, thread «Fix source
+  qualification»; a NOTE on RC06, which stays open — no ruling is recorded here and none is implied).** On 12 of the
+  16 instances in the diagnostics the qualified count was exactly 6,400, and 6,400 is the size of the shipped curated
+  catalogue (`stamp_curated_catalog`, ruling 2026-09-10): the frozen set was the catalogue's own stamp, not the
+  engine's output, so "no source added in 72 hours" meant no source had yet been judged IN, not that a judgement was
+  stuck. Two builds are in the field and the difference matters when reading any figure: instance 101538 carries
+  #1224 only (the re-qualification queue and sampling, whose memory floor declined passes on a small machine) and
+  091717 carries #1224 + #1234 (R95, floors that grow with the machine). The `with_judging_attempt` counts
+  (2,088 on one instance, 2,603 on another) do NOT prove local fleet passes: on two instances the "measured" rows were
+  curated-stamped rows with another instance's judging attempts merged in beside them (the import adopted a stamp only
+  over `unqualified`, so the live status stayed curated while the attempts arrived). Fixed in two steps: the merge now
+  lets a curated stamp give way to a measured one (PR #1278), and the export/report count a live curated stamp as
+  `curated` whatever history sits beside it, name the attempt timestamps, and withdraw (never re-admit) inversions at
+  boot with a revert record. RC06 itself (how far back a re-check looks) is still the maintainer's call.
