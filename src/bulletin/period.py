@@ -25,13 +25,13 @@ Two conventions are load-bearing here and neither is negotiable:
   is the shape mirrored here.
 * **The default period is CLOSED** — it ends at the start of today, so it covers
   the whole days ending yesterday. Today is a partial bucket
-  (``KeywordMention.observed_on`` is a DATE, so the final day holds only what has
+  (``KeywordMentionRead.observed_on`` is a DATE, so the final day holds only what has
   been observed so far), and an edition built over a partial day is neither
   reproducible tomorrow nor honest about its own last day.
 
 Daily is the floor cadence. Hourly is BLOCKED, not merely unimplemented: the
 mention clock is a ``Date`` and the time is destroyed at write
-(``store.py:285``), while ``KeywordMention.created_at`` is unusable because
+(``store.py:285``), while ``KeywordMentionRead.created_at`` is unusable because
 re-index deletes and re-inserts every row stamped ``now()`` — one keyword
 clean-up would collapse the entire history into a single hour.
 """
