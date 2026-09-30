@@ -259,6 +259,9 @@ _RAW_CEILING: dict[str, int] = {
     "src/monitoring/benchmark.py": 3,
     "src/monitoring/expedition.py": 1,
     "src/monitoring/integrity.py": 4,
+    # The diagnostic reads the PHYSICAL table on purpose: PRAGMA index_list and sqlite_stat1 need
+    # its name and a view owns neither, and what it measures is the table's own index cost.
+    "src/monitoring/keyword_write_cost.py": 1,
     "src/monitoring/rollup_benchmark.py": 5,
     "src/monitoring/slowquery.py": 4,
     "src/monitoring/storage.py": 1,

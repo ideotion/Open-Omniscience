@@ -158,6 +158,7 @@ def debug_bundle(db: Session = Depends(read_only_db)) -> JSONResponse:
     from src.monitoring.field_test import recent_results as _field_test_results
     from src.monitoring.forensics import session_forensics as _session_forensics
     from src.monitoring.integrity import corpus_integrity as _corpus_integrity
+    from src.monitoring.keyword_write_cost import keyword_write_cost as _keyword_write_cost
     from src.monitoring.latency import summary as _latency_summary
     from src.monitoring.preflight import recent_results as source_results
     from src.monitoring.schema_drift import schema_drift as _schema_drift
@@ -389,6 +390,13 @@ def debug_bundle(db: Session = Depends(read_only_db)) -> JSONResponse:
         # degrades to {available:false, reason} where dbstat is not compiled in.
         "storage_composition": _member(
             "storage_composition", lambda: _storage_composition(db), threaded=False
+        ),
+        # What one indexed article costs the mentions tables, WITHOUT dbstat (D47 (b), D46,
+        # D45): the mean row size, the mentions table and its ten indexes estimated against
+        # the file, and the measured write rate. Sampled + deadline-bounded; an unmeasurable
+        # window says why instead of reading 0.
+        "keyword_write_cost": _member(
+            "keyword_write_cost", lambda: _keyword_write_cost(db), threaded=False
         ),
         # P0 data-safety validation (S1.2): the LAST saved report from the push-button
         # backup/restore/unlock/collector acceptance run (read-only here — never runs a
