@@ -103,7 +103,7 @@ file over. **A session may not amend the protocol.** This is unanswered and appe
 → **Recommendation: b, with a's ratchet added on top.** (a) alone loses the lessons' texture,
 which is where their value is; (c) is the status quo that already produced the failure. (b) is
 what rule (1)'s own 2026-09-07 amendment did for the queue, and it worked.
-`ANSWER D07:`
+`ANSWER D07: b, with (a)'s ratchet on top — given in the project thread «Record the 37 answers» 2026-09-30 03:35 UTC (the older-rounds list, item 4) and copied here by the recording session: «4 = OK» to the recommendation above (recorded on `PF11`'s row).`
 
 ## §A3 — The 0.8 entry, and one feature nobody has scoped
 
@@ -125,7 +125,7 @@ other analysis-surface work.
 **D10 · The eclipse canon (RC13's unwritten `± eclipses` suffix).** Neither dropped nor funded; no
 session may settle it by building *or* by removing. → **Recommendation: `− eclipses`** — the
 religious-calendar session is already briefed and eclipses are a separate astronomical dataset.
-`ANSWER D10:`
+`ANSWER D10: `+ eclipses` — given in the project thread «Record the 37 answers» 2026-09-30 03:35 UTC (the older-rounds list, item 5) and copied here by the recording session: «5 = a», with eclipses (the list's (a); against this file's recommendation). Recorded as `R99`.`
 
 ## §A4 — Ten CONFLICTs: two answers recorded, you pick one
 
@@ -309,7 +309,7 @@ option that makes the invariant true on the tier where 50 workers are real, and 
 distinction it rests on (checkouts vs fan-out) is exactly the one `R26`'s wording leaves
 open. *Shipped state meanwhile:* the small tier is fixed, medium is improved and
 **honestly reported as insufficient** rather than implied fixed.
-`ANSWER D44:`
+`ANSWER D44: a — given in the project thread «Record the 37 answers» 2026-09-30 03:35 UTC (the older-rounds list, item 7) and copied here by the recording session: «7 = a».`
 
 **D45 ⛔ · The article-row rewrite is a TAIL cost, not a constant factor — measured while
 building PR 4 (2026-09-23).** Audit §9.2 item 4's third named factor is "the article-row
@@ -364,7 +364,7 @@ designing if the distribution says it matters, and `b` optimises the tail at the
 the common path's read simplicity. *Shipped state meanwhile:* **nothing built for this
 item**, and PR 4 says so rather than letting "the constant factors in apply" read as all
 three.
-`ANSWER D45:`
+`ANSWER D45: d first, then a — given in the project thread «Record the 37 answers» 2026-09-30 03:35 UTC (the older-rounds list, item 8) and copied here by the recording session: «8 = go with your recommendation». Conditional on `D47`: the list marked it as waiting on item 37, and the thread «Keyword working session» decides when it is built.`
 
 **D46 ⛔ · What does a bulk-build index window SPAN? The mechanism is built; the trigger
 is a ruling (2026-09-23).** `R23` puts the bulk build on the LIVE store with the surfaces
@@ -396,7 +396,7 @@ multi-day stripped store; `a` is where the order-of-magnitude actually lives, an
 a measurement rather than a preference. *Shipped state meanwhile:* the window, the
 **boot heal** (live and load-bearing from the first boot — it is what makes `R23`'s
 live-store choice survivable) and `rebuild_progress` for the disclosure.
-`ANSWER D46:`
+`ANSWER D46: b now, a once `D43` returns a backlog fraction — given in the project thread «Record the 37 answers» 2026-09-30 03:35 UTC (the older-rounds list, item 9) and copied here by the recording session: «9 = go with your recommendation». Conditional on `D47`: (a) there dissolves this question.`
 
 **D47 ⛔ · The segmented derived index: adopt it as 0.5's plan for the derived-row WRITE
 path, and in what order against Phase C (2026-09-24).** §9.2 item 7's design half, written up

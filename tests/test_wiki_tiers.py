@@ -179,8 +179,8 @@ def test_titles_are_normalised_on_the_way_IN_as_well_as_on_the_way_out():
 # --------------------------------------------------------------------------- #
 # The budget.
 # --------------------------------------------------------------------------- #
-def test_the_published_default_is_Q707s_twenty_GB():
-    assert DEFAULT_TOTAL_BUDGET_GB == 20
+def test_the_published_default_is_R53s_150_GB_Q707s_twenty_raised():
+    assert DEFAULT_TOTAL_BUDGET_GB == 150
 
 
 def test_a_budget_outside_the_bounds_is_REFUSED_and_never_clamped():

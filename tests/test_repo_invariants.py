@@ -2837,13 +2837,19 @@ def test_ui_invariants():
     assert "openAnalysisForIds(" in watches_js, (
         "a watch's history must open its exact article set via openAnalysisForIds"
     )
-    # 22. The analysis window (Group F, keystone #4): a full-screen #analyze tab
-    #     driven by the universal subtab component, fed by the article-SET keyword
-    #     endpoint, opened from the Search tab's Analyze button. Counts, no verdict.
-    assert 'id="tab-analyze"' in html, (
-        "the analysis window panel must exist (Group F); the Analysis SIDEBAR entry was "
-        "retired 2026-06-20 — it is reached via search / openAnalysisFor, not a sidebar tab"
-    )
+    # 22. The analysis (Group F, keystone #4): driven by the universal subtab component,
+    #     fed by the article-SET keyword endpoint. Counts, no verdict.
+    assert 'id="tab-analyze"' in html, "the analysis part must exist (Group F)"
+    # 22c. SUPERSEDED BY EXPLORE (R47, 2026-09-29): Search and the analysis are ONE sidebar
+    #      page -- the query box on top, the analysis under the results -- never a second
+    #      window. Both parts sit inside #tab-explore, and the old names land on it.
+    explore = html.split('<div class="tab-page" id="tab-explore">', 1)[1]
+    assert explore.index('id="tab-search"') < explore.index('id="tab-analyze"'), (
+        "Explore: the search on top, the analysis under it (R47)")
+    assert '<div class="tab-page" id="tab-search">' not in html and '<div class="tab-page" id="tab-analyze">' not in html, (
+        "the search and the analysis are parts of ONE page, never two tab pages (R47)")
+    assert 'if (name === "search" || name === "analyze") name = "explore";' in html, (
+        "every older entry point must land on Explore (R47)")
     assert 'ooSubtabs($("an-subtabs")' in html, (
         "the analysis window must use THE universal subtab component"
     )
@@ -4092,20 +4098,18 @@ def test_cjk_keyword_disclosure():
     assert any(k.startswith("Keyword extraction splits on spaces") for k in en), "long-form must be keyed"
 
 
-def test_search_retired_from_sidebar_but_reachable():
-    """Ruled "one search entry" (Item I): now that the analysis window absorbs every
-    Search-tab capability + the omnibar Enter entry, the Search SIDEBAR button is
-    retired. Nothing is lost — #tab-search, doSearch and the entry paths remain, so
-    Boolean search is still reachable (the omnibar / palette), just not a sidebar tab.
-    """
+def test_search_and_analysis_share_one_sidebar_entry():
+    """Ruled "one search entry" (Item I) retired the separate Search and Analysis sidebar
+    buttons; R47 (2026-09-29, Explore) then gave the two ONE entry. Neither old button
+    comes back -- a second entry for the same page is what "one search entry" refused --
+    and the old names still reach the page (the omnibar, the palette, deep links)."""
     html = _ui_source()
-    assert '<button class="nav-item" data-tab="search">' not in html, "no Search button in the sidebar rail"
-    assert 'id="tab-search"' in html, "the search page is KEPT (nothing lost)"
+    assert '<button class="nav-item" data-tab="search">' not in html, "no second Search button in the sidebar"
+    assert '<button class="nav-item" data-tab="analyze">' not in html, "no second Analysis button in the sidebar"
+    assert '<button class="nav-item" data-tab="explore">' in html, "Explore is the one entry (R47)"
+    assert 'id="tab-search"' in html, "the search part is KEPT (nothing lost)"
     assert "function doSearch" in html, "Boolean search still exists"
     assert 'showTab("search")' in html, "search stays reachable (omnibar/palette entry points)"
-    # Analysis is no longer a sidebar tab (retired 2026-06-20 — reached via search /
-    # openAnalysisFor); the sidebar still lists its other tabs (invariant #2 not regressed).
-    assert '<button class="nav-item" data-tab="analyze">' not in html, "Analysis sidebar tab retired"
     assert '<button class="nav-item" data-tab="insights">' in html and '<button class="nav-item" data-tab="home">' in html
 
 
@@ -4942,8 +4946,8 @@ def test_search_timescope():
     # the engine was split into modules (S-3, 2026-08-20), since a bare reference is
     # resolved when the table is BUILT and so depends on same-script hoisting. Which
     # loader the Search tab mounts -- the property this guard is about -- is unchanged.
-    assert re.search(r"search:\s*(?:\(\)\s*=>\s*)?buildSearchTimeScope\b", html), (
-        "the Search tab loader must mount the time-scope control"
+    assert re.search(r"explore:\s*(?:\(\)\s*=>\s*)?buildSearchTimeScope\b", html), (
+        "the Explore tab loader (the search's page since R47) must mount the time-scope control"
     )
 
 
@@ -8268,7 +8272,9 @@ def test_docs_index_covers_live_docs():
 #: RAISED 2026-09-25 (Q1016's NOTE, ruling R32): 761 -> 768, seven lines for UI invariant #32
 #: (Living sources is a main tab). A new UI invariant is the growth the clause above names as
 #: normal; the build detail stays in the gate row and the slice's own tests.
-_CLAUDE_MD_LINE_CEILING = 774
+#: RAISED 2026-09-30: 782 -> 785, three lines amending protocol rule (5a): a shipped row is a new
+#: file under docs/ledger/shipped.d/, not a line appended to the shared shipped.csv.
+_CLAUDE_MD_LINE_CEILING = 785
 
 
 def _claude_md_lines() -> int:
@@ -8358,11 +8364,21 @@ def _shipped_csv_rows() -> tuple[list[str], list[list[str]]]:
     ~830 LF-terminated ones into a huge, misleading diff); csv.reader over already-decoded
     text handles mixed line endings fine for read-only parsing."""
     import csv
+    import importlib.util
     import io
 
-    text = (_ROOT / "docs" / "ledger" / "shipped.csv").read_text(encoding="utf-8")
+    csv_path = _ROOT / "docs" / "ledger" / "shipped.csv"
+    text = csv_path.read_text(encoding="utf-8")
     rows = list(csv.reader(io.StringIO(text)))
-    return rows[0], rows[1:]
+    # One-file-per-row fragments (scripts/ledger_shipped.py) are ledger rows too: a duplicate
+    # between a fragment and the file, or between two fragments, is the same defect.
+    spec = importlib.util.spec_from_file_location(
+        "ledger_shipped", _ROOT / "scripts" / "ledger_shipped.py"
+    )
+    assert spec is not None and spec.loader is not None
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return rows[0], rows[1:] + mod.fragment_rows(csv_path)
 
 
 def _shipped_csv_duplicate_groups() -> dict[tuple[str, str, str], list[list[str]]]:

@@ -56,6 +56,22 @@ tracked as follow-up work.
 - Schema changes go through Alembic (`alembic revision --autogenerate`); CI runs
   `alembic check` to catch model/migration drift.
 
+## The shipped ledger: one file per row
+
+Do not append to `docs/ledger/shipped.csv`. GitHub's merge check ignores the file's
+`merge=union` rule, so a row appended by every PR made every open PR conflict after every merge.
+Add ONE new file instead:
+
+    python scripts/ledger_shipped.py new --date 2026-09-30 --area tests --item "..." \
+        --status "shipped (draft)" --refs "PR #1240" --key-paths "src/a.py; tests/b.py" --summary "..."
+
+It writes `docs/ledger/shipped.d/<date>-<slug>.csv` (the ledger's header plus one row). No other PR
+can conflict with a file it does not touch. `python scripts/ledger_shipped.py check` verifies every
+fragment; the release notes and the repo-invariant tests read `shipped.csv` first and the fragments
+after it. `ledger_shipped.py fold` appends the fragments to `shipped.csv` in binary and deletes
+them; it is for the maintainer or a release, never for a feature PR. `refs` must be the real PR
+number, not `PR pending` (a test fails on it).
+
 ## Locale files and merge conflicts
 
 The 12 `src/static/locales/*.json` files are kept **sorted** (`_meta` first, then keys in code-point order), so two PRs that add strings insert at different places and merge cleanly. After adding strings, run `python scripts/locales_merge.py`; it sorts the files and checks them (`--check` only verifies; `tests/test_locales_merge.py` fails on unsorted or duplicated keys).

@@ -42,11 +42,13 @@ latest + previous per Q710). ``wiki_warm_editions`` counts what THIS machine fet
 ``wiki_warm_scan`` is a bookmark into this lane file's own change-row ids, which mean
 nothing in another file -- so both stay behind.
 
-The search index's three (``R52``, ``src/wiki/lane_search.py``) are DERIVED, all of them:
+The search index's four (``R52``/``R54``, ``src/wiki/lane_search.py``) are DERIVED, all of them:
 ``wiki_lane_docs`` says which stretch of which held text each index entry came from,
-``wiki_lane_index_queue`` what is waiting to be (re)indexed, and ``wiki_lane_index_state``
-the counts. Every one of them can be rebuilt from the texts above and the stream's own
-versions, so none needs to ride a backup, and a restore rebuilds rather than trusts them.
+``wiki_lane_index_queue`` what is waiting to be (re)indexed, ``wiki_lane_index_state`` the
+counts, and ``wiki_lane_tracked`` which of the old page tracker's versions the index has
+already read. Every one of them can be rebuilt from the texts above, the stream's own
+versions and the tracker's rows in ``corpus.db``, so none needs to ride a backup, and a
+restore rebuilds rather than trusts them.
 """
 
 from __future__ import annotations
@@ -318,9 +320,12 @@ class WikiLaneDoc(LaneBase):
       again for every version would roughly double the lane's size for text that is
       already found. So an older version is found by what a later edit took out of it.
 
-    ``source`` is ``warm`` (``owner_id`` is the ``wiki_warm_pages`` row) or ``hot``
+    ``source`` is ``warm`` (``owner_id`` is the ``wiki_warm_pages`` row), ``hot``
     (``owner_id`` is the ``versioned_entities`` row, the page the stream follows, whose
-    NEWEST text is the corpus article and is searched there, never here). ``mask`` is the
+    NEWEST text is the corpus article and is searched there, never here) or ``tracked``
+    (``R54``: ``owner_id`` is the page tracker's ``wiki_pages`` row in ``corpus.db``, whose
+    stored versions are read from there; its newest version is indexed in full only when no
+    corpus article is that revision). ``mask`` is the
     ``src.database.fts_norm`` transform the entry was indexed under (Arabic folding, CJK
     segmentation), recorded for the reason ``article_fts_norm`` records it.
     """
@@ -404,6 +409,40 @@ class WikiLaneIndexState(LaneBase):
     updated_at: Mapped[datetime] = mapped_column(LaneUTCDateTime, nullable=False, default=_utcnow)
 
 
+class WikiLaneTracked(LaneBase):
+    """Which versions of a TRACKED page the search index has read (``R54``): a derived mirror.
+
+    ``R54`` («Track now», 2026-09-29): the versions the old page tracker stores in
+    ``corpus.db`` (``wiki_revisions.full_text``) become searchable, indexed here in the lane's
+    own file beside its other texts. The texts stay where they are; this table is what lets the
+    indexer read a page's new versions only. One row per revision the tracker holds for a page,
+    text or not, so a page's rows can be counted against the tracker's own without reading a
+    single text (``owner_id`` = the tracker's ``wiki_pages`` row, which is what an index entry
+    of source ``tracked`` names as its owner).
+
+    ``successor_revid`` is the next version WITH a stored text when the entry was derived: an
+    older version is indexed by the lines that version removed, so a different successor means
+    the entry is stale. ``article_rev`` is the revision the tracker recorded as the page's
+    newest text (the corpus article's) at that time: the newest version is indexed in full
+    only while the article does not hold it. Both are recorded rather than recomputed because
+    a comparison of the two stores would otherwise need every text read on every scan.
+
+    ``WITHOUT ROWID`` as the walk's pages are: the key IS the row.
+    """
+
+    __tablename__ = "wiki_lane_tracked"
+
+    owner_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=False)
+    revid: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=False)
+    successor_revid: Mapped[int | None] = mapped_column(Integer)
+    edition: Mapped[str] = mapped_column(String(16), nullable=False)
+    #: 1 when the tracker stored this revision's text, 0 when it stored none.
+    has_text: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    article_rev: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+    __table_args__ = ({"sqlite_with_rowid": False},)
+
+
 #: The wiki lane's own tables. ``src/versioned/store.create_schema`` materialises these in
 #: ``wiki.db`` ONLY, exactly as ``LAW_LANE_MODELS`` go to ``law.db`` only.
 WIKI_LANE_MODELS: tuple[type[LaneBase], ...] = (
@@ -416,4 +455,5 @@ WIKI_LANE_MODELS: tuple[type[LaneBase], ...] = (
     WikiLaneDoc,
     WikiLaneIndexQueue,
     WikiLaneIndexState,
+    WikiLaneTracked,
 )

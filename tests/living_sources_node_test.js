@@ -474,8 +474,9 @@ const WIKI = {
     "a page that became followed must say its earlier texts were kept");
   assert.strictEqual(fact("Requests answered").value, "60");
   assert.strictEqual(fact("Stops at").value, "90% of the budget");
-  assert.ok(fact("Stops at").hover.includes("proposed default, not a ruling"),
-    "the WARM share reads as ruled: it is a proposed default");
+  assert.ok(fact("Stops at").hover.includes("The share is a ruled default."),
+    "the share was ruled (R55 keeps 90%), and must not still read as a proposal");
+  assert.ok(!fact("Stops at").hover.includes("proposed"), "a ruled share still called a proposal");
   assert.strictEqual(fact("L3(fr)").value, "1500 with text · 20 to fetch");
   assert.ok(fact("L3(fr)").hover.startsWith("NAME(fr): "),
     "Q302/Q306: the code shows and the name in the UI language is the hover");
