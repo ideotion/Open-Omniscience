@@ -830,7 +830,7 @@
           // source names them; a row opens the Place card.
           const grp = head(t("Places"), g);
           items.forEach(it => out.push({grp, label: it.name,
-            sub: [it.kind || "", it.country || "", it.qid || ""].filter(Boolean).join(" · "),
+            sub: [ooPlaceKind(it.kind).text, it.country || "", it.qid || ""].filter(Boolean).join(" · "),
             run: () => (typeof openPlaceCard === "function" ? openPlaceCard(it.id) : null)}));
           // S05-04 S5 (Q817): every other named place of the OSM countries read, a row of the
           // lane behind the same facet; a row opens its object card.

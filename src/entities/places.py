@@ -26,12 +26,14 @@ for each distinct mentioned place the gazetteer resolves, and nothing else -- th
 Q724 puts on the Wikidata cache. Row D (Q817) widens Places to every notable place of an
 ingested country.
 
-**THE BODY IS NOT A CORPUS ARTICLE HERE.** A corpus Article rides every backup and export, and
-Q823 ⛔ (ODbL) keeps OSM-derived content inside the machine until it is ruled. So the body is
-composed on read (:func:`place_body`), its keywords come from the ONE extractor the corpus uses,
-and the Place is searchable through the omnibar's Places group (``src/api/search_omni.py``) --
-all without a row that could leave the machine. Row D makes notable Places Articles (Q817) when
-Q823 allows it; :func:`place_body` is the text it will index.
+**THE BODY IS NOT A CORPUS ARTICLE HERE.** It was composed on read (:func:`place_body`) while
+Q823 (ODbL) was open, so that no OSM-derived Article could ride a backup before it was ruled;
+Q823 = a (2026-09-29) lets OSM data leave with OSM's credit and the ODbL line, but nothing
+here needed to change: the body's keywords still come from the ONE extractor the corpus uses,
+and the Place is searchable through the omnibar's Places group (``src/api/search_omni.py``).
+Row D makes notable Places Articles (Q817); :func:`place_body` is the text it will index.
+The Place ROW itself rides a backup restore (``_merge_places``), credited by the attribution
+seam.
 """
 
 from __future__ import annotations
@@ -192,7 +194,7 @@ def materialise_notable(session, *, should_stop=None) -> dict:
     stated: an administrative area is its RELATION (the ways of its border carry the same tags
     and are not places), and an object with no ``name`` is counted, never made a Place called
     nothing. A Place the gazetteer already resolved keeps its gazetteer facts; this adds where
-    its geometry lives. Q823: the body stays composed on read, never an Article.
+    its geometry lives. The body stays composed on read, never an Article (row D's call).
     """
     from sqlalchemy import select
 

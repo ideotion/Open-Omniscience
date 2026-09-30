@@ -1176,8 +1176,15 @@ def _insert_window(
     table: str,
     insert_sql: str,
     params: tuple = (),
+    key_column: str | None = None,
 ) -> int:
     """One INSERT..SELECT + its merged_rows provenance. Returns rows inserted.
+
+    ``key_column`` names the natural key of a table with NO integer key (places, Wikidata items):
+    it is recorded in ``merged_rows.row_key`` beside the ``rowid``, because VACUUM may renumber
+    a rowid and a provenance lookup through it could then name the wrong row. It is written only
+    when this store's ``merged_rows`` has the column, so a working copy that predates it still
+    restores (the arrival is then simply not resolvable for those rows, never mis-resolved).
 
     Uses a rowid watermark: we hold the copy exclusively, so rows with rowid >
     the pre-insert max are exactly the inserted ones.
@@ -1191,11 +1198,23 @@ def _insert_window(
     """
     wm = con.execute(f'SELECT COALESCE(MAX(rowid), 0) FROM "{table}"').fetchone()[0]  # noqa: S608  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
     con.execute(insert_sql, params)
-    cur = con.execute(
-        f'INSERT INTO merged_rows (batch_id, table_name, row_id) '  # noqa: S608  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
-        f'SELECT ?, ?, rowid FROM "{table}" WHERE rowid > ?',
-        (batch_id, table, wm),
+    keyed = key_column is not None and any(
+        c[1] == "row_key" for c in con.execute("PRAGMA main.table_info(merged_rows)")
     )
+    if keyed:
+        if not _SAFE_KEY_NAME.fullmatch(key_column or ""):
+            raise ValueError(f"unsafe key column {key_column!r}")
+        cur = con.execute(
+            'INSERT INTO merged_rows (batch_id, table_name, row_id, row_key) '  # noqa: S608  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
+            f'SELECT ?, ?, rowid, "{key_column}" FROM "{table}" WHERE rowid > ?',
+            (batch_id, table, wm),
+        )
+    else:
+        cur = con.execute(
+            f'INSERT INTO merged_rows (batch_id, table_name, row_id) '  # noqa: S608  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
+            f'SELECT ?, ?, rowid FROM "{table}" WHERE rowid > ?',
+            (batch_id, table, wm),
+        )
     n = cur.rowcount
     if n is None or n < 0:  # a driver that does not report -- pay for the scan
         return _count(con, f'SELECT COUNT(*) FROM "{table}" WHERE rowid > ?', (wm,))  # noqa: S608  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
@@ -1211,8 +1230,11 @@ def _insert_tracked(
     *,
     src: str | None = None,
     src_key: str = "id",
+    key_column: str | None = None,
 ) -> int:
     """Run an INSERT..SELECT and record every new row in merged_rows (provenance).
+
+    ``key_column`` is passed through to ``_insert_window`` (a table with no integer key).
 
     ``src`` opts this call into WINDOWED execution over the incoming table's
     primary key: the statement runs once per slice of ``i.<src_key>``, committing
@@ -1264,7 +1286,11 @@ def _insert_tracked(
     one, materialise it rather than accepting the quadratic.
     """
     if src is None:
-        return _insert_window(con, batch_id, table, insert_sql, params)
+        if key_column is None:
+            return _insert_window(con, batch_id, table, insert_sql, params)
+        return _insert_window(con, batch_id, table, insert_sql, params, key_column)
+    if key_column is not None:
+        raise ValueError("a windowed insert cannot record a natural key; key_column is for unwindowed steps")
 
     if _WINDOW_MARK not in insert_sql:
         raise ValueError(
@@ -1791,6 +1817,13 @@ _MERGE_HANDLED = {
     # 2026-09-30, R61 (item 12): the ≈ titles are deduced metadata and ride the backup; they
     # left _MERGE_NOT_CARRIED for it. See `_merge_ai_layer`.
     "article_title_translations",
+    # 2026-09-30, R71 (b) and Q823 = a (OSM data may leave the machine with OSM's credit and the
+    # ODbL, which the attribution seam already adds to a backup that holds a place). The Places
+    # and the Wikidata items they carry are deduced from a public source, not written by a person,
+    # so they ride the backup under the same rule as every other deduced item: a restore ADDS
+    # what this corpus lacks, and where it holds the same place or item with other values it
+    # keeps the incoming ones beside its own. See `_merge_places`.
+    "places", "wikidata_items",
     # 2026-09-30, R61 slice 3: the differences a backup was carrying travel with it.
     "metadata_alternates",
 }
@@ -1853,19 +1886,10 @@ _MERGE_NOT_CARRIED: dict[str, str] = {
     # keyword vocabulary by its own job; a carried copy would point at another corpus'
     # keyword ids. The next build after a restore covers the merged vocabulary.
     "spell_deletes": "the did-you-mean table, derived from the keywords and rebuilt by its job",
-    # S05-03 (row C of the 0.5 gate). Places are OSM-derived and Q823 ⛔ (the ODbL question)
-    # is open, so no Place row leaves this machine by any route -- a restore included. They
-    # are rebuilt from the gazetteer by the local "resolve places" job, which makes no request.
-    "places": (
-        "OSM-derived (Q823 open); rebuilt from the gazetteer by the local resolve-places job"
-    ),
-    # A cache of a public CC0 source. Whether it rides a backup is one of the questions
-    # S05-03 §6 leaves to the maintainer; until then it is re-read at R8's rate, and the
-    # restore report counts what was left behind rather than dropping it silently.
-    "wikidata_items": (
-        "a local cache of Wikidata (CC0), re-read at one request per 10 seconds; whether it "
-        "rides a backup is not ruled yet (S05-03 §6)"
-    ),
+    # `places` and `wikidata_items` LEFT THIS LIST on 2026-09-30 (R71 b, Q823 = a). They were
+    # held back while the ODbL question was open; the maintainer answered it, and a restore
+    # that dropped them would have cost a Wikidata re-read at one request per 10 seconds and
+    # a re-materialise of every notable place. They now have a handler (`_merge_places`).
     # `feed_fetch_state` LEFT THIS LIST on 2026-09-16 (the Q701 note, gate row K). The
     # reading above -- per-machine, self-healing, re-learned next pass -- was correct
     # about the mechanism and was overturned as a POLICY: re-learning it costs a full
@@ -2014,6 +2038,8 @@ def _merge_steps() -> tuple[tuple[str, Callable[..., None]], ...]:
         # temp.map_articles it joins.
         ("watches", _merge_watches),
         ("AI layer", _merge_ai_layer),
+        # 2026-09-30, R71 (b). After `articles`, whose temp.map_articles a place's body joins.
+        ("places", _merge_places),
         # 2026-09-16, the Q701 note. After `sources`, whose temp.map_sources it joins.
         # ALWAYS a step, even when the operator untrusted the history: a restore that
         # adopted nothing because they said not to, and a restore that had nothing to
@@ -4351,6 +4377,88 @@ def _merge_ai_layer(con, batch_id, results) -> None:
         )
         tt.duplicate = max(0, tt.duplicate - tt.conflict)
         results["article_title_translations"] = tt
+
+
+def _merge_places(con, batch_id, results) -> None:
+    """The Wikidata items and the Places, carried by a restore (R71 b; Q823 = a; R61).
+
+    Neither table has an integer id: a Place is keyed on its OpenStreetMap object
+    (``node/240109189``) and an item on its QID, and both are the SAME thing in every corpus --
+    which is the cross-corpus identity, so no id map is needed. ``merged_rows`` records them by
+    SQLite ``rowid`` like every other table (`_insert_window` reads ``rowid``, and a text-keyed
+    table still has one) AND by their natural key in ``merged_rows.row_key``: VACUUM may
+    renumber a rowid, so the provenance lookup for these two tables goes through the key.
+
+    THE RULING, applied as it was for the ≈ titles: this corpus's own row is never changed. A
+    place or item the corpus lacks is ADDED (with the ``oo.prov/1`` tag on its way in, via
+    ``merged_rows``); one it already holds with other values keeps its own, and the backup's
+    values go to ``metadata_alternates`` for the operator to keep or discard. What counts as
+    "other values" is `ALTERNATE_SPECS`' ``differs``; a place that differs only in its
+    coordinates or its vintage is the same place measured twice, not a contradiction.
+
+    ``article_id`` (the Place's body Article, once row D indexes one) goes through
+    ``temp.map_articles`` like every other article pointer, and is NULL when the article did not
+    come across -- a place is never left pointing at another corpus's id. ``geometry_ref`` is
+    carried as written: it names where the geometry lives on the machine that made the row, and
+    the Place card already says "the lane does not hold it" when this machine's OSM lane does
+    not (`_osm_facts`), so a carried reference never claims geometry this machine lacks.
+
+    Items first: a Place's ``qid`` is a soft reference to them (no foreign key), but the order
+    keeps the report reading the way the data depends. A backup that predates either table has
+    nothing to carry and says so by not reporting the domain.
+    """
+    if _inc_has_table(con, "wikidata_items"):
+        wd = DomainResult()
+        wd_key = "t.qid = i.qid"
+        wd.conflict = _capture_alternates(
+            con, batch_id, "wikidata_items", key=wd_key, joins="",
+            identity=[("qid", "i.qid")],
+            **_alt_fields("wikidata_items"),
+        )
+        wd.duplicate = _count(
+            con,
+            "SELECT COUNT(*) FROM inc.wikidata_items i"  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
+            f" WHERE EXISTS (SELECT 1 FROM wikidata_items t WHERE {wd_key})",
+        )
+        wd.new = _insert_tracked(
+            con, batch_id, "wikidata_items",
+            "INSERT OR IGNORE INTO wikidata_items (qid, status, resolved_qid, labels_json,"  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
+            " descriptions_json, claims_json, lastrevid, fetched_at)"
+            " SELECT i.qid, i.status, i.resolved_qid, i.labels_json, i.descriptions_json,"
+            " i.claims_json, i.lastrevid, i.fetched_at FROM inc.wikidata_items i"
+            f" WHERE NOT EXISTS (SELECT 1 FROM wikidata_items t WHERE {wd_key})",
+            key_column="qid",
+        )
+        wd.duplicate = max(0, wd.duplicate - wd.conflict)
+        results["wikidata_items"] = wd
+
+    if _inc_has_table(con, "places"):
+        pl = DomainResult()
+        pl_key = "t.id = i.id"
+        pl.conflict = _capture_alternates(
+            con, batch_id, "places", key=pl_key, joins="",
+            identity=[("place_id", "i.id")],
+            **_alt_fields("places"),
+        )
+        pl.duplicate = _count(
+            con,
+            "SELECT COUNT(*) FROM inc.places i"  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
+            f" WHERE EXISTS (SELECT 1 FROM places t WHERE {pl_key})",
+        )
+        pl.new = _insert_tracked(
+            con, batch_id, "places",
+            "INSERT OR IGNORE INTO places (id, qid, kind, name, names_json, country,"  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
+            " country_alpha3, admin_path_json, geometry_ref, lat, lon, population,"
+            " gazetteer_vintage, article_id, as_of)"
+            " SELECT i.id, i.qid, i.kind, i.name, i.names_json, i.country, i.country_alpha3,"
+            " i.admin_path_json, i.geometry_ref, i.lat, i.lon, i.population,"
+            " i.gazetteer_vintage, ma.new, i.as_of FROM inc.places i"
+            " LEFT JOIN temp.map_articles ma ON ma.old = i.article_id"
+            f" WHERE NOT EXISTS (SELECT 1 FROM places t WHERE {pl_key})",
+            key_column="id",
+        )
+        pl.duplicate = max(0, pl.duplicate - pl.conflict)
+        results["places"] = pl
 
 
 def _merge_statistics(con, batch_id, results) -> None:

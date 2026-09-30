@@ -570,9 +570,11 @@ def test_a_card_on_a_machine_whose_lane_never_ran_names_the_absence(gazetteer, d
     dispose_all()
 
 
-def test_Place_rows_never_leave_the_machine_Q823():
-    """Q823 ⛔ (ODbL) is open: no Place row rides a backup restore or an export."""
+def test_Place_rows_ride_a_backup_restore_Q823_answered():
+    """Q823 = a (2026-09-29): OSM-derived rows may leave the machine with OSM's credit, so a
+    restore carries them (R71 b). The behaviour is driven in tests/test_places_in_backups.py;
+    this pins that the deliberate omission it replaced stays gone."""
     from src.backup.merge import _MERGE_HANDLED, _MERGE_NOT_CARRIED
 
-    assert "places" in _MERGE_NOT_CARRIED and "places" not in _MERGE_HANDLED
-    assert "wikidata_items" in _MERGE_NOT_CARRIED
+    assert "places" in _MERGE_HANDLED and "places" not in _MERGE_NOT_CARRIED
+    assert "wikidata_items" in _MERGE_HANDLED and "wikidata_items" not in _MERGE_NOT_CARRIED

@@ -46,7 +46,10 @@ def _columns(session: Any, table: str) -> set[str]:
 
 
 def _local_row_id(session: Any, table: str, identity: dict) -> int | None:
-    """The id of the local row this alternate differs from, found by its IDENTITY.
+    """The ``rowid`` of the local row this alternate differs from, found by its IDENTITY.
+
+    ``rowid`` rather than ``id``: it is the same number for a table with an integer key and it
+    exists for the text-keyed ones (places, Wikidata items) that have no ``id`` to read.
 
     Never by the ``local_row_id`` the restore stored: those tables use plain integer keys that
     SQLite reuses after a delete, so a stored id can point at an unrelated row later. Where the
