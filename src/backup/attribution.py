@@ -93,6 +93,21 @@ def card_signal(producer: str) -> str:
     return f"card:{producer}"
 
 
+def card_signals_from_edition(edition: dict | None) -> set[str]:
+    """``card:<producer>`` for each lane card a bulletin edition's cards section SHOWS.
+
+    Read from the RECORD (``lane_cards_shown``), so the credit follows what the document
+    holds: a card cut by the per-type limit or the budget carries no OSM row, and a line
+    for it would be the false statement this module exists to avoid. Shared by the edition
+    (which stores the block) and the evidence ZIP (which writes its own ``ATTRIBUTION.md``
+    and carries the whole edition as ``edition.json``), so the two cannot disagree."""
+    out: set[str] = set()
+    for sec in (edition or {}).get("sections") or []:
+        if isinstance(sec, dict) and sec.get("section") == "cards":
+            out |= {card_signal(str(p)) for p in sec.get("lane_cards_shown") or []}
+    return out
+
+
 def domain_signal(domain: str) -> str:
     return f"domain:{domain}"
 

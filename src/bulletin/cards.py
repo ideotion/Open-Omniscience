@@ -242,8 +242,9 @@ def cards_by_type(
         # so, or a short feed reads as a quiet period.
         "truncated": bool(stats.get("truncated")),
         # The lane producers this document did NOT run, BY NAME. Empty since the carrier
-        # (Q823 = a lets the lane's cards leave with OpenStreetMap's credit); kept so an
-        # edition written before it, and any future caller that holds one back, still says so.
+        # (Q823 = a lets the lane's cards leave with OpenStreetMap's credit). Kept in the
+        # record only, no renderer prints it: an edition written before the carrier holds
+        # the name, and a caller that holds a lane back would put it here.
         "held_q823": sorted(stats.get("held_q823") or []),
         # The lane cards this document SHOWS, by producer: what the attribution block keys on.
         "lane_cards_shown": sorted(

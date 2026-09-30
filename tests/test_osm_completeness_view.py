@@ -80,11 +80,10 @@ def test_an_edition_that_shows_the_lane_card_credits_openstreetmap_and_one_that_
     records that it SHOWS it, and the edition's attribution block keys on that record."""
     from datetime import date
 
-    from src.backup.attribution import attribution_dicts
+    from src.backup.attribution import attribution_dicts, card_signals_from_edition
     from src.briefing import registry
     from src.briefing.producers import osm_tag_completeness
     from src.bulletin.cards import cards_by_type
-    from src.bulletin.edition import _lane_card_signals
     from src.bulletin.period import Period
 
     ingest.ingest_country(FIXTURE, "ZZ", reader="python")
@@ -97,15 +96,15 @@ def test_an_edition_that_shows_the_lane_card_credits_openstreetmap_and_one_that_
     assert section["held_q823"] == [], "the bulletin no longer holds the lane back"
     assert section["cards_shown_total"] == 1
 
-    signals = _lane_card_signals({"sections": [section]})
+    signals = card_signals_from_edition({"sections": [section]})
     assert signals == {"card:osm_tag_completeness"}
     (line,) = attribution_dicts(signals)
     assert line["key"] == "openstreetmap" and "ODbL" in line["text"] and "OpenStreetMap contributors" in line["text"]
     assert line["because"] == "card:osm_tag_completeness", "the line says what measured it"
 
     # no lane card in the document, no OpenStreetMap line: the credit follows the content
-    assert _lane_card_signals({"sections": [dict(section, lane_cards_shown=[])]}) == set()
-    assert _lane_card_signals({"sections": []}) == set() and _lane_card_signals(None) == set()
+    assert card_signals_from_edition({"sections": [dict(section, lane_cards_shown=[])]}) == set()
+    assert card_signals_from_edition({"sections": []}) == set() and card_signals_from_edition(None) == set()
 
 
 def test_a_lane_producer_cannot_be_carried_without_its_credit():
@@ -115,8 +114,10 @@ def test_a_lane_producer_cannot_be_carried_without_its_credit():
     from src.backup.attribution import OSM_DERIVED_CARDS, attribution_lines, card_signal
     from src.briefing.registry import LANE_ONLY_PRODUCERS
 
-    assert set(OSM_DERIVED_CARDS) >= LANE_ONLY_PRODUCERS
     for name in LANE_ONLY_PRODUCERS:
+        lines = attribution_lines({card_signal(name)})
+        assert lines, f"{name} is lane-only and has no licence line: it cannot leave without one"
+    for name in OSM_DERIVED_CARDS:
         (line,) = attribution_lines({card_signal(name)})
         assert line.key == "openstreetmap" and "ODbL" in line.text and line.because == f"card:{name}"
     assert attribution_lines({card_signal("rising_now")}) == [], "no credit for a card that holds no OSM row"
@@ -159,3 +160,76 @@ def test_every_view_and_card_string_ships_in_twelve_languages():
         loc = json.loads(path.read_text("utf-8"))
         for s in strings:
             assert s in loc, (path.name, s)
+
+
+# ---- every document form the carrier reaches carries the credit, or none does -------------------
+
+_LANE_EDITION = {
+    "layer": "A",
+    "period": {"cadence": "weekly", "start": "2026-09-01", "end": "2026-09-08"},
+    "attribution": [
+        {"key": "openstreetmap", "because": "card:osm_tag_completeness",
+         "text": "Map data — © OpenStreetMap contributors (https://www.openstreetmap.org/copyright), "
+                 "available under the Open Database License 1.0 (ODbL, https://opendatacommons.org/licenses/odbl/1-0/)."},
+    ],
+    "sections": [{"section": "cards", "lane_cards_shown": ["osm_tag_completeness"], "types": []}],
+}
+
+
+def test_the_html_bulletin_carries_the_credit_like_the_markdown_one():
+    """HTML is the default view: an OpenStreetMap card there without the credit would break
+    Q823 = a whatever the Markdown says."""
+    from src.bulletin.render import render_html, render_markdown
+
+    for out in (render_html(_LANE_EDITION), render_markdown(_LANE_EDITION)):
+        assert "© OpenStreetMap contributors" in out and "ODbL" in out
+    bare = dict(_LANE_EDITION)
+    del bare["attribution"]
+    assert "OpenStreetMap contributors" not in render_html(bare), "an old record says nothing, never a guess"
+
+
+def test_the_evidence_zip_credits_the_lane_card_its_edition_json_carries(tmp_path):
+    import json
+    import zipfile
+
+    from src.bulletin.evidence import build_evidence_archive
+    from tests.test_bulletin_evidence import _P, _corpus
+
+    edition = {k: v for k, v in _LANE_EDITION.items() if k != "attribution"}  # the API's bare layer_a
+    rep = build_evidence_archive(_corpus(2), edition, _P, tmp_path)
+    with zipfile.ZipFile(rep["path"]) as z:
+        text = z.read("ATTRIBUTION.md").decode("utf-8")
+        manifest = json.loads(z.read("manifest.json").decode("utf-8"))
+    assert "© OpenStreetMap contributors" in text and "ODbL" in text
+    assert [a["key"] for a in manifest["attribution"]] == ["openstreetmap"]
+    (tmp_path / "plain").mkdir()
+    plain = build_evidence_archive(_corpus(2), {"layer": "A", "sections": []}, _P, tmp_path / "plain")
+    with zipfile.ZipFile(plain["path"]) as z:
+        assert "OpenStreetMap" not in z.read("ATTRIBUTION.md").decode("utf-8")
+
+
+def test_excluding_the_cards_section_drops_the_credit_it_alone_justified():
+    from src.bulletin.review import apply_selection
+
+    kept = apply_selection(_LANE_EDITION, exclude_sections=["through_time"])
+    assert [a["key"] for a in kept["attribution"]] == ["openstreetmap"], "the card is still in the document"
+    dropped = apply_selection(_LANE_EDITION, exclude_sections=["cards"])
+    assert dropped["attribution"] == [], "no card, no credit for it"
+    assert _LANE_EDITION["attribution"], "the record itself is untouched"
+    mixed = dict(_LANE_EDITION, attribution=[dict(_LANE_EDITION["attribution"][0], because="table:osm_admin, card:osm_tag_completeness")])
+    assert apply_selection(mixed, exclude_sections=["cards"])["attribution"][0]["because"] == "table:osm_admin"
+    old = {"sections": [{"section": "cards"}]}
+    assert "attribution" not in apply_selection(old, exclude_sections=["cards"]), "an old record stays silent"
+
+
+def test_a_failed_source_query_still_leaves_the_card_credit_and_says_it_failed(monkeypatch):
+    from src.bulletin import edition as E
+    from src.bulletin import evidence as EV
+
+    def boom(*_a, **_k):
+        raise RuntimeError("statement deadline")
+
+    monkeypatch.setattr(EV, "period_source_rows", boom)
+    lines, err = E._attribution(None, None, _LANE_EDITION)
+    assert [x["key"] for x in lines] == ["openstreetmap"] and "statement deadline" in err
+    assert E._attribution(None, None, {"sections": []}) == ([], "RuntimeError: statement deadline")
