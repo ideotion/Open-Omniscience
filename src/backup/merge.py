@@ -2132,7 +2132,7 @@ def _merge_metadata_alternates(con, batch_id, results) -> None:
         if where is None:
             r.deferred += 1
             continue
-        rows = _q(con, f"SELECT MIN(id) FROM {tbl} WHERE {where}", tuple(params))  # nosec B608 - table is a key of ALTERNATE_SPECS, column names are module literals, values are bound
+        rows = _q(con, f"SELECT MIN(rowid) FROM {tbl} WHERE {where}", tuple(params))  # nosec B608 - table is a key of ALTERNATE_SPECS, column names are module literals, values are bound
         local_id = rows[0][0] if rows else None
         if local_id is None:
             r.deferred += 1
@@ -3760,7 +3760,7 @@ def _capture_alternates(
         "INSERT INTO metadata_alternates (batch_id, table_name, identity, local_row_id, fields,"  # nosec B608 - table/column names come from the app's OWN fixed schema maps, never input
         " provenance, origin, status, created_at)"
         f" SELECT :batch, :table, json_object({ident}),"
-        f" (SELECT MIN(t.id) FROM {tbl} t WHERE {key}), json_object({fields}), {tag},"
+        f" (SELECT MIN(t.rowid) FROM {tbl} t WHERE {key}), json_object({fields}), {tag},"
         " :origin, 'pending', :now"
         f"{where}"
         " AND NOT EXISTS (SELECT 1 FROM metadata_alternates x"
