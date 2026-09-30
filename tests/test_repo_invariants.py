@@ -8272,7 +8272,9 @@ def test_docs_index_covers_live_docs():
 #: RAISED 2026-09-25 (Q1016's NOTE, ruling R32): 761 -> 768, seven lines for UI invariant #32
 #: (Living sources is a main tab). A new UI invariant is the growth the clause above names as
 #: normal; the build detail stays in the gate row and the slice's own tests.
-_CLAUDE_MD_LINE_CEILING = 782
+#: RAISED 2026-09-30: 782 -> 785, three lines amending protocol rule (5a): a shipped row is a new
+#: file under docs/ledger/shipped.d/, not a line appended to the shared shipped.csv.
+_CLAUDE_MD_LINE_CEILING = 785
 
 
 def _claude_md_lines() -> int:
@@ -8362,11 +8364,21 @@ def _shipped_csv_rows() -> tuple[list[str], list[list[str]]]:
     ~830 LF-terminated ones into a huge, misleading diff); csv.reader over already-decoded
     text handles mixed line endings fine for read-only parsing."""
     import csv
+    import importlib.util
     import io
 
-    text = (_ROOT / "docs" / "ledger" / "shipped.csv").read_text(encoding="utf-8")
+    csv_path = _ROOT / "docs" / "ledger" / "shipped.csv"
+    text = csv_path.read_text(encoding="utf-8")
     rows = list(csv.reader(io.StringIO(text)))
-    return rows[0], rows[1:]
+    # One-file-per-row fragments (scripts/ledger_shipped.py) are ledger rows too: a duplicate
+    # between a fragment and the file, or between two fragments, is the same defect.
+    spec = importlib.util.spec_from_file_location(
+        "ledger_shipped", _ROOT / "scripts" / "ledger_shipped.py"
+    )
+    assert spec is not None and spec.loader is not None
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return rows[0], rows[1:] + mod.fragment_rows(csv_path)
 
 
 def _shipped_csv_duplicate_groups() -> dict[tuple[str, str, str], list[list[str]]]:
