@@ -1,8 +1,10 @@
 # A keyword's kind comes from a source (R97, `RC05`)
 
 **Status:** design, before any code. Ruled 2026-09-30 15:34 UTC («1=a (but we should make plans
-for autonomy and complete independence»), recorded as `R97`. Thread «Keyword working session».
-Section 5 is the plan the maintainer's condition asks for; its open questions are section 7.
+for autonomy and complete independence»), recorded as `R97`; refined at 17:06 UTC by `R106` (build
+all the no-network parts, the offline resolver is measured before it is promised), `R107` (NO
+hand-set kinds) and `R108` (which edition). Thread «Keyword working session». Section 5 is the plan
+the maintainer's condition asks for; section 7 records how its three questions were answered.
 
 ## 1. What is ruled
 
@@ -34,8 +36,8 @@ built for AI guesses.
 source_id, as_of, note)`, one row per (keyword, source), so several sources can disagree and
 both are kept. Reasons: `keywords` is rewritten by the corpus-sized migrations D33 fuses, and a
 new table needs no rewrite; provenance is per row; the table rides backups with the same
-keep / discard / reversible-swap rules as the rest (R61, R71), because a kind checked by hand is
-the operator's work. `kind` is a closed set: `person`, `organisation`, `place`, `other`
+keep / discard / reversible-swap rules as the rest (R61, R71), so a restored install keeps its
+kinds without the network. `kind` is a closed set: `person`, `organisation`, `place`, `other`
 (the source says what it is and it is none of the three: a species, an event), and the row is
 absent when there is no answer («unknown» is the absence, never a stored guess).
 
@@ -54,7 +56,7 @@ names are 14 hours). `wbgetentities` with `sites=enwiki&titles=A|B|…` resolves
 per request (about 18,000 names an hour at the same rate), follows redirects and never
 fuzzy-matches. So: candidate names come from `article_entities` and capitalised keywords, most
 cited first (the existing `_ENTITY_SCAN_CAP` discipline: a stated cap, never a silent
-truncation); each is asked as an exact title in the corpus's language edition; a disambiguation
+truncation); each is asked as an exact title in the keyword's own language edition when it is one of the twelve, English otherwise (`R108`); a disambiguation
 page (`P31` = Q4167410) is refused as ambiguous and listed; a redirect is followed and the
 resolved title stated. A name that is not an exact title is «unknown», not searched.
 
@@ -81,10 +83,11 @@ reviewed document, not a score.
 * **T0, no network at all.** «Unknown» is a first-class answer; every surface works with no
   kinds. Boot makes zero calls (unchanged).
 * **T1, local sources, no network.** The 684 shipped ring QIDs, the OSM gazetteer for places (row
-  D, already local and ODbL-credited), the local `wikidata_items` cache, any Wikipedia page the
-  operator already follows (its QID is in the page data), and **the operator's own pin** (a
-  kind set by hand in the review screen, source `operator`, which outranks every other source
-  and is never overwritten). Everything here works on an air-gapped machine.
+  D, already local and ODbL-credited), the local `wikidata_items` cache, and any Wikipedia page the
+  operator already follows (its QID is in the page data). **There is NO hand-set kind (`R107`):
+  the maintainer ruled that kind attribution is optimised by us, not by users, and a wrong kind is
+  fixed in the class table or the matcher, never overridden by hand.** Everything here works on
+  an air-gapped machine.
 * **T2, consented lookups, cached for good.** The matcher of section 3. Every answer is stored
   with source and date and rides backups, so a restored install has its kinds without the
   network, and re-asking is never needed for a name already answered.
@@ -95,7 +98,8 @@ reviewed document, not a score.
 * **T4, offline resolution from a file the operator holds.** The same matcher can read a
   Wikidata dump extract the operator downloaded once through the existing dump lane, instead
   of the API: no network afterwards. It is the only tier that costs real work (a streaming
-  reader of a very large file) and is **question 1 below**; nothing in T0 to T3 depends on it.
+  reader of a very large file). `R106`: it stays in the plan and is MEASURED before it is promised;
+  nothing in T0 to T3 depends on it.
 
 Nothing in this plan shares data between installs (`R100`): each install resolves and stores its
 own kinds; articles and kinds travel only through the operator's own backups.
@@ -110,13 +114,11 @@ own kinds; articles and kinds travel only through the operator's own backups.
 * Kinds of `other` (a species, an event) are kept because dropping them would look like
   «unknown» and invite a second lookup.
 
-## 7. Open questions for the maintainer
+## 7. The three questions, answered (2026-09-30 17:06 UTC)
 
-1. **How far should independence go?** (a) T0 to T3 now and T4 (offline from a dump the
-   operator holds) later, only if a dump extract is small enough to be reasonable. Recommended:
-   nothing in the plan depends on T4, and it can be measured before it is promised. (b) build
-   T4 now. (c) T0 to T3 only, no dump path.
-2. **The operator's own pin:** recommended yes (the review screen lets the operator set a kind by
-   hand, outranking every source); it is the smallest step to independence and costs one column.
-3. **Which language edition asks the titles?** Recommended: the keyword's own language edition
-   when it has one among the twelve, English otherwise.
+1. **How far should independence go?** `R106` = a: T0 to T3 now; the offline resolver (T4) stays in
+   the plan and is measured before it is promised.
+2. **The operator's own pin:** `R107` = b, **NO.** Kinds come only from sources. The review screen
+   (`R98`) carries no control that sets a kind, and there is no `operator` source row.
+3. **Which language edition asks the titles?** `R108` = a: the keyword's own language edition when
+   it has one among the twelve, English otherwise.
