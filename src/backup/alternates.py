@@ -185,8 +185,8 @@ def adopt(session: Any, alt_id: int) -> dict:
         raise AlternateError("the local row this differs from is gone", 409)
     tag_before = provenance_tag(session, table, alt.local_row_id)
     session.execute(
-        text(  # noqa: S608  # nosec B608 - table is a key of PRODUCER_COLUMNS and cols are intersected with the table's own columns; values are bound
-            f"UPDATE {table} SET " + ", ".join(f"{c} = :v_{i}" for i, c in enumerate(cols))
+        text(
+            f"UPDATE {table} SET " + ", ".join(f"{c} = :v_{i}" for i, c in enumerate(cols))  # noqa: S608  # nosec B608 - table is a key of PRODUCER_COLUMNS and cols are intersected with the table's own columns; values are bound
             + " WHERE id = :id"
         ),
         {**{f"v_{i}": imported[c] for i, c in enumerate(cols)}, "id": alt.local_row_id},
