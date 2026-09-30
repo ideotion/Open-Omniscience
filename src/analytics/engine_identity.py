@@ -132,6 +132,11 @@ NOT_OUTPUT_AFFECTING: dict[str, str] = {
         "by the merge in both modes, so a carry and a re-index cannot differ here"
     ),
     "src/analytics/engine_identity.py": "this module; it computes the stamp, not the rows",
+    "src/database/derived_views.py": (
+        "the READ seam over the keyword rows (R96): a view listing the table's own columns, so a "
+        "reader sees exactly the rows a pass wrote; it changes how they are read, never what "
+        "extraction writes"
+    ),
     "src/services/duckduckgo.py": "imported by the services package; makes no call in a pass",
     "src/utils/logging_config.py": "log formatting only",
 }

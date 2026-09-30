@@ -371,6 +371,15 @@ def init_db() -> None:
     ensure_article_newsletter_attach_column(engine)
     ensure_source_catalog_baseline_column(engine)
 
+    # The read seam over the derived keyword rows (segmented-index step 0, R96): create the
+    # view for a database made before it existed, or re-create it if the table's columns
+    # moved. AFTER the column self-heals above -- a view naming a column the table does not
+    # yet have blocks every ALTER ... RENAME until it is repaired. Boot makes no network call
+    # and this reads one sqlite_master row when the view is current.
+    from src.database.derived_views import ensure_derived_views
+
+    ensure_derived_views(engine)
+
     ensure_hot_indexes(engine)
 
     # R23 / PR 5: finish a bulk build that a crash interrupted with its indexes dropped.
