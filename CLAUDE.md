@@ -27,9 +27,12 @@ file saturates (maintainer-asked 2026-06-12) — details stay in git history,
 `docs/CHANGES.md` and the named design docs; NEVER compress away a pending
 ruling, a contingency, or a deliberate-omission note. (5a) **SHIPPED WORK IS
 TRACKED IN A CSV, NOT INLINE HERE (maintainer-asked 2026-06-25, to keep this
-file readable):** record newly-shipped work as a ROW in
-[`docs/ledger/shipped.csv`](docs/ledger/shipped.csv) (date · area · item ·
-status · refs · key_paths · summary). If it carries a reusable LESSON or
+file readable):** record newly-shipped work as ONE NEW FILE,
+`docs/ledger/shipped.d/<date>-<slug>.csv` (`python scripts/ledger_shipped.py new`; one row in the columns
+date · area · item · status · refs · key_paths · summary) — NEVER a line appended to the shared
+[`docs/ledger/shipped.csv`](docs/ledger/shipped.csv), because GitHub does not apply its `merge=union`
+rule and every open PR then conflicts after every merge (amended 2026-09-30; the readers take the
+file first and the fragments after it; `ledger_shipped.py fold` merges them at a release). If it carries a reusable LESSON or
 EMPIRICAL FACT, ALSO (a) append the verbatim entry to
 [`docs/ledger/SHIPPED_LOG.md`](docs/ledger/SHIPPED_LOG.md) and (b) copy the
 lesson into [`docs/ledger/LESSONS.md`](docs/ledger/LESSONS.md) (so first-readers
