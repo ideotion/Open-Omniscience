@@ -372,7 +372,7 @@ def lane_service_status() -> dict:
         drain_alive = bool(_DRAIN_THREAD is not None and _DRAIN_THREAD.is_alive())
     if runner is None:
         return {"streaming": False, "draining": False, "drains": 0, "last_drain": None,
-                "stream": None, "walk": None, "warm": None, "index": None}
+                "stream": None, "drain": None, "walk": None, "warm": None, "index": None}
     return {
         "streaming": bool(runner.streaming),
         "draining": drain_alive,
@@ -382,6 +382,10 @@ def lane_service_status() -> dict:
         # failure, idle seconds): what the lane's status reads to say it is WAITING
         # and on what, rather than "running" while every connection fails.
         "stream": runner.stream_counters(),
+        # Where the drain loop is (stage, edition, how long it has been in this drain, how
+        # many failed in a row and why). ``drains: 0`` alone cannot say whether the first
+        # drain is stuck, slow or failing.
+        "drain": runner.drain_status(),
         # The walk's in-process state (walking, paused and why, waiting). Its COUNTS are
         # rows in the lane, read by ``src.wiki.walk.walk_coverage``; this is only what no
         # row holds. ``None`` for a runner built without a walker.

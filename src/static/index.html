@@ -171,7 +171,20 @@
           <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor"
                stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path id="wiki-mark" d="M3 6h3.2l3.1 8.6L12 8h1.9l2.7 6.6L19.8 6H22l-4.3 12h-2L13 11.4 10.3 18h-2L3 6Z"/>
-          </svg></button>
+          </svg>
+          <!-- The state pip: what the stream is DOING, drawn by SHAPE (a colour alone fails
+               for anyone who cannot tell the hues apart), in the corner so the button's
+               footprint never changes (invariant #3). live = solid dot; held = ring; waiting =
+               ring with a dot; paused = a dash; stopped = a cross. These describe the STATE,
+               never the action a click performs (invariant #14: no play/pause glyphs). Painted by _paintWikiLane through
+               data-wiki on the button; the hover words the same state. -->
+          <span id="wiki-pip" aria-hidden="true"><svg viewBox="0 0 10 10" width="10" height="10">
+            <circle class="pip-bg" cx="5" cy="5" r="5"/>
+            <circle class="pip-dot" cx="5" cy="5" r="2.6"/>
+            <circle class="pip-ring" cx="5" cy="5" r="2.3" fill="none"/>
+            <path class="pip-dash" d="M2.8 5h4.4" fill="none"/>
+            <path class="pip-x" d="M3 3l4 4M7 3l-4 4" fill="none"/>
+          </svg></span></button>
         <button class="icon-btn" id="net-toggle" data-on-click="toggleNetwork()" data-i18n-dyn
           title="Airplane mode — filled means offline: every new network request is refused instantly; one in-flight request may finish."
           aria-label="Airplane mode (network on/off)">

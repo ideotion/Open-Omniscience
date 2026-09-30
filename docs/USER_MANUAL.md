@@ -1048,6 +1048,31 @@ wiki that asks it to slow down is asked again after a pause that doubles up to a
 hour. A restart resumes each edition where it stopped. Its progress is in **Living
 sources** and in the task manager.
 
+**Why the walk can wait behind the stream's first drain.** The stream stores what it heard in
+a drain every 30 seconds; the search index, the fetch of other changed pages and the walk run
+in the time *after* each drain. A drain fetches the text of the followed pages that changed,
+and behind a backlog (a stream resumed hours back) that is thousands of polite requests, so the
+drain now has a **20-second bound for fetching texts**, shared out between the editions
+(the first edition rotates each drain). Every change is still recorded; a text not reached in
+time is counted as *deferred* and the **next drain fetches it first**, so the bound delays a
+text by a drain or two and never drops it. The bound limits when a fetch may *start*: one
+already under way finishes (up to 30 seconds), so a drain can run somewhat past 20 seconds.
+While the page walk is on, it keeps 30% of the idle time, so the fetch of other changed pages
+cannot use all of it. The status (`/api/scheduler/status`, the `wiki_lane.service.drain`
+block) says where the drain is: the stage (`hot-sets` or `feeds`), the edition, how long it has
+been in this drain, and how many drains failed in a row and why.
+
+**Reading the W in the top bar.** The W is the **stream's** switch, not the walk's: the
+walk is the tick box above, and it runs only while the stream does. The small mark in the
+W's corner says what the stream is doing by shape: a solid dot is connected and receiving;
+a ring is *chosen but not connected* (airplane mode holds it, or it has not started in this
+session); a ring with a dot is connecting and failing, retrying on its own; a dash is paused;
+a cross is stopped. Hover it for the words, including whether the page walk is on. A click
+on a ring **starts** the stream (you confirm going online once); a click on a dot or a ring
+with a dot **pauses** it; Shift+click stops it. Settings → Wikipedia shows the same two lines
+in words above the editions. Both repaint when you go online or offline, and when you tick
+or untick the walk.
+
 **The other changed pages (off unless you switch it on):** the live stream stores
 the text of the pages it follows and only counts the changes it reports on every
 other page. Ticking **Also fetch the text of other changed pages** (Settings →
