@@ -363,7 +363,7 @@ def frozen_cohort(
     sampled = sample_articles is not None
     stats = sq.collect_article_stats(
         session, should_pause=should_pause, since=since,
-        recent_limit=int(sample_articles) if sampled else None,
+        recent_limit=int(sample_articles) if sample_articles is not None else None,
     )
     cohort = cohort_from_stats(stats)
     per = per_source_metrics(
@@ -425,7 +425,7 @@ def frozen_cohort(
         # Present and NULL on a whole-corpus cut, for the same reason: a verdict judged
         # against a bounded sample must be able to say so (qualification labels its
         # attempt rows with it).
-        "sample_articles": int(sample_articles) if sampled else None,
+        "sample_articles": int(sample_articles) if sample_articles is not None else None,
         "per_source": per,
     }
 
